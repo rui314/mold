@@ -419,9 +419,9 @@ void add_synthetic_symbols(Context<E> &ctx) {
   ctx.__executable_start = add("__executable_start");
 
   ctx.__rel_iplt_start =
-    add(E::is_rel ? "__rel_iplt_start" : "__rela_iplt_start");
+    add(is_rela<E> ? "__rela_iplt_start" : "__rel_iplt_start");
   ctx.__rel_iplt_end =
-    add(E::is_rel ? "__rel_iplt_end" : "__rela_iplt_end");
+    add(is_rela<E> ? "__rela_iplt_end" : "__rel_iplt_end");
 
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");
@@ -435,7 +435,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
   if (!get_symbol(ctx, "__dso_handle")->file)
     ctx.__dso_handle = add("__dso_handle");
 
-  if constexpr (E::supports_tlsdesc)
+  if constexpr (supports_tlsdesc<E>)
     ctx._TLS_MODULE_BASE_ = add("_TLS_MODULE_BASE_");
 
   if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>)
@@ -1550,7 +1550,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
 
   // _TLS_MODULE_BASE_
-  if constexpr (E::supports_tlsdesc) {
+  if constexpr (supports_tlsdesc<E>) {
     // _TLS_MODULE_BASE_ is used for Local Dynamic model for TLSDESC.
     // I believe GCC and Clang don't create a reference to it, but Intel
     // compiler seems to be using this symbol.

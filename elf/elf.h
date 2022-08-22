@@ -1397,8 +1397,6 @@ struct X86_64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr bool is_rel = false;
-  static constexpr bool supports_tlsdesc = true;
 };
 
 template <> struct ElfSym<X86_64> : public Elf64Sym {};
@@ -1431,8 +1429,6 @@ struct I386 {
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
-  static constexpr bool is_rel = true;
-  static constexpr bool supports_tlsdesc = true;
 };
 
 template <> struct ElfSym<I386> : public Elf32Sym {};
@@ -1466,8 +1462,6 @@ struct ARM64 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_offset = 16;
-  static constexpr bool is_rel = false;
-  static constexpr bool supports_tlsdesc = true;
 };
 
 template <> struct ElfSym<ARM64> : public Elf64Sym {};
@@ -1501,8 +1495,6 @@ struct ARM32 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_offset = 8;
-  static constexpr bool is_rel = true;
-  static constexpr bool supports_tlsdesc = true;
 };
 
 template <> struct ElfSym<ARM32> : public Elf32Sym {};
@@ -1535,8 +1527,6 @@ struct RISCV64 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_offset = 0;
-  static constexpr bool is_rel = false;
-  static constexpr bool supports_tlsdesc = false;
 };
 
 template <> struct ElfSym<RISCV64> : public Elf64Sym {};
@@ -1569,8 +1559,6 @@ struct RISCV32 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_offset = 0;
-  static constexpr bool is_rel = false;
-  static constexpr bool supports_tlsdesc = false;
 };
 
 template <> struct ElfSym<RISCV32> : public Elf32Sym {};
@@ -1580,5 +1568,11 @@ template <> struct ElfPhdr<RISCV32> : public Elf32Phdr {};
 template <> struct ElfRel<RISCV32> : public Elf32Rela { using Elf32Rela::Elf32Rela; };
 template <> struct ElfDyn<RISCV32> : public Elf32Dyn {};
 template <> struct ElfChdr<RISCV32> : public Elf32Chdr {};
+
+template <typename E>
+inline constexpr bool is_rela = requires { ElfRel<E>::r_addend; };
+
+template <typename E>
+inline constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
 
 } // namespace mold::elf

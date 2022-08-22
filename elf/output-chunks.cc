@@ -599,9 +599,9 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
     define(DT_FILTER, ctx.dynstr->find_string(str));
 
   if (ctx.reldyn->shdr.sh_size) {
-    define(E::is_rel ? DT_REL : DT_RELA, ctx.reldyn->shdr.sh_addr);
-    define(E::is_rel ? DT_RELSZ : DT_RELASZ, ctx.reldyn->shdr.sh_size);
-    define(E::is_rel ? DT_RELENT : DT_RELAENT, sizeof(ElfRel<E>));
+    define(is_rela<E> ? DT_RELA : DT_REL, ctx.reldyn->shdr.sh_addr);
+    define(is_rela<E> ? DT_RELASZ : DT_RELSZ, ctx.reldyn->shdr.sh_size);
+    define(is_rela<E> ? DT_RELAENT : DT_RELENT, sizeof(ElfRel<E>));
   }
 
   if (ctx.relrdyn) {
@@ -613,7 +613,7 @@ static std::vector<typename E::WordTy> create_dynamic_section(Context<E> &ctx) {
   if (ctx.relplt->shdr.sh_size) {
     define(DT_JMPREL, ctx.relplt->shdr.sh_addr);
     define(DT_PLTRELSZ, ctx.relplt->shdr.sh_size);
-    define(DT_PLTREL, E::is_rel ? DT_REL : DT_RELA);
+    define(DT_PLTREL, is_rela<E> ? DT_RELA : DT_REL);
   }
 
   if (ctx.gotplt->shdr.sh_size)
@@ -978,7 +978,7 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(E::supports_tlsdesc);
+  assert(supports_tlsdesc<E>);
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / E::word_size);
   this->shdr.sh_size += E::word_size * 2;
   tlsdesc_syms.push_back(sym);
@@ -1050,7 +1050,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     }
   }
 
-  if constexpr (E::supports_tlsdesc)
+  if constexpr (supports_tlsdesc<E>)
     for (Symbol<E> *sym : tlsdesc_syms)
       entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC,
                          sym == ctx._TLS_MODULE_BASE_ ? nullptr : sym});

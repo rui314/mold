@@ -545,8 +545,8 @@ template <typename E>
 class RelPltSection : public Chunk<E> {
 public:
   RelPltSection() {
-    this->name = E::is_rel ? ".rel.plt" : ".rela.plt";
-    this->shdr.sh_type = E::is_rel ? SHT_REL : SHT_RELA;
+    this->name = is_rela<E> ? ".rela.plt" : ".rel.plt";
+    this->shdr.sh_type = is_rela<E> ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
     this->shdr.sh_addralign = E::word_size;
@@ -560,8 +560,8 @@ template <typename E>
 class RelDynSection : public Chunk<E> {
 public:
   RelDynSection() {
-    this->name = E::is_rel ? ".rel.dyn" : ".rela.dyn";
-    this->shdr.sh_type = E::is_rel ? SHT_REL : SHT_RELA;
+    this->name = is_rela<E> ? ".rela.dyn" : ".rel.dyn";
+    this->shdr.sh_type = is_rela<E> ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
     this->shdr.sh_addralign = E::word_size;
