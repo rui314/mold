@@ -53,8 +53,7 @@ int main() {
 }
 EOF
 
-$CC -B. -no-pie -Wl,--image-base=0x40000 \
-  -o $t/exe $t/a.o $t/b.o
+$CC -B. -no-pie -Wl,--image-base=0x40000 -o $t/exe $t/a.o $t/b.o
 $QEMU $t/exe > $t/log
 
 grep -q '^__ehdr_start=0x40000$' $t/log
