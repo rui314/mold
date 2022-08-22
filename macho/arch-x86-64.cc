@@ -16,8 +16,7 @@ void StubsSection<E>::copy_buf(Context<E> &ctx) {
     buf[i * 6] = 0xff;
     buf[i * 6 + 1] = 0x25;
     *(ul32 *)(buf + i * 6 + 2) =
-      ctx.lazy_symbol_ptr.hdr.addr + i * E::word_size -
-      (this->hdr.addr + i * 6 + 6);
+      ctx.lazy_symbol_ptr.hdr.addr + i * word_size - (this->hdr.addr + i * 6 + 6);
   }
 }
 

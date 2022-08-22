@@ -29,7 +29,7 @@ void StubsSection<E>::copy_buf(Context<E> &ctx) {
 
     static_assert(sizeof(insn) == E::stub_size);
 
-    u64 la_addr = ctx.lazy_symbol_ptr.hdr.addr + E::word_size * i;
+    u64 la_addr = ctx.lazy_symbol_ptr.hdr.addr + word_size * i;
     u64 this_addr = this->hdr.addr + E::stub_size * i;
 
     memcpy(buf, insn, sizeof(insn));

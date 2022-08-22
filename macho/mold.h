@@ -1017,13 +1017,13 @@ u64 Symbol<E>::get_addr(Context<E> &ctx) const {
 template <typename E>
 u64 Symbol<E>::get_got_addr(Context<E> &ctx) const {
   assert(got_idx != -1);
-  return ctx.got.hdr.addr + got_idx * E::word_size;
+  return ctx.got.hdr.addr + got_idx * word_size;
 }
 
 template <typename E>
 u64 Symbol<E>::get_tlv_addr(Context<E> &ctx) const {
   assert(tlv_idx != -1);
-  return ctx.thread_ptrs.hdr.addr + tlv_idx * E::word_size;
+  return ctx.thread_ptrs.hdr.addr + tlv_idx * word_size;
 }
 
 template <typename E>
