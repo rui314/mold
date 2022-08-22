@@ -76,6 +76,13 @@ static void resolve_symbols(Context<E> &ctx) {
       file->clear_symbols();
   });
 
+  // Redo symbol resolution because extracting object files from archives
+  // may raise the priority of symbols defined by the object file.
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+    if (file->is_alive)
+      file->resolve_symbols(ctx);
+  });
+
   std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
   std::erase_if(ctx.dylibs, [](InputFile<E> *file) { return !file->is_alive; });
 }
