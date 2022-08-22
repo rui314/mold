@@ -1376,7 +1376,7 @@ struct ElfNhdr {
 };
 
 template <typename E>
-inline constexpr bool is_rela = requires { ElfRel<E>::r_addend; };
+inline constexpr bool is_rela = requires(ElfRel<E> r) { r.r_addend; };
 
 template <typename E>
 inline constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
