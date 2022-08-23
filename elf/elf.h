@@ -1259,6 +1259,24 @@ struct Elf32Phdr {
   ul32 p_align;
 };
 
+// Depending on the target, ElfRel may or may not contain r_addend member.
+// The relocation record containing r_addend is called RELA, and that
+// without r_addend is called REL.
+//
+// If REL, relocation addends are stored as parts of section contents.
+// That means we add a computed value to an existing value when writing a
+// relocated value if REL. If RELA, we just overwrite an existing value
+// with a newly computed value.
+//
+// We don't want to have too many `if (REL)`s and `if (RELA)`s in our
+// codebase, so we write dynamic relocations in the following manner:
+//
+// - We always create a dynamic relocation with an addend. If it's REL,
+//   the addend will be discarded.
+//
+// - We also always write an addend to the relocated place even though
+//   it's redundant for RELA. If RELA, the written value will be
+//   ovewritten by the dynamic linker at load-time.
 struct Elf64Rel {
   Elf64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
