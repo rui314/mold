@@ -892,24 +892,23 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 // bit. An address must be even and thus its LSB is 0 (odd address is not
 // representable in this encoding and such relocation must be stored to
 // the .rel.dyn section). A bitmap has LSB 1.
-template <typename E>
-static std::vector<Word<E>> encode_relr(std::span<Word<E>> pos) {
-  std::vector<Word<E>> vec;
-  u64 num_bits = sizeof(Word<E>) * 8 - 1;
-  u64 max_delta = num_bits * sizeof(Word<E>);
+static std::vector<u64> encode_relr(std::span<u64> pos, i64 word_size) {
+  std::vector<u64> vec;
+  u64 num_bits = word_size * 8 - 1;
+  u64 max_delta = num_bits * word_size;
 
   for (i64 i = 0; i < pos.size();) {
     assert(i == 0 || pos[i - 1] <= pos[i]);
-    assert(pos[i] % sizeof(Word<E>) == 0);
+    assert(pos[i] % word_size == 0);
 
     vec.push_back(pos[i]);
-    u64 base = pos[i] + sizeof(Word<E>);
+    u64 base = pos[i] + word_size;
     i++;
 
     for (;;) {
       u64 bits = 0;
       for (; i < pos.size() && pos[i] - base < max_delta; i++)
-        bits |= (u64)1 << ((pos[i] - base) / sizeof(Word<E>));
+        bits |= (u64)1 << ((pos[i] - base) / word_size);
 
       if (!bits)
         break;
@@ -936,7 +935,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
     return;
 
   // Collect base relocations
-  std::vector<std::vector<Word<E>>> shards(members.size());
+  std::vector<std::vector<u64>> shards(members.size());
 
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
     InputSection<E> &isec = *members[i];
@@ -951,8 +950,8 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
   });
 
   // Compress them
-  std::vector<Word<E>> pos = flatten(shards);
-  relr = encode_relr<E>(pos);
+  std::vector<u64> pos = flatten(shards);
+  relr = encode_relr(pos, sizeof(Word<E>));
 }
 
 template <typename E>
@@ -1114,12 +1113,12 @@ template <typename E>
 void GotSection<E>::construct_relr(Context<E> &ctx) {
   assert(ctx.arg.pack_dyn_relocs_relr);
 
-  std::vector<Word<E>> pos;
+  std::vector<u64> pos;
   for (GotEntry<E> &ent : get_entries(ctx))
     if (ent.is_relr(ctx))
       pos.push_back(ent.idx * sizeof(Word<E>));
 
-  relr = encode_relr<E>(pos);
+  relr = encode_relr(pos, sizeof(Word<E>));
 }
 
 template <typename E>

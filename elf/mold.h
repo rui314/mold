@@ -441,7 +441,7 @@ public:
   u32 idx;
 
   void construct_relr(Context<E> &ctx);
-  std::vector<Word<E>> relr;
+  std::vector<u64> relr;
 
   std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
 
@@ -497,7 +497,7 @@ public:
   u32 tlsld_idx = -1;
 
   void construct_relr(Context<E> &ctx);
-  std::vector<Word<E>> relr;
+  std::vector<u64> relr;
 
 private:
   std::vector<GotEntry<E>> get_entries(Context<E> &ctx) const;
