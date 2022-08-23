@@ -14,7 +14,7 @@ mkdir -p $t
 
 [[ $MACHINE == arm* ]] || { echo skipped; exit; }
 
-$CC -o /dev/null -c -xc /dev/null -mthumb 2> /dev/null || { echo skipped; exit; }
+echo 'int foo() { return 0; }' | $CC -o /dev/null -c -xc - -mthumb 2> /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -mthumb
 #include <stdio.h>
