@@ -1793,7 +1793,6 @@ public:
   bool has_plt(Context<E> &ctx) const;
   bool has_got(Context<E> &ctx) const;
 
-  u64 get_st_shndx() const;
   bool is_absolute() const;
   bool is_relative() const { return !is_absolute(); }
   bool is_local() const;
@@ -2284,21 +2283,6 @@ inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
 template <typename E>
 inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
   return sections[get_shndx(esym)].get();
-}
-
-template <typename E>
-inline u64 Symbol<E>::get_st_shndx() const {
-  // if we are pointing to a section fragment, then the parent section (which is
-  // mergeable) should contain the real st_shndx
-  if (SectionFragment<E> *frag = get_frag())
-    if (frag->is_alive)
-      return frag->output_section.shndx;
-
-  if (InputSection<E> *isec = get_input_section())
-    if (isec->is_alive)
-      return isec->output_section->shndx;
-
-  return SHN_UNDEF;
 }
 
 template <typename E>

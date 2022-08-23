@@ -1186,7 +1186,6 @@ template<typename E>
 ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
   ElfSym<E> esym;
   memset(&esym, 0, sizeof(esym));
-
   esym.st_type = sym.esym().st_type;
 
   if (sym.is_local())
@@ -1197,6 +1196,17 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
     esym.st_bind = STB_GLOBAL;
   else
     esym.st_bind = sym.esym().st_bind;
+
+  auto get_st_shndx = [](Symbol<E> &sym) -> u32 {
+    if (SectionFragment<E> *frag = sym.get_frag())
+      if (frag->is_alive)
+        return frag->output_section.shndx;
+
+    if (InputSection<E> *isec = sym.get_input_section())
+      if (isec->is_alive)
+        return isec->output_section->shndx;
+    return SHN_UNDEF;
+  };
 
   if (sym.has_copyrel) {
     esym.st_shndx =
@@ -1217,12 +1227,12 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
     esym.st_value = sym.get_addr(ctx);
     esym.st_size = sym.esym().st_size;
   } else if (sym.get_type() == STT_TLS) {
-    esym.st_shndx = sym.get_st_shndx();
+    esym.st_shndx = get_st_shndx(sym);
     esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
     esym.st_size = sym.esym().st_size;
   } else {
     esym.st_visibility = sym.visibility;
-    esym.st_shndx = sym.get_st_shndx();
+    esym.st_shndx = get_st_shndx(sym);
     esym.st_value = sym.get_addr(ctx, false);
     esym.st_size = sym.esym().st_size;
   }
