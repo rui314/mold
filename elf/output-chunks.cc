@@ -450,15 +450,16 @@ void ShstrtabSection<E>::update_shdr(Context<E> &ctx) {
   std::unordered_map<std::string_view, i64> map;
   i64 offset = 1;
 
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (!chunk->name.empty() && map.insert({chunk->name, offset}).second)
-      offset += chunk->name.size() + 1;
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (!chunk->name.empty()) {
+      auto [it, inserted] = map.insert({chunk->name, offset});
+      chunk->shdr.sh_name = it->second;
+      if (inserted)
+        offset += chunk->name.size() + 1;
+    }
+  }
 
   this->shdr.sh_size = offset;
-
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (!chunk->name.empty())
-      chunk->shdr.sh_name = map[chunk->name];
 }
 
 template <typename E>
@@ -891,24 +892,24 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 // bit. An address must be even and thus its LSB is 0 (odd address is not
 // representable in this encoding and such relocation must be stored to
 // the .rel.dyn section). A bitmap has LSB 1.
-template <typename T>
-static std::vector<T> encode_relr(const std::vector<T> &pos) {
-  std::vector<T> vec;
-  u64 num_bits = sizeof(T) * 8 - 1;
-  u64 max_delta = num_bits * sizeof(T);
+template <typename E>
+static std::vector<Word<E>> encode_relr(std::span<Word<E>> pos) {
+  std::vector<Word<E>> vec;
+  u64 num_bits = sizeof(Word<E>) * 8 - 1;
+  u64 max_delta = num_bits * sizeof(Word<E>);
 
   for (i64 i = 0; i < pos.size();) {
     assert(i == 0 || pos[i - 1] <= pos[i]);
-    assert(pos[i] % sizeof(T) == 0);
+    assert(pos[i] % sizeof(Word<E>) == 0);
 
     vec.push_back(pos[i]);
-    u64 base = pos[i] + sizeof(T);
+    u64 base = pos[i] + sizeof(Word<E>);
     i++;
 
     for (;;) {
       u64 bits = 0;
       for (; i < pos.size() && pos[i] - base < max_delta; i++)
-        bits |= (u64)1 << ((pos[i] - base) / sizeof(T));
+        bits |= (u64)1 << ((pos[i] - base) / sizeof(Word<E>));
 
       if (!bits)
         break;
@@ -951,7 +952,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
 
   // Compress them
   std::vector<Word<E>> pos = flatten(shards);
-  relr = encode_relr(pos);
+  relr = encode_relr<E>(pos);
 }
 
 template <typename E>
@@ -1118,7 +1119,7 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
     if (ent.is_relr(ctx))
       pos.push_back(ent.idx * sizeof(Word<E>));
 
-  relr = encode_relr(pos);
+  relr = encode_relr<E>(pos);
 }
 
 template <typename E>
