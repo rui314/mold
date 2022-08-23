@@ -566,11 +566,11 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 
   // Copy symbols and symbol names from input files
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->export_to_symtab(ctx);
+    file->populate_symtab(ctx);
   });
 
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-    file->export_to_symtab(ctx);
+    file->populate_symtab(ctx);
   });
 }
 

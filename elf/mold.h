@@ -1129,7 +1129,7 @@ public:
   void scan_relocations(Context<E> &ctx);
   void convert_common_symbols(Context<E> &ctx);
   void compute_symtab(Context<E> &ctx);
-  void export_to_symtab(Context<E> &ctx);
+  void populate_symtab(Context<E> &ctx);
 
   i64 get_shndx(const ElfSym<E> &esym);
   InputSection<E> *get_section(const ElfSym<E> &esym);
@@ -1211,7 +1211,7 @@ public:
                          std::function<void(InputFile<E> *)> feeder) override;
 
   void compute_symtab(Context<E> &ctx);
-  void export_to_symtab(Context<E> &ctx);
+  void populate_symtab(Context<E> &ctx);
 
   bool is_needed = false;
   std::string soname;
