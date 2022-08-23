@@ -1,5 +1,3 @@
-#ifdef _WIN32
-
 #include "mold.h"
 #include "lto.h"
 
@@ -27,5 +25,3 @@ void lto_cleanup(Context<E> &ctx) {}
 INSTANTIATE_ALL;
 
 } // namespace mold::elf
-
-#endif

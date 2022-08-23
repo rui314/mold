@@ -25,19 +25,19 @@
 #include <vector>
 
 #ifdef _WIN32
-#include <io.h>
+# include <io.h>
 #else
-#include <sys/mman.h>
-#include <unistd.h>
+# include <sys/mman.h>
+# include <unistd.h>
 #endif
 
 #define XXH_INLINE_ALL 1
 #include "third-party/xxhash/xxhash.h"
 
-#if defined(NDEBUG)
-#  define unreachable() __builtin_unreachable()
+#ifdef NDEBUG
+# define unreachable() __builtin_unreachable()
 #else
-#  define unreachable() assert(0 && "unreachable")
+# define unreachable() assert(0 && "unreachable")
 #endif
 
 inline uint64_t hash_string(std::string_view str) {

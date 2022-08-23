@@ -31,7 +31,7 @@
 #include <vector>
 
 #ifndef _WIN32
-#include <unistd.h>
+# include <unistd.h>
 #endif
 
 // MOLD_DEBUG_{X86_64,ARM64}_ONLY are macros to speed up builds.

@@ -9,7 +9,7 @@
 #include <unordered_set>
 
 #ifndef _WIN32
-#include <unistd.h>
+# include <unistd.h>
 #endif
 
 namespace mold::macho {

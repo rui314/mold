@@ -1,5 +1,3 @@
-#ifdef _WIN32
-
 #include "lto.h"
 #include "mold.h"
 
@@ -22,5 +20,3 @@ void do_lto(Context<E> &ctx) {}
 INSTANTIATE_ALL;
 
 } // namespace mold::macho
-
-#endif
