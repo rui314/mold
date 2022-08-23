@@ -1185,9 +1185,9 @@ static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
     return false;
 
   // Local symbols are discarded if --discard-local is given or they
-  // are not in a mergeable section. I *believe* we exclude symbols in
-  // mergeable sections because (1) they are too many and (2) they are
-  // merged, so their origins shouldn't matter, but I dont' really
+  // are in a mergeable section. I *believe* we exclude symbols in
+  // mergeable sections because (1) there are too many and (2) they are
+  // merged, so their origins shouldn't matter, but I don't really
   // know the rationale. Anyway, this is the behavior of the
   // traditional linkers.
   if (sym.name().starts_with(".L")) {
