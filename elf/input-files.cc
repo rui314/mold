@@ -221,10 +221,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       this->sections[i] = std::make_unique<InputSection<E>>(ctx, *this, name, i);
 
       // Save .llvm_addrsig for --icf=safe.
-      if (shdr.sh_type == SHT_LLVM_ADDRSIG) {
-        if (ctx.arg.icf && !ctx.arg.icf_all)
-          llvm_addrsig = this->sections[i].get();
-      }
+      if (shdr.sh_type == SHT_LLVM_ADDRSIG && ctx.arg.icf && !ctx.arg.icf_all)
+        llvm_addrsig = this->sections[i].get();
 
       // Save debug sections for --gdb-index.
       if (ctx.arg.gdb_index) {
