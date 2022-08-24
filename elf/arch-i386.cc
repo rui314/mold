@@ -173,13 +173,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       continue;
     case R_386_PC8: {
-      i64 val = S + A;
+      i64 val = S + A - P;
       overflow_check(val, -(1 << 7), 1 << 7);
       *loc = val;
       continue;
     };
     case R_386_PC16: {
-      i64 val = S + A;
+      i64 val = S + A - P;
       overflow_check(val, -(1 << 15), 1 << 15);
       *(ul16 *)loc = val;
       continue;
