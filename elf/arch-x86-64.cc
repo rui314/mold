@@ -271,12 +271,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write32s(S + A - P);
       continue;
     case R_X86_64_PC64:
-      if (sym.is_absolute() || !sym.is_imported || !ctx.arg.shared) {
-        write64(S + A - P);
-      } else {
-        *dynrel++ = ElfRel<E>(P, R_X86_64_64, sym.get_dynsym_idx(ctx), A);
-        write64(A);
-      }
+      write64(S + A - P);
       continue;
     case R_X86_64_PLT32:
       write32s(S + A - P);
