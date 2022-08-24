@@ -1188,7 +1188,7 @@ void compute_import_export(Context<E> &ctx) {
         continue;
 
       // If we are using a symbol in a DSO, we need to import it at runtime.
-      if (sym->file != file && sym->file->is_dso) {
+      if (sym->file != file && sym->file->is_dso && !sym->is_absolute()) {
         std::scoped_lock lock(sym->mu);
         sym->is_imported = true;
         continue;
