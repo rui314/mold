@@ -185,8 +185,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     }
     case R_386_PC32:
-      *(ul32 *)loc = S + A - P;
-      continue;
     case R_386_PLT32:
       *(ul32 *)loc = S + A - P;
       continue;
