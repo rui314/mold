@@ -224,7 +224,7 @@ ifneq ($(OS), Darwin)
 endif
 
 	$(INSTALL) -d $D$(LIBEXECDIR)/mold
-	cmake -DSOURCE=$D$(BINDIR)/mold -DDEST=$D$(LIBEXECDIR)/ld -P create-symlink.cmake
+	cmake -DSOURCE=$D$(BINDIR)/mold -DDEST=$D$(LIBEXECDIR)/mold/ld -P create-symlink.cmake
 
 	$(INSTALL) -d $D$(MANDIR)/man1
 	$(INSTALL_DATA) docs/mold.1 $D$(MANDIR)/man1
