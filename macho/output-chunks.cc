@@ -671,7 +671,7 @@ void RebaseSection<E>::compute_size(Context<E> &ctx) {
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     for (Chunk<E> *chunk : seg->chunks)
-      if (chunk->is_output_section && !chunk->hdr.match("__TEXT", "__eh_frame"))
+      if (chunk->is_output_section)
         for (Subsection<E> *subsec : ((OutputSection<E> *)chunk)->members)
           for (Relocation<E> &rel : subsec->get_rels())
             if (!rel.is_pcrel && !rel.is_subtracted && rel.type == E::abs_rel &&
@@ -701,7 +701,7 @@ static i32 get_dylib_idx(InputFile<E> *file) {
 }
 
 template <typename E>
-void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset) {
+void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset, i64 addend) {
   i64 dylib_idx = get_dylib_idx(sym.file);
   i64 flags = (sym.is_weak ? BIND_SYMBOL_FLAGS_WEAK_IMPORT : 0);
 
@@ -725,10 +725,15 @@ void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset) {
     buf.push_back('\0');
   }
 
-  if (last_seg != seg_idx || last_off != offset) {
+  if (last_seg != seg_idx || last_offset != offset) {
     assert(seg_idx < 16);
     buf.push_back(BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB | seg_idx);
     encode_uleb(buf, offset);
+  }
+
+  if (last_addend != addend) {
+    buf.push_back(BIND_OPCODE_SET_ADDEND_SLEB);
+    encode_sleb(buf, addend);
   }
 
   buf.push_back(BIND_OPCODE_DO_BIND);
@@ -737,7 +742,8 @@ void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset) {
   last_name = sym.name;
   last_flags = flags;
   last_seg = seg_idx;
-  last_off = offset;
+  last_offset = offset;
+  last_addend = addend;
 }
 
 void BindEncoder::finish() {
@@ -752,12 +758,12 @@ void BindSection<E>::compute_size(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.got.syms)
     if (sym->is_imported)
       enc.add(*sym, ctx.data_const_seg->seg_idx,
-              sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr);
+              sym->get_got_addr(ctx) - ctx.data_const_seg->cmd.vmaddr, 0);
 
   for (Symbol<E> *sym : ctx.thread_ptrs.syms)
     if (sym->is_imported)
       enc.add(*sym, ctx.data_seg->seg_idx,
-              sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
+              sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr, 0);
 
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
     for (Chunk<E> *chunk : seg->chunks)
@@ -766,7 +772,8 @@ void BindSection<E>::compute_size(Context<E> &ctx) {
           for (Relocation<E> &r : subsec->get_rels())
             if (r.needs_dynrel)
               enc.add(*r.sym, seg->seg_idx,
-                      subsec->get_addr(ctx) + r.offset - seg->cmd.vmaddr);
+                      subsec->get_addr(ctx) + r.offset - seg->cmd.vmaddr,
+                      r.addend);
 
   enc.finish();
   contents = std::move(enc.buf);
