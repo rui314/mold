@@ -1,3 +1,54 @@
+// This file contains code to read DWARF debug info to create .gdb_index.
+//
+// .gdb_index is an optional section to speed up GNU debugger. It contains
+// two maps: 1) a map from function/variable/type names to compunits, and
+// 2) a map from function address ranges to compunits. gdb uses these
+// maps to quickly find a compunit given a name or an instruction pointer.
+//
+// (Terminology: a compilation unit, which often abbreviated as compunit
+// or cu, is a unit of debug info. An input .debug_info section usually
+// contains one compunit, and thus an output .debug_info contains as
+// many compunits as the number of input files.)
+//
+// .gdb_index is not mandatory. All the information in .gdb_index is
+// also in other debug info sections. You can actually create an
+// executable without .gdb_index and later add it using `gdb-add-index`
+// post-processing tool that comes with gdb.
+//
+// The mapping from names to compunits is 1:n while the mapping from
+// address ranges to compunits is 1:1. That is, two object files may
+// define the same type name (with the same definition), while there
+// should be no two functions that overlap with each other in memory.
+//
+// .gdb_index contains an on-disk hash table for names, so gdb can
+// lookup names without loading all strings into memory and construct an
+// in-memory hash table.
+//
+// Names are in .debug_gnu_pubnames and .debug_gnu_pubtypes input
+// sections. These sections are created if `-ggnu-pubnames` is given.
+// Besides names, these sections contains attributes for each name so
+// that gdb can distinguish type names from function names, for example.
+//
+// A compunit contains one or more function address ranges. If an
+// object file is compiled without -ffunction-sections, it contains
+// only one .text section and therefore contains a single address range.
+// Such range is typically stored directly to the compunit.
+//
+// If an object file is compiled with -fucntion-sections, it contains
+// more than one .text section, and it has as many address ranges as
+// the number of .text sections. Such discontiguous address ranges are
+// stored to .debug_ranges in DWARF 2/3/4/5 and
+// .debug_rnglists/.debug_addr in DWARF 5.
+//
+// .debug_info section contains DWARF debug info. Although we don't need
+// to parse the whole .debug_info section to read address ranges, we
+// have to do a little bit. DWARF is complicated and often handled using
+// a library such as libdwarf. But we don't use any library because we
+// don't want to add an extra run-time dependency just for --gdb-index.
+//
+// This page explains the format of .gdb_index:
+// https://sourceware.org/gdb/onlinedocs/gdb/Index-Section-Format.html
+
 #include "mold.h"
 
 namespace mold::elf {
