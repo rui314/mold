@@ -116,26 +116,8 @@ typedef enum { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } Action;
 
 template <typename E>
 static void
-dispatch(Context<E> &ctx, const Action table[3][4], InputSection<E> &isec,
+dispatch(Context<E> &ctx, InputSection<E> &isec, Action action,
          Symbol<E> &sym, const ElfRel<E> &rel) {
-  auto get_output_type = [&] {
-    if (ctx.arg.shared)
-      return 0;
-    if (ctx.arg.pie)
-      return 1;
-    return 2;
-  };
-
-  auto get_sym_type = [&] {
-    if (sym.is_absolute())
-      return 0;
-    if (!sym.is_imported)
-      return 1;
-    if (sym.get_type() != STT_FUNC)
-      return 2;
-    return 3;
-  };
-
   auto error = [&] {
     std::string msg = sym.is_absolute() ? "-fno-PIC" : "-fPIC";
     Error(ctx) << isec << ": " << rel << " relocation at offset 0x"
@@ -156,7 +138,7 @@ dispatch(Context<E> &ctx, const Action table[3][4], InputSection<E> &isec,
     ctx.has_textrel = true;
   };
 
-  switch (table[get_output_type()][get_sym_type()]) {
+  switch (action) {
   case NONE:
     return;
   case ERROR:
@@ -194,6 +176,30 @@ dispatch(Context<E> &ctx, const Action table[3][4], InputSection<E> &isec,
 }
 
 template <typename E>
+static Action get_rel_action(Context<E> &ctx, const Action table[3][4],
+                             Symbol<E> &sym) {
+  auto get_output_type = [&] {
+    if (ctx.arg.shared)
+      return 0;
+    if (ctx.arg.pie)
+      return 1;
+    return 2;
+  };
+
+  auto get_sym_type = [&] {
+    if (sym.is_absolute())
+      return 0;
+    if (!sym.is_imported)
+      return 1;
+    if (sym.get_type() != STT_FUNC)
+      return 2;
+    return 3;
+  };
+
+  return table[get_output_type()][get_sym_type()];
+}
+
+template <typename E>
 void InputSection<E>::handle_abs_rel(Context<E> &ctx, Symbol<E> &sym,
                                      const ElfRel<E> &rel) {
   // This is a decision table for absolute relocations that is smaller
@@ -207,12 +213,12 @@ void InputSection<E>::handle_abs_rel(Context<E> &ctx, Symbol<E> &sym,
     {  NONE,     ERROR,   ERROR,         ERROR },      // PIE
     {  NONE,     NONE,    COPYREL,       CPLT  },      // PDE
   };
-  dispatch(ctx, table, *this, sym, rel);
+  Action action = get_rel_action(ctx, table, sym);
+  dispatch(ctx, *this, action, sym, rel);
 }
 
 template <typename E>
-void InputSection<E>::handle_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym,
-                                         const ElfRel<E> &rel) {
+static Action get_abs_dyn_action(Context<E> &ctx, Symbol<E> &sym) {
   // This is a decision table for absolute relocations for the word
   // size (e.g. R_X86_64_64). Unlike the above, we can emit a dynamic
   // relocation if we cannot resolve its address at link-time.
@@ -222,7 +228,14 @@ void InputSection<E>::handle_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym,
     {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
     {  NONE,     NONE,    COPYREL,       CPLT   },     // PDE
   };
-  dispatch(ctx, table, *this, sym, rel);
+  return get_rel_action(ctx, table, sym);
+}
+
+template <typename E>
+void InputSection<E>::handle_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym,
+                                         const ElfRel<E> &rel) {
+  Action action = get_abs_dyn_action(ctx, sym);
+  dispatch(ctx, *this, action, sym, rel);
 }
 
 template <typename E>
@@ -237,7 +250,32 @@ void InputSection<E>::handle_pcrel_rel(Context<E> &ctx, Symbol<E> &sym,
     {  ERROR,    NONE,    COPYREL,       PLT   },      // PIE
     {  NONE,     NONE,    COPYREL,       CPLT  },      // PDE
   };
-  dispatch(ctx, table, *this, sym, rel);
+  Action action = get_rel_action(ctx, table, sym);
+  dispatch(ctx, *this, action, sym, rel);
+}
+
+template <typename E>
+void InputSection<E>::apply_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym,
+                                        const ElfRel<E> &rel, u8 *loc,
+                                        u64 S, i64 A, u64 P, ElfRel<E> *&dynrel) {
+  switch (get_abs_dyn_action(ctx, sym)) {
+  case COPYREL:
+  case CPLT:
+  case NONE:
+    *(Word<E> *)loc = S + A;
+    break;
+  case BASEREL:
+    if (!is_relr_reloc(ctx, rel))
+      *dynrel++ = ElfRel<E>(P, E::R_RELATIVE, 0, S + A);
+    *(Word<E> *)loc = S + A;
+    break;
+  case DYNREL:
+    *dynrel++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
+    *(Word<E> *)loc = A;
+    break;
+  default:
+    unreachable();
+  }
 }
 
 template <typename E>

@@ -326,6 +326,9 @@ private:
   void handle_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
   void handle_pcrel_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
 
+  void apply_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
+                         u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel);
+
   void copy_contents(Context<E> &ctx, u8 *buf);
   void copy_contents_riscv(Context<E> &ctx, u8 *buf);
 

@@ -243,30 +243,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOT ctx.got->shdr.sh_addr
 
-    auto write_dyn_abs_rel = [&] {
-      if (sym.is_absolute() || !ctx.arg.pic) {
-        *(Word<E> *)loc = S + A;
-      } else if (sym.is_imported) {
-        *dynrel++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
-        *(Word<E> *)loc = A;
-      } else {
-        if (!is_relr_reloc(ctx, rel))
-          *dynrel++ = ElfRel<E>(P, E::R_RELATIVE, 0, S + A);
-        *(Word<E> *)loc = S + A;
-      }
-    };
-
     switch (rel.r_type) {
-    case R_RISCV_32: {
+    case R_RISCV_32:
       if constexpr (sizeof(Word<E>) == 4)
-        write_dyn_abs_rel();
+        apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       else
         *(ul32 *)loc = S + A;
       break;
-    }
     case R_RISCV_64:
       if constexpr (sizeof(Word<E>) == 8)
-        write_dyn_abs_rel();
+        apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       else
         *(ul64 *)loc = S + A;
       break;

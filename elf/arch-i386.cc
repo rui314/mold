@@ -161,16 +161,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     }
     case R_386_32:
-      if (sym.is_absolute() || !ctx.arg.pic) {
-        *(ul32 *)loc = S + A;
-      } else if (sym.is_imported) {
-        *dynrel++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx));
-        *(ul32 *)loc = A;
-      } else {
-        if (!is_relr_reloc(ctx, rel))
-          *dynrel++ = ElfRel<E>(P, E::R_RELATIVE, 0);
-        *(ul32 *)loc = S + A;
-      }
+      apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       continue;
     case R_386_PC8: {
       i64 val = S + A - P;
