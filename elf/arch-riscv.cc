@@ -251,10 +251,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc = S + A;
       break;
     case R_RISCV_64:
-      if constexpr (sizeof(Word<E>) == 8)
-        apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
-      else
-        *(ul64 *)loc = S + A;
+      assert(sizeof(Word<E>) == 8);
+      apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_RISCV_BRANCH:
       write_btype(loc, S + A - P);
@@ -576,6 +574,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       handle_abs_rel(ctx, sym, rel);
       break;
     case R_RISCV_64:
+      if constexpr (sizeof(Word<E>) == 4)
+        Fatal(ctx) << *this << ": R_RISCV_64 cannot be used on RV32";
       handle_abs_dyn_rel(ctx, sym, rel);
       break;
     case R_RISCV_CALL:
