@@ -565,13 +565,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_RISCV_32:
+    case R_RISCV_HI20:
       if constexpr (sizeof(Word<E>) == 8)
         handle_abs_rel(ctx, sym, rel);
       else
         handle_abs_dyn_rel(ctx, sym, rel);
-      break;
-    case R_RISCV_HI20:
-      handle_abs_rel(ctx, sym, rel);
       break;
     case R_RISCV_64:
       if constexpr (sizeof(Word<E>) == 4)
