@@ -101,8 +101,8 @@ static void write_plt_header(Context<E> &ctx) {
     0x0003ae03, // lw     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
     0xfd430313, // addi   t1, t1, -44              # .plt entry
     0x00038293, // addi   t0, t2, %pcrel_lo(1b)    # &.got.plt
-    0x00135313, // srli   t1, t1, 1                # .plt entry offset
-    0x0082a283, // lw     t0, 8(t0)                # link map
+    0x00235313, // srli   t1, t1, 2                # .plt entry offset
+    0x0042a283, // lw     t0, 4(t0)                # link map
     0x000e0067, // jr     t3
   };
 
