@@ -536,11 +536,9 @@ void sort_arm_exidx(Context<E> &ctx) {
   Entry *ent = (Entry *)(ctx.buf + osec->shdr.sh_offset);
   i64 num_entries = osec->shdr.sh_size / sizeof(Entry);
 
-  // Entry's addresses are relative to the beginning of their entries.
-  // We first translate them so that they are relative to the
-  // beginning of the section. We then sort the records and then
-  // translate them back to be relative to each record.
-
+  // Entry's addresses are relative to themselves. In order to sort
+  // records by addresses, we first translate them so that the addresses
+  // are relative to the beginning of the section.
   auto is_relative = [](u32 val) {
     return val != EXIDX_CANTUNWIND && !(val & 0x8000'0000);
   };
@@ -556,7 +554,7 @@ void sort_arm_exidx(Context<E> &ctx) {
     return a.addr < b.addr;
   });
 
-  // Write back the sorted records while adjusting relative addresses
+  // Make addresses relative to themselves.
   tbb::parallel_for((i64)0, num_entries, [&](i64 i) {
     i64 offset = sizeof(Entry) * i;
     ent[i].addr = 0x7fff'ffff & (ent[i].addr - offset);
