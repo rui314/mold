@@ -178,6 +178,7 @@ target_sources(mold PRIVATE
   elf/arch-arm32.cc
   elf/arch-arm64.cc
   elf/arch-i386.cc
+  elf/arch-ppc64.cc
   elf/arch-riscv.cc
   elf/arch-x86-64.cc
   elf/cmdline.cc

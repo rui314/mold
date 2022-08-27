@@ -24,6 +24,7 @@ struct ARM64;
 struct ARM32;
 struct RISCV64;
 struct RISCV32;
+struct PPC64;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -33,7 +34,9 @@ template <typename E> struct ElfRel;
 template <typename E> struct ElfDyn;
 template <typename E> struct ElfChdr;
 
-enum class MachineType { NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32 };
+enum class MachineType {
+  NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32, PPC64,
+};
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   switch (mt) {
@@ -44,6 +47,7 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   case MachineType::ARM32:   out << "arm32";   break;
   case MachineType::RISCV64: out << "riscv64"; break;
   case MachineType::RISCV32: out << "riscv32"; break;
+  case MachineType::PPC64:   out << "ppc64le"; break;
   }
   return out;
 }
@@ -165,6 +169,7 @@ static constexpr u32 EV_CURRENT = 1;
 
 static constexpr u32 EM_NONE = 0;
 static constexpr u32 EM_386 = 3;
+static constexpr u32 EM_PPC64 = 21;
 static constexpr u32 EM_ARM = 40;
 static constexpr u32 EM_X86_64 = 62;
 static constexpr u32 EM_AARCH64 = 183;
@@ -224,6 +229,7 @@ static constexpr u32 DT_VERDEF = 0x6ffffffc;
 static constexpr u32 DT_VERDEFNUM = 0x6ffffffd;
 static constexpr u32 DT_VERNEED = 0x6ffffffe;
 static constexpr u32 DT_VERNEEDNUM = 0x6fffffff;
+static constexpr u32 DT_PPC64_GLINK = 0x70000000;
 static constexpr u32 DT_AUXILIARY = 0x7ffffffd;
 static constexpr u32 DT_FILTER = 0x7fffffff;
 
@@ -1058,6 +1064,218 @@ inline std::string rel_to_string<RISCV32>(u32 r_type) {
   return rel_to_string<RISCV64>(r_type);
 }
 
+static constexpr u32 R_PPC64_NONE = 0;
+static constexpr u32 R_PPC64_ADDR32 = 1;
+static constexpr u32 R_PPC64_ADDR24 = 2;
+static constexpr u32 R_PPC64_ADDR16 = 3;
+static constexpr u32 R_PPC64_ADDR16_LO = 4;
+static constexpr u32 R_PPC64_ADDR16_HI = 5;
+static constexpr u32 R_PPC64_ADDR16_HA = 6;
+static constexpr u32 R_PPC64_ADDR14 = 7;
+static constexpr u32 R_PPC64_ADDR14_BRTAKEN = 8;
+static constexpr u32 R_PPC64_ADDR14_BRNTAKEN = 9;
+static constexpr u32 R_PPC64_REL24 = 10;
+static constexpr u32 R_PPC64_REL14 = 11;
+static constexpr u32 R_PPC64_REL14_BRTAKEN = 12;
+static constexpr u32 R_PPC64_REL14_BRNTAKEN = 13;
+static constexpr u32 R_PPC64_GOT16 = 14;
+static constexpr u32 R_PPC64_GOT16_LO = 15;
+static constexpr u32 R_PPC64_GOT16_HI = 16;
+static constexpr u32 R_PPC64_GOT16_HA = 17;
+static constexpr u32 R_PPC64_COPY = 19;
+static constexpr u32 R_PPC64_GLOB_DAT = 20;
+static constexpr u32 R_PPC64_JMP_SLOT = 21;
+static constexpr u32 R_PPC64_RELATIVE = 22;
+static constexpr u32 R_PPC64_REL32 = 26;
+static constexpr u32 R_PPC64_ADDR64 = 38;
+static constexpr u32 R_PPC64_ADDR16_HIGHER = 39;
+static constexpr u32 R_PPC64_ADDR16_HIGHERA = 40;
+static constexpr u32 R_PPC64_ADDR16_HIGHEST = 41;
+static constexpr u32 R_PPC64_ADDR16_HIGHESTA = 42;
+static constexpr u32 R_PPC64_REL64 = 44;
+static constexpr u32 R_PPC64_TOC16 = 47;
+static constexpr u32 R_PPC64_TOC16_LO = 48;
+static constexpr u32 R_PPC64_TOC16_HI = 49;
+static constexpr u32 R_PPC64_TOC16_HA = 50;
+static constexpr u32 R_PPC64_TOC = 51;
+static constexpr u32 R_PPC64_ADDR16_DS = 56;
+static constexpr u32 R_PPC64_ADDR16_LO_DS = 57;
+static constexpr u32 R_PPC64_GOT16_DS = 58;
+static constexpr u32 R_PPC64_GOT16_LO_DS = 59;
+static constexpr u32 R_PPC64_TOC16_DS = 63;
+static constexpr u32 R_PPC64_TOC16_LO_DS = 64;
+static constexpr u32 R_PPC64_TLS = 67;
+static constexpr u32 R_PPC64_DTPMOD64 = 68;
+static constexpr u32 R_PPC64_TPREL16 = 69;
+static constexpr u32 R_PPC64_TPREL16_LO = 70;
+static constexpr u32 R_PPC64_TPREL16_HI = 71;
+static constexpr u32 R_PPC64_TPREL16_HA = 72;
+static constexpr u32 R_PPC64_TPREL64 = 73;
+static constexpr u32 R_PPC64_DTPREL16 = 74;
+static constexpr u32 R_PPC64_DTPREL16_LO = 75;
+static constexpr u32 R_PPC64_DTPREL16_HI = 76;
+static constexpr u32 R_PPC64_DTPREL16_HA = 77;
+static constexpr u32 R_PPC64_DTPREL64 = 78;
+static constexpr u32 R_PPC64_GOT_TLSGD16 = 79;
+static constexpr u32 R_PPC64_GOT_TLSGD16_LO = 80;
+static constexpr u32 R_PPC64_GOT_TLSGD16_HI = 81;
+static constexpr u32 R_PPC64_GOT_TLSGD16_HA = 82;
+static constexpr u32 R_PPC64_GOT_TLSLD16 = 83;
+static constexpr u32 R_PPC64_GOT_TLSLD16_LO = 84;
+static constexpr u32 R_PPC64_GOT_TLSLD16_HI = 85;
+static constexpr u32 R_PPC64_GOT_TLSLD16_HA = 86;
+static constexpr u32 R_PPC64_GOT_TPREL16_DS = 87;
+static constexpr u32 R_PPC64_GOT_TPREL16_LO_DS = 88;
+static constexpr u32 R_PPC64_GOT_TPREL16_HI = 89;
+static constexpr u32 R_PPC64_GOT_TPREL16_HA = 90;
+static constexpr u32 R_PPC64_GOT_DTPREL16_DS = 91;
+static constexpr u32 R_PPC64_GOT_DTPREL16_LO_DS = 92;
+static constexpr u32 R_PPC64_GOT_DTPREL16_HI = 93;
+static constexpr u32 R_PPC64_GOT_DTPREL16_HA = 94;
+static constexpr u32 R_PPC64_TPREL16_DS = 95;
+static constexpr u32 R_PPC64_TPREL16_LO_DS = 96;
+static constexpr u32 R_PPC64_TPREL16_HIGHER = 97;
+static constexpr u32 R_PPC64_TPREL16_HIGHERA = 98;
+static constexpr u32 R_PPC64_TPREL16_HIGHEST = 99;
+static constexpr u32 R_PPC64_TPREL16_HIGHESTA = 100;
+static constexpr u32 R_PPC64_DTPREL16_DS = 101;
+static constexpr u32 R_PPC64_DTPREL16_LO_DS = 102;
+static constexpr u32 R_PPC64_DTPREL16_HIGHER = 103;
+static constexpr u32 R_PPC64_DTPREL16_HIGHERA = 104;
+static constexpr u32 R_PPC64_DTPREL16_HIGHEST = 105;
+static constexpr u32 R_PPC64_DTPREL16_HIGHESTA = 106;
+static constexpr u32 R_PPC64_TLSGD = 107;
+static constexpr u32 R_PPC64_TLSLD = 108;
+static constexpr u32 R_PPC64_ADDR16_HIGH = 110;
+static constexpr u32 R_PPC64_ADDR16_HIGHA = 111;
+static constexpr u32 R_PPC64_TPREL16_HIGH = 112;
+static constexpr u32 R_PPC64_TPREL16_HIGHA = 113;
+static constexpr u32 R_PPC64_DTPREL16_HIGH = 114;
+static constexpr u32 R_PPC64_DTPREL16_HIGHA = 115;
+static constexpr u32 R_PPC64_REL24_NOTOC = 116;
+static constexpr u32 R_PPC64_PCREL_OPT = 123;
+static constexpr u32 R_PPC64_PCREL34 = 132;
+static constexpr u32 R_PPC64_GOT_PCREL34 = 133;
+static constexpr u32 R_PPC64_TPREL34 = 146;
+static constexpr u32 R_PPC64_DTPREL34 = 147;
+static constexpr u32 R_PPC64_GOT_TLSGD_PCREL34 = 148;
+static constexpr u32 R_PPC64_GOT_TLSLD_PCREL34 = 149;
+static constexpr u32 R_PPC64_GOT_TPREL_PCREL34 = 150;
+static constexpr u32 R_PPC64_IRELATIVE = 248;
+static constexpr u32 R_PPC64_REL16 = 249;
+static constexpr u32 R_PPC64_REL16_LO = 250;
+static constexpr u32 R_PPC64_REL16_HI = 251;
+static constexpr u32 R_PPC64_REL16_HA = 252;
+
+template <>
+inline std::string rel_to_string<PPC64>(u32 r_type) {
+  switch (r_type) {
+  case R_PPC64_NONE: return "R_PPC64_NONE";
+  case R_PPC64_ADDR32: return "R_PPC64_ADDR32";
+  case R_PPC64_ADDR24: return "R_PPC64_ADDR24";
+  case R_PPC64_ADDR16: return "R_PPC64_ADDR16";
+  case R_PPC64_ADDR16_LO: return "R_PPC64_ADDR16_LO";
+  case R_PPC64_ADDR16_HI: return "R_PPC64_ADDR16_HI";
+  case R_PPC64_ADDR16_HA: return "R_PPC64_ADDR16_HA";
+  case R_PPC64_ADDR14: return "R_PPC64_ADDR14";
+  case R_PPC64_ADDR14_BRTAKEN: return "R_PPC64_ADDR14_BRTAKEN";
+  case R_PPC64_ADDR14_BRNTAKEN: return "R_PPC64_ADDR14_BRNTAKEN";
+  case R_PPC64_REL24: return "R_PPC64_REL24";
+  case R_PPC64_REL14: return "R_PPC64_REL14";
+  case R_PPC64_REL14_BRTAKEN: return "R_PPC64_REL14_BRTAKEN";
+  case R_PPC64_REL14_BRNTAKEN: return "R_PPC64_REL14_BRNTAKEN";
+  case R_PPC64_GOT16: return "R_PPC64_GOT16";
+  case R_PPC64_GOT16_LO: return "R_PPC64_GOT16_LO";
+  case R_PPC64_GOT16_HI: return "R_PPC64_GOT16_HI";
+  case R_PPC64_GOT16_HA: return "R_PPC64_GOT16_HA";
+  case R_PPC64_COPY: return "R_PPC64_COPY";
+  case R_PPC64_GLOB_DAT: return "R_PPC64_GLOB_DAT";
+  case R_PPC64_JMP_SLOT: return "R_PPC64_JMP_SLOT";
+  case R_PPC64_RELATIVE: return "R_PPC64_RELATIVE";
+  case R_PPC64_REL32: return "R_PPC64_REL32";
+  case R_PPC64_ADDR64: return "R_PPC64_ADDR64";
+  case R_PPC64_ADDR16_HIGHER: return "R_PPC64_ADDR16_HIGHER";
+  case R_PPC64_ADDR16_HIGHERA: return "R_PPC64_ADDR16_HIGHERA";
+  case R_PPC64_ADDR16_HIGHEST: return "R_PPC64_ADDR16_HIGHEST";
+  case R_PPC64_ADDR16_HIGHESTA: return "R_PPC64_ADDR16_HIGHESTA";
+  case R_PPC64_REL64: return "R_PPC64_REL64";
+  case R_PPC64_TOC16: return "R_PPC64_TOC16";
+  case R_PPC64_TOC16_LO: return "R_PPC64_TOC16_LO";
+  case R_PPC64_TOC16_HI: return "R_PPC64_TOC16_HI";
+  case R_PPC64_TOC16_HA: return "R_PPC64_TOC16_HA";
+  case R_PPC64_TOC: return "R_PPC64_TOC";
+  case R_PPC64_ADDR16_DS: return "R_PPC64_ADDR16_DS";
+  case R_PPC64_ADDR16_LO_DS: return "R_PPC64_ADDR16_LO_DS";
+  case R_PPC64_GOT16_DS: return "R_PPC64_GOT16_DS";
+  case R_PPC64_GOT16_LO_DS: return "R_PPC64_GOT16_LO_DS";
+  case R_PPC64_TOC16_DS: return "R_PPC64_TOC16_DS";
+  case R_PPC64_TOC16_LO_DS: return "R_PPC64_TOC16_LO_DS";
+  case R_PPC64_TLS: return "R_PPC64_TLS";
+  case R_PPC64_DTPMOD64: return "R_PPC64_DTPMOD64";
+  case R_PPC64_TPREL16: return "R_PPC64_TPREL16";
+  case R_PPC64_TPREL16_LO: return "R_PPC64_TPREL16_LO";
+  case R_PPC64_TPREL16_HI: return "R_PPC64_TPREL16_HI";
+  case R_PPC64_TPREL16_HA: return "R_PPC64_TPREL16_HA";
+  case R_PPC64_TPREL64: return "R_PPC64_TPREL64";
+  case R_PPC64_DTPREL16: return "R_PPC64_DTPREL16";
+  case R_PPC64_DTPREL16_LO: return "R_PPC64_DTPREL16_LO";
+  case R_PPC64_DTPREL16_HI: return "R_PPC64_DTPREL16_HI";
+  case R_PPC64_DTPREL16_HA: return "R_PPC64_DTPREL16_HA";
+  case R_PPC64_DTPREL64: return "R_PPC64_DTPREL64";
+  case R_PPC64_GOT_TLSGD16: return "R_PPC64_GOT_TLSGD16";
+  case R_PPC64_GOT_TLSGD16_LO: return "R_PPC64_GOT_TLSGD16_LO";
+  case R_PPC64_GOT_TLSGD16_HI: return "R_PPC64_GOT_TLSGD16_HI";
+  case R_PPC64_GOT_TLSGD16_HA: return "R_PPC64_GOT_TLSGD16_HA";
+  case R_PPC64_GOT_TLSLD16: return "R_PPC64_GOT_TLSLD16";
+  case R_PPC64_GOT_TLSLD16_LO: return "R_PPC64_GOT_TLSLD16_LO";
+  case R_PPC64_GOT_TLSLD16_HI: return "R_PPC64_GOT_TLSLD16_HI";
+  case R_PPC64_GOT_TLSLD16_HA: return "R_PPC64_GOT_TLSLD16_HA";
+  case R_PPC64_GOT_TPREL16_DS: return "R_PPC64_GOT_TPREL16_DS";
+  case R_PPC64_GOT_TPREL16_LO_DS: return "R_PPC64_GOT_TPREL16_LO_DS";
+  case R_PPC64_GOT_TPREL16_HI: return "R_PPC64_GOT_TPREL16_HI";
+  case R_PPC64_GOT_TPREL16_HA: return "R_PPC64_GOT_TPREL16_HA";
+  case R_PPC64_GOT_DTPREL16_DS: return "R_PPC64_GOT_DTPREL16_DS";
+  case R_PPC64_GOT_DTPREL16_LO_DS: return "R_PPC64_GOT_DTPREL16_LO_DS";
+  case R_PPC64_GOT_DTPREL16_HI: return "R_PPC64_GOT_DTPREL16_HI";
+  case R_PPC64_GOT_DTPREL16_HA: return "R_PPC64_GOT_DTPREL16_HA";
+  case R_PPC64_TPREL16_DS: return "R_PPC64_TPREL16_DS";
+  case R_PPC64_TPREL16_LO_DS: return "R_PPC64_TPREL16_LO_DS";
+  case R_PPC64_TPREL16_HIGHER: return "R_PPC64_TPREL16_HIGHER";
+  case R_PPC64_TPREL16_HIGHERA: return "R_PPC64_TPREL16_HIGHERA";
+  case R_PPC64_TPREL16_HIGHEST: return "R_PPC64_TPREL16_HIGHEST";
+  case R_PPC64_TPREL16_HIGHESTA: return "R_PPC64_TPREL16_HIGHESTA";
+  case R_PPC64_DTPREL16_DS: return "R_PPC64_DTPREL16_DS";
+  case R_PPC64_DTPREL16_LO_DS: return "R_PPC64_DTPREL16_LO_DS";
+  case R_PPC64_DTPREL16_HIGHER: return "R_PPC64_DTPREL16_HIGHER";
+  case R_PPC64_DTPREL16_HIGHERA: return "R_PPC64_DTPREL16_HIGHERA";
+  case R_PPC64_DTPREL16_HIGHEST: return "R_PPC64_DTPREL16_HIGHEST";
+  case R_PPC64_DTPREL16_HIGHESTA: return "R_PPC64_DTPREL16_HIGHESTA";
+  case R_PPC64_TLSGD: return "R_PPC64_TLSGD";
+  case R_PPC64_TLSLD: return "R_PPC64_TLSLD";
+  case R_PPC64_ADDR16_HIGH: return "R_PPC64_ADDR16_HIGH";
+  case R_PPC64_ADDR16_HIGHA: return "R_PPC64_ADDR16_HIGHA";
+  case R_PPC64_TPREL16_HIGH: return "R_PPC64_TPREL16_HIGH";
+  case R_PPC64_TPREL16_HIGHA: return "R_PPC64_TPREL16_HIGHA";
+  case R_PPC64_DTPREL16_HIGH: return "R_PPC64_DTPREL16_HIGH";
+  case R_PPC64_DTPREL16_HIGHA: return "R_PPC64_DTPREL16_HIGHA";
+  case R_PPC64_REL24_NOTOC: return "R_PPC64_REL24_NOTOC";
+  case R_PPC64_PCREL_OPT: return "R_PPC64_PCREL_OPT";
+  case R_PPC64_PCREL34: return "R_PPC64_PCREL34";
+  case R_PPC64_GOT_PCREL34: return "R_PPC64_GOT_PCREL34";
+  case R_PPC64_TPREL34: return "R_PPC64_TPREL34";
+  case R_PPC64_DTPREL34: return "R_PPC64_DTPREL34";
+  case R_PPC64_GOT_TLSGD_PCREL34: return "R_PPC64_GOT_TLSGD_PCREL34";
+  case R_PPC64_GOT_TLSLD_PCREL34: return "R_PPC64_GOT_TLSLD_PCREL34";
+  case R_PPC64_GOT_TPREL_PCREL34: return "R_PPC64_GOT_TPREL_PCREL34";
+  case R_PPC64_IRELATIVE: return "R_PPC64_IRELATIVE";
+  case R_PPC64_REL16: return "R_PPC64_REL16";
+  case R_PPC64_REL16_LO: return "R_PPC64_REL16_LO";
+  case R_PPC64_REL16_HI: return "R_PPC64_REL16_HI";
+  case R_PPC64_REL16_HA: return "R_PPC64_REL16_HA";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
 static constexpr u32 DW_EH_PE_absptr = 0;
 static constexpr u32 DW_EH_PE_omit = 0xff;
 static constexpr u32 DW_EH_PE_uleb128 = 0x01;
@@ -1155,6 +1373,8 @@ struct Elf64Sym {
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
+  u8 : 3;
+  u8 ppc64_local_entry : 3;
   ul16 st_shndx;
   ul64 st_value;
   ul64 st_size;
@@ -1624,5 +1844,42 @@ template <> struct ElfPhdr<RISCV32> : public Elf32Phdr {};
 template <> struct ElfRel<RISCV32> : public Elf32Rela { using Elf32Rela::Elf32Rela; };
 template <> struct ElfDyn<RISCV32> : public Elf32Dyn {};
 template <> struct ElfChdr<RISCV32> : public Elf32Chdr {};
+
+struct PPC64 {
+  using Word = ul64;
+
+  static constexpr u32 R_NONE = R_PPC64_NONE;
+  static constexpr u32 R_COPY = R_PPC64_COPY;
+  static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
+  static constexpr u32 R_ABS = R_PPC64_ADDR64;
+  static constexpr u32 R_RELATIVE = R_PPC64_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_PPC64_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_PPC64_DTPREL64;
+  static constexpr u32 R_TPOFF = R_PPC64_TPREL64;
+  static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
+
+  static constexpr MachineType machine_type = MachineType::PPC64;
+  static constexpr u32 page_size = 65536;
+  static constexpr u32 e_machine = EM_PPC64;
+  static constexpr u32 plt_hdr_size = 0;
+  static constexpr u32 plt_size = 24;
+  static constexpr u32 pltgot_size = 24;
+  static constexpr u32 tls_tp_offset = 8;
+  static constexpr u32 tls_dtv_offset = 0x8000;
+
+  static constexpr u32 thunk_hdr_size = 0;
+  static constexpr u32 thunk_size = 20;
+  static constexpr u32 thunk_max_distance = 10 * 1024 * 1024;
+  static constexpr u32 thunk_group_size = 2 * 1024 * 1024;
+};
+
+template <> struct ElfSym<PPC64> : public Elf64Sym {};
+template <> struct ElfShdr<PPC64> : public Elf64Shdr {};
+template <> struct ElfEhdr<PPC64> : public Elf64Ehdr {};
+template <> struct ElfPhdr<PPC64> : public Elf64Phdr {};
+template <> struct ElfRel<PPC64> : public Elf64Rela { using Elf64Rela::Elf64Rela; };
+template <> struct ElfDyn<PPC64> : public Elf64Dyn {};
+template <> struct ElfChdr<PPC64> : public Elf64Chdr {};
 
 } // namespace mold::elf

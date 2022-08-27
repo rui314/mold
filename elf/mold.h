@@ -47,7 +47,8 @@
   INSTANTIATE(ARM64);                           \
   INSTANTIATE(ARM32);                           \
   INSTANTIATE(RISCV64);                         \
-  INSTANTIATE(RISCV32)
+  INSTANTIATE(RISCV32);                         \
+  INSTANTIATE(PPC64);
 #endif
 
 namespace mold::elf {
@@ -167,6 +168,11 @@ template <>
 inline bool needs_thunk_rel(const ElfRel<ARM32> &r) {
   return r.r_type == R_ARM_JUMP24 || r.r_type == R_ARM_THM_JUMP24 ||
          r.r_type == R_ARM_CALL   || r.r_type == R_ARM_THM_CALL;
+}
+
+template <>
+inline bool needs_thunk_rel(const ElfRel<PPC64> &r) {
+  return r.r_type == R_PPC64_REL24;
 }
 
 //
@@ -503,6 +509,11 @@ public:
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
+
+    // .got has to be always exist for PPC64 as it's used to compute
+    // the address of the .TOC. symbol.
+    if constexpr (std::is_same_v<E, PPC64>)
+      this->shdr.sh_size = 8;
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -1385,6 +1396,26 @@ template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx);
 
 //
+// arch-ppc64.cc
+//
+
+class GlinkSection : public Chunk<PPC64> {
+public:
+  GlinkSection() {
+    this->name = ".glink";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 16;
+  }
+
+  void update_shdr(Context<PPC64> &ctx) override;
+  void copy_buf(Context<PPC64> &ctx) override;
+
+  static constexpr i64 HEADER_SIZE = 52;
+  static constexpr i64 ENTRY_SIZE = 4;
+};
+
+//
 // main.cc
 //
 
@@ -1641,6 +1672,7 @@ struct Context {
   NotePackageSection<E> *note_package = nullptr;
   NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
+  GlinkSection *glink = nullptr;
 
   // For --gdb-index
   Chunk<E> *debug_info = nullptr;
@@ -1662,6 +1694,7 @@ struct Context {
   bool relax_tlsdesc = false;
 
   // Linker-synthesized symbols
+  Symbol<E> *TOC = nullptr;
   Symbol<E> *_DYNAMIC = nullptr;
   Symbol<E> *_GLOBAL_OFFSET_TABLE_ = nullptr;
   Symbol<E> *_TLS_MODULE_BASE_ = nullptr;

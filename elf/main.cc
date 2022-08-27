@@ -40,6 +40,8 @@ static MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf)
     case EM_RISCV:
       return (ehdr.e_ident[EI_CLASS] == ELFCLASS64)
         ? MachineType::RISCV64 : MachineType::RISCV32;
+    case EM_PPC64:
+      return MachineType::PPC64;
     default:
       return MachineType::NONE;
     }
@@ -382,6 +384,8 @@ static int elf_main(int argc, char **argv) {
       return elf_main<RISCV64>(argc, argv);
     case MachineType::RISCV32:
       return elf_main<RISCV32>(argc, argv);
+    case MachineType::PPC64:
+      return elf_main<PPC64>(argc, argv);
     default:
       unreachable();
     }

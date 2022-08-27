@@ -173,4 +173,7 @@ void create_range_extension_thunks(Context<ARM64> &, OutputSection<ARM64> &);
 template
 void create_range_extension_thunks(Context<ARM32> &, OutputSection<ARM32> &);
 
+template
+void create_range_extension_thunks(Context<PPC64> &, OutputSection<PPC64> &);
+
 } // namespace mold::elf

@@ -66,6 +66,10 @@ u64 get_eflags(Context<E> &ctx) {
     return ret;
   }
 
+  // We support only PPC64 ELFv2 ABI.
+  if constexpr (std::is_same_v<E, PPC64>)
+    return 2;
+
   return 0;
 }
 
@@ -152,7 +156,7 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
            type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
            chunk == ctx.got || chunk == ctx.dynamic ||
            (ctx.arg.z_now && chunk == ctx.gotplt) ||
-           chunk->name.ends_with(".rel.ro");
+           chunk->name == ".toc" || chunk->name.ends_with(".rel.ro");
   return false;
 }
 
@@ -285,6 +289,8 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
     } else if constexpr (is_arm<E>) {
       ctx.tp_addr = ctx.tls_begin - sizeof(Word<E>) * 2;
+    } else if constexpr (std::is_same_v<E, PPC64>) {
+      ctx.tp_addr = ctx.tls_begin + 0x7000;
     } else {
       static_assert(is_riscv<E>);
       ctx.tp_addr = ctx.tls_begin;
@@ -736,6 +742,14 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   if (flags1)
     define(DT_FLAGS_1, flags1);
 
+  if constexpr (std::is_same_v<E, PPC64>) {
+    // PPC64_GLINK is defined by the psABI to refer 32 bytes before the
+    // PLT part of .glink section. I don't know why it's 32 bytes off,
+    // but it's what it is.
+    define(DT_PPC64_GLINK,
+           ctx.glink->shdr.sh_addr + GlinkSection::HEADER_SIZE - 32);
+  }
+
   // GDB needs a DT_DEBUG entry in an executable to store a word-size
   // data for its own purpose. Its content is not important.
   if (!ctx.arg.shared)
@@ -1165,7 +1179,9 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   buf[2] = 0;
 
   for (Symbol<E> *sym : ctx.plt->symbols) {
-    if constexpr (std::is_same_v<E, I386>)
+    if constexpr (std::is_same_v<E, PPC64>)
+      buf[sym->get_gotplt_idx(ctx)] = 0;
+    else if constexpr (std::is_same_v<E, I386>)
       buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
     else
       buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;

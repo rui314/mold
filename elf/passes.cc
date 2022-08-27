@@ -86,6 +86,9 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.note_package = push(new NotePackageSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
+  if constexpr (std::is_same_v<E, PPC64>)
+    ctx.glink = push(new GlinkSection);
+
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
   if (ctx.dynamic) {
@@ -449,6 +452,9 @@ void add_synthetic_symbols(Context<E> &ctx) {
     ctx.__exidx_start = add("__exidx_start");
     ctx.__exidx_end = add("__exidx_end");
   }
+
+  if constexpr (std::is_same_v<E, PPC64>)
+    ctx.TOC = add(".TOC.");
 
   for (Chunk<E> *chunk : ctx.chunks) {
     if (is_c_identifier(chunk->name)) {
@@ -1269,6 +1275,8 @@ void clear_padding(Context<E> &ctx) {
 //   alloc writable tdata
 //   alloc writable tbss
 //   alloc writable RELRO data
+//   .got
+//   .toc
 //   alloc writable RELRO bss
 //   alloc writable non-RELRO data
 //   alloc writable non-RELRO bss
@@ -1285,11 +1293,16 @@ void clear_padding(Context<E> &ctx) {
 // particular, if .note.gnu.build-id is in a truncated core file, you
 // can at least identify which executable has crashed.
 //
+// .toc is placed right after .got for PPC64. PPC-specific .toc section
+// contains data that may be accessed with a 16-bit offset relative to
+// %r2. %r2 is set to .got + 0x8000. Therefore, .toc needs to be within
+// [.got, .got + 0x10000).
+//
 // Other file layouts are possible, but this layout is chosen to keep
 // the number of segments as few as possible.
 template <typename E>
 void sort_output_sections(Context<E> &ctx) {
-  auto get_rank = [&](Chunk<E> *chunk) {
+  auto get_rank1 = [&](Chunk<E> *chunk) {
     u64 type = chunk->shdr.sh_type;
     u64 flags = chunk->shdr.sh_flags;
 
@@ -1333,17 +1346,26 @@ void sort_output_sections(Context<E> &ctx) {
            (!relro << 6) | (is_bss << 5);
   };
 
+  auto get_rank2 = [&](Chunk<E> *chunk) -> i64 {
+    if (chunk->shdr.sh_type == SHT_NOTE)
+      return chunk->shdr.sh_addralign;
+
+    if (chunk->name == ".toc")
+      return 2;
+    if (chunk == ctx.got)
+      return 1;
+    return 0;
+  };
+
   sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
     // Sort sections by segments
-    i64 x = get_rank(a);
-    i64 y = get_rank(b);
+    i64 x = get_rank1(a);
+    i64 y = get_rank1(b);
     if (x != y)
       return x < y;
 
-    // Ties are broken by special rules
-    if (a->shdr.sh_type == SHT_NOTE)
-      return a->shdr.sh_addralign < b->shdr.sh_addralign;
-    return false;
+    // Ties are broken by additional rules
+    return get_rank2(a) < get_rank2(b);
   });
 }
 
@@ -1634,6 +1656,14 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     if (Chunk<E> *chunk = find(".ARM.exidx")) {
       start(ctx.__exidx_start, chunk);
       stop(ctx.__exidx_end, chunk);
+    }
+  }
+
+  // PPC64's ".TOC." symbol.
+  if (ctx.TOC) {
+    if (Chunk<E> *chunk = find(".got")) {
+      start(ctx.TOC, chunk);
+      ctx.TOC->value += 0x8000;
     }
   }
 
