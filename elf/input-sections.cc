@@ -209,9 +209,9 @@ void InputSection<E>::handle_abs_rel(Context<E> &ctx, Symbol<E> &sym,
   // resolved at link-time.
   constexpr Action table[][4] = {
     // Absolute  Local    Imported data  Imported code
-    {  NONE,     ERROR,   ERROR,         ERROR },      // DSO
-    {  NONE,     ERROR,   ERROR,         ERROR },      // PIE
-    {  NONE,     NONE,    COPYREL,       CPLT  },      // PDE
+    {  NONE,     ERROR,   ERROR,         ERROR },  // Shared object
+    {  NONE,     ERROR,   ERROR,         ERROR },  // Position-independent exec
+    {  NONE,     NONE,    COPYREL,       CPLT  },  // Position-dependent exec
   };
   Action action = get_rel_action(ctx, table, sym);
   dispatch(ctx, *this, action, sym, rel);
@@ -224,9 +224,9 @@ static Action get_abs_dyn_action(Context<E> &ctx, Symbol<E> &sym) {
   // relocation if we cannot resolve its address at link-time.
   constexpr Action table[][4] = {
     // Absolute  Local    Imported data  Imported code
-    {  NONE,     BASEREL, DYNREL,        DYNREL },     // DSO
-    {  NONE,     BASEREL, DYNREL,        DYNREL },     // PIE
-    {  NONE,     NONE,    COPYREL,       CPLT   },     // PDE
+    {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
+    {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
+    {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
   };
   return get_rel_action(ctx, table, sym);
 }
@@ -242,13 +242,13 @@ template <typename E>
 void InputSection<E>::handle_pcrel_rel(Context<E> &ctx, Symbol<E> &sym,
                                        const ElfRel<E> &rel) {
   // This is for PC-relative relocations (e.g. R_X86_64_PC32).
-  // We cannot use dynamic relocations because dynamic relocations
-  // can only set absolute addresses.
+  // We cannot promote them to dynamic relocations because the dynamic
+  // linker generally does not support PC-relative relocations.
   constexpr Action table[][4] = {
     // Absolute  Local    Imported data  Imported code
-    {  ERROR,    NONE,    ERROR,         PLT   },      // DSO
-    {  ERROR,    NONE,    COPYREL,       PLT   },      // PIE
-    {  NONE,     NONE,    COPYREL,       CPLT  },      // PDE
+    {  ERROR,    NONE,    ERROR,         PLT    },  // Shared object
+    {  ERROR,    NONE,    COPYREL,       PLT    },  // Position-independent exec
+    {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
   };
   Action action = get_rel_action(ctx, table, sym);
   dispatch(ctx, *this, action, sym, rel);
