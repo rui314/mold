@@ -18,7 +18,8 @@ ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
 # We need to implement R_386_GOT32X relaxation to support PIE on i386
 [ $MACHINE = i386 -o $MACHINE = i686 ] && { echo skipped; exit; }
 
-# RISCV64 does not support IFUNC yet
+# IFUNC is not supported on RISC-V yet
+[ $MACHINE = riscv32 ] && { echo skipped; exit; }
 [ $MACHINE = riscv64 ] && { echo skipped; exit; }
 
 [ $MACHINE = aarch64 ] && { echo skipped; exit; }

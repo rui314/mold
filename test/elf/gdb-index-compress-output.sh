@@ -14,6 +14,7 @@ mkdir -p $t
 
 [ $MACHINE = $(uname -m) ] || { echo skipped; exit; }
 
+[ $MACHINE = riscv32 ] && { echo skipped; exit; }
 [ $MACHINE = riscv64 ] && { echo skipped; exit; }
 
 which gdb >& /dev/null || { echo skipped; exit; }
