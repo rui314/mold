@@ -24,7 +24,7 @@ static u32 utype(u32 val) {
   // of a register. I-type insn sign-extends a 12-bits immediate and
   // add it to a register value to construct a complete value. 0x800
   // is added here to compensate for the sign-extension.
-  return bits(val + 0x800, 31, 12) << 12;
+  return (val + 0x800) & 0xffff'f000;
 }
 
 static u32 jtype(u32 val) {
