@@ -334,19 +334,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_SUB64:
       *(ul64 *)loc -= S + A;
       break;
-    case R_RISCV_ALIGN:
+    case R_RISCV_ALIGN: {
       // A R_RISCV_ALIGN is followed by nops. We sometimes have to not
       // just remove nops but rewrite a nop with a c.nop. Here, we always
       // rewrite all nops for the sake of simplicity.
-      if (i64 padding_size = align_to(P, bit_ceil(rel.r_addend + 1)) - P) {
-        assert(padding_size % 2 == 0);
-        i64 i = 0;
-        for (; i <= padding_size - 4; i += 4)
-          *(ul32 *)(loc + i) = 0x00000013; // nop
-        if (i != padding_size)
-          *(ul16 *)(loc + i) = 0x0001;     // c.nop
-      }
+      i64 padding_size = align_to(P, bit_ceil(rel.r_addend + 1)) - P;
+      assert(padding_size % 2 == 0);
+
+      i64 i = 0;
+      for (; i <= padding_size - 4; i += 4)
+        *(ul32 *)(loc + i) = 0x00000013; // nop
+      if (i != padding_size)
+        *(ul16 *)(loc + i) = 0x0001;     // c.nop
       break;
+    }
     case R_RISCV_RVC_BRANCH:
       write_cbtype(loc, S + A - P);
       break;
