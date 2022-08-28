@@ -12,8 +12,7 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = riscv32 ] && { echo skipped; exit; }
-[ $MACHINE = riscv64 ] && { echo skipped; exit; }
+[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] && { echo skipped; exit; }
 
 cat <<EOF | $CC -c -fPIC -o $t/a.o -xc -
 void keep();

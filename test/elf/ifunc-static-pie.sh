@@ -19,9 +19,7 @@ ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
 [ $MACHINE = i386 -o $MACHINE = i686 ] && { echo skipped; exit; }
 
 # IFUNC is not supported on RISC-V yet
-[ $MACHINE = riscv32 ] && { echo skipped; exit; }
-[ $MACHINE = riscv64 ] && { echo skipped; exit; }
-
+[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] && { echo skipped; exit; }
 [ $MACHINE = aarch64 ] && { echo skipped; exit; }
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
