@@ -45,6 +45,10 @@ static u32 cjtype(u32 val) {
          bit(val, 1)  << 3  | bit(val, 5)  << 2;
 }
 
+static u32 rd_reg(u32 val) {
+  return bits(val, 11, 7);
+}
+
 static void write_itype(u8 *loc, u32 val) {
   u32 mask = 0b000000'00000'11111'111'11111'1111111;
   *(ul32 *)loc = (*(ul32 *)loc & mask) | itype(val);
@@ -263,11 +267,27 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
       if (extra.r_deltas[i + 1] - extra.r_deltas[i] != 0) {
-        // auipc + jalr -> jal
-        assert(extra.r_deltas[i + 1] - extra.r_deltas[i] == -4);
+        i32 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
         u32 jalr = *(ul32 *)&contents[rels[i].r_offset + 4];
-        *(ul32 *)loc = (0b11111'0000000 & jalr) | 0b1101111;
-        write_jtype(loc, S + A - P);
+
+        // auipc + jalr -> jal
+        if (delta == -4) {
+          *(ul32 *)loc = (0b11111'0000000 & jalr) | 0b1101111;
+          write_jtype(loc, S + A - P);
+
+        // auipc + jalr -> c.j
+        } else if (delta == -6 && rd_reg(jalr) == 0) {
+          *(ul16 *)loc = 0b101'00000000000'01;
+          write_cjtype(loc, S + A - P);
+
+        // auipc + jalr -> c.jal (RV32 only)
+        } else if (sizeof(Word<E>) == 4 && delta == -6 && rd_reg(jalr) == 1) {
+          *(ul16 *)loc = 0b001'00000000000'01;
+          write_cjtype(loc, S + A - P);
+
+        } else {
+          unreachable();
+        }
       } else {
         u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
         write_utype(loc, val);
@@ -705,17 +725,33 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
     }
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT:
-      if (ctx.arg.relax) {
-        if (i == rels.size() - 1 || rels[i + 1].r_type != R_RISCV_RELAX)
-          break;
+      if (!ctx.arg.relax || i == rels.size() - 1 ||
+          rels[i + 1].r_type != R_RISCV_RELAX)
+        break;
 
-        // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
-        // with JAL, saving 4 bytes.
-        Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-        i64 dist = compute_distance(ctx, sym, isec, r);
-        if (dist % 2 == 0 && -(1 << 20) <= dist && dist < (1 << 20))
-          delta2 = -4;
-      }
+      Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+      i64 dist = compute_distance(ctx, sym, isec, r);
+
+      std::string_view contents = isec.contents;
+      u32 rd = rd_reg(*(ul32 *)(contents.data() + rels[i + 1].r_offset));
+
+      // In RV32, if the jump target is within ±1 KiB, and rd is x1, we can
+      // replace AUIPC+JALR with C.JAL, saving 6 bytes.
+      if constexpr (sizeof(Word<E>) == 4)
+        if (dist % 2 == 0 && rd == 1 && -(1 << 10) <= dist && dist < (1 << 10))
+          delta2 = -6;
+
+      // If the jump target is within ±1 KiB, and rd is x0, we can replace
+      // AUIPC+JALR with C.J, saving 6 bytes.
+      if (delta2 == 0 && dist % 2 == 0 && rd == 0 &&
+          -(1 << 10) <= dist && dist < (1 << 10))
+        delta2 = -6;
+
+      // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
+      // with JAL, saving 4 bytes.
+      else if (delta2 == 0 && dist % 2 == 0 &&
+               -(1 << 20) <= dist && dist < (1 << 20))
+        delta2 = -4;
     }
 
     if (delta2 == 0)
