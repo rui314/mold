@@ -126,6 +126,8 @@ endif
 
 DEPFLAGS = -MT $@ -MMD -MP -MF out/$*.d
 
+MOLD_ENABLE_RV32_QEMU_TESTS = Off
+
 all: mold mold-wrapper.so
 
 -include $(SRCS:%.cc=out/%.d)
@@ -196,6 +198,9 @@ test-all: all
 	$(MAKE) test-arch TRIPLE=aarch64-linux-gnu MACHINE=aarch64
 	$(MAKE) test-arch TRIPLE=arm-linux-gnueabihf MACHINE=arm
 	$(MAKE) test-arch TRIPLE=riscv64-linux-gnu MACHINE=riscv64
+ifeq ($(MOLD_ENABLE_RV32_QEMU_TESTS), On)
+	$(MAKE) test-arch TRIPLE=riscv32-linux-gnu MACHINE=riscv32
+endif
 
 # macOS's GNU make hasn't been updated since 3.8.1 perhaps due a concern
 # of GPLv3. The --output-sync flag was introduced in GNU Make 4.0, so we
