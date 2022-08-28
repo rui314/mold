@@ -266,7 +266,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // auipc + jalr -> jal
         assert(extra.r_deltas[i + 1] - extra.r_deltas[i] == -4);
         u32 jalr = *(ul32 *)&contents[rels[i].r_offset + 4];
-        *(ul32 *)loc = (0b11111'000000 & jalr) | 0b101111;
+        *(ul32 *)loc = (0b11111'0000000 & jalr) | 0b1101111;
         write_jtype(loc, S + A - P);
       } else {
         u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
