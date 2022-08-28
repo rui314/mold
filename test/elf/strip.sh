@@ -26,7 +26,7 @@ fgrep -q _start $t/log
 fgrep -q foo $t/log
 fgrep -q bar $t/log
 
-if [ $MACHINE '!=' riscv64 ]; then
+if [ $MACHINE '!=' riscv32 ] && [ $MACHINE '!=' riscv64 ]; then
   fgrep -q .L.baz $t/log
 fi
 
@@ -36,7 +36,7 @@ readelf --symbols $t/exe > $t/log
 ! fgrep -q foo $t/log || false
 ! fgrep -q bar $t/log || false
 
-if [ $MACHINE '!=' riscv64 ]; then
+if [ $MACHINE '!=' riscv32 ] && [ $MACHINE '!=' riscv64 ]; then
   ! fgrep -q .L.baz $t/log || false
 fi
 

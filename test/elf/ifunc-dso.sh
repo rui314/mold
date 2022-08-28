@@ -13,6 +13,7 @@ t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
 # IFUNC is not supported on RISC-V yet
+[ $MACHINE = riscv32 ] && { echo skipped; exit; }
 [ $MACHINE = riscv64 ] && { echo skipped; exit; }
 
 # Skip if libc is musl because musl does not support GNU FUNC
