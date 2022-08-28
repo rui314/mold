@@ -338,7 +338,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // A R_RISCV_ALIGN is followed by nops. We sometimes have to not
       // just remove nops but rewrite a nop with a c.nop. Here, we always
       // rewrite all nops for the sake of simplicity.
-      if (i64 padding_size = align_to(P, bit_ceil(rel.r_addend)) - P) {
+      if (i64 padding_size = align_to(P, bit_ceil(rel.r_addend + 1)) - P) {
         assert(padding_size % 2 == 0);
         i64 i = 0;
         for (; i <= padding_size - 4; i += 4)
