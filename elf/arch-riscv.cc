@@ -267,12 +267,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
       i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
-      u32 jalr = *(ul32 *)&contents[rels[i].r_offset + 4];
-      u32 rd = get_rd(jalr);
+      u32 rd = get_rd(*(ul32 *)&contents[rels[i].r_offset + 4]);
 
       if (delta == -4) {
         // auipc + jalr -> jal
-        *(ul32 *)loc = (0b11111'0000000 & jalr) | 0b1101111;
+        *(ul32 *)loc = (rd << 7) | 0b1101111;
         write_jtype(loc, S + A - P);
       } else if (delta == -6 && rd == 0) {
         // auipc + jalr -> c.j
