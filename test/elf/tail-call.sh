@@ -31,8 +31,7 @@ int main() {
 }
 EOF
 
-$CC -B. -O2 -o $t/exe $t/a.o $t/b.o $t/c.o
-chmod 755 $t/exe
+$CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
 $QEMU $t/exe | grep -q '42'
 
 if [ $MACHINE = riscv32 -o $MACHINE = riscv64 ]; then
