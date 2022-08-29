@@ -667,7 +667,7 @@ template <typename E>
 static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
                             InputSection<E> &isec, const ElfRel<E> &rel) {
   // We handle absolute symbols as if they were infinitely far away
-  // because `relax_section` may increase a distance between a branch
+  // because `shrink_section` may increase a distance between a branch
   // instruction and an absolute symbol. Branching to an absolute
   // location is extremely rare in real code, though.
   if (sym.is_absolute())
