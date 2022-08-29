@@ -102,7 +102,7 @@ jobs:
         # Install a RV32 toolchain from third party since it's not available
         # as an Ubuntu package.
         mkdir /usr/local/rv32
-        wget -O- https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2022.08.26/riscv32-glibc-ubuntu-20.04-nightly-2022.08.26-nightly.tar.gz | tar -C /usr/local/rv32 --strip-components=1 -xzf -
+        wget -O- -q https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2022.08.26/riscv32-glibc-ubuntu-20.04-nightly-2022.08.26-nightly.tar.gz | tar -C /usr/local/rv32 --strip-components=1 -xzf -
 
         ln -sf /usr/local/rv32/sysroot /usr/riscv32-linux-gnu
         ln -sf /usr/local/rv32/bin/riscv32-unknown-linux-gnu-objdump /usr/bin/riscv32-linux-gnu-objdump
