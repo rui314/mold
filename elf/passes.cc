@@ -1719,7 +1719,7 @@ void write_dependency_file(Context<E> &ctx) {
   template void apply_version_script(Context<E> &);                     \
   template void parse_symbol_version(Context<E> &);                     \
   template void compute_import_export(Context<E> &);                    \
-  template void mark_addrsig(Context<E> &);                                   \
+  template void mark_addrsig(Context<E> &);                             \
   template void clear_padding(Context<E> &);                            \
   template i64 get_section_rank(Context<E> &, Chunk<E> *);              \
   template i64 set_osec_offsets(Context<E> &);                          \
