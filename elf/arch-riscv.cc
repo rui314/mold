@@ -727,7 +727,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
       Symbol<E> &sym = *isec.file.symbols[r.r_sym];
       i64 dist = compute_distance(ctx, sym, isec, r);
       if (dist % 2)
-        Fatal(ctx) << isec << ": bad alignment";
+        break;
 
       std::string_view contents = isec.contents;
       i64 rd = get_rd(*(ul32 *)(contents.data() + rels[i + 1].r_offset));
