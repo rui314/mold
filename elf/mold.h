@@ -1589,7 +1589,6 @@ struct Context {
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
   tbb::concurrent_hash_map<std::string_view, ComdatGroup, HashCmp> comdat_groups;
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
-  tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> output_chunks;
   std::vector<std::unique_ptr<OutputSection<E>>> output_sections;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
@@ -1599,6 +1598,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> dso_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
+  tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> chunk_pool;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
@@ -1626,38 +1626,38 @@ struct Context {
   tbb::concurrent_hash_map<std::string_view, std::vector<std::string>> undef_errors;
 
   // Output chunks
-  std::unique_ptr<OutputEhdr<E>> ehdr;
-  std::unique_ptr<OutputShdr<E>> shdr;
-  std::unique_ptr<OutputPhdr<E>> phdr;
-  std::unique_ptr<InterpSection<E>> interp;
-  std::unique_ptr<GotSection<E>> got;
-  std::unique_ptr<GotPltSection<E>> gotplt;
-  std::unique_ptr<RelPltSection<E>> relplt;
-  std::unique_ptr<RelDynSection<E>> reldyn;
-  std::unique_ptr<RelrDynSection<E>> relrdyn;
-  std::unique_ptr<DynamicSection<E>> dynamic;
-  std::unique_ptr<StrtabSection<E>> strtab;
-  std::unique_ptr<DynstrSection<E>> dynstr;
-  std::unique_ptr<HashSection<E>> hash;
-  std::unique_ptr<GnuHashSection<E>> gnu_hash;
-  std::unique_ptr<ShstrtabSection<E>> shstrtab;
-  std::unique_ptr<PltSection<E>> plt;
-  std::unique_ptr<PltGotSection<E>> pltgot;
-  std::unique_ptr<SymtabSection<E>> symtab;
-  std::unique_ptr<DynsymSection<E>> dynsym;
-  std::unique_ptr<EhFrameSection<E>> eh_frame;
-  std::unique_ptr<EhFrameHdrSection<E>> eh_frame_hdr;
-  std::unique_ptr<CopyrelSection<E>> copyrel;
-  std::unique_ptr<CopyrelSection<E>> copyrel_relro;
-  std::unique_ptr<VersymSection<E>> versym;
-  std::unique_ptr<VerneedSection<E>> verneed;
-  std::unique_ptr<VerdefSection<E>> verdef;
-  std::unique_ptr<BuildIdSection<E>> buildid;
-  std::unique_ptr<NotePackageSection<E>> note_package;
-  std::unique_ptr<NotePropertySection<E>> note_property;
-  std::unique_ptr<GdbIndexSection<E>> gdb_index;
-  std::unique_ptr<ThumbToArmSection> thumb_to_arm;
-  std::unique_ptr<TlsTrampolineSection> tls_trampoline;
+  OutputEhdr<E> *ehdr = nullptr;
+  OutputShdr<E> *shdr = nullptr;
+  OutputPhdr<E> *phdr = nullptr;
+  InterpSection<E> *interp = nullptr;
+  GotSection<E> *got = nullptr;
+  GotPltSection<E> *gotplt = nullptr;
+  RelPltSection<E> *relplt = nullptr;
+  RelDynSection<E> *reldyn = nullptr;
+  RelrDynSection<E> *relrdyn = nullptr;
+  DynamicSection<E> *dynamic = nullptr;
+  StrtabSection<E> *strtab = nullptr;
+  DynstrSection<E> *dynstr = nullptr;
+  HashSection<E> *hash = nullptr;
+  GnuHashSection<E> *gnu_hash = nullptr;
+  ShstrtabSection<E> *shstrtab = nullptr;
+  PltSection<E> *plt = nullptr;
+  PltGotSection<E> *pltgot = nullptr;
+  SymtabSection<E> *symtab = nullptr;
+  DynsymSection<E> *dynsym = nullptr;
+  EhFrameSection<E> *eh_frame = nullptr;
+  EhFrameHdrSection<E> *eh_frame_hdr = nullptr;
+  CopyrelSection<E> *copyrel = nullptr;
+  CopyrelSection<E> *copyrel_relro = nullptr;
+  VersymSection<E> *versym = nullptr;
+  VerneedSection<E> *verneed = nullptr;
+  VerdefSection<E> *verdef = nullptr;
+  BuildIdSection<E> *buildid = nullptr;
+  NotePackageSection<E> *note_package = nullptr;
+  NotePropertySection<E> *note_property = nullptr;
+  GdbIndexSection<E> *gdb_index = nullptr;
+  ThumbToArmSection *thumb_to_arm = nullptr;
+  TlsTrampolineSection *tls_trampoline = nullptr;
 
   // For --gdb-index
   Chunk<E> *debug_info = nullptr;

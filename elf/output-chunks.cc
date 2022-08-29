@@ -150,8 +150,8 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
   if (flags & SHF_WRITE)
     return (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
            type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
-           chunk == ctx.got.get() || chunk == ctx.dynamic.get() ||
-           (ctx.arg.z_now && chunk == ctx.gotplt.get()) ||
+           chunk == ctx.got || chunk == ctx.dynamic ||
+           (ctx.arg.z_now && chunk == ctx.gotplt) ||
            chunk->name.ends_with(".rel.ro");
   return false;
 }
@@ -203,11 +203,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr)
-    define(PT_PHDR, PF_R, sizeof(Word<E>), ctx.phdr.get());
+    define(PT_PHDR, PF_R, sizeof(Word<E>), ctx.phdr);
 
   // Create a PT_INTERP.
   if (ctx.interp)
-    define(PT_INTERP, PF_R, 1, ctx.interp.get());
+    define(PT_INTERP, PF_R, 1, ctx.interp);
 
   // Create a PT_NOTE for each group of SHF_NOTE sections with the same
   // alignment requirement.
@@ -271,11 +271,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Add PT_DYNAMIC
   if (ctx.dynamic && ctx.dynamic->shdr.sh_size)
-    define(PT_DYNAMIC, PF_R | PF_W, 1, ctx.dynamic.get());
+    define(PT_DYNAMIC, PF_R | PF_W, 1, ctx.dynamic);
 
   // Add PT_GNU_EH_FRAME
   if (ctx.eh_frame_hdr)
-    define(PT_GNU_EH_FRAME, PF_R, 1, ctx.eh_frame_hdr.get());
+    define(PT_GNU_EH_FRAME, PF_R, 1, ctx.eh_frame_hdr);
 
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
   // contain any segments. It controls executable bit of stack area.

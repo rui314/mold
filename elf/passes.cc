@@ -34,7 +34,8 @@ template <typename E>
 void create_synthetic_sections(Context<E> &ctx) {
   auto push = [&]<typename T>(T *x) {
     ctx.chunks.push_back(x);
-    return std::unique_ptr<T>(x);
+    ctx.chunk_pool.emplace_back(x);
+    return x;
   };
 
   if (!ctx.arg.oformat_binary) {
@@ -1001,7 +1002,7 @@ void create_reloc_sections(Context<E> &ctx) {
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
     RelocSection<E> *r = new RelocSection<E>(ctx, *osec);
     ctx.chunks.push_back(r);
-    ctx.output_chunks.emplace_back(r);
+    ctx.chunk_pool.emplace_back(r);
   }
 
   // Create a table to map input symbol indices to output symbol indices
@@ -1279,34 +1280,34 @@ i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
   u64 type = chunk->shdr.sh_type;
   u64 flags = chunk->shdr.sh_flags;
 
-  if (chunk == ctx.ehdr.get())
+  if (chunk == ctx.ehdr)
     return 0;
-  if (chunk == ctx.phdr.get())
+  if (chunk == ctx.phdr)
     return 1;
-  if (chunk == ctx.interp.get())
+  if (chunk == ctx.interp)
     return 2;
 
   if (type == SHT_NOTE && (flags & SHF_ALLOC))
     return (1 << 10) + chunk->shdr.sh_addralign;
 
-  if (chunk == ctx.hash.get())
+  if (chunk == ctx.hash)
     return (1 << 11) + 0;
-  if (chunk == ctx.gnu_hash.get())
+  if (chunk == ctx.gnu_hash)
     return (1 << 11) + 1;
-  if (chunk == ctx.dynsym.get())
+  if (chunk == ctx.dynsym)
     return (1 << 11) + 2;
-  if (chunk == ctx.dynstr.get())
+  if (chunk == ctx.dynstr)
     return (1 << 11) + 3;
-  if (chunk == ctx.versym.get())
+  if (chunk == ctx.versym)
     return (1 << 11) + 4;
-  if (chunk == ctx.verneed.get())
+  if (chunk == ctx.verneed)
     return (1 << 11) + 5;
-  if (chunk == ctx.reldyn.get())
+  if (chunk == ctx.reldyn)
     return (1 << 11) + 6;
-  if (chunk == ctx.relplt.get())
+  if (chunk == ctx.relplt)
     return (1 << 11) + 7;
 
-  if (chunk == ctx.shdr.get())
+  if (chunk == ctx.shdr)
     return 1 << 30;
   if (!(flags & SHF_ALLOC))
     return (1 << 30) - 1;
@@ -1648,7 +1649,7 @@ i64 compress_debug_sections(Context<E> &ctx) {
       comp = new GnuCompressedSection<E>(ctx, chunk);
     assert(comp);
 
-    ctx.output_chunks.emplace_back(comp);
+    ctx.chunk_pool.emplace_back(comp);
     ctx.chunks[i] = comp;
   });
 
