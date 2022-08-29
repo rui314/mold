@@ -126,7 +126,9 @@ jobs:
       if: always()
       with:
         name: test-results
-        path: build/out build/Testing
+        path: |
+          build/out
+          build/Testing
 
   build-macos-make:
     strategy:
