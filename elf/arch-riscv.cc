@@ -686,7 +686,7 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
 
 // Relax R_RISCV_CALL and R_RISCV_CALL_PLT relocations.
 template <typename E>
-static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
+static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   std::vector<Symbol<E> *> vec = get_sorted_symbols(isec);
   std::span<Symbol<E> *> syms = vec;
   i64 delta = 0;
@@ -819,7 +819,7 @@ i64 riscv_resize_sections(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (is_resizable(ctx, isec.get()))
-        relax_section(ctx, *isec);
+        shrink_section(ctx, *isec);
   });
 
   // Re-compute section offset again to finalize them.
