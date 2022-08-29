@@ -1379,6 +1379,36 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   counter += this->elf_syms.size();
 }
 
+// Symbol versioning is a GNU extension to the ELF file format. I don't
+// particularly like the feature as it complicates the semantics of
+// dynamic linking, but we need to support it anyway because it is
+// mandatory on glibc-based systems such as most Linux distros.
+//
+// Let me explain what symbol versioning is. Symbol versioning is a
+// mechanism to allow multiple symbols of the same name but of different
+// versions live together in a shared object file. It's convenient if you
+// want to make an API-breaking change to some function but want to keep
+// old programs working with the newer libraries.
+//
+// With symbol versioning, dynamic symbols are resolved by (name, version)
+// tuple instead of just by name. For example, glibc 2.35 defines two
+// different versions of `posix_spawn`, `posix_spawn` of version
+// "GLIBC_2.15" and that of version "GLIBC_2.2.5". Any executable that
+// uses `posix_spawn` is linked either to that of "GLIBC_2.15" or that of
+// "GLIBC_2.2.5"
+//
+// Versions are just stirngs, and no ordering is defined between them.
+// For example, "GLIBC_2.15" is not considered a newer version of
+// "GLIBC_2.2.5" or vice versa. They are considered just different.
+//
+// If a shared object file has versioned symbols, it contains a parallel
+// array for the symbol table. Version strings can be found in that
+// parallel table.
+//
+// One version is considered the "default" version for each shared object.
+// If an undefiend symbol `foo` is resolved to a symbol defined by the
+// shared object, it's marked so that it'll be resolved to (`foo`, the
+// default version of the library) at load-time.
 template <typename E>
 std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
   std::vector<std::string_view> ret(VER_NDX_LAST_RESERVED + 1);
