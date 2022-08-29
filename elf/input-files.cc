@@ -409,7 +409,7 @@ template <typename E>
 static Symbol<E> *insert_symbol(Context<E> &ctx, const ElfSym<E> &esym,
                                 std::string_view key, std::string_view name) {
   if (esym.is_undef() && name.starts_with("__real_") &&
-      ctx.arg.wrap.count(name.substr(7))) {
+      ctx.arg.wrap.contains(name.substr(7))) {
     return get_symbol(ctx, key.substr(7), name.substr(7));
   }
 
