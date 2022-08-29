@@ -267,7 +267,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
       i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
-      u32 rd = get_rd(*(ul32 *)&contents[rels[i].r_offset + 4]);
+      u32 rd = get_rd(*(ul32 *)&contents[rel.r_offset + 4]);
 
       if (delta == -4) {
         // auipc + jalr -> jal
@@ -730,7 +730,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         break;
 
       std::string_view contents = isec.contents;
-      i64 rd = get_rd(*(ul32 *)(contents.data() + rels[i].r_offset));
+      i64 rd = get_rd(*(ul32 *)(contents.data() + r.r_offset + 4));
 
       if (rd == 0 && -(1 << 10) <= dist && dist < (1 << 10)) {
         // If rd is x0 and the jump target is within ±1 KiB, we can replace
