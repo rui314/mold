@@ -730,7 +730,7 @@ static void relax_section(Context<E> &ctx, InputSection<E> &isec) {
         break;
 
       std::string_view contents = isec.contents;
-      i64 rd = get_rd(*(ul32 *)(contents.data() + rels[i + 1].r_offset));
+      i64 rd = get_rd(*(ul32 *)(contents.data() + rels[i].r_offset));
 
       if (rd == 0 && -(1 << 10) <= dist && dist < (1 << 10)) {
         // If rd is x0 and the jump target is within ±1 KiB, we can replace
