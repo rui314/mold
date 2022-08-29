@@ -121,6 +121,11 @@ jobs:
         cmake -DMOLD_ENABLE_QEMU_TESTS=On -DMOLD_ENABLE_QEMU_TESTS_RV32=On ..
         cmake --build . -j$(nproc)
         ctest . -j$(nproc)
+    - name: archive test results
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results
+        path: build/Testing
 
   build-macos-make:
     strategy:
