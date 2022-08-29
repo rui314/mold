@@ -1211,8 +1211,9 @@ void compute_import_export(Context<E> &ctx) {
 template <typename E>
 void mark_addrsig(Context<E> &ctx) {
   Timer t(ctx, "mark_addrsig");
+
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->fill_addrsig(ctx);
+    file->mark_addrsig(ctx);
   });
 }
 

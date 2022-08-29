@@ -221,7 +221,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       this->sections[i] = std::make_unique<InputSection<E>>(ctx, *this, name, i);
 
       // Save .llvm_addrsig for --icf=safe.
-      if (shdr.sh_type == SHT_LLVM_ADDRSIG && ctx.arg.icf && !ctx.arg.icf_all)
+      if (shdr.sh_type == SHT_LLVM_ADDRSIG)
         llvm_addrsig = this->sections[i].get();
 
       // Save debug sections for --gdb-index.
@@ -751,7 +751,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
 }
 
 template <typename E>
-void ObjectFile<E>::fill_addrsig(Context<E> &ctx) {
+void ObjectFile<E>::mark_addrsig(Context<E> &ctx) {
   // Parse a .llvm_addrsig section.
   if (llvm_addrsig) {
     u8 *cur = (u8 *)llvm_addrsig->contents.data();
@@ -768,12 +768,12 @@ void ObjectFile<E>::fill_addrsig(Context<E> &ctx) {
   // We treat a symbol's address as significant if
   //
   // 1. we have no address significance information for the symbol, or
-  // 2. the symbol could be referenced from the outside in an address-
+  // 2. the symbol can be referenced from the outside in an address-
   //    significant manner.
   for (Symbol<E> *sym : this->symbols)
     if (sym->file == this)
       if (InputSection<E> *isec = sym->get_input_section())
-        if (!llvm_addrsig || sym->is_imported || sym->is_exported)
+        if (!llvm_addrsig || sym->is_exported)
           isec->address_significant = true;
 }
 
