@@ -709,9 +709,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       u64 next_loc = loc + r.r_addend;
       u64 alignment = bit_ceil(r.r_addend + 1);
       assert(alignment <= (1 << isec.p2align));
-
-      if (next_loc % alignment)
-        delta += next_loc - align_to(loc, alignment);
+      delta += next_loc - align_to(loc, alignment);
       break;
     }
     case R_RISCV_CALL:
