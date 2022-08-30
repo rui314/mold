@@ -234,7 +234,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    i64 r_offset = rel.r_offset + extra.r_deltas[i];
+    i64 r_offset = rel.r_offset - extra.r_deltas[i];
     u8 *loc = base + r_offset;
 
     const SectionFragmentRef<E> *frag_ref = nullptr;
@@ -269,15 +269,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
       u32 rd = get_rd(*(ul32 *)(contents.data() + rel.r_offset + 4));
 
-      if (delta == -4) {
+      if (delta == 4) {
         // auipc + jalr -> jal
         *(ul32 *)loc = (rd << 7) | 0b1101111;
         write_jtype(loc, S + A - P);
-      } else if (delta == -6 && rd == 0) {
+      } else if (delta == 6 && rd == 0) {
         // auipc + jalr -> c.j
         *(ul16 *)loc = 0b101'00000000000'01;
         write_cjtype(loc, S + A - P);
-      } else if (delta == -6 && rd == 1) {
+      } else if (delta == 6 && rd == 1) {
         // auipc + jalr -> c.jal
         assert(sizeof(Word<E>) == 4);
         *(ul16 *)loc = 0b001'00000000000'01;
@@ -412,7 +412,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       Symbol<E> &sym = *file.symbols[rels[i].r_sym];
       assert(sym.get_input_section() == this);
 
-      u8 *loc = base + rels[i].r_offset + extra.r_deltas[i];
+      u8 *loc = base + rels[i].r_offset - extra.r_deltas[i];
       u32 val = *(ul32 *)(base + sym.value);
 
       if (rels[i].r_type == R_RISCV_PCREL_LO12_I)
@@ -429,7 +429,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_PCREL_HI20:
     case R_RISCV_TLS_GOT_HI20:
     case R_RISCV_TLS_GD_HI20: {
-      u8 *loc = base + rels[i].r_offset + extra.r_deltas[i];
+      u8 *loc = base + rels[i].r_offset - extra.r_deltas[i];
       u32 val = *(ul32 *)loc;
       *(ul32 *)loc = *(ul32 *)&contents[rels[i].r_offset];
       write_utype(loc, val);
@@ -545,12 +545,12 @@ void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
     i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
     if (delta == 0)
       continue;
-    assert(delta < 0);
+    assert(delta > 0);
 
     const ElfRel<E> &r = rels[i];
     memcpy(buf, contents.data() + pos, r.r_offset - pos);
     buf += r.r_offset - pos;
-    pos = r.r_offset - delta;
+    pos = r.r_offset + delta;
   }
 
   memcpy(buf, contents.data() + pos, contents.size() - pos);
@@ -702,7 +702,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       // some or all of the instructions so that the instruction that
       // immediately follows the NOPs is aligned to a specified
       // alignment boundary.
-      u64 loc = isec.get_addr() + r.r_offset + delta;
+      u64 loc = isec.get_addr() + r.r_offset - delta;
 
       // The total bytes of NOPs is stored to r_addend, so the next
       // instruction is r_addend away.
@@ -711,7 +711,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       assert(alignment <= (1 << isec.p2align));
 
       if (next_loc % alignment)
-        delta += align_to(loc, alignment) - next_loc;
+        delta += next_loc - align_to(loc, alignment);
       break;
     }
     case R_RISCV_CALL:
@@ -731,23 +731,23 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       if (rd == 0 && -(1 << 10) <= dist && dist < (1 << 10)) {
         // If rd is x0 and the jump target is within ±1 KiB, we can replace
         // AUIPC+JALR with C.J, saving 6 bytes.
-        delta += -6;
+        delta += 6;
       } else if (rd == 1 && -(1 << 10) <= dist && dist < (1 << 10) &&
                  sizeof(Word<E>) == 4) {
         // If rd is x1 and the jump target is within ±1 KiB, we can replace
         // AUIPC+JALR with C.JAL. This is RV32 only because C.JAL is defined
         // only in RV32.
-        delta += -6;
+        delta += 6;
       } else if (-(1 << 20) <= dist && dist < (1 << 20)) {
         // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
         // with JAL.
-        delta += -4;
+        delta += 4;
       }
     }
   }
 
   isec.extra.r_deltas[rels.size()] = delta;
-  isec.sh_size += delta;
+  isec.sh_size -= delta;
 }
 
 template <typename E>
@@ -757,7 +757,7 @@ static void update_symbol_values(Context<E> &ctx, InputSection<E> &isec) {
   for (Symbol<E> *sym : get_sorted_symbols(isec)) {
     while (i < rels.size() && rels[i].r_offset < sym->value)
       i++;
-    sym->value += isec.extra.r_deltas[i];
+    sym->value -= isec.extra.r_deltas[i];
   }
 }
 
