@@ -431,7 +431,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_TLS_GD_HI20: {
       u8 *loc = base + rels[i].r_offset - extra.r_deltas[i];
       u32 val = *(ul32 *)loc;
-      *(ul32 *)loc = *(ul32 *)&contents[rels[i].r_offset];
+      *(ul32 *)loc = *(ul32 *)(contents.data() + rels[i].r_offset);
       write_utype(loc, val);
     }
     }
