@@ -200,8 +200,8 @@ static Action get_rel_action(Context<E> &ctx, const Action table[3][4],
 }
 
 template <typename E>
-void InputSection<E>::handle_abs_rel(Context<E> &ctx, Symbol<E> &sym,
-                                     const ElfRel<E> &rel) {
+void InputSection<E>::scan_abs_rel(Context<E> &ctx, Symbol<E> &sym,
+                                   const ElfRel<E> &rel) {
   // This is a decision table for absolute relocations that is smaller
   // than the word size (e.g. R_X86_64_32). Since the dynamic linker
   // generally does not support dynamic relocations smaller than the
@@ -232,15 +232,15 @@ static Action get_abs_dyn_action(Context<E> &ctx, Symbol<E> &sym) {
 }
 
 template <typename E>
-void InputSection<E>::handle_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym,
-                                         const ElfRel<E> &rel) {
+void InputSection<E>::scan_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym,
+                                       const ElfRel<E> &rel) {
   Action action = get_abs_dyn_action(ctx, sym);
   dispatch(ctx, *this, action, sym, rel);
 }
 
 template <typename E>
-void InputSection<E>::handle_pcrel_rel(Context<E> &ctx, Symbol<E> &sym,
-                                       const ElfRel<E> &rel) {
+void InputSection<E>::scan_pcrel_rel(Context<E> &ctx, Symbol<E> &sym,
+                                     const ElfRel<E> &rel) {
   // This is for PC-relative relocations (e.g. R_X86_64_PC32).
   // We cannot promote them to dynamic relocations because the dynamic
   // linker generally does not support PC-relative relocations.

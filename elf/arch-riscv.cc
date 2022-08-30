@@ -582,17 +582,17 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     switch (rel.r_type) {
     case R_RISCV_32:
       if constexpr (sizeof(Word<E>) == 8)
-        handle_abs_rel(ctx, sym, rel);
+        scan_abs_rel(ctx, sym, rel);
       else
-        handle_abs_dyn_rel(ctx, sym, rel);
+        scan_abs_dyn_rel(ctx, sym, rel);
       break;
     case R_RISCV_HI20:
-      handle_abs_rel(ctx, sym, rel);
+      scan_abs_rel(ctx, sym, rel);
       break;
     case R_RISCV_64:
       if constexpr (sizeof(Word<E>) == 4)
         Fatal(ctx) << *this << ": R_RISCV_64 cannot be used on RV32";
-      handle_abs_dyn_rel(ctx, sym, rel);
+      scan_abs_dyn_rel(ctx, sym, rel);
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT:
@@ -610,7 +610,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_TLSGD;
       break;
     case R_RISCV_32_PCREL:
-      handle_pcrel_rel(ctx, sym, rel);
+      scan_pcrel_rel(ctx, sym, rel);
       break;
     case R_RISCV_BRANCH:
     case R_RISCV_JAL:

@@ -602,16 +602,16 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
-      handle_abs_rel(ctx, sym, rel);
+      scan_abs_rel(ctx, sym, rel);
       break;
     case R_X86_64_64:
-      handle_abs_dyn_rel(ctx, sym, rel);
+      scan_abs_dyn_rel(ctx, sym, rel);
       break;
     case R_X86_64_PC8:
     case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
-      handle_pcrel_rel(ctx, sym, rel);
+      scan_pcrel_rel(ctx, sym, rel);
       break;
     case R_X86_64_GOT32:
     case R_X86_64_GOT64:

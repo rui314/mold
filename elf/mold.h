@@ -322,9 +322,9 @@ public:
   bool icf_leaf = false;
 
 private:
-  void handle_abs_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
-  void handle_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
-  void handle_pcrel_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void scan_abs_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void scan_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void scan_pcrel_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
 
   void apply_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
                          u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel);
