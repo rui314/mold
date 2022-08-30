@@ -687,17 +687,13 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
 // Relax R_RISCV_CALL and R_RISCV_CALL_PLT relocations.
 template <typename E>
 static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
-  std::vector<Symbol<E> *> vec = get_sorted_symbols(isec);
-  std::span<Symbol<E> *> syms = vec;
-  i64 delta = 0;
-
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   isec.extra.r_deltas.resize(rels.size() + 1);
 
+  i64 delta = 0;
+
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
-    i64 delta2 = 0;
-
     isec.extra.r_deltas[i] = delta;
 
     switch (r.r_type) {
@@ -715,7 +711,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       assert(alignment <= (1 << isec.p2align));
 
       if (next_loc % alignment)
-        delta2 = align_to(loc, alignment) - next_loc;
+        delta += align_to(loc, alignment) - next_loc;
       break;
     }
     case R_RISCV_CALL:
@@ -735,36 +731,34 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       if (rd == 0 && -(1 << 10) <= dist && dist < (1 << 10)) {
         // If rd is x0 and the jump target is within ±1 KiB, we can replace
         // AUIPC+JALR with C.J, saving 6 bytes.
-        delta2 = -6;
+        delta += -6;
       } else if (rd == 1 && -(1 << 10) <= dist && dist < (1 << 10) &&
                  sizeof(Word<E>) == 4) {
         // If rd is x1 and the jump target is within ±1 KiB, we can replace
         // AUIPC+JALR with C.JAL. This is RV32 only because C.JAL is defined
         // only in RV32.
-        delta2 = -6;
+        delta += -6;
       } else if (-(1 << 20) <= dist && dist < (1 << 20)) {
         // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
         // with JAL.
-        delta2 = -4;
+        delta += -4;
       }
     }
-
-    if (delta2 == 0)
-      continue;
-
-    while (!syms.empty() && syms[0]->value <= r.r_offset) {
-      syms[0]->value += delta;
-      syms = syms.subspan(1);
-    }
-
-    delta += delta2;
   }
 
-  for (Symbol<E> *sym : syms)
-    sym->value += delta;
   isec.extra.r_deltas[rels.size()] = delta;
-
   isec.sh_size += delta;
+}
+
+template <typename E>
+static void update_symbol_values(Context<E> &ctx, InputSection<E> &isec) {
+  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
+  i64 i = 0;
+  for (Symbol<E> *sym : get_sorted_symbols(isec)) {
+    while (i < rels.size() && rels[i].r_offset < sym->value)
+      i++;
+    sym->value += isec.extra.r_deltas[i];
+  }
 }
 
 // RISC-V instructions are 16 or 32 bits long, so immediates encoded
@@ -816,10 +810,17 @@ i64 riscv_resize_sections(Context<E> &ctx) {
 
   // Find R_RISCV_CALL AND R_RISCV_CALL_PLT that can be relaxed.
   // This step should only shrink sections.
-  for (ObjectFile<E> *file : ctx.objs)
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (is_resizable(ctx, isec.get()))
         shrink_section(ctx, *isec);
+  });
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (is_resizable(ctx, isec.get()))
+        update_symbol_values(ctx, *isec);
+  });
 
   // Re-compute section offset again to finalize them.
   compute_section_sizes(ctx);
