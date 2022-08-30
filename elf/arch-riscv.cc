@@ -350,9 +350,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc -= S + A;
       break;
     case R_RISCV_ALIGN: {
-      // A R_RISCV_ALIGN is followed by nops. We sometimes have to not
-      // just remove nops but rewrite a nop with a c.nop. Here, we always
-      // rewrite all nops for the sake of simplicity.
+      // A R_RISCV_ALIGN is followed by a NOP sequence. We need to remove
+      // zero or more bytes so that the instruction after R_RISCV_ALIGN is
+      // aligned to a given alignment boundary.
+      //
+      // We need to guarantee that the NOP sequence is valid after byte
+      // removal (e.g. we can't remove 2 bytes from a 4-byte NOP). For the
+      // sake of simplicity, we always rewrite the entire NOP sequence.
       i64 padding_size = align_to(P, bit_ceil(rel.r_addend + 1)) - P;
       assert(padding_size % 2 == 0);
 
