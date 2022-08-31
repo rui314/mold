@@ -317,9 +317,27 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_TPREL_LO12_S:
       write_stype(loc, S + A);
       break;
-    case R_RISCV_HI20:
-      write_utype(loc, S + A);
+    case R_RISCV_HI20: {
+      i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
+      if (delta == 2) {
+        // LUI → C.LUI or C.LI
+        u64 val = S + A - P;
+        u32 rd = get_rd(*(ul32 *)(contents.data() + rel.r_offset));
+        assert(sign_extend(val, 17) == val);
+        if (bits(val, 17, 12)) {
+          // C.LUI
+          *(ul16 *)loc = 0b011'0'00000'00000'01 | (bit(val, 17) << 12) |
+                         (rd << 7) | (bits(val, 16, 12) << 2);
+        } else {
+          // `C.LUI rd, 0` is illegal. We need to use `C.LI rd, 0` instead.
+          *(ul16 *)loc = 0b010'0'00000'00000'01 | (rd << 7);
+        }
+      } else {
+        assert(delta == 0);
+        write_utype(loc, S + A);
+      }
       break;
+    }
     case R_RISCV_TPREL_HI20:
       write_utype(loc, S + A - ctx.tls_begin);
       break;
@@ -716,6 +734,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       delta += next_loc - align_to(loc, alignment);
       break;
     }
+    case R_RISCV_HI20:
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT:
       if (!ctx.arg.relax || i == rels.size() - 1 ||
@@ -723,28 +742,39 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         break;
 
       Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-      i64 dist = compute_distance(ctx, sym, isec, r);
-      if (dist % 2)
+      i64 val = compute_distance(ctx, sym, isec, r);
+      if (val % 2)
         break;
 
       std::string_view contents = isec.contents;
-      i64 rd = get_rd(*(ul32 *)(contents.data() + r.r_offset + 4));
+      u32 insn = *(ul32 *)(contents.data() + r.r_offset + 4);
+      i64 rd = get_rd(insn);
 
-      if (rd == 0 && sign_extend(dist, 11) == dist) {
-        // If rd is x0 and the jump target is within ±2 KiB, we can replace
-        // AUIPC+JALR with C.J, saving 6 bytes.
-        delta += 6;
-      } else if (rd == 1 && sign_extend(dist, 11) == dist
-                 && sizeof(Word<E>) == 4) {
-        // If rd is x1 and the jump target is within ±2 KiB, we can replace
-        // AUIPC+JALR with C.JAL. This is RV32 only because C.JAL is defined
-        // only in RV32.
-        delta += 6;
-      } else if (sign_extend(dist, 20) == dist) {
-        // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
-        // with JAL.
-        delta += 4;
+      if (r.r_type == R_RISCV_HI20) {
+        // LUI → C.LUI or C.LI
+        bool is_lui = (insn & 0b1111111) == 0b0110111;
+        if (is_lui && rd != 0 && rd != 2 && sign_extend(val, 17) == val)
+          delta += 2;
+      } else {
+        assert(r.r_type == R_RISCV_CALL || r.r_type == R_RISCV_CALL_PLT);
+
+        if (rd == 0 && sign_extend(val, 11) == val) {
+          // If rd is x0 and the jump target is within ±2 KiB, we can replace
+          // AUIPC+JALR with C.J, saving 6 bytes.
+          delta += 6;
+        } else if (rd == 1 && sign_extend(val, 11) == val
+                   && sizeof(Word<E>) == 4) {
+          // If rd is x1 and the jump target is within ±2 KiB, we can replace
+          // AUIPC+JALR with C.JAL. This is RV32 only because C.JAL is defined
+          // only in RV32.
+          delta += 6;
+        } else if (sign_extend(val, 20) == val) {
+          // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
+          // with JAL.
+          delta += 4;
+        }
       }
+      break;
     }
   }
 
