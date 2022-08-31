@@ -235,6 +235,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     i64 r_offset = rel.r_offset - extra.r_deltas[i];
+    i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
     u8 *loc = base + r_offset;
 
     const SectionFragmentRef<E> *frag_ref = nullptr;
@@ -266,9 +267,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
-      i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
       u32 rd = get_rd(*(ul32 *)(contents.data() + rel.r_offset + 4));
-
       if (delta == 4) {
         // auipc + jalr -> jal
         *(ul32 *)loc = (rd << 7) | 0b1101111;
@@ -310,21 +309,36 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_RISCV_LO12_I:
-    case R_RISCV_TPREL_LO12_I:
       write_itype(loc, S + A);
       break;
     case R_RISCV_LO12_S:
-    case R_RISCV_TPREL_LO12_S:
       write_stype(loc, S + A);
       break;
     case R_RISCV_HI20:
       write_utype(loc, S + A);
       break;
     case R_RISCV_TPREL_HI20:
-      write_utype(loc, S + A - ctx.tls_begin);
+      assert(delta == 0 || delta == 4);
+      if (delta == 0)
+        write_utype(loc, S + A - ctx.tls_begin);
       break;
     case R_RISCV_TPREL_ADD:
       break;
+    case R_RISCV_TPREL_LO12_I:
+    case R_RISCV_TPREL_LO12_S: {
+      i64 val = S + A - ctx.tls_begin;
+      if (rel.r_type == R_RISCV_TPREL_LO12_I)
+        write_itype(loc, val);
+      else
+        write_stype(loc, val);
+
+      // Rewrite `lw t1, 0(t0)` with `lw t1, 0(tp)` if the address is
+      // directly accessible using tp. tp is x4.
+      if (sign_extend(val, 11) == val)
+        *(ul32 *)loc = (*(ul32 *)loc & 0b111111'11111'00000'111'11111'1111111) |
+                       (4 << 15);
+      break;
+    }
     case R_RISCV_ADD8:
       loc += S + A;
       break;
@@ -698,31 +712,33 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
+    Symbol<E> &sym = *isec.file.symbols[r.r_sym];
     isec.extra.r_deltas[i] = delta;
 
-    switch (r.r_type) {
-    case R_RISCV_ALIGN: {
-      // R_RISCV_ALIGN refers NOP instructions. We need to eliminate
-      // some or all of the instructions so that the instruction that
-      // immediately follows the NOPs is aligned to a specified
-      // alignment boundary.
-      u64 loc = isec.get_addr() + r.r_offset - delta;
-
+    // Handling R_RISCV_ALIGN is mandatory.
+    //
+    // R_RISCV_ALIGN refers NOP instructions. We need to eliminate some
+    // or all of the instructions so that the instruction that immediately
+    // follows the NOPs is aligned to a specified alignment boundary.
+    if (r.r_type == R_RISCV_ALIGN) {
       // The total bytes of NOPs is stored to r_addend, so the next
       // instruction is r_addend away.
+      u64 loc = isec.get_addr() + r.r_offset - delta;
       u64 next_loc = loc + r.r_addend;
       u64 alignment = bit_ceil(r.r_addend + 1);
       assert(alignment <= (1 << isec.p2align));
       delta += next_loc - align_to(loc, alignment);
-      break;
+      continue;
     }
-    case R_RISCV_CALL:
-    case R_RISCV_CALL_PLT:
-      if (!ctx.arg.relax || i == rels.size() - 1 ||
-          rels[i + 1].r_type != R_RISCV_RELAX)
-        break;
 
-      Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+    // Handling other relocations is optional.
+    if (!ctx.arg.relax || i == rels.size() - 1 ||
+        rels[i + 1].r_type != R_RISCV_RELAX)
+      continue;
+
+    switch (r.r_type) {
+    case R_RISCV_CALL:
+    case R_RISCV_CALL_PLT: {
       i64 dist = compute_distance(ctx, sym, isec, r);
       if (dist % 2)
         break;
@@ -745,6 +761,33 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         // with JAL.
         delta += 4;
       }
+      break;
+    }
+    case R_RISCV_TPREL_HI20:
+    case R_RISCV_TPREL_ADD: {
+      // These relocations are used to materialize the upper 20 bits of
+      // an address relative to the thread pointer as follows:
+      //
+      //  lui  a5,%tprel_hi(foo)         # R_RISCV_TPREL_HI20 (symbol)
+      //  add  a5,a5,tp,%tprel_add(foo)  # R_RISCV_TPREL_ADD (symbol)
+      //
+      // Then thread-local variable `foo` is accessed with a 12-bit offset
+      // like this:
+      //
+      //  sw   t0,%tprel_lo(foo)(a5)     # R_RISCV_TPREL_LO12_S (symbol)
+      //
+      // However, if the offset is ±2 KiB, we don't need to materialize
+      // the upper 20 bits in a register. We can instead access the
+      // thread-local variable with TP like this:
+      //
+      //  sw   t0,%tprel_lo(foo)(tp)
+      //
+      // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
+      i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tls_begin;
+      if (sign_extend(val, 11) == val)
+        delta += 4;
+      break;
+    }
     }
   }
 
