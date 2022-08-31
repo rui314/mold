@@ -317,9 +317,28 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_TPREL_LO12_S:
       write_stype(loc, S + A);
       break;
-    case R_RISCV_HI20:
-      write_utype(loc, S + A);
+    case R_RISCV_HI20: {
+      i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
+      u64 val = S + A;
+
+      if (delta == 2) {
+        // LUI → C.LUI or C.LI
+        assert(sign_extend(val, 17) == val);
+        u32 rd = get_rd(*(ul32 *)(contents.data() + rel.r_offset));
+        if (bits(val, 17, 12)) {
+          // C.LUI
+          *(ul16 *)loc = 0b011'0'00000'00000'01 | (bit(val, 17) << 12) |
+                         (rd << 7) | (bits(val, 16, 12) << 2);
+        } else {
+          // `C.LUI rd, 0` is illegal. We need to use `C.LI rd, 0` instead.
+          *(ul16 *)loc = 0b010'0'00000'00000'01 | (rd << 7);
+        }
+      } else {
+        assert(delta == 0);
+        write_utype(loc, val);
+      }
       break;
+    }
     case R_RISCV_TPREL_HI20:
       write_utype(loc, S + A - ctx.tls_begin);
       break;
@@ -717,7 +736,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       break;
     }
     case R_RISCV_CALL:
-    case R_RISCV_CALL_PLT:
+    case R_RISCV_CALL_PLT: {
       if (!ctx.arg.relax || i == rels.size() - 1 ||
           rels[i + 1].r_type != R_RISCV_RELAX)
         break;
@@ -745,6 +764,26 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         // with JAL.
         delta += 4;
       }
+      break;
+    }
+    case R_RISCV_HI20: {
+      if (!ctx.arg.relax || i == rels.size() - 1 ||
+          rels[i + 1].r_type != R_RISCV_RELAX)
+        break;
+
+      Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+      i64 val = sym.get_addr(ctx) + r.r_addend;
+
+      std::string_view contents = isec.contents;
+      u32 insn = *(ul32 *)(contents.data() + r.r_offset);
+      i64 rd = get_rd(insn);
+
+      // LUI → C.LUI or C.LI
+      bool is_lui = (insn & 0b1111111) == 0b0110111;
+      if (is_lui && rd != 0 && rd != 2 && sign_extend(val, 17) == val)
+        delta += 2;
+      break;
+    }
     }
   }
 
