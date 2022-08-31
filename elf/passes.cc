@@ -1342,16 +1342,20 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
     if (!(chunk->shdr.sh_flags & SHF_ALLOC))
       continue;
 
+    bool addr_specified = false;
     if (auto it = ctx.arg.section_start.find(chunk->name);
-        it != ctx.arg.section_start.end())
+        it != ctx.arg.section_start.end()) {
       addr = it->second;
+      addr_specified = true;
+    }
 
     if (is_tbss(chunk)) {
       chunk->shdr.sh_addr = addr;
       continue;
     }
 
-    addr = align_to(addr, alignment(chunk));
+    if (!addr_specified)
+      addr = align_to(addr, alignment(chunk));
     chunk->shdr.sh_addr = addr;
     addr += chunk->shdr.sh_size;
   }
@@ -1384,17 +1388,34 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
   while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC)) {
     Chunk<E> &first = *chunks[i];
     assert(first.shdr.sh_type != SHT_NOBITS);
-
     fileoff = align_to(fileoff, alignment(&first));
 
-    do {
+    // Assign ALLOC sections contiguous file offsets as long as they
+    // are contiguous in memory.
+    for (;;) {
       chunks[i]->shdr.sh_offset =
         fileoff + chunks[i]->shdr.sh_addr - first.shdr.sh_addr;
       i++;
-    } while (i < chunks.size() &&
-             (chunks[i]->shdr.sh_flags & SHF_ALLOC) &&
-             chunks[i]->shdr.sh_type != SHT_NOBITS &&
-             first.shdr.sh_addr <= chunks[i]->shdr.sh_addr);
+
+      if (i >= chunks.size() ||
+          !(chunks[i]->shdr.sh_flags & SHF_ALLOC) ||
+          chunks[i]->shdr.sh_type == SHT_NOBITS)
+        break;
+
+      // If --start-section is given, addresses may not increase
+      // monotonically.
+      if (chunks[i]->shdr.sh_addr < first.shdr.sh_addr)
+        break;
+
+      i64 gap_size = chunks[i]->shdr.sh_addr - chunks[i - 1]->shdr.sh_addr -
+                     chunks[i - 1]->shdr.sh_size;
+
+      // If --start-section is given, there may be a large gap between
+      // sections. We don't want to allocate a disk space for a gap if
+      // exists.
+      if (gap_size >= ctx.page_size)
+        break;
+    }
 
     fileoff = chunks[i - 1]->shdr.sh_offset + chunks[i - 1]->shdr.sh_size;
 

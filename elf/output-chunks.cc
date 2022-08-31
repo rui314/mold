@@ -239,9 +239,13 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       i64 flags = to_phdr_flags(ctx, first);
       define(PT_LOAD, flags, ctx.page_size, first);
 
+      // Add contiguous ALLOC sections as long as they have the same
+      // section flags and there's no on-disk gap in between.
       if (!is_bss(first))
         while (i < end && !is_bss(chunks[i]) &&
-               to_phdr_flags(ctx, chunks[i]) == flags)
+               to_phdr_flags(ctx, chunks[i]) == flags &&
+               chunks[i]->shdr.sh_offset - first->shdr.sh_offset ==
+               chunks[i]->shdr.sh_addr - first->shdr.sh_addr)
           append(chunks[i++]);
 
       while (i < end && is_bss(chunks[i]) &&
