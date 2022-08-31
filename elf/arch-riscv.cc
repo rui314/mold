@@ -730,17 +730,17 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       std::string_view contents = isec.contents;
       i64 rd = get_rd(*(ul32 *)(contents.data() + r.r_offset + 4));
 
-      if (rd == 0 && -(1 << 11) <= dist && dist < (1 << 11)) {
+      if (rd == 0 && sign_extend(dist, 11) == dist) {
         // If rd is x0 and the jump target is within ±2 KiB, we can replace
         // AUIPC+JALR with C.J, saving 6 bytes.
         delta += 6;
-      } else if (rd == 1 && -(1 << 11) <= dist && dist < (1 << 11) &&
-                 sizeof(Word<E>) == 4) {
+      } else if (rd == 1 && sign_extend(dist, 11) == dist
+                 && sizeof(Word<E>) == 4) {
         // If rd is x1 and the jump target is within ±2 KiB, we can replace
         // AUIPC+JALR with C.JAL. This is RV32 only because C.JAL is defined
         // only in RV32.
         delta += 6;
-      } else if (-(1 << 20) <= dist && dist < (1 << 20)) {
+      } else if (sign_extend(dist, 20) == dist) {
         // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
         // with JAL.
         delta += 4;
