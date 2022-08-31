@@ -739,6 +739,9 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
     switch (r.r_type) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
+      // These relocations referes an AUIPC + JALR instruction pair to
+      // allow to jump to anywhere in PC ± 2 GiB. If the jump target is
+      // close enough to PC, we can use C.J, C.JAL or JAL instead.
       i64 dist = compute_distance(ctx, sym, isec, r);
       if (dist % 2)
         break;
@@ -747,18 +750,16 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       i64 rd = get_rd(*(ul32 *)(contents.data() + r.r_offset + 4));
 
       if (rd == 0 && sign_extend(dist, 11) == dist) {
-        // If rd is x0 and the jump target is within ±2 KiB, we can replace
-        // AUIPC+JALR with C.J, saving 6 bytes.
+        // If rd is x0 and the jump target is within ±2 KiB, we can use
+        // C.J, saving 6 bytes.
         delta += 6;
       } else if (rd == 1 && sign_extend(dist, 11) == dist
                  && sizeof(Word<E>) == 4) {
-        // If rd is x1 and the jump target is within ±2 KiB, we can replace
-        // AUIPC+JALR with C.JAL. This is RV32 only because C.JAL is defined
-        // only in RV32.
+        // If rd is x1 and the jump target is within ±2 KiB, we can use
+        // C.JAL. This is RV32 only because C.JAL is RV32-only instruction.
         delta += 6;
       } else if (sign_extend(dist, 20) == dist) {
-        // If the jump target is within ±1 MiB, we can replace AUIPC+JALR
-        // with JAL.
+        // If the jump target is within ±1 MiB, we can use JAL.
         delta += 4;
       }
       break;
