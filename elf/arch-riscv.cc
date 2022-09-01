@@ -702,7 +702,7 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
   return S + A - P;
 }
 
-// Relax R_RISCV_CALL and R_RISCV_CALL_PLT relocations.
+// Scan relocations to shrink sections.
 template <typename E>
 static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
