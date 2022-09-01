@@ -1382,6 +1382,9 @@ template <typename E>
 inline constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
 
 template <typename E>
+inline constexpr bool needs_thunk = requires { E::thunk_size; };
+
+template <typename E>
 using Word = typename E::Word;
 
 struct X86_64 {
@@ -1468,6 +1471,10 @@ struct ARM64 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_offset = 16;
+
+  static constexpr u32 thunk_size = 12;
+  static constexpr u32 thunk_max_distance = 100 * 1024 * 1024;
+  static constexpr u32 thunk_group_size = 10 * 1024 * 1024;
 };
 
 template <> struct ElfSym<ARM64> : public Elf64Sym {};
@@ -1500,6 +1507,10 @@ struct ARM32 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_offset = 8;
+
+  static constexpr u32 thunk_size = 20;
+  static constexpr u32 thunk_max_distance = 10 * 1024 * 1024;
+  static constexpr u32 thunk_group_size = 2 * 1024 * 1024;
 };
 
 template <> struct ElfSym<ARM32> : public Elf32Sym {};

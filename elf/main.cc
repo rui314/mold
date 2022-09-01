@@ -335,7 +335,7 @@ static void show_stats(Context<E> &ctx) {
   static Counter num_objs("num_objs", ctx.objs.size());
   static Counter num_dsos("num_dsos", ctx.dsos.size());
 
-  if constexpr (std::is_same_v<E, ARM64>) {
+  if constexpr (needs_thunk<E>) {
     static Counter num_thunks("num_thunks");
     for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
       for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec->thunks)

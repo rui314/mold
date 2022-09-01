@@ -118,6 +118,58 @@ struct SymbolAux {
 };
 
 //
+// thunks.cc
+//
+
+template <typename E>
+class RangeExtensionThunk {};
+
+template <typename E> requires needs_thunk<E>
+class RangeExtensionThunk<E> {
+public:
+  RangeExtensionThunk(OutputSection<E> &osec) : output_section(osec) {}
+  i64 size() const { return symbols.size() * E::thunk_size; }
+  void copy_buf(Context<E> &ctx);
+
+  u64 get_addr(i64 idx) const {
+    return output_section.shdr.sh_addr + offset + idx * E::thunk_size;
+  }
+
+  static constexpr i64 alignment = 16;
+  OutputSection<E> &output_section;
+  i32 thunk_idx = -1;
+  i64 offset = -1;
+  std::mutex mu;
+  std::vector<Symbol<E> *> symbols;
+};
+
+struct RangeExtensionRef {
+  i32 thunk_idx = -1;
+  i32 sym_idx = -1;
+};
+
+template <typename E>
+void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec);
+
+template <typename E>
+bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
+                  InputSection<E> &isec, const ElfRel<E> &rel);
+
+template <typename E>
+inline bool needs_thunk_rel(const ElfRel<E> &r);
+
+template <>
+inline bool needs_thunk_rel(const ElfRel<ARM64> &r) {
+  return r.r_type == R_AARCH64_CALL26 || r.r_type == R_AARCH64_JUMP26;
+}
+
+template <>
+inline bool needs_thunk_rel(const ElfRel<ARM32> &r) {
+  return r.r_type == R_ARM_CALL ||  r.r_type == R_ARM_JUMP24 ||
+         r.r_type == R_ARM_THM_CALL || r.r_type == R_ARM_THM_JUMP24;
+}
+
+//
 // input-sections.cc
 //
 
@@ -213,39 +265,12 @@ struct FdeRecord {
   std::atomic_bool is_alive = true;
 };
 
-template <typename E>
-class RangeExtensionThunk {};
-
-template <>
-class RangeExtensionThunk<ARM64> {
-public:
-  RangeExtensionThunk(OutputSection<ARM64> &osec)
-    : output_section(osec) {}
-
-  i64 size() const { return symbols.size() * ENTRY_SIZE; }
-  u64 get_addr(i64 idx) const;
-  void copy_buf(Context<ARM64> &ctx);
-
-  static constexpr i64 ENTRY_SIZE = 12;
-
-  OutputSection<ARM64> &output_section;
-  i32 thunk_idx = -1;
-  i64 offset = -1;
-  std::mutex mu;
-  std::vector<Symbol<ARM64> *> symbols;
-};
-
-struct RangeExtensionRef {
-  i32 thunk_idx = -1;
-  i32 sym_idx = -1;
-};
-
 // A struct to hold taret-dependent input section members.
 template <typename E>
 struct InputSectionExtras {};
 
-template <>
-struct InputSectionExtras<ARM64> {
+template <typename E> requires needs_thunk<E>
+struct InputSectionExtras<E> {
   std::vector<RangeExtensionRef> range_extn;
 };
 
@@ -1355,24 +1380,6 @@ template <typename E> void write_dependency_file(Context<E> &);
 // arch-arm32.cc
 //
 
-class ThumbToArmSection : public Chunk<ARM32> {
-public:
-  ThumbToArmSection() {
-    this->name = ".thumb_to_arm";
-    this->shdr.sh_type = SHT_PROGBITS;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = 4;
-  }
-
-  void add_symbol(Context<ARM32> &ctx, Symbol<ARM32> *sym);
-  void update_shdr(Context<ARM32> &ctx) override;
-  void copy_buf(Context<ARM32> &ctx) override;
-
-  std::vector<Symbol<ARM32> *> symbols;
-
-  static constexpr i64 ENTRY_SIZE = 12;
-};
-
 class TlsTrampolineSection : public Chunk<ARM32> {
 public:
   TlsTrampolineSection() {
@@ -1387,12 +1394,6 @@ public:
 };
 
 void sort_arm_exidx(Context<ARM32> &ctx);
-
-//
-// arch-arm64.cc
-//
-
-void create_range_extension_thunks(Context<ARM64> &ctx, OutputSection<ARM64> &osec);
 
 //
 // arch-riscv64.cc
@@ -1658,7 +1659,6 @@ struct Context {
   NotePackageSection<E> *note_package = nullptr;
   NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
-  ThumbToArmSection *thumb_to_arm = nullptr;
   TlsTrampolineSection *tls_trampoline = nullptr;
 
   // For --gdb-index
@@ -1734,24 +1734,15 @@ enum {
   NEEDS_TLSGD              = 1 << 4,
   NEEDS_COPYREL            = 1 << 5,
   NEEDS_TLSDESC            = 1 << 6,
-  NEEDS_THUMB_TO_ARM_THUNK = 1 << 7,
-
-  // This is used only by ARM64. Since the flag is used in a different
-  // phase than the above flags, we can reuse the same value.
-  NEEDS_RANGE_EXTN_THUNK   = 1 << 0,
+  NEEDS_RANGE_EXTN_THUNK   = 1 << 7,
 };
 
 // A struct to hold taret-dependent symbol members.
 template <typename E>
 struct SymbolExtras {};
 
-template <>
-struct SymbolExtras<ARM32> {
-  i32 thumb_to_arm_thunk_idx = -1;
-};
-
-template <>
-struct SymbolExtras<ARM64> {
+template <typename E> requires needs_thunk<E>
+struct SymbolExtras<E> {
   // For range extension thunks
   i32 thunk_idx = -1;
   i32 thunk_sym_idx = -1;
@@ -2227,11 +2218,6 @@ inline bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel
          !(shdr().sh_flags & SHF_EXECINSTR) &&
          (shdr().sh_addralign % sizeof(Word<E>)) == 0 &&
          (rel.r_offset % sizeof(Word<E>)) == 0;
-}
-
-inline u64
-RangeExtensionThunk<ARM64>::get_addr(i64 idx) const {
-  return output_section.shdr.sh_addr + offset + idx * ENTRY_SIZE;
 }
 
 template <typename E>

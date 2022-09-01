@@ -123,6 +123,11 @@ template <>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {}
 
+// ARM and Thumb branch instructions can jump within ±16 MiB.
+static bool is_jump_reachable(i64 val) {
+  return sign_extend(val, 24) == val;
+}
+
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
@@ -153,6 +158,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
 #define GOT ctx.got->shdr.sh_addr
 
+    auto get_thumb_thunk_addr = [&] {
+      RangeExtensionRef ref = extra.range_extn[i];
+      assert(ref.thunk_idx != -1);
+      u64 addr = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx);
+      assert(is_jump_reachable(addr + A - P));
+      return addr;
+    };
+
+    auto get_arm_thunk_addr = [&] {
+      return get_thumb_thunk_addr() + 4;
+    };
+
     switch (rel.r_type) {
     case R_ARM_ABS32:
     case R_ARM_TARGET1:
@@ -161,23 +178,34 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_REL32:
       *(ul32 *)loc = S + A - P;
       continue;
-    case R_ARM_THM_CALL:
+    case R_ARM_THM_CALL: {
       // THM_CALL relocation refers either BL or BLX instruction.
       // They are different in only one bit. We need to use BL if
       // the jump target is Thumb. Otherwise, use BLX.
+
       if (sym.esym().is_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
         write_thm_b_imm(loc, 4);
-        *(ul16 *)(loc + 2) |= 0x1000;  // rewrite with BL
-      } else if (T) {
-        write_thm_b_imm(loc, S + A - P);
-        *(ul16 *)(loc + 2) |= 0x1000;  // rewrite with BL
+        *(ul16 *)(loc + 2) |= 0x1000;  // rewrite to BL
+        continue;
+      }
+
+      u64 val = S + A - P;
+      if (is_jump_reachable(val)) {
+        if (T) {
+          write_thm_b_imm(loc, val);
+          *(ul16 *)(loc + 2) |= 0x1000;  // rewrite to BL
+        } else {
+          write_thm_b_imm(loc, align_to(val, 4));
+          *(ul16 *)(loc + 2) &= ~0x1000; // rewrite to BLX
+        }
       } else {
-        write_thm_b_imm(loc, align_to(S + A - P, 4));
-        *(ul16 *)(loc + 2) &= ~0x1000; // rewrite with BLX
+        write_thm_b_imm(loc, align_to(get_arm_thunk_addr() + A - P, 4));
+        *(ul16 *)(loc + 2) &= ~0x1000;  // rewrite to BLX
       }
       continue;
+    }
     case R_ARM_BASE_PREL:
       *(ul32 *)loc = GOT + A - P;
       continue;
@@ -200,33 +228,42 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
         *(ul32 *)loc = 0xeb00'0001;
-      } else if (T) {
-        u32 val = S + A - P;
-        *(ul32 *)loc = 0xfa00'0000 | (bit(val, 1) << 24) | bits(val, 25, 2);
+        continue;
+      }
+
+      u64 val = S + A - P;
+      if (is_jump_reachable(val)) {
+        if (T)
+          *(ul32 *)loc = 0xfa00'0000 | (bit(val, 1) << 24) | bits(val, 25, 2);
+        else
+          *(ul32 *)loc = 0xeb00'0000 | bits(val, 25, 2);
       } else {
-        *(ul32 *)loc = 0xeb00'0000 | bits(S + A - P, 25, 2);
+        *(ul32 *)loc = 0xeb00'0000 | bits(get_arm_thunk_addr() + A - P, 25, 2);
       }
       continue;
     }
     case R_ARM_JUMP24:
-      if (sym.esym().is_undef_weak())
+      if (sym.esym().is_undef_weak()) {
         *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | 1;
-      else
-        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(S + A - P, 25, 2);
+      } else {
+        u64 val = S + A - P;
+        if (!is_jump_reachable(val) || T)
+          val = get_arm_thunk_addr() + A - P;
+        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
+      }
       continue;
     case R_ARM_THM_JUMP11:
       assert(T);
       *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(S + A - P, 11, 1);
       continue;
     case R_ARM_THM_JUMP24:
-      if (T) {
-        write_thm_b_imm(loc, S + A - P);
+      if (sym.esym().is_undef_weak()) {
+        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | 1;
       } else {
-        assert(sym.extra.thumb_to_arm_thunk_idx != -1);
-        u64 thunk_addr =
-          ctx.thumb_to_arm->shdr.sh_addr +
-          sym.extra.thumb_to_arm_thunk_idx * ThumbToArmSection::ENTRY_SIZE;
-        write_thm_b_imm(loc, thunk_addr - P - 4);
+        u64 val = S + A - P;
+        if (!is_jump_reachable(val) || !T)
+          val = get_thumb_thunk_addr() + A - P;
+        write_thm_b_imm(loc, val);
       }
       continue;
     case R_ARM_MOVW_PREL_NC:
@@ -384,6 +421,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_THM_CALL:
     case R_ARM_CALL:
     case R_ARM_JUMP24:
+    case R_ARM_THM_JUMP24:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
@@ -391,12 +429,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_GOT_BREL:
     case R_ARM_TARGET2:
       sym.flags |= NEEDS_GOT;
-      break;
-    case R_ARM_THM_JUMP24:
-      if (sym.is_imported || sym.get_type() == STT_GNU_IFUNC)
-        sym.flags |= (NEEDS_PLT | NEEDS_THUMB_TO_ARM_THUNK);
-      else if (sym.esym().st_value % 2 == 0)
-        sym.flags |= NEEDS_THUMB_TO_ARM_THUNK;
       break;
     case R_ARM_MOVT_PREL:
     case R_ARM_THM_MOVT_PREL:
@@ -434,49 +466,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
-// If a function referenced by a Thumb B (branch) instruction is
-// resovled to a non-thumb function, we can't directly jump from the
-// thumb function to the ARM function. We can't rewrite B with BX
-// because there's no such BX instruction that takes an immediate.
-// BX takes only a register.
-//
-// In order to support such branch, we insert a small piece of code to
-// the resulting executable which switches the processor mode from
-// Thumb to ARM. This section contains such code.
-void ThumbToArmSection::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  if (sym->extra.thumb_to_arm_thunk_idx == -1) {
-    sym->extra.thumb_to_arm_thunk_idx = symbols.size();
-    symbols.push_back(sym);
-  }
-}
-
-void ThumbToArmSection::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_size = symbols.size() * ENTRY_SIZE;
-}
-
-void ThumbToArmSection::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-  i64 offset = 0;
-
-  static u8 insn[] = {
-    0x40, 0xf2, 0x00, 0x0c, // movw ip, $0
-    0xc0, 0xf2, 0x00, 0x0c, // movt ip, $0
-    0xfc, 0x44,             // add  ip, pc
-    0x60, 0x47,             // bx   ip
-  };
-
-  static_assert(sizeof(insn) == ENTRY_SIZE);
-
-  for (Symbol<E> *sym : symbols) {
-    memcpy(buf + offset, insn, sizeof(insn));
-
-    u32 val = sym->get_addr(ctx) - this->shdr.sh_addr - offset - 12;
-    write_thm_mov_imm(buf + offset, val);
-    write_thm_mov_imm(buf + offset + 4, val >> 16);
-    offset += sizeof(insn);
-  }
-}
-
 void TlsTrampolineSection::copy_buf(Context<E> &ctx) {
   // Trampoline code for TLSDESC
   static u32 insn[] = {
@@ -485,6 +474,67 @@ void TlsTrampolineSection::copy_buf(Context<E> &ctx) {
     0xe12fff11, // bx  r1
   };
   memcpy(ctx.buf + this->shdr.sh_offset, insn, sizeof(insn));
+}
+
+// For range extension thunks
+template <>
+bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
+                  InputSection<E> &isec, const ElfRel<E> &rel) {
+  // We pessimistically assume that PLT entries are unreacahble.
+  if (sym.has_plt(ctx))
+    return false;
+
+  // We create thunks with a pessimistic assumption that all
+  // out-of-section relocations would be out-of-range.
+  InputSection<E> *isec2 = sym.get_input_section();
+  if (!isec2 || isec.output_section != isec2->output_section)
+    return false;
+
+  if (isec2->offset == -1)
+    return false;
+
+  // Thumb and ARM B instructions cannot be converted to BX, so we
+  // always have to make them jump to a thunk even if their
+  // destinations are within their ranges.
+  bool is_thumb = sym.get_addr(ctx) & 1;
+  if ((rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
+      (rel.r_type == R_ARM_JUMP24 && is_thumb))
+    return false;
+
+  // Compute a distance between the relocated place and the symbol
+  // and check if they are within reach.
+  i64 S = sym.get_addr(ctx);
+  i64 A = isec.get_addend(rel);
+  i64 P = isec.get_addr() + rel.r_offset;
+  return is_jump_reachable(S + A - P);
+}
+
+template <>
+void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
+
+  // This is a range extension and mode switch thunk.
+  // It has two entry points: +0 for Thumb and +4 for ARM.
+  const u8 data[] = {
+    // .thumb
+    0xfc, 0x46,             //    mov  ip, pc
+    0x60, 0x47,             //    bx   ip  # jumps to the following `ldr` insn
+    // .arm
+    0x04, 0xc0, 0x9f, 0xe5, //    ldr  ip, 2f
+    0x0f, 0xc0, 0x8c, 0xe0, // 1: add  ip, ip, pc
+    0x1c, 0xff, 0x2f, 0xe1, //    bx   ip
+    0x00, 0x00, 0x00, 0x00, // 2: .word sym - 1b
+  };
+
+  static_assert(E::thunk_size == sizeof(data));
+
+  for (i64 i = 0; i < symbols.size(); i++) {
+    u64 S = symbols[i]->get_addr(ctx);
+    u64 P = output_section.shdr.sh_addr + offset + i * E::thunk_size;
+    u8 *loc = buf + i * E::thunk_size;
+    memcpy(loc , data, sizeof(data));
+    *(ul32 *)(loc + 16) = S - P - 16;
+  }
 }
 
 template <typename E>

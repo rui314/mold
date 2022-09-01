@@ -86,10 +86,8 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.note_package = push(new NotePackageSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
-  if constexpr (std::is_same_v<E, ARM32>) {
-    ctx.thumb_to_arm = push(new ThumbToArmSection);
+  if constexpr (std::is_same_v<E, ARM32>)
     ctx.tls_trampoline = push(new TlsTrampolineSection);
-  }
 
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
@@ -816,7 +814,7 @@ void compute_section_sizes(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.output_sections,
                          [&](std::unique_ptr<OutputSection<E>> &osec) {
     // This pattern will be processed in the next loop.
-    if constexpr (std::is_same_v<E, ARM64>)
+    if constexpr (needs_thunk<E>)
       if (osec->shdr.sh_flags & SHF_EXECINSTR)
         return;
 
@@ -860,12 +858,15 @@ void compute_section_sizes(Context<E> &ctx) {
     });
   });
 
-  // On ARM64, we may need to create so-called "range extension thunks" to
-  // extend branch instructions reach, as they can jump only to ±128 MiB.
-  // In this case, we compute the sizes of sections while inserting thunks.
-  // This pass cannot be parallelized (`create_range_extension_thunks` is
-  // parallelized internally, but the function itself is not thread-safe.
-  if constexpr (std::is_same_v<E, ARM64>)
+  // On ARM32 or ARM64, we may need to create so-called "range extension
+  // thunks" to extend branch instructions reach, as they can jump only
+  // to ±16 MiB or ±128 MiB, respecitvely.
+  //
+  // In the following loop, We compute the sizes of sections while
+  // inserting thunks. This pass cannot be parallelized. That is,
+  // create_range_extension_thunks is parallelized internally, but the
+  // function itself is not thread-safe.
+  if constexpr (needs_thunk<E>)
     for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
       if (osec->shdr.sh_flags & SHF_EXECINSTR)
         create_range_extension_thunks(ctx, *osec);
@@ -979,10 +980,6 @@ void scan_rels(Context<E> &ctx) {
         ctx.dynsym->add_symbol(ctx, alias);
       }
     }
-
-    if constexpr (std::is_same_v<E, ARM32>)
-      if (sym->flags & NEEDS_THUMB_TO_ARM_THUNK)
-        ctx.thumb_to_arm->add_symbol(ctx, sym);
 
     sym->flags = 0;
   }

@@ -192,6 +192,7 @@ target_sources(mold PRIVATE
   elf/output-chunks.cc
   elf/passes.cc
   elf/relocatable.cc
+  elf/thunks.cc
   filepath.cc
   git-hash.cc
   glob.cc

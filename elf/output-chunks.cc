@@ -871,7 +871,7 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     memset(buf + this_end, 0, next_start - this_end);
   });
 
-  if constexpr (std::is_same_v<E, ARM64>) {
+  if constexpr (needs_thunk<E>) {
     tbb::parallel_for_each(thunks,
                            [&](std::unique_ptr<RangeExtensionThunk<E>> &thunk) {
       thunk->copy_buf(ctx);
