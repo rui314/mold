@@ -2551,4 +2551,7 @@ inline std::string_view Symbol<E>::name() const {
   return {nameptr, (size_t)namelen};
 }
 
+template <typename E>
+u64 get_eflags(Context<E> &ctx);
+
 } // namespace mold::elf
