@@ -345,6 +345,9 @@ void report_undef_errors(Context<E> &ctx);
 //
 
 template <typename E>
+u64 get_eflags(Context<E> &ctx);
+
+template <typename E>
 bool is_relro(Context<E> &ctx, Chunk<E> *chunk);
 
 typedef enum { HEADER, OUTPUT_SECTION, SYNTHETIC } ChunkKind;
@@ -2550,8 +2553,5 @@ template <typename E>
 inline std::string_view Symbol<E>::name() const {
   return {nameptr, (size_t)namelen};
 }
-
-template <typename E>
-u64 get_eflags(Context<E> &ctx);
 
 } // namespace mold::elf

@@ -727,7 +727,7 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
 
 // Scan relocations to shrink sections.
 template <typename E>
-static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
+static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   isec.extra.r_deltas.resize(rels.size() + 1);
 
@@ -771,14 +771,13 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
 
       std::string_view contents = isec.contents;
       i64 rd = get_rd(*(ul32 *)(contents.data() + r.r_offset + 4));
-      bool rvc = get_eflags(ctx) & EF_RISCV_RVC;
 
-      if (rvc && rd == 0 && sign_extend(dist, 11) == dist) {
+      if (rd == 0 && sign_extend(dist, 11) == dist && use_rvc) {
         // If rd is x0 and the jump target is within ±2 KiB, we can use
         // C.J, saving 6 bytes.
         delta += 6;
-      } else if (rvc && rd == 1 && sign_extend(dist, 11) == dist
-                 && sizeof(Word<E>) == 4) {
+      } else if (rd == 1 && sign_extend(dist, 11) == dist
+                 && use_rvc && sizeof(Word<E>) == 4) {
         // If rd is x1 and the jump target is within ±2 KiB, we can use
         // C.JAL. This is RV32 only because C.JAL is RV32-only instruction.
         delta += 6;
@@ -878,12 +877,15 @@ template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx) {
   Timer t(ctx, "riscv_resize_sections");
 
+  // True if we can use the 2-byte instructions.
+  bool use_rvc = get_eflags(ctx) & EF_RISCV_RVC;
+
   // Find R_RISCV_CALL AND R_RISCV_CALL_PLT that can be relaxed.
   // This step should only shrink sections.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (is_resizable(ctx, isec.get()))
-        shrink_section(ctx, *isec);
+        shrink_section(ctx, *isec, use_rvc);
   });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
