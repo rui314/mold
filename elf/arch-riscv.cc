@@ -85,6 +85,13 @@ static void write_cjtype(u8 *loc, u32 val) {
 }
 
 template <typename E>
+static void check_int(Context<E> &ctx, const ElfRel<E> &rel, i64 val, i64 n) {
+  if (sign_extend(val, n) != val)
+    Fatal(ctx) << "unsupported relocation distance for "
+               << rel << ": " << val;
+}
+
+template <typename E>
 static void write_plt_header(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
@@ -259,12 +266,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       assert(sizeof(Word<E>) == 8);
       apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
-    case R_RISCV_BRANCH:
-      write_btype(loc, S + A - P);
+    case R_RISCV_BRANCH: {
+      i64 val = S + A - P;
+      check_int(ctx, rel, val, 13);
+      write_btype(loc, val);
       break;
-    case R_RISCV_JAL:
-      write_jtype(loc, S + A - P);
+    }
+    case R_RISCV_JAL: {
+      i64 val = S + A - P;
+      check_int(ctx, rel, val, 21);
+      write_jtype(loc, val);
       break;
+    }
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
       u32 rd = get_rd(*(ul32 *)(contents.data() + rel.r_offset + 4));
@@ -284,6 +297,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         assert(delta == 0);
         u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
+        check_int(ctx, rel, utype(val) >> 12, 20);
         write_utype(loc, val);
         write_itype(loc + 4, val);
       }
@@ -314,9 +328,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_LO12_S:
       write_stype(loc, S + A);
       break;
-    case R_RISCV_HI20:
-      write_utype(loc, S + A);
+    case R_RISCV_HI20: {
+      i64 val = S + A;
+      check_int(ctx, rel, utype(val) >> 12, 20);
+      write_utype(loc, val);
       break;
+    }
     case R_RISCV_TPREL_HI20:
       assert(delta == 0 || delta == 4);
       if (delta == 0)
@@ -381,12 +398,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul16 *)(loc + i) = 0x0001;     // c.nop
       break;
     }
-    case R_RISCV_RVC_BRANCH:
-      write_cbtype(loc, S + A - P);
+    case R_RISCV_RVC_BRANCH: {
+      i64 val = S + A - P;
+      check_int(ctx, rel, val, 9);
+      write_cbtype(loc, val);
       break;
-    case R_RISCV_RVC_JUMP:
-      write_cjtype(loc, S + A - P);
+    }
+    case R_RISCV_RVC_JUMP: {
+      i64 val = S + A - P;
+      check_int(ctx, rel, val, 12);
+      write_cjtype(loc, val);
       break;
+    }
     case R_RISCV_SUB6:
       *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
       break;
