@@ -85,13 +85,6 @@ static void write_cjtype(u8 *loc, u32 val) {
 }
 
 template <typename E>
-static void check_int(Context<E> &ctx, const ElfRel<E> &rel, i64 val, i64 n) {
-  if (sign_extend(val, n) != val)
-    Fatal(ctx) << "unsupported relocation distance for "
-               << rel << ": " << val;
-}
-
-template <typename E>
 static void write_plt_header(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
@@ -249,6 +242,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       frag_ref = &rel_fragments[frag_idx++];
 
+    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+      if (val < lo || hi <= val)
+        Error(ctx) << *this << ": relocation " << rel << " against "
+                   << sym << " out of range: " << val << " is not in ["
+                   << lo << ", " << hi << ")";
+    };
+
 #define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
 #define A   (frag_ref ? (u64)frag_ref->addend : (u64)rel.r_addend)
 #define P   (get_addr() + r_offset)
@@ -268,13 +268,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_BRANCH: {
       i64 val = S + A - P;
-      check_int(ctx, rel, val, 13);
+      overflow_check(val, -(1 << 12), 1 << 12);
       write_btype(loc, val);
       break;
     }
     case R_RISCV_JAL: {
       i64 val = S + A - P;
-      check_int(ctx, rel, val, 21);
+      overflow_check(val, -(1 << 20), 1 << 20);
       write_jtype(loc, val);
       break;
     }
@@ -297,7 +297,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         assert(delta == 0);
         u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
-        check_int(ctx, rel, utype(val) >> 12, 20);
+        overflow_check(val, -(1LL << 31), 1LL << 31);
         write_utype(loc, val);
         write_itype(loc + 4, val);
       }
@@ -330,7 +330,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_HI20: {
       i64 val = S + A;
-      check_int(ctx, rel, utype(val) >> 12, 20);
+      overflow_check(val, -(1LL << 31), 1LL << 31);
       write_utype(loc, val);
       break;
     }
@@ -400,13 +400,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
     case R_RISCV_RVC_BRANCH: {
       i64 val = S + A - P;
-      check_int(ctx, rel, val, 9);
+      overflow_check(val, -(1 << 8), 1 << 8);
       write_cbtype(loc, val);
       break;
     }
     case R_RISCV_RVC_JUMP: {
       i64 val = S + A - P;
-      check_int(ctx, rel, val, 12);
+      overflow_check(val, -(1 << 11), 1 << 11);
       write_cjtype(loc, val);
       break;
     }
