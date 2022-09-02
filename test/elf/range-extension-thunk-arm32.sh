@@ -14,6 +14,9 @@ mkdir -p $t
 
 [[ $MACHINE = arm* ]] || { echo skipped; exit; }
 
+echo 'int main() {}' | $CC -c -o- -xc - -O0 -mthumb >& /dev/null \
+  || { echo skipped; exit; }
+
 cat <<EOF > $t/a.c
 #include <stdio.h>
 
