@@ -13,17 +13,17 @@ t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
 if [ $MACHINE = x86_64 ]; then
-  dialect=gnu
+  mtls=-mtls-dialect=gnu
 elif [ $MACHINE = aarch64 ]; then
-  dialect=trad
-else
+  mtls=-mtls-dialect=trad
+elif [ $MACHINE '!=' riscv64 -a $MACHINE '!=' riscv32 ]; then
   echo skipped
   exit
 fi
 
 echo '{ global: bar; local: *; };' > $t/a.ver
 
-cat <<EOF | $GCC -mtls-dialect=$dialect -fPIC -c -o $t/b.o -xc -
+cat <<EOF | $GCC $mtls -fPIC -c -o $t/b.o -xc -
 _Thread_local int foo;
 
 int bar() {

@@ -12,7 +12,7 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+[ $MACHINE = x86_64 -o $MACHINE = riscv64 -o $MACHINE = riscv32 ] || { echo skipped; exit; }
 
 cat <<EOF | $CC -c -o $t/a.o -x assembler -
 .globl x, y
