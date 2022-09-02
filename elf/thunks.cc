@@ -1,3 +1,16 @@
+// RISC instructions are usually up to 4 bytes long, so the immediates
+// of their branch instructions are naturally smaller than 32 bits.
+// This is contrary to x86-64 on which branch instructions take 4
+// bytes immediates and can jump to anywhere within PC ± 2 GiB.
+//
+// In fact, ARM32's branch instructions can jump only within ±16 MiB
+// and ARM64's ±128 MiB. If a branch target is further than that, we
+// need to let it branch to a linker-synthesized code sequence that
+// construct a full 32 bit address in a register and jump there. That
+// linker-synthesized code is called "thunk".
+//
+// The function in this file creates thunks.
+
 #include "mold.h"
 
 #include <tbb/parallel_for.h>
@@ -14,11 +27,6 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
   }
 }
 
-// ARM64's call/jump instructions take 27 bits displacement, so they
-// can refer only up to ±128 MiB. If a branch target is further than
-// that, we need to let it branch to a linker-synthesized code
-// sequence that construct a full 32 bit address in a register and
-// jump there. That linker-synthesized code is called "thunk".
 template <typename E>
 void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   std::span<InputSection<E> *> members = osec.members;

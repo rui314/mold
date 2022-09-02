@@ -12,8 +12,8 @@
 // be switched using BX (branch and mode exchange)-family instructions.
 // We need to use such instructions to, for example, call a function
 // encoded in Thumb from a function encoded in ARM. Sometimes, the
-// linker even has to emit an interworking thunk code to switch from
-// Thumb to ARM.
+// linker even has to emit an interworking thunk code to switch between
+// them.
 //
 // ARM instructions are aligned to 4 byte boundaries. Thumb are to 2
 // byte boundaries.
@@ -246,6 +246,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.esym().is_undef_weak()) {
         *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | 1;
       } else {
+        // Unlike BL and BLX, we can't rewrite B to BX because BX doesn't
+        // takes an immediate; it takes only a register. So if mode switch
+        // is required, we jump to a linker-synthesized thunk which construct
+        // a branch destination in a register and branch to that address.
         u64 val = S + A - P;
         if (!is_jump_reachable(val) || T)
           val = get_arm_thunk_addr() + A - P;
@@ -260,6 +264,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.esym().is_undef_weak()) {
         *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | 1;
       } else {
+        // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
+        // switch processor mode.
         u64 val = S + A - P;
         if (!is_jump_reachable(val) || !T)
           val = get_thumb_thunk_addr() + A - P;
