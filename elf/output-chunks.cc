@@ -1045,7 +1045,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     i64 idx = sym->get_tlsgd_idx(ctx);
 
     if (ctx.arg.is_static) {
-      entries.push_back({idx, 1});
+      entries.push_back({idx, 1}); // One indicates the main executable file
       entries.push_back({idx + 1,
                          sym->get_addr(ctx) - ctx.tls_begin - E::tls_dtv_offset});
     } else {
