@@ -94,9 +94,8 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
         if (!needs_thunk_rel(rel))
           continue;
 
-        Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
-
         // Skip if the symbol is undefined. apply_reloc() will report an error.
+        Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
         if (!sym.file)
           continue;
 
@@ -141,9 +140,9 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     tbb::parallel_for_each(members.begin() + b, members.begin() + c,
                            [&](InputSection<E> *isec) {
       std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
+      std::vector<RangeExtensionRef> &range_extn = isec->extra.range_extn;
 
       for (i64 i = 0; i < rels.size(); i++) {
-        std::vector<RangeExtensionRef> &range_extn = isec->extra.range_extn;
         if (range_extn[i].thunk_idx == thunk.thunk_idx) {
           Symbol<E> &sym = *isec->file.symbols[rels[i].r_sym];
           range_extn[i].sym_idx = sym.extra.thunk_sym_idx;
