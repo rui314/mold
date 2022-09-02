@@ -1553,19 +1553,19 @@ struct RISCV64 {
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_tp_offset = 0;
 
-  // __tls_get_addr is called to resolve the TLV's address with the module
-  // number that the variable blongs to and the variable's offset within
-  // the module's TLS block. The module number and the offset are usually
-  // set to GOT slots by the dynamic linker as a result of resolving
-  // R_DTPMOD and R_DTPOFF dynamic relocations.
+  // When __tls_get_addr is called to resolve the TLV's address, it's
+  // given the module number that the variable belongs to and the
+  // variable's offset within the module's TLS block. The module number
+  // and the offset are usually set to GOT slots by the dynamic linker as
+  // the result of resolving R_DTPMOD and R_DTPOFF dynamic relocations.
   //
-  // On RISC-V, R_DTPMOD resolved to the address 0x800 past the start of
+  // On RISC-V, R_DTPOFF resolved to the address 0x800 past the start of
   // the TLS block to maximize the accessible range for load/store
   // instructions with 12-bits signed immediates.
   //
-  // In most cases we don't have to think about the bias, as the DTPMOD
+  // In most cases we don't have to think about the bias, as the DTPOFF
   // values are usually computed and used only by runtime. But when we do
-  // compute DTPMOD for statically-linked executable, we need to offset
+  // compute DTPOFF for statically-linked executable, we need to offset
   // the offset by subtracting 0x800.
   static constexpr u32 tls_dtv_offset = 0x800;
 };
