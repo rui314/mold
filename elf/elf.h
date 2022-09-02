@@ -1470,7 +1470,7 @@ struct ARM64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_offset = 16;
+  static constexpr u32 tls_tp_offset = 16;
 
   static constexpr u32 thunk_size = 12;
   static constexpr u32 thunk_max_distance = 100 * 1024 * 1024;
@@ -1506,7 +1506,7 @@ struct ARM32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_offset = 8;
+  static constexpr u32 tls_tp_offset = 8;
 
   static constexpr u32 thunk_size = 20;
   static constexpr u32 thunk_max_distance = 10 * 1024 * 1024;
@@ -1541,7 +1541,7 @@ struct RISCV64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_offset = 0;
+  static constexpr u32 tls_tp_offset = 0;
 };
 
 template <> struct ElfSym<RISCV64> : public Elf64Sym {};
@@ -1572,7 +1572,7 @@ struct RISCV32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_offset = 0;
+  static constexpr u32 tls_tp_offset = 0;
 };
 
 template <> struct ElfSym<RISCV32> : public Elf32Sym {};

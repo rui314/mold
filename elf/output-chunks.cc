@@ -1086,7 +1086,8 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>)
       entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_end});
     else
-      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin + E::tls_offset});
+      entries.push_back({idx,
+                         sym->get_addr(ctx) - ctx.tls_begin + E::tls_tp_offset});
   }
 
   if (tlsld_idx != -1)

@@ -312,11 +312,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - P;
       continue;
     case R_ARM_TLS_LE32:
-      *(ul32 *)loc = S + A - ctx.tls_begin + E::tls_offset;
+      *(ul32 *)loc = S + A - ctx.tls_begin + E::tls_tp_offset;
       continue;
     case R_ARM_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1)
-        *(ul32 *)loc = S - ctx.tls_begin + E::tls_offset;
+        *(ul32 *)loc = S - ctx.tls_begin + E::tls_tp_offset;
       else
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - P - 6;
       continue;
