@@ -248,8 +248,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         // Unlike BL and BLX, we can't rewrite B to BX because BX doesn't
         // takes an immediate; it takes only a register. So if mode switch
-        // is required, we jump to a linker-synthesized thunk which construct
-        // a branch destination in a register and branch to that address.
+        // is required, we jump to a linker-synthesized thunk which constructs
+        // a branch destination in a register and branches to that address.
         u64 val = S + A - P;
         if (!is_jump_reachable(val) || T)
           val = get_arm_thunk_addr() + A - P;
@@ -521,7 +521,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   // This is a range extension and mode switch thunk.
   // It has two entry points: +0 for Thumb and +4 for ARM.
-  const u8 data[] = {
+  const u8 entry[] = {
     // .thumb
     0xfc, 0x46,             //    mov  ip, pc
     0x60, 0x47,             //    bx   ip  # jumps to the following `ldr` insn
@@ -532,13 +532,14 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0x00, 0x00, 0x00, 0x00, // 2: .word sym - 1b
   };
 
-  static_assert(E::thunk_size == sizeof(data));
+  static_assert(E::thunk_size == sizeof(entry));
 
   for (i64 i = 0; i < symbols.size(); i++) {
+    u8 *loc = buf + i * sizeof(entry);
+    memcpy(loc, entry, sizeof(entry));
+
     u64 S = symbols[i]->get_addr(ctx);
-    u64 P = output_section.shdr.sh_addr + offset + i * E::thunk_size;
-    u8 *loc = buf + i * E::thunk_size;
-    memcpy(loc , data, sizeof(data));
+    u64 P = output_section.shdr.sh_addr + offset + i * sizeof(entry);
     *(ul32 *)(loc + 16) = S - P - 16;
   }
 }
