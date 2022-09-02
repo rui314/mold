@@ -75,12 +75,12 @@ static void write_jtype(u8 *loc, u32 val) {
 }
 
 static void write_cbtype(u8 *loc, u32 val) {
-  u32 mask = 0b1110001110000011;
+  u32 mask = 0b111'000'111'00000'11;
   *(ul16 *)loc = (*(ul16 *)loc & mask) | cbtype(val);
 }
 
 static void write_cjtype(u8 *loc, u32 val) {
-  u32 mask = 0b1110000000000011;
+  u32 mask = 0b111'00000000000'11;
   *(ul16 *)loc = (*(ul16 *)loc & mask) | cjtype(val);
 }
 
@@ -322,16 +322,29 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc = S + A - P;
       }
       break;
-    case R_RISCV_LO12_I:
-      write_itype(loc, S + A);
-      break;
-    case R_RISCV_LO12_S:
-      write_stype(loc, S + A);
-      break;
     case R_RISCV_HI20: {
+      assert(delta == 0 || delta == 4);
       i64 val = S + A;
       overflow_check(val, -(1LL << 31), 1LL << 31);
-      write_utype(loc, val);
+
+      if (delta == 0) {
+        write_utype(loc, val);
+      }
+      break;
+    }
+    case R_RISCV_LO12_I:
+    case R_RISCV_LO12_S: {
+      i64 val = S + A;
+      if (rel.r_type == R_RISCV_LO12_I)
+        write_itype(loc, val);
+      else
+        write_stype(loc, val);
+
+      // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
+      // x0-relative accessible.
+      if (sign_extend(val, 11) == val)
+        *(ul32 *)loc = (*(ul32 *)loc & 0b111111'11111'00000'111'11111'1111111);
+
       break;
     }
     case R_RISCV_TPREL_HI20:
@@ -732,11 +745,16 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
   isec.extra.r_deltas.resize(rels.size() + 1);
 
   i64 delta = 0;
+  i64 frag_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
     isec.extra.r_deltas[i] = delta;
+
+    const SectionFragmentRef<E> *frag_ref = nullptr;
+    if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == i)
+      frag_ref = &isec.rel_fragments[frag_idx++];
 
     // Handling R_RISCV_ALIGN is mandatory.
     //
@@ -810,6 +828,31 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tls_begin;
       if (sign_extend(val, 11) == val)
         delta += 4;
+      break;
+    }
+    case R_RISCV_HI20: {
+      // This relocation refers to an LUI instruction containing the high
+      // 20-bits to be relocated to an absolute symbol address.
+      // In some cases, LUI can be removed.
+
+      // val = S + A
+      i64 val = frag_ref
+        ? frag_ref->frag->get_addr(ctx) + (u64)frag_ref->addend
+        : sym.get_addr(ctx) + (u64)r.r_addend;
+      if (val % 2)
+        break;
+
+      // Here we need to skip undefined & weak symbols as well as symbols in the
+      // internal object.
+      if (sym.esym().is_undef_weak() || sym.file == ctx.internal_obj) {
+        break;
+      }
+
+      // The symbol address located within ±2 KiB, we can remove LUI.
+      if (sign_extend(val, 11) == val) {
+        delta += 4;
+        break;
+      }
       break;
     }
     }
