@@ -135,7 +135,7 @@ public:
     return output_section.shdr.sh_addr + offset + idx * E::thunk_size;
   }
 
-  static constexpr i64 alignment = 16;
+  static constexpr i64 alignment = 4;
   OutputSection<E> &output_section;
   i32 thunk_idx = -1;
   i64 offset = -1;
