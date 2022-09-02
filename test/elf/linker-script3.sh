@@ -22,6 +22,6 @@ cat <<EOF > $t/b.script
 INPUT(a.o)
 EOF
 
-$CC -o $t/exe -L$t/foo $t/b.script
+$CC -B. -o $t/exe -L$t/foo $t/b.script
 
 echo OK
