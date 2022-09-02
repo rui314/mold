@@ -1727,14 +1727,13 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 //
 
 enum {
-  NEEDS_GOT                = 1 << 0,
-  NEEDS_PLT                = 1 << 1,
-  NEEDS_CPLT               = 1 << 2,
-  NEEDS_GOTTP              = 1 << 3,
-  NEEDS_TLSGD              = 1 << 4,
-  NEEDS_COPYREL            = 1 << 5,
-  NEEDS_TLSDESC            = 1 << 6,
-  NEEDS_RANGE_EXTN_THUNK   = 1 << 7,
+  NEEDS_GOT     = 1 << 0,
+  NEEDS_PLT     = 1 << 1,
+  NEEDS_CPLT    = 1 << 2,
+  NEEDS_GOTTP   = 1 << 3,
+  NEEDS_TLSGD   = 1 << 4,
+  NEEDS_COPYREL = 1 << 5,
+  NEEDS_TLSDESC = 1 << 6,
 };
 
 // A struct to hold taret-dependent symbol members.

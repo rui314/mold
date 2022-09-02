@@ -112,8 +112,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
         // Otherwise, add the symbol to this thunk if it's not added already.
         range_extn[i] = {thunk.thunk_idx, -1};
 
-        if (!(sym.flags.fetch_or(NEEDS_RANGE_EXTN_THUNK) &
-              NEEDS_RANGE_EXTN_THUNK)) {
+        if (sym.flags.exchange(-1) == 0) {
           std::scoped_lock lock(thunk.mu);
           thunk.symbols.push_back(&sym);
         }
