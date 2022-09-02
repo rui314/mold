@@ -315,18 +315,31 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = S + A - ctx.tls_begin + E::tls_tp_offset;
       continue;
     case R_ARM_TLS_GOTDESC:
-      if (sym.get_tlsdesc_idx(ctx) == -1)
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
         *(ul32 *)loc = S - ctx.tls_begin + E::tls_tp_offset;
-      else
-        *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - P - 6;
+      } else if ((P - A) & 1) {
+        *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 6;
+      } else {
+        *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 4;
+      }
+      continue;
+    case R_ARM_TLS_CALL:
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
+        // BL -> NOP
+        *(ul32 *)loc = 0xe320'f000;
+      } else {
+        // BL __tls_trampoline
+        u64 val = ctx.tls_trampoline->shdr.sh_addr - P - 8;
+        *(ul32 *)loc = 0xeb00'0000 | bits(val, 25, 2);
+      }
       continue;
     case R_ARM_THM_TLS_CALL:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         // BL -> NOP
         *(ul32 *)loc = 0x8000'f3af;
       } else {
-        u64 addr = ctx.tls_trampoline->shdr.sh_addr;
-        write_thm_b_imm(loc, align_to(addr - P - 4, 4));
+        u64 val = align_to(ctx.tls_trampoline->shdr.sh_addr - P - 4, 4);
+        write_thm_b_imm(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       }
       continue;
@@ -463,6 +476,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_THM_MOVW_ABS_NC:
     case R_ARM_TLS_LDO32:
     case R_ARM_TLS_LE32:
+    case R_ARM_TLS_CALL:
     case R_ARM_THM_TLS_CALL:
     case R_ARM_V4BX:
       break;
