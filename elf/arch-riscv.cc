@@ -859,7 +859,7 @@ static void update_symbol_values(Context<E> &ctx, InputSection<E> &isec) {
 // symbol values. For example, if we replace AUIPC+JALR with JAL
 // (which saves 4 bytes), all relocations pointing to anywhere after
 // that location need to be shifted by 4. In addition to that, any
-// symbol that refers anywhere after that locatioin need to be shifted
+// symbol that refers anywhere after that location need to be shifted
 // by 4 bytes as well.
 //
 // For relocations, we use `r_deltas` array to memorize how many bytes
@@ -880,7 +880,7 @@ i64 riscv_resize_sections(Context<E> &ctx) {
   // True if we can use the 2-byte instructions.
   bool use_rvc = get_eflags(ctx) & EF_RISCV_RVC;
 
-  // Find R_RISCV_CALL AND R_RISCV_CALL_PLT that can be relaxed.
+  // Find all the relocations that can be relaxed.
   // This step should only shrink sections.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
