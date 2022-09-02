@@ -1046,7 +1046,8 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
 
     if (ctx.arg.is_static) {
       entries.push_back({idx, 1});
-      entries.push_back({idx + 1, sym->get_addr(ctx) - ctx.tls_begin});
+      entries.push_back({idx + 1,
+                         sym->get_addr(ctx) - ctx.tls_begin - E::tls_dtv_offset});
     } else {
       entries.push_back({idx, 0, E::R_DTPMOD, sym});
       entries.push_back({idx + 1, 0, E::R_DTPOFF, sym});
