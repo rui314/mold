@@ -14,7 +14,7 @@ mkdir -p $t
 
 [[ $MACHINE = arm* ]] || { echo skipped; exit; }
 
-cat <<EOF | $CC -o $t/a.o -c -xc - -mthumb
+cat <<EOF > $t/a.c
 #include <stdio.h>
 
 void fn3();
@@ -30,7 +30,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -o $t/b.o -c -xc - -marm
+cat <<EOF > $t/b.c
 #include <stdio.h>
 
 void fn1();
@@ -40,7 +40,17 @@ __attribute__((section(".high"))) void fn3() { printf(" fn3"); fn2(); }
 __attribute__((section(".high"))) void fn4() { printf(" fn4"); }
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o \
+$CC -c -o $t/c.o $t/a.c -O0 -mthumb
+$CC -c -o $t/d.o $t/b.c -O0 -marm
+
+$CC -B. -o $t/exe $t/c.o $t/d.o \
+  -Wl,--section-start=.low=0x10000000,--section-start=.high=0x20000000
+$QEMU $t/exe | grep -q 'main fn1 fn3 fn2 fn4'
+
+$CC -c -o $t/e.o $t/a.c -O2 -mthumb
+$CC -c -o $t/f.o $t/b.c -O2 -marm
+
+$CC -B. -o $t/exe $t/e.o $t/f.o \
   -Wl,--section-start=.low=0x10000000,--section-start=.high=0x20000000
 $QEMU $t/exe | grep -q 'main fn1 fn3 fn2 fn4'
 
