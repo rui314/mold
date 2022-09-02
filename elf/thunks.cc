@@ -82,6 +82,8 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     offset = align_to(offset, thunk.alignment);
     thunk.offset = offset;
 
+    std::mutex mu;
+
     // Scan relocations between B and C to collect symbols that need thunks.
     tbb::parallel_for_each(members.begin() + b, members.begin() + c,
                            [&](InputSection<E> *isec) {
@@ -113,7 +115,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
         range_extn[i] = {thunk.thunk_idx, -1};
 
         if (sym.flags.exchange(-1) == 0) {
-          std::scoped_lock lock(thunk.mu);
+          std::scoped_lock lock(mu);
           thunk.symbols.push_back(&sym);
         }
       }
