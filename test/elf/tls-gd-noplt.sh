@@ -13,15 +13,15 @@ t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
 if [ $MACHINE = x86_64 ]; then
-  dialect=gnu
+  mtls=-mtls-dialect=gnu
 elif [ $MACHINE = aarch64 ]; then
-  dialect=trad
-else
+  mtls=-mtls-dialect=trad
+elif [ $MACHINE '!=' riscv64 -a $MACHINE '!=' riscv32 ]; then
   echo skipped
   exit
 fi
 
-cat <<EOF | $GCC -mtls-dialect=$dialect -fPIC -fno-plt -c -o $t/a.o -xc -
+cat <<EOF | $GCC $mtls -fPIC -fno-plt -c -o $t/a.o -xc -
 #include <stdio.h>
 
 static _Thread_local int x1 = 1;
@@ -39,14 +39,14 @@ int main() {
 }
 EOF
 
-cat <<EOF | $GCC -mtls-dialect=$dialect -fPIC -fno-plt -c -o $t/b.o -xc -
+cat <<EOF | $GCC $mtls -fPIC -fno-plt -c -o $t/b.o -xc -
 _Thread_local int x3 = 3;
 static _Thread_local int x5 = 5;
 int get_x5() { return x5; }
 EOF
 
 
-cat <<EOF | $GCC -mtls-dialect=$dialect -fPIC -fno-plt -c -o $t/c.o -xc -
+cat <<EOF | $GCC $mtls -fPIC -fno-plt -c -o $t/c.o -xc -
 _Thread_local int x4 = 4;
 static _Thread_local int x6 = 6;
 int get_x6() { return x6; }
