@@ -612,7 +612,7 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 // are usually put into a mergeable section by a compiler. If the same
 // string literal happen to occur in two different translation units,
 // a linker merges them into a single instance of a string, so that
-// a linker's output doens't contain duplicate string literals.
+// a linker's output doesn't contain duplicate string literals.
 //
 // Handling relocations referring mergeable sections is a bit tricky.
 // Assume that we have a mergeable section with the following contents
