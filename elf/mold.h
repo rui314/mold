@@ -167,9 +167,8 @@ inline bool needs_thunk_rel(const ElfRel<ARM64> &r) {
 
 template <>
 inline bool needs_thunk_rel(const ElfRel<ARM32> &r) {
-  return r.r_type == R_ARM_JUMP24   || r.r_type == R_ARM_THM_JUMP24 ||
-         r.r_type == R_ARM_CALL     || r.r_type == R_ARM_THM_CALL ||
-         r.r_type == R_ARM_TLS_CALL || r.r_type == R_ARM_THM_TLS_CALL;
+  return r.r_type == R_ARM_JUMP24 || r.r_type == R_ARM_THM_JUMP24 ||
+         r.r_type == R_ARM_CALL   || r.r_type == R_ARM_THM_CALL;
 }
 
 //

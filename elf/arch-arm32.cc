@@ -135,6 +135,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   i64 frag_idx = 0;
+  i64 trampoline_idx = 0;
 
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
@@ -171,11 +172,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       return get_thumb_thunk_addr() + 4;
     };
 
-    auto get_trampoline_addr = [&] {
-      RangeExtensionRef ref = extra.range_extn[i];
-      assert(ref.has_value());
-      RangeExtensionThunk<E> &thunk = *output_section->thunks[ref.thunk_idx];
-      return output_section->shdr.sh_addr + thunk.offset;
+    auto get_trampoline_addr = [&](u64 addr) {
+      for (; trampoline_idx < output_section->thunks.size(); trampoline_idx++) {
+        RangeExtensionThunk<E> &thunk = *output_section->thunks[trampoline_idx];
+        i64 disp = output_section->shdr.sh_addr + thunk.offset - addr;
+        if (is_jump_reachable(disp))
+          return disp;
+      }
+      unreachable();
     };
 
     switch (rel.r_type) {
@@ -338,8 +342,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc = 0xe320'f000;
       } else {
         // BL <tls_trampoline>
-        u64 val = get_trampoline_addr() - P - 8;
-        *(ul32 *)loc = 0xeb00'0000 | bits(val, 25, 2);
+        *(ul32 *)loc = 0xeb00'0000 | bits(get_trampoline_addr(P + 8), 25, 2);
       }
       continue;
     case R_ARM_THM_TLS_CALL:
@@ -347,7 +350,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // BL -> NOP
         *(ul32 *)loc = 0x8000'f3af;
       } else {
-        u64 val = align_to(get_trampoline_addr() - P - 4, 4);
+        u64 val = align_to(get_trampoline_addr(P + 4), 4);
         write_thm_b_imm(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       }
@@ -520,13 +523,6 @@ bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
   bool is_thumb = sym.get_addr(ctx) & 1;
   if ((rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
       (rel.r_type == R_ARM_JUMP24 && is_thumb))
-    return false;
-
-  // TLS_CALL relocations are always considered unreachable if they
-  // need a TLS trampoline because we create a TLS trampoline in a
-  // thunk.
-  if ((rel.r_type == R_ARM_TLS_CALL || rel.r_type == R_ARM_THM_TLS_CALL) &&
-      sym.get_tlsdesc_idx(ctx) == -1)
     return false;
 
   // Compute a distance between the relocated place and the symbol
