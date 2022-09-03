@@ -1385,6 +1385,10 @@ template <typename E>
 inline constexpr bool needs_thunk = requires { E::thunk_size; };
 
 template <typename E>
+inline constexpr bool is_riscv =
+  std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>;
+
+template <typename E>
 using Word = typename E::Word;
 
 struct X86_64 {

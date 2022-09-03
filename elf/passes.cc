@@ -434,7 +434,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
   if constexpr (supports_tlsdesc<E>)
     ctx._TLS_MODULE_BASE_ = add("_TLS_MODULE_BASE_");
 
-  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>)
+  if constexpr (is_riscv<E>)
     if (!ctx.arg.shared)
       ctx.__global_pointer = add("__global_pointer$");
 

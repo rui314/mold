@@ -277,13 +277,8 @@ struct InputSectionExtras<E> {
   std::vector<RangeExtensionRef> range_extn;
 };
 
-template <>
-struct InputSectionExtras<RISCV64> {
-  std::vector<i32> r_deltas;
-};
-
-template <>
-struct InputSectionExtras<RISCV32> {
+template <typename E> requires is_riscv<E>
+struct InputSectionExtras<E> {
   std::vector<i32> r_deltas;
 };
 

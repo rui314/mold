@@ -642,7 +642,7 @@ static int elf_main(int argc, char **argv) {
   // that they can jump to anywhere in ±2 GiB by default. They may
   // be replaced with shorter instruction sequences if destinations
   // are close enough. Do this optimization.
-  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>)
+  if constexpr (is_riscv<E>)
     filesize = riscv_resize_sections(ctx);
 
   // Fix linker-synthesized symbol addresses.

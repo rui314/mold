@@ -343,7 +343,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   // RISC-V object files contains lots of local symbols, so by default
   // we discard them. This is compatible with GNU ld.
-  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>)
+  if constexpr (is_riscv<E>)
     ctx.arg.discard_locals = true;
 
   auto read_arg = [&](std::string name) {

@@ -52,7 +52,7 @@ u64 get_eflags(Context<E> &ctx) {
   if constexpr (std::is_same_v<E, ARM32>)
     return EF_ARM_EABI_VER5;
 
-  if constexpr (std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>) {
+  if constexpr (is_riscv<E>) {
     std::vector<ObjectFile<E> *> objs = ctx.objs;
     std::erase(objs, ctx.internal_obj);
 
