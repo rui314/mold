@@ -1562,20 +1562,27 @@ struct RISCV64 {
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_tp_offset = 0;
 
-  // When __tls_get_addr is called to resolve the TLV's address, it's
-  // given the module number that the variable belongs to and the
-  // variable's offset within the module's TLS block. The module number
-  // and the offset are usually set to GOT slots by the dynamic linker as
-  // the result of resolving R_DTPMOD and R_DTPOFF dynamic relocations.
+  // When __tls_get_addr is called to resolve a thread-local variable's
+  // address, the following two arguments are passed to the function:
   //
-  // On RISC-V, R_DTPOFF resolved to the address 0x800 past the start of
-  // the TLS block to maximize the accessible range for load/store
-  // instructions with 12-bits signed immediates.
+  // 1. the module number that the variable belongs, and
+  // 2. the variable's offset within the module's TLS block.
+  //
+  // These values are usually computed by the dynamic linker and set to
+  // GOT slots as a result of resolving R_DTPMOD and R_DTPOFF dynamic
+  // relocations.
+  //
+  // On RISC-V, R_DTPOFF is resolved to the address 0x800 past the start
+  // of the TLS block. The bias maximizes the accessible range for
+  // load/store instructions with 12-bits signed immediates. That is, if
+  // the offset was right at the beginning of the start of the TLS block,
+  // the half of addressible space (negative immediates) would have been
+  // wasted.
   //
   // In most cases we don't have to think about the bias, as the DTPOFF
   // values are usually computed and used only by runtime. But when we do
   // compute DTPOFF for statically-linked executable, we need to offset
-  // the offset by subtracting 0x800.
+  // the bias by subtracting 0x800.
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
