@@ -52,8 +52,8 @@ static void write_thm_b_imm(u8 *loc, u32 val) {
   u32 imm11 = bits(val, 11, 1);
 
   ul16 *buf = (ul16 *)loc;
-  buf[0] = (buf[0] & 0x1111'1000'0000'0000) | (sign << 10) | imm10;
-  buf[1] = (buf[1] & 0x1101'0000'0000'0000) | (J1 << 13) | (J2 << 11) | imm11;
+  buf[0] = (buf[0] & 0b1111'1000'0000'0000) | (sign << 10) | imm10;
+  buf[1] = (buf[1] & 0b1101'0000'0000'0000) | (J1 << 13) | (J2 << 11) | imm11;
 }
 
 static void write_thm_mov_imm(u8 *loc, u32 val) {
