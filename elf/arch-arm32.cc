@@ -170,6 +170,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       return get_thumb_thunk_addr() + 4;
     };
 
+    auto get_trampoline_addr = [&] {
+      RangeExtensionRef ref = extra.range_extn[i];
+      assert(ref.thunk_idx != -1);
+      RangeExtensionThunk<E> &thunk = *output_section->thunks[ref.thunk_idx];
+      return output_section->shdr.sh_addr + thunk.offset;
+    };
+
     switch (rel.r_type) {
     case R_ARM_ABS32:
     case R_ARM_TARGET1:
@@ -328,8 +335,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // BL -> NOP
         *(ul32 *)loc = 0xe320'f000;
       } else {
-        // BL __tls_trampoline
-        u64 val = ctx.tls_trampoline->shdr.sh_addr - P - 8;
+        // BL <tls_trampoline>
+        u64 val = get_trampoline_addr() - P - 8;
         *(ul32 *)loc = 0xeb00'0000 | bits(val, 25, 2);
       }
       continue;
@@ -338,7 +345,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // BL -> NOP
         *(ul32 *)loc = 0x8000'f3af;
       } else {
-        u64 val = align_to(ctx.tls_trampoline->shdr.sh_addr - P - 4, 4);
+        u64 val = align_to(get_trampoline_addr() - P - 4, 4);
         write_thm_b_imm(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       }
@@ -486,16 +493,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
-void TlsTrampolineSection::copy_buf(Context<E> &ctx) {
-  // Trampoline code for TLSDESC
-  static u32 insn[] = {
-    0xe08e0000, // add r0, lr, r0
-    0xe5901004, // ldr r1, [r0, #4]
-    0xe12fff11, // bx  r1
-  };
-  memcpy(ctx.buf + this->shdr.sh_offset, insn, sizeof(insn));
-}
-
 // For range extension thunks
 template <>
 bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
@@ -521,6 +518,13 @@ bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
       (rel.r_type == R_ARM_JUMP24 && is_thumb))
     return false;
 
+  // TLS_CALL relocations are always considered unreachable if they
+  // need a TLS trampoline because we create a TLS trampoline in a
+  // thunk.
+  if ((rel.r_type == R_ARM_TLS_CALL || rel.r_type == R_ARM_THM_TLS_CALL) &&
+      sym.get_tlsdesc_idx(ctx) == -1)
+    return false;
+
   // Compute a distance between the relocated place and the symbol
   // and check if they are within reach.
   i64 S = sym.get_addr(ctx);
@@ -532,6 +536,15 @@ bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
 template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
+
+  // TLS trampoline code. ARM32's TLSDESC is designed so that this
+  // common piece of code is factored out from object files to reduce
+  // output size. Since no one provide, the linker has to synthesize it.
+  static u32 hdr[] = {
+    0xe08e0000, // add r0, lr, r0
+    0xe5901004, // ldr r1, [r0, #4]
+    0xe12fff11, // bx  r1
+  };
 
   // This is a range extension and mode switch thunk.
   // It has two entry points: +0 for Thumb and +4 for ARM.
@@ -546,14 +559,17 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0x00, 0x00, 0x00, 0x00, // 2: .word sym - 1b
   };
 
+  static_assert(E::thunk_hdr_size == sizeof(hdr));
   static_assert(E::thunk_size == sizeof(entry));
 
+  memcpy(buf, hdr, sizeof(hdr));
+
   for (i64 i = 0; i < symbols.size(); i++) {
-    u8 *loc = buf + i * sizeof(entry);
+    u8 *loc = buf + sizeof(hdr) + i * sizeof(entry);
     memcpy(loc, entry, sizeof(entry));
 
     u64 S = symbols[i]->get_addr(ctx);
-    u64 P = output_section.shdr.sh_addr + offset + i * sizeof(entry);
+    u64 P = output_section.shdr.sh_addr + offset + sizeof(hdr) + i * sizeof(entry);
     *(ul32 *)(loc + 16) = S - P - 16;
   }
 }

@@ -128,11 +128,12 @@ template <typename E> requires needs_thunk<E>
 class RangeExtensionThunk<E> {
 public:
   RangeExtensionThunk(OutputSection<E> &osec) : output_section(osec) {}
-  i64 size() const { return symbols.size() * E::thunk_size; }
+  i64 size() const { return E::thunk_hdr_size + symbols.size() * E::thunk_size; }
   void copy_buf(Context<E> &ctx);
 
   u64 get_addr(i64 idx) const {
-    return output_section.shdr.sh_addr + offset + idx * E::thunk_size;
+    return output_section.shdr.sh_addr + offset + E::thunk_hdr_size +
+           idx * E::thunk_size;
   }
 
   static constexpr i64 alignment = 4;
@@ -159,13 +160,14 @@ inline bool needs_thunk_rel(const ElfRel<E> &r);
 
 template <>
 inline bool needs_thunk_rel(const ElfRel<ARM64> &r) {
-  return r.r_type == R_AARCH64_CALL26 || r.r_type == R_AARCH64_JUMP26;
+  return r.r_type == R_AARCH64_JUMP26 || r.r_type == R_AARCH64_CALL26;
 }
 
 template <>
 inline bool needs_thunk_rel(const ElfRel<ARM32> &r) {
-  return r.r_type == R_ARM_CALL ||  r.r_type == R_ARM_JUMP24 ||
-         r.r_type == R_ARM_THM_CALL || r.r_type == R_ARM_THM_JUMP24;
+  return r.r_type == R_ARM_JUMP24   || r.r_type == R_ARM_THM_JUMP24 ||
+         r.r_type == R_ARM_CALL     || r.r_type == R_ARM_THM_CALL ||
+         r.r_type == R_ARM_TLS_CALL || r.r_type == R_ARM_THM_TLS_CALL;
 }
 
 //
@@ -1379,19 +1381,6 @@ template <typename E> void write_dependency_file(Context<E> &);
 // arch-arm32.cc
 //
 
-class TlsTrampolineSection : public Chunk<ARM32> {
-public:
-  TlsTrampolineSection() {
-    this->name = ".tls_trampoline";
-    this->shdr.sh_type = SHT_PROGBITS;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = 4;
-    this->shdr.sh_size = 12;
-  }
-
-  void copy_buf(Context<ARM32> &ctx) override;
-};
-
 void sort_arm_exidx(Context<ARM32> &ctx);
 
 //
@@ -1658,7 +1647,6 @@ struct Context {
   NotePackageSection<E> *note_package = nullptr;
   NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
-  TlsTrampolineSection *tls_trampoline = nullptr;
 
   // For --gdb-index
   Chunk<E> *debug_info = nullptr;
