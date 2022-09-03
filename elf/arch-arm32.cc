@@ -51,9 +51,9 @@ static void write_thm_b_imm(u8 *loc, u32 val) {
   u32 imm10 = bits(val, 21, 12);
   u32 imm11 = bits(val, 11, 1);
 
-  *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | (sign << 10) | imm10;
-  *(ul16 *)(loc + 2) =
-    (*(ul16 *)(loc + 2) & 0xd000) | (J1 << 13) | (J2 << 11) | imm11;
+  ul16 *buf = (ul16 *)loc;
+  buf[0] = (buf[0] & 0x1111'1000'0000'0000) | (sign << 10) | imm10;
+  buf[1] = (buf[1] & 0x1101'0000'0000'0000) | (J1 << 13) | (J2 << 11) | imm11;
 }
 
 static void write_thm_mov_imm(u8 *loc, u32 val) {
@@ -62,9 +62,10 @@ static void write_thm_mov_imm(u8 *loc, u32 val) {
   u32 i = bit(val, 11);
   u32 imm3 = bits(val, 10, 8);
   u32 imm8 = bits(val, 7, 0);
-  *(ul16 *)loc = (*(ul16 *)loc & 0b1111'1011'1111'0000) | (i << 10) | imm4;
-  *(ul16 *)(loc + 2) =
-    ((*(ul16 *)(loc + 2)) & 0b1000'1111'0000'0000) | (imm3 << 12) | imm8;
+
+  ul16 *buf = (ul16 *)loc;
+  buf[0] = (buf[0] & 0b1111'1011'1111'0000) | (i << 10) | imm4;
+  buf[1] = (buf[1] & 0b1000'1111'0000'0000) | (imm3 << 12) | imm8;
 }
 
 template <>
