@@ -107,12 +107,14 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
         // If the symbol is already in another thunk, reuse it.
         if (sym.extra.thunk_idx != -1) {
-          range_extn[i] = {sym.extra.thunk_idx, sym.extra.thunk_sym_idx};
+          range_extn[i].thunk_idx = sym.extra.thunk_idx;
+          range_extn[i].sym_idx = sym.extra.thunk_sym_idx;
           continue;
         }
 
         // Otherwise, add the symbol to this thunk if it's not added already.
-        range_extn[i] = {thunk.thunk_idx, -1};
+        range_extn[i].thunk_idx = thunk.thunk_idx;
+        range_extn[i].sym_idx = -1;
 
         if (sym.flags.exchange(-1) == 0) {
           std::scoped_lock lock(mu);
