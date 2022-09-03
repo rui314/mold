@@ -721,7 +721,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
                                          (i32)(offset - offsets[idx])};
     }
 
-    isec->rel_fragments[frag_idx++] = {nullptr, -1, -1};
+    isec->rel_fragments[frag_idx] = {nullptr, -1, -1};
   }
 
   // Initialize sym_fragments
