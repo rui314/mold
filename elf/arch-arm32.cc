@@ -518,8 +518,8 @@ bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
     return false;
 
   // Thumb and ARM B instructions cannot be converted to BX, so we
-  // always have to make them jump to a thunk even if their
-  // destinations are within their ranges.
+  // always have to make them jump to a thunk to switch processor mode
+  // even if their destinations are within their ranges.
   bool is_thumb = sym.get_addr(ctx) & 1;
   if ((rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
       (rel.r_type == R_ARM_JUMP24 && is_thumb))
