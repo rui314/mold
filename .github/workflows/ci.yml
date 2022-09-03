@@ -106,8 +106,6 @@ jobs:
 
         ln -sf /usr/local/rv32/sysroot /usr/riscv32-linux-gnu
         ln -sf /usr/local/rv32/bin/riscv32-unknown-linux-gnu-objdump /usr/bin/riscv32-linux-gnu-objdump
-        ln -sf /usr/local/rv32/bin/riscv32-unknown-linux-gnu-objdump /usr/bin/riscv32-linux-gnu-objdump
-
         echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-gcc -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-gcc
         echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-g++ -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-g++
         chmod 755 /usr/bin/riscv32-linux-gnu-gcc /usr/bin/riscv32-linux-gnu-g++
