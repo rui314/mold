@@ -146,8 +146,8 @@ public:
 struct RangeExtensionRef {
   bool has_value() const { return thunk_idx != 0x3fff && sym_idx != 0x3ffff; }
 
-  u32 thunk_idx : 14 = -1;
-  u32 sym_idx : 18 = -1;
+  u32 thunk_idx : 14 = 0x3fff;
+  u32 sym_idx : 18 = 0x3ffff;
 };
 
 template <typename E>

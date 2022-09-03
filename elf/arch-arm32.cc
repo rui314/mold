@@ -324,7 +324,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         *(ul32 *)loc = S - ctx.tls_begin + E::tls_tp_offset;
-      } else if ((P - A) & 1) {
+      } else if (A & 1) {
+        // A is odd if the corresponding TLS_CALL is Thumb.
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 6;
       } else {
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 4;
@@ -507,6 +508,8 @@ bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
   if (!isec2 || isec.output_section != isec2->output_section)
     return false;
 
+  // If the target section is in the same output section but hasn't got
+  // any address yet, that's unreacahble.
   if (isec2->offset == -1)
     return false;
 
