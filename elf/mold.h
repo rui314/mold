@@ -71,6 +71,7 @@ template <typename E> class ROutputEhdr;
 template <typename E> class ROutputShdr;
 template <typename E> class RStrtabSection;
 template <typename E> class RSymtabSection;
+template <typename E> class RObjectFile;
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
@@ -1262,6 +1263,9 @@ template <typename E>
 void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
+void parse_linker_script_relocatable(Context<E> &, MappedFile<Context<E>> *);
+
+template <typename E>
 MachineType get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
@@ -1302,7 +1306,119 @@ void icf_sections(Context<E> &ctx);
 //
 
 template <typename E>
+class RChunk {
+public:
+  RChunk() {
+    out_shdr.sh_addralign = 1;
+  }
+
+  virtual ~RChunk() = default;
+  virtual void update_shdr(Context<E> &ctx) {}
+  virtual void write_to(Context<E> &ctx) = 0;
+
+  std::string_view name;
+  i64 shndx = 0;
+  ElfShdr<E> in_shdr = {};
+  ElfShdr<E> out_shdr = {};
+};
+
+template <typename E>
+class RInputSection : public RChunk<E> {
+public:
+  RInputSection(Context<E> &ctx, RObjectFile<E> &file, const ElfShdr<E> &shdr);
+  void update_shdr(Context<E> &ctx) override;
+  void write_to(Context<E> &ctx) override;
+
+  RObjectFile<E> &file;
+};
+
+template <typename E>
+class RSymtabSection : public RChunk<E> {
+public:
+  RSymtabSection() {
+    this->name = ".symtab";
+    this->out_shdr.sh_type = SHT_SYMTAB;
+    this->out_shdr.sh_entsize = sizeof(ElfSym<E>);
+    this->out_shdr.sh_addralign = sizeof(Word<E>);
+  }
+
+  void add_local_symbol(Context<E> &ctx, RObjectFile<E> &file, i64 idx);
+  void add_global_symbol(Context<E> &ctx, RObjectFile<E> &file, i64 idx);
+  void update_shdr(Context<E> &ctx) override;
+  void write_to(Context<E> &ctx) override;
+
+  std::unordered_map<std::string_view, i64> sym_map;
+  std::vector<ElfSym<E>> syms{1};
+};
+
+template <typename E>
+class RStrtabSection : public RChunk<E> {
+public:
+  RStrtabSection(std::string_view name) {
+    this->name = name;
+    this->out_shdr.sh_type = SHT_STRTAB;
+    this->out_shdr.sh_size = 1;
+  }
+
+  i64 add_string(std::string_view str);
+  void write_to(Context<E> &ctx) override;
+
+  std::unordered_map<std::string_view, i64> strings;
+};
+
+template <typename E>
+class ROutputEhdr : public RChunk<E> {
+public:
+  ROutputEhdr() {
+    this->out_shdr.sh_size = sizeof(ElfEhdr<E>);
+  }
+
+  void write_to(Context<E> &ctx) override;
+};
+
+template <typename E>
+class ROutputShdr : public RChunk<E> {
+public:
+  ROutputShdr() {
+    this->out_shdr.sh_size = sizeof(ElfShdr<E>);
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void write_to(Context<E> &ctx) override;
+};
+
+template <typename E>
+class RObjectFile {
+public:
+  RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mf, bool is_alive);
+
+  static RObjectFile *create(Context<E> &ctx, MappedFile<Context<E>> &mf,
+                            bool is_alive);
+
+  void remove_comdats(Context<E> &ctx,
+                      std::unordered_set<std::string_view> &groups);
+
+  template <typename T>
+  std::span<T> get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
+
+  MappedFile<Context<E>> &mf;
+  std::span<ElfShdr<E>> elf_sections;
+  std::vector<std::unique_ptr<RInputSection<E>>> sections;
+  std::span<const ElfSym<E>> syms;
+  std::vector<i64> symidx;
+  std::unordered_set<std::string_view> defined_syms;
+  std::unordered_set<std::string_view> undef_syms;
+  i64 symtab_shndx = 0;
+  i64 first_global = 0;
+  bool is_alive;
+  const char *strtab = nullptr;
+  const char *shstrtab = nullptr;
+};
+
+template <typename E>
 void combine_objects(Context<E> &ctx, std::span<std::string> file_args);
+template <typename E>
+void read_file_relocatable(Context<E> &, MappedFile<Context<E>> *);
 
 //
 // mapfile.cc
@@ -1581,6 +1697,7 @@ struct Context {
 
   tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> obj_pool;
   tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> dso_pool;
+  tbb::concurrent_vector<std::unique_ptr<RObjectFile<E>>> relocatable_obj_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
   tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> chunk_pool;
@@ -1594,6 +1711,9 @@ struct Context {
   // Input files
   std::vector<ObjectFile<E> *> objs;
   std::vector<SharedFile<E> *> dsos;
+
+  // Relocatable files
+  std::vector<RObjectFile<E> *> relocatable_objs;
 
   ObjectFile<E> *internal_obj = nullptr;
   std::vector<ElfSym<E>> internal_esyms;

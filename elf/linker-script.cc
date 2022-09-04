@@ -187,14 +187,15 @@ static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view to
 
 template <typename E>
 static std::span<std::string_view>
-read_group(Context<E> &ctx, std::span<std::string_view> tok) {
+read_group(Context<E> &ctx, std::span<std::string_view> tok,
+  std::function<void(Context<E> &, MappedFile<Context<E>> *)> read_file) {
   tok = skip(ctx, tok, "(");
 
   while (!tok.empty() && tok[0] != ")") {
     if (tok[0] == "AS_NEEDED") {
       bool orig = ctx.as_needed;
       ctx.as_needed = true;
-      tok = read_group(ctx, tok.subspan(1));
+      tok = read_group(ctx, tok.subspan(1), read_file);
       ctx.as_needed = orig;
       continue;
     }
@@ -220,7 +221,9 @@ void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     if (tok[0] == "OUTPUT_FORMAT") {
       tok = read_output_format(ctx, tok.subspan(1));
     } else if (tok[0] == "INPUT" || tok[0] == "GROUP") {
-      tok = read_group(ctx, tok.subspan(1));
+      std::function<void(Context<E> &, MappedFile<Context<E>> *)>
+        func = read_file<E>;
+      tok = read_group(ctx, tok.subspan(1), func);
     } else if (tok[0] == "VERSION") {
       tok = tok.subspan(1);
       tok = skip(ctx, tok, "{");
@@ -237,6 +240,24 @@ void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     }
   }
 }
+
+template <typename E>
+void parse_linker_script_relocatable(Context<E> &ctx,
+                                     MappedFile<Context<E>> *mf) {
+  current_file<E> = mf;
+
+  std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
+  std::span<std::string_view> tok = vec;
+
+  while (!tok.empty()) {
+    if (tok[0] == "INPUT" || tok[0] == "GROUP") {
+      std::function<void(Context<E> &, MappedFile<Context<E>> *)>
+        func = read_file_relocatable<E>;
+      tok = read_group(ctx, tok.subspan(1), func);
+    }
+  }
+}
+
 
 template <typename E>
 MachineType get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
@@ -406,6 +427,8 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
 #define INSTANTIATE(E)                                                          \
   template                                                                      \
   void parse_linker_script(Context<E> &, MappedFile<Context<E>> *);             \
+  template                                                                      \
+  void parse_linker_script_relocatable(Context<E> &, MappedFile<Context<E>> *); \
   template                                                                      \
   MachineType get_script_output_type(Context<E> &, MappedFile<Context<E>> *);   \
   template                                                                      \

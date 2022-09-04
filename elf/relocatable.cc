@@ -35,115 +35,6 @@
 
 namespace mold::elf {
 
-template <typename E> class RObjectFile;
-
-template <typename E>
-class RChunk {
-public:
-  RChunk() {
-    out_shdr.sh_addralign = 1;
-  }
-
-  virtual ~RChunk() = default;
-  virtual void update_shdr(Context<E> &ctx) {}
-  virtual void write_to(Context<E> &ctx) = 0;
-
-  std::string_view name;
-  i64 shndx = 0;
-  ElfShdr<E> in_shdr = {};
-  ElfShdr<E> out_shdr = {};
-};
-
-template <typename E>
-class RInputSection : public RChunk<E> {
-public:
-  RInputSection(Context<E> &ctx, RObjectFile<E> &file, const ElfShdr<E> &shdr);
-  void update_shdr(Context<E> &ctx) override;
-  void write_to(Context<E> &ctx) override;
-
-  RObjectFile<E> &file;
-};
-
-template <typename E>
-class RSymtabSection : public RChunk<E> {
-public:
-  RSymtabSection() {
-    this->name = ".symtab";
-    this->out_shdr.sh_type = SHT_SYMTAB;
-    this->out_shdr.sh_entsize = sizeof(ElfSym<E>);
-    this->out_shdr.sh_addralign = sizeof(Word<E>);
-  }
-
-  void add_local_symbol(Context<E> &ctx, RObjectFile<E> &file, i64 idx);
-  void add_global_symbol(Context<E> &ctx, RObjectFile<E> &file, i64 idx);
-  void update_shdr(Context<E> &ctx) override;
-  void write_to(Context<E> &ctx) override;
-
-  std::unordered_map<std::string_view, i64> sym_map;
-  std::vector<ElfSym<E>> syms{1};
-};
-
-template <typename E>
-class RStrtabSection : public RChunk<E> {
-public:
-  RStrtabSection(std::string_view name) {
-    this->name = name;
-    this->out_shdr.sh_type = SHT_STRTAB;
-    this->out_shdr.sh_size = 1;
-  }
-
-  i64 add_string(std::string_view str);
-  void write_to(Context<E> &ctx) override;
-
-  std::unordered_map<std::string_view, i64> strings;
-};
-
-template <typename E>
-class ROutputEhdr : public RChunk<E> {
-public:
-  ROutputEhdr() {
-    this->out_shdr.sh_size = sizeof(ElfEhdr<E>);
-  }
-
-  void write_to(Context<E> &ctx) override;
-};
-
-template <typename E>
-class ROutputShdr : public RChunk<E> {
-public:
-  ROutputShdr() {
-    this->out_shdr.sh_size = sizeof(ElfShdr<E>);
-  }
-
-  void update_shdr(Context<E> &ctx) override;
-  void write_to(Context<E> &ctx) override;
-};
-
-template <typename E>
-class RObjectFile {
-public:
-  RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mf, bool is_alive);
-
-  void remove_comdats(Context<E> &ctx,
-                      std::unordered_set<std::string_view> &groups);
-
-  template <typename T>
-  std::span<T> get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
-
-  MappedFile<Context<E>> &mf;
-  std::span<ElfShdr<E>> elf_sections;
-  std::vector<std::unique_ptr<RInputSection<E>>> sections;
-  std::span<const ElfSym<E>> syms;
-  std::vector<i64> symidx;
-  std::unordered_set<std::string_view> defined_syms;
-  std::unordered_set<std::string_view> undef_syms;
-  i64 symtab_shndx = 0;
-  i64 first_global = 0;
-  bool is_alive;
-  const char *strtab = nullptr;
-  const char *shstrtab = nullptr;
-};
-
 template <typename E>
 void RSymtabSection<E>::add_local_symbol(Context<E> &ctx, RObjectFile<E> &file,
                                          i64 idx) {
@@ -380,6 +271,15 @@ RObjectFile<E>::RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mf,
   }
 }
 
+template <typename E>
+RObjectFile<E> *
+RObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> &mf,
+                       bool is_alive) {
+  RObjectFile<E> *obj = new RObjectFile<E>(ctx, mf, is_alive);
+  ctx.relocatable_obj_pool.emplace_back(obj);
+  return obj;
+}
+
 // Remove duplicate comdat groups
 template <typename E>
 void RObjectFile<E>::remove_comdats(Context<E> &ctx,
@@ -413,22 +313,43 @@ std::span<T> RObjectFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
 }
 
 template <typename E>
-static std::vector<std::unique_ptr<RObjectFile<E>>>
-open_files(Context<E> &ctx, std::span<std::string> args) {
-  std::vector<std::unique_ptr<RObjectFile<E>>> files;
-  bool whole_archive = false;
+void read_file_relocatable(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+    switch (get_file_type(mf)) {
+    case FileType::ELF_OBJ: {
+      RObjectFile<E> *obj = RObjectFile<E>::create(ctx, *mf, true);
+      ctx.relocatable_objs.push_back(obj);
+      break;
+    }
+    case FileType::AR:
+    case FileType::THIN_AR:
+      for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf))
+        if (get_file_type(child) == FileType::ELF_OBJ) {
+          RObjectFile<E> *obj = RObjectFile<E>::create(
+            ctx, *child, ctx.whole_archive);
+          ctx.relocatable_objs.push_back(obj);
+        }
+      break;
+    case FileType::TEXT:
+      parse_linker_script_relocatable(ctx, mf);
+      break;
+    default:
+      break;
+    }
+}
 
+template <typename E>
+void open_files(Context<E> &ctx, std::span<std::string> args) {
   while (!args.empty()) {
     const std::string &arg = args[0];
     args = args.subspan(1);
 
     if (arg == "--whole-archive") {
-      whole_archive = true;
+      ctx.whole_archive = true;
       continue;
     }
 
     if (arg == "--no-whole-archive") {
-      whole_archive = false;
+      ctx.whole_archive = false;
       continue;
     }
 
@@ -447,22 +368,8 @@ open_files(Context<E> &ctx, std::span<std::string> args) {
         continue;
       mf = MappedFile<Context<E>>::must_open(ctx, arg);
     }
-
-    switch (get_file_type(mf)) {
-    case FileType::ELF_OBJ:
-      files.emplace_back(new RObjectFile<E>(ctx, *mf, true));
-      break;
-    case FileType::AR:
-    case FileType::THIN_AR:
-      for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf))
-        if (get_file_type(child) == FileType::ELF_OBJ)
-          files.emplace_back(new RObjectFile<E>(ctx, *child, whole_archive));
-      break;
-    default:
-      break;
-    }
+    read_file_relocatable(ctx, mf);
   }
-  return files;
 }
 
 template <typename E>
@@ -487,7 +394,7 @@ static bool contains(std::unordered_set<std::string_view> &a,
 template <typename E>
 void combine_objects(Context<E> &ctx, std::span<std::string> file_args) {
   // Read object files
-  std::vector<std::unique_ptr<RObjectFile<E>>> files = open_files(ctx, file_args);
+  open_files(ctx, file_args);
 
   // Identify needed objects
   std::unordered_set<std::string_view> undef_syms;
@@ -498,13 +405,13 @@ void combine_objects(Context<E> &ctx, std::span<std::string> file_args) {
     file.is_alive = true;
   };
 
-  for (std::unique_ptr<RObjectFile<E>> &file : files)
+  for (RObjectFile<E> *file : ctx.relocatable_objs)
     if (file->is_alive)
       add_syms(*file);
 
   for (;;) {
     bool added = false;
-    for (std::unique_ptr<RObjectFile<E>> &file : files) {
+    for (RObjectFile<E> *file : ctx.relocatable_objs) {
       if (!file->is_alive && contains(undef_syms, file->defined_syms)) {
         add_syms(*file);
         added = true;
@@ -514,13 +421,13 @@ void combine_objects(Context<E> &ctx, std::span<std::string> file_args) {
       break;
   }
 
-  std::erase_if(files, [](std::unique_ptr<RObjectFile<E>> &file) {
+  std::erase_if(ctx.relocatable_objs, [](RObjectFile<E> *file) {
     return !file->is_alive;
   });
 
   // Remove duplicate comdat groups
   std::unordered_set<std::string_view> comdat_groups;
-  for (std::unique_ptr<RObjectFile<E>> &file : files)
+  for (RObjectFile<E> *file : ctx.relocatable_objs)
     file->remove_comdats(ctx, comdat_groups);
 
   // Create headers and linker-synthesized sections
@@ -541,7 +448,7 @@ void combine_objects(Context<E> &ctx, std::span<std::string> file_args) {
   ctx.r_symtab = &symtab;
 
   // Add input sections to output sections
-  for (std::unique_ptr<RObjectFile<E>> &file : files)
+  for (RObjectFile<E> *file : ctx.relocatable_objs)
     for (std::unique_ptr<RInputSection<E>> &sec : file->sections)
       if (sec)
         ctx.r_chunks.push_back(sec.get());
@@ -561,13 +468,13 @@ void combine_objects(Context<E> &ctx, std::span<std::string> file_args) {
       chunk->out_shdr.sh_name = shstrtab.add_string(chunk->name);
 
   // Copy symbols from input objects to an output object
-  for (std::unique_ptr<RObjectFile<E>> &file : files)
+  for (RObjectFile<E> *file : ctx.relocatable_objs)
     for (i64 i = 1; i < file->first_global; i++)
       symtab.add_local_symbol(ctx, *file, i);
 
   symtab.out_shdr.sh_info = symtab.syms.size();
 
-  for (std::unique_ptr<RObjectFile<E>> &file : files)
+  for (RObjectFile<E> *file : ctx.relocatable_objs)
     for (i64 i = file->first_global; i < file->syms.size(); i++)
       symtab.add_global_symbol(ctx, *file, i);
 
@@ -588,8 +495,10 @@ void combine_objects(Context<E> &ctx, std::span<std::string> file_args) {
   out->close(ctx);
 }
 
-#define INSTANTIATE(E)                                                  \
-  template void combine_objects(Context<E> &, std::span<std::string>);
+#define INSTANTIATE(E)                                                        \
+  template class RObjectFile<E>;                                              \
+  template void combine_objects(Context<E> &, std::span<std::string>);        \
+  template void read_file_relocatable(Context<E> &, MappedFile<Context<E>> *);
 
 INSTANTIATE_ALL;
 

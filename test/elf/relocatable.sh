@@ -41,7 +41,11 @@ int b() {
 }
 EOF
 
-./mold --relocatable -o $t/c.o $t/a.o $t/b.o
+cat <<EOF > $t/script
+INPUT($t/b.o)
+EOF
+
+./mold --relocatable -o $t/c.o $t/a.o $t/script
 
 [ -f $t/c.o ]
 ! [ -x t/c.o ] || false
