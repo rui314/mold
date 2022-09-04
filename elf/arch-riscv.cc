@@ -693,16 +693,6 @@ static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
   return isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC);
 }
 
-template <typename E>
-static std::vector<Symbol<E> *> get_sorted_symbols(InputSection<E> &isec) {
-  std::vector<Symbol<E> *> vec;
-  for (Symbol<E> *sym : isec.file.symbols)
-    if (sym->file == &isec.file && sym->get_input_section() == &isec)
-      vec.push_back(sym);
-  sort(vec, [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });
-  return vec;
-}
-
 // Returns the distance between a relocated place and a symbol.
 template <typename E>
 static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
@@ -819,17 +809,6 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
   isec.sh_size -= delta;
 }
 
-template <typename E>
-static void update_symbol_values(Context<E> &ctx, InputSection<E> &isec) {
-  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
-  i64 i = 0;
-  for (Symbol<E> *sym : get_sorted_symbols(isec)) {
-    while (i < rels.size() && rels[i].r_offset < sym->value)
-      i++;
-    sym->value -= isec.extra.r_deltas[i];
-  }
-}
-
 // RISC-V instructions are 16 or 32 bits long, so immediates encoded
 // in instructions can't be 32 bits long. Therefore, branch and load
 // instructions can't refer the 4 GiB address space unlike x86-64.
@@ -888,10 +867,28 @@ i64 riscv_resize_sections(Context<E> &ctx) {
         shrink_section(ctx, *isec, use_rvc);
   });
 
+  // Fix symbol values.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (is_resizable(ctx, isec.get()))
-        update_symbol_values(ctx, *isec);
+    for (Symbol<E> *sym : file->symbols) {
+      if (sym->file != file)
+        continue;
+
+      InputSection<E> *isec = sym->get_input_section();
+      if (!isec || !is_resizable(ctx, isec))
+        continue;
+
+      std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
+      if (rels.empty())
+        continue;
+
+      auto it = std::lower_bound(rels.begin(), rels.end(), sym->value,
+                                 [&](const ElfRel<E> &r, u64 val) {
+        return r.r_offset < val;
+      });
+
+      if (it->r_offset == sym->value || it != rels.begin())
+        sym->value -= isec->extra.r_deltas[it - rels.begin()];
+    }
   });
 
   // Re-compute section offset again to finalize them.
