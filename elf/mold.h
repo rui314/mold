@@ -144,10 +144,8 @@ public:
 };
 
 struct RangeExtensionRef {
-  bool has_value() const { return thunk_idx != 0x3fff && sym_idx != 0x3ffff; }
-
-  u32 thunk_idx : 14 = 0x3fff;
-  u32 sym_idx : 18 = 0x3ffff;
+  i32 thunk_idx : 12 = -1;
+  i32 sym_idx : 20 = -1;
 };
 
 template <typename E>
@@ -1726,8 +1724,8 @@ struct SymbolExtras {};
 template <typename E> requires needs_thunk<E>
 struct SymbolExtras<E> {
   // For range extension thunks
-  i32 thunk_idx = -1;
-  i32 thunk_sym_idx = -1;
+  i32 thunk_idx : 12 = -1;
+  i32 thunk_sym_idx : 20 = -1;
 };
 
 // Symbol class represents a defined symbol.

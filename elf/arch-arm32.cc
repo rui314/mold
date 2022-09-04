@@ -162,7 +162,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     auto get_thumb_thunk_addr = [&] {
       RangeExtensionRef ref = extra.range_extn[i];
-      assert(ref.has_value());
+      assert(ref.thunk_idx != -1);
       u64 addr = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx);
       assert(is_jump_reachable(addr + A - P));
       return addr;
