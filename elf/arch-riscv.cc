@@ -879,13 +879,10 @@ i64 riscv_resize_sections(Context<E> &ctx) {
         continue;
 
       InputSection<E> *isec = sym->get_input_section();
-      if (!is_resizable(ctx, isec))
+      if (!isec || isec->extra.r_deltas.empty())
         continue;
 
       std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
-      if (rels.empty())
-        continue;
-
       auto it = std::lower_bound(rels.begin(), rels.end(), sym->value,
                                  [&](const ElfRel<E> &r, u64 val) {
         return r.r_offset < val;
