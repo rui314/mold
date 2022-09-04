@@ -61,7 +61,7 @@ necessary packages. You may want to run it as root.
 ```shell
 git clone https://github.com/rui314/mold.git
 cd mold
-git checkout v1.4.1
+git checkout v1.4.2
 make -j$(nproc) CXX=clang++
 sudo make install
 ```
