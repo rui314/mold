@@ -228,14 +228,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
 
+  auto get_r_delta = [&](i64 idx) {
+    return extra.r_deltas.empty() ? 0 : extra.r_deltas[idx];
+  };
+
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_RISCV_NONE || rel.r_type == R_RISCV_RELAX)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    i64 r_offset = rel.r_offset - extra.r_deltas[i];
-    i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
+    i64 r_offset = rel.r_offset - get_r_delta(i);
+    i64 delta = get_r_delta(i + 1) - get_r_delta(i);
     u8 *loc = base + r_offset;
 
     const SectionFragmentRef<E> *frag_ref = nullptr;
@@ -453,7 +457,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       Symbol<E> &sym = *file.symbols[rels[i].r_sym];
       assert(sym.get_input_section() == this);
 
-      u8 *loc = base + rels[i].r_offset - extra.r_deltas[i];
+      u8 *loc = base + rels[i].r_offset - get_r_delta(i);
       u32 val = *(ul32 *)(base + sym.value);
 
       if (rels[i].r_type == R_RISCV_PCREL_LO12_I)
@@ -470,7 +474,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_PCREL_HI20:
     case R_RISCV_TLS_GOT_HI20:
     case R_RISCV_TLS_GD_HI20: {
-      u8 *loc = base + rels[i].r_offset - extra.r_deltas[i];
+      u8 *loc = base + rels[i].r_offset - get_r_delta(i);
       u32 val = *(ul32 *)loc;
       *(ul32 *)loc = *(ul32 *)(contents.data() + rels[i].r_offset);
       write_utype(loc, val);
@@ -690,7 +694,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <typename E>
 static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
-  return isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC);
+  return isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
+         (isec->shdr().sh_flags & SHF_EXECINSTR);
 }
 
 // Returns the distance between a relocated place and a symbol.
@@ -874,7 +879,7 @@ i64 riscv_resize_sections(Context<E> &ctx) {
         continue;
 
       InputSection<E> *isec = sym->get_input_section();
-      if (!isec || !is_resizable(ctx, isec))
+      if (!is_resizable(ctx, isec))
         continue;
 
       std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
