@@ -12,7 +12,11 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+if [ $MACHINE = aarch64 ]; then
+  entry_addr_prefix=0x21000
+else
+  entry_addr_prefix=0x20100
+fi
 
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .globl foo, bar
@@ -24,14 +28,22 @@ EOF
 
 ./mold -e foo -static -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
-grep -q "Entry point address:.*0x201000" $t/log
+grep -q "Entry point address:.*${entry_addr_prefix}0" $t/log
 
 ./mold -e bar -static -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
-grep -q "Entry point address:.*0x201008" $t/log
+grep -q "Entry point address:.*${entry_addr_prefix}8" $t/log
 
 ./mold -static -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
-grep -q "Entry point address:.*0x201000" $t/log
+grep -q "Entry point address:.*${entry_addr_prefix}0" $t/log
+
+cat <<EOF > $t/script
+ENTRY(bar)
+EOF
+
+./mold -static -o $t/exe $t/a.o $t/script
+readelf -e $t/exe > $t/log
+grep -q "Entry point address:.*${entry_addr_prefix}8" $t/log
 
 echo OK
