@@ -38,6 +38,8 @@ if(MOLD_USE_ASAN)
   target_link_options(mold PRIVATE -fsanitize=address -fsanitize=undefined)
 endif()
 
+target_include_directories(mold PRIVATE "/tmp/openssl/include")
+
 option(MOLD_USE_TSAN "Build mold with ThreadSanitizer" OFF)
 if(MOLD_USE_TSAN)
   target_compile_options(mold PRIVATE -fsanitize=thread)
