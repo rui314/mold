@@ -229,7 +229,8 @@ void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     } else if (tok[0] == "ENTRY") {
       tok = tok.subspan(1);
       tok = skip(ctx, tok, "(");
-      ctx.arg.entry = std::string(tok[0]);
+      if (ctx.arg.entry.empty())
+        ctx.arg.entry = std::string(tok[0]);
       tok = tok.subspan(1);
       tok = skip(ctx, tok, ")");
     } else if (tok.size() > 3 && tok[1] == "=" && tok[3] == ";") {

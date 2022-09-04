@@ -1527,7 +1527,7 @@ struct Context {
     std::string dependency_file;
     std::string directory;
     std::string dynamic_linker;
-    std::string entry = "_start";
+    std::string entry;
     std::string fini = "_fini";
     std::string init = "_init";
     std::string output = "a.out";

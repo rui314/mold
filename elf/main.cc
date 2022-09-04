@@ -275,6 +275,9 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     }
   }
 
+  if (ctx.arg.entry.empty())
+    ctx.arg.entry = "_start";
+
   if (ctx.objs.empty())
     Fatal(ctx) << "no input files";
 

@@ -46,4 +46,8 @@ EOF
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*${entry_addr_prefix}8" $t/log
 
+./mold -e foo -static -o $t/exe $t/a.o $t/script
+readelf -e $t/exe > $t/log
+grep -q "Entry point address:.*${entry_addr_prefix}0" $t/log
+
 echo OK
