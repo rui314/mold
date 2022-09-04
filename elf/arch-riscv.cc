@@ -568,8 +568,8 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
 template <typename E>
 void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
-  // A non-alloc section isn't relaxed, so just copy it as one big chunk.
-  if (!(shdr().sh_flags & SHF_ALLOC)) {
+  // If a section is not relaxed, we can copy it as a one big chunk.
+  if (extra.r_deltas.empty()) {
     if (compressed)
       uncompress_to(ctx, buf);
     else
@@ -690,7 +690,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <typename E>
 static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
-  return isec && (isec->shdr().sh_flags & SHF_ALLOC);
+  return isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC);
 }
 
 template <typename E>
