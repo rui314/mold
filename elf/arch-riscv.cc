@@ -886,8 +886,7 @@ i64 riscv_resize_sections(Context<E> &ctx) {
         return r.r_offset < val;
       });
 
-      if (it->r_offset == sym->value || it != rels.begin())
-        sym->value -= isec->extra.r_deltas[it - rels.begin()];
+      sym->value -= isec->extra.r_deltas[it - rels.begin()];
     }
   });
 
