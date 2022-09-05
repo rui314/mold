@@ -327,12 +327,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_RISCV_HI20: {
-      assert(delta == 0 || delta == 4);
       i64 val = S + A;
-      overflow_check(val, -(1LL << 31), 1LL << 31);
-
       if (delta == 0) {
+        overflow_check(val, -(1LL << 31), 1LL << 31);
         write_utype(loc, val);
+      } else {
+        assert(delta == 4);
+        assert(sign_extend(val, 11) == val);
       }
       break;
     }
@@ -345,10 +346,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_stype(loc, val);
 
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
-      // x0-relative accessible.
+      // accessible relative to the zero register, because if the upper 20
+      // bits are all zero, the corresponding LUI might have been removed.
       if (sign_extend(val, 11) == val)
-        *(ul32 *)loc = (*(ul32 *)loc & 0b111111'11111'00000'111'11111'1111111);
-
+        *(ul32 *)loc &= 0b111111'11111'00000'111'11111'1111111;
       break;
     }
     case R_RISCV_TPREL_HI20:
@@ -828,26 +829,24 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
     case R_RISCV_HI20: {
       // This relocation refers to an LUI instruction containing the high
       // 20-bits to be relocated to an absolute symbol address.
-      // In some cases, LUI can be removed.
 
-      // val = S + A
-      i64 val = frag_ref
-        ? frag_ref->frag->get_addr(ctx) + (u64)frag_ref->addend
-        : sym.get_addr(ctx) + (u64)r.r_addend;
-      if (val % 2)
+      // Linker-synthesized symbols haven't been assigned their final
+      // values when we are shrinking sections because actual values can
+      // be computed only after we fix the file layout. Therefore, we
+      // assume that relocations against such symbols are always
+      // non-relaxable.
+      if (sym.file == ctx.internal_obj)
         break;
 
-      // Here we need to skip undefined & weak symbols as well as symbols in the
-      // internal object.
-      if (sym.esym().is_undef_weak() || sym.file == ctx.internal_obj) {
-        break;
-      }
+      i64 val;
+      if (frag_ref)
+        val = frag_ref->frag->get_addr(ctx) + (u64)frag_ref->addend;
+      else
+        val = sym.get_addr(ctx) + (u64)r.r_addend;
 
       // The symbol address located within ±2 KiB, we can remove LUI.
-      if (sign_extend(val, 11) == val) {
+      if (sign_extend(val, 11) == val)
         delta += 4;
-        break;
-      }
       break;
     }
     }
