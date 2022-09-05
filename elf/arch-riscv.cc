@@ -905,7 +905,8 @@ template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx) {
   Timer t(ctx, "riscv_resize_sections");
 
-  // True if we can use the 2-byte instructions.
+  // True if we can use the 2-byte instructions. This is usually true on
+  // Unix because RV64GC is generally considered the baseline hardware.
   bool use_rvc = get_eflags(ctx) & EF_RISCV_RVC;
 
   // Find all the relocations that can be relaxed.
