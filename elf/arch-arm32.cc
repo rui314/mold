@@ -197,8 +197,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // THM_CALL relocation refers either BL or BLX instruction.
       // They are different in only one bit. We need to use BL if
       // the jump target is Thumb. Otherwise, use BLX.
-
-      if (sym.esym().is_undef_weak()) {
+      if (sym.is_remaining_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
         write_thm_b_imm(loc, 4);
@@ -239,7 +238,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (!is_bl && !is_blx)
         Fatal(ctx) << *this << ": R_ARM_CALL refers neither BL nor BLX";
 
-      if (sym.esym().is_undef_weak()) {
+      if (sym.is_remaining_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
         *(ul32 *)loc = 0xeb00'0001;
@@ -258,7 +257,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     }
     case R_ARM_JUMP24:
-      if (sym.esym().is_undef_weak()) {
+      if (sym.is_remaining_undef_weak()) {
         *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | 1;
       } else {
         // Unlike BL and BLX, we can't rewrite B to BX because BX doesn't
@@ -276,7 +275,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(S + A - P, 11, 1);
       continue;
     case R_ARM_THM_JUMP24:
-      if (sym.esym().is_undef_weak()) {
+      if (sym.is_remaining_undef_weak()) {
         *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | 1;
       } else {
         // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to

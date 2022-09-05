@@ -1771,7 +1771,8 @@ public:
 
   bool is_absolute() const;
   bool is_relative() const { return !is_absolute(); }
-  bool is_local() const;
+  bool is_local() const { return !is_imported && !is_exported; }
+  bool is_remaining_undef_weak() const;
 
   InputSection<E> *get_input_section() const;
   u32 get_type() const;
@@ -2475,9 +2476,12 @@ inline bool Symbol<E>::is_absolute() const {
   return !is_imported && !get_frag() && shndx == 0;
 }
 
+// A remaining weak undefined symbol is promoted to a dynamic symbol
+// in DSO and resolved to 0 in an executable. This function returns
+// true if it's latter.
 template<typename E>
-inline bool Symbol<E>::is_local() const {
-  return !is_imported && !is_exported;
+inline bool Symbol<E>::is_remaining_undef_weak() const {
+  return !is_imported && esym().is_undef_weak();
 }
 
 template <typename E>

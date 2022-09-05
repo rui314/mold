@@ -206,7 +206,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
     case R_AARCH64_CALL26:
     case R_AARCH64_JUMP26: {
-      if (sym.esym().is_undef_weak()) {
+      if (sym.is_remaining_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
         *(ul32 *)loc |= 1;
