@@ -844,7 +844,9 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       else
         val = sym.get_addr(ctx) + (u64)r.r_addend;
 
-      // The symbol address located within ±2 KiB, we can remove LUI.
+      // If the upper 20 bits are all zero, we can remove LUI.
+      // The corresponding instructions referred by LO12_I/LO12_S
+      // relocations will use the zero register instead.
       if (sign_extend(val, 11) == val)
         delta += 4;
       break;
