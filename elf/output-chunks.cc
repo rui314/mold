@@ -748,14 +748,13 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-static std::string_view get_output_name(Context<E> &ctx, std::string_view name) {
+static std::string_view
+get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
   if (ctx.arg.unique && ctx.arg.unique->match(name))
     return name;
 
-  if (name.starts_with(".rodata.cst"))
-    return ".rodata.cst";
-  if (name.starts_with(".rodata.str"))
-    return ".rodata.str";
+  if (name.starts_with(".rodata") && (flags & SHF_MERGE))
+    return (flags & SHF_STRINGS) ? ".rodata.str" : ".rodata.cst";
   if (name.starts_with(".ARM.exidx"))
     return ".ARM.exidx";
   if (name.starts_with(".ARM.extab"))
@@ -812,7 +811,7 @@ template <typename E>
 OutputSection<E> *
 OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
-  name = get_output_name(ctx, name);
+  name = get_output_name(ctx, name, flags);
   type = canonicalize_type<E>(name, type);
   flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED & ~(u64)SHF_LINK_ORDER &
           ~(u64)SHF_GNU_RETAIN;
@@ -1461,7 +1460,7 @@ template <typename E>
 MergedSection<E> *
 MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
                                u64 type, u64 flags) {
-  name = get_output_name(ctx, name);
+  name = get_output_name(ctx, name, flags);
   flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_MERGE & ~(u64)SHF_STRINGS &
           ~(u64)SHF_COMPRESSED;
 
