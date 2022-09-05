@@ -801,31 +801,6 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       }
       break;
     }
-    case R_RISCV_TPREL_HI20:
-    case R_RISCV_TPREL_ADD: {
-      // These relocations are used to materialize the upper 20 bits of
-      // an address relative to the thread pointer as follows:
-      //
-      //  lui  a5,%tprel_hi(foo)         # R_RISCV_TPREL_HI20 (symbol)
-      //  add  a5,a5,tp,%tprel_add(foo)  # R_RISCV_TPREL_ADD (symbol)
-      //
-      // Then thread-local variable `foo` is accessed with a 12-bit offset
-      // like this:
-      //
-      //  sw   t0,%tprel_lo(foo)(a5)     # R_RISCV_TPREL_LO12_S (symbol)
-      //
-      // However, if the offset is ±2 KiB, we don't need to materialize
-      // the upper 20 bits in a register. We can instead access the
-      // thread-local variable directly with TP like this:
-      //
-      //  sw   t0,%tprel_lo(foo)(tp)
-      //
-      // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
-      i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tls_begin;
-      if (sign_extend(val, 11) == val)
-        delta += 4;
-      break;
-    }
     case R_RISCV_HI20: {
       // This relocation refers to an LUI instruction containing the high
       // 20-bits to be relocated to an absolute symbol address.
@@ -847,6 +822,31 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       // If the upper 20 bits are all zero, we can remove LUI.
       // The corresponding instructions referred by LO12_I/LO12_S
       // relocations will use the zero register instead.
+      if (sign_extend(val, 11) == val)
+        delta += 4;
+      break;
+    }
+    case R_RISCV_TPREL_HI20:
+    case R_RISCV_TPREL_ADD: {
+      // These relocations are used to materialize the upper 20 bits of
+      // an address relative to the thread pointer as follows:
+      //
+      //  lui  a5,%tprel_hi(foo)         # R_RISCV_TPREL_HI20 (symbol)
+      //  add  a5,a5,tp,%tprel_add(foo)  # R_RISCV_TPREL_ADD (symbol)
+      //
+      // Then thread-local variable `foo` is accessed with a 12-bit offset
+      // like this:
+      //
+      //  sw   t0,%tprel_lo(foo)(a5)     # R_RISCV_TPREL_LO12_S (symbol)
+      //
+      // However, if the offset is ±2 KiB, we don't need to materialize
+      // the upper 20 bits in a register. We can instead access the
+      // thread-local variable directly with TP like this:
+      //
+      //  sw   t0,%tprel_lo(foo)(tp)
+      //
+      // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
+      i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tls_begin;
       if (sign_extend(val, 11) == val)
         delta += 4;
       break;
