@@ -200,8 +200,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.is_remaining_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
-        write_thm_b_imm(loc, 4);
-        *(ul16 *)(loc + 2) |= 0x1000;  // rewrite to BL
+        *(ul32 *)loc = 0x8000'f3af; // NOP.W
         continue;
       }
 
@@ -241,7 +240,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.is_remaining_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
-        *(ul32 *)loc = 0xeb00'0001;
+        *(ul32 *)loc = 0xe320'f000; // NOP
         continue;
       }
 
@@ -258,7 +257,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
     case R_ARM_JUMP24:
       if (sym.is_remaining_undef_weak()) {
-        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | 1;
+        *(ul32 *)loc = 0xe320'f000; // NOP
       } else {
         // Unlike BL and BLX, we can't rewrite B to BX because BX doesn't
         // takes an immediate; it takes only a register. So if mode switch
@@ -276,7 +275,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     case R_ARM_THM_JUMP24:
       if (sym.is_remaining_undef_weak()) {
-        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | 1;
+        *(ul32 *)loc = 0x8000'f3af; // NOP.W
       } else {
         // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
         // switch processor mode.
@@ -349,7 +348,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     case R_ARM_THM_TLS_CALL:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
-        // BL -> NOP
+        // BL -> NOP.W
         *(ul32 *)loc = 0x8000'f3af;
       } else {
         u64 val = align_to(get_trampoline_addr(P + 4), 4);

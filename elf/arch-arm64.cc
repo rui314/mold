@@ -209,7 +209,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.is_remaining_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
-        *(ul32 *)loc |= 1;
+        *(ul32 *)loc = 0xd503201f; // nop
         continue;
       }
 
