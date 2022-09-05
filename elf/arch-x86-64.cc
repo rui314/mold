@@ -189,7 +189,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       frag_ref = &rel_fragments[frag_idx++];
 
-    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+    auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
@@ -197,32 +197,32 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     };
 
     auto write8 = [&](u64 val) {
-      overflow_check(val, 0, 1 << 8);
+      check(val, 0, 1 << 8);
       *loc = val;
     };
 
     auto write8s = [&](u64 val) {
-      overflow_check(val, -(1 << 7), 1 << 7);
+      check(val, -(1 << 7), 1 << 7);
       *loc = val;
     };
 
     auto write16 = [&](u64 val) {
-      overflow_check(val, 0, 1 << 16);
+      check(val, 0, 1 << 16);
       *(ul16 *)loc = val;
     };
 
     auto write16s = [&](u64 val) {
-      overflow_check(val, -(1 << 15), 1 << 15);
+      check(val, -(1 << 15), 1 << 15);
       *(ul16 *)loc = val;
     };
 
     auto write32 = [&](u64 val) {
-      overflow_check(val, 0, (i64)1 << 32);
+      check(val, 0, (i64)1 << 32);
       *(ul32 *)loc = val;
     };
 
     auto write32s = [&](u64 val) {
-      overflow_check(val, -((i64)1 << 31), (i64)1 << 31);
+      check(val, -((i64)1 << 31), (i64)1 << 31);
       *(ul32 *)loc = val;
     };
 
@@ -316,7 +316,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.get_tlsgd_idx(ctx) == -1) {
         // Relax GD to LE
         i64 val = S - ctx.tls_end + A + 4;
-        overflow_check(val, -((i64)1 << 31), (i64)1 << 31);
+        check(val, -((i64)1 << 31), (i64)1 << 31);
 
         switch (rels[i + 1].r_type) {
         case R_X86_64_PLT32:
@@ -487,7 +487,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     i64 addend;
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
-    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+    auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
@@ -495,22 +495,22 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     };
 
     auto write8 = [&](u64 val) {
-      overflow_check(val, 0, 1 << 8);
+      check(val, 0, 1 << 8);
       *loc = val;
     };
 
     auto write16 = [&](u64 val) {
-      overflow_check(val, 0, 1 << 16);
+      check(val, 0, 1 << 16);
       *(ul16 *)loc = val;
     };
 
     auto write32 = [&](u64 val) {
-      overflow_check(val, 0, (i64)1 << 32);
+      check(val, 0, (i64)1 << 32);
       *(ul32 *)loc = val;
     };
 
     auto write32s = [&](u64 val) {
-      overflow_check(val, -((i64)1 << 31), (i64)1 << 31);
+      check(val, -((i64)1 << 31), (i64)1 << 31);
       *(ul32 *)loc = val;
     };
 

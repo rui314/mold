@@ -134,7 +134,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       frag_ref = &rel_fragments[frag_idx++];
 
-    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+    auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
@@ -150,13 +150,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_386_8: {
       i64 val = S + A;
-      overflow_check(val, 0, 1 << 8);
+      check(val, 0, 1 << 8);
       *loc = val;
       continue;
     }
     case R_386_16: {
       i64 val = S + A;
-      overflow_check(val, 0, 1 << 16);
+      check(val, 0, 1 << 16);
       *(ul16 *)loc = val;
       continue;
     }
@@ -165,13 +165,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     case R_386_PC8: {
       i64 val = S + A - P;
-      overflow_check(val, -(1 << 7), 1 << 7);
+      check(val, -(1 << 7), 1 << 7);
       *loc = val;
       continue;
     };
     case R_386_PC16: {
       i64 val = S + A - P;
-      overflow_check(val, -(1 << 15), 1 << 15);
+      check(val, -(1 << 15), 1 << 15);
       *(ul16 *)loc = val;
       continue;
     }
@@ -320,7 +320,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     i64 addend;
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
-    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+    auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
@@ -335,13 +335,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_386_8: {
       i64 val = S + A;
-      overflow_check(val, 0, 1 << 8);
+      check(val, 0, 1 << 8);
       *loc = val;
       continue;
     }
     case R_386_16: {
       i64 val = S + A;
-      overflow_check(val, 0, 1 << 16);
+      check(val, 0, 1 << 16);
       *(ul16 *)loc = val;
       continue;
     }
@@ -356,13 +356,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       continue;
     case R_386_PC8: {
       i64 val = S + A;
-      overflow_check(val, -(1 << 7), 1 << 7);
+      check(val, -(1 << 7), 1 << 7);
       *loc = val;
       continue;
     }
     case R_386_PC16: {
       i64 val = S + A;
-      overflow_check(val, -(1 << 15), 1 << 15);
+      check(val, -(1 << 15), 1 << 15);
       *(ul16 *)loc = val;
       continue;
     };

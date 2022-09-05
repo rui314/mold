@@ -246,7 +246,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     if (rel_fragments && rel_fragments[frag_idx].idx == i)
       frag_ref = &rel_fragments[frag_idx++];
 
-    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+    auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
@@ -272,13 +272,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_BRANCH: {
       i64 val = S + A - P;
-      overflow_check(val, -(1 << 12), 1 << 12);
+      check(val, -(1 << 12), 1 << 12);
       write_btype(loc, val);
       break;
     }
     case R_RISCV_JAL: {
       i64 val = S + A - P;
-      overflow_check(val, -(1 << 20), 1 << 20);
+      check(val, -(1 << 20), 1 << 20);
       write_jtype(loc, val);
       break;
     }
@@ -301,7 +301,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         assert(delta == 0);
         u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
-        overflow_check(val, -(1LL << 31), 1LL << 31);
+        check(val, -(1LL << 31), 1LL << 31);
         write_utype(loc, val);
         write_itype(loc + 4, val);
       }
@@ -329,7 +329,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_HI20: {
       i64 val = S + A;
       if (delta == 0) {
-        overflow_check(val, -(1LL << 31), 1LL << 31);
+        check(val, -(1LL << 31), 1LL << 31);
         write_utype(loc, val);
       } else {
         assert(delta == 4);
@@ -418,13 +418,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
     case R_RISCV_RVC_BRANCH: {
       i64 val = S + A - P;
-      overflow_check(val, -(1 << 8), 1 << 8);
+      check(val, -(1 << 8), 1 << 8);
       write_cbtype(loc, val);
       break;
     }
     case R_RISCV_RVC_JUMP: {
       i64 val = S + A - P;
-      overflow_check(val, -(1 << 11), 1 << 11);
+      check(val, -(1 << 11), 1 << 11);
       write_cjtype(loc, val);
       break;
     }
