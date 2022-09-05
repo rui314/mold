@@ -367,6 +367,12 @@ void create_internal_file(Context<E> &ctx) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
     obj->symbols.push_back(sym);
 
+    // An actual value will be set to a linker-synthesized symbol by
+    // fix_synthetic_symbols(). Until then, `value` doesn't have a valid
+    // value. 0xdeadbeef is a unique dummy value to make debugging easier
+    // if the field is accidentally used before it gets a valid one.
+    sym->value = 0xdeadbeef;
+
     ElfSym<E> esym;
     memset(&esym, 0, sizeof(esym));
     esym.st_type = STT_NOTYPE;
@@ -395,6 +401,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
     ctx.internal_esyms.push_back(esym);
 
     Symbol<E> *sym = get_symbol(ctx, name);
+    sym->value = 0xdeadbeef; // unique dummy value
     obj.symbols.push_back(sym);
     return sym;
   };
