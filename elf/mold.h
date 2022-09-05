@@ -302,6 +302,8 @@ public:
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
   std::string_view get_func_name(Context<E> &ctx, i64 offset);
+  std::pair<SectionFragment<E> *, i64>
+  get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
   bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel);
 
   void record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
@@ -350,9 +352,6 @@ private:
                          u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel);
 
   void copy_contents_riscv(Context<E> &ctx, u8 *buf);
-
-  std::pair<SectionFragment<E> *, i64>
-  get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
   std::optional<u64> get_tombstone(Symbol<E> &sym);
 };
