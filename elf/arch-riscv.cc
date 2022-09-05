@@ -461,9 +461,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #undef GOT
   }
 
-  // Handle LO12 relocations. In the above loop, PC-relative HI20
+  // Handle PC-relative LO12 relocations. In the above loop, pcrel HI20
   // relocations overwrote instructions with full 32-bit values to allow
-  // their corresponding LO12 relocations to read their values.
+  // their corresponding pcrel LO12 relocations to read their values.
   for (i64 i = 0; i < rels.size(); i++) {
     switch (rels[i].r_type)
     case R_RISCV_PCREL_LO12_I:
@@ -481,7 +481,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
   }
 
-  // Restore the original instructions HI20 relocations overwrote.
+  // Restore the original instructions pcrel HI20 relocations overwrote.
   for (i64 i = 0; i < rels.size(); i++) {
     switch (rels[i].r_type) {
     case R_RISCV_GOT_HI20:
