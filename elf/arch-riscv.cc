@@ -776,7 +776,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
     switch (r.r_type) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
-      // These relocations refer  an AUIPC + JALR instruction pair to
+      // These relocations refer an AUIPC + JALR instruction pair to
       // allow to jump to anywhere in PC ± 2 GiB. If the jump target is
       // close enough to PC, we can use C.J, C.JAL or JAL instead.
       i64 dist = compute_distance(ctx, sym, isec, r);

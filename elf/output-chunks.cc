@@ -1012,6 +1012,20 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
 }
 
 // Fill .got and .rel.dyn.
+//
+// .got is a linker-synthesized constant pool whose entry is of pointer
+// size. If we know a correct value for an entry, we'll just set that value
+// to the entry. Otherwise, we'll create a dynamic relocation and let the
+// dynamic linker to fill the entry at laod-time.
+//
+// Most GOT entries contain addresses of global variable. If a global
+// variable is an imported symbol, we don't know its address until runtime.
+// GOT contains the addresses of such variables at runtime so that we can
+// access imported global variables via GOT.
+//
+// Thread-local variables (TLVs) also use GOT entries. We need them because
+// TLVs are accessed in a different way than the ordinary global variables.
+// Their addresses are not unique; each thread has its own copy of TLVs.
 template <typename E>
 std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
   std::vector<GotEntry<E>> entries;
