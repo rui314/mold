@@ -278,8 +278,9 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     // of all TLVs for historical reasons. TLVs are accessed with
     // negative offsets from TP.
     //
-    // ARM runtime reserves two words at the beginning of thread-local
-    // area, so user-defined TLVs start at TP + 16 (or TP + 8 on ARM32).
+    // On ARM, the runtime appends two words at the beginning of TLV
+    // template image when copying TLVs to per-thread area, so we need
+    // to offset it.
     if constexpr (is_x86<E>) {
       ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
     } else if constexpr (is_arm<E>) {
