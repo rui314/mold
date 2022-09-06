@@ -1579,7 +1579,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   start(ctx._DYNAMIC, ctx.dynamic);
 
   // _GLOBAL_OFFSET_TABLE_
-  if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>)
+  if constexpr (is_x86<E>)
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.gotplt);
   else
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
@@ -1594,12 +1594,9 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     // But if DTPOFF is relaxed, it must point the end of the TLS section
     // so that a GOTPC_TLSDESC's relaxed value is consistent with a
     // DTPOFF's relaxed value.
-    u64 addr;
-    if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>) {
-      addr = (ctx.arg.relax && !ctx.arg.shared) ? ctx.tls_end : ctx.tls_begin;
-    } else {
-      addr = ctx.tls_begin;
-    }
+    u64 addr = ctx.tls_begin;
+    if (is_x86<E> && ctx.arg.relax && !ctx.arg.shared)
+      addr = ctx.tp_addr;
 
     ctx._TLS_MODULE_BASE_->shndx = -1;
     ctx._TLS_MODULE_BASE_->value = addr;

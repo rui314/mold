@@ -1658,7 +1658,7 @@ struct Context {
   RSymtabSection<E> *r_symtab = nullptr;
 
   u64 tls_begin = 0;
-  u64 tls_end = 0;
+  u64 tp_addr = 0;
   bool relax_tlsdesc = false;
 
   // Linker-synthesized symbols

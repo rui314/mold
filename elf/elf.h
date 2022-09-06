@@ -1385,6 +1385,14 @@ template <typename E>
 inline constexpr bool needs_thunk = requires { E::thunk_size; };
 
 template <typename E>
+inline constexpr bool is_x86 =
+  std::is_same_v<E, X86_64> || std::is_same_v<E, I386>;
+
+template <typename E>
+inline constexpr bool is_arm =
+  std::is_same_v<E, ARM64> || std::is_same_v<E, ARM32>;
+
+template <typename E>
 inline constexpr bool is_riscv =
   std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>;
 
@@ -1477,12 +1485,6 @@ struct ARM64 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
 
-  // Each thread has its own value in TP (thread pointer) register, and
-  // TLVs defined in the main executable are accessed relative to TP.
-  // ARM runtime reserves two words right at TP, so the TLVs start at
-  // TP + 16 (or TP + 8 on ARM32).
-  static constexpr u32 tls_tp_offset = 16;
-
   static constexpr u32 tls_dtv_offset = 0;
 
   // For ARM, we need to insert a piece of code between a function call
@@ -1523,7 +1525,6 @@ struct ARM32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_tp_offset = 8;
   static constexpr u32 tls_dtv_offset = 0;
 
   static constexpr u32 thunk_hdr_size = 12;
@@ -1560,7 +1561,6 @@ struct RISCV64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_tp_offset = 0;
 
   // When __tls_get_addr is called to resolve a thread-local variable's
   // address, the following two arguments are passed to the function:
@@ -1614,7 +1614,6 @@ struct RISCV32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_tp_offset = 0;
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 

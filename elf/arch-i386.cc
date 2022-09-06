@@ -193,7 +193,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - GOT;
       continue;
     case R_386_TLS_LE:
-      *(ul32 *)loc = S + A - ctx.tls_end;
+      *(ul32 *)loc = S + A - ctx.tp_addr;
       continue;
     case R_386_TLS_IE:
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A;
@@ -208,7 +208,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
             0x81, 0xe8, 0, 0, 0, 0, // add $0, %rax
           };
           memcpy(loc - 3, insn, sizeof(insn));
-          *(ul32 *)(loc + 5) = ctx.tls_end - S - A;
+          *(ul32 *)(loc + 5) = ctx.tp_addr - S - A;
           break;
         }
         case R_386_GOT32: {
@@ -217,7 +217,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
             0x81, 0xe8, 0, 0, 0, 0, // add $0, %rax
           };
           memcpy(loc - 2, insn, sizeof(insn));
-          *(ul32 *)(loc + 6) = ctx.tls_end - S - A;
+          *(ul32 *)(loc + 6) = ctx.tp_addr - S - A;
           break;
         }
         default:
@@ -262,7 +262,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     case R_386_TLS_LDO_32:
       if (ctx.got->tlsld_idx == -1)
-        *(ul32 *)loc = S + A - ctx.tls_end;
+        *(ul32 *)loc = S + A - ctx.tp_addr;
       else
         *(ul32 *)loc = S + A - ctx.tls_begin;
       continue;
@@ -275,7 +275,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           0x8d, 0x05, 0, 0, 0, 0, // lea 0, %eax
         };
         memcpy(loc - 2, insn, sizeof(insn));
-        *(ul32 *)loc = S + A - ctx.tls_end;
+        *(ul32 *)loc = S + A - ctx.tp_addr;
       } else {
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - GOT;
       }

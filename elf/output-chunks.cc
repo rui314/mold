@@ -270,7 +270,24 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     // segment, so save its addresses for easy access.
     ElfPhdr<E> &phdr = vec.back();
     ctx.tls_begin = phdr.p_vaddr;
-    ctx.tls_end = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
+
+    // Each thread has its own value in TP (thread pointer) register, and
+    // TLVs defined in the main executable are accessed relative to TP.
+    //
+    // On x86, TP (%gs for 32-bit, %fs for 64-bit) refers past the end
+    // of all TLVs for historical reasons. TLVs are accessed with
+    // negative offsets from TP.
+    //
+    // ARM runtime reserves two words at the beginning of thread-local
+    // area, so user-defined TLVs start at TP + 16 (or TP + 8 on ARM32).
+    if constexpr (is_x86<E>) {
+      ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
+    } else if constexpr (is_arm<E>) {
+      ctx.tp_addr = ctx.tls_begin - sizeof(Word<E>) * 2;
+    } else {
+      static_assert(is_riscv<E>);
+      ctx.tp_addr = ctx.tls_begin;
+    }
   }
 
   // Add PT_DYNAMIC
@@ -1091,17 +1108,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
 
     // Otherwise, we know the offset from the thread pointer (TP) at
     // link-time, so we can fill the GOT entry directly.
-    //
-    // On x86, TP (%gs for 32-bit, %fs for 64-bit) points to the end of
-    // all thread-local variables for a historical reason, so the offset
-    // we calculate here will be negative. On other architectures, TP
-    // points to an optional padding whose size is architecture-dependent
-    // followed by thread-local variables.
-    if constexpr (std::is_same_v<E, X86_64> || std::is_same_v<E, I386>)
-      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_end});
-    else
-      entries.push_back({idx,
-                         sym->get_addr(ctx) - ctx.tls_begin + E::tls_tp_offset});
+    entries.push_back({idx, sym->get_addr(ctx) - ctx.tp_addr});
   }
 
   if (tlsld_idx != -1)

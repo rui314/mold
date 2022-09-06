@@ -325,11 +325,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - P;
       continue;
     case R_ARM_TLS_LE32:
-      *(ul32 *)loc = S + A - ctx.tls_begin + E::tls_tp_offset;
+      *(ul32 *)loc = S + A - ctx.tp_addr;
       continue;
     case R_ARM_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
-        *(ul32 *)loc = S - ctx.tls_begin + E::tls_tp_offset;
+        *(ul32 *)loc = S - ctx.tp_addr;
       } else if (A & 1) {
         // A is odd if the corresponding TLS_CALL is Thumb.
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 6;

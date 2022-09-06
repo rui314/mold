@@ -303,7 +303,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_X86_64_TLSGD:
       if (sym.get_tlsgd_idx(ctx) == -1) {
         // Relax GD to LE
-        i64 val = S - ctx.tls_end + A + 4;
+        i64 val = S + A - ctx.tp_addr + 4;
         check(val, -((i64)1 << 31), (i64)1 << 31);
 
         switch (rels[i + 1].r_type) {
@@ -379,21 +379,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
     case R_X86_64_DTPOFF32:
       if (ctx.arg.relax && !ctx.arg.shared)
-        write32s(S + A - ctx.tls_end);
+        write32s(S + A - ctx.tp_addr);
       else
         write32s(S + A - ctx.tls_begin);
       continue;
     case R_X86_64_DTPOFF64:
       if (ctx.arg.relax && !ctx.arg.shared)
-        *(ul64 *)loc = S + A - ctx.tls_end;
+        *(ul64 *)loc = S + A - ctx.tp_addr;
       else
         *(ul64 *)loc = S + A - ctx.tls_begin;
       continue;
     case R_X86_64_TPOFF32:
-      write32s(S + A - ctx.tls_end);
+      write32s(S + A - ctx.tp_addr);
       continue;
     case R_X86_64_TPOFF64:
-      *(ul64 *)loc = S + A - ctx.tls_end;
+      *(ul64 *)loc = S + A - ctx.tp_addr;
       continue;
     case R_X86_64_GOTTPOFF:
       if (sym.get_gottp_idx(ctx) == -1) {
@@ -401,7 +401,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
-        write32s(S + A - ctx.tls_end + 4);
+        write32s(S + A - ctx.tp_addr + 4);
       } else {
         write32s(sym.get_gottp_addr(ctx) + A - P);
       }
@@ -412,7 +412,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
-        write32s(S + A - ctx.tls_end + 4);
+        write32s(S + A - ctx.tp_addr + 4);
       } else {
         write32s(sym.get_tlsdesc_addr(ctx) + A - P);
       }
