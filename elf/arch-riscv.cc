@@ -239,7 +239,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     i64 r_offset = rel.r_offset - get_r_delta(i);
-    i64 delta = get_r_delta(i + 1) - get_r_delta(i);
+    i64 removed_bytes = get_r_delta(i + 1) - get_r_delta(i);
     u8 *loc = base + r_offset;
 
     const SectionFragmentRef<E> *frag_ref = nullptr;
@@ -285,21 +285,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
       u32 rd = get_rd(*(ul32 *)(contents.data() + rel.r_offset + 4));
-      if (delta == 4) {
+      if (removed_bytes == 4) {
         // auipc + jalr -> jal
         *(ul32 *)loc = (rd << 7) | 0b1101111;
         write_jtype(loc, S + A - P);
-      } else if (delta == 6 && rd == 0) {
+      } else if (removed_bytes == 6 && rd == 0) {
         // auipc + jalr -> c.j
         *(ul16 *)loc = 0b101'00000000000'01;
         write_cjtype(loc, S + A - P);
-      } else if (delta == 6 && rd == 1) {
+      } else if (removed_bytes == 6 && rd == 1) {
         // auipc + jalr -> c.jal
         assert(sizeof(Word<E>) == 4);
         *(ul16 *)loc = 0b001'00000000000'01;
         write_cjtype(loc, S + A - P);
       } else {
-        assert(delta == 0);
+        assert(removed_bytes == 0);
         u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
         check(val, -(1LL << 31), 1LL << 31);
         write_utype(loc, val);
@@ -328,11 +328,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_HI20: {
       i64 val = S + A;
-      if (delta == 0) {
+      if (removed_bytes == 0) {
         check(val, -(1LL << 31), 1LL << 31);
         write_utype(loc, val);
       } else {
-        assert(delta == 4);
+        assert(removed_bytes == 4);
         assert(sign_extend(val, 11) == val);
       }
       break;
@@ -353,8 +353,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_TPREL_HI20:
-      assert(delta == 0 || delta == 4);
-      if (delta == 0)
+      assert(removed_bytes == 0 || removed_bytes == 4);
+      if (removed_bytes == 0)
         write_utype(loc, S + A - ctx.tls_begin);
       break;
     case R_RISCV_TPREL_ADD:
