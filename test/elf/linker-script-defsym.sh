@@ -21,7 +21,7 @@ bar = foo;
 EOF
 
 $CC -B. -o $t/b.so -shared $t/script $t/a.o
-readelf -s $t/b.so | grep -q bar
+readelf -sW $t/b.so | grep -q 'FUNC .* bar'
 
 cat <<EOF | $CC -o $t/c.o -c -xc -
 #include <stdio.h>

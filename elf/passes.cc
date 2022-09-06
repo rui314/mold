@@ -467,13 +467,24 @@ void add_synthetic_symbols(Context<E> &ctx) {
   for (Symbol<E> *sym : obj.symbols)
     sym->shndx = -1; // dummy value to make it a relative symbol
 
-  // Make defsym symbols absolute if necessary.
+  // Handle --defsym symbols.
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
     std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
-    if (std::holds_alternative<u64>(val) ||
-        std::get<Symbol<E> *>(val)->is_absolute())
-        sym->shndx = 0;
+
+    Symbol<E> *target = nullptr;
+    if (Symbol<E> **ref = std::get_if<Symbol<E> *>(&val))
+      target = *ref;
+
+    // If the alias refers another symobl, copy ELF symbol attributes.
+    if (target) {
+      ElfSym<E> &esym = obj.elf_syms[i + 1];
+      esym.st_type = target->esym().st_type;
+    }
+
+    // Make the target absolute if necessary.
+    if (!target || target->is_absolute())
+      sym->shndx = 0;
   }
 }
 
