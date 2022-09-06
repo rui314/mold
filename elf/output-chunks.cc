@@ -1085,10 +1085,16 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     }
   }
 
-  if constexpr (supports_tlsdesc<E>)
-    for (Symbol<E> *sym : tlsdesc_syms)
-      entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC,
-                         sym == ctx._TLS_MODULE_BASE_ ? nullptr : sym});
+  if constexpr (supports_tlsdesc<E>) {
+    for (Symbol<E> *sym : tlsdesc_syms) {
+      // _TLS_MODULE_BASE_ is a linker-synthesized virtual symbol that
+      // refers the begining of the TLS block.
+      if (sym == ctx._TLS_MODULE_BASE_)
+        entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC});
+      else
+        entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC, sym});
+    }
+  }
 
   for (Symbol<E> *sym : gottp_syms) {
     i64 idx = sym->get_gottp_idx(ctx);
