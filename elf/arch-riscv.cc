@@ -333,23 +333,33 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_utype(loc, val);
       } else {
         assert(removed_bytes == 4);
-        assert(sign_extend(val, 11) == val);
+        i64 gp_offset = ctx.__global_pointer->get_addr(ctx) - val;
+        assert(sign_extend(val, 11) == val ||
+               sign_extend(gp_offset, 11) == gp_offset);
       }
       break;
     }
     case R_RISCV_LO12_I:
     case R_RISCV_LO12_S: {
       i64 val = S + A;
+      i64 gp_offset = ctx.__global_pointer->get_addr(ctx) - val;
+      u32 mask = 0b111111'11111'00000'111'11111'1111111;
+      if (sign_extend(gp_offset, 11) == gp_offset) {
+        // Rewrite `lw t1, 0(t0)` with `lw t1, 0(gp)` if the address is
+        // accessible relative to the gp register.
+        *(ul32 *)loc = (*(ul32 *)loc & mask) | (0b00011 << 15);
+        val = gp_offset;
+      } else if (sign_extend(val, 11) == val) {
+        // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
+        // accessible relative to the zero register, because if the upper 20
+        // bits are all zero, the corresponding LUI might have been removed.
+        *(ul32 *)loc &= mask;
+      }
+
       if (rel.r_type == R_RISCV_LO12_I)
         write_itype(loc, val);
       else
         write_stype(loc, val);
-
-      // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
-      // accessible relative to the zero register, because if the upper 20
-      // bits are all zero, the corresponding LUI might have been removed.
-      if (sign_extend(val, 11) == val)
-        *(ul32 *)loc &= 0b111111'11111'00000'111'11111'1111111;
       break;
     }
     case R_RISCV_TPREL_HI20:
@@ -819,11 +829,21 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       else
         val = sym.get_addr(ctx) + (u64)r.r_addend;
 
-      // If the upper 20 bits are all zero, we can remove LUI.
-      // The corresponding instructions referred by LO12_I/LO12_S
-      // relocations will use the zero register instead.
-      if (sign_extend(val, 11) == val)
+      i64 gp_offset = ctx.__global_pointer->get_addr(ctx) - val;
+      if (sign_extend(gp_offset, 11) == gp_offset) {
+        // In RISC-V, __global_pointer$ symbol is always .sdata+0x800, which is
+        // also the content of gp register.
+        // If the offset between global-pointer and symbol is within ±2 KiB, we
+        // can remove LUI.
+        // The corresponding instructions referred by LO12_I/LO12_S relocations
+        // can be replaced with a gp-relative access instruction.
         delta += 4;
+      } else if (sign_extend(val, 11) == val) {
+        // If the upper 20 bits are all zero, we can remove LUI.
+        // The corresponding instructions referred by LO12_I/LO12_S
+        // relocations will use the zero register instead.
+        delta += 4;
+      }
       break;
     }
     case R_RISCV_TPREL_HI20:
