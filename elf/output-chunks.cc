@@ -1170,6 +1170,13 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
 
 template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
+  if constexpr (std::is_same_v<E, PPC64>) {
+    // Dynamic loader fills the .got.plt section on PPC64 so that they
+    // jump to entries in .glink. Dynamic loader finds the address of
+    // .glink by DT_PPC64_GLINK.
+    return;
+  }
+
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
@@ -1179,9 +1186,7 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   buf[2] = 0;
 
   for (Symbol<E> *sym : ctx.plt->symbols) {
-    if constexpr (std::is_same_v<E, PPC64>)
-      buf[sym->get_gotplt_idx(ctx)] = 0;
-    else if constexpr (std::is_same_v<E, I386>)
+    if constexpr (std::is_same_v<E, I386>)
       buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
     else
       buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
