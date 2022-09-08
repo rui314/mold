@@ -1713,7 +1713,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   HdrEntry *eh_hdr_begin = nullptr;
   if (ctx.arg.eh_frame_hdr)
     eh_hdr_begin = (HdrEntry *)(ctx.buf + ctx.eh_frame_hdr->shdr.sh_offset +
-                 EhFrameHdrSection<E>::HEADER_SIZE);
+                   EhFrameHdrSection<E>::HEADER_SIZE);
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Copy CIEs.
@@ -1757,7 +1757,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         u64 addend = cie.input_section.get_addend(rel);
         apply_reloc(ctx, rel, loc, val + addend);
 
-        if (is_first && eh_hdr_begin) {
+        if (eh_hdr_begin && is_first) {
           // Write to .eh_frame_hdr
           HdrEntry &ent = eh_hdr_begin[file->fde_idx + i];
           u64 sh_addr = ctx.eh_frame_hdr->shdr.sh_addr;
@@ -1773,11 +1773,12 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   *(ul32 *)(base + this->shdr.sh_size - 4) = 0;
 
   // Sort .eh_frame_hdr contents.
-  if (eh_hdr_begin)
+  if (eh_hdr_begin) {
     tbb::parallel_sort(eh_hdr_begin, eh_hdr_begin + ctx.eh_frame_hdr->num_fdes,
                       [](const HdrEntry &a, const HdrEntry &b) {
       return a.init_addr < b.init_addr;
     });
+  }
 }
 
 template <typename E>
