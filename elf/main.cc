@@ -573,9 +573,7 @@ static int elf_main(int argc, char **argv) {
 
   // Sort sections by section attributes so that we'll have to
   // create as few segments as possible.
-  sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
-    return get_section_rank(ctx, a) < get_section_rank(ctx, b);
-  });
+  sort_output_sections(ctx);
 
   // If --packed_dyn_relocs=relr was given, base relocations are stored
   // to a .relr.dyn section in a compressed form. Construct a compressed

@@ -1288,50 +1288,63 @@ void clear_padding(Context<E> &ctx) {
 // Other file layouts are possible, but this layout is chosen to keep
 // the number of segments as few as possible.
 template <typename E>
-i64 get_section_rank(Context<E> &ctx, Chunk<E> *chunk) {
-  u64 type = chunk->shdr.sh_type;
-  u64 flags = chunk->shdr.sh_flags;
+void sort_output_sections(Context<E> &ctx) {
+  auto get_rank = [&](Chunk<E> *chunk) {
+    u64 type = chunk->shdr.sh_type;
+    u64 flags = chunk->shdr.sh_flags;
 
-  if (chunk == ctx.ehdr)
-    return 0;
-  if (chunk == ctx.phdr)
-    return 1;
-  if (chunk == ctx.interp)
-    return 2;
+    if (!(flags & SHF_ALLOC))
+      return INT32_MAX - 1;
+    if (chunk == ctx.shdr)
+      return INT32_MAX;
 
-  if (type == SHT_NOTE && (flags & SHF_ALLOC))
-    return (1 << 10) + chunk->shdr.sh_addralign;
+    if (chunk == ctx.ehdr)
+      return 0;
+    if (chunk == ctx.phdr)
+      return 1;
+    if (chunk == ctx.interp)
+      return 2;
+    if (type == SHT_NOTE)
+      return 3;
+    if (chunk == ctx.hash)
+      return 4;
+    if (chunk == ctx.gnu_hash)
+      return 5;
+    if (chunk == ctx.dynsym)
+      return 6;
+    if (chunk == ctx.dynstr)
+      return 7;
+    if (chunk == ctx.versym)
+      return 8;
+    if (chunk == ctx.verneed)
+      return 9;
+    if (chunk == ctx.reldyn)
+      return 10;
+    if (chunk == ctx.relplt)
+      return 11;
 
-  if (chunk == ctx.hash)
-    return (1 << 11) + 0;
-  if (chunk == ctx.gnu_hash)
-    return (1 << 11) + 1;
-  if (chunk == ctx.dynsym)
-    return (1 << 11) + 2;
-  if (chunk == ctx.dynstr)
-    return (1 << 11) + 3;
-  if (chunk == ctx.versym)
-    return (1 << 11) + 4;
-  if (chunk == ctx.verneed)
-    return (1 << 11) + 5;
-  if (chunk == ctx.reldyn)
-    return (1 << 11) + 6;
-  if (chunk == ctx.relplt)
-    return (1 << 11) + 7;
+    bool writable = (flags & SHF_WRITE);
+    bool exec = (flags & SHF_EXECINSTR);
+    bool tls = (flags & SHF_TLS);
+    bool relro = is_relro(ctx, chunk);
+    bool is_bss = (type == SHT_NOBITS);
 
-  if (chunk == ctx.shdr)
-    return 1 << 30;
-  if (!(flags & SHF_ALLOC))
-    return (1 << 30) - 1;
+    return (1 << 10) | (writable << 9) | (!exec << 8) | (!tls << 7) |
+           (!relro << 6) | (is_bss << 5);
+  };
 
-  bool writable = (flags & SHF_WRITE);
-  bool exec = (flags & SHF_EXECINSTR);
-  bool tls = (flags & SHF_TLS);
-  bool relro = is_relro(ctx, chunk);
-  bool is_bss = (type == SHT_NOBITS);
+  sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
+    // Sort sections by segments
+    i64 x = get_rank(a);
+    i64 y = get_rank(b);
+    if (x != y)
+      return x < y;
 
-  return (1 << 20) | (writable << 19) | (!exec << 18) | (!tls << 17) |
-         (!relro << 16) | (is_bss << 15);
+    // Ties are broken by special rules
+    if (a->shdr.sh_type == SHT_NOTE)
+      return a->shdr.sh_addralign < b->shdr.sh_addralign;
+    return false;
+  });
 }
 
 template <typename E>
@@ -1744,6 +1757,7 @@ void write_dependency_file(Context<E> &ctx) {
   template void shuffle_sections(Context<E> &);                         \
   template std::vector<Chunk<E> *> collect_output_sections(Context<E> &); \
   template void compute_section_sizes(Context<E> &);                    \
+  template void sort_output_sections(Context<E> &);                     \
   template void claim_unresolved_symbols(Context<E> &);                 \
   template void scan_rels(Context<E> &);                                \
   template void create_reloc_sections(Context<E> &);                    \
@@ -1754,7 +1768,6 @@ void write_dependency_file(Context<E> &ctx) {
   template void compute_import_export(Context<E> &);                    \
   template void mark_addrsig(Context<E> &);                             \
   template void clear_padding(Context<E> &);                            \
-  template i64 get_section_rank(Context<E> &, Chunk<E> *);              \
   template i64 set_osec_offsets(Context<E> &);                          \
   template void fix_synthetic_symbols(Context<E> &);                    \
   template i64 compress_debug_sections(Context<E> &);                   \

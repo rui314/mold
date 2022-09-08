@@ -1355,6 +1355,7 @@ template <typename E> void shuffle_sections(Context<E> &);
 template <typename E> std::vector<Chunk<E> *>
 collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
+template <typename E> void sort_output_sections(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_rels(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
@@ -1365,7 +1366,6 @@ template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
 template <typename E> void mark_addrsig(Context<E> &);
 template <typename E> void clear_padding(Context<E> &);
-template <typename E> i64 get_section_rank(Context<E> &, Chunk<E> *chunk);
 template <typename E> i64 set_osec_offsets(Context<E> &);
 template <typename E> void fix_synthetic_symbols(Context<E> &);
 template <typename E> i64 compress_debug_sections(Context<E> &);
