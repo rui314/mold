@@ -49,6 +49,12 @@ static u64 highera(u64 x)  { return ((x + 0x8000) >> 32) & 0xffff; }
 static u64 highest(u64 x)  { return x >> 48; }
 static u64 highesta(u64 x) { return (x + 0x8000) >> 48; }
 
+// .plt is used only for lazy symbol resolution on PPC64. All PLT
+// calls are made via range extension thunks even if they are within
+// reach. Thunks read addresses from .got.plt and jump there.
+// Therefore, once PLT symbols are resolved and final addresses are
+// written to .got.plt, thunks just skip .plt and directly jump to the
+// resolved addresses.
 template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
