@@ -1507,10 +1507,10 @@ static i64 get_num_irelative_relocs(Context<E> &ctx) {
 
 template <typename E>
 void fix_synthetic_symbols(Context<E> &ctx) {
-  auto start = [](Symbol<E> *sym, auto &chunk) {
+  auto start = [](Symbol<E> *sym, auto &chunk, i64 bias = 0) {
     if (sym && chunk) {
       sym->shndx = -chunk->shndx;
-      sym->value = chunk->shdr.sh_addr;
+      sym->value = chunk->shdr.sh_addr + bias;
     }
   };
 
@@ -1640,8 +1640,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // RISC-V's __global_pointer$
   if (ctx.__global_pointer) {
     if (Chunk<E> *chunk = find(".sdata")) {
-      start(ctx.__global_pointer, chunk);
-      ctx.__global_pointer->value += 0x800;
+      start(ctx.__global_pointer, chunk, 0x800);
     } else {
       ctx.__global_pointer->shndx = -1;
       ctx.__global_pointer->value = 0;
@@ -1657,12 +1656,9 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // PPC64's ".TOC." symbol.
-  if (ctx.TOC) {
-    if (Chunk<E> *chunk = find(".got")) {
-      start(ctx.TOC, chunk);
-      ctx.TOC->value += 0x8000;
-    }
-  }
+  if (ctx.TOC)
+    if (Chunk<E> *chunk = find(".got"))
+      start(ctx.TOC, chunk, 0x8000);
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : ctx.chunks) {
