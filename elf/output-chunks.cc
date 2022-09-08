@@ -743,11 +743,10 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_FLAGS_1, flags1);
 
   if constexpr (std::is_same_v<E, PPC64>) {
-    // PPC64_GLINK is defined by the psABI to refer 32 bytes before the
-    // PLT part of .glink section. I don't know why it's 32 bytes off,
-    // but it's what it is.
-    define(DT_PPC64_GLINK,
-           ctx.glink->shdr.sh_addr + GlinkSection::HEADER_SIZE - 32);
+    // PPC64_GLINK is defined by the psABI to refer 32 bytes before
+    // the first PLT entry. I don't know why it's 32 bytes off, but
+    // it's what it is.
+    define(DT_PPC64_GLINK, ctx.plt->shdr.sh_addr + E::plt_hdr_size - 32);
   }
 
   // GDB needs a DT_DEBUG entry in an executable to store a word-size

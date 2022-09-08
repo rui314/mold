@@ -49,30 +49,38 @@ static u64 highera(u64 x)  { return ((x + 0x8000) >> 32) & 0xffff; }
 static u64 highest(u64 x)  { return x >> 48; }
 static u64 highesta(u64 x) { return (x + 0x8000) >> 48; }
 
-static constexpr u32 plt_entry[] = {
-  // Save %r2 to the caller's TOC save area
-  0xf841'0018, // std     r2, 24(r1)
-
-  // Set %r12 to this PLT entry's .got.plt value and jump there
-  0x3d82'0000, // addis   r12, r2, 0
-  0xe98c'0000, // ld      r12, 0(r12)
-  0x7d89'03a6, // mtctr   r12
-  0x4e80'0420, // bctr
-  0x0000'0000, // padding
-};
-
 template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
-  for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_plt_idx(ctx) * E::plt_size;
-    memcpy(ent, plt_entry, sizeof(plt_entry));
+  static constexpr u32 plt0[] = {
+    // Get PC
+    0x7c08'02a6, // mflr    r0
+    0x429f'0005, // bcl     1f
+    0x7d68'02a6, // 1: mflr r11
+    0x7c08'03a6, // mtlr    r0
+    // Compute a .got.plt address
+    0xe98b'002c, // ld      r0, 44(r11)
+    0x7d8b'6050, // subf    r12, r11, r12
+    0x7d60'5a14, // add     r11, r0, r11
+    // Compute a PLT index
+    0x380c'ffcc, // addi    r0, r12, -52
+    0x7800'f082, // rldicl  r0, r0, 62, 2
+    // Load .got.plt[0] and .got.plt[1] and branch to .got.plt[0]
+    0xe98b'0000, // ld      r12, 0(r11)
+    0x7d89'03a6, // mtctr   r12
+    0xe96b'0008, // ld      r11, 8(r11)
+    0x4e80'0420, // bctr
+    0x0000'0000, // .quad .got.plt - .plt - 8
+  };
 
-    i64 disp = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - ctx.TOC->value;
-    assert(disp == sign_extend(disp, 31));
-    *(ul32 *)(ent + 4) |= bits(disp, 31, 16);
-    *(ul32 *)(ent + 8) |= bits(disp, 15, 0);
+  static_assert(E::plt_hdr_size == sizeof(plt0));
+  memcpy(buf, plt0, sizeof(plt0));
+  *(ul32 *)(buf + 52) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 8;
+
+  for (i64 i = 0; i < symbols.size(); i++) {
+    i64 disp = E::plt_hdr_size + i * E::plt_size;
+    *(ul32 *)(buf + disp) = 0x4b00'0000 | (-disp & 0x00ff'ffff); // bl plt0
   }
 }
 
@@ -80,9 +88,21 @@ template <>
 void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
+  static constexpr u32 entry[] = {
+    // Save %r2 to the caller's TOC save area
+    0xf841'0018, // std     r2, 24(r1)
+
+    // Set %r12 to this PLT entry's .got.plt value and jump there
+    0x3d82'0000, // addis   r12, r2, 0
+    0xe98c'0000, // ld      r12, 0(r12)
+    0x7d89'03a6, // mtctr   r12
+    0x4e80'0420, // bctr
+    0x0000'0000, // padding
+  };
+
   for (Symbol<E> *sym : symbols) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
-    memcpy(ent, plt_entry, sizeof(plt_entry));
+    memcpy(ent, entry, sizeof(entry));
 
     i64 disp = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - ctx.TOC->value;
     assert(disp == sign_extend(disp, 31));
@@ -312,37 +332,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Fatal(ctx) << *this << ": scan_relocations: " << rel;
     }
   }
-}
-
-void GlinkSection::update_shdr(Context<PPC64> &ctx) {
-  this->shdr.sh_size = HEADER_SIZE + ctx.plt->symbols.size() * ENTRY_SIZE;
-}
-
-void GlinkSection::copy_buf(Context<PPC64> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
-  static constexpr u8 hdr[] = {
-    0xa6, 0x02, 0x08, 0x7c, // mflr    r0
-    0x05, 0x00, 0x9f, 0x42, // bcl     1f
-    0xa6, 0x02, 0x68, 0x7d, // 1: mflr r11
-    0xa6, 0x03, 0x08, 0x7c, // mtlr    r0
-    0xf0, 0xff, 0x0b, 0xe8, // ld      r0, -16(r11)
-    0x50, 0x60, 0x8b, 0x7d, // subf    r12, r11, r12
-    0x14, 0x5a, 0x60, 0x7d, // add     r11, r0, r11
-    0xd4, 0xff, 0x0c, 0x38, // addi    r0, r12, -44
-    0x00, 0x00, 0x8b, 0xe9, // ld      r12, 0(r11)
-    0x82, 0xf0, 0x00, 0x78, // rldicl  r0, r0, 62, 2
-    0xa6, 0x03, 0x89, 0x7d, // mtctr   r12
-    0x08, 0x00, 0x6b, 0xe9, // ld      r11, 8(r11)
-    0x20, 0x04, 0x80, 0x4e, // bctr
-  };
-
-  static_assert(HEADER_SIZE == sizeof(hdr));
-  memcpy(buf, hdr, sizeof(hdr));
-
-  u32 *ent = (u32 *)(buf + sizeof(hdr));
-  for (i64 i = 0; i < ctx.plt->symbols.size(); i++)
-    *ent++ = 0x4b00'0000 | (-(HEADER_SIZE + i * ENTRY_SIZE) & 0x00ff'ffff);
 }
 
 // For range extension thunks

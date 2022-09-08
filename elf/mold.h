@@ -1396,26 +1396,6 @@ template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx);
 
 //
-// arch-ppc64.cc
-//
-
-class GlinkSection : public Chunk<PPC64> {
-public:
-  GlinkSection() {
-    this->name = ".glink";
-    this->shdr.sh_type = SHT_PROGBITS;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = 16;
-  }
-
-  void update_shdr(Context<PPC64> &ctx) override;
-  void copy_buf(Context<PPC64> &ctx) override;
-
-  static constexpr i64 HEADER_SIZE = 52;
-  static constexpr i64 ENTRY_SIZE = 4;
-};
-
-//
 // main.cc
 //
 
@@ -1672,7 +1652,6 @@ struct Context {
   NotePackageSection<E> *note_package = nullptr;
   NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
-  GlinkSection *glink = nullptr;
 
   // For --gdb-index
   Chunk<E> *debug_info = nullptr;
