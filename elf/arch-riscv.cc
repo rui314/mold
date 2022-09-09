@@ -236,7 +236,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_RISCV_NONE || rel.r_type == R_RISCV_RELAX)
+    if (rel.r_type == R_NONE || rel.r_type == R_RISCV_RELAX)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -505,7 +505,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_RISCV_NONE)
+    if (rel.r_type == R_NONE)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -627,7 +627,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_RISCV_NONE)
+    if (rel.r_type == R_NONE)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];

@@ -574,7 +574,7 @@ R"(# This is an output of the mold linker's --print-dependencies=full option.
       std::unordered_set<void *> visited;
 
       for (const ElfRel<E> &r : isec->get_rels(ctx)) {
-        if (r.r_type == E::R_NONE)
+        if (r.r_type == R_NONE)
           continue;
 
         ElfSym<E> &esym = file->elf_syms[r.r_sym];

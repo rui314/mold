@@ -133,7 +133,7 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
   switch (rel.r_type) {
-  case R_PPC64_NONE:
+  case R_NONE:
     return;
   case R_PPC64_ADDR64:
     *(ul64 *)loc = val;
@@ -171,7 +171,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_PPC64_NONE)
+    if (rel.r_type == R_NONE)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -283,7 +283,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_PPC64_NONE)
+    if (rel.r_type == R_NONE)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -332,7 +332,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_PPC64_NONE)
+    if (rel.r_type == R_NONE)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];

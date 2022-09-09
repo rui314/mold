@@ -34,6 +34,8 @@ template <typename E> struct ElfRel;
 template <typename E> struct ElfDyn;
 template <typename E> struct ElfChdr;
 
+static constexpr u32 R_NONE = 0;
+
 enum class MachineType {
   NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32, PPC64,
 };
@@ -1622,7 +1624,6 @@ using Word = typename E::Word;
 struct X86_64 {
   using Word = ul64;
 
-  static constexpr u32 R_NONE = R_X86_64_NONE;
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_X86_64_JUMP_SLOT;
@@ -1654,7 +1655,6 @@ template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
 struct I386 {
   using Word = ul32;
 
-  static constexpr u32 R_NONE = R_386_NONE;
   static constexpr u32 R_COPY = R_386_COPY;
   static constexpr u32 R_GLOB_DAT = R_386_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_386_JUMP_SLOT;
@@ -1686,7 +1686,6 @@ template <> struct ElfChdr<I386> : public Elf32Chdr {};
 struct ARM64 {
   using Word = ul64;
 
-  static constexpr u32 R_NONE = R_AARCH64_NONE;
   static constexpr u32 R_COPY = R_AARCH64_COPY;
   static constexpr u32 R_GLOB_DAT = R_AARCH64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_AARCH64_JUMP_SLOT;
@@ -1727,7 +1726,6 @@ template <> struct ElfChdr<ARM64> : public Elf64Chdr {};
 struct ARM32 {
   using Word = ul32;
 
-  static constexpr u32 R_NONE = R_ARM_NONE;
   static constexpr u32 R_COPY = R_ARM_COPY;
   static constexpr u32 R_GLOB_DAT = R_ARM_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_ARM_JUMP_SLOT;
@@ -1764,7 +1762,6 @@ template <> struct ElfChdr<ARM32> : public Elf32Chdr {};
 struct RISCV64 {
   using Word = ul64;
 
-  static constexpr u32 R_NONE = R_RISCV_NONE;
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_64;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
@@ -1817,7 +1814,6 @@ template <> struct ElfChdr<RISCV64> : public Elf64Chdr {};
 struct RISCV32 {
   using Word = ul32;
 
-  static constexpr u32 R_NONE = R_RISCV_NONE;
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_32;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
@@ -1848,7 +1844,6 @@ template <> struct ElfChdr<RISCV32> : public Elf32Chdr {};
 struct PPC64 {
   using Word = ul64;
 
-  static constexpr u32 R_NONE = R_PPC64_NONE;
   static constexpr u32 R_COPY = R_PPC64_COPY;
   static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;

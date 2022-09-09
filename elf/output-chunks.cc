@@ -1729,7 +1729,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       memcpy(base + cie.output_offset, contents.data(), contents.size());
 
       for (const ElfRel<E> &rel : cie.get_rels()) {
-        if (rel.r_type == E::R_NONE)
+        if (rel.r_type == R_NONE)
           continue;
         assert(rel.r_offset - cie.input_offset < contents.size());
         u64 loc = cie.output_offset + rel.r_offset - cie.input_offset;
@@ -1752,7 +1752,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       bool is_first = true;
 
       for (const ElfRel<E> &rel : fde.get_rels(*file)) {
-        if (rel.r_type == E::R_NONE)
+        if (rel.r_type == R_NONE)
           continue;
 
         assert(rel.r_offset - fde.input_offset < contents.size());
@@ -2551,7 +2551,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       memset(buf + j, 0, sizeof(RelaTy));
 
       if (sym.esym().st_type != STT_SECTION && !sym.write_to_symtab) {
-        buf[j].r_type = E::R_NONE;
+        buf[j].r_type = R_NONE;
         continue;
       }
 
