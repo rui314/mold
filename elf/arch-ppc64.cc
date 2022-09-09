@@ -14,7 +14,7 @@
 //
 // As a workaround, most functions are compiled in such a way that r2 is
 // assumed to always contain the address of .got + 0x8000. With this, we
-// can for example load the first entry of .got with a single instruction,
+// can for example load the first entry of .got with a single instruction
 // `lw r0, -0x8000(r2)`. r2 is called the TOC pointer.
 //
 // There's only one .got for each ELF module. Therefore, if a callee is in
@@ -29,10 +29,11 @@
 //   addis r2, r12, .TOC.@ha
 //   addi  r2, r2,  .TOC.@lo + 4;
 //
-// The global entry point assumes that the address of itself in r12, and
-// it computes r2 from r12 (it's easy to do because the offset between
-// .got + 0x8000 and the function is a constant). It then falls through to
-// the local entry point that assumes r2 is .got + 0x8000.
+// The global entry point assumes that the address of itself is in r12,
+// and it computes r2 from r12. It's easy to do so because the offset
+// between .got + 0x8000 and the function is a constant. The above code
+// sequence then falls through to the local entry point that assumes r2 is
+// .got + 0x8000.
 //
 // So, if a callee's TOC pointer is different from the current one
 // (e.g. calling a function in another .so), we first load the callee's
