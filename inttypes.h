@@ -30,6 +30,16 @@
 
 namespace mold {
 
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
+
 template <typename T, size_t SIZE = sizeof(T)>
 class LittleEndian {
 public:
@@ -84,16 +94,16 @@ public:
   }
 
 private:
-  uint8_t val[SIZE];
+  u8 val[SIZE];
 };
 
-using il16 = LittleEndian<int16_t>;
-using il32 = LittleEndian<int32_t>;
-using il64 = LittleEndian<int64_t>;
-using ul16 = LittleEndian<uint16_t>;
-using ul24 = LittleEndian<uint32_t, 3>;
-using ul32 = LittleEndian<uint32_t>;
-using ul64 = LittleEndian<uint64_t>;
+using il16 = LittleEndian<i16>;
+using il32 = LittleEndian<i32>;
+using il64 = LittleEndian<i64>;
+using ul16 = LittleEndian<u16>;
+using ul24 = LittleEndian<u32, 3>;
+using ul32 = LittleEndian<u32>;
+using ul64 = LittleEndian<u64>;
 
 template <typename T>
 class BigEndian {
@@ -145,7 +155,7 @@ public:
   }
 
 private:
-  uint8_t val[sizeof(T)];
+  u8 val[sizeof(T)];
 
   static T bswap(T x) {
     // Compiler is usually smart enough to compile the following code into
@@ -171,11 +181,11 @@ private:
   }
 };
 
-using ib16 = BigEndian<int16_t>;
-using ib32 = BigEndian<int32_t>;
-using ib64 = BigEndian<int64_t>;
-using ub16 = BigEndian<uint16_t>;
-using ub32 = BigEndian<uint32_t>;
-using ub64 = BigEndian<uint64_t>;
+using ib16 = BigEndian<i16>;
+using ib32 = BigEndian<i32>;
+using ib64 = BigEndian<i64>;
+using ub16 = BigEndian<u16>;
+using ub32 = BigEndian<u32>;
+using ub64 = BigEndian<u64>;
 
 } // namespace mold
