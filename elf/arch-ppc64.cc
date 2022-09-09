@@ -18,8 +18,9 @@
 // `lw r0, -0x8000(r2)`. r2 is called the TOC pointer.
 //
 // There's only one .got for each ELF module. Therefore, if a callee is in
-// the same ELF module, r2 doesn't have to recomputed. Most function calls
-// are usually within the same ELF module, so this mechanism is efficient.
+// the same ELF module, r2 doesn't have to be recomputed. Most function
+// calls are usually within the same ELF module, so this mechanism is
+// efficient.
 //
 // In PPC64, a function usually have two entry points, global and local.
 // The local entry point is usually 8 bytes past the global entry point.
@@ -28,12 +29,16 @@
 //   addis r2, r12, .TOC.@ha
 //   addi  r2, r2,  .TOC.@lo + 4;
 //
-// The global entry point assumes that the address of the function being
-// called is in r12, and it restores r2 from r12. So, if a callee's TOC
-// pointer is different from the current one (e.g. calling a function in
-// another .so), we first load the callee's address to r12 (e.g. from
-// .got.plt with a r2-relative load) and branch to that address. Then the
-// callee computes its own TOC pointer using r12.
+// The global entry point assumes that the address of itself in r12, and
+// it computes r2 from r12 (it's easy to do because the offset between
+// .got + 0x8000 and the function is a constant). It then falls through to
+// the local entry point that assumes r2 is .got + 0x8000.
+//
+// So, if a callee's TOC pointer is different from the current one
+// (e.g. calling a function in another .so), we first load the callee's
+// address to r12 (e.g. from .got.plt with a r2-relative load) and branch
+// to that address. Then the callee computes its own TOC pointer using
+// r12.
 //
 // https://openpowerfoundation.org/specifications/64bitelfabi/
 
