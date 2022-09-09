@@ -145,7 +145,7 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
     *(ul64 *)loc = val - this->shdr.sh_addr - offset;
     return;
   default:
-    Fatal(ctx) << ": EhFrame: " << rel;
+    Fatal(ctx) << "unknown relocation in ehframe: " << rel;
   }
   unreachable();
 }
@@ -266,7 +266,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_TLSLD:
       break;
     default:
-      Fatal(ctx) << ": apply_reloc_alloc relocation: " << rel;
+      Fatal(ctx) << *this << ": apply_reloc_alloc relocation: " << rel;
     }
 
 #undef S
@@ -324,7 +324,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = S + A;
       break;
     default:
-      Fatal(ctx) << ": apply_reloc_nonalloc: " << rel;
+      Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
     }
 
 #undef S
