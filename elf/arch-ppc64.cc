@@ -307,18 +307,28 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
 #define S   (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
 #define A   (frag ? addend : this->get_addend(rel))
-#define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
-#define GOT ctx.got->shdr.sh_addr
 
     switch (rel.r_type) {
+    case R_NONE:
+      break;
+    case R_PPC64_ADDR64:
+      if (!frag) {
+        if (std::optional<u64> val = get_tombstone(sym)) {
+          *(ul64 *)loc = *val;
+          break;
+        }
+      }
+      *(ul64 *)loc = S + A;
+      break;
+    case R_PPC64_ADDR32:
+      *(ul32 *)loc = S + A;
+      break;
     default:
       Fatal(ctx) << ": apply_reloc_nonalloc: " << rel;
     }
 
 #undef S
 #undef A
-#undef G
-#undef GOT
   }
 }
 
