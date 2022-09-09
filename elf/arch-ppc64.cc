@@ -34,6 +34,8 @@
 // another .so), we first load the callee's address to r12 (e.g. from
 // .got.plt with a r2-relative load) and branch to that address. Then the
 // callee computes its own TOC pointer using r12.
+//
+// https://openpowerfoundation.org/specifications/64bitelfabi/
 
 #include "mold.h"
 

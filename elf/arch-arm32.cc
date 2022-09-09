@@ -27,6 +27,8 @@
 // is 0x2000 (not 0x2001, as Thumb instructions are always 2-byte
 // aligned). Likewise, if a function pointer has value 0x2001, it
 // refers a Thumb function at 0x2000.
+//
+// https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst
 
 #include "mold.h"
 

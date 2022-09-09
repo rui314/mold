@@ -1,3 +1,5 @@
+// https://github.com/rui314/mold/wiki/i386-psabi.pdf
+
 #include "mold.h"
 
 namespace mold::elf {

@@ -1,3 +1,16 @@
+// This file contains ARM64-specific code. Being new, the ARM64's ELF
+// psABI doesn't have anything peculiar. ARM64 is a clean RISC
+// instruction set that supports PC-relative load/store instructions.
+//
+// Unlike ARM32, instructions length doesn't vary. All ARM64
+// instructions are 4 bytes long.
+//
+// Branch instructions used for function call can jump within ±128 MiB.
+// We need to create range extension thunks to support binaries whose
+// .text is larger than that.
+//
+// https://github.com/ARM-software/abi-aa/blob/main/aaelf64/aaelf64.rst
+
 #include "mold.h"
 
 namespace mold::elf {

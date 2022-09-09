@@ -1,3 +1,5 @@
+// https://github.com/rui314/mold/wiki/x86-64-psabi.pdf
+
 #include "mold.h"
 
 namespace mold::elf {

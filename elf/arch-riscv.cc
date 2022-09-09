@@ -1,3 +1,5 @@
+// https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
+
 #include "mold.h"
 
 #include <tbb/parallel_for.h>
