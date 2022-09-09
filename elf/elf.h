@@ -1862,8 +1862,8 @@ struct PPC64 {
   static constexpr MachineType machine_type = MachineType::PPC64;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_PPC64;
-  static constexpr u32 plt_hdr_size = 56;
-  static constexpr u32 plt_size = 8;
+  static constexpr u32 plt_hdr_size = 60;
+  static constexpr u32 plt_size = 4;
   static constexpr u32 pltgot_size = 24;
   static constexpr u32 tls_tp_offset = 8;
   static constexpr u32 tls_dtv_offset = 0x8000;

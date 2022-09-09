@@ -65,11 +65,10 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
     0x429f'0005, // bcl     1f
     0x7d68'02a6, // 1: mflr r11
     0x7c08'03a6, // mtlr    r0
-    // Compute a .got.plt address
-    0xe98b'002c, // ld      r0, 44(r11)
+    // Compute the PLT entry index
+    0xe80b'002c, // ld      r0, 44(r11)
     0x7d8b'6050, // subf    r12, r11, r12
     0x7d60'5a14, // add     r11, r0, r11
-    // Compute a PLT index
     0x380c'ffcc, // addi    r0, r12, -52
     0x7800'f082, // rldicl  r0, r0, 62, 2
     // Load .got.plt[0] and .got.plt[1] and branch to .got.plt[0]
@@ -77,12 +76,14 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
     0x7d89'03a6, // mtctr   r12
     0xe96b'0008, // ld      r11, 8(r11)
     0x4e80'0420, // bctr
-    0x0000'0000, // .quad .got.plt - .plt - 8
+    // .quad .got.plt - .plt - 8
+    0x0000'0000,
+    0x0000'0000,
   };
 
   static_assert(E::plt_hdr_size == sizeof(plt0));
   memcpy(buf, plt0, sizeof(plt0));
-  *(ul32 *)(buf + 52) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 8;
+  *(ul64 *)(buf + 52) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 8;
 
   for (i64 i = 0; i < symbols.size(); i++) {
     i64 disp = E::plt_hdr_size + i * E::plt_size;
@@ -359,7 +360,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0x3d820000, // addis r12, r2,  foo@gotplt@toc@ha
     0xe98c0000, // addi  r12, r12, foo@gotplt@toc@lo
     0x7d8903a6, // mtctr r12
-    0x4e800420, // bctr  r12
+    0x4e800420, // bctr
   };
 
   static_assert(E::thunk_size == sizeof(data));
