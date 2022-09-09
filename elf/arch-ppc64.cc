@@ -114,7 +114,6 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
     0xe98c'0000, // ld      r12, 0(r12)
     0x7d89'03a6, // mtctr   r12
     0x4e80'0420, // bctr
-    0x0000'0000, // padding
   };
 
   for (Symbol<E> *sym : symbols) {
