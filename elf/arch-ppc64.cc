@@ -239,6 +239,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_GOT_TLSLD16_HA:
       *(ul16 *)loc = ha(ctx.got->get_tlsld_addr(ctx) - ctx.TOC->value);
       break;
+    case R_PPC64_GOT_TLSLD16_LO:
+      *(ul16 *)loc = ctx.got->get_tlsld_addr(ctx) - ctx.TOC->value;
+      break;
+    case R_PPC64_DTPREL16_HA:
+      *(ul16 *)loc = ha(S + A - ctx.tp_addr);
+      break;
+    case R_PPC64_DTPREL16_LO:
+      *(ul16 *)loc = S + A - ctx.tp_addr;
+      break;
     case R_PPC64_GOT_TPREL16_LO_DS:
       *(ul16 *)loc |= (sym.get_gottp_addr(ctx) - ctx.TOC->value) & 0xfffc;
       break;
@@ -249,6 +258,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = S + A - ctx.tp_addr;
       break;
     case R_PPC64_TLS:
+    case R_PPC64_TLSLD:
       break;
     default:
       Fatal(ctx) << ": apply_reloc_alloc relocation: " << rel;
@@ -342,6 +352,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_PLT;
       break;
     case R_PPC64_GOT_TLSLD16_HA:
+    case R_PPC64_GOT_TLSLD16_LO:
       ctx.needs_tlsld = true;
       break;
     case R_PPC64_REL64:
@@ -355,6 +366,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_TPREL16_LO:
     case R_PPC64_GOT_TPREL16_LO_DS:
     case R_PPC64_TLS:
+    case R_PPC64_TLSLD:
+    case R_PPC64_DTPREL16_HA:
+    case R_PPC64_DTPREL16_LO:
       break;
     default:
       Fatal(ctx) << *this << ": scan_relocations: " << rel;
