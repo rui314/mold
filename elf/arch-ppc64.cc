@@ -1,12 +1,14 @@
 // PPC64 is a bit tricky to support because PC-relative load/store
-// instructions are generally not supported. Therefore, for example, it's
-// not easy for position-independent code to load a value from .got, as we
-// can't do that with <PC + the offset to the .got entry>.
+// instructions are generally not available. Therefore, it's not easy
+// for position-independent code to load a value, for example, from
+// .got, as we can't do that with [PC + the offset to the .got entry].
 //
-// We can get the program counter by the following two instructions
+// We can get the program counter by the following four instructions
 //
-//   bl .+4   // branch to the next instruction as if it were a function
-//   mflr r0  // copy the return address to r0
+//   mflr  r1  // save the current link register to r1
+//   bl    .+4 // branch to the next instruction as if it were a function
+//   mflr  r0  // copy the return address to r0
+//   mtlr  r1  // restore the original link register value
 //
 // , but that's too expensive to do if we do this for each load/store.
 //
