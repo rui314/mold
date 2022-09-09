@@ -215,6 +215,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       check(val, -(1 << 23), 1 << 23);
       *(ul32 *)loc |= bits(val, 25, 2) << 2;
+
+      // If the callee saves r2 to the caller's r2 save slot to clobber
+      // r2, we need to restore r2 after function return. To do so,
+      // there's usually a NOP as a placeholder after a BL. 0x6000'0000 is
+      // a NOP.
+      if (sym.has_plt(ctx) && *(ul32 *)(loc + 4) == 0x6000'0000)
+        *(ul32 *)(loc + 4) = 0xe841'0018; // ld r2, 24(r1)
       break;
     }
     case R_PPC64_REL16_HA:
