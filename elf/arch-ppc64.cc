@@ -127,7 +127,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
 
     i64 val = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - ctx.TOC->value;
     assert(val == sign_extend(val, 31));
-    *(ul32 *)(ent + 4) |= ha(val);
+    *(ul32 *)(ent + 4) |= higha(val);
     *(ul32 *)(ent + 8) |= lo(val);
   }
 }
@@ -214,13 +214,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc |= (S + A - ctx.TOC->value) & 0xfffc;
       break;
     case R_PPC64_REL24: {
-      i64 val;
-      if (sym.has_plt(ctx)) {
+      i64 val = S + A - P + get_local_entry_offset(ctx, sym);
+
+      if (sym.has_plt(ctx) || sign_extend(val, 23) != val) {
         RangeExtensionRef ref = extra.range_extn[i];
         assert(ref.thunk_idx != -1);
         val = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx) + A - P;
-      } else {
-        val = S + A - P + get_local_entry_offset(ctx, sym);
       }
 
       check(val, -(1 << 23), 1 << 23);
@@ -413,14 +412,34 @@ template <>
 bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
                   InputSection<E> &isec, const ElfRel<E> &rel) {
   // We always jump to a PLT entry through a thunk.
-  return !sym.has_plt(ctx);
+  if (sym.has_plt(ctx))
+    return false;
+
+  // We create thunks with a pessimistic assumption that all
+  // out-of-section relocations would be out-of-range.
+  InputSection<E> *isec2 = sym.get_input_section();
+  if (!isec2 || isec.output_section != isec2->output_section)
+    return false;
+
+  if (isec2->offset == -1)
+    return false;
+
+  // Compute a distance between the relocated place and the symbol
+  // and check if they are within reach.
+  i64 S = sym.get_addr(ctx);
+  i64 A = rel.r_addend;
+  i64 P = isec.get_addr() + rel.r_offset;
+  i64 val = S + A - P;
+  return sign_extend(val, 23) == val;
 }
 
 template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
 
-  static const u32 data[] = {
+  // If the destination is PLT, we read a value from .got.plt or .got
+  // and jump there.
+  static const u32 plt_thunk[] = {
     // Save r2 to the r2 save slot reserved in the caller's stack frame
     0xf841'0018, // std   r2, 24(r1)
     // Jump to a PLT entry
@@ -430,17 +449,38 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0x4e80'0420, // bctr
   };
 
-  static_assert(E::thunk_size == sizeof(data));
+  // If the destination is a non-imported function, we directly jump
+  // to that address. We don't need to save r2 because the destination
+  // is not external.
+  static const u32 local_thunk[] = {
+    // Jump to a PLT entry
+    0x3d82'0000, // addis r12, r2, foo@toc@ha
+    0x398c'0000, // addi  r0, r12, foo@toc@lo
+    0x7d89'03a6, // mtctr r12
+    0x4e80'0420, // bctr
+    0x0000'0000, // (padding)
+  };
+
+  static_assert(E::thunk_size == sizeof(plt_thunk));
+  static_assert(E::thunk_size == sizeof(local_thunk));
 
   for (i64 i = 0; i < symbols.size(); i++) {
     Symbol<E> &sym = *symbols[i];
     u8 *loc = buf + i * E::thunk_size;
-    memcpy(loc , data, sizeof(data));
 
-    u64 got = sym.has_got(ctx) ? sym.get_got_addr(ctx) : sym.get_gotplt_addr(ctx);
-    i64 val = got - ctx.TOC->value;
-    *(ul32 *)(loc + 4) |= ha(val);
-    *(ul32 *)(loc + 8) |= lo(val);
+    if (sym.has_plt(ctx)) {
+      memcpy(loc , plt_thunk, sizeof(plt_thunk));
+      u64 got = sym.has_got(ctx) ? sym.get_got_addr(ctx) : sym.get_gotplt_addr(ctx);
+      i64 val = got - ctx.TOC->value;
+      *(ul32 *)(loc + 4) |= higha(val);
+      *(ul32 *)(loc + 8) |= lo(val);
+    } else {
+      memcpy(loc , local_thunk, sizeof(local_thunk));
+      i64 val = sym.get_addr(ctx) - ctx.TOC->value;
+      *(ul32 *)(loc + 0) |= higha(val);
+      *(ul32 *)(loc + 4) |= lo(val);
+    }
+
   }
 }
 

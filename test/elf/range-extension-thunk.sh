@@ -17,9 +17,6 @@ mkdir -p $t
 [ $MACHINE = arm32 ] && { echo skipped; exit; }
 [ $MACHINE = riscv32 ] && { echo skipped; exit; }
 
-# PPC64 doesn't have a range extension support yet.
-[ $MACHINE = ppc64le ] && { echo skipped; exit; }
-
 cat <<EOF > $t/a.c
 #include <stdio.h>
 
