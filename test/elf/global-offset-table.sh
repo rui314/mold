@@ -14,25 +14,15 @@ mkdir -p $t
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
-#include <errno.h>
 
 extern char foo;
-extern _Thread_local int bar;
-
-void ignore(int);
 
 int main() {
-  ignore(bar);
   printf("%lx\n", (unsigned long)&foo);
 }
 EOF
 
-cat <<EOF | $CC -fPIC -c -o $t/b.o -xc -
-_Thread_local int bar;
-void ignore(int) {}
-EOF
-
-$CC -B. -no-pie -o $t/exe $t/a.o $t/b.o -Wl,-defsym=foo=_GLOBAL_OFFSET_TABLE_
+$CC -B. -no-pie -o $t/exe $t/a.o -Wl,-defsym=foo=_GLOBAL_OFFSET_TABLE_
 
 $QEMU $t/exe > /dev/null
 GOT_ADDR=$($QEMU $t/exe)
