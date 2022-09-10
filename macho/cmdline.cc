@@ -70,7 +70,7 @@ Options:
     -enable_optimization_hints
   -install_name <NAME>
   -l<LIB>                     Search for a given library
-  -lto_library <FILE>         Path to the LLVM link time optimizer library
+  -lto_library <FILE>         Load a LTO linker plugin library
   -macos_version_min <VERSION>
   -map <FILE>                 Write map file to a given file
   -mark_dead_strippable_dylib Mark the output as dead-strippable
@@ -83,9 +83,7 @@ Options:
   -o <FILE>                   Set output filename
   -objc_abi_version <VERSION> Ignored
   -object_path_lto <FILE>     Write a LTO temporary file to a given path
-  -order_file <FILE>          Path to an order file specifying symbols which
-                              should be laid out first and in the order specified.
-                              Symbols should be delimited by newlines
+  -order_file <FILE>          Layout functions and data according to specification in a given file
   -pagezero_size <SIZE>       Specify the size of the __PAGEZERO segment
   -platform_version <PLATFORM> <MIN_VERSION> <SDK_VERSION>
                               Set platform, platform version and SDK version
