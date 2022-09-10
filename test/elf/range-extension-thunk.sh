@@ -12,7 +12,13 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[[ $MACHINE = aarch64 ]] || { echo skipped; exit; }
+# Skip if 32 bits as we use very large addresses in this test.
+[ $MACHINE = i386 -o $MACHINE = i686 ] && { echo skipped; exit; }
+[ $MACHINE = arm32 ] && { echo skipped; exit; }
+[ $MACHINE = riscv32 ] && { echo skipped; exit; }
+
+# PPC64 doesn't have a range extension support yet.
+[ $MACHINE = ppc64le ] && { echo skipped; exit; }
 
 cat <<EOF > $t/a.c
 #include <stdio.h>
