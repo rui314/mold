@@ -78,14 +78,14 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
   static const u32 plt0[] = {
-    0xe52de004, // push {lr}
-    0xe59fe004, // ldr lr, 2f
-    0xe08fe00e, // 1: add lr, pc, lr
-    0xe5bef008, // ldr pc, [lr, #8]!
-    0x00000000, // 2: .word .got.plt - 1b - 8
-    0xe320f000, // nop
-    0xe320f000, // nop
-    0xe320f000, // nop
+    0xe52d'e004, // push {lr}
+    0xe59f'e004, // ldr lr, 2f
+    0xe08f'e00e, // 1: add lr, pc, lr
+    0xe5be'f008, // ldr pc, [lr, #8]!
+    0x0000'0000, // 2: .word .got.plt - 1b - 8
+    0xe320'f000, // nop
+    0xe320'f000, // nop
+    0xe320'f000, // nop
   };
 
   memcpy(buf, plt0, sizeof(plt0));
@@ -93,10 +93,10 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : symbols) {
     static const u32 plt[] = {
-      0xe59fc004, // 1: ldr ip, 2f
-      0xe08cc00f, // add ip, ip, pc
-      0xe59cf000, // ldr pc, [ip]
-      0x00000000, // 2: .word sym@PLTGOT - 1b
+      0xe59f'c004, // 1: ldr ip, 2f
+      0xe08c'c00f, // add ip, ip, pc
+      0xe59c'f000, // ldr pc, [ip]
+      0x0000'0000, // 2: .word sym@PLTGOT - 1b
     };
 
     u8 *ent = buf + sizeof(plt0) + sym->get_plt_idx(ctx) * sizeof(plt);
@@ -111,10 +111,10 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : symbols) {
     static const u32 plt[] = {
-      0xe59fc004, // 1: ldr ip, 2f
-      0xe08cc00f, // add ip, ip, pc
-      0xe59cf000, // ldr pc, [ip]
-      0x00000000, // 2: .word sym@GOT - 1b
+      0xe59f'c004, // 1: ldr ip, 2f
+      0xe08c'c00f, // add ip, ip, pc
+      0xe59c'f000, // ldr pc, [ip]
+      0x0000'0000, // 2: .word sym@GOT - 1b
     };
 
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * sizeof(plt);

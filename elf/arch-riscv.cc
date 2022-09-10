@@ -91,25 +91,25 @@ static void write_plt_header(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
   static const u32 plt0_64[] = {
-    0x00000397, // auipc  t2, %pcrel_hi(.got.plt)
-    0x41c30333, // sub    t1, t1, t3               # .plt entry + hdr + 12
-    0x0003be03, // ld     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
-    0xfd430313, // addi   t1, t1, -44              # .plt entry
-    0x00038293, // addi   t0, t2, %pcrel_lo(1b)    # &.got.plt
-    0x00135313, // srli   t1, t1, 1                # .plt entry offset
-    0x0082b283, // ld     t0, 8(t0)                # link map
-    0x000e0067, // jr     t3
+    0x0000'0397, // auipc  t2, %pcrel_hi(.got.plt)
+    0x41c3'0333, // sub    t1, t1, t3               # .plt entry + hdr + 12
+    0x0003'be03, // ld     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
+    0xfd43'0313, // addi   t1, t1, -44              # .plt entry
+    0x0003'8293, // addi   t0, t2, %pcrel_lo(1b)    # &.got.plt
+    0x0013'5313, // srli   t1, t1, 1                # .plt entry offset
+    0x0082'b283, // ld     t0, 8(t0)                # link map
+    0x000e'0067, // jr     t3
   };
 
   static const u32 plt0_32[] = {
-    0x00000397, // auipc  t2, %pcrel_hi(.got.plt)
-    0x41c30333, // sub    t1, t1, t3               # .plt entry + hdr + 12
-    0x0003ae03, // lw     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
-    0xfd430313, // addi   t1, t1, -44              # .plt entry
-    0x00038293, // addi   t0, t2, %pcrel_lo(1b)    # &.got.plt
-    0x00235313, // srli   t1, t1, 2                # .plt entry offset
-    0x0042a283, // lw     t0, 4(t0)                # link map
-    0x000e0067, // jr     t3
+    0x0000'0397, // auipc  t2, %pcrel_hi(.got.plt)
+    0x41c3'0333, // sub    t1, t1, t3               # .plt entry + hdr + 12
+    0x0003'ae03, // lw     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
+    0xfd43'0313, // addi   t1, t1, -44              # .plt entry
+    0x0003'8293, // addi   t0, t2, %pcrel_lo(1b)    # &.got.plt
+    0x0023'5313, // srli   t1, t1, 2                # .plt entry offset
+    0x0042'a283, // lw     t0, 4(t0)                # link map
+    0x000e'0067, // jr     t3
   };
 
   if constexpr (sizeof(Word<E>) == 8)
@@ -126,17 +126,17 @@ static void write_plt_header(Context<E> &ctx) {
 }
 
 static constexpr u32 plt_entry_64[] = {
-  0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)
-  0x000e3e03, // ld      t3, %pcrel_lo(1b)(t3)
-  0x000e0367, // jalr    t1, t3
-  0x00000013, // nop
+  0x0000'0e17, // auipc   t3, %pcrel_hi(function@.got.plt)
+  0x000e'3e03, // ld      t3, %pcrel_lo(1b)(t3)
+  0x000e'0367, // jalr    t1, t3
+  0x0000'0013, // nop
 };
 
 static constexpr u32 plt_entry_32[] = {
-  0x00000e17, // auipc   t3, %pcrel_hi(function@.got.plt)
-  0x000e2e03, // lw      t3, %pcrel_lo(1b)(t3)
-  0x000e0367, // jalr    t1, t3
-  0x00000013, // nop
+  0x0000'0e17, // auipc   t3, %pcrel_hi(function@.got.plt)
+  0x000e'2e03, // lw      t3, %pcrel_lo(1b)(t3)
+  0x000e'0367, // jalr    t1, t3
+  0x0000'0013, // nop
 };
 
 template <typename E>
@@ -413,7 +413,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       i64 i = 0;
       for (; i <= padding_size - 4; i += 4)
-        *(ul32 *)(loc + i) = 0x00000013; // nop
+        *(ul32 *)(loc + i) = 0x0000'0013; // nop
       if (i != padding_size)
         *(ul16 *)(loc + i) = 0x0001;     // c.nop
       break;

@@ -38,14 +38,14 @@ static u64 page(u64 val) {
 static void write_plt_header(Context<E> &ctx, u8 *buf) {
   // Write PLT header
   static const u32 plt0[] = {
-    0xa9bf7bf0, // stp  x16, x30, [sp,#-16]!
-    0x90000010, // adrp x16, .got.plt[2]
-    0xf9400211, // ldr  x17, [x16, .got.plt[2]]
-    0x91000210, // add  x16, x16, .got.plt[2]
-    0xd61f0220, // br   x17
-    0xd503201f, // nop
-    0xd503201f, // nop
-    0xd503201f, // nop
+    0xa9bf'7bf0, // stp  x16, x30, [sp,#-16]!
+    0x9000'0010, // adrp x16, .got.plt[2]
+    0xf940'0211, // ldr  x17, [x16, .got.plt[2]]
+    0x9100'0210, // add  x16, x16, .got.plt[2]
+    0xd61f'0220, // br   x17
+    0xd503'201f, // nop
+    0xd503'201f, // nop
+    0xd503'201f, // nop
   };
 
   u64 gotplt = ctx.gotplt->shdr.sh_addr + 16;
@@ -61,10 +61,10 @@ static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u8 *ent = buf + E::plt_hdr_size + sym.get_plt_idx(ctx) * E::plt_size;
 
   static const u32 data[] = {
-    0x90000010, // adrp x16, .got.plt[n]
-    0xf9400211, // ldr  x17, [x16, .got.plt[n]]
-    0x91000210, // add  x16, x16, .got.plt[n]
-    0xd61f0220, // br   x17
+    0x9000'0010, // adrp x16, .got.plt[n]
+    0xf940'0211, // ldr  x17, [x16, .got.plt[n]]
+    0x9100'0210, // add  x16, x16, .got.plt[n]
+    0xd61f'0220, // br   x17
   };
 
   u64 gotplt = sym.get_gotplt_addr(ctx);
@@ -92,10 +92,10 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * ARM64::pltgot_size;
 
     static const u32 data[] = {
-      0x90000010, // adrp x16, GOT[n]
-      0xf9400211, // ldr  x17, [x16, GOT[n]]
-      0xd61f0220, // br   x17
-      0xd503201f, // nop
+      0x9000'0010, // adrp x16, GOT[n]
+      0xf940'0211, // ldr  x17, [x16, GOT[n]]
+      0xd61f'0220, // br   x17
+      0xd503'201f, // nop
     };
 
     u64 got = sym->get_got_addr(ctx);
@@ -237,7 +237,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.is_remaining_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
-        *(ul32 *)loc = 0xd503201f; // nop
+        *(ul32 *)loc = 0xd503'201f; // nop
         continue;
       }
 
@@ -251,7 +251,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         assert(lo <= val && val < hi);
       }
 
-      *(ul32 *)loc |= (val >> 2) & 0x3ffffff;
+      *(ul32 *)loc |= (val >> 2) & 0x03ff'ffff;
       continue;
     }
     case R_AARCH64_CONDBR19:
@@ -318,7 +318,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // adrp x0, 0 -> movz x0, #tls_ofset_hi, lsl #16
         i64 val = (S + A - ctx.tp_addr);
         check(val, -(1LL << 32), 1LL << 32);
-        *(ul32 *)loc = 0xd2a00000 | (bits(val, 32, 16) << 5);
+        *(ul32 *)loc = 0xd2a0'0000 | (bits(val, 32, 16) << 5);
       } else {
         i64 val = page(sym.get_tlsdesc_addr(ctx) + A) - page(P);
         check(val, -(1LL << 32), 1LL << 32);
@@ -330,7 +330,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (ctx.relax_tlsdesc && !sym.is_imported) {
         // ldr x2, [x0] -> movk x0, #tls_ofset_lo
         u32 offset_lo = (S + A - ctx.tp_addr) & 0xffff;
-        *(ul32 *)loc = 0xf2800000 | (offset_lo << 5);
+        *(ul32 *)loc = 0xf280'0000 | (offset_lo << 5);
       } else {
         *(ul32 *)loc |= bits(sym.get_tlsdesc_addr(ctx) + A, 11, 3) << 10;
       }
@@ -338,7 +338,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_TLSDESC_ADD_LO12:
       if (ctx.relax_tlsdesc && !sym.is_imported) {
         // add x0, x0, #0 -> nop
-        *(ul32 *)loc = 0xd503201f;
+        *(ul32 *)loc = 0xd503'201f;
       } else {
         *(ul32 *)loc |= bits(sym.get_tlsdesc_addr(ctx) + A, 11, 0) << 10;
       }
@@ -346,7 +346,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_TLSDESC_CALL:
       if (ctx.relax_tlsdesc && !sym.is_imported) {
         // blr x2 -> nop
-        *(ul32 *)loc = 0xd503201f;
+        *(ul32 *)loc = 0xd503'201f;
       }
       continue;
     default:
@@ -524,9 +524,9 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
 
   static const u32 data[] = {
-    0x90000010, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
-    0x91000210, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC
-    0xd61f0200, // br   x16
+    0x9000'0010, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
+    0x9100'0210, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC
+    0xd61f'0200, // br   x16
   };
 
   static_assert(E::thunk_size == sizeof(data));
