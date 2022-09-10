@@ -41,6 +41,11 @@
 // to that address. Then the callee computes its own TOC pointer using
 // r12.
 //
+// The PPC64 psABI uses an weird naming convention. It calls .got.plt
+// .plt. We ignored that part because it's just confusing. Since the
+// runtime only cares about segments, we should be able to name sections
+// whatever we want.
+//
 // https://openpowerfoundation.org/specifications/64bitelfabi/
 
 #include "mold.h"
