@@ -40,7 +40,7 @@ int foo() {
 }
 
 int bar();
-void *baz();
+void *baz() {}
 
 int main() {
   printf("%d %d %d\n", foo(), bar(), baz == baz());

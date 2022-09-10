@@ -12,6 +12,8 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
+[ $MACHINE = ppc64le ] && { echo skipped; exit; }
+
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIE -
 extern int foo;
 

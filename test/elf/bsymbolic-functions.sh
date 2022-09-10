@@ -15,13 +15,8 @@ mkdir -p $t
 cat <<EOF | $CC -c -o $t/a.o -fPIC -xc -
 int foo = 4;
 
-int get_foo() {
-  return foo;
-}
-
-void *bar() {
-  return bar;
-}
+int get_foo() { return foo; }
+void *bar() { return bar; }
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,-Bsymbolic-functions
@@ -29,12 +24,11 @@ $CC -B. -shared -o $t/b.so $t/a.o -Wl,-Bsymbolic-functions
 cat <<EOF | $CC -c -o $t/c.o -xc - -fno-PIE
 #include <stdio.h>
 
-extern int foo;
+int foo = 3;
 int get_foo();
-void *bar();
+void *bar() {}
 
 int main() {
-  foo = 3;
   printf("%d %d %d\n", foo, get_foo(), bar == bar());
 }
 EOF

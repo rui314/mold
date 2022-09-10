@@ -12,6 +12,8 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
+[ $MACHINE = ppc64le ] && { echo skipped; exit; }
+
 cat <<EOF | $CC -shared -o $t/a.so -xc -
 int foo = 3;
 int bar = 5;
