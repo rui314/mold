@@ -118,7 +118,7 @@ jobs:
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
-        cmake -DMOLD_ENABLE_QEMU_TESTS=On -DMOLD_ENABLE_QEMU_TESTS_RV32=On  -DMOLD_ENABLE_QEMU_TESTS_PPC64=On ..
+        cmake -DMOLD_ENABLE_QEMU_TESTS=On -DMOLD_ENABLE_QEMU_TESTS_RV32=On ..
         cmake --build . -j$(nproc)
         ctest . -j$(nproc)
     - name: archive test results
