@@ -120,10 +120,10 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
     memcpy(ent, entry, sizeof(entry));
 
-    i64 disp = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - ctx.TOC->value;
-    assert(disp == sign_extend(disp, 31));
-    *(ul32 *)(ent + 4) |= bits(disp, 31, 16);
-    *(ul32 *)(ent + 8) |= bits(disp, 15, 0);
+    i64 val = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - ctx.TOC->value;
+    assert(val == sign_extend(val, 31));
+    *(ul32 *)(ent + 4) |= ha(val);
+    *(ul32 *)(ent + 8) |= lo(val);
   }
 }
 
@@ -241,6 +241,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_GOT_TPREL16_HA:
       *(ul16 *)loc = ha(sym.get_gottp_addr(ctx) - ctx.TOC->value);
       break;
+    case R_PPC64_GOT_TLSGD16_HA:
+      *(ul16 *)loc = ha(sym.get_tlsgd_addr(ctx) - ctx.TOC->value);
+      continue;
+    case R_PPC64_GOT_TLSGD16_LO:
+      *(ul16 *)loc = sym.get_tlsgd_addr(ctx) - ctx.TOC->value;
+      continue;
     case R_PPC64_GOT_TLSLD16_HA:
       *(ul16 *)loc = ha(ctx.got->get_tlsld_addr(ctx) - ctx.TOC->value);
       break;
@@ -263,6 +269,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = S + A - ctx.tp_addr;
       break;
     case R_PPC64_TLS:
+    case R_PPC64_TLSGD:
     case R_PPC64_TLSLD:
       break;
     default:
@@ -366,8 +373,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
+    case R_PPC64_GOT_TLSGD16_HA:
+      sym.flags |= NEEDS_TLSGD;
+      break;
     case R_PPC64_GOT_TLSLD16_HA:
-    case R_PPC64_GOT_TLSLD16_LO:
       ctx.needs_tlsld = true;
       break;
     case R_PPC64_REL64:
@@ -380,7 +389,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_TPREL16_HA:
     case R_PPC64_TPREL16_LO:
     case R_PPC64_GOT_TPREL16_LO_DS:
+    case R_PPC64_GOT_TLSGD16_LO:
+    case R_PPC64_GOT_TLSLD16_LO:
     case R_PPC64_TLS:
+    case R_PPC64_TLSGD:
     case R_PPC64_TLSLD:
     case R_PPC64_DTPREL16_HA:
     case R_PPC64_DTPREL16_LO:
@@ -405,12 +417,12 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   static const u32 data[] = {
     // Save r2 to the r2 save slot reserved in the caller's stack frame
-    0xf8410018, // std   r2, 24(r1)
+    0xf841'0018, // std   r2, 24(r1)
     // Jump to a PLT entry
-    0x3d820000, // addis r12, r2,  foo@gotplt@toc@ha
-    0xe98c0000, // addi  r12, r12, foo@gotplt@toc@lo
-    0x7d8903a6, // mtctr r12
-    0x4e800420, // bctr
+    0x3d82'0000, // addis r12, r2, foo@gotplt@toc@ha
+    0xe98c'0000, // ld    r12, foo@gotplt@toc@lo(r12)
+    0x7d89'03a6, // mtctr r12
+    0x4e80'0420, // bctr
   };
 
   static_assert(E::thunk_size == sizeof(data));

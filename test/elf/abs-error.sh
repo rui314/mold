@@ -12,7 +12,7 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = aarch64 ] && { echo skipped; exit; }
+[ $MACHINE = aarch64 -o $MACHINE = ppc64le ] && { echo skipped; exit; }
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xassembler -
 .globl foo

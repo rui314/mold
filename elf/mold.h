@@ -509,11 +509,6 @@ public:
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
-
-    // .got has to be always exist for PPC64 as it's used to compute
-    // the address of the .TOC. symbol.
-    if constexpr (std::is_same_v<E, PPC64>)
-      this->shdr.sh_size = 8;
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -576,7 +571,7 @@ public:
     this->name = ".plt.got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = E::pltgot_size;
+    this->shdr.sh_addralign = 16;
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);

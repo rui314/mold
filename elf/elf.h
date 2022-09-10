@@ -1386,6 +1386,8 @@ struct Elf32Sym {
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
+  u8 : 3;
+  u8 ppc64_local_entry : 3;
   ul16 st_shndx;
 };
 

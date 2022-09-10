@@ -483,6 +483,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
     if (target) {
       ElfSym<E> &esym = obj.elf_syms[i + 1];
       esym.st_type = target->esym().st_type;
+      esym.ppc64_local_entry = target->esym().ppc64_local_entry;
     }
 
     // Make the target absolute if necessary.
@@ -1656,9 +1657,16 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // PPC64's ".TOC." symbol.
-  if (ctx.TOC)
-    if (Chunk<E> *chunk = find(".got"))
+  if (ctx.TOC) {
+    if (Chunk<E> *chunk = find(".got")) {
       start(ctx.TOC, chunk, 0x8000);
+    } else if (Chunk<E> *chunk = find(".toc")) {
+      start(ctx.TOC, chunk, 0x8000);
+    } else {
+      ctx.TOC->shndx = -1;
+      ctx.TOC->value = 0;
+    }
+  }
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : ctx.chunks) {

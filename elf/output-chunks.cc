@@ -1171,8 +1171,9 @@ template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   if constexpr (std::is_same_v<E, PPC64>) {
     // Dynamic loader fills the .got.plt section on PPC64 so that they
-    // jump to entries in .glink. Dynamic loader finds the address of
-    // .glink by DT_PPC64_GLINK.
+    // jump to PLT entries. Dynamic loader finds the address of the
+    // first PLT entry by DT_PPC64_GLINK and assumes that each PLT
+    // entry is 4 bytes long.
     return;
   }
 
