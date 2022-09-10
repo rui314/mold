@@ -1,6 +1,6 @@
 // PPC64 is a bit tricky to support because PC-relative load/store
 // instructions are generally not available. Therefore, it's not easy
-// for position-independent code to load a value, for example, from
+// for position-independent code to load a value from, for example,
 // .got, as we can't do that with [PC + the offset to the .got entry].
 //
 // We can get the program counter by the following four instructions
@@ -30,10 +30,10 @@
 //   addi  r2, r2,  .TOC.@lo + 4;
 //
 // The global entry point assumes that the address of itself is in r12,
-// and it computes r2 from r12. It's easy to do so because the offset
-// between .got + 0x8000 and the function is a constant. The above code
-// sequence then falls through to the local entry point that assumes r2 is
-// .got + 0x8000.
+// and it computes r2 from r12. It's easy to do so for the callee because
+// the offset between .got + 0x8000 and the function is known at link-
+// time. The above code sequence then falls through to the local entry
+// point that assumes r2 is .got + 0x8000.
 //
 // So, if a callee's TOC pointer is different from the current one
 // (e.g. calling a function in another .so), we first load the callee's
