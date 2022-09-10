@@ -942,7 +942,7 @@ static std::vector<u64> encode_relr(std::span<u64> pos, i64 word_size) {
     for (;;) {
       u64 bits = 0;
       for (; i < pos.size() && pos[i] - base < max_delta; i++)
-        bits |= (u64)1 << ((pos[i] - base) / word_size);
+        bits |= 1LL << ((pos[i] - base) / word_size);
 
       if (!bits)
         break;
@@ -1469,8 +1469,8 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   for (i64 hash : hashes) {
     constexpr i64 word_bits = sizeof(Word<E>) * 8;
     i64 idx = (hash / word_bits) % num_bloom;
-    bloom[idx] |= (u64)1 << (hash % word_bits);
-    bloom[idx] |= (u64)1 << ((hash >> BLOOM_SHIFT) % word_bits);
+    bloom[idx] |= 1LL << (hash % word_bits);
+    bloom[idx] |= 1LL << ((hash >> BLOOM_SHIFT) % word_bits);
   }
 
   // Write hash bucket indices

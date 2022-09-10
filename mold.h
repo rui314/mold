@@ -189,7 +189,7 @@ inline bool has_single_bit(u64 val) {
 inline u64 bit_ceil(u64 val) {
   if (has_single_bit(val))
     return val;
-  return (u64)1 << (64 - std::countl_zero(val));
+  return 1LL << (64 - std::countl_zero(val));
 }
 
 inline u64 align_to(u64 val, u64 align) {
@@ -210,7 +210,7 @@ inline u64 bit(u64 val, i64 pos) {
 
 // Returns [hi:lo] bits of val.
 inline u64 bits(u64 val, u64 hi, u64 lo) {
-  return (val >> lo) & (((u64)1 << (hi - lo + 1)) - 1);
+  return (val >> lo) & ((1LL << (hi - lo + 1)) - 1);
 }
 
 inline i64 sign_extend(u64 val, i64 size) {
@@ -333,7 +333,7 @@ inline i64 uleb_size(u64 val) {
 #pragma GCC unroll 8
 #endif
   for (int i = 1; i < 9; i++)
-    if (val < ((u64)1 << (7 * i)))
+    if (val < (1LL << (7 * i)))
       return i;
   return 9;
 }
