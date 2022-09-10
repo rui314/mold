@@ -41,10 +41,10 @@
 // to that address. Then the callee computes its own TOC pointer using
 // r12.
 //
-// The PPC64 psABI uses an weird naming convention. It calls .got.plt
-// .plt. We ignored that part because it's just confusing. Since the
-// runtime only cares about segments, we should be able to name sections
-// whatever we want.
+// Note on section names: the PPC64 psABI uses a weird naming convention
+// which calls .got.plt .plt. We ignored that part because it's just
+// confusing. Since the runtime only cares about segments, we should be
+// able to name sections whatever we want.
 //
 // https://openpowerfoundation.org/specifications/64bitelfabi/
 
@@ -437,7 +437,7 @@ template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
 
-  // If the destination is PLT, we read a value from .got.plt or .got
+  // If the destination is PLT, we read an address from .got.plt or .got
   // and jump there.
   static const u32 plt_thunk[] = {
     // Save r2 to the r2 save slot reserved in the caller's stack frame
@@ -451,11 +451,11 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   // If the destination is a non-imported function, we directly jump
   // to that address. We don't need to save r2 because the destination
-  // is not external.
+  // is within the same output file.
   static const u32 local_thunk[] = {
     // Jump to a PLT entry
-    0x3d82'0000, // addis r12, r2, foo@toc@ha
-    0x398c'0000, // addi  r0, r12, foo@toc@lo
+    0x3d82'0000, // addis r12, r2,  foo@toc@ha
+    0x398c'0000, // addi  r0,  r12, foo@toc@lo
     0x7d89'03a6, // mtctr r12
     0x4e80'0420, // bctr
     0x0000'0000, // (padding)
