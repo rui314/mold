@@ -220,10 +220,6 @@ void InputSection<E>::scan_abs_rel(Context<E> &ctx, Symbol<E> &sym,
 template <typename E>
 static Action get_abs_dyn_action(Context<E> &ctx, Symbol<E> &sym,
                                  InputSection<E> &isec) {
-  // This is a decision table for absolute relocations for the word
-  // size data (e.g. R_X86_64_64). Unlike the above, we can emit a
-  // dynamic relocation if we cannot resolve its address at link-time.
-
   if (std::is_same_v<E, PPC64> && isec.name() == ".toc") {
     // As a special case, we do not create copy relocations nor canonical
     // PLTs for PPC64 .toc sections. PPC64's .toc is a compiler-generated
@@ -236,15 +232,18 @@ static Action get_abs_dyn_action(Context<E> &ctx, Symbol<E> &sym,
       {  NONE,     NONE,    DYNREL,        DYNREL },  // Position-dependent exec
     };
     return get_rel_action(ctx, table, sym);
-  } else {
-    constexpr Action table[][4] = {
-      // Absolute  Local    Imported data  Imported code
-      {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
-      {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
-      {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
-    };
-    return get_rel_action(ctx, table, sym);
   }
+
+  // This is a decision table for absolute relocations for the word
+  // size data (e.g. R_X86_64_64). Unlike the above, we can emit a
+  // dynamic relocation if we cannot resolve its address at link-time.
+  constexpr Action table[][4] = {
+    // Absolute  Local    Imported data  Imported code
+    {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
+    {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
+    {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
+  };
+  return get_rel_action(ctx, table, sym);
 }
 
 template <typename E>

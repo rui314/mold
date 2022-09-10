@@ -1169,14 +1169,6 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
 
 template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
-  if constexpr (std::is_same_v<E, PPC64>) {
-    // Dynamic loader fills the .got.plt section on PPC64 so that they
-    // jump to PLT entries. Dynamic loader finds the address of the
-    // first PLT entry by DT_PPC64_GLINK and assumes that each PLT
-    // entry is 4 bytes long.
-    return;
-  }
-
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
@@ -1192,6 +1184,12 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
       buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
   }
 }
+
+// On PPC64, it's dynamic loader responsibility to fill the .got.plt
+// section. Dynamic loader finds the address of the first PLT entry by
+// DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
+template <>
+void GotPltSection<PPC64>::copy_buf(Context<PPC64> &ctx) {}
 
 template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
