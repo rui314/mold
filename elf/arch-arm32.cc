@@ -191,10 +191,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_ABS32:
     case R_ARM_TARGET1:
       apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
-      continue;
+      break;
     case R_ARM_REL32:
       *(ul32 *)loc = S + A - P;
-      continue;
+      break;
     case R_ARM_THM_CALL: {
       // THM_CALL relocation refers either BL or BLX instruction.
       // They are different in only one bit. We need to use BL if
@@ -203,7 +203,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
         *(ul32 *)loc = 0x8000'f3af; // NOP.W
-        continue;
+        break;
       }
 
       u64 val = S + A - P;
@@ -219,18 +219,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_thm_b_imm(loc, align_to(get_arm_thunk_addr() + A - P, 4));
         *(ul16 *)(loc + 2) &= ~0x1000;  // rewrite to BLX
       }
-      continue;
+      break;
     }
     case R_ARM_BASE_PREL:
       *(ul32 *)loc = GOT + A - P;
-      continue;
+      break;
     case R_ARM_GOT_PREL:
     case R_ARM_TARGET2:
       *(ul32 *)loc = GOT + G + A - P;
-      continue;
+      break;
     case R_ARM_GOT_BREL:
       *(ul32 *)loc = G + A;
-      continue;
+      break;
     case R_ARM_CALL: {
       // Just like THM_CALL, ARM_CALL relocation refers either BL or
       // BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
@@ -243,7 +243,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
         *(ul32 *)loc = 0xe320'f000; // NOP
-        continue;
+        break;
       }
 
       u64 val = S + A - P;
@@ -255,7 +255,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         *(ul32 *)loc = 0xeb00'0000 | bits(get_arm_thunk_addr() + A - P, 25, 2);
       }
-      continue;
+      break;
     }
     case R_ARM_JUMP24:
       if (sym.is_remaining_undef_weak()) {
@@ -270,11 +270,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           val = get_arm_thunk_addr() + A - P;
         *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
       }
-      continue;
+      break;
     case R_ARM_THM_JUMP11:
       assert(T);
       *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(S + A - P, 11, 1);
-      continue;
+      break;
     case R_ARM_THM_JUMP24:
       if (sym.is_remaining_undef_weak()) {
         *(ul32 *)loc = 0x8000'f3af; // NOP.W
@@ -286,49 +286,49 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           val = get_thumb_thunk_addr() + A - P;
         write_thm_b_imm(loc, val);
       }
-      continue;
+      break;
     case R_ARM_MOVW_PREL_NC:
       write_mov_imm(loc, ((S + A) | T) - P);
-      continue;
+      break;
     case R_ARM_MOVW_ABS_NC:
       write_mov_imm(loc, (S + A) | T);
-      continue;
+      break;
     case R_ARM_THM_MOVW_PREL_NC:
       write_thm_mov_imm(loc, ((S + A) | T) - P);
-      continue;
+      break;
     case R_ARM_PREL31:
       *(ul32 *)loc = (*(ul32 *)loc & 0x8000'0000) | ((S + A - P) & 0x7fff'ffff);
-      continue;
+      break;
     case R_ARM_THM_MOVW_ABS_NC:
       write_thm_mov_imm(loc, (S + A) | T);
-      continue;
+      break;
     case R_ARM_MOVT_PREL:
       write_mov_imm(loc, (S + A - P) >> 16);
-      continue;
+      break;
     case R_ARM_THM_MOVT_PREL:
       write_thm_mov_imm(loc, (S + A - P) >> 16);
-      continue;
+      break;
     case R_ARM_MOVT_ABS:
       write_mov_imm(loc, (S + A) >> 16);
-      continue;
+      break;
     case R_ARM_THM_MOVT_ABS:
       write_thm_mov_imm(loc, (S + A) >> 16);
-      continue;
+      break;
     case R_ARM_TLS_GD32:
       *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - P;
-      continue;
+      break;
     case R_ARM_TLS_LDM32:
       *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - P;
-      continue;
+      break;
     case R_ARM_TLS_LDO32:
       *(ul32 *)loc = S + A - ctx.tls_begin;
-      continue;
+      break;
     case R_ARM_TLS_IE32:
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - P;
-      continue;
+      break;
     case R_ARM_TLS_LE32:
       *(ul32 *)loc = S + A - ctx.tp_addr;
-      continue;
+      break;
     case R_ARM_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         *(ul32 *)loc = S - ctx.tp_addr;
@@ -338,7 +338,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 4;
       }
-      continue;
+      break;
     case R_ARM_TLS_CALL:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         // BL -> NOP
@@ -347,7 +347,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // BL <tls_trampoline>
         *(ul32 *)loc = 0xeb00'0000 | bits(get_trampoline_addr(P + 8), 25, 2);
       }
-      continue;
+      break;
     case R_ARM_THM_TLS_CALL:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         // BL -> NOP.W
@@ -357,7 +357,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_thm_b_imm(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       }
-      continue;
+      break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }

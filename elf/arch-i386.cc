@@ -154,52 +154,52 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A;
       check(val, 0, 1 << 8);
       *loc = val;
-      continue;
+      break;
     }
     case R_386_16: {
       i64 val = S + A;
       check(val, 0, 1 << 16);
       *(ul16 *)loc = val;
-      continue;
+      break;
     }
     case R_386_32:
       apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
-      continue;
+      break;
     case R_386_PC8: {
       i64 val = S + A - P;
       check(val, -(1 << 7), 1 << 7);
       *loc = val;
-      continue;
+      break;
     };
     case R_386_PC16: {
       i64 val = S + A - P;
       check(val, -(1 << 15), 1 << 15);
       *(ul16 *)loc = val;
-      continue;
+      break;
     }
     case R_386_PC32:
     case R_386_PLT32:
       *(ul32 *)loc = S + A - P;
-      continue;
+      break;
     case R_386_GOT32:
     case R_386_GOT32X:
       *(ul32 *)loc = G + A;
-      continue;
+      break;
     case R_386_GOTOFF:
       *(ul32 *)loc = S + A - GOT;
-      continue;
+      break;
     case R_386_GOTPC:
       *(ul32 *)loc = GOT + A - P;
-      continue;
+      break;
     case R_386_TLS_GOTIE:
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - GOT;
-      continue;
+      break;
     case R_386_TLS_LE:
       *(ul32 *)loc = S + A - ctx.tp_addr;
-      continue;
+      break;
     case R_386_TLS_IE:
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A;
-      continue;
+      break;
     case R_386_TLS_GD:
       if (sym.get_tlsgd_idx(ctx) == -1) {
         // Relax GD to LE
@@ -230,7 +230,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
       }
-      continue;
+      break;
     case R_386_TLS_LDM:
       if (ctx.got->tlsld_idx == -1) {
         // Relax LD to LE
@@ -261,16 +261,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
       }
-      continue;
+      break;
     case R_386_TLS_LDO_32:
       if (ctx.got->tlsld_idx == -1)
         *(ul32 *)loc = S + A - ctx.tp_addr;
       else
         *(ul32 *)loc = S + A - ctx.tls_begin;
-      continue;
+      break;
     case R_386_SIZE32:
       *(ul32 *)loc = sym.esym().st_size + A;
-      continue;
+      break;
     case R_386_TLS_GOTDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         static const u8 insn[] = {
@@ -281,14 +281,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - GOT;
       }
-      continue;
+      break;
     case R_386_TLS_DESC_CALL:
       if (ctx.arg.relax && !ctx.arg.shared) {
         // call *(%rax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;
       }
-      continue;
+      break;
     default:
       unreachable();
     }
@@ -339,53 +339,53 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A;
       check(val, 0, 1 << 8);
       *loc = val;
-      continue;
+      break;
     }
     case R_386_16: {
       i64 val = S + A;
       check(val, 0, 1 << 16);
       *(ul16 *)loc = val;
-      continue;
+      break;
     }
     case R_386_32:
       if (!frag) {
         if (std::optional<u64> val = get_tombstone(sym)) {
           *(ul32 *)loc = *val;
-          continue;
+          break;
         }
       }
       *(ul32 *)loc = S + A;
-      continue;
+      break;
     case R_386_PC8: {
       i64 val = S + A;
       check(val, -(1 << 7), 1 << 7);
       *loc = val;
-      continue;
+      break;
     }
     case R_386_PC16: {
       i64 val = S + A;
       check(val, -(1 << 15), 1 << 15);
       *(ul16 *)loc = val;
-      continue;
+      break;
     };
     case R_386_PC32:
       *(ul32 *)loc = S + A;
-      continue;
+      break;
     case R_386_GOTPC:
       *(ul32 *)loc = GOT + A;
-      continue;
+      break;
     case R_386_GOTOFF:
       *(ul32 *)loc = S + A - GOT;
-      continue;
+      break;
     case R_386_TLS_LDO_32:
       if (std::optional<u64> val = get_tombstone(sym))
         *(ul32 *)loc = *val;
       else
         *(ul32 *)loc = S + A - ctx.tls_begin;
-      continue;
+      break;
     case R_386_SIZE32:
       *(ul32 *)loc = sym.esym().st_size + A;
-      continue;
+      break;
     default:
       unreachable();
     }

@@ -219,68 +219,68 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A;
       check(val, 0, 1 << 8);
       *loc = val;
-      continue;
+      break;
     }
     case R_X86_64_16: {
       i64 val = S + A;
       check(val, 0, 1 << 16);
       *(ul16 *)loc = val;
-      continue;
+      break;
     }
     case R_X86_64_32:
       write32(S + A);
-      continue;
+      break;
     case R_X86_64_32S:
       write32s(S + A);
-      continue;
+      break;
     case R_X86_64_64:
       apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
-      continue;
+      break;
     case R_X86_64_PC8: {
       i64 val = S + A - P;
       check(val, -(1 << 7), 1 << 7);
       *loc = val;
-      continue;
+      break;
     }
     case R_X86_64_PC16: {
       i64 val = S + A - P;
       check(val, -(1 << 15), 1 << 15);
       *(ul16 *)loc = val;
-      continue;
+      break;
     }
     case R_X86_64_PC32:
       write32s(S + A - P);
-      continue;
+      break;
     case R_X86_64_PC64:
       *(ul64 *)loc = S + A - P;
-      continue;
+      break;
     case R_X86_64_PLT32:
       write32s(S + A - P);
-      continue;
+      break;
     case R_X86_64_PLTOFF64:
       *(ul64 *)loc = S + A - GOT;
       break;
     case R_X86_64_GOT32:
       write32s(G + A);
-      continue;
+      break;
     case R_X86_64_GOT64:
       *(ul64 *)loc = G + A;
-      continue;
+      break;
     case R_X86_64_GOTOFF64:
       *(ul64 *)loc = S + A - GOT;
-      continue;
+      break;
     case R_X86_64_GOTPC32:
       write32s(GOT + A - P);
-      continue;
+      break;
     case R_X86_64_GOTPC64:
       *(ul64 *)loc = GOT + A - P;
-      continue;
+      break;
     case R_X86_64_GOTPCREL:
       write32s(G + GOT + A - P);
-      continue;
+      break;
     case R_X86_64_GOTPCREL64:
       *(ul64 *)loc = G + GOT + A - P;
-      continue;
+      break;
     case R_X86_64_GOTPCRELX:
       if (sym.get_got_idx(ctx) == -1) {
         u32 insn = relax_gotpcrelx(loc - 2);
@@ -290,7 +290,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(G + GOT + A - P);
       }
-      continue;
+      break;
     case R_X86_64_REX_GOTPCRELX:
       if (sym.get_got_idx(ctx) == -1) {
         u32 insn = relax_rex_gotpcrelx(loc - 3);
@@ -301,7 +301,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(G + GOT + A - P);
       }
-      continue;
+      break;
     case R_X86_64_TLSGD:
       if (sym.get_tlsgd_idx(ctx) == -1) {
         // Relax GD to LE
@@ -338,7 +338,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(sym.get_tlsgd_addr(ctx) + A - P);
       }
-      continue;
+      break;
     case R_X86_64_TLSLD:
       if (ctx.got->tlsld_idx == -1) {
         // Relax LD to LE
@@ -378,25 +378,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(ctx.got->get_tlsld_addr(ctx) + A - P);
       }
-      continue;
+      break;
     case R_X86_64_DTPOFF32:
       if (ctx.arg.relax && !ctx.arg.shared)
         write32s(S + A - ctx.tp_addr);
       else
         write32s(S + A - ctx.tls_begin);
-      continue;
+      break;
     case R_X86_64_DTPOFF64:
       if (ctx.arg.relax && !ctx.arg.shared)
         *(ul64 *)loc = S + A - ctx.tp_addr;
       else
         *(ul64 *)loc = S + A - ctx.tls_begin;
-      continue;
+      break;
     case R_X86_64_TPOFF32:
       write32s(S + A - ctx.tp_addr);
-      continue;
+      break;
     case R_X86_64_TPOFF64:
       *(ul64 *)loc = S + A - ctx.tp_addr;
-      continue;
+      break;
     case R_X86_64_GOTTPOFF:
       if (sym.get_gottp_idx(ctx) == -1) {
         u32 insn = relax_gottpoff(loc - 3);
@@ -407,7 +407,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(sym.get_gottp_addr(ctx) + A - P);
       }
-      continue;
+      break;
     case R_X86_64_GOTPC32_TLSDESC:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         u32 insn = relax_gotpc32_tlsdesc(loc - 3);
@@ -418,20 +418,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         write32s(sym.get_tlsdesc_addr(ctx) + A - P);
       }
-      continue;
+      break;
     case R_X86_64_SIZE32:
       write32(sym.esym().st_size + A);
-      continue;
+      break;
     case R_X86_64_SIZE64:
       *(ul64 *)loc = sym.esym().st_size + A;
-      continue;
+      break;
     case R_X86_64_TLSDESC_CALL:
       if (sym.get_tlsdesc_idx(ctx) == -1) {
         // call *(%rax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;
       }
-      continue;
+      break;
     default:
       unreachable();
     }

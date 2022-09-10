@@ -248,10 +248,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_PPC64_GOT_TLSGD16_HA:
       *(ul16 *)loc = ha(sym.get_tlsgd_addr(ctx) - ctx.TOC->value);
-      continue;
+      break;
     case R_PPC64_GOT_TLSGD16_LO:
       *(ul16 *)loc = sym.get_tlsgd_addr(ctx) - ctx.TOC->value;
-      continue;
+      break;
     case R_PPC64_GOT_TLSLD16_HA:
       *(ul16 *)loc = ha(ctx.got->get_tlsld_addr(ctx) - ctx.TOC->value);
       break;
