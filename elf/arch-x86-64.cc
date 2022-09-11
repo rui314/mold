@@ -314,7 +314,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         case R_X86_64_GOTPCRELX: {
           static const u8 insn[] = {
             0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-            0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea 0(%rax), %rax
+            0x48, 0x81, 0xc0, 0, 0, 0, 0,             // add $val, %rax
           };
           memcpy(loc - 4, insn, sizeof(insn));
           *(ul32 *)(loc + 8) = val;
@@ -323,7 +323,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         case R_X86_64_PLTOFF64: {
           static const u8 insn[] = {
             0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-            0x48, 0x8d, 0x80, 0,    0,    0, 0,       // lea 0(%rax), %rax
+            0x48, 0x81, 0xc0, 0, 0, 0, 0,             // add $val, %rax
             0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00,       // nop
           };
           memcpy(loc - 3, insn, sizeof(insn));

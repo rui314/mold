@@ -236,7 +236,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         case R_386_PLT32: {
           static const u8 insn[] = {
             0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %rax
-            0x81, 0xe8, 0, 0, 0, 0, // add $0, %rax
+            0x81, 0xe8, 0, 0, 0, 0, // add $val, %rax
           };
           memcpy(loc - 3, insn, sizeof(insn));
           *(ul32 *)(loc + 5) = ctx.tp_addr - S - A;
@@ -246,7 +246,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         case R_386_GOT32X: {
           static const u8 insn[] = {
             0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %rax
-            0x81, 0xe8, 0, 0, 0, 0, // add $0, %rax
+            0x81, 0xe8, 0, 0, 0, 0, // add $val, %rax
           };
           memcpy(loc - 2, insn, sizeof(insn));
           *(ul32 *)(loc + 6) = ctx.tp_addr - S - A;
