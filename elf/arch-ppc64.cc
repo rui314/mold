@@ -23,8 +23,8 @@
 // efficient.
 //
 // In PPC64, a function usually have two entry points, global and local.
-// The local entry point is usually 8 bytes past the global entry point.
-// In between is the following instructions:
+// The global entry point is usually 8 bytes precedes the local entry
+// point. In between is the following instructions:
 //
 //   addis r2, r12, .TOC.@ha
 //   addi  r2, r2,  .TOC.@lo + 4;

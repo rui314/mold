@@ -355,8 +355,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_stype(loc, val);
 
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
-      // accessible relative to the zero register, because if the upper 20
-      // bits are all zero, the corresponding LUI might have been removed.
+      // accessible relative to the zero register. If the upper 20 bits
+      // are all zero, the corresponding LUI might have been removed.
       if (sign_extend(val, 11) == val)
         set_rs1(loc, 0);
       break;

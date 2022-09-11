@@ -1,3 +1,36 @@
+// i386 is similar to x86-64 but lacks PC-relative memory access
+// instructions. So it's not straightforward to support position-
+// independent code (PIC) on that target.
+//
+// If an object file is compiled with -fPIC, a function that needs to load
+// a value from memory first obtains its own address with the following
+// code
+//
+//   call __x86.get_pc_thunk.bx
+//
+// where __x86.get_pc_thunk.bx is defined as
+//
+//   __x86.get_pc_thunk.bx:
+//     mov (%esp), %ebx  # move the return address to %ebx
+//     ret
+//
+// . With the function's own address (or, more precisely, the address
+// immediately after the call instruction), the function can compute an
+// absolute address of a variable with its address + link-time constant.
+//
+// Executing call-mov-ret isn't very cheap, and allocating one register to
+// store PC isn't cheap too, especially given that i386 has only 8
+// general-purpose registers. But that's the cost of PIC on i386. You need
+// to pay it when creating a .so and a position-independent executable.
+//
+// When a position-independent function calls another function, it sets
+// %ebx to the address of .got. Position-independent PLT entries use that
+// register to load values from .got.plt/.got.
+//
+// If we are creating a position-dependent executable (PDE), we can't
+// assume that %ebx is set to .got. For PDE, we need to create position-
+// dependent PLT entries which don't use %ebx.
+//
 // https://github.com/rui314/mold/wiki/i386-psabi.pdf
 
 #include "mold.h"
@@ -6,10 +39,6 @@ namespace mold::elf {
 
 using E = I386;
 
-// Emitting position-independent code (PIC) for i386 is a bit tricky
-// because i386 doesn't support PC-relative memory access instructions.
-// By default, i386 executables are not PIC. If PIC, %ebx is used to
-// store the location of .got and access all data with offsets from .got.
 static void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 plt0[] = {
