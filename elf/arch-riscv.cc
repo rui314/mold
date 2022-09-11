@@ -47,10 +47,6 @@ static u32 cjtype(u32 val) {
          bit(val, 1)  << 3  | bit(val, 5)  << 2;
 }
 
-static u32 get_rd(u32 val) {
-  return bits(val, 11, 7);
-}
-
 static void write_itype(u8 *loc, u32 val) {
   u32 mask = 0b000000'00000'11111'111'11111'1111111;
   *(ul32 *)loc = (*(ul32 *)loc & mask) | itype(val);
@@ -84,6 +80,17 @@ static void write_cbtype(u8 *loc, u32 val) {
 static void write_cjtype(u8 *loc, u32 val) {
   u32 mask = 0b111'00000000000'11;
   *(ul16 *)loc = (*(ul16 *)loc & mask) | cjtype(val);
+}
+
+// Returns the rd register of an R/I/U/J-type instruction.
+static u32 get_rd(u32 val) {
+  return bits(val, 11, 7);
+}
+
+static void set_rs1(u8 *loc, u32 rs1) {
+  assert(rs1 < 32);
+  *(ul32 *)loc &= 0b111111'11111'00000'111'11111'1111111;
+  *(ul32 *)loc |= rs1 << 15;
 }
 
 template <typename E>
@@ -351,19 +358,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // accessible relative to the zero register, because if the upper 20
       // bits are all zero, the corresponding LUI might have been removed.
       if (sign_extend(val, 11) == val)
-        *(ul32 *)loc &= 0b111111'11111'00000'111'11111'1111111;
+        set_rs1(loc, 0);
       break;
     }
     case R_RISCV_TPREL_HI20:
       assert(removed_bytes == 0 || removed_bytes == 4);
       if (removed_bytes == 0)
-        write_utype(loc, S + A - ctx.tls_begin);
+        write_utype(loc, S + A - ctx.tp_addr);
       break;
     case R_RISCV_TPREL_ADD:
       break;
     case R_RISCV_TPREL_LO12_I:
     case R_RISCV_TPREL_LO12_S: {
-      i64 val = S + A - ctx.tls_begin;
+      i64 val = S + A - ctx.tp_addr;
       if (rel.r_type == R_RISCV_TPREL_LO12_I)
         write_itype(loc, val);
       else
@@ -372,8 +379,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(tp)` if the address is
       // directly accessible using tp. tp is x4.
       if (sign_extend(val, 11) == val)
-        *(ul32 *)loc = (*(ul32 *)loc & 0b111111'11111'00000'111'11111'1111111) |
-                       (4 << 15);
+        set_rs1(loc, 4);
       break;
     }
     case R_RISCV_ADD8:
@@ -775,6 +781,14 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
         rels[i + 1].r_type != R_RISCV_RELAX)
       continue;
 
+    // Linker-synthesized symbols haven't been assigned their final
+    // values when we are shrinking sections because actual values can
+    // be computed only after we fix the file layout. Therefore, we
+    // assume that relocations against such symbols are always
+    // non-relaxable.
+    if (sym.file == ctx.internal_obj)
+      continue;
+
     switch (r.r_type) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
@@ -804,17 +818,6 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       break;
     }
     case R_RISCV_HI20: {
-      // This relocation refers to an LUI instruction containing the high
-      // 20-bits to be relocated to an absolute symbol address.
-
-      // Linker-synthesized symbols haven't been assigned their final
-      // values when we are shrinking sections because actual values can
-      // be computed only after we fix the file layout. Therefore, we
-      // assume that relocations against such symbols are always
-      // non-relaxable.
-      if (sym.file == ctx.internal_obj)
-        break;
-
       i64 val;
       if (frag_ref)
         val = frag_ref->frag->get_addr(ctx) + (u64)frag_ref->addend;
@@ -848,7 +851,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       //  sw   t0,%tprel_lo(foo)(tp)
       //
       // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
-      i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tls_begin;
+      i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
       if (sign_extend(val, 11) == val)
         delta += 4;
       break;
