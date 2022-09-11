@@ -1617,22 +1617,13 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   else
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
 
-  // _TLS_MODULE_BASE_
+  // _TLS_MODULE_BASE_. This symbol is used to obtain the address of
+  // the TLS block in the TLSDESC model. I believe GCC and Clang don't
+  // create a reference to it, but Intel compiler seems to be using
+  // this symbol.
   if (ctx._TLS_MODULE_BASE_) {
-    // _TLS_MODULE_BASE_ is used for Local Dynamic model for TLSDESC.
-    // I believe GCC and Clang don't create a reference to it, but Intel
-    // compiler seems to be using this symbol.
-    //
-    // The symbol is usually resolved to the beginning of the TLS section.
-    // But if DTPOFF is relaxed, it must point the end of the TLS section
-    // so that a GOTPC_TLSDESC's relaxed value is consistent with a
-    // DTPOFF's relaxed value.
-    u64 addr = ctx.tls_begin;
-    if (is_x86<E> && ctx.arg.relax && !ctx.arg.shared)
-      addr = ctx.tp_addr;
-
     ctx._TLS_MODULE_BASE_->shndx = -1;
-    ctx._TLS_MODULE_BASE_->value = addr;
+    ctx._TLS_MODULE_BASE_->value = ctx.tls_begin;
   }
 
   // __GNU_EH_FRAME_HDR

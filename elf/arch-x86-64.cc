@@ -345,8 +345,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         switch (rels[i + 1].r_type) {
         case R_X86_64_PLT32: {
           static const u8 insn[] = {
-            0x66, 0x66, 0x66,                         // (padding)
-            0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+            0x31, 0xc0,                   // xor %eax, %eax
+            0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
+            0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
           };
           memcpy(loc - 3, insn, sizeof(insn));
           break;
@@ -354,18 +355,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         case R_X86_64_GOTPCREL:
         case R_X86_64_GOTPCRELX: {
           static const u8 insn[] = {
-            0x66, 0x66, 0x66,                         // (padding)
-            0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-            0x90,                                     // nop
+            0x31, 0xc0,                   // xor %eax, %eax
+            0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
+            0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
+            0x90,                         // nop
           };
           memcpy(loc - 3, insn, sizeof(insn));
           break;
         }
         case R_X86_64_PLTOFF64: {
           static const u8 insn[] = {
-            0x66, 0x66, 0x66,                         // (padding)
-            0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-            0x66, 0x66, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, // nop
+            0x31, 0xc0,                   // xor %eax, %eax
+            0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
+            0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
+            0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
+            0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
           };
           memcpy(loc - 3, insn, sizeof(insn));
           break;
@@ -374,22 +378,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           unreachable();
         }
 
+        *(ul32 *)(loc + 5) = ctx.tp_addr - ctx.tls_begin;
         i++;
       } else {
         write32s(ctx.got->get_tlsld_addr(ctx) + A - P);
       }
       break;
     case R_X86_64_DTPOFF32:
-      if (ctx.arg.relax && !ctx.arg.shared)
-        write32s(S + A - ctx.tp_addr);
-      else
-        write32s(S + A - ctx.tls_begin);
+      write32s(S + A - ctx.tls_begin);
       break;
     case R_X86_64_DTPOFF64:
-      if (ctx.arg.relax && !ctx.arg.shared)
-        *(ul64 *)loc = S + A - ctx.tp_addr;
-      else
-        *(ul64 *)loc = S + A - ctx.tls_begin;
+      *(ul64 *)loc = S + A - ctx.tls_begin;
       break;
     case R_X86_64_TPOFF32:
       write32s(S + A - ctx.tp_addr);
