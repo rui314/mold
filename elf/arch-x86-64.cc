@@ -327,6 +327,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.get_tlsgd_idx(ctx) == -1) {
         // Relax GD to LE
         i64 val = S - ctx.tp_addr;
+        assert(A == -4);
         check(val, -(1LL << 31), 1LL << 31);
 
         switch (rels[i + 1].r_type) {
@@ -400,6 +401,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         }
 
         *(ul32 *)(loc + 5) = ctx.tp_addr - ctx.tls_begin;
+        assert(A == -4);
         i++;
       } else {
         write32s(ctx.got->get_tlsld_addr(ctx) + A - P);
@@ -653,6 +655,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_PLT;
       break;
     case R_X86_64_TLSGD: {
+      if (rel.r_addend != -4)
+        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_TLSGD";
+
       if (i + 1 == rels.size())
         Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
 
@@ -668,6 +673,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     }
     case R_X86_64_TLSLD: {
+      if (rel.r_addend != -4)
+        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_TLSLD";
+
       if (i + 1 == rels.size())
         Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
 
