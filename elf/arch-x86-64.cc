@@ -220,12 +220,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     };
 
     auto write32 = [&](u64 val) {
-      check(val, 0, (i64)1 << 32);
+      check(val, 0, 1LL << 32);
       *(ul32 *)loc = val;
     };
 
     auto write32s = [&](u64 val) {
-      check(val, -((i64)1 << 31), (i64)1 << 31);
+      check(val, -(1LL << 31), 1LL << 31);
       *(ul32 *)loc = val;
     };
 
@@ -326,8 +326,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_X86_64_TLSGD:
       if (sym.get_tlsgd_idx(ctx) == -1) {
         // Relax GD to LE
-        i64 val = S + A - ctx.tp_addr + 4;
-        check(val, -((i64)1 << 31), (i64)1 << 31);
+        i64 val = S - ctx.tp_addr;
+        check(val, -(1LL << 31), 1LL << 31);
 
         switch (rels[i + 1].r_type) {
         case R_X86_64_PLT32:
@@ -505,12 +505,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     };
 
     auto write32 = [&](u64 val) {
-      check(val, 0, (i64)1 << 32);
+      check(val, 0, 1LL << 32);
       *(ul32 *)loc = val;
     };
 
     auto write32s = [&](u64 val) {
-      check(val, -((i64)1 << 31), (i64)1 << 31);
+      check(val, -(1LL << 31), 1LL << 31);
       *(ul32 *)loc = val;
     };
 
