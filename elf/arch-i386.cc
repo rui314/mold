@@ -242,7 +242,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           *(ul32 *)(loc + 5) = ctx.tp_addr - S - A;
           break;
         }
-        case R_386_GOT32: {
+        case R_386_GOT32:
+        case R_386_GOT32X: {
           static const u8 insn[] = {
             0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %rax
             0x81, 0xe8, 0, 0, 0, 0, // add $0, %rax
@@ -273,7 +274,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           memcpy(loc - 2, insn, sizeof(insn));
           break;
         }
-        case R_386_GOT32: {
+        case R_386_GOT32:
+        case R_386_GOT32X: {
           static const u8 insn[] = {
             0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
             0x8d, 0x74, 0x26, 0x00, // lea (%esi,1), %esi
@@ -480,7 +482,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
 
       if (u32 ty = rels[i + 1].r_type;
-          ty != R_386_PLT32 && ty != R_386_GOT32)
+          ty != R_386_PLT32 && ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
 
       if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)
@@ -493,7 +495,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
 
       if (u32 ty = rels[i + 1].r_type;
-          ty != R_386_PLT32 && ty != R_386_GOT32)
+          ty != R_386_PLT32 && ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
 
       if (ctx.arg.relax && !ctx.arg.shared)
