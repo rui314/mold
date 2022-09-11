@@ -1,3 +1,24 @@
+// Supporting x86-64 is straightforward. Unlike its predecessor, i386,
+// x86-64 supports PC-relative addressing for position-independent
+// code. Being CISC, its instructions are variable in size. Branch
+// instructions take 4 bytes offsets, so we don't need range extension
+// thunks for the medium code model.
+//
+// The psABI specifies %r11 as neither caller- nor callee-saved. It's
+// intentionally left out so that we can use it as a scratch register in
+// PLT.
+//
+// Thread Pointer (TP) is stored not to a general-purpose register but to
+// %fs segment register. The value of a segment register itself is not
+// easily readable from the user space, but %fs:0 is initialized so that
+// it has the value of %fs itself, so we can obtain the TP just by `mov
+// %fs:0, %rax`.
+//
+// For historical reasons, TP points past the end of the TLS block on x86.
+// This is contrary to other psABIs which usually use the beginning of
+// the TLS block (with some addend) as TP. As a result, offsets from TP to
+// thread-local variables (TLVs) in the main executable are all negative.
+//
 // https://github.com/rui314/mold/wiki/x86-64-psabi.pdf
 
 #include "mold.h"
@@ -177,7 +198,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                                file.reldyn_offset + this->reldyn_offset);
+                           file.reldyn_offset + this->reldyn_offset);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];

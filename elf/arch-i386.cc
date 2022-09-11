@@ -235,8 +235,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         switch (rels[i + 1].r_type) {
         case R_386_PLT32: {
           static const u8 insn[] = {
-            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %rax
-            0x81, 0xe8, 0, 0, 0, 0, // add $val, %rax
+            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
+            0x81, 0xe8, 0, 0, 0, 0, // add $val, %eax
           };
           memcpy(loc - 3, insn, sizeof(insn));
           *(ul32 *)(loc + 5) = ctx.tp_addr - S - A;
@@ -245,8 +245,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         case R_386_GOT32:
         case R_386_GOT32X: {
           static const u8 insn[] = {
-            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %rax
-            0x81, 0xe8, 0, 0, 0, 0, // add $val, %rax
+            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
+            0x81, 0xe8, 0, 0, 0, 0, // add $val, %eax
           };
           memcpy(loc - 2, insn, sizeof(insn));
           *(ul32 *)(loc + 6) = ctx.tp_addr - S - A;
@@ -314,7 +314,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_386_TLS_DESC_CALL:
       if (ctx.arg.relax && !ctx.arg.shared) {
-        // call *(%rax) -> nop
+        // call *(%eax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;
       }
