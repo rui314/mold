@@ -425,7 +425,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
-        write32s(S + A - ctx.tp_addr + 4);
+        write32s(S - ctx.tp_addr);
+        assert(A == -4);
       } else {
         write32s(sym.get_gottp_addr(ctx) + A - P);
       }
@@ -436,7 +437,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
-        write32s(S + A - ctx.tp_addr + 4);
+        write32s(S - ctx.tp_addr);
+        assert(A == -4);
       } else {
         write32s(sym.get_tlsdesc_addr(ctx) + A - P);
       }
@@ -691,6 +693,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     }
     case R_X86_64_GOTTPOFF: {
+      if (rel.r_addend != -4)
+        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTTPOFF";
+
       ctx.has_gottp_rel = true;
 
       bool do_relax = ctx.arg.relax && !ctx.arg.shared &&
@@ -700,6 +705,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     }
     case R_X86_64_GOTPC32_TLSDESC: {
+      if (rel.r_addend != -4)
+        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTPC32_TLSDESC";
+
       if (relax_gotpc32_tlsdesc(loc - 3) == 0)
         Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
                    << " against an invalid code sequence";
