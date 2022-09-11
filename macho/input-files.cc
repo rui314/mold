@@ -110,10 +110,13 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx) {
       continue;
     }
 
-    if (msec.attr & S_ATTR_DEBUG)
+    InputSection<E> *isec = new InputSection<E>(ctx, *this, msec, i);
+    if (msec.attr & S_ATTR_DEBUG) {
+      debug_sections.emplace_back(isec);
       continue;
+    }
 
-    sections.back().reset(new InputSection<E>(ctx, *this, msec, i));
+    sections.back().reset(isec);
   }
 }
 

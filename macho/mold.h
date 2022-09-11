@@ -127,6 +127,7 @@ public:
   Relocation<E> read_reloc(Context<E> &ctx, const MachSection &hdr, MachRel r);
 
   std::vector<std::unique_ptr<InputSection<E>>> sections;
+  std::vector<std::unique_ptr<InputSection<E>>> debug_sections;
   std::vector<Subsection<E> *> subsections;
   std::vector<Subsection<E> *> sym_to_subsec;
   std::span<MachSym> mach_syms;
