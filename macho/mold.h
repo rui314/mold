@@ -35,6 +35,7 @@ template <typename E> class OutputSection;
 template <typename E> class Subsection;
 template <typename E> struct Context;
 template <typename E> struct Symbol;
+template <typename E> struct DwarfObject;
 
 //
 // input-files.cc
@@ -136,6 +137,7 @@ public:
   std::span<DataInCodeEntry> data_in_code_entries;
   ObjcImageInfo *objc_image_info = nullptr;
   LTOModule *lto_module = nullptr;
+  std::unique_ptr<DwarfObject<E>> dwarf_obj = nullptr;
 
   // For the internal file and LTO object files
   std::vector<MachSym> mach_syms2;
@@ -811,6 +813,20 @@ void do_lto(Context<E> &ctx);
 
 void create_range_extension_thunks(Context<ARM64> &ctx, OutputSection<ARM64> &osec);
 void apply_linker_optimization_hints(Context<ARM64> &ctx);
+
+//
+// dwarf.cc
+//
+
+template <typename E>
+struct DwarfObject {
+public:
+  DwarfObject() = default;
+  static std::unique_ptr<DwarfObject<E>>
+  create(ObjectFile<E> *obj);
+
+  std::string_view str_section;
+};
 
 //
 // main.cc

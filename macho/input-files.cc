@@ -118,6 +118,8 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx) {
 
     sections.back().reset(isec);
   }
+
+  dwarf_obj = DwarfObject<E>::create(this);
 }
 
 template <typename E>
