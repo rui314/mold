@@ -63,7 +63,6 @@ using namespace std::literals::string_view_literals;
 template <typename C> class OutputFile;
 
 inline char *output_tmpfile;
-inline char *socket_tmpfile;
 inline thread_local bool opt_demangle;
 
 inline u8 *output_buffer_start = nullptr;
