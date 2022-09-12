@@ -1287,14 +1287,21 @@ void clear_padding(Context<E> &ctx) {
 // sections in a single seek.
 //
 // .note sections are also placed at the beginning so that they are
-// included in a core crash dump even if it's truncated by ulimit.  In
+// included in a core crash dump even if it's truncated by ulimit. In
 // particular, if .note.gnu.build-id is in a truncated core file, you
 // can at least identify which executable has crashed.
 //
+// A PT_NOTE segment will contain multiple .note sections if exists,
+// but there's no way to represent a gap between .note sections.
+// Therefore, we sort .note sections by decreasing alignment
+// requirement. I believe each .note section size is a multiple of its
+// alignment, so by sorting them by alignment, we should be able to
+// avoid a gap between .note sections.
+//
 // .toc is placed right after .got for PPC64. PPC-specific .toc section
 // contains data that may be accessed with a 16-bit offset relative to
-// %r2. %r2 is set to .got + 0x8000. Therefore, .toc needs to be within
-// [.got, .got + 0x10000).
+// %r2. %r2 is set to .got + 32 KiB. Therefore, .toc needs to be within
+// [.got, .got + 64 KiB).
 //
 // Other file layouts are possible, but this layout is chosen to keep
 // the number of segments as few as possible.
@@ -1346,7 +1353,7 @@ void sort_output_sections(Context<E> &ctx) {
 
   auto get_rank2 = [&](Chunk<E> *chunk) -> i64 {
     if (chunk->shdr.sh_type == SHT_NOTE)
-      return chunk->shdr.sh_addralign;
+      return -chunk->shdr.sh_addralign;
 
     if (chunk->name == ".toc")
       return 2;

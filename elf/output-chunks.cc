@@ -213,8 +213,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   if (ctx.interp)
     define(PT_INTERP, PF_R, 1, ctx.interp);
 
-  // Create a PT_NOTE for each group of SHF_NOTE sections with the same
-  // alignment requirement.
+  // Create a PT_NOTE for SHF_NOTE sections.
   for (i64 i = 0, end = ctx.chunks.size(); i < end;) {
     Chunk<E> *first = ctx.chunks[i++];
     if (!is_note(first))
@@ -225,8 +224,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     define(PT_NOTE, flags, alignment, first);
 
     while (i < end && is_note(ctx.chunks[i]) &&
-           to_phdr_flags(ctx, ctx.chunks[i]) == flags &&
-           ctx.chunks[i]->shdr.sh_addralign == alignment)
+           to_phdr_flags(ctx, ctx.chunks[i]) == flags)
       append(ctx.chunks[i++]);
   }
 
