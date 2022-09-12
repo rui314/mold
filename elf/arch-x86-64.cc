@@ -270,16 +270,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_X86_64_PC32:
+    case R_X86_64_PLT32:
       write32s(S + A - P);
       break;
     case R_X86_64_PC64:
       *(ul64 *)loc = S + A - P;
-      break;
-    case R_X86_64_PLT32:
-      write32s(S + A - P);
-      break;
-    case R_X86_64_PLTOFF64:
-      *(ul64 *)loc = S + A - GOT;
       break;
     case R_X86_64_GOT32:
       write32s(G + A);
@@ -288,6 +283,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc = G + A;
       break;
     case R_X86_64_GOTOFF64:
+    case R_X86_64_PLTOFF64:
       *(ul64 *)loc = S + A - GOT;
       break;
     case R_X86_64_GOTPC32:
