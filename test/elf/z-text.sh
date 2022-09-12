@@ -47,7 +47,7 @@ EOF
 $CC -B. -pie -o $t/exe $t/a.o $t/b.o
 $QEMU $t/exe | grep -q 3
 
-readelf --dynamic $t/exe | fgrep -q '(TEXTREL)'
+readelf --dynamic $t/exe | grep -Fq '(TEXTREL)'
 readelf --dynamic $t/exe | grep -q '\(FLAGS\).*TEXTREL'
 
 echo OK

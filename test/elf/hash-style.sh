@@ -18,7 +18,7 @@ EOF
 
 ./mold -shared -o $t/b.so $t/a.o
 
-readelf -WS $t/b.so | fgrep -q ' .hash'
-readelf -WS $t/b.so | fgrep -q ' .gnu.hash'
+readelf -WS $t/b.so | grep -Fq ' .hash'
+readelf -WS $t/b.so | grep -Fq ' .gnu.hash'
 
 echo OK

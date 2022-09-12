@@ -33,7 +33,7 @@ void greet() {
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,--gdb-index -Wl,--compress-debug-sections=zlib-gabi
-readelf -WS $t/b.so 2> /dev/null | fgrep -q .gdb_index
+readelf -WS $t/b.so 2> /dev/null | grep -Fq .gdb_index
 
 cat <<EOF | $CC -c -o $t/c.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -gz
 void greet();
@@ -44,7 +44,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/b.so $t/c.o -Wl,--gdb-index -Wl,--compress-debug-sections=zlib-gnu
-readelf -WS $t/exe 2> /dev/null | fgrep -q .gdb_index
+readelf -WS $t/exe 2> /dev/null | grep -Fq .gdb_index
 
 $QEMU $t/exe | grep -q 'Hello world'
 

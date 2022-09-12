@@ -25,12 +25,12 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,--compress-debug-sections=zlib
 dwarfdump $t/exe > $t/log
-fgrep -q '.debug_info SHF_COMPRESSED' $t/log
-fgrep -q '.debug_str SHF_COMPRESSED' $t/log
+grep -Fq '.debug_info SHF_COMPRESSED' $t/log
+grep -Fq '.debug_str SHF_COMPRESSED' $t/log
 
 $CC -B. -o $t/exe $t/a.o -Wl,--compress-debug-sections=zlib-gnu
 dwarfdump $t/exe > $t/log
-fgrep -q .zdebug_info $t/log
-fgrep -q .zdebug_str $t/log
+grep -Fq .zdebug_info $t/log
+grep -Fq .zdebug_str $t/log
 
 echo OK

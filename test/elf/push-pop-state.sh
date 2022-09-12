@@ -28,7 +28,7 @@ $CC -B. -o $t/exe $t/c.o -Wl,-as-needed \
   -Wl,-push-state -Wl,-no-as-needed $t/a.so -Wl,-pop-state $t/b.so
 
 readelf --dynamic $t/exe > $t/log
-fgrep -q a.so $t/log
-! fgrep -q b.so $t/log || false
+grep -Fq a.so $t/log
+! grep -Fq b.so $t/log || false
 
 echo OK

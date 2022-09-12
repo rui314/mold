@@ -31,6 +31,6 @@ EOF
 
 $CC -B. -shared -o $t/e.so $t/c.a $t/d.o
 readelf --dyn-syms $t/e.so > $t/log
-! fgrep -q foo $t/log || false
+! grep -Fq foo $t/log || false
 
 echo OK

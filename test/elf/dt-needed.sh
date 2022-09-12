@@ -25,15 +25,15 @@ int main() { foo(); }
 EOF
 
 $CC -B. -o $t/exe $t/b.o $t/libfoo.so
-readelf --dynamic $t/exe | fgrep -q 'Shared library: [libfoo]'
+readelf --dynamic $t/exe | grep -Fq 'Shared library: [libfoo]'
 
 $CC -B. -o $t/exe $t/b.o -L $t -lfoo
-readelf --dynamic $t/exe | fgrep -q 'Shared library: [libfoo]'
+readelf --dynamic $t/exe | grep -Fq 'Shared library: [libfoo]'
 
 $CC -B. -o $t/exe $t/b.o $t/libbar.so
 readelf --dynamic $t/exe | grep -Eq 'Shared library: \[.*dt-needed/libbar\.so\]'
 
 $CC -B. -o $t/exe $t/b.o -L$t -lbar
-readelf --dynamic $t/exe | fgrep -q 'Shared library: [libbar.so]'
+readelf --dynamic $t/exe | grep -Fq 'Shared library: [libbar.so]'
 
 echo OK

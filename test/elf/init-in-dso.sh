@@ -23,6 +23,6 @@ EOF
 
 $CC -B. -o $t/exe $t/a.so $t/b.o -Wl,-init,foo
 readelf --dynamic $t/exe > $t/log
-! fgrep -q '(INIT)' $t/log || false
+! grep -Fq '(INIT)' $t/log || false
 
 echo OK

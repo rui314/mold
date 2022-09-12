@@ -224,7 +224,7 @@ $CC -c -o $t/f.o $t/f.s
 $CC -B. -o $t/exe $t/f.o
 readelf -x .foo -x .bar $t/exe > $t/log
 
-fgrep -q '0x00000010 00000000 00000000 10000000 00000000' $t/log
-fgrep -q '0x00000010 18000000 00000000' $t/log
+grep -Fq '0x00000010 00000000 00000000 10000000 00000000' $t/log
+grep -Fq '0x00000010 18000000 00000000' $t/log
 
 echo OK

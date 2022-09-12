@@ -27,6 +27,6 @@ EOF
 
 # Make sure that we do not copy .gnu.warning.* sections.
 $CC -B. -o $t/exe $t/a.o $t/b.o
-! readelf --sections $t/exe | fgrep -q .gnu.warning || false
+! readelf --sections $t/exe | grep -Fq .gnu.warning || false
 
 echo OK

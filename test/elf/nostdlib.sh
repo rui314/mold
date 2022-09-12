@@ -19,8 +19,8 @@ EOF
 ./mold -o $t/exe $t/a.o
 
 readelf -W --sections $t/exe > $t/log
-! fgrep -q ' .dynsym ' $t/log || false
-! fgrep -q ' .dynstr ' $t/log || false
-! fgrep -q ' .got ' $t/log || false
+! grep -Fq ' .dynsym ' $t/log || false
+! grep -Fq ' .dynstr ' $t/log || false
+! grep -Fq ' .got ' $t/log || false
 
 echo OK

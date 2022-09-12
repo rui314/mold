@@ -46,7 +46,7 @@ void hello2() {
 EOF
 
 $CC -B. -shared -o $t/c.so $t/a.o $t/b.o -Wl,--gdb-index
-readelf -WS $t/c.so 2> /dev/null | fgrep -q .gdb_index
+readelf -WS $t/c.so 2> /dev/null | grep -Fq .gdb_index
 
 cat <<EOF | $CC -c -o $t/d.o -fPIC -g -ggnu-pubnames -gdwarf-3 -xc - -gz
 void greet();
@@ -57,7 +57,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.o -Wl,--gdb-index
-readelf -WS $t/exe 2> /dev/null | fgrep -q .gdb_index
+readelf -WS $t/exe 2> /dev/null | grep -Fq .gdb_index
 
 $QEMU $t/exe | grep -q 'Hello world'
 

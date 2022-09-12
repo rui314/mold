@@ -25,9 +25,9 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o > $t/log
-! fgrep -q 'multiple common symbols' $t/log || false
+! grep -Fq 'multiple common symbols' $t/log || false
 
 $CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-warn-common 2> $t/log
-fgrep -q 'multiple common symbols' $t/log
+grep -Fq 'multiple common symbols' $t/log
 
 echo OK

@@ -15,6 +15,6 @@ mkdir -p $t
 echo 'void _start() {}' | $CC -c -o $t/a.o -xc -
 ./mold -o $t/exe $t/a.o -gdb-index
 readelf -WS $t/exe > $t/log
-! fgrep -q .gdb_index $t/log || false
+! grep -Fq .gdb_index $t/log || false
 
 echo OK

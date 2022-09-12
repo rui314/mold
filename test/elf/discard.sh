@@ -27,26 +27,26 @@ EOF
 
 ./mold -o $t/exe $t/a.o
 readelf --symbols $t/exe > $t/log
-fgrep -q _start $t/log
-fgrep -q foo $t/log
-fgrep -q .Lbar $t/log
+grep -Fq _start $t/log
+grep -Fq foo $t/log
+grep -Fq .Lbar $t/log
 
 ./mold -o $t/exe $t/a.o --discard-locals
 readelf --symbols $t/exe > $t/log
-fgrep -q _start $t/log
-fgrep -q foo $t/log
-! fgrep -q .Lbar $t/log || false
+grep -Fq _start $t/log
+grep -Fq foo $t/log
+! grep -Fq .Lbar $t/log || false
 
 ./mold -o $t/exe $t/a.o --discard-all
 readelf --symbols $t/exe > $t/log
-fgrep -q _start $t/log
-! fgrep -q foo $t/log || false
-! fgrep -q .Lbar $t/log || false
+grep -Fq _start $t/log
+! grep -Fq foo $t/log || false
+! grep -Fq .Lbar $t/log || false
 
 ./mold -o $t/exe $t/a.o --strip-all
 readelf --symbols $t/exe > $t/log
-! fgrep -q _start $t/log || false
-! fgrep -q foo $t/log || false
-! fgrep -q .Lbar $t/log || false
+! grep -Fq _start $t/log || false
+! grep -Fq foo $t/log || false
+! grep -Fq .Lbar $t/log || false
 
 echo OK

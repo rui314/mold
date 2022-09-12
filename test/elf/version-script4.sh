@@ -37,7 +37,7 @@ EOF
 $CC -B. -shared -o $t/c.so -Wl,-version-script,$t/a.ver $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
-fgrep -q _ZN3foo3barE $t/log
-! fgrep -q ' bar' $t/log || false
+grep -Fq _ZN3foo3barE $t/log
+! grep -Fq ' bar' $t/log || false
 
 echo OK

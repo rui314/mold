@@ -33,6 +33,6 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
-$OBJDUMP -d $t/exe | grep -A1 '<__x86.get_pc_thunk.bx>:' | fgrep -q .plt
+$OBJDUMP -d $t/exe | grep -A1 '<__x86.get_pc_thunk.bx>:' | grep -Fq .plt
 
 echo OK

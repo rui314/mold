@@ -20,6 +20,6 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-package-metadata='{"foo":"bar"}'
-readelf -x .note.package $t/exe | fgrep -q '{"foo":"bar"}'
+readelf -x .note.package $t/exe | grep -Fq '{"foo":"bar"}'
 
 echo OK

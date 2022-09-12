@@ -36,9 +36,9 @@ rm -f $t/d.a
 
 $CC -B. -Wl,--trace -o $t/exe $t/c.o $t/d.a > $t/log
 
-fgrep -q 'static-archive/d.a(long-long-long-filename.o)' $t/log
-fgrep -q 'static-archive/d.a(b.o)' $t/log
-fgrep -q static-archive/c.o $t/log
+grep -Fq 'static-archive/d.a(long-long-long-filename.o)' $t/log
+grep -Fq 'static-archive/d.a(b.o)' $t/log
+grep -Fq static-archive/c.o $t/log
 
 $QEMU $t/exe | grep -q '8'
 

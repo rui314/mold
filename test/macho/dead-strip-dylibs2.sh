@@ -23,11 +23,11 @@ int main() {
 EOF
 
 cc --ld-path=./ld64 -o $t/exe $t/a.o -Wl,-F$t -Wl,-framework,Foo
-otool -l $t/exe | grep -A3 'cmd LC_LOAD_DYLIB' | fgrep -q Foo.framework/Foo
+otool -l $t/exe | grep -A3 'cmd LC_LOAD_DYLIB' | grep -Fq Foo.framework/Foo
 
 cc --ld-path=./ld64 -o $t/exe $t/a.o -Wl,-F$t -Wl,-framework,Foo \
   -Wl,-dead_strip_dylibs
 otool -l $t/exe | grep -A3 'cmd LC_LOAD_DYLIB' >& $t/log
-! fgrep -q Foo.framework/Foo $t/log || false
+! grep -Fq Foo.framework/Foo $t/log || false
 
 echo OK

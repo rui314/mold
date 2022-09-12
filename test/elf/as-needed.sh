@@ -30,13 +30,13 @@ EOF
 $CC -B. -o $t/exe $t/a.o -Wl,--no-as-needed $t/b.so $t/c.so
 
 readelf --dynamic $t/exe > $t/readelf
-fgrep -q 'Shared library: [libfoo.so]' $t/readelf
-fgrep -q 'Shared library: [libbar.so]' $t/readelf
+grep -Fq 'Shared library: [libfoo.so]' $t/readelf
+grep -Fq 'Shared library: [libbar.so]' $t/readelf
 
 $CC -B. -o $t/exe $t/a.o -Wl,--as-needed $t/b.so $t/c.so
 
 readelf --dynamic $t/exe > $t/readelf
-fgrep -q 'Shared library: [libfoo.so]' $t/readelf
-! fgrep -q 'Shared library: [libbar.so]' $t/readelf || false
+grep -Fq 'Shared library: [libfoo.so]' $t/readelf
+! grep -Fq 'Shared library: [libbar.so]' $t/readelf || false
 
 echo OK

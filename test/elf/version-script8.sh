@@ -44,8 +44,8 @@ $CC -B. -o $t/exe $t/c.o $t/b.so
 $QEMU $t/exe
 
 readelf --dyn-syms $t/b.so > $t/log
-fgrep -q 'foo@@ver1' $t/log
-fgrep -q 'bar@@ver2' $t/log
-! fgrep -q 'baz' $t/log || false
+grep -Fq 'foo@@ver1' $t/log
+grep -Fq 'bar@@ver2' $t/log
+! grep -Fq 'baz' $t/log || false
 
 echo OK

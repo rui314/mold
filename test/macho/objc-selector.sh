@@ -15,6 +15,6 @@ int main() {
 EOF
 
 cc --ld-path=./ld64 -o $t/exe $t/a.o -framework foundation -Wl,-ObjC
-$t/exe 2>&1 | fgrep -q 'processName: exe'
+$t/exe 2>&1 | grep -Fq 'processName: exe'
 
 echo OK

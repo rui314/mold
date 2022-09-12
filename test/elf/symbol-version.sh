@@ -32,8 +32,8 @@ echo 'VER1 { local: *; }; VER2 { local: *; }; VER3 { local: *; };' > $t/b.ver
 $CC -B. -shared -o $t/c.so $t/a.o -Wl,--version-script=$t/b.ver
 readelf --symbols $t/c.so > $t/log
 
-fgrep -q 'foo@VER1' $t/log
-fgrep -q 'foo@VER2' $t/log
-fgrep -q 'foo@@VER3' $t/log
+grep -Fq 'foo@VER1' $t/log
+grep -Fq 'foo@VER2' $t/log
+grep -Fq 'foo@@VER3' $t/log
 
 echo OK

@@ -21,6 +21,6 @@ call _RNCINkXs25_NgCsbmNqQUJIY6D_4core5sliceINyB9_4IterhENuNgNoBb_4iter8iterator
 EOF
 
 ! $CC -B. -o $t/exe $t/a.o 2> $t/log || false
-fgrep -q '<core::slice::Iter<u8> as core::iter::iterator::Iterator>::rposition::<core::slice::memchr::memrchr::{closure#1}>::{closure#0}' $t/log
+grep -Fq '<core::slice::Iter<u8> as core::iter::iterator::Iterator>::rposition::<core::slice::memchr::memrchr::{closure#1}>::{closure#0}' $t/log
 
 echo OK

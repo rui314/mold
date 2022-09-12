@@ -23,6 +23,6 @@ $CC -B. -o $t/exe $t/a.o \
   -Wl,-rpath,/foo -Wl,-rpath,/bar -Wl,-R/no/such/directory -Wl,-R/
 
 readelf --dynamic $t/exe | \
-  fgrep -q 'Library runpath: [/foo:/bar:/no/such/directory:/]'
+  grep -Fq 'Library runpath: [/foo:/bar:/no/such/directory:/]'
 
 echo OK

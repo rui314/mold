@@ -68,20 +68,20 @@ EOF
 
 ./mold -o $t/exe $t/a.o -z keep-text-section-prefix
 
-readelf -p .text.hot $t/exe | fgrep -q '.text.hot .text.hot.foo'
-readelf -p .text.unknown $t/exe | fgrep -q '.text.unknown .text.unknown.foo'
-readelf -p .text.unlikely $t/exe | fgrep -q '.text.unlikely .text.unlikely.foo'
-readelf -p .text.startup $t/exe | fgrep -q '.text.startup .text.startup.foo'
-readelf -p .text.exit $t/exe | fgrep -q '.text.exit .text.exit.foo'
-readelf -p .text $t/exe | fgrep -q '.text .text.foo'
-readelf -p .data.rel.ro $t/exe | fgrep -q '.data.rel.ro .data.rel.ro.foo'
-readelf -p .data $t/exe | fgrep -q '.data .data.foo'
-readelf -p .rodata $t/exe | fgrep -q '.rodata .rodata.foo'
+readelf -p .text.hot $t/exe | grep -Fq '.text.hot .text.hot.foo'
+readelf -p .text.unknown $t/exe | grep -Fq '.text.unknown .text.unknown.foo'
+readelf -p .text.unlikely $t/exe | grep -Fq '.text.unlikely .text.unlikely.foo'
+readelf -p .text.startup $t/exe | grep -Fq '.text.startup .text.startup.foo'
+readelf -p .text.exit $t/exe | grep -Fq '.text.exit .text.exit.foo'
+readelf -p .text $t/exe | grep -Fq '.text .text.foo'
+readelf -p .data.rel.ro $t/exe | grep -Fq '.data.rel.ro .data.rel.ro.foo'
+readelf -p .data $t/exe | grep -Fq '.data .data.foo'
+readelf -p .rodata $t/exe | grep -Fq '.rodata .rodata.foo'
 
 ./mold -o $t/exe $t/a.o
-! readelf --sections $t/exe | fgrep -q .text.hot || false
+! readelf --sections $t/exe | grep -Fq .text.hot || false
 
 ./mold -o $t/exe $t/a.o -z nokeep-text-section-prefix
-! readelf --sections $t/exe | fgrep -q .text.hot || false
+! readelf --sections $t/exe | grep -Fq .text.hot || false
 
 echo OK

@@ -27,6 +27,6 @@ __attribute__((visibility("protected"))) int foo;
 EOF
 
 ! $CC -B. $t/a.o $t/b.so -o $t/exe >& $t/log -no-pie || false
-fgrep -q 'cannot make copy relocation for protected symbol' $t/log
+grep -Fq 'cannot make copy relocation for protected symbol' $t/log
 
 echo OK

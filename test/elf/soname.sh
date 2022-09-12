@@ -18,9 +18,9 @@ EOF
 
 $CC -o $t/b.so -shared $t/a.o
 readelf --dynamic $t/b.so > $t/log
-! fgrep -q 'Library soname' $t/log || false
+! grep -Fq 'Library soname' $t/log || false
 
 $CC -B. -o $t/b.so -shared $t/a.o -Wl,-soname,foo
-readelf --dynamic $t/b.so | fgrep -q 'Library soname: [foo]'
+readelf --dynamic $t/b.so | grep -Fq 'Library soname: [foo]'
 
 echo OK
