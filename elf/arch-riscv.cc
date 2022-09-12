@@ -1,3 +1,64 @@
+// RISC-V is a clean RISC ISA. It supports PC-relative load/store for
+// position-independent code. It's 32-bits and 64-bits ISAs are almost
+// identical. That is, you can think RV32 as a RV64 without 64-bit-wide
+// instructions. In this file, we support both RV64 and RV32.
+//
+// From the linker's point of view, the RISC-V's psABI is unique because
+// sections in input object files can be shrunk while being copied to the
+// output file. That is contrary to other psABIs in which sections are an
+// atomic unit of copying. Let me explain it in more details.
+//
+// Since RISC-V instructions are 16-bits or 32-bits long, there's no way to
+// embed a very large immediate into a branch instruction. In fact, JAL
+// (jump and link) instruction can jump to only within PC ± 1 MiB because
+// its immediate is only 21 bits long. If the destination is out of its
+// reach, we need to use two instructions instead; the first instruction
+// being AUIPC which sets upper 20 bits to a register and the second being
+// JALR with a 12-bit immediate and the register. Combined, they specify a
+// 32 bits displacement.
+//
+// Other RISC ISAs have the same limitation, and they solved the problem by
+// letting the linker create so-called "range extension thunks". It works as
+// follows: the compiler optimistically emits single jump instructions for
+// function calls. If the linker finds that a branch target is unreachable,
+// it emits a small piece of machine code near the branch that constructs a
+// full 32-bit address in a register and jump to the destination. Then the
+// linker redirects the unreachable branch to that linker-synthesized piece
+// of code. That code is called "range extension thunks" or just "thunks".
+//
+// The RISC-V psABI is unique that it works the other way around. That is,
+// for RISC-V, the compiler always emits two instructions (AUIPC + JAL) for
+// function calls. If the linker finds the destination is reachable with a
+// single instruction, it replaces the two instructions with the one and
+// shrink the section size by one instruction length, instead of filling the
+// gap with a nop.
+//
+// With the presence of this relaxation, sections can no longer be
+// considered as an atomic unit. If we delete 4 bytes form the middle of a
+// section, all contents after that point needs to be shifted by 4. Symbol
+// values and relocation's r_offset have to be adjusted accordingly if they
+// refer past the deleted bytes.
+//
+// In mold, we use `r_deltas` array to memorize how many bytes have be
+// adjusted for relocations. For symbols, we directly mutate their `value`
+// member.
+//
+// RISC-V object files tend to have way more relocations than those for
+// other targets. This is because all branches, including ones that jump
+// within the same section, are explicitly annotated with relocations. Here
+// is why we need them: all control-flow statements such as `if` or `for`
+// are implemented using branch instructions. For other targets, the
+// compiler doesn't emit relocations for such branches because they know
+// exactly how many bytes has to be skipped at compile-time. That's not true
+// to RISC-V because the linker may delete bytes between a branch and its
+// destination. Therefore, all branches have to be adjusted at link-time
+// using relocations.
+//
+// Note that this mechanism only shrink sections and never enlarge them, as
+// the compiler is guaranteed to always emit the longest instruction
+// sequence. This makes the linker implementation a bit easier because we
+// don't need to worry about oscillation.
+//
 // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
 
 #include "mold.h"
@@ -863,49 +924,14 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
   isec.sh_size -= delta;
 }
 
-// RISC-V instructions are 16 or 32 bits long, so immediates encoded
-// in instructions can't be 32 bits long. Therefore, branch and load
-// instructions can't refer the 4 GiB address space unlike x86-64.
-// In fact, JAL (jump and link) instruction can jump to only within
-// ±1 MiB as their immediate is only 21 bits long.
+// Shrink sections by interpreting relocations.
 //
-// If you want to jump to somewhere further than that, you need to
-// construct a full 32-bit offset using multiple instruction and
-// branch to that place (e.g. AUIPC and JALR instead of JAL).
-// In this comment, we refer instructions such as JAL as the short
-// encoding and ones such as AUIPC+JALR as the long encoding.
-//
-// By default, compiler always uses the long encoding so that branch
-// targets are always encodable. This is a safe bet for them but
-// may result in inefficient code. Therefore, the RISC-V psABI defines
-// a mechanism for the linker to replace long encoding instructions
-// with short ones, shrinking the section and increasing the code
-// density.
-//
-// This is contrary to the psABIs for the other RISC processors such as
-// ARM64. Typically, they use short instructions by default, and a
-// linker creates so-called "thunks" to extend ranges of short jumps.
-// On RISC-V, instructions are in the long encoding by default, and
-// the linker shrinks them if it can.
-//
-// When we shrink a section, we need to adjust relocation offsets and
-// symbol values. For example, if we replace AUIPC+JALR with JAL
-// (which saves 4 bytes), all relocations pointing to anywhere after
-// that location need to be shifted by 4. In addition to that, any
-// symbol that refers anywhere after that location need to be shifted
-// by 4 bytes as well.
-//
-// For relocations, we use `r_deltas` array to memorize how many bytes
-// have be adjusted. For symbols, we directly mutate their `value`
-// member.
-//
-// This operation seems to be optional, as by default instructions are
-// using the long encoding, but calling this function is actually
-// mandatory because of R_RISCV_ALIGN. R_RISCV_ALIGN relocation is a
-// directive to the linker to align the location referred to by the
-// relocation to a specified byte boundary. We at least have to
-// interpret them satisfy the constraints imposed by R_RISCV_ALIGN
-// relocations.
+// This operation seems to be optional, because by default longest
+// instructions are being used. However, calling this function is actually
+// mandatory because of R_RISCV_ALIGN. R_RISCV_ALIGN is a directive to the
+// linker to align the location referred to by the relocation to a specified
+// byte boundary. We at least have to interpret them satisfy the constraints
+// imposed by R_RISCV_ALIGN relocations.
 template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx) {
   Timer t(ctx, "riscv_resize_sections");
