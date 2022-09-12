@@ -334,6 +334,9 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_ADDR32:
       *(ul32 *)loc = S + A;
       break;
+    case R_PPC64_DTPREL64:
+      *(ul64 *)loc = S + A - ctx.tp_addr;
+      break;
     default:
       Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
     }
