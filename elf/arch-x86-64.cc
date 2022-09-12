@@ -9,10 +9,15 @@
 // PLT.
 //
 // Thread Pointer (TP) is stored not to a general-purpose register but to
-// %fs segment register. The value of a segment register itself is not
-// easily readable from the user space, but %fs:0 is initialized so that
-// it has the value of %fs itself, so we can obtain the TP just by `mov
-// %fs:0, %rax`.
+// FS segment register. Segment register is a 64-bits register which can
+// be used as a base address for memory access. Each thread has a unique
+// fs value, and they access their thread-local variables relative to FS
+// as %fs:offset_from_tp.
+//
+// The value of a segment register itself is not readable from the user
+// space. As a workaround, %fs:0 (the first word referenced by FS) is
+// initialized to the value of %fs itself, so we can obtain TP just by
+// `mov %fs:0, %rax` if we need it.
 //
 // For historical reasons, TP points past the end of the TLS block on x86.
 // This is contrary to other psABIs which usually use the beginning of
@@ -330,6 +335,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         case R_X86_64_PLT32:
         case R_X86_64_GOTPCREL:
         case R_X86_64_GOTPCRELX: {
+          // The original instructions are the following:
+          //
+          //  66 48 8d 3d 00 00 00 00    lea  foo@tlsgd(%rip), %rdi
+          //  66 66 48 e8 00 00 00 00    call __tls_get_addr
+          //
+          // or
+          //
+          //  66 48 8d 3d 00 00 00 00    lea foo@tlsgd(%rip), %rdi
+          //  66 48 ff 15 00 00 00 00    call *__tls_get_addr@GOT(%rip)
           static const u8 insn[] = {
             0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
             0x48, 0x81, 0xc0, 0, 0, 0, 0,             // add $val, %rax
@@ -339,6 +353,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           break;
         }
         case R_X86_64_PLTOFF64: {
+          // The original instructions are the following:
+          //
+          //  48 8d 3d 00 00 00 00           lea    foo@tlsgd(%rip), %rdi
+          //  48 b8 00 00 00 00 00 00 00 00  movabs __tls_get_addr, %rax
+          //  48 01 d8                       add    %rbx, %rax
+          //  ff d0                          call   *%rax
           static const u8 insn[] = {
             0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
             0x48, 0x81, 0xc0, 0, 0, 0, 0,             // add $val, %rax
@@ -362,6 +382,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // Relax LD to LE
         switch (rels[i + 1].r_type) {
         case R_X86_64_PLT32: {
+          // The original instructions are the following:
+          //
+          //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
+          //  e8 00 00 00 00          call   __tls_get_addr
           static const u8 insn[] = {
             0x31, 0xc0,                   // xor %eax, %eax
             0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
@@ -372,6 +396,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         }
         case R_X86_64_GOTPCREL:
         case R_X86_64_GOTPCRELX: {
+          // The original instructions are the following:
+          //
+          //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
+          //  ff 15 00 00 00 00       call   *__tls_get_addr@GOT(%rip)
           static const u8 insn[] = {
             0x31, 0xc0,                   // xor %eax, %eax
             0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
@@ -382,6 +410,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           break;
         }
         case R_X86_64_PLTOFF64: {
+          // The original instructions are the following:
+          //
+          //  48 8d 3d 00 00 00 00           lea    foo@tlsld(%rip), %rdi
+          //  48 b8 00 00 00 00 00 00 00 00  movabs __tls_get_addr@GOTOFF, %rax
+          //  48 01 d8                       add    %rbx, %rax
+          //  ff d0                          call   *%rax
           static const u8 insn[] = {
             0x31, 0xc0,                   // xor %eax, %eax
             0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
