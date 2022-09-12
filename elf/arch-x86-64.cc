@@ -326,7 +326,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_X86_64_TLSGD:
       if (sym.get_tlsgd_idx(ctx) == -1) {
-        // Relax GD to LE
+        // Relax GD to LE. If we are creating an exectuable, the offset of
+        // a thread-local variable from TP is a link-time constant. So we
+        // don't need to call __tls_get_addr to obtain the address of a TLV.
         i64 val = S - ctx.tp_addr;
         assert(A == -4);
         check(val, -(1LL << 31), 1LL << 31);
@@ -379,7 +381,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_X86_64_TLSLD:
       if (ctx.got->tlsld_idx == -1) {
-        // Relax LD to LE
+        // Relax LD to LE. If we are creating an executable, we don't need
+        // to call __tls_get_addr to obtain the address of the beginning
+        // of the current TLS block. TP points past the end of the TLS
+        // block, and we know the exact size of the TLS block we have
+        // created, so we can just subtract it from TP.
         switch (rels[i + 1].r_type) {
         case R_X86_64_PLT32: {
           // The original instructions are the following:
