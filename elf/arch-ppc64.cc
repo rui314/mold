@@ -216,21 +216,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_REL24: {
       i64 val = S + A - P + get_local_entry_offset(ctx, sym);
 
-      if (sym.has_plt(ctx) || sign_extend(val, 23) != val) {
+      if (sym.has_plt(ctx) || sign_extend(val, 25) != val) {
         RangeExtensionRef ref = extra.range_extn[i];
         assert(ref.thunk_idx != -1);
         val = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx) + A - P;
+
+        // If the callee saves r2 to the caller's r2 save slot to clobber
+        // r2, we need to restore r2 after function return. To do so,
+        // there's usually a NOP as a placeholder after a BL. 0x6000'0000 is
+        // a NOP.
+        if (*(ul32 *)(loc + 4) == 0x6000'0000)
+          *(ul32 *)(loc + 4) = 0xe841'0018; // ld r2, 24(r1)
       }
 
-      check(val, -(1 << 23), 1 << 23);
+      check(val, -(1 << 25), 1 << 25);
       *(ul32 *)loc |= bits(val, 25, 2) << 2;
-
-      // If the callee saves r2 to the caller's r2 save slot to clobber
-      // r2, we need to restore r2 after function return. To do so,
-      // there's usually a NOP as a placeholder after a BL. 0x6000'0000 is
-      // a NOP.
-      if (sym.has_plt(ctx) && *(ul32 *)(loc + 4) == 0x6000'0000)
-        *(ul32 *)(loc + 4) = 0xe841'0018; // ld r2, 24(r1)
       break;
     }
     case R_PPC64_REL64:
@@ -430,7 +430,7 @@ bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
   i64 A = rel.r_addend;
   i64 P = isec.get_addr() + rel.r_offset;
   i64 val = S + A - P;
-  return sign_extend(val, 23) == val;
+  return sign_extend(val, 25) == val;
 }
 
 template <>
@@ -450,15 +450,15 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   };
 
   // If the destination is a non-imported function, we directly jump
-  // to that address. We don't need to save r2 because the destination
-  // is within the same output file.
+  // to that address.
   static const u32 local_thunk[] = {
+    // Save r2 to the r2 save slot reserved in the caller's stack frame
+    0xf841'0018, // std   r2, 24(r1)
     // Jump to a PLT entry
     0x3d82'0000, // addis r12, r2,  foo@toc@ha
     0x398c'0000, // addi  r0,  r12, foo@toc@lo
     0x7d89'03a6, // mtctr r12
     0x4e80'0420, // bctr
-    0x0000'0000, // (padding)
   };
 
   static_assert(E::thunk_size == sizeof(plt_thunk));
@@ -477,8 +477,8 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     } else {
       memcpy(loc , local_thunk, sizeof(local_thunk));
       i64 val = sym.get_addr(ctx) - ctx.TOC->value;
-      *(ul32 *)(loc + 0) |= higha(val);
-      *(ul32 *)(loc + 4) |= lo(val);
+      *(ul32 *)(loc + 4) |= higha(val);
+      *(ul32 *)(loc + 8) |= lo(val);
     }
 
   }
