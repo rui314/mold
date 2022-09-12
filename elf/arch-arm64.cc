@@ -26,15 +26,15 @@ using E = ARM64;
 static void write_adrp(u8 *buf, u64 val) {
   u32 hi = bits(val, 32, 14);
   u32 lo = bits(val, 13, 12);
-  u32 op = *(ul32 *)buf & 0b1001'1111'0000'0000'0000'0000'0001'1111;
-  *(ul32 *)buf = (lo << 29) | (hi << 5) | op;
+  *(ul32 *)buf &= 0b1001'1111'0000'0000'0000'0000'0001'1111;
+  *(ul32 *)buf |= (lo << 29) | (hi << 5);
 }
 
 static void write_adr(u8 *buf, u64 val) {
   u32 hi = bits(val, 20, 2);
   u32 lo = bits(val, 1, 0);
-  u32 op = *(ul32 *)buf & 0b1001'1111'0000'0000'0000'0000'0001'1111;
-  *(ul32 *)buf = (lo << 29) | (hi << 5) | op;
+  *(ul32 *)buf &= 0b1001'1111'0000'0000'0000'0000'0001'1111;
+  *(ul32 *)buf |= (lo << 29) | (hi << 5);
 }
 
 static u64 page(u64 val) {
