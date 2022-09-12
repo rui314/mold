@@ -9,6 +9,12 @@
 // We need to create range extension thunks to support binaries whose
 // .text is larger than that.
 //
+// Unlike most other targets, the TLSDESC access model is used by default
+// for -fPIC to access thread-local variables instead of the less
+// efficient GD model. You can still enable GD but it needs the
+// -mtls-dialect=trad flag. Since GD is used rarely, we don't need to
+// implement GD → LE relaxation.
+//
 // https://github.com/ARM-software/abi-aa/blob/main/aaelf64/aaelf64.rst
 
 #include "mold.h"
