@@ -359,8 +359,7 @@ inline u64 DebugInfoReader<E>::read(u64 form) {
   }
 }
 
-// Read a range list from .debug_ranges starting at the given offset
-// (until an end of list entry).
+// Read a range list from .debug_ranges starting at the given offset.
 template <typename E>
 static std::vector<u64>
 read_debug_range(Context<E> &ctx, ObjectFile<E> &file, Word<E> *range) {
@@ -379,8 +378,7 @@ read_debug_range(Context<E> &ctx, ObjectFile<E> &file, Word<E> *range) {
   return vec;
 }
 
-// Read a range list from .debug_rnglists starting at the given offset
-// (until an end of list entry).
+// Read a range list from .debug_rnglists starting at the given offset.
 template <typename E>
 static std::vector<u64>
 read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
