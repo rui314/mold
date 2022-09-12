@@ -817,6 +817,8 @@ void apply_linker_optimization_hints(Context<ARM64> &ctx);
 
 enum UuidKind { UUID_NONE, UUID_HASH, UUID_RANDOM };
 
+enum UndefinedSymbolTreatment { ERROR, DYNAMIC_LOOKUP };
+
 struct AddEmptySectionOption {
   std::string_view segname;
   std::string_view sectname;
@@ -918,6 +920,7 @@ struct Context {
     std::vector<std::string> rpath;
     std::vector<std::string> syslibroot;
     std::vector<std::string> u;
+    UndefinedSymbolTreatment undefined = ERROR;
   } arg;
 
   std::vector<std::string_view> cmdline_args;

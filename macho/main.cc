@@ -511,6 +511,9 @@ static void export_symbols(Context<E> &ctx) {
           ctx.got.add(ctx, sym);
         if (sym->flags & NEEDS_THREAD_PTR)
           ctx.thread_ptrs.add(ctx, sym);
+      } else if (sym && !sym->file) {
+        if (sym->flags & NEEDS_STUB)
+          ctx.stubs.add(ctx, sym);
       }
     }
   }

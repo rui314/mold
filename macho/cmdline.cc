@@ -471,6 +471,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.thread_count = std::stoi(std::string(arg));
     } else if (read_arg("-u")) {
       ctx.arg.u.push_back(std::string(arg));
+    } else if (read_arg("-undefined")) {
+      if (arg == "error" || arg == "dynamic_lookup") {
+        if (arg == "dynamic_lookup")
+          ctx.arg.undefined = DYNAMIC_LOOKUP;
+      } else {
+        Fatal(ctx) << "-undefined: invalid treatment: " << arg;
+      }
     } else if (read_arg("-unexported_symbol")) {
       if (!ctx.arg.unexported_symbols_list.add(arg, 1))
         Fatal(ctx) << "-unexported_symbol: invalid glob pattern: " << arg;

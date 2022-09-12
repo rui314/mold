@@ -173,7 +173,7 @@ void Subsection<E>::scan_relocations(Context<E> &ctx) {
       break;
     }
 
-    if (sym->is_imported)
+    if (sym->is_imported || !sym->file)
       sym->flags |= NEEDS_STUB;
   }
 }
@@ -188,7 +188,7 @@ void Subsection<E>::apply_reloc(Context<E> &ctx, u8 *buf) {
     i64 val = r.addend;
     u64 pc = get_addr(ctx) + r.offset;
 
-    if (r.sym && !r.sym->file) {
+    if (r.sym && !r.sym->file && ctx.arg.undefined == ERROR) {
       Error(ctx) << "undefined symbol: " << isec.file << ": " << *r.sym;
       continue;
     }

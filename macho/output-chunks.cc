@@ -791,11 +791,14 @@ void LazyBindSection<E>::add(Context<E> &ctx, Symbol<E> &sym) {
     contents.push_back(byte);
   };
 
-  i64 dylib_idx = get_dylib_idx(sym.file);
+
+  i64 dylib_idx = BIND_SPECIAL_DYLIB_FLAT_LOOKUP;
+  if (sym.file)
+    get_dylib_idx(sym.file);
 
   if (dylib_idx < 0) {
     emit(BIND_OPCODE_SET_DYLIB_SPECIAL_IMM | (dylib_idx & BIND_IMMEDIATE_MASK));
-  } else if (dylib_idx < 16) {
+  } else if (dylib_idx <= BIND_IMMEDIATE_MASK) {
     emit(BIND_OPCODE_SET_DYLIB_ORDINAL_IMM | dylib_idx);
   } else {
     emit(BIND_OPCODE_SET_DYLIB_ORDINAL_ULEB);
@@ -1051,7 +1054,9 @@ void SymtabSection<E>::compute_size(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     ObjectFile<E> &file = *ctx.objs[i];
     for (Symbol<E> *sym : file.syms) {
-      if (sym && sym->file == &file && (!sym->subsec || sym->subsec->is_alive)) {
+      if (sym && (
+          (sym->file == &file && (!sym->subsec || sym->subsec->is_alive)) ||
+          !sym->file)) {
         symtab_offsets[i + 1]++;
         strtab_offsets[i + 1] += sym->name.size() + 1;
         count(sym);
@@ -1120,9 +1125,12 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
     write_string(strtab + stroff, sym.name);
 
     msym.is_extern = (sym.is_imported || sym.scope == SCOPE_EXTERN);
-    msym.type = (sym.is_imported ? N_UNDF : N_SECT);
+    msym.type = (sym.is_imported || !sym.file ? N_UNDF : N_SECT);
 
-    if (sym.is_imported)
+    if (!sym.file)
+      msym.is_extern = 1;
+
+    if (sym.is_imported || !sym.file)
       msym.sect = N_UNDF;
     else if (sym.subsec)
       msym.sect = sym.subsec->isec.osec.sect_idx;
@@ -1134,10 +1142,10 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
     else
       msym.sect = N_ABS;
 
-    if (sym.file->is_dylib)
-      msym.desc = ((DylibFile<E> *)sym.file)->dylib_idx << 8;
-    else if (sym.is_imported)
+    if (sym.is_imported || !sym.file)
       msym.desc = DYNAMIC_LOOKUP_ORDINAL << 8;
+    else if (sym.file->is_dylib)
+      msym.desc = ((DylibFile<E> *)sym.file)->dylib_idx << 8;
     else if (sym.referenced_dynamically)
       msym.desc = REFERENCED_DYNAMICALLY;
 
@@ -1151,7 +1159,9 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
     i64 stroff = strtab_offsets[i];
 
     for (Symbol<E> *sym : file.syms) {
-      if (sym && sym->file == &file && (!sym->subsec || sym->subsec->is_alive)) {
+      if (sym && (
+          (sym->file == &file && (!sym->subsec || sym->subsec->is_alive)) ||
+          !sym->file)) {
         write(*sym, symoff, stroff);
         symoff++;
         stroff += sym->name.size() + 1;
