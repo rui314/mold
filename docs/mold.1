@@ -487,10 +487,13 @@ Default is
 .Pp
 .It Fl -defsym Ns = Ns Ar symbol Ns = Ns Ar value
 .Pp
-.It Fl -compress-debug-sections Ns = Ns Op Sy none | zlib | zlib-gabi | zlib-gnu
+.It Fl -compress-debug-sections Ns = Ns Op Sy none | zlib | zlib-gabi | zstd
 Compress DWARF debug info
 .Pf ( Sy .debug_*
-sections) using the zlib compression algorithm.
+sections) using the zlib or zstd compression algorithm.
+.Fl zlib-gabi
+is an alias for
+.Fl zlib .
 .Pp
 .It Fl -defsym Ns = Ns Ar symbol Ns = Ns Ar value
 Define
