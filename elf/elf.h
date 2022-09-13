@@ -1590,24 +1590,24 @@ struct ElfNhdr {
 };
 
 template <typename E>
-inline constexpr bool is_rela = requires(ElfRel<E> r) { r.r_addend; };
+static constexpr bool is_rela = requires(ElfRel<E> r) { r.r_addend; };
 
 template <typename E>
-inline constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
+static constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
 
 template <typename E>
-inline constexpr bool needs_thunk = requires { E::thunk_size; };
+static constexpr bool needs_thunk = requires { E::thunk_size; };
 
 template <typename E>
-inline constexpr bool is_x86 =
+static constexpr bool is_x86 =
   std::is_same_v<E, X86_64> || std::is_same_v<E, I386>;
 
 template <typename E>
-inline constexpr bool is_arm =
+static constexpr bool is_arm =
   std::is_same_v<E, ARM64> || std::is_same_v<E, ARM32>;
 
 template <typename E>
-inline constexpr bool is_riscv =
+static constexpr bool is_riscv =
   std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>;
 
 template <typename E>

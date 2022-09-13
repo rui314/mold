@@ -111,14 +111,20 @@ public:
   BigEndian() = delete;
 
   operator T() const {
-    T x;
-    memcpy(&x, val, sizeof(T));
-    return bswap(x);
+    T x = 0;
+
+    // Compilers are usually smart enough to convert this loop to a
+    // MOV followed by a BSWAP. https://godbolt.org/z/9Es4en5xE
+#pragma GCC unroll 8
+    for (int i = 0, j = sizeof(T) - 1; i < sizeof(T); i++, j--)
+      x |= (u64)val[i] << (j * 8);
+    return x;
   }
 
   BigEndian &operator=(T x) {
-    x = bswap(x);
-    memcpy(&val, &x, sizeof(T));
+#pragma GCC unroll 8
+    for (int i = 0, j = sizeof(T) - 1; i < sizeof(T); i++, j--)
+      val[i] = x >> (j * 8);
     return *this;
   }
 
@@ -156,29 +162,6 @@ public:
 
 private:
   u8 val[sizeof(T)];
-
-  static T bswap(T x) {
-    // Compiler is usually smart enough to compile the following code into
-    // a single bswap instruction. See https://godbolt.org/z/7nvaM7qab
-    if constexpr (sizeof(T) == 2) {
-      return ((x & 0xff00) >> 8) |
-             ((x & 0x00ff) << 8);
-    } else if constexpr (sizeof(T) == 4) {
-      return ((x & 0xff000000) >> 24) |
-             ((x & 0x00ff0000) >> 8)  |
-             ((x & 0x0000ff00) << 8)  |
-             ((x & 0x000000ff) << 24);
-    } else {
-      return ((x & 0xff000000'00000000) >> 56) |
-             ((x & 0x00ff0000'00000000) >> 40) |
-             ((x & 0x0000ff00'00000000) >> 24) |
-             ((x & 0x000000ff'00000000) >> 8)  |
-             ((x & 0x00000000'ff000000) << 8)  |
-             ((x & 0x00000000'00ff0000) << 24) |
-             ((x & 0x00000000'0000ff00) << 40) |
-             ((x & 0x00000000'000000ff) << 56);
-    }
-  }
 };
 
 using ib16 = BigEndian<i16>;

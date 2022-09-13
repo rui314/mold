@@ -766,6 +766,6 @@ struct X86_64 {
   static constexpr u32 stub_helper_size = 10;
 };
 
-inline constexpr size_t word_size = 8;
+static constexpr size_t word_size = 8;
 
 } // namespace mold::macho
