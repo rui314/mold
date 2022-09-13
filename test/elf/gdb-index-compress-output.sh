@@ -43,7 +43,7 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/b.so $t/c.o -Wl,--gdb-index -Wl,--compress-debug-sections=zlib-gnu
+$CC -B. -o $t/exe $t/b.so $t/c.o -Wl,--gdb-index -Wl,--compress-debug-sections=zlib
 readelf -WS $t/exe 2> /dev/null | grep -Fq .gdb_index
 
 $QEMU $t/exe | grep -q 'Hello world'

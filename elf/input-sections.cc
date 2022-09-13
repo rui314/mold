@@ -38,11 +38,7 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
   if (shndx < file.elf_sections.size())
     contents = {(char *)file.mf->data + shdr().sh_offset, (size_t)shdr().sh_size};
 
-  if (name.starts_with(".zdebug")) {
-    sh_size = *(ub64 *)&contents[4];
-    p2align = to_p2align(shdr().sh_addralign);
-    compressed = true;
-  } else if (shdr().sh_flags & SHF_COMPRESSED) {
+  if (shdr().sh_flags & SHF_COMPRESSED) {
     ElfChdr<E> &chdr = *(ElfChdr<E> *)&contents[0];
     sh_size = chdr.ch_size;
     p2align = to_p2align(chdr.ch_addralign);
@@ -84,24 +80,8 @@ void InputSection<E>::uncompress_to(Context<E> &ctx, u8 *buf) {
     return;
   }
 
-  auto do_uncompress = [&](std::string_view data) {
-    unsigned long size = sh_size;
-    if (::uncompress(buf, &size, (u8 *)data.data(), data.size()) != Z_OK)
-      Fatal(ctx) << *this << ": uncompress failed";
-    assert(size == sh_size);
-  };
-
-  if (name().starts_with(".zdebug")) {
-    // Old-style compressed section
-    if (!contents.starts_with("ZLIB") || contents.size() <= 12)
-      Fatal(ctx) << *this << ": corrupted compressed section";
-    do_uncompress(contents.substr(12));
-    return;
-  }
-
   assert(shdr().sh_flags & SHF_COMPRESSED);
 
-  // New-style compressed section
   if (contents.size() < sizeof(ElfChdr<E>))
     Fatal(ctx) << *this << ": corrupted compressed section";
 
@@ -109,7 +89,12 @@ void InputSection<E>::uncompress_to(Context<E> &ctx, u8 *buf) {
   if (hdr.ch_type != ELFCOMPRESS_ZLIB)
     Fatal(ctx) << *this << ": unsupported compression type: 0x"
                << std::hex << hdr.ch_type;
-  do_uncompress(contents.substr(sizeof(ElfChdr<E>)));
+
+  std::string_view data = contents.substr(sizeof(ElfChdr<E>));
+  unsigned long size = sh_size;
+  if (::uncompress(buf, &size, (u8 *)data.data(), data.size()) != Z_OK)
+    Fatal(ctx) << *this << ": uncompress failed";
+  assert(size == sh_size);
 }
 
 typedef enum { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } Action;

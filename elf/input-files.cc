@@ -93,8 +93,7 @@ ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
 
 template <typename E>
 static bool is_debug_section(const ElfShdr<E> &shdr, std::string_view name) {
-  return !(shdr.sh_flags & SHF_ALLOC) &&
-         (name.starts_with(".debug") || name.starts_with(".zdebug"));
+  return !(shdr.sh_flags & SHF_ALLOC) && name.starts_with(".debug");
 }
 
 template <typename E>

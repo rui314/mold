@@ -70,7 +70,7 @@ Options:
   --color-diagnostics=[auto,always,never]
                               Use colors in diagnostics
   --color-diagnostics         Alias for --color-diagnostics=always
-  --compress-debug-sections [none,zlib,zlib-gabi,zlib-gnu,zstd]
+  --compress-debug-sections [none,zlib,zlib-gabi,zstd]
                               Compress .debug_* sections
   --dc                        Ignored
   --dependency-file=FILE      Write Makefile-style dependency rules to FILE
@@ -636,8 +636,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
         ctx.arg.compress_debug_sections = COMPRESS_ZLIB;
-      else if (arg == "zlib-gnu")
-        ctx.arg.compress_debug_sections = COMPRESS_GNU;
       else if (arg == "zstd")
         ctx.arg.compress_debug_sections = COMPRESS_ZSTD;
       else if (arg == "none")

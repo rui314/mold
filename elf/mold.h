@@ -984,29 +984,15 @@ private:
 };
 
 template <typename E>
-class ZlibCompressedSection : public Chunk<E> {
+class CompressedSection : public Chunk<E> {
 public:
-  ZlibCompressedSection(Context<E> &ctx, Chunk<E> &chunk);
+  CompressedSection(Context<E> &ctx, Chunk<E> &chunk);
   void copy_buf(Context<E> &ctx) override;
   u8 *get_uncompressed_data() override { return uncompressed.get(); }
 
 private:
   ElfChdr<E> chdr = {};
   std::unique_ptr<Compressor> compressed;
-  std::unique_ptr<u8[]> uncompressed;
-};
-
-template <typename E>
-class GnuCompressedSection : public Chunk<E> {
-public:
-  GnuCompressedSection(Context<E> &ctx, Chunk<E> &chunk);
-  void copy_buf(Context<E> &ctx) override;
-  u8 *get_uncompressed_data() override { return uncompressed.get(); }
-
-private:
-  static constexpr i64 HEADER_SIZE = 12;
-  i64 original_size = 0;
-  std::unique_ptr<ZlibCompressor> compressed;
   std::unique_ptr<u8[]> uncompressed;
 };
 
@@ -1402,9 +1388,7 @@ struct BuildId {
   i64 hash_size = 0;
 };
 
-typedef enum {
-  COMPRESS_NONE, COMPRESS_ZLIB, COMPRESS_GNU, COMPRESS_ZSTD,
-} CompressKind;
+typedef enum { COMPRESS_NONE, COMPRESS_ZLIB, COMPRESS_ZSTD } CompressKind;
 
 typedef enum {
   UNRESOLVED_ERROR,

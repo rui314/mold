@@ -826,9 +826,6 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
       return stem;
   }
 
-  if (name.starts_with(".zdebug_"))
-    return save_string(ctx, "."s + std::string(name.substr(2)));
-
   return name;
 }
 
@@ -2374,15 +2371,15 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 
   for (Chunk<E> *chunk : ctx.chunks) {
     std::string_view name = chunk->name;
-    if (name == ".debug_info" || name == ".zdebug_info")
+    if (name == ".debug_info")
       ctx.debug_info = chunk;
-    if (name == ".debug_abbrev" || name == ".zdebug_abbrev")
+    if (name == ".debug_abbrev")
       ctx.debug_abbrev = chunk;
-    if (name == ".debug_ranges" || name == ".zdebug_ranges")
+    if (name == ".debug_ranges")
       ctx.debug_ranges = chunk;
-    if (name == ".debug_addr" || name == ".zdebug_addr")
+    if (name == ".debug_addr")
       ctx.debug_addr = chunk;
-    if (name == ".debug_rnglists" || name == ".zdebug_rnglists")
+    if (name == ".debug_rnglists")
       ctx.debug_rnglists = chunk;
   }
 
@@ -2442,8 +2439,7 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 }
 
 template <typename E>
-ZlibCompressedSection<E>::ZlibCompressedSection(Context<E> &ctx,
-                                                Chunk<E> &chunk) {
+CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   assert(chunk.name.starts_with(".debug"));
   this->name = chunk.name;
 
@@ -2478,39 +2474,10 @@ ZlibCompressedSection<E>::ZlibCompressedSection(Context<E> &ctx,
 }
 
 template <typename E>
-void ZlibCompressedSection<E>::copy_buf(Context<E> &ctx) {
+void CompressedSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memcpy(base, &chdr, sizeof(chdr));
   compressed->write_to(base + sizeof(chdr));
-}
-
-template <typename E>
-GnuCompressedSection<E>::GnuCompressedSection(Context<E> &ctx,
-                                              Chunk<E> &chunk) {
-  assert(chunk.name.starts_with(".debug"));
-  this->name = save_string(ctx, ".zdebug" + std::string(chunk.name.substr(6)));
-
-  uncompressed.reset(new u8[chunk.shdr.sh_size]);
-  chunk.write_to(ctx, uncompressed.get());
-
-  compressed.reset(new ZlibCompressor(uncompressed.get(), chunk.shdr.sh_size));
-
-  this->shdr = chunk.shdr;
-  this->shdr.sh_size = HEADER_SIZE + compressed->size();
-  this->shndx = chunk.shndx;
-  this->original_size = chunk.shdr.sh_size;
-
-  // We don't need to keep the original data unless --gdb-index is given.
-  if (!ctx.arg.gdb_index)
-    uncompressed.reset(nullptr);
-}
-
-template <typename E>
-void GnuCompressedSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *base = ctx.buf + this->shdr.sh_offset;
-  memcpy(base, "ZLIB", 4);
-  *(ub64 *)(base + 4) = this->original_size;
-  compressed->write_to(base + 12);
 }
 
 template <typename E>
@@ -2623,8 +2590,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template class NotePackageSection<E>;                                 \
   template class NotePropertySection<E>;                                \
   template class GdbIndexSection<E>;                                    \
-  template class ZlibCompressedSection<E>;                              \
-  template class GnuCompressedSection<E>;                               \
+  template class CompressedSection<E>;                                  \
   template class RelocSection<E>;                                       \
   template bool is_relro(Context<E> &, Chunk<E> *);                     \
   template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &);

@@ -1716,20 +1716,7 @@ i64 compress_debug_sections(Context<E> &ctx) {
         !chunk.name.starts_with(".debug"))
       return;
 
-    Chunk<E> *comp = nullptr;
-
-    switch (ctx.arg.compress_debug_sections) {
-    case COMPRESS_ZLIB:
-    case COMPRESS_ZSTD:
-      comp = new ZlibCompressedSection<E>(ctx, chunk);
-      break;
-    case COMPRESS_GNU:
-      comp = new GnuCompressedSection<E>(ctx, chunk);
-      break;
-    default:
-      unreachable();
-    }
-
+    Chunk<E> *comp = new CompressedSection<E>(ctx, chunk);
     ctx.chunk_pool.emplace_back(comp);
     ctx.chunks[i] = comp;
   });
