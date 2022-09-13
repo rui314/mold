@@ -2442,7 +2442,7 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
 }
 
 template <typename E>
-GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
+ZlibCompressedSection<E>::ZlibCompressedSection(Context<E> &ctx,
                                                 Chunk<E> &chunk) {
   assert(chunk.name.starts_with(".debug"));
   this->name = chunk.name;
@@ -2450,11 +2450,21 @@ GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
   uncompressed.reset(new u8[chunk.shdr.sh_size]);
   chunk.write_to(ctx, uncompressed.get());
 
-  chdr.ch_type = ELFCOMPRESS_ZLIB;
+  switch (ctx.arg.compress_debug_sections) {
+  case COMPRESS_ZLIB:
+    chdr.ch_type = ELFCOMPRESS_ZLIB;
+    compressed.reset(new ZlibCompressor(uncompressed.get(), chunk.shdr.sh_size));
+    break;
+  case COMPRESS_ZSTD:
+    chdr.ch_type = ELFCOMPRESS_ZSTD;
+    compressed.reset(new ZstdCompressor(uncompressed.get(), chunk.shdr.sh_size));
+    break;
+  default:
+    unreachable();
+  }
+
   chdr.ch_size = chunk.shdr.sh_size;
   chdr.ch_addralign = chunk.shdr.sh_addralign;
-
-  compressed.reset(new ZlibCompressor(uncompressed.get(), chunk.shdr.sh_size));
 
   this->shdr = chunk.shdr;
   this->shdr.sh_flags |= SHF_COMPRESSED;
@@ -2468,7 +2478,7 @@ GabiCompressedSection<E>::GabiCompressedSection(Context<E> &ctx,
 }
 
 template <typename E>
-void GabiCompressedSection<E>::copy_buf(Context<E> &ctx) {
+void ZlibCompressedSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memcpy(base, &chdr, sizeof(chdr));
   compressed->write_to(base + sizeof(chdr));
@@ -2613,7 +2623,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   template class NotePackageSection<E>;                                 \
   template class NotePropertySection<E>;                                \
   template class GdbIndexSection<E>;                                    \
-  template class GabiCompressedSection<E>;                              \
+  template class ZlibCompressedSection<E>;                              \
   template class GnuCompressedSection<E>;                               \
   template class RelocSection<E>;                                       \
   template bool is_relro(Context<E> &, Chunk<E> *);                     \

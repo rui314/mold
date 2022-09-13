@@ -587,27 +587,32 @@ std::optional<std::string_view> cpp_demangle(std::string_view name);
 // compress.cc
 //
 
-class ZlibCompressor {
+class Compressor {
+public:
+  virtual void write_to(u8 *buf) = 0;
+  virtual i64 size() const = 0;
+  virtual ~Compressor() {}
+};
+
+class ZlibCompressor : public Compressor {
 public:
   ZlibCompressor(u8 *buf, i64 size);
-  void write_to(u8 *buf);
-  i64 size() const;
+  void write_to(u8 *buf) override;
+  i64 size() const override;
 
 private:
   std::vector<std::vector<u8>> shards;
   u64 checksum = 0;
 };
 
-class GzipCompressor {
+class ZstdCompressor : public Compressor {
 public:
-  GzipCompressor(std::string_view input);
-  void write_to(u8 *buf);
-  i64 size() const;
+  ZstdCompressor(u8 *buf, i64 size);
+  void write_to(u8 *buf) override;
+  i64 size() const override;
 
 private:
   std::vector<std::vector<u8>> shards;
-  u32 checksum = 0;
-  u32 uncompressed_size = 0;
 };
 
 //

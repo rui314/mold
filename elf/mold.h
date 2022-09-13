@@ -984,15 +984,15 @@ private:
 };
 
 template <typename E>
-class GabiCompressedSection : public Chunk<E> {
+class ZlibCompressedSection : public Chunk<E> {
 public:
-  GabiCompressedSection(Context<E> &ctx, Chunk<E> &chunk);
+  ZlibCompressedSection(Context<E> &ctx, Chunk<E> &chunk);
   void copy_buf(Context<E> &ctx) override;
   u8 *get_uncompressed_data() override { return uncompressed.get(); }
 
 private:
   ElfChdr<E> chdr = {};
-  std::unique_ptr<ZlibCompressor> compressed;
+  std::unique_ptr<Compressor> compressed;
   std::unique_ptr<u8[]> uncompressed;
 };
 
@@ -1402,7 +1402,9 @@ struct BuildId {
   i64 hash_size = 0;
 };
 
-typedef enum { COMPRESS_NONE, COMPRESS_GABI, COMPRESS_GNU } CompressKind;
+typedef enum {
+  COMPRESS_NONE, COMPRESS_ZLIB, COMPRESS_GNU, COMPRESS_ZSTD,
+} CompressKind;
 
 typedef enum {
   UNRESOLVED_ERROR,

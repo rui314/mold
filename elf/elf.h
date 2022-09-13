@@ -255,6 +255,7 @@ static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_IBT = 1;
 static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_SHSTK = 2;
 
 static constexpr u32 ELFCOMPRESS_ZLIB = 1;
+static constexpr u32 ELFCOMPRESS_ZSTD = 2;
 
 static constexpr u32 EF_ARM_ABI_FLOAT_SOFT = 0x00000200;
 static constexpr u32 EF_ARM_ABI_FLOAT_HARD = 0x00000400;

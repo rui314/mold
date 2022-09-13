@@ -1717,11 +1717,18 @@ i64 compress_debug_sections(Context<E> &ctx) {
       return;
 
     Chunk<E> *comp = nullptr;
-    if (ctx.arg.compress_debug_sections == COMPRESS_GABI)
-      comp = new GabiCompressedSection<E>(ctx, chunk);
-    else if (ctx.arg.compress_debug_sections == COMPRESS_GNU)
+
+    switch (ctx.arg.compress_debug_sections) {
+    case COMPRESS_ZLIB:
+    case COMPRESS_ZSTD:
+      comp = new ZlibCompressedSection<E>(ctx, chunk);
+      break;
+    case COMPRESS_GNU:
       comp = new GnuCompressedSection<E>(ctx, chunk);
-    assert(comp);
+      break;
+    default:
+      unreachable();
+    }
 
     ctx.chunk_pool.emplace_back(comp);
     ctx.chunks[i] = comp;
