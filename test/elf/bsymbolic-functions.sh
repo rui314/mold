@@ -25,8 +25,9 @@ cat <<EOF | $CC -c -o $t/c.o -xc - -fno-PIE
 #include <stdio.h>
 
 int foo = 3;
+int x = 5;
 int get_foo();
-void *bar() {}
+void *bar() { return &x; }
 
 int main() {
   printf("%d %d %d\n", foo, get_foo(), bar == bar());

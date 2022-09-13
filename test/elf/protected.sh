@@ -39,8 +39,9 @@ int foo() {
   return 3;
 }
 
+int x = 5;
 int bar();
-void *baz() {}
+void *baz() { return &x; }
 
 int main() {
   printf("%d %d %d\n", foo(), bar(), baz == baz());
