@@ -1,14 +1,14 @@
 // RISC-V is a clean RISC ISA. It supports PC-relative load/store for
-// position-independent code. It's 32-bits and 64-bits ISAs are almost
-// identical. That is, you can think RV32 as a RV64 without 64-bit-wide
-// instructions. In this file, we support both RV64 and RV32.
+// position-independent code. Its 32-bit and 64-bit ISAs are almost
+// identical. That is, you can think RV32 as a RV64 without 64-bit
+// operations. In this file, we support both RV64 and RV32.
 //
 // From the linker's point of view, the RISC-V's psABI is unique because
 // sections in input object files can be shrunk while being copied to the
 // output file. That is contrary to other psABIs in which sections are an
 // atomic unit of copying. Let me explain it in more details.
 //
-// Since RISC-V instructions are 16-bits or 32-bits long, there's no way to
+// Since RISC-V instructions are 16-bit or 32-bit long, there's no way to
 // embed a very large immediate into a branch instruction. In fact, JAL
 // (jump and link) instruction can jump to only within PC ± 1 MiB because
 // its immediate is only 21 bits long. If the destination is out of its
@@ -36,12 +36,11 @@
 // With the presence of this relaxation, sections can no longer be
 // considered as an atomic unit. If we delete 4 bytes form the middle of a
 // section, all contents after that point needs to be shifted by 4. Symbol
-// values and relocation's r_offset have to be adjusted accordingly if they
+// values and relocation offsets have to be adjusted accordingly if they
 // refer past the deleted bytes.
 //
-// In mold, we use `r_deltas` array to memorize how many bytes have be
-// adjusted for relocations. For symbols, we directly mutate their `value`
-// member.
+// In mold, we use `r_deltas` to memorize how many bytes have be adjusted
+// for relocations. For symbols, we directly mutate their `value` member.
 //
 // RISC-V object files tend to have way more relocations than those for
 // other targets. This is because all branches, including ones that jump
@@ -51,13 +50,13 @@
 // compiler doesn't emit relocations for such branches because they know
 // exactly how many bytes has to be skipped at compile-time. That's not true
 // to RISC-V because the linker may delete bytes between a branch and its
-// destination. Therefore, all branches have to be adjusted at link-time
-// using relocations.
+// destination. Therefore, all branches including in-section ones have to
+// be adjusted at link-time using relocations.
 //
-// Note that this mechanism only shrink sections and never enlarge them, as
+// Note that this mechanism only shrink sections and never enlarge, as
 // the compiler is guaranteed to always emit the longest instruction
-// sequence. This makes the linker implementation a bit easier because we
-// don't need to worry about oscillation.
+// sequence. This makes the linker implementation a bit simpler because
+// we don't need to worry about oscillation.
 //
 // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
 
