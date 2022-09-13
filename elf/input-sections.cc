@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <zlib.h>
+#include <zstd.h>
 
 namespace mold::elf {
 
@@ -86,15 +87,24 @@ void InputSection<E>::uncompress_to(Context<E> &ctx, u8 *buf) {
     Fatal(ctx) << *this << ": corrupted compressed section";
 
   ElfChdr<E> &hdr = *(ElfChdr<E> *)&contents[0];
-  if (hdr.ch_type != ELFCOMPRESS_ZLIB)
+  std::string_view data = contents.substr(sizeof(ElfChdr<E>));
+
+  switch (hdr.ch_type) {
+  case ELFCOMPRESS_ZLIB: {
+    unsigned long size = sh_size;
+    if (::uncompress(buf, &size, (u8 *)data.data(), data.size()) != Z_OK)
+      Fatal(ctx) << *this << ": uncompress failed";
+    assert(size == sh_size);
+    break;
+  }
+  case ELFCOMPRESS_ZSTD:
+    if (ZSTD_decompress(buf, sh_size, (u8 *)data.data(), data.size()) != sh_size)
+      Fatal(ctx) << *this << ": ZSTD_decompress failed";
+    break;
+  default:
     Fatal(ctx) << *this << ": unsupported compression type: 0x"
                << std::hex << hdr.ch_type;
-
-  std::string_view data = contents.substr(sizeof(ElfChdr<E>));
-  unsigned long size = sh_size;
-  if (::uncompress(buf, &size, (u8 *)data.data(), data.size()) != Z_OK)
-    Fatal(ctx) << *this << ": uncompress failed";
-  assert(size == sh_size);
+  }
 }
 
 typedef enum { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } Action;
