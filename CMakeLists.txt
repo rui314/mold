@@ -74,6 +74,7 @@ else()
     ZSTD_BUILD_PROGRAMS=0
     ZSTD_MULTITHREAD_SUPPORT=0
     ZSTD_BUILD_TESTS=0)
+  target_include_directories(mold PUBLIC third-party/zstd/lib)
   target_link_libraries(mold PRIVATE libzstd_static)
 endif()
 
