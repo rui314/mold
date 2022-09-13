@@ -97,7 +97,7 @@ ifdef SYSTEM_ZSTD
   MOLD_LDFLAGS += -lzstd
 else
   ZSTD_LIB = out/zstd/lib/libzstd.a
-  MOLD_CXXFLAGS += -I../third-party/zstd/lib
+  MOLD_CXXFLAGS += -Ithird-party/zstd/lib
   MOLD_LDFLAGS += -Wl,-whole-archive $(ZSTD_LIB) -Wl,-no-whole-archive
 endif
 
