@@ -62,6 +62,21 @@ else()
   target_link_libraries(mold PRIVATE zlibstatic)
 endif()
 
+# Setup zstd
+find_package(ZSTD QUIET)
+if(ZSTD_FOUND)
+  target_link_libraries(mold PRIVATE ZSTD::ZSTD)
+else()
+  add_subdirectory(third-party/zstd/build/cmake EXCLUDE_FROM_ALL)
+  target_compile_definitions(libzstd_static PRIVATE
+    ZSTD_BUILD_STATIC=1
+    ZSTD_BUILD_SHARED=0
+    ZSTD_BUILD_PROGRAMS=0
+    ZSTD_MULTITHREAD_SUPPORT=0
+    ZSTD_BUILD_TESTS=0)
+  target_link_libraries(mold PRIVATE libzstd_static)
+endif()
+
 # Setup mimalloc
 cmake_dependent_option(MOLD_USE_MIMALLOC "Use mimalloc" ON
   "NOT APPLE;NOT ANDROID" OFF)

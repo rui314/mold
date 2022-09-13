@@ -93,6 +93,14 @@ else
   MOLD_CXXFLAGS += -Ithird-party/tbb/include
 endif
 
+ifdef SYSTEM_ZSTD
+  MOLD_LDFLAGS += -lzstd
+else
+  ZSTD_LIB = out/zstd/lib/libzstd.a
+  MOLD_CXXFLAGS += -I../third-party/zstd/lib
+  MOLD_LDFLAGS += -Wl,-whole-archive $(ZSTD_LIB) -Wl,-no-whole-archive
+endif
+
 ifeq ($(OS), Linux)
   ifeq ($(IS_ANDROID), 0)
     # glibc before 2.17 need librt for clock_gettime
@@ -138,7 +146,7 @@ FORCE:
 out/git-hash.o: out/git-hash.cc
 	$(CXX) $(MOLD_CXXFLAGS) $(CXXFLAGS) -c -o $@ $<
 
-mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB)
+mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(ZSTD_LIB)
 	$(CXX) $(OBJS) -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
 	ln -sf mold ld
 	ln -sf mold ld64
@@ -166,6 +174,11 @@ $(TBB_LIB):
 	(cd out/tbb; cmake -G'Unix Makefiles' -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_SHARED_LIBS=OFF -DTBB_TEST=OFF -DCMAKE_CXX_FLAGS="$(CXXFLAGS) -D__TBB_DYNAMIC_LOAD_ENABLED=0" -DTBB_STRICT=OFF ../../third-party/tbb)
 	$(MAKE) -C out/tbb tbb
 	(cd out/tbb; ln -sf *_relwithdebinfo libs)
+
+$(ZSTD_LIB):
+	mkdir -p out/zstd
+	(cd out/zstd; cmake -G'Unix Makefiles' ../../third-party/zstd/build/cmake -DZSTD_BUILD_STATIC=ON -DZSTD_BUILD_SHARED=OFF -DZSTD_BUILD_PROGRAMS=OFF -DZSTD_MULTITHREAD_SUPPORT=OFF -DZSTD_BUILD_TESTS=OFF)
+	$(MAKE) -C out/zstd libzstd_static
 
 test tests check: all
 ifeq ($(OS), Darwin)
