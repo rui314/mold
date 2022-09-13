@@ -43,7 +43,7 @@ static u64 page(u64 val) {
 
 static void write_plt_header(Context<E> &ctx, u8 *buf) {
   // Write PLT header
-  static const u32 plt0[] = {
+  static const ul32 plt0[] = {
     0xa9bf'7bf0, // stp  x16, x30, [sp,#-16]!
     0x9000'0010, // adrp x16, .got.plt[2]
     0xf940'0211, // ldr  x17, [x16, .got.plt[2]]
@@ -66,7 +66,7 @@ static void write_plt_header(Context<E> &ctx, u8 *buf) {
 static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u8 *ent = buf + E::plt_hdr_size + sym.get_plt_idx(ctx) * E::plt_size;
 
-  static const u32 data[] = {
+  static const ul32 data[] = {
     0x9000'0010, // adrp x16, .got.plt[n]
     0xf940'0211, // ldr  x17, [x16, .got.plt[n]]
     0x9100'0210, // add  x16, x16, .got.plt[n]
@@ -97,7 +97,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : symbols) {
     u8 *ent = buf + sym->get_pltgot_idx(ctx) * ARM64::pltgot_size;
 
-    static const u32 data[] = {
+    static const ul32 data[] = {
       0x9000'0010, // adrp x16, GOT[n]
       0xf940'0211, // ldr  x17, [x16, GOT[n]]
       0xd61f'0220, // br   x17
@@ -529,7 +529,7 @@ template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
 
-  static const u32 data[] = {
+  static const ul32 data[] = {
     0x9000'0010, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
     0x9100'0210, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC
     0xd61f'0200, // br   x16

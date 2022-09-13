@@ -21,7 +21,7 @@ void StubsSection<E>::copy_buf(Context<E> &ctx) {
   ul32 *buf = (ul32 *)(ctx.buf + this->hdr.offset);
 
   for (i64 i = 0; i < syms.size(); i++) {
-    static const u32 insn[] = {
+    static const ul32 insn[] = {
       0x90000010, // adrp x16, $ptr@PAGE
       0xf9400210, // ldr  x16, [x16, $ptr@PAGEOFF]
       0xd61f0200, // br   x16
@@ -44,7 +44,7 @@ void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
   ul32 *start = (ul32 *)(ctx.buf + this->hdr.offset);
   ul32 *buf = start;
 
-  static const u32 insn0[] = {
+  static const ul32 insn0[] = {
     0x90000011, // adrp x17, $__dyld_private@PAGE
     0x91000231, // add  x17, x17, $__dyld_private@PAGEOFF
     0xa9bf47f0, // stp	x16, x17, [sp, #-16]!
@@ -67,7 +67,7 @@ void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
   buf += 6;
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++) {
-    static const u32 insn[] = {
+    static const ul32 insn[] = {
       0x18000050, // ldr  w16, addr
       0x14000000, // b    stubHelperHeader
       0x00000000, // addr: .long <idx>
@@ -447,7 +447,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.hdr.offset + offset;
 
-  static const u32 data[] = {
+  static const ul32 data[] = {
     0x90000010, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
     0x91000210, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC
     0xd61f0200, // br   x16

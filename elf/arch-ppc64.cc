@@ -74,7 +74,7 @@ template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
-  static constexpr u32 plt0[] = {
+  static const ul32 plt0[] = {
     // Get PC
     0x7c08'02a6, // mflr    r0
     0x429f'0005, // bcl     1f
@@ -110,7 +110,7 @@ template <>
 void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
-  static constexpr u32 entry[] = {
+  static const ul32 entry[] = {
     // Save %r2 to the caller's TOC save area
     0xf841'0018, // std     r2, 24(r1)
 
@@ -442,7 +442,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   // If the destination is PLT, we read an address from .got.plt or .got
   // and jump there.
-  static const u32 plt_thunk[] = {
+  static const ul32 plt_thunk[] = {
     // Save r2 to the r2 save slot reserved in the caller's stack frame
     0xf841'0018, // std   r2, 24(r1)
     // Jump to a PLT entry
@@ -454,7 +454,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   // If the destination is a non-imported function, we directly jump
   // to that address.
-  static const u32 local_thunk[] = {
+  static const ul32 local_thunk[] = {
     // Save r2 to the r2 save slot reserved in the caller's stack frame
     0xf841'0018, // std   r2, 24(r1)
     // Jump to a PLT entry

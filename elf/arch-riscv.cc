@@ -158,7 +158,7 @@ template <typename E>
 static void write_plt_header(Context<E> &ctx) {
   u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
 
-  static const u32 plt0_64[] = {
+  static const ul32 plt0_64[] = {
     0x0000'0397, // auipc  t2, %pcrel_hi(.got.plt)
     0x41c3'0333, // sub    t1, t1, t3               # .plt entry + hdr + 12
     0x0003'be03, // ld     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
@@ -169,7 +169,7 @@ static void write_plt_header(Context<E> &ctx) {
     0x000e'0067, // jr     t3
   };
 
-  static const u32 plt0_32[] = {
+  static const ul32 plt0_32[] = {
     0x0000'0397, // auipc  t2, %pcrel_hi(.got.plt)
     0x41c3'0333, // sub    t1, t1, t3               # .plt entry + hdr + 12
     0x0003'ae03, // lw     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
@@ -193,14 +193,14 @@ static void write_plt_header(Context<E> &ctx) {
   write_itype(buf + 16, gotplt - plt);
 }
 
-static constexpr u32 plt_entry_64[] = {
+static const ul32 plt_entry_64[] = {
   0x0000'0e17, // auipc   t3, %pcrel_hi(function@.got.plt)
   0x000e'3e03, // ld      t3, %pcrel_lo(1b)(t3)
   0x000e'0367, // jalr    t1, t3
   0x0000'0013, // nop
 };
 
-static constexpr u32 plt_entry_32[] = {
+static const ul32 plt_entry_32[] = {
   0x0000'0e17, // auipc   t3, %pcrel_hi(function@.got.plt)
   0x000e'2e03, // lw      t3, %pcrel_lo(1b)(t3)
   0x000e'0367, // jalr    t1, t3
@@ -355,6 +355,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
       u32 rd = get_rd(*(ul32 *)(contents.data() + rel.r_offset + 4));
+
       if (removed_bytes == 4) {
         // auipc + jalr -> jal
         *(ul32 *)loc = (rd << 7) | 0b1101111;

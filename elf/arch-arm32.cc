@@ -77,7 +77,7 @@ template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
-  static const u32 plt0[] = {
+  static const ul32 plt0[] = {
     0xe52d'e004, // push {lr}
     0xe59f'e004, // ldr lr, 2f
     0xe08f'e00e, // 1: add lr, pc, lr
@@ -92,7 +92,7 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
   *(ul32 *)(buf + 16) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr - 16;
 
   for (Symbol<E> *sym : symbols) {
-    static const u32 plt[] = {
+    static const ul32 plt[] = {
       0xe59f'c004, // 1: ldr ip, 2f
       0xe08c'c00f, // add ip, ip, pc
       0xe59c'f000, // ldr pc, [ip]
@@ -110,7 +110,8 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
   for (Symbol<E> *sym : symbols) {
-    static const u32 plt[] = {
+
+    static const ul32 plt[] = {
       0xe59f'c004, // 1: ldr ip, 2f
       0xe08c'c00f, // add ip, ip, pc
       0xe59c'f000, // ldr pc, [ip]
@@ -543,7 +544,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   // TLS trampoline code. ARM32's TLSDESC is designed so that this
   // common piece of code is factored out from object files to reduce
   // output size. Since no one provide, the linker has to synthesize it.
-  static u32 hdr[] = {
+  static ul32 hdr[] = {
     0xe08e0000, // add r0, lr, r0
     0xe5901004, // ldr r1, [r0, #4]
     0xe12fff11, // bx  r1
