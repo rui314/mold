@@ -63,9 +63,11 @@ else()
 endif()
 
 # Setup zstd
-find_package(ZSTD QUIET)
-if(ZSTD_FOUND)
-  target_link_libraries(mold PRIVATE ZSTD::ZSTD)
+include(CheckIncludeFile)
+check_include_file(zstd.h HAVE_ZSTD_H)
+
+if(HAVE_ZSTD_H)
+  target_link_libraries(mold PRIVATE zstd)
 else()
   add_subdirectory(third-party/zstd/build/cmake EXCLUDE_FROM_ALL)
   target_compile_definitions(libzstd_static PRIVATE
