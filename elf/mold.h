@@ -334,7 +334,6 @@ public:
   u8 p2align = 0;
 
   bool address_significant : 1 = false;
-  bool compressed : 1 = false;
   bool uncompressed : 1 = false;
   bool killed_by_icf : 1 = false;
 

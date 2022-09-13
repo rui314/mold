@@ -43,11 +43,9 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
     ElfChdr<E> &chdr = *(ElfChdr<E> *)&contents[0];
     sh_size = chdr.ch_size;
     p2align = to_p2align(chdr.ch_addralign);
-    compressed = true;
   } else {
     sh_size = shdr().sh_size;
     p2align = to_p2align(shdr().sh_addralign);
-    compressed = false;
   }
 
   // Sections may have been compressed. We usually uncompress them
@@ -64,7 +62,7 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
 
 template <typename E>
 void InputSection<E>::uncompress(Context<E> &ctx) {
-  if (!compressed || uncompressed)
+  if (!(shdr().sh_flags & SHF_COMPRESSED) || uncompressed)
     return;
 
   u8 *buf = new u8[sh_size];
@@ -76,12 +74,10 @@ void InputSection<E>::uncompress(Context<E> &ctx) {
 
 template <typename E>
 void InputSection<E>::uncompress_to(Context<E> &ctx, u8 *buf) {
-  if (!compressed || uncompressed) {
+  if (!(shdr().sh_flags & SHF_COMPRESSED) || uncompressed) {
     memcpy(buf, contents.data(), contents.size());
     return;
   }
-
-  assert(shdr().sh_flags & SHF_COMPRESSED);
 
   if (contents.size() < sizeof(ElfChdr<E>))
     Fatal(ctx) << *this << ": corrupted compressed section";
@@ -296,10 +292,8 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   // Copy data
   if constexpr (is_riscv<E>) {
     copy_contents_riscv(ctx, buf);
-  } else if (compressed) {
-    uncompress_to(ctx, buf);
   } else {
-    memcpy(buf, contents.data(), contents.size());
+    uncompress_to(ctx, buf);
   }
 
   // Apply relocations
