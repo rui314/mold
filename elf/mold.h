@@ -141,6 +141,7 @@ public:
   OutputSection<E> &output_section;
   i32 thunk_idx = -1;
   i64 offset = -1;
+  std::mutex mu;
   std::vector<Symbol<E> *> symbols;
 };
 

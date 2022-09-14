@@ -27,6 +27,68 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
   }
 }
 
+// Scan relocations to collect symbols that need thunks.
+template <typename E>
+static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
+                      RangeExtensionThunk<E> &thunk) {
+  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
+  std::vector<RangeExtensionRef> &range_extn = isec.extra.range_extn;
+  range_extn.resize(rels.size());
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<E> &rel = rels[i];
+    if (!needs_thunk_rel(rel))
+      continue;
+
+    // Skip if the symbol is undefined. apply_reloc() will report an error.
+    Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+    if (!sym.file)
+      continue;
+
+    auto reachable = [&] {
+      // We create thunks with a pessimistic assumption that all
+      // out-of-section relocations would be out-of-range.
+      InputSection<E> *isec2 = sym.get_input_section();
+      if (!isec2 || isec.output_section != isec2->output_section)
+        return false;
+
+      // Even if the target is the same section, we branch to its PLT
+      // if it has one. So a symbol with a PLT is also an out-of-section
+      // reference.
+      if (sym.has_plt(ctx))
+        return false;
+
+      // If the target section is in the same output section but
+      // hasn't got any address yet, that's unreacahble.
+      if (isec2->offset == -1)
+        return false;
+
+      // Handle target-specific rules.
+      return is_reachable(ctx, sym, isec, rel);
+    };
+
+    // Skip if the destination is within reach.
+    if (reachable())
+      continue;
+
+    // If the symbol is already in another thunk, reuse it.
+    if (sym.extra.thunk_idx != -1) {
+      range_extn[i].thunk_idx = sym.extra.thunk_idx;
+      range_extn[i].sym_idx = sym.extra.thunk_sym_idx;
+      continue;
+    }
+
+    // Otherwise, add the symbol to this thunk if it's not added already.
+    range_extn[i].thunk_idx = thunk.thunk_idx;
+    range_extn[i].sym_idx = -1;
+
+    if (sym.flags.exchange(-1) == 0) {
+      std::scoped_lock lock(thunk.mu);
+      thunk.symbols.push_back(&sym);
+    }
+  }
+}
+
 template <typename E>
 void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   std::span<InputSection<E> *> members = osec.members;
@@ -82,67 +144,10 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     offset = align_to(offset, thunk.alignment);
     thunk.offset = offset;
 
-    std::mutex mu;
-
     // Scan relocations between B and C to collect symbols that need thunks.
     tbb::parallel_for_each(members.begin() + b, members.begin() + c,
                            [&](InputSection<E> *isec) {
-      std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
-      std::vector<RangeExtensionRef> &range_extn = isec->extra.range_extn;
-      range_extn.resize(rels.size());
-
-      for (i64 i = 0; i < rels.size(); i++) {
-        const ElfRel<E> &rel = rels[i];
-        if (!needs_thunk_rel(rel))
-          continue;
-
-        // Skip if the symbol is undefined. apply_reloc() will report an error.
-        Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
-        if (!sym.file)
-          continue;
-
-        auto reachable = [&] {
-          // We create thunks with a pessimistic assumption that all
-          // out-of-section relocations would be out-of-range.
-          InputSection<E> *isec2 = sym.get_input_section();
-          if (!isec2 || isec->output_section != isec2->output_section)
-            return false;
-
-          // Even if the target is the same section, we branch to its PLT
-          // if it has one. So a symbol with a PLT is also an out-of-section
-          // reference.
-          if (sym.has_plt(ctx))
-            return false;
-
-          // If the target section is in the same output section but
-          // hasn't got any address yet, that's unreacahble.
-          if (isec2->offset == -1)
-            return false;
-
-          // Handle target-specific rules.
-          return is_reachable(ctx, sym, *isec, rel);
-        };
-
-        // Skip if the destination is within reach.
-        if (reachable())
-          continue;
-
-        // If the symbol is already in another thunk, reuse it.
-        if (sym.extra.thunk_idx != -1) {
-          range_extn[i].thunk_idx = sym.extra.thunk_idx;
-          range_extn[i].sym_idx = sym.extra.thunk_sym_idx;
-          continue;
-        }
-
-        // Otherwise, add the symbol to this thunk if it's not added already.
-        range_extn[i].thunk_idx = thunk.thunk_idx;
-        range_extn[i].sym_idx = -1;
-
-        if (sym.flags.exchange(-1) == 0) {
-          std::scoped_lock lock(mu);
-          thunk.symbols.push_back(&sym);
-        }
-      }
+      scan_rels(ctx, *isec, thunk);
     });
 
     // Now that we know the number of symbols in the thunk, we can compute
