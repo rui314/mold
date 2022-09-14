@@ -15,6 +15,8 @@ mkdir -p $t
 echo 'int main() {}' | cc -o /dev/null -xc - -static >& /dev/null || \
   { echo skipped; exit; }
 
+[ $MACHINE = aarch64 ] && { echo skipped; exit; }
+
 # Skip if libc is musl because musl does not support GNU IFUNC
 ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
 
