@@ -1700,7 +1700,6 @@ struct ARM64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-
   static constexpr u32 tls_dtv_offset = 0;
 
   // For ARM, we need to insert a piece of code between a function call
@@ -1857,7 +1856,6 @@ struct PPC64 {
   static constexpr u32 plt_hdr_size = 60;
   static constexpr u32 plt_size = 4;
   static constexpr u32 pltgot_size = 20;
-  static constexpr u32 tls_tp_offset = 8;
   static constexpr u32 tls_dtv_offset = 0x8000;
 
   static constexpr u32 thunk_hdr_size = 0;
