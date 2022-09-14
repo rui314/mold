@@ -12,7 +12,11 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-# Skip if libc is musl because musl does not support GNU IFUNC
+# IFUNC is not supported on RISC-V yet
+[ $MACHINE = riscv32 ] && { echo skipped; exit; }
+[ $MACHINE = riscv64 ] && { echo skipped; exit; }
+
+# Skip if libc is musl because musl does not support GNU FUNC
 ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
