@@ -14,11 +14,22 @@ mkdir -p $t
 
 [ $MACHINE = x86_64 ] || { echo skipped; exit; }
 
-echo '.globl _start; _start: jmp loop' | $CC -o $t/a.o -c -x assembler -
-echo '.globl loop; loop: jmp loop' | $CC -o $t/b.o -c -x assembler -
-echo "-o '$t/exe' '$t/a.o' '$t/b.o'" > $t/rsp
-./mold -static @$t/rsp
-$OBJDUMP -d $t/exe > /dev/null
-file $t/exe | grep -q ELF
+cat <<EOF | $CC -c -o $t/a.o -xc -
+void foo();
+void bar();
+int main() { foo(); bar(); }
+EOF
+
+cat <<EOF | $CC -c -o $t/b.o -xc -
+void foo() {}
+EOF
+
+cat <<EOF | $CC -c -o $t/c.o -xc -
+void bar() {}
+EOF
+
+echo "'$t/b.o' '$t/c.o'" > $t/rsp
+
+$CC -o $t/exe $t/a.o -Wl,@$t/rsp
 
 echo OK

@@ -12,6 +12,9 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
+echo 'int main() {}' | cc -o /dev/null -xc - -static >& /dev/null || \
+  { echo skipped; exit; }
+
 # We need to implement R_386_GOT32X relaxation to support PIE on i386
 [ $MACHINE = i386 -o $MACHINE = i686 ] && { echo skipped; exit; }
 

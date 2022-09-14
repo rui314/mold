@@ -12,7 +12,10 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-# Skip if libc is musl because musl does not support GNU FUNC
+echo 'int main() {}' | cc -o /dev/null -xc - -static >& /dev/null || \
+  { echo skipped; exit; }
+
+# Skip if libc is musl because musl does not support GNU IFUNC
 ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
 
 # We need to implement R_386_GOT32X relaxation to support PIE on i386

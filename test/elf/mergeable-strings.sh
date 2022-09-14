@@ -12,6 +12,9 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
+echo 'int main() {}' | cc -o /dev/null -xc - -static >& /dev/null || \
+  { echo skipped; exit; }
+
 # Skip if target is not x86-64
 [ $MACHINE = x86_64 ] || { echo skipped; exit; }
 

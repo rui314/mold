@@ -22,15 +22,15 @@ bar:
   .quad 0
 EOF
 
-./mold -e foo -static -o $t/exe $t/a.o
+./mold -e foo -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*0x201000" $t/log
 
-./mold -e bar -static -o $t/exe $t/a.o
+./mold -e bar -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*0x201008" $t/log
 
-./mold -static -o $t/exe $t/a.o
+./mold -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*0x201000" $t/log
 
