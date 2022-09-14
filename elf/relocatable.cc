@@ -249,7 +249,7 @@ void RInputSection<E>::write_to(Context<E> &ctx) {
 
   switch (this->in_shdr.sh_type) {
   case SHT_GROUP: {
-    u32 *mem = (u32 *)(ctx.buf + this->out_shdr.sh_offset);
+    ul32 *mem = (ul32 *)(ctx.buf + this->out_shdr.sh_offset);
     for (i64 i = 1; i < this->out_shdr.sh_size / sizeof(u32); i++)
       mem[i] = file.sections[mem[i]]->shndx;
     break;

@@ -1363,11 +1363,21 @@ struct Elf64Sym {
   bool is_undef_weak() const { return is_undef() && is_weak(); }
 
   ul32 st_name;
+
+#ifdef __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 ppc64_local_entry : 3;
+  u8 : 3;
+  u8 st_visibility : 2;
+#endif
+
   ul16 st_shndx;
   ul64 st_value;
   ul64 st_size;
@@ -1384,11 +1394,21 @@ struct Elf32Sym {
   ul32 st_name;
   ul32 st_value;
   ul32 st_size;
+
+#ifdef __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 ppc64_local_entry : 3;
+  u8 : 3;
+  u8 st_visibility : 2;
+#endif
+
   ul16 st_shndx;
 };
 

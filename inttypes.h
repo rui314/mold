@@ -24,8 +24,14 @@
 #include <cstdint>
 #include <cstring>
 
-#ifdef __BIG_ENDIAN__
-#error "mold does not support big-endian hosts"
+#if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
+# if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#  define __LITTLE_ENDIAN__ 1
+# elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#  define __BIG_ENDIAN__ 1
+# else
+#  error "unknwon host byte order"
+# endif
 #endif
 
 namespace mold {
@@ -47,13 +53,19 @@ public:
   LittleEndian(T x) { *this = x; }
 
   operator T() const {
+    // Compilers are usually smart enough to convert this loop to a
+    // simple data copy. https://godbolt.org/z/1qz177vzs
     T x = 0;
-    memcpy(&x, val, SIZE);
+#pragma GCC unroll 8
+    for (int i = 0; i < SIZE; i++)
+      x |= (u64)val[i] << (i * 8);
     return x;
   }
 
   LittleEndian &operator=(T x) {
-    memcpy(&val, &x, SIZE);
+#pragma GCC unroll 8
+    for (int i = 0; i < SIZE; i++)
+      val[i] = x >> (i * 8);
     return *this;
   }
 
@@ -112,8 +124,8 @@ public:
   BigEndian(T x) { *this = x; }
 
   operator T() const {
-    // Compilers are usually smart enough to convert this loop to a
-    // MOV followed by a BSWAP. https://godbolt.org/z/9Es4en5xE
+    // This is compiled to a MOV followed by a BSWAP.
+    // https://godbolt.org/z/1qz177vzs
     T x = 0;
 #pragma GCC unroll 8
     for (int i = 0, j = SIZE - 1; i < SIZE; i++, j--)

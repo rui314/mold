@@ -1410,9 +1410,9 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
   memset(base, 0, this->shdr.sh_size);
 
   i64 num_slots = ctx.dynsym->symbols.size();
-  u32 *hdr = (u32 *)base;
-  u32 *buckets = (u32 *)(base + 8);
-  u32 *chains = buckets + num_slots;
+  ul32 *hdr = (ul32 *)base;
+  ul32 *buckets = (ul32 *)(base + 8);
+  ul32 *chains = buckets + num_slots;
 
   hdr[0] = hdr[1] = num_slots;
 
@@ -1481,7 +1481,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   }
 
   // Write hash bucket indices
-  u32 *buckets = (u32 *)(bloom + num_bloom);
+  ul32 *buckets = (ul32 *)(bloom + num_bloom);
   for (i64 i = 0; i < hashes.size(); i++) {
     i64 idx = hashes[i] % num_buckets;
     if (!buckets[idx])
@@ -1489,7 +1489,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   }
 
   // Write a hash table
-  u32 *table = buckets + num_buckets;
+  ul32 *table = buckets + num_buckets;
   for (i64 i = 0; i < syms.size(); i++) {
     bool is_last = false;
     if (i == syms.size() - 1 ||
@@ -2030,7 +2030,7 @@ void BuildIdSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void BuildIdSection<E>::copy_buf(Context<E> &ctx) {
-  u32 *base = (u32 *)(ctx.buf + this->shdr.sh_offset);
+  ul32 *base = (ul32 *)(ctx.buf + this->shdr.sh_offset);
   memset(base, 0, this->shdr.sh_size);
   base[0] = 4;                          // Name size
   base[1] = ctx.arg.build_id.size();    // Hash size
@@ -2112,7 +2112,7 @@ void NotePackageSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void NotePackageSection<E>::copy_buf(Context<E> &ctx) {
-  u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
+  ul32 *buf = (ul32 *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   buf[0] = 4;                                      // Name size
@@ -2139,7 +2139,7 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
-  u32 *buf = (u32 *)(ctx.buf + this->shdr.sh_offset);
+  ul32 *buf = (ul32 *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   buf[0] = 4;                                 // Name size
@@ -2336,13 +2336,13 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   const i64 shard_size = map.nbuckets / map.NUM_SHARDS;
 
   tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
-    u32 *attrs = (u32 *)buf;
+    ul32 *attrs = (ul32 *)buf;
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
       if (map.has_key(j)) {
         MapEntry &ent = map.values[j];
         u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
-        u32 *start = attrs + idx + 1;
+        ul32 *start = attrs + idx + 1;
         std::sort(start, start + attrs[idx]);
       }
     }
