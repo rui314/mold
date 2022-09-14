@@ -16,6 +16,8 @@ endif()
 
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
+target_compile_definitions(mold PRIVATE
+  "LIBDIR=\"${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}\"")
 target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
 
 if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
