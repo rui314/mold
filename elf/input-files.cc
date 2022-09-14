@@ -692,6 +692,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
 
     if (len == 0)
       continue;
+    assert(sizeof(SectionFragmentRef<E>) * (len + 1) < UINT32_MAX);
 
     isec->rel_fragments.reset(new SectionFragmentRef<E>[len + 1]);
     i64 frag_idx = 0;
