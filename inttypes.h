@@ -43,7 +43,7 @@ typedef int64_t i64;
 template <typename T, size_t SIZE = sizeof(T)>
 class LittleEndian {
 public:
-  LittleEndian() { *this = 0; }
+  LittleEndian() = default;
   LittleEndian(T x) { *this = x; }
 
   operator T() const {
@@ -108,7 +108,7 @@ using ul64 = LittleEndian<u64>;
 template <typename T, size_t SIZE = sizeof(T)>
 class BigEndian {
 public:
-  BigEndian() { *this = 0; }
+  BigEndian() = default;
   BigEndian(T x) { *this = x; }
 
   operator T() const {

@@ -1493,6 +1493,7 @@ struct Elf32Phdr {
 //   it's redundant for RELA. If RELA, the written value will be
 //   ovewritten by the dynamic linker at load-time.
 struct Elf64Rel {
+  Elf64Rel() = default;
   Elf64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
@@ -1502,6 +1503,7 @@ struct Elf64Rel {
 };
 
 struct Elf32Rel {
+  Elf32Rel() = default;
   Elf32Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
@@ -1511,6 +1513,7 @@ struct Elf32Rel {
 };
 
 struct Elf64Rela {
+  Elf64Rela() = default;
   Elf64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
@@ -1521,6 +1524,7 @@ struct Elf64Rela {
 };
 
 struct Elf32Rela {
+  Elf32Rela() = default;
   Elf32Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
