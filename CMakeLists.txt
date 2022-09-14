@@ -24,7 +24,9 @@ if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
   target_compile_options(mold PRIVATE
     -fno-exceptions
     -fno-unwind-tables
-    -fno-asynchronous-unwind-tables)
+    -fno-asynchronous-unwind-tables
+    -Wno-sign-compare
+    -Wno-unused-function)
 endif()
 
 # Build mold with -flto if MOLD_LTO=On

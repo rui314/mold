@@ -305,7 +305,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     i64 addend;
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
-    auto overflow_check = [&](i64 val, i64 lo, i64 hi) {
+    auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
@@ -327,9 +327,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       }
       *(ul64 *)loc = S + A;
       break;
-    case R_PPC64_ADDR32:
-      *(ul32 *)loc = S + A;
+    case R_PPC64_ADDR32: {
+      i64 val = S + A;
+      check(val, 0, 1LL << 32);
+      *(ul32 *)loc = val;
       break;
+    }
     case R_PPC64_DTPREL64:
       *(ul64 *)loc = S + A - ctx.tp_addr;
       break;

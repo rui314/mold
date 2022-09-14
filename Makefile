@@ -47,6 +47,7 @@ CXXFLAGS = -O2
 
 MOLD_CXXFLAGS := -std=c++20 -fno-exceptions -fno-unwind-tables \
                  -fno-asynchronous-unwind-tables \
+                 -Wno-sign-compare -Wno-unused-function \
                  -DMOLD_VERSION=\"$(VERSION)\" -DLIBDIR="\"$(LIBDIR)\""
 
 ifeq ($(OS), OpenBSD)
