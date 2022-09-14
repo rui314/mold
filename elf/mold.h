@@ -154,8 +154,8 @@ template <typename E>
 void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec);
 
 template <typename E>
-bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
-                  InputSection<E> &isec, const ElfRel<E> &rel);
+bool is_branch_reachable(Context<E> &ctx, Symbol<E> &sym,
+                         InputSection<E> &isec, const ElfRel<E> &rel);
 
 template <typename E>
 inline bool needs_thunk_rel(const ElfRel<E> &r);

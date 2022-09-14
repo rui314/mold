@@ -411,8 +411,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 // For range extension thunks
 template <>
-bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
-                  InputSection<E> &isec, const ElfRel<E> &rel) {
+bool is_branch_reachable(Context<E> &ctx, Symbol<E> &sym,
+                         InputSection<E> &isec, const ElfRel<E> &rel) {
   // Compute a distance between the relocated place and the symbol
   // and check if they are within reach.
   i64 S = sym.get_addr(ctx);

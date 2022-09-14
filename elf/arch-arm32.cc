@@ -503,8 +503,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 // For range extension thunks
 template <>
-bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
-                  InputSection<E> &isec, const ElfRel<E> &rel) {
+bool is_branch_reachable(Context<E> &ctx, Symbol<E> &sym,
+                         InputSection<E> &isec, const ElfRel<E> &rel) {
   // Thumb and ARM B instructions cannot be converted to BX, so we
   // always have to make them jump to a thunk to switch processor mode
   // even if their destinations are within their ranges.

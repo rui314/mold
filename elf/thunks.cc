@@ -27,6 +27,30 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
   }
 }
 
+template <typename E>
+static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
+                         Symbol<E> &sym, const ElfRel<E> &rel) {
+  // We create thunks with a pessimistic assumption that all
+  // out-of-section relocations would be out-of-range.
+  InputSection<E> *isec2 = sym.get_input_section();
+  if (!isec2 || isec.output_section != isec2->output_section)
+    return false;
+
+  // Even if the target is the same section, we branch to its PLT
+  // if it has one. So a symbol with a PLT is also considered an
+  // out-of-section reference.
+  if (sym.has_plt(ctx))
+    return false;
+
+  // If the target section is in the same output section but
+  // hasn't got any address yet, that's unreacahble.
+  if (isec2->offset == -1)
+    return false;
+
+  // Handle target-specific rules.
+  return is_branch_reachable(ctx, sym, isec, rel);
+}
+
 // Scan relocations to collect symbols that need thunks.
 template <typename E>
 static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
@@ -45,30 +69,8 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
     if (!sym.file)
       continue;
 
-    auto reachable = [&] {
-      // We create thunks with a pessimistic assumption that all
-      // out-of-section relocations would be out-of-range.
-      InputSection<E> *isec2 = sym.get_input_section();
-      if (!isec2 || isec.output_section != isec2->output_section)
-        return false;
-
-      // Even if the target is the same section, we branch to its PLT
-      // if it has one. So a symbol with a PLT is also an out-of-section
-      // reference.
-      if (sym.has_plt(ctx))
-        return false;
-
-      // If the target section is in the same output section but
-      // hasn't got any address yet, that's unreacahble.
-      if (isec2->offset == -1)
-        return false;
-
-      // Handle target-specific rules.
-      return is_reachable(ctx, sym, isec, rel);
-    };
-
     // Skip if the destination is within reach.
-    if (reachable())
+    if (is_reachable(ctx, isec, sym, rel))
       continue;
 
     // If the symbol is already in another thunk, reuse it.
@@ -78,7 +80,7 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
       continue;
     }
 
-    // Otherwise, add the symbol to this thunk if it's not added already.
+    // Otherwise, add the symbol to the thunk if it's not added already.
     range_extn[i].thunk_idx = thunk.thunk_idx;
     range_extn[i].sym_idx = -1;
 
