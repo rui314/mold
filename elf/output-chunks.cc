@@ -2465,7 +2465,7 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   this->shdr = chunk.shdr;
   this->shdr.sh_flags |= SHF_COMPRESSED;
   this->shdr.sh_addralign = 1;
-  this->shdr.sh_size = sizeof(chdr) + compressed->size();
+  this->shdr.sh_size = sizeof(chdr) + compressed->compressed_size;
   this->shndx = chunk.shndx;
 
   // We don't need to keep the original data unless --gdb-index is given.

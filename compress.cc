@@ -109,13 +109,11 @@ ZlibCompressor::ZlibCompressor(u8 *buf, i64 size) {
   checksum = adlers[0];
   for (i64 i = 1; i < inputs.size(); i++)
     checksum = adler32_combine(checksum, adlers[i], inputs[i].size());
-}
 
-i64 ZlibCompressor::size() const {
-  i64 size = 2;    // +2 for header
-  for (const std::vector<u8> &shard : shards)
-    size += shard.size();
-  return size + 6; // +6 for trailer and checksum
+  // Comput the total size
+  compressed_size = 8; // the header and the trailer
+  for (std::vector<u8> &shard : shards)
+    compressed_size += shard.size();
 }
 
 void ZlibCompressor::write_to(u8 *buf) {
@@ -134,7 +132,7 @@ void ZlibCompressor::write_to(u8 *buf) {
   });
 
   // Write a trailer
-  u8 *end = buf + size();
+  u8 *end = buf + compressed_size;
   end[-6] = 3;
   end[-5] = 0;
 
@@ -163,13 +161,10 @@ ZstdCompressor::ZstdCompressor(u8 *buf, i64 size) {
   tbb::parallel_for((i64)0, (i64)inputs.size(), [&](i64 i) {
     shards[i] = zstd_compress(inputs[i]);
   });
-}
 
-i64 ZstdCompressor::size() const {
-  i64 size = 0;
-  for (const std::vector<u8> &shard : shards)
-    size += shard.size();
-  return size;
+  compressed_size = 0;
+  for (std::vector<u8> &shard : shards)
+    compressed_size += shard.size();
 }
 
 void ZstdCompressor::write_to(u8 *buf) {
