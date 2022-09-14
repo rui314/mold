@@ -258,19 +258,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = ctx.got->get_tlsld_addr(ctx) - ctx.TOC->value;
       break;
     case R_PPC64_DTPREL16_HA:
+    case R_PPC64_TPREL16_HA:
       *(ul16 *)loc = ha(S + A - ctx.tp_addr);
       break;
     case R_PPC64_DTPREL16_LO:
+    case R_PPC64_TPREL16_LO:
       *(ul16 *)loc = S + A - ctx.tp_addr;
       break;
     case R_PPC64_GOT_TPREL16_LO_DS:
       *(ul16 *)loc |= (sym.get_gottp_addr(ctx) - ctx.TOC->value) & 0xfffc;
-      break;
-    case R_PPC64_TPREL16_HA:
-      *(ul16 *)loc = ha(S + A - ctx.tp_addr);
-      break;
-    case R_PPC64_TPREL16_LO:
-      *(ul16 *)loc = S + A - ctx.tp_addr;
       break;
     case R_PPC64_TLS:
     case R_PPC64_TLSGD:
@@ -459,7 +455,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0xf841'0018, // std   r2, 24(r1)
     // Jump to a PLT entry
     0x3d82'0000, // addis r12, r2,  foo@toc@ha
-    0x398c'0000, // addi  r0,  r12, foo@toc@lo
+    0x398c'0000, // addi  r12, r12, foo@toc@lo
     0x7d89'03a6, // mtctr r12
     0x4e80'0420, // bctr
   };

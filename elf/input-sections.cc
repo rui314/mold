@@ -226,8 +226,8 @@ static Action get_abs_dyn_action(Context<E> &ctx, Symbol<E> &sym,
   }
 
   // This is a decision table for absolute relocations for the word
-  // size data (e.g. R_X86_64_64). Unlike the above, we can emit a
-  // dynamic relocation if we cannot resolve its address at link-time.
+  // size data (e.g. R_X86_64_64). Unlike the scan_abs_rel, we can emit
+  // a dynamic relocation if we cannot resolve an address at link-time.
   constexpr Action table[][4] = {
     // Absolute  Local    Imported data  Imported code
     {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object

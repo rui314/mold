@@ -38,7 +38,7 @@ static void write_adr(u8 *buf, u64 val) {
 }
 
 static u64 page(u64 val) {
-  return val & ~(u64)0xfff;
+  return val & 0xffff'ffff'ffff'f000;
 }
 
 static void write_plt_header(Context<E> &ctx, u8 *buf) {
@@ -95,7 +95,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
   for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * ARM64::pltgot_size;
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
 
     static const ul32 data[] = {
       0x9000'0010, // adrp x16, GOT[n]

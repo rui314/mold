@@ -11,17 +11,17 @@
 // Thread Pointer (TP) is stored not to a general-purpose register but to
 // FS segment register. Segment register is a 64-bits register which can
 // be used as a base address for memory access. Each thread has a unique
-// fs value, and they access their thread-local variables relative to FS
+// FS value, and they access their thread-local variables relative to FS
 // as %fs:offset_from_tp.
 //
-// The value of a segment register itself is not readable from the user
-// space. As a workaround, %fs:0 (the first word referenced by FS) is
-// initialized to the value of %fs itself, so we can obtain TP just by
-// `mov %fs:0, %rax` if we need it.
+// The value of a segment register itself is not generally readable from
+// the user space. As a workaround, %fs:0 (the first word referenced by
+// FS) is initialized to the value of %fs itself, so we can obtain TP just
+// by `mov %fs:0, %rax` if we need it.
 //
 // For historical reasons, TP points past the end of the TLS block on x86.
-// This is contrary to other psABIs which usually use the beginning of
-// the TLS block (with some addend) as TP. As a result, offsets from TP to
+// This is contrary to other psABIs which usually use the beginning of the
+// TLS block as TP (with some addend). As a result, offsets from TP to
 // thread-local variables (TLVs) in the main executable are all negative.
 //
 // https://github.com/rui314/mold/wiki/x86-64-psabi.pdf

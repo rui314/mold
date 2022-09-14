@@ -105,25 +105,25 @@ using ul24 = LittleEndian<u32, 3>;
 using ul32 = LittleEndian<u32>;
 using ul64 = LittleEndian<u64>;
 
-template <typename T>
+template <typename T, size_t SIZE = sizeof(T)>
 class BigEndian {
 public:
-  BigEndian() = delete;
+  BigEndian() { *this = 0; }
+  BigEndian(T x) { *this = x; }
 
   operator T() const {
-    T x = 0;
-
     // Compilers are usually smart enough to convert this loop to a
     // MOV followed by a BSWAP. https://godbolt.org/z/9Es4en5xE
+    T x = 0;
 #pragma GCC unroll 8
-    for (int i = 0, j = sizeof(T) - 1; i < sizeof(T); i++, j--)
+    for (int i = 0, j = SIZE - 1; i < SIZE; i++, j--)
       x |= (u64)val[i] << (j * 8);
     return x;
   }
 
   BigEndian &operator=(T x) {
 #pragma GCC unroll 8
-    for (int i = 0, j = sizeof(T) - 1; i < sizeof(T); i++, j--)
+    for (int i = 0, j = SIZE - 1; i < SIZE; i++, j--)
       val[i] = x >> (j * 8);
     return *this;
   }
@@ -161,13 +161,14 @@ public:
   }
 
 private:
-  u8 val[sizeof(T)];
+  u8 val[SIZE];
 };
 
 using ib16 = BigEndian<i16>;
 using ib32 = BigEndian<i32>;
 using ib64 = BigEndian<i64>;
 using ub16 = BigEndian<u16>;
+using ub24 = BigEndian<u32, 3>;
 using ub32 = BigEndian<u32>;
 using ub64 = BigEndian<u64>;
 

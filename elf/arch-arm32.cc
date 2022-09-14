@@ -110,7 +110,6 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
 
   for (Symbol<E> *sym : symbols) {
-
     static const ul32 plt[] = {
       0xe59f'c004, // 1: ldr ip, 2f
       0xe08c'c00f, // add ip, ip, pc

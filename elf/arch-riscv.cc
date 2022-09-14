@@ -48,15 +48,15 @@
 // is why we need them: all control-flow statements such as `if` or `for`
 // are implemented using branch instructions. For other targets, the
 // compiler doesn't emit relocations for such branches because they know
-// exactly how many bytes has to be skipped at compile-time. That's not true
+// at compile-time exactly how many bytes has to be skipped. That's not true
 // to RISC-V because the linker may delete bytes between a branch and its
 // destination. Therefore, all branches including in-section ones have to
-// be adjusted at link-time using relocations.
+// be explicitly annotated with relocations.
 //
 // Note that this mechanism only shrink sections and never enlarge, as
-// the compiler is guaranteed to always emit the longest instruction
-// sequence. This makes the linker implementation a bit simpler because
-// we don't need to worry about oscillation.
+// the compiler always emits the longest instruction sequence. This
+// makes the linker implementation a bit simpler because we don't need
+// to worry about oscillation.
 //
 // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
 
