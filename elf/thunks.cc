@@ -101,8 +101,30 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
         if (!sym.file)
           continue;
 
+        auto reachable = [&] {
+          // We create thunks with a pessimistic assumption that all
+          // out-of-section relocations would be out-of-range.
+          InputSection<E> *isec2 = sym.get_input_section();
+          if (!isec2 || isec->output_section != isec2->output_section)
+            return false;
+
+          // Even if the target is the same section, we branch to its PLT
+          // if it has one. So a symbol with a PLT is also an out-of-section
+          // reference.
+          if (sym.has_plt(ctx))
+            return false;
+
+          // If the target section is in the same output section but
+          // hasn't got any address yet, that's unreacahble.
+          if (isec2->offset == -1)
+            return false;
+
+          // Handle target-specific rules.
+          return is_reachable(ctx, sym, *isec, rel);
+        };
+
         // Skip if the destination is within reach.
-        if (is_reachable(ctx, sym, *isec, rel))
+        if (reachable())
           continue;
 
         // If the symbol is already in another thunk, reuse it.

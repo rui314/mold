@@ -505,21 +505,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 template <>
 bool is_reachable(Context<E> &ctx, Symbol<E> &sym,
                   InputSection<E> &isec, const ElfRel<E> &rel) {
-  // We pessimistically assume that PLT entries are unreacahble.
-  if (sym.has_plt(ctx))
-    return false;
-
-  // We create thunks with a pessimistic assumption that all
-  // out-of-section relocations would be out-of-range.
-  InputSection<E> *isec2 = sym.get_input_section();
-  if (!isec2 || isec.output_section != isec2->output_section)
-    return false;
-
-  // If the target section is in the same output section but hasn't got
-  // any address yet, that's unreacahble.
-  if (isec2->offset == -1)
-    return false;
-
   // Thumb and ARM B instructions cannot be converted to BX, so we
   // always have to make them jump to a thunk to switch processor mode
   // even if their destinations are within their ranges.
