@@ -118,7 +118,7 @@ static i64 parse_version(const std::string &arg) {
   static std::regex re(R"((\d+)(?:\.(\d+))?(?:\.(\d+))?)", flags);
 
   std::smatch m;
-  bool ok = std::regex_match(arg, m, re);
+  [[maybe_unused]] bool ok = std::regex_match(arg, m, re);
   assert(ok);
 
   i64 major = (m[1].length() == 0) ? 0 : stoi(m[1]);

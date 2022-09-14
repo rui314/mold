@@ -500,7 +500,7 @@ static void load_plugin(Context<E> &ctx) {
   tv.emplace_back(LDPT_GET_API_VERSION, get_api_version<E>);
   tv.emplace_back(LDPT_NULL, 0);
 
-  PluginStatus status = onload(tv.data());
+  [[maybe_unused]] PluginStatus status = onload(tv.data());
   assert(status == LDPS_OK);
 }
 

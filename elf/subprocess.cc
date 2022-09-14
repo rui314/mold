@@ -49,7 +49,7 @@ std::function<void()> fork_child() {
 
   return [=] {
     char buf[] = {1};
-    int n = write(pipefd[1], buf, 1);
+    [[maybe_unused]] int n = write(pipefd[1], buf, 1);
     assert(n == 1);
   };
 }
@@ -81,8 +81,8 @@ static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
 template <typename E>
 [[noreturn]]
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
-  std::string_view arg1 = argv[1];
-  assert(arg1 == "-run" || arg1 == "--run");
+  assert(argv[1] == "-run"s || argv[1] == "--run"s);
+
   if (!argv[2])
     Fatal(ctx) << "-run: argument missing";
 

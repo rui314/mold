@@ -20,7 +20,11 @@
 #include <zlib.h>
 #include <zstd.h>
 
-#define CHECK(fn) do { int r = (fn); assert(r == Z_OK); } while (0)
+#define CHECK(fn)                               \
+  do {                                          \
+    [[maybe_unused]] int r = (fn);              \
+    assert(r == Z_OK);                          \
+  } while (0)
 
 namespace mold {
 

@@ -495,8 +495,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
 template <typename E>
 void check_cet_errors(Context<E> &ctx) {
   bool warning = (ctx.arg.z_cet_report == CET_REPORT_WARNING);
-  bool error = (ctx.arg.z_cet_report == CET_REPORT_ERROR);
-  assert(warning || error);
+  assert(warning || (ctx.arg.z_cet_report == CET_REPORT_ERROR));
 
   for (ObjectFile<E> *file : ctx.objs) {
     if (!(file->features & GNU_PROPERTY_X86_FEATURE_1_IBT)) {
