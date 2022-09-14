@@ -13,7 +13,7 @@ t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
 static=1
-echo 'int main() {}' | cc -o /dev/null -xc - -static >& /dev/null || static=0
+echo 'int main() {}' | $CC -o /dev/null -xc - -static >& /dev/null || static=0
 
 cat <<EOF > $t/a.cc
 int main() {

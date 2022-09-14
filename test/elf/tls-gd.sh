@@ -61,7 +61,7 @@ $QEMU $t/exe | grep -q '1 2 3 4 5 6'
 $CC -B. -o $t/exe $t/a.o $t/d.so $t/e.so -Wl,-no-relax
 $QEMU $t/exe | grep -q '1 2 3 4 5 6'
 
-if echo 'int main() {}' | cc -o /dev/null -xc - -static >& /dev/null; then
+if echo 'int main() {}' | $CC -o /dev/null -xc - -static >& /dev/null; then
   $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o -static
   $QEMU $t/exe | grep -q '1 2 3 4 5 6'
 fi
