@@ -179,7 +179,7 @@ static void write_plt_header(Context<E> &ctx) {
     0x000e'0067, // jr     t3
   };
 
-  if constexpr (sizeof(Word<E>) == 8)
+  if constexpr (E::is_64)
     memcpy(buf, plt0_64, sizeof(plt0_64));
   else
     memcpy(buf, plt0_32, sizeof(plt0_32));
@@ -217,7 +217,7 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
     u64 gotplt = sym->get_gotplt_addr(ctx);
     u64 plt = sym->get_plt_addr(ctx);
 
-    if constexpr (sizeof(Word<E>) == 8)
+    if constexpr (E::is_64)
       memcpy(ent, plt_entry_64, sizeof(plt_entry_64));
     else
       memcpy(ent, plt_entry_32, sizeof(plt_entry_32));
@@ -236,7 +236,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
     u64 got = sym->get_got_addr(ctx);
     u64 plt = sym->get_plt_addr(ctx);
 
-    if constexpr (sizeof(Word<E>) == 8)
+    if constexpr (E::is_64)
       memcpy(ent, plt_entry_64, sizeof(plt_entry_64));
     else
       memcpy(ent, plt_entry_32, sizeof(plt_entry_32));
@@ -330,13 +330,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_RISCV_32:
-      if constexpr (sizeof(Word<E>) == 4)
-        apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
-      else
+      if constexpr (E::is_64)
         *(ul32 *)loc = S + A;
+      else
+        apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_RISCV_64:
-      assert(sizeof(Word<E>) == 8);
+      assert(E::is_64);
       apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_RISCV_BRANCH: {
@@ -365,7 +365,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_cjtype(loc, S + A - P);
       } else if (removed_bytes == 6 && rd == 1) {
         // auipc + jalr -> c.jal
-        assert(sizeof(Word<E>) == 4);
+        assert(!E::is_64);
         *(ul16 *)loc = 0b001'00000000000'01;
         write_cjtype(loc, S + A - P);
       } else {
@@ -706,7 +706,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_RISCV_32:
-      if constexpr (sizeof(Word<E>) == 8)
+      if constexpr (E::is_64)
         scan_abs_rel(ctx, sym, rel);
       else
         scan_abs_dyn_rel(ctx, sym, rel);
@@ -715,7 +715,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_abs_rel(ctx, sym, rel);
       break;
     case R_RISCV_64:
-      if constexpr (sizeof(Word<E>) == 4)
+      if constexpr (!E::is_64)
         Fatal(ctx) << *this << ": R_RISCV_64 cannot be used on RV32";
       scan_abs_dyn_rel(ctx, sym, rel);
       break;
@@ -864,8 +864,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
         // If rd is x0 and the jump target is within ±2 KiB, we can use
         // C.J, saving 6 bytes.
         delta += 6;
-      } else if (rd == 1 && sign_extend(dist, 11) == dist
-                 && use_rvc && sizeof(Word<E>) == 4) {
+      } else if (rd == 1 && sign_extend(dist, 11) == dist && use_rvc && !E::is_64) {
         // If rd is x1 and the jump target is within ±2 KiB, we can use
         // C.JAL. This is RV32 only because C.JAL is RV32-only instruction.
         delta += 6;

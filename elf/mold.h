@@ -1004,8 +1004,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
 private:
-  using RelaTy =
-    typename std::conditional<sizeof(Word<E>) == 8, Elf64Rela, Elf32Rela>::type;
+  using RelaTy = typename std::conditional_t<E::is_64, Elf64Rela, Elf32Rela>;
 
   OutputSection<E> &output_section;
   std::vector<i64> offsets;

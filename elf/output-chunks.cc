@@ -79,7 +79,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   memset(&hdr, 0, sizeof(hdr));
 
   memcpy(&hdr.e_ident, "\177ELF", 4);
-  hdr.e_ident[EI_CLASS] = (sizeof(Word<E>) == 8) ? ELFCLASS64 : ELFCLASS32;
+  hdr.e_ident[EI_CLASS] = E::is_64 ? ELFCLASS64 : ELFCLASS32;
   hdr.e_ident[EI_DATA] = ELFDATA2LSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
   hdr.e_type = ctx.arg.pic ? ET_DYN : ET_EXEC;
@@ -2134,7 +2134,7 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
     features |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
 
   if (features != 0 && features != -1)
-    this->shdr.sh_size = (sizeof(Word<E>) == 8) ? 32 : 28;
+    this->shdr.sh_size = E::is_64 ? 32 : 28;
 }
 
 template <typename E>
@@ -2142,13 +2142,13 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
   ul32 *buf = (ul32 *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
-  buf[0] = 4;                                 // Name size
-  buf[1] = (sizeof(Word<E>) == 8) ? 16 : 12;  // Content size
-  buf[2] = NT_GNU_PROPERTY_TYPE_0;            // Type
-  memcpy(buf + 3, "GNU", 4);                  // Name
-  buf[4] = GNU_PROPERTY_X86_FEATURE_1_AND;    // Feature type
-  buf[5] = 4;                                 // Feature size
-  buf[6] = features;                          // Feature flags
+  buf[0] = 4;                              // Name size
+  buf[1] = E::is_64 ? 16 : 12;             // Content size
+  buf[2] = NT_GNU_PROPERTY_TYPE_0;         // Type
+  memcpy(buf + 3, "GNU", 4);               // Name
+  buf[4] = GNU_PROPERTY_X86_FEATURE_1_AND; // Feature type
+  buf[5] = 4;                              // Feature size
+  buf[6] = features;                       // Feature flags
 }
 
 // This page explains the format of .gdb_index:
