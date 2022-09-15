@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <ostream>
 #include <string>
+#include <type_traits>
 
 namespace mold::elf {
 
@@ -1615,6 +1616,9 @@ struct ElfNhdr {
 };
 
 template <typename E>
+using Word = std::conditional_t<E::is_64, ul64, ul32>;
+
+template <typename E>
 static constexpr bool is_rela = requires(ElfRel<E> r) { r.r_addend; };
 
 template <typename E>
@@ -1635,12 +1639,7 @@ template <typename E>
 static constexpr bool is_riscv =
   std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>;
 
-template <typename E>
-using Word = typename E::Word;
-
 struct X86_64 {
-  using Word = ul64;
-
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_X86_64_JUMP_SLOT;
@@ -1652,6 +1651,7 @@ struct X86_64 {
   static constexpr u32 R_DTPMOD = R_X86_64_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
+  static constexpr bool is_64 = true;
   static constexpr MachineType machine_type = MachineType::X86_64;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
@@ -1661,17 +1661,15 @@ struct X86_64 {
   static constexpr u32 tls_dtv_offset = 0;
 };
 
-template <> struct ElfSym<X86_64> : public Elf64Sym {};
-template <> struct ElfShdr<X86_64> : public Elf64Shdr {};
-template <> struct ElfEhdr<X86_64> : public Elf64Ehdr {};
-template <> struct ElfPhdr<X86_64> : public Elf64Phdr {};
-template <> struct ElfRel<X86_64> : public Elf64Rela { using Elf64Rela::Elf64Rela; };
-template <> struct ElfDyn<X86_64> : public Elf64Dyn {};
-template <> struct ElfChdr<X86_64> : public Elf64Chdr {};
+template <> struct ElfSym<X86_64>  : Elf64Sym {};
+template <> struct ElfShdr<X86_64> : Elf64Shdr {};
+template <> struct ElfEhdr<X86_64> : Elf64Ehdr {};
+template <> struct ElfPhdr<X86_64> : Elf64Phdr {};
+template <> struct ElfRel<X86_64>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
+template <> struct ElfDyn<X86_64>  : Elf64Dyn {};
+template <> struct ElfChdr<X86_64> : Elf64Chdr {};
 
 struct I386 {
-  using Word = ul32;
-
   static constexpr u32 R_COPY = R_386_COPY;
   static constexpr u32 R_GLOB_DAT = R_386_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_386_JUMP_SLOT;
@@ -1683,6 +1681,7 @@ struct I386 {
   static constexpr u32 R_DTPMOD = R_386_TLS_DTPMOD32;
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
+  static constexpr bool is_64 = false;
   static constexpr MachineType machine_type = MachineType::I386;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_386;
@@ -1692,17 +1691,15 @@ struct I386 {
   static constexpr u32 tls_dtv_offset = 0;
 };
 
-template <> struct ElfSym<I386> : public Elf32Sym {};
-template <> struct ElfShdr<I386> : public Elf32Shdr {};
-template <> struct ElfEhdr<I386> : public Elf32Ehdr {};
-template <> struct ElfPhdr<I386> : public Elf32Phdr {};
-template <> struct ElfRel<I386> : public Elf32Rel { using Elf32Rel::Elf32Rel; };
-template <> struct ElfDyn<I386> : public Elf32Dyn {};
-template <> struct ElfChdr<I386> : public Elf32Chdr {};
+template <> struct ElfSym<I386>  : Elf32Sym {};
+template <> struct ElfShdr<I386> : Elf32Shdr {};
+template <> struct ElfEhdr<I386> : Elf32Ehdr {};
+template <> struct ElfPhdr<I386> : Elf32Phdr {};
+template <> struct ElfRel<I386>  : Elf32Rel { using Elf32Rel::Elf32Rel; };
+template <> struct ElfDyn<I386>  : Elf32Dyn {};
+template <> struct ElfChdr<I386> : Elf32Chdr {};
 
 struct ARM64 {
-  using Word = ul64;
-
   static constexpr u32 R_COPY = R_AARCH64_COPY;
   static constexpr u32 R_GLOB_DAT = R_AARCH64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_AARCH64_JUMP_SLOT;
@@ -1714,6 +1711,7 @@ struct ARM64 {
   static constexpr u32 R_DTPMOD = R_AARCH64_TLS_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 
+  static constexpr bool is_64 = true;
   static constexpr MachineType machine_type = MachineType::ARM64;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
@@ -1731,17 +1729,15 @@ struct ARM64 {
   static constexpr u32 thunk_group_size = 10 * 1024 * 1024;
 };
 
-template <> struct ElfSym<ARM64> : public Elf64Sym {};
-template <> struct ElfShdr<ARM64> : public Elf64Shdr {};
-template <> struct ElfEhdr<ARM64> : public Elf64Ehdr {};
-template <> struct ElfPhdr<ARM64> : public Elf64Phdr {};
-template <> struct ElfRel<ARM64> : public Elf64Rela { using Elf64Rela::Elf64Rela; };
-template <> struct ElfDyn<ARM64> : public Elf64Dyn {};
-template <> struct ElfChdr<ARM64> : public Elf64Chdr {};
+template <> struct ElfSym<ARM64>  : Elf64Sym {};
+template <> struct ElfShdr<ARM64> : Elf64Shdr {};
+template <> struct ElfEhdr<ARM64> : Elf64Ehdr {};
+template <> struct ElfPhdr<ARM64> : Elf64Phdr {};
+template <> struct ElfRel<ARM64>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
+template <> struct ElfDyn<ARM64>  : Elf64Dyn {};
+template <> struct ElfChdr<ARM64> : Elf64Chdr {};
 
 struct ARM32 {
-  using Word = ul32;
-
   static constexpr u32 R_COPY = R_ARM_COPY;
   static constexpr u32 R_GLOB_DAT = R_ARM_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_ARM_JUMP_SLOT;
@@ -1753,6 +1749,7 @@ struct ARM32 {
   static constexpr u32 R_DTPMOD = R_ARM_TLS_DTPMOD32;
   static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
 
+  static constexpr bool is_64 = false;
   static constexpr MachineType machine_type = MachineType::ARM32;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_ARM;
@@ -1767,17 +1764,15 @@ struct ARM32 {
   static constexpr u32 thunk_group_size = 2 * 1024 * 1024;
 };
 
-template <> struct ElfSym<ARM32> : public Elf32Sym {};
-template <> struct ElfShdr<ARM32> : public Elf32Shdr {};
-template <> struct ElfEhdr<ARM32> : public Elf32Ehdr {};
-template <> struct ElfPhdr<ARM32> : public Elf32Phdr {};
-template <> struct ElfRel<ARM32> : public Elf32Rel { using Elf32Rel::Elf32Rel; };
-template <> struct ElfDyn<ARM32> : public Elf32Dyn {};
-template <> struct ElfChdr<ARM32> : public Elf32Chdr {};
+template <> struct ElfSym<ARM32>  : Elf32Sym {};
+template <> struct ElfShdr<ARM32> : Elf32Shdr {};
+template <> struct ElfEhdr<ARM32> : Elf32Ehdr {};
+template <> struct ElfPhdr<ARM32> : Elf32Phdr {};
+template <> struct ElfRel<ARM32>  : Elf32Rel { using Elf32Rel::Elf32Rel; };
+template <> struct ElfDyn<ARM32>  : Elf32Dyn {};
+template <> struct ElfChdr<ARM32> : Elf32Chdr {};
 
 struct RISCV64 {
-  using Word = ul64;
-
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_64;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
@@ -1788,6 +1783,7 @@ struct RISCV64 {
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
 
+  static constexpr bool is_64 = true;
   static constexpr MachineType machine_type = MachineType::RISCV64;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
@@ -1819,17 +1815,15 @@ struct RISCV64 {
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
-template <> struct ElfSym<RISCV64> : public Elf64Sym {};
-template <> struct ElfShdr<RISCV64> : public Elf64Shdr {};
-template <> struct ElfEhdr<RISCV64> : public Elf64Ehdr {};
-template <> struct ElfPhdr<RISCV64> : public Elf64Phdr {};
-template <> struct ElfRel<RISCV64> : public Elf64Rela { using Elf64Rela::Elf64Rela; };
-template <> struct ElfDyn<RISCV64> : public Elf64Dyn {};
-template <> struct ElfChdr<RISCV64> : public Elf64Chdr {};
+template <> struct ElfSym<RISCV64>  : Elf64Sym {};
+template <> struct ElfShdr<RISCV64> : Elf64Shdr {};
+template <> struct ElfEhdr<RISCV64> : Elf64Ehdr {};
+template <> struct ElfPhdr<RISCV64> : Elf64Phdr {};
+template <> struct ElfRel<RISCV64>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
+template <> struct ElfDyn<RISCV64>  : Elf64Dyn {};
+template <> struct ElfChdr<RISCV64> : Elf64Chdr {};
 
 struct RISCV32 {
-  using Word = ul32;
-
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_32;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
@@ -1840,6 +1834,7 @@ struct RISCV32 {
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
 
+  static constexpr bool is_64 = false;
   static constexpr MachineType machine_type = MachineType::RISCV32;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
@@ -1849,17 +1844,15 @@ struct RISCV32 {
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
-template <> struct ElfSym<RISCV32> : public Elf32Sym {};
-template <> struct ElfShdr<RISCV32> : public Elf32Shdr {};
-template <> struct ElfEhdr<RISCV32> : public Elf32Ehdr {};
-template <> struct ElfPhdr<RISCV32> : public Elf32Phdr {};
-template <> struct ElfRel<RISCV32> : public Elf32Rela { using Elf32Rela::Elf32Rela; };
-template <> struct ElfDyn<RISCV32> : public Elf32Dyn {};
-template <> struct ElfChdr<RISCV32> : public Elf32Chdr {};
+template <> struct ElfSym<RISCV32>  : Elf32Sym {};
+template <> struct ElfShdr<RISCV32> : Elf32Shdr {};
+template <> struct ElfEhdr<RISCV32> : Elf32Ehdr {};
+template <> struct ElfPhdr<RISCV32> : Elf32Phdr {};
+template <> struct ElfRel<RISCV32>  : Elf32Rela { using Elf32Rela::Elf32Rela; };
+template <> struct ElfDyn<RISCV32>  : Elf32Dyn {};
+template <> struct ElfChdr<RISCV32> : Elf32Chdr {};
 
 struct PPC64 {
-  using Word = ul64;
-
   static constexpr u32 R_COPY = R_PPC64_COPY;
   static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
@@ -1870,6 +1863,7 @@ struct PPC64 {
   static constexpr u32 R_TPOFF = R_PPC64_TPREL64;
   static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
 
+  static constexpr bool is_64 = true;
   static constexpr MachineType machine_type = MachineType::PPC64;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_PPC64;
@@ -1884,12 +1878,12 @@ struct PPC64 {
   static constexpr u32 thunk_group_size = 2 * 1024 * 1024;
 };
 
-template <> struct ElfSym<PPC64> : public Elf64Sym {};
-template <> struct ElfShdr<PPC64> : public Elf64Shdr {};
-template <> struct ElfEhdr<PPC64> : public Elf64Ehdr {};
-template <> struct ElfPhdr<PPC64> : public Elf64Phdr {};
-template <> struct ElfRel<PPC64> : public Elf64Rela { using Elf64Rela::Elf64Rela; };
-template <> struct ElfDyn<PPC64> : public Elf64Dyn {};
-template <> struct ElfChdr<PPC64> : public Elf64Chdr {};
+template <> struct ElfSym<PPC64>  : Elf64Sym {};
+template <> struct ElfShdr<PPC64> : Elf64Shdr {};
+template <> struct ElfEhdr<PPC64> : Elf64Ehdr {};
+template <> struct ElfPhdr<PPC64> : Elf64Phdr {};
+template <> struct ElfRel<PPC64>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
+template <> struct ElfDyn<PPC64>  : Elf64Dyn {};
+template <> struct ElfChdr<PPC64> : Elf64Chdr {};
 
 } // namespace mold::elf
