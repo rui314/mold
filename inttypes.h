@@ -1,23 +1,25 @@
-// This file defines integral types for file input/output. You should
-// use these types instead of the plain integers (such as u32 or i32)
-// when reading from/writing to an mmap'ed file area.
+// This file defines integral types for file input/output. We need to use
+// these types instead of the plain integers (such as uint32_t or int32_t)
+// when reading from/writing to an mmap'ed file area for the following
+// reasons:
 //
-// Here is why you need these types. In C/C++, all data accesses must
-// be aligned. That is, if you read an N byte value from memory, the
-// address of that value must be a multiple of N. For example, reading
-// an u32 value from address 16 is legal, while reading from 18 is not
-// (since 18 is not a multiple of 4.) An unaligned access yields an
-// undefined behavior.
+// 1. mold is always a cross linker and should not depend on what host it
+//    is running on. In theory, users should be able to run mold on a
+//    big-endian PowerPC machine to create a little-endian RV64 binary,
+//    for example. So we don't want to depend on host byte order. Note
+//    that we do not support any big-endian architecture as a target,
+//    though.
 //
-// All data members of the ELF data structures are naturally aligned,
-// so it may look like we don't need the integral types defined in
-// this file to access them. But there's a catch; if an object file is
-// in an archive file (a .a file), the beginning of the file is
-// guaranteed to be aligned only to a 2 bytes boundary, because ar
-// aligns each member only to a 2 byte boundary. Therefore, any data
-// members larger than 2 bytes may be unaligned in an mmap'ed memory,
-// and thus you always need to use the integral types in this file to
-// access it.
+// 2. Even though data members in all ELF data strucutres are naturally
+//    aligned, they are not guaranteed to be aligned on memory. Because
+//    archive file (.a file) aligns each member only to a 2 byte boundary,
+//    anything larger than 2 bytes may be unaligned in an mmap'ed memory.
+//    Unaligned access is an undefined behavior in C/C++, so we shouldn't
+//    cast an arbitrary pointer to a uint32_t, for example, to read a
+//    32-bits value.
+//
+// The data types defined in this file don't depend on host byte order and
+// don't do unaligned access.
 
 #pragma once
 
