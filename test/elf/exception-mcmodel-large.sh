@@ -28,7 +28,7 @@ EOF
 $CXX -B. -o $t/exe $t/a.o -mcmodel=large
 $QEMU $t/exe
 
-if echo 'int main() {}' | cc -o /dev/null -xc - -static >& /dev/null; then
+if echo 'int main() {}' | $CC -o /dev/null -xc - -static >& /dev/null; then
   $CXX -B. -o $t/exe $t/a.o -static -mcmodel=large
   $QEMU $t/exe
 fi
