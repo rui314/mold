@@ -1716,8 +1716,8 @@ struct SymbolExtras {};
 template <typename E> requires needs_thunk<E>
 struct SymbolExtras<E> {
   // For range extension thunks
-  i32 thunk_idx : 12 = -1;
-  i32 thunk_sym_idx : 20 = -1;
+  i32 thunk_idx = -1;
+  i32 thunk_sym_idx = -1;
 };
 
 // Symbol class represents a defined symbol.
