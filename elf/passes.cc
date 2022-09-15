@@ -1562,10 +1562,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // to find ifunc relocations other than these symbols.
   //
   // We don't want to set values to these symbols if we are creating a
-  // static PIE due to a glibc bug. If we set values to these symbols in
-  // a static PIE, glibc attempts to run ifunc initializers twice, with
-  // the second attempt with wrong function addresses, causing a
-  // segmentation fault.
+  // static PIE due to a glibc bug. Static PIE has a dynamic section.
+  // If we set values to these symbols in a static PIE, glibc attempts
+  // to run ifunc initializers twice, with the second attempt with wrong
+  // function addresses, causing a segmentation fault.
   if (ctx.reldyn && ctx.arg.is_static && !ctx.arg.pie) {
     stop(ctx.__rel_iplt_start, ctx.reldyn);
     stop(ctx.__rel_iplt_end, ctx.reldyn);
@@ -1617,7 +1617,9 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // _DYNAMIC
   start(ctx._DYNAMIC, ctx.dynamic);
 
-  // _GLOBAL_OFFSET_TABLE_
+  // _GLOBAL_OFFSET_TABLE_. I don't know why, but for the sake of
+  // compatibility with existing code, it must be set to the beginning of
+  // .got.plt instead of .got only on i386 and x86-64.
   if constexpr (is_x86<E>)
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.gotplt);
   else
