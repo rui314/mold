@@ -1365,7 +1365,7 @@ struct Elf64Sym {
 
   ul32 st_name;
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#if __LITTLE_ENDIAN__
   // Bitfield bit order is not defined in C/C++. That said, they are usually
   // defined from the least significant bit to the most significant bit on
   // little-endian hosts and in the reverse order on big-endian hosts. So,
@@ -1400,7 +1400,7 @@ struct Elf32Sym {
   ul32 st_value;
   ul32 st_size;
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#if __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;

@@ -26,6 +26,16 @@
 #include <cstdint>
 #include <cstring>
 
+#if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
+# if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#  define __LITTLE_ENDIAN__ 1
+# elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#  define __BIG_ENDIAN__ 1
+# else
+#  error "unknwon host byte order"
+# endif
+#endif
+
 namespace mold {
 
 typedef uint8_t u8;
@@ -38,26 +48,41 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-template <typename T, size_t SIZE = sizeof(T)>
+static inline u64 bswap(u64 val, int size) {
+  switch (size) {
+  case 2:
+    return __builtin_bswap16(val);
+  case 3:
+    return ((val >> 16) & 0x0000ff) | (val & 0x00ff00) | ((val << 16) & 0xff0000);
+  case 4:
+    return __builtin_bswap32(val);
+  case 8:
+    return __builtin_bswap64(val);
+  default:
+    __builtin_unreachable();
+  }
+}
+
+template <typename T, int SIZE = sizeof(T)>
 class LittleEndian {
 public:
   LittleEndian() = default;
   LittleEndian(T x) { *this = x; }
 
   operator T() const {
-    // Compilers are usually smart enough to convert this loop to a
-    // simple data copy. https://godbolt.org/z/1qz177vzs
     T x = 0;
-#pragma GCC unroll 8
-    for (int i = 0; i < SIZE; i++)
-      x |= (u64)val[i] << (i * 8);
+    memcpy(&x, val, SIZE);
+#ifdef __BIG_ENDIAN__
+    x = bswap(x, SIZE);
+#endif
     return x;
   }
 
   LittleEndian &operator=(T x) {
-#pragma GCC unroll 8
-    for (int i = 0; i < SIZE; i++)
-      val[i] = x >> (i * 8);
+#ifdef __BIG_ENDIAN__
+    x = bswap(x, SIZE);
+#endif
+    memcpy(val, &x, SIZE);
     return *this;
   }
 
@@ -109,26 +134,26 @@ using ul24 = LittleEndian<u32, 3>;
 using ul32 = LittleEndian<u32>;
 using ul64 = LittleEndian<u64>;
 
-template <typename T, size_t SIZE = sizeof(T)>
+template <typename T, int SIZE = sizeof(T)>
 class BigEndian {
 public:
   BigEndian() = default;
   BigEndian(T x) { *this = x; }
 
   operator T() const {
-    // This is compiled to a MOV followed by a BSWAP.
-    // https://godbolt.org/z/1qz177vzs
     T x = 0;
-#pragma GCC unroll 8
-    for (int i = 0, j = SIZE - 1; i < SIZE; i++, j--)
-      x |= (u64)val[i] << (j * 8);
+    memcpy(&x, val, SIZE);
+#ifdef __LITTLE_ENDIAN__
+    x = bswap(x, SIZE);
+#endif
     return x;
   }
 
   BigEndian &operator=(T x) {
-#pragma GCC unroll 8
-    for (int i = 0, j = SIZE - 1; i < SIZE; i++, j--)
-      val[i] = x >> (j * 8);
+#ifdef __LITTLE_ENDIAN__
+    x = bswap(x, SIZE);
+#endif
+    memcpy(val, &x, SIZE);
     return *this;
   }
 
