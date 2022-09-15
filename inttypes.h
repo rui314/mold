@@ -24,16 +24,6 @@
 #include <cstdint>
 #include <cstring>
 
-#if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
-# if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#  define __LITTLE_ENDIAN__ 1
-# elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#  define __BIG_ENDIAN__ 1
-# else
-#  error "unknwon host byte order"
-# endif
-#endif
-
 namespace mold {
 
 typedef uint8_t u8;
