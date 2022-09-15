@@ -1,7 +1,7 @@
 # This dockerfile creates a reproducible build environment for mold.
 #
-# $ docker build -t rui314/mold-builder:v1-$(uname -m) .
-# $ docker push rui314/mold-builder:v1-$(uname -m)
+# $ docker buildx create --use
+# $ docker buildx build --platform linux/x86_64,linux/aarch64 -t rui314/mold-builder:latest --push .
 
 FROM ubuntu:18.04
 ENV TZ=Europe/London
