@@ -18,12 +18,31 @@
 
 namespace mold::elf {
 
+// ARM64 branch instructions can jump to ±128 MiB. We redirect a
+// branch to a thunk if its desitnation is further than 100 MiB.
+// On ARM32 and PPC64, they can jump to ±16 MiB.
 template <typename E>
-static void reset_thunk(RangeExtensionThunk<E> &thunk) {
-  for (Symbol<E> *sym : thunk.symbols) {
-    sym->extra.thunk_idx = -1;
-    sym->extra.thunk_sym_idx = -1;
-    sym->flags = 0;
+static constexpr i64 max_distance =
+  (std::is_same_v<E, ARM64> ? 100 : 10) * 1024 * 1024;
+
+// We create one thunk block for each 10 MiB or 2 MiB code block on
+// ARM64 or on ARM32/PPC64, respectively.
+template <typename E>
+static constexpr i64 group_size =
+  (std::is_same_v<E, ARM64> ? 10 : 2) * 1024 * 1024;
+
+template <typename E>
+static bool needs_thunk_rel(const ElfRel<E> &r) {
+  u32 ty = r.r_type;
+
+  if constexpr (std::is_same_v<E, ARM64>) {
+    return ty == R_AARCH64_JUMP26 || ty == R_AARCH64_CALL26;
+  } else if constexpr (std::is_same_v<E, ARM32>) {
+    return ty == R_ARM_JUMP24 || ty == R_ARM_THM_JUMP24 ||
+           ty == R_ARM_CALL   || ty == R_ARM_THM_CALL;
+  } else {
+    static_assert(std::is_same_v<E, PPC64>);
+    return ty == R_PPC64_REL24;
   }
 }
 
@@ -47,8 +66,40 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   if (isec2->offset == -1)
     return false;
 
-  // Handle target-specific rules.
-  return is_branch_reachable(ctx, sym, isec, rel);
+  if constexpr (std::is_same_v<E, ARM32>) {
+    // Thumb and ARM B instructions cannot be converted to BX, so we
+    // always have to make them jump to a thunk to switch processor mode
+    // even if their destinations are within their ranges.
+    bool is_thumb = sym.get_addr(ctx) & 1;
+    if ((rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
+        (rel.r_type == R_ARM_JUMP24 && is_thumb))
+      return false;
+  }
+
+  // Compute a distance between the relocated place and the symbol
+  // and check if they are within reach.
+  i64 S = sym.get_addr(ctx);
+  i64 A = isec.get_addend(rel);
+  i64 P = isec.get_addr() + rel.r_offset;
+  u64 val = S + A - P;
+
+  if constexpr (std::is_same_v<E, ARM64>) {
+    return sign_extend(val, 27) == val;
+  } else if constexpr (std::is_same_v<E, ARM32>) {
+    return sign_extend(val, 24) == val;
+  } else {
+    static_assert(std::is_same_v<E, PPC64>);
+    return sign_extend(val, 25) == val;
+  }
+}
+
+template <typename E>
+static void reset_thunk(RangeExtensionThunk<E> &thunk) {
+  for (Symbol<E> *sym : thunk.symbols) {
+    sym->extra.thunk_idx = -1;
+    sym->extra.thunk_sym_idx = -1;
+    sym->flags = 0;
+  }
 }
 
 // Scan relocations to collect symbols that need thunks.
@@ -117,8 +168,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
   while (b < members.size()) {
     // Move D foward as far as we can jump from B to D.
-    while (d < members.size() &&
-           offset - members[b]->offset < E::thunk_max_distance) {
+    while (d < members.size() && offset - members[b]->offset < max_distance<E>) {
       offset = align_to(offset, 1 << members[d]->p2align);
       members[d]->offset = offset;
       offset += members[d]->sh_size;
@@ -127,14 +177,14 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
     // Move C forward so that C is apart from B by GROUP_SIZE.
     while (c < members.size() &&
-           members[c]->offset - members[b]->offset < E::thunk_group_size)
+           members[c]->offset - members[b]->offset < group_size<E>)
       c++;
 
     // Move A forward so that A is reachable from C.
     if (c > 0) {
       i64 c_end = members[c - 1]->offset + members[c - 1]->sh_size;
       while (a < osec.thunks.size() &&
-             osec.thunks[a]->offset < c_end - E::thunk_max_distance)
+             osec.thunks[a]->offset < c_end - max_distance<E>)
         reset_thunk(*osec.thunks[a++]);
     }
 

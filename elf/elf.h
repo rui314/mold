@@ -1723,14 +1723,8 @@ struct ARM64 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0;
-
-  // For ARM, we need to insert a piece of code between a function call
-  // site and the callee if they are not reachable with a single branch
-  // instruction. Here are parameters for the thunk creation function.
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 12;
-  static constexpr u32 thunk_max_distance = 100 * 1024 * 1024;
-  static constexpr u32 thunk_group_size = 10 * 1024 * 1024;
 };
 
 template <> struct ElfSym<ARM64>  : Elf64Sym {};
@@ -1761,11 +1755,8 @@ struct ARM32 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0;
-
   static constexpr u32 thunk_hdr_size = 12;
   static constexpr u32 thunk_size = 20;
-  static constexpr u32 thunk_max_distance = 10 * 1024 * 1024;
-  static constexpr u32 thunk_group_size = 2 * 1024 * 1024;
 };
 
 template <> struct ElfSym<ARM32>  : Elf32Sym {};
@@ -1875,11 +1866,8 @@ struct PPC64 {
   static constexpr u32 plt_size = 4;
   static constexpr u32 pltgot_size = 20;
   static constexpr u32 tls_dtv_offset = 0x8000;
-
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 20;
-  static constexpr u32 thunk_max_distance = 10 * 1024 * 1024;
-  static constexpr u32 thunk_group_size = 2 * 1024 * 1024;
 };
 
 template <> struct ElfSym<PPC64>  : Elf64Sym {};

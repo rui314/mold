@@ -501,26 +501,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
-// For range extension thunks
-template <>
-bool is_branch_reachable(Context<E> &ctx, Symbol<E> &sym,
-                         InputSection<E> &isec, const ElfRel<E> &rel) {
-  // Thumb and ARM B instructions cannot be converted to BX, so we
-  // always have to make them jump to a thunk to switch processor mode
-  // even if their destinations are within their ranges.
-  bool is_thumb = sym.get_addr(ctx) & 1;
-  if ((rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
-      (rel.r_type == R_ARM_JUMP24 && is_thumb))
-    return false;
-
-  // Compute a distance between the relocated place and the symbol
-  // and check if they are within reach.
-  i64 S = sym.get_addr(ctx);
-  i64 A = isec.get_addend(rel);
-  i64 P = isec.get_addr() + rel.r_offset;
-  return is_jump_reachable(S + A - P);
-}
-
 template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;

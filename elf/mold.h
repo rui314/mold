@@ -153,29 +153,6 @@ struct RangeExtensionRef {
 template <typename E>
 void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec);
 
-template <typename E>
-bool is_branch_reachable(Context<E> &ctx, Symbol<E> &sym,
-                         InputSection<E> &isec, const ElfRel<E> &rel);
-
-template <typename E>
-inline bool needs_thunk_rel(const ElfRel<E> &r);
-
-template <>
-inline bool needs_thunk_rel(const ElfRel<ARM64> &r) {
-  return r.r_type == R_AARCH64_JUMP26 || r.r_type == R_AARCH64_CALL26;
-}
-
-template <>
-inline bool needs_thunk_rel(const ElfRel<ARM32> &r) {
-  return r.r_type == R_ARM_JUMP24 || r.r_type == R_ARM_THM_JUMP24 ||
-         r.r_type == R_ARM_CALL   || r.r_type == R_ARM_THM_CALL;
-}
-
-template <>
-inline bool needs_thunk_rel(const ElfRel<PPC64> &r) {
-  return r.r_type == R_PPC64_REL24;
-}
-
 //
 // input-sections.cc
 //
