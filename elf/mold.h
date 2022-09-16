@@ -48,7 +48,8 @@
   INSTANTIATE(ARM32);                           \
   INSTANTIATE(RISCV64);                         \
   INSTANTIATE(RISCV32);                         \
-  INSTANTIATE(PPC64LE);
+  INSTANTIATE(PPC64LE);                         \
+  INSTANTIATE(SPARC64);
 #endif
 
 namespace mold::elf {

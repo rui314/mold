@@ -191,8 +191,8 @@ Options:
     -z notext
     -z textoff
 
-mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf64-littleriscv
-mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf64lriscv)";
+mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf64-littleriscv elf64-sparc
+mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf64lriscv elf64_sparc)";
 
 static std::vector<std::string> add_dashes(std::string name) {
   // Single-letter option
@@ -438,7 +438,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       SyncOut(ctx) << mold_version
                    << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n"
                    << "   aarch64linux\n   armelf_linux_eabi\n   elf64lriscv\n"
-                   << "   elf32lriscv\n   elf64lppc\n";
+                   << "   elf32lriscv\n   elf64lppc\n  elf64_sparc\n";
       version_shown = true;
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
@@ -455,6 +455,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.emulation = MachineType::RISCV32;
       } else if (arg == "elf64lppc") {
         ctx.arg.emulation = MachineType::PPC64LE;
+      } else if (arg == "elf64_sparc") {
+        ctx.arg.emulation = MachineType::SPARC64;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }

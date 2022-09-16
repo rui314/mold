@@ -302,7 +302,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     } else if constexpr (std::is_same_v<E, PPC64LE>) {
       ctx.tp_addr = ctx.tls_begin + 0x7000;
     } else {
-      static_assert(is_riscv<E>);
+      static_assert(is_riscv<E> || std::is_same_v<E, SPARC64>);
       ctx.tp_addr = ctx.tls_begin;
     }
   }
