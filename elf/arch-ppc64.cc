@@ -52,7 +52,7 @@
 
 namespace mold::elf {
 
-using E = PPC64;
+using E = PPC64LE;
 
 static u64 lo(u64 x)       { return x & 0xffff; }
 static u64 hi(u64 x)       { return x >> 16; }

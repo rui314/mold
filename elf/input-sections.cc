@@ -211,7 +211,7 @@ void InputSection<E>::scan_abs_rel(Context<E> &ctx, Symbol<E> &sym,
 template <typename E>
 static Action get_abs_dyn_action(Context<E> &ctx, Symbol<E> &sym,
                                  InputSection<E> &isec) {
-  if (std::is_same_v<E, PPC64> && isec.name() == ".toc") {
+  if (std::is_same_v<E, PPC64LE> && isec.name() == ".toc") {
     // As a special case, we do not create copy relocations nor canonical
     // PLTs for PPC64 .toc sections. PPC64's .toc is a compiler-generated
     // GOT-like section, and no user-generated code directly uses values

@@ -15,7 +15,7 @@ struct ARM64;
 struct ARM32;
 struct RISCV64;
 struct RISCV32;
-struct PPC64;
+struct PPC64LE;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -28,7 +28,7 @@ template <typename E> struct ElfChdr;
 static constexpr u32 R_NONE = 0;
 
 enum class MachineType {
-  NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32, PPC64,
+  NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32, PPC64LE,
 };
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
@@ -40,7 +40,7 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   case MachineType::ARM32:   out << "arm32";   break;
   case MachineType::RISCV64: out << "riscv64"; break;
   case MachineType::RISCV32: out << "riscv32"; break;
-  case MachineType::PPC64:   out << "ppc64le"; break;
+  case MachineType::PPC64LE: out << "ppc64le"; break;
   }
   return out;
 }
@@ -1162,7 +1162,7 @@ static constexpr u32 R_PPC64_REL16_HI = 251;
 static constexpr u32 R_PPC64_REL16_HA = 252;
 
 template <>
-inline std::string rel_to_string<PPC64>(u32 r_type) {
+inline std::string rel_to_string<PPC64LE>(u32 r_type) {
   switch (r_type) {
   case R_PPC64_NONE: return "R_PPC64_NONE";
   case R_PPC64_ADDR32: return "R_PPC64_ADDR32";
@@ -1847,7 +1847,7 @@ template <> struct ElfRel<RISCV32>  : Elf32Rela { using Elf32Rela::Elf32Rela; };
 template <> struct ElfDyn<RISCV32>  : Elf32Dyn {};
 template <> struct ElfChdr<RISCV32> : Elf32Chdr {};
 
-struct PPC64 {
+struct PPC64LE {
   static constexpr u32 R_COPY = R_PPC64_COPY;
   static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
@@ -1859,7 +1859,7 @@ struct PPC64 {
   static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
 
   static constexpr bool is_64 = true;
-  static constexpr MachineType machine_type = MachineType::PPC64;
+  static constexpr MachineType machine_type = MachineType::PPC64LE;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_PPC64;
   static constexpr u32 plt_hdr_size = 60;
@@ -1870,12 +1870,12 @@ struct PPC64 {
   static constexpr u32 thunk_size = 20;
 };
 
-template <> struct ElfSym<PPC64>  : Elf64Sym {};
-template <> struct ElfShdr<PPC64> : Elf64Shdr {};
-template <> struct ElfEhdr<PPC64> : Elf64Ehdr {};
-template <> struct ElfPhdr<PPC64> : Elf64Phdr {};
-template <> struct ElfRel<PPC64>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
-template <> struct ElfDyn<PPC64>  : Elf64Dyn {};
-template <> struct ElfChdr<PPC64> : Elf64Chdr {};
+template <> struct ElfSym<PPC64LE>  : Elf64Sym {};
+template <> struct ElfShdr<PPC64LE> : Elf64Shdr {};
+template <> struct ElfEhdr<PPC64LE> : Elf64Ehdr {};
+template <> struct ElfPhdr<PPC64LE> : Elf64Phdr {};
+template <> struct ElfRel<PPC64LE>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
+template <> struct ElfDyn<PPC64LE>  : Elf64Dyn {};
+template <> struct ElfChdr<PPC64LE> : Elf64Chdr {};
 
 } // namespace mold::elf

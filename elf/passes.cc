@@ -450,7 +450,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
     ctx.__exidx_end = add("__exidx_end");
   }
 
-  if constexpr (std::is_same_v<E, PPC64>)
+  if constexpr (std::is_same_v<E, PPC64LE>)
     ctx.TOC = add(".TOC.");
 
   for (Chunk<E> *chunk : ctx.chunks) {

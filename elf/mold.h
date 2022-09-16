@@ -48,7 +48,7 @@
   INSTANTIATE(ARM32);                           \
   INSTANTIATE(RISCV64);                         \
   INSTANTIATE(RISCV32);                         \
-  INSTANTIATE(PPC64);
+  INSTANTIATE(PPC64LE);
 #endif
 
 namespace mold::elf {
@@ -516,10 +516,10 @@ class GotPltSection : public Chunk<E> {
 public:
   GotPltSection() {
     this->name = ".got.plt";
-    this->shdr.sh_type = std::is_same_v<E, PPC64> ? SHT_NOBITS : SHT_PROGBITS;
+    this->shdr.sh_type = std::is_same_v<E, PPC64LE> ? SHT_NOBITS : SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
-    this->shdr.sh_size = sizeof(Word<E>) * (std::is_same_v<E, PPC64> ? 2 : 3);
+    this->shdr.sh_size = sizeof(Word<E>) * (std::is_same_v<E, PPC64LE> ? 2 : 3);
   }
 
   void copy_buf(Context<E> &ctx) override;

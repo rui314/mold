@@ -454,7 +454,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       } else if (arg == "elf32lriscv") {
         ctx.arg.emulation = MachineType::RISCV32;
       } else if (arg == "elf64lppc") {
-        ctx.arg.emulation = MachineType::PPC64;
+        ctx.arg.emulation = MachineType::PPC64LE;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }
