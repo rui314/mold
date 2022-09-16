@@ -273,11 +273,13 @@ void InputSection<E>::apply_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym,
   case BASEREL:
     if (!is_relr_reloc(ctx, rel))
       *dynrel++ = ElfRel<E>(P, E::R_RELATIVE, 0, S + A);
-    *(Word<E> *)loc = S + A;
+    if (ctx.arg.apply_dynamic_relocs)
+      *(Word<E> *)loc = S + A;
     break;
   case DYNREL:
     *dynrel++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
-    *(Word<E> *)loc = A;
+    if (ctx.arg.apply_dynamic_relocs)
+      *(Word<E> *)loc = A;
     break;
   default:
     unreachable();

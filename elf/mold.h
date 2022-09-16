@@ -532,8 +532,14 @@ public:
   PltSection() {
     this->name = ".plt";
     this->shdr.sh_type = SHT_PROGBITS;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = 16;
+
+    if constexpr (is_sparc<E>) {
+      this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR | SHF_WRITE;
+      this->shdr.sh_addralign = 256;
+    } else {
+      this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+      this->shdr.sh_addralign = 16;
+    }
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -827,7 +833,7 @@ public:
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
-  std::vector<u16> contents;
+  std::vector<U16<E>> contents;
 };
 
 template <typename E>
@@ -982,7 +988,9 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
 private:
-  using RelaTy = typename std::conditional_t<E::is_64, EL64Rela, EL32Rela>;
+  using RelaTy = std::conditional_t<E::is_le,
+    std::conditional_t<E::is_64, EL64Rela, EL32Rela>,
+    std::conditional_t<E::is_64, EB64Rela, EB32Rela>>;
 
   OutputSection<E> &output_section;
   std::vector<i64> offsets;
@@ -1431,6 +1439,7 @@ struct Context {
     bool discard_locals = false;
     bool eh_frame_hdr = true;
     bool emit_relocs = false;
+    bool apply_dynamic_relocs = true;
     bool enable_new_dtags = true;
     bool export_dynamic = false;
     bool fatal_warnings = false;
@@ -1634,6 +1643,7 @@ struct Context {
   Symbol<E> *TOC = nullptr;
   Symbol<E> *_DYNAMIC = nullptr;
   Symbol<E> *_GLOBAL_OFFSET_TABLE_ = nullptr;
+  Symbol<E> *_PROCEDURE_LINKAGE_TABLE_ = nullptr;
   Symbol<E> *_TLS_MODULE_BASE_ = nullptr;
   Symbol<E> *__GNU_EH_FRAME_HDR = nullptr;
   Symbol<E> *__bss_start = nullptr;

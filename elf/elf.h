@@ -1366,6 +1366,7 @@ static constexpr u32 R_SPARC_GOTDATA_LOX10 = 81;
 static constexpr u32 R_SPARC_GOTDATA_OP_HIX22 = 82;
 static constexpr u32 R_SPARC_GOTDATA_OP_LOX10 = 83;
 static constexpr u32 R_SPARC_GOTDATA_OP = 84;
+static constexpr u32 R_SPARC_SIZE32 = 86;
 static constexpr u32 R_SPARC_IRELATIVE = 249;
 
 template <>
@@ -1688,9 +1689,9 @@ struct EL32Phdr {
 // - We always create a dynamic relocation with an addend. If it's REL,
 //   the addend will be discarded.
 //
-// - We also always write an addend to the relocated place even though
-//   it's redundant for RELA. If RELA, the written value will be
-//   ovewritten by the dynamic linker at load-time.
+// - We also always write an addend to the relocated place by default
+//   even though it's redundant for RELA. If RELA, the written value
+//   will be ovewritten by the dynamic linker at load-time.
 struct EL64Rel {
   EL64Rel() = default;
   EL64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
@@ -1945,7 +1946,7 @@ struct EB64Rela {
   ub64 r_offset;
   ub32 r_sym;
   ub32 r_type;
-  il64 r_addend;
+  ib64 r_addend;
 };
 
 struct EB32Rela {
@@ -1956,7 +1957,7 @@ struct EB32Rela {
   ub32 r_offset;
   ub24 r_sym;
   u8 r_type;
-  il32 r_addend;
+  ib32 r_addend;
 };
 
 struct EB64Dyn {
@@ -2067,6 +2068,9 @@ static constexpr bool is_arm =
 template <typename E>
 static constexpr bool is_riscv =
   std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>;
+
+template <typename E>
+static constexpr bool is_sparc = std::is_same_v<E, SPARC64>;
 
 struct X86_64 {
   static constexpr u32 R_COPY = R_X86_64_COPY;
@@ -2361,7 +2365,7 @@ struct SPARC64 {
   static constexpr MachineType machine_type = MachineType::SPARC64;
   static constexpr u32 page_size = 8192;
   static constexpr u32 e_machine = EM_SPARC64;
-  static constexpr u32 plt_hdr_size = 256;
+  static constexpr u32 plt_hdr_size = 128;
   static constexpr u32 plt_size = 32;
   static constexpr u32 pltgot_size = 20;
   static constexpr u32 tls_dtv_offset = 0;

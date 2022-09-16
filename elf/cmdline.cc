@@ -61,6 +61,8 @@ Options:
   --Tdata                     Set address to .data
   --Ttext                     Set address to .text
   --allow-multiple-definition Allow multiple definitions
+  --apply-dynamic-relocs      Apply link-time values for dynamic relocations (defualt)
+    --no-apply-dynamic-relocs
   --as-needed                 Only set DT_NEEDED if used
     --no-as-needed
   --build-id [none,md5,sha1,sha256,uuid,HEXSTRING]
@@ -346,6 +348,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if constexpr (is_riscv<E>)
     ctx.arg.discard_locals = true;
 
+  // It looks like the SPARC's dynamic linker takes both RELA's r_addend
+  // and the value at the relocated place. So we don't want to write
+  // values to relocated places.
+  if (is_sparc<E>)
+    ctx.arg.apply_dynamic_relocs = false;
+
   auto read_arg = [&](std::string name) {
     for (std::string opt : add_dashes(name)) {
       if (args[0] == opt) {
@@ -577,6 +585,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.soname = arg;
     } else if (read_flag("allow-multiple-definition")) {
       ctx.arg.allow_multiple_definition = true;
+    } else if (read_flag("apply-dynamic-relocs")) {
+      ctx.arg.apply_dynamic_relocs = true;
+    } else if (read_flag("no-apply-dynamic-relocs")) {
+      ctx.arg.apply_dynamic_relocs = false;
     } else if (read_flag("trace")) {
       ctx.arg.trace = true;
     } else if (read_flag("eh-frame-hdr")) {
@@ -912,7 +924,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.auxiliary.push_back(arg);
     } else if (read_arg("filter") || read_arg("F")) {
       ctx.arg.filter.push_back(arg);
-    } else if (read_flag("apply-dynamic-relocs")) {
     } else if (read_arg("O")) {
     } else if (read_flag("O0")) {
     } else if (read_flag("O1")) {

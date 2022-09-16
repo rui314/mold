@@ -155,7 +155,7 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
     return (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
            type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
            chunk == ctx.got || chunk == ctx.dynamic ||
-           (ctx.arg.z_now && chunk == ctx.gotplt) ||
+           (ctx.arg.z_now && ctx.gotplt && chunk == ctx.gotplt) ||
            chunk->name == ".toc" || chunk->name.ends_with(".rel.ro");
   return false;
 }
@@ -295,14 +295,14 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     // load/store instructions usually take 12-bits signed immediates,
     // so the beginning of TLV ± 2 KiB is accessible with a single
     // load/store instruction.
-    if constexpr (is_x86<E>) {
+    if constexpr (is_x86<E> || is_sparc<E>) {
       ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
     } else if constexpr (is_arm<E>) {
       ctx.tp_addr = ctx.tls_begin - sizeof(Word<E>) * 2;
     } else if constexpr (std::is_same_v<E, PPC64LE>) {
       ctx.tp_addr = ctx.tls_begin + 0x7000;
     } else {
-      static_assert(is_riscv<E> || std::is_same_v<E, SPARC64>);
+      static_assert(is_riscv<E>);
       ctx.tp_addr = ctx.tls_begin;
     }
   }
@@ -655,8 +655,13 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_PLTREL, is_rela<E> ? DT_RELA : DT_REL);
   }
 
-  if (ctx.gotplt->shdr.sh_size)
-    define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr);
+  if constexpr (is_sparc<E>) {
+    if (ctx.plt->shdr.sh_size)
+      define(DT_PLTGOT, ctx.plt->shdr.sh_addr);
+  } else {
+    if (ctx.gotplt->shdr.sh_size)
+      define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr);
+  }
 
   if (ctx.dynsym->shdr.sh_size) {
     define(DT_SYMTAB, ctx.dynsym->shdr.sh_addr);
@@ -1152,7 +1157,8 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
 
   for (GotEntry<E> &ent : get_entries(ctx)) {
-    buf[ent.idx] = ent.val;
+    if (ctx.arg.apply_dynamic_relocs)
+      buf[ent.idx] = ent.val;
 
     if (ent.is_rel(ctx))
       *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
@@ -1209,8 +1215,11 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   this->shdr.sh_size += E::plt_size;
   symbols.push_back(sym);
 
-  sym->set_gotplt_idx(ctx, ctx.gotplt->shdr.sh_size / sizeof(Word<E>));
-  ctx.gotplt->shdr.sh_size += sizeof(Word<E>);
+  if (!is_sparc<E>) {
+    sym->set_gotplt_idx(ctx, ctx.gotplt->shdr.sh_size / sizeof(Word<E>));
+    ctx.gotplt->shdr.sh_size += sizeof(Word<E>);
+  }
+
   ctx.relplt->shdr.sh_size += sizeof(ElfRel<E>);
   ctx.dynsym->add_symbol(ctx, sym);
 }
@@ -1228,17 +1237,28 @@ void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 template <typename E>
 void RelPltSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
-  this->shdr.sh_info = ctx.gotplt->shndx;
+
+  if (!is_sparc<E>)
+    this->shdr.sh_info = ctx.gotplt->shndx;
 }
 
 template <typename E>
 void RelPltSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
 
-  i64 relplt_idx = 0;
-  for (Symbol<E> *sym : ctx.plt->symbols)
-    buf[relplt_idx++] = ElfRel<E>(sym->get_gotplt_addr(ctx), E::R_JUMP_SLOT,
-                                  sym->get_dynsym_idx(ctx), 0);
+  for (i64 i = 0; i < ctx.plt->symbols.size(); i++) {
+    Symbol<E> &sym = *ctx.plt->symbols[i];
+
+    // SPARC doesn't have a .got.plt because its role is merged to .plt.
+    // On SPARC, .plt is writable (!) and the dynamic linker directly
+    // modify its instructions as it resolves dynamic symbols. Therefore,
+    // it doesn't need a separate section to store the symbol resolution
+    // results. That is of course horrible from the security point of view,
+    // though.
+    u64 addr = is_sparc<E> ? sym.get_plt_addr(ctx) : sym.get_gotplt_addr(ctx);
+
+    buf[i] = ElfRel<E>(addr, E::R_JUMP_SLOT, sym.get_dynsym_idx(ctx), 0);
+  }
 }
 
 template<typename E>

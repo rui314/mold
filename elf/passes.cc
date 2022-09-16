@@ -45,7 +45,10 @@ void create_synthetic_sections(Context<E> &ctx) {
   }
 
   ctx.got = push(new GotSection<E>);
-  ctx.gotplt = push(new GotPltSection<E>);
+
+  if constexpr (!is_sparc<E>)
+    ctx.gotplt = push(new GotPltSection<E>);
+
   ctx.reldyn = push(new RelDynSection<E>);
   ctx.relplt = push(new RelPltSection<E>);
 
@@ -415,6 +418,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
   ctx.__preinit_array_end = add("__preinit_array_end");
   ctx._DYNAMIC = add("_DYNAMIC");
   ctx._GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_");
+  ctx._PROCEDURE_LINKAGE_TABLE_ = add("_PROCEDURE_LINKAGE_TABLE_");
   ctx.__bss_start = add("__bss_start");
   ctx._end = add("_end");
   ctx._etext = add("_etext");
@@ -1624,6 +1628,9 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.gotplt);
   else
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
+
+  // _PROCEDURE_LINKAGE_TABLE_. We need this on SPARC.
+  start(ctx._PROCEDURE_LINKAGE_TABLE_, ctx.plt);
 
   // _TLS_MODULE_BASE_. This symbol is used to obtain the address of
   // the TLS block in the TLSDESC model. I believe GCC and Clang don't
