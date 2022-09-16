@@ -116,11 +116,11 @@ u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
       continue;
 
     while (!desc.empty()) {
-      u32 type = *(ul32 *)desc.data();
-      u32 size = *(ul32 *)(desc.data() + 4);
+      u32 type = *(U32<E> *)desc.data();
+      u32 size = *(U32<E> *)(desc.data() + 4);
       desc = desc.substr(8);
       if (type == GNU_PROPERTY_X86_FEATURE_1_AND)
-        ret |= *(ul32 *)desc.data();
+        ret |= *(U32<E> *)desc.data();
       desc = desc.substr(align_to(size, sizeof(Word<E>)));
     }
   }
@@ -151,7 +151,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
 
       // Get comdat group members.
-      std::span<ul32> entries = this->template get_data<ul32>(ctx, shdr);
+      std::span<U32<E>> entries = this->template get_data<U32<E>>(ctx, shdr);
 
       if (entries.empty())
         Fatal(ctx) << *this << ": empty SHT_GROUP";
@@ -167,7 +167,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       break;
     }
     case SHT_SYMTAB_SHNDX:
-      symtab_shndx_sec = this->template get_data<u32>(ctx, shdr);
+      symtab_shndx_sec = this->template get_data<U32<E>>(ctx, shdr);
       break;
     case SHT_SYMTAB:
     case SHT_STRTAB:
@@ -333,13 +333,13 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   i64 rel_idx = 0;
 
   for (std::string_view data = contents; !data.empty();) {
-    i64 size = *(ul32 *)data.data();
+    i64 size = *(U32<E> *)data.data();
     if (size == 0)
       break;
 
     i64 begin_offset = data.data() - contents.data();
     i64 end_offset = begin_offset + size + 4;
-    i64 id = *(ul32 *)(data.data() + 4);
+    i64 id = *(U32<E> *)(data.data() + 4);
     data = data.substr(size + 4);
 
     i64 rel_begin = rel_idx;
@@ -375,7 +375,7 @@ void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
   };
 
   for (i64 i = fdes_begin; i < fdes.size(); i++) {
-    i64 cie_offset = *(il32 *)(contents.data() + fdes[i].input_offset + 4);
+    i64 cie_offset = *(I32<E> *)(contents.data() + fdes[i].input_offset + 4);
     fdes[i].cie_idx = find_cie(fdes[i].input_offset + 4 - cie_offset);
   }
 
@@ -976,7 +976,7 @@ void ObjectFile<E>::eliminate_duplicate_comdat_groups() {
     if (group->owner == this->priority)
       continue;
 
-    std::span<ul32> entries = pair.second;
+    std::span<U32<E>> entries = pair.second;
     for (u32 i : entries)
       if (sections[i])
         sections[i]->kill();
@@ -1343,9 +1343,9 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   // Read a symbol table.
   std::span<ElfSym<E>> esyms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
 
-  std::span<u16> vers;
+  std::span<U16<E>> vers;
   if (ElfShdr<E> *sec = this->find_section(SHT_GNU_VERSYM))
-    vers = this->template get_data<u16>(ctx, *sec);
+    vers = this->template get_data<U16<E>>(ctx, *sec);
 
   for (i64 i = symtab_sec->sh_info; i < esyms.size(); i++) {
     u16 ver;

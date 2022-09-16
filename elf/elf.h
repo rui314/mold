@@ -1721,8 +1721,14 @@ struct EL64Rel {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ul64 r_offset;
+
+#if __LITTLE_ENDIAN__
   ul32 r_type;
   ul32 r_sym;
+#else
+  ul32 r_sym;
+  ul32 r_type;
+#endif
 };
 
 struct EL32Rel {
@@ -1731,8 +1737,14 @@ struct EL32Rel {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ul32 r_offset;
+
+#if __LITTLE_ENDIAN__
   u8 r_type;
   ul24 r_sym;
+#else
+  ul24 r_sym;
+  u8 r_type;
+#endif
 };
 
 struct EL64Rela {
@@ -1741,8 +1753,15 @@ struct EL64Rela {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ul64 r_offset;
+
+#if __LITTLE_ENDIAN__
   ul32 r_type;
   ul32 r_sym;
+#else
+  ul32 r_sym;
+  ul32 r_type;
+#endif
+
   il64 r_addend;
 };
 
@@ -1752,8 +1771,15 @@ struct EL32Rela {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ul32 r_offset;
+
+#if __LITTLE_ENDIAN__
   u8 r_type;
   ul24 r_sym;
+#else
+  ul24 r_sym;
+  u8 r_type;
+#endif
+
   il32 r_addend;
 };
 
@@ -1967,8 +1993,14 @@ struct EB64Rel {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ub64 r_offset;
+
+#if __LITTLE_ENDIAN__
+  ub32 r_sym;
+  ub32 r_type;
+#else
   ub32 r_type;
   ub32 r_sym;
+#endif
 };
 
 struct EB32Rel {
@@ -1977,8 +2009,14 @@ struct EB32Rel {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ub32 r_offset;
+
+#if __LITTLE_ENDIAN__
+  ub24 r_sym;
+  u8 r_type;
+#else
   u8 r_type;
   ub24 r_sym;
+#endif
 };
 
 struct EB64Rela {
@@ -1987,9 +2025,16 @@ struct EB64Rela {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ub64 r_offset;
+
+#if __LITTLE_ENDIAN__
+  ub32 r_sym;
+  ub32 r_type;
+#else
   ub32 r_type;
   ub32 r_sym;
-  ib64 r_addend;
+#endif
+
+  il64 r_addend;
 };
 
 struct EB32Rela {
@@ -1998,9 +2043,16 @@ struct EB32Rela {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ub32 r_offset;
+
+#if __LITTLE_ENDIAN__
+  ub24 r_sym;
+  u8 r_type;
+#else
   u8 r_type;
   ub24 r_sym;
-  ib32 r_addend;
+#endif
+
+  il32 r_addend;
 };
 
 struct EB64Dyn {
@@ -2068,7 +2120,28 @@ struct EBNhdr {
 //
 
 template <typename E>
-using Word = std::conditional_t<E::is_64, ul64, ul32>;
+using U64 = std::conditional_t<E::is_le, ul64, ub64>;
+
+template <typename E>
+using U32 = std::conditional_t<E::is_le, ul32, ub32>;
+
+template <typename E>
+using U24 = std::conditional_t<E::is_le, ul24, ub24>;
+
+template <typename E>
+using U16 = std::conditional_t<E::is_le, ul16, ub16>;
+
+template <typename E>
+using I64 = std::conditional_t<E::is_le, il64, ib64>;
+
+template <typename E>
+using I32 = std::conditional_t<E::is_le, il32, ib32>;
+
+template <typename E>
+using I16 = std::conditional_t<E::is_le, il16, ib16>;
+
+template <typename E>
+using Word = std::conditional_t<E::is_64, U64<E>, U32<E>>;
 
 template <typename E>
 static constexpr bool is_rela = requires(ElfRel<E> r) { r.r_addend; };
@@ -2104,6 +2177,7 @@ struct X86_64 {
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
   static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
   static constexpr MachineType machine_type = MachineType::X86_64;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
@@ -2139,6 +2213,7 @@ struct I386 {
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
   static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
   static constexpr MachineType machine_type = MachineType::I386;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_386;
@@ -2174,6 +2249,7 @@ struct ARM64 {
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 
   static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
   static constexpr MachineType machine_type = MachineType::ARM64;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
@@ -2211,6 +2287,7 @@ struct ARM32 {
   static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
 
   static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
   static constexpr MachineType machine_type = MachineType::ARM32;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_ARM;
@@ -2247,6 +2324,7 @@ struct RISCV64 {
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
 
   static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
   static constexpr MachineType machine_type = MachineType::RISCV64;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
@@ -2303,6 +2381,7 @@ struct RISCV32 {
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
 
   static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
   static constexpr MachineType machine_type = MachineType::RISCV32;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
@@ -2337,6 +2416,7 @@ struct PPC64LE {
   static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
 
   static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
   static constexpr MachineType machine_type = MachineType::PPC64LE;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_PPC64;
@@ -2373,11 +2453,12 @@ struct SPARC64 {
   static constexpr u32 R_DTPMOD = R_SPARC_TLS_DTPMOD64;
 
   static constexpr bool is_64 = true;
+  static constexpr bool is_le = false;
   static constexpr MachineType machine_type = MachineType::SPARC64;
   static constexpr u32 page_size = 8192;
   static constexpr u32 e_machine = EM_SPARC64;
-  static constexpr u32 plt_hdr_size = 60;
-  static constexpr u32 plt_size = 4;
+  static constexpr u32 plt_hdr_size = 256;
+  static constexpr u32 plt_size = 32;
   static constexpr u32 pltgot_size = 20;
   static constexpr u32 tls_dtv_offset = 0;
 };

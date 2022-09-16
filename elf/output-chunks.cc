@@ -80,7 +80,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
 
   memcpy(&hdr.e_ident, "\177ELF", 4);
   hdr.e_ident[EI_CLASS] = E::is_64 ? ELFCLASS64 : ELFCLASS32;
-  hdr.e_ident[EI_DATA] = ELFDATA2LSB;
+  hdr.e_ident[EI_DATA] = E::is_le ? ELFDATA2LSB : ELFDATA2MSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
   hdr.e_type = ctx.arg.pic ? ET_DYN : ET_EXEC;
   hdr.e_machine = E::e_machine;
@@ -1410,9 +1410,9 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
   memset(base, 0, this->shdr.sh_size);
 
   i64 num_slots = ctx.dynsym->symbols.size();
-  ul32 *hdr = (ul32 *)base;
-  ul32 *buckets = (ul32 *)(base + 8);
-  ul32 *chains = buckets + num_slots;
+  U32<E> *hdr = (U32<E> *)base;
+  U32<E> *buckets = (U32<E> *)(base + 8);
+  U32<E> *chains = buckets + num_slots;
 
   hdr[0] = hdr[1] = num_slots;
 
@@ -1462,10 +1462,10 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   std::span<Symbol<E> *> syms = get_exported_symbols(ctx);
   i64 exported_offset = ctx.dynsym->symbols.size() - syms.size();
 
-  *(ul32 *)base = num_buckets;
-  *(ul32 *)(base + 4) = exported_offset;
-  *(ul32 *)(base + 8) = num_bloom;
-  *(ul32 *)(base + 12) = BLOOM_SHIFT;
+  *(U32<E> *)base = num_buckets;
+  *(U32<E> *)(base + 4) = exported_offset;
+  *(U32<E> *)(base + 8) = num_bloom;
+  *(U32<E> *)(base + 12) = BLOOM_SHIFT;
 
   std::vector<u32> hashes(syms.size());
   for (i64 i = 0; i < syms.size(); i++)
@@ -1481,7 +1481,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   }
 
   // Write hash bucket indices
-  ul32 *buckets = (ul32 *)(bloom + num_bloom);
+  U32<E> *buckets = (U32<E> *)(bloom + num_bloom);
   for (i64 i = 0; i < hashes.size(); i++) {
     i64 idx = hashes[i] % num_buckets;
     if (!buckets[idx])
@@ -1489,7 +1489,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   }
 
   // Write a hash table
-  ul32 *table = buckets + num_buckets;
+  U32<E> *table = buckets + num_buckets;
   for (i64 i = 0; i < syms.size(); i++) {
     bool is_last = false;
     if (i == syms.size() - 1 ||
@@ -1754,7 +1754,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       memcpy(base + offset, contents.data(), contents.size());
 
       CieRecord<E> &cie = file->cies[fde.cie_idx];
-      *(ul32 *)(base + offset + 4) = offset + 4 - cie.output_offset;
+      *(U32<E> *)(base + offset + 4) = offset + 4 - cie.output_offset;
       bool is_first = true;
 
       for (const ElfRel<E> &rel : fde.get_rels(*file)) {
@@ -1780,7 +1780,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   });
 
   // Write a terminator.
-  *(ul32 *)(base + this->shdr.sh_size - 4) = 0;
+  *(U32<E> *)(base + this->shdr.sh_size - 4) = 0;
 
   // Sort .eh_frame_hdr contents.
   if (eh_hdr_begin) {
@@ -1809,8 +1809,8 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
   base[2] = DW_EH_PE_udata4;
   base[3] = DW_EH_PE_datarel | DW_EH_PE_sdata4;
 
-  *(ul32 *)(base + 4) = ctx.eh_frame->shdr.sh_addr - this->shdr.sh_addr - 4;
-  *(ul32 *)(base + 8) = num_fdes;
+  *(U32<E> *)(base + 4) = ctx.eh_frame->shdr.sh_addr - this->shdr.sh_addr - 4;
+  *(U32<E> *)(base + 8) = num_fdes;
 }
 
 template <typename E>
@@ -2030,7 +2030,7 @@ void BuildIdSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void BuildIdSection<E>::copy_buf(Context<E> &ctx) {
-  ul32 *base = (ul32 *)(ctx.buf + this->shdr.sh_offset);
+  U32<E> *base = (U32<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(base, 0, this->shdr.sh_size);
   base[0] = 4;                          // Name size
   base[1] = ctx.arg.build_id.size();    // Hash size
@@ -2112,7 +2112,7 @@ void NotePackageSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void NotePackageSection<E>::copy_buf(Context<E> &ctx) {
-  ul32 *buf = (ul32 *)(ctx.buf + this->shdr.sh_offset);
+  U32<E> *buf = (U32<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   buf[0] = 4;                                      // Name size
@@ -2139,7 +2139,7 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
-  ul32 *buf = (ul32 *)(ctx.buf + this->shdr.sh_offset);
+  U32<E> *buf = (U32<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
   buf[0] = 4;                              // Name size
@@ -2284,8 +2284,8 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
     if (file->debug_info) {
       u64 offset = file->debug_info->offset;
       for (std::string_view cu : file->compunits) {
-        *(ul64 *)buf = offset;
-        *(ul64 *)(buf + 8) = cu.size();
+        *(U64<E> *)buf = offset;
+        *(U64<E> *)(buf + 8) = cu.size();
         buf += 16;
         offset += cu.size();
       }
@@ -2308,12 +2308,12 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
       u32 step = (hash & mask) | 1;
       u32 j = hash & mask;
 
-      while (*(ul32 *)(buf + j * 8))
+      while (*(U32<E> *)(buf + j * 8))
         j = (j + step) & mask;
 
       ObjectFile<E> &file = *map.values[i].owner;
-      *(ul32 *)(buf + j * 8) = file.names_offset + map.values[i].name_offset;
-      *(ul32 *)(buf + j * 8 + 4) = file.attrs_offset + map.values[i].attr_offset;
+      *(U32<E> *)(buf + j * 8) = file.names_offset + map.values[i].name_offset;
+      *(U32<E> *)(buf + j * 8 + 4) = file.attrs_offset + map.values[i].attr_offset;
     }
   }
 
@@ -2336,13 +2336,13 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   const i64 shard_size = map.nbuckets / map.NUM_SHARDS;
 
   tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
-    ul32 *attrs = (ul32 *)buf;
+    U32<E> *attrs = (U32<E> *)buf;
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
       if (map.has_key(j)) {
         MapEntry &ent = map.values[j];
         u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
-        ul32 *start = attrs + idx + 1;
+        U32<E> *start = attrs + idx + 1;
         std::sort(start, start + attrs[idx]);
       }
     }
@@ -2387,9 +2387,9 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
   assert(ctx.debug_abbrev);
 
   struct Entry {
-    ul64 start;
-    ul64 end;
-    ul32 attr;
+    U64<E> start;
+    U64<E> end;
+    U32<E> attr;
   };
 
   // Read address ranges from debug sections and copy them to .gdb_index.

@@ -193,7 +193,7 @@ struct CieRecord {
       rel_idx(rel_idx), rels(rels), contents(file.get_string(ctx, isec.shdr())) {}
 
   i64 size() const {
-    return *(ul32 *)(contents.data() + input_offset) + 4;
+    return *(U32<E> *)(contents.data() + input_offset) + 4;
   }
 
   std::string_view get_contents() const {
@@ -1137,7 +1137,7 @@ public:
   std::vector<FdeRecord<E>> fdes;
   std::vector<const char *> symvers;
   std::vector<SectionFragmentRef<E>> sym_fragments;
-  std::vector<std::pair<ComdatGroup *, std::span<ul32>>> comdat_groups;
+  std::vector<std::pair<ComdatGroup *, std::span<U32<E>>>> comdat_groups;
   bool exclude_libs = false;
   u32 features = 0;
   bool is_lto_obj = false;
@@ -1187,7 +1187,7 @@ private:
   bool has_common_symbol = false;
 
   const ElfShdr<E> *symtab_sec;
-  std::span<u32> symtab_shndx_sec;
+  std::span<U32<E>> symtab_shndx_sec;
 };
 
 // SharedFile represents an input .so file.
@@ -1926,7 +1926,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
 
 template <typename E>
 inline i64 FdeRecord<E>::size(ObjectFile<E> &file) const {
-  return *(ul32 *)(file.cies[cie_idx].contents.data() + input_offset) + 4;
+  return *(U32<E> *)(file.cies[cie_idx].contents.data() + input_offset) + 4;
 }
 
 template <typename E>

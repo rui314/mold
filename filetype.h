@@ -75,23 +75,35 @@ FileType get_file_type(MappedFile<C> *mf) {
     return FileType::EMPTY;
 
   if (data.starts_with("\177ELF")) {
-    switch (*(ul16 *)(data.data() + 16)) {
-    case 1: {
-      // ET_REL
+    u8 byte_order = ((elf::EL32Ehdr *)data.data())->e_ident[elf::EI_DATA];
+
+    if (byte_order == elf::ELFDATA2LSB) {
       elf::EL32Ehdr &ehdr = *(elf::EL32Ehdr *)data.data();
 
-      if (ehdr.e_ident[elf::EI_CLASS] == elf::ELFCLASS32) {
-        if (is_gcc_lto_obj<elf::I386>(mf))
-          return FileType::GCC_LTO_OBJ;
-      } else {
-        if (is_gcc_lto_obj<elf::X86_64>(mf))
-          return FileType::GCC_LTO_OBJ;
+      if (ehdr.e_type == elf::ET_REL) {
+        if (ehdr.e_ident[elf::EI_CLASS] == elf::ELFCLASS32) {
+          if (is_gcc_lto_obj<elf::I386>(mf))
+            return FileType::GCC_LTO_OBJ;
+        } else {
+          if (is_gcc_lto_obj<elf::X86_64>(mf))
+            return FileType::GCC_LTO_OBJ;
+        }
+        return FileType::ELF_OBJ;
       }
 
-      return FileType::ELF_OBJ;
-    }
-    case 3: // ET_DYN
-      return FileType::ELF_DSO;
+      if (ehdr.e_type == elf::ET_DYN)
+        return FileType::ELF_DSO;
+    } else {
+      elf::EB32Ehdr &ehdr = *(elf::EB32Ehdr *)data.data();
+
+      if (ehdr.e_type == elf::ET_REL) {
+        if (is_gcc_lto_obj<elf::SPARC64>(mf))
+          return FileType::GCC_LTO_OBJ;
+        return FileType::ELF_OBJ;
+      }
+
+      if (ehdr.e_type == elf::ET_DYN)
+        return FileType::ELF_DSO;
     }
     return FileType::UNKNOWN;
   }
