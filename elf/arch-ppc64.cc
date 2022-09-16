@@ -30,10 +30,10 @@
 //   addi  r2, r2,  .TOC.@lo + 4;
 //
 // The global entry point assumes that the address of itself is in r12,
-// and it computes r2 from r12. It's easy to do so for the callee because
-// the offset between .got + 0x8000 and the function is known at link-
-// time. The above code sequence then falls through to the local entry
-// point that assumes r2 is .got + 0x8000.
+// and it computes its own TOC pointer from r12. It's easy to do so for
+// the callee because the offset between its .got + 0x8000 and the
+// function is known at link-time. The above code sequence then falls
+// through to the local entry point that assumes r2 is .got + 0x8000.
 //
 // So, if a callee's TOC pointer is different from the current one
 // (e.g. calling a function in another .so), we first load the callee's

@@ -2,7 +2,7 @@
 // x86-64 supports PC-relative addressing for position-independent
 // code. Being CISC, its instructions are variable in size. Branch
 // instructions take 4 bytes offsets, so we don't need range extension
-// thunks for the medium code model.
+// thunks.
 //
 // The psABI specifies %r11 as neither caller- nor callee-saved. It's
 // intentionally left out so that we can use it as a scratch register in
