@@ -18,18 +18,40 @@
 
 namespace mold::elf {
 
-// ARM64 branch instructions can jump to ±128 MiB. We redirect a
-// branch to a thunk if its desitnation is further than 100 MiB.
-// On ARM32 and PPC64, they can jump to ±16 MiB.
+// The number of immediate bits in branch instructions.
+//
+// ARM64's branch has 26 bits immediate, and it's scaled by 4 because all
+// instructions are 4 bytes aligned, so it's effectively 28 bits long.
+//
+// ARM32's Thumb branch has 24 bits immediate, and the instructions are
+// aligned to 2, so it's effectively 25 bits. ARM32's non-Thumb branches
+// have twice longer range than its Thumb counterparts, but we
+// conservatively use the Thumb's limitation.
+//
+// PPC64's branch has 24 bits immediate, and the instructions are aligned
+// to 4, therefore 26.
+//
+// Here is the summary of branch instructions reaches:
+//
+//   ARM64: PC ± 128 MiB
+//   ARM32: PC ± 16 MiB
+//   PPC64: PC ± 32 MiB
 template <typename E>
-static constexpr i64 max_distance =
-  (std::is_same_v<E, ARM64> ? 100 : 10) * 1024 * 1024;
+static constexpr i64 jump_bits =
+  std::is_same_v<E, ARM64> ? 28 : std::is_same_v<E, ARM32> ? 25 : 26;
 
-// We create one thunk block for each 10 MiB or 2 MiB code block on
-// ARM64 or on ARM32/PPC64, respectively.
+// We redirect a branch to a thunk if its destination is further than
+// this number.
+//
+// 5 MiB is a safety margin; we assume that there's no crazy big input
+// .text segment that is larger than 5 MiB.
 template <typename E>
-static constexpr i64 group_size =
-  (std::is_same_v<E, ARM64> ? 10 : 2) * 1024 * 1024;
+static constexpr i64 max_distance = (1LL << (jump_bits<E> - 1)) - 5 * 1024 * 1024;
+
+// We create thunks for each 12.8/1.6/3.2 MiB code block for
+// ARM64/ARM32/PPC64, respectively.
+template <typename E>
+static constexpr i64 group_size = (1LL << (jump_bits<E> - 1)) / 10;
 
 template <typename E>
 static bool needs_thunk_rel(const ElfRel<E> &r) {
@@ -66,10 +88,10 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   if (isec2->offset == -1)
     return false;
 
+  // Thumb and ARM B instructions cannot be converted to BX, so we
+  // always have to make them jump to a thunk to switch processor mode
+  // even if their destinations are within their ranges.
   if constexpr (std::is_same_v<E, ARM32>) {
-    // Thumb and ARM B instructions cannot be converted to BX, so we
-    // always have to make them jump to a thunk to switch processor mode
-    // even if their destinations are within their ranges.
     bool is_thumb = sym.get_addr(ctx) & 1;
     if ((rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
         (rel.r_type == R_ARM_JUMP24 && is_thumb))
@@ -82,15 +104,7 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   i64 A = isec.get_addend(rel);
   i64 P = isec.get_addr() + rel.r_offset;
   u64 val = S + A - P;
-
-  if constexpr (std::is_same_v<E, ARM64>) {
-    return sign_extend(val, 27) == val;
-  } else if constexpr (std::is_same_v<E, ARM32>) {
-    return sign_extend(val, 24) == val;
-  } else {
-    static_assert(std::is_same_v<E, PPC64>);
-    return sign_extend(val, 25) == val;
-  }
+  return sign_extend(val, jump_bits<E> - 1) == val;
 }
 
 template <typename E>
