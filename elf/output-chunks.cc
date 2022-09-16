@@ -1885,13 +1885,13 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
   ctx.versym->contents[0] = 0;
 
   // Allocate a large enough buffer for .gnu.version_r.
-  contents.resize((sizeof(ElfVerneed) + sizeof(ElfVernaux)) * syms.size());
+  contents.resize((sizeof(ElfVerneed<E>) + sizeof(ElfVernaux<E>)) * syms.size());
 
   // Fill .gnu.version_r.
   u8 *buf = (u8 *)&contents[0];
   u8 *ptr = buf;
-  ElfVerneed *verneed = nullptr;
-  ElfVernaux *aux = nullptr;
+  ElfVerneed<E> *verneed = nullptr;
+  ElfVernaux<E> *aux = nullptr;
 
   u16 veridx = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size();
 
@@ -1900,11 +1900,11 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
     if (verneed)
       verneed->vn_next = ptr - (u8 *)verneed;
 
-    verneed = (ElfVerneed *)ptr;
+    verneed = (ElfVerneed<E> *)ptr;
     ptr += sizeof(*verneed);
     verneed->vn_version = 1;
     verneed->vn_file = ctx.dynstr->find_string(((SharedFile<E> *)file)->soname);
-    verneed->vn_aux = sizeof(ElfVerneed);
+    verneed->vn_aux = sizeof(ElfVerneed<E>);
     aux = nullptr;
   };
 
@@ -1912,8 +1912,8 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
     verneed->vn_cnt++;
 
     if (aux)
-      aux->vna_next = sizeof(ElfVernaux);
-    aux = (ElfVernaux *)ptr;
+      aux->vna_next = sizeof(ElfVernaux<E>);
+    aux = (ElfVernaux<E> *)ptr;
     ptr += sizeof(*aux);
 
     std::string_view verstr = sym->get_version();
@@ -1960,30 +1960,30 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   ctx.versym->contents[0] = 0;
 
   // Allocate a buffer for .gnu.version_d.
-  contents.resize((sizeof(ElfVerdef) + sizeof(ElfVerdaux)) *
+  contents.resize((sizeof(ElfVerdef<E>) + sizeof(ElfVerdaux<E>)) *
                   (ctx.arg.version_definitions.size() + 1));
 
   u8 *buf = (u8 *)&contents[0];
   u8 *ptr = buf;
-  ElfVerdef *verdef = nullptr;
+  ElfVerdef<E> *verdef = nullptr;
 
   auto write = [&](std::string_view verstr, i64 idx, i64 flags) {
     this->shdr.sh_info++;
     if (verdef)
       verdef->vd_next = ptr - (u8 *)verdef;
 
-    verdef = (ElfVerdef *)ptr;
-    ptr += sizeof(ElfVerdef);
+    verdef = (ElfVerdef<E> *)ptr;
+    ptr += sizeof(ElfVerdef<E>);
 
     verdef->vd_version = 1;
     verdef->vd_flags = flags;
     verdef->vd_ndx = idx;
     verdef->vd_cnt = 1;
     verdef->vd_hash = elf_hash(verstr);
-    verdef->vd_aux = sizeof(ElfVerdef);
+    verdef->vd_aux = sizeof(ElfVerdef<E>);
 
-    ElfVerdaux *aux = (ElfVerdaux *)ptr;
-    ptr += sizeof(ElfVerdaux);
+    ElfVerdaux<E> *aux = (ElfVerdaux<E> *)ptr;
+    ptr += sizeof(ElfVerdaux<E>);
     aux->vda_name = ctx.dynstr->add_string(verstr);
   };
 

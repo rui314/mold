@@ -78,7 +78,7 @@ FileType get_file_type(MappedFile<C> *mf) {
     switch (*(ul16 *)(data.data() + 16)) {
     case 1: {
       // ET_REL
-      elf::Elf32Ehdr &ehdr = *(elf::Elf32Ehdr *)data.data();
+      elf::EL32Ehdr &ehdr = *(elf::EL32Ehdr *)data.data();
 
       if (ehdr.e_ident[elf::EI_CLASS] == elf::ELFCLASS32) {
         if (is_gcc_lto_obj<elf::I386>(mf))

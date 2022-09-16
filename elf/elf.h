@@ -16,6 +16,7 @@ struct ARM32;
 struct RISCV64;
 struct RISCV32;
 struct PPC64LE;
+struct SPARC64;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -23,12 +24,17 @@ template <typename E> struct ElfEhdr;
 template <typename E> struct ElfPhdr;
 template <typename E> struct ElfRel;
 template <typename E> struct ElfDyn;
+template <typename E> struct ElfVerneed;
+template <typename E> struct ElfVernaux;
+template <typename E> struct ElfVerdef;
+template <typename E> struct ElfVerdaux;
 template <typename E> struct ElfChdr;
+template <typename E> struct ElfNhdr;
 
 static constexpr u32 R_NONE = 0;
 
 enum class MachineType {
-  NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32, PPC64LE,
+  NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32, PPC64LE, SPARC64,
 };
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
@@ -41,6 +47,7 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   case MachineType::RISCV64: out << "riscv64"; break;
   case MachineType::RISCV32: out << "riscv32"; break;
   case MachineType::PPC64LE: out << "ppc64le"; break;
+  case MachineType::SPARC64: out << "sparc64"; break;
   }
   return out;
 }
@@ -164,6 +171,7 @@ static constexpr u32 EM_NONE = 0;
 static constexpr u32 EM_386 = 3;
 static constexpr u32 EM_PPC64 = 21;
 static constexpr u32 EM_ARM = 40;
+static constexpr u32 EM_SPARC64 = 43;
 static constexpr u32 EM_X86_64 = 62;
 static constexpr u32 EM_AARCH64 = 183;
 static constexpr u32 EM_RISCV = 243;
@@ -272,6 +280,10 @@ static constexpr u32 EF_RISCV_RVE = 8;
 static constexpr u32 EF_RISCV_TSO = 16;
 
 static constexpr u32 STO_RISCV_VARIANT_CC = 0x80;
+
+//
+// Relocation types
+//
 
 static constexpr u32 R_X86_64_NONE = 0;
 static constexpr u32 R_X86_64_64 = 1;
@@ -1270,6 +1282,188 @@ inline std::string rel_to_string<PPC64LE>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
+static constexpr u32 R_SPARC_NONE = 0;
+static constexpr u32 R_SPARC_8 = 1;
+static constexpr u32 R_SPARC_16 = 2;
+static constexpr u32 R_SPARC_32 = 3;
+static constexpr u32 R_SPARC_DISP8 = 4;
+static constexpr u32 R_SPARC_DISP16 = 5;
+static constexpr u32 R_SPARC_DISP32 = 6;
+static constexpr u32 R_SPARC_WDISP30 = 7;
+static constexpr u32 R_SPARC_WDISP22 = 8;
+static constexpr u32 R_SPARC_HI22 = 9;
+static constexpr u32 R_SPARC_22 = 10;
+static constexpr u32 R_SPARC_13 = 11;
+static constexpr u32 R_SPARC_LO10 = 12;
+static constexpr u32 R_SPARC_GOT10 = 13;
+static constexpr u32 R_SPARC_GOT13 = 14;
+static constexpr u32 R_SPARC_GOT22 = 15;
+static constexpr u32 R_SPARC_PC10 = 16;
+static constexpr u32 R_SPARC_PC22 = 17;
+static constexpr u32 R_SPARC_WPLT30 = 18;
+static constexpr u32 R_SPARC_COPY = 19;
+static constexpr u32 R_SPARC_GLOB_DAT = 20;
+static constexpr u32 R_SPARC_JMP_SLOT = 21;
+static constexpr u32 R_SPARC_RELATIVE = 22;
+static constexpr u32 R_SPARC_UA32 = 23;
+static constexpr u32 R_SPARC_PLT32 = 24;
+static constexpr u32 R_SPARC_HIPLT22 = 25;
+static constexpr u32 R_SPARC_LOPLT10 = 26;
+static constexpr u32 R_SPARC_PCPLT32 = 27;
+static constexpr u32 R_SPARC_PCPLT22 = 28;
+static constexpr u32 R_SPARC_PCPLT10 = 29;
+static constexpr u32 R_SPARC_10 = 30;
+static constexpr u32 R_SPARC_11 = 31;
+static constexpr u32 R_SPARC_64 = 32;
+static constexpr u32 R_SPARC_OLO10 = 33;
+static constexpr u32 R_SPARC_HH22 = 34;
+static constexpr u32 R_SPARC_HM10 = 35;
+static constexpr u32 R_SPARC_LM22 = 36;
+static constexpr u32 R_SPARC_PC_HH22 = 37;
+static constexpr u32 R_SPARC_PC_HM10 = 38;
+static constexpr u32 R_SPARC_PC_LM22 = 39;
+static constexpr u32 R_SPARC_WDISP16 = 40;
+static constexpr u32 R_SPARC_WDISP19 = 41;
+static constexpr u32 R_SPARC_7 = 43;
+static constexpr u32 R_SPARC_5 = 44;
+static constexpr u32 R_SPARC_6 = 45;
+static constexpr u32 R_SPARC_DISP64 = 46;
+static constexpr u32 R_SPARC_PLT64 = 47;
+static constexpr u32 R_SPARC_HIX22 = 48;
+static constexpr u32 R_SPARC_LOX10 = 49;
+static constexpr u32 R_SPARC_H44 = 50;
+static constexpr u32 R_SPARC_M44 = 51;
+static constexpr u32 R_SPARC_L44 = 52;
+static constexpr u32 R_SPARC_REGISTER = 53;
+static constexpr u32 R_SPARC_UA64 = 54;
+static constexpr u32 R_SPARC_UA16 = 55;
+static constexpr u32 R_SPARC_TLS_GD_HI22 = 56;
+static constexpr u32 R_SPARC_TLS_GD_LO10 = 57;
+static constexpr u32 R_SPARC_TLS_GD_ADD = 58;
+static constexpr u32 R_SPARC_TLS_GD_CALL = 59;
+static constexpr u32 R_SPARC_TLS_LDM_HI22 = 60;
+static constexpr u32 R_SPARC_TLS_LDM_LO10 = 61;
+static constexpr u32 R_SPARC_TLS_LDM_ADD = 62;
+static constexpr u32 R_SPARC_TLS_LDM_CALL = 63;
+static constexpr u32 R_SPARC_TLS_LDO_HIX22 = 64;
+static constexpr u32 R_SPARC_TLS_LDO_LOX10 = 65;
+static constexpr u32 R_SPARC_TLS_LDO_ADD = 66;
+static constexpr u32 R_SPARC_TLS_IE_HI22 = 67;
+static constexpr u32 R_SPARC_TLS_IE_LO10 = 68;
+static constexpr u32 R_SPARC_TLS_IE_LD = 69;
+static constexpr u32 R_SPARC_TLS_IE_LDX = 70;
+static constexpr u32 R_SPARC_TLS_IE_ADD = 71;
+static constexpr u32 R_SPARC_TLS_LE_HIX22 = 72;
+static constexpr u32 R_SPARC_TLS_LE_LOX10 = 73;
+static constexpr u32 R_SPARC_TLS_DTPMOD32 = 74;
+static constexpr u32 R_SPARC_TLS_DTPMOD64 = 75;
+static constexpr u32 R_SPARC_TLS_DTPOFF32 = 76;
+static constexpr u32 R_SPARC_TLS_DTPOFF64 = 77;
+static constexpr u32 R_SPARC_TLS_TPOFF32 = 78;
+static constexpr u32 R_SPARC_TLS_TPOFF64 = 79;
+static constexpr u32 R_SPARC_GOTDATA_HIX22 = 80;
+static constexpr u32 R_SPARC_GOTDATA_LOX10 = 81;
+static constexpr u32 R_SPARC_GOTDATA_OP_HIX22 = 82;
+static constexpr u32 R_SPARC_GOTDATA_OP_LOX10 = 83;
+static constexpr u32 R_SPARC_GOTDATA_OP = 84;
+static constexpr u32 R_SPARC_IRELATIVE = 249;
+
+template <>
+inline std::string rel_to_string<SPARC64>(u32 r_type) {
+  switch (r_type) {
+  case R_SPARC_NONE: return "R_SPARC_NONE";
+  case R_SPARC_8: return "R_SPARC_8";
+  case R_SPARC_16: return "R_SPARC_16";
+  case R_SPARC_32: return "R_SPARC_32";
+  case R_SPARC_DISP8: return "R_SPARC_DISP8";
+  case R_SPARC_DISP16: return "R_SPARC_DISP16";
+  case R_SPARC_DISP32: return "R_SPARC_DISP32";
+  case R_SPARC_WDISP30: return "R_SPARC_WDISP30";
+  case R_SPARC_WDISP22: return "R_SPARC_WDISP22";
+  case R_SPARC_HI22: return "R_SPARC_HI22";
+  case R_SPARC_22: return "R_SPARC_22";
+  case R_SPARC_13: return "R_SPARC_13";
+  case R_SPARC_LO10: return "R_SPARC_LO10";
+  case R_SPARC_GOT10: return "R_SPARC_GOT10";
+  case R_SPARC_GOT13: return "R_SPARC_GOT13";
+  case R_SPARC_GOT22: return "R_SPARC_GOT22";
+  case R_SPARC_PC10: return "R_SPARC_PC10";
+  case R_SPARC_PC22: return "R_SPARC_PC22";
+  case R_SPARC_WPLT30: return "R_SPARC_WPLT30";
+  case R_SPARC_COPY: return "R_SPARC_COPY";
+  case R_SPARC_GLOB_DAT: return "R_SPARC_GLOB_DAT";
+  case R_SPARC_JMP_SLOT: return "R_SPARC_JMP_SLOT";
+  case R_SPARC_RELATIVE: return "R_SPARC_RELATIVE";
+  case R_SPARC_UA32: return "R_SPARC_UA32";
+  case R_SPARC_PLT32: return "R_SPARC_PLT32";
+  case R_SPARC_HIPLT22: return "R_SPARC_HIPLT22";
+  case R_SPARC_LOPLT10: return "R_SPARC_LOPLT10";
+  case R_SPARC_PCPLT32: return "R_SPARC_PCPLT32";
+  case R_SPARC_PCPLT22: return "R_SPARC_PCPLT22";
+  case R_SPARC_PCPLT10: return "R_SPARC_PCPLT10";
+  case R_SPARC_10: return "R_SPARC_10";
+  case R_SPARC_11: return "R_SPARC_11";
+  case R_SPARC_64: return "R_SPARC_64";
+  case R_SPARC_OLO10: return "R_SPARC_OLO10";
+  case R_SPARC_HH22: return "R_SPARC_HH22";
+  case R_SPARC_HM10: return "R_SPARC_HM10";
+  case R_SPARC_LM22: return "R_SPARC_LM22";
+  case R_SPARC_PC_HH22: return "R_SPARC_PC_HH22";
+  case R_SPARC_PC_HM10: return "R_SPARC_PC_HM10";
+  case R_SPARC_PC_LM22: return "R_SPARC_PC_LM22";
+  case R_SPARC_WDISP16: return "R_SPARC_WDISP16";
+  case R_SPARC_WDISP19: return "R_SPARC_WDISP19";
+  case R_SPARC_7: return "R_SPARC_7";
+  case R_SPARC_5: return "R_SPARC_5";
+  case R_SPARC_6: return "R_SPARC_6";
+  case R_SPARC_DISP64: return "R_SPARC_DISP64";
+  case R_SPARC_PLT64: return "R_SPARC_PLT64";
+  case R_SPARC_HIX22: return "R_SPARC_HIX22";
+  case R_SPARC_LOX10: return "R_SPARC_LOX10";
+  case R_SPARC_H44: return "R_SPARC_H44";
+  case R_SPARC_M44: return "R_SPARC_M44";
+  case R_SPARC_L44: return "R_SPARC_L44";
+  case R_SPARC_REGISTER: return "R_SPARC_REGISTER";
+  case R_SPARC_UA64: return "R_SPARC_UA64";
+  case R_SPARC_UA16: return "R_SPARC_UA16";
+  case R_SPARC_TLS_GD_HI22: return "R_SPARC_TLS_GD_HI22";
+  case R_SPARC_TLS_GD_LO10: return "R_SPARC_TLS_GD_LO10";
+  case R_SPARC_TLS_GD_ADD: return "R_SPARC_TLS_GD_ADD";
+  case R_SPARC_TLS_GD_CALL: return "R_SPARC_TLS_GD_CALL";
+  case R_SPARC_TLS_LDM_HI22: return "R_SPARC_TLS_LDM_HI22";
+  case R_SPARC_TLS_LDM_LO10: return "R_SPARC_TLS_LDM_LO10";
+  case R_SPARC_TLS_LDM_ADD: return "R_SPARC_TLS_LDM_ADD";
+  case R_SPARC_TLS_LDM_CALL: return "R_SPARC_TLS_LDM_CALL";
+  case R_SPARC_TLS_LDO_HIX22: return "R_SPARC_TLS_LDO_HIX22";
+  case R_SPARC_TLS_LDO_LOX10: return "R_SPARC_TLS_LDO_LOX10";
+  case R_SPARC_TLS_LDO_ADD: return "R_SPARC_TLS_LDO_ADD";
+  case R_SPARC_TLS_IE_HI22: return "R_SPARC_TLS_IE_HI22";
+  case R_SPARC_TLS_IE_LO10: return "R_SPARC_TLS_IE_LO10";
+  case R_SPARC_TLS_IE_LD: return "R_SPARC_TLS_IE_LD";
+  case R_SPARC_TLS_IE_LDX: return "R_SPARC_TLS_IE_LDX";
+  case R_SPARC_TLS_IE_ADD: return "R_SPARC_TLS_IE_ADD";
+  case R_SPARC_TLS_LE_HIX22: return "R_SPARC_TLS_LE_HIX22";
+  case R_SPARC_TLS_LE_LOX10: return "R_SPARC_TLS_LE_LOX10";
+  case R_SPARC_TLS_DTPMOD32: return "R_SPARC_TLS_DTPMOD32";
+  case R_SPARC_TLS_DTPMOD64: return "R_SPARC_TLS_DTPMOD64";
+  case R_SPARC_TLS_DTPOFF32: return "R_SPARC_TLS_DTPOFF32";
+  case R_SPARC_TLS_DTPOFF64: return "R_SPARC_TLS_DTPOFF64";
+  case R_SPARC_TLS_TPOFF32: return "R_SPARC_TLS_TPOFF32";
+  case R_SPARC_TLS_TPOFF64: return "R_SPARC_TLS_TPOFF64";
+  case R_SPARC_GOTDATA_HIX22: return "R_SPARC_GOTDATA_HIX22";
+  case R_SPARC_GOTDATA_LOX10: return "R_SPARC_GOTDATA_LOX10";
+  case R_SPARC_GOTDATA_OP_HIX22: return "R_SPARC_GOTDATA_OP_HIX22";
+  case R_SPARC_GOTDATA_OP_LOX10: return "R_SPARC_GOTDATA_OP_LOX10";
+  case R_SPARC_GOTDATA_OP: return "R_SPARC_GOTDATA_OP";
+  case R_SPARC_IRELATIVE: return "R_SPARC_IRELATIVE";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
+//
+// DWARF data types
+//
+
 static constexpr u32 DW_EH_PE_absptr = 0;
 static constexpr u32 DW_EH_PE_omit = 0xff;
 static constexpr u32 DW_EH_PE_uleb128 = 0x01;
@@ -1355,7 +1549,11 @@ static constexpr u32 DW_RLE_base_address = 0x05;
 static constexpr u32 DW_RLE_start_end = 0x06;
 static constexpr u32 DW_RLE_start_length = 0x07;
 
-struct Elf64Sym {
+//
+// Little-endian ELF types
+//
+
+struct EL64Sym {
   bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
@@ -1388,7 +1586,7 @@ struct Elf64Sym {
   ul64 st_size;
 };
 
-struct Elf32Sym {
+struct EL32Sym {
   bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
@@ -1417,7 +1615,7 @@ struct Elf32Sym {
   ul16 st_shndx;
 };
 
-struct Elf64Shdr {
+struct EL64Shdr {
   ul32 sh_name;
   ul32 sh_type;
   ul64 sh_flags;
@@ -1430,7 +1628,7 @@ struct Elf64Shdr {
   ul64 sh_entsize;
 };
 
-struct Elf32Shdr {
+struct EL32Shdr {
   ul32 sh_name;
   ul32 sh_type;
   ul32 sh_flags;
@@ -1443,7 +1641,7 @@ struct Elf32Shdr {
   ul32 sh_entsize;
 };
 
-struct Elf64Ehdr {
+struct EL64Ehdr {
   u8 e_ident[16];
   ul16 e_type;
   ul16 e_machine;
@@ -1460,7 +1658,7 @@ struct Elf64Ehdr {
   ul16 e_shstrndx;
 };
 
-struct Elf32Ehdr {
+struct EL32Ehdr {
   u8 e_ident[16];
   ul16 e_type;
   ul16 e_machine;
@@ -1477,7 +1675,7 @@ struct Elf32Ehdr {
   ul16 e_shstrndx;
 };
 
-struct Elf64Phdr {
+struct EL64Phdr {
   ul32 p_type;
   ul32 p_flags;
   ul64 p_offset;
@@ -1488,7 +1686,7 @@ struct Elf64Phdr {
   ul64 p_align;
 };
 
-struct Elf32Phdr {
+struct EL32Phdr {
   ul32 p_type;
   ul32 p_offset;
   ul32 p_vaddr;
@@ -1517,9 +1715,9 @@ struct Elf32Phdr {
 // - We also always write an addend to the relocated place even though
 //   it's redundant for RELA. If RELA, the written value will be
 //   ovewritten by the dynamic linker at load-time.
-struct Elf64Rel {
-  Elf64Rel() = default;
-  Elf64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
+struct EL64Rel {
+  EL64Rel() = default;
+  EL64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ul64 r_offset;
@@ -1527,9 +1725,9 @@ struct Elf64Rel {
   ul32 r_sym;
 };
 
-struct Elf32Rel {
-  Elf32Rel() = default;
-  Elf32Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
+struct EL32Rel {
+  EL32Rel() = default;
+  EL32Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ul32 r_offset;
@@ -1537,9 +1735,9 @@ struct Elf32Rel {
   ul24 r_sym;
 };
 
-struct Elf64Rela {
-  Elf64Rela() = default;
-  Elf64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
+struct EL64Rela {
+  EL64Rela() = default;
+  EL64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ul64 r_offset;
@@ -1548,9 +1746,9 @@ struct Elf64Rela {
   il64 r_addend;
 };
 
-struct Elf32Rela {
-  Elf32Rela() = default;
-  Elf32Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
+struct EL32Rela {
+  EL32Rela() = default;
+  EL32Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ul32 r_offset;
@@ -1559,17 +1757,17 @@ struct Elf32Rela {
   il32 r_addend;
 };
 
-struct Elf64Dyn {
+struct EL64Dyn {
   ul64 d_tag;
   ul64 d_val;
 };
 
-struct Elf32Dyn {
+struct EL32Dyn {
   ul32 d_tag;
   ul32 d_val;
 };
 
-struct ElfVerneed {
+struct ELVerneed {
   ul16 vn_version;
   ul16 vn_cnt;
   ul32 vn_file;
@@ -1577,7 +1775,7 @@ struct ElfVerneed {
   ul32 vn_next;
 };
 
-struct ElfVernaux {
+struct ELVernaux {
   ul32 vna_hash;
   ul16 vna_flags;
   ul16 vna_other;
@@ -1585,7 +1783,7 @@ struct ElfVernaux {
   ul32 vna_next;
 };
 
-struct ElfVerdef {
+struct ELVerdef {
   ul16 vd_version;
   ul16 vd_flags;
   ul16 vd_ndx;
@@ -1595,29 +1793,279 @@ struct ElfVerdef {
   ul32 vd_next;
 };
 
-struct ElfVerdaux {
+struct ELVerdaux {
   ul32 vda_name;
   ul32 vda_next;
 };
 
-struct Elf64Chdr {
+struct EL64Chdr {
   ul32 ch_type;
   ul32 ch_reserved;
   ul64 ch_size;
   ul64 ch_addralign;
 };
 
-struct Elf32Chdr {
+struct EL32Chdr {
   ul32 ch_type;
   ul32 ch_size;
   ul32 ch_addralign;
 };
 
-struct ElfNhdr {
+struct ELNhdr {
   ul32 n_namesz;
   ul32 n_descsz;
   ul32 n_type;
 };
+
+//
+// Big-endian ELF types
+//
+
+struct EB64Sym {
+  bool is_defined() const { return !is_undef(); }
+  bool is_undef() const { return st_shndx == SHN_UNDEF; }
+  bool is_abs() const { return st_shndx == SHN_ABS; }
+  bool is_common() const { return st_shndx == SHN_COMMON; }
+  bool is_weak() const { return st_bind == STB_WEAK; }
+  bool is_undef_weak() const { return is_undef() && is_weak(); }
+
+  ub32 st_name;
+
+#if __LITTLE_ENDIAN__
+  u8 st_type : 4;
+  u8 st_bind : 4;
+  u8 st_visibility : 2;
+  u8 : 3;
+  u8 ppc64_local_entry : 3;
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 ppc64_local_entry : 3;
+  u8 : 3;
+  u8 st_visibility : 2;
+#endif
+
+  ub16 st_shndx;
+  ub64 st_value;
+  ub64 st_size;
+};
+
+struct EB32Sym {
+  bool is_defined() const { return !is_undef(); }
+  bool is_undef() const { return st_shndx == SHN_UNDEF; }
+  bool is_abs() const { return st_shndx == SHN_ABS; }
+  bool is_common() const { return st_shndx == SHN_COMMON; }
+  bool is_weak() const { return st_bind == STB_WEAK; }
+  bool is_undef_weak() const { return is_undef() && is_weak(); }
+
+  ub32 st_name;
+  ub32 st_value;
+  ub32 st_size;
+
+#if __LITTLE_ENDIAN__
+  u8 st_type : 4;
+  u8 st_bind : 4;
+  u8 st_visibility : 2;
+  u8 : 3;
+  u8 ppc64_local_entry : 3;
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 ppc64_local_entry : 3;
+  u8 : 3;
+  u8 st_visibility : 2;
+#endif
+
+  ub16 st_shndx;
+};
+
+struct EB64Shdr {
+  ub32 sh_name;
+  ub32 sh_type;
+  ub64 sh_flags;
+  ub64 sh_addr;
+  ub64 sh_offset;
+  ub64 sh_size;
+  ub32 sh_link;
+  ub32 sh_info;
+  ub64 sh_addralign;
+  ub64 sh_entsize;
+};
+
+struct EB32Shdr {
+  ub32 sh_name;
+  ub32 sh_type;
+  ub32 sh_flags;
+  ub32 sh_addr;
+  ub32 sh_offset;
+  ub32 sh_size;
+  ub32 sh_link;
+  ub32 sh_info;
+  ub32 sh_addralign;
+  ub32 sh_entsize;
+};
+
+struct EB64Ehdr {
+  u8 e_ident[16];
+  ub16 e_type;
+  ub16 e_machine;
+  ub32 e_version;
+  ub64 e_entry;
+  ub64 e_phoff;
+  ub64 e_shoff;
+  ub32 e_flags;
+  ub16 e_ehsize;
+  ub16 e_phentsize;
+  ub16 e_phnum;
+  ub16 e_shentsize;
+  ub16 e_shnum;
+  ub16 e_shstrndx;
+};
+
+struct EB32Ehdr {
+  u8 e_ident[16];
+  ub16 e_type;
+  ub16 e_machine;
+  ub32 e_version;
+  ub32 e_entry;
+  ub32 e_phoff;
+  ub32 e_shoff;
+  ub32 e_flags;
+  ub16 e_ehsize;
+  ub16 e_phentsize;
+  ub16 e_phnum;
+  ub16 e_shentsize;
+  ub16 e_shnum;
+  ub16 e_shstrndx;
+};
+
+struct EB64Phdr {
+  ub32 p_type;
+  ub32 p_flags;
+  ub64 p_offset;
+  ub64 p_vaddr;
+  ub64 p_paddr;
+  ub64 p_filesz;
+  ub64 p_memsz;
+  ub64 p_align;
+};
+
+struct EB32Phdr {
+  ub32 p_type;
+  ub32 p_offset;
+  ub32 p_vaddr;
+  ub32 p_paddr;
+  ub32 p_filesz;
+  ub32 p_memsz;
+  ub32 p_flags;
+  ub32 p_align;
+};
+
+struct EB64Rel {
+  EB64Rel() = default;
+  EB64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
+    : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
+
+  ub64 r_offset;
+  ub32 r_type;
+  ub32 r_sym;
+};
+
+struct EB32Rel {
+  EB32Rel() = default;
+  EB32Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
+    : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
+
+  ub32 r_offset;
+  u8 r_type;
+  ub24 r_sym;
+};
+
+struct EB64Rela {
+  EB64Rela() = default;
+  EB64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
+    : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
+
+  ub64 r_offset;
+  ub32 r_type;
+  ub32 r_sym;
+  ib64 r_addend;
+};
+
+struct EB32Rela {
+  EB32Rela() = default;
+  EB32Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
+    : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
+
+  ub32 r_offset;
+  u8 r_type;
+  ub24 r_sym;
+  ib32 r_addend;
+};
+
+struct EB64Dyn {
+  ub64 d_tag;
+  ub64 d_val;
+};
+
+struct EB32Dyn {
+  ub32 d_tag;
+  ub32 d_val;
+};
+
+struct EBVerneed {
+  ub16 vn_version;
+  ub16 vn_cnt;
+  ub32 vn_file;
+  ub32 vn_aux;
+  ub32 vn_next;
+};
+
+struct EBVernaux {
+  ub32 vna_hash;
+  ub16 vna_flags;
+  ub16 vna_other;
+  ub32 vna_name;
+  ub32 vna_next;
+};
+
+struct EBVerdef {
+  ub16 vd_version;
+  ub16 vd_flags;
+  ub16 vd_ndx;
+  ub16 vd_cnt;
+  ub32 vd_hash;
+  ub32 vd_aux;
+  ub32 vd_next;
+};
+
+struct EBVerdaux {
+  ub32 vda_name;
+  ub32 vda_next;
+};
+
+struct EB64Chdr {
+  ub32 ch_type;
+  ub32 ch_reserved;
+  ub64 ch_size;
+  ub64 ch_addralign;
+};
+
+struct EB32Chdr {
+  ub32 ch_type;
+  ub32 ch_size;
+  ub32 ch_addralign;
+};
+
+struct EBNhdr {
+  ub32 n_namesz;
+  ub32 n_descsz;
+  ub32 n_type;
+};
+
+//
+// Machine descriptions
+//
 
 template <typename E>
 using Word = std::conditional_t<E::is_64, ul64, ul32>;
@@ -1665,13 +2113,18 @@ struct X86_64 {
   static constexpr u32 tls_dtv_offset = 0;
 };
 
-template <> struct ElfSym<X86_64>  : Elf64Sym {};
-template <> struct ElfShdr<X86_64> : Elf64Shdr {};
-template <> struct ElfEhdr<X86_64> : Elf64Ehdr {};
-template <> struct ElfPhdr<X86_64> : Elf64Phdr {};
-template <> struct ElfRel<X86_64>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
-template <> struct ElfDyn<X86_64>  : Elf64Dyn {};
-template <> struct ElfChdr<X86_64> : Elf64Chdr {};
+template <> struct ElfSym<X86_64>     : EL64Sym {};
+template <> struct ElfShdr<X86_64>    : EL64Shdr {};
+template <> struct ElfEhdr<X86_64>    : EL64Ehdr {};
+template <> struct ElfPhdr<X86_64>    : EL64Phdr {};
+template <> struct ElfRel<X86_64>     : EL64Rela { using EL64Rela::EL64Rela; };
+template <> struct ElfDyn<X86_64>     : EL64Dyn {};
+template <> struct ElfVerneed<X86_64> : ELVerneed {};
+template <> struct ElfVernaux<X86_64> : ELVernaux {};
+template <> struct ElfVerdef<X86_64>  : ELVerdef {};
+template <> struct ElfVerdaux<X86_64> : ELVerdaux {};
+template <> struct ElfChdr<X86_64>    : EL64Chdr {};
+template <> struct ElfNhdr<X86_64>    : ELNhdr {};
 
 struct I386 {
   static constexpr u32 R_COPY = R_386_COPY;
@@ -1695,13 +2148,18 @@ struct I386 {
   static constexpr u32 tls_dtv_offset = 0;
 };
 
-template <> struct ElfSym<I386>  : Elf32Sym {};
-template <> struct ElfShdr<I386> : Elf32Shdr {};
-template <> struct ElfEhdr<I386> : Elf32Ehdr {};
-template <> struct ElfPhdr<I386> : Elf32Phdr {};
-template <> struct ElfRel<I386>  : Elf32Rel { using Elf32Rel::Elf32Rel; };
-template <> struct ElfDyn<I386>  : Elf32Dyn {};
-template <> struct ElfChdr<I386> : Elf32Chdr {};
+template <> struct ElfSym<I386>     : EL32Sym {};
+template <> struct ElfShdr<I386>    : EL32Shdr {};
+template <> struct ElfEhdr<I386>    : EL32Ehdr {};
+template <> struct ElfPhdr<I386>    : EL32Phdr {};
+template <> struct ElfRel<I386>     : EL32Rel { using EL32Rel::EL32Rel; };
+template <> struct ElfDyn<I386>     : EL32Dyn {};
+template <> struct ElfVerneed<I386> : ELVerneed {};
+template <> struct ElfVernaux<I386> : ELVernaux {};
+template <> struct ElfVerdef<I386>  : ELVerdef {};
+template <> struct ElfVerdaux<I386> : ELVerdaux {};
+template <> struct ElfChdr<I386>    : EL32Chdr {};
+template <> struct ElfNhdr<I386>    : ELNhdr {};
 
 struct ARM64 {
   static constexpr u32 R_COPY = R_AARCH64_COPY;
@@ -1727,13 +2185,18 @@ struct ARM64 {
   static constexpr u32 thunk_size = 12;
 };
 
-template <> struct ElfSym<ARM64>  : Elf64Sym {};
-template <> struct ElfShdr<ARM64> : Elf64Shdr {};
-template <> struct ElfEhdr<ARM64> : Elf64Ehdr {};
-template <> struct ElfPhdr<ARM64> : Elf64Phdr {};
-template <> struct ElfRel<ARM64>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
-template <> struct ElfDyn<ARM64>  : Elf64Dyn {};
-template <> struct ElfChdr<ARM64> : Elf64Chdr {};
+template <> struct ElfSym<ARM64>     : EL64Sym {};
+template <> struct ElfShdr<ARM64>    : EL64Shdr {};
+template <> struct ElfEhdr<ARM64>    : EL64Ehdr {};
+template <> struct ElfPhdr<ARM64>    : EL64Phdr {};
+template <> struct ElfRel<ARM64>     : EL64Rela { using EL64Rela::EL64Rela; };
+template <> struct ElfDyn<ARM64>     : EL64Dyn {};
+template <> struct ElfVerneed<ARM64> : ELVerneed {};
+template <> struct ElfVernaux<ARM64> : ELVernaux {};
+template <> struct ElfVerdef<ARM64>  : ELVerdef {};
+template <> struct ElfVerdaux<ARM64> : ELVerdaux {};
+template <> struct ElfChdr<ARM64>    : EL64Chdr {};
+template <> struct ElfNhdr<ARM64>    : ELNhdr {};
 
 struct ARM32 {
   static constexpr u32 R_COPY = R_ARM_COPY;
@@ -1759,13 +2222,18 @@ struct ARM32 {
   static constexpr u32 thunk_size = 20;
 };
 
-template <> struct ElfSym<ARM32>  : Elf32Sym {};
-template <> struct ElfShdr<ARM32> : Elf32Shdr {};
-template <> struct ElfEhdr<ARM32> : Elf32Ehdr {};
-template <> struct ElfPhdr<ARM32> : Elf32Phdr {};
-template <> struct ElfRel<ARM32>  : Elf32Rel { using Elf32Rel::Elf32Rel; };
-template <> struct ElfDyn<ARM32>  : Elf32Dyn {};
-template <> struct ElfChdr<ARM32> : Elf32Chdr {};
+template <> struct ElfSym<ARM32>     : EL32Sym {};
+template <> struct ElfShdr<ARM32>    : EL32Shdr {};
+template <> struct ElfEhdr<ARM32>    : EL32Ehdr {};
+template <> struct ElfPhdr<ARM32>    : EL32Phdr {};
+template <> struct ElfRel<ARM32>     : EL32Rel { using EL32Rel::EL32Rel; };
+template <> struct ElfDyn<ARM32>     : EL32Dyn {};
+template <> struct ElfVerneed<ARM32> : ELVerneed {};
+template <> struct ElfVernaux<ARM32> : ELVernaux {};
+template <> struct ElfVerdef<ARM32>  : ELVerdef {};
+template <> struct ElfVerdaux<ARM32> : ELVerdaux {};
+template <> struct ElfChdr<ARM32>    : EL32Chdr {};
+template <> struct ElfNhdr<ARM32>    : ELNhdr {};
 
 struct RISCV64 {
   static constexpr u32 R_COPY = R_RISCV_COPY;
@@ -1810,13 +2278,18 @@ struct RISCV64 {
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
-template <> struct ElfSym<RISCV64>  : Elf64Sym {};
-template <> struct ElfShdr<RISCV64> : Elf64Shdr {};
-template <> struct ElfEhdr<RISCV64> : Elf64Ehdr {};
-template <> struct ElfPhdr<RISCV64> : Elf64Phdr {};
-template <> struct ElfRel<RISCV64>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
-template <> struct ElfDyn<RISCV64>  : Elf64Dyn {};
-template <> struct ElfChdr<RISCV64> : Elf64Chdr {};
+template <> struct ElfSym<RISCV64>     : EL64Sym {};
+template <> struct ElfShdr<RISCV64>    : EL64Shdr {};
+template <> struct ElfEhdr<RISCV64>    : EL64Ehdr {};
+template <> struct ElfPhdr<RISCV64>    : EL64Phdr {};
+template <> struct ElfRel<RISCV64>     : EL64Rela { using EL64Rela::EL64Rela; };
+template <> struct ElfDyn<RISCV64>     : EL64Dyn {};
+template <> struct ElfVerneed<RISCV64> : ELVerneed {};
+template <> struct ElfVernaux<RISCV64> : ELVernaux {};
+template <> struct ElfVerdef<RISCV64>  : ELVerdef {};
+template <> struct ElfVerdaux<RISCV64> : ELVerdaux {};
+template <> struct ElfChdr<RISCV64>    : EL64Chdr {};
+template <> struct ElfNhdr<RISCV64>    : ELNhdr {};
 
 struct RISCV32 {
   static constexpr u32 R_COPY = R_RISCV_COPY;
@@ -1839,13 +2312,18 @@ struct RISCV32 {
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
-template <> struct ElfSym<RISCV32>  : Elf32Sym {};
-template <> struct ElfShdr<RISCV32> : Elf32Shdr {};
-template <> struct ElfEhdr<RISCV32> : Elf32Ehdr {};
-template <> struct ElfPhdr<RISCV32> : Elf32Phdr {};
-template <> struct ElfRel<RISCV32>  : Elf32Rela { using Elf32Rela::Elf32Rela; };
-template <> struct ElfDyn<RISCV32>  : Elf32Dyn {};
-template <> struct ElfChdr<RISCV32> : Elf32Chdr {};
+template <> struct ElfSym<RISCV32>     : EL32Sym {};
+template <> struct ElfShdr<RISCV32>    : EL32Shdr {};
+template <> struct ElfEhdr<RISCV32>    : EL32Ehdr {};
+template <> struct ElfPhdr<RISCV32>    : EL32Phdr {};
+template <> struct ElfRel<RISCV32>     : EL32Rela { using EL32Rela::EL32Rela; };
+template <> struct ElfDyn<RISCV32>     : EL32Dyn {};
+template <> struct ElfVerneed<RISCV32> : ELVerneed {};
+template <> struct ElfVernaux<RISCV32> : ELVernaux {};
+template <> struct ElfVerdef<RISCV32>  : ELVerdef {};
+template <> struct ElfVerdaux<RISCV32> : ELVerdaux {};
+template <> struct ElfChdr<RISCV32>    : EL32Chdr {};
+template <> struct ElfNhdr<RISCV32>    : ELNhdr {};
 
 struct PPC64LE {
   static constexpr u32 R_COPY = R_PPC64_COPY;
@@ -1870,12 +2348,51 @@ struct PPC64LE {
   static constexpr u32 thunk_size = 20;
 };
 
-template <> struct ElfSym<PPC64LE>  : Elf64Sym {};
-template <> struct ElfShdr<PPC64LE> : Elf64Shdr {};
-template <> struct ElfEhdr<PPC64LE> : Elf64Ehdr {};
-template <> struct ElfPhdr<PPC64LE> : Elf64Phdr {};
-template <> struct ElfRel<PPC64LE>  : Elf64Rela { using Elf64Rela::Elf64Rela; };
-template <> struct ElfDyn<PPC64LE>  : Elf64Dyn {};
-template <> struct ElfChdr<PPC64LE> : Elf64Chdr {};
+template <> struct ElfSym<PPC64LE>     : EL64Sym {};
+template <> struct ElfShdr<PPC64LE>    : EL64Shdr {};
+template <> struct ElfEhdr<PPC64LE>    : EL64Ehdr {};
+template <> struct ElfPhdr<PPC64LE>    : EL64Phdr {};
+template <> struct ElfRel<PPC64LE>     : EL64Rela { using EL64Rela::EL64Rela; };
+template <> struct ElfDyn<PPC64LE>     : EL64Dyn {};
+template <> struct ElfVerneed<PPC64LE> : ELVerneed {};
+template <> struct ElfVernaux<PPC64LE> : ELVernaux {};
+template <> struct ElfVerdef<PPC64LE>  : ELVerdef {};
+template <> struct ElfVerdaux<PPC64LE> : ELVerdaux {};
+template <> struct ElfChdr<PPC64LE>    : EL64Chdr {};
+template <> struct ElfNhdr<PPC64LE>    : ELNhdr {};
+
+struct SPARC64 {
+  static constexpr u32 R_COPY = R_SPARC_COPY;
+  static constexpr u32 R_GLOB_DAT = R_SPARC_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_SPARC_JMP_SLOT;
+  static constexpr u32 R_ABS = R_SPARC_64;
+  static constexpr u32 R_RELATIVE = R_SPARC_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_SPARC_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_SPARC_TLS_DTPOFF64;
+  static constexpr u32 R_TPOFF = R_SPARC_TLS_TPOFF64;
+  static constexpr u32 R_DTPMOD = R_SPARC_TLS_DTPMOD64;
+
+  static constexpr bool is_64 = true;
+  static constexpr MachineType machine_type = MachineType::SPARC64;
+  static constexpr u32 page_size = 8192;
+  static constexpr u32 e_machine = EM_SPARC64;
+  static constexpr u32 plt_hdr_size = 60;
+  static constexpr u32 plt_size = 4;
+  static constexpr u32 pltgot_size = 20;
+  static constexpr u32 tls_dtv_offset = 0;
+};
+
+template <> struct ElfSym<SPARC64>     : EB64Sym {};
+template <> struct ElfShdr<SPARC64>    : EB64Shdr {};
+template <> struct ElfEhdr<SPARC64>    : EB64Ehdr {};
+template <> struct ElfPhdr<SPARC64>    : EB64Phdr {};
+template <> struct ElfRel<SPARC64>     : EB64Rela { using EB64Rela::EB64Rela; };
+template <> struct ElfDyn<SPARC64>     : EB64Dyn {};
+template <> struct ElfVerneed<SPARC64> : EBVerneed {};
+template <> struct ElfVernaux<SPARC64> : EBVernaux {};
+template <> struct ElfVerdef<SPARC64>  : EBVerdef {};
+template <> struct ElfVerdaux<SPARC64> : EBVerdaux {};
+template <> struct ElfChdr<SPARC64>    : EB64Chdr {};
+template <> struct ElfNhdr<SPARC64>    : EBNhdr {};
 
 } // namespace mold::elf

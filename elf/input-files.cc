@@ -103,7 +103,7 @@ u32 ObjectFile<E>::read_note_gnu_property(Context<E> &ctx,
   u32 ret = 0;
 
   while (!data.empty()) {
-    ElfNhdr &hdr = *(ElfNhdr *)data.data();
+    ElfNhdr<E> &hdr = *(ElfNhdr<E> *)data.data();
     data = data.substr(sizeof(hdr));
 
     std::string_view name = data.substr(0, hdr.n_namesz - 1);
@@ -1420,18 +1420,18 @@ std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
   std::string_view verdef = this->get_string(ctx, *verdef_sec);
   std::string_view strtab = this->get_string(ctx, verdef_sec->sh_link);
 
-  ElfVerdef *ver = (ElfVerdef *)verdef.data();
+  ElfVerdef<E> *ver = (ElfVerdef<E> *)verdef.data();
 
   for (;;) {
     if (ret.size() <= ver->vd_ndx)
       ret.resize(ver->vd_ndx + 1);
 
-    ElfVerdaux *aux = (ElfVerdaux *)((u8 *)ver + ver->vd_aux);
+    ElfVerdaux<E> *aux = (ElfVerdaux<E> *)((u8 *)ver + ver->vd_aux);
     ret[ver->vd_ndx] = strtab.data() + aux->vda_name;
     if (!ver->vd_next)
       break;
 
-    ver = (ElfVerdef *)((u8 *)ver + ver->vd_next);
+    ver = (ElfVerdef<E> *)((u8 *)ver + ver->vd_next);
   }
   return ret;
 }
