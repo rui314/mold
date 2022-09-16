@@ -4,10 +4,10 @@
 // bytes immediates and can jump to anywhere within PC ± 2 GiB.
 //
 // In fact, ARM32's branch instructions can jump only within ±16 MiB
-// and ARM64's ±128 MiB. If a branch target is further than that, we
-// need to let it branch to a linker-synthesized code sequence that
-// construct a full 32 bit address in a register and jump there. That
-// linker-synthesized code is called "thunk".
+// and ARM64's ±128 MiB, for example. If a branch target is further
+// than that, we need to let it branch to a linker-synthesized code
+// sequence that construct a full 32 bit address in a register and
+// jump there. That linker-synthesized code is called "thunk".
 //
 // The function in this file creates thunks.
 
@@ -44,7 +44,7 @@ static constexpr i64 jump_bits =
 // this number.
 //
 // 5 MiB is a safety margin; we assume that there's no crazy big input
-// .text segment that is larger than 5 MiB.
+// .text section that is larger than 5 MiB.
 template <typename E>
 static constexpr i64 max_distance = (1LL << (jump_bits<E> - 1)) - 5 * 1024 * 1024;
 
@@ -138,14 +138,16 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
     if (is_reachable(ctx, isec, sym, rel))
       continue;
 
-    // If the symbol is already in another thunk, reuse it.
+    // This relocation needs a thunk. If the symbol is already in a
+    // previous thunk, reuse it.
     if (sym.extra.thunk_idx != -1) {
       range_extn[i].thunk_idx = sym.extra.thunk_idx;
       range_extn[i].sym_idx = sym.extra.thunk_sym_idx;
       continue;
     }
 
-    // Otherwise, add the symbol to the thunk if it's not added already.
+    // Otherwise, add the symbol to the current thunk if it's not
+    // added already.
     range_extn[i].thunk_idx = thunk.thunk_idx;
     range_extn[i].sym_idx = -1;
 
@@ -235,15 +237,13 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     // Scan relocations again to fix symbol offsets in the last thunk.
     tbb::parallel_for_each(members.begin() + b, members.begin() + c,
                            [&](InputSection<E> *isec) {
+      std::span<Symbol<E> *> syms = isec->file.symbols;
       std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
-      std::vector<RangeExtensionRef> &range_extn = isec->extra.range_extn;
+      std::span<RangeExtensionRef> range_extn = isec->extra.range_extn;
 
-      for (i64 i = 0; i < rels.size(); i++) {
-        if (range_extn[i].thunk_idx == thunk.thunk_idx) {
-          Symbol<E> &sym = *isec->file.symbols[rels[i].r_sym];
-          range_extn[i].sym_idx = sym.extra.thunk_sym_idx;
-        }
-      }
+      for (i64 i = 0; i < rels.size(); i++)
+        if (range_extn[i].thunk_idx == thunk.thunk_idx)
+          range_extn[i].sym_idx = syms[rels[i].r_sym]->extra.thunk_sym_idx;
     });
 
     // Move B forward to point to the begining of the next group.
