@@ -1,3 +1,20 @@
+// SPARC is a RISC ISA developed by Sun Microsystems.
+//
+// The byte order of the processor is big-endian. Anything larger than a
+// byte is stored in the "reverse" order compared to little-endian
+// processors such as x86-64.
+//
+// All instructions are 4 bytes long and aligned to 4 bytes boundaries.
+//
+// A notable feature of SPARC is that, unlike other RISC ISAs, it doesn't
+// need range extension thunks. It is because the SPARC's CALL instruction
+// contains a 30 bits immediate. The processor scales it by 4 to extend it
+// to 32 bits (this is doable because all instructions are aligned to 4
+// bytes boundaries, so the least significant two bits are always zero).
+// That means CALL's reach is PC ± 2 GiB, elinating the need of range
+// extension thunks. It comes with the cost that the CALL instruction alone
+// takes 1/4th of the instruction encoding space, though.
+
 #include "mold.h"
 
 namespace mold::elf {
