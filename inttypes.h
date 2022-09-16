@@ -23,18 +23,9 @@
 
 #pragma once
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
-
-#if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
-# if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#  define __LITTLE_ENDIAN__ 1
-# elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#  define __BIG_ENDIAN__ 1
-# else
-#  error "unknwon host byte order"
-# endif
-#endif
 
 namespace mold {
 
@@ -72,16 +63,14 @@ public:
   operator T() const {
     T x = 0;
     memcpy(&x, val, SIZE);
-#ifdef __BIG_ENDIAN__
-    x = bswap(x, SIZE);
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+      x = bswap(x, SIZE);
     return x;
   }
 
   LittleEndian &operator=(T x) {
-#ifdef __BIG_ENDIAN__
-    x = bswap(x, SIZE);
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+      x = bswap(x, SIZE);
     memcpy(val, &x, SIZE);
     return *this;
   }
@@ -143,16 +132,14 @@ public:
   operator T() const {
     T x = 0;
     memcpy(&x, val, SIZE);
-#ifdef __LITTLE_ENDIAN__
-    x = bswap(x, SIZE);
-#endif
+    if constexpr (std::endian::native == std::endian::little)
+      x = bswap(x, SIZE);
     return x;
   }
 
   BigEndian &operator=(T x) {
-#ifdef __LITTLE_ENDIAN__
-    x = bswap(x, SIZE);
-#endif
+    if constexpr (std::endian::native == std::endian::little)
+      x = bswap(x, SIZE);
     memcpy(val, &x, SIZE);
     return *this;
   }

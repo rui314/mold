@@ -1563,24 +1563,11 @@ struct EL64Sym {
 
   ul32 st_name;
 
-#if __LITTLE_ENDIAN__
-  // Bitfield bit order is not defined in C/C++. That said, they are usually
-  // defined from the least significant bit to the most significant bit on
-  // little-endian hosts and in the reverse order on big-endian hosts. So,
-  // we need an #if to represent the same in-memory structure.
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
-#else
-  u8 st_bind : 4;
-  u8 st_type : 4;
-  u8 ppc64_local_entry : 3;
-  u8 : 3;
-  u8 st_visibility : 2;
-#endif
-
   ul16 st_shndx;
   ul64 st_value;
   ul64 st_size;
@@ -1597,21 +1584,11 @@ struct EL32Sym {
   ul32 st_name;
   ul32 st_value;
   ul32 st_size;
-
-#if __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
-#else
-  u8 st_bind : 4;
-  u8 st_type : 4;
-  u8 ppc64_local_entry : 3;
-  u8 : 3;
-  u8 st_visibility : 2;
-#endif
-
   ul16 st_shndx;
 };
 
@@ -1721,14 +1698,8 @@ struct EL64Rel {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ul64 r_offset;
-
-#if __LITTLE_ENDIAN__
   ul32 r_type;
   ul32 r_sym;
-#else
-  ul32 r_sym;
-  ul32 r_type;
-#endif
 };
 
 struct EL32Rel {
@@ -1737,14 +1708,8 @@ struct EL32Rel {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ul32 r_offset;
-
-#if __LITTLE_ENDIAN__
   u8 r_type;
   ul24 r_sym;
-#else
-  ul24 r_sym;
-  u8 r_type;
-#endif
 };
 
 struct EL64Rela {
@@ -1753,15 +1718,8 @@ struct EL64Rela {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ul64 r_offset;
-
-#if __LITTLE_ENDIAN__
   ul32 r_type;
   ul32 r_sym;
-#else
-  ul32 r_sym;
-  ul32 r_type;
-#endif
-
   il64 r_addend;
 };
 
@@ -1771,15 +1729,8 @@ struct EL32Rela {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ul32 r_offset;
-
-#if __LITTLE_ENDIAN__
   u8 r_type;
   ul24 r_sym;
-#else
-  ul24 r_sym;
-  u8 r_type;
-#endif
-
   il32 r_addend;
 };
 
@@ -1856,21 +1807,11 @@ struct EB64Sym {
   bool is_undef_weak() const { return is_undef() && is_weak(); }
 
   ub32 st_name;
-
-#if __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
-#else
-  u8 st_bind : 4;
-  u8 st_type : 4;
-  u8 ppc64_local_entry : 3;
-  u8 : 3;
-  u8 st_visibility : 2;
-#endif
-
   ub16 st_shndx;
   ub64 st_value;
   ub64 st_size;
@@ -1887,21 +1828,11 @@ struct EB32Sym {
   ub32 st_name;
   ub32 st_value;
   ub32 st_size;
-
-#if __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
-#else
-  u8 st_bind : 4;
-  u8 st_type : 4;
-  u8 ppc64_local_entry : 3;
-  u8 : 3;
-  u8 st_visibility : 2;
-#endif
-
   ub16 st_shndx;
 };
 
@@ -1993,14 +1924,8 @@ struct EB64Rel {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ub64 r_offset;
-
-#if __LITTLE_ENDIAN__
   ub32 r_sym;
   ub32 r_type;
-#else
-  ub32 r_type;
-  ub32 r_sym;
-#endif
 };
 
 struct EB32Rel {
@@ -2009,14 +1934,8 @@ struct EB32Rel {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
 
   ub32 r_offset;
-
-#if __LITTLE_ENDIAN__
   ub24 r_sym;
   u8 r_type;
-#else
-  u8 r_type;
-  ub24 r_sym;
-#endif
 };
 
 struct EB64Rela {
@@ -2025,15 +1944,8 @@ struct EB64Rela {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ub64 r_offset;
-
-#if __LITTLE_ENDIAN__
   ub32 r_sym;
   ub32 r_type;
-#else
-  ub32 r_type;
-  ub32 r_sym;
-#endif
-
   il64 r_addend;
 };
 
@@ -2043,15 +1955,8 @@ struct EB32Rela {
     : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
 
   ub32 r_offset;
-
-#if __LITTLE_ENDIAN__
   ub24 r_sym;
   u8 r_type;
-#else
-  u8 r_type;
-  ub24 r_sym;
-#endif
-
   il32 r_addend;
 };
 
