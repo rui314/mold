@@ -17,7 +17,7 @@ mkdir -p $t
 # ASAN doesn't work with LD_PRELOAD
 nm mold-wrapper.so | grep -q '__[at]san_init' && { echo skipped; exit; }
 
-which clang >& /dev/null || { echo skipped; exit; }
+clang --version >& /dev/null || { echo skipped; exit; }
 
 cat <<'EOF' | $CC -xc -c -o $t/a.o -
 #include <stdio.h>
