@@ -30,7 +30,7 @@ cat <<EOF | $CC -c -o $t/b.o -x assembler -
 .quad init2
 EOF
 
-perl -i -pe s/init_xxxxx/init_array/g $t/b.o
+sed -i'' -e 's/init_xxxxx/init_array/g' $t/b.o
 
 cat <<EOF | $CC -c -o $t/c.o -xc -
 #include <stdio.h>
