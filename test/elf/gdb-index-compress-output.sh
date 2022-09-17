@@ -15,7 +15,7 @@ mkdir -p $t
 [ $MACHINE = $(uname -m) ] || { echo skipped; exit; }
 [ $MACHINE = riscv64 -o $MACHINE = riscv32 ] && { echo skipped; exit; }
 
-which gdb >& /dev/null || { echo skipped; exit; }
+command -v gdb >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $CC -c -o $t/a.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -ffunction-sections
 #include <stdio.h>

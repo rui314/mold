@@ -17,7 +17,7 @@ mkdir -p $t
 [ $MACHINE = riscv32 ] && { echo skipped; exit; }
 [ $MACHINE = riscv64 ] && { echo skipped; exit; }
 
-which gdb >& /dev/null || { echo skipped; exit; }
+command -v gdb >& /dev/null || { echo skipped; exit; }
 
 echo 'int main() {}' | $CC -o /dev/null -xc -gdwarf-3 -g - >& /dev/null ||
   { echo skipped; exit; }

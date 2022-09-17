@@ -12,7 +12,7 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-which llvm-readelf >& /dev/null || { echo skipped; exit; }
+command -v llvm-readelf >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $CC -o $t/a.o -fPIC -c -xc -
 #include <stdio.h>
