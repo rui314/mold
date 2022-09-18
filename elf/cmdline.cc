@@ -1048,6 +1048,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
 
+  if (!ctx.arg.apply_dynamic_relocs && !is_rela<E>)
+    Fatal(ctx) << "--no-apply-dynamic-relocs may not be used on "
+               << E::machine_type;
+
   if (ctx.arg.thread_count == 0)
     ctx.arg.thread_count = get_default_thread_count();
 
