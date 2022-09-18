@@ -475,7 +475,7 @@ struct GotEntry {
 
   i64 idx = 0;
   u64 val = 0;
-  i64 r_type = 0;
+  i64 r_type = R_NONE;
   Symbol<E> *sym = nullptr;
 };
 

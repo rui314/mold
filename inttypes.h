@@ -39,14 +39,10 @@ typedef int64_t i64;
 template <typename T>
 static inline T bswap(T val) {
   switch (sizeof(T)) {
-  case 2:
-    return __builtin_bswap16(val);
-  case 4:
-    return __builtin_bswap32(val);
-  case 8:
-    return __builtin_bswap64(val);
-  default:
-    __builtin_unreachable();
+  case 2:  return __builtin_bswap16(val);
+  case 4:  return __builtin_bswap32(val);
+  case 8:  return __builtin_bswap64(val);
+  default: __builtin_unreachable();
   }
 }
 
@@ -76,9 +72,9 @@ public:
   }
 
   LittleEndian &operator=(T x) requires (SIZE == 3) {
-    val[0] = x;
-    val[1] = x >> 8;
     val[2] = x >> 16;
+    val[1] = x >> 8;
+    val[0] = x;
     return *this;
   }
 

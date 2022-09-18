@@ -28,6 +28,32 @@ template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
   memset(buf, 0, this->shdr.sh_size);
+
+  static ub32 plt[] = {
+    0x0300'0000, // sethi (. - .PLT0), %g1
+    0x3068'0000, // ba,a  %xcc, .PLT1
+    0x0100'0000, // nop
+    0x0100'0000, // nop
+    0x0100'0000, // nop
+    0x0100'0000, // nop
+    0x0100'0000, // nop
+    0x0100'0000, // nop
+  };
+
+  static_assert(sizeof(plt) == E::plt_size);
+
+  for (i64 i = 0; i < symbols.size(); i++) {
+    Symbol<E> &sym = *symbols[i];
+    u8 *loc = buf + E::plt_hdr_size + i * E::plt_size;
+    memcpy(loc, plt, sizeof(plt));
+
+    u64 plt0 = ctx.plt->shdr.sh_addr;
+    u64 plt1 = ctx.plt->shdr.sh_addr + E::plt_size;
+    u64 ent_addr = sym.get_plt_addr(ctx);
+
+    *(ub32 *)(loc + 0) |= bits(ent_addr - plt0, 21, 0);
+    *(ub32 *)(loc + 4) |= bits(plt1 - ent_addr - 4, 20, 2);
+  }
 }
 
 template <>
