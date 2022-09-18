@@ -201,8 +201,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A - P, 41, 32);
       break;
     case R_SPARC_WDISP16: {
-      i64 val = (S + A - P) >> 2;
-      *(ub16 *)loc |= (bit(val, 14) << 21) | bits(val, 13, 0);
+      i64 val = S + A - P;
+      *(ub16 *)loc |= (bit(val, 16) << 21) | bits(val, 15, 2);
       break;
     }
     case R_SPARC_WDISP19:

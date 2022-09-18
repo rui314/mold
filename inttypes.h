@@ -4,11 +4,8 @@
 // reasons:
 //
 // 1. mold is always a cross linker and should not depend on what host it
-//    is running on. In theory, users should be able to run mold on a
-//    big-endian PowerPC machine to create a little-endian RV64 binary,
-//    for example. So we don't want to depend on host byte order. Note
-//    that we do not support any big-endian architecture as a target,
-//    though.
+//    is running on. Users should be able to run mold on a big-endian
+//    SPARC machine to create a little-endian RV64 binary, for example.
 //
 // 2. Even though data members in all ELF data strucutres are naturally
 //    aligned, they are not guaranteed to be aligned on memory. Because
