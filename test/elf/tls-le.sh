@@ -16,7 +16,7 @@ if [ $MACHINE = x86_64 -o $MACHINE = i386 -o $MACHINE = i686 ]; then
   mtls=-mtls-dialect=gnu
 elif [ $MACHINE = aarch64 ]; then
   mtls=-mtls-dialect=trad
-elif [ $MACHINE '!=' riscv64 -a $MACHINE '!=' riscv32 ]; then
+elif [[ $MACHINE != riscv* ]] && [[ $MACHINE != sparc64 ]]; then
   echo skipped
   exit
 fi

@@ -16,6 +16,7 @@
 // takes 1/4th of the instruction encoding space, though.
 //
 // https://docs.oracle.com/cd/E36784_01/html/E36857/chapter6-62988.html
+// https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter8-40/index.html
 
 #include "mold.h"
 
@@ -87,6 +88,9 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 
   switch (rel.r_type) {
   case R_NONE:
+    return;
+  case R_SPARC_DISP32:
+    *(ub32 *)loc = val - this->shdr.sh_addr - offset;
     return;
   default:
     Fatal(ctx) << "unknown relocation in ehframe: " << rel;
@@ -273,8 +277,51 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_L44:
       *(ub32 *)loc |= bits(S + A, 11, 0);
       break;
+    case R_SPARC_TLS_GD_HI22:
+      *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 31, 10);
+      break;
+    case R_SPARC_TLS_GD_LO10:
+      *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 9, 0);
+      break;
+    case R_SPARC_TLS_GD_CALL:
+    case R_SPARC_TLS_LDM_CALL: {
+      Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
+      *(ub32 *)loc |= bits(sym2->get_addr(ctx) + A - P, 31, 2);
+      break;
+    }
+    case R_SPARC_TLS_LDM_HI22:
+      *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 31, 10);
+      break;
+    case R_SPARC_TLS_LDM_LO10:
+      *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 9, 0);
+      break;
+    case R_SPARC_TLS_LDO_HIX22:
+      *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 31, 10);
+      break;
+    case R_SPARC_TLS_LDO_LOX10:
+      *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 9, 0);
+      break;
+    case R_SPARC_TLS_IE_HI22:
+      *(ub32 *)loc |= bits(sym.get_gottp_addr(ctx) + A - GOT, 31, 10);
+      break;
+    case R_SPARC_TLS_IE_LO10:
+      *(ub32 *)loc |= bits(sym.get_gottp_addr(ctx) + A - GOT, 9, 0);
+      break;
+    case R_SPARC_TLS_LE_HIX22:
+      *(ub32 *)loc |= bits(~(S + A - ctx.tp_addr), 31, 10);
+      break;
+    case R_SPARC_TLS_LE_LOX10:
+      *(ub32 *)loc |= bits(S + A - ctx.tp_addr, 9, 0) | 0b0001'1100'0000'0000;
+      break;
     case R_SPARC_SIZE32:
       *(ub32 *)loc = sym.esym().st_size + A;
+      break;
+    case R_SPARC_TLS_GD_ADD:
+    case R_SPARC_TLS_LDM_ADD:
+    case R_SPARC_TLS_LDO_ADD:
+    case R_SPARC_TLS_IE_LD:
+    case R_SPARC_TLS_IE_LDX:
+    case R_SPARC_TLS_IE_ADD:
       break;
     default:
       Fatal(ctx) << *this << ": apply_reloc_alloc relocation: " << rel;
@@ -435,6 +482,35 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_PC_HH22:
       scan_pcrel_rel(ctx, sym, rel);
       break;
+    case R_SPARC_TLS_GD_HI22:
+    case R_SPARC_TLS_GD_LO10:
+    case R_SPARC_TLS_GD_ADD:
+      sym.flags |= NEEDS_TLSGD;
+      break;
+    case R_SPARC_TLS_LDM_HI22:
+    case R_SPARC_TLS_LDM_LO10:
+    case R_SPARC_TLS_LDM_ADD:
+    case R_SPARC_TLS_LDO_HIX22:
+    case R_SPARC_TLS_LDO_LOX10:
+    case R_SPARC_TLS_LDO_ADD:
+      ctx.needs_tlsld = true;
+      break;
+    case R_SPARC_TLS_IE_HI22:
+    case R_SPARC_TLS_IE_LO10:
+    case R_SPARC_TLS_LE_HIX22:
+    case R_SPARC_TLS_LE_LOX10:
+    case R_SPARC_TLS_IE_LD:
+    case R_SPARC_TLS_IE_LDX:
+    case R_SPARC_TLS_IE_ADD:
+      sym.flags |= NEEDS_GOTTP;
+      break;
+    case R_SPARC_TLS_GD_CALL:
+    case R_SPARC_TLS_LDM_CALL: {
+      Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
+      if (sym2->is_imported)
+        sym2->flags |= NEEDS_PLT;
+      break;
+    }
     case R_SPARC_SIZE32:
     default:
       Fatal(ctx) << *this << ": scan_relocations: " << rel;
