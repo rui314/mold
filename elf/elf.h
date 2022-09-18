@@ -2367,7 +2367,7 @@ struct SPARC64 {
   static constexpr u32 e_machine = EM_SPARC64;
   static constexpr u32 plt_hdr_size = 128;
   static constexpr u32 plt_size = 32;
-  static constexpr u32 pltgot_size = 20;
+  static constexpr u32 pltgot_size = 32;
   static constexpr u32 tls_dtv_offset = 0;
 };
 

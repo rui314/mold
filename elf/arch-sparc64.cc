@@ -23,7 +23,6 @@ namespace mold::elf {
 
 using E = SPARC64;
 
-// On SPARC, .plt contents are filled by the dynamic loader.
 template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
@@ -59,9 +58,26 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 template <>
 void PltGotSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
+  memset(buf, 0, this->shdr.sh_size);
 
-  // TODO: implement this
-  memset(buf, 0xdeadbeef, this->shdr.sh_size);
+  static ub32 entry[] = {
+    0x8a10'000f, // mov  %o7, %g5
+    0x4000'0002, // call . + 4
+    0xc25b'e014, // ldx  [ %o7 + 20 ], %g1
+    0xc25b'c001, // ldx  [ %o7 + %g1 ], %g1
+    0x81c0'4000, // jmp  %g1
+    0x9e10'0005, // mov  %g5, %o7
+    0x0000'0000, // .quad PLT - GOT
+    0x0000'0000,
+  };
+
+  static_assert(sizeof(entry) == E::pltgot_size);
+
+  for (Symbol<E> *sym : symbols) {
+    u8 *loc = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
+    memcpy(loc, entry, sizeof(entry));
+    *(ub64 *)(loc + 24) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 4;
+  }
 }
 
 template <>

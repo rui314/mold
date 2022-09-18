@@ -1157,7 +1157,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
 
   for (GotEntry<E> &ent : get_entries(ctx)) {
-    if (ent.r_type == R_NONE || ctx.arg.apply_dynamic_relocs)
+    if (ctx.arg.apply_dynamic_relocs || ent.r_type == R_NONE)
       buf[ent.idx] = ent.val;
 
     if (ent.is_rel(ctx))

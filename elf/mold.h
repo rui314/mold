@@ -466,7 +466,7 @@ private:
 template <typename E>
 struct GotEntry {
   bool is_rel(Context<E> &ctx) const {
-    return r_type && !is_relr(ctx);
+    return r_type != R_NONE && !is_relr(ctx);
   }
 
   bool is_relr(Context<E> &ctx) const {

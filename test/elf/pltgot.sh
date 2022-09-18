@@ -12,29 +12,28 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
+#include <stdio.h>
 
-cat <<EOF | $CC -fPIC -shared -Wl,-z,noexecstack -o $t/a.so -x assembler -
-.globl ext1, ext2
-ext1:
-  nop
-ext2:
-  nop
+void ignore(void *foo) {}
+
+void hello() {
+  printf("Hello world\n");
+}
 EOF
 
-cat <<EOF | $CC -c -o $t/b.o -x assembler -
-.globl _start
-_start:
-  call ext1@PLT
-  call ext2@PLT
-  mov ext2@GOTPCREL(%rip), %rax
-  ret
+$CC -B. -shared -o $t/b.so $t/a.o
+
+cat <<EOF | $CC -o $t/c.o -c -xc - -fPIC
+void ignore(void *);
+int hello();
+
+void foo() { ignore(hello); }
+
+int main() { hello(); }
 EOF
 
-./mold --pie -o $t/exe $t/b.o $t/a.so
-
-$OBJDUMP -d -j .plt.got $t/exe > $t/log
-
-grep -Eq '1034:.*jmp.* <ext2>' $t/log
+$CC -B. -o $t/exe $t/c.o $t/b.so
+$QEMU $t/exe | grep -q 'Hello world'
 
 echo OK
