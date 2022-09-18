@@ -12,7 +12,7 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-which dwarfdump >& /dev/null || { echo skipped; exit; }
+command -v dwarfdump >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $CC -c -g -o $t/a.o -xc -
 #include <stdio.h>

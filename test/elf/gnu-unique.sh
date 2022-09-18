@@ -12,7 +12,7 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-which $GXX >& /dev/null || { echo skipped; exit; }
+command -v $GXX >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $GXX -o $t/a.o -c -std=c++17 -fno-gnu-unique -xc++ -
 inline int foo = 5;

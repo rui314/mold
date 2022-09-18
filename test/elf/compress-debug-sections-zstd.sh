@@ -14,7 +14,7 @@ mkdir -p $t
 
 [ $MACHINE == x86_64 ] || { echo skipped; exit; }
 [ $CC == cc ] || { echo skipped; exit; }
-which zstdcat >& /dev/null || { echo skipped; exit; }
+command -v zstdcat >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $CC -c -g -o $t/a.o -xc -
 #include <stdio.h>

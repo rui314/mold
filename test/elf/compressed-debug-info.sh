@@ -12,7 +12,7 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-which dwarfdump >& /dev/null || { echo skipped; exit; }
+command -v dwarfdump >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $CXX -c -o $t/a.o -g -gz=zlib -xc++ -
 int main() {
