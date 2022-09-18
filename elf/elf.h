@@ -1921,7 +1921,7 @@ struct EB32Phdr {
 struct EB64Rel {
   EB64Rel() = default;
   EB64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
-    : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
+    : r_offset(r_offset), r_sym(r_sym), r_type(r_type) {}
 
   ub64 r_offset;
   ub32 r_sym;
@@ -1931,7 +1931,7 @@ struct EB64Rel {
 struct EB32Rel {
   EB32Rel() = default;
   EB32Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
-    : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
+    : r_offset(r_offset), r_sym(r_sym), r_type(r_type) {}
 
   ub32 r_offset;
   ub24 r_sym;
@@ -1941,7 +1941,7 @@ struct EB32Rel {
 struct EB64Rela {
   EB64Rela() = default;
   EB64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
-    : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
+    : r_offset(r_offset), r_sym(r_sym), r_type(r_type), r_addend(r_addend) {}
 
   ub64 r_offset;
   ub32 r_sym;
@@ -1952,7 +1952,7 @@ struct EB64Rela {
 struct EB32Rela {
   EB32Rela() = default;
   EB32Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
-    : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
+    : r_offset(r_offset), r_sym(r_sym), r_type(r_type), r_addend(r_addend) {}
 
   ub32 r_offset;
   ub24 r_sym;
