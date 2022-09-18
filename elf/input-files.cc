@@ -1045,7 +1045,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       report_undef(sym);
 
     // Convert remaining undefined symbols to dynamic symbols.
-    if (ctx.arg.shared) {
+    if (ctx.arg.shared && sym.visibility != STV_HIDDEN) {
       // Traditionally, remaining undefined symbols cause a link failure
       // only when we are creating an executable. Undefined symbols in
       // shared objects are promoted to dynamic symbols, so that they'll
