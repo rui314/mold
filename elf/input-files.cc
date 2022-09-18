@@ -1081,6 +1081,26 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
+void ObjectFile<E>::convert_hidden_symbols(Context<E> &ctx) {
+  if (!this->is_alive)
+    return;
+
+  for (i64 i = this->first_global; i < this->symbols.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
+
+    if (sym.visibility != STV_HIDDEN)
+      continue;
+
+    std::scoped_lock lock(sym.mu);
+
+    // make the symbol local
+    sym.is_imported = false;
+    sym.is_exported = false;
+    sym.is_weak = false;
+  }
+}
+
+template <typename E>
 void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations against seciton contents
   for (std::unique_ptr<InputSection<E>> &isec : sections)

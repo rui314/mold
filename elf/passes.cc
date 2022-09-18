@@ -899,6 +899,14 @@ void claim_unresolved_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
+void convert_hidden_symbols(Context<E> &ctx) {
+  Timer t(ctx, "convert_hidden_symbols");
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->convert_hidden_symbols(ctx);
+  });
+}
+
+template <typename E>
 void scan_rels(Context<E> &ctx) {
   Timer t(ctx, "scan_rels");
 
@@ -1783,6 +1791,7 @@ void write_dependency_file(Context<E> &ctx) {
   template void compute_section_sizes(Context<E> &);                    \
   template void sort_output_sections(Context<E> &);                     \
   template void claim_unresolved_symbols(Context<E> &);                 \
+  template void convert_hidden_symbols(Context<E> &);                   \
   template void scan_rels(Context<E> &);                                \
   template void create_reloc_sections(Context<E> &);                    \
   template void construct_relr(Context<E> &);                           \

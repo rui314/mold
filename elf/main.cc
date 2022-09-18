@@ -526,6 +526,10 @@ static int elf_main(int argc, char **argv) {
   // resolved.
   claim_unresolved_symbols(ctx);
 
+  // Hidden global/weak symbols are converted into local symbols (this is not
+  // done for symbols coming from shared objects)
+  convert_hidden_symbols(ctx);
+
   // Beyond this point, no new symbols will be added to the result.
 
   // Handle --print-dependencies
