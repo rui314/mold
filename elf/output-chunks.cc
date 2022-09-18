@@ -67,7 +67,7 @@ u64 get_eflags(Context<E> &ctx) {
   }
 
   // We support only PPC64 ELFv2 ABI.
-  if constexpr (std::is_same_v<E, PPC64LE>)
+  if constexpr (is_ppc<E>)
     return 2;
 
   return 0;
@@ -299,7 +299,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
     } else if constexpr (is_arm<E>) {
       ctx.tp_addr = ctx.tls_begin - sizeof(Word<E>) * 2;
-    } else if constexpr (std::is_same_v<E, PPC64LE>) {
+    } else if constexpr (is_ppc<E>) {
       ctx.tp_addr = ctx.tls_begin + 0x7000;
     } else {
       static_assert(is_riscv<E>);
@@ -757,7 +757,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   if (flags1)
     define(DT_FLAGS_1, flags1);
 
-  if constexpr (std::is_same_v<E, PPC64LE>) {
+  if constexpr (is_ppc<E>) {
     // PPC64_GLINK is defined by the psABI to refer 32 bytes before
     // the first PLT entry. I don't know why it's 32 bytes off, but
     // it's what it is.

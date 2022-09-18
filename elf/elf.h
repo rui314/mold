@@ -2070,6 +2070,9 @@ static constexpr bool is_riscv =
   std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>;
 
 template <typename E>
+static constexpr bool is_ppc = std::is_same_v<E, PPC64LE>;
+
+template <typename E>
 static constexpr bool is_sparc = std::is_same_v<E, SPARC64>;
 
 struct X86_64 {
@@ -2084,9 +2087,9 @@ struct X86_64 {
   static constexpr u32 R_DTPMOD = R_X86_64_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
 
+  static constexpr MachineType machine_type = MachineType::X86_64;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
-  static constexpr MachineType machine_type = MachineType::X86_64;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 plt_hdr_size = 32;
@@ -2120,9 +2123,9 @@ struct I386 {
   static constexpr u32 R_DTPMOD = R_386_TLS_DTPMOD32;
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
 
+  static constexpr MachineType machine_type = MachineType::I386;
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
-  static constexpr MachineType machine_type = MachineType::I386;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_386;
   static constexpr u32 plt_hdr_size = 16;
@@ -2156,9 +2159,9 @@ struct ARM64 {
   static constexpr u32 R_DTPMOD = R_AARCH64_TLS_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 
+  static constexpr MachineType machine_type = MachineType::ARM64;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
-  static constexpr MachineType machine_type = MachineType::ARM64;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
   static constexpr u32 plt_hdr_size = 32;
@@ -2194,9 +2197,9 @@ struct ARM32 {
   static constexpr u32 R_DTPMOD = R_ARM_TLS_DTPMOD32;
   static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
 
+  static constexpr MachineType machine_type = MachineType::ARM32;
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
-  static constexpr MachineType machine_type = MachineType::ARM32;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_ARM;
   static constexpr u32 plt_hdr_size = 32;
@@ -2231,9 +2234,9 @@ struct RISCV64 {
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
 
+  static constexpr MachineType machine_type = MachineType::RISCV64;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
-  static constexpr MachineType machine_type = MachineType::RISCV64;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
@@ -2288,9 +2291,9 @@ struct RISCV32 {
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
 
+  static constexpr MachineType machine_type = MachineType::RISCV32;
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
-  static constexpr MachineType machine_type = MachineType::RISCV32;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
@@ -2323,9 +2326,9 @@ struct PPC64LE {
   static constexpr u32 R_TPOFF = R_PPC64_TPREL64;
   static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
 
+  static constexpr MachineType machine_type = MachineType::PPC64LE;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
-  static constexpr MachineType machine_type = MachineType::PPC64LE;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_PPC64;
   static constexpr u32 plt_hdr_size = 60;
@@ -2360,9 +2363,9 @@ struct SPARC64 {
   static constexpr u32 R_TPOFF = R_SPARC_TLS_TPOFF64;
   static constexpr u32 R_DTPMOD = R_SPARC_TLS_DTPMOD64;
 
+  static constexpr MachineType machine_type = MachineType::SPARC64;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = false;
-  static constexpr MachineType machine_type = MachineType::SPARC64;
   static constexpr u32 page_size = 8192;
   static constexpr u32 e_machine = EM_SPARC64;
   static constexpr u32 plt_hdr_size = 128;

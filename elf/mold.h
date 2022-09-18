@@ -517,10 +517,10 @@ class GotPltSection : public Chunk<E> {
 public:
   GotPltSection() {
     this->name = ".got.plt";
-    this->shdr.sh_type = std::is_same_v<E, PPC64LE> ? SHT_NOBITS : SHT_PROGBITS;
+    this->shdr.sh_type = is_ppc<E> ? SHT_NOBITS : SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
-    this->shdr.sh_size = sizeof(Word<E>) * (std::is_same_v<E, PPC64LE> ? 2 : 3);
+    this->shdr.sh_size = sizeof(Word<E>) * (is_ppc<E> ? 2 : 3);
   }
 
   void copy_buf(Context<E> &ctx) override;
