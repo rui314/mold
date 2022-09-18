@@ -36,12 +36,11 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-static inline u64 bswap(u64 val, int size) {
-  switch (size) {
+template <typename T>
+static inline T bswap(T val) {
+  switch (sizeof(T)) {
   case 2:
     return __builtin_bswap16(val);
-  case 3:
-    return ((val >> 16) & 0x0000ff) | (val & 0x00ff00) | ((val << 16) & 0xff0000);
   case 4:
     return __builtin_bswap32(val);
   case 8:
@@ -58,17 +57,28 @@ public:
   LittleEndian(T x) { *this = x; }
 
   operator T() const {
-    T x = 0;
-    memcpy(&x, val, SIZE);
+    T x;
+    memcpy(&x, val, sizeof(T));
     if constexpr (std::endian::native == std::endian::big)
-      x = bswap(x, SIZE);
+      x = bswap(x);
     return x;
   }
 
   LittleEndian &operator=(T x) {
     if constexpr (std::endian::native == std::endian::big)
-      x = bswap(x, SIZE);
-    memcpy(val, &x, SIZE);
+      x = bswap(x);
+    memcpy(val, &x, sizeof(T));
+    return *this;
+  }
+
+  operator T() const requires (SIZE == 3) {
+    return (val[2] << 16) | (val[1] << 8) | val[0];
+  }
+
+  LittleEndian &operator=(T x) requires (SIZE == 3) {
+    val[0] = x;
+    val[1] = x >> 8;
+    val[2] = x >> 16;
     return *this;
   }
 
@@ -127,17 +137,28 @@ public:
   BigEndian(T x) { *this = x; }
 
   operator T() const {
-    T x = 0;
-    memcpy(&x, val, SIZE);
+    T x;
+    memcpy(&x, val, sizeof(T));
     if constexpr (std::endian::native == std::endian::little)
-      x = bswap(x, SIZE);
+      x = bswap(x);
     return x;
   }
 
   BigEndian &operator=(T x) {
     if constexpr (std::endian::native == std::endian::little)
-      x = bswap(x, SIZE);
-    memcpy(val, &x, SIZE);
+      x = bswap(x);
+    memcpy(val, &x, sizeof(T));
+    return *this;
+  }
+
+  operator T() const requires (SIZE == 3) {
+    return (val[0] << 16) | (val[1] << 8) | val[2];
+  }
+
+  BigEndian &operator=(T x) requires (SIZE == 3) {
+    val[0] = x >> 16;
+    val[1] = x >> 8;
+    val[2] = x;
     return *this;
   }
 
