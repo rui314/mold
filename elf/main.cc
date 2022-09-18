@@ -27,8 +27,22 @@ namespace mold::elf {
 // (e.g. EM_X86_64 or EM_386).
 template <typename E>
 static MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  auto get_elf_type = [](u8 *buf) {
-    switch (ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)buf; ehdr.e_machine) {
+  auto get_elf_type = [&](u8 *buf) {
+    bool is_le = (((EL32Ehdr *)buf)->e_ident[EI_DATA] == ELFDATA2LSB);
+    bool is_64;
+    u32 e_machine;
+
+    if (is_le) {
+      EL32Ehdr &ehdr = *(EL32Ehdr *)buf;
+      is_64 = (ehdr.e_ident[EI_CLASS] == ELFCLASS64);
+      e_machine = ehdr.e_machine;
+    } else {
+      EB32Ehdr &ehdr = *(EB32Ehdr *)buf;
+      is_64 = (ehdr.e_ident[EI_CLASS] == ELFCLASS64);
+      e_machine = ehdr.e_machine;
+    }
+
+    switch (e_machine) {
     case EM_386:
       return MachineType::I386;
     case EM_X86_64:
@@ -38,8 +52,7 @@ static MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf)
     case EM_AARCH64:
       return MachineType::ARM64;
     case EM_RISCV:
-      return (ehdr.e_ident[EI_CLASS] == ELFCLASS64)
-        ? MachineType::RISCV64 : MachineType::RISCV32;
+      return is_64 ? MachineType::RISCV64 : MachineType::RISCV32;
     case EM_PPC64:
       return MachineType::PPC64LE;
     case EM_SPARC64:
