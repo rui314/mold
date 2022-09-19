@@ -294,22 +294,12 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     }
   }
 
-  i64 frag_idx = 0;
-
   for (i64 i = 0; i < isec.get_rels(ctx).size(); i++) {
     const ElfRel<E> &rel = isec.get_rels(ctx)[i];
     hash(rel.r_offset);
     hash(rel.r_type);
     hash(isec.get_addend(rel));
-
-    if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == i) {
-      SectionFragmentRef<E> &ref = isec.rel_fragments[frag_idx++];
-      hash('a');
-      isec.get_addend(rel);
-      hash((u64)ref.frag);
-    } else {
-      hash_symbol(*isec.file.symbols[rel.r_sym]);
-    }
+    hash_symbol(*isec.file.symbols[rel.r_sym]);
   }
 
   return digest_final(sha);
@@ -381,19 +371,14 @@ static void gather_edges(Context<E> &ctx,
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
     assert(isec.icf_eligible);
-    i64 frag_idx = 0;
 
     for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
-      if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == j) {
-        frag_idx++;
-      } else {
-        const ElfRel<E> &rel = isec.get_rels(ctx)[j];
-        Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.get_frag())
-          if (InputSection<E> *isec = sym.get_input_section())
-            if (isec->icf_eligible)
-              num_edges[i]++;
-      }
+      const ElfRel<E> &rel = isec.get_rels(ctx)[j];
+      Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+      if (!sym.get_frag())
+        if (InputSection<E> *isec = sym.get_input_section())
+          if (isec->icf_eligible)
+            num_edges[i]++;
     }
   });
 
@@ -404,20 +389,15 @@ static void gather_edges(Context<E> &ctx,
 
   tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
-    i64 frag_idx = 0;
     i64 idx = edge_indices[i];
 
     for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
-      if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == j) {
-        frag_idx++;
-      } else {
-        const ElfRel<E> &rel = isec.get_rels(ctx)[j];
-        Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.get_frag())
-          if (InputSection<E> *isec = sym.get_input_section())
-            if (isec->icf_eligible)
-              edges[idx++] = isec->icf_idx;
-      }
+      const ElfRel<E> &rel = isec.get_rels(ctx)[j];
+      Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+      if (!sym.get_frag())
+        if (InputSection<E> *isec = sym.get_input_section())
+          if (isec->icf_eligible)
+            edges[idx++] = isec->icf_idx;
     }
   });
 }

@@ -423,9 +423,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   counter += this->elf_syms.size();
 
   // Initialize local symbols
-  this->local_syms.reset(new Symbol<E>[this->first_global]);
-
-  new (&this->local_syms[0]) Symbol<E>;
+  this->local_syms.resize(this->first_global);
   this->local_syms[0].file = this;
   this->local_syms[0].sym_idx = 0;
 
@@ -440,7 +438,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
         name = sec->name();
 
     Symbol<E> &sym = this->local_syms[i];
-    new (&sym) Symbol<E>(name);
+    sym.set_name(name);
     sym.file = this;
     sym.value = esym.st_value;
     sym.sym_idx = i;
@@ -663,56 +661,59 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
     }
   }
 
-  // Initialize rel_fragments
+  // Compute the size of frag_syms.
+  i64 nfrag_syms = 0;
+  for (std::unique_ptr<InputSection<E>> &isec : sections)
+    if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC))
+      for (ElfRel<E> &r : isec->get_rels(ctx))
+        if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
+            esym.st_type == STT_SECTION && mergeable_sections[get_shndx(esym)])
+          nfrag_syms++;
+
+  this->frag_syms.resize(nfrag_syms);
+
+  // Initialize frag_syms
+  i64 idx = 0;
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
     if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
       continue;
 
-    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-    if (rels.empty())
-      continue;
-
-    // Compute the size of rel_fragments.
-    i64 len = 0;
-    for (i64 i = 0; i < rels.size(); i++) {
-      const ElfRel<E> &rel = rels[i];
-      const ElfSym<E> &esym = this->elf_syms[rel.r_sym];
-      if (esym.st_type == STT_SECTION && mergeable_sections[get_shndx(esym)])
-        len++;
-    }
-
-    if (len == 0)
-      continue;
-    assert(sizeof(SectionFragmentRef<E>) * (len + 1) < UINT32_MAX);
-
-    isec->rel_fragments.reset(new SectionFragmentRef<E>[len + 1]);
-    i64 frag_idx = 0;
-
-    // Fill rel_fragments contents.
-    for (i64 i = 0; i < rels.size(); i++) {
-      const ElfRel<E> &rel = rels[i];
-      const ElfSym<E> &esym = this->elf_syms[rel.r_sym];
+    for (ElfRel<E> &r : isec->get_rels(ctx)) {
+      const ElfSym<E> &esym = this->elf_syms[r.r_sym];
       if (esym.st_type != STT_SECTION)
         continue;
 
-      std::unique_ptr<MergeableSection<E>> &m =
-        mergeable_sections[get_shndx(esym)];
+      std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[get_shndx(esym)];
       if (!m)
         continue;
 
       SectionFragment<E> *frag;
       i64 frag_offset;
       std::tie(frag, frag_offset) =
-        m->get_fragment(esym.st_value + isec->get_addend(rel));
+        m->get_fragment(esym.st_value + isec->get_addend(r));
 
       if (!frag)
-        Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
+        Fatal(ctx) << *this << ": bad relocation at " << r.r_sym;
 
-      isec->rel_fragments[frag_idx++] = {frag, (i32)i, (i32)frag_offset};
+      Symbol<E> &sym = this->frag_syms[idx];
+      sym.file = this;
+      sym.sym_idx = r.r_sym;
+      sym.visibility = STV_HIDDEN;
+      sym.set_frag(frag);
+      sym.value = frag_offset;
+
+      r.r_sym = this->elf_syms.size() + idx;
+      if constexpr (is_rela<E>)
+        r.r_addend = 0;
+
+      idx++;
     }
-
-    isec->rel_fragments[frag_idx] = {nullptr, -1, -1};
   }
+
+  assert(idx == this->frag_syms.size());
+
+  for (Symbol<E> &sym : this->frag_syms)
+    this->symbols.push_back(&sym);
 
   // Initialize sym_fragments
   for (i64 i = 1; i < this->elf_syms.size(); i++) {
@@ -722,8 +723,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
     if (esym.is_abs() || esym.is_common() || esym.is_undef())
       continue;
 
-    std::unique_ptr<MergeableSection<E>> &m =
-      mergeable_sections[get_shndx(esym)];
+    std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[get_shndx(esym)];
     if (!m)
       continue;
 
@@ -876,7 +876,7 @@ static void print_trace_symbol(Context<E> &ctx, InputFile<E> &file,
 
 template <typename E>
 void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
-  for (i64 i = this->first_global; i < this->symbols.size(); i++) {
+  for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = this->elf_syms[i];
 
@@ -910,7 +910,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
                                  std::function<void(InputFile<E> *)> feeder) {
   assert(this->is_alive);
 
-  for (i64 i = this->first_global; i < this->symbols.size(); i++) {
+  for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
 
@@ -989,7 +989,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     acc->second.push_back(ss.str());
   };
 
-  for (i64 i = this->first_global; i < this->symbols.size(); i++) {
+  for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
     if (!esym.is_undef())
@@ -1219,7 +1219,7 @@ void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
   }
 
   // Compute the size of global symbols.
-  for (i64 i = this->first_global; i < this->symbols.size(); i++) {
+  for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
 
     if (sym.file == this && is_alive(sym) &&

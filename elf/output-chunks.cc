@@ -1305,7 +1305,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
     // Section fragment
     esym.st_shndx = frag->output_section.shndx;
     esym.st_value = sym.get_addr(ctx);
-    esym.st_size = sym.esym().st_size;
+    esym.st_size = 0;
   } else if (!sym.get_input_section()) {
     // Absolute symbol
     esym.st_shndx = SHN_ABS;

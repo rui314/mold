@@ -97,13 +97,6 @@ struct SectionFragment {
   std::atomic_bool is_alive = false;
 };
 
-template <typename E>
-struct SectionFragmentRef {
-  SectionFragment<E> *frag = nullptr;
-  i32 idx = 0;
-  i32 addend = 0;
-};
-
 // Additional class members for dynamic symbols. Because most symbols
 // don't need them and we allocate tens of millions of symbol objects
 // for large programs, we separate them from `Symbol` class to save
@@ -298,7 +291,6 @@ public:
 
   [[no_unique_address]] InputSectionExtras<E> extra;
 
-  std::unique_ptr<SectionFragmentRef<E>[]> rel_fragments;
   i32 fde_begin = -1;
   i32 fde_end = -1;
 
@@ -338,7 +330,7 @@ private:
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
-  std::optional<u64> get_tombstone(Symbol<E> &sym);
+  std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
 };
 
 template <typename E>
@@ -1096,7 +1088,6 @@ public:
   u32 priority;
   std::atomic_bool is_alive = false;
   std::string_view shstrtab;
-  std::unique_ptr<Symbol<E>[]> local_syms;
   std::string_view symbol_strtab;
 
   // To create an output .symtab
@@ -1109,6 +1100,10 @@ public:
 
   // For --emit-relocs
   std::vector<i32> output_sym_indices;
+
+protected:
+  std::vector<Symbol<E>> local_syms;
+  std::vector<Symbol<E>> frag_syms;
 };
 
 // ObjectFile represents an input .o file.
@@ -1763,10 +1758,12 @@ public:
   void set_output_section(Chunk<E> *);
   void set_frag(SectionFragment<E> *);
 
+  void set_name(std::string_view);
+  std::string_view name() const;
+
   u32 get_type() const;
   std::string_view get_version() const;
   const ElfSym<E> &esym() const;
-  std::string_view name() const;
   void clear();
 
   // A symbol is owned by a file. If two or more files define the
@@ -2014,15 +2011,19 @@ inline i64 InputSection<E>::get_priority() const {
 }
 
 template <typename E>
-inline i64 InputSection<E>::get_addend(const ElfRel<E> &rel) const {
-  return rel.r_addend;
+inline i64 InputSection<E>::get_addend(const ElfRel<E> &r) const {
+  return r.r_addend;
 }
 
 template <>
-inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
-  u8 *loc = (u8 *)contents.data() + rel.r_offset;
+inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &r) const {
+  u8 *loc = (u8 *)contents.data() + r.r_offset;
 
-  switch (rel.r_type) {
+  if (Symbol<I386> &sym = *file.symbols[r.r_sym];
+      sym.get_frag() && sym.esym().st_type == STT_SECTION)
+    return 0;
+
+  switch (r.r_type) {
   case R_386_NONE:
     return 0;
   case R_386_8:
@@ -2052,10 +2053,14 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &rel) const {
 }
 
 template <>
-inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &rel) const {
-  u8 *loc = (u8 *)contents.data() + rel.r_offset;
+inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &r) const {
+  u8 *loc = (u8 *)contents.data() + r.r_offset;
 
-  switch (rel.r_type) {
+  if (Symbol<ARM32> &sym = *file.symbols[r.r_sym];
+      sym.get_frag() && sym.esym().st_type == STT_SECTION)
+    return 0;
+
+  switch (r.r_type) {
   case R_ARM_NONE:
     return 0;
   case R_ARM_ABS32:
@@ -2163,7 +2168,11 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 // This function returns a tombstone value for the symbol if the symbol
 // refers a dead debug info section.
 template <typename E>
-inline std::optional<u64> InputSection<E>::get_tombstone(Symbol<E> &sym) {
+inline std::optional<u64>
+InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
+  if (frag)
+    return {};
+
   InputSection<E> *isec = sym.get_input_section();
 
   // Setting a tombstone is a special feature for a dead debug section.
@@ -2547,6 +2556,12 @@ inline std::string_view Symbol<E>::get_version() const {
 template <typename E>
 inline const ElfSym<E> &Symbol<E>::esym() const {
   return file->elf_syms[sym_idx];
+}
+
+template <typename E>
+inline void Symbol<E>::set_name(std::string_view name) {
+  nameptr = name.data();
+  namelen = name.size();
 }
 
 template <typename E>

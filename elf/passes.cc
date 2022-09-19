@@ -531,7 +531,7 @@ R"(# This is an output of the mold linker's --print-dependencies option.
 # <file2> to use <symbol>.)";
 
   auto print = [&](InputFile<E> *file) {
-    for (i64 i = file->first_global; i < file->symbols.size(); i++) {
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
       if (esym.is_undef() && sym.file && sym.file != file)
@@ -1025,14 +1025,14 @@ void create_reloc_sections(Context<E> &ctx) {
 
   // Create a table to map input symbol indices to output symbol indices
   auto set_indices = [&](InputFile<E> *file) {
-    file->output_sym_indices.resize(file->symbols.size(), -1);
+    file->output_sym_indices.resize(file->elf_syms.size(), -1);
 
     for (i64 i = 1, j = 0; i < file->first_global; i++)
       if (Symbol<E> &sym = *file->symbols[i];
           sym.file == file && sym.write_to_symtab)
         file->output_sym_indices[i] = j++;
 
-    for (i64 i = file->first_global, j = 0; i < file->symbols.size(); i++)
+    for (i64 i = file->first_global, j = 0; i < file->elf_syms.size(); i++)
       if (Symbol<E> &sym = *file->symbols[i];
           sym.file == file && sym.write_to_symtab)
         file->output_sym_indices[i] = j++;
@@ -1137,7 +1137,7 @@ void parse_symbol_version(Context<E> &ctx) {
     verdefs[ctx.arg.version_definitions[i]] = i + VER_NDX_LAST_RESERVED + 1;
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (i64 i = 0; i < file->symbols.size() - file->first_global; i++) {
+    for (i64 i = 0; i < file->elf_syms.size() - file->first_global; i++) {
       // Match VERSION part of symbol foo@VERSION with version definitions.
       // The symbols' VERSION parts are in file->symvers.
       if (!file->symvers[i])

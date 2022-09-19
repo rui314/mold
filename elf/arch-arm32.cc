@@ -139,7 +139,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  i64 frag_idx = 0;
   i64 trampoline_idx = 0;
 
   if (ctx.reldyn)
@@ -154,12 +153,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SectionFragmentRef<E> *frag_ref = nullptr;
-    if (rel_fragments && rel_fragments[frag_idx].idx == i)
-      frag_ref = &rel_fragments[frag_idx++];
-
-#define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (frag_ref ? frag_ref->addend : this->get_addend(rel))
+#define S   sym.get_addr(ctx)
+#define A   this->get_addend(rel)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define T   (sym.get_addr(ctx) & 1)
 #define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
@@ -397,16 +392,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_ARM_ABS32:
-      if (!frag) {
-        if (std::optional<u64> val = get_tombstone(sym)) {
-          *(ul32 *)loc = *val;
-          break;
-        }
-      }
-      *(ul32 *)loc = S + A;
+      if (std::optional<u64> val = get_tombstone(sym, frag))
+        *(ul32 *)loc = *val;
+      else
+        *(ul32 *)loc = S + A;
       break;
     case R_ARM_TLS_LDO32:
-      if (std::optional<u64> val = get_tombstone(sym))
+      if (std::optional<u64> val = get_tombstone(sym, frag))
         *(ul32 *)loc = *val;
       else
         *(ul32 *)loc = S + A - ctx.tls_begin;

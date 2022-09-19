@@ -291,8 +291,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  i64 frag_idx = 0;
-
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
@@ -311,10 +309,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     i64 removed_bytes = get_r_delta(i + 1) - get_r_delta(i);
     u8 *loc = base + r_offset;
 
-    const SectionFragmentRef<E> *frag_ref = nullptr;
-    if (rel_fragments && rel_fragments[frag_idx].idx == i)
-      frag_ref = &rel_fragments[frag_idx++];
-
     auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
@@ -322,8 +316,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
                    << lo << ", " << hi << ")";
     };
 
-#define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (frag_ref ? (u64)frag_ref->addend : (u64)rel.r_addend)
+#define S   sym.get_addr(ctx)
+#define A   this->get_addend(rel)
 #define P   (get_addr() + r_offset)
 #define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
 #define GOT ctx.got->shdr.sh_addr
@@ -588,20 +582,17 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
 #define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A (frag ? (u64)addend : (u64)rel.r_addend)
+#define A (frag ? addend : this->get_addend(rel))
 
     switch (rel.r_type) {
     case R_RISCV_32:
       *(ul32 *)loc = S + A;
       break;
     case R_RISCV_64:
-      if (!frag) {
-        if (std::optional<u64> val = get_tombstone(sym)) {
-          *(ul64 *)loc = *val;
-          break;
-        }
-      }
-      *(ul64 *)loc = S + A;
+      if (std::optional<u64> val = get_tombstone(sym, frag))
+        *(ul64 *)loc = *val;
+      else
+        *(ul64 *)loc = S + A;
       break;
     case R_RISCV_ADD8:
       *loc += S + A;
@@ -807,16 +798,11 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
   isec.extra.r_deltas.resize(rels.size() + 1);
 
   i64 delta = 0;
-  i64 frag_idx = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
     isec.extra.r_deltas[i] = delta;
-
-    const SectionFragmentRef<E> *frag_ref = nullptr;
-    if (isec.rel_fragments && isec.rel_fragments[frag_idx].idx == i)
-      frag_ref = &isec.rel_fragments[frag_idx++];
 
     // Handling R_RISCV_ALIGN is mandatory.
     //
@@ -875,15 +861,10 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       break;
     }
     case R_RISCV_HI20: {
-      i64 val;
-      if (frag_ref)
-        val = frag_ref->frag->get_addr(ctx) + (u64)frag_ref->addend;
-      else
-        val = sym.get_addr(ctx) + (u64)r.r_addend;
-
       // If the upper 20 bits are all zero, we can remove LUI.
       // The corresponding instructions referred by LO12_I/LO12_S
       // relocations will use the zero register instead.
+      i64 val = sym.get_addr(ctx);
       if (sign_extend(val, 11) == val)
         delta += 4;
       break;

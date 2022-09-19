@@ -199,7 +199,6 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
   std::span<const ElfRel<E>> rels = get_rels(ctx);
-  i64 frag_idx = 0;
 
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
@@ -212,10 +211,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
-
-    const SectionFragmentRef<E> *frag_ref = nullptr;
-    if (rel_fragments && rel_fragments[frag_idx].idx == i)
-      frag_ref = &rel_fragments[frag_idx++];
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
@@ -234,8 +229,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = val;
     };
 
-#define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (frag_ref ? (u64)frag_ref->addend : (u64)rel.r_addend)
+#define S   sym.get_addr(ctx)
+#define A   this->get_addend(rel)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G   (sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr)
 #define GOT ctx.gotplt->shdr.sh_addr
@@ -533,10 +528,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       continue;
     }
 
-    SectionFragment<E> *frag;
-    i64 addend;
-    std::tie(frag, addend) = get_fragment(ctx, rel);
-
     auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
@@ -554,8 +545,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = val;
     };
 
+    SectionFragment<E> *frag;
+    i64 addend;
+    std::tie(frag, addend) = get_fragment(ctx, rel);
+
 #define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A (frag ? (u64)addend : (u64)rel.r_addend)
+#define A (frag ? addend : this->get_addend(rel))
 
     switch (rel.r_type) {
     case R_X86_64_8: {
@@ -577,22 +572,19 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       write32s(S + A);
       break;
     case R_X86_64_64:
-      if (!frag) {
-        if (std::optional<u64> val = get_tombstone(sym)) {
-          *(ul64 *)loc = *val;
-          break;
-        }
-      }
-      *(ul64 *)loc = S + A;
+      if (std::optional<u64> val = get_tombstone(sym, frag))
+        *(ul64 *)loc = *val;
+      else
+        *(ul64 *)loc = S + A;
       break;
     case R_X86_64_DTPOFF32:
-      if (std::optional<u64> val = get_tombstone(sym))
+      if (std::optional<u64> val = get_tombstone(sym, frag))
         *(ul32 *)loc = *val;
       else
         write32s(S + A - ctx.tls_begin);
       break;
     case R_X86_64_DTPOFF64:
-      if (std::optional<u64> val = get_tombstone(sym))
+      if (std::optional<u64> val = get_tombstone(sym, frag))
         *(ul64 *)loc = *val;
       else
         *(ul64 *)loc = S + A - ctx.tls_begin;

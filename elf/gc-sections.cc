@@ -34,13 +34,6 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
                   tbb::feeder<InputSection<E> *> &feeder, i64 depth) {
   assert(isec->is_visited);
 
-  // A relocation can refer either a section fragment (i.e. a piece of
-  // string in a mergeable string section) or a symbol. Mark all
-  // section fragments as alive.
-  if (SectionFragmentRef<E> *refs = isec->rel_fragments.get())
-    for (i64 i = 0; refs[i].idx >= 0; i++)
-      refs[i].frag->is_alive.store(true, std::memory_order_relaxed);
-
   // If this is a text section, .eh_frame may contain records
   // describing how to handle exceptions for that function.
   // We want to keep associated .eh_frame records.

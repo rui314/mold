@@ -103,7 +103,6 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   ElfRel<E> *dynrel = nullptr;
   std::span<const ElfRel<E>> rels = get_rels(ctx);
-  i64 frag_idx = 0;
 
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
@@ -117,12 +116,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    const SectionFragmentRef<E> *frag_ref = nullptr;
-    if (rel_fragments && rel_fragments[frag_idx].idx == i)
-      frag_ref = &rel_fragments[frag_idx++];
-
-#define S   (frag_ref ? frag_ref->frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (frag_ref ? frag_ref->addend : this->get_addend(rel))
+#define S   sym.get_addr(ctx)
+#define A   this->get_addend(rel)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
 #define GOT ctx.got->shdr.sh_addr
@@ -349,21 +344,18 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     i64 addend;
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
-#define S   (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A   (frag ? addend : this->get_addend(rel))
+#define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
+#define A (frag ? addend : this->get_addend(rel))
 
     switch (rel.r_type) {
     case R_NONE:
       break;
     case R_SPARC_64:
     case R_SPARC_UA64:
-      if (!frag) {
-        if (std::optional<u64> val = get_tombstone(sym)) {
-          *(ub64 *)loc = *val;
-          break;
-        }
-      }
-      *(ub64 *)loc = S + A;
+      if (std::optional<u64> val = get_tombstone(sym, frag))
+        *(ub64 *)loc = *val;
+      else
+        *(ub64 *)loc = S + A;
       break;
     case R_SPARC_32:
     case R_SPARC_UA32:
