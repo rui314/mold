@@ -2019,10 +2019,6 @@ template <>
 inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &r) const {
   u8 *loc = (u8 *)contents.data() + r.r_offset;
 
-  if (Symbol<I386> &sym = *file.symbols[r.r_sym];
-      sym.get_frag() && sym.esym().st_type == STT_SECTION)
-    return 0;
-
   switch (r.r_type) {
   case R_386_NONE:
     return 0;
@@ -2055,10 +2051,6 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &r) const {
 template <>
 inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &r) const {
   u8 *loc = (u8 *)contents.data() + r.r_offset;
-
-  if (Symbol<ARM32> &sym = *file.symbols[r.r_sym];
-      sym.get_frag() && sym.esym().st_type == STT_SECTION)
-    return 0;
 
   switch (r.r_type) {
   case R_ARM_NONE:

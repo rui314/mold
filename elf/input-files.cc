@@ -712,25 +712,24 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
       if (!m)
         continue;
 
+      i64 r_addend = isec->get_addend(r);
+
       SectionFragment<E> *frag;
       i64 frag_offset;
-      std::tie(frag, frag_offset) =
-        m->get_fragment(esym.st_value + isec->get_addend(r));
+      std::tie(frag, frag_offset) = m->get_fragment(esym.st_value + r_addend);
 
       if (!frag)
         Fatal(ctx) << *this << ": bad relocation at " << r.r_sym;
 
       Symbol<E> &sym = this->frag_syms[idx];
       sym.file = this;
+      sym.set_name("<fragment>");
       sym.sym_idx = r.r_sym;
       sym.visibility = STV_HIDDEN;
       sym.set_frag(frag);
-      sym.value = frag_offset;
+      sym.value = frag_offset - r_addend;
 
       r.r_sym = this->elf_syms.size() + idx;
-      if constexpr (is_rela<E>)
-        r.r_addend = 0;
-
       idx++;
     }
   }

@@ -208,18 +208,43 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits((val >> 10) ^ (val >> 31), 21, 0);
       break;
     }
-    case R_SPARC_GOTDATA_OP_HIX22:
-      *(ub32 *)loc |= bits((G >> 10) ^ (G >> 31), 21, 0);
-      break;
     case R_SPARC_GOTDATA_LOX10: {
       i64 val = S + A - GOT;
       *(ub32 *)loc |= bits((val & 0x3ff) | ((val >> 31) & 0x1c00), 12, 0);
       break;
     }
+    case R_SPARC_GOTDATA_OP_HIX22:
+      if (sym.is_imported) {
+        *(ub32 *)loc |= bits((G >> 10) ^ (G >> 31), 21, 0);
+      } else {
+        // We always have to relax a GOT load to a load immediate if a
+        // symbol is local, because R_SPARC_GOTDATA_OP cannot represent
+        // an addend for a local symbol.
+        i64 val = S + A - GOT;
+        *(ub32 *)loc |= bits((val >> 10) ^ (val >> 31), 21, 0);
+      }
+      break;
     case R_SPARC_GOTDATA_OP_LOX10:
-      *(ub32 *)loc |= bits((G & 0x3ff) | ((G >> 31) & 0x1c00), 12, 0);
+      if (sym.is_imported) {
+        *(ub32 *)loc |= bits((G >> 10) ^ (G >> 31), 21, 0);
+      } else {
+        i64 val = S + A - GOT;
+        *(ub32 *)loc |= bits((val & 0x3ff) | ((val >> 31) & 0x1c00), 12, 0);
+      }
       break;
     case R_SPARC_GOTDATA_OP:
+      if (sym.is_imported)
+        break;
+
+      if (sym.is_remaining_undef_weak()) {
+        // ldx [ %g2 + %g1 ], %g1  →  mov %g0, %g1
+        *(ub32 *)loc &= 0b00'11111'000000'00000'1'11111111'00000;
+        *(ub32 *)loc |= 0b10'00000'000010'00000'0'00000000'00000;
+      } else {
+        // ldx [ %g2 + %g1 ], %g1  →  add %g2, %g1, %g1
+        *(ub32 *)loc &= 0b00'11111'000000'11111'1'11111111'11111;
+        *(ub32 *)loc |= 0b10'00000'000000'00000'0'00000000'00000;
+      }
       break;
     case R_SPARC_PC10:
     case R_SPARC_PCPLT10:
@@ -486,10 +511,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_GOT22:
     case R_SPARC_GOTDATA_HIX22:
     case R_SPARC_GOTDATA_LOX10:
+      sym.flags |= NEEDS_GOT;
+      break;
     case R_SPARC_GOTDATA_OP_HIX22:
     case R_SPARC_GOTDATA_OP_LOX10:
     case R_SPARC_GOTDATA_OP:
-      sym.flags |= NEEDS_GOT;
+      if (sym.is_imported)
+        sym.flags |= NEEDS_GOT;
       break;
     case R_SPARC_DISP16:
     case R_SPARC_DISP32:
