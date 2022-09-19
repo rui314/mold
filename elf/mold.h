@@ -1772,6 +1772,22 @@ public:
   // If `file` is null, the symbol is equivalent to nonexistent.
   InputFile<E> *file = nullptr;
 
+private:
+  // A symbol usually belongs to an input section, but it can belong
+  // to a section fragment, an output section or nothing
+  // (i.e. absolute symbol). `origin` holds one of them. We use the
+  // least significant two bits to distinguish type.
+  enum : uintptr_t {
+    TAG_ABS  = 0b00,
+    TAG_ISEC = 0b01,
+    TAG_OSEC = 0b10,
+    TAG_FRAG = 0b11,
+    TAG_MASK = 0b11,
+  };
+
+  uintptr_t origin = 0;
+
+public:
   // `value` contains symbol value. If it's an absolute symbol, it is
   // equivalent to its address. If it belongs to an input section or a
   // section fragment, value is added to the base of the input section
@@ -1908,21 +1924,6 @@ public:
 
   // Target-dependent extra members.
   [[no_unique_address]] SymbolExtras<E> extra;
-
-private:
-  // A symbol usually belongs to an input section, but it can belong
-  // to a section fragment, an output section or nothing
-  // (i.e. absolute symbol). `origin` holds one of them. We use the
-  // least significant two bits to distinguish type.
-  enum : uintptr_t {
-    TAG_ABS  = 0b00,
-    TAG_ISEC = 0b01,
-    TAG_OSEC = 0b10,
-    TAG_FRAG = 0b11,
-    TAG_MASK = 0b11,
-  };
-
-  uintptr_t origin = 0;
 };
 
 // If we haven't seen the same `key` before, create a new instance
