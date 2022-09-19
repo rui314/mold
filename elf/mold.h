@@ -489,6 +489,7 @@ public:
 
   u64 get_tlsld_addr(Context<E> &ctx) const;
   i64 get_reldyn_size(Context<E> &ctx) const;
+  void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> got_syms;
@@ -1771,7 +1772,6 @@ public:
   // If `file` is null, the symbol is equivalent to nonexistent.
   InputFile<E> *file = nullptr;
 
-private:
   // A symbol usually belongs to an input section, but it can belong
   // to a section fragment, an output section or nothing
   // (i.e. absolute symbol). `origin` holds one of them. We use the
@@ -1786,7 +1786,6 @@ private:
 
   uintptr_t origin = 0;
 
-public:
   // `value` contains symbol value. If it's an absolute symbol, it is
   // equivalent to its address. If it belongs to an input section or a
   // section fragment, value is added to the base of the input section

@@ -299,7 +299,7 @@ void ROutputEhdr<E>::write_to(Context<E> &ctx) {
   ElfEhdr<E> &hdr = *(ElfEhdr<E> *)(ctx.buf + this->out_shdr.sh_offset);
   memcpy(&hdr.e_ident, "\177ELF", 4);
   hdr.e_ident[EI_CLASS] = E::is_64 ? ELFCLASS64 : ELFCLASS32;
-  hdr.e_ident[EI_DATA] = ELFDATA2LSB;
+  hdr.e_ident[EI_DATA] = E::is_le ? ELFDATA2LSB : ELFDATA2MSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
   hdr.e_type = ET_REL;
   hdr.e_machine = E::e_machine;
@@ -398,7 +398,7 @@ void RObjectFile<E>::remove_comdats(Context<E> &ctx,
       continue;
 
     // If it is a duplicate, remove it and its members.
-    for (i64 j : this->template get_data<u32>(ctx, shdr).subspan(1))
+    for (i64 j : this->template get_data<U32<E>>(ctx, shdr).subspan(1))
       sections[j] = nullptr;
     sections[i] = nullptr;
   }

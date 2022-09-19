@@ -21,6 +21,5 @@ EOF
 readelf -W --sections $t/exe > $t/log
 ! grep -Fq ' .dynsym ' $t/log || false
 ! grep -Fq ' .dynstr ' $t/log || false
-! grep -Fq ' .got ' $t/log || false
 
 echo OK

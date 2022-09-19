@@ -1024,7 +1024,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     auto claim = [&] {
       sym.file = this;
-      sym.set_input_section(nullptr);
+      sym.origin = 0;
       sym.value = 0;
       sym.sym_idx = i;
       sym.is_weak = false;
@@ -1438,7 +1438,7 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
 
     if (get_rank(this, esym, false) < get_rank(sym)) {
       sym.file = this;
-      sym.set_input_section(nullptr);
+      sym.origin = 0;
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];

@@ -130,7 +130,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #define S   sym.get_addr(ctx)
 #define A   this->get_addend(rel)
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
-#define G   (sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr)
+#define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
 #define GOT ctx.got->shdr.sh_addr
 
     switch (rel.r_type) {
@@ -214,32 +214,38 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_SPARC_GOTDATA_OP_HIX22:
+      // We always have to relax a GOT load to a load immediate if a
+      // symbol is local, because R_SPARC_GOTDATA_OP cannot represent
+      // an addend for a local symbol.
       if (sym.is_imported) {
         *(ub32 *)loc |= bits((G >> 10) ^ (G >> 31), 21, 0);
+      } else if (sym.is_absolute()) {
+        i64 val = S + A;
+        *(ub32 *)loc |= bits((val >> 10) ^ (val >> 31), 21, 0);
       } else {
-        // We always have to relax a GOT load to a load immediate if a
-        // symbol is local, because R_SPARC_GOTDATA_OP cannot represent
-        // an addend for a local symbol.
         i64 val = S + A - GOT;
         *(ub32 *)loc |= bits((val >> 10) ^ (val >> 31), 21, 0);
       }
       break;
-    case R_SPARC_GOTDATA_OP_LOX10:
+    case R_SPARC_GOTDATA_OP_LOX10: {
       if (sym.is_imported) {
-        *(ub32 *)loc |= bits((G >> 10) ^ (G >> 31), 21, 0);
+        *(ub32 *)loc |= bits((G & 0x3ff) | ((G >> 31) & 0x1c00), 12, 0);
+      } else if (sym.is_absolute()) {
+        i64 val = S + A;
+        *(ub32 *)loc |= bits((val & 0x3ff) | ((val >> 31) & 0x1c00), 12, 0);
       } else {
         i64 val = S + A - GOT;
         *(ub32 *)loc |= bits((val & 0x3ff) | ((val >> 31) & 0x1c00), 12, 0);
       }
       break;
+    }
     case R_SPARC_GOTDATA_OP:
       if (sym.is_imported)
         break;
 
-      if (sym.is_remaining_undef_weak()) {
-        // ldx [ %g2 + %g1 ], %g1  →  mov %g0, %g1
-        *(ub32 *)loc &= 0b00'11111'000000'00000'1'11111111'00000;
-        *(ub32 *)loc |= 0b10'00000'000010'00000'0'00000000'00000;
+      if (sym.is_absolute()) {
+        // ldx [ %g2 + %g1 ], %g1  →  nop
+        *(ub32 *)loc = 0x0100'0000;
       } else {
         // ldx [ %g2 + %g1 ], %g1  →  add %g2, %g1, %g1
         *(ub32 *)loc &= 0b00'11111'000000'11111'1'11111111'11111;

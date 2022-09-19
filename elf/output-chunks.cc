@@ -1148,6 +1148,14 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
   return entries;
 }
 
+template <typename E>
+void GotSection<E>::update_shdr(Context<E> &ctx) {
+  // We always create a .got so that _GLOBAL_OFFSET_TABLE_ refers
+  // a GOT section.
+  if (this->shdr.sh_size == 0)
+    this->shdr.sh_size = sizeof(Word<E>);
+}
+
 // Fill .got and .rel.dyn.
 template <typename E>
 void GotSection<E>::copy_buf(Context<E> &ctx) {

@@ -491,7 +491,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
     // Make the target absolute if necessary.
     if (!target || target->is_absolute())
-      sym->set_input_section(nullptr);
+      sym->origin = 0;
   }
 }
 
@@ -1688,9 +1688,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
     std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
 
-    sym->set_input_section(nullptr);
-
     if (u64 *addr = std::get_if<u64>(&val)) {
+      sym->origin = 0;
       sym->value = *addr;
       continue;
     }
@@ -1701,11 +1700,9 @@ void fix_synthetic_symbols(Context<E> &ctx) {
       continue;
     }
 
-    sym->value = sym2->get_addr(ctx);
+    sym->value = sym2->value;
+    sym->origin = sym2->origin;
     sym->visibility = sym2->visibility.load();
-
-    if (InputSection<E> *isec = sym2->get_input_section())
-      sym->set_output_section(isec->output_section);
   }
 }
 
