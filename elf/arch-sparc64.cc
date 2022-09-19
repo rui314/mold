@@ -24,6 +24,13 @@ namespace mold::elf {
 
 using E = SPARC64;
 
+static bool relax_tlsgd_tlsld(Context<E> &ctx, Symbol<E> &sym) {
+  // On SPARC, we must relax TLSGD and TLSLD for statically-linked
+  // executables because `__tls_get_addr` is not missing in libc.a.
+  return (ctx.arg.relax || ctx.arg.is_static) &&
+         !ctx.arg.shared && !sym.is_imported;
+}
+
 template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
@@ -88,6 +95,10 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 
   switch (rel.r_type) {
   case R_NONE:
+    return;
+  case R_SPARC_64:
+  case R_SPARC_UA64:
+    *(ub64 *)loc = val;
     return;
   case R_SPARC_DISP32:
     *(ub32 *)loc = val - this->shdr.sh_addr - offset;
@@ -266,28 +277,64 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A, 11, 0);
       break;
     case R_SPARC_TLS_GD_HI22:
-      *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 31, 10);
+      if (relax_tlsgd_tlsld(ctx, sym))
+        *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 31, 10);
+      else
+        *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 31, 10);
       break;
     case R_SPARC_TLS_GD_LO10:
-      *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 9, 0);
+      if (relax_tlsgd_tlsld(ctx, sym))
+        *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 9, 0);
+      else
+        *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 9, 0);
       break;
     case R_SPARC_TLS_GD_CALL:
-    case R_SPARC_TLS_LDM_CALL: {
-      Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
-      *(ub32 *)loc |= bits(sym2->get_addr(ctx) + A - P, 31, 2);
+      if (relax_tlsgd_tlsld(ctx, sym)) {
+        *(ub32 *)loc = 0x0100'0000; // nop
+      } else {
+        Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
+        *(ub32 *)loc |= bits(sym2->get_addr(ctx) + A - P, 31, 2);
+      }
       break;
-    }
     case R_SPARC_TLS_LDM_HI22:
-      *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 31, 10);
+      if (relax_tlsgd_tlsld(ctx, sym))
+        *(ub32 *)loc = 0x0100'0000; // nop
+      else
+        *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 31, 10);
       break;
     case R_SPARC_TLS_LDM_LO10:
-      *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 9, 0);
+      if (relax_tlsgd_tlsld(ctx, sym))
+        *(ub32 *)loc = 0x0100'0000; // nop
+      else
+        *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 9, 0);
+      break;
+    case R_SPARC_TLS_LDM_ADD:
+      if (relax_tlsgd_tlsld(ctx, sym))
+        *(ub32 *)loc = 0x0100'0000; // nop
       break;
     case R_SPARC_TLS_LDO_HIX22:
-      *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 31, 10);
+      if (relax_tlsgd_tlsld(ctx, sym))
+        *(ub32 *)loc |= bits(~(S + A - ctx.tp_addr), 31, 10);
+      else
+        *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 31, 10);
       break;
     case R_SPARC_TLS_LDO_LOX10:
-      *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 9, 0);
+      if (relax_tlsgd_tlsld(ctx, sym))
+        *(ub32 *)loc |= bits(S + A - ctx.tp_addr, 9, 0) | 0b0001'1100'0000'0000;
+      else
+        *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 9, 0);
+      break;
+    case R_SPARC_TLS_LDO_ADD:
+      if (relax_tlsgd_tlsld(ctx, sym))
+        *(ub32 *)loc = 0xb001'c001; // add  %g7, %g1, %i0
+      break;
+    case R_SPARC_TLS_LDM_CALL:
+      if (relax_tlsgd_tlsld(ctx, sym)) {
+        *(ub32 *)loc = 0x9010'0000; // mov  %g0, %o0
+      } else {
+        Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
+        *(ub32 *)loc |= bits(sym2->get_addr(ctx) + A - P, 31, 2);
+      }
       break;
     case R_SPARC_TLS_IE_HI22:
       *(ub32 *)loc |= bits(sym.get_gottp_addr(ctx) + A - GOT, 31, 10);
@@ -305,8 +352,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc = sym.esym().st_size + A;
       break;
     case R_SPARC_TLS_GD_ADD:
-    case R_SPARC_TLS_LDM_ADD:
-    case R_SPARC_TLS_LDO_ADD:
     case R_SPARC_TLS_IE_LD:
     case R_SPARC_TLS_IE_LDX:
     case R_SPARC_TLS_IE_ADD:
@@ -463,7 +508,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_TLS_GD_HI22:
     case R_SPARC_TLS_GD_LO10:
     case R_SPARC_TLS_GD_ADD:
-      sym.flags |= NEEDS_TLSGD;
+      if (!relax_tlsgd_tlsld(ctx, sym))
+        sym.flags |= NEEDS_TLSGD;
       break;
     case R_SPARC_TLS_LDM_HI22:
     case R_SPARC_TLS_LDM_LO10:
@@ -471,7 +517,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_TLS_LDO_HIX22:
     case R_SPARC_TLS_LDO_LOX10:
     case R_SPARC_TLS_LDO_ADD:
-      ctx.needs_tlsld = true;
+      if (!relax_tlsgd_tlsld(ctx, sym))
+        ctx.needs_tlsld = true;
       break;
     case R_SPARC_TLS_IE_HI22:
     case R_SPARC_TLS_IE_LO10:
@@ -483,12 +530,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_SPARC_TLS_GD_CALL:
-    case R_SPARC_TLS_LDM_CALL: {
-      Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
-      if (sym2->is_imported)
-        sym2->flags |= NEEDS_PLT;
+    case R_SPARC_TLS_LDM_CALL:
+      if (!relax_tlsgd_tlsld(ctx, sym)) {
+        Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
+        if (sym2->is_imported)
+          sym2->flags |= NEEDS_PLT;
+      }
       break;
-    }
     case R_SPARC_SIZE32:
     default:
       Fatal(ctx) << *this << ": scan_relocations: " << rel;
