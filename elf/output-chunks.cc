@@ -673,19 +673,19 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_STRSZ, ctx.dynstr->shdr.sh_size);
   }
 
-  if (ctx.__init_array_start->shndx < 0) {
+  if (ctx.__init_array_start->get_output_section()) {
     define(DT_INIT_ARRAY, ctx.__init_array_start->value);
     define(DT_INIT_ARRAYSZ,
            ctx.__init_array_end->value - ctx.__init_array_start->value);
   }
 
-  if (ctx.__preinit_array_start->shndx < 0) {
+  if (ctx.__preinit_array_start->get_output_section()) {
     define(DT_PREINIT_ARRAY, ctx.__preinit_array_start->value);
     define(DT_PREINIT_ARRAYSZ,
            ctx.__preinit_array_end->value - ctx.__preinit_array_start->value);
   }
 
-  if (ctx.__fini_array_start->shndx < 0) {
+  if (ctx.__fini_array_start->get_output_section()) {
     define(DT_FINI_ARRAY, ctx.__fini_array_start->value);
     define(DT_FINI_ARRAYSZ,
            ctx.__fini_array_end->value - ctx.__fini_array_start->value);
@@ -1251,10 +1251,10 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 
     // SPARC doesn't have a .got.plt because its role is merged to .plt.
     // On SPARC, .plt is writable (!) and the dynamic linker directly
-    // modify its instructions as it resolves dynamic symbols. Therefore,
-    // it doesn't need a separate section to store the symbol resolution
-    // results. That is of course horrible from the security point of view,
-    // though.
+    // modify its machine instructions as it resolves dynamic symbols.
+    // Therefore, it doesn't need a separate section to store the symbol
+    // resolution results. That is of course horrible from the security
+    // point of view, though.
     u64 addr = is_sparc<E> ? sym.get_plt_addr(ctx) : sym.get_gotplt_addr(ctx);
 
     buf[i] = ElfRel<E>(addr, E::R_JUMP_SLOT, sym.get_dynsym_idx(ctx), 0);
@@ -1296,12 +1296,18 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
     esym.st_shndx = SHN_UNDEF;
     esym.st_value = sym.is_canonical ? sym.get_plt_addr(ctx) : 0;
     esym.st_size = 0;
-  } else if (sym.shndx < 0) {
-    // Internal file
-    esym.st_shndx = -sym.shndx;
+  } else if (Chunk<E> *osec = sym.get_output_section()) {
+    // Linker-synthesized symbols
+    esym.st_shndx = osec->shndx;
     esym.st_value = sym.get_addr(ctx);
     esym.st_size = sym.esym().st_size;
-  } else if (sym.shndx == 0) {
+  } else if (SectionFragment<E> *frag = sym.get_frag()) {
+    // Section fragment
+    esym.st_shndx = frag->output_section.shndx;
+    esym.st_value = sym.get_addr(ctx);
+    esym.st_size = sym.esym().st_size;
+  } else if (!sym.get_input_section()) {
+    // Absolute symbol
     esym.st_shndx = SHN_ABS;
     esym.st_value = sym.get_addr(ctx);
     esym.st_size = sym.esym().st_size;

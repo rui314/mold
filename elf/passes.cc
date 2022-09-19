@@ -386,7 +386,6 @@ void create_internal_file(Context<E> &ctx) {
   };
 
   obj->elf_syms = ctx.internal_esyms;
-  obj->sym_fragments.resize(ctx.internal_esyms.size());
   obj->symvers.resize(ctx.internal_esyms.size() - 1);
 }
 
@@ -465,14 +464,14 @@ void add_synthetic_symbols(Context<E> &ctx) {
   }
 
   obj.elf_syms = ctx.internal_esyms;
-  obj.sym_fragments.resize(ctx.internal_esyms.size());
   obj.symvers.resize(ctx.internal_esyms.size() - 1);
 
   obj.resolve_symbols(ctx);
 
-  // Make all synthetic symbols relative ones.
+  // Make all synthetic symbols relative ones by associating them to
+  // a dummy output section.
   for (Symbol<E> *sym : obj.symbols)
-    sym->shndx = -1; // dummy value to make it a relative symbol
+    sym->set_output_section(ctx.symtab);
 
   // Handle --defsym symbols.
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
@@ -492,7 +491,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
     // Make the target absolute if necessary.
     if (!target || target->is_absolute())
-      sym->shndx = 0;
+      sym->set_input_section(nullptr);
   }
 }
 
@@ -1520,20 +1519,25 @@ template <typename E>
 void fix_synthetic_symbols(Context<E> &ctx) {
   auto start = [](Symbol<E> *sym, auto &chunk, i64 bias = 0) {
     if (sym && chunk) {
-      sym->shndx = -chunk->shndx;
+      sym->set_output_section(chunk);
       sym->value = chunk->shdr.sh_addr + bias;
     }
   };
 
   auto stop = [](Symbol<E> *sym, auto &chunk) {
     if (sym && chunk) {
-      sym->shndx = -chunk->shndx;
+      sym->set_output_section(chunk);
       sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
     }
   };
 
+  std::vector<Chunk<E> *> output_sections;
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (chunk->kind() != HEADER)
+      output_sections.push_back(chunk);
+
   auto find = [&](std::string name) -> Chunk<E> * {
-    for (Chunk<E> *chunk : ctx.chunks)
+    for (Chunk<E> *chunk : output_sections)
       if (chunk->name == name)
         return chunk;
     return nullptr;
@@ -1544,19 +1548,14 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     start(ctx.__bss_start, chunk);
 
   if (ctx.ehdr) {
-    for (Chunk<E> *chunk : ctx.chunks) {
-      if (chunk->shndx == 1) {
-        ctx.__ehdr_start->shndx = -1;
-        ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
-        ctx.__executable_start->shndx = -1;
-        ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
+    ctx.__ehdr_start->set_output_section(output_sections[0]);
+    ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
+    ctx.__executable_start->set_output_section(output_sections[0]);
+    ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
 
-        if (ctx.__dso_handle) {
-          ctx.__dso_handle->shndx = -1;
-          ctx.__dso_handle->value = ctx.ehdr->shdr.sh_addr;
-        }
-        break;
-      }
+    if (ctx.__dso_handle) {
+      ctx.__dso_handle->set_output_section(output_sections[0]);
+      ctx.__dso_handle->value = ctx.ehdr->shdr.sh_addr;
     }
   }
 
@@ -1579,7 +1578,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // __{init,fini}_array_{start,end}
-  for (Chunk<E> *chunk : ctx.chunks) {
+  for (Chunk<E> *chunk : output_sections) {
     switch (chunk->shdr.sh_type) {
     case SHT_INIT_ARRAY:
       start(ctx.__init_array_start, chunk);
@@ -1597,10 +1596,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // _end, _etext, _edata and the like
-  for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk->kind() == HEADER)
-      continue;
-
+  for (Chunk<E> *chunk : output_sections) {
     if (chunk->shdr.sh_flags & SHF_ALLOC) {
       stop(ctx._end, chunk);
       stop(ctx.end, chunk);
@@ -1637,7 +1633,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // create a reference to it, but Intel compiler seems to be using
   // this symbol.
   if (ctx._TLS_MODULE_BASE_) {
-    ctx._TLS_MODULE_BASE_->shndx = -1;
+    ctx._TLS_MODULE_BASE_->set_output_section(output_sections[0]);
     ctx._TLS_MODULE_BASE_->value = ctx.tls_begin;
   }
 
@@ -1649,7 +1645,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     if (Chunk<E> *chunk = find(".sdata")) {
       start(ctx.__global_pointer, chunk, 0x800);
     } else {
-      ctx.__global_pointer->shndx = -1;
+      ctx.__global_pointer->set_output_section(output_sections[0]);
       ctx.__global_pointer->value = 0;
     }
   }
@@ -1669,13 +1665,13 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     } else if (Chunk<E> *chunk = find(".toc")) {
       start(ctx.TOC, chunk, 0x8000);
     } else {
-      ctx.TOC->shndx = -1;
+      ctx.TOC->set_output_section(output_sections[0]);
       ctx.TOC->value = 0;
     }
   }
 
   // __start_ and __stop_ symbols
-  for (Chunk<E> *chunk : ctx.chunks) {
+  for (Chunk<E> *chunk : output_sections) {
     if (is_c_identifier(chunk->name)) {
       std::string_view sym1 =
         save_string(ctx, "__start_" + std::string(chunk->name));
@@ -1692,7 +1688,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
     std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
 
-    sym->shndx = 0;
+    sym->set_input_section(nullptr);
 
     if (u64 *addr = std::get_if<u64>(&val)) {
       sym->value = *addr;
@@ -1709,7 +1705,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     sym->visibility = sym2->visibility.load();
 
     if (InputSection<E> *isec = sym2->get_input_section())
-      sym->shndx = -isec->output_section->shndx;
+      sym->set_output_section(isec->output_section);
   }
 }
 

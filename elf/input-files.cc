@@ -53,16 +53,8 @@ template <typename E>
 void InputFile<E>::clear_symbols() {
   for (Symbol<E> *sym : get_global_syms()) {
     std::scoped_lock lock(sym->mu);
-    if (sym->file == this) {
-      sym->file = nullptr;
-      sym->shndx = 0;
-      sym->value = -1;
-      sym->sym_idx = -1;
-      sym->ver_idx = 0;
-      sym->is_weak = false;
-      sym->is_imported = false;
-      sym->is_exported = false;
-    }
+    if (sym->file == this)
+      sym->clear();
   }
 }
 
@@ -454,13 +446,12 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     sym.sym_idx = i;
 
     if (!esym.is_abs())
-      sym.shndx = esym.is_abs() ? 0 : get_shndx(esym);
+      sym.set_input_section(sections[get_shndx(esym)].get());
   }
 
   this->symbols.resize(this->elf_syms.size());
 
   i64 num_globals = this->elf_syms.size() - this->first_global;
-  sym_fragments.resize(this->elf_syms.size());
   symvers.resize(num_globals);
 
   for (i64 i = 0; i < this->first_global; i++)
@@ -726,7 +717,9 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
 
   // Initialize sym_fragments
   for (i64 i = 1; i < this->elf_syms.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
     const ElfSym<E> &esym = this->elf_syms[i];
+
     if (esym.is_abs() || esym.is_common() || esym.is_undef())
       continue;
 
@@ -742,11 +735,8 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
       Fatal(ctx) << *this << ": bad symbol value: " << esym.st_value;
     i64 idx = it - 1 - offsets.begin();
 
-    if (i < this->first_global)
-      this->symbols[i]->value = esym.st_value - offsets[idx];
-
-    sym_fragments[i].frag = m->fragments[idx];
-    sym_fragments[i].addend = esym.st_value - offsets[idx];
+    sym.set_frag(m->fragments[idx]);
+    sym.value = esym.st_value - offsets[idx];
   }
 }
 
@@ -904,7 +894,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     std::scoped_lock lock(sym.mu);
     if (get_rank(this, esym, !this->is_alive) < get_rank(sym)) {
       sym.file = this;
-      sym.shndx = isec ? isec->shndx : 0;
+      sym.set_input_section(isec);
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = ctx.default_version;
@@ -1034,7 +1024,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     auto claim = [&] {
       sym.file = this;
-      sym.shndx = 0;
+      sym.set_input_section(nullptr);
       sym.value = 0;
       sym.sym_idx = i;
       sym.is_weak = false;
@@ -1165,7 +1155,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     isec->output_section = is_tls ? tls_common : common;
 
     sym.file = this;
-    sym.shndx = idx;
+    sym.set_input_section(isec.get());
     sym.value = 0;
     sym.sym_idx = i;
     sym.ver_idx = ctx.default_version;
@@ -1448,7 +1438,7 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
 
     if (get_rank(this, esym, false) < get_rank(sym)) {
       sym.file = this;
-      sym.shndx = 0;
+      sym.set_input_section(nullptr);
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];

@@ -644,7 +644,6 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   }
 
   obj->elf_syms = *esyms;
-  obj->sym_fragments.resize(esyms->size());
   obj->symvers.resize(esyms->size());
   plugin_symbols.clear();
   return obj;

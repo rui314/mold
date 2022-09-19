@@ -1144,7 +1144,6 @@ public:
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
   std::vector<const char *> symvers;
-  std::vector<SectionFragmentRef<E>> sym_fragments;
   std::vector<std::pair<ComdatGroup *, std::span<U32<E>>>> comdat_groups;
   bool exclude_libs = false;
   u32 features = 0;
@@ -1755,17 +1754,28 @@ public:
   bool is_remaining_undef_weak() const;
 
   InputSection<E> *get_input_section() const;
+  Chunk<E> *get_output_section() const;
+  SectionFragment<E> *get_frag() const;
+
+  void set_input_section(InputSection<E> *);
+  void set_output_section(Chunk<E> *);
+  void set_frag(SectionFragment<E> *);
+
   u32 get_type() const;
   std::string_view get_version() const;
   const ElfSym<E> &esym() const;
-  SectionFragment<E> *get_frag() const;
   std::string_view name() const;
+  void clear();
 
   // A symbol is owned by a file. If two or more files define the
   // same symbol, the one with the strongest definition owns the symbol.
   // If `file` is null, the symbol is equivalent to nonexistent.
   InputFile<E> *file = nullptr;
 
+  // `value` contains symbol value. If it's an absolute symbol, it is
+  // equivalent to its address. If it belongs to an input section or a
+  // section fragment, value is added to the base of the input section
+  // to yield an address.
   u64 value = 0;
 
   const char *nameptr = nullptr;
@@ -1773,11 +1783,6 @@ public:
 
   // Index into the symbol table of the owner file.
   i32 sym_idx = -1;
-
-  // shndx > 0  : symbol is in file's shndx'th section
-  // shndx == 0 : absolute symbol
-  // shndx < 0  : symbol is in the -shndx'th output section
-  i32 shndx = 0;
 
   i32 aux_idx = -1;
   u16 ver_idx = 0;
@@ -1903,6 +1908,21 @@ public:
 
   // Target-dependent extra members.
   [[no_unique_address]] SymbolExtras<E> extra;
+
+private:
+  // A symbol usually belongs to an input section, but it can belong
+  // to a section fragment, an output section or nothing
+  // (i.e. absolute symbol). `origin` holds one of them. We use the
+  // least significant two bits to distinguish type.
+  enum : uintptr_t {
+    TAG_ABS  = 0b00,
+    TAG_ISEC = 0b01,
+    TAG_OSEC = 0b10,
+    TAG_FRAG = 0b11,
+    TAG_MASK = 0b11,
+  };
+
+  uintptr_t origin = 0;
 };
 
 // If we haven't seen the same `key` before, create a new instance
@@ -2239,20 +2259,16 @@ inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
 
 template <typename E>
 inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
-  if (file && !file->is_dso) {
-    SectionFragmentRef<E> &ref = ((ObjectFile<E> *)file)->sym_fragments[sym_idx];
-
-    if (ref.frag) {
-      if (!ref.frag->is_alive) {
-        // This condition is met if a non-alloc section refers an
-        // alloc section and if the referenced piece of data is
-        // garbage-collected. Typically, this condition occurs if a
-        // debug info section refers a string constant in .rodata.
-        return 0;
-      }
-
-      return ref.frag->get_addr(ctx) + ref.addend;
+  if (SectionFragment<E> *frag = get_frag()) {
+    if (!frag->is_alive) {
+      // This condition is met if a non-alloc section refers an
+      // alloc section and if the referenced piece of data is
+      // garbage-collected. Typically, this condition occurs if a
+      // debug info section refers a string constant in .rodata.
+      return 0;
     }
+
+    return frag->get_addr(ctx) + value;
   }
 
   if (has_copyrel) {
@@ -2453,7 +2469,9 @@ template <typename E>
 inline bool Symbol<E>::is_absolute() const {
   if (file && file->is_dso)
     return esym().is_abs();
-  return !is_imported && !get_frag() && shndx == 0;
+
+  return !is_imported && !get_frag() && !get_input_section() &&
+         !get_output_section();
 }
 
 // A remaining weak undefined symbol is promoted to a dynamic symbol
@@ -2466,11 +2484,44 @@ inline bool Symbol<E>::is_remaining_undef_weak() const {
 
 template <typename E>
 inline InputSection<E> *Symbol<E>::get_input_section() const {
-  if (shndx > 0) {
-    assert(!file->is_dso);
-    return ((ObjectFile<E> *)file)->sections[shndx].get();
-  }
+  if ((origin & TAG_MASK) == TAG_ISEC)
+    return (InputSection<E> *)(origin & ~TAG_MASK);
   return nullptr;
+}
+
+template <typename E>
+inline Chunk<E> *Symbol<E>::get_output_section() const {
+  if ((origin & TAG_MASK) == TAG_OSEC)
+    return (Chunk<E> *)(origin & ~TAG_MASK);
+  return nullptr;
+}
+
+template <typename E>
+inline SectionFragment<E> *Symbol<E>::get_frag() const {
+  if ((origin & TAG_MASK) == TAG_FRAG)
+    return (SectionFragment<E> *)(origin & ~TAG_MASK);
+  return nullptr;
+}
+
+template <typename E>
+inline void Symbol<E>::set_input_section(InputSection<E> *isec) {
+  uintptr_t addr = (uintptr_t)isec;
+  assert((addr & TAG_MASK) == 0);
+  origin = addr | TAG_ISEC;
+}
+
+template <typename E>
+inline void Symbol<E>::set_output_section(Chunk<E> *osec) {
+  uintptr_t addr = (uintptr_t)osec;
+  assert((addr & TAG_MASK) == 0);
+  origin = addr | TAG_OSEC;
+}
+
+template <typename E>
+inline void Symbol<E>::set_frag(SectionFragment<E> *frag) {
+  uintptr_t addr = (uintptr_t)frag;
+  assert((addr & TAG_MASK) == 0);
+  origin = addr | TAG_FRAG;
 }
 
 template <typename E>
@@ -2493,15 +2544,20 @@ inline const ElfSym<E> &Symbol<E>::esym() const {
 }
 
 template <typename E>
-inline SectionFragment<E> *Symbol<E>::get_frag() const {
-  if (!file || file->is_dso)
-    return nullptr;
-  return ((ObjectFile<E> *)file)->sym_fragments[sym_idx].frag;
+inline std::string_view Symbol<E>::name() const {
+  return {nameptr, (size_t)namelen};
 }
 
 template <typename E>
-inline std::string_view Symbol<E>::name() const {
-  return {nameptr, (size_t)namelen};
+inline void Symbol<E>::clear() {
+  file = nullptr;
+  origin = 0;
+  value = -1;
+  sym_idx = -1;
+  ver_idx = 0;
+  is_weak = false;
+  is_imported = false;
+  is_exported = false;
 }
 
 } // namespace mold::elf
