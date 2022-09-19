@@ -700,16 +700,15 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
       if (!m)
         continue;
 
-      i64 offset = esym.st_value + isec->get_addend(rel);
-      std::span<u32> offsets = m->frag_offsets;
+      SectionFragment<E> *frag;
+      i64 frag_offset;
+      std::tie(frag, frag_offset) =
+        m->get_fragment(esym.st_value + isec->get_addend(rel));
 
-      auto it = std::upper_bound(offsets.begin(), offsets.end(), offset);
-      if (it == offsets.begin())
+      if (!frag)
         Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
-      i64 idx = it - 1 - offsets.begin();
 
-      isec->rel_fragments[frag_idx++] = {m->fragments[idx], (i32)i,
-                                         (i32)(offset - offsets[idx])};
+      isec->rel_fragments[frag_idx++] = {frag, (i32)i, (i32)frag_offset};
     }
 
     isec->rel_fragments[frag_idx] = {nullptr, -1, -1};
@@ -728,15 +727,15 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
     if (!m)
       continue;
 
-    std::span<u32> offsets = m->frag_offsets;
+    SectionFragment<E> *frag;
+    i64 frag_offset;
+    std::tie(frag, frag_offset) = m->get_fragment(esym.st_value);
 
-    auto it = std::upper_bound(offsets.begin(), offsets.end(), esym.st_value);
-    if (it == offsets.begin())
+    if (!frag)
       Fatal(ctx) << *this << ": bad symbol value: " << esym.st_value;
-    i64 idx = it - 1 - offsets.begin();
 
-    sym.set_frag(m->fragments[idx]);
-    sym.value = esym.st_value - offsets[idx];
+    sym.set_frag(frag);
+    sym.value = frag_offset;
   }
 }
 

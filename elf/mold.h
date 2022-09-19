@@ -1042,6 +1042,8 @@ struct ComdatGroup {
 
 template <typename E>
 struct MergeableSection {
+  std::pair<SectionFragment<E> *, i64> get_fragment(i64 offset);
+
   MergedSection<E> *parent;
   u8 p2align = 0;
   std::vector<std::string_view> strings;
@@ -2142,22 +2144,12 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
   assert(!(shdr().sh_flags & SHF_ALLOC));
 
   const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
-  if (esym.st_type != STT_SECTION)
-    return {nullptr, 0};
+  if (esym.st_type == STT_SECTION)
+    if (std::unique_ptr<MergeableSection<E>> &m =
+        file.mergeable_sections[file.get_shndx(esym)])
+      return m->get_fragment(esym.st_value + get_addend(rel));
 
-  std::unique_ptr<MergeableSection<E>> &m =
-    file.mergeable_sections[file.get_shndx(esym)];
-  if (!m)
-    return {nullptr, 0};
-
-  i64 offset = esym.st_value + get_addend(rel);
-  std::span<u32> offsets = m->frag_offsets;
-
-  auto it = std::upper_bound(offsets.begin(), offsets.end(), offset);
-  if (it == offsets.begin())
-    Fatal(ctx) << *this << ": bad relocation at " << rel.r_sym;
-  i64 idx = it - 1 - offsets.begin();
-  return {m->fragments[idx], offset - offsets[idx]};
+  return {nullptr, 0};
 }
 
 // Input object files may contain duplicate code for inline functions
@@ -2203,8 +2195,21 @@ inline bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel
 }
 
 template <typename E>
+std::pair<SectionFragment<E> *, i64>
+MergeableSection<E>::get_fragment(i64 offset) {
+  std::vector<u32> &vec = frag_offsets;
+  auto it = std::upper_bound(vec.begin(), vec.end(), offset);
+  if (it == vec.begin())
+    return {nullptr, 0};
+
+  i64 idx = it - 1 - vec.begin();
+  return {fragments[idx], offset - vec[idx]};
+}
+
+template <typename E>
 template <typename T>
-inline std::span<T> InputFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
+inline std::span<T>
+InputFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
   std::string_view view = this->get_string(ctx, shdr);
   if (view.size() % sizeof(T))
     Fatal(ctx) << *this << ": corrupted section";
