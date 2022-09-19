@@ -454,7 +454,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     sym.sym_idx = i;
 
     if (!esym.is_abs())
-      sym.shndx = esym.is_abs() ? 0 : get_shndx(esym);
+      sym.shndx = get_shndx(esym);
   }
 
   this->symbols.resize(this->elf_syms.size());
