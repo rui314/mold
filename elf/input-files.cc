@@ -626,11 +626,11 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 // section piece in a section, but it doesn't do for any other types
 // of symbols.
 //
-// In mold, we attach section pieces to either relocations or symbols.
-// If a relocation refers a section symbol whose section is a
-// mergeable section, a section piece is attached to the relocation.
-// If a non-section symbol refers a section piece, the section piece
-// is attached to the symbol.
+// In mold, we attach section pieces symbols. If a relocation refers a
+// section symbol whose section is a mergeable section, we create a
+// new dummy symbol with a section piece and redirect the relocation
+// to the symbol. If a non-section symbol refers a section piece, the
+// section piece is attached to the symbol.
 template <typename E>
 void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
   mergeable_sections.resize(sections.size());
@@ -661,6 +661,29 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
     }
   }
 
+  // Attach section pieces to symbols.
+  for (i64 i = 1; i < this->elf_syms.size(); i++) {
+    Symbol<E> &sym = *this->symbols[i];
+    const ElfSym<E> &esym = this->elf_syms[i];
+
+    if (esym.is_abs() || esym.is_common() || esym.is_undef())
+      continue;
+
+    std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[get_shndx(esym)];
+    if (!m)
+      continue;
+
+    SectionFragment<E> *frag;
+    i64 frag_offset;
+    std::tie(frag, frag_offset) = m->get_fragment(esym.st_value);
+
+    if (!frag)
+      Fatal(ctx) << *this << ": bad symbol value: " << esym.st_value;
+
+    sym.set_frag(frag);
+    sym.value = frag_offset;
+  }
+
   // Compute the size of frag_syms.
   i64 nfrag_syms = 0;
   for (std::unique_ptr<InputSection<E>> &isec : sections)
@@ -672,7 +695,9 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
 
   this->frag_syms.resize(nfrag_syms);
 
-  // Initialize frag_syms
+  // For each relocation referring a mergeable section symbol, we create
+  // a new dummy non-section symbol and redirect the relocation to the
+  // newly-created symbol.
   i64 idx = 0;
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
     if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
@@ -714,29 +739,6 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
 
   for (Symbol<E> &sym : this->frag_syms)
     this->symbols.push_back(&sym);
-
-  // Initialize sym_fragments
-  for (i64 i = 1; i < this->elf_syms.size(); i++) {
-    Symbol<E> &sym = *this->symbols[i];
-    const ElfSym<E> &esym = this->elf_syms[i];
-
-    if (esym.is_abs() || esym.is_common() || esym.is_undef())
-      continue;
-
-    std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[get_shndx(esym)];
-    if (!m)
-      continue;
-
-    SectionFragment<E> *frag;
-    i64 frag_offset;
-    std::tie(frag, frag_offset) = m->get_fragment(esym.st_value);
-
-    if (!frag)
-      Fatal(ctx) << *this << ": bad symbol value: " << esym.st_value;
-
-    sym.set_frag(frag);
-    sym.value = frag_offset;
-  }
 }
 
 template <typename E>
