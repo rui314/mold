@@ -39,8 +39,8 @@ EOF
 $CC -B. -o $t/c.so -shared $t/b.o
 $CC -B. -o $t/d.so -shared $t/b.o -Wl,-init,init -Wl,-fini,fini
 
-$CC -o $t/exe1 $t/a.o $t/c.so
-$CC -o $t/exe2 $t/a.o $t/d.so
+$CC -B. -o $t/exe1 $t/a.o $t/c.so
+$CC -B. -o $t/exe2 $t/a.o $t/d.so
 
 $QEMU $t/exe1 > $t/log1
 $QEMU $t/exe2 > $t/log2
