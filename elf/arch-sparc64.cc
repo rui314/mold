@@ -286,7 +286,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A - P, 31, 10);
       break;
     case R_SPARC_OLO10:
-      *(ub32 *)loc |= bits(S + A, 9, 0) + rel.r_type_data;
+      *(ub32 *)loc |= bits(((S + A) & 0x3ff) + rel.r_type_data, 12, 0);
       break;
     case R_SPARC_HH22:
       *(ub32 *)loc |= bits(S + A, 63, 42);
