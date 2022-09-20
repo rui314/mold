@@ -17,6 +17,9 @@ mkdir -p $t
 [ $MACHINE = arm32 ] && { echo skipped; exit; }
 [ $MACHINE = riscv32 ] && { echo skipped; exit; }
 
+# It looks like SPARC's runtime can't handle PLT if it's too far from GOT.
+[ $MACHINE = sparc64 ] && { echo skipped; exit; }
+
 cat <<EOF > $t/a.c
 #include <stdio.h>
 
