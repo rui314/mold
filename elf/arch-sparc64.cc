@@ -29,14 +29,17 @@ namespace mold::elf {
 using E = SPARC64;
 
 // SPARC's PLT section is writable despite containing executable code.
-// The dynamic loader actually rewrite its contents. So we don't need
-// to write the PLT0 entry.
+// We don't need to write the PLT header entry because the dynamic loader
+// will do that for us.
 //
 // We also don't need a .got.plt section to store the result of lazy PLT
-// symbol resolution because the dynamic symbol resolver directly rewrite
+// symbol resolution because the dynamic symbol resolver directly modify
 // instructions in PLT so that they jump to the right places next time.
-// This kind of self-modifying code is considered a really bad practice
-// from the security point of view, though.
+// That's why each PLT entry contains lots of NOPs; that's a placeholder
+// to add more instructions at runtime.
+//
+// Self-modifying code is nowadays considered really bad from the security
+// point of view, though.
 template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
@@ -55,17 +58,16 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 
   static_assert(sizeof(plt) == E::plt_size);
 
+  u64 plt0 = ctx.plt->shdr.sh_addr;
+  u64 plt1 = ctx.plt->shdr.sh_addr + E::plt_size;
+
   for (i64 i = 0; i < symbols.size(); i++) {
-    Symbol<E> &sym = *symbols[i];
-    u8 *loc = buf + E::plt_hdr_size + i * E::plt_size;
+    ub32 *loc = (ub32 *)(buf + E::plt_hdr_size + i * E::plt_size);
     memcpy(loc, plt, sizeof(plt));
 
-    u64 plt0 = ctx.plt->shdr.sh_addr;
-    u64 plt1 = ctx.plt->shdr.sh_addr + E::plt_size;
-    u64 ent_addr = sym.get_plt_addr(ctx);
-
-    *(ub32 *)(loc + 0) |= bits(ent_addr - plt0, 21, 0);
-    *(ub32 *)(loc + 4) |= bits(plt1 - ent_addr - 4, 20, 2);
+    u64 ent_addr = symbols[i]->get_plt_addr(ctx);
+    loc[0] |= bits(ent_addr - plt0, 21, 0);
+    loc[1] |= bits(plt1 - ent_addr - 4, 20, 2);
   }
 }
 
@@ -81,7 +83,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
     0xc25b'c001, // ldx  [ %o7 + %g1 ], %g1
     0x81c0'4000, // jmp  %g1
     0x9e10'0005, // mov  %g5, %o7
-    0x0000'0000, // .quad PLT - GOT
+    0x0000'0000, // .quad $plt_entry - $got_entry
     0x0000'0000,
   };
 
@@ -166,12 +168,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_13:
       *(ub32 *)loc |= bits(S + A, 12, 0);
       break;
-    case R_SPARC_22:
-      *(ub32 *)loc |= bits(S + A, 21, 0);
-      break;
     case R_SPARC_16:
     case R_SPARC_UA16:
       *(ub16 *)loc = S + A;
+      break;
+    case R_SPARC_22:
+      *(ub32 *)loc |= bits(S + A, 21, 0);
       break;
     case R_SPARC_32:
     case R_SPARC_UA32:
@@ -211,12 +213,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_GOTDATA_HIX22: {
       i64 val = S + A - GOT;
-      *(ub32 *)loc |= bits((val >> 10) ^ (val >> 31), 21, 0);
+      *(ub32 *)loc |= bits(val < 0 ? ~val : val, 31, 10);
       break;
     }
     case R_SPARC_GOTDATA_LOX10: {
       i64 val = S + A - GOT;
-      *(ub32 *)loc |= bits((val & 0x3ff) | ((val >> 31) & 0x1c00), 12, 0);
+      *(ub32 *)loc |= bits(val, 10, 0) | (val < 0 ? 0b1'1100'0000'0000 : 0);
       break;
     }
     case R_SPARC_GOTDATA_OP_HIX22:
@@ -224,24 +226,24 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // symbol is local, because R_SPARC_GOTDATA_OP cannot represent
       // an addend for a local symbol.
       if (sym.is_imported) {
-        *(ub32 *)loc |= bits((G >> 10) ^ (G >> 31), 21, 0);
+        *(ub32 *)loc |= bits(G < 0 ? ~G : G, 31, 10);
       } else if (sym.is_absolute()) {
         i64 val = S + A;
-        *(ub32 *)loc |= bits((val >> 10) ^ (val >> 31), 21, 0);
+        *(ub32 *)loc |= bits(val < 0 ? ~val : val, 31, 10);
       } else {
         i64 val = S + A - GOT;
-        *(ub32 *)loc |= bits((val >> 10) ^ (val >> 31), 21, 0);
+        *(ub32 *)loc |= bits(val < 0 ? ~val : val, 31, 10);
       }
       break;
     case R_SPARC_GOTDATA_OP_LOX10: {
       if (sym.is_imported) {
-        *(ub32 *)loc |= bits((G & 0x3ff) | ((G >> 31) & 0x1c00), 12, 0);
+        *(ub32 *)loc |= bits(G, 9, 0) | (G < 0 ? 0b1'1100'0000'0000 : 0);
       } else if (sym.is_absolute()) {
         i64 val = S + A;
-        *(ub32 *)loc |= bits((val & 0x3ff) | ((val >> 31) & 0x1c00), 12, 0);
+        *(ub32 *)loc |= bits(val, 9, 0) | (val < 0 ? 0b1'1100'0000'0000 : 0);
       } else {
         i64 val = S + A - GOT;
-        *(ub32 *)loc |= bits((val & 0x3ff) | ((val >> 31) & 0x1c00), 12, 0);
+        *(ub32 *)loc |= bits(val, 9, 0) | (val < 0 ? 0b1'1100'0000'0000 : 0);
       }
       break;
     }
@@ -302,7 +304,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(~(S + A), 31, 10);
       break;
     case R_SPARC_LOX10:
-      *(ub32 *)loc |= bits(S + A, 9, 0) | 0b0001'1100'0000'0000;
+      *(ub32 *)loc |= bits(S + A, 9, 0) | 0b1'1100'0000'0000;
       break;
     case R_SPARC_H44:
       *(ub32 *)loc |= bits(S + A, 43, 22);
@@ -352,7 +354,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(~(S + A - ctx.tp_addr), 31, 10);
       break;
     case R_SPARC_TLS_LE_LOX10:
-      *(ub32 *)loc |= bits(S + A - ctx.tp_addr, 9, 0) | 0b0001'1100'0000'0000;
+      *(ub32 *)loc |= bits(S + A - ctx.tp_addr, 9, 0) | 0b1'1100'0000'0000;
       break;
     case R_SPARC_SIZE32:
       *(ub32 *)loc = sym.esym().st_size + A;
@@ -365,7 +367,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_TLS_IE_ADD:
       break;
     default:
-      Fatal(ctx) << *this << ": apply_reloc_alloc relocation: " << rel;
+      unreachable();
     }
 
 #undef S
@@ -557,7 +559,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 // __tls_get_addr is not defined by libc.a, so we can't use that function
 // in statically-linked executables. This section provides a replacement.
 void SparcTlsGetAddrSection::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  ub32 *buf = (ub32 *)(ctx.buf + this->shdr.sh_offset);
 
   static const ub32 insn[] = {
     0x0300'0000, // sethi  %hi(TP_SIZE), %g1
@@ -571,8 +573,8 @@ void SparcTlsGetAddrSection::copy_buf(Context<E> &ctx) {
   assert(this->shdr.sh_size == sizeof(insn));
   memcpy(buf, insn, sizeof(insn));
 
-  *(ub32 *)(buf + 0) |= bits(ctx.tp_addr - ctx.tls_begin, 31, 10);
-  *(ub32 *)(buf + 4) |= bits(ctx.tp_addr - ctx.tls_begin, 9, 0);
+  buf[0] |= bits(ctx.tp_addr - ctx.tls_begin, 31, 10);
+  buf[1] |= bits(ctx.tp_addr - ctx.tls_begin, 9, 0);
 }
 
 } // namespace mold::elf
