@@ -372,43 +372,36 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_TLS_LDM_HI22:
       if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc = 0x0100'0000; // nop
+        *(ub32 *)loc |= bits(ctx.tp_addr - ctx.tls_begin, 31, 10);
       else
         *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 31, 10);
       break;
     case R_SPARC_TLS_LDM_LO10:
       if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc = 0x0100'0000; // nop
+        *(ub32 *)loc |= bits(ctx.tp_addr - ctx.tls_begin, 9, 0);
       else
         *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 9, 0);
       break;
     case R_SPARC_TLS_LDM_ADD:
-      if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc = 0x0100'0000; // nop
-      break;
-    case R_SPARC_TLS_LDO_HIX22:
-      if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc |= bits(~(S + A - ctx.tp_addr), 31, 10);
-      else
-        *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 31, 10);
-      break;
-    case R_SPARC_TLS_LDO_LOX10:
-      if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc |= bits(S + A - ctx.tp_addr, 9, 0) | 0b0001'1100'0000'0000;
-      else
-        *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 9, 0);
-      break;
-    case R_SPARC_TLS_LDO_ADD:
-      if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc = 0xb001'c001; // add  %g7, %g1, %i0
+      if (relax_tlsgd_tlsld(ctx, sym)) {
+        // add %i5, %g1, %o0 → mov %g1, %o0
+        *(ub32 *)loc &= 0b00'11111'000000'00000'0'00000000'11111;
+        *(ub32 *)loc |= 0b10'00000'000010'00000'0'00000000'00000;
+      }
       break;
     case R_SPARC_TLS_LDM_CALL:
       if (relax_tlsgd_tlsld(ctx, sym)) {
-        *(ub32 *)loc = 0x9010'0000; // mov  %g0, %o0
+        *(ub32 *)loc = 0x9021'c008; // sub  %g7, %o0, %o0
       } else {
         Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
         *(ub32 *)loc |= bits(sym2->get_addr(ctx) + A - P, 31, 2);
       }
+      break;
+    case R_SPARC_TLS_LDO_HIX22:
+      *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 31, 10);
+      break;
+    case R_SPARC_TLS_LDO_LOX10:
+      *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 9, 0);
       break;
     case R_SPARC_TLS_IE_HI22:
       *(ub32 *)loc |= bits(sym.get_gottp_addr(ctx) + A - GOT, 31, 10);
@@ -425,6 +418,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_SIZE32:
       *(ub32 *)loc = sym.esym().st_size + A;
       break;
+    case R_SPARC_TLS_LDO_ADD:
     case R_SPARC_TLS_IE_LD:
     case R_SPARC_TLS_IE_LDX:
     case R_SPARC_TLS_IE_ADD:
