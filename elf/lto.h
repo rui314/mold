@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../inttypes.h"
+
 namespace mold {
 
 enum PluginStatus {
@@ -87,9 +89,17 @@ struct PluginSection {
 struct PluginSymbol {
   char *name;
   char *version;
+#ifdef __LITTLE_ENDIAN__
   char def;
   char symbol_type;
   char section_kind;
+  char padding;
+#else
+  char padding;
+  char section_kind;
+  char symbol_type;
+  char def;
+#endif
   int32_t visibility;
   uint64_t size;
   char *comdat_key;
