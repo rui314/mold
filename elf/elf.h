@@ -2082,8 +2082,8 @@ struct SparcEB64Rela {
 
   ub64 r_offset;
   ub32 r_sym;
-  u8 r_type;
   ub24 r_type_data;
+  u8 r_type;
   ib64 r_addend;
 };
 
