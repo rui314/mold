@@ -180,6 +180,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_PLT32:
       *(ub32 *)loc = S + A;
       break;
+    case R_SPARC_PLT64:
+    case R_SPARC_UA64:
+    case R_SPARC_REGISTER:
+      *(ub64 *)loc = S + A;
+      break;
     case R_SPARC_DISP8:
       *(u8 *)loc = S + A - P;
       break;
@@ -189,6 +194,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_DISP32:
     case R_SPARC_PCPLT32:
       *(ub32 *)loc = S + A - P;
+      break;
+    case R_SPARC_DISP64:
+      *(ub64 *)loc = S + A - P;
+      break;
+    case R_SPARC_WDISP16: {
+      i64 val = S + A - P;
+      *(ub16 *)loc |= (bit(val, 16) << 21) | bits(val, 15, 2);
+      break;
+    }
+    case R_SPARC_WDISP19:
+      *(ub32 *)loc |= bits(S + A - P, 20, 2);
       break;
     case R_SPARC_WDISP22:
       *(ub32 *)loc |= bits(S + A - P, 23, 2);
@@ -218,7 +234,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
     case R_SPARC_GOTDATA_LOX10: {
       i64 val = S + A - GOT;
-      *(ub32 *)loc |= bits(val, 10, 0) | (val < 0 ? 0b1'1100'0000'0000 : 0);
+      *(ub32 *)loc |= bits(val, 9, 0) | (val < 0 ? 0b1'1100'0000'0000 : 0);
       break;
     }
     case R_SPARC_GOTDATA_OP_HIX22:
@@ -270,7 +286,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A - P, 31, 10);
       break;
     case R_SPARC_OLO10:
-      *(ub32 *)loc |= bits(S + A, 9, 0); // + O
+      *(ub32 *)loc |= bits(S + A, 9, 0) + rel.r_type_data;
       break;
     case R_SPARC_HH22:
       *(ub32 *)loc |= bits(S + A, 63, 42);
@@ -283,22 +299,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_PC_HM10:
       *(ub32 *)loc |= bits(S + A - P, 41, 32);
-      break;
-    case R_SPARC_WDISP16: {
-      i64 val = S + A - P;
-      *(ub16 *)loc |= (bit(val, 16) << 21) | bits(val, 15, 2);
-      break;
-    }
-    case R_SPARC_WDISP19:
-      *(ub32 *)loc |= bits(S + A - P, 20, 2);
-      break;
-    case R_SPARC_DISP64:
-      *(ub64 *)loc = S + A - P;
-      break;
-    case R_SPARC_PLT64:
-    case R_SPARC_UA64:
-    case R_SPARC_REGISTER:
-      *(ub64 *)loc = S + A;
       break;
     case R_SPARC_HIX22:
       *(ub32 *)loc |= bits(~(S + A), 31, 10);
