@@ -116,6 +116,7 @@ static constexpr u32 STT_FILE = 4;
 static constexpr u32 STT_COMMON = 5;
 static constexpr u32 STT_TLS = 6;
 static constexpr u32 STT_GNU_IFUNC = 10;
+static constexpr u32 STT_SPARC_REGISTER = 13;
 
 static constexpr u32 STB_LOCAL = 0;
 static constexpr u32 STB_GLOBAL = 1;
@@ -278,6 +279,15 @@ static constexpr u32 EF_RISCV_FLOAT_ABI_DOUBLE = 4;
 static constexpr u32 EF_RISCV_FLOAT_ABI_QUAD = 6;
 static constexpr u32 EF_RISCV_RVE = 8;
 static constexpr u32 EF_RISCV_TSO = 16;
+
+static constexpr u32 EF_SPARC64_MM = 0x3;
+static constexpr u32 EF_SPARC64_TSO = 0x0;
+static constexpr u32 EF_SPARC64_PSO = 0x1;
+static constexpr u32 EF_SPARC64_RMO = 0x2;
+static constexpr u32 EF_SPARC_EXT_MASK = 0xffff00;
+static constexpr u32 EF_SPARC_SUN_US1 = 0x000200;
+static constexpr u32 EF_SPARC_HAL_R1 = 0x000400;
+static constexpr u32 EF_SPARC_SUN_US3 = 0x000800;
 
 static constexpr u32 STO_RISCV_VARIANT_CC = 0x80;
 
