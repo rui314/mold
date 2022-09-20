@@ -15,6 +15,9 @@
 // extension thunks. It comes with the cost that the CALL instruction alone
 // takes 1/4th of the instruction encoding space, though.
 //
+// SPARC has 32 registers.CALL instruction saves a return address to %o7,
+// which is an alias for %r15. Thread pointer is stored to %g7 which is %r7.
+//
 // https://docs.oracle.com/cd/E36784_01/html/E36857/chapter6-62988.html
 // https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter8-40/index.html
 
@@ -29,6 +32,30 @@ static bool relax_tlsgd_tlsld(Context<E> &ctx, Symbol<E> &sym) {
   // executables because `__tls_get_addr` is not missing in libc.a.
   return (ctx.arg.relax || ctx.arg.is_static) &&
          !ctx.arg.shared && !sym.is_imported;
+}
+
+static void set_rd(u8 *loc, u32 reg) {
+  assert(reg < 32);
+  *(ub32 *)loc &= 0b11'00000'111111'11111'1'11111111'11111;
+  *(ub32 *)loc |= reg << 25;
+}
+
+static void set_op3(u8 *loc, u32 op) {
+  assert(op < 64);
+  *(ub32 *)loc &= 0b11'11111'000000'11111'1'11111111'11111;
+  *(ub32 *)loc |= op << 19;
+}
+
+static void set_rs1(u8 *loc, u32 reg) {
+  assert(reg < 32);
+  *(ub32 *)loc &= 0b11'11111'111111'00000'1'11111111'11111;
+  *(ub32 *)loc |= reg << 14;
+}
+
+static void set_rs2(u8 *loc, u32 reg) {
+  assert(reg < 32);
+  *(ub32 *)loc &= 0b11'11111'111111'11111'1'11111111'00000;
+  *(ub32 *)loc |= reg;
 }
 
 template <>
@@ -271,7 +298,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A, 41, 32);
       break;
     case R_SPARC_PC_HH22:
-      *(ub32 *)loc |= bits(S + A - P, 53, 42);
+      *(ub32 *)loc |= bits(S + A - P, 63, 42);
       break;
     case R_SPARC_PC_HM10:
       *(ub32 *)loc |= bits(S + A - P, 41, 32);
@@ -309,15 +336,31 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_TLS_GD_HI22:
       if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 31, 10);
+        *(ub32 *)loc |= bits(~(S + A - ctx.tp_addr), 31, 10);
       else
         *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 31, 10);
       break;
     case R_SPARC_TLS_GD_LO10:
-      if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 9, 0);
-      else
+      if (relax_tlsgd_tlsld(ctx, sym)) {
+        // add %g1, 0, %g1 → xor %g1, 0, %g1
+        //
+        // Since an offset from TP is always negative, we can't materialize
+        // a value with SETHI + ADD as they leave the most significant 32
+        // bits as zero. So we use SETHI + XOR instead. XOR treats its
+        // immediate as a signed integer, so we can negate the MSB bits
+        // with it.
+        set_op3(loc, 0b00'0011); // XOR
+        *(ub32 *)loc |= bits(S + A - ctx.tp_addr, 9, 0) | 0b0011'1100'0000'0000;
+      } else {
         *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 9, 0);
+      }
+      break;
+    case R_SPARC_TLS_GD_ADD:
+      if (relax_tlsgd_tlsld(ctx, sym)) {
+        // add %l7, %o0, %o0 → add %g7, %o0, %o0
+        // g7 is 7th register and contains the thread pointer.
+        set_rs1(loc, 7);
+      }
       break;
     case R_SPARC_TLS_GD_CALL:
       if (relax_tlsgd_tlsld(ctx, sym)) {
@@ -382,7 +425,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_SIZE32:
       *(ub32 *)loc = sym.esym().st_size + A;
       break;
-    case R_SPARC_TLS_GD_ADD:
     case R_SPARC_TLS_IE_LD:
     case R_SPARC_TLS_IE_LDX:
     case R_SPARC_TLS_IE_ADD:
