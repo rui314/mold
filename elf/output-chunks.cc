@@ -1750,8 +1750,8 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
   struct HdrEntry {
-    il32 init_addr;
-    il32 fde_addr;
+    I32<E> init_addr;
+    I32<E> fde_addr;
   };
 
   HdrEntry *eh_hdr_begin = nullptr;
