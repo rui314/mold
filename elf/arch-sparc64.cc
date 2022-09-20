@@ -19,6 +19,39 @@
 // address to %o7, which is an alias for %r15. Thread pointer is stored to
 // %g7 which is %r7.
 //
+// SPARC does not support PC-relative load/store insturctions. To access
+// data in a position-independent manner, we usually first set the address
+// of .got to, for example, %l7, with the following piece of code
+//
+//   sethi  %hi(_GLOBAL_OFFSET_TABLE_), %l7
+//   add  %l7, %lo(_GLOBAL_OFFSET_TABLE_), %l7
+//   call __sparc_get_pc_thunk.l7
+//   nop
+//
+// where __sparc_get_pc_thunk.l7 is defined as
+//
+//   retl
+//   add  %o7, %l7, %l7
+//
+// SETHI and the following ADD materialize a 32 bits offset to .got.
+// CALL instruction sets a return address to $o7, and the following ADD
+// adds it to the GOT offset to materialize the absolute address of .got.
+//
+// Note that the .got address obtained this way is not shared between
+// functions, so functions can use an arbitrary register to hold the .got
+// address. That also means each function needs to execute the above piece
+// of code to become position-independent.
+//
+// Note also that we have a NOP after CALL and another instruction after
+// RETL because of SPARC's delay branch slots. That is, the SPARC processor
+// always executes one instruction after a branch even if the branch is
+// not taken. This seems like an odd behavior and actually is (which is a
+// result of a premature optimization for the early pipelined SPARC
+// processors), but that's been a part of the spec so that's what it is.
+//
+// This scheme is very similar to i386. That may not be a coincidence
+// because the i386 ELF psABI is created by Sun Microsystems.
+//
 // https://docs.oracle.com/cd/E36784_01/html/E36857/chapter6-62988.html
 // https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter8-40/index.html
 
@@ -33,10 +66,10 @@ using E = SPARC64;
 // will do that for us.
 //
 // We also don't need a .got.plt section to store the result of lazy PLT
-// symbol resolution because the dynamic symbol resolver directly modify
+// symbol resolution because the dynamic symbol resolver directly mutates
 // instructions in PLT so that they jump to the right places next time.
 // That's why each PLT entry contains lots of NOPs; that's a placeholder
-// to add more instructions at runtime.
+// for the runtime to add more instructions.
 //
 // Self-modifying code is nowadays considered really bad from the security
 // point of view, though.
