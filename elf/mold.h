@@ -1359,6 +1359,23 @@ template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx);
 
 //
+// arch-sparc.cc
+//
+
+class SparcTlsGetAddrSection : public Chunk<SPARC64> {
+public:
+  SparcTlsGetAddrSection() {
+    this->name = ".tls_get_addr";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 4;
+    this->shdr.sh_size = 24;
+  }
+
+  void copy_buf(Context<SPARC64> &ctx) override;
+};
+
+//
 // main.cc
 //
 
@@ -1616,6 +1633,7 @@ struct Context {
   NotePackageSection<E> *note_package = nullptr;
   NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
+  SparcTlsGetAddrSection *sparc_tls_get_addr = nullptr;
 
   // For --gdb-index
   Chunk<E> *debug_info = nullptr;

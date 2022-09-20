@@ -15,8 +15,9 @@
 // extension thunks. It comes with the cost that the CALL instruction alone
 // takes 1/4th of the instruction encoding space, though.
 //
-// SPARC has 32 registers.CALL instruction saves a return address to %o7,
-// which is an alias for %r15. Thread pointer is stored to %g7 which is %r7.
+// SPARC has 32 general purpose registers. CALL instruction saves a return
+// address to %o7, which is an alias for %r15. Thread pointer is stored to
+// %g7 which is %r7.
 //
 // https://docs.oracle.com/cd/E36784_01/html/E36857/chapter6-62988.html
 // https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter8-40/index.html
@@ -27,37 +28,15 @@ namespace mold::elf {
 
 using E = SPARC64;
 
-static bool relax_tlsgd_tlsld(Context<E> &ctx, Symbol<E> &sym) {
-  // On SPARC, we must relax TLSGD and TLSLD for statically-linked
-  // executables because `__tls_get_addr` is not missing in libc.a.
-  return (ctx.arg.relax || ctx.arg.is_static) &&
-         !ctx.arg.shared && !sym.is_imported;
-}
-
-static void set_rd(u8 *loc, u32 reg) {
-  assert(reg < 32);
-  *(ub32 *)loc &= 0b11'00000'111111'11111'1'11111111'11111;
-  *(ub32 *)loc |= reg << 25;
-}
-
-static void set_op3(u8 *loc, u32 op) {
-  assert(op < 64);
-  *(ub32 *)loc &= 0b11'11111'000000'11111'1'11111111'11111;
-  *(ub32 *)loc |= op << 19;
-}
-
-static void set_rs1(u8 *loc, u32 reg) {
-  assert(reg < 32);
-  *(ub32 *)loc &= 0b11'11111'111111'00000'1'11111111'11111;
-  *(ub32 *)loc |= reg << 14;
-}
-
-static void set_rs2(u8 *loc, u32 reg) {
-  assert(reg < 32);
-  *(ub32 *)loc &= 0b11'11111'111111'11111'1'11111111'00000;
-  *(ub32 *)loc |= reg;
-}
-
+// SPARC's PLT section is writable despite containing executable code.
+// The dynamic loader actually rewrite its contents. So we don't need
+// to write the PLT0 entry.
+//
+// We also don't need a .got.plt section to store the result of lazy PLT
+// symbol resolution because the dynamic symbol resolver directly rewrite
+// instructions in PLT so that they jump to the right places next time.
+// This kind of self-modifying code is considered a really bad practice
+// from the security point of view, though.
 template <>
 void PltSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
@@ -335,67 +314,27 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A, 11, 0);
       break;
     case R_SPARC_TLS_GD_HI22:
-      if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc |= bits(~(S + A - ctx.tp_addr), 31, 10);
-      else
-        *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 31, 10);
+      *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 31, 10);
       break;
     case R_SPARC_TLS_GD_LO10:
-      if (relax_tlsgd_tlsld(ctx, sym)) {
-        // add %g1, 0, %g1 → xor %g1, 0, %g1
-        //
-        // Since an offset from TP is always negative, we can't materialize
-        // a value with SETHI + ADD as they leave the most significant 32
-        // bits as zero. So we use SETHI + XOR instead. XOR treats its
-        // immediate as a signed integer, so we can negate the MSB bits
-        // with it.
-        set_op3(loc, 0b00'0011); // XOR
-        *(ub32 *)loc |= bits(S + A - ctx.tp_addr, 9, 0) | 0b0011'1100'0000'0000;
-      } else {
-        *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 9, 0);
-      }
-      break;
-    case R_SPARC_TLS_GD_ADD:
-      if (relax_tlsgd_tlsld(ctx, sym)) {
-        // add %l7, %o0, %o0 → add %g7, %o0, %o0
-        // g7 is 7th register and contains the thread pointer.
-        set_rs1(loc, 7);
-      }
+      *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 9, 0);
       break;
     case R_SPARC_TLS_GD_CALL:
-      if (relax_tlsgd_tlsld(ctx, sym)) {
-        *(ub32 *)loc = 0x0100'0000; // nop
-      } else {
-        Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
-        *(ub32 *)loc |= bits(sym2->get_addr(ctx) + A - P, 31, 2);
-      }
-      break;
-    case R_SPARC_TLS_LDM_HI22:
-      if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc |= bits(ctx.tp_addr - ctx.tls_begin, 31, 10);
+    case R_SPARC_TLS_LDM_CALL: {
+      u64 addr;
+      if (ctx.arg.is_static)
+        addr = ctx.sparc_tls_get_addr->shdr.sh_addr;
       else
-        *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 31, 10);
+        addr = get_symbol(ctx, "__tls_get_addr")->get_addr(ctx);
+
+      *(ub32 *)loc |= bits(addr + A - P, 31, 2);
+      break;
+    }
+    case R_SPARC_TLS_LDM_HI22:
+      *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 31, 10);
       break;
     case R_SPARC_TLS_LDM_LO10:
-      if (relax_tlsgd_tlsld(ctx, sym))
-        *(ub32 *)loc |= bits(ctx.tp_addr - ctx.tls_begin, 9, 0);
-      else
-        *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 9, 0);
-      break;
-    case R_SPARC_TLS_LDM_ADD:
-      if (relax_tlsgd_tlsld(ctx, sym)) {
-        // add %i5, %g1, %o0 → mov %g1, %o0
-        *(ub32 *)loc &= 0b00'11111'000000'00000'0'00000000'11111;
-        *(ub32 *)loc |= 0b10'00000'000010'00000'0'00000000'00000;
-      }
-      break;
-    case R_SPARC_TLS_LDM_CALL:
-      if (relax_tlsgd_tlsld(ctx, sym)) {
-        *(ub32 *)loc = 0x9021'c008; // sub  %g7, %o0, %o0
-      } else {
-        Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
-        *(ub32 *)loc |= bits(sym2->get_addr(ctx) + A - P, 31, 2);
-      }
+      *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 9, 0);
       break;
     case R_SPARC_TLS_LDO_HIX22:
       *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 31, 10);
@@ -418,6 +357,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_SIZE32:
       *(ub32 *)loc = sym.esym().st_size + A;
       break;
+    case R_SPARC_TLS_GD_ADD:
+    case R_SPARC_TLS_LDM_ADD:
     case R_SPARC_TLS_LDO_ADD:
     case R_SPARC_TLS_IE_LD:
     case R_SPARC_TLS_IE_LDX:
@@ -578,8 +519,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_TLS_GD_HI22:
     case R_SPARC_TLS_GD_LO10:
     case R_SPARC_TLS_GD_ADD:
-      if (!relax_tlsgd_tlsld(ctx, sym))
-        sym.flags |= NEEDS_TLSGD;
+      sym.flags |= NEEDS_TLSGD;
       break;
     case R_SPARC_TLS_LDM_HI22:
     case R_SPARC_TLS_LDM_LO10:
@@ -587,8 +527,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_TLS_LDO_HIX22:
     case R_SPARC_TLS_LDO_LOX10:
     case R_SPARC_TLS_LDO_ADD:
-      if (!relax_tlsgd_tlsld(ctx, sym))
-        ctx.needs_tlsld = true;
+      ctx.needs_tlsld = true;
       break;
     case R_SPARC_TLS_IE_HI22:
     case R_SPARC_TLS_IE_LO10:
@@ -601,17 +540,39 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_SPARC_TLS_GD_CALL:
     case R_SPARC_TLS_LDM_CALL:
-      if (!relax_tlsgd_tlsld(ctx, sym)) {
+      if (!ctx.arg.is_static) {
         Symbol<E> *sym2 = get_symbol(ctx, "__tls_get_addr");
         if (sym2->is_imported)
           sym2->flags |= NEEDS_PLT;
       }
       break;
     case R_SPARC_SIZE32:
+      break;
     default:
       Fatal(ctx) << *this << ": scan_relocations: " << rel;
     }
   }
+}
+
+// __tls_get_addr is not defined by libc.a, so we can't use that function
+// in statically-linked executables. This section provides a replacement.
+void SparcTlsGetAddrSection::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  static const ub32 insn[] = {
+    0x0300'0000, // sethi  %hi(TP_SIZE), %g1
+    0x8210'6000, // or   %g1, %lo(TP_SIZE), %g1
+    0x8221'c001, // sub  %g7, %g1, %g1
+    0xd05a'2008, // ldx  [ %o0 + 8 ], %o0
+    0x81c3'e008, // retl
+    0x9000'4008, // add  %g1, %o0, %o0
+  };
+
+  assert(this->shdr.sh_size == sizeof(insn));
+  memcpy(buf, insn, sizeof(insn));
+
+  *(ub32 *)(buf + 0) |= bits(ctx.tp_addr - ctx.tls_begin, 31, 10);
+  *(ub32 *)(buf + 4) |= bits(ctx.tp_addr - ctx.tls_begin, 9, 0);
 }
 
 } // namespace mold::elf

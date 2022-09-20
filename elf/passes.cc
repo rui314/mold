@@ -89,6 +89,10 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.note_package = push(new NotePackageSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
+  if constexpr (is_sparc<E>)
+    if (ctx.arg.is_static)
+      ctx.sparc_tls_get_addr = push(new SparcTlsGetAddrSection);
+
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
   if (ctx.dynamic) {
