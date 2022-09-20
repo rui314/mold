@@ -19,9 +19,9 @@
 // address to %o7, which is an alias for %r15. Thread pointer is stored to
 // %g7 which is %r7.
 //
-// SPARC does not support PC-relative load/store instructions. To access
-// data in a position-independent manner, we usually first set the address
-// of .got to, for example, %l7, with the following piece of code
+// SPARC does not have PC-relative load/store instructions. To access data
+// in the position-independent manner, we usually first set the address of
+// .got to, for example, %l7, with the following piece of code
 //
 //   sethi  %hi(_GLOBAL_OFFSET_TABLE_), %l7
 //   add  %l7, %lo(_GLOBAL_OFFSET_TABLE_), %l7
@@ -33,15 +33,15 @@
 //   retl
 //   add  %o7, %l7, %l7
 //
-// SETHI and the following ADD materialize a 32 bits offset to .got.
-// CALL instruction sets a return address to $o7, and the following ADD
+// . SETHI and the following ADD materialize a 32 bits offset to .got.
+// CALL instruction sets a return address to $o7, and the subsequent ADD
 // adds it to the GOT offset to materialize the absolute address of .got.
 //
-// Note that we have a NOP after CALL and another instruction after RETL
-// because of SPARC's delay branch slots. That is, the SPARC processor
-// always executes one instruction after a branch even if the branch is
-// not taken. This seems like an odd behavior and actually is (which is a
-// result of a premature optimization for the early pipelined SPARC
+// Note that we have a NOP after CALL and an ADD after RETL because of
+// SPARC's delay branch slots. That is, the SPARC processor always
+// executes one instruction after a branch even if the branch is taken.
+// This may seem like an odd behavior, and I think it actually is (which
+// is a result of a premature optimization for the early pipelined SPARC
 // processors), but that's been a part of the spec so that's what it is.
 //
 // Note also that the .got address obtained this way is not shared between
