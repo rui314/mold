@@ -1,5 +1,6 @@
 option(MOLD_ENABLE_QEMU_TESTS "Enable tests on non-native targets" OFF)
 option(MOLD_ENABLE_QEMU_TESTS_RV32 "Enable tests for RV32" OFF)
+option(MOLD_ENABLE_QEMU_TESTS_SPARC64 "Enable tests for SPARC64" OFF)
 
 file(GLOB TESTS
   RELATIVE ${CMAKE_CURRENT_LIST_DIR}
@@ -36,10 +37,13 @@ foreach(TEST IN LISTS TESTS)
     add_qemu_test(${TEST} arm-linux-gnueabihf arm)
     add_qemu_test(${TEST} riscv64-linux-gnu riscv64)
     add_qemu_test(${TEST} powerpc64le-linux-gnu ppc64le)
-    add_qemu_test(${TEST} sparc64-linux-gnu sparc64)
   endif()
 
   if (MOLD_ENABLE_QEMU_TESTS_RV32)
     add_qemu_test(${TEST} riscv32-linux-gnu riscv32)
+  endif()
+
+  if (MOLD_ENABLE_QEMU_TESTS_SPARC64)
+    add_qemu_test(${TEST} sparc64-linux-gnu sparc64)
   endif()
 endforeach()
