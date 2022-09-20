@@ -276,9 +276,9 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     // Each thread has its own value in TP (thread pointer) register, and
     // TLVs defined in the main executable are accessed relative to TP.
     //
-    // On x86, TP (%gs for 32-bit, %fs for 64-bit) refers past the end
-    // of all TLVs for historical reasons. TLVs are accessed with
-    // negative offsets from TP.
+    // On x86 and SPARC, TP (%gs on i386, %fs on x86-64 and %g7 on SPARC)
+    // refers past the end of all TLVs for historical reasons. TLVs are
+    // accessed with negative offsets from TP.
     //
     // On ARM, the runtime appends two words at the beginning of TLV
     // template image when copying TLVs to per-thread area, so we need

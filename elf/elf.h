@@ -2082,7 +2082,7 @@ struct SparcEB64Rela {
 
   ub64 r_offset;
   ub32 r_sym;
-  ub24 r_type_data;
+  ub24 r_type_data; // SPARC-specific: used for R_SPARC_OLO10
   u8 r_type;
   ib64 r_addend;
 };

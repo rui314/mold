@@ -111,7 +111,7 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
 
   static ub32 entry[] = {
     0x8a10'000f, // mov  %o7, %g5
-    0x4000'0002, // call . + 4
+    0x4000'0002, // call . + 8
     0xc25b'e014, // ldx  [ %o7 + 20 ], %g1
     0xc25b'c001, // ldx  [ %o7 + %g1 ], %g1
     0x81c0'4000, // jmp  %g1
@@ -169,7 +169,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
 #define S   sym.get_addr(ctx)
-#define A   this->get_addend(rel)
+#define A   rel.r_addend
 #define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
 #define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
 #define GOT ctx.got->shdr.sh_addr
@@ -319,7 +319,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A - P, 31, 10);
       break;
     case R_SPARC_OLO10:
-      *(ub32 *)loc |= bits(((S + A) & 0x3ff) + rel.r_type_data, 12, 0);
+      *(ub32 *)loc |= bits(bits(S + A, 9, 0) + rel.r_type_data, 12, 0);
       break;
     case R_SPARC_HH22:
       *(ub32 *)loc |= bits(S + A, 63, 42);
@@ -433,7 +433,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     std::tie(frag, addend) = get_fragment(ctx, rel);
 
 #define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A (frag ? addend : this->get_addend(rel))
+#define A (frag ? addend : (u64)rel.r_addend)
 
     switch (rel.r_type) {
     case R_NONE:
@@ -482,7 +482,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= (NEEDS_GOT | NEEDS_PLT);
 
     switch (rel.r_type) {
+    case R_SPARC_64:
+      scan_abs_dyn_rel(ctx, sym, rel);
+      break;
     case R_SPARC_8:
+    case R_SPARC_5:
+    case R_SPARC_6:
+    case R_SPARC_7:
     case R_SPARC_10:
     case R_SPARC_11:
     case R_SPARC_13:
@@ -499,19 +505,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_HM10:
     case R_SPARC_M44:
     case R_SPARC_HIX22:
-    case R_SPARC_5:
-    case R_SPARC_6:
     case R_SPARC_LO10:
-    case R_SPARC_7:
     case R_SPARC_L44:
     case R_SPARC_LM22:
     case R_SPARC_HI22:
     case R_SPARC_H44:
     case R_SPARC_HH22:
       scan_abs_rel(ctx, sym, rel);
-      break;
-    case R_SPARC_64:
-      scan_abs_dyn_rel(ctx, sym, rel);
       break;
     case R_SPARC_PLT32:
     case R_SPARC_WPLT30:
@@ -528,12 +528,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_GOT10:
     case R_SPARC_GOT22:
     case R_SPARC_GOTDATA_HIX22:
-    case R_SPARC_GOTDATA_LOX10:
       sym.flags |= NEEDS_GOT;
       break;
     case R_SPARC_GOTDATA_OP_HIX22:
-    case R_SPARC_GOTDATA_OP_LOX10:
-    case R_SPARC_GOTDATA_OP:
       if (sym.is_imported)
         sym.flags |= NEEDS_GOT;
       break;
@@ -552,25 +549,12 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_pcrel_rel(ctx, sym, rel);
       break;
     case R_SPARC_TLS_GD_HI22:
-    case R_SPARC_TLS_GD_LO10:
-    case R_SPARC_TLS_GD_ADD:
       sym.flags |= NEEDS_TLSGD;
       break;
     case R_SPARC_TLS_LDM_HI22:
-    case R_SPARC_TLS_LDM_LO10:
-    case R_SPARC_TLS_LDM_ADD:
-    case R_SPARC_TLS_LDO_HIX22:
-    case R_SPARC_TLS_LDO_LOX10:
-    case R_SPARC_TLS_LDO_ADD:
       ctx.needs_tlsld = true;
       break;
     case R_SPARC_TLS_IE_HI22:
-    case R_SPARC_TLS_IE_LO10:
-    case R_SPARC_TLS_LE_HIX22:
-    case R_SPARC_TLS_LE_LOX10:
-    case R_SPARC_TLS_IE_LD:
-    case R_SPARC_TLS_IE_LDX:
-    case R_SPARC_TLS_IE_ADD:
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_SPARC_TLS_GD_CALL:
@@ -581,6 +565,22 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           sym2->flags |= NEEDS_PLT;
       }
       break;
+    case R_SPARC_GOTDATA_OP_LOX10:
+    case R_SPARC_GOTDATA_OP:
+    case R_SPARC_GOTDATA_LOX10:
+    case R_SPARC_TLS_GD_LO10:
+    case R_SPARC_TLS_GD_ADD:
+    case R_SPARC_TLS_LDM_LO10:
+    case R_SPARC_TLS_LDM_ADD:
+    case R_SPARC_TLS_LDO_HIX22:
+    case R_SPARC_TLS_LDO_LOX10:
+    case R_SPARC_TLS_LDO_ADD:
+    case R_SPARC_TLS_IE_ADD:
+    case R_SPARC_TLS_IE_LD:
+    case R_SPARC_TLS_IE_LDX:
+    case R_SPARC_TLS_IE_LO10:
+    case R_SPARC_TLS_LE_HIX22:
+    case R_SPARC_TLS_LE_LOX10:
     case R_SPARC_SIZE32:
       break;
     default:
