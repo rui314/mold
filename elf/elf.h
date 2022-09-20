@@ -1563,11 +1563,21 @@ struct EL64Sym {
   bool is_undef_weak() const { return is_undef() && is_weak(); }
 
   ul32 st_name;
+
+#ifdef __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 ppc64_local_entry : 3;
+  u8 : 3;
+  u8 st_visibility : 2;
+#endif
+
   ul16 st_shndx;
   ul64 st_value;
   ul64 st_size;
@@ -1584,11 +1594,21 @@ struct EL32Sym {
   ul32 st_name;
   ul32 st_value;
   ul32 st_size;
+
+#ifdef __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 ppc64_local_entry : 3;
+  u8 : 3;
+  u8 st_visibility : 2;
+#endif
+
   ul16 st_shndx;
 };
 
@@ -1807,11 +1827,21 @@ struct EB64Sym {
   bool is_undef_weak() const { return is_undef() && is_weak(); }
 
   ub32 st_name;
+
+#ifdef __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 ppc64_local_entry : 3;
+  u8 : 3;
+  u8 st_visibility : 2;
+#endif
+
   ub16 st_shndx;
   ub64 st_value;
   ub64 st_size;
@@ -1828,11 +1858,21 @@ struct EB32Sym {
   ub32 st_name;
   ub32 st_value;
   ub32 st_size;
+
+#ifdef __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
   u8 ppc64_local_entry : 3;
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 ppc64_local_entry : 3;
+  u8 : 3;
+  u8 st_visibility : 2;
+#endif
+
   ub16 st_shndx;
 };
 
@@ -2018,6 +2058,23 @@ struct EBNhdr {
   ub32 n_namesz;
   ub32 n_descsz;
   ub32 n_type;
+};
+
+//
+// Target-specific ELF data types
+//
+
+struct SparcEB64Rela {
+  SparcEB64Rela() = default;
+  SparcEB64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
+    : r_offset(r_offset), r_sym(r_sym), r_type(r_type), r_type_data(0),
+      r_addend(r_addend) {}
+
+  ub64 r_offset;
+  ub32 r_sym;
+  u8 r_type;
+  ub24 r_type_data;
+  ib64 r_addend;
 };
 
 //
@@ -2378,7 +2435,7 @@ template <> struct ElfSym<SPARC64>     : EB64Sym {};
 template <> struct ElfShdr<SPARC64>    : EB64Shdr {};
 template <> struct ElfEhdr<SPARC64>    : EB64Ehdr {};
 template <> struct ElfPhdr<SPARC64>    : EB64Phdr {};
-template <> struct ElfRel<SPARC64>     : EB64Rela { using EB64Rela::EB64Rela; };
+template <> struct ElfRel<SPARC64>     : SparcEB64Rela { using SparcEB64Rela::SparcEB64Rela; };
 template <> struct ElfDyn<SPARC64>     : EB64Dyn {};
 template <> struct ElfVerneed<SPARC64> : EBVerneed {};
 template <> struct ElfVernaux<SPARC64> : EBVernaux {};
