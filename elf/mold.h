@@ -140,8 +140,8 @@ public:
 };
 
 struct RangeExtensionRef {
-  i32 thunk_idx : 12 = -1;
-  i32 sym_idx : 20 = -1;
+  i32 thunk_idx = -1;
+  i32 sym_idx = -1;
 };
 
 template <typename E>
