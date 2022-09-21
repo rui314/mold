@@ -16,6 +16,7 @@ mkdir -p $t
 
 [ $MACHINE = riscv32 ] && { echo skipped; exit; }
 [ $MACHINE = riscv64 ] && { echo skipped; exit; }
+[ $MACHINE = sparc64 ] && { echo skipped; exit; }
 
 command -v gdb >& /dev/null || { echo skipped; exit; }
 
