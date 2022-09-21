@@ -2098,7 +2098,7 @@ struct PPCEL64Sym {
 struct SparcEB64Rela {
   SparcEB64Rela() = default;
   SparcEB64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
-    : r_offset(r_offset), r_sym(r_sym), r_type(r_type), r_type_data(0),
+    : r_offset(r_offset), r_sym(r_sym), r_type_data(0), r_type(r_type),
       r_addend(r_addend) {}
 
   ub64 r_offset;
