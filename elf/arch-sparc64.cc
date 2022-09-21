@@ -449,6 +449,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_UA32:
       *(ub32 *)loc = S + A;
       break;
+    case R_SPARC_TLS_DTPOFF32:
+      *(ub32 *)loc = S + A - ctx.tls_begin;
+      break;
+    case R_SPARC_TLS_DTPOFF64:
+      *(ub64 *)loc = S + A - ctx.tls_begin;
+      break;
     default:
       Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
     }
