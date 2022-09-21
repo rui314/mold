@@ -1165,14 +1165,17 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
 
   for (GotEntry<E> &ent : get_entries(ctx)) {
-    if (ctx.arg.apply_dynamic_relocs || ent.r_type == R_NONE)
+    if (ent.is_relr(ctx) || ent.r_type == R_NONE) {
       buf[ent.idx] = ent.val;
-
-    if (ent.is_rel(ctx))
+    } else {
       *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
                          ent.r_type,
                          ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
                          ent.val);
+
+      if (ctx.arg.apply_dynamic_relocs)
+        buf[ent.idx] = ent.val;
+    }
   }
 }
 
