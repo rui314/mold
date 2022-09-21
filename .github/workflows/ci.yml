@@ -89,7 +89,7 @@ jobs:
         dpkg --add-architecture i386
         apt-get update
         ./install-build-deps.sh
-        apt-get install -y sudo qemu-user gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf gcc-10-powerpc64le-linux-gnu g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf g++-10-powerpc64le-linux-gnu
+        apt-get install -y sudo qemu-user gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf gcc-10-powerpc64le-linux-gnu gcc-10-sparc64-linux-gnu g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf g++-10-powerpc64le-linux-gnu g++-10-sparc64-linux-gnu
         ln -sf /usr/bin/i686-linux-gnu-gcc-10 /usr/bin/i686-linux-gnu-gcc
         ln -sf /usr/bin/i686-linux-gnu-g++-10 /usr/bin/i686-linux-gnu-g++
         ln -sf /usr/bin/aarch64-linux-gnu-gcc-10 /usr/bin/aarch64-linux-gnu-gcc
@@ -100,6 +100,8 @@ jobs:
         ln -sf /usr/bin/riscv64-linux-gnu-g++-10 /usr/bin/riscv64-linux-gnu-g++
         ln -sf /usr/bin/powerpc64le-linux-gnu-gcc-10 /usr/bin/powerpc64le-linux-gnu-gcc
         ln -sf /usr/bin/powerpc64le-linux-gnu-g++-10 /usr/bin/powerpc64le-linux-gnu-g++
+        ln -sf /usr/bin/sparc64-linux-gnu-gcc-10 /usr/bin/sparc64-linux-gnu-gcc
+        ln -sf /usr/bin/sparc64-linux-gnu-g++-10 /usr/bin/sparc64-linux-gnu-g++
 
         # Install a RV32 toolchain from third party since it's not available
         # as an Ubuntu package.
@@ -118,7 +120,7 @@ jobs:
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
-        cmake -DMOLD_ENABLE_QEMU_TESTS=On -DMOLD_ENABLE_QEMU_TESTS_RV32=On ..
+        cmake -DMOLD_ENABLE_QEMU_TESTS=On -DMOLD_ENABLE_QEMU_TESTS_RV32=On -DMOLD_ENABLE_QEMU_TESTS_SPARC64=On ..
         cmake --build . -j$(nproc)
         ctest . -j$(nproc)
     - name: archive test results
