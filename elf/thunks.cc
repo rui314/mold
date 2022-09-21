@@ -63,7 +63,7 @@ static bool needs_thunk_rel(const ElfRel<E> &r) {
     return ty == R_ARM_JUMP24 || ty == R_ARM_THM_JUMP24 ||
            ty == R_ARM_CALL   || ty == R_ARM_THM_CALL;
   } else {
-    static_assert(std::is_same_v<E, PPC64LE>);
+    static_assert(std::is_same_v<E, PPC64V2>);
     return ty == R_PPC64_REL24;
   }
 }
@@ -267,6 +267,6 @@ template
 void create_range_extension_thunks(Context<ARM32> &, OutputSection<ARM32> &);
 
 template
-void create_range_extension_thunks(Context<PPC64LE> &, OutputSection<PPC64LE> &);
+void create_range_extension_thunks(Context<PPC64V2> &, OutputSection<PPC64V2> &);
 
 } // namespace mold::elf

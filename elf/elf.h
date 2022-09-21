@@ -15,7 +15,7 @@ struct ARM64;
 struct ARM32;
 struct RISCV64;
 struct RISCV32;
-struct PPC64LE;
+struct PPC64V2;
 struct SPARC64;
 
 template <typename E> struct ElfSym;
@@ -34,7 +34,7 @@ template <typename E> struct ElfNhdr;
 static constexpr u32 R_NONE = 0;
 
 enum class MachineType {
-  NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32, PPC64LE, SPARC64,
+  NONE, X86_64, I386, ARM64, ARM32, RISCV64, RISCV32, PPC64V2, SPARC64,
 };
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
@@ -46,7 +46,7 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   case MachineType::ARM32:   out << "arm32";   break;
   case MachineType::RISCV64: out << "riscv64"; break;
   case MachineType::RISCV32: out << "riscv32"; break;
-  case MachineType::PPC64LE: out << "ppc64le"; break;
+  case MachineType::PPC64V2: out << "ppc64v2"; break;
   case MachineType::SPARC64: out << "sparc64"; break;
   }
   return out;
@@ -1184,7 +1184,7 @@ static constexpr u32 R_PPC64_REL16_HI = 251;
 static constexpr u32 R_PPC64_REL16_HA = 252;
 
 template <>
-inline std::string rel_to_string<PPC64LE>(u32 r_type) {
+inline std::string rel_to_string<PPC64V2>(u32 r_type) {
   switch (r_type) {
   case R_PPC64_NONE: return "R_PPC64_NONE";
   case R_PPC64_ADDR32: return "R_PPC64_ADDR32";
@@ -2158,7 +2158,7 @@ static constexpr bool is_riscv =
   std::is_same_v<E, RISCV64> || std::is_same_v<E, RISCV32>;
 
 template <typename E>
-static constexpr bool is_ppc = std::is_same_v<E, PPC64LE>;
+static constexpr bool is_ppc = std::is_same_v<E, PPC64V2>;
 
 template <typename E>
 static constexpr bool is_sparc = std::is_same_v<E, SPARC64>;
@@ -2403,7 +2403,7 @@ template <> struct ElfVerdaux<RISCV32> : ELVerdaux {};
 template <> struct ElfChdr<RISCV32>    : EL32Chdr {};
 template <> struct ElfNhdr<RISCV32>    : ELNhdr {};
 
-struct PPC64LE {
+struct PPC64V2 {
   static constexpr u32 R_COPY = R_PPC64_COPY;
   static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
@@ -2414,7 +2414,7 @@ struct PPC64LE {
   static constexpr u32 R_TPOFF = R_PPC64_TPREL64;
   static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
 
-  static constexpr MachineType machine_type = MachineType::PPC64LE;
+  static constexpr MachineType machine_type = MachineType::PPC64V2;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr u32 page_size = 65536;
@@ -2427,18 +2427,18 @@ struct PPC64LE {
   static constexpr u32 thunk_size = 20;
 };
 
-template <> struct ElfSym<PPC64LE>     : PPCEL64Sym {};
-template <> struct ElfShdr<PPC64LE>    : EL64Shdr {};
-template <> struct ElfEhdr<PPC64LE>    : EL64Ehdr {};
-template <> struct ElfPhdr<PPC64LE>    : EL64Phdr {};
-template <> struct ElfRel<PPC64LE>     : EL64Rela { using EL64Rela::EL64Rela; };
-template <> struct ElfDyn<PPC64LE>     : EL64Dyn {};
-template <> struct ElfVerneed<PPC64LE> : ELVerneed {};
-template <> struct ElfVernaux<PPC64LE> : ELVernaux {};
-template <> struct ElfVerdef<PPC64LE>  : ELVerdef {};
-template <> struct ElfVerdaux<PPC64LE> : ELVerdaux {};
-template <> struct ElfChdr<PPC64LE>    : EL64Chdr {};
-template <> struct ElfNhdr<PPC64LE>    : ELNhdr {};
+template <> struct ElfSym<PPC64V2>     : PPCEL64Sym {};
+template <> struct ElfShdr<PPC64V2>    : EL64Shdr {};
+template <> struct ElfEhdr<PPC64V2>    : EL64Ehdr {};
+template <> struct ElfPhdr<PPC64V2>    : EL64Phdr {};
+template <> struct ElfRel<PPC64V2>     : EL64Rela { using EL64Rela::EL64Rela; };
+template <> struct ElfDyn<PPC64V2>     : EL64Dyn {};
+template <> struct ElfVerneed<PPC64V2> : ELVerneed {};
+template <> struct ElfVernaux<PPC64V2> : ELVernaux {};
+template <> struct ElfVerdef<PPC64V2>  : ELVerdef {};
+template <> struct ElfVerdaux<PPC64V2> : ELVerdaux {};
+template <> struct ElfChdr<PPC64V2>    : EL64Chdr {};
+template <> struct ElfNhdr<PPC64V2>    : ELNhdr {};
 
 struct SPARC64 {
   static constexpr u32 R_COPY = R_SPARC_COPY;

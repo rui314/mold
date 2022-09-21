@@ -54,7 +54,7 @@ static MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf)
     case EM_RISCV:
       return is_64 ? MachineType::RISCV64 : MachineType::RISCV32;
     case EM_PPC64:
-      return MachineType::PPC64LE;
+      return MachineType::PPC64V2;
     case EM_SPARC64:
       return MachineType::SPARC64;
     default:
@@ -399,8 +399,8 @@ static int elf_main(int argc, char **argv) {
       return elf_main<RISCV64>(argc, argv);
     case MachineType::RISCV32:
       return elf_main<RISCV32>(argc, argv);
-    case MachineType::PPC64LE:
-      return elf_main<PPC64LE>(argc, argv);
+    case MachineType::PPC64V2:
+      return elf_main<PPC64V2>(argc, argv);
     case MachineType::SPARC64:
       return elf_main<SPARC64>(argc, argv);
     default:

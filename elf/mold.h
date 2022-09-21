@@ -48,7 +48,7 @@
   INSTANTIATE(ARM32);                           \
   INSTANTIATE(RISCV64);                         \
   INSTANTIATE(RISCV32);                         \
-  INSTANTIATE(PPC64LE);                         \
+  INSTANTIATE(PPC64V2);                         \
   INSTANTIATE(SPARC64);
 #endif
 

@@ -1213,7 +1213,7 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
 // section. Dynamic loader finds the address of the first PLT entry by
 // DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
 template <>
-void GotPltSection<PPC64LE>::copy_buf(Context<PPC64LE> &ctx) {}
+void GotPltSection<PPC64V2>::copy_buf(Context<PPC64V2> &ctx) {}
 
 template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
