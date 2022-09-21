@@ -85,8 +85,11 @@ else()
 endif()
 
 # Setup mimalloc
+include(CheckCSourceCompiles)
+check_c_source_compiles("#ifdef __i386__\nint main() {}\n#endif" I386)
+
 cmake_dependent_option(MOLD_USE_MIMALLOC "Use mimalloc" ON
-  "NOT APPLE;NOT ANDROID" OFF)
+  "NOT APPLE; NOT ANDROID; NOT I386" OFF)
 cmake_dependent_option(
   MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
   MOLD_USE_MIMALLOC OFF)

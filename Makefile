@@ -67,6 +67,8 @@ endif
 USE_MIMALLOC = 1
 ifeq ($(OS), Darwin)
   USE_MIMALLOC = 0
+else ifeq ($(ARCH), i686)
+  USE_MIMALLOC = 0
 else ifeq ($(IS_ANDROID), 1)
   USE_MIMALLOC = 0
 endif
