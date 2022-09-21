@@ -23,8 +23,8 @@
 // in the position-independent manner, we usually first set the address of
 // .got to, for example, %l7, with the following piece of code
 //
-//   sethi  %hi(_GLOBAL_OFFSET_TABLE_), %l7
-//   add  %l7, %lo(_GLOBAL_OFFSET_TABLE_), %l7
+//   sethi  %hi(. - _GLOBAL_OFFSET_TABLE_), %l7
+//   add  %l7, %lo(. - _GLOBAL_OFFSET_TABLE_), %l7
 //   call __sparc_get_pc_thunk.l7
 //   nop
 //
