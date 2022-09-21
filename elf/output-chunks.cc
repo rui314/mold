@@ -2318,8 +2318,8 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
     if (file->debug_info) {
       u64 offset = file->debug_info->offset;
       for (std::string_view cu : file->compunits) {
-        *(U64<E> *)buf = offset;
-        *(U64<E> *)(buf + 8) = cu.size();
+        *(ul64 *)buf = offset;
+        *(ul64 *)(buf + 8) = cu.size();
         buf += 16;
         offset += cu.size();
       }
@@ -2346,8 +2346,8 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
         j = (j + step) & mask;
 
       ObjectFile<E> &file = *map.values[i].owner;
-      *(U32<E> *)(buf + j * 8) = file.names_offset + map.values[i].name_offset;
-      *(U32<E> *)(buf + j * 8 + 4) = file.attrs_offset + map.values[i].attr_offset;
+      *(ul32 *)(buf + j * 8) = file.names_offset + map.values[i].name_offset;
+      *(ul32 *)(buf + j * 8 + 4) = file.attrs_offset + map.values[i].attr_offset;
     }
   }
 
@@ -2381,6 +2381,11 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
       }
     }
   });
+
+  // .gdb_index contents are little-endian, so swap bytes if big-endian.
+  if constexpr (std::endian::native == std::endian::big)
+    for (i64 i = 0; i < ctx.objs[0]->names_offset; i += 4)
+      *(u32 *)(buf + i) = bswap(*(u32 *)(buf + i));
 
   // Write pubnames and pubtypes.
   tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
@@ -2421,9 +2426,9 @@ void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
   assert(ctx.debug_abbrev);
 
   struct Entry {
-    U64<E> start;
-    U64<E> end;
-    U32<E> attr;
+    ul64 start;
+    ul64 end;
+    ul32 attr;
   };
 
   // Read address ranges from debug sections and copy them to .gdb_index.

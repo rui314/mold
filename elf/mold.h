@@ -933,12 +933,12 @@ public:
 
 private:
   struct SectionHeader {
-    u32 version = 7;
-    u32 cu_list_offset = 0;
-    u32 cu_types_offset = 0;
-    u32 areas_offset = 0;
-    u32 symtab_offset = 0;
-    u32 const_pool_offset = 0;
+    ul32 version = 7;
+    ul32 cu_list_offset = 0;
+    ul32 cu_types_offset = 0;
+    ul32 areas_offset = 0;
+    ul32 symtab_offset = 0;
+    ul32 const_pool_offset = 0;
   };
 
   struct MapEntry {
