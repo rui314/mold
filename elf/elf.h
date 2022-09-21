@@ -1578,13 +1578,11 @@ struct EL64Sym {
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
-  u8 : 3;
-  u8 ppc64_local_entry : 3;
+  u8 : 6;
 #else
   u8 st_bind : 4;
   u8 st_type : 4;
-  u8 ppc64_local_entry : 3;
-  u8 : 3;
+  u8 : 6;
   u8 st_visibility : 2;
 #endif
 
@@ -1609,13 +1607,11 @@ struct EL32Sym {
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
-  u8 : 3;
-  u8 ppc64_local_entry : 3;
+  u8 : 6;
 #else
   u8 st_bind : 4;
   u8 st_type : 4;
-  u8 ppc64_local_entry : 3;
-  u8 : 3;
+  u8 : 6;
   u8 st_visibility : 2;
 #endif
 
@@ -1842,13 +1838,11 @@ struct EB64Sym {
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
-  u8 : 3;
-  u8 ppc64_local_entry : 3;
+  u8 : 6;
 #else
   u8 st_bind : 4;
   u8 st_type : 4;
-  u8 ppc64_local_entry : 3;
-  u8 : 3;
+  u8 : 6;
   u8 st_visibility : 2;
 #endif
 
@@ -1873,13 +1867,11 @@ struct EB32Sym {
   u8 st_type : 4;
   u8 st_bind : 4;
   u8 st_visibility : 2;
-  u8 : 3;
-  u8 ppc64_local_entry : 3;
+  u8 : 6;
 #else
   u8 st_bind : 4;
   u8 st_type : 4;
-  u8 ppc64_local_entry : 3;
-  u8 : 3;
+  u8 : 6;
   u8 st_visibility : 2;
 #endif
 
@@ -2073,6 +2065,35 @@ struct EBNhdr {
 //
 // Target-specific ELF data types
 //
+
+struct PPCEL64Sym {
+  bool is_defined() const { return !is_undef(); }
+  bool is_undef() const { return st_shndx == SHN_UNDEF; }
+  bool is_abs() const { return st_shndx == SHN_ABS; }
+  bool is_common() const { return st_shndx == SHN_COMMON; }
+  bool is_weak() const { return st_bind == STB_WEAK; }
+  bool is_undef_weak() const { return is_undef() && is_weak(); }
+
+  ul32 st_name;
+
+#ifdef __LITTLE_ENDIAN__
+  u8 st_type : 4;
+  u8 st_bind : 4;
+  u8 st_visibility : 2;
+  u8 : 3;
+  u8 ppc_local_entry : 3;
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 ppc_local_entry : 3;
+  u8 : 3;
+  u8 st_visibility : 2;
+#endif
+
+  ul16 st_shndx;
+  ul64 st_value;
+  ul64 st_size;
+};
 
 struct SparcEB64Rela {
   SparcEB64Rela() = default;
@@ -2406,7 +2427,7 @@ struct PPC64LE {
   static constexpr u32 thunk_size = 20;
 };
 
-template <> struct ElfSym<PPC64LE>     : EL64Sym {};
+template <> struct ElfSym<PPC64LE>     : PPCEL64Sym {};
 template <> struct ElfShdr<PPC64LE>    : EL64Shdr {};
 template <> struct ElfEhdr<PPC64LE>    : EL64Ehdr {};
 template <> struct ElfPhdr<PPC64LE>    : EL64Phdr {};

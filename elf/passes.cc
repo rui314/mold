@@ -490,7 +490,8 @@ void add_synthetic_symbols(Context<E> &ctx) {
     if (target) {
       ElfSym<E> &esym = obj.elf_syms[i + 1];
       esym.st_type = target->esym().st_type;
-      esym.ppc64_local_entry = target->esym().ppc64_local_entry;
+      if constexpr (std::is_same_v<E, PPC64LE>)
+        esym.ppc_local_entry = target->esym().ppc_local_entry;
     }
 
     // Make the target absolute if necessary.

@@ -156,7 +156,7 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 }
 
 static u64 get_local_entry_offset(Context<E> &ctx, Symbol<E> &sym) {
-  i64 val = sym.esym().ppc64_local_entry;
+  i64 val = sym.esym().ppc_local_entry;
   if (val == 0 || val == 1)
     return 0;
   if (val == 7)
