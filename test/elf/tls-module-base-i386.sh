@@ -31,6 +31,7 @@ get_foo:
 .section .tdata, "awT", @progbits
 foo:
 .long 20
+.section .note.GNU-stack, "", @progbits
 EOF
 
 cat <<EOF | $CC -fPIC -o $t/b.o -c -xc -
