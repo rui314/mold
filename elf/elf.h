@@ -1580,7 +1580,6 @@ static constexpr u32 DW_RLE_start_length = 0x07;
 //
 
 struct EL64Sym {
-  bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
   bool is_common() const { return st_shndx == SHN_COMMON; }
@@ -1607,7 +1606,6 @@ struct EL64Sym {
 };
 
 struct EL32Sym {
-  bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
   bool is_common() const { return st_shndx == SHN_COMMON; }
@@ -1840,7 +1838,6 @@ struct ELNhdr {
 //
 
 struct EB64Sym {
-  bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
   bool is_common() const { return st_shndx == SHN_COMMON; }
@@ -1867,7 +1864,6 @@ struct EB64Sym {
 };
 
 struct EB32Sym {
-  bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
   bool is_common() const { return st_shndx == SHN_COMMON; }
@@ -2082,7 +2078,6 @@ struct EBNhdr {
 //
 
 struct PPC64V2Sym {
-  bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
   bool is_common() const { return st_shndx == SHN_COMMON; }
@@ -2096,7 +2091,7 @@ struct PPC64V2Sym {
   u8 st_bind : 4;
   u8 st_visibility : 2;
   u8 : 3;
-  u8 ppc_local_entry : 3;
+  u8 ppc_local_entry : 3; // This is PPC64V2-specific
 #else
   u8 st_bind : 4;
   u8 st_type : 4;

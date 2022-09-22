@@ -373,10 +373,10 @@ RObjectFile<E>::RObjectFile(Context<E> &ctx, MappedFile<Context<E>> &mf,
   // Read global symbols
   for (i64 i = first_global; i < syms.size(); i++) {
     std::string_view name = strtab + syms[i].st_name;
-    if (syms[i].is_defined())
-      defined_syms.insert(name);
-    else
+    if (syms[i].is_undef())
       undef_syms.insert(name);
+    else
+      defined_syms.insert(name);
   }
 }
 

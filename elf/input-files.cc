@@ -471,7 +471,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
       if (!ver.empty() && ver != "@") {
         if (ver.starts_with('@'))
           key = name;
-        if (esym.is_defined())
+        if (!esym.is_undef())
           symvers[i - this->first_global] = ver.data();
       }
     }
@@ -867,7 +867,7 @@ void ObjectFile<E>::merge_visibility(Context<E> &ctx, Symbol<E> &sym,
 template <typename E>
 static void print_trace_symbol(Context<E> &ctx, InputFile<E> &file,
                                const ElfSym<E> &esym, Symbol<E> &sym) {
-  if (esym.is_defined())
+  if (!esym.is_undef())
     SyncOut(ctx) << "trace-symbol: " << file << ": definition of " << sym;
   else if (esym.is_weak())
     SyncOut(ctx) << "trace-symbol: " << file << ": weak reference to " << sym;
@@ -915,7 +915,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
 
-    if (esym.is_defined() && exclude_libs)
+    if (!esym.is_undef() && exclude_libs)
       merge_visibility(ctx, sym, STV_HIDDEN);
     else
       merge_visibility(ctx, sym, esym.st_visibility);
