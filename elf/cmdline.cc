@@ -194,7 +194,8 @@ Options:
     -z textoff
 
 mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf64-littleriscv elf64-sparc
-mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf64lriscv elf64_sparc)";
+mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf64lriscv elf64_sparc
+mold: supported debug section compressions: zlib zlib-gabi zstd)";
 
 static std::vector<std::string> add_dashes(std::string name) {
   // Single-letter option
@@ -447,7 +448,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                    << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n"
                    << "   aarch64linux\n   armelf_linux_eabi\n   elf64lriscv\n"
                    << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
-                   << "   elf64lppc\n  elf64_sparc\n";
+                   << "   elf64lppc\n   elf64_sparc\n";
+      SyncOut(ctx) << "  Supported debug section compressions:\n"
+                   << "   zlib\n   zlib-gabi\n   zstd";
       version_shown = true;
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
