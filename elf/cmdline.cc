@@ -447,7 +447,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                    << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n"
                    << "   aarch64linux\n   armelf_linux_eabi\n   elf64lriscv\n"
                    << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
-                   << "   elf64lppc\n  elf64_sparc\n";
+                   << "   elf64lppc\n   elf64_sparc";
       version_shown = true;
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
