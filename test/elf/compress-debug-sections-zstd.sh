@@ -13,7 +13,6 @@ t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
 [ $MACHINE == x86_64 ] || { echo skipped; exit; }
-[ $CC == cc ] || { echo skipped; exit; }
 command -v zstdcat >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $CC -c -g -o $t/a.o -xc -
