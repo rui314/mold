@@ -6,8 +6,8 @@
 // RISC-V is essentially little-endian, but the big-endian version is
 // available as an extension. GCC supports `-mbig-endian` to generate
 // big-endian code. Even in big-endian mode, machine instructions are
-// defined to be encoded in little-endian, though. Only constants are
-// in big-endian.
+// defined to be encoded in little-endian, though. Only the behavior of
+// load/store instructions are different between LE RISC-V and BE RISC-V.
 //
 // From the linker's point of view, the RISC-V's psABI is unique because
 // sections in input object files can be shrunk while being copied to the
