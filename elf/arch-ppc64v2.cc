@@ -1,3 +1,8 @@
+// This file implements the PowerPC ELFv2 ABI which was standardized in
+// 2014. Modern little-endian PowerPC systems are based on this ABI.
+// The ABI is often referred to as "ppc64le". This shouldn't be confused
+// with "ppc64" which refers the original, big-endian PowerPC systems.
+//
 // PPC64 is a bit tricky to support because PC-relative load/store
 // instructions are generally not available. Therefore, it's not easy
 // for position-independent code to load a value from, for example,
