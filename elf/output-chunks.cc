@@ -1861,6 +1861,7 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   this->shdr.sh_size = align_to(this->shdr.sh_size, this->shdr.sh_addralign);
   sym->value = this->shdr.sh_size;
   sym->has_copyrel = true;
+
   this->shdr.sh_size += sym->esym().st_size;
   symbols.push_back(sym);
   ctx.dynsym->add_symbol(ctx, sym);

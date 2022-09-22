@@ -230,7 +230,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
 #define S   sym.get_addr(ctx)
 #define A   rel.r_addend
-#define P   (output_section->shdr.sh_addr + offset + rel.r_offset)
+#define P   (get_addr() + rel.r_offset)
 #define G   (sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr)
 #define GOT ctx.gotplt->shdr.sh_addr
 
