@@ -1733,8 +1733,8 @@ struct EL32Phdr {
 //   will be ovewritten by the dynamic linker at load-time.
 struct EL64Rel {
   EL64Rel() = default;
-  EL64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
-    : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
+  EL64Rel(u64 offset, u32 type, u32 sym, i64 addend = 0)
+    : r_offset(offset), r_type(type), r_sym(sym) {}
 
   ul64 r_offset;
   ul32 r_type;
@@ -1743,8 +1743,8 @@ struct EL64Rel {
 
 struct EL32Rel {
   EL32Rel() = default;
-  EL32Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
-    : r_offset(r_offset), r_type(r_type), r_sym(r_sym) {}
+  EL32Rel(u64 offset, u32 type, u32 sym, i64 addend = 0)
+    : r_offset(offset), r_type(type), r_sym(sym) {}
 
   ul32 r_offset;
   u8 r_type;
@@ -1753,8 +1753,8 @@ struct EL32Rel {
 
 struct EL64Rela {
   EL64Rela() = default;
-  EL64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
-    : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
+  EL64Rela(u64 offset, u32 type, u32 sym, i64 addend)
+    : r_offset(offset), r_type(type), r_sym(sym), r_addend(addend) {}
 
   ul64 r_offset;
   ul32 r_type;
@@ -1764,8 +1764,8 @@ struct EL64Rela {
 
 struct EL32Rela {
   EL32Rela() = default;
-  EL32Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
-    : r_offset(r_offset), r_type(r_type), r_sym(r_sym), r_addend(r_addend) {}
+  EL32Rela(u64 offset, u32 type, u32 sym, i64 addend)
+    : r_offset(offset), r_type(type), r_sym(sym), r_addend(addend) {}
 
   ul32 r_offset;
   u8 r_type;
@@ -1973,8 +1973,8 @@ struct EB32Phdr {
 
 struct EB64Rel {
   EB64Rel() = default;
-  EB64Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
-    : r_offset(r_offset), r_sym(r_sym), r_type(r_type) {}
+  EB64Rel(u64 offset, u32 type, u32 sym, i64 addend = 0)
+    : r_offset(offset), r_sym(sym), r_type(type) {}
 
   ub64 r_offset;
   ub32 r_sym;
@@ -1983,8 +1983,8 @@ struct EB64Rel {
 
 struct EB32Rel {
   EB32Rel() = default;
-  EB32Rel(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend = 0)
-    : r_offset(r_offset), r_sym(r_sym), r_type(r_type) {}
+  EB32Rel(u64 offset, u32 type, u32 sym, i64 addend = 0)
+    : r_offset(offset), r_sym(sym), r_type(type) {}
 
   ub32 r_offset;
   ub24 r_sym;
@@ -1993,8 +1993,8 @@ struct EB32Rel {
 
 struct EB64Rela {
   EB64Rela() = default;
-  EB64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
-    : r_offset(r_offset), r_sym(r_sym), r_type(r_type), r_addend(r_addend) {}
+  EB64Rela(u64 offset, u32 type, u32 sym, i64 addend)
+    : r_offset(offset), r_sym(sym), r_type(type), r_addend(addend) {}
 
   ub64 r_offset;
   ub32 r_sym;
@@ -2004,8 +2004,8 @@ struct EB64Rela {
 
 struct EB32Rela {
   EB32Rela() = default;
-  EB32Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
-    : r_offset(r_offset), r_sym(r_sym), r_type(r_type), r_addend(r_addend) {}
+  EB32Rela(u64 offset, u32 type, u32 sym, i64 addend)
+    : r_offset(offset), r_sym(sym), r_type(type), r_addend(addend) {}
 
   ub32 r_offset;
   ub24 r_sym;
@@ -2107,9 +2107,9 @@ struct PPC64V2Sym {
 
 struct SPARC64Rela {
   SPARC64Rela() = default;
-  SPARC64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
-    : r_offset(r_offset), r_sym(r_sym), r_type_data(0), r_type(r_type),
-      r_addend(r_addend) {}
+  SPARC64Rela(u64 offset, u32 type, u32 sym, i64 addend)
+    : r_offset(offset), r_sym(sym), r_type_data(0), r_type(type),
+      r_addend(addend) {}
 
   ub64 r_offset;
   ub32 r_sym;
