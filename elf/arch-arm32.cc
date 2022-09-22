@@ -137,12 +137,22 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  i64 trampoline_idx = 0;
-
   ElfRel<E> *dynrel = nullptr;
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
+
+  i64 trampoline_idx = 0;
+
+  auto get_trampoline_addr = [&](u64 addr) {
+    for (; trampoline_idx < output_section->thunks.size(); trampoline_idx++) {
+      RangeExtensionThunk<E> &thunk = *output_section->thunks[trampoline_idx];
+      i64 disp = output_section->shdr.sh_addr + thunk.offset - addr;
+      if (is_jump_reachable(disp))
+        return disp;
+    }
+    unreachable();
+  };
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -171,16 +181,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       return get_thumb_thunk_addr() + 4;
     };
 
-    auto get_trampoline_addr = [&](u64 addr) {
-      for (; trampoline_idx < output_section->thunks.size(); trampoline_idx++) {
-        RangeExtensionThunk<E> &thunk = *output_section->thunks[trampoline_idx];
-        i64 disp = output_section->shdr.sh_addr + thunk.offset - addr;
-        if (is_jump_reachable(disp))
-          return disp;
-      }
-      unreachable();
-    };
-
     switch (rel.r_type) {
     case R_ARM_ABS32:
     case R_ARM_TARGET1:
@@ -200,7 +200,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         break;
       }
 
-      u64 val = S + A - P;
+      i64 val = S + A - P;
       if (is_jump_reachable(val)) {
         if (T) {
           write_thm_b_imm(loc, val);
