@@ -8,12 +8,13 @@
 //
 // A notable feature of SPARC is that, unlike other RISC ISAs, it doesn't
 // need range extension thunks. It is because the SPARC's CALL instruction
-// contains a 30 bits immediate. The processor scales it by 4 to extend it
-// to 32 bits (this is doable because all instructions are aligned to 4
-// bytes boundaries, so the least significant two bits are always zero).
-// That means CALL's reach is PC ± 2 GiB, elinating the need of range
-// extension thunks. It comes with the cost that the CALL instruction alone
-// takes 1/4th of the instruction encoding space, though.
+// contains a whopping 30 bits immediate. The processor scales it by 4 to
+// extend it to 32 bits (this is doable because all instructions are
+// aligned to 4 bytes boundaries, so the least significant two bits are
+// always zero). That means CALL's reach is PC ± 2 GiB, elinating the
+// need of range extension thunks. It comes with the cost that the CALL
+// instruction alone takes 1/4th of the instruction encoding space,
+// though.
 //
 // SPARC has 32 general purpose registers. CALL instruction saves a return
 // address to %o7, which is an alias for %r15. Thread pointer is stored to
@@ -40,9 +41,10 @@
 // Note that we have a NOP after CALL and an ADD after RETL because of
 // SPARC's delay branch slots. That is, the SPARC processor always
 // executes one instruction after a branch even if the branch is taken.
-// This may seem like an odd behavior, and I think it actually is (which
-// is a result of a premature optimization for the early pipelined SPARC
-// processors), but that's been a part of the spec so that's what it is.
+// This may seem like an odd behavior, and indeed it is considered as such
+// (that's a premature optimization for the early pipelined SPARC
+// processors), but that's been a part of the ISA's spec so that's what it
+// is.
 //
 // Note also that the .got address obtained this way is not shared between
 // functions, so functions can use an arbitrary register to hold the .got
@@ -50,7 +52,7 @@
 // of code to become position-independent.
 //
 // This scheme is very similar to i386. That may not be a coincidence
-// because the i386 ELF psABI is created by Sun Microsystems.
+// because the i386 ELF psABI is created by Sun Microsystems too.
 //
 // https://docs.oracle.com/cd/E36784_01/html/E36857/chapter6-62988.html
 // https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter8-40/index.html
@@ -68,7 +70,7 @@ using E = SPARC64;
 // We also don't need a .got.plt section to store the result of lazy PLT
 // symbol resolution because the dynamic symbol resolver directly mutates
 // instructions in PLT so that they jump to the right places next time.
-// That's why each PLT entry contains lots of NOPs; that's a placeholder
+// That's why each PLT entry contains lots of NOPs; they are a placeholder
 // for the runtime to add more instructions.
 //
 // Self-modifying code is nowadays considered really bad from the security

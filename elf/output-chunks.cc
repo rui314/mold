@@ -1049,7 +1049,7 @@ template <typename E>
 i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
   for (GotEntry<E> &ent : get_entries(ctx))
-    if (ent.is_rel(ctx))
+    if (!ent.is_relr(ctx) && ent.r_type != R_NONE)
       n++;
   return n * sizeof(ElfRel<E>);
 }

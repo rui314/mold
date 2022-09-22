@@ -10,10 +10,9 @@
 //
 // ARM processors runs in either ARM mode or Thumb mode. The mode can
 // be switched using BX (branch and mode exchange)-family instructions.
-// We need to use such instructions to, for example, call a function
+// We need to use that instructions to, for example, call a function
 // encoded in Thumb from a function encoded in ARM. Sometimes, the
-// linker even has to emit an interworking thunk code to switch between
-// them.
+// linker even has to emit an interworking thunk code to switch mode.
 //
 // ARM instructions are aligned to 4 byte boundaries. Thumb are to 2
 // byte boundaries.

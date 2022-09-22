@@ -2066,7 +2066,7 @@ struct EBNhdr {
 // Target-specific ELF data types
 //
 
-struct PPCEL64Sym {
+struct PPC64V2Sym {
   bool is_defined() const { return !is_undef(); }
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
   bool is_abs() const { return st_shndx == SHN_ABS; }
@@ -2095,9 +2095,9 @@ struct PPCEL64Sym {
   ul64 st_size;
 };
 
-struct SparcEB64Rela {
-  SparcEB64Rela() = default;
-  SparcEB64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
+struct SPARC64Rela {
+  SPARC64Rela() = default;
+  SPARC64Rela(u64 r_offset, u32 r_type, u32 r_sym, i64 r_addend)
     : r_offset(r_offset), r_sym(r_sym), r_type_data(0), r_type(r_type),
       r_addend(r_addend) {}
 
@@ -2427,7 +2427,7 @@ struct PPC64V2 {
   static constexpr u32 thunk_size = 20;
 };
 
-template <> struct ElfSym<PPC64V2>     : PPCEL64Sym {};
+template <> struct ElfSym<PPC64V2>     : PPC64V2Sym {};
 template <> struct ElfShdr<PPC64V2>    : EL64Shdr {};
 template <> struct ElfEhdr<PPC64V2>    : EL64Ehdr {};
 template <> struct ElfPhdr<PPC64V2>    : EL64Phdr {};
@@ -2466,7 +2466,7 @@ template <> struct ElfSym<SPARC64>     : EB64Sym {};
 template <> struct ElfShdr<SPARC64>    : EB64Shdr {};
 template <> struct ElfEhdr<SPARC64>    : EB64Ehdr {};
 template <> struct ElfPhdr<SPARC64>    : EB64Phdr {};
-template <> struct ElfRel<SPARC64>     : SparcEB64Rela { using SparcEB64Rela::SparcEB64Rela; };
+template <> struct ElfRel<SPARC64>     : SPARC64Rela { using SPARC64Rela::SPARC64Rela; };
 template <> struct ElfDyn<SPARC64>     : EB64Dyn {};
 template <> struct ElfVerneed<SPARC64> : EBVerneed {};
 template <> struct ElfVernaux<SPARC64> : EBVernaux {};

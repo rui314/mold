@@ -457,10 +457,6 @@ private:
 
 template <typename E>
 struct GotEntry {
-  bool is_rel(Context<E> &ctx) const {
-    return r_type != R_NONE && !is_relr(ctx);
-  }
-
   bool is_relr(Context<E> &ctx) const {
     return r_type == E::R_RELATIVE && ctx.arg.pack_dyn_relocs_relr;
   }

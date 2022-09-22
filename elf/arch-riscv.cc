@@ -20,11 +20,12 @@
 // Other RISC ISAs have the same limitation, and they solved the problem by
 // letting the linker create so-called "range extension thunks". It works as
 // follows: the compiler optimistically emits single jump instructions for
-// function calls. If the linker finds that a branch target is unreachable,
-// it emits a small piece of machine code near the branch that constructs a
-// full 32-bit address in a register and jump to the destination. Then the
-// linker redirects the unreachable branch to that linker-synthesized piece
-// of code. That code is called "range extension thunks" or just "thunks".
+// function calls. If the linker finds that a branch target is out of reach,
+// it emits a small piece of machine code near the branch instruction and
+// redirect the branch to the linker-synthesized code. The code constructs a
+// full 32-bit address in a register and jump to the destination. That
+// linker-synthesized code is called "range extension thunks" or just
+// "thunks".
 //
 // The RISC-V psABI is unique that it works the other way around. That is,
 // for RISC-V, the compiler always emits two instructions (AUIPC + JAL) for
@@ -34,7 +35,7 @@
 // gap with a nop.
 //
 // With the presence of this relaxation, sections can no longer be
-// considered as an atomic unit. If we delete 4 bytes form the middle of a
+// considered as an atomic unit. If we delete 4 bytes from the middle of a
 // section, all contents after that point needs to be shifted by 4. Symbol
 // values and relocation offsets have to be adjusted accordingly if they
 // refer past the deleted bytes.
@@ -84,7 +85,7 @@ static u32 utype(u32 val) {
   // U-type instructions are used in combination with I-type
   // instructions. U-type insn sets an immediate to the upper 20-bits
   // of a register. I-type insn sign-extends a 12-bits immediate and
-  // add it to a register value to construct a complete value. 0x800
+  // adds it to a register value to construct a complete value. 0x800
   // is added here to compensate for the sign-extension.
   return (val + 0x800) & 0xffff'f000;
 }
@@ -467,8 +468,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // aligned to a given alignment boundary.
       //
       // We need to guarantee that the NOP sequence is valid after byte
-      // removal (e.g. we can't remove 2 bytes from a 4-byte NOP). For the
-      // sake of simplicity, we always rewrite the entire NOP sequence.
+      // removal (e.g. we can't remove the first 2 bytes of a 4-byte NOP).
+      // For the sake of simplicity, we always rewrite the entire NOP sequence.
       i64 padding_size = align_to(P, bit_ceil(rel.r_addend + 1)) - P;
       assert(padding_size % 2 == 0);
 
@@ -906,9 +907,9 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
 // This operation seems to be optional, because by default longest
 // instructions are being used. However, calling this function is actually
 // mandatory because of R_RISCV_ALIGN. R_RISCV_ALIGN is a directive to the
-// linker to align the location referred to by the relocation to a specified
-// byte boundary. We at least have to interpret them satisfy the constraints
-// imposed by R_RISCV_ALIGN relocations.
+// linker to align the location referred to by the relocation to a
+// specified byte boundary. We at least have to interpret them to satisfy
+// the alignment constraints.
 template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx) {
   Timer t(ctx, "riscv_resize_sections");

@@ -1,8 +1,7 @@
 // Supporting x86-64 is straightforward. Unlike its predecessor, i386,
-// x86-64 supports PC-relative addressing for position-independent
-// code. Being CISC, its instructions are variable in size. Branch
-// instructions take 4 bytes offsets, so we don't need range extension
-// thunks.
+// x86-64 supports PC-relative addressing for position-independent code.
+// Being CISC, its instructions are variable in size. Branch instructions
+// take 4 bytes offsets, so we don't need range extension thunks.
 //
 // The psABI specifies %r11 as neither caller- nor callee-saved. It's
 // intentionally left out so that we can use it as a scratch register in
@@ -15,8 +14,8 @@
 // as %fs:offset_from_tp.
 //
 // The value of a segment register itself is not generally readable from
-// the user space. As a workaround, %fs:0 (the first word referenced by
-// FS) is initialized to the value of %fs itself, so we can obtain TP just
+// the user space. As a workaround, libc initializes %fs:0 (the first word
+// referenced by FS) to the value of %fs itself. So we can obtain TP just
 // by `mov %fs:0, %rax` if we need it.
 //
 // For historical reasons, TP points past the end of the TLS block on x86.

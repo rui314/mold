@@ -26,7 +26,7 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
   return true;
 }
 
-static inline i64 to_p2align(u64 alignment) {
+static i64 to_p2align(u64 alignment) {
   if (alignment == 0)
     return 0;
   return std::countr_zero(alignment);
@@ -215,7 +215,7 @@ static Action get_abs_dyn_action(Context<E> &ctx, Symbol<E> &sym,
     // As a special case, we do not create copy relocations nor canonical
     // PLTs for PPC64 .toc sections. PPC64's .toc is a compiler-generated
     // GOT-like section, and no user-generated code directly uses values
-    // in it. Therefore, all relocations can be resolved at load-time.
+    // in it.
     constexpr Action table[][4] = {
       // Absolute  Local    Imported data  Imported code
       {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object

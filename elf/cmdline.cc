@@ -1052,6 +1052,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     Fatal(ctx) << "--no-apply-dynamic-relocs may not be used on "
                << E::machine_type;
 
+  if (is_sparc<E> && ctx.arg.apply_dynamic_relocs)
+    Fatal(ctx) << "--apply-dynamic-relocs may not be used on SPARC64";
+
   if (ctx.arg.thread_count == 0)
     ctx.arg.thread_count = get_default_thread_count();
 
