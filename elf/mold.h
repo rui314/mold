@@ -46,8 +46,10 @@
   INSTANTIATE(I386);                            \
   INSTANTIATE(ARM64);                           \
   INSTANTIATE(ARM32);                           \
-  INSTANTIATE(RISCV64);                         \
-  INSTANTIATE(RISCV32);                         \
+  INSTANTIATE(RV64LE);                          \
+  INSTANTIATE(RV32LE);                          \
+  INSTANTIATE(RV64BE);                          \
+  INSTANTIATE(RV32BE);                          \
   INSTANTIATE(PPC64V2);                         \
   INSTANTIATE(SPARC64);
 #endif

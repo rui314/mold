@@ -3,6 +3,12 @@
 // identical. That is, you can think RV32 as a RV64 without 64-bit
 // operations. In this file, we support both RV64 and RV32.
 //
+// RISC-V is essentially little-endian, but the big-endian version is
+// available as an extension. GCC supports `-mbig-endian` to generate
+// big-endian code. Even in big-endian mode, machine instructions are
+// defined to be encoded in little-endian, though. Only constants are
+// in big-endian.
+//
 // From the linker's point of view, the RISC-V's psABI is unique because
 // sections in input object files can be shrunk while being copied to the
 // output file. That is contrary to other psABIs in which sections are an
@@ -254,16 +260,16 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 
   switch (rel.r_type) {
   case R_RISCV_ADD32:
-    *(ul32 *)loc += val;
+    *(U32<E> *)loc += val;
     return;
   case R_RISCV_SUB8:
     *loc -= val;
     return;
   case R_RISCV_SUB16:
-    *(ul16 *)loc -= val;
+    *(U16<E> *)loc -= val;
     return;
   case R_RISCV_SUB32:
-    *(ul32 *)loc -= val;
+    *(U32<E> *)loc -= val;
     return;
   case R_RISCV_SUB6:
     *loc = (*loc & 0b1100'0000) | ((*loc - val) & 0b0011'1111);
@@ -275,13 +281,13 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
     *loc = val;
     return;
   case R_RISCV_SET16:
-    *(ul16 *)loc = val;
+    *(U16<E> *)loc = val;
     return;
   case R_RISCV_SET32:
-    *(ul32 *)loc = val;
+    *(U32<E> *)loc = val;
     return;
   case R_RISCV_32_PCREL:
-    *(ul32 *)loc = val - this->shdr.sh_addr - offset;
+    *(U32<E> *)loc = val - this->shdr.sh_addr - offset;
     return;
   }
   Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
@@ -326,7 +332,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_RISCV_32:
       if constexpr (E::is_64)
-        *(ul32 *)loc = S + A;
+        *(U32<E> *)loc = S + A;
       else
         apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
@@ -442,25 +448,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       loc += S + A;
       break;
     case R_RISCV_ADD16:
-      *(ul16 *)loc += S + A;
+      *(U16<E> *)loc += S + A;
       break;
     case R_RISCV_ADD32:
-      *(ul32 *)loc += S + A;
+      *(U32<E> *)loc += S + A;
       break;
     case R_RISCV_ADD64:
-      *(ul64 *)loc += S + A;
+      *(U64<E> *)loc += S + A;
       break;
     case R_RISCV_SUB8:
       loc -= S + A;
       break;
     case R_RISCV_SUB16:
-      *(ul16 *)loc -= S + A;
+      *(U16<E> *)loc -= S + A;
       break;
     case R_RISCV_SUB32:
-      *(ul32 *)loc -= S + A;
+      *(U32<E> *)loc -= S + A;
       break;
     case R_RISCV_SUB64:
-      *(ul64 *)loc -= S + A;
+      *(U64<E> *)loc -= S + A;
       break;
     case R_RISCV_ALIGN: {
       // A R_RISCV_ALIGN is followed by a NOP sequence. We need to remove
@@ -502,13 +508,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *loc = S + A;
       break;
     case R_RISCV_SET16:
-      *(ul16 *)loc = S + A;
+      *(U16<E> *)loc = S + A;
       break;
     case R_RISCV_SET32:
-      *(ul32 *)loc = S + A;
+      *(U32<E> *)loc = S + A;
       break;
     case R_RISCV_32_PCREL:
-      *(ul32 *)loc = S + A - P;
+      *(U32<E> *)loc = S + A - P;
       break;
     case R_RISCV_PCREL_LO12_I:
     case R_RISCV_PCREL_LO12_S:
@@ -587,37 +593,37 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_RISCV_32:
-      *(ul32 *)loc = S + A;
+      *(U32<E> *)loc = S + A;
       break;
     case R_RISCV_64:
       if (std::optional<u64> val = get_tombstone(sym, frag))
-        *(ul64 *)loc = *val;
+        *(U64<E> *)loc = *val;
       else
-        *(ul64 *)loc = S + A;
+        *(U64<E> *)loc = S + A;
       break;
     case R_RISCV_ADD8:
       *loc += S + A;
       break;
     case R_RISCV_ADD16:
-      *(ul16 *)loc += S + A;
+      *(U16<E> *)loc += S + A;
       break;
     case R_RISCV_ADD32:
-      *(ul32 *)loc += S + A;
+      *(U32<E> *)loc += S + A;
       break;
     case R_RISCV_ADD64:
-      *(ul64 *)loc += S + A;
+      *(U64<E> *)loc += S + A;
       break;
     case R_RISCV_SUB8:
       *loc -= S + A;
       break;
     case R_RISCV_SUB16:
-      *(ul16 *)loc -= S + A;
+      *(U16<E> *)loc -= S + A;
       break;
     case R_RISCV_SUB32:
-      *(ul32 *)loc -= S + A;
+      *(U32<E> *)loc -= S + A;
       break;
     case R_RISCV_SUB64:
-      *(ul64 *)loc -= S + A;
+      *(U64<E> *)loc -= S + A;
       break;
     case R_RISCV_SUB6:
       *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
@@ -629,10 +635,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *loc = S + A;
       break;
     case R_RISCV_SET16:
-      *(ul16 *)loc = S + A;
+      *(U16<E> *)loc = S + A;
       break;
     case R_RISCV_SET32:
-      *(ul32 *)loc = S + A;
+      *(U32<E> *)loc = S + A;
       break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
@@ -962,7 +968,9 @@ i64 riscv_resize_sections(Context<E> &ctx) {
   template void InputSection<E>::scan_relocations(Context<E> &);             \
   template i64 riscv_resize_sections(Context<E> &);
 
-INSTANTIATE_RISCV(RISCV64);
-INSTANTIATE_RISCV(RISCV32);
+INSTANTIATE_RISCV(RV64LE);
+INSTANTIATE_RISCV(RV64BE);
+INSTANTIATE_RISCV(RV32LE);
+INSTANTIATE_RISCV(RV32BE);
 
 } // namespace mold::elf

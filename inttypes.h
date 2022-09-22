@@ -192,6 +192,10 @@ public:
     return *this = *this + x;
   }
 
+  BigEndian &operator-=(T x) {
+    return *this = *this - x;
+  }
+
   BigEndian &operator&=(T x) {
     return *this = *this & x;
   }
