@@ -9,7 +9,7 @@
 
 set -e
 
-if [ $# -ge 2 ]; then
+if [ $# -ne 1 ]; then
   echo "Usage: $0 [ x86_64 | aarch64 ]"
   exit 1
 fi
