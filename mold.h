@@ -69,6 +69,7 @@ inline u8 *output_buffer_start = nullptr;
 inline u8 *output_buffer_end = nullptr;
 
 inline std::string mold_version;
+extern std::string mold_version_string;
 extern std::string mold_git_hash;
 
 std::string_view errno_string();

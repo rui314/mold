@@ -10,6 +10,8 @@
 
 namespace mold {
 
+std::string mold_version_string = MOLD_VERSION;
+
 namespace elf {
 int main(int argc, char **argv);
 }
