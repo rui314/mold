@@ -603,9 +603,8 @@ void icf_sections(Context<E> &ctx) {
   }
 }
 
-#define INSTANTIATE(E)                          \
-  template void icf_sections(Context<E> &ctx);
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template void icf_sections(Context<E> &ctx);
 
 } // namespace mold::elf

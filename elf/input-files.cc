@@ -9,6 +9,14 @@
 
 namespace mold::elf {
 
+#ifdef MOLD_X86_64
+bool is_c_identifier(std::string_view name) {
+  static std::regex re("[a-zA-Z_][a-zA-Z0-9_]*",
+                       std::regex_constants::optimize);
+  return std::regex_match(name.begin(), name.end(), re);
+}
+#endif
+
 template <typename E>
 InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
   : mf(mf), filename(mf->name) {
@@ -1271,12 +1279,6 @@ void ObjectFile<E>::populate_symtab(Context<E> &ctx) {
   }
 }
 
-bool is_c_identifier(std::string_view name) {
-  static std::regex re("[a-zA-Z_][a-zA-Z0-9_]*",
-                       std::regex_constants::optimize);
-  return std::regex_match(name.begin(), name.end(), re);
-}
-
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
   if (file.is_dso) {
@@ -1538,12 +1540,11 @@ void SharedFile<E>::populate_symtab(Context<E> &ctx) {
   }
 }
 
-#define INSTANTIATE(E)                                                  \
-  template class InputFile<E>;                                          \
-  template class ObjectFile<E>;                                         \
-  template class SharedFile<E>;                                         \
-  template std::ostream &operator<<(std::ostream &, const InputFile<E> &)
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template class InputFile<E>;
+template class ObjectFile<E>;
+template class SharedFile<E>;
+template std::ostream &operator<<(std::ostream &, const InputFile<E> &);
 
 } // namespace mold::elf

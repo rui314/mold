@@ -109,9 +109,8 @@ void print_map(Context<E> &ctx) {
   }
 }
 
-#define INSTANTIATE(E)                          \
-  template void print_map(Context<E> &ctx);
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template void print_map(Context<E> &ctx);
 
 } // namespace mold::elf

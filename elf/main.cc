@@ -7,6 +7,7 @@
 #include <functional>
 #include <iomanip>
 #include <map>
+#include <regex>
 #include <signal.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -368,7 +369,7 @@ static void show_stats(Context<E> &ctx) {
 }
 
 template <typename E>
-static int elf_main(int argc, char **argv) {
+int elf_main(int argc, char **argv) {
   Context<E> ctx;
 
   // Process -run option first. process_run_subcommand() does not return.
@@ -389,7 +390,6 @@ static int elf_main(int argc, char **argv) {
 
   // Redo if -m is not x86-64.
   if (ctx.arg.emulation != E::machine_type) {
-#ifndef MOLD_DEBUG_X86_64_ONLY
     switch (ctx.arg.emulation) {
     case MachineType::I386:
       return elf_main<I386>(argc, argv);
@@ -412,7 +412,6 @@ static int elf_main(int argc, char **argv) {
     default:
       unreachable();
     }
-#endif
     unreachable();
   }
 
@@ -765,13 +764,30 @@ static int elf_main(int argc, char **argv) {
   return 0;
 }
 
+using E = MOLD_TARGET;
+
+template void read_file(Context<E> &, MappedFile<Context<E>> *);
+
+#ifdef MOLD_X86_64
+
+extern template int elf_main<I386>(int, char **);
+extern template int elf_main<ARM32>(int, char **);
+extern template int elf_main<ARM64>(int, char **);
+extern template int elf_main<RV32BE>(int, char **);
+extern template int elf_main<RV32LE>(int, char **);
+extern template int elf_main<RV64LE>(int, char **);
+extern template int elf_main<RV64BE>(int, char **);
+extern template int elf_main<PPC64V2>(int, char **);
+extern template int elf_main<SPARC64>(int, char **);
+
 int main(int argc, char **argv) {
   return elf_main<X86_64>(argc, argv);
 }
 
-#define INSTANTIATE(E)                                                  \
-  template void read_file(Context<E> &, MappedFile<Context<E>> *);
+#else
 
-INSTANTIATE_ALL;
+template int elf_main<E>(int, char **);
+
+#endif
 
 } // namespace mold::elf

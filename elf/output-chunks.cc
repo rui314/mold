@@ -1193,6 +1193,12 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
 
 template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
+  // On PPC64, it's dynamic loader responsibility to fill the .got.plt
+  // section. Dynamic loader finds the address of the first PLT entry by
+  // DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
+  if constexpr (is_ppc<E>)
+    return;
+
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
@@ -1208,12 +1214,6 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
       buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
   }
 }
-
-// On PPC64, it's dynamic loader responsibility to fill the .got.plt
-// section. Dynamic loader finds the address of the first PLT entry by
-// DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
-template <>
-void GotPltSection<PPC64V2>::copy_buf(Context<PPC64V2> &ctx) {}
 
 template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
@@ -2048,7 +2048,7 @@ void VerdefSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
-i64 BuildId::size() const {
+inline i64 BuildId::size() const {
   switch (kind) {
   case HEX:
     return value.size();
@@ -2604,44 +2604,43 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
   });
 }
 
-#define INSTANTIATE(E)                                                  \
-  template class Chunk<E>;                                              \
-  template class OutputEhdr<E>;                                         \
-  template class OutputShdr<E>;                                         \
-  template class OutputPhdr<E>;                                         \
-  template class InterpSection<E>;                                      \
-  template class OutputSection<E>;                                      \
-  template class GotSection<E>;                                         \
-  template class GotPltSection<E>;                                      \
-  template class PltSection<E>;                                         \
-  template class PltGotSection<E>;                                      \
-  template class RelPltSection<E>;                                      \
-  template class RelDynSection<E>;                                      \
-  template class RelrDynSection<E>;                                     \
-  template class StrtabSection<E>;                                      \
-  template class ShstrtabSection<E>;                                    \
-  template class DynstrSection<E>;                                      \
-  template class DynamicSection<E>;                                     \
-  template class SymtabSection<E>;                                      \
-  template class DynsymSection<E>;                                      \
-  template class HashSection<E>;                                        \
-  template class GnuHashSection<E>;                                     \
-  template class MergedSection<E>;                                      \
-  template class EhFrameSection<E>;                                     \
-  template class EhFrameHdrSection<E>;                                  \
-  template class CopyrelSection<E>;                                     \
-  template class VersymSection<E>;                                      \
-  template class VerneedSection<E>;                                     \
-  template class VerdefSection<E>;                                      \
-  template class BuildIdSection<E>;                                     \
-  template class NotePackageSection<E>;                                 \
-  template class NotePropertySection<E>;                                \
-  template class GdbIndexSection<E>;                                    \
-  template class CompressedSection<E>;                                  \
-  template class RelocSection<E>;                                       \
-  template bool is_relro(Context<E> &, Chunk<E> *);                     \
-  template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &);
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template class Chunk<E>;
+template class OutputEhdr<E>;
+template class OutputShdr<E>;
+template class OutputPhdr<E>;
+template class InterpSection<E>;
+template class OutputSection<E>;
+template class GotSection<E>;
+template class GotPltSection<E>;
+template class PltSection<E>;
+template class PltGotSection<E>;
+template class RelPltSection<E>;
+template class RelDynSection<E>;
+template class RelrDynSection<E>;
+template class StrtabSection<E>;
+template class ShstrtabSection<E>;
+template class DynstrSection<E>;
+template class DynamicSection<E>;
+template class SymtabSection<E>;
+template class DynsymSection<E>;
+template class HashSection<E>;
+template class GnuHashSection<E>;
+template class MergedSection<E>;
+template class EhFrameSection<E>;
+template class EhFrameHdrSection<E>;
+template class CopyrelSection<E>;
+template class VersymSection<E>;
+template class VerneedSection<E>;
+template class VerdefSection<E>;
+template class BuildIdSection<E>;
+template class NotePackageSection<E>;
+template class NotePropertySection<E>;
+template class GdbIndexSection<E>;
+template class CompressedSection<E>;
+template class RelocSection<E>;
+template bool is_relro(Context<E> &, Chunk<E> *);
+template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &);
 
 } // namespace mold::elf

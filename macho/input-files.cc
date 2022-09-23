@@ -972,12 +972,11 @@ void DylibFile<E>::resolve_symbols(Context<E> &ctx) {
   }
 }
 
-#define INSTANTIATE(E)                                                  \
-  template class InputFile<E>;                                          \
-  template class ObjectFile<E>;                                         \
-  template class DylibFile<E>;                                          \
-  template std::ostream &operator<<(std::ostream &, const InputFile<E> &)
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template class InputFile<E>;
+template class ObjectFile<E>;
+template class DylibFile<E>;
+template std::ostream &operator<<(std::ostream &, const InputFile<E> &);
 
 } // namespace mold::macho

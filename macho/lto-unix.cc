@@ -8,11 +8,6 @@
 
 namespace mold::macho {
 
-LTOPlugin::~LTOPlugin() {
-  if (dlopen_handle)
-    dlclose(dlopen_handle);
-}
-
 template <typename E>
 static void do_load_plugin(Context<E> &ctx) {
   void *handle = dlopen(ctx.arg.lto_library.c_str(), RTLD_NOW | RTLD_GLOBAL);
@@ -155,10 +150,16 @@ void do_lto(Context<E> &ctx) {
   ctx.objs.push_back(obj);
 }
 
-#define INSTANTIATE(E)                         \
-  template void load_lto_plugin(Context<E> &); \
-  template void do_lto(Context<E> &);
+#ifdef MOLD_ARM64
+LTOPlugin::~LTOPlugin() {
+  if (dlopen_handle)
+    dlclose(dlopen_handle);
+}
+#endif
 
-INSTANTIATE_ALL;
+using E = MOLD_TARGET;
+
+template void load_lto_plugin(Context<E> &);
+template void do_lto(Context<E> &);
 
 } // namespace mold::macho

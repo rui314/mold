@@ -1,5 +1,3 @@
-#ifdef _WIN32
-
 #include "mold.h"
 #include "lto.h"
 
@@ -18,14 +16,10 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
 template <typename E>
 void lto_cleanup(Context<E> &ctx) {}
 
-#define INSTANTIATE(E)                                                  \
-  template ObjectFile<E> *                                              \
-    read_lto_object(Context<E> &, MappedFile<Context<E>> *);            \
-  template std::vector<ObjectFile<E> *> do_lto(Context<E> &);           \
-  template void lto_cleanup(Context<E> &)
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template ObjectFile<E> *read_lto_object(Context<E> &, MappedFile<Context<E>> *);
+template std::vector<ObjectFile<E> *> do_lto(Context<E> &);
+template void lto_cleanup(Context<E> &);
 
 } // namespace mold::elf
-
-#endif

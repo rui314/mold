@@ -374,12 +374,10 @@ void report_undef_errors(Context<E> &ctx) {
   ctx.checkpoint();
 }
 
-#define INSTANTIATE(E)                                                  \
-  template struct CieRecord<E>;                                         \
-  template class InputSection<E>;                                       \
-  template void report_undef_errors(Context<E> &)
+using E = MOLD_TARGET;
 
-
-INSTANTIATE_ALL;
+template struct CieRecord<E>;
+template class InputSection<E>;
+template void report_undef_errors(Context<E> &);
 
 } // namespace mold::elf

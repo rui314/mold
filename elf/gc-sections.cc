@@ -187,9 +187,8 @@ void gc_sections(Context<E> &ctx) {
   sweep(ctx);
 }
 
-#define INSTANTIATE(E)                                  \
-  template void gc_sections(Context<E> &ctx);
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template void gc_sections(Context<E> &ctx);
 
 } // namespace mold::elf

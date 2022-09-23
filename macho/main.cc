@@ -983,7 +983,7 @@ static void print_stats(Context<E> &ctx) {
 }
 
 template <typename E>
-static int do_main(int argc, char **argv) {
+int macho_main(int argc, char **argv) {
   Context<E> ctx;
 
   for (i64 i = 0; i < argc; i++)
@@ -992,14 +992,12 @@ static int do_main(int argc, char **argv) {
   std::vector<std::string> file_args = parse_nonpositional_args(ctx);
 
   if (ctx.arg.arch != E::cputype) {
-#ifndef MOLD_DEBUG_X86_64_ONLY
     switch (ctx.arg.arch) {
     case CPU_TYPE_X86_64:
-      return do_main<X86_64>(argc, argv);
+      return macho_main<X86_64>(argc, argv);
     case CPU_TYPE_ARM64:
-      return do_main<X86_64>(argc, argv);
+      return macho_main<X86_64>(argc, argv);
     }
-#endif
     Fatal(ctx) << "unknown cputype: " << ctx.arg.arch;
   }
 
@@ -1114,8 +1112,19 @@ static int do_main(int argc, char **argv) {
   return 0;
 }
 
+using E = MOLD_TARGET;
+
+#ifdef MOLD_ARM64
+
+extern template int macho_main<X86_64>(int, char **);
+
 int main(int argc, char **argv) {
-  return do_main<ARM64>(argc, argv);
+  return macho_main<ARM64>(argc, argv);
 }
 
+#else
+
+template int macho_main<E>(int, char **);
+
+#endif
 }

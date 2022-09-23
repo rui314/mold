@@ -139,9 +139,8 @@ void dead_strip(Context<E> &ctx) {
   sweep(ctx);
 }
 
-#define INSTANTIATE(E)                          \
-  template void dead_strip(Context<E> &)
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template void dead_strip(Context<E> &);
 
 } // namespace mold::macho

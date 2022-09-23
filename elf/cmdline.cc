@@ -1110,9 +1110,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   return remaining;
 }
 
-#define INSTANTIATE(E)                                                  \
-  template std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 
 } // namespace mold::elf

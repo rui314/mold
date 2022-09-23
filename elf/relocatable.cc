@@ -588,9 +588,8 @@ void combine_objects(Context<E> &ctx, std::span<std::string> file_args) {
   out->close(ctx);
 }
 
-#define INSTANTIATE(E)                                                  \
-  template void combine_objects(Context<E> &, std::span<std::string>);
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template void combine_objects(Context<E> &, std::span<std::string>);
 
 } // namespace mold::elf

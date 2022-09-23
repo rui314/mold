@@ -564,10 +564,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   return remaining;
 }
 
-#define INSTANTIATE(E)                                                  \
-  template i64 parse_version(Context<E> &, std::string_view);           \
-  template std::vector<std::string> parse_nonpositional_args(Context<E> &)
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template i64 parse_version(Context<E> &, std::string_view);
+template std::vector<std::string> parse_nonpositional_args(Context<E> &);
 
 } // namespace mold::macho

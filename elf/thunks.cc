@@ -260,13 +260,9 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       std::max<u32>(osec.shdr.sh_addralign, 1 << isec->p2align);
 }
 
-template
-void create_range_extension_thunks(Context<ARM64> &, OutputSection<ARM64> &);
-
-template
-void create_range_extension_thunks(Context<ARM32> &, OutputSection<ARM32> &);
-
-template
-void create_range_extension_thunks(Context<PPC64V2> &, OutputSection<PPC64V2> &);
+#if defined(MOLD_ARM64) || defined(MOLD_ARM32) || defined(MOLD_PPC64V2)
+using E = MOLD_TARGET;
+template void create_range_extension_thunks(Context<E> &, OutputSection<E> &);
+#endif
 
 } // namespace mold::elf

@@ -1765,43 +1765,42 @@ void write_dependency_file(Context<E> &ctx) {
   out.close();
 }
 
-#define INSTANTIATE(E)                                                  \
-  template void create_internal_file(Context<E> &);                     \
-  template void apply_exclude_libs(Context<E> &);                       \
-  template void create_synthetic_sections(Context<E> &);                \
-  template void resolve_symbols(Context<E> &);                          \
-  template void register_section_pieces(Context<E> &);                  \
-  template void eliminate_comdats(Context<E> &);                        \
-  template void convert_common_symbols(Context<E> &);                   \
-  template void compute_merged_section_sizes(Context<E> &);             \
-  template void bin_sections(Context<E> &);                             \
-  template void add_synthetic_symbols(Context<E> &);                    \
-  template void check_cet_errors(Context<E> &);                         \
-  template void print_dependencies(Context<E> &);                       \
-  template void print_dependencies_full(Context<E> &);                  \
-  template void write_repro_file(Context<E> &);                         \
-  template void check_duplicate_symbols(Context<E> &);                  \
-  template void sort_init_fini(Context<E> &);                           \
-  template void sort_ctor_dtor(Context<E> &);                           \
-  template void shuffle_sections(Context<E> &);                         \
-  template std::vector<Chunk<E> *> collect_output_sections(Context<E> &); \
-  template void compute_section_sizes(Context<E> &);                    \
-  template void sort_output_sections(Context<E> &);                     \
-  template void claim_unresolved_symbols(Context<E> &);                 \
-  template void scan_rels(Context<E> &);                                \
-  template void create_reloc_sections(Context<E> &);                    \
-  template void construct_relr(Context<E> &);                           \
-  template void create_output_symtab(Context<E> &);                     \
-  template void apply_version_script(Context<E> &);                     \
-  template void parse_symbol_version(Context<E> &);                     \
-  template void compute_import_export(Context<E> &);                    \
-  template void mark_addrsig(Context<E> &);                             \
-  template void clear_padding(Context<E> &);                            \
-  template i64 set_osec_offsets(Context<E> &);                          \
-  template void fix_synthetic_symbols(Context<E> &);                    \
-  template i64 compress_debug_sections(Context<E> &);                   \
-  template void write_dependency_file(Context<E> &);
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template void create_internal_file(Context<E> &);
+template void apply_exclude_libs(Context<E> &);
+template void create_synthetic_sections(Context<E> &);
+template void resolve_symbols(Context<E> &);
+template void register_section_pieces(Context<E> &);
+template void eliminate_comdats(Context<E> &);
+template void convert_common_symbols(Context<E> &);
+template void compute_merged_section_sizes(Context<E> &);
+template void bin_sections(Context<E> &);
+template void add_synthetic_symbols(Context<E> &);
+template void check_cet_errors(Context<E> &);
+template void print_dependencies(Context<E> &);
+template void print_dependencies_full(Context<E> &);
+template void write_repro_file(Context<E> &);
+template void check_duplicate_symbols(Context<E> &);
+template void sort_init_fini(Context<E> &);
+template void sort_ctor_dtor(Context<E> &);
+template void shuffle_sections(Context<E> &);
+template std::vector<Chunk<E> *> collect_output_sections(Context<E> &);
+template void compute_section_sizes(Context<E> &);
+template void sort_output_sections(Context<E> &);
+template void claim_unresolved_symbols(Context<E> &);
+template void scan_rels(Context<E> &);
+template void create_reloc_sections(Context<E> &);
+template void construct_relr(Context<E> &);
+template void create_output_symtab(Context<E> &);
+template void apply_version_script(Context<E> &);
+template void parse_symbol_version(Context<E> &);
+template void compute_import_export(Context<E> &);
+template void mark_addrsig(Context<E> &);
+template void clear_padding(Context<E> &);
+template i64 set_osec_offsets(Context<E> &);
+template void fix_synthetic_symbols(Context<E> &);
+template i64 compress_debug_sections(Context<E> &);
+template void write_dependency_file(Context<E> &);
 
 } // namespace mold::elf

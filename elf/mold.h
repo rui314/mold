@@ -34,26 +34,6 @@
 # include <unistd.h>
 #endif
 
-// MOLD_DEBUG_{X86_64,ARM64}_ONLY are macros to speed up builds.
-// This should be used only for debugging. When you use this flag,
-// you need to compile mold C++ files with `-ffunction-sections
-// -fdata-sections` and link them with -Wl,-gc-sections.
-#if MOLD_DEBUG_X86_64_ONLY
-# define INSTANTIATE_ALL INSTANTIATE(X86_64)
-#else
-# define INSTANTIATE_ALL                        \
-  INSTANTIATE(X86_64);                          \
-  INSTANTIATE(I386);                            \
-  INSTANTIATE(ARM64);                           \
-  INSTANTIATE(ARM32);                           \
-  INSTANTIATE(RV64LE);                          \
-  INSTANTIATE(RV32LE);                          \
-  INSTANTIATE(RV64BE);                          \
-  INSTANTIATE(RV32BE);                          \
-  INSTANTIATE(PPC64V2);                         \
-  INSTANTIATE(SPARC64);
-#endif
-
 namespace mold::elf {
 
 static constexpr i32 SHA256_SIZE = 32;
@@ -1690,6 +1670,9 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
 
 template <typename E>
 void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
+
+template <typename E>
+int elf_main(int argc, char **argv);
 
 int main(int argc, char **argv);
 

@@ -403,16 +403,11 @@ void parse_dynamic_list(Context<E> &ctx, std::string path) {
     SyntaxError(ctx, tok[0]) << "trailing garbage token";
 }
 
-#define INSTANTIATE(E)                                                          \
-  template                                                                      \
-  void parse_linker_script(Context<E> &, MappedFile<Context<E>> *);             \
-  template                                                                      \
-  MachineType get_script_output_type(Context<E> &, MappedFile<Context<E>> *);   \
-  template                                                                      \
-  void parse_version_script(Context<E> &, std::string);                         \
-  template                                                                      \
-  void parse_dynamic_list(Context<E> &, std::string);
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template void parse_linker_script(Context<E> &, MappedFile<Context<E>> *);
+template MachineType get_script_output_type(Context<E> &, MappedFile<Context<E>> *);
+template void parse_version_script(Context<E> &, std::string);
+template void parse_dynamic_list(Context<E> &, std::string);
 
 } // namespace mold::elf

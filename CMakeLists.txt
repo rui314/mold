@@ -130,16 +130,6 @@ else()
   mold_add_tbb()
 endif()
 
-# MOLD_X86_64_ONLY is a developer-only option. You should not use it
-# for creating an executable for production use.
-option(MOLD_X86_64_ONLY "Developer-only option" OFF)
-if(MOLD_X86_64_ONLY)
-  set(CMAKE_BUILD_TYPE "Debug")
-  target_compile_options(mold PRIVATE -ffunction-sections -fdata-sections
-    -DMOLD_DEBUG_X86_64_ONLY)
-  target_link_options(mold PRIVATE -Wl,--gc-sections)
-endif()
-
 if(WIN32)
   if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(FATAL_ERROR
@@ -147,21 +137,12 @@ if(WIN32)
   endif()
 
   target_compile_definitions(mold PRIVATE NOGDI NOMINMAX)
-
-  target_sources(mold PRIVATE
-    elf/lto-win32.cc
-    macho/lto-win32.cc)
 else()
   include(CheckLibraryExists)
   check_library_exists(m pow "" LIBM_FOUND)
   if(LIBM_FOUND)
     target_link_libraries(mold PRIVATE m)
   endif()
-
-  target_sources(mold PRIVATE
-    elf/lto-unix.cc
-    elf/subprocess.cc
-    macho/lto-unix.cc)
 endif()
 
 if(NOT APPLE AND NOT WIN32)
@@ -183,9 +164,10 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64|armv)")
   target_link_libraries(mold PRIVATE atomic)
 endif()
 
-set_property(SOURCE main.cc elf/lto-unix.cc macho/output-chunks.cc APPEND PROPERTY
+set_property(SOURCE main.cc APPEND PROPERTY
   COMPILE_DEFINITIONS "MOLD_VERSION=\"${CMAKE_PROJECT_VERSION}\"")
 
+# Create a .cc file containing the current git hash for `mold --version`.
 add_custom_target(git_hash
   COMMAND ${CMAKE_COMMAND}
     -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
@@ -197,6 +179,71 @@ add_custom_target(git_hash
 
 add_dependencies(mold git_hash)
 
+# Almost all functions are template in mold which take a target type
+# (e.g. X86_64) as its type parameter. Since we suport more than 10
+# targets, compiling a single source file for all the targets is very
+# slow.
+#
+# As a workaround, we create a .cc file for each target and spawn many
+# compiler instances. This is hacky but greatly reduces compile time.
+list(APPEND MOLD_ELF_TARGETS
+  X86_64 I386 ARM64 ARM32 RV32LE RV32BE RV64LE RV64BE PPC64V2 SPARC64)
+
+list(APPEND MOLD_ELF_TEMPLATE_FILES
+  elf/cmdline.cc
+  elf/dwarf.cc
+  elf/gc-sections.cc
+  elf/icf.cc
+  elf/input-files.cc
+  elf/input-sections.cc
+  elf/linker-script.cc
+  elf/lto.cc
+  elf/lto.cc
+  elf/main.cc
+  elf/mapfile.cc
+  elf/output-chunks.cc
+  elf/passes.cc
+  elf/relocatable.cc
+  elf/subprocess.cc
+  elf/thunks.cc
+  )
+
+list(APPEND MOLD_MACHO_TARGETS X86_64 ARM64)
+
+list(APPEND MOLD_MACHO_TEMPLATE_FILES
+  macho/cmdline.cc
+  macho/dead-strip.cc
+  macho/input-files.cc
+  macho/input-sections.cc
+  macho/lto.cc
+  macho/main.cc
+  macho/mapfile.cc
+  macho/output-chunks.cc
+  macho/tapi.cc
+  )
+
+function(mold_instantiate_templates SOURCE TARGET)
+  set(PATH ${CMAKE_BINARY_DIR}/${SOURCE}.${TARGET}.cc)
+  file(WRITE ${PATH} "#define MOLD_${TARGET} 1
+#define MOLD_TARGET ${TARGET}
+#include \"${CMAKE_SOURCE_DIR}/${SOURCE}\"
+")
+  target_sources(mold PRIVATE ${PATH})
+endfunction()
+
+foreach (SOURCE IN LISTS MOLD_ELF_TEMPLATE_FILES)
+  foreach(TARGET IN LISTS MOLD_ELF_TARGETS)
+    mold_instantiate_templates(${SOURCE} ${TARGET})
+  endforeach()
+endforeach()
+
+foreach (SOURCE IN LISTS MOLD_MACHO_TEMPLATE_FILES)
+  foreach(TARGET IN LISTS MOLD_MACHO_TARGETS)
+    mold_instantiate_templates(${SOURCE} ${TARGET})
+  endforeach()
+endforeach()
+
+# Add other non-template source files.
 target_sources(mold PRIVATE
   compress.cc
   demangle.cc
@@ -207,33 +254,12 @@ target_sources(mold PRIVATE
   elf/arch-riscv.cc
   elf/arch-sparc64.cc
   elf/arch-x86-64.cc
-  elf/cmdline.cc
-  elf/dwarf.cc
-  elf/gc-sections.cc
-  elf/icf.cc
-  elf/input-files.cc
-  elf/input-sections.cc
-  elf/linker-script.cc
-  elf/main.cc
-  elf/mapfile.cc
-  elf/output-chunks.cc
-  elf/passes.cc
-  elf/relocatable.cc
-  elf/thunks.cc
   filepath.cc
   git-hash.cc
   glob.cc
   hyperloglog.cc
   macho/arch-arm64.cc
   macho/arch-x86-64.cc
-  macho/cmdline.cc
-  macho/dead-strip.cc
-  macho/input-files.cc
-  macho/input-sections.cc
-  macho/main.cc
-  macho/mapfile.cc
-  macho/output-chunks.cc
-  macho/tapi.cc
   macho/yaml.cc
   main.cc
   multi-glob.cc

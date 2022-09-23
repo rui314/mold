@@ -1,3 +1,5 @@
+#ifndef _WIN32
+
 #include "mold.h"
 
 #include <filesystem>
@@ -10,6 +12,7 @@
 
 namespace mold::elf {
 
+#ifdef MOLD_X86_64
 // Exiting from a program with large memory usage is slow --
 // it may take a few hundred milliseconds. To hide the latency,
 // we fork a child and let it do the actual linking work.
@@ -53,6 +56,7 @@ std::function<void()> fork_child() {
     assert(n == 1);
   };
 }
+#endif
 
 template <typename E>
 static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
@@ -110,9 +114,10 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   Fatal(ctx) << "mold -run failed: " << argv[2] << ": " << errno_string();
 }
 
-#define INSTANTIATE(E)                                                  \
-  template void process_run_subcommand(Context<E> &, int, char **)
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template void process_run_subcommand(Context<E> &, int, char **);
 
 } // namespace mold::elf
+
+#endif

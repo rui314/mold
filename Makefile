@@ -32,8 +32,20 @@ endif
 # `STRIP=true` to run /bin/true instead of the strip command.
 STRIP = strip
 
-SRCS = $(wildcard *.cc elf/*.cc macho/*.cc)
-OBJS = $(SRCS:%.cc=out/%.o) out/rust-demangle.o out/git-hash.o
+SRCS = compress.cc demangle.cc elf/arch-arm32.cc elf/arch-arm64.cc elf/arch-i386.cc elf/arch-ppc64v2.cc elf/arch-riscv.cc elf/arch-sparc64.cc elf/arch-x86-64.cc filepath.cc glob.cc hyperloglog.cc macho/arch-arm64.cc macho/arch-x86-64.cc macho/yaml.cc main.cc multi-glob.cc perf.cc strerror.cc tar.cc uuid.cc
+
+ELF_TARGETS = X86_64 I386 ARM64 ARM32 RV32LE RV32BE RV64LE RV64BE PPC64V2 SPARC64
+MACHO_TARGETS = X86_64 ARM64
+
+ELF_TEMPLATES = elf/cmdline.cc elf/dwarf.cc elf/gc-sections.cc elf/icf.cc elf/input-files.cc elf/input-sections.cc elf/linker-script.cc elf/lto.cc elf/main.cc elf/mapfile.cc elf/output-chunks.cc elf/passes.cc elf/relocatable.cc elf/subprocess.cc elf/thunks.cc
+
+MACHO_TEMPLATES = macho/cmdline.cc macho/dead-strip.cc macho/input-files.cc macho/input-sections.cc macho/lto.cc macho/main.cc macho/mapfile.cc macho/output-chunks.cc macho/tapi.cc
+
+ELF_SRCS = $(foreach src, $(ELF_TEMPLATES), $(foreach arch, $(ELF_TARGETS), $(src).$(arch).cc))
+
+MACHO_SRCS = $(foreach src, $(MACHO_TEMPLATES), $(foreach arch, $(MACHO_TARGETS), $(src).$(arch).cc))
+
+OBJS = $(SRCS:%.cc=out/objs/%.o) $(ELF_SRCS:%.cc=out/objs2/%.o) $(MACHO_SRCS:%.cc=out/objs2/%.o) out/objs/rust-demangle.o out/objs2/git-hash.o
 
 IS_ANDROID = 0
 ifneq ($(findstring -android,$(shell $(CC) -dumpmachine)),)
@@ -135,19 +147,19 @@ ifeq ($(OS), Linux)
   MOLD_WRAPPER_LDFLAGS = -Wl,-push-state -Wl,-no-as-needed -ldl -Wl,-pop-state
 endif
 
-DEPFLAGS = -MT $@ -MMD -MP -MF out/$*.d
+DEPFLAGS = -MT $@ -MMD -MP -MF out/d/$*.d
 
-all: mold mold-wrapper.so
+all: prebuild mold mold-wrapper.so
 
--include $(SRCS:%.cc=out/%.d)
+-include $(SRCS:%.cc=d/%.d)
 
-out/git-hash.cc: FORCE
-	cmake -DSOURCE_DIR=. -DOUTPUT_FILE=out/git-hash.cc -P update-git-hash.cmake
+prebuild:
+	mkdir -p out/d out/d/elf out/d/macho out/srcs/elf out/srcs/macho out/objs/elf out/objs/macho out/objs2/elf out/objs2/macho out/objs2/src/elf out/objs2/src/macho
+
+out/srcs/git-hash.cc: FORCE
+	cmake -DSOURCE_DIR=. -DOUTPUT_FILE=out/srcs/git-hash.cc -P update-git-hash.cmake
 
 FORCE:
-
-out/git-hash.o: out/git-hash.cc
-	$(CXX) $(MOLD_CXXFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(ZSTD_LIB)
 	$(CXX) $(OBJS) -o $@ $(MOLD_LDFLAGS) $(LDFLAGS)
@@ -157,15 +169,25 @@ mold: $(OBJS) $(MIMALLOC_LIB) $(TBB_LIB) $(ZSTD_LIB)
 mold-wrapper.so: elf/mold-wrapper.c
 	$(CC) $(DEPFLAGS) $(CFLAGS) -fPIC -shared -o $@ $< $(MOLD_WRAPPER_LDFLAGS) $(LDFLAGS)
 
-out/rust-demangle.o: third-party/rust-demangle/rust-demangle.c
+out/objs/rust-demangle.o: third-party/rust-demangle/rust-demangle.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-out/%.o: %.cc out/elf/.keep out/macho/.keep
+define gen_target
+out/srcs/$1.$2.cc: $1
+	@echo "#define MOLD_$2 1" > out/srcs/$1.$2.cc
+	@echo "#define MOLD_TARGET $2" >> out/srcs/$1.$2.cc
+	@echo "#include \"../../../$1\"" >> out/srcs/$1.$2.cc
+endef
+
+$(foreach src, $(ELF_TEMPLATES), $(foreach arch, $(ELF_TARGETS), $(eval $(call gen_target,$(src),$(arch)))))
+
+$(foreach src, $(MACHO_TEMPLATES), $(foreach arch, $(MACHO_TARGETS), $(eval $(call gen_target,$(src),$(arch)))))
+
+out/objs/%.o: %.cc
 	$(CXX) $(MOLD_CXXFLAGS) $(DEPFLAGS) $(CXXFLAGS) -c -o $@ $<
 
-out/elf/.keep out/macho/.keep:
-	mkdir -p $(@D)
-	touch $@
+out/objs2/%.o: out/srcs/%.cc
+	$(CXX) $(MOLD_CXXFLAGS) $(DEPFLAGS) $(CXXFLAGS) -c -o $@ $<
 
 $(MIMALLOC_LIB):
 	mkdir -p out/mimalloc
@@ -266,4 +288,4 @@ test-tsan:
 clean:
 	rm -rf *~ mold mold-wrapper.so out ld ld64 mold-*-linux.tar.gz
 
-.PHONY: all test tests check clean test-arch test-all test-asan test-ubsan test-tsan $(TESTS)
+.PHONY: all prebuild test tests check clean test-arch test-all test-asan test-ubsan test-tsan $(TESTS)

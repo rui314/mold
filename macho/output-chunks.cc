@@ -125,7 +125,7 @@ static std::vector<u8> create_build_version_cmd(Context<E> &ctx) {
 
   BuildToolVersion &tool = *(BuildToolVersion *)(buf.data() + sizeof(cmd));
   tool.tool = TOOL_MOLD;
-  tool.version = parse_version(ctx, MOLD_VERSION);
+  tool.version = parse_version(ctx, mold_version);
   return buf;
 }
 
@@ -583,11 +583,11 @@ void OutputSegment<E>::set_offset_linkedit(Context<E> &ctx, i64 fileoff,
   cmd.filesize = fileoff - cmd.fileoff;
 }
 
-RebaseEncoder::RebaseEncoder() {
+inline RebaseEncoder::RebaseEncoder() {
   buf.push_back(REBASE_OPCODE_SET_TYPE_IMM | REBASE_TYPE_POINTER);
 }
 
-void RebaseEncoder::add(i64 seg_idx, i64 offset) {
+inline void RebaseEncoder::add(i64 seg_idx, i64 offset) {
   assert(seg_idx < 16);
 
   // Accumulate consecutive base relocations
@@ -621,7 +621,7 @@ void RebaseEncoder::add(i64 seg_idx, i64 offset) {
   times = 1;
 }
 
-void RebaseEncoder::flush() {
+inline void RebaseEncoder::flush() {
   if (times == 0)
     return;
 
@@ -635,14 +635,14 @@ void RebaseEncoder::flush() {
   times = 0;
 }
 
-void RebaseEncoder::finish() {
+inline void RebaseEncoder::finish() {
   flush();
   buf.push_back(REBASE_OPCODE_DONE);
   buf.resize(align_to(buf.size(), 8));
 }
 
 template <typename E>
-void RebaseSection<E>::compute_size(Context<E> &ctx) {
+inline void RebaseSection<E>::compute_size(Context<E> &ctx) {
   RebaseEncoder enc;
 
   for (i64 i = 0; i < ctx.stubs.syms.size(); i++)
@@ -685,11 +685,11 @@ void RebaseSection<E>::compute_size(Context<E> &ctx) {
 }
 
 template <typename E>
-void RebaseSection<E>::copy_buf(Context<E> &ctx) {
+inline void RebaseSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->hdr.offset, contents);
 }
 
-BindEncoder::BindEncoder() {
+inline BindEncoder::BindEncoder() {
   buf.push_back(BIND_OPCODE_SET_TYPE_IMM | BIND_TYPE_POINTER);
 }
 
@@ -701,7 +701,7 @@ static i32 get_dylib_idx(InputFile<E> *file) {
 }
 
 template <typename E>
-void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset, i64 addend) {
+inline void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset, i64 addend) {
   i64 dylib_idx = get_dylib_idx(sym.file);
   i64 flags = (sym.is_weak ? BIND_SYMBOL_FLAGS_WEAK_IMPORT : 0);
 
@@ -746,7 +746,7 @@ void BindEncoder::add(Symbol<E> &sym, i64 seg_idx, i64 offset, i64 addend) {
   last_addend = addend;
 }
 
-void BindEncoder::finish() {
+inline void BindEncoder::finish() {
   buf.push_back(BIND_OPCODE_DONE);
   buf.resize(align_to(buf.size(), 8));
 }
@@ -839,7 +839,7 @@ void LazyBindSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->hdr.offset, contents);
 }
 
-i64 ExportEncoder::finish() {
+inline i64 ExportEncoder::finish() {
   tbb::parallel_sort(entries, [](const Entry &a, const Entry &b) {
     return a.name < b.name;
   });
@@ -874,8 +874,9 @@ static i64 common_prefix_len(std::string_view x, std::string_view y) {
 }
 
 void
-ExportEncoder::construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
-                              tbb::task_group *tg, i64 grain_size, bool divide) {
+inline ExportEncoder::construct_trie(TrieNode &node, std::span<Entry> entries,
+                                     i64 len, tbb::task_group *tg,
+                                     i64 grain_size, bool divide) {
   i64 new_len = common_prefix_len(entries[0].name, entries.back().name);
 
   if (new_len > len) {
@@ -911,7 +912,7 @@ ExportEncoder::construct_trie(TrieNode &node, std::span<Entry> entries, i64 len,
   }
 }
 
-i64 ExportEncoder::set_offset(TrieNode &node, i64 offset) {
+inline i64 ExportEncoder::set_offset(TrieNode &node, i64 offset) {
   node.offset = offset;
 
   i64 size = 0;
@@ -934,7 +935,7 @@ i64 ExportEncoder::set_offset(TrieNode &node, i64 offset) {
   return size;
 }
 
-void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
+inline void ExportEncoder::write_trie(u8 *start, TrieNode &node) {
   u8 *buf = start + node.offset;
 
   if (node.is_leaf) {
@@ -1640,28 +1641,27 @@ void SectCreateSection<E>::copy_buf(Context<E> &ctx) {
   write_string(ctx.buf + this->hdr.offset, contents);
 }
 
-#define INSTANTIATE(E)                                  \
-  template class OutputSegment<E>;                      \
-  template class OutputMachHeader<E>;                   \
-  template class OutputSection<E>;                      \
-  template class RebaseSection<E>;                      \
-  template class BindSection<E>;                        \
-  template class LazyBindSection<E>;                    \
-  template class ExportSection<E>;                      \
-  template class FunctionStartsSection<E>;              \
-  template class SymtabSection<E>;                      \
-  template class StrtabSection<E>;                      \
-  template class CodeSignatureSection<E>;               \
-  template class ObjcImageInfoSection<E>;               \
-  template class DataInCodeSection<E>;                  \
-  template class StubsSection<E>;                       \
-  template class StubHelperSection<E>;                  \
-  template class UnwindInfoSection<E>;                  \
-  template class GotSection<E>;                         \
-  template class LazySymbolPtrSection<E>;               \
-  template class ThreadPtrsSection<E>;                  \
-  template class SectCreateSection<E>
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template class OutputSegment<E>;
+template class OutputMachHeader<E>;
+template class OutputSection<E>;
+template class RebaseSection<E>;
+template class BindSection<E>;
+template class LazyBindSection<E>;
+template class ExportSection<E>;
+template class FunctionStartsSection<E>;
+template class SymtabSection<E>;
+template class StrtabSection<E>;
+template class CodeSignatureSection<E>;
+template class ObjcImageInfoSection<E>;
+template class DataInCodeSection<E>;
+template class StubsSection<E>;
+template class StubHelperSection<E>;
+template class UnwindInfoSection<E>;
+template class GotSection<E>;
+template class LazySymbolPtrSection<E>;
+template class ThreadPtrsSection<E>;
+template class SectCreateSection<E>;
 
 } // namespace mold::macho

@@ -544,16 +544,11 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   return {};
 }
 
-#define INSTANTIATE(E)                                                  \
-  template std::vector<std::string_view>                                \
-  read_compunits(Context<E> &, ObjectFile<E> &);                        \
-  template std::vector<GdbIndexName>                                    \
-  read_pubnames(Context<E> &, ObjectFile<E> &);                         \
-  template i64                                                          \
-  estimate_address_areas(Context<E> &, ObjectFile<E> &);                \
-  template std::vector<u64>                                             \
-  read_address_areas(Context<E> &, ObjectFile<E> &, i64)
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template std::vector<std::string_view> read_compunits(Context<E> &, ObjectFile<E> &);
+template std::vector<GdbIndexName> read_pubnames(Context<E> &, ObjectFile<E> &);
+template i64 estimate_address_areas(Context<E> &, ObjectFile<E> &);
+template std::vector<u64> read_address_areas(Context<E> &, ObjectFile<E> &, i64);
 
 } // namespace mold::elf

@@ -64,9 +64,8 @@ void InputSection<E>::parse_relocations(Context<E> &ctx) {
   }
 }
 
-#define INSTANTIATE(E)                          \
-  template class InputSection<E>
+using E = MOLD_TARGET;
 
-INSTANTIATE_ALL;
+template class InputSection<E>;
 
 } // namespace mold::macho
