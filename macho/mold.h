@@ -17,13 +17,9 @@
 #include <unordered_set>
 #include <variant>
 
-#if MOLD_DEBUG_X86_64_ONLY
-# define INSTANTIATE_ALL INSTANTIATE(X86_64)
-#else
 # define INSTANTIATE_ALL                        \
   INSTANTIATE(X86_64);                          \
   INSTANTIATE(ARM64);
-#endif
 
 namespace mold::macho {
 

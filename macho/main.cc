@@ -1115,11 +1115,7 @@ static int do_main(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
-#ifdef MOLD_DEBUG_X86_64_ONLY
-  return do_main<X86_64>(argc, argv);
-#else
   return do_main<ARM64>(argc, argv);
-#endif
 }
 
 }
