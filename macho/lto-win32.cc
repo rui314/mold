@@ -1,11 +1,6 @@
 #include "lto.h"
 #include "mold.h"
 
-# include <algorithm>
-#include <cstdio>
-#include <dlfcn.h>
-#include <unistd.h>
-
 namespace mold::macho {
 
 LTOPlugin::~LTOPlugin() {}
