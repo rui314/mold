@@ -3,8 +3,6 @@
 
 namespace mold::macho {
 
-LTOPlugin::~LTOPlugin() {}
-
 template <typename E>
 void load_lto_plugin(Context<E> &ctx) {
   Fatal(ctx) << "LTO is not supported on Windows";
@@ -12,6 +10,10 @@ void load_lto_plugin(Context<E> &ctx) {
 
 template <typename E>
 void do_lto(Context<E> &ctx) {}
+
+#ifdef MOLD_ARM64
+LTOPlugin::~LTOPlugin() {}
+#endif
 
 using E = MOLD_TARGET;
 
