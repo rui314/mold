@@ -1,17 +1,13 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.13)
 project(mold VERSION 1.4.2)
 
 include(CMakeDependentOption)
 include(GNUInstallDirs)
 
 # Add -fuse-ld=mold if accepted by the compiler.
-option(MOLD_USE_MOLD "Use mold to build mold" ON)
+option(MOLD_USE_MOLD "Use mold to build mold" OFF)
 if(MOLD_USE_MOLD)
-  include(CheckLinkerFlag)
-  check_linker_flag(CXX -fuse-ld=mold CXX_SUPPORTS_FUSE_MOLD)
-  if(CXX_SUPPORTS_FUSE_MOLD)
-    add_link_options(-fuse-ld=mold)
-  endif()
+  add_link_options(-fuse-ld=mold)
 endif()
 
 add_executable(mold)
@@ -292,7 +288,7 @@ if(BUILD_TESTING)
 endif()
 
 if(NOT CMAKE_SKIP_INSTALL_RULES)
-  install(TARGETS mold)
+  install(TARGETS mold RUNTIME DESTINATION bin)
   install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
   install(FILES docs/mold.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/)
   install(CODE "
