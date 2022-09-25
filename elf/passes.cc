@@ -1394,16 +1394,15 @@ static void set_virtual_addresses(Context<E> &ctx) {
   // Assign virtual addresses
   u64 addr = ctx.arg.image_base;
   for (i64 i = 0; i < chunks.size(); i++) {
-    Chunk<E> *chunk = chunks[i];
-    if (!(chunk->shdr.sh_flags & SHF_ALLOC))
+    if (!(chunks[i]->shdr.sh_flags & SHF_ALLOC))
       continue;
 
     // Handle --section-start first
-    if (auto it = ctx.arg.section_start.find(chunk->name);
+    if (auto it = ctx.arg.section_start.find(chunks[i]->name);
         it != ctx.arg.section_start.end()) {
       addr = it->second;
-      chunk->shdr.sh_addr = addr;
-      addr += chunk->shdr.sh_size;
+      chunks[i]->shdr.sh_addr = addr;
+      addr += chunks[i]->shdr.sh_size;
       continue;
     }
 
@@ -1429,36 +1428,32 @@ static void set_virtual_addresses(Context<E> &ctx) {
       }
     }
 
-    // Zero-initialized TLS area is handled in the next loop.
-    if (is_tbss(chunk)) {
-      chunk->shdr.sh_addr = addr;
+    // TLS BSS sections are laid out so that they overlap with the
+    // subsequent non-tbss sections. This is fine because a STT_TLS
+    // segment contains an initialization image for newly-created threads,
+    // and no one except the runtime reads its contents. Even the runtime
+    // doesn't need a BSS part of a TLS initialization image; it just
+    // leaves zero-initialized bytes as-is instead of copying zeros.
+    // So no one really read tbss at runtime.
+    //
+    // We can instead allocate a dedicated virtual address space to tbss,
+    // but that would be just a waste of the address and disk space.
+    if (is_tbss(chunks[i])) {
+      u64 addr2 = addr;
+      for (;;) {
+        addr2 = align_to(addr2, chunks[i]->shdr.sh_addralign);
+        chunks[i]->shdr.sh_addr = addr2;
+        addr2 += chunks[i]->shdr.sh_size;
+        if (i + 2 == chunks.size() || !is_tbss(chunks[i + 1]))
+            break;
+        i++;
+      }
       continue;
     }
 
-    addr = align_to(addr, chunk->shdr.sh_addralign);
-    chunk->shdr.sh_addr = addr;
-    addr += chunk->shdr.sh_size;
-  }
-
-  // Fix tbss virtual addresses. tbss sections are laid out as if they
-  // were overlapping to suceeding non-tbss sections. This is fine
-  // because no one will actually access the TBSS part of a TLS
-  // template image at runtime.
-  //
-  // We can lay out tbss sections in the same way as regular bss
-  // sections, but that would need one more extra PT_LOAD segment.
-  // Having fewer PT_LOAD segments is generally desirable, so we do this.
-  for (i64 i = 0; i < chunks.size();) {
-    if (is_tbss(chunks[i])) {
-      u64 addr = chunks[i]->shdr.sh_addr;
-      for (; i < chunks.size() && is_tbss(chunks[i]); i++) {
-        addr = align_to(addr, chunks[i]->shdr.sh_addralign);
-        chunks[i]->shdr.sh_addr = addr;
-        addr += chunks[i]->shdr.sh_size;
-      }
-    } else {
-      i++;
-    }
+    addr = align_to(addr, chunks[i]->shdr.sh_addralign);
+    chunks[i]->shdr.sh_addr = addr;
+    addr += chunks[i]->shdr.sh_size;
   }
 }
 
