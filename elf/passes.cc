@@ -1391,16 +1391,14 @@ template <typename E>
 static void set_virtual_addresses(Context<E> &ctx) {
   std::vector<Chunk<E> *> &chunks = ctx.chunks;
 
-  auto alignment = [](Chunk<E> *chunk) {
-    return std::max<i64>(chunk->extra_addralign, chunk->shdr.sh_addralign);
-  };
-
   // Assign virtual addresses
   u64 addr = ctx.arg.image_base;
-  for (Chunk<E> *chunk : chunks) {
+  for (i64 i = 0; i < chunks.size(); i++) {
+    Chunk<E> *chunk = chunks[i];
     if (!(chunk->shdr.sh_flags & SHF_ALLOC))
       continue;
 
+    // Handle --section-start first
     if (auto it = ctx.arg.section_start.find(chunk->name);
         it != ctx.arg.section_start.end()) {
       addr = it->second;
@@ -1409,12 +1407,35 @@ static void set_virtual_addresses(Context<E> &ctx) {
       continue;
     }
 
+    // Memory protection works at page size granularity. We need to
+    // put sections with different memory attributes into different
+    // pages. We do that by inserting paddings here.
+    if (i > 0) {
+      constexpr i64 RELRO = 1LL << 32;
+      i64 flags1 = to_phdr_flags(ctx, chunks[i - 1]);
+      if (is_relro(ctx, chunks[i - 1]))
+        flags1 |= RELRO;
+
+      i64 flags2 = to_phdr_flags(ctx, chunks[i]);
+      if (is_relro(ctx, chunks[i]))
+        flags2 |= RELRO;
+
+      // We do not create an on-disk padding for RELRO to reduce file size.
+      if (flags1 != flags2) {
+        if (flags2 & RELRO)
+          addr += ctx.page_size;
+        else
+          addr = align_to(addr, ctx.page_size);
+      }
+    }
+
+    // Zero-initialized TLS area is handled in the next loop.
     if (is_tbss(chunk)) {
       chunk->shdr.sh_addr = addr;
       continue;
     }
 
-    addr = align_to(addr, alignment(chunk));
+    addr = align_to(addr, chunk->shdr.sh_addralign);
     chunk->shdr.sh_addr = addr;
     addr += chunk->shdr.sh_size;
   }
@@ -1431,7 +1452,7 @@ static void set_virtual_addresses(Context<E> &ctx) {
     if (is_tbss(chunks[i])) {
       u64 addr = chunks[i]->shdr.sh_addr;
       for (; i < chunks.size() && is_tbss(chunks[i]); i++) {
-        addr = align_to(addr, alignment(chunks[i]));
+        addr = align_to(addr, chunks[i]->shdr.sh_addralign);
         chunks[i]->shdr.sh_addr = addr;
         addr += chunks[i]->shdr.sh_size;
       }
@@ -1441,6 +1462,18 @@ static void set_virtual_addresses(Context<E> &ctx) {
   }
 }
 
+// Returns the smallest integer N that satisfies N >= val and
+// N mod align == skew.
+//
+// Section's file offset must be congruent to its virtual address modulo
+// the page size. We use this function to satisfy that requirement.
+static u64 align_with_skew(u64 val, u64 align, u64 skew) {
+  skew = skew % align;
+  if (val % align <= skew)
+    return align_down(val, align) + skew;
+  return align_to(val, align) + skew;
+}
+
 // Assign file offsets to output sections.
 template <typename E>
 static i64 set_file_offsets(Context<E> &ctx) {
@@ -1448,14 +1481,10 @@ static i64 set_file_offsets(Context<E> &ctx) {
   u64 fileoff = 0;
   i64 i = 0;
 
-  auto alignment = [](Chunk<E> *chunk) {
-    return std::max<i64>(chunk->extra_addralign, chunk->shdr.sh_addralign);
-  };
-
   while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC)) {
     Chunk<E> &first = *chunks[i];
     assert(first.shdr.sh_type != SHT_NOBITS);
-    fileoff = align_to(fileoff, alignment(&first));
+    fileoff = align_with_skew(fileoff, ctx.page_size, first.shdr.sh_addr);
 
     // Assign ALLOC sections contiguous file offsets as long as they
     // are contiguous in memory.

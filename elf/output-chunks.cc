@@ -117,7 +117,7 @@ void OutputShdr<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-static i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
+i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
   if (ctx.arg.omagic)
     return PF_R | PF_W | PF_X;
 
@@ -201,10 +201,6 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     return (shdr.sh_type == SHT_NOTE) && (shdr.sh_flags & SHF_ALLOC);
   };
 
-  // Clear previous results so that this function is idempotent.
-  for (Chunk<E> *chunk : ctx.chunks)
-    chunk->extra_addralign = 1;
-
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr)
     define(PT_PHDR, PF_R, sizeof(Word<E>), ctx.phdr);
@@ -253,8 +249,6 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       while (i < end && is_bss(chunks[i]) &&
              to_phdr_flags(ctx, chunks[i]) == flags)
         append(chunks[i++]);
-
-      first->extra_addralign = vec.back().p_align;
     }
   }
 
@@ -263,8 +257,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     if (!(ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
       continue;
 
-    define(PT_TLS, PF_R, 1, ctx.chunks[i]);
-    i++;
+    define(PT_TLS, PF_R, 1, ctx.chunks[i++]);
     while (i < ctx.chunks.size() && (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
       append(ctx.chunks[i++]);
 
@@ -328,18 +321,15 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       if (!is_relro(ctx, ctx.chunks[i]))
         continue;
 
-      define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i]);
-      ctx.chunks[i]->extra_addralign = ctx.page_size;
-
-      i++;
+      define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i++]);
       while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
 
-      // RELRO works on page granularity, so align both ends to
-      // the page size.
-      vec.back().p_memsz = align_to(vec.back().p_memsz, ctx.page_size);
-      if (i < ctx.chunks.size())
-        ctx.chunks[i]->extra_addralign = ctx.page_size;
+      // Both start and end addresses are aligned down to the page size
+      // by the loader. We need to align up the end address to compensate.
+      ElfPhdr<E> &phdr = vec.back();
+      u64 end = align_to(phdr.p_vaddr + phdr.p_memsz, ctx.page_size);
+      phdr.p_memsz = end - phdr.p_vaddr;
     }
   }
 
@@ -2640,6 +2630,7 @@ template class NotePropertySection<E>;
 template class GdbIndexSection<E>;
 template class CompressedSection<E>;
 template class RelocSection<E>;
+template i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
 template bool is_relro(Context<E> &, Chunk<E> *);
 template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &);
 

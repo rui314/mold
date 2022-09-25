@@ -326,6 +326,9 @@ template <typename E>
 u64 get_eflags(Context<E> &ctx);
 
 template <typename E>
+i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
+
+template <typename E>
 bool is_relro(Context<E> &ctx, Chunk<E> *chunk);
 
 typedef enum { HEADER, OUTPUT_SECTION, SYNTHETIC } ChunkKind;
@@ -346,7 +349,6 @@ public:
   std::string_view name;
   ElfShdr<E> shdr = {};
   i64 shndx = 0;
-  i64 extra_addralign = 1;
 
 protected:
   Chunk() { shdr.sh_addralign = 1; }
