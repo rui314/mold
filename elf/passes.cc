@@ -1386,9 +1386,9 @@ static bool is_tbss(Chunk<E> *chunk) {
   return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
 }
 
-// Assign virtual addresses and file offsets to output sections.
+// Assign virtual addresses to output sections.
 template <typename E>
-i64 do_set_osec_offsets(Context<E> &ctx) {
+static void set_virtual_addresses(Context<E> &ctx) {
   std::vector<Chunk<E> *> &chunks = ctx.chunks;
 
   auto alignment = [](Chunk<E> *chunk) {
@@ -1401,11 +1401,12 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
     if (!(chunk->shdr.sh_flags & SHF_ALLOC))
       continue;
 
-    bool addr_specified = false;
     if (auto it = ctx.arg.section_start.find(chunk->name);
         it != ctx.arg.section_start.end()) {
       addr = it->second;
-      addr_specified = true;
+      chunk->shdr.sh_addr = addr;
+      addr += chunk->shdr.sh_size;
+      continue;
     }
 
     if (is_tbss(chunk)) {
@@ -1413,8 +1414,7 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
       continue;
     }
 
-    if (!addr_specified)
-      addr = align_to(addr, alignment(chunk));
+    addr = align_to(addr, alignment(chunk));
     chunk->shdr.sh_addr = addr;
     addr += chunk->shdr.sh_size;
   }
@@ -1439,10 +1439,18 @@ i64 do_set_osec_offsets(Context<E> &ctx) {
       i++;
     }
   }
+}
 
-  // Assign file offsets to memory-allocated sections.
+// Assign file offsets to output sections.
+template <typename E>
+static i64 set_file_offsets(Context<E> &ctx) {
+  std::vector<Chunk<E> *> &chunks = ctx.chunks;
   u64 fileoff = 0;
   i64 i = 0;
+
+  auto alignment = [](Chunk<E> *chunk) {
+    return std::max<i64>(chunk->extra_addralign, chunk->shdr.sh_addralign);
+  };
 
   while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC)) {
     Chunk<E> &first = *chunks[i];
@@ -1499,7 +1507,8 @@ i64 set_osec_offsets(Context<E> &ctx) {
   Timer t(ctx, "set_osec_offsets");
 
   for (;;) {
-    i64 fileoff = do_set_osec_offsets(ctx);
+    set_virtual_addresses(ctx);
+    i64 fileoff = set_file_offsets(ctx);
 
     // Assigning new offsets may change the contents and the length
     // of the program header, so repeat it until converge.
