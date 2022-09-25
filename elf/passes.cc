@@ -1463,15 +1463,13 @@ static void set_virtual_addresses(Context<E> &ctx) {
 }
 
 // Returns the smallest integer N that satisfies N >= val and
-// N mod align == skew.
+// N mod align == skew mod align.
 //
 // Section's file offset must be congruent to its virtual address modulo
 // the page size. We use this function to satisfy that requirement.
 static u64 align_with_skew(u64 val, u64 align, u64 skew) {
-  skew = skew % align;
-  if (val % align <= skew)
-    return align_down(val, align) + skew;
-  return align_to(val, align) + skew;
+  u64 x = align_down(val, align) + skew % align;
+  return (val <= x) ? x : x + align;
 }
 
 // Assign file offsets to output sections.
