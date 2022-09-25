@@ -1482,7 +1482,11 @@ static i64 set_file_offsets(Context<E> &ctx) {
   while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC)) {
     Chunk<E> &first = *chunks[i];
     assert(first.shdr.sh_type != SHT_NOBITS);
-    fileoff = align_with_skew(fileoff, ctx.page_size, first.shdr.sh_addr);
+
+    if (first.shdr.sh_addralign > ctx.page_size)
+      fileoff = align_to(fileoff, first.shdr.sh_addralign);
+    else
+      fileoff = align_with_skew(fileoff, ctx.page_size, first.shdr.sh_addr);
 
     // Assign ALLOC sections contiguous file offsets as long as they
     // are contiguous in memory.
