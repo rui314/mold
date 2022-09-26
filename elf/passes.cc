@@ -1386,7 +1386,38 @@ static bool is_tbss(Chunk<E> *chunk) {
   return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
 }
 
-// Assign virtual addresses to output sections.
+// This function assigns virtual addresses to output sections. Assigning
+// addresses are a bit tricky because we want to pack sections as tightly
+// as possible while not violating the constraints imposed by the hardware
+// and the OS kernel. Specifically, we need to satisfy the following
+// constraints:
+//
+// - Memory protection (readable, writable and executable) works at page
+//   granularity. Therefore, if want to set different memory attributes to
+//   two sections, we need to place them into separate pages.
+//
+// - Section's file offset must be congruent to its virtual address modulo
+//   the page size. For example, a section at virtual address 0x2001234 at
+//   runtime on x86-64 (4 KiB, or 0x1000 byte page system) can be at file
+//   offset 0x3234 or 0x50234 but not at 0x1000.
+//
+// We need to insert holes between sections to satisfy the above
+// constraints.
+//
+// We don't want to waste too much memory and disk space for the holes.
+// There are a few tricks we can use to minimize the size of the holes as
+// below:
+//
+// - We can map the same file region more than once to memory. So we can
+//   write code (with R and X bits) and read-only data (with R bits)
+//   adjacent on file and map it twice as the last page of the executable
+//   segment and the first page of the read-only data segment.
+//
+// - We can also overlap the last read-only data page with the first
+//   writable but RELRO page. Such page will be initially mapped as
+//   writable by the loader (if two pages have their end and start
+//   addresses on the same page, the latter takes precedence), but after
+//   the initialization, the runtime remaps it as a read-only page.
 template <typename E>
 static void set_virtual_addresses(Context<E> &ctx) {
   std::vector<Chunk<E> *> &chunks = ctx.chunks;
@@ -1417,12 +1448,13 @@ static void set_virtual_addresses(Context<E> &ctx) {
 
     // Memory protection works at page size granularity. We need to
     // put sections with different memory attributes into different
-    // pages. We do that by inserting paddings here.
+    // pages. We do it by inserting paddings here.
     if (i > 0) {
       i64 flags1 = get_flags(chunks[i - 1]);
       i64 flags2 = get_flags(chunks[i]);
+      bool relro_overlap = (flags1 == PF_R && flags2 == (PF_R | PF_W | RELRO));
 
-      if (flags1 != flags2) {
+      if (flags1 != flags2 && !relro_overlap) {
         switch (ctx.arg.z_separate_code) {
         case SEPARATE_LOADABLE_SEGMENTS:
           addr = align_to(addr, ctx.page_size);
