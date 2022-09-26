@@ -144,20 +144,19 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 
   switch (rel.r_type) {
   case R_NONE:
-    return;
+    break;
   case R_PPC64_ADDR64:
     *(ul64 *)loc = val;
-    return;
+    break;
   case R_PPC64_REL32:
     *(ul32 *)loc = val - this->shdr.sh_addr - offset;
-    return;
+    break;
   case R_PPC64_REL64:
     *(ul64 *)loc = val - this->shdr.sh_addr - offset;
-    return;
+    break;
   default:
-    Fatal(ctx) << "unknown relocation in ehframe: " << rel;
+    Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
   }
-  unreachable();
 }
 
 static u64 get_local_entry_offset(Context<E> &ctx, Symbol<E> &sym) {
@@ -316,8 +315,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 #define A (frag ? frag_addend : (i64)rel.r_addend)
 
     switch (rel.r_type) {
-    case R_NONE:
-      break;
     case R_PPC64_ADDR64:
       if (std::optional<u64> val = get_tombstone(sym, frag))
         *(ul64 *)loc = *val;

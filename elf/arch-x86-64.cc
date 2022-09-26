@@ -100,21 +100,22 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 
   switch (rel.r_type) {
   case R_NONE:
-    return;
+    break;
   case R_X86_64_32:
     *(ul32 *)loc = val;
-    return;
+    break;
   case R_X86_64_64:
     *(ul64 *)loc = val;
-    return;
+    break;
   case R_X86_64_PC32:
     *(ul32 *)loc = val - this->shdr.sh_addr - offset;
-    return;
+    break;
   case R_X86_64_PC64:
     *(ul64 *)loc = val - this->shdr.sh_addr - offset;
-    return;
+    break;
+  default:
+    Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
   }
-  unreachable();
 }
 
 static u32 relax_gotpcrelx(u8 *loc) {

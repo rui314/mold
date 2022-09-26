@@ -259,38 +259,41 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
   switch (rel.r_type) {
+  case R_NONE:
+    break;
   case R_RISCV_ADD32:
     *(U32<E> *)loc += val;
-    return;
+    break;
   case R_RISCV_SUB8:
     *loc -= val;
-    return;
+    break;
   case R_RISCV_SUB16:
     *(U16<E> *)loc -= val;
-    return;
+    break;
   case R_RISCV_SUB32:
     *(U32<E> *)loc -= val;
-    return;
+    break;
   case R_RISCV_SUB6:
     *loc = (*loc & 0b1100'0000) | ((*loc - val) & 0b0011'1111);
-    return;
+    break;
   case R_RISCV_SET6:
     *loc = (*loc & 0b1100'0000) | (val & 0b0011'1111);
-    return;
+    break;
   case R_RISCV_SET8:
     *loc = val;
-    return;
+    break;
   case R_RISCV_SET16:
     *(U16<E> *)loc = val;
-    return;
+    break;
   case R_RISCV_SET32:
     *(U32<E> *)loc = val;
-    return;
+    break;
   case R_RISCV_32_PCREL:
     *(U32<E> *)loc = val - this->shdr.sh_addr - offset;
-    return;
+    break;
+  default:
+    Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
   }
-  Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
 }
 
 template <typename E>
