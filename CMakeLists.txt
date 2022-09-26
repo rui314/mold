@@ -194,7 +194,6 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/input-sections.cc
   elf/linker-script.cc
   elf/lto.cc
-  elf/lto.cc
   elf/main.cc
   elf/mapfile.cc
   elf/output-chunks.cc
