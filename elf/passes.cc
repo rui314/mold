@@ -1421,8 +1421,6 @@ static bool is_tbss(Chunk<E> *chunk) {
 //   a read-only page.
 template <typename E>
 static void set_virtual_addresses(Context<E> &ctx) {
-  std::vector<Chunk<E> *> &chunks = ctx.chunks;
-
   constexpr i64 RELRO = 1LL << 32;
 
   auto get_flags = [&](Chunk<E> *chunk) {
@@ -1433,7 +1431,9 @@ static void set_virtual_addresses(Context<E> &ctx) {
   };
 
   // Assign virtual addresses
+  std::vector<Chunk<E> *> &chunks = ctx.chunks;
   u64 addr = ctx.arg.image_base;
+
   for (i64 i = 0; i < chunks.size(); i++) {
     if (!(chunks[i]->shdr.sh_flags & SHF_ALLOC))
       continue;
