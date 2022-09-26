@@ -2303,7 +2303,7 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
       // section doesn't make much sense. However, CRT files contain
       // symbols pointing to the very beginning and ending of the section.
       if (name() == "__EH_FRAME_BEGIN__" || name() == "__EH_FRAME_LIST__" ||
-          esym().st_type == STT_SECTION)
+          name() == ".eh_frame_seg" || esym().st_type == STT_SECTION)
         return ctx.eh_frame->shdr.sh_addr;
 
       if (name() == "__FRAME_END__" || name() == "__EH_FRAME_LIST_END__")
