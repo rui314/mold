@@ -1136,7 +1136,7 @@ public:
   u64 fde_size = 0;
 
   // For ICF
-  InputSection<E> *llvm_addrsig = nullptr;
+  std::unique_ptr<InputSection<E>> llvm_addrsig;
 
   // For .gdb_index
   InputSection<E> *debug_info = nullptr;
