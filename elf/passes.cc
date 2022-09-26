@@ -1387,37 +1387,38 @@ static bool is_tbss(Chunk<E> *chunk) {
 }
 
 // This function assigns virtual addresses to output sections. Assigning
-// addresses are a bit tricky because we want to pack sections as tightly
+// addresses is a bit tricky because we want to pack sections as tightly
 // as possible while not violating the constraints imposed by the hardware
 // and the OS kernel. Specifically, we need to satisfy the following
 // constraints:
 //
 // - Memory protection (readable, writable and executable) works at page
-//   granularity. Therefore, if want to set different memory attributes to
-//   two sections, we need to place them into separate pages.
+//   granularity. Therefore, if we want to set different memory attributes
+//   to two sections, we need to place them into separate pages.
 //
-// - Section's file offset must be congruent to its virtual address modulo
-//   the page size. For example, a section at virtual address 0x2001234 at
-//   runtime on x86-64 (4 KiB, or 0x1000 byte page system) can be at file
-//   offset 0x3234 or 0x50234 but not at 0x1000.
+// - The ELF spec requires that a section's file offset is congruent to
+//   its virtual address modulo the page size. For example, a section at
+//   virtual address 0x401234 on x86-64 (4 KiB, or 0x1000 byte page
+//   system) can be at file offset 0x3234 or 0x50234 but not at 0x1000.
 //
-// We need to insert holes between sections to satisfy the above
-// constraints.
+// We need to insert paddings between sections if we can't satisfy the
+// above constraints without them.
 //
-// We don't want to waste too much memory and disk space for the holes.
-// There are a few tricks we can use to minimize the size of the holes as
-// below:
+// We don't want to waste too much memory and disk space for paddings.
+// There are a few tricks we can use to minimize paddings as below:
 //
-// - We can map the same file region more than once to memory. So we can
-//   write code (with R and X bits) and read-only data (with R bits)
-//   adjacent on file and map it twice as the last page of the executable
-//   segment and the first page of the read-only data segment.
+// - We can map the same file region to memory more than once. For
+//   example, we can write code (with R and X bits) and read-only data
+//   (with R bits) adjacent on file and map it twice as the last page of
+//   the executable segment and the first page of the read-only data
+//   segment. This doesn't save memory but saves disk space.
 //
 // - We can also overlap the last read-only data page with the first
 //   writable but RELRO page. Such page will be initially mapped as
-//   writable by the loader (if two pages have their end and start
-//   addresses on the same page, the latter takes precedence), but after
-//   the initialization, the runtime remaps it as a read-only page.
+//   writable by the loader (if two segments have their end and start
+//   addresses on the same page, the latter's memory attributes take
+//   precedence), but after the initialization, the runtime remaps it as
+//   a read-only page.
 template <typename E>
 static void set_virtual_addresses(Context<E> &ctx) {
   std::vector<Chunk<E> *> &chunks = ctx.chunks;
