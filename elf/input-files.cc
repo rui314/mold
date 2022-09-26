@@ -1,21 +1,12 @@
 #include "mold.h"
 
 #include <cstring>
-#include <regex>
 
 #ifndef _WIN32
 # include <unistd.h>
 #endif
 
 namespace mold::elf {
-
-#ifdef MOLD_X86_64
-bool is_c_identifier(std::string_view name) {
-  static std::regex re("[a-zA-Z_][a-zA-Z0-9_]*",
-                       std::regex_constants::optimize);
-  return std::regex_match(name.begin(), name.end(), re);
-}
-#endif
 
 template <typename E>
 InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
