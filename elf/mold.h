@@ -1420,7 +1420,7 @@ struct Context {
     BuildId build_id;
     CetReportKind z_cet_report = CET_REPORT_NONE;
     CompressKind compress_debug_sections = COMPRESS_NONE;
-    SeparateCodeKind z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
+    SeparateCodeKind z_separate_code = NOSEPARATE_CODE;
     ShuffleSectionsKind shuffle_sections = SHUFFLE_SECTIONS_NONE;
     UnresolvedKind unresolved_symbols = UNRESOLVED_ERROR;
     bool Bsymbolic = false;

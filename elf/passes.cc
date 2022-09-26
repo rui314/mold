@@ -1391,6 +1391,15 @@ template <typename E>
 static void set_virtual_addresses(Context<E> &ctx) {
   std::vector<Chunk<E> *> &chunks = ctx.chunks;
 
+  constexpr i64 RELRO = 1LL << 32;
+
+  auto get_flags = [&](Chunk<E> *chunk) {
+    i64 flags = to_phdr_flags(ctx, chunk);
+    if (is_relro(ctx, chunk))
+      return flags | RELRO;
+    return flags;
+  };
+
   // Assign virtual addresses
   u64 addr = ctx.arg.image_base;
   for (i64 i = 0; i < chunks.size(); i++) {
@@ -1410,21 +1419,26 @@ static void set_virtual_addresses(Context<E> &ctx) {
     // put sections with different memory attributes into different
     // pages. We do that by inserting paddings here.
     if (i > 0) {
-      constexpr i64 RELRO = 1LL << 32;
-      i64 flags1 = to_phdr_flags(ctx, chunks[i - 1]);
-      if (is_relro(ctx, chunks[i - 1]))
-        flags1 |= RELRO;
+      i64 flags1 = get_flags(chunks[i - 1]);
+      i64 flags2 = get_flags(chunks[i]);
 
-      i64 flags2 = to_phdr_flags(ctx, chunks[i]);
-      if (is_relro(ctx, chunks[i]))
-        flags2 |= RELRO;
-
-      // We do not create an on-disk padding for RELRO to reduce file size.
       if (flags1 != flags2) {
-        if (flags2 & RELRO)
-          addr += ctx.page_size;
-        else
+        switch (ctx.arg.z_separate_code) {
+        case SEPARATE_LOADABLE_SEGMENTS:
           addr = align_to(addr, ctx.page_size);
+          break;
+        case SEPARATE_CODE:
+          if ((flags1 & PF_X) != (flags2 & PF_X))
+            addr = align_to(addr, ctx.page_size);
+          else
+            addr += ctx.page_size;
+          break;
+        case NOSEPARATE_CODE:
+          addr += ctx.page_size;
+          break;
+        default:
+          unreachable();
+        }
       }
     }
 

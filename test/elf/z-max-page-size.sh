@@ -19,11 +19,11 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o -Wl,-z,max-page-size=65536
+$CC -B. -o $t/exe $t/a.o -Wl,-z,max-page-size=65536 -Wl,-z,separate-loadable-segments
 $QEMU $t/exe | grep -q 'Hello world'
 readelf -W --segments $t/exe | grep -q 'LOAD.*R   0x10000$'
 
-$CC -B. -o $t/exe $t/a.o -Wl,-zmax-page-size=$((1024*1024))
+$CC -B. -o $t/exe $t/a.o -Wl,-zmax-page-size=$((1024*1024)) -Wl,-z,separate-loadable-segments
 $QEMU $t/exe | grep -q 'Hello world'
 readelf -W --segments $t/exe | grep -q 'LOAD.*R   0x100000$'
 
