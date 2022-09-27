@@ -1,6 +1,8 @@
-#!/bin/bash -x
+#!/bin/bash
 set -e
 source /etc/os-release
+
+set -x
 
 # The first line for each distro installs a build dependency.
 # The second line installs extra packages for `make test`.

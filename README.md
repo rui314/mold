@@ -61,25 +61,28 @@ necessary packages. You may want to run it as root.
 
 ```shell
 git clone https://github.com/rui314/mold.git
-cd mold
-git checkout v1.4.2
-make -j$(nproc) CXX=clang++
-sudo make install
+mkdir mold/build
+cd mold/build
+git checkout v1.5.0
+../install-build-deps.sh
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ ..
+cmake --build . -j $(nproc)
+sudo cmake --install .
 ```
 
-You may need to pass a C++20 compiler command name to `make`.
-In the above case, `clang++` is passed. If it doesn't work for you,
+You may need to pass a C++20 compiler command name to `cmake`.
+In the above case, `c++` is passed. If it doesn't work for you,
 try a specific version of a compiler such as `g++-10` or `clang++-12`.
 
 By default, `mold` is installed to `/usr/local/bin`.
 
 If you don't use a recent enough Linux distribution, or if for any reason
-`make` in the above commands doesn't work for you, you can use Docker to
+`cmake` in the above commands doesn't work for you, you can use Docker to
 build it in a Docker environment. To do so, just run `./dist.sh` in this
-directory instead of running `make -j$(nproc)`. The shell script pulls a
-Docker image, builds mold and auxiliary files inside it, and packs
-them into a single tar file `mold-$version-$arch-linux.tar.gz`.
-You can extract the tar file anywhere and use `mold` executable in it.
+directory instead of `cmake`. The shell script pulls a Docker image,
+builds mold and auxiliary files inside it, and packs them into a
+single tar file `mold-$version-$arch-linux.tar.gz`.  You can extract
+the tar file anywhere and use `mold` executable in it.
 
 ## How to use
 
