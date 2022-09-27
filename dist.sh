@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 # This script creates a mold binary distribution. The output is
 # written in this directory as `mold-$version-$arch-linux.tar.gz`
 # (e.g. `mold-1.0.3-x86_64-linux.tar.gz`).
@@ -6,8 +6,6 @@
 # The mold executable created by this script is statically-linked to
 # libstdc++ and libcrypto but dynamically-linked to libc, libm, libz
 # and librt, as they almost always exist on any Linux systems.
-
-set -e
 
 if [ $# -ne 1 ]; then
   echo "Usage: $0 [ x86_64 | aarch64 ]"
@@ -22,6 +20,8 @@ fi
 
 version=$(grep '^VERSION =' $(dirname $0)/Makefile | sed 's/.* = //')
 dest=mold-$version-$arch-linux
+
+set -e -x
 
 docker run --platform linux/$arch -it --rm -v "$(pwd):/mold" \
   -e "OWNER=$(id -u):$(id -g)" rui314/mold-builder:latest \
