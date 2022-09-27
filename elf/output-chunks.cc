@@ -200,6 +200,12 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     return (shdr.sh_type == SHT_NOTE) && (shdr.sh_flags & SHF_ALLOC);
   };
 
+  auto extend_to_page_end = [&] {
+    ElfPhdr<E> &phdr = vec.back();
+    u64 end = align_to(phdr.p_vaddr + phdr.p_memsz, ctx.page_size);
+    phdr.p_memsz = end - phdr.p_vaddr;
+  };
+
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr)
     define(PT_PHDR, PF_R, sizeof(Word<E>), ctx.phdr);
@@ -248,6 +254,13 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       while (i < end && is_bss(chunks[i]) &&
              to_phdr_flags(ctx, chunks[i]) == flags)
         append(chunks[i++]);
+
+      // RELRO works on page granularity. The loader calls mprotect(2)
+      // to enforce write protection. If the system call fails, it
+      // immediately aborts. So we extend a load command containing
+      // RELRO sections to make sure that mprotect will always succeed.
+      if (is_relro(ctx, first))
+        extend_to_page_end();
     }
   }
 
@@ -323,12 +336,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i++]);
       while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
-
-      // Both start and end addresses are aligned down to the page size
-      // by the loader. We need to align up the end address to compensate.
-      ElfPhdr<E> &phdr = vec.back();
-      u64 end = align_to(phdr.p_vaddr + phdr.p_memsz, ctx.page_size);
-      phdr.p_memsz = end - phdr.p_vaddr;
+      extend_to_page_end();
     }
   }
 
