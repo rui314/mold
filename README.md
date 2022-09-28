@@ -63,7 +63,7 @@ necessary packages. You may want to run it as root.
 git clone https://github.com/rui314/mold.git
 mkdir mold/build
 cd mold/build
-git checkout v1.5.0
+git checkout v1.5.1
 ../install-build-deps.sh
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ ..
 cmake --build . -j $(nproc)

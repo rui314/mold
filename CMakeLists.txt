@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.13)
-project(mold VERSION 1.5.0)
+project(mold VERSION 1.5.1)
 
 include(CMakeDependentOption)
 include(GNUInstallDirs)
