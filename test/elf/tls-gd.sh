@@ -55,15 +55,15 @@ EOF
 $CC -B. -shared -o $t/d.so $t/b.o
 $CC -B. -shared -o $t/e.so $t/c.o -Wl,--no-relax
 
-$CC -B. -o $t/exe1 $t/a.o $t/d.so $t/e.so
-$QEMU $t/exe1 | grep -q '1 2 3 4 5 6'
+$CC -B. -o $t/exe $t/a.o $t/d.so $t/e.so
+$QEMU $t/exe | grep -q '1 2 3 4 5 6'
 
-$CC -B. -o $t/exe2 $t/a.o $t/d.so $t/e.so -Wl,-no-relax
-$QEMU $t/exe2 | grep -q '1 2 3 4 5 6'
+$CC -B. -o $t/exe $t/a.o $t/d.so $t/e.so -Wl,-no-relax
+$QEMU $t/exe | grep -q '1 2 3 4 5 6'
 
 if echo 'int main() {}' | $CC -o /dev/null -xc - -static >& /dev/null; then
-  $CC -B. -o $t/exe3 $t/a.o $t/b.o $t/c.o -static
-  $QEMU $t/exe3 | grep -q '1 2 3 4 5 6'
+  $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o -static
+  $QEMU $t/exe | grep -q '1 2 3 4 5 6'
 fi
 
 echo OK

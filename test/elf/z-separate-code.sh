@@ -31,4 +31,7 @@ $QEMU $t/exe2 | grep -q 'Hello world'
 $CC -B. -o $t/exe3 $t/a.o -Wl,-z,noseparate-code -Wl,-z,norelro
 $QEMU $t/exe3 | grep -q 'Hello world'
 
+readelf --segments $t/exe3 > $t/log
+! grep 'LOAD .* RW ' $t/log || false
+
 echo OK

@@ -20,12 +20,12 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe1 $t/a.o -no-pie -Wl,-section-start=.text=0x610000
-$QEMU $t/exe1 | grep -q 'Hello world'
-readelf -W --sections $t/exe1 | grep -q '\.text .*00610000'
+$CC -B. -o $t/exe $t/a.o -no-pie -Wl,-section-start=.text=0x610000
+$QEMU $t/exe | grep -q 'Hello world'
+readelf -W --sections $t/exe | grep -q '\.text .*00610000'
 
-$CC -B. -o $t/exe2 $t/a.o -no-pie -Wl,-Ttext=840000
-$QEMU $t/exe2 | grep -q 'Hello world'
-readelf -W --sections $t/exe2 | grep -q '\.text .*00840000'
+$CC -B. -o $t/exe $t/a.o -no-pie -Wl,-Ttext=840000
+$QEMU $t/exe | grep -q 'Hello world'
+readelf -W --sections $t/exe | grep -q '\.text .*00840000'
 
 echo OK

@@ -31,7 +31,7 @@ _start:
   ret
 EOF
 
-./mold -z separate-loadable-segments -pie -o $t/exe $t/b.o $t/a.so
+./mold --pie -o $t/exe $t/b.o $t/a.so
 
 $OBJDUMP -d -j .plt.got $t/exe > $t/log
 

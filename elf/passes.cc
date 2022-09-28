@@ -1386,132 +1386,59 @@ static bool is_tbss(Chunk<E> *chunk) {
   return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
 }
 
-// This function assigns virtual addresses to output sections. Assigning
-// addresses is a bit tricky because we want to pack sections as tightly
-// as possible while not violating the constraints imposed by the hardware
-// and the OS kernel. Specifically, we need to satisfy the following
-// constraints:
-//
-// - Memory protection (readable, writable and executable) works at page
-//   granularity. Therefore, if we want to set different memory attributes
-//   to two sections, we need to place them into separate pages.
-//
-// - The ELF spec requires that a section's file offset is congruent to
-//   its virtual address modulo the page size. For example, a section at
-//   virtual address 0x401234 on x86-64 (4 KiB, or 0x1000 byte page
-//   system) can be at file offset 0x3234 or 0x50234 but not at 0x1000.
-//
-// We need to insert paddings between sections if we can't satisfy the
-// above constraints without them.
-//
-// We don't want to waste too much memory and disk space for paddings.
-// There are a few tricks we can use to minimize paddings as below:
-//
-// - We can map the same file region to memory more than once. For
-//   example, we can write code (with R and X bits) and read-only data
-//   (with R bits) adjacent on file and map it twice as the last page of
-//   the executable segment and the first page of the read-only data
-//   segment. This doesn't save memory but saves disk space.
-//
-// - We can also overlap the last read-only data page with the first
-//   writable but RELRO page. Such page will be initially mapped as
-//   writable by the loader (if two segments have their end and start
-//   addresses on the same page, the latter's memory attributes take
-//   precedence), but after the initialization, the runtime remaps it as
-//   a read-only page.
+// Assign virtual addresses to output sections.
 template <typename E>
 static void set_virtual_addresses(Context<E> &ctx) {
-  constexpr i64 RELRO = 1LL << 32;
+  std::vector<Chunk<E> *> &chunks = ctx.chunks;
 
-  auto get_flags = [&](Chunk<E> *chunk) {
-    i64 flags = to_phdr_flags(ctx, chunk);
-    if (is_relro(ctx, chunk))
-      return flags | RELRO;
-    return flags;
+  auto alignment = [](Chunk<E> *chunk) {
+    return std::max<i64>(chunk->extra_addralign, chunk->shdr.sh_addralign);
   };
 
   // Assign virtual addresses
-  std::vector<Chunk<E> *> &chunks = ctx.chunks;
   u64 addr = ctx.arg.image_base;
-
-  for (i64 i = 0; i < chunks.size(); i++) {
-    if (!(chunks[i]->shdr.sh_flags & SHF_ALLOC))
+  for (Chunk<E> *chunk : chunks) {
+    if (!(chunk->shdr.sh_flags & SHF_ALLOC))
       continue;
 
-    // Handle --section-start first
-    if (auto it = ctx.arg.section_start.find(chunks[i]->name);
+    if (auto it = ctx.arg.section_start.find(chunk->name);
         it != ctx.arg.section_start.end()) {
       addr = it->second;
-      chunks[i]->shdr.sh_addr = addr;
-      addr += chunks[i]->shdr.sh_size;
+      chunk->shdr.sh_addr = addr;
+      addr += chunk->shdr.sh_size;
       continue;
     }
 
-    // Memory protection works at page size granularity. We need to
-    // put sections with different memory attributes into different
-    // pages. We do it by inserting paddings here.
-    if (i > 0) {
-      i64 flags1 = get_flags(chunks[i - 1]);
-      i64 flags2 = get_flags(chunks[i]);
-      bool relro_overlap = (flags1 == PF_R && flags2 == (PF_R | PF_W | RELRO));
-
-      if (flags1 != flags2 && !relro_overlap) {
-        switch (ctx.arg.z_separate_code) {
-        case SEPARATE_LOADABLE_SEGMENTS:
-          addr = align_to(addr, ctx.page_size);
-          break;
-        case SEPARATE_CODE:
-          if ((flags1 & PF_X) != (flags2 & PF_X))
-            addr = align_to(addr, ctx.page_size);
-          else
-            addr += ctx.page_size;
-          break;
-        case NOSEPARATE_CODE:
-          addr += ctx.page_size;
-          break;
-        default:
-          unreachable();
-        }
-      }
-    }
-
-    // TLS BSS sections are laid out so that they overlap with the
-    // subsequent non-tbss sections. This is fine because a STT_TLS
-    // segment contains an initialization image for newly-created threads,
-    // and no one except the runtime reads its contents. Even the runtime
-    // doesn't need a BSS part of a TLS initialization image; it just
-    // leaves zero-initialized bytes as-is instead of copying zeros.
-    // So no one really read tbss at runtime.
-    //
-    // We can instead allocate a dedicated virtual address space to tbss,
-    // but that would be just a waste of the address and disk space.
-    if (is_tbss(chunks[i])) {
-      u64 addr2 = addr;
-      for (;;) {
-        addr2 = align_to(addr2, chunks[i]->shdr.sh_addralign);
-        chunks[i]->shdr.sh_addr = addr2;
-        addr2 += chunks[i]->shdr.sh_size;
-        if (i + 2 == chunks.size() || !is_tbss(chunks[i + 1]))
-            break;
-        i++;
-      }
+    if (is_tbss(chunk)) {
+      chunk->shdr.sh_addr = addr;
       continue;
     }
 
-    addr = align_to(addr, chunks[i]->shdr.sh_addralign);
-    chunks[i]->shdr.sh_addr = addr;
-    addr += chunks[i]->shdr.sh_size;
+    addr = align_to(addr, alignment(chunk));
+    chunk->shdr.sh_addr = addr;
+    addr += chunk->shdr.sh_size;
   }
-}
 
-// Returns the smallest integer N that satisfies N >= val and
-// N mod align == skew mod align.
-//
-// Section's file offset must be congruent to its virtual address modulo
-// the page size. We use this function to satisfy that requirement.
-static u64 align_with_skew(u64 val, u64 align, u64 skew) {
-  u64 x = align_down(val, align) + skew % align;
-  return (val <= x) ? x : x + align;
+  // Fix tbss virtual addresses. tbss sections are laid out as if they
+  // were overlapping to suceeding non-tbss sections. This is fine
+  // because no one will actually access the TBSS part of a TLS
+  // template image at runtime.
+  //
+  // We can lay out tbss sections in the same way as regular bss
+  // sections, but that would need one more extra PT_LOAD segment.
+  // Having fewer PT_LOAD segments is generally desirable, so we do this.
+  for (i64 i = 0; i < chunks.size();) {
+    if (is_tbss(chunks[i])) {
+      u64 addr = chunks[i]->shdr.sh_addr;
+      for (; i < chunks.size() && is_tbss(chunks[i]); i++) {
+        addr = align_to(addr, alignment(chunks[i]));
+        chunks[i]->shdr.sh_addr = addr;
+        addr += chunks[i]->shdr.sh_size;
+      }
+    } else {
+      i++;
+    }
+  }
 }
 
 // Assign file offsets to output sections.
@@ -1521,14 +1448,14 @@ static i64 set_file_offsets(Context<E> &ctx) {
   u64 fileoff = 0;
   i64 i = 0;
 
+  auto alignment = [](Chunk<E> *chunk) {
+    return std::max<i64>(chunk->extra_addralign, chunk->shdr.sh_addralign);
+  };
+
   while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC)) {
     Chunk<E> &first = *chunks[i];
     assert(first.shdr.sh_type != SHT_NOBITS);
-
-    if (first.shdr.sh_addralign > ctx.page_size)
-      fileoff = align_to(fileoff, first.shdr.sh_addralign);
-    else
-      fileoff = align_with_skew(fileoff, ctx.page_size, first.shdr.sh_addr);
+    fileoff = align_to(fileoff, alignment(&first));
 
     // Assign ALLOC sections contiguous file offsets as long as they
     // are contiguous in memory.
