@@ -18,8 +18,7 @@ function(add_qemu_test TEST TRIPLE MACHINE)
       TEST_CXX=${TRIPLE}-g++
       TEST_GCC=${TRIPLE}-gcc
       TEST_GXX=${TRIPLE}-g++
-      TRIPLE=${TRIPLE}-
-      OBJDUMP=${TRIPLE}-objdump
+      TEST_TRIPLE=${TRIPLE}-
       MACHINE=${MACHINE}
       "QEMU=qemu-${MACHINE} -L /usr/${TRIPLE}")
     set_tests_properties("${MACHINE}-${TEST}" PROPERTIES ENVIRONMENT "${ENV}")

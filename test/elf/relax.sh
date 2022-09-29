@@ -46,7 +46,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-${TRIPLE}objdump -d $t/exe | grep -A20 '<bar>:' > $t/log
+${TEST_TRIPLE}objdump -d $t/exe | grep -A20 '<bar>:' > $t/log
 
 grep -Eq 'lea \s*0x.+\(%rip\),%rax .*<foo>' $t/log
 grep -Eq 'lea \s*0x.+\(%rip\),%rcx .*<foo>' $t/log
@@ -67,7 +67,7 @@ grep -Eq 'call.*<foo>' $t/log
 grep -Eq 'jmp.*<foo>' $t/log
 
 $CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-no-relax
-${TRIPLE}objdump -d $t/exe | grep -A20 '<bar>:' > $t/log
+${TEST_TRIPLE}objdump -d $t/exe | grep -A20 '<bar>:' > $t/log
 
 grep -Eq 'mov \s*0x.+\(%rip\),%rax' $t/log
 grep -Eq 'mov \s*0x.+\(%rip\),%rcx' $t/log

@@ -19,7 +19,7 @@ echo 'int main() {}' | $CC -o /dev/null -xc - -static >& /dev/null || \
 echo '.globl _start; _start: jmp loop' | $CC -o $t/a.o -c -x assembler -
 echo '.globl loop; loop: jmp loop' | $CC -o $t/b.o -c -x assembler -
 ./mold -static -o $t/exe $t/a.o $t/b.o
-${TRIPLE}objdump -d $t/exe > /dev/null
+${TEST_TRIPLE}objdump -d $t/exe > /dev/null
 file $t/exe | grep -q ELF
 
 echo OK

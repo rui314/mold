@@ -14,7 +14,7 @@ mkdir -p $t
 # ARM32's strip command crashes on the output of this test for some reason.
 [[ $MACHINE = arm* ]] && { echo skipped; exit; }
 
-strip=${TRIPLE}strip
+strip=${TEST_TRIPLE}strip
 command -v $strip >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC

@@ -28,7 +28,7 @@ int z()  { return A + B; }
 EOF
 
 $GCC -B. -o $t/exe $t/b.o $t/c.o
-${TRIPLE}objdump --dwarf=macro $t/exe > $t/log
+${TEST_TRIPLE}objdump --dwarf=macro $t/exe > $t/log
 ! grep 'DW_MACRO_import -.* 0x0$' $t/log || false
 
 echo OK
