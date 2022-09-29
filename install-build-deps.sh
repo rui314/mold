@@ -20,7 +20,7 @@ ubuntu-* | pop-* | debian-* | raspbian-*)
   ;;
 fedora-*)
   dnf install -y gcc-g++ cmake openssl-devel zlib-devel
-  dnf install -y glibc-static file libstdc++-static diffutils
+  dnf install -y glibc-static file libstdc++-static diffutils util-linux
   ;;
 opensuse-leap-*)
   zypper install -y make cmake zlib-devel libopenssl-devel gcc-c++ gcc11-c++
