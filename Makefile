@@ -223,7 +223,7 @@ test-arch:
 	TEST_CXX=${TRIPLE}-g++ \
 	TEST_GCC=${TRIPLE}-gcc \
 	TEST_GXX=${TRIPLE}-g++ \
-	OBJDUMP=${TRIPLE}-objdump \
+	TRIPLE=${TRIPLE}- \
 	MACHINE=${MACHINE} \
 	QEMU="qemu-${MACHINE} -L /usr/${TRIPLE}" \
 	$(MAKE) test
