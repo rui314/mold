@@ -22,15 +22,15 @@ bar:
   .quad 0
 EOF
 
-./mold -e foo -o $t/exe $t/a.o
+./mold -z separate-loadable-segments -e foo -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*0x201000" $t/log
 
-./mold -e bar -o $t/exe $t/a.o
+./mold -z separate-loadable-segments -e bar -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*0x201008" $t/log
 
-./mold -o $t/exe $t/a.o
+./mold -z separate-loadable-segments -o $t/exe $t/a.o
 readelf -e $t/exe > $t/log
 grep -q "Entry point address:.*0x201000" $t/log
 

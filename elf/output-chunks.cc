@@ -117,7 +117,7 @@ void OutputShdr<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-static i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
+i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
   if (ctx.arg.omagic)
     return PF_R | PF_W | PF_X;
 
@@ -125,8 +125,7 @@ static i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
   bool write = (chunk->shdr.sh_flags & SHF_WRITE);
   if (write)
     ret |= PF_W;
-  if ((ctx.arg.z_separate_code == NOSEPARATE_CODE) ||
-      (!ctx.arg.rosegment && !write) ||
+  if ((!ctx.arg.rosegment && !write) ||
       (chunk->shdr.sh_flags & SHF_EXECINSTR))
     ret |= PF_X;
   return ret;
@@ -201,9 +200,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     return (shdr.sh_type == SHT_NOTE) && (shdr.sh_flags & SHF_ALLOC);
   };
 
-  // Clear previous results so that this function is idempotent.
-  for (Chunk<E> *chunk : ctx.chunks)
-    chunk->extra_addralign = 1;
+  auto extend_to_page_end = [&] {
+    ElfPhdr<E> &phdr = vec.back();
+    u64 end = align_to(phdr.p_vaddr + phdr.p_memsz, ctx.page_size);
+    phdr.p_memsz = end - phdr.p_vaddr;
+  };
 
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr)
@@ -255,7 +256,12 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
              to_phdr_flags(ctx, chunks[i]) == flags)
         append(chunks[i++]);
 
-      first->extra_addralign = vec.back().p_align;
+      // RELRO works on page granularity. The loader calls mprotect(2)
+      // to enforce write protection. If the system call fails, it
+      // immediately aborts. So we extend a load command containing
+      // RELRO sections to make sure that mprotect will always succeed.
+      if (is_relro(ctx, first))
+        extend_to_page_end();
     }
 
     // The ELF spec says that "loadable segment entries in the program
@@ -272,8 +278,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     if (!(ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
       continue;
 
-    define(PT_TLS, PF_R, 1, ctx.chunks[i]);
-    i++;
+    define(PT_TLS, PF_R, 1, ctx.chunks[i++]);
     while (i < ctx.chunks.size() && (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
       append(ctx.chunks[i++]);
 
@@ -337,18 +342,10 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       if (!is_relro(ctx, ctx.chunks[i]))
         continue;
 
-      define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i]);
-      ctx.chunks[i]->extra_addralign = ctx.page_size;
-
-      i++;
+      define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i++]);
       while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
-
-      // RELRO works on page granularity, so align both ends to
-      // the page size.
-      vec.back().p_memsz = align_to(vec.back().p_memsz, ctx.page_size);
-      if (i < ctx.chunks.size())
-        ctx.chunks[i]->extra_addralign = ctx.page_size;
+      extend_to_page_end();
     }
   }
 
@@ -2649,6 +2646,7 @@ template class NotePropertySection<E>;
 template class GdbIndexSection<E>;
 template class CompressedSection<E>;
 template class RelocSection<E>;
+template i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
 template bool is_relro(Context<E> &, Chunk<E> *);
 template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &);
 
