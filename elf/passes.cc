@@ -74,6 +74,8 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.eh_frame_hdr = push(new EhFrameHdrSection<E>);
   if (ctx.arg.gdb_index)
     ctx.gdb_index = push(new GdbIndexSection<E>);
+  if (ctx.arg.z_relro)
+    ctx.relro_padding = push(new RelroPaddingSection<E>);
   if (ctx.arg.hash_style_sysv)
     ctx.hash = push(new HashSection<E>);
   if (ctx.arg.hash_style_gnu)
@@ -1283,6 +1285,7 @@ void clear_padding(Context<E> &ctx) {
 //   .got
 //   .toc
 //   alloc writable RELRO bss
+//   .relro_padding
 //   alloc writable non-RELRO data
 //   alloc writable non-RELRO bss
 //   nonalloc
@@ -1362,6 +1365,8 @@ void sort_output_sections(Context<E> &ctx) {
     if (chunk->shdr.sh_type == SHT_NOTE)
       return -chunk->shdr.sh_addralign;
 
+    if (chunk == ctx.relro_padding)
+      return INT_MAX;
     if (chunk->name == ".toc")
       return 2;
     if (chunk == ctx.got)
@@ -1443,6 +1448,9 @@ static void set_virtual_addresses(Context<E> &ctx) {
       continue;
     }
 
+    if (chunks[i] == ctx.relro_padding)
+      chunks[i]->shdr.sh_size = align_to(addr, ctx.page_size) - addr;
+
     // Memory protection works at page size granularity. We need to
     // put sections with different memory attributes into different
     // pages. We do it by inserting paddings here.
@@ -1458,11 +1466,12 @@ static void set_virtual_addresses(Context<E> &ctx) {
         case SEPARATE_CODE:
           if ((flags1 & PF_X) != (flags2 & PF_X))
             addr = align_to(addr, ctx.page_size);
-          else
+          else if (addr % ctx.page_size != 0)
             addr += ctx.page_size;
           break;
         case NOSEPARATE_CODE:
-          addr += ctx.page_size;
+          if (addr % ctx.page_size != 0)
+            addr += ctx.page_size;
           break;
         default:
           unreachable();

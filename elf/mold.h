@@ -969,6 +969,21 @@ private:
   std::vector<i64> offsets;
 };
 
+// PT_GNU_RELRO works on page granularity. We want to align its end to
+// a page boundary. We append this section at end of a segment so that
+// the segment always ends at a page boundary.
+template <typename E>
+class RelroPaddingSection : public Chunk<E> {
+public:
+  RelroPaddingSection() {
+    this->name = ".relro_padding";
+    this->shdr.sh_type = SHT_NOBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+    this->shdr.sh_addralign = 1;
+    this->shdr.sh_size = 1;
+  }
+};
+
 //
 // dwarf.cc
 //
@@ -1611,6 +1626,7 @@ struct Context {
   NotePackageSection<E> *note_package = nullptr;
   NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
+  RelroPaddingSection<E> *relro_padding = nullptr;
   SparcTlsGetAddrSection *sparc_tls_get_addr = nullptr;
 
   // For --gdb-index

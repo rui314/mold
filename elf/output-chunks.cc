@@ -154,6 +154,7 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
     return (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
            type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
            chunk == ctx.got || chunk == ctx.dynamic ||
+           chunk == ctx.relro_padding ||
            (ctx.arg.z_now && ctx.gotplt && chunk == ctx.gotplt) ||
            chunk->name == ".toc" || chunk->name.ends_with(".rel.ro");
   return false;
@@ -198,12 +199,6 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   auto is_note = [](Chunk<E> *chunk) {
     ElfShdr<E> &shdr = chunk->shdr;
     return (shdr.sh_type == SHT_NOTE) && (shdr.sh_flags & SHF_ALLOC);
-  };
-
-  auto extend_to_page_end = [&] {
-    ElfPhdr<E> &phdr = vec.back();
-    u64 end = align_to(phdr.p_vaddr + phdr.p_memsz, ctx.page_size);
-    phdr.p_memsz = end - phdr.p_vaddr;
   };
 
   // Create a PT_PHDR for the program header itself.
@@ -255,13 +250,6 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       while (i < end && is_bss(chunks[i]) &&
              to_phdr_flags(ctx, chunks[i]) == flags)
         append(chunks[i++]);
-
-      // RELRO works on page granularity. The loader calls mprotect(2)
-      // to enforce write protection. If the system call fails, it
-      // immediately aborts. So we extend a load command containing
-      // RELRO sections to make sure that mprotect will always succeed.
-      if (is_relro(ctx, first))
-        extend_to_page_end();
     }
 
     // The ELF spec says that "loadable segment entries in the program
@@ -345,7 +333,6 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i++]);
       while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
-      extend_to_page_end();
     }
   }
 
