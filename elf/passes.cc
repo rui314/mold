@@ -1275,8 +1275,8 @@ void clear_padding(Context<E> &ctx) {
 //   .gnu.version_r
 //   .rela.dyn
 //   .rela.plt
-//   alloc readonly code
 //   alloc readonly data
+//   alloc readonly code
 //   alloc writable tdata
 //   alloc writable tbss
 //   alloc writable RELRO data
@@ -1354,7 +1354,7 @@ void sort_output_sections(Context<E> &ctx) {
     bool relro = is_relro(ctx, chunk);
     bool is_bss = (type == SHT_NOBITS);
 
-    return (1 << 10) | (writable << 9) | (!exec << 8) | (!tls << 7) |
+    return (1 << 10) | (writable << 9) | (exec << 8) | (!tls << 7) |
            (!relro << 6) | (is_bss << 5);
   };
 
