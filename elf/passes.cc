@@ -1407,18 +1407,14 @@ static bool is_tbss(Chunk<E> *chunk) {
 // We don't want to waste too much memory and disk space for paddings.
 // There are a few tricks we can use to minimize paddings as below:
 //
+// - We want to place sections with the same memory attributes
+//   contiguous as possible.
+//
 // - We can map the same file region to memory more than once. For
 //   example, we can write code (with R and X bits) and read-only data
 //   (with R bits) adjacent on file and map it twice as the last page of
 //   the executable segment and the first page of the read-only data
 //   segment. This doesn't save memory but saves disk space.
-//
-// - We can also overlap the last read-only data page with the first
-//   writable but RELRO page. Such page will be initially mapped as
-//   writable by the loader (if two segments have their end and start
-//   addresses on the same page, the latter's memory attributes take
-//   precedence), but after the initialization, the runtime remaps it as
-//   a read-only page.
 template <typename E>
 static void set_virtual_addresses(Context<E> &ctx) {
   constexpr i64 RELRO = 1LL << 32;
@@ -1453,9 +1449,8 @@ static void set_virtual_addresses(Context<E> &ctx) {
     if (i > 0) {
       i64 flags1 = get_flags(chunks[i - 1]);
       i64 flags2 = get_flags(chunks[i]);
-      bool relro_overlap = (flags1 == PF_R && flags2 == (PF_R | PF_W | RELRO));
 
-      if (flags1 != flags2 && !relro_overlap) {
+      if (flags1 != flags2) {
         switch (ctx.arg.z_separate_code) {
         case SEPARATE_LOADABLE_SEGMENTS:
           addr = align_to(addr, ctx.page_size);
