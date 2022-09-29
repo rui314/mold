@@ -38,8 +38,8 @@ ar crs $t/e.a $t/a.o $t/b.o $t/c.o
 ./mold -r -o $t/f.o $t/d.o $t/e.a
 
 readelf --symbols $t/f.o > $t/log
-grep -q 'foo$' $t/log
-grep -q 'bar$' $t/log
-! grep -q 'baz$' $t/log || false
+grep -q 'foo\b' $t/log
+grep -q 'bar\b' $t/log
+! grep -q 'baz\b' $t/log || false
 
 echo OK
