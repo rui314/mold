@@ -5,7 +5,6 @@ CC="${CC:-cc}"
 CXX="${CXX:-c++}"
 GCC="${GCC:-gcc}"
 GXX="${GXX:-g++}"
-OBJDUMP="${OBJDUMP:-objdump}"
 MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "

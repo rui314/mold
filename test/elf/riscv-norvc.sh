@@ -5,7 +5,6 @@ CC="${TEST_CC:-cc}"
 CXX="${TEST_CXX:-c++}"
 GCC="${TEST_GCC:-gcc}"
 GXX="${TEST_GXX:-g++}"
-OBJDUMP="${OBJDUMP:-objdump}"
 MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
@@ -40,6 +39,6 @@ EOF
 
 $CC -march=$ISA -B. -nostdlib -O2 -o $t/exe $t/a.o $t/b.o $t/c.o
 
-$OBJDUMP -d $t/exe | grep -q ff5ff06f # j pc - 0xc
+${TRIPLE}objdump -d $t/exe | grep -q ff5ff06f # j pc - 0xc
 
 echo OK

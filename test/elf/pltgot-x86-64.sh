@@ -5,7 +5,6 @@ CC="${TEST_CC:-cc}"
 CXX="${TEST_CXX:-c++}"
 GCC="${TEST_GCC:-gcc}"
 GXX="${TEST_GXX:-g++}"
-OBJDUMP="${OBJDUMP:-objdump}"
 MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
@@ -33,7 +32,7 @@ EOF
 
 ./mold -z separate-loadable-segments -pie -o $t/exe $t/b.o $t/a.so
 
-$OBJDUMP -d -j .plt.got $t/exe > $t/log
+${TRIPLE}objdump -d -j .plt.got $t/exe > $t/log
 
 grep -Eq '1034:.*jmp.* <ext2>' $t/log
 

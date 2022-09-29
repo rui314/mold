@@ -5,7 +5,6 @@ CC="${TEST_CC:-cc}"
 CXX="${TEST_CXX:-c++}"
 GCC="${TEST_GCC:-gcc}"
 GXX="${TEST_GXX:-g++}"
-OBJDUMP="${OBJDUMP:-objdump}"
 MACHINE="${MACHINE:-$(uname -m)}"
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
@@ -47,7 +46,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-$OBJDUMP -d $t/exe | grep -A20 '<bar>:' > $t/log
+${TRIPLE}objdump -d $t/exe | grep -A20 '<bar>:' > $t/log
 
 grep -Eq 'lea \s*0x.+\(%rip\),%rax .*<foo>' $t/log
 grep -Eq 'lea \s*0x.+\(%rip\),%rcx .*<foo>' $t/log
@@ -68,7 +67,7 @@ grep -Eq 'call.*<foo>' $t/log
 grep -Eq 'jmp.*<foo>' $t/log
 
 $CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-no-relax
-$OBJDUMP -d $t/exe | grep -A20 '<bar>:' > $t/log
+${TRIPLE}objdump -d $t/exe | grep -A20 '<bar>:' > $t/log
 
 grep -Eq 'mov \s*0x.+\(%rip\),%rax' $t/log
 grep -Eq 'mov \s*0x.+\(%rip\),%rcx' $t/log
