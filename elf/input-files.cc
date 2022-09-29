@@ -186,7 +186,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
       }
 
-      if (name.starts_with(".gnu.warning."))
+      if (name.starts_with(".gnu.warning.") && !ctx.arg.emit_relocs)
         continue;
 
       if (name == ".note.gnu.property") {
