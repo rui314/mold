@@ -267,6 +267,13 @@ target_sources(mold PRIVATE
 
 include(CTest)
 
+option(MOLD_SHOW_SKIPPED_TESTS "Print list of skipped tests in the summary" OFF)
+if(MOLD_SHOW_SKIPPED_TESTS AND ${CMAKE_VERSION} VERSION_LESS "3.16")
+  # This feature uses `SKIP_REGULAR_EXPRESSION`, which requires CMake >= 3.16
+  message(WARNING "MOLD_SHOW_SKIPPED_TESTS=ON requires CMake >= 3.16; forcing it to OFF")
+  set(MOLD_SHOW_SKIPPED_TESTS OFF)
+endif()
+
 if(BUILD_TESTING)
   # Create the ld and ld64 symlinks required for testing
   if(NOT WIN32)

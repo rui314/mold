@@ -30,6 +30,12 @@ foreach(TEST IN LISTS TESTS)
     COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
     WORKING_DIRECTORY ${mold_BINARY_DIR})
 
+  if(MOLD_SHOW_SKIPPED_TESTS)
+    set_property(TEST "${CMAKE_HOST_SYSTEM_PROCESSOR}-${TEST}" PROPERTY
+      SKIP_REGULAR_EXPRESSION "skipped"
+    )
+  endif()
+
   if(MOLD_ENABLE_QEMU_TESTS)
     add_qemu_test(${TEST} x86_64-linux-gnu x86_64)
     add_qemu_test(${TEST} i686-linux-gnu i386)
