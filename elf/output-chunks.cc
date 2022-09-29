@@ -230,6 +230,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create PT_LOAD segments.
   {
+    i64 idx = vec.size();
     std::vector<Chunk<E> *> chunks = ctx.chunks;
     std::erase_if(chunks, is_tbss);
 
@@ -256,6 +257,14 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
       first->extra_addralign = vec.back().p_align;
     }
+
+    // The ELF spec says that "loadable segment entries in the program
+    // header table appear in ascending order, sorted on the p_vaddr
+    // member".
+    std::stable_sort(vec.begin() + idx, vec.end(),
+                     [](const ElfPhdr<E> &a, const ElfPhdr<E> &b) {
+      return a.p_vaddr < b.p_vaddr;
+    });
   }
 
   // Create a PT_TLS.
