@@ -74,7 +74,7 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.eh_frame_hdr = push(new EhFrameHdrSection<E>);
   if (ctx.arg.gdb_index)
     ctx.gdb_index = push(new GdbIndexSection<E>);
-  if (ctx.arg.z_relro)
+  if (ctx.arg.z_relro && ctx.arg.z_separate_code != SEPARATE_LOADABLE_SEGMENTS)
     ctx.relro_padding = push(new RelroPaddingSection<E>);
   if (ctx.arg.hash_style_sysv)
     ctx.hash = push(new HashSection<E>);
@@ -1439,6 +1439,15 @@ static void set_virtual_addresses(Context<E> &ctx) {
     if (!(chunks[i]->shdr.sh_flags & SHF_ALLOC))
       continue;
 
+    // .relro_padding is a padding section to extend a PT_GNU_RELRO
+    // segment to cover an entire page.
+    if (chunks[i] == ctx.relro_padding) {
+      chunks[i]->shdr.sh_addr = addr;
+      chunks[i]->shdr.sh_size = align_to(addr, ctx.page_size) - addr;
+      addr += ctx.page_size;
+      continue;
+    }
+
     // Handle --section-start first
     if (auto it = ctx.arg.section_start.find(chunks[i]->name);
         it != ctx.arg.section_start.end()) {
@@ -1448,13 +1457,10 @@ static void set_virtual_addresses(Context<E> &ctx) {
       continue;
     }
 
-    if (chunks[i] == ctx.relro_padding)
-      chunks[i]->shdr.sh_size = align_to(addr, ctx.page_size) - addr;
-
     // Memory protection works at page size granularity. We need to
     // put sections with different memory attributes into different
     // pages. We do it by inserting paddings here.
-    if (i > 0) {
+    if (i > 0 && chunks[i - 1] != ctx.relro_padding) {
       i64 flags1 = get_flags(chunks[i - 1]);
       i64 flags2 = get_flags(chunks[i]);
 
@@ -1466,9 +1472,7 @@ static void set_virtual_addresses(Context<E> &ctx) {
         case SEPARATE_CODE:
           if ((flags1 & PF_X) != (flags2 & PF_X))
             addr = align_to(addr, ctx.page_size);
-          else if (addr % ctx.page_size != 0)
-            addr += ctx.page_size;
-          break;
+          [[fallthrough]];
         case NOSEPARATE_CODE:
           if (addr % ctx.page_size != 0)
             addr += ctx.page_size;
@@ -1527,7 +1531,10 @@ static i64 set_file_offsets(Context<E> &ctx) {
 
   while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC)) {
     Chunk<E> &first = *chunks[i];
-    assert(first.shdr.sh_type != SHT_NOBITS);
+    if (first.shdr.sh_type == SHT_NOBITS) {
+      i++;
+      continue;
+    }
 
     if (first.shdr.sh_addralign > ctx.page_size)
       fileoff = align_to(fileoff, first.shdr.sh_addralign);
