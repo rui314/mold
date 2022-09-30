@@ -12,20 +12,21 @@ t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
 cat <<EOF | $GCC -c -o $t/a.o -xc -
-void foo() {}
+#include <stdio.h>
 
 __attribute__((section(".gnu.warning.foo")))
-static const char foo_warning[] = "warning message";
-EOF
+static const char foo[] = "foo is deprecated";
 
-cat <<EOF | $CC -c -o $t/b.o -xc -
-void foo();
+__attribute__((section(".gnu.warning.bar")))
+const char bar[] = "bar is deprecated";
 
-int main() { foo(); }
+int main() {
+  printf("Hello world\n");
+}
 EOF
 
 # Make sure that we do not copy .gnu.warning.* sections.
-$CC -B. -o $t/exe $t/a.o $t/b.o
-! readelf --sections $t/exe | grep -Fq .gnu.warning || false
+$CC -B. -o $t/exe $t/a.o
+$QEMU $t/exe | grep -q 'Hello world'
 
 echo OK

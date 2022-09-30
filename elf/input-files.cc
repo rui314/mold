@@ -186,9 +186,6 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
       }
 
-      if (name.starts_with(".gnu.warning.") && !ctx.arg.emit_relocs)
-        continue;
-
       if (name == ".note.gnu.property") {
         this->features = read_note_gnu_property(ctx, shdr);
         continue;

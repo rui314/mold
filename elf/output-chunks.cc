@@ -815,7 +815,7 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
   static std::string_view prefixes[] = {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
     ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
-    ".ctors.", ".dtors.",
+    ".ctors.", ".dtors.", ".gnu.warning.",
   };
 
   for (std::string_view prefix : prefixes) {
