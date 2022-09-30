@@ -7,4 +7,10 @@ foreach(TEST IN LISTS TESTS)
   add_test(NAME ${TEST}
     COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
     WORKING_DIRECTORY ${mold_BINARY_DIR})
+
+  if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16")
+    set_property(TEST ${TEST} PROPERTY
+      SKIP_REGULAR_EXPRESSION "skipped"
+    )
+  endif()
 endforeach()
