@@ -1470,8 +1470,10 @@ static void set_virtual_addresses(Context<E> &ctx) {
           addr = align_to(addr, ctx.page_size);
           break;
         case SEPARATE_CODE:
-          if ((flags1 & PF_X) != (flags2 & PF_X))
+          if ((flags1 & PF_X) != (flags2 & PF_X)) {
             addr = align_to(addr, ctx.page_size);
+            break;
+          }
           [[fallthrough]];
         case NOSEPARATE_CODE:
           if (addr % ctx.page_size != 0)
