@@ -11,11 +11,11 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-echo 'int main() {}' | $CC -o /dev/null -xc - -static >& /dev/null || \
-  { echo skipped; exit; }
-
 # Skip if target is not x86-64
 [ $MACHINE = x86_64 ] || { echo skipped; exit; }
+
+echo 'int main() {}' | $CC -o /dev/null -xc - -static >& /dev/null || \
+  { echo skipped; exit; }
 
 cat <<'EOF' | $CC -o $t/a.o -c -x assembler -
   .text

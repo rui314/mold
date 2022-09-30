@@ -11,7 +11,9 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE == x86_64 ] || { echo skipped; exit; }
+# arm-linux-gnueabihf-objcopy crashes on x86-64
+[[ $MACHINE = arm* ]] && { echo skipped; exit; }
+
 command -v zstdcat >& /dev/null || { echo skipped; exit; }
 
 cat <<EOF | $CC -c -g -o $t/a.o -xc -
@@ -24,7 +26,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,--compress-debug-sections=zstd
-objcopy --dump-section .debug_info=$t/debug_info $t/exe
+${TEST_TRIPLE}objcopy --dump-section .debug_info=$t/debug_info $t/exe
 dd if=$t/debug_info of=$t/debug_info.zstd bs=24 skip=1 status=none
 zstdcat $t/debug_info.zstd > /dev/null
 

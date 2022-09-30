@@ -11,26 +11,22 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
-
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .globl foo, bar
-foo:
-  .quad 0
-bar:
-  .quad 0
+foo = 0x1000
+bar = 0x2000
 EOF
 
-./mold -z separate-loadable-segments -e foo -o $t/exe $t/a.o
-readelf -e $t/exe > $t/log
-grep -q "Entry point address:.*0x201000" $t/log
+cat <<EOF | $CC -o $t/b.o -c -xc -
+int main() {}
+EOF
 
-./mold -z separate-loadable-segments -e bar -o $t/exe $t/a.o
-readelf -e $t/exe > $t/log
-grep -q "Entry point address:.*0x201008" $t/log
+$CC -B. -o $t/exe1 -Wl,-e,foo $t/a.o $t/b.o
+readelf -e $t/exe1 > $t/log
+grep -q "Entry point address:.*0x1000$" $t/log
 
-./mold -z separate-loadable-segments -o $t/exe $t/a.o
-readelf -e $t/exe > $t/log
-grep -q "Entry point address:.*0x201000" $t/log
+$CC -B. -o $t/exe2 -Wl,-e,bar $t/a.o $t/b.o
+readelf -e $t/exe2 > $t/log
+grep -q "Entry point address:.*0x2000$" $t/log
 
 echo OK

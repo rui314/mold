@@ -11,8 +11,6 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
-
 cat <<EOF | $CC -c -o $t/a.o -xc -
 void foo();
 void bar();

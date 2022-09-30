@@ -11,11 +11,9 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
-
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .globl foo
-foo = 0x800000
+foo = 0x800008
 EOF
 
 cat <<EOF | $CC -o $t/b.o -c -fno-PIC -xc -
@@ -26,8 +24,7 @@ cat <<EOF | $CC -o $t/b.o -c -fno-PIC -xc -
 #include <ucontext.h>
 
 void handler(int signum, siginfo_t *info, void *ptr) {
-  ucontext_t *u = (ucontext_t *)ptr;
-  printf("ip=0x%llx\n", u->uc_mcontext.gregs[REG_RIP]);
+  printf("ip=%p\n", info->si_addr);
   exit(0);
 }
 
@@ -44,6 +41,6 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe -no-pie $t/a.o $t/b.o
-$QEMU $t/exe | grep -q '^ip=0x800000$'
+$QEMU $t/exe | grep -q '^ip=0x80000.$'
 
 echo OK

@@ -11,11 +11,8 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
-
-cat <<EOF | $CC -c -o $t/a.o -x assembler -
-.section foo,"a",@progbits
-.ascii "section foo"
+cat <<EOF | $CC -c -o $t/a.o -xc -
+__attribute__((section("foo"))) char bar[] = "section foo";
 EOF
 
 # Test synthetic symbols
