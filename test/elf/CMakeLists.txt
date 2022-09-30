@@ -13,12 +13,6 @@ function(add_qemu_test TEST TRIPLE MACHINE)
       COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
       WORKING_DIRECTORY ${mold_BINARY_DIR})
 
-    if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16")
-      set_property(TEST "${MACHINE}-${TEST}" PROPERTY
-        SKIP_REGULAR_EXPRESSION "skipped"
-      )
-    endif()
-
     set(ENV
       TEST_CC=${TRIPLE}-gcc
       TEST_CXX=${TRIPLE}-g++
@@ -35,12 +29,6 @@ foreach(TEST IN LISTS TESTS)
   add_test(NAME "${CMAKE_HOST_SYSTEM_PROCESSOR}-${TEST}"
     COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
     WORKING_DIRECTORY ${mold_BINARY_DIR})
-
-  if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16")
-    set_property(TEST "${CMAKE_HOST_SYSTEM_PROCESSOR}-${TEST}" PROPERTY
-      SKIP_REGULAR_EXPRESSION "skipped"
-    )
-  endif()
 
   if(MOLD_ENABLE_QEMU_TESTS)
     add_qemu_test(${TEST} x86_64-linux-gnu x86_64)
