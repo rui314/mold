@@ -500,9 +500,9 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   // common piece of code is factored out from object files to reduce
   // output size. Since no one provide, the linker has to synthesize it.
   static ul32 hdr[] = {
-    0xe08e0000, // add r0, lr, r0
-    0xe5901004, // ldr r1, [r0, #4]
-    0xe12fff11, // bx  r1
+    0xe08e'0000, // add r0, lr, r0
+    0xe590'1004, // ldr r1, [r0, #4]
+    0xe12f'ff11, // bx  r1
   };
 
   // This is a range extension and mode switch thunk.
@@ -593,7 +593,7 @@ void sort_arm_exidx(Context<E> &ctx) {
     i64 offset = sizeof(Entry) * i;
     ent[i].addr = sign_extend(ent[i].addr, 30) + offset;
     if (is_relative(ent[i].val))
-      ent[i].val = 0x7fff'ffff & (sign_extend(ent[i].val, 30) + offset);
+      ent[i].val = 0x7fff'ffff & (ent[i].val + offset);
   });
 
   tbb::parallel_sort(ent, ent + num_entries, [](const Entry &a, const Entry &b) {
