@@ -894,10 +894,17 @@ void compute_section_sizes(Context<E> &ctx) {
   // inserting thunks. This pass cannot be parallelized. That is,
   // create_range_extension_thunks is parallelized internally, but the
   // function itself is not thread-safe.
-  if constexpr (needs_thunk<E>)
-    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-      if (osec->shdr.sh_flags & SHF_EXECINSTR)
+  if constexpr (needs_thunk<E>) {
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
+      if (osec->shdr.sh_flags & SHF_EXECINSTR) {
         create_range_extension_thunks(ctx, *osec);
+
+        for (InputSection<E> *isec : osec->members)
+          osec->shdr.sh_addralign =
+            std::max<u32>(osec->shdr.sh_addralign, 1 << isec->p2align);
+      }
+    }
+  }
 }
 
 template <typename E>

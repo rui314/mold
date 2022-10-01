@@ -31,6 +31,6 @@ EOF
 $CC -B. -o $t/exe $t/a.o \
   -Wl,--section-start=.low=0x10000000,--section-start=.high=0x20000000
 
-${TRIPLE}objdump -dr $t/exe | grep -Fq '<thunk$fn1>:'
+${TEST_TRIPLE}objdump -dr $t/exe | grep -Fq '<thunk$fn1>:'
 
 echo OK

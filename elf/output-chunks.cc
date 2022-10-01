@@ -1027,7 +1027,7 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
     u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
     u8 *strtab = strtab_base + strtab_offset;
 
-    if (std::is_same_v<E, ARM32>) {
+    if constexpr (std::is_same_v<E, ARM32>) {
       // ARM uses these symbols to mark the begining of Thumb code, ARM
       // code and data, respectively. Our thunk contains all of them.
       strtab += write_string(strtab, "$t");

@@ -270,11 +270,6 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     for (Symbol<E> *sym : thunk->symbols)
       osec.strtab_size += thunk_sym_prefix.size() + sym->name().size() + 1;
   }
-
-  // Compute the alignment of this output section
-  for (InputSection<E> *isec : members)
-    osec.shdr.sh_addralign =
-      std::max<u32>(osec.shdr.sh_addralign, 1 << isec->p2align);
 }
 
 #if defined(MOLD_ARM64) || defined(MOLD_ARM32) || defined(MOLD_PPC64V2)
