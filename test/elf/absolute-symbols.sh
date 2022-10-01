@@ -11,6 +11,11 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
+# This test crashes only on qemu-sparc64 running on GitHub Actions,
+# even though it works on a local x86-64 machine and on an actual
+# SPARC machine.
+[ $MACHINE = sparc64 ] && { echo skipped; exit; }
+
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .globl foo
 foo = 0x800008
