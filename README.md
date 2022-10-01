@@ -22,8 +22,8 @@ mold is so fast that it is only 2x _slower_ than `cp` on the same
 machine. Feel free to [file a bug](https://github.com/rui314/mold/issues)
 if you find mold is not faster than other linkers.
 
-mold officially supports x86-64, i386, ARM64, ARM32, 64-bit RISC-V and
-32-bit RISC-V. Little-endian PowerPC64 ELFv2 is partially supported.
+mold supports x86-64, i386, ARM64, ARM32, 64-bit/32-bit little/big-endian
+RISC-V, PPC64LE and SPARC64.
 
 ## Why does the speed of linking matter?
 

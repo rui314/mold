@@ -1,6 +1,5 @@
 option(MOLD_ENABLE_QEMU_TESTS "Enable tests on non-native targets" OFF)
 option(MOLD_ENABLE_QEMU_TESTS_RV32 "Enable tests for RV32" OFF)
-option(MOLD_ENABLE_QEMU_TESTS_SPARC64 "Enable tests for SPARC64" OFF)
 
 function(add_target ARCH TRIPLE)
   if(MOLD_ENABLE_QEMU_TESTS OR ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ${ARCH})
@@ -45,11 +44,9 @@ add_target(aarch64 aarch64-linux-gnu)
 add_target(arm arm-linux-gnueabihf)
 add_target(riscv64 riscv64-linux-gnu)
 add_target(ppc64le powerpc64le-linux-gnu)
+add_target(sparc64 sparc64-linux-gnu)
 
 if(MOLD_ENABLE_QEMU_TESTS_RV32)
   add_target(riscv32 riscv32-linux-gnu)
 endif()
 
-if(MOLD_ENABLE_QEMU_TESTS_SPARC64)
-  add_target(sparc64 sparc64-linux-gnu)
-endif()
