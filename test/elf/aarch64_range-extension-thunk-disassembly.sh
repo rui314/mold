@@ -11,8 +11,7 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-[[ $MACHINE = arm* ]] || [ $MACHINE = ppc64le -o $MACHINE = aarch64 ] || \
-  { echo skipped; exit; }
+[ $MACHINE = aarch64 ] || { echo skipped; exit; }
 
 cat <<EOF | $CC -c -o $t/a.o -fPIC -xc -
 #include <stdio.h>
