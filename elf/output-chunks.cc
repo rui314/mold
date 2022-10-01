@@ -463,17 +463,24 @@ void RelrDynSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void StrtabSection<E>::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_size = 1;
+  i64 offset = 1;
+
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
+    osec->strtab_offset = offset;
+    offset += osec->strtab_size;
+  }
 
   for (ObjectFile<E> *file : ctx.objs) {
-    file->strtab_offset = this->shdr.sh_size;
-    this->shdr.sh_size += file->strtab_size;
+    file->strtab_offset = offset;
+    offset += file->strtab_size;
   }
 
   for (SharedFile<E> *file : ctx.dsos) {
-    file->strtab_offset = this->shdr.sh_size;
-    this->shdr.sh_size += file->strtab_size;
+    file->strtab_offset = offset;
+    offset += file->strtab_size;
   }
+
+  this->shdr.sh_size = offset;
 }
 
 template <typename E>
@@ -554,6 +561,12 @@ void SymtabSection<E>::update_shdr(Context<E> &ctx) {
     if (chunk->shndx && (chunk->shdr.sh_flags & SHF_ALLOC))
       nsyms++;
 
+  // Range extension thunk symbols
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
+    osec->local_symtab_idx = nsyms;
+    nsyms += osec->num_local_symtab;
+  }
+
   // Local symbols
   for (ObjectFile<E> *file : ctx.objs) {
     file->local_symtab_idx = nsyms;
@@ -593,6 +606,14 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
       sym.st_value = chunk->shdr.sh_addr;
       sym.st_shndx = chunk->shndx;
     }
+  }
+
+  // Populate range extension thunk symbols
+  if constexpr (needs_thunk<E>) {
+    tbb::parallel_for_each(ctx.output_sections,
+                           [&](std::unique_ptr<OutputSection<E>> &osec) {
+      osec->populate_symtab(ctx);
+    });
   }
 
   // Copy symbols and symbol names from input files
@@ -991,6 +1012,56 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
   // Compress them
   std::vector<u64> pos = flatten(shards);
   relr = encode_relr(pos, sizeof(Word<E>));
+}
+
+// If we create range extension thunks, we also synthesize symbols to mark
+// the locations of thunks. Creating such symbols is optional, but it helps
+// disassembling and/or debugging our output.
+template <typename E>
+void OutputSection<E>::populate_symtab(Context<E> &ctx) {
+  if constexpr (needs_thunk<E>) {
+    ElfSym<E> *esym =
+      (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + local_symtab_idx;
+    memset(esym, 0, num_local_symtab * sizeof(ElfSym<E>));
+
+    u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
+    u8 *strtab = strtab_base + strtab_offset;
+
+    if (std::is_same_v<E, ARM32>) {
+      // ARM uses these symbols to mark the begining of Thumb code, ARM
+      // code and data, respectively. Our thunk contains all of them.
+      strtab += write_string(strtab, "$t");
+      strtab += write_string(strtab, "$a");
+      strtab += write_string(strtab, "$d");
+    }
+
+    for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks) {
+      for (i64 i = 0; i < thunk->symbols.size(); i++) {
+        Symbol<E> &sym = *thunk->symbols[i];
+
+        auto write_esym = [&](i64 st_name, i64 off) {
+          esym->st_name = st_name;
+          esym->st_type = STT_FUNC;
+          esym->st_shndx = this->shndx;
+          esym->st_value = thunk->get_addr(i) + off;
+          esym++;
+        };
+
+        write_esym(strtab - strtab_base, 0);
+
+        write_string(strtab, thunk_sym_prefix);
+        strtab += thunk_sym_prefix.size();
+        strtab += write_string(strtab, sym.name());
+
+        // Emit "$t", "$a" and "$d" if ARM32.
+        if constexpr (std::is_same_v<E, ARM32>) {
+          write_esym(strtab_offset, 0);
+          write_esym(strtab_offset + 3, 4);
+          write_esym(strtab_offset + 6, 16);
+        }
+      }
+    }
+  }
 }
 
 template <typename E>

@@ -255,6 +255,23 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
   osec.shdr.sh_size = offset;
 
+  // Compute spaces needed for thunk symbols
+  if constexpr (std::is_same_v<E, ARM32>)
+    osec.strtab_size = 9; // for "$t", "$a" and "$d" symbols
+
+  for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec.thunks) {
+    // For ARM32, we emit additional symbol "$t", "$a" and "$d" for
+    // each thunk to mark the beginning of ARM code.
+    if constexpr (std::is_same_v<E, ARM32>)
+      osec.num_local_symtab += thunk->symbols.size() * 4;
+    else
+      osec.num_local_symtab += thunk->symbols.size();
+
+    for (Symbol<E> *sym : thunk->symbols)
+      osec.strtab_size += thunk_sym_prefix.size() + sym->name().size() + 1;
+  }
+
+  // Compute the alignment of this output section
   for (InputSection<E> *isec : members)
     osec.shdr.sh_addralign =
       std::max<u32>(osec.shdr.sh_addralign, 1 << isec->p2align);
