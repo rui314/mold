@@ -28,7 +28,10 @@ function(add_target ARCH TRIPLE)
         COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
         WORKING_DIRECTORY ${mold_BINARY_DIR})
 
-      if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ${ARCH})
+      if(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ${ARCH})
+        set_tests_properties("${ARCH}-${TEST}" PROPERTIES
+          SKIP_REGULAR_EXPRESSION "skipped")
+      else()
         set_tests_properties("${ARCH}-${TEST}" PROPERTIES
           ENVIRONMENT "${ENV}")
       endif()
