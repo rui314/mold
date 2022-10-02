@@ -322,6 +322,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   ElfPhdr<E> phdr = {};
   phdr.p_type = PT_GNU_STACK,
   phdr.p_flags = ctx.arg.z_execstack ? (PF_R | PF_W | PF_X) : (PF_R | PF_W),
+  phdr.p_align = 1;
   vec.push_back(phdr);
 
   // Create a PT_GNU_RELRO.
@@ -333,6 +334,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i++]);
       while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
         append(ctx.chunks[i++]);
+      vec.back().p_align = 1;
     }
   }
 
