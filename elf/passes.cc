@@ -1328,10 +1328,10 @@ void sort_output_sections(Context<E> &ctx) {
     u64 type = chunk->shdr.sh_type;
     u64 flags = chunk->shdr.sh_flags;
 
-    if (!(flags & SHF_ALLOC))
-      return INT32_MAX - 1;
     if (chunk == ctx.shdr)
       return INT32_MAX;
+    if (!(flags & SHF_ALLOC))
+      return INT32_MAX - 1;
 
     if (chunk == ctx.ehdr)
       return 0;
