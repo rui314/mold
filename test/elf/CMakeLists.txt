@@ -23,15 +23,17 @@ function(add_target ARCH TRIPLE)
       "QEMU=qemu-${ARCH} -L /usr/${TRIPLE}")
 
     foreach(TEST IN LISTS TESTS)
-      add_test(NAME "${ARCH}-${TEST}"
+      string(REGEX REPLACE "\\.sh$" "" TESTNAME "${ARCH}-${TEST}")
+
+      add_test(NAME ${TESTNAME}
         COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
         WORKING_DIRECTORY ${mold_BINARY_DIR})
 
       if(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL ${ARCH})
-        set_tests_properties("${ARCH}-${TEST}" PROPERTIES
+        set_tests_properties(${TESTNAME} PROPERTIES
           SKIP_REGULAR_EXPRESSION "skipped")
       else()
-        set_tests_properties("${ARCH}-${TEST}" PROPERTIES
+        set_tests_properties(${TESTNAME} PROPERTIES
           ENVIRONMENT "${ENV}")
       endif()
     endforeach()

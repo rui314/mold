@@ -4,7 +4,9 @@ file(GLOB TESTS
   "*.sh")
 
 foreach(TEST IN LISTS TESTS)
-  add_test(NAME ${TEST}
+  string(REGEX REPLACE "\\.sh$" "" TESTNAME ${TEST})
+
+  add_test(NAME ${TESTNAME}
     COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
     WORKING_DIRECTORY ${mold_BINARY_DIR})
 endforeach()
