@@ -430,7 +430,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_GOT;
+      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
 
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
@@ -443,7 +443,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_AARCH64_CALL26:
     case R_AARCH64_JUMP26:
-      if (sym.is_imported || sym.is_ifunc())
+      if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
     case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
