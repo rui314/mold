@@ -1150,7 +1150,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     }
 
     // IFUNC always needs to be fixed up by the dynamic linker.
-    if (sym->get_type() == STT_GNU_IFUNC) {
+    if (sym->is_ifunc()) {
       entries.push_back({idx, sym->get_addr(ctx, false), E::R_IRELATIVE});
       continue;
     }

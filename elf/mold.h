@@ -1776,6 +1776,7 @@ public:
   bool is_absolute() const;
   bool is_relative() const { return !is_absolute(); }
   bool is_local() const { return !is_imported && !is_exported; }
+  bool is_ifunc() const { return get_type() == STT_GNU_IFUNC; }
   bool is_remaining_undef_weak() const;
 
   InputSection<E> *get_input_section() const;
@@ -2311,7 +2312,7 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
   }
 
   if (allow_plt && has_plt(ctx)) {
-    assert(is_imported || esym().st_type == STT_GNU_IFUNC);
+    assert(is_imported || is_ifunc());
     return get_plt_addr(ctx);
   }
 

@@ -1619,7 +1619,7 @@ template <typename E>
 static i64 get_num_irelative_relocs(Context<E> &ctx) {
   return std::count_if(
     ctx.got->got_syms.begin(), ctx.got->got_syms.end(),
-    [](Symbol<E> *sym) { return sym->get_type() == STT_GNU_IFUNC; });
+    [](Symbol<E> *sym) { return sym->is_ifunc(); });
 }
 
 template <typename E>
