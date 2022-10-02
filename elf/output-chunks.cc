@@ -300,7 +300,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     if constexpr (is_x86<E> || is_sparc<E>) {
       ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
     } else if constexpr (is_arm<E>) {
-      ctx.tp_addr = ctx.tls_begin - sizeof(Word<E>) * 2;
+      ctx.tp_addr = align_down(ctx.tls_begin - sizeof(Word<E>) * 2, phdr.p_align);
     } else if constexpr (is_ppc<E>) {
       ctx.tp_addr = ctx.tls_begin + 0x7000;
     } else {
