@@ -430,10 +430,11 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     if (esym.is_common())
       Fatal(ctx) << *this << ": common local symbol?";
 
-    std::string_view name = this->symbol_strtab.data() + esym.st_name;
-    if (name.empty() && esym.st_type == STT_SECTION)
-      if (InputSection<E> *sec = get_section(esym))
-        name = sec->name();
+    std::string_view name;
+    if (esym.st_type == STT_SECTION)
+      name = this->shstrtab.data() + this->elf_sections[esym.st_shndx].sh_name;
+    else
+      name = this->symbol_strtab.data() + esym.st_name;
 
     Symbol<E> &sym = this->local_syms[i];
     sym.set_name(name);

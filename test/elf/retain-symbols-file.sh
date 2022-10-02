@@ -24,7 +24,7 @@ baz
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,--retain-symbols-file=$t/symbols
-readelf --symbols $t/exe > $t/log
+readelf -W --symbols $t/exe > $t/log
 
 ! grep -qw foo $t/log || false
 ! grep -qw bar $t/log || false

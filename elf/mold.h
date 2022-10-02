@@ -127,10 +127,6 @@ struct RangeExtensionRef {
   i32 sym_idx = -1;
 };
 
-// We create a symbol for each range extension thunk entry. The symbol
-// name is formed by prepending this prefix to the original symbol.
-static constexpr std::string_view thunk_sym_prefix = "thunk$";
-
 template <typename E>
 void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec);
 
@@ -493,6 +489,14 @@ public:
   void construct_relr(Context<E> &ctx);
   std::vector<u64> relr;
 
+  // For symbol table
+  void compute_symtab(Context<E> &ctx);
+  void populate_symtab(Context<E> &ctx);
+  i64 local_symtab_idx = 0;
+  i64 num_local_symtab = 0;
+  i64 strtab_size = 0;
+  i64 strtab_offset = 0;
+
 private:
   std::vector<GotEntry<E>> get_entries(Context<E> &ctx) const;
 };
@@ -531,6 +535,13 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> symbols;
+
+  // For symbol table
+  void compute_symtab(Context<E> &ctx);
+  void populate_symtab(Context<E> &ctx);
+  i64 local_symtab_idx = 0;
+  i64 strtab_size = 0;
+  i64 strtab_offset = 0;
 };
 
 template <typename E>
@@ -547,6 +558,13 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> symbols;
+
+  // For symbol table
+  void compute_symtab(Context<E> &ctx);
+  void populate_symtab(Context<E> &ctx);
+  i64 local_symtab_idx = 0;
+  i64 strtab_size = 0;
+  i64 strtab_offset = 0;
 };
 
 template <typename E>

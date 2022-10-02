@@ -467,6 +467,21 @@ template <typename E>
 void StrtabSection<E>::update_shdr(Context<E> &ctx) {
   i64 offset = 1;
 
+  if (ctx.got) {
+    ctx.got->strtab_offset = offset;
+    offset += ctx.got->strtab_size;
+  }
+
+  if (ctx.plt) {
+    ctx.plt->strtab_offset = offset;
+    offset += ctx.plt->strtab_size;
+  }
+
+  if (ctx.pltgot) {
+    ctx.pltgot->strtab_offset = offset;
+    offset += ctx.pltgot->strtab_size;
+  }
+
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
     osec->strtab_offset = offset;
     offset += osec->strtab_size;
@@ -563,6 +578,24 @@ void SymtabSection<E>::update_shdr(Context<E> &ctx) {
     if (chunk->shndx && (chunk->shdr.sh_flags & SHF_ALLOC))
       nsyms++;
 
+  // GOT symbols
+  if (ctx.got) {
+    ctx.got->local_symtab_idx = nsyms;
+    nsyms += ctx.got->num_local_symtab;
+  }
+
+  // PLT symbols
+  if (ctx.plt) {
+    ctx.plt->local_symtab_idx = nsyms;
+    nsyms += ctx.plt->symbols.size();
+  }
+
+  // PLTGOT symbols
+  if (ctx.pltgot) {
+    ctx.pltgot->local_symtab_idx = nsyms;
+    nsyms += ctx.pltgot->symbols.size();
+  }
+
   // Range extension thunk symbols
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
     osec->local_symtab_idx = nsyms;
@@ -609,6 +642,18 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
       sym.st_shndx = chunk->shndx;
     }
   }
+
+  // Populate GOT symbols
+  if (ctx.got)
+    ctx.got->populate_symtab(ctx);
+
+  // Populate PLT symbols
+  if (ctx.plt)
+    ctx.plt->populate_symtab(ctx);
+
+  // Populate PLTGOT symbols
+  if (ctx.pltgot)
+    ctx.pltgot->populate_symtab(ctx);
 
   // Populate range extension thunk symbols
   if constexpr (needs_thunk<E>) {
@@ -1021,6 +1066,9 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
 // disassembling and/or debugging our output.
 template <typename E>
 void OutputSection<E>::populate_symtab(Context<E> &ctx) {
+  if (strtab_size == 0)
+    return;
+
   if constexpr (needs_thunk<E>) {
     ElfSym<E> *esym =
       (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + local_symtab_idx;
@@ -1051,9 +1099,8 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
 
         write_esym(strtab - strtab_base, 0);
 
-        write_string(strtab, thunk_sym_prefix);
-        strtab += thunk_sym_prefix.size();
-        strtab += write_string(strtab, sym.name());
+        strtab += write_string(strtab, sym.name()) - 1;
+        strtab += write_string(strtab, "@thunk");
 
         // Emit "$t", "$a" and "$d" if ARM32.
         if constexpr (std::is_same_v<E, ARM32>) {
@@ -1258,6 +1305,70 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
 }
 
 template <typename E>
+void GotSection<E>::compute_symtab(Context<E> &ctx) {
+  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
+    return;
+
+  num_local_symtab = got_syms.size() + gottp_syms.size() + tlsgd_syms.size() +
+                     tlsdesc_syms.size() + (tlsld_idx != -1);
+  strtab_size = 0;
+
+  for (Symbol<E> *sym : got_syms)
+    strtab_size += sym->name().size() + sizeof("@got");
+
+  for (Symbol<E> *sym : gottp_syms)
+    strtab_size += sym->name().size() + sizeof("@gottp");
+
+  for (Symbol<E> *sym : tlsgd_syms)
+    strtab_size += sym->name().size() + sizeof("@tlsgd");
+
+  for (Symbol<E> *sym : tlsdesc_syms)
+    strtab_size += sym->name().size() + sizeof("@tlsdesc");
+
+  if (tlsld_idx != -1)
+    strtab_size += sizeof("@tlsld");
+}
+
+template <typename E>
+void GotSection<E>::populate_symtab(Context<E> &ctx) {
+  if (strtab_size == 0)
+    return;
+
+  ElfSym<E> *esym =
+    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + local_symtab_idx;
+  memset(esym, 0, num_local_symtab * sizeof(ElfSym<E>));
+
+  u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
+  u8 *strtab = strtab_base + strtab_offset;
+
+  auto write = [&](std::string_view name, std::string_view suffix, i64 value) {
+    esym->st_name = strtab - strtab_base;
+    esym->st_type = STT_OBJECT;
+    esym->st_shndx = this->shndx;
+    esym->st_value = value;
+    esym++;
+
+    strtab += write_string(strtab, name) - 1;
+    strtab += write_string(strtab, suffix);
+  };
+
+  for (Symbol<E> *sym : got_syms)
+    write(sym->name(), "@got", sym->get_got_addr(ctx));
+
+  for (Symbol<E> *sym : gottp_syms)
+    write(sym->name(), "@gottp", sym->get_gottp_addr(ctx));
+
+  for (Symbol<E> *sym : tlsgd_syms)
+    write(sym->name(), "@tlsgd", sym->get_tlsgd_addr(ctx));
+
+  for (Symbol<E> *sym : tlsdesc_syms)
+    write(sym->name(), "@tlsdesc", sym->get_tlsdesc_addr(ctx));
+
+  if (tlsld_idx != -1)
+    write("", "@tlsld", get_tlsld_addr(ctx));
+}
+
+template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   // On PPC64, it's dynamic loader responsibility to fill the .got.plt
   // section. Dynamic loader finds the address of the first PLT entry by
@@ -1302,6 +1413,40 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
+void PltSection<E>::compute_symtab(Context<E> &ctx) {
+  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
+    return;
+
+  strtab_size = 0;
+  for (Symbol<E> *sym : symbols)
+    strtab_size += sym->name().size() + sizeof("@plt");
+}
+
+template <typename E>
+void PltSection<E>::populate_symtab(Context<E> &ctx) {
+  if (strtab_size == 0)
+    return;
+
+  ElfSym<E> *esym =
+    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + local_symtab_idx;
+  memset(esym, 0, symbols.size() * sizeof(ElfSym<E>));
+
+  u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
+  u8 *strtab = strtab_base + strtab_offset;
+
+  for (Symbol<E> *sym : symbols) {
+    esym->st_name = strtab - strtab_base;
+    esym->st_type = STT_FUNC;
+    esym->st_shndx = this->shndx;
+    esym->st_value = sym->get_plt_addr(ctx);
+    esym++;
+
+    strtab += write_string(strtab, sym->name()) - 1;
+    strtab += write_string(strtab, "@plt");
+  }
+}
+
+template <typename E>
 void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
   assert(sym->has_got(ctx));
@@ -1309,6 +1454,40 @@ void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_pltgot_idx(ctx, this->shdr.sh_size / E::pltgot_size);
   this->shdr.sh_size += E::pltgot_size;
   symbols.push_back(sym);
+}
+
+template <typename E>
+void PltGotSection<E>::compute_symtab(Context<E> &ctx) {
+  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
+    return;
+
+  strtab_size = 0;
+  for (Symbol<E> *sym : symbols)
+    strtab_size += sym->name().size() + sizeof("@pltgot");
+}
+
+template <typename E>
+void PltGotSection<E>::populate_symtab(Context<E> &ctx) {
+  if (strtab_size == 0)
+    return;
+
+  ElfSym<E> *esym =
+    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + local_symtab_idx;
+  memset(esym, 0, symbols.size() * sizeof(ElfSym<E>));
+
+  u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
+  u8 *strtab = strtab_base + strtab_offset;
+
+  for (Symbol<E> *sym : symbols) {
+    esym->st_name = strtab - strtab_base;
+    esym->st_type = STT_FUNC;
+    esym->st_shndx = this->shndx;
+    esym->st_value = sym->get_plt_addr(ctx);
+    esym++;
+
+    strtab += write_string(strtab, sym->name()) - 1;
+    strtab += write_string(strtab, "@pltgot");
+  }
 }
 
 template <typename E>
