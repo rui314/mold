@@ -703,7 +703,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
+      sym.flags |= NEEDS_GOT;
 
     switch (rel.r_type) {
     case R_RISCV_32:
@@ -722,7 +722,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT:
-      if (sym.is_imported)
+      if (sym.is_imported || sym.is_ifunc())
         sym.flags |= NEEDS_PLT;
       break;
     case R_RISCV_GOT_HI20:

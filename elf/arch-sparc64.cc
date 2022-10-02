@@ -483,7 +483,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
+      sym.flags |= NEEDS_GOT;
 
     switch (rel.r_type) {
     case R_SPARC_64:
@@ -519,13 +519,14 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_SPARC_PLT32:
     case R_SPARC_WPLT30:
+    case R_SPARC_WDISP30:
     case R_SPARC_HIPLT22:
     case R_SPARC_LOPLT10:
     case R_SPARC_PCPLT32:
     case R_SPARC_PCPLT22:
     case R_SPARC_PCPLT10:
     case R_SPARC_PLT64:
-      if (sym.is_imported)
+      if (sym.is_imported || sym.is_ifunc())
         sym.flags |= NEEDS_PLT;
       break;
     case R_SPARC_GOT13:
@@ -548,7 +549,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_WDISP16:
     case R_SPARC_WDISP19:
     case R_SPARC_WDISP22:
-    case R_SPARC_WDISP30:
     case R_SPARC_PC_HH22:
       scan_pcrel_rel(ctx, sym, rel);
       break;

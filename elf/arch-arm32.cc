@@ -434,7 +434,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
+      sym.flags |= NEEDS_GOT;
 
     switch (rel.r_type) {
     case R_ARM_ABS32:
@@ -447,7 +447,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_CALL:
     case R_ARM_JUMP24:
     case R_ARM_THM_JUMP24:
-      if (sym.is_imported)
+      if (sym.is_imported || sym.is_ifunc())
         sym.flags |= NEEDS_PLT;
       break;
     case R_ARM_GOT_PREL:

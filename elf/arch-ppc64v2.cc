@@ -241,6 +241,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_REL16_LO:
       *(ul16 *)loc = S + A - P;
       break;
+    case R_PPC64_PLT16_HA:
+      *(ul16 *)loc = ha(G + GOT - ctx.TOC->value);
+      break;
+    case R_PPC64_PLT16_HI:
+      *(ul16 *)loc = hi(G + GOT - ctx.TOC->value);
+      break;
+    case R_PPC64_PLT16_LO:
+      *(ul16 *)loc = lo(G + GOT - ctx.TOC->value);
+      break;
+    case R_PPC64_PLT16_LO_DS:
+      *(ul16 *)loc |= (G + GOT - ctx.TOC->value) & 0xfffc;
+      break;
     case R_PPC64_GOT_TPREL16_HA:
       *(ul16 *)loc = ha(sym.get_gottp_addr(ctx) - ctx.TOC->value);
       break;
@@ -267,6 +279,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_GOT_TPREL16_LO_DS:
       *(ul16 *)loc |= (sym.get_gottp_addr(ctx) - ctx.TOC->value) & 0xfffc;
       break;
+    case R_PPC64_PLTSEQ:
+    case R_PPC64_PLTCALL:
     case R_PPC64_TLS:
     case R_PPC64_TLSGD:
     case R_PPC64_TLSLD:
@@ -360,7 +374,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
+      sym.flags |= NEEDS_GOT;
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
@@ -370,8 +384,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_PPC64_REL24:
-      if (sym.is_imported)
+      if (sym.is_imported || sym.is_ifunc())
         sym.flags |= NEEDS_PLT;
+      break;
+    case R_PPC64_PLT16_HA:
+      sym.flags |= NEEDS_GOT;
       break;
     case R_PPC64_GOT_TLSGD16_HA:
       sym.flags |= NEEDS_TLSGD;
@@ -386,6 +403,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_TOC16_DS:
     case R_PPC64_REL16_HA:
     case R_PPC64_REL16_LO:
+    case R_PPC64_PLT16_HI:
+    case R_PPC64_PLT16_LO:
+    case R_PPC64_PLT16_LO_DS:
+    case R_PPC64_PLTSEQ:
+    case R_PPC64_PLTCALL:
     case R_PPC64_TPREL16_HA:
     case R_PPC64_TPREL16_LO:
     case R_PPC64_GOT_TPREL16_LO_DS:
