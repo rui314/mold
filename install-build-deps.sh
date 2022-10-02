@@ -15,7 +15,7 @@ ubuntu-20.* | pop-20.*)
   apt-get install -y cmake libssl-dev zlib1g-dev gcc g++ g++-10
   apt-get install -y file bsdmainutils
   ;;
-ubuntu-* | pop-* | debian-* | raspbian-*)
+ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-*)
   [ "$1" = update ] && apt-get update
   apt-get install -y cmake libssl-dev zlib1g-dev gcc g++
   apt-get install -y file bsdmainutils
