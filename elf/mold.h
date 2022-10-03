@@ -351,10 +351,10 @@ public:
   ElfShdr<E> shdr = {};
   i64 shndx = 0;
 
-  // Some synethetic symbols adds local symbols to the output.
+  // Some synethetic sections add local symbols to the output.
   // For example, range extension thunks adds function_name@thunk
   // symbol for each thunk entry. The following members are used
-  // for synthesizing symbols.
+  // for such synthesizing symbols.
   virtual void compute_symtab_size(Context<E> &ctx) {};
   virtual void populate_symtab(Context<E> &ctx) {};
 
@@ -641,6 +641,7 @@ public:
     this->name = ".dynstr";
     this->shdr.sh_type = SHT_STRTAB;
     this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_size = 1;
   }
 
   void keep() { this->shdr.sh_size = 1; }

@@ -1620,13 +1620,6 @@ i64 set_osec_offsets(Context<E> &ctx) {
 }
 
 template <typename E>
-static i64 get_num_irelative_relocs(Context<E> &ctx) {
-  return std::count_if(
-    ctx.got->got_syms.begin(), ctx.got->got_syms.end(),
-    [](Symbol<E> *sym) { return sym->is_ifunc(); });
-}
-
-template <typename E>
 void fix_synthetic_symbols(Context<E> &ctx) {
   auto start = [](Symbol<E> *sym, auto &chunk, i64 bias = 0) {
     if (sym && chunk) {
@@ -1680,12 +1673,9 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // If we set values to these symbols in a static PIE, glibc attempts
   // to run ifunc initializers twice, with the second attempt with wrong
   // function addresses, causing a segmentation fault.
-  if (ctx.reldyn && ctx.arg.is_static && !ctx.arg.pie) {
-    stop(ctx.__rel_iplt_start, ctx.reldyn);
-    stop(ctx.__rel_iplt_end, ctx.reldyn);
-
-    ctx.__rel_iplt_start->value -=
-      get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
+  if (ctx.relplt && ctx.arg.is_static && !ctx.arg.pie) {
+    start(ctx.__rel_iplt_start, ctx.relplt);
+    stop(ctx.__rel_iplt_end, ctx.relplt);
   }
 
   // __{init,fini}_array_{start,end}

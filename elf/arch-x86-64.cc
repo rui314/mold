@@ -633,7 +633,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
+      sym.flags |= NEEDS_PLT;
 
     switch (rel.r_type) {
     case R_X86_64_8:
