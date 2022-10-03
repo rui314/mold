@@ -269,6 +269,7 @@ public:
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
+  u64 sh_size = -1;
 
   std::string_view contents;
 
@@ -281,7 +282,6 @@ public:
   u32 shndx = -1;
   u32 relsec_idx = -1;
   u32 reldyn_offset = 0;
-  u32 sh_size = -1;
 
   // For COMDAT de-duplication and garbage collection
   std::atomic_bool is_alive = true;
