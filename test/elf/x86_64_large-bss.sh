@@ -18,7 +18,7 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o
+$CC -B. -o $t/exe $t/a.o 2> /dev/null || { echo skipped; exit; }
 $QEMU $t/exe
 
 echo OK
