@@ -351,6 +351,18 @@ public:
   ElfShdr<E> shdr = {};
   i64 shndx = 0;
 
+  // Some synethetic symbols adds local symbols to the output.
+  // For example, range extension thunks adds function_name@thunk
+  // symbol for each thunk entry. The following members are used
+  // for synthesizing symbols.
+  virtual void compute_symtab(Context<E> &ctx) {};
+  virtual void populate_symtab(Context<E> &ctx) {};
+
+  i64 local_symtab_idx = 0;
+  i64 num_local_symtab = 0;
+  i64 strtab_size = 0;
+  i64 strtab_offset = 0;
+
 protected:
   Chunk() { shdr.sh_addralign = 1; }
 };
@@ -423,6 +435,9 @@ public:
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
 
+  void compute_symtab(Context<E> &ctx) override;
+  void populate_symtab(Context<E> &ctx) override;
+
   std::vector<InputSection<E> *> members;
   u32 idx;
 
@@ -430,13 +445,6 @@ public:
   std::vector<u64> relr;
 
   std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
-
-  // For range extension thunk symbols
-  void populate_symtab(Context<E> &ctx);
-  i64 local_symtab_idx = 0;
-  i64 num_local_symtab = 0;
-  i64 strtab_size = 0;
-  i64 strtab_offset = 0;
 
 private:
   OutputSection(std::string_view name, u32 type, u64 flags, u32 idx)
@@ -480,6 +488,9 @@ public:
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
+  void compute_symtab(Context<E> &ctx) override;
+  void populate_symtab(Context<E> &ctx) override;
+
   std::vector<Symbol<E> *> got_syms;
   std::vector<Symbol<E> *> gottp_syms;
   std::vector<Symbol<E> *> tlsgd_syms;
@@ -488,14 +499,6 @@ public:
 
   void construct_relr(Context<E> &ctx);
   std::vector<u64> relr;
-
-  // For symbol table
-  void compute_symtab(Context<E> &ctx);
-  void populate_symtab(Context<E> &ctx);
-  i64 local_symtab_idx = 0;
-  i64 num_local_symtab = 0;
-  i64 strtab_size = 0;
-  i64 strtab_offset = 0;
 
 private:
   std::vector<GotEntry<E>> get_entries(Context<E> &ctx) const;
@@ -534,14 +537,10 @@ public:
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
   void copy_buf(Context<E> &ctx) override;
 
-  std::vector<Symbol<E> *> symbols;
+  void compute_symtab(Context<E> &ctx) override;
+  void populate_symtab(Context<E> &ctx) override;
 
-  // For symbol table
-  void compute_symtab(Context<E> &ctx);
-  void populate_symtab(Context<E> &ctx);
-  i64 local_symtab_idx = 0;
-  i64 strtab_size = 0;
-  i64 strtab_offset = 0;
+  std::vector<Symbol<E> *> symbols;
 };
 
 template <typename E>
@@ -557,14 +556,10 @@ public:
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
   void copy_buf(Context<E> &ctx) override;
 
-  std::vector<Symbol<E> *> symbols;
+  void compute_symtab(Context<E> &ctx) override;
+  void populate_symtab(Context<E> &ctx) override;
 
-  // For symbol table
-  void compute_symtab(Context<E> &ctx);
-  void populate_symtab(Context<E> &ctx);
-  i64 local_symtab_idx = 0;
-  i64 strtab_size = 0;
-  i64 strtab_offset = 0;
+  std::vector<Symbol<E> *> symbols;
 };
 
 template <typename E>

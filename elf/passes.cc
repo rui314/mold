@@ -1071,17 +1071,10 @@ void construct_relr(Context<E> &ctx) {
 template <typename E>
 void create_output_symtab(Context<E> &ctx) {
   Timer t(ctx, "compute_symtab");
-  if (ctx.arg.strip_all)
-    return;
 
-  if (ctx.got)
-    ctx.got->compute_symtab(ctx);
-
-  if (ctx.plt)
-    ctx.plt->compute_symtab(ctx);
-
-  if (ctx.pltgot)
-    ctx.pltgot->compute_symtab(ctx);
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    chunk->compute_symtab(ctx);
+  });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->compute_symtab(ctx);

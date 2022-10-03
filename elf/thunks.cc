@@ -254,27 +254,6 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     reset_thunk(*osec.thunks[a++]);
 
   osec.shdr.sh_size = offset;
-
-  // Compute spaces needed for thunk symbols
-  if (!ctx.arg.strip_all && !ctx.arg.retain_symbols_file) {
-    osec.strtab_size = 0;
-    osec.num_local_symtab = 0;
-
-    if constexpr (std::is_same_v<E, ARM32>)
-      osec.strtab_size = 9; // for "$t", "$a" and "$d" symbols
-
-    for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec.thunks) {
-      // For ARM32, we emit additional symbol "$t", "$a" and "$d" for
-      // each thunk to mark the beginning of ARM code.
-      if constexpr (std::is_same_v<E, ARM32>)
-        osec.num_local_symtab += thunk->symbols.size() * 4;
-      else
-        osec.num_local_symtab += thunk->symbols.size();
-
-      for (Symbol<E> *sym : thunk->symbols)
-        osec.strtab_size += sym->name().size() + sizeof("@thunk");
-    }
-  }
 }
 
 #if defined(MOLD_ARM64) || defined(MOLD_ARM32) || defined(MOLD_PPC64V2)

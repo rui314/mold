@@ -467,24 +467,9 @@ template <typename E>
 void StrtabSection<E>::update_shdr(Context<E> &ctx) {
   i64 offset = 1;
 
-  if (ctx.got) {
-    ctx.got->strtab_offset = offset;
-    offset += ctx.got->strtab_size;
-  }
-
-  if (ctx.plt) {
-    ctx.plt->strtab_offset = offset;
-    offset += ctx.plt->strtab_size;
-  }
-
-  if (ctx.pltgot) {
-    ctx.pltgot->strtab_offset = offset;
-    offset += ctx.pltgot->strtab_size;
-  }
-
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-    osec->strtab_offset = offset;
-    offset += osec->strtab_size;
+  for (Chunk<E> *chunk : ctx.chunks) {
+    chunk->strtab_offset = offset;
+    offset += chunk->strtab_size;
   }
 
   for (ObjectFile<E> *file : ctx.objs) {
@@ -578,37 +563,19 @@ void SymtabSection<E>::update_shdr(Context<E> &ctx) {
     if (chunk->shndx && (chunk->shdr.sh_flags & SHF_ALLOC))
       nsyms++;
 
-  // GOT symbols
-  if (ctx.got) {
-    ctx.got->local_symtab_idx = nsyms;
-    nsyms += ctx.got->num_local_symtab;
+  // Linker-synthesized symbols
+  for (Chunk<E> *chunk : ctx.chunks) {
+    chunk->local_symtab_idx = nsyms;
+    nsyms += chunk->num_local_symtab;
   }
 
-  // PLT symbols
-  if (ctx.plt) {
-    ctx.plt->local_symtab_idx = nsyms;
-    nsyms += ctx.plt->symbols.size();
-  }
-
-  // PLTGOT symbols
-  if (ctx.pltgot) {
-    ctx.pltgot->local_symtab_idx = nsyms;
-    nsyms += ctx.pltgot->symbols.size();
-  }
-
-  // Range extension thunk symbols
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-    osec->local_symtab_idx = nsyms;
-    nsyms += osec->num_local_symtab;
-  }
-
-  // Local symbols
+  // File local symbols
   for (ObjectFile<E> *file : ctx.objs) {
     file->local_symtab_idx = nsyms;
     nsyms += file->num_local_symtab;
   }
 
-  // Global symbols
+  // File global symbols
   for (ObjectFile<E> *file : ctx.objs) {
     file->global_symtab_idx = nsyms;
     nsyms += file->num_global_symtab;
@@ -643,27 +610,12 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
     }
   }
 
-  // Populate GOT symbols
-  if (ctx.got)
-    ctx.got->populate_symtab(ctx);
+  // Populate linker-synthesized symbols
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    chunk->populate_symtab(ctx);
+  });
 
-  // Populate PLT symbols
-  if (ctx.plt)
-    ctx.plt->populate_symtab(ctx);
-
-  // Populate PLTGOT symbols
-  if (ctx.pltgot)
-    ctx.pltgot->populate_symtab(ctx);
-
-  // Populate range extension thunk symbols
-  if constexpr (needs_thunk<E>) {
-    tbb::parallel_for_each(ctx.output_sections,
-                           [&](std::unique_ptr<OutputSection<E>> &osec) {
-      osec->populate_symtab(ctx);
-    });
-  }
-
-  // Copy symbols and symbol names from input files
+  // Copy symbols from input files
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->populate_symtab(ctx);
   });
@@ -1061,21 +1013,48 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
   relr = encode_relr(pos, sizeof(Word<E>));
 }
 
+// Compute spaces needed for thunk symbols
+template <typename E>
+void OutputSection<E>::compute_symtab(Context<E> &ctx) {
+  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
+    return;
+
+  if constexpr (needs_thunk<E>) {
+    this->strtab_size = 0;
+    this->num_local_symtab = 0;
+
+    if constexpr (std::is_same_v<E, ARM32>)
+      this->strtab_size = 9; // for "$t", "$a" and "$d" symbols
+
+    for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks) {
+      // For ARM32, we emit additional symbol "$t", "$a" and "$d" for
+      // each thunk to mark the beginning of ARM code.
+      if constexpr (std::is_same_v<E, ARM32>)
+        this->num_local_symtab += thunk->symbols.size() * 4;
+      else
+        this->num_local_symtab += thunk->symbols.size();
+
+      for (Symbol<E> *sym : thunk->symbols)
+        this->strtab_size += sym->name().size() + sizeof("@thunk");
+    }
+  }
+}
+
 // If we create range extension thunks, we also synthesize symbols to mark
 // the locations of thunks. Creating such symbols is optional, but it helps
 // disassembling and/or debugging our output.
 template <typename E>
 void OutputSection<E>::populate_symtab(Context<E> &ctx) {
-  if (strtab_size == 0)
+  if (this->strtab_size == 0)
     return;
 
   if constexpr (needs_thunk<E>) {
     ElfSym<E> *esym =
-      (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + local_symtab_idx;
-    memset(esym, 0, num_local_symtab * sizeof(ElfSym<E>));
+      (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
+    memset(esym, 0, this->num_local_symtab * sizeof(ElfSym<E>));
 
     u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
-    u8 *strtab = strtab_base + strtab_offset;
+    u8 *strtab = strtab_base + this->strtab_offset;
 
     if constexpr (std::is_same_v<E, ARM32>) {
       // ARM uses these symbols to mark the begining of Thumb code, ARM
@@ -1104,9 +1083,9 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
 
         // Emit "$t", "$a" and "$d" if ARM32.
         if constexpr (std::is_same_v<E, ARM32>) {
-          write_esym(strtab_offset, 0);
-          write_esym(strtab_offset + 3, 4);
-          write_esym(strtab_offset + 6, 16);
+          write_esym(this->strtab_offset, 0);
+          write_esym(this->strtab_offset + 3, 4);
+          write_esym(this->strtab_offset + 6, 16);
         }
       }
     }
@@ -1309,37 +1288,46 @@ void GotSection<E>::compute_symtab(Context<E> &ctx) {
   if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return;
 
-  num_local_symtab = got_syms.size() + gottp_syms.size() + tlsgd_syms.size() +
-                     tlsdesc_syms.size() + (tlsld_idx != -1);
-  strtab_size = 0;
+  this->strtab_size = 0;
+  this->num_local_symtab = 0;
 
-  for (Symbol<E> *sym : got_syms)
-    strtab_size += sym->name().size() + sizeof("@got");
+  for (Symbol<E> *sym : got_syms) {
+    this->strtab_size += sym->name().size() + sizeof("@got");
+    this->num_local_symtab++;
+  }
 
-  for (Symbol<E> *sym : gottp_syms)
-    strtab_size += sym->name().size() + sizeof("@gottp");
+  for (Symbol<E> *sym : gottp_syms) {
+    this->strtab_size += sym->name().size() + sizeof("@gottp");
+    this->num_local_symtab++;
+  }
 
-  for (Symbol<E> *sym : tlsgd_syms)
-    strtab_size += sym->name().size() + sizeof("@tlsgd");
+  for (Symbol<E> *sym : tlsgd_syms) {
+    this->strtab_size += sym->name().size() + sizeof("@tlsgd");
+    this->num_local_symtab++;
+  }
 
-  for (Symbol<E> *sym : tlsdesc_syms)
-    strtab_size += sym->name().size() + sizeof("@tlsdesc");
+  for (Symbol<E> *sym : tlsdesc_syms) {
+    this->strtab_size += sym->name().size() + sizeof("@tlsdesc");
+    this->num_local_symtab++;
+  }
 
-  if (tlsld_idx != -1)
-    strtab_size += sizeof("@tlsld");
+  if (tlsld_idx != -1) {
+    this->strtab_size += sizeof("@tlsld");
+    this->num_local_symtab++;
+  }
 }
 
 template <typename E>
 void GotSection<E>::populate_symtab(Context<E> &ctx) {
-  if (strtab_size == 0)
+  if (this->strtab_size == 0)
     return;
 
   ElfSym<E> *esym =
-    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + local_symtab_idx;
-  memset(esym, 0, num_local_symtab * sizeof(ElfSym<E>));
+    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
+  memset(esym, 0, this->num_local_symtab * sizeof(ElfSym<E>));
 
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
-  u8 *strtab = strtab_base + strtab_offset;
+  u8 *strtab = strtab_base + this->strtab_offset;
 
   auto write = [&](std::string_view name, std::string_view suffix, i64 value) {
     esym->st_name = strtab - strtab_base;
@@ -1417,22 +1405,24 @@ void PltSection<E>::compute_symtab(Context<E> &ctx) {
   if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return;
 
-  strtab_size = 0;
+  this->num_local_symtab = symbols.size();
+  this->strtab_size = 0;
+
   for (Symbol<E> *sym : symbols)
-    strtab_size += sym->name().size() + sizeof("@plt");
+    this->strtab_size += sym->name().size() + sizeof("@plt");
 }
 
 template <typename E>
 void PltSection<E>::populate_symtab(Context<E> &ctx) {
-  if (strtab_size == 0)
+  if (this->strtab_size == 0)
     return;
 
   ElfSym<E> *esym =
-    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + local_symtab_idx;
+    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
   memset(esym, 0, symbols.size() * sizeof(ElfSym<E>));
 
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
-  u8 *strtab = strtab_base + strtab_offset;
+  u8 *strtab = strtab_base + this->strtab_offset;
 
   for (Symbol<E> *sym : symbols) {
     esym->st_name = strtab - strtab_base;
@@ -1461,22 +1451,24 @@ void PltGotSection<E>::compute_symtab(Context<E> &ctx) {
   if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return;
 
-  strtab_size = 0;
+  this->num_local_symtab = symbols.size();
+  this->strtab_size = 0;
+
   for (Symbol<E> *sym : symbols)
-    strtab_size += sym->name().size() + sizeof("@pltgot");
+    this->strtab_size += sym->name().size() + sizeof("@pltgot");
 }
 
 template <typename E>
 void PltGotSection<E>::populate_symtab(Context<E> &ctx) {
-  if (strtab_size == 0)
+  if (this->strtab_size == 0)
     return;
 
   ElfSym<E> *esym =
-    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + local_symtab_idx;
+    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
   memset(esym, 0, symbols.size() * sizeof(ElfSym<E>));
 
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
-  u8 *strtab = strtab_base + strtab_offset;
+  u8 *strtab = strtab_base + this->strtab_offset;
 
   for (Symbol<E> *sym : symbols) {
     esym->st_name = strtab - strtab_base;
