@@ -12,10 +12,9 @@ t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
-volatile char arr[0x800000000];
+volatile char arr[0x100000000];
 int main() {
-  arr[sizeof(arr) - 1] = 5;
-  return arr[100];
+  return arr[2000];
 }
 EOF
 
