@@ -11,14 +11,14 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-cat <<EOF | $CC -o $t/a.o -c -xc -
+cat <<EOF | $CC -o $t/a.o -c -xc - 2> /dev/null || { echo skipped; exit; }
 volatile char arr[0x100000000];
 int main() {
   return arr[2000];
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o 2> /dev/null || { echo skipped; exit; }
+$CC -B. -o $t/exe $t/a.o
 $QEMU $t/exe
 
 echo OK
