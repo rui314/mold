@@ -58,7 +58,6 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.strtab = push(new StrtabSection<E>);
   ctx.shstrtab = push(new ShstrtabSection<E>);
   ctx.plt = push(new PltSection<E>);
-  ctx.pltgot = push(new PltGotSection<E>);
   ctx.symtab = push(new SymtabSection<E>);
   ctx.dynsym = push(new DynsymSection<E>);
   ctx.dynstr = push(new DynstrSection<E>);
@@ -962,21 +961,12 @@ void scan_rels(Context<E> &ctx) {
     if (sym->flags & NEEDS_GOT)
       ctx.got->add_got_symbol(ctx, sym);
 
+    if (sym->flags & (NEEDS_PLT | NEEDS_CPLT))
+      ctx.plt->add_symbol(ctx, sym);
+
     if (sym->flags & NEEDS_CPLT) {
       sym->is_canonical = true;
-
-      // A canonical PLT needs to be visible from DSOs.
       sym->is_exported = true;
-
-      // We can't use .plt.got for a canonical PLT because otherwise
-      // .plt.got and .got would refer each other, resulting in an
-      // infinite loop at runtime.
-      ctx.plt->add_symbol(ctx, sym);
-    } else if (sym->flags & NEEDS_PLT) {
-      if (sym->flags & NEEDS_GOT)
-        ctx.pltgot->add_symbol(ctx, sym);
-      else
-        ctx.plt->add_symbol(ctx, sym);
     }
 
     if (sym->flags & NEEDS_GOTTP)

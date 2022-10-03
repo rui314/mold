@@ -1433,52 +1433,6 @@ void PltSection<E>::populate_symtab(Context<E> &ctx) {
 }
 
 template <typename E>
-void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  assert(!sym->has_plt(ctx));
-  assert(sym->has_got(ctx));
-
-  sym->set_pltgot_idx(ctx, this->shdr.sh_size / E::pltgot_size);
-  this->shdr.sh_size += E::pltgot_size;
-  symbols.push_back(sym);
-}
-
-template <typename E>
-void PltGotSection<E>::compute_symtab_size(Context<E> &ctx) {
-  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
-    return;
-
-  this->num_local_symtab = symbols.size();
-  this->strtab_size = 0;
-
-  for (Symbol<E> *sym : symbols)
-    this->strtab_size += sym->name().size() + sizeof("@pltgot");
-}
-
-template <typename E>
-void PltGotSection<E>::populate_symtab(Context<E> &ctx) {
-  if (this->strtab_size == 0)
-    return;
-
-  ElfSym<E> *esym =
-    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
-  memset(esym, 0, symbols.size() * sizeof(ElfSym<E>));
-
-  u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
-  u8 *strtab = strtab_base + this->strtab_offset;
-
-  for (Symbol<E> *sym : symbols) {
-    esym->st_name = strtab - strtab_base;
-    esym->st_type = STT_FUNC;
-    esym->st_shndx = this->shndx;
-    esym->st_value = sym->get_plt_addr(ctx);
-    esym++;
-
-    strtab += write_string(strtab, sym->name()) - 1;
-    strtab += write_string(strtab, "@pltgot");
-  }
-}
-
-template <typename E>
 void RelPltSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
 
@@ -2851,7 +2805,6 @@ template class OutputSection<E>;
 template class GotSection<E>;
 template class GotPltSection<E>;
 template class PltSection<E>;
-template class PltGotSection<E>;
 template class RelPltSection<E>;
 template class RelDynSection<E>;
 template class RelrDynSection<E>;

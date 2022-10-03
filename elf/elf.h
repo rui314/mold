@@ -2207,7 +2207,6 @@ struct X86_64 {
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0;
 };
 
@@ -2244,7 +2243,6 @@ struct I386 {
   static constexpr u32 e_machine = EM_386;
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 8;
   static constexpr u32 tls_dtv_offset = 0;
 };
 
@@ -2281,7 +2279,6 @@ struct ARM64 {
   static constexpr u32 e_machine = EM_AARCH64;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 12;
@@ -2320,7 +2317,6 @@ struct ARM32 {
   static constexpr u32 e_machine = EM_ARM;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0;
   static constexpr u32 thunk_hdr_size = 12;
   static constexpr u32 thunk_size = 20;
@@ -2358,7 +2354,6 @@ struct RV64LE {
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
 
   // When __tls_get_addr is called to resolve a thread-local variable's
   // address, the following two arguments are passed to the function:
@@ -2416,7 +2411,6 @@ struct RV64BE {
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
@@ -2452,7 +2446,6 @@ struct RV32LE {
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
@@ -2488,7 +2481,6 @@ struct RV32BE {
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
@@ -2524,7 +2516,6 @@ struct PPC64V2 {
   static constexpr u32 e_machine = EM_PPC64;
   static constexpr u32 plt_hdr_size = 60;
   static constexpr u32 plt_size = 4;
-  static constexpr u32 pltgot_size = 20;
   static constexpr u32 tls_dtv_offset = 0x8000;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 20;
@@ -2562,7 +2553,6 @@ struct SPARC64 {
   static constexpr u32 e_machine = EM_SPARC64;
   static constexpr u32 plt_hdr_size = 128;
   static constexpr u32 plt_size = 32;
-  static constexpr u32 pltgot_size = 32;
   static constexpr u32 tls_dtv_offset = 0;
 };
 

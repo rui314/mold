@@ -95,30 +95,12 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
       0xe59f'c004, // 1: ldr ip, 2f
       0xe08c'c00f, // add ip, ip, pc
       0xe59c'f000, // ldr pc, [ip]
-      0x0000'0000, // 2: .word sym@PLTGOT - 1b
+      0x0000'0000, // 2: .word sym@GOTPLT - 1b
     };
 
     u8 *ent = buf + sizeof(plt0) + sym->get_plt_idx(ctx) * sizeof(plt);
     memcpy(ent, plt, sizeof(plt));
     *(ul32 *)(ent + 12) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 12;
-  }
-}
-
-template <>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
-  for (Symbol<E> *sym : symbols) {
-    static const ul32 plt[] = {
-      0xe59f'c004, // 1: ldr ip, 2f
-      0xe08c'c00f, // add ip, ip, pc
-      0xe59c'f000, // ldr pc, [ip]
-      0x0000'0000, // 2: .word sym@GOT - 1b
-    };
-
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * sizeof(plt);
-    memcpy(ent, plt, sizeof(plt));
-    *(ul32 *)(ent + 12) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 12;
   }
 }
 

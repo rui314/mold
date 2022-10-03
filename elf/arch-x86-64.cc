@@ -77,23 +77,6 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-  memset(buf, 0xcc, this->shdr.sh_size);
-
-  static const u8 data[] = {
-    0xf3, 0x0f, 0x1e, 0xfa, // endbr64
-    0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-  };
-
-  for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
-    memcpy(ent, data, sizeof(data));
-    *(ul32 *)(ent + 6) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 10;
-  }
-}
-
-template <>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
