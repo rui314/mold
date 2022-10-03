@@ -355,7 +355,7 @@ public:
   // For example, range extension thunks adds function_name@thunk
   // symbol for each thunk entry. The following members are used
   // for synthesizing symbols.
-  virtual void compute_symtab(Context<E> &ctx) {};
+  virtual void compute_symtab_size(Context<E> &ctx) {};
   virtual void populate_symtab(Context<E> &ctx) {};
 
   i64 local_symtab_idx = 0;
@@ -435,7 +435,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
 
-  void compute_symtab(Context<E> &ctx) override;
+  void compute_symtab_size(Context<E> &ctx) override;
   void populate_symtab(Context<E> &ctx) override;
 
   std::vector<InputSection<E> *> members;
@@ -488,7 +488,7 @@ public:
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
-  void compute_symtab(Context<E> &ctx) override;
+  void compute_symtab_size(Context<E> &ctx) override;
   void populate_symtab(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> got_syms;
@@ -537,7 +537,7 @@ public:
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
   void copy_buf(Context<E> &ctx) override;
 
-  void compute_symtab(Context<E> &ctx) override;
+  void compute_symtab_size(Context<E> &ctx) override;
   void populate_symtab(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> symbols;
@@ -556,7 +556,7 @@ public:
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
   void copy_buf(Context<E> &ctx) override;
 
-  void compute_symtab(Context<E> &ctx) override;
+  void compute_symtab_size(Context<E> &ctx) override;
   void populate_symtab(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> symbols;
@@ -1146,7 +1146,7 @@ public:
   void claim_unresolved_symbols(Context<E> &ctx);
   void scan_relocations(Context<E> &ctx);
   void convert_common_symbols(Context<E> &ctx);
-  void compute_symtab(Context<E> &ctx);
+  void compute_symtab_size(Context<E> &ctx);
   void populate_symtab(Context<E> &ctx);
 
   i64 get_shndx(const ElfSym<E> &esym);
@@ -1227,7 +1227,7 @@ public:
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
 
-  void compute_symtab(Context<E> &ctx);
+  void compute_symtab_size(Context<E> &ctx);
   void populate_symtab(Context<E> &ctx);
 
   bool is_needed = false;

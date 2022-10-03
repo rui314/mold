@@ -1190,7 +1190,7 @@ static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
 }
 
 template <typename E>
-void ObjectFile<E>::compute_symtab(Context<E> &ctx) {
+void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
   if (ctx.arg.strip_all)
     return;
 
@@ -1488,7 +1488,7 @@ bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-void SharedFile<E>::compute_symtab(Context<E> &ctx) {
+void SharedFile<E>::compute_symtab_size(Context<E> &ctx) {
   if (ctx.arg.strip_all)
     return;
 

@@ -1015,7 +1015,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
 
 // Compute spaces needed for thunk symbols
 template <typename E>
-void OutputSection<E>::compute_symtab(Context<E> &ctx) {
+void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
   if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return;
 
@@ -1284,7 +1284,7 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
 }
 
 template <typename E>
-void GotSection<E>::compute_symtab(Context<E> &ctx) {
+void GotSection<E>::compute_symtab_size(Context<E> &ctx) {
   if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return;
 
@@ -1401,7 +1401,7 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-void PltSection<E>::compute_symtab(Context<E> &ctx) {
+void PltSection<E>::compute_symtab_size(Context<E> &ctx) {
   if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return;
 
@@ -1447,7 +1447,7 @@ void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-void PltGotSection<E>::compute_symtab(Context<E> &ctx) {
+void PltGotSection<E>::compute_symtab_size(Context<E> &ctx) {
   if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return;
 

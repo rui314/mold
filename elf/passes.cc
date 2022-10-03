@@ -1070,18 +1070,18 @@ void construct_relr(Context<E> &ctx) {
 
 template <typename E>
 void create_output_symtab(Context<E> &ctx) {
-  Timer t(ctx, "compute_symtab");
+  Timer t(ctx, "compute_symtab_size");
 
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    chunk->compute_symtab(ctx);
+    chunk->compute_symtab_size(ctx);
   });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->compute_symtab(ctx);
+    file->compute_symtab_size(ctx);
   });
 
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-    file->compute_symtab(ctx);
+    file->compute_symtab_size(ctx);
   });
 }
 
