@@ -90,6 +90,7 @@ struct SymbolAux {
   i32 tlsgd_idx = -1;
   i32 tlsdesc_idx = -1;
   i32 plt_idx = -1;
+  i32 pltgot_idx = -1;
   i32 dynsym_idx = -1;
 };
 
@@ -543,6 +544,25 @@ public:
 };
 
 template <typename E>
+class PltGotSection : public Chunk<E> {
+public:
+  PltGotSection() {
+    this->name = ".plt.got";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 16;
+  }
+
+  void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void copy_buf(Context<E> &ctx) override;
+
+  void compute_symtab_size(Context<E> &ctx) override;
+  void populate_symtab(Context<E> &ctx) override;
+
+  std::vector<Symbol<E> *> symbols;
+};
+
+template <typename E>
 class RelPltSection : public Chunk<E> {
 public:
   RelPltSection() {
@@ -621,7 +641,6 @@ public:
     this->name = ".dynstr";
     this->shdr.sh_type = SHT_STRTAB;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_size = 1;
   }
 
   void keep() { this->shdr.sh_size = 1; }
@@ -1618,6 +1637,7 @@ struct Context {
   GnuHashSection<E> *gnu_hash = nullptr;
   ShstrtabSection<E> *shstrtab = nullptr;
   PltSection<E> *plt = nullptr;
+  PltGotSection<E> *pltgot = nullptr;
   SymtabSection<E> *symtab = nullptr;
   DynsymSection<E> *dynsym = nullptr;
   EhFrameSection<E> *eh_frame = nullptr;
@@ -1751,6 +1771,7 @@ public:
   void set_tlsgd_idx(Context<E> &ctx, i32 idx);
   void set_tlsdesc_idx(Context<E> &ctx, i32 idx);
   void set_plt_idx(Context<E> &ctx, i32 idx);
+  void set_pltgot_idx(Context<E> &ctx, i32 idx);
   void set_dynsym_idx(Context<E> &ctx, i32 idx);
 
   i32 get_got_idx(Context<E> &ctx) const;
@@ -1759,6 +1780,7 @@ public:
   i32 get_tlsgd_idx(Context<E> &ctx) const;
   i32 get_tlsdesc_idx(Context<E> &ctx) const;
   i32 get_plt_idx(Context<E> &ctx) const;
+  i32 get_pltgot_idx(Context<E> &ctx) const;
   i32 get_dynsym_idx(Context<E> &ctx) const;
 
   bool has_plt(Context<E> &ctx) const;
@@ -2379,8 +2401,9 @@ inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
 
 template <typename E>
 inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
-  assert(get_plt_idx(ctx) != -1);
-  return ctx.plt->shdr.sh_addr + E::plt_hdr_size + get_plt_idx(ctx) * E::plt_size;
+  if (i32 idx = get_plt_idx(ctx); idx != -1)
+    return ctx.plt->shdr.sh_addr + E::plt_hdr_size + idx * E::plt_size;
+  return ctx.pltgot->shdr.sh_addr + get_pltgot_idx(ctx) * E::pltgot_size;
 }
 
 template <typename E>
@@ -2426,6 +2449,13 @@ inline void Symbol<E>::set_plt_idx(Context<E> &ctx, i32 idx) {
 }
 
 template <typename E>
+inline void Symbol<E>::set_pltgot_idx(Context<E> &ctx, i32 idx) {
+  assert(aux_idx != -1);
+  assert(ctx.symbol_aux[aux_idx].pltgot_idx < 0);
+  ctx.symbol_aux[aux_idx].pltgot_idx = idx;
+}
+
+template <typename E>
 inline void Symbol<E>::set_dynsym_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].dynsym_idx < 0);
@@ -2463,13 +2493,18 @@ inline i32 Symbol<E>::get_plt_idx(Context<E> &ctx) const {
 }
 
 template <typename E>
+inline i32 Symbol<E>::get_pltgot_idx(Context<E> &ctx) const {
+  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].pltgot_idx;
+}
+
+template <typename E>
 inline i32 Symbol<E>::get_dynsym_idx(Context<E> &ctx) const {
   return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].dynsym_idx;
 }
 
 template <typename E>
 inline bool Symbol<E>::has_plt(Context<E> &ctx) const {
-  return get_plt_idx(ctx) != -1;
+  return get_plt_idx(ctx) != -1 || get_pltgot_idx(ctx) != -1;
 }
 
 template <typename E>

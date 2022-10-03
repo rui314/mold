@@ -91,6 +91,29 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <>
+void PltGotSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  for (Symbol<E> *sym : symbols) {
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
+
+    static const ul32 data[] = {
+      0x9000'0010, // adrp x16, GOT[n]
+      0xf940'0211, // ldr  x17, [x16, GOT[n]]
+      0xd61f'0220, // br   x17
+      0xd503'201f, // nop
+    };
+
+    u64 got = sym->get_got_addr(ctx);
+    u64 plt = sym->get_plt_addr(ctx);
+
+    memcpy(ent, data, sizeof(data));
+    write_adrp(ent, page(got) - page(plt));
+    *(ul32 *)(ent + 4) |= bits(got, 11, 3) << 10;
+  }
+}
+
+template <>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
@@ -407,7 +430,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_PLT;
+      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
 
     switch (rel.r_type) {
     case R_AARCH64_ABS64:

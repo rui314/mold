@@ -97,6 +97,35 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <>
+void PltGotSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  if (ctx.arg.pic) {
+    static const u8 data[] = {
+      0xff, 0xa3, 0, 0, 0, 0, // jmp   *foo@GOT(%ebx)
+      0x66, 0x90,             // nop
+    };
+
+    for (i64 i = 0; i < symbols.size(); i++) {
+      u8 *ent = buf + i * sizeof(data);
+      memcpy(ent, data, sizeof(data));
+      *(ul32 *)(ent + 2) = symbols[i]->get_got_addr(ctx) - ctx.got->shdr.sh_addr;
+    }
+  } else {
+    static const u8 data[] = {
+      0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOT
+      0x66, 0x90,             // nop
+    };
+
+    for (i64 i = 0; i < symbols.size(); i++) {
+      u8 *ent = buf + i * sizeof(data);
+      memcpy(ent, data, sizeof(data));
+      *(ul32 *)(ent + 2) = symbols[i]->get_got_addr(ctx);
+    }
+  }
+}
+
+template <>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
@@ -412,7 +441,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_PLT;
+      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
 
     switch (rel.r_type) {
     case R_386_8:

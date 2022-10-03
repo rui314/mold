@@ -235,6 +235,25 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
+void PltGotSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  for (Symbol<E> *sym : symbols) {
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
+    u64 got = sym->get_got_addr(ctx);
+    u64 plt = sym->get_plt_addr(ctx);
+
+    if constexpr (E::is_64)
+      memcpy(ent, plt_entry_64, sizeof(plt_entry_64));
+    else
+      memcpy(ent, plt_entry_32, sizeof(plt_entry_32));
+
+    write_utype(ent, got - plt);
+    write_itype(ent + 4, got - plt);
+  }
+}
+
+template <typename E>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
@@ -684,7 +703,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_PLT;
+      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
 
     switch (rel.r_type) {
     case R_RISCV_32:
@@ -943,6 +962,7 @@ i64 riscv_resize_sections(Context<E> &ctx) {
 
 #define INSTANTIATE_RISCV(E)                                                 \
   template void PltSection<E>::copy_buf(Context<E> &);                       \
+  template void PltGotSection<E>::copy_buf(Context<E> &);                    \
   template void                                                              \
   EhFrameSection<E>::apply_reloc(Context<E> &, const ElfRel<E> &, u64, u64); \
   template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);      \

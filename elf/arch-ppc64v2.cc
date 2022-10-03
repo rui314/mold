@@ -112,6 +112,32 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <>
+void PltGotSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  static const ul32 entry[] = {
+    // Save %r2 to the caller's TOC save area
+    0xf841'0018, // std     r2, 24(r1)
+
+    // Set %r12 to this PLT entry's .got.plt value and jump there
+    0x3d82'0000, // addis   r12, r2, 0
+    0xe98c'0000, // ld      r12, 0(r12)
+    0x7d89'03a6, // mtctr   r12
+    0x4e80'0420, // bctr
+  };
+
+  for (Symbol<E> *sym : symbols) {
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
+    memcpy(ent, entry, sizeof(entry));
+
+    i64 val = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - ctx.TOC->value;
+    assert(val == sign_extend(val, 31));
+    *(ul32 *)(ent + 4) |= higha(val);
+    *(ul32 *)(ent + 8) |= lo(val);
+  }
+}
+
+template <>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
@@ -348,7 +374,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_PLT;
+      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:

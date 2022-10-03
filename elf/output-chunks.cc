@@ -432,6 +432,9 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   //   against the same symbol, are sorted by the address in the output
   //   file. This tends to optimize paging and caching when there are two
   //   references from the same page.
+  //
+  // We group IFUNC relocations at the end of .rel.dyn because we need to
+  // mark them with `__rel_iplt_start and `__rel_iplt_end`.
   tbb::parallel_sort(begin, end, [&](const ElfRel<E> &a, const ElfRel<E> &b) {
     return std::tuple(get_rank(a.r_type), a.r_sym, a.r_offset) <
            std::tuple(get_rank(b.r_type), b.r_sym, b.r_offset);
@@ -511,6 +514,9 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 i64 DynstrSection<E>::add_string(std::string_view str) {
+  if (this->shdr.sh_size == 0)
+    this->shdr.sh_size = 1;
+
   if (str.empty())
     return 0;
 
@@ -540,6 +546,7 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
 
   if (!ctx.dynsym->symbols.empty()) {
     i64 offset = dynsym_offset;
+
     for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
       Symbol<E> &sym = *ctx.dynsym->symbols[i];
       write_string(base + offset, sym.name());
@@ -1367,9 +1374,7 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   buf[2] = 0;
 
   for (Symbol<E> *sym : ctx.plt->symbols) {
-    if (sym->is_ifunc() && !is_rela<E>)
-      buf[sym->get_gotplt_idx(ctx)] = sym->get_addr(ctx, false);
-    else if (std::is_same_v<E, I386>)
+    if constexpr (std::is_same_v<E, I386>)
       buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
     else
       buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
@@ -1433,6 +1438,52 @@ void PltSection<E>::populate_symtab(Context<E> &ctx) {
 }
 
 template <typename E>
+void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
+  assert(!sym->has_plt(ctx));
+  assert(sym->has_got(ctx));
+
+  sym->set_pltgot_idx(ctx, this->shdr.sh_size / E::pltgot_size);
+  this->shdr.sh_size += E::pltgot_size;
+  symbols.push_back(sym);
+}
+
+template <typename E>
+void PltGotSection<E>::compute_symtab_size(Context<E> &ctx) {
+  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
+    return;
+
+  this->num_local_symtab = symbols.size();
+  this->strtab_size = 0;
+
+  for (Symbol<E> *sym : symbols)
+    this->strtab_size += sym->name().size() + sizeof("@pltgot");
+}
+
+template <typename E>
+void PltGotSection<E>::populate_symtab(Context<E> &ctx) {
+  if (this->strtab_size == 0)
+    return;
+
+  ElfSym<E> *esym =
+    (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
+  memset(esym, 0, symbols.size() * sizeof(ElfSym<E>));
+
+  u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
+  u8 *strtab = strtab_base + this->strtab_offset;
+
+  for (Symbol<E> *sym : symbols) {
+    esym->st_name = strtab - strtab_base;
+    esym->st_type = STT_FUNC;
+    esym->st_shndx = this->shndx;
+    esym->st_value = sym->get_plt_addr(ctx);
+    esym++;
+
+    strtab += write_string(strtab, sym->name()) - 1;
+    strtab += write_string(strtab, "@pltgot");
+  }
+}
+
+template <typename E>
 void RelPltSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
 
@@ -1455,10 +1506,7 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
     // point of view, though.
     u64 addr = is_sparc<E> ? sym.get_plt_addr(ctx) : sym.get_gotplt_addr(ctx);
 
-    if (sym.is_ifunc())
-      buf[i] = ElfRel<E>(addr, E::R_JUMP_IREL, 0, sym.get_addr(ctx, false));
-    else
-      buf[i] = ElfRel<E>(addr, E::R_JUMP_SLOT, sym.get_dynsym_idx(ctx), 0);
+    buf[i] = ElfRel<E>(addr, E::R_JUMP_SLOT, sym.get_dynsym_idx(ctx), 0);
   }
 }
 
@@ -2805,6 +2853,7 @@ template class OutputSection<E>;
 template class GotSection<E>;
 template class GotPltSection<E>;
 template class PltSection<E>;
+template class PltGotSection<E>;
 template class RelPltSection<E>;
 template class RelDynSection<E>;
 template class RelrDynSection<E>;

@@ -2194,7 +2194,6 @@ struct X86_64 {
   static constexpr u32 R_ABS = R_X86_64_64;
   static constexpr u32 R_RELATIVE = R_X86_64_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_X86_64_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_X86_64_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_X86_64_DTPOFF64;
   static constexpr u32 R_TPOFF = R_X86_64_TPOFF64;
   static constexpr u32 R_DTPMOD = R_X86_64_DTPMOD64;
@@ -2207,6 +2206,7 @@ struct X86_64 {
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0;
 };
 
@@ -2230,7 +2230,6 @@ struct I386 {
   static constexpr u32 R_ABS = R_386_32;
   static constexpr u32 R_RELATIVE = R_386_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_386_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_386_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_386_TLS_DTPOFF32;
   static constexpr u32 R_TPOFF = R_386_TLS_TPOFF;
   static constexpr u32 R_DTPMOD = R_386_TLS_DTPMOD32;
@@ -2243,6 +2242,7 @@ struct I386 {
   static constexpr u32 e_machine = EM_386;
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 8;
   static constexpr u32 tls_dtv_offset = 0;
 };
 
@@ -2266,7 +2266,6 @@ struct ARM64 {
   static constexpr u32 R_ABS = R_AARCH64_ABS64;
   static constexpr u32 R_RELATIVE = R_AARCH64_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_AARCH64_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_AARCH64_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_AARCH64_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_AARCH64_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_AARCH64_TLS_DTPMOD64;
@@ -2279,6 +2278,7 @@ struct ARM64 {
   static constexpr u32 e_machine = EM_AARCH64;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 12;
@@ -2304,7 +2304,6 @@ struct ARM32 {
   static constexpr u32 R_ABS = R_ARM_ABS32;
   static constexpr u32 R_RELATIVE = R_ARM_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_ARM_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_ARM_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_ARM_TLS_DTPOFF32;
   static constexpr u32 R_TPOFF = R_ARM_TLS_TPOFF32;
   static constexpr u32 R_DTPMOD = R_ARM_TLS_DTPMOD32;
@@ -2317,6 +2316,7 @@ struct ARM32 {
   static constexpr u32 e_machine = EM_ARM;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0;
   static constexpr u32 thunk_hdr_size = 12;
   static constexpr u32 thunk_size = 20;
@@ -2342,7 +2342,6 @@ struct RV64LE {
   static constexpr u32 R_ABS = R_RISCV_64;
   static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_RISCV_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
@@ -2354,6 +2353,7 @@ struct RV64LE {
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
 
   // When __tls_get_addr is called to resolve a thread-local variable's
   // address, the following two arguments are passed to the function:
@@ -2399,7 +2399,6 @@ struct RV64BE {
   static constexpr u32 R_ABS = R_RISCV_64;
   static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_RISCV_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
@@ -2411,6 +2410,7 @@ struct RV64BE {
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
@@ -2434,7 +2434,6 @@ struct RV32LE {
   static constexpr u32 R_ABS = R_RISCV_32;
   static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_RISCV_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
@@ -2446,6 +2445,7 @@ struct RV32LE {
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
@@ -2469,7 +2469,6 @@ struct RV32BE {
   static constexpr u32 R_ABS = R_RISCV_32;
   static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_RISCV_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
@@ -2481,6 +2480,7 @@ struct RV32BE {
   static constexpr u32 e_machine = EM_RISCV;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0x800;
 };
 
@@ -2504,7 +2504,6 @@ struct PPC64V2 {
   static constexpr u32 R_ABS = R_PPC64_ADDR64;
   static constexpr u32 R_RELATIVE = R_PPC64_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_PPC64_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_PPC64_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_PPC64_DTPREL64;
   static constexpr u32 R_TPOFF = R_PPC64_TPREL64;
   static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
@@ -2516,6 +2515,7 @@ struct PPC64V2 {
   static constexpr u32 e_machine = EM_PPC64;
   static constexpr u32 plt_hdr_size = 60;
   static constexpr u32 plt_size = 4;
+  static constexpr u32 pltgot_size = 20;
   static constexpr u32 tls_dtv_offset = 0x8000;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 20;
@@ -2541,7 +2541,6 @@ struct SPARC64 {
   static constexpr u32 R_ABS = R_SPARC_64;
   static constexpr u32 R_RELATIVE = R_SPARC_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_SPARC_IRELATIVE;
-  static constexpr u32 R_JUMP_IREL = R_SPARC_JMP_IREL;
   static constexpr u32 R_DTPOFF = R_SPARC_TLS_DTPOFF64;
   static constexpr u32 R_TPOFF = R_SPARC_TLS_TPOFF64;
   static constexpr u32 R_DTPMOD = R_SPARC_TLS_DTPMOD64;
@@ -2553,6 +2552,7 @@ struct SPARC64 {
   static constexpr u32 e_machine = EM_SPARC64;
   static constexpr u32 plt_hdr_size = 128;
   static constexpr u32 plt_size = 32;
+  static constexpr u32 pltgot_size = 32;
   static constexpr u32 tls_dtv_offset = 0;
 };
 

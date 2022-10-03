@@ -39,7 +39,10 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o
-$QEMU $t/exe | grep -q 'Hello world'
+$CC -B. -o $t/exe1 $t/a.o -Wl,-z,lazy
+$QEMU $t/exe1 | grep -q 'Hello world'
+
+$CC -B. -o $t/exe2 $t/a.o -Wl,-z,now
+$QEMU $t/exe2 | grep -q 'Hello world'
 
 echo OK

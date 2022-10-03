@@ -104,6 +104,24 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+template <>
+void PltGotSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+
+  for (Symbol<E> *sym : symbols) {
+    static const ul32 plt[] = {
+      0xe59f'c004, // 1: ldr ip, 2f
+      0xe08c'c00f, // add ip, ip, pc
+      0xe59c'f000, // ldr pc, [ip]
+      0x0000'0000, // 2: .word sym@GOT - 1b
+    };
+
+    u8 *ent = buf + sym->get_pltgot_idx(ctx) * sizeof(plt);
+    memcpy(ent, plt, sizeof(plt));
+    *(ul32 *)(ent + 12) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 12;
+  }
+}
+
 // ARM does not use .eh_frame for exception handling. Instead, it uses
 // .ARM.exidx and .ARM.extab. So this function is empty.
 template <>
@@ -416,7 +434,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_PLT;
+      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
 
     switch (rel.r_type) {
     case R_ARM_ABS32:
