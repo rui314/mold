@@ -193,8 +193,8 @@ Options:
     -z notext
     -z textoff
 
-mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf64-sparc
-mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf32briscv elf64lriscv elf64briscv elf64_sparc)";
+mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf64-s390 elf64-sparc
+mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf32briscv elf64lriscv elf64briscv elf64_s390 elf64_sparc)";
 
 static std::vector<std::string> add_dashes(std::string name) {
   // Single-letter option
@@ -447,7 +447,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                    << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n"
                    << "   aarch64linux\n   armelf_linux_eabi\n   elf64lriscv\n"
                    << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
-                   << "   elf64lppc\n   elf64_sparc";
+                   << "   elf64lppc\n   elf64_s390\n   elf64_sparc";
       version_shown = true;
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
@@ -468,6 +468,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.emulation = MachineType::RV32BE;
       } else if (arg == "elf64lppc") {
         ctx.arg.emulation = MachineType::PPC64V2;
+      } else if (arg == "elf64_s390") {
+        ctx.arg.emulation = MachineType::S390;
       } else if (arg == "elf64_sparc") {
         ctx.arg.emulation = MachineType::SPARC64;
       } else {

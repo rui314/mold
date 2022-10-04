@@ -304,7 +304,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     } else if constexpr (is_ppc<E>) {
       ctx.tp_addr = ctx.tls_begin + 0x7000;
     } else {
-      static_assert(is_riscv<E>);
+      static_assert(is_riscv<E> || is_s390<E>);
       ctx.tp_addr = ctx.tls_begin;
     }
   }
@@ -915,16 +915,29 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
+  auto clear = [&](u8 *loc, i64 size) {
+    // As a special case, .init and .fini are filled with NOPs because the
+    // runtime executes the sections as if they were a single function.
+    // .init and .fini are superceded by .init_array and .fini_array and
+    // being actively used only on s390x though.
+    if (is_s390<E> && (this->name == ".init" || this->name == ".fini")) {
+      for (i64 i = 0; i < size; i += 2)
+        *(ub16 *)(loc + i) = 0x0700; // nop
+    } else {
+      memset(loc, 0, size);
+    }
+  };
+
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
     // Copy section contents to an output file
     InputSection<E> &isec = *members[i];
     isec.write_to(ctx, buf + isec.offset);
 
-    // Zero-clear trailing padding
+    // Clear trailing padding
     u64 this_end = isec.offset + isec.sh_size;
     u64 next_start = (i == members.size() - 1) ?
       (u64)this->shdr.sh_size : members[i + 1]->offset;
-    memset(buf + this_end, 0, next_start - this_end);
+    clear(buf + this_end, next_start - this_end);
   });
 
   if constexpr (needs_thunk<E>) {

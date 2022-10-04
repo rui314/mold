@@ -19,6 +19,7 @@ struct RV32LE;
 struct RV32BE;
 struct PPC64V2;
 struct SPARC64;
+struct S390;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -37,7 +38,7 @@ static constexpr u32 R_NONE = 0;
 
 enum class MachineType {
   NONE, X86_64, I386, ARM64, ARM32, RV64LE, RV64BE, RV32LE, RV32BE,
-  PPC64V2, SPARC64,
+  PPC64V2, SPARC64, S390
 };
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
@@ -53,6 +54,7 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   case MachineType::RV32BE:  out << "riscv32be"; break;
   case MachineType::PPC64V2: out << "ppc64v2";   break;
   case MachineType::SPARC64: out << "sparc64";   break;
+  case MachineType::S390:    out << "s390";      break;
   }
   return out;
 }
@@ -176,6 +178,7 @@ static constexpr u32 EV_CURRENT = 1;
 static constexpr u32 EM_NONE = 0;
 static constexpr u32 EM_386 = 3;
 static constexpr u32 EM_PPC64 = 21;
+static constexpr u32 EM_S390 = 22;
 static constexpr u32 EM_ARM = 40;
 static constexpr u32 EM_SPARC64 = 43;
 static constexpr u32 EM_X86_64 = 62;
@@ -1499,6 +1502,146 @@ inline std::string rel_to_string<SPARC64>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
+static constexpr u32 R_390_NONE = 0;
+static constexpr u32 R_390_8 = 1;
+static constexpr u32 R_390_12 = 2;
+static constexpr u32 R_390_16 = 3;
+static constexpr u32 R_390_32 = 4;
+static constexpr u32 R_390_PC32 = 5;
+static constexpr u32 R_390_GOT12 = 6;
+static constexpr u32 R_390_GOT32 = 7;
+static constexpr u32 R_390_PLT32 = 8;
+static constexpr u32 R_390_COPY = 9;
+static constexpr u32 R_390_GLOB_DAT = 10;
+static constexpr u32 R_390_JMP_SLOT = 11;
+static constexpr u32 R_390_RELATIVE = 12;
+static constexpr u32 R_390_GOTOFF = 13;
+static constexpr u32 R_390_GOTPC = 14;
+static constexpr u32 R_390_GOT16 = 15;
+static constexpr u32 R_390_PC16 = 16;
+static constexpr u32 R_390_PC16DBL = 17;
+static constexpr u32 R_390_PLT16DBL = 18;
+static constexpr u32 R_390_PC32DBL = 19;
+static constexpr u32 R_390_PLT32DBL = 20;
+static constexpr u32 R_390_GOTPCDBL = 21;
+static constexpr u32 R_390_64 = 22;
+static constexpr u32 R_390_PC64 = 23;
+static constexpr u32 R_390_GOT64 = 24;
+static constexpr u32 R_390_PLT64 = 25;
+static constexpr u32 R_390_GOTENT = 26;
+static constexpr u32 R_390_GOTOFF16 = 27;
+static constexpr u32 R_390_GOTOFF64 = 28;
+static constexpr u32 R_390_GOTPLT12 = 29;
+static constexpr u32 R_390_GOTPLT16 = 30;
+static constexpr u32 R_390_GOTPLT32 = 31;
+static constexpr u32 R_390_GOTPLT64 = 32;
+static constexpr u32 R_390_GOTPLTENT = 33;
+static constexpr u32 R_390_PLTOFF16 = 34;
+static constexpr u32 R_390_PLTOFF32 = 35;
+static constexpr u32 R_390_PLTOFF64 = 36;
+static constexpr u32 R_390_TLS_LOAD = 37;
+static constexpr u32 R_390_TLS_GDCALL = 38;
+static constexpr u32 R_390_TLS_LDCALL = 39;
+static constexpr u32 R_390_TLS_GD32 = 40;
+static constexpr u32 R_390_TLS_GD64 = 41;
+static constexpr u32 R_390_TLS_GOTIE12 = 42;
+static constexpr u32 R_390_TLS_GOTIE32 = 43;
+static constexpr u32 R_390_TLS_GOTIE64 = 44;
+static constexpr u32 R_390_TLS_LDM32 = 45;
+static constexpr u32 R_390_TLS_LDM64 = 46;
+static constexpr u32 R_390_TLS_IE32 = 47;
+static constexpr u32 R_390_TLS_IE64 = 48;
+static constexpr u32 R_390_TLS_IEENT = 49;
+static constexpr u32 R_390_TLS_LE32 = 50;
+static constexpr u32 R_390_TLS_LE64 = 51;
+static constexpr u32 R_390_TLS_LDO32 = 52;
+static constexpr u32 R_390_TLS_LDO64 = 53;
+static constexpr u32 R_390_TLS_DTPMOD = 54;
+static constexpr u32 R_390_TLS_DTPOFF = 55;
+static constexpr u32 R_390_TLS_TPOFF = 56;
+static constexpr u32 R_390_20 = 57;
+static constexpr u32 R_390_GOT20 = 58;
+static constexpr u32 R_390_GOTPLT20 = 59;
+static constexpr u32 R_390_TLS_GOTIE20 = 60;
+static constexpr u32 R_390_IRELATIVE = 61;
+static constexpr u32 R_390_PC12DBL = 62;
+static constexpr u32 R_390_PLT12DBL = 63;
+static constexpr u32 R_390_PC24DBL = 64;
+static constexpr u32 R_390_PLT24DBL = 65;
+
+template <>
+inline std::string rel_to_string<S390>(u32 r_type) {
+  switch (r_type) {
+  case R_390_NONE: return "R_390_NONE";
+  case R_390_8: return "R_390_8";
+  case R_390_12: return "R_390_12";
+  case R_390_16: return "R_390_16";
+  case R_390_32: return "R_390_32";
+  case R_390_PC32: return "R_390_PC32";
+  case R_390_GOT12: return "R_390_GOT12";
+  case R_390_GOT32: return "R_390_GOT32";
+  case R_390_PLT32: return "R_390_PLT32";
+  case R_390_COPY: return "R_390_COPY";
+  case R_390_GLOB_DAT: return "R_390_GLOB_DAT";
+  case R_390_JMP_SLOT: return "R_390_JMP_SLOT";
+  case R_390_RELATIVE: return "R_390_RELATIVE";
+  case R_390_GOTOFF: return "R_390_GOTOFF";
+  case R_390_GOTPC: return "R_390_GOTPC";
+  case R_390_GOT16: return "R_390_GOT16";
+  case R_390_PC16: return "R_390_PC16";
+  case R_390_PC16DBL: return "R_390_PC16DBL";
+  case R_390_PLT16DBL: return "R_390_PLT16DBL";
+  case R_390_PC32DBL: return "R_390_PC32DBL";
+  case R_390_PLT32DBL: return "R_390_PLT32DBL";
+  case R_390_GOTPCDBL: return "R_390_GOTPCDBL";
+  case R_390_64: return "R_390_64";
+  case R_390_PC64: return "R_390_PC64";
+  case R_390_GOT64: return "R_390_GOT64";
+  case R_390_PLT64: return "R_390_PLT64";
+  case R_390_GOTENT: return "R_390_GOTENT";
+  case R_390_GOTOFF16: return "R_390_GOTOFF16";
+  case R_390_GOTOFF64: return "R_390_GOTOFF64";
+  case R_390_GOTPLT12: return "R_390_GOTPLT12";
+  case R_390_GOTPLT16: return "R_390_GOTPLT16";
+  case R_390_GOTPLT32: return "R_390_GOTPLT32";
+  case R_390_GOTPLT64: return "R_390_GOTPLT64";
+  case R_390_GOTPLTENT: return "R_390_GOTPLTENT";
+  case R_390_PLTOFF16: return "R_390_PLTOFF16";
+  case R_390_PLTOFF32: return "R_390_PLTOFF32";
+  case R_390_PLTOFF64: return "R_390_PLTOFF64";
+  case R_390_TLS_LOAD: return "R_390_TLS_LOAD";
+  case R_390_TLS_GDCALL: return "R_390_TLS_GDCALL";
+  case R_390_TLS_LDCALL: return "R_390_TLS_LDCALL";
+  case R_390_TLS_GD32: return "R_390_TLS_GD32";
+  case R_390_TLS_GD64: return "R_390_TLS_GD64";
+  case R_390_TLS_GOTIE12: return "R_390_TLS_GOTIE12";
+  case R_390_TLS_GOTIE32: return "R_390_TLS_GOTIE32";
+  case R_390_TLS_GOTIE64: return "R_390_TLS_GOTIE64";
+  case R_390_TLS_LDM32: return "R_390_TLS_LDM32";
+  case R_390_TLS_LDM64: return "R_390_TLS_LDM64";
+  case R_390_TLS_IE32: return "R_390_TLS_IE32";
+  case R_390_TLS_IE64: return "R_390_TLS_IE64";
+  case R_390_TLS_IEENT: return "R_390_TLS_IEENT";
+  case R_390_TLS_LE32: return "R_390_TLS_LE32";
+  case R_390_TLS_LE64: return "R_390_TLS_LE64";
+  case R_390_TLS_LDO32: return "R_390_TLS_LDO32";
+  case R_390_TLS_LDO64: return "R_390_TLS_LDO64";
+  case R_390_TLS_DTPMOD: return "R_390_TLS_DTPMOD";
+  case R_390_TLS_DTPOFF: return "R_390_TLS_DTPOFF";
+  case R_390_TLS_TPOFF: return "R_390_TLS_TPOFF";
+  case R_390_20: return "R_390_20";
+  case R_390_GOT20: return "R_390_GOT20";
+  case R_390_GOTPLT20: return "R_390_GOTPLT20";
+  case R_390_TLS_GOTIE20: return "R_390_TLS_GOTIE20";
+  case R_390_IRELATIVE: return "R_390_IRELATIVE";
+  case R_390_PC12DBL: return "R_390_PC12DBL";
+  case R_390_PLT12DBL: return "R_390_PLT12DBL";
+  case R_390_PC24DBL: return "R_390_PC24DBL";
+  case R_390_PLT24DBL: return "R_390_PLT24DBL";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
 //
 // DWARF data types
 //
@@ -2187,6 +2330,9 @@ static constexpr bool is_ppc = std::is_same_v<E, PPC64V2>;
 template <typename E>
 static constexpr bool is_sparc = std::is_same_v<E, SPARC64>;
 
+template <typename E>
+static constexpr bool is_s390 = std::is_same_v<E, S390>;
+
 struct X86_64 {
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
@@ -2533,6 +2679,41 @@ template <> struct ElfVerdef<PPC64V2>  : ELVerdef {};
 template <> struct ElfVerdaux<PPC64V2> : ELVerdaux {};
 template <> struct ElfChdr<PPC64V2>    : EL64Chdr {};
 template <> struct ElfNhdr<PPC64V2>    : ELNhdr {};
+
+struct S390 {
+  static constexpr u32 R_COPY = R_390_COPY;
+  static constexpr u32 R_GLOB_DAT = R_390_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_390_JMP_SLOT;
+  static constexpr u32 R_ABS = R_390_64;
+  static constexpr u32 R_RELATIVE = R_390_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_390_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_390_TLS_DTPOFF;
+  static constexpr u32 R_TPOFF = R_390_TLS_TPOFF;
+  static constexpr u32 R_DTPMOD = R_390_TLS_DTPMOD;
+
+  static constexpr MachineType machine_type = MachineType::S390;
+  static constexpr bool is_64 = true;
+  static constexpr bool is_le = false;
+  static constexpr u32 page_size = 4096;
+  static constexpr u32 e_machine = EM_S390;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 32;
+  static constexpr u32 pltgot_size = 16;
+  static constexpr u32 tls_dtv_offset = 0;
+};
+
+template <> struct ElfSym<S390>     : EB64Sym {};
+template <> struct ElfShdr<S390>    : EB64Shdr {};
+template <> struct ElfEhdr<S390>    : EB64Ehdr {};
+template <> struct ElfPhdr<S390>    : EB64Phdr {};
+template <> struct ElfRel<S390>     : EB64Rela { using EB64Rela::EB64Rela; };
+template <> struct ElfDyn<S390>     : EB64Dyn {};
+template <> struct ElfVerneed<S390> : EBVerneed {};
+template <> struct ElfVernaux<S390> : EBVernaux {};
+template <> struct ElfVerdef<S390>  : EBVerdef {};
+template <> struct ElfVerdaux<S390> : EBVerdaux {};
+template <> struct ElfChdr<S390>    : EB64Chdr {};
+template <> struct ElfNhdr<S390>    : EBNhdr {};
 
 struct SPARC64 {
   static constexpr u32 R_COPY = R_SPARC_COPY;
