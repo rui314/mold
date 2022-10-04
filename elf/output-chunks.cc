@@ -1036,7 +1036,7 @@ void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
         this->num_local_symtab += thunk->symbols.size();
 
       for (Symbol<E> *sym : thunk->symbols)
-        this->strtab_size += sym->name().size() + sizeof("@thunk");
+        this->strtab_size += sym->name().size() + sizeof("$thunk");
     }
   }
 }
@@ -1080,7 +1080,7 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
         write_esym(strtab - strtab_base, 0);
 
         strtab += write_string(strtab, sym.name()) - 1;
-        strtab += write_string(strtab, "@thunk");
+        strtab += write_string(strtab, "$thunk");
 
         // Emit "$t", "$a" and "$d" if ARM32.
         if constexpr (std::is_same_v<E, ARM32>) {
@@ -1293,27 +1293,27 @@ void GotSection<E>::compute_symtab_size(Context<E> &ctx) {
   this->num_local_symtab = 0;
 
   for (Symbol<E> *sym : got_syms) {
-    this->strtab_size += sym->name().size() + sizeof("@got");
+    this->strtab_size += sym->name().size() + sizeof("$got");
     this->num_local_symtab++;
   }
 
   for (Symbol<E> *sym : gottp_syms) {
-    this->strtab_size += sym->name().size() + sizeof("@gottp");
+    this->strtab_size += sym->name().size() + sizeof("$gottp");
     this->num_local_symtab++;
   }
 
   for (Symbol<E> *sym : tlsgd_syms) {
-    this->strtab_size += sym->name().size() + sizeof("@tlsgd");
+    this->strtab_size += sym->name().size() + sizeof("$tlsgd");
     this->num_local_symtab++;
   }
 
   for (Symbol<E> *sym : tlsdesc_syms) {
-    this->strtab_size += sym->name().size() + sizeof("@tlsdesc");
+    this->strtab_size += sym->name().size() + sizeof("$tlsdesc");
     this->num_local_symtab++;
   }
 
   if (tlsld_idx != -1) {
-    this->strtab_size += sizeof("@tlsld");
+    this->strtab_size += sizeof("$tlsld");
     this->num_local_symtab++;
   }
 }
@@ -1342,19 +1342,19 @@ void GotSection<E>::populate_symtab(Context<E> &ctx) {
   };
 
   for (Symbol<E> *sym : got_syms)
-    write(sym->name(), "@got", sym->get_got_addr(ctx));
+    write(sym->name(), "$got", sym->get_got_addr(ctx));
 
   for (Symbol<E> *sym : gottp_syms)
-    write(sym->name(), "@gottp", sym->get_gottp_addr(ctx));
+    write(sym->name(), "$gottp", sym->get_gottp_addr(ctx));
 
   for (Symbol<E> *sym : tlsgd_syms)
-    write(sym->name(), "@tlsgd", sym->get_tlsgd_addr(ctx));
+    write(sym->name(), "$tlsgd", sym->get_tlsgd_addr(ctx));
 
   for (Symbol<E> *sym : tlsdesc_syms)
-    write(sym->name(), "@tlsdesc", sym->get_tlsdesc_addr(ctx));
+    write(sym->name(), "$tlsdesc", sym->get_tlsdesc_addr(ctx));
 
   if (tlsld_idx != -1)
-    write("", "@tlsld", get_tlsld_addr(ctx));
+    write("", "$tlsld", get_tlsld_addr(ctx));
 }
 
 template <typename E>
@@ -1415,7 +1415,7 @@ void PltSection<E>::compute_symtab_size(Context<E> &ctx) {
   this->strtab_size = 0;
 
   for (Symbol<E> *sym : symbols)
-    this->strtab_size += sym->name().size() + sizeof("@plt");
+    this->strtab_size += sym->name().size() + sizeof("$plt");
 }
 
 template <typename E>
@@ -1438,7 +1438,7 @@ void PltSection<E>::populate_symtab(Context<E> &ctx) {
     esym++;
 
     strtab += write_string(strtab, sym->name()) - 1;
-    strtab += write_string(strtab, "@plt");
+    strtab += write_string(strtab, "$plt");
   }
 }
 
@@ -1468,7 +1468,7 @@ void PltGotSection<E>::compute_symtab_size(Context<E> &ctx) {
   this->strtab_size = 0;
 
   for (Symbol<E> *sym : symbols)
-    this->strtab_size += sym->name().size() + sizeof("@pltgot");
+    this->strtab_size += sym->name().size() + sizeof("$pltgot");
 }
 
 template <typename E>
@@ -1491,7 +1491,7 @@ void PltGotSection<E>::populate_symtab(Context<E> &ctx) {
     esym++;
 
     strtab += write_string(strtab, sym->name()) - 1;
-    strtab += write_string(strtab, "@pltgot");
+    strtab += write_string(strtab, "$pltgot");
   }
 }
 
