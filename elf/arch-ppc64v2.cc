@@ -112,10 +112,10 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 
 template <>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  // Just like .plt, no one uses .got.plt at runtime because all calls
-  // to .got.plt are made via range extension thunks and range extension
-  // thunks directly calls the final destination by reading a .got entry.
-  // Here, we just set a dummy instruction.
+  // No one uses .got.plt at runtime because all calls to .got.plt are
+  // made via range extension thunks. Range extension thunks directly
+  // calls the final destination by reading a .got entry. Here, we just
+  // set a dummy instruction.
   //
   // I believe we can completely elimnate .got.plt, but saving 4 bytes
   // for each GOTPLT entry doesn't seem to be worth its complexity.

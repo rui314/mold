@@ -1366,19 +1366,15 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
     return;
 
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
+  memset(buf, 0, this->shdr.sh_size);
 
   // The first slot of .got.plt points to _DYNAMIC, as requested by
   // the psABI. The second and the third slots are reserved by the psABI.
-  buf[0] = ctx.dynamic ? (u64)ctx.dynamic->shdr.sh_addr : 0;
-  buf[1] = 0;
-  buf[2] = 0;
+  if (ctx.dynamic)
+    buf[0] = ctx.dynamic->shdr.sh_addr;
 
-  for (Symbol<E> *sym : ctx.plt->symbols) {
-    if constexpr (std::is_same_v<E, I386>)
-      buf[sym->get_gotplt_idx(ctx)] = sym->get_plt_addr(ctx) + 6;
-    else
-      buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
-  }
+  for (Symbol<E> *sym : ctx.plt->symbols)
+    buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
 }
 
 template <typename E>

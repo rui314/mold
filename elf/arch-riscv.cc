@@ -184,14 +184,13 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     0x000e'0067, // jr     t3
   };
 
-  u64 gotplt = ctx.gotplt->shdr.sh_addr;
-  u64 plt = ctx.plt->shdr.sh_addr;
-
   if constexpr (E::is_64)
     memcpy(buf, insn_64, sizeof(insn_64));
   else
     memcpy(buf, insn_32, sizeof(insn_32));
 
+  u64 gotplt = ctx.gotplt->shdr.sh_addr;
+  u64 plt = ctx.plt->shdr.sh_addr;
   write_utype(buf, gotplt - plt);
   write_itype(buf + 8, gotplt - plt);
   write_itype(buf + 16, gotplt - plt);

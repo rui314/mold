@@ -43,22 +43,25 @@ template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {
-      0xff, 0xb3, 0, 0, 0, 0, // pushl GOTPLT+4(%ebx)
-      0xff, 0xa3, 0, 0, 0, 0, // jmp *GOTPLT+8(%ebx)
-      0x90, 0x90, 0x90, 0x90, // nop
+      0xf3, 0x0f, 0x1e, 0xfb, // endbr32
+      0x51,                   // push   %ecx
+      0x8d, 0x8b, 0, 0, 0, 0, // lea    GOTPLT+4(%ebx), %ecx
+      0xff, 0x31,             // push   (%ecx)
+      0xff, 0x61, 0x04,       // jmp    *0x4(%ecx)
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - ctx.got->shdr.sh_addr + 4;
-    *(ul32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - ctx.got->shdr.sh_addr + 8;
+    *(ul32 *)(buf + 7) = ctx.gotplt->shdr.sh_addr - ctx.got->shdr.sh_addr + 4;
   } else {
     static const u8 insn[] = {
-      0xff, 0x35, 0, 0, 0, 0, // pushl GOTPLT+4
-      0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+8
-      0x90, 0x90, 0x90, 0x90, // nop
+      0xf3, 0x0f, 0x1e, 0xfb, // endbr32
+      0x51,                   // push   %ecx
+      0xb9, 0, 0, 0, 0,       // mov    GOTPLT+4, %ecx
+      0xff, 0x31,             // push   (%ecx)
+      0xff, 0x61, 0x04,       // jmp    *0x4(%ecx)
+      0x90,                   // nop
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr + 4;
-    *(ul32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr + 8;
+    *(ul32 *)(buf + 6) = ctx.gotplt->shdr.sh_addr + 4;
   }
 }
 
@@ -66,42 +69,45 @@ template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {
+      0xf3, 0x0f, 0x1e, 0xfb, // endbr32
+      0xb9, 0, 0, 0, 0,       // mov $reloc_offset, %ecx
       0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
-      0x68, 0,    0, 0, 0,    // pushl $reloc_offset
-      0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
+      0x90,                   // nop
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 2) = sym.get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
+    *(ul32 *)(buf + 11) = sym.get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
   } else {
     static const u8 insn[] = {
+      0xf3, 0x0f, 0x1e, 0xfb, // endbr32
+      0xb9, 0, 0, 0, 0,       // mov $reloc_offset, %ecx
       0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-      0x68, 0,    0, 0, 0,    // pushl $reloc_offset
-      0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
+      0x90,                   // nop
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 2) = sym.get_gotplt_addr(ctx);
+    *(ul32 *)(buf + 11) = sym.get_gotplt_addr(ctx);
   }
 
-  *(ul32 *)(buf + 7) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
-  *(ul32 *)(buf + 12) = ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 16;
+  *(ul32 *)(buf + 5) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
 }
 
 template <>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {
-      0xff, 0xa3, 0, 0, 0, 0, // jmp   *foo@GOT(%ebx)
-      0x66, 0x90,             // nop
+      0xf3, 0x0f, 0x1e, 0xfb,             // endbr32
+      0xff, 0xa3, 0, 0, 0, 0,             // jmp *foo@GOT(%ebx)
+      0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 2) = sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr;
+    *(ul32 *)(buf + 6) = sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr;
   } else {
     static const u8 insn[] = {
-      0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOT
-      0x66, 0x90,             // nop
+      0xf3, 0x0f, 0x1e, 0xfb,             // endbr32
+      0xff, 0x25, 0, 0, 0, 0,             // jmp *foo@GOT
+      0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 2) = sym.get_got_addr(ctx);
+    *(ul32 *)(buf + 6) = sym.get_got_addr(ctx);
   }
 }
 
