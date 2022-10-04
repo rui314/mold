@@ -28,8 +28,8 @@ docker run --platform linux/$arch -it --rm -v "$(pwd):/mold" \
   bash -c "mkdir /tmp/build &&
 cd /tmp/build &&
 cmake -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10 -DMOLD_MOSTLY_STATIC=On -DCMAKE_BUILD_TYPE=Release /mold &&
-cmake --build . -j\$(nproc)
-cmake --install . --prefix $dest --strip
+cmake --build . -j\$(nproc) &&
+cmake --install . --prefix $dest --strip &&
 tar czf /mold/$dest.tar.gz $dest &&
 cp mold mold-wrapper.so /mold &&
 chown \$OWNER /mold/mold /mold/mold-wrapper.so /mold/$dest.tar.gz"
