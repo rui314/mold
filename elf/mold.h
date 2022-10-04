@@ -332,6 +332,15 @@ i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
 template <typename E>
 bool is_relro(Context<E> &ctx, Chunk<E> *chunk);
 
+template <typename E>
+void write_plt_header(Context<E> &ctx, u8 *buf);
+
+template <typename E>
+void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym);
+
+template <typename E>
+void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym);
+
 typedef enum { HEADER, OUTPUT_SECTION, SYNTHETIC } ChunkKind;
 
 // Chunk represents a contiguous region in an output file.

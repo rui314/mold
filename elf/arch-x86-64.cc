@@ -44,53 +44,47 @@ using E = X86_64;
 // Our PLT entry clobbers %r11, but that's fine because the resolver
 // function (_dl_runtime_resolve) clobbers %r11 anyway.
 template <>
-void PltSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-  memset(buf, 0xcc, this->shdr.sh_size);
-
-  // Write PLT header
-  static const u8 plt0[] = {
+void write_plt_header(Context<E> &ctx, u8 *buf) {
+  static const u8 insn[] = {
     0xf3, 0x0f, 0x1e, 0xfa, // endbr64
     0x41, 0x53,             // push %r11
     0xff, 0x35, 0, 0, 0, 0, // push GOTPLT+8(%rip)
     0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
+    0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+    0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+    0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+    0xcc, 0xcc,             // (padding)
   };
 
-  memcpy(buf, plt0, sizeof(plt0));
-  *(ul32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr - 4;
-  *(ul32 *)(buf + 14) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr - 2;
+  memcpy(buf, insn, sizeof(insn));
+  *(ul32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 4;
+  *(ul32 *)(buf + 14) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 2;
+}
 
-  // Write PLT entries
-  static const u8 data[] = {
+template <>
+void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  static const u8 insn[] = {
     0xf3, 0x0f, 0x1e, 0xfa, // endbr64
     0x41, 0xbb, 0, 0, 0, 0, // mov $index_in_relplt, %r11d
     0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
   };
 
-  for (Symbol<E> *sym : symbols) {
-    i64 idx = sym->get_plt_idx(ctx);
-    u8 *ent = buf + E::plt_hdr_size + idx * E::plt_size;
-    memcpy(ent, data, sizeof(data));
-    *(ul32 *)(ent + 6) = idx;
-    *(ul32 *)(ent + 12) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 16;
-  }
+  memcpy(buf, insn, sizeof(insn));
+  *(ul32 *)(buf + 6) = sym.get_plt_idx(ctx);
+  *(ul32 *)(buf + 12) = sym.get_gotplt_addr(ctx) - sym.get_plt_addr(ctx) - 16;
 }
 
 template <>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-  memset(buf, 0xcc, this->shdr.sh_size);
-
-  static const u8 data[] = {
+void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  static const u8 insn[] = {
     0xf3, 0x0f, 0x1e, 0xfa, // endbr64
     0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
+    0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+    0xcc, 0xcc,             // (padding)
   };
 
-  for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
-    memcpy(ent, data, sizeof(data));
-    *(ul32 *)(ent + 6) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 10;
-  }
+  memcpy(buf, insn, sizeof(insn));
+  *(ul32 *)(buf + 6) = sym.get_got_addr(ctx) - sym.get_plt_addr(ctx) - 10;
 }
 
 template <>

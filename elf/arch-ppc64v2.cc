@@ -76,10 +76,8 @@ static u64 highesta(u64 x) { return (x + 0x8000) >> 48; }
 // written to .got.plt, thunks just skip .plt and directly jump to the
 // resolved addresses.
 template <>
-void PltSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
-  static const ul32 plt0[] = {
+void write_plt_header(Context<E> &ctx, u8 *buf) {
+  static const ul32 insn[] = {
     // Get PC
     0x7c08'02a6, // mflr    r0
     0x429f'0005, // bcl     1f
@@ -101,40 +99,27 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
     0x0000'0000,
   };
 
-  static_assert(E::plt_hdr_size == sizeof(plt0));
-  memcpy(buf, plt0, sizeof(plt0));
+  memcpy(buf, insn, sizeof(insn));
   *(ul64 *)(buf + 52) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 8;
-
-  for (i64 i = 0; i < symbols.size(); i++) {
-    i64 disp = E::plt_hdr_size + i * E::plt_size;
-    *(ul32 *)(buf + disp) = 0x4b00'0000 | (-disp & 0x00ff'ffff); // bl plt0
-  }
 }
 
 template <>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
+void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  // bl plt0
+  *(ul32 *)buf = 0x4b00'0000;
+  *(ul32 *)buf |= (ctx.plt->shdr.sh_addr -sym.get_plt_addr(ctx)) & 0x00ff'ffff;
+}
 
-  static const ul32 entry[] = {
-    // Save %r2 to the caller's TOC save area
-    0xf841'0018, // std     r2, 24(r1)
-
-    // Set %r12 to this PLT entry's .got.plt value and jump there
-    0x3d82'0000, // addis   r12, r2, 0
-    0xe98c'0000, // ld      r12, 0(r12)
-    0x7d89'03a6, // mtctr   r12
-    0x4e80'0420, // bctr
-  };
-
-  for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
-    memcpy(ent, entry, sizeof(entry));
-
-    i64 val = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - ctx.TOC->value;
-    assert(val == sign_extend(val, 31));
-    *(ul32 *)(ent + 4) |= higha(val);
-    *(ul32 *)(ent + 8) |= lo(val);
-  }
+template <>
+void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  // Just like .plt, no one uses .got.plt at runtime because all calls
+  // to .got.plt are made via range extension thunks and range extension
+  // thunks directly calls the final destination by reading a .got entry.
+  // Here, we just set a dummy instruction.
+  //
+  // I believe we can completely elimnate .got.plt, but saving 4 bytes
+  // for each GOTPLT entry doesn't seem to be worth its complexity.
+  *(ul32 *)buf = 0x6000'0000; // nop
 }
 
 template <>

@@ -161,10 +161,8 @@ static void set_rs1(u8 *loc, u32 rs1) {
 }
 
 template <typename E>
-static void write_plt_header(Context<E> &ctx) {
-  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
-
-  static const ul32 plt0_64[] = {
+void write_plt_header(Context<E> &ctx, u8 *buf) {
+  static const ul32 insn_64[] = {
     0x0000'0397, // auipc  t2, %pcrel_hi(.got.plt)
     0x41c3'0333, // sub    t1, t1, t3               # .plt entry + hdr + 12
     0x0003'be03, // ld     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
@@ -175,7 +173,7 @@ static void write_plt_header(Context<E> &ctx) {
     0x000e'0067, // jr     t3
   };
 
-  static const ul32 plt0_32[] = {
+  static const ul32 insn_32[] = {
     0x0000'0397, // auipc  t2, %pcrel_hi(.got.plt)
     0x41c3'0333, // sub    t1, t1, t3               # .plt entry + hdr + 12
     0x0003'ae03, // lw     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
@@ -186,13 +184,13 @@ static void write_plt_header(Context<E> &ctx) {
     0x000e'0067, // jr     t3
   };
 
-  if constexpr (E::is_64)
-    memcpy(buf, plt0_64, sizeof(plt0_64));
-  else
-    memcpy(buf, plt0_32, sizeof(plt0_32));
-
   u64 gotplt = ctx.gotplt->shdr.sh_addr;
   u64 plt = ctx.plt->shdr.sh_addr;
+
+  if constexpr (E::is_64)
+    memcpy(buf, insn_64, sizeof(insn_64));
+  else
+    memcpy(buf, insn_32, sizeof(insn_32));
 
   write_utype(buf, gotplt - plt);
   write_itype(buf + 8, gotplt - plt);
@@ -214,43 +212,29 @@ static const ul32 plt_entry_32[] = {
 };
 
 template <typename E>
-void PltSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
+void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  if constexpr (E::is_64)
+    memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
+  else
+    memcpy(buf, plt_entry_32, sizeof(plt_entry_32));
 
-  write_plt_header(ctx);
-
-  for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + E::plt_hdr_size + sym->get_plt_idx(ctx) * E::plt_size;
-    u64 gotplt = sym->get_gotplt_addr(ctx);
-    u64 plt = sym->get_plt_addr(ctx);
-
-    if constexpr (E::is_64)
-      memcpy(ent, plt_entry_64, sizeof(plt_entry_64));
-    else
-      memcpy(ent, plt_entry_32, sizeof(plt_entry_32));
-
-    write_utype(ent, gotplt - plt);
-    write_itype(ent + 4, gotplt - plt);
-  }
+  u64 gotplt = sym.get_gotplt_addr(ctx);
+  u64 plt = sym.get_plt_addr(ctx);
+  write_utype(buf, gotplt - plt);
+  write_itype(buf + 4, gotplt - plt);
 }
 
 template <typename E>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
+void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  if constexpr (E::is_64)
+    memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
+  else
+    memcpy(buf, plt_entry_32, sizeof(plt_entry_32));
 
-  for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
-    u64 got = sym->get_got_addr(ctx);
-    u64 plt = sym->get_plt_addr(ctx);
-
-    if constexpr (E::is_64)
-      memcpy(ent, plt_entry_64, sizeof(plt_entry_64));
-    else
-      memcpy(ent, plt_entry_32, sizeof(plt_entry_32));
-
-    write_utype(ent, got - plt);
-    write_itype(ent + 4, got - plt);
-  }
+  u64 got = sym.get_got_addr(ctx);
+  u64 plt = sym.get_plt_addr(ctx);
+  write_utype(buf, got - plt);
+  write_itype(buf + 4, got - plt);
 }
 
 template <typename E>
@@ -961,8 +945,9 @@ i64 riscv_resize_sections(Context<E> &ctx) {
 }
 
 #define INSTANTIATE_RISCV(E)                                                 \
-  template void PltSection<E>::copy_buf(Context<E> &);                       \
-  template void PltGotSection<E>::copy_buf(Context<E> &);                    \
+  template void write_plt_header(Context<E> &, u8 *);                        \
+  template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);            \
+  template void write_pltgot_entry(Context<E> &, u8 *, Symbol<E> &);         \
   template void                                                              \
   EhFrameSection<E>::apply_reloc(Context<E> &, const ElfRel<E> &, u64, u64); \
   template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);      \

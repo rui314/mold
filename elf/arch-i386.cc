@@ -39,89 +39,69 @@ namespace mold::elf {
 
 using E = I386;
 
-static void write_plt_header(Context<E> &ctx, u8 *buf) {
+template <>
+void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
-    static const u8 plt0[] = {
+    static const u8 insn[] = {
       0xff, 0xb3, 0, 0, 0, 0, // pushl GOTPLT+4(%ebx)
       0xff, 0xa3, 0, 0, 0, 0, // jmp *GOTPLT+8(%ebx)
       0x90, 0x90, 0x90, 0x90, // nop
     };
-    memcpy(buf, plt0, sizeof(plt0));
+    memcpy(buf, insn, sizeof(insn));
     *(ul32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr - ctx.got->shdr.sh_addr + 4;
     *(ul32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr - ctx.got->shdr.sh_addr + 8;
   } else {
-    static const u8 plt0[] = {
+    static const u8 insn[] = {
       0xff, 0x35, 0, 0, 0, 0, // pushl GOTPLT+4
       0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+8
       0x90, 0x90, 0x90, 0x90, // nop
     };
-    memcpy(buf, plt0, sizeof(plt0));
+    memcpy(buf, insn, sizeof(insn));
     *(ul32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr + 4;
     *(ul32 *)(buf + 8) = ctx.gotplt->shdr.sh_addr + 8;
   }
 }
 
-static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym,
-                            i64 idx) {
-  u8 *ent = buf + E::plt_hdr_size + sym.get_plt_idx(ctx) * E::plt_size;
-
+template <>
+void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if (ctx.arg.pic) {
-    static const u8 data[] = {
+    static const u8 insn[] = {
       0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
       0x68, 0,    0, 0, 0,    // pushl $reloc_offset
       0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
     };
-    memcpy(ent, data, sizeof(data));
-    *(ul32 *)(ent + 2) = sym.get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
+    memcpy(buf, insn, sizeof(insn));
+    *(ul32 *)(buf + 2) = sym.get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
   } else {
-    static const u8 data[] = {
+    static const u8 insn[] = {
       0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
       0x68, 0,    0, 0, 0,    // pushl $reloc_offset
       0xe9, 0,    0, 0, 0,    // jmp .PLT0@PC
     };
-    memcpy(ent, data, sizeof(data));
-    *(ul32 *)(ent + 2) = sym.get_gotplt_addr(ctx);
+    memcpy(buf, insn, sizeof(insn));
+    *(ul32 *)(buf + 2) = sym.get_gotplt_addr(ctx);
   }
 
-  *(ul32 *)(ent + 7) = idx * sizeof(ElfRel<E>);
-  *(ul32 *)(ent + 12) = ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 16;
+  *(ul32 *)(buf + 7) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
+  *(ul32 *)(buf + 12) = ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 16;
 }
 
 template <>
-void PltSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-  write_plt_header(ctx, buf);
-
-  for (i64 i = 0; i < symbols.size(); i++)
-    write_plt_entry(ctx, buf, *symbols[i], i);
-}
-
-template <>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
+void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if (ctx.arg.pic) {
-    static const u8 data[] = {
+    static const u8 insn[] = {
       0xff, 0xa3, 0, 0, 0, 0, // jmp   *foo@GOT(%ebx)
       0x66, 0x90,             // nop
     };
-
-    for (i64 i = 0; i < symbols.size(); i++) {
-      u8 *ent = buf + i * sizeof(data);
-      memcpy(ent, data, sizeof(data));
-      *(ul32 *)(ent + 2) = symbols[i]->get_got_addr(ctx) - ctx.got->shdr.sh_addr;
-    }
+    memcpy(buf, insn, sizeof(insn));
+    *(ul32 *)(buf + 2) = sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr;
   } else {
-    static const u8 data[] = {
+    static const u8 insn[] = {
       0xff, 0x25, 0, 0, 0, 0, // jmp   *foo@GOT
       0x66, 0x90,             // nop
     };
-
-    for (i64 i = 0; i < symbols.size(); i++) {
-      u8 *ent = buf + i * sizeof(data);
-      memcpy(ent, data, sizeof(data));
-      *(ul32 *)(ent + 2) = symbols[i]->get_got_addr(ctx);
-    }
+    memcpy(buf, insn, sizeof(insn));
+    *(ul32 *)(buf + 2) = sym.get_got_addr(ctx);
   }
 }
 

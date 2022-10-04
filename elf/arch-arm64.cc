@@ -41,9 +41,9 @@ static u64 page(u64 val) {
   return val & 0xffff'ffff'ffff'f000;
 }
 
-static void write_plt_header(Context<E> &ctx, u8 *buf) {
-  // Write PLT header
-  static const ul32 plt0[] = {
+template <>
+void write_plt_header(Context<E> &ctx, u8 *buf) {
+  static const ul32 insn[] = {
     0xa9bf'7bf0, // stp  x16, x30, [sp,#-16]!
     0x9000'0010, // adrp x16, .got.plt[2]
     0xf940'0211, // ldr  x17, [x16, .got.plt[2]]
@@ -57,16 +57,15 @@ static void write_plt_header(Context<E> &ctx, u8 *buf) {
   u64 gotplt = ctx.gotplt->shdr.sh_addr + 16;
   u64 plt = ctx.plt->shdr.sh_addr;
 
-  memcpy(buf, plt0, sizeof(plt0));
+  memcpy(buf, insn, sizeof(insn));
   write_adrp(buf + 4, page(gotplt) - page(plt + 4));
   *(ul32 *)(buf + 8) |= bits(gotplt, 11, 3) << 10;
   *(ul32 *)(buf + 12) |= (gotplt & 0xfff) << 10;
 }
 
-static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  u8 *ent = buf + E::plt_hdr_size + sym.get_plt_idx(ctx) * E::plt_size;
-
-  static const ul32 data[] = {
+template <>
+void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  static const ul32 insn[] = {
     0x9000'0010, // adrp x16, .got.plt[n]
     0xf940'0211, // ldr  x17, [x16, .got.plt[n]]
     0x9100'0210, // add  x16, x16, .got.plt[n]
@@ -76,41 +75,27 @@ static void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u64 gotplt = sym.get_gotplt_addr(ctx);
   u64 plt = sym.get_plt_addr(ctx);
 
-  memcpy(ent, data, sizeof(data));
-  write_adrp(ent, page(gotplt) - page(plt));
-  *(ul32 *)(ent + 4) |= bits(gotplt, 11, 3) << 10;
-  *(ul32 *)(ent + 8) |= (gotplt & 0xfff) << 10;
+  memcpy(buf, insn, sizeof(insn));
+  write_adrp(buf, page(gotplt) - page(plt));
+  *(ul32 *)(buf + 4) |= bits(gotplt, 11, 3) << 10;
+  *(ul32 *)(buf + 8) |= (gotplt & 0xfff) << 10;
 }
 
 template <>
-void PltSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-  write_plt_header(ctx, buf);
-  for (Symbol<E> *sym : symbols)
-    write_plt_entry(ctx, buf, *sym);
-}
+void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  static const ul32 insn[] = {
+    0x9000'0010, // adrp x16, GOT[n]
+    0xf940'0211, // ldr  x17, [x16, GOT[n]]
+    0xd61f'0220, // br   x17
+    0xd503'201f, // nop
+  };
 
-template <>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  u64 got = sym.get_got_addr(ctx);
+  u64 plt = sym.get_plt_addr(ctx);
 
-  for (Symbol<E> *sym : symbols) {
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
-
-    static const ul32 data[] = {
-      0x9000'0010, // adrp x16, GOT[n]
-      0xf940'0211, // ldr  x17, [x16, GOT[n]]
-      0xd61f'0220, // br   x17
-      0xd503'201f, // nop
-    };
-
-    u64 got = sym->get_got_addr(ctx);
-    u64 plt = sym->get_plt_addr(ctx);
-
-    memcpy(ent, data, sizeof(data));
-    write_adrp(ent, page(got) - page(plt));
-    *(ul32 *)(ent + 4) |= bits(got, 11, 3) << 10;
-  }
+  memcpy(buf, insn, sizeof(insn));
+  write_adrp(buf, page(got) - page(plt));
+  *(ul32 *)(buf + 4) |= bits(got, 11, 3) << 10;
 }
 
 template <>

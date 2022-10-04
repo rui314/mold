@@ -76,11 +76,13 @@ using E = SPARC64;
 // Self-modifying code is nowadays considered really bad from the security
 // point of view, though.
 template <>
-void PltSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-  memset(buf, 0, this->shdr.sh_size);
+void write_plt_header(Context<E> &ctx, u8 *buf) {
+  memset(buf, 0, E::plt_hdr_size);
+}
 
-  static ub32 plt[] = {
+template <>
+void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  static ub32 insn[] = {
     0x0300'0000, // sethi (. - .PLT0), %g1
     0x3068'0000, // ba,a  %xcc, .PLT1
     0x0100'0000, // nop
@@ -91,26 +93,17 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
     0x0100'0000, // nop
   };
 
-  static_assert(sizeof(plt) == E::plt_size);
-
   u64 plt0 = ctx.plt->shdr.sh_addr;
   u64 plt1 = ctx.plt->shdr.sh_addr + E::plt_size;
+  u64 entry = sym.get_plt_addr(ctx);
 
-  for (i64 i = 0; i < symbols.size(); i++) {
-    ub32 *loc = (ub32 *)(buf + E::plt_hdr_size + i * E::plt_size);
-    memcpy(loc, plt, sizeof(plt));
-
-    u64 ent_addr = symbols[i]->get_plt_addr(ctx);
-    loc[0] |= bits(ent_addr - plt0, 21, 0);
-    loc[1] |= bits(plt1 - ent_addr - 4, 20, 2);
-  }
+  memcpy(buf, insn, sizeof(insn));
+  *(ub32 *)buf |= bits(entry - plt0, 21, 0);
+  *(ub32 *)(buf + 4) |= bits(plt1 - entry - 4, 20, 2);
 }
 
 template <>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-  memset(buf, 0, this->shdr.sh_size);
-
+void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   static ub32 entry[] = {
     0x8a10'000f, // mov  %o7, %g5
     0x4000'0002, // call . + 8
@@ -122,13 +115,8 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
     0x0000'0000,
   };
 
-  static_assert(sizeof(entry) == E::pltgot_size);
-
-  for (Symbol<E> *sym : symbols) {
-    u8 *loc = buf + sym->get_pltgot_idx(ctx) * E::pltgot_size;
-    memcpy(loc, entry, sizeof(entry));
-    *(ub64 *)(loc + 24) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 4;
-  }
+  memcpy(buf, entry, sizeof(entry));
+  *(ub64 *)(buf + 24) = sym.get_got_addr(ctx) - sym.get_plt_addr(ctx) - 4;
 }
 
 template <>

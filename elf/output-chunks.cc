@@ -1402,6 +1402,15 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
+void PltSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + ctx.plt->shdr.sh_offset;
+  write_plt_header(ctx, buf);
+
+  for (i64 i = 0; i < symbols.size(); i++)
+    write_plt_entry(ctx, buf + E::plt_hdr_size + i * E::plt_size, *symbols[i]);
+}
+
+template <typename E>
 void PltSection<E>::compute_symtab_size(Context<E> &ctx) {
   if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return;
@@ -1445,6 +1454,13 @@ void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_pltgot_idx(ctx, this->shdr.sh_size / E::pltgot_size);
   this->shdr.sh_size += E::pltgot_size;
   symbols.push_back(sym);
+}
+
+template <typename E>
+void PltGotSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + ctx.pltgot->shdr.sh_offset;
+  for (i64 i = 0; i < symbols.size(); i++)
+    write_pltgot_entry(ctx, buf + i * E::pltgot_size, *symbols[i]);
 }
 
 template <typename E>

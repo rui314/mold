@@ -73,10 +73,8 @@ static void write_thm_mov_imm(u8 *loc, u32 val) {
 }
 
 template <>
-void PltSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
-  static const ul32 plt0[] = {
+void write_plt_header(Context<E> &ctx, u8 *buf) {
+  static const ul32 insn[] = {
     0xe52d'e004, // push {lr}
     0xe59f'e004, // ldr lr, 2f
     0xe08f'e00e, // 1: add lr, pc, lr
@@ -87,39 +85,27 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
     0xe320'f000, // nop
   };
 
-  memcpy(buf, plt0, sizeof(plt0));
-  *(ul32 *)(buf + 16) = ctx.gotplt->shdr.sh_addr - this->shdr.sh_addr - 16;
+  memcpy(buf, insn, sizeof(insn));
+  *(ul32 *)(buf + 16) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 16;
+}
 
-  for (Symbol<E> *sym : symbols) {
-    static const ul32 plt[] = {
-      0xe59f'c004, // 1: ldr ip, 2f
-      0xe08c'c00f, // add ip, ip, pc
-      0xe59c'f000, // ldr pc, [ip]
-      0x0000'0000, // 2: .word sym@GOTPLT - 1b
-    };
+static const ul32 plt_entry[] = {
+  0xe59f'c004, // 1: ldr ip, 2f
+  0xe08c'c00f, // add ip, ip, pc
+  0xe59c'f000, // ldr pc, [ip]
+  0x0000'0000, // 2: .word sym@GOT - 1b
+};
 
-    u8 *ent = buf + sizeof(plt0) + sym->get_plt_idx(ctx) * sizeof(plt);
-    memcpy(ent, plt, sizeof(plt));
-    *(ul32 *)(ent + 12) = sym->get_gotplt_addr(ctx) - sym->get_plt_addr(ctx) - 12;
-  }
+template <>
+void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  memcpy(buf, plt_entry, sizeof(plt_entry));
+  *(ul32 *)(buf + 12) = sym.get_gotplt_addr(ctx) - sym.get_plt_addr(ctx) - 12;
 }
 
 template <>
-void PltGotSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
-  for (Symbol<E> *sym : symbols) {
-    static const ul32 plt[] = {
-      0xe59f'c004, // 1: ldr ip, 2f
-      0xe08c'c00f, // add ip, ip, pc
-      0xe59c'f000, // ldr pc, [ip]
-      0x0000'0000, // 2: .word sym@GOT - 1b
-    };
-
-    u8 *ent = buf + sym->get_pltgot_idx(ctx) * sizeof(plt);
-    memcpy(ent, plt, sizeof(plt));
-    *(ul32 *)(ent + 12) = sym->get_got_addr(ctx) - sym->get_plt_addr(ctx) - 12;
-  }
+void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+  memcpy(buf, plt_entry, sizeof(plt_entry));
+  *(ul32 *)(buf + 12) = sym.get_got_addr(ctx) - sym.get_plt_addr(ctx) - 12;
 }
 
 // ARM does not use .eh_frame for exception handling. Instead, it uses
