@@ -11,20 +11,11 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-if [ $MACHINE = x86_64 -o $MACHINE = i386 -o $MACHINE = i686 ]; then
-  mtls=-mtls-dialect=gnu
-elif [ $MACHINE = aarch64 ]; then
-  mtls=-mtls-dialect=trad
-elif [[ $MACHINE != riscv* ]] && [[ $MACHINE != sparc64 ]]; then
-  echo skipped
-  exit
-fi
-
-cat <<EOF | $GCC -ftls-model=local-exec $mtls -fPIC -c -o $t/a.o -xc -
+cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
-extern _Thread_local int foo;
-static _Thread_local int bar;
+__attribute__((tls_model("local-exec"))) extern _Thread_local int foo;
+__attribute__((tls_model("local-exec"))) static _Thread_local int bar;
 
 int *get_foo_addr() { return &foo; }
 int *get_bar_addr() { return &bar; }
@@ -37,8 +28,8 @@ int main() {
 }
 EOF
 
-cat <<EOF | $GCC -ftls-model=local-exec $mtls -fPIC -c -o $t/b.o -xc -
-_Thread_local int foo = 3;
+cat <<EOF | $GCC -fPIC -c -o $t/b.o -xc -
+__attribute__((tls_model("local-exec"))) _Thread_local int foo = 3;
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o

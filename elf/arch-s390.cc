@@ -17,7 +17,8 @@
 // in our PLT. %r2-%r6 are used for parameter passing. %r2 is also used to
 // return a value. In position independent code, %r12 usually contains the
 // address of GOT. %r14 usually contains a return address. %r15 is a stack
-// pointer. A special register %a0 contains the thread pointer.
+// pointer. Special registers %a0 and %a1 contain the upper 32 bits and
+// the lower 32 bits of TP, respectively.
 //
 // https://uclibc.org/docs/psABI-s390x.pdf
 
@@ -367,13 +368,18 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 // This section provides a replacement.
 void S390TlsGetOffsetSection::copy_buf(Context<E> &ctx) {
   static const u8 insn[] = {
-    0x1a, 0x2c,                         // ar %r2, %r12
-    0xe3, 0x20, 0x20, 0x08, 0x00, 0x04, // lg %r2, 8(%r2)
-    0x07, 0xfe,                         // br %r14
+    0xb9, 0x08, 0x00, 0x2c,             // agr  %r2, %r12
+    0xe3, 0x20, 0x20, 0x08, 0x00, 0x04, // lg   %r2, 8(%r2)
+    0xc0, 0x11, 0, 0, 0, 0,             // lgfi %r1, TLS_BLOCK_SIZE
+    0xb9, 0x09, 0x00, 0x21,             // sgr  %r2, %r1
+    0x07, 0xfe,                         // br   %r14
   };
 
   assert(this->shdr.sh_size == sizeof(insn));
-  memcpy(ctx.buf + this->shdr.sh_offset, insn, sizeof(insn));
+
+  u8 *loc = ctx.buf + this->shdr.sh_offset;
+  memcpy(loc, insn, sizeof(insn));
+  *(ub32 *)(loc + 12) = ctx.tp_addr - ctx.tls_begin;
 }
 
 } // namespace mold::elf

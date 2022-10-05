@@ -11,19 +11,10 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-if [ $MACHINE = x86_64 ]; then
-  mtls=-mtls-dialect=gnu
-elif [ $MACHINE = aarch64 ]; then
-  mtls=-mtls-dialect=trad
-elif [[ $MACHINE != riscv* ]] && [[ $MACHINE != sparc64 ]]; then
-  echo skipped
-  exit
-fi
-
 echo '{ global: bar; local: *; };' > $t/a.ver
 
 cat <<EOF | $GCC $mtls -fPIC -c -o $t/b.o -xc -
-_Thread_local int foo;
+__attribute__((tls_model("global-dynamic"))) _Thread_local int foo;
 
 int bar() {
   return foo;

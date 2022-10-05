@@ -11,22 +11,14 @@ echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
 mkdir -p $t
 
-if [ $MACHINE = x86_64 ]; then
-  mtls=-mtls-dialect=gnu
-elif [ $MACHINE = aarch64 ]; then
-  mtls=-mtls-dialect=trad
-elif [[ $MACHINE != riscv* ]] && [[ $MACHINE != sparc64 ]]; then
-  echo skipped
-  exit
-fi
-
-cat <<EOF | $GCC $mtls -fPIC -c -o $t/a.o -xc -
+cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
-static _Thread_local int x1 = 1;
-static _Thread_local int x2;
-extern _Thread_local int x3;
-extern _Thread_local int x4;
+__attribute__((tls_model("global-dynamic"))) static _Thread_local int x1 = 1;
+__attribute__((tls_model("global-dynamic"))) static _Thread_local int x2;
+__attribute__((tls_model("global-dynamic"))) extern _Thread_local int x3;
+__attribute__((tls_model("global-dynamic"))) extern _Thread_local int x4;
+
 int get_x5();
 int get_x6();
 
@@ -38,16 +30,16 @@ int main() {
 }
 EOF
 
-cat <<EOF | $GCC $mtls -fPIC -c -o $t/b.o -xc -
-_Thread_local int x3 = 3;
-static _Thread_local int x5 = 5;
+cat <<EOF | $GCC -fPIC -c -o $t/b.o -xc -
+__attribute__((tls_model("global-dynamic"))) _Thread_local int x3 = 3;
+__attribute__((tls_model("global-dynamic"))) static _Thread_local int x5 = 5;
 int get_x5() { return x5; }
 EOF
 
 
-cat <<EOF | $GCC $mtls -fPIC -c -o $t/c.o -xc -
-_Thread_local int x4 = 4;
-static _Thread_local int x6 = 6;
+cat <<EOF | $GCC -fPIC -c -o $t/c.o -xc -
+__attribute__((tls_model("global-dynamic"))) _Thread_local int x4 = 4;
+__attribute__((tls_model("global-dynamic"))) static _Thread_local int x6 = 6;
 int get_x6() { return x6; }
 EOF
 
