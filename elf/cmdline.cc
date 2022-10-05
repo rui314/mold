@@ -1088,12 +1088,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   ctx.arg.undefined.push_back(ctx.arg.entry);
 
-  // TLSDESC relocs must be always relaxed for statically-linked
-  // executables even if -no-relax is given. It is because a
-  // statically-linked executable doesn't contain a tranpoline
-  // function needed for TLSDESC.
-  ctx.relax_tlsdesc = ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared);
-
   // By default, mold tries to ovewrite to an output file if exists
   // because at least on Linux, writing to an existing file is much
   // faster than creating a fresh file and writing to it.

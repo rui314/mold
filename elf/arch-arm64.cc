@@ -302,7 +302,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A, 11, 0) << 10;
       break;
     case R_AARCH64_TLSDESC_ADR_PAGE21: {
-      if (ctx.relax_tlsdesc && !sym.is_imported) {
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
         // adrp x0, 0 -> movz x0, #tls_ofset_hi, lsl #16
         i64 val = (S + A - ctx.tp_addr);
         check(val, -(1LL << 32), 1LL << 32);
@@ -315,7 +315,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_AARCH64_TLSDESC_LD64_LO12:
-      if (ctx.relax_tlsdesc && !sym.is_imported) {
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
         // ldr x2, [x0] -> movk x0, #tls_ofset_lo
         u32 offset_lo = (S + A - ctx.tp_addr) & 0xffff;
         *(ul32 *)loc = 0xf280'0000 | (offset_lo << 5);
@@ -324,7 +324,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_AARCH64_TLSDESC_ADD_LO12:
-      if (ctx.relax_tlsdesc && !sym.is_imported) {
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
         // add x0, x0, #0 -> nop
         *(ul32 *)loc = 0xd503'201f;
       } else {
@@ -332,7 +332,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_AARCH64_TLSDESC_CALL:
-      if (ctx.relax_tlsdesc && !sym.is_imported) {
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
         // blr x2 -> nop
         *(ul32 *)loc = 0xd503'201f;
       }
@@ -444,7 +444,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_TLSDESC_ADR_PAGE21:
     case R_AARCH64_TLSDESC_LD64_LO12:
     case R_AARCH64_TLSDESC_ADD_LO12:
-      if (!ctx.relax_tlsdesc || sym.is_imported)
+      if (!relax_tlsdesc(ctx, sym))
         sym.flags |= NEEDS_TLSDESC;
       break;
     case R_AARCH64_ADD_ABS_LO12_NC:

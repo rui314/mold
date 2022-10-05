@@ -690,7 +690,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_X86_64_GOTPCREL && ty != R_X86_64_GOTPCRELX)
         Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
 
-      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)
+      if (relax_tlsgd(ctx, sym))
         i++;
       else
         sym.flags |= NEEDS_TLSGD;
@@ -708,7 +708,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_X86_64_GOTPCREL && ty != R_X86_64_GOTPCRELX)
         Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
 
-      if (ctx.arg.relax && !ctx.arg.shared)
+      if (relax_tlsld(ctx, sym))
         i++;
       else
         ctx.needs_tlsld = true;
@@ -734,8 +734,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
                    << " against an invalid code sequence";
 
-      bool do_relax = ctx.relax_tlsdesc && !sym.is_imported;
-      if (!do_relax)
+      if (!relax_tlsdesc(ctx, sym))
         sym.flags |= NEEDS_TLSDESC;
       break;
     }

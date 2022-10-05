@@ -456,7 +456,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_ARM_TLS_GOTDESC:
-      if (!ctx.relax_tlsdesc || sym.is_imported)
+      if (!relax_tlsdesc(ctx, sym))
         sym.flags |= NEEDS_TLSDESC;
       break;
     case R_ARM_REL32:

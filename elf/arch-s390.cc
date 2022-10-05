@@ -373,16 +373,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_390_TLS_GD32:
-    case R_390_TLS_GD64: {
-      bool do_relax = ctx.arg.relax && !ctx.arg.shared && !sym.is_imported;
-      if (!do_relax)
+    case R_390_TLS_GD64:
+      if (!relax_tlsgd(ctx, sym))
         sym.flags |= NEEDS_TLSGD;
       break;
-    }
     case R_390_TLS_LDM32:
     case R_390_TLS_LDM64: {
-      bool do_relax = ctx.arg.relax && !ctx.arg.shared;
-      if (!do_relax)
+      if (!relax_tlsld(ctx, sym))
         ctx.needs_tlsld = true;
       break;
     }

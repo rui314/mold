@@ -1702,7 +1702,6 @@ struct Context {
 
   u64 tls_begin = 0;
   u64 tp_addr = 0;
-  bool relax_tlsdesc = false;
 
   // Linker-synthesized symbols
   Symbol<E> *TOC = nullptr;
@@ -2662,6 +2661,27 @@ inline bool is_c_identifier(std::string_view s) {
     if (!is_alnum(s[i]))
       return false;
   return true;
+}
+
+template <typename E>
+inline bool relax_tlsgd(Context<E> &ctx, Symbol<E> &sym) {
+  return ctx.arg.relax && !ctx.arg.shared && !sym.is_imported;
+}
+
+template <typename E>
+inline bool relax_tlsld(Context<E> &ctx, Symbol<E> &sym) {
+  return ctx.arg.relax && !ctx.arg.shared;
+}
+
+template <typename E>
+inline bool relax_tlsdesc(Context<E> &ctx, Symbol<E> &sym) {
+  // TLSDESC relocs must be always relaxed for statically-linked
+  // executables even if -no-relax is given. It is because a
+  // statically-linked executable doesn't contain a tranpoline
+  // function needed for TLSDESC.
+  if (ctx.arg.is_static)
+    return true;
+  return ctx.arg.relax && !ctx.arg.shared && !sym.is_imported;
 }
 
 } // namespace mold::elf

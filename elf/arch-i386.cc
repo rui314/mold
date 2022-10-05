@@ -295,7 +295,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_386_TLS_DESC_CALL:
-      if (ctx.arg.relax && !ctx.arg.shared) {
+      if (sym.get_tlsdesc_idx(ctx) == -1) {
         // call *(%eax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;
@@ -464,7 +464,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_386_PLT32 && ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
 
-      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)
+      if (relax_tlsgd(ctx, sym))
         i++;
       else
         sym.flags |= NEEDS_TLSGD;
@@ -477,13 +477,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_386_PLT32 && ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
 
-      if (ctx.arg.relax && !ctx.arg.shared)
+      if (relax_tlsld(ctx, sym))
         i++;
       else
         ctx.needs_tlsld = true;
       break;
     case R_386_TLS_GOTDESC:
-      if (!ctx.arg.relax || ctx.arg.shared)
+      if (!relax_tlsdesc(ctx, sym))
         sym.flags |= NEEDS_TLSDESC;
       break;
     case R_386_GOTOFF:
