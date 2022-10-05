@@ -2673,7 +2673,7 @@ inline bool relax_tlsgd(Context<E> &ctx, Symbol<E> &sym) {
 }
 
 template <typename E>
-inline bool relax_tlsld(Context<E> &ctx, Symbol<E> &sym) {
+inline bool relax_tlsld(Context<E> &ctx) {
   return ctx.arg.relax && !ctx.arg.shared;
 }
 

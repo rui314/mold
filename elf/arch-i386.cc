@@ -477,7 +477,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_386_PLT32 && ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
 
-      if (relax_tlsld(ctx, sym))
+      if (relax_tlsld(ctx))
         i++;
       else
         ctx.needs_tlsld = true;

@@ -375,7 +375,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_390_TLS_LDM32:
     case R_390_TLS_LDM64: {
-      if (!relax_tlsld(ctx, sym))
+      if (!relax_tlsld(ctx))
         ctx.needs_tlsld = true;
       break;
     }

@@ -708,7 +708,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_X86_64_GOTPCREL && ty != R_X86_64_GOTPCRELX)
         Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
 
-      if (relax_tlsld(ctx, sym))
+      if (relax_tlsld(ctx))
         i++;
       else
         ctx.needs_tlsld = true;
