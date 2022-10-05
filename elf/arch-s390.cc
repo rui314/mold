@@ -370,7 +370,6 @@ void S390TlsGetOffsetSection::copy_buf(Context<E> &ctx) {
     0x1a, 0x2c,                         // ar %r2, %r12
     0xe3, 0x20, 0x20, 0x08, 0x00, 0x04, // lg %r2, 8(%r2)
     0x07, 0xfe,                         // br %r14
-    0x07, 0x00,                         // nopr
   };
 
   assert(this->shdr.sh_size == sizeof(insn));

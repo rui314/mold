@@ -1396,7 +1396,7 @@ public:
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
     this->shdr.sh_addralign = 4;
-    this->shdr.sh_size = 12;
+    this->shdr.sh_size = 10;
   }
 
   void copy_buf(Context<S390> &ctx) override;
