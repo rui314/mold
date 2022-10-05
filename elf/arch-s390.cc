@@ -239,6 +239,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       else
         *(ub64 *)loc = S + A;
       break;
+    case R_390_TLS_LDO64:
+      if (std::optional<u64> val = get_tombstone(sym, frag))
+        *(ub64 *)loc = *val;
+      else
+        *(ub64 *)loc = S + A - ctx.tls_begin;
+      break;
     default:
       Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
     }
