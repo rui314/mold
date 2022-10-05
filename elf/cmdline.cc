@@ -115,12 +115,12 @@ Options:
   --perf                      Print performance statistics
   --pie, --pic-executable     Create a position independent executable
     --no-pie, --no-pic-executable
-  --pop-state                 Pop state of flags governing input file handling
+  --pop-state                 Restore state of flags governing input file handling
   --print-gc-sections         Print removed unreferenced sections
     --no-print-gc-sections
   --print-icf-sections        Print folded identical sections
     --no-print-icf-sections
-  --push-state                Pop state of flags governing input file handling
+  --push-state                Save state of flags governing input file handling
   --quick-exit                Use quick_exit to exit (default)
     --no-quick-exit
   --relax                     Optimize instructions (default)
