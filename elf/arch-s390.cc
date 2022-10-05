@@ -9,9 +9,10 @@
 // Ubuntu for example provides the official support for s390x as of 2022.
 // Since they are being actively maintained, we need to support them.
 //
-// As an instruction set, s390x is actually straightforward to support.
-// It has 16 general-purpose registers. Instructions vary in size but
-// always be a multiple of 2 and always aligned to 2 bytes boundaries.
+// As an instruction set, s390x isn't particularly odd. It has 16 general-
+// purpose registers. Instructions vary in size but always be a multiple
+// of 2 and always aligned to 2 bytes boundaries. Despite unfamiliarty, I
+// found that it just feels like a 64-bit i386 in a parallel universe.
 //
 // Its psABI reserves %r0 and %r1 as scratch registers so we can use them
 // in our PLT. %r2-%r6 are used for parameter passing. %r2 is also used to
