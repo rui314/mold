@@ -421,8 +421,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 #define A (frag ? frag_addend : (i64)rel.r_addend)
 
     switch (rel.r_type) {
-    case R_NONE:
-      break;
     case R_SPARC_64:
     case R_SPARC_UA64:
       if (std::optional<u64> val = get_tombstone(sym, frag))
