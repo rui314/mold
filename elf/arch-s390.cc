@@ -200,49 +200,45 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc = (sym.get_gottp_addr(ctx) + A - P) >> 1;
       break;
     case R_390_TLS_GD32:
-      if (sym.get_tlsgd_idx(ctx) == -1)
-        *(ub32 *)loc = S + A - ctx.tp_addr;
-      else
+      if (sym.has_tlsgd(ctx))
         *(ub32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
+      else
+        *(ub32 *)loc = S + A - ctx.tp_addr;
       break;
     case R_390_TLS_GD64:
-      if (sym.get_tlsgd_idx(ctx) == -1)
-        *(ub64 *)loc = S + A - ctx.tp_addr;
-      else
+      if (sym.has_tlsgd(ctx))
         *(ub64 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
+      else
+        *(ub64 *)loc = S + A - ctx.tp_addr;
       break;
     case R_390_TLS_GDCALL:
-      if (sym.get_tlsgd_idx(ctx) == -1) {
+      if (!sym.has_tlsgd(ctx)) {
         static const u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
         memcpy(loc, nop, sizeof(nop));
       }
       break;
     case R_390_TLS_LDM32:
-      if (ctx.got->tlsld_idx == -1)
-        *(ub32 *)loc = 0;
-      else
+      if (ctx.got->has_tlsld(ctx))
         *(ub32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
       break;
     case R_390_TLS_LDM64:
-      if (ctx.got->tlsld_idx == -1)
-        *(ub64 *)loc = 0;
-      else
+      if (ctx.got->has_tlsld(ctx))
         *(ub64 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
       break;
     case R_390_TLS_LDO32:
-      if (ctx.got->tlsld_idx == -1)
-        *(ub32 *)loc = S + A - ctx.tp_addr;
-      else
+      if (ctx.got->has_tlsld(ctx))
         *(ub32 *)loc = S + A - ctx.tls_begin;
+      else
+        *(ub32 *)loc = S + A - ctx.tp_addr;
       break;
     case R_390_TLS_LDO64:
-      if (ctx.got->tlsld_idx == -1)
-        *(ub64 *)loc = S + A - ctx.tp_addr;
-      else
+      if (ctx.got->has_tlsld(ctx))
         *(ub64 *)loc = S + A - ctx.tls_begin;
+      else
+        *(ub64 *)loc = S + A - ctx.tp_addr;
       break;
     case R_390_TLS_LDCALL:
-      if (ctx.got->tlsld_idx == -1) {
+      if (!ctx.got->has_tlsld(ctx)) {
         static const u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
         memcpy(loc, nop, sizeof(nop));
       }

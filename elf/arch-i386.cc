@@ -212,7 +212,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A;
       break;
     case R_386_TLS_GD:
-      if (sym.get_tlsgd_idx(ctx) == -1) {
+      if (sym.has_tlsgd(ctx)) {
+        *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
+      } else {
         // Relax GD to LE
         switch (rels[i + 1].r_type) {
         case R_386_PLT32: {
@@ -239,12 +241,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         }
 
         i++;
-      } else {
-        *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
       }
       break;
     case R_386_TLS_LDM:
-      if (ctx.got->tlsld_idx == -1) {
+      if (ctx.got->has_tlsld(ctx)) {
+        *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
+      } else {
         // Relax LD to LE
         switch (rels[i + 1].r_type) {
         case R_386_PLT32: {
@@ -273,8 +275,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
         *(ul32 *)(loc + 5) = ctx.tp_addr - ctx.tls_begin;
         i++;
-      } else {
-        *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
       }
       break;
     case R_386_TLS_LDO_32:
@@ -284,18 +284,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = sym.esym().st_size + A;
       break;
     case R_386_TLS_GOTDESC:
-      if (sym.get_tlsdesc_idx(ctx) == -1) {
+      if (sym.has_tlsdesc(ctx)) {
+        *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - GOT;
+      } else {
         static const u8 insn[] = {
           0x8d, 0x05, 0, 0, 0, 0, // lea 0, %eax
         };
         memcpy(loc - 2, insn, sizeof(insn));
         *(ul32 *)loc = S + A - ctx.tp_addr;
-      } else {
-        *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - GOT;
       }
       break;
     case R_386_TLS_DESC_CALL:
-      if (sym.get_tlsdesc_idx(ctx) == -1) {
+      if (!sym.has_tlsdesc(ctx)) {
         // call *(%eax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;

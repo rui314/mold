@@ -310,32 +310,33 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = S + A - ctx.tp_addr;
       break;
     case R_ARM_TLS_GOTDESC:
-      if (sym.get_tlsdesc_idx(ctx) == -1) {
-        *(ul32 *)loc = S - ctx.tp_addr;
-      } else if (A & 1) {
+      if (sym.has_tlsdesc(ctx)) {
         // A is odd if the corresponding TLS_CALL is Thumb.
-        *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 6;
+        if (A & 1)
+          *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 6;
+        else
+          *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 4;
       } else {
-        *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 4;
+        *(ul32 *)loc = S - ctx.tp_addr;
       }
       break;
     case R_ARM_TLS_CALL:
-      if (sym.get_tlsdesc_idx(ctx) == -1) {
-        // BL -> NOP
-        *(ul32 *)loc = 0xe320'f000;
-      } else {
+      if (sym.has_tlsdesc(ctx)) {
         // BL <tls_trampoline>
         *(ul32 *)loc = 0xeb00'0000 | bits(get_trampoline_addr(P + 8), 25, 2);
+      } else {
+        // BL -> NOP
+        *(ul32 *)loc = 0xe320'f000;
       }
       break;
     case R_ARM_THM_TLS_CALL:
-      if (sym.get_tlsdesc_idx(ctx) == -1) {
-        // BL -> NOP.W
-        *(ul32 *)loc = 0x8000'f3af;
-      } else {
+      if (sym.has_tlsdesc(ctx)) {
         u64 val = align_to(get_trampoline_addr(P + 4), 4);
         write_thm_b_imm(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
+      } else {
+        // BL -> NOP.W
+        *(ul32 *)loc = 0x8000'f3af;
       }
       break;
     default:

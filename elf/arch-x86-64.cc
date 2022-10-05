@@ -293,28 +293,30 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc = G + GOT + A - P;
       break;
     case R_X86_64_GOTPCRELX:
-      if (sym.get_got_idx(ctx) == -1) {
+      if (sym.has_got(ctx)) {
+        write32s(G + GOT + A - P);
+      } else {
         u32 insn = relax_gotpcrelx(loc - 2);
         loc[-2] = insn >> 8;
         loc[-1] = insn;
         write32s(S + A - P);
-      } else {
-        write32s(G + GOT + A - P);
       }
       break;
     case R_X86_64_REX_GOTPCRELX:
-      if (sym.get_got_idx(ctx) == -1) {
+      if (sym.has_got(ctx)) {
+        write32s(G + GOT + A - P);
+      } else {
         u32 insn = relax_rex_gotpcrelx(loc - 3);
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
         write32s(S + A - P);
-      } else {
-        write32s(G + GOT + A - P);
       }
       break;
     case R_X86_64_TLSGD:
-      if (sym.get_tlsgd_idx(ctx) == -1) {
+      if (sym.has_tlsgd(ctx)) {
+        write32s(sym.get_tlsgd_addr(ctx) + A - P);
+      } else {
         // Relax GD to LE. If we are creating an exectuable, the offset of
         // a thread-local variable from TP is a link-time constant. So we
         // don't need to call __tls_get_addr to obtain the address of a TLV.
@@ -364,12 +366,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         }
 
         i++;
-      } else {
-        write32s(sym.get_tlsgd_addr(ctx) + A - P);
       }
       break;
     case R_X86_64_TLSLD:
-      if (ctx.got->tlsld_idx == -1) {
+      if (ctx.got->has_tlsld(ctx)) {
+        write32s(ctx.got->get_tlsld_addr(ctx) + A - P);
+      } else {
         // Relax LD to LE. If we are creating an executable, we don't need
         // to call __tls_get_addr to obtain the address of the beginning
         // of the current TLS block. TP points past the end of the TLS
@@ -428,8 +430,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)(loc + 5) = ctx.tp_addr - ctx.tls_begin;
         assert(A == -4);
         i++;
-      } else {
-        write32s(ctx.got->get_tlsld_addr(ctx) + A - P);
       }
       break;
     case R_X86_64_DTPOFF32:
@@ -445,27 +445,27 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc = S + A - ctx.tp_addr;
       break;
     case R_X86_64_GOTTPOFF:
-      if (sym.get_gottp_idx(ctx) == -1) {
+      if (sym.has_gottp(ctx)) {
+        write32s(sym.get_gottp_addr(ctx) + A - P);
+      } else {
         u32 insn = relax_gottpoff(loc - 3);
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
         write32s(S - ctx.tp_addr);
         assert(A == -4);
-      } else {
-        write32s(sym.get_gottp_addr(ctx) + A - P);
       }
       break;
     case R_X86_64_GOTPC32_TLSDESC:
-      if (sym.get_tlsdesc_idx(ctx) == -1) {
+      if (sym.has_tlsdesc(ctx)) {
+        write32s(sym.get_tlsdesc_addr(ctx) + A - P);
+      } else {
         u32 insn = relax_gotpc32_tlsdesc(loc - 3);
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
         write32s(S - ctx.tp_addr);
         assert(A == -4);
-      } else {
-        write32s(sym.get_tlsdesc_addr(ctx) + A - P);
       }
       break;
     case R_X86_64_SIZE32:
@@ -475,7 +475,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc = sym.esym().st_size + A;
       break;
     case R_X86_64_TLSDESC_CALL:
-      if (sym.get_tlsdesc_idx(ctx) == -1) {
+      if (!sym.has_tlsdesc(ctx)) {
         // call *(%rax) -> nop
         loc[0] = 0x66;
         loc[1] = 0x90;

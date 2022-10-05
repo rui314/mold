@@ -493,6 +493,7 @@ public:
   void add_tlsld(Context<E> &ctx);
 
   u64 get_tlsld_addr(Context<E> &ctx) const;
+  bool has_tlsld(Context<E> &ctx) const { return tlsld_idx != -1; }
   i64 get_reldyn_size(Context<E> &ctx) const;
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
@@ -1815,6 +1816,9 @@ public:
 
   bool has_plt(Context<E> &ctx) const;
   bool has_got(Context<E> &ctx) const;
+  bool has_gottp(Context<E> &ctx) const { return get_gottp_idx(ctx) != -1; }
+  bool has_tlsgd(Context<E> &ctx) const { return get_tlsgd_idx(ctx) != -1; }
+  bool has_tlsdesc(Context<E> &ctx) const { return get_tlsdesc_idx(ctx) != -1; }
 
   bool is_absolute() const;
   bool is_relative() const { return !is_absolute(); }
