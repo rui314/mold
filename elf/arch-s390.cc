@@ -46,7 +46,7 @@ template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   static u8 insn[] = {
     0xc0, 0x10, 0, 0, 0, 0,             // larl  %r1, GOT_ENTRY_OFFSET
-    0xe3, 0x10, 0x10, 0x00, 0x00, 0x04, // lg    %r1, 0(%r1)
+    0xe3, 0x10, 0x10, 0x00, 0x00, 0x04, // lg    %r1, (%r1)
     0xc0, 0x01, 0, 0, 0, 0,             // lgfi  %r0, PLT_INDEX
     0x07, 0xf1,                         // br    %r1
     0x07, 0x00, 0x07, 0x00, 0x07, 0x00, // nopr; nopr; nopr
@@ -55,14 +55,14 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 
   memcpy(buf, insn, sizeof(insn));
   *(ub32 *)(buf + 2) = (sym.get_gotplt_addr(ctx) - sym.get_plt_addr(ctx)) >> 1;
-  *(ub32 *)(buf + 14) = sym.get_plt_idx(ctx) * 24;
+  *(ub32 *)(buf + 14) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
 }
 
 template <>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   static u8 insn[] = {
     0xc0, 0x10, 0, 0, 0, 0,             // larl  %r1, GOT_ENTRY_OFFSET
-    0xe3, 0x10, 0x10, 0x00, 0x00, 0x04, // lg    %r1, 0(%r1)
+    0xe3, 0x10, 0x10, 0x00, 0x00, 0x04, // lg    %r1, (%r1)
     0x07, 0xf1,                         // br    %r1
     0x07, 0x00,                         // nopr
   };
@@ -119,7 +119,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *loc = S + A;
       break;
     case R_390_12:
-      *(ub16 *)loc = (*(ub16 *)loc & 0xf000) | (S + A) & 0x0fff;
+      *(ub16 *)loc &= 0xf000;
+      *(ub16 *)loc |= (S + A) & 0x0fff;
       break;
     case R_390_16:
       *(ub16 *)loc = S + A;
@@ -155,7 +156,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub64 *)loc = S + A - P;
       break;
     case R_390_GOT12:
-      *(ub16 *)loc = (*(ub16 *)loc & 0xf000) | (G + GOT + A) & 0x0fff;
+      *(ub16 *)loc &= 0xf000;
+      *(ub16 *)loc |= (G + GOT + A) & 0x0fff;
       break;
     case R_390_GOT16:
       *(ub16 *)loc = G + GOT + A;
