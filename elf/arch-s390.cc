@@ -1,3 +1,26 @@
+// This file contains code for the IBM z/Architecture ISA, which is
+// commonly referred to as "s390x" as a target name on Linux.
+//
+// z/Architecture is a 64-bit CISC ISA developed by IBM around 2000 for
+// IBM's "big iron" mainframe computers. The computers are direct
+// descendents of IBM System/360 all the way back in 1966. I've never
+// actually seen a mainframe, and you probaly haven't either, but it looks
+// like the mainframe market is still large enough to sustain its ecosystem.
+// Ubuntu for example provides the official support for s390x as of 2022.
+// Since they are being actively maintained, we need to support them.
+//
+// As an instruction set, s390x is actually straightforward to support.
+// It has 32 general-purpose registers. Instructions vary in size but
+// always be a multiple of 2 and always aligned to 2 bytes boundaries.
+//
+// Its psABI reserves %r0 and %r1 as scratch registers so we can use them
+// in our PLT. %r2-%r6 are used for parameter passing. %r2 is also used to
+// return a value. In position independent code, %r12 usually contains the
+// address of GOT. %r14 usually contains a return address. %r15 is a stack
+// pointer. A special register %a0 contains the thread pointer.
+//
+// https://uclibc.org/docs/psABI-s390x.pdf
+
 #include "mold.h"
 
 namespace mold::elf {
@@ -12,9 +35,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     0xd2, 0x07, 0xf0, 0x30, 0x10, 0x08, // mvc   48(8, %r15), 8(%r1)
     0xe3, 0x10, 0x10, 0x10, 0x00, 0x04, // lg    %r1, 16(%r1)
     0x07, 0xf1,                         // br    %r1
-    0x07, 0x00,                         // nopr
-    0x07, 0x00,                         // nopr
-    0x07, 0x00,                         // nopr
+    0x07, 0x00, 0x07, 0x00, 0x07, 0x00, // nopr; nopr; nopr
   };
 
   memcpy(buf, insn, sizeof(insn));
@@ -28,8 +49,8 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
     0xe3, 0x10, 0x10, 0x00, 0x00, 0x04, // lg    %r1, 0(%r1)
     0xc0, 0x01, 0, 0, 0, 0,             // lgfi  %r0, PLT_INDEX
     0x07, 0xf1,                         // br    %r1
-    0x07, 0x00, 0x07, 0x00, 0x07, 0x00, // nopr
-    0x07, 0x00, 0x07, 0x00, 0x07, 0x00, // nopr
+    0x07, 0x00, 0x07, 0x00, 0x07, 0x00, // nopr; nopr; nopr
+    0x07, 0x00, 0x07, 0x00, 0x07, 0x00, // nopr; nopr; nopr
   };
 
   memcpy(buf, insn, sizeof(insn));
@@ -122,10 +143,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_PC32DBL:
     case R_390_PLT32DBL:
-      if (ctx.is_static && &sym == ctx.tls_get_offset)
+      if (ctx.is_static && &sym == ctx.tls_get_offset) {
+        // __tls_get_offset() in libc.a is stub code that calls abort().
+        // So we provide a replacement function.
         *(ub32 *)loc = (ctx.s390_tls_get_offset->shdr.sh_addr - P) >> 1;
-      else
+      } else {
         *(ub32 *)loc = (S + A - P) >> 1;
+      }
       break;
     case R_390_PC64:
       *(ub64 *)loc = S + A - P;
