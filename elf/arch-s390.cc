@@ -10,7 +10,7 @@
 // Since they are being actively maintained, we need to support them.
 //
 // As an instruction set, s390x is actually straightforward to support.
-// It has 32 general-purpose registers. Instructions vary in size but
+// It has 16 general-purpose registers. Instructions vary in size but
 // always be a multiple of 2 and always aligned to 2 bytes boundaries.
 //
 // Its psABI reserves %r0 and %r1 as scratch registers so we can use them
@@ -45,7 +45,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
 template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   static u8 insn[] = {
-    0xc0, 0x10, 0, 0, 0, 0,             // larl  %r1, GOT_ENTRY_OFFSET
+    0xc0, 0x10, 0, 0, 0, 0,             // larl  %r1, GOTPLT_ENTRY_OFFSET
     0xe3, 0x10, 0x10, 0x00, 0x00, 0x04, // lg    %r1, (%r1)
     0xc0, 0x01, 0, 0, 0, 0,             // lgfi  %r0, PLT_INDEX
     0x07, 0xf1,                         // br    %r1
