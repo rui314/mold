@@ -91,9 +91,13 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.note_package = push(new NotePackageSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
-  if constexpr (is_sparc<E>)
-    if (ctx.arg.is_static)
+  if (ctx.arg.is_static) {
+    if constexpr (is_s390<E>)
+      ctx.s390_tls_get_offset = push(new S390TlsGetOffsetSection);
+
+    if constexpr (is_sparc<E>)
       ctx.sparc_tls_get_addr = push(new SparcTlsGetAddrSection);
+  }
 
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
@@ -101,6 +105,9 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.dynstr->keep();
     ctx.dynsym->keep();
   }
+
+  ctx.tls_get_addr = get_symbol(ctx, "__tls_get_addr");
+  ctx.tls_get_offset = get_symbol(ctx, "__tls_get_offset");
 }
 
 template <typename E>

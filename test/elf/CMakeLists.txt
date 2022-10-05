@@ -47,8 +47,8 @@ add_target(arm arm-linux-gnueabihf)
 add_target(riscv64 riscv64-linux-gnu)
 add_target(ppc64le powerpc64le-linux-gnu)
 add_target(sparc64 sparc64-linux-gnu)
+add_target(s390x s390x-linux-gnu)
 
 if(MOLD_ENABLE_QEMU_TESTS_RV32)
   add_target(riscv32 riscv32-linux-gnu)
 endif()
-

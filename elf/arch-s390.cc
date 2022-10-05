@@ -59,6 +59,9 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   case R_390_PC32:
     *(ub32 *)loc = val - this->shdr.sh_addr - offset;
     break;
+  case R_390_64:
+    *(ub64 *)loc = val;
+    break;
   default:
     Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
   }
@@ -95,13 +98,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *loc = S + A;
       break;
     case R_390_12:
-      *(ub16 *)loc = (*(ub16 *)loc & 0xf00) | (S + A) & 0x0fff;
+      *(ub16 *)loc = (*(ub16 *)loc & 0xf000) | (S + A) & 0x0fff;
       break;
     case R_390_16:
       *(ub16 *)loc = S + A;
       break;
     case R_390_32:
+    case R_390_PLT32:
       *(ub32 *)loc = S + A;
+      break;
+    case R_390_PLT64:
+      *(ub64 *)loc = S + A;
       break;
     case R_390_PC16:
       *(ub16 *)loc = S + A - P;
@@ -115,13 +122,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_PC32DBL:
     case R_390_PLT32DBL:
-      *(ub32 *)loc = (S + A - P) >> 1;
+      if (ctx.is_static && &sym == ctx.tls_get_offset)
+        *(ub32 *)loc = (ctx.s390_tls_get_offset->shdr.sh_addr - P) >> 1;
+      else
+        *(ub32 *)loc = (S + A - P) >> 1;
       break;
     case R_390_PC64:
       *(ub64 *)loc = S + A - P;
       break;
     case R_390_GOT12:
-      *(ub16 *)loc = (*(ub16 *)loc & 0xf00) | (G + GOT + A) & 0x0fff;
+      *(ub16 *)loc = (*(ub16 *)loc & 0xf000) | (G + GOT + A) & 0x0fff;
       break;
     case R_390_GOT16:
       *(ub16 *)loc = G + GOT + A;
@@ -132,11 +142,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_GOT64:
       *(ub64 *)loc = G + GOT + A;
       break;
-    case R_390_GOTOFF:
-      *(ub32 *)loc = S + A - GOT;
+    case R_390_GOTOFF16:
+      *(ub16 *)loc = S + A - GOT;
+      break;
+    case R_390_GOTOFF64:
+      *(ub64 *)loc = S + A - GOT;
       break;
     case R_390_GOTPC:
-      *(ub32 *)loc = GOT + A - P;
+      *(ub64 *)loc = GOT + A - P;
       break;
     case R_390_GOTPCDBL:
       *(ub32 *)loc = (GOT + A - P) >> 1;
@@ -144,11 +157,41 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_GOTENT:
       *(ub32 *)loc = (GOT + G + A - P) >> 1;
       break;
-    case R_390_PLT32:
-      *(ub32 *)loc = S + A;
+    case R_390_TLS_LE32:
+      *(ub32 *)loc = S + A - ctx.tp_addr;
       break;
-    case R_390_PLT64:
-      *(ub64 *)loc = S + A;
+    case R_390_TLS_LE64:
+      *(ub64 *)loc = S + A - ctx.tp_addr;
+      break;
+    case R_390_TLS_GOTIE20: {
+      i64 val = sym.get_gottp_addr(ctx) + A - GOT;
+      *(ub32 *)loc &= 0xf000'00ff;
+      *(ub32 *)loc |= (bits(val, 11, 0) << 16) | (bits(val, 19, 12) << 8);
+      break;
+    }
+    case R_390_TLS_IEENT:
+      *(ub32 *)loc = (sym.get_gottp_addr(ctx) + A - P) >> 1;
+      break;
+    case R_390_TLS_GD32:
+      *(ub32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
+      break;
+    case R_390_TLS_GD64:
+      *(ub64 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
+      break;
+    case R_390_TLS_LDM32:
+      *(ub32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
+      break;
+    case R_390_TLS_LDM64:
+      *(ub64 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
+      break;
+    case R_390_TLS_LDO32:
+      *(ub32 *)loc = S + A - ctx.tls_begin;
+      break;
+    case R_390_TLS_LDO64:
+      *(ub64 *)loc = S + A - ctx.tls_begin;
+      break;
+    case R_390_TLS_GDCALL:
+    case R_390_TLS_LDCALL:
       break;
     default:
       unreachable();
@@ -187,6 +230,15 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 #define A (frag ? frag_addend : (i64)rel.r_addend)
 
     switch (rel.r_type) {
+    case R_390_32:
+      *(ub32 *)loc = S + A;
+      break;
+    case R_390_64:
+      if (std::optional<u64> val = get_tombstone(sym, frag))
+        *(ub64 *)loc = *val;
+      else
+        *(ub64 *)loc = S + A;
+      break;
     default:
       Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
     }
@@ -202,7 +254,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
-  Symbol<E> &tls_get_addr = *get_symbol(ctx, "__tls_get_addr");
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -241,7 +292,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_390_GOT16:
     case R_390_GOT32:
     case R_390_GOT64:
-    case R_390_GOTOFF:
+    case R_390_GOTOFF16:
+    case R_390_GOTOFF64:
     case R_390_GOTPC:
     case R_390_GOTPCDBL:
     case R_390_GOTENT:
@@ -254,10 +306,43 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
+    case R_390_TLS_LE32:
+    case R_390_TLS_LE64:
+    case R_390_TLS_GOTIE20:
+    case R_390_TLS_IEENT:
+      sym.flags |= NEEDS_GOTTP;
+      break;
+    case R_390_TLS_GD32:
+    case R_390_TLS_GD64:
+      sym.flags |= NEEDS_TLSGD;
+      break;
+    case R_390_TLS_LDM32:
+    case R_390_TLS_LDM64:
+      ctx.needs_tlsld = true;
+      break;
+    case R_390_TLS_LDO32:
+    case R_390_TLS_LDO64:
+    case R_390_TLS_LDCALL:
+    case R_390_TLS_GDCALL:
+      break;
     default:
       Fatal(ctx) << *this << ": scan_relocations: " << rel;
     }
   }
+}
+
+// __tls_get_offset() in libc.a just calls abort().
+// This section provides a replacement.
+void S390TlsGetOffsetSection::copy_buf(Context<E> &ctx) {
+  static const u8 insn[] = {
+    0x1a, 0x2c,                         // ar %r2, %r12
+    0xe3, 0x20, 0x20, 0x08, 0x00, 0x04, // lg %r2, 8(%r2)
+    0x07, 0xfe,                         // br %r14
+    0x07, 0x00,                         // nopr
+  };
+
+  assert(this->shdr.sh_size == sizeof(insn));
+  memcpy(ctx.buf + this->shdr.sh_offset, insn, sizeof(insn));
 }
 
 } // namespace mold::elf

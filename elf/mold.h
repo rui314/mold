@@ -1386,6 +1386,23 @@ template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx);
 
 //
+// arch-s390.cc
+//
+
+class S390TlsGetOffsetSection : public Chunk<S390> {
+public:
+  S390TlsGetOffsetSection() {
+    this->name = ".tls_get_offset";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 4;
+    this->shdr.sh_size = 12;
+  }
+
+  void copy_buf(Context<S390> &ctx) override;
+};
+
+//
 // arch-sparc.cc
 //
 
@@ -1662,6 +1679,11 @@ struct Context {
   GdbIndexSection<E> *gdb_index = nullptr;
   RelroPaddingSection<E> *relro_padding = nullptr;
   SparcTlsGetAddrSection *sparc_tls_get_addr = nullptr;
+  S390TlsGetOffsetSection *s390_tls_get_offset = nullptr;
+
+  // Frequently accessed symbols
+  Symbol<E> *tls_get_addr = nullptr;
+  Symbol<E> *tls_get_offset = nullptr;
 
   // For --gdb-index
   Chunk<E> *debug_info = nullptr;

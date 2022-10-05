@@ -297,14 +297,14 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     // load/store instructions usually take 12-bits signed immediates,
     // so the beginning of TLV ± 2 KiB is accessible with a single
     // load/store instruction.
-    if constexpr (is_x86<E> || is_sparc<E>) {
+    if constexpr (is_x86<E> || is_sparc<E> || is_s390<E>) {
       ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
     } else if constexpr (is_arm<E>) {
       ctx.tp_addr = align_down(ctx.tls_begin - sizeof(Word<E>) * 2, phdr.p_align);
     } else if constexpr (is_ppc<E>) {
       ctx.tp_addr = ctx.tls_begin + 0x7000;
     } else {
-      static_assert(is_riscv<E> || is_s390<E>);
+      static_assert(is_riscv<E>);
       ctx.tp_addr = ctx.tls_begin;
     }
   }
@@ -1249,8 +1249,13 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     entries.push_back({idx, sym->get_addr(ctx) - ctx.tp_addr});
   }
 
-  if (tlsld_idx != -1)
-    entries.push_back({tlsld_idx, 0, E::R_DTPMOD});
+  if (tlsld_idx != -1) {
+    if (ctx.arg.is_static)
+      entries.push_back({tlsld_idx, 1}); // One indicates the main executable
+    else
+      entries.push_back({tlsld_idx, 0, E::R_DTPMOD});
+  }
+
   return entries;
 }
 

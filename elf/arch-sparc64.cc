@@ -150,7 +150,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
   u64 tls_get_addr_addr = ctx.arg.is_static
     ? (u64)ctx.sparc_tls_get_addr->shdr.sh_addr
-    : get_symbol(ctx, "__tls_get_addr")->get_addr(ctx);
+    : ctx.tls_get_addr->get_addr(ctx);
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -453,7 +453,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
-  Symbol<E> &tls_get_addr = *get_symbol(ctx, "__tls_get_addr");
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -549,8 +548,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_SPARC_TLS_GD_CALL:
     case R_SPARC_TLS_LDM_CALL:
-      if (!ctx.arg.is_static && tls_get_addr.is_imported)
-        tls_get_addr.flags |= NEEDS_PLT;
+      if (!ctx.arg.is_static && ctx.tls_get_addr->is_imported)
+        ctx.tls_get_addr->flags |= NEEDS_PLT;
       break;
     case R_SPARC_GOTDATA_OP_LOX10:
     case R_SPARC_GOTDATA_OP:
