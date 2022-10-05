@@ -200,25 +200,52 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc = (sym.get_gottp_addr(ctx) + A - P) >> 1;
       break;
     case R_390_TLS_GD32:
-      *(ub32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
+      if (sym.get_tlsgd_idx(ctx) == -1)
+        *(ub32 *)loc = S + A - ctx.tp_addr;
+      else
+        *(ub32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
       break;
     case R_390_TLS_GD64:
-      *(ub64 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
-      break;
-    case R_390_TLS_LDM32:
-      *(ub32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
-      break;
-    case R_390_TLS_LDM64:
-      *(ub64 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
-      break;
-    case R_390_TLS_LDO32:
-      *(ub32 *)loc = S + A - ctx.tls_begin;
-      break;
-    case R_390_TLS_LDO64:
-      *(ub64 *)loc = S + A - ctx.tls_begin;
+      if (sym.get_tlsgd_idx(ctx) == -1)
+        *(ub64 *)loc = S + A - ctx.tp_addr;
+      else
+        *(ub64 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
       break;
     case R_390_TLS_GDCALL:
+      if (sym.get_tlsgd_idx(ctx) == -1) {
+        static const u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
+        memcpy(loc, nop, sizeof(nop));
+      }
+      break;
+    case R_390_TLS_LDM32:
+      if (ctx.got->tlsld_idx == -1)
+        *(ub32 *)loc = 0;
+      else
+        *(ub32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
+      break;
+    case R_390_TLS_LDM64:
+      if (ctx.got->tlsld_idx == -1)
+        *(ub64 *)loc = 0;
+      else
+        *(ub64 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
+      break;
+    case R_390_TLS_LDO32:
+      if (ctx.got->tlsld_idx == -1)
+        *(ub32 *)loc = S + A - ctx.tp_addr;
+      else
+        *(ub32 *)loc = S + A - ctx.tls_begin;
+      break;
+    case R_390_TLS_LDO64:
+      if (ctx.got->tlsld_idx == -1)
+        *(ub64 *)loc = S + A - ctx.tp_addr;
+      else
+        *(ub64 *)loc = S + A - ctx.tls_begin;
+      break;
     case R_390_TLS_LDCALL:
+      if (ctx.got->tlsld_idx == -1) {
+        static const u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
+        memcpy(loc, nop, sizeof(nop));
+      }
       break;
     default:
       unreachable();
@@ -346,17 +373,23 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_390_TLS_GD32:
-    case R_390_TLS_GD64:
-      sym.flags |= NEEDS_TLSGD;
+    case R_390_TLS_GD64: {
+      bool do_relax = ctx.arg.relax && !ctx.arg.shared && !sym.is_imported;
+      if (!do_relax)
+        sym.flags |= NEEDS_TLSGD;
       break;
+    }
     case R_390_TLS_LDM32:
-    case R_390_TLS_LDM64:
-      ctx.needs_tlsld = true;
+    case R_390_TLS_LDM64: {
+      bool do_relax = ctx.arg.relax && !ctx.arg.shared;
+      if (!do_relax)
+        ctx.needs_tlsld = true;
       break;
+    }
     case R_390_TLS_LDO32:
     case R_390_TLS_LDO64:
-    case R_390_TLS_LDCALL:
     case R_390_TLS_GDCALL:
+    case R_390_TLS_LDCALL:
       break;
     default:
       Fatal(ctx) << *this << ": scan_relocations: " << rel;

@@ -13,7 +13,7 @@ mkdir -p $t
 
 [ $MACHINE = x86_64 ] || { echo skipped; exit; }
 
-cat <<EOF | $GCC -ftls-model=local-dynamic -mtls-dialect=gnu -fPIC -c -o $t/a.o -xc - -mcmodel=large
+cat <<EOF | $GCC -ftls-model=local-dynamic -fPIC -c -o $t/a.o -xc - -mcmodel=large
 #include <stdio.h>
 
 extern _Thread_local int foo;
@@ -30,7 +30,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $GCC -ftls-model=local-dynamic -mtls-dialect=gnu  -fPIC -c -o $t/b.o -xc - -mcmodel=large
+cat <<EOF | $GCC -ftls-model=local-dynamic  -fPIC -c -o $t/b.o -xc - -mcmodel=large
 _Thread_local int foo = 3;
 EOF
 

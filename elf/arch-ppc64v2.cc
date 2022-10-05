@@ -254,10 +254,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = ctx.got->get_tlsld_addr(ctx) - ctx.TOC->value;
       break;
     case R_PPC64_DTPREL16_HA:
+      *(ul16 *)loc = ha(S + A - ctx.tls_begin - E::tls_dtv_offset);
+      break;
     case R_PPC64_TPREL16_HA:
       *(ul16 *)loc = ha(S + A - ctx.tp_addr);
       break;
     case R_PPC64_DTPREL16_LO:
+      *(ul16 *)loc = S + A - ctx.tls_begin - E::tls_dtv_offset;
+      break;
     case R_PPC64_TPREL16_LO:
       *(ul16 *)loc = S + A - ctx.tp_addr;
       break;
@@ -327,7 +331,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_PPC64_DTPREL64:
-      *(ul64 *)loc = S + A - ctx.tp_addr;
+      *(ul64 *)loc = S + A - ctx.tls_begin - E::tls_dtv_offset;
       break;
     default:
       Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
