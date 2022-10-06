@@ -20,4 +20,4 @@ EOF
 $CC -B. -o $t/exe $t/a.o \
   -Wl,--section-start=.low=0x10000000,--section-start=.high=0x20000000
 
-${TEST_TRIPLE}objdump -dr $t/exe | grep -Fq '<fn1$thunk>:'
+$OBJDUMP -dr $t/exe | grep -Fq '<fn1$thunk>:'

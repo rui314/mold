@@ -219,21 +219,14 @@ endif
 	fi
 
 test-arch:
-	TEST_CC=${TRIPLE}-gcc \
-	TEST_CXX=${TRIPLE}-g++ \
-	TEST_GCC=${TRIPLE}-gcc \
-	TEST_GXX=${TRIPLE}-g++ \
-	TEST_TRIPLE=${TRIPLE}- \
-	MACHINE=${MACHINE} \
-	QEMU="qemu-${MACHINE} -L /usr/${TRIPLE}" \
 	$(MAKE) test
 
 test-all: all
-	$(MAKE) test-arch TRIPLE=x86_64-linux-gnu MACHINE=x86_64
-	$(MAKE) test-arch TRIPLE=i686-linux-gnu MACHINE=i386
-	$(MAKE) test-arch TRIPLE=aarch64-linux-gnu MACHINE=aarch64
-	$(MAKE) test-arch TRIPLE=arm-linux-gnueabihf MACHINE=arm
-	$(MAKE) test-arch TRIPLE=riscv64-linux-gnu MACHINE=riscv64
+	$(MAKE) test-arch TRIPLE=x86_64-linux-gnu
+	$(MAKE) test-arch TRIPLE=i686-linux-gnu
+	$(MAKE) test-arch TRIPLE=aarch64-linux-gnu
+	$(MAKE) test-arch TRIPLE=arm-linux-gnueabihf
+	$(MAKE) test-arch TRIPLE=riscv64-linux-gnu
 
 # macOS's GNU make hasn't been updated since 3.8.1 perhaps due a concern
 # of GPLv3. The --output-sync flag was introduced in GNU Make 4.0, so we

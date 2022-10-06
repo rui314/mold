@@ -29,4 +29,4 @@ EOF
 
 $CC -march=$ISA -B. -nostdlib -O2 -o $t/exe $t/a.o $t/b.o $t/c.o
 
-${TEST_TRIPLE}objdump -d $t/exe | grep -q ff5ff06f # j pc - 0xc
+$OBJDUMP -d $t/exe | grep -q ff5ff06f # j pc - 0xc

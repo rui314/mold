@@ -22,6 +22,6 @@ EOF
 
 ./mold -z separate-loadable-segments -pie -o $t/exe $t/b.o $t/a.so
 
-${TEST_TRIPLE}objdump -d -j .plt.got $t/exe > $t/log
+$OBJDUMP -d -j .plt.got $t/exe > $t/log
 
 grep -Eq '1034:.*jmp.* <ext2>' $t/log

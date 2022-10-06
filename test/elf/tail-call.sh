@@ -24,5 +24,5 @@ $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
 $QEMU $t/exe | grep -q '42'
 
 if [ $MACHINE = riscv32 -o $MACHINE = riscv64 ]; then
-  ${TEST_TRIPLE}objdump -d $t/exe | grep -q bfed # c.j pc - 6
+  $OBJDUMP -d $t/exe | grep -q bfed # c.j pc - 6
 fi

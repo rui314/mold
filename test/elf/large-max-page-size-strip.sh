@@ -4,7 +4,7 @@
 # ARM32's strip command crashes on the output of this test for some reason.
 [ $MACHINE = arm ] && skip
 
-strip=${TEST_TRIPLE}strip
+strip=$STRIP
 command -v $strip >& /dev/null || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC

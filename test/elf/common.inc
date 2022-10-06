@@ -3,19 +3,45 @@
 # Make sure all commands print out messages in English
 export LC_ALL=C
 
-# Set test variables
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
+canonical_name() {
+  case $1 in
+  i?86) echo i386 ;;
+  arm*) echo arm ;;
+  powerpc64le) echo ppc64le ;;
+  *) echo $1
+  esac
+}
 
-# Canonicalize a target name
-case $MACHINE in
-arm*) MACHINE=arm ;;
-i?86) MACHINE=i386 ;;
-esac
+HOST=$(canonical_name $(uname -m))
 
+if [ -n "$TRIPLE" ]; then
+  MACHINE=$(canonical_name $(echo $TRIPLE | sed 's/-.*//'))
+else
+  MACHINE=$HOST
+fi
+
+# Set tool names
+if [ -n "$TRIPLE" ]; then
+  CC="${TEST_CC:-$TRIPLE-gcc}"
+  CXX="${TEST_CXX:-$TRIPLE-g++}"
+  GCC="${TEST_GCC:-$TRIPLE-gcc}"
+  GXX="${TEST_GXX:-$TRIPLE-g++}"
+  OBJDUMP="$TRIPLE-objdump"
+  OBJCOPY="$TRIPLE-objcopy"
+  STRIP="$TRIPLE-strip"
+  QEMU="qemu-$MACHINE -L /usr/$TRIPLE"
+else
+  CC="${TEST_CC:-cc}"
+  CXX="${TEST_CXX:-c++}"
+  GCC="${TEST_GCC:-gcc}"
+  GXX="${TEST_GXX:-g++}"
+  OBJDUMP=objdump
+  OBJCOPY=objcopy
+  STRIP=strip
+  QEMU=
+fi
+
+# Common functions
 test_cflags() {
   echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null
 }
@@ -41,6 +67,7 @@ on_exit() {
 trap 'on_error $LINENO' ERR
 trap on_exit EXIT
 
+# Print out the startup message
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 t=out/test/elf/$MACHINE/$testname
