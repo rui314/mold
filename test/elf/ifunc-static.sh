@@ -2,12 +2,7 @@
 . $(dirname $0)/common.inc
 
 test_cflags -static || skip
-
-# IFUNC is not supported on RISC-V yet
-[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] && skip
-
-# Skip if libc is musl because musl does not support GNU IFUNC
-ldd --help 2>&1 | grep -q musl && skip
+supports_ifunc || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>

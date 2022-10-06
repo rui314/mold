@@ -130,6 +130,13 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
+static u32 relax_got32x(u8 *loc) {
+  // mov imm(%reg1), %reg2 -> lea imm(%reg1), %reg2
+  if (loc[0] == 0x8b)
+    return 0x8d00 | loc[1];
+  return 0;
+}
+
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
@@ -193,8 +200,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = S + A - P;
       break;
     case R_386_GOT32:
-    case R_386_GOT32X:
       *(ul32 *)loc = G + A;
+      break;
+    case R_386_GOT32X:
+      if (sym.has_got(ctx)) {
+        *(ul32 *)loc = G + A;
+      } else {
+        u32 insn = relax_got32x(loc - 2);
+        loc[-2] = insn >> 8;
+        loc[-1] = insn;
+        *(ul32 *)loc = S + A - GOT;
+      }
       break;
     case R_386_GOTOFF:
       *(ul32 *)loc = S + A - GOT;
@@ -420,6 +436,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
+    u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
       record_undef_error(ctx, rel);
@@ -443,10 +460,16 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_pcrel_rel(ctx, sym, rel);
       break;
     case R_386_GOT32:
-    case R_386_GOT32X:
     case R_386_GOTPC:
       sym.flags |= NEEDS_GOT;
       break;
+    case R_386_GOT32X: {
+      bool do_relax = ctx.arg.relax && !sym.is_imported &&
+                      sym.is_relative() && relax_got32x(loc - 2);
+      if (!do_relax)
+        sym.flags |= NEEDS_GOT;
+      break;
+    }
     case R_386_PLT32:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;

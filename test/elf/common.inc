@@ -46,6 +46,11 @@ test_cflags() {
   echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null
 }
 
+supports_ifunc() {
+  echo 'void x() __attribute__((ifunc("y"))); void *y() { return 0; }' | \
+    $CC -c -o /dev/null -xc - >& /dev/null
+}
+
 skip() {
   echo skipped
   trap - EXIT

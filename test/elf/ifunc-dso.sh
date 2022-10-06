@@ -1,11 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-# IFUNC is not supported on RISC-V yet
-[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] && skip
-
-# Skip if libc is musl because musl does not support GNU FUNC
-ldd --help 2>&1 | grep -q musl && skip
+supports_ifunc || skip
 
 cat <<EOF | $CC -fPIC -o $t/a.o -c -xc -
 void foobar(void);

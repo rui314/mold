@@ -2,18 +2,7 @@
 . $(dirname $0)/common.inc
 
 test_cflags -static || skip
-
-[ $MACHINE = aarch64 ] && skip
-
-# Skip if libc is musl because musl does not support GNU IFUNC
-ldd --help 2>&1 | grep -q musl && skip
-
-# We need to implement R_386_GOT32X relaxation to support PIE on i386
-[ $MACHINE = i386 ] && skip
-
-# IFUNC is not supported on RISC-V yet
-[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] && skip
-[ $MACHINE = aarch64 ] && skip
+supports_ifunc || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
 #include <stdio.h>
