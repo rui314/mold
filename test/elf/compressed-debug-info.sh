@@ -18,5 +18,3 @@ EOF
 $CC -B. -o $t/exe $t/a.o $t/b.o
 dwarfdump $t/exe > /dev/null
 readelf --sections $t/exe | grep -Fq .debug_info
-
-echo ' OK'
