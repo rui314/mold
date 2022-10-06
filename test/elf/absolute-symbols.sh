@@ -1,20 +1,10 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 # This test crashes only on qemu-sparc64 running on GitHub Actions,
 # even though it works on a local x86-64 machine and on an actual
 # SPARC machine.
-[ $MACHINE = sparc64 ] && { echo skipped; exit; }
+[ $MACHINE = sparc64 ] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .globl foo
@@ -47,5 +37,3 @@ EOF
 
 $CC -B. -o $t/exe -no-pie $t/a.o $t/b.o
 $QEMU $t/exe | grep -q '^ip=0x80000.$'
-
-echo OK

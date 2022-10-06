@@ -1,17 +1,7 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[[ $MACHINE = arm* ]] && flags=-marm
+[ $MACHINE = arm ] && flags=-marm
 
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIC $flags -
 #include <stdio.h>
@@ -41,5 +31,3 @@ $QEMU $t/exe2 | grep -q 'main fn1 fn2 0x20000000 0x10000000'
 
 readelf -W --segments $t/exe2 | grep ' LOAD ' | sed 's/0x[0-9a-f]*//' > $t/log2
 diff $t/log2 <(sort $t/log2)
-
-echo OK

@@ -1,15 +1,5 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 void foo(int x) {}
@@ -44,5 +34,3 @@ readelf --dyn-syms $t/exe2 > $t/log2
 grep -q ' foo$' $t/log2
 ! grep -q ' bar$' $t/log2 || false
 grep -q ' _Z3bazi$' $t/log2
-
-echo OK

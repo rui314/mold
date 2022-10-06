@@ -1,15 +1,5 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
@@ -32,5 +22,3 @@ if [ $MACHINE = x86-64 -o $MACHINE = aarch64 ]; then
   $CC -B. -no-pie -o $t/exe2 $t/b.o -nostdlib -Wl,--image-base=0xffffffff80000000
   readelf -W --sections $t/exe2 | grep -Eq '.interp\s+PROGBITS\s+ffffffff80000...\b'
 fi
-
-echo OK

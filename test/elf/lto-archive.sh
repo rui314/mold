@@ -1,20 +1,10 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[ "$CC" = cc ] || { echo skipped; exit; }
+[ "$CC" = cc ] || skip
 
 echo 'int main() {}' | $CC -flto -o /dev/null -xc - >& /dev/null \
-  || { echo skipped; exit; }
+  || skip
 
 cat <<EOF | $CC -o $t/a.o -c -flto -xc -
 #include <stdio.h>
@@ -46,5 +36,3 @@ $QEMU $t/exe | grep -q 'Hello world'
 nm $t/exe > $t/log
 grep -q hello $t/log
 ! grep -q howdy $t/log || false
-
-echo OK

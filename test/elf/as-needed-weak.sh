@@ -1,15 +1,5 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 cat <<EOF | $CC -fPIC -o $t/a.o -c -xc -
 __attribute__((weak)) int fn1();
@@ -38,5 +28,3 @@ $CC -B. -o $t/exe $t/a.o -Wl,-as-needed $t/b.so $t/c.so
 readelf --dynamic $t/exe > $t/readelf
 ! grep -Fq 'Shared library: [libfoo.so]' $t/readelf || false
 ! grep -Fq 'Shared library: [libbar.so]' $t/readelf || false
-
-echo OK

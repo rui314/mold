@@ -1,18 +1,8 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 static=1
-echo 'int main() {}' | $CC -o /dev/null -xc - -static >& /dev/null || static=0
+test_cflags -static || static=0
 
 cat <<EOF > $t/a.cc
 int main() {
@@ -75,5 +65,3 @@ if [ $MACHINE = x86_64 -o $MACHINE = aarch64 ]; then
   $CXX -B. -o $t/exe10 $t/e.o -no-pie
   $QEMU $t/exe10
 fi
-
-echo OK

@@ -1,21 +1,10 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 # Skip if target is not x86-64
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+[ $MACHINE = x86_64 ] || skip
 
-echo 'int main() {}' | $CC -o /dev/null -xc - -static >& /dev/null || \
-  { echo skipped; exit; }
+test_cflags -static || skip
 
 cat <<'EOF' | $CC -o $t/a.o -c -x assembler -
   .text
@@ -65,5 +54,3 @@ $QEMU $t/exe | grep -q '^bcdef$'
 $QEMU $t/exe | grep -q '^ijkl$'
 $QEMU $t/exe | grep -q '^pqr$'
 $QEMU $t/exe | grep -q '^mnopqr$'
-
-echo OK

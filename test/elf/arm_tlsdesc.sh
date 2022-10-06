@@ -1,20 +1,10 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[[ $MACHINE = arm* ]] || { echo skipped; exit; }
+[ $MACHINE = arm ] || skip
 
 echo 'int main() {}' | $GCC -c -o /dev/null -xc - -O0 -mthumb >& /dev/null \
-  || { echo skipped; exit; }
+  || skip
 
 cat <<EOF > $t/a.c
 extern _Thread_local int foo;
@@ -73,5 +63,3 @@ $QEMU $t/exe5 | grep -q '42 5'
 $CC -B. -o $t/exe6 $t/e.o $t/f.o -Wl,-no-relax \
   -Wl,--section-start=.low=0x10000000,--section-start=.high=0x20000000
 $QEMU $t/exe6 | grep -q '42 5'
-
-echo OK

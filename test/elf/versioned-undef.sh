@@ -1,19 +1,9 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 # Skip if libc is musl because musl does not fully support GNU-style
 # symbol versioning.
-ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
+ldd --help 2>&1 | grep -q musl && skip
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 int foo1() { return 1; }
@@ -47,5 +37,3 @@ EOF
 
 $CC -B. -o $t/exe $t/d.o $t/c.so
 $QEMU $t/exe | grep -q '^1 2 3 3$'
-
-echo OK

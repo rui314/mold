@@ -1,26 +1,15 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[ $MACHINE = $(uname -m) ] || { echo skipped; exit; }
+[ $MACHINE = $(uname -m) ] || skip
 
-[ $MACHINE = riscv32 ] && { echo skipped; exit; }
-[ $MACHINE = riscv64 ] && { echo skipped; exit; }
-[ $MACHINE = sparc64 ] && { echo skipped; exit; }
+[ $MACHINE = riscv32 ] && skip
+[ $MACHINE = riscv64 ] && skip
+[ $MACHINE = sparc64 ] && skip
 
-command -v gdb >& /dev/null || { echo skipped; exit; }
+command -v gdb >& /dev/null || skip
 
-echo 'int main() {}' | $CC -o /dev/null -xc -gdwarf-5 -g - >& /dev/null ||
-  { echo skipped; exit; }
+test_cflags -gdwarf-5 -g || skip
 
 cat <<EOF > $t/a.c
 void fn3();
@@ -104,5 +93,3 @@ grep -q 'fn4 () at .*/b.c:4' $t/log
 grep -q 'fn3 () at .*/b.c:8' $t/log
 grep -q 'fn2 () at .*/a.c:4' $t/log
 grep -q 'fn1 () at .*/a.c:8' $t/log
-
-echo OK

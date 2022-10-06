@@ -1,15 +1,5 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 void foo1() {}
@@ -34,5 +24,3 @@ readelf --symbols $t/c.so > $t/log
 grep -Fq 'foo@VER1' $t/log
 grep -Fq 'foo@VER2' $t/log
 grep -Fq 'foo@@VER3' $t/log
-
-echo OK

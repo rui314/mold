@@ -1,15 +1,5 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 cat <<'EOF' | $CC -x assembler -c -o $t/a.o -Wa,-L -
 .globl _start, foo
@@ -38,5 +28,3 @@ readelf --symbols $t/exe > $t/log
 if [ $MACHINE '!=' riscv32 ] && [ $MACHINE '!=' riscv64 ]; then
   ! grep -Fq .L.baz $t/log || false
 fi
-
-echo OK

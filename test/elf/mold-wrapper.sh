@@ -1,21 +1,11 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[ "$CC" = cc ] || { echo skipped; exit; }
+[ "$CC" = cc ] || skip
 
-ldd mold-wrapper.so | grep -q libasan && { echo skipped; exit; }
+ldd mold-wrapper.so | grep -q libasan && skip
 
-nm mold | grep -q '__[at]san_init' && { echo skipped; exit; }
+nm mold | grep -q '__[at]san_init' && skip
 
 cat <<'EOF' > $t/a.sh
 #!/bin/bash
@@ -83,5 +73,3 @@ LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execle | grep -q 'a.sh
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execv | grep -q 'a.sh execv'
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execvp | grep -q 'a.sh execvp'
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=$t/a.sh $t/exe execvpe | grep -q 'a.sh execvpe bar'
-
-echo OK

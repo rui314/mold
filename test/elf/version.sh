@@ -1,15 +1,5 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 ./mold -v | grep -q 'mold .*compatible with GNU ld'
 ./mold --version | grep -q 'mold .*compatible with GNU ld'
@@ -35,5 +25,3 @@ $QEMU $t/exe | grep -q 'Hello world'
 
 ! ./mold --v >& $t/log
 grep -q 'unknown command line option:' $t/log
-
-echo OK

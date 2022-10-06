@@ -1,26 +1,15 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[ $MACHINE = $(uname -m) ] || { echo skipped; exit; }
+[ $MACHINE = $(uname -m) ] || skip
 
-[ $MACHINE = riscv32 ] && { echo skipped; exit; }
-[ $MACHINE = riscv64 ] && { echo skipped; exit; }
-[ $MACHINE = sparc64 ] && { echo skipped; exit; }
+[ $MACHINE = riscv32 ] && skip
+[ $MACHINE = riscv64 ] && skip
+[ $MACHINE = sparc64 ] && skip
 
-command -v gdb >& /dev/null || { echo skipped; exit; }
+command -v gdb >& /dev/null || skip
 
-echo 'int main() {}' | $CC -o /dev/null -xc -gdwarf-3 -g - >& /dev/null ||
-  { echo skipped; exit; }
+test_cflags -gdwarf-3 || skip
 
 cat <<EOF | $CC -c -o $t/a.o -fPIC -g -ggnu-pubnames -gdwarf-3 -xc - -ffunction-sections
 void hello2();
@@ -68,5 +57,3 @@ grep -q 'hello2 () at .*<stdin>:7' $t/log
 grep -q 'hello () at .*<stdin>:4' $t/log
 grep -q 'greet () at .*<stdin>:8' $t/log
 grep -q 'main () at .*<stdin>:4' $t/log
-
-echo OK

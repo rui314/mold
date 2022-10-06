@@ -1,17 +1,7 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-command -v llvm-readelf >& /dev/null || { echo skipped; exit; }
+command -v llvm-readelf >& /dev/null || skip
 
 cat <<EOF | $CC -o $t/a.o -fPIC -c -xc -
 #include <stdio.h>
@@ -32,5 +22,3 @@ llvm-readelf --dynamic $t/exe2 > $t/log3
 grep -wq RELR $t/log3
 grep -wq RELRSZ $t/log3
 grep -wq RELRENT $t/log3
-
-echo OK

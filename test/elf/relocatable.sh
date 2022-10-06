@@ -1,18 +1,8 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98667
-[ $MACHINE = i386 -o $MACHINE = i686 ] && { echo skipped; exit; }
+[ $MACHINE = i386 ] && skip
 
 cat <<EOF | $CXX -c -o $t/a.o -xc++ -
 int one() { return 1; }
@@ -63,5 +53,3 @@ EOF
 
 $CXX -B. -o $t/exe $t/c.o $t/d.o
 $QEMU $t/exe | grep -q '^1 2 3$'
-
-echo OK

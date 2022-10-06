@@ -1,20 +1,10 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+[ $MACHINE = x86_64 ] || skip
 
 echo 'int main() {}' | $CC -m32 -o $t/exe -xc - >& /dev/null \
-  || { echo skipped; exit; }
+  || skip
 
 cat <<EOF | $CC -m32 -c -o $t/a.o -xc -
 char hello[] = "Hello world";
@@ -48,5 +38,3 @@ $CC -B. -o $t/exe -L$t/lib32 -L$t/lib64 -lfoo $t/e.o -Wl,-rpath $t/lib64 \
 
 grep -q 'lib32/libfoo.so: skipping incompatible file' $t/log
 $QEMU $t/exe | grep -q 'Hello world'
-
-echo OK

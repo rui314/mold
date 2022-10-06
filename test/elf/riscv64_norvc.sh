@@ -1,17 +1,7 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] || { echo skipped; exit; }
+[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] || skip
 
 # Disable C extension
 if [ $MACHINE = riscv32 ]; then
@@ -40,5 +30,3 @@ EOF
 $CC -march=$ISA -B. -nostdlib -O2 -o $t/exe $t/a.o $t/b.o $t/c.o
 
 ${TEST_TRIPLE}objdump -d $t/exe | grep -q ff5ff06f # j pc - 0xc
-
-echo OK

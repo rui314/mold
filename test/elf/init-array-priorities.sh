@@ -1,18 +1,8 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 # musl does not support GNU-style init/fini priorities
-ldd --help 2>&1 | grep -q musl && { echo skipped; exit; }
+ldd --help 2>&1 | grep -q musl && skip
 
 cat <<'EOF' | $CC -c -o $t/a.o -xc -
 #include <stdio.h>
@@ -60,5 +50,3 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o $t/e.o $t/f.o $t/g.o $t/h.o $t/i.o
 $QEMU $t/exe | grep -q '21348756'
-
-echo OK

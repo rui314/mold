@@ -1,20 +1,10 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[[ $MACHINE = arm* ]] || { echo skipped; exit; }
+[ $MACHINE = arm ] || skip
 
 echo 'int main() {}' | $CC -c -o /dev/null -xc - -O0 -mthumb >& /dev/null \
-  || { echo skipped; exit; }
+  || skip
 
 cat <<EOF > $t/a.c
 #include <stdio.h>
@@ -55,5 +45,3 @@ $CC -c -o $t/f.o $t/b.c -O2 -marm
 $CC -B. -o $t/exe $t/e.o $t/f.o \
   -Wl,--section-start=.low=0x10000000,--section-start=.high=0x20000000
 $QEMU $t/exe | grep -q 'main fn1 fn3 fn2 fn4'
-
-echo OK

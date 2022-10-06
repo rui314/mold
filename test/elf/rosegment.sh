@@ -1,15 +1,5 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
@@ -27,5 +17,3 @@ readelf -W --segments $t/exe2 > $t/log2
 $CC -B. -o $t/exe3 $t/a.o -Wl,--no-rosegment
 readelf -W --segments $t/exe3 > $t/log3
 grep -q '\.interp .* \.text' $t/log3
-
-echo OK

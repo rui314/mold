@@ -1,20 +1,9 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+[ $MACHINE = x86_64 ] || skip
 
-echo '.section foo,"R"' | $CC -o /dev/null -c -xassembler - 2> /dev/null ||
-  { echo skipped; exit; }
+echo '.section foo,"R"' | $CC -o /dev/null -c -xassembler - 2> /dev/null || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 int main() {}
@@ -40,5 +29,3 @@ nm $t/exe1 | grep -q foo
 $CC -B. -o $t/exe1 $t/a.o $t/c.o -Wl,-gc-sections
 nm $t/exe1 > $t/log
 ! grep -q foo $t/log || false
-
-echo OK

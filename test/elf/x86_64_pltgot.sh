@@ -1,17 +1,7 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || { echo skipped; exit; }
+[ $MACHINE = x86_64 ] || skip
 
 cat <<EOF | $CC -fPIC -shared -Wl,-z,noexecstack -o $t/a.so -x assembler -
 .globl ext1, ext2
@@ -35,5 +25,3 @@ EOF
 ${TEST_TRIPLE}objdump -d -j .plt.got $t/exe > $t/log
 
 grep -Eq '1034:.*jmp.* <ext2>' $t/log
-
-echo OK

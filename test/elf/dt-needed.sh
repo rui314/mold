@@ -1,15 +1,5 @@
 #!/bin/bash
-export LC_ALL=C
-set -e
-CC="${TEST_CC:-cc}"
-CXX="${TEST_CXX:-c++}"
-GCC="${TEST_GCC:-gcc}"
-GXX="${TEST_GXX:-g++}"
-MACHINE="${MACHINE:-$(uname -m)}"
-testname=$(basename "$0" .sh)
-echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
-mkdir -p $t
+. $(dirname $0)/common.inc
 
 cat <<EOF | $CC -c -o $t/a.o -xc -
 void foo() {}
@@ -34,5 +24,3 @@ readelf --dynamic $t/exe | grep -Eq 'Shared library: \[.*dt-needed/libbar\.so\]'
 
 $CC -B. -o $t/exe $t/b.o -L$t -lbar
 readelf --dynamic $t/exe | grep -Fq 'Shared library: [libbar.so]'
-
-echo OK
