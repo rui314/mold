@@ -8,8 +8,7 @@ if [ $MACHINE = x86_64 ]; then
 elif [ $MACHINE = aarch64 ]; then
   dialect=desc
 else
-  echo skipped
-  exit
+  skip
 fi
 
 cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -c -o $t/a.o -xc -
