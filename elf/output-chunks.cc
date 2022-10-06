@@ -278,8 +278,8 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     // Each thread has its own value in TP (thread pointer) register, and
     // TLVs defined in the main executable are accessed relative to TP.
     //
-    // On x86, SPARC and S390, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
-    // and %a0 on S390) refers past the end of all TLVs for historical
+    // On x86, SPARC and S390X, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
+    // and %a0/%a1 on S390X) refers past the end of all TLVs for historical
     // reasons. TLVs are accessed with negative offsets from TP.
     //
     // On ARM, the runtime appends two words at the beginning of TLV
@@ -297,7 +297,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     // load/store instructions usually take 12-bits signed immediates,
     // so the beginning of TLV ± 2 KiB is accessible with a single
     // load/store instruction.
-    if constexpr (is_x86<E> || is_sparc<E> || is_s390<E>) {
+    if constexpr (is_x86<E> || is_sparc<E> || is_s390x<E>) {
       ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
     } else if constexpr (is_arm<E>) {
       ctx.tp_addr = align_down(ctx.tls_begin - sizeof(Word<E>) * 2, phdr.p_align);
@@ -920,7 +920,7 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     // runtime executes the sections as if they were a single function.
     // .init and .fini are superceded by .init_array and .fini_array and
     // being actively used only on s390x though.
-    if (is_s390<E> && (this->name == ".init" || this->name == ".fini")) {
+    if (is_s390x<E> && (this->name == ".init" || this->name == ".fini")) {
       for (i64 i = 0; i < size; i += 2)
         *(ub16 *)(loc + i) = 0x0700; // nop
     } else {

@@ -58,8 +58,8 @@ static MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf)
       return is_64 ? MachineType::RV64BE : MachineType::RV32BE;
     case EM_PPC64:
       return MachineType::PPC64V2;
-    case EM_S390:
-      return MachineType::S390;
+    case EM_S390X:
+      return MachineType::S390X;
     case EM_SPARC64:
       return MachineType::SPARC64;
     default:
@@ -409,8 +409,8 @@ int elf_main(int argc, char **argv) {
       return elf_main<RV32BE>(argc, argv);
     case MachineType::PPC64V2:
       return elf_main<PPC64V2>(argc, argv);
-    case MachineType::S390:
-      return elf_main<S390>(argc, argv);
+    case MachineType::S390X:
+      return elf_main<S390X>(argc, argv);
     case MachineType::SPARC64:
       return elf_main<SPARC64>(argc, argv);
     default:
@@ -782,7 +782,7 @@ extern template int elf_main<RV32LE>(int, char **);
 extern template int elf_main<RV64LE>(int, char **);
 extern template int elf_main<RV64BE>(int, char **);
 extern template int elf_main<PPC64V2>(int, char **);
-extern template int elf_main<S390>(int, char **);
+extern template int elf_main<S390X>(int, char **);
 extern template int elf_main<SPARC64>(int, char **);
 
 int main(int argc, char **argv) {

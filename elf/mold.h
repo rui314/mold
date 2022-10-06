@@ -1390,9 +1390,9 @@ i64 riscv_resize_sections(Context<E> &ctx);
 // arch-s390.cc
 //
 
-class S390TlsGetOffsetSection : public Chunk<S390> {
+class S390XTlsGetOffsetSection : public Chunk<S390X> {
 public:
-  S390TlsGetOffsetSection() {
+  S390XTlsGetOffsetSection() {
     this->name = ".tls_get_offset";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
@@ -1400,7 +1400,7 @@ public:
     this->shdr.sh_size = 22;
   }
 
-  void copy_buf(Context<S390> &ctx) override;
+  void copy_buf(Context<S390X> &ctx) override;
 };
 
 //
@@ -1680,7 +1680,7 @@ struct Context {
   GdbIndexSection<E> *gdb_index = nullptr;
   RelroPaddingSection<E> *relro_padding = nullptr;
   SparcTlsGetAddrSection *sparc_tls_get_addr = nullptr;
-  S390TlsGetOffsetSection *s390_tls_get_offset = nullptr;
+  S390XTlsGetOffsetSection *s390x_tls_get_offset = nullptr;
 
   // Frequently accessed symbols
   Symbol<E> *tls_get_addr = nullptr;

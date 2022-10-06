@@ -1,5 +1,5 @@
-// This file contains code for the IBM z/Architecture ISA, which is
-// commonly referred to as "s390x" as a target name on Linux.
+// This file contains code for the IBM z/Architecture 64-bit ISA, which is
+// commonly referred to as "s390x" on Linux.
 //
 // z/Architecture is a 64-bit CISC ISA developed by IBM around 2000 for
 // IBM's "big iron" mainframe computers. The computers are direct
@@ -10,9 +10,9 @@
 // Since they are being actively maintained, we need to support them.
 //
 // As an instruction set, s390x isn't particularly odd. It has 16 general-
-// purpose registers. Instructions vary in size but always be a multiple
-// of 2 and always aligned to 2 bytes boundaries. Despite unfamiliarty, I
-// found that it just feels like a 64-bit i386 in a parallel universe.
+// purpose registers. Instructions are 2, 4 or 6 bytes long and always
+// aligned to 2 bytes boundaries. Despite unfamiliarty, I found that it
+// just feels like a 64-bit i386 in a parallel universe.
 //
 // Its psABI reserves %r0 and %r1 as scratch registers so we can use them
 // in our PLT. %r2-%r6 are used for parameter passing. %r2 is also used to
@@ -27,7 +27,7 @@
 
 namespace mold::elf {
 
-using E = S390;
+using E = S390X;
 
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
@@ -149,7 +149,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (ctx.is_static && &sym == ctx.tls_get_offset) {
         // __tls_get_offset() in libc.a is stub code that calls abort().
         // So we provide a replacement function.
-        *(ub32 *)loc = (ctx.s390_tls_get_offset->shdr.sh_addr - P) >> 1;
+        *(ub32 *)loc = (ctx.s390x_tls_get_offset->shdr.sh_addr - P) >> 1;
       } else {
         *(ub32 *)loc = (S + A - P) >> 1;
       }
@@ -214,7 +214,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_TLS_GDCALL:
       if (!sym.has_tlsgd(ctx)) {
-        static const u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
+        static u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
         memcpy(loc, nop, sizeof(nop));
       }
       break;
@@ -240,7 +240,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_TLS_LDCALL:
       if (!ctx.got->has_tlsld(ctx)) {
-        static const u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
+        static u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
         memcpy(loc, nop, sizeof(nop));
       }
       break;
@@ -393,7 +393,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 // __tls_get_offset() in libc.a just calls abort().
 // This section provides a replacement.
-void S390TlsGetOffsetSection::copy_buf(Context<E> &ctx) {
+void S390XTlsGetOffsetSection::copy_buf(Context<E> &ctx) {
   static const u8 insn[] = {
     0xb9, 0x08, 0x00, 0x2c,             // agr  %r2, %r12
     0xe3, 0x20, 0x20, 0x08, 0x00, 0x04, // lg   %r2, 8(%r2)

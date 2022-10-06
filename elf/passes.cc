@@ -92,8 +92,8 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.note_property = push(new NotePropertySection<E>);
 
   if (ctx.arg.is_static) {
-    if constexpr (is_s390<E>)
-      ctx.s390_tls_get_offset = push(new S390TlsGetOffsetSection);
+    if constexpr (is_s390x<E>)
+      ctx.s390x_tls_get_offset = push(new S390XTlsGetOffsetSection);
 
     if constexpr (is_sparc<E>)
       ctx.sparc_tls_get_addr = push(new SparcTlsGetAddrSection);

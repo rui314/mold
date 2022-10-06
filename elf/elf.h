@@ -19,7 +19,7 @@ struct RV32LE;
 struct RV32BE;
 struct PPC64V2;
 struct SPARC64;
-struct S390;
+struct S390X;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -38,7 +38,7 @@ static constexpr u32 R_NONE = 0;
 
 enum class MachineType {
   NONE, X86_64, I386, ARM64, ARM32, RV64LE, RV64BE, RV32LE, RV32BE,
-  PPC64V2, SPARC64, S390
+  PPC64V2, SPARC64, S390X
 };
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
@@ -54,7 +54,7 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   case MachineType::RV32BE:  out << "riscv32be"; break;
   case MachineType::PPC64V2: out << "ppc64v2";   break;
   case MachineType::SPARC64: out << "sparc64";   break;
-  case MachineType::S390:    out << "s390";      break;
+  case MachineType::S390X:   out << "s390x";     break;
   }
   return out;
 }
@@ -178,7 +178,7 @@ static constexpr u32 EV_CURRENT = 1;
 static constexpr u32 EM_NONE = 0;
 static constexpr u32 EM_386 = 3;
 static constexpr u32 EM_PPC64 = 21;
-static constexpr u32 EM_S390 = 22;
+static constexpr u32 EM_S390X = 22;
 static constexpr u32 EM_ARM = 40;
 static constexpr u32 EM_SPARC64 = 43;
 static constexpr u32 EM_X86_64 = 62;
@@ -1570,7 +1570,7 @@ static constexpr u32 R_390_PC24DBL = 64;
 static constexpr u32 R_390_PLT24DBL = 65;
 
 template <>
-inline std::string rel_to_string<S390>(u32 r_type) {
+inline std::string rel_to_string<S390X>(u32 r_type) {
   switch (r_type) {
   case R_390_NONE: return "R_390_NONE";
   case R_390_8: return "R_390_8";
@@ -2331,7 +2331,7 @@ template <typename E>
 static constexpr bool is_sparc = std::is_same_v<E, SPARC64>;
 
 template <typename E>
-static constexpr bool is_s390 = std::is_same_v<E, S390>;
+static constexpr bool is_s390x = std::is_same_v<E, S390X>;
 
 struct X86_64 {
   static constexpr u32 R_COPY = R_X86_64_COPY;
@@ -2680,7 +2680,7 @@ template <> struct ElfVerdaux<PPC64V2> : ELVerdaux {};
 template <> struct ElfChdr<PPC64V2>    : EL64Chdr {};
 template <> struct ElfNhdr<PPC64V2>    : ELNhdr {};
 
-struct S390 {
+struct S390X {
   static constexpr u32 R_COPY = R_390_COPY;
   static constexpr u32 R_GLOB_DAT = R_390_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_390_JMP_SLOT;
@@ -2691,29 +2691,29 @@ struct S390 {
   static constexpr u32 R_TPOFF = R_390_TLS_TPOFF;
   static constexpr u32 R_DTPMOD = R_390_TLS_DTPMOD;
 
-  static constexpr MachineType machine_type = MachineType::S390;
+  static constexpr MachineType machine_type = MachineType::S390X;
   static constexpr bool is_64 = true;
   static constexpr bool is_le = false;
   static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_S390;
+  static constexpr u32 e_machine = EM_S390X;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 32;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 tls_dtv_offset = 0;
 };
 
-template <> struct ElfSym<S390>     : EB64Sym {};
-template <> struct ElfShdr<S390>    : EB64Shdr {};
-template <> struct ElfEhdr<S390>    : EB64Ehdr {};
-template <> struct ElfPhdr<S390>    : EB64Phdr {};
-template <> struct ElfRel<S390>     : EB64Rela { using EB64Rela::EB64Rela; };
-template <> struct ElfDyn<S390>     : EB64Dyn {};
-template <> struct ElfVerneed<S390> : EBVerneed {};
-template <> struct ElfVernaux<S390> : EBVernaux {};
-template <> struct ElfVerdef<S390>  : EBVerdef {};
-template <> struct ElfVerdaux<S390> : EBVerdaux {};
-template <> struct ElfChdr<S390>    : EB64Chdr {};
-template <> struct ElfNhdr<S390>    : EBNhdr {};
+template <> struct ElfSym<S390X>     : EB64Sym {};
+template <> struct ElfShdr<S390X>    : EB64Shdr {};
+template <> struct ElfEhdr<S390X>    : EB64Ehdr {};
+template <> struct ElfPhdr<S390X>    : EB64Phdr {};
+template <> struct ElfRel<S390X>     : EB64Rela { using EB64Rela::EB64Rela; };
+template <> struct ElfDyn<S390X>     : EB64Dyn {};
+template <> struct ElfVerneed<S390X> : EBVerneed {};
+template <> struct ElfVernaux<S390X> : EBVernaux {};
+template <> struct ElfVerdef<S390X>  : EBVerdef {};
+template <> struct ElfVerdaux<S390X> : EBVerdaux {};
+template <> struct ElfChdr<S390X>    : EB64Chdr {};
+template <> struct ElfNhdr<S390X>    : EBNhdr {};
 
 struct SPARC64 {
   static constexpr u32 R_COPY = R_SPARC_COPY;

@@ -469,7 +469,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       } else if (arg == "elf64lppc") {
         ctx.arg.emulation = MachineType::PPC64V2;
       } else if (arg == "elf64_s390") {
-        ctx.arg.emulation = MachineType::S390;
+        ctx.arg.emulation = MachineType::S390X;
       } else if (arg == "elf64_sparc") {
         ctx.arg.emulation = MachineType::SPARC64;
       } else {
