@@ -67,7 +67,7 @@ void InputSection<E>::uncompress(Context<E> &ctx) {
 
   u8 *buf = new u8[sh_size];
   uncompress_to(ctx, buf);
-  contents = {(char *)buf, sh_size};
+  contents = std::string_view((char *)buf, sh_size);
   ctx.string_pool.emplace_back(buf);
   uncompressed = true;
 }
