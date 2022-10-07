@@ -148,10 +148,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
 
-  u64 tls_get_addr_addr = ctx.arg.is_static
-    ? (u64)ctx.sparc_tls_get_addr->shdr.sh_addr
-    : ctx.tls_get_addr->get_addr(ctx);
-
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE)
@@ -348,7 +344,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_TLS_GD_CALL:
     case R_SPARC_TLS_LDM_CALL:
-      *(ub32 *)loc |= bits(tls_get_addr_addr + A - P, 31, 2);
+      if (ctx.arg.is_static)
+        *(ub32 *)loc |= bits(ctx.sparc_tls_get_addr->shdr.sh_addr + A - P, 31, 2);
+      else
+        *(ub32 *)loc |= bits(ctx.tls_get_addr->get_addr(ctx) + A - P, 31, 2);
       break;
     case R_SPARC_TLS_LDM_HI22:
       *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 31, 10);
