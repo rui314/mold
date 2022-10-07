@@ -3,6 +3,7 @@
 
 test_cflags -static-pie || skip
 supports_ifunc || skip
+[ $MACHINE = aarch64 ] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
 #include <stdio.h>
