@@ -363,8 +363,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
-    case R_390_TLS_LE32:
-    case R_390_TLS_LE64:
     case R_390_TLS_GOTIE20:
     case R_390_TLS_IEENT:
       sym.flags |= NEEDS_GOTTP;
@@ -380,6 +378,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         ctx.needs_tlsld = true;
       break;
     }
+    case R_390_TLS_LE32:
+    case R_390_TLS_LE64:
     case R_390_TLS_LDO32:
     case R_390_TLS_LDO64:
     case R_390_TLS_GDCALL:
