@@ -18,8 +18,8 @@
 // in our PLT. %r2-%r6 are used for parameter passing. %r2 is also used to
 // return a value. In position independent code, %r12 usually contains the
 // address of GOT. %r14 usually contains a return address. %r15 is a stack
-// pointer. Special registers %a0 and %a1 contain the upper 32 bits and
-// the lower 32 bits of TP, respectively.
+// pointer. Access registers %a0 and %a1 contain the upper 32 bits and
+// the lower 32 bits of the thread pointer, respectively.
 //
 // https://uclibc.org/docs/psABI-s390x.pdf
 
@@ -373,11 +373,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_TLSGD;
       break;
     case R_390_TLS_LDM32:
-    case R_390_TLS_LDM64: {
+    case R_390_TLS_LDM64:
       if (!relax_tlsld(ctx))
         ctx.needs_tlsld = true;
       break;
-    }
     case R_390_TLS_LE32:
     case R_390_TLS_LE64:
     case R_390_TLS_LDO32:
@@ -391,11 +390,16 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
-// __tls_get_offset() in libc.a just calls abort().
-// This section provides a replacement.
+// __tls_get_offset() in libc.a just calls abort(), assuming that the
+// linker always relaxes TLS calls for statically-linkd executables.
+// We don't always do that because we believe --relax and --static
+// should be orthogonal.
+//
+// This section provides a replacement for __tls_get_offset() in libc.a.
 void S390XTlsGetOffsetSection::copy_buf(Context<E> &ctx) {
   static const u8 insn[] = {
-    0xb9, 0x08, 0x00, 0x2c,             // agr  %r2, %r12
+    0xc0, 0x10, 0, 0, 0, 0,             // larl %r1, GOT
+    0xb9, 0x08, 0x00, 0x21,             // agr  %r2, %r1
     0xe3, 0x20, 0x20, 0x08, 0x00, 0x04, // lg   %r2, 8(%r2)
     0xc0, 0x11, 0, 0, 0, 0,             // lgfi %r1, TLS_BLOCK_SIZE
     0xb9, 0x09, 0x00, 0x21,             // sgr  %r2, %r1
@@ -406,7 +410,8 @@ void S390XTlsGetOffsetSection::copy_buf(Context<E> &ctx) {
 
   u8 *loc = ctx.buf + this->shdr.sh_offset;
   memcpy(loc, insn, sizeof(insn));
-  *(ub32 *)(loc + 12) = ctx.tp_addr - ctx.tls_begin;
+  *(ub32 *)(loc + 2) = (ctx.got->shdr.sh_addr - this->shdr.sh_addr) >> 1;
+  *(ub32 *)(loc + 18) = ctx.tp_addr - ctx.tls_begin;
 }
 
 } // namespace mold::elf
