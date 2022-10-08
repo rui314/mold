@@ -30,7 +30,7 @@
 # elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #  define __BIG_ENDIAN__ 1
 # else
-#  error "unknwon host byte order"
+#  error "unknown host byte order"
 # endif
 #endif
 
