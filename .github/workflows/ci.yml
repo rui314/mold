@@ -20,7 +20,7 @@ jobs:
     - uses: actions/checkout@v2
     - uses: rui314/setup-mold@staging
     - name: install-build-deps
-      run: sudo apt-get update && sudo ./install-build-deps.sh
+      run: sudo ./install-build-deps.sh update
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: make test
@@ -40,7 +40,7 @@ jobs:
     - uses: actions/checkout@v2
     - uses: rui314/setup-mold@staging
     - name: install-build-deps
-      run: sudo apt-get update && sudo ./install-build-deps.sh
+      run: sudo ./install-build-deps.sh update
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: build and test
@@ -60,8 +60,7 @@ jobs:
     - name: install-build-deps
       run: |
         dpkg --add-architecture i386
-        apt-get update
-        ./install-build-deps.sh
+        ./install-build-deps.sh update
         apt-get install -y sudo qemu-user gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf
         ln -sf /usr/bin/i686-linux-gnu-gcc-10 /usr/bin/i686-linux-gnu-gcc
         ln -sf /usr/bin/i686-linux-gnu-g++-10 /usr/bin/i686-linux-gnu-g++
@@ -87,8 +86,7 @@ jobs:
       run: |
         # Install cross toolchains
         dpkg --add-architecture i386
-        apt-get update
-        ./install-build-deps.sh
+        ./install-build-deps.sh update
         apt-get install -y sudo qemu-user gdb zstd dwarfdump gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf gcc-10-powerpc64le-linux-gnu gcc-10-s390x-linux-gnu gcc-10-sparc64-linux-gnu g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf g++-10-powerpc64le-linux-gnu g++-10-s390x-linux-gnu g++-10-sparc64-linux-gnu
         ln -sf /usr/bin/i686-linux-gnu-gcc-10 /usr/bin/i686-linux-gnu-gcc
         ln -sf /usr/bin/i686-linux-gnu-g++-10 /usr/bin/i686-linux-gnu-g++
