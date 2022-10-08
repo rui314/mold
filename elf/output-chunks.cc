@@ -1265,14 +1265,16 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
-  // glibc before 2021-08 assumes GOT[0] refers _DYNAMIC. We need to
-  // satisfy the assumption until older glibc completely retires.
-  // Since it is only required for static PIE on ARM64, we do this only
-  // for that case, so that no new code would accidentally depend on it.
+  // glibc on s390 and arm64 wrongly assumes GOT[0] refers _DYNAMIC.
+  // We set the value only on s390 and arm64, so that no new code would
+  // accidentally depend on the value of GOT[0].
   //
-  // https://sourceware.org/git/?p=glibc.git;h=43d06ed218fc8be58987bdfd00e21e5720f0b862
-  if (std::is_same_v<E, ARM64> && ctx.arg.is_static && ctx.arg.pie && ctx.dynamic)
-    buf[0] = ctx.dynamic->shdr.sh_addr;
+  // https://sourceware.org/bugzilla/show_bug.cgi?id=29662
+  // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be58987bdfd00e21e5720f0b862
+  if (ctx.dynamic)
+    if (is_s390x<E> ||
+        (std::is_same_v<E, ARM64> && ctx.arg.is_static && ctx.arg.pie))
+      buf[0] = ctx.dynamic->shdr.sh_addr;
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
 
