@@ -2,7 +2,6 @@
 . $(dirname $0)/common.inc
 
 test_cflags -static-pie || skip
-[ $MACHINE = aarch64 ] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIE
 #include <stdio.h>

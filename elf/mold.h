@@ -484,6 +484,7 @@ public:
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
+    this->shdr.sh_size = sizeof(Word<E>);
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -495,7 +496,6 @@ public:
   u64 get_tlsld_addr(Context<E> &ctx) const;
   bool has_tlsld(Context<E> &ctx) const { return tlsld_idx != -1; }
   i64 get_reldyn_size(Context<E> &ctx) const;
-  void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
   void compute_symtab_size(Context<E> &ctx) override;
