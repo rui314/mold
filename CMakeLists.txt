@@ -183,7 +183,8 @@ add_dependencies(mold git_hash)
 # As a workaround, we create a .cc file for each target and spawn many
 # compiler instances. This is hacky but greatly reduces compile time.
 list(APPEND MOLD_ELF_TARGETS
-  X86_64 I386 ARM64 ARM32 RV32LE RV32BE RV64LE RV64BE PPC64V2 SPARC64 S390X)
+  X86_64 I386 ARM64 ARM32 RV32LE RV32BE RV64LE RV64BE
+  PPC64V1 PPC64V2 SPARC64 S390X)
 
 list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/cmdline.cc
@@ -245,6 +246,7 @@ target_sources(mold PRIVATE
   elf/arch-arm32.cc
   elf/arch-arm64.cc
   elf/arch-i386.cc
+  elf/arch-ppc64v1.cc
   elf/arch-ppc64v2.cc
   elf/arch-riscv.cc
   elf/arch-s390x.cc

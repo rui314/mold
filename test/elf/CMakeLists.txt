@@ -1,5 +1,6 @@
 option(MOLD_ENABLE_QEMU_TESTS "Enable tests on non-native targets" OFF)
 option(MOLD_ENABLE_QEMU_TESTS_RV32 "Enable tests for RV32" OFF)
+option(MOLD_ENABLE_QEMU_TESTS_PPV64V1 "Enable tests for PPC64V1" OFF)
 
 function(add_target TRIPLE)
   set(HOST ${CMAKE_HOST_SYSTEM_PROCESSOR})
@@ -55,4 +56,8 @@ add_target(s390x-linux-gnu)
 
 if(MOLD_ENABLE_QEMU_TESTS_RV32)
   add_target(riscv32-linux-gnu)
+endif()
+
+if(MOLD_ENABLE_QEMU_TESTS_PPV64V1)
+  add_target(powerpc64-linux-gnu)
 endif()

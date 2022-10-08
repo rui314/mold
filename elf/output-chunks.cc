@@ -66,10 +66,8 @@ u64 get_eflags(Context<E> &ctx) {
     return ret;
   }
 
-  // We support only PPC64 ELFv2 ABI.
-  if constexpr (is_ppc<E>)
+  if constexpr (std::is_same_v<E, PPC64V2>)
     return 2;
-
   return 0;
 }
 
@@ -1379,23 +1377,29 @@ void GotSection<E>::populate_symtab(Context<E> &ctx) {
 }
 
 template <typename E>
+void GotPltSection<E>::update_shdr(Context<E> &ctx) {
+  this->shdr.sh_size = HDR_SIZE + ctx.plt->symbols.size() * ENTRY_SIZE;
+}
+
+template <typename E>
 void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   // On PPC64, it's dynamic loader responsibility to fill the .got.plt
   // section. Dynamic loader finds the address of the first PLT entry by
   // DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
-  if constexpr (is_ppc<E>)
-    return;
+  if constexpr (!is_ppc<E>) {
+    Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
+    memset(buf, 0, this->shdr.sh_size);
 
-  Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
-  memset(buf, 0, this->shdr.sh_size);
+    // The first slot of .got.plt points to _DYNAMIC, as requested by
+    // the psABI. The second and the third slots are reserved by the psABI.
+    static_assert(HDR_SIZE / sizeof(Word<E>) == 3);
 
-  // The first slot of .got.plt points to _DYNAMIC, as requested by
-  // the psABI. The second and the third slots are reserved by the psABI.
-  if (ctx.dynamic)
-    buf[0] = ctx.dynamic->shdr.sh_addr;
+    if (ctx.dynamic)
+      buf[0] = ctx.dynamic->shdr.sh_addr;
 
-  for (Symbol<E> *sym : ctx.plt->symbols)
-    buf[sym->get_gotplt_idx(ctx)] = ctx.plt->shdr.sh_addr;
+    for (i64 i = 3; Symbol<E> *sym : ctx.plt->symbols)
+      buf[i++] = ctx.plt->shdr.sh_addr;
+  }
 }
 
 template <typename E>
@@ -1408,11 +1412,6 @@ void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_plt_idx(ctx, symbols.size());
   this->shdr.sh_size += E::plt_size;
   symbols.push_back(sym);
-
-  if (!is_sparc<E>) {
-    sym->set_gotplt_idx(ctx, ctx.gotplt->shdr.sh_size / sizeof(Word<E>));
-    ctx.gotplt->shdr.sh_size += sizeof(Word<E>);
-  }
 
   ctx.relplt->shdr.sh_size += sizeof(ElfRel<E>);
   ctx.dynsym->add_symbol(ctx, sym);

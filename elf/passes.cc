@@ -1064,6 +1064,40 @@ void create_reloc_sections(Context<E> &ctx) {
 }
 
 template <typename E>
+void copy_chunks(Context<E> &ctx) {
+  Timer t(ctx, "copy_chunks");
+
+  if constexpr (std::is_same_v<E, PPC64V1>) {
+    // Sometimes, R_PPC64_REL24 relocations has to read values from the
+    // .opd section for the ELF PPV64 ELFv1 ABI, so relocate it first.
+    OutputSection<E> *opd =
+      OutputSection<E>::get_instance(ctx, ".opd", SHT_PROGBITS,
+                                     SHF_WRITE | SHF_ALLOC);
+    if (opd) {
+      Timer t2(ctx, ".opd", &t);
+      ctx.opd = opd;
+      opd->copy_buf(ctx);
+    }
+  }
+
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    if constexpr (std::is_same_v<E, PPC64V1>)
+      if (chunk == ctx.opd)
+        return;
+
+    std::string name =
+      chunk->name.empty() ? "(header)" : std::string(chunk->name);
+    Timer t2(ctx, name, &t);
+    chunk->copy_buf(ctx);
+  });
+
+  report_undef_errors(ctx);
+
+  if constexpr (std::is_same_v<E, ARM32>)
+    sort_arm_exidx(ctx);
+}
+
+template <typename E>
 void construct_relr(Context<E> &ctx) {
   Timer t(ctx, "construct_relr");
 
@@ -1904,6 +1938,7 @@ template void sort_output_sections(Context<E> &);
 template void claim_unresolved_symbols(Context<E> &);
 template void scan_rels(Context<E> &);
 template void create_reloc_sections(Context<E> &);
+template void copy_chunks(Context<E> &);
 template void construct_relr(Context<E> &);
 template void create_output_symtab(Context<E> &);
 template void apply_version_script(Context<E> &);

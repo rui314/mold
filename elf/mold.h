@@ -85,7 +85,6 @@ struct SectionFragment {
 // memory.
 struct SymbolAux {
   i32 got_idx = -1;
-  i32 gotplt_idx = -1;
   i32 gottp_idx = -1;
   i32 tlsgd_idx = -1;
   i32 tlsdesc_idx = -1;
@@ -522,10 +521,17 @@ public:
     this->shdr.sh_type = is_ppc<E> ? SHT_NOBITS : SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
-    this->shdr.sh_size = sizeof(Word<E>) * (is_ppc<E> ? 2 : 3);
+    this->shdr.sh_size = HDR_SIZE;
   }
 
+  void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
+
+  static constexpr i64 HDR_SIZE =
+    (std::is_same_v<E, PPC64V2> ? 2 : 3) * sizeof(Word<E>);
+
+  static constexpr i64 ENTRY_SIZE =
+    (std::is_same_v<E, PPC64V1> ? 3 : 1) * sizeof(Word<E>);
 };
 
 template <typename E>
@@ -1363,6 +1369,7 @@ template <typename E> void scan_rels(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
 template <typename E> void create_output_symtab(Context<E> &);
 template <typename E> void create_reloc_sections(Context<E> &);
+template <typename E> void copy_chunks(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
@@ -1686,6 +1693,9 @@ struct Context {
   Symbol<E> *tls_get_addr = nullptr;
   Symbol<E> *tls_get_offset = nullptr;
 
+  // For PPC64V1
+  OutputSection<E> *opd = nullptr;
+
   // For --gdb-index
   Chunk<E> *debug_info = nullptr;
   Chunk<E> *debug_abbrev = nullptr;
@@ -1797,7 +1807,6 @@ public:
   u64 get_plt_addr(Context<E> &ctx) const;
 
   void set_got_idx(Context<E> &ctx, i32 idx);
-  void set_gotplt_idx(Context<E> &ctx, i32 idx);
   void set_gottp_idx(Context<E> &ctx, i32 idx);
   void set_tlsgd_idx(Context<E> &ctx, i32 idx);
   void set_tlsdesc_idx(Context<E> &ctx, i32 idx);
@@ -1806,7 +1815,6 @@ public:
   void set_dynsym_idx(Context<E> &ctx, i32 idx);
 
   i32 get_got_idx(Context<E> &ctx) const;
-  i32 get_gotplt_idx(Context<E> &ctx) const;
   i32 get_gottp_idx(Context<E> &ctx) const;
   i32 get_tlsgd_idx(Context<E> &ctx) const;
   i32 get_tlsdesc_idx(Context<E> &ctx) const;
@@ -2411,8 +2419,9 @@ inline u64 Symbol<E>::get_got_addr(Context<E> &ctx) const {
 
 template <typename E>
 inline u64 Symbol<E>::get_gotplt_addr(Context<E> &ctx) const {
-  assert(get_gotplt_idx(ctx) != -1);
-  return ctx.gotplt->shdr.sh_addr + get_gotplt_idx(ctx) * sizeof(Word<E>);
+  assert(get_plt_idx(ctx) != -1);
+  return ctx.gotplt->shdr.sh_addr + GotPltSection<E>::HDR_SIZE +
+         get_plt_idx(ctx) * GotPltSection<E>::ENTRY_SIZE;
 }
 
 template <typename E>
@@ -2445,13 +2454,6 @@ inline void Symbol<E>::set_got_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].got_idx < 0);
   ctx.symbol_aux[aux_idx].got_idx = idx;
-}
-
-template <typename E>
-inline void Symbol<E>::set_gotplt_idx(Context<E> &ctx, i32 idx) {
-  assert(aux_idx != -1);
-  assert(ctx.symbol_aux[aux_idx].gotplt_idx < 0);
-  ctx.symbol_aux[aux_idx].gotplt_idx = idx;
 }
 
 template <typename E>
@@ -2499,11 +2501,6 @@ inline void Symbol<E>::set_dynsym_idx(Context<E> &ctx, i32 idx) {
 template <typename E>
 inline i32 Symbol<E>::get_got_idx(Context<E> &ctx) const {
   return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].got_idx;
-}
-
-template <typename E>
-inline i32 Symbol<E>::get_gotplt_idx(Context<E> &ctx) const {
-  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].gotplt_idx;
 }
 
 template <typename E>

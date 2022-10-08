@@ -57,7 +57,7 @@ static MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf)
         return is_64 ? MachineType::RV64LE : MachineType::RV32LE;
       return is_64 ? MachineType::RV64BE : MachineType::RV32BE;
     case EM_PPC64:
-      return MachineType::PPC64V2;
+      return is_le ? MachineType::PPC64V2 : MachineType::PPC64V1;
     case EM_S390X:
       return MachineType::S390X;
     case EM_SPARC64:
@@ -407,6 +407,8 @@ int elf_main(int argc, char **argv) {
       return elf_main<RV32LE>(argc, argv);
     case MachineType::RV32BE:
       return elf_main<RV32BE>(argc, argv);
+    case MachineType::PPC64V1:
+      return elf_main<PPC64V1>(argc, argv);
     case MachineType::PPC64V2:
       return elf_main<PPC64V2>(argc, argv);
     case MachineType::S390X:
@@ -695,22 +697,8 @@ int elf_main(int argc, char **argv) {
 
   Timer t_copy(ctx, "copy");
 
-  // Copy input sections to the output file
-  {
-    Timer t(ctx, "copy_buf");
-
-    tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-      std::string name =
-        chunk->name.empty() ? "(header)" : std::string(chunk->name);
-      Timer t2(ctx, name, &t);
-      chunk->copy_buf(ctx);
-    });
-
-    report_undef_errors(ctx);
-  }
-
-  if constexpr (std::is_same_v<E, ARM32>)
-    sort_arm_exidx(ctx);
+  // Copy input sections to the output file and apply relocations.
+  copy_chunks(ctx);
 
   // Some part of .gdb_index couldn't be computed until other debug
   // sections are complete. We have complete debug sections now, so
@@ -781,6 +769,7 @@ extern template int elf_main<RV32BE>(int, char **);
 extern template int elf_main<RV32LE>(int, char **);
 extern template int elf_main<RV64LE>(int, char **);
 extern template int elf_main<RV64BE>(int, char **);
+extern template int elf_main<PPC64V1>(int, char **);
 extern template int elf_main<PPC64V2>(int, char **);
 extern template int elf_main<S390X>(int, char **);
 extern template int elf_main<SPARC64>(int, char **);
