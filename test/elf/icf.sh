@@ -1,6 +1,13 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# On PPC64V1, function pointers refer function descriptors in .opd
+# instead of directly referring .text section. We create a .opd entry
+# for each symbol. So function pointer comparison on two different
+# symbols are always the same, even if their function body are at the
+# same location.
+[ $MACHINE = ppc64 ] && skip
+
 cat <<EOF | $CC -c -o $t/a.o -ffunction-sections -fdata-sections -xc -
 #include <stdio.h>
 

@@ -249,7 +249,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write32s(S + A);
       break;
     case R_X86_64_64:
-      apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
+      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_X86_64_PC8: {
       i64 val = S + A - P;
@@ -634,16 +634,16 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_X86_64_16:
     case R_X86_64_32:
     case R_X86_64_32S:
-      scan_abs_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, absrel_table);
       break;
     case R_X86_64_64:
-      scan_abs_dyn_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, dyn_absrel_table);
       break;
     case R_X86_64_PC8:
     case R_X86_64_PC16:
     case R_X86_64_PC32:
     case R_X86_64_PC64:
-      scan_pcrel_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, pcrel_table);
       break;
     case R_X86_64_GOT32:
     case R_X86_64_GOT64:

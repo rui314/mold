@@ -9,4 +9,10 @@ void foo() {}
 EOF
 
 $CC -B. -shared -o $t/b.so -flto $t/a.o
-nm -D $t/b.so | grep -q 'T foo'
+
+if [ $MACHINE = ppc64 ]; then
+  # On PPC64V1, function symbol refers a function descriptor in .opd
+  nm -D $t/b.so | grep -q 'D foo'
+else
+  nm -D $t/b.so | grep -q 'T foo'
+fi

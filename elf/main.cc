@@ -518,6 +518,13 @@ int elf_main(int argc, char **argv) {
   // .got or .plt.
   create_synthetic_sections(ctx);
 
+  // Make sure that there's no duplicate symbol
+  if (!ctx.arg.allow_multiple_definition)
+    check_duplicate_symbols(ctx);
+
+  if constexpr (std::is_same_v<E, PPC64V1>)
+    ppc64v1_rewrite_opd(ctx);
+
   // Bin input sections into output sections.
   bin_sections(ctx);
 
@@ -561,10 +568,6 @@ int elf_main(int argc, char **argv) {
   if (ctx.arg.repro)
     write_repro_file(ctx);
 
-  // Make sure that all symbols have been resolved.
-  if (!ctx.arg.allow_multiple_definition)
-    check_duplicate_symbols(ctx);
-
   // Handle --require-defined
   for (std::string_view name : ctx.arg.require_defined)
     if (!get_symbol(ctx, name)->file)
@@ -594,9 +597,12 @@ int elf_main(int argc, char **argv) {
   if (!ctx.arg.soname.empty())
     ctx.dynstr->add_string(ctx.arg.soname);
 
+  if constexpr (std::is_same_v<E, PPC64V1>)
+    ppc64v1_scan_symbols(ctx);
+
   // Scan relocations to find symbols that need entries in .got, .plt,
   // .got.plt, .dynsym, .dynstr, etc.
-  scan_rels(ctx);
+  scan_relocations(ctx);
 
   // Compute sizes of output sections while assigning offsets
   // within an output section to input sections.

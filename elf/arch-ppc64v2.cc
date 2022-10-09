@@ -59,6 +59,17 @@ namespace mold::elf {
 
 using E = PPC64V2;
 
+// As a special case, we do not create copy relocations nor canonical
+// PLTs for .toc sections. PPC64's .toc is a compiler-generated
+// GOT-like section, and no user-generated code directly uses values
+// in it.
+static constexpr ScanAction toc_dyn_absrel_table[3][4] = {
+  // Absolute  Local    Imported data  Imported code
+  {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
+  {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
+  {  NONE,     NONE,    DYNREL,        DYNREL },  // Position-dependent exec
+};
+
 static u64 lo(u64 x)       { return x & 0xffff; }
 static u64 hi(u64 x)       { return x >> 16; }
 static u64 ha(u64 x)       { return (x + 0x8000) >> 16; }
@@ -185,7 +196,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
-      apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
+      if (name() == ".toc")
+        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel, toc_dyn_absrel_table);
+      else
+        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel, dyn_absrel_table);
       break;
     case R_PPC64_TOC16_HA:
       *(ul16 *)loc = ha(S + A - ctx.TOC->value);
@@ -367,7 +381,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
-      scan_abs_dyn_rel(ctx, sym, rel);
+      if (name() == ".toc")
+        scan_rel(ctx, sym, rel, toc_dyn_absrel_table);
+      else
+        scan_rel(ctx, sym, rel, dyn_absrel_table);
       break;
     case R_PPC64_GOT_TPREL16_HA:
       sym.flags |= NEEDS_GOTTP;

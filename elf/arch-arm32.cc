@@ -170,7 +170,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_ARM_ABS32:
     case R_ARM_TARGET1:
-      apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
+      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_ARM_REL32:
       *(ul32 *)loc = S + A - P;
@@ -445,7 +445,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_MOVT_ABS:
     case R_ARM_THM_MOVT_ABS:
     case R_ARM_TARGET1:
-      scan_abs_dyn_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, dyn_absrel_table);
       break;
     case R_ARM_THM_CALL:
     case R_ARM_CALL:
@@ -462,7 +462,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_MOVT_PREL:
     case R_ARM_THM_MOVT_PREL:
     case R_ARM_PREL31:
-      scan_pcrel_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, pcrel_table);
       break;
     case R_ARM_TLS_GD32:
       sym.flags |= NEEDS_TLSGD;

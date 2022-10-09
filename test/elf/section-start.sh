@@ -1,6 +1,10 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# On PPC64V1, function pointers do not refer function entry addresses
+# but instead refers "function descriptors" in .opd.
+[ $MACHINE = ppc64 ] && skip
+
 [ $MACHINE = arm ] && flags=-marm
 
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIC $flags -

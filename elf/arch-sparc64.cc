@@ -164,7 +164,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_SPARC_64:
-      apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
+      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_SPARC_5:
       *(ub32 *)loc |= bits(S + A, 4, 0);
@@ -471,7 +471,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_SPARC_64:
-      scan_abs_dyn_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, dyn_absrel_table);
       break;
     case R_SPARC_8:
     case R_SPARC_5:
@@ -499,7 +499,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_HI22:
     case R_SPARC_H44:
     case R_SPARC_HH22:
-      scan_abs_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, absrel_table);
       break;
     case R_SPARC_PLT32:
     case R_SPARC_WPLT30:
@@ -534,7 +534,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_WDISP19:
     case R_SPARC_WDISP22:
     case R_SPARC_PC_HH22:
-      scan_pcrel_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, pcrel_table);
       break;
     case R_SPARC_TLS_GD_HI22:
       sym.flags |= NEEDS_TLSGD;

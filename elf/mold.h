@@ -90,6 +90,7 @@ struct SymbolAux {
   i32 tlsdesc_idx = -1;
   i32 plt_idx = -1;
   i32 pltgot_idx = -1;
+  i32 opd_idx = -1;
   i32 dynsym_idx = -1;
 };
 
@@ -239,6 +240,40 @@ struct InputSectionExtras<E> {
   std::vector<i32> r_deltas;
 };
 
+typedef enum { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } ScanAction;
+
+// This is a decision table for absolute relocations that is smaller
+// than the word size (e.g. R_X86_64_32). Since the dynamic linker
+// generally does not support dynamic relocations smaller than the
+// word size, we need to report an error if a relocation cannot be
+// resolved at link-time.
+constexpr static ScanAction absrel_table[3][4] = {
+  // Absolute  Local    Imported data  Imported code
+  {  NONE,     ERROR,   ERROR,         ERROR },  // Shared object
+  {  NONE,     ERROR,   ERROR,         ERROR },  // Position-independent exec
+  {  NONE,     NONE,    COPYREL,       CPLT  },  // Position-dependent exec
+};
+
+// This is a decision table for absolute relocations for the word
+// size data (e.g. R_X86_64_64). Unlike the absrel_table, we can emit
+// a dynamic relocation if we cannot resolve an address at link-time.
+constexpr static ScanAction dyn_absrel_table[3][4] = {
+  // Absolute  Local    Imported data  Imported code
+  {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
+  {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
+  {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
+};
+
+// This is for PC-relative relocations (e.g. R_X86_64_PC32).
+// We cannot promote them to dynamic relocations because the dynamic
+// linker generally does not support PC-relative relocations.
+constexpr static ScanAction pcrel_table[3][4] = {
+  // Absolute  Local    Imported data  Imported code
+  {  ERROR,    NONE,    ERROR,         PLT    },  // Shared object
+  {  ERROR,    NONE,    COPYREL,       PLT    },  // Position-independent exec
+  {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
+};
+
 // InputSection represents a section in an input object file.
 template <typename E>
 class InputSection {
@@ -300,12 +335,12 @@ public:
   bool icf_leaf = false;
 
 private:
-  void scan_abs_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
-  void scan_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
-  void scan_pcrel_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void scan_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
+                const ScanAction table[3][4]);
 
-  void apply_abs_dyn_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
-                         u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel);
+  void apply_dyn_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
+                        u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel,
+                        const ScanAction table[3][4] = dyn_absrel_table);
 
   void copy_contents_riscv(Context<E> &ctx, u8 *buf);
 
@@ -1366,7 +1401,7 @@ collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
 template <typename E> void sort_output_sections(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
-template <typename E> void scan_rels(Context<E> &);
+template <typename E> void scan_relocations(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
 template <typename E> void create_output_symtab(Context<E> &);
 template <typename E> void create_reloc_sections(Context<E> &);
@@ -1393,6 +1428,30 @@ void sort_arm_exidx(Context<ARM32> &ctx);
 
 template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx);
+
+//
+// arch-ppc64v1.cc
+//
+
+void ppc64v1_rewrite_opd(Context<PPC64V1> &ctx);
+void ppc64v1_scan_symbols(Context<PPC64V1> &ctx);
+
+class PPC64OpdSection : public Chunk<PPC64V1> {
+public:
+  PPC64OpdSection() {
+    this->name = ".opd";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+    this->shdr.sh_addralign = 8;
+  }
+
+  void add_symbol(Context<PPC64V1> &ctx, Symbol<PPC64V1> *sym);
+  void copy_buf(Context<PPC64V1> &ctx) override;
+
+  static constexpr i64 ENTRY_SIZE = sizeof(Word<PPC64V1>) * 3;
+
+  std::vector<Symbol<PPC64V1> *> symbols;
+};
 
 //
 // arch-s390.cc
@@ -1687,15 +1746,13 @@ struct Context {
   NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
   RelroPaddingSection<E> *relro_padding = nullptr;
+  PPC64OpdSection *ppc64_opd = nullptr;
   SparcTlsGetAddrSection *sparc_tls_get_addr = nullptr;
   S390XTlsGetOffsetSection *s390x_tls_get_offset = nullptr;
 
   // Frequently accessed symbols
   Symbol<E> *tls_get_addr = nullptr;
   Symbol<E> *tls_get_offset = nullptr;
-
-  // For PPC64V1
-  OutputSection<E> *opd = nullptr;
 
   // For --gdb-index
   Chunk<E> *debug_info = nullptr;
@@ -1774,6 +1831,7 @@ enum {
   NEEDS_TLSGD   = 1 << 4,
   NEEDS_COPYREL = 1 << 5,
   NEEDS_TLSDESC = 1 << 6,
+  NEEDS_OPD     = 1 << 7,
 };
 
 // A struct to hold taret-dependent symbol members.
@@ -1785,6 +1843,11 @@ struct SymbolExtras<E> {
   // For range extension thunks
   i32 thunk_idx = -1;
   i32 thunk_sym_idx = -1;
+};
+
+enum {
+  NO_PLT = 1 << 0,
+  NO_OPD = 1 << 1,
 };
 
 // Symbol class represents a defined symbol.
@@ -1799,13 +1862,14 @@ public:
   Symbol(std::string_view name) : nameptr(name.data()), namelen(name.size()) {}
   Symbol(const Symbol<E> &other) : Symbol(other.name()) {}
 
-  u64 get_addr(Context<E> &ctx, bool allow_plt = true) const;
+  u64 get_addr(Context<E> &ctx, i64 flags = 0) const;
   u64 get_got_addr(Context<E> &ctx) const;
   u64 get_gotplt_addr(Context<E> &ctx) const;
   u64 get_gottp_addr(Context<E> &ctx) const;
   u64 get_tlsgd_addr(Context<E> &ctx) const;
   u64 get_tlsdesc_addr(Context<E> &ctx) const;
   u64 get_plt_addr(Context<E> &ctx) const;
+  u64 get_opd_addr(Context<E> &ctx) const;
 
   void set_got_idx(Context<E> &ctx, i32 idx);
   void set_gottp_idx(Context<E> &ctx, i32 idx);
@@ -1813,6 +1877,7 @@ public:
   void set_tlsdesc_idx(Context<E> &ctx, i32 idx);
   void set_plt_idx(Context<E> &ctx, i32 idx);
   void set_pltgot_idx(Context<E> &ctx, i32 idx);
+  void set_opd_idx(Context<E> &ctx, i32 idx);
   void set_dynsym_idx(Context<E> &ctx, i32 idx);
 
   i32 get_got_idx(Context<E> &ctx) const;
@@ -1821,6 +1886,7 @@ public:
   i32 get_tlsdesc_idx(Context<E> &ctx) const;
   i32 get_plt_idx(Context<E> &ctx) const;
   i32 get_pltgot_idx(Context<E> &ctx) const;
+  i32 get_opd_idx(Context<E> &ctx) const;
   i32 get_dynsym_idx(Context<E> &ctx) const;
 
   bool has_plt(Context<E> &ctx) const;
@@ -1828,6 +1894,7 @@ public:
   bool has_gottp(Context<E> &ctx) const { return get_gottp_idx(ctx) != -1; }
   bool has_tlsgd(Context<E> &ctx) const { return get_tlsgd_idx(ctx) != -1; }
   bool has_tlsdesc(Context<E> &ctx) const { return get_tlsdesc_idx(ctx) != -1; }
+  bool has_opd(Context<E> &ctx) const { return get_opd_idx(ctx) != -1; }
 
   bool is_absolute() const;
   bool is_relative() const { return !is_absolute(); }
@@ -2348,7 +2415,7 @@ inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
 }
 
 template <typename E>
-inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
+inline u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
   if (SectionFragment<E> *frag = get_frag()) {
     if (!frag->is_alive) {
       // This condition is met if a non-alloc section refers an
@@ -2367,7 +2434,11 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, bool allow_plt) const {
       : ctx.copyrel->shdr.sh_addr + value;
   }
 
-  if (allow_plt && has_plt(ctx)) {
+  if constexpr (std::is_same_v<E, PPC64V1>)
+    if (!(flags & NO_OPD) && has_opd(ctx))
+      return get_opd_addr(ctx);
+
+  if (!(flags & NO_PLT) && has_plt(ctx)) {
     assert(is_imported || is_ifunc());
     return get_plt_addr(ctx);
   }
@@ -2451,6 +2522,13 @@ inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
 }
 
 template <typename E>
+inline u64 Symbol<E>::get_opd_addr(Context<E> &ctx) const {
+  assert(get_opd_idx(ctx) != -1);
+  return ctx.ppc64_opd->shdr.sh_addr +
+         get_opd_idx(ctx) * PPC64OpdSection::ENTRY_SIZE;
+}
+
+template <typename E>
 inline void Symbol<E>::set_got_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].got_idx < 0);
@@ -2493,6 +2571,13 @@ inline void Symbol<E>::set_pltgot_idx(Context<E> &ctx, i32 idx) {
 }
 
 template <typename E>
+inline void Symbol<E>::set_opd_idx(Context<E> &ctx, i32 idx) {
+  assert(aux_idx != -1);
+  assert(ctx.symbol_aux[aux_idx].opd_idx < 0);
+  ctx.symbol_aux[aux_idx].opd_idx = idx;
+}
+
+template <typename E>
 inline void Symbol<E>::set_dynsym_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].dynsym_idx < 0);
@@ -2527,6 +2612,11 @@ inline i32 Symbol<E>::get_plt_idx(Context<E> &ctx) const {
 template <typename E>
 inline i32 Symbol<E>::get_pltgot_idx(Context<E> &ctx) const {
   return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].pltgot_idx;
+}
+
+template <typename E>
+inline i32 Symbol<E>::get_opd_idx(Context<E> &ctx) const {
+  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].opd_idx;
 }
 
 template <typename E>

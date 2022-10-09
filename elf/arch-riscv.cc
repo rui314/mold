@@ -320,11 +320,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if constexpr (E::is_64)
         *(U32<E> *)loc = S + A;
       else
-        apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
+        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_RISCV_64:
       assert(E::is_64);
-      apply_abs_dyn_rel(ctx, sym, rel, loc, S, A, P, dynrel);
+      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_RISCV_BRANCH: {
       i64 val = S + A - P;
@@ -691,17 +691,17 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     switch (rel.r_type) {
     case R_RISCV_32:
       if constexpr (E::is_64)
-        scan_abs_rel(ctx, sym, rel);
+        scan_rel(ctx, sym, rel, absrel_table);
       else
-        scan_abs_dyn_rel(ctx, sym, rel);
+        scan_rel(ctx, sym, rel, dyn_absrel_table);
       break;
     case R_RISCV_HI20:
-      scan_abs_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, absrel_table);
       break;
     case R_RISCV_64:
       if constexpr (!E::is_64)
         Fatal(ctx) << *this << ": R_RISCV_64 cannot be used on RV32";
-      scan_abs_dyn_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, dyn_absrel_table);
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT:
@@ -719,7 +719,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_TLSGD;
       break;
     case R_RISCV_32_PCREL:
-      scan_pcrel_rel(ctx, sym, rel);
+      scan_rel(ctx, sym, rel, pcrel_table);
       break;
     case R_RISCV_BRANCH:
     case R_RISCV_JAL:

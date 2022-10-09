@@ -1,7 +1,10 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = aarch64 -o $MACHINE = ppc64le -o $MACHINE = s390x ] && skip
+[ $MACHINE = aarch64 ] && skip
+[ $MACHINE = ppc64 ] && skip
+[ $MACHINE = ppc64le ] && skip
+[ $MACHINE = s390x ] && skip
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xassembler -
 .globl foo

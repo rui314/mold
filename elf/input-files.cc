@@ -1084,8 +1084,8 @@ void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
       if (sym.is_imported) {
         if (sym.get_type() != STT_FUNC)
           Fatal(ctx) << *this << ": " << sym
-                  << ": .eh_frame CIE record with an external data reference"
-                  << " is not supported";
+                     << ": .eh_frame CIE record with an external data reference"
+                     << " is not supported";
         sym.flags |= NEEDS_PLT;
       }
     }

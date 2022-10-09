@@ -1,6 +1,10 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# On PPC64, a given entry point address is set to .opd, and the
+# address in .opd address is set to the ELF header.
+[ $MACHINE = ppc64 ] && skip
+
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .globl foo, bar
 foo = 0x1000

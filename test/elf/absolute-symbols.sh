@@ -23,7 +23,7 @@ void handler(int signum, siginfo_t *info, void *ptr) {
   exit(0);
 }
 
-void foo();
+extern volatile int foo;
 
 int main() {
   struct sigaction act;
@@ -31,7 +31,7 @@ int main() {
   act.sa_sigaction = handler;
   sigemptyset(&act.sa_mask);
   sigaction(SIGSEGV, &act, 0);
-  foo();
+  foo = 5;
 }
 EOF
 

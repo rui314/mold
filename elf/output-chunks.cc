@@ -381,10 +381,15 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   offset += ctx.copyrel->symbols.size() * sizeof(ElfRel<E>);
   offset += ctx.copyrel_relro->symbols.size() * sizeof(ElfRel<E>);
 
+  if constexpr (std::is_same_v<E, PPC64V1>)
+    if (ctx.arg.pic)
+      offset += ctx.ppc64_opd->symbols.size() * sizeof(ElfRel<E>) * 2;
+
   for (ObjectFile<E> *file : ctx.objs) {
     file->reldyn_offset = offset;
     offset += file->num_dynrel * sizeof(ElfRel<E>);
   }
+
   this->shdr.sh_size = offset;
 }
 
@@ -398,6 +403,17 @@ void RelDynSection<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : ctx.copyrel_relro->symbols)
     *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
+
+  if constexpr (std::is_same_v<E, PPC64V1>) {
+    if (ctx.arg.pic) {
+      for (Symbol<E> *sym : ctx.ppc64_opd->symbols) {
+        u64 addr = sym->get_opd_addr(ctx);
+        *rel++ = ElfRel<E>(addr, E::R_RELATIVE, 0,
+                           sym->get_addr(ctx, NO_PLT | NO_OPD));
+        *rel++ = ElfRel<E>(addr + 8, E::R_RELATIVE, 0, ctx.TOC->value);
+      }
+    }
+  }
 }
 
 template <typename E>
@@ -431,8 +447,9 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   //   file. This tends to optimize paging and caching when there are two
   //   references from the same page.
   //
-  // We group IFUNC relocations at the end of .rel.dyn because we need to
-  // mark them with `__rel_iplt_start and `__rel_iplt_end`.
+  // We group IFUNC relocations at the end of .rel.dyn because we want to
+  // apply all the other relocations before running user-supplied ifunc
+  // resolver functions.
   tbb::parallel_sort(begin, end, [&](const ElfRel<E> &a, const ElfRel<E> &b) {
     return std::tuple(get_rank(a.r_type), a.r_sym, a.r_offset) <
            std::tuple(get_rank(b.r_type), b.r_sym, b.r_offset);
@@ -1189,16 +1206,16 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
 
     // IFUNC always needs to be fixed up by the dynamic linker.
     if (sym->is_ifunc()) {
-      entries.push_back({idx, sym->get_addr(ctx, false), E::R_IRELATIVE});
+      entries.push_back({idx, sym->get_addr(ctx, NO_PLT), E::R_IRELATIVE});
       continue;
     }
 
     // If we know the address at address at link-time, fill that GOT entry
     // now. It may need a base relocation, though.
     if (ctx.arg.pic && sym->is_relative())
-      entries.push_back({idx, sym->get_addr(ctx, false), E::R_RELATIVE});
+      entries.push_back({idx, sym->get_addr(ctx, NO_PLT), E::R_RELATIVE});
     else
-      entries.push_back({idx, sym->get_addr(ctx, false)});
+      entries.push_back({idx, sym->get_addr(ctx, NO_PLT)});
   }
 
   for (Symbol<E> *sym : tlsgd_syms) {
@@ -1560,10 +1577,14 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
   else
     esym.st_bind = sym.esym().st_bind;
 
-  auto get_st_shndx = [](Symbol<E> &sym) -> u32 {
+  auto get_st_shndx = [&](Symbol<E> &sym) -> u32 {
     if (SectionFragment<E> *frag = sym.get_frag())
       if (frag->is_alive)
         return frag->output_section.shndx;
+
+    if constexpr (std::is_same_v<E, PPC64V1>)
+      if (sym.has_opd(ctx))
+        return ctx.ppc64_opd->shndx;
 
     if (InputSection<E> *isec = sym.get_input_section())
       if (isec->is_alive)
@@ -1602,7 +1623,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
   } else {
     esym.st_visibility = sym.visibility;
     esym.st_shndx = get_st_shndx(sym);
-    esym.st_value = sym.get_addr(ctx, false);
+    esym.st_value = sym.get_addr(ctx, NO_PLT);
     esym.st_size = sym.esym().st_size;
   }
   return esym;

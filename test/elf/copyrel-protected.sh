@@ -1,6 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = ppc64 ] && skip
 [ $MACHINE = ppc64le ] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIE -
