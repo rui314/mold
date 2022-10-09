@@ -1214,7 +1214,7 @@ void compute_import_export(Context<E> &ctx) {
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
       for (Symbol<E> *sym : file->symbols) {
         if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN) {
-          if (sym->ver_idx != VER_NDX_LOCAL || !ctx.version_specified) {
+          if (sym->ver_idx != VER_NDX_LOCAL || !ctx.default_version_from_version_script) {
             std::scoped_lock lock(sym->mu);
             sym->is_exported = true;
           }
