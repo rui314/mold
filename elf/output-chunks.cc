@@ -1397,7 +1397,7 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
     if (ctx.dynamic)
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
-    for (i64 i = 3; Symbol<E> *sym : ctx.plt->symbols)
+    for (i64 i = 3; [[maybe_unused]] Symbol<E> *sym : ctx.plt->symbols)
       buf[i++] = ctx.plt->shdr.sh_addr;
   }
 }
