@@ -1,3 +1,40 @@
+// This file contains code for the 64-bit PowerPC ELFv1 ABI that is
+// commonly used for big-endian PPC systems. Modern PPC systems that use
+// the processor in the little-endian mode use the ELFv2 ABI instead. For
+// ELFv2, see arch-ppc64v2.cc.
+//
+// Even though they are similiar, ELFv1 isn't only different from ELFv2 in
+// endianness. The most notable difference is, in ELFv1, a function
+// pointer doesn't directly refers the entry point of a function but
+// instead refers a data structure so-called "function descriptor".
+//
+// The function descriptor is essentially a pair of a function entry point
+// address and a value that should be set to %r2 before calling that
+// function. There is actually a third member, but we don't need to know
+// what that is. In total, the function descriptor is 18 bytes long. Here
+// is why we need it.
+//
+// PPC generally lacks PC-relative data access instructions. Position-
+// independent code stores GOT + 0x8000 to %r2 and access global variables
+// relative to %r2.
+//
+// Each ELF file has its own GOT. If a function calls another function in
+// the same ELF file, it doesn't have to reset %r2. However, if it is in
+// another file (e.g. another .so), it has to set a new value to %r2 so
+// that the register contains the callee's GOT + 0x8000.
+//
+// In this way, you can't call a function via a function pointer just by
+// knowing the function's entry point address. You also need to know a
+// proper %r2 value for the function. This is why a function pointer
+// refers a tuple of an address and a %r2 value.
+//
+// If a function call is made through PLT, PLT takes care of restoring %r2.
+// Therefore, the caller has to restore %r2 only for function calls
+// through function pointers.
+//
+// .opd (short for "official procedure descriptors") contains function
+// descriptors.
+
 #include "mold.h"
 
 namespace mold::elf {
@@ -50,7 +87,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   i64 offset = ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 4;
   ub32 *loc = (ub32 *)buf;
   loc[0] = 0x3800'0000 | sym.get_plt_idx(ctx);   // li %r0, PLT_INDEX
-  loc[1] = 0x4b00'0000 | (offset & 0x00ff'ffff); // b plt0
+  loc[1] = 0x4b00'0000 | (offset & 0x00ff'ffff); // b  plt0
 }
 
 template <>
