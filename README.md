@@ -127,19 +127,18 @@ linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
 ```
 
-where `/path/to/mold` is an absolute path to `mold` exectuable.
-Please make sure you have installed `clang`.
-
-If you want to use mold for all projects, put the above snippet to
-`~/.cargo/config.toml`.
-
-If you are using GCC 12.1.0 or later, installing `clang` is not necessary.
-The Cargo configuration snippet above can be simplified to the following:
+where `/path/to/mold` is an absolute path to `mold` exectuable. In the
+above example, we use `clang` as a linker driver as it can always take
+the `-fuse-ldd` option. If your GCC is recent enough to recognize the
+option, you may be able to remove the `linker = "clang"` line.
 
 ```toml
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
 ```
+
+If you want to use mold for all projects, put the above snippet to
+`~/.cargo/config.toml`.
 
 If you are using macOS, you can modify `config.toml` in a similar manner.
 Here is an example with `mold` installed via [Homebrew](https://brew.sh).
