@@ -1406,15 +1406,17 @@ template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
 
-  if (this->shdr.sh_size == 0)
-    this->shdr.sh_size = E::plt_hdr_size;
-
   sym->set_plt_idx(ctx, symbols.size());
-  this->shdr.sh_size += E::plt_size;
   symbols.push_back(sym);
-
-  ctx.relplt->shdr.sh_size += sizeof(ElfRel<E>);
   ctx.dynsym->add_symbol(ctx, sym);
+}
+
+template <typename E>
+void PltSection<E>::update_shdr(Context<E> &ctx) {
+  if (symbols.empty())
+    this->shdr.sh_size = 0;
+  else
+    this->shdr.sh_size = E::plt_hdr_size + symbols.size() * E::plt_size;
 }
 
 template <typename E>
@@ -1517,6 +1519,7 @@ void PltGotSection<E>::populate_symtab(Context<E> &ctx) {
 
 template <typename E>
 void RelPltSection<E>::update_shdr(Context<E> &ctx) {
+  this->shdr.sh_size = ctx.plt->symbols.size() * sizeof(ElfRel<E>);
   this->shdr.sh_link = ctx.dynsym->shndx;
 
   if (!is_sparc<E>)

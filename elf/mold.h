@@ -551,6 +551,7 @@ public:
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
+  void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
   void compute_symtab_size(Context<E> &ctx) override;
