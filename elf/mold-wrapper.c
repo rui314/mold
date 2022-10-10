@@ -22,7 +22,7 @@ static char *get_mold_path() {
   exit(1);
 }
 
-static void debug_print(char *fmt, ...) {
+static void debug_print(const char *fmt, ...) {
   if (!getenv("MOLD_WRAPPER_DEBUG"))
     return;
 
