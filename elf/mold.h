@@ -1600,7 +1600,7 @@ struct Context {
 
   std::vector<VersionPattern> version_patterns;
   u16 default_version = VER_NDX_GLOBAL;
-  bool version_specified = false;
+  bool default_version_from_version_script = false; // true if default_version is set by a wildcard in version script.
   i64 page_size = -1;
 
   // Reader context

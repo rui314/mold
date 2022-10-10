@@ -276,7 +276,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
         ctx.default_version = VER_NDX_GLOBAL;
       else
         ctx.version_patterns.push_back({arg, VER_NDX_GLOBAL, false});
-      ctx.version_specified = true;
     } else if (remove_prefix(arg, "--export-dynamic-symbol-list=")) {
       parse_dynamic_list(ctx, std::string(arg));
     } else if (arg == "--push-state") {

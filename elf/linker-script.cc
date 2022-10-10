@@ -272,7 +272,6 @@ template <typename E>
 static void
 read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
                              u16 ver_idx, bool is_cpp) {
-  ctx.version_specified = true;
   bool is_global = true;
 
   while (!tok.empty() && tok[0] != "}") {
@@ -306,6 +305,7 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
 
     if (tok[0] == "*") {
       ctx.default_version = (is_global ? ver_idx : VER_NDX_LOCAL);
+      ctx.default_version_from_version_script = true;
     } else if (is_global) {
       ctx.version_patterns.push_back({unquote(tok[0]), ver_idx, is_cpp});
     } else {
@@ -357,8 +357,6 @@ void parse_version_script(Context<E> &ctx, std::string path) {
 template <typename E>
 void read_dynamic_list_commands(Context<E> &ctx, std::span<std::string_view> &tok,
                                 bool is_cpp) {
-  ctx.version_specified = true;
-
   while (!tok.empty() && tok[0] != "}") {
     if (tok[0] == "extern") {
       tok = tok.subspan(1);
