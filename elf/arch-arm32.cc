@@ -255,6 +255,23 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       assert(T);
       *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(S + A - P, 11, 1);
       break;
+    case R_ARM_THM_JUMP19: {
+      i64 val = S + A - P;
+
+      // sign:J2:J1:imm6:imm11:'0'
+      u32 sign = bit(val, 20);
+      u32 J2 = bit(val, 19);
+      u32 J1 = bit(val, 18);
+      u32 imm6 = bits(val, 17, 12);
+      u32 imm11 = bits(val, 11, 1);
+
+      *(ul16 *)loc &= 0b1111'1011'1100'0000;
+      *(ul16 *)loc |= (sign << 10) | imm6;
+
+      *(ul16 *)(loc + 2) &= 0b1101'0000'0000'0000;
+      *(ul16 *)(loc + 2) |= (J2 << 13) | (J1 << 11) | imm11;
+      break;
+    }
     case R_ARM_THM_JUMP24:
       if (sym.is_remaining_undef_weak()) {
         *(ul32 *)loc = 0x8000'f3af; // NOP.W
@@ -463,6 +480,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_REL32:
     case R_ARM_BASE_PREL:
     case R_ARM_THM_JUMP11:
+    case R_ARM_THM_JUMP19:
     case R_ARM_MOVW_PREL_NC:
     case R_ARM_MOVW_ABS_NC:
     case R_ARM_THM_MOVW_PREL_NC:
