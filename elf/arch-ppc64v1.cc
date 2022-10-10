@@ -275,19 +275,11 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    u8 *loc = base + rel.r_offset;
 
     if (!sym.file) {
       record_undef_error(ctx, rel);
       continue;
     }
-
-    auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
-    };
 
     SectionFragment<E> *frag;
     i64 frag_addend;
