@@ -8,8 +8,11 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/sysctl.h>
 #include <unistd.h>
+
+#ifdef __FreeBSD__
+# include <sys/sysctl.h>
+#endif
 
 namespace mold::elf {
 
@@ -83,6 +86,28 @@ static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
   Fatal(ctx) << "mold-wrapper.so is missing";
 }
 
+static std::string get_self_path() {
+#ifdef __FreeBSD__
+  // /proc may not be mounted on FreeBSD. The proper way to get the
+  // current executable's path is to use sysctl(2).
+  int mib[4];
+  mib[0] = CTL_KERN;
+  mib[1] = KERN_PROC;
+  mib[2] = KERN_PROC_PATHNAME;
+  mib[3] = -1;
+
+  size_t size;
+  sysctl(mib, 4, NULL, &size, NULL, 0);
+
+  std::string path;
+  path.resize(size);
+  sysctl(mib, 4, path.data(), &size, NULL, 0);
+  return path;
+#else
+  return std::filesystem::read_symlink("/proc/self/exe");
+#endif
+}
+
 template <typename E>
 [[noreturn]]
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
@@ -92,25 +117,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     Fatal(ctx) << "-run: argument missing";
 
   // Get the mold-wrapper.so path
-
-  #ifdef __FreeBSD__
-  int mib[4];
-  mib[0] = CTL_KERN;
-  mib[1] = KERN_PROC;
-  mib[2] = KERN_PROC_PATHNAME;
-  mib[3] = -1;
-
-  size_t cb;
-  sysctl(mib, 4, NULL, &cb, NULL, 0);
-
-  std::string self;
-  self.resize(cb);
-
-  sysctl(mib, 4, self.data(), &cb, NULL, 0);
-  #else
-  std::string self = std::filesystem::read_symlink("/proc/self/exe");
-  #endif
-  
+  std::string self = get_self_path();
   std::string dso_path = find_dso(ctx, self);
 
   // Set environment variables
