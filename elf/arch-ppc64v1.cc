@@ -474,18 +474,16 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     Symbol<E> &sym = *symbols[i];
     ub32 *loc = (ub32 *)(buf + i * E::thunk_size);
 
-    if (sym.has_plt(ctx)) {
-      if (sym.has_got(ctx)) {
-        memcpy(loc, pltgot_thunk, sizeof(plt_thunk));
-        i64 val = sym.get_got_addr(ctx) - ctx.TOC->value;
-        loc[1] |= higha(val);
-        loc[2] |= lo(val);
-      } else {
-        memcpy(loc, plt_thunk, sizeof(plt_thunk));
-        i64 val = sym.get_gotplt_addr(ctx) - ctx.TOC->value;
-        loc[1] |= higha(val);
-        loc[2] |= lo(val);
-      }
+    if (sym.has_got(ctx)) {
+      memcpy(loc, pltgot_thunk, sizeof(plt_thunk));
+      i64 val = sym.get_got_addr(ctx) - ctx.TOC->value;
+      loc[1] |= higha(val);
+      loc[2] |= lo(val);
+    } else if(sym.has_plt(ctx)) {
+      memcpy(loc, plt_thunk, sizeof(plt_thunk));
+      i64 val = sym.get_gotplt_addr(ctx) - ctx.TOC->value;
+      loc[1] |= higha(val);
+      loc[2] |= lo(val);
     } else {
       memcpy(loc , local_thunk, sizeof(local_thunk));
       i64 val = sym.get_addr(ctx, NO_OPD) - ctx.TOC->value;
@@ -570,7 +568,7 @@ get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, i64 offset) {
 // half-baked .plt section in an object file and the linker has to deal
 // with that. That's not a good design.
 //
-// So, in this function, we reverse what the compiler did to .opd. We
+// So, in this function, we undo what the compiler did to .opd. We
 // remove function symbols from .opd and reattach them to their function
 // entry points. We also rewrite relocations that directly refer an input
 // .opd section so that they refer function symbols instead. We then mark
