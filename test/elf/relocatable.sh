@@ -4,6 +4,10 @@
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=98667
 [ $MACHINE = i386 ] && skip
 
+# We need to merge .opd instead of creating multiple .opd sections
+# in an output. That's not implemented yet.
+[ $MACHINE = ppc64 ] && skip
+
 cat <<EOF | $CXX -c -o $t/a.o -xc++ -
 int one() { return 1; }
 

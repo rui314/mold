@@ -87,7 +87,7 @@ jobs:
         # Install cross toolchains
         dpkg --add-architecture i386
         ./install-build-deps.sh update
-        apt-get install -y sudo qemu-user gdb zstd dwarfdump gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf gcc-10-powerpc64le-linux-gnu gcc-10-s390x-linux-gnu gcc-10-sparc64-linux-gnu g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf g++-10-powerpc64le-linux-gnu g++-10-s390x-linux-gnu g++-10-sparc64-linux-gnu
+        apt-get install -y sudo qemu-user gdb zstd dwarfdump gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf gcc-10-powerpc64-linux-gnu gcc-10-powerpc64le-linux-gnu gcc-10-s390x-linux-gnu gcc-10-sparc64-linux-gnu g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf g++-10-powerpc64-linux-gnu g++-10-powerpc64le-linux-gnu g++-10-s390x-linux-gnu g++-10-sparc64-linux-gnu
         ln -sf /usr/bin/i686-linux-gnu-gcc-10 /usr/bin/i686-linux-gnu-gcc
         ln -sf /usr/bin/i686-linux-gnu-g++-10 /usr/bin/i686-linux-gnu-g++
         ln -sf /usr/bin/aarch64-linux-gnu-gcc-10 /usr/bin/aarch64-linux-gnu-gcc
@@ -96,6 +96,8 @@ jobs:
         ln -sf /usr/bin/arm-linux-gnueabihf-g++-10 /usr/bin/arm-linux-gnueabihf-g++
         ln -sf /usr/bin/riscv64-linux-gnu-gcc-10 /usr/bin/riscv64-linux-gnu-gcc
         ln -sf /usr/bin/riscv64-linux-gnu-g++-10 /usr/bin/riscv64-linux-gnu-g++
+        ln -sf /usr/bin/powerpc64-linux-gnu-gcc-10 /usr/bin/powerpc64-linux-gnu-gcc
+        ln -sf /usr/bin/powerpc64-linux-gnu-g++-10 /usr/bin/powerpc64-linux-gnu-g++
         ln -sf /usr/bin/powerpc64le-linux-gnu-gcc-10 /usr/bin/powerpc64le-linux-gnu-gcc
         ln -sf /usr/bin/powerpc64le-linux-gnu-g++-10 /usr/bin/powerpc64le-linux-gnu-g++
         ln -sf /usr/bin/s390x-linux-gnu-gcc-10 /usr/bin/s390x-linux-gnu-gcc
