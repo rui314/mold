@@ -95,16 +95,14 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
 
   static_assert(sizeof(insn) == E::plt_hdr_size);
   memcpy(buf, insn, sizeof(insn));
-
   *(ub64 *)(buf + 44) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 8;
 }
 
 template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   i64 offset = ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 4;
-  ub32 *loc = (ub32 *)buf;
-  loc[0] = 0x3800'0000 | sym.get_plt_idx(ctx);   // li %r0, PLT_INDEX
-  loc[1] = 0x4b00'0000 | (offset & 0x00ff'ffff); // b  plt0
+  *(ub32 *)(buf + 0) = 0x3800'0000 | sym.get_plt_idx(ctx);   // li %r0, PLT_INDEX
+  *(ub32 *)(buf + 4) = 0x4b00'0000 | (offset & 0x00ff'ffff); // b  plt0
 }
 
 template <>
@@ -193,7 +191,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub16 *)loc |= (S + A - ctx.TOC->value) & 0xfffc;
       break;
     case R_PPC64_REL24: {
-      i64 val = sym.get_addr(ctx, NO_PLT | NO_OPD) + A - P;
+      i64 val = sym.get_addr(ctx, NO_OPD) + A - P;
 
       if (sym.has_plt(ctx) || sign_extend(val, 25) != val) {
         RangeExtensionRef ref = extra.range_extn[i];
@@ -362,9 +360,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     if (sym.is_ifunc())
       sym.flags |= (NEEDS_GOT | NEEDS_PLT | NEEDS_OPD);
 
-    if (rel.r_type != R_PPC64_REL24)
-      if (u32 ty = sym.get_type(); ty == STT_FUNC || ty == STT_GNU_IFUNC)
-        sym.flags |= NEEDS_OPD;
+    if (rel.r_type != R_PPC64_REL24 && sym.get_type() == STT_FUNC)
+      sym.flags |= NEEDS_OPD;
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
@@ -425,8 +422,9 @@ template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
 
-  // If the destination is PLT, we save the current r2, read an address of
-  // a function descriptor from .got, restore %r2 and jump to the function.
+  // If the destination is .plt.got, we save the current r2, read an
+  // address of a function descriptor from .got, restore %r2 and jump
+  // to the function.
   static const ub32 pltgot_thunk[] = {
     // Store the caller's %r2
     0xf841'0028, // std   %r2, 40(%r1)
@@ -441,8 +439,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0x4e80'0420, // bctr
   };
 
-  // If the destination is PLT, a pointer to a function descriptor is
-  // stored to .got.plt.
+  // If the destination is .plt, read a function descriptor from .got.plt.
   static const ub32 plt_thunk[] = {
     // Store the caller's %r2
     0xf841'0028, // std   %r2, 40(%r1)
@@ -458,7 +455,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   };
 
   // If the destination is a non-imported function, we directly jump
-  // to that address.
+  // to the function entry address.
   static const ub32 local_thunk[] = {
     0x3d82'0000, // addis r12, r2,  foo@toc@ha
     0x398c'0000, // addi  r12, r12, foo@toc@lo
@@ -469,8 +466,8 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0x6000'0000, // nop
   };
 
-  static_assert(E::thunk_size == sizeof(plt_thunk));
   static_assert(E::thunk_size == sizeof(pltgot_thunk));
+  static_assert(E::thunk_size == sizeof(plt_thunk));
   static_assert(E::thunk_size == sizeof(local_thunk));
 
   for (i64 i = 0; i < symbols.size(); i++) {
@@ -614,6 +611,7 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
       sym->value = rel->r_addend;
     }
 
+    // Sort symbols so that get_opd_sym_at() can do binary search.
     sort(opd_syms, [](const OpdSymbol &a, const OpdSymbol &b) {
       return a.r_offset < b.r_offset;
     });
@@ -625,7 +623,6 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
 
       for (ElfRel<E> &r : isec->get_rels(ctx)) {
         Symbol<E> &sym = *file->symbols[r.r_sym];
-
         if (sym.get_input_section() != opd)
           continue;
 
