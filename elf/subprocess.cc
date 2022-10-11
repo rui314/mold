@@ -8,6 +8,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/sysctl.h>
 #include <unistd.h>
 
 namespace mold::elf {
@@ -91,7 +92,25 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
     Fatal(ctx) << "-run: argument missing";
 
   // Get the mold-wrapper.so path
+
+  #ifdef __FreeBSD__
+  int mib[4];
+  mib[0] = CTL_KERN;
+  mib[1] = KERN_PROC;
+  mib[2] = KERN_PROC_PATHNAME;
+  mib[3] = -1;
+
+  size_t cb;
+  sysctl(mib, 4, NULL, &cb, NULL, 0);
+
+  std::string self;
+  self.resize(cb);
+
+  sysctl(mib, 4, self.data(), &cb, NULL, 0);
+  #else
   std::string self = std::filesystem::read_symlink("/proc/self/exe");
+  #endif
+  
   std::string dso_path = find_dso(ctx, self);
 
   // Set environment variables
