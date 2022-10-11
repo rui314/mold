@@ -475,7 +475,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     ub32 *loc = (ub32 *)(buf + i * E::thunk_size);
 
     if (sym.has_got(ctx)) {
-      memcpy(loc, pltgot_thunk, sizeof(plt_thunk));
+      memcpy(loc, pltgot_thunk, sizeof(pltgot_thunk));
       i64 val = sym.get_got_addr(ctx) - ctx.TOC->value;
       loc[1] |= higha(val);
       loc[2] |= lo(val);
@@ -485,7 +485,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
       loc[1] |= higha(val);
       loc[2] |= lo(val);
     } else {
-      memcpy(loc , local_thunk, sizeof(local_thunk));
+      memcpy(loc, local_thunk, sizeof(local_thunk));
       i64 val = sym.get_addr(ctx, NO_OPD) - ctx.TOC->value;
       loc[0] |= higha(val);
       loc[1] |= lo(val);
