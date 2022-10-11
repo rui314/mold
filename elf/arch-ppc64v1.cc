@@ -553,29 +553,30 @@ get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, i64 offset) {
 //    address-taking relocations such as R_PPC64_ADDR64. However,
 //    R_PPC64_REL24 (which is used for branch instruction) needs a
 //    function entry point address instead of the function's .opd address.
-//    We need to read .opd contents to find out an function entry point
+//    We need to read .opd contents to find out a function entry point
 //    address to apply R_PPC64_REL24.
 //
-// 2. Output .opd entries are needed only for functions whose addresses
+// 2. Output .opd entries are needed only by functions whose addresses
 //    are taken. Just copying input .opd sections to an output would
 //    produce lots of dead .opd entries.
 //
 // 3. In this design, all function symbols refer an .opd section, and that
 //    doesn't work well with graph traversal optimizations such as garbage
 //    collection or identical comdat folding. For example, garbage
-//    collector would mark an .opd alive and in turn mark all function
-//    bodies that is referenced by .opd, effectively keeps all functions.
+//    collector would mark an .opd alive which in turn mark all function
+//    bodies that is referenced by .opd as alive, effectively keeping
+//    all functions as alive.
 //
 // The problem is that the compiler creates a half-baked .opd section, and
-// the linker has to speculate what all these .opd entries and relocations
-// are trying to do. It's like the compiler would emit a half-baked .plt
-// section in an object file and the linker has to deal with that. That's
-// not a good design.
+// the linker has to figure out what all these .opd entries and
+// relocations are trying to achieve. It's like the compiler would emit a
+// half-baked .plt section in an object file and the linker has to deal
+// with that. That's not a good design.
 //
 // So, in this function, we reverse what the compiler did to .opd. We
 // remove function symbols from .opd and reattach them to their function
 // entry points. We also rewrite relocations that directly refer an input
-// .opd section so that they directly refer function symbols. We then mark
+// .opd section so that they refer function symbols instead. We then mark
 // input .opd sections as dead.
 //
 // After this function, we mark symbols with the NEEDS_OPD flag if the
