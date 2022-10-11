@@ -535,17 +535,16 @@ get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, i64 offset) {
   return it->sym;
 }
 
-// An input object files contain a .opd section for all symbols that might
-// need .opd entries in an output file. The intention of the input .opd
-// section is to make it possible to create an output .opd just by linking
-// input .opd sections in the same manner as we do to other normal input
-// sections.
+// An input object file contain an .opd section for all symbols that might
+// need .opd entries in an output file. The intention is to make it
+// possible to create an output .opd just by linking input .opd sections
+// in the same manner as we do to other normal input sections.
 //
-// However, in reality, .opd isn't a normal input section but needs many
+// However, in reality, .opd isn't a normal input section. It needs many
 // special treatments as follows:
 //
-// 1. A function symbol refers an .opd, and that address works fine for
-//    address-taking relocations such as R_PPC64_ADDR64. However,
+// 1. A function symbol refers not a .text but an .opd. Its address works
+//    fine for address-taking relocations such as R_PPC64_ADDR64. However,
 //    R_PPC64_REL24 (which is used for branch instruction) needs a
 //    function entry point address instead of the function's .opd address.
 //    We need to read .opd contents to find out a function entry point
@@ -568,11 +567,11 @@ get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, i64 offset) {
 // half-baked .plt section in an object file and the linker has to deal
 // with that. That's not a good design.
 //
-// So, in this function, we undo what the compiler did to .opd. We
-// remove function symbols from .opd and reattach them to their function
-// entry points. We also rewrite relocations that directly refer an input
-// .opd section so that they refer function symbols instead. We then mark
-// input .opd sections as dead.
+// So, in this function, we undo what the compiler did to .opd. We remove
+// function symbols from .opd and reattach them to their function entry
+// points. We also rewrite relocations that directly refer an input .opd
+// section so that they refer function symbols instead. We then mark input
+// .opd sections as dead.
 //
 // After this function, we mark symbols with the NEEDS_OPD flag if the
 // symbol needs an .opd entry. We then create an output .opd just like we
@@ -661,7 +660,7 @@ void ppc64v1_scan_symbols(Context<E> &ctx) {
 void PPC64OpdSection::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_opd_idx(ctx, symbols.size());
   symbols.push_back(sym);
-  this->shdr.sh_size += 3 * sizeof(Word<E>);
+  this->shdr.sh_size += ENTRY_SIZE;
 }
 
 void PPC64OpdSection::copy_buf(Context<E> &ctx) {

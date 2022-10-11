@@ -51,14 +51,14 @@
 //
 // RISC-V object files tend to have way more relocations than those for
 // other targets. This is because all branches, including ones that jump
-// within the same section, are explicitly annotated with relocations. Here
-// is why we need them: all control-flow statements such as `if` or `for`
-// are implemented using branch instructions. For other targets, the
+// within the same section, are explicitly expressed with relocations.
+// Here is why we need them: all control-flow statements such as `if` or
+// `for` are implemented using branch instructions. For other targets, the
 // compiler doesn't emit relocations for such branches because they know
-// at compile-time exactly how many bytes has to be skipped. That's not true
-// to RISC-V because the linker may delete bytes between a branch and its
-// destination. Therefore, all branches including in-section ones have to
-// be explicitly annotated with relocations.
+// at compile-time exactly how many bytes has to be skipped. That's not
+// true to RISC-V because the linker may delete bytes between a branch and
+// its destination. Therefore, all branches including in-section ones have
+// to be explicitly expressed with relocations.
 //
 // Note that this mechanism only shrink sections and never enlarge, as
 // the compiler always emits the longest instruction sequence. This

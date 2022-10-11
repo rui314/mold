@@ -1454,7 +1454,7 @@ public:
 };
 
 //
-// arch-s390.cc
+// arch-s390x.cc
 //
 
 class S390XTlsGetOffsetSection : public Chunk<S390X> {
@@ -1845,9 +1845,10 @@ struct SymbolExtras<E> {
   i32 thunk_sym_idx = -1;
 };
 
+// Flags for Symbol<E>::get_addr()
 enum {
-  NO_PLT = 1 << 0,
-  NO_OPD = 1 << 1,
+  NO_PLT = 1 << 0, // Request an address other than .plt
+  NO_OPD = 1 << 1, // Request an address other than .opd (PPC64V1 only)
 };
 
 // Symbol class represents a defined symbol.
