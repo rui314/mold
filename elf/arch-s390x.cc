@@ -159,16 +159,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_GOT12:
       *(ub16 *)loc &= 0xf000;
-      *(ub16 *)loc |= (G + GOT + A) & 0x0fff;
+      *(ub16 *)loc |= (G + A) & 0x0fff;
       break;
     case R_390_GOT16:
-      *(ub16 *)loc = G + GOT + A;
+      *(ub16 *)loc = G + A;
       break;
     case R_390_GOT32:
-      *(ub32 *)loc = G + GOT + A;
+      *(ub32 *)loc = G + A;
       break;
     case R_390_GOT64:
-      *(ub64 *)loc = G + GOT + A;
+      *(ub64 *)loc = G + A;
       break;
     case R_390_GOTOFF16:
       *(ub16 *)loc = S + A - GOT;
