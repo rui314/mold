@@ -63,7 +63,7 @@ using E = PPC64V2;
 // PLTs for .toc sections. PPC64's .toc is a compiler-generated
 // GOT-like section, and no user-generated code directly uses values
 // in it.
-static constexpr ScanAction toc_dyn_absrel_table[3][4] = {
+static constexpr ScanAction toc_table[3][4] = {
   // Absolute  Local    Imported data  Imported code
   {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
   {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
@@ -197,7 +197,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
       if (name() == ".toc")
-        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel, toc_dyn_absrel_table);
+        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel, toc_table);
       else
         apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel, dyn_absrel_table);
       break;
@@ -382,7 +382,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
       if (name() == ".toc")
-        scan_rel(ctx, sym, rel, toc_dyn_absrel_table);
+        scan_rel(ctx, sym, rel, toc_table);
       else
         scan_rel(ctx, sym, rel, dyn_absrel_table);
       break;
