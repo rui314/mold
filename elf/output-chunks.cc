@@ -1286,9 +1286,8 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   //
   // https://sourceware.org/bugzilla/show_bug.cgi?id=29662
   // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be58987bdfd00e21e5720f0b862
-  if (ctx.dynamic)
-    if (is_s390x<E> ||
-        (std::is_same_v<E, ARM64> && ctx.arg.is_static && ctx.arg.pie))
+  if constexpr (std::is_same_v<E, ARM64> || std::is_same_v<E, S390X>)
+    if (ctx.dynamic && ctx.arg.is_static && ctx.arg.pie)
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
