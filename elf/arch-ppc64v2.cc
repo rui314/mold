@@ -218,17 +218,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         RangeExtensionRef ref = extra.range_extn[i];
         assert(ref.thunk_idx != -1);
         val = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx) + A - P;
-
-        // If the callee saves r2 to the caller's r2 save slot to clobber
-        // r2, we need to restore r2 after function return. To do so,
-        // there's usually a NOP as a placeholder after a BL. 0x6000'0000 is
-        // a NOP.
-        if (*(ul32 *)(loc + 4) == 0x6000'0000)
-          *(ul32 *)(loc + 4) = 0xe841'0018; // ld r2, 24(r1)
       }
 
       check(val, -(1 << 25), 1 << 25);
       *(ul32 *)loc |= bits(val, 25, 2) << 2;
+
+      // If a callee is an external function, PLT saves %r2 to the
+      // caller's r2 save slot. We need to restore it after function
+      // return. To do so, there's usually a NOP as a placeholder
+      // after a BL. 0x6000'0000 is a NOP.
+      if (sym.has_plt(ctx) && *(ul32 *)(loc + 4) == 0x6000'0000)
+        *(ul32 *)(loc + 4) = 0xe841'0018; // ld r2, 24(r1)
       break;
     }
     case R_PPC64_REL64:
@@ -448,15 +448,14 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   };
 
   // If the destination is a non-imported function, we directly jump
-  // to that address.
+  // to its local entry point.
   static const ul32 local_thunk[] = {
-    // Save r2 to the r2 save slot reserved in the caller's stack frame
-    0xf841'0018, // std   r2, 24(r1)
-    // Jump to a PLT entry
+    // Jump to a local entry point
     0x3d82'0000, // addis r12, r2,  foo@toc@ha
     0x398c'0000, // addi  r12, r12, foo@toc@lo
     0x7d89'03a6, // mtctr r12
     0x4e80'0420, // bctr
+    0x6000'0000, // nop
   };
 
   static_assert(E::thunk_size == sizeof(plt_thunk));
@@ -474,9 +473,10 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
       loc[2] |= lo(val);
     } else {
       memcpy(loc , local_thunk, sizeof(local_thunk));
-      i64 val = sym.get_addr(ctx) - ctx.TOC->value;
-      loc[1] |= higha(val);
-      loc[2] |= lo(val);
+      i64 val = sym.get_addr(ctx) + get_local_entry_offset(ctx, sym) -
+                ctx.TOC->value;
+      loc[0] |= higha(val);
+      loc[1] |= lo(val);
     }
   }
 }

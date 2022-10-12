@@ -199,17 +199,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
         RangeExtensionThunk<E> &thunk = *output_section->thunks[ref.thunk_idx];
         val = thunk.get_addr(ref.sym_idx) + A - P;
-
-        // If the callee saves r2 to the caller's r2 save slot to clobber
-        // r2, we need to restore r2 after function return. To do so,
-        // there's usually a NOP as a placeholder after a BL. 0x6000'0000 is
-        // a NOP.
-        if (*(ub32 *)(loc + 4) == 0x6000'0000)
-          *(ub32 *)(loc + 4) = 0xe841'0028; // ld r2, 40(r1)
       }
 
       check(val, -(1 << 25), 1 << 25);
       *(ub32 *)loc |= bits(val, 25, 2) << 2;
+
+      // If a callee is an external function, PLT saves %r2 to the
+      // caller's r2 save slot. We need to restore it after function
+      // return. To do so, there's usually a NOP as a placeholder
+      // after a BL. 0x6000'0000 is a NOP.
+      if (sym.has_plt(ctx) && *(ub32 *)(loc + 4) == 0x6000'0000)
+        *(ub32 *)(loc + 4) = 0xe841'0028; // ld r2, 40(r1)
       break;
     }
     case R_PPC64_REL64:
