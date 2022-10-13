@@ -1201,11 +1201,11 @@ template <typename E>
 std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
   std::vector<GotEntry<E>> entries;
 
+  // Create GOT entries for ordinary symbols
   for (Symbol<E> *sym : got_syms) {
     i64 idx = sym->get_got_idx(ctx);
 
-    // If the symbol may not be defined within our output, let the
-    // dynamic linker to resolve it.
+    // If a symbol is imported, let the dynamic linker to resolve it.
     if (sym->is_imported) {
       entries.push_back({idx, 0, E::R_GLOB_DAT, sym});
       continue;
@@ -1217,14 +1217,15 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
       continue;
     }
 
-    // If we know the address at address at link-time, fill that GOT entry
-    // now. It may need a base relocation, though.
+    // If we know an address at link-time, fill that GOT entry now.
+    // It may need a base relocation, though.
     if (ctx.arg.pic && sym->is_relative())
       entries.push_back({idx, sym->get_addr(ctx, NO_PLT), E::R_RELATIVE});
     else
       entries.push_back({idx, sym->get_addr(ctx, NO_PLT)});
   }
 
+  // Create GOT entries for TLVs.
   for (Symbol<E> *sym : tlsgd_syms) {
     i64 idx = sym->get_tlsgd_idx(ctx);
 

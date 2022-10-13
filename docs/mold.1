@@ -229,7 +229,47 @@ such as system-dependent library search paths, are hard-coded.
 depends only on its command-line arguments.
 .
 .\"=============================================================================
-.Sh OPTIONS
+.Sh MOLD-SPECIFIC OPTIONS
+.Bl -tag -width 6n -compact
+.It Fl -reverse-sections
+Reverses the order of input sections before assigning them the offsets \
+in the output file.
+.Pp
+This option is useful for finding a bug that depends on an initialization \
+order of global objects. In C++, constructors of global objects in a single \
+ source file are guaranteed to be executed in the source order, but \
+there's no such guarantee across compilation units. Usually, constructors \
+are executed in the order given to the linker, but depending on it is a mistake.
+.Pp
+By reversing the order of input sections using
+.Fl -reverse-sections ,
+you can easily test that your program works in the reversed initialization order.
+.Pp
+.It Fl -shuffle-sections
+.It Fl -shuffle-sections Ns = Ns Ar number
+Randomizes the output by shuffleing the order of input sections before \
+assigning them the offsets in the output file. If
+.Ar number
+is given, it's used as a seed for the random number generator, so that \
+the linker produces the same output as for the same seed. If no seed \
+is given, it uses a random number as a seed.
+.Pp
+This option is useful for benchmarking. Modern CPUs are sensitive to program's \
+memory layout. A seeming benign change in program layout (such as a small \
+size increase of a function) can affect program's performance. Therefore, \
+even if you write new code and get a good benchmark result, it is hard \
+to say whether or not the new code improves the programs performance; \
+it is possible that the a program's layout happens to perform better.
+.Pp
+By running a benchmark multiple time with shuffling program's layout using
+.Fl -shuffle-sections ,
+you can isolate your progrma's real performace number from the randomness \
+caused by memory layout changes.
+.
+.El \" End of options list
+.
+.\"-----------------------------------------------------------------------------
+.Sh GNU-COMPATIBLE OPTIONS
 .Bl -tag -width 6n -compact
 .It Fl -help
 Report usage information to stdout and exit.
@@ -803,10 +843,6 @@ section and does not affect
 .Dv .dynsym
 section, which is used for dynamic linking.
 .Pp
-.It Fl -reverse-sections
-Reverses the order of input sections before assigning them the offsets \
-in the output file.
-.Pp
 .It Fl -rpath Ns = Ns Ar dir
 Add
 .Ar dir
@@ -831,15 +867,6 @@ is a hexadecimal number that may start with an optional
 .Pp
 .It Fl -shared , -Bshareable
 Create a share library.
-.Pp
-.It Fl -shuffle-sections
-.It Fl -shuffle-sections Ns = Ns Ar number
-Randomizes the output by shuffleing the order of input sections before \
-assigning them the offsets in the output file. If
-.Ar number
-is given, it's used as a seed for the random number generator, so that \
-the linker produces the same output as for the same seed. If no seed \
-is given, it uses a random number as a seed.
 .Pp
 .It Fl -spare-dynamic-tags Ns = Ns Ar number
 Reserve given
