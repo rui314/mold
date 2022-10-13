@@ -1,4 +1,4 @@
-# You can customize build by specifying CMake options. A option may be
+# You can customize build by specifying CMake options. An option may be
 # given in the -Dvariable=value form. For a boolean variable, `ON` or `1`
 # means true while `OFF` or `0` means false.
 #
@@ -6,11 +6,11 @@
 #
 #  -DCMAKE_C_COMPILER=<command-name>
 #
-#   Specifies a C compiler name to use.
+#   Specifies a C compiler name to use. The default value is `cc`.
 #
 #  -DCMAKE_CXX_COMPILER=<command-name>
 #
-#   Specifies a C++ compiler name to use.
+#   Specifies a C++ compiler name to use. The default value is `c++`.
 #
 #  -DCMAKE_INSTALL_PREFIX=<directory>
 #
@@ -29,8 +29,8 @@
 #
 # where `..` refers this directory.
 #
-# In order to see the current CMake variables and their values, run `cmake
-# -N -L .` in a build directory.
+# You can see the current cmake variables and their values by running
+# `cmake -N -L .` in a build directory.
 #
 # Note that in this file, we provide various dials and knobs to configure
 # how to build mold. However, as a policy, we do not provide a way to
@@ -131,7 +131,7 @@ endif()
 # Find mimalloc. mimalloc is an alternative malloc implementation
 # optimized for multi-threaded applications.
 #
-# If you do not want to use mimalloc, pass -DMOLD_USE_MIMALLOC=OFF.
+# If you want to the usual libc's malloc, pass -DMOLD_USE_MIMALLOC=OFF.
 include(CheckCSourceCompiles)
 check_c_source_compiles("#ifdef __i386__\nint main() {}\n#endif" I386)
 
