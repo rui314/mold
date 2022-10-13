@@ -1,10 +1,51 @@
+# You can customize build by specifying CMake options. A option may be
+# given in the -Dvariable=value form. For a boolean variable, `ON` or `1`
+# means true while `OFF` or `0` means false.
+#
+# Here are a couple of common cmake options:
+#
+#  -DCMAKE_C_COMPILER=<command-name>
+#
+#   Specifies a C compiler name to use.
+#
+#  -DCMAKE_CXX_COMPILER=<command-name>
+#
+#   Specifies a C++ compiler name to use.
+#
+#  -DCMAKE_INSTALL_PREFIX=<directory>
+#
+#   Specifies an install target directory. For example, if you want to
+#   install mold as `/usr/bin/mold`, specify `-DCMAKE_INSTALL_PREFIX=/usr`.
+#   The default value is `/usr/local`.
+#
+#  -DCMAKE_BUILD_TYPE=[Debug | Release | RelWithDebInfo | MinSizeRel]
+#
+#   Specifies a build type. The default is `Release` which is the right
+#   option unless you are debugging mold.
+#
+# An example of a cmake command line is shown below:
+#
+#   $ cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_CXX_COMPILER=g++-12 ..
+#
+# where `..` refers this directory.
+#
+# In order to see the current CMake variables and their values, run `cmake
+# -N -L .` in a build directory.
+#
+# Note that in this file, we provide various dials and knobs to configure
+# how to build mold. However, as a policy, we do not provide a way to
+# enable/disable any individual mold's feature. In other words, we do not
+# provide options like `--enable-foo` or `--disable-foo`. This policy
+# guarantees that all builds of the mold linker of the same version will
+# have the exactly same set of features and behave exactly the same.
+
 cmake_minimum_required(VERSION 3.13)
 project(mold VERSION 1.5.1)
 
 include(CMakeDependentOption)
 include(GNUInstallDirs)
 
-# Add -fuse-ld=mold if accepted by the compiler.
+# Build mold itself using mold if -DMOLD_USE_MOLD=ON.
 option(MOLD_USE_MOLD "Use mold to build mold" OFF)
 if(MOLD_USE_MOLD)
   add_link_options(-fuse-ld=mold)
@@ -25,33 +66,39 @@ if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
     -Wno-unused-function)
 endif()
 
-# Build mold with -flto if MOLD_LTO=On
+# Build mold with -flto if -DMOLD_LTO=ON
 option(MOLD_LTO "Build mold with link-time optimization enabled")
 if(MOLD_LTO)
   set_property(TARGET mold PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
 endif()
 
-# Handle MOLD_USE_ASAN and MOLD_USE_TSAN
+# Enable AddressSanitizer if -DMOLD_USE_ASAN=ON
 option(MOLD_USE_ASAN "Build mold with AddressSanitizer" OFF)
 if(MOLD_USE_ASAN)
   target_compile_options(mold PRIVATE -fsanitize=address -fsanitize=undefined)
   target_link_options(mold PRIVATE -fsanitize=address -fsanitize=undefined)
 endif()
 
+# Enabled ThreadSanitizer if -DMOLD_USE_TSAN=ON
 option(MOLD_USE_TSAN "Build mold with ThreadSanitizer" OFF)
 if(MOLD_USE_TSAN)
   target_compile_options(mold PRIVATE -fsanitize=thread)
   target_link_options(mold PRIVATE -fsanitize=thread)
 endif()
 
-# Static link libstdc++ and libcrypto if MOLD_MOSTLY_STATIC=On
+# Statically-link libstdc++ and libcrypto if -DMOLD_MOSTLY_STATIC=ON.
+#
+# This option is intended to be used by `./dist.sh` script to create a
+# mold binary that works on various Linux distros. You probably don't
+# need nor want to set this to ON.
 option(MOLD_MOSTLY_STATIC "Statically link libstdc++ and libcrypto" OFF)
 if(MOLD_MOSTLY_STATIC)
   target_link_options(mold PRIVATE -static-libstdc++)
   target_link_libraries(mold PRIVATE libcrypto.a)
 endif()
 
-# Setup zlib
+# Find zlib. If libz.so is not found, we compile a bundled one and
+# statically-link it to mold.
 find_package(ZLIB QUIET)
 if(ZLIB_FOUND)
   target_link_libraries(mold PRIVATE ZLIB::ZLIB)
@@ -62,7 +109,8 @@ else()
   target_link_libraries(mold PRIVATE zlibstatic)
 endif()
 
-# Setup zstd
+# Find zstd compression library. Just like zlib, if libzstd.so is not
+# found, we compile a bundled one and statically-link it to mold.
 include(CheckIncludeFile)
 check_include_file(zstd.h HAVE_ZSTD_H)
 
@@ -80,7 +128,10 @@ else()
   target_link_libraries(mold PRIVATE libzstd_static)
 endif()
 
-# Setup mimalloc
+# Find mimalloc. mimalloc is an alternative malloc implementation
+# optimized for multi-threaded applications.
+#
+# If you do not want to use mimalloc, pass -DMOLD_USE_MIMALLOC=OFF.
 include(CheckCSourceCompiles)
 check_c_source_compiles("#ifdef __i386__\nint main() {}\n#endif" I386)
 
@@ -90,6 +141,9 @@ cmake_dependent_option(
   MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
   MOLD_USE_MIMALLOC OFF)
 
+# By default, we build a bundled mimalloc and statically-link it to
+# mold. If you want to dynamically link to the system's
+# libmimalloc.so, pass -DMOLD_USE_SYSTEM_MIMALLOC=ON.
 if(MOLD_USE_MIMALLOC)
   if(MOLD_USE_SYSTEM_MIMALLOC)
     find_package(mimalloc REQUIRED)
@@ -108,7 +162,12 @@ if(MOLD_USE_MIMALLOC)
   endif()
 endif()
 
-# Setup TBB
+# Find TBB. TBB (OneTBB or Intel TBB) is a high-level threading library.
+# Use of this library is mandatory.
+#
+# By default, we build a bundled one and statically-link the library
+# to mold. If you want to link to the system's libtbb2.so, pass
+# -DMOLD_USE_SYSTEM_TBB=ON.
 option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" OFF)
 if(MOLD_USE_SYSTEM_TBB)
   find_package(TBB REQUIRED)
