@@ -702,19 +702,26 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_STRSZ, ctx.dynstr->shdr.sh_size);
   }
 
-  if (ctx.__init_array_start->get_output_section()) {
+  auto has_output_section = [&](u32 sh_type) {
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (chunk->shdr.sh_type == sh_type)
+        return true;
+    return false;
+  };
+
+  if (has_output_section(SHT_INIT_ARRAY)) {
     define(DT_INIT_ARRAY, ctx.__init_array_start->value);
     define(DT_INIT_ARRAYSZ,
            ctx.__init_array_end->value - ctx.__init_array_start->value);
   }
 
-  if (ctx.__preinit_array_start->get_output_section()) {
+  if (has_output_section(SHT_PREINIT_ARRAY)) {
     define(DT_PREINIT_ARRAY, ctx.__preinit_array_start->value);
     define(DT_PREINIT_ARRAYSZ,
            ctx.__preinit_array_end->value - ctx.__preinit_array_start->value);
   }
 
-  if (ctx.__fini_array_start->get_output_section()) {
+  if (has_output_section(SHT_FINI_ARRAY)) {
     define(DT_FINI_ARRAY, ctx.__fini_array_start->value);
     define(DT_FINI_ARRAYSZ,
            ctx.__fini_array_end->value - ctx.__fini_array_start->value);
