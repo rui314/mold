@@ -3,10 +3,10 @@
 
 # We should not create a PREINIT_ARRAY .dynamic entry by default
 cat <<EOF | $CC -o $t/a.o -c -xc -
-int main() {}
+void _start() {}
 EOF
 
-$CC -B. -o $t/exe1 $t/a.o
+./mold -o $t/exe1 $t/a.o
 readelf -W --dynamic $t/exe1 > $t/log1
 ! grep -q PREINIT_ARRAY $t/log1 || false
 
