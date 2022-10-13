@@ -74,7 +74,9 @@ You may need to pass a C++20 compiler command name to `cmake`.
 In the above case, `c++` is passed. If it doesn't work for you,
 try a specific version of a compiler such as `g++-10` or `clang++-12`.
 
-By default, `mold` is installed to `/usr/local/bin`.
+By default, `mold` is installed to `/usr/local/bin`. You can change
+that by passing `-DCMAKE_INSTALL_PREFIX=<directory>`. For other cmake
+options, see the comments in `CMakeLists.txt`.
 
 If you don't use a recent enough Linux distribution, or if for any reason
 `cmake` in the above commands doesn't work for you, you can use Docker to
