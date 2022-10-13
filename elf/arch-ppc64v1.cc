@@ -36,7 +36,7 @@
 // descriptors.
 //
 // You can think OPD as this: even in other targets, a function can have a
-// few different addresses for different purposes. It doesn't only have an
+// few different addresses for different purposes. It may not only have an
 // entry point address but may also have PLT and/or GOT addresses.
 // In PPCV1, it may have an OPD address in addition to these. OPD address
 // is used for relocations that refers the address of a function as a
@@ -546,19 +546,19 @@ get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, i64 offset) {
 // 1. A function symbol refers not a .text but an .opd. Its address works
 //    fine for address-taking relocations such as R_PPC64_ADDR64. However,
 //    R_PPC64_REL24 (which is used for branch instruction) needs a
-//    function entry point address instead of the function's .opd address.
-//    We need to read .opd contents to find out a function entry point
-//    address to apply R_PPC64_REL24.
+//    function's real instead of the function's .opd address. We need to
+//    read .opd contents to find out a function entry point address to
+//    apply R_PPC64_REL24.
 //
 // 2. Output .opd entries are needed only by functions whose addresses
 //    are taken. Just copying input .opd sections to an output would
-//    produce lots of dead .opd entries.
+//    produces lots of dead .opd entries.
 //
 // 3. In this design, all function symbols refer an .opd section, and that
 //    doesn't work well with graph traversal optimizations such as garbage
 //    collection or identical comdat folding. For example, garbage
 //    collector would mark an .opd alive which in turn mark all function
-//    bodies that is referenced by .opd as alive, effectively keeping
+//    bodies that are referenced by .opd as alive, effectively keeping
 //    all functions as alive.
 //
 // The problem is that the compiler creates a half-baked .opd section, and

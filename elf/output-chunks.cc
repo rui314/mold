@@ -1280,13 +1280,16 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
-  // glibc on s390 and arm64 wrongly assumes GOT[0] refers _DYNAMIC.
-  // We set the value only on s390 and arm64, so that no new code would
-  // accidentally depend on the value of GOT[0].
+  // s390x psABI requires GOT[0] to be set to the link-time value of _DYNAMIC.
+  if constexpr (std::is_same_v<E, S390X>)
+    if (ctx.dynamic)
+      buf[0] = ctx.dynamic->shdr.sh_addr;
+
+  // arm64 psABI doesn't say anything about GOT[0], but glibc/arm64's code
+  // path for -static-pie wrongly assumed that GOT[0] refers _DYNAMIC.
   //
-  // https://sourceware.org/bugzilla/show_bug.cgi?id=29662
-  // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be58987bdfd00e21e5720f0b862
-  if constexpr (std::is_same_v<E, ARM64> || std::is_same_v<E, S390X>)
+  // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be5
+  if constexpr (std::is_same_v<E, ARM64>)
     if (ctx.dynamic && ctx.arg.is_static && ctx.arg.pie)
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
