@@ -1,4 +1,4 @@
-# You can customize build by specifying CMake options. An option may be
+# You can customize a build by specifying CMake options. An option may be
 # given in the -Dvariable=value form. For a boolean variable, `ON` or `1`
 # means true while `OFF` or `0` means false.
 #
@@ -14,9 +14,7 @@
 #
 #  -DCMAKE_INSTALL_PREFIX=<directory>
 #
-#   Specifies an install target directory. For example, if you want to
-#   install mold as `/usr/bin/mold`, specify `-DCMAKE_INSTALL_PREFIX=/usr`.
-#   The default value is `/usr/local`.
+#   Specifies an install target directory. The default value is `/usr/local`.
 #
 #  -DCMAKE_BUILD_TYPE=[Debug | Release | RelWithDebInfo | MinSizeRel]
 #
@@ -29,15 +27,21 @@
 #
 # where `..` refers this directory.
 #
+# With cmake, you may run `cmake --install .` instead of `make install` to
+# install build artifacts to system directories. If you want to install
+# artifacts to a temporary target directory, run `cmake --install . --prefix
+# <dir>`.
+#
 # You can see the current cmake variables and their values by running
 # `cmake -N -L .` in a build directory.
 #
 # Note that in this file, we provide various dials and knobs to configure
 # how to build mold. However, as a policy, we do not provide a way to
 # enable/disable any individual mold's feature. In other words, we do not
-# provide options like `--enable-foo` or `--disable-foo`. This policy
-# guarantees that all builds of the mold linker of the same version will
-# have the exactly same set of features and behave exactly the same.
+# provide options like `--enable-foo` or `--disable-foo`. The motivation
+# behind it is build reproducibility. We want to guarantees that all builds
+# of the mold linker of the same version will have the exactly same set of
+# features and behave exactly the same.
 
 cmake_minimum_required(VERSION 3.13)
 project(mold VERSION 1.5.1)
@@ -131,7 +135,7 @@ endif()
 # Find mimalloc. mimalloc is an alternative malloc implementation
 # optimized for multi-threaded applications.
 #
-# If you want to the usual libc's malloc, pass -DMOLD_USE_MIMALLOC=OFF.
+# If you want to use the usual libc's malloc, pass -DMOLD_USE_MIMALLOC=OFF.
 include(CheckCSourceCompiles)
 check_c_source_compiles("#ifdef __i386__\nint main() {}\n#endif" I386)
 
