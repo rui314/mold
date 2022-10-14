@@ -1895,7 +1895,7 @@ public:
   i32 get_dynsym_idx(Context<E> &ctx) const;
 
   bool has_plt(Context<E> &ctx) const;
-  bool has_got(Context<E> &ctx) const;
+  bool has_got(Context<E> &ctx) const { return get_got_idx(ctx) != -1; }
   bool has_gottp(Context<E> &ctx) const { return get_gottp_idx(ctx) != -1; }
   bool has_tlsgd(Context<E> &ctx) const { return get_tlsgd_idx(ctx) != -1; }
   bool has_tlsdesc(Context<E> &ctx) const { return get_tlsdesc_idx(ctx) != -1; }
@@ -1993,7 +1993,7 @@ public:
   bool is_exported : 1 = false;
 
   // `is_canonical` is true if this symbol represents a "canonical" PLT.
-  // Here is the explanation as to what is the canonical PLT is.
+  // Here is the explanation as to what the canonical PLT is.
   //
   // In C/C++, the process-wide function pointer equality is guaratneed.
   // That is, if you take an address of a function `foo`, it's always
@@ -2057,8 +2057,8 @@ public:
   // The loader supports a feature so-called "copy relocations".
   // A copy relocation instructs the loader to copy data from a DSO to a
   // specified location in the main executable. By using this feature,
-  // you can make `foo`'s data to a BSS region at runtime. With that,
-  // you can apply relocations agianst `foo` as if `foo` existed in the
+  // we can copy `foo`'s data to a BSS region at runtime. With that,
+  // we can apply relocations agianst `foo` as if `foo` existed in the
   // main executable's BSS area, whose address is known at link-time.
   //
   // Copy relocations are used only by position-dependent executables.
@@ -2632,11 +2632,6 @@ inline i32 Symbol<E>::get_dynsym_idx(Context<E> &ctx) const {
 template <typename E>
 inline bool Symbol<E>::has_plt(Context<E> &ctx) const {
   return get_plt_idx(ctx) != -1 || get_pltgot_idx(ctx) != -1;
-}
-
-template <typename E>
-inline bool Symbol<E>::has_got(Context<E> &ctx) const {
-  return get_got_idx(ctx) != -1;
 }
 
 template <typename E>

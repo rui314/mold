@@ -1459,7 +1459,7 @@ static bool is_tbss(Chunk<E> *chunk) {
 //
 // - We can map the same file region to memory more than once. For
 //   example, we can write code (with R and X bits) and read-only data
-//   (with R bits) adjacent on file and map it twice as the last page of
+//   (with R bit) adjacent on file and map it twice as the last page of
 //   the executable segment and the first page of the read-only data
 //   segment. This doesn't save memory but saves disk space.
 template <typename E>
@@ -1528,7 +1528,7 @@ static void set_virtual_addresses(Context<E> &ctx) {
     }
 
     // TLS BSS sections are laid out so that they overlap with the
-    // subsequent non-tbss sections. This is fine because a STT_TLS
+    // subsequent non-tbss sections. Overlapping is fine because a STT_TLS
     // segment contains an initialization image for newly-created threads,
     // and no one except the runtime reads its contents. Even the runtime
     // doesn't need a BSS part of a TLS initialization image; it just
@@ -1544,7 +1544,7 @@ static void set_virtual_addresses(Context<E> &ctx) {
         chunks[i]->shdr.sh_addr = addr2;
         addr2 += chunks[i]->shdr.sh_size;
         if (i + 2 == chunks.size() || !is_tbss(chunks[i + 1]))
-            break;
+          break;
         i++;
       }
       continue;

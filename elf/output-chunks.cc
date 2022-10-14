@@ -374,8 +374,8 @@ template <typename E>
 void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
 
-  // .rel.dyn contents are filled by GotSection::copy_buf(Context<E> &ctx) and
-  // InputSection::apply_reloc_alloc().
+  // .rel.dyn contents are also filled by GotSection::copy_buf() and
+  // by InputSection::apply_reloc_alloc().
   i64 offset = ctx.got->get_reldyn_size(ctx);
 
   offset += ctx.copyrel->symbols.size() * sizeof(ElfRel<E>);
@@ -743,6 +743,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.init);
       sym->file && !sym->file->is_dso)
     define(DT_INIT, sym->get_addr(ctx));
+
   if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.fini);
       sym->file && !sym->file->is_dso)
     define(DT_FINI, sym->get_addr(ctx));
@@ -1562,12 +1563,11 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 
     // SPARC doesn't have a .got.plt because its role is merged to .plt.
     // On SPARC, .plt is writable (!) and the dynamic linker directly
-    // modify its machine instructions as it resolves dynamic symbols.
+    // modifies .plt's machine instructions as it resolves dynamic symbols.
     // Therefore, it doesn't need a separate section to store the symbol
     // resolution results. That is of course horrible from the security
     // point of view, though.
     u64 addr = is_sparc<E> ? sym.get_plt_addr(ctx) : sym.get_gotplt_addr(ctx);
-
     buf[i] = ElfRel<E>(addr, E::R_JUMP_SLOT, sym.get_dynsym_idx(ctx), 0);
   }
 }
