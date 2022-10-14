@@ -149,7 +149,8 @@ endif
 
 DEPFLAGS = -MT $@ -MMD -MP -MF out/d/$*.d
 
-all: prebuild mold mold-wrapper.so
+all: prebuild
+	$(MAKE) mold mold-wrapper.so
 
 -include $(SRCS:%.cc=d/%.d)
 
