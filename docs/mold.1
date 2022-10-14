@@ -231,6 +231,40 @@ depends only on its command-line arguments.
 .\"=============================================================================
 .Sh MOLD-SPECIFIC OPTIONS
 .Bl -tag -width 6n -compact
+.Pp
+.It Fl -chroot Ns = Ns Ar dir
+Set
+.Ar dir
+to root directory.
+.Pp
+.It Fl -color-diagnostics Ns = Ns Op Sy auto | always | never
+.It Fl -color-diagnostics
+.It Fl -no-color-diagnostics
+.Pp
+Show diagnostics messages in color using ANSI escape sequences.
+.Ar auto
+means that
+.Nm
+prints out messages in color only if the standard output is connected to a TTY. \
+Default is
+.Ar auto .
+.Pp
+.It Fl -fork
+.It Fl -no-fork
+Spawn a child process and let it do the actual linking. \
+When linking a large program, the OS kernel can take a few hundred \
+milliseconds to terminate a
+.Nm
+process.
+.Fl -fork
+hides that latency. By default, it does fork.
+.Pp
+.It Fl -perf
+Print performance statistics.
+.Pp
+.It Fl -repro
+Archive input files as a tar file.
+.Pp
 .It Fl -reverse-sections
 Reverses the order of input sections before assigning them the offsets \
 in the output file.
@@ -245,6 +279,14 @@ By reversing the order of input sections using
 .Fl -reverse-sections ,
 you can easily test that your program works in the reversed initialization order.
 .Pp
+.It Fl -run Cm command Ar arg Ar
+Run
+.Cm command
+with
+.Nm
+as
+.Pa /usr/bin/ld .
+.Pp
 .It Fl -shuffle-sections
 .It Fl -shuffle-sections Ns = Ns Ar number
 Randomizes the output by shuffleing the order of input sections before \
@@ -252,19 +294,49 @@ assigning them the offsets in the output file. If
 .Ar number
 is given, it's used as a seed for the random number generator, so that \
 the linker produces the same output as for the same seed. If no seed \
-is given, it uses a random number as a seed.
+is given, a random number is used as a seed.
 .Pp
 This option is useful for benchmarking. Modern CPUs are sensitive to program's \
 memory layout. A seeming benign change in program layout (such as a small \
-size increase of a function) can affect program's performance. Therefore, \
+size increase of a function in the middle of a program) can affect program's \
+performance. Therefore, \
 even if you write new code and get a good benchmark result, it is hard \
-to say whether or not the new code improves the programs performance; \
-it is possible that the a program's layout happens to perform better.
+to say whether or not the new code improves the programs performance. \
+It is possible that the new memory layout happens to perform better.
 .Pp
-By running a benchmark multiple time with shuffling program's layout using
+By running a benchmark multiple time with shuffling memory layout using
 .Fl -shuffle-sections ,
 you can isolate your progrma's real performace number from the randomness \
 caused by memory layout changes.
+.Pp
+.It Fl -stats
+Print input statistics.
+.Pp
+.It Fl -thread-count Ns = Ns Ar count
+Use
+.Ar count
+number of threads.
+.Pp
+.It Fl -threads
+.It Fl -no-threads
+Use multiple threads.
+By default,
+.Nm
+uses as many threads as the number of cores or 32, whichever is the smallest.
+The reason why it is capped to 32 is because
+.Nm
+doesn't scale well beyond that point.
+To use only one thread, pass
+.Fl -no-threads
+or
+.Fl -thread-count Ns = Ns Sy 1 .
+.Pp
+.Pp
+.It Fl -quick-exit
+.It Fl -no-quick-exit
+Use or do not use
+.Dv quick_exit
+to exit.
 .
 .El \" End of options list
 .
@@ -508,23 +580,6 @@ sets a random 128-bit UUID.
 sets
 .Ar hexstring .
 .Pp
-.It Fl -chroot Ns = Ns Ar dir
-Set
-.Ar dir
-to root directory.
-.Pp
-.It Fl -color-diagnostics Ns = Ns Op Sy auto | always | never
-.It Fl -color-diagnostics
-.It Fl -no-color-diagnostics
-.Pp
-Show diagnostics messages in color using ANSI escape sequences.
-.Ar auto
-means that
-.Nm
-prints out messages in color only if the standard output is connected to a TTY. \
-Default is
-.Ar auto .
-.Pp
 .It Fl -defsym Ns = Ns Ar symbol Ns = Ns Ar value
 .Pp
 .It Fl -compress-debug-sections Ns = Ns Op Sy none | zlib | zlib-gabi | zstd
@@ -639,16 +694,6 @@ Call
 .Ar symbol
 at unload-time.
 .Pp
-.It Fl -fork
-.It Fl -no-fork
-Spawn a child process and let it do the actual linking.
-When linking a large program, the OS kernel can take a few hundred \
-milliseconds to terminate a
-.Nm
-process.
-.Fl -fork
-hides that latency.
-.Pp
 .It Fl -gc-sections
 .It Fl -no-gc-sections
 Remove unreferenced sections.
@@ -762,9 +807,6 @@ package management command such as
 .Cm rpm
 to embed metadata regarding a package to each executable file.
 .Pp
-.It Fl -perf
-Print performance statistics.
-.Pp
 .It Fl -pie , -pic-executable
 .It Fl -no-pie , -no-pic-executable
 Create a position-independent executable.
@@ -805,12 +847,6 @@ by as-needed basis but don't want to change the global state of
 you can append "--push-state --as-needed -lfoo --pop-state" to the \
 linker command line options.
 .Pp
-.It Fl -quick-exit
-.It Fl -no-quick-exit
-Use
-.Dv quick_exit
-to exit.
-.Pp
 .It Fl -relax
 .It Fl -no-relax
 Rewrite machine instructions with more efficient ones for some relocations.
@@ -820,11 +856,6 @@ The feature is enabled by default.
 Like
 .Fl -undefined ,
 except the new symbol must be defined by the end of the link.
-.Pp
-.It Fl -repro
-Embed input files into
-.Dv .repro
-section.
 .Pp
 .It Fl -retain-symbols-file Ns = Ns Ar file
 Keep only symbols listed in
@@ -847,14 +878,6 @@ section, which is used for dynamic linking.
 Add
 .Ar dir
 to runtime search path.
-.Pp
-.It Fl -run Cm command Ar arg Ar
-Run
-.Cm command
-with
-.Nm
-as
-.Pa /usr/bin/ld .
 .Pp
 .It Fl -section-start Ns = Ns Ar section Ns = Ns Ar address
 Set
@@ -890,32 +913,9 @@ needed but want to avoid the overhead of running
 .It Fl -static
 Do not link against shared libraries.
 .Pp
-.It Fl -stats
-Print input statistics.
-.Pp
 .It Fl -sysroot Ns = Ns Ar dir
 Set target system root directory to
 .Ar dir .
-.Pp
-.It Fl -thread-count Ns = Ns Ar count
-Use
-.Ar count
-number of threads.
-.Pp
-.It Fl -threads
-.It Fl -no-threads
-Use multiple threads.
-By default,
-.Nm
-uses as many threads as the number of cores or 32, whichever is the smallest.
-The reason why it is capped to 32 is because
-.Nm
-doesn't scale well beyond that point.
-To use only one thread, pass
-.Fl -no-threads
-or
-.Fl -thread-count Ns = Ns Sy 1 .
-.Pp
 .It Fl -trace
 Print name of each input file.
 .Pp
