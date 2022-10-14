@@ -369,6 +369,39 @@ static void show_stats(Context<E> &ctx) {
     sec->print_stats(ctx);
 }
 
+// Since elf_main is a template, we can't run it without a type parameter.
+// We speculatively run elf_main with X86_64, and if the speculation was
+// wrong, re-run it with an actual machine type.
+template <typename E>
+static int redo_main(int argc, char **argv, MachineType ty) {
+  switch (ty) {
+  case MachineType::I386:
+    return elf_main<I386>(argc, argv);
+  case MachineType::ARM64:
+    return elf_main<ARM64>(argc, argv);
+  case MachineType::ARM32:
+    return elf_main<ARM32>(argc, argv);
+  case MachineType::RV64LE:
+    return elf_main<RV64LE>(argc, argv);
+  case MachineType::RV64BE:
+    return elf_main<RV64BE>(argc, argv);
+  case MachineType::RV32LE:
+    return elf_main<RV32LE>(argc, argv);
+  case MachineType::RV32BE:
+    return elf_main<RV32BE>(argc, argv);
+  case MachineType::PPC64V1:
+    return elf_main<PPC64V1>(argc, argv);
+  case MachineType::PPC64V2:
+    return elf_main<PPC64V2>(argc, argv);
+  case MachineType::S390X:
+    return elf_main<S390X>(argc, argv);
+  case MachineType::SPARC64:
+    return elf_main<SPARC64>(argc, argv);
+  default:
+    unreachable();
+  }
+}
+
 template <typename E>
 int elf_main(int argc, char **argv) {
   Context<E> ctx;
@@ -390,37 +423,9 @@ int elf_main(int argc, char **argv) {
     ctx.arg.emulation = deduce_machine_type(ctx, file_args);
 
   // Redo if -m is not x86-64.
-  if constexpr (std:: is_same_v<E, X86_64>) {
-    if (ctx.arg.emulation != E::machine_type) {
-      switch (ctx.arg.emulation) {
-      case MachineType::I386:
-        return elf_main<I386>(argc, argv);
-      case MachineType::ARM64:
-        return elf_main<ARM64>(argc, argv);
-      case MachineType::ARM32:
-        return elf_main<ARM32>(argc, argv);
-      case MachineType::RV64LE:
-        return elf_main<RV64LE>(argc, argv);
-      case MachineType::RV64BE:
-        return elf_main<RV64BE>(argc, argv);
-      case MachineType::RV32LE:
-        return elf_main<RV32LE>(argc, argv);
-      case MachineType::RV32BE:
-        return elf_main<RV32BE>(argc, argv);
-      case MachineType::PPC64V1:
-        return elf_main<PPC64V1>(argc, argv);
-      case MachineType::PPC64V2:
-        return elf_main<PPC64V2>(argc, argv);
-      case MachineType::S390X:
-        return elf_main<S390X>(argc, argv);
-      case MachineType::SPARC64:
-        return elf_main<SPARC64>(argc, argv);
-      default:
-        unreachable();
-      }
-      unreachable();
-    }
-  }
+  if constexpr (std::is_same_v<E, X86_64>)
+    if (ctx.arg.emulation != MachineType::X86_64)
+      return redo_main<E>(argc, argv, ctx.arg.emulation);
 
   Timer t_all(ctx, "all");
 
