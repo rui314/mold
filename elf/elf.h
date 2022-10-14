@@ -1522,7 +1522,7 @@ static constexpr u32 R_390_COPY = 9;
 static constexpr u32 R_390_GLOB_DAT = 10;
 static constexpr u32 R_390_JMP_SLOT = 11;
 static constexpr u32 R_390_RELATIVE = 12;
-static constexpr u32 R_390_GOTOFF = 13;
+static constexpr u32 R_390_GOTOFF32 = 13;
 static constexpr u32 R_390_GOTPC = 14;
 static constexpr u32 R_390_GOT16 = 15;
 static constexpr u32 R_390_PC16 = 16;
@@ -1592,7 +1592,7 @@ inline std::string rel_to_string<S390X>(u32 r_type) {
   case R_390_GLOB_DAT: return "R_390_GLOB_DAT";
   case R_390_JMP_SLOT: return "R_390_JMP_SLOT";
   case R_390_RELATIVE: return "R_390_RELATIVE";
-  case R_390_GOTOFF: return "R_390_GOTOFF";
+  case R_390_GOTOFF32: return "R_390_GOTOFF32";
   case R_390_GOTPC: return "R_390_GOTPC";
   case R_390_GOT16: return "R_390_GOT16";
   case R_390_PC16: return "R_390_PC16";

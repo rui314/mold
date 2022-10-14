@@ -41,6 +41,21 @@ namespace mold::elf {
 
 using E = S390X;
 
+static void write_low12(u8 *loc, u64 val) {
+  *(ub16 *)loc &= 0xf000;
+  *(ub16 *)loc |= val & 0x0fff;
+}
+
+static void write_mid20(u8 *loc, u64 val) {
+  *(ub32 *)loc &= 0xf000'00ff;
+  *(ub32 *)loc |= (bits(val, 11, 0) << 16) | (bits(val, 19, 12) << 8);
+}
+
+static void write_low24(u8 *loc, u64 val) {
+  *(ub32 *)loc &= 0xff00'0000;
+  *(ub32 *)loc |= val & 0x00ff'ffff;
+}
+
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   static u8 insn[] = {
@@ -133,11 +148,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *loc = S + A;
       break;
     case R_390_12:
-      *(ub16 *)loc &= 0xf000;
-      *(ub16 *)loc |= (S + A) & 0x0fff;
+      write_low12(loc, S + A);
       break;
     case R_390_16:
       *(ub16 *)loc = S + A;
+      break;
+    case R_390_20:
+      write_mid20(loc, S + A);
       break;
     case R_390_32:
     case R_390_PLT32:
@@ -146,15 +163,26 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_PLT64:
       *(ub64 *)loc = S + A;
       break;
+    case R_390_PC12DBL:
+    case R_390_PLT12DBL:
+      write_low12(loc, (S + A - P) >> 1);
+      break;
     case R_390_PC16:
       *(ub16 *)loc = S + A - P;
+      break;
+    case R_390_PC32:
+      *(ub32 *)loc = S + A - P;
+      break;
+    case R_390_PC64:
+      *(ub64 *)loc = S + A - P;
       break;
     case R_390_PC16DBL:
     case R_390_PLT16DBL:
       *(ub16 *)loc = (S + A - P) >> 1;
       break;
-    case R_390_PC32:
-      *(ub32 *)loc = S + A - P;
+    case R_390_PC24DBL:
+    case R_390_PLT24DBL:
+      write_low24(loc, (S + A - P) >> 1);
       break;
     case R_390_PC32DBL:
     case R_390_PLT32DBL:
@@ -166,26 +194,36 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ub32 *)loc = (S + A - P) >> 1;
       }
       break;
-    case R_390_PC64:
-      *(ub64 *)loc = S + A - P;
-      break;
     case R_390_GOT12:
-      *(ub16 *)loc &= 0xf000;
-      *(ub16 *)loc |= (G + A) & 0x0fff;
+    case R_390_GOTPLT12:
+      write_low12(loc, G + A);
       break;
     case R_390_GOT16:
+    case R_390_GOTPLT16:
       *(ub16 *)loc = G + A;
       break;
+    case R_390_GOT20:
+    case R_390_GOTPLT20:
+      write_mid20(loc, G + A);
+      break;
     case R_390_GOT32:
+    case R_390_GOTPLT32:
       *(ub32 *)loc = G + A;
       break;
     case R_390_GOT64:
+    case R_390_GOTPLT64:
       *(ub64 *)loc = G + A;
       break;
     case R_390_GOTOFF16:
+    case R_390_PLTOFF16:
       *(ub16 *)loc = S + A - GOT;
       break;
+    case R_390_GOTOFF32:
+    case R_390_PLTOFF32:
+      *(ub32 *)loc = S + A - GOT;
+      break;
     case R_390_GOTOFF64:
+    case R_390_PLTOFF64:
       *(ub64 *)loc = S + A - GOT;
       break;
     case R_390_GOTPC:
@@ -203,12 +241,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_TLS_LE64:
       *(ub64 *)loc = S + A - ctx.tp_addr;
       break;
-    case R_390_TLS_GOTIE20: {
-      i64 val = sym.get_gottp_addr(ctx) + A - GOT;
-      *(ub32 *)loc &= 0xf000'00ff;
-      *(ub32 *)loc |= (bits(val, 11, 0) << 16) | (bits(val, 19, 12) << 8);
+    case R_390_TLS_GOTIE20:
+      write_mid20(loc, sym.get_gottp_addr(ctx) + A - GOT);
       break;
-    }
     case R_390_TLS_IEENT:
       *(ub32 *)loc = (sym.get_gottp_addr(ctx) + A - P) >> 1;
       break;
@@ -347,6 +382,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_390_8:
     case R_390_12:
     case R_390_16:
+    case R_390_20:
     case R_390_32:
       scan_rel(ctx, sym, rel, absrel_table);
       break;
@@ -359,19 +395,31 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_390_GOT12:
     case R_390_GOT16:
+    case R_390_GOT20:
     case R_390_GOT32:
     case R_390_GOT64:
     case R_390_GOTOFF16:
+    case R_390_GOTOFF32:
     case R_390_GOTOFF64:
+    case R_390_GOTPLT12:
+    case R_390_GOTPLT16:
+    case R_390_GOTPLT20:
+    case R_390_GOTPLT32:
+    case R_390_GOTPLT64:
     case R_390_GOTPC:
     case R_390_GOTPCDBL:
     case R_390_GOTENT:
       sym.flags |= NEEDS_GOT;
       break;
+    case R_390_PLT12DBL:
     case R_390_PLT16DBL:
+    case R_390_PLT24DBL:
     case R_390_PLT32:
     case R_390_PLT32DBL:
     case R_390_PLT64:
+    case R_390_PLTOFF16:
+    case R_390_PLTOFF32:
+    case R_390_PLTOFF64:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
