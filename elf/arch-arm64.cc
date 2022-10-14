@@ -366,6 +366,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       continue;
     }
 
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (val < lo || hi <= val)
+        Error(ctx) << *this << ": relocation " << rel << " against "
+                   << sym << " out of range: " << val << " is not in ["
+                   << lo << ", " << hi << ")";
+    };
+
     SectionFragment<E> *frag;
     i64 frag_addend;
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
@@ -380,9 +387,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       else
         *(ul64 *)loc = S + A;
       break;
-    case R_AARCH64_ABS32:
-      *(ul32 *)loc = S + A;
+    case R_AARCH64_ABS32: {
+      i64 val = S + A;
+      check(val, 0, 1LL << 32);
+      *(ul32 *)loc = val;
       break;
+    }
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
                  << rel;

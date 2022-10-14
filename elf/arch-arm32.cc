@@ -148,6 +148,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (val < lo || hi <= val)
+        Error(ctx) << *this << ": relocation " << rel << " against "
+                   << sym << " out of range: " << val << " is not in ["
+                   << lo << ", " << hi << ")";
+    };
+
 #define S   sym.get_addr(ctx)
 #define A   this->get_addend(rel)
 #define P   (get_addr() + rel.r_offset)
@@ -251,12 +258,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
       }
       break;
-    case R_ARM_THM_JUMP11:
+    case R_ARM_THM_JUMP11: {
       assert(T);
-      *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(S + A - P, 11, 1);
+      i64 val = S + A - P;
+      check(val, -(1 << 11), 1 << 11);
+      *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(val, 11, 1);
       break;
+    }
     case R_ARM_THM_JUMP19: {
       i64 val = S + A - P;
+      check(val, -(1 << 19), 1 << 19);
 
       // sign:J2:J1:imm6:imm11:'0'
       u32 sign = bit(val, 20);
@@ -293,9 +304,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_THM_MOVW_PREL_NC:
       write_thm_mov_imm(loc, ((S + A) | T) - P);
       break;
-    case R_ARM_PREL31:
-      *(ul32 *)loc = (*(ul32 *)loc & 0x8000'0000) | ((S + A - P) & 0x7fff'ffff);
+    case R_ARM_PREL31: {
+      i64 val = S + A - P;
+      check(val, -(1LL << 30), 1LL << 30);
+      *(ul32 *)loc = (*(ul32 *)loc & 0x8000'0000) | ((val) & 0x7fff'ffff);
       break;
+    }
     case R_ARM_THM_MOVW_ABS_NC:
       write_thm_mov_imm(loc, (S + A) | T);
       break;

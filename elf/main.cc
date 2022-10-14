@@ -503,7 +503,7 @@ int elf_main(int argc, char **argv) {
   // Parse symbol version suffixes (e.g. "foo@ver1").
   parse_symbol_version(ctx);
 
-  // Set is_import and is_export bits for each symbol.
+  // Set is_imported and is_exported bits for each symbol.
   compute_import_export(ctx);
 
   // Read address-significant section information.
@@ -521,8 +521,7 @@ int elf_main(int argc, char **argv) {
   // Compute sizes of sections containing mergeable strings.
   compute_merged_section_sizes(ctx);
 
-  // Create instances of linker-synthesized sections such as
-  // .got or .plt.
+  // Create linker-synthesized sections such as .got or .plt.
   create_synthetic_sections(ctx);
 
   // Make sure that there's no duplicate symbol
@@ -559,7 +558,7 @@ int elf_main(int argc, char **argv) {
   // were imported symbols.
   //
   // If we are linking an executable, weak undefs are converted to
-  // weakly imported symbol so that they'll have another chance to be
+  // weakly imported symbols so that they'll have another chance to be
   // resolved.
   claim_unresolved_symbols(ctx);
 
@@ -687,7 +686,9 @@ int elf_main(int argc, char **argv) {
   if constexpr (is_riscv<E>)
     filesize = riscv_resize_sections(ctx);
 
-  // Fix linker-synthesized symbol addresses.
+  // At this point, memory layout is fixed.
+
+  // Set actual addresses to linker-synthesized symbols.
   fix_synthetic_symbols(ctx);
 
   // Beyond this, you can assume that symbol addresses including their
@@ -698,7 +699,7 @@ int elf_main(int argc, char **argv) {
   if (ctx.arg.compress_debug_sections != COMPRESS_NONE)
     filesize = compress_debug_sections(ctx);
 
-  // At this point, file layout is fixed.
+  // At this point, both memory and file layouts are fixed.
 
   t_before_copy.stop();
 
@@ -725,6 +726,9 @@ int elf_main(int argc, char **argv) {
   // Zero-clear paddings between sections
   clear_padding(ctx);
 
+  // .note.gnu.build-id section contains a cryptographic hash of the
+  // entire output file. Now that we wrote everything except build-id,
+  // we can compute it.
   if (ctx.buildid)
     ctx.buildid->write_buildid(ctx);
 

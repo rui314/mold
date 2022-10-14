@@ -188,7 +188,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check(val, -(1 << 7), 1 << 7);
       *loc = val;
       break;
-    };
+    }
     case R_386_PC16: {
       i64 val = S + A - P;
       check(val, -(1 << 15), 1 << 15);
@@ -207,6 +207,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc = G + A;
       } else {
         u32 insn = relax_got32x(loc - 2);
+        assert(insn);
         loc[-2] = insn >> 8;
         loc[-1] = insn;
         *(ul32 *)loc = S + A - GOT;
@@ -392,7 +393,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       check(val, -(1 << 15), 1 << 15);
       *(ul16 *)loc = val;
       break;
-    };
+    }
     case R_386_PC32:
       *(ul32 *)loc = S + A;
       break;

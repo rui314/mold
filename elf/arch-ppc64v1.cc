@@ -182,7 +182,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_TOC16_LO:
       *(ub16 *)loc = S + A - ctx.TOC->value;
       break;
-    case R_PPC64_TOC16_DS:
+    case R_PPC64_TOC16_DS: {
+      i64 val = S + A - ctx.TOC->value;
+      check(val, -(1 << 15), 1 << 15);
+      *(ub16 *)loc |= val & 0xfffc;
+      break;
+    }
     case R_PPC64_TOC16_LO_DS:
       *(ub16 *)loc |= (S + A - ctx.TOC->value) & 0xfffc;
       break;

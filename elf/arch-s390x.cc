@@ -134,6 +134,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (val < lo || hi <= val)
+        Error(ctx) << *this << ": relocation " << rel << " against "
+                   << sym << " out of range: " << val << " is not in ["
+                   << lo << ", " << hi << ")";
+    };
+
 #define S   sym.get_addr(ctx)
 #define A   rel.r_addend
 #define P   (get_addr() + rel.r_offset)
@@ -144,46 +151,76 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_64:
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
-    case R_390_8:
-      *loc = S + A;
+    case R_390_8: {
+      i64 val = S + A;
+      check(val, 0, 1 << 8);
+      *loc = val;
       break;
-    case R_390_12:
-      write_low12(loc, S + A);
+    }
+    case R_390_12: {
+      i64 val = S + A;
+      check(val, 0, 1 << 12);
+      write_low12(loc, val);
       break;
-    case R_390_16:
-      *(ub16 *)loc = S + A;
+    }
+    case R_390_16: {
+      i64 val = S + A;
+      check(val, 0, 1 << 16);
+      *(ub16 *)loc = val;
       break;
-    case R_390_20:
-      write_mid20(loc, S + A);
+    }
+    case R_390_20: {
+      i64 val = S + A;
+      check(val, 0, 1 << 20);
+      write_mid20(loc, val);
       break;
+    }
     case R_390_32:
-    case R_390_PLT32:
-      *(ub32 *)loc = S + A;
+    case R_390_PLT32: {
+      i64 val = S + A;
+      check(val, 0, 1LL << 32);
+      *(ub32 *)loc = val;
       break;
+    }
     case R_390_PLT64:
       *(ub64 *)loc = S + A;
       break;
     case R_390_PC12DBL:
-    case R_390_PLT12DBL:
-      write_low12(loc, (S + A - P) >> 1);
+    case R_390_PLT12DBL: {
+      i64 val = S + A - P;
+      check(val, -(1 << 12), 1 << 12);
+      write_low12(loc, val >> 1);
       break;
-    case R_390_PC16:
-      *(ub16 *)loc = S + A - P;
+    }
+    case R_390_PC16: {
+      i64 val = S + A - P;
+      check(val, -(1 << 15), 1 << 15);
+      *(ub16 *)loc = val;
       break;
-    case R_390_PC32:
-      *(ub32 *)loc = S + A - P;
+    }
+    case R_390_PC32: {
+      i64 val = S + A - P;
+      check(val, -(1LL << 31), 1LL << 31);
+      *(ub32 *)loc = val;
       break;
+    }
     case R_390_PC64:
       *(ub64 *)loc = S + A - P;
       break;
     case R_390_PC16DBL:
-    case R_390_PLT16DBL:
-      *(ub16 *)loc = (S + A - P) >> 1;
+    case R_390_PLT16DBL: {
+      i64 val = S + A - P;
+      check(val, -(1 << 16), 1 << 16);
+      *(ub16 *)loc = val >> 1;
       break;
+    }
     case R_390_PC24DBL:
-    case R_390_PLT24DBL:
-      write_low24(loc, (S + A - P) >> 1);
+    case R_390_PLT24DBL: {
+      i64 val = S + A - P;
+      check(val, -(1 << 24), 1 << 24);
+      write_low24(loc, val >> 1);
       break;
+    }
     case R_390_PC32DBL:
     case R_390_PLT32DBL:
       if (ctx.is_static && &sym == ctx.tls_get_offset) {
@@ -191,37 +228,57 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // So we provide a replacement function.
         *(ub32 *)loc = (ctx.s390x_tls_get_offset->shdr.sh_addr - P) >> 1;
       } else {
-        *(ub32 *)loc = (S + A - P) >> 1;
+        i64 val = S + A - P;
+        check(val, -(1LL << 32), 1LL << 32);
+        *(ub32 *)loc = val >> 1;
       }
       break;
     case R_390_GOT12:
-    case R_390_GOTPLT12:
-      write_low12(loc, G + A);
+    case R_390_GOTPLT12: {
+      i64 val = G + A;
+      check(val, 0, 1 << 12);
+      write_low12(loc, val);
       break;
+    }
     case R_390_GOT16:
-    case R_390_GOTPLT16:
-      *(ub16 *)loc = G + A;
+    case R_390_GOTPLT16: {
+      i64 val = G + A;
+      check(val, 0, 1 << 16);
+      *(ub16 *)loc = val;
       break;
+    }
     case R_390_GOT20:
-    case R_390_GOTPLT20:
-      write_mid20(loc, G + A);
+    case R_390_GOTPLT20: {
+      i64 val = G + A;
+      check(val, 0, 1 << 20);
+      write_mid20(loc, val);
       break;
+    }
     case R_390_GOT32:
-    case R_390_GOTPLT32:
-      *(ub32 *)loc = G + A;
+    case R_390_GOTPLT32: {
+      i64 val = G + A;
+      check(val, 0, 1LL << 32);
+      *(ub32 *)loc = val;
       break;
+    }
     case R_390_GOT64:
     case R_390_GOTPLT64:
       *(ub64 *)loc = G + A;
       break;
     case R_390_GOTOFF16:
-    case R_390_PLTOFF16:
-      *(ub16 *)loc = S + A - GOT;
+    case R_390_PLTOFF16: {
+      i64 val = S + A - GOT;
+      check(val, -(1 << 15), 1 << 15);
+      *(ub16 *)loc = val;
       break;
+    }
     case R_390_GOTOFF32:
-    case R_390_PLTOFF32:
-      *(ub32 *)loc = S + A - GOT;
+    case R_390_PLTOFF32: {
+      i64 val = S + A - GOT;
+      check(val, -(1LL << 31), 1LL << 31);
+      *(ub32 *)loc = val;
       break;
+    }
     case R_390_GOTOFF64:
     case R_390_PLTOFF64:
       *(ub64 *)loc = S + A - GOT;
@@ -229,12 +286,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_GOTPC:
       *(ub64 *)loc = GOT + A - P;
       break;
-    case R_390_GOTPCDBL:
-      *(ub32 *)loc = (GOT + A - P) >> 1;
+    case R_390_GOTPCDBL: {
+      i64 val = GOT + A - P;
+      check(val, -(1LL << 32), 1LL << 32);
+      *(ub32 *)loc = val >> 1;
       break;
-    case R_390_GOTENT:
-      *(ub32 *)loc = (GOT + G + A - P) >> 1;
+    }
+    case R_390_GOTENT: {
+      i64 val = GOT + G + A - P;
+      check(val, -(1LL << 32), 1LL << 32);
+      *(ub32 *)loc = val >> 1;
       break;
+    }
     case R_390_TLS_LE32:
       *(ub32 *)loc = S + A - ctx.tp_addr;
       break;
@@ -320,6 +383,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       continue;
     }
 
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (val < lo || hi <= val)
+        Error(ctx) << *this << ": relocation " << rel << " against "
+                   << sym << " out of range: " << val << " is not in ["
+                   << lo << ", " << hi << ")";
+    };
+
     SectionFragment<E> *frag;
     i64 frag_addend;
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
@@ -328,9 +398,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 #define A (frag ? frag_addend : (i64)rel.r_addend)
 
     switch (rel.r_type) {
-    case R_390_32:
-      *(ub32 *)loc = S + A;
+    case R_390_32: {
+      i64 val = S + A;
+      check(val, 0, 1LL << 32);
+      *(ub32 *)loc = val;
       break;
+    }
     case R_390_64:
       if (std::optional<u64> val = get_tombstone(sym, frag))
         *(ub64 *)loc = *val;
