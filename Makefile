@@ -154,6 +154,8 @@ all: prebuild mold mold-wrapper.so
 -include $(SRCS:%.cc=d/%.d)
 
 prebuild:
+	@echo 'WARNING: Use of `make` is deprecated. Please use `cmake` to build mold.'
+	sleep 10
 	mkdir -p out/d out/d/elf out/d/macho out/srcs/elf out/srcs/macho out/objs/elf out/objs/macho out/objs2/elf out/objs2/macho out/objs2/src/elf out/objs2/src/macho
 
 out/srcs/git-hash.cc: FORCE

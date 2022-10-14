@@ -642,6 +642,7 @@ void ppc64v1_scan_symbols(Context<E> &ctx) {
           sym->flags |= NEEDS_OPD;
   });
 
+  // Functions referenced by the ELF header also have to have .opd entries.
   auto mark = [&](std::string_view name) {
     if (!name.empty())
       if (Symbol<E> &sym = *get_symbol(ctx, name); !sym.is_imported)
