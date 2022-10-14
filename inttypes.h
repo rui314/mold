@@ -63,28 +63,29 @@ public:
   LittleEndian(T x) { *this = x; }
 
   operator T() const {
-    T x;
-    memcpy(&x, val, sizeof(T));
-    if constexpr (std::endian::native == std::endian::big)
-      x = bswap(x);
-    return x;
+    if constexpr (sizeof(T) == SIZE) {
+      T x;
+      memcpy(&x, val, sizeof(T));
+      if constexpr (std::endian::native == std::endian::big)
+        x = bswap(x);
+      return x;
+    } else {
+      static_assert(SIZE == 3);
+      return (val[2] << 16) | (val[1] << 8) | val[0];
+    }
   }
 
   LittleEndian &operator=(T x) {
-    if constexpr (std::endian::native == std::endian::big)
-      x = bswap(x);
-    memcpy(val, &x, sizeof(T));
-    return *this;
-  }
-
-  operator T() const requires (SIZE == 3) {
-    return (val[2] << 16) | (val[1] << 8) | val[0];
-  }
-
-  LittleEndian &operator=(T x) requires (SIZE == 3) {
-    val[2] = x >> 16;
-    val[1] = x >> 8;
-    val[0] = x;
+    if constexpr (sizeof(T) == SIZE) {
+      if constexpr (std::endian::native == std::endian::big)
+        x = bswap(x);
+      memcpy(val, &x, sizeof(T));
+    } else {
+      static_assert(SIZE == 3);
+      val[2] = x >> 16;
+      val[1] = x >> 8;
+      val[0] = x;
+    }
     return *this;
   }
 
@@ -143,28 +144,29 @@ public:
   BigEndian(T x) { *this = x; }
 
   operator T() const {
-    T x;
-    memcpy(&x, val, sizeof(T));
-    if constexpr (std::endian::native == std::endian::little)
-      x = bswap(x);
-    return x;
+    if constexpr (sizeof(T) == SIZE) {
+      T x;
+      memcpy(&x, val, sizeof(T));
+      if constexpr (std::endian::native == std::endian::little)
+        x = bswap(x);
+      return x;
+    } else {
+      static_assert(SIZE == 3);
+      return (val[0] << 16) | (val[1] << 8) | val[2];
+    }
   }
 
   BigEndian &operator=(T x) {
-    if constexpr (std::endian::native == std::endian::little)
-      x = bswap(x);
-    memcpy(val, &x, sizeof(T));
-    return *this;
-  }
-
-  operator T() const requires (SIZE == 3) {
-    return (val[0] << 16) | (val[1] << 8) | val[2];
-  }
-
-  BigEndian &operator=(T x) requires (SIZE == 3) {
-    val[0] = x >> 16;
-    val[1] = x >> 8;
-    val[2] = x;
+    if constexpr (sizeof(T) == SIZE) {
+      if constexpr (std::endian::native == std::endian::little)
+        x = bswap(x);
+      memcpy(val, &x, sizeof(T));
+    } else {
+      static_assert(SIZE == 3);
+      val[0] = x >> 16;
+      val[1] = x >> 8;
+      val[2] = x;
+    }
     return *this;
   }
 
