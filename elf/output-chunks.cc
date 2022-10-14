@@ -1496,9 +1496,9 @@ void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
   assert(sym->has_got(ctx));
 
-  sym->set_pltgot_idx(ctx, this->shdr.sh_size / E::pltgot_size);
-  this->shdr.sh_size += E::pltgot_size;
+  sym->set_pltgot_idx(ctx, symbols.size());
   symbols.push_back(sym);
+  this->shdr.sh_size = symbols.size() * E::pltgot_size;
 }
 
 template <typename E>

@@ -14,14 +14,26 @@
 // aligned to 2 bytes boundaries. Despite unfamiliarty, I found that it
 // just feels like a 64-bit i386 in a parallel universe.
 //
-// Its psABI reserves %r0 and %r1 as scratch registers so we can use them
-// in our PLT. %r2-%r6 are used for parameter passing. %r2 is also used to
-// return a value. In position independent code, %r12 usually contains the
-// address of GOT. %r14 usually contains a return address. %r15 is a stack
-// pointer. Access registers %a0 and %a1 contain the upper 32 bits and
-// the lower 32 bits of the thread pointer, respectively.
+// Here is the register usage in this ABI:
 //
-// https://uclibc.org/docs/psABI-s390x.pdf
+//   r0-r1: reserved as scratch registers so we can use them in our PLT
+//   r2:    parameter passing and return values
+//   r3-r6: parameter passing
+//   r12:   address of GOT if position-independent code
+//   r14:   return address
+//   r15:   stack pointer
+//   a1:    upper 32 bits of TP (thread pointer)
+//   a2:    lower 32 bits of TP (thread pointer)
+//
+// TLS is supported on s390x in the same way as it is on other targets
+// with one exeption. On other targets, __tls_get_addr is used to get an
+// address of a thread-local variable. On s390x, __tls_get_offset is used
+// instead. The difference is __tls_get_offset returns an address of a
+// thread-local variable as an offset from TP. So we need to add TP to a
+// return value before use. I don't know why it is different, but that is
+// the way it is.
+//
+// https://github.com/IBM/s390x-abi/releases/download/v1.6/lzsabi_s390x.pdf
 
 #include "mold.h"
 
@@ -33,7 +45,7 @@ template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   static u8 insn[] = {
     0xe3, 0x00, 0xf0, 0x38, 0x00, 0x24, // stg   %r0, 56(%r15)
-    0xc0, 0x10, 0, 0, 0, 0,             // larl  %r1, GOT_OFFSET
+    0xc0, 0x10, 0, 0, 0, 0,             // larl  %r1, GOTPLT_OFFSET
     0xd2, 0x07, 0xf0, 0x30, 0x10, 0x08, // mvc   48(8, %r15), 8(%r1)
     0xe3, 0x10, 0x10, 0x10, 0x00, 0x04, // lg    %r1, 16(%r1)
     0x07, 0xf1,                         // br    %r1

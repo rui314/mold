@@ -2669,7 +2669,7 @@ struct PPC64V1 {
   static constexpr u32 e_machine = EM_PPC64;
   static constexpr u32 plt_hdr_size = 52;
   static constexpr u32 plt_size = 8;
-  static constexpr u32 pltgot_size = 4;
+  static constexpr u32 pltgot_size = 0;
   static constexpr u32 tls_dtv_offset = 0x8000;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 28;
@@ -2706,7 +2706,7 @@ struct PPC64V2 {
   static constexpr u32 e_machine = EM_PPC64;
   static constexpr u32 plt_hdr_size = 60;
   static constexpr u32 plt_size = 4;
-  static constexpr u32 pltgot_size = 4;
+  static constexpr u32 pltgot_size = 0;
   static constexpr u32 tls_dtv_offset = 0x8000;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 20;

@@ -121,17 +121,10 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   *(ul32 *)buf |= (ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx)) & 0x00ff'ffff;
 }
 
+// .plt.got is not necessary on PPC64 because range extension thunks
+// directly read GOT entries and jump there.
 template <>
-void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  // No one uses .got.plt at runtime because all calls to .got.plt are
-  // made via range extension thunks. Range extension thunks directly
-  // calls the final destination by reading a .got entry. Here, we just
-  // set a dummy instruction.
-  //
-  // I believe we can completely elimnate .got.plt, but saving 4 bytes
-  // for each GOTPLT entry doesn't seem to be worth its complexity.
-  *(ul32 *)buf = 0x6000'0000; // nop
-}
+void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {}
 
 template <>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
