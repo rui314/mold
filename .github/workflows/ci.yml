@@ -17,7 +17,7 @@ jobs:
         - test-tsan
     runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: rui314/setup-mold@staging
     - name: install-build-deps
       run: sudo ./install-build-deps.sh update
@@ -37,7 +37,7 @@ jobs:
         - '-DMOLD_USE_TSAN=On'
     runs-on: ubuntu-20.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: rui314/setup-mold@staging
     - name: install-build-deps
       run: sudo ./install-build-deps.sh update
@@ -56,7 +56,7 @@ jobs:
     runs-on: ubuntu-20.04
     container: gcc:11.1.0
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: install-build-deps
       run: |
         dpkg --add-architecture i386
@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-20.04
     container: gcc:11.1.0
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: install-build-deps
       run: |
         # Install cross toolchains
@@ -142,7 +142,7 @@ jobs:
         - test-asan
     runs-on: macos-11
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - uses: rui314/setup-mold@staging
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
@@ -159,7 +159,7 @@ jobs:
         - ''
         - '-DMOLD_USE_ASAN=On'
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: build and test
@@ -174,7 +174,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: build
       run: |
         mkdir build
