@@ -329,6 +329,13 @@ public:
   std::atomic_bool is_visited = false;
 
   // For ICF
+  //
+  // `leader` is the section that this section has been merged with.
+  // Three kind of values are possible:
+  // - `leader == nullptr`: This section was not eligible for ICF.
+  // - `leader == this`: This section was retained.
+  // - `leader != this`: This section was merged with another idential section.
+  //                     Implies `killed_by_icf`.
   InputSection<E> *leader = nullptr;
   u32 icf_idx = -1;
   bool icf_eligible = false;

@@ -1596,9 +1596,13 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
       if (sym.has_opd(ctx))
         return ctx.ppc64_opd->shndx;
 
-    if (InputSection<E> *isec = sym.get_input_section())
+    if (InputSection<E> *isec = sym.get_input_section()) {
       if (isec->is_alive)
         return isec->output_section->shndx;
+      else if (isec->killed_by_icf)
+        return isec->leader->output_section->shndx;
+    }
+
     return SHN_UNDEF;
   };
 
