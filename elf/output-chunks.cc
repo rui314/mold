@@ -810,6 +810,9 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   if constexpr (is_sparc<E>) {
     if (ctx.plt->shdr.sh_size)
       define(DT_PLTGOT, ctx.plt->shdr.sh_addr);
+  } else if constexpr (is_ppc32<E>) {
+    if (ctx.gotplt->shdr.sh_size)
+      define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr + GotPltSection<E>::HDR_SIZE);
   } else {
     if (ctx.gotplt->shdr.sh_size)
       define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr);
@@ -917,7 +920,10 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   if (flags1)
     define(DT_FLAGS_1, flags1);
 
-  if constexpr (is_ppc<E>) {
+  if constexpr (is_ppc32<E>)
+    define(DT_PPC_GOT, ctx.gotplt->shdr.sh_addr);
+
+  if constexpr (is_ppc64<E>) {
     // PPC64_GLINK is defined by the psABI to refer 32 bytes before
     // the first PLT entry. I don't know why it's 32 bytes off, but
     // it's what it is.
@@ -1448,7 +1454,7 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   // On PPC64, it's dynamic loader responsibility to fill the .got.plt
   // section. Dynamic loader finds the address of the first PLT entry by
   // DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
-  if constexpr (!is_ppc<E>) {
+  if constexpr (!is_ppc64<E>) {
     Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
 
     // The first slot of .got.plt points to _DYNAMIC, as requested by

@@ -17,6 +17,7 @@ struct RV64LE;
 struct RV64BE;
 struct RV32LE;
 struct RV32BE;
+struct PPC32;
 struct PPC64V1;
 struct PPC64V2;
 struct S390X;
@@ -40,7 +41,7 @@ template <typename E> struct ElfNhdr;
 
 enum class MachineType {
   NONE, X86_64, I386, ARM64, ARM32, RV64LE, RV64BE, RV32LE, RV32BE,
-  PPC64V1, PPC64V2, S390X, SPARC64, M68K, SH4, ALPHA,
+  PPC32, PPC64V1, PPC64V2, S390X, SPARC64, M68K, SH4, ALPHA,
 };
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
@@ -54,6 +55,7 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   case MachineType::RV64BE:  out << "riscv64be"; break;
   case MachineType::RV32LE:  out << "riscv32";   break;
   case MachineType::RV32BE:  out << "riscv32be"; break;
+  case MachineType::PPC32:   out << "ppc32";     break;
   case MachineType::PPC64V1: out << "ppc64v1";   break;
   case MachineType::PPC64V2: out << "ppc64v2";   break;
   case MachineType::S390X:   out << "s390x";     break;
@@ -244,6 +246,7 @@ enum : u32 {
   EM_NONE = 0,
   EM_386 = 3,
   EM_68K = 4,
+  EM_PPC = 20,
   EM_PPC64 = 21,
   EM_S390X = 22,
   EM_ARM = 40,
@@ -309,6 +312,7 @@ enum : u32 {
   DT_VERDEFNUM = 0x6ffffffd,
   DT_VERNEED = 0x6ffffffe,
   DT_VERNEEDNUM = 0x6fffffff,
+  DT_PPC_GOT = 0x70000000,
   DT_PPC64_GLINK = 0x70000000,
   DT_AUXILIARY = 0x7ffffffd,
   DT_FILTER = 0x7fffffff,
@@ -782,6 +786,84 @@ enum : u32 {
   R_RISCV_SET32 = 56,
   R_RISCV_32_PCREL = 57,
   R_RISCV_IRELATIVE = 58,
+};
+
+enum : u32 {
+  R_PPC_NONE = 0,
+  R_PPC_ADDR32 = 1,
+  R_PPC_ADDR24 = 2,
+  R_PPC_ADDR16 = 3,
+  R_PPC_ADDR16_LO = 4,
+  R_PPC_ADDR16_HI = 5,
+  R_PPC_ADDR16_HA = 6,
+  R_PPC_ADDR14 = 7,
+  R_PPC_ADDR14_BRTAKEN = 8,
+  R_PPC_ADDR14_BRNTAKEN = 9,
+  R_PPC_REL24 = 10,
+  R_PPC_REL14 = 11,
+  R_PPC_REL14_BRTAKEN = 12,
+  R_PPC_REL14_BRNTAKEN = 13,
+  R_PPC_GOT16 = 14,
+  R_PPC_GOT16_LO = 15,
+  R_PPC_GOT16_HI = 16,
+  R_PPC_GOT16_HA = 17,
+  R_PPC_PLTREL24 = 18,
+  R_PPC_COPY = 19,
+  R_PPC_GLOB_DAT = 20,
+  R_PPC_JMP_SLOT = 21,
+  R_PPC_RELATIVE = 22,
+  R_PPC_LOCAL24PC = 23,
+  R_PPC_UADDR32 = 24,
+  R_PPC_UADDR16 = 25,
+  R_PPC_REL32 = 26,
+  R_PPC_PLT32 = 27,
+  R_PPC_PLTREL32 = 28,
+  R_PPC_PLT16_LO = 29,
+  R_PPC_PLT16_HI = 30,
+  R_PPC_PLT16_HA = 31,
+  R_PPC_SDAREL16 = 32,
+  R_PPC_SECTOFF = 33,
+  R_PPC_SECTOFF_LO = 34,
+  R_PPC_SECTOFF_HI = 35,
+  R_PPC_SECTOFF_HA = 36,
+  R_PPC_ADDR30 = 37,
+  R_PPC_TLS = 67,
+  R_PPC_DTPMOD32 = 68,
+  R_PPC_TPREL16 = 69,
+  R_PPC_TPREL16_LO = 70,
+  R_PPC_TPREL16_HI = 71,
+  R_PPC_TPREL16_HA = 72,
+  R_PPC_TPREL32 = 73,
+  R_PPC_DTPREL16 = 74,
+  R_PPC_DTPREL16_LO = 75,
+  R_PPC_DTPREL16_HI = 76,
+  R_PPC_DTPREL16_HA = 77,
+  R_PPC_DTPREL32 = 78,
+  R_PPC_GOT_TLSGD16 = 79,
+  R_PPC_GOT_TLSGD16_LO = 80,
+  R_PPC_GOT_TLSGD16_HI = 81,
+  R_PPC_GOT_TLSGD16_HA = 82,
+  R_PPC_GOT_TLSLD16 = 83,
+  R_PPC_GOT_TLSLD16_LO = 84,
+  R_PPC_GOT_TLSLD16_HI = 85,
+  R_PPC_GOT_TLSLD16_HA = 86,
+  R_PPC_GOT_TPREL16 = 87,
+  R_PPC_GOT_TPREL16_LO = 88,
+  R_PPC_GOT_TPREL16_HI = 89,
+  R_PPC_GOT_TPREL16_HA = 90,
+  R_PPC_GOT_DTPREL16 = 91,
+  R_PPC_GOT_DTPREL16_LO = 92,
+  R_PPC_GOT_DTPREL16_HI = 93,
+  R_PPC_GOT_DTPREL16_HA = 94,
+  R_PPC_TLSGD = 95,
+  R_PPC_TLSLD = 96,
+  R_PPC_PLTSEQ = 119,
+  R_PPC_PLTCALL = 120,
+  R_PPC_IRELATIVE = 248,
+  R_PPC_REL16 = 249,
+  R_PPC_REL16_LO = 250,
+  R_PPC_REL16_HI = 251,
+  R_PPC_REL16_HA = 252,
 };
 
 enum : u32 {
@@ -1604,6 +1686,7 @@ template <typename E> static constexpr bool is_rv64le = std::is_same_v<E, RV64LE
 template <typename E> static constexpr bool is_rv64be = std::is_same_v<E, RV64BE>;
 template <typename E> static constexpr bool is_rv32le = std::is_same_v<E, RV32LE>;
 template <typename E> static constexpr bool is_rv32be = std::is_same_v<E, RV32BE>;
+template <typename E> static constexpr bool is_ppc32 = std::is_same_v<E, PPC32>;
 template <typename E> static constexpr bool is_ppc64v1 = std::is_same_v<E, PPC64V1>;
 template <typename E> static constexpr bool is_ppc64v2 = std::is_same_v<E, PPC64V2>;
 template <typename E> static constexpr bool is_s390x = std::is_same_v<E, S390X>;
@@ -1617,7 +1700,8 @@ template <typename E> static constexpr bool is_arm = is_arm64<E> || is_arm32<E>;
 template <typename E> static constexpr bool is_rv64 = is_rv64le<E> || is_rv64be<E>;
 template <typename E> static constexpr bool is_rv32 = is_rv32le<E> || is_rv32be<E>;
 template <typename E> static constexpr bool is_riscv = is_rv64<E> || is_rv32<E>;
-template <typename E> static constexpr bool is_ppc = is_ppc64v1<E> || is_ppc64v2<E>;
+template <typename E> static constexpr bool is_ppc64 = is_ppc64v1<E> || is_ppc64v2<E>;
+template <typename E> static constexpr bool is_ppc = is_ppc64<E> || is_ppc32<E>;
 template <typename E> static constexpr bool is_sparc = is_sparc64<E>;
 
 struct X86_64 {
@@ -1802,6 +1886,30 @@ struct RV32BE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
+};
+
+struct PPC32 {
+  static constexpr u32 R_COPY = R_PPC_COPY;
+  static constexpr u32 R_GLOB_DAT = R_PPC_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_PPC_JMP_SLOT;
+  static constexpr u32 R_ABS = R_PPC_ADDR32;
+  static constexpr u32 R_RELATIVE = R_PPC_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_PPC_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_PPC_DTPREL32;
+  static constexpr u32 R_TPOFF = R_PPC_TPREL32;
+  static constexpr u32 R_DTPMOD = R_PPC_DTPMOD32;
+
+  static constexpr MachineType machine_type = MachineType::PPC32;
+  static constexpr bool is_64 = false;
+  static constexpr bool is_le = false;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 65536;
+  static constexpr u32 e_machine = EM_PPC;
+  static constexpr u32 plt_hdr_size = 64;
+  static constexpr u32 plt_size = 36;
+  static constexpr u32 pltgot_size = 36;
+  static constexpr u32 thunk_hdr_size = 0;
+  static constexpr u32 thunk_size = 36;
 };
 
 struct PPC64V1 {

@@ -250,6 +250,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
       this->sections[i] = std::make_unique<InputSection<E>>(ctx, *this, name, i);
 
+      if constexpr (is_ppc32<E>)
+        if (name == ".got2")
+          ppc32_got2 = this->sections[i].get();
+
       // Save debug sections for --gdb-index.
       if (ctx.arg.gdb_index) {
         InputSection<E> *isec = this->sections[i].get();

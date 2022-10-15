@@ -423,6 +423,88 @@ std::string rel_to_string<RV32BE>(u32 r_type) {
 }
 
 template <>
+std::string rel_to_string<PPC32>(u32 r_type) {
+  switch (r_type) {
+  case R_PPC_NONE: return "R_PPC_NONE";
+  case R_PPC_ADDR32: return "R_PPC_ADDR32";
+  case R_PPC_ADDR24: return "R_PPC_ADDR24";
+  case R_PPC_ADDR16: return "R_PPC_ADDR16";
+  case R_PPC_ADDR16_LO: return "R_PPC_ADDR16_LO";
+  case R_PPC_ADDR16_HI: return "R_PPC_ADDR16_HI";
+  case R_PPC_ADDR16_HA: return "R_PPC_ADDR16_HA";
+  case R_PPC_ADDR14: return "R_PPC_ADDR14";
+  case R_PPC_ADDR14_BRTAKEN: return "R_PPC_ADDR14_BRTAKEN";
+  case R_PPC_ADDR14_BRNTAKEN: return "R_PPC_ADDR14_BRNTAKEN";
+  case R_PPC_REL24: return "R_PPC_REL24";
+  case R_PPC_REL14: return "R_PPC_REL14";
+  case R_PPC_REL14_BRTAKEN: return "R_PPC_REL14_BRTAKEN";
+  case R_PPC_REL14_BRNTAKEN: return "R_PPC_REL14_BRNTAKEN";
+  case R_PPC_GOT16: return "R_PPC_GOT16";
+  case R_PPC_GOT16_LO: return "R_PPC_GOT16_LO";
+  case R_PPC_GOT16_HI: return "R_PPC_GOT16_HI";
+  case R_PPC_GOT16_HA: return "R_PPC_GOT16_HA";
+  case R_PPC_PLTREL24: return "R_PPC_PLTREL24";
+  case R_PPC_COPY: return "R_PPC_COPY";
+  case R_PPC_GLOB_DAT: return "R_PPC_GLOB_DAT";
+  case R_PPC_JMP_SLOT: return "R_PPC_JMP_SLOT";
+  case R_PPC_RELATIVE: return "R_PPC_RELATIVE";
+  case R_PPC_LOCAL24PC: return "R_PPC_LOCAL24PC";
+  case R_PPC_UADDR32: return "R_PPC_UADDR32";
+  case R_PPC_UADDR16: return "R_PPC_UADDR16";
+  case R_PPC_REL32: return "R_PPC_REL32";
+  case R_PPC_PLT32: return "R_PPC_PLT32";
+  case R_PPC_PLTREL32: return "R_PPC_PLTREL32";
+  case R_PPC_PLT16_LO: return "R_PPC_PLT16_LO";
+  case R_PPC_PLT16_HI: return "R_PPC_PLT16_HI";
+  case R_PPC_PLT16_HA: return "R_PPC_PLT16_HA";
+  case R_PPC_SDAREL16: return "R_PPC_SDAREL16";
+  case R_PPC_SECTOFF: return "R_PPC_SECTOFF";
+  case R_PPC_SECTOFF_LO: return "R_PPC_SECTOFF_LO";
+  case R_PPC_SECTOFF_HI: return "R_PPC_SECTOFF_HI";
+  case R_PPC_SECTOFF_HA: return "R_PPC_SECTOFF_HA";
+  case R_PPC_ADDR30: return "R_PPC_ADDR30";
+  case R_PPC_TLS: return "R_PPC_TLS";
+  case R_PPC_DTPMOD32: return "R_PPC_DTPMOD32";
+  case R_PPC_TPREL16: return "R_PPC_TPREL16";
+  case R_PPC_TPREL16_LO: return "R_PPC_TPREL16_LO";
+  case R_PPC_TPREL16_HI: return "R_PPC_TPREL16_HI";
+  case R_PPC_TPREL16_HA: return "R_PPC_TPREL16_HA";
+  case R_PPC_TPREL32: return "R_PPC_TPREL32";
+  case R_PPC_DTPREL16: return "R_PPC_DTPREL16";
+  case R_PPC_DTPREL16_LO: return "R_PPC_DTPREL16_LO";
+  case R_PPC_DTPREL16_HI: return "R_PPC_DTPREL16_HI";
+  case R_PPC_DTPREL16_HA: return "R_PPC_DTPREL16_HA";
+  case R_PPC_DTPREL32: return "R_PPC_DTPREL32";
+  case R_PPC_GOT_TLSGD16: return "R_PPC_GOT_TLSGD16";
+  case R_PPC_GOT_TLSGD16_LO: return "R_PPC_GOT_TLSGD16_LO";
+  case R_PPC_GOT_TLSGD16_HI: return "R_PPC_GOT_TLSGD16_HI";
+  case R_PPC_GOT_TLSGD16_HA: return "R_PPC_GOT_TLSGD16_HA";
+  case R_PPC_GOT_TLSLD16: return "R_PPC_GOT_TLSLD16";
+  case R_PPC_GOT_TLSLD16_LO: return "R_PPC_GOT_TLSLD16_LO";
+  case R_PPC_GOT_TLSLD16_HI: return "R_PPC_GOT_TLSLD16_HI";
+  case R_PPC_GOT_TLSLD16_HA: return "R_PPC_GOT_TLSLD16_HA";
+  case R_PPC_GOT_TPREL16: return "R_PPC_GOT_TPREL16";
+  case R_PPC_GOT_TPREL16_LO: return "R_PPC_GOT_TPREL16_LO";
+  case R_PPC_GOT_TPREL16_HI: return "R_PPC_GOT_TPREL16_HI";
+  case R_PPC_GOT_TPREL16_HA: return "R_PPC_GOT_TPREL16_HA";
+  case R_PPC_GOT_DTPREL16: return "R_PPC_GOT_DTPREL16";
+  case R_PPC_GOT_DTPREL16_LO: return "R_PPC_GOT_DTPREL16_LO";
+  case R_PPC_GOT_DTPREL16_HI: return "R_PPC_GOT_DTPREL16_HI";
+  case R_PPC_GOT_DTPREL16_HA: return "R_PPC_GOT_DTPREL16_HA";
+  case R_PPC_TLSGD: return "R_PPC_TLSGD";
+  case R_PPC_TLSLD: return "R_PPC_TLSLD";
+  case R_PPC_PLTSEQ: return "R_PPC_PLTSEQ";
+  case R_PPC_PLTCALL: return "R_PPC_PLTCALL";
+  case R_PPC_IRELATIVE: return "R_PPC_IRELATIVE";
+  case R_PPC_REL16: return "R_PPC_REL16";
+  case R_PPC_REL16_LO: return "R_PPC_REL16_LO";
+  case R_PPC_REL16_HI: return "R_PPC_REL16_HI";
+  case R_PPC_REL16_HA: return "R_PPC_REL16_HA";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
+template <>
 std::string rel_to_string<PPC64V1>(u32 r_type) {
   switch (r_type) {
   case R_PPC64_NONE: return "R_PPC64_NONE";

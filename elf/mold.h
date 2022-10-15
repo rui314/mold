@@ -518,7 +518,7 @@ class GotPltSection : public Chunk<E> {
 public:
   GotPltSection() {
     this->name = ".got.plt";
-    this->shdr.sh_type = is_ppc<E> ? SHT_NOBITS : SHT_PROGBITS;
+    this->shdr.sh_type = is_ppc64<E> ? SHT_NOBITS : SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
     this->shdr.sh_size = HDR_SIZE;
@@ -1238,6 +1238,7 @@ public:
 
   // For ICF
   std::unique_ptr<InputSection<E>> llvm_addrsig;
+
   // For .gdb_index
   InputSection<E> *debug_info = nullptr;
   InputSection<E> *debug_ranges = nullptr;
@@ -1253,6 +1254,9 @@ public:
   i64 names_offset = 0;
   i64 num_areas = 0;
   i64 area_offset = 0;
+
+  // For PPC32
+  InputSection<E> *ppc32_got2 = nullptr;
 
 private:
   ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
@@ -1854,6 +1858,7 @@ struct Context {
   Symbol<E> *_DYNAMIC = nullptr;
   Symbol<E> *_GLOBAL_OFFSET_TABLE_ = nullptr;
   Symbol<E> *_PROCEDURE_LINKAGE_TABLE_ = nullptr;
+  Symbol<E> *_SDA_BASE_ = nullptr;
   Symbol<E> *_TLS_MODULE_BASE_ = nullptr;
   Symbol<E> *__GNU_EH_FRAME_HDR = nullptr;
   Symbol<E> *__bss_start = nullptr;

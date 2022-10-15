@@ -7,6 +7,7 @@ canonical_name() {
   case $1 in
   i?86) echo i386 ;;
   arm*) echo arm ;;
+  powerpc) echo ppc ;;
   powerpc64) echo ppc64 ;;
   powerpc64le) echo ppc64le ;;
   *) echo $1
