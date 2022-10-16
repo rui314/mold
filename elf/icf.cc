@@ -595,7 +595,6 @@ void icf_sections(Context<E> &ctx) {
           InputSection<E> *isec = sym->get_input_section();
           if (isec && isec->leader && isec->leader != isec) {
             isec->kill();
-            isec->killed_by_icf = true;
           }
         }
       }
