@@ -298,6 +298,7 @@ public:
   std::span<FdeRecord<E>> get_fdes() const;
   std::string_view get_func_name(Context<E> &ctx, i64 offset);
   bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel);
+  bool is_killed_by_icf() const;
 
   void record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
 
@@ -323,7 +324,6 @@ public:
 
   bool address_significant : 1 = false;
   bool uncompressed : 1 = false;
-  bool killed_by_icf : 1 = false;
 
   // For garbage collection
   std::atomic_bool is_visited = false;
@@ -334,8 +334,7 @@ public:
   // Three kind of values are possible:
   // - `leader == nullptr`: This section was not eligible for ICF.
   // - `leader == this`: This section was retained.
-  // - `leader != this`: This section was merged with another idential section.
-  //                     Implies `killed_by_icf`.
+  // - `leader != this`: This section was merged with another identical section.
   InputSection<E> *leader = nullptr;
   u32 icf_idx = -1;
   bool icf_eligible = false;
@@ -2340,7 +2339,7 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   // If the section was dead due to ICF, we don't want to emit debug
   // info for that section but want to set real values to .debug_line so
   // that users can set a breakpoint inside a merged section.
-  if (isec->killed_by_icf && s == ".debug_line")
+  if (isec->is_killed_by_icf() && s == ".debug_line")
     return {};
 
   // 0 is an invalid value in most debug info sections, so we use it
@@ -2355,6 +2354,11 @@ inline bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel
          !(shdr().sh_flags & SHF_EXECINSTR) &&
          (shdr().sh_addralign % sizeof(Word<E>)) == 0 &&
          (rel.r_offset % sizeof(Word<E>)) == 0;
+}
+
+template<typename E>
+inline bool InputSection<E>::is_killed_by_icf() const {
+  return this->leader && this->leader != this;
 }
 
 template <typename E>
@@ -2460,7 +2464,7 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
     return value; // absolute symbol
 
   if (!isec->is_alive) {
-    if (isec->killed_by_icf)
+    if (isec->is_killed_by_icf())
       return isec->leader->get_addr() + value;
 
     if (isec->name() == ".eh_frame") {
