@@ -331,6 +331,13 @@ target_sources(mold PRIVATE
   uuid.cc
   )
 
+# Add frequently included header files for pre-compiling.
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16.0") # for target_precompile_headers
+target_precompile_headers(mold PRIVATE
+  "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/elf/mold.h>"
+  "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/macho/mold.h>")
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
