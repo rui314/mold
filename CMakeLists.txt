@@ -219,7 +219,7 @@ if(NOT APPLE AND NOT WIN32 AND NOT MOLD_MOSTLY_STATIC)
   target_link_libraries(mold PRIVATE OpenSSL::Crypto)
 endif()
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64|armv)")
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64|armv6)")
   target_link_libraries(mold PRIVATE atomic)
 endif()
 
