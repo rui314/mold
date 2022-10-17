@@ -32,7 +32,8 @@ jobs:
     strategy:
       matrix:
         target:
-        - ''
+        # Disable PCH for the default configuration. This prevents relying on implicit includes.
+        - '-DCMAKE_DISABLE_PRECOMPILE_HEADERS=On'
         - '-DMOLD_USE_ASAN=On'
         - '-DMOLD_USE_TSAN=On'
     runs-on: ubuntu-20.04
@@ -156,7 +157,8 @@ jobs:
     strategy:
       matrix:
         target:
-        - ''
+        # Disable PCH for the default configuration. This prevents relying on implicit includes.
+        - '-DCMAKE_DISABLE_PRECOMPILE_HEADERS=On'
         - '-DMOLD_USE_ASAN=On'
     steps:
     - uses: actions/checkout@v3
