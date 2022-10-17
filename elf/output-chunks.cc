@@ -158,6 +158,48 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
   return false;
 }
 
+// Some types of TLS relocations are defined relative to the TLS
+// segment, so save its addresses for easy access.
+template <typename E>
+static void init_thread_pointers(Context<E> &ctx, ElfPhdr<E> phdr) {
+  assert(phdr.p_type == PT_TLS);
+  ctx.tls_begin = phdr.p_vaddr;
+
+  // Each thread has its own value in TP (thread pointer) register.
+  // Thread-local variables (TLVs) defined in the main executable are
+  // accessed relative to TP.
+  //
+  // On x86, SPARC and s390x, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
+  // and %a0/%a1 on s390x) refers past the end of all TLVs for historical
+  // reasons. TLVs are accessed with negative offsets from TP.
+  //
+  // On ARM, the runtime appends two words at the beginning of TLV
+  // template image when copying TLVs to per-thread area, so we need
+  // to offset it.
+  //
+  // On PPC64, TP is 0x7000 (28 KiB) past the beginning of the TLV block
+  // to maximize the addressable range for load/store instructions with
+  // 16-bits signed immediates. It's not exactly 0x8000 (32 KiB) off
+  // because there's a small implementation-defined piece of data before
+  // the TLV block, and the runtime wants to access them efficiently
+  // too.
+  //
+  // RISC-V just uses the beginning of the TLV block as TP. RISC-V
+  // load/store instructions usually take 12-bits signed immediates,
+  // so the beginning of TLV ± 2 KiB is accessible with a single
+  // load/store instruction.
+  if constexpr (is_x86<E> || is_sparc<E> || is_s390x<E>) {
+    ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
+  } else if constexpr (is_arm<E>) {
+    ctx.tp_addr = align_down(phdr.p_vaddr - sizeof(Word<E>) * 2, phdr.p_align);
+  } else if constexpr (is_ppc<E>) {
+    ctx.tp_addr = phdr.p_vaddr + 0x7000;
+  } else {
+    static_assert(is_riscv<E>);
+    ctx.tp_addr = phdr.p_vaddr;
+  }
+}
+
 template <typename E>
 static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   std::vector<ElfPhdr<E>> vec;
@@ -268,43 +310,8 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     while (i < ctx.chunks.size() && (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
       append(ctx.chunks[i++]);
 
-    // Some types of TLS relocations are defined relative to the TLS
-    // segment, so save its addresses for easy access.
-    ElfPhdr<E> &phdr = vec.back();
-    ctx.tls_begin = phdr.p_vaddr;
-
-    // Each thread has its own value in TP (thread pointer) register, and
-    // TLVs defined in the main executable are accessed relative to TP.
-    //
-    // On x86, SPARC and S390X, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
-    // and %a0/%a1 on S390X) refers past the end of all TLVs for historical
-    // reasons. TLVs are accessed with negative offsets from TP.
-    //
-    // On ARM, the runtime appends two words at the beginning of TLV
-    // template image when copying TLVs to per-thread area, so we need
-    // to offset it.
-    //
-    // On PPC64, TP is 0x7000 (28 KiB) past the beginning of the TLV block
-    // to maximize the addressable range for load/store instructions with
-    // 16-bits signed immediates. It's not exactly 0x8000 (32 KiB) off
-    // because there's a small implementation-defined piece of data before
-    // the TLV block, and the runtime wants to access them efficiently
-    // too.
-    //
-    // RISC-V just uses the beginning of the TLV block as TP. RISC-V
-    // load/store instructions usually take 12-bits signed immediates,
-    // so the beginning of TLV ± 2 KiB is accessible with a single
-    // load/store instruction.
-    if constexpr (is_x86<E> || is_sparc<E> || is_s390x<E>) {
-      ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
-    } else if constexpr (is_arm<E>) {
-      ctx.tp_addr = align_down(ctx.tls_begin - sizeof(Word<E>) * 2, phdr.p_align);
-    } else if constexpr (is_ppc<E>) {
-      ctx.tp_addr = ctx.tls_begin + 0x7000;
-    } else {
-      static_assert(is_riscv<E>);
-      ctx.tp_addr = ctx.tls_begin;
-    }
+    // Initialize ctx.tls_begin and ctx.tp_addr
+    init_thread_pointers(ctx, vec.back());
   }
 
   // Add PT_DYNAMIC
@@ -1233,7 +1240,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     if (ctx.arg.is_static) {
       entries.push_back({idx, 1}); // One indicates the main executable file
       entries.push_back({idx + 1,
-                         sym->get_addr(ctx) - ctx.tls_begin - E::tls_dtv_offset});
+                         sym->get_addr(ctx) - ctx.tls_begin - E::tls_dtp_offset});
     } else {
       entries.push_back({idx, 0, E::R_DTPMOD, sym});
       entries.push_back({idx + 1, 0, E::R_DTPOFF, sym});

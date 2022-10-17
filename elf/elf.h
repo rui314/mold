@@ -2361,7 +2361,7 @@ struct X86_64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtv_offset = 0;
+  static constexpr u32 tls_dtp_offset = 0;
 };
 
 template <> struct ElfSym<X86_64>     : EL64Sym {};
@@ -2397,7 +2397,7 @@ struct I386 {
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtv_offset = 0;
+  static constexpr u32 tls_dtp_offset = 0;
 };
 
 template <> struct ElfSym<I386>     : EL32Sym {};
@@ -2433,7 +2433,7 @@ struct ARM64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtv_offset = 0;
+  static constexpr u32 tls_dtp_offset = 0;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 12;
 };
@@ -2471,7 +2471,7 @@ struct ARM32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtv_offset = 0;
+  static constexpr u32 tls_dtp_offset = 0;
   static constexpr u32 thunk_hdr_size = 12;
   static constexpr u32 thunk_size = 20;
 };
@@ -2530,7 +2530,7 @@ struct RV64LE {
   // values are usually computed and used only by runtime. But when we do
   // compute DTPOFF for statically-linked executable, we need to offset
   // the bias by subtracting 0x800.
-  static constexpr u32 tls_dtv_offset = 0x800;
+  static constexpr u32 tls_dtp_offset = 0x800;
 };
 
 template <> struct ElfSym<RV64LE>     : EL64Sym {};
@@ -2565,7 +2565,7 @@ struct RV64BE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtv_offset = 0x800;
+  static constexpr u32 tls_dtp_offset = 0x800;
 };
 
 template <> struct ElfSym<RV64BE>     : EB64Sym {};
@@ -2600,7 +2600,7 @@ struct RV32LE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtv_offset = 0x800;
+  static constexpr u32 tls_dtp_offset = 0x800;
 };
 
 template <> struct ElfSym<RV32LE>     : EL32Sym {};
@@ -2635,7 +2635,7 @@ struct RV32BE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtv_offset = 0x800;
+  static constexpr u32 tls_dtp_offset = 0x800;
 };
 
 template <> struct ElfSym<RV32BE>     : EB32Sym {};
@@ -2670,7 +2670,7 @@ struct PPC64V1 {
   static constexpr u32 plt_hdr_size = 52;
   static constexpr u32 plt_size = 8;
   static constexpr u32 pltgot_size = 0;
-  static constexpr u32 tls_dtv_offset = 0x8000;
+  static constexpr u32 tls_dtp_offset = 0x8000;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 28;
 };
@@ -2707,7 +2707,7 @@ struct PPC64V2 {
   static constexpr u32 plt_hdr_size = 60;
   static constexpr u32 plt_size = 4;
   static constexpr u32 pltgot_size = 0;
-  static constexpr u32 tls_dtv_offset = 0x8000;
+  static constexpr u32 tls_dtp_offset = 0x8000;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 20;
 };
@@ -2744,7 +2744,7 @@ struct S390X {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 32;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtv_offset = 0;
+  static constexpr u32 tls_dtp_offset = 0;
 };
 
 template <> struct ElfSym<S390X>     : EB64Sym {};
@@ -2779,7 +2779,7 @@ struct SPARC64 {
   static constexpr u32 plt_hdr_size = 128;
   static constexpr u32 plt_size = 32;
   static constexpr u32 pltgot_size = 32;
-  static constexpr u32 tls_dtv_offset = 0;
+  static constexpr u32 tls_dtp_offset = 0;
 };
 
 template <> struct ElfSym<SPARC64>     : EB64Sym {};
