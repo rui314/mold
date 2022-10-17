@@ -115,38 +115,38 @@ static u32 cjtype(u32 val) {
 }
 
 static void write_itype(u8 *loc, u32 val) {
-  u32 mask = 0b000000'00000'11111'111'11111'1111111;
-  *(ul32 *)loc = (*(ul32 *)loc & mask) | itype(val);
+  *(ul32 *)loc &= 0b000000'00000'11111'111'11111'1111111;
+  *(ul32 *)loc |= itype(val);
 }
 
 static void write_stype(u8 *loc, u32 val) {
-  u32 mask = 0b000000'11111'11111'111'00000'1111111;
-  *(ul32 *)loc = (*(ul32 *)loc & mask) | stype(val);
+  *(ul32 *)loc &= 0b000000'11111'11111'111'00000'1111111;
+  *(ul32 *)loc |= stype(val);
 }
 
 static void write_btype(u8 *loc, u32 val) {
-  u32 mask = 0b000000'11111'11111'111'00000'1111111;
-  *(ul32 *)loc = (*(ul32 *)loc & mask) | btype(val);
+  *(ul32 *)loc &= 0b000000'11111'11111'111'00000'1111111;
+  *(ul32 *)loc |= btype(val);
 }
 
 static void write_utype(u8 *loc, u32 val) {
-  u32 mask = 0b000000'00000'00000'000'11111'1111111;
-  *(ul32 *)loc = (*(ul32 *)loc & mask) | utype(val);
+  *(ul32 *)loc &= 0b000000'00000'00000'000'11111'1111111;
+  *(ul32 *)loc |= utype(val);
 }
 
 static void write_jtype(u8 *loc, u32 val) {
-  u32 mask = 0b000000'00000'00000'000'11111'1111111;
-  *(ul32 *)loc = (*(ul32 *)loc & mask) | jtype(val);
+  *(ul32 *)loc &= 0b000000'00000'00000'000'11111'1111111;
+  *(ul32 *)loc |= jtype(val);
 }
 
 static void write_cbtype(u8 *loc, u32 val) {
-  u32 mask = 0b111'000'111'00000'11;
-  *(ul16 *)loc = (*(ul16 *)loc & mask) | cbtype(val);
+  *(ul16 *)loc &= 0b111'000'111'00000'11;
+  *(ul16 *)loc |= cbtype(val);
 }
 
 static void write_cjtype(u8 *loc, u32 val) {
-  u32 mask = 0b111'00000000000'11;
-  *(ul16 *)loc = (*(ul16 *)loc & mask) | cjtype(val);
+  *(ul16 *)loc &= 0b111'00000000000'11;
+  *(ul16 *)loc |= cjtype(val);
 }
 
 // Returns the rd register of an R/I/U/J-type instruction.
@@ -546,7 +546,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_TLS_GD_HI20: {
       u8 *loc = base + rels[i].r_offset - get_r_delta(i);
       u32 val = *(ul32 *)loc;
-      *(ul32 *)loc = *(ul32 *)(contents.data() + rels[i].r_offset);
+      memcpy(loc, contents.data() + rels[i].r_offset, 4);
       write_utype(loc, val);
     }
     }
@@ -943,7 +943,7 @@ i64 riscv_resize_sections(Context<E> &ctx) {
   return set_osec_offsets(ctx);
 }
 
-#define INSTANTIATE_RISCV(E)                                                 \
+#define INSTANTIATE(E)                                                       \
   template void write_plt_header(Context<E> &, u8 *);                        \
   template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);            \
   template void write_pltgot_entry(Context<E> &, u8 *, Symbol<E> &);         \
@@ -955,9 +955,9 @@ i64 riscv_resize_sections(Context<E> &ctx) {
   template void InputSection<E>::scan_relocations(Context<E> &);             \
   template i64 riscv_resize_sections(Context<E> &);
 
-INSTANTIATE_RISCV(RV64LE);
-INSTANTIATE_RISCV(RV64BE);
-INSTANTIATE_RISCV(RV32LE);
-INSTANTIATE_RISCV(RV32BE);
+INSTANTIATE(RV64LE);
+INSTANTIATE(RV64BE);
+INSTANTIATE(RV32LE);
+INSTANTIATE(RV32BE);
 
 } // namespace mold::elf
