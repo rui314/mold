@@ -14,7 +14,7 @@ EOF
 $CC -B. -o $t/exe1 $t/a.o -pie -Wl,-section-start=.tdata=0x100001 -Wl,-relax
 $QEMU $t/exe1 | grep -q '^42$'
 
-$CC -B. -o $t/exe1 $t/a.o -pie -Wl,-section-start=.tdata=0x100001 -Wl,-no-relax
+$CC -B. -o $t/exe2 $t/a.o -pie -Wl,-section-start=.tdata=0x100001 -Wl,-no-relax
 $QEMU $t/exe2 | grep -q '^42$'
 
 $CC -B. -o $t/exe3 $t/a.o -pie -Wl,-section-start=.tdata=0x10000f -Wl,-relax
