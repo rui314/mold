@@ -1451,7 +1451,7 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
     if (sym.traced)
       print_trace_symbol(ctx, *this, esym, sym);
 
-    if (esym.is_undef() && sym.file && sym.file != this &&
+    if (esym.is_undef() && sym.file && !sym.file->is_dso &&
         !sym.file->is_alive.exchange(true)) {
       feeder(sym.file);
 
