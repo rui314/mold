@@ -536,10 +536,10 @@ get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, i64 offset) {
   return it->sym;
 }
 
-// An input object file contain an .opd section for all symbols that might
-// need .opd entries in an output file. The intention is to make it
-// possible to create an output .opd just by linking input .opd sections
-// in the same manner as we do to other normal input sections.
+// Compiler creates an .opd entry for each function symbol. The intention
+// is to make it possible to create an output .opd section just by linking
+// input .opd sections in the same manner as we do to other normal input
+// sections.
 //
 // However, in reality, .opd isn't a normal input section. It needs many
 // special treatments as follows:
@@ -547,20 +547,20 @@ get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, i64 offset) {
 // 1. A function symbol refers not a .text but an .opd. Its address works
 //    fine for address-taking relocations such as R_PPC64_ADDR64. However,
 //    R_PPC64_REL24 (which is used for branch instruction) needs a
-//    function's real instead of the function's .opd address. We need to
-//    read .opd contents to find out a function entry point address to
-//    apply R_PPC64_REL24.
+//    function's real address instead of the function's .opd address.
+//    We need to read .opd contents to find out a function entry point
+//    address to apply R_PPC64_REL24.
 //
-// 2. Output .opd entries are needed only by functions whose addresses
+// 2. Output .opd entries are needed only for functions whose addresses
 //    are taken. Just copying input .opd sections to an output would
 //    produces lots of dead .opd entries.
 //
 // 3. In this design, all function symbols refer an .opd section, and that
 //    doesn't work well with graph traversal optimizations such as garbage
 //    collection or identical comdat folding. For example, garbage
-//    collector would mark an .opd alive which in turn mark all function
-//    bodies that are referenced by .opd as alive, effectively keeping
-//    all functions as alive.
+//    collector would mark an .opd alive which in turn mark all functions
+//    thatare referenced by .opd as alive, effectively keeping all
+//    functions as alive.
 //
 // The problem is that the compiler creates a half-baked .opd section, and
 // the linker has to figure out what all these .opd entries and
