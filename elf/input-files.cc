@@ -191,6 +191,12 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
       }
 
+      // Ignore a build-id section in an input file. This doesn't normally
+      // happen, but you can create such object file with
+      // `ld.bfd -r --build-id`.
+      if (name == ".note.gnu.build-id")
+        continue;
+
       // Ignore these sections for compatibility with old glibc i386 CRT files.
       if (name == ".gnu.linkonce.t.__x86.get_pc_thunk.bx" ||
           name == ".gnu.linkonce.t.__i686.get_pc_thunk.bx")
