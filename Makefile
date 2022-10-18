@@ -32,7 +32,7 @@ endif
 # `STRIP=true` to run /bin/true instead of the strip command.
 STRIP = strip
 
-SRCS = compress.cc demangle.cc elf/arch-arm32.cc elf/arch-arm64.cc elf/arch-i386.cc elf/arch-ppc64v1.cc elf/arch-ppc64v2.cc elf/arch-riscv.cc elf/arch-s390x.cc elf/arch-sparc64.cc elf/arch-x86-64.cc filepath.cc glob.cc hyperloglog.cc macho/arch-arm64.cc macho/arch-x86-64.cc macho/yaml.cc main.cc multi-glob.cc perf.cc strerror.cc tar.cc uuid.cc
+SRCS = compress.cc demangle.cc elf/arch-arm32.cc elf/arch-arm64.cc elf/arch-i386.cc elf/arch-ppc64v1.cc elf/arch-ppc64v2.cc elf/arch-riscv.cc elf/arch-s390x.cc elf/arch-sparc64.cc elf/arch-x86-64.cc filepath.cc glob.cc hyperloglog.cc macho/arch-arm64.cc macho/arch-x86-64.cc macho/yaml.cc main.cc multi-glob.cc perf.cc tar.cc uuid.cc
 
 ELF_TARGETS = X86_64 I386 ARM64 ARM32 RV32LE RV32BE RV64LE RV64BE PPC64V1 PPC64V2 S390X SPARC64
 MACHO_TARGETS = X86_64 ARM64
