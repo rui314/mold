@@ -31,6 +31,13 @@ void cleanup() {
     unlink(output_tmpfile);
 }
 
+std::string errno_string() {
+  // strerror is not thread-safe, so guard it with a lock.
+  static std::mutex mu;
+  std::scoped_lock lock(mu);
+  return strerror(errno);
+}
+
 // mold mmap's an output file, and the mmap succeeds even if there's
 // no enough space left on the filesystem. The actual disk blocks are
 // not allocated on the mmap call but when the program writes to it

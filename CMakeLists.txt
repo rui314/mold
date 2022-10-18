@@ -325,7 +325,6 @@ target_sources(mold PRIVATE
   main.cc
   multi-glob.cc
   perf.cc
-  strerror.cc
   tar.cc
   third-party/rust-demangle/rust-demangle.c
   uuid.cc
