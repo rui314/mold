@@ -16,7 +16,8 @@ std::string_view errno_string() {
 #ifdef _WIN32
   strerror_s(buf, errno);
 #else
-  strerror_r(errno, buf, sizeof(buf));
+  if (strerror_r(errno, buf, sizeof(buf)) != 0)
+    return "strerror failed";
 #endif
   return buf;
 }
