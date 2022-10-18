@@ -571,8 +571,7 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
 
     for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
       Symbol<E> &sym = *ctx.dynsym->symbols[i];
-      write_string(base + offset, sym.name());
-      offset += sym.name().size() + 1;
+      offset += write_string(base + offset, sym.name());
     }
   }
 }
