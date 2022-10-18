@@ -141,6 +141,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
                    << lo << ", " << hi << ")";
     };
 
+    auto check_dbl = [&](i64 val, i64 lo, i64 hi) {
+      check(val, lo, hi);
+
+      // R_390_*DBL relocs should never refer a symbol at an odd address
+      if (val & 1)
+        Error(ctx) << *this << ": misaligned symbol " << sym
+                   << " for relocation " << rel;
+    };
+
 #define S   sym.get_addr(ctx)
 #define A   rel.r_addend
 #define P   (get_addr() + rel.r_offset)
@@ -188,7 +197,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_PC12DBL:
     case R_390_PLT12DBL: {
       i64 val = S + A - P;
-      check(val, -(1 << 12), 1 << 12);
+      check_dbl(val, -(1 << 12), 1 << 12);
       write_low12(loc, val >> 1);
       break;
     }
@@ -210,14 +219,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_PC16DBL:
     case R_390_PLT16DBL: {
       i64 val = S + A - P;
-      check(val, -(1 << 16), 1 << 16);
+      check_dbl(val, -(1 << 16), 1 << 16);
       *(ub16 *)loc = val >> 1;
       break;
     }
     case R_390_PC24DBL:
     case R_390_PLT24DBL: {
       i64 val = S + A - P;
-      check(val, -(1 << 24), 1 << 24);
+      check_dbl(val, -(1 << 24), 1 << 24);
       write_low24(loc, val >> 1);
       break;
     }
@@ -229,7 +238,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ub32 *)loc = (ctx.s390x_tls_get_offset->shdr.sh_addr - P) >> 1;
       } else {
         i64 val = S + A - P;
-        check(val, -(1LL << 32), 1LL << 32);
+        check_dbl(val, -(1LL << 32), 1LL << 32);
         *(ub32 *)loc = val >> 1;
       }
       break;
@@ -288,7 +297,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_GOTPCDBL: {
       i64 val = GOT + A - P;
-      check(val, -(1LL << 32), 1LL << 32);
+      check_dbl(val, -(1LL << 32), 1LL << 32);
       *(ub32 *)loc = val >> 1;
       break;
     }
