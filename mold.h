@@ -731,7 +731,8 @@ public:
   static MappedFile *open(C &ctx, std::string path);
   static MappedFile *must_open(C &ctx, std::string path);
 
-  ~MappedFile();
+  ~MappedFile() { unmap(); }
+  void unmap();
 
   MappedFile *slice(C &ctx, std::string name, u64 start, u64 size);
 
@@ -777,7 +778,6 @@ template <typename C>
 MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
-
 
   i64 fd;
 #ifdef _WIN32
@@ -851,8 +851,8 @@ MappedFile<C>::slice(C &ctx, std::string name, u64 start, u64 size) {
 }
 
 template <typename C>
-MappedFile<C>::~MappedFile() {
-  if (size == 0 || parent)
+void MappedFile<C>::unmap() {
+  if (size == 0 || parent || !data)
     return;
 
 #ifdef _WIN32
@@ -862,6 +862,8 @@ MappedFile<C>::~MappedFile() {
 #else
   munmap(data, size);
 #endif
+
+  data = nullptr;
 }
 
 } // namespace mold

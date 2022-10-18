@@ -657,8 +657,13 @@ void write_repro_file(Context<E> &ctx) {
   for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool) {
     if (!mf->parent) {
       std::string path = to_abs_path(mf->name).string();
-      if (seen.insert(path).second)
-        tar->append(path, mf->get_contents());
+      if (seen.insert(path).second) {
+        // We reopen a file because we may have modified the contents of mf
+        // in memory, which is mapped with PROT_WRITE and MAP_PRIVATE.
+        MappedFile<Context<E>> *mf2 = MappedFile<Context<E>>::must_open(ctx, path);
+        tar->append(path, mf2->get_contents());
+        mf2->unmap();
+      }
     }
   }
 }
