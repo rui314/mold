@@ -765,7 +765,7 @@ static void shuffle(std::vector<T> &vec, u64 seed) {
 
   // Xorshift random number generator. We use this RNG because it is
   // measurably faster than MT19937.
-  auto rand = [&]() {
+  auto rand = [&] {
     seed ^= seed << 13;
     seed ^= seed >> 7;
     seed ^= seed << 17;

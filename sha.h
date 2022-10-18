@@ -16,7 +16,7 @@ inline static BCRYPT_ALG_HANDLE get_sha256_handle() {
   static std::once_flag once;
   static BCRYPT_ALG_HANDLE alg;
 
-  std::call_once(once, [&]() {
+  std::call_once(once, [&] {
     BCryptOpenAlgorithmProvider(&alg, BCRYPT_SHA256_ALGORITHM, nullptr, 0);
   });
   return alg;
