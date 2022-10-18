@@ -2173,13 +2173,16 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!ctx.arg.shared);
   assert(sym->file->is_dso);
 
-  this->shdr.sh_size = align_to(this->shdr.sh_size, this->shdr.sh_addralign);
-  sym->value = this->shdr.sh_size;
   sym->has_copyrel = true;
-
-  this->shdr.sh_size += sym->esym().st_size;
   symbols.push_back(sym);
   ctx.dynsym->add_symbol(ctx, sym);
+
+  i64 alignment = ((SharedFile<E> *)sym->file)->get_alignment(sym);
+  this->shdr.sh_size = align_to(this->shdr.sh_size, alignment);
+  sym->value = this->shdr.sh_size;
+
+  this->shdr.sh_size += sym->esym().st_size;
+  this->shdr.sh_addralign = std::max<i64>(alignment, this->shdr.sh_addralign);
 }
 
 template <typename E>

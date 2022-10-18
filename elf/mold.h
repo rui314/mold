@@ -868,7 +868,6 @@ public:
     this->name = is_relro ? ".copyrel.rel.ro" : ".copyrel";
     this->shdr.sh_type = SHT_NOBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    this->shdr.sh_addralign = 64;
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -1284,6 +1283,7 @@ public:
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
   std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
+  i64 get_alignment(Symbol<E> *sym);
   bool is_readonly(Context<E> &ctx, Symbol<E> *sym);
 
   void mark_live_objects(Context<E> &ctx,

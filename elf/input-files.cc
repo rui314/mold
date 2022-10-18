@@ -1,5 +1,6 @@
 #include "mold.h"
 
+#include <bit>
 #include <cstring>
 
 #ifndef _WIN32
@@ -1477,6 +1478,23 @@ std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
         sym->esym().st_value == sym2->esym().st_value)
       vec.push_back(sym2);
   return vec;
+}
+
+// Infer an alignment of a DSO symbol. An alignment of a symbol in other
+// .so is not something we usually care about, but when we create a copy
+// relocation for a symbol, we need to preserve its alignment requirement.
+//
+// Symbol alignment is not explicitly represented in an ELF file. In this
+// function, we conservatively infer it from a symbol address and a
+// section alignment requirement.
+template <typename E>
+i64 SharedFile<E>::get_alignment(Symbol<E> *sym) {
+  ElfShdr<E> &shdr = this->elf_sections[sym->esym().st_shndx];
+  i64 p2align = std::min(std::countr_zero<u64>(sym->value),
+                         std::countr_zero<u64>(shdr.sh_addralign));
+
+  // We do not want a ridiculously large alignment. Cap it arbitrary at 64.
+  return std::min(64, 1 << p2align);
 }
 
 template <typename E>
