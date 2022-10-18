@@ -47,7 +47,7 @@ void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
   static const ul32 insn0[] = {
     0x90000011, // adrp x17, $__dyld_private@PAGE
     0x91000231, // add  x17, x17, $__dyld_private@PAGEOFF
-    0xa9bf47f0, // stp	x16, x17, [sp, #-16]!
+    0xa9bf47f0, // stp  x16, x17, [sp, #-16]!
     0x90000010, // adrp x16, $dyld_stub_binder@PAGE
     0xf9400210, // ldr  x16, [x16, $dyld_stub_binder@PAGEOFF]
     0xd61f0200, // br   x16

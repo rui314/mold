@@ -248,14 +248,14 @@ get_input_section_name(const PluginSection section,
 static PluginStatus
 get_input_section_contents(const PluginSection section,
                            const char **section_contents,
-		           size_t *len) {
+                           size_t *len) {
   LOG << "get_input_section_contents\n";
   return LDPS_OK;
 }
 
 static PluginStatus
 update_section_order(const PluginSection *section_list,
-		     int num_sections) {
+                     int num_sections) {
   LOG << "update_section_order\n";
   return LDPS_OK;
 }
@@ -381,10 +381,10 @@ static PluginStatus allow_unique_segment_for_sections() {
 
 static PluginStatus
 unique_segment_for_sections(const char *segment_name,
-			    uint64_t flags,
-			    uint64_t align,
-			    const PluginSection *section_list,
-			    int num_sections) {
+                            uint64_t flags,
+                            uint64_t align,
+                            const PluginSection *section_list,
+                            int num_sections) {
   LOG << "unique_segment_for_sections\n";
   return LDPS_OK;
 }
