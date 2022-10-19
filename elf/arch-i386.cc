@@ -485,7 +485,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
 
       if (u32 ty = rels[i + 1].r_type;
-          ty != R_386_PLT32 && ty != R_386_GOT32 && ty != R_386_GOT32X)
+          ty != R_386_PLT32 && ty != R_386_PC32 &&
+          ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
 
       if (relax_tlsgd(ctx, sym))
@@ -498,7 +499,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
 
       if (u32 ty = rels[i + 1].r_type;
-          ty != R_386_PLT32 && ty != R_386_GOT32 && ty != R_386_GOT32X)
+          ty != R_386_PLT32 && ty != R_386_PC32 &&
+          ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
 
       if (relax_tlsld(ctx))
