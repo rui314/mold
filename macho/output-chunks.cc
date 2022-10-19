@@ -346,7 +346,7 @@ void OutputMachHeader<E>::copy_buf(Context<E> &ctx) {
   mhdr.filetype = ctx.output_type;
   mhdr.ncmds = cmds.size();
   mhdr.sizeofcmds = flatten(cmds).size();
-  mhdr.flags = MH_TWOLEVEL | MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
+  mhdr.flags = MH_NOUNDEFS | MH_DYLDLINK | MH_PIE;
 
   if (has_tlv(ctx))
     mhdr.flags |= MH_HAS_TLV_DESCRIPTORS;
@@ -356,6 +356,9 @@ void OutputMachHeader<E>::copy_buf(Context<E> &ctx) {
 
   if (ctx.arg.mark_dead_strippable_dylib)
     mhdr.flags |= MH_DEAD_STRIPPABLE_DYLIB;
+
+  if (!ctx.arg.flat_namespace)
+    mhdr.flags |= MH_TWOLEVEL;
 
   write_vector(buf + sizeof(mhdr), flatten(cmds));
 }

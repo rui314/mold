@@ -354,6 +354,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.dependency_info = arg;
     } else if (read_flag("-dylib")) {
       ctx.output_type = MH_DYLIB;
+    } else if (read_flag("-flat_namespace")) {
+      ctx.arg.flat_namespace = true;
     } else if (read_hex("-headerpad")) {
       ctx.arg.headerpad = hex_arg;
     } else if (read_flag("-headerpad_max_install_names")) {

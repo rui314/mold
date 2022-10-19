@@ -869,6 +869,7 @@ struct Context {
     bool dynamic = true;
     bool export_dynamic = false;
     bool fatal_warnings = false;
+    bool flat_namespace = false;
     bool function_starts = true;
     bool ignore_optimization_hints = true;
     bool mark_dead_strippable_dylib = false;
