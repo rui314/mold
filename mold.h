@@ -73,6 +73,7 @@ extern std::string mold_version_string;
 extern std::string mold_git_hash;
 
 std::string errno_string();
+std::string get_self_path();
 void cleanup();
 void install_signal_handler();
 i64 get_default_thread_count();

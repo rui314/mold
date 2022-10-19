@@ -351,10 +351,10 @@ static void restart_process(Context<E> &ctx) {
   args.push_back("--:lto-pass2");
   args.push_back(nullptr);
 
-  std::string self = std::filesystem::read_symlink("/proc/self/exe");
-
   std::cout << std::flush;
   std::cerr << std::flush;
+
+  std::string self = get_self_path();
   execv(self.c_str(), (char * const *)args.data());
   std::cerr << "execv failed: " << errno_string() << "\n";
   _exit(1);

@@ -10,10 +10,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#ifdef __FreeBSD__
-# include <sys/sysctl.h>
-#endif
-
 namespace mold::elf {
 
 #ifdef MOLD_X86_64
@@ -84,28 +80,6 @@ static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
     return path;
 
   Fatal(ctx) << "mold-wrapper.so is missing";
-}
-
-static std::string get_self_path() {
-#ifdef __FreeBSD__
-  // /proc may not be mounted on FreeBSD. The proper way to get the
-  // current executable's path is to use sysctl(2).
-  int mib[4];
-  mib[0] = CTL_KERN;
-  mib[1] = KERN_PROC;
-  mib[2] = KERN_PROC_PATHNAME;
-  mib[3] = -1;
-
-  size_t size;
-  sysctl(mib, 4, NULL, &size, NULL, 0);
-
-  std::string path;
-  path.resize(size);
-  sysctl(mib, 4, path.data(), &size, NULL, 0);
-  return path;
-#else
-  return std::filesystem::read_symlink("/proc/self/exe");
-#endif
 }
 
 template <typename E>
