@@ -234,7 +234,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         // Relax GD to LE
         switch (rels[i + 1].r_type) {
-        case R_386_PLT32: {
+        case R_386_PLT32:
+        case R_386_PC32: {
           static const u8 insn[] = {
             0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
             0x81, 0xe8, 0, 0, 0, 0, // add $val, %eax
@@ -266,7 +267,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         // Relax LD to LE
         switch (rels[i + 1].r_type) {
-        case R_386_PLT32: {
+        case R_386_PLT32:
+        case R_386_PC32: {
           static const u8 insn[] = {
             0x31, 0xc0,             // xor %eax, %eax
             0x65, 0x8b, 0x00,       // mov %gs:(%eax), %eax
