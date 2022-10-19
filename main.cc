@@ -63,7 +63,7 @@ std::string get_self_path() {
   sysctl(mib, 4, path.data(), &size, NULL, 0);
   return path;
 #else
-  return std::filesystem::read_symlink("/proc/self/exe");
+  return std::filesystem::read_symlink("/proc/self/exe").string();
 #endif
 }
 
