@@ -1,30 +1,16 @@
 # Contributing to mold
 
-Summary: When you send a patch that is longer than 10 lines, you must
-agree that the patch is released under the dual license of the GNU
-AGPLv3 and the MIT license. As an indication of agreement, please add
-a `Signed-off-by` line to your commit message using `git commit -s`.
-
-Here is the long official version:
-
-mold is currently licensed under the GNU AGPLv3, but I want to relicense
-it under a more liberal license in the future. To make this possible,
-I want all patches to be submitted under the dual license of the GNU
-AGPLv3 and the MIT license (the "Dual License") from the beginning.
-
-To make it clear that contributors have agreed to release their
-patches under the Dual License, I introduced a sign-off procedure just
-like the Linux kernel project did. The sign-off is a simple line at
-the end of the git commit message, which certifies that you wrote it
-or otherwise have the right to pass it on as an open-source patch. The
-rules are pretty simple: if you can certify the below:
+We request all patches to mold to be released under the dual license
+of the GNU AGPLv3 and the MIT license. Please read the following and
+sign-off your patch as an indication of agreement.
 
 > ## Developer's Certificate of Origin
 >
 > By making a contribution to this project, I certify that:
 >
 >  1. The contribution was created in whole or in part by me and I
->     have the right to submit it under the Dual License; or
+>     have the right to submit it under the Dual License of the GNU
+>     AGPLv3 and the MIT license; or
 >
 >  2. The contribution is based upon previous work that, to the best
 >     of my knowledge, is covered under the the Dual License and I
@@ -42,7 +28,7 @@ rules are pretty simple: if you can certify the below:
 >     maintained indefinitely and may be redistributed consistent with
 >     this project or the open source license(s) involved.
 
-then you just add a line saying:
+If you agree, you just add a line saying:
 
 ```
 Signed-off-by: Random J Developer <random@developer.example.org>
@@ -55,4 +41,4 @@ for you.
 
 We assume that any contribution that's 10 lines or less does not meet
 the threshold of originality and therefore copyright does not apply.
-You don't need to add a "Signed-off-by" line to such small commits.
+You don't need to add a "Signed-off-by" line to such small patches.
