@@ -2878,7 +2878,7 @@ static i64 get_output_sym_idx(Symbol<E> &sym) {
   i64 idx2 = sym.file->output_sym_indices[sym.sym_idx];
   assert(idx2 != -1);
 
-  if (sym.sym_idx < sym.file->first_global)
+  if (sym.is_local())
     return sym.file->local_symtab_idx + idx2;
   return sym.file->global_symtab_idx + idx2;
 }
