@@ -409,7 +409,7 @@ int elf_main(int argc, char **argv) {
   // Process -run option first. process_run_subcommand() does not return.
   if (argc >= 2 && (argv[1] == "-run"sv || argv[1] == "--run"sv)) {
 #if defined(_WIN32) || defined(__APPLE__)
-    Fatal(ctx) << ": -run is supported only on Unix";
+    Fatal(ctx) << "-run is supported only on Unix";
 #endif
     process_run_subcommand(ctx, argc, argv);
   }
