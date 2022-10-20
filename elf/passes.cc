@@ -1055,24 +1055,6 @@ void create_reloc_sections(Context<E> &ctx) {
     ctx.chunks.push_back(r);
     ctx.chunk_pool.emplace_back(r);
   }
-
-  // Create a table to map input symbol indices to output symbol indices
-  auto set_indices = [&](InputFile<E> *file) {
-    file->output_sym_indices.resize(file->elf_syms.size(), -1);
-
-    for (i64 i = 1, j = 0; i < file->first_global; i++)
-      if (Symbol<E> &sym = *file->symbols[i];
-          sym.file == file && sym.write_to_symtab)
-        file->output_sym_indices[i] = j++;
-
-    for (i64 i = file->first_global, j = 0; i < file->elf_syms.size(); i++)
-      if (Symbol<E> &sym = *file->symbols[i];
-          sym.file == file && sym.write_to_symtab)
-        file->output_sym_indices[i] = j++;
-  };
-
-  tbb::parallel_for_each(ctx.objs, set_indices);
-  tbb::parallel_for_each(ctx.dsos, set_indices);
 }
 
 template <typename E>

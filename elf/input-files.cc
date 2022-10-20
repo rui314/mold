@@ -1199,6 +1199,8 @@ void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
   if (ctx.arg.strip_all)
     return;
 
+  this->output_sym_indices.resize(this->elf_syms.size(), -1);
+
   auto is_alive = [&](Symbol<E> &sym) -> bool {
     if (!ctx.arg.gc_sections)
       return true;
@@ -1217,7 +1219,7 @@ void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
 
       if (is_alive(sym) && should_write_to_local_symtab(ctx, sym)) {
         this->strtab_size += sym.name().size() + 1;
-        this->num_local_symtab++;
+        this->output_sym_indices[i] = this->num_local_symtab++;
         sym.write_to_symtab = true;
       }
     }
@@ -1233,9 +1235,9 @@ void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
       // Global symbols can be demoted to local symbols based on visibility,
       // version scripts etc.
       if (sym.is_local())
-        this->num_local_symtab++;
+        this->output_sym_indices[i] = this->num_local_symtab++;
       else
-        this->num_global_symtab++;
+        this->output_sym_indices[i] = this->num_global_symtab++;
       sym.write_to_symtab = true;
     }
   }
@@ -1514,6 +1516,8 @@ void SharedFile<E>::compute_symtab_size(Context<E> &ctx) {
   if (ctx.arg.strip_all)
     return;
 
+  this->output_sym_indices.resize(this->elf_syms.size(), -1);
+
   // Compute the size of global symbols.
   for (i64 i = this->first_global; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
@@ -1521,7 +1525,7 @@ void SharedFile<E>::compute_symtab_size(Context<E> &ctx) {
     if (sym.file == this && (sym.is_imported || sym.is_exported) &&
         (!ctx.arg.retain_symbols_file || sym.write_to_symtab)) {
       this->strtab_size += sym.name().size() + 1;
-      this->num_global_symtab++;
+      this->output_sym_indices[i] = this->num_global_symtab++;
       sym.write_to_symtab = true;
     }
   }
