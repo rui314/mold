@@ -400,6 +400,10 @@ public:
   ElfShdr<E> shdr = {};
   i64 shndx = 0;
 
+  // For __start and __stop symbols
+  std::string start_symbol;
+  std::string stop_symbol;
+
   // Some synethetic sections add local symbols to the output.
   // For example, range extension thunks adds function_name@thunk
   // symbol for each thunk entry. The following members are used
@@ -1795,13 +1799,7 @@ struct Context {
   Symbol<E> *__executable_start = nullptr;
   Symbol<E> *__exidx_end = nullptr;
   Symbol<E> *__exidx_start = nullptr;
-  Symbol<E> *__fini_array_end = nullptr;
-  Symbol<E> *__fini_array_start = nullptr;
   Symbol<E> *__global_pointer = nullptr;
-  Symbol<E> *__init_array_end = nullptr;
-  Symbol<E> *__init_array_start = nullptr;
-  Symbol<E> *__preinit_array_end = nullptr;
-  Symbol<E> *__preinit_array_start = nullptr;
   Symbol<E> *__rel_iplt_end = nullptr;
   Symbol<E> *__rel_iplt_start = nullptr;
   Symbol<E> *_edata = nullptr;
