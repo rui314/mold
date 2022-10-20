@@ -515,7 +515,7 @@ static size_t find_null(std::string_view data, u64 entsize) {
     return data.find('\0');
 
   for (i64 i = 0; i <= data.size() - entsize; i += entsize)
-    if (data.substr(i, i + entsize).find_first_not_of('\0') == data.npos)
+    if (data.substr(i, entsize).find_first_not_of('\0') == data.npos)
       return i;
 
   return data.npos;
