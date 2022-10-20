@@ -552,14 +552,6 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
-template <typename E>
-static OutputSection<E> *find_exidx_section(Context<E> &ctx) {
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-    if (osec->shdr.sh_type == SHT_ARM_EXIDX)
-      return osec.get();
-  return nullptr;
-}
-
 // ARM executables use an .ARM.exidx section to look up an exception
 // handling record for the current instruction pointer. The table needs
 // to be sorted by their addresses.
@@ -569,13 +561,7 @@ static OutputSection<E> *find_exidx_section(Context<E> &ctx) {
 // likely that it's due to some historical reason.
 //
 // This function sorts .ARM.exidx records.
-void sort_arm_exidx(Context<E> &ctx) {
-  Timer t(ctx, "sort_arm_exidx");
-
-  OutputSection<E> *osec = find_exidx_section(ctx);
-  if (!osec)
-    return;
-
+static void sort_exidx(Context<E> &ctx, OutputSection<E> &osec) {
   // .ARM.exidx records consists of a signed 31-bit relative address
   // and a 32-bit value. The relative address indicates the start
   // address of a function that the record covers. The value is one of
@@ -595,11 +581,11 @@ void sort_arm_exidx(Context<E> &ctx) {
     ul32 val;
   };
 
-  if (osec->shdr.sh_size % sizeof(Entry))
+  if (osec.shdr.sh_size % sizeof(Entry))
     Fatal(ctx) << "invalid .ARM.exidx section size";
 
-  Entry *ent = (Entry *)(ctx.buf + osec->shdr.sh_offset);
-  i64 num_entries = osec->shdr.sh_size / sizeof(Entry);
+  Entry *ent = (Entry *)(ctx.buf + osec.shdr.sh_offset);
+  i64 num_entries = osec.shdr.sh_size / sizeof(Entry);
 
   // Entry's addresses are relative to themselves. In order to sort
   // records by addresses, we first translate them so that the addresses
@@ -626,6 +612,40 @@ void sort_arm_exidx(Context<E> &ctx) {
     if (is_relative(ent[i].val))
       ent[i].val = 0x7fff'ffff & (ent[i].val - offset);
   });
+}
+
+void fixup_arm_exidx_section(Context<E> &ctx) {
+  Timer t(ctx, "fixup_arm_exidx_section");
+
+  auto find_exidx = [&]() -> OutputSection<E> * {
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+      if (osec->shdr.sh_type == SHT_ARM_EXIDX)
+        return osec.get();
+    return nullptr;
+  };
+
+  OutputSection<E> *exidx = find_exidx();
+  if (!exidx)
+    return;
+
+  // Sort .ARM.exidx contents
+  sort_exidx(ctx, *exidx);
+
+  // .ARM.exidx's sh_link should be set to the .text section index.
+  // Runtime doesn't care about it, but the binutils's strip command does.
+  if (ctx.shdr) {
+    auto find_text = [&]() -> OutputSection<E> * {
+      for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+        if (osec->name == ".text")
+          return osec.get();
+      return nullptr;
+    };
+
+    if (OutputSection<E> *text = find_exidx()) {
+      exidx->shdr.sh_link = text->shndx;
+      ctx.shdr->copy_buf(ctx);
+    }
+  }
 }
 
 } // namespace mold::elf

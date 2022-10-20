@@ -1434,7 +1434,7 @@ template <typename E> void write_dependency_file(Context<E> &);
 // arch-arm32.cc
 //
 
-void sort_arm_exidx(Context<ARM32> &ctx);
+void fixup_arm_exidx_section(Context<ARM32> &ctx);
 
 //
 // arch-riscv64.cc

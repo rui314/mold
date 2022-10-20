@@ -65,3 +65,11 @@ if [ $MACHINE = x86_64 -o $MACHINE = aarch64 ]; then
   $CXX -B. -o $t/exe10 $t/e.o -no-pie
   $QEMU $t/exe10
 fi
+
+$CXX -B. -o $t/exe11 $t/b.o -pie
+$STRIP $t/exe11
+$QEMU $t/exe11
+
+$CXX -B. -o $t/exe12 $t/c.o -no-pie
+$STRIP $t/exe12
+$QEMU $t/exe12

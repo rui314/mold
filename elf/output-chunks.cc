@@ -847,9 +847,9 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
 
   if ((name == ".rodata" || name.starts_with(".rodata.")) && (flags & SHF_MERGE))
     return (flags & SHF_STRINGS) ? ".rodata.str" : ".rodata.cst";
-  if (name == ".ARM.exidx" || name.starts_with(".ARM.exidx."))
+  if (name.starts_with(".ARM.exidx"))
     return ".ARM.exidx";
-  if (name == ".ARM.extab" || name.starts_with(".ARM.extab."))
+  if (name.starts_with(".ARM.extab"))
     return ".ARM.extab";
 
   if (ctx.arg.z_keep_text_section_prefix) {

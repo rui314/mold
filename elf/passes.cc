@@ -1102,7 +1102,7 @@ void copy_chunks(Context<E> &ctx) {
   report_undef_errors(ctx);
 
   if constexpr (std::is_same_v<E, ARM32>)
-    sort_arm_exidx(ctx);
+    fixup_arm_exidx_section(ctx);
 }
 
 template <typename E>
