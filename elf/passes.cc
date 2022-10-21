@@ -711,10 +711,13 @@ void check_duplicate_symbols(Context<E> &ctx) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
 
+      // Skip if our symbol is undef or weak
       if (sym.file == file || sym.file == ctx.internal_obj ||
           esym.is_undef() || esym.is_common() || (esym.st_bind == STB_WEAK))
         continue;
 
+      // Skip if our symbol is in a dead section. In most cases, the
+      // section has been eliminated due to comdat deduplication.
       if (!esym.is_abs()) {
         InputSection<E> *isec = file->get_section(esym);
         if (!isec || !isec->is_alive)
