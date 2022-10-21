@@ -56,7 +56,6 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.relrdyn = push(new RelrDynSection<E>);
 
   ctx.strtab = push(new StrtabSection<E>);
-  ctx.shstrtab = push(new ShstrtabSection<E>);
   ctx.plt = push(new PltSection<E>);
   ctx.pltgot = push(new PltGotSection<E>);
   ctx.symtab = push(new SymtabSection<E>);
@@ -65,6 +64,9 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.eh_frame = push(new EhFrameSection<E>);
   ctx.copyrel = push(new CopyrelSection<E>(false));
   ctx.copyrel_relro = push(new CopyrelSection<E>(true));
+
+  if (!ctx.arg.oformat_binary)
+    ctx.shstrtab = push(new ShstrtabSection<E>);
 
   if (!ctx.arg.dynamic_linker.empty())
     ctx.interp = push(new InterpSection<E>);
@@ -293,7 +295,8 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   }
 
   // Add an identification string to .comment.
-  add_comment_string(ctx, mold_version);
+  if (!ctx.arg.oformat_binary)
+    add_comment_string(ctx, mold_version);
 
   // Embed command line arguments for debugging.
   if (char *env = getenv("MOLD_DEBUG"); env && env[0])

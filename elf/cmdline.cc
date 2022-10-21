@@ -1090,6 +1090,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   ctx.arg.undefined.push_back(ctx.arg.entry);
 
+  // --oformat=binary implies --strip-all because without a section
+  // header, there's no way to identify the locations of a symbol
+  // table in an output file in the first place.
+  if (ctx.arg.oformat_binary)
+    ctx.arg.strip_all = true;
+
   // By default, mold tries to ovewrite to an output file if exists
   // because at least on Linux, writing to an existing file is much
   // faster than creating a fresh file and writing to it.

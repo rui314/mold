@@ -682,7 +682,6 @@ public:
   StrtabSection() {
     this->name = ".strtab";
     this->shdr.sh_type = SHT_STRTAB;
-    this->shdr.sh_size = 1;
   }
 
   void update_shdr(Context<E> &ctx) override;

@@ -218,6 +218,13 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
       }
 
+      // If an output file doesn't have a section header (i.e.
+      // --oformat=binary is given), we discard all non-memory-allocated
+      // sections. This is because without a section header, we can't find
+      // their places in an output file in the first place.
+      if (ctx.arg.oformat_binary && !(shdr.sh_flags & SHF_ALLOC))
+        continue;
+
       this->sections[i] = std::make_unique<InputSection<E>>(ctx, *this, name, i);
 
       // Save debug sections for --gdb-index.

@@ -504,7 +504,7 @@ void StrtabSection<E>::update_shdr(Context<E> &ctx) {
     offset += file->strtab_size;
   }
 
-  this->shdr.sh_size = offset;
+  this->shdr.sh_size = (offset == 1) ? 0 : offset;
 }
 
 template <typename E>
