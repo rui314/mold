@@ -5,9 +5,9 @@ source /etc/os-release
 set -x
 
 # The first line for each distro installs a build dependency.
-# The second line installs extra packages for `make test`.
+# The second line installs extra packages for unittests.
 #
-# Feel free to send me a PR if you find a missing OS.
+# Feel free to send me a PR if your OS is not on this list.
 
 case "$ID-$VERSION_ID" in
 ubuntu-20.* | pop-20.*)
