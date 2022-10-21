@@ -711,9 +711,12 @@ void check_duplicate_symbols(Context<E> &ctx) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
 
-      // Skip if our symbol is undef or weak
+      // Skip if our symbol is undef or weak. We handle GNU-unique
+      // symbols as if they were weak so that this logic is consistent
+      // with get_rank() in input-files.cc.
       if (sym.file == file || sym.file == ctx.internal_obj ||
-          esym.is_undef() || esym.is_common() || (esym.st_bind == STB_WEAK))
+          esym.is_undef() || esym.is_common() || (esym.st_bind == STB_WEAK) ||
+          (esym.st_bind == STB_GNU_UNIQUE))
         continue;
 
       // Skip if our symbol is in a dead section. In most cases, the

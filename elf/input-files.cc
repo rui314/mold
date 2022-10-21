@@ -819,12 +819,22 @@ static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_lazy) {
     return (5 << 24) + file->priority;
   }
 
+  // GCC creates symbols in COMDATs with STB_GNU_UNIQUE instead of
+  // STB_WEAK if it was configured to do so at build time or the
+  // -fgnu-unique flag was given. In order to to not select a
+  // GNU_UNIQUE symbol in a discarded COMDAT section, we treat it as
+  // if it were weak.
+  //
+  // It looks like STB_GNU_UNIQUE is not a popular option anymore and
+  // often disabled by default though.
+  bool is_weak = (esym.st_bind == STB_WEAK || esym.st_bind == STB_GNU_UNIQUE);
+
   if (file->is_dso || is_lazy) {
-    if (esym.st_bind == STB_WEAK)
+    if (is_weak)
       return (4 << 24) + file->priority;
     return (3 << 24) + file->priority;
   }
-  if (esym.st_bind == STB_WEAK)
+  if (is_weak)
     return (2 << 24) + file->priority;
   return (1 << 24) + file->priority;
 }
