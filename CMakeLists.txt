@@ -57,8 +57,6 @@ endif()
 
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
-target_compile_definitions(mold PRIVATE
-  "LIBDIR=\"${CMAKE_INSTALL_FULL_LIBDIR}\"")
 target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
 
 if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
@@ -223,9 +221,6 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64|armv6)")
   target_link_libraries(mold PRIVATE atomic)
 endif()
 
-set_property(SOURCE main.cc APPEND PROPERTY
-  COMPILE_DEFINITIONS "MOLD_VERSION=\"${CMAKE_PROJECT_VERSION}\"")
-
 # Create a .cc file containing the current git hash for `mold --version`.
 add_custom_target(git_hash
   COMMAND ${CMAKE_COMMAND}
@@ -237,6 +232,10 @@ add_custom_target(git_hash
   VERBATIM)
 
 add_dependencies(mold git_hash)
+
+# Create config.h file
+configure_file(config.h.in config.h)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # Almost all functions are template in mold which take a target type
 # (e.g. X86_64) as its type parameter. Since we suport more than 10
@@ -331,10 +330,11 @@ target_sources(mold PRIVATE
   )
 
 # Add frequently included header files for pre-compiling.
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16.0") # for target_precompile_headers
-target_precompile_headers(mold PRIVATE
-  "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/elf/mold.h>"
-  "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/macho/mold.h>")
+# target_precompile_headers is supported by CMake 3.16.0 or newer.
+if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16.0")
+  target_precompile_headers(mold PRIVATE
+    "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/elf/mold.h>"
+    "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/macho/mold.h>")
 endif()
 
 include(CTest)

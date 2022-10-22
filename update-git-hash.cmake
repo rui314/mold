@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.9)
-
 # Get a git hash value. We do not want to use git command here
 # because we don't want to make git a build-time dependency.
 if(EXISTS "${SOURCE_DIR}/.git/HEAD")

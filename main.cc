@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "config.h"
 
 #include <cstring>
 #include <filesystem>
