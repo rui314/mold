@@ -193,7 +193,10 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       d++;
     }
 
-    // Move C forward so that C is apart from B by BATCH_SIZE.
+    // Move C forward so that C is apart from B by BATCH_SIZE. We want
+    // to make sure that there's at least one section between B and C
+    // to ensure progress.
+    c = b + 1;
     while (c < m.size() &&
            m[c]->offset + m[c]->sh_size < m[b]->offset + batch_size<E>)
       c++;
