@@ -508,7 +508,8 @@ static void load_plugin(Context<E> &ctx) {
 
 template <typename E>
 static ElfSym<E> to_elf_sym(PluginSymbol &psym) {
-  ElfSym<E> esym = {};
+  ElfSym<E> esym;
+  memset(&esym, 0, sizeof(esym));
 
   switch (psym.def) {
   case LDPK_DEF:
