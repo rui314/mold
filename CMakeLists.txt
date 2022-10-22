@@ -88,13 +88,6 @@ if(MOLD_USE_TSAN)
   target_link_options(mold PRIVATE -fsanitize=thread)
 endif()
 
-# We enable assert() even for release builds. Do not change this flag to
-# OFF. This option is intended to be used only by our continuous builds.
-option(MOLD_USE_ASSERT "Enable code assertions" ON)
-if(MOLD_USE_ASSERT)
-  target_compile_definitions(mold PRIVATE ENABLE_ASSERT)
-endif()
-
 # Statically-link libstdc++ and libcrypto if -DMOLD_MOSTLY_STATIC=ON.
 #
 # This option is intended to be used by `./dist.sh` script to create a

@@ -1,14 +1,5 @@
 #pragma once
 
-// cmake disables assert() for non-release builds by passing -DNDEBUG.
-// We want to control it by ourselves, so override the macro here.
-// This needs to be done before `#include <cassert>`.
-#ifdef ENABLE_ASSERT
-# undef NDEBUG
-#else
-# define NDEBUG
-#endif
-
 #include "inttypes.h"
 
 #include <array>
@@ -43,7 +34,11 @@
 #define XXH_INLINE_ALL 1
 #include "third-party/xxhash/xxhash.h"
 
-#define unreachable() assert(0 && "unreachable")
+#ifdef NDEBUG
+# define unreachable() __builtin_unreachable()
+#else
+# define unreachable() assert(0 && "unreachable")
+#endif
 
 inline uint64_t hash_string(std::string_view str) {
   return XXH3_64bits(str.data(), str.size());
