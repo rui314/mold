@@ -160,17 +160,17 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
 
 template <typename E>
 void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
-  std::span<InputSection<E> *> members = osec.members;
-  if (members.empty())
+  std::span<InputSection<E> *> m = osec.members;
+  if (m.empty())
     return;
 
-  members[0]->offset = 0;
+  m[0]->offset = 0;
 
   // Initialize input sections with a dummy offset so that we can
   // distinguish sections that have got an address with the one who
   // haven't.
-  tbb::parallel_for((i64)1, (i64)members.size(), [&](i64 i) {
-    members[i]->offset = -1;
+  tbb::parallel_for((i64)1, (i64)m.size(), [&](i64 i) {
+    m[i]->offset = -1;
   });
 
   // We create thunks from the beginning of the section to the end.
@@ -182,23 +182,22 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   i64 d = 0;
   i64 offset = 0;
 
-  while (b < members.size()) {
+  while (b < m.size()) {
     // Move D foward as far as we can jump from B to D.
-    while (d < members.size() && offset - members[b]->offset < max_distance<E>) {
-      offset = align_to(offset, 1 << members[d]->p2align);
-      members[d]->offset = offset;
-      offset += members[d]->sh_size;
+    while (d < m.size() && offset - m[b]->offset < max_distance<E>) {
+      offset = align_to(offset, 1 << m[d]->p2align);
+      m[d]->offset = offset;
+      offset += m[d]->sh_size;
       d++;
     }
 
     // Move C forward so that C is apart from B by GROUP_SIZE.
-    while (c < members.size() &&
-           members[c]->offset - members[b]->offset < group_size<E>)
+    while (c < m.size() && m[c]->offset - m[b]->offset < group_size<E>)
       c++;
 
     // Move A forward so that A is reachable from C.
     if (c > 0) {
-      i64 c_end = members[c - 1]->offset + members[c - 1]->sh_size;
+      i64 c_end = m[c - 1]->offset + m[c - 1]->sh_size;
       while (a < osec.thunks.size() &&
              osec.thunks[a]->offset < c_end - max_distance<E>)
         reset_thunk(*osec.thunks[a++]);
@@ -213,8 +212,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     thunk.offset = offset;
 
     // Scan relocations between B and C to collect symbols that need thunks.
-    tbb::parallel_for_each(members.begin() + b, members.begin() + c,
-                           [&](InputSection<E> *isec) {
+    tbb::parallel_for_each(&m[b], &m[c], [&](InputSection<E> *isec) {
       scan_rels(ctx, *isec, thunk);
     });
 
@@ -235,8 +233,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     }
 
     // Scan relocations again to fix symbol offsets in the last thunk.
-    tbb::parallel_for_each(members.begin() + b, members.begin() + c,
-                           [&](InputSection<E> *isec) {
+    tbb::parallel_for_each(&m[b], &m[c], [&](InputSection<E> *isec) {
       std::span<Symbol<E> *> syms = isec->file.symbols;
       std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
       std::span<RangeExtensionRef> range_extn = isec->extra.range_extn;
