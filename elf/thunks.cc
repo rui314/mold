@@ -40,18 +40,17 @@ template <typename E>
 static constexpr i64 jump_bits =
   std::is_same_v<E, ARM64> ? 28 : std::is_same_v<E, ARM32> ? 25 : 26;
 
-// We redirect a branch to a thunk if its destination is further than
-// this number.
-//
-// 5 MiB is a safety margin; we assume that there's no crazy big input
-// .text section that is larger than 5 MiB.
+// Branch reach in bytes.
 template <typename E>
-static constexpr i64 max_distance = (1LL << (jump_bits<E> - 1)) - 5 * 1024 * 1024;
+static constexpr i64 max_distance = 1LL << (jump_bits<E> - 1);
 
 // We create thunks for each 12.8/1.6/3.2 MiB code block for
 // ARM64/ARM32/PPC64, respectively.
 template <typename E>
-static constexpr i64 group_size = (1LL << (jump_bits<E> - 1)) / 10;
+static constexpr i64 group_size = max_distance<E> / 10;
+
+// We assume that a single thunk group is smaller than 100 KiB.
+static constexpr i64 max_thunk_size = 102400;
 
 template <typename E>
 static bool needs_thunk_rel(const ElfRel<E> &r) {
@@ -183,8 +182,10 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   i64 offset = 0;
 
   while (b < m.size()) {
-    // Move D foward as far as we can jump from B to D.
-    while (d < m.size() && offset - m[b]->offset < max_distance<E>) {
+    // Move D foward as far as we can jump from B to anywhere in a thunk after D.
+    while (d < m.size() &&
+           align_to(offset, 1 << m[d]->p2align) + m[d]->sh_size + max_thunk_size <
+           m[b]->offset + max_distance<E>) {
       offset = align_to(offset, 1 << m[d]->p2align);
       m[d]->offset = offset;
       offset += m[d]->sh_size;
@@ -218,6 +219,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
     // Now that we know the number of symbols in the thunk, we can compute
     // its size.
+    assert(thunk.size() < max_thunk_size);
     offset += thunk.size();
 
     // Sort symbols added to the thunk to make the output deterministic.
