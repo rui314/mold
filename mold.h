@@ -1,9 +1,13 @@
 #pragma once
 
 // cmake disables assert() for non-release builds by passing -DNDEBUG.
-// We want to always enable it, so undefine the macro. This needs to
-// be done before `#include <cassert>`.
-#undef NDEBUG
+// We want to control it by ourselves, so override the macro here.
+// This needs to be done before `#include <cassert>`.
+#ifdef ENABLE_ASSERT
+# undef NDEBUG
+#else
+# define NDEBUG
+#endif
 
 #include "inttypes.h"
 
