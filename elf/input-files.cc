@@ -1535,6 +1535,7 @@ template <typename E>
 void SharedFile<E>::populate_symtab(Context<E> &ctx) {
   ElfSym<E> *symtab =
     (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->global_symtab_idx;
+  memset(symtab, 0, sizeof(ElfSym<E>) * this->num_global_symtab);
 
   u8 *strtab = ctx.buf + ctx.strtab->shdr.sh_offset + this->strtab_offset;
 
