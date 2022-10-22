@@ -568,11 +568,8 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
 
   if (!ctx.dynsym->symbols.empty()) {
     i64 offset = dynsym_offset;
-
-    for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
-      Symbol<E> &sym = *ctx.dynsym->symbols[i];
-      offset += write_string(base + offset, sym.name());
-    }
+    for (Symbol<E> *sym : std::span(ctx.dynsym->symbols).subspan(1))
+      offset += write_string(base + offset, sym->name());
   }
 }
 
