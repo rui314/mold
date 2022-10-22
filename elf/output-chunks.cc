@@ -1097,7 +1097,6 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
   if constexpr (needs_thunk<E>) {
     ElfSym<E> *esym =
       (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
-    memset(esym, 0, this->num_local_symtab * sizeof(ElfSym<E>));
 
     u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
     u8 *strtab = strtab_base + this->strtab_offset;
@@ -1115,6 +1114,7 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
         Symbol<E> &sym = *thunk->symbols[i];
 
         auto write_esym = [&](i64 st_name, i64 off) {
+          memset(esym, 0, sizeof(*esym));
           esym->st_name = st_name;
           esym->st_type = STT_FUNC;
           esym->st_shndx = this->shndx;
@@ -1381,12 +1381,12 @@ void GotSection<E>::populate_symtab(Context<E> &ctx) {
 
   ElfSym<E> *esym =
     (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
-  memset(esym, 0, this->num_local_symtab * sizeof(ElfSym<E>));
 
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   u8 *strtab = strtab_base + this->strtab_offset;
 
   auto write = [&](std::string_view name, std::string_view suffix, i64 value) {
+    memset(esym, 0, sizeof(*esym));
     esym->st_name = strtab - strtab_base;
     esym->st_type = STT_OBJECT;
     esym->st_shndx = this->shndx;
@@ -1484,12 +1484,12 @@ void PltSection<E>::populate_symtab(Context<E> &ctx) {
 
   ElfSym<E> *esym =
     (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
-  memset(esym, 0, symbols.size() * sizeof(ElfSym<E>));
 
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   u8 *strtab = strtab_base + this->strtab_offset;
 
   for (Symbol<E> *sym : symbols) {
+    memset(esym, 0, sizeof(*esym));
     esym->st_name = strtab - strtab_base;
     esym->st_type = STT_FUNC;
     esym->st_shndx = this->shndx;
@@ -1537,12 +1537,12 @@ void PltGotSection<E>::populate_symtab(Context<E> &ctx) {
 
   ElfSym<E> *esym =
     (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
-  memset(esym, 0, symbols.size() * sizeof(ElfSym<E>));
 
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   u8 *strtab = strtab_base + this->strtab_offset;
 
   for (Symbol<E> *sym : symbols) {
+    memset(esym, 0, sizeof(*esym));
     esym->st_name = strtab - strtab_base;
     esym->st_type = STT_FUNC;
     esym->st_shndx = this->shndx;
