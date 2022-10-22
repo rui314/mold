@@ -641,7 +641,7 @@ void fixup_arm_exidx_section(Context<E> &ctx) {
       return nullptr;
     };
 
-    if (OutputSection<E> *text = find_exidx()) {
+    if (OutputSection<E> *text = find_text()) {
       exidx->shdr.sh_link = text->shndx;
       ctx.shdr->copy_buf(ctx);
     }
