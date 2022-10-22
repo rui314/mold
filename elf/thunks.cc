@@ -47,11 +47,12 @@ static constexpr i64 max_distance = 1LL << (jump_bits<E> - 1);
 // We create thunks for each 12.8/1.6/3.2 MiB code block for
 // ARM64/ARM32/PPC64, respectively.
 template <typename E>
-static constexpr i64 group_size = max_distance<E> / 10;
+static constexpr i64 batch_size = max_distance<E> / 10;
 
 // We assume that a single thunk group is smaller than 100 KiB.
 static constexpr i64 max_thunk_size = 102400;
 
+// Returns true if a given relocation is of type used for function calls.
 template <typename E>
 static bool needs_thunk_rel(const ElfRel<E> &r) {
   u32 ty = r.r_type;
@@ -192,17 +193,16 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       d++;
     }
 
-    // Move C forward so that C is apart from B by GROUP_SIZE.
-    while (c < m.size() && m[c]->offset - m[b]->offset < group_size<E>)
+    // Move C forward so that C is apart from B by BATCH_SIZE.
+    while (c < m.size() &&
+           m[c]->offset + m[c]->sh_size < m[b]->offset + batch_size<E>)
       c++;
 
     // Move A forward so that A is reachable from C.
-    if (c > 0) {
-      i64 c_end = m[c - 1]->offset + m[c - 1]->sh_size;
-      while (a < osec.thunks.size() &&
-             osec.thunks[a]->offset < c_end - max_distance<E>)
-        reset_thunk(*osec.thunks[a++]);
-    }
+    i64 c_offset = (c == m.size()) ? offset : m[c]->offset;
+    while (a < osec.thunks.size() &&
+           osec.thunks[a]->offset + max_distance<E> < c_offset)
+      reset_thunk(*osec.thunks[a++]);
 
     // Create a thunk for input sections between B and C and place it at D.
     osec.thunks.emplace_back(new RangeExtensionThunk<E>{osec});
@@ -245,7 +245,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
           range_extn[i].sym_idx = syms[rels[i].r_sym]->extra.thunk_sym_idx;
     });
 
-    // Move B forward to point to the begining of the next group.
+    // Move B forward to point to the begining of the next batch.
     b = c;
   }
 
