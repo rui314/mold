@@ -357,10 +357,10 @@ static void show_stats(Context<E> &ctx) {
   static Counter num_dsos("num_dsos", ctx.dsos.size());
 
   if constexpr (needs_thunk<E>) {
-    static Counter num_thunks("num_thunks");
+    static Counter thunk_bytes("thunk_bytes");
     for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
       for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec->thunks)
-        num_thunks += thunk->symbols.size();
+        thunk_bytes += thunk->size();
   }
 
   Counter::print();
