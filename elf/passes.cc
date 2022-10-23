@@ -208,13 +208,6 @@ void resolve_symbols(Context<E> &ctx) {
 
     append(ctx.objs, lto_objs);
 
-    // Remove IR object files.
-    for (ObjectFile<E> *file : ctx.objs)
-      if (file->is_lto_obj)
-        file->is_alive = false;
-
-    std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
-
     // Redo name resolution from scratch.
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       file->clear_symbols();
@@ -225,6 +218,13 @@ void resolve_symbols(Context<E> &ctx) {
       file->clear_symbols();
       file->is_alive = !file->is_needed;
     });
+
+    // Remove IR object files.
+    for (ObjectFile<E> *file : ctx.objs)
+      if (file->is_lto_obj)
+        file->is_alive = false;
+
+    std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
 
     do_resolve_symbols(ctx);
   }
