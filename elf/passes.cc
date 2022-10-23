@@ -164,17 +164,16 @@ void do_resolve_symbols(Context<E> &ctx) {
       file->clear_symbols();
   });
 
+  // Remove unused files
+  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
+
   // Since we have turned on object files live bits, their symbols
   // may now have higher priority than before. So run the symbol
   // resolution pass again to get the final resolution result.
   for_each_file([&](InputFile<E> *file) {
-    if (file->is_alive)
-      file->resolve_symbols(ctx);
+    file->resolve_symbols(ctx);
   });
-
-  // Remove unused files
-  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
-  std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
 }
 
 template <typename E>
