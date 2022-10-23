@@ -145,7 +145,7 @@ static void mark_live_objects(Context<E> &ctx) {
 }
 
 template <typename E>
-void do_resolve_symbols(Context<E> &ctx) {
+void finalize_archive_extraction(Context<E> &ctx) {
   auto for_each_file = [&](std::function<void(InputFile<E> *)> fn) {
     tbb::parallel_for_each(ctx.objs, fn);
     tbb::parallel_for_each(ctx.dsos, fn);
@@ -164,14 +164,22 @@ void do_resolve_symbols(Context<E> &ctx) {
       file->clear_symbols();
   });
 
-  // Remove unused files
+  // Now that the symbol references are gone, also remove the eliminated files from the file list.
   std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
   std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
+}
+
+template <typename E>
+void do_resolve_symbols(Context<E> &ctx) {
+  finalize_archive_extraction(ctx);
 
   // Since we have turned on object files live bits, their symbols
   // may now have higher priority than before. So run the symbol
   // resolution pass again to get the final resolution result.
-  for_each_file([&](InputFile<E> *file) {
+  tbb::parallel_for_each(ctx.objs, [&](InputFile<E> *file) {
+    file->resolve_symbols(ctx);
+  });
+  tbb::parallel_for_each(ctx.dsos, [&](InputFile<E> *file) {
     file->resolve_symbols(ctx);
   });
 }
