@@ -446,7 +446,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 
     std::string_view name;
     if (esym.st_type == STT_SECTION)
-      name = this->shstrtab.data() + this->elf_sections[esym.st_shndx].sh_name;
+      name = this->shstrtab.data() + this->elf_sections[get_shndx(esym)].sh_name;
     else
       name = this->symbol_strtab.data() + esym.st_name;
 
