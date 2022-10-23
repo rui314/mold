@@ -794,7 +794,6 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
   initialize_sections(ctx);
   initialize_symbols(ctx);
   sort_relocations(ctx);
-  initialize_mergeable_sections(ctx);
   initialize_ehframe_sections(ctx);
 }
 

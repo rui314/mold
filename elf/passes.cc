@@ -242,6 +242,10 @@ void register_section_pieces(Context<E> &ctx) {
   Timer t(ctx, "register_section_pieces");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->initialize_mergeable_sections(ctx);
+  });
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->register_section_pieces(ctx);
   });
 }

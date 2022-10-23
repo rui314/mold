@@ -1199,6 +1199,7 @@ public:
                                std::string archive_name, bool is_in_lib);
 
   void parse(Context<E> &ctx);
+  void initialize_mergeable_sections(Context<E> &ctx);
   void register_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
   void mark_live_objects(Context<E> &ctx,
@@ -1239,7 +1240,6 @@ public:
 
   // For ICF
   std::unique_ptr<InputSection<E>> llvm_addrsig;
-
   // For .gdb_index
   InputSection<E> *debug_info = nullptr;
   InputSection<E> *debug_ranges = nullptr;
@@ -1263,7 +1263,6 @@ private:
   void initialize_sections(Context<E> &ctx);
   void initialize_symbols(Context<E> &ctx);
   void sort_relocations(Context<E> &ctx);
-  void initialize_mergeable_sections(Context<E> &ctx);
   void initialize_ehframe_sections(Context<E> &ctx);
   u32 read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr);
   void read_ehframe(Context<E> &ctx, InputSection<E> &isec);
