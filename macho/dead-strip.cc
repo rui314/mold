@@ -48,7 +48,7 @@ static std::vector<Subsection<E> *> collect_root_set(Context<E> &ctx) {
 
 template <typename E>
 static void visit(Context<E> &ctx, Subsection<E> &subsec) {
-  if (subsec.is_alive.exchange(true))
+  if (!fast_mark(subsec.is_alive))
     return;
 
   for (Relocation<E> &rel : subsec.get_rels()) {

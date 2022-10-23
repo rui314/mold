@@ -26,7 +26,7 @@ static bool is_init_fini(const InputSection<E> &isec) {
 
 template <typename E>
 static bool mark_section(InputSection<E> *isec) {
-  return isec && isec->is_alive && !isec->is_visited.exchange(true);
+  return isec && isec->is_alive && fast_mark(isec->is_visited);
 }
 
 template <typename E>

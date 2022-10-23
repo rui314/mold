@@ -658,7 +658,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
 
     if (msym.is_undef() || (msym.is_common() && !sym.is_common))
       if (InputFile<E> *file = sym.file)
-        if (!file->is_alive.exchange(true) && !file->is_dylib)
+        if (fast_mark(file->is_alive) && !file->is_dylib)
           feeder((ObjectFile<E> *)file);
   }
 
@@ -666,7 +666,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     for (UnwindRecord<E> &rec : subsec->get_unwind_records())
       if (Symbol<E> *sym = rec.personality)
         if (InputFile<E> *file = sym->file)
-          if (!file->is_alive.exchange(true) && !file->is_dylib)
+          if (fast_mark(file->is_alive) && !file->is_dylib)
             feeder((ObjectFile<E> *)file);
 }
 

@@ -942,7 +942,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
       continue;
 
     bool keep = esym.is_undef() || (esym.is_common() && !sym.esym().is_common());
-    if (keep && !sym.file->is_alive.exchange(true)) {
+    if (keep && fast_mark(sym.file->is_alive)) {
       feeder(sym.file);
 
       if (sym.traced)
@@ -1468,7 +1468,7 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
       print_trace_symbol(ctx, *this, esym, sym);
 
     if (esym.is_undef() && sym.file && !sym.file->is_dso &&
-        !sym.file->is_alive.exchange(true)) {
+        fast_mark(sym.file->is_alive)) {
       feeder(sym.file);
 
       if (sym.traced)
