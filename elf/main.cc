@@ -484,15 +484,18 @@ int elf_main(int argc, char **argv) {
   // Create a dummy file containing linker-synthesized symbols.
   create_internal_file(ctx);
 
-  // Resolve symbols and fix the set of object files that are
-  // included to the final output.
+  // resolve_symbols is 4 things in 1 phase:
+  // - Determine the set of object files to extract from archives.
+  // - Remove redundant COMDAT sections (e.g. duplicate inline functions).
+  // - Finally, the actual symbol resolution.
+  // - LTO, which requires preliminary symbol resolution before running and a follow-up re-resolution after the LTO
+  //   objects are emitted.
+  //
+  // These passes have complex interactions, and unfortunately has to be put together in a single phase.
   resolve_symbols(ctx);
 
   // Resolve mergeable section pieces to merge them.
   register_section_pieces(ctx);
-
-  // Remove redundant comdat sections (e.g. duplicate inline functions).
-  eliminate_comdats(ctx);
 
   // Create .bss sections for common symbols.
   convert_common_symbols(ctx);

@@ -144,6 +144,18 @@ static void mark_live_objects(Context<E> &ctx) {
   });
 }
 
+// Due to legacy reasons, archive members will only get included in the final binary if they satisfy one of the
+// undefined symbols in a non-archive object file. This is called archive extraction.
+// In finalize_archive_extraction, this is processed as follows:
+// 1. Do preliminary symbol resolution assuming all archive members are included. This matches the undefined symbols
+//    with ones to be extracted from archives.
+// 2. Do a mark & sweep pass to eliminate unneeded archive members.
+//
+// Note that the symbol resolution inside finalize_archive_extraction uses a different rule. In order to prevent
+// extracting archive members that can be satisfied by either non-archive object files or DSOs, the archive members are
+// given a lower priority. This is not correct for the general case, where *extracted* object files have precedence over
+// DSOs and even non-archive files that are passed earlier in the command line. Hence, the symbol resolution is thrown
+// away once we determine which archive members to extract, and redone later with the formal rule.
 template <typename E>
 void finalize_archive_extraction(Context<E> &ctx) {
   auto for_each_file = [&](std::function<void(InputFile<E> *)> fn) {
@@ -158,13 +170,13 @@ void finalize_archive_extraction(Context<E> &ctx) {
   // This also merges symbol visibility.
   mark_live_objects(ctx);
 
-  // Remove symbols of eliminated files.
+  // Cleanup. The rule used for archive extraction isn't accurate for the general case of symbol extraction, so reset
+  // the resolution to be redone later.
   for_each_file([](InputFile<E> *file) {
-    if (!file->is_alive)
-      file->clear_symbols();
+    file->clear_symbols();
   });
 
-  // Now that the symbol references are gone, also remove the eliminated files from the file list.
+  // Now that the symbol references are gone, remove the eliminated files from the file list.
   std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
   std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
 }
@@ -172,6 +184,15 @@ void finalize_archive_extraction(Context<E> &ctx) {
 template <typename E>
 void do_resolve_symbols(Context<E> &ctx) {
   finalize_archive_extraction(ctx);
+
+  // COMDAT elimination needs to happen exactly here.
+  //
+  // It needs to be after archive extraction, otherwise we might assign COMDAT leader to an archive member that is not
+  // supposed to be extracted.
+  //
+  // It needs to happen before symbol resolution, otherwise we could eliminate a symbol that is already resolved to
+  // and cause dangling references.
+  eliminate_comdats(ctx);
 
   // Since we have turned on object files live bits, their symbols
   // may now have higher priority than before. So run the symbol
@@ -722,12 +743,9 @@ void check_duplicate_symbols(Context<E> &ctx) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
 
-      // Skip if our symbol is undef or weak. We handle GNU-unique
-      // symbols as if they were weak so that this logic is consistent
-      // with get_rank() in input-files.cc.
+      // Skip if our symbol is undef or weak
       if (sym.file == file || sym.file == ctx.internal_obj ||
-          esym.is_undef() || esym.is_common() || (esym.st_bind == STB_WEAK) ||
-          (esym.st_bind == STB_GNU_UNIQUE))
+          esym.is_undef() || esym.is_common() || (esym.st_bind == STB_WEAK))
         continue;
 
       // Skip if our symbol is in a dead section. In most cases, the
