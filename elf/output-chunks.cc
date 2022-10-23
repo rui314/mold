@@ -714,24 +714,21 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   };
 
   if (has_output_section(SHT_INIT_ARRAY)) {
-    u64 start = get_symbol(ctx, "__init_array_start")->value;
-    u64 end = get_symbol(ctx, "__init_array_end")->value;
-    define(DT_INIT_ARRAY, start);
-    define(DT_INIT_ARRAYSZ, end - start);
+    define(DT_INIT_ARRAY, ctx.__init_array_start->value);
+    define(DT_INIT_ARRAYSZ,
+           ctx.__init_array_end->value - ctx.__init_array_start->value);
   }
 
   if (has_output_section(SHT_PREINIT_ARRAY)) {
-    u64 start = get_symbol(ctx, "__preinit_array_start")->value;
-    u64 end = get_symbol(ctx, "__preinit_array_end")->value;
-    define(DT_PREINIT_ARRAY, start);
-    define(DT_PREINIT_ARRAYSZ, end - start);
+    define(DT_PREINIT_ARRAY, ctx.__preinit_array_start->value);
+    define(DT_PREINIT_ARRAYSZ,
+           ctx.__preinit_array_end->value - ctx.__preinit_array_start->value);
   }
 
   if (has_output_section(SHT_FINI_ARRAY)) {
-    u64 start = get_symbol(ctx, "__fini_array_start")->value;
-    u64 end = get_symbol(ctx, "__fini_array_end")->value;
-    define(DT_FINI_ARRAY, start);
-    define(DT_FINI_ARRAYSZ, end - start);
+    define(DT_FINI_ARRAY, ctx.__fini_array_start->value);
+    define(DT_FINI_ARRAYSZ,
+           ctx.__fini_array_end->value - ctx.__fini_array_start->value);
   }
 
   if (ctx.versym->shdr.sh_size)

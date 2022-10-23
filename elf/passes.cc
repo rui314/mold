@@ -441,34 +441,6 @@ void create_internal_file(Context<E> &ctx) {
 }
 
 template <typename E>
-static void init_start_stop_names(Context<E> &ctx, Chunk<E> &chunk) {
-  if (chunk.name.empty() || !(chunk.shdr.sh_flags & SHF_ALLOC))
-    return;
-
-  if (is_c_identifier(chunk.name)) {
-    chunk.start_symbol = "__start_" + std::string(chunk.name);
-    chunk.stop_symbol = "__stop_" + std::string(chunk.name);
-    return;
-  }
-
-  auto isalnum = [](char c) {
-    return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') ||
-           ('0' <= c && c <= '9');
-  };
-
-  std::string s{chunk.name};
-  if (s.starts_with('.'))
-    s = s.substr(1);
-
-  for (i64 i = 0; i < s.size(); i++)
-    if (!isalnum(s[i]))
-      s[i] = '_';
-
-  chunk.start_symbol = "__" + s + "_start";
-  chunk.stop_symbol = "__" + s + "_end";
-}
-
-template <typename E>
 void add_synthetic_symbols(Context<E> &ctx) {
   ObjectFile<E> &obj = *ctx.internal_obj;
 
@@ -488,6 +460,12 @@ void add_synthetic_symbols(Context<E> &ctx) {
   };
 
   ctx.__ehdr_start = add("__ehdr_start");
+  ctx.__init_array_start = add("__init_array_start");
+  ctx.__init_array_end = add("__init_array_end");
+  ctx.__fini_array_start = add("__fini_array_start");
+  ctx.__fini_array_end = add("__fini_array_end");
+  ctx.__preinit_array_start = add("__preinit_array_start");
+  ctx.__preinit_array_end = add("__preinit_array_end");
   ctx._DYNAMIC = add("_DYNAMIC");
   ctx._GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_");
   ctx._PROCEDURE_LINKAGE_TABLE_ = add("_PROCEDURE_LINKAGE_TABLE_");
@@ -501,13 +479,6 @@ void add_synthetic_symbols(Context<E> &ctx) {
     add(is_rela<E> ? "__rela_iplt_start" : "__rel_iplt_start");
   ctx.__rel_iplt_end =
     add(is_rela<E> ? "__rela_iplt_end" : "__rel_iplt_end");
-
-  add("__init_array_start");
-  add("__init_array_end");
-  add("__fini_array_start");
-  add("__fini_array_end");
-  add("__preinit_array_start");
-  add("__preinit_array_end");
 
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");
@@ -537,11 +508,9 @@ void add_synthetic_symbols(Context<E> &ctx) {
     ctx.TOC = add(".TOC.");
 
   for (Chunk<E> *chunk : ctx.chunks) {
-    init_start_stop_names(ctx, *chunk);
-
-    if (!chunk->start_symbol.empty()) {
-      add(chunk->start_symbol);
-      add(chunk->stop_symbol);
+    if (is_c_identifier(chunk->name)) {
+      add(save_string(ctx, "__start_" + std::string(chunk->name)));
+      add(save_string(ctx, "__stop_" + std::string(chunk->name)));
     }
   }
 
@@ -1775,6 +1744,24 @@ void fix_synthetic_symbols(Context<E> &ctx) {
       get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
   }
 
+  // __{init,fini}_array_{start,end}
+  for (Chunk<E> *chunk : output_sections) {
+    switch (chunk->shdr.sh_type) {
+    case SHT_INIT_ARRAY:
+      start(ctx.__init_array_start, chunk);
+      stop(ctx.__init_array_end, chunk);
+      break;
+    case SHT_PREINIT_ARRAY:
+      start(ctx.__preinit_array_start, chunk);
+      stop(ctx.__preinit_array_end, chunk);
+      break;
+    case SHT_FINI_ARRAY:
+      start(ctx.__fini_array_start, chunk);
+      stop(ctx.__fini_array_end, chunk);
+      break;
+    }
+  }
+
   // _end, _etext, _edata and the like
   for (Chunk<E> *chunk : output_sections) {
     if (chunk->shdr.sh_flags & SHF_ALLOC) {
@@ -1852,9 +1839,14 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : output_sections) {
-    if (!chunk->start_symbol.empty()) {
-      start(get_symbol(ctx, chunk->start_symbol), chunk);
-      stop(get_symbol(ctx, chunk->stop_symbol), chunk);
+    if (is_c_identifier(chunk->name)) {
+      std::string_view sym1 =
+        save_string(ctx, "__start_" + std::string(chunk->name));
+      std::string_view sym2 =
+        save_string(ctx, "__stop_" + std::string(chunk->name));
+
+      start(get_symbol(ctx, sym1), chunk);
+      stop(get_symbol(ctx, sym2), chunk);
     }
   }
 
