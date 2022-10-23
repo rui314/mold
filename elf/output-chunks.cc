@@ -3,6 +3,7 @@
 
 #include <cctype>
 #include <shared_mutex>
+#include <span>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_scan.h>
 #include <tbb/parallel_sort.h>
