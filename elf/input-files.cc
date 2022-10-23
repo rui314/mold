@@ -1488,11 +1488,10 @@ std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
 template <typename E>
 i64 SharedFile<E>::get_alignment(Symbol<E> *sym) {
   ElfShdr<E> &shdr = this->elf_sections[sym->esym().st_shndx];
-  i64 p2align = std::min(std::countr_zero<u64>(sym->value),
-                         std::countr_zero<u64>(shdr.sh_addralign));
-
-  // We do not want a ridiculously large alignment. Cap it arbitrary at 64.
-  return std::min(64, 1 << p2align);
+  i64 align = std::max<i64>(1, shdr.sh_addralign);
+  if (sym->value)
+    align = std::min<i64>(align, 1LL << std::countr_zero(sym->value));
+  return align;
 }
 
 template <typename E>

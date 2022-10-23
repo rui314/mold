@@ -32,4 +32,4 @@ readelf -W --sections $t/exe2 | grep -q '\.copyrel.* 8$'
 
 $CC -B. -o $t/exe3 $t/d.o $t/c.so -no-pie
 $QEMU $t/exe3 > /dev/null
-readelf -W --sections $t/exe3 | grep -q '\.copyrel.* 64$'
+readelf -W --sections $t/exe3 | grep -q '\.copyrel.* 256$'
