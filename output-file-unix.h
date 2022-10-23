@@ -133,6 +133,19 @@ OutputFile<C>::open(C &ctx, std::string path, i64 filesize, i64 perm) {
   else
     file = new MemoryMappedOutputFile<C>(ctx, path, filesize, perm);
 
+#ifdef MADV_HUGEPAGE
+  // Enable transparent huge page for an output memory-mapped file.
+  // On Linux, it has an effect only on tmpfs mounted with `huge=advise`,
+  // but it can make the linker ~10% faster. You can try it by creating
+  // a tmpfs with the following commands
+  //
+  //  $ mkdir tmp
+  //  $ sudo mount -t tmpfs -o size=2G,huge=advise none tmp
+  //
+  // and then specifying a path under the directory as an output file.
+  madvise(file->buf, filesize, MADV_HUGEPAGE);
+#endif
+
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
   return std::unique_ptr<OutputFile<C>>(file);
