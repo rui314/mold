@@ -232,6 +232,16 @@ void update_maximum(std::atomic<T> &atomic, u64 new_val, Compare cmp = {}) {
          !atomic.compare_exchange_weak(old_val, new_val));
 }
 
+// An optimized "mark" operation for parallel mark-and-sweep algorithms.
+// Returns true if `visited` was false and updated to true.
+inline bool fast_mark(std::atomic<bool> &visited) {
+  // A relaxed load + branch (assuming miss) takes only around 20 cycles, while an atomic RMW can easily take hundreds
+  // on x86.
+  // We note that it's common that another thread beat us in marking, so doing an optimistic early test tends to improve
+  // performance in the ~20% ballpark.
+  return !visited.load(std::memory_order_relaxed) && !visited.exchange(true, std::memory_order_relaxed);
+}
+
 template <typename T, typename U>
 inline void append(std::vector<T> &vec1, std::vector<U> vec2) {
   vec1.insert(vec1.end(), vec2.begin(), vec2.end());
