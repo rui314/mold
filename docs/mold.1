@@ -306,7 +306,7 @@ It is possible that the new memory layout happens to perform better.
 .Pp
 By running a benchmark multiple time with shuffling memory layout using
 .Fl -shuffle-sections ,
-you can isolate your progrma's real performace number from the randomness \
+you can isolate your progrma's real performance number from the randomness \
 caused by memory layout changes.
 .Pp
 .It Fl -stats
@@ -618,7 +618,7 @@ Write a dependency file to
 The contents of the written file is readable by
 .Cm make ,
 which defines only one rule with the linker's output file as a target \
-and all input fiels as its prerequisite. Users are expected to include \
+and all input files as its prerequisite. Users are expected to include \
 the generated dependency file into a Makefile to automate the \
 dependency management. This option is analogous to the compiler's
 .Fl MM Fl MF
@@ -729,7 +729,7 @@ is given,
 tries to merge all identical functions. This reduces the size of the output \
 most, but it is not
 .Dq safe
-optimization. It is guaranteed in C and C++ that two pointeres pointing two \
+optimization. It is guaranteed in C and C++ that two pointers pointing two \
 different functions will never be equal, but
 .Fl -icf=all
 breaks that assumption as two functions have the same address after merging. \
@@ -1076,7 +1076,7 @@ disables the feature.
 .It Fl z Cm noseparate-code
 If one memory page contains multiple segments,
 the page protection bits are set in such a way that needed attributes \
-(writable or executable) are satisifed for all segments.
+(writable or executable) are satisfied for all segments.
 This usually happens at a boundary of two segments with two different \
 attributes.
 .Pp
@@ -1184,7 +1184,7 @@ Ignored
 .Sh SEE ALSO
 .Xr gold 1 ,
 .Xr ld 1 ,
-.Xr elf 5
+.Xr elf 5 ,
 .Xr ld.so 8
 .
 .\"=============================================================================
