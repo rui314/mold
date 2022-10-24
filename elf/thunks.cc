@@ -18,10 +18,11 @@
 
 namespace mold::elf {
 
-// The number of immediate bits in branch instructions.
+// Branch reach in bytes.
 //
 // ARM64's branch has 26 bits immediate, and it's scaled by 4 because all
 // instructions are 4 bytes aligned, so it's effectively 28 bits long.
+// That means the range is [-2^27, 2^27).
 //
 // ARM32's Thumb branch has 24 bits immediate, and the instructions are
 // aligned to 2, so it's effectively 25 bits. ARM32's non-Thumb branches
@@ -37,12 +38,8 @@ namespace mold::elf {
 //   ARM32: PC ± 16 MiB
 //   PPC64: PC ± 32 MiB
 template <typename E>
-static constexpr i64 jump_bits =
-  std::is_same_v<E, ARM64> ? 28 : std::is_same_v<E, ARM32> ? 25 : 26;
-
-// Branch reach in bytes.
-template <typename E>
-static constexpr i64 max_distance = 1LL << (jump_bits<E> - 1);
+static constexpr i64 max_distance =
+  1LL << (std::is_same_v<E, ARM64> ? 27 : std::is_same_v<E, ARM32> ? 24 : 25);
 
 // We create thunks for each 12.8/1.6/3.2 MiB code block for
 // ARM64/ARM32/PPC64, respectively.
@@ -103,8 +100,8 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   i64 S = sym.get_addr(ctx, NO_OPD);
   i64 A = isec.get_addend(rel);
   i64 P = isec.get_addr() + rel.r_offset;
-  u64 val = S + A - P;
-  return sign_extend(val, jump_bits<E> - 1) == val;
+  i64 val = S + A - P;
+  return -max_distance<E> <= val && val < max_distance<E>;
 }
 
 template <typename E>
