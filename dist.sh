@@ -8,19 +8,16 @@
 # and librt, as they almost always exist on any Linux systems.
 
 if [ $# -ne 1 ]; then
-  echo "Usage: $0 [ x86_64 | aarch64 ]"
+  echo "Usage: $0 [ x86_64 | aarch64 | arm | ppc64le | s390x ]"
   exit 1
 fi
 
 arch=$1
-if [ $arch != x86_64 -a $arch != aarch64 ]; then
-  echo "Error: no docker image for $arch"
-  exit 1
-fi
+echo $arch | grep -Eq '^(x86_64|aarch64|arm|ppc64le|s390x)$' || \
+  { echo "Error: no docker image for $arch"; exit 1; }
 
-version=$(grep '^VERSION =' $(dirname $0)/Makefile | sed 's/.* = //')
+version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' $(dirname $0)/CMakeLists.txt)
 dest=mold-$version-$arch-linux
-
 set -e -x
 
 docker run --platform linux/$arch -it --rm -v "$(pwd):/mold" \
