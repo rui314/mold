@@ -926,7 +926,6 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     if (esym.is_weak())
       continue;
 
-    std::scoped_lock lock(sym.mu);
     if (!sym.file)
       continue;
 
