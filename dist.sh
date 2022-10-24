@@ -26,6 +26,7 @@ docker run --platform linux/$arch -it --rm -v "$(pwd):/mold" \
 cd /tmp/build &&
 cmake -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10 -DMOLD_MOSTLY_STATIC=On -DCMAKE_BUILD_TYPE=Release /mold &&
 cmake --build . -j\$(nproc) &&
+ctest -j\$(nproc) &&
 cmake --install . --prefix $dest --strip &&
 tar czf /mold/$dest.tar.gz $dest &&
 cp mold mold-wrapper.so /mold &&
