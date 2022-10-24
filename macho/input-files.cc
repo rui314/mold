@@ -12,10 +12,15 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
   return out;
 }
 
+// This function is actually racy, in that "tearing" might be observed during the read or write of `sym->file`.
+// However, on most platforms read/write of pointers never tears, and even if it did, it would be harmless, as
+// `sym->file` will not become equal to `sym`, or even if it did by chance, we just wipe a symbol twice.
+// Doing this in a standard-compliant way is too cumbersome, hence here we just pretend a compiler will never optimize
+// this into a form that actually exploits the UB.
 template <typename E>
+__attribute__((no_sanitize("thread")))
 void InputFile<E>::clear_symbols() {
   for (Symbol<E> *sym : syms) {
-    std::scoped_lock lock(sym->mu);
     if (sym->file == this) {
       sym->file = nullptr;
       sym->scope = SCOPE_LOCAL;
