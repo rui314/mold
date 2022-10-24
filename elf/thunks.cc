@@ -1,15 +1,24 @@
-// RISC instructions are usually up to 4 bytes long, so the immediates
-// of their branch instructions are naturally smaller than 32 bits.
-// This is contrary to x86-64 on which branch instructions take 4
-// bytes immediates and can jump to anywhere within PC ± 2 GiB.
+// RISC instructions are usually up to 4 bytes long, so the immediates of
+// their branch instructions are naturally smaller than 32 bits.  This is
+// contrary to x86-64 on which branch instructions take 4 bytes immediates
+// and can jump to anywhere within PC ± 2 GiB.
 //
-// In fact, ARM32's branch instructions can jump only within ±16 MiB
-// and ARM64's ±128 MiB, for example. If a branch target is further
-// than that, we need to let it branch to a linker-synthesized code
-// sequence that construct a full 32 bit address in a register and
-// jump there. That linker-synthesized code is called "thunk".
+// In fact, ARM32's branch instructions can jump only within ±16 MiB and
+// ARM64's ±128 MiB, for example. If a branch target is further than that,
+// we need to let it branch to a linker-synthesized code sequence that
+// construct a full 32 bit address in a register and jump there. That
+// linker-synthesized code is called "thunk".
 //
 // The function in this file creates thunks.
+//
+// Note that although thunks play an important role in an executable, they
+// don't take up too much space in it. For example, among the clang-16's
+// text segment whose size is ~300 MiB on ARM64, thunks in total occupy
+// only ~30 KiB or 0.01%. Of course the number depends on an ISA; we would
+// need more thunks on ARM32 whose branch range is shorter than ARM64.
+// That said, the total size of thunks still isn't that much. Therefore,
+// we don't need to try too hard to reduce thunk size to the absolute
+// minimum.
 
 #include "mold.h"
 
