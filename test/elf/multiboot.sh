@@ -15,7 +15,7 @@ readelf -SW $t/exe2 | grep -q 'multiboot.*0100040'
 
 cat <<EOF | $CC -o $t/b.o -c -xc - -fPIC
 __attribute__((section("multiboot")))
-const char hdr[32] = {0};
+const char hdr[8] = {0};
 void _entry() {}
 EOF
 
