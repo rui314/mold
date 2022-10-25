@@ -1332,10 +1332,11 @@ void clear_padding(Context<E> &ctx) {
 
 // We want to sort output chunks in the following order.
 //
-//   ELF header
-//   program header
+//   <ELF header>
+//   multiboot
+//   <program header>
 //   .interp
-//   alloc note
+//   .note
 //   .hash
 //   .gnu.hash
 //   .dynsym
@@ -1344,23 +1345,30 @@ void clear_padding(Context<E> &ctx) {
 //   .gnu.version_r
 //   .rela.dyn
 //   .rela.plt
-//   alloc readonly data
-//   alloc readonly code
-//   alloc writable tdata
-//   alloc writable tbss
-//   alloc writable RELRO data
+//   <readonly data>
+//   <readonly code>
+//   <writable tdata>
+//   <writable tbss>
+//   <writable RELRO data>
 //   .got
 //   .toc
-//   alloc writable RELRO bss
+//   <writable RELRO bss>
 //   .relro_padding
-//   alloc writable non-RELRO data
-//   alloc writable non-RELRO bss
-//   nonalloc
-//   section header
+//   <writable non-RELRO data>
+//   <writable non-RELRO bss>
+//   <non-memory-allocated sections>
+//   <section header>
 //
-// The reason to place .interp and other sections at the beginning of
-// a file is because they are needed by the loader. Especially on a
-// hard drive with spinnning disks, it is important to read these
+// If a section whose name is "multiboot" exists, it's placed right
+// after the ELF header. We do this for OS kernels. "multiboot" section
+// is expected to be read-only, start with a magic number and have an
+// alignment requirement of 32. GRUB (and other Multiboot specification-
+// compliant bootloaders) can recognize such data strcuture near the
+// beginning of a file and load a file into memory.
+//
+// .interp and some other linker-synthesized sections are placed at the
+// beginning of a file because they are needed by loader. Especially on
+// a hard drive with spinnning disks, it is important to read these
 // sections in a single seek.
 //
 // .note sections are also placed at the beginning so that they are
@@ -1395,28 +1403,30 @@ void sort_output_sections(Context<E> &ctx) {
 
     if (chunk == ctx.ehdr)
       return 0;
-    if (chunk == ctx.phdr)
+    if (chunk->name == "multiboot")
       return 1;
-    if (chunk == ctx.interp)
+    if (chunk == ctx.phdr)
       return 2;
-    if (type == SHT_NOTE)
+    if (chunk == ctx.interp)
       return 3;
-    if (chunk == ctx.hash)
+    if (type == SHT_NOTE)
       return 4;
-    if (chunk == ctx.gnu_hash)
+    if (chunk == ctx.hash)
       return 5;
-    if (chunk == ctx.dynsym)
+    if (chunk == ctx.gnu_hash)
       return 6;
-    if (chunk == ctx.dynstr)
+    if (chunk == ctx.dynsym)
       return 7;
-    if (chunk == ctx.versym)
+    if (chunk == ctx.dynstr)
       return 8;
-    if (chunk == ctx.verneed)
+    if (chunk == ctx.versym)
       return 9;
-    if (chunk == ctx.reldyn)
+    if (chunk == ctx.verneed)
       return 10;
-    if (chunk == ctx.relplt)
+    if (chunk == ctx.reldyn)
       return 11;
+    if (chunk == ctx.relplt)
+      return 12;
 
     bool writable = (flags & SHF_WRITE);
     bool exec = (flags & SHF_EXECINSTR);
