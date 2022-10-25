@@ -10,18 +10,22 @@
 namespace mold::elf {
 
 template <typename E>
-static bool is_init_fini(const InputSection<E> &isec) {
+static bool should_keep(const InputSection<E> &isec) {
   u32 type = isec.shdr().sh_type;
+  u32 flags = isec.shdr().sh_flags;
   std::string_view name = isec.name();
 
-  return type == SHT_INIT_ARRAY ||
+  return (flags & SHF_GNU_RETAIN) ||
+         type == SHT_NOTE ||
+         type == SHT_INIT_ARRAY ||
          type == SHT_FINI_ARRAY ||
          type == SHT_PREINIT_ARRAY ||
          (std::is_same_v<E, ARM32> && type == SHT_ARM_EXIDX) ||
          name.starts_with(".ctors") ||
          name.starts_with(".dtors") ||
          name.starts_with(".init") ||
-         name.starts_with(".fini");
+         name.starts_with(".fini") ||
+         is_c_identifier(name);
 }
 
 template <typename E>
@@ -98,8 +102,7 @@ static void collect_root_set(Context<E> &ctx,
       if (!(flags & SHF_ALLOC))
         isec->is_visited = true;
 
-      if (is_init_fini(*isec) || is_c_identifier(isec->name()) ||
-          (flags & SHF_GNU_RETAIN) || isec->shdr().sh_type == SHT_NOTE)
+      if (should_keep(*isec))
         enqueue_section(isec.get());
     }
   });

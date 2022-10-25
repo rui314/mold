@@ -212,6 +212,16 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (name == ".gnu.linkonce.d.DW.ref.__gxx_personality_v0")
         continue;
 
+      // "multiboot" is a special section for bootloaders.
+      // We'll place it right after the ELF header.
+      if (name == "multiboot") {
+        if (shdr.sh_addralign < 32)
+          Warn(ctx) << *this
+                    << ": multiboot section alignment should be 32 or larger";
+        if (shdr.sh_flags != SHF_ALLOC)
+          Warn(ctx) << *this << ": multiboot section should be read-only";
+      }
+
       // Ignore debug sections if --strip-all or --strip-debug is given.
       if ((ctx.arg.strip_all || ctx.arg.strip_debug) &&
           is_debug_section(shdr, name))
