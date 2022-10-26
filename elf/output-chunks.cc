@@ -2918,9 +2918,9 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
 
       buf[j].r_offset =
         isec.output_section->shdr.sh_addr + isec.offset + r.r_offset;
+      buf[j].r_type = r.r_type;
 
       if (sym.esym().st_type == STT_SECTION) {
-        buf[j].r_type = STT_SECTION;
         buf[j].r_addend = isec.get_addend(r) + isec.offset;
 
         if (SectionFragment<E> *frag = sym.get_frag())
@@ -2928,7 +2928,6 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
         else
           buf[j].r_sym = sym.get_input_section()->output_section->shndx;
       } else {
-        buf[j].r_type = r.r_type;
         buf[j].r_sym = get_output_sym_idx(sym);
         buf[j].r_addend = isec.get_addend(r);
       }
