@@ -1558,15 +1558,9 @@ void SharedFile<E>::populate_symtab(Context<E> &ctx) {
       continue;
 
     ElfSym<E> &esym = *symtab++;
-    memset(&esym, 0, sizeof(esym));
-    esym.st_name = strtab - (ctx.buf + ctx.strtab->shdr.sh_offset);
-    esym.st_value = 0;
-    esym.st_size = 0;
-    esym.st_type = STT_NOTYPE;
-    esym.st_bind = STB_GLOBAL;
-    esym.st_visibility = sym.visibility;
-    esym.st_shndx = SHN_UNDEF;
+    esym = to_output_esym(ctx, sym);
 
+    esym.st_name = strtab - (ctx.buf + ctx.strtab->shdr.sh_offset);
     write_string(strtab, sym.name());
     strtab += sym.name().size() + 1;
   }
