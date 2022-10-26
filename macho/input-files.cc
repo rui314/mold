@@ -418,11 +418,18 @@ LoadCommand *ObjectFile<E>::find_load_command(Context<E> &ctx, u32 type) {
 template <typename E>
 Subsection<E> *
 ObjectFile<E>::find_subsection(Context<E> &ctx, u32 secidx, u32 addr) {
-  Subsection<E> *ret = nullptr;
-  for (Subsection<E> *subsec : subsections)
-    if (subsec->isec.secidx == secidx && subsec->input_addr <= addr)
-      ret = subsec;
-  return ret;
+  assert(subsections.size() > 0);
+  auto begin = subsections.begin();
+  auto end = subsections.end();
+  auto upper = std::upper_bound(begin, end, addr,
+      [](u32 addr, Subsection<E> *subsec) { return addr < subsec->input_addr; });
+
+  if (upper == begin)
+    return nullptr;
+  Subsection<E> *subsec = *(upper - 1);
+  if (subsec->isec.secidx == secidx)
+    return subsec;
+  return nullptr;
 }
 
 template <typename E>
