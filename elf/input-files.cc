@@ -1269,8 +1269,7 @@ void ObjectFile<E>::populate_symtab(Context<E> &ctx) {
     ElfSym<E> &esym = symtab_base[symtab_idx++];
     esym = to_output_esym(ctx, sym);
     esym.st_name = strtab_off;
-    write_string(strtab_base + strtab_off, sym.name());
-    strtab_off += sym.name().size() + 1;
+    strtab_off += write_string(strtab_base + strtab_off, sym.name());
   };
 
   i64 local_symtab_idx = this->local_symtab_idx;
@@ -1559,10 +1558,8 @@ void SharedFile<E>::populate_symtab(Context<E> &ctx) {
 
     ElfSym<E> &esym = *symtab++;
     esym = to_output_esym(ctx, sym);
-
     esym.st_name = strtab - (ctx.buf + ctx.strtab->shdr.sh_offset);
-    write_string(strtab, sym.name());
-    strtab += sym.name().size() + 1;
+    strtab += write_string(strtab, sym.name());
   }
 }
 
