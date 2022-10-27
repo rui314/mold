@@ -517,6 +517,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.spare_dynamic_tags = parse_number(ctx, "spare-dynamic-tags", arg);
     } else if (read_flag("start-lib")) {
       remaining.push_back("--start-lib");
+    } else if (read_flag("start-stop")) {
+      ctx.arg.start_stop = true;
     } else if (read_arg("dependency-file")) {
       ctx.arg.dependency_file = arg;
     } else if (read_arg("defsym")) {

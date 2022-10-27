@@ -441,6 +441,33 @@ void create_internal_file(Context<E> &ctx) {
 }
 
 template <typename E>
+static std::optional<std::string>
+get_start_stop_name(Context<E> &ctx, Chunk<E> &chunk) {
+  if ((chunk.shdr.sh_flags & SHF_ALLOC) && !chunk.name.empty()) {
+    if (is_c_identifier(chunk.name))
+      return std::string(chunk.name);
+
+    if (ctx.arg.start_stop) {
+      auto isalnum = [](char c) {
+        return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') ||
+          ('0' <= c && c <= '9');
+      };
+
+      std::string s{chunk.name};
+      if (s.starts_with('.'))
+        s = s.substr(1);
+
+      for (i64 i = 0; i < s.size(); i++)
+        if (!isalnum(s[i]))
+          s[i] = '_';
+      return s;
+    }
+  }
+
+  return {};
+}
+
+template <typename E>
 void add_synthetic_symbols(Context<E> &ctx) {
   ObjectFile<E> &obj = *ctx.internal_obj;
 
@@ -508,14 +535,13 @@ void add_synthetic_symbols(Context<E> &ctx) {
     ctx.TOC = add(".TOC.");
 
   for (Chunk<E> *chunk : ctx.chunks) {
-    if ((chunk->shdr.sh_flags & SHF_ALLOC) && is_c_identifier(chunk->name)) {
-      std::string name{chunk->name};
-      add(save_string(ctx, "__start_" + name));
-      add(save_string(ctx, "__stop_" + name));
+    if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
+      add(save_string(ctx, "__start_" + *name));
+      add(save_string(ctx, "__stop_" + *name));
 
       if (ctx.arg.physical_image_base) {
-        add(save_string(ctx, "__phys_start_" + name));
-        add(save_string(ctx, "__phys_stop_" + name));
+        add(save_string(ctx, "__phys_start_" + *name));
+        add(save_string(ctx, "__phys_stop_" + *name));
       }
     }
   }
@@ -1868,19 +1894,18 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : output_sections) {
-    if ((chunk->shdr.sh_flags & SHF_ALLOC) && is_c_identifier(chunk->name)) {
-      std::string name{chunk->name};
-      start(get_symbol(ctx, save_string(ctx, "__start_" + name)), chunk);
-      stop(get_symbol(ctx, save_string(ctx, "__stop_" + name)), chunk);
+    if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
+      start(get_symbol(ctx, save_string(ctx, "__start_" + *name)), chunk);
+      stop(get_symbol(ctx, save_string(ctx, "__stop_" + *name)), chunk);
 
       if (ctx.arg.physical_image_base) {
         u64 paddr = to_paddr(ctx, chunk->shdr.sh_addr);
 
-        Symbol<E> *x = get_symbol(ctx, save_string(ctx, "__phys_start_" + name));
+        Symbol<E> *x = get_symbol(ctx, save_string(ctx, "__phys_start_" + *name));
         x->set_output_section(chunk);
         x->value = paddr;
 
-        Symbol<E> *y = get_symbol(ctx, save_string(ctx, "__phys_stop_" + name));
+        Symbol<E> *y = get_symbol(ctx, save_string(ctx, "__phys_stop_" + *name));
         y->set_output_section(chunk);
         y->value = paddr + chunk->shdr.sh_size;
       }

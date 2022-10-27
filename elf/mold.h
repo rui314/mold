@@ -1569,10 +1569,10 @@ struct Context {
     bool default_symver = false;
     bool demangle = true;
     bool discard_all = false;
+    bool apply_dynamic_relocs = true;
     bool discard_locals = false;
     bool eh_frame_hdr = true;
     bool emit_relocs = false;
-    bool apply_dynamic_relocs = true;
     bool enable_new_dtags = true;
     bool export_dynamic = false;
     bool fatal_warnings = false;
@@ -1602,6 +1602,7 @@ struct Context {
     bool repro = false;
     bool rosegment = true;
     bool shared = false;
+    bool start_stop = false;
     bool stats = false;
     bool strip_all = false;
     bool strip_debug = false;
