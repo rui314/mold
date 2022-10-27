@@ -355,7 +355,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   }
 
   // Set p_paddr if --physical-image-base was given
-  if (ctx.arg.physical_image_base.has_value()) {
+  if (ctx.arg.physical_image_base) {
     u64 addr = *ctx.arg.physical_image_base;
     for (ElfPhdr<E> &phdr : vec) {
       if (phdr.p_type == PT_LOAD) {

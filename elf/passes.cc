@@ -508,9 +508,15 @@ void add_synthetic_symbols(Context<E> &ctx) {
     ctx.TOC = add(".TOC.");
 
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (is_c_identifier(chunk->name)) {
-      add(save_string(ctx, "__start_" + std::string(chunk->name)));
-      add(save_string(ctx, "__stop_" + std::string(chunk->name)));
+    if ((chunk->shdr.sh_flags & SHF_ALLOC) && is_c_identifier(chunk->name)) {
+      std::string name{chunk->name};
+      add(save_string(ctx, "__start_" + name));
+      add(save_string(ctx, "__stop_" + name));
+
+      if (ctx.arg.physical_image_base) {
+        add(save_string(ctx, "__phys_start_" + name));
+        add(save_string(ctx, "__phys_stop_" + name));
+      }
     }
   }
 
@@ -1697,6 +1703,15 @@ static i64 get_num_irelative_relocs(Context<E> &ctx) {
 }
 
 template <typename E>
+static u64 to_paddr(Context<E> &ctx, u64 vaddr) {
+  for (ElfPhdr<E> &phdr : ctx.phdr->phdrs)
+    if (phdr.p_type == PT_LOAD)
+      if (phdr.p_vaddr <= vaddr && vaddr < phdr.p_vaddr + phdr.p_memsz)
+        return phdr.p_paddr + (vaddr - phdr.p_vaddr);
+  return 0;
+}
+
+template <typename E>
 void fix_synthetic_symbols(Context<E> &ctx) {
   auto start = [](Symbol<E> *sym, auto &chunk, i64 bias = 0) {
     if (sym && chunk) {
@@ -1853,14 +1868,22 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : output_sections) {
-    if (is_c_identifier(chunk->name)) {
-      std::string_view sym1 =
-        save_string(ctx, "__start_" + std::string(chunk->name));
-      std::string_view sym2 =
-        save_string(ctx, "__stop_" + std::string(chunk->name));
+    if ((chunk->shdr.sh_flags & SHF_ALLOC) && is_c_identifier(chunk->name)) {
+      std::string name{chunk->name};
+      start(get_symbol(ctx, save_string(ctx, "__start_" + name)), chunk);
+      stop(get_symbol(ctx, save_string(ctx, "__stop_" + name)), chunk);
 
-      start(get_symbol(ctx, sym1), chunk);
-      stop(get_symbol(ctx, sym2), chunk);
+      if (ctx.arg.physical_image_base) {
+        u64 paddr = to_paddr(ctx, chunk->shdr.sh_addr);
+
+        Symbol<E> *x = get_symbol(ctx, save_string(ctx, "__phys_start_" + name));
+        x->set_output_section(chunk);
+        x->value = paddr;
+
+        Symbol<E> *y = get_symbol(ctx, save_string(ctx, "__phys_stop_" + name));
+        y->set_output_section(chunk);
+        y->value = paddr + chunk->shdr.sh_size;
+      }
     }
   }
 
