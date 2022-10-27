@@ -683,7 +683,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       if (pos == arg.npos || pos == arg.size() - 1)
         Fatal(ctx) << "-section-align: syntax error: " << arg;
       ctx.arg.section_align[arg.substr(0, pos)] =
-        parse_hex(ctx, "section-align", arg.substr(pos + 1));
+        parse_number(ctx, "section-align", arg.substr(pos + 1));
     } else if (read_arg("section-start")) {
       size_t pos = arg.find('=');
       if (pos == arg.npos || pos == arg.size() - 1)
