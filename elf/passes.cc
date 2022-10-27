@@ -958,6 +958,10 @@ void compute_section_sizes(Context<E> &ctx) {
       }
     }
   }
+
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+    if (u32 align = ctx.arg.section_align[osec->name])
+      osec->shdr.sh_addralign = std::max<u32>(osec->shdr.sh_addralign, align);
 }
 
 template <typename E>

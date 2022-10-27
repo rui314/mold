@@ -678,6 +678,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.oformat_binary = true;
     } else if (read_arg("retain-symbols-file")) {
       read_retain_symbols_file(ctx, arg);
+    } else if (read_arg("section-align")) {
+      size_t pos = arg.find('=');
+      if (pos == arg.npos || pos == arg.size() - 1)
+        Fatal(ctx) << "-section-align: syntax error: " << arg;
+      ctx.arg.section_align[arg.substr(0, pos)] =
+        parse_hex(ctx, "section-align", arg.substr(pos + 1));
     } else if (read_arg("section-start")) {
       size_t pos = arg.find('=');
       if (pos == arg.npos || pos == arg.size() - 1)
