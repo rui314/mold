@@ -681,13 +681,15 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("section-align")) {
       size_t pos = arg.find('=');
       if (pos == arg.npos || pos == arg.size() - 1)
-        Fatal(ctx) << "-section-align: syntax error: " << arg;
-      ctx.arg.section_align[arg.substr(0, pos)] =
-        parse_number(ctx, "section-align", arg.substr(pos + 1));
+        Fatal(ctx) << "--section-align: syntax error: " << arg;
+      i64 value = parse_number(ctx, "section-align", arg.substr(pos + 1));
+      if (!has_single_bit(value))
+        Fatal(ctx) << "--section-align=" << arg << ": value must be a power of 2";
+      ctx.arg.section_align[arg.substr(0, pos)] = value;
     } else if (read_arg("section-start")) {
       size_t pos = arg.find('=');
       if (pos == arg.npos || pos == arg.size() - 1)
-        Fatal(ctx) << "-section-start: syntax error: " << arg;
+        Fatal(ctx) << "--section-start: syntax error: " << arg;
       ctx.arg.section_start[arg.substr(0, pos)] =
         parse_hex(ctx, "section-start", arg.substr(pos + 1));
     } else if (read_arg("Tbss")) {
