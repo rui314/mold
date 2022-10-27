@@ -1577,10 +1577,11 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template<typename E>
-ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym) {
+ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name) {
   ElfSym<E> esym;
   memset(&esym, 0, sizeof(esym));
   esym.st_type = sym.esym().st_type;
+  esym.st_name = st_name;
 
   if (sym.is_local())
     esym.st_bind = STB_LOCAL;
@@ -1735,8 +1736,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     ElfSym<E> &esym =
       *(ElfSym<E> *)(base + sym.get_dynsym_idx(ctx) * sizeof(ElfSym<E>));
 
-    esym = to_output_esym(ctx, sym);
-    esym.st_name = name_offset;
+    esym = to_output_esym(ctx, sym, name_offset);
     name_offset += sym.name().size() + 1;
     assert(esym.st_bind != STB_LOCAL || i < this->shdr.sh_info);
   }
@@ -2973,6 +2973,6 @@ template class CompressedSection<E>;
 template class RelocSection<E>;
 template i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
 template bool is_relro(Context<E> &, Chunk<E> *);
-template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &);
+template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &, u32);
 
 } // namespace mold::elf

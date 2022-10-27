@@ -1266,9 +1266,7 @@ void ObjectFile<E>::populate_symtab(Context<E> &ctx) {
   i64 strtab_off = this->strtab_offset;
 
   auto write_sym = [&](Symbol<E> &sym, i64 &symtab_idx) {
-    ElfSym<E> &esym = symtab_base[symtab_idx++];
-    esym = to_output_esym(ctx, sym);
-    esym.st_name = strtab_off;
+    symtab_base[symtab_idx++] = to_output_esym(ctx, sym, strtab_off);
     strtab_off += write_string(strtab_base + strtab_off, sym.name());
   };
 
@@ -1549,17 +1547,16 @@ void SharedFile<E>::populate_symtab(Context<E> &ctx) {
   ElfSym<E> *symtab =
     (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->global_symtab_idx;
 
-  u8 *strtab = ctx.buf + ctx.strtab->shdr.sh_offset + this->strtab_offset;
+  u8 *strtab = ctx.buf + ctx.strtab->shdr.sh_offset;
+  i64 strtab_off = this->strtab_offset;
 
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     if (sym.file != this || !sym.write_to_symtab)
       continue;
 
-    ElfSym<E> &esym = *symtab++;
-    esym = to_output_esym(ctx, sym);
-    esym.st_name = strtab - (ctx.buf + ctx.strtab->shdr.sh_offset);
-    strtab += write_string(strtab, sym.name());
+    *symtab++ = to_output_esym(ctx, sym, strtab_off);
+    strtab_off += write_string(strtab + strtab_off, sym.name());
   }
 }
 
