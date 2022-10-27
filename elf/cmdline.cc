@@ -800,6 +800,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.ignore_data_address_equality = true;
     } else if (read_arg("image-base")) {
       ctx.arg.image_base = parse_number(ctx, "image-base", arg);
+    } else if (read_arg("physical-image-base")) {
+      ctx.arg.physical_image_base = parse_number(ctx, "physical-image-base", arg);
     } else if (read_flag("print-icf-sections")) {
       ctx.arg.print_icf_sections = true;
     } else if (read_flag("no-print-icf-sections")) {

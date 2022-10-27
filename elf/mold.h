@@ -1633,6 +1633,7 @@ struct Context {
     i64 spare_dynamic_tags = 5;
     i64 thread_count = 0;
     std::optional<Glob> unique;
+    std::optional<u64> physical_image_base;
     std::optional<u64> shuffle_sections_seed;
     std::string Map;
     std::string chroot;

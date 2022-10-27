@@ -215,7 +215,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     phdr.p_filesz =
       (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : (u64)chunk->shdr.sh_size;
     phdr.p_vaddr = chunk->shdr.sh_addr;
-    phdr.p_paddr = chunk->shdr.sh_addr;
+    phdr.p_paddr = (type == PT_LOAD) ? (u64)chunk->shdr.sh_addr : 0;
     phdr.p_memsz = chunk->shdr.sh_size;
   };
 
@@ -350,6 +350,17 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
       if (chunk->shdr.sh_type == SHT_ARM_EXIDX) {
         define(PT_ARM_EXIDX, PF_R, 4, chunk);
         break;
+      }
+    }
+  }
+
+  // Set p_paddr if --physical-image-base was given
+  if (ctx.arg.physical_image_base.has_value()) {
+    u64 addr = *ctx.arg.physical_image_base;
+    for (ElfPhdr<E> &phdr : vec) {
+      if (phdr.p_type == PT_LOAD) {
+        phdr.p_paddr = addr;
+        addr += phdr.p_memsz;
       }
     }
   }
