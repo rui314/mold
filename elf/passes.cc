@@ -39,7 +39,11 @@ void create_synthetic_sections(Context<E> &ctx) {
   };
 
   if (!ctx.arg.oformat_binary) {
-    ctx.ehdr = push(new OutputEhdr<E>);
+    if (ctx.arg.section_order.empty())
+      ctx.ehdr = push(new OutputEhdr<E>(SHF_ALLOC));
+    else
+      ctx.ehdr = push(new OutputEhdr<E>(0));
+
     ctx.phdr = push(new OutputPhdr<E>);
     ctx.shdr = push(new OutputShdr<E>);
   }
@@ -1427,15 +1431,10 @@ void clear_padding(Context<E> &ctx) {
 // Other file layouts are possible, but this layout is chosen to keep
 // the number of segments as few as possible.
 template <typename E>
-void sort_output_sections(Context<E> &ctx) {
+void sort_output_sections_regular(Context<E> &ctx) {
   auto get_rank1 = [&](Chunk<E> *chunk) {
     u64 type = chunk->shdr.sh_type;
     u64 flags = chunk->shdr.sh_flags;
-
-    if (chunk == ctx.shdr)
-      return INT32_MAX;
-    if (!(flags & SHF_ALLOC))
-      return INT32_MAX - 1;
 
     if (chunk == ctx.ehdr)
       return 0;
@@ -1445,7 +1444,7 @@ void sort_output_sections(Context<E> &ctx) {
       return 2;
     if (chunk == ctx.interp)
       return 3;
-    if (type == SHT_NOTE)
+    if (type == SHT_NOTE && (flags & SHF_ALLOC))
       return 4;
     if (chunk == ctx.hash)
       return 5;
@@ -1463,15 +1462,18 @@ void sort_output_sections(Context<E> &ctx) {
       return 11;
     if (chunk == ctx.relplt)
       return 12;
+    if (chunk == ctx.shdr)
+      return INT32_MAX;
 
+    bool alloc = (flags & SHF_ALLOC);
     bool writable = (flags & SHF_WRITE);
     bool exec = (flags & SHF_EXECINSTR);
     bool tls = (flags & SHF_TLS);
     bool relro = is_relro(ctx, chunk);
     bool is_bss = (type == SHT_NOBITS);
 
-    return (1 << 10) | (writable << 9) | (exec << 8) | (!tls << 7) |
-           (!relro << 6) | (is_bss << 5);
+    return (1 << 10) | (!alloc << 9) | (writable << 8) | (exec << 7) |
+           (!tls << 6) | (!relro << 5) | (is_bss << 4);
   };
 
   auto get_rank2 = [&](Chunk<E> *chunk) -> i64 {
@@ -1497,6 +1499,96 @@ void sort_output_sections(Context<E> &ctx) {
     // Ties are broken by additional rules
     return get_rank2(a) < get_rank2(b);
   });
+}
+
+// Sort sections according to a --section-order argument.
+template <typename E>
+void sort_output_sections_by_order(Context<E> &ctx) {
+  auto get_type = [&](u32 flags) -> std::string_view {
+    if (flags & SHF_EXECINSTR)
+      return "#text";
+    if (flags & SHF_WRITE)
+      return "#data";
+    return "#rodata";
+  };
+
+  auto get_rank = [&](Chunk<E> *chunk) -> i64 {
+    u64 type = chunk->shdr.sh_type;
+    u64 flags = chunk->shdr.sh_flags;
+
+    if (chunk == ctx.ehdr)
+      return 0;
+    if (chunk == ctx.shdr)
+      return INT32_MAX;
+    if (!(flags & SHF_ALLOC))
+      return INT32_MAX - 1;
+
+    for (i64 i = 0; i < ctx.arg.section_order.size(); i++) {
+      SectionOrder arg = ctx.arg.section_order[i];
+      if (chunk->name == arg.name)
+        return i + 1;
+    }
+
+    std::string_view hash_name = get_type(chunk->shdr.sh_flags);
+
+    for (i64 i = 0; i < ctx.arg.section_order.size(); i++) {
+      SectionOrder arg = ctx.arg.section_order[i];
+      if (hash_name == arg.name)
+        return i + 1;
+    }
+
+    return -1;
+  };
+
+  // It is an error if a section order cannot be determined by a given
+  // section order list.
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (get_rank(chunk) == -1)
+      Error(ctx) << "--section-order: missing section specification for "
+                 << chunk->name;
+
+  // Sort output sections by --section-order
+  sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
+    return get_rank(a) < get_rank(b);
+  });
+
+  // Assign adresses if specified
+  for (SectionOrder arg : ctx.arg.section_order)
+    if (arg.addr && !arg.name.starts_with('#'))
+      ctx.arg.section_start[save_string(ctx, arg.name)] = *arg.addr;
+
+  auto find_section = [&](std::string_view hash_type) -> Chunk<E> * {
+    for (Chunk<E> *chunk : ctx.chunks) {
+      u32 flags = chunk->shdr.sh_flags;
+      if (!(flags & SHF_ALLOC))
+        continue;
+
+      if (flags & SHF_EXECINSTR) {
+        if (hash_type == "#text")
+          return chunk;
+      } else if (flags & SHF_WRITE) {
+        if (hash_type == "#data")
+          return chunk;
+      } else {
+        assert(hash_type == "#rodata");
+        return chunk;
+      }
+    }
+    return nullptr;
+  };
+
+  for (SectionOrder arg : ctx.arg.section_order)
+    if (arg.addr && arg.name.starts_with('#'))
+      if (Chunk<E> *chunk = find_section(arg.name))
+        ctx.arg.section_start[chunk->name] = *arg.addr;
+}
+
+template <typename E>
+void sort_output_sections(Context<E> &ctx) {
+  if (ctx.arg.section_order.empty())
+    sort_output_sections_regular(ctx);
+  else
+    sort_output_sections_by_order(ctx);
 }
 
 template <typename E>
@@ -1644,8 +1736,17 @@ static i64 set_file_offsets(Context<E> &ctx) {
   u64 fileoff = 0;
   i64 i = 0;
 
-  while (i < chunks.size() && (chunks[i]->shdr.sh_flags & SHF_ALLOC)) {
+  while (i < chunks.size()) {
     Chunk<E> &first = *chunks[i];
+
+    if (!(first.shdr.sh_flags & SHF_ALLOC)) {
+      fileoff = align_to(fileoff, first.shdr.sh_addralign);
+      first.shdr.sh_offset = fileoff;
+      fileoff += first.shdr.sh_size;
+      i++;
+      continue;
+    }
+
     if (first.shdr.sh_type == SHT_NOBITS) {
       i++;
       continue;
@@ -1691,12 +1792,6 @@ static i64 set_file_offsets(Context<E> &ctx) {
       i++;
   }
 
-  // Assign file offsets to non-memory-allocated sections.
-  for (; i < chunks.size(); i++) {
-    fileoff = align_to(fileoff, chunks[i]->shdr.sh_addralign);
-    chunks[i]->shdr.sh_offset = fileoff;
-    fileoff += chunks[i]->shdr.sh_size;
-  }
   return fileoff;
 }
 
@@ -1769,16 +1864,16 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   if (Chunk<E> *chunk = find(".bss"))
     start(ctx.__bss_start, chunk);
 
-  if (ctx.ehdr) {
+  if (ctx.ehdr && (ctx.ehdr->shdr.sh_flags & SHF_ALLOC)) {
     ctx.__ehdr_start->set_output_section(output_sections[0]);
     ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
     ctx.__executable_start->set_output_section(output_sections[0]);
     ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
+  }
 
-    if (ctx.__dso_handle) {
-      ctx.__dso_handle->set_output_section(output_sections[0]);
-      ctx.__dso_handle->value = ctx.ehdr->shdr.sh_addr;
-    }
+  if (ctx.__dso_handle) {
+    ctx.__dso_handle->set_output_section(ctx.got);
+    ctx.__dso_handle->value = ctx.got->shdr.sh_addr;
   }
 
   // __rel_iplt_start and __rel_iplt_end. These symbols need to be

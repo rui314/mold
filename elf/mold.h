@@ -420,8 +420,9 @@ protected:
 template <typename E>
 class OutputEhdr : public Chunk<E> {
 public:
-  OutputEhdr() {
-    this->shdr.sh_flags = SHF_ALLOC;
+  OutputEhdr(u32 sh_flags) {
+    this->name = "<ELF header>";
+    this->shdr.sh_flags = sh_flags;
     this->shdr.sh_size = sizeof(ElfEhdr<E>);
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
@@ -435,6 +436,7 @@ template <typename E>
 class OutputShdr : public Chunk<E> {
 public:
   OutputShdr() {
+    this->name = "<section header>";
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
@@ -448,6 +450,7 @@ template <typename E>
 class OutputPhdr : public Chunk<E> {
 public:
   OutputPhdr() {
+    this->name = "<program header>";
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
@@ -1538,6 +1541,11 @@ struct VersionPattern {
   bool is_cpp = false;
 };
 
+struct SectionOrder {
+  std::string name;
+  std::optional<u64> addr;
+};
+
 // Context represents a context object for each invocation of the linker.
 // It contains command line flags, pointers to singleton objects
 // (such as linker-synthesized output sections), unique_ptrs for
@@ -1654,6 +1662,7 @@ struct Context {
     std::unordered_map<std::string_view, u64> section_start;
     std::unordered_set<std::string_view> ignore_ir_file;
     std::unordered_set<std::string_view> wrap;
+    std::vector<SectionOrder> section_order;
     std::vector<std::pair<Symbol<E> *, std::variant<Symbol<E> *, u64>>> defsyms;
     std::vector<std::string> library_paths;
     std::vector<std::string> plugin_opt;

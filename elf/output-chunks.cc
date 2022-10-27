@@ -274,7 +274,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     for (i64 i = 0, end = chunks.size(); i < end;) {
       Chunk<E> *first = chunks[i++];
       if (!(first->shdr.sh_flags & SHF_ALLOC))
-        break;
+        continue;
 
       i64 flags = to_phdr_flags(ctx, first);
       define(PT_LOAD, flags, ctx.page_size, first);
@@ -525,7 +525,7 @@ void ShstrtabSection<E>::update_shdr(Context<E> &ctx) {
   i64 offset = 1;
 
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (!chunk->name.empty()) {
+    if (chunk->kind() != ChunkKind::HEADER && !chunk->name.empty()) {
       auto [it, inserted] = map.insert({chunk->name, offset});
       chunk->shdr.sh_name = it->second;
       if (inserted)
@@ -542,7 +542,7 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
   base[0] = '\0';
 
   for (Chunk<E> *chunk : ctx.chunks)
-    if (!chunk->name.empty())
+    if (chunk->kind() != ChunkKind::HEADER && !chunk->name.empty())
       write_string(base + chunk->shdr.sh_name, chunk->name);
 }
 

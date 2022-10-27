@@ -314,6 +314,36 @@ static bool is_file(std::string_view path) {
 }
 
 template <typename E>
+static std::vector<SectionOrder>
+parse_section_order(Context<E> &ctx, std::string_view arg) {
+  auto flags = std::regex_constants::ECMAScript | std::regex_constants::icase |
+               std::regex_constants::optimize;
+  static std::regex re(R"(^([^\s=]+)(?:=(0x[0-9a-f]+|\d+)\s*)?\s*)", flags);
+
+  std::vector<SectionOrder> vec;
+  arg = string_trim(arg);
+
+  while (!arg.empty()) {
+    std::cmatch m;
+    if (!std::regex_search(arg.data(), arg.data() + arg.size(), m, re))
+      Fatal(ctx) << "--section-order: parse error: " << arg;
+
+    std::string name = m[1].str();
+    if (name.starts_with('#') && name != "#text" && name != "#data" &&
+        name != "#rodata")
+      Fatal(ctx) << "--section-order: invalid section name: " << name;
+
+    SectionOrder order;
+    order.name = name;
+    if (std::string s = m[2]; !s.empty())
+      order.addr = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
+    vec.push_back(order);
+    arg = arg.substr(m[0].length());
+  }
+  return vec;
+}
+
+template <typename E>
 static std::variant<Symbol<E> *, u64>
 parse_defsym_value(Context<E> &ctx, std::string_view s) {
   if (s.starts_with("0x") || s.starts_with("0X")) {
@@ -694,6 +724,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         Fatal(ctx) << "--section-start: syntax error: " << arg;
       ctx.arg.section_start[arg.substr(0, pos)] =
         parse_hex(ctx, "section-start", arg.substr(pos + 1));
+    } else if (read_arg("section-order")) {
+      ctx.arg.section_order = parse_section_order(ctx, arg);
     } else if (read_arg("Tbss")) {
       ctx.arg.section_start[".bss"] = parse_hex(ctx, "Tbss", arg);
     } else if (read_arg("Tdata")) {
@@ -1076,11 +1108,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (is_sparc<E> && ctx.arg.apply_dynamic_relocs)
     Fatal(ctx) << "--apply-dynamic-relocs may not be used on SPARC64";
 
-  if (ctx.arg.thread_count == 0)
-    ctx.arg.thread_count = get_default_thread_count();
+  if (!ctx.arg.section_start.empty() && !ctx.arg.section_order.empty())
+    Fatal(ctx) << "--section-start may not be used with --section-order";
 
   if (ctx.arg.image_base % ctx.page_size)
     Fatal(ctx) << "-image-base must be a multiple of -max-page-size";
+
+  if (ctx.arg.thread_count == 0)
+    ctx.arg.thread_count = get_default_thread_count();
 
   if (char *env = getenv("MOLD_REPRO"); env && env[0])
     ctx.arg.repro = true;
