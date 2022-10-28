@@ -319,7 +319,7 @@ static std::vector<SectionOrder>
 parse_section_order(Context<E> &ctx, std::string_view arg) {
   auto flags = std::regex_constants::ECMAScript | std::regex_constants::icase |
                std::regex_constants::optimize;
-  static std::regex re(R"(^([^\s=]+)(?:=(0x[0-9a-f]+|\d+)\s*)?\s*)", flags);
+  static std::regex re(R"(^([^\s=]+)(?:\s*=\s*(0x[0-9a-f]+|\d+)\s*)?\s*)", flags);
 
   std::vector<SectionOrder> vec;
   arg = string_trim(arg);

@@ -1588,8 +1588,8 @@ static void apply_section_order_addr(Context<E> &ctx) {
         if (hash_type == "#data")
           return chunk;
       } else {
-        assert(hash_type == "#rodata");
-        return chunk;
+        if (hash_type == "#rodata")
+          return chunk;
       }
     }
     return nullptr;

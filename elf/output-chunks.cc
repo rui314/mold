@@ -354,14 +354,49 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     }
   }
 
-  // Set p_paddr if --physical-image-base was given
+  // Set p_paddr if --physical-image-base was given. --physical-image-base
+  // is typically used in embedded programming to specify the base address
+  // of a memory-mapped ROM area. In that environment, paddr refers to a
+  // segment's initial location in ROM and vaddr refers the its run-time
+  // address.
+  //
+  // When a device is turned on, it start executing code at a fixed
+  // location in the ROM area. At that location is a startup routine that
+  // copies data or code from ROM to RAM before using them.
+  //
+  // .data must have different paddr and vaddr because ROM is not writable.
+  // paddr of .rodata and .text may or may be equal to vaddr. They can be
+  // directly read or executed from ROM, but oftentimes they are copied
+  // from ROM to RAM because Flash or EEPROM are usually much slower than
+  // DRAM.
+  //
+  // We want to keep vaddr == pvaddr for as many segments as possible so
+  // that they can be directly read/executed from ROM. If a gap between
+  // two segments is two page size or larger, we give up and pack segments
+  // tightly so that we don't waste too much ROM area.
   if (ctx.arg.physical_image_base) {
-    u64 addr = *ctx.arg.physical_image_base;
-    for (ElfPhdr<E> &phdr : vec) {
-      if (phdr.p_type == PT_LOAD) {
-        phdr.p_paddr = addr;
-        addr += phdr.p_memsz;
+    for (i64 i = 0; i < vec.size(); i++) {
+      if (vec[i].p_type != PT_LOAD)
+        continue;
+
+      u64 addr = *ctx.arg.physical_image_base;
+      bool in_sync = (vec[i].p_vaddr == addr);
+
+      vec[i].p_paddr = addr;
+      addr += vec[i].p_memsz;
+
+      for (i++; i < vec.size() && vec[i].p_type == PT_LOAD; i++) {
+        ElfPhdr<E> &p = vec[i];
+        if (in_sync && addr <= p.p_vaddr && p.p_vaddr < addr + ctx.page_size * 2) {
+          p.p_paddr = p.p_vaddr;
+          addr = p.p_vaddr + p.p_memsz;
+        } else {
+          in_sync = false;
+          p.p_paddr = addr;
+          addr += p.p_memsz;
+        }
       }
+      break;
     }
   }
 
