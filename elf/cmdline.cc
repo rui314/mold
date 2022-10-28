@@ -183,6 +183,7 @@ Options:
   -z nodump                   Mark DSO not available to dldump
   -z now                      Disable lazy function resolution
   -z origin                   Mark object requiring immediate $ORIGIN processing at runtime
+  -z pack-relative-relocs     Alias for --pack-dyn-relocs=relr
   -z separate-loadable-segments
                               Separate all loadable segments to different pages
     -z separate-code          Separate code and data into different pages
@@ -798,6 +799,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_origin = true;
     } else if (read_z_flag("nodefaultlib")) {
       ctx.arg.z_nodefaultlib = true;
+    } else if (read_z_flag("pack-relative-relocs")) {
+      ctx.arg.pack_dyn_relocs_relr = true;
     } else if (read_z_flag("separate-loadable-segments")) {
       ctx.arg.z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
     } else if (read_z_flag("separate-code")) {
