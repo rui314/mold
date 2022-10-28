@@ -39,23 +39,22 @@ void create_synthetic_sections(Context<E> &ctx) {
   };
 
   if (!ctx.arg.oformat_binary) {
-    std::span<SectionOrder> order = ctx.arg.section_order;
+    auto find = [&](std::string_view name) {
+      for (SectionOrder ord : ctx.arg.section_order)
+        if (ord.type == SectionOrder::SECT && ord.name == name)
+          return true;
+      return false;
+    };
 
-    if (order.empty() || order[0].name == "#ehdr")
+    if (ctx.arg.section_order.empty() || find("#ehdr"))
       ctx.ehdr = push(new OutputEhdr<E>(SHF_ALLOC));
     else
       ctx.ehdr = push(new OutputEhdr<E>(0));
 
-    if (order.empty()) {
+    if (ctx.arg.section_order.empty() || find("#phdr"))
       ctx.phdr = push(new OutputPhdr<E>(SHF_ALLOC));
-    } else {
-      auto it = std::find_if(order.begin(), order.end(),
-                             [](SectionOrder arg) { return arg.name == "#phdr"; });
-      if (it != order.end())
-        ctx.phdr = push(new OutputPhdr<E>(SHF_ALLOC));
-      else
-        ctx.phdr = push(new OutputPhdr<E>(0));
-    }
+    else
+      ctx.phdr = push(new OutputPhdr<E>(0));
 
     ctx.shdr = push(new OutputShdr<E>);
   }
@@ -92,7 +91,8 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.eh_frame_hdr = push(new EhFrameHdrSection<E>);
   if (ctx.arg.gdb_index)
     ctx.gdb_index = push(new GdbIndexSection<E>);
-  if (ctx.arg.z_relro && ctx.arg.z_separate_code != SEPARATE_LOADABLE_SEGMENTS)
+  if (ctx.arg.z_relro && ctx.arg.section_order.empty() &&
+      ctx.arg.z_separate_code != SEPARATE_LOADABLE_SEGMENTS)
     ctx.relro_padding = push(new RelroPaddingSection<E>);
   if (ctx.arg.hash_style_sysv)
     ctx.hash = push(new HashSection<E>);
@@ -1503,54 +1503,60 @@ void sort_output_sections_regular(Context<E> &ctx) {
   });
 }
 
+template <typename E>
+static std::string_view get_section_order_group(Chunk<E> &chunk) {
+  if (chunk.shdr.sh_type == SHT_NOBITS)
+    return "bss";
+  if (chunk.shdr.sh_flags & SHF_EXECINSTR)
+    return "text";
+  if (chunk.shdr.sh_flags & SHF_WRITE)
+    return "data";
+  return "rodata";
+};
+
 // Sort sections according to a --section-order argument.
 template <typename E>
 void sort_output_sections_by_order(Context<E> &ctx) {
-  auto get_type = [&](u32 flags) -> std::string_view {
-    if (flags & SHF_EXECINSTR)
-      return "#text";
-    if (flags & SHF_WRITE)
-      return "#data";
-    return "#rodata";
-  };
-
   auto get_rank = [&](Chunk<E> *chunk) -> i64 {
     u64 flags = chunk->shdr.sh_flags;
 
-    if (chunk == ctx.ehdr)
-      return 0;
+    if (chunk == ctx.ehdr && !(chunk->shdr.sh_flags & SHF_ALLOC))
+      return -2;
+    if (chunk == ctx.phdr && !(chunk->shdr.sh_flags & SHF_ALLOC))
+      return -1;
+
     if (chunk == ctx.shdr)
       return INT32_MAX;
     if (!(flags & SHF_ALLOC))
       return INT32_MAX - 1;
 
-    for (i64 i = 0; i < ctx.arg.section_order.size(); i++) {
-      SectionOrder arg = ctx.arg.section_order[i];
-      if (chunk->name == arg.name)
-        return i + 1;
+    for (i64 i = 0; SectionOrder arg : ctx.arg.section_order) {
+      if (arg.type == SectionOrder::SECT && arg.name == chunk->name)
+        return i;
+      i++;
     }
 
-    std::string_view hash_name = get_type(chunk->shdr.sh_flags);
+    std::string_view group = get_section_order_group(*chunk);
 
     for (i64 i = 0; i < ctx.arg.section_order.size(); i++) {
       SectionOrder arg = ctx.arg.section_order[i];
-      if (hash_name == arg.name)
-        return i + 1;
+      if (arg.type == SectionOrder::GROUP && arg.name == group)
+        return i;
     }
 
-    return -1;
+    Error(ctx) << "--section-order: missing section specification for "
+               << chunk->name;
+    return 0;
   };
 
   // It is an error if a section order cannot be determined by a given
   // section order list.
   for (Chunk<E> *chunk : ctx.chunks)
-    if (get_rank(chunk) == -1)
-      Error(ctx) << "--section-order: missing section specification for "
-                 << chunk->name;
+    chunk->sect_order = get_rank(chunk);
 
   // Sort output sections by --section-order
   sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
-    return get_rank(a) < get_rank(b);
+    return a->sect_order < b->sect_order;
   });
 }
 
@@ -1560,44 +1566,6 @@ void sort_output_sections(Context<E> &ctx) {
     sort_output_sections_regular(ctx);
   else
     sort_output_sections_by_order(ctx);
-}
-
-// Assign adresses to output sections as specified by --section-order
-template <typename E>
-static void apply_section_order_addr(Context<E> &ctx) {
-  for (SectionOrder arg : ctx.arg.section_order)
-    if (arg.addr && !arg.name.starts_with('#'))
-      ctx.arg.section_start[save_string(ctx, arg.name)] = *arg.addr;
-
-  auto find_section = [&](std::string_view hash_type) -> Chunk<E> * {
-    if (hash_type == "#ehdr")
-      return ctx.ehdr;
-    if (hash_type == "#phdr")
-      return ctx.phdr;
-
-    for (Chunk<E> *chunk : ctx.chunks) {
-      u32 flags = chunk->shdr.sh_flags;
-      if (!(flags & SHF_ALLOC))
-        continue;
-
-      if (flags & SHF_EXECINSTR) {
-        if (hash_type == "#text")
-          return chunk;
-      } else if (flags & SHF_WRITE) {
-        if (hash_type == "#data")
-          return chunk;
-      } else {
-        if (hash_type == "#rodata")
-          return chunk;
-      }
-    }
-    return nullptr;
-  };
-
-  for (SectionOrder arg : ctx.arg.section_order)
-    if (arg.addr && arg.name.starts_with('#'))
-      if (Chunk<E> *chunk = find_section(arg.name))
-        ctx.arg.section_start[chunk->name] = *arg.addr;
 }
 
 template <typename E>
@@ -1635,7 +1603,7 @@ static bool is_tbss(Chunk<E> *chunk) {
 //   the executable segment and the first page of the read-only data
 //   segment. This doesn't save memory but saves disk space.
 template <typename E>
-static void set_virtual_addresses(Context<E> &ctx) {
+static void set_virtual_addresses_regular(Context<E> &ctx) {
   constexpr i64 RELRO = 1LL << 32;
 
   auto get_flags = [&](Chunk<E> *chunk) {
@@ -1728,6 +1696,70 @@ static void set_virtual_addresses(Context<E> &ctx) {
   }
 }
 
+template <typename E>
+static void set_virtual_addresses_by_order(Context<E> &ctx) {
+  std::vector<Chunk<E> *> &c = ctx.chunks;
+  u64 addr = ctx.arg.image_base;
+  i64 i = 0;
+
+  while (i < c.size() && !(c[i]->shdr.sh_flags & SHF_ALLOC))
+    i++;
+
+  auto assign_addr = [&] {
+    if (i != 0) {
+      i64 flags1 = to_phdr_flags(ctx, c[i - 1]);
+      i64 flags2 = to_phdr_flags(ctx, c[i]);
+
+      // Memory protection works at page size granularity. We need to
+      // put sections with different memory attributes into different
+      // pages. We do it by inserting paddings here.
+      if (flags1 != flags2) {
+        switch (ctx.arg.z_separate_code) {
+        case SEPARATE_LOADABLE_SEGMENTS:
+          addr = align_to(addr, ctx.page_size);
+          break;
+        case SEPARATE_CODE:
+          if ((flags1 & PF_X) != (flags2 & PF_X))
+            addr = align_to(addr, ctx.page_size);
+          break;
+        default:
+          break;
+        }
+      }
+    }
+
+    addr = align_to(addr, c[i]->shdr.sh_addralign);
+    c[i]->shdr.sh_addr = addr;
+    addr += c[i]->shdr.sh_size;
+
+    do {
+      i++;
+    } while (i < c.size() && !(c[i]->shdr.sh_flags & SHF_ALLOC));
+  };
+
+  for (i64 j = 0; j < ctx.arg.section_order.size(); j++) {
+    SectionOrder ord = ctx.arg.section_order[j];
+    switch (ord.type) {
+    case SectionOrder::SECT:
+      if (i < c.size() && j == c[i]->sect_order)
+        assign_addr();
+      break;
+    case SectionOrder::GROUP:
+      while (i < c.size() && j == c[i]->sect_order)
+        assign_addr();
+      break;
+    case SectionOrder::ADDR:
+      addr = ord.value;
+      break;
+    case SectionOrder::ALIGN:
+      addr = align_to(addr, ord.value);
+      break;
+    default:
+      unreachable();
+    }
+  }
+}
+
 // Returns the smallest integer N that satisfies N >= val and
 // N mod align == skew mod align.
 //
@@ -1808,10 +1840,13 @@ static i64 set_file_offsets(Context<E> &ctx) {
 template <typename E>
 i64 set_osec_offsets(Context<E> &ctx) {
   Timer t(ctx, "set_osec_offsets");
-  apply_section_order_addr(ctx);
 
   for (;;) {
-    set_virtual_addresses(ctx);
+    if (ctx.arg.section_order.empty())
+      set_virtual_addresses_regular(ctx);
+    else
+      set_virtual_addresses_by_order(ctx);
+
     i64 fileoff = set_file_offsets(ctx);
 
     // Assigning new offsets may change the contents and the length

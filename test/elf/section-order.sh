@@ -15,16 +15,16 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe1 $t/a.o -no-pie \
-  -Wl,--section-order='#phdr=0x100000 .fn2=0x200000 #text .fn1=0x300000 #data #rodata'
+$CC -B. -o $t/exe1 $t/a.o -no-pie -z separate-loadable-segments -z norelro \
+  -Wl,--section-order='=0x100000 #phdr =0x200000 .fn2 #text =0x300000 .fn1 #data #bss #rodata'
 $QEMU $t/exe1 | grep -q Hello
 
 readelf -SW $t/exe1 | grep -q '\.fn2 .*00200000'
 readelf -SW $t/exe1 | grep -q '\.fn1 .*00300000'
 readelf -sw $t/exe1 | grep -Eq ': 0+\s.*\s__ehdr_start$'
 
-$CC -B. -o $t/exe2 $t/a.o -no-pie \
-  -Wl,--section-order='#ehdr=0x200000 #rodata #phdr=0x300000 .fn2=0x400000 #text #data'
+$CC -B. -o $t/exe2 $t/a.o -no-pie -z separate-loadable-segments -z norelro \
+  -Wl,--section-order='=0x200000 #ehdr #rodata =0x300000 #phdr =0x400000 .fn2 #text #data #bss'
 $QEMU $t/exe2 | grep -q Hello
 
 readelf -SW $t/exe2 | grep -q '\.fn2 .*00400000'

@@ -319,32 +319,50 @@ static std::vector<SectionOrder>
 parse_section_order(Context<E> &ctx, std::string_view arg) {
   auto flags = std::regex_constants::ECMAScript | std::regex_constants::icase |
                std::regex_constants::optimize;
-  static std::regex re(R"(^([^\s=]+)(?:\s*=\s*(0x[0-9a-f]+|\d+)\s*)?\s*)", flags);
+  static std::regex re1(R"(^\s*([a-zA-Z0-9_.][^\s]*|#ehdr|#phdr)(?:\s|$))", flags);
+  static std::regex re2(R"(^\s*#(text|data|rodata|bss)(?:\s|$))", flags);
+  static std::regex re3(R"(^\s*=(0x[0-9a-f]+|\d+)(?:\s|$))", flags);
+  static std::regex re4(R"(^\s*%(0x[0-9a-f]+|\d*)(?:\s|$))", flags);
 
   std::vector<SectionOrder> vec;
   arg = string_trim(arg);
 
   while (!arg.empty()) {
+    SectionOrder ord;
     std::cmatch m;
-    if (!std::regex_search(arg.data(), arg.data() + arg.size(), m, re))
+
+    if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re1)) {
+      ord.type = SectionOrder::SECT;
+      ord.name = m[1].str();
+    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re2)) {
+      ord.type = SectionOrder::GROUP;
+      ord.name = m[1].str();
+    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re3)) {
+      ord.type = SectionOrder::ADDR;
+      std::string s = m[1];
+      ord.value = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
+    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re4)) {
+      ord.type = SectionOrder::ALIGN;
+      std::string s = m[1];
+      ord.value = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
+    } else {
       Fatal(ctx) << "--section-order: parse error: " << arg;
+    }
 
-    std::string name = m[1].str();
-    if (name.starts_with('#') && name != "#text" && name != "#data" &&
-        name != "#rodata" && name != "#ehdr" && name != "#phdr")
-      Fatal(ctx) << "--section-order: invalid section name: " << name;
-
-    SectionOrder order;
-    order.name = name;
-    if (std::string s = m[2]; !s.empty())
-      order.addr = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
-    vec.push_back(order);
+    vec.push_back(ord);
     arg = arg.substr(m[0].length());
   }
 
-  for (i64 i = 1; i < vec.size(); i++)
-    if (vec[i].name == "#ehdr")
-      Fatal(ctx) << "--section-order: invalid order for #ehdr: " << arg;
+  bool is_first = true;
+  for (SectionOrder ord : vec) {
+    if (ord.type == SectionOrder::SECT) {
+      if (is_first) {
+        is_first = false;
+      } else if (ord.name == "#ehdr")
+        Fatal(ctx) << "--section-order: #ehdr must be the first section specifier: "
+                   << arg;
+    }
+  }
 
   return vec;
 }

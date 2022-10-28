@@ -412,6 +412,9 @@ public:
   i64 strtab_size = 0;
   i64 strtab_offset = 0;
 
+  // For --section-order
+  i64 sect_order = 0;
+
 protected:
   Chunk() { shdr.sh_addralign = 1; }
 };
@@ -1542,8 +1545,9 @@ struct VersionPattern {
 };
 
 struct SectionOrder {
+  enum { SECT, GROUP, ADDR, ALIGN } type = SECT;
   std::string name;
-  std::optional<u64> addr;
+  u64 value = 0;
 };
 
 // Context represents a context object for each invocation of the linker.
