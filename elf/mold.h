@@ -421,7 +421,7 @@ template <typename E>
 class OutputEhdr : public Chunk<E> {
 public:
   OutputEhdr(u32 sh_flags) {
-    this->name = "<ELF header>";
+    this->name = "#ehdr";
     this->shdr.sh_flags = sh_flags;
     this->shdr.sh_size = sizeof(ElfEhdr<E>);
     this->shdr.sh_addralign = sizeof(Word<E>);
@@ -436,7 +436,7 @@ template <typename E>
 class OutputShdr : public Chunk<E> {
 public:
   OutputShdr() {
-    this->name = "<section header>";
+    this->name = "#shdr";
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
@@ -450,7 +450,7 @@ template <typename E>
 class OutputPhdr : public Chunk<E> {
 public:
   OutputPhdr() {
-    this->name = "<program header>";
+    this->name = "#phdr";
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_addralign = sizeof(Word<E>);
   }

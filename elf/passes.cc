@@ -39,7 +39,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   };
 
   if (!ctx.arg.oformat_binary) {
-    if (ctx.arg.section_order.empty())
+    if (ctx.arg.section_order.empty() || ctx.arg.section_order[0].name == "#ehdr")
       ctx.ehdr = push(new OutputEhdr<E>(SHF_ALLOC));
     else
       ctx.ehdr = push(new OutputEhdr<E>(0));
@@ -1562,6 +1562,11 @@ void sort_output_sections_by_order(Context<E> &ctx) {
       u32 flags = chunk->shdr.sh_flags;
       if (!(flags & SHF_ALLOC))
         continue;
+
+      if (hash_type == "#ehdr")
+        return ctx.ehdr;
+      if (hash_type == "#phdr")
+        return ctx.phdr;
 
       if (flags & SHF_EXECINSTR) {
         if (hash_type == "#text")

@@ -330,7 +330,7 @@ parse_section_order(Context<E> &ctx, std::string_view arg) {
 
     std::string name = m[1].str();
     if (name.starts_with('#') && name != "#text" && name != "#data" &&
-        name != "#rodata")
+        name != "#rodata" && name != "#ehdr" && name != "#phdr")
       Fatal(ctx) << "--section-order: invalid section name: " << name;
 
     SectionOrder order;
@@ -340,6 +340,11 @@ parse_section_order(Context<E> &ctx, std::string_view arg) {
     vec.push_back(order);
     arg = arg.substr(m[0].length());
   }
+
+  for (i64 i = 1; i < vec.size(); i++)
+    if (vec[i].name == "#ehdr")
+      Fatal(ctx) << "--section-order: invalid order for #ehdr: " << arg;
+
   return vec;
 }
 
