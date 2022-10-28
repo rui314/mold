@@ -20,7 +20,7 @@ std::string path_clean(std::string_view path) {
 
 std::filesystem::path to_abs_path(std::filesystem::path path) {
   if (path.is_absolute())
-    return path;
+    return path.lexically_normal();
   return (std::filesystem::current_path() / path).lexically_normal();
 }
 
