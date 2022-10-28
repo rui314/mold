@@ -1515,7 +1515,6 @@ void sort_output_sections_by_order(Context<E> &ctx) {
   };
 
   auto get_rank = [&](Chunk<E> *chunk) -> i64 {
-    u64 type = chunk->shdr.sh_type;
     u64 flags = chunk->shdr.sh_flags;
 
     if (chunk == ctx.ehdr)
