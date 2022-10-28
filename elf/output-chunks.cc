@@ -243,7 +243,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   };
 
   // Create a PT_PHDR for the program header itself.
-  if (ctx.phdr)
+  if (ctx.phdr && (ctx.phdr->shdr.sh_flags & SHF_ALLOC))
     define(PT_PHDR, PF_R, sizeof(Word<E>), ctx.phdr);
 
   // Create a PT_INTERP.

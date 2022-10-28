@@ -39,12 +39,24 @@ void create_synthetic_sections(Context<E> &ctx) {
   };
 
   if (!ctx.arg.oformat_binary) {
-    if (ctx.arg.section_order.empty() || ctx.arg.section_order[0].name == "#ehdr")
+    std::span<SectionOrder> order = ctx.arg.section_order;
+
+    if (order.empty() || order[0].name == "#ehdr")
       ctx.ehdr = push(new OutputEhdr<E>(SHF_ALLOC));
     else
       ctx.ehdr = push(new OutputEhdr<E>(0));
 
-    ctx.phdr = push(new OutputPhdr<E>);
+    if (order.empty()) {
+      ctx.phdr = push(new OutputPhdr<E>(SHF_ALLOC));
+    } else {
+      auto it = std::find_if(order.begin(), order.end(),
+                             [](SectionOrder arg) { return arg.name == "#phdr"; });
+      if (it != order.end())
+        ctx.phdr = push(new OutputPhdr<E>(SHF_ALLOC));
+      else
+        ctx.phdr = push(new OutputPhdr<E>(0));
+    }
+
     ctx.shdr = push(new OutputShdr<E>);
   }
 
@@ -1551,22 +1563,33 @@ void sort_output_sections_by_order(Context<E> &ctx) {
   sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
     return get_rank(a) < get_rank(b);
   });
+}
 
-  // Assign adresses if specified
+template <typename E>
+void sort_output_sections(Context<E> &ctx) {
+  if (ctx.arg.section_order.empty())
+    sort_output_sections_regular(ctx);
+  else
+    sort_output_sections_by_order(ctx);
+}
+
+// Assign adresses to output sections as specified by --section-order
+template <typename E>
+static void apply_section_order_addr(Context<E> &ctx) {
   for (SectionOrder arg : ctx.arg.section_order)
     if (arg.addr && !arg.name.starts_with('#'))
       ctx.arg.section_start[save_string(ctx, arg.name)] = *arg.addr;
 
   auto find_section = [&](std::string_view hash_type) -> Chunk<E> * {
+    if (hash_type == "#ehdr")
+      return ctx.ehdr;
+    if (hash_type == "#phdr")
+      return ctx.phdr;
+
     for (Chunk<E> *chunk : ctx.chunks) {
       u32 flags = chunk->shdr.sh_flags;
       if (!(flags & SHF_ALLOC))
         continue;
-
-      if (hash_type == "#ehdr")
-        return ctx.ehdr;
-      if (hash_type == "#phdr")
-        return ctx.phdr;
 
       if (flags & SHF_EXECINSTR) {
         if (hash_type == "#text")
@@ -1586,14 +1609,6 @@ void sort_output_sections_by_order(Context<E> &ctx) {
     if (arg.addr && arg.name.starts_with('#'))
       if (Chunk<E> *chunk = find_section(arg.name))
         ctx.arg.section_start[chunk->name] = *arg.addr;
-}
-
-template <typename E>
-void sort_output_sections(Context<E> &ctx) {
-  if (ctx.arg.section_order.empty())
-    sort_output_sections_regular(ctx);
-  else
-    sort_output_sections_by_order(ctx);
 }
 
 template <typename E>
@@ -1804,6 +1819,7 @@ static i64 set_file_offsets(Context<E> &ctx) {
 template <typename E>
 i64 set_osec_offsets(Context<E> &ctx) {
   Timer t(ctx, "set_osec_offsets");
+  apply_section_order_addr(ctx);
 
   for (;;) {
     set_virtual_addresses(ctx);

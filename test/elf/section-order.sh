@@ -16,11 +16,11 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o -no-pie \
-  -Wl,--section-order='.fn2=0x100000 #text .fn1=0x200000 #data #rodata'
+  -Wl,--section-order='#phdr=0x100000 .fn2=0x200000 #text .fn1=0x300000 #data #rodata'
 $QEMU $t/exe1 | grep -q Hello
 
-readelf -SW $t/exe1 | grep -q '\.fn2 .*00100000'
-readelf -SW $t/exe1 | grep -q '\.fn1 .*00200000'
+readelf -SW $t/exe1 | grep -q '\.fn2 .*00200000'
+readelf -SW $t/exe1 | grep -q '\.fn1 .*00300000'
 readelf -sw $t/exe1 | grep -Eq ': 0+\s.*\s__ehdr_start$'
 
 $CC -B. -o $t/exe2 $t/a.o -no-pie \

@@ -449,9 +449,9 @@ public:
 template <typename E>
 class OutputPhdr : public Chunk<E> {
 public:
-  OutputPhdr() {
+  OutputPhdr(u32 sh_flags) {
     this->name = "#phdr";
-    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_flags = sh_flags;
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
