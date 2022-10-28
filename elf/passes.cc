@@ -1385,7 +1385,6 @@ void clear_padding(Context<E> &ctx) {
 // We want to sort output chunks in the following order.
 //
 //   <ELF header>
-//   multiboot
 //   <program header>
 //   .interp
 //   .note
@@ -1410,13 +1409,6 @@ void clear_padding(Context<E> &ctx) {
 //   <writable non-RELRO bss>
 //   <non-memory-allocated sections>
 //   <section header>
-//
-// If a section whose name is "multiboot" exists, it's placed right
-// after the ELF header. We do this for OS kernels. "multiboot" section
-// is expected to be read-only, start with a magic number and have an
-// alignment requirement of 32. GRUB (and other Multiboot specification-
-// compliant bootloaders) can recognize such data strcuture near the
-// beginning of a file and load a file into memory.
 //
 // .interp and some other linker-synthesized sections are placed at the
 // beginning of a file because they are needed by loader. Especially on
@@ -1450,30 +1442,28 @@ void sort_output_sections_regular(Context<E> &ctx) {
 
     if (chunk == ctx.ehdr)
       return 0;
-    if (chunk->name == "multiboot")
-      return 1;
     if (chunk == ctx.phdr)
-      return 2;
+      return 1;
     if (chunk == ctx.interp)
-      return 3;
+      return 2;
     if (type == SHT_NOTE && (flags & SHF_ALLOC))
-      return 4;
+      return 3;
     if (chunk == ctx.hash)
-      return 5;
+      return 4;
     if (chunk == ctx.gnu_hash)
-      return 6;
+      return 5;
     if (chunk == ctx.dynsym)
-      return 7;
+      return 6;
     if (chunk == ctx.dynstr)
-      return 8;
+      return 7;
     if (chunk == ctx.versym)
-      return 9;
+      return 8;
     if (chunk == ctx.verneed)
-      return 10;
+      return 9;
     if (chunk == ctx.reldyn)
-      return 11;
+      return 10;
     if (chunk == ctx.relplt)
-      return 12;
+      return 11;
     if (chunk == ctx.shdr)
       return INT32_MAX;
 
