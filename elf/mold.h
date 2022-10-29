@@ -424,7 +424,7 @@ template <typename E>
 class OutputEhdr : public Chunk<E> {
 public:
   OutputEhdr(u32 sh_flags) {
-    this->name = "#ehdr";
+    this->name = "EHDR";
     this->shdr.sh_flags = sh_flags;
     this->shdr.sh_size = sizeof(ElfEhdr<E>);
     this->shdr.sh_addralign = sizeof(Word<E>);
@@ -439,7 +439,7 @@ template <typename E>
 class OutputShdr : public Chunk<E> {
 public:
   OutputShdr() {
-    this->name = "#shdr";
+    this->name = "SHDR";
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
@@ -453,7 +453,7 @@ template <typename E>
 class OutputPhdr : public Chunk<E> {
 public:
   OutputPhdr(u32 sh_flags) {
-    this->name = "#phdr";
+    this->name = "PHDR";
     this->shdr.sh_flags = sh_flags;
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
@@ -1545,7 +1545,7 @@ struct VersionPattern {
 };
 
 struct SectionOrder {
-  enum { SECT, GROUP, ADDR, ALIGN } type = SECT;
+  enum { NONE, SECTION, GROUP, ADDR, ALIGN, SYMBOL } type = NONE;
   std::string name;
   u64 value = 0;
 };

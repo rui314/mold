@@ -24,7 +24,7 @@ readelf -Ws $t/exe1 | grep -q __phys_start_foo
 
 
 $CC -B. -no-pie -o $t/exe2 $t/a.o -Wl,--physical-image-base=0x800000 \
-  -Wl,--section-order='=0x800000 #text #rodata =0x900000 #data #bss'
+  -Wl,--section-order='=0x800000 TEXT RODATA =0x900000 DATA BSS'
 
 readelf -W --segments $t/exe2 | grep -Eq 'LOAD\s+\S+\s+(\S+)\s\1.*R E 0'
 readelf -W --segments $t/exe2 | grep -Eq 'LOAD\s+\S+\s+(\S+)\s\1.*R   0'

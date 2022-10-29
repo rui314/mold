@@ -40,18 +40,18 @@ void create_synthetic_sections(Context<E> &ctx) {
 
   if (!ctx.arg.oformat_binary) {
     auto find = [&](std::string_view name) {
-      for (SectionOrder ord : ctx.arg.section_order)
-        if (ord.type == SectionOrder::SECT && ord.name == name)
+      for (SectionOrder &ord : ctx.arg.section_order)
+        if (ord.type == SectionOrder::SECTION && ord.name == name)
           return true;
       return false;
     };
 
-    if (ctx.arg.section_order.empty() || find("#ehdr"))
+    if (ctx.arg.section_order.empty() || find("EHDR"))
       ctx.ehdr = push(new OutputEhdr<E>(SHF_ALLOC));
     else
       ctx.ehdr = push(new OutputEhdr<E>(0));
 
-    if (ctx.arg.section_order.empty() || find("#phdr"))
+    if (ctx.arg.section_order.empty() || find("PHDR"))
       ctx.phdr = push(new OutputPhdr<E>(SHF_ALLOC));
     else
       ctx.phdr = push(new OutputPhdr<E>(0));
@@ -432,9 +432,7 @@ void create_internal_file(Context<E> &ctx) {
   obj->features = -1;
   obj->priority = 1;
 
-  // Add symbols for --defsym.
-  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
-    Symbol<E> *sym = ctx.arg.defsyms[i].first;
+  auto add = [&](Symbol<E> *sym) {
     obj->symbols.push_back(sym);
 
     // An actual value will be set to a linker-synthesized symbol by
@@ -451,6 +449,15 @@ void create_internal_file(Context<E> &ctx) {
     esym.st_visibility = STV_DEFAULT;
     ctx.internal_esyms.push_back(esym);
   };
+
+  // Add --defsym symbols
+  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++)
+    add(ctx.arg.defsyms[i].first);
+
+  // Add --section-order symbols
+  for (SectionOrder &ord : ctx.arg.section_order)
+    if (ord.type == SectionOrder::SYMBOL)
+      add(get_symbol(ctx, ord.name));
 
   obj->elf_syms = ctx.internal_esyms;
   obj->symvers.resize(ctx.internal_esyms.size() - 1);
@@ -593,6 +600,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
     if (!target || target->is_absolute())
       sym->origin = 0;
   }
+
 }
 
 template <typename E>
@@ -1506,12 +1514,12 @@ void sort_output_sections_regular(Context<E> &ctx) {
 template <typename E>
 static std::string_view get_section_order_group(Chunk<E> &chunk) {
   if (chunk.shdr.sh_type == SHT_NOBITS)
-    return "bss";
+    return "BSS";
   if (chunk.shdr.sh_flags & SHF_EXECINSTR)
-    return "text";
+    return "TEXT";
   if (chunk.shdr.sh_flags & SHF_WRITE)
-    return "data";
-  return "rodata";
+    return "DATA";
+  return "RODATA";
 };
 
 // Sort sections according to a --section-order argument.
@@ -1530,8 +1538,8 @@ void sort_output_sections_by_order(Context<E> &ctx) {
     if (!(flags & SHF_ALLOC))
       return INT32_MAX - 1;
 
-    for (i64 i = 0; SectionOrder arg : ctx.arg.section_order) {
-      if (arg.type == SectionOrder::SECT && arg.name == chunk->name)
+    for (i64 i = 0; const SectionOrder &arg : ctx.arg.section_order) {
+      if (arg.type == SectionOrder::SECTION && arg.name == chunk->name)
         return i;
       i++;
     }
@@ -1738,9 +1746,9 @@ static void set_virtual_addresses_by_order(Context<E> &ctx) {
   };
 
   for (i64 j = 0; j < ctx.arg.section_order.size(); j++) {
-    SectionOrder ord = ctx.arg.section_order[j];
+    SectionOrder &ord = ctx.arg.section_order[j];
     switch (ord.type) {
-    case SectionOrder::SECT:
+    case SectionOrder::SECTION:
       if (i < c.size() && j == c[i]->sect_order)
         assign_addr();
       break;
@@ -1753,6 +1761,9 @@ static void set_virtual_addresses_by_order(Context<E> &ctx) {
       break;
     case SectionOrder::ALIGN:
       addr = align_to(addr, ord.value);
+      break;
+    case SectionOrder::SYMBOL:
+      get_symbol(ctx, ord.name)->value = addr;
       break;
     default:
       unreachable();
@@ -1893,13 +1904,13 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
   };
 
-  std::vector<Chunk<E> *> output_sections;
+  std::vector<Chunk<E> *> sections;
   for (Chunk<E> *chunk : ctx.chunks)
-    if (chunk->kind() != HEADER)
-      output_sections.push_back(chunk);
+    if (chunk->kind() != HEADER && (chunk->shdr.sh_flags & SHF_ALLOC))
+      sections.push_back(chunk);
 
   auto find = [&](std::string name) -> Chunk<E> * {
-    for (Chunk<E> *chunk : output_sections)
+    for (Chunk<E> *chunk : sections)
       if (chunk->name == name)
         return chunk;
     return nullptr;
@@ -1910,15 +1921,15 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     start(ctx.__bss_start, chunk);
 
   if (ctx.ehdr && (ctx.ehdr->shdr.sh_flags & SHF_ALLOC)) {
-    ctx.__ehdr_start->set_output_section(output_sections[0]);
+    ctx.__ehdr_start->set_output_section(sections[0]);
     ctx.__ehdr_start->value = ctx.ehdr->shdr.sh_addr;
-    ctx.__executable_start->set_output_section(output_sections[0]);
+    ctx.__executable_start->set_output_section(sections[0]);
     ctx.__executable_start->value = ctx.ehdr->shdr.sh_addr;
   }
 
   if (ctx.__dso_handle) {
-    ctx.__dso_handle->set_output_section(ctx.got);
-    ctx.__dso_handle->value = ctx.got->shdr.sh_addr;
+    ctx.__dso_handle->set_output_section(sections[0]);
+    ctx.__dso_handle->value = sections[0]->shdr.sh_addr;
   }
 
   // __rel_iplt_start and __rel_iplt_end. These symbols need to be
@@ -1940,7 +1951,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // __{init,fini}_array_{start,end}
-  for (Chunk<E> *chunk : output_sections) {
+  for (Chunk<E> *chunk : sections) {
     switch (chunk->shdr.sh_type) {
     case SHT_INIT_ARRAY:
       start(ctx.__init_array_start, chunk);
@@ -1958,7 +1969,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // _end, _etext, _edata and the like
-  for (Chunk<E> *chunk : output_sections) {
+  for (Chunk<E> *chunk : sections) {
     if (chunk->shdr.sh_flags & SHF_ALLOC) {
       stop(ctx._end, chunk);
       stop(ctx.end, chunk);
@@ -1995,7 +2006,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // create a reference to it, but Intel compiler seems to be using
   // this symbol.
   if (ctx._TLS_MODULE_BASE_) {
-    ctx._TLS_MODULE_BASE_->set_output_section(output_sections[0]);
+    ctx._TLS_MODULE_BASE_->set_output_section(sections[0]);
     ctx._TLS_MODULE_BASE_->value = ctx.tls_begin;
   }
 
@@ -2007,7 +2018,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     if (Chunk<E> *chunk = find(".sdata")) {
       start(ctx.__global_pointer, chunk, 0x800);
     } else {
-      ctx.__global_pointer->set_output_section(output_sections[0]);
+      ctx.__global_pointer->set_output_section(sections[0]);
       ctx.__global_pointer->value = 0;
     }
   }
@@ -2027,13 +2038,13 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     } else if (Chunk<E> *chunk = find(".toc")) {
       start(ctx.TOC, chunk, 0x8000);
     } else {
-      ctx.TOC->set_output_section(output_sections[0]);
+      ctx.TOC->set_output_section(sections[0]);
       ctx.TOC->value = 0;
     }
   }
 
   // __start_ and __stop_ symbols
-  for (Chunk<E> *chunk : output_sections) {
+  for (Chunk<E> *chunk : sections) {
     if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
       start(get_symbol(ctx, save_string(ctx, "__start_" + *name)), chunk);
       stop(get_symbol(ctx, save_string(ctx, "__stop_" + *name)), chunk);
@@ -2073,6 +2084,12 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     sym->origin = sym2->origin;
     sym->visibility = sym2->visibility.load();
   }
+
+
+  // --section-order symbols
+  for (SectionOrder &ord : ctx.arg.section_order)
+    if (ord.type == SectionOrder::SYMBOL)
+      get_symbol(ctx, ord.name)->set_output_section(sections[0]);
 }
 
 template <typename E>
