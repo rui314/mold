@@ -326,6 +326,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
         switch (rels[i + 1].r_type) {
         case R_X86_64_PLT32:
+        case R_X86_64_PC32:
         case R_X86_64_GOTPCREL:
         case R_X86_64_GOTPCRELX: {
           // The original instructions are the following:
@@ -378,7 +379,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // block, and we know the exact size of the TLS block we have
         // created, so we can just subtract it from TP.
         switch (rels[i + 1].r_type) {
-        case R_X86_64_PLT32: {
+        case R_X86_64_PLT32:
+        case R_X86_64_PC32: {
           // The original instructions are the following:
           //
           //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
@@ -686,8 +688,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
 
       if (u32 ty = rels[i + 1].r_type;
-          ty != R_X86_64_PLT32 && ty != R_X86_64_PLTOFF64 &&
-          ty != R_X86_64_GOTPCREL && ty != R_X86_64_GOTPCRELX)
+          ty != R_X86_64_PLT32 && ty != R_X86_64_PC32 &&
+          ty != R_X86_64_PLTOFF64 && ty != R_X86_64_GOTPCREL &&
+          ty != R_X86_64_GOTPCRELX)
         Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
 
       if (relax_tlsgd(ctx, sym))
@@ -704,8 +707,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
 
       if (u32 ty = rels[i + 1].r_type;
-          ty != R_X86_64_PLT32 && ty != R_X86_64_PLTOFF64 &&
-          ty != R_X86_64_GOTPCREL && ty != R_X86_64_GOTPCRELX)
+          ty != R_X86_64_PLT32 && ty != R_X86_64_PC32 &&
+          ty != R_X86_64_PLTOFF64 && ty != R_X86_64_GOTPCREL &&
+          ty != R_X86_64_GOTPCRELX)
         Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
 
       if (relax_tlsld(ctx))
