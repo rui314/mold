@@ -34,7 +34,7 @@ readelf -W --segments $t/exe2 | grep -Eq 'PHDR\s.*0x0+300000\s'
 
 
 $CC -B. -o $t/exe3 $t/a.o -no-pie \
-  -Wl,--section-order='=0x200000 !ehdr_start EHDR !rodata_start RODATA =0x300000 !phdr_start PHDR %4096 !phdr_end =0x400000 !text_start TEXT DATA BSS'
+  -Wl,--section-order='=0x200000 !ehdr_start EHDR %0x20 !rodata_start RODATA =0x300000 !phdr_start PHDR %4096 !phdr_end =0x400000 !text_start TEXT DATA BSS'
 $QEMU $t/exe3 | grep -q Hello
 
 readelf -sW $t/exe3 > $t/log3
