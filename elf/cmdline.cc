@@ -400,6 +400,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   bool version_shown = false;
   bool warn_shared_textrel = false;
+  std::optional<SeparateCodeKind> z_separate_code;
+  std::optional<bool> z_relro;
 
   // RISC-V object files contains lots of local symbols, so by default
   // we discard them. This is compatible with GNU ld.
@@ -783,9 +785,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_z_flag("noexecstack")) {
       ctx.arg.z_execstack = false;
     } else if (read_z_flag("relro")) {
-      ctx.arg.z_relro = true;
+      z_relro = true;
     } else if (read_z_flag("norelro")) {
-      ctx.arg.z_relro = false;
+      z_relro = false;
     } else if (read_z_flag("defs")) {
       ctx.arg.z_defs = true;
     } else if (read_z_flag("nodefs")) {
@@ -824,11 +826,11 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_z_flag("pack-relative-relocs")) {
       ctx.arg.pack_dyn_relocs_relr = true;
     } else if (read_z_flag("separate-loadable-segments")) {
-      ctx.arg.z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
+      z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
     } else if (read_z_flag("separate-code")) {
-      ctx.arg.z_separate_code = SEPARATE_CODE;
+      z_separate_code = SEPARATE_CODE;
     } else if (read_z_flag("noseparate-code")) {
-      ctx.arg.z_separate_code = NOSEPARATE_CODE;
+      z_separate_code = NOSEPARATE_CODE;
     } else if (read_flag("no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag("fatal-warnings")) {
@@ -1123,6 +1125,18 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (ctx.arg.relocatable)
     ctx.arg.is_static = true;
+
+  // --section-order implies `-z separate-loadable-segments`
+  if (z_separate_code)
+    ctx.arg.z_separate_code = *z_separate_code;
+  else if (!ctx.arg.section_order.empty())
+    ctx.arg.z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
+
+  // --section-order implies `-z norelro`
+  if (z_relro)
+    ctx.arg.z_relro = *z_relro;
+  else if (!ctx.arg.section_order.empty())
+    ctx.arg.z_relro = false;
 
   if (!ctx.arg.shared) {
     if (!ctx.arg.filter.empty())

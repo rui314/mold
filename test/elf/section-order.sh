@@ -15,7 +15,7 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe1 $t/a.o -no-pie -z separate-loadable-segments -z norelro \
+$CC -B. -o $t/exe1 $t/a.o -no-pie \
   -Wl,--section-order='=0x100000 PHDR =0x200000 .fn2 TEXT =0x300000 .fn1 DATA BSS RODATA'
 $QEMU $t/exe1 | grep -q Hello
 
@@ -24,7 +24,7 @@ readelf -SW $t/exe1 | grep -q '\.fn1 .*00300000'
 readelf -sw $t/exe1 | grep -Eq ': 0+\s.*\s__ehdr_start$'
 
 
-$CC -B. -o $t/exe2 $t/a.o -no-pie -z separate-loadable-segments -z norelro \
+$CC -B. -o $t/exe2 $t/a.o -no-pie \
   -Wl,--section-order='=0x200000 EHDR RODATA =0x300000 PHDR =0x400000 .fn2 TEXT DATA BSS'
 $QEMU $t/exe2 | grep -q Hello
 
@@ -33,7 +33,7 @@ readelf -sW $t/exe2 | grep -Eq ': 0+200000\s.*\s__ehdr_start$'
 readelf -W --segments $t/exe2 | grep -Eq 'PHDR\s.*0x0+300000\s'
 
 
-$CC -B. -o $t/exe3 $t/a.o -no-pie -z separate-loadable-segments -z norelro \
+$CC -B. -o $t/exe3 $t/a.o -no-pie \
   -Wl,--section-order='=0x200000 !ehdr_start EHDR !rodata_start RODATA =0x300000 !phdr_start PHDR %4096 !phdr_end =0x400000 !text_start TEXT DATA BSS'
 $QEMU $t/exe3 | grep -q Hello
 
