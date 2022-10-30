@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = m68k ] && skip
+
 command -v llvm-readelf >& /dev/null || skip
 
 cat <<EOF | $CC -o $t/a.o -fPIC -c -xc -

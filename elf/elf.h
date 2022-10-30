@@ -19,8 +19,9 @@ struct RV32LE;
 struct RV32BE;
 struct PPC64V1;
 struct PPC64V2;
-struct SPARC64;
 struct S390X;
+struct SPARC64;
+struct M68K;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -39,7 +40,7 @@ static constexpr u32 R_NONE = 0;
 
 enum class MachineType {
   NONE, X86_64, I386, ARM64, ARM32, RV64LE, RV64BE, RV32LE, RV32BE,
-  PPC64V1, PPC64V2, SPARC64, S390X
+  PPC64V1, PPC64V2, S390X, SPARC64, M68K
 };
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
@@ -55,8 +56,9 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   case MachineType::RV32BE:  out << "riscv32be"; break;
   case MachineType::PPC64V1: out << "ppc64v1";   break;
   case MachineType::PPC64V2: out << "ppc64v2";   break;
-  case MachineType::SPARC64: out << "sparc64";   break;
   case MachineType::S390X:   out << "s390x";     break;
+  case MachineType::SPARC64: out << "sparc64";   break;
+  case MachineType::M68K:    out << "m68k";      break;
   }
   return out;
 }
@@ -179,6 +181,7 @@ static constexpr u32 EV_CURRENT = 1;
 
 static constexpr u32 EM_NONE = 0;
 static constexpr u32 EM_386 = 3;
+static constexpr u32 EM_68K = 4;
 static constexpr u32 EM_PPC64 = 21;
 static constexpr u32 EM_S390X = 22;
 static constexpr u32 EM_ARM = 40;
@@ -1649,6 +1652,96 @@ inline std::string rel_to_string<S390X>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
+static constexpr u32 R_68K_NONE = 0;
+static constexpr u32 R_68K_32 = 1;
+static constexpr u32 R_68K_16 = 2;
+static constexpr u32 R_68K_8 = 3;
+static constexpr u32 R_68K_PC32 = 4;
+static constexpr u32 R_68K_PC16 = 5;
+static constexpr u32 R_68K_PC8 = 6;
+static constexpr u32 R_68K_GOTPCREL32 = 7;
+static constexpr u32 R_68K_GOTPCREL16 = 8;
+static constexpr u32 R_68K_GOTPCREL8 = 9;
+static constexpr u32 R_68K_GOTOFF32 = 10;
+static constexpr u32 R_68K_GOTOFF16 = 11;
+static constexpr u32 R_68K_GOTOFF8 = 12;
+static constexpr u32 R_68K_PLT32 = 13;
+static constexpr u32 R_68K_PLT16 = 14;
+static constexpr u32 R_68K_PLT8 = 15;
+static constexpr u32 R_68K_PLTOFF32 = 16;
+static constexpr u32 R_68K_PLTOFF16 = 17;
+static constexpr u32 R_68K_PLTOFF8 = 18;
+static constexpr u32 R_68K_COPY = 19;
+static constexpr u32 R_68K_GLOB_DAT = 20;
+static constexpr u32 R_68K_JMP_SLOT = 21;
+static constexpr u32 R_68K_RELATIVE = 22;
+static constexpr u32 R_68K_TLS_GD32 = 25;
+static constexpr u32 R_68K_TLS_GD16 = 26;
+static constexpr u32 R_68K_TLS_GD8 = 27;
+static constexpr u32 R_68K_TLS_LDM32 = 28;
+static constexpr u32 R_68K_TLS_LDM16 = 29;
+static constexpr u32 R_68K_TLS_LDM8 = 30;
+static constexpr u32 R_68K_TLS_LDO32 = 31;
+static constexpr u32 R_68K_TLS_LDO16 = 32;
+static constexpr u32 R_68K_TLS_LDO8 = 33;
+static constexpr u32 R_68K_TLS_IE32 = 34;
+static constexpr u32 R_68K_TLS_IE16 = 35;
+static constexpr u32 R_68K_TLS_IE8 = 36;
+static constexpr u32 R_68K_TLS_LE32 = 37;
+static constexpr u32 R_68K_TLS_LE16 = 38;
+static constexpr u32 R_68K_TLS_LE8 = 39;
+static constexpr u32 R_68K_TLS_DTPMOD32 = 40;
+static constexpr u32 R_68K_TLS_DTPREL32 = 41;
+static constexpr u32 R_68K_TLS_TPREL32 = 42;
+
+template <>
+inline std::string rel_to_string<M68K>(u32 r_type) {
+  switch (r_type) {
+  case R_68K_NONE: return "R_68K_NONE";
+  case R_68K_32: return "R_68K_32";
+  case R_68K_16: return "R_68K_16";
+  case R_68K_8: return "R_68K_8";
+  case R_68K_PC32: return "R_68K_PC32";
+  case R_68K_PC16: return "R_68K_PC16";
+  case R_68K_PC8: return "R_68K_PC8";
+  case R_68K_GOTPCREL32: return "R_68K_GOTPCREL32";
+  case R_68K_GOTPCREL16: return "R_68K_GOTPCREL16";
+  case R_68K_GOTPCREL8: return "R_68K_GOTPCREL8";
+  case R_68K_GOTOFF32: return "R_68K_GOTOFF32";
+  case R_68K_GOTOFF16: return "R_68K_GOTOFF16";
+  case R_68K_GOTOFF8: return "R_68K_GOTOFF8";
+  case R_68K_PLT32: return "R_68K_PLT32";
+  case R_68K_PLT16: return "R_68K_PLT16";
+  case R_68K_PLT8: return "R_68K_PLT8";
+  case R_68K_PLTOFF32: return "R_68K_PLTOFF32";
+  case R_68K_PLTOFF16: return "R_68K_PLTOFF16";
+  case R_68K_PLTOFF8: return "R_68K_PLTOFF8";
+  case R_68K_COPY: return "R_68K_COPY";
+  case R_68K_GLOB_DAT: return "R_68K_GLOB_DAT";
+  case R_68K_JMP_SLOT: return "R_68K_JMP_SLOT";
+  case R_68K_RELATIVE: return "R_68K_RELATIVE";
+  case R_68K_TLS_GD32: return "R_68K_TLS_GD32";
+  case R_68K_TLS_GD16: return "R_68K_TLS_GD16";
+  case R_68K_TLS_GD8: return "R_68K_TLS_GD8";
+  case R_68K_TLS_LDM32: return "R_68K_TLS_LDM32";
+  case R_68K_TLS_LDM16: return "R_68K_TLS_LDM16";
+  case R_68K_TLS_LDM8: return "R_68K_TLS_LDM8";
+  case R_68K_TLS_LDO32: return "R_68K_TLS_LDO32";
+  case R_68K_TLS_LDO16: return "R_68K_TLS_LDO16";
+  case R_68K_TLS_LDO8: return "R_68K_TLS_LDO8";
+  case R_68K_TLS_IE32: return "R_68K_TLS_IE32";
+  case R_68K_TLS_IE16: return "R_68K_TLS_IE16";
+  case R_68K_TLS_IE8: return "R_68K_TLS_IE8";
+  case R_68K_TLS_LE32: return "R_68K_TLS_LE32";
+  case R_68K_TLS_LE16: return "R_68K_TLS_LE16";
+  case R_68K_TLS_LE8: return "R_68K_TLS_LE8";
+  case R_68K_TLS_DTPMOD32: return "R_68K_TLS_DTPMOD32";
+  case R_68K_TLS_DTPREL32: return "R_68K_TLS_DTPREL32";
+  case R_68K_TLS_TPREL32: return "R_68K_TLS_TPREL32";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
 //
 // DWARF data types
 //
@@ -2341,6 +2434,9 @@ static constexpr bool is_sparc = std::is_same_v<E, SPARC64>;
 template <typename E>
 static constexpr bool is_s390x = std::is_same_v<E, S390X>;
 
+template <typename E>
+static constexpr bool is_m68k = std::is_same_v<E, M68K>;
+
 struct X86_64 {
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
@@ -2794,5 +2890,40 @@ template <> struct ElfVerdef<SPARC64>  : EBVerdef {};
 template <> struct ElfVerdaux<SPARC64> : EBVerdaux {};
 template <> struct ElfChdr<SPARC64>    : EB64Chdr {};
 template <> struct ElfNhdr<SPARC64>    : EBNhdr {};
+
+struct M68K {
+  static constexpr u32 R_COPY = R_68K_COPY;
+  static constexpr u32 R_GLOB_DAT = R_68K_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_68K_JMP_SLOT;
+  static constexpr u32 R_ABS = R_68K_32;
+  static constexpr u32 R_RELATIVE = R_68K_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_68K_NONE; // m68k does not support ifunc
+  static constexpr u32 R_DTPOFF = R_68K_TLS_DTPREL32;
+  static constexpr u32 R_TPOFF = R_68K_TLS_TPREL32;
+  static constexpr u32 R_DTPMOD = R_68K_TLS_DTPMOD32;
+
+  static constexpr MachineType machine_type = MachineType::M68K;
+  static constexpr bool is_64 = false;
+  static constexpr bool is_le = false;
+  static constexpr u32 page_size = 8192;
+  static constexpr u32 e_machine = EM_68K;
+  static constexpr u32 plt_hdr_size = 18;
+  static constexpr u32 plt_size = 14;
+  static constexpr u32 pltgot_size = 8;
+  static constexpr u32 tls_dtp_offset = 0x8000;
+};
+
+template <> struct ElfSym<M68K>     : EB32Sym {};
+template <> struct ElfShdr<M68K>    : EB32Shdr {};
+template <> struct ElfEhdr<M68K>    : EB32Ehdr {};
+template <> struct ElfPhdr<M68K>    : EB32Phdr {};
+template <> struct ElfRel<M68K>     : EB32Rela { using EB32Rela::EB32Rela; };
+template <> struct ElfDyn<M68K>     : EB32Dyn {};
+template <> struct ElfVerneed<M68K> : EBVerneed {};
+template <> struct ElfVernaux<M68K> : EBVernaux {};
+template <> struct ElfVerdef<M68K>  : EBVerdef {};
+template <> struct ElfVerdaux<M68K> : EBVerdaux {};
+template <> struct ElfChdr<M68K>    : EB32Chdr {};
+template <> struct ElfNhdr<M68K>    : EBNhdr {};
 
 } // namespace mold::elf

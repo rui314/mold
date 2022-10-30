@@ -97,8 +97,13 @@ FileType get_file_type(MappedFile<C> *mf) {
       elf::EB32Ehdr &ehdr = *(elf::EB32Ehdr *)data.data();
 
       if (ehdr.e_type == elf::ET_REL) {
-        if (is_gcc_lto_obj<elf::SPARC64>(mf))
-          return FileType::GCC_LTO_OBJ;
+        if (ehdr.e_ident[elf::EI_CLASS] == elf::ELFCLASS32) {
+          if (is_gcc_lto_obj<elf::M68K>(mf))
+            return FileType::GCC_LTO_OBJ;
+        } else {
+          if (is_gcc_lto_obj<elf::SPARC64>(mf))
+            return FileType::GCC_LTO_OBJ;
+        }
         return FileType::ELF_OBJ;
       }
 

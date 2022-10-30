@@ -178,12 +178,12 @@ static void init_thread_pointers(Context<E> &ctx, ElfPhdr<E> phdr) {
   // template image when copying TLVs to per-thread area, so we need
   // to offset it.
   //
-  // On PPC64, TP is 0x7000 (28 KiB) past the beginning of the TLV block
-  // to maximize the addressable range for load/store instructions with
-  // 16-bits signed immediates. It's not exactly 0x8000 (32 KiB) off
-  // because there's a small implementation-defined piece of data before
-  // the TLV block, and the runtime wants to access them efficiently
-  // too.
+  // On PPC64 and m68k, TP is 0x7000 (28 KiB) past the beginning of the
+  // TLV block to maximize the addressable range for load/store
+  // instructions with 16-bits signed immediates. It's not exactly 0x8000
+  // (32 KiB) off because there's a small implementation-defined piece of
+  // data before the TLV block, and the runtime wants to access them
+  // efficiently too.
   //
   // RISC-V just uses the beginning of the TLV block as TP. RISC-V
   // load/store instructions usually take 12-bits signed immediates,
@@ -193,7 +193,7 @@ static void init_thread_pointers(Context<E> &ctx, ElfPhdr<E> phdr) {
     ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
   } else if constexpr (is_arm<E>) {
     ctx.tp_addr = align_down(phdr.p_vaddr - sizeof(Word<E>) * 2, phdr.p_align);
-  } else if constexpr (is_ppc<E>) {
+  } else if constexpr (is_ppc<E> || is_m68k<E>) {
     ctx.tp_addr = phdr.p_vaddr + 0x7000;
   } else {
     static_assert(is_riscv<E>);
