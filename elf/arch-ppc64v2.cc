@@ -91,8 +91,8 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   static const ul32 insn[] = {
     // Get PC
     0x7c08'02a6, // mflr    r0
-    0x429f'0005, // bcl     1f
-    0x7d68'02a6, // 1: mflr r11
+    0x429f'0005, // bcl     20, 31, 4 // obtain PC
+    0x7d68'02a6, // mflr    r11
     0x7c08'03a6, // mtlr    r0
     // Compute the PLT entry index
     0xe80b'002c, // ld      r0, 44(r11)

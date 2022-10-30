@@ -78,8 +78,8 @@ template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   static const ub32 insn[] = {
     0x7d88'02a6, // mflr    r12
-    0x429f'0005, // bcl     1f
-    0x7d68'02a6, // 1: mflr r11
+    0x429f'0005, // bcl     20, 31, 4 // obtain PC
+    0x7d68'02a6, // mflr    r11
     0xe84b'0024, // ld      r2,36(r11)
     0x7d88'03a6, // mtlr    r12
     0x7d62'5a14, // add     r11,r2,r11
