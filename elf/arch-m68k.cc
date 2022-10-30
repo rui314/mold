@@ -11,6 +11,8 @@
 // m68k's psABI is actually simpler because m68k has PC-relative memory
 // access instructions and therefore can support position-independent
 // code without too much hassle.
+//
+// https://github.com/rui314/mold/wiki/m68k-psabi.pdf
 
 #include "mold.h"
 
