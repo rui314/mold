@@ -24,7 +24,7 @@ if you find mold is not faster than other linkers.
 
 mold supports x86-64, i386, ARM64, ARM32, 64-bit/32-bit little/big-endian
 RISC-V, 64-bit big-endian PowerPC ELFv1, 64-bit little-endian PowerPC ELFv2,
-s390x and SPARC64.
+s390x, SPARC64 and m68k.
 
 ## Why does the speed of linking matter?
 
