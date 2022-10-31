@@ -217,7 +217,16 @@ if(NOT APPLE AND NOT WIN32 AND NOT MOLD_MOSTLY_STATIC)
   target_link_libraries(mold PRIVATE OpenSSL::Crypto)
 endif()
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv64|armv6|m68k)")
+# If atomics doesn't work by default, add -latomic.
+# We need the flag on riscv, armv6 and m68k.
+check_cxx_source_compiles("#include <cstdint>
+int main() {
+  uint64_t x = 1;
+  __atomic_add_fetch(&x, 0, __ATOMIC_RELAXED);
+  return x;
+}" HAVE_ATOMIC_ADD_FETCH)
+
+if(NOT HAVE_ATOMIC_ADD_FETCH)
   target_link_libraries(mold PRIVATE atomic)
 endif()
 
