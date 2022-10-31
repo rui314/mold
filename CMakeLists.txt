@@ -219,6 +219,7 @@ endif()
 
 # If atomics doesn't work by default, add -latomic.
 # We need the flag on riscv, armv6 and m68k.
+INCLUDE(CheckCXXSourceCompiles)
 check_cxx_source_compiles("#include <cstdint>
 int main() {
   uint64_t x = 1;
