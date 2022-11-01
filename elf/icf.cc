@@ -613,16 +613,15 @@ void icf_sections(Context<E> &ctx) {
   if (ctx.arg.print_icf_sections)
     print_icf_sections(ctx);
 
-  // Re-assign input sections to symbols.
+  // Eliminate duplicate sections.
+  // Symbols pointing to eliminated sections will be redirected on the fly when
+  // exporting to the symtab.
   {
-    Timer t(ctx, "reassign");
+    Timer t(ctx, "sweep");
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (Symbol<E> *sym : file->symbols) {
-        if (sym->file == file) {
-          InputSection<E> *isec = sym->get_input_section();
-          if (isec && isec->leader && isec->leader != isec) {
-            isec->kill();
-          }
+      for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+        if (isec && isec->is_alive && isec->is_killed_by_icf()) {
+          isec->kill();
         }
       }
     });
