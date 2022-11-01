@@ -49,7 +49,7 @@ project(mold VERSION 1.6.0)
 include(CMakeDependentOption)
 include(GNUInstallDirs)
 
-# Build mold itself using mold if -DMOLD_USE_MOLD=ON.
+# Build mold itself using mold if -DMOLD_USE_MOLD=ON
 option(MOLD_USE_MOLD "Use mold to build mold" OFF)
 if(MOLD_USE_MOLD)
   add_link_options(-fuse-ld=mold)
@@ -187,6 +187,7 @@ else()
   mold_add_tbb()
 endif()
 
+# We always use Clang to build mold on Windows. MSVC can't compile mold.
 if(WIN32)
   if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(FATAL_ERROR
@@ -202,6 +203,7 @@ else()
   endif()
 endif()
 
+# Build mold-wrapper.so
 if(NOT APPLE AND NOT WIN32)
   add_library(mold-wrapper SHARED)
   install(TARGETS mold-wrapper DESTINATION ${CMAKE_INSTALL_LIBDIR}/mold)
@@ -219,7 +221,7 @@ endif()
 
 # If atomics doesn't work by default, add -latomic.
 # We need the flag on riscv, armv6 and m68k.
-INCLUDE(CheckCXXSourceCompiles)
+include(CheckCXXSourceCompiles)
 check_cxx_source_compiles("#include <cstdint>
 int main() {
   uint64_t x = 1;
@@ -253,7 +255,8 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 # slow.
 #
 # As a workaround, we create a .cc file for each target and spawn many
-# compiler instances. This is hacky but greatly reduces compile time.
+# compiler instances. This is hacky but greatly reduces compile time
+# on a multicore machine.
 list(APPEND MOLD_ELF_TARGETS
   X86_64 I386 ARM64 ARM32 RV32LE RV32BE RV64LE RV64BE
   PPC64V1 PPC64V2 S390X SPARC64 M68K)
