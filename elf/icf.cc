@@ -90,6 +90,16 @@ template<> struct hash<Digest> {
 
 namespace mold::elf {
 
+class BitVector {
+public:
+  BitVector(u32 size) : vec((size + 7) / 8) {}
+  bool get(u32 idx) const { return vec[idx / 8] & (1 << (idx % 8)); }
+  void set(u32 idx) { vec[idx / 8] |= 1 << (idx % 8); }
+
+private:
+  std::vector<u8> vec;
+};
+
 template <typename E>
 static void uniquify_cies(Context<E> &ctx) {
   Timer t(ctx, "uniquify_cies");
@@ -402,17 +412,6 @@ static void gather_edges(Context<E> &ctx,
   });
 }
 
-static std::vector<u64> init_converged_mask(i64 num_digests) {
-  std::vector<u64> converged;
-  if (num_digests == 0)
-    return converged;
-
-  converged.resize((num_digests + 63) / 64, 0);
-  // Pre-set the out-of-bound elements so that they'll never be accessed.
-  converged[converged.size() - 1] = num_digests % 64 == 0 ? 0 : (~0uLL) << (num_digests % 64);
-  return converged;
-}
-
 template <typename F>
 static void for_each_unset_bit(u64 bitset, F f) {
   while (bitset != (~0ULL)) {
@@ -425,36 +424,37 @@ static void for_each_unset_bit(u64 bitset, F f) {
 template <typename E>
 static i64 propagate(std::span<std::vector<Digest>> digests,
                      std::span<u32> edges, std::span<u32> edge_indices,
-                     bool &slot, std::span<u64> converged, tbb::affinity_partitioner &ap) {
+                     bool &slot, BitVector &converged,
+                     tbb::affinity_partitioner &ap) {
   static Counter round("icf_round");
   round++;
 
   i64 num_digests = digests[0].size();
-  i64 num_chunks = converged.size();
   tbb::enumerable_thread_specific<i64> changed;
-  tbb::parallel_for((i64)0, num_chunks, [&](i64 chunk) {
-    u64 bitset = converged[chunk];
-    for_each_unset_bit(bitset, [&](i64 offset) {
-      i64 i = chunk + offset;
 
-      SHA256Hash sha;
-      sha.update(digests[2][i].data(), HASH_SIZE);
+  tbb::parallel_for((i64)0, num_digests, [&](i64 i) {
+    if (converged.get(i))
+      return;
 
-      i64 begin = edge_indices[i];
-      i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
+    SHA256Hash sha;
+    sha.update(digests[2][i].data(), HASH_SIZE);
 
-      for (i64 j : edges.subspan(begin, end - begin)) {
-        sha.update(digests[slot][j].data(), HASH_SIZE);
-      }
+    i64 begin = edge_indices[i];
+    i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
-      digests[!slot][i] = digest_final(sha);
+    for (i64 j : edges.subspan(begin, end - begin)) {
+      sha.update(digests[slot][j].data(), HASH_SIZE);
+    }
 
-      if (digests[slot][i] != digests[!slot][i])
-        changed.local()++;
-      else
-        // This node has converged. Skip further iterations as it will yield the same hash.
-        converged[chunk] |= (1uLL << offset);
-    });
+    digests[!slot][i] = digest_final(sha);
+
+    if (digests[slot][i] != digests[!slot][i]) {
+      changed.local()++;
+    } else {
+      // This node has converged. Skip further iterations as it will
+      // yield the same hash.
+      converged.set(i);
+    }
   }, ap);
 
   slot = !slot;
@@ -529,10 +529,14 @@ void icf_sections(Context<E> &ctx) {
   std::vector<InputSection<E> *> sections = gather_sections(ctx);
 
   // We allocate 3 arrays to store hashes for each vertex.
-  // Index 0 and 1 are used for tree hashes from the previous iteration and the current iteration.
-  // They switch roles every iteration --- see `slot` below.
-  // Index 2 stores the initial, single-vertex hash --- this is combined with hashes from the connected vertices to
-  // form the tree hash described above.
+  //
+  // Index 0 and 1 are used for tree hashes from the previous
+  // iteration and the current iteration. They switch roles every
+  // iteration. See `slot` below.
+  //
+  // Index 2 stores the initial, single-vertex hash. This is combined
+  // with hashes from the connected vertices to form the tree hash
+  // described above.
   std::vector<std::vector<Digest>> digests(3);
   digests[0] = compute_digests<E>(ctx, sections);
   digests[1].resize(digests[0].size());
@@ -542,8 +546,7 @@ void icf_sections(Context<E> &ctx) {
   std::vector<u32> edge_indices;
   gather_edges<E>(ctx, sections, edges, edge_indices);
 
-  std::vector<u64> converged = init_converged_mask(digests[0].size());
-
+  BitVector converged(digests[0].size());
   bool slot = 0;
 
   // Execute the propagation rounds until convergence is obtained.
