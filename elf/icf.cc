@@ -618,10 +618,12 @@ void icf_sections(Context<E> &ctx) {
   // exporting to the symtab.
   {
     Timer t(ctx, "sweep");
+    static Counter eliminated("icf_eliminated");
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
       for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
         if (isec && isec->is_alive && isec->is_killed_by_icf()) {
           isec->kill();
+          eliminated++;
         }
       }
     });
