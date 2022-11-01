@@ -412,15 +412,6 @@ static void gather_edges(Context<E> &ctx,
   });
 }
 
-template <typename F>
-static void for_each_unset_bit(u64 bitset, F f) {
-  while (bitset != (~0ULL)) {
-    i64 offset = std::countr_one(bitset);
-    f(offset);
-    bitset ^= (1uLL << offset);
-  }
-}
-
 template <typename E>
 static i64 propagate(std::span<std::vector<Digest>> digests,
                      std::span<u32> edges, std::span<u32> edge_indices,
@@ -442,18 +433,17 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
-    for (i64 j : edges.subspan(begin, end - begin)) {
+    for (i64 j : edges.subspan(begin, end - begin))
       sha.update(digests[slot][j].data(), HASH_SIZE);
-    }
 
     digests[!slot][i] = digest_final(sha);
 
-    if (digests[slot][i] != digests[!slot][i]) {
-      changed.local()++;
-    } else {
+    if (digests[slot][i] == digests[!slot][i]) {
       // This node has converged. Skip further iterations as it will
       // yield the same hash.
       converged.set(i);
+    } else {
+      changed.local()++;
     }
   }, ap);
 
