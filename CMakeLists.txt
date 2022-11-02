@@ -377,18 +377,22 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
   install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
   install(FILES docs/mold.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/)
 
-  function(mold_install_symlink OLD NEW)
+  function(mold_install_relative_symlink OLD NEW)
     install(CODE "
       get_filename_component(PREFIX_ABS \${CMAKE_INSTALL_PREFIX} ABSOLUTE)
-      get_filename_component(NEW_DIR
-        \$ENV{DESTDIR}/\${PREFIX_ABS}/${NEW} DIRECTORY)
-      file(MAKE_DIRECTORY \${NEW_DIR})
-      file(CREATE_LINK ${OLD} \$ENV{DESTDIR}/\${PREFIX_ABS}/${NEW} SYMBOLIC)")
+      get_filename_component(OLD_ABS ${OLD} ABSOLUTE BASE_DIR \${PREFIX_ABS})
+      get_filename_component(NEW_ABS ${NEW} ABSOLUTE BASE_DIR \${PREFIX_ABS})
+      get_filename_component(NEW_DIR \${NEW_ABS} DIRECTORY)
+      file(RELATIVE_PATH OLD_REL \${NEW_DIR} \${OLD_ABS})
+      file(MAKE_DIRECTORY \$ENV{DESTDIR}/\${NEW_DIR})
+      file(CREATE_LINK \${OLD_REL} \$ENV{DESTDIR}/\${NEW_ABS} SYMBOLIC)")
   endfunction()
-  file(RELATIVE_PATH RELPATH
-       /${CMAKE_INSTALL_LIBEXECDIR}/mold /${CMAKE_INSTALL_BINDIR}/mold)
-  mold_install_symlink(${RELPATH} ${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)
-  mold_install_symlink(mold ${CMAKE_INSTALL_BINDIR}/ld.mold)
-  mold_install_symlink(mold ${CMAKE_INSTALL_BINDIR}/ld64.mold)
-  mold_install_symlink(mold.1 ${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)
+  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
+    ${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)
+  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
+    ${CMAKE_INSTALL_BINDIR}/ld.mold)
+  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
+    ${CMAKE_INSTALL_BINDIR}/ld64.mold)
+  mold_install_relative_symlink(${CMAKE_INSTALL_MANDIR}/man1/mold.1
+    ${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)
 endif()
