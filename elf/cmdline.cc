@@ -81,11 +81,11 @@ Options:
     --no-demangle
   --enable-new-dtags          Emit DT_RUNPATH for --rpath (default)
     --disable-new-dtags       Emit DT_RPATH for --rpath
+  --execute-only              Make executable segments unreadable
   --dp                        Ignored
   --dynamic-list              Read a list of dynamic symbols (implies -Bsymbolic)
   --eh-frame-hdr              Create .eh_frame_hdr section
     --no-eh-frame-hdr
-  --enable-new-dtags          Ignored
   --exclude-libs LIB,LIB,..   Mark all symbols in given libraries hidden
   --export-dynamic-symbol     Put symbols matching glob in the dynamic symbol table
   --export-dynamic-symbol-list
@@ -721,6 +721,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.enable_new_dtags = true;
     } else if (read_flag("disable-new-dtags")) {
       ctx.arg.enable_new_dtags = false;
+    } else if (read_flag("execute-only")) {
+      ctx.arg.execute_only = true;
     } else if (read_arg("compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
         ctx.arg.compress_debug_sections = COMPRESS_ZLIB;

@@ -117,17 +117,26 @@ void OutputShdr<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
+  // All sections are put into a single RWX segment if --omagic
   if (ctx.arg.omagic)
     return PF_R | PF_W | PF_X;
 
-  i64 ret = PF_R;
   bool write = (chunk->shdr.sh_flags & SHF_WRITE);
-  if (write)
-    ret |= PF_W;
-  if ((!ctx.arg.rosegment && !write) ||
-      (chunk->shdr.sh_flags & SHF_EXECINSTR))
-    ret |= PF_X;
-  return ret;
+  bool exec = (chunk->shdr.sh_flags & SHF_EXECINSTR);
+
+  // .text is not readable if --execute-only
+  if (exec && ctx.arg.execute_only) {
+    if (write)
+      Error(ctx) << "--execute-only is not compatible with writable section: "
+                 << chunk->name;
+    return PF_X;
+  }
+
+  // .rodata is merged with .text if --no-rosegment
+  if (!write && !ctx.arg.rosegment)
+    exec = true;
+
+  return PF_R | (write ? PF_W : 0) | (exec ? PF_X : 0);
 }
 
 // PT_GNU_RELRO segment is a security mechanism to make more pages

@@ -665,6 +665,19 @@ mold emits DT_RPATH for
 .Fl -rpath
 instead.
 .Pp
+.It Fl -execute-only
+Traditionally, most processors require both executable and readable bits to 1 \
+to make the page executable, which allows machine code to read itself as data
+at runtime. This is actually what an attacker often does after gaining a limited \
+control of a process to find pieces of machine code they can use to gain the \
+full control of the process.
+.Pp
+As a mitigation, some recent processors allows "execute-only" pages. \
+If a page is execute-only, you can call a function there as long as you know \
+its address but can't read it as data.
+.Pp
+This option marks text segments execute-only. This option currently works only \
+on some ARM64 processors.
 .Pp
 .It Fl -exclude-libs Ns = Ns Ar libraries Ns ...
 Mark all symbols in the given
