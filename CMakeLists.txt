@@ -349,6 +349,10 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16.0")
   target_precompile_headers(mold PRIVATE
     "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/elf/mold.h>"
     "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/macho/mold.h>")
+
+  # ccache needs this flag along with `sloppiness = pch_defines,time_macros`
+  # to enable caching
+  target_compile_options(mold PRIVATE -fpch-preprocess)
 endif()
 
 include(CTest)
