@@ -301,7 +301,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_TLSGD_ADD_LO12_NC:
       *(ul32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A, 11, 0) << 10;
       break;
-    case R_AARCH64_TLSDESC_ADR_PAGE21: {
+    case R_AARCH64_TLSDESC_ADR_PAGE21:
       if (sym.has_tlsdesc(ctx)) {
         i64 val = page(sym.get_tlsdesc_addr(ctx) + A) - page(P);
         check(val, -(1LL << 32), 1LL << 32);
@@ -313,7 +313,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc = 0xd2a0'0000 | (bits(val, 32, 16) << 5);
       }
       break;
-    }
     case R_AARCH64_TLSDESC_LD64_LO12:
       if (sym.has_tlsdesc(ctx)) {
         *(ul32 *)loc |= bits(sym.get_tlsdesc_addr(ctx) + A, 11, 3) << 10;

@@ -1635,8 +1635,10 @@ template<typename E>
 ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name) {
   ElfSym<E> esym;
   memset(&esym, 0, sizeof(esym));
-  esym.st_type = sym.esym().st_type;
+
   esym.st_name = st_name;
+  esym.st_type = sym.esym().st_type;
+  esym.st_size = sym.esym().st_size;
 
   if (sym.is_local())
     esym.st_bind = STB_LOCAL;
@@ -1670,35 +1672,29 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name) {
     esym.st_shndx =
       sym.copyrel_readonly ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
     esym.st_value = sym.get_addr(ctx);
-    esym.st_size = sym.esym().st_size;
   } else if (sym.file->is_dso || sym.esym().is_undef()) {
     esym.st_shndx = SHN_UNDEF;
-    esym.st_value = sym.is_canonical ? sym.get_plt_addr(ctx) : 0;
-    esym.st_size = 0;
+    if (sym.is_canonical)
+      esym.st_value = sym.get_plt_addr(ctx);
   } else if (Chunk<E> *osec = sym.get_output_section()) {
     // Linker-synthesized symbols
     esym.st_shndx = osec->shndx;
     esym.st_value = sym.get_addr(ctx);
-    esym.st_size = sym.esym().st_size;
   } else if (SectionFragment<E> *frag = sym.get_frag()) {
     // Section fragment
     esym.st_shndx = frag->output_section.shndx;
     esym.st_value = sym.get_addr(ctx);
-    esym.st_size = 0;
   } else if (!sym.get_input_section()) {
     // Absolute symbol
     esym.st_shndx = SHN_ABS;
     esym.st_value = sym.get_addr(ctx);
-    esym.st_size = sym.esym().st_size;
   } else if (sym.get_type() == STT_TLS) {
     esym.st_shndx = get_st_shndx(sym);
     esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
-    esym.st_size = sym.esym().st_size;
   } else {
     esym.st_visibility = sym.visibility;
     esym.st_shndx = get_st_shndx(sym);
     esym.st_value = sym.get_addr(ctx, NO_PLT);
-    esym.st_size = sym.esym().st_size;
   }
   return esym;
 }

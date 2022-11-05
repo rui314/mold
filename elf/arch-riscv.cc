@@ -462,14 +462,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // We need to guarantee that the NOP sequence is valid after byte
       // removal (e.g. we can't remove the first 2 bytes of a 4-byte NOP).
       // For the sake of simplicity, we always rewrite the entire NOP sequence.
-      i64 padding_size = align_to(P, bit_ceil(rel.r_addend + 1)) - P;
-      assert(padding_size % 2 == 0);
+      i64 padding_bytes = rel.r_addend - removed_bytes;
+      assert((padding_bytes & 1) == 0);
 
       i64 i = 0;
-      for (; i <= padding_size - 4; i += 4)
+      for (; i <= padding_bytes - 4; i += 4)
         *(ul32 *)(loc + i) = 0x0000'0013; // nop
-      if (i != padding_size)
-        *(ul16 *)(loc + i) = 0x0001;     // c.nop
+      if (i < padding_bytes)
+        *(ul16 *)(loc + i) = 0x0001;      // c.nop
       break;
     }
     case R_RISCV_RVC_BRANCH: {
@@ -521,7 +521,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   // relocations overwrote instructions with full 32-bit values to allow
   // their corresponding pcrel LO12 relocations to read their values.
   for (i64 i = 0; i < rels.size(); i++) {
-    switch (rels[i].r_type)
+    switch (rels[i].r_type) {
     case R_RISCV_PCREL_LO12_I:
     case R_RISCV_PCREL_LO12_S: {
       Symbol<E> &sym = *file.symbols[rels[i].r_sym];
@@ -534,6 +534,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_itype(loc, val);
       else
         write_stype(loc, val);
+    }
     }
   }
 
@@ -833,7 +834,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       // allow to jump to anywhere in PC ± 2 GiB. If the jump target is
       // close enough to PC, we can use C.J, C.JAL or JAL instead.
       i64 dist = compute_distance(ctx, sym, isec, r);
-      if (dist % 2)
+      if (dist & 1)
         break;
 
       std::string_view contents = isec.contents;
