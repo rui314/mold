@@ -26,7 +26,6 @@ readelf -sw $t/exe1 | grep -Eq ': 0+\s.*\s__ehdr_start$'
 
 $CC -B. -o $t/exe2 $t/a.o -no-pie \
   -Wl,--section-order='=0x200000 EHDR RODATA =0x300000 PHDR =0x400000 .fn2 TEXT DATA BSS'
-$QEMU $t/exe2 | grep -q Hello
 
 readelf -SW $t/exe2 | grep -q '\.fn2 .*00400000'
 readelf -sW $t/exe2 | grep -Eq ': 0+200000\s.*\s__ehdr_start$'
@@ -35,7 +34,6 @@ readelf -W --segments $t/exe2 | grep -Eq 'PHDR\s.*0x0+300000\s'
 
 $CC -B. -o $t/exe3 $t/a.o -no-pie \
   -Wl,--section-order='=0x200000 !ehdr_start EHDR %0x20 !rodata_start RODATA =0x300000 !phdr_start PHDR %4096 !phdr_end =0x400000 !text_start TEXT DATA BSS'
-$QEMU $t/exe3 | grep -q Hello
 
 readelf -sW $t/exe3 > $t/log3
 grep -Eq '\b0+200000 .* ehdr_start$' $t/log3
