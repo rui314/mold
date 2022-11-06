@@ -489,13 +489,15 @@ int elf_main(int argc, char **argv) {
   create_internal_file(ctx);
 
   // resolve_symbols is 4 things in 1 phase:
+  //
   // - Determine the set of object files to extract from archives.
   // - Remove redundant COMDAT sections (e.g. duplicate inline functions).
   // - Finally, the actual symbol resolution.
-  // - LTO, which requires preliminary symbol resolution before running and a follow-up re-resolution after the LTO
-  //   objects are emitted.
+  // - LTO, which requires preliminary symbol resolution before running
+  //   and a follow-up re-resolution after the LTO objects are emitted.
   //
-  // These passes have complex interactions, and unfortunately has to be put together in a single phase.
+  // These passes have complex interactions, and unfortunately has to be
+  // put together in a single phase.
   resolve_symbols(ctx);
 
   // Resolve mergeable section pieces to merge them.
