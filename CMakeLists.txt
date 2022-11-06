@@ -134,11 +134,15 @@ endif()
 # optimized for multi-threaded applications.
 #
 # If you want to use the usual libc's malloc, pass -DMOLD_USE_MIMALLOC=OFF.
-include(CheckCSourceCompiles)
-check_c_source_compiles("#ifdef __i386__\nint main() {}\n#endif" I386)
+#
+# We enable mimalloc by default for 64-bit targets. It doesn't seem to
+# be stable on 32-bit targets.
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles(
+  "static_assert(sizeof(void *) == 4); int main() {}" P32)
 
 cmake_dependent_option(MOLD_USE_MIMALLOC "Use mimalloc" ON
-  "NOT APPLE; NOT ANDROID; NOT I386" OFF)
+  "NOT APPLE; NOT ANDROID; NOT P32" OFF)
 cmake_dependent_option(
   MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
   MOLD_USE_MIMALLOC OFF)
