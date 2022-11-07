@@ -77,7 +77,7 @@ void TarWriter::append(std::string path, std::string_view data) {
   UstarHeader pax;
 
   std::string attr = encode_path(basedir, path);
-  sprintf(pax.size, "%011zo", attr.size());
+  snprintf(pax.size, sizeof(pax.size), "%011zo", attr.size());
   pax.typeflag[0] = 'x';
   pax.finalize();
   fwrite(&pax, sizeof(pax), 1, out);
@@ -89,7 +89,7 @@ void TarWriter::append(std::string path, std::string_view data) {
   // Write Ustar header
   UstarHeader ustar;
   memcpy(ustar.mode, "0000664", 8);
-  sprintf(ustar.size, "%011zo", data.size());
+  snprintf(ustar.size, sizeof(ustar.size), "%011zo", data.size());
   ustar.finalize();
   fwrite(&ustar, sizeof(ustar), 1, out);
 
