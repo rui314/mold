@@ -1227,12 +1227,13 @@ void apply_version_script(Context<E> &ctx) {
   MultiGlob matcher;
   MultiGlob cpp_matcher;
 
-  for (VersionPattern &v : ctx.version_patterns) {
+  for (i64 i = 0; i < ctx.version_patterns.size(); i++) {
+    VersionPattern &v = ctx.version_patterns[i];
     if (v.is_cpp) {
-      if (!cpp_matcher.add(v.pattern, v.ver_idx))
+      if (!cpp_matcher.add(v.pattern, i))
         Fatal(ctx) << "invalid version pattern: " << v.pattern;
     } else {
-      if (!matcher.add(v.pattern, v.ver_idx))
+      if (!matcher.add(v.pattern, i))
         Fatal(ctx) << "invalid version pattern: " << v.pattern;
     }
   }
@@ -1244,17 +1245,26 @@ void apply_version_script(Context<E> &ctx) {
 
       std::string_view name = sym->name();
 
-      if (std::optional<u16> ver = matcher.find(name)) {
-        sym->ver_idx = *ver;
-        continue;
-      }
+      std::optional<u32> best_match = std::nullopt;
+      auto update_match = [&](u32 match) {
+        if (!best_match || match < *best_match)
+          best_match = match;
+      };
 
+      if (std::optional<u32> rule_idx = matcher.find(name))
+        update_match(*rule_idx);
+
+      // Match non-mangled symbols against the C++ pattern as well.
+      // Weird, but required to match other linkers' behavior.
       if (!cpp_matcher.empty()) {
         if (std::optional<std::string_view> s = cpp_demangle(name))
           name = *s;
-        if (std::optional<u16> ver = cpp_matcher.find(name))
-          sym->ver_idx = *ver;
+        if (std::optional<u32> rule_idx = cpp_matcher.find(name))
+          update_match(*rule_idx);
       }
+
+      if (best_match)
+        sym->ver_idx = ctx.version_patterns[*best_match].ver_idx;
     }
   });
 }

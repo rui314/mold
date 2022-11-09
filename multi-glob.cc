@@ -26,7 +26,7 @@ namespace mold {
 
 std::optional<u32> MultiGlob::find(std::string_view str) {
   std::call_once(once, [&] { compile(); });
-  u32 idx = UINT32_MAX;
+  u32 val = UINT32_MAX;
 
   if (root) {
     // Match against simple glob patterns
@@ -36,7 +36,7 @@ std::optional<u32> MultiGlob::find(std::string_view str) {
       for (;;) {
         if (node->children[c]) {
           node = node->children[c].get();
-          idx = std::min(idx, node->value);
+          val = std::min(val, node->value);
           return;
         }
 
@@ -55,11 +55,11 @@ std::optional<u32> MultiGlob::find(std::string_view str) {
   // Match against complex glob patterns
   for (std::pair<Glob, u32> &glob : globs)
     if (glob.first.match(str))
-      idx = std::min(idx, glob.second);
+      val = std::min(val, glob.second);
 
-  if (idx == UINT32_MAX)
+  if (val == UINT32_MAX)
     return {};
-  return values[idx];
+  return val;
 }
 
 static bool is_simple_pattern(std::string_view pat) {
@@ -86,14 +86,12 @@ bool MultiGlob::add(std::string_view pat, u32 val) {
   assert(!is_compiled);
   assert(!pat.empty());
 
-  u32 idx = strings.size();
   strings.push_back(std::string(pat));
-  values.push_back(val);
 
   // Complex glob pattern
   if (!is_simple_pattern(pat)) {
     if (std::optional<Glob> glob = Glob::compile(pat)) {
-      globs.push_back({std::move(*glob), idx});
+      globs.push_back({std::move(*glob), val});
       return true;
     }
     return false;
@@ -110,7 +108,7 @@ bool MultiGlob::add(std::string_view pat, u32 val) {
     node = node->children[c].get();
   }
 
-  node->value = std::min(node->value, idx);
+  node->value = std::min(node->value, val);
   return true;
 }
 

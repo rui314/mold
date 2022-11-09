@@ -567,7 +567,6 @@ private:
   std::vector<std::string> strings;
   std::unique_ptr<TrieNode> root;
   std::vector<std::pair<Glob, u32>> globs;
-  std::vector<u32> values;
   std::once_flag once;
   bool is_compiled = false;
 };
