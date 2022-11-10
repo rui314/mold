@@ -31,6 +31,7 @@
 #include <pthread.h>
 #include <cstring>
 #include <cstdlib>
+#include <time.h>
 #else
 #error Unsupported platform
 #endif
@@ -191,8 +192,25 @@ inline thread_monitor::handle_type thread_monitor::launch( void* (*thread_routin
     check(pthread_attr_init( &s ), "pthread_attr_init has failed");
     if( stack_size>0 )
         check(pthread_attr_setstacksize( &s, stack_size ), "pthread_attr_setstack_size has failed" );
+
+    // pthread_create(2) can spuriously fail with EAGAIN. We retry
+    // max_num_tries times with progressively longer wait times.
     pthread_t handle;
-    check( pthread_create( &handle, &s, thread_routine, arg ), "pthread_create has failed" );
+    const int max_num_tries = 20;
+    int error = EAGAIN;
+
+    for (int i = 0; i < max_num_tries && error == EAGAIN; i++) {
+      if (i != 0) {
+        // Wait i milliseconds
+        struct timespec ts = {0, i * 1000 * 1000};
+        nanosleep(&ts, NULL);
+      }
+      error = pthread_create(&handle, &s, thread_routine, arg);
+    }
+
+    if (error)
+      handle_perror(error, "pthread_create has failed");
+
     check( pthread_attr_destroy( &s ), "pthread_attr_destroy has failed" );
     return handle;
 }
