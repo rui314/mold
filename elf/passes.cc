@@ -1244,27 +1244,22 @@ void apply_version_script(Context<E> &ctx) {
         continue;
 
       std::string_view name = sym->name();
+      i64 match = INT64_MAX;
 
-      std::optional<u32> best_match = std::nullopt;
-      auto update_match = [&](u32 match) {
-        if (!best_match || match < *best_match)
-          best_match = match;
-      };
-
-      if (std::optional<u32> rule_idx = matcher.find(name))
-        update_match(*rule_idx);
+      if (std::optional<u32> idx = matcher.find(name))
+        match = std::min<i64>(match, *idx);
 
       // Match non-mangled symbols against the C++ pattern as well.
       // Weird, but required to match other linkers' behavior.
       if (!cpp_matcher.empty()) {
         if (std::optional<std::string_view> s = cpp_demangle(name))
           name = *s;
-        if (std::optional<u32> rule_idx = cpp_matcher.find(name))
-          update_match(*rule_idx);
+        if (std::optional<u32> idx = cpp_matcher.find(name))
+          match = std::min<i64>(match, *idx);
       }
 
-      if (best_match)
-        sym->ver_idx = ctx.version_patterns[*best_match].ver_idx;
+      if (match != INT64_MAX)
+        sym->ver_idx = ctx.version_patterns[match].ver_idx;
     }
   });
 }
