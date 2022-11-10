@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ macro(tbb_remove_compile_flag flag)
     set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY COMPILE_OPTIONS ${_tbb_compile_options})
     unset(_tbb_compile_options)
     if (CMAKE_CXX_FLAGS)
-        string(REGEX REPLACE ${flag} "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
+        string(REGEX REPLACE "(^|[ \t\r\n]+)${flag}($|[ \t\r\n]+)" " " CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
     endif()
 endmacro()
 
@@ -42,5 +42,18 @@ macro(tbb_install_target target)
                 DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 NAMELINK_ONLY
                 COMPONENT devel)
+    endif()
+endmacro()
+
+macro(tbb_handle_ipo target)
+    if (TBB_IPO_PROPERTY)
+        set_target_properties(${target} PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+    elseif (TBB_IPO_FLAGS)
+        target_compile_options(${target} PRIVATE ${TBB_IPO_COMPILE_FLAGS})
+        if (COMMAND target_link_options)
+            target_link_options(${target} PRIVATE ${TBB_IPO_LINK_FLAGS})
+        else()
+            target_link_libraries(${target} PRIVATE ${TBB_IPO_LINK_FLAGS})
+        endif()
     endif()
 endmacro()

@@ -9,7 +9,7 @@
    :maxdepth: 4
 
    ../tbb_userguide/Package_Contents
-   ../tbb_userguide/Parallelizing_Simple_Loops
+   ../tbb_userguide/Parallelizing_Simple_Loops_os
    ../tbb_userguide/Parallelizing_Complex_Loops
    ../tbb_userguide/Flow_Graph
    ../tbb_userguide/work_isolation

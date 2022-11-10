@@ -75,7 +75,6 @@ public:
 
     // Include constructors of base_type
     using base_type::base_type;
-    using base_type::operator=;
 
     // Required for implicit deduction guides
     concurrent_set() = default;
@@ -86,6 +85,11 @@ public:
     // Required to respect the rule of 5
     concurrent_set& operator=( const concurrent_set& ) = default;
     concurrent_set& operator=( concurrent_set&& ) = default;
+
+    concurrent_set& operator=( std::initializer_list<value_type> il ) {
+        base_type::operator= (il);
+        return *this;
+    }
 
     template<typename OtherCompare>
     void merge(concurrent_set<key_type, OtherCompare, Allocator>& source) {
@@ -172,7 +176,6 @@ public:
 
     // Include constructors of base_type;
     using base_type::base_type;
-    using base_type::operator=;
 
     // Required for implicit deduction guides
     concurrent_multiset() = default;
@@ -183,6 +186,11 @@ public:
     // Required to respect the rule of 5
     concurrent_multiset& operator=( const concurrent_multiset& ) = default;
     concurrent_multiset& operator=( concurrent_multiset&& ) = default;
+
+    concurrent_multiset& operator=( std::initializer_list<value_type> il ) {
+        base_type::operator= (il);
+        return *this;
+    }
 
     template<typename OtherCompare>
     void merge(concurrent_set<key_type, OtherCompare, Allocator>& source) {

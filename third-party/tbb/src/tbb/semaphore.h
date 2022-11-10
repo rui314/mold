@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -101,7 +101,7 @@ namespace r1 {
 #if __TBB_USE_FUTEX
 
 static inline int futex_wait( void *futex, int comparand ) {
-    int r = ::syscall(SYS_futex, futex, __TBB_FUTEX_WAIT, comparand, NULL, NULL, 0);
+    int r = ::syscall(SYS_futex, futex, __TBB_FUTEX_WAIT, comparand, nullptr, nullptr, 0);
 #if TBB_USE_ASSERT
     int e = errno;
     __TBB_ASSERT(r == 0 || r == EWOULDBLOCK || (r == -1 && (e == EAGAIN || e == EINTR)), "futex_wait failed.");
@@ -110,14 +110,14 @@ static inline int futex_wait( void *futex, int comparand ) {
 }
 
 static inline int futex_wakeup_one( void *futex ) {
-    int r = ::syscall(SYS_futex, futex, __TBB_FUTEX_WAKE, 1, NULL, NULL, 0);
+    int r = ::syscall(SYS_futex, futex, __TBB_FUTEX_WAKE, 1, nullptr, nullptr, 0);
     __TBB_ASSERT(r == 0 || r == 1, "futex_wakeup_one: more than one thread woken up?");
     return r;
 }
 
 // Additional possible methods that are not required right now
 // static inline int futex_wakeup_all( void *futex ) {
-//     int r = ::syscall( SYS_futex,futex,__TBB_FUTEX_WAKE,INT_MAX,NULL,NULL,0 );
+//     int r = ::syscall( SYS_futex,futex,__TBB_FUTEX_WAKE,INT_MAX,nullptr,nullptr,0 );
 //     __TBB_ASSERT( r>=0, "futex_wakeup_all: error in waking up threads" );
 //     return r;
 // }
@@ -138,11 +138,11 @@ public:
     //! wait/acquire
     void P() {WaitForSingleObjectEx( sem, INFINITE, FALSE );}
     //! post/release
-    void V() {ReleaseSemaphore( sem, 1, NULL );}
+    void V() {ReleaseSemaphore( sem, 1, nullptr);}
 private:
     HANDLE sem;
     void init_semaphore(size_t start_cnt_) {
-        sem = CreateSemaphoreEx( NULL, LONG(start_cnt_), max_semaphore_cnt, NULL, 0, SEMAPHORE_ALL_ACCESS );
+        sem = CreateSemaphoreEx( nullptr, LONG(start_cnt_), max_semaphore_cnt, nullptr, 0, SEMAPHORE_ALL_ACCESS );
     }
 };
 #elif __APPLE__
@@ -154,7 +154,7 @@ public:
     //! dtor
     ~semaphore() {
         kern_return_t ret = semaphore_destroy( mach_task_self(), sem );
-        __TBB_ASSERT_EX( ret==err_none, NULL );
+        __TBB_ASSERT_EX( ret==err_none, nullptr);
     }
     //! wait/acquire
     void P() {
@@ -184,12 +184,12 @@ public:
     //! dtor
     ~semaphore() {
         int ret = sem_destroy( &sem );
-        __TBB_ASSERT_EX( !ret, NULL );
+        __TBB_ASSERT_EX( !ret, nullptr);
     }
     //! wait/acquire
     void P() {
         while( sem_wait( &sem )!=0 )
-            __TBB_ASSERT( errno==EINTR, NULL );
+            __TBB_ASSERT( errno==EINTR, nullptr);
     }
     //! post/release
     void V() { sem_post( &sem ); }
@@ -197,7 +197,7 @@ private:
     sem_t sem;
     void init_semaphore(int start_cnt_) {
         int ret = sem_init( &sem, /*shared among threads*/ 0, start_cnt_ );
-        __TBB_ASSERT_EX( !ret, NULL );
+        __TBB_ASSERT_EX( !ret, nullptr);
     }
 };
 #endif /* _WIN32||_WIN64 */
@@ -210,7 +210,7 @@ private:
 class binary_semaphore : no_copy {
 public:
     //! ctor
-    binary_semaphore() { my_sem = CreateEventEx( NULL, NULL, 0, EVENT_ALL_ACCESS );  }
+    binary_semaphore() { my_sem = CreateEventEx( nullptr, nullptr, 0, EVENT_ALL_ACCESS );  }
     //! dtor
     ~binary_semaphore() { CloseHandle( my_sem ); }
     //! wait/acquire
@@ -254,7 +254,7 @@ public:
     //! dtor
     ~binary_semaphore() {
         kern_return_t ret = semaphore_destroy( mach_task_self(), my_sem );
-        __TBB_ASSERT_EX( ret==err_none, NULL );
+        __TBB_ASSERT_EX( ret==err_none, nullptr);
     }
     //! wait/acquire
     void P() {
@@ -309,17 +309,17 @@ public:
     //! ctor
     binary_semaphore() {
         int ret = sem_init( &my_sem, /*shared among threads*/ 0, 0 );
-        __TBB_ASSERT_EX( !ret, NULL );
+        __TBB_ASSERT_EX( !ret, nullptr);
     }
     //! dtor
     ~binary_semaphore() {
         int ret = sem_destroy( &my_sem );
-        __TBB_ASSERT_EX( !ret, NULL );
+        __TBB_ASSERT_EX( !ret, nullptr);
     }
     //! wait/acquire
     void P() {
         while( sem_wait( &my_sem )!=0 )
-            __TBB_ASSERT( errno==EINTR, NULL );
+            __TBB_ASSERT( errno==EINTR, nullptr);
     }
     //! post/release
     void V() { sem_post( &my_sem ); }

@@ -34,6 +34,7 @@ string(STRIP "${TBB4PY_INCLUDE_STRING}" TBB4PY_INCLUDE_STRING)
 
 add_custom_target(
     python_build
+    ALL
     DEPENDS tbb python_copy
     COMMAND
     ${PYTHON_EXECUTABLE} ${PYTHON_BUILD_WORK_DIR}/setup.py

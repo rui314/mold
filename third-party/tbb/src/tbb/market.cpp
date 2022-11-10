@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -75,6 +75,11 @@ market::market ( unsigned workers_soft_limit, unsigned workers_hard_limit, std::
     __TBB_ASSERT( my_server, "Failed to create RML server" );
 }
 
+market::~market() {
+    poison_pointer(my_server);
+    poison_pointer(my_next_arena);
+}
+
 static unsigned calc_workers_soft_limit(unsigned workers_soft_limit, unsigned workers_hard_limit) {
     if( int soft_limit = market::app_parallelism_limit() )
         workers_soft_limit = soft_limit-1;
@@ -147,12 +152,10 @@ market& market::global_market(bool is_public, unsigned workers_requested, std::s
         market* m = new (storage) market( workers_soft_limit, workers_hard_limit, stack_size );
         if( is_public )
             m->my_public_ref_count.store(1, std::memory_order_relaxed);
-#if __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
         if (market::is_lifetime_control_present()) {
             ++m->my_public_ref_count;
             ++m->my_ref_count;
         }
-#endif // __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
         theMarket = m;
         // This check relies on the fact that for shared RML default_concurrency==max_concurrency
         if ( !governor::UsePrivateRML && m->my_server->default_concurrency() < workers_soft_limit )
@@ -194,13 +197,13 @@ bool market::release ( bool is_public, bool blocking_terminate ) {
         }
         if ( is_public ) {
             __TBB_ASSERT( theMarket == this, "Global market instance was destroyed prematurely?" );
-            __TBB_ASSERT( my_public_ref_count.load(std::memory_order_relaxed), NULL );
+            __TBB_ASSERT( my_public_ref_count.load(std::memory_order_relaxed), nullptr);
             --my_public_ref_count;
         }
         if ( --my_ref_count == 0 ) {
-            __TBB_ASSERT( !my_public_ref_count.load(std::memory_order_relaxed), NULL );
+            __TBB_ASSERT( !my_public_ref_count.load(std::memory_order_relaxed), nullptr);
             do_release = true;
-            theMarket = NULL;
+            theMarket = nullptr;
         }
     }
     if( do_release ) {
@@ -220,7 +223,7 @@ int market::update_workers_request() {
                                    (int)my_num_workers_soft_limit.load(std::memory_order_relaxed));
 #if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
     if (my_mandatory_num_requested > 0) {
-        __TBB_ASSERT(my_num_workers_soft_limit.load(std::memory_order_relaxed) == 0, NULL);
+        __TBB_ASSERT(my_num_workers_soft_limit.load(std::memory_order_relaxed) == 0, nullptr);
         my_num_workers_requested = 1;
     }
 #endif
@@ -245,7 +248,7 @@ void market::set_active_num_workers ( unsigned soft_limit ) {
     int delta = 0;
     {
         arenas_list_mutex_type::scoped_lock lock( m->my_arenas_list_mutex );
-        __TBB_ASSERT(soft_limit <= m->my_num_workers_hard_limit, NULL);
+        __TBB_ASSERT(soft_limit <= m->my_num_workers_hard_limit, nullptr);
 
 #if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
         arena_list_type* arenas = m->my_arenas;
@@ -258,7 +261,7 @@ void market::set_active_num_workers ( unsigned soft_limit ) {
                     if (it->my_global_concurrency_mode.load(std::memory_order_relaxed))
                         m->disable_mandatory_concurrency_impl(&*it);
         }
-        __TBB_ASSERT(m->my_mandatory_num_requested == 0, NULL);
+        __TBB_ASSERT(m->my_mandatory_num_requested == 0, nullptr);
 #endif
 
         m->my_num_workers_soft_limit.store(soft_limit, std::memory_order_release);
@@ -290,8 +293,8 @@ bool governor::does_client_join_workers (const rml::tbb_client &client) {
 arena* market::create_arena ( int num_slots, int num_reserved_slots, unsigned arena_priority_level,
                               std::size_t stack_size )
 {
-    __TBB_ASSERT( num_slots > 0, NULL );
-    __TBB_ASSERT( num_reserved_slots <= num_slots, NULL );
+    __TBB_ASSERT( num_slots > 0, nullptr);
+    __TBB_ASSERT( num_reserved_slots <= num_slots, nullptr);
     // Add public market reference for an external thread/task_arena (that adds an internal reference in exchange).
     market &m = global_market( /*is_public=*/true, num_slots-num_reserved_slots, stack_size );
     arena& a = arena::allocate_arena( m, num_slots, num_reserved_slots, arena_priority_level );
@@ -304,7 +307,7 @@ arena* market::create_arena ( int num_slots, int num_reserved_slots, unsigned ar
 /** This method must be invoked under my_arenas_list_mutex. **/
 void market::detach_arena ( arena& a ) {
     market::enforce([this] { return theMarket == this; }, "Global market instance was destroyed prematurely?");
-    __TBB_ASSERT( !a.my_slots[0].is_occupied(), NULL );
+    __TBB_ASSERT( !a.my_slots[0].is_occupied(), nullptr);
     if (a.my_global_concurrency_mode.load(std::memory_order_relaxed))
         disable_mandatory_concurrency_impl(&a);
 
@@ -316,10 +319,9 @@ void market::detach_arena ( arena& a ) {
 
 void market::try_destroy_arena ( arena* a, uintptr_t aba_epoch, unsigned priority_level ) {
     bool locked = true;
-    __TBB_ASSERT( a, NULL );
-    // we hold reference to the market, so it cannot be destroyed at any moment here
-    market::enforce([this] { return theMarket == this; }, NULL);
-    __TBB_ASSERT( my_ref_count!=0, NULL );
+    __TBB_ASSERT( a, nullptr);
+    // we hold reference to the server, so market cannot be destroyed at any moment here
+    __TBB_ASSERT(!is_poisoned(my_server), nullptr);
     my_arenas_list_mutex.lock();
         arena_list_type::iterator it = my_arenas[priority_level].begin();
         for ( ; it != my_arenas[priority_level].end(); ++it ) {
@@ -456,8 +458,8 @@ bool market::is_arena_alive(arena* a) {
 
 #if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
 void market::enable_mandatory_concurrency_impl ( arena *a ) {
-    __TBB_ASSERT(!a->my_global_concurrency_mode.load(std::memory_order_relaxed), NULL);
-    __TBB_ASSERT(my_num_workers_soft_limit.load(std::memory_order_relaxed) == 0, NULL);
+    __TBB_ASSERT(!a->my_global_concurrency_mode.load(std::memory_order_relaxed), nullptr);
+    __TBB_ASSERT(my_num_workers_soft_limit.load(std::memory_order_relaxed) == 0, nullptr);
 
     a->my_global_concurrency_mode.store(true, std::memory_order_relaxed);
     my_mandatory_num_requested++;
@@ -480,8 +482,8 @@ void market::enable_mandatory_concurrency ( arena *a ) {
 }
 
 void market::disable_mandatory_concurrency_impl(arena* a) {
-    __TBB_ASSERT(a->my_global_concurrency_mode.load(std::memory_order_relaxed), NULL);
-    __TBB_ASSERT(my_mandatory_num_requested > 0, NULL);
+    __TBB_ASSERT(a->my_global_concurrency_mode.load(std::memory_order_relaxed), nullptr);
+    __TBB_ASSERT(my_mandatory_num_requested > 0, nullptr);
 
     a->my_global_concurrency_mode.store(false, std::memory_order_relaxed);
     my_mandatory_num_requested--;
@@ -499,7 +501,7 @@ void market::mandatory_concurrency_disable ( arena *a ) {
         if (a->has_enqueued_tasks())
             return;
 
-        __TBB_ASSERT(my_num_workers_soft_limit.load(std::memory_order_relaxed) == 0, NULL);
+        __TBB_ASSERT(my_num_workers_soft_limit.load(std::memory_order_relaxed) == 0, nullptr);
         disable_mandatory_concurrency_impl(a);
 
         delta = update_workers_request();
@@ -559,7 +561,7 @@ void market::adjust_demand ( arena& a, int delta, bool mandatory ) {
         my_priority_level_demand[a.my_priority_level] += delta;
         unsigned effective_soft_limit = my_num_workers_soft_limit.load(std::memory_order_relaxed);
         if (my_mandatory_num_requested > 0) {
-            __TBB_ASSERT(effective_soft_limit == 0, NULL);
+            __TBB_ASSERT(effective_soft_limit == 0, nullptr);
             effective_soft_limit = 1;
         }
 
@@ -576,7 +578,7 @@ void market::adjust_demand ( arena& a, int delta, bool mandatory ) {
                 delta = min(total_demand, (int)effective_soft_limit) - my_num_workers_requested;
         }
         my_num_workers_requested += delta;
-        __TBB_ASSERT(my_num_workers_requested <= (int)effective_soft_limit, NULL);
+        __TBB_ASSERT(my_num_workers_requested <= (int)effective_soft_limit, nullptr);
 
         target_epoch = a.my_adjust_demand_target_epoch++;
     }
@@ -607,7 +609,7 @@ void market::process( job& j ) {
 }
 
 void market::cleanup( job& j) {
-    market::enforce([this] { return theMarket != this; }, NULL );
+    market::enforce([this] { return theMarket != this; }, nullptr );
     governor::auto_terminate(&j);
 }
 
@@ -617,12 +619,12 @@ void market::acknowledge_close_connection() {
 
 ::rml::job* market::create_one_job() {
     unsigned short index = ++my_first_unused_worker_idx;
-    __TBB_ASSERT( index > 0, NULL );
+    __TBB_ASSERT( index > 0, nullptr);
     ITT_THREAD_SET_NAME(_T("TBB Worker Thread"));
     // index serves as a hint decreasing conflicts between workers when they migrate between arenas
     thread_data* td = new(cache_aligned_allocate(sizeof(thread_data))) thread_data{ index, true };
-    __TBB_ASSERT( index <= my_num_workers_hard_limit, NULL );
-    __TBB_ASSERT( my_workers[index - 1].load(std::memory_order_relaxed) == nullptr, NULL );
+    __TBB_ASSERT( index <= my_num_workers_hard_limit, nullptr);
+    __TBB_ASSERT( my_workers[index - 1].load(std::memory_order_relaxed) == nullptr, nullptr);
     my_workers[index - 1].store(td, std::memory_order_release);
     return td;
 }

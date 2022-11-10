@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -50,14 +50,14 @@ protected:
     bool buffer_empty() const { return my_head == my_tail; }
 
     aligned_space_item &item(size_type i) {
-        __TBB_ASSERT(!(size_type(&(my_array[i&(my_array_size-1)].begin()->second))%alignment_of<buffer_item_state>::value),NULL);
-        __TBB_ASSERT(!(size_type(&(my_array[i&(my_array_size-1)].begin()->first))%alignment_of<item_type>::value), NULL);
+        __TBB_ASSERT(!(size_type(&(my_array[i&(my_array_size-1)].begin()->second))%alignment_of<buffer_item_state>::value), nullptr);
+        __TBB_ASSERT(!(size_type(&(my_array[i&(my_array_size-1)].begin()->first))%alignment_of<item_type>::value), nullptr);
         return *my_array[i & (my_array_size - 1) ].begin();
     }
 
     const aligned_space_item &item(size_type i) const {
-        __TBB_ASSERT(!(size_type(&(my_array[i&(my_array_size-1)].begin()->second))%alignment_of<buffer_item_state>::value), NULL);
-        __TBB_ASSERT(!(size_type(&(my_array[i&(my_array_size-1)].begin()->first))%alignment_of<item_type>::value), NULL);
+        __TBB_ASSERT(!(size_type(&(my_array[i&(my_array_size-1)].begin()->second))%alignment_of<buffer_item_state>::value), nullptr);
+        __TBB_ASSERT(!(size_type(&(my_array[i&(my_array_size-1)].begin()->first))%alignment_of<item_type>::value), nullptr);
         return *my_array[i & (my_array_size-1)].begin();
     }
 
@@ -217,7 +217,7 @@ protected:
             }
             allocator_type().deallocate(my_array,my_array_size);
         }
-        my_array = NULL;
+        my_array = nullptr;
         if(reset_pointers) {
             my_head = my_tail = my_array_size = 0;
         }
@@ -225,7 +225,7 @@ protected:
 
 public:
     //! Constructor
-    item_buffer( ) : my_array(NULL), my_array_size(0),
+    item_buffer( ) : my_array(nullptr), my_array_size(0),
                      my_head(0), my_tail(0) {
         grow_my_array(initial_buffer_size);
     }

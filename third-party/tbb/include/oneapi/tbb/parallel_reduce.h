@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -342,14 +342,14 @@ task* start_deterministic_reduce<Range,Body,Partitioner>::execute(execution_data
     my_partition.execute(*this, my_range, ed);
 
     finalize(ed);
-    return NULL;
+    return nullptr;
 }
 
 //! Cancel parallel_deterministic_reduce task
 template<typename Range, typename Body, typename Partitioner>
 task* start_deterministic_reduce<Range, Body, Partitioner>::cancel(execution_data& ed) {
     finalize(ed);
-    return NULL;
+    return nullptr;
 }
 
 

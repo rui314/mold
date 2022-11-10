@@ -17,8 +17,6 @@
 #ifndef __TBB_rw_mutex_H
 #define __TBB_rw_mutex_H
 
-#if __TBB_PREVIEW_MUTEXES
-
 #include "detail/_namespace_injection.h"
 #include "detail/_utils.h"
 #include "detail/_waitable_atomic.h"
@@ -214,7 +212,5 @@ using detail::d1::rw_mutex;
 } // namespace v1
 
 } // namespace tbb
-
-#endif /* __TBB_PREVIEW_MUTEXES */
 
 #endif // __TBB_rw_mutex_H

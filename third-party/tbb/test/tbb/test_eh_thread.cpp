@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -36,6 +36,7 @@
 // TODO: enable limitThreads with sanitizer under docker
 #if TBB_USE_EXCEPTIONS && !_WIN32 && !__ANDROID__
 
+#include <limits.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -62,7 +63,7 @@ static void* thread_routine(void*)
 {
     std::unique_lock<std::mutex> lock(m);
     cv.wait(lock, [] { return stop == true; });
-    return 0;
+    return nullptr;
 }
 
 class Thread {
@@ -73,7 +74,8 @@ public:
         mValid = false;
         pthread_attr_t attr;
         // Limit the stack size not to consume all virtual memory on 32 bit platforms.
-        if (pthread_attr_init(&attr) == 0 && pthread_attr_setstacksize(&attr, 100*1024) == 0) {
+        std::size_t stacksize = utils::max(128*1024, PTHREAD_STACK_MIN);
+        if (pthread_attr_init(&attr) == 0 && pthread_attr_setstacksize(&attr, stacksize) == 0) {
             mValid = pthread_create(&mHandle, &attr, thread_routine, /* arg = */ nullptr) == 0;
         }
     }

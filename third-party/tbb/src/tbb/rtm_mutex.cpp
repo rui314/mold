@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -86,7 +86,6 @@ struct rtm_mutex_impl {
         s.m_mutex = &m;
         s.m_mutex->lock();
         s.m_transaction_state = d1::rtm_mutex::rtm_state::rtm_real;
-        return;
     }
 
     //! Try to acquire lock on the given mutex.
@@ -95,7 +94,7 @@ struct rtm_mutex_impl {
         if (s.m_transaction_state == d1::rtm_mutex::rtm_state::rtm_transacting) {
             return true;
         }
-        __TBB_ASSERT(s.m_transaction_state == d1::rtm_mutex::rtm_state::rtm_none, NULL);
+        __TBB_ASSERT(s.m_transaction_state == d1::rtm_mutex::rtm_state::rtm_none, nullptr);
         // transacting acquire failed. try_lock the real mutex
         if (m.try_lock()) {
             s.m_mutex = &m;

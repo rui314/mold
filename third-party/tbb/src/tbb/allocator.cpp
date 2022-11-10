@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -27,11 +27,29 @@
 
 #include <cstdlib>
 
-#if _WIN32 || _WIN64
-#include <Windows.h>
+#ifdef _WIN32
+#include <windows.h>
 #else
 #include <dlfcn.h>
-#endif /* _WIN32||_WIN64 */
+#endif
+
+#if (!defined(_WIN32) && !defined(_WIN64)) || defined(__CYGWIN__)
+#include <stdlib.h> // posix_memalign, free
+// With glibc, uClibc and musl on Linux and bionic on Android it is safe to use memalign(), as the allocated memory
+// can be freed with free(). It is also better to use memalign() since posix_memalign() is just a wrapper on top of
+// memalign() and it offers nothing but overhead due to inconvenient interface. This is likely the case with other
+// standard libraries as well, and more libraries can be added to the preprocessor check below. Unfortunately, we
+// can't detect musl, so we simply enable memalign() on Linux and Android in general.
+#if defined(linux) || defined(__linux) || defined(__linux__) || defined(__ANDROID__)
+#include <malloc.h> // memalign
+#define __TBB_USE_MEMALIGN
+#else
+#define __TBB_USE_POSIX_MEMALIGN
+#endif
+#elif defined(_MSC_VER) || defined(__MINGW32__)
+#include <malloc.h> // _aligned_malloc, _aligned_free
+#define __TBB_USE_MSVC_ALIGNED_MALLOC
+#endif
 
 #if __TBB_WEAK_SYMBOLS_PRESENT
 
@@ -67,10 +85,10 @@ static void  (*deallocate_handler)(void* pointer) = nullptr;
 //! Initialization routine used for first indirect call via cache_aligned_allocate_handler.
 static void* initialize_cache_aligned_allocate_handler(std::size_t n, std::size_t alignment);
 
-//! Allocates memory using standard malloc. It is used when scalable_allocator is not available
+//! Allocates overaligned memory using standard memory allocator. It is used when scalable_allocator is not available.
 static void* std_cache_aligned_allocate(std::size_t n, std::size_t alignment);
 
-//! Allocates memory using standard free. It is used when scalable_allocator is not available
+//! Deallocates overaligned memory using standard memory allocator. It is used when scalable_allocator is not available.
 static void  std_cache_aligned_deallocate(void* p);
 
 //! Handler for padded memory allocation
@@ -114,7 +132,7 @@ static const dynamic_link_descriptor MallocLinkTable[] = {
     The routine attempts to dynamically link with the TBB memory allocator.
     If that allocator is not found, it links to malloc and free. */
 void initialize_handler_pointers() {
-    __TBB_ASSERT(allocate_handler == &initialize_allocate_handler, NULL);
+    __TBB_ASSERT(allocate_handler == &initialize_allocate_handler, nullptr);
     bool success = dynamic_link(MALLOCLIB_NAME, MallocLinkTable, 4);
     if(!success) {
         // If unsuccessful, set the handlers to the default routines.
@@ -141,14 +159,14 @@ void initialize_cache_aligned_allocator() {
 //! Executed on very first call through allocate_handler
 static void* initialize_allocate_handler(std::size_t size) {
     initialize_cache_aligned_allocator();
-    __TBB_ASSERT(allocate_handler != &initialize_allocate_handler, NULL);
+    __TBB_ASSERT(allocate_handler != &initialize_allocate_handler, nullptr);
     return (*allocate_handler)(size);
 }
 
 //! Executed on very first call through cache_aligned_allocate_handler
 static void* initialize_cache_aligned_allocate_handler(std::size_t bytes, std::size_t alignment) {
     initialize_cache_aligned_allocator();
-    __TBB_ASSERT(cache_aligned_allocate_handler != &initialize_cache_aligned_allocate_handler, NULL);
+    __TBB_ASSERT(cache_aligned_allocate_handler != &initialize_cache_aligned_allocate_handler, nullptr);
     return (*cache_aligned_allocate_handler)(bytes, alignment);
 }
 
@@ -168,7 +186,7 @@ void* __TBB_EXPORTED_FUNC cache_aligned_allocate(std::size_t size) {
     if (size + cache_line_size < size) {
         throw_exception(exception_id::bad_alloc);
     }
-    // scalable_aligned_malloc considers zero size request an error, and returns NULL
+    // scalable_aligned_malloc considers zero size request an error, and returns nullptr
     if (size == 0) size = 1;
 
     void* result = cache_aligned_allocate_handler.load(std::memory_order_acquire)(size, cache_line_size);
@@ -185,6 +203,17 @@ void __TBB_EXPORTED_FUNC cache_aligned_deallocate(void* p) {
 }
 
 static void* std_cache_aligned_allocate(std::size_t bytes, std::size_t alignment) {
+#if defined(__TBB_USE_MEMALIGN)
+    return memalign(alignment, bytes);
+#elif defined(__TBB_USE_POSIX_MEMALIGN)
+    void* p = nullptr;
+    int res = posix_memalign(&p, alignment, bytes);
+    if (res != 0)
+        p = nullptr;
+    return p;
+#elif defined(__TBB_USE_MSVC_ALIGNED_MALLOC)
+    return _aligned_malloc(bytes, alignment);
+#else
     // TODO: make it common with cache_aligned_resource
     std::size_t space = alignment + bytes;
     std::uintptr_t base = reinterpret_cast<std::uintptr_t>(std::malloc(space));
@@ -199,9 +228,15 @@ static void* std_cache_aligned_allocate(std::size_t bytes, std::size_t alignment
     // Record where block actually starts.
     (reinterpret_cast<std::uintptr_t*>(result))[-1] = base;
     return reinterpret_cast<void*>(result);
+#endif
 }
 
 static void std_cache_aligned_deallocate(void* p) {
+#if defined(__TBB_USE_MEMALIGN) || defined(__TBB_USE_POSIX_MEMALIGN)
+    free(p);
+#elif defined(__TBB_USE_MSVC_ALIGNED_MALLOC)
+    _aligned_free(p);
+#else
     if (p) {
         __TBB_ASSERT(reinterpret_cast<std::uintptr_t>(p) >= 0x4096, "attempt to free block not obtained from cache_aligned_allocator");
         // Recover where block actually starts
@@ -209,6 +244,7 @@ static void std_cache_aligned_deallocate(void* p) {
         __TBB_ASSERT(((base + nfs_size) & ~(nfs_size - 1)) == reinterpret_cast<std::uintptr_t>(p), "Incorrect alignment or not allocated by std_cache_aligned_deallocate?");
         std::free(reinterpret_cast<void*>(base));
     }
+#endif
 }
 
 void* __TBB_EXPORTED_FUNC allocate_memory(std::size_t size) {
@@ -232,7 +268,7 @@ bool __TBB_EXPORTED_FUNC is_tbbmalloc_used() {
         initialize_cache_aligned_allocator();
     }
     handler_snapshot = allocate_handler.load(std::memory_order_relaxed);
-    __TBB_ASSERT(handler_snapshot != &initialize_allocate_handler && deallocate_handler != nullptr, NULL);
+    __TBB_ASSERT(handler_snapshot != &initialize_allocate_handler && deallocate_handler != nullptr, nullptr);
     // Cast to void avoids type mismatch errors on some compilers (e.g. __IBMCPP__)
     __TBB_ASSERT((reinterpret_cast<void*>(handler_snapshot) == reinterpret_cast<void*>(&std::malloc)) == (reinterpret_cast<void*>(deallocate_handler) == reinterpret_cast<void*>(&std::free)),
                   "Both shim pointers must refer to routines from the same package (either TBB or CRT)");

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -51,10 +51,10 @@ int __TBB_load_ittnotify() {
 #if !(_WIN32||_WIN64)
     // tool_api crashes without dlopen, check that it's present. Common case
     // for lack of dlopen is static binaries, i.e. ones build with -static.
-    if (dlopen == NULL)
+    if (dlopen == nullptr)
         return 0;
 #endif
-    return __itt_init_ittlib(NULL,          // groups for:
+    return __itt_init_ittlib(nullptr,       // groups for:
       (__itt_group_id)(__itt_group_sync     // prepare/cancel/acquired/releasing
                        | __itt_group_thread // name threads
                        | __itt_group_stitch // stack stitching

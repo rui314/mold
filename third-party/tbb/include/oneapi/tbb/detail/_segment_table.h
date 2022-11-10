@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -120,7 +120,7 @@ public:
         return *this;
     }
 
-    segment_table& operator=( segment_table&& other ) 
+    segment_table& operator=( segment_table&& other )
         noexcept(derived_type::is_noexcept_assignment)
     {
         using pocma_type = typename segment_table_allocator_traits::propagate_on_container_move_assignment;
@@ -133,7 +133,7 @@ public:
         return *this;
     }
 
-    void swap( segment_table& other ) 
+    void swap( segment_table& other )
         noexcept(derived_type::is_noexcept_swap)
     {
         using is_equal_type = typename segment_table_allocator_traits::is_always_equal;
@@ -184,9 +184,7 @@ public:
     }
 
     void delete_segment( segment_index_type seg_index ) {
-        segment_type disabled_segment = nullptr;
-        // Set the pointer to the segment to NULL in the table
-        segment_type segment_to_delete = get_table()[seg_index].exchange(disabled_segment);
+        segment_type segment_to_delete = self()->nullify_segment(get_table(), seg_index);
         if (segment_to_delete == segment_allocation_failure_tag) {
             return;
         }
@@ -296,7 +294,7 @@ public:
                         throw_exception(exception_id::bad_alloc);
                     }
                     backoff.pause();
-                    table = my_segment_table.load(std::memory_order_acquire); 
+                    table = my_segment_table.load(std::memory_order_acquire);
                 } while (table == my_embedded_table);
             }
         }
@@ -542,8 +540,8 @@ protected:
     }
 
     segment_table_allocator_type my_segment_table_allocator;
-    atomic_segment my_embedded_table[pointers_per_embedded_table];
     std::atomic<segment_table_type> my_segment_table;
+    atomic_segment my_embedded_table[pointers_per_embedded_table];
     // Number of segments in first block
     std::atomic<size_type> my_first_block;
     // Number of elements in table

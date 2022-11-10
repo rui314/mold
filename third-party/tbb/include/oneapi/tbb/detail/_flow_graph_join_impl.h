@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -910,7 +910,7 @@
                     }
                     break;
                 case inc_count: {  // called from input ports
-                        count_element_type *p = 0;
+                        count_element_type *p = nullptr;
                         unref_key_type &t = current->my_val;
                         if(!(this->find_ref_with_key(t,p))) {
                             count_element_type ev;

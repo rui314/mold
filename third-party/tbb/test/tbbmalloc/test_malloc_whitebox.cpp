@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ class AllocInfo {
     int val;
     int size;
 public:
-    AllocInfo() : p(NULL), val(0), size(0) {}
+    AllocInfo() : p(nullptr), val(0), size(0) {}
     explicit AllocInfo(int sz) : p((int*)scalable_malloc(sz*sizeof(int))),
                                    val(rand()), size(sz) {
         REQUIRE(p);
@@ -90,7 +90,7 @@ public:
     }
     void check() const {
         for (int k=0; k<size; k++)
-            ASSERT(p[k] == val, NULL);
+            ASSERT(p[k] == val, nullptr);
     }
     void clear() {
         scalable_free(p);
@@ -354,7 +354,7 @@ void TestBackRef() {
     utils::NativeParallelFor( 1, LocalCachesHit() );
     beforeNumBackRef = allocatedBackRefCount();
     utils::NativeParallelFor( 2, LocalCachesHit() );
-    int res = scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, NULL);
+    int res = scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, nullptr);
     REQUIRE(res == TBBMALLOC_OK);
     afterNumBackRef = allocatedBackRefCount();
     REQUIRE_MESSAGE(beforeNumBackRef>=afterNumBackRef, "backreference leak detected");
@@ -379,7 +379,7 @@ void *getMem(intptr_t /*pool_id*/, size_t &bytes)
     static size_t pos;
 
     if (pos + bytes > BUF_SIZE)
-        return NULL;
+        return nullptr;
 
     void *ret = space + pos;
     pos += bytes;
@@ -444,7 +444,7 @@ void TestPools() {
     pool_destroy(pool1);
     pool_destroy(pool2);
 
-    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, NULL);
+    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, nullptr);
     beforeNumBackRef = allocatedBackRefCount();
     rml::MemoryPool *fixedPool;
 
@@ -501,7 +501,7 @@ void TestPools() {
     pool_destroy(mallocPool);
     pool_destroy(fixedPool);
 
-    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, NULL);
+    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, nullptr);
     afterNumBackRef = allocatedBackRefCount();
     REQUIRE_MESSAGE(beforeNumBackRef==afterNumBackRef, "backreference leak detected");
 
@@ -603,9 +603,9 @@ void TestObjectRecognition() {
                     falseBlock->backRefIdx.largeObj = largeObj;
                     headerLO->backRefIdx.largeObj = largeObj;
 
-                    obtainedSize = __TBB_malloc_safer_msize(falseSO, NULL);
+                    obtainedSize = __TBB_malloc_safer_msize(falseSO, nullptr);
                     REQUIRE_MESSAGE(obtainedSize==0, "Incorrect pointer accepted");
-                    obtainedSize = __TBB_malloc_safer_msize(falseLO, NULL);
+                    obtainedSize = __TBB_malloc_safer_msize(falseLO, nullptr);
                     REQUIRE_MESSAGE(obtainedSize==0, "Incorrect pointer accepted");
                 }
             }
@@ -617,15 +617,15 @@ void TestObjectRecognition() {
         }
         for (int i=0; i<NUM_OF_IDX; i++) {
             idxs[i] = BackRefIdx::newBackRef(/*largeObj=*/false);
-            setBackRef(idxs[i], NULL);
+            setBackRef(idxs[i], nullptr);
         }
     }
     char *smallPtr = (char*)scalable_malloc(falseObjectSize);
-    obtainedSize = __TBB_malloc_safer_msize(smallPtr, NULL);
+    obtainedSize = __TBB_malloc_safer_msize(smallPtr, nullptr);
     REQUIRE_MESSAGE(obtainedSize==getObjectSize(falseObjectSize), "Correct pointer not accepted?");
     scalable_free(smallPtr);
 
-    obtainedSize = __TBB_malloc_safer_msize(mem, NULL);
+    obtainedSize = __TBB_malloc_safer_msize(mem, nullptr);
     REQUIRE_MESSAGE(obtainedSize>=2*slabSize, "Correct pointer not accepted?");
     scalable_free(mem);
     scalable_free(bufferLOH);
@@ -851,7 +851,7 @@ template<int AllocSize>
 void TestCleanAllBuffers() {
     const int num_threads = 8;
     // Clean up if something was allocated before the test
-    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS,0);
+    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS,nullptr);
 
     size_t memory_in_use_before = getMemSize();
     alloc_counter = 0;
@@ -859,11 +859,11 @@ void TestCleanAllBuffers() {
 
     utils::NativeParallelFor(num_threads, TestCleanAllBuffersBody<AllocSize>());
     // TODO: reproduce the bug conditions more reliably
-    if ( defaultMemPool->extMemPool.backend.coalescQ.blocksToFree.load(std::memory_order_relaxed) == NULL ) {
+    if ( defaultMemPool->extMemPool.backend.coalescQ.blocksToFree.load(std::memory_order_relaxed) == nullptr ) {
         INFO( "Warning: The queue of postponed coalescing requests is empty. ");
         INFO( "Unable to create the condition for bug reproduction.\n" );
     }
-    int result = scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS,0);
+    int result = scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS,nullptr);
     REQUIRE_MESSAGE( result == TBBMALLOC_OK, "The cleanup request has not cleaned anything." );
     size_t memory_in_use_after = getMemSize();
 
@@ -881,7 +881,7 @@ struct TestCleanThreadBuffersBody : public SimpleBarrier {
         barrier.wait();
         crossThreadDealloc();
         barrier.wait();
-        int result = scalable_allocation_command(TBBMALLOC_CLEAN_THREAD_BUFFERS,0);
+        int result = scalable_allocation_command(TBBMALLOC_CLEAN_THREAD_BUFFERS,nullptr);
         if (result != TBBMALLOC_OK && free_was_called) {
             REPORT("Warning: clean-up request for this particular thread has not cleaned anything.");
         }
@@ -901,7 +901,7 @@ struct TestCleanThreadBuffersBody : public SimpleBarrier {
 void TestCleanThreadBuffers() {
     const int num_threads = 8;
     // Clean up if something was allocated before the test
-    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS,0);
+    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS,nullptr);
 
     alloc_counter = 0;
     TestCleanThreadBuffersBody::initBarrier(num_threads);
@@ -1082,7 +1082,7 @@ public:
 
     rml::internal::LargeMemoryBlock* next() {
         if ( allocating )
-            return NULL;
+            return nullptr;
         if ( !lmbArray.empty() ) {
             rml::internal::LargeMemoryBlock *ret = lmbArray.back();
             lmbArray.pop_back();
@@ -1092,7 +1092,7 @@ public:
     }
 
     void saveLmb( rml::internal::LargeMemoryBlock *lmb ) {
-        lmb->next = NULL;
+        lmb->next = nullptr;
         lmbArray.push_back(lmb);
         if ( lmbArray.size() == 1000 ) allocating = false;
     }
@@ -1109,7 +1109,7 @@ public:
     rml::internal::LargeMemoryBlock* next() {
         if ( numOps-- ) {
             if ( lmbArray.empty() || rand() / (RAND_MAX>>1) == 0 )
-                return NULL;
+                return nullptr;
             size_t ind = rand()%lmbArray.size();
             if ( ind != lmbArray.size()-1 ) std::swap(lmbArray[ind],lmbArray[lmbArray.size()-1]);
             rml::internal::LargeMemoryBlock *lmb = lmbArray.back();
@@ -1120,7 +1120,7 @@ public:
     }
 
     void saveLmb( rml::internal::LargeMemoryBlock *lmb ) {
-        lmb->next = NULL;
+        lmb->next = nullptr;
         lmbArray.push_back(lmb);
     }
 };
@@ -1338,7 +1338,7 @@ void TestReallocDecreasing() {
     size_t startSize = 100 * 1024 * 1024;
     size_t maxBinnedSize = defaultMemPool->extMemPool.backend.getMaxBinnedSize();
     void*  origPtr = scalable_malloc(startSize);
-    void*  reallocPtr = NULL;
+    void*  reallocPtr = nullptr;
 
     // Realloc on 1MB less size
     size_t origBlockSize = 42;
@@ -1395,7 +1395,7 @@ namespace FunctionReplacement {
             HeapFree(GetProcessHeap(), 0, Log::records[i]);
         }
         for (unsigned i = 0; i < Log::RECORDS_COUNT + 1; i++){
-            Log::records[i] = NULL;
+            Log::records[i] = nullptr;
         }
         Log::replacement_status = true;
         Log::record_number = 0;
@@ -1422,7 +1422,7 @@ namespace FunctionReplacement {
 
         // Change status
         Log::record(funcInfo, "opcode string", false);
-        status = TBB_malloc_replacement_log(NULL);
+        status = TBB_malloc_replacement_log(nullptr);
         REQUIRE_MESSAGE(status == -1, "Status is true, but we have false search case");
 
         LogCleanup();
@@ -1443,7 +1443,7 @@ namespace FunctionReplacement {
     void TestWrongFunctionInDll(){
         HMODULE ucrtbase_handle = GetModuleHandle("ucrtbase.dll");
         if (ucrtbase_handle) {
-            IsPrologueKnown("ucrtbase.dll", "fake_function", NULL, ucrtbase_handle);
+            IsPrologueKnown("ucrtbase.dll", "fake_function", nullptr, ucrtbase_handle);
             std::string expected_line = "Fail: fake_function (ucrtbase.dll), byte pattern: <unknown>";
 
             status = TBB_malloc_replacement_log(&func_replacement_log);
@@ -1568,7 +1568,7 @@ struct HOThresholdTester {
 
 private:
     bool cacheBinEmpty(int idx) {
-        return (loc->hugeCache.bin[idx].cachedSize.load(std::memory_order_relaxed) == 0 && loc->hugeCache.bin[idx].get() == NULL);
+        return (loc->hugeCache.bin[idx].cachedSize.load(std::memory_order_relaxed) == 0 && loc->hugeCache.bin[idx].get() == nullptr);
     }
     bool objectInCacheBin(int idx, size_t size) {
         return (loc->hugeCache.bin[idx].cachedSize.load(std::memory_order_relaxed) != 0 &&
@@ -1608,7 +1608,7 @@ void TestHugeSizeThresholdImpl(LargeObjectCache* loc, size_t hugeSize, bool full
  */
 void TestHugeSizeThreshold() {
     // Clean up if something was allocated before the test and reset cache state
-    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, 0);
+    scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, nullptr);
     LargeObjectCache* loc = &defaultMemPool->extMemPool.loc;
     // Restore default settings just in case
     loc->setHugeSizeThreshold(LargeObjectCache::maxHugeSize);
@@ -1632,6 +1632,12 @@ void TestHugeSizeThreshold() {
     // Unit testing for scalable_allocation_command
     scalable_allocation_mode(TBBMALLOC_SET_HUGE_SIZE_THRESHOLD, 56 * MByte);
     TestHugeSizeThresholdImpl(loc, 56 * MByte, true);
+    // Verify that objects whose sizes align to maxHugeSize are not cached.
+    size_t sz = LargeObjectCache::maxHugeSize;
+    size_t aligned_sz = LargeObjectCache::alignToBin(sz);
+    REQUIRE_MESSAGE(sz == aligned_sz, "maxHugeSize should be aligned.");
+    REQUIRE_MESSAGE(!loc->sizeInCacheRange(sz), "Upper bound sized object shouldn't be cached.");
+    REQUIRE_MESSAGE(loc->get(sz) == nullptr, "Upper bound sized object shouldn't be cached.");
 }
 
 //! \brief \ref error_guessing

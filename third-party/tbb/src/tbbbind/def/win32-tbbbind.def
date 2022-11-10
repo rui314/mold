@@ -14,7 +14,6 @@
 
 EXPORTS
 
-global
 __TBB_internal_initialize_system_topology
 __TBB_internal_apply_affinity
 __TBB_internal_restore_affinity

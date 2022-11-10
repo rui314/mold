@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -87,7 +87,7 @@ public:
             start_handle_operations(handle_operations);
             // The operation with 'short' life time can already be destroyed
             if (long_life_time)
-                __TBB_ASSERT(op->status.load(std::memory_order_relaxed), NULL);
+                __TBB_ASSERT(op->status.load(std::memory_order_relaxed), nullptr);
         }
         // Not first; wait for op to be ready
         else if (!status) { // operation is blocking here.

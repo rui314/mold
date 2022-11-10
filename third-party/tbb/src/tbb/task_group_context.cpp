@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -53,9 +53,9 @@ void tbb_exception_ptr::throw_self() {
 
 void task_group_context_impl::destroy(d1::task_group_context& ctx) {
     __TBB_ASSERT(!is_poisoned(ctx.my_context_list), nullptr);
-    
+
     if (ctx.my_context_list != nullptr) {
-        __TBB_ASSERT(ctx.my_lifetime_state.load(std::memory_order_relaxed) == d1::task_group_context::lifetime_state::bound, nullptr);
+        __TBB_ASSERT(ctx.my_state.load(std::memory_order_relaxed) == d1::task_group_context::state::bound, nullptr);
         // The owner can be destroyed at any moment. Access the associate data with caution.
         ctx.my_context_list->remove(ctx.my_node);
     }
@@ -78,7 +78,7 @@ void task_group_context_impl::destroy(d1::task_group_context& ctx) {
     poison_pointer(ctx.my_exception);
     poison_pointer(ctx.my_itt_caller);
 
-    ctx.my_lifetime_state.store(d1::task_group_context::lifetime_state::dead, std::memory_order_release);
+    ctx.my_state.store(d1::task_group_context::state::dead, std::memory_order_release);
 }
 
 void task_group_context_impl::initialize(d1::task_group_context& ctx) {
@@ -88,9 +88,9 @@ void task_group_context_impl::initialize(d1::task_group_context& ctx) {
     ctx.my_node.my_prev_node = &ctx.my_node;
     ctx.my_cpu_ctl_env = 0;
     ctx.my_cancellation_requested = 0;
-    ctx.my_state.store(0, std::memory_order_relaxed);
+    ctx.my_may_have_children.store(0, std::memory_order_relaxed);
     // Set the created state to bound at the first usage.
-    ctx.my_lifetime_state.store(d1::task_group_context::lifetime_state::created, std::memory_order_relaxed);
+    ctx.my_state.store(d1::task_group_context::state::created, std::memory_order_relaxed);
     ctx.my_parent = nullptr;
     ctx.my_context_list = nullptr;
     ctx.my_exception.store(nullptr, std::memory_order_relaxed);
@@ -112,7 +112,7 @@ void task_group_context_impl::register_with(d1::task_group_context& ctx, thread_
 
 void task_group_context_impl::bind_to_impl(d1::task_group_context& ctx, thread_data* td) {
     __TBB_ASSERT(!is_poisoned(ctx.my_context_list), nullptr);
-    __TBB_ASSERT(ctx.my_lifetime_state.load(std::memory_order_relaxed) == d1::task_group_context::lifetime_state::locked, "The context can be bound only under the lock.");
+    __TBB_ASSERT(ctx.my_state.load(std::memory_order_relaxed) == d1::task_group_context::state::locked, "The context can be bound only under the lock.");
     __TBB_ASSERT(!ctx.my_parent, "Parent is set before initial binding");
 
     ctx.my_parent = td->my_task_dispatcher->m_execute_data_ext.context;
@@ -123,8 +123,8 @@ void task_group_context_impl::bind_to_impl(d1::task_group_context& ctx, thread_d
         copy_fp_settings(ctx, *ctx.my_parent);
 
     // Condition below prevents unnecessary thrashing parent context's cache line
-    if (ctx.my_parent->my_state.load(std::memory_order_relaxed) != d1::task_group_context::may_have_children) {
-        ctx.my_parent->my_state.store(d1::task_group_context::may_have_children, std::memory_order_relaxed); // full fence is below
+    if (ctx.my_parent->my_may_have_children.load(std::memory_order_relaxed) != d1::task_group_context::may_have_children) {
+        ctx.my_parent->my_may_have_children.store(d1::task_group_context::may_have_children, std::memory_order_relaxed); // full fence is below
     }
     if (ctx.my_parent->my_parent) {
         // Even if this context were made accessible for state change propagation
@@ -163,39 +163,38 @@ void task_group_context_impl::bind_to_impl(d1::task_group_context& ctx, thread_d
 }
 
 void task_group_context_impl::bind_to(d1::task_group_context& ctx, thread_data* td) {
-    __TBB_ASSERT(!is_poisoned(ctx.my_context_list), nullptr);
-    d1::task_group_context::lifetime_state state = ctx.my_lifetime_state.load(std::memory_order_acquire);
-    if (state <= d1::task_group_context::lifetime_state::locked) {
-        if (state == d1::task_group_context::lifetime_state::created &&
+    d1::task_group_context::state state = ctx.my_state.load(std::memory_order_acquire);
+    if (state <= d1::task_group_context::state::locked) {
+        if (state == d1::task_group_context::state::created &&
 #if defined(__INTEL_COMPILER) && __INTEL_COMPILER <= 1910
-            ((std::atomic<typename std::underlying_type<d1::task_group_context::lifetime_state>::type>&)ctx.my_lifetime_state).compare_exchange_strong(
-                (typename std::underlying_type<d1::task_group_context::lifetime_state>::type&)state,
-                (typename std::underlying_type<d1::task_group_context::lifetime_state>::type)d1::task_group_context::lifetime_state::locked)
+            ((std::atomic<typename std::underlying_type<d1::task_group_context::state>::type>&)ctx.my_state).compare_exchange_strong(
+                (typename std::underlying_type<d1::task_group_context::state>::type&)state,
+                (typename std::underlying_type<d1::task_group_context::state>::type)d1::task_group_context::state::locked)
 #else
-            ctx.my_lifetime_state.compare_exchange_strong(state, d1::task_group_context::lifetime_state::locked)
+            ctx.my_state.compare_exchange_strong(state, d1::task_group_context::state::locked)
 #endif
             ) {
             // If we are in the outermost task dispatch loop of an external thread, then
             // there is nothing to bind this context to, and we skip the binding part
             // treating the context as isolated.
             __TBB_ASSERT(td->my_task_dispatcher->m_execute_data_ext.context != nullptr, nullptr);
-            d1::task_group_context::lifetime_state release_state{};
+            d1::task_group_context::state release_state{};
             if (td->my_task_dispatcher->m_execute_data_ext.context == td->my_arena->my_default_ctx || !ctx.my_traits.bound) {
                 if (!ctx.my_traits.fp_settings) {
                     copy_fp_settings(ctx, *td->my_arena->my_default_ctx);
                 }
-                release_state = d1::task_group_context::lifetime_state::isolated;
+                release_state = d1::task_group_context::state::isolated;
             } else {
                 bind_to_impl(ctx, td);
-                release_state = d1::task_group_context::lifetime_state::bound;
+                release_state = d1::task_group_context::state::bound;
             }
             ITT_STACK_CREATE(ctx.my_itt_caller);
-            ctx.my_lifetime_state.store(release_state, std::memory_order_release);
+            ctx.my_state.store(release_state, std::memory_order_release);
         }
-        spin_wait_while_eq(ctx.my_lifetime_state, d1::task_group_context::lifetime_state::locked);
+        spin_wait_while_eq(ctx.my_state, d1::task_group_context::state::locked);
     }
-    __TBB_ASSERT(ctx.my_lifetime_state.load(std::memory_order_relaxed) != d1::task_group_context::lifetime_state::created, nullptr);
-    __TBB_ASSERT(ctx.my_lifetime_state.load(std::memory_order_relaxed) != d1::task_group_context::lifetime_state::locked, nullptr);
+    __TBB_ASSERT(ctx.my_state.load(std::memory_order_relaxed) != d1::task_group_context::state::created, nullptr);
+    __TBB_ASSERT(ctx.my_state.load(std::memory_order_relaxed) != d1::task_group_context::state::locked, nullptr);
 }
 
 template <typename T>
@@ -243,7 +242,7 @@ void thread_data::propagate_task_group_state(std::atomic<T> d1::task_group_conte
 
 template <typename T>
 bool market::propagate_task_group_state(std::atomic<T> d1::task_group_context::* mptr_state, d1::task_group_context& src, T new_state) {
-    if (src.my_state.load(std::memory_order_relaxed) != d1::task_group_context::may_have_children)
+    if (src.my_may_have_children.load(std::memory_order_relaxed) != d1::task_group_context::may_have_children)
         return true;
     // The whole propagation algorithm is under the lock in order to ensure correctness
     // in case of concurrent state changes at the different levels of the context tree.

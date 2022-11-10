@@ -51,6 +51,7 @@ expressions into equivalent C++03 code.
    ../../tbb_userguide/design_patterns/Divide_and_Conquer
    ../../tbb_userguide/design_patterns/GUI_Thread
    ../../tbb_userguide/design_patterns/Non-Preemptive_Priorities
+   ../../tbb_userguide/design_patterns/Lazy_Initialization
    ../../tbb_userguide/design_patterns/Local_Serializer
    ../../tbb_userguide/design_patterns/Fenced_Data_Transfer
    ../../tbb_userguide/design_patterns/Reference_Counting

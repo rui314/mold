@@ -22,8 +22,8 @@
 
 #if __TBB_DYNAMIC_LOAD_ENABLED
 
-#if _WIN32 || _WIN64
-#include <Windows.h>
+#ifdef _WIN32
+#include <windows.h>
 #else
 #include <dlfcn.h>
 #endif

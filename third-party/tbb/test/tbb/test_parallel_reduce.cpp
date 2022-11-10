@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -466,12 +466,10 @@ private:
     FooBody( const FooBody& );          // Deny access
     void operator=( const FooBody& );   // Deny access
     template <typename Partitioner_> friend void TestSplitting( std::size_t nthread );
-    //! Parent that created this body via split operation.  NULL if original body.
+    //! Parent that created this body via split operation.  nullptr if original body.
     FooBody* parent;
     //! Total number of index values processed by body and its children.
     size_t sum;
-    //! Number of join operations done so far on this body and its children.
-    long join_count;
     //! Range that has been processed so far by this body and its children.
     size_t begin, end;
     //! True if body has not yet been processed at least once by operator().
@@ -483,7 +481,6 @@ public:
     ~FooBody() {
         forked = 0xDEADBEEF;
         sum=0xDEADBEEF;
-        join_count=0xDEADBEEF;
         --FooBodyCount;
     }
     FooBody( FooBody& other, tbb::split ) {
@@ -491,7 +488,6 @@ public:
         ++ForkCount;
         sum = 0;
         parent = &other;
-        join_count = 0;
         is_new = true;
         forked = 1;
     }
@@ -499,7 +495,6 @@ public:
     void init() {
         sum = 0;
         parent = nullptr;
-        join_count = 0;
         is_new = true;
         forked = 0;
         begin = ~size_t(0);
@@ -513,7 +508,6 @@ public:
         REQUIRE( end==s.begin );
         end = s.end;
         sum += s.sum;
-        join_count += s.join_count + 1;
         s.forked = 2;
     }
     void operator()( const MinimalRange& r ) {
@@ -531,7 +525,6 @@ public:
 template<typename Partitioner>
 void TestSplitting( std::size_t nthread ) {
     ForkCount = 0;
-    long join_count = 0;
     Partitioner partitioner;
     for( size_t i=0; i<=1000; ++i ) {
         FooBody f;
@@ -541,7 +534,6 @@ void TestSplitting( std::size_t nthread ) {
 
         if (nthread == 1) REQUIRE_MESSAGE(ForkCount==0, "Body was split during 1 thread execution");
 
-        join_count += f.join_count;
         REQUIRE_MESSAGE( FooBodyCount==1, "Some copies of FooBody was not removed after reduction");
         REQUIRE_MESSAGE( f.sum==i, "Incorrect reduction" );
         REQUIRE_MESSAGE( f.begin==(i==0 ? ~size_t(0) : 0), "Incorrect range borders" );

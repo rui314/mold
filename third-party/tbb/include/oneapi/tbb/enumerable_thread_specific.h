@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -140,7 +140,7 @@ protected:
         std::memset( a + 1, 0, n * sizeof(slot) );
         return a;
     }
-    void free(array* a) {
+    void deallocate(array* a) {
         std::size_t n = std::size_t(1) << (a->lg_size);
         free_array( static_cast<void*>(a), std::size_t(sizeof(array) + n * sizeof(slot)) );
     }
@@ -155,8 +155,8 @@ protected:
     template <ets_key_usage_type E2>
     void table_elementwise_copy( const ets_base& other,
                                  void*(*add_element)(ets_base<E2>&, void*) ) {
-        __TBB_ASSERT(!my_root.load(std::memory_order_relaxed),NULL);
-        __TBB_ASSERT(!my_count.load(std::memory_order_relaxed),NULL);
+        __TBB_ASSERT(!my_root.load(std::memory_order_relaxed), nullptr);
+        __TBB_ASSERT(!my_count.load(std::memory_order_relaxed), nullptr);
         if( !other.my_root.load(std::memory_order_relaxed) ) return;
         array* root = allocate(other.my_root.load(std::memory_order_relaxed)->lg_size);
         my_root.store(root, std::memory_order_relaxed);
@@ -197,7 +197,7 @@ template<ets_key_usage_type ETS_key_type>
 void ets_base<ETS_key_type>::table_clear() {
     while ( array* r = my_root.load(std::memory_order_relaxed) ) {
         my_root.store(r->next, std::memory_order_relaxed);
-        free(r);
+        deallocate(r);
     }
     my_count.store(0, std::memory_order_relaxed);
 }
@@ -206,7 +206,7 @@ template<ets_key_usage_type ETS_key_type>
 void* ets_base<ETS_key_type>::table_lookup( bool& exists ) {
     const key_type k = ets_key_selector<ETS_key_type>::current_key();
 
-    __TBB_ASSERT(k != key_type(),NULL);
+    __TBB_ASSERT(k != key_type(), nullptr);
     void* found;
     std::size_t h = std::hash<key_type>{}(k);
     for( array* r = my_root.load(std::memory_order_acquire); r; r = r->next ) {
@@ -251,7 +251,7 @@ void* ets_base<ETS_key_type>::table_lookup( bool& exists ) {
                 __TBB_ASSERT(new_r != nullptr, nullptr);
                 if( new_r->lg_size >= s ) {
                     // Another thread inserted an equal or  bigger array, so our array is superfluous.
-                    free(a);
+                    deallocate(a);
                     break;
                 }
                 r = new_r;
@@ -283,7 +283,7 @@ class ets_base<ets_key_per_instance>: public ets_base<ets_no_key> {
 #if _WIN32||_WIN64
 #if __TBB_WIN8UI_SUPPORT
     using tls_key_t = DWORD;
-    void create_key() { my_key = FlsAlloc(NULL); }
+    void create_key() { my_key = FlsAlloc(nullptr); }
     void destroy_key() { FlsFree(my_key); }
     void set_tls(void * value) { FlsSetValue(my_key, (LPVOID)value); }
     void* get_tls() { return (void *)FlsGetValue(my_key); }
@@ -296,7 +296,7 @@ class ets_base<ets_key_per_instance>: public ets_base<ets_no_key> {
 #endif
 #else
     using tls_key_t = pthread_key_t;
-    void create_key() { pthread_key_create(&my_key, NULL); }
+    void create_key() { pthread_key_create(&my_key, nullptr); }
     void destroy_key() { pthread_key_delete(my_key); }
     void set_tls( void * value ) const { pthread_setspecific(my_key, value); }
     void* get_tls() const { return pthread_getspecific(my_key); }
@@ -540,7 +540,7 @@ public:
     // assigned, move forward until a non-empty inner container is found or
     // the end of the outer container is reached.
     segmented_iterator& operator=(const outer_iterator& new_outer_iter) {
-        __TBB_ASSERT(my_segcont != nullptr, NULL);
+        __TBB_ASSERT(my_segcont != nullptr, nullptr);
         // check that this iterator points to something inside the segmented container
         for(outer_iter = new_outer_iter ;outer_iter!=my_segcont->end(); ++outer_iter) {
             if( !outer_iter->empty() ) {
@@ -565,7 +565,7 @@ public:
     }
 
     bool operator==(const outer_iterator& other_outer) const {
-        __TBB_ASSERT(my_segcont != nullptr, NULL);
+        __TBB_ASSERT(my_segcont != nullptr, nullptr);
         return (outer_iter == other_outer &&
                 (outer_iter == my_segcont->end() || inner_iter == outer_iter->begin()));
     }
@@ -577,9 +577,9 @@ public:
 
     // (i)* RHS
     reference operator*() const {
-        __TBB_ASSERT(my_segcont != nullptr, NULL);
+        __TBB_ASSERT(my_segcont != nullptr, nullptr);
         __TBB_ASSERT(outer_iter != my_segcont->end(), "Dereferencing a pointer at end of container");
-        __TBB_ASSERT(inner_iter != outer_iter->end(), NULL); // should never happen
+        __TBB_ASSERT(inner_iter != outer_iter->end(), nullptr); // should never happen
         return *inner_iter;
     }
 
@@ -592,9 +592,9 @@ private:
     inner_iterator inner_iter;
 
     void advance_me() {
-        __TBB_ASSERT(my_segcont != nullptr, NULL);
-        __TBB_ASSERT(outer_iter != my_segcont->end(), NULL); // not true if there are no inner containers
-        __TBB_ASSERT(inner_iter != outer_iter->end(), NULL); // not true if the inner containers are all empty.
+        __TBB_ASSERT(my_segcont != nullptr, nullptr);
+        __TBB_ASSERT(outer_iter != my_segcont->end(), nullptr); // not true if there are no inner containers
+        __TBB_ASSERT(inner_iter != outer_iter->end(), nullptr); // not true if the inner containers are all empty.
         ++inner_iter;
         while(inner_iter == outer_iter->end() && ++outer_iter != my_segcont->end()) {
             inner_iter = outer_iter->begin();
@@ -923,14 +923,14 @@ private:
         static_assert( (is_compatible_ets<T, typename std::decay<decltype(other)>::type>::value), "is_compatible_ets fails" );
         // Initialize my_construct_callback first, so that it is valid even if rest of this routine throws an exception.
         my_construct_callback = other.my_construct_callback->clone();
-        __TBB_ASSERT(my_locals.size()==0,NULL);
+        __TBB_ASSERT(my_locals.size()==0, nullptr);
         my_locals.reserve(other.size());
         this->table_elementwise_copy( other, create_local_by_copy );
     }
 
     void internal_swap(enumerable_thread_specific& other) {
         using std::swap;
-        __TBB_ASSERT( this!=&other, NULL );
+        __TBB_ASSERT( this!=&other, nullptr);
         swap(my_construct_callback, other.my_construct_callback);
         // concurrent_vector::swap() preserves storage space,
         // so addresses to the vector kept in ETS hash table remain valid.
@@ -943,7 +943,7 @@ private:
         static_assert( (is_compatible_ets<T, typename std::decay<decltype(other)>::type>::value), "is_compatible_ets fails" );
         my_construct_callback = other.my_construct_callback;
         other.my_construct_callback = nullptr;
-        __TBB_ASSERT(my_locals.size()==0,NULL);
+        __TBB_ASSERT(my_locals.size()==0, nullptr);
         my_locals.reserve(other.size());
         this->table_elementwise_copy( other, create_local_by_move );
     }
@@ -986,7 +986,7 @@ public:
     template<typename Alloc, ets_key_usage_type Cachetype>
     enumerable_thread_specific& operator=( const enumerable_thread_specific<T, Alloc, Cachetype>& other )
     {
-        __TBB_ASSERT( static_cast<void*>(this)!=static_cast<const void*>(&other), NULL ); // Objects of different types
+        __TBB_ASSERT( static_cast<void*>(this)!=static_cast<const void*>(&other), nullptr); // Objects of different types
         this->clear();
         my_construct_callback->destroy();
         internal_copy(other);
@@ -1005,7 +1005,7 @@ public:
     template<typename Alloc, ets_key_usage_type Cachetype>
     enumerable_thread_specific& operator=( enumerable_thread_specific<T, Alloc, Cachetype>&& other )
     {
-        __TBB_ASSERT( static_cast<void*>(this)!=static_cast<const void*>(&other), NULL ); // Objects of different types
+        __TBB_ASSERT( static_cast<void*>(this)!=static_cast<const void*>(&other), nullptr); // Objects of different types
         this->clear();
         my_construct_callback->destroy();
         internal_move(std::move(other));

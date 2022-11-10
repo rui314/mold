@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -106,7 +106,7 @@ public:
     const_pointer address(const_reference x) const { return &x; }
 
     //! Allocate space for n objects.
-    pointer allocate( size_type n, const void* /*hint*/ = 0) {
+    pointer allocate( size_type n, const void* /*hint*/ = nullptr) {
         pointer p = static_cast<pointer>( my_pool->malloc( n*sizeof(value_type) ) );
         if (!p)
             throw_exception(std::bad_alloc());
@@ -211,7 +211,7 @@ template <typename Alloc>
 void *memory_pool<Alloc>::allocate_request(intptr_t pool_id, size_t & bytes) {
     memory_pool<Alloc> &self = *reinterpret_cast<memory_pool<Alloc>*>(pool_id);
     const size_t unit_size = sizeof(typename Alloc::value_type);
-    __TBBMALLOC_ASSERT( 0 == bytes%unit_size, NULL);
+    __TBBMALLOC_ASSERT( 0 == bytes%unit_size, nullptr);
     void *ptr;
 #if TBB_USE_EXCEPTIONS
     try {
@@ -219,7 +219,7 @@ void *memory_pool<Alloc>::allocate_request(intptr_t pool_id, size_t & bytes) {
         ptr = self.my_alloc.allocate( bytes/unit_size );
 #if TBB_USE_EXCEPTIONS
     } catch(...) {
-        return 0;
+        return nullptr;
     }
 #endif
     return ptr;
@@ -234,7 +234,7 @@ template <typename Alloc>
 int memory_pool<Alloc>::deallocate_request(intptr_t pool_id, void* raw_ptr, size_t raw_bytes) {
     memory_pool<Alloc> &self = *reinterpret_cast<memory_pool<Alloc>*>(pool_id);
     const size_t unit_size = sizeof(typename Alloc::value_type);
-    __TBBMALLOC_ASSERT( 0 == raw_bytes%unit_size, NULL);
+    __TBBMALLOC_ASSERT( 0 == raw_bytes%unit_size, nullptr);
     self.my_alloc.deallocate( static_cast<typename Alloc::value_type*>(raw_ptr), raw_bytes/unit_size );
     return 0;
 }
@@ -245,7 +245,7 @@ inline fixed_pool::fixed_pool(void *buf, size_t size) : my_buffer(buf), my_size(
     if (!buf || !size)
         // TODO: improve support for mode with exceptions disabled
         throw_exception(std::invalid_argument("Zero in parameter is invalid"));
-    rml::MemPoolPolicy args(allocate_request, 0, size, /*fixedPool=*/true);
+    rml::MemPoolPolicy args(allocate_request, nullptr, size, /*fixedPool=*/true);
     rml::MemPoolError res = rml::pool_create_v1(intptr_t(this), &args, &my_pool);
     if (res!=rml::POOL_OK)
         throw_exception(std::runtime_error("Can't create pool"));

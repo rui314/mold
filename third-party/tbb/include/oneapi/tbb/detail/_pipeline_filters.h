@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -420,7 +420,7 @@ inline void filter_node_ptr::operator=(filter_node_ptr && rhs) {
 }
 
 inline filter_node& filter_node_ptr::operator*() const{
-    __TBB_ASSERT(my_node,"NULL node is used");
+    __TBB_ASSERT(my_node,"nullptr node is used");
     return *my_node;
 }
 

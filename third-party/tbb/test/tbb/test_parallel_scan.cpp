@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -153,7 +153,7 @@ class Accumulator {
 
     };
     mutable state_type my_state;
-    //! Equals this while object is fully constructed, NULL otherwise.
+    //! Equals this while object is fully constructed, nullptr otherwise.
     /** Used to detect premature destruction and accidental bitwise copy. */
     Accumulator* self;
     Accumulator& operator= (const Accumulator& other);
@@ -166,7 +166,7 @@ public:
     }
     ~Accumulator() {
         // Clear self as first action of destructor, to indicate that object is not fully constructed.
-        self = 0;
+        self = nullptr;
     }
     Accumulator( Accumulator& a, tbb::split ) :
         my_array(a.my_array), my_sum(a.my_sum), storage(0), my_state(partial)
@@ -330,12 +330,10 @@ void TestAccumulator( int mode ) {
 
             ScanIsRunning = false;
 
-            long used_once_count = 0;
             for( long i=0; i<n; ++i )
                 CHECK_MESSAGE((AddendHistory[i]&USED_FINAL), "failed to use addend[" << i << "] " << (AddendHistory[i] & USED_NONFINAL ? "(but used nonfinal)\n" : "\n"));
             for( long i=0; i<n; ++i ) {
                 VerifySum( 42, i, sum[i], __LINE__ );
-                used_once_count += AddendHistory[i]==USED_FINAL;
             }
             if( n )
                 CHECK(acc.get_total()==sum[n-1]);

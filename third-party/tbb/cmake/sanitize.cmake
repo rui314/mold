@@ -34,7 +34,9 @@ if (NOT ${FLAG_DISPLAY_NAME})
     "please try another compiler or omit TBB_SANITIZE variable")
 endif()
 
-set(TBB_TESTS_ENVIRONMENT ${TBB_TESTS_ENVIRONMENT} "LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/cmake/suppressions/lsan.suppressions")
+set(TBB_TESTS_ENVIRONMENT ${TBB_TESTS_ENVIRONMENT}
+    "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/cmake/suppressions/tsan.suppressions"
+    "LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/cmake/suppressions/lsan.suppressions")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TBB_SANITIZE_OPTION}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${TBB_SANITIZE_OPTION}")

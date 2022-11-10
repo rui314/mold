@@ -23,8 +23,6 @@
 #pragma warning( disable: 4324 )
 #endif
 
-#define TBB_PREVIEW_MUTEXES 1
-
 #include "common/test.h"
 #include "common/utils.h"
 #define __TBB_TEST_DEFINE_PRIVATE_PUBLIC 1

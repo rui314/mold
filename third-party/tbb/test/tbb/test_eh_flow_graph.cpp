@@ -288,14 +288,6 @@ struct sequencer_body {
     }
 };
 
-// --------- body to compare the "priorities" of objects for priority_queue_node  five priority levels 0-4.
-template<class T>
-struct myLess {
-    bool operator()(const T &t1, const T &t2) {
-        return (int(t1) % 5) < (int(t2) % 5);
-    }
-};
-
 // --------- type for < comparison in priority_queue_node.
 template<class ItemType>
 struct less_body {

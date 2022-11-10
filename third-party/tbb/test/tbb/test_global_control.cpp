@@ -17,8 +17,6 @@
 //! \file test_global_control.cpp
 //! \brief Test for [sched.global_control] specification
 
-#define TBB_PREVIEW_WAITING_FOR_WORKERS 1
-
 #include "common/test.h"
 
 #include "common/utils.h"
@@ -36,11 +34,11 @@ struct task_scheduler_handle_guard {
     tbb::task_scheduler_handle m_handle{};
 
     task_scheduler_handle_guard() {
-        m_handle = tbb::task_scheduler_handle::get();
+        m_handle = tbb::task_scheduler_handle{tbb::attach{}};
     }
 
     ~task_scheduler_handle_guard() {
-        tbb::task_scheduler_handle::release(m_handle);
+        m_handle.release();
     }
 
     tbb::task_scheduler_handle& get() {
@@ -50,14 +48,9 @@ struct task_scheduler_handle_guard {
 
 namespace TestBlockingTerminateNS {
 
-    struct EmptyBody {
-        void operator()() const {}
-        void operator()( int ) const {}
-    };
-
     struct TestAutoInitBody {
         void operator()( int ) const {
-            tbb::parallel_for( 0, 100, EmptyBody() );
+            tbb::parallel_for( 0, 100, utils::DummyBody() );
         }
     };
 
@@ -71,7 +64,7 @@ namespace TestBlockingTerminateNS {
         void operator()( int ) const {
             task_scheduler_handle_guard init;
             if ( !myAutoInit ) {
-                tbb::parallel_for(0, 10, EmptyBody());
+                tbb::parallel_for(0, 10, utils::DummyBody());
             }
             utils::FastRandom<> rnd( ++gSeed );
             // In case of auto init sub-tests we skip
@@ -81,18 +74,18 @@ namespace TestBlockingTerminateNS {
             switch ( rnd.get() % numCases ) {
             case 0: {
                 tbb::task_arena a;
-                a.enqueue( EmptyBody() );
+                a.enqueue(utils::DummyBody() );
                 break;
             }
             case 1: {
                 tbb::task_group tg;
-                EmptyBody eb;
+                utils::DummyBody eb;
                 tg.run( eb );
                 tg.wait();
                 break;
             }
             case 2:
-                tbb::parallel_for( 0, 100, EmptyBody() );
+                tbb::parallel_for( 0, 100, utils::DummyBody() );
                 break;
             case 3:
                 /* do nothing */
@@ -158,7 +151,7 @@ namespace TestBlockingTerminateNS {
 
         void operator()() {
             task_scheduler_handle_guard tsi2;
-            tbb::parallel_for(0, 2, EmptyBody()); // auto-init
+            tbb::parallel_for(0, 2, utils::DummyBody()); // auto-init
             tbb::finalize((myIndex == 0 ? tsi1.get() : tsi2.get()));
             REQUIRE_MESSAGE( false, "Blocking terminate did not throw the exception" );
         }
@@ -210,7 +203,7 @@ void TestTerminationAndAutoinit(bool autoinit) {
     task_scheduler_handle_guard ctl2;
 
     if (autoinit) {
-        tbb::parallel_for(0, 10, TestBlockingTerminateNS::EmptyBody());
+        tbb::parallel_for(0, 10, utils::DummyBody());
     }
     bool res1 = tbb::finalize(ctl1.get(), std::nothrow);
     if (autoinit) {
@@ -225,7 +218,7 @@ void TestTerminationAndAutoinit(bool autoinit) {
 //! Check no reference leak for an external thread
 //! \brief \ref regression \ref error_guessing
 TEST_CASE("test decrease reference") {
-    tbb::task_scheduler_handle handle = tbb::task_scheduler_handle::get();
+    tbb::task_scheduler_handle handle = tbb::task_scheduler_handle{tbb::attach{}};
 
     std::thread thr([] { tbb::parallel_for(0, 1, [](int) {}); } );
     thr.join();
@@ -233,64 +226,16 @@ TEST_CASE("test decrease reference") {
     REQUIRE(tbb::finalize(handle, std::nothrow));
 }
 
-//! Testing lifetime control conformance
-//! \brief \ref interface \ref requirement
-TEST_CASE("prolong lifetime simple") {
-    tbb::task_scheduler_handle hdl1 = tbb::task_scheduler_handle::get();
-    {
-        tbb::parallel_for(0, 10, TestBlockingTerminateNS::EmptyBody());
-
-        tbb::task_scheduler_handle hdl2 = tbb::task_scheduler_handle::get();
-        tbb::task_scheduler_handle::release(hdl2);
-    }
-    bool ok = tbb::finalize(hdl1, std::nothrow);
-    REQUIRE(ok);
-}
-
-//! Testing lifetime control conformance
-//! \brief \ref interface \ref requirement
-TEST_CASE("prolong lifetime simple 2") {
+//! Testing lifetime control
+//! \brief \ref error_guessing
+TEST_CASE("prolong lifetime auto init") {
     TestTerminationAndAutoinit(false);
     TestTerminationAndAutoinit(true);
 }
 
-//! Testing handle check for emptiness
-//! \brief \ref interface \ref requirement
-TEST_CASE("null handle check") {
-    tbb::task_scheduler_handle hndl;
-    REQUIRE_FALSE(hndl);
-}
-
-//! Testing handle check for emptiness
-//! \brief \ref interface \ref requirement
-TEST_CASE("null handle check 2") {
-    tbb::task_scheduler_handle hndl = tbb::task_scheduler_handle::get();
-    bool not_empty = (bool)hndl;
-
-    tbb::finalize(hndl, std::nothrow);
-
-    REQUIRE(not_empty);
-    REQUIRE_FALSE(hndl);
-}
-
-//! Testing handle check for emptiness
-//! \brief \ref interface \ref requirement
-TEST_CASE("null handle check 3") {
-    tbb::task_scheduler_handle handle1 = tbb::task_scheduler_handle::get();
-    tbb::task_scheduler_handle handle2(std::move(handle1));
-
-    bool handle1_empty = !handle1;
-    bool handle2_not_empty = (bool)handle2;
-
-    tbb::finalize(handle2, std::nothrow);
-
-    REQUIRE(handle1_empty);
-    REQUIRE(handle2_not_empty);
-}
-
 #if TBB_USE_EXCEPTIONS
 //! Testing lifetime control advanced
-//! \brief \ref interface \ref requirement
+//! \brief \ref error_guessing
 TEST_CASE("prolong lifetime advanced") {
     // Exceptions test leaves auto-initialized sheduler after,
     // because all blocking terminate calls are inside the parallel region,
@@ -301,46 +246,8 @@ TEST_CASE("prolong lifetime advanced") {
 #endif
 
 //! Testing multiple wait
-//! \brief \ref interface \ref requirement
+//! \brief \ref error_guessing
 TEST_CASE("prolong lifetime multiple wait") {
     TestBlockingTerminateNS::TestMultpleWait();
-}
-
-//! Testing  global_control is created on one thread and destroyed on another.
-//! \brief \ref interface \ref requirement
-TEST_CASE("cross thread 1") {
-    // created GC, parallel_for on another thread - finalize
-    tbb::task_scheduler_handle ctl = tbb::task_scheduler_handle::get();
-    utils::NativeParallelFor(1, [&](int) {
-        tbb::parallel_for(0, 10, TestBlockingTerminateNS::EmptyBody());
-        bool res = tbb::finalize(ctl, std::nothrow);
-        REQUIRE(res);
-    });
-}
-
-//! Testing  global_control is created on one thread and destroyed on another.
-//! \brief \ref interface \ref requirement
-TEST_CASE("cross thread 2") {
-    // created GC, called parallel_for on this thread, killed the thread - and finalize on another thread
-    tbb::task_scheduler_handle ctl;
-    utils::NativeParallelFor(1, [&](int) {
-        ctl = tbb::task_scheduler_handle::get();
-        tbb::parallel_for(0, 10, TestBlockingTerminateNS::EmptyBody());
-    });
-    bool res = tbb::finalize(ctl, std::nothrow);
-    REQUIRE(res);
-}
-
-//! Testing multiple wait
-//! \brief \ref interface \ref requirement
-TEST_CASE("simple prolong lifetime 3") {
-    // Parallel region
-    tbb::parallel_for(0, 10, TestBlockingTerminateNS::EmptyBody());
-    // Termination
-    tbb::task_scheduler_handle ctl = tbb::task_scheduler_handle::get();
-    bool res = tbb::finalize(ctl, std::nothrow);
-    REQUIRE(res);
-    // New parallel region
-    tbb::parallel_for(0, 10, TestBlockingTerminateNS::EmptyBody());
 }
 

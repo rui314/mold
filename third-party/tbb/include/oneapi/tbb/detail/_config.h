@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -268,7 +268,7 @@
     #define __TBB_CPP20_COMPARISONS_PRESENT __TBB_CPP20_PRESENT
 #endif
 
-#define __TBB_RESUMABLE_TASKS                           (!__TBB_WIN8UI_SUPPORT && !__ANDROID__ && !__QNXNTO__ && HAVE_GETCONTEXT)
+#define __TBB_RESUMABLE_TASKS                           (!__TBB_WIN8UI_SUPPORT && !__ANDROID__ && !__QNXNTO__ && (!__linux__ || __GLIBC__))
 
 /* This macro marks incomplete code or comments describing ideas which are considered for the future.
  * See also for plain comment with TODO and FIXME marks for small improvement opportunities.
@@ -329,7 +329,8 @@
 
 #define __TBB_TSX_INTRINSICS_PRESENT (__RTM__ || __INTEL_COMPILER || (_MSC_VER>=1700 && (__TBB_x86_64 || __TBB_x86_32)))
 
-#define __TBB_WAITPKG_INTRINSICS_PRESENT ((__INTEL_COMPILER >= 1900 || __TBB_GCC_VERSION >= 110000 || __TBB_CLANG_VERSION >= 120000) && !__ANDROID__)
+#define __TBB_WAITPKG_INTRINSICS_PRESENT ((__INTEL_COMPILER >= 1900 || __TBB_GCC_VERSION >= 110000 || __TBB_CLANG_VERSION >= 120000) \
+                                         && (_WIN32 || _WIN64 || __unix__ || __APPLE__) && (__TBB_x86_32 || __TBB_x86_64) && !__ANDROID__)
 
 /** Internal TBB features & modes **/
 
@@ -371,10 +372,6 @@
 
 #ifndef __TBB_ARENA_BINDING
     #define __TBB_ARENA_BINDING 1
-#endif
-
-#if TBB_PREVIEW_WAITING_FOR_WORKERS || __TBB_BUILD
-    #define __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE 1
 #endif
 
 #if (TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION || __TBB_BUILD) && __TBB_ARENA_BINDING
@@ -519,20 +516,12 @@
 #define __TBB_PREVIEW_FLOW_GRAPH_NODE_SET       (TBB_PREVIEW_FLOW_GRAPH_FEATURES)
 #endif
 
-#if TBB_PREVIEW_MUTEXES || __TBB_BUILD
-#define __TBB_PREVIEW_MUTEXES 1
-#endif
-
 #if TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
 #define __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS 1
 #endif
 
 #if TBB_PREVIEW_TASK_GROUP_EXTENSIONS || __TBB_BUILD
 #define __TBB_PREVIEW_TASK_GROUP_EXTENSIONS 1
-#endif
-
-#if TBB_PREVIEW_COLLABORATIVE_CALL_ONCE || __TBB_BUILD
-#define __TBB_PREVIEW_COLLABORATIVE_CALL_ONCE 1
 #endif
 
 #endif // __TBB_detail__config_H

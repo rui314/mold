@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -40,12 +40,12 @@ bool DisplayError(LPSTR lpstrErr, HRESULT hres) {
             hres = GetLastError();
         FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
                           FORMAT_MESSAGE_IGNORE_INSERTS,
-                      NULL,
+                      nullptr,
                       hres,
                       MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                       (LPTSTR)&lpMsgBuf,
                       0,
-                      NULL);
+                      nullptr);
         retval = MessageBox(g_hAppWnd, lpstrErr, lpMsgBuf, MB_OK | MB_ICONERROR);
         LocalFree((HLOCAL)lpMsgBuf);
         InError = false;
@@ -60,7 +60,7 @@ LRESULT CALLBACK InternalWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lPa
             // Check to make sure our window exists before we tell it to repaint.
             // This will fail the first time (while the window is being created).
             if (hwnd) {
-                InvalidateRect(hwnd, NULL, FALSE);
+                InvalidateRect(hwnd, nullptr, FALSE);
                 UpdateWindow(hwnd);
             }
             return 0L;
@@ -114,7 +114,7 @@ bool video::init_window(int sizex, int sizey) {
         return false;
     }
     ShowWindow(g_hAppWnd, SW_SHOW);
-    Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+    Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, nullptr);
     g_pImg = new unsigned int[sizex * sizey];
     g_pBitmap =
         new Gdiplus::Bitmap(g_sizex, g_sizey, 4 * g_sizex, PixelFormat32bppRGB, (BYTE*)g_pImg);
@@ -123,17 +123,15 @@ bool video::init_window(int sizex, int sizey) {
 }
 
 void video::terminate() {
-    if (g_pBitmap) {
-        delete g_pBitmap;
-        g_pBitmap = 0;
-    }
+    delete g_pBitmap;
+    g_pBitmap = nullptr;
+
     Gdiplus::GdiplusShutdown(gdiplusToken);
-    g_video = 0;
+    g_video = nullptr;
     running = false;
-    if (g_pImg) {
-        delete[] g_pImg;
-        g_pImg = 0;
-    }
+
+    delete[] g_pImg;
+    g_pImg = nullptr;
 }
 
 //////////// drawing area constructor & destructor /////////////

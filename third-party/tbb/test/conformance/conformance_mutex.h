@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -236,11 +236,11 @@ public:
         mutex_type* my_mutex;
         bool m_is_writer;
     public:
-        scoped_lock() : my_mutex(NULL), m_is_writer(false) {}
-        scoped_lock(mutex_type& m) : my_mutex(NULL), m_is_writer(false) {
+        scoped_lock() : my_mutex(nullptr), m_is_writer(false) {}
+        scoped_lock(mutex_type& m) : my_mutex(nullptr), m_is_writer(false) {
             acquire(m);
         }
-        scoped_lock(mutex_type& m, bool is_writer) : my_mutex(NULL) {
+        scoped_lock(mutex_type& m, bool is_writer) : my_mutex(nullptr) {
             acquire(m,is_writer);
         }
         void acquire(mutex_type& m) {
@@ -261,7 +261,7 @@ public:
         template<typename Q = M>
         typename std::enable_if<!Q::is_rw_mutex>::type release() {
             my_mutex->my_iso_mutex.unlock();
-            my_mutex = NULL;
+            my_mutex = nullptr;
         }
 
         template<typename Q = M>
@@ -270,7 +270,7 @@ public:
                 my_mutex->my_iso_mutex.unlock();
             else
                 my_mutex->my_iso_mutex.unlock_shared();
-            my_mutex = NULL;
+            my_mutex = nullptr;
         }
 
         // Methods for reader-writer mutex

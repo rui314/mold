@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -173,9 +173,11 @@ inline void ThrowTestException ( intptr_t threshold ) {
 
 #define CATCH()     \
     } catch ( PropagatedException& e ) { \
-        intptr_t exprected = 0;\
-        g_ExecutedAtFirstCatch.compare_exchange_strong(exprected, g_CurExecuted); \
-        g_ExecutedAtLastCatch = g_CurExecuted.load(); \
+        intptr_t expected = 0;\
+        g_ExecutedAtFirstCatch.compare_exchange_strong(expected , g_CurExecuted); \
+        intptr_t curExecuted = g_CurExecuted.load(); \
+        expected = g_ExecutedAtLastCatch.load();\
+        while (expected < curExecuted) g_ExecutedAtLastCatch.compare_exchange_strong(expected, curExecuted); \
         REQUIRE_MESSAGE(e.what(), "Empty what() string" );  \
         REQUIRE_MESSAGE((strcmp(EXCEPTION_NAME(e), (g_SolitaryException ? typeid(solitary_test_exception) : typeid(test_exception)).name() ) == 0), "Unexpected original exception name"); \
         REQUIRE_MESSAGE((strcmp(e.what(), EXCEPTION_DESCR) == 0), "Unexpected original exception info"); \

@@ -31,6 +31,8 @@
 #include <cstring>
 #include <cstddef>
 #include <cstdio>
+#include <iterator>
+#include <type_traits>
 
 //! \file test_parallel_sort.cpp
 //! \brief Test for [algorithms.parallel_sort]
@@ -44,7 +46,7 @@ public:
     static bool Less (const Minimal &a, const Minimal &b) {
         return (a.val < b.val);
     }
-    static bool AreEqual( Minimal &a,  Minimal &b) {
+    static bool AreEqual( const Minimal &a, const Minimal &b) {
        return a.val == b.val;
     }
 };
@@ -57,26 +59,25 @@ public:
     }
 };
 
-//! The default validate; but it uses operator== which is not required
+template<typename Value>
+bool compare(const Value& lhs, const Value& rhs) {
+    return lhs == rhs;
+}
+
+bool compare(const Minimal& lhs, const Minimal& rhs) {
+    return Minimal::AreEqual(lhs, rhs);
+}
+
 template<typename Range>
-void validate(Range test_range, Range sorted_range, std::size_t size) {
-    for (std::size_t i = 0; i < size; i++) {
-        REQUIRE( test_range[i] == sorted_range[i] );
-    }
-}
-
-//! A validate() specialized to Minimal since it does not define an operator==
-void validate(Minimal* test_range, Minimal* sorted_range, std::size_t size) {
-    for (std::size_t i = 0; i < size; i++) {
-        REQUIRE( Minimal::AreEqual(test_range[i], sorted_range[i]) );
-    }
-}
-
-//! A validate() specialized to concurrent_vector<Minimal> since it does not define an operator==
-void validate(tbb::concurrent_vector<Minimal>::iterator test_range, tbb::concurrent_vector<Minimal>::iterator sorted_range, std::size_t size) {
-    for (std::size_t i = 0; i < size; i++) {
-        REQUIRE( Minimal::AreEqual(test_range[i], sorted_range[i]) );
-    }
+void validate(Range test_range, Range sorted_range) {
+    using value_type = typename std::iterator_traits<decltype(std::begin(test_range))>::value_type;
+    REQUIRE(
+        std::equal(std::begin(test_range), std::end(test_range), std::begin(sorted_range),
+            [](const value_type& tested, const value_type& reference) {
+                return compare(tested, reference);
+            }
+        )
+    );
 }
 
 //! The default initialization routine.
@@ -95,6 +96,18 @@ template <typename ValueType>
 void set(Minimal& minimal_ref, ValueType new_value) {
     minimal_ref.set_val(static_cast<int>(new_value));
 }
+
+template <typename KeyType>
+void set(std::string& string_ref, KeyType key) {
+    static char buffer[20];
+#if _MSC_VER && __STDC_SECURE_LIB__>=200411
+    sprintf_s(buffer, sizeof(buffer), "%f", static_cast<float>(key));
+#else
+    sprintf(buffer, "%f", static_cast<float>(key));
+#endif
+    string_ref = buffer;
+}
+
 
 template <typename RandomAccessIterator, typename Compare>
 bool fill_ranges(RandomAccessIterator test_range_begin, RandomAccessIterator sorted_range_begin,
@@ -138,117 +151,58 @@ bool fill_ranges(RandomAccessIterator test_range_begin, RandomAccessIterator sor
     return false;
 }
 
-//! The initialization routine specialized to the class string
-/*! strings are created from floats.
-*/
-bool fill_ranges(std::string* iter, std::string* sorted_list, std::size_t size, const std::less<std::string> &compare) {
-    static char test_case = 0;
-    const char num_cases = 1;
-
-    if (test_case < num_cases) {
-        /* use sin to generate the values */
-        for (std::size_t i = 0; i < size; i++) {
-            char buffer[20];
-// Getting rid of secure warning issued by VC 14 and newer
-#if _MSC_VER && __STDC_SECURE_LIB__>=200411
-            sprintf_s(buffer, sizeof(buffer), "%f", float(sin(float(i))));
-#else
-            sprintf(buffer, "%f", float(sin(float(i))));
-#endif
-            sorted_list[i] = iter[i] = std::string(buffer);
-        }
-
-        std::sort(sorted_list, sorted_list + size, compare);
-        test_case++;
-        return true;
-    }
-    test_case = 0;
-    return false;
-}
-
 //! The default test routine.
 /*! Tests all data set sizes from 0 to N, all grainsizes from 0 to G=10, and selects from
     all possible interfaces to parallel_sort depending on whether a scratch space and
     compare have been provided.
 */
-template<typename ValueType, std::size_t Size>
+template<typename ContainerType, std::size_t Size>
 struct parallel_sort_test {
     static void run() {
-         std::less<ValueType> default_comp;
-         ValueType* array = new ValueType[Size];
-         ValueType* sorted_array = new ValueType[Size];
+        std::less<typename ContainerType::value_type> default_comp;
+        ContainerType range(Size);
+        ContainerType sorted_range(Size);
 
-         while (fill_ranges(array, sorted_array, Size, default_comp)) {
-             tbb::parallel_sort(array, array + Size);
-             validate(array, sorted_array, Size);
-         }
-
-         delete[] array;
-         delete[] sorted_array;
-    }
-
-    template<typename Comparator>
-    static void run(Comparator& comp) {
-         ValueType* array = new ValueType[Size];
-         ValueType* sorted_array = new ValueType[Size];
-
-        while (fill_ranges(array, sorted_array, Size, comp)) {
-            tbb::parallel_sort(array, array + Size, comp);
-            validate(array, sorted_array, Size);
-        }
-
-        delete[] array;
-        delete[] sorted_array;
-    }
-};
-
-template<typename ValueType, std::size_t Size>
-struct parallel_sort_test<tbb::concurrent_vector<ValueType>, Size> {
-    static void run() {
-        std::less<ValueType> default_comp;
-        tbb::concurrent_vector<ValueType> vector(Size);
-        tbb::concurrent_vector<ValueType> sorted_vector(Size);
-
-        while (fill_ranges(std::begin(vector), std::begin(sorted_vector), Size, default_comp)) {
-            tbb::parallel_sort(vector);
-            validate(std::begin(vector), std::begin(sorted_vector), Size);
+        while (fill_ranges(std::begin(range), std::begin(sorted_range), Size, default_comp)) {
+            tbb::parallel_sort(range);
+            validate(range, sorted_range);
         }
     }
 
     template<typename Comparator>
     static void run(Comparator& comp) {
-        tbb::concurrent_vector<ValueType> vector(Size);
-        tbb::concurrent_vector<ValueType> sorted_vector(Size);
+        ContainerType range(Size);
+        ContainerType sorted_range(Size);
 
-        while (fill_ranges(std::begin(vector), std::begin(sorted_vector), Size, comp)) {
-            tbb::parallel_sort(vector, comp);
-            validate(std::begin(vector), std::begin(sorted_vector), Size);
+        while (fill_ranges(std::begin(range), std::begin(sorted_range), Size, comp)) {
+            tbb::parallel_sort(range, comp);
+            validate(range, sorted_range);
         }
     }
 };
 
-template<typename ValueType, typename Comparator>
+template<typename ContainerType, typename Comparator>
 void parallel_sort_test_suite() {
     Comparator comp;
     for (auto concurrency_level : utils::concurrency_range()) {
         tbb::global_control control(tbb::global_control::max_allowed_parallelism, concurrency_level);
-        parallel_sort_test<ValueType, /*Size*/0    >::run(comp);
-        parallel_sort_test<ValueType, /*Size*/1    >::run(comp);
-        parallel_sort_test<ValueType, /*Size*/10   >::run(comp);
-        parallel_sort_test<ValueType, /*Size*/9999 >::run(comp);
-        parallel_sort_test<ValueType, /*Size*/50000>::run(comp);
+        parallel_sort_test<ContainerType, /*Size*/0    >::run(comp);
+        parallel_sort_test<ContainerType, /*Size*/1    >::run(comp);
+        parallel_sort_test<ContainerType, /*Size*/10   >::run(comp);
+        parallel_sort_test<ContainerType, /*Size*/9999 >::run(comp);
+        parallel_sort_test<ContainerType, /*Size*/50000>::run(comp);
     }
 }
 
-template<typename ValueType>
+template<typename ContainerType>
 void parallel_sort_test_suite() {
     for (auto concurrency_level : utils::concurrency_range()) {
         tbb::global_control control(tbb::global_control::max_allowed_parallelism, concurrency_level);
-        parallel_sort_test<ValueType, /*Size*/0    >::run();
-        parallel_sort_test<ValueType, /*Size*/1    >::run();
-        parallel_sort_test<ValueType, /*Size*/10   >::run();
-        parallel_sort_test<ValueType, /*Size*/9999 >::run();
-        parallel_sort_test<ValueType, /*Size*/50000>::run();
+        parallel_sort_test<ContainerType, /*Size*/0    >::run();
+        parallel_sort_test<ContainerType, /*Size*/1    >::run();
+        parallel_sort_test<ContainerType, /*Size*/10   >::run();
+        parallel_sort_test<ContainerType, /*Size*/9999 >::run();
+        parallel_sort_test<ContainerType, /*Size*/50000>::run();
     }
 }
 
@@ -277,21 +231,31 @@ template <typename T>
 using CorrectCompare = test_concepts::compare::Correct<T>;
 
 void test_psort_iterator_constraints() {
+    using namespace test_concepts::parallel_sort_value;
+
     static_assert(can_call_parallel_sort_with_iterator<utils::RandomIterator<int>>);
     static_assert(can_call_parallel_sort_with_iterator<typename std::vector<int>::iterator>);
     static_assert(!can_call_parallel_sort_with_iterator<utils::ForwardIterator<int>>);
     static_assert(!can_call_parallel_sort_with_iterator<utils::InputIterator<int>>);
+    static_assert(!can_call_parallel_sort_with_iterator<utils::RandomIterator<NonMovableValue>>);
+    static_assert(!can_call_parallel_sort_with_iterator<utils::RandomIterator<NonMoveAssignableValue>>);
+    static_assert(!can_call_parallel_sort_with_iterator<utils::RandomIterator<NonComparableValue>>);
+    static_assert(!can_call_parallel_sort_with_iterator<test_concepts::ConstantIT<int>>);
 
     static_assert(can_call_parallel_sort_with_iterator_and_compare<utils::RandomIterator<int>, CorrectCompare<int>>);
     static_assert(can_call_parallel_sort_with_iterator_and_compare<typename std::vector<int>::iterator, CorrectCompare<int>>);
     static_assert(!can_call_parallel_sort_with_iterator_and_compare<utils::ForwardIterator<int>, CorrectCompare<int>>);
     static_assert(!can_call_parallel_sort_with_iterator_and_compare<utils::InputIterator<int>, CorrectCompare<int>>);
+    static_assert(!can_call_parallel_sort_with_iterator_and_compare<utils::RandomIterator<NonMovableValue>, CorrectCompare<NonMovableValue>>);
+    static_assert(!can_call_parallel_sort_with_iterator_and_compare<utils::RandomIterator<NonMoveAssignableValue>, CorrectCompare<NonMoveAssignableValue>>);
+    static_assert(!can_call_parallel_sort_with_iterator_and_compare<test_concepts::ConstantIT<int>, CorrectCompare<const int>>);
 }
 
 void test_psort_compare_constraints() {
     using namespace test_concepts::compare;
-    using CorrectIterator = test_concepts::container_based_sequence::iterator;
+
     using CorrectCBS = test_concepts::container_based_sequence::Correct;
+    using CorrectIterator = CorrectCBS::iterator;
     static_assert(can_call_parallel_sort_with_iterator_and_compare<CorrectIterator, Correct<int>>);
     static_assert(!can_call_parallel_sort_with_iterator_and_compare<CorrectIterator, NoOperatorRoundBrackets<int>>);
     static_assert(!can_call_parallel_sort_with_iterator_and_compare<CorrectIterator, WrongFirstInputOperatorRoundBrackets<int>>);
@@ -307,30 +271,61 @@ void test_psort_compare_constraints() {
 
 void test_psort_cbs_constraints() {
     using namespace test_concepts::container_based_sequence;
-    using CorrectCompare = test_concepts::compare::Correct<int>;
+    using namespace test_concepts::parallel_sort_value;
+
     static_assert(can_call_parallel_sort_with_cbs<Correct>);
     static_assert(!can_call_parallel_sort_with_cbs<NoBegin>);
     static_assert(!can_call_parallel_sort_with_cbs<NoEnd>);
     static_assert(!can_call_parallel_sort_with_cbs<ForwardIteratorCBS>);
+    static_assert(!can_call_parallel_sort_with_cbs<ConstantCBS>);
 
+    static_assert(can_call_parallel_sort_with_cbs<CustomValueCBS<CorrectValue>>);
+    static_assert(!can_call_parallel_sort_with_cbs<CustomValueCBS<NonMovableValue>>);
+    static_assert(!can_call_parallel_sort_with_cbs<CustomValueCBS<NonMoveAssignableValue>>);
+    static_assert(!can_call_parallel_sort_with_cbs<CustomValueCBS<NonComparableValue>>);\
+
+    using CorrectCompare = test_concepts::compare::Correct<int>;
+    using NonMovableCompare = test_concepts::compare::Correct<NonMovableValue>;
+    using NonMoveAssignableCompare = test_concepts::compare::Correct<NonMoveAssignableValue>;
     static_assert(can_call_parallel_sort_with_cbs_and_compare<Correct, CorrectCompare>);
     static_assert(!can_call_parallel_sort_with_cbs_and_compare<NoBegin, CorrectCompare>);
     static_assert(!can_call_parallel_sort_with_cbs_and_compare<NoEnd, CorrectCompare>);
     static_assert(!can_call_parallel_sort_with_cbs_and_compare<ForwardIteratorCBS, CorrectCompare>);
+    static_assert(!can_call_parallel_sort_with_cbs_and_compare<ConstantCBS, CorrectCompare>);
+    static_assert(!can_call_parallel_sort_with_cbs_and_compare<CustomValueCBS<NonMovableValue>, NonMovableCompare>);
+    static_assert(!can_call_parallel_sort_with_cbs_and_compare<CustomValueCBS<NonMoveAssignableValue>, NonMoveAssignableCompare>);
 }
 
 #endif // __TBB_CPP20_CONCEPTS_PRESENT
 
+template<typename T>
+struct minimal_span {
+    minimal_span(T* input_data, std::size_t input_size)
+     : data{input_data}
+     , size{input_size}
+    {}
+
+    T* begin() const {
+        return data;
+    }
+    T* end() const {
+        return data + size;
+    }
+private:
+    T* data;
+    std::size_t size;
+};
+
 //! Minimal array sorting test (less comparator)
 //! \brief \ref error_guessing
 TEST_CASE("Minimal array sorting test (less comparator)") {
-    parallel_sort_test_suite<Minimal, MinimalLessCompare>();
+    parallel_sort_test_suite<std::vector<Minimal>, MinimalLessCompare>();
 }
 
 //! Float array sorting test (default comparator)
 //! \brief \ref error_guessing
 TEST_CASE("Float array sorting test (default comparator)") {
-    parallel_sort_test_suite<float>();
+    parallel_sort_test_suite<std::vector<float>>();
 }
 
 //! tbb::concurrent_vector<float> sorting test (less comparator)
@@ -348,13 +343,13 @@ TEST_CASE("tbb::concurrent_vector<float> sorting test (default comparator)") {
 //! Array of strings sorting test (less comparator)
 //! \brief \ref error_guessing
 TEST_CASE("Array of strings sorting test (less comparator)") {
-    parallel_sort_test_suite<std::string, std::less<std::string>>();
+    parallel_sort_test_suite<std::vector<std::string>, std::less<std::string>>();
 }
 
 //! Array of strings sorting test (default comparator)
 //! \brief \ref error_guessing
 TEST_CASE("Array of strings sorting test (default comparator)") {
-    parallel_sort_test_suite<std::string>();
+    parallel_sort_test_suite<std::vector<std::string>>();
 }
 
 //! tbb::concurrent_vector<Minimal> sorting test (less comparator)
@@ -363,31 +358,72 @@ TEST_CASE("tbb::concurrent_vector<Minimal> sorting test (less comparator)") {
     parallel_sort_test_suite<tbb::concurrent_vector<Minimal>, MinimalLessCompare>();
 }
 
-const int vector_size = 10000;
+constexpr std::size_t array_size = 10000;
+
+template<typename SortFunctor>
+void sort_array_test(const SortFunctor& sort_functor) {
+    int test_array[array_size];
+    for (std::size_t i = 0; i < array_size; ++i)
+        test_array[i] = rand() % array_size;
+
+    sort_functor(test_array);
+
+    for (std::size_t i = 0; i < array_size - 1; ++i)
+        REQUIRE_MESSAGE(test_array[i] <= test_array[i + 1], "Testing data not sorted");
+}
 
 //! Array sorting test (default comparator)
 //! \brief \ref error_guessing
 TEST_CASE("Array sorting test (default comparator)") {
     for ( auto concurrency_level : utils::concurrency_range() ) {
         tbb::global_control control(tbb::global_control::max_allowed_parallelism, concurrency_level);
-
-        int test_array[vector_size];
-        for (int i = 0; i < vector_size; ++i)
-            test_array[i] = rand() % vector_size;
-
-        tbb::parallel_sort(test_array);
-
-        for(int i = 0; i < vector_size - 1; ++i)
-            REQUIRE_MESSAGE(test_array[i] <= test_array[i + 1], "Testing data not sorted");
+        sort_array_test([](int (&array)[array_size]) {
+            tbb::parallel_sort(array);
+        });
     }
+}
+
+//! Test array sorting via rvalue span (default comparator)
+//! \brief \ref error_guessing
+TEST_CASE("Test array sorting via rvalue span (default comparator)") {
+    sort_array_test([](int (&array)[array_size]) {
+        tbb::parallel_sort(minimal_span<int>{array, array_size});
+    });
+}
+
+//! Test array sorting via const span (default comparator)
+//! \brief \ref error_guessing
+TEST_CASE("Test array sorting via const span (default comparator)") {
+    sort_array_test([](int (&array)[array_size]) {
+        const minimal_span<int> span(array, array_size);
+        tbb::parallel_sort(span);
+    });
+}
+
+//! Test rvalue container with stateful comparator
+//! \brief \ref error_guessing
+TEST_CASE("Test rvalue container with stateful comparator") {
+    // Create sorted range
+    std::vector<std::size_t> test_vector(array_size);
+    for (std::size_t i = 0; i < array_size; ++i)
+        test_vector[i] = i;
+
+    std::atomic<std::size_t> count{0};
+    tbb::parallel_sort(std::move(test_vector), [&](std::size_t lhs, std::size_t rhs) {
+        ++count;
+        return lhs < rhs;
+    });
+
+    // The comparator should be called at least (size - 1) times to check that the array is sorted
+    REQUIRE_MESSAGE(count >= array_size - 1, "Incorrect comparator calls count");
 }
 
 //! Testing workers going to sleep
 //! \brief \ref resource_usage
 TEST_CASE("That all workers sleep when no work") {
-    int test_array[vector_size];
-    for (int i = 0; i < vector_size; ++i)
-        test_array[i] = rand() % vector_size;
+    int test_array[array_size];
+    for (std::size_t i = 0; i < array_size; ++i)
+        test_array[i] = rand() % array_size;
 
     tbb::parallel_sort(test_array);
     TestCPUUserTime(utils::get_platform_max_threads());

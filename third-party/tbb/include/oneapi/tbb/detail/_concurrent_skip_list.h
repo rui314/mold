@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2019-2021 Intel Corporation
+    Copyright (c) 2019-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -72,7 +72,7 @@ public:
     using pointer = typename value_allocator_traits::pointer;
     using const_pointer = typename value_allocator_traits::const_pointer;
 
-    //In perfect world these constructor and destructor would have been private, 
+    //In perfect world these constructor and destructor would have been private,
     //however this seems technically impractical due to use of allocator_traits.
 
     //Should not be called directly, instead use create method
@@ -671,24 +671,34 @@ public:
         using reference = typename iterator::reference;
 
         bool empty() const {
-            return my_begin.my_node_ptr->next(0) == my_end.my_node_ptr;
+            return my_begin.my_node_ptr ? (my_begin.my_node_ptr->next(0) == my_end.my_node_ptr)
+                                        : true;
         }
 
         bool is_divisible() const {
-            return my_level != 0 ? my_begin.my_node_ptr->next(my_level - 1) != my_end.my_node_ptr : false;
+            return my_begin.my_node_ptr && my_level != 0
+                        ? my_begin.my_node_ptr->next(my_level - 1) != my_end.my_node_ptr
+                        : false;
         }
 
         size_type size() const { return std::distance(my_begin, my_end); }
 
         const_range_type( const_range_type& r, split)
             : my_end(r.my_end) {
-            my_begin = iterator(r.my_begin.my_node_ptr->next(r.my_level - 1));
-            my_level = my_begin.my_node_ptr->height();
+            if (r.empty()) {
+                __TBB_ASSERT(my_end.my_node_ptr == nullptr, nullptr);
+                my_begin = my_end;
+                my_level = 0;
+            } else {
+                my_begin = iterator(r.my_begin.my_node_ptr->next(r.my_level - 1));
+                my_level = my_begin.my_node_ptr->height();
+            }
             r.my_end = my_begin;
         }
 
         const_range_type( const concurrent_skip_list& l)
-            : my_end(l.end()), my_begin(l.begin()), my_level(my_begin.my_node_ptr->height() ) {}
+            : my_end(l.end()), my_begin(l.begin()),
+              my_level(my_begin.my_node_ptr ? my_begin.my_node_ptr->height() : 0) {}
 
         iterator begin() const { return my_begin; }
         iterator end() const { return my_end; }

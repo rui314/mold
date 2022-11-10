@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -596,10 +596,10 @@ struct test_grow_by {
 
 template<typename Iterator, typename T>
 void TestIteratorTraits() {
-    AssertSameType( static_cast<typename Iterator::difference_type*>(0), static_cast<std::ptrdiff_t*>(0) );
-    AssertSameType( static_cast<typename Iterator::value_type*>(0), static_cast<T*>(0) );
-    AssertSameType( static_cast<typename Iterator::pointer*>(0), static_cast<T**>(0) );
-    AssertSameType( static_cast<typename Iterator::iterator_category*>(0), static_cast<std::random_access_iterator_tag*>(0) );
+    AssertSameType( static_cast<typename Iterator::difference_type*>(nullptr), static_cast<std::ptrdiff_t*>(nullptr) );
+    AssertSameType( static_cast<typename Iterator::value_type*>(nullptr), static_cast<T*>(nullptr) );
+    AssertSameType( static_cast<typename Iterator::pointer*>(nullptr), static_cast<T**>(nullptr) );
+    AssertSameType( static_cast<typename Iterator::iterator_category*>(nullptr), static_cast<std::random_access_iterator_tag*>(nullptr) );
     T x;
     typename Iterator::reference xr = x;
     typename Iterator::pointer xp = &x;
@@ -990,7 +990,7 @@ void TestConcurrentGrowBy() {
         REQUIRE( v.size() == std::size_t(range_size) );
 
         // Verify that v is a permutation of 0..m
-        size_t inversions = 0, direct_inits = 0, def_inits = 0, copy_inits = 0, move_inits = 0;
+        size_t direct_inits = 0, def_inits = 0, copy_inits = 0, move_inits = 0;
         std::vector<bool> found(range_size, 0);
         for( std::size_t i=0; i<range_size; ++i ) {
             if( v[i].state == move_support_tests::Foo::DefaultInitialized ) ++def_inits;
@@ -1003,8 +1003,6 @@ void TestConcurrentGrowBy() {
             intptr_t index = v[i].bar();
             REQUIRE( !found[index] );
             found[index] = true;
-            if( i>0 )
-                inversions += v[i].bar()<v[i-1].bar();
         }
 
         std::size_t expected_direct_inits = 0, expected_def_inits = 0, expected_copy_inits = 0, expected_move_inits = 0;

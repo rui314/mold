@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ static std::atomic<do_once_state> concmon_module_inited;
 void WINAPI init_binsem_using_event( SRWLOCK* h_ )
 {
     srwl_or_handle* shptr = (srwl_or_handle*) h_;
-    shptr->h = CreateEventEx( NULL, NULL, 0, EVENT_ALL_ACCESS|SEMAPHORE_ALL_ACCESS );
+    shptr->h = CreateEventEx( nullptr, nullptr, 0, EVENT_ALL_ACCESS|SEMAPHORE_ALL_ACCESS );
 }
 
 void WINAPI acquire_binsem_using_event( SRWLOCK* h_ )
@@ -60,11 +60,11 @@ static const dynamic_link_descriptor SRWLLinkTable[] = {
 
 inline void init_concmon_module()
 {
-    __TBB_ASSERT( (uintptr_t)__TBB_init_binsem==(uintptr_t)&init_binsem_using_event, NULL );
+    __TBB_ASSERT( (uintptr_t)__TBB_init_binsem==(uintptr_t)&init_binsem_using_event, nullptr);
     if( dynamic_link( "Kernel32.dll", SRWLLinkTable, sizeof(SRWLLinkTable)/sizeof(dynamic_link_descriptor) ) ) {
-        __TBB_ASSERT( (uintptr_t)__TBB_init_binsem!=(uintptr_t)&init_binsem_using_event, NULL );
-        __TBB_ASSERT( (uintptr_t)__TBB_acquire_binsem!=(uintptr_t)&acquire_binsem_using_event, NULL );
-        __TBB_ASSERT( (uintptr_t)__TBB_release_binsem!=(uintptr_t)&release_binsem_using_event, NULL );
+        __TBB_ASSERT( (uintptr_t)__TBB_init_binsem!=(uintptr_t)&init_binsem_using_event, nullptr);
+        __TBB_ASSERT( (uintptr_t)__TBB_acquire_binsem!=(uintptr_t)&acquire_binsem_using_event, nullptr);
+        __TBB_ASSERT( (uintptr_t)__TBB_release_binsem!=(uintptr_t)&release_binsem_using_event, nullptr);
     }
 }
 

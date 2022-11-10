@@ -79,7 +79,6 @@ target_compile_options(tbb
     ${TBB_WARNING_SUPPRESS}
     ${TBB_LIB_COMPILE_FLAGS}
     ${TBB_COMMON_COMPILE_FLAGS}
-    ${TBB_IPO_COMPILE_FLAGS}
 )
 
 # Avoid use of target_link_libraries here as it changes /DEF option to \DEF on Windows.
@@ -88,6 +87,8 @@ set_target_properties(tbb PROPERTIES
     VERSION ${TBB_BINARY_VERSION}.${TBB_BINARY_MINOR_VERSION}
     SOVERSION ${TBB_BINARY_VERSION}
 )
+
+tbb_handle_ipo(tbb)
 
 if (TBB_DEF_FILE_PREFIX) # If there's no prefix, assume we're using export directives
     set_target_properties(tbb PROPERTIES
@@ -103,14 +104,12 @@ if (COMMAND target_link_options)
         PRIVATE
         ${TBB_LIB_LINK_FLAGS}
         ${TBB_COMMON_LINK_FLAGS}
-        ${TBB_IPO_LINK_FLAGS}
     )
 else()
     target_link_libraries(tbb
         PRIVATE
         ${TBB_LIB_LINK_FLAGS}
         ${TBB_COMMON_LINK_FLAGS}
-        ${TBB_IPO_LINK_FLAGS}
     )
 endif()
 
@@ -123,7 +122,7 @@ target_link_libraries(tbb
 
 tbb_install_target(tbb)
 
-if (WIN32)
+if (MSVC)
     # Create a copy of target linker file (tbb<ver>[_debug].lib) with legacy name (tbb[_debug].lib)
     # to support previous user experience for linkage.
     install(FILES

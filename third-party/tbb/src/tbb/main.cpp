@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -145,7 +145,7 @@ extern "C" bool WINAPI DllMain( HANDLE /*hinstDLL*/, DWORD reason, LPVOID lpvRes
         case DLL_PROCESS_DETACH:
             // Since THREAD_DETACH is not called for the main thread, call auto-termination
             // here as well - but not during process shutdown (due to risk of a deadlock).
-            if ( lpvReserved==NULL ) { // library unload
+            if ( lpvReserved == nullptr ) { // library unload
                 governor::terminate_external_thread();
             }
             __TBB_InitOnce::remove_ref();

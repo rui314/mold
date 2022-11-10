@@ -72,19 +72,19 @@ const double EXPECTED_SUM = (REPETITIONS + 1) * N;
 //! A minimal class that occupies N bytes.
 /** Defines default and copy constructor, and allows implicit operator&. Hides operator=. */
 template<size_t N = oneapi::tbb::detail::max_nfs_size>
-class minimal: utils::NoAssign {
+class minimalNComparable: utils::NoAssign {
 private:
     int my_value;
     bool is_constructed;
     char pad[N-sizeof(int) - sizeof(bool)];
 public:
-    minimal() : utils::NoAssign(), my_value(0) { ++construction_counter; is_constructed = true; }
-    minimal( const minimal &m ) : utils::NoAssign(), my_value(m.my_value) { ++construction_counter; is_constructed = true; }
-    ~minimal() { ++destruction_counter; CHECK_FAST(is_constructed); is_constructed = false; }
+    minimalNComparable() : utils::NoAssign(), my_value(0) { ++construction_counter; is_constructed = true; }
+    minimalNComparable( const minimalNComparable &m ) : utils::NoAssign(), my_value(m.my_value) { ++construction_counter; is_constructed = true; }
+    ~minimalNComparable() { ++destruction_counter; CHECK_FAST(is_constructed); is_constructed = false; }
     void set_value( const int i ) { CHECK_FAST(is_constructed); my_value = i; }
     int value( ) const { CHECK_FAST(is_constructed); return my_value; }
 
-    bool operator==( const minimal& other ) const { return my_value == other.my_value; }
+    bool operator==( const minimalNComparable& other ) const { return my_value == other.my_value; }
 };
 
 static size_t AlignMask = 0;  // set to cache-line-size - 1
@@ -140,7 +140,7 @@ private:
 };
 
 //
-// A helper class that simplifies writing the tests since minimal does not
+// A helper class that simplifies writing the tests since minimalNComparable does not
 // define = or + operators.
 //
 
@@ -154,13 +154,13 @@ struct test_helper {
 };
 
 template<size_t N>
-struct test_helper<minimal<N> > {
-   static inline void init(minimal<N> &sum) { sum.set_value( 0 ); }
-   static inline void sum(minimal<N> &sum, const int addend ) { sum.set_value( sum.value() + addend); }
-   static inline void sum(minimal<N> &sum, const double addend ) { sum.set_value( sum.value() + static_cast<int>(addend)); }
-   static inline void sum(minimal<N> &sum, const minimal<N> &addend ) { sum.set_value( sum.value() + addend.value()); }
-   static inline void set(minimal<N> &v, const int value ) { v.set_value( static_cast<int>(value) ); }
-   static inline double get(const minimal<N> &sum ) { return static_cast<double>(sum.value()); }
+struct test_helper<minimalNComparable<N> > {
+   static inline void init(minimalNComparable<N> &sum) { sum.set_value( 0 ); }
+   static inline void sum(minimalNComparable<N> &sum, const int addend ) { sum.set_value( sum.value() + addend); }
+   static inline void sum(minimalNComparable<N> &sum, const double addend ) { sum.set_value( sum.value() + static_cast<int>(addend)); }
+   static inline void sum(minimalNComparable<N> &sum, const minimalNComparable<N> &addend ) { sum.set_value( sum.value() + addend.value()); }
+   static inline void set(minimalNComparable<N> &v, const int value ) { v.set_value( static_cast<int>(value) ); }
+   static inline double get(const minimalNComparable<N> &sum ) { return static_cast<double>(sum.value()); }
 };
 
 template<>
@@ -198,12 +198,12 @@ struct FunctorFinit<ThrowingConstructor,Value> {
 };
 
 template <size_t N, int Value>
-struct FunctorFinit<minimal<N>,Value> {
+struct FunctorFinit<minimalNComparable<N>,Value> {
     FunctorFinit( const FunctorFinit& ) {++FinitCounter;}
     FunctorFinit( SecretTagType ) {++FinitCounter;}
     ~FunctorFinit() {--FinitCounter;}
-    minimal<N> operator()() {
-        minimal<N> result;
+    minimalNComparable<N> operator()() {
+        minimalNComparable<N> result;
         result.set_value( Value );
         return result;
     }
@@ -219,9 +219,9 @@ struct FunctorAddCombineRef {
 };
 
 template <size_t N>
-struct FunctorAddCombineRef<minimal<N> > {
-    minimal<N> operator()(const minimal<N>& left, const minimal<N>& right) const {
-        minimal<N> result;
+struct FunctorAddCombineRef<minimalNComparable<N> > {
+    minimalNComparable<N> operator()(const minimalNComparable<N>& left, const minimalNComparable<N>& right) const {
+        minimalNComparable<N> result;
         result.set_value( left.value() + right.value() );
         return result;
     }
@@ -816,7 +816,7 @@ const size_t line_size = oneapi::tbb::detail::max_nfs_size;
 void run_reference_check() {
     run_serial_scalar_tests<int>("int");
     run_serial_scalar_tests<double>("double");
-    run_serial_scalar_tests<minimal<> >("minimal<>");
+    run_serial_scalar_tests<minimalNComparable<> >("minimalNComparable<>");
     run_serial_vector_tests<int>("std::vector<int, oneapi::tbb::tbb_allocator<int> >");
     run_serial_vector_tests<double>("std::vector<double, oneapi::tbb::tbb_allocator<double> >");
 }
@@ -825,7 +825,7 @@ template<template<class>class Allocator>
 void run_parallel_tests(const char *allocator_name) {
     run_parallel_scalar_tests<int, Allocator>("int",allocator_name);
     run_parallel_scalar_tests<double, Allocator>("double",allocator_name);
-    run_parallel_scalar_tests_nocombine<minimal<>,Allocator>("minimal<>",allocator_name);
+    run_parallel_scalar_tests_nocombine<minimalNComparable<>,Allocator>("minimalNComparable<>",allocator_name);
     run_parallel_scalar_tests<ThrowingConstructor, Allocator>("ThrowingConstructor", allocator_name);
     run_parallel_vector_tests<int, Allocator>("std::vector<int, oneapi::tbb::tbb_allocator<int> >",allocator_name);
     run_parallel_vector_tests<double, Allocator>("std::vector<double, oneapi::tbb::tbb_allocator<double> >",allocator_name);
@@ -943,9 +943,9 @@ void run_assignment_and_copy_constructor_tests(const char* allocator_name) {
     run_assign_and_copy_constructor_test<int, Allocator>("int", allocator_name);
     run_assign_and_copy_constructor_test<double, Allocator>("double", allocator_name);
     // Try class sizes that are close to a cache line in size, in order to check padding calculations.
-    run_assign_and_copy_constructor_test<minimal<line_size-1>, Allocator >("minimal<line_size-1>", allocator_name);
-    run_assign_and_copy_constructor_test<minimal<line_size>, Allocator >("minimal<line_size>", allocator_name);
-    run_assign_and_copy_constructor_test<minimal<line_size+1>, Allocator >("minimal<line_size+1>", allocator_name);
+    run_assign_and_copy_constructor_test<minimalNComparable<line_size-1>, Allocator >("minimalNComparable<line_size-1>", allocator_name);
+    run_assign_and_copy_constructor_test<minimalNComparable<line_size>, Allocator >("minimalNComparable<line_size>", allocator_name);
+    run_assign_and_copy_constructor_test<minimalNComparable<line_size+1>, Allocator >("minimalNComparable<line_size+1>", allocator_name);
     REQUIRE(FinitCounter==0);
 }
 

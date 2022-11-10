@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -24,7 +24,7 @@ namespace d1 {
 // unique_scoped_lock supposes that Mutex operations never throw
 template <typename Mutex>
 class unique_scoped_lock {
-    //! Points to currently held Mutex, or NULL if no lock is held.
+    //! Points to currently held Mutex, or nullptr if no lock is held.
     Mutex* m_mutex{};
 
 public:
@@ -79,10 +79,10 @@ class rw_scoped_lock {
 public:
     //! Construct lock that has not acquired a mutex.
     /** Equivalent to zero-initialization of *this. */
-    constexpr rw_scoped_lock() noexcept : m_mutex(nullptr), m_is_writer(false) {}
+    constexpr rw_scoped_lock() noexcept {}
 
     //! Acquire lock on given mutex.
-    rw_scoped_lock(Mutex& m, bool write = true) : m_mutex(nullptr) {
+    rw_scoped_lock(Mutex& m, bool write = true) {
         acquire(m, write);
     }
 
@@ -160,11 +160,11 @@ public:
 
 protected:
     //! The pointer to the current mutex that is held, or nullptr if no mutex is held.
-    Mutex* m_mutex{};
+    Mutex* m_mutex {nullptr};
 
     //! If mutex != nullptr, then is_writer is true if holding a writer lock, false if holding a reader lock.
     /** Not defined if not holding a lock. */
-    bool m_is_writer{};
+    bool m_is_writer {false};
 };
 
 } // namespace d1

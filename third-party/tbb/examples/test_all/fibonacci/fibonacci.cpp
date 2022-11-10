@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -421,7 +421,7 @@ void IntRange::set_from_string(const char *s) {
     char *end;
     high = low = strtol(s, &end, 0);
     switch (*end) {
-        case ':': high = strtol(end + 1, 0, 0); break;
+        case ':': high = strtol(end + 1, nullptr, 0); break;
         case '\0': break;
         default: printf("unexpected character = %c\n", *end);
     }
@@ -451,11 +451,11 @@ value Measure(const char *name, MeasureFunc func, int n) {
 int main(int argc, char *argv[]) {
     if (argc > 1)
         Verbose = true;
-    int NumbersCount = argc > 1 ? strtol(argv[1], 0, 0) : 500;
+    int NumbersCount = argc > 1 ? strtol(argv[1], nullptr, 0) : 500;
     IntRange NThread(1, 4); // Number of threads to use.
     if (argc > 2)
         NThread.set_from_string(argv[2]);
-    unsigned long ntrial = argc > 3 ? (unsigned long)strtoul(argv[3], 0, 0) : 1;
+    unsigned long ntrial = argc > 3 ? (unsigned long)strtoul(argv[3], nullptr, 0) : 1;
     value result, sum;
 
     if (Verbose)

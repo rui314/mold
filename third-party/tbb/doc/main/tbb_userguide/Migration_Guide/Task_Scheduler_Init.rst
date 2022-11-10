@@ -145,12 +145,11 @@ allows waiting for oneTBB worker threads completion:
 
 .. code:: cpp
 
-    #define TBB_PREVIEW_WAITING_FOR_WORKERS 1
     #include <oneapi/tbb/global_control.h>
     #include <oneapi/tbb/parallel_for.h>
 
     int main() {
-        oneapi::tbb::task_scheduler_handle handle = oneapi::tbb::task_scheduler_handle::get();
+        oneapi::tbb::task_scheduler_handle handle{tbb::attach{}};
         // Do some parallel work here
         oneapi::tbb::parallel_for(/* ... */);
         oneapi::tbb::finalize(handle);

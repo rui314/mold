@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@ TBB_EXPORT void __TBB_EXPORTED_FUNC assertion_failure(const char* location, int 
 #if TBB_USE_ASSERT
     //! Assert that predicate is true.
     /** If predicate is false, print assertion failure message.
-        If the comment argument is not NULL, it is printed as part of the failure message.
+        If the comment argument is not nullptr, it is printed as part of the failure message.
         The comment argument has no other effect. */
     #define __TBB_ASSERT(predicate,message) __TBB_ASSERT_RELEASE(predicate,message)
     //! "Extended" version

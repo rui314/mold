@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -73,7 +73,7 @@ bool WinInit(HINSTANCE hInstance,
     }
     else {
         memset(&wndclass, 0, sizeof(wndclass));
-        wndclass.hCursor = LoadCursor(NULL, IDC_ARROW);
+        wndclass.hCursor = LoadCursor(nullptr, IDC_ARROW);
         wndclass.lpszClassName = title;
     }
     wndclass.cbSize = sizeof(wndclass);
@@ -99,11 +99,11 @@ bool WinInit(HINSTANCE hInstance,
                               0, // Initial y pos: not used here
                               g_sizex + xaddend, // Initial x size
                               g_sizey + yaddend, // Initial y size
-                              NULL, // parent window handle
-                              NULL, // window menu handle
+                              nullptr, // parent window handle
+                              nullptr, // window menu handle
                               hInstance, // program instance handle
-                              NULL); // Creation parameters
-    return g_hAppWnd != NULL;
+                              nullptr); // Creation parameters
+    return g_hAppWnd != nullptr;
 }
 
 //! create console window with redirection
@@ -127,7 +127,7 @@ static bool RedirectIOToConsole(void) {
         return false;
     fp = _fdopen(hConHandle, "w");
     *stdout = *fp;
-    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stdout, nullptr, _IONBF, 0);
 
     // redirect unbuffered STDERR to the console
     lStdHandle = (size_t)GetStdHandle(STD_ERROR_HANDLE);
@@ -135,7 +135,7 @@ static bool RedirectIOToConsole(void) {
     if (hConHandle > 0) {
         fp = _fdopen(hConHandle, "w");
         *stderr = *fp;
-        setvbuf(stderr, NULL, _IONBF, 0);
+        setvbuf(stderr, nullptr, _IONBF, 0);
     }
 
     // redirect unbuffered STDIN to the console
@@ -144,7 +144,7 @@ static bool RedirectIOToConsole(void) {
     if (hConHandle > 0) {
         fp = _fdopen(hConHandle, "r");
         *stdin = *fp;
-        setvbuf(stdin, NULL, _IONBF, 0);
+        setvbuf(stdin, nullptr, _IONBF, 0);
     }
 
     // make cout, wcout, cin, wcin, wcerr, cerr, wclog and clog
@@ -229,7 +229,7 @@ static bool loop_once(video *v) {
     }
     // event processing, including painting
     MSG msg;
-    if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+    if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
         if (msg.message == WM_QUIT) {
             v->running = false;
             return false;
@@ -255,7 +255,7 @@ void video::main_loop() {
     g_msec = GetTickCount();
     // now, start main process
     if (threaded) {
-        g_handles[0] = CreateThread(NULL, // LPSECURITY_ATTRIBUTES security_attrs
+        g_handles[0] = CreateThread(nullptr, // LPSECURITY_ATTRIBUTES security_attrs
                                     0, // SIZE_T stacksize
                                     (LPTHREAD_START_ROUTINE)thread_video,
                                     this, // argument
@@ -266,7 +266,7 @@ void video::main_loop() {
             return;
         }
         else // harmless race is possible here
-            g_handles[1] = CreateEvent(NULL, false, false, NULL);
+            g_handles[1] = CreateEvent(nullptr, false, false, nullptr);
         while (running) {
             while (loop_once(this))
                 ;

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2021 Intel Corporation
+    Copyright (c) 2021-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -13,10 +13,6 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 */
-
-#define TBB_PREVIEW_MUTEXES 1
-#define TBB_PREVIEW_WAITING_FOR_WORKERS 1
-#define TBB_PREVIEW_TASK_GROUP_EXTENSIONS 1
 
 #include "common/config.h"
 
@@ -161,7 +157,7 @@ public:
             mMutex = nullptr;
             m->clear();
         }
-     
+
         //! Release lock.
         void release() {
             CHECK_FAST(mMutex != nullptr);
@@ -654,7 +650,7 @@ void global_actor() {
 TEST_CASE("Stress test with mixing functionality") {
     // TODO add thread recreation
     // TODO: Enable statistics
-    // tbb::task_scheduler_handle handle = tbb::task_scheduler_handle::get();
+    tbb::task_scheduler_handle handle{ tbb::attach{} };
 
     const std::size_t numExtraThreads = 16;
     utils::SpinBarrier startBarrier{numExtraThreads};
@@ -665,7 +661,7 @@ TEST_CASE("Stress test with mixing functionality") {
 
     arenaTable.shutdown();
 
-    // tbb::finalize(handle, std::nothrow_t{});
+    tbb::finalize(handle);
 
     // gStats.report();
 }

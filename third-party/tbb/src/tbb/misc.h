@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -53,11 +53,9 @@ class task_scheduler_observer;
 
 const std::size_t MByte = 1024*1024;
 
-#if __TBB_WIN8UI_SUPPORT && (_WIN32_WINNT < 0x0A00)
-// In Win8UI mode (Windows 8 Store* applications), TBB uses a thread creation API
-// that does not allow to specify the stack size.
-// Still, the thread stack size value, either explicit or default, is used by the scheduler.
-// So here we set the default value to match the platform's default of 1MB.
+#if __TBB_USE_WINAPI
+// The Microsoft Documentation about Thread Stack Size states that
+// "The default stack reservation size used by the linker is 1 MB"
 const std::size_t ThreadStackSize = 1*MByte;
 #else
 const std::size_t ThreadStackSize = (sizeof(uintptr_t) <= 4 ? 2 : 4 )*MByte;
@@ -196,7 +194,7 @@ T1 atomic_update(std::atomic<T1>& dst, T1 newValue, Pred compare) {
         basic_mask_t* threadMask;
         int is_changed;
     public:
-        affinity_helper() : threadMask(NULL), is_changed(0) {}
+        affinity_helper() : threadMask(nullptr), is_changed(0) {}
         ~affinity_helper();
         void protect_affinity_mask( bool restore_process_mask  );
         void dismiss();

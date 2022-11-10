@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -97,7 +97,6 @@ struct rtm_rw_mutex_impl {
         __TBB_ASSERT(!m.write_flag.load(std::memory_order_relaxed), "After acquire for write, write_flag already true");
         m.write_flag.store(true, std::memory_order_relaxed);                       // kill transactional readers
         s.m_transaction_state = d1::rtm_rw_mutex::rtm_type::rtm_real_writer;
-        return;
     }
 
     //! Acquire read lock on given mutex.
@@ -205,7 +204,7 @@ struct rtm_rw_mutex_impl {
         if (s.m_transaction_state == d1::rtm_rw_mutex::rtm_type::rtm_transacting_writer) {
             return true;
         }
-        __TBB_ASSERT(s.m_transaction_state == d1::rtm_rw_mutex::rtm_type::rtm_not_in_mutex, NULL);
+        __TBB_ASSERT(s.m_transaction_state == d1::rtm_rw_mutex::rtm_type::rtm_not_in_mutex, nullptr);
         // transacting write acquire failed. try_lock the real mutex
         if (m.try_lock()) {
             s.m_mutex = &m;
@@ -225,7 +224,7 @@ struct rtm_rw_mutex_impl {
         if (s.m_transaction_state == d1::rtm_rw_mutex::rtm_type::rtm_transacting_reader) {
             return true;
         }
-        __TBB_ASSERT(s.m_transaction_state == d1::rtm_rw_mutex::rtm_type::rtm_not_in_mutex, NULL);
+        __TBB_ASSERT(s.m_transaction_state == d1::rtm_rw_mutex::rtm_type::rtm_not_in_mutex, nullptr);
         // transacting read acquire failed. try_lock_shared the real mutex
         if (m.try_lock_shared()) {
             s.m_mutex = &m;

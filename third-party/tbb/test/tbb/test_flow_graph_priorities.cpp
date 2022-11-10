@@ -332,7 +332,11 @@ struct DeciderBody {
 
 struct AsyncSubmissionBody {
     AsyncActivity* my_activity;
-    void operator()(data_type input, async_node_type::gateway_type& gateway) {
+    // It is important that async_node in the test executes without spawning a TBB task, because
+    // it passes the work to asynchronous thread, which unlocks the barrier that is waited
+    // by every execution thread (asynchronous thread and any TBB worker or main thread).
+    // This is why async_node's body marked noexcept.
+    void operator()(data_type input, async_node_type::gateway_type& gateway) noexcept {
         my_activity->submit(input, &gateway);
     }
     AsyncSubmissionBody(AsyncActivity* activity) : my_activity(activity) {}

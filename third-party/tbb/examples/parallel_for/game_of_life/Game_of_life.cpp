@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -98,7 +98,7 @@ bool ParseCommandLine(int argc, char* argv[]) {
         high = strtol(s, &end, 0);
     low = strtol(s, &end, 0);
     switch (*end) {
-        case ':': high = strtol(end + 1, 0, 0); break;
+        case ':': high = strtol(end + 1, nullptr, 0); break;
         case '\0': break;
         default: PrintUsage(); return false;
     }

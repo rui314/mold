@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,7 +46,6 @@ function(tbbbind_build TBBBIND_NAME REQUIRED_HWLOC_TARGET)
         ${TBB_WARNING_LEVEL}
         ${TBB_LIB_COMPILE_FLAGS}
         ${TBB_COMMON_COMPILE_FLAGS}
-        ${TBB_IPO_COMPILE_FLAGS}
     )
 
     # Avoid use of target_link_libraries here as it changes /DEF option to \DEF on Windows.
@@ -55,6 +54,9 @@ function(tbbbind_build TBBBIND_NAME REQUIRED_HWLOC_TARGET)
         VERSION ${TBBBIND_BINARY_VERSION}.${TBB_BINARY_MINOR_VERSION}
         SOVERSION ${TBBBIND_BINARY_VERSION}
     )
+
+    tbb_handle_ipo(${TBBBIND_NAME})
+
     if (TBB_DEF_FILE_PREFIX) # If there's no prefix, assume we're using export directives
         set_target_properties(${TBBBIND_NAME} PROPERTIES
             LINK_FLAGS ${TBB_LINK_DEF_FILE_FLAG}${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbbbind.def
@@ -69,14 +71,12 @@ function(tbbbind_build TBBBIND_NAME REQUIRED_HWLOC_TARGET)
             PRIVATE
             ${TBB_LIB_LINK_FLAGS}
             ${TBB_COMMON_LINK_FLAGS}
-            ${TBB_IPO_LINK_FLAGS}
         )
     else()
         target_link_libraries(${TBBBIND_NAME}
             PRIVATE
             ${TBB_LIB_LINK_FLAGS}
             ${TBB_COMMON_LINK_FLAGS}
-            ${TBB_IPO_LINK_FLAGS}
         )
     endif()
 
@@ -90,9 +90,6 @@ function(tbbbind_build TBBBIND_NAME REQUIRED_HWLOC_TARGET)
 
     tbb_install_target(${TBBBIND_NAME})
 
-    if (COMMAND tbb_gen_vars)
-        tbb_gen_vars(${TBBBIND_NAME})
-    endif()
 endfunction()
 
 if (NOT DEFINED HWLOC_TARGET_EXPLICITLY_DEFINED AND TARGET PkgConfig::HWLOC)

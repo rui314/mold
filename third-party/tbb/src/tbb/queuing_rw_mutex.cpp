@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -198,7 +198,7 @@ struct queuing_rw_mutex_impl {
                     predecessor = tricky_pointer(predecessor) & ~FLAG;
                 } else {
                     // Load predecessor->my_state now, because once predecessor->my_next becomes
-                    // non-NULL, we must assume that *predecessor might be destroyed.
+                    // non-null, we must assume that *predecessor might be destroyed.
                     pred_state = predecessor->my_state.load(std::memory_order_relaxed);
                     if (pred_state == STATE_READER) {
                         // Notify the previous reader to unblock us.

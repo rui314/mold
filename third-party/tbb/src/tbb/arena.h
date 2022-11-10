@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -494,7 +494,7 @@ void arena::advertise_new_work() {
     };
 
     if( work_type == work_enqueued ) {
-        atomic_fence(std::memory_order_seq_cst);
+        atomic_fence_seq_cst();
 #if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
         if ( my_market->my_num_workers_soft_limit.load(std::memory_order_acquire) == 0 &&
             my_global_concurrency_mode.load(std::memory_order_acquire) == false )
@@ -508,7 +508,7 @@ void arena::advertise_new_work() {
         // Starvation resistant tasks require concurrency, so missed wakeups are unacceptable.
     }
     else if( work_type == wakeup ) {
-        atomic_fence(std::memory_order_seq_cst);
+        atomic_fence_seq_cst();
     }
 
     // Double-check idiom that, in case of spawning, is deliberately sloppy about memory fences.

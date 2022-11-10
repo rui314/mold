@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@
 
 #include "pover_global.hpp" // for declaration of DEFINE and INIT
 
-DEFINE Polygon_map_t *gPolymap1 INIT(0);
-DEFINE Polygon_map_t *gPolymap2 INIT(0);
-DEFINE Polygon_map_t *gResultMap INIT(0);
+DEFINE Polygon_map_t *gPolymap1 INIT(nullptr);
+DEFINE Polygon_map_t *gPolymap2 INIT(nullptr);
+DEFINE Polygon_map_t *gResultMap INIT(nullptr);
 
 extern void Usage(int argc, char *argv[]);
 

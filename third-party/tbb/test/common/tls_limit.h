@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ class LimitTLSKeysTo {
 #if _WIN32 || _WIN64
     #if __TBB_WIN8UI_SUPPORT && !defined(TLS_OUT_OF_INDEXES)
         // for SDKs for Windows*8 Store Apps that did not redirect TLS to FLS
-        #define TlsAlloc() FlsAlloc(NULL)
+        #define TlsAlloc() FlsAlloc(nullptr)
         #define TlsFree FlsFree
         #define TLS_OUT_OF_INDEXES FLS_OUT_OF_INDEXES
     #endif
@@ -43,7 +43,7 @@ public:
             if (h==TLS_OUT_OF_INDEXES)
 #else
             int setspecific_dummy=10;
-            if (pthread_key_create(&handles[lastUsedIdx], NULL)!=0)
+            if (pthread_key_create(&handles[lastUsedIdx], nullptr)!=0)
 #endif
             {
                 break;

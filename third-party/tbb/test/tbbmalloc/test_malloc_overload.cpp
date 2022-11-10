@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -269,7 +269,7 @@ void CheckFreeAligned() {
 
     for (int s=0; sz[s]; s++)
         for (int a=0; align[a]; a++) {
-            void *ptr = NULL;
+            void *ptr = nullptr;
 #if __TBB_POSIX_MEMALIGN_PRESENT
             int ret = posix_memalign(&ptr, align[a], sz[s]);
             REQUIRE(!ret);
@@ -302,7 +302,7 @@ void TestZoneOverload() {
     vm_address_t *zones;
     unsigned zones_num;
 
-    kern_return_t ret = malloc_get_all_zones(mach_task_self(), NULL, &zones, &zones_num);
+    kern_return_t ret = malloc_get_all_zones(mach_task_self(), nullptr, &zones, &zones_num);
     REQUIRE((!ret && zones_num>1));
     malloc_zone_t *sys_zone = (malloc_zone_t*)zones[1];
     REQUIRE_MESSAGE(strcmp("tbbmalloc", malloc_get_zone_name(sys_zone)), "zone 1 expected to be not tbbmalloc");
@@ -383,7 +383,7 @@ void FuncReplacementInfoCheck() {
     REQUIRE_MESSAGE(functions.empty(), "Changed opcodes log must contain all required functions with \"Success\" changed status");
     REQUIRE_MESSAGE(func_replacement_status == status_check, "replacement_opcodes_log() function return wrong status");
 
-    func_replacement_status = TBB_malloc_replacement_log(NULL);
+    func_replacement_status = TBB_malloc_replacement_log(nullptr);
     REQUIRE_MESSAGE(func_replacement_status == status_check, "replacement_opcodes_log() function return wrong status");
 
     // TODO: was ASSERT_WARNING
@@ -400,7 +400,7 @@ TEST_CASE("Main set of tests") {
     REQUIRE(mallopt(0, 0)); // add dummy mallopt call for coverage
 #endif // __unix__
 
-    void *ptr = NULL;
+    void *ptr = nullptr;
     utils::suppress_unused_warning(ptr); // for android
 
 #if MALLOC_UNIXLIKE_OVERLOAD_ENABLED || MALLOC_ZONE_OVERLOAD_ENABLED

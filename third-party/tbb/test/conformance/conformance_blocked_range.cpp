@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -64,7 +64,7 @@ static void SerialTest() {
                 range_type r( i, j, k );
                 utils::AssertSameType( r.empty(), true );
                 utils::AssertSameType( range_type::size_type(), std::size_t() );
-                utils::AssertSameType( static_cast<range_type::const_iterator*>(0), static_cast<AbstractValueType*>(0) );
+                utils::AssertSameType( static_cast<range_type::const_iterator*>(nullptr), static_cast<AbstractValueType*>(nullptr) );
                 utils::AssertSameType( r.begin(), MakeAbstractValueType(0) );
                 utils::AssertSameType( r.end(), MakeAbstractValueType(0) );
                 CHECK( r.empty()==(y<=x));

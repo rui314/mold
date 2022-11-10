@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -102,7 +102,7 @@ public:
         }
         init_external_thread();
         td = theTLS.get();
-        __TBB_ASSERT(td, NULL);
+        __TBB_ASSERT(td, nullptr);
         return td;
     }
 
@@ -118,11 +118,9 @@ public:
         return theTLS.get();
     }
 
-#if TBB_USE_ASSERT
     static bool is_thread_data_set(thread_data* td) {
         return theTLS.get() == td;
     }
-#endif
 
     //! Undo automatic initialization if necessary; call when a thread exits.
     static void terminate_external_thread() {

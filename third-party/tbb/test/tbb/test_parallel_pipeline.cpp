@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ void *fetchNextBuffer() {
         }
     }
     CHECK_MESSAGE(false, "Ran out of buffers, p:"<< concurrency);
-    return 0;
+    return nullptr;
 }
 void freeBuffer(void *buf) {
     for(size_t i=0; i < n_buffers;++i) {
@@ -143,10 +143,10 @@ public:
         }
         ++pointer_specialized_calls;
         if(ival == max_counter / 2) {
-            return nullptr;  // non-stop NULL
+            return nullptr;  // non-stop nullptr
         }
         U* myReturn = new(fetchNextBuffer()) U();
-        if (myReturn) {  // may have been passed in a NULL
+        if (myReturn) {  // may have been passed in a nullptr
             CHECK_MESSAGE(!middle_my_id(*myReturn), "bad id value, p:" << concurrency);
             CHECK_MESSAGE(!middle_is_ready(*myReturn), "Already ready, p:" << concurrency);
         }
@@ -205,7 +205,7 @@ public:
     U operator()(T* my_storage) const {
         free_on_scope_exit<T> my_ptr(my_storage);  // free_on_scope_exit marks the buffer available
         CHECK(is_alive());
-        if(my_storage) {  // may have been passed in a NULL
+        if(my_storage) {  // may have been passed in a nullptr
             CHECK_MESSAGE(!middle_my_id(*my_storage), "bad id value, p:" << concurrency);
             CHECK_MESSAGE(!middle_is_ready(*my_storage), "Already ready, p:" << concurrency );
         }
@@ -241,7 +241,7 @@ public:
             CHECK_MESSAGE(!middle_my_id(*my_storage), "bad id value, p:" << concurrency);
             CHECK_MESSAGE(!middle_is_ready(*my_storage), "Already ready, p:" << concurrency );
         }
-        // may have been passed a NULL
+        // may have been passed a nullptr
         ++pointer_specialized_calls;
         if(!my_storage) return nullptr;
         CHECK_MESSAGE(!middle_my_id(*my_storage), "bad id value, p:" << concurrency);

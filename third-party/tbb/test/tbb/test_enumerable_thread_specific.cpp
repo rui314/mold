@@ -54,15 +54,15 @@ const int VALID_NUMBER_OF_KEYS = 100;
 //! A minimal class that occupies N bytes.
 /** Defines default and copy constructor, and allows implicit operator&. Hides operator=. */
 template<size_t N = tbb::detail::max_nfs_size>
-class minimal: utils::NoAssign {
+class minimalN: utils::NoAssign {
 private:
     int my_value;
     bool is_constructed;
     char pad[N-sizeof(int) - sizeof(bool)];
 public:
-    minimal() : utils::NoAssign(), my_value(0) { ++construction_counter; is_constructed = true; }
-    minimal( const minimal &m ) : utils::NoAssign(), my_value(m.my_value) { ++construction_counter; is_constructed = true; }
-    ~minimal() { ++destruction_counter; REQUIRE(is_constructed); is_constructed = false; }
+    minimalN() : utils::NoAssign(), my_value(0) { ++construction_counter; is_constructed = true; }
+    minimalN( const minimalN&m ) : utils::NoAssign(), my_value(m.my_value) { ++construction_counter; is_constructed = true; }
+    ~minimalN() { ++destruction_counter; REQUIRE(is_constructed); is_constructed = false; }
     void set_value( const int i ) { REQUIRE(is_constructed); my_value = i; }
     int value( ) const { REQUIRE(is_constructed); return my_value; }
 };
@@ -88,13 +88,13 @@ const T& check_alignment(const T& t, const char *aname) {
 }
 
 //
-// A helper class that simplifies writing the tests since minimal does not
+// A helper class that simplifies writing the tests since minimalN does not
 // define = or + operators.
 //
 
 const size_t line_size = tbb::detail::max_nfs_size;
 
-typedef tbb::enumerable_thread_specific<minimal<line_size> > flogged_ets;
+typedef tbb::enumerable_thread_specific<minimalN<line_size> > flogged_ets;
 
 class set_body {
     flogged_ets *a;

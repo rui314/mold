@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -71,7 +71,7 @@ private:
         for(size_t i=0; i < sz - 1; ++i ) {  // construct free list
             la[i].second = &(la[i+1]);
         }
-        la[sz-1].second = NULL;
+        la[sz-1].second = nullptr;
         *p_free_list = (element_type *)&(la[0]);
     }
 
@@ -95,14 +95,14 @@ private:
     void grow_array() {
         size_t new_size = my_size*2;
         size_t new_nelements = nelements;  // internal_free_buffer zeroes this
-        list_array_type new_elements_array = NULL;
-        pointer_array_type new_pointer_array = NULL;
-        list_array_type new_free_list = NULL;
+        list_array_type new_elements_array = nullptr;
+        pointer_array_type new_pointer_array = nullptr;
+        list_array_type new_free_list = nullptr;
         {
             DoCleanup my_cleanup(new_pointer_array, new_elements_array, new_size);
             new_elements_array = elements_array_allocator().allocate(my_size);
             new_pointer_array = pointer_array_allocator_type().allocate(new_size);
-            for(size_t i=0; i < new_size; ++i) new_pointer_array[i] = NULL;
+            for(size_t i=0; i < new_size; ++i) new_pointer_array[i] = nullptr;
             set_up_free_list(&new_free_list, new_elements_array, my_size );
 
             for(size_t i=0; i < my_size; ++i) {
@@ -112,8 +112,8 @@ private:
                     internal_insert_with_key(new_pointer_array, new_size, new_free_list, *ov);
                 }
             }
-            my_cleanup.my_pa = NULL;
-            my_cleanup.my_elements = NULL;
+            my_cleanup.my_pa = nullptr;
+            my_cleanup.my_elements = nullptr;
         }
 
         internal_free_buffer(pointer_array, elements_array, my_size, nelements);
@@ -140,7 +140,7 @@ private:
 
     void internal_initialize_buffer() {
         pointer_array = pointer_array_allocator_type().allocate(my_size);
-        for(size_t i = 0; i < my_size; ++i) pointer_array[i] = NULL;
+        for(size_t i = 0; i < my_size; ++i) pointer_array[i] = nullptr;
         elements_array = elements_array_allocator().allocate(my_size / 2);
         set_up_free_list(&free_list, elements_array, my_size / 2);
     }
@@ -161,26 +161,27 @@ private:
                 }
             }
             pointer_array_allocator_type().deallocate(pa, sz);
-            pa = NULL;
+            pa = nullptr;
         }
         // Separate test (if allocation of pa throws, el may be allocated.
         // but no elements will be constructed.)
         if(el) {
             elements_array_allocator().deallocate(el, sz / 2);
-            el = NULL;
+            el = nullptr;
         }
         sz = INITIAL_SIZE;
         ne = 0;
     }
 
 public:
-    hash_buffer() : my_key(NULL), my_size(INITIAL_SIZE), nelements(0) {
+    hash_buffer() : my_key(nullptr), my_size(INITIAL_SIZE), nelements(0) {
         internal_initialize_buffer();
     }
 
     ~hash_buffer() {
         internal_free_buffer(pointer_array, elements_array, my_size, nelements);
-        if(my_key) delete my_key;
+        delete my_key;
+        my_key = nullptr;
     }
     hash_buffer(const hash_buffer&) = delete;
     hash_buffer& operator=(const hash_buffer&) = delete;
@@ -197,7 +198,7 @@ public:
     ValueToKey* get_key_func() { return my_key; }
 
     bool insert_with_key(const value_type &v) {
-        pointer_type p = NULL;
+        pointer_type p = nullptr;
         __TBB_ASSERT(my_key, "Error: value-to-key functor not provided");
         if(find_ref_with_key((*my_key)(v), p)) {
             p->~value_type();
@@ -236,7 +237,7 @@ public:
 
     void delete_with_key(const Knoref& k) {
         size_t h = this->hash(k) & mask();
-        element_type* prev = NULL;
+        element_type* prev = nullptr;
         for(element_type* p = pointer_array[h]; p; prev = p, p = (element_type *)(p->second)) {
             value_type *vp = reinterpret_cast<value_type *>(&(p->first));
             __TBB_ASSERT(my_key, "Error: value-to-key functor not provided");

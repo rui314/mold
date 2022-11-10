@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,9 +19,9 @@
 
 #include "video.hpp"
 
-unsigned int *g_pImg = 0;
+unsigned int *g_pImg = nullptr;
 int g_sizex, g_sizey;
-static video *g_video = 0;
+static video *g_video = nullptr;
 static int g_fps = 0;
 
 #if _WIN32 || _WIN64
@@ -52,7 +52,7 @@ video::video()
           red_mask(0xff),
           green_mask(0xff00),
           blue_mask(0xff0000) {
-    assert(g_video == 0);
+    assert(g_video == nullptr);
     g_video = this;
     title = "Video";
     updating = calc_fps = false;
@@ -87,12 +87,11 @@ void video::terminate() {
         printf("%s: %.1f fps\n", title, fps);
     }
 #endif
-    g_video = 0;
+    g_video = nullptr;
     running = false;
-    if (g_pImg) {
-        delete[] g_pImg;
-        g_pImg = 0;
-    }
+
+    delete[] g_pImg;
+    g_pImg = nullptr;
 }
 
 video::~video() {

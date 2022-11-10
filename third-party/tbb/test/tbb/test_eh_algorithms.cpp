@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -371,7 +371,7 @@ void Test4 () {
         // to do the solitary throw swaps out after registering its intent to throw but before it
         // actually does so. As a result, the number of extra tasks cannot exceed the number of thread
         // for each nested pfor invication)
-        REQUIRE_MESSAGE (g_CurExecuted <= minExecuted + (g_NumThreads-1)*g_NumThreads/2, "Too many tasks survived exception");
+        REQUIRE_MESSAGE (g_CurExecuted <= minExecuted + (g_ExecutedAtLastCatch + g_NumThreads), "Too many tasks survived exception");
     }
     else {
         REQUIRE_MESSAGE (((g_NumExceptionsCaught >= 1 && g_NumExceptionsCaught <= outerCalls) || okayNoExceptionsCaught), "Unexpected actual number of exceptions");
@@ -1535,6 +1535,11 @@ void Test4_pipeline ( const FilterSet& filters ) {
 //! Tests pipeline function passed with different combination of filters
 template<void testFunc(const FilterSet&)>
 void TestWithDifferentFiltersAndConcurrency() {
+#if __TBB_USE_ADDRESS_SANITIZER
+    // parallel_pipeline allocates tls that sporadically observed as a memory leak with
+    // detached threads. So, use task_scheduler_handle to join threads with finalize
+    tbb::task_scheduler_handle handle{ tbb::attach{} };
+#endif
     for (auto concurrency_level: utils::concurrency_range()) {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
@@ -1564,6 +1569,9 @@ void TestWithDifferentFiltersAndConcurrency() {
             }
         }
     }
+#if __TBB_USE_ADDRESS_SANITIZER
+    tbb::finalize(handle);
+#endif
 }
 
 //! Testing parallel_pipeline exception handling

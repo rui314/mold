@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -33,7 +33,7 @@ extern std::atomic<int> the_observer_proxy_count;
 #endif /* TBB_USE_ASSERT */
 
 observer_proxy::observer_proxy( d1::task_scheduler_observer& tso )
-    : my_ref_count(1), my_list(NULL), my_next(NULL), my_prev(NULL), my_observer(&tso)
+    : my_ref_count(1), my_list(nullptr), my_next(nullptr), my_prev(nullptr), my_observer(&tso)
 {
 #if TBB_USE_ASSERT
     ++the_observer_proxy_count;
@@ -100,7 +100,7 @@ void observer_list::insert( observer_proxy* p ) {
 
 void observer_list::remove(observer_proxy* p) {
     __TBB_ASSERT(my_head.load(std::memory_order_relaxed), "Attempt to remove an item from an empty list");
-    __TBB_ASSERT(!my_tail.load(std::memory_order_relaxed)->my_next, "Last item's my_next must be NULL");
+    __TBB_ASSERT(!my_tail.load(std::memory_order_relaxed)->my_next, "Last item's my_next must be nullptr");
     if (p == my_tail.load(std::memory_order_relaxed)) {
         __TBB_ASSERT(!p->my_next, nullptr);
         my_tail.store(p->my_prev, std::memory_order_relaxed);
@@ -156,7 +156,7 @@ void observer_list::do_notify_entry_observers(observer_proxy*& last, bool worker
                     // We were already processing the list.
                     if (observer_proxy* q = p->my_next) {
                         if (p == prev) {
-                            remove_ref_fast(prev); // sets prev to NULL if successful
+                            remove_ref_fast(prev); // sets prev to nullptr if successful
                         }
                         p = q;
                     } else {
@@ -218,7 +218,7 @@ void observer_list::do_notify_exit_observers(observer_proxy* last, bool worker) 
                     if (p != last) {
                         __TBB_ASSERT(p->my_next, "List items before 'last' must have valid my_next pointer");
                         if (p == prev)
-                            remove_ref_fast(prev); // sets prev to NULL if successful
+                            remove_ref_fast(prev); // sets prev to nullptr if successful
                         p = p->my_next;
                     } else {
                         // remove the reference from the last item
@@ -305,7 +305,7 @@ void __TBB_EXPORTED_FUNC observe(d1::task_scheduler_observer &tso, bool enable) 
                 // Proxy may still be held by other threads (to track the last notified observer)
                 if( !--proxy->my_ref_count ) {// nobody can increase it under exclusive lock
                     list.remove(proxy);
-                    __TBB_ASSERT( !proxy->my_ref_count, NULL );
+                    __TBB_ASSERT( !proxy->my_ref_count, nullptr);
                     delete proxy;
                 }
             }

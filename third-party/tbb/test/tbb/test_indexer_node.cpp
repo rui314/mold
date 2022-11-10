@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -252,7 +252,7 @@ public:
         INFO(" >\n");
         for(int i=0; i < MaxPorts; ++i) {
             for(int j=0; j < MaxNInputs; ++j) {
-                all_input_nodes[i][j] = NULL;
+                all_input_nodes[i][j] = nullptr;
             }
         }
         for(int nInputs = 1; nInputs <= MaxNInputs; ++nInputs) {

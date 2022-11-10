@@ -44,16 +44,10 @@ The key properties of a preview feature are:
     :titlesonly:
 
     type_specified_message_keys
-    blocking_terminate
     scalable_memory_pools
     helpers_for_expressing_graphs
     concurrent_lru_cache_cls
     constraints_extensions
     info_namespace_extensions
     task_group_extensions
-    task_arena_extensions 
-    this_task_arena_extensions
-    mutex_cls
-    rw_mutex_cls
-    heterogeneous_extensions_chmap
     custom_mutex_chmap

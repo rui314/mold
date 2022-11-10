@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@
 // Product version
 #define TBB_VERSION_MAJOR 2021
 // Update version
-#define TBB_VERSION_MINOR 5
+#define TBB_VERSION_MINOR 7
 // "Patch" version for custom releases
 #define TBB_VERSION_PATCH 0
 // Suffix string
@@ -34,7 +34,7 @@
 // OneAPI oneTBB specification version
 #define ONETBB_SPEC_VERSION "1.0"
 // Full interface version
-#define TBB_INTERFACE_VERSION 12050
+#define TBB_INTERFACE_VERSION 12070
 // Major interface version
 #define TBB_INTERFACE_VERSION_MAJOR (TBB_INTERFACE_VERSION/1000)
 // Minor interface version

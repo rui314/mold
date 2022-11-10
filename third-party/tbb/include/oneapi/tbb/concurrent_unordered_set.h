@@ -68,7 +68,7 @@ public:
 
     // Include constructors of base_type;
     using base_type::base_type;
-    using base_type::operator=;
+
     // Required for implicit deduction guides
     concurrent_unordered_set() = default;
     concurrent_unordered_set( const concurrent_unordered_set& ) = default;
@@ -78,6 +78,11 @@ public:
     // Required to respect the rule of 5
     concurrent_unordered_set& operator=( const concurrent_unordered_set& ) = default;
     concurrent_unordered_set& operator=( concurrent_unordered_set&& ) = default;
+
+    concurrent_unordered_set& operator=( std::initializer_list<value_type> il ) {
+        base_type::operator= (il);
+        return *this;
+    }
 
     template <typename OtherHash, typename OtherKeyEqual>
     void merge( concurrent_unordered_set<key_type, OtherHash, OtherKeyEqual, allocator_type>& source ) {
@@ -193,7 +198,6 @@ public:
 
     // Include constructors of base_type;
     using base_type::base_type;
-    using base_type::operator=;
 
     // Required for implicit deduction guides
     concurrent_unordered_multiset() = default;
@@ -204,6 +208,11 @@ public:
     // Required to respect the rule of 5
     concurrent_unordered_multiset& operator=( const concurrent_unordered_multiset& ) = default;
     concurrent_unordered_multiset& operator=( concurrent_unordered_multiset&& ) = default;
+
+    concurrent_unordered_multiset& operator=( std::initializer_list<value_type> il ) {
+        base_type::operator= (il);
+        return *this;
+    }
 
     template <typename OtherHash, typename OtherKeyEqual>
     void merge( concurrent_unordered_set<key_type, OtherHash, OtherKeyEqual, allocator_type>& source ) {

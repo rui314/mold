@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -82,6 +82,6 @@ void renderscene(scenedef scene) {
   outfile = opentgafile(scene.outfilename);
   */
 
-    trace_region(scene, 0 /*outfile*/, 0, 0, scene.hres, scene.vres);
+    trace_region(scene, nullptr /*outfile*/, 0, 0, scene.hres, scene.vres);
     //fclose((FILE *)outfile);
 } /* end of renderscene() */
