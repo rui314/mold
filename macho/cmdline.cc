@@ -374,7 +374,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         if (!ctx.arg.exported_symbols_list.add(pat, 1))
           Fatal(ctx) << "-exported_symbols_list: " << arg
                      << ": invalid glob pattern: " << pat;
-    } else if (read_arg("-fatal_warnings")) {
     } else if (read_arg("-filelist")) {
       remaining.push_back("-filelist");
       remaining.push_back(std::string(arg));
@@ -488,6 +487,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_joined("-weak-l")) {
       remaining.push_back("-weak-l");
       remaining.push_back(std::string(arg));
+    } else if (read_arg("-undefined") ||
+        read_arg("-unaligned_pointers") ||
+        read_arg("-oso_prefix")) {
+      Warn(ctx) << "unsupported command line option: " << args[i - 2];
+    } else if (read_flag("-S") ||
+        read_flag("-fatal_warnings") ||
+        read_flag("-arch_errors_fatal")) {
+      Warn(ctx) << "unsupported command line option: " << args[i - 1];
     } else {
       if (args[i][0] == '-')
         Fatal(ctx) << "unknown command line option: " << args[i];
