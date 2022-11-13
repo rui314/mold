@@ -8,12 +8,12 @@
 # and librt, as they almost always exist on any Linux systems.
 
 if [ $# -ne 1 ]; then
-  echo "Usage: $0 [ x86_64 | aarch64 | arm | ppc64le | s390x ]"
+  echo "Usage: $0 [ x86_64 | aarch64 ]"
   exit 1
 fi
 
 arch=$1
-echo $arch | grep -Eq '^(x86_64|aarch64|arm|ppc64le|s390x)$' || \
+echo $arch | grep -Eq '^(x86_64|aarch64)$' || \
   { echo "Error: no docker image for $arch"; exit 1; }
 
 version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' $(dirname $0)/CMakeLists.txt)
@@ -24,9 +24,9 @@ docker run --platform linux/$arch -it --rm -v "$(pwd):/mold" \
   -e "OWNER=$(id -u):$(id -g)" rui314/mold-builder:latest \
   bash -c "mkdir /tmp/build &&
 cd /tmp/build &&
-cmake -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10 -DMOLD_MOSTLY_STATIC=On -DCMAKE_BUILD_TYPE=Release /mold &&
+cmake -DCMAKE_C_COMPILER=clang-15 -DCMAKE_CXX_COMPILER=clang++-15 -DMOLD_MOSTLY_STATIC=On -DCMAKE_BUILD_TYPE=Release /mold &&
 cmake --build . -j\$(nproc) &&
-[ $arch = arm ] || ctest -j\$(nproc) &&
+ctest -E '^example' -j\$(nproc) &&
 cmake --install . --prefix $dest --strip &&
 tar czf /mold/$dest.tar.gz $dest &&
 cp mold mold-wrapper.so /mold &&

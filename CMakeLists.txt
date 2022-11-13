@@ -88,14 +88,15 @@ if(MOLD_USE_TSAN)
   target_link_options(mold PRIVATE -fsanitize=thread)
 endif()
 
-# Statically-link libstdc++ and libcrypto if -DMOLD_MOSTLY_STATIC=ON.
+# Statically-link libc++ and libcrypto if -DMOLD_MOSTLY_STATIC=ON.
 #
 # This option is intended to be used by `./dist.sh` script to create a
 # mold binary that works on various Linux distros. You probably don't
 # need nor want to set this to ON.
 option(MOLD_MOSTLY_STATIC "Statically link libstdc++ and libcrypto" OFF)
 if(MOLD_MOSTLY_STATIC)
-  target_link_options(mold PRIVATE -static-libstdc++)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+  target_link_options(mold PRIVATE -stdlib=libc++ -static-libstdc++)
   target_link_libraries(mold PRIVATE libcrypto.a)
 endif()
 
