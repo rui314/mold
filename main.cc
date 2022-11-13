@@ -27,10 +27,20 @@ namespace macho {
 int main(int argc, char **argv);
 }
 
+static bool has_commercial_license() {
+  if (MOLD_HAS_COMMERCIAL_LICENSE)
+    return true;
+  char *env = getenv("MOLD_HAS_COMMERCIAL_LICENSE");
+  return env && env[0];
+}
+
 static std::string get_mold_version() {
+  std::string ver = "mold " MOLD_VERSION;
+  ver += has_commercial_license() ? " commercial edition" : " free edition";
+
   if (mold_git_hash.empty())
-    return "mold " MOLD_VERSION " (compatible with GNU ld)";
-  return "mold " MOLD_VERSION " (" + mold_git_hash + "; compatible with GNU ld)";
+    return ver + " (compatible with GNU ld)";
+  return ver + " (" + mold_git_hash + "; compatible with GNU ld)";
 }
 
 void cleanup() {
