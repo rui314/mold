@@ -151,7 +151,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     const ElfShdr<E> &shdr = this->elf_sections[i];
 
     if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC) &&
-        shdr.sh_type != SHT_LLVM_ADDRSIG)
+        shdr.sh_type != SHT_LLVM_ADDRSIG && !ctx.arg.relocatable)
       continue;
 
     switch (shdr.sh_type) {
@@ -180,7 +180,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       typename decltype(ctx.comdat_groups)::const_accessor acc;
       ctx.comdat_groups.insert(acc, {signature, ComdatGroup()});
       ComdatGroup *group = const_cast<ComdatGroup *>(&acc->second);
-      comdat_groups.push_back({group, entries.subspan(1)});
+      comdat_groups.push_back({group, (u32)i, entries.subspan(1)});
       break;
     }
     case SHT_SYMTAB_SHNDX:
@@ -238,7 +238,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
 
       // Save .llvm_addrsig for --icf=safe.
-      if (shdr.sh_type == SHT_LLVM_ADDRSIG) {
+      if (shdr.sh_type == SHT_LLVM_ADDRSIG && !ctx.arg.relocatable) {
         llvm_addrsig = std::make_unique<InputSection<E>>(ctx, *this, name, i);
         continue;
       }
@@ -748,7 +748,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
       if (!m)
         continue;
 
-      i64 r_addend = isec->get_addend(r);
+      i64 r_addend = get_addend(*isec, r);
 
       SectionFragment<E> *frag;
       i64 frag_offset;
@@ -977,24 +977,17 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
 // contains only a single copy of `std::vector<int>`.
 template <typename E>
 void ObjectFile<E>::resolve_comdat_groups() {
-  for (auto &pair : comdat_groups) {
-    ComdatGroup *group = pair.first;
-    update_minimum(group->owner, this->priority);
-  }
+  for (ComdatGroupRef<E> &ref : comdat_groups)
+    update_minimum(ref.group->owner, this->priority);
 }
 
 template <typename E>
 void ObjectFile<E>::eliminate_duplicate_comdat_groups() {
-  for (auto &pair : comdat_groups) {
-    ComdatGroup *group = pair.first;
-    if (group->owner == this->priority)
-      continue;
-
-    std::span<U32<E>> entries = pair.second;
-    for (u32 i : entries)
-      if (sections[i])
-        sections[i]->kill();
-  }
+  for (ComdatGroupRef<E> &ref : comdat_groups)
+    if (ref.group->owner != this->priority)
+      for (u32 i : ref.members)
+        if (sections[i])
+          sections[i]->kill();
 }
 
 template <typename E>
@@ -1254,7 +1247,7 @@ void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
       this->strtab_size += sym.name().size() + 1;
       // Global symbols can be demoted to local symbols based on visibility,
       // version scripts etc.
-      if (sym.is_local())
+      if (sym.is_local(ctx))
         this->output_sym_indices[i] = this->num_local_symtab++;
       else
         this->output_sym_indices[i] = this->num_global_symtab++;
@@ -1286,7 +1279,7 @@ void ObjectFile<E>::populate_symtab(Context<E> &ctx) {
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     if (sym.file == this && sym.write_to_symtab) {
-      if (sym.is_local())
+      if (sym.is_local(ctx))
         write_sym(sym, local_symtab_idx);
       else
         write_sym(sym, global_symtab_idx);

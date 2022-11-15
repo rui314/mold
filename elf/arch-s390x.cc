@@ -106,6 +106,8 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
   switch (rel.r_type) {
+  case R_NONE:
+    break;
   case R_390_PC32:
     *(ub32 *)loc = val - this->shdr.sh_addr - offset;
     break;

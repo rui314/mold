@@ -330,9 +330,9 @@ static void show_stats(Context<E> &ctx) {
     comdats += obj->comdat_groups.size();
 
     static Counter removed_comdats("removed_comdat_mem");
-    for (auto &pair : obj->comdat_groups)
-      if (ComdatGroup *group = pair.first; group->owner != obj->priority)
-        removed_comdats += pair.second.size();
+    for (ComdatGroupRef<E> &ref : obj->comdat_groups)
+      if (ref.group->owner != obj->priority)
+        removed_comdats += ref.members.size();
 
     static Counter num_cies("num_cies");
     num_cies += obj->cies.size();
@@ -440,11 +440,6 @@ int elf_main(int argc, char **argv) {
       Fatal(ctx) << "chdir failed: " << ctx.arg.directory
                  << ": " << errno_string();
 
-  if (ctx.arg.relocatable) {
-    combine_objects(ctx, file_args);
-    return 0;
-  }
-
   // Fork a subprocess unless --no-fork is given.
   std::function<void()> on_complete;
 
@@ -502,6 +497,11 @@ int elf_main(int argc, char **argv) {
 
   // Resolve mergeable section pieces to merge them.
   register_section_pieces(ctx);
+
+  if (ctx.arg.relocatable) {
+    combine_objects(ctx);
+    return 0;
+  }
 
   // Create .bss sections for common symbols.
   convert_common_symbols(ctx);

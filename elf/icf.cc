@@ -300,7 +300,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
       hash_symbol(*isec.file.symbols[rel.r_sym]);
       hash(rel.r_type);
       hash(rel.r_offset - fde.input_offset);
-      hash(isec.file.cies[fde.cie_idx].input_section.get_addend(rel));
+      hash(get_addend(isec.file.cies[fde.cie_idx].input_section, rel));
     }
   }
 
@@ -308,7 +308,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     const ElfRel<E> &rel = isec.get_rels(ctx)[i];
     hash(rel.r_offset);
     hash(rel.r_type);
-    hash(isec.get_addend(rel));
+    hash(get_addend(isec, rel));
     hash_symbol(*isec.file.symbols[rel.r_sym]);
   }
 

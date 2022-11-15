@@ -21,4 +21,4 @@ Func *resolve_foobar(void) {
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
-readelf --dyn-syms $t/b.so | grep -Eq '(IFUNC|<OS specific>: 10)\s+GLOBAL DEFAULT   .* foobar'
+readelf --dyn-syms $t/b.so | grep -Eq '(IFUNC|<OS specific>: 10)\s+GLOBAL DEFAULT.* foobar'

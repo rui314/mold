@@ -130,6 +130,41 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
+template <>
+void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
+  switch (rel.r_type) {
+  case R_386_NONE:
+    break;
+  case R_386_8:
+  case R_386_PC8:
+    *loc = val;
+    break;
+  case R_386_16:
+  case R_386_PC16:
+    *(ul16 *)loc = val;
+    break;
+  case R_386_32:
+  case R_386_PC32:
+  case R_386_GOT32:
+  case R_386_GOT32X:
+  case R_386_PLT32:
+  case R_386_GOTOFF:
+  case R_386_GOTPC:
+  case R_386_TLS_LDM:
+  case R_386_TLS_GOTIE:
+  case R_386_TLS_LE:
+  case R_386_TLS_IE:
+  case R_386_TLS_GD:
+  case R_386_TLS_LDO_32:
+  case R_386_SIZE32:
+  case R_386_TLS_GOTDESC:
+    *(ul32 *)loc = val;
+    break;
+  default:
+    unreachable();
+  }
+}
+
 static u32 relax_got32x(u8 *loc) {
   // mov imm(%reg1), %reg2 -> lea imm(%reg1), %reg2
   if (loc[0] == 0x8b)
@@ -162,7 +197,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     };
 
 #define S   sym.get_addr(ctx)
-#define A   this->get_addend(rel)
+#define A   get_addend(*this, rel)
 #define P   (get_addr() + rel.r_offset)
 #define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
 #define GOT ctx.got->shdr.sh_addr
@@ -238,7 +273,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         case R_386_PC32: {
           static const u8 insn[] = {
             0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
-            0x81, 0xe8, 0, 0, 0, 0, // add $val, %eax
+            0x81, 0xe8, 0, 0, 0, 0, // sub $val, %eax
           };
           memcpy(loc - 3, insn, sizeof(insn));
           *(ul32 *)(loc + 5) = ctx.tp_addr - S - A;
@@ -248,7 +283,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         case R_386_GOT32X: {
           static const u8 insn[] = {
             0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
-            0x81, 0xe8, 0, 0, 0, 0, // add $val, %eax
+            0x81, 0xe8, 0, 0, 0, 0, // sub $val, %eax
           };
           memcpy(loc - 2, insn, sizeof(insn));
           *(ul32 *)(loc + 6) = ctx.tp_addr - S - A;
@@ -361,7 +396,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
 
 #define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A (frag ? frag_addend : this->get_addend(rel))
+#define A (frag ? frag_addend : get_addend(*this, rel))
 #define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
 #define GOT ctx.got->shdr.sh_addr
 

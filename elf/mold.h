@@ -49,6 +49,7 @@ template <typename E> class Symbol;
 template <typename E> struct CieRecord;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
+template <typename E> class RelocSection;
 
 template <typename E> class RChunk;
 template <typename E> class ROutputEhdr;
@@ -292,7 +293,6 @@ public:
   std::string_view name() const;
   i64 get_priority() const;
   u64 get_addr() const;
-  i64 get_addend(const ElfRel<E> &rel) const;
   const ElfShdr<E> &shdr() const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
@@ -499,6 +499,7 @@ public:
   std::vector<u64> relr;
 
   std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
+  RelocSection<E> *reloc_sec = nullptr;
 
 private:
   OutputSection(std::string_view name, u32 type, u64 flags, u32 idx)
@@ -869,19 +870,14 @@ template <typename E>
 class EhFrameRelocSection : public Chunk<E> {
 public:
   EhFrameRelocSection() {
-    this->name = ".rela.eh_frame";
-    this->shdr.sh_type = SHT_RELA;
+    this->name = is_rela<E> ? ".rela.eh_frame" : ".rel.eh_frame";
+    this->shdr.sh_type = is_rela<E> ? SHT_RELA : SHT_REL;
     this->shdr.sh_addralign = sizeof(Word<E>);
-    this->shdr.sh_entsize = sizeof(RelaTy);
+    this->shdr.sh_entsize = sizeof(ElfRel<E>);
   }
 
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
-
-private:
-  using RelaTy = std::conditional_t<E::is_le,
-    std::conditional_t<E::is_64, EL64Rela, EL32Rela>,
-    std::conditional_t<E::is_64, EB64Rela, EB32Rela>>;
 };
 
 template <typename E>
@@ -1092,6 +1088,26 @@ public:
   }
 };
 
+template <typename E>
+class ComdatGroupSection : public Chunk<E> {
+public:
+  ComdatGroupSection(Symbol<E> &sym, std::vector<Chunk<E> *> members)
+    : sym(sym), members(std::move(members)) {
+    this->name = ".group";
+    this->shdr.sh_type = SHT_GROUP;
+    this->shdr.sh_entsize = 4;
+    this->shdr.sh_addralign = 4;
+    this->shdr.sh_size = this->members.size() * 4 + 4;
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+
+private:
+  Symbol<E> &sym;
+  std::vector<Chunk<E> *> members;
+};
+
 //
 // dwarf.cc
 //
@@ -1127,11 +1143,17 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset);
 // comdat section refers to.
 struct ComdatGroup {
   ComdatGroup() = default;
-  ComdatGroup(const ComdatGroup &other)
-    : owner(other.owner.load()) {}
+  ComdatGroup(const ComdatGroup &other) : owner(other.owner.load()) {}
 
   // The file priority of the owner file of this comdat section.
   std::atomic_uint32_t owner = -1;
+};
+
+template <typename E>
+struct ComdatGroupRef {
+  ComdatGroup *group;
+  u32 sect_idx;
+  std::span<U32<E>> members;
 };
 
 template <typename E>
@@ -1244,7 +1266,7 @@ public:
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
   std::vector<const char *> symvers;
-  std::vector<std::pair<ComdatGroup *, std::span<U32<E>>>> comdat_groups;
+  std::vector<ComdatGroupRef<E>> comdat_groups;
   bool exclude_libs = false;
   std::vector<std::pair<u32, u32>> gnu_properties;
   bool is_lto_obj = false;
@@ -1377,7 +1399,7 @@ void icf_sections(Context<E> &ctx);
 //
 
 template <typename E>
-void combine_objects(Context<E> &ctx, std::span<std::string> file_args);
+void combine_objects(Context<E> &ctx);
 
 //
 // mapfile.cc
@@ -1943,7 +1965,7 @@ public:
 
   bool is_absolute() const;
   bool is_relative() const { return !is_absolute(); }
-  bool is_local() const { return !is_imported && !is_exported; }
+  bool is_local(Context<E> &ctx) const;
   bool is_ifunc() const { return get_type() == STT_GNU_IFUNC; }
   bool is_remaining_undef_weak() const;
 
@@ -2207,15 +2229,13 @@ inline i64 InputSection<E>::get_priority() const {
 }
 
 template <typename E>
-inline i64 InputSection<E>::get_addend(const ElfRel<E> &r) const {
-  return r.r_addend;
+inline i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
+  return rel.r_addend;
 }
 
 template <>
-inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &r) const {
-  u8 *loc = (u8 *)contents.data() + r.r_offset;
-
-  switch (r.r_type) {
+inline i64 get_addend(u8 *loc, const ElfRel<I386> &rel) {
+  switch (rel.r_type) {
   case R_386_NONE:
     return 0;
   case R_386_8:
@@ -2245,10 +2265,8 @@ inline i64 InputSection<I386>::get_addend(const ElfRel<I386> &r) const {
 }
 
 template <>
-inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &r) const {
-  u8 *loc = (u8 *)contents.data() + r.r_offset;
-
-  switch (r.r_type) {
+inline i64 get_addend(u8 *loc, const ElfRel<ARM32> &rel) {
+  switch (rel.r_type) {
   case R_ARM_NONE:
     return 0;
   case R_ARM_ABS32:
@@ -2310,6 +2328,14 @@ inline i64 InputSection<ARM32>::get_addend(const ElfRel<ARM32> &r) const {
 }
 
 template <typename E>
+inline i64 get_addend(InputSection<E> &isec, const ElfRel<E> &rel) {
+  return get_addend((u8 *)isec.contents.data() + rel.r_offset, rel);
+}
+
+template <typename E>
+void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel);
+
+template <typename E>
 inline const ElfShdr<E> &InputSection<E>::shdr() const {
   if (shndx < file.elf_sections.size())
     return file.elf_sections[shndx];
@@ -2340,7 +2366,7 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
   if (esym.st_type == STT_SECTION)
     if (std::unique_ptr<MergeableSection<E>> &m =
         file.mergeable_sections[file.get_shndx(esym)])
-      return m->get_fragment(esym.st_value + get_addend(rel));
+      return m->get_fragment(esym.st_value + get_addend(*this, rel));
 
   return {nullptr, 0};
 }
@@ -2689,6 +2715,13 @@ inline bool Symbol<E>::is_absolute() const {
          !get_output_section();
 }
 
+template <typename E>
+inline bool Symbol<E>::is_local(Context<E> &ctx) const {
+  if (ctx.arg.relocatable)
+    return esym().st_bind == STB_LOCAL;
+  return !is_imported && !is_exported;
+}
+
 // A remaining weak undefined symbol is promoted to a dynamic symbol
 // in DSO and resolved to 0 in an executable. This function returns
 // true if it's latter.
@@ -2757,7 +2790,7 @@ template <typename E>
 inline i64 Symbol<E>::get_output_sym_idx(Context<E> &ctx) const {
   i64 i = file->output_sym_indices[sym_idx];
   assert(i != -1);
-  if (is_local())
+  if (is_local(ctx))
     return file->local_symtab_idx + i;
   return file->global_symtab_idx + i;
 }

@@ -20,7 +20,7 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
     if (x[i].r_offset - input_offset != y[i].r_offset - other.input_offset ||
         x[i].r_type != y[i].r_type ||
         file.symbols[x[i].r_sym] != other.file.symbols[y[i].r_sym] ||
-        input_section.get_addend(x[i]) != other.input_section.get_addend(y[i]))
+        get_addend(input_section, x[i]) != get_addend(other.input_section, y[i]))
       return false;
   }
   return true;
@@ -232,10 +232,12 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   }
 
   // Apply relocations
-  if (shdr().sh_flags & SHF_ALLOC)
-    apply_reloc_alloc(ctx, buf);
-  else
-    apply_reloc_nonalloc(ctx, buf);
+  if (!ctx.arg.relocatable) {
+    if (shdr().sh_flags & SHF_ALLOC)
+      apply_reloc_alloc(ctx, buf);
+    else
+      apply_reloc_nonalloc(ctx, buf);
+  }
 }
 
 // Get the name of a function containin a given offset.

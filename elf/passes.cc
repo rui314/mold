@@ -965,7 +965,7 @@ void compute_section_sizes(Context<E> &ctx) {
                          [&](std::unique_ptr<OutputSection<E>> &osec) {
     // This pattern will be processed in the next loop.
     if constexpr (needs_thunk<E>)
-      if (osec->shdr.sh_flags & SHF_EXECINSTR)
+      if ((osec->shdr.sh_flags & SHF_EXECINSTR) && !ctx.arg.relocatable)
         return;
 
     // Since one output section may contain millions of input sections,
@@ -1018,7 +1018,7 @@ void compute_section_sizes(Context<E> &ctx) {
   // function itself is not thread-safe.
   if constexpr (needs_thunk<E>) {
     for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-      if (osec->shdr.sh_flags & SHF_EXECINSTR) {
+      if ((osec->shdr.sh_flags & SHF_EXECINSTR) && !ctx.arg.relocatable) {
         create_range_extension_thunks(ctx, *osec);
 
         for (InputSection<E> *isec : osec->members)
@@ -1163,20 +1163,34 @@ void create_reloc_sections(Context<E> &ctx) {
   // Create .rela.* sections
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
     RelocSection<E> *r = new RelocSection<E>(ctx, *osec);
+    osec->reloc_sec = r;
     ctx.chunks.push_back(r);
     ctx.chunk_pool.emplace_back(r);
   }
 }
 
+// Copy chunks to an output file
 template <typename E>
 void copy_chunks(Context<E> &ctx) {
   Timer t(ctx, "copy_chunks");
 
-  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    std::string name =
-      chunk->name.empty() ? "(header)" : std::string(chunk->name);
+  auto copy = [&](Chunk<E> &chunk) {
+    std::string name = chunk.name.empty() ? "(header)" : std::string(chunk.name);
     Timer t2(ctx, name, &t);
-    chunk->copy_buf(ctx);
+    chunk.copy_buf(ctx);
+  };
+
+  // For --relocatable and --emit-relocs, we want to copy non-relocation
+  // sections first. This is because REL-type relocation sections (as
+  // opposed to RELA-type) stores relocation addends to target sections.
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    if (chunk->shdr.sh_type != (is_rela<E> ? SHT_RELA : SHT_REL))
+      copy(*chunk);
+  });
+
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    if (chunk->shdr.sh_type == (is_rela<E> ? SHT_RELA : SHT_REL))
+      copy(*chunk);
   });
 
   report_undef_errors(ctx);

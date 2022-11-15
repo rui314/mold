@@ -114,6 +114,58 @@ template <>
 void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {}
 
+template <>
+void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
+  switch (rel.r_type) {
+  case R_ARM_NONE:
+    break;
+  case R_ARM_ABS32:
+  case R_ARM_REL32:
+  case R_ARM_TARGET1:
+  case R_ARM_BASE_PREL:
+  case R_ARM_GOT_PREL:
+  case R_ARM_GOT_BREL:
+  case R_ARM_TLS_GD32:
+  case R_ARM_TLS_LDM32:
+  case R_ARM_TLS_LDO32:
+  case R_ARM_TLS_IE32:
+  case R_ARM_TLS_LE32:
+  case R_ARM_TLS_GOTDESC:
+  case R_ARM_TARGET2:
+    *(ul32 *)loc = val;
+    break;
+  case R_ARM_THM_JUMP11:
+    *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(val, 11, 1);
+    break;
+  case R_ARM_THM_CALL:
+  case R_ARM_THM_JUMP24:
+  case R_ARM_THM_TLS_CALL:
+    write_thm_b_imm(loc, val);
+    break;
+  case R_ARM_CALL:
+  case R_ARM_JUMP24:
+    *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
+    break;
+  case R_ARM_MOVW_PREL_NC:
+  case R_ARM_MOVW_ABS_NC:
+  case R_ARM_MOVT_PREL:
+  case R_ARM_MOVT_ABS:
+    write_mov_imm(loc, val);
+    break;
+  case R_ARM_PREL31:
+    *(ul32 *)loc = (*(ul32 *)loc & 0x8000'0000) | (val & 0x7fff'ffff);
+    break;
+  case R_ARM_THM_MOVW_PREL_NC:
+  case R_ARM_THM_MOVW_ABS_NC:
+  case R_ARM_THM_MOVT_PREL:
+  case R_ARM_THM_MOVT_ABS:
+    write_thm_mov_imm(loc, val);
+    break;
+  default:
+    unreachable();
+  }
+}
+
 // ARM and Thumb branch instructions can jump within ±16 MiB.
 static bool is_jump_reachable(i64 val) {
   return sign_extend(val, 24) == val;
@@ -156,7 +208,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     };
 
 #define S   sym.get_addr(ctx)
-#define A   this->get_addend(rel)
+#define A   get_addend(*this, rel)
 #define P   (get_addr() + rel.r_offset)
 #define T   (sym.get_addr(ctx) & 1)
 #define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
@@ -405,7 +457,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
 
 #define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A (frag ? frag_addend : this->get_addend(rel))
+#define A (frag ? frag_addend : get_addend(*this, rel))
 
     switch (rel.r_type) {
     case R_ARM_ABS32:

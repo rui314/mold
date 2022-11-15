@@ -107,7 +107,7 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   // Compute a distance between the relocated place and the symbol
   // and check if they are within reach.
   i64 S = sym.get_addr(ctx, NO_OPD);
-  i64 A = isec.get_addend(rel);
+  i64 A = get_addend(isec, rel);
   i64 P = isec.get_addr() + rel.r_offset;
   i64 val = S + A - P;
   return -max_distance<E> <= val && val < max_distance<E>;
