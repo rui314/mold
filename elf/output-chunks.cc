@@ -36,19 +36,6 @@ static u32 djb_hash(std::string_view name) {
 }
 
 template <typename E>
-u64 get_entry_addr(Context<E> &ctx) {
-  if (!ctx.arg.entry.empty())
-    if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.entry);
-        sym->file && !sym->file->is_dso)
-      return sym->get_addr(ctx);
-
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-    if (osec->name == ".text")
-      return osec->shdr.sh_addr;
-  return 0;
-}
-
-template <typename E>
 u64 get_eflags(Context<E> &ctx) {
   if constexpr (std::is_same_v<E, ARM32>)
     return EF_ARM_EABI_VER5;
@@ -77,6 +64,18 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   ElfEhdr<E> &hdr = *(ElfEhdr<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(&hdr, 0, sizeof(hdr));
 
+  auto get_entry_addr = [&]() -> u64 {
+    if (!ctx.arg.entry.empty())
+      if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.entry);
+          sym->file && !sym->file->is_dso)
+        return sym->get_addr(ctx);
+
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
+      if (osec->name == ".text")
+        return osec->shdr.sh_addr;
+    return 0;
+  };
+
   memcpy(&hdr.e_ident, "\177ELF", 4);
   hdr.e_ident[EI_CLASS] = E::is_64 ? ELFCLASS64 : ELFCLASS32;
   hdr.e_ident[EI_DATA] = E::is_le ? ELFDATA2LSB : ELFDATA2MSB;
@@ -84,7 +83,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   hdr.e_type = ctx.arg.pic ? ET_DYN : ET_EXEC;
   hdr.e_machine = E::e_machine;
   hdr.e_version = EV_CURRENT;
-  hdr.e_entry = get_entry_addr(ctx);
+  hdr.e_entry = get_entry_addr();
   hdr.e_phoff = ctx.phdr->shdr.sh_offset;
   hdr.e_shoff = ctx.shdr->shdr.sh_offset;
   hdr.e_flags = get_eflags(ctx);
