@@ -307,7 +307,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_PREL31: {
       i64 val = S + A - P;
       check(val, -(1LL << 30), 1LL << 30);
-      *(ul32 *)loc = (*(ul32 *)loc & 0x8000'0000) | ((val) & 0x7fff'ffff);
+      *(ul32 *)loc = (*(ul32 *)loc & 0x8000'0000) | (val & 0x7fff'ffff);
       break;
     }
     case R_ARM_THM_MOVW_ABS_NC:

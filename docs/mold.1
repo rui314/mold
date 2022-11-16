@@ -649,10 +649,6 @@ instructs the linker to leave relocation sections in the output file. \
 Some post-link binary analysis or optimization tools such as LLVM Bolt \
 need them.
 .Pp
-.Nm
-always creates RELA-type relocation sections even if the native \
-ELF format is REL-type so that it is easy to read addends.
-.Pp
 .It Fl -enable-new-dtags
 .It Fl -disable-new-dtags
 By default,

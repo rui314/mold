@@ -2965,10 +2965,16 @@ void CompressedSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 RelocSection<E>::RelocSection(Context<E> &ctx, OutputSection<E> &osec)
   : output_section(osec) {
-  this->name = save_string(ctx, ".rela" + std::string(osec.name));
-  this->shdr.sh_type = SHT_RELA;
+  if constexpr (is_rela<E>) {
+    this->name = save_string(ctx, ".rela" + std::string(osec.name));
+    this->shdr.sh_type = SHT_RELA;
+  } else {
+    this->name = save_string(ctx, ".rel" + std::string(osec.name));
+    this->shdr.sh_type = SHT_REL;
+  }
+
   this->shdr.sh_addralign = sizeof(Word<E>);
-  this->shdr.sh_entsize = sizeof(RelaTy);
+  this->shdr.sh_entsize = sizeof(ElfRel<E>);
 
   // Compute an offset for each input section
   offsets.resize(osec.members.size());
@@ -2986,7 +2992,7 @@ RelocSection<E>::RelocSection(Context<E> &ctx, OutputSection<E> &osec)
   i64 num_entries = tbb::parallel_scan(
     tbb::blocked_range<i64>(0, osec.members.size()), 0, scan, std::plus());
 
-  this->shdr.sh_size = num_entries * sizeof(RelaTy);
+  this->shdr.sh_size = num_entries * sizeof(ElfRel<E>);
 }
 
 template <typename E>
@@ -3008,7 +3014,7 @@ static i64 get_output_sym_idx(Symbol<E> &sym) {
 template <typename E>
 void RelocSection<E>::copy_buf(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)output_section.members.size(), [&](i64 i) {
-    RelaTy *buf = (RelaTy *)(ctx.buf + this->shdr.sh_offset) + offsets[i];
+    ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset) + offsets[i];
 
     InputSection<E> &isec = *output_section.members[i];
     std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
@@ -3016,7 +3022,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
     for (i64 j = 0; j < rels.size(); j++) {
       const ElfRel<E> &r = rels[j];
       Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-      memset(buf + j, 0, sizeof(RelaTy));
+      memset(&buf[j], 0, sizeof(buf[j]));
 
       if (sym.esym().st_type != STT_SECTION && !sym.write_to_symtab) {
         buf[j].r_type = R_NONE;
@@ -3028,15 +3034,17 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       buf[j].r_type = r.r_type;
 
       if (sym.esym().st_type == STT_SECTION) {
-        buf[j].r_addend = isec.get_addend(r) + isec.offset;
-
         if (SectionFragment<E> *frag = sym.get_frag())
           buf[j].r_sym = frag->output_section.shndx;
         else
           buf[j].r_sym = sym.get_input_section()->output_section->shndx;
+
+        if constexpr (is_rela<E>)
+          buf[j].r_addend = r.r_addend + isec.offset;
       } else {
         buf[j].r_sym = get_output_sym_idx(sym);
-        buf[j].r_addend = isec.get_addend(r);
+        if constexpr (is_rela<E>)
+          buf[j].r_addend = r.r_addend;
       }
     }
   });

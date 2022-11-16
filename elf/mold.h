@@ -1070,10 +1070,6 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
 private:
-  using RelaTy = std::conditional_t<E::is_le,
-    std::conditional_t<E::is_64, EL64Rela, EL32Rela>,
-    std::conditional_t<E::is_64, EB64Rela, EB32Rela>>;
-
   OutputSection<E> &output_section;
   std::vector<i64> offsets;
 };
