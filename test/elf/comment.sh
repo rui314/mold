@@ -7,3 +7,4 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o
 readelf -p .comment $t/exe | grep -q 'mold'
+readelf -SW $t/exe | grep -Eq '\.comment.*\bMS\b'
