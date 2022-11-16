@@ -2259,11 +2259,13 @@ void EhFrameRelocSection<E>::copy_buf(Context<E> &ctx) {
     for (CieRecord<E> &cie : file->cies)
       if (cie.is_leader)
         for (const ElfRel<E> &rel : cie.get_rels())
-          copy(rel, cie.output_offset);
+          copy(rel, cie.output_offset + rel.r_offset - cie.input_offset);
 
-    for (FdeRecord<E> &fde : file->fdes)
+    for (FdeRecord<E> &fde : file->fdes) {
+      i64 offset = file->fde_offset + fde.output_offset;
       for (const ElfRel<E> &rel : fde.get_rels(*file))
-        copy(rel, file->fde_offset + fde.output_offset);
+        copy(rel, offset + rel.r_offset - fde.input_offset);
+    }
   }
 }
 
