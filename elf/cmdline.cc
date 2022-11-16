@@ -557,6 +557,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       append(ctx.arg.exclude_libs, split_by_comma_or_colon(arg));
     } else if (read_flag("q") || read_flag("emit-relocs")) {
       ctx.arg.emit_relocs = true;
+      ctx.arg.discard_locals = false;
     } else if (read_arg("e") || read_arg("entry")) {
       ctx.arg.entry = arg;
     } else if (read_arg("Map")) {

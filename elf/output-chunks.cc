@@ -2212,6 +2212,62 @@ void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
+void EhFrameRelocSection<E>::update_shdr(Context<E> &ctx) {
+  tbb::enumerable_thread_specific<i64> count;
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (CieRecord<E> &cie : file->cies)
+      if (cie.is_leader)
+        count.local() += cie.get_rels().size();
+
+    for (FdeRecord<E> &fde : file->fdes)
+      count.local() += fde.get_rels(*file).size();
+  });
+
+  this->shdr.sh_size = count.combine(std::plus()) * sizeof(RelaTy);
+  this->shdr.sh_link = ctx.symtab->shndx;
+  this->shdr.sh_info = ctx.eh_frame->shndx;
+}
+
+template <typename E>
+void EhFrameRelocSection<E>::copy_buf(Context<E> &ctx) {
+  RelaTy *buf = (RelaTy *)(ctx.buf + this->shdr.sh_offset);
+
+  for (ObjectFile<E> *file : ctx.objs) {
+    auto copy = [&](const ElfRel<E> &r, u64 offset) {
+      Symbol<E> &sym = *file->symbols[r.r_sym];
+      memset(buf, 0, sizeof(*buf));
+
+      i64 addend = 0;
+      if constexpr (is_rela<E>)
+        addend = r.r_addend;
+
+      if (sym.esym().st_type == STT_SECTION) {
+        InputSection<E> &isec = *sym.get_input_section();
+        buf->r_sym = isec.output_section->shndx;
+        buf->r_addend = isec.offset + addend;
+      } else {
+        buf->r_sym = get_output_sym_idx(sym);
+        buf->r_addend = addend;
+      }
+
+      buf->r_offset = ctx.eh_frame->shdr.sh_addr + offset;
+      buf->r_type = r.r_type;
+      buf++;
+    };
+
+    for (CieRecord<E> &cie : file->cies)
+      if (cie.is_leader)
+        for (const ElfRel<E> &rel : cie.get_rels())
+          copy(rel, cie.output_offset);
+
+    for (FdeRecord<E> &fde : file->fdes)
+      for (const ElfRel<E> &rel : fde.get_rels(*file))
+        copy(rel, file->fde_offset + fde.output_offset);
+  }
+}
+
+template <typename E>
 void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   if (sym->has_copyrel)
     return;
@@ -3010,6 +3066,7 @@ template class GnuHashSection<E>;
 template class MergedSection<E>;
 template class EhFrameSection<E>;
 template class EhFrameHdrSection<E>;
+template class EhFrameRelocSection<E>;
 template class CopyrelSection<E>;
 template class VersymSection<E>;
 template class VerneedSection<E>;

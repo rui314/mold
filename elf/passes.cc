@@ -100,6 +100,8 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.gnu_hash = push(new GnuHashSection<E>);
   if (!ctx.arg.version_definitions.empty())
     ctx.verdef = push(new VerdefSection<E>);
+  if (ctx.arg.emit_relocs)
+    ctx.eh_frame_reloc = push(new EhFrameRelocSection<E>);
 
   if (ctx.arg.shared || !ctx.dsos.empty() || ctx.arg.pie)
     ctx.dynamic = push(new DynamicSection<E>);

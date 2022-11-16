@@ -866,6 +866,25 @@ public:
 };
 
 template <typename E>
+class EhFrameRelocSection : public Chunk<E> {
+public:
+  EhFrameRelocSection() {
+    this->name = ".rela.eh_frame";
+    this->shdr.sh_type = SHT_RELA;
+    this->shdr.sh_addralign = sizeof(Word<E>);
+    this->shdr.sh_entsize = sizeof(RelaTy);
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+
+private:
+  using RelaTy = std::conditional_t<E::is_le,
+    std::conditional_t<E::is_64, EL64Rela, EL32Rela>,
+    std::conditional_t<E::is_64, EB64Rela, EB32Rela>>;
+};
+
+template <typename E>
 class CopyrelSection : public Chunk<E> {
 public:
   CopyrelSection(bool is_relro) : is_relro(is_relro) {
@@ -1761,6 +1780,7 @@ struct Context {
   DynsymSection<E> *dynsym = nullptr;
   EhFrameSection<E> *eh_frame = nullptr;
   EhFrameHdrSection<E> *eh_frame_hdr = nullptr;
+  EhFrameRelocSection<E> *eh_frame_reloc = nullptr;
   CopyrelSection<E> *copyrel = nullptr;
   CopyrelSection<E> *copyrel_relro = nullptr;
   VersymSection<E> *versym = nullptr;
