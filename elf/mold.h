@@ -1424,6 +1424,7 @@ template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
 template <typename E> void mark_addrsig(Context<E> &);
 template <typename E> void clear_padding(Context<E> &);
+template <typename E> void compute_section_headers(Context<E> &);
 template <typename E> i64 set_osec_offsets(Context<E> &);
 template <typename E> void fix_synthetic_symbols(Context<E> &);
 template <typename E> i64 compress_debug_sections(Context<E> &);

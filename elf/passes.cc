@@ -1852,6 +1852,28 @@ static i64 set_file_offsets(Context<E> &ctx) {
   return fileoff;
 }
 
+template <typename E>
+void compute_section_headers(Context<E> &ctx) {
+  // Update sh_size for each chunk.
+  for (Chunk<E> *chunk : ctx.chunks)
+    chunk->update_shdr(ctx);
+
+  // Remove empty chunks.
+  std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
+    return chunk->kind() != OUTPUT_SECTION && chunk->shdr.sh_size == 0;
+  });
+
+  // Set section indices.
+  for (i64 i = 0, shndx = 1; i < ctx.chunks.size(); i++)
+    if (ctx.chunks[i]->kind() != HEADER)
+      ctx.chunks[i]->shndx = shndx++;
+
+  // Some types of section header refer other section by index.
+  // Recompute the section header to fill such fields with correct values.
+  for (Chunk<E> *chunk : ctx.chunks)
+    chunk->update_shdr(ctx);
+}
+
 // Assign virtual addresses and file offsets to output sections.
 template <typename E>
 i64 set_osec_offsets(Context<E> &ctx) {
@@ -2185,6 +2207,7 @@ template void parse_symbol_version(Context<E> &);
 template void compute_import_export(Context<E> &);
 template void mark_addrsig(Context<E> &);
 template void clear_padding(Context<E> &);
+template void compute_section_headers(Context<E> &);
 template i64 set_osec_offsets(Context<E> &);
 template void fix_synthetic_symbols(Context<E> &);
 template i64 compress_debug_sections(Context<E> &);

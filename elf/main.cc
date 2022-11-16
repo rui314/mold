@@ -667,23 +667,8 @@ int elf_main(int argc, char **argv) {
   if (ctx.arg.emit_relocs)
     create_reloc_sections(ctx);
 
-  // Update sh_size for each chunk and remove empty ones.
-  for (Chunk<E> *chunk : ctx.chunks)
-    chunk->update_shdr(ctx);
-
-  std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
-    return chunk->kind() != OUTPUT_SECTION && chunk->shdr.sh_size == 0;
-  });
-
-  // Set section indices.
-  for (i64 i = 0, shndx = 1; i < ctx.chunks.size(); i++)
-    if (ctx.chunks[i]->kind() != HEADER)
-      ctx.chunks[i]->shndx = shndx++;
-
-  // Some types of section header refer other section by index.
-  // Recompute the section header to fill such fields with correct values.
-  for (Chunk<E> *chunk : ctx.chunks)
-    chunk->update_shdr(ctx);
+  // Compute the section header values for all sections.
+  compute_section_headers(ctx);
 
   // Assign offsets to output sections
   i64 filesize = set_osec_offsets(ctx);
