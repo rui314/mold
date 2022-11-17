@@ -997,7 +997,10 @@ public:
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
-  u32 features = 0;
+  std::vector<std::pair<u32, u32>> properties;
+
+private:
+  static constexpr i64 entry_size = E::is_64 ? 16 : 12;
 };
 
 struct GdbIndexName {
@@ -1243,7 +1246,7 @@ public:
   std::vector<const char *> symvers;
   std::vector<std::pair<ComdatGroup *, std::span<U32<E>>>> comdat_groups;
   bool exclude_libs = false;
-  u32 features = 0;
+  std::vector<std::pair<u32, u32>> gnu_properties;
   bool is_lto_obj = false;
   bool needs_executable_stack = false;
 
@@ -1280,7 +1283,7 @@ private:
   void initialize_symbols(Context<E> &ctx);
   void sort_relocations(Context<E> &ctx);
   void initialize_ehframe_sections(Context<E> &ctx);
-  u32 read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr);
+  void read_note_gnu_property(Context <E> &ctx, const ElfShdr <E> &shdr, std::vector<std::pair<u32, u32>> &out);
   void read_ehframe(Context<E> &ctx, InputSection<E> &isec);
   void override_symbol(Context<E> &ctx, Symbol<E> &sym,
                        const ElfSym<E> &esym, i64 symidx);

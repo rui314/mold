@@ -433,7 +433,6 @@ void create_internal_file(Context<E> &ctx) {
   obj->symbols.push_back(new Symbol<E>);
   obj->first_global = 1;
   obj->is_alive = true;
-  obj->features = -1;
   obj->priority = 1;
 
   auto add = [&](Symbol<E> *sym) {
@@ -612,8 +611,18 @@ void check_cet_errors(Context<E> &ctx) {
   bool warning = (ctx.arg.z_cet_report == CET_REPORT_WARNING);
   assert(warning || (ctx.arg.z_cet_report == CET_REPORT_ERROR));
 
+  auto has_feature = [](ObjectFile<E> *file, u32 feature) {
+    return std::any_of(file->gnu_properties.begin(), file->gnu_properties.end(),
+                       [&](auto kv) {
+                         return kv.first == GNU_PROPERTY_X86_FEATURE_1_AND
+                             && (kv.second & feature);
+                       });
+  };
+
   for (ObjectFile<E> *file : ctx.objs) {
-    if (!(file->features & GNU_PROPERTY_X86_FEATURE_1_IBT)) {
+    if (file == ctx.internal_obj)
+      continue;
+    if (!has_feature(file, GNU_PROPERTY_X86_FEATURE_1_IBT)) {
       if (warning)
         Warn(ctx) << *file << ": -cet-report=warning: "
                   << "missing GNU_PROPERTY_X86_FEATURE_1_IBT";
@@ -622,7 +631,7 @@ void check_cet_errors(Context<E> &ctx) {
                    << "missing GNU_PROPERTY_X86_FEATURE_1_IBT";
     }
 
-    if (!(file->features & GNU_PROPERTY_X86_FEATURE_1_SHSTK)) {
+    if (!has_feature(file, GNU_PROPERTY_X86_FEATURE_1_SHSTK)) {
       if (warning)
         Warn(ctx) << *file << ": -cet-report=warning: "
                   << "missing GNU_PROPERTY_X86_FEATURE_1_SHSTK";
