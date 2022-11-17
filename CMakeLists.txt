@@ -388,7 +388,7 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
 
   function(mold_install_relative_symlink OLD NEW)
     install(CODE "
-      get_filename_component(PREFIX_ABS \${CMAKE_INSTALL_PREFIX} ABSOLUTE)
+      get_filename_component(PREFIX_ABS \${CMAKE_INSTALL_PREFIX}/ ABSOLUTE)
       get_filename_component(OLD_ABS ${OLD} ABSOLUTE BASE_DIR \${PREFIX_ABS})
       get_filename_component(NEW_ABS ${NEW} ABSOLUTE BASE_DIR \${PREFIX_ABS})
       get_filename_component(NEW_DIR \${NEW_ABS} DIRECTORY)
