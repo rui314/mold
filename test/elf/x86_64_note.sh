@@ -5,7 +5,10 @@ test_cflags -static || skip
 
 [ $MACHINE = x86_64 ] || skip
 
-cat <<EOF | $CC -o $t/a.o -c -x assembler -
+# Binutils 2.32 injects their own .note.gnu.property section interfering with the tests
+test_cflags -Xassembler -mx86-used-note=no && CFLAGS="-Xassembler -mx86-used-note=no" || CFLAGS=""
+
+cat <<EOF | $CC $CFLAGS -o $t/a.o -c -x assembler -
 .text
 .globl _start
 _start:
