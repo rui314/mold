@@ -45,6 +45,7 @@
 
 cmake_minimum_required(VERSION 3.13)
 project(mold VERSION 1.7.0)
+set(MOLD_PRODUCT_NAME "mold")
 
 include(CMakeDependentOption)
 include(GNUInstallDirs)
@@ -397,6 +398,7 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
       file(MAKE_DIRECTORY \$ENV{DESTDIR}\${NEW_DIR})
       file(CREATE_LINK \${OLD_REL} \$ENV{DESTDIR}\${NEW_ABS} SYMBOLIC)")
   endfunction()
+
   mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
     ${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)
   mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
@@ -405,4 +407,9 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
     ${CMAKE_INSTALL_BINDIR}/ld64.mold)
   mold_install_relative_symlink(${CMAKE_INSTALL_MANDIR}/man1/mold.1
     ${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)
+
+  if(NOT MOLD_PRODUCT_NAME STREQUAL "mold")
+    mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
+      ${CMAKE_INSTALL_BINDIR}/ld.${MOLD_PRODUCT_NAME})
+  endif()
 endif()

@@ -69,6 +69,7 @@ inline u8 *output_buffer_start = nullptr;
 inline u8 *output_buffer_end = nullptr;
 
 inline std::string mold_version;
+inline std::string mold_product_name;
 extern std::string mold_version_string;
 extern std::string mold_git_hash;
 
@@ -109,8 +110,8 @@ private:
 template <typename C>
 static std::string add_color(C &ctx, std::string msg) {
   if (ctx.arg.color_diagnostics)
-    return "mold: \033[0;1;31m" + msg + ":\033[0m ";
-  return "mold: " + msg + ": ";
+    return mold_product_name + ": \033[0;1;31m" + msg + ":\033[0m ";
+  return mold_product_name + ": " + msg + ": ";
 }
 
 template <typename C>

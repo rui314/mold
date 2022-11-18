@@ -27,20 +27,11 @@ namespace macho {
 int main(int argc, char **argv);
 }
 
-static bool has_commercial_license() {
-  if (MOLD_HAS_COMMERCIAL_LICENSE)
-    return true;
-  char *env = getenv("MOLD_HAS_COMMERCIAL_LICENSE");
-  return env && env[0];
-}
-
 static std::string get_mold_version() {
-  std::string ver = "mold " MOLD_VERSION;
-  ver += has_commercial_license() ? " commercial edition" : " free edition";
-
   if (mold_git_hash.empty())
-    return ver + " (compatible with GNU ld)";
-  return ver + " (" + mold_git_hash + "; compatible with GNU ld)";
+    return MOLD_PRODUCT_NAME " " MOLD_VERSION " (compatible with GNU ld)";
+  return MOLD_PRODUCT_NAME " " MOLD_VERSION " (" + mold_git_hash +
+         "; compatible with GNU ld)";
 }
 
 void cleanup() {
@@ -101,7 +92,8 @@ static LONG WINAPI vectored_handler(_EXCEPTION_POINTERS *exception_info) {
       (ULONG_PTR)output_buffer_start <= exception_information[1] &&
       exception_information[1] < (ULONG_PTR)output_buffer_end) {
 
-    const char msg[] = "mold: failed to write to an output file. Disk full?\n";
+    const char msg[] =
+      MOLD_PRODUCT_NAME ": failed to write to an output file. Disk full?\n";
     (void)!write(_fileno(stderr), msg, sizeof(msg) - 1);
   }
 
@@ -122,7 +114,8 @@ static void sighandler(int signo, siginfo_t *info, void *ucontext) {
   if ((signo == SIGSEGV || signo == SIGBUS) &&
       output_buffer_start <= info->si_addr &&
       info->si_addr < output_buffer_end) {
-    const char msg[] = "mold: failed to write to an output file. Disk full?\n";
+    const char msg[] =
+      MOLD_PRODUCT_NAME ": failed to write to an output file. Disk full?\n";
     (void)!write(STDERR_FILENO, msg, sizeof(msg) - 1);
   }
 
@@ -154,6 +147,7 @@ i64 get_default_thread_count() {
 
 int main(int argc, char **argv) {
   mold::mold_version = mold::get_mold_version();
+  mold::mold_product_name = MOLD_PRODUCT_NAME;
 
   std::string cmd = mold::filepath(argv[0]).filename().string();
   if (cmd == "ld64" || cmd == "ld64.mold")
