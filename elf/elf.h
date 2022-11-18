@@ -271,8 +271,17 @@ static constexpr u32 NT_GNU_GOLD_VERSION = 4;
 static constexpr u32 NT_GNU_PROPERTY_TYPE_0 = 5;
 static constexpr u32 NT_FDO_PACKAGING_METADATA = 0xcafe1a7e;
 
-static constexpr u32 GNU_PROPERTY_AARCH64_FEATURE_1_AND = 0xc0000000;
-static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_AND = 0xc0000002;
+static constexpr u32 GNU_PROPERTY_X86_UINT32_AND_LO = 0xc0000002;
+static constexpr u32 GNU_PROPERTY_X86_UINT32_AND_HI = 0xc0007fff;
+
+static constexpr u32 GNU_PROPERTY_X86_UINT32_OR_LO = 0xc0008000;
+static constexpr u32 GNU_PROPERTY_X86_UINT32_OR_HI = 0xc000ffff;
+
+static constexpr u32 GNU_PROPERTY_X86_UINT32_OR_AND_LO = 0xc0010000;
+static constexpr u32 GNU_PROPERTY_X86_UINT32_OR_AND_HI = 0xc0017fff;
+
+static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_AND
+    = (GNU_PROPERTY_X86_UINT32_AND_LO + 0);
 
 static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_IBT = 1;
 static constexpr u32 GNU_PROPERTY_X86_FEATURE_1_SHSTK = 2;
