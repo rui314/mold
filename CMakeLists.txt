@@ -388,14 +388,14 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
 
   function(mold_install_relative_symlink OLD NEW)
     install(CODE "
-      get_filename_component(PREFIX_ABS \${CMAKE_INSTALL_PREFIX} ABSOLUTE)
+      get_filename_component(PREFIX_ABS \${CMAKE_INSTALL_PREFIX}/ ABSOLUTE)
       get_filename_component(OLD_ABS ${OLD} ABSOLUTE BASE_DIR \${PREFIX_ABS})
       get_filename_component(NEW_ABS ${NEW} ABSOLUTE BASE_DIR \${PREFIX_ABS})
       get_filename_component(NEW_DIR \${NEW_ABS} DIRECTORY)
       file(RELATIVE_PATH OLD_REL \${NEW_DIR} \${OLD_ABS})
-      message(STATUS \"Installing symlink: \$ENV{DESTDIR}/\${NEW_ABS} -> \${OLD_REL}\")
-      file(MAKE_DIRECTORY \$ENV{DESTDIR}/\${NEW_DIR})
-      file(CREATE_LINK \${OLD_REL} \$ENV{DESTDIR}/\${NEW_ABS} SYMBOLIC)")
+      message(STATUS \"Installing symlink: \$ENV{DESTDIR}\${NEW_ABS} -> \${OLD_REL}\")
+      file(MAKE_DIRECTORY \$ENV{DESTDIR}\${NEW_DIR})
+      file(CREATE_LINK \${OLD_REL} \$ENV{DESTDIR}\${NEW_ABS} SYMBOLIC)")
   endfunction()
   mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
     ${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)
