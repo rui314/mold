@@ -2444,24 +2444,8 @@ void BuildIdSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 static void compute_sha256(Context<E> &ctx, i64 offset) {
-  // We compute sha256 only for the part of the file that is memory-mapped
-  // at runtime. In other words, we ignore symbol table, section table,
-  // debug info, etc. when computing build-id.
-  //
-  // We ignore them because build-id is not unique anyway due to the strip
-  // command. If you run strip on an executable, its symbol table and
-  // debug info sections are removed, but its .note.gnu.build-id is
-  // unchanged. So, there are commonly two versions of a file of the same
-  // build-id; unstripped and stripped.
-  i64 memsize = 0;
-  for (Chunk<E> *chunk : ctx.chunks) {
-    ElfShdr<E> &shdr = chunk->shdr;
-    if ((shdr.sh_flags & SHF_ALLOC) && shdr.sh_type != SHT_NOBITS)
-      memsize = std::max<i64>(memsize, shdr.sh_offset + shdr.sh_size);
-  }
-
-  i64 filesize = ctx.output_file->filesize;
   u8 *buf = ctx.buf;
+  i64 filesize = ctx.output_file->filesize;
 
   i64 shard_size = 4096 * 1024;
   i64 num_shards = align_to(filesize, shard_size) / shard_size;
@@ -2470,8 +2454,7 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
   tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
     u8 *begin = buf + shard_size * i;
     u8 *end = (i == num_shards - 1) ? buf + filesize : begin + shard_size;
-    if (end <= buf + memsize)
-      sha256_hash(begin, end - begin, shards.data() + i * SHA256_SIZE);
+    sha256_hash(begin, end - begin, shards.data() + i * SHA256_SIZE);
 
 #ifndef _WIN32
     // We call munmap early for each chunk so that the last munmap
