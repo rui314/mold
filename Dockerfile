@@ -12,4 +12,5 @@ RUN apt-get update && \
   wget -O- -q https://www.openssl.org/source/openssl-3.0.7.tar.gz | tar --strip-components=1 -xzf - && \
   ./Configure --prefix=/usr/local && \
   make -j$(nproc) && \
-  make -j$(nproc) install
+  make -j$(nproc) install && \
+  rm -rf /var/lib/apt/lists/* /openssl
