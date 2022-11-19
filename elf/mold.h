@@ -1960,6 +1960,7 @@ public:
 
   u32 get_type() const;
   std::string_view get_version() const;
+  i64 get_output_sym_idx(Context<E> &ctx) const;
   const ElfSym<E> &esym() const;
   void clear();
 
@@ -2750,6 +2751,15 @@ inline std::string_view Symbol<E>::get_version() const {
   if (file->is_dso)
     return ((SharedFile<E> *)file)->version_strings[ver_idx];
   return "";
+}
+
+template <typename E>
+inline i64 Symbol<E>::get_output_sym_idx(Context<E> &ctx) const {
+  i64 i = file->output_sym_indices[sym_idx];
+  assert(i != -1);
+  if (is_local())
+    return file->local_symtab_idx + i;
+  return file->global_symtab_idx + i;
 }
 
 template <typename E>

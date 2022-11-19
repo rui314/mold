@@ -2247,7 +2247,7 @@ void EhFrameRelocSection<E>::copy_buf(Context<E> &ctx) {
         buf->r_sym = isec.output_section->shndx;
         buf->r_addend = isec.offset + addend;
       } else {
-        buf->r_sym = get_output_sym_idx(sym);
+        buf->r_sym = sym.get_output_sym_idx(ctx);
         buf->r_addend = addend;
       }
 
@@ -3071,16 +3071,6 @@ void RelocSection<E>::update_shdr(Context<E> &ctx) {
 }
 
 template <typename E>
-static i64 get_output_sym_idx(Symbol<E> &sym) {
-  i64 idx2 = sym.file->output_sym_indices[sym.sym_idx];
-  assert(idx2 != -1);
-
-  if (sym.is_local())
-    return sym.file->local_symtab_idx + idx2;
-  return sym.file->global_symtab_idx + idx2;
-}
-
-template <typename E>
 void RelocSection<E>::copy_buf(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)output_section.members.size(), [&](i64 i) {
     ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset) + offsets[i];
@@ -3111,7 +3101,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
         if constexpr (is_rela<E>)
           buf[j].r_addend = r.r_addend + isec.offset;
       } else {
-        buf[j].r_sym = get_output_sym_idx(sym);
+        buf[j].r_sym = sym.get_output_sym_idx(ctx);
         if constexpr (is_rela<E>)
           buf[j].r_addend = r.r_addend;
       }
