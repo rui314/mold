@@ -1,5 +1,10 @@
 # mold: A Modern Linker
 
+<i>This is a repo of a free, AGPL-licensed version of the linker.
+If you are looking for a commercial, non-AGPL version of the same linker,
+please visit the
+[repo of the sold linker](https://github.com/bluewhalesystems/sold).</i>
+
 mold is a faster drop-in replacement for existing Unix linkers.
 It is several times faster than the LLVM lld linker, the second-fastest
 open-source linker which I originally created a few years ago.
