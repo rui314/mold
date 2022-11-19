@@ -196,6 +196,22 @@ If you find any issue with mold/macOS, please file it to
 
 </details>
 
+<details><summary>CMake</summary>
+
+mold comes with a CMake config file that intends to make it easy for users to
+use it in their CMake projects. You may use the config file as follows:
+
+```cmake
+find_package(mold CONFIG)
+if(mold_FOUND)
+  target_use_mold(<target-name>)
+endif()
+```
+
+This sets mold as the linker for the target specified.
+
+</details>
+
 <details><summary>GitHub Actions</summary>
 
 You can use our <a href=https://github.com/rui314/setup-mold>setup-mold</a>
