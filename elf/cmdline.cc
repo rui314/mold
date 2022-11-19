@@ -402,6 +402,15 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   bool warn_shared_textrel = false;
   std::optional<SeparateCodeKind> z_separate_code;
   std::optional<bool> z_relro;
+  std::unordered_set<std::string_view> rpaths;
+
+  auto add_rpath = [&](std::string_view arg) {
+    if (rpaths.insert(arg).second) {
+      if (!ctx.arg.rpaths.empty())
+        ctx.arg.rpaths += ':';
+      ctx.arg.rpaths += arg;
+    }
+  };
 
   // RISC-V object files contains lots of local symbols, so by default
   // we discard them. This is compatible with GNU ld.
@@ -968,17 +977,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("error-unresolved-symbols")) {
       ctx.arg.unresolved_symbols = UNRESOLVED_ERROR;
     } else if (read_arg("rpath")) {
-      if (!ctx.arg.rpaths.empty())
-        ctx.arg.rpaths += ":";
-      ctx.arg.rpaths += arg;
+      add_rpath(arg);
     } else if (read_arg("R")) {
       if (is_file(arg))
         Fatal(ctx) << "-R" << arg
                    << ": -R as an alias for --just-symbols is not supported";
-
-      if (!ctx.arg.rpaths.empty())
-        ctx.arg.rpaths += ":";
-      ctx.arg.rpaths += arg;
+      add_rpath(arg);
     } else if (read_flag("build-id")) {
       ctx.arg.build_id.kind = BuildId::HASH;
       ctx.arg.build_id.hash_size = 20;

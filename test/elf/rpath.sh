@@ -8,8 +8,8 @@ main:
   nop
 EOF
 
-$CC -B. -o $t/exe $t/a.o \
-  -Wl,-rpath,/foo -Wl,-rpath,/bar -Wl,-R/no/such/directory -Wl,-R/
+$CC -B. -o $t/exe1 $t/a.o -Wl,-rpath,/foo,-rpath,/bar,-R/no/such/directory,-R/
+readelf --dynamic $t/exe1 | grep -Fq 'Library runpath: [/foo:/bar:/no/such/directory:/]'
 
-readelf --dynamic $t/exe | \
-  grep -Fq 'Library runpath: [/foo:/bar:/no/such/directory:/]'
+$CC -B. -o $t/exe2 $t/a.o -Wl,-rpath,/foo,-rpath,/bar,-rpath,/foo,-rpath,/baz
+readelf --dynamic $t/exe2 | grep -Fq 'Library runpath: [/foo:/bar:/baz]'
