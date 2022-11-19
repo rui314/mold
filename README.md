@@ -265,7 +265,7 @@ concern. By purchasing a license, you are guaranteed that mold will be
 maintained for you. Please [contact us](mailto:contact@bluewhale.systems)
 for a commercial license inquiry.
 
-## Acknowledgement
+## Sponsors
 
 We accept donations via [GitHub Sponsors](https://github.com/sponsors/rui314)
 and [OpenCollective](https://opencollective.com/mold-linker).
@@ -273,7 +273,15 @@ We thank you to everybody who sponsors our project. In particular,
 we'd like to acknowledge the following people and organizations who
 have sponsored $128/month or more:
 
-- [300baud](https://github.com/300baud)
-- [Mercury](https://github.com/MercuryTechnologies)
-- [Wei Wu](https://github.com/lazyparser)
+### Corporate sponsors
+
+<a href="https://mercury.com/"><img src="docs/mercury-logo.png" align=center height=120 width=400 alt=Mercury></a>
+
 - [Signal Slot Inc.](https://github.com/signal-slot)
+
+### Individual sponsors
+
+- [300baud](https://github.com/300baud)
+- [Johan Andersson](https://github.com/repi)
+- [Wei Wu](https://github.com/lazyparser)
+- [kyle-elliott](https://github.com/kyle-elliott)
