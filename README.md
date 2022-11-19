@@ -282,6 +282,7 @@ have sponsored $128/month or more:
 
 <a href="https://mercury.com/"><img src="docs/mercury-logo.png" align=center height=120 width=400 alt=Mercury></a>
 
+- [Uber](https://uber.com)
 - [Signal Slot Inc.](https://github.com/signal-slot)
 
 ### Individual sponsors
