@@ -382,10 +382,24 @@ if(BUILD_TESTING)
   endif()
 endif()
 
+include(CMakePackageConfigHelpers)
+# The PACKAGE_* variables used in mold-config.cmake.in need to be added to the
+# PATH_VARS list here. See comments in the config file for details.
+configure_package_config_file(
+  mold-config.cmake.in
+  mold-config.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mold
+  PATH_VARS
+    CMAKE_INSTALL_BINDIR
+    CMAKE_INSTALL_LIBEXECDIR
+  )
+
 if(NOT CMAKE_SKIP_INSTALL_RULES)
   install(TARGETS mold RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
   install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
   install(FILES docs/mold.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/)
+  install(FILES ${CMAKE_BINARY_DIR}/mold-config.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/mold/)
 
   function(mold_install_relative_symlink OLD NEW)
     install(CODE "
