@@ -401,14 +401,12 @@ static void gather_edges(Context<E> &ctx,
     InputSection<E> &isec = *sections[i];
     i64 idx = edge_indices[i];
 
-    for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
-      const ElfRel<E> &rel = isec.get_rels(ctx)[j];
+    for (ElfRel<E> &rel : isec.get_rels(ctx)) {
       Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-      if (!sym.get_frag())
-        if (InputSection<E> *isec = sym.get_input_section())
-          if (isec->icf_eligible)
-            edges[idx++] = isec->icf_idx;
-    }
+      if (InputSection<E> *isec = sym.get_input_section())
+        if (isec->icf_eligible)
+          edges[idx++] = isec->icf_idx;
+  }
   });
 }
 
