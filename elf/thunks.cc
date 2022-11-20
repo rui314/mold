@@ -222,7 +222,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     thunk.offset = offset;
 
     // Scan relocations between B and C to collect symbols that need thunks.
-    tbb::parallel_for_each(&m[b], &m[c], [&](InputSection<E> *isec) {
+    tbb::parallel_for_each(m.begin() + b, m.begin() + c, [&](InputSection<E> *isec) {
       scan_rels(ctx, *isec, thunk);
     });
 
@@ -244,7 +244,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     }
 
     // Scan relocations again to fix symbol offsets in the last thunk.
-    tbb::parallel_for_each(&m[b], &m[c], [&](InputSection<E> *isec) {
+    tbb::parallel_for_each(m.begin() + b, m.begin() + c, [&](InputSection<E> *isec) {
       std::span<Symbol<E> *> syms = isec->file.symbols;
       std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
       std::span<RangeExtensionRef> range_extn = isec->extra.range_extn;
