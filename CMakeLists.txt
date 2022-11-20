@@ -44,7 +44,7 @@
 # features and behave exactly the same.
 
 cmake_minimum_required(VERSION 3.13)
-project(mold VERSION 1.7.0)
+project(mold VERSION 1.7.1)
 set(MOLD_PRODUCT_NAME "mold")
 
 include(CMakeDependentOption)
