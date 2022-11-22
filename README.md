@@ -137,7 +137,7 @@ rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
 
 where `/path/to/mold` is an absolute path to `mold` exectuable. In the
 above example, we use `clang` as a linker driver as it can always take
-the `-fuse-ldd` option. If your GCC is recent enough to recognize the
+the `-fuse-ld` option. If your GCC is recent enough to recognize the
 option, you may be able to remove the `linker = "clang"` line.
 
 ```toml
@@ -159,6 +159,30 @@ rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 [target.aarch64-apple-darwin]
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+```
+
+</details>
+
+<details><summary>If you are using Nim</summary>
+
+Create `config.nims` in your project directory with the following:
+
+```nim
+when findExe("mold").len > 0 and defined(linux):
+  switch("passL", "-fuse-ld=mold")
+```
+
+where `mold` must be included in the PATH environment variable. In this example
+The above example uses `gcc` as the linker driver.
+Use the `fuse-ld` option. If your GCC is recent enough to recognize this option
+
+If you want to use mold for all projects, put the above snippet to ~/.config/config.nims.
+
+If you are using macOS, you can modify config.nims in a similar manner. Here is an example with mold installed via Homebrew.
+
+```nim
+when findExe("ld64.mold").len > 0 and defined(macosx):
+  switch("passL", "-fuse-ld=ld64.mold")
 ```
 
 </details>
