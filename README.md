@@ -174,9 +174,9 @@ when findExe("mold").len > 0 and defined(linux):
 
 where `mold` must be included in the PATH environment variable. In this example
 The above example uses `gcc` as the linker driver.
-Use the `fuse-ld` option. If your GCC is recent enough to recognize this option
+Use the `fuse-ld` option. If your GCC is recent enough to recognize this option.
 
-If you want to use mold for all projects, put the above snippet to ~/.config/config.nims.
+If you want to use mold for all projects, put the above snippet to `~/.config/config.nims`.
 
 If you are using macOS, you can modify config.nims in a similar manner. Here is an example with mold installed via Homebrew.
 
