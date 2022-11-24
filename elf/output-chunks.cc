@@ -2267,6 +2267,9 @@ void EhFrameRelocSection<E>::copy_buf(Context<E> &ctx) {
     memset(buf, 0, sizeof(*buf));
 
     if (sym.esym().st_type == STT_SECTION) {
+      // We discard section symbols in input files and re-create new
+      // ones for each output section. So we need to adjust relocations'
+      // addends if they refer a section symbol.
       InputSection<E> *target = sym.get_input_section();
       buf->r_sym = target->output_section->shndx;
 
