@@ -2626,6 +2626,7 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
 
   std::vector<ObjectFile<E> *> files = ctx.objs;
   std::erase(files, ctx.internal_obj);
+  properties.clear();
 
   std::set<u32> keys;
   for (ObjectFile<E> *file : files)
