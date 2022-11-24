@@ -499,6 +499,9 @@ int elf_main(int argc, char **argv) {
   // Resolve mergeable section pieces to merge them.
   register_section_pieces(ctx);
 
+  // Handle --relocatable. Since the linker's behavior is quite different
+  // from the normal one when the option is given, the logic is implemented
+  // to a separate file.
   if (ctx.arg.relocatable) {
     combine_objects(ctx);
     return 0;

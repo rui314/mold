@@ -3156,6 +3156,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void ComdatGroupSection<E>::update_shdr(Context<E> &ctx) {
+  assert(ctx.arg.relocatable);
   this->shdr.sh_link = ctx.symtab->shndx;
   this->shdr.sh_info = sym.get_output_sym_idx(ctx);
 }

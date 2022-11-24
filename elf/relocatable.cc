@@ -36,6 +36,7 @@
 
 namespace mold::elf {
 
+// Create linker-synthesized sections
 template <typename E>
 static void r_create_synthetic_sections(Context<E> &ctx) {
   auto push = [&]<typename T>(T *x) {
@@ -53,6 +54,9 @@ static void r_create_synthetic_sections(Context<E> &ctx) {
   ctx.shstrtab = push(new ShstrtabSection<E>);
 }
 
+// Create SHT_GROUP (i.e. comdat group) sections. We uniquify comdat
+// sections by signature. We want to propagate input comdat groups as
+// output comdat groups if they are still alive after uniquification.
 template <typename E>
 static void create_comdat_group_sections(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs) {
@@ -67,30 +71,26 @@ static void create_comdat_group_sections(Context<E> &ctx) {
 
       for (u32 i : ref.members) {
         const ElfShdr<E> &shdr = file->elf_sections[i];
-
         if (shdr.sh_type == (is_rela<E> ? SHT_RELA : SHT_REL)) {
-          InputSection<E> *isec = file->sections[shdr.sh_info].get();
-          assert(isec);
-          assert(isec->output_section);
-          assert(isec->output_section->reloc_sec);
-          members.push_back(isec->output_section->reloc_sec);
-          continue;
+          InputSection<E> &isec = *file->sections[shdr.sh_info];
+          members.push_back(isec.output_section->reloc_sec);
+        } else {
+          InputSection<E> &isec = *file->sections[i];
+          members.push_back(isec.output_section);
         }
-
-        InputSection<E> *isec = file->sections[i].get();
-        assert(isec);
-        assert(isec->is_alive);
-        assert(isec->output_section);
-        members.push_back(isec->output_section);
       }
 
-      ComdatGroupSection<E> *sec = new ComdatGroupSection<E>(*sym, members);
+      ComdatGroupSection<E> *sec =
+        new ComdatGroupSection<E>(*sym, std::move(members));
       ctx.chunks.push_back(sec);
       ctx.chunk_pool.emplace_back(sec);
     }
   }
 }
 
+// Unresolved undefined symbols in the -r mode are simply propagated to an
+// output file as undefined symbols. This function guarantees that
+// unresolved undefined symbols belongs to some input file.
 template <typename E>
 static void r_claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "r_claim_unresolved_symbols");
@@ -119,6 +119,8 @@ static void r_claim_unresolved_symbols(Context<E> &ctx) {
   });
 }
 
+// Set output section in-file offsets. Output section memory addresses
+// are left as zero.
 template <typename E>
 static u64 r_set_osec_offsets(Context<E> &ctx) {
   u64 offset = 0;
