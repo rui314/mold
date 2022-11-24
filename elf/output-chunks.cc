@@ -2619,6 +2619,7 @@ void NotePackageSection<E>::copy_buf(Context<E> &ctx) {
   write_string(buf + 4, ctx.arg.package_metadata); // Content
 }
 
+// Merges input files' .note.gnu.property values.
 template <typename E>
 void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
   // The rules we support are only specified for x86 psABI.
@@ -2648,7 +2649,7 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
 
     if (GNU_PROPERTY_X86_UINT32_AND_LO <= key &&
         key <= GNU_PROPERTY_X86_UINT32_AND_HI) {
-      // An AND property is set if all input objects have the property and
+      // An AND feature is set if all input objects have the property and
       // the feature.
       if (std::all_of(files.begin(), files.end(), has_key)) {
         properties[key] = 0xffff'ffff;
@@ -2657,12 +2658,12 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
       }
     } else if (GNU_PROPERTY_X86_UINT32_OR_LO <= key &&
                key <= GNU_PROPERTY_X86_UINT32_OR_HI) {
-      // An OR property is set if some input object has the feature.
+      // An OR feature is set if some input object has the feature.
       for (ObjectFile<E> *file : files)
         properties[key] |= get_value(file, key);
     } else if (GNU_PROPERTY_X86_UINT32_OR_AND_LO <= key &&
                key <= GNU_PROPERTY_X86_UINT32_OR_AND_HI) {
-      // An OR-AND property is set if all input object files have the property
+      // An OR-AND feature is set if all input object files have the property
       // and some of them has the feature.
       if (std::all_of(files.begin(), files.end(), has_key))
         for (ObjectFile<E> *file : files)
@@ -2679,7 +2680,9 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
     return kv.second == 0;
   });
 
-  if (!properties.empty())
+  if (properties.empty())
+    this->shdr.sh_size = 0;
+  else
     this->shdr.sh_size = 16 + ENTRY_SIZE * properties.size();
 }
 
