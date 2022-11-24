@@ -160,7 +160,7 @@ void combine_objects(Context<E> &ctx) {
 
   i64 filesize = r_set_osec_offsets(ctx);
   ctx.output_file =
-    OutputFile<Context<E>>::open(ctx, ctx.arg.output, filesize, 0777);
+    OutputFile<Context<E>>::open(ctx, ctx.arg.output, filesize, 0666);
   ctx.buf = ctx.output_file->buf;
 
   copy_chunks(ctx);
