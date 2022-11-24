@@ -120,9 +120,14 @@ ObjectFile<E>::read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr) {
       u32 size = *(U32<E> *)(desc.data() + 4);
       desc = desc.substr(8);
 
-      // All currently defined .note.gnu.property use 32-bit values.
+      // The majority of currently defined .note.gnu.property
+      // use 32-bit values.
       // We don't know how to handle anything else, so if we encounter
       // one, skip it.
+      //
+      // The following properties have a different size:
+      // - GNU_PROPERTY_STACK_SIZE
+      // - GNU_PROPERTY_NO_COPY_ON_PROTECTED
       if (size == 4)
         gnu_properties[type] |= *(U32<E> *)desc.data();
       desc = desc.substr(align_to(size, sizeof(Word<E>)));
