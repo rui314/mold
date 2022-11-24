@@ -481,7 +481,8 @@ int elf_main(int argc, char **argv) {
   apply_exclude_libs(ctx);
 
   // Create a dummy file containing linker-synthesized symbols.
-  create_internal_file(ctx);
+  if (!ctx.arg.relocatable)
+    create_internal_file(ctx);
 
   // resolve_symbols is 4 things in 1 phase:
   //
