@@ -1,6 +1,9 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# OneTBB isn't tsan-clean
+nm mold | grep -q '__tsan_init' && skip
+
 cat <<EOF | $CXX -c -o $t/a.o -xc++ -
 int foo() {
   try {
