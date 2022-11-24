@@ -1,11 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || skip
-
-seq 1 65500 | sed 's/.*/.section .text.\0, "ax",@progbits/' > $t/a.s
-
-$CC -c -o $t/a.o $t/a.s
+seq 1 100000 | sed 's/.*/int x\0 __attribute__((section(".data.\0")));/g' | \
+  $CC -c -xc -o $t/a.o -
 
 cat <<'EOF' | $CC -c -xc -o $t/b.o -
 #include <stdio.h>
