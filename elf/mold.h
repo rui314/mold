@@ -438,11 +438,11 @@ class OutputShdr : public Chunk<E> {
 public:
   OutputShdr() {
     this->name = "SHDR";
+    this->shdr.sh_size = 1;
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
   ChunkKind kind() override { return HEADER; }
-  void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 };
 
@@ -730,7 +730,8 @@ public:
 };
 
 template<typename E>
-ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name);
+ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
+                         U32<E> *shndx);
 
 template <typename E>
 class SymtabSection : public Chunk<E> {
@@ -743,6 +744,19 @@ public:
   }
 
   void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+};
+
+template <typename E>
+class SymtabShndxSection : public Chunk<E> {
+public:
+  SymtabShndxSection() {
+    this->name = ".symtab_shndx";
+    this->shdr.sh_type = SHT_SYMTAB_SHNDX;
+    this->shdr.sh_entsize = 4;
+    this->shdr.sh_addralign = 4;
+  }
+
   void copy_buf(Context<E> &ctx) override;
 };
 
@@ -1789,6 +1803,7 @@ struct Context {
   PltSection<E> *plt = nullptr;
   PltGotSection<E> *pltgot = nullptr;
   SymtabSection<E> *symtab = nullptr;
+  SymtabShndxSection<E> *symtab_shndx = nullptr;
   DynsymSection<E> *dynsym = nullptr;
   EhFrameSection<E> *eh_frame = nullptr;
   EhFrameHdrSection<E> *eh_frame_hdr = nullptr;

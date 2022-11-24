@@ -89,7 +89,13 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   hdr.e_entry = get_entry_addr();
   hdr.e_flags = get_eflags(ctx);
   hdr.e_ehsize = sizeof(ElfEhdr<E>);
-  hdr.e_shstrndx = ctx.shstrtab->shndx;
+
+  // If e_shstrndx is too large, a dummy value is set to e_shstrndx.
+  // The real value is stored to the zero'th section's sh_link field.
+  if (ctx.shstrtab->shndx < SHN_LORESERVE)
+    hdr.e_shstrndx = ctx.shstrtab->shndx;
+  else
+    hdr.e_shstrndx = SHN_XINDEX;
 
   if (ctx.arg.relocatable)
     hdr.e_type = ET_REL;
@@ -107,23 +113,26 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   if (ctx.shdr) {
     hdr.e_shoff = ctx.shdr->shdr.sh_offset;
     hdr.e_shentsize = sizeof(ElfShdr<E>);
-    hdr.e_shnum = ctx.shdr->shdr.sh_size / sizeof(ElfShdr<E>);
-  }
-}
 
-template <typename E>
-void OutputShdr<E>::update_shdr(Context<E> &ctx) {
-  i64 n = 0;
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (chunk->shndx)
-      n = chunk->shndx;
-  this->shdr.sh_size = (n + 1) * sizeof(ElfShdr<E>);
+    // Since e_shnum is a 16-bit integer field, we can't store a very
+    // large value there. If it is >65535, the real value is stored to
+    // the zero'th section's sh_size field.
+    i64 shnum = ctx.shdr->shdr.sh_size / sizeof(ElfShdr<E>);
+    hdr.e_shnum = (shnum <= UINT16_MAX) ? shnum : 0;
+  }
 }
 
 template <typename E>
 void OutputShdr<E>::copy_buf(Context<E> &ctx) {
   ElfShdr<E> *hdr = (ElfShdr<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(hdr, 0, this->shdr.sh_size);
+
+  i64 shnum = ctx.shdr->shdr.sh_size / sizeof(ElfShdr<E>);
+  if (UINT16_MAX < shnum)
+    hdr->sh_size = shnum;
+
+  if (SHN_LORESERVE <= ctx.shstrtab->shndx)
+    hdr->sh_link = ctx.shstrtab->shndx;
 
   for (Chunk<E> *chunk : ctx.chunks)
     if (chunk->shndx)
@@ -716,6 +725,9 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
     file->populate_symtab(ctx);
   });
 }
+
+template <typename E>
+void SymtabShndxSection<E>::copy_buf(Context<E> &ctx) {}
 
 template <typename E>
 static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
@@ -1549,7 +1561,8 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template<typename E>
-ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name) {
+ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
+                         U32<E> *shn_xindex) {
   ElfSym<E> esym;
   memset(&esym, 0, sizeof(esym));
 
@@ -1588,34 +1601,50 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name) {
     return SHN_UNDEF;
   };
 
+  u32 shndx = 0;
   if (sym.has_copyrel) {
-    esym.st_shndx =
-      sym.copyrel_readonly ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
+    shndx = sym.copyrel_readonly ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
     esym.st_value = sym.get_addr(ctx);
   } else if (sym.file->is_dso || sym.esym().is_undef()) {
-    esym.st_shndx = SHN_UNDEF;
+    shndx = SHN_UNDEF;
     if (sym.is_canonical)
       esym.st_value = sym.get_plt_addr(ctx);
   } else if (Chunk<E> *osec = sym.get_output_section()) {
     // Linker-synthesized symbols
-    esym.st_shndx = osec->shndx;
+    shndx = osec->shndx;
     esym.st_value = sym.get_addr(ctx);
   } else if (SectionFragment<E> *frag = sym.get_frag()) {
     // Section fragment
-    esym.st_shndx = frag->output_section.shndx;
+    shndx = frag->output_section.shndx;
     esym.st_value = sym.get_addr(ctx);
   } else if (!sym.get_input_section()) {
     // Absolute symbol
-    esym.st_shndx = SHN_ABS;
+    shndx = SHN_ABS;
     esym.st_value = sym.get_addr(ctx);
   } else if (sym.get_type() == STT_TLS) {
-    esym.st_shndx = get_st_shndx(sym);
+    shndx = get_st_shndx(sym);
     esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
   } else {
+    shndx = get_st_shndx(sym);
     esym.st_visibility = sym.visibility;
-    esym.st_shndx = get_st_shndx(sym);
     esym.st_value = sym.get_addr(ctx, NO_PLT);
   }
+
+  // Symbol's st_shndx is only 16 bits wide, so we can't store a large
+  // section index there. If the total number of sections is equal to
+  // or greater than SHN_LORESERVE (= 65280), the real index is stored
+  // to a SHT_SYMTAB_SHNDX section which contains a parallel array of
+  // the symbol table.
+  if (shn_xindex) {
+    *shn_xindex = shndx;
+    esym.st_shndx = SHN_XINDEX;
+  } else {
+    if (shndx >= SHN_LORESERVE && shndx != SHN_ABS && shndx != SHN_COMMON)
+      Fatal(ctx) << sym << ": internal error: output symbol index too large: "
+                 << shndx;
+    esym.st_shndx = shndx;
+  }
+
   return esym;
 }
 
@@ -1709,7 +1738,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
     ElfSym<E> &esym =
       *(ElfSym<E> *)(base + sym.get_dynsym_idx(ctx) * sizeof(ElfSym<E>));
 
-    esym = to_output_esym(ctx, sym, name_offset);
+    esym = to_output_esym(ctx, sym, name_offset, nullptr);
     name_offset += sym.name().size() + 1;
     assert(esym.st_bind != STB_LOCAL || i < this->shdr.sh_info);
   }
@@ -3105,6 +3134,7 @@ template class ShstrtabSection<E>;
 template class DynstrSection<E>;
 template class DynamicSection<E>;
 template class SymtabSection<E>;
+template class SymtabShndxSection<E>;
 template class DynsymSection<E>;
 template class HashSection<E>;
 template class GnuHashSection<E>;
@@ -3125,6 +3155,6 @@ template class RelocSection<E>;
 template class ComdatGroupSection<E>;
 template i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
 template bool is_relro(Context<E> &, Chunk<E> *);
-template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &, u32);
+template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &, u32, U32<E> *);
 
 } // namespace mold::elf

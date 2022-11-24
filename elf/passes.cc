@@ -1961,14 +1961,32 @@ void compute_section_headers(Context<E> &ctx) {
   });
 
   // Set section indices.
-  for (i64 i = 0, shndx = 1; i < ctx.chunks.size(); i++)
+  i64 shndx = 1;
+  for (i64 i = 0; i < ctx.chunks.size(); i++)
     if (ctx.chunks[i]->kind() != HEADER)
       ctx.chunks[i]->shndx = shndx++;
+
+  if (ctx.symtab && SHN_LORESERVE <= shndx) {
+    SymtabShndxSection<E> *sec = new SymtabShndxSection<E>;
+    sec->shndx = shndx++;
+    sec->shdr.sh_link = ctx.symtab->shndx;
+    ctx.symtab_shndx = sec;
+    ctx.chunks.push_back(sec);
+    ctx.chunk_pool.emplace_back(sec);
+  }
+
+  if (ctx.shdr)
+    ctx.shdr->shdr.sh_size = shndx * sizeof(ElfShdr<E>);
 
   // Some types of section header refer other section by index.
   // Recompute the section header to fill such fields with correct values.
   for (Chunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
+
+  if (ctx.symtab_shndx) {
+    i64 symtab_size = ctx.symtab->shdr.sh_size / sizeof(ElfSym<E>);
+    ctx.symtab_shndx->shdr.sh_size = symtab_size * 4;
+  }
 }
 
 // Assign virtual addresses and file offsets to output sections.

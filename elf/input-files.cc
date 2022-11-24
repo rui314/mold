@@ -1252,7 +1252,12 @@ void ObjectFile<E>::populate_symtab(Context<E> &ctx) {
   i64 strtab_off = this->strtab_offset;
 
   auto write_sym = [&](Symbol<E> &sym, i64 &symtab_idx) {
-    symtab_base[symtab_idx++] = to_output_esym(ctx, sym, strtab_off);
+    U32<E> *xindex = nullptr;
+    if (ctx.symtab_shndx)
+      xindex = (U32<E> *)(ctx.buf + ctx.symtab_shndx->shdr.sh_offset +
+                          symtab_idx * 4);
+
+    symtab_base[symtab_idx++] = to_output_esym(ctx, sym, strtab_off, xindex);
     strtab_off += write_string(strtab_base + strtab_off, sym.name());
   };
 
@@ -1536,12 +1541,17 @@ void SharedFile<E>::populate_symtab(Context<E> &ctx) {
   u8 *strtab = ctx.buf + ctx.strtab->shdr.sh_offset;
   i64 strtab_off = this->strtab_offset;
 
-  for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
-    Symbol<E> &sym = *this->symbols[i];
+  for (i64 i = 0, j = this->first_global; j < this->elf_syms.size(); i++, j++) {
+    Symbol<E> &sym = *this->symbols[j];
     if (sym.file != this || !sym.write_to_symtab)
       continue;
 
-    *symtab++ = to_output_esym(ctx, sym, strtab_off);
+    U32<E> *xindex = nullptr;
+    if (ctx.symtab_shndx)
+      xindex = (U32<E> *)(ctx.buf + ctx.symtab_shndx->shdr.sh_offset +
+                          (this->global_symtab_idx + i) * 4);
+
+    *symtab++ = to_output_esym(ctx, sym, strtab_off, xindex);
     strtab_off += write_string(strtab + strtab_off, sym.name());
   }
 }

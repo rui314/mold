@@ -75,6 +75,7 @@ std::ostream &operator<<(std::ostream &out, const ElfRel<E> &rel) {
 static constexpr u32 SHN_UNDEF = 0;
 static constexpr u32 SHN_ABS = 0xfff1;
 static constexpr u32 SHN_COMMON = 0xfff2;
+static constexpr u32 SHN_LORESERVE = 0xff00;
 static constexpr u32 SHN_XINDEX = 0xffff;
 
 static constexpr u32 SHT_NULL = 0;
