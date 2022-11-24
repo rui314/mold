@@ -1,3 +1,35 @@
+// This file implements -r or --relocatable. That option forces the linker
+// to combine input object files into another single large object file.
+// Since the behavior of the linker when the option is given is quite
+// different from that of the normal execution mode, we separate code for
+// the feature into this separate file.
+//
+// The --relocatable option isn't used very often. After all, if you want
+// to combine object files into a single file, you could use `ar`.
+// However, some programs use it in a creative manner which is hard to be
+// substituted with static archives, so we need to support this option in
+// the same way as GNU ld does. A notable example is GHC (Glasgow Haskell
+// Compiler). GHC has its own dynamic linker which can load a .o file (as
+// opposed to a .so) into memory. GHC's module is not a shared object file
+// but a combined object file.
+//
+// There are many different ways to combine object files into a single file.
+// The simplest approach would be to just copy all sections from input files
+// to an output file as-is with a few exceptions for singleton sections such
+// as the symbol table or the string table. That works, but that's not
+// compatible with GNU ld.
+//
+// To be compatible with GNU ld, we need to do the followings:
+//
+//  - Regular sections containing opaque data (e.g. ".text" or ".data")
+//    are just copied as-is. Two sections with the same name are merged.
+//
+//  - .symtab, .strtab and .shstrtab are merged.
+//
+//  - COMDAT groups are uniquified.
+//
+//  - Relocations are copied, but we need to fix symbol indices.
+
 #include "mold.h"
 
 #include <tbb/parallel_for_each.h>
