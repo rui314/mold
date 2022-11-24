@@ -2,6 +2,7 @@
 #include "../sha.h"
 
 #include <cctype>
+#include <set>
 #include <shared_mutex>
 #include <span>
 #include <tbb/parallel_for_each.h>
