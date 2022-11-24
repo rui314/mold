@@ -2624,95 +2624,61 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
   if (!std::is_same_v<E, I386> && !std::is_same_v<E, X86_64>)
     return;
 
-  // From binutils: A 4-byte unsigned integer property: A bit is set if it is
-  // set in all relocatable inputs.
-  auto is_and = [](u32 key) {
-    return key >= GNU_PROPERTY_X86_UINT32_AND_LO
-        && key <= GNU_PROPERTY_X86_UINT32_AND_HI;
-  };
-  // From binutils: A 4-byte unsigned integer property: A bit is set if it is
-  // set in any relocatable inputs.
-  auto is_or = [](u32 key) {
-    return key >= GNU_PROPERTY_X86_UINT32_OR_LO
-        && key <= GNU_PROPERTY_X86_UINT32_OR_HI;
-  };
-  // From binutils: A 4-byte unsigned integer property: A bit is set if it is
-  // set in any relocatable inputs and the property is present in all
-  // relocatable inputs.
-  auto is_or_and = [](u32 key) {
-    return key >= GNU_PROPERTY_X86_UINT32_OR_AND_LO
-        && key <= GNU_PROPERTY_X86_UINT32_OR_AND_HI;
+  std::vector<ObjectFile<E> *> files = ctx.objs;
+  std::erase(files, ctx.internal_obj);
+
+  std::set<u32> keys;
+  for (ObjectFile<E> *file : files)
+    for (std::pair<u32, u32> kv : file->gnu_properties)
+      keys.insert(kv.first);
+
+  auto get_value = [](ObjectFile<E> *file, u32 key) -> u32 {
+    auto it = file->gnu_properties.find(key);
+    if (it != file->gnu_properties.end())
+      return it->second;
+    return 0;
   };
 
-  auto merge = [&](const std::vector<std::pair<u32, u32>> &a,
-                   const std::vector<std::pair<u32, u32>> &b,
-                   std::vector<std::pair<u32, u32>> &out) {
-    i64 i = 0, j = 0, a_len = a.size(), b_len = b.size();
-    while (i < a_len || j < b_len) {
-      u32 key, value;
-      bool do_merge = false;
-      if (i < a_len && (j == b_len || a[i].first < b[j].first)) {
-        key = a[i].first;
-        value = a[i].second;
-        i++;
-      } else if (i == a_len || a[i].first > b[j].first) {
-        key = b[j].first;
-        value = b[j].second;
-        j++;
-      } else {
-        do_merge = true;
-        key = a[i].first;
-        value = is_and(key) ? a[i].second & b[j].second
-                            : a[i].second | b[j].second;
-        i++;
-        j++;
+  for (u32 key : keys) {
+    auto has_key = [&](ObjectFile<E> *file) {
+      return file->gnu_properties.contains(key);
+    };
+
+    if (GNU_PROPERTY_X86_UINT32_AND_LO <= key &&
+        key <= GNU_PROPERTY_X86_UINT32_AND_HI) {
+      // An AND property is set if all input objects have the property and
+      // the feature.
+      if (std::all_of(files.begin(), files.end(), has_key)) {
+        properties[key] = 0xffff'ffff;
+        for (ObjectFile<E> *file : files)
+          properties[key] &= get_value(file, key);
       }
-
-      if (!(is_and(key) || is_or(key) || is_or_and(key)))
-        continue;
-
-      if (!is_or(key) && !do_merge)
-        continue;
-
-      out.push_back({key, value});
-    }
-  };
-
-  std::vector<std::pair<u32, u32>> tmp, out;
-
-  bool is_first = true;
-  for (ObjectFile<E> *file : ctx.objs) {
-    if (file == ctx.internal_obj)
-      continue;
-    if (is_first) {
-      out = file->gnu_properties;
-      is_first = false;
-    } else {
-      merge(file->gnu_properties, out, tmp);
-      swap(tmp, out);
-      tmp.clear();
+    } else if (GNU_PROPERTY_X86_UINT32_OR_LO <= key &&
+               key <= GNU_PROPERTY_X86_UINT32_OR_HI) {
+      // An OR property is set if some input object has the feature.
+      for (ObjectFile<E> *file : files)
+        properties[key] |= get_value(file, key);
+    } else if (GNU_PROPERTY_X86_UINT32_OR_AND_LO <= key &&
+               key <= GNU_PROPERTY_X86_UINT32_OR_AND_HI) {
+      // An OR-AND property is set if all input object files have the property
+      // and some of them has the feature.
+      if (std::all_of(files.begin(), files.end(), has_key))
+        for (ObjectFile<E> *file : files)
+          properties[key] |= get_value(file, key);
     }
   }
 
-  u32 cmdline_features = 0;
   if (ctx.arg.z_ibt)
-    cmdline_features |= GNU_PROPERTY_X86_FEATURE_1_IBT;
+    properties[GNU_PROPERTY_X86_FEATURE_1_AND] |= GNU_PROPERTY_X86_FEATURE_1_IBT;
   if (ctx.arg.z_shstk)
-    cmdline_features |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
-  auto it
-      = std::find_if(out.begin(), out.end(), [](const std::pair<u32, u32> &kv) {
-          return kv.first == GNU_PROPERTY_X86_FEATURE_1_AND;
+    properties[GNU_PROPERTY_X86_FEATURE_1_AND] |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
+
+  std::erase_if(properties, [](std::pair<u32, u32> kv) {
+    return kv.second == 0;
   });
-  if (it != out.end())
-    it->second |= cmdline_features;
-  else
-    out.push_back({GNU_PROPERTY_X86_FEATURE_1_AND, cmdline_features});
 
-  erase_if(out, [&](const std::pair<u32, u32> &kv) { return kv.second == 0; });
-  this->properties = std::move(out);
-
-  if (!this->properties.empty())
-    this->shdr.sh_size = 16 + entry_size * this->properties.size();
+  if (!properties.empty())
+    this->shdr.sh_size = 16 + ENTRY_SIZE * properties.size();
 }
 
 template <typename E>
@@ -2720,16 +2686,17 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
   U32<E> *buf = (U32<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
-  buf[0] = 4;                                    // Name size
-  buf[1] = entry_size * this->properties.size(); // Content size
-  buf[2] = NT_GNU_PROPERTY_TYPE_0;               // Type
-  memcpy(buf + 3, "GNU", 4);                     // Name
+  buf[0] = 4;                              // Name size
+  buf[1] = ENTRY_SIZE * properties.size(); // Content size
+  buf[2] = NT_GNU_PROPERTY_TYPE_0;         // Type
+  memcpy(buf + 3, "GNU", 4);               // Name
+
   i64 idx = 4;
-  for (auto [key, value] : this->properties) {
-    buf[idx] = key;                              // Feature type
-    buf[idx + 1] = 4;                            // Feature size
-    buf[idx + 2] = value;                        // Feature flags
-    idx += entry_size / sizeof(U32<E>);
+  for (std::pair<u32, u32> kv : properties) {
+    buf[idx] = kv.first;                   // Feature type
+    buf[idx + 1] = 4;                      // Feature size
+    buf[idx + 2] = kv.second;              // Feature flags
+    idx += ENTRY_SIZE / sizeof(U32<E>);
   }
 }
 

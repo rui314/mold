@@ -98,10 +98,8 @@ static bool is_debug_section(const ElfShdr<E> &shdr, std::string_view name) {
 }
 
 template <typename E>
-void ObjectFile<E>::read_note_gnu_property(
-    Context<E> &ctx,
-    const ElfShdr<E> &shdr,
-    std::vector<std::pair<u32, u32>> &out) {
+void
+ObjectFile<E>::read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr) {
   std::string_view data = this->get_string(ctx, shdr);
 
   while (!data.empty()) {
@@ -121,27 +119,15 @@ void ObjectFile<E>::read_note_gnu_property(
       u32 type = *(U32<E> *)desc.data();
       u32 size = *(U32<E> *)(desc.data() + 4);
       desc = desc.substr(8);
+
       // All currently defined .note.gnu.property use 32-bit values.
-      // We don't know how to handle anything else, so if we encounter one, skip
-      // it.
+      // We don't know how to handle anything else, so if we encounter
+      // one, skip it.
       if (size == 4)
-        out.push_back({type, *(U32<E> *)desc.data()});
+        gnu_properties[type] |= *(U32<E> *)desc.data();
       desc = desc.substr(align_to(size, sizeof(Word<E>)));
     }
   }
-
-  std::sort(out.begin(), out.end());
-  // Merge entries with identical keys.
-  i64 new_i = -1;
-  for (i64 i = 0; i < out.size(); i++) {
-    if (new_i != -1 && out[i].first == out[new_i].first) {
-      out[new_i].second |= out[i].second;
-    } else {
-      new_i++;
-      out[new_i].second = out[i].second;
-    }
-  }
-  out.resize(new_i + 1);
 }
 
 template <typename E>
@@ -213,7 +199,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       }
 
       if (name == ".note.gnu.property") {
-        read_note_gnu_property(ctx, shdr, this->gnu_properties);
+        read_note_gnu_property(ctx, shdr);
         continue;
       }
 
