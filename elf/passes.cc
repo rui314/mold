@@ -822,15 +822,17 @@ void sort_init_fini(Context<E> &ctx) {
     return 65536;
   };
 
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-    if (osec->name == ".init_array" || osec->name == ".preinit_array" ||
-        osec->name == ".fini_array") {
-      if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_REVERSE)
-        std::reverse(osec->members.begin(), osec->members.end());
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (OutputSection<E> *osec = chunk->to_osec()) {
+      if (osec->name == ".init_array" || osec->name == ".preinit_array" ||
+          osec->name == ".fini_array") {
+        if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_REVERSE)
+          std::reverse(osec->members.begin(), osec->members.end());
 
-      sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
-        return get_priority(a) < get_priority(b);
-      });
+        sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
+          return get_priority(a) < get_priority(b);
+        });
+      }
     }
   }
 }
@@ -860,14 +862,16 @@ void sort_ctor_dtor(Context<E> &ctx) {
     return -1;
   };
 
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-    if (osec->name == ".ctors" || osec->name == ".dtors") {
-      if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_REVERSE)
-        std::reverse(osec->members.begin(), osec->members.end());
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (OutputSection<E> *osec = chunk->to_osec()) {
+      if (osec->name == ".ctors" || osec->name == ".dtors") {
+        if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_REVERSE)
+          std::reverse(osec->members.begin(), osec->members.end());
 
-      sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
-        return get_priority(a) < get_priority(b);
-      });
+        sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
+          return get_priority(a) < get_priority(b);
+        });
+      }
     }
   }
 }
@@ -919,18 +923,18 @@ void shuffle_sections(Context<E> &ctx) {
     else
       seed = ((u64)std::random_device()() << 32) | std::random_device()();
 
-    tbb::parallel_for_each(ctx.output_sections,
-                           [&](std::unique_ptr<OutputSection<E>> &osec) {
-      if (is_eligible(*osec))
-        shuffle(osec->members, seed + hash_string(osec->name));
+    tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+      if (OutputSection<E> *osec = chunk->to_osec())
+        if (is_eligible(*osec))
+          shuffle(osec->members, seed + hash_string(osec->name));
     });
     break;
   }
   case SHUFFLE_SECTIONS_REVERSE:
-    tbb::parallel_for_each(ctx.output_sections,
-                           [&](std::unique_ptr<OutputSection<E>> &osec) {
-      if (is_eligible(*osec))
-        std::reverse(osec->members.begin(), osec->members.end());
+    tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+      if (OutputSection<E> *osec = chunk->to_osec())
+        if (is_eligible(*osec))
+          std::reverse(osec->members.begin(), osec->members.end());
     });
     break;
   }
@@ -943,6 +947,7 @@ std::vector<Chunk<E> *> collect_output_sections(Context<E> &ctx) {
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
     if (!osec->members.empty())
       vec.push_back(osec.get());
+
   for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
     if (osec->shdr.sh_size)
       vec.push_back(osec.get());
@@ -968,8 +973,11 @@ void compute_section_sizes(Context<E> &ctx) {
     std::span<InputSection<E> *> members;
   };
 
-  tbb::parallel_for_each(ctx.output_sections,
-                         [&](std::unique_ptr<OutputSection<E>> &osec) {
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    OutputSection<E> *osec = chunk->to_osec();
+    if (!osec)
+      return;
+
     // This pattern will be processed in the next loop.
     if constexpr (needs_thunk<E>)
       if ((osec->shdr.sh_flags & SHF_EXECINSTR) && !ctx.arg.relocatable)
@@ -1024,8 +1032,9 @@ void compute_section_sizes(Context<E> &ctx) {
   // create_range_extension_thunks is parallelized internally, but the
   // function itself is not thread-safe.
   if constexpr (needs_thunk<E>) {
-    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-      if ((osec->shdr.sh_flags & SHF_EXECINSTR) && !ctx.arg.relocatable) {
+    for (Chunk<E> *chunk : ctx.chunks) {
+      OutputSection<E> *osec = chunk->to_osec();
+      if (osec && (osec->shdr.sh_flags & SHF_EXECINSTR) && !ctx.arg.relocatable) {
         create_range_extension_thunks(ctx, *osec);
 
         for (InputSection<E> *isec : osec->members)
@@ -1035,9 +1044,10 @@ void compute_section_sizes(Context<E> &ctx) {
     }
   }
 
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-    if (u32 align = ctx.arg.section_align[osec->name])
-      osec->shdr.sh_addralign = std::max<u32>(osec->shdr.sh_addralign, align);
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      if (u32 align = ctx.arg.section_align[osec->name])
+        osec->shdr.sh_addralign = std::max<u32>(osec->shdr.sh_addralign, align);
 }
 
 template <typename E>
@@ -1168,11 +1178,13 @@ void create_reloc_sections(Context<E> &ctx) {
   Timer t(ctx, "create_reloc_sections");
 
   // Create .rela.* sections
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections) {
-    RelocSection<E> *r = new RelocSection<E>(ctx, *osec);
-    osec->reloc_sec = r;
-    ctx.chunks.push_back(r);
-    ctx.chunk_pool.emplace_back(r);
+  for (i64 i = 0, end = ctx.chunks.size(); i < end; i++) {
+    if (OutputSection<E> *osec = ctx.chunks[i]->to_osec()) {
+      RelocSection<E> *r = new RelocSection<E>(ctx, *osec);
+      osec->reloc_sec = r;
+      ctx.chunks.push_back(r);
+      ctx.chunk_pool.emplace_back(r);
+    }
   }
 }
 
@@ -1210,9 +1222,9 @@ template <typename E>
 void construct_relr(Context<E> &ctx) {
   Timer t(ctx, "construct_relr");
 
-  tbb::parallel_for_each(ctx.output_sections,
-                         [&](std::unique_ptr<OutputSection<E>> &osec) {
-    osec->construct_relr(ctx);
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    if (OutputSection<E> *osec = chunk->to_osec())
+      osec->construct_relr(ctx);
   });
 
   ctx.got->construct_relr(ctx);

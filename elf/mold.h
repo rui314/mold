@@ -389,6 +389,7 @@ class Chunk {
 public:
   virtual ~Chunk() = default;
   virtual ChunkKind kind() { return SYNTHETIC; }
+  virtual OutputSection<E> *to_osec() { return nullptr; }
   virtual void copy_buf(Context<E> &ctx) {}
   virtual void write_to(Context<E> &ctx, u8 *buf) { unreachable(); }
   virtual void update_shdr(Context<E> &ctx) {}
@@ -486,6 +487,7 @@ public:
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
   ChunkKind kind() override { return OUTPUT_SECTION; }
+  OutputSection<E> *to_osec() override { return this; }
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
 

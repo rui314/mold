@@ -360,9 +360,10 @@ static void show_stats(Context<E> &ctx) {
 
   if constexpr (needs_thunk<E>) {
     static Counter thunk_bytes("thunk_bytes");
-    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-      for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec->thunks)
-        thunk_bytes += thunk->size();
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (OutputSection<E> *osec = chunk->to_osec())
+        for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec->thunks)
+          thunk_bytes += thunk->size();
   }
 
   Counter::print();

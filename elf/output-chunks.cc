@@ -74,9 +74,9 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
           sym->file && !sym->file->is_dso)
         return sym->get_addr(ctx);
 
-    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-      if (osec->name == ".text")
-        return osec->shdr.sh_addr;
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (chunk->name == ".text")
+        return chunk->shdr.sh_addr;
     return 0;
   };
 
@@ -539,8 +539,9 @@ void RelrDynSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
 
   i64 n = ctx.got->relr.size();
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-    n += osec->relr.size();
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      n += osec->relr.size();
   this->shdr.sh_size = n * sizeof(Word<E>);
 }
 
@@ -551,9 +552,10 @@ void RelrDynSection<E>::copy_buf(Context<E> &ctx) {
   for (u64 val : ctx.got->relr)
     *buf++ = (val & 1) ? val : (ctx.got->shdr.sh_addr + val);
 
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-    for (u64 val : osec->relr)
-      *buf++ = (val & 1) ? val : (osec->shdr.sh_addr + val);
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      for (u64 val : osec->relr)
+        *buf++ = (val & 1) ? val : (osec->shdr.sh_addr + val);
 }
 
 template <typename E>

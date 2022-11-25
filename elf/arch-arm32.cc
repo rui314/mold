@@ -670,9 +670,10 @@ void fixup_arm_exidx_section(Context<E> &ctx) {
   Timer t(ctx, "fixup_arm_exidx_section");
 
   auto find_exidx = [&]() -> OutputSection<E> * {
-    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-      if (osec->shdr.sh_type == SHT_ARM_EXIDX)
-        return osec.get();
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (OutputSection<E> *osec = chunk->to_osec())
+        if (osec->shdr.sh_type == SHT_ARM_EXIDX)
+          return osec;
     return nullptr;
   };
 
@@ -686,14 +687,14 @@ void fixup_arm_exidx_section(Context<E> &ctx) {
   // .ARM.exidx's sh_link should be set to the .text section index.
   // Runtime doesn't care about it, but the binutils's strip command does.
   if (ctx.shdr) {
-    auto find_text = [&]() -> OutputSection<E> * {
-      for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-        if (osec->name == ".text")
-          return osec.get();
+    auto find_text = [&]() -> Chunk<E> * {
+      for (Chunk<E> *chunk : ctx.chunks)
+        if (chunk->name == ".text")
+          return chunk;
       return nullptr;
     };
 
-    if (OutputSection<E> *text = find_text()) {
+    if (Chunk<E> *text = find_text()) {
       exidx->shdr.sh_link = text->shndx;
       ctx.shdr->copy_buf(ctx);
     }
