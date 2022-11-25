@@ -6,6 +6,7 @@
 #include <optional>
 #include <random>
 #include <regex>
+#include <shared_mutex>
 #include <tbb/parallel_for_each.h>
 #include <tbb/partitioner.h>
 #include <unordered_set>
