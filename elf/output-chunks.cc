@@ -907,111 +907,6 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-static std::string_view
-get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
-  if (ctx.arg.relocatable)
-    return name;
-
-  if (ctx.arg.unique && ctx.arg.unique->match(name))
-    return name;
-
-  if ((name == ".rodata" || name.starts_with(".rodata.")) && (flags & SHF_MERGE))
-    return (flags & SHF_STRINGS) ? ".rodata.str" : ".rodata.cst";
-  if (name.starts_with(".ARM.exidx"))
-    return ".ARM.exidx";
-  if (name.starts_with(".ARM.extab"))
-    return ".ARM.extab";
-
-  if (ctx.arg.z_keep_text_section_prefix) {
-    static std::string_view prefixes[] = {
-      ".text.hot.", ".text.unknown.", ".text.unlikely.", ".text.startup.",
-      ".text.exit."
-    };
-
-    for (std::string_view prefix : prefixes) {
-      std::string_view stem = prefix.substr(0, prefix.size() - 1);
-      if (name == stem || name.starts_with(prefix))
-        return stem;
-    }
-  }
-
-  static std::string_view prefixes[] = {
-    ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
-    ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
-    ".ctors.", ".dtors.", ".gnu.warning.",
-  };
-
-  for (std::string_view prefix : prefixes) {
-    std::string_view stem = prefix.substr(0, prefix.size() - 1);
-    if (name == stem || name.starts_with(prefix))
-      return stem;
-  }
-
-  return name;
-}
-
-template <typename E>
-static u64 canonicalize_type(std::string_view name, u64 type) {
-  if (type == SHT_PROGBITS) {
-    if (name == ".init_array" || name.starts_with(".init_array."))
-      return SHT_INIT_ARRAY;
-    if (name == ".fini_array" || name.starts_with(".fini_array."))
-      return SHT_FINI_ARRAY;
-  }
-
-  if constexpr (std::is_same_v<E, X86_64>)
-    if (type == SHT_X86_64_UNWIND)
-      return SHT_PROGBITS;
-
-  return type;
-}
-
-template <typename E>
-OutputSection<E> *
-OutputSection<E>::get_instance(Context<E> &ctx, std::string_view name,
-                               u64 type, u64 flags) {
-  name = get_output_name(ctx, name, flags);
-  type = canonicalize_type<E>(name, type);
-  flags &= ~(u64)SHF_COMPRESSED;
-
-  if (!ctx.arg.relocatable)
-    flags &= ~(u64)SHF_GROUP & ~(u64)SHF_LINK_ORDER & ~(u64)SHF_GNU_RETAIN;
-
-  // .init_array is usually writable. We don't want to create multiple
-  // .init_array output sections, so make it always writable.
-  // So is .fini_array.
-  if (type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY)
-    flags |= SHF_WRITE;
-
-  auto find = [&]() -> OutputSection<E> * {
-    for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-      if (name == osec->name && type == osec->shdr.sh_type &&
-          flags == osec->shdr.sh_flags)
-        return osec.get();
-    return nullptr;
-  };
-
-  static std::shared_mutex mu;
-
-  // Search for an exiting output section.
-  {
-    std::shared_lock lock(mu);
-    if (OutputSection<E> *osec = find())
-      return osec;
-  }
-
-  // Create a new output section.
-  std::unique_lock lock(mu);
-  if (OutputSection<E> *osec = find())
-    return osec;
-
-  OutputSection<E> *osec = new OutputSection(name, type, flags,
-                                             ctx.output_sections.size());
-  ctx.output_sections.emplace_back(osec);
-  return osec;
-}
-
-template <typename E>
 void OutputSection<E>::copy_buf(Context<E> &ctx) {
   if (this->shdr.sh_type != SHT_NOBITS)
     write_to(ctx, ctx.buf + this->shdr.sh_offset);
@@ -1928,6 +1823,50 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
     else
       table[i] = hashes[i] & ~1;
   }
+}
+
+template <typename E>
+std::string_view
+get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
+  if (ctx.arg.relocatable)
+    return name;
+
+  if (ctx.arg.unique && ctx.arg.unique->match(name))
+    return name;
+
+  if ((name == ".rodata" || name.starts_with(".rodata.")) && (flags & SHF_MERGE))
+    return (flags & SHF_STRINGS) ? ".rodata.str" : ".rodata.cst";
+  if (name.starts_with(".ARM.exidx"))
+    return ".ARM.exidx";
+  if (name.starts_with(".ARM.extab"))
+    return ".ARM.extab";
+
+  if (ctx.arg.z_keep_text_section_prefix) {
+    static std::string_view prefixes[] = {
+      ".text.hot.", ".text.unknown.", ".text.unlikely.", ".text.startup.",
+      ".text.exit."
+    };
+
+    for (std::string_view prefix : prefixes) {
+      std::string_view stem = prefix.substr(0, prefix.size() - 1);
+      if (name == stem || name.starts_with(prefix))
+        return stem;
+    }
+  }
+
+  static std::string_view prefixes[] = {
+    ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
+    ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
+    ".ctors.", ".dtors.", ".gnu.warning.",
+  };
+
+  for (std::string_view prefix : prefixes) {
+    std::string_view stem = prefix.substr(0, prefix.size() - 1);
+    if (name == stem || name.starts_with(prefix))
+      return stem;
+  }
+
+  return name;
 }
 
 template <typename E>

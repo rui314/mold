@@ -546,10 +546,7 @@ int elf_main(int argc, char **argv) {
     ppc64v1_rewrite_opd(ctx);
 
   // Bin input sections into output sections.
-  bin_sections(ctx);
-
-  // Get a list of output sections.
-  append(ctx.chunks, collect_output_sections(ctx));
+  create_output_sections(ctx);
 
   // Add synthetic symbols such as __ehdr_start or __end.
   add_synthetic_symbols(ctx);

@@ -55,9 +55,6 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
   // addends are in relocations.
   if constexpr (!is_rela<E>)
     uncompress(ctx);
-
-  output_section =
-    OutputSection<E>::get_instance(ctx, name, shdr().sh_type, shdr().sh_flags);
 }
 
 template <typename E>

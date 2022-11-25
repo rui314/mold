@@ -382,46 +382,87 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
   return vec;
 }
 
-// So far, each input section has a pointer to its corresponding
-// output section, but there's no reverse edge to get a list of
-// input sections from an output section. This function creates it.
-//
-// An output section may contain millions of input sections.
-// So, we append input sections to output sections in parallel.
 template <typename E>
-void bin_sections(Context<E> &ctx) {
-  Timer t(ctx, "bin_sections");
+static u64 canonicalize_type(std::string_view name, u64 type) {
+  if (type == SHT_PROGBITS) {
+    if (name == ".init_array" || name.starts_with(".init_array."))
+      return SHT_INIT_ARRAY;
+    if (name == ".fini_array" || name.starts_with(".fini_array."))
+      return SHT_FINI_ARRAY;
+  }
 
-  if (ctx.objs.empty())
-    return;
+  if constexpr (std::is_same_v<E, X86_64>)
+    if (type == SHT_X86_64_UNWIND)
+      return SHT_PROGBITS;
+  return type;
+}
 
-  static constexpr i64 num_shards = 128;
-  i64 unit = (ctx.objs.size() + num_shards - 1) / num_shards;
-  std::vector<std::span<ObjectFile<E> *>> slices = split(ctx.objs, unit);
+template <typename E>
+static OutputSectionKey
+get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
+  const ElfShdr<E> &shdr = isec.shdr();
+  std::string_view name = get_output_name(ctx, isec.name(), shdr.sh_flags);
+  u64 type = canonicalize_type<E>(name, shdr.sh_type);
+  u64 flags = shdr.sh_flags & ~(u64)SHF_COMPRESSED;
 
-  i64 num_osec = ctx.output_sections.size();
+  if (!ctx.arg.relocatable)
+    flags &= ~(u64)SHF_GROUP & ~(u64)SHF_LINK_ORDER & ~(u64)SHF_GNU_RETAIN;
 
-  std::vector<std::vector<std::vector<InputSection<E> *>>> groups(slices.size());
-  for (i64 i = 0; i < groups.size(); i++)
-    groups[i].resize(num_osec);
+  // .init_array is usually writable. We don't want to create multiple
+  // .init_array output sections, so make it always writable.
+  // So is .fini_array.
+  if (type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY)
+    flags |= SHF_WRITE;
+  return {name, type, flags};
+}
 
-  tbb::parallel_for((i64)0, (i64)slices.size(), [&](i64 i) {
-    for (ObjectFile<E> *file : slices[i])
-      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-        if (isec && isec->is_alive)
-          groups[i][isec->output_section->idx].push_back(isec.get());
+// Create output sections for input sections.
+template <typename E>
+void create_output_sections(Context<E> &ctx) {
+  Timer t(ctx, "create_output_sections");
+
+  // Instantiate output sections
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (isec && isec->is_alive) {
+        typename decltype(ctx.output_section_map)::accessor acc;
+        OutputSectionKey key = get_output_section_key(ctx, *isec);
+        bool inserted = ctx.output_section_map.insert(acc, key);
+
+        OutputSection<E> &osec = acc->second;
+        isec->output_section = &osec;
+
+        if (inserted) {
+          osec.name = key.name;
+          osec.shdr.sh_type = key.type;
+          osec.shdr.sh_flags = key.flags;
+        }
+      }
+    }
   });
 
-  std::vector<i64> sizes(num_osec);
+  // Add input sections to output sections
+  for (ObjectFile<E> *file : ctx.objs)
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (isec && isec->is_alive)
+        isec->output_section->members.push_back(isec.get());
 
-  for (std::span<std::vector<InputSection<E> *>> group : groups)
-    for (i64 i = 0; i < group.size(); i++)
-      sizes[i] += group[i].size();
+  // Add output sections and mergeable sections to ctx.chunks
+  i64 sz = ctx.chunks.size();
+  for (std::pair<const OutputSectionKey, OutputSection<E>> &kv :
+         ctx.output_section_map)
+    ctx.chunks.push_back(&kv.second);
 
-  tbb::parallel_for((i64)0, num_osec, [&](i64 j) {
-    ctx.output_sections[j]->members.reserve(sizes[j]);
-    for (i64 i = 0; i < groups.size(); i++)
-      append(ctx.output_sections[j]->members, groups[i][j]);
+  for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
+    if (osec->shdr.sh_size)
+      ctx.chunks.push_back(osec.get());
+
+  // Sections are added to the section lists in an arbitrary order
+  // because they are created in parallel. Sort them to to make the
+  // output deterministic.
+  sort(ctx.chunks.begin() + sz, ctx.chunks.end(), [](Chunk<E> *x, Chunk<E> *y) {
+    return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
+           std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
   });
 }
 
@@ -938,28 +979,6 @@ void shuffle_sections(Context<E> &ctx) {
     });
     break;
   }
-}
-
-template <typename E>
-std::vector<Chunk<E> *> collect_output_sections(Context<E> &ctx) {
-  std::vector<Chunk<E> *> vec;
-
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.output_sections)
-    if (!osec->members.empty())
-      vec.push_back(osec.get());
-
-  for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
-    if (osec->shdr.sh_size)
-      vec.push_back(osec.get());
-
-  // Sections are added to the section lists in an arbitrary order because
-  // they are created in parallel.
-  // Sort them to to make the output deterministic.
-  sort(vec, [](Chunk<E> *x, Chunk<E> *y) {
-    return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
-           std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
-  });
-  return vec;
 }
 
 template <typename E>
@@ -2229,7 +2248,7 @@ template void register_section_pieces(Context<E> &);
 template void eliminate_comdats(Context<E> &);
 template void convert_common_symbols(Context<E> &);
 template void compute_merged_section_sizes(Context<E> &);
-template void bin_sections(Context<E> &);
+template void create_output_sections(Context<E> &);
 template void add_synthetic_symbols(Context<E> &);
 template void check_cet_errors(Context<E> &);
 template void print_dependencies(Context<E> &);
@@ -2239,7 +2258,6 @@ template void check_duplicate_symbols(Context<E> &);
 template void sort_init_fini(Context<E> &);
 template void sort_ctor_dtor(Context<E> &);
 template void shuffle_sections(Context<E> &);
-template std::vector<Chunk<E> *> collect_output_sections(Context<E> &);
 template void compute_section_sizes(Context<E> &);
 template void sort_output_sections(Context<E> &);
 template void claim_unresolved_symbols(Context<E> &);

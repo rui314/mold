@@ -137,9 +137,7 @@ template <typename E>
 void combine_objects(Context<E> &ctx) {
   compute_merged_section_sizes(ctx);
 
-  bin_sections(ctx);
-
-  append(ctx.chunks, collect_output_sections(ctx));
+  create_output_sections(ctx);
 
   r_create_synthetic_sections(ctx);
 

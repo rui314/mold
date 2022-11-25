@@ -79,6 +79,10 @@ void cleanup();
 void install_signal_handler();
 i64 get_default_thread_count();
 
+static u64 combine_hash(u64 a, u64 b) {
+  return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
+}
+
 //
 // Error output
 //

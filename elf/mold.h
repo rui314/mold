@@ -373,6 +373,9 @@ template <typename E>
 bool is_relro(Context<E> &ctx, Chunk<E> *chunk);
 
 template <typename E>
+std::string_view get_output_name(Context<E> &ctx, std::string_view name, u64 flags);
+
+template <typename E>
 void write_plt_header(Context<E> &ctx, u8 *buf);
 
 template <typename E>
@@ -483,9 +486,6 @@ public:
 template <typename E>
 class OutputSection : public Chunk<E> {
 public:
-  static OutputSection *
-  get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
-
   ChunkKind kind() override { return OUTPUT_SECTION; }
   OutputSection<E> *to_osec() override { return this; }
   void copy_buf(Context<E> &ctx) override;
@@ -495,21 +495,12 @@ public:
   void populate_symtab(Context<E> &ctx) override;
 
   std::vector<InputSection<E> *> members;
-  u32 idx;
 
   void construct_relr(Context<E> &ctx);
   std::vector<u64> relr;
 
   std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
   RelocSection<E> *reloc_sec = nullptr;
-
-private:
-  OutputSection(std::string_view name, u32 type, u64 flags, u32 idx)
-    : idx(idx) {
-    this->name = name;
-    this->shdr.sh_type = type;
-    this->shdr.sh_flags = flags;
-  }
 };
 
 template <typename E>
@@ -1440,7 +1431,7 @@ template <typename E> void register_section_pieces(Context<E> &);
 template <typename E> void eliminate_comdats(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void compute_merged_section_sizes(Context<E> &);
-template <typename E> void bin_sections(Context<E> &);
+template <typename E> void create_output_sections(Context<E> &);
 template <typename E> void add_synthetic_symbols(Context<E> &);
 template <typename E> void check_cet_errors(Context<E> &);
 template <typename E> void print_dependencies(Context<E> &);
@@ -1451,8 +1442,6 @@ template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> void sort_ctor_dtor(Context<E> &);
 template <typename E> void shuffle_sections(Context<E> &);
-template <typename E> std::vector<Chunk<E> *>
-collect_output_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
 template <typename E> void sort_output_sections(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
@@ -1591,6 +1580,25 @@ struct SectionOrder {
   enum { NONE, SECTION, GROUP, ADDR, ALIGN, SYMBOL } type = NONE;
   std::string name;
   u64 value = 0;
+};
+
+struct OutputSectionKey {
+  std::string_view name;
+  u64 type;
+  u64 flags;
+};
+
+struct OutputSectionKeyCompare {
+  static size_t hash(const OutputSectionKey &k) {
+    u64 h = hash_string(k.name);
+    h = combine_hash(h, std::hash<u64>{}(k.type));
+    h = combine_hash(h, std::hash<u64>{}(k.flags));
+    return h;
+  }
+
+  static bool equal(const OutputSectionKey &a, const OutputSectionKey &b) {
+    return a.name == b.name && a.type == b.type && a.flags == b.flags;
+  }
 };
 
 // Context represents a context object for each invocation of the linker.
@@ -1745,7 +1753,8 @@ struct Context {
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
   tbb::concurrent_hash_map<std::string_view, ComdatGroup, HashCmp> comdat_groups;
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
-  std::vector<std::unique_ptr<OutputSection<E>>> output_sections;
+  tbb::concurrent_hash_map<OutputSectionKey, OutputSection<E>,
+                           OutputSectionKeyCompare> output_section_map;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
   tbb::concurrent_vector<std::function<void()>> on_exit;
