@@ -51,12 +51,6 @@ template <typename E> struct Context;
 template <typename E> struct FdeRecord;
 template <typename E> class RelocSection;
 
-template <typename E> class RChunk;
-template <typename E> class ROutputEhdr;
-template <typename E> class ROutputShdr;
-template <typename E> class RStrtabSection;
-template <typename E> class RSymtabSection;
-
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
@@ -1824,14 +1818,7 @@ struct Context {
   Chunk<E> *debug_addr = nullptr;
   Chunk<E> *debug_rnglists = nullptr;
 
-  // For --relocatable
-  std::vector<RChunk<E> *> r_chunks;
-  ROutputEhdr<E> *r_ehdr = nullptr;
-  ROutputShdr<E> *r_shdr = nullptr;
-  RStrtabSection<E> *r_shstrtab = nullptr;
-  RStrtabSection<E> *r_strtab = nullptr;
-  RSymtabSection<E> *r_symtab = nullptr;
-
+  // For thread-local variables
   u64 tls_begin = 0;
   u64 tp_addr = 0;
 
