@@ -397,6 +397,16 @@ static u64 canonicalize_type(std::string_view name, u64 type) {
   return type;
 }
 
+struct OutputSectionKey {
+  std::string_view name;
+  u64 type;
+  u64 flags;
+
+  bool operator==(const OutputSectionKey &other) const {
+    return name == other.name && type == other.type && flags == other.flags;
+  }
+};
+
 template <typename E>
 static OutputSectionKey
 get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
@@ -421,23 +431,43 @@ template <typename E>
 void create_output_sections(Context<E> &ctx) {
   Timer t(ctx, "create_output_sections");
 
+  struct Cmp {
+    size_t operator()(const OutputSectionKey &k) const {
+      u64 h = hash_string(k.name);
+      h = combine_hash(h, std::hash<u64>{}(k.type));
+      h = combine_hash(h, std::hash<u64>{}(k.flags));
+      return h;
+    }
+  };
+
+  std::unordered_map<OutputSectionKey, OutputSection<E> *, Cmp> map;
+  std::shared_mutex mu;
+
   // Instantiate output sections
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
-      if (isec && isec->is_alive) {
-        typename decltype(ctx.output_section_map)::accessor acc;
-        OutputSectionKey key = get_output_section_key(ctx, *isec);
-        bool inserted = ctx.output_section_map.insert(acc, key);
+      if (!isec || !isec->is_alive)
+        continue;
 
-        OutputSection<E> &osec = acc->second;
-        isec->output_section = &osec;
+      OutputSectionKey key = get_output_section_key(ctx, *isec);
 
-        if (inserted) {
-          osec.name = key.name;
-          osec.shdr.sh_type = key.type;
-          osec.shdr.sh_flags = key.flags;
+      {
+        std::shared_lock lock(mu);
+        auto it = map.find(key);
+        if (it != map.end()) {
+          isec->output_section = it->second;
+          continue;
         }
       }
+
+      std::unique_ptr<OutputSection<E>> osec =
+        std::make_unique<OutputSection<E>>(key.name, key.type, key.flags);
+      std::unique_lock lock(mu);
+
+      auto [it, inserted] = map.insert({key, osec.get()});
+      isec->output_section = it->second;
+      if (inserted)
+        ctx.osec_pool.emplace_back(std::move(osec));
     }
   });
 
@@ -448,22 +478,23 @@ void create_output_sections(Context<E> &ctx) {
         isec->output_section->members.push_back(isec.get());
 
   // Add output sections and mergeable sections to ctx.chunks
-  i64 sz = ctx.chunks.size();
-  for (std::pair<const OutputSectionKey, OutputSection<E>> &kv :
-         ctx.output_section_map)
-    ctx.chunks.push_back(&kv.second);
+  std::vector<Chunk<E> *> vec;
+  for (std::pair<const OutputSectionKey, OutputSection<E> *> &kv : map)
+    vec.push_back(kv.second);
 
   for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
     if (osec->shdr.sh_size)
-      ctx.chunks.push_back(osec.get());
+      vec.push_back(osec.get());
 
   // Sections are added to the section lists in an arbitrary order
   // because they are created in parallel. Sort them to to make the
   // output deterministic.
-  sort(ctx.chunks.begin() + sz, ctx.chunks.end(), [](Chunk<E> *x, Chunk<E> *y) {
+  sort(vec, [](Chunk<E> *x, Chunk<E> *y) {
     return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
            std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
   });
+
+  append(ctx.chunks, vec);
 }
 
 // Create a dummy object file containing linker-synthesized

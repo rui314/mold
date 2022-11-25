@@ -486,6 +486,12 @@ public:
 template <typename E>
 class OutputSection : public Chunk<E> {
 public:
+  OutputSection(std::string_view name, u32 type, u64 flags) {
+    this->name = name;
+    this->shdr.sh_type = type;
+    this->shdr.sh_flags = flags;
+  }
+
   ChunkKind kind() override { return OUTPUT_SECTION; }
   OutputSection<E> *to_osec() override { return this; }
   void copy_buf(Context<E> &ctx) override;
@@ -1582,25 +1588,6 @@ struct SectionOrder {
   u64 value = 0;
 };
 
-struct OutputSectionKey {
-  std::string_view name;
-  u64 type;
-  u64 flags;
-};
-
-struct OutputSectionKeyCompare {
-  static size_t hash(const OutputSectionKey &k) {
-    u64 h = hash_string(k.name);
-    h = combine_hash(h, std::hash<u64>{}(k.type));
-    h = combine_hash(h, std::hash<u64>{}(k.flags));
-    return h;
-  }
-
-  static bool equal(const OutputSectionKey &a, const OutputSectionKey &b) {
-    return a.name == b.name && a.type == b.type && a.flags == b.flags;
-  }
-};
-
 // Context represents a context object for each invocation of the linker.
 // It contains command line flags, pointers to singleton objects
 // (such as linker-synthesized output sections), unique_ptrs for
@@ -1753,8 +1740,6 @@ struct Context {
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
   tbb::concurrent_hash_map<std::string_view, ComdatGroup, HashCmp> comdat_groups;
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
-  tbb::concurrent_hash_map<OutputSectionKey, OutputSection<E>,
-                           OutputSectionKeyCompare> output_section_map;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
   tbb::concurrent_vector<std::function<void()>> on_exit;
@@ -1764,6 +1749,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
   tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> chunk_pool;
+  tbb::concurrent_vector<std::unique_ptr<OutputSection<E>>> osec_pool;
 
   // Symbol auxiliary data
   std::vector<SymbolAux> symbol_aux;
