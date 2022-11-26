@@ -3044,11 +3044,11 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
           buf[j].r_sym = frag->output_section.shndx;
 
           if constexpr (is_rela<E>) {
-            buf[j].r_addend = frag->offset + sym.value;
+            buf[j].r_addend = frag->offset + sym.value + r.r_addend;
           } else if (ctx.arg.relocatable) {
             u8 *loc = ctx.buf + isec.output_section->shdr.sh_offset +
                       isec.offset + r.r_offset;
-            write_addend(loc, frag->offset + sym.value, r);
+            write_addend(loc, frag->offset + sym.value + get_addend(isec, r), r);
           }
         } else {
           InputSection<E> *target = sym.get_input_section();
