@@ -2427,9 +2427,6 @@ std::pair<SectionFragment<E> *, i64>
 MergeableSection<E>::get_fragment(i64 offset) {
   std::vector<u32> &vec = frag_offsets;
   auto it = std::upper_bound(vec.begin(), vec.end(), offset);
-  if (it == vec.begin())
-    return {nullptr, 0};
-
   i64 idx = it - 1 - vec.begin();
   return {fragments[idx], offset - vec[idx]};
 }

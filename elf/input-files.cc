@@ -742,8 +742,8 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
       i64 r_addend = get_addend(*isec, r);
 
       SectionFragment<E> *frag;
-      i64 frag_offset;
-      std::tie(frag, frag_offset) = m->get_fragment(esym.st_value + r_addend);
+      i64 in_frag_offset;
+      std::tie(frag, in_frag_offset) = m->get_fragment(esym.st_value + r_addend);
 
       if (!frag)
         Fatal(ctx) << *this << ": bad relocation at " << r.r_sym;
@@ -754,8 +754,7 @@ void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
       sym.sym_idx = r.r_sym;
       sym.visibility = STV_HIDDEN;
       sym.set_frag(frag);
-      sym.value = frag_offset - r_addend;
-
+      sym.value = in_frag_offset - r_addend;
       r.r_sym = this->elf_syms.size() + idx;
       idx++;
     }
