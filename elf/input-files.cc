@@ -191,7 +191,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       // area in GNU linkers. We ignore that section because silently
       // making the stack area executable is too dangerous. Tell our
       // users about the difference if that matters.
-      if (name == ".note.GNU-stack") {
+      if (name == ".note.GNU-stack" && !ctx.arg.relocatable) {
         if (shdr.sh_flags & SHF_EXECINSTR) {
           if (!ctx.arg.z_execstack && !ctx.arg.z_execstack_if_needed)
             Warn(ctx) << *this << ": this file may cause a segmentation"
