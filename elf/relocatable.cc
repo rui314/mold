@@ -165,9 +165,19 @@ void combine_objects(Context<E> &ctx) {
   copy_chunks(ctx);
   clear_padding(ctx);
   ctx.output_file->close(ctx);
+  ctx.checkpoint();
 
   if (ctx.arg.print_map)
     print_map(ctx);
+
+  if (ctx.arg.stats)
+    show_stats(ctx);
+
+  if (ctx.arg.perf)
+    print_timer_records(ctx.timer_records);
+
+  if (ctx.arg.quick_exit)
+    _exit(0);
 }
 
 using E = MOLD_TARGET;

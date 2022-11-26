@@ -2288,6 +2288,74 @@ void write_dependency_file(Context<E> &ctx) {
   out.close();
 }
 
+template <typename E>
+void show_stats(Context<E> &ctx) {
+  for (ObjectFile<E> *obj : ctx.objs) {
+    static Counter defined("defined_syms");
+    defined += obj->first_global - 1;
+
+    static Counter undefined("undefined_syms");
+    undefined += obj->symbols.size() - obj->first_global;
+
+    for (std::unique_ptr<InputSection<E>> &sec : obj->sections) {
+      if (!sec || !sec->is_alive)
+        continue;
+
+      static Counter alloc("reloc_alloc");
+      static Counter nonalloc("reloc_nonalloc");
+
+      if (sec->shdr().sh_flags & SHF_ALLOC)
+        alloc += sec->get_rels(ctx).size();
+      else
+        nonalloc += sec->get_rels(ctx).size();
+    }
+
+    static Counter comdats("comdats");
+    comdats += obj->comdat_groups.size();
+
+    static Counter removed_comdats("removed_comdat_mem");
+    for (ComdatGroupRef<E> &ref : obj->comdat_groups)
+      if (ref.group->owner != obj->priority)
+        removed_comdats += ref.members.size();
+
+    static Counter num_cies("num_cies");
+    num_cies += obj->cies.size();
+
+    static Counter num_unique_cies("num_unique_cies");
+    for (CieRecord<E> &cie : obj->cies)
+      if (cie.is_leader)
+        num_unique_cies++;
+
+    static Counter num_fdes("num_fdes");
+    num_fdes +=  obj->fdes.size();
+  }
+
+  static Counter num_bytes("total_input_bytes");
+  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool)
+    num_bytes += mf->size;
+
+  static Counter num_input_sections("input_sections");
+  for (ObjectFile<E> *file : ctx.objs)
+    num_input_sections += file->sections.size();
+
+  static Counter num_output_chunks("output_chunks", ctx.chunks.size());
+  static Counter num_objs("num_objs", ctx.objs.size());
+  static Counter num_dsos("num_dsos", ctx.dsos.size());
+
+  if constexpr (needs_thunk<E>) {
+    static Counter thunk_bytes("thunk_bytes");
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (OutputSection<E> *osec = chunk->to_osec())
+        for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec->thunks)
+          thunk_bytes += thunk->size();
+  }
+
+  Counter::print();
+
+  for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
+    sec->print_stats(ctx);
+}
+
 using E = MOLD_TARGET;
 
 template void create_internal_file(Context<E> &);
@@ -2326,5 +2394,6 @@ template i64 set_osec_offsets(Context<E> &);
 template void fix_synthetic_symbols(Context<E> &);
 template i64 compress_debug_sections(Context<E> &);
 template void write_dependency_file(Context<E> &);
+template void show_stats(Context<E> &);
 
 } // namespace mold::elf
