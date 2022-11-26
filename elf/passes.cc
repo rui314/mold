@@ -410,6 +410,49 @@ struct OutputSectionKey {
 };
 
 template <typename E>
+std::string_view
+get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
+  if (ctx.arg.relocatable)
+    return name;
+  if (ctx.arg.unique && ctx.arg.unique->match(name))
+    return name;
+  if (flags & SHF_MERGE)
+    return name;
+
+  if (name.starts_with(".ARM.exidx"))
+    return ".ARM.exidx";
+  if (name.starts_with(".ARM.extab"))
+    return ".ARM.extab";
+
+  if (ctx.arg.z_keep_text_section_prefix) {
+    static std::string_view prefixes[] = {
+      ".text.hot.", ".text.unknown.", ".text.unlikely.", ".text.startup.",
+      ".text.exit."
+    };
+
+    for (std::string_view prefix : prefixes) {
+      std::string_view stem = prefix.substr(0, prefix.size() - 1);
+      if (name == stem || name.starts_with(prefix))
+        return stem;
+    }
+  }
+
+  static std::string_view prefixes[] = {
+    ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
+    ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
+    ".ctors.", ".dtors.", ".gnu.warning.",
+  };
+
+  for (std::string_view prefix : prefixes) {
+    std::string_view stem = prefix.substr(0, prefix.size() - 1);
+    if (name == stem || name.starts_with(prefix))
+      return stem;
+  }
+
+  return name;
+}
+
+template <typename E>
 static OutputSectionKey
 get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
   const ElfShdr<E> &shdr = isec.shdr();

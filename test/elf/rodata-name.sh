@@ -1,6 +1,10 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# ARM assembler has a differnet grammar than the others.
+# Concretely speaking, ARM as uses "@" as a start of a comment.
+[ $MACHINE = arm ] && skip
+
 cat <<'EOF' | $CC -c -o $t/a.o -x assembler -
 .globl val1, val2, val3, val4, val5
 
