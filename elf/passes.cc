@@ -8,6 +8,7 @@
 #include <regex>
 #include <shared_mutex>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_sort.h>
 #include <tbb/partitioner.h>
 #include <unordered_set>
 
@@ -490,7 +491,7 @@ void create_output_sections(Context<E> &ctx) {
   // Sections are added to the section lists in an arbitrary order
   // because they are created in parallel. Sort them to to make the
   // output deterministic.
-  sort(vec, [](Chunk<E> *x, Chunk<E> *y) {
+  tbb::parallel_sort(vec.begin(), vec.end(), [](Chunk<E> *x, Chunk<E> *y) {
     return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
            std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
   });
