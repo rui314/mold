@@ -32,6 +32,7 @@
 
 #include "mold.h"
 
+#include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 
 namespace mold::elf {
@@ -60,31 +61,40 @@ static void r_create_synthetic_sections(Context<E> &ctx) {
 // output comdat groups if they are still alive after uniquification.
 template <typename E>
 static void create_comdat_group_sections(Context<E> &ctx) {
-  for (ObjectFile<E> *file : ctx.objs) {
-    for (ComdatGroupRef<E> &ref : file->comdat_groups) {
-      if (ref.group->owner != file->priority)
+  Timer t(ctx, "create_comdat_group_sections");
+
+  std::vector<std::vector<Chunk<E> *>> vec{ctx.objs.size()};
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> &file = *ctx.objs[i];
+
+    for (ComdatGroupRef<E> &ref : file.comdat_groups) {
+      if (ref.group->owner != file.priority)
         continue;
 
-      Symbol<E> *sym = file->symbols[file->elf_sections[ref.sect_idx].sh_info];
+      Symbol<E> *sym = file.symbols[file.elf_sections[ref.sect_idx].sh_info];
       assert(sym);
 
       std::vector<Chunk<E> *> members;
-
-      for (u32 i : ref.members) {
-        const ElfShdr<E> &shdr = file->elf_sections[i];
+      for (u32 j : ref.members) {
+        const ElfShdr<E> &shdr = file.elf_sections[j];
         if (shdr.sh_type == (is_rela<E> ? SHT_RELA : SHT_REL)) {
-          InputSection<E> &isec = *file->sections[shdr.sh_info];
+          InputSection<E> &isec = *file.sections[shdr.sh_info];
           members.push_back(isec.output_section->reloc_sec.get());
         } else {
-          InputSection<E> &isec = *file->sections[i];
+          InputSection<E> &isec = *file.sections[j];
           members.push_back(isec.output_section);
         }
       }
 
-      ComdatGroupSection<E> *sec =
-        new ComdatGroupSection<E>(*sym, std::move(members));
-      ctx.chunks.push_back(sec);
-      ctx.chunk_pool.emplace_back(sec);
+      vec[i].push_back(new ComdatGroupSection<E>(*sym, std::move(members)));
+    }
+  });
+
+  for (std::vector<Chunk<E> *> &vec2 : vec) {
+    for (Chunk<E> *chunk : vec2) {
+      ctx.chunks.push_back(chunk);
+      ctx.chunk_pool.emplace_back(chunk);
     }
   }
 }
