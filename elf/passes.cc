@@ -1230,14 +1230,15 @@ void create_reloc_sections(Context<E> &ctx) {
   Timer t(ctx, "create_reloc_sections");
 
   // Create .rela.* sections
-  for (i64 i = 0, end = ctx.chunks.size(); i < end; i++) {
-    if (OutputSection<E> *osec = ctx.chunks[i]->to_osec()) {
-      RelocSection<E> *r = new RelocSection<E>(ctx, *osec);
-      osec->reloc_sec = r;
-      ctx.chunks.push_back(r);
-      ctx.chunk_pool.emplace_back(r);
-    }
-  }
+  tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
+    if (OutputSection<E> *osec = ctx.chunks[i]->to_osec())
+      osec->reloc_sec.reset(new RelocSection<E>(ctx, *osec));
+  });
+
+  for (i64 i = 0, end = ctx.chunks.size(); i < end; i++)
+    if (OutputSection<E> *osec = ctx.chunks[i]->to_osec())
+      if (RelocSection<E> *x = osec->reloc_sec.get())
+        ctx.chunks.push_back(x);
 }
 
 // Copy chunks to an output file

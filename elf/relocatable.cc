@@ -74,7 +74,7 @@ static void create_comdat_group_sections(Context<E> &ctx) {
         const ElfShdr<E> &shdr = file->elf_sections[i];
         if (shdr.sh_type == (is_rela<E> ? SHT_RELA : SHT_REL)) {
           InputSection<E> &isec = *file->sections[shdr.sh_info];
-          members.push_back(isec.output_section->reloc_sec);
+          members.push_back(isec.output_section->reloc_sec.get());
         } else {
           InputSection<E> &isec = *file->sections[i];
           members.push_back(isec.output_section);

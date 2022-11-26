@@ -500,7 +500,7 @@ public:
   std::vector<u64> relr;
 
   std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
-  RelocSection<E> *reloc_sec = nullptr;
+  std::unique_ptr<RelocSection<E>> reloc_sec;
 };
 
 template <typename E>
