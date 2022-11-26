@@ -1,6 +1,9 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# OneTBB isn't tsan-clean
+nm mold | grep -q '__tsan_init' && skip
+
 seq 1 100000 | sed 's/.*/int x\0 __attribute__((section(".data.\0")));/g' | \
   $CC -c -xc -o $t/a.o -
 
