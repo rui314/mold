@@ -286,15 +286,15 @@ void resolve_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-void register_section_pieces(Context<E> &ctx) {
-  Timer t(ctx, "register_section_pieces");
+void resolve_section_pieces(Context<E> &ctx) {
+  Timer t(ctx, "resolve_section_pieces");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->initialize_mergeable_sections(ctx);
   });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->register_section_pieces(ctx);
+    file->resolve_section_pieces(ctx);
   });
 }
 
@@ -2407,7 +2407,7 @@ template void create_internal_file(Context<E> &);
 template void apply_exclude_libs(Context<E> &);
 template void create_synthetic_sections(Context<E> &);
 template void resolve_symbols(Context<E> &);
-template void register_section_pieces(Context<E> &);
+template void resolve_section_pieces(Context<E> &);
 template void eliminate_comdats(Context<E> &);
 template void convert_common_symbols(Context<E> &);
 template void compute_merged_section_sizes(Context<E> &);

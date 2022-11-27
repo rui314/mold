@@ -1249,7 +1249,7 @@ public:
 
   void parse(Context<E> &ctx);
   void initialize_mergeable_sections(Context<E> &ctx);
-  void register_section_pieces(Context<E> &ctx);
+  void resolve_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
@@ -1442,7 +1442,7 @@ template <typename E> void apply_exclude_libs(Context<E> &);
 template <typename E> void create_synthetic_sections(Context<E> &);
 template <typename E> void set_file_priority(Context<E> &);
 template <typename E> void resolve_symbols(Context<E> &);
-template <typename E> void register_section_pieces(Context<E> &);
+template <typename E> void resolve_section_pieces(Context<E> &);
 template <typename E> void eliminate_comdats(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void compute_merged_section_sizes(Context<E> &);

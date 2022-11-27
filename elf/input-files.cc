@@ -674,7 +674,7 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
 }
 
 template <typename E>
-void ObjectFile<E>::register_section_pieces(Context<E> &ctx) {
+void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
   for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections) {
     if (m) {
       m->fragments.reserve(m->strings.size());

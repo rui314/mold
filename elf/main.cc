@@ -430,7 +430,7 @@ int elf_main(int argc, char **argv) {
   resolve_symbols(ctx);
 
   // Resolve mergeable section pieces to merge them.
-  register_section_pieces(ctx);
+  resolve_section_pieces(ctx);
 
   // Handle --relocatable. Since the linker's behavior is quite different
   // from the normal one when the option is given, the logic is implemented
