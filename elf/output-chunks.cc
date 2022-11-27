@@ -2994,6 +2994,7 @@ RelocSection<E>::RelocSection(Context<E> &ctx, OutputSection<E> &osec)
     this->shdr.sh_type = SHT_REL;
   }
 
+  this->shdr.sh_flags = SHF_INFO_LINK;
   this->shdr.sh_addralign = sizeof(Word<E>);
   this->shdr.sh_entsize = sizeof(ElfRel<E>);
 
