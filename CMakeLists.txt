@@ -228,14 +228,17 @@ endif()
 # If atomics doesn't work by default, add -latomic.
 # We need the flag on riscv, armv6 and m68k.
 include(CheckCXXSourceCompiles)
-check_cxx_source_compiles("#include <cstdint>
+check_cxx_source_compiles("#include <atomic>
 int main() {
-  uint64_t x = 1;
-  __atomic_add_fetch(&x, 0, __ATOMIC_RELAXED);
-  return x;
-}" HAVE_ATOMIC_ADD_FETCH)
+  std::atomic<uint8_t> w1;
+  std::atomic<uint16_t> w2;
+  std::atomic<uint32_t> w4;
+  std::atomic<uint64_t> w8;
 
-if(NOT HAVE_ATOMIC_ADD_FETCH)
+  return ++w1 + ++w2 + ++w4 + ++w8;
+}" HAVE_FULL_ATOMIC_SUPPORT)
+
+if(NOT HAVE_FULL_ATOMIC_SUPPORT)
   target_link_libraries(mold PRIVATE atomic)
 endif()
 
