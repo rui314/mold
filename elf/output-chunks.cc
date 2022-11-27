@@ -3040,28 +3040,24 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       buf[j].r_type = r.r_type;
 
       if (sym.esym().st_type == STT_SECTION) {
+        i64 addend;
+
         if (SectionFragment<E> *frag = sym.get_frag()) {
           buf[j].r_sym = frag->output_section.shndx;
-
-          if constexpr (is_rela<E>) {
-            buf[j].r_addend = frag->offset + sym.value + r.r_addend;
-          } else if (ctx.arg.relocatable) {
-            u8 *loc = ctx.buf + isec.output_section->shdr.sh_offset +
-                      isec.offset + r.r_offset;
-            write_addend(loc, frag->offset + sym.value + get_addend(isec, r), r);
-          }
+          addend = frag->offset + sym.value + get_addend(isec, r);
         } else {
           InputSection<E> *target = sym.get_input_section();
           OutputSection<E> *osec = target->output_section;
           buf[j].r_sym = osec->shndx;
+          addend = get_addend(isec, r) + target->offset;
+        }
 
-          if constexpr (is_rela<E>) {
-            buf[j].r_addend = r.r_addend + target->offset;
-          } else if (ctx.arg.relocatable) {
-            u8 *loc = ctx.buf + isec.output_section->shdr.sh_offset +
-                      isec.offset + r.r_offset;
-            write_addend(loc, get_addend(isec, r) + target->offset, r);
-          }
+        if constexpr (is_rela<E>) {
+          buf[j].r_addend = addend;
+        } else if (ctx.arg.relocatable) {
+          u8 *loc = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset +
+                    r.r_offset;
+          write_addend(loc, addend, r);
         }
       } else {
         if (sym.sym_idx)
