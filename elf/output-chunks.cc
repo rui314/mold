@@ -3028,6 +3028,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
     ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset) + offsets[i];
 
     InputSection<E> &isec = *output_section.members[i];
+    u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
     std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
 
     for (i64 j = 0; j < rels.size(); j++) {
@@ -3052,13 +3053,10 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
           addend = get_addend(isec, r) + target->offset;
         }
 
-        if constexpr (is_rela<E>) {
+        if constexpr (is_rela<E>)
           buf[j].r_addend = addend;
-        } else if (ctx.arg.relocatable) {
-          u8 *loc = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset +
-                    r.r_offset;
-          write_addend(loc, addend, r);
-        }
+        else if (ctx.arg.relocatable)
+          write_addend(base + r.r_offset, addend, r);
       } else {
         if (sym.sym_idx)
           buf[j].r_sym = sym.get_output_sym_idx(ctx);
