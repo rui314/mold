@@ -1660,6 +1660,7 @@ struct Context {
     bool quick_exit = true;
     bool relax = true;
     bool relocatable = false;
+    bool relocatable_merge_sections = false;
     bool repro = false;
     bool rosegment = true;
     bool shared = false;

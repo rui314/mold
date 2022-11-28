@@ -478,6 +478,26 @@ Instead of generating an executable or a shared object file, combine
 input object files to generate another object file that can be used as
 an input to a linker.
 .Pp
+.It Fl -relocatable-merge-sections
+By default,
+.Nm
+doesn't merge input sections by name when merging input object files into a \
+single output object file for
+.Fl r .
+For example,
+.Ar .text.foo
+and
+.Ar .text.bar
+aren't merged for
+.Fl r
+even though they are merged into
+.Ar .text
+according to the default section merging rules.
+.Pp
+This option changes the behavior so that
+.Nm
+merges input sections by name by the default section merging rules.
+.Pp
 .It Fl s , Fl -strip-all
 Omit
 .Li \.symtab

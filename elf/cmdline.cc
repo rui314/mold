@@ -697,6 +697,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.relocatable = true;
       ctx.arg.emit_relocs = true;
       ctx.arg.discard_locals = false;
+    } else if (read_flag("relocatable-merge-sections")) {
+      ctx.arg.relocatable_merge_sections = true;
     } else if (read_flag("perf")) {
       ctx.arg.perf = true;
     } else if (read_flag("pack-dyn-relocs=relr")) {

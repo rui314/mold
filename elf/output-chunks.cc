@@ -1857,7 +1857,9 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 std::string_view
 get_merged_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
-  if (ctx.arg.relocatable || (ctx.arg.unique && ctx.arg.unique->match(name)))
+  if (ctx.arg.relocatable && !ctx.arg.relocatable_merge_sections)
+    return name;
+  if (ctx.arg.unique && ctx.arg.unique->match(name))
     return name;
   if (name == ".rodata" || name.starts_with(".rodata."))
     return (flags & SHF_STRINGS) ? ".rodata.str" : ".rodata.cst";

@@ -412,7 +412,7 @@ struct OutputSectionKey {
 template <typename E>
 std::string_view
 get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
-  if (ctx.arg.relocatable)
+  if (ctx.arg.relocatable && !ctx.arg.relocatable_merge_sections)
     return name;
   if (ctx.arg.unique && ctx.arg.unique->match(name))
     return name;
