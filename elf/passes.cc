@@ -1567,7 +1567,7 @@ void clear_padding(Context<E> &ctx) {
 //
 // .interp and some other linker-synthesized sections are placed at the
 // beginning of a file because they are needed by loader. Especially on
-// a hard drive with spinnning disks, it is important to read these
+// a hard drive with spinning disks, it is important to read these
 // sections in a single seek.
 //
 // .note sections are also placed at the beginning so that they are

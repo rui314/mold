@@ -221,7 +221,7 @@ struct FdeRecord {
   std::atomic_bool is_alive = true;
 };
 
-// A struct to hold taret-dependent input section members.
+// A struct to hold target-dependent input section members.
 template <typename E>
 struct InputSectionExtras {};
 
@@ -1905,7 +1905,7 @@ enum {
   NEEDS_OPD     = 1 << 7,
 };
 
-// A struct to hold taret-dependent symbol members.
+// A struct to hold target-dependent symbol members.
 template <typename E>
 struct SymbolExtras {};
 
@@ -2063,7 +2063,7 @@ public:
   // `is_canonical` is true if this symbol represents a "canonical" PLT.
   // Here is the explanation as to what the canonical PLT is.
   //
-  // In C/C++, the process-wide function pointer equality is guaratneed.
+  // In C/C++, the process-wide function pointer equality is guaranteed.
   // That is, if you take an address of a function `foo`, it's always
   // evaluated to the same address wherever you do that.
   //

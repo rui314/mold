@@ -271,7 +271,7 @@ get_symbols_v1(const void *handle, int nsyms, PluginSymbol *psyms) {
 }
 
 // get_symbols teaches the LTO plugin as to how we resolved symbols.
-// The plugin uses the symbol resolution info to optimizes the program.
+// The plugin uses the symbol resolution info to optimize the program.
 //
 // For example, if a definition in an IR file is not referenced by
 // non-IR objects at all, the plugin may choose to completely inline
@@ -570,7 +570,7 @@ static bool is_llvm(Context<E> &ctx) {
 // Returns true if a given linker plugin supports the get_symbols_v3 API.
 // Any version of LLVM and GCC 12 or newer support it.
 template <typename E>
-static bool suppots_v3_api(Context<E> &ctx) {
+static bool supports_v3_api(Context<E> &ctx) {
   return is_gcc_linker_api_v1 || is_llvm(ctx);
 }
 
@@ -657,7 +657,7 @@ template <typename E>
 std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
   Timer t(ctx, "do_lto");
 
-  if (!ctx.arg.lto_pass2 && !suppots_v3_api(ctx))
+  if (!ctx.arg.lto_pass2 && !supports_v3_api(ctx))
     restart_process(ctx);
 
   assert(phase == 1);
