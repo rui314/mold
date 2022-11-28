@@ -1870,6 +1870,9 @@ struct Context {
 };
 
 template <typename E>
+MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
+
+template <typename E>
 MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path);
 
 template <typename E>

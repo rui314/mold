@@ -27,7 +27,7 @@ namespace mold::elf {
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386).
 template <typename E>
-static MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   auto get_elf_type = [&](u8 *buf) {
     bool is_le = (((EL32Ehdr *)buf)->e_ident[EI_DATA] == ELFDATA2LSB);
     bool is_64;
