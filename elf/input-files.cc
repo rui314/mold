@@ -579,6 +579,13 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 
   // Split sections
   if (sec.shdr().sh_flags & SHF_STRINGS) {
+    if (entsize == 0) {
+      // GHC (Glasgow Haskell Compiler) sometimes creates a mergeable
+      // string section with entsize of 0 instead of 1, though such
+      // entsize is technically wrong. This is a workaround for the issue.
+      entsize = 1;
+    }
+
     while (!data.empty()) {
       size_t end = find_null(data, entsize);
       if (end == data.npos)
@@ -665,7 +672,6 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
   for (i64 i = 0; i < sections.size(); i++) {
     std::unique_ptr<InputSection<E>> &isec = sections[i];
     if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_MERGE) &&
-        isec->sh_size && isec->shdr().sh_entsize &&
         isec->relsec_idx == -1) {
       mergeable_sections[i] = split_section(ctx, *isec);
       isec->is_alive = false;
