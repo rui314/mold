@@ -36,9 +36,26 @@ inline bool is_gcc_lto_obj(MappedFile<C> *mf) {
 
   const char *data = mf->get_contents().data();
   ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data;
+  ElfShdr<E> *sh_begin = (ElfShdr<E> *)(data + ehdr.e_shoff);
   std::span<ElfShdr<E>> shdrs{(ElfShdr<E> *)(data + ehdr.e_shoff), ehdr.e_shnum};
 
+  // e_shstrndx is a 16-bit field. If .shstrtab's section index is
+  // too large, the actual number is stored to sh_link field.
+  i64 shstrtab_idx = (ehdr.e_shstrndx == SHN_XINDEX)
+    ? sh_begin->sh_link : ehdr.e_shstrndx;
+
   for (ElfShdr<E> &sec : shdrs) {
+    // GCC LTO object contains only sections symbols followed by a common
+    // symbol whose name is `__gnu_lto_slim` (or `__gnu_lto_v1` for older
+    // GCC releases).
+    //
+    // However, FAT LTO objects don't have any of the above mentioned symbols
+    // and can identify LTO by `.gnu.lto_.symtab.` section, similarly
+    // to what lto-plugin does.
+    std::string_view name = data + shdrs[shstrtab_idx].sh_offset + sec.sh_name;
+    if (name.starts_with (".gnu.lto_.symtab."))
+      return true;
+
     if (sec.sh_type != SHT_SYMTAB)
       continue;
 
@@ -49,8 +66,6 @@ inline bool is_gcc_lto_obj(MappedFile<C> *mf) {
       return type == STT_NOTYPE || type == STT_FILE || type == STT_SECTION;
     };
 
-    // GCC LTO object contains only sections symbols followed by a common
-    // symbol whose name is `__gnu_lto_v1` or `__gnu_lto_slim`.
     i64 i = 1;
     while (i < elf_syms.size() && skip(elf_syms[i].st_type))
       i++;
