@@ -11,14 +11,15 @@ int main() {
 }
 EOF
 
-$GCC -B. -o $t/exe -flto $t/a.o
-$QEMU $t/exe | grep -q 'Hello world'
+$GCC -B. -o $t/exe1 -flto $t/a.o
+$QEMU $t/exe1 | grep -q 'Hello world'
 
 # Test that LTO is used for FAT LTO objects
-cat <<EOF | $GCC -flto -ffat-lto-objects -c -o $t/a.o -xc -
+cat <<EOF | $GCC -flto -ffat-lto-objects -c -o $t/b.o -xc -
 #include <stdio.h>
 int main() {
   printf("Hello world\n");
 }
 EOF
-$GCC -B. -o $t/exe $t/a.o --verbose 2>&1 | grep -- -fwpa
+
+$GCC -B. -o $t/exe2 $t/b.o --verbose 2>&1 | grep -q -- -fwpa
