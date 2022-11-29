@@ -255,7 +255,7 @@ MachineType get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) 
   if (tok.size() >= 3 && (tok[0] == "INPUT" || tok[0] == "GROUP") &&
       tok[1] == "(")
     if (MappedFile<Context<E>> *mf =
-        MappedFile<Context<E>>::open(ctx, std::string(tok[2])))
+        MappedFile<Context<E>>::open(ctx, std::string(unquote(tok[2]))))
       return get_machine_type(ctx, mf);
 
   return MachineType::NONE;
