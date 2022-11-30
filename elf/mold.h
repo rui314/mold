@@ -1357,6 +1357,10 @@ private:
 
   std::vector<u16> versyms;
   const ElfShdr<E> *symtab_sec;
+
+  // Used by find_aliases()
+  std::once_flag init_aliases;
+  std::vector<Symbol<E> *> aliases;
 };
 
 //

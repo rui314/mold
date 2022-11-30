@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <cstring>
+#include <tbb/parallel_sort.h>
 
 #ifndef _WIN32
 # include <unistd.h>
@@ -1482,11 +1483,29 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
 template <typename E>
 std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
   assert(sym->file == this);
-  std::vector<Symbol<E> *> vec;
-  for (Symbol<E> *sym2 : this->symbols)
-    if (sym2->file == this && sym != sym2 &&
-        sym->esym().st_value == sym2->esym().st_value)
-      vec.push_back(sym2);
+
+  std::call_once(init_aliases, [&] {
+    for (Symbol<E> *sym : this->symbols)
+      if (sym->file == this)
+        aliases.push_back(sym);
+
+    tbb::parallel_sort(aliases.begin(), aliases.end(),
+                       [](Symbol<E> *a, Symbol<E> *b) {
+      const ElfSym<E> &x = a->esym();
+      const ElfSym<E> &y = b->esym();
+      return std::tuple{x.st_value, &x} < std::tuple{y.st_value, &y};
+    });
+  });
+
+  struct Cmp {
+    bool operator()(Symbol<E> *sym, u64 val) { return sym->esym().st_value < val; }
+    bool operator()(u64 val, Symbol<E> *sym) { return val < sym->esym().st_value; }
+  };
+
+  auto [begin, end] =
+    std::equal_range(aliases.begin(), aliases.end(), sym->esym().st_value, Cmp{});
+  std::vector<Symbol<E> *> vec{begin, end};
+  std::erase(vec, sym);
   return vec;
 }
 
