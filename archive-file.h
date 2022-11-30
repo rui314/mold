@@ -20,7 +20,7 @@
 // that provides functions and variables used in your program get
 // linked. To make this efficient, static library functions are
 // usually separated to each object file in an archive file. You can
-// see the contents of libc.a by runnning `ar t
+// see the contents of libc.a by running `ar t
 // /usr/lib/x86_64-linux-gnu/libc.a`.
 
 #pragma once

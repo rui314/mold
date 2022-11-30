@@ -105,7 +105,7 @@ Options:
   --ignore-data-address-equality
                               Allow merging non-executable sections with --icf
   --image-base ADDR           Set the base address to a given value
-  --init SYMBOL               Call SYMBOl at load-time
+  --init SYMBOL               Call SYMBOL at load-time
   --no-undefined              Report undefined symbols (even with --shared)
   --noinhibit-exec            Create an output file even if errors occur
   --oformat=binary            Omit ELF, section and program headers

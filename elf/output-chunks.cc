@@ -1176,7 +1176,7 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
 // .got is a linker-synthesized constant pool whose entry is of pointer
 // size. If we know a correct value for an entry, we'll just set that value
 // to the entry. Otherwise, we'll create a dynamic relocation and let the
-// dynamic linker to fill the entry at laod-time.
+// dynamic linker to fill the entry at load-time.
 //
 // Most GOT entries contain addresses of global variable. If a global
 // variable is an imported symbol, we don't know its address until runtime.
@@ -2276,7 +2276,7 @@ template <typename E>
 void CopyrelSection<E>::update_shdr(Context<E> &ctx) {
   // SHT_NOBITS sections (i.e. BSS sections) have to be at the end of
   // a segment, so a .copyrel.rel.ro usually requires one extra
-  // segment for it. We turn a .coyprel.rel.ro into a regular section
+  // segment for it. We turn a .copyrel.rel.ro into a regular section
   // if it is very small to avoid the cost of the extra segment.
   constexpr i64 threshold = 4096;
   if (is_relro && ctx.arg.z_relro && this->shdr.sh_size < threshold)

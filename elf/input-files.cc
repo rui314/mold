@@ -1396,7 +1396,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 // uses `posix_spawn` is linked either to that of "GLIBC_2.15" or that of
 // "GLIBC_2.2.5"
 //
-// Versions are just stirngs, and no ordering is defined between them.
+// Versions are just strings, and no ordering is defined between them.
 // For example, "GLIBC_2.15" is not considered a newer version of
 // "GLIBC_2.2.5" or vice versa. They are considered just different.
 //

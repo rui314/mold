@@ -552,7 +552,7 @@ static i64 assign_offsets(Context<E> &ctx) {
 
 // An address of a symbol of type S_THREAD_LOCAL_VARIABLES is computed
 // as a relative address to the beginning of the first thread-local
-// section. This function finds the beginnning address.
+// section. This function finds the beginning address.
 template <typename E>
 static u64 get_tls_begin(Context<E> &ctx) {
   for (std::unique_ptr<OutputSegment<E>> &seg : ctx.segments)
