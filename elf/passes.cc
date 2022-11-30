@@ -1772,6 +1772,29 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
   std::vector<Chunk<E> *> &chunks = ctx.chunks;
   u64 addr = ctx.arg.image_base;
 
+  // TLS chunks alignments are special: in addition to having their virtual
+  // addresses aligned, they also have to be aligned when the region of
+  // tls_begin is copied to a new thread's storage area. In other words, their
+  // offset against tls_begin also has to be aligned.
+  //
+  // A good way to achieve this is to take the largest alignment requirement
+  // of all TLS sections and make tls_begin also aligned to that.
+  Chunk<E> *first_tls_chunk = nullptr;
+  u64 first_tls_chunk_alignment = 1;
+  for (Chunk<E> *chunk : chunks) {
+    if (chunk->shdr.sh_flags & SHF_TLS) {
+      if (!first_tls_chunk)
+        first_tls_chunk = chunk;
+      first_tls_chunk_alignment
+          = std::max(first_tls_chunk_alignment, (u64)chunk->shdr.sh_addralign);
+    }
+  }
+
+  auto alignment = [&](Chunk<E> *chunk) {
+    return chunk == first_tls_chunk ? first_tls_chunk_alignment
+                                    : (u64)chunk->shdr.sh_addralign;
+  };
+
   for (i64 i = 0; i < chunks.size(); i++) {
     if (!(chunks[i]->shdr.sh_flags & SHF_ALLOC))
       continue;
@@ -1835,7 +1858,7 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
     if (is_tbss(chunks[i])) {
       u64 addr2 = addr;
       for (;;) {
-        addr2 = align_to(addr2, chunks[i]->shdr.sh_addralign);
+        addr2 = align_to(addr2, alignment(chunks[i]));
         chunks[i]->shdr.sh_addr = addr2;
         addr2 += chunks[i]->shdr.sh_size;
         if (i + 2 == chunks.size() || !is_tbss(chunks[i + 1]))
@@ -1845,7 +1868,7 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
       continue;
     }
 
-    addr = align_to(addr, chunks[i]->shdr.sh_addralign);
+    addr = align_to(addr, alignment(chunks[i]));
     chunks[i]->shdr.sh_addr = addr;
     addr += chunks[i]->shdr.sh_size;
   }
