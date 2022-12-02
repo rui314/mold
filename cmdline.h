@@ -29,8 +29,22 @@ read_response_file(C &ctx, std::string_view path) {
 
   auto read_unquoted = [&](i64 i) {
     std::string buf;
-    while (i < mf->size && !isspace(data[i]))
-      buf.append(1, data[i++]);
+
+    while (i < mf->size) {
+      if (data[i] == '\\' && i + 1 < mf->size) {
+        buf.append(1, data[i + 1]);
+        i += 2;
+        continue;
+      }
+
+      if (!isspace(data[i])) {
+        buf.append(1, data[i++]);
+        continue;
+      }
+
+      break;
+    }
+
     vec.push_back(save_string(ctx, buf));
     return i;
   };
