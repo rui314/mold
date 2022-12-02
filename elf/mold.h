@@ -235,7 +235,9 @@ struct InputSectionExtras<E> {
   std::vector<i32> r_deltas;
 };
 
-typedef enum { NONE, ERROR, COPYREL, PLT, CPLT, DYNREL, BASEREL } ScanAction;
+typedef enum {
+  NONE, ERROR, COPYREL, DYN_COPYREL, PLT, CPLT, DYN_CPLT, DYNREL, BASEREL,
+} ScanAction;
 
 // This is a decision table for absolute relocations that is smaller
 // than the word size (e.g. R_X86_64_32). Since the dynamic linker
@@ -254,9 +256,9 @@ constexpr static ScanAction absrel_table[3][4] = {
 // a dynamic relocation if we cannot resolve an address at link-time.
 constexpr static ScanAction dyn_absrel_table[3][4] = {
   // Absolute  Local    Imported data  Imported code
-  {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
-  {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
-  {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
+  {  NONE,     BASEREL, DYNREL,        DYNREL   },  // Shared object
+  {  NONE,     BASEREL, DYNREL,        DYNREL   },  // Position-independent exec
+  {  NONE,     NONE,    DYN_COPYREL,   DYN_CPLT },  // Position-dependent exec
 };
 
 // This is for PC-relative relocations (e.g. R_X86_64_PC32).
