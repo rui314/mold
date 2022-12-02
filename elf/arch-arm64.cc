@@ -37,6 +37,15 @@ static void write_adr(u8 *buf, u64 val) {
   *(ul32 *)buf |= (lo << 29) | (hi << 5);
 }
 
+static void write_movn_movz(u8 *buf, u64 val) {
+  *(ul32 *)buf &= 0b0000'0000'0110'0000'0000'0000'0001'1111;
+
+  if ((val >> 15) & 1)
+    *(ul32 *)buf |= 0x9280'0000 | (bits(~val, 15, 0) << 5); // rewrite to movn
+  else
+    *(ul32 *)buf |= 0xd280'0000 | (bits(val, 15, 0) << 5);  // rewrite to movz
+}
+
 static u64 page(u64 val) {
   return val & 0xffff'ffff'ffff'f000;
 }
@@ -282,6 +291,30 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
       *(ul32 *)loc |= bits(sym.get_gottp_addr(ctx) + A, 11, 3) << 10;
       break;
+    case R_AARCH64_TLSLE_MOVW_TPREL_G0: {
+      i64 val = S + A - ctx.tp_addr;
+      check(val, 0, 1 << 16);
+      write_movn_movz(loc, val);
+      break;
+    }
+    case R_AARCH64_TLSLE_MOVW_TPREL_G0_NC:
+      *(ul32 *)loc |= bits(S + A - ctx.tp_addr, 15, 0) << 5;
+      break;
+    case R_AARCH64_TLSLE_MOVW_TPREL_G1: {
+      i64 val = S + A - ctx.tp_addr;
+      check(val, 0, 1LL << 32);
+      write_movn_movz(loc, val >> 16);
+      break;
+    }
+    case R_AARCH64_TLSLE_MOVW_TPREL_G1_NC:
+      *(ul32 *)loc |= bits(S + A - ctx.tp_addr, 31, 16) << 5;
+      break;
+    case R_AARCH64_TLSLE_MOVW_TPREL_G2: {
+      i64 val = S + A - ctx.tp_addr;
+      check(val, 0, 1LL << 48);
+      write_movn_movz(loc, val >> 32);
+      break;
+    }
     case R_AARCH64_TLSLE_ADD_TPREL_HI12: {
       i64 val = S + A - ctx.tp_addr;
       check(val, 0, 1LL << 24);
@@ -475,6 +508,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_PREL16:
     case R_AARCH64_PREL32:
     case R_AARCH64_PREL64:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G0:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G0_NC:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G1:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G1_NC:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G2:
     case R_AARCH64_TLSLE_ADD_TPREL_HI12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
