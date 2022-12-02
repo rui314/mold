@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+echo "$t" | grep -q ' ' && skip
+
 cat <<EOF | $CC -c -o $t/a.o -xc -
 void foo();
 int main() { foo(); }
@@ -10,5 +12,5 @@ cat <<EOF | $CC -c -o $t/'b c.o' -xc -
 void foo() {}
 EOF
 
-echo "'$t'/b\ c.o" > $t/rsp
+echo "$t/b\ c.o" > $t/rsp
 $CC -o $t/exe $t/a.o -Wl,@$t/rsp
