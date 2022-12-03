@@ -138,16 +138,15 @@ void InputSection<E>::scan_rel(Context<E> &ctx, Symbol<E> &sym,
   };
 
   auto check_textrel = [&] {
-    if (writable)
-      return;
-
-    if (ctx.arg.z_text) {
-      error();
-    } else if (ctx.arg.warn_textrel) {
-      Warn(ctx) << *this << ": relocation against symbol `" << sym
-                << "' in read-only section";
+    if (!writable) {
+      if (ctx.arg.z_text) {
+        error();
+      } else if (ctx.arg.warn_textrel) {
+        Warn(ctx) << *this << ": relocation against symbol `" << sym
+                  << "' in read-only section";
+      }
+      ctx.has_textrel = true;
     }
-    ctx.has_textrel = true;
   };
 
   auto copyrel = [&] {
@@ -168,41 +167,41 @@ void InputSection<E>::scan_rel(Context<E> &ctx, Symbol<E> &sym,
 
   switch (get_rel_action(ctx, sym, table)) {
   case NONE:
-    return;
+    break;
   case ERROR:
     error();
-    return;
+    break;
   case COPYREL:
     if (!ctx.arg.z_copyreloc)
       error();
     copyrel();
-    return;
+    break;
   case DYN_COPYREL:
     if (writable || !ctx.arg.z_copyreloc)
       dynrel();
     else
       copyrel();
-    return;
+    break;
   case PLT:
     sym.flags |= NEEDS_PLT;
-    return;
+    break;
   case CPLT:
     sym.flags |= NEEDS_CPLT;
-    return;
+    break;
   case DYN_CPLT:
     if (writable)
       dynrel();
     else
       sym.flags |= NEEDS_CPLT;
-    return;
+    break;
   case DYNREL:
     dynrel();
-    return;
+    break;
   case BASEREL:
     check_textrel();
     if (!this->is_relr_reloc(ctx, rel))
       this->file.num_dynrel++;
-    return;
+    break;
   default:
     unreachable();
   }
