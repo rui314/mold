@@ -243,6 +243,18 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
 }
 
 template <typename E>
+MappedFile<Context<E>> *find_version_script(Context<E> &ctx, std::string name) {
+  if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, name))
+    return mf;
+
+  for (std::string_view dir : ctx.arg.library_paths)
+    if (MappedFile<Context<E>> *mf =
+        MappedFile<Context<E>>::open(ctx, std::string(dir) + "/" + name))
+      return mf;
+  Fatal(ctx) << "version script not found: " << name;
+}
+
+template <typename E>
 static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   Timer t(ctx, "read_input_files");
 
@@ -270,7 +282,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     } else if (arg == "--end-lib") {
       ctx.in_lib = false;
     } else if (remove_prefix(arg, "--version-script=")) {
-      parse_version_script(ctx, std::string(arg));
+      parse_version_script(ctx, find_version_script(ctx, std::string(arg)));
     } else if (remove_prefix(arg, "--dynamic-list=")) {
       parse_dynamic_list(ctx, std::string(arg));
     } else if (remove_prefix(arg, "--export-dynamic-symbol=")) {

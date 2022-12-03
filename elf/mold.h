@@ -1376,7 +1376,7 @@ template <typename E>
 MachineType get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
-void parse_version_script(Context<E> &ctx, std::string path);
+void parse_version_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
 void parse_dynamic_list(Context<E> &ctx, std::string path);

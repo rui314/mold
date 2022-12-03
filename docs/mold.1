@@ -959,6 +959,10 @@ How to handle undefined symbols.
 .It Fl -version-script Ns = Ns Ar file
 Read version script from
 .Ar file .
+If
+.Ar file
+does not exist in the current directory, it is searched from library search paths \
+for the sake of compatibility with GNU ld.
 .Pp
 .It Fl -warn-common
 .It Fl -no-warn-common
