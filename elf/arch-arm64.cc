@@ -37,13 +37,13 @@ static void write_adr(u8 *buf, u64 val) {
   *(ul32 *)buf |= (lo << 29) | (hi << 5);
 }
 
-static void write_movn_movz(u8 *buf, u64 val) {
+static void write_movn_movz(u8 *buf, i64 val) {
   *(ul32 *)buf &= 0b0000'0000'0110'0000'0000'0000'0001'1111;
 
-  if ((val >> 15) & 1)
-    *(ul32 *)buf |= 0x9280'0000 | (bits(~val, 15, 0) << 5); // rewrite to movn
-  else
+  if (val >= 0)
     *(ul32 *)buf |= 0xd280'0000 | (bits(val, 15, 0) << 5);  // rewrite to movz
+  else
+    *(ul32 *)buf |= 0x9280'0000 | (bits(~val, 15, 0) << 5); // rewrite to movn
 }
 
 static u64 page(u64 val) {
@@ -293,7 +293,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_AARCH64_TLSLE_MOVW_TPREL_G0: {
       i64 val = S + A - ctx.tp_addr;
-      check(val, 0, 1 << 16);
+      check(val, -(1 << 15), 1 << 15);
       write_movn_movz(loc, val);
       break;
     }
@@ -302,7 +302,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_AARCH64_TLSLE_MOVW_TPREL_G1: {
       i64 val = S + A - ctx.tp_addr;
-      check(val, 0, 1LL << 32);
+      check(val, -(1LL << 31), 1LL << 31);
       write_movn_movz(loc, val >> 16);
       break;
     }
@@ -311,7 +311,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_AARCH64_TLSLE_MOVW_TPREL_G2: {
       i64 val = S + A - ctx.tp_addr;
-      check(val, 0, 1LL << 48);
+      check(val, -(1LL << 47), 1LL << 47);
       write_movn_movz(loc, val >> 32);
       break;
     }
