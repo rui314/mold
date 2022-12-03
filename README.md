@@ -120,7 +120,7 @@ following flags to use `mold` instead of `/usr/bin/ld`:
   `-B/usr/libexec/mold` (or `-B/usr/local/libexec/mold`) to GCC.
 
 If you haven't installed `mold` to any `$PATH`, you can still pass
-`-fuse-ld=/absolute/path/to/mold` to clang to use mold. GCC does not
+`--ld-path=/absolute/path/to/mold` to clang to use mold. GCC does not
 take an absolute path as an argument for `-fuse-ld` though.
 
 </details>
