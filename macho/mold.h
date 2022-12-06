@@ -606,6 +606,48 @@ private:
 };
 
 template <typename E>
+class ObjcStubsSection : public Chunk<E> {
+public:
+  ObjcStubsSection(Context<E> &ctx)
+    : Chunk<E>(ctx, "__TEXT", "__objc_stubs") {
+    this->hdr.p2align = 5;
+    this->hdr.attr = S_ATTR_SOME_INSTRUCTIONS | S_ATTR_PURE_INSTRUCTIONS;
+  }
+
+  void add(Context<E> &ctx, Symbol<E> *sym);
+  void copy_buf(Context<E> &ctx) override;
+
+  std::vector<Symbol<E> *> symbols;
+
+  static constexpr i64 ENTRY_SIZE = std::is_same_v<E, ARM64> ? 32 : 16;
+};
+
+template <typename E>
+class ObjcSelrefsSection : public Chunk<E> {
+public:
+  ObjcSelrefsSection(Context<E> &ctx)
+    : Chunk<E>(ctx, "__DATA", "__objc_selrefs") {
+    this->hdr.p2align = 3;
+    this->hdr.type = S_LITERAL_POINTERS;
+    this->hdr.attr = S_ATTR_NO_DEAD_STRIP;
+  }
+
+  void copy_buf(Context<E> &ctx) override;
+};
+
+template <typename E>
+class ObjcMethnameSection : public Chunk<E> {
+public:
+  ObjcMethnameSection(Context<E> &ctx)
+    : Chunk<E>(ctx, "__TEXT", "__objc_methname") {
+    this->hdr.p2align = 0;
+    this->hdr.type = S_CSTRING_LITERALS;
+  }
+
+  void copy_buf(Context<E> &ctx) override;
+};
+
+template <typename E>
 class CodeSignatureSection : public Chunk<E> {
 public:
   CodeSignatureSection(Context<E> &ctx)
@@ -969,6 +1011,9 @@ struct Context {
   ExportSection<E> export_{*this};
   SymtabSection<E> symtab{*this};
   StrtabSection<E> strtab{*this};
+  ObjcStubsSection<E> objc_stubs{*this};
+  ObjcSelrefsSection<E> objc_selrefs{*this};
+  ObjcMethnameSection<E> objc_methname{*this};
 
   std::unique_ptr<FunctionStartsSection<E>> function_starts;
   std::unique_ptr<ObjcImageInfoSection<E>> image_info;

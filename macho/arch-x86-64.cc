@@ -57,6 +57,9 @@ void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+template <>
+void ObjcStubsSection<E>::copy_buf(Context<E> &ctx) {}
+
 static i64 get_reloc_addend(u32 type) {
   switch (type) {
   case X86_64_RELOC_SIGNED_1:

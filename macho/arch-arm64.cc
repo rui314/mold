@@ -83,6 +83,38 @@ void StubHelperSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <>
+void ObjcStubsSection<E>::copy_buf(Context<E> &ctx) {
+  if (this->hdr.size == 0)
+    return;
+
+  static const ul32 insn[] = {
+    0x90000001, // adrp  x1, @selector("foo")@PAGE
+    0xf9400021, // ldr   x1, [x1, @selector("foo")@PAGEOFF]
+    0x90000010, // adrp  x16, _objc_msgSend@GOTPAGE
+    0xf9400210, // ldr   x16, [x16, _objc_msgSend@GOTPAGEOFF]
+    0xd61f0200, // br    x16
+    0xd4200020, // brk   #0x1
+    0xd4200020, // brk   #0x1
+    0xd4200020, // brk   #0x1
+  };
+  static_assert(sizeof(insn) == ENTRY_SIZE);
+
+  u64 msgsend_got_addr = get_symbol(ctx, "_objc_msgSend")->get_got_addr(ctx);
+
+  for (i64 i = 0; i < symbols.size(); i++) {
+    ul32 *buf = (ul32 *)(ctx.buf + this->hdr.offset + sizeof(insn) * i);
+    u64 sel_addr = ctx.objc_selrefs.hdr.addr + word_size * i;
+    u64 ent_addr = this->hdr.addr + sizeof(insn) * i;
+
+    memcpy(buf, insn, sizeof(insn));
+    buf[0] |= page_offset(sel_addr, ent_addr);
+    buf[1] |= bits(sel_addr, 11, 3) << 10;
+    buf[2] |= page_offset(msgsend_got_addr, ent_addr + 8);
+    buf[3] |= bits(msgsend_got_addr, 11, 3) << 10;
+  }
+}
+
+template <>
 std::vector<Relocation<E>>
 read_relocations(Context<E> &ctx, ObjectFile<E> &file, const MachSection &hdr) {
   std::vector<Relocation<E>> vec;
