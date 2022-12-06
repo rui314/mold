@@ -243,7 +243,7 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
 }
 
 template <typename E>
-MappedFile<Context<E>> *find_version_script(Context<E> &ctx, std::string name) {
+MappedFile<Context<E>> *find_from_search_paths(Context<E> &ctx, std::string name) {
   if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, name))
     return mf;
 
@@ -251,7 +251,7 @@ MappedFile<Context<E>> *find_version_script(Context<E> &ctx, std::string name) {
     if (MappedFile<Context<E>> *mf =
         MappedFile<Context<E>>::open(ctx, std::string(dir) + "/" + name))
       return mf;
-  Fatal(ctx) << "version script not found: " << name;
+  return nullptr;
 }
 
 template <typename E>
@@ -282,16 +282,25 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     } else if (arg == "--end-lib") {
       ctx.in_lib = false;
     } else if (remove_prefix(arg, "--version-script=")) {
-      parse_version_script(ctx, find_version_script(ctx, std::string(arg)));
+      MappedFile<Context<E>> *mf = find_from_search_paths(ctx, std::string(arg));
+      if (!mf)
+        Fatal(ctx) << "--version-script: file not found: " << arg;
+      parse_version_script(ctx, mf);
     } else if (remove_prefix(arg, "--dynamic-list=")) {
-      parse_dynamic_list(ctx, std::string(arg));
+      MappedFile<Context<E>> *mf = find_from_search_paths(ctx, std::string(arg));
+      if (!mf)
+        Fatal(ctx) << "--dynamic-list: file not found: " << arg;
+      parse_dynamic_list(ctx, mf);
     } else if (remove_prefix(arg, "--export-dynamic-symbol=")) {
       if (arg == "*")
         ctx.default_version = VER_NDX_GLOBAL;
       else
         ctx.version_patterns.push_back({arg, VER_NDX_GLOBAL, false});
     } else if (remove_prefix(arg, "--export-dynamic-symbol-list=")) {
-      parse_dynamic_list(ctx, std::string(arg));
+      MappedFile<Context<E>> *mf = find_from_search_paths(ctx, std::string(arg));
+      if (!mf)
+        Fatal(ctx) << "--export-dynamic-symbol-list: file not found: " << arg;
+      parse_dynamic_list(ctx, mf);
     } else if (arg == "--push-state") {
       state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static,
                        ctx.in_lib});

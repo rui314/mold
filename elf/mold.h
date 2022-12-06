@@ -1379,7 +1379,7 @@ template <typename E>
 void parse_version_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
-void parse_dynamic_list(Context<E> &ctx, std::string path);
+void parse_dynamic_list(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 //
 // lto.cc

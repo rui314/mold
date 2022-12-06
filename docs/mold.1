@@ -652,6 +652,11 @@ Same as
 except that it implies
 .Fl -Bsymbolic .
 .Pp
+If
+.Ar file
+does not exist in the current directory, it is searched from library \
+search paths for the sake of compatibility with GNU ld.
+.Pp
 .It Fl -eh-frame-hdr
 .It Fl -no-eh-frame-hdr
 Create
