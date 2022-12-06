@@ -461,7 +461,7 @@ get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
   u64 flags = shdr.sh_flags & ~(u64)SHF_COMPRESSED;
 
   if (!ctx.arg.relocatable)
-    flags &= ~(u64)SHF_GROUP & ~(u64)SHF_LINK_ORDER & ~(u64)SHF_GNU_RETAIN;
+    flags &= ~(u64)SHF_GROUP & ~(u64)SHF_GNU_RETAIN;
 
   // .init_array is usually writable. We don't want to create multiple
   // .init_array output sections, so make it always writable.
