@@ -704,7 +704,8 @@ void add_synthetic_symbols(Context<E> &ctx) {
   // Make all synthetic symbols relative ones by associating them to
   // a dummy output section.
   for (Symbol<E> *sym : obj.symbols)
-    sym->set_output_section(ctx.symtab);
+    if (sym->file == &obj)
+      sym->set_output_section(ctx.symtab);
 
   // Handle --defsym symbols.
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
