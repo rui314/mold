@@ -577,9 +577,34 @@ void create_internal_file(Context<E> &ctx) {
     ctx.internal_esyms.push_back(esym);
   };
 
+  auto add_undef = [&](Symbol<E> *sym) {
+    obj->symbols.push_back(sym);
+    sym->value = 0xdeadbeef;
+
+    ElfSym<E> esym;
+    memset(&esym, 0, sizeof(esym));
+    esym.st_type = STT_NOTYPE;
+    esym.st_shndx = SHN_UNDEF;
+    esym.st_bind = STB_GLOBAL;
+    esym.st_visibility = STV_DEFAULT;
+    ctx.internal_esyms.push_back(esym);
+  };
+
   // Add --defsym symbols
-  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++)
-    add(ctx.arg.defsyms[i].first);
+  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
+    std::pair<Symbol<E> *, std::variant<Symbol<E> *, u64>> &defsym = ctx.arg.defsyms[i];
+    add(defsym.first);
+
+    if (std::holds_alternative<Symbol<E> *>(defsym.second)) {
+      // Add an undefined symbol to keep a reference to the defsym target.
+      // This prevents elimination by e.g. LTO or gc-sections.
+      // The undefined symbol will never make to the final object file; we
+      // double-check that the defsym target is not undefined in
+      // fix_synthetic_symbols.
+      auto sym = std::get<Symbol<E> *>(defsym.second);
+      add_undef(sym);
+    }
+  }
 
   // Add --section-order symbols
   for (SectionOrder &ord : ctx.arg.section_order)
