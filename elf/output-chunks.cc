@@ -1760,18 +1760,22 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memset(base, 0, this->shdr.sh_size);
 
-  i64 num_slots = ctx.dynsym->symbols.size();
+  std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
   U32<E> *hdr = (U32<E> *)base;
   U32<E> *buckets = (U32<E> *)(base + 8);
-  U32<E> *chains = buckets + num_slots;
+  U32<E> *chains = buckets + syms.size();
 
-  hdr[0] = hdr[1] = num_slots;
+  hdr[0] = hdr[1] = syms.size();
 
-  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
-    Symbol<E> *sym = ctx.dynsym->symbols[i];
-    i64 idx = elf_hash(sym->name()) % num_slots;
-    chains[sym->get_dynsym_idx(ctx)] = buckets[idx];
-    buckets[idx] = sym->get_dynsym_idx(ctx);
+  std::vector<u32> hashes(syms.size());
+  tbb::parallel_for((i64)1, (i64)syms.size(), [&](i64 i) {
+    hashes[i] = elf_hash(syms[i]->name()) % syms.size();
+  });
+
+  for (i64 i = 1; i < syms.size(); i++) {
+    i64 h = hashes[i];
+    chains[syms[i]->get_dynsym_idx(ctx)] = buckets[h];
+    buckets[h] = syms[i]->get_dynsym_idx(ctx);
   }
 }
 
@@ -1819,16 +1823,17 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   *(U32<E> *)(base + 12) = BLOOM_SHIFT;
 
   std::vector<u32> hashes(syms.size());
-  for (i64 i = 0; i < syms.size(); i++)
+  tbb::parallel_for((i64)0, (i64)syms.size(), [&](i64 i) {
     hashes[i] = djb_hash(syms[i]->name());
+  });
 
   // Write a bloom filter
   Word<E> *bloom = (Word<E> *)(base + HEADER_SIZE);
-  for (i64 hash : hashes) {
+  for (i64 h : hashes) {
     constexpr i64 word_bits = sizeof(Word<E>) * 8;
-    i64 idx = (hash / word_bits) % num_bloom;
-    bloom[idx] |= 1LL << (hash % word_bits);
-    bloom[idx] |= 1LL << ((hash >> BLOOM_SHIFT) % word_bits);
+    i64 idx = (h / word_bits) % num_bloom;
+    bloom[idx] |= 1LL << (h % word_bits);
+    bloom[idx] |= 1LL << ((h >> BLOOM_SHIFT) % word_bits);
   }
 
   // Write hash bucket indices
