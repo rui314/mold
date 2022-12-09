@@ -58,7 +58,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
       0xb9, 0, 0, 0, 0,       // mov    GOTPLT+4, %ecx
       0xff, 0x31,             // push   (%ecx)
       0xff, 0x61, 0x04,       // jmp    *0x4(%ecx)
-      0x90,                   // nop
+      0xcc,                   // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
     *(ul32 *)(buf + 6) = ctx.gotplt->shdr.sh_addr + 4;
@@ -72,7 +72,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
       0xf3, 0x0f, 0x1e, 0xfb, // endbr32
       0xb9, 0, 0, 0, 0,       // mov $reloc_offset, %ecx
       0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
-      0x90,                   // nop
+      0xcc,                   // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
     *(ul32 *)(buf + 11) = sym.get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
@@ -81,7 +81,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
       0xf3, 0x0f, 0x1e, 0xfb, // endbr32
       0xb9, 0, 0, 0, 0,       // mov $reloc_offset, %ecx
       0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-      0x90,                   // nop
+      0xcc,                   // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
     *(ul32 *)(buf + 11) = sym.get_gotplt_addr(ctx);
@@ -96,7 +96,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
     static const u8 insn[] = {
       0xf3, 0x0f, 0x1e, 0xfb,             // endbr32
       0xff, 0xa3, 0, 0, 0, 0,             // jmp *foo@GOT(%ebx)
-      0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
+      0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
     *(ul32 *)(buf + 6) = sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr;
@@ -104,7 +104,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
     static const u8 insn[] = {
       0xf3, 0x0f, 0x1e, 0xfb,             // endbr32
       0xff, 0x25, 0, 0, 0, 0,             // jmp *foo@GOT
-      0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
+      0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
     *(ul32 *)(buf + 6) = sym.get_got_addr(ctx);
