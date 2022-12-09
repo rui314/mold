@@ -660,9 +660,10 @@ inline void RebaseSection<E>::compute_size(Context<E> &ctx) {
       enc.add(ctx.data_seg->seg_idx,
               sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
 
-  for (i64 i = 0; i < ctx.objc_stubs->symbols.size(); i++)
-    enc.add(ctx.text_seg->seg_idx,
-            ctx.objc_selrefs->hdr.addr + i * word_size - ctx.text_seg->cmd.vmaddr);
+  if (ctx.objc_stubs)
+    for (i64 i = 0; i < ctx.objc_stubs->symbols.size(); i++)
+      enc.add(ctx.text_seg->seg_idx,
+              ctx.objc_selrefs->hdr.addr + i * word_size - ctx.text_seg->cmd.vmaddr);
 
   auto refers_tls = [](Symbol<E> *sym) {
     if (sym && sym->subsec) {

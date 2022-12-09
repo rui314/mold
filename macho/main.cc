@@ -284,6 +284,15 @@ static bool compare_chunks(const Chunk<E> *a, const Chunk<E> *b) {
 }
 
 template <typename E>
+static Chunk<E> *find_section(Context<E> &ctx, std::string_view segname,
+                              std::string_view sectname) {
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (chunk->hdr.match(segname, sectname))
+      return chunk;
+  return nullptr;
+}
+
+template <typename E>
 static void claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "claim_unresolved_symbols");
 
@@ -331,6 +340,13 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
   // We synthesize `_objc_msgSend$foo` in the `__objc_stubs` section
   // if such symbol is missing.
   if (!syms.empty()) {
+    if (find_section(ctx, "__TEXT", "__objc_selrefs"))
+      Fatal(ctx) << "__objc_selrefs already exists";
+
+    ctx.objc_stubs.reset(new ObjcStubsSection<E>(ctx));
+    ctx.objc_selrefs.reset(new ObjcSelrefsSection<E>(ctx));
+    ctx.objc_methname.reset(new ObjcMethnameSection<E>(ctx));
+
     tbb::parallel_sort(syms.begin(), syms.end(), [](Symbol<E> *a, Symbol<E> *b) {
       return a->name < b->name;
     });
@@ -349,15 +365,6 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-static Chunk<E> *find_section(Context<E> &ctx, std::string_view segname,
-                              std::string_view sectname) {
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (chunk->hdr.match(segname, sectname))
-      return chunk;
-  return nullptr;
-}
-
-template <typename E>
 static void create_synthetic_chunks(Context<E> &ctx) {
   Timer t(ctx, "create_synthetic_chunks");
 
@@ -367,14 +374,6 @@ static void create_synthetic_chunks(Context<E> &ctx) {
   // Create a __LINKEDIT,__func_starts section.
   if (ctx.arg.function_starts)
     ctx.function_starts.reset(new FunctionStartsSection(ctx));
-
-  // Create __TEXT,__objc_stubs,  __DATA,__objc_selrefs and
-  // __TEXT,__objc_methname
-  if (!find_section(ctx, "__TEXT", "__objc_selrefs")) {
-    ctx.objc_stubs.reset(new ObjcStubsSection<E>(ctx));
-    ctx.objc_selrefs.reset(new ObjcSelrefsSection<E>(ctx));
-    ctx.objc_methname.reset(new ObjcMethnameSection<E>(ctx));
-  }
 
   // Handle -sectcreate
   for (SectCreateOption arg : ctx.arg.sectcreate) {
