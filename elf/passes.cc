@@ -164,53 +164,52 @@ static void mark_live_objects(Context<E> &ctx) {
   });
 }
 
-// Due to legacy reasons, archive members will only get included in the final
-// binary if they satisfy one of the undefined symbols in a non-archive object
-// file. This is called archive extraction. In finalize_archive_extraction,
-// this is processed as follows:
-//
-// 1. Do preliminary symbol resolution assuming all archive members
-//    are included. This matches the undefined symbols with ones to be
-//    extracted from archives.
-//
-// 2. Do a mark & sweep pass to eliminate unneeded archive members.
-//
-// Note that the symbol resolution inside finalize_archive_extraction uses a
-// different rule. In order to prevent extracting archive members that can be
-// satisfied by either non-archive object files or DSOs, the archive members
-// are given a lower priority. This is not correct for the general case, where
-// *extracted* object files have precedence over DSOs and even non-archive
-// files that are passed earlier in the command line. Hence, the symbol
-// resolution is thrown away once we determine which archive members to
-// extract, and redone later with the formal rule.
 template <typename E>
-void finalize_archive_extraction(Context<E> &ctx) {
+void do_resolve_symbols(Context<E> &ctx) {
   auto for_each_file = [&](std::function<void(InputFile<E> *)> fn) {
     tbb::parallel_for_each(ctx.objs, fn);
     tbb::parallel_for_each(ctx.dsos, fn);
   };
 
-  // Register symbols
-  for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
+  // Due to legacy reasons, archive members will only get included in the final
+  // binary if they satisfy one of the undefined symbols in a non-archive object
+  // file. This is called archive extraction. In finalize_archive_extraction,
+  // this is processed as follows:
+  //
+  // 1. Do preliminary symbol resolution assuming all archive members
+  //    are included. This matches the undefined symbols with ones to be
+  //    extracted from archives.
+  //
+  // 2. Do a mark & sweep pass to eliminate unneeded archive members.
+  //
+  // Note that the symbol resolution inside finalize_archive_extraction uses a
+  // different rule. In order to prevent extracting archive members that can be
+  // satisfied by either non-archive object files or DSOs, the archive members
+  // are given a lower priority. This is not correct for the general case, where
+  // *extracted* object files have precedence over DSOs and even non-archive
+  // files that are passed earlier in the command line. Hence, the symbol
+  // resolution is thrown away once we determine which archive members to
+  // extract, and redone later with the formal rule.
+  {
+    Timer t(ctx, "extract_archive_members");
 
-  // Mark reachable objects to decide which files to include into an output.
-  // This also merges symbol visibility.
-  mark_live_objects(ctx);
+    // Register symbols
+    for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
 
-  // Cleanup. The rule used for archive extraction isn't accurate for the
-  // general case of symbol extraction, so reset the resolution to be redone
-  // later.
-  for_each_file([](InputFile<E> *file) { file->clear_symbols(); });
+    // Mark reachable objects to decide which files to include into an output.
+    // This also merges symbol visibility.
+    mark_live_objects(ctx);
 
-  // Now that the symbol references are gone, remove the eliminated files from
-  // the file list.
-  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
-  std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
-}
+    // Cleanup. The rule used for archive extraction isn't accurate for the
+    // general case of symbol extraction, so reset the resolution to be redone
+    // later.
+    for_each_file([](InputFile<E> *file) { file->clear_symbols(); });
 
-template <typename E>
-void do_resolve_symbols(Context<E> &ctx) {
-  finalize_archive_extraction(ctx);
+    // Now that the symbol references are gone, remove the eliminated files from
+    // the file list.
+    std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
+    std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
+  }
 
   // COMDAT elimination needs to happen exactly here.
   //
@@ -219,17 +218,22 @@ void do_resolve_symbols(Context<E> &ctx) {
   //
   // It needs to happen before symbol resolution, otherwise we could eliminate
   // a symbol that is already resolved to and cause dangling references.
-  eliminate_comdats(ctx);
+  {
+    Timer t(ctx, "eliminate_comdats");
+
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+      file->resolve_comdat_groups();
+    });
+
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+      file->eliminate_duplicate_comdat_groups();
+    });
+  }
 
   // Since we have turned on object files live bits, their symbols
   // may now have higher priority than before. So run the symbol
   // resolution pass again to get the final resolution result.
-  tbb::parallel_for_each(ctx.objs, [&](InputFile<E> *file) {
-    file->resolve_symbols(ctx);
-  });
-  tbb::parallel_for_each(ctx.dsos, [&](InputFile<E> *file) {
-    file->resolve_symbols(ctx);
-  });
+  for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
 }
 
 template <typename E>
@@ -295,19 +299,6 @@ void resolve_section_pieces(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->resolve_section_pieces(ctx);
-  });
-}
-
-template <typename E>
-void eliminate_comdats(Context<E> &ctx) {
-  Timer t(ctx, "eliminate_comdats");
-
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    file->resolve_comdat_groups();
-  });
-
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    file->eliminate_duplicate_comdat_groups();
   });
 }
 
@@ -2457,7 +2448,6 @@ template void apply_exclude_libs(Context<E> &);
 template void create_synthetic_sections(Context<E> &);
 template void resolve_symbols(Context<E> &);
 template void resolve_section_pieces(Context<E> &);
-template void eliminate_comdats(Context<E> &);
 template void convert_common_symbols(Context<E> &);
 template void compute_merged_section_sizes(Context<E> &);
 template void create_output_sections(Context<E> &);
