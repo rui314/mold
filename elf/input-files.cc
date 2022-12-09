@@ -151,8 +151,15 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       // Get the signature of this section group.
       if (shdr.sh_info >= this->elf_syms.size())
         Fatal(ctx) << *this << ": invalid symbol index";
-      const ElfSym<E> &sym = this->elf_syms[shdr.sh_info];
-      std::string_view signature = this->symbol_strtab.data() + sym.st_name;
+      const ElfSym<E> &esym = this->elf_syms[shdr.sh_info];
+
+      std::string_view signature;
+      if (esym.st_type == STT_SECTION) {
+        signature = this->shstrtab.data() +
+                    this->elf_sections[esym.st_shndx].sh_name;
+      } else {
+        signature = this->symbol_strtab.data() + esym.st_name;
+      }
 
       // Ignore a broken comdat group GCC emits for .debug_macros.
       // https://github.com/rui314/mold/issues/438
