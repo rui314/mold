@@ -660,9 +660,9 @@ inline void RebaseSection<E>::compute_size(Context<E> &ctx) {
       enc.add(ctx.data_seg->seg_idx,
               sym->get_tlv_addr(ctx) - ctx.data_seg->cmd.vmaddr);
 
-  for (i64 i = 0; i < ctx.objc_stubs.symbols.size(); i++)
+  for (i64 i = 0; i < ctx.objc_stubs->symbols.size(); i++)
     enc.add(ctx.text_seg->seg_idx,
-            ctx.objc_selrefs.hdr.addr + i * word_size - ctx.text_seg->cmd.vmaddr);
+            ctx.objc_selrefs->hdr.addr + i * word_size - ctx.text_seg->cmd.vmaddr);
 
   auto refers_tls = [](Symbol<E> *sym) {
     if (sym && sym->subsec) {
@@ -1255,18 +1255,18 @@ void ObjcStubsSection<E>::add(Context<E> &ctx, Symbol<E> *sym) {
   symbols.push_back(sym);
   this->hdr.size = symbols.size() * ENTRY_SIZE;
 
-  ctx.objc_selrefs.hdr.size += word_size;
+  ctx.objc_selrefs->hdr.size += word_size;
 
   assert(sym->name.starts_with("_objc_msgSend$"));
-  ctx.objc_methname.hdr.size += sym->name.size() + 1 - strlen("_objc_msgSend$");
+  ctx.objc_methname->hdr.size += sym->name.size() + 1 - strlen("_objc_msgSend$");
 }
 
 template <typename E>
 void ObjcSelrefsSection<E>::copy_buf(Context<E> &ctx) {
   ul64 *buf = (ul64 *)(ctx.buf + this->hdr.offset);
-  u64 addr = ctx.objc_methname.hdr.addr;
+  u64 addr = ctx.objc_methname->hdr.addr;
 
-  for (Symbol<E> *sym : ctx.objc_stubs.symbols) {
+  for (Symbol<E> *sym : ctx.objc_stubs->symbols) {
     *buf++ = addr;
     addr += sym->name.size() + 1 - strlen("_objc_msgSend$");
   }
@@ -1275,7 +1275,7 @@ void ObjcSelrefsSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void ObjcMethnameSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->hdr.offset;
-  for (Symbol<E> *sym : ctx.objc_stubs.symbols)
+  for (Symbol<E> *sym : ctx.objc_stubs->symbols)
     buf += write_string(buf, sym->name.substr("_objc_msgSend$"s.size()));
 }
 

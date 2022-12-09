@@ -337,7 +337,7 @@ static void claim_unresolved_symbols(Context<E> &ctx) {
 
     for (Symbol<E> *sym : syms) {
       ctx.internal_obj->syms.push_back(sym);
-      ctx.objc_stubs.add(ctx, sym);
+      ctx.objc_stubs->add(ctx, sym);
     }
 
     Symbol<E> *sym = get_symbol(ctx, "_objc_msgSend");
@@ -367,6 +367,14 @@ static void create_synthetic_chunks(Context<E> &ctx) {
   // Create a __LINKEDIT,__func_starts section.
   if (ctx.arg.function_starts)
     ctx.function_starts.reset(new FunctionStartsSection(ctx));
+
+  // Create __TEXT,__objc_stubs,  __DATA,__objc_selrefs and
+  // __TEXT,__objc_methname
+  if (!find_section(ctx, "__TEXT", "__objc_selrefs")) {
+    ctx.objc_stubs.reset(new ObjcStubsSection<E>(ctx));
+    ctx.objc_selrefs.reset(new ObjcSelrefsSection<E>(ctx));
+    ctx.objc_methname.reset(new ObjcMethnameSection<E>(ctx));
+  }
 
   // Handle -sectcreate
   for (SectCreateOption arg : ctx.arg.sectcreate) {
@@ -656,7 +664,7 @@ static void fix_synthetic_symbol_values(Context<E> &ctx) {
     }
 
     if (name.starts_with("_objc_msgSend$")) {
-      sym->value = ctx.objc_stubs.hdr.addr + objc_stubs_offset;
+      sym->value = ctx.objc_stubs->hdr.addr + objc_stubs_offset;
       objc_stubs_offset += ObjcStubsSection<E>::ENTRY_SIZE;
       continue;
     }

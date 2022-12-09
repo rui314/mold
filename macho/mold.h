@@ -1011,13 +1011,13 @@ struct Context {
   ExportSection<E> export_{*this};
   SymtabSection<E> symtab{*this};
   StrtabSection<E> strtab{*this};
-  ObjcStubsSection<E> objc_stubs{*this};
-  ObjcSelrefsSection<E> objc_selrefs{*this};
-  ObjcMethnameSection<E> objc_methname{*this};
 
   std::unique_ptr<FunctionStartsSection<E>> function_starts;
   std::unique_ptr<ObjcImageInfoSection<E>> image_info;
   std::unique_ptr<CodeSignatureSection<E>> code_sig;
+  std::unique_ptr<ObjcStubsSection<E>> objc_stubs;
+  std::unique_ptr<ObjcSelrefsSection<E>> objc_selrefs;
+  std::unique_ptr<ObjcMethnameSection<E>> objc_methname;
 
   OutputSection<E> *text = nullptr;
   OutputSection<E> *data = nullptr;

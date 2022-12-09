@@ -103,7 +103,7 @@ void ObjcStubsSection<E>::copy_buf(Context<E> &ctx) {
 
   for (i64 i = 0; i < symbols.size(); i++) {
     ul32 *buf = (ul32 *)(ctx.buf + this->hdr.offset + sizeof(insn) * i);
-    u64 sel_addr = ctx.objc_selrefs.hdr.addr + word_size * i;
+    u64 sel_addr = ctx.objc_selrefs->hdr.addr + word_size * i;
     u64 ent_addr = this->hdr.addr + sizeof(insn) * i;
 
     memcpy(buf, insn, sizeof(insn));
