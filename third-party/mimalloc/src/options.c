@@ -479,7 +479,31 @@ static bool mi_getenv(const char* name, char* result, size_t result_size) {
   MI_UNUSED(result_size);
   return false;
 }
-#else
+#elif defined _WIN32
+// On Windows use GetEnvironmentVariable instead of getenv to work
+// reliably even when this is invoked before the C runtime is initialized.
+// i.e. when `_mi_preloading() == true`.
+// Note: on windows, environment names are not case sensitive.
+# include <windows.h>
+static bool mi_getenv(const char* name, char* result, size_t result_size) {
+  result[0] = 0;
+  size_t len = GetEnvironmentVariableA(name, result, (DWORD)result_size);
+  return (len > 0 && len < result_size);
+}
+#elif !defined(MI_USE_ENVIRON) || (MI_USE_ENVIRON!=0)
+// On Posix systemsr use `environ` to acces environment variables
+// even before the C runtime is initialized.
+# if defined(__APPLE__) && defined(__has_include) && __has_include(<crt_externs.h>)
+#  include <crt_externs.h>
+static char** mi_get_environ(void) {
+  return (*_NSGetEnviron());
+}
+# else
+extern char** environ;
+static char** mi_get_environ(void) {
+  return environ;
+}
+# endif
 static inline int mi_strnicmp(const char* s, const char* t, size_t n) {
   if (n==0) return 0;
   for (; *s != 0 && *t != 0 && n > 0; s++, t++, n--) {
@@ -487,35 +511,11 @@ static inline int mi_strnicmp(const char* s, const char* t, size_t n) {
   }
   return (n==0 ? 0 : *s - *t);
 }
-#if defined _WIN32
-// On Windows use GetEnvironmentVariable instead of getenv to work
-// reliably even when this is invoked before the C runtime is initialized.
-// i.e. when `_mi_preloading() == true`.
-// Note: on windows, environment names are not case sensitive.
-#include <windows.h>
+
 static bool mi_getenv(const char* name, char* result, size_t result_size) {
-  result[0] = 0;
-  size_t len = GetEnvironmentVariableA(name, result, (DWORD)result_size);
-  return (len > 0 && len < result_size);
-}
-#elif !defined(MI_USE_ENVIRON) || (MI_USE_ENVIRON!=0)
-// On Posix systemsr use `environ` to acces environment variables 
-// even before the C runtime is initialized.
-#if defined(__APPLE__) && defined(__has_include) && __has_include(<crt_externs.h>)
-#include <crt_externs.h>
-static char** mi_get_environ(void) {
-  return (*_NSGetEnviron());
-}
-#else 
-extern char** environ;
-static char** mi_get_environ(void) {
-  return environ;
-}
-#endif
-static bool mi_getenv(const char* name, char* result, size_t result_size) {
-  if (name==NULL) return false;  
+  if (name==NULL) return false;
   const size_t len = strlen(name);
-  if (len == 0) return false;  
+  if (len == 0) return false;
   char** env = mi_get_environ();
   if (env == NULL) return false;
   // compare up to 256 entries
@@ -529,7 +529,7 @@ static bool mi_getenv(const char* name, char* result, size_t result_size) {
   }
   return false;
 }
-#else  
+#else
 // fallback: use standard C `getenv` but this cannot be used while initializing the C runtime
 static bool mi_getenv(const char* name, char* result, size_t result_size) {
   // cannot call getenv() when still initializing the C runtime.
@@ -554,7 +554,6 @@ static bool mi_getenv(const char* name, char* result, size_t result_size) {
     return false;
   }
 }
-#endif  // !MI_USE_ENVIRON
 #endif  // !MI_NO_GETENV
 
 static void mi_option_init(mi_option_desc_t* desc) {  
