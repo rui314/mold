@@ -8,7 +8,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #ifndef MIMALLOC_H
 #define MIMALLOC_H
 
-#define MI_MALLOC_VERSION 206   // major + 2 digits minor
+#define MI_MALLOC_VERSION 207   // major + 2 digits minor
 
 // ------------------------------------------------------
 // Compiler specific attributes
@@ -95,6 +95,7 @@ terms of the MIT license. A copy of the license can be found in the file
 
 #include <stddef.h>     // size_t
 #include <stdbool.h>    // bool
+#include <stdint.h>     // INTPTR_MAX
 
 #ifdef __cplusplus
 extern "C" {
@@ -166,7 +167,11 @@ mi_decl_export void mi_process_info(size_t* elapsed_msecs, size_t* user_msecs, s
 // Note that `alignment` always follows `size` for consistency with unaligned
 // allocation, but unfortunately this differs from `posix_memalign` and `aligned_alloc`.
 // -------------------------------------------------------------------------------------
-#define MI_ALIGNMENT_MAX   (1024*1024UL)    // maximum supported alignment is 1MiB
+#if (INTPTR_MAX > INT32_MAX)
+#define MI_ALIGNMENT_MAX   (16*1024*1024UL)  // maximum supported alignment is 16MiB
+#else
+#define MI_ALIGNMENT_MAX   (1024*1024UL)     // maximum supported alignment for 32-bit systems is 1MiB
+#endif
 
 mi_decl_nodiscard mi_decl_export mi_decl_restrict void* mi_malloc_aligned(size_t size, size_t alignment) mi_attr_noexcept mi_attr_malloc mi_attr_alloc_size(1) mi_attr_alloc_align(2);
 mi_decl_nodiscard mi_decl_export mi_decl_restrict void* mi_malloc_aligned_at(size_t size, size_t alignment, size_t offset) mi_attr_noexcept mi_attr_malloc mi_attr_alloc_size(1);
@@ -274,6 +279,17 @@ mi_decl_export int  mi_reserve_os_memory(size_t size, bool commit, bool allow_la
 mi_decl_export bool mi_manage_os_memory(void* start, size_t size, bool is_committed, bool is_large, bool is_zero, int numa_node) mi_attr_noexcept;
 
 mi_decl_export void mi_debug_show_arenas(void) mi_attr_noexcept;
+
+// Experimental: heaps associated with specific memory arena's
+typedef int mi_arena_id_t;
+mi_decl_export void* mi_arena_area(mi_arena_id_t arena_id, size_t* size);
+mi_decl_export int   mi_reserve_huge_os_pages_at_ex(size_t pages, int numa_node, size_t timeout_msecs, bool exclusive, mi_arena_id_t* arena_id) mi_attr_noexcept;
+mi_decl_export int   mi_reserve_os_memory_ex(size_t size, bool commit, bool allow_large, bool exclusive, mi_arena_id_t* arena_id) mi_attr_noexcept;
+mi_decl_export bool  mi_manage_os_memory_ex(void* start, size_t size, bool is_committed, bool is_large, bool is_zero, int numa_node, bool exclusive, mi_arena_id_t* arena_id) mi_attr_noexcept;
+
+#if MI_MALLOC_VERSION >= 200
+mi_decl_nodiscard mi_decl_export mi_heap_t* mi_heap_new_in_arena(mi_arena_id_t arena_id);
+#endif
 
 // deprecated
 mi_decl_export int  mi_reserve_huge_os_pages(size_t pages, double max_secs, size_t* pages_reserved) mi_attr_noexcept;

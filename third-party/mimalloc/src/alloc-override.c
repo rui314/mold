@@ -29,7 +29,7 @@ typedef struct mi_nothrow_s { int _tag; } mi_nothrow_t;
 // Override system malloc
 // ------------------------------------------------------
 
-#if (defined(__GNUC__) || defined(__clang__)) && !defined(__APPLE__) && !defined(MI_VALGRIND)
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(__APPLE__) && !MI_TRACK_ENABLED
   // gcc, clang: use aliasing to alias the exported function to one of our `mi_` functions
   #if (defined(__GNUC__) && __GNUC__ >= 9)
     #pragma GCC diagnostic ignored "-Wattributes"  // or we get warnings that nodiscard is ignored on a forward
@@ -44,7 +44,7 @@ typedef struct mi_nothrow_s { int _tag; } mi_nothrow_t;
   #define MI_FORWARD02(fun,x,y)   MI_FORWARD(fun)
 #else
   // otherwise use forwarding by calling our `mi_` function 
-  #define MI_FORWARD1(fun,x)      { return fun(x); }
+  #define MI_FORWARD1(fun,x)      { return fun(x); }       
   #define MI_FORWARD2(fun,x,y)    { return fun(x,y); }
   #define MI_FORWARD3(fun,x,y,z)  { return fun(x,y,z); }
   #define MI_FORWARD0(fun,x)      { fun(x); }
@@ -123,10 +123,10 @@ typedef struct mi_nothrow_s { int _tag; } mi_nothrow_t;
   // we just override new/delete which does work in a static library.
 #else
   // On all other systems forward to our API  
-  void* malloc(size_t size)              MI_FORWARD1(mi_malloc, size)
-  void* calloc(size_t size, size_t n)    MI_FORWARD2(mi_calloc, size, n)
-  void* realloc(void* p, size_t newsize) MI_FORWARD2(mi_realloc, p, newsize)
-  void  free(void* p)                    MI_FORWARD0(mi_free, p)
+  mi_decl_export void* malloc(size_t size)              MI_FORWARD1(mi_malloc, size)
+  mi_decl_export void* calloc(size_t size, size_t n)    MI_FORWARD2(mi_calloc, size, n)
+  mi_decl_export void* realloc(void* p, size_t newsize) MI_FORWARD2(mi_realloc, p, newsize)
+  mi_decl_export void  free(void* p)                    MI_FORWARD0(mi_free, p)  
 #endif
 
 #if (defined(__GNUC__) || defined(__clang__)) && !defined(__APPLE__)

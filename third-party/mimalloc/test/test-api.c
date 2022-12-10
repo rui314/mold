@@ -56,75 +56,79 @@ int main(void) {
   // Malloc
   // ---------------------------------------------------
 
-  CHECK_BODY("malloc-zero",{
-    void* p = mi_malloc(0); mi_free(p);
-  });
-  CHECK_BODY("malloc-nomem1",{
+  CHECK_BODY("malloc-zero") {
+    void* p = mi_malloc(0); 
+    result = (p != NULL);
+    mi_free(p);
+  };
+  CHECK_BODY("malloc-nomem1") {
     result = (mi_malloc((size_t)PTRDIFF_MAX + (size_t)1) == NULL);
-  });
-  CHECK_BODY("malloc-null",{
+  };
+  CHECK_BODY("malloc-null") {
     mi_free(NULL);
-  });
-  CHECK_BODY("calloc-overflow",{
+  };
+  CHECK_BODY("calloc-overflow") {
     // use (size_t)&mi_calloc to get some number without triggering compiler warnings
     result = (mi_calloc((size_t)&mi_calloc,SIZE_MAX/1000) == NULL);
-  });
-  CHECK_BODY("calloc0",{
-    result = (mi_usable_size(mi_calloc(0,1000)) <= 16);
-  });
-  CHECK_BODY("malloc-large",{   // see PR #544.
+  };
+  CHECK_BODY("calloc0") {
+    void* p = mi_calloc(0,1000);
+    result = (mi_usable_size(p) <= 16);
+    mi_free(p);
+  };
+  CHECK_BODY("malloc-large") {   // see PR #544.
     void* p = mi_malloc(67108872);
     mi_free(p);
-  });
+  };
 
   // ---------------------------------------------------
   // Extended
   // ---------------------------------------------------  
-  CHECK_BODY("posix_memalign1", {
+  CHECK_BODY("posix_memalign1") {
     void* p = &p;
     int err = mi_posix_memalign(&p, sizeof(void*), 32);
     result = ((err==0 && (uintptr_t)p % sizeof(void*) == 0) || p==&p);
     mi_free(p);
-  });
-  CHECK_BODY("posix_memalign_no_align", {
+  };
+  CHECK_BODY("posix_memalign_no_align") {
     void* p = &p;
     int err = mi_posix_memalign(&p, 3, 32);
     result = (err==EINVAL && p==&p);
-  });
-  CHECK_BODY("posix_memalign_zero", {
+  };
+  CHECK_BODY("posix_memalign_zero") {
     void* p = &p;
     int err = mi_posix_memalign(&p, sizeof(void*), 0);
     mi_free(p);
     result = (err==0);
-  });
-  CHECK_BODY("posix_memalign_nopow2", {
+  };
+  CHECK_BODY("posix_memalign_nopow2") {
     void* p = &p;
     int err = mi_posix_memalign(&p, 3*sizeof(void*), 32);
     result = (err==EINVAL && p==&p);
-  });
-  CHECK_BODY("posix_memalign_nomem", {
+  };
+  CHECK_BODY("posix_memalign_nomem") {
     void* p = &p;
     int err = mi_posix_memalign(&p, sizeof(void*), SIZE_MAX);
     result = (err==ENOMEM && p==&p);
-  });
+  };
 
   // ---------------------------------------------------
   // Aligned API
   // ---------------------------------------------------
-  CHECK_BODY("malloc-aligned1", {
+  CHECK_BODY("malloc-aligned1") {
     void* p = mi_malloc_aligned(32,32); result = (p != NULL && (uintptr_t)(p) % 32 == 0); mi_free(p);
-  });
-  CHECK_BODY("malloc-aligned2", {
+  };
+  CHECK_BODY("malloc-aligned2") {
     void* p = mi_malloc_aligned(48,32); result = (p != NULL && (uintptr_t)(p) % 32 == 0); mi_free(p);
-  });
-  CHECK_BODY("malloc-aligned3", {
+  };
+  CHECK_BODY("malloc-aligned3") {
     void* p1 = mi_malloc_aligned(48,32); bool result1 = (p1 != NULL && (uintptr_t)(p1) % 32 == 0); 
     void* p2 = mi_malloc_aligned(48,32); bool result2 = (p2 != NULL && (uintptr_t)(p2) % 32 == 0);
     mi_free(p2);
     mi_free(p1);
     result = (result1&&result2);
-  });
-  CHECK_BODY("malloc-aligned4", {
+  };
+  CHECK_BODY("malloc-aligned4") {
     void* p;
     bool ok = true;
     for (int i = 0; i < 8 && ok; i++) {
@@ -132,11 +136,15 @@ int main(void) {
       ok = (p != NULL && (uintptr_t)(p) % 16 == 0); mi_free(p);
     }
     result = ok;
-  });
-  CHECK_BODY("malloc-aligned5", {
-    void* p = mi_malloc_aligned(4097,4096); size_t usable = mi_usable_size(p); result = usable >= 4097 && usable < 10000; mi_free(p);
-  });
-  CHECK_BODY("malloc-aligned6", {
+  };
+  CHECK_BODY("malloc-aligned5") {
+    void* p = mi_malloc_aligned(4097,4096); 
+    size_t usable = mi_usable_size(p); 
+    result = (usable >= 4097 && usable < 16000); 
+    printf("malloc_aligned5: usable size: %zi\n", usable);
+    mi_free(p);
+  };
+  CHECK_BODY("malloc-aligned6") {
     bool ok = true;
     for (size_t align = 1; align <= MI_ALIGNMENT_MAX && ok; align *= 2) {
       void* ps[8];
@@ -151,20 +159,20 @@ int main(void) {
       }
     }
     result = ok;
-  });
-  CHECK_BODY("malloc-aligned7", {
+  };
+  CHECK_BODY("malloc-aligned7") {
     void* p = mi_malloc_aligned(1024,MI_ALIGNMENT_MAX); mi_free(p);
-    });
-  CHECK_BODY("malloc-aligned8", {
+    };
+  CHECK_BODY("malloc-aligned8") {
     void* p = mi_malloc_aligned(1024,2*MI_ALIGNMENT_MAX); mi_free(p);
-  });
-  CHECK_BODY("malloc-aligned-at1", {
+  };
+  CHECK_BODY("malloc-aligned-at1") {
     void* p = mi_malloc_aligned_at(48,32,0); result = (p != NULL && ((uintptr_t)(p) + 0) % 32 == 0); mi_free(p);
-  });
-  CHECK_BODY("malloc-aligned-at2", {
+  };
+  CHECK_BODY("malloc-aligned-at2") {
     void* p = mi_malloc_aligned_at(50,32,8); result = (p != NULL && ((uintptr_t)(p) + 8) % 32 == 0); mi_free(p);
-  });  
-  CHECK_BODY("memalign1", {
+  };  
+  CHECK_BODY("memalign1") {
     void* p;
     bool ok = true;
     for (int i = 0; i < 8 && ok; i++) {
@@ -172,8 +180,36 @@ int main(void) {
       ok = (p != NULL && (uintptr_t)(p) % 16 == 0); mi_free(p);
     }
     result = ok;
-  });
+  };
   
+  // ---------------------------------------------------
+  // Reallocation
+  // ---------------------------------------------------
+  CHECK_BODY("realloc-null") {
+    void* p = mi_realloc(NULL,4);
+    result = (p != NULL);
+    mi_free(p);
+  };
+
+  CHECK_BODY("realloc-null-sizezero") {
+    void* p = mi_realloc(NULL,0);  // <https://en.cppreference.com/w/c/memory/realloc> "If ptr is NULL, the behavior is the same as calling malloc(new_size)."
+    result = (p != NULL);
+    mi_free(p);
+  };
+
+  CHECK_BODY("realloc-sizezero") {
+    void* p = mi_malloc(4);
+    void* q = mi_realloc(p, 0);
+    result = (q != NULL);
+    mi_free(q);
+  };
+
+  CHECK_BODY("reallocarray-null-sizezero") {
+    void* p = mi_reallocarray(NULL,0,16);  // issue #574
+    result = (p != NULL && errno == 0);
+    mi_free(p);
+  };
+
   // ---------------------------------------------------
   // Heaps
   // ---------------------------------------------------
@@ -185,11 +221,11 @@ int main(void) {
   // ---------------------------------------------------
   // various
   // ---------------------------------------------------
-  CHECK_BODY("realpath", {
+  CHECK_BODY("realpath") {
     char* s = mi_realpath( ".", NULL );
     // printf("realpath: %s\n",s);
     mi_free(s);
-  });
+  };
 
   CHECK("stl_allocator1", test_stl_allocator1());
   CHECK("stl_allocator2", test_stl_allocator2());

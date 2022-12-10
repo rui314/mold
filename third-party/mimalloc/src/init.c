@@ -109,6 +109,7 @@ mi_decl_cache_align const mi_heap_t _mi_heap_empty = {
   MI_ATOMIC_VAR_INIT(NULL),
   0,                // tid
   0,                // cookie
+  0,                // arena id
   { 0, 0 },         // keys
   { {0}, {0}, 0 },
   0,                // page count
@@ -149,6 +150,7 @@ mi_heap_t _mi_heap_main = {
   MI_ATOMIC_VAR_INIT(NULL),
   0,                // thread id
   0,                // initial cookie
+  0,                // arena id
   { 0, 0 },         // the key of the main heap can be fixed (unlike page keys that need to be secure!)
   { {0x846ca68b}, {0}, 0 },  // random
   0,                // page count
@@ -475,7 +477,7 @@ void _mi_heap_set_default_direct(mi_heap_t* heap)  {
 // --------------------------------------------------------
 // Run functions on process init/done, and thread init/done
 // --------------------------------------------------------
-static void mi_process_done(void);
+static void mi_cdecl mi_process_done(void);
 
 static bool os_preloading = true;    // true until this module is initialized
 static bool mi_redirected = false;   // true if malloc redirects to mi_malloc
@@ -490,7 +492,7 @@ mi_decl_nodiscard bool mi_is_redirected(void) mi_attr_noexcept {
 }
 
 // Communicate with the redirection module on Windows
-#if defined(_WIN32) && defined(MI_SHARED_LIB)
+#if defined(_WIN32) && defined(MI_SHARED_LIB) && !defined(MI_WIN_NOREDIRECT)
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -506,8 +508,8 @@ mi_decl_export void _mi_redirect_entry(DWORD reason) {
     mi_thread_done();
   }
 }
-__declspec(dllimport) bool mi_allocator_init(const char** message);
-__declspec(dllimport) void mi_allocator_done(void);
+__declspec(dllimport) bool mi_cdecl mi_allocator_init(const char** message);
+__declspec(dllimport) void mi_cdecl mi_allocator_done(void);
 #ifdef __cplusplus
 }
 #endif
@@ -606,7 +608,7 @@ void mi_process_init(void) mi_attr_noexcept {
 }
 
 // Called when the process is done (through `at_exit`)
-static void mi_process_done(void) {
+static void mi_cdecl mi_process_done(void) {
   // only shutdown if we were initialized
   if (!_mi_process_is_initialized) return;
   // ensure we are called once

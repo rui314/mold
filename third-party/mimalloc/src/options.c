@@ -120,7 +120,7 @@ mi_decl_nodiscard long mi_option_get(mi_option_t option) {
   if (option < 0 || option >= _mi_option_last) return 0;
   mi_option_desc_t* desc = &options[option];
   mi_assert(desc->option == option);  // index should match the option
-  if (mi_unlikely(desc->init == UNINIT)) {
+  if mi_unlikely(desc->init == UNINIT) {
     mi_option_init(desc);
   }
   return desc->value;
@@ -170,7 +170,7 @@ void mi_option_disable(mi_option_t option) {
 }
 
 
-static void mi_out_stderr(const char* msg, void* arg) {
+static void mi_cdecl mi_out_stderr(const char* msg, void* arg) {
   MI_UNUSED(arg);
   if (msg == NULL) return;
   #ifdef _WIN32
@@ -203,7 +203,7 @@ static void mi_out_stderr(const char* msg, void* arg) {
 static char out_buf[MI_MAX_DELAY_OUTPUT+1];
 static _Atomic(size_t) out_len;
 
-static void mi_out_buf(const char* msg, void* arg) {
+static void mi_cdecl mi_out_buf(const char* msg, void* arg) {
   MI_UNUSED(arg);
   if (msg==NULL) return;
   if (mi_atomic_load_relaxed(&out_len)>=MI_MAX_DELAY_OUTPUT) return;
@@ -235,7 +235,7 @@ static void mi_out_buf_flush(mi_output_fun* out, bool no_more_buf, void* arg) {
 
 // Once this module is loaded, switch to this routine
 // which outputs to stderr and the delayed output buffer.
-static void mi_out_buf_stderr(const char* msg, void* arg) {
+static void mi_cdecl mi_out_buf_stderr(const char* msg, void* arg) {
   mi_out_stderr(msg,arg);
   mi_out_buf(msg,arg);
 }

@@ -39,8 +39,13 @@ static mi_decl_cache_align mi_bitmap_field_t cache_available[MI_CACHE_FIELDS] = 
 static mi_decl_cache_align mi_bitmap_field_t cache_available_large[MI_CACHE_FIELDS] = { MI_CACHE_BITS_SET };
 static mi_decl_cache_align mi_bitmap_field_t cache_inuse[MI_CACHE_FIELDS];   // zero bit = free
 
+static bool mi_cdecl mi_segment_cache_is_suitable(mi_bitmap_index_t bitidx, void* arg) {
+  mi_arena_id_t req_arena_id = *((mi_arena_id_t*)arg);
+  mi_cache_slot_t* slot = &cache[mi_bitmap_index_bit(bitidx)];
+  return _mi_arena_memid_is_suitable(slot->memid, req_arena_id);
+}
 
-mi_decl_noinline void* _mi_segment_cache_pop(size_t size, mi_commit_mask_t* commit_mask, mi_commit_mask_t* decommit_mask, bool* large, bool* is_pinned, bool* is_zero, size_t* memid, mi_os_tld_t* tld)
+mi_decl_noinline void* _mi_segment_cache_pop(size_t size, mi_commit_mask_t* commit_mask, mi_commit_mask_t* decommit_mask, bool* large, bool* is_pinned, bool* is_zero, mi_arena_id_t _req_arena_id, size_t* memid, mi_os_tld_t* tld)
 {
 #ifdef MI_CACHE_DISABLE
   return NULL;
@@ -60,12 +65,15 @@ mi_decl_noinline void* _mi_segment_cache_pop(size_t size, mi_commit_mask_t* comm
   // find an available slot
   mi_bitmap_index_t bitidx = 0;
   bool claimed = false;
+  mi_arena_id_t req_arena_id = _req_arena_id;
+  mi_bitmap_pred_fun_t pred_fun = &mi_segment_cache_is_suitable;  // cannot pass NULL as the arena may be exclusive itself; todo: do not put exclusive arenas in the cache?
+  
   if (*large) {  // large allowed?
-    claimed = _mi_bitmap_try_find_from_claim(cache_available_large, MI_CACHE_FIELDS, start_field, 1, &bitidx);
+    claimed = _mi_bitmap_try_find_from_claim_pred(cache_available_large, MI_CACHE_FIELDS, start_field, 1, pred_fun, &req_arena_id, &bitidx);
     if (claimed) *large = true;
   }
   if (!claimed) {
-    claimed = _mi_bitmap_try_find_from_claim(cache_available, MI_CACHE_FIELDS, start_field, 1, &bitidx);
+    claimed = _mi_bitmap_try_find_from_claim_pred (cache_available, MI_CACHE_FIELDS, start_field, 1, pred_fun, &req_arena_id, &bitidx);
     if (claimed) *large = false;
   }
 
@@ -283,7 +291,7 @@ static mi_segment_t* _mi_segment_of(const void* p) {
   size_t index = mi_segment_map_index_of(segment, &bitidx);
   // fast path: for any pointer to valid small/medium/large object or first MI_SEGMENT_SIZE in huge
   const uintptr_t mask = mi_atomic_load_relaxed(&mi_segment_map[index]);
-  if (mi_likely((mask & ((uintptr_t)1 << bitidx)) != 0)) {
+  if mi_likely((mask & ((uintptr_t)1 << bitidx)) != 0) {
     return segment; // yes, allocated by us
   }
   if (index==MI_SEGMENT_MAP_WSIZE) return NULL;
@@ -324,7 +332,7 @@ static mi_segment_t* _mi_segment_of(const void* p) {
   mi_assert_internal((void*)segment < p);
   bool cookie_ok = (_mi_ptr_cookie(segment) == segment->cookie);
   mi_assert_internal(cookie_ok);
-  if (mi_unlikely(!cookie_ok)) return NULL;
+  if mi_unlikely(!cookie_ok) return NULL;
   if (((uint8_t*)segment + mi_segment_size(segment)) <= (uint8_t*)p) return NULL; // outside the range
   mi_assert_internal(p >= (void*)segment && (uint8_t*)p < (uint8_t*)segment + mi_segment_size(segment));
   return segment;

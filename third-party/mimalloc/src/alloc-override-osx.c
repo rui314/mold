@@ -254,7 +254,7 @@ static malloc_zone_t mi_malloc_zone = {
 static inline malloc_zone_t* mi_get_default_zone(void)
 {
   static bool init;
-  if (mi_unlikely(!init)) { 
+  if mi_unlikely(!init) { 
     init = true;
     malloc_zone_register(&mi_malloc_zone);  // by calling register we avoid a zone error on free (see <http://eatmyrandom.blogspot.com/2010/03/mallocfree-interception-on-mac-os-x.html>)
   }

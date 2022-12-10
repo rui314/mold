@@ -122,7 +122,7 @@ size_t _mi_os_good_alloc_size(size_t size) {
   else if (size < 8*MI_MiB) align_size = 256*MI_KiB;
   else if (size < 32*MI_MiB) align_size = 1*MI_MiB;
   else align_size = 4*MI_MiB;
-  if (mi_unlikely(size >= (SIZE_MAX - align_size))) return size; // possible overflow?
+  if mi_unlikely(size >= (SIZE_MAX - align_size)) return size; // possible overflow?
   return _mi_align_up(size, align_size);
 }
 
@@ -362,9 +362,9 @@ static bool mi_os_mem_free(void* addr, size_t size, bool was_committed, mi_stats
     // In mi_os_mem_alloc_aligned the fallback path may have returned a pointer inside
     // the memory region returned by VirtualAlloc; in that case we need to free using
     // the start of the region.
-    MEMORY_BASIC_INFORMATION info = { 0, 0 };
+    MEMORY_BASIC_INFORMATION info = { 0 };
     VirtualQuery(addr, &info, sizeof(info));
-    if (info.AllocationBase < addr && ((uint8_t*)addr - (uint8_t*)info.AllocationBase) < MI_SEGMENT_SIZE) {
+    if (info.AllocationBase < addr && ((uint8_t*)addr - (uint8_t*)info.AllocationBase) < (ptrdiff_t)MI_SEGMENT_SIZE) {
       errcode = 0;
       err = (VirtualFree(info.AllocationBase, 0, MEM_RELEASE) == 0);
       if (err) { errcode = GetLastError(); }
@@ -986,7 +986,7 @@ static bool mi_os_resetx(void* addr, size_t size, bool reset, mi_stats_t* stats)
         else _mi_stat_decrease(&stats->reset, csize);
   if (!reset) return true; // nothing to do on unreset!
 
-  #if (MI_DEBUG>1)
+  #if (MI_DEBUG>1) && !MI_TRACK_ENABLED
   if (MI_SECURE==0) {
     memset(start, 0, csize); // pretend it is eagerly reset
   }

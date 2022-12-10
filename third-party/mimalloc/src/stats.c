@@ -267,7 +267,7 @@ static void mi_buffered_flush(buffered_t* buf) {
   buf->used = 0;
 }
 
-static void mi_buffered_out(const char* msg, void* arg) {
+static void mi_cdecl mi_buffered_out(const char* msg, void* arg) {
   buffered_t* buf = (buffered_t*)arg;
   if (msg==NULL || buf==NULL) return;
   for (const char* src = msg; *src != 0; src++) {

@@ -29,6 +29,9 @@ terms of the MIT license. A copy of the license can be found in the file
 // Define NDEBUG in the release version to disable assertions.
 // #define NDEBUG
 
+// Define MI_VALGRIND to enable valgrind support
+// #define MI_VALGRIND 1
+
 // Define MI_STAT as 1 to maintain statistics; set it to 2 to have detailed statistics (but costs some performance).
 // #define MI_STAT 1
 
@@ -56,15 +59,15 @@ terms of the MIT license. A copy of the license can be found in the file
 
 // Reserve extra padding at the end of each block to be more resilient against heap block overflows.
 // The padding can detect byte-precise buffer overflow on free.
-#if !defined(MI_PADDING) && (MI_DEBUG>=1)
+#if !defined(MI_PADDING) && (MI_DEBUG>=1 || MI_VALGRIND)
 #define MI_PADDING  1
 #endif
 
 
 // Encoded free lists allow detection of corrupted free lists
 // and can detect buffer overflows, modify after free, and double `free`s.
-#if (MI_SECURE>=3 || MI_DEBUG>=1 || MI_PADDING > 0)
-#define MI_ENCODE_FREELIST  1
+#if (MI_SECURE>=3 || MI_DEBUG>=1)
+#define MI_ENCODE_FREELIST  1 
 #endif
 
 
@@ -435,6 +438,7 @@ struct mi_heap_s {
   mi_page_queue_t       pages[MI_BIN_FULL + 1];              // queue of pages for each size class (or "bin")
   _Atomic(mi_block_t*)  thread_delayed_free;
   mi_threadid_t         thread_id;                           // thread this heap belongs too
+  mi_arena_id_t         arena_id;                            // arena id if the heap belongs to a specific arena (or 0)  
   uintptr_t             cookie;                              // random cookie to verify pointers (see `_mi_ptr_cookie`)
   uintptr_t             keys[2];                             // two random keys used to encode the `thread_delayed_free` list
   mi_random_ctx_t       random;                              // random number context used for secure allocation

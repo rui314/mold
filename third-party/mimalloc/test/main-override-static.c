@@ -19,6 +19,7 @@ static void test_reserved(void);
 static void negative_stat(void);
 static void alloc_huge(void);
 static void test_heap_walk(void);
+static void test_heap_arena(void);
 
 int main() {
   mi_version();
@@ -33,7 +34,8 @@ int main() {
   // test_reserved();
   // negative_stat();
   // alloc_huge();
-  test_heap_walk();
+  // test_heap_walk();
+  test_heap_arena();
   
   void* p1 = malloc(78);
   void* p2 = malloc(24);
@@ -210,6 +212,20 @@ static void test_heap_walk(void) {
   mi_heap_malloc(heap, 2097160);
   mi_heap_malloc(heap, 24576);
   mi_heap_visit_blocks(heap, true, &test_visit, NULL);
+}
+
+static void test_heap_arena(void) {
+  mi_arena_id_t arena_id;
+  int err = mi_reserve_os_memory_ex(100 * 1024 * 1024, false /* commit */, false /* allow large */, true /* exclusive */, &arena_id);
+  if (err) abort();
+  mi_heap_t* heap = mi_heap_new_in_arena(arena_id);
+  for (int i = 0; i < 500000; i++) {
+    void* p = mi_heap_malloc(heap, 1024);
+    if (p == NULL) {
+      printf("out of memory after %d kb (expecting about 100_000kb)\n", i);
+      break;
+    }
+  }
 }
 
 // ----------------------------

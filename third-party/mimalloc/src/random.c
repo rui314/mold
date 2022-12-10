@@ -172,6 +172,8 @@ If we cannot get good randomness, we fall back to weak randomness based on a tim
 // We prefer to use BCryptGenRandom instead of (the unofficial) RtlGenRandom but when using 
 // dynamic overriding, we observed it can raise an exception when compiled with C++, and 
 // sometimes deadlocks when also running under the VS debugger.
+// In contrast, issue #623 implies that on Windows Server 2019 we need to use BCryptGenRandom.
+// To be continued..
 #pragma comment (lib,"advapi32.lib")
 #define RtlGenRandom  SystemFunction036
 #ifdef __cplusplus
