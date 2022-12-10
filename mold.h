@@ -420,18 +420,19 @@ public:
     i64 retry = 0;
 
     while (retry < MAX_RETRY) {
-      const char *ptr = keys[idx];
+      const char *ptr = keys[idx].load(std::memory_order_acquire);
       if (ptr == marker) {
         pause();
         continue;
       }
 
       if (ptr == nullptr) {
-        if (!keys[idx].compare_exchange_weak(ptr, marker))
+        if (!keys[idx].compare_exchange_weak(ptr, marker,
+                                             std::memory_order_acq_rel))
           continue;
         new (values + idx) T(val);
         key_sizes[idx] = key.size();
-        keys[idx] = key.data();
+        keys[idx].store(key.data(), std::memory_order_release);
         return {values + idx, true};
       }
 
