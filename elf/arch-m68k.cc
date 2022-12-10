@@ -303,18 +303,18 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_68K_GOTOFF32:
     case R_68K_GOTOFF16:
     case R_68K_GOTOFF8:
-      sym.flags |= NEEDS_GOT;
+      sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
     case R_68K_PLT32:
     case R_68K_PLT16:
     case R_68K_PLT8:
       if (sym.is_imported)
-        sym.flags |= NEEDS_PLT;
+        sym.flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
       break;
     case R_68K_TLS_GD32:
     case R_68K_TLS_GD16:
     case R_68K_TLS_GD8:
-      sym.flags |= NEEDS_TLSGD;
+      sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
       break;
     case R_68K_TLS_LDM32:
     case R_68K_TLS_LDM16:
@@ -324,7 +324,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_68K_TLS_IE32:
     case R_68K_TLS_IE16:
     case R_68K_TLS_IE8:
-      sym.flags |= NEEDS_GOTTP;
+      sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
       break;
     case R_68K_TLS_LDO32:
     case R_68K_TLS_LDO16:

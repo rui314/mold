@@ -536,7 +536,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
+      sym.flags.fetch_or(NEEDS_GOT | NEEDS_PLT, std::memory_order_relaxed);
 
     switch (rel.r_type) {
     case R_SPARC_64:
@@ -580,17 +580,17 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_PCPLT10:
     case R_SPARC_PLT64:
       if (sym.is_imported)
-        sym.flags |= NEEDS_PLT;
+        sym.flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
       break;
     case R_SPARC_GOT13:
     case R_SPARC_GOT10:
     case R_SPARC_GOT22:
     case R_SPARC_GOTDATA_HIX22:
-      sym.flags |= NEEDS_GOT;
+      sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
     case R_SPARC_GOTDATA_OP_HIX22:
       if (sym.is_imported)
-        sym.flags |= NEEDS_GOT;
+        sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
     case R_SPARC_DISP16:
     case R_SPARC_DISP32:
@@ -606,18 +606,18 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_rel(ctx, sym, rel, pcrel_table);
       break;
     case R_SPARC_TLS_GD_HI22:
-      sym.flags |= NEEDS_TLSGD;
+      sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
       break;
     case R_SPARC_TLS_LDM_HI22:
       ctx.needs_tlsld = true;
       break;
     case R_SPARC_TLS_IE_HI22:
-      sym.flags |= NEEDS_GOTTP;
+      sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
       break;
     case R_SPARC_TLS_GD_CALL:
     case R_SPARC_TLS_LDM_CALL:
       if (!ctx.arg.is_static && ctx.tls_get_addr->is_imported)
-        ctx.tls_get_addr->flags |= NEEDS_PLT;
+        ctx.tls_get_addr->flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
       break;
     case R_SPARC_GOTDATA_OP_LOX10:
     case R_SPARC_GOTDATA_OP:

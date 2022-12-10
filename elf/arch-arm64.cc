@@ -457,7 +457,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
+      sym.flags.fetch_or(NEEDS_GOT | NEEDS_PLT, std::memory_order_relaxed);
 
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
@@ -466,28 +466,28 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_ADR_GOT_PAGE:
     case R_AARCH64_LD64_GOT_LO12_NC:
     case R_AARCH64_LD64_GOTPAGE_LO15:
-      sym.flags |= NEEDS_GOT;
+      sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
     case R_AARCH64_CALL26:
     case R_AARCH64_JUMP26:
       if (sym.is_imported)
-        sym.flags |= NEEDS_PLT;
+        sym.flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
       break;
     case R_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
     case R_AARCH64_TLSIE_LD64_GOTTPREL_LO12_NC:
-      sym.flags |= NEEDS_GOTTP;
+      sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
       break;
     case R_AARCH64_ADR_PREL_PG_HI21:
       scan_rel(ctx, sym, rel, pcrel_table);
       break;
     case R_AARCH64_TLSGD_ADR_PAGE21:
-      sym.flags |= NEEDS_TLSGD;
+      sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
       break;
     case R_AARCH64_TLSDESC_ADR_PAGE21:
     case R_AARCH64_TLSDESC_LD64_LO12:
     case R_AARCH64_TLSDESC_ADD_LO12:
       if (!relax_tlsdesc(ctx, sym))
-        sym.flags |= NEEDS_TLSDESC;
+        sym.flags.fetch_or(NEEDS_TLSDESC, std::memory_order_relaxed);
       break;
     case R_AARCH64_ADD_ABS_LO12_NC:
     case R_AARCH64_ADR_PREL_LO21:

@@ -359,10 +359,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= (NEEDS_GOT | NEEDS_PLT | NEEDS_OPD);
+      sym.flags.fetch_or(NEEDS_GOT | NEEDS_PLT | NEEDS_OPD,
+                         std::memory_order_relaxed);
 
     if (rel.r_type != R_PPC64_REL24 && sym.get_type() == STT_FUNC)
-      sym.flags |= NEEDS_OPD;
+      sym.flags.fetch_or(NEEDS_OPD, std::memory_order_relaxed);
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
@@ -375,17 +376,17 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_rel(ctx, sym, rel, toc_table);
       break;
     case R_PPC64_GOT_TPREL16_HA:
-      sym.flags |= NEEDS_GOTTP;
+      sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
       break;
     case R_PPC64_REL24:
       if (sym.is_imported)
-        sym.flags |= NEEDS_PLT;
+        sym.flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
       break;
     case R_PPC64_PLT16_HA:
-      sym.flags |= NEEDS_GOT;
+      sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
     case R_PPC64_GOT_TLSGD16_HA:
-      sym.flags |= NEEDS_TLSGD;
+      sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
       break;
     case R_PPC64_GOT_TLSLD16_HA:
       ctx.needs_tlsld = true;
