@@ -1817,7 +1817,11 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
       continue;
 
     // .relro_padding is a padding section to extend a PT_GNU_RELRO
-    // segment to cover an entire page.
+    // segment to cover an entire page. Technically, we don't need a
+    // .relro_padding section because we can leave a trailing part of a
+    // segment an unused space. However, the `strip` command would delete
+    // such an unused trailing part and make an executable invalid.
+    // So we add a dummy section.
     if (chunks[i] == ctx.relro_padding) {
       chunks[i]->shdr.sh_addr = addr;
       chunks[i]->shdr.sh_size = align_to(addr, ctx.page_size) - addr;
