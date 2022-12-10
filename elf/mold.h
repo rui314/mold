@@ -758,8 +758,6 @@ public:
     this->shdr.sh_entsize = 4;
     this->shdr.sh_addralign = 4;
   }
-
-  void copy_buf(Context<E> &ctx) override;
 };
 
 template <typename E>

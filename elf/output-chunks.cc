@@ -727,9 +727,6 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-void SymtabShndxSection<E>::copy_buf(Context<E> &ctx) {}
-
-template <typename E>
 static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   std::vector<Word<E>> vec;
 
@@ -3110,7 +3107,6 @@ template class ShstrtabSection<E>;
 template class DynstrSection<E>;
 template class DynamicSection<E>;
 template class SymtabSection<E>;
-template class SymtabShndxSection<E>;
 template class DynsymSection<E>;
 template class HashSection<E>;
 template class GnuHashSection<E>;
