@@ -87,6 +87,7 @@ struct SymbolAux {
   i32 pltgot_idx = -1;
   i32 opd_idx = -1;
   i32 dynsym_idx = -1;
+  u32 djb_hash = 0;
 };
 
 //
@@ -1971,6 +1972,9 @@ public:
   bool has_tlsdesc(Context<E> &ctx) const { return get_tlsdesc_idx(ctx) != -1; }
   bool has_opd(Context<E> &ctx) const { return get_opd_idx(ctx) != -1; }
 
+  u32 get_djb_hash(Context<E> &ctx) const;
+  void set_djb_hash(Context<E> &ctx, u32 hash);
+
   bool is_absolute() const;
   bool is_relative() const { return !is_absolute(); }
   bool is_local(Context<E> &ctx) const;
@@ -2662,7 +2666,6 @@ inline void Symbol<E>::set_opd_idx(Context<E> &ctx, i32 idx) {
 template <typename E>
 inline void Symbol<E>::set_dynsym_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
-  assert(ctx.symbol_aux[aux_idx].dynsym_idx < 0);
   ctx.symbol_aux[aux_idx].dynsym_idx = idx;
 }
 
@@ -2704,6 +2707,18 @@ inline i32 Symbol<E>::get_opd_idx(Context<E> &ctx) const {
 template <typename E>
 inline i32 Symbol<E>::get_dynsym_idx(Context<E> &ctx) const {
   return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].dynsym_idx;
+}
+
+template <typename E>
+inline u32 Symbol<E>::get_djb_hash(Context<E> &ctx) const {
+  assert(aux_idx != -1);
+  return ctx.symbol_aux[aux_idx].djb_hash;
+}
+
+template <typename E>
+inline void Symbol<E>::set_djb_hash(Context<E> &ctx, u32 hash) {
+  assert(aux_idx != -1);
+  ctx.symbol_aux[aux_idx].djb_hash = hash;
 }
 
 template <typename E>

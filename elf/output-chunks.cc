@@ -1662,20 +1662,14 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
   if (symbols.empty())
     return;
 
-  // We need a stable sort for build reproducibility, but parallel_sort
-  // isn't stable, so we use this struct to make it stable.
-  struct T {
-    Symbol<E> *sym = nullptr;
-    u32 hash = 0;
-    i32 idx = 0;
-  };
-
   // Sort symbols. In any symtab, local symbols must precede global symbols.
+  auto first_global = std::stable_partition(symbols.begin() + 1, symbols.end(),
+                                            [&](Symbol<E> *sym) {
+    return sym->is_local(ctx);
+  });
+
   // We also place undefined symbols before defined symbols for .gnu.hash.
   // Defined symbols are sorted by their hashes for .gnu.hash.
-  std::vector<T> vec(symbols.size());
-  i64 num_buckets = 0;
-
   if (ctx.gnu_hash) {
     // Count the number of exported symbols to compute the size of .gnu.hash.
     i64 num_exported = 0;
@@ -1683,38 +1677,37 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
       if (symbols[i]->is_exported)
         num_exported++;
 
-    num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
+    u32 num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
     ctx.gnu_hash->num_buckets = num_buckets;
+
+    tbb::parallel_for((i64)(first_global - symbols.begin()), (i64)symbols.size(),
+                      [&](i64 i) {
+      Symbol<E> &sym = *symbols[i];
+      sym.set_dynsym_idx(ctx, i);
+      sym.set_djb_hash(ctx, djb_hash(sym.name()));
+    });
+
+    tbb::parallel_sort(first_global, symbols.end(),
+                       [&](Symbol<E> *a, Symbol<E> *b) {
+      if (a->is_exported != b->is_exported)
+        return b->is_exported;
+
+      u32 h1 = a->get_djb_hash(ctx) % num_buckets;
+      u32 h2 = b->get_djb_hash(ctx) % num_buckets;
+      return std::tuple(h1, a->get_dynsym_idx(ctx)) <
+             std::tuple(h2, b->get_dynsym_idx(ctx));
+    });
   }
 
-  tbb::parallel_for((i64)1, (i64)symbols.size(), [&](i64 i) {
-    Symbol<E> *sym = symbols[i];
-    vec[i].sym = sym;
-    if (ctx.gnu_hash && sym->is_exported)
-      vec[i].hash = djb_hash(sym->name()) % num_buckets;
-    vec[i].idx = i;
-  });
-
-  tbb::parallel_sort(vec.begin() + 1, vec.end(), [&](const T &a, const T &b) {
-    bool x = a.sym->is_local(ctx);
-    bool y = b.sym->is_local(ctx);
-    return std::tuple(!x, (bool)a.sym->is_exported, a.hash, a.idx) <
-           std::tuple(!y, (bool)b.sym->is_exported, b.hash, b.idx);
-  });
-
+  // Compute .dynstr size
   ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
 
   for (i64 i = 1; i < symbols.size(); i++) {
-    symbols[i] = vec[i].sym;
     symbols[i]->set_dynsym_idx(ctx, i);
     ctx.dynstr->shdr.sh_size += symbols[i]->name().size() + 1;
   }
 
   // ELF's symbol table sh_info holds the offset of the first global symbol.
-  auto first_global =
-    std::partition_point(symbols.begin() + 1, symbols.end(), [&](Symbol<E> *sym) {
-      return sym->is_local(ctx);
-    });
   this->shdr.sh_info = first_global - symbols.begin();
 }
 
@@ -1812,6 +1805,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   memset(base, 0, this->shdr.sh_size);
 
   std::span<Symbol<E> *> syms = get_exported_symbols(ctx);
+  std::vector<u32> indices(syms.size());
   i64 exported_offset = ctx.dynsym->symbols.size() - syms.size();
 
   *(U32<E> *)base = num_buckets;
@@ -1819,15 +1813,15 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   *(U32<E> *)(base + 8) = num_bloom;
   *(U32<E> *)(base + 12) = BLOOM_SHIFT;
 
-  std::vector<u32> hashes(syms.size());
-  tbb::parallel_for((i64)0, (i64)syms.size(), [&](i64 i) {
-    hashes[i] = djb_hash(syms[i]->name());
-  });
-
   // Write a bloom filter
   Word<E> *bloom = (Word<E> *)(base + HEADER_SIZE);
-  for (i64 h : hashes) {
+
+  for (i64 i = 0; i < syms.size(); i++) {
     constexpr i64 word_bits = sizeof(Word<E>) * 8;
+
+    i64 h = syms[i]->get_djb_hash(ctx);
+    indices[i] = h % num_buckets;
+
     i64 idx = (h / word_bits) % num_bloom;
     bloom[idx] |= 1LL << (h % word_bits);
     bloom[idx] |= 1LL << ((h >> BLOOM_SHIFT) % word_bits);
@@ -1835,24 +1829,23 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 
   // Write hash bucket indices
   U32<E> *buckets = (U32<E> *)(bloom + num_bloom);
-  for (i64 i = 0; i < hashes.size(); i++) {
-    i64 idx = hashes[i] % num_buckets;
+  for (i64 i = 0; i < syms.size(); i++) {
+    i64 idx = indices[i];
     if (!buckets[idx])
       buckets[idx] = i + exported_offset;
   }
 
   // Write a hash table
   U32<E> *table = buckets + num_buckets;
-  for (i64 i = 0; i < syms.size(); i++) {
-    bool is_last = false;
-    if (i == syms.size() - 1 ||
-        (hashes[i] % num_buckets) != (hashes[i + 1] % num_buckets))
-      is_last = true;
 
-    if (is_last)
-      table[i] = hashes[i] | 1;
+  for (i64 i = 0; i < syms.size(); i++) {
+    // The last entry in a chain must be terminated with an entry with
+    // least-significant bit 1.
+    u32 h = syms[i]->get_djb_hash(ctx);
+    if (i == syms.size() - 1 || indices[i] != indices[i + 1])
+      table[i] = h | 1;
     else
-      table[i] = hashes[i] & ~1;
+      table[i] = h & ~1;
   }
 }
 
