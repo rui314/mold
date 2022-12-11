@@ -1797,19 +1797,17 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
   // A good way to achieve this is to take the largest alignment requirement
   // of all TLS sections and make tls_begin also aligned to that.
   Chunk<E> *first_tls_chunk = nullptr;
-  u64 first_tls_chunk_alignment = 1;
+  u64 tls_alignment = 1;
   for (Chunk<E> *chunk : chunks) {
     if (chunk->shdr.sh_flags & SHF_TLS) {
       if (!first_tls_chunk)
         first_tls_chunk = chunk;
-      first_tls_chunk_alignment
-          = std::max(first_tls_chunk_alignment, (u64)chunk->shdr.sh_addralign);
+      tls_alignment = std::max(tls_alignment, (u64)chunk->shdr.sh_addralign);
     }
   }
 
   auto alignment = [&](Chunk<E> *chunk) {
-    return chunk == first_tls_chunk ? first_tls_chunk_alignment
-                                    : (u64)chunk->shdr.sh_addralign;
+    return chunk == first_tls_chunk ? tls_alignment : (u64)chunk->shdr.sh_addralign;
   };
 
   for (i64 i = 0; i < chunks.size(); i++) {
