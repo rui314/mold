@@ -1829,11 +1829,10 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 
   // Write hash bucket indices
   U32<E> *buckets = (U32<E> *)(bloom + num_bloom);
-  for (i64 i = 0; i < syms.size(); i++) {
-    i64 idx = indices[i];
-    if (!buckets[idx])
-      buckets[idx] = i + exported_offset;
-  }
+
+  for (i64 i = 0; i < syms.size(); i++)
+    if (!buckets[indices[i]])
+      buckets[indices[i]] = i + exported_offset;
 
   // Write a hash table
   U32<E> *table = buckets + num_buckets;
@@ -1942,8 +1941,8 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
     // Sort fragments to make output deterministic.
     tbb::parallel_sort(fragments.begin(), fragments.end(),
                        [](const KeyVal &a, const KeyVal &b) {
-      return std::tuple{a.val->p2align.load(), a.key.size(), a.key} <
-             std::tuple{b.val->p2align.load(), b.key.size(), b.key};
+      return std::tuple{(u32)a.val->p2align, a.key.size(), a.key} <
+             std::tuple{(u32)b.val->p2align, b.key.size(), b.key};
     });
 
     // Assign offsets.
