@@ -320,11 +320,13 @@ foreach (SOURCE IN LISTS MOLD_ELF_TEMPLATE_FILES)
   endforeach()
 endforeach()
 
-foreach (SOURCE IN LISTS MOLD_MACHO_TEMPLATE_FILES)
-  foreach(TARGET IN LISTS MOLD_MACHO_TARGETS)
-    mold_instantiate_templates(${SOURCE} ${TARGET})
+if(MOLD_IS_SOLD)
+  foreach (SOURCE IN LISTS MOLD_MACHO_TEMPLATE_FILES)
+    foreach(TARGET IN LISTS MOLD_MACHO_TARGETS)
+      mold_instantiate_templates(${SOURCE} ${TARGET})
+    endforeach()
   endforeach()
-endforeach()
+endif()
 
 # Add other non-template source files.
 target_sources(mold PRIVATE
@@ -344,9 +346,6 @@ target_sources(mold PRIVATE
   git-hash.cc
   glob.cc
   hyperloglog.cc
-  macho/arch-arm64.cc
-  macho/arch-x86-64.cc
-  macho/yaml.cc
   main.cc
   multi-glob.cc
   perf.cc
@@ -355,12 +354,25 @@ target_sources(mold PRIVATE
   uuid.cc
   )
 
+if(MOLD_IS_SOLD)
+  target_sources(mold PRIVATE
+    macho/arch-arm64.cc
+    macho/arch-x86-64.cc
+    macho/yaml.cc
+    )
+endif()
+
 # Add frequently included header files for pre-compiling.
 # target_precompile_headers is supported by CMake 3.16.0 or newer.
 if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16.0")
-  target_precompile_headers(mold PRIVATE
-    "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/elf/mold.h>"
-    "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/macho/mold.h>")
+  if(MOLD_IS_SOLD)
+    target_precompile_headers(mold PRIVATE
+      "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/elf/mold.h>"
+      "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/macho/mold.h>")
+  else()
+    target_precompile_headers(mold PRIVATE
+      "$<$<COMPILE_LANGUAGE:CXX>:${CMAKE_SOURCE_DIR}/elf/mold.h>")
+  endif()
 
   # ccache needs this flag along with `sloppiness = pch_defines,time_macros`
   # to enable caching
@@ -375,14 +387,24 @@ if(BUILD_TESTING)
     add_custom_command(
       TARGET mold POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld
-      COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld64
-      BYPRODUCTS ld ld64
+      BYPRODUCTS ld
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
       VERBATIM)
+
+    if(MOLD_IS_SOLD)
+      add_custom_command(
+        TARGET mold POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E create_symlink mold ld64
+        BYPRODUCTS ld64
+        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        VERBATIM)
+    endif()
   endif()
 
   if(${APPLE})
-    add_subdirectory(test/macho)
+    if(MOLD_IS_SOLD)
+      add_subdirectory(test/macho)
+    endif()
   elseif(${UNIX})
     add_subdirectory(test/elf)
   endif()
@@ -409,10 +431,13 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
     ${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)
   mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
     ${CMAKE_INSTALL_BINDIR}/ld.mold)
-  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
-    ${CMAKE_INSTALL_BINDIR}/ld64.mold)
   mold_install_relative_symlink(${CMAKE_INSTALL_MANDIR}/man1/mold.1
     ${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)
+
+  if(MOLD_IS_SOLD)
+    mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
+      ${CMAKE_INSTALL_BINDIR}/ld64.mold)
+  endif()
 
   if(NOT MOLD_PRODUCT_NAME STREQUAL "mold")
     mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold

@@ -31,6 +31,9 @@ mold supports x86-64, i386, ARM64, ARM32, 64-bit/32-bit little/big-endian
 RISC-V, 64-bit big-endian PowerPC ELFv1, 64-bit little-endian PowerPC ELFv2,
 s390x, SPARC64 and m68k.
 
+mold/macOS is commercial software. For mold/macOS, please visit
+https://github.com/bluewhalesystems/sold.
+
 ## Why does the speed of linking matter?
 
 If you are using a compiled language such as C, C++ or Rust, a build
