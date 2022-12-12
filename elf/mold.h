@@ -2285,6 +2285,7 @@ inline i64 get_addend(u8 *loc, const ElfRel<ARM32> &rel) {
   case R_ARM_REL32:
   case R_ARM_TARGET1:
   case R_ARM_BASE_PREL:
+  case R_ARM_GOTOFF32:
   case R_ARM_GOT_PREL:
   case R_ARM_GOT_BREL:
   case R_ARM_TLS_GD32:

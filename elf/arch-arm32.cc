@@ -123,6 +123,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
   case R_ARM_REL32:
   case R_ARM_TARGET1:
   case R_ARM_BASE_PREL:
+  case R_ARM_GOTOFF32:
   case R_ARM_GOT_PREL:
   case R_ARM_GOT_BREL:
   case R_ARM_TLS_GD32:
@@ -262,6 +263,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
     case R_ARM_BASE_PREL:
       *(ul32 *)loc = GOT + A - P;
+      break;
+    case R_ARM_GOTOFF32:
+      *(ul32 *)loc = ((S + A) | T) - GOT;
       break;
     case R_ARM_GOT_PREL:
     case R_ARM_TARGET2:
@@ -545,6 +549,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_ARM_REL32:
     case R_ARM_BASE_PREL:
+    case R_ARM_GOTOFF32:
     case R_ARM_THM_JUMP11:
     case R_ARM_THM_JUMP19:
     case R_ARM_MOVW_PREL_NC:
