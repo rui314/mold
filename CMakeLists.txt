@@ -439,5 +439,7 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
       ${CMAKE_INSTALL_BINDIR}/ld64.mold)
     mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
       ${CMAKE_INSTALL_BINDIR}/ld.sold)
+    mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
+      ${CMAKE_INSTALL_BINDIR}/ld64.sold)
   endif()
 endif()
