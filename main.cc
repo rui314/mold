@@ -28,14 +28,10 @@ int main(int argc, char **argv);
 }
 
 static std::string get_mold_version() {
-  std::string name = "mold ";
-  if (MOLD_PRODUCT_NAME != "mold"s)
-    name += "(" MOLD_PRODUCT_NAME ") ";
-  name += MOLD_VERSION;
-
+  std::string name = MOLD_IS_SOLD ? "mold (sold) " : "mold ";
   if (mold_git_hash.empty())
-    return name + " (compatible with GNU ld)";
-  return name + " (" + mold_git_hash + "; compatible with GNU ld)";
+    return name + MOLD_VERSION + " (compatible with GNU ld)";
+  return name + MOLD_VERSION + " (" + mold_git_hash + "; compatible with GNU ld)";
 }
 
 void cleanup() {

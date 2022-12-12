@@ -45,7 +45,6 @@
 
 cmake_minimum_required(VERSION 3.13)
 project(mold VERSION 1.7.1)
-set(MOLD_PRODUCT_NAME "mold")
 
 include(CMakeDependentOption)
 include(GNUInstallDirs)
@@ -190,6 +189,11 @@ else()
   endfunction()
 
   mold_add_tbb()
+endif()
+
+# Check if this is a commercial version of mold (a.k.a. "sold")
+if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE.md")
+  set(MOLD_IS_SOLD ON)
 endif()
 
 # We always use Clang to build mold on Windows. MSVC can't compile mold.
