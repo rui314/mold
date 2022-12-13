@@ -1061,6 +1061,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_z_flag("nocombreloc")) {
     } else if (read_z_arg("common-page-size")) {
     } else if (read_flag("no-keep-memory")) {
+    } else if (read_arg("max-cache-size")) {
     } else if (read_arg("version-script")) {
       // --version-script, --dynamic-list and --export-dynamic-symbol[-list]
       // are treated as positional arguments even if they are actually not
