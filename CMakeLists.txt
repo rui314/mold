@@ -437,10 +437,9 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
   if(MOLD_IS_SOLD)
     mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
       ${CMAKE_INSTALL_BINDIR}/ld64.mold)
-  endif()
-
-  if(NOT MOLD_PRODUCT_NAME STREQUAL "mold")
     mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
-      ${CMAKE_INSTALL_BINDIR}/ld.${MOLD_PRODUCT_NAME})
+      ${CMAKE_INSTALL_BINDIR}/ld.sold)
+    mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
+      ${CMAKE_INSTALL_BINDIR}/ld64.sold)
   endif()
 endif()
