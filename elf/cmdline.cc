@@ -801,6 +801,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.page_size = parse_number(ctx, "-z max-page-size", arg);
       if (!has_single_bit(ctx.page_size))
         Fatal(ctx) << "-z max-page-size " << arg << ": value must be a power of 2";
+    } else if (read_z_arg("start-stop-visibility")) {
+      if (arg != "hidden")
+        Fatal(ctx) << "-z start-stop-visibility: unsupported visibility: " << arg;
     } else if (read_z_flag("noexecstack")) {
       ctx.arg.z_execstack = false;
     } else if (read_z_flag("relro")) {
