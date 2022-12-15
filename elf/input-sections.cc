@@ -7,7 +7,7 @@
 namespace mold::elf {
 
 typedef enum {
-  NONE, ERROR, COPYREL, DYN_COPYREL, PLT, CPLT, DYN_CPLT, DYNREL, BASEREL,
+  NONE, ERROR, COPYREL, DYN_COPYREL, PLT, CPLT, DYN_CPLT, DYNREL, BASEREL, IFUNC,
 } Action;
 
 template <typename E>
@@ -197,6 +197,7 @@ static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
       sym.flags |= NEEDS_CPLT;
     break;
   case DYNREL:
+  case IFUNC:
     dynrel();
     break;
   case BASEREL:
@@ -243,6 +244,9 @@ static Action get_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
 
 template <typename E>
 static Action get_dyn_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
+  if (sym.is_ifunc())
+    return IFUNC;
+
   // This is a decision table for absolute relocations for the word
   // size data (e.g. R_X86_64_64). Unlike the absrel_table, we can emit
   // a dynamic relocation if we cannot resolve an address at link-time.
@@ -258,6 +262,9 @@ static Action get_dyn_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
 
 template <typename E>
 static Action get_ppc64_toc_action(Context<E> &ctx, Symbol<E> &sym) {
+  if (sym.is_ifunc())
+    return IFUNC;
+
   // As a special case, we do not create copy relocations nor canonical
   // PLTs for .toc sections. PPC64's .toc is a compiler-generated
   // GOT-like section, and no user-generated code directly uses values
@@ -339,6 +346,13 @@ static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
   case DYNREL:
     apply_dynrel();
     break;
+  case IFUNC: {
+    u64 addr = sym.get_addr(ctx, NO_PLT) + A;
+    *dynrel++ = ElfRel<E>(P, E::R_IRELATIVE, 0, addr);
+    if (ctx.arg.apply_dynamic_relocs)
+      *(Word<E> *)loc = addr;
+    break;
+  }
   default:
     unreachable();
   }

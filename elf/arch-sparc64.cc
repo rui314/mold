@@ -321,7 +321,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // We always have to relax a GOT load to a load immediate if a
       // symbol is local, because R_SPARC_GOTDATA_OP cannot represent
       // an addend for a local symbol.
-      if (sym.is_imported) {
+      if (sym.is_imported || sym.is_ifunc()) {
         *(ub32 *)loc |= bits(G, 31, 10);
       } else if (sym.is_absolute()) {
         i64 val = S + A;
@@ -332,7 +332,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_SPARC_GOTDATA_OP_LOX10: {
-      if (sym.is_imported) {
+      if (sym.is_imported || sym.is_ifunc()) {
         *(ub32 *)loc |= bits(G, 9, 0);
       } else if (sym.is_absolute()) {
         i64 val = S + A;
@@ -344,7 +344,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_SPARC_GOTDATA_OP:
-      if (sym.is_imported)
+      if (sym.is_imported || sym.is_ifunc())
         break;
 
       if (sym.is_absolute()) {
