@@ -461,21 +461,21 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_390_64:
-      scan_rel(ctx, sym, rel, dyn_absrel_table);
+      scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_390_8:
     case R_390_12:
     case R_390_16:
     case R_390_20:
     case R_390_32:
-      scan_rel(ctx, sym, rel, absrel_table);
+      scan_absrel(ctx, sym, rel);
       break;
     case R_390_PC16:
     case R_390_PC16DBL:
     case R_390_PC32:
     case R_390_PC32DBL:
     case R_390_PC64:
-      scan_rel(ctx, sym, rel, pcrel_table);
+      scan_pcrel(ctx, sym, rel);
       break;
     case R_390_GOT12:
     case R_390_GOT16:

@@ -236,42 +236,6 @@ struct InputSectionExtras<E> {
   std::vector<i32> r_deltas;
 };
 
-typedef enum {
-  NONE, ERROR, COPYREL, DYN_COPYREL, PLT, CPLT, DYN_CPLT, DYNREL, BASEREL,
-} ScanAction;
-
-// This is a decision table for absolute relocations that is smaller
-// than the word size (e.g. R_X86_64_32). Since the dynamic linker
-// generally does not support dynamic relocations smaller than the
-// word size, we need to report an error if a relocation cannot be
-// resolved at link-time.
-constexpr static ScanAction absrel_table[3][4] = {
-  // Absolute  Local    Imported data  Imported code
-  {  NONE,     ERROR,   ERROR,         ERROR },  // Shared object
-  {  NONE,     ERROR,   ERROR,         ERROR },  // Position-independent exec
-  {  NONE,     NONE,    COPYREL,       CPLT  },  // Position-dependent exec
-};
-
-// This is a decision table for absolute relocations for the word
-// size data (e.g. R_X86_64_64). Unlike the absrel_table, we can emit
-// a dynamic relocation if we cannot resolve an address at link-time.
-constexpr static ScanAction dyn_absrel_table[3][4] = {
-  // Absolute  Local    Imported data  Imported code
-  {  NONE,     BASEREL, DYNREL,        DYNREL   },  // Shared object
-  {  NONE,     BASEREL, DYNREL,        DYNREL   },  // Position-independent exec
-  {  NONE,     NONE,    DYN_COPYREL,   DYN_CPLT },  // Position-dependent exec
-};
-
-// This is for PC-relative relocations (e.g. R_X86_64_PC32).
-// We cannot promote them to dynamic relocations because the dynamic
-// linker generally does not support PC-relative relocations.
-constexpr static ScanAction pcrel_table[3][4] = {
-  // Absolute  Local    Imported data  Imported code
-  {  ERROR,    NONE,    ERROR,         PLT    },  // Shared object
-  {  ERROR,    NONE,    COPYREL,       PLT    },  // Position-independent exec
-  {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
-};
-
 // InputSection represents a section in an input object file.
 template <typename E>
 class InputSection {
@@ -338,12 +302,16 @@ public:
   bool icf_leaf = false;
 
 private:
-  void scan_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
-                const ScanAction table[3][4]);
+  void scan_pcrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void scan_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void scan_dyn_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
+  void scan_toc_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
 
   void apply_dyn_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
-                        u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel,
-                        const ScanAction table[3][4] = dyn_absrel_table);
+                        u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel);
+
+  void apply_toc_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
+                     u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel);
 
   void copy_contents_riscv(Context<E> &ctx, u8 *buf);
 

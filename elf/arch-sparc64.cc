@@ -540,7 +540,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_SPARC_64:
-      scan_rel(ctx, sym, rel, dyn_absrel_table);
+      scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_SPARC_8:
     case R_SPARC_5:
@@ -568,7 +568,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_HI22:
     case R_SPARC_H44:
     case R_SPARC_HH22:
-      scan_rel(ctx, sym, rel, absrel_table);
+      scan_absrel(ctx, sym, rel);
       break;
     case R_SPARC_PLT32:
     case R_SPARC_WPLT30:
@@ -603,7 +603,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_WDISP19:
     case R_SPARC_WDISP22:
     case R_SPARC_PC_HH22:
-      scan_rel(ctx, sym, rel, pcrel_table);
+      scan_pcrel(ctx, sym, rel);
       break;
     case R_SPARC_TLS_GD_HI22:
       sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);

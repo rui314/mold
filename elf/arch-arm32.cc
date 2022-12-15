@@ -515,7 +515,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_MOVT_ABS:
     case R_ARM_THM_MOVT_ABS:
     case R_ARM_TARGET1:
-      scan_rel(ctx, sym, rel, dyn_absrel_table);
+      scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_ARM_THM_CALL:
     case R_ARM_CALL:
@@ -532,7 +532,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_MOVT_PREL:
     case R_ARM_THM_MOVT_PREL:
     case R_ARM_PREL31:
-      scan_rel(ctx, sym, rel, pcrel_table);
+      scan_pcrel(ctx, sym, rel);
       break;
     case R_ARM_TLS_GD32:
       sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);

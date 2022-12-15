@@ -61,13 +61,6 @@ static u64 highera(u64 x)  { return ((x + 0x8000) >> 32) & 0xffff; }
 static u64 highest(u64 x)  { return x >> 48; }
 static u64 highesta(u64 x) { return (x + 0x8000) >> 48; }
 
-static constexpr ScanAction toc_table[3][4] = {
-  // Absolute  Local    Imported data  Imported code
-  {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
-  {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
-  {  NONE,     NONE,    DYNREL,        DYNREL },  // Position-dependent exec
-};
-
 // .plt is used only for lazy symbol resolution on PPC64. All PLT
 // calls are made via range extension thunks even if they are within
 // reach. Thunks read addresses from .got.plt and jump there.
@@ -169,12 +162,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         if (ctx.arg.apply_dynamic_relocs)
           *(ub64 *)loc = S + A;
       } else {
-        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel, toc_table);
+        apply_toc_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       }
       break;
     case R_PPC64_TOC:
-      apply_dyn_absrel(ctx, *ctx.TOC, rel, loc, ctx.TOC->value, A, P, dynrel,
-                       toc_table);
+      apply_toc_rel(ctx, *ctx.TOC, rel, loc, ctx.TOC->value, A, P, dynrel);
       break;
     case R_PPC64_TOC16_HA:
       *(ub16 *)loc = ha(S + A - ctx.TOC->value);
@@ -370,10 +362,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (sym.is_ifunc())
         this->file.num_dynrel++;
       else
-        scan_rel(ctx, sym, rel, toc_table);
+        scan_toc_rel(ctx, sym, rel);
       break;
     case R_PPC64_TOC:
-      scan_rel(ctx, sym, rel, toc_table);
+      scan_toc_rel(ctx, sym, rel);
       break;
     case R_PPC64_GOT_TPREL16_HA:
       sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);

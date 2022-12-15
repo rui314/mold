@@ -461,7 +461,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
-      scan_rel(ctx, sym, rel, dyn_absrel_table);
+      scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_AARCH64_ADR_GOT_PAGE:
     case R_AARCH64_LD64_GOT_LO12_NC:
@@ -478,7 +478,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
       break;
     case R_AARCH64_ADR_PREL_PG_HI21:
-      scan_rel(ctx, sym, rel, pcrel_table);
+      scan_pcrel(ctx, sym, rel);
       break;
     case R_AARCH64_TLSGD_ADR_PAGE21:
       sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);

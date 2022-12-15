@@ -487,15 +487,15 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     switch (rel.r_type) {
     case R_386_8:
     case R_386_16:
-      scan_rel(ctx, sym, rel, absrel_table);
+      scan_absrel(ctx, sym, rel);
       break;
     case R_386_32:
-      scan_rel(ctx, sym, rel, dyn_absrel_table);
+      scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_386_PC8:
     case R_386_PC16:
     case R_386_PC32:
-      scan_rel(ctx, sym, rel, pcrel_table);
+      scan_pcrel(ctx, sym, rel);
       break;
     case R_386_GOT32:
     case R_386_GOTPC:
