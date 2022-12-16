@@ -270,7 +270,7 @@ get_symbols_v1(const void *handle, int nsyms, PluginSymbol *psyms) {
   unreachable();
 }
 
-// get_symbols teaches the LTO plugin as to how we resolved symbols.
+// get_symbols teaches the LTO plugin as to how we have resolved symbols.
 // The plugin uses the symbol resolution info to optimize the program.
 //
 // For example, if a definition in an IR file is not referenced by
@@ -308,7 +308,8 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
 
     if (sym.file->is_dso)
       return LDPR_RESOLVED_DYN;
-    if (((ObjectFile<E> *)sym.file)->is_lto_obj)
+
+    if (((ObjectFile<E> *)sym.file)->is_lto_obj && !sym.wrap)
       return esym.is_undef() ? LDPR_RESOLVED_IR : LDPR_PREEMPTED_IR;
     return esym.is_undef() ? LDPR_RESOLVED_EXEC : LDPR_PREEMPTED_REG;
   };
@@ -678,6 +679,18 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
       }
     }
   });
+
+  // Symbols specified by the --wrap option needs to be visible from
+  // regular object files.
+  for (std::string_view name : ctx.arg.wrap) {
+    get_symbol(ctx, name)->referenced_by_regular_obj = true;
+
+    std::string_view x = save_string(ctx, "__wrap_" + std::string(name));
+    std::string_view y = save_string(ctx, "__real_" + std::string(name));
+
+    get_symbol(ctx, x)->referenced_by_regular_obj = true;
+    get_symbol(ctx, x)->referenced_by_regular_obj = true;
+  }
 
   // all_symbols_read_hook() calls add_input_file() and add_input_library()
   LOG << "all symbols read\n";

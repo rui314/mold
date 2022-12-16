@@ -9,7 +9,7 @@ void foo() {
 }
 EOF
 
-cat <<EOF | $CC -c -o $t/b.o -xc -
+cat <<EOF | $CC -c -o $t/b.o -xc - -flto
 #include <stdio.h>
 
 void foo();
@@ -23,7 +23,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -c -o $t/c.o -xc -
+cat <<EOF | $CC -c -o $t/c.o -xc - -flto
 #include <stdio.h>
 
 void __real_foo();
@@ -33,11 +33,11 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.so $t/b.o
+$CC -B. -o $t/exe $t/a.so $t/b.o -flto
 $QEMU $t/exe | grep -q '^foo$'
 
-$CC -B. -o $t/exe $t/a.so $t/b.o -Wl,-wrap,foo
+$CC -B. -o $t/exe $t/a.so $t/b.o -Wl,-wrap,foo -flto
 $QEMU $t/exe | grep -q '^wrap_foo$'
 
-$CC -B. -o $t/exe $t/a.so $t/c.o -Wl,-wrap,foo
+$CC -B. -o $t/exe $t/a.so $t/c.o -Wl,-wrap,foo -flto
 $QEMU $t/exe | grep -q '^foo$'
