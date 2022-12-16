@@ -689,7 +689,7 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
     std::string_view y = save_string(ctx, "__real_" + std::string(name));
 
     get_symbol(ctx, x)->referenced_by_regular_obj = true;
-    get_symbol(ctx, x)->referenced_by_regular_obj = true;
+    get_symbol(ctx, y)->referenced_by_regular_obj = true;
   }
 
   // all_symbols_read_hook() calls add_input_file() and add_input_library()
