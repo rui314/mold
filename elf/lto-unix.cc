@@ -47,7 +47,7 @@
 // functions. `onload` calls callbacks to notify about the pointers to
 // other functions the linker plugin provides. I don't know why `onload`
 // can't just return a list of functions or why the linker plugin can't
-// define not only `onload` but other functions, but that's how it works.
+// define not only `onload` but other functions, but that's what it is.
 //
 // Here is the steps to use the linker plugin:
 //

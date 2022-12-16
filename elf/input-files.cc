@@ -62,10 +62,9 @@ ElfShdr<E> *InputFile<E>::find_section(i64 type) {
 template <typename E>
 __attribute__((no_sanitize("thread")))
 void InputFile<E>::clear_symbols() {
-  for (Symbol<E> *sym : get_global_syms()) {
+  for (Symbol<E> *sym : get_global_syms())
     if (sym->file == this)
       sym->clear();
-  }
 }
 
 // Find the source filename. It should be listed in symtab as STT_FILE.

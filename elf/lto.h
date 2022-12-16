@@ -153,7 +153,7 @@ enum PluginLevel {
 };
 
 enum PluginLinkerAPIVersion {
-  LAPI_V0 = 0,
+  LAPI_V0,
   LAPI_V1,
 };
 
