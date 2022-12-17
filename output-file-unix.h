@@ -65,16 +65,31 @@ public:
     mold::output_buffer_end = this->buf + filesize;
   }
 
+  ~MemoryMappedOutputFile() {
+    if (fd2 != -1)
+      ::close(fd2);
+  }
+
   void close(C &ctx) override {
     Timer t(ctx, "close_file");
 
     if (!this->is_unmapped)
       munmap(this->buf, this->filesize);
 
+    // If an output file already exists, open a file and then remove it.
+    // This is the fastest way to unlink a file, as it does not make the
+    // system to immediately release disk blocks occupied by the file.
+    fd2 = ::open(this->path.c_str(), O_RDONLY);
+    if (fd2 != -1)
+      unlink(this->path.c_str());
+
     if (rename(output_tmpfile, this->path.c_str()) == -1)
       Fatal(ctx) << this->path << ": rename failed: " << errno_string();
     output_tmpfile = nullptr;
   }
+
+private:
+  int fd2 = -1;
 };
 
 template <typename C>
