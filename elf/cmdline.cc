@@ -16,7 +16,7 @@
 
 namespace mold::elf {
 
-static const char helpmsg[] = R"(
+inline const char helpmsg[] = R"(
 Options:
   --help                      Report usage information
   -v, --version               Report version information
