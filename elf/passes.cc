@@ -1375,10 +1375,16 @@ void apply_version_script(Context<E> &ctx) {
   };
 
   if (is_simple()) {
-    for (VersionPattern &v : ctx.version_patterns)
-      if (Symbol<E> *sym = get_symbol(ctx, v.pattern);
-          sym->file && !sym->file->is_dso)
+    for (VersionPattern &v : ctx.version_patterns) {
+      Symbol<E> *sym = get_symbol(ctx, v.pattern);
+
+      if (!sym->file && !ctx.arg.undefined_version)
+        Warn(ctx) << v.source << ": cannot assign version `" << v.ver_str
+                  << "` to symbol `" << *sym << "`: symbol not found";
+
+      if (sym->file && !sym->file->is_dso)
         sym->ver_idx = v.ver_idx;
+    }
     return;
   }
 

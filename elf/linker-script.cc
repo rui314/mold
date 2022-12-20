@@ -278,7 +278,7 @@ static bool read_label(std::span<std::string_view> &tok,
 template <typename E>
 static void
 read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
-                             u16 ver_idx, bool is_cpp) {
+                             std::string_view ver_str, u16 ver_idx, bool is_cpp) {
   bool is_global = true;
 
   while (!tok.empty() && tok[0] != "}") {
@@ -298,11 +298,11 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
       if (!tok.empty() && tok[0] == "\"C\"") {
         tok = tok.subspan(1);
         tok = skip(ctx, tok, "{");
-        read_version_script_commands( ctx, tok, ver_idx, false);
+        read_version_script_commands( ctx, tok, ver_str, ver_idx, false);
       } else {
         tok = skip(ctx, tok, "\"C++\"");
         tok = skip(ctx, tok, "{");
-        read_version_script_commands(ctx, tok, ver_idx, true);
+        read_version_script_commands(ctx, tok, ver_str, ver_idx, true);
       }
 
       tok = skip(ctx, tok, "}");
@@ -314,9 +314,11 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
       ctx.default_version = (is_global ? ver_idx : VER_NDX_LOCAL);
       ctx.default_version_from_version_script = true;
     } else if (is_global) {
-      ctx.version_patterns.push_back({unquote(tok[0]), ver_idx, is_cpp});
+      ctx.version_patterns.push_back({unquote(tok[0]), current_file<E>->name,
+                                      ver_str, ver_idx, is_cpp});
     } else {
-      ctx.version_patterns.push_back({unquote(tok[0]), VER_NDX_LOCAL, is_cpp});
+      ctx.version_patterns.push_back({unquote(tok[0]), current_file<E>->name,
+                                      ver_str, VER_NDX_LOCAL, is_cpp});
     }
 
     tok = tok.subspan(1);
@@ -332,17 +334,21 @@ void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
   u16 next_ver = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size() + 1;
 
   while (!tok.empty() && tok[0] != "}") {
+    std::string_view ver_str;
     u16 ver_idx;
+
     if (tok[0] == "{") {
+      ver_str = "global";
       ver_idx = VER_NDX_GLOBAL;
     } else {
+      ver_str = tok[0];
       ver_idx = next_ver++;
       ctx.arg.version_definitions.push_back(std::string(tok[0]));
       tok = tok.subspan(1);
     }
 
     tok = skip(ctx, tok, "{");
-    read_version_script_commands(ctx, tok, ver_idx, false);
+    read_version_script_commands(ctx, tok, ver_str, ver_idx, false);
     tok = skip(ctx, tok, "}");
     if (!tok.empty() && tok[0] != ";")
       tok = tok.subspan(1);
@@ -385,7 +391,8 @@ void read_dynamic_list_commands(Context<E> &ctx, std::span<std::string_view> &to
     if (tok[0] == "*")
       ctx.default_version = VER_NDX_GLOBAL;
     else
-      ctx.version_patterns.push_back({unquote(tok[0]), VER_NDX_GLOBAL, is_cpp});
+      ctx.version_patterns.push_back({unquote(tok[0]), current_file<E>->name,
+                                      "global", VER_NDX_GLOBAL, is_cpp});
 
     tok = skip(ctx, tok.subspan(1), ";");
   }

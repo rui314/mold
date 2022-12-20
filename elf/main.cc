@@ -295,7 +295,8 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       if (arg == "*")
         ctx.default_version = VER_NDX_GLOBAL;
       else
-        ctx.version_patterns.push_back({arg, VER_NDX_GLOBAL, false});
+        ctx.version_patterns.push_back({arg, "--export-dynamic-symbol",
+                                        "global", VER_NDX_GLOBAL, false});
     } else if (remove_prefix(arg, "--export-dynamic-symbol-list=")) {
       MappedFile<Context<E>> *mf = find_from_search_paths(ctx, std::string(arg));
       if (!mf)

@@ -149,6 +149,8 @@ Options:
   --threads                   Use multiple threads (default)
     --no-threads
   --trace                     Print name of each input file
+  --undefined-version         Report version scripts that refer undefined symbols (default)
+    --no-undefined-version
   --unique PATTERN            Don't merge input sections that match a given pattern
   --unresolved-symbols [report-all,ignore-all,ignore-in-object-files,ignore-in-shared-libs]
                               How to handle unresolved symbols
@@ -990,6 +992,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         Fatal(ctx) << "-R" << arg
                    << ": -R as an alias for --just-symbols is not supported";
       add_rpath(arg);
+    } else if (read_flag("undefined-version")) {
+      ctx.arg.undefined_version = true;
+    } else if (read_flag("no-undefined-version")) {
+      ctx.arg.undefined_version = false;
     } else if (read_flag("build-id")) {
       ctx.arg.build_id.kind = BuildId::HASH;
       ctx.arg.build_id.hash_size = 20;
@@ -1046,7 +1052,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("no-add-needed")) {
     } else if (read_flag("no-call-graph-profile-sort")) {
     } else if (read_flag("no-copy-dt-needed-entries")) {
-    } else if (read_flag("no-undefined-version")) {
     } else if (read_arg("sort-section")) {
     } else if (read_flag("sort-common")) {
     } else if (read_flag("dc")) {

@@ -950,6 +950,15 @@ Set target system root directory to
 .It Fl -trace
 Print name of each input file.
 .Pp
+.It Fl -undefined-version
+.It Fl -no-undefined-version
+By default,
+.Nm
+warns on a symbol specified by a version script or by
+.Fl -export-dynamic-symbol
+if it is not defined. You can silence the warning by
+.Fl -undefined-version .
+.Pp
 .It Fl -unique Ns = Ns Ar pattern
 Don't merge input sections that match
 .Ar pattern .
@@ -1197,7 +1206,6 @@ Mark object to interpose all DSOs but executable.
 .It Fl -no-allow-shlib-undefined
 .It Fl -no-copy-dt-needed-entries
 .It Fl -no-fatal-warnings
-.It Fl -no-undefined-version
 .It Fl -nostdlib
 .It Fl -rpath-link Ns = Ns Ar dir
 .It Fl -sort-common

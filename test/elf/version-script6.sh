@@ -26,8 +26,7 @@ extern int bar;
 int baz() { return foo + bar; }
 EOF
 
-$CC -B. -shared -Wl,-version-script,$t/d.ver \
-  -o $t/f.so $t/e.o $t/c.so
+$CC -B. -shared -Wl,-version-script,$t/d.ver -o $t/f.so $t/e.o $t/c.so -Wl,--undefined-version
 
 readelf --dyn-syms $t/f.so > $t/log
 grep -q 'foo@VER_X1' $t/log

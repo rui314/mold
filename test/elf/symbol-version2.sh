@@ -10,11 +10,7 @@ __asm__(".symver bar1, bar@TEST");
 EOF
 
 cat <<EOF > $t/b.version
-TEST {
-global:
-  foo;
-  bar;
-};
+TEST { global: foo; };
 EOF
 
 $CC -B. -o $t/c.so -shared $t/a.o -Wl,--version-script=$t/b.version

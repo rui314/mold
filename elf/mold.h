@@ -1560,6 +1560,8 @@ typedef enum {
 
 struct VersionPattern {
   std::string_view pattern;
+  std::string_view source;
+  std::string_view ver_str;
   u16 ver_idx = -1;
   bool is_cpp = false;
 };
@@ -1641,6 +1643,7 @@ struct Context {
     bool strip_all = false;
     bool strip_debug = false;
     bool trace = false;
+    bool undefined_version = false;
     bool warn_common = false;
     bool warn_once = false;
     bool warn_textrel = false;
