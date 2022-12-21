@@ -149,8 +149,8 @@ Options:
   --threads                   Use multiple threads (default)
     --no-threads
   --trace                     Print name of each input file
-  --undefined-version         Report version scripts that refer undefined symbols (default)
-    --no-undefined-version
+  --undefined-version         Do not report version scripts that refer undefined symbols
+    --no-undefined-version    Report version scripts that refer undefined symbols (default)
   --unique PATTERN            Don't merge input sections that match a given pattern
   --unresolved-symbols [report-all,ignore-all,ignore-in-object-files,ignore-in-shared-libs]
                               How to handle unresolved symbols
