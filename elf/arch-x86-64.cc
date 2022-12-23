@@ -716,14 +716,14 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (relax_tlsld(ctx))
         i++;
       else
-        ctx.needs_tlsld = true;
+        ctx.needs_tlsld.store(true, std::memory_order_relaxed);
       break;
     }
     case R_X86_64_GOTTPOFF: {
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTTPOFF";
 
-      ctx.has_gottp_rel = true;
+      ctx.has_gottp_rel.store(true, std::memory_order_relaxed);
 
       bool do_relax = ctx.arg.relax && !ctx.arg.shared &&
                       !sym.is_imported && relax_gottpoff(loc - 3);

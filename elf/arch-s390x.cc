@@ -519,7 +519,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_390_TLS_LDM32:
     case R_390_TLS_LDM64:
       if (!relax_tlsld(ctx))
-        ctx.needs_tlsld = true;
+        ctx.needs_tlsld.store(true, std::memory_order_relaxed);
       break;
     case R_390_TLS_LE32:
     case R_390_TLS_LE64:

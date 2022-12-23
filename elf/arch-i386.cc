@@ -543,7 +543,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (relax_tlsld(ctx))
         i++;
       else
-        ctx.needs_tlsld = true;
+        ctx.needs_tlsld.store(true, std::memory_order_relaxed);
       break;
     case R_386_TLS_GOTDESC:
       if (!relax_tlsdesc(ctx, sym))

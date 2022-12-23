@@ -538,7 +538,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
       break;
     case R_ARM_TLS_LDM32:
-      ctx.needs_tlsld = true;
+      ctx.needs_tlsld.store(true, std::memory_order_relaxed);
       break;
     case R_ARM_TLS_IE32:
       sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);

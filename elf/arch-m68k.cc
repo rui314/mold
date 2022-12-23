@@ -319,7 +319,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_68K_TLS_LDM32:
     case R_68K_TLS_LDM16:
     case R_68K_TLS_LDM8:
-      ctx.needs_tlsld = true;
+      ctx.needs_tlsld.store(true, std::memory_order_relaxed);
       break;
     case R_68K_TLS_IE32:
     case R_68K_TLS_IE16:

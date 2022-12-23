@@ -713,7 +713,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
     case R_RISCV_TLS_GOT_HI20:
-      ctx.has_gottp_rel = true;
+      ctx.has_gottp_rel.store(true, std::memory_order_relaxed);
       sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
       break;
     case R_RISCV_TLS_GD_HI20:
