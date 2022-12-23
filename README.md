@@ -1,5 +1,8 @@
 # mold: A Modern Linker
 
+[![CI](https://github.com/rui314/mold/actions/workflows/ci.yml/badge.svg)](https://github.com/rui314/mold/actions/workflows/ci.yml)
+[![build result](https://build.opensuse.org/projects/home:marxin:mold/packages/mold/badge.svg?type=default)](https://build.opensuse.org/package/show/home:marxin:mold/mold)
+
 <i>This is a repo of a free, AGPL-licensed version of the linker.
 If you are looking for a commercial, non-AGPL version of the same linker,
 please visit the
