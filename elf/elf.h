@@ -2465,7 +2465,6 @@ struct X86_64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtp_offset = 0;
 };
 
 template <> struct ElfSym<X86_64>     : EL64Sym {};
@@ -2501,7 +2500,6 @@ struct I386 {
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtp_offset = 0;
 };
 
 template <> struct ElfSym<I386>     : EL32Sym {};
@@ -2537,7 +2535,6 @@ struct ARM64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtp_offset = 0;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 12;
 };
@@ -2575,7 +2572,6 @@ struct ARM32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtp_offset = 0;
   static constexpr u32 thunk_hdr_size = 12;
   static constexpr u32 thunk_size = 20;
 };
@@ -2612,29 +2608,6 @@ struct RV64LE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-
-  // When __tls_get_addr is called to resolve a thread-local variable's
-  // address, the following two arguments are passed to the function:
-  //
-  // 1. the module number that the variable belongs, and
-  // 2. the variable's offset within the module's TLS block.
-  //
-  // These values are usually computed by the dynamic linker and set to
-  // GOT slots as a result of resolving R_DTPMOD and R_DTPOFF dynamic
-  // relocations.
-  //
-  // On RISC-V, R_DTPOFF is resolved to the address 0x800 past the start
-  // of the TLS block. The bias maximizes the accessible range for
-  // load/store instructions with 12-bits signed immediates. That is, if
-  // the offset was right at the beginning of the start of the TLS block,
-  // the half of addressible space (negative immediates) would have been
-  // wasted.
-  //
-  // In most cases we don't have to think about the bias, as the DTPOFF
-  // values are usually computed and used only by runtime. But when we do
-  // compute DTPOFF for statically-linked executable, we need to offset
-  // the bias by subtracting 0x800.
-  static constexpr u32 tls_dtp_offset = 0x800;
 };
 
 template <> struct ElfSym<RV64LE>     : EL64Sym {};
@@ -2669,7 +2642,6 @@ struct RV64BE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtp_offset = 0x800;
 };
 
 template <> struct ElfSym<RV64BE>     : EB64Sym {};
@@ -2704,7 +2676,6 @@ struct RV32LE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtp_offset = 0x800;
 };
 
 template <> struct ElfSym<RV32LE>     : EL32Sym {};
@@ -2739,7 +2710,6 @@ struct RV32BE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtp_offset = 0x800;
 };
 
 template <> struct ElfSym<RV32BE>     : EB32Sym {};
@@ -2774,7 +2744,6 @@ struct PPC64V1 {
   static constexpr u32 plt_hdr_size = 52;
   static constexpr u32 plt_size = 8;
   static constexpr u32 pltgot_size = 0;
-  static constexpr u32 tls_dtp_offset = 0x8000;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 28;
 };
@@ -2811,7 +2780,6 @@ struct PPC64V2 {
   static constexpr u32 plt_hdr_size = 60;
   static constexpr u32 plt_size = 4;
   static constexpr u32 pltgot_size = 0;
-  static constexpr u32 tls_dtp_offset = 0x8000;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 20;
 };
@@ -2848,7 +2816,6 @@ struct S390X {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 32;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 tls_dtp_offset = 0;
 };
 
 template <> struct ElfSym<S390X>     : EB64Sym {};
@@ -2883,7 +2850,6 @@ struct SPARC64 {
   static constexpr u32 plt_hdr_size = 128;
   static constexpr u32 plt_size = 32;
   static constexpr u32 pltgot_size = 32;
-  static constexpr u32 tls_dtp_offset = 0;
 };
 
 template <> struct ElfSym<SPARC64>     : EB64Sym {};
@@ -2918,7 +2884,6 @@ struct M68K {
   static constexpr u32 plt_hdr_size = 18;
   static constexpr u32 plt_size = 14;
   static constexpr u32 pltgot_size = 8;
-  static constexpr u32 tls_dtp_offset = 0x8000;
 };
 
 template <> struct ElfSym<M68K>     : EB32Sym {};

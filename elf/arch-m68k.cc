@@ -183,13 +183,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write8(ctx.got->get_tlsld_addr(ctx) + A - GOT);
       break;
     case R_68K_TLS_LDO32:
-      *(ub32 *)loc = S + A - ctx.tls_begin - E::tls_dtp_offset;
+      *(ub32 *)loc = S + A - ctx.dtp_addr;
       break;
     case R_68K_TLS_LDO16:
-      write16s(S + A - ctx.tls_begin - E::tls_dtp_offset);
+      write16s(S + A - ctx.dtp_addr);
       break;
     case R_68K_TLS_LDO8:
-      write8s(S + A - ctx.tls_begin - E::tls_dtp_offset);
+      write8s(S + A - ctx.dtp_addr);
       break;
     case R_68K_TLS_IE32:
       *(ub32 *)loc = sym.get_gottp_addr(ctx) + A - GOT;

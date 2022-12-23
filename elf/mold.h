@@ -1814,6 +1814,7 @@ struct Context {
   // For thread-local variables
   u64 tls_begin = 0;
   u64 tp_addr = 0;
+  u64 dtp_addr = 0;
 
   // Linker-synthesized symbols
   Symbol<E> *TOC = nullptr;

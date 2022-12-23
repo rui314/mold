@@ -232,6 +232,38 @@ static void init_thread_pointers(Context<E> &ctx, ElfPhdr<E> phdr) {
     static_assert(is_riscv<E>);
     ctx.tp_addr = phdr.p_vaddr;
   }
+
+  // When __tls_get_addr is called to resolve a thread-local variable's
+  // address, the following two arguments are passed to the function:
+  //
+  //   1. the module number that the variable belongs, and
+  //   2. the variable's offset within the module's TLS block.
+  //
+  // These values are usually computed by the dynamic linker and set to
+  // GOT slots as a result of resolving R_DTPMOD and R_DTPOFF dynamic
+  // relocations.
+  //
+  // On PPC64 and m68k, R_DTPOFF is resolved to the address 0x8000 (32 KiB)
+  // past the start of the TLS block. The bias maximizes the accessible
+  // range for load/store instructions with 16-bits signed immediates.
+  // That is, if the offset were right at the beginning of the start of the
+  // TLS block, the half of addressible space (negative immediates) would
+  // have been wasted.
+  //
+  // On RISC-V, the bias is 0x800 as the load/store instructions in the ISA
+  // usually have a 12-bit immediate.
+  //
+  // In most cases we don't have to think about the bias, as the DTPOFF
+  // values are usually computed and used only by runtime. But when we do
+  // compute DTPOFF for statically-linked executable, we need to offset
+  // the bias by subtracting the psABI-specific value.
+  if constexpr (is_ppc<E> || is_m68k<E>) {
+    ctx.dtp_addr = ctx.tls_begin + 0x8000;
+  } else if constexpr (is_riscv<E>) {
+    ctx.dtp_addr = ctx.tls_begin + 0x800;
+  } else {
+    ctx.dtp_addr = ctx.tls_begin;
+  }
 }
 
 template <typename E>
@@ -1217,8 +1249,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
 
     if (ctx.arg.is_static) {
       entries.push_back({idx, 1}); // One indicates the main executable file
-      entries.push_back({idx + 1,
-                         sym->get_addr(ctx) - ctx.tls_begin - E::tls_dtp_offset});
+      entries.push_back({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
     } else {
       entries.push_back({idx, 0, E::R_DTPMOD, sym});
       entries.push_back({idx + 1, 0, E::R_DTPOFF, sym});
