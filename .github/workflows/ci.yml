@@ -18,6 +18,10 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v3
+    - name: curl-test
+      run: curl --retry 10 --no-progress-meter https://api.github.com/repos/rui314/mold/releases/latest
+      shell: bash
+      if: runner.os == 'linux'
     - uses: rui314/setup-mold@staging
     - name: install-build-deps
       run: sudo ./install-build-deps.sh update
