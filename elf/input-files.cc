@@ -571,9 +571,16 @@ static size_t find_null(std::string_view data, u64 entsize) {
 template <typename E>
 static std::unique_ptr<MergeableSection<E>>
 split_section(Context<E> &ctx, InputSection<E> &sec) {
+  if (!sec.is_alive || sec.sh_size == 0 || sec.relsec_idx != -1)
+    return nullptr;
+
+  const ElfShdr<E> &shdr = sec.shdr();
+  if (!(shdr.sh_flags & SHF_MERGE))
+    return nullptr;
+
   std::unique_ptr<MergeableSection<E>> rec(new MergeableSection<E>);
-  rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), sec.shdr().sh_type,
-                                               sec.shdr().sh_flags);
+  rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), shdr.sh_type,
+                                               shdr.sh_flags);
   rec->p2align = sec.p2align;
 
   // If thes section contents are compressed, uncompress them.
@@ -581,11 +588,11 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 
   std::string_view data = sec.contents;
   const char *begin = data.data();
-  u64 entsize = sec.shdr().sh_entsize;
+  u64 entsize = shdr.sh_entsize;
   HyperLogLog estimator;
 
   // Split sections
-  if (sec.shdr().sh_flags & SHF_STRINGS) {
+  if (shdr.sh_flags & SHF_STRINGS) {
     if (entsize == 0) {
       // GHC (Glasgow Haskell Compiler) sometimes creates a mergeable
       // string section with entsize of 0 instead of 1, though such
@@ -609,6 +616,11 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
       estimator.insert(hash);
     }
   } else {
+    // OCaml compiler seems to create a mergeable non-string section with
+    // entisze of 0. Such section is malformed. We do not split such section.
+    if (entsize == 0)
+      return nullptr;
+
     if (data.size() % entsize)
       Fatal(ctx) << sec << ": section size is not multiple of sh_entsize";
 
@@ -677,12 +689,9 @@ void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
   mergeable_sections.resize(sections.size());
 
   for (i64 i = 0; i < sections.size(); i++) {
-    std::unique_ptr<InputSection<E>> &isec = sections[i];
-    if (isec && isec->is_alive && isec->sh_size && isec->relsec_idx == -1) {
-      const ElfShdr<E> &shdr = isec->shdr();
-      if ((shdr.sh_flags & SHF_MERGE) &&
-          ((shdr.sh_flags & SHF_STRINGS) || shdr.sh_entsize)) {
-        mergeable_sections[i] = split_section(ctx, *isec);
+    if (std::unique_ptr<InputSection<E>> &isec = sections[i]) {
+      if (std::unique_ptr<MergeableSection<E>> m = split_section(ctx, *isec)) {
+        mergeable_sections[i] = std::move(m);
         isec->is_alive = false;
       }
     }
