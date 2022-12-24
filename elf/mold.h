@@ -475,18 +475,6 @@ public:
 };
 
 template <typename E>
-struct GotEntry {
-  bool is_relr(Context<E> &ctx) const {
-    return r_type == E::R_RELATIVE && ctx.arg.pack_dyn_relocs_relr;
-  }
-
-  i64 idx = 0;
-  u64 val = 0;
-  i64 r_type = R_NONE;
-  Symbol<E> *sym = nullptr;
-};
-
-template <typename E>
 class GotSection : public Chunk<E> {
 public:
   GotSection() {
@@ -523,9 +511,6 @@ public:
 
   void construct_relr(Context<E> &ctx);
   std::vector<u64> relr;
-
-private:
-  std::vector<GotEntry<E>> get_entries(Context<E> &ctx) const;
 };
 
 template <typename E>

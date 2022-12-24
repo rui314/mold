@@ -1192,15 +1192,18 @@ u64 GotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
 }
 
 template <typename E>
-i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
-  i64 n = 0;
-  for (GotEntry<E> &ent : get_entries(ctx))
-    if (!ent.is_relr(ctx) && ent.r_type != R_NONE)
-      n++;
-  return n * sizeof(ElfRel<E>);
-}
+struct GotEntry {
+  bool is_relr(Context<E> &ctx) const {
+    return r_type == E::R_RELATIVE && ctx.arg.pack_dyn_relocs_relr;
+  }
 
-// Fill .got and .rel.dyn.
+  i64 idx = 0;
+  u64 val = 0;
+  i64 r_type = R_NONE;
+  Symbol<E> *sym = nullptr;
+};
+
+// Get .got and .rel.dyn contents.
 //
 // .got is a linker-synthesized constant pool whose entry is of pointer
 // size. If we know a correct value for an entry, we'll just set that value
@@ -1216,11 +1219,11 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
 // TLVs are accessed in a different way than the ordinary global variables.
 // Their addresses are not unique; each thread has its own copy of TLVs.
 template <typename E>
-std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
+static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
   std::vector<GotEntry<E>> entries;
 
   // Create GOT entries for ordinary symbols
-  for (Symbol<E> *sym : got_syms) {
+  for (Symbol<E> *sym : ctx.got->got_syms) {
     i64 idx = sym->get_got_idx(ctx);
 
     // If a symbol is imported, let the dynamic linker to resolve it.
@@ -1244,7 +1247,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
   }
 
   // Create GOT entries for TLVs.
-  for (Symbol<E> *sym : tlsgd_syms) {
+  for (Symbol<E> *sym : ctx.got->tlsgd_syms) {
     i64 idx = sym->get_tlsgd_idx(ctx);
 
     if (ctx.arg.is_static) {
@@ -1257,7 +1260,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
   }
 
   if constexpr (supports_tlsdesc<E>) {
-    for (Symbol<E> *sym : tlsdesc_syms) {
+    for (Symbol<E> *sym : ctx.got->tlsdesc_syms) {
       // _TLS_MODULE_BASE_ is a linker-synthesized virtual symbol that
       // refers the begining of the TLS block.
       if (sym == ctx._TLS_MODULE_BASE_)
@@ -1267,7 +1270,7 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     }
   }
 
-  for (Symbol<E> *sym : gottp_syms) {
+  for (Symbol<E> *sym : ctx.got->gottp_syms) {
     i64 idx = sym->get_gottp_idx(ctx);
 
     // If we know nothing about the symbol, let the dynamic linker
@@ -1289,14 +1292,23 @@ std::vector<GotEntry<E>> GotSection<E>::get_entries(Context<E> &ctx) const {
     entries.push_back({idx, sym->get_addr(ctx) - ctx.tp_addr});
   }
 
-  if (tlsld_idx != -1) {
+  if (ctx.got->tlsld_idx != -1) {
     if (ctx.arg.is_static)
-      entries.push_back({tlsld_idx, 1}); // One indicates the main executable
+      entries.push_back({ctx.got->tlsld_idx, 1}); // 1 means the main executable
     else
-      entries.push_back({tlsld_idx, 0, E::R_DTPMOD});
+      entries.push_back({ctx.got->tlsld_idx, 0, E::R_DTPMOD});
   }
 
   return entries;
+}
+
+template <typename E>
+i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
+  i64 n = 0;
+  for (GotEntry<E> &ent : get_got_entries(ctx))
+    if (!ent.is_relr(ctx) && ent.r_type != R_NONE)
+      n++;
+  return n * sizeof(ElfRel<E>);
 }
 
 // Fill .got and .rel.dyn.
@@ -1320,7 +1332,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
 
-  for (GotEntry<E> &ent : get_entries(ctx)) {
+  for (GotEntry<E> &ent : get_got_entries(ctx)) {
     if (ent.is_relr(ctx) || ent.r_type == R_NONE) {
       buf[ent.idx] = ent.val;
     } else {
@@ -1340,7 +1352,7 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
   assert(ctx.arg.pack_dyn_relocs_relr);
 
   std::vector<u64> pos;
-  for (GotEntry<E> &ent : get_entries(ctx))
+  for (GotEntry<E> &ent : get_got_entries(ctx))
     if (ent.is_relr(ctx))
       pos.push_back(ent.idx * sizeof(Word<E>));
 
