@@ -1444,14 +1444,14 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
   // DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
   if constexpr (!is_ppc<E>) {
     Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
-    memset(buf, 0, this->shdr.sh_size);
 
     // The first slot of .got.plt points to _DYNAMIC, as requested by
     // the psABI. The second and the third slots are reserved by the psABI.
     static_assert(HDR_SIZE / sizeof(Word<E>) == 3);
 
-    if (ctx.dynamic)
-      buf[0] = ctx.dynamic->shdr.sh_addr;
+    buf[0] = ctx.dynamic ? (u64)ctx.dynamic->shdr.sh_addr : 0;
+    buf[1] = 0;
+    buf[2] = 0;
 
     for (i64 i = 0; i < ctx.plt->symbols.size(); i++)
       buf[i + 3] = ctx.plt->shdr.sh_addr;
@@ -1693,10 +1693,10 @@ void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   if (symbols.empty())
     symbols.resize(1);
 
-  if (sym->get_dynsym_idx(ctx) != -1)
-    return;
-  sym->set_dynsym_idx(ctx, -2);
-  symbols.push_back(sym);
+  if (sym->get_dynsym_idx(ctx) == -1) {
+    sym->set_dynsym_idx(ctx, -2);
+    symbols.push_back(sym);
+  }
 }
 
 template <typename E>
@@ -2605,14 +2605,16 @@ void NotePackageSection<E>::copy_buf(Context<E> &ctx) {
 // Merges input files' .note.gnu.property values.
 template <typename E>
 void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
-  // The rules we support are only specified for x86 psABI.
-  if (!std::is_same_v<E, I386> && !std::is_same_v<E, X86_64>)
+  // The rules we support are only specified for x86 psABI
+  if (!is_x86<E>)
     return;
 
+  // Reset to the initial state so that this function is idempotent
   std::vector<ObjectFile<E> *> files = ctx.objs;
   std::erase(files, ctx.internal_obj);
   properties.clear();
 
+  // Obtain the list of keys
   std::set<u32> keys;
   for (ObjectFile<E> *file : files)
     for (std::pair<u32, u32> kv : file->gnu_properties)
@@ -2625,6 +2627,7 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
     return 0;
   };
 
+  // Merge values for each key
   for (u32 key : keys) {
     auto has_key = [&](ObjectFile<E> *file) {
       return file->gnu_properties.contains(key);
@@ -3064,46 +3067,47 @@ void RelocSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void RelocSection<E>::copy_buf(Context<E> &ctx) {
+  auto write = [&](ElfRel<E> &out, InputSection<E> &isec, const ElfRel<E> &rel) {
+    memset(&out, 0, sizeof(out));
+    out.r_offset = isec.output_section->shdr.sh_addr + isec.offset + rel.r_offset;
+    out.r_type = rel.r_type;
+
+    Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+
+    if (sym.esym().st_type == STT_SECTION) {
+      i64 addend;
+
+      if (SectionFragment<E> *frag = sym.get_frag()) {
+        out.r_sym = frag->output_section.shndx;
+        addend = frag->offset + sym.value + get_addend(isec, rel);
+      } else {
+        InputSection<E> *target = sym.get_input_section();
+        OutputSection<E> *osec = target->output_section;
+        out.r_sym = osec->shndx;
+        addend = get_addend(isec, rel) + target->offset;
+      }
+
+      if constexpr (is_rela<E>) {
+        out.r_addend = addend;
+      } else if (ctx.arg.relocatable) {
+        u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
+        write_addend(base + rel.r_offset, addend, rel);
+      }
+    } else {
+      if (sym.sym_idx)
+        out.r_sym = sym.get_output_sym_idx(ctx);
+      if constexpr (is_rela<E>)
+        out.r_addend = rel.r_addend;
+    }
+  };
+
   tbb::parallel_for((i64)0, (i64)output_section.members.size(), [&](i64 i) {
     ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset) + offsets[i];
-
     InputSection<E> &isec = *output_section.members[i];
-    u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
     std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
 
-    for (i64 j = 0; j < rels.size(); j++) {
-      const ElfRel<E> &r = rels[j];
-      Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-      memset(&buf[j], 0, sizeof(buf[j]));
-
-      buf[j].r_offset =
-        isec.output_section->shdr.sh_addr + isec.offset + r.r_offset;
-      buf[j].r_type = r.r_type;
-
-      if (sym.esym().st_type == STT_SECTION) {
-        i64 addend;
-
-        if (SectionFragment<E> *frag = sym.get_frag()) {
-          buf[j].r_sym = frag->output_section.shndx;
-          addend = frag->offset + sym.value + get_addend(isec, r);
-        } else {
-          InputSection<E> *target = sym.get_input_section();
-          OutputSection<E> *osec = target->output_section;
-          buf[j].r_sym = osec->shndx;
-          addend = get_addend(isec, r) + target->offset;
-        }
-
-        if constexpr (is_rela<E>)
-          buf[j].r_addend = addend;
-        else if (ctx.arg.relocatable)
-          write_addend(base + r.r_offset, addend, r);
-      } else {
-        if (sym.sym_idx)
-          buf[j].r_sym = sym.get_output_sym_idx(ctx);
-        if constexpr (is_rela<E>)
-          buf[j].r_addend = r.r_addend;
-      }
-    }
+    for (i64 j = 0; j < rels.size(); j++)
+      write(buf[j], isec, rels[j]);
   });
 }
 
