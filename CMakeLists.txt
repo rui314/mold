@@ -244,6 +244,12 @@ if(NOT HAVE_FULL_ATOMIC_SUPPORT)
   target_link_libraries(mold PRIVATE atomic)
 endif()
 
+# Add -pthread
+if(NOT APPLE AND NOT WIN32)
+  target_compile_options(mold PRIVATE -pthread)
+  target_link_options(mold PRIVATE -pthread)
+endif()
+
 # Create a .cc file containing the current git hash for `mold --version`.
 add_custom_target(git_hash
   COMMAND ${CMAKE_COMMAND}
