@@ -964,7 +964,7 @@ void check_symbol_types(Context<E> &ctx) {
       u32 their_type = normalize_type(sym.esym().st_type);
       u32 our_type = normalize_type(esym.st_type);
 
-      if (sym.file && their_type != STT_NOTYPE && our_type != STT_NOTYPE &&
+      if (their_type != STT_NOTYPE && our_type != STT_NOTYPE &&
           their_type != our_type)
         Warn(ctx) << "symbol type mismatch: " << sym << '\n'
                   << ">>> defined in " << *sym.file << " as "
@@ -973,6 +973,7 @@ void check_symbol_types(Context<E> &ctx) {
                   << stt_to_string(esym.st_type);
     }
   };
+
   tbb::parallel_for_each(ctx.objs, check);
   tbb::parallel_for_each(ctx.dsos, check);
 }
