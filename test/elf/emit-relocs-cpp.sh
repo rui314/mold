@@ -4,8 +4,8 @@
 [ $MACHINE = arm ] && skip
 
 cat <<EOF | $CXX -o $t/a.o -c -fPIC -xc++ -
-#include <iostream>
-int main() { std::cout << "Hello world\n"; }
+#include <cstdio>
+int main() { printf("Hello world\n"); }
 EOF
 
 $CXX -B. -o $t/exe $t/a.o -Wl,-emit-relocs

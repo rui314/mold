@@ -64,6 +64,8 @@ MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
       return MachineType::SPARC64;
     case EM_68K:
       return MachineType::M68K;
+    case EM_SH:
+      return MachineType::SH4;
     default:
       return MachineType::NONE;
     }
@@ -356,6 +358,8 @@ static int redo_main(int argc, char **argv, MachineType ty) {
     return elf_main<SPARC64>(argc, argv);
   case MachineType::M68K:
     return elf_main<M68K>(argc, argv);
+  case MachineType::SH4:
+    return elf_main<SH4>(argc, argv);
   default:
     unreachable();
   }
@@ -743,6 +747,7 @@ extern template int elf_main<PPC64V2>(int, char **);
 extern template int elf_main<S390X>(int, char **);
 extern template int elf_main<SPARC64>(int, char **);
 extern template int elf_main<M68K>(int, char **);
+extern template int elf_main<SH4>(int, char **);
 
 int main(int argc, char **argv) {
   return elf_main<X86_64>(argc, argv);

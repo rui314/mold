@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = sh4 ] && skip
+
 static=1
 test_cflags -static || static=0
 

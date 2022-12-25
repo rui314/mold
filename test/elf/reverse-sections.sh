@@ -2,38 +2,38 @@
 . $(dirname $0)/common.inc
 
 cat <<EOF | $CC -o $t/a.o -c -xc++ -
-#include <iostream>
+#include <cstdio>
 static struct Foo1 {
-  Foo1() { std::cout << "foo1 "; }
+  Foo1() { printf("foo1 "); }
 } x;
 
 static struct Foo2 {
-  Foo2() { std::cout << "foo2 "; }
+  Foo2() { printf("foo2 "); }
 } y;
 EOF
 
 cat <<EOF | $CC -o $t/b.o -c -xc++ -
-#include <iostream>
+#include <cstdio>
 static struct Foo3 {
-  Foo3() { std::cout << "foo3 "; }
+  Foo3() { printf("foo3 "); }
 } x;
 
 static struct Foo4 {
-  Foo4() { std::cout << "foo4 "; }
+  Foo4() { printf("foo4 "); }
 } y;
 EOF
 
 cat <<EOF | $CC -o $t/c.o -c -xc++ -
-#include <iostream>
+#include <cstdio>
 static struct Foo5 {
-  Foo5() { std::cout << "foo5 "; }
+  Foo5() { printf("foo5 "); }
 } x;
 
 static struct Foo6 {
-  Foo6() { std::cout << "foo6 "; }
+  Foo6() { printf("foo6 "); }
 } y;
 
-int main() { std::cout << "\n"; }
+int main() { printf("\n"); }
 EOF
 
 $CXX -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o

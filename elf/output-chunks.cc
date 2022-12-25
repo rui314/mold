@@ -207,7 +207,7 @@ static void init_thread_pointers(Context<E> &ctx, ElfPhdr<E> phdr) {
   // and %a0/%a1 on s390x) refers past the end of all TLVs for historical
   // reasons. TLVs are accessed with negative offsets from TP.
   //
-  // On ARM, the runtime appends two words at the beginning of TLV
+  // On ARM and SH4, the runtime appends two words at the beginning of TLV
   // template image when copying TLVs to per-thread area, so we need
   // to offset it.
   //
@@ -224,7 +224,7 @@ static void init_thread_pointers(Context<E> &ctx, ElfPhdr<E> phdr) {
   // load/store instruction.
   if constexpr (is_x86<E> || is_sparc<E> || is_s390x<E>) {
     ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
-  } else if constexpr (is_arm<E>) {
+  } else if constexpr (is_arm<E> || is_sh4<E>) {
     ctx.tp_addr = align_down(phdr.p_vaddr - sizeof(Word<E>) * 2, phdr.p_align);
   } else if constexpr (is_ppc<E> || is_m68k<E>) {
     ctx.tp_addr = phdr.p_vaddr + 0x7000;
@@ -2258,14 +2258,14 @@ void EhFrameRelocSection<E>::copy_buf(Context<E> &ctx) {
       buf->r_sym = target->output_section->shndx;
 
       if constexpr (is_rela<E>)
-        buf->r_addend = r.r_addend + target->offset;
+        buf->r_addend = get_addend(isec, r) + target->offset;
       else if (ctx.arg.relocatable)
         write_addend(ctx.buf + ctx.eh_frame->shdr.sh_offset + offset,
                      get_addend(isec, r) + target->offset, r);
     } else {
       buf->r_sym = sym.get_output_sym_idx(ctx);
       if constexpr (is_rela<E>)
-        buf->r_addend = r.r_addend;
+        buf->r_addend = get_addend(isec, r);
     }
 
     buf->r_offset = ctx.eh_frame->shdr.sh_addr + offset;
@@ -3097,7 +3097,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       if (sym.sym_idx)
         out.r_sym = sym.get_output_sym_idx(ctx);
       if constexpr (is_rela<E>)
-        out.r_addend = rel.r_addend;
+        out.r_addend = get_addend(isec, rel);
     }
   };
 

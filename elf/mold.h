@@ -2297,6 +2297,30 @@ inline i64 get_addend(u8 *loc, const ElfRel<ARM32> &rel) {
   }
 }
 
+template <>
+inline i64 get_addend(u8 *loc, const ElfRel<SH4> &rel) {
+  switch (rel.r_type) {
+  case R_SH_DIR32:
+  case R_SH_REL32:
+  case R_SH_TLS_GD_32:
+  case R_SH_TLS_LD_32:
+  case R_SH_TLS_LDO_32:
+  case R_SH_TLS_IE_32:
+  case R_SH_TLS_LE_32:
+  case R_SH_TLS_DTPMOD32:
+  case R_SH_TLS_DTPOFF32:
+  case R_SH_TLS_TPOFF32:
+  case R_SH_GOT32:
+  case R_SH_PLT32:
+  case R_SH_GOTOFF:
+  case R_SH_GOTPC:
+  case R_SH_GOTPLT32:
+    return *(ul32 *)loc;
+  default:
+    return 0;
+  }
+}
+
 template <typename E>
 inline i64 get_addend(InputSection<E> &isec, const ElfRel<E> &rel) {
   return get_addend((u8 *)isec.contents.data() + rel.r_offset, rel);

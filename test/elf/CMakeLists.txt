@@ -54,6 +54,7 @@ add_target(powerpc64le-linux-gnu)
 add_target(sparc64-linux-gnu)
 add_target(s390x-linux-gnu)
 add_target(m68k-linux-gnu)
+add_target(sh4-linux-gnu)
 
 if(MOLD_ENABLE_QEMU_TESTS_RV32)
   add_target(riscv32-linux-gnu)
