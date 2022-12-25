@@ -1635,6 +1635,7 @@ struct Context {
     bool z_delete = true;
     bool z_dlopen = true;
     bool z_dump = true;
+    bool z_dynamic_undefined_weak = true;
     bool z_execstack = false;
     bool z_execstack_if_needed = false;
     bool z_ibt = false;

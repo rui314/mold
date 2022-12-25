@@ -855,6 +855,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       z_separate_code = SEPARATE_CODE;
     } else if (read_z_flag("noseparate-code")) {
       z_separate_code = NOSEPARATE_CODE;
+    } else if (read_z_flag("dynamic-undefined-weak")) {
+      ctx.arg.z_dynamic_undefined_weak = true;
+    } else if (read_z_flag("nodynamic-undefined-weak")) {
+      ctx.arg.z_dynamic_undefined_weak = false;
     } else if (read_flag("no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag("fatal-warnings")) {

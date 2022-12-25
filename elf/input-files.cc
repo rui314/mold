@@ -1054,51 +1054,58 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       }
     }
 
-    auto claim = [&] {
+    auto claim = [&](bool is_imported) {
+      if (sym.traced)
+        SyncOut(ctx) << "trace-symbol: " << *this << ": unresolved"
+                     << (esym.is_weak() ? " weak" : "")
+                     << " symbol " << sym;
+
       sym.file = this;
       sym.origin = 0;
       sym.value = 0;
       sym.sym_idx = i;
       sym.is_weak = false;
+      sym.is_imported = is_imported;
       sym.is_exported = false;
+      sym.ver_idx = is_imported ? 0 : ctx.default_version;
     };
+
+    if (esym.is_undef_weak()) {
+      if (ctx.arg.shared && sym.visibility != STV_HIDDEN &&
+          ctx.arg.z_dynamic_undefined_weak) {
+        // Global weak undefined symbols are promoted to dynamic symbols
+        // when when linking a DSO, unless `-z nodynamic_undefined_weak`
+        // was given.
+        claim(true);
+      } else {
+        // Otherwise, weak undefs are converted to absolute symbols with value 0.
+        claim(false);
+      }
+      continue;
+    }
 
     if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
       report_undef(sym);
 
-    // Convert remaining undefined symbols to dynamic symbols.
-    if (ctx.arg.shared && sym.visibility != STV_HIDDEN) {
-      // Traditionally, remaining undefined symbols cause a link failure
-      // only when we are creating an executable. Undefined symbols in
-      // shared objects are promoted to dynamic symbols, so that they'll
-      // get another chance to be resolved at run-time. You can change the
-      // behavior by passing `-z defs` to the linker.
-      //
-      // Even if `-z defs` is given, weak undefined symbols are still
-      // promoted to dynamic symbols for compatibility with other linkers.
-      // Some major programs, notably Firefox, depend on the behavior
-      // (they use this loophole to export symbols from libxul.so).
-      if (!ctx.arg.z_defs || esym.is_undef_weak() ||
-          ctx.arg.unresolved_symbols != UNRESOLVED_ERROR) {
-        claim();
-        sym.ver_idx = 0;
-        sym.is_imported = true;
-
-        if (sym.traced)
-          SyncOut(ctx) << "trace-symbol: " << *this << ": unresolved"
-                       << (esym.is_weak() ? " weak" : "")
-                       << " symbol " << sym;
-        continue;
-      }
+    // Traditionally, remaining undefined symbols cause a link failure
+    // only when we are creating an executable. Undefined symbols in
+    // shared objects are promoted to dynamic symbols, so that they'll
+    // get another chance to be resolved at run-time. You can change the
+    // behavior by passing `-z defs` to the linker.
+    //
+    // Even if `-z defs` is given, weak undefined symbols are still
+    // promoted to dynamic symbols for compatibility with other linkers.
+    // Some major programs, notably Firefox, depend on the behavior
+    // (they use this loophole to export symbols from libxul.so).
+    if (ctx.arg.shared && sym.visibility != STV_HIDDEN &&
+        (!ctx.arg.z_defs || ctx.arg.unresolved_symbols != UNRESOLVED_ERROR)) {
+      claim(true);
+      continue;
     }
 
     // Convert remaining undefined symbols to absolute symbols with value 0.
-    if (ctx.arg.unresolved_symbols != UNRESOLVED_ERROR ||
-        ctx.arg.noinhibit_exec || esym.is_undef_weak()) {
-      claim();
-      sym.ver_idx = ctx.default_version;
-      sym.is_imported = false;
-    }
+    if (ctx.arg.unresolved_symbols != UNRESOLVED_ERROR || ctx.arg.noinhibit_exec)
+      claim(false);
   }
 }
 
