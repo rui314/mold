@@ -944,6 +944,40 @@ void check_duplicate_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
+void check_symbol_types(Context<E> &ctx) {
+  Timer t(ctx, "check_symbol_types");
+
+  auto normalize_type = [](u32 type) {
+    if (type == STT_GNU_IFUNC)
+      return STT_FUNC;
+    return type;
+  };
+
+  auto check = [&](InputFile<E> *file) {
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
+      const ElfSym<E> &esym = file->elf_syms[i];
+      Symbol<E> &sym = *file->symbols[i];
+
+      if (!sym.file)
+        continue;
+
+      u32 their_type = normalize_type(sym.esym().st_type);
+      u32 our_type = normalize_type(esym.st_type);
+
+      if (sym.file && their_type != STT_NOTYPE && our_type != STT_NOTYPE &&
+          their_type != our_type)
+        Warn(ctx) << "symbol type mismatch: " << sym << '\n'
+                  << ">>> defined in " << *sym.file << " as "
+                  << stt_to_string(sym.esym().st_type) << '\n'
+                  << ">>> defined in " << *file << " as "
+                  << stt_to_string(esym.st_type);
+    }
+  };
+  tbb::parallel_for_each(ctx.objs, check);
+  tbb::parallel_for_each(ctx.dsos, check);
+}
+
+template <typename E>
 void sort_init_fini(Context<E> &ctx) {
   Timer t(ctx, "sort_init_fini");
 
@@ -2465,6 +2499,7 @@ template void print_dependencies(Context<E> &);
 template void print_dependencies_full(Context<E> &);
 template void write_repro_file(Context<E> &);
 template void check_duplicate_symbols(Context<E> &);
+template void check_symbol_types(Context<E> &);
 template void sort_init_fini(Context<E> &);
 template void sort_ctor_dtor(Context<E> &);
 template void shuffle_sections(Context<E> &);

@@ -496,6 +496,9 @@ int elf_main(int argc, char **argv) {
   if (!ctx.arg.allow_multiple_definition)
     check_duplicate_symbols(ctx);
 
+  // Warn if symbols with different types are defined under the same name.
+  check_symbol_types(ctx);
+
   if constexpr (std::is_same_v<E, PPC64V1>)
     ppc64v1_rewrite_opd(ctx);
 

@@ -130,6 +130,21 @@ static constexpr u32 STT_TLS = 6;
 static constexpr u32 STT_GNU_IFUNC = 10;
 static constexpr u32 STT_SPARC_REGISTER = 13;
 
+inline std::string stt_to_string(u32 st_type) {
+  switch (st_type) {
+  case STT_NOTYPE:         return "STT_NOTYPE";
+  case STT_OBJECT:         return "STT_OBJECT";
+  case STT_FUNC:           return "STT_FUNC";
+  case STT_SECTION:        return "STT_SECTION";
+  case STT_FILE:           return "STT_FILE";
+  case STT_COMMON:         return "STT_COMMON";
+  case STT_TLS:            return "STT_TLS";
+  case STT_GNU_IFUNC:      return "STT_GNU_IFUNC";
+  case STT_SPARC_REGISTER: return "STT_SPARC_REGISTER";
+  default:                 return "unknown st_type (" + std::to_string(st_type) + ")";
+  }
+}
+
 static constexpr u32 STB_LOCAL = 0;
 static constexpr u32 STB_GLOBAL = 1;
 static constexpr u32 STB_WEAK = 2;
