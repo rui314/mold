@@ -815,7 +815,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       z_relro = false;
     } else if (read_z_flag("defs")) {
       ctx.arg.z_defs = true;
-    } else if (read_z_flag("nodefs")) {
+    } else if (read_z_flag("undefs")) {
       ctx.arg.z_defs = false;
     } else if (read_z_flag("nodlopen")) {
       ctx.arg.z_dlopen = false;

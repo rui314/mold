@@ -7,7 +7,7 @@ void bar() { foo(); }
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
-$CC -B. -shared -o $t/b.so $t/a.o -Wl,-z,nodefs
+$CC -B. -shared -o $t/b.so $t/a.o -Wl,-z,undefs
 
 ! $CC -B. -shared -o $t/b.so $t/a.o -Wl,-z,defs \
   2> $t/log || false
