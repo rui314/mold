@@ -233,12 +233,11 @@ endif()
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles("#include <atomic>
 int main() {
-  std::atomic<uint8_t> w1;
-  std::atomic<uint16_t> w2;
-  std::atomic<uint32_t> w4;
-  std::atomic<uint64_t> w8;
-
-  return ++w1 + ++w2 + ++w4 + ++w8;
+  std::atomic_uint8_t  a;
+  std::atomic_uint16_t b;
+  std::atomic_uint32_t c;
+  std::atomic_uint64_t d;
+  return ++a + ++b + ++c + ++d;
 }" HAVE_FULL_ATOMIC_SUPPORT)
 
 if(NOT HAVE_FULL_ATOMIC_SUPPORT)
