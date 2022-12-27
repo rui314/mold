@@ -415,10 +415,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(ctx.got->get_tlsld_addr(ctx) + A - GOT, 9, 0);
       break;
     case R_SPARC_TLS_LDO_HIX22:
-      *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 31, 10);
+      *(ub32 *)loc |= bits(S + A - ctx.dtp_addr, 31, 10);
       break;
     case R_SPARC_TLS_LDO_LOX10:
-      *(ub32 *)loc |= bits(S + A - ctx.tls_begin, 9, 0);
+      *(ub32 *)loc |= bits(S + A - ctx.dtp_addr, 9, 0);
       break;
     case R_SPARC_TLS_IE_HI22:
       *(ub32 *)loc |= bits(sym.get_gottp_addr(ctx) + A - GOT, 31, 10);
@@ -501,10 +501,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_SPARC_TLS_DTPOFF32:
-      *(ub32 *)loc = S + A - ctx.tls_begin;
+      *(ub32 *)loc = S + A - ctx.dtp_addr;
       break;
     case R_SPARC_TLS_DTPOFF64:
-      *(ub64 *)loc = S + A - ctx.tls_begin;
+      *(ub64 *)loc = S + A - ctx.dtp_addr;
       break;
     default:
       Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;

@@ -200,19 +200,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_SH_REL32:
+    case R_SH_PLT32:
       *(ul32 *)loc = S + A - P;
       break;
     case R_SH_GOT32:
       *(ul32 *)loc = sym.get_got_addr(ctx) - GOT;
       break;
     case R_SH_GOTPC:
-      *(ul32 *)loc = GOT - A - P;
+      *(ul32 *)loc = GOT + A - P;
       break;
     case R_SH_GOTOFF:
       *(ul32 *)loc = S + A - GOT;
-      break;
-    case R_SH_PLT32:
-      *(ul32 *)loc = S + A - P;
       break;
     case R_SH_TLS_GD_32:
       *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;

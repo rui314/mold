@@ -349,13 +349,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_TLS_LDO32:
       if (ctx.got->has_tlsld(ctx))
-        *(ub32 *)loc = S + A - ctx.tls_begin;
+        *(ub32 *)loc = S + A - ctx.dtp_addr;
       else
         *(ub32 *)loc = S + A - ctx.tp_addr;
       break;
     case R_390_TLS_LDO64:
       if (ctx.got->has_tlsld(ctx))
-        *(ub64 *)loc = S + A - ctx.tls_begin;
+        *(ub64 *)loc = S + A - ctx.dtp_addr;
       else
         *(ub64 *)loc = S + A - ctx.tp_addr;
       break;
@@ -425,7 +425,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       if (std::optional<u64> val = get_tombstone(sym, frag))
         *(ub64 *)loc = *val;
       else
-        *(ub64 *)loc = S + A - ctx.tls_begin;
+        *(ub64 *)loc = S + A - ctx.dtp_addr;
       break;
     default:
       Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
