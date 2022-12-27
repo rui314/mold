@@ -189,11 +189,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-#define S   sym.get_addr(ctx)
-#define A   get_addend(loc, rel)
-#define P   (get_addr() + rel.r_offset)
-#define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
-#define GOT ctx.gotplt->shdr.sh_addr
+#define S      sym.get_addr(ctx)
+#define A      get_addend(loc, rel)
+#define P      (get_addr() + rel.r_offset)
+#define G      (sym.get_got_idx(ctx) * sizeof(Word<E>))
+#define GOTPLT ctx.gotplt->shdr.sh_addr
 
     switch (rel.r_type) {
     case R_SH_DIR32:
@@ -204,25 +204,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = S + A - P;
       break;
     case R_SH_GOT32:
-      *(ul32 *)loc = sym.get_got_addr(ctx) - GOT;
+      *(ul32 *)loc = sym.get_got_addr(ctx) - GOTPLT;
       break;
     case R_SH_GOTPC:
-      *(ul32 *)loc = GOT + A - P;
+      *(ul32 *)loc = GOTPLT + A - P;
       break;
     case R_SH_GOTOFF:
-      *(ul32 *)loc = S + A - GOT;
+      *(ul32 *)loc = S + A - GOTPLT;
       break;
     case R_SH_TLS_GD_32:
-      *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
+      *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOTPLT;
       break;
     case R_SH_TLS_LD_32:
-      *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
+      *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOTPLT;
       break;
     case R_SH_TLS_LDO_32:
       *(ul32 *)loc = S + A - ctx.dtp_addr;
       break;
     case R_SH_TLS_IE_32:
-      *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - GOT;
+      *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - GOTPLT;
       break;
     case R_SH_TLS_LE_32:
       *(ul32 *)loc = S + A - ctx.tp_addr;
@@ -235,7 +235,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #undef A
 #undef P
 #undef G
-#undef GOT
+#undef GOTPLT
   }
 }
 
