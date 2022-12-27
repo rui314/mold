@@ -188,7 +188,8 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
            chunk == ctx.got || chunk == ctx.dynamic ||
            chunk == ctx.relro_padding ||
            (ctx.arg.z_now && ctx.gotplt && chunk == ctx.gotplt) ||
-           chunk->name == ".toc" || chunk->name.ends_with(".rel.ro");
+           chunk->name == ".alpha_got2" || chunk->name == ".toc" ||
+           chunk->name.ends_with(".rel.ro");
   return false;
 }
 
@@ -224,7 +225,7 @@ static void init_thread_pointers(Context<E> &ctx, ElfPhdr<E> phdr) {
   // load/store instruction.
   if constexpr (is_x86<E> || is_sparc<E> || is_s390x<E>) {
     ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
-  } else if constexpr (is_arm<E> || is_sh4<E>) {
+  } else if constexpr (is_arm<E> || is_sh4<E> || is_alpha<E>) {
     ctx.tp_addr = align_down(phdr.p_vaddr - sizeof(Word<E>) * 2, phdr.p_align);
   } else if constexpr (is_ppc<E> || is_m68k<E>) {
     ctx.tp_addr = phdr.p_vaddr + 0x7000;
@@ -503,6 +504,11 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   if constexpr (std::is_same_v<E, PPC64V1>)
     if (ctx.arg.pic)
       offset += ctx.ppc64_opd->symbols.size() * sizeof(ElfRel<E>) * 2;
+
+  if constexpr (is_alpha<E>) {
+    ctx.alpha_got2->reldyn_offset = offset;
+    offset += ctx.alpha_got2->get_reldyn_size(ctx) * sizeof(ElfRel<E>);
+  }
 
   for (ObjectFile<E> *file : ctx.objs) {
     file->reldyn_offset = offset;
@@ -3096,9 +3102,14 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
     } else {
       if (sym.sym_idx)
         out.r_sym = sym.get_output_sym_idx(ctx);
+
       if constexpr (is_rela<E>)
         out.r_addend = get_addend(isec, rel);
     }
+
+    if constexpr (is_alpha<E>)
+      if (rel.r_type == R_ALPHA_GPDISP || rel.r_type == R_ALPHA_LITUSE)
+        out.r_addend = rel.r_addend;
   };
 
   tbb::parallel_for((i64)0, (i64)output_section.members.size(), [&](i64 i) {

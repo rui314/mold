@@ -1505,6 +1505,37 @@ public:
 };
 
 //
+// arch-alpha.cc
+//
+
+class AlphaGot2Section : public Chunk<ALPHA> {
+public:
+  AlphaGot2Section() {
+    this->name = ".alpha_got2";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+    this->shdr.sh_addralign = 8;
+  }
+
+  void add_symbol(Symbol<ALPHA> &sym, i64 addend);
+  void finalize();
+  u64 get_addr(Symbol<ALPHA> &sym, i64 addend);
+  i64 get_reldyn_size(Context<ALPHA> &ctx);
+  void copy_buf(Context<ALPHA> &ctx) override;
+
+  struct Entry {
+    Symbol<ALPHA> *sym;
+    i64 addend;
+  };
+
+  i64 reldyn_offset = 0;
+
+private:
+  std::vector<Entry> entries;
+  std::mutex mu;
+};
+
+//
 // main.cc
 //
 
@@ -1784,6 +1815,7 @@ struct Context {
   PPC64OpdSection *ppc64_opd = nullptr;
   SparcTlsGetAddrSection *sparc_tls_get_addr = nullptr;
   S390XTlsGetOffsetSection *s390x_tls_get_offset = nullptr;
+  AlphaGot2Section *alpha_got2 = nullptr;
 
   // Frequently accessed symbols
   Symbol<E> *tls_get_addr = nullptr;
@@ -1863,7 +1895,9 @@ enum {
   NEEDS_TLSGD   = 1 << 4,
   NEEDS_COPYREL = 1 << 5,
   NEEDS_TLSDESC = 1 << 6,
-  NEEDS_OPD     = 1 << 7,
+
+  NEEDS_OPD     = 1 << 7, // for PPCv1
+  NEEDS_GOT2    = 1 << 7, // for Alpha
 };
 
 // A struct to hold target-dependent symbol members.

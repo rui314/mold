@@ -124,6 +124,9 @@ void create_synthetic_sections(Context<E> &ctx) {
   if constexpr (std::is_same_v<E, PPC64V1>)
     ctx.ppc64_opd = push(new PPC64OpdSection);
 
+  if constexpr (is_alpha<E>)
+    ctx.alpha_got2 = push(new AlphaGot2Section);
+
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
   if (ctx.dynamic) {
@@ -410,10 +413,19 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
   if (flags & SHF_MERGE)
     return name;
 
-  if (name.starts_with(".ARM.exidx"))
-    return ".ARM.exidx";
-  if (name.starts_with(".ARM.extab"))
-    return ".ARM.extab";
+  if constexpr (std::is_same_v<E, ARM32>) {
+    if (name.starts_with(".ARM.exidx"))
+      return ".ARM.exidx";
+    if (name.starts_with(".ARM.extab"))
+      return ".ARM.extab";
+  }
+
+  if constexpr (is_alpha<E>) {
+    if (name.starts_with(".sdata."))
+      return ".sdata";
+    if (name.starts_with(".sbss."))
+      return ".sbss";
+  }
 
   if (ctx.arg.z_keep_text_section_prefix) {
     static std::string_view prefixes[] = {
@@ -1316,6 +1328,9 @@ void scan_relocations(Context<E> &ctx) {
   if (ctx.needs_tlsld)
     ctx.got->add_tlsld(ctx);
 
+  if constexpr (is_alpha<E>)
+    ctx.alpha_got2->finalize();
+
   if (ctx.has_textrel && ctx.arg.warn_textrel)
     Warn(ctx) << "creating a DT_TEXTREL in an output file";
 }
@@ -1616,6 +1631,7 @@ void clear_padding(Context<E> &ctx) {
 //   <writable RELRO data>
 //   .got
 //   .toc
+//   .alpha_got2
 //   <writable RELRO bss>
 //   .relro_padding
 //   <writable non-RELRO data>
@@ -1695,12 +1711,14 @@ void sort_output_sections_regular(Context<E> &ctx) {
     if (chunk->shdr.sh_type == SHT_NOTE)
       return -chunk->shdr.sh_addralign;
 
-    if (chunk == ctx.relro_padding)
-      return INT_MAX;
-    if (chunk->name == ".toc")
-      return 2;
     if (chunk == ctx.got)
       return 1;
+    if (chunk->name == ".toc")
+      return 2;
+    if (chunk->name == ".alpha_got2")
+      return 3;
+    if (chunk == ctx.relro_padding)
+      return INT_MAX;
     return 0;
   };
 

@@ -23,6 +23,7 @@ struct S390X;
 struct SPARC64;
 struct M68K;
 struct SH4;
+struct ALPHA;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -41,7 +42,7 @@ static constexpr u32 R_NONE = 0;
 
 enum class MachineType {
   NONE, X86_64, I386, ARM64, ARM32, RV64LE, RV64BE, RV32LE, RV32BE,
-  PPC64V1, PPC64V2, S390X, SPARC64, M68K, SH4,
+  PPC64V1, PPC64V2, S390X, SPARC64, M68K, SH4, ALPHA
 };
 
 inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
@@ -61,6 +62,7 @@ inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
   case MachineType::SPARC64: out << "sparc64";   break;
   case MachineType::M68K:    out << "m68k";      break;
   case MachineType::SH4:     out << "sh4";       break;
+  case MachineType::ALPHA:   out << "alpha";     break;
   }
   return out;
 }
@@ -208,6 +210,7 @@ static constexpr u32 EM_SPARC64 = 43;
 static constexpr u32 EM_X86_64 = 62;
 static constexpr u32 EM_AARCH64 = 183;
 static constexpr u32 EM_RISCV = 243;
+static constexpr u32 EM_ALPHA = 0x9026;
 
 static constexpr u32 EI_CLASS = 4;
 static constexpr u32 EI_DATA = 5;
@@ -1830,6 +1833,80 @@ inline std::string rel_to_string<SH4>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
+static constexpr u32 R_ALPHA_NONE = 0;
+static constexpr u32 R_ALPHA_REFLONG = 1;
+static constexpr u32 R_ALPHA_REFQUAD = 2;
+static constexpr u32 R_ALPHA_GPREL32 = 3;
+static constexpr u32 R_ALPHA_LITERAL = 4;
+static constexpr u32 R_ALPHA_LITUSE = 5;
+static constexpr u32 R_ALPHA_GPDISP = 6;
+static constexpr u32 R_ALPHA_BRADDR = 7;
+static constexpr u32 R_ALPHA_HINT = 8;
+static constexpr u32 R_ALPHA_SREL16 = 9;
+static constexpr u32 R_ALPHA_SREL32 = 10;
+static constexpr u32 R_ALPHA_SREL64 = 11;
+static constexpr u32 R_ALPHA_GPRELHIGH = 17;
+static constexpr u32 R_ALPHA_GPRELLOW = 18;
+static constexpr u32 R_ALPHA_GPREL16 = 19;
+static constexpr u32 R_ALPHA_COPY = 24;
+static constexpr u32 R_ALPHA_GLOB_DAT = 25;
+static constexpr u32 R_ALPHA_JMP_SLOT = 26;
+static constexpr u32 R_ALPHA_RELATIVE = 27;
+static constexpr u32 R_ALPHA_BRSGP = 28;
+static constexpr u32 R_ALPHA_TLSGD = 29;
+static constexpr u32 R_ALPHA_TLSLDM = 30;
+static constexpr u32 R_ALPHA_DTPMOD64 = 31;
+static constexpr u32 R_ALPHA_GOTDTPREL = 32;
+static constexpr u32 R_ALPHA_DTPREL64 = 33;
+static constexpr u32 R_ALPHA_DTPRELHI = 34;
+static constexpr u32 R_ALPHA_DTPRELLO = 35;
+static constexpr u32 R_ALPHA_DTPREL16 = 36;
+static constexpr u32 R_ALPHA_GOTTPREL = 37;
+static constexpr u32 R_ALPHA_TPREL64 = 38;
+static constexpr u32 R_ALPHA_TPRELHI = 39;
+static constexpr u32 R_ALPHA_TPRELLO = 40;
+static constexpr u32 R_ALPHA_TPREL16 = 41;
+
+template <>
+inline std::string rel_to_string<ALPHA>(u32 r_type) {
+  switch (r_type) {
+  case R_ALPHA_NONE: return "R_ALPHA_NONE";
+  case R_ALPHA_REFLONG: return "R_ALPHA_REFLONG";
+  case R_ALPHA_REFQUAD: return "R_ALPHA_REFQUAD";
+  case R_ALPHA_GPREL32: return "R_ALPHA_GPREL32";
+  case R_ALPHA_LITERAL: return "R_ALPHA_LITERAL";
+  case R_ALPHA_LITUSE: return "R_ALPHA_LITUSE";
+  case R_ALPHA_GPDISP: return "R_ALPHA_GPDISP";
+  case R_ALPHA_BRADDR: return "R_ALPHA_BRADDR";
+  case R_ALPHA_HINT: return "R_ALPHA_HINT";
+  case R_ALPHA_SREL16: return "R_ALPHA_SREL16";
+  case R_ALPHA_SREL32: return "R_ALPHA_SREL32";
+  case R_ALPHA_SREL64: return "R_ALPHA_SREL64";
+  case R_ALPHA_GPRELHIGH: return "R_ALPHA_GPRELHIGH";
+  case R_ALPHA_GPRELLOW: return "R_ALPHA_GPRELLOW";
+  case R_ALPHA_GPREL16: return "R_ALPHA_GPREL16";
+  case R_ALPHA_COPY: return "R_ALPHA_COPY";
+  case R_ALPHA_GLOB_DAT: return "R_ALPHA_GLOB_DAT";
+  case R_ALPHA_JMP_SLOT: return "R_ALPHA_JMP_SLOT";
+  case R_ALPHA_RELATIVE: return "R_ALPHA_RELATIVE";
+  case R_ALPHA_BRSGP: return "R_ALPHA_BRSGP";
+  case R_ALPHA_TLSGD: return "R_ALPHA_TLSGD";
+  case R_ALPHA_TLSLDM: return "R_ALPHA_TLSLDM";
+  case R_ALPHA_DTPMOD64: return "R_ALPHA_DTPMOD64";
+  case R_ALPHA_GOTDTPREL: return "R_ALPHA_GOTDTPREL";
+  case R_ALPHA_DTPREL64: return "R_ALPHA_DTPREL64";
+  case R_ALPHA_DTPRELHI: return "R_ALPHA_DTPRELHI";
+  case R_ALPHA_DTPRELLO: return "R_ALPHA_DTPRELLO";
+  case R_ALPHA_DTPREL16: return "R_ALPHA_DTPREL16";
+  case R_ALPHA_GOTTPREL: return "R_ALPHA_GOTTPREL";
+  case R_ALPHA_TPREL64: return "R_ALPHA_TPREL64";
+  case R_ALPHA_TPRELHI: return "R_ALPHA_TPRELHI";
+  case R_ALPHA_TPRELLO: return "R_ALPHA_TPRELLO";
+  case R_ALPHA_TPREL16: return "R_ALPHA_TPREL16";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
 //
 // DWARF data types
 //
@@ -2528,6 +2605,9 @@ static constexpr bool is_m68k = std::is_same_v<E, M68K>;
 template <typename E>
 static constexpr bool is_sh4 = std::is_same_v<E, SH4>;
 
+template <typename E>
+static constexpr bool is_alpha = std::is_same_v<E, ALPHA>;
+
 struct X86_64 {
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
@@ -3015,5 +3095,39 @@ template <> struct ElfVerdef<SH4>  : ELVerdef {};
 template <> struct ElfVerdaux<SH4> : ELVerdaux {};
 template <> struct ElfChdr<SH4>    : EL32Chdr {};
 template <> struct ElfNhdr<SH4>    : ELNhdr {};
+
+struct ALPHA {
+  static constexpr u32 R_COPY = R_ALPHA_COPY;
+  static constexpr u32 R_GLOB_DAT = R_ALPHA_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_ALPHA_JMP_SLOT;
+  static constexpr u32 R_ABS = R_ALPHA_REFQUAD;
+  static constexpr u32 R_RELATIVE = R_ALPHA_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_ALPHA_NONE; // alpha does not support ifunc
+  static constexpr u32 R_DTPOFF = R_ALPHA_DTPREL64;
+  static constexpr u32 R_TPOFF = R_ALPHA_TPREL64;
+  static constexpr u32 R_DTPMOD = R_ALPHA_DTPMOD64;
+
+  static constexpr MachineType machine_type = MachineType::ALPHA;
+  static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
+  static constexpr u32 page_size = 65536;
+  static constexpr u32 e_machine = EM_ALPHA;
+  static constexpr u32 plt_hdr_size = 0;
+  static constexpr u32 plt_size = 0;
+  static constexpr u32 pltgot_size = 0;
+};
+
+template <> struct ElfSym<ALPHA>     : EL64Sym {};
+template <> struct ElfShdr<ALPHA>    : EL64Shdr {};
+template <> struct ElfEhdr<ALPHA>    : EL64Ehdr {};
+template <> struct ElfPhdr<ALPHA>    : EL64Phdr {};
+template <> struct ElfRel<ALPHA>     : EL64Rela { using EL64Rela::EL64Rela; };
+template <> struct ElfDyn<ALPHA>     : EL64Dyn {};
+template <> struct ElfVerneed<ALPHA> : ELVerneed {};
+template <> struct ElfVernaux<ALPHA> : ELVernaux {};
+template <> struct ElfVerdef<ALPHA>  : ELVerdef {};
+template <> struct ElfVerdaux<ALPHA> : ELVerdaux {};
+template <> struct ElfChdr<ALPHA>    : EL64Chdr {};
+template <> struct ElfNhdr<ALPHA>    : ELNhdr {};
 
 } // namespace mold::elf

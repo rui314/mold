@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = alpha ] && skip
+
 # OneTBB isn't tsan-clean
 nm mold | grep -q '__tsan_init' && skip
 

@@ -3,6 +3,7 @@
 
 [ $MACHINE = ppc64 ] && skip
 [ $MACHINE = ppc64le ] && skip
+[ $MACHINE = alpha ] && skip
 
 cat <<EOF | $CC -fPIC -shared -o $t/a.so -xc -
 __attribute__((aligned(32))) int foo = 5;
