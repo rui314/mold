@@ -2297,6 +2297,10 @@ inline i64 get_addend(u8 *loc, const ElfRel<ARM32> &rel) {
   }
 }
 
+// Even though SH-4 employs the RELA-type relocations, its relocation
+// addends are for some reason stored to section contents. The
+// r_addend member of a relocation is always zero. Therefore, SH-4 is
+// effectively of REL-type.
 template <>
 inline i64 get_addend(u8 *loc, const ElfRel<SH4> &rel) {
   switch (rel.r_type) {

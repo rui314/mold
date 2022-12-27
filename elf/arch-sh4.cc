@@ -17,7 +17,7 @@
 //  - Binary instructions such as ADD normally take three register in
 //    RISC ISAs (e.g. x ← y ⊕ z where x, y and z are registers), but
 //    SH-4's instructions take only two registers. The result of an
-//    operation is written to one of the source register (e.g. x ← x ⊕ y).
+//    operation is written to one of the source registers (e.g. x ← x ⊕ y).
 //
 //  - Usual RISC ISAs have "load high" and "load low" instructions to set
 //    an immediate to most significant and least significant bits in a
