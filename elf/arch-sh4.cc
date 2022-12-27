@@ -29,17 +29,16 @@
 // Just like contemporary MIPS and SPARC, SH-4 has a delay branch slot.
 // That is, one instruction after a branch instruction will always be
 // executed even if the branch is taken. Delay branch slot allows a
-// pipelined processor to start executing an instruction after a branch
-// regardless of the branch's condition, simplifying the processor's
-// implementation. It's considered a premature optimization nowadays,
-// though. Modern RISC processors don't have it.
+// pipelined processor to start and finish executing an instruction after
+// a branch regardless of the branch's condition, simplifying the
+// processor's implementation. It's considered a premature optimization
+// nowadays, though. Modern RISC processors don't have it.
 //
 // Here are notes about the SH-4 psABI:
 //
-//  - If a source file is compiled with -fPIC, each function prologue
-//    starts with a piece of code to store the address of .got.plt to
-//    %r12. We can use the register in our PLT for position-independent
-//    output.
+//  - If a source file is compiled with -fPIC, each function starts
+//    with a piece of code to store the address of .got to %r12.
+//    We can use the register in our PLT for position-independent output.
 //
 //  - Even though it uses the RELA-type relocations, relocation addends
 //    are stored not to the r_addend field but to the relocated section
@@ -62,18 +61,18 @@ template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {
-      0xc2, 0x50, // mov.l   @(8, r12), r0
-      0xc1, 0x52, // mov.l   @(4, r12), r2
-      0x2b, 0x40, // jmp     @r0
-      0x00, 0xe0, // mov     #0, r0
-      0x09, 0x00, // nop
-      0x09, 0x00, // nop
-      0x09, 0x00, // nop
-      0x09, 0x00, // nop
+      0x02, 0xd2, //    mov.l   1f, r2
+      0xcc, 0x32, //    add     r12, r2
+      0x22, 0x50, //    mov.l   @(8, r2), r0
+      0x21, 0x52, //    mov.l   @(4, r2), r2
+      0x2b, 0x40, //    jmp     @r0
+      0x00, 0xe0, //    mov     #0, r0
+      0, 0, 0, 0, // 1: .long GOTPLT
     };
 
     static_assert(sizeof(insn) == E::plt_hdr_size);
     memcpy(buf, insn, sizeof(insn));
+    *(ul32 *)(buf + 12) = ctx.gotplt->shdr.sh_addr - ctx.got->shdr.sh_addr;
   } else {
     static const u8 insn[] = {
       0x02, 0xd2, //    mov.l   1f, r2
@@ -105,7 +104,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 
     static_assert(sizeof(insn) == E::plt_size);
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 8) = sym.get_gotplt_addr(ctx) - ctx.gotplt->shdr.sh_addr;
+    *(ul32 *)(buf + 8) = sym.get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
     *(ul32 *)(buf + 12) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
   } else {
     static const u8 insn[] = {
@@ -137,7 +136,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 
     static_assert(sizeof(insn) == E::pltgot_size);
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 8) = sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr;
+    *(ul32 *)(buf + 8) = sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr;
   } else {
     static const u8 insn[] = {
       0x01, 0xd0, //    mov.l   1f, r0
@@ -189,11 +188,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-#define S      sym.get_addr(ctx)
-#define A      get_addend(loc, rel)
-#define P      (get_addr() + rel.r_offset)
-#define G      (sym.get_got_idx(ctx) * sizeof(Word<E>))
-#define GOTPLT ctx.gotplt->shdr.sh_addr
+#define S   sym.get_addr(ctx)
+#define A   get_addend(loc, rel)
+#define P   (get_addr() + rel.r_offset)
+#define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
+#define GOT ctx.got->shdr.sh_addr
 
     switch (rel.r_type) {
     case R_SH_DIR32:
@@ -204,25 +203,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = S + A - P;
       break;
     case R_SH_GOT32:
-      *(ul32 *)loc = sym.get_got_addr(ctx) - GOTPLT;
+      *(ul32 *)loc = G;
       break;
     case R_SH_GOTPC:
-      *(ul32 *)loc = GOTPLT + A - P;
+      *(ul32 *)loc = GOT + A - P;
       break;
     case R_SH_GOTOFF:
-      *(ul32 *)loc = S + A - GOTPLT;
+      *(ul32 *)loc = S + A - GOT;
       break;
     case R_SH_TLS_GD_32:
-      *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOTPLT;
+      *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
       break;
     case R_SH_TLS_LD_32:
-      *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOTPLT;
+      *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
       break;
     case R_SH_TLS_LDO_32:
       *(ul32 *)loc = S + A - ctx.dtp_addr;
       break;
     case R_SH_TLS_IE_32:
-      *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - GOTPLT;
+      *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - GOT;
       break;
     case R_SH_TLS_LE_32:
       *(ul32 *)loc = S + A - ctx.tp_addr;
@@ -235,7 +234,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #undef A
 #undef P
 #undef G
-#undef GOTPLT
+#undef GOT
   }
 }
 
