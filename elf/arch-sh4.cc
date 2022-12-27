@@ -309,14 +309,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_pcrel(ctx, sym, rel);
       break;
     case R_SH_GOT32:
-    case R_SH_GOTOFF:
       sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
     case R_SH_PLT32:
       if (sym.is_imported)
         sym.flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
-      break;
-    case R_SH_GOTPC:
       break;
     case R_SH_TLS_GD_32:
       sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
@@ -327,6 +324,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SH_TLS_IE_32:
       sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
       break;
+    case R_SH_GOTPC:
+    case R_SH_GOTOFF:
     case R_SH_TLS_LDO_32:
     case R_SH_TLS_LE_32:
       break;
