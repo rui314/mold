@@ -90,8 +90,8 @@ struct SymbolAux {
   u32 djb_hash = 0;
 };
 
-template <>
-struct SymbolAux<PPC64V1> : SymbolAux<X86_64> {
+template <typename E> requires is_ppc64v1<E> || is_hppa<E>
+struct SymbolAux<E> : SymbolAux<X86_64> {
   i32 opd_idx = -1;
 };
 
@@ -323,6 +323,7 @@ private:
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
+  u64 has_thunk(i64 idx);
   u64 get_thunk_addr(i64 idx);
 
   std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
@@ -1546,6 +1547,43 @@ private:
 };
 
 //
+// arch-hppa.cc
+//
+
+class HppaOpdSection : public Chunk<HPPA32> {
+public:
+  HppaOpdSection() {
+    this->name = ".opd";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 8;
+  }
+
+  void add_symbol(Context<HPPA32> &ctx, Symbol<HPPA32> *sym);
+  void update_shdr(Context<HPPA32> &ctx) override;
+  void copy_buf(Context<HPPA32> &ctx) override;
+
+  static constexpr i64 ENTRY_SIZE = sizeof(Word<HPPA32>) * 2;
+  static constexpr i64 TRAILER_SIZE = sizeof(Word<HPPA32>) * 9;
+
+  std::vector<Symbol<HPPA32> *> symbols;
+};
+
+class HppaRelOpdSection : public Chunk<HPPA32> {
+public:
+  HppaRelOpdSection() {
+    this->name = ".rela.opd";
+    this->shdr.sh_type = SHT_RELA;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_entsize = sizeof(ElfRel<HPPA32>);
+    this->shdr.sh_addralign = sizeof(Word<HPPA32>);
+  }
+
+  void update_shdr(Context<HPPA32> &ctx) override;
+  void copy_buf(Context<HPPA32> &ctx) override;
+};
+
+//
 // main.cc
 //
 
@@ -1623,6 +1661,12 @@ template <> struct ContextExtras<S390X> {
 
 template <> struct ContextExtras<ALPHA> {
   AlphaGotSection *got = nullptr;
+};
+
+template <> struct ContextExtras<HPPA32> {
+  HppaOpdSection *opd = nullptr;
+  HppaRelOpdSection *relopd = nullptr;
+  Symbol<HPPA32> *global = nullptr;
 };
 
 // Context represents a context object for each invocation of the linker.
@@ -1706,7 +1750,7 @@ struct Context {
     bool z_dlopen = true;
     bool z_dump = true;
     bool z_dynamic_undefined_weak = true;
-    bool z_execstack = false;
+    bool z_execstack = is_hppa<E>;
     bool z_execstack_if_needed = false;
     bool z_ibt = false;
     bool z_initfirst = false;
@@ -1931,7 +1975,7 @@ enum {
   NEEDS_TLSGD     = 1 << 4,
   NEEDS_COPYREL   = 1 << 5,
   NEEDS_TLSDESC   = 1 << 6,
-  NEEDS_PPC_OPD   = 1 << 7, // for PPCv1
+  NEEDS_OPD       = 1 << 7, // for PPCv1 or HPPA
   NEEDS_ALPHA_GOT = 1 << 7, // for Alpha
 };
 
@@ -2004,6 +2048,7 @@ public:
   bool is_absolute() const;
   bool is_relative() const { return !is_absolute(); }
   bool is_local(Context<E> &ctx) const;
+  bool is_func() const { return get_type() == STT_FUNC; }
   bool is_ifunc() const { return get_type() == STT_GNU_IFUNC; }
   bool is_remaining_undef_weak() const;
 
@@ -2319,6 +2364,13 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 }
 
 template <typename E>
+u64 InputSection<E>::has_thunk(i64 idx) {
+  if constexpr (needs_thunk<E>)
+    return extra.range_extn[idx].thunk_idx != -1;
+  unreachable();
+}
+
+template <typename E>
 u64 InputSection<E>::get_thunk_addr(i64 idx) {
   if constexpr (needs_thunk<E>) {
     RangeExtensionRef ref = extra.range_extn[idx];
@@ -2556,7 +2608,7 @@ template <typename E>
 inline u64 Symbol<E>::get_opd_addr(Context<E> &ctx) const {
   assert(get_opd_idx(ctx) != -1);
   return ctx.extra.opd->shdr.sh_addr +
-         get_opd_idx(ctx) * PPC64OpdSection::ENTRY_SIZE;
+         get_opd_idx(ctx) * ctx.extra.opd->ENTRY_SIZE;
 }
 
 template <typename E>

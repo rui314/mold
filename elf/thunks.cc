@@ -47,13 +47,23 @@ namespace mold::elf {
 //   ARM32: PC ± 16 MiB
 //   PPC:   PC ± 32 MiB
 template <typename E>
-static constexpr i64 max_distance =
-  1LL << (is_arm64<E> ? 27 : is_arm32<E> ? 24 : 25);
+static consteval i64 max_distance() {
+  if constexpr (is_arm64<E>) {
+    return 1LL << 27;
+  } else if constexpr (is_arm32<E>) {
+    return 1LL << 24;
+  } else if constexpr (is_ppc<E>) {
+    return 1LL << 25;
+  } else {
+    static_assert(is_hppa<E>);
+    return 1LL << 18;
+  }
+}
 
 // We create thunks for each 12.8/1.6/3.2 MiB code block for
 // ARM64/ARM32/PPC, respectively.
 template <typename E>
-static constexpr i64 batch_size = max_distance<E> / 10;
+static constexpr i64 batch_size = max_distance<E>() / 10;
 
 // We assume that a single thunk group is smaller than 100 KiB.
 static constexpr i64 max_thunk_size = 102400;
@@ -70,9 +80,11 @@ static bool needs_thunk_rel(const ElfRel<E> &r) {
            ty == R_ARM_CALL   || ty == R_ARM_THM_CALL;
   } else if constexpr (is_ppc32<E>) {
     return ty == R_PPC_REL24  || ty == R_PPC_PLTREL24 || ty == R_PPC_LOCAL24PC;
-  } else {
-    static_assert(is_ppc64<E>);
+  } else if constexpr (is_ppc64<E>) {
     return ty == R_PPC64_REL24;
+  } else {
+    static_assert(is_hppa<E>);
+    return ty == R_PARISC_PCREL17F || ty == R_PARISC_PCREL32;
   }
 }
 
@@ -106,13 +118,18 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
       return false;
   }
 
+  // (TODO)
+  if constexpr (is_hppa<E>)
+    if (sym.has_opd(ctx))
+      return false;
+
   // Compute a distance between the relocated place and the symbol
   // and check if they are within reach.
   i64 S = sym.get_addr(ctx, NO_OPD);
   i64 A = get_addend(isec, rel);
   i64 P = isec.get_addr() + rel.r_offset;
   i64 val = S + A - P;
-  return -max_distance<E> <= val && val < max_distance<E>;
+  return -max_distance<E>() <= val && val < max_distance<E>();
 }
 
 template <typename E>
@@ -194,7 +211,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     // Move D foward as far as we can jump from B to anywhere in a thunk after D.
     while (d < m.size() &&
            align_to(offset, 1 << m[d]->p2align) + m[d]->sh_size + max_thunk_size <
-           m[b]->offset + max_distance<E>) {
+           m[b]->offset + max_distance<E>()) {
       offset = align_to(offset, 1 << m[d]->p2align);
       m[d]->offset = offset;
       offset += m[d]->sh_size;
@@ -212,7 +229,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     // Move A forward so that A is reachable from C.
     i64 c_offset = (c == m.size()) ? offset : m[c]->offset;
     while (a < osec.thunks.size() &&
-           osec.thunks[a]->offset + max_distance<E> < c_offset)
+           osec.thunks[a]->offset + max_distance<E>() < c_offset)
       reset_thunk(*osec.thunks[a++]);
 
     // Create a thunk for input sections between B and C and place it at D.
@@ -266,7 +283,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   osec.shdr.sh_size = offset;
 }
 
-#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2
+#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2 || MOLD_HPPA32
 using E = MOLD_TARGET;
 template void create_range_extension_thunks(Context<E> &, OutputSection<E> &);
 #endif

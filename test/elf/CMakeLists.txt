@@ -57,6 +57,7 @@ add_target(s390x-linux-gnu)
 add_target(m68k-linux-gnu)
 add_target(sh4-linux-gnu)
 add_target(alpha-linux-gnu)
+add_target(hppa-linux-gnu)
 
 if(MOLD_ENABLE_QEMU_TESTS_RV32)
   add_target(riscv32-linux-gnu)

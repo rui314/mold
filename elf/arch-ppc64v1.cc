@@ -332,13 +332,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags.fetch_or(NEEDS_GOT | NEEDS_PLT | NEEDS_PPC_OPD,
+      sym.flags.fetch_or(NEEDS_GOT | NEEDS_PLT | NEEDS_OPD,
                          std::memory_order_relaxed);
 
     // Any relocation except R_PPC64_REL24 is considered as an
     // address-taking relocation.
     if (rel.r_type != R_PPC64_REL24 && sym.get_type() == STT_FUNC)
-      sym.flags.fetch_or(NEEDS_PPC_OPD, std::memory_order_relaxed);
+      sym.flags.fetch_or(NEEDS_OPD, std::memory_order_relaxed);
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
@@ -551,7 +551,7 @@ get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, u64 offset) {
 // section so that they refer function symbols instead. We then mark input
 // .opd sections as dead.
 //
-// After this function, we mark symbols with the NEEDS_PPC_OPD flag if the
+// After this function, we mark symbols with the NEEDS_OPD flag if the
 // symbol needs an .opd entry. We then create an output .opd just like we
 // do for .plt or .got.
 void ppc64v1_rewrite_opd(Context<E> &ctx) {
@@ -613,20 +613,20 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
 
 // When a function is exported, the dynamic symbol for the function should
 // refers the function's .opd entry. This function marks such symbols with
-// NEEDS_PPC_OPD.
+// NEEDS_OPD.
 void ppc64v1_scan_symbols(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->symbols)
       if (sym->file == file && sym->is_exported)
         if (u32 ty = sym->get_type(); ty == STT_FUNC || ty == STT_GNU_IFUNC)
-          sym->flags |= NEEDS_PPC_OPD;
+          sym->flags |= NEEDS_OPD;
   });
 
   // Functions referenced by the ELF header also have to have .opd entries.
   auto mark = [&](std::string_view name) {
     if (!name.empty())
       if (Symbol<E> &sym = *get_symbol(ctx, name); !sym.is_imported)
-        sym.flags |= NEEDS_PPC_OPD;
+        sym.flags |= NEEDS_OPD;
   };
 
   mark(ctx.arg.entry);

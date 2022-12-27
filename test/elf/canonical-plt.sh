@@ -5,6 +5,9 @@
 # https://sourceware.org/bugzilla/show_bug.cgi?id=29655
 [ $MACHINE = s390x ] && $CC -v 2>&1 | grep -E '^gcc version 1[0-3]\.' && skip
 
+# Pointer equality does not seem to be guaranteed on HP/PA
+[ $MACHINE = hppa ] && skip
+
 cat <<EOF | $CC -o $t/a.so -fPIC -shared -xc -
 void *foo() {
   return foo;

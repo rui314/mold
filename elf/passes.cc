@@ -127,6 +127,11 @@ void create_synthetic_sections(Context<E> &ctx) {
   if constexpr (is_alpha<E>)
     ctx.extra.got = push(new AlphaGotSection);
 
+  if constexpr (is_hppa<E>) {
+    ctx.extra.opd = push(new HppaOpdSection);
+    ctx.extra.relopd = push(new HppaRelOpdSection);
+  }
+
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
   if (ctx.dynamic) {
@@ -378,21 +383,6 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
   return vec;
 }
 
-template <typename E>
-static u64 canonicalize_type(std::string_view name, u64 type) {
-  if (type == SHT_PROGBITS) {
-    if (name == ".init_array" || name.starts_with(".init_array."))
-      return SHT_INIT_ARRAY;
-    if (name == ".fini_array" || name.starts_with(".fini_array."))
-      return SHT_FINI_ARRAY;
-  }
-
-  if constexpr (is_x86_64<E>)
-    if (type == SHT_X86_64_UNWIND)
-      return SHT_PROGBITS;
-  return type;
-}
-
 struct OutputSectionKey {
   std::string_view name;
   u64 type;
@@ -460,18 +450,41 @@ static OutputSectionKey
 get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
   const ElfShdr<E> &shdr = isec.shdr();
   std::string_view name = get_output_name(ctx, isec.name(), shdr.sh_flags);
-  u64 type = canonicalize_type<E>(name, shdr.sh_type);
-  u64 flags = shdr.sh_flags & ~(u64)SHF_COMPRESSED;
 
-  if (!ctx.arg.relocatable)
-    flags &= ~(u64)SHF_GROUP & ~(u64)SHF_GNU_RETAIN;
+  auto get_type = [&]() -> u32 {
+    if (shdr.sh_type == SHT_PROGBITS) {
+      if (name == ".init_array" || name.starts_with(".init_array."))
+        return SHT_INIT_ARRAY;
+      if (name == ".fini_array" || name.starts_with(".fini_array."))
+        return SHT_FINI_ARRAY;
+    }
 
-  // .init_array is usually writable. We don't want to create multiple
-  // .init_array output sections, so make it always writable.
-  // So is .fini_array.
-  if (type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY)
-    flags |= SHF_WRITE;
-  return {name, type, flags};
+    if constexpr (is_x86_64<E>)
+      if (shdr.sh_type == SHT_X86_64_UNWIND)
+        return SHT_PROGBITS;
+    return shdr.sh_type;
+  };
+
+  u32 type = get_type();
+
+  auto get_flags = [&]() -> u32 {
+    if constexpr (is_hppa<E>)
+      if (name == ".PARISC.unwind")
+        return SHF_ALLOC | SHF_INFO_LINK;
+
+    u32 flags = shdr.sh_flags & ~(u64)SHF_COMPRESSED;
+    if (!ctx.arg.relocatable)
+      flags &= ~(u64)SHF_GROUP & ~(u64)SHF_GNU_RETAIN;
+
+    // .init_array is usually writable. We don't want to create multiple
+    // .init_array output sections, so make it always writable.
+    // So is .fini_array.
+    if (type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY)
+      flags |= SHF_WRITE;
+    return flags;
+  };
+
+  return {name, type, get_flags()};
 }
 
 // Create output sections for input sections.
@@ -562,7 +575,7 @@ void create_internal_file(Context<E> &ctx) {
   obj->is_alive = true;
   obj->priority = 1;
 
-  auto add = [&](Symbol<E> *sym) {
+  auto add = [&](Symbol<E> *sym, u32 visibility = STV_DEFAULT) {
     obj->symbols.push_back(sym);
 
     // An actual value will be set to a linker-synthesized symbol by
@@ -576,7 +589,7 @@ void create_internal_file(Context<E> &ctx) {
     esym.st_type = STT_NOTYPE;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
-    esym.st_visibility = STV_DEFAULT;
+    esym.st_visibility = visibility;
     ctx.internal_esyms.push_back(esym);
   };
 
@@ -606,6 +619,26 @@ void create_internal_file(Context<E> &ctx) {
       // double-check that the defsym target is not undefined in
       // fix_synthetic_symbols.
       add_undef(*ref);
+    }
+  }
+
+  // Add _GLOBAL_OFFSET_TABLE_
+  //
+  // We watn to do this before resolve_symbols() because on HP/PA, the
+  // symbol may also be defined by shared libraries. We always want to
+  // make the undefined symbol to it to refer to the synthesized one,
+  // so the symbol needs to be available before resolve_symbols().
+  {
+    Symbol<E> *sym = get_symbol(ctx, "_GLOBAL_OFFSET_TABLE_");
+    ctx._GLOBAL_OFFSET_TABLE_ = sym;
+
+    if constexpr (is_hppa<E>) {
+      add(sym);
+      sym->is_exported = true;
+      if (ctx.arg.shared)
+        sym->is_imported = true;
+    } else {
+      add(sym, STV_HIDDEN);
     }
   }
 
@@ -672,7 +705,6 @@ void add_synthetic_symbols(Context<E> &ctx) {
   ctx.__preinit_array_start = add("__preinit_array_start");
   ctx.__preinit_array_end = add("__preinit_array_end");
   ctx._DYNAMIC = add("_DYNAMIC");
-  ctx._GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_");
   ctx._PROCEDURE_LINKAGE_TABLE_ = add("_PROCEDURE_LINKAGE_TABLE_");
   ctx.__bss_start = add("__bss_start");
   ctx._end = add("_end");
@@ -714,6 +746,9 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
   if constexpr (is_ppc32<E>)
     ctx.extra._SDA_BASE_ = add("_SDA_BASE_");
+
+  if constexpr (is_hppa<E>)
+    ctx.extra.global = add("$global$");
 
   for (Chunk<E> *chunk : ctx.chunks) {
     if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
@@ -962,6 +997,17 @@ template <typename E>
 void check_symbol_types(Context<E> &ctx) {
   Timer t(ctx, "check_symbol_types");
 
+  auto canonicalize = [](u32 ty) -> u32 {
+    if (ty == STT_GNU_IFUNC)
+      return STT_FUNC;
+
+    if constexpr (is_hppa<E>)
+      if (ty == STT_HPPA_MILLI)
+        return STT_FUNC;
+
+    return ty;
+  };
+
   auto check = [&](InputFile<E> *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
@@ -970,13 +1016,8 @@ void check_symbol_types(Context<E> &ctx) {
       if (!sym.file)
         continue;
 
-      u32 x = sym.esym().st_type;
-      if (x == STT_GNU_IFUNC)
-        x = STT_FUNC;
-
-      u32 y = esym.st_type;
-      if (y == STT_GNU_IFUNC)
-        y = STT_FUNC;
+      u32 x = canonicalize(sym.esym().st_type);
+      u32 y = canonicalize(esym.st_type);
 
       if (x != STT_NOTYPE && y != STT_NOTYPE && x != y)
         Warn(ctx) << "symbol type mismatch: " << sym << '\n'
@@ -1319,8 +1360,8 @@ void scan_relocations(Context<E> &ctx) {
       }
     }
 
-    if constexpr (is_ppc64v1<E>)
-      if (sym->flags & NEEDS_PPC_OPD)
+    if constexpr (is_ppc64v1<E> || is_hppa<E>)
+      if (sym->flags & NEEDS_OPD)
         ctx.extra.opd->add_symbol(ctx, sym);
 
     sym->flags = 0;
@@ -2186,10 +2227,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
   };
 
-  auto stop = [](Symbol<E> *sym, auto &chunk) {
+  auto stop = [](Symbol<E> *sym, auto &chunk, i64 bias = 0) {
     if (sym && chunk) {
       sym->set_output_section(chunk);
-      sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
+      sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size + bias;
     }
   };
 
@@ -2279,13 +2320,19 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // _DYNAMIC
   start(ctx._DYNAMIC, ctx.dynamic);
 
-  // _GLOBAL_OFFSET_TABLE_. I don't know why, but for the sake of
-  // compatibility with existing code, it must be set to the beginning of
-  // .got.plt instead of .got only on i386 and x86-64.
-  if constexpr (is_x86<E>)
+  // _GLOBAL_OFFSET_TABLE_
+  if constexpr (is_x86<E>) {
+    // I don't know why, but for the sake of compatibility with existing
+    // code, it must be set to the beginning of .got.plt instead of .got
+    // only on i386 and x86-64.
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.gotplt);
-  else
+  } else if constexpr (is_hppa<E>) {
+    i64 offset = ctx.extra.opd->shdr.sh_size - sizeof(Word<E>) * 2;
+    start(ctx._GLOBAL_OFFSET_TABLE_, ctx.extra.opd, offset);
+    start(ctx.extra.global, ctx.extra.opd, offset);
+  } else {
     start(ctx._GLOBAL_OFFSET_TABLE_, ctx.got);
+  }
 
   // _PROCEDURE_LINKAGE_TABLE_. We need this on SPARC.
   start(ctx._PROCEDURE_LINKAGE_TABLE_, ctx.plt);

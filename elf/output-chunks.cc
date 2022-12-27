@@ -37,6 +37,24 @@ static u32 djb_hash(std::string_view name) {
 }
 
 template <typename E>
+static u64 get_osabi() {
+  // The EI_OSABI field in the ELF header specified what ABI variant the
+  // output file is using. In practice, it is either GNU or NONE.
+  //
+  // Technically, if we use GNU extensions such as GNU ifunc, we should
+  // set it to GNU and otherwise NONE. That being said, GNU extensions are
+  // so prevalent that no runtime bothers to check the value. Likewise, we
+  // don't bother to change the value of EI_OSABI depending on the feature
+  // that the output file depends on.
+  //
+  // HPPA's objdump refuses to disassemble an executable unless it is
+  // ELFOSABI_GNU, so we unconditionally set it to GNU for HPPA.
+  if constexpr (is_hppa<E>)
+    return ELFOSABI_GNU;
+  return ELFOSABI_NONE;
+}
+
+template <typename E>
 u64 get_eflags(Context<E> &ctx) {
   if constexpr (is_arm32<E>)
     return EF_ARM_EABI_VER5;
@@ -57,6 +75,10 @@ u64 get_eflags(Context<E> &ctx) {
 
   if constexpr (is_ppc64v2<E>)
     return 2;
+
+  if constexpr (is_hppa<E>)
+    return 0x210;
+
   return 0;
 }
 
@@ -84,6 +106,7 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   hdr.e_ident[EI_CLASS] = E::is_64 ? ELFCLASS64 : ELFCLASS32;
   hdr.e_ident[EI_DATA] = E::is_le ? ELFDATA2LSB : ELFDATA2MSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
+  hdr.e_ident[EI_OSABI] = get_osabi<E>();
   hdr.e_machine = E::e_machine;
   hdr.e_version = EV_CURRENT;
   hdr.e_entry = get_entry_addr();
@@ -225,7 +248,7 @@ static void init_thread_pointers(Context<E> &ctx, ElfPhdr<E> phdr) {
   // load/store instruction.
   if constexpr (is_x86<E> || is_sparc<E> || is_s390x<E>) {
     ctx.tp_addr = align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
-  } else if constexpr (is_arm<E> || is_sh4<E> || is_alpha<E>) {
+  } else if constexpr (is_arm<E> || is_sh4<E> || is_alpha<E> || is_hppa<E>) {
     ctx.tp_addr = align_down(phdr.p_vaddr - sizeof(Word<E>) * 2, phdr.p_align);
   } else if constexpr (is_ppc<E> || is_m68k<E>) {
     ctx.tp_addr = phdr.p_vaddr + 0x7000;
@@ -801,10 +824,18 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_RELRENT, ctx.relrdyn->shdr.sh_entsize);
   }
 
-  if (ctx.relplt->shdr.sh_size) {
-    define(DT_JMPREL, ctx.relplt->shdr.sh_addr);
-    define(DT_PLTRELSZ, ctx.relplt->shdr.sh_size);
-    define(DT_PLTREL, E::is_rela ? DT_RELA : DT_REL);
+  if constexpr (is_hppa<E>) {
+    if (ctx.extra.relopd->shdr.sh_size) {
+      define(DT_JMPREL, ctx.extra.relopd->shdr.sh_addr);
+      define(DT_PLTRELSZ, ctx.extra.relopd->shdr.sh_size);
+      define(DT_PLTREL, DT_RELA);
+    }
+  } else {
+    if (ctx.relplt->shdr.sh_size) {
+      define(DT_JMPREL, ctx.relplt->shdr.sh_addr);
+      define(DT_PLTRELSZ, ctx.relplt->shdr.sh_size);
+      define(DT_PLTREL, E::is_rela ? DT_RELA : DT_REL);
+    }
   }
 
   if constexpr (is_sparc<E>) {

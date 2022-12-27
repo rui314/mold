@@ -25,6 +25,7 @@ struct SPARC64;
 struct M68K;
 struct SH4;
 struct ALPHA;
+struct HPPA32;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -118,6 +119,7 @@ enum : u32 {
   STT_TLS = 6,
   STT_GNU_IFUNC = 10,
   STT_SPARC_REGISTER = 13,
+  STT_HPPA_MILLI = 13,
 };
 
 template <typename E>
@@ -136,6 +138,10 @@ inline std::string stt_to_string(u32 st_type) {
   if constexpr (std::is_same_v<E, SPARC64>)
     if (st_type == STT_SPARC_REGISTER)
       return "STT_SPARC_REGISTER";
+
+  if constexpr (std::is_same_v<E, HPPA32>)
+    if (st_type == STT_HPPA_MILLI)
+      return "STT_HPPA_MILLI";
 
   return "unknown st_type (" + std::to_string(st_type) + ")";
 }
@@ -217,6 +223,7 @@ enum : u32 {
   EM_NONE = 0,
   EM_386 = 3,
   EM_68K = 4,
+  EM_PARISC = 15,
   EM_PPC = 20,
   EM_PPC64 = 21,
   EM_S390X = 22,
@@ -235,6 +242,11 @@ enum : u32 {
   EI_VERSION = 6,
   EI_OSABI = 7,
   EI_ABIVERSION = 8,
+};
+
+enum : u32 {
+  ELFOSABI_NONE = 0,
+  ELFOSABI_GNU = 3,
 };
 
 enum : u32 {
@@ -1217,6 +1229,130 @@ enum : u32 {
   R_ALPHA_TPREL16 = 41,
 };
 
+enum : u32 {
+  R_PARISC_NONE = 0,
+  R_PARISC_DIR32 = 1,
+  R_PARISC_DIR21L = 2,
+  R_PARISC_DIR17R = 3,
+  R_PARISC_DIR17F = 4,
+  R_PARISC_DIR14R = 6,
+  R_PARISC_DIR14F = 7,
+  R_PARISC_PCREL12F = 8,
+  R_PARISC_PCREL32 = 9,
+  R_PARISC_PCREL21L = 10,
+  R_PARISC_PCREL17R = 11,
+  R_PARISC_PCREL17F = 12,
+  R_PARISC_PCREL17C = 13,
+  R_PARISC_PCREL14R = 14,
+  R_PARISC_PCREL14F = 15,
+  R_PARISC_DPREL21L = 18,
+  R_PARISC_DPREL14WR = 19,
+  R_PARISC_DPREL14DR = 20,
+  R_PARISC_DPREL14R = 22,
+  R_PARISC_DPREL14F = 23,
+  R_PARISC_DLTREL21L = 26,
+  R_PARISC_DLTREL14R = 30,
+  R_PARISC_DLTREL14F = 31,
+  R_PARISC_DLTIND21L = 34,
+  R_PARISC_DLTIND14R = 38,
+  R_PARISC_DLTIND14F = 39,
+  R_PARISC_SETBASE = 40,
+  R_PARISC_SECREL32 = 41,
+  R_PARISC_BASEREL21L = 42,
+  R_PARISC_BASEREL17R = 43,
+  R_PARISC_BASEREL17F = 44,
+  R_PARISC_BASEREL14R = 46,
+  R_PARISC_BASEREL14F = 47,
+  R_PARISC_SEGBASE = 48,
+  R_PARISC_SEGREL32 = 49,
+  R_PARISC_PLTOFF21L = 50,
+  R_PARISC_PLTOFF14R = 54,
+  R_PARISC_PLTOFF14F = 55,
+  R_PARISC_LTOFF_FPTR32 = 57,
+  R_PARISC_LTOFF_FPTR21L = 58,
+  R_PARISC_LTOFF_FPTR14R = 62,
+  R_PARISC_FPTR64 = 64,
+  R_PARISC_PLABEL32 = 65,
+  R_PARISC_PLABEL21L = 66,
+  R_PARISC_PLABEL14R = 70,
+  R_PARISC_PCREL64 = 72,
+  R_PARISC_PCREL22C = 73,
+  R_PARISC_PCREL22F = 74,
+  R_PARISC_PCREL14WR = 75,
+  R_PARISC_PCREL14DR = 76,
+  R_PARISC_PCREL16F = 77,
+  R_PARISC_PCREL16WF = 78,
+  R_PARISC_PCREL16DF = 79,
+  R_PARISC_DIR64 = 80,
+  R_PARISC_DIR14WR = 83,
+  R_PARISC_DIR14DR = 84,
+  R_PARISC_DIR16F = 85,
+  R_PARISC_DIR16WF = 86,
+  R_PARISC_DIR16DF = 87,
+  R_PARISC_GPREL64 = 88,
+  R_PARISC_DLTREL14WR = 91,
+  R_PARISC_DLTREL14DR = 92,
+  R_PARISC_GPREL16F = 93,
+  R_PARISC_GPREL16WF = 94,
+  R_PARISC_GPREL16DF = 95,
+  R_PARISC_LTOFF64 = 96,
+  R_PARISC_DLTIND14WR = 99,
+  R_PARISC_DLTIND14DR = 100,
+  R_PARISC_LTOFF16F = 101,
+  R_PARISC_LTOFF16WF = 102,
+  R_PARISC_LTOFF16DF = 103,
+  R_PARISC_SECREL64 = 104,
+  R_PARISC_BASEREL14WR = 107,
+  R_PARISC_BASEREL14DR = 108,
+  R_PARISC_SEGREL64 = 112,
+  R_PARISC_PLTOFF14WR = 115,
+  R_PARISC_PLTOFF14DR = 116,
+  R_PARISC_PLTOFF16F = 117,
+  R_PARISC_PLTOFF16WF = 118,
+  R_PARISC_PLTOFF16DF = 119,
+  R_PARISC_LTOFF_FPTR64 = 120,
+  R_PARISC_LTOFF_FPTR14WR = 123,
+  R_PARISC_LTOFF_FPTR14DR = 124,
+  R_PARISC_LTOFF_FPTR16F = 125,
+  R_PARISC_LTOFF_FPTR16WF = 126,
+  R_PARISC_LTOFF_FPTR16DF = 127,
+  R_PARISC_COPY = 128,
+  R_PARISC_IPLT = 129,
+  R_PARISC_EPLT = 130,
+  R_PARISC_TPREL32 = 153,
+  R_PARISC_TPREL21L = 154,
+  R_PARISC_TPREL14R = 158,
+  R_PARISC_LTOFF_TP21L = 162,
+  R_PARISC_LTOFF_TP14R = 166,
+  R_PARISC_LTOFF_TP14F = 167,
+  R_PARISC_TPREL64 = 216,
+  R_PARISC_TPREL14WR = 219,
+  R_PARISC_TPREL14DR = 220,
+  R_PARISC_TPREL16F = 221,
+  R_PARISC_TPREL16WF = 222,
+  R_PARISC_TPREL16DF = 223,
+  R_PARISC_LTOFF_TP64 = 224,
+  R_PARISC_LTOFF_TP14WR = 227,
+  R_PARISC_LTOFF_TP14DR = 228,
+  R_PARISC_LTOFF_TP16F = 229,
+  R_PARISC_LTOFF_TP16WF = 230,
+  R_PARISC_LTOFF_TP16DF = 231,
+  R_PARISC_GNU_VTENTRY = 232,
+  R_PARISC_GNU_VTINHERIT = 233,
+  R_PARISC_TLS_GD21L = 234,
+  R_PARISC_TLS_GD14R = 235,
+  R_PARISC_TLS_GDCALL = 236,
+  R_PARISC_TLS_LDM21L = 237,
+  R_PARISC_TLS_LDM14R = 238,
+  R_PARISC_TLS_LDMCALL = 239,
+  R_PARISC_TLS_LDO21L = 240,
+  R_PARISC_TLS_LDO14R = 241,
+  R_PARISC_TLS_DTPMOD32 = 242,
+  R_PARISC_TLS_DTPMOD64 = 243,
+  R_PARISC_TLS_DTPOFF32 = 244,
+  R_PARISC_TLS_DTPOFF64 = 245,
+};
+
 //
 // DWARF data types
 //
@@ -1670,6 +1806,7 @@ template <typename E> static constexpr bool is_sparc64 = std::is_same_v<E, SPARC
 template <typename E> static constexpr bool is_m68k = std::is_same_v<E, M68K>;
 template <typename E> static constexpr bool is_sh4 = std::is_same_v<E, SH4>;
 template <typename E> static constexpr bool is_alpha = std::is_same_v<E, ALPHA>;
+template <typename E> static constexpr bool is_hppa32 = std::is_same_v<E, HPPA32>;
 
 template <typename E> static constexpr bool is_x86 = is_x86_64<E> || is_i386<E>;
 template <typename E> static constexpr bool is_arm = is_arm64<E> || is_arm32<E>;
@@ -1679,6 +1816,7 @@ template <typename E> static constexpr bool is_riscv = is_rv64<E> || is_rv32<E>;
 template <typename E> static constexpr bool is_ppc64 = is_ppc64v1<E> || is_ppc64v2<E>;
 template <typename E> static constexpr bool is_ppc = is_ppc64<E> || is_ppc32<E>;
 template <typename E> static constexpr bool is_sparc = is_sparc64<E>;
+template <typename E> static constexpr bool is_hppa = is_hppa32<E>;
 
 struct X86_64 {
   static constexpr std::string_view target_name = "x86_64";
@@ -2044,6 +2182,30 @@ struct ALPHA {
   static constexpr u32 R_DTPOFF = R_ALPHA_DTPREL64;
   static constexpr u32 R_TPOFF = R_ALPHA_TPREL64;
   static constexpr u32 R_DTPMOD = R_ALPHA_DTPMOD64;
+};
+
+struct HPPA32 {
+  static constexpr std::string_view target_name = "hppa32";
+  static constexpr bool is_64 = false;
+  static constexpr bool is_le = false;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 4096;
+  static constexpr u32 e_machine = EM_PARISC;
+  static constexpr u32 plt_hdr_size = 0;
+  static constexpr u32 plt_size = 0;
+  static constexpr u32 pltgot_size = 0;
+  static constexpr u32 thunk_hdr_size = 0;
+  static constexpr u32 thunk_size = 20;
+
+  static constexpr u32 R_COPY = R_PARISC_COPY;
+  static constexpr u32 R_GLOB_DAT = R_PARISC_DIR32;
+  static constexpr u32 R_JUMP_SLOT = R_PARISC_IPLT;
+  static constexpr u32 R_ABS = R_PARISC_DIR32;
+  static constexpr u32 R_RELATIVE = R_PARISC_DIR32;
+  static constexpr u32 R_IRELATIVE = R_NONE;
+  static constexpr u32 R_DTPOFF = R_PARISC_TLS_DTPOFF32;
+  static constexpr u32 R_TPOFF = R_PARISC_TPREL32;
+  static constexpr u32 R_DTPMOD = R_PARISC_TLS_DTPMOD32;
 };
 
 } // namespace mold::elf
