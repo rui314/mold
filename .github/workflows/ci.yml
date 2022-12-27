@@ -42,7 +42,7 @@ jobs:
         # Install cross toolchains
         dpkg --add-architecture i386
         ./install-build-deps.sh update
-        apt-get install -y sudo qemu-user gdb zstd dwarfdump gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf gcc-10-powerpc64-linux-gnu gcc-10-powerpc64le-linux-gnu gcc-10-s390x-linux-gnu gcc-10-sparc64-linux-gnu gcc-10-m68k-linux-gnu g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf g++-10-powerpc64-linux-gnu g++-10-powerpc64le-linux-gnu g++-10-s390x-linux-gnu g++-10-sparc64-linux-gnu g++-10-m68k-linux-gnu
+        apt-get install -y sudo qemu-user gdb zstd dwarfdump gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf gcc-10-powerpc64-linux-gnu gcc-10-powerpc64le-linux-gnu gcc-10-s390x-linux-gnu gcc-10-sparc64-linux-gnu gcc-10-m68k-linux-gnu gcc-10-sh4-linux-gnu g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf g++-10-powerpc64-linux-gnu g++-10-powerpc64le-linux-gnu g++-10-s390x-linux-gnu g++-10-sparc64-linux-gnu g++-10-m68k-linux-gnu g++-10-sh4-linux-gnu
         ln -sf /usr/bin/i686-linux-gnu-gcc-10 /usr/bin/i686-linux-gnu-gcc
         ln -sf /usr/bin/i686-linux-gnu-g++-10 /usr/bin/i686-linux-gnu-g++
         ln -sf /usr/bin/aarch64-linux-gnu-gcc-10 /usr/bin/aarch64-linux-gnu-gcc
@@ -61,6 +61,8 @@ jobs:
         ln -sf /usr/bin/sparc64-linux-gnu-g++-10 /usr/bin/sparc64-linux-gnu-g++
         ln -sf /usr/bin/m68k-linux-gnu-gcc-10 /usr/bin/m68k-linux-gnu-gcc
         ln -sf /usr/bin/m68k-linux-gnu-g++-10 /usr/bin/m68k-linux-gnu-g++
+        ln -sf /usr/bin/sh4-linux-gnu-gcc-10 /usr/bin/sh4-linux-gnu-gcc
+        ln -sf /usr/bin/sh4-linux-gnu-g++-10 /usr/bin/sh4-linux-gnu-g++
 
         # Install a RV32 toolchain from third party since it's not available
         # as an Ubuntu package.
