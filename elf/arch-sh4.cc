@@ -26,13 +26,13 @@
 //    small to contain large immediates. On SH-4, large immediates are
 //    loaded from memory using `mov.l` PC-relative load instruction.
 //
-// Just like contemporary MIPS and SPARC, SH-4 has a delay branch slot.
-// That is, one instruction after a branch instruction will always be
-// executed even if the branch is taken. Delay branch slot allows a
-// pipelined processor to start and finish executing an instruction after
-// a branch regardless of the branch's condition, simplifying the
-// processor's implementation. It's considered a premature optimization
-// nowadays, though. Modern RISC processors don't have it.
+// Beside these, SH-4 has a delay branch slot just like contemporary MIPS
+// and SPARC. That is, one instruction after a branch instruction will
+// always be executed even if the branch is taken. Delay branch slot allows
+// a pipelined CPU to start and finish executing an instruction after a
+// branch regardless of the branch's condition, simplifying the processor's
+// implementation. It's considered a bad premature optimization nowadays,
+// though. Modern RISC processors don't have it.
 //
 // Here are notes about the SH-4 psABI:
 //
