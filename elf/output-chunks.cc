@@ -188,7 +188,7 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
            chunk == ctx.got || chunk == ctx.dynamic ||
            chunk == ctx.relro_padding ||
            (ctx.arg.z_now && ctx.gotplt && chunk == ctx.gotplt) ||
-           chunk->name == ".alpha_got2" || chunk->name == ".toc" ||
+           chunk->name == ".alpha_got" || chunk->name == ".toc" ||
            chunk->name.ends_with(".rel.ro");
   return false;
 }
@@ -506,8 +506,8 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
       offset += ctx.ppc64_opd->symbols.size() * sizeof(ElfRel<E>) * 2;
 
   if constexpr (is_alpha<E>) {
-    ctx.alpha_got2->reldyn_offset = offset;
-    offset += ctx.alpha_got2->get_reldyn_size(ctx) * sizeof(ElfRel<E>);
+    ctx.alpha_got->reldyn_offset = offset;
+    offset += ctx.alpha_got->get_reldyn_size(ctx) * sizeof(ElfRel<E>);
   }
 
   for (ObjectFile<E> *file : ctx.objs) {

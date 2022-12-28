@@ -110,7 +110,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_ALPHA_LITERAL:
       if (A)
-        *(ul16 *)loc = ctx.alpha_got2->get_addr(sym, A) - GP;
+        *(ul16 *)loc = ctx.alpha_got->get_addr(sym, A) - GP;
       else
         *(ul16 *)loc = GOT + G - GP;
       break;
@@ -243,7 +243,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ALPHA_LITERAL:
       if (rel.r_addend) {
         sym.flags.fetch_or(NEEDS_GOT2, std::memory_order_relaxed);
-        ctx.alpha_got2->add_symbol(sym, rel.r_addend);
+        ctx.alpha_got->add_symbol(sym, rel.r_addend);
       } else {
         sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       }
@@ -291,30 +291,30 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 // only one but two GOT entries for symbol X with different addends.
 //
 // We don't want to mess up the implementation of the common GOT section
-// for Alpha. So we create another GOT-like section, .alpha_got2. Any GOT
-// entry for a R_ALPHA_LITERAL reloc with non-zero addends is created not
-// in .got but in .alpha_got2.
+// for Alpha. So we create another GOT-like section, .alpha_got. Any GOT
+// entry for an R_ALPHA_LITERAL reloc with a non-zero addends is created
+// not in .got but in .alpha_got.
 //
-// Since .alpha_got2 entries are accessed relative to GP, .alpha_got2
+// Since .alpha_got entries are accessed relative to GP, .alpha_got
 // needs to be close enough to .got. It's actually placed next to .got.
-void AlphaGot2Section::add_symbol(Symbol<E> &sym, i64 addend) {
+void AlphaGotSection::add_symbol(Symbol<E> &sym, i64 addend) {
   assert(addend);
   std::scoped_lock lock(mu);
   entries.push_back({&sym, addend});
 }
 
-bool operator<(const AlphaGot2Section::Entry &a, const AlphaGot2Section::Entry &b) {
+bool operator<(const AlphaGotSection::Entry &a, const AlphaGotSection::Entry &b) {
   return std::tuple(a.sym->file->priority, a.sym->sym_idx, a.addend) <
          std::tuple(b.sym->file->priority, b.sym->sym_idx, b.addend);
 };
 
-u64 AlphaGot2Section::get_addr(Symbol<E> &sym, i64 addend) {
+u64 AlphaGotSection::get_addr(Symbol<E> &sym, i64 addend) {
   auto it = std::lower_bound(entries.begin(), entries.end(), Entry{&sym, addend});
   assert(it != entries.end());
   return this->shdr.sh_addr + (it - entries.begin()) * sizeof(Word<E>);
 }
 
-i64 AlphaGot2Section::get_reldyn_size(Context<E> &ctx) {
+i64 AlphaGotSection::get_reldyn_size(Context<E> &ctx) {
   i64 n = 0;
   for (Entry &e : entries)
     if (e.sym->is_imported || (ctx.arg.pic && !e.sym->is_absolute()))
@@ -322,31 +322,29 @@ i64 AlphaGot2Section::get_reldyn_size(Context<E> &ctx) {
   return n;
 }
 
-void AlphaGot2Section::finalize() {
+void AlphaGotSection::finalize() {
   sort(entries);
-  entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
+  remove_duplicates(entries);
   shdr.sh_size = entries.size() * sizeof(Word<E>);
 }
 
-void AlphaGot2Section::copy_buf(Context<E> &ctx) {
+void AlphaGotSection::copy_buf(Context<E> &ctx) {
   ElfRel<E> *dynrel = nullptr;
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset + reldyn_offset);
 
   for (i64 i = 0; i < entries.size(); i++) {
     Entry &e = entries[i];
-    i64 offset = sizeof(Word<E>) * i;
-    ul64 *buf = (ul64 *)(ctx.buf + this->shdr.sh_offset + offset);
+    u64 P = this->shdr.sh_addr + sizeof(Word<E>) * i;
+    ul64 *buf = (ul64 *)(ctx.buf + this->shdr.sh_offset + sizeof(Word<E>) * i);
 
     if (e.sym->is_imported) {
-      *dynrel++ = ElfRel<E>(this->shdr.sh_addr + offset, E::R_ABS,
-                            e.sym->get_dynsym_idx(ctx), e.addend);
-      *buf = e.addend;
+      *dynrel++ = ElfRel<E>(P, E::R_ABS, e.sym->get_dynsym_idx(ctx), e.addend);
+      *buf = ctx.arg.apply_dynamic_relocs ? e.addend : 0;
     } else {
-      u64 addr = e.sym->get_addr(ctx) + e.addend;
-      *buf = addr;
       if (ctx.arg.pic && !e.sym->is_absolute())
-        *dynrel++ = ElfRel<E>(this->shdr.sh_addr + offset, E::R_RELATIVE, 0, addr);
+        *dynrel++ = ElfRel<E>(P, E::R_RELATIVE, 0, *buf);
+      *buf = e.sym->get_addr(ctx) + e.addend;
     }
   }
 }

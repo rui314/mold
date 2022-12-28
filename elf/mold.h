@@ -1508,10 +1508,10 @@ public:
 // arch-alpha.cc
 //
 
-class AlphaGot2Section : public Chunk<ALPHA> {
+class AlphaGotSection : public Chunk<ALPHA> {
 public:
-  AlphaGot2Section() {
-    this->name = ".alpha_got2";
+  AlphaGotSection() {
+    this->name = ".alpha_got";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = 8;
@@ -1816,7 +1816,7 @@ struct Context {
   PPC64OpdSection *ppc64_opd = nullptr;
   SparcTlsGetAddrSection *sparc_tls_get_addr = nullptr;
   S390XTlsGetOffsetSection *s390x_tls_get_offset = nullptr;
-  AlphaGot2Section *alpha_got2 = nullptr;
+  AlphaGotSection *alpha_got = nullptr;
 
   // Frequently accessed symbols
   Symbol<E> *tls_get_addr = nullptr;

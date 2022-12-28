@@ -125,7 +125,7 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.ppc64_opd = push(new PPC64OpdSection);
 
   if constexpr (is_alpha<E>)
-    ctx.alpha_got2 = push(new AlphaGot2Section);
+    ctx.alpha_got = push(new AlphaGotSection);
 
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
@@ -1329,7 +1329,7 @@ void scan_relocations(Context<E> &ctx) {
     ctx.got->add_tlsld(ctx);
 
   if constexpr (is_alpha<E>)
-    ctx.alpha_got2->finalize();
+    ctx.alpha_got->finalize();
 
   if (ctx.has_textrel && ctx.arg.warn_textrel)
     Warn(ctx) << "creating a DT_TEXTREL in an output file";
@@ -1631,7 +1631,7 @@ void clear_padding(Context<E> &ctx) {
 //   <writable RELRO data>
 //   .got
 //   .toc
-//   .alpha_got2
+//   .alpha_got
 //   <writable RELRO bss>
 //   .relro_padding
 //   <writable non-RELRO data>
@@ -1715,7 +1715,7 @@ void sort_output_sections_regular(Context<E> &ctx) {
       return 1;
     if (chunk->name == ".toc")
       return 2;
-    if (chunk->name == ".alpha_got2")
+    if (chunk->name == ".alpha_got")
       return 3;
     if (chunk == ctx.relro_padding)
       return INT_MAX;
