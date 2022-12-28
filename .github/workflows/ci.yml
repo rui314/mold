@@ -42,27 +42,15 @@ jobs:
         # Install cross toolchains
         dpkg --add-architecture i386
         ./install-build-deps.sh update
-        apt-get install -y sudo qemu-user gdb zstd dwarfdump gcc-10-i686-linux-gnu gcc-10-aarch64-linux-gnu gcc-10-riscv64-linux-gnu gcc-10-arm-linux-gnueabihf gcc-10-powerpc64-linux-gnu gcc-10-powerpc64le-linux-gnu gcc-10-s390x-linux-gnu gcc-10-sparc64-linux-gnu gcc-10-m68k-linux-gnu gcc-10-sh4-linux-gnu g++-10-i686-linux-gnu g++-10-aarch64-linux-gnu g++-10-riscv64-linux-gnu g++-10-arm-linux-gnueabihf g++-10-powerpc64-linux-gnu g++-10-powerpc64le-linux-gnu g++-10-s390x-linux-gnu g++-10-sparc64-linux-gnu g++-10-m68k-linux-gnu g++-10-sh4-linux-gnu
-        ln -sf /usr/bin/i686-linux-gnu-gcc-10 /usr/bin/i686-linux-gnu-gcc
-        ln -sf /usr/bin/i686-linux-gnu-g++-10 /usr/bin/i686-linux-gnu-g++
-        ln -sf /usr/bin/aarch64-linux-gnu-gcc-10 /usr/bin/aarch64-linux-gnu-gcc
-        ln -sf /usr/bin/aarch64-linux-gnu-g++-10 /usr/bin/aarch64-linux-gnu-g++
+        apt-get install -y sudo qemu-user gdb zstd dwarfdump {gcc,g++}-10-{i686,aarch64,riscv64,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4}-linux-gnu {gcc,g++}-10-arm-linux-gnueabihf
+
+        for i in i686 aarch64 riscv64 powerpc64 powerpc64le s390x sparc64 m68k sh4; do
+          ln -sf /usr/bin/$i-linux-gnu-gcc-10 /usr/bin/$i-linux-gnu-gcc
+          ln -sf /usr/bin/$i-linux-gnu-g++-10 /usr/bin/$i-linux-gnu-g++
+        done
+
         ln -sf /usr/bin/arm-linux-gnueabihf-gcc-10 /usr/bin/arm-linux-gnueabihf-gcc
         ln -sf /usr/bin/arm-linux-gnueabihf-g++-10 /usr/bin/arm-linux-gnueabihf-g++
-        ln -sf /usr/bin/riscv64-linux-gnu-gcc-10 /usr/bin/riscv64-linux-gnu-gcc
-        ln -sf /usr/bin/riscv64-linux-gnu-g++-10 /usr/bin/riscv64-linux-gnu-g++
-        ln -sf /usr/bin/powerpc64-linux-gnu-gcc-10 /usr/bin/powerpc64-linux-gnu-gcc
-        ln -sf /usr/bin/powerpc64-linux-gnu-g++-10 /usr/bin/powerpc64-linux-gnu-g++
-        ln -sf /usr/bin/powerpc64le-linux-gnu-gcc-10 /usr/bin/powerpc64le-linux-gnu-gcc
-        ln -sf /usr/bin/powerpc64le-linux-gnu-g++-10 /usr/bin/powerpc64le-linux-gnu-g++
-        ln -sf /usr/bin/s390x-linux-gnu-gcc-10 /usr/bin/s390x-linux-gnu-gcc
-        ln -sf /usr/bin/s390x-linux-gnu-g++-10 /usr/bin/s390x-linux-gnu-g++
-        ln -sf /usr/bin/sparc64-linux-gnu-gcc-10 /usr/bin/sparc64-linux-gnu-gcc
-        ln -sf /usr/bin/sparc64-linux-gnu-g++-10 /usr/bin/sparc64-linux-gnu-g++
-        ln -sf /usr/bin/m68k-linux-gnu-gcc-10 /usr/bin/m68k-linux-gnu-gcc
-        ln -sf /usr/bin/m68k-linux-gnu-g++-10 /usr/bin/m68k-linux-gnu-g++
-        ln -sf /usr/bin/sh4-linux-gnu-gcc-10 /usr/bin/sh4-linux-gnu-gcc
-        ln -sf /usr/bin/sh4-linux-gnu-g++-10 /usr/bin/sh4-linux-gnu-g++
 
         # Install a RV32 toolchain from third party since it's not available
         # as an Ubuntu package.
@@ -74,6 +62,7 @@ jobs:
         echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-gcc -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-gcc
         echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-g++ -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-g++
         chmod 755 /usr/bin/riscv32-linux-gnu-gcc /usr/bin/riscv32-linux-gnu-g++
+      shell: bash
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: build and test
