@@ -115,17 +115,17 @@ void create_synthetic_sections(Context<E> &ctx) {
 
   if (ctx.arg.is_static) {
     if constexpr (is_s390x<E>)
-      ctx.s390x_tls_get_offset = push(new S390XTlsGetOffsetSection);
+      ctx.extra.tls_get_offset = push(new S390XTlsGetOffsetSection);
 
     if constexpr (is_sparc<E>)
-      ctx.sparc_tls_get_addr = push(new SparcTlsGetAddrSection);
+      ctx.extra.tls_get_addr = push(new SparcTlsGetAddrSection);
   }
 
   if constexpr (std::is_same_v<E, PPC64V1>)
-    ctx.ppc64_opd = push(new PPC64OpdSection);
+    ctx.extra.opd = push(new PPC64OpdSection);
 
   if constexpr (is_alpha<E>)
-    ctx.alpha_got = push(new AlphaGotSection);
+    ctx.extra.got = push(new AlphaGotSection);
 
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
@@ -1320,7 +1320,7 @@ void scan_relocations(Context<E> &ctx) {
 
     if constexpr (std::is_same_v<E, PPC64V1>)
       if (sym->flags & NEEDS_OPD)
-        ctx.ppc64_opd->add_symbol(ctx, sym);
+        ctx.extra.opd->add_symbol(ctx, sym);
 
     sym->flags = 0;
   }
@@ -1329,7 +1329,7 @@ void scan_relocations(Context<E> &ctx) {
     ctx.got->add_tlsld(ctx);
 
   if constexpr (is_alpha<E>)
-    ctx.alpha_got->finalize();
+    ctx.extra.got->finalize();
 
   if (ctx.has_textrel && ctx.arg.warn_textrel)
     Warn(ctx) << "creating a DT_TEXTREL in an output file";

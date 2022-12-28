@@ -237,7 +237,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (ctx.is_static && &sym == ctx.tls_get_offset) {
         // __tls_get_offset() in libc.a is stub code that calls abort().
         // So we provide a replacement function.
-        *(ub32 *)loc = (ctx.s390x_tls_get_offset->shdr.sh_addr - P) >> 1;
+        *(ub32 *)loc = (ctx.extra.tls_get_offset->shdr.sh_addr - P) >> 1;
       } else {
         i64 val = S + A - P;
         check_dbl(val, -(1LL << 32), 1LL << 32);

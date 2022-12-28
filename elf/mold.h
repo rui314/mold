@@ -1588,6 +1588,25 @@ struct SectionOrder {
   u64 value = 0;
 };
 
+// Target-specific context clss
+template <typename E> struct ContextExtras {};
+
+template <> struct ContextExtras<PPC64V1> {
+  PPC64OpdSection *opd = nullptr;
+};
+
+template <> struct ContextExtras<SPARC64> {
+  SparcTlsGetAddrSection *tls_get_addr = nullptr;
+};
+
+template <> struct ContextExtras<S390X> {
+  S390XTlsGetOffsetSection *tls_get_offset = nullptr;
+};
+
+template <> struct ContextExtras<ALPHA> {
+  AlphaGotSection *got = nullptr;
+};
+
 // Context represents a context object for each invocation of the linker.
 // It contains command line flags, pointers to singleton objects
 // (such as linker-synthesized output sections), unique_ptrs for
@@ -1813,10 +1832,8 @@ struct Context {
   NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
   RelroPaddingSection<E> *relro_padding = nullptr;
-  PPC64OpdSection *ppc64_opd = nullptr;
-  SparcTlsGetAddrSection *sparc_tls_get_addr = nullptr;
-  S390XTlsGetOffsetSection *s390x_tls_get_offset = nullptr;
-  AlphaGotSection *alpha_got = nullptr;
+
+  [[no_unique_address]] ContextExtras<E> extra;
 
   // Frequently accessed symbols
   Symbol<E> *tls_get_addr = nullptr;
@@ -2631,7 +2648,7 @@ inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
 template <typename E>
 inline u64 Symbol<E>::get_opd_addr(Context<E> &ctx) const {
   assert(get_opd_idx(ctx) != -1);
-  return ctx.ppc64_opd->shdr.sh_addr +
+  return ctx.extra.opd->shdr.sh_addr +
          get_opd_idx(ctx) * PPC64OpdSection::ENTRY_SIZE;
 }
 

@@ -110,7 +110,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_ALPHA_LITERAL:
       if (A)
-        *(ul16 *)loc = ctx.alpha_got->get_addr(sym, A) - GP;
+        *(ul16 *)loc = ctx.extra.got->get_addr(sym, A) - GP;
       else
         *(ul16 *)loc = GOT + G - GP;
       break;
@@ -243,7 +243,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ALPHA_LITERAL:
       if (rel.r_addend) {
         sym.flags.fetch_or(NEEDS_GOT2, std::memory_order_relaxed);
-        ctx.alpha_got->add_symbol(sym, rel.r_addend);
+        ctx.extra.got->add_symbol(sym, rel.r_addend);
       } else {
         sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       }

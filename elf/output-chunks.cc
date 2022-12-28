@@ -503,11 +503,11 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
 
   if constexpr (std::is_same_v<E, PPC64V1>)
     if (ctx.arg.pic)
-      offset += ctx.ppc64_opd->symbols.size() * sizeof(ElfRel<E>) * 2;
+      offset += ctx.extra.opd->symbols.size() * sizeof(ElfRel<E>) * 2;
 
   if constexpr (is_alpha<E>) {
-    ctx.alpha_got->reldyn_offset = offset;
-    offset += ctx.alpha_got->get_reldyn_size(ctx) * sizeof(ElfRel<E>);
+    ctx.extra.got->reldyn_offset = offset;
+    offset += ctx.extra.got->get_reldyn_size(ctx) * sizeof(ElfRel<E>);
   }
 
   for (ObjectFile<E> *file : ctx.objs) {
@@ -531,7 +531,7 @@ void RelDynSection<E>::copy_buf(Context<E> &ctx) {
 
   if constexpr (std::is_same_v<E, PPC64V1>) {
     if (ctx.arg.pic) {
-      for (Symbol<E> *sym : ctx.ppc64_opd->symbols) {
+      for (Symbol<E> *sym : ctx.extra.opd->symbols) {
         u64 addr = sym->get_opd_addr(ctx);
         *rel++ = ElfRel<E>(addr, E::R_RELATIVE, 0,
                            sym->get_addr(ctx, NO_PLT | NO_OPD));
@@ -1635,7 +1635,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
 
     if constexpr (std::is_same_v<E, PPC64V1>)
       if (sym.has_opd(ctx))
-        return ctx.ppc64_opd->shndx;
+        return ctx.extra.opd->shndx;
 
     if (InputSection<E> *isec = sym.get_input_section()) {
       if (isec->is_alive)

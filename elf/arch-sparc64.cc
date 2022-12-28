@@ -404,7 +404,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_TLS_GD_CALL:
     case R_SPARC_TLS_LDM_CALL:
       if (ctx.arg.is_static)
-        *(ub32 *)loc |= bits(ctx.sparc_tls_get_addr->shdr.sh_addr + A - P, 31, 2);
+        *(ub32 *)loc |= bits(ctx.extra.tls_get_addr->shdr.sh_addr + A - P, 31, 2);
       else
         *(ub32 *)loc |= bits(ctx.tls_get_addr->get_addr(ctx) + A - P, 31, 2);
       break;
