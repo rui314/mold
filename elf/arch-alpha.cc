@@ -339,12 +339,12 @@ void AlphaGotSection::copy_buf(Context<E> &ctx) {
     ul64 *buf = (ul64 *)(ctx.buf + this->shdr.sh_offset + sizeof(Word<E>) * i);
 
     if (e.sym->is_imported) {
-      *dynrel++ = ElfRel<E>(P, E::R_ABS, e.sym->get_dynsym_idx(ctx), e.addend);
       *buf = ctx.arg.apply_dynamic_relocs ? e.addend : 0;
+      *dynrel++ = ElfRel<E>(P, E::R_ABS, e.sym->get_dynsym_idx(ctx), e.addend);
     } else {
+      *buf = e.sym->get_addr(ctx) + e.addend;
       if (ctx.arg.pic && !e.sym->is_absolute())
         *dynrel++ = ElfRel<E>(P, E::R_RELATIVE, 0, *buf);
-      *buf = e.sym->get_addr(ctx) + e.addend;
     }
   }
 }
