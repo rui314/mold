@@ -242,7 +242,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_ALPHA_LITERAL:
       if (rel.r_addend) {
-        sym.flags.fetch_or(NEEDS_GOT2, std::memory_order_relaxed);
+        sym.flags.fetch_or(NEEDS_ALPHA_GOT, std::memory_order_relaxed);
         ctx.extra.got->add_symbol(sym, rel.r_addend);
       } else {
         sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);

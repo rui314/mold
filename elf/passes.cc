@@ -1319,7 +1319,7 @@ void scan_relocations(Context<E> &ctx) {
     }
 
     if constexpr (std::is_same_v<E, PPC64V1>)
-      if (sym->flags & NEEDS_OPD)
+      if (sym->flags & NEEDS_PPC_OPD)
         ctx.extra.opd->add_symbol(ctx, sym);
 
     sym->flags = 0;

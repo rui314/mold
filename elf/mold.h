@@ -1906,16 +1906,15 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 //
 
 enum {
-  NEEDS_GOT     = 1 << 0,
-  NEEDS_PLT     = 1 << 1,
-  NEEDS_CPLT    = 1 << 2,
-  NEEDS_GOTTP   = 1 << 3,
-  NEEDS_TLSGD   = 1 << 4,
-  NEEDS_COPYREL = 1 << 5,
-  NEEDS_TLSDESC = 1 << 6,
-
-  NEEDS_OPD     = 1 << 7, // for PPCv1
-  NEEDS_GOT2    = 1 << 7, // for Alpha
+  NEEDS_GOT       = 1 << 0,
+  NEEDS_PLT       = 1 << 1,
+  NEEDS_CPLT      = 1 << 2,
+  NEEDS_GOTTP     = 1 << 3,
+  NEEDS_TLSGD     = 1 << 4,
+  NEEDS_COPYREL   = 1 << 5,
+  NEEDS_TLSDESC   = 1 << 6,
+  NEEDS_PPC_OPD   = 1 << 7, // for PPCv1
+  NEEDS_ALPHA_GOT = 1 << 7, // for Alpha
 };
 
 // A struct to hold target-dependent symbol members.
