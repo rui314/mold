@@ -29,25 +29,28 @@
 //  - It looks like even function addresses are first loaded to register
 //    in a GP-relative manner before calling it. We can relax it to
 //    convert the instruction sequence with a direct branch instruction,
-//    but by default, object files don't use branch instructions to call a
-//    function. Therefore, by default, we don't need to create a PLT. Any
-//    function call is made by first reading its address from GOT and jump
-//    to the address.
-//
-//  - A 32-bit immediate can be materialized in a register with a "load
-//    high" and a "load low" instruction sequence. The first instruction
-//    sets the upper 16 bits in a register, and the second one set the
-//    lower 16 bits. When doing so, they sign-extend an immediate.
-//    Therefore, if the 15th bit of an immediate happens to be 1, setting
-//    a "low half" value negates the upper 16 bit values that has already
-//    been set in a register. To compensate that, we need to add 0x8000
-//    when setting the upper 16 bits.
+//    but by default, object files don't use a direct branch to call a
+//    function. Therefore, by default, we don't need to create a PLT.
+//    Any function call is made by first reading its address from GOT and
+//    jump to the address.
 
 #include "mold.h"
 
 namespace mold::elf {
 
 using E = ALPHA;
+
+// A 32-bit immediate can be materialized in a register with a "load high"
+// and a "load low" instruction sequence. The first instruction sets the
+// upper 16 bits in a register, and the second one set the lower 16
+// bits. When doing so, they sign-extend an immediate.  Therefore, if the
+// 15th bit of an immediate happens to be 1, setting a "low half" value
+// negates the upper 16 bit values that has already been set in a
+// register. To compensate that, we need to add 0x8000 when setting the
+// upper 16 bits.
+static u32 hi(u32 val) {
+  return bits(val + 0x8000, 31, 16);
+}
 
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {}
@@ -115,14 +118,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc |= bits(S + A - P - 4, 22, 0);
       break;
     case R_ALPHA_GPDISP:
-      *(ul16 *)loc = bits(GP - P + 0x8000, 31, 16);
+      *(ul16 *)loc = hi(GP - P);
       *(ul16 *)(loc + A) = GP - P;
       break;
     case R_ALPHA_SREL32:
       *(ul32 *)loc = S + A - P;
       break;
     case R_ALPHA_GPRELHIGH:
-      *(ul16 *)loc = bits(S + A - GP + 0x8000, 31, 16);
+      *(ul16 *)loc = hi(S + A - GP);
       break;
     case R_ALPHA_GPRELLOW:
       *(ul16 *)loc = S + A - GP;
@@ -134,7 +137,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = ctx.got->get_tlsld_addr(ctx) - GP;
       break;
     case R_ALPHA_DTPRELHI:
-      *(ul16 *)loc = bits(S + A - ctx.dtp_addr + 0x8000, 31, 16);
+      *(ul16 *)loc = hi(S + A - ctx.dtp_addr);
       break;
     case R_ALPHA_DTPRELLO:
       *(ul16 *)loc = S + A - ctx.dtp_addr;
@@ -143,7 +146,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = sym.get_gottp_addr(ctx) + A - GP;
       break;
     case R_ALPHA_TPRELHI:
-      *(ul16 *)loc = bits(S + A - ctx.tp_addr + 0x8000, 31, 16);
+      *(ul16 *)loc = hi(S + A - ctx.tp_addr);
       break;
     case R_ALPHA_TPRELLO:
       *(ul16 *)loc = S + A - ctx.tp_addr;
