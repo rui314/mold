@@ -23,3 +23,15 @@ int main() {
 EOF
 
 $GCC -B. -o $t/exe2 $t/b.o --verbose 2>&1 | grep -q -- -fwpa
+
+# Test FAT objects if -fno-use-linker-plugin is used
+
+cat <<EOF | $GCC -flto -fno-use-linker-plugin -c -o $t/c.o -xc -
+#include <stdio.h>
+int main() {
+  printf("Hello world\n");
+}
+EOF
+
+$GCC -B. -o $t/exe3 -flto -fno-use-linker-plugin $t/c.o
+$QEMU $t/exe3 | grep -q 'Hello world'

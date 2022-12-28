@@ -31,7 +31,7 @@ bool is_text_file(MappedFile<C> *mf) {
 }
 
 template <typename E, typename C>
-inline bool is_gcc_lto_obj(MappedFile<C> *mf) {
+inline bool is_gcc_lto_obj(MappedFile<C> *mf, bool opt_plugin) {
   using namespace mold::elf;
 
   const char *data = mf->get_contents().data();
@@ -51,9 +51,10 @@ inline bool is_gcc_lto_obj(MappedFile<C> *mf) {
     //
     // However, FAT LTO objects don't have any of the above mentioned symbols
     // and can identify LTO by `.gnu.lto_.symtab.` section, similarly
-    // to what lto-plugin does.
+    // to what lto-plugin does. However, if LTO linker plug-in is not available,
+    // use the emitted assembly instead.
     std::string_view name = data + shdrs[shstrtab_idx].sh_offset + sec.sh_name;
-    if (name.starts_with (".gnu.lto_.symtab."))
+    if (opt_plugin && name.starts_with (".gnu.lto_.symtab."))
       return true;
 
     if (sec.sh_type != SHT_SYMTAB)
@@ -83,7 +84,7 @@ inline bool is_gcc_lto_obj(MappedFile<C> *mf) {
 }
 
 template <typename C>
-FileType get_file_type(MappedFile<C> *mf) {
+FileType get_file_type(MappedFile<C> *mf, bool opt_plugin) {
   std::string_view data = mf->get_contents();
 
   if (data.empty())
@@ -97,10 +98,10 @@ FileType get_file_type(MappedFile<C> *mf) {
 
       if (ehdr.e_type == elf::ET_REL) {
         if (ehdr.e_ident[elf::EI_CLASS] == elf::ELFCLASS32) {
-          if (is_gcc_lto_obj<elf::I386>(mf))
+          if (is_gcc_lto_obj<elf::I386>(mf, opt_plugin))
             return FileType::GCC_LTO_OBJ;
         } else {
-          if (is_gcc_lto_obj<elf::X86_64>(mf))
+          if (is_gcc_lto_obj<elf::X86_64>(mf, opt_plugin))
             return FileType::GCC_LTO_OBJ;
         }
         return FileType::ELF_OBJ;
@@ -113,10 +114,10 @@ FileType get_file_type(MappedFile<C> *mf) {
 
       if (ehdr.e_type == elf::ET_REL) {
         if (ehdr.e_ident[elf::EI_CLASS] == elf::ELFCLASS32) {
-          if (is_gcc_lto_obj<elf::M68K>(mf))
+          if (is_gcc_lto_obj<elf::M68K>(mf, opt_plugin))
             return FileType::GCC_LTO_OBJ;
         } else {
-          if (is_gcc_lto_obj<elf::SPARC64>(mf))
+          if (is_gcc_lto_obj<elf::SPARC64>(mf, opt_plugin))
             return FileType::GCC_LTO_OBJ;
         }
         return FileType::ELF_OBJ;

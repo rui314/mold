@@ -166,7 +166,7 @@ read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
 template <typename C>
 std::vector<MappedFile<C> *>
 read_archive_members(C &ctx, MappedFile<C> *mf) {
-  switch (get_file_type(mf)) {
+  switch (get_file_type(mf, !ctx.arg.plugin.empty())) {
   case FileType::AR:
     return read_fat_archive_members(ctx, mf);
   case FileType::THIN_AR:
