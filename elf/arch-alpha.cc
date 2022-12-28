@@ -14,8 +14,8 @@
 // Itanium. Itanium resulted in a miserable failure, but it wiped out
 // several RISC processors just by promising overly optimistic perf
 // numbers. Alpha as an ISA would probably have been fine after 25 years
-// since its introduction (which is 2017), but the company and its market
-// didn't last that long.
+// since its introduction (which is 1992 + 25 = 2017), but the company and
+// its market didn't last that long.
 //
 // From the linker's point of view, there are a few peculiarities in its
 // psABI as shown below:
