@@ -1,21 +1,21 @@
 // Alpha is a 64-bit RISC ISA developed by DEC (Digital Equipment
 // Corporation) in the early '90s. It aimed to be an ISA that would last
-// at lest 25 years. DEC expected Alpha would become 1000x faster during
-// that time span. Since the ISA was developed for future machines, it's
-// 64-bit from the beginning. There's no 32-bit variant.
+// 25 years. DEC expected Alpha would become 1000x faster during that time
+// span. Since the ISA was developed from scratch for future machines,
+// it's 64-bit from the beginning. There's no 32-bit variant.
 //
 // DEC ported its own Unix (Tru64) to Alpha. Microsoft also ported Windows
-// NT 4.0 to it. But it wasn't a huge commercial success.
+// NT to it. But it wasn't a huge commercial success.
 //
 // DEC was acquired by Compaq in 1997. In the late '90s, Intel and
 // Hewlett-Packard were advertising that their upcoming Itanium processor
 // would achieve significantly better performance than RISC processors, so
 // Compaq decided to discontinue the Alpha processor line to switch to
-// Itanium. Itanium resulted in a miserable failure, but it wiped out
-// several RISC processors just by promising overly optimistic perf
-// numbers. Alpha as an ISA would probably have been fine after 25 years
-// since its introduction (which is 1992 + 25 = 2017), but the company and
-// its market didn't last that long.
+// Itanium. Itanium resulted in a miserable failure, but it still suceeded
+// to wipe out several RISC processors just by promising overly optimistic
+// perf numbers. Alpha as an ISA would probably have been fine after 25
+// years since its introduction (which is 1992 + 25 = 2017), but the
+// company and its market didn't last that long.
 //
 // From the linker's point of view, there are a few peculiarities in its
 // psABI as shown below:
@@ -288,34 +288,29 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 // Referring an external symbol with a non-zero addend is a bad practice.
 // To see why, assume that we have two R_ALPHA_LITERAL relocs to symbol X
 // with addend 8 and 16. To satisfy that request, we need to create not
-// only one but two GOT entries for the same symbol with different
-// addends.
+// only one but two GOT entries for symbol X with different addends.
 //
-// We don't want to avoid messing up the implementation of the common GOT
-// section for Alpha. So we create another GOT-like section, .alpha_got2.
-// Any GOT entry for a R_ALPHA_LITERAL reloc with non-zero addends is
-// created not in .got but in .alpha_got2.
+// We don't want to mess up the implementation of the common GOT section
+// for Alpha. So we create another GOT-like section, .alpha_got2. Any GOT
+// entry for a R_ALPHA_LITERAL reloc with non-zero addends is created not
+// in .got but in .alpha_got2.
 //
 // Since .alpha_got2 entries are accessed relative to GP, .alpha_got2
 // needs to be close enough to .got. It's actually placed next to .got.
 void AlphaGot2Section::add_symbol(Symbol<E> &sym, i64 addend) {
+  assert(addend);
   std::scoped_lock lock(mu);
   entries.push_back({&sym, addend});
 }
 
-bool
-operator<(const AlphaGot2Section::Entry &a, const AlphaGot2Section::Entry &b) {
+bool operator<(const AlphaGot2Section::Entry &a, const AlphaGot2Section::Entry &b) {
   return std::tuple(a.sym->file->priority, a.sym->sym_idx, a.addend) <
          std::tuple(b.sym->file->priority, b.sym->sym_idx, b.addend);
 };
 
-bool
-operator==(const AlphaGot2Section::Entry &a, const AlphaGot2Section::Entry &b) {
-  return a.sym == b.sym && a.addend == b.addend;
-};
-
 u64 AlphaGot2Section::get_addr(Symbol<E> &sym, i64 addend) {
   auto it = std::lower_bound(entries.begin(), entries.end(), Entry{&sym, addend});
+  assert(it != entries.end());
   return this->shdr.sh_addr + (it - entries.begin()) * sizeof(Word<E>);
 }
 
@@ -334,26 +329,25 @@ void AlphaGot2Section::finalize() {
 }
 
 void AlphaGot2Section::copy_buf(Context<E> &ctx) {
-  ul64 *buf = (ul64 *)(ctx.buf + this->shdr.sh_offset);
-  i64 offset = 0;
-
   ElfRel<E> *dynrel = nullptr;
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset + reldyn_offset);
 
-  for (Entry &e : entries) {
+  for (i64 i = 0; i < entries.size(); i++) {
+    Entry &e = entries[i];
+    i64 offset = sizeof(Word<E>) * i;
+    ul64 *buf = (ul64 *)(ctx.buf + this->shdr.sh_offset + offset);
+
     if (e.sym->is_imported) {
       *dynrel++ = ElfRel<E>(this->shdr.sh_addr + offset, E::R_ABS,
                             e.sym->get_dynsym_idx(ctx), e.addend);
-      *buf++ = e.addend;
+      *buf = e.addend;
     } else {
       u64 addr = e.sym->get_addr(ctx) + e.addend;
-      *buf++ = addr;
+      *buf = addr;
       if (ctx.arg.pic && !e.sym->is_absolute())
         *dynrel++ = ElfRel<E>(this->shdr.sh_addr + offset, E::R_RELATIVE, 0, addr);
     }
-
-    offset += sizeof(Word<E>);
   }
 }
 

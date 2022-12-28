@@ -1524,6 +1524,7 @@ public:
   void copy_buf(Context<ALPHA> &ctx) override;
 
   struct Entry {
+    bool operator==(const Entry &) const = default;
     Symbol<ALPHA> *sym;
     i64 addend;
   };
