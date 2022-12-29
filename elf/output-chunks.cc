@@ -38,7 +38,7 @@ static u32 djb_hash(std::string_view name) {
 
 template <typename E>
 u64 get_eflags(Context<E> &ctx) {
-  if constexpr (std::is_same_v<E, ARM32>)
+  if constexpr (is_arm32<E>)
     return EF_ARM_EABI_VER5;
 
   if constexpr (is_riscv<E>) {
@@ -55,7 +55,7 @@ u64 get_eflags(Context<E> &ctx) {
     return ret;
   }
 
-  if constexpr (std::is_same_v<E, PPC64V2>)
+  if constexpr (is_ppc64v2<E>)
     return 2;
   return 0;
 }
@@ -411,7 +411,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   }
 
   // Add PT_ARM_EDXIDX
-  if constexpr (std::is_same_v<E, ARM32>) {
+  if constexpr (is_arm32<E>) {
     for (Chunk<E> *chunk : ctx.chunks) {
       if (chunk->shdr.sh_type == SHT_ARM_EXIDX) {
         define(PT_ARM_EXIDX, PF_R, 4, chunk);
@@ -501,7 +501,7 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   offset += ctx.copyrel->symbols.size() * sizeof(ElfRel<E>);
   offset += ctx.copyrel_relro->symbols.size() * sizeof(ElfRel<E>);
 
-  if constexpr (std::is_same_v<E, PPC64V1>)
+  if constexpr (is_ppc64v1<E>)
     if (ctx.arg.pic)
       offset += ctx.extra.opd->symbols.size() * sizeof(ElfRel<E>) * 2;
 
@@ -529,7 +529,7 @@ void RelDynSection<E>::copy_buf(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.copyrel_relro->symbols)
     *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
 
-  if constexpr (std::is_same_v<E, PPC64V1>) {
+  if constexpr (is_ppc64v1<E>) {
     if (ctx.arg.pic) {
       for (Symbol<E> *sym : ctx.extra.opd->symbols) {
         u64 addr = sym->get_opd_addr(ctx);
@@ -1083,13 +1083,13 @@ void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
     this->strtab_size = 0;
     this->num_local_symtab = 0;
 
-    if constexpr (std::is_same_v<E, ARM32>)
+    if constexpr (is_arm32<E>)
       this->strtab_size = 9; // for "$t", "$a" and "$d" symbols
 
     for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks) {
       // For ARM32, we emit additional symbol "$t", "$a" and "$d" for
       // each thunk to mark the beginning of ARM code.
-      if constexpr (std::is_same_v<E, ARM32>)
+      if constexpr (is_arm32<E>)
         this->num_local_symtab += thunk->symbols.size() * 4;
       else
         this->num_local_symtab += thunk->symbols.size();
@@ -1115,7 +1115,7 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
     u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
     u8 *strtab = strtab_base + this->strtab_offset;
 
-    if constexpr (std::is_same_v<E, ARM32>) {
+    if constexpr (is_arm32<E>) {
       // ARM uses these symbols to mark the begining of Thumb code, ARM
       // code and data, respectively. Our thunk contains all of them.
       strtab += write_string(strtab, "$t");
@@ -1142,7 +1142,7 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
         strtab += write_string(strtab, "$thunk");
 
         // Emit "$t", "$a" and "$d" if ARM32.
-        if constexpr (std::is_same_v<E, ARM32>) {
+        if constexpr (is_arm32<E>) {
           write_esym(this->strtab_offset, 0);
           write_esym(this->strtab_offset + 3, 4);
           write_esym(this->strtab_offset + 6, 16);
@@ -1324,7 +1324,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   memset(buf, 0, this->shdr.sh_size);
 
   // s390x psABI requires GOT[0] to be set to the link-time value of _DYNAMIC.
-  if constexpr (std::is_same_v<E, S390X>)
+  if constexpr (is_s390x<E>)
     if (ctx.dynamic)
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
@@ -1332,7 +1332,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   // path for -static-pie wrongly assumed that GOT[0] refers _DYNAMIC.
   //
   // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be5
-  if constexpr (std::is_same_v<E, ARM64>)
+  if constexpr (is_arm64<E>)
     if (ctx.dynamic && ctx.arg.is_static && ctx.arg.pie)
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
@@ -1625,7 +1625,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
   else
     esym.st_bind = sym.esym().st_bind;
 
-  if constexpr (std::is_same_v<E, PPC64V2>)
+  if constexpr (is_ppc64v2<E>)
     esym.ppc_local_entry = sym.esym().ppc_local_entry;
 
   if constexpr (is_alpha<E>)
@@ -1636,7 +1636,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
       if (frag->is_alive)
         return frag->output_section.shndx;
 
-    if constexpr (std::is_same_v<E, PPC64V1>)
+    if constexpr (is_ppc64v1<E>)
       if (sym.has_opd(ctx))
         return ctx.extra.opd->shndx;
 

@@ -2578,26 +2578,13 @@ struct SPARC64Rela {
 // Machine descriptions
 //
 
-template <typename E>
-using I16 = std::conditional_t<E::is_le, il16, ib16>;
-
-template <typename E>
-using I32 = std::conditional_t<E::is_le, il32, ib32>;
-
-template <typename E>
-using I64 = std::conditional_t<E::is_le, il64, ib64>;
-
-template <typename E>
-using U16 = std::conditional_t<E::is_le, ul16, ub16>;
-
-template <typename E>
-using U24 = std::conditional_t<E::is_le, ul24, ub24>;
-
-template <typename E>
-using U32 = std::conditional_t<E::is_le, ul32, ub32>;
-
-template <typename E>
-using U64 = std::conditional_t<E::is_le, ul64, ub64>;
+template <typename E> using I16 = std::conditional_t<E::is_le, il16, ib16>;
+template <typename E> using I32 = std::conditional_t<E::is_le, il32, ib32>;
+template <typename E> using I64 = std::conditional_t<E::is_le, il64, ib64>;
+template <typename E> using U16 = std::conditional_t<E::is_le, ul16, ub16>;
+template <typename E> using U24 = std::conditional_t<E::is_le, ul24, ub24>;
+template <typename E> using U32 = std::conditional_t<E::is_le, ul32, ub32>;
+template <typename E> using U64 = std::conditional_t<E::is_le, ul64, ub64>;
 
 template <typename E>
 using Word = std::conditional_t<E::is_64, U64<E>, U32<E>>;
@@ -2611,37 +2598,29 @@ static constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
 template <typename E>
 static constexpr bool needs_thunk = requires { E::thunk_size; };
 
-template <typename E>
-static constexpr bool is_x86 =
-  std::is_same_v<E, X86_64> || std::is_same_v<E, I386>;
+template <typename E> static constexpr bool is_x86_64 = std::is_same_v<E, X86_64>;
+template <typename E> static constexpr bool is_i386 = std::is_same_v<E, I386>;
+template <typename E> static constexpr bool is_arm64 = std::is_same_v<E, ARM64>;
+template <typename E> static constexpr bool is_arm32 = std::is_same_v<E, ARM32>;
+template <typename E> static constexpr bool is_rv64le = std::is_same_v<E, RV64LE>;
+template <typename E> static constexpr bool is_rv64be = std::is_same_v<E, RV64BE>;
+template <typename E> static constexpr bool is_rv32le = std::is_same_v<E, RV32LE>;
+template <typename E> static constexpr bool is_rv32be = std::is_same_v<E, RV32BE>;
+template <typename E> static constexpr bool is_ppc64v1 = std::is_same_v<E, PPC64V1>;
+template <typename E> static constexpr bool is_ppc64v2 = std::is_same_v<E, PPC64V2>;
+template <typename E> static constexpr bool is_s390x = std::is_same_v<E, S390X>;
+template <typename E> static constexpr bool is_sparc64 = std::is_same_v<E, SPARC64>;
+template <typename E> static constexpr bool is_m68k = std::is_same_v<E, M68K>;
+template <typename E> static constexpr bool is_sh4 = std::is_same_v<E, SH4>;
+template <typename E> static constexpr bool is_alpha = std::is_same_v<E, ALPHA>;
 
-template <typename E>
-static constexpr bool is_arm =
-  std::is_same_v<E, ARM64> || std::is_same_v<E, ARM32>;
-
-template <typename E>
-static constexpr bool is_riscv =
-  std::is_same_v<E, RV64LE> || std::is_same_v<E, RV64BE> ||
-  std::is_same_v<E, RV32LE> || std::is_same_v<E, RV32BE>;
-
-template <typename E>
-static constexpr bool is_ppc =
-  std::is_same_v<E, PPC64V1> || std::is_same_v<E, PPC64V2>;
-
-template <typename E>
-static constexpr bool is_sparc = std::is_same_v<E, SPARC64>;
-
-template <typename E>
-static constexpr bool is_s390x = std::is_same_v<E, S390X>;
-
-template <typename E>
-static constexpr bool is_m68k = std::is_same_v<E, M68K>;
-
-template <typename E>
-static constexpr bool is_sh4 = std::is_same_v<E, SH4>;
-
-template <typename E>
-static constexpr bool is_alpha = std::is_same_v<E, ALPHA>;
+template <typename E> static constexpr bool is_x86 = is_x86_64<E> || is_i386<E>;
+template <typename E> static constexpr bool is_arm = is_arm64<E> || is_arm32<E>;
+template <typename E> static constexpr bool is_rv64 = is_rv64le<E> || is_rv64be<E>;
+template <typename E> static constexpr bool is_rv32 = is_rv32le<E> || is_rv32be<E>;
+template <typename E> static constexpr bool is_riscv = is_rv64<E> || is_rv32<E>;
+template <typename E> static constexpr bool is_ppc = is_ppc64v1<E> || is_ppc64v2<E>;
+template <typename E> static constexpr bool is_sparc = is_sparc64<E>;
 
 struct X86_64 {
   static constexpr u32 R_COPY = R_X86_64_COPY;

@@ -20,7 +20,7 @@ static bool should_keep(const InputSection<E> &isec) {
          type == SHT_INIT_ARRAY ||
          type == SHT_FINI_ARRAY ||
          type == SHT_PREINIT_ARRAY ||
-         (std::is_same_v<E, ARM32> && type == SHT_ARM_EXIDX) ||
+         (is_arm32<E> && type == SHT_ARM_EXIDX) ||
          name.starts_with(".ctors") ||
          name.starts_with(".dtors") ||
          name.starts_with(".init") ||

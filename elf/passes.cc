@@ -121,7 +121,7 @@ void create_synthetic_sections(Context<E> &ctx) {
       ctx.extra.tls_get_addr = push(new SparcTlsGetAddrSection);
   }
 
-  if constexpr (std::is_same_v<E, PPC64V1>)
+  if constexpr (is_ppc64v1<E>)
     ctx.extra.opd = push(new PPC64OpdSection);
 
   if constexpr (is_alpha<E>)
@@ -387,7 +387,7 @@ static u64 canonicalize_type(std::string_view name, u64 type) {
       return SHT_FINI_ARRAY;
   }
 
-  if constexpr (std::is_same_v<E, X86_64>)
+  if constexpr (is_x86_64<E>)
     if (type == SHT_X86_64_UNWIND)
       return SHT_PROGBITS;
   return type;
@@ -413,7 +413,7 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
   if (flags & SHF_MERGE)
     return name;
 
-  if constexpr (std::is_same_v<E, ARM32>) {
+  if constexpr (is_arm32<E>) {
     if (name.starts_with(".ARM.exidx"))
       return ".ARM.exidx";
     if (name.starts_with(".ARM.extab"))
@@ -704,7 +704,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
     if (!ctx.arg.shared)
       ctx.__global_pointer = add("__global_pointer$");
 
-  if constexpr (std::is_same_v<E, ARM32>) {
+  if constexpr (is_arm32<E>) {
     ctx.__exidx_start = add("__exidx_start");
     ctx.__exidx_end = add("__exidx_end");
   }
@@ -1316,7 +1316,7 @@ void scan_relocations(Context<E> &ctx) {
       }
     }
 
-    if constexpr (std::is_same_v<E, PPC64V1>)
+    if constexpr (is_ppc64v1<E>)
       if (sym->flags & NEEDS_PPC_OPD)
         ctx.extra.opd->add_symbol(ctx, sym);
 
@@ -1375,7 +1375,7 @@ void copy_chunks(Context<E> &ctx) {
 
   report_undef_errors(ctx);
 
-  if constexpr (std::is_same_v<E, ARM32>)
+  if constexpr (is_arm32<E>)
     fixup_arm_exidx_section(ctx);
 }
 

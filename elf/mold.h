@@ -527,11 +527,8 @@ public:
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
-  static constexpr i64 HDR_SIZE =
-    (std::is_same_v<E, PPC64V2> ? 2 : 3) * sizeof(Word<E>);
-
-  static constexpr i64 ENTRY_SIZE =
-    (std::is_same_v<E, PPC64V1> ? 3 : 1) * sizeof(Word<E>);
+  static constexpr i64 HDR_SIZE = (is_ppc64v2<E> ? 2 : 3) * sizeof(Word<E>);
+  static constexpr i64 ENTRY_SIZE = (is_ppc64v1<E> ? 3 : 1) * sizeof(Word<E>);
 };
 
 template <typename E>
@@ -2557,7 +2554,7 @@ inline u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
       : ctx.copyrel->shdr.sh_addr + value;
   }
 
-  if constexpr (std::is_same_v<E, PPC64V1>)
+  if constexpr (is_ppc64v1<E>)
     if (!(flags & NO_OPD) && has_opd(ctx))
       return get_opd_addr(ctx);
 

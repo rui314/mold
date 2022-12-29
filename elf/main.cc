@@ -393,7 +393,7 @@ int elf_main(int argc, char **argv) {
     ctx.arg.emulation = deduce_machine_type(ctx, file_args);
 
   // Redo if -m is not x86-64.
-  if constexpr (std::is_same_v<E, X86_64>)
+  if constexpr (is_x86_64<E>)
     if (ctx.arg.emulation != MachineType::X86_64)
       return redo_main<E>(argc, argv, ctx.arg.emulation);
 
@@ -510,7 +510,7 @@ int elf_main(int argc, char **argv) {
   // Warn if symbols with different types are defined under the same name.
   check_symbol_types(ctx);
 
-  if constexpr (std::is_same_v<E, PPC64V1>)
+  if constexpr (is_ppc64v1<E>)
     ppc64v1_rewrite_opd(ctx);
 
   // Bin input sections into output sections.
@@ -582,7 +582,7 @@ int elf_main(int argc, char **argv) {
   if (!ctx.arg.soname.empty())
     ctx.dynstr->add_string(ctx.arg.soname);
 
-  if constexpr (std::is_same_v<E, PPC64V1>)
+  if constexpr (is_ppc64v1<E>)
     ppc64v1_scan_symbols(ctx);
 
   // Scan relocations to find symbols that need entries in .got, .plt,
