@@ -73,19 +73,21 @@ MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     }
   };
 
-  switch (get_file_type(mf)) {
+  bool opt_plugin = !ctx.arg.plugin.empty();
+
+  switch (get_file_type(mf, opt_plugin)) {
   case FileType::ELF_OBJ:
   case FileType::ELF_DSO:
   case FileType::GCC_LTO_OBJ:
     return get_elf_type(mf->data);
   case FileType::AR:
     for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mf))
-      if (get_file_type(child) == FileType::ELF_OBJ)
+      if (get_file_type(child, opt_plugin) == FileType::ELF_OBJ)
         return get_elf_type(child->data);
     return MachineType::NONE;
   case FileType::THIN_AR:
     for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mf))
-      if (get_file_type(child) == FileType::ELF_OBJ)
+      if (get_file_type(child, opt_plugin) == FileType::ELF_OBJ)
         return get_elf_type(child->data);
     return MachineType::NONE;
   case FileType::TEXT:
@@ -159,7 +161,8 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   if (ctx.visited.contains(mf->name))
     return;
 
-  FileType type = get_file_type(mf);
+  bool opt_plugin = !ctx.arg.plugin.empty();
+  FileType type = get_file_type(mf, opt_plugin);
   switch (type) {
   case FileType::ELF_OBJ:
     ctx.objs.push_back(new_object_file(ctx, mf, ""));
@@ -171,7 +174,7 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   case FileType::AR:
   case FileType::THIN_AR:
     for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf)) {
-      switch (get_file_type(child)) {
+      switch (get_file_type(child, opt_plugin)) {
       case FileType::ELF_OBJ:
         ctx.objs.push_back(new_object_file(ctx, child, mf->name));
         break;
