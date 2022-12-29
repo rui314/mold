@@ -959,12 +959,6 @@ template <typename E>
 void check_symbol_types(Context<E> &ctx) {
   Timer t(ctx, "check_symbol_types");
 
-  auto normalize_type = [](u32 type) {
-    if (type == STT_GNU_IFUNC)
-      return STT_FUNC;
-    return type;
-  };
-
   auto check = [&](InputFile<E> *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
@@ -973,16 +967,20 @@ void check_symbol_types(Context<E> &ctx) {
       if (!sym.file)
         continue;
 
-      u32 their_type = normalize_type(sym.esym().st_type);
-      u32 our_type = normalize_type(esym.st_type);
+      u32 x = sym.esym().st_type;
+      if (x == STT_GNU_IFUNC)
+        x = STT_FUNC;
 
-      if (their_type != STT_NOTYPE && our_type != STT_NOTYPE &&
-          their_type != our_type)
+      u32 y = esym.st_type;
+      if (y == STT_GNU_IFUNC)
+        y = STT_FUNC;
+
+      if (x != STT_NOTYPE && y != STT_NOTYPE && x != y)
         Warn(ctx) << "symbol type mismatch: " << sym << '\n'
                   << ">>> defined in " << *sym.file << " as "
-                  << stt_to_string(sym.esym().st_type) << '\n'
+                  << stt_to_string<E>(sym.esym().st_type) << '\n'
                   << ">>> defined in " << *file << " as "
-                  << stt_to_string(esym.st_type);
+                  << stt_to_string<E>(esym.st_type);
     }
   };
 
