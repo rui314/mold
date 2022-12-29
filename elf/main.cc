@@ -29,16 +29,16 @@ namespace mold::elf {
 template <typename E>
 MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   auto get_elf_type = [&](u8 *buf) {
-    bool is_le = (((EL32Ehdr *)buf)->e_ident[EI_DATA] == ELFDATA2LSB);
+    bool is_le = (((ElfEhdr<I386> *)buf)->e_ident[EI_DATA] == ELFDATA2LSB);
     bool is_64;
     u32 e_machine;
 
     if (is_le) {
-      EL32Ehdr &ehdr = *(EL32Ehdr *)buf;
+      auto &ehdr = *(ElfEhdr<I386> *)buf;
       is_64 = (ehdr.e_ident[EI_CLASS] == ELFCLASS64);
       e_machine = ehdr.e_machine;
     } else {
-      EB32Ehdr &ehdr = *(EB32Ehdr *)buf;
+      auto &ehdr = *(ElfEhdr<M68K> *)buf;
       is_64 = (ehdr.e_ident[EI_CLASS] == ELFCLASS64);
       e_machine = ehdr.e_machine;
     }

@@ -85,45 +85,47 @@ inline bool is_gcc_lto_obj(MappedFile<C> *mf, bool opt_plugin) {
 
 template <typename C>
 FileType get_file_type(MappedFile<C> *mf, bool opt_plugin) {
+  using namespace elf;
+
   std::string_view data = mf->get_contents();
 
   if (data.empty())
     return FileType::EMPTY;
 
   if (data.starts_with("\177ELF")) {
-    u8 byte_order = ((elf::EL32Ehdr *)data.data())->e_ident[elf::EI_DATA];
+    u8 byte_order = ((ElfEhdr<I386> *)data.data())->e_ident[EI_DATA];
 
-    if (byte_order == elf::ELFDATA2LSB) {
-      elf::EL32Ehdr &ehdr = *(elf::EL32Ehdr *)data.data();
+    if (byte_order == ELFDATA2LSB) {
+      auto &ehdr = *(ElfEhdr<I386> *)data.data();
 
-      if (ehdr.e_type == elf::ET_REL) {
-        if (ehdr.e_ident[elf::EI_CLASS] == elf::ELFCLASS32) {
-          if (is_gcc_lto_obj<elf::I386>(mf, opt_plugin))
+      if (ehdr.e_type == ET_REL) {
+        if (ehdr.e_ident[EI_CLASS] == ELFCLASS32) {
+          if (is_gcc_lto_obj<I386>(mf, opt_plugin))
             return FileType::GCC_LTO_OBJ;
         } else {
-          if (is_gcc_lto_obj<elf::X86_64>(mf, opt_plugin))
+          if (is_gcc_lto_obj<X86_64>(mf, opt_plugin))
             return FileType::GCC_LTO_OBJ;
         }
         return FileType::ELF_OBJ;
       }
 
-      if (ehdr.e_type == elf::ET_DYN)
+      if (ehdr.e_type == ET_DYN)
         return FileType::ELF_DSO;
     } else {
-      elf::EB32Ehdr &ehdr = *(elf::EB32Ehdr *)data.data();
+      auto &ehdr = *(ElfEhdr<M68K> *)data.data();
 
-      if (ehdr.e_type == elf::ET_REL) {
-        if (ehdr.e_ident[elf::EI_CLASS] == elf::ELFCLASS32) {
-          if (is_gcc_lto_obj<elf::M68K>(mf, opt_plugin))
+      if (ehdr.e_type == ET_REL) {
+        if (ehdr.e_ident[EI_CLASS] == ELFCLASS32) {
+          if (is_gcc_lto_obj<M68K>(mf, opt_plugin))
             return FileType::GCC_LTO_OBJ;
         } else {
-          if (is_gcc_lto_obj<elf::SPARC64>(mf, opt_plugin))
+          if (is_gcc_lto_obj<SPARC64>(mf, opt_plugin))
             return FileType::GCC_LTO_OBJ;
         }
         return FileType::ELF_OBJ;
       }
 
-      if (ehdr.e_type == elf::ET_DYN)
+      if (ehdr.e_type == ET_DYN)
         return FileType::ELF_DSO;
     }
     return FileType::UNKNOWN;

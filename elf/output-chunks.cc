@@ -790,9 +790,9 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_FILTER, ctx.dynstr->find_string(str));
 
   if (ctx.reldyn->shdr.sh_size) {
-    define(is_rela<E> ? DT_RELA : DT_REL, ctx.reldyn->shdr.sh_addr);
-    define(is_rela<E> ? DT_RELASZ : DT_RELSZ, ctx.reldyn->shdr.sh_size);
-    define(is_rela<E> ? DT_RELAENT : DT_RELENT, sizeof(ElfRel<E>));
+    define(E::is_rela ? DT_RELA : DT_REL, ctx.reldyn->shdr.sh_addr);
+    define(E::is_rela ? DT_RELASZ : DT_RELSZ, ctx.reldyn->shdr.sh_size);
+    define(E::is_rela ? DT_RELAENT : DT_RELENT, sizeof(ElfRel<E>));
   }
 
   if (ctx.relrdyn) {
@@ -804,7 +804,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   if (ctx.relplt->shdr.sh_size) {
     define(DT_JMPREL, ctx.relplt->shdr.sh_addr);
     define(DT_PLTRELSZ, ctx.relplt->shdr.sh_size);
-    define(DT_PLTREL, is_rela<E> ? DT_RELA : DT_REL);
+    define(DT_PLTREL, E::is_rela ? DT_RELA : DT_REL);
   }
 
   if constexpr (is_sparc<E>) {
@@ -2266,14 +2266,14 @@ void EhFrameRelocSection<E>::copy_buf(Context<E> &ctx) {
       InputSection<E> *target = sym.get_input_section();
       buf->r_sym = target->output_section->shndx;
 
-      if constexpr (is_rela<E>)
+      if constexpr (E::is_rela)
         buf->r_addend = get_addend(isec, r) + target->offset;
       else if (ctx.arg.relocatable)
         write_addend(ctx.buf + ctx.eh_frame->shdr.sh_offset + offset,
                      get_addend(isec, r) + target->offset, r);
     } else {
       buf->r_sym = sym.get_output_sym_idx(ctx);
-      if constexpr (is_rela<E>)
+      if constexpr (E::is_rela)
         buf->r_addend = get_addend(isec, r);
     }
 
@@ -3037,7 +3037,7 @@ void CompressedSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 RelocSection<E>::RelocSection(Context<E> &ctx, OutputSection<E> &osec)
   : output_section(osec) {
-  if constexpr (is_rela<E>) {
+  if constexpr (E::is_rela) {
     this->name = save_string(ctx, ".rela" + std::string(osec.name));
     this->shdr.sh_type = SHT_RELA;
   } else {
@@ -3096,7 +3096,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
         addend = get_addend(isec, rel) + target->offset;
       }
 
-      if constexpr (is_rela<E>) {
+      if constexpr (E::is_rela) {
         out.r_addend = addend;
       } else if (ctx.arg.relocatable) {
         u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
@@ -3106,7 +3106,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       if (sym.sym_idx)
         out.r_sym = sym.get_output_sym_idx(ctx);
 
-      if constexpr (is_rela<E>)
+      if constexpr (E::is_rela)
         out.r_addend = get_addend(isec, rel);
     }
 

@@ -681,9 +681,9 @@ void add_synthetic_symbols(Context<E> &ctx) {
   ctx.__executable_start = add("__executable_start");
 
   ctx.__rel_iplt_start =
-    add(is_rela<E> ? "__rela_iplt_start" : "__rel_iplt_start");
+    add(E::is_rela ? "__rela_iplt_start" : "__rel_iplt_start");
   ctx.__rel_iplt_end =
-    add(is_rela<E> ? "__rela_iplt_end" : "__rel_iplt_end");
+    add(E::is_rela ? "__rela_iplt_end" : "__rel_iplt_end");
 
   if (ctx.arg.eh_frame_hdr)
     ctx.__GNU_EH_FRAME_HDR = add("__GNU_EH_FRAME_HDR");
@@ -748,7 +748,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
     if (target) {
       ElfSym<E> &esym = obj.elf_syms[i + 1];
       esym.st_type = target->esym().st_type;
-      if constexpr (requires { esym.ppc_local_entry; })
+      if constexpr (is_ppc64v2<E>)
         esym.ppc_local_entry = target->esym().ppc_local_entry;
     }
 
@@ -1364,12 +1364,12 @@ void copy_chunks(Context<E> &ctx) {
   // sections first. This is because REL-type relocation sections (as
   // opposed to RELA-type) stores relocation addends to target sections.
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (chunk->shdr.sh_type != (is_rela<E> ? SHT_RELA : SHT_REL))
+    if (chunk->shdr.sh_type != (E::is_rela ? SHT_RELA : SHT_REL))
       copy(*chunk);
   });
 
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (chunk->shdr.sh_type == (is_rela<E> ? SHT_RELA : SHT_REL))
+    if (chunk->shdr.sh_type == (E::is_rela ? SHT_RELA : SHT_REL))
       copy(*chunk);
   });
 

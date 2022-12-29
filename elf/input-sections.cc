@@ -57,7 +57,7 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file,
   // early for REL-type ELF types to read relocation addends from
   // section contents. For RELA-type, we don't need to do this because
   // addends are in relocations.
-  if constexpr (!is_rela<E>)
+  if constexpr (!E::is_rela)
     uncompress(ctx);
 }
 

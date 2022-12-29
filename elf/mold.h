@@ -580,8 +580,8 @@ template <typename E>
 class RelPltSection : public Chunk<E> {
 public:
   RelPltSection() {
-    this->name = is_rela<E> ? ".rela.plt" : ".rel.plt";
-    this->shdr.sh_type = is_rela<E> ? SHT_RELA : SHT_REL;
+    this->name = E::is_rela ? ".rela.plt" : ".rel.plt";
+    this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
     this->shdr.sh_addralign = sizeof(Word<E>);
@@ -595,8 +595,8 @@ template <typename E>
 class RelDynSection : public Chunk<E> {
 public:
   RelDynSection() {
-    this->name = is_rela<E> ? ".rela.dyn" : ".rel.dyn";
-    this->shdr.sh_type = is_rela<E> ? SHT_RELA : SHT_REL;
+    this->name = E::is_rela ? ".rela.dyn" : ".rel.dyn";
+    this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
     this->shdr.sh_addralign = sizeof(Word<E>);
@@ -826,8 +826,8 @@ template <typename E>
 class EhFrameRelocSection : public Chunk<E> {
 public:
   EhFrameRelocSection() {
-    this->name = is_rela<E> ? ".rela.eh_frame" : ".rel.eh_frame";
-    this->shdr.sh_type = is_rela<E> ? SHT_RELA : SHT_REL;
+    this->name = E::is_rela ? ".rela.eh_frame" : ".rel.eh_frame";
+    this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_INFO_LINK;
     this->shdr.sh_addralign = sizeof(Word<E>);
     this->shdr.sh_entsize = sizeof(ElfRel<E>);

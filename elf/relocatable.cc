@@ -78,7 +78,7 @@ static void create_comdat_group_sections(Context<E> &ctx) {
       std::vector<Chunk<E> *> members;
       for (u32 j : ref.members) {
         const ElfShdr<E> &shdr = file.elf_sections[j];
-        if (shdr.sh_type == (is_rela<E> ? SHT_RELA : SHT_REL)) {
+        if (shdr.sh_type == (E::is_rela ? SHT_RELA : SHT_REL)) {
           InputSection<E> &isec = *file.sections[shdr.sh_info];
           members.push_back(isec.output_section->reloc_sec.get());
         } else {
