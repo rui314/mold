@@ -349,6 +349,7 @@ target_sources(mold PRIVATE
   elf/arch-sh4.cc
   elf/arch-sparc64.cc
   elf/arch-x86-64.cc
+  elf/relocations.cc
   filepath.cc
   git-hash.cc
   glob.cc
