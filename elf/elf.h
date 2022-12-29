@@ -2237,7 +2237,6 @@ struct ElfPhdr<E> {
 //   will be ovewritten by the dynamic linker at load-time.
 template <typename E> requires E::is_le && E::is_rela
 struct ElfRel<E> {
-  ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
     : r_offset(offset), r_type(type), r_sym(sym), r_addend(addend) {}
 
@@ -2249,7 +2248,6 @@ struct ElfRel<E> {
 
 template <typename E> requires (!E::is_le) && E::is_rela
 struct ElfRel<E> {
-  ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
     : r_offset(offset), r_sym(sym), r_type(type), r_addend(addend) {}
 
@@ -2261,7 +2259,6 @@ struct ElfRel<E> {
 
 template <typename E> requires E::is_le && (!E::is_rela)
 struct ElfRel<E> {
-  ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend = 0)
     : r_offset(offset), r_type(type), r_sym(sym) {}
 
@@ -2272,7 +2269,6 @@ struct ElfRel<E> {
 
 template <typename E> requires (!E::is_le) && (!E::is_rela)
 struct ElfRel<E> {
-  ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend = 0)
     : r_offset(offset), r_sym(sym), r_type(type) {}
 
@@ -2406,7 +2402,6 @@ struct ElfSym<ALPHA> {
 
 template <>
 struct ElfRel<SPARC64> {
-  ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
     : r_offset(offset), r_sym(sym), r_type_data(0), r_type(type),
       r_addend(addend) {}
