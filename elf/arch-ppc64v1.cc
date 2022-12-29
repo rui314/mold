@@ -511,17 +511,15 @@ get_relocation_at(Context<E> &ctx, InputSection<E> &isec, i64 offset) {
 }
 
 struct OpdSymbol {
+  bool operator<(const OpdSymbol &x) const { return r_offset < x.r_offset; }
+
   u64 r_offset = 0;
   Symbol<E> *sym = nullptr;
 };
 
 static Symbol<E> *
-get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, i64 offset) {
-  auto it = std::lower_bound(syms.begin(), syms.end(), offset,
-                             [](const OpdSymbol &ent, i64 offset) {
-    return ent.r_offset < offset;
-  });
-
+get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, u64 offset) {
+  auto it = std::lower_bound(syms.begin(), syms.end(), OpdSymbol{offset});
   if (it == syms.end())
     return nullptr;
   if (it->r_offset != offset)
@@ -590,7 +588,7 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
       ElfRel<E> *rel = get_relocation_at(ctx, *opd, sym->value);
       if (!rel)
         Fatal(ctx) << *file << ": cannot find a relocation in .opd for "
-                   << *sym << " at offset 0x" << std::hex << (u32)sym->value;
+                   << *sym << " at offset 0x" << std::hex << (u64)sym->value;
 
       Symbol<E> *sym2 = file->symbols[rel->r_sym];
       if (sym2->get_type() != STT_SECTION)
@@ -603,11 +601,9 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
     }
 
     // Sort symbols so that get_opd_sym_at() can do binary search.
-    sort(opd_syms, [](const OpdSymbol &a, const OpdSymbol &b) {
-      return a.r_offset < b.r_offset;
-    });
+    sort(opd_syms);
 
-    // Rewrite relocations directly referring .opd.
+    // Rewrite relocations so that they directly refer to .opd.
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
       if (!isec || !isec->is_alive || isec.get() == opd)
         continue;
@@ -620,7 +616,7 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
         Symbol<E> *real_sym = get_opd_sym_at(ctx, opd_syms, r.r_addend);
         if (!real_sym)
           Fatal(ctx) << *isec << ": cannot find a symbol in .opd for " << r
-                     << " at offset 0x" << std::hex << (u32)r.r_addend;
+                     << " at offset 0x" << std::hex << (u64)r.r_addend;
 
         r.r_sym = real_sym->sym_idx;
         r.r_addend = 0;
