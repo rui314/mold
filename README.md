@@ -111,7 +111,9 @@ If you can specify an additional command line option to your compiler
 driver by modifying build system's config files, add one of the
 following flags to use `mold` instead of `/usr/bin/ld`:
 
-- Clang: pass `-fuse-ld=mold`
+- Clang 12.0.0 or later: pass `--ld-path=mold`
+  
+- Clang before 12.0.0: pass `-fuse-ld=mold`
 
 - GCC 12.1.0 or later: pass `-fuse-ld=mold`
 
