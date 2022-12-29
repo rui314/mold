@@ -1625,8 +1625,11 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
   else
     esym.st_bind = sym.esym().st_bind;
 
-  if constexpr (requires { esym.ppc_local_entry; })
+  if constexpr (std::is_same_v<E, PPC64V2>)
     esym.ppc_local_entry = sym.esym().ppc_local_entry;
+
+  if constexpr (is_alpha<E>)
+    esym.alpha_st_other = sym.esym().alpha_st_other;
 
   auto get_st_shndx = [&](Symbol<E> &sym) -> u32 {
     if (SectionFragment<E> *frag = sym.get_frag())

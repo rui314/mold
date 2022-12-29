@@ -339,6 +339,8 @@ static constexpr u32 EF_SPARC_HAL_R1 = 0x000400;
 static constexpr u32 EF_SPARC_SUN_US3 = 0x000800;
 
 static constexpr u32 STO_RISCV_VARIANT_CC = 0x80;
+static constexpr u32 STO_ALPHA_NOPV = 0x20;
+static constexpr u32 STO_ALPHA_STD_GPLOAD = 0x22;
 
 //
 // Relocation types
@@ -2533,6 +2535,32 @@ struct PPC64V2Sym {
   ul64 st_size;
 };
 
+struct AlphaSym {
+  bool is_undef() const { return st_shndx == SHN_UNDEF; }
+  bool is_abs() const { return st_shndx == SHN_ABS; }
+  bool is_common() const { return st_shndx == SHN_COMMON; }
+  bool is_weak() const { return st_bind == STB_WEAK; }
+  bool is_undef_weak() const { return is_undef() && is_weak(); }
+
+  ul32 st_name;
+
+#ifdef __LITTLE_ENDIAN__
+  u8 st_type : 4;
+  u8 st_bind : 4;
+  u8 st_visibility : 2;
+  u8 alpha_st_other : 6; // contains STO_ALPHA_NOPV, STO_ALPHA_STD_GPLOAD or 0
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 alpha_st_other : 6;
+  u8 st_visibility : 2;
+#endif
+
+  ul16 st_shndx;
+  ul64 st_value;
+  ul64 st_size;
+};
+
 struct SPARC64Rela {
   SPARC64Rela() = default;
   SPARC64Rela(u64 offset, u32 type, u32 sym, i64 addend)
@@ -3124,7 +3152,7 @@ struct ALPHA {
   static constexpr u32 pltgot_size = 0;
 };
 
-template <> struct ElfSym<ALPHA>     : EL64Sym {};
+template <> struct ElfSym<ALPHA>     : AlphaSym {};
 template <> struct ElfShdr<ALPHA>    : EL64Shdr {};
 template <> struct ElfEhdr<ALPHA>    : EL64Ehdr {};
 template <> struct ElfPhdr<ALPHA>    : EL64Phdr {};
