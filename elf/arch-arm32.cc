@@ -144,6 +144,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
     write_thm_b_imm(loc, val);
     break;
   case R_ARM_CALL:
+  case R_ARM_PLT32:
   case R_ARM_JUMP24:
     *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
     break;
@@ -274,7 +275,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_GOT_BREL:
       *(ul32 *)loc = G + A;
       break;
-    case R_ARM_CALL: {
+    case R_ARM_CALL:
+    case R_ARM_PLT32: {
       // Just like THM_CALL, ARM_CALL relocation refers either BL or
       // BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
       bool is_bl = ((*(ul32 *)loc & 0xff00'0000) == 0xeb00'0000);
@@ -519,6 +521,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_ARM_THM_CALL:
     case R_ARM_CALL:
+    case R_ARM_PLT32:
     case R_ARM_JUMP24:
     case R_ARM_THM_JUMP24:
       if (sym.is_imported)
