@@ -129,7 +129,7 @@ following flags to use `mold` instead of `/usr/bin/ld`. When using
   `-B/usr/libexec/mold` (or `-B/usr/local/libexec/mold`) to GCC.
 
 GCC does not take an absolute path as an argument for `-fuse-ld` though.
-GCC also does not support `--ld-path=`.
+GCC also does not support `--ld-path`.
 
 </details>
 
