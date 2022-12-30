@@ -595,17 +595,17 @@ void create_internal_file(Context<E> &ctx) {
 
   // Add --defsym symbols
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
-    std::pair<Symbol<E> *, std::variant<Symbol<E> *, u64>> &defsym = ctx.arg.defsyms[i];
-    add(defsym.first);
+    Symbol<E> *sym = ctx.arg.defsyms[i].first;
+    std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
+    add(sym);
 
-    if (std::holds_alternative<Symbol<E> *>(defsym.second)) {
+    if (Symbol<E> **ref = std::get_if<Symbol<E> *>(&val)) {
       // Add an undefined symbol to keep a reference to the defsym target.
       // This prevents elimination by e.g. LTO or gc-sections.
       // The undefined symbol will never make to the final object file; we
       // double-check that the defsym target is not undefined in
       // fix_synthetic_symbols.
-      auto sym = std::get<Symbol<E> *>(defsym.second);
-      add_undef(sym);
+      add_undef(*ref);
     }
   }
 
