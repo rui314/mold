@@ -1792,6 +1792,7 @@ struct Context {
   std::atomic_bool needs_tlsld = false;
   std::atomic_bool has_gottp_rel = false;
   std::atomic_bool has_textrel = false;
+  std::atomic_uint32_t num_ifunc_dynrels = 0;
 
   tbb::concurrent_hash_map<std::string_view, std::vector<std::string>> undef_errors;
 

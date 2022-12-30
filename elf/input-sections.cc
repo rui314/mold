@@ -197,13 +197,16 @@ static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
       sym.flags |= NEEDS_CPLT;
     break;
   case DYNREL:
-  case IFUNC:
     dynrel();
     break;
   case BASEREL:
     check_textrel();
     if (!isec.is_relr_reloc(ctx, rel))
       isec.file.num_dynrel++;
+    break;
+  case IFUNC:
+    dynrel();
+    ctx.num_ifunc_dynrels.fetch_add(1, std::memory_order_relaxed);
     break;
   default:
     unreachable();
