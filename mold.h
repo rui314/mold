@@ -4,7 +4,6 @@
 
 #include <array>
 #include <atomic>
-#include <bit>
 #include <bitset>
 #include <cassert>
 #include <cstdio>
@@ -194,7 +193,7 @@ inline bool has_single_bit(u64 val) {
 inline u64 bit_ceil(u64 val) {
   if (has_single_bit(val))
     return val;
-  return 1LL << (64 - std::countl_zero(val));
+  return 1LL << (64 - __builtin_clzll(val));
 }
 
 inline u64 align_to(u64 val, u64 align) {
@@ -506,7 +505,7 @@ public:
   HyperLogLog() : buckets(NBUCKETS) {}
 
   void insert(u32 hash) {
-    update_maximum(buckets[hash & (NBUCKETS - 1)], std::countl_zero(hash) + 1);
+    update_maximum(buckets[hash & (NBUCKETS - 1)], __builtin_clzll(hash) + 1);
   }
 
   i64 get_cardinality() const;
