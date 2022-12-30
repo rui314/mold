@@ -184,12 +184,30 @@ private:
 // Utility functions
 //
 
-// Some C++ libraries haven't implemented std::has_single_bit yet.
+// Some <bit> functions are missing in some C++ libraries, so we provide our own.
 inline bool has_single_bit(u64 val) {
-  return std::popcount(val) == 1;
+  return __builtin_popcountll(val) == 1;
 }
 
-// Some C++ libraries haven't implemented std::bit_ceil yet.
+template <typename T>
+inline u64 countl_zero(T val) {
+  if (val == 0)
+    sizeof(T) * 8;
+
+  static_assert(sizeof(T) == 4 || sizeof(T) == 8);
+
+  if constexpr (sizeof(T) == 4)
+    return __builtin_clz(val);
+  return __builtin_clzll(val);
+}
+
+template <typename T>
+inline u64 countr_zero(T val) {
+  if (val == 0)
+    sizeof(T) * 8;
+  return __builtin_ctzll(val);
+}
+
 inline u64 bit_ceil(u64 val) {
   if (has_single_bit(val))
     return val;
@@ -505,7 +523,7 @@ public:
   HyperLogLog() : buckets(NBUCKETS) {}
 
   void insert(u32 hash) {
-    update_maximum(buckets[hash & (NBUCKETS - 1)], __builtin_clzll(hash) + 1);
+    update_maximum(buckets[hash & (NBUCKETS - 1)], countl_zero(hash) + 1);
   }
 
   i64 get_cardinality() const;

@@ -1545,7 +1545,7 @@ i64 SharedFile<E>::get_alignment(Symbol<E> *sym) {
   ElfShdr<E> &shdr = this->elf_sections[sym->esym().st_shndx];
   i64 align = std::max<i64>(1, shdr.sh_addralign);
   if (sym->value)
-    align = std::min<i64>(align, 1LL << __builtin_ctzll(sym->value));
+    align = std::min<i64>(align, 1LL << countr_zero(sym->value));
   return align;
 }
 
