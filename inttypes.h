@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 
@@ -45,14 +46,6 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-#if __LITTLE_ENDIAN__
-static constexpr bool is_little_endian_host = 1;
-static constexpr bool is_big_endian_host = 0;
-#else
-static constexpr bool is_little_endian_host = 0;
-static constexpr bool is_big_endian_host = 1;
-#endif
-
 template <typename T>
 static inline T bswap(T val) {
   switch (sizeof(T)) {
@@ -73,7 +66,7 @@ public:
     if constexpr (sizeof(T) == SIZE) {
       T x;
       memcpy(&x, val, sizeof(T));
-      if constexpr (is_big_endian_host)
+      if constexpr (std::endian::native == std::endian::big)
         x = bswap(x);
       return x;
     } else {
@@ -84,7 +77,7 @@ public:
 
   LittleEndian &operator=(T x) {
     if constexpr (sizeof(T) == SIZE) {
-      if constexpr (is_big_endian_host)
+      if constexpr (std::endian::native == std::endian::big)
         x = bswap(x);
       memcpy(val, &x, sizeof(T));
     } else {
@@ -154,7 +147,7 @@ public:
     if constexpr (sizeof(T) == SIZE) {
       T x;
       memcpy(&x, val, sizeof(T));
-      if constexpr (is_little_endian_host)
+      if constexpr (std::endian::native == std::endian::little)
         x = bswap(x);
       return x;
     } else {
@@ -165,7 +158,7 @@ public:
 
   BigEndian &operator=(T x) {
     if constexpr (sizeof(T) == SIZE) {
-      if constexpr (is_little_endian_host)
+      if constexpr (std::endian::native == std::endian::little)
         x = bswap(x);
       memcpy(val, &x, sizeof(T));
     } else {

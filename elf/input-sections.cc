@@ -33,7 +33,7 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
 static i64 to_p2align(u64 alignment) {
   if (alignment == 0)
     return 0;
-  return countr_zero(alignment);
+  return std::countr_zero(alignment);
 }
 
 template <typename E>
