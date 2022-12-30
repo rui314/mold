@@ -1,6 +1,6 @@
 #pragma once
 
-#include "inttypes.h"
+#include "integers.h"
 
 #include <array>
 #include <atomic>
