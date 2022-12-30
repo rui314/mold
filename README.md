@@ -109,9 +109,12 @@ invoked indirectly by the compiler driver (which is usually `cc`,
 
 If you can specify an additional command line option to your compiler
 driver by modifying build system's config files, add one of the
-following flags to use `mold` instead of `/usr/bin/ld`:
+following flags to use `mold` instead of `/usr/bin/ld`. When using
+`-fuse-ld=mold`, both `mold` and `ld.mold` should be in your path: 
 
 - Clang: pass `-fuse-ld=mold`
+  
+- Clang 12.0.0 or later: pass `--ld-path=/path/to/mold`
 
 - GCC 12.1.0 or later: pass `-fuse-ld=mold`
 
