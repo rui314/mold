@@ -334,7 +334,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_68K_TLS_LE8:
       break;
     default:
-      Fatal(ctx) << *this << ": unknown relocation: " << rel;
+      Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
 }

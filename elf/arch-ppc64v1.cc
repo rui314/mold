@@ -257,7 +257,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_TLSLD:
       break;
     default:
-      Fatal(ctx) << *this << ": apply_reloc_alloc relocation: " << rel;
+      unreachable();
     }
 
 #undef S
@@ -316,7 +316,8 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *(ub64 *)loc = S + A - ctx.dtp_addr;
       break;
     default:
-      Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
+      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
+                 << rel;
     }
 
 #undef S
@@ -403,7 +404,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_DTPREL16_LO:
       break;
     default:
-      Fatal(ctx) << *this << ": scan_relocations: " << rel;
+      Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
 }

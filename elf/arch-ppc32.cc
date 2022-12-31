@@ -14,7 +14,7 @@
 // support position-independent code (PIC) on PPC32.
 //
 // A position-independent function typically contains the following code
-// in its prologue to obtain its own own address:
+// in the prologue to obtain its own address:
 //
 //    mflr    r0        // save the current return address to %r0
 //    bcl     20, 31, 4 // call the next instruction as if it were a function
@@ -26,17 +26,19 @@
 // constants. A PIC function usually computes its .got2+0x8000 and set it
 // to %r30. This scheme allows the function to access global objects
 // defined in the same input file with a single %r30-relative load/store
-// instructions with a 16-bit offset, given that the object file doesn't
+// instruction with a 16-bit offset, given that the object file doesn't
 // contain more than 65535 global objects.
 //
 // Since each object file has its own .got2, %r30 refers to different
-// places in a merged .got2 for two functions came from different input
-// files. Therefore, %r30 makes sense only within a single function.
+// places in a merged .got2 for two functions that are came from different
+// input files. Therefore, %r30 makes sense only within a single function.
 //
 // Technically, we can reuse a %r30 value in our PLT if we create a PLT
 // _for each input file_ (that's what GNU ld seems to be doing), but that
-// doesn't seems to worth its complexity. Our PLT simply doesn't rely on a
-// %r30 value.
+// doesn't seems to be worth its complexity. Our PLT simply doesn't rely
+// on a %r30 value.
+//
+// https://github.com/rui314/mold/wiki/ppc32-psabi.pdf
 
 #include "mold.h"
 
@@ -300,7 +302,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC_PLTCALL:
       break;
     default:
-      Fatal(ctx) << *this << ": apply_reloc_alloc relocation: " << rel;
+      unreachable();
     }
 
 #undef S
@@ -337,10 +339,14 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_PPC_ADDR32:
-      *(ub32 *)loc = S + A;
+      if (std::optional<u64> val = get_tombstone(sym, frag))
+        *(ub32 *)loc = *val;
+      else
+        *(ub32 *)loc = S + A;
       break;
     default:
-      Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
+      Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
+                 << rel;
     }
 
 #undef S
@@ -433,7 +439,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC_PLTCALL:
       break;
     default:
-      Fatal(ctx) << *this << ": scan_relocations: " << rel;
+      Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
 }
