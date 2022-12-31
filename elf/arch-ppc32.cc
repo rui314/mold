@@ -1,27 +1,42 @@
-// This file supports PowerPC 32-bit ISA. For 64-bit PowerPC, see
+// This file implements the PowerPC 32-bit ISA. For 64-bit PowerPC, see
 // arch-ppc64v1.cpp and arch-ppc64v2.cpp.
 //
 // PPC32 is a RISC ISA. It has 32 general-purpose registers (GPRs).
 // r0, r11 and r12 are reserved for static linkers, so we can use these
-// registers in PLTs and range extension thunks.
+// registers in PLTs and range extension thunks. In addition to that, it
+// has a few special registers. Notable ones are LR which holds a return
+// address and CTR which we can use to store a branch target address.
 //
-// Besides GPRs, PowerPC a few special registesr. Notable ones are LR
-// which holds a return address and CTR which is used for branching.
+// It feels that the PPC32 psABI is unnecessarily complicated at first
+// glance, but that is mainly stemmed from the fact that the ISA lacks
+// PC-relative load/store instructions. Since machine instructions cannot
+// load data relative to its own address, it is not straightforward to
+// support position-independent code (PIC) on PPC32.
 //
-// PowerPC generally lacks PC-relative load/store instructions, so it is
-// not straightforward to support position-independent code. A position-
-// independent function contains code like this in its prologue to obtain
-// its own address
+// A position-independent function typically contains the following code
+// in its prologue to obtain its own own address:
 //
-//   mflr    r0        // save the current return address to %r0
-//   bcl     20, 31, 4 // call the next instruction as if it were a function
-//   mtlr    r12       // save the return address to %r12
-//   mtlr    r0        // restore the original return address
+//    mflr    r0        // save the current return address to %r0
+//    bcl     20, 31, 4 // call the next instruction as if it were a function
+//    mtlr    r12       // save the return address to %r12
+//    mtlr    r0        // restore the original return address
 //
-// , and then the function computes its .got2 address (or .got2+0x800) to
-// %r30. The rule for the %r30 value is complicated, so we essentially
-// ignore that part of the ABI. Our PLT and range extension thunks don't
-// depend on %r30 value and position-independent by themselves.
+// An object file compiled with -fPIC contains a data section named
+// `.got2` to store addresses of locally-defined global variables and
+// constants. A PIC function usually computes its .got2+0x8000 and set it
+// to %r30. This scheme allows the function to access global objects
+// defined in the same input file with a single %r30-relative load/store
+// instructions with a 16-bit offset, given that the object file doesn't
+// contain more than 65535 global objects.
+//
+// Since each object file has its own .got2, %r30 refers to different
+// places in a merged .got2 for two functions came from different input
+// files. Therefore, %r30 makes sense only within a single function.
+//
+// Technically, we can reuse a %r30 value in our PLT if we create a PLT
+// _for each input file_ (that's what GNU ld seems to be doing), but that
+// doesn't seems to worth its complexity. Our PLT simply doesn't rely on a
+// %r30 value.
 
 #include "mold.h"
 
@@ -42,7 +57,7 @@ static u64 highesta(u64 x) { return (x + 0x8000) >> 48; }
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   static const ub32 insn[] = {
-    // Get the address of this thunk
+    // Get the address of this PLT section
     0x7c08'02a6, //    mflr    r0
     0x429f'0005, //    bcl     20, 31, 4
     0x7d88'02a6, // 1: mflr    r12
@@ -75,25 +90,25 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   loc[5] |= lo(ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 4);
 }
 
+static const ub32 plt_entry[] = {
+  // Get the address of this PLT entry
+  0x7c08'02a6, // mflr    r0
+  0x429f'0005, // bcl     20, 31, 4
+  0x7d88'02a6, // mflr    r12
+  0x7c08'03a6, // mtlr    r0
+
+  // Load an address from the GOT/GOTPLT entry and jump to that address
+  0x3d6c'0000, // addis   r11, r12, OFFSET@higha
+  0x396b'0000, // addi    r11, r11, OFFSET@lo
+  0x818b'0000, // lwz     r12, 0(r11)
+  0x7d89'03a6, // mtctr   r12
+  0x4e80'0420, // bctr
+};
+
 template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  static const ub32 insn[] = {
-    // Get the address of this PLT entry
-    0x7c08'02a6, // mflr    r0
-    0x429f'0005, // bcl     20, 31, 4
-    0x7d88'02a6, // mflr    r12
-    0x7c08'03a6, // mtlr    r0
-
-    // Load an address from the GOTPLT entry and jump to that address
-    0x3d6c'0000, // addis   r11, r12, OFFSET@higha
-    0x396b'0000, // addi    r11, r11, OFFSET@lo
-    0x818b'0000, // lwz     r12, 0(r11)
-    0x7d89'03a6, // mtctr   r12
-    0x4e80'0420, // bctr
-  };
-
-  static_assert(E::plt_size == sizeof(insn));
-  memcpy(buf, insn, sizeof(insn));
+  static_assert(E::plt_size == sizeof(plt_entry));
+  memcpy(buf, plt_entry, sizeof(plt_entry));
 
   ub32 *loc = (ub32 *)buf;
   i64 offset = sym.get_gotplt_addr(ctx) - sym.get_plt_addr(ctx) - 8;
@@ -103,23 +118,8 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 
 template <>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  static const ub32 insn[] = {
-    // Get the address of this PLT entry
-    0x7c08'02a6, // mflr    r0
-    0x429f'0005, // bcl     20, 31, 4
-    0x7d88'02a6, // mflr    r12
-    0x7c08'03a6, // mtlr    r0
-
-    // Load an address from the GOT entry and jump to that address
-    0x3d6c'0000, // addis   r11, r12, 0
-    0x396b'0000, // addi    r11, r11, 0
-    0x818b'0000, // lwz     r12, 0(r11)
-    0x7d89'03a6, // mtctr   r12
-    0x4e80'0420, // bctr
-  };
-
-  static_assert(E::pltgot_size == sizeof(insn));
-  memcpy(buf, insn, sizeof(insn));
+  static_assert(E::pltgot_size == sizeof(plt_entry));
+  memcpy(buf, plt_entry, sizeof(plt_entry));
 
   ub32 *loc = (ub32 *)buf;
   i64 offset = sym.get_got_addr(ctx) - sym.get_plt_addr(ctx) - 8;
@@ -133,6 +133,8 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
   switch (rel.r_type) {
+  case R_NONE:
+    break;
   case R_PPC_ADDR32:
     *(ub32 *)loc = val;
     break;
@@ -153,9 +155,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
 
-  u64 GP = 0;
+  u64 got2 = 0;
   if (file.ppc32_got2)
-    GP = file.ppc32_got2->output_section->shdr.sh_addr + file.ppc32_got2->offset;
+    got2 = file.ppc32_got2->output_section->shdr.sh_addr + file.ppc32_got2->offset;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -206,16 +208,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A, 31, 2) << 2;
       break;
     case R_PPC_PLT16_LO:
-      *(ub16 *)loc = lo(G + GOT - GP - A);
+      *(ub16 *)loc = lo(G + GOT - got2 - A);
       break;
     case R_PPC_PLT16_HI:
-      *(ub16 *)loc = hi(G + GOT - GP - A);
+      *(ub16 *)loc = hi(G + GOT - got2 - A);
       break;
     case R_PPC_PLT16_HA:
-      *(ub16 *)loc = ha(G + GOT - GP - A);
+      *(ub16 *)loc = ha(G + GOT - got2 - A);
       break;
     case R_PPC_PLT32:
-      *(ub32 *)loc = G + GOT - GP - A;
+      *(ub32 *)loc = G + GOT - got2 - A;
       break;
     case R_PPC_REL14:
       *(ub32 *)loc &= 0b1111'1111'1111'1111'0000'0000'0000'0011;
@@ -223,7 +225,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_PPC_REL16:
     case R_PPC_REL16_LO:
-      *(ub16 *)loc = S + A - P;
+      *(ub16 *)loc = lo(S + A - P);
       break;
     case R_PPC_REL16_HI:
       *(ub16 *)loc = hi(S + A - P);
@@ -256,7 +258,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_PPC_GOT16:
     case R_PPC_GOT16_LO:
-      *(ub16 *)loc = G + A;
+      *(ub16 *)loc = lo(G + A);
       break;
     case R_PPC_GOT16_HI:
       *(ub16 *)loc = hi(G + A);
@@ -440,21 +442,6 @@ template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
 
-  static const ub32 plt_thunk[] = {
-    // Get this thunk's address
-    0x7c08'02a6, // mflr    r0
-    0x429f'0005, // bcl     20, 31, 4
-    0x7d88'02a6, // mflr    r12
-    0x7c08'03a6, // mtlr    r0
-
-    // Load an address from the GOT/GOTPLT entry and jump to that address
-    0x3d6c'0000, // addis   r11, r12, OFFSET@higha
-    0x396b'0000, // addi    r11, r11, OFFSET@lo
-    0x818b'0000, // lwz     r12, 0(r11)
-    0x7d89'03a6, // mtctr   r12
-    0x4e80'0420, // bctr
-  };
-
   static const ub32 local_thunk[] = {
     // Get this thunk's address
     0x7c08'02a6, // mflr    r0
@@ -470,21 +457,17 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0x6000'0000, // nop
   };
 
-  static_assert(E::thunk_size == sizeof(plt_thunk));
+  static_assert(E::thunk_size == sizeof(plt_entry));
   static_assert(E::thunk_size == sizeof(local_thunk));
 
   for (i64 i = 0; i < symbols.size(); i++) {
     ub32 *loc = (ub32 *)(buf + i * E::thunk_size);
     Symbol<E> &sym = *symbols[i];
 
-    if (sym.has_got(ctx)) {
-      memcpy(loc, plt_thunk, sizeof(plt_thunk));
-      i64 val = sym.get_got_addr(ctx) - get_addr(i) - 8;
-      loc[4] |= higha(val);
-      loc[5] |= lo(val);
-    } else if (sym.has_plt(ctx)) {
-      memcpy(loc, plt_thunk, sizeof(plt_thunk));
-      i64 val = sym.get_gotplt_addr(ctx) - get_addr(i) - 8;
+    if (sym.has_plt(ctx)) {
+      memcpy(loc, plt_entry, sizeof(plt_entry));
+      u64 got = sym.has_got(ctx) ? sym.get_got_addr(ctx) : sym.get_gotplt_addr(ctx);
+      i64 val = got - get_addr(i) - 8;
       loc[4] |= higha(val);
       loc[5] |= lo(val);
     } else {

@@ -1592,8 +1592,17 @@ struct SectionOrder {
 // Target-specific context clss
 template <typename E> struct ContextExtras {};
 
+template <> struct ContextExtras<PPC32> {
+  Symbol<PPC32> *_SDA_BASE_ = nullptr;
+};
+
 template <> struct ContextExtras<PPC64V1> {
   PPC64OpdSection *opd = nullptr;
+  Symbol<PPC64V1> *TOC = nullptr;
+};
+
+template <> struct ContextExtras<PPC64V2> {
+  Symbol<PPC64V2> *TOC = nullptr;
 };
 
 template <> struct ContextExtras<SPARC64> {
@@ -1854,11 +1863,9 @@ struct Context {
   u64 dtp_addr = 0;
 
   // Linker-synthesized symbols
-  Symbol<E> *TOC = nullptr;
   Symbol<E> *_DYNAMIC = nullptr;
   Symbol<E> *_GLOBAL_OFFSET_TABLE_ = nullptr;
   Symbol<E> *_PROCEDURE_LINKAGE_TABLE_ = nullptr;
-  Symbol<E> *_SDA_BASE_ = nullptr;
   Symbol<E> *_TLS_MODULE_BASE_ = nullptr;
   Symbol<E> *__GNU_EH_FRAME_HDR = nullptr;
   Symbol<E> *__bss_start = nullptr;

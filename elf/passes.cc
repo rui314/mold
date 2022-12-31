@@ -709,11 +709,11 @@ void add_synthetic_symbols(Context<E> &ctx) {
     ctx.__exidx_end = add("__exidx_end");
   }
 
-  if constexpr (is_ppc<E>)
-    ctx.TOC = add(".TOC.");
+  if constexpr (is_ppc64<E>)
+    ctx.extra.TOC = add(".TOC.");
 
   if constexpr (is_ppc32<E>)
-    ctx._SDA_BASE_ = add("_SDA_BASE_");
+    ctx.extra._SDA_BASE_ = add("_SDA_BASE_");
 
   for (Chunk<E> *chunk : ctx.chunks) {
     if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
@@ -2321,14 +2321,14 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // PPC64's ".TOC." symbol.
-  if (ctx.TOC) {
+  if constexpr (is_ppc64<E>) {
     if (Chunk<E> *chunk = find(".got")) {
-      start(ctx.TOC, chunk, 0x8000);
+      start(ctx.extra.TOC, chunk, 0x8000);
     } else if (Chunk<E> *chunk = find(".toc")) {
-      start(ctx.TOC, chunk, 0x8000);
+      start(ctx.extra.TOC, chunk, 0x8000);
     } else {
-      ctx.TOC->set_output_section(sections[0]);
-      ctx.TOC->value = 0;
+      ctx.extra.TOC->set_output_section(sections[0]);
+      ctx.extra.TOC->value = 0;
     }
   }
 

@@ -535,7 +535,7 @@ void RelDynSection<E>::copy_buf(Context<E> &ctx) {
         u64 addr = sym->get_opd_addr(ctx);
         *rel++ = ElfRel<E>(addr, E::R_RELATIVE, 0,
                            sym->get_addr(ctx, NO_PLT | NO_OPD));
-        *rel++ = ElfRel<E>(addr + 8, E::R_RELATIVE, 0, ctx.TOC->value);
+        *rel++ = ElfRel<E>(addr + 8, E::R_RELATIVE, 0, ctx.extra.TOC->value);
       }
     }
   }

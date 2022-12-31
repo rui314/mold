@@ -83,17 +83,20 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     0x429f'0005, // bcl     20, 31, 4 // obtain PC
     0x7d68'02a6, // mflr    r11
     0x7c08'03a6, // mtlr    r0
+
     // Compute the PLT entry index
     0xe80b'002c, // ld      r0, 44(r11)
     0x7d8b'6050, // subf    r12, r11, r12
     0x7d60'5a14, // add     r11, r0, r11
     0x380c'ffcc, // addi    r0, r12, -52
     0x7800'f082, // rldicl  r0, r0, 62, 2
+
     // Load .got.plt[0] and .got.plt[1] and branch to .got.plt[0]
     0xe98b'0000, // ld      r12, 0(r11)
     0x7d89'03a6, // mtctr   r12
     0xe96b'0008, // ld      r11, 8(r11)
     0x4e80'0420, // bctr
+
     // .quad .got.plt - .plt - 8
     0x0000'0000,
     0x0000'0000,
@@ -105,9 +108,10 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
 
 template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  // bl plt0
-  *(ul32 *)buf = 0x4b00'0000;
-  *(ul32 *)buf |= (ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx)) & 0x00ff'ffff;
+  // When the control is transferred to a PLT entry, the PLT entry's
+  // address is already set to %r12 by the caller.
+  i64 offset = ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx);
+  *(ul32 *)buf = 0x4b00'0000 | (offset & 0x00ff'ffff);        // b plt0
 }
 
 // .plt.got is not necessary on PPC64 because range extension thunks
@@ -184,14 +188,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_PPC64_TOC16_HA:
-      *(ul16 *)loc = ha(S + A - ctx.TOC->value);
+      *(ul16 *)loc = ha(S + A - ctx.extra.TOC->value);
       break;
     case R_PPC64_TOC16_LO:
-      *(ul16 *)loc = S + A - ctx.TOC->value;
+      *(ul16 *)loc = lo(S + A - ctx.extra.TOC->value);
       break;
     case R_PPC64_TOC16_DS:
     case R_PPC64_TOC16_LO_DS:
-      *(ul16 *)loc |= (S + A - ctx.TOC->value) & 0xfffc;
+      *(ul16 *)loc |= (S + A - ctx.extra.TOC->value) & 0xfffc;
       break;
     case R_PPC64_REL24: {
       i64 val = S + A - P + get_local_entry_offset(ctx, sym);
@@ -220,34 +224,34 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = ha(S + A - P);
       break;
     case R_PPC64_REL16_LO:
-      *(ul16 *)loc = S + A - P;
+      *(ul16 *)loc = lo(S + A - P);
       break;
     case R_PPC64_PLT16_HA:
-      *(ul16 *)loc = ha(G + GOT - ctx.TOC->value);
+      *(ul16 *)loc = ha(G + GOT - ctx.extra.TOC->value);
       break;
     case R_PPC64_PLT16_HI:
-      *(ul16 *)loc = hi(G + GOT - ctx.TOC->value);
+      *(ul16 *)loc = hi(G + GOT - ctx.extra.TOC->value);
       break;
     case R_PPC64_PLT16_LO:
-      *(ul16 *)loc = lo(G + GOT - ctx.TOC->value);
+      *(ul16 *)loc = lo(G + GOT - ctx.extra.TOC->value);
       break;
     case R_PPC64_PLT16_LO_DS:
-      *(ul16 *)loc |= (G + GOT - ctx.TOC->value) & 0xfffc;
+      *(ul16 *)loc |= (G + GOT - ctx.extra.TOC->value) & 0xfffc;
       break;
     case R_PPC64_GOT_TPREL16_HA:
-      *(ul16 *)loc = ha(sym.get_gottp_addr(ctx) - ctx.TOC->value);
+      *(ul16 *)loc = ha(sym.get_gottp_addr(ctx) - ctx.extra.TOC->value);
       break;
     case R_PPC64_GOT_TLSGD16_HA:
-      *(ul16 *)loc = ha(sym.get_tlsgd_addr(ctx) - ctx.TOC->value);
+      *(ul16 *)loc = ha(sym.get_tlsgd_addr(ctx) - ctx.extra.TOC->value);
       break;
     case R_PPC64_GOT_TLSGD16_LO:
-      *(ul16 *)loc = sym.get_tlsgd_addr(ctx) - ctx.TOC->value;
+      *(ul16 *)loc = lo(sym.get_tlsgd_addr(ctx) - ctx.extra.TOC->value);
       break;
     case R_PPC64_GOT_TLSLD16_HA:
-      *(ul16 *)loc = ha(ctx.got->get_tlsld_addr(ctx) - ctx.TOC->value);
+      *(ul16 *)loc = ha(ctx.got->get_tlsld_addr(ctx) - ctx.extra.TOC->value);
       break;
     case R_PPC64_GOT_TLSLD16_LO:
-      *(ul16 *)loc = ctx.got->get_tlsld_addr(ctx) - ctx.TOC->value;
+      *(ul16 *)loc = lo(ctx.got->get_tlsld_addr(ctx) - ctx.extra.TOC->value);
       break;
     case R_PPC64_DTPREL16_HA:
       *(ul16 *)loc = ha(S + A - ctx.dtp_addr);
@@ -256,13 +260,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = ha(S + A - ctx.tp_addr);
       break;
     case R_PPC64_DTPREL16_LO:
-      *(ul16 *)loc = S + A - ctx.dtp_addr;
+      *(ul16 *)loc = lo(S + A - ctx.dtp_addr);
       break;
     case R_PPC64_TPREL16_LO:
-      *(ul16 *)loc = S + A - ctx.tp_addr;
+      *(ul16 *)loc = lo(S + A - ctx.tp_addr);
       break;
     case R_PPC64_GOT_TPREL16_LO_DS:
-      *(ul16 *)loc |= (sym.get_gottp_addr(ctx) - ctx.TOC->value) & 0xfffc;
+      *(ul16 *)loc |= (sym.get_gottp_addr(ctx) - ctx.extra.TOC->value) & 0xfffc;
       break;
     case R_PPC64_PLTSEQ:
     case R_PPC64_PLTCALL:
@@ -422,6 +426,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   static const ul32 plt_thunk[] = {
     // Save r2 to the r2 save slot reserved in the caller's stack frame
     0xf841'0018, // std   r2, 24(r1)
+
     // Jump to a PLT entry
     0x3d82'0000, // addis r12, r2, foo@gotplt@toc@ha
     0xe98c'0000, // ld    r12, foo@gotplt@toc@lo(r12)
@@ -450,13 +455,13 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     if (sym.has_plt(ctx)) {
       memcpy(loc, plt_thunk, sizeof(plt_thunk));
       u64 got = sym.has_got(ctx) ? sym.get_got_addr(ctx) : sym.get_gotplt_addr(ctx);
-      i64 val = got - ctx.TOC->value;
+      i64 val = got - ctx.extra.TOC->value;
       loc[1] |= higha(val);
       loc[2] |= lo(val);
     } else {
       memcpy(loc, local_thunk, sizeof(local_thunk));
       i64 val = sym.get_addr(ctx) + get_local_entry_offset(ctx, sym) -
-                ctx.TOC->value;
+                ctx.extra.TOC->value;
       loc[0] |= higha(val);
       loc[1] |= lo(val);
     }
