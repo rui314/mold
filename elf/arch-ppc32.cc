@@ -231,7 +231,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC_REL16_HA:
       *(ub16 *)loc = ha(S + A - P);
       break;
-    case R_PPC_REL24: {
+    case R_PPC_REL24:
+    case R_PPC_LOCAL24PC: {
       i64 val = S + A - P;
       if (sign_extend(val, 25) != val)
         val = get_thunk_addr() - P;
@@ -252,11 +253,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC_REL32:
     case R_PPC_PLTREL32:
       *(ub32 *)loc = S + A - P;
-      break;
-    case R_PPC_LOCAL24PC:
-      assert(!sym.is_imported);
-      *(ub32 *)loc &= 0b1111'1100'0000'0000'0000'0000'0000'0011;
-      *(ub32 *)loc |= bits(S + A - P, 25, 2) << 2;
       break;
     case R_PPC_GOT16:
     case R_PPC_GOT16_LO:
