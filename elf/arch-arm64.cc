@@ -236,16 +236,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         break;
       }
 
-      i64 lo = -(1 << 27);
-      i64 hi = 1 << 27;
       i64 val = S + A - P;
-
-      if (val < lo || hi <= val) {
-        RangeExtensionRef ref = extra.range_extn[i];
-        val = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx) + A - P;
-        assert(lo <= val && val < hi);
-      }
-
+      if (val < -(1 << 27) || (1 << 27) <= val)
+        val = get_thunk_addr(i) + A - P;
       *(ul32 *)loc |= bits(val, 27, 2);
       break;
     }

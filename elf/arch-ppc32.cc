@@ -169,12 +169,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    auto get_thunk_addr = [&] {
-      RangeExtensionRef ref = extra.range_extn[i];
-      assert(ref.thunk_idx != -1);
-      return output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx);
-    };
-
 #define S   sym.get_addr(ctx)
 #define A   rel.r_addend
 #define P   (get_addr() + rel.r_offset)
@@ -235,14 +229,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC_LOCAL24PC: {
       i64 val = S + A - P;
       if (sign_extend(val, 25) != val)
-        val = get_thunk_addr() - P;
+        val = get_thunk_addr(i) - P;
       *(ub32 *)loc |= bits(val, 25, 2) << 2;
       break;
     }
     case R_PPC_PLTREL24: {
       i64 val = S - P;
       if (sym.has_plt(ctx) || sign_extend(val, 25) != val)
-        val = get_thunk_addr() - P;
+        val = get_thunk_addr(i) - P;
       *(ub32 *)loc |= bits(val, 25, 2) << 2;
       break;
     }

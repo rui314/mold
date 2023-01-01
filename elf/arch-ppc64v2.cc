@@ -200,12 +200,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_PPC64_REL24: {
       i64 val = S + A - P + get_local_entry_offset(ctx, sym);
-
-      if (sym.has_plt(ctx) || sign_extend(val, 25) != val) {
-        RangeExtensionRef ref = extra.range_extn[i];
-        assert(ref.thunk_idx != -1);
-        val = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx) + A - P;
-      }
+      if (sym.has_plt(ctx) || sign_extend(val, 25) != val)
+        val = get_thunk_addr(i) + A - P;
 
       check(val, -(1 << 25), 1 << 25);
       *(ul32 *)loc |= bits(val, 25, 2) << 2;

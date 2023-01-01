@@ -182,16 +182,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
 
-  i64 trampoline_idx = 0;
+  std::span<std::unique_ptr<RangeExtensionThunk<E>>> thunks =
+    output_section->thunks;
 
   auto get_trampoline_addr = [&](u64 addr) {
-    for (; trampoline_idx < output_section->thunks.size(); trampoline_idx++) {
-      RangeExtensionThunk<E> &thunk = *output_section->thunks[trampoline_idx];
-      i64 disp = output_section->shdr.sh_addr + thunk.offset - addr;
+    for (;;) {
+      assert(!thunks.empty());
+      i64 disp = output_section->shdr.sh_addr + thunks[0]->offset - addr;
       if (is_jump_reachable(disp))
         return disp;
+      thunks = thunks.subspan(1);
     }
-    unreachable();
   };
 
   for (i64 i = 0; i < rels.size(); i++) {
@@ -216,17 +217,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 #define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
 #define GOT ctx.got->shdr.sh_addr
 
-    auto get_thumb_thunk_addr = [&] {
-      RangeExtensionRef ref = extra.range_extn[i];
-      assert(ref.thunk_idx != -1);
-      u64 addr = output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx);
-      assert(is_jump_reachable(addr + A - P));
-      return addr;
-    };
-
-    auto get_arm_thunk_addr = [&] {
-      return get_thumb_thunk_addr() + 4;
-    };
+    auto get_thumb_thunk_addr = [&] { return get_thunk_addr(i); };
+    auto get_arm_thunk_addr   = [&] { return get_thunk_addr(i) + 4; };
 
     switch (rel.r_type) {
     case R_ARM_ABS32:

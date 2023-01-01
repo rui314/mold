@@ -323,6 +323,8 @@ private:
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
+  u64 get_thunk_addr(i64 idx);
+
   std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
 };
 
@@ -2433,6 +2435,16 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
       return m->get_fragment(esym.st_value + get_addend(*this, rel));
 
   return {nullptr, 0};
+}
+
+template <typename E>
+u64 InputSection<E>::get_thunk_addr(i64 idx) {
+  if constexpr (needs_thunk<E>) {
+    RangeExtensionRef ref = extra.range_extn[idx];
+    assert(ref.thunk_idx != -1);
+    return output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx);
+  }
+  unreachable();
 }
 
 // Input object files may contain duplicate code for inline functions
