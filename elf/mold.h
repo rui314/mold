@@ -78,6 +78,7 @@ struct SectionFragment {
 // don't need them and we allocate tens of millions of symbol objects
 // for large programs, we separate them from `Symbol` class to save
 // memory.
+template <typename E>
 struct SymbolAux {
   i32 got_idx = -1;
   i32 gottp_idx = -1;
@@ -85,9 +86,13 @@ struct SymbolAux {
   i32 tlsdesc_idx = -1;
   i32 plt_idx = -1;
   i32 pltgot_idx = -1;
-  i32 opd_idx = -1;
   i32 dynsym_idx = -1;
   u32 djb_hash = 0;
+};
+
+template <>
+struct SymbolAux<PPC64V1> : SymbolAux<X86_64> {
+  i32 opd_idx = -1;
 };
 
 //
@@ -1784,7 +1789,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<OutputSection<E>>> osec_pool;
 
   // Symbol auxiliary data
-  std::vector<SymbolAux> symbol_aux;
+  std::vector<SymbolAux<E>> symbol_aux;
 
   // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
