@@ -171,10 +171,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_TOC16_DS: {
       i64 val = S + A - ctx.extra.TOC->value;
       check(val, -(1 << 15), 1 << 15);
+      *(ub16 *)loc &= 0x0003;
       *(ub16 *)loc |= val & 0xfffc;
       break;
     }
     case R_PPC64_TOC16_LO_DS:
+      *(ub16 *)loc &= 0x0003;
       *(ub16 *)loc |= (S + A - ctx.extra.TOC->value) & 0xfffc;
       break;
     case R_PPC64_REL24: {
@@ -189,6 +191,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
 
       check(val, -(1 << 25), 1 << 25);
+      *(ub32 *)loc &= 0b1111'1100'0000'0000'0000'0000'0000'0011;
       *(ub32 *)loc |= bits(val, 25, 2) << 2;
 
       // If a callee is an external function, PLT saves %r2 to the
@@ -218,6 +221,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub16 *)loc = lo(G + GOT - ctx.extra.TOC->value);
       break;
     case R_PPC64_PLT16_LO_DS:
+      *(ub16 *)loc &= 0x0003;
       *(ub16 *)loc |= (G + GOT - ctx.extra.TOC->value) & 0xfffc;
       break;
     case R_PPC64_GOT_TPREL16_HA:
@@ -248,6 +252,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub16 *)loc = lo(S + A - ctx.tp_addr);
       break;
     case R_PPC64_GOT_TPREL16_LO_DS:
+      *(ub16 *)loc &= 0x0003;
       *(ub16 *)loc |= (sym.get_gottp_addr(ctx) - ctx.extra.TOC->value) & 0xfffc;
       break;
     case R_PPC64_PLTSEQ:
