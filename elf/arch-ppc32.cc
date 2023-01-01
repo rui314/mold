@@ -187,7 +187,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_PPC_ADDR14:
-      *(ub32 *)loc &= 0b1111'1111'1111'1111'0000'0000'0000'0011;
       *(ub32 *)loc |= bits(S + A, 15, 2) << 2;
       break;
     case R_PPC_ADDR16:
@@ -202,11 +201,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub16 *)loc = ha(S + A);
       break;
     case R_PPC_ADDR24:
-      *(ub32 *)loc &= 0b1111'1100'0000'0000'0000'0000'0000'0011;
       *(ub32 *)loc |= bits(S + A, 25, 2) << 2;
       break;
     case R_PPC_ADDR30:
-      *(ub32 *)loc &= 0b0000'0000'0000'0000'0000'0000'0000'0011;
       *(ub32 *)loc |= bits(S + A, 31, 2) << 2;
       break;
     case R_PPC_PLT16_LO:
@@ -222,7 +219,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc = G + GOT - got2 - A;
       break;
     case R_PPC_REL14:
-      *(ub32 *)loc &= 0b1111'1111'1111'1111'0000'0000'0000'0011;
       *(ub32 *)loc |= bits(S + A - P, 15, 2) << 2;
       break;
     case R_PPC_REL16:
@@ -240,8 +236,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A - P;
       if (sign_extend(val, 25) != val)
         val = get_thunk_addr() - P;
-
-      *(ub32 *)loc &= 0b1111'1100'0000'0000'0000'0000'0000'0011;
       *(ub32 *)loc |= bits(val, 25, 2) << 2;
       break;
     }
@@ -249,8 +243,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S - P;
       if (sym.has_plt(ctx) || sign_extend(val, 25) != val)
         val = get_thunk_addr() - P;
-
-      *(ub32 *)loc &= 0b1111'1100'0000'0000'0000'0000'0000'0011;
       *(ub32 *)loc |= bits(val, 25, 2) << 2;
       break;
     }

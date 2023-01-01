@@ -26,14 +26,12 @@ using E = ARM64;
 static void write_adrp(u8 *buf, u64 val) {
   u32 hi = bits(val, 32, 14);
   u32 lo = bits(val, 13, 12);
-  *(ul32 *)buf &= 0b1001'1111'0000'0000'0000'0000'0001'1111;
   *(ul32 *)buf |= (lo << 29) | (hi << 5);
 }
 
 static void write_adr(u8 *buf, u64 val) {
   u32 hi = bits(val, 20, 2);
   u32 lo = bits(val, 1, 0);
-  *(ul32 *)buf &= 0b1001'1111'0000'0000'0000'0000'0001'1111;
   *(ul32 *)buf |= (lo << 29) | (hi << 5);
 }
 
@@ -248,7 +246,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         assert(lo <= val && val < hi);
       }
 
-      *(ul32 *)loc |= (val >> 2) & 0x03ff'ffff;
+      *(ul32 *)loc |= bits(val, 27, 2);
       break;
     }
     case R_AARCH64_CONDBR19:

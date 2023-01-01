@@ -41,19 +41,8 @@ namespace mold::elf {
 
 using E = S390X;
 
-static void write_low12(u8 *loc, u64 val) {
-  *(ub16 *)loc &= 0xf000;
-  *(ub16 *)loc |= val & 0x0fff;
-}
-
 static void write_mid20(u8 *loc, u64 val) {
-  *(ub32 *)loc &= 0xf000'00ff;
   *(ub32 *)loc |= (bits(val, 11, 0) << 16) | (bits(val, 19, 12) << 8);
-}
-
-static void write_low24(u8 *loc, u64 val) {
-  *(ub32 *)loc &= 0xff00'0000;
-  *(ub32 *)loc |= val & 0x00ff'ffff;
 }
 
 template <>
@@ -171,7 +160,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_12: {
       i64 val = S + A;
       check(val, 0, 1 << 12);
-      write_low12(loc, val);
+      *(ul16 *)loc = bits(val, 11, 0);
       break;
     }
     case R_390_16: {
@@ -200,7 +189,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_PLT12DBL: {
       i64 val = S + A - P;
       check_dbl(val, -(1 << 12), 1 << 12);
-      write_low12(loc, val >> 1);
+      *(ul16 *)loc = val >> 1 & 0x0fff;
       break;
     }
     case R_390_PC16: {
@@ -229,7 +218,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_PLT24DBL: {
       i64 val = S + A - P;
       check_dbl(val, -(1 << 24), 1 << 24);
-      write_low24(loc, val >> 1);
+      *(ub32 *)loc |= bits(val, 24, 1);
       break;
     }
     case R_390_PC32DBL:
@@ -248,7 +237,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_GOTPLT12: {
       i64 val = G + A;
       check(val, 0, 1 << 12);
-      write_low12(loc, val);
+      *(ul16 *)loc = bits(val, 11, 0);
       break;
     }
     case R_390_GOT16:
