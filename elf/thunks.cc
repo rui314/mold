@@ -69,7 +69,7 @@ static bool needs_thunk_rel(const ElfRel<E> &r) {
     return ty == R_ARM_JUMP24 || ty == R_ARM_THM_JUMP24 ||
            ty == R_ARM_CALL   || ty == R_ARM_THM_CALL;
   } else if constexpr (is_ppc32<E>) {
-    return ty == R_PPC_REL24  || ty == R_PPC_PLTREL24 || R_PPC_LOCAL24PC;
+    return ty == R_PPC_REL24  || ty == R_PPC_PLTREL24 || ty == R_PPC_LOCAL24PC;
   } else {
     static_assert(is_ppc64<E>);
     return ty == R_PPC64_REL24;
