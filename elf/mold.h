@@ -1331,7 +1331,7 @@ template <typename E>
 void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
-MachineType get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
+const char *get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
 void parse_version_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
@@ -1717,7 +1717,7 @@ struct Context {
     bool z_relro = true;
     bool z_shstk = false;
     bool z_text = false;
-    MachineType emulation = MachineType::NONE;
+    const char * emulation = nullptr;
     i64 filler = -1;
     i64 print_dependencies = 0;
     i64 spare_dynamic_tags = 5;
@@ -1899,7 +1899,7 @@ struct Context {
 };
 
 template <typename E>
-MachineType get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
+const char *get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
 MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path);

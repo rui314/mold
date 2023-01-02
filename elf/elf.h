@@ -39,34 +39,6 @@ template <typename E> struct ElfVerdaux;
 template <typename E> struct ElfChdr;
 template <typename E> struct ElfNhdr;
 
-enum class MachineType {
-  NONE, X86_64, I386, ARM64, ARM32, RV64LE, RV64BE, RV32LE, RV32BE,
-  PPC32, PPC64V1, PPC64V2, S390X, SPARC64, M68K, SH4, ALPHA,
-};
-
-inline std::ostream &operator<<(std::ostream &out, MachineType mt) {
-  switch (mt) {
-  case MachineType::NONE:    out << "none";      break;
-  case MachineType::X86_64:  out << "x86_64";    break;
-  case MachineType::I386:    out << "i386";      break;
-  case MachineType::ARM64:   out << "arm64";     break;
-  case MachineType::ARM32:   out << "arm32";     break;
-  case MachineType::RV64LE:  out << "riscv64";   break;
-  case MachineType::RV64BE:  out << "riscv64be"; break;
-  case MachineType::RV32LE:  out << "riscv32";   break;
-  case MachineType::RV32BE:  out << "riscv32be"; break;
-  case MachineType::PPC32:   out << "ppc32";     break;
-  case MachineType::PPC64V1: out << "ppc64v1";   break;
-  case MachineType::PPC64V2: out << "ppc64v2";   break;
-  case MachineType::S390X:   out << "s390x";     break;
-  case MachineType::SPARC64: out << "sparc64";   break;
-  case MachineType::M68K:    out << "m68k";      break;
-  case MachineType::SH4:     out << "sh4";       break;
-  case MachineType::ALPHA:   out << "alpha";     break;
-  }
-  return out;
-}
-
 template <typename E>
 std::string rel_to_string(u32 r_type);
 
@@ -1705,6 +1677,16 @@ template <typename E> static constexpr bool is_ppc = is_ppc64<E> || is_ppc32<E>;
 template <typename E> static constexpr bool is_sparc = is_sparc64<E>;
 
 struct X86_64 {
+  static constexpr char *target_name = "x86_64";
+  static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 4096;
+  static constexpr u32 e_machine = EM_X86_64;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
+
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_X86_64_JUMP_SLOT;
@@ -1715,19 +1697,19 @@ struct X86_64 {
   static constexpr u32 R_TPOFF = R_X86_64_TPOFF64;
   static constexpr u32 R_DTPMOD = R_X86_64_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
-
-  static constexpr MachineType machine_type = MachineType::X86_64;
-  static constexpr bool is_64 = true;
-  static constexpr bool is_le = true;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_X86_64;
-  static constexpr u32 plt_hdr_size = 32;
-  static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
 };
 
 struct I386 {
+  static constexpr char *target_name = "i386";
+  static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
+  static constexpr bool is_rela = false;
+  static constexpr u32 page_size = 4096;
+  static constexpr u32 e_machine = EM_386;
+  static constexpr u32 plt_hdr_size = 16;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
+
   static constexpr u32 R_COPY = R_386_COPY;
   static constexpr u32 R_GLOB_DAT = R_386_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_386_JUMP_SLOT;
@@ -1738,31 +1720,10 @@ struct I386 {
   static constexpr u32 R_TPOFF = R_386_TLS_TPOFF;
   static constexpr u32 R_DTPMOD = R_386_TLS_DTPMOD32;
   static constexpr u32 R_TLSDESC = R_386_TLS_DESC;
-
-  static constexpr MachineType machine_type = MachineType::I386;
-  static constexpr bool is_64 = false;
-  static constexpr bool is_le = true;
-  static constexpr bool is_rela = false;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_386;
-  static constexpr u32 plt_hdr_size = 16;
-  static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
 };
 
 struct ARM64 {
-  static constexpr u32 R_COPY = R_AARCH64_COPY;
-  static constexpr u32 R_GLOB_DAT = R_AARCH64_GLOB_DAT;
-  static constexpr u32 R_JUMP_SLOT = R_AARCH64_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_AARCH64_ABS64;
-  static constexpr u32 R_RELATIVE = R_AARCH64_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_AARCH64_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_AARCH64_TLS_DTPREL64;
-  static constexpr u32 R_TPOFF = R_AARCH64_TLS_TPREL64;
-  static constexpr u32 R_DTPMOD = R_AARCH64_TLS_DTPMOD64;
-  static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
-
-  static constexpr MachineType machine_type = MachineType::ARM64;
+  static constexpr char *target_name = "arm64";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -1773,21 +1734,21 @@ struct ARM64 {
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 12;
+
+  static constexpr u32 R_COPY = R_AARCH64_COPY;
+  static constexpr u32 R_GLOB_DAT = R_AARCH64_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_AARCH64_JUMP_SLOT;
+  static constexpr u32 R_ABS = R_AARCH64_ABS64;
+  static constexpr u32 R_RELATIVE = R_AARCH64_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_AARCH64_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_AARCH64_TLS_DTPREL64;
+  static constexpr u32 R_TPOFF = R_AARCH64_TLS_TPREL64;
+  static constexpr u32 R_DTPMOD = R_AARCH64_TLS_DTPMOD64;
+  static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
 };
 
 struct ARM32 {
-  static constexpr u32 R_COPY = R_ARM_COPY;
-  static constexpr u32 R_GLOB_DAT = R_ARM_GLOB_DAT;
-  static constexpr u32 R_JUMP_SLOT = R_ARM_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_ARM_ABS32;
-  static constexpr u32 R_RELATIVE = R_ARM_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_ARM_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_ARM_TLS_DTPOFF32;
-  static constexpr u32 R_TPOFF = R_ARM_TLS_TPOFF32;
-  static constexpr u32 R_DTPMOD = R_ARM_TLS_DTPMOD32;
-  static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
-
-  static constexpr MachineType machine_type = MachineType::ARM32;
+  static constexpr char *target_name = "arm32";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = false;
@@ -1798,9 +1759,30 @@ struct ARM32 {
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 12;
   static constexpr u32 thunk_size = 20;
+
+  static constexpr u32 R_COPY = R_ARM_COPY;
+  static constexpr u32 R_GLOB_DAT = R_ARM_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_ARM_JUMP_SLOT;
+  static constexpr u32 R_ABS = R_ARM_ABS32;
+  static constexpr u32 R_RELATIVE = R_ARM_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_ARM_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_ARM_TLS_DTPOFF32;
+  static constexpr u32 R_TPOFF = R_ARM_TLS_TPOFF32;
+  static constexpr u32 R_DTPMOD = R_ARM_TLS_DTPMOD32;
+  static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
 };
 
 struct RV64LE {
+  static constexpr char *target_name = "riscv64";
+  static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 4096;
+  static constexpr u32 e_machine = EM_RISCV;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
+
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_64;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
@@ -1810,19 +1792,19 @@ struct RV64LE {
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
-
-  static constexpr MachineType machine_type = MachineType::RV64LE;
-  static constexpr bool is_64 = true;
-  static constexpr bool is_le = true;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_RISCV;
-  static constexpr u32 plt_hdr_size = 32;
-  static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
 };
 
 struct RV64BE {
+  static constexpr char *target_name = "riscv64be";
+  static constexpr bool is_64 = true;
+  static constexpr bool is_le = false;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 4096;
+  static constexpr u32 e_machine = EM_RISCV;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
+
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_64;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
@@ -1832,30 +1814,10 @@ struct RV64BE {
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
-
-  static constexpr MachineType machine_type = MachineType::RV64BE;
-  static constexpr bool is_64 = true;
-  static constexpr bool is_le = false;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_RISCV;
-  static constexpr u32 plt_hdr_size = 32;
-  static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
 };
 
 struct RV32LE {
-  static constexpr u32 R_COPY = R_RISCV_COPY;
-  static constexpr u32 R_GLOB_DAT = R_RISCV_32;
-  static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_RISCV_32;
-  static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
-  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
-  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
-
-  static constexpr MachineType machine_type = MachineType::RV32LE;
+  static constexpr char *target_name = "riscv32";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -1864,9 +1826,7 @@ struct RV32LE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-};
 
-struct RV32BE {
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_32;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
@@ -1876,8 +1836,10 @@ struct RV32BE {
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
+};
 
-  static constexpr MachineType machine_type = MachineType::RV32BE;
+struct RV32BE {
+  static constexpr char *target_name = "riscv32be";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1886,20 +1848,20 @@ struct RV32BE {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
+
+  static constexpr u32 R_COPY = R_RISCV_COPY;
+  static constexpr u32 R_GLOB_DAT = R_RISCV_32;
+  static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
+  static constexpr u32 R_ABS = R_RISCV_32;
+  static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
+  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
+  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
 };
 
 struct PPC32 {
-  static constexpr u32 R_COPY = R_PPC_COPY;
-  static constexpr u32 R_GLOB_DAT = R_PPC_GLOB_DAT;
-  static constexpr u32 R_JUMP_SLOT = R_PPC_JMP_SLOT;
-  static constexpr u32 R_ABS = R_PPC_ADDR32;
-  static constexpr u32 R_RELATIVE = R_PPC_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_PPC_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_PPC_DTPREL32;
-  static constexpr u32 R_TPOFF = R_PPC_TPREL32;
-  static constexpr u32 R_DTPMOD = R_PPC_DTPMOD32;
-
-  static constexpr MachineType machine_type = MachineType::PPC32;
+  static constexpr char *target_name = "ppc32";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1910,20 +1872,20 @@ struct PPC32 {
   static constexpr u32 pltgot_size = 36;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 36;
+
+  static constexpr u32 R_COPY = R_PPC_COPY;
+  static constexpr u32 R_GLOB_DAT = R_PPC_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_PPC_JMP_SLOT;
+  static constexpr u32 R_ABS = R_PPC_ADDR32;
+  static constexpr u32 R_RELATIVE = R_PPC_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_PPC_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_PPC_DTPREL32;
+  static constexpr u32 R_TPOFF = R_PPC_TPREL32;
+  static constexpr u32 R_DTPMOD = R_PPC_DTPMOD32;
 };
 
 struct PPC64V1 {
-  static constexpr u32 R_COPY = R_PPC64_COPY;
-  static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
-  static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
-  static constexpr u32 R_ABS = R_PPC64_ADDR64;
-  static constexpr u32 R_RELATIVE = R_PPC64_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_PPC64_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_PPC64_DTPREL64;
-  static constexpr u32 R_TPOFF = R_PPC64_TPREL64;
-  static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
-
-  static constexpr MachineType machine_type = MachineType::PPC64V1;
+  static constexpr char *target_name = "ppc64v1";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1934,9 +1896,7 @@ struct PPC64V1 {
   static constexpr u32 pltgot_size = 0;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 28;
-};
 
-struct PPC64V2 {
   static constexpr u32 R_COPY = R_PPC64_COPY;
   static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
@@ -1946,8 +1906,10 @@ struct PPC64V2 {
   static constexpr u32 R_DTPOFF = R_PPC64_DTPREL64;
   static constexpr u32 R_TPOFF = R_PPC64_TPREL64;
   static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
+};
 
-  static constexpr MachineType machine_type = MachineType::PPC64V2;
+struct PPC64V2 {
+  static constexpr char *target_name = "ppc64v2";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -1958,9 +1920,29 @@ struct PPC64V2 {
   static constexpr u32 pltgot_size = 0;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 20;
+
+  static constexpr u32 R_COPY = R_PPC64_COPY;
+  static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
+  static constexpr u32 R_ABS = R_PPC64_ADDR64;
+  static constexpr u32 R_RELATIVE = R_PPC64_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_PPC64_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_PPC64_DTPREL64;
+  static constexpr u32 R_TPOFF = R_PPC64_TPREL64;
+  static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
 };
 
 struct S390X {
+  static constexpr char *target_name = "s390x";
+  static constexpr bool is_64 = true;
+  static constexpr bool is_le = false;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 4096;
+  static constexpr u32 e_machine = EM_S390X;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 32;
+  static constexpr u32 pltgot_size = 16;
+
   static constexpr u32 R_COPY = R_390_COPY;
   static constexpr u32 R_GLOB_DAT = R_390_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_390_JMP_SLOT;
@@ -1970,19 +1952,19 @@ struct S390X {
   static constexpr u32 R_DTPOFF = R_390_TLS_DTPOFF;
   static constexpr u32 R_TPOFF = R_390_TLS_TPOFF;
   static constexpr u32 R_DTPMOD = R_390_TLS_DTPMOD;
-
-  static constexpr MachineType machine_type = MachineType::S390X;
-  static constexpr bool is_64 = true;
-  static constexpr bool is_le = false;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_S390X;
-  static constexpr u32 plt_hdr_size = 32;
-  static constexpr u32 plt_size = 32;
-  static constexpr u32 pltgot_size = 16;
 };
 
 struct SPARC64 {
+  static constexpr char *target_name = "sparc64";
+  static constexpr bool is_64 = true;
+  static constexpr bool is_le = false;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 8192;
+  static constexpr u32 e_machine = EM_SPARC64;
+  static constexpr u32 plt_hdr_size = 128;
+  static constexpr u32 plt_size = 32;
+  static constexpr u32 pltgot_size = 32;
+
   static constexpr u32 R_COPY = R_SPARC_COPY;
   static constexpr u32 R_GLOB_DAT = R_SPARC_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_SPARC_JMP_SLOT;
@@ -1992,30 +1974,10 @@ struct SPARC64 {
   static constexpr u32 R_DTPOFF = R_SPARC_TLS_DTPOFF64;
   static constexpr u32 R_TPOFF = R_SPARC_TLS_TPOFF64;
   static constexpr u32 R_DTPMOD = R_SPARC_TLS_DTPMOD64;
-
-  static constexpr MachineType machine_type = MachineType::SPARC64;
-  static constexpr bool is_64 = true;
-  static constexpr bool is_le = false;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 8192;
-  static constexpr u32 e_machine = EM_SPARC64;
-  static constexpr u32 plt_hdr_size = 128;
-  static constexpr u32 plt_size = 32;
-  static constexpr u32 pltgot_size = 32;
 };
 
 struct M68K {
-  static constexpr u32 R_COPY = R_68K_COPY;
-  static constexpr u32 R_GLOB_DAT = R_68K_GLOB_DAT;
-  static constexpr u32 R_JUMP_SLOT = R_68K_JMP_SLOT;
-  static constexpr u32 R_ABS = R_68K_32;
-  static constexpr u32 R_RELATIVE = R_68K_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_68K_NONE; // m68k does not support ifunc
-  static constexpr u32 R_DTPOFF = R_68K_TLS_DTPREL32;
-  static constexpr u32 R_TPOFF = R_68K_TLS_TPREL32;
-  static constexpr u32 R_DTPMOD = R_68K_TLS_DTPMOD32;
-
-  static constexpr MachineType machine_type = MachineType::M68K;
+  static constexpr char *target_name = "m68k";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -2024,20 +1986,20 @@ struct M68K {
   static constexpr u32 plt_hdr_size = 18;
   static constexpr u32 plt_size = 14;
   static constexpr u32 pltgot_size = 8;
+
+  static constexpr u32 R_COPY = R_68K_COPY;
+  static constexpr u32 R_GLOB_DAT = R_68K_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_68K_JMP_SLOT;
+  static constexpr u32 R_ABS = R_68K_32;
+  static constexpr u32 R_RELATIVE = R_68K_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_NONE;
+  static constexpr u32 R_DTPOFF = R_68K_TLS_DTPREL32;
+  static constexpr u32 R_TPOFF = R_68K_TLS_TPREL32;
+  static constexpr u32 R_DTPMOD = R_68K_TLS_DTPMOD32;
 };
 
 struct SH4 {
-  static constexpr u32 R_COPY = R_SH_COPY;
-  static constexpr u32 R_GLOB_DAT = R_SH_GLOB_DAT;
-  static constexpr u32 R_JUMP_SLOT = R_SH_JMP_SLOT;
-  static constexpr u32 R_ABS = R_SH_DIR32;
-  static constexpr u32 R_RELATIVE = R_SH_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_SH_NONE; // sh4 does not support ifunc
-  static constexpr u32 R_DTPOFF = R_SH_TLS_DTPOFF32;
-  static constexpr u32 R_TPOFF = R_SH_TLS_TPOFF32;
-  static constexpr u32 R_DTPMOD = R_SH_TLS_DTPMOD32;
-
-  static constexpr MachineType machine_type = MachineType::SH4;
+  static constexpr char *target_name = "sh4";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -2046,20 +2008,20 @@ struct SH4 {
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 12;
+
+  static constexpr u32 R_COPY = R_SH_COPY;
+  static constexpr u32 R_GLOB_DAT = R_SH_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_SH_JMP_SLOT;
+  static constexpr u32 R_ABS = R_SH_DIR32;
+  static constexpr u32 R_RELATIVE = R_SH_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_NONE;
+  static constexpr u32 R_DTPOFF = R_SH_TLS_DTPOFF32;
+  static constexpr u32 R_TPOFF = R_SH_TLS_TPOFF32;
+  static constexpr u32 R_DTPMOD = R_SH_TLS_DTPMOD32;
 };
 
 struct ALPHA {
-  static constexpr u32 R_COPY = R_ALPHA_COPY;
-  static constexpr u32 R_GLOB_DAT = R_ALPHA_GLOB_DAT;
-  static constexpr u32 R_JUMP_SLOT = R_ALPHA_JMP_SLOT;
-  static constexpr u32 R_ABS = R_ALPHA_REFQUAD;
-  static constexpr u32 R_RELATIVE = R_ALPHA_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_ALPHA_NONE; // alpha does not support ifunc
-  static constexpr u32 R_DTPOFF = R_ALPHA_DTPREL64;
-  static constexpr u32 R_TPOFF = R_ALPHA_TPREL64;
-  static constexpr u32 R_DTPMOD = R_ALPHA_DTPMOD64;
-
-  static constexpr MachineType machine_type = MachineType::ALPHA;
+  static constexpr char *target_name = "alpha";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -2068,6 +2030,16 @@ struct ALPHA {
   static constexpr u32 plt_hdr_size = 0;
   static constexpr u32 plt_size = 0;
   static constexpr u32 pltgot_size = 0;
+
+  static constexpr u32 R_COPY = R_ALPHA_COPY;
+  static constexpr u32 R_GLOB_DAT = R_ALPHA_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_ALPHA_JMP_SLOT;
+  static constexpr u32 R_ABS = R_ALPHA_REFQUAD;
+  static constexpr u32 R_RELATIVE = R_ALPHA_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_NONE;
+  static constexpr u32 R_DTPOFF = R_ALPHA_DTPREL64;
+  static constexpr u32 R_TPOFF = R_ALPHA_TPREL64;
+  static constexpr u32 R_DTPMOD = R_ALPHA_DTPMOD64;
 };
 
 } // namespace mold::elf

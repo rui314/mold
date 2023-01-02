@@ -524,37 +524,37 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       version_shown = true;
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
-        ctx.arg.emulation = MachineType::X86_64;
+        ctx.arg.emulation = X86_64::target_name;
       } else if (arg == "elf_i386") {
-        ctx.arg.emulation = MachineType::I386;
+        ctx.arg.emulation = I386::target_name;
       } else if (arg == "aarch64linux") {
-        ctx.arg.emulation = MachineType::ARM64;
+        ctx.arg.emulation = ARM64::target_name;
       } else if (arg == "armelf_linux_eabi") {
-        ctx.arg.emulation = MachineType::ARM32;
+        ctx.arg.emulation = ARM32::target_name;
       } else if (arg == "elf64lriscv") {
-        ctx.arg.emulation = MachineType::RV64LE;
+        ctx.arg.emulation = RV64LE::target_name;
       } else if (arg == "elf64briscv") {
-        ctx.arg.emulation = MachineType::RV64BE;
+        ctx.arg.emulation = RV64BE::target_name;
       } else if (arg == "elf32lriscv") {
-        ctx.arg.emulation = MachineType::RV32LE;
+        ctx.arg.emulation = RV32LE::target_name;
       } else if (arg == "elf32briscv") {
-        ctx.arg.emulation = MachineType::RV32BE;
+        ctx.arg.emulation = RV32BE::target_name;
       } else if (arg == "elf32ppc" || arg == "elf32ppclinux") {
-        ctx.arg.emulation = MachineType::PPC32;
+        ctx.arg.emulation = PPC32::target_name;
       } else if (arg == "elf64ppc") {
-        ctx.arg.emulation = MachineType::PPC64V1;
+        ctx.arg.emulation = PPC64V1::target_name;
       } else if (arg == "elf64lppc") {
-        ctx.arg.emulation = MachineType::PPC64V2;
+        ctx.arg.emulation = PPC64V2::target_name;
       } else if (arg == "elf64_s390") {
-        ctx.arg.emulation = MachineType::S390X;
+        ctx.arg.emulation = S390X::target_name;
       } else if (arg == "elf64_sparc") {
-        ctx.arg.emulation = MachineType::SPARC64;
+        ctx.arg.emulation = SPARC64::target_name;
       } else if (arg == "m68kelf") {
-        ctx.arg.emulation = MachineType::M68K;
+        ctx.arg.emulation = M68K::target_name;
       } else if (arg == "shlelf_linux") {
-        ctx.arg.emulation = MachineType::SH4;
+        ctx.arg.emulation = SH4::target_name;
       } else if (arg == "elf64alpha") {
-        ctx.arg.emulation = MachineType::ALPHA;
+        ctx.arg.emulation = ALPHA::target_name;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }
@@ -1184,7 +1184,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (!ctx.arg.apply_dynamic_relocs && !E::is_rela)
     Fatal(ctx) << "--no-apply-dynamic-relocs may not be used on "
-               << E::machine_type;
+               << E::target_name;
 
   if (is_sparc<E> && ctx.arg.apply_dynamic_relocs)
     Fatal(ctx) << "--apply-dynamic-relocs may not be used on SPARC64";
