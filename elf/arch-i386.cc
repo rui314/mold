@@ -71,6 +71,41 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
 }
 
 template <>
+void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
+  switch (rel.r_type) {
+  case R_386_NONE:
+    break;
+  case R_386_8:
+  case R_386_PC8:
+    *loc = val;
+    break;
+  case R_386_16:
+  case R_386_PC16:
+    *(ul16 *)loc = val;
+    break;
+  case R_386_32:
+  case R_386_PC32:
+  case R_386_GOT32:
+  case R_386_GOT32X:
+  case R_386_PLT32:
+  case R_386_GOTOFF:
+  case R_386_GOTPC:
+  case R_386_TLS_LDM:
+  case R_386_TLS_GOTIE:
+  case R_386_TLS_LE:
+  case R_386_TLS_IE:
+  case R_386_TLS_GD:
+  case R_386_TLS_LDO_32:
+  case R_386_SIZE32:
+  case R_386_TLS_GOTDESC:
+    *(ul32 *)loc = val;
+    break;
+  default:
+    unreachable();
+  }
+}
+
+template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {
@@ -158,41 +193,6 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
     break;
   default:
     Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
-  }
-}
-
-template <>
-void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
-  switch (rel.r_type) {
-  case R_386_NONE:
-    break;
-  case R_386_8:
-  case R_386_PC8:
-    *loc = val;
-    break;
-  case R_386_16:
-  case R_386_PC16:
-    *(ul16 *)loc = val;
-    break;
-  case R_386_32:
-  case R_386_PC32:
-  case R_386_GOT32:
-  case R_386_GOT32X:
-  case R_386_PLT32:
-  case R_386_GOTOFF:
-  case R_386_GOTPC:
-  case R_386_TLS_LDM:
-  case R_386_TLS_GOTIE:
-  case R_386_TLS_LE:
-  case R_386_TLS_IE:
-  case R_386_TLS_GD:
-  case R_386_TLS_LDO_32:
-  case R_386_SIZE32:
-  case R_386_TLS_GOTDESC:
-    *(ul32 *)loc = val;
-    break;
-  default:
-    unreachable();
   }
 }
 
@@ -395,7 +395,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
-  u64 GOT = ctx.got->shdr.sh_addr;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -424,6 +423,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
     u64 A = frag ? frag_addend : get_addend(*this, rel);
     u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
+    u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
     case R_386_8: {
