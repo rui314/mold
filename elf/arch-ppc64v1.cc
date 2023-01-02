@@ -134,6 +134,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
 
+  u64 TOC = ctx.extra.TOC->value;
+
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE)
@@ -160,23 +162,22 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       apply_toc_rel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_PPC64_TOC:
-      apply_toc_rel(ctx, *ctx.extra.TOC, rel, loc, ctx.extra.TOC->value,
-                    A, P, dynrel);
+      apply_toc_rel(ctx, *ctx.extra.TOC, rel, loc, TOC, A, P, dynrel);
       break;
     case R_PPC64_TOC16_HA:
-      *(ub16 *)loc = ha(S + A - ctx.extra.TOC->value);
+      *(ub16 *)loc = ha(S + A - TOC);
       break;
     case R_PPC64_TOC16_LO:
-      *(ub16 *)loc = lo(S + A - ctx.extra.TOC->value);
+      *(ub16 *)loc = lo(S + A - TOC);
       break;
     case R_PPC64_TOC16_DS: {
-      i64 val = S + A - ctx.extra.TOC->value;
+      i64 val = S + A - TOC;
       check(val, -(1 << 15), 1 << 15);
       *(ub16 *)loc |= val & 0xfffc;
       break;
     }
     case R_PPC64_TOC16_LO_DS:
-      *(ub16 *)loc |= (S + A - ctx.extra.TOC->value) & 0xfffc;
+      *(ub16 *)loc |= (S + A - TOC) & 0xfffc;
       break;
     case R_PPC64_REL24: {
       i64 val = sym.get_addr(ctx, NO_OPD) + A - P;
@@ -204,31 +205,31 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub16 *)loc = lo(S + A - P);
       break;
     case R_PPC64_PLT16_HA:
-      *(ub16 *)loc = ha(G + GOT - ctx.extra.TOC->value);
+      *(ub16 *)loc = ha(G + GOT - TOC);
       break;
     case R_PPC64_PLT16_HI:
-      *(ub16 *)loc = hi(G + GOT - ctx.extra.TOC->value);
+      *(ub16 *)loc = hi(G + GOT - TOC);
       break;
     case R_PPC64_PLT16_LO:
-      *(ub16 *)loc = lo(G + GOT - ctx.extra.TOC->value);
+      *(ub16 *)loc = lo(G + GOT - TOC);
       break;
     case R_PPC64_PLT16_LO_DS:
-      *(ub16 *)loc |= (G + GOT - ctx.extra.TOC->value) & 0xfffc;
+      *(ub16 *)loc |= (G + GOT - TOC) & 0xfffc;
       break;
     case R_PPC64_GOT_TPREL16_HA:
-      *(ub16 *)loc = ha(sym.get_gottp_addr(ctx) - ctx.extra.TOC->value);
+      *(ub16 *)loc = ha(sym.get_gottp_addr(ctx) - TOC);
       break;
     case R_PPC64_GOT_TLSGD16_HA:
-      *(ub16 *)loc = ha(sym.get_tlsgd_addr(ctx) - ctx.extra.TOC->value);
+      *(ub16 *)loc = ha(sym.get_tlsgd_addr(ctx) - TOC);
       break;
     case R_PPC64_GOT_TLSGD16_LO:
-      *(ub16 *)loc = lo(sym.get_tlsgd_addr(ctx) - ctx.extra.TOC->value);
+      *(ub16 *)loc = lo(sym.get_tlsgd_addr(ctx) - TOC);
       break;
     case R_PPC64_GOT_TLSLD16_HA:
-      *(ub16 *)loc = ha(ctx.got->get_tlsld_addr(ctx) - ctx.extra.TOC->value);
+      *(ub16 *)loc = ha(ctx.got->get_tlsld_addr(ctx) - TOC);
       break;
     case R_PPC64_GOT_TLSLD16_LO:
-      *(ub16 *)loc = lo(ctx.got->get_tlsld_addr(ctx) - ctx.extra.TOC->value);
+      *(ub16 *)loc = lo(ctx.got->get_tlsld_addr(ctx) - TOC);
       break;
     case R_PPC64_DTPREL16_HA:
       *(ub16 *)loc = ha(S + A - ctx.dtp_addr);
@@ -243,7 +244,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub16 *)loc = lo(S + A - ctx.tp_addr);
       break;
     case R_PPC64_GOT_TPREL16_LO_DS:
-      *(ub16 *)loc |= (sym.get_gottp_addr(ctx) - ctx.extra.TOC->value) & 0xfffc;
+      *(ub16 *)loc |= (sym.get_gottp_addr(ctx) - TOC) & 0xfffc;
       break;
     case R_PPC64_PLTSEQ:
     case R_PPC64_PLTCALL:
@@ -351,10 +352,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
-      if (sym.is_ifunc())
-        this->file.num_dynrel++;
-      else
-        scan_toc_rel(ctx, sym, rel);
+      scan_toc_rel(ctx, sym, rel);
       break;
     case R_PPC64_TOC:
       scan_toc_rel(ctx, sym, rel);

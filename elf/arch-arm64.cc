@@ -24,15 +24,11 @@ namespace mold::elf {
 using E = ARM64;
 
 static void write_adrp(u8 *buf, u64 val) {
-  u32 hi = bits(val, 32, 14);
-  u32 lo = bits(val, 13, 12);
-  *(ul32 *)buf |= (lo << 29) | (hi << 5);
+  *(ul32 *)buf |= (bits(val, 13, 12) << 29) | (bits(val, 32, 14) << 5);
 }
 
 static void write_adr(u8 *buf, u64 val) {
-  u32 hi = bits(val, 20, 2);
-  u32 lo = bits(val, 1, 0);
-  *(ul32 *)buf |= (lo << 29) | (hi << 5);
+  *(ul32 *)buf |= (bits(val, 1, 0) << 29) | (bits(val, 20, 2) << 5);
 }
 
 static void write_movn_movz(u8 *buf, i64 val) {
