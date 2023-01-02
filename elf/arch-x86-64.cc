@@ -224,11 +224,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = val;
     };
 
-#define S      sym.get_addr(ctx)
-#define A      rel.r_addend
-#define P      (get_addr() + rel.r_offset)
-#define G      (sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr)
-#define GOTPLT ctx.gotplt->shdr.sh_addr
+    u64 S = sym.get_addr(ctx);
+    u64 A = rel.r_addend;
+    u64 P = get_addr() + rel.r_offset;
+    u64 G = sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr;
+    u64 GOTPLT = ctx.gotplt->shdr.sh_addr;
 
     switch (rel.r_type) {
     case R_X86_64_8: {
@@ -487,12 +487,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     default:
       unreachable();
     }
-
-#undef S
-#undef A
-#undef P
-#undef G
-#undef GOTPLT
   }
 }
 
@@ -546,8 +540,8 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     i64 frag_addend;
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
 
-#define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A (frag ? frag_addend : (i64)rel.r_addend)
+    u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
+    u64 A = frag ? frag_addend : (i64)rel.r_addend;
 
     switch (rel.r_type) {
     case R_X86_64_8: {
@@ -597,9 +591,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
                  << rel;
       break;
     }
-
-#undef S
-#undef A
   }
 }
 

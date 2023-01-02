@@ -40,6 +40,37 @@ namespace mold::elf {
 using E = I386;
 
 template <>
+i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
+  switch (rel.r_type) {
+  case R_386_NONE:
+    return 0;
+  case R_386_8:
+  case R_386_PC8:
+    return *loc;
+  case R_386_16:
+  case R_386_PC16:
+    return *(ul16 *)loc;
+  case R_386_32:
+  case R_386_PC32:
+  case R_386_GOT32:
+  case R_386_GOT32X:
+  case R_386_PLT32:
+  case R_386_GOTOFF:
+  case R_386_GOTPC:
+  case R_386_TLS_LDM:
+  case R_386_TLS_GOTIE:
+  case R_386_TLS_LE:
+  case R_386_TLS_IE:
+  case R_386_TLS_GD:
+  case R_386_TLS_LDO_32:
+  case R_386_SIZE32:
+  case R_386_TLS_GOTDESC:
+    return *(ul32 *)loc;
+  }
+  unreachable();
+}
+
+template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {
@@ -196,11 +227,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
                    << lo << ", " << hi << ")";
     };
 
-#define S   sym.get_addr(ctx)
-#define A   get_addend(*this, rel)
-#define P   (get_addr() + rel.r_offset)
-#define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
-#define GOT ctx.got->shdr.sh_addr
+    u64 S = sym.get_addr(ctx);
+    u64 A = get_addend(*this, rel);
+    u64 P = get_addr() + rel.r_offset;
+    u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
+    u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
     case R_386_8: {
@@ -358,18 +389,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     default:
       unreachable();
     }
-
-#undef S
-#undef A
-#undef P
-#undef G
-#undef GOT
   }
 }
 
 template <>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  u64 GOT = ctx.got->shdr.sh_addr;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -395,10 +421,9 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     i64 frag_addend;
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
 
-#define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A (frag ? frag_addend : get_addend(*this, rel))
-#define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
-#define GOT ctx.got->shdr.sh_addr
+    u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
+    u64 A = frag ? frag_addend : get_addend(*this, rel);
+    u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
 
     switch (rel.r_type) {
     case R_386_8: {
@@ -452,11 +477,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     default:
       unreachable();
     }
-
-#undef S
-#undef A
-#undef G
-#undef GOT
   }
 }
 

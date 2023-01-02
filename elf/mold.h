@@ -2266,135 +2266,15 @@ inline i64 InputSection<E>::get_priority() const {
 }
 
 template <typename E>
+i64 get_addend(u8 *loc, const ElfRel<E> &rel);
+
+template <typename E> requires E::is_rela && (!is_sh4<E>)
 inline i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   return rel.r_addend;
 }
 
-template <>
-inline i64 get_addend(u8 *loc, const ElfRel<I386> &rel) {
-  switch (rel.r_type) {
-  case R_386_NONE:
-    return 0;
-  case R_386_8:
-  case R_386_PC8:
-    return *loc;
-  case R_386_16:
-  case R_386_PC16:
-    return *(ul16 *)loc;
-  case R_386_32:
-  case R_386_PC32:
-  case R_386_GOT32:
-  case R_386_GOT32X:
-  case R_386_PLT32:
-  case R_386_GOTOFF:
-  case R_386_GOTPC:
-  case R_386_TLS_LDM:
-  case R_386_TLS_GOTIE:
-  case R_386_TLS_LE:
-  case R_386_TLS_IE:
-  case R_386_TLS_GD:
-  case R_386_TLS_LDO_32:
-  case R_386_SIZE32:
-  case R_386_TLS_GOTDESC:
-    return *(ul32 *)loc;
-  }
-  unreachable();
-}
-
-template <>
-inline i64 get_addend(u8 *loc, const ElfRel<ARM32> &rel) {
-  switch (rel.r_type) {
-  case R_ARM_NONE:
-    return 0;
-  case R_ARM_ABS32:
-  case R_ARM_REL32:
-  case R_ARM_TARGET1:
-  case R_ARM_BASE_PREL:
-  case R_ARM_GOTOFF32:
-  case R_ARM_GOT_PREL:
-  case R_ARM_GOT_BREL:
-  case R_ARM_TLS_GD32:
-  case R_ARM_TLS_LDM32:
-  case R_ARM_TLS_LDO32:
-  case R_ARM_TLS_IE32:
-  case R_ARM_TLS_LE32:
-  case R_ARM_TLS_GOTDESC:
-  case R_ARM_TARGET2:
-    return *(il32 *)loc;
-  case R_ARM_THM_JUMP11:
-    return sign_extend(*(ul16 *)loc, 10) << 1;
-  case R_ARM_THM_CALL:
-  case R_ARM_THM_JUMP24:
-  case R_ARM_THM_TLS_CALL: {
-    u32 S = bit(*(ul16 *)loc, 10);
-    u32 J1 = bit(*(ul16 *)(loc + 2), 13);
-    u32 J2 = bit(*(ul16 *)(loc + 2), 11);
-    u32 I1 = !(J1 ^ S);
-    u32 I2 = !(J2 ^ S);
-    u32 imm10 = bits(*(ul16 *)loc, 9, 0);
-    u32 imm11 = bits(*(ul16 *)(loc + 2), 10, 0);
-    u32 val = (S << 24) | (I1 << 23) | (I2 << 22) | (imm10 << 12) | (imm11 << 1);
-    return sign_extend(val, 24);
-  }
-  case R_ARM_CALL:
-  case R_ARM_JUMP24:
-    return sign_extend(*(ul32 *)loc & 0x00ff'ffff, 23) << 2;
-  case R_ARM_MOVW_PREL_NC:
-  case R_ARM_MOVW_ABS_NC:
-  case R_ARM_MOVT_PREL:
-  case R_ARM_MOVT_ABS: {
-    u32 imm12 = bits(*(ul32 *)loc, 11, 0);
-    u32 imm4 = bits(*(ul32 *)loc, 19, 16);
-    return sign_extend((imm4 << 12) | imm12, 15);
-  }
-  case R_ARM_PREL31:
-    return sign_extend(*(ul32 *)loc, 30);
-  case R_ARM_THM_MOVW_PREL_NC:
-  case R_ARM_THM_MOVW_ABS_NC:
-  case R_ARM_THM_MOVT_PREL:
-  case R_ARM_THM_MOVT_ABS: {
-    u32 imm4 = bits(*(ul16 *)loc, 3, 0);
-    u32 i = bit(*(ul16 *)loc, 10);
-    u32 imm3 = bits(*(ul16 *)(loc + 2), 14, 12);
-    u32 imm8 = bits(*(ul16 *)(loc + 2), 7, 0);
-    u32 val = (imm4 << 12) | (i << 11) | (imm3 << 8) | imm8;
-    return sign_extend(val, 15);
-  }
-  default:
-    unreachable();
-  }
-}
-
-// Even though SH-4 employs the RELA-type relocations, its relocation
-// addends are for some reason stored to section contents. The
-// r_addend member of a relocation is always zero. Therefore, SH-4 is
-// effectively of REL-type.
-template <>
-inline i64 get_addend(u8 *loc, const ElfRel<SH4> &rel) {
-  switch (rel.r_type) {
-  case R_SH_DIR32:
-  case R_SH_REL32:
-  case R_SH_TLS_GD_32:
-  case R_SH_TLS_LD_32:
-  case R_SH_TLS_LDO_32:
-  case R_SH_TLS_IE_32:
-  case R_SH_TLS_LE_32:
-  case R_SH_TLS_DTPMOD32:
-  case R_SH_TLS_DTPOFF32:
-  case R_SH_TLS_TPOFF32:
-  case R_SH_GOT32:
-  case R_SH_PLT32:
-  case R_SH_GOTOFF:
-  case R_SH_GOTPC:
-  case R_SH_GOTPLT32:
-    return *(ul32 *)loc;
-  default:
-    return 0;
-  }
-}
-
 template <typename E>
-inline i64 get_addend(InputSection<E> &isec, const ElfRel<E> &rel) {
+i64 get_addend(InputSection<E> &isec, const ElfRel<E> &rel) {
   return get_addend((u8 *)isec.contents.data() + rel.r_offset, rel);
 }
 
@@ -2565,7 +2445,7 @@ inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
 }
 
 template <typename E>
-inline u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
+u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
   if (SectionFragment<E> *frag = get_frag()) {
     if (!frag->is_alive) {
       // This condition is met if a non-alloc section refers an

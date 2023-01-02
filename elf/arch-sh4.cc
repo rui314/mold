@@ -57,6 +57,32 @@ namespace mold::elf {
 
 using E = SH4;
 
+// Even though SH-4 uses RELA-type relocations, addends are stored to
+// relocated places for some reason.
+template <>
+i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
+  switch (rel.r_type) {
+  case R_SH_DIR32:
+  case R_SH_REL32:
+  case R_SH_TLS_GD_32:
+  case R_SH_TLS_LD_32:
+  case R_SH_TLS_LDO_32:
+  case R_SH_TLS_IE_32:
+  case R_SH_TLS_LE_32:
+  case R_SH_TLS_DTPMOD32:
+  case R_SH_TLS_DTPOFF32:
+  case R_SH_TLS_TPOFF32:
+  case R_SH_GOT32:
+  case R_SH_PLT32:
+  case R_SH_GOTOFF:
+  case R_SH_GOTPC:
+  case R_SH_GOTPLT32:
+    return *(ul32 *)loc;
+  default:
+    return 0;
+  }
+}
+
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
@@ -188,11 +214,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-#define S   sym.get_addr(ctx)
-#define A   get_addend(loc, rel)
-#define P   (get_addr() + rel.r_offset)
-#define G   (sym.get_got_idx(ctx) * sizeof(Word<E>))
-#define GOT ctx.got->shdr.sh_addr
+    u64 S = sym.get_addr(ctx);
+    u64 A = get_addend(loc, rel);
+    u64 P = get_addr() + rel.r_offset;
+    u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
+    u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
     case R_SH_DIR32:
@@ -229,12 +255,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     default:
       unreachable();
     }
-
-#undef S
-#undef A
-#undef P
-#undef G
-#undef GOT
   }
 }
 
@@ -259,8 +279,8 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     i64 frag_addend;
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
 
-#define S (frag ? frag->get_addr(ctx) : sym.get_addr(ctx))
-#define A (frag ? frag_addend : get_addend(loc, rel))
+    u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
+    u64 A = frag ? frag_addend : get_addend(loc, rel);
 
     switch (rel.r_type) {
     case R_SH_DIR32:
@@ -273,9 +293,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
                  << rel;
     }
-
-#undef S
-#undef A
   }
 }
 
