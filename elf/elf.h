@@ -1677,7 +1677,7 @@ template <typename E> static constexpr bool is_ppc = is_ppc64<E> || is_ppc32<E>;
 template <typename E> static constexpr bool is_sparc = is_sparc64<E>;
 
 struct X86_64 {
-  static constexpr char *target_name = "x86_64";
+  static constexpr std::string_view target_name = "x86_64";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -1700,7 +1700,7 @@ struct X86_64 {
 };
 
 struct I386 {
-  static constexpr char *target_name = "i386";
+  static constexpr std::string_view target_name = "i386";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = false;
@@ -1723,7 +1723,7 @@ struct I386 {
 };
 
 struct ARM64 {
-  static constexpr char *target_name = "arm64";
+  static constexpr std::string_view target_name = "arm64";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -1748,7 +1748,7 @@ struct ARM64 {
 };
 
 struct ARM32 {
-  static constexpr char *target_name = "arm32";
+  static constexpr std::string_view target_name = "arm32";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = false;
@@ -1773,7 +1773,7 @@ struct ARM32 {
 };
 
 struct RV64LE {
-  static constexpr char *target_name = "riscv64";
+  static constexpr std::string_view target_name = "riscv64";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -1795,7 +1795,7 @@ struct RV64LE {
 };
 
 struct RV64BE {
-  static constexpr char *target_name = "riscv64be";
+  static constexpr std::string_view target_name = "riscv64be";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1817,7 +1817,7 @@ struct RV64BE {
 };
 
 struct RV32LE {
-  static constexpr char *target_name = "riscv32";
+  static constexpr std::string_view target_name = "riscv32";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -1839,7 +1839,7 @@ struct RV32LE {
 };
 
 struct RV32BE {
-  static constexpr char *target_name = "riscv32be";
+  static constexpr std::string_view target_name = "riscv32be";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1861,7 +1861,7 @@ struct RV32BE {
 };
 
 struct PPC32 {
-  static constexpr char *target_name = "ppc32";
+  static constexpr std::string_view target_name = "ppc32";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1885,7 +1885,7 @@ struct PPC32 {
 };
 
 struct PPC64V1 {
-  static constexpr char *target_name = "ppc64v1";
+  static constexpr std::string_view target_name = "ppc64v1";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1909,7 +1909,7 @@ struct PPC64V1 {
 };
 
 struct PPC64V2 {
-  static constexpr char *target_name = "ppc64v2";
+  static constexpr std::string_view target_name = "ppc64v2";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -1933,7 +1933,7 @@ struct PPC64V2 {
 };
 
 struct S390X {
-  static constexpr char *target_name = "s390x";
+  static constexpr std::string_view target_name = "s390x";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1955,7 +1955,7 @@ struct S390X {
 };
 
 struct SPARC64 {
-  static constexpr char *target_name = "sparc64";
+  static constexpr std::string_view target_name = "sparc64";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1977,7 +1977,7 @@ struct SPARC64 {
 };
 
 struct M68K {
-  static constexpr char *target_name = "m68k";
+  static constexpr std::string_view target_name = "m68k";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
@@ -1999,7 +1999,7 @@ struct M68K {
 };
 
 struct SH4 {
-  static constexpr char *target_name = "sh4";
+  static constexpr std::string_view target_name = "sh4";
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
@@ -2021,7 +2021,7 @@ struct SH4 {
 };
 
 struct ALPHA {
-  static constexpr char *target_name = "alpha";
+  static constexpr std::string_view target_name = "alpha";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;

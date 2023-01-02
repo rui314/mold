@@ -239,7 +239,8 @@ void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 }
 
 template <typename E>
-const char *get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+std::string_view
+get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   current_file<E> = mf;
 
   std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
@@ -258,7 +259,7 @@ const char *get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) 
         MappedFile<Context<E>>::open(ctx, std::string(unquote(tok[2]))))
       return get_machine_type(ctx, mf);
 
-  return nullptr;
+  return "";
 }
 
 static bool read_label(std::span<std::string_view> &tok,
@@ -416,7 +417,7 @@ void parse_dynamic_list(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 using E = MOLD_TARGET;
 
 template void parse_linker_script(Context<E> &, MappedFile<Context<E>> *);
-template const char *get_script_output_type(Context<E> &, MappedFile<Context<E>> *);
+template std::string_view get_script_output_type(Context<E> &, MappedFile<Context<E>> *);
 template void parse_version_script(Context<E> &, MappedFile<Context<E>> *);
 template void parse_dynamic_list(Context<E> &, MappedFile<Context<E>> *);
 

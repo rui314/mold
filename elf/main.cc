@@ -27,8 +27,8 @@ namespace mold::elf {
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386).
 template <typename E>
-const char *get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  auto get_elf_type = [&](u8 *buf) -> const char * {
+std::string_view get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+  auto get_elf_type = [&](u8 *buf) -> std::string_view {
     bool is_le = (((ElfEhdr<I386> *)buf)->e_ident[EI_DATA] == ELFDATA2LSB);
     bool is_64;
     u32 e_machine;
@@ -71,7 +71,7 @@ const char *get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     case EM_ALPHA:
       return ALPHA::target_name;
     default:
-      return nullptr;
+      return "";
     }
   };
 
@@ -86,23 +86,23 @@ const char *get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mf))
       if (get_file_type(child, opt_plugin) == FileType::ELF_OBJ)
         return get_elf_type(child->data);
-    return nullptr;
+    return "";
   case FileType::THIN_AR:
     for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mf))
       if (get_file_type(child, opt_plugin) == FileType::ELF_OBJ)
         return get_elf_type(child->data);
-    return nullptr;
+    return "";
   case FileType::TEXT:
     return get_script_output_type(ctx, mf);
   default:
-    return nullptr;
+    return "";
   }
 }
 
 template <typename E>
 static void
 check_file_compatibility(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  const char *target = get_machine_type(ctx, mf);
+  std::string_view target = get_machine_type(ctx, mf);
   if (target != ctx.arg.emulation)
     Fatal(ctx) << mf->name << ": incompatible file type: "
                << ctx.arg.emulation << " is expected but got " << target;
@@ -205,12 +205,13 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 }
 
 template <typename E>
-static const char *
+static std::string_view
 deduce_machine_type(Context<E> &ctx, std::span<std::string> args) {
   for (std::string_view arg : args)
     if (!arg.starts_with('-'))
       if (auto *mf = MappedFile<Context<E>>::open(ctx, std::string(arg)))
-        if (const char *target = get_machine_type(ctx, mf))
+        if (std::string_view target = get_machine_type(ctx, mf);
+            !target.empty())
           return target;
   Fatal(ctx) << "-m option is missing";
 }
@@ -221,8 +222,8 @@ MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
   if (!mf)
     return nullptr;
 
-  const char *target = get_machine_type(ctx, mf);
-  if (!target || target == E::target_name)
+  std::string_view target = get_machine_type(ctx, mf);
+  if (target.empty() || target == E::target_name)
     return mf;
   Warn(ctx) << path << ": skipping incompatible file " << target
             << " " << (int)E::e_machine;
@@ -339,7 +340,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 // We speculatively run elf_main with X86_64, and if the speculation was
 // wrong, re-run it with an actual machine type.
 template <typename E>
-static int redo_main(int argc, char **argv, const char *target) {
+static int redo_main(int argc, char **argv, std::string_view target) {
   if (target == I386::target_name)
     return elf_main<I386>(argc, argv);
   if (target == ARM64::target_name)
@@ -390,7 +391,7 @@ int elf_main(int argc, char **argv) {
   std::vector<std::string> file_args = parse_nonpositional_args(ctx);
 
   // If no -m option is given, deduce it from input files.
-  if (!ctx.arg.emulation)
+  if (ctx.arg.emulation.empty())
     ctx.arg.emulation = deduce_machine_type(ctx, file_args);
 
   // Redo if -m is not x86-64.
