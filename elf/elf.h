@@ -132,14 +132,12 @@ inline std::string stt_to_string(u32 st_type) {
   case STT_TLS: return "STT_TLS";
   case STT_GNU_IFUNC: return "STT_GNU_IFUNC";
   }
-  return "unknown st_type (" + std::to_string(st_type) + ")";
-}
 
-template <>
-inline std::string stt_to_string<SPARC64>(u32 st_type) {
-  if (st_type == STT_SPARC_REGISTER)
-    return "STT_SPARC_REGISTER";
-  return stt_to_string<X86_64>(st_type);
+  if constexpr (std::is_same_v<E, SPARC64>)
+    if (st_type == STT_SPARC_REGISTER)
+      return "STT_SPARC_REGISTER";
+
+  return "unknown st_type (" + std::to_string(st_type) + ")";
 }
 
 enum : u32 {
