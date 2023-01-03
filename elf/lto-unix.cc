@@ -309,7 +309,7 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
     if (sym.file->is_dso)
       return LDPR_RESOLVED_DYN;
 
-    if (((ObjectFile<E> *)sym.file)->is_lto_obj && !sym.wrap)
+    if (((ObjectFile<E> *)sym.file)->is_lto_obj && !sym.is_wrapped)
       return esym.is_undef() ? LDPR_RESOLVED_IR : LDPR_PREEMPTED_IR;
     return esym.is_undef() ? LDPR_RESOLVED_EXEC : LDPR_PREEMPTED_REG;
   };

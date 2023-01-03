@@ -266,8 +266,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   osec.shdr.sh_size = offset;
 }
 
-#if defined(MOLD_ARM64) || defined(MOLD_ARM32) || defined(MOLD_PPC32) || \
-    defined(MOLD_PPC64V1) || defined(MOLD_PPC64V2)
+#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2
 using E = MOLD_TARGET;
 template void create_range_extension_thunks(Context<E> &, OutputSection<E> &);
 #endif

@@ -445,7 +445,7 @@ static Symbol<E> *insert_symbol(Context<E> &ctx, const ElfSym<E> &esym,
 
   Symbol<E> *sym = get_symbol(ctx, key, name);
 
-  if (esym.is_undef() && sym->wrap) {
+  if (esym.is_undef() && sym->is_wrapped) {
     key = save_string(ctx, "__wrap_" + std::string(key));
     name = save_string(ctx, "__wrap_" + std::string(name));
     return get_symbol(ctx, key, name);
@@ -964,7 +964,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     else
       merge_visibility(ctx, sym, esym.st_visibility);
 
-    if (sym.traced)
+    if (sym.is_traced)
       print_trace_symbol(ctx, *this, esym, sym);
 
     if (esym.is_weak())
@@ -977,7 +977,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     if (keep && fast_mark(sym.file->is_alive)) {
       feeder(sym.file);
 
-      if (sym.traced)
+      if (sym.is_traced)
         SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
                      << " for " << sym;
     }
@@ -1059,7 +1059,7 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     }
 
     auto claim = [&](bool is_imported) {
-      if (sym.traced)
+      if (sym.is_traced)
         SyncOut(ctx) << "trace-symbol: " << *this << ": unresolved"
                      << (esym.is_weak() ? " weak" : "")
                      << " symbol " << sym;
@@ -1495,14 +1495,14 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
 
-    if (sym.traced)
+    if (sym.is_traced)
       print_trace_symbol(ctx, *this, esym, sym);
 
     if (esym.is_undef() && sym.file && !sym.file->is_dso &&
         fast_mark(sym.file->is_alive)) {
       feeder(sym.file);
 
-      if (sym.traced)
+      if (sym.is_traced)
         SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
                      << " for " << sym;
     }

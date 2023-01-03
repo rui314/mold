@@ -2066,8 +2066,8 @@ public:
 
   bool is_weak : 1 = false;
   bool write_to_symtab : 1 = false; // for --strip-all and the like
-  bool traced : 1 = false;          // for --trace-symbol
-  bool wrap : 1 = false;            // for --wrap
+  bool is_traced : 1 = false;       // for --trace-symbol
+  bool is_wrapped : 1 = false;      // for --wrap
 
   // If a symbol can be resolved to a symbol in a different ELF file at
   // runtime, `is_imported` is true. If a symbol is a dynamic symbol and

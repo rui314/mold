@@ -421,7 +421,7 @@ int elf_main(int argc, char **argv) {
 
   // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)
-    get_symbol(ctx, name)->wrap = true;
+    get_symbol(ctx, name)->is_wrapped = true;
 
   // Handle --retain-symbols-file options if any.
   if (ctx.arg.retain_symbols_file)
@@ -429,7 +429,7 @@ int elf_main(int argc, char **argv) {
       get_symbol(ctx, name)->write_to_symtab = true;
 
   for (std::string_view arg : ctx.arg.trace_symbol)
-    get_symbol(ctx, arg)->traced = true;
+    get_symbol(ctx, arg)->is_traced = true;
 
   // Parse input files
   read_input_files(ctx, file_args);
