@@ -422,7 +422,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
     u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
     u64 A = frag ? frag_addend : get_addend(*this, rel);
-    u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
