@@ -101,23 +101,17 @@ static u32 jtype(u32 val) {
          bit(val, 11) << 20 | bits(val, 19, 12) << 12;
 }
 
-static inline u16 permute(u16 bits, std::array<i8, 16> pos) {
-  u16 ret = 0;
-#pragma unroll 16
-  for (int i = 0, j = 15; i < 16; i++, j--)
-    if (pos[i] != -1)
-      ret |= ((bits >> pos[i]) & 1) << j;
-  return ret;
-}
-
 static u32 cbtype(u32 val) {
-  i8 _ = -1;
-  return permute(val, { _, _, _, 8, 4, 3, _, _, _, 7, 6, 2, 1, 5, _, _ });
+  return bit(val, 8) << 12 | bit(val, 4) << 11 | bit(val, 3) << 10 |
+         bit(val, 7) << 6  | bit(val, 6) << 5  | bit(val, 2) << 4  |
+         bit(val, 1) << 3  | bit(val, 5) << 2;
 }
 
 static u32 cjtype(u32 val) {
-  i8 _ = -1;
-  return permute(val, { _, _, _, 11, 4, 9, 8, 10, 6, 7, 3, 2, 1, 5, _, _ });
+  return bit(val, 11) << 12 | bit(val, 4)  << 11 | bit(val, 9) << 10 |
+         bit(val, 8)  << 9  | bit(val, 10) << 8  | bit(val, 6) << 7  |
+         bit(val, 7)  << 6  | bit(val, 3)  << 5  | bit(val, 2) << 4  |
+         bit(val, 1)  << 3  | bit(val, 5)  << 2;
 }
 
 static void write_itype(u8 *loc, u32 val) {
