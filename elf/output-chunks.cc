@@ -160,7 +160,7 @@ i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
   if (!write && !ctx.arg.rosegment)
     exec = true;
 
-  return PF_R | (write ? PF_W : 0) | (exec ? PF_X : 0);
+  return PF_R | (write ? PF_W : PF_NONE) | (exec ? PF_X : PF_NONE);
 }
 
 // PT_GNU_RELRO segment is a security mechanism to make more pages

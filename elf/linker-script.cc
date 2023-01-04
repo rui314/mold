@@ -312,7 +312,7 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
     }
 
     if (tok[0] == "*") {
-      ctx.default_version = (is_global ? ver_idx : VER_NDX_LOCAL);
+      ctx.default_version = (is_global ? ver_idx : (u32)VER_NDX_LOCAL);
       ctx.default_version_from_version_script = true;
     } else if (is_global) {
       ctx.version_patterns.push_back({unquote(tok[0]), current_file<E>->name,

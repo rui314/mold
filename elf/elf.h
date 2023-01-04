@@ -186,6 +186,7 @@ enum : u32 {
 };
 
 enum : u32 {
+  PF_NONE = 0,
   PF_X = 1,
   PF_W = 2,
   PF_R = 4,
