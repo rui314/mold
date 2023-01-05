@@ -75,6 +75,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
     return sign_extend(val, 24);
   }
   case R_ARM_CALL:
+  case R_ARM_PLT32:
   case R_ARM_JUMP24:
   case R_ARM_TLS_CALL:
     return sign_extend(*(ul32 *)loc & 0x00ff'ffff, 23) << 2;
