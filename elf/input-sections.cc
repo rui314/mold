@@ -350,10 +350,14 @@ static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
     apply_dynrel();
     break;
   case IFUNC: {
-    u64 addr = sym.get_addr(ctx, NO_PLT) + A;
-    *dynrel++ = ElfRel<E>(P, E::R_IRELATIVE, 0, addr);
-    if (ctx.arg.apply_dynamic_relocs)
-      *(Word<E> *)loc = addr;
+    if constexpr (supports_ifunc<E>) {
+      u64 addr = sym.get_addr(ctx, NO_PLT) + A;
+      *dynrel++ = ElfRel<E>(P, E::R_IRELATIVE, 0, addr);
+      if (ctx.arg.apply_dynamic_relocs)
+        *(Word<E> *)loc = addr;
+    } else {
+      unreachable();
+    }
     break;
   }
   default:

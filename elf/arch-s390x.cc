@@ -12,7 +12,7 @@
 // As an instruction set, s390x isn't particularly odd. It has 16 general-
 // purpose registers. Instructions are 2, 4 or 6 bytes long and always
 // aligned to 2 bytes boundaries. Despite unfamiliarty, I found that it
-// just feels like a 64-bit i386 in a parallel universe.
+// just feels like an x86-64 in a parallel universe.
 //
 // Here is the register usage in this ABI:
 //
@@ -25,13 +25,13 @@
 //   a1:    upper 32 bits of TP (thread pointer)
 //   a2:    lower 32 bits of TP (thread pointer)
 //
-// TLS is supported on s390x in the same way as it is on other targets
-// with one exeption. On other targets, __tls_get_addr is used to get an
-// address of a thread-local variable. On s390x, __tls_get_offset is used
-// instead. The difference is __tls_get_offset returns an address of a
-// thread-local variable as an offset from TP. So we need to add TP to a
-// return value before use. I don't know why it is different, but that is
-// the way it is.
+// Thread-local storage (TLS) is supported on s390x in the same way as it
+// is on other targets with one exeption. On other targets, __tls_get_addr
+// is used to get an address of a thread-local variable. On s390x,
+// __tls_get_offset is used instead. The difference is __tls_get_offset
+// returns an address of a thread-local variable as an offset from TP. So
+// we need to add TP to a return value before use. I don't know why it is
+// different, but that is the way it is.
 //
 // https://github.com/IBM/s390x-abi/releases/download/v1.6/lzsabi_s390x.pdf
 

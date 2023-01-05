@@ -1649,6 +1649,9 @@ struct ElfRel<SPARC64> {
 //
 
 template <typename E>
+static constexpr bool supports_ifunc = requires { E::R_IRELATIVE; };
+
+template <typename E>
 static constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
 
 template <typename E>
@@ -1996,7 +1999,6 @@ struct M68K {
   static constexpr u32 R_JUMP_SLOT = R_68K_JMP_SLOT;
   static constexpr u32 R_ABS = R_68K_32;
   static constexpr u32 R_RELATIVE = R_68K_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_NONE;
   static constexpr u32 R_DTPOFF = R_68K_TLS_DTPREL32;
   static constexpr u32 R_TPOFF = R_68K_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_68K_TLS_DTPMOD32;
@@ -2018,7 +2020,6 @@ struct SH4 {
   static constexpr u32 R_JUMP_SLOT = R_SH_JMP_SLOT;
   static constexpr u32 R_ABS = R_SH_DIR32;
   static constexpr u32 R_RELATIVE = R_SH_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_NONE;
   static constexpr u32 R_DTPOFF = R_SH_TLS_DTPOFF32;
   static constexpr u32 R_TPOFF = R_SH_TLS_TPOFF32;
   static constexpr u32 R_DTPMOD = R_SH_TLS_DTPMOD32;
@@ -2040,7 +2041,6 @@ struct ALPHA {
   static constexpr u32 R_JUMP_SLOT = R_ALPHA_JMP_SLOT;
   static constexpr u32 R_ABS = R_ALPHA_REFQUAD;
   static constexpr u32 R_RELATIVE = R_ALPHA_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_NONE;
   static constexpr u32 R_DTPOFF = R_ALPHA_DTPREL64;
   static constexpr u32 R_TPOFF = R_ALPHA_TPREL64;
   static constexpr u32 R_DTPMOD = R_ALPHA_DTPMOD64;

@@ -26,6 +26,13 @@
 //    small to contain large immediates. On SH-4, large immediates are
 //    loaded from memory using `mov.l` PC-relative load instruction.
 //
+//  - Many RISC ISAs are, despite their name, actually fairly complex.
+//    They tend to have hundreds if not thousands of different instructions.
+//    SH-4 doesn't really have that many instructions because its 16-bit
+//    machine code simply can't encode many different opcodes. As a
+//    result, the number of relocations the linker has to support is also
+//    small.
+//
 // Beside these, SH-4 has a delay branch slot just like contemporary MIPS
 // and SPARC. That is, one instruction after a branch instruction will
 // always be executed even if the branch is taken. Delay branch slot allows

@@ -549,11 +549,12 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   ElfRel<E> *end = (ElfRel<E> *)((u8 *)begin + this->shdr.sh_size);
 
   auto get_rank = [](u32 r_type) {
-    switch (r_type) {
-    case E::R_RELATIVE: return 0;
-    case E::R_IRELATIVE: return 2;
-    default: return 1;
-    }
+    if (r_type == E::R_RELATIVE)
+      return 0;
+    if constexpr (supports_ifunc<E>)
+      if (r_type == E::R_IRELATIVE)
+        return 2;
+    return 1;
   };
 
   // This is the reason why we sort dynamic relocations. Quote from
@@ -1245,9 +1246,11 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
     }
 
     // IFUNC always needs to be fixed up by the dynamic linker.
-    if (sym->is_ifunc()) {
-      entries.push_back({idx, sym->get_addr(ctx, NO_PLT), E::R_IRELATIVE});
-      continue;
+    if constexpr (supports_ifunc<E>) {
+      if (sym->is_ifunc()) {
+        entries.push_back({idx, sym->get_addr(ctx, NO_PLT), E::R_IRELATIVE});
+        continue;
+      }
     }
 
     // If we know an address at link-time, fill that GOT entry now.
