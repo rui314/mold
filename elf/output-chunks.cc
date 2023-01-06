@@ -2894,13 +2894,13 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   const i64 shard_size = map.nbuckets / map.NUM_SHARDS;
 
   tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
-    U32<E> *attrs = (U32<E> *)buf;
+    u32 *attrs = (u32 *)buf;
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
       if (map.has_key(j)) {
         MapEntry &ent = map.values[j];
         u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
-        U32<E> *start = attrs + idx + 1;
+        u32 *start = attrs + idx + 1;
         std::sort(start, start + attrs[idx]);
       }
     }
