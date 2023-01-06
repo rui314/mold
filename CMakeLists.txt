@@ -44,7 +44,7 @@
 # features and behave exactly the same.
 
 cmake_minimum_required(VERSION 3.13)
-project(mold VERSION 1.8.0)
+project(mold VERSION 1.9.0)
 
 include(CMakeDependentOption)
 include(GNUInstallDirs)
