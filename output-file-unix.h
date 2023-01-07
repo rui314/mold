@@ -14,9 +14,9 @@ inline u32 get_umask() {
   return orig_umask;
 }
 
-template <typename C>
+template <typename Context>
 static std::pair<i64, char *>
-open_or_create_file(C &ctx, std::string path, i64 filesize, i64 perm) {
+open_or_create_file(Context &ctx, std::string path, i64 filesize, i64 perm) {
   std::string tmpl = filepath(path).parent_path() / ".mold-XXXXXX";
   char *path2 = (char *)save_string(ctx, tmpl).data();
 
@@ -47,11 +47,11 @@ open_or_create_file(C &ctx, std::string path, i64 filesize, i64 perm) {
   return {fd, path2};
 }
 
-template <typename C>
-class MemoryMappedOutputFile : public OutputFile<C> {
+template <typename Context>
+class MemoryMappedOutputFile : public OutputFile<Context> {
 public:
-  MemoryMappedOutputFile(C &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile<C>(path, filesize, true) {
+  MemoryMappedOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<Context>(path, filesize, true) {
     i64 fd;
     std::tie(fd, output_tmpfile) = open_or_create_file(ctx, path, filesize, perm);
 
@@ -70,7 +70,7 @@ public:
       ::close(fd2);
   }
 
-  void close(C &ctx) override {
+  void close(Context &ctx) override {
     Timer t(ctx, "close_file");
 
     if (!this->is_unmapped)
@@ -92,18 +92,18 @@ private:
   int fd2 = -1;
 };
 
-template <typename C>
-class MallocOutputFile : public OutputFile<C> {
+template <typename Context>
+class MallocOutputFile : public OutputFile<Context> {
 public:
-  MallocOutputFile(C &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile<C>(path, filesize, false), perm(perm) {
+  MallocOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<Context>(path, filesize, false), perm(perm) {
     this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
                            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     if (this->buf == MAP_FAILED)
       Fatal(ctx) << "mmap failed: " << errno_string();
   }
 
-  void close(C &ctx) override {
+  void close(Context &ctx) override {
     Timer t(ctx, "close_file");
 
     if (this->path == "-") {
@@ -125,9 +125,9 @@ private:
   i64 perm;
 };
 
-template <typename C>
-std::unique_ptr<OutputFile<C>>
-OutputFile<C>::open(C &ctx, std::string path, i64 filesize, i64 perm) {
+template <typename Context>
+std::unique_ptr<OutputFile<Context>>
+OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, i64 perm) {
   Timer t(ctx, "open_file");
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
@@ -142,11 +142,11 @@ OutputFile<C>::open(C &ctx, std::string path, i64 filesize, i64 perm) {
       is_special = true;
   }
 
-  OutputFile<C> *file;
+  OutputFile<Context> *file;
   if (is_special)
-    file = new MallocOutputFile<C>(ctx, path, filesize, perm);
+    file = new MallocOutputFile(ctx, path, filesize, perm);
   else
-    file = new MemoryMappedOutputFile<C>(ctx, path, filesize, perm);
+    file = new MemoryMappedOutputFile(ctx, path, filesize, perm);
 
 #ifdef MADV_HUGEPAGE
   // Enable transparent huge page for an output memory-mapped file.
@@ -163,7 +163,7 @@ OutputFile<C>::open(C &ctx, std::string path, i64 filesize, i64 perm) {
 
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
-  return std::unique_ptr<OutputFile<C>>(file);
+  return std::unique_ptr<OutputFile>(file);
 }
 
 } // namespace mold

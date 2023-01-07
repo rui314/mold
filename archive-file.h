@@ -76,12 +76,12 @@ struct ArHdr {
   }
 };
 
-template <typename C>
-std::vector<MappedFile<C> *>
-read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
+template <typename Context, typename MappedFile>
+std::vector<MappedFile *>
+read_thin_archive_members(Context &ctx, MappedFile *mf) {
   u8 *begin = mf->data;
   u8 *data = begin + 8;
-  std::vector<MappedFile<C> *> vec;
+  std::vector<MappedFile *> vec;
   std::string_view strtab;
 
   while (data < begin + mf->size) {
@@ -117,19 +117,18 @@ read_thin_archive_members(C &ctx, MappedFile<C> *mf) {
 
     std::string path = name.starts_with('/') ?
       name : (filepath(mf->name).parent_path() / name).string();
-    vec.push_back(MappedFile<C>::must_open(ctx, path));
+    vec.push_back(MappedFile::must_open(ctx, path));
     vec.back()->thin_parent = mf;
     data = body;
   }
   return vec;
 }
 
-template <typename C>
-std::vector<MappedFile<C> *>
-read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
+template <typename Context, typename MappedFile>
+std::vector<MappedFile *> read_fat_archive_members(Context &ctx, MappedFile *mf) {
   u8 *begin = mf->data;
   u8 *data = begin + 8;
-  std::vector<MappedFile<C> *> vec;
+  std::vector<MappedFile *> vec;
   std::string_view strtab;
 
   while (begin + mf->size - data >= 2) {
@@ -163,9 +162,8 @@ read_fat_archive_members(C &ctx, MappedFile<C> *mf) {
   return vec;
 }
 
-template <typename C>
-std::vector<MappedFile<C> *>
-read_archive_members(C &ctx, MappedFile<C> *mf) {
+template <typename Context, typename MappedFile>
+std::vector<MappedFile *> read_archive_members(Context &ctx, MappedFile *mf) {
   switch (get_file_type(ctx, mf)) {
   case FileType::AR:
     return read_fat_archive_members(ctx, mf);

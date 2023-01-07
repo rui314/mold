@@ -6,17 +6,17 @@
 
 namespace mold {
 
-template <typename C>
-class MallocOutputFile : public OutputFile<C> {
+template <typename Context>
+class MallocOutputFile : public OutputFile<Context> {
 public:
-  MallocOutputFile(C &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile<C>(path, filesize, false), perm(perm) {
+  MallocOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<Context>(path, filesize, false), perm(perm) {
     this->buf = (u8 *)malloc(filesize);
     if (!this->buf)
       Fatal(ctx) << "malloc failed";
   }
 
-  void close(C &ctx) override {
+  void close(Context &ctx) override {
     Timer t(ctx, "close_file");
 
     if (this->path == "-") {
@@ -39,19 +39,19 @@ private:
   i64 perm;
 };
 
-template <typename C>
-std::unique_ptr<OutputFile<C>>
-OutputFile<C>::open(C &ctx, std::string path, i64 filesize, i64 perm) {
+template <typename Context>
+std::unique_ptr<OutputFile<Context>>
+OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, i64 perm) {
   Timer t(ctx, "open_file");
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
 
-  OutputFile<C> *file = new MallocOutputFile<C>(ctx, path, filesize, perm);
+  OutputFile<Context> *file = new MallocOutputFile(ctx, path, filesize, perm);
 
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
-  return std::unique_ptr<OutputFile<C>>(file);
+  return std::unique_ptr<OutputFile<Context>>(file);
 }
 
 } // namespace mold

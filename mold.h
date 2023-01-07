@@ -60,7 +60,7 @@ namespace mold {
 using namespace std::literals::string_literals;
 using namespace std::literals::string_view_literals;
 
-template <typename C> class OutputFile;
+template <typename Context> class OutputFile;
 
 inline char *output_tmpfile;
 inline thread_local bool opt_demangle;
@@ -86,10 +86,10 @@ static u64 combine_hash(u64 a, u64 b) {
 // Error output
 //
 
-template <typename C>
+template <typename Context>
 class SyncOut {
 public:
-  SyncOut(C &ctx, std::ostream &out = std::cout) : out(out) {
+  SyncOut(Context &ctx, std::ostream &out = std::cout) : out(out) {
     opt_demangle = ctx.arg.demangle;
   }
 
@@ -110,17 +110,17 @@ private:
   std::stringstream ss;
 };
 
-template <typename C>
-static std::string add_color(C &ctx, std::string msg) {
+template <typename Context>
+static std::string add_color(Context &ctx, std::string msg) {
   if (ctx.arg.color_diagnostics)
     return "mold: \033[0;1;31m" + msg + ":\033[0m ";
   return "mold: " + msg + ": ";
 }
 
-template <typename C>
+template <typename Context>
 class Fatal {
 public:
-  Fatal(C &ctx) : out(ctx, std::cerr) {
+  Fatal(Context &ctx) : out(ctx, std::cerr) {
     out << add_color(ctx, "fatal");
   }
 
@@ -136,13 +136,13 @@ public:
   }
 
 private:
-  SyncOut<C> out;
+  SyncOut<Context> out;
 };
 
-template <typename C>
+template <typename Context>
 class Error {
 public:
-  Error(C &ctx) : out(ctx, std::cerr) {
+  Error(Context &ctx) : out(ctx, std::cerr) {
     if (ctx.arg.noinhibit_exec) {
       out << add_color(ctx, "warning");
     } else {
@@ -157,13 +157,13 @@ public:
   }
 
 private:
-  SyncOut<C> out;
+  SyncOut<Context> out;
 };
 
-template <typename C>
+template <typename Context>
 class Warn {
 public:
-  Warn(C &ctx) : out(ctx, std::cerr) {
+  Warn(Context &ctx) : out(ctx, std::cerr) {
     if (ctx.arg.fatal_warnings) {
       out << add_color(ctx, "error");
       ctx.has_error = true;
@@ -178,7 +178,7 @@ public:
   }
 
 private:
-  SyncOut<C> out;
+  SyncOut<Context> out;
 };
 
 //
@@ -356,8 +356,8 @@ inline i64 uleb_size(u64 val) {
   return 9;
 }
 
-template <typename C>
-std::string_view save_string(C &ctx, const std::string &str) {
+template <typename Context>
+std::string_view save_string(Context &ctx, const std::string &str) {
   u8 *buf = new u8[str.size() + 1];
   memcpy(buf, str.data(), str.size());
   buf[str.size()] = '\0';
@@ -477,13 +477,13 @@ private:
 // output-file.h
 //
 
-template <typename C>
+template <typename Context>
 class OutputFile {
 public:
-  static std::unique_ptr<OutputFile<C>>
-  open(C &ctx, std::string path, i64 filesize, i64 perm);
+  static std::unique_ptr<OutputFile<Context>>
+  open(Context &ctx, std::string path, i64 filesize, i64 perm);
 
-  virtual void close(C &ctx) = 0;
+  virtual void close(Context &ctx) = 0;
   virtual ~OutputFile() = default;
 
   u8 *buf = nullptr;
@@ -689,10 +689,10 @@ struct TimerRecord {
 void
 print_timer_records(tbb::concurrent_vector<std::unique_ptr<TimerRecord>> &);
 
-template <typename C>
+template <typename Context>
 class Timer {
 public:
-  Timer(C &ctx, std::string name, Timer *parent = nullptr) {
+  Timer(Context &ctx, std::string name, Timer *parent = nullptr) {
     record = new TimerRecord(name, parent ? parent->record : nullptr);
     ctx.timer_records.push_back(std::unique_ptr<TimerRecord>(record));
   }
@@ -743,16 +743,16 @@ private:
 
 // MappedFile represents an mmap'ed input file.
 // mold uses mmap-IO only.
-template <typename C>
+template <typename Context>
 class MappedFile {
 public:
-  static MappedFile *open(C &ctx, std::string path);
-  static MappedFile *must_open(C &ctx, std::string path);
+  static MappedFile *open(Context &ctx, std::string path);
+  static MappedFile *must_open(Context &ctx, std::string path);
 
   ~MappedFile() { unmap(); }
   void unmap();
 
-  MappedFile *slice(C &ctx, std::string name, u64 start, u64 size);
+  MappedFile *slice(Context &ctx, std::string name, u64 start, u64 size);
 
   std::string_view get_contents() {
     return std::string_view((char *)data, size);
@@ -792,8 +792,8 @@ public:
 #endif
 };
 
-template <typename C>
-MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
+template <typename Context>
+MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
 
@@ -820,9 +820,10 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
 #ifdef _WIN32
     mf->mtime = st.st_mtime;
 #elif defined(__APPLE__)
-    mf->mtime = (u64)st.st_mtimespec.tv_sec * 1000000000 + st.st_mtimespec.tv_nsec;
+    mf->mtime = (u64)st.st_mtimespec.tv_sec * 1'000'000'000 +
+                st.st_mtimespec.tv_nsec;
 #else
-    mf->mtime = (u64)st.st_mtim.tv_sec * 1000000000 + st.st_mtim.tv_nsec;
+    mf->mtime = (u64)st.st_mtim.tv_sec * 1'000'000'000 + st.st_mtim.tv_nsec;
 #endif
 
   if (st.st_size > 0) {
@@ -848,17 +849,18 @@ MappedFile<C> *MappedFile<C>::open(C &ctx, std::string path) {
   return mf;
 }
 
-template <typename C>
-MappedFile<C> *MappedFile<C>::must_open(C &ctx, std::string path) {
+template <typename Context>
+MappedFile<Context> *
+MappedFile<Context>::must_open(Context &ctx, std::string path) {
   if (MappedFile *mf = MappedFile::open(ctx, path))
     return mf;
   Fatal(ctx) << "cannot open " << path << ": " << errno_string();
 }
 
-template <typename C>
-MappedFile<C> *
-MappedFile<C>::slice(C &ctx, std::string name, u64 start, u64 size) {
-  MappedFile *mf = new MappedFile<C>;
+template <typename Context>
+MappedFile<Context> *
+MappedFile<Context>::slice(Context &ctx, std::string name, u64 start, u64 size) {
+  MappedFile *mf = new MappedFile;
   mf->name = name;
   mf->data = data + start;
   mf->size = size;
@@ -868,8 +870,8 @@ MappedFile<C>::slice(C &ctx, std::string name, u64 start, u64 size) {
   return mf;
 }
 
-template <typename C>
-void MappedFile<C>::unmap() {
+template <typename Context>
+void MappedFile<Context>::unmap() {
   if (size == 0 || parent || !data)
     return;
 

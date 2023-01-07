@@ -23,15 +23,15 @@ enum class FileType {
   LLVM_BITCODE,
 };
 
-template <typename C>
-bool is_text_file(MappedFile<C> *mf) {
+template <typename MappedFile>
+bool is_text_file(MappedFile *mf) {
   u8 *data = mf->data;
   return mf->size >= 4 && isprint(data[0]) && isprint(data[1]) &&
          isprint(data[2]) && isprint(data[3]);
 }
 
-template <typename E, typename C>
-inline bool is_gcc_lto_obj(C &ctx, MappedFile<C> *mf) {
+template <typename E, typename Context, typename MappedFile>
+inline bool is_gcc_lto_obj(Context &ctx, MappedFile *mf) {
   using namespace mold::elf;
 
   const char *data = mf->get_contents().data();
@@ -85,8 +85,8 @@ inline bool is_gcc_lto_obj(C &ctx, MappedFile<C> *mf) {
   return false;
 }
 
-template <typename C>
-FileType get_file_type(C &ctx, MappedFile<C> *mf) {
+template <typename Context, typename MappedFile>
+FileType get_file_type(Context &ctx, MappedFile *mf) {
   using namespace elf;
 
   std::string_view data = mf->get_contents();

@@ -4,11 +4,11 @@
 
 namespace mold {
 
-template <typename C>
+template <typename Context>
 std::vector<std::string_view>
-read_response_file(C &ctx, std::string_view path) {
+read_response_file(Context &ctx, std::string_view path) {
   std::vector<std::string_view> vec;
-  MappedFile<C> *mf = MappedFile<C>::must_open(ctx, std::string(path));
+  MappedFile<Context> *mf = MappedFile<Context>::must_open(ctx, std::string(path));
   u8 *data = mf->data;
 
   auto read_quoted = [&](i64 i, char quote) {
@@ -63,8 +63,8 @@ read_response_file(C &ctx, std::string_view path) {
 }
 
 // Replace "@path/to/some/text/file" with its file contents.
-template <typename C>
-std::vector<std::string_view> expand_response_files(C &ctx, char **argv) {
+template <typename Context>
+std::vector<std::string_view> expand_response_files(Context &ctx, char **argv) {
   std::vector<std::string_view> vec;
   for (i64 i = 0; argv[i]; i++) {
     if (argv[i][0] == '@')
