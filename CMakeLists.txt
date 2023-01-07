@@ -52,7 +52,7 @@ include(GNUInstallDirs)
 # Build mold itself using mold if -DMOLD_USE_MOLD=ON
 option(MOLD_USE_MOLD "Use mold to build mold" OFF)
 if(MOLD_USE_MOLD)
-  add_link_options(-fuse-ld=mold)
+  add_link_options(-fuse-ld=mold -Wl,-gdb-index)
 endif()
 
 add_executable(mold)
@@ -65,7 +65,8 @@ if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
     -fno-unwind-tables
     -fno-asynchronous-unwind-tables
     -Wno-sign-compare
-    -Wno-unused-function)
+    -Wno-unused-function
+    -ggnu-pubnames)
 endif()
 
 # Build mold with -flto if -DMOLD_LTO=ON
