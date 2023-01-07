@@ -373,7 +373,7 @@ static int redo_main(int argc, char **argv, std::string_view target) {
 template <typename E>
 int elf_main(int argc, char **argv) {
   Context<E> ctx;
-
+  using namespace std::string_view_literals;
   // Process -run option first. process_run_subcommand() does not return.
   if (argc >= 2 && (argv[1] == "-run"sv || argv[1] == "--run"sv)) {
 #if defined(_WIN32) || defined(__APPLE__)
