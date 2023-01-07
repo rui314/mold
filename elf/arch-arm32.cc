@@ -42,8 +42,6 @@ using E = ARM32;
 template <>
 i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   switch (rel.r_type) {
-  case R_ARM_NONE:
-    return 0;
   case R_ARM_ABS32:
   case R_ARM_REL32:
   case R_ARM_TARGET1:
@@ -101,7 +99,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
     return sign_extend(val, 15);
   }
   default:
-    unreachable();
+    return 0;
   }
 }
 

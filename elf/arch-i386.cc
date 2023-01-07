@@ -42,8 +42,6 @@ using E = I386;
 template <>
 i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   switch (rel.r_type) {
-  case R_386_NONE:
-    return 0;
   case R_386_8:
   case R_386_PC8:
     return *loc;
@@ -66,8 +64,9 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_386_SIZE32:
   case R_386_TLS_GOTDESC:
     return *(ul32 *)loc;
+  default:
+    return 0;
   }
-  unreachable();
 }
 
 template <>
