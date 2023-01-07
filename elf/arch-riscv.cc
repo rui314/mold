@@ -396,7 +396,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
       // accessible relative to the zero register. If the upper 20 bits
       // are all zero, the corresponding LUI might have been removed.
-      if (sign_extend(S + A, 11) == S + A)
+      if (bits(S + A, 31, 12) == 0)
         set_rs1(loc, 0);
       break;
     case R_RISCV_TPREL_HI20:
@@ -407,17 +407,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_TPREL_ADD:
       break;
     case R_RISCV_TPREL_LO12_I:
-    case R_RISCV_TPREL_LO12_S:
+    case R_RISCV_TPREL_LO12_S: {
+      i64 val = S + A - ctx.tp_addr;
       if (rel.r_type == R_RISCV_TPREL_LO12_I)
-        write_itype(loc, S + A - ctx.tp_addr);
+        write_itype(loc, val);
       else
-        write_stype(loc, S + A - ctx.tp_addr);
+        write_stype(loc, val);
 
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(tp)` if the address is
       // directly accessible using tp. tp is x4.
-      if (sign_extend(S + A - ctx.tp_addr, 11) == S + A - ctx.tp_addr)
+      if (sign_extend(val, 11) == val)
         set_rs1(loc, 4);
       break;
+    }
     case R_RISCV_ADD8:
       loc += S + A;
       break;
