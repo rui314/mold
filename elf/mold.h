@@ -332,6 +332,14 @@ template <typename E>
 void report_undef_errors(Context<E> &ctx);
 
 //
+// tls.cc
+//
+
+template<typename E> u64 get_tls_begin(Context<E> &);
+template<typename E> u64 get_tp_addr(Context<E> &);
+template<typename E> u64 get_dtp_addr(Context<E> &);
+
+//
 // output-chunks.cc
 //
 

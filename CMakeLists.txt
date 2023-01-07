@@ -295,6 +295,7 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/relocatable.cc
   elf/subprocess.cc
   elf/thunks.cc
+  elf/tls.cc
   )
 
 list(APPEND MOLD_MACHO_TARGETS X86_64 ARM64)
