@@ -262,8 +262,8 @@ public:
   const ElfShdr<E> &shdr() const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
-  std::string_view get_func_name(Context<E> &ctx, i64 offset);
-  bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel);
+  std::string_view get_func_name(Context<E> &ctx, i64 offset) const;
+  bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) const;
   bool is_killed_by_icf() const;
 
   void record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
@@ -2367,7 +2367,8 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
 }
 
 template <typename E>
-inline bool InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) {
+inline bool
+InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) const {
   return ctx.arg.pack_dyn_relocs_relr &&
          !(shdr().sh_flags & SHF_EXECINSTR) &&
          (shdr().sh_addralign % sizeof(Word<E>)) == 0 &&

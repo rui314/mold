@@ -406,7 +406,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 
 // Get the name of a function containin a given offset.
 template <typename E>
-std::string_view InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) {
+std::string_view InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) const {
   for (const ElfSym<E> &esym : file.elf_syms) {
     if (esym.st_shndx == shndx && esym.st_type == STT_FUNC &&
         esym.st_value <= offset && offset < esym.st_value + esym.st_size) {
