@@ -73,6 +73,7 @@ static std::string handle_stars(std::string_view pat) {
   // Convert "foo" -> "\0foo\0", "*foo" -> "foo\0", "foo*" -> "\0foo"
   // and "*foo*" -> "foo". Aho-Corasick can do only substring matching,
   // so we use \0 as beginning/end-of-string markers.
+  using namespace ::std::string_literals;
   if (str.starts_with('*') && str.ends_with('*'))
     return str.substr(1, str.size() - 2);
   if (str.starts_with('*'))
