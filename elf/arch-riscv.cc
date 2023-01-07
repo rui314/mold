@@ -326,18 +326,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       assert(E::is_64);
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
-    case R_RISCV_BRANCH: {
-      i64 val = S + A - P;
-      check(val, -(1 << 12), 1 << 12);
-      write_btype(loc, val);
+    case R_RISCV_BRANCH:
+      check(S + A - P, -(1 << 12), 1 << 12);
+      write_btype(loc, S + A - P);
       break;
-    }
-    case R_RISCV_JAL: {
-      i64 val = S + A - P;
-      check(val, -(1 << 20), 1 << 20);
-      write_jtype(loc, val);
+    case R_RISCV_JAL:
+      check(S + A - P, -(1 << 20), 1 << 20);
+      write_jtype(loc, S + A - P);
       break;
-    }
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
       u32 rd = get_rd(*(ul32 *)(contents.data() + rel.r_offset + 4));
@@ -386,26 +382,23 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_HI20:
       assert(removed_bytes == 0 || removed_bytes == 4);
       if (removed_bytes == 0) {
-        i64 val = S + A;
-        check(val, -(1LL << 31), 1LL << 31);
-        write_utype(loc, val);
+        check(S + A, -(1LL << 31), 1LL << 31);
+        write_utype(loc, S + A);
       }
       break;
     case R_RISCV_LO12_I:
-    case R_RISCV_LO12_S: {
-      i64 val = S + A;
+    case R_RISCV_LO12_S:
       if (rel.r_type == R_RISCV_LO12_I)
-        write_itype(loc, val);
+        write_itype(loc, S + A);
       else
-        write_stype(loc, val);
+        write_stype(loc, S + A);
 
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
       // accessible relative to the zero register. If the upper 20 bits
       // are all zero, the corresponding LUI might have been removed.
-      if (sign_extend(val, 11) == val)
+      if (sign_extend(S + A, 11) == S + A)
         set_rs1(loc, 0);
       break;
-    }
     case R_RISCV_TPREL_HI20:
       assert(removed_bytes == 0 || removed_bytes == 4);
       if (removed_bytes == 0)
@@ -414,19 +407,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_TPREL_ADD:
       break;
     case R_RISCV_TPREL_LO12_I:
-    case R_RISCV_TPREL_LO12_S: {
-      i64 val = S + A - ctx.tp_addr;
+    case R_RISCV_TPREL_LO12_S:
       if (rel.r_type == R_RISCV_TPREL_LO12_I)
-        write_itype(loc, val);
+        write_itype(loc, S + A - ctx.tp_addr);
       else
-        write_stype(loc, val);
+        write_stype(loc, S + A - ctx.tp_addr);
 
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(tp)` if the address is
       // directly accessible using tp. tp is x4.
-      if (sign_extend(val, 11) == val)
+      if (sign_extend(S + A - ctx.tp_addr, 11) == S + A - ctx.tp_addr)
         set_rs1(loc, 4);
       break;
-    }
     case R_RISCV_ADD8:
       loc += S + A;
       break;
@@ -469,18 +460,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul16 *)(loc + i) = 0x0001;      // c.nop
       break;
     }
-    case R_RISCV_RVC_BRANCH: {
-      i64 val = S + A - P;
-      check(val, -(1 << 8), 1 << 8);
-      write_cbtype(loc, val);
+    case R_RISCV_RVC_BRANCH:
+      check(S + A - P, -(1 << 8), 1 << 8);
+      write_cbtype(loc, S + A - P);
       break;
-    }
-    case R_RISCV_RVC_JUMP: {
-      i64 val = S + A - P;
-      check(val, -(1 << 11), 1 << 11);
-      write_cjtype(loc, val);
+    case R_RISCV_RVC_JUMP:
+      check(S + A - P, -(1 << 11), 1 << 11);
+      write_cjtype(loc, S + A - P);
       break;
-    }
     case R_RISCV_SUB6:
       *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
       break;

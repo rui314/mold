@@ -175,30 +175,24 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_ADD_ABS_LO12_NC:
       *(ul32 *)loc |= bits(S + A, 11, 0) << 10;
       break;
-    case R_AARCH64_MOVW_UABS_G0: {
-      i64 val = S + A;
-      check(val, 0, 1 << 16);
-      *(ul32 *)loc |= bits(val, 15, 0) << 5;
+    case R_AARCH64_MOVW_UABS_G0:
+      check(S + A, 0, 1 << 16);
+      *(ul32 *)loc |= bits(S + A, 15, 0) << 5;
       break;
-    }
     case R_AARCH64_MOVW_UABS_G0_NC:
       *(ul32 *)loc |= bits(S + A, 15, 0) << 5;
       break;
-    case R_AARCH64_MOVW_UABS_G1: {
-      i64 val = S + A;
-      check(val, 0, 1LL << 32);
-      *(ul32 *)loc |= bits(val, 31, 16) << 5;
+    case R_AARCH64_MOVW_UABS_G1:
+      check(S + A, 0, 1LL << 32);
+      *(ul32 *)loc |= bits(S + A, 31, 16) << 5;
       break;
-    }
     case R_AARCH64_MOVW_UABS_G1_NC:
       *(ul32 *)loc |= bits(S + A, 31, 16) << 5;
       break;
-    case R_AARCH64_MOVW_UABS_G2: {
-      i64 val = S + A;
-      check(val, 0, 1LL << 48);
-      *(ul32 *)loc |= bits(val, 47, 32) << 5;
+    case R_AARCH64_MOVW_UABS_G2:
+      check(S + A, 0, 1LL << 48);
+      *(ul32 *)loc |= bits(S + A, 47, 32) << 5;
       break;
-    }
     case R_AARCH64_MOVW_UABS_G2_NC:
       *(ul32 *)loc |= bits(S + A, 47, 32) << 5;
       break;
@@ -217,12 +211,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_adrp(loc, val);
       break;
     }
-    case R_AARCH64_ADR_PREL_LO21: {
-      i64 val = S + A - P;
-      check(val, -(1LL << 20), 1LL << 20);
-      write_adr(loc, val);
+    case R_AARCH64_ADR_PREL_LO21:
+      check(S + A - P, -(1LL << 20), 1LL << 20);
+      write_adr(loc, S + A - P);
       break;
-    }
     case R_AARCH64_CALL26:
     case R_AARCH64_JUMP26: {
       if (sym.is_remaining_undef_weak()) {
@@ -239,24 +231,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_AARCH64_CONDBR19:
-    case R_AARCH64_LD_PREL_LO19: {
-      i64 val = S + A - P;
-      check(val, -(1LL << 20), 1LL << 20);
-      *(ul32 *)loc |= bits(val, 20, 2) << 5;
+    case R_AARCH64_LD_PREL_LO19:
+      check(S + A - P, -(1LL << 20), 1LL << 20);
+      *(ul32 *)loc |= bits(S + A - P, 20, 2) << 5;
       break;
-    }
-    case R_AARCH64_PREL16: {
-      i64 val = S + A - P;
-      check(val, -(1LL << 15), 1LL << 15);
-      *(ul16 *)loc = val;
+    case R_AARCH64_PREL16:
+      check(S + A - P, -(1LL << 15), 1LL << 15);
+      *(ul16 *)loc = S + A - P;
       break;
-    }
-    case R_AARCH64_PREL32: {
-      i64 val = S + A - P;
-      check(val, -(1LL << 31), 1LL << 32);
-      *(ul32 *)loc = val;
+    case R_AARCH64_PREL32:
+      check(S + A - P, -(1LL << 31), 1LL << 32);
+      *(ul32 *)loc = S + A - P;
       break;
-    }
     case R_AARCH64_PREL64:
       *(ul64 *)loc = S + A - P;
       break;

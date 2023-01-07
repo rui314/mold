@@ -233,33 +233,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
-    case R_386_8: {
-      i64 val = S + A;
-      check(val, 0, 1 << 8);
-      *loc = val;
+    case R_386_8:
+      check(S + A, 0, 1 << 8);
+      *loc = S + A;
       break;
-    }
-    case R_386_16: {
-      i64 val = S + A;
-      check(val, 0, 1 << 16);
-      *(ul16 *)loc = val;
+    case R_386_16:
+      check(S + A, 0, 1 << 16);
+      *(ul16 *)loc = S + A;
       break;
-    }
     case R_386_32:
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
-    case R_386_PC8: {
-      i64 val = S + A - P;
-      check(val, -(1 << 7), 1 << 7);
-      *loc = val;
+    case R_386_PC8:
+      check(S + A - P, -(1 << 7), 1 << 7);
+      *loc = S + A - P;
       break;
-    }
-    case R_386_PC16: {
-      i64 val = S + A - P;
-      check(val, -(1 << 15), 1 << 15);
-      *(ul16 *)loc = val;
+    case R_386_PC16:
+      check(S + A - P, -(1 << 15), 1 << 15);
+      *(ul16 *)loc = S + A - P;
       break;
-    }
     case R_386_PC32:
     case R_386_PLT32:
       *(ul32 *)loc = S + A - P;
@@ -424,36 +416,28 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
-    case R_386_8: {
-      i64 val = S + A;
-      check(val, 0, 1 << 8);
-      *loc = val;
+    case R_386_8:
+      check(S + A, 0, 1 << 8);
+      *loc = S + A;
       break;
-    }
-    case R_386_16: {
-      i64 val = S + A;
-      check(val, 0, 1 << 16);
-      *(ul16 *)loc = val;
+    case R_386_16:
+      check(S + A, 0, 1 << 16);
+      *(ul16 *)loc = S + A;
       break;
-    }
     case R_386_32:
       if (std::optional<u64> val = get_tombstone(sym, frag))
         *(ul32 *)loc = *val;
       else
         *(ul32 *)loc = S + A;
       break;
-    case R_386_PC8: {
-      i64 val = S + A;
-      check(val, -(1 << 7), 1 << 7);
-      *loc = val;
+    case R_386_PC8:
+      check(S + A, -(1 << 7), 1 << 7);
+      *loc = S + A;
       break;
-    }
-    case R_386_PC16: {
-      i64 val = S + A;
-      check(val, -(1 << 15), 1 << 15);
-      *(ul16 *)loc = val;
+    case R_386_PC16:
+      check(S + A, -(1 << 15), 1 << 15);
+      *(ul16 *)loc = S + A;
       break;
-    }
     case R_386_PC32:
       *(ul32 *)loc = S + A;
       break;

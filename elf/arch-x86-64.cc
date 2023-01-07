@@ -231,18 +231,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 GOTPLT = ctx.gotplt->shdr.sh_addr;
 
     switch (rel.r_type) {
-    case R_X86_64_8: {
-      i64 val = S + A;
-      check(val, 0, 1 << 8);
-      *loc = val;
+    case R_X86_64_8:
+      check(S + A, 0, 1 << 8);
+      *loc = S + A;
       break;
-    }
-    case R_X86_64_16: {
-      i64 val = S + A;
-      check(val, 0, 1 << 16);
-      *(ul16 *)loc = val;
+    case R_X86_64_16:
+      check(S + A, 0, 1 << 16);
+      *(ul16 *)loc = S + A;
       break;
-    }
     case R_X86_64_32:
       write32(S + A);
       break;
@@ -252,18 +248,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_X86_64_64:
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
-    case R_X86_64_PC8: {
-      i64 val = S + A - P;
-      check(val, -(1 << 7), 1 << 7);
-      *loc = val;
+    case R_X86_64_PC8:
+      check(S + A - P, -(1 << 7), 1 << 7);
+      *loc = S + A - P;
       break;
-    }
-    case R_X86_64_PC16: {
-      i64 val = S + A - P;
-      check(val, -(1 << 15), 1 << 15);
-      *(ul16 *)loc = val;
+    case R_X86_64_PC16:
+      check(S + A - P, -(1 << 15), 1 << 15);
+      *(ul16 *)loc = S + A - P;
       break;
-    }
     case R_X86_64_PC32:
     case R_X86_64_PLT32:
       write32s(S + A - P);
@@ -544,18 +536,14 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     u64 A = frag ? frag_addend : (i64)rel.r_addend;
 
     switch (rel.r_type) {
-    case R_X86_64_8: {
-      i64 val = S + A;
-      check(val, 0, 1 << 8);
-      *loc = val;
+    case R_X86_64_8:
+      check(S + A, 0, 1 << 8);
+      *loc = S + A;
       break;
-    }
-    case R_X86_64_16: {
-      i64 val = S + A;
-      check(val, 0, 1 << 16);
-      *(ul16 *)loc = val;
+    case R_X86_64_16:
+      check(S + A, 0, 1 << 16);
+      *(ul16 *)loc = S + A;
       break;
-    }
     case R_X86_64_32:
       write32(S + A);
       break;

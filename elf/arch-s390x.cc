@@ -151,76 +151,56 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_64:
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
-    case R_390_8: {
-      i64 val = S + A;
-      check(val, 0, 1 << 8);
-      *loc = val;
+    case R_390_8:
+      check(S + A, 0, 1 << 8);
+      *loc = S + A;
       break;
-    }
-    case R_390_12: {
-      i64 val = S + A;
-      check(val, 0, 1 << 12);
-      *(ul16 *)loc = bits(val, 11, 0);
+    case R_390_12:
+      check(S + A, 0, 1 << 12);
+      *(ul16 *)loc = bits(S + A, 11, S + A);
       break;
-    }
-    case R_390_16: {
-      i64 val = S + A;
-      check(val, 0, 1 << 16);
-      *(ub16 *)loc = val;
+    case R_390_16:
+      check(S + A, 0, 1 << 16);
+      *(ub16 *)loc = S + A;
       break;
-    }
-    case R_390_20: {
-      i64 val = S + A;
-      check(val, 0, 1 << 20);
-      write_mid20(loc, val);
+    case R_390_20:
+      check(S + A, 0, 1 << 20);
+      write_mid20(loc, S + A);
       break;
-    }
     case R_390_32:
-    case R_390_PLT32: {
-      i64 val = S + A;
-      check(val, 0, 1LL << 32);
-      *(ub32 *)loc = val;
+    case R_390_PLT32:
+      check(S + A, 0, 1LL << 32);
+      *(ub32 *)loc = S + A;
       break;
-    }
     case R_390_PLT64:
       *(ub64 *)loc = S + A;
       break;
     case R_390_PC12DBL:
-    case R_390_PLT12DBL: {
-      i64 val = S + A - P;
-      check_dbl(val, -(1 << 12), 1 << 12);
-      *(ul16 *)loc = (val >> 1) & 0x0fff;
+    case R_390_PLT12DBL:
+      check_dbl(S + A - P, -(1 << 12), 1 << 12);
+      *(ul16 *)loc = ((S + A - P) >> 1) & 0x0fff;
       break;
-    }
-    case R_390_PC16: {
-      i64 val = S + A - P;
-      check(val, -(1 << 15), 1 << 15);
-      *(ub16 *)loc = val;
+    case R_390_PC16:
+      check(S + A - P, -(1 << 15), 1 << 15);
+      *(ub16 *)loc = S + A - P;
       break;
-    }
-    case R_390_PC32: {
-      i64 val = S + A - P;
-      check(val, -(1LL << 31), 1LL << 31);
-      *(ub32 *)loc = val;
+    case R_390_PC32:
+      check(S + A - P, -(1LL << 31), 1LL << 31);
+      *(ub32 *)loc = S + A - P;
       break;
-    }
     case R_390_PC64:
       *(ub64 *)loc = S + A - P;
       break;
     case R_390_PC16DBL:
-    case R_390_PLT16DBL: {
-      i64 val = S + A - P;
-      check_dbl(val, -(1 << 16), 1 << 16);
-      *(ub16 *)loc = val >> 1;
+    case R_390_PLT16DBL:
+      check_dbl(S + A - P, -(1 << 16), 1 << 16);
+      *(ub16 *)loc = (S + A - P) >> 1;
       break;
-    }
     case R_390_PC24DBL:
-    case R_390_PLT24DBL: {
-      i64 val = S + A - P;
-      check_dbl(val, -(1 << 24), 1 << 24);
-      *(ub32 *)loc |= bits(val, 24, 1);
+    case R_390_PLT24DBL:
+      check_dbl(S + A - P, -(1 << 24), 1 << 24);
+      *(ub32 *)loc |= bits(S + A - P, 24, 1);
       break;
-    }
     case R_390_PC32DBL:
     case R_390_PLT32DBL:
       if (ctx.is_static && &sym == ctx.tls_get_offset) {
@@ -228,57 +208,44 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // So we provide a replacement function.
         *(ub32 *)loc = (ctx.extra.tls_get_offset->shdr.sh_addr - P) >> 1;
       } else {
-        i64 val = S + A - P;
-        check_dbl(val, -(1LL << 32), 1LL << 32);
-        *(ub32 *)loc = val >> 1;
+        check_dbl(S + A - P, -(1LL << 32), 1LL << 32);
+        *(ub32 *)loc = (S + A - P) >> 1;
       }
       break;
     case R_390_GOT12:
-    case R_390_GOTPLT12: {
-      i64 val = G + A;
-      check(val, 0, 1 << 12);
-      *(ul16 *)loc = bits(val, 11, 0);
+    case R_390_GOTPLT12:
+      check(G + A, 0, 1 << 12);
+      *(ul16 *)loc = bits(G + A, 11, 0);
       break;
-    }
     case R_390_GOT16:
-    case R_390_GOTPLT16: {
-      i64 val = G + A;
-      check(val, 0, 1 << 16);
-      *(ub16 *)loc = val;
+    case R_390_GOTPLT16:
+      check(G + A, 0, 1 << 16);
+      *(ub16 *)loc = G + A;
       break;
-    }
     case R_390_GOT20:
-    case R_390_GOTPLT20: {
-      i64 val = G + A;
-      check(val, 0, 1 << 20);
-      write_mid20(loc, val);
+    case R_390_GOTPLT20:
+      check(G + A, 0, 1 << 20);
+      write_mid20(loc, G + A);
       break;
-    }
     case R_390_GOT32:
-    case R_390_GOTPLT32: {
-      i64 val = G + A;
-      check(val, 0, 1LL << 32);
-      *(ub32 *)loc = val;
+    case R_390_GOTPLT32:
+      check(G + A, 0, 1LL << 32);
+      *(ub32 *)loc = G + A;
       break;
-    }
     case R_390_GOT64:
     case R_390_GOTPLT64:
       *(ub64 *)loc = G + A;
       break;
     case R_390_GOTOFF16:
-    case R_390_PLTOFF16: {
-      i64 val = S + A - GOT;
-      check(val, -(1 << 15), 1 << 15);
-      *(ub16 *)loc = val;
+    case R_390_PLTOFF16:
+      check(S + A - GOT, -(1 << 15), 1 << 15);
+      *(ub16 *)loc = S + A - GOT;
       break;
-    }
     case R_390_GOTOFF32:
-    case R_390_PLTOFF32: {
-      i64 val = S + A - GOT;
-      check(val, -(1LL << 31), 1LL << 31);
-      *(ub32 *)loc = val;
+    case R_390_PLTOFF32:
+      check(S + A - GOT, -(1LL << 31), 1LL << 31);
+      *(ub32 *)loc = S + A - GOT;
       break;
-    }
     case R_390_GOTOFF64:
     case R_390_PLTOFF64:
       *(ub64 *)loc = S + A - GOT;
@@ -286,18 +253,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_GOTPC:
       *(ub64 *)loc = GOT + A - P;
       break;
-    case R_390_GOTPCDBL: {
-      i64 val = GOT + A - P;
-      check_dbl(val, -(1LL << 32), 1LL << 32);
-      *(ub32 *)loc = val >> 1;
+    case R_390_GOTPCDBL:
+      check_dbl(GOT + A - P, -(1LL << 32), 1LL << 32);
+      *(ub32 *)loc = (GOT + A - P) >> 1;
       break;
-    }
-    case R_390_GOTENT: {
-      i64 val = GOT + G + A - P;
-      check(val, -(1LL << 32), 1LL << 32);
-      *(ub32 *)loc = val >> 1;
+    case R_390_GOTENT:
+      check(GOT + G + A - P, -(1LL << 32), 1LL << 32);
+      *(ub32 *)loc = (GOT + G + A - P) >> 1;
       break;
-    }
     case R_390_TLS_LE32:
       *(ub32 *)loc = S + A - ctx.tp_addr;
       break;
