@@ -31,7 +31,7 @@ bool is_text_file(MappedFile<C> *mf) {
 }
 
 template <typename E, typename C>
-inline bool is_gcc_lto_obj(MappedFile<C> *mf, bool opt_plugin) {
+inline bool is_gcc_lto_obj(C &ctx, MappedFile<C> *mf) {
   using namespace mold::elf;
 
   const char *data = mf->get_contents().data();
@@ -45,21 +45,23 @@ inline bool is_gcc_lto_obj(MappedFile<C> *mf, bool opt_plugin) {
     ? sh_begin->sh_link : ehdr.e_shstrndx;
 
   for (ElfShdr<E> &sec : shdrs) {
-    // GCC LTO object contains only sections symbols followed by a common
-    // symbol whose name is `__gnu_lto_slim` (or `__gnu_lto_v1` for older
-    // GCC releases).
-    //
-    // However, FAT LTO objects don't have any of the above mentioned symbols
-    // and can identify LTO by `.gnu.lto_.symtab.` section, similarly
-    // to what lto-plugin does. However, if LTO linker plug-in is not available,
-    // use the emitted assembly instead.
-    std::string_view name = data + shdrs[shstrtab_idx].sh_offset + sec.sh_name;
-    if (opt_plugin && name.starts_with (".gnu.lto_.symtab."))
+    // GCC FAT LTO objects contain both regular ELF sections and GCC-
+    // specific LTO sections, so that they can be linked as LTO objects if
+    // the LTO linker plugin is available and falls back as regular
+    // objects otherwise. GCC FAT LTO object can be identified by the
+    // presence of `.gcc.lto_.symtab` section.
+    if (!ctx.arg.plugin.empty()) {
+      std::string_view name = data + shdrs[shstrtab_idx].sh_offset + sec.sh_name;
+      if (name.starts_with(".gnu.lto_.symtab."))
       return true;
+    }
 
     if (sec.sh_type != SHT_SYMTAB)
       continue;
 
+    // GCC non-FAT LTO object contains only sections symbols followed by
+    // a common symbol whose name is `__gnu_lto_slim` (or `__gnu_lto_v1`
+    // for older GCC releases).
     std::span<ElfSym<E>> elf_syms{(ElfSym<E> *)(data + sec.sh_offset),
                                   (size_t)sec.sh_size / sizeof(ElfSym<E>)};
 
@@ -84,7 +86,7 @@ inline bool is_gcc_lto_obj(MappedFile<C> *mf, bool opt_plugin) {
 }
 
 template <typename C>
-FileType get_file_type(MappedFile<C> *mf, bool opt_plugin) {
+FileType get_file_type(C &ctx, MappedFile<C> *mf) {
   using namespace elf;
 
   std::string_view data = mf->get_contents();
@@ -100,10 +102,10 @@ FileType get_file_type(MappedFile<C> *mf, bool opt_plugin) {
 
       if (ehdr.e_type == ET_REL) {
         if (ehdr.e_ident[EI_CLASS] == ELFCLASS32) {
-          if (is_gcc_lto_obj<I386>(mf, opt_plugin))
+          if (is_gcc_lto_obj<I386>(ctx, mf))
             return FileType::GCC_LTO_OBJ;
         } else {
-          if (is_gcc_lto_obj<X86_64>(mf, opt_plugin))
+          if (is_gcc_lto_obj<X86_64>(ctx, mf))
             return FileType::GCC_LTO_OBJ;
         }
         return FileType::ELF_OBJ;
@@ -116,10 +118,10 @@ FileType get_file_type(MappedFile<C> *mf, bool opt_plugin) {
 
       if (ehdr.e_type == ET_REL) {
         if (ehdr.e_ident[EI_CLASS] == ELFCLASS32) {
-          if (is_gcc_lto_obj<M68K>(mf, opt_plugin))
+          if (is_gcc_lto_obj<M68K>(ctx, mf))
             return FileType::GCC_LTO_OBJ;
         } else {
-          if (is_gcc_lto_obj<SPARC64>(mf, opt_plugin))
+          if (is_gcc_lto_obj<SPARC64>(ctx, mf))
             return FileType::GCC_LTO_OBJ;
         }
         return FileType::ELF_OBJ;
