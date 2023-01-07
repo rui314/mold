@@ -157,9 +157,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
 
-  u64 got2 = 0;
-  if (file.ppc32_got2)
-    got2 = file.ppc32_got2->output_section->shdr.sh_addr + file.ppc32_got2->offset;
+  u64 GOT2 = file.ppc32_got2 ? file.ppc32_got2->get_addr() : 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -201,16 +199,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A, 31, 2) << 2;
       break;
     case R_PPC_PLT16_LO:
-      *(ub16 *)loc = lo(G + GOT - got2 - A);
+      *(ub16 *)loc = lo(G + GOT - A - GOT2);
       break;
     case R_PPC_PLT16_HI:
-      *(ub16 *)loc = hi(G + GOT - got2 - A);
+      *(ub16 *)loc = hi(G + GOT - A - GOT2);
       break;
     case R_PPC_PLT16_HA:
-      *(ub16 *)loc = ha(G + GOT - got2 - A);
+      *(ub16 *)loc = ha(G + GOT - A - GOT2);
       break;
     case R_PPC_PLT32:
-      *(ub32 *)loc = G + GOT - got2 - A;
+      *(ub32 *)loc = G + GOT - A - GOT2;
       break;
     case R_PPC_REL14:
       *(ub32 *)loc |= bits(S + A - P, 15, 2) << 2;

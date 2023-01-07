@@ -379,6 +379,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc = S + A - P;
       }
       break;
+    case R_RISCV_PCREL_LO12_I:
+    case R_RISCV_PCREL_LO12_S:
+      // These relocations are handled in the next loop.
+      break;
     case R_RISCV_HI20:
       assert(removed_bytes == 0 || removed_bytes == 4);
       if (removed_bytes == 0) {
@@ -405,6 +409,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_utype(loc, S + A - ctx.tp_addr);
       break;
     case R_RISCV_TPREL_ADD:
+      // This relocation just annotates an ADD instruction that can be
+      // removed when a TPREL is relaxed. No value is needed to be
+      // written.
+      assert(removed_bytes == 0 || removed_bytes == 4);
       break;
     case R_RISCV_TPREL_LO12_I:
     case R_RISCV_TPREL_LO12_S: {
@@ -487,10 +495,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_32_PCREL:
       *(U32<E> *)loc = S + A - P;
-      break;
-    case R_RISCV_PCREL_LO12_I:
-    case R_RISCV_PCREL_LO12_S:
-      // These relocations are handled in the next loop.
       break;
     default:
       unreachable();
@@ -623,8 +627,7 @@ void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
     return;
   }
 
-  // Memory-allocated sections may be relaxed, so copy each segment
-  // individually.
+  // A relaxed section is copied piece-wise.
   std::span<const ElfRel<E>> rels = get_rels(ctx);
   i64 pos = 0;
 
@@ -840,20 +843,21 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       break;
     case R_RISCV_TPREL_HI20:
     case R_RISCV_TPREL_ADD: {
-      // These relocations are used to materialize the upper 20 bits of
-      // an address relative to the thread pointer as follows:
+      // These relocations are used to add a high 20-bit value to the
+      // thread pointer. The following two instructions materializes
+      // TP + HI20(foo) in %r5, for example.
       //
       //  lui  a5,%tprel_hi(foo)         # R_RISCV_TPREL_HI20 (symbol)
       //  add  a5,a5,tp,%tprel_add(foo)  # R_RISCV_TPREL_ADD (symbol)
       //
-      // Then thread-local variable `foo` is accessed with a 12-bit offset
-      // like this:
+      // Then thread-local variable `foo` is accessed with a low 12-bit
+      // offset like this:
       //
       //  sw   t0,%tprel_lo(foo)(a5)     # R_RISCV_TPREL_LO12_S (symbol)
       //
-      // However, if the offset is ±2 KiB, we don't need to materialize
-      // the upper 20 bits in a register. We can instead access the
-      // thread-local variable directly with TP like this:
+      // However, if the variable is at TP ±2 KiB, TP + HI20(foo) is the
+      // same as TP, so we can instead access the thread-local variable
+      // directly using TP like this:
       //
       //  sw   t0,%tprel_lo(foo)(tp)
       //

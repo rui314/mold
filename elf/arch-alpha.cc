@@ -273,16 +273,15 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 // An R_ALPHA_LITERAL relocation may request the linker to create a GOT
 // entry for an external symbol with a non-zero addend. This is an unusual
-// request which we cannot find in any other targets.
+// request which is not found in any other targets.
 //
-// Referring an external symbol with a non-zero addend is a bad practice.
-// To see why, assume that we have two R_ALPHA_LITERAL relocs to symbol X
-// with addend 8 and 16. To satisfy that request, we need to create not
-// only one but two GOT entries for symbol X with different addends.
+// Referring an external symbol with a non-zero addend is a bad practice
+// because we need to create as many dynamic relocations as the number of
+// distinctive addends for the same symbol.
 //
 // We don't want to mess up the implementation of the common GOT section
 // for Alpha. So we create another GOT-like section, .alpha_got. Any GOT
-// entry for an R_ALPHA_LITERAL reloc with a non-zero addends is created
+// entry for an R_ALPHA_LITERAL reloc with a non-zero addend is created
 // not in .got but in .alpha_got.
 //
 // Since .alpha_got entries are accessed relative to GP, .alpha_got
