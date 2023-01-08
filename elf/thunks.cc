@@ -27,33 +27,36 @@
 
 namespace mold::elf {
 
-// Branch reach in bytes.
-//
-// ARM64's branch has 26 bits immediate, and it's scaled by 4 because all
-// instructions are 4 bytes aligned, so it's effectively 28 bits long.
-// That means the range is [-2^27, 2^27).
-//
-// ARM32's Thumb branch has 24 bits immediate, and the instructions are
-// aligned to 2, so it's effectively 25 bits. ARM32's non-Thumb branches
-// have twice longer range than its Thumb counterparts, but we
-// conservatively use the Thumb's limitation.
-//
-// PPC's branch has 24 bits immediate, and the instructions are aligned
-// to 4, therefore 26.
-//
-// Here is the summary of branch instructions reaches:
-//
-//   ARM64: PC ± 128 MiB
-//   ARM32: PC ± 16 MiB
-//   PPC:   PC ± 32 MiB
+// Returns a branch reach in bytes for a given target.
 template <typename E>
-static constexpr i64 max_distance =
-  1LL << (is_arm64<E> ? 27 : is_arm32<E> ? 24 : 25);
+static consteval i64 max_distance() {
+  // ARM64's branch has 26 bits immediate. The immediate is padded with
+  // implicit two-bit zeros because all instructions are 4 bytes aligned
+  // and therefore the least two bits are always zero. So the branch
+  // operand is effectively 28 bits long. That means the branch range is
+  // [-2^27, 2^27) or PC ± 128 MiB.
+  if (is_arm64<E>)
+    return 1 << 27;
+
+  // ARM32's Thumb branch has 24 bits immediate, and the instructions are
+  // aligned to 2, so it's effectively 25 bits. It's [-2^24, 2^24) or PC ±
+  // 16 MiB.
+  //
+  // ARM32's non-Thumb branches have twice longer range than its Thumb
+  // counterparts, but we conservatively use the Thumb's limitation.
+  if (is_arm32<E>)
+    return 1 << 24;
+
+  // PPC's branch has 24 bits immediate, and the instructions are aligned
+  // to 4, therefore the reach is [-2^25, 2^25) or PC ± 32 MiB.
+  assert(is_ppc<E>);
+  return 1 << 25;
+}
 
 // We create thunks for each 12.8/1.6/3.2 MiB code block for
 // ARM64/ARM32/PPC, respectively.
 template <typename E>
-static constexpr i64 batch_size = max_distance<E> / 10;
+static constexpr i64 batch_size = max_distance<E>() / 10;
 
 // We assume that a single thunk group is smaller than 100 KiB.
 static constexpr i64 max_thunk_size = 102400;
@@ -112,7 +115,7 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   i64 A = get_addend(isec, rel);
   i64 P = isec.get_addr() + rel.r_offset;
   i64 val = S + A - P;
-  return -max_distance<E> <= val && val < max_distance<E>;
+  return -max_distance<E>() <= val && val < max_distance<E>();
 }
 
 template <typename E>
@@ -194,7 +197,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     // Move D foward as far as we can jump from B to anywhere in a thunk after D.
     while (d < m.size() &&
            align_to(offset, 1 << m[d]->p2align) + m[d]->sh_size + max_thunk_size <
-           m[b]->offset + max_distance<E>) {
+           m[b]->offset + max_distance<E>()) {
       offset = align_to(offset, 1 << m[d]->p2align);
       m[d]->offset = offset;
       offset += m[d]->sh_size;
@@ -212,7 +215,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     // Move A forward so that A is reachable from C.
     i64 c_offset = (c == m.size()) ? offset : m[c]->offset;
     while (a < osec.thunks.size() &&
-           osec.thunks[a]->offset + max_distance<E> < c_offset)
+           osec.thunks[a]->offset + max_distance<E>() < c_offset)
       reset_thunk(*osec.thunks[a++]);
 
     // Create a thunk for input sections between B and C and place it at D.
@@ -224,7 +227,8 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     thunk.offset = offset;
 
     // Scan relocations between B and C to collect symbols that need thunks.
-    tbb::parallel_for_each(m.begin() + b, m.begin() + c, [&](InputSection<E> *isec) {
+    tbb::parallel_for_each(m.begin() + b, m.begin() + c,
+                           [&](InputSection<E> *isec) {
       scan_rels(ctx, *isec, thunk);
     });
 
@@ -246,7 +250,8 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     }
 
     // Scan relocations again to fix symbol offsets in the last thunk.
-    tbb::parallel_for_each(m.begin() + b, m.begin() + c, [&](InputSection<E> *isec) {
+    tbb::parallel_for_each(m.begin() + b, m.begin() + c,
+                           [&](InputSection<E> *isec) {
       std::span<Symbol<E> *> syms = isec->file.symbols;
       std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
       std::span<RangeExtensionRef> range_extn = isec->extra.range_extn;
