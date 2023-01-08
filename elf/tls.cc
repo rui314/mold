@@ -33,18 +33,18 @@
 // for new threads, and no one write to it at runtime.
 //
 // Now, let's think about how to access a TLV. We need to know the TLV's
-// address to access it, and that can be done in various ways as follows:
+// address to access it which can be done in various ways as follows:
 //
 //  1. If we are creating an executable, we know the exact size of the TLS
 //     template image we are creating, and we know where the TP will be
 //     set to after the template is copied to the TLS block. Therefore,
-//     the TP-relative address of a TLV in the main executable can be
-//     computed at link-time. That means, computing a TLV's address can be
-//     as easy as `add %dst, %tp, <link-time constant>`.
+//     the TP-relative address of a TLV in the main executable is known at
+//     link-time. That means, computing a TLV's address can be as easy as
+//     `add %dst, %tp, <link-time constant>`.
 //
 //  2. If we are creating a shared library, we don't excatly know where
-//     its TLS template image will be copied to relative to other files'
-//     TLS blocks, because we don't know how large is the main
+//     its TLS template image will be copied to in terms of the
+//     TP-relative address, because we don't know how large is the main
 //     executable's and other libraries' TLS template images are. Only the
 //     runtime knows the exact TP-relative address.
 //
@@ -141,7 +141,9 @@ u64 get_tls_begin(Context<E> &ctx) {
 }
 
 // Returns the TP address which can be used for efficient TLV accesses in
-// the main executable.
+// the main executable. TP at runtime refers to a per-process TLS block
+// whose address is not known at link-time. So the address returned from
+// this function is the TP if the TLS template image were a TLS block.
 template <typename E>
 u64 get_tp_addr(Context<E> &ctx) {
   ElfPhdr<E> *phdr = get_tls_segment(ctx);
@@ -172,14 +174,13 @@ u64 get_tp_addr(Context<E> &ctx) {
   // TP. RISC-V load/store instructions usually take 12-bits signed
   // immediates, so the beginning of TLV ± 2 KiB is accessible with a
   // single load/store instruction.
-  if (is_riscv<E>)
+  if constexpr (is_riscv<E>)
     return phdr->p_vaddr;
 
   unreachable();
 }
 
-// Returns the address in the TLS template image when __tls_get_addr would
-// be called with offset 0.
+// Returns the address when __tls_get_addr would be called with offset 0.
 template <typename E>
 u64 get_dtp_addr(Context<E> &ctx) {
   ElfPhdr<E> *phdr = get_tls_segment(ctx);

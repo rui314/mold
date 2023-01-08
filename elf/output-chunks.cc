@@ -296,12 +296,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create a PT_TLS.
   for (i64 i = 0; i < ctx.chunks.size(); i++) {
-    if (!(ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
-      continue;
-
-    define(PT_TLS, PF_R, 1, ctx.chunks[i++]);
-    while (i < ctx.chunks.size() && (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
-      append(ctx.chunks[i++]);
+    if (ctx.chunks[i]->shdr.sh_flags & SHF_TLS) {
+      define(PT_TLS, PF_R, 1, ctx.chunks[i++]);
+      while (i < ctx.chunks.size() && (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
+        append(ctx.chunks[i++]);
+    }
   }
 
   // Add PT_DYNAMIC
