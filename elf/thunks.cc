@@ -187,6 +187,21 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   // We create thunks from the beginning of the section to the end.
   // We manage progress using four offsets which increase monotonically.
   // The locations they point to are always A <= B <= C <= D.
+  //
+  //  ................................ <input sections> ............
+  //     A    B    C    D
+  //                   ^
+  //                   We insert a thunk for the current batch just before D
+  //          <--->      The current batch, which is smaller than BATCH_SIZE
+  //     <-------->      Smaller than max_distance<E>
+  //          <--------> Smaller than max_distance<E>
+  //
+  // A is the input section with the smallest address than can reach
+  // anywhere from the current batch.
+  //
+  // D is the input section with the largest address such that the thunk
+  // is reachable from the current batch if it's inserted right before D
+  // but at least partially unreacahble if it's inserted after D.
   i64 a = 0;
   i64 b = 0;
   i64 c = 0;
