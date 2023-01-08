@@ -199,12 +199,23 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_MOVW_UABS_G3:
       *(ul32 *)loc |= bits(S + A, 63, 48) << 5;
       break;
-    case R_AARCH64_ADR_GOT_PAGE: {
-      i64 val = page(G + GOT + A) - page(P);
-      check(val, -(1LL << 32), 1LL << 32);
-      write_adrp(loc, val);
+    case R_AARCH64_ADR_GOT_PAGE:
+      if (sym.has_got(ctx)) {
+        i64 val = page(G + GOT + A) - page(P);
+        check(val, -(1LL << 32), 1LL << 32);
+        write_adrp(loc, val);
+      } else {
+        i64 val = page(S + A) - page(P);
+        check(val, -(1LL << 32), 1LL << 32);
+        write_adrp(loc, val);
+
+        // Rewrite LDR with ADD
+        u32 reg = bits(*(ul32 *)loc, 4, 0);
+        *(ul32 *)(loc + 4) = 0x9100'0000 | (reg << 5) | reg |
+                             (bits(S + A, 11, 0) << 10);
+        i++;
+      }
       break;
-    }
     case R_AARCH64_ADR_PREL_PG_HI21: {
       i64 val = page(S + A) - page(P);
       check(val, -(1LL << 32), 1LL << 32);
@@ -400,6 +411,16 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   }
 }
 
+static bool is_adrp(u8 *loc) {
+  u32 insn = *(ul32 *)loc;
+  return ((insn >> 24) & 0b1001'1111) == 0b1001'0000;
+}
+
+static bool is_ldr(u8 *loc) {
+  u32 insn = *(ul32 *)loc;
+  return ((insn >> 20) & 0b1111'1111'1100) == 0b1111'1001'0100;
+}
+
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
@@ -414,6 +435,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
+    u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (!sym.file) {
       record_undef_error(ctx, rel);
@@ -428,6 +450,32 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_AARCH64_ADR_GOT_PAGE:
+      // An ADR_GOT_PAGE and GOT_LO12_NC relocation pair is often used to
+      // load a symbol's address from GOT. If the GOT value is a link-time
+      // constant, we may be able to rewrite the ADRP+LDR instruction pair
+      // with an ADRP+ADD, eliminating a GOT memory load.
+      if (ctx.arg.relax && sym.is_relative() && !sym.is_imported &&
+          i + 1 < rels.size()) {
+        // ADRP+LDR must be consecutive and use the same register to relax.
+        const ElfRel<E> &rel2 = rels[i + 1];
+        if (rel2.r_type == R_AARCH64_LD64_GOT_LO12_NC &&
+            rel2.r_offset == rel.r_offset + 4 &&
+            rel2.r_sym == rel.r_sym &&
+            rel.r_addend == 0 &&
+            rel2.r_addend == 0 &&
+            is_adrp(loc) &&
+            is_ldr(loc + 4)) {
+          u32 rd = bits(*(ul32 *)loc, 4, 0);
+          u32 rn = bits(*(ul32 *)(loc + 4), 9, 5);
+          u32 rt = bits(*(ul32 *)(loc + 4), 4, 0);
+          if (rd == rn && rn == rt) {
+            i++;
+            continue;
+          }
+        }
+      }
+      sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
+      break;
     case R_AARCH64_LD64_GOT_LO12_NC:
     case R_AARCH64_LD64_GOTPAGE_LO15:
       sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
