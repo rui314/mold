@@ -123,6 +123,24 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
+static bool is_adrp(u8 *loc) {
+  // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/ADRP--Form-PC-relative-address-to-4KB-page-
+  u32 insn = *(ul32 *)loc;
+  return ((insn >> 24) & 0b1001'1111) == 0b1001'0000;
+}
+
+static bool is_ldr(u8 *loc) {
+  // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/LDR--immediate---Load-Register--immediate--
+  u32 insn = *(ul32 *)loc;
+  return ((insn >> 20) & 0b1111'1111'1100) == 0b1111'1001'0100;
+}
+
+static bool is_add(u8 *loc) {
+  // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/ADD--immediate---Add--immediate--
+  u32 insn = *(ul32 *)loc;
+  return ((insn >> 20) & 0b1111'1111'1100) == 0b1001'0001'0000;
+}
+
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
@@ -173,6 +191,28 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc |= bits(S + A, 11, 4) << 10;
       break;
     case R_AARCH64_ADD_ABS_LO12_NC:
+      // An `ADRP x0, foo` and `ADD x0, x0, :lo12: foo` instruction pair
+      // to materialize a PC-relative address in a register can be relaxed
+      // to `NOP` followed by `ADR x0, foo` if foo is in PC ± 1 MiB.
+      if (ctx.arg.relax && i != 0 && sign_extend(S + A - P, 20) == S + A - P) {
+        const ElfRel<E> &rel2 = rels[i - 1];
+        if (rel2.r_type == R_AARCH64_ADR_PREL_PG_HI21 &&
+            rel2.r_sym == rel.r_sym &&
+            rel2.r_offset == rel.r_offset - 4 &&
+            rel2.r_addend == rel.r_addend &&
+            is_adrp(loc - 4) &&
+            is_add(loc)) {
+          u32 reg1 = bits(*(ul32 *)(loc - 4), 4, 0);
+          u32 reg2 = bits(*(ul32 *)loc, 4, 0);
+          if (reg1 == reg2) {
+            *(ul32 *)(loc - 4) = 0xd503'201f;  // nop
+            *(ul32 *)loc = 0x1000'0000 | reg1; // adr
+            write_adr(loc, S + A - P);
+            break;
+          }
+        }
+      }
+
       *(ul32 *)loc |= bits(S + A, 11, 0) << 10;
       break;
     case R_AARCH64_MOVW_UABS_G0:
@@ -205,14 +245,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         check(val, -(1LL << 32), 1LL << 32);
         write_adrp(loc, val);
       } else {
+        // Relax GOT-loading ADRP+LDR to an immediate ADRP+ADD
         i64 val = page(S + A) - page(P);
         check(val, -(1LL << 32), 1LL << 32);
         write_adrp(loc, val);
 
-        // Rewrite LDR with ADD
         u32 reg = bits(*(ul32 *)loc, 4, 0);
-        *(ul32 *)(loc + 4) = 0x9100'0000 | (reg << 5) | reg |
-                             (bits(S + A, 11, 0) << 10);
+        *(ul32 *)(loc + 4) = 0x9100'0000 | (reg << 5) | reg; // ADD
+        *(ul32 *)(loc + 4) |= bits(S + A, 11, 0) << 10;
         i++;
       }
       break;
@@ -411,16 +451,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   }
 }
 
-static bool is_adrp(u8 *loc) {
-  u32 insn = *(ul32 *)loc;
-  return ((insn >> 24) & 0b1001'1111) == 0b1001'0000;
-}
-
-static bool is_ldr(u8 *loc) {
-  u32 insn = *(ul32 *)loc;
-  return ((insn >> 20) & 0b1111'1111'1100) == 0b1111'1001'0100;
-}
-
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
@@ -450,8 +480,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_AARCH64_ADR_GOT_PAGE:
-      // An ADR_GOT_PAGE and GOT_LO12_NC relocation pair is often used to
-      // load a symbol's address from GOT. If the GOT value is a link-time
+      // An ADR_GOT_PAGE and GOT_LO12_NC relocation pair is used to load a
+      // symbol's address from GOT. If the GOT value is a link-time
       // constant, we may be able to rewrite the ADRP+LDR instruction pair
       // with an ADRP+ADD, eliminating a GOT memory load.
       if (ctx.arg.relax && sym.is_relative() && !sym.is_imported &&
