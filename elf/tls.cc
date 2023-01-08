@@ -5,7 +5,7 @@
 // TLS is a per-thread storage. Thread-local variables (TLVs) are in a TLS
 // so that each thread has its own set of thread-local variables. Taking
 // an address of a TLV returns a unique value for each thread. For example,
-// `&foo` for the following code returns a different pointer value for
+// `&foo` for the following code returns different pointer values for
 // different threads.
 //
 //   thread_local int foo;
@@ -26,11 +26,11 @@
 //
 // The register referring the per-thread storage is called the Thread
 // Pointer (TP). TP is part of the thread's context. When the kernel
-// scheduler switches between threads, TP is saved and restored
-// automatically just like other registers are.
+// scheduler switches threads, TP is saved and restored automatically just
+// like other registers are.
 //
 // The TLS template image is read-only. It contains TLVs' initial values
-// for new threads, and no one write to it at runtime.
+// for new threads, and no one writes to it at runtime.
 //
 // Now, let's think about how to access a TLV. We need to know the TLV's
 // address to access it which can be done in various ways as follows:
@@ -42,7 +42,7 @@
 //     link-time. That means, computing a TLV's address can be as easy as
 //     `add %dst, %tp, <link-time constant>`.
 //
-//  2. If we are creating a shared library, we don't excatly know where
+//  2. If we are creating a shared library, we don't exactly know where
 //     its TLS template image will be copied to in terms of the
 //     TP-relative address, because we don't know how large is the main
 //     executable's and other libraries' TLS template images are. Only the
@@ -50,9 +50,9 @@
 //
 //     We can solve the problem with an indirection. Specifically, for
 //     each TLV whose TP-relative address is only known at process startup
-//     time, we create a GOT entry to store its TP-relative address. And
-//     then we emit a dynamic relocation to let the runtime to fill it
-//     with a per-TLV TP-relative address.
+//     time, we create a GOT entry to store its TP-relative address. We
+//     also emit a dynamic relocation to let the runtime to fill the GOT
+//     entry with a per-TLV TP-relative address.
 //
 //     Computing a TLV address in this scheme needs at least two machine
 //     instructions; first one loads a value from a GOT entry, and the
