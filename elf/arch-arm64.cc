@@ -126,19 +126,19 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 static bool is_adrp(u8 *loc) {
   // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/ADRP--Form-PC-relative-address-to-4KB-page-
   u32 insn = *(ul32 *)loc;
-  return ((insn >> 24) & 0b1001'1111) == 0b1001'0000;
+  return (bits(insn, 31, 24) & 0b1001'1111) == 0b1001'0000;
 }
 
 static bool is_ldr(u8 *loc) {
   // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/LDR--immediate---Load-Register--immediate--
   u32 insn = *(ul32 *)loc;
-  return ((insn >> 20) & 0b1111'1111'1100) == 0b1111'1001'0100;
+  return (bits(insn, 31, 20) & 0b1111'1111'1100) == 0b1111'1001'0100;
 }
 
 static bool is_add(u8 *loc) {
   // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/ADD--immediate---Add--immediate--
   u32 insn = *(ul32 *)loc;
-  return ((insn >> 20) & 0b1111'1111'1100) == 0b1001'0001'0000;
+  return (bits(insn, 31, 20) & 0b1111'1111'1100) == 0b1001'0001'0000;
 }
 
 template <>
@@ -176,6 +176,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
       break;
     case R_AARCH64_LDST8_ABS_LO12_NC:
+    case R_AARCH64_ADD_ABS_LO12_NC:
       *(ul32 *)loc |= bits(S + A, 11, 0) << 10;
       break;
     case R_AARCH64_LDST16_ABS_LO12_NC:
@@ -190,27 +191,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_LDST128_ABS_LO12_NC:
       *(ul32 *)loc |= bits(S + A, 11, 4) << 10;
       break;
-    case R_AARCH64_ADD_ABS_LO12_NC:
-      *(ul32 *)loc |= bits(S + A, 11, 0) << 10;
-      break;
     case R_AARCH64_MOVW_UABS_G0:
       check(S + A, 0, 1 << 16);
-      *(ul32 *)loc |= bits(S + A, 15, 0) << 5;
-      break;
     case R_AARCH64_MOVW_UABS_G0_NC:
       *(ul32 *)loc |= bits(S + A, 15, 0) << 5;
       break;
     case R_AARCH64_MOVW_UABS_G1:
       check(S + A, 0, 1LL << 32);
-      *(ul32 *)loc |= bits(S + A, 31, 16) << 5;
-      break;
     case R_AARCH64_MOVW_UABS_G1_NC:
       *(ul32 *)loc |= bits(S + A, 31, 16) << 5;
       break;
     case R_AARCH64_MOVW_UABS_G2:
       check(S + A, 0, 1LL << 48);
-      *(ul32 *)loc |= bits(S + A, 47, 32) << 5;
-      break;
     case R_AARCH64_MOVW_UABS_G2_NC:
       *(ul32 *)loc |= bits(S + A, 47, 32) << 5;
       break;
