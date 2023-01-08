@@ -70,10 +70,13 @@
 //     compiled to a function call! The module ID and the offset are
 //     usually stored to GOT as two consecutive words.
 //
-// The last access method provides the most generic, so the compiler emits
-// such code by default. But that's the most expensive one, so the linker
+// The last access method is the most generic, so the compiler emits such
+// code by default. But that's the most expensive one, so the linker
 // rewrites instructions if possible so that 3) is relaxed to 2) or even
 // to 1).
+//
+// 1) is often called the Local Exec access model. 2) is Initial Exec, and
+// 3) is called General Dynamic.
 //
 // There's also a trick that the compiler can use if it knows two TLVs are
 // in the same ELF file (usually in the same file as the code is). In this
@@ -81,7 +84,41 @@
 // offset 0 to obtain the base address of the ELF file's TLS block.
 // The base address obtained this way is sometimes called Dynamic Thread
 // Pointer or DTP. We can then compute TLVs' addresses by adding their
-// DTP-relative addresses to DTP.
+// DTP-relative addresses to DTP. This access model is called the Local
+// Dynamic.
+//
+//
+// === TLS Descriptor access model ===
+//
+// As described above, there are arguably too many different TLS access
+// models from the most generic one you can use in any ELF file to the
+// most efficient one you can use only in the main executable. Compiling
+// source code with an appropriate TLS access model is bothersome.
+// To solve the problem, a new TLS access model was proposed. That is
+// called the TLS Descriptor (TLSDESC) model.
+//
+// For a TLV compiled with TLSDESC, we allocate two consecutive GOT slots
+// and create a TLSDESC dynamic relocation for them. The dynamic linker
+// sets a function pointer to the first GOT slot and its argument to the
+// second slot.
+//
+// To access the TLV, we call the function pointer with the argument we
+// read from the second GOT slot. The function returns the TLV's
+// TP-relative address.
+//
+// The runtime chooses the best access method depending on the situation
+// and sets a pointer to the most efficient code to the first GOT slot.
+// For example, if a TLV's TP-relative address is known at process startup
+// time, the runtime sets that address to the second GOT slot and set a
+// function that just returns its argument to the first GOT slot.
+//
+// With TLSDECS, the compiler can always emit the same code for TLVs
+// without sacrificing runtime performance.
+//
+// TLSDESC is better than the traditional, non-TLSDESC TLS access models.
+// It's the default on ARM64, but on other targets, TLSDESC is
+// unfortunately either optional or even not supported at all. So we still
+// need to support both the traditional TLS models and the TLSDESC model.
 
 #include "mold.h"
 
