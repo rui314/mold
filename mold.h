@@ -405,9 +405,9 @@ public:
     nbuckets = std::max<i64>(MIN_NBUCKETS, bit_ceil(nbuckets));
 
     this->nbuckets = nbuckets;
-    keys = (std::atomic<const char *> *)calloc(nbuckets, sizeof(keys[0]));
-    key_sizes = (u32 *)calloc(nbuckets, sizeof(key_sizes[0]));
-    values = (T *)calloc(nbuckets, sizeof(values[0]));
+    keys = (std::atomic<const char *> *)calloc(nbuckets, sizeof(char *));
+    key_sizes = (u32 *)malloc(nbuckets * sizeof(u32));
+    values = (T *)malloc(nbuckets * sizeof(T));
   }
 
   std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
