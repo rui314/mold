@@ -43,6 +43,12 @@ InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
 }
 
 template <typename E>
+std::span<ElfPhdr<E>> InputFile<E>::get_phdrs() {
+  ElfEhdr<E> &ehdr = get_ehdr();
+  return {(ElfPhdr<E> *)(mf->data + ehdr.e_phoff), ehdr.e_phnum};
+}
+
+template <typename E>
 ElfShdr<E> *InputFile<E>::find_section(i64 type) {
   for (ElfShdr<E> &sec : elf_sections)
     if (sec.sh_type == type)
@@ -1556,12 +1562,11 @@ i64 SharedFile<E>::get_alignment(Symbol<E> *sym) {
 
 template <typename E>
 bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
-  ElfPhdr<E> *phdr = this->get_phdr();
   u64 val = sym->esym().st_value;
 
-  for (i64 i = 0; i < this->get_ehdr().e_phnum; i++)
-    if (phdr[i].p_type == PT_LOAD && !(phdr[i].p_flags & PF_W) &&
-        phdr[i].p_vaddr <= val && val < phdr[i].p_vaddr + phdr[i].p_memsz)
+  for (ElfPhdr<E> &phdr : this->get_phdrs())
+    if (phdr.p_type == PT_LOAD && !(phdr.p_flags & PF_W) &&
+        phdr.p_vaddr <= val && val < phdr.p_vaddr + phdr.p_memsz)
       return true;
   return false;
 }

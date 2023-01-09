@@ -381,7 +381,7 @@ public:
   virtual u8 *get_uncompressed_data() { return nullptr; }
 
   std::string_view name;
-  ElfShdr<E> shdr = {};
+  ElfShdr<E> shdr = { .sh_addralign = 1 };
   i64 shndx = 0;
 
   // Some synethetic sections add local symbols to the output.
@@ -398,9 +398,6 @@ public:
 
   // For --section-order
   i64 sect_order = 0;
-
-protected:
-  Chunk() { shdr.sh_addralign = 1; }
 };
 
 // ELF header
@@ -1159,7 +1156,7 @@ public:
   std::string_view get_string(Context<E> &ctx, i64 idx);
 
   ElfEhdr<E> &get_ehdr() { return *(ElfEhdr<E> *)mf->data; }
-  ElfPhdr<E> *get_phdr() { return (ElfPhdr<E> *)(mf->data + get_ehdr().e_phoff); }
+  std::span<ElfPhdr<E>> get_phdrs();
 
   ElfShdr<E> *find_section(i64 type);
 
@@ -1605,7 +1602,7 @@ struct SectionOrder {
   u64 value = 0;
 };
 
-// Target-specific context clss
+// Target-specific context members
 template <typename E> struct ContextExtras {};
 
 template <> struct ContextExtras<PPC32> {

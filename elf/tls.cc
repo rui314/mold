@@ -174,10 +174,8 @@ u64 get_tp_addr(Context<E> &ctx) {
   // TP. RISC-V load/store instructions usually take 12-bits signed
   // immediates, so the beginning of TLV ± 2 KiB is accessible with a
   // single load/store instruction.
-  if constexpr (is_riscv<E>)
-    return phdr->p_vaddr;
-
-  unreachable();
+  assert(is_riscv<E>);
+  return phdr->p_vaddr;
 }
 
 // Returns the address when __tls_get_addr would be called with offset 0.
