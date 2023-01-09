@@ -193,16 +193,22 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_AARCH64_MOVW_UABS_G0:
       check(S + A, 0, 1 << 16);
+      *(ul32 *)loc |= bits(S + A, 15, 0) << 5;
+      break;
     case R_AARCH64_MOVW_UABS_G0_NC:
       *(ul32 *)loc |= bits(S + A, 15, 0) << 5;
       break;
     case R_AARCH64_MOVW_UABS_G1:
       check(S + A, 0, 1LL << 32);
+      *(ul32 *)loc |= bits(S + A, 31, 16) << 5;
+      break;
     case R_AARCH64_MOVW_UABS_G1_NC:
       *(ul32 *)loc |= bits(S + A, 31, 16) << 5;
       break;
     case R_AARCH64_MOVW_UABS_G2:
       check(S + A, 0, 1LL << 48);
+      *(ul32 *)loc |= bits(S + A, 47, 32) << 5;
+      break;
     case R_AARCH64_MOVW_UABS_G2_NC:
       *(ul32 *)loc |= bits(S + A, 47, 32) << 5;
       break;
@@ -342,6 +348,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
     case R_AARCH64_TLSLE_ADD_TPREL_LO12:
       check(S + A - ctx.tp_addr, 0, 1 << 12);
+      *(ul32 *)loc |= bits(S + A - ctx.tp_addr, 11, 0) << 10;
+      break;
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
       *(ul32 *)loc |= bits(S + A - ctx.tp_addr, 11, 0) << 10;
       break;
