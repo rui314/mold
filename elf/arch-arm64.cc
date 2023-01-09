@@ -504,7 +504,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           u32 rt = bits(*(ul32 *)(loc + 4), 4, 0);
           if (rd == rn && rn == rt) {
             i++;
-            continue;
+            break;
           }
         }
       }

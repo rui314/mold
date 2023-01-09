@@ -1298,9 +1298,9 @@ public:
 
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
-  std::vector<Symbol<E> *> find_aliases(Symbol<E> *sym);
+  std::span<Symbol<E> *> find_aliases(Symbol<E> *sym);
   i64 get_alignment(Symbol<E> *sym);
-  bool is_readonly(Context<E> &ctx, Symbol<E> *sym);
+  bool is_readonly(Symbol<E> *sym);
 
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
@@ -2027,6 +2027,7 @@ public:
   std::string_view get_version() const;
   i64 get_output_sym_idx(Context<E> &ctx) const;
   const ElfSym<E> &esym() const;
+  void add_aux(Context<E> &ctx);
   void clear();
 
   // A symbol is owned by a file. If two or more files define the
@@ -2173,10 +2174,10 @@ public:
   //
   // `has_copyrel` is true if we need to emit a copy relocation for this
   // symbol. If the original symbol in a DSO is in a read-only memory
-  // region, `copyrel_readonly` is set to true so that the copied data
+  // region, `is_copyrel_readonly` is set to true so that the copied data
   // will become read-only at run-time.
   bool has_copyrel : 1 = false;
-  bool copyrel_readonly : 1 = false;
+  bool is_copyrel_readonly : 1 = false;
 
   // For LTO. True if the symbol is referenced by a regular object (as
   // opposed to IR object).
@@ -2466,7 +2467,7 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
   }
 
   if (has_copyrel) {
-    return copyrel_readonly
+    return is_copyrel_readonly
       ? ctx.copyrel_relro->shdr.sh_addr + value
       : ctx.copyrel->shdr.sh_addr + value;
   }
@@ -2780,6 +2781,15 @@ inline void Symbol<E>::set_name(std::string_view name) {
 template <typename E>
 inline std::string_view Symbol<E>::name() const {
   return {nameptr, (size_t)namelen};
+}
+
+template <typename E>
+inline void Symbol<E>::add_aux(Context<E> &ctx) {
+  if (aux_idx == -1) {
+    i64 sz = ctx.symbol_aux.size();
+    aux_idx = sz;
+    ctx.symbol_aux.resize(sz + 1);
+  }
 }
 
 template <typename E>

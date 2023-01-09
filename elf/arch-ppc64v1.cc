@@ -10,9 +10,10 @@
 //
 // The function descriptor is essentially a pair of a function entry point
 // address and a value that should be set to %r2 before calling that
-// function. There is actually a third member, but we don't need to know
-// what that is. In total, the function descriptor is 24 bytes long. Here
-// is why we need it.
+// function. There is also a third member for "the environment pointer for
+// languages such as Pascal and PL/1" according to the psABI, but it looks
+// like no one acutally uses it. In total, the function descriptor is 24
+// bytes long. Here is why we need it.
 //
 // PPC generally lacks PC-relative data access instructions. Position-
 // independent code sets GOT + 0x8000 to %r2 and access global variables
@@ -56,10 +57,6 @@ static u64 hi(u64 x)       { return x >> 16; }
 static u64 ha(u64 x)       { return (x + 0x8000) >> 16; }
 static u64 high(u64 x)     { return (x >> 16) & 0xffff; }
 static u64 higha(u64 x)    { return ((x + 0x8000) >> 16) & 0xffff; }
-static u64 higher(u64 x)   { return (x >> 32) & 0xffff; }
-static u64 highera(u64 x)  { return ((x + 0x8000) >> 32) & 0xffff; }
-static u64 highest(u64 x)  { return x >> 48; }
-static u64 highesta(u64 x) { return (x + 0x8000) >> 48; }
 
 // .plt is used only for lazy symbol resolution on PPC64. All PLT
 // calls are made via range extension thunks even if they are within
@@ -169,12 +166,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_TOC16_LO:
       *(ub16 *)loc = lo(S + A - TOC);
       break;
-    case R_PPC64_TOC16_DS: {
-      i64 val = S + A - TOC;
-      check(val, -(1 << 15), 1 << 15);
-      *(ub16 *)loc |= val & 0xfffc;
+    case R_PPC64_TOC16_DS:
+      check(S + A - TOC, -(1 << 15), 1 << 15);
+      *(ub16 *)loc |= (S + A - TOC) & 0xfffc;
       break;
-    }
     case R_PPC64_TOC16_LO_DS:
       *(ub16 *)loc |= (S + A - TOC) & 0xfffc;
       break;

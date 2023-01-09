@@ -192,9 +192,10 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   //     A    B    C    D
   //                   ^
   //                   We insert a thunk for the current batch just before D
-  //          <--->      The current batch, which is smaller than BATCH_SIZE
-  //     <-------->      Smaller than max_distance<E>
-  //          <--------> Smaller than max_distance<E>
+  //          <--->      The current batch, which is smaller than batch_size
+  //     <-------->      smaller than max_distance
+  //          <--------> Smaller than max_distance
+  //     <-------------> Reachable from the current batch
   //
   // A is the input section with the smallest address than can reach
   // anywhere from the current batch.

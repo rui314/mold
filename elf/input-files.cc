@@ -1516,7 +1516,7 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
 }
 
 template <typename E>
-std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
+std::span<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
   assert(sym->file == this);
 
   std::call_once(init_aliases, [&] {
@@ -1532,16 +1532,12 @@ std::vector<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
     });
   });
 
-  struct Cmp {
-    bool operator()(Symbol<E> *sym, u64 val) { return sym->esym().st_value < val; }
-    bool operator()(u64 val, Symbol<E> *sym) { return val < sym->esym().st_value; }
-  };
+  auto [begin, end] = std::equal_range(aliases.begin(), aliases.end(), sym,
+                                       [&](Symbol<E> *x, Symbol<E> *y) {
+    return x->esym().st_value < y->esym().st_value;
+  });
 
-  auto [begin, end] =
-    std::equal_range(aliases.begin(), aliases.end(), sym->esym().st_value, Cmp{});
-  std::vector<Symbol<E> *> vec{begin, end};
-  std::erase(vec, sym);
-  return vec;
+  return {begin, end};
 }
 
 // Infer an alignment of a DSO symbol. An alignment of a symbol in other
@@ -1561,7 +1557,7 @@ i64 SharedFile<E>::get_alignment(Symbol<E> *sym) {
 }
 
 template <typename E>
-bool SharedFile<E>::is_readonly(Context<E> &ctx, Symbol<E> *sym) {
+bool SharedFile<E>::is_readonly(Symbol<E> *sym) {
   u64 val = sym->esym().st_value;
 
   for (ElfPhdr<E> &phdr : this->get_phdrs())

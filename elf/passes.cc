@@ -479,7 +479,7 @@ template <typename E>
 void create_output_sections(Context<E> &ctx) {
   Timer t(ctx, "create_output_sections");
 
-  struct Cmp {
+  struct Hash {
     size_t operator()(const OutputSectionKey &k) const {
       u64 h = hash_string(k.name);
       h = combine_hash(h, std::hash<u64>{}(k.type));
@@ -488,7 +488,7 @@ void create_output_sections(Context<E> &ctx) {
     }
   };
 
-  std::unordered_map<OutputSectionKey, OutputSection<E> *, Cmp> map;
+  std::unordered_map<OutputSectionKey, OutputSection<E> *, Hash> map;
   std::shared_mutex mu;
 
   // Instantiate output sections
@@ -1265,17 +1265,9 @@ void scan_relocations(Context<E> &ctx) {
   std::vector<Symbol<E> *> syms = flatten(vec);
   ctx.symbol_aux.reserve(syms.size());
 
-  auto add_aux = [&](Symbol<E> *sym) {
-    if (sym->aux_idx == -1) {
-      i64 sz = ctx.symbol_aux.size();
-      sym->aux_idx = sz;
-      ctx.symbol_aux.resize(sz + 1);
-    }
-  };
-
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
-    add_aux(sym);
+    sym->add_aux(ctx);
 
     if (sym->is_imported || sym->is_exported)
       ctx.dynsym->add_symbol(ctx, sym);
@@ -1290,7 +1282,7 @@ void scan_relocations(Context<E> &ctx) {
       sym->is_exported = true;
 
       // We can't use .plt.got for a canonical PLT because otherwise
-      // .plt.got and .got would refer each other, resulting in an
+      // .plt.got and .got would refer to each other, resulting in an
       // infinite loop at runtime.
       ctx.plt->add_symbol(ctx, sym);
     } else if (sym->flags & NEEDS_PLT) {
@@ -1310,31 +1302,10 @@ void scan_relocations(Context<E> &ctx) {
       ctx.got->add_tlsdesc_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_COPYREL) {
-      assert(sym->file->is_dso);
-      SharedFile<E> *file = (SharedFile<E> *)sym->file;
-      sym->copyrel_readonly = file->is_readonly(ctx, sym);
-
-      if (sym->copyrel_readonly)
+      if (((SharedFile<E> *)sym->file)->is_readonly(sym))
         ctx.copyrel_relro->add_symbol(ctx, sym);
       else
         ctx.copyrel->add_symbol(ctx, sym);
-
-      // If a symbol needs copyrel, it is considered both imported
-      // and exported.
-      assert(sym->is_imported);
-      sym->is_exported = true;
-
-      // Aliases of this symbol are also copied so that they will be
-      // resolved to the same address at runtime.
-      for (Symbol<E> *alias : file->find_aliases(sym)) {
-        add_aux(alias);
-        alias->is_imported = true;
-        alias->is_exported = true;
-        alias->has_copyrel = true;
-        alias->value = sym->value;
-        alias->copyrel_readonly = sym->copyrel_readonly;
-        ctx.dynsym->add_symbol(ctx, alias);
-      }
     }
 
     if constexpr (is_ppc64v1<E>)
@@ -1562,7 +1533,8 @@ void compute_import_export(Context<E> &ctx) {
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
       for (Symbol<E> *sym : file->symbols) {
         if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN) {
-          if (sym->ver_idx != VER_NDX_LOCAL || !ctx.default_version_from_version_script) {
+          if (sym->ver_idx != VER_NDX_LOCAL ||
+              !ctx.default_version_from_version_script) {
             std::scoped_lock lock(sym->mu);
             sym->is_exported = true;
           }

@@ -1587,7 +1587,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
 
   u32 shndx = 0;
   if (sym.has_copyrel) {
-    shndx = sym.copyrel_readonly ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
+    shndx = sym.is_copyrel_readonly ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
     esym.st_value = sym.get_addr(ctx);
   } else if (sym.file->is_dso || sym.esym().is_undef()) {
     shndx = SHN_UNDEF;
@@ -2243,16 +2243,30 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!ctx.arg.shared);
   assert(sym->file->is_dso);
 
-  sym->has_copyrel = true;
   symbols.push_back(sym);
-  ctx.dynsym->add_symbol(ctx, sym);
 
-  i64 alignment = ((SharedFile<E> *)sym->file)->get_alignment(sym);
-  this->shdr.sh_size = align_to(this->shdr.sh_size, alignment);
-  sym->value = this->shdr.sh_size;
+  SharedFile<E> &file = *(SharedFile<E> *)sym->file;
+  i64 alignment = file.get_alignment(sym);
+  u64 offset = align_to(this->shdr.sh_size, alignment);
 
-  this->shdr.sh_size += sym->esym().st_size;
+  this->shdr.sh_size = offset + sym->esym().st_size;
   this->shdr.sh_addralign = std::max<i64>(alignment, this->shdr.sh_addralign);
+
+  // We need to create dynamic symbols not only for this particular symbol
+  // but also for its aliases (i.e. other symbols at the same address)
+  // becasue otherwise the aliases are broken apart at runtime.
+  // For example, `environ`, `_environ` and `__environ` in libc.so are
+  // aliases. If one of the symbols is copied by a copy relocation, other
+  // symbols have to refer to the copied place as well.
+  for (Symbol<E> *sym2 : file.find_aliases(sym)) {
+    sym2->add_aux(ctx);
+    sym2->is_imported = true;
+    sym2->is_exported = true;
+    sym2->has_copyrel = true;
+    sym2->is_copyrel_readonly = is_relro;
+    sym2->value = offset;
+    ctx.dynsym->add_symbol(ctx, sym2);
+  }
 }
 
 template <typename E>

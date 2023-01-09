@@ -51,10 +51,6 @@ static u64 hi(u64 x)       { return x >> 16; }
 static u64 ha(u64 x)       { return (x + 0x8000) >> 16; }
 static u64 high(u64 x)     { return (x >> 16) & 0xffff; }
 static u64 higha(u64 x)    { return ((x + 0x8000) >> 16) & 0xffff; }
-static u64 higher(u64 x)   { return (x >> 32) & 0xffff; }
-static u64 highera(u64 x)  { return ((x + 0x8000) >> 32) & 0xffff; }
-static u64 highest(u64 x)  { return x >> 48; }
-static u64 highesta(u64 x) { return (x + 0x8000) >> 48; }
 
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
