@@ -488,8 +488,30 @@ void create_output_sections(Context<E> &ctx) {
     }
   };
 
-  std::unordered_map<OutputSectionKey, OutputSection<E> *, Cmp> map;
-  std::shared_mutex mu;
+  std::unordered_map<OutputSectionKey, OutputSection<E> *, Cmp> map1;
+  std::unordered_map<OutputSectionKey, OutputSection<E> *, Cmp> map2;
+  std::mutex mu;
+
+  // We guard the maps from concurrent writes using the mutex.
+  // The lock contention can cause a noticeable slowdown if we have
+  // millions of input sections. To avoid that, we create output sections
+  // for the first 10 files, hoping that we create almost all output
+  // sections in this loop rather than the next loop.
+  for (i64 i = 0; i < std::min<i64>(10, ctx.objs.size()); i++) {
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
+      if (!isec || !isec->is_alive)
+        continue;
+
+      OutputSectionKey key = get_output_section_key(ctx, *isec);
+      if (map1.find(key) != map1.end())
+        continue;
+
+      std::unique_ptr<OutputSection<E>> osec =
+        std::make_unique<OutputSection<E>>(key.name, key.type, key.flags);
+      map1.insert({key, osec.get()});
+      ctx.osec_pool.emplace_back(std::move(osec));
+    }
+  }
 
   // Instantiate output sections
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -499,23 +521,23 @@ void create_output_sections(Context<E> &ctx) {
 
       OutputSectionKey key = get_output_section_key(ctx, *isec);
 
-      {
-        std::shared_lock lock(mu);
-        auto it = map.find(key);
-        if (it != map.end()) {
-          isec->output_section = it->second;
-          continue;
-        }
+      if (auto it = map1.find(key); it != map1.end()) {
+        isec->output_section = it->second;
+        continue;
+      }
+
+      std::scoped_lock lock(mu);
+
+      if (auto it = map2.find(key); it != map2.end()) {
+        isec->output_section = it->second;
+        continue;
       }
 
       std::unique_ptr<OutputSection<E>> osec =
         std::make_unique<OutputSection<E>>(key.name, key.type, key.flags);
-      std::unique_lock lock(mu);
-
-      auto [it, inserted] = map.insert({key, osec.get()});
-      isec->output_section = it->second;
-      if (inserted)
-        ctx.osec_pool.emplace_back(std::move(osec));
+      isec->output_section = osec.get();
+      map2.insert({key, osec.get()});
+      ctx.osec_pool.emplace_back(std::move(osec));
     }
   });
 
@@ -527,7 +549,9 @@ void create_output_sections(Context<E> &ctx) {
 
   // Add output sections and mergeable sections to ctx.chunks
   std::vector<Chunk<E> *> vec;
-  for (std::pair<const OutputSectionKey, OutputSection<E> *> &kv : map)
+  for (std::pair<const OutputSectionKey, OutputSection<E> *> &kv : map1)
+    vec.push_back(kv.second);
+  for (std::pair<const OutputSectionKey, OutputSection<E> *> &kv : map2)
     vec.push_back(kv.second);
 
   for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
