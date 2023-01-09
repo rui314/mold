@@ -52,7 +52,7 @@ include(GNUInstallDirs)
 # Build mold itself using mold if -DMOLD_USE_MOLD=ON
 option(MOLD_USE_MOLD "Use mold to build mold" OFF)
 if(MOLD_USE_MOLD)
-  add_link_options(-fuse-ld=mold -Wl,-gdb-index)
+  add_link_options(-fuse-ld=mold -Wl,--gdb-index)
 endif()
 
 add_executable(mold)
