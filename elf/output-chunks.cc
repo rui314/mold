@@ -3026,9 +3026,18 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
         addend = frag->offset + sym.value + get_addend(isec, rel);
       } else {
         InputSection<E> *target = sym.get_input_section();
-        OutputSection<E> *osec = target->output_section;
-        out.r_sym = osec->shndx;
-        addend = get_addend(isec, rel) + target->offset;
+
+        if (OutputSection<E> *osec = target->output_section) {
+          out.r_sym = osec->shndx;
+          addend = get_addend(isec, rel) + target->offset;
+        } else if (isec.name() == ".eh_frame") {
+          out.r_sym = ctx.eh_frame->shndx;
+          addend = get_addend(isec, rel);
+        } else {
+          // This is usually a dead debug section referring a
+          // COMDAT-eliminated section.
+          addend = 0;
+        }
       }
 
       if constexpr (E::is_rela) {
