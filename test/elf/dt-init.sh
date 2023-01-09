@@ -3,9 +3,9 @@
 
 [ $MACHINE = riscv64 -o $MACHINE = riscv32 ] && skip
 
-# musl libc does not support init/fini on ARM32
+# musl libc does not support init/fini on ARM
 # https://github.com/rui314/mold/issues/951
-[ $MACHINE = arm ] && ldd --help 2>&1 | grep -q musl && skip
+[ $MACHINE = arm -o  $MACHINE = aarch64 ] && ldd --help 2>&1 | grep -q musl && skip
 
 cat <<EOF | $CC -c -fPIC -o $t/a.o -xc -
 void keep();
