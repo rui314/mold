@@ -341,6 +341,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_AARCH64_TLSLE_ADD_TPREL_LO12:
+      check(S + A - ctx.tp_addr, 0, 1 << 12);
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
       *(ul32 *)loc |= bits(S + A - ctx.tp_addr, 11, 0) << 10;
       break;
