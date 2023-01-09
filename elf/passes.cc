@@ -516,6 +516,8 @@ void create_output_sections(Context<E> &ctx) {
         std::shared_lock lock(mu);
         if (auto it = map.find(key); it != map.end()) {
           isec->output_section = it->second;
+          lock.unlock();
+          cache.insert({key, it->second});
           continue;
         }
       }
