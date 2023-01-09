@@ -427,7 +427,7 @@ public:
 
       if (ptr == nullptr) {
         if (!keys[idx].compare_exchange_weak(ptr, marker,
-                                             std::memory_order_acq_rel))
+                                             std::memory_order_acquire))
           continue;
         new (values + idx) T(val);
         key_sizes[idx] = key.size();

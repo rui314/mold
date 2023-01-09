@@ -1922,8 +1922,9 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
     fragments.reserve(shard_size);
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
-        fragments.push_back({{map.keys[j], map.key_sizes[j]}, &frag});
+      if (map.has_key(j))
+        if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+          fragments.push_back({{map.keys[j], map.key_sizes[j]}, &frag});
 
     // Sort fragments to make output deterministic.
     tbb::parallel_sort(fragments.begin(), fragments.end(),
@@ -1982,8 +1983,9 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
-        memcpy(buf + frag.offset, map.keys[j], map.key_sizes[j]);
+      if (map.has_key(j))
+        if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+          memcpy(buf + frag.offset, map.keys[j], map.key_sizes[j]);
   });
 }
 
