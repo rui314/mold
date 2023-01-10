@@ -542,10 +542,8 @@ int elf_main(int argc, char **argv) {
   // Beyond this point, no new symbols will be added to the result.
 
   // Handle --print-dependencies
-  if (ctx.arg.print_dependencies == 1)
+  if (ctx.arg.print_dependencies)
     print_dependencies(ctx);
-  else if (ctx.arg.print_dependencies == 2)
-    print_dependencies_full(ctx);
 
   // Handle -repro
   if (ctx.arg.repro)

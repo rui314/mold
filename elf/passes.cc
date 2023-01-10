@@ -821,30 +821,6 @@ void print_dependencies(Context<E> &ctx) {
   SyncOut(ctx) <<
 R"(# This is an output of the mold linker's --print-dependencies option.
 #
-# Each line consists of three fields, <file1>, <file2> and <symbol>
-# separated by tab characters. It indicates that <file1> depends on
-# <file2> to use <symbol>.)";
-
-  auto print = [&](InputFile<E> *file) {
-    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
-      ElfSym<E> &esym = file->elf_syms[i];
-      Symbol<E> &sym = *file->symbols[i];
-      if (esym.is_undef() && sym.file && sym.file != file)
-        SyncOut(ctx) << *file << "\t" << *sym.file << "\t" << sym;
-    }
-  };
-
-  for (InputFile<E> *file : ctx.objs)
-    print(file);
-  for (InputFile<E> *file : ctx.dsos)
-    print(file);
-}
-
-template <typename E>
-void print_dependencies_full(Context<E> &ctx) {
-  SyncOut(ctx) <<
-R"(# This is an output of the mold linker's --print-dependencies=full option.
-#
 # Each line consists of 4 fields, <section1>, <section2>, <symbol-type> and
 # <symbol>, separated by tab characters. It indicates that <section1> depends
 # on <section2> to use <symbol>. <symbol-type> is either "u" or "w" for
@@ -2506,7 +2482,6 @@ template void create_output_sections(Context<E> &);
 template void add_synthetic_symbols(Context<E> &);
 template void check_cet_errors(Context<E> &);
 template void print_dependencies(Context<E> &);
-template void print_dependencies_full(Context<E> &);
 template void write_repro_file(Context<E> &);
 template void check_duplicate_symbols(Context<E> &);
 template void check_symbol_types(Context<E> &);

@@ -10,7 +10,5 @@ void foo();
 int main() { foo(); }
 EOF
 
-! $CC -B. -o $t/exe $t/a.o $t/b.o \
-  -Wl,--print-dependencies=full > $t/log 2> /dev/null
-
+! $CC -B. -o $t/exe $t/a.o $t/b.o -Wl,--print-dependencies > $t/log 2> /dev/null
 grep -q 'b\.o.*a\.o.*foo$' $t/log

@@ -582,9 +582,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.Map = arg;
       ctx.arg.print_map = true;
     } else if (read_flag("print-dependencies")) {
-      ctx.arg.print_dependencies = 1;
-    } else if (read_flag("print-dependencies=full")) {
-      ctx.arg.print_dependencies = 2;
+      ctx.arg.print_dependencies = true;
     } else if (read_flag("print-map") || read_flag("M")) {
       ctx.arg.print_map = true;
     } else if (read_flag("Bstatic") || read_flag("dn") || read_flag("static")) {

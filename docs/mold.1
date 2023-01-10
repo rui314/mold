@@ -262,6 +262,25 @@ hides that latency. By default, it does fork.
 .It Fl -perf
 Print performance statistics.
 .Pp
+.It Fl -print-dependencies
+Print out dependency information for input files.
+.Pp
+
+Each line of the output for this option shows that which file depends on \
+which file to use which symbol. This option is useful to debug why some \
+object file in a static archive got linked or why some shared library is \
+kept in an output file's dependency list even with
+.Fl -as-needed .
+.Pp
+.It Fl N , Fl -omagic
+.It Fl -no-omagic
+Force
+.Nm
+to emit an output file with an old-fashioned memory layout.
+First, it makes the first data segment to not be aligned to a page boundary.
+Second, text segments are marked as writable if the option is given.
+
+.Pp
 .It Fl -repro
 Archive input files as a tar file.
 .Pp
