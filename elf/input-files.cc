@@ -1537,7 +1537,7 @@ std::span<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
     return x->esym().st_value < y->esym().st_value;
   });
 
-  return {begin, end};
+  return {begin, (size_t)(end - begin)};
 }
 
 // Infer an alignment of a DSO symbol. An alignment of a symbol in other
