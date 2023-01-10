@@ -130,7 +130,7 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
 // Scan relocations to collect symbols that need thunks.
 template <typename E>
 static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
-                      RangeExtensionThunk<E> &thunk) {
+                      RangeExtensionThunk<E> &thunk, i64 thunk_idx) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   std::vector<RangeExtensionRef> &range_extn = isec.extra.range_extn;
   range_extn.resize(rels.size());
@@ -159,7 +159,7 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
 
     // Otherwise, add the symbol to the current thunk if it's not
     // added already.
-    range_extn[i].thunk_idx = thunk.thunk_idx;
+    range_extn[i].thunk_idx = thunk_idx;
     range_extn[i].sym_idx = -1;
 
     if (sym.flags.exchange(-1) == 0) {
@@ -235,33 +235,31 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       reset_thunk(*osec.thunks[a++]);
 
     // Create a thunk for input sections between B and C and place it at D.
-    osec.thunks.emplace_back(new RangeExtensionThunk<E>{osec});
-
-    RangeExtensionThunk<E> &thunk = *osec.thunks.back();
-    thunk.thunk_idx = osec.thunks.size() - 1;
-    offset = align_to(offset, thunk.alignment);
-    thunk.offset = offset;
+    offset = align_to(offset, RangeExtensionThunk<E>::alignment);
+    RangeExtensionThunk<E> *thunk = new RangeExtensionThunk<E>(osec, offset);
+    i64 thunk_idx = osec.thunks.size();
+    osec.thunks.emplace_back(thunk);
 
     // Scan relocations between B and C to collect symbols that need thunks.
     tbb::parallel_for_each(m.begin() + b, m.begin() + c,
                            [&](InputSection<E> *isec) {
-      scan_rels(ctx, *isec, thunk);
+      scan_rels(ctx, *isec, *thunk, thunk_idx);
     });
 
     // Now that we know the number of symbols in the thunk, we can compute
     // its size.
-    assert(thunk.size() < max_thunk_size);
-    offset += thunk.size();
+    assert(thunk->size() < max_thunk_size);
+    offset += thunk->size();
 
     // Sort symbols added to the thunk to make the output deterministic.
-    sort(thunk.symbols, [](Symbol<E> *a, Symbol<E> *b) {
+    sort(thunk->symbols, [](Symbol<E> *a, Symbol<E> *b) {
       return std::tuple{a->file->priority, a->sym_idx} <
              std::tuple{b->file->priority, b->sym_idx};
     });
 
     // Assign offsets within the thunk to the symbols.
-    for (i64 i = 0; Symbol<E> *sym : thunk.symbols) {
-      sym->extra.thunk_idx = thunk.thunk_idx;
+    for (i64 i = 0; Symbol<E> *sym : thunk->symbols) {
+      sym->extra.thunk_idx = thunk_idx;
       sym->extra.thunk_sym_idx = i++;
     }
 
@@ -273,7 +271,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       std::span<RangeExtensionRef> range_extn = isec->extra.range_extn;
 
       for (i64 i = 0; i < rels.size(); i++)
-        if (range_extn[i].thunk_idx == thunk.thunk_idx)
+        if (range_extn[i].thunk_idx == thunk_idx)
           range_extn[i].sym_idx = syms[rels[i].r_sym]->extra.thunk_sym_idx;
     });
 

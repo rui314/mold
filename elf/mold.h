@@ -105,7 +105,9 @@ class RangeExtensionThunk {};
 template <typename E> requires needs_thunk<E>
 class RangeExtensionThunk<E> {
 public:
-  RangeExtensionThunk(OutputSection<E> &osec) : output_section(osec) {}
+  RangeExtensionThunk(OutputSection<E> &osec, i64 offset)
+    : output_section(osec), offset(offset) {}
+
   i64 size() const { return E::thunk_hdr_size + symbols.size() * E::thunk_size; }
   void copy_buf(Context<E> &ctx);
 
@@ -117,8 +119,7 @@ public:
   static constexpr i64 alignment = 4;
 
   OutputSection<E> &output_section;
-  i32 thunk_idx = -1;
-  i64 offset = -1;
+  i64 offset;
   std::mutex mu;
   std::vector<Symbol<E> *> symbols;
 };

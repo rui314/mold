@@ -249,7 +249,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<std::unique_ptr<RangeExtensionThunk<E>>> thunks =
     output_section->thunks;
 
-  auto get_trampoline_addr = [&](u64 addr) {
+  auto get_tls_trampoline_addr = [&](u64 addr) {
     for (;;) {
       assert(!thunks.empty());
       i64 disp = output_section->shdr.sh_addr + thunks[0]->offset - addr;
@@ -466,7 +466,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_TLS_CALL:
       if (sym.has_tlsdesc(ctx)) {
         // BL <tls_trampoline>
-        *(ul32 *)loc = 0xeb00'0000 | bits(get_trampoline_addr(P + 8), 25, 2);
+        *(ul32 *)loc = 0xeb00'0000 | bits(get_tls_trampoline_addr(P + 8), 25, 2);
       } else {
         // BL -> NOP
         *(ul32 *)loc = 0xe320'f000;
@@ -474,7 +474,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_ARM_THM_TLS_CALL:
       if (sym.has_tlsdesc(ctx)) {
-        u64 val = align_to(get_trampoline_addr(P + 4), 4);
+        u64 val = align_to(get_tls_trampoline_addr(P + 4), 4);
         write_thm_b_imm(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       } else {
