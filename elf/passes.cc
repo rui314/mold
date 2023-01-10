@@ -512,28 +512,29 @@ void create_output_sections(Context<E> &ctx) {
         continue;
       }
 
-      {
-        std::shared_lock lock(mu);
-        if (auto it = map.find(key); it != map.end()) {
-          isec->output_section = it->second;
-          lock.unlock();
-          cache.insert({key, it->second});
-          continue;
+      auto get_or_insert = [&] {
+        {
+          std::shared_lock lock(mu);
+          if (auto it = map.find(key); it != map.end())
+            return it->second;
         }
-      }
 
-      std::unique_ptr<OutputSection<E>> osec =
-        std::make_unique<OutputSection<E>>(key.name, key.type, key.flags);
+        std::unique_ptr<OutputSection<E>> osec =
+          std::make_unique<OutputSection<E>>(key.name, key.type, key.flags);
 
-      std::unique_lock lock(mu);
-      auto [it, inserted] = map.insert({key, osec.get()});
-      lock.unlock();
+        std::unique_lock lock(mu);
+        auto [it, inserted] = map.insert({key, osec.get()});
+        OutputSection<E> *ret = it->second;
+        lock.unlock();
 
-      if (inserted)
-        ctx.osec_pool.emplace_back(std::move(osec));
+        if (inserted)
+          ctx.osec_pool.emplace_back(std::move(osec));
+        return ret;
+      };
 
-      isec->output_section = it->second;
-      cache.insert({key, it->second});
+      OutputSection<E> *osec = get_or_insert();
+      isec->output_section = osec;
+      cache.insert({key, osec});
     }
   });
 
