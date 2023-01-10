@@ -199,12 +199,16 @@ endif()
 
 # We always use Clang to build mold on Windows. MSVC can't compile mold.
 if(WIN32)
-  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     message(FATAL_ERROR
       "Your compiler is not supported; install Clang from Visual Studio Installer and re-run cmake with '-T clangcl'")
   endif()
 
   target_compile_definitions(mold PRIVATE NOGDI NOMINMAX)
+  if(MINGW)
+    target_compile_definitions(mold PRIVATE _WIN32_WINNT=0xA00)
+    target_link_libraries(mold PRIVATE bcrypt)
+  endif()
 else()
   include(CheckLibraryExists)
   check_library_exists(m pow "" LIBM_FOUND)
@@ -246,7 +250,7 @@ if(NOT HAVE_FULL_ATOMIC_SUPPORT)
 endif()
 
 # Add -pthread
-if(NOT APPLE AND NOT WIN32)
+if(NOT APPLE AND NOT MSVC)
   target_compile_options(mold PRIVATE -pthread)
   target_link_options(mold PRIVATE -pthread)
 endif()
@@ -441,10 +445,10 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
       file(CREATE_LINK \${OLD_REL} \$ENV{DESTDIR}\${NEW_ABS} SYMBOLIC)")
   endfunction()
 
-  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
-    ${CMAKE_INSTALL_LIBEXECDIR}/mold/ld)
-  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold
-    ${CMAKE_INSTALL_BINDIR}/ld.mold)
+  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold${CMAKE_EXECUTABLE_SUFFIX}
+    ${CMAKE_INSTALL_LIBEXECDIR}/mold/ld${CMAKE_EXECUTABLE_SUFFIX})
+  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold${CMAKE_EXECUTABLE_SUFFIX}
+    ${CMAKE_INSTALL_BINDIR}/ld.mold${CMAKE_EXECUTABLE_SUFFIX})
   mold_install_relative_symlink(${CMAKE_INSTALL_MANDIR}/man1/mold.1
     ${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)
 
