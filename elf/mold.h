@@ -125,8 +125,8 @@ public:
 };
 
 struct RangeExtensionRef {
-  i32 thunk_idx = -1;
-  i32 sym_idx = -1;
+  i16 thunk_idx = -1;
+  i16 sym_idx = -1;
 };
 
 template <typename E>
@@ -1946,8 +1946,8 @@ struct SymbolExtras {};
 template <typename E> requires needs_thunk<E>
 struct SymbolExtras<E> {
   // For range extension thunks
-  i32 thunk_idx = -1;
-  i32 thunk_sym_idx = -1;
+  i16 thunk_idx = -1;
+  i16 thunk_sym_idx = -1;
 };
 
 // Flags for Symbol<E>::get_addr()

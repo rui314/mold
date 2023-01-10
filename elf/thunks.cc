@@ -287,6 +287,9 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
 #if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2
 using E = MOLD_TARGET;
+
+static_assert(max_thunk_size / E::thunk_size < INT16_MAX);
+
 template void create_range_extension_thunks(Context<E> &, OutputSection<E> &);
 #endif
 
