@@ -1922,9 +1922,10 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
     fragments.reserve(shard_size);
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (map.has_key(j))
-        if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
-          fragments.push_back({{map.keys[j], map.key_sizes[j]}, &frag});
+      if (const char *key = map.get_key(j))
+        if (SectionFragment<E> &frag = map.values[j];
+            frag.is_alive.load(std::memory_order_relaxed))
+          fragments.push_back({{key, map.key_sizes[j]}, &frag});
 
     // Sort fragments to make output deterministic.
     tbb::parallel_sort(fragments.begin(), fragments.end(),
@@ -1962,7 +1963,8 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+      if (SectionFragment<E> &frag = map.values[j];
+          frag.is_alive.load(std::memory_order_relaxed))
         frag.offset += shard_offsets[i];
   });
 
@@ -1983,9 +1985,10 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (map.has_key(j))
-        if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
-          memcpy(buf + frag.offset, map.keys[j], map.key_sizes[j]);
+      if (const char *key = map.get_key(j))
+        if (SectionFragment<E> &frag = map.values[j];
+            frag.is_alive.load(std::memory_order_relaxed))
+          memcpy(buf + frag.offset, key, map.key_sizes[j]);
   });
 }
 
@@ -1993,7 +1996,7 @@ template <typename E>
 void MergedSection<E>::print_stats(Context<E> &ctx) {
   i64 used = 0;
   for (i64 i = 0; i < map.nbuckets; i++)
-    if (map.keys[i])
+    if (map.get_key(i))
       used++;
 
   SyncOut(ctx) << this->name
@@ -2803,7 +2806,7 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   u32 mask = symtab_size / 8 - 1;
 
   for (i64 i = 0; i < map.nbuckets; i++) {
-    if (map.has_key(i)) {
+    if (map.get_key(i)) {
       u32 hash = map.values[i].hash;
       u32 step = (hash & mask) | 1;
       u32 j = hash & mask;
@@ -2839,7 +2842,7 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
     u32 *attrs = (u32 *)buf;
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
-      if (map.has_key(j)) {
+      if (map.get_key(j)) {
         MapEntry &ent = map.values[j];
         u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
         u32 *start = attrs + idx + 1;
@@ -2856,9 +2859,9 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   // Write pubnames and pubtypes.
   tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
-      if (map.has_key(j)) {
+      if (const char *key = map.get_key(j)) {
         ObjectFile<E> &file = *map.values[j].owner;
-        std::string_view name{map.keys[j], map.key_sizes[j]};
+        std::string_view name{key, map.key_sizes[j]};
         write_string(buf + file.names_offset + map.values[j].name_offset, name);
       }
     }

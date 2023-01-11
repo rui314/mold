@@ -448,7 +448,7 @@ public:
     return {nullptr, false};
   }
 
-  bool has_key(i64 idx) {
+  const char *get_key(i64 idx) {
     return keys[idx].load(std::memory_order_relaxed);
   }
 
@@ -457,7 +457,6 @@ public:
   static constexpr i64 MAX_RETRY = 128;
 
   i64 nbuckets = 0;
-  std::atomic<const char *> *keys = nullptr;
   u32 *key_sizes = nullptr;
   T *values = nullptr;
 
@@ -470,6 +469,8 @@ private:
 #endif
   }
 
+private:
+  std::atomic<const char *> *keys = nullptr;
   static constexpr const char *marker = "marker";
 };
 
