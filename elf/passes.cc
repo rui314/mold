@@ -1006,8 +1006,12 @@ void sort_init_fini(Context<E> &ctx) {
         if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_REVERSE)
           std::reverse(osec->members.begin(), osec->members.end());
 
+        std::unordered_map<InputSection<E> *, i64> map;
+        for (InputSection<E> *isec : osec->members)
+          map.insert({isec, get_priority(isec)});
+
         sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
-          return get_priority(a) < get_priority(b);
+          return map[a] < map[b];
         });
       }
     }
@@ -1045,8 +1049,12 @@ void sort_ctor_dtor(Context<E> &ctx) {
         if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_REVERSE)
           std::reverse(osec->members.begin(), osec->members.end());
 
+        std::unordered_map<InputSection<E> *, i64> map;
+        for (InputSection<E> *isec : osec->members)
+          map.insert({isec, get_priority(isec)});
+
         sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
-          return get_priority(a) < get_priority(b);
+          return map[a] < map[b];
         });
       }
     }
