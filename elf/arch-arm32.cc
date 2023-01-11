@@ -293,9 +293,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = S + A - P;
       break;
     case R_ARM_THM_CALL: {
-      // THM_CALL relocation refers either BL or BLX instruction.
-      // They are different in only one bit. We need to use BL if
-      // the jump target is Thumb. Otherwise, use BLX.
       if (sym.is_remaining_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
@@ -303,6 +300,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         break;
       }
 
+      // THM_CALL relocation refers either BL or BLX instruction.
+      // They are different in only one bit. We need to use BL if
+      // the jump target is Thumb. Otherwise, use BLX.
       i64 val = S + A - P;
       if (is_jump_reachable(val)) {
         if (T) {
@@ -332,6 +332,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = G + A;
       break;
     case R_ARM_CALL: {
+      if (sym.is_remaining_undef_weak()) {
+        *(ul32 *)loc = 0xe320'f000; // NOP
+        break;
+      }
+
       // Just like THM_CALL, ARM_CALL relocation refers either BL or
       // BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
       bool is_bl = ((*(ul32 *)loc & 0xff00'0000) == 0xeb00'0000);
@@ -339,39 +344,40 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (!is_bl && !is_blx)
         Fatal(ctx) << *this << ": R_ARM_CALL refers neither BL nor BLX";
 
-      if (sym.is_remaining_undef_weak()) {
-        // On ARM, calling an weak undefined symbol jumps to the
-        // next instruction.
-        *(ul32 *)loc = 0xe320'f000; // NOP
-        break;
-      }
-
       u64 val = S + A - P;
       if (is_jump_reachable(val)) {
-        if (T)
-          *(ul32 *)loc = 0xfa00'0000 | (bit(val, 1) << 24) | bits(val, 25, 2);
-        else
-          *(ul32 *)loc = 0xeb00'0000 | bits(val, 25, 2);
+        if (T) {
+          *(ul32 *)loc = 0xfa00'0000; // BLX
+          *(ul32 *)loc |= (bit(val, 1) << 24) | bits(val, 25, 2);
+        } else {
+          *(ul32 *)loc = 0xeb00'0000; // BL
+          *(ul32 *)loc |= bits(val, 25, 2);
+        }
       } else {
-        *(ul32 *)loc = 0xeb00'0000 | bits(get_arm_thunk_addr() + A - P, 25, 2);
+        *(ul32 *)loc = 0xeb00'0000; // BL
+        *(ul32 *)loc |= bits(get_arm_thunk_addr() + A - P, 25, 2);
       }
       break;
     }
     case R_ARM_JUMP24:
-    case R_ARM_PLT32:
+    case R_ARM_PLT32: {
       if (sym.is_remaining_undef_weak()) {
         *(ul32 *)loc = 0xe320'f000; // NOP
-      } else {
-        // Unlike BL and BLX, we can't rewrite B to BX because BX doesn't
-        // takes an immediate; it takes only a register. So if mode switch
-        // is required, we jump to a linker-synthesized thunk which constructs
-        // a branch destination in a register and branches to that address.
-        u64 val = S + A - P;
-        if (!is_jump_reachable(val) || T)
-          val = get_arm_thunk_addr() + A - P;
-        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
+        break;
       }
+
+      // These relocs refers a B (unconditional branch) instruction.
+      // Unlike BL or BLX, we can't rewrite B to BX in place when the
+      // processor mode switch is required because BX doesn't takes an
+      // immediate; it takes only a register. So if mode switch is
+      // required, we jump to a linker-synthesized thunk which does the
+      // job with a longer code sequence.
+      u64 val = S + A - P;
+      if (!is_jump_reachable(val) || T)
+        val = get_arm_thunk_addr() + A - P;
+      *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
       break;
+    }
     case R_ARM_THM_JUMP11:
       assert(T);
       check(S + A - P, -(1 << 11), 1 << 11);
@@ -396,18 +402,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)(loc + 2) |= (J2 << 13) | (J1 << 11) | imm11;
       break;
     }
-    case R_ARM_THM_JUMP24:
+    case R_ARM_THM_JUMP24: {
       if (sym.is_remaining_undef_weak()) {
-        *(ul32 *)loc = 0x8000'f3af; // NOP.W
-      } else {
-        // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
-        // switch processor mode.
-        u64 val = S + A - P;
-        if (!is_jump_reachable(val) || !T)
-          val = get_thumb_thunk_addr() + A - P;
-        write_thm_b_imm(loc, val);
+        *(ul32 *)loc = 0x8000'f3af; // NOP
+        break;
       }
+
+      // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
+      // switch processor mode.
+      u64 val = S + A - P;
+      if (!is_jump_reachable(val) || !T)
+        val = get_thumb_thunk_addr() + A - P;
+      write_thm_b_imm(loc, val);
       break;
+    }
     case R_ARM_MOVW_PREL_NC:
       write_mov_imm(loc, ((S + A) | T) - P);
       break;
