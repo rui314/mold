@@ -113,16 +113,21 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.note_package = push(new NotePackageSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
-  if (ctx.arg.is_static) {
-    if constexpr (is_s390x<E>)
-      ctx.extra.tls_get_offset = push(new S390XTlsGetOffsetSection);
-
-    if constexpr (is_sparc<E>)
-      ctx.extra.tls_get_addr = push(new SparcTlsGetAddrSection);
-  }
 
   if constexpr (is_ppc64v1<E>)
     ctx.extra.opd = push(new PPC64OpdSection);
+
+  if constexpr (is_s390x<E>) {
+    if (ctx.arg.is_static)
+      ctx.extra.tls_get_offset_sec = push(new S390XTlsGetOffsetSection);
+    ctx.extra.tls_get_offset_sym = get_symbol(ctx, "__tls_get_offset");
+  }
+
+  if constexpr (is_sparc<E>) {
+    if (ctx.arg.is_static)
+      ctx.extra.tls_get_addr_sec = push(new SparcTlsGetAddrSection);
+    ctx.extra.tls_get_addr_sym = get_symbol(ctx, "__tls_get_addr");
+  }
 
   if constexpr (is_alpha<E>)
     ctx.extra.got = push(new AlphaGotSection);
@@ -133,9 +138,6 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.dynstr->keep();
     ctx.dynsym->keep();
   }
-
-  ctx.tls_get_addr = get_symbol(ctx, "__tls_get_addr");
-  ctx.tls_get_offset = get_symbol(ctx, "__tls_get_offset");
 }
 
 template <typename E>

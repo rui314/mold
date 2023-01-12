@@ -1618,11 +1618,13 @@ template <> struct ContextExtras<PPC64V2> {
 };
 
 template <> struct ContextExtras<SPARC64> {
-  SparcTlsGetAddrSection *tls_get_addr = nullptr;
+  SparcTlsGetAddrSection *tls_get_addr_sec = nullptr;
+  Symbol<SPARC64> *tls_get_addr_sym = nullptr;
 };
 
 template <> struct ContextExtras<S390X> {
-  S390XTlsGetOffsetSection *tls_get_offset = nullptr;
+  S390XTlsGetOffsetSection *tls_get_offset_sec = nullptr;
+  Symbol<S390X> *tls_get_offset_sym = nullptr;
 };
 
 template <> struct ContextExtras<ALPHA> {
@@ -1857,10 +1859,6 @@ struct Context {
   RelroPaddingSection<E> *relro_padding = nullptr;
 
   [[no_unique_address]] ContextExtras<E> extra;
-
-  // Frequently accessed symbols
-  Symbol<E> *tls_get_addr = nullptr;
-  Symbol<E> *tls_get_offset = nullptr;
 
   // For --gdb-index
   Chunk<E> *debug_info = nullptr;

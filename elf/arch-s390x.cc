@@ -203,10 +203,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_PC32DBL:
     case R_390_PLT32DBL:
-      if (ctx.is_static && &sym == ctx.tls_get_offset) {
+      if (ctx.is_static && &sym == ctx.extra.tls_get_offset_sym) {
         // __tls_get_offset() in libc.a is stub code that calls abort().
         // So we provide a replacement function.
-        *(ub32 *)loc = (ctx.extra.tls_get_offset->shdr.sh_addr - P) >> 1;
+        *(ub32 *)loc = (ctx.extra.tls_get_offset_sec->shdr.sh_addr - P) >> 1;
       } else {
         check_dbl(S + A - P, -(1LL << 32), 1LL << 32);
         *(ub32 *)loc = (S + A - P) >> 1;
