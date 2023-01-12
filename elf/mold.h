@@ -2287,6 +2287,9 @@ i64 get_addend(InputSection<E> &isec, const ElfRel<E> &rel) {
 template <typename E>
 void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel);
 
+template <typename E> requires E::is_rela
+void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {}
+
 template <typename E>
 inline const ElfShdr<E> &InputSection<E>::shdr() const {
   if (shndx < file.elf_sections.size())

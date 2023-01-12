@@ -3031,51 +3031,46 @@ void RelocSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void RelocSection<E>::copy_buf(Context<E> &ctx) {
   auto write = [&](ElfRel<E> &out, InputSection<E> &isec, const ElfRel<E> &rel) {
-    memset(&out, 0, sizeof(out));
-    out.r_offset = isec.output_section->shdr.sh_addr + isec.offset + rel.r_offset;
-    out.r_type = rel.r_type;
+    i64 symidx = 0;
+    i64 addend = 0;
 
     Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
 
     if (sym.esym().st_type == STT_SECTION) {
-      i64 addend;
-
       if (SectionFragment<E> *frag = sym.get_frag()) {
-        out.r_sym = frag->output_section.shndx;
+        symidx = frag->output_section.shndx;
         addend = frag->offset + sym.value + get_addend(isec, rel);
       } else {
         InputSection<E> *target = sym.get_input_section();
 
         if (OutputSection<E> *osec = target->output_section) {
-          out.r_sym = osec->shndx;
+          symidx = osec->shndx;
           addend = get_addend(isec, rel) + target->offset;
         } else if (isec.name() == ".eh_frame") {
-          out.r_sym = ctx.eh_frame->shndx;
+          symidx = ctx.eh_frame->shndx;
           addend = get_addend(isec, rel);
         } else {
           // This is usually a dead debug section referring a
           // COMDAT-eliminated section.
-          addend = 0;
         }
-      }
-
-      if constexpr (E::is_rela) {
-        out.r_addend = addend;
-      } else if (ctx.arg.relocatable) {
-        u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
-        write_addend(base + rel.r_offset, addend, rel);
       }
     } else {
       if (sym.sym_idx)
-        out.r_sym = sym.get_output_sym_idx(ctx);
-
-      if constexpr (E::is_rela)
-        out.r_addend = get_addend(isec, rel);
+        symidx = sym.get_output_sym_idx(ctx);
+      addend = get_addend(isec, rel);
     }
 
     if constexpr (is_alpha<E>)
       if (rel.r_type == R_ALPHA_GPDISP || rel.r_type == R_ALPHA_LITUSE)
-        out.r_addend = rel.r_addend;
+        addend = rel.r_addend;
+
+    i64 r_offset = isec.output_section->shdr.sh_addr + isec.offset + rel.r_offset;
+    out = ElfRel<E>(r_offset, rel.r_type, symidx, addend);
+
+    if (ctx.arg.relocatable) {
+      u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
+      write_addend(base + rel.r_offset, addend, rel);
+    }
   };
 
   tbb::parallel_for((i64)0, (i64)output_section.members.size(), [&](i64 i) {
