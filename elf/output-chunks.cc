@@ -626,7 +626,7 @@ void SymtabSection<E>::update_shdr(Context<E> &ctx) {
 
   // Section symbols
   for (Chunk<E> *chunk : ctx.chunks)
-    if (chunk->shndx && (chunk->shdr.sh_flags & SHF_ALLOC))
+    if (chunk->shndx)
       nsyms++;
 
   // Linker-synthesized symbols
@@ -667,7 +667,7 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 
   // Create section symbols
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk->shndx && (chunk->shdr.sh_flags & SHF_ALLOC)) {
+    if (chunk->shndx) {
       ElfSym<E> &sym = buf[chunk->shndx];
       memset(&sym, 0, sizeof(sym));
       sym.st_type = STT_SECTION;
