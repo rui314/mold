@@ -1106,7 +1106,6 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_tlsgd_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
   this->shdr.sh_size += sizeof(Word<E>) * 2;
   tlsgd_syms.push_back(sym);
-  ctx.dynsym->add_symbol(ctx, sym);
 }
 
 template <typename E>
@@ -1115,7 +1114,9 @@ void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
   this->shdr.sh_size += sizeof(Word<E>) * 2;
   tlsdesc_syms.push_back(sym);
-  ctx.dynsym->add_symbol(ctx, sym);
+
+  if (sym != ctx._TLS_MODULE_BASE_)
+    ctx.dynsym->add_symbol(ctx, sym);
 }
 
 template <typename E>
@@ -1193,13 +1194,25 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.got->tlsgd_syms) {
     i64 idx = sym->get_tlsgd_idx(ctx);
 
-    if (ctx.arg.is_static) {
-      entries.push_back({idx, 1}); // One indicates the main executable file
-      entries.push_back({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
-    } else {
+    // If a symbol is imported, let the dynamic linker to resolve it.
+    if (sym->is_imported) {
       entries.push_back({idx, 0, E::R_DTPMOD, sym});
       entries.push_back({idx + 1, 0, E::R_DTPOFF, sym});
+      continue;
     }
+
+    // If we are creating a shared library, we know the TLV's offset
+    // within the current TLS block. We don't know the module ID though.
+    if (ctx.arg.shared) {
+      entries.push_back({idx, 0, E::R_DTPMOD});
+      entries.push_back({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
+      continue;
+    }
+
+    // If we are creating an executable, we know both the module ID and the
+    // offset. Module ID 1 indicates the main executable.
+    entries.push_back({idx, 1});
+    entries.push_back({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
   }
 
   if constexpr (supports_tlsdesc<E>) {
@@ -1236,10 +1249,10 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
   }
 
   if (ctx.got->tlsld_idx != -1) {
-    if (ctx.arg.is_static)
-      entries.push_back({ctx.got->tlsld_idx, 1}); // 1 means the main executable
-    else
+    if (ctx.arg.shared)
       entries.push_back({ctx.got->tlsld_idx, 0, E::R_DTPMOD});
+    else
+      entries.push_back({ctx.got->tlsld_idx, 1}); // 1 means the main executable
   }
 
   return entries;
