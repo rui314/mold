@@ -1704,10 +1704,13 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
   // Compute .dynstr size
   ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
 
-  for (i64 i = 1; i < symbols.size(); i++) {
+  tbb::enumerable_thread_specific<i64> size;
+  tbb::parallel_for((i64)1, (i64)symbols.size(), [&](i64 i) {
     symbols[i]->set_dynsym_idx(ctx, i);
-    ctx.dynstr->shdr.sh_size += symbols[i]->name().size() + 1;
-  }
+    size.local() += symbols[i]->name().size() + 1;
+  });
+
+  ctx.dynstr->shdr.sh_size += size.combine(std::plus());
 
   // ELF's symbol table sh_info holds the offset of the first global symbol.
   this->shdr.sh_info = first_global - symbols.begin();
