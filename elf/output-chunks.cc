@@ -895,16 +895,18 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   auto clear = [&](u8 *loc, i64 size) {
-    // As a special case, .init and .fini are filled with NOPs because the
-    // runtime executes the sections as if they were a single function.
-    // .init and .fini are superceded by .init_array and .fini_array and
-    // being actively used only on s390x though.
-    if (is_s390x<E> && (this->name == ".init" || this->name == ".fini")) {
-      for (i64 i = 0; i < size; i += 2)
-        *(ub16 *)(loc + i) = 0x0700; // nop
-    } else {
-      memset(loc, 0, size);
+    // As a special case, .init and .fini are filled with NOPs for s390x
+    // because the runtime executes the sections as if they were a single
+    // function. .init and .fini are superceded by .init_array and
+    // .fini_array but being actively used only on s390x.
+    if constexpr (is_s390x<E>) {
+      if (this->name == ".init" || this->name == ".fini") {
+        for (i64 i = 0; i < size; i += 2)
+          *(ub16 *)(loc + i) = 0x0700; // nop
+        return;
+      }
     }
+    memset(loc, 0, size);
   };
 
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
