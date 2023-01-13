@@ -348,7 +348,6 @@ void compute_merged_section_sizes(Context<E> &ctx) {
   if (char *env = getenv("MOLD_DEBUG"); env && env[0])
     add_comment_string(ctx, "mold command line: " + get_cmdline_args(ctx));
 
-  Timer t2(ctx, "MergedSection assign_offsets");
   tbb::parallel_for_each(ctx.merged_sections,
                          [&](std::unique_ptr<MergedSection<E>> &sec) {
     sec->assign_offsets(ctx);
