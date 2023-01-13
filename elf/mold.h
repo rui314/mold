@@ -1934,7 +1934,6 @@ enum {
   NEEDS_COPYREL   = 1 << 5,
   NEEDS_TLSDESC   = 1 << 6,
   NEEDS_PPC_OPD   = 1 << 7, // for PPCv1
-  NEEDS_ALPHA_GOT = 1 << 7, // for Alpha
 };
 
 // A struct to hold target-dependent symbol members.

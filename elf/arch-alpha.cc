@@ -231,12 +231,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_ALPHA_LITERAL:
-      if (rel.r_addend) {
-        sym.flags.fetch_or(NEEDS_ALPHA_GOT, std::memory_order_relaxed);
+      if (rel.r_addend)
         ctx.extra.got->add_symbol(sym, rel.r_addend);
-      } else {
+      else
         sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
-      }
       break;
     case R_ALPHA_SREL32:
       scan_pcrel(ctx, sym, rel);
