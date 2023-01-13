@@ -163,26 +163,9 @@ static void sweep(Context<E> &ctx) {
   });
 }
 
-// Non-alloc section fragments are not subject of garbage collection.
-// This function marks such fragments.
-template <typename E>
-static void mark_nonalloc_fragments(Context<E> &ctx) {
-  Timer t(ctx, "mark_nonalloc_fragments");
-
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    for (std::unique_ptr<MergeableSection<E>> &m : file->mergeable_sections)
-      if (m)
-        for (SectionFragment<E> *frag : m->fragments)
-          if (!(frag->output_section.shdr.sh_flags & SHF_ALLOC))
-            frag->is_alive.store(true, std::memory_order_relaxed);
-  });
-}
-
 template <typename E>
 void gc_sections(Context<E> &ctx) {
   Timer t(ctx, "gc");
-
-  mark_nonalloc_fragments(ctx);
 
   tbb::concurrent_vector<InputSection<E> *> rootset;
   collect_root_set(ctx, rootset);

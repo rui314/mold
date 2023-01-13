@@ -714,7 +714,7 @@ void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
     if (m) {
       m->fragments.reserve(m->strings.size());
       for (i64 i = 0; i < m->strings.size(); i++)
-        m->fragments.push_back(m->parent->insert(m->strings[i], m->hashes[i],
+        m->fragments.push_back(m->parent->insert(ctx, m->strings[i], m->hashes[i],
                                                  m->p2align));
 
       // Shrink vectors that we will never use again to reclaim memory.

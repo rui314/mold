@@ -333,23 +333,12 @@ void add_comment_string(Context<E> &ctx, std::string str) {
 
   std::string_view buf = save_string(ctx, str);
   std::string_view data(buf.data(), buf.size() + 1);
-  SectionFragment<E> *frag = sec->insert(data, hash_string(data), 0);
-  frag->is_alive = true;
+  sec->insert(ctx, data, hash_string(data), 0);
 }
 
 template <typename E>
 void compute_merged_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_merged_section_sizes");
-
-  // Mark section fragments referenced by live objects.
-  if (!ctx.arg.gc_sections) {
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (std::unique_ptr<MergeableSection<E>> &m : file->mergeable_sections)
-        if (m)
-          for (SectionFragment<E> *frag : m->fragments)
-            frag->is_alive.store(true, std::memory_order_relaxed);
-    });
-  }
 
   // Add an identification string to .comment.
   if (!ctx.arg.oformat_binary)

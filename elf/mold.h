@@ -60,7 +60,8 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
 template <typename E>
 struct SectionFragment {
-  SectionFragment(MergedSection<E> *sec) : output_section(*sec) {}
+  SectionFragment(MergedSection<E> *sec, bool is_alive)
+    : output_section(*sec), is_alive(is_alive) {}
 
   SectionFragment(const SectionFragment &other)
     : output_section(other.output_section), offset(other.offset),
@@ -785,7 +786,9 @@ public:
   static MergedSection<E> *
   get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
 
-  SectionFragment<E> *insert(std::string_view data, u64 hash, i64 p2align);
+  SectionFragment<E> *insert(Context<E> &ctx, std::string_view data,
+                             u64 hash, i64 p2align);
+
   void assign_offsets(Context<E> &ctx);
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
