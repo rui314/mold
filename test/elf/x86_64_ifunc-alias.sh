@@ -2,6 +2,7 @@
 . $(dirname $0)/common.inc
 
 supports_ifunc || skip
+test_cflags -static || skip
 
 cat <<EOF | $CXX -o $t/a.o -c -xc++ - -fno-PIE
 #include <assert.h>
