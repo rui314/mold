@@ -187,6 +187,113 @@ static u32 relax_gotpc32_tlsdesc(u8 *loc) {
   return 0;
 }
 
+// Rewrite a function call to __tls_get_addr to a cheaper instruction
+// sequence. We can do this when we know the thread-local variable's TP-
+// relative address at link-time.
+static void relax_gd_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
+  switch (rel.r_type) {
+  case R_X86_64_PLT32:
+  case R_X86_64_PC32:
+  case R_X86_64_GOTPCREL:
+  case R_X86_64_GOTPCRELX: {
+    // The original instructions are the following:
+    //
+    //  66 48 8d 3d 00 00 00 00    lea  foo@tlsgd(%rip), %rdi
+    //  66 66 48 e8 00 00 00 00    call __tls_get_addr
+    //
+    // or
+    //
+    //  66 48 8d 3d 00 00 00 00    lea foo@tlsgd(%rip), %rdi
+    //  66 48 ff 15 00 00 00 00    call *__tls_get_addr@GOT(%rip)
+    static const u8 insn[] = {
+      0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+      0x48, 0x81, 0xc0, 0, 0, 0, 0,             // add $tp_offset, %rax
+    };
+    memcpy(loc - 4, insn, sizeof(insn));
+    *(ul32 *)(loc + 8) = val;
+    break;
+  }
+  case R_X86_64_PLTOFF64: {
+    // The original instructions are the following:
+    //
+    //  48 8d 3d 00 00 00 00           lea    foo@tlsgd(%rip), %rdi
+    //  48 b8 00 00 00 00 00 00 00 00  movabs __tls_get_addr, %rax
+    //  48 01 d8                       add    %rbx, %rax
+    //  ff d0                          call   *%rax
+    static const u8 insn[] = {
+      0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+      0x48, 0x81, 0xc0, 0, 0, 0, 0,             // add $tp_offset, %rax
+      0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00,       // nop
+    };
+    memcpy(loc - 3, insn, sizeof(insn));
+    *(ul32 *)(loc + 9) = val;
+    break;
+  }
+  default:
+    unreachable();
+  }
+}
+
+// Rewrite a function call to __tls_get_addr to a cheaper instruction
+// sequence. The difference from relax_ld_to_le is that we are
+// materializing a Dynamic Thread Pointer for the current ELF module
+// instead of an address for a particular thread-local variable.
+static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
+  switch (rel.r_type) {
+  case R_X86_64_PLT32:
+  case R_X86_64_PC32: {
+    // The original instructions are the following:
+    //
+    //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
+    //  e8 00 00 00 00          call   __tls_get_addr
+    static const u8 insn[] = {
+      0x31, 0xc0,                   // xor %eax, %eax
+      0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
+      0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
+    };
+    memcpy(loc - 3, insn, sizeof(insn));
+    *(ul32 *)(loc + 5) = val;
+    break;
+  }
+  case R_X86_64_GOTPCREL:
+  case R_X86_64_GOTPCRELX: {
+    // The original instructions are the following:
+    //
+    //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
+    //  ff 15 00 00 00 00       call   *__tls_get_addr@GOT(%rip)
+    static const u8 insn[] = {
+      0x31, 0xc0,                   // xor %eax, %eax
+      0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
+      0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
+      0x90,                         // nop
+    };
+    memcpy(loc - 3, insn, sizeof(insn));
+    *(ul32 *)(loc + 5) = val;
+    break;
+  }
+  case R_X86_64_PLTOFF64: {
+    // The original instructions are the following:
+    //
+    //  48 8d 3d 00 00 00 00           lea    foo@tlsld(%rip), %rdi
+    //  48 b8 00 00 00 00 00 00 00 00  movabs __tls_get_addr@GOTOFF, %rax
+    //  48 01 d8                       add    %rbx, %rax
+    //  ff d0                          call   *%rax
+    static const u8 insn[] = {
+      0x31, 0xc0,                   // xor %eax, %eax
+      0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
+      0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
+      0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
+      0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
+    };
+    memcpy(loc - 3, insn, sizeof(insn));
+    *(ul32 *)(loc + 5) = val;
+    break;
+  }
+  default:
+    unreachable();
+  }
+}
+
 // Apply relocations to SHF_ALLOC sections (i.e. sections that are
 // mapped to memory at runtime) based on the result of
 // scan_relocations().
@@ -310,55 +417,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsgd(ctx)) {
         write32s(sym.get_tlsgd_addr(ctx) + A - P);
       } else {
-        // Relax GD to LE. If we are creating an exectuable, the offset of
-        // a thread-local variable from TP is a link-time constant. So we
-        // don't need to call __tls_get_addr to obtain the address of a TLV.
-        i64 val = S - ctx.tp_addr;
-        assert(A == -4);
-        check(val, -(1LL << 31), 1LL << 31);
-
-        switch (rels[i + 1].r_type) {
-        case R_X86_64_PLT32:
-        case R_X86_64_PC32:
-        case R_X86_64_GOTPCREL:
-        case R_X86_64_GOTPCRELX: {
-          // The original instructions are the following:
-          //
-          //  66 48 8d 3d 00 00 00 00    lea  foo@tlsgd(%rip), %rdi
-          //  66 66 48 e8 00 00 00 00    call __tls_get_addr
-          //
-          // or
-          //
-          //  66 48 8d 3d 00 00 00 00    lea foo@tlsgd(%rip), %rdi
-          //  66 48 ff 15 00 00 00 00    call *__tls_get_addr@GOT(%rip)
-          static const u8 insn[] = {
-            0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-            0x48, 0x81, 0xc0, 0, 0, 0, 0,             // add $val, %rax
-          };
-          memcpy(loc - 4, insn, sizeof(insn));
-          *(ul32 *)(loc + 8) = val;
-          break;
-        }
-        case R_X86_64_PLTOFF64: {
-          // The original instructions are the following:
-          //
-          //  48 8d 3d 00 00 00 00           lea    foo@tlsgd(%rip), %rdi
-          //  48 b8 00 00 00 00 00 00 00 00  movabs __tls_get_addr, %rax
-          //  48 01 d8                       add    %rbx, %rax
-          //  ff d0                          call   *%rax
-          static const u8 insn[] = {
-            0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
-            0x48, 0x81, 0xc0, 0, 0, 0, 0,             // add $val, %rax
-            0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00,       // nop
-          };
-          memcpy(loc - 3, insn, sizeof(insn));
-          *(ul32 *)(loc + 9) = val;
-          break;
-        }
-        default:
-          unreachable();
-        }
-
+        relax_gd_to_le(loc, rels[i + 1], S - ctx.tp_addr);
         i++;
       }
       break;
@@ -366,64 +425,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (ctx.got->has_tlsld(ctx)) {
         write32s(ctx.got->get_tlsld_addr(ctx) + A - P);
       } else {
-        // Relax LD to LE. If we are creating an executable, we don't need
-        // to call __tls_get_addr to obtain the address of the beginning
-        // of the current TLS block. TP points past the end of the TLS
-        // block, and we know the exact size of the TLS block we have
-        // created, so we can just subtract it from TP.
-        switch (rels[i + 1].r_type) {
-        case R_X86_64_PLT32:
-        case R_X86_64_PC32: {
-          // The original instructions are the following:
-          //
-          //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
-          //  e8 00 00 00 00          call   __tls_get_addr
-          static const u8 insn[] = {
-            0x31, 0xc0,                   // xor %eax, %eax
-            0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
-            0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
-          };
-          memcpy(loc - 3, insn, sizeof(insn));
-          break;
-        }
-        case R_X86_64_GOTPCREL:
-        case R_X86_64_GOTPCRELX: {
-          // The original instructions are the following:
-          //
-          //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
-          //  ff 15 00 00 00 00       call   *__tls_get_addr@GOT(%rip)
-          static const u8 insn[] = {
-            0x31, 0xc0,                   // xor %eax, %eax
-            0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
-            0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
-            0x90,                         // nop
-          };
-          memcpy(loc - 3, insn, sizeof(insn));
-          break;
-        }
-        case R_X86_64_PLTOFF64: {
-          // The original instructions are the following:
-          //
-          //  48 8d 3d 00 00 00 00           lea    foo@tlsld(%rip), %rdi
-          //  48 b8 00 00 00 00 00 00 00 00  movabs __tls_get_addr@GOTOFF, %rax
-          //  48 01 d8                       add    %rbx, %rax
-          //  ff d0                          call   *%rax
-          static const u8 insn[] = {
-            0x31, 0xc0,                   // xor %eax, %eax
-            0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
-            0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
-            0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
-            0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
-          };
-          memcpy(loc - 3, insn, sizeof(insn));
-          break;
-        }
-        default:
-          unreachable();
-        }
-
-        *(ul32 *)(loc + 5) = ctx.tp_addr - ctx.tls_begin;
-        assert(A == -4);
+        relax_ld_to_le(loc, rels[i + 1], ctx.tp_addr - ctx.tls_begin);
         i++;
       }
       break;

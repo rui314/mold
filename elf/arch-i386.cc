@@ -202,6 +202,63 @@ static u32 relax_got32x(u8 *loc) {
   return 0;
 }
 
+// Relax GD to LE
+static void relax_gd_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
+  switch (rel.r_type) {
+  case R_386_PLT32:
+  case R_386_PC32: {
+    static const u8 insn[] = {
+      0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
+      0x81, 0xc0, 0, 0, 0, 0, // add $tp_offset, %eax
+    };
+    memcpy(loc - 3, insn, sizeof(insn));
+    *(ul32 *)(loc + 5) = val;
+    break;
+  }
+  case R_386_GOT32:
+  case R_386_GOT32X: {
+    static const u8 insn[] = {
+      0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
+      0x81, 0xc0, 0, 0, 0, 0, // add $tp_offset, %eax
+    };
+    memcpy(loc - 2, insn, sizeof(insn));
+    *(ul32 *)(loc + 6) = val;
+    break;
+  }
+  default:
+    unreachable();
+  }
+}
+
+// Relax LD to LE
+static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
+  switch (rel.r_type) {
+  case R_386_PLT32:
+  case R_386_PC32: {
+    static const u8 insn[] = {
+      0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
+      0x2d, 0, 0, 0, 0,       // sub $tls_size, %eax
+    };
+    memcpy(loc - 2, insn, sizeof(insn));
+    *(ul32 *)(loc + 5) = val;
+    break;
+  }
+  case R_386_GOT32:
+  case R_386_GOT32X: {
+    static const u8 insn[] = {
+      0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
+      0x2d, 0, 0, 0, 0,       // sub $tls_size, %eax
+      0x90,                   // nop
+    };
+    memcpy(loc - 2, insn, sizeof(insn));
+    *(ul32 *)(loc + 5) = val;
+    break;
+  }
+  default:
+    unreachable();
+  }
+}
+
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
@@ -289,32 +346,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsgd(ctx)) {
         *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
       } else {
-        // Relax GD to LE
-        switch (rels[i + 1].r_type) {
-        case R_386_PLT32:
-        case R_386_PC32: {
-          static const u8 insn[] = {
-            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
-            0x81, 0xe8, 0, 0, 0, 0, // sub $val, %eax
-          };
-          memcpy(loc - 3, insn, sizeof(insn));
-          *(ul32 *)(loc + 5) = ctx.tp_addr - S - A;
-          break;
-        }
-        case R_386_GOT32:
-        case R_386_GOT32X: {
-          static const u8 insn[] = {
-            0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
-            0x81, 0xe8, 0, 0, 0, 0, // sub $val, %eax
-          };
-          memcpy(loc - 2, insn, sizeof(insn));
-          *(ul32 *)(loc + 6) = ctx.tp_addr - S - A;
-          break;
-        }
-        default:
-          unreachable();
-        }
-
+        relax_gd_to_le(loc, rels[i + 1], S - ctx.tp_addr);
         i++;
       }
       break;
@@ -322,34 +354,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (ctx.got->has_tlsld(ctx)) {
         *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
       } else {
-        // Relax LD to LE
-        switch (rels[i + 1].r_type) {
-        case R_386_PLT32:
-        case R_386_PC32: {
-          static const u8 insn[] = {
-            0x31, 0xc0,             // xor %eax, %eax
-            0x65, 0x8b, 0x00,       // mov %gs:(%eax), %eax
-            0x81, 0xe8, 0, 0, 0, 0, // sub $tls_size, %eax
-          };
-          memcpy(loc - 2, insn, sizeof(insn));
-          break;
-        }
-        case R_386_GOT32:
-        case R_386_GOT32X: {
-          static const u8 insn[] = {
-            0x31, 0xc0,             // xor %eax, %eax
-            0x65, 0x8b, 0x00,       // mov %gs:(%eax), %eax
-            0x81, 0xe8, 0, 0, 0, 0, // sub $tls_size, %eax
-            0x90,                   // nop
-          };
-          memcpy(loc - 2, insn, sizeof(insn));
-          break;
-        }
-        default:
-          unreachable();
-        }
-
-        *(ul32 *)(loc + 5) = ctx.tp_addr - ctx.tls_begin;
+        relax_ld_to_le(loc, rels[i + 1], ctx.tp_addr - ctx.tls_begin);
         i++;
       }
       break;
