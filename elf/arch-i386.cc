@@ -204,27 +204,22 @@ static u32 relax_got32x(u8 *loc) {
 
 // Relax GD to LE
 static void relax_gd_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
+  static const u8 insn[] = {
+    0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
+    0x81, 0xc0, 0, 0, 0, 0, // add $tp_offset, %eax
+  };
+
   switch (rel.r_type) {
   case R_386_PLT32:
-  case R_386_PC32: {
-    static const u8 insn[] = {
-      0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
-      0x81, 0xc0, 0, 0, 0, 0, // add $tp_offset, %eax
-    };
+  case R_386_PC32:
     memcpy(loc - 3, insn, sizeof(insn));
     *(ul32 *)(loc + 5) = val;
     break;
-  }
   case R_386_GOT32:
-  case R_386_GOT32X: {
-    static const u8 insn[] = {
-      0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
-      0x81, 0xc0, 0, 0, 0, 0, // add $tp_offset, %eax
-    };
+  case R_386_GOT32X:
     memcpy(loc - 2, insn, sizeof(insn));
     *(ul32 *)(loc + 6) = val;
     break;
-  }
   default:
     unreachable();
   }
