@@ -57,15 +57,14 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
       continue;
     }
 
-    if (!mark_section(sym.get_input_section()))
-      continue;
-
     // Mark a section alive. For better performacne, we don't call
     // `feeder.add` too often.
-    if (depth < 3)
-      visit(ctx, sym.get_input_section(), feeder, depth + 1);
-    else
-      feeder.add(sym.get_input_section());
+    if (mark_section(sym.get_input_section())) {
+      if (depth < 3)
+        visit(ctx, sym.get_input_section(), feeder, depth + 1);
+      else
+        feeder.add(sym.get_input_section());
+    }
   }
 }
 
@@ -94,10 +93,10 @@ static void collect_root_set(Context<E> &ctx,
       if (!isec || !isec->is_alive)
         continue;
 
-      // -gc-sections discards only SHF_ALLOC sections. If you want to
+      // --gc-sections discards only SHF_ALLOC sections. If you want to
       // reduce the amount of non-memory-mapped segments, you should
       // use `strip` command, compile without debug info or use
-      // -strip-all linker option.
+      // --strip-all linker option.
       u32 flags = isec->shdr().sh_flags;
       if (!(flags & SHF_ALLOC))
         isec->is_visited = true;
