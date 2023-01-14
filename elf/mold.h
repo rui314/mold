@@ -2827,16 +2827,6 @@ inline bool is_c_identifier(std::string_view s) {
 }
 
 template <typename E>
-inline bool relax_tlsgd(Context<E> &ctx, Symbol<E> &sym) {
-  return ctx.arg.relax && !ctx.arg.shared && !sym.is_imported;
-}
-
-template <typename E>
-inline bool relax_tlsld(Context<E> &ctx) {
-  return ctx.arg.relax && !ctx.arg.shared;
-}
-
-template <typename E>
 inline bool relax_tlsdesc(Context<E> &ctx, Symbol<E> &sym) {
   // TLSDESC relocs must be always relaxed for statically-linked
   // executables even if -no-relax is given. It is because a

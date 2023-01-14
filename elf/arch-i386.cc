@@ -140,6 +140,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
       0xcc,                   // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
+    *(ul32 *)(buf + 5) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
     *(ul32 *)(buf + 11) = sym.get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
   } else {
     static const u8 insn[] = {
@@ -149,10 +150,9 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
       0xcc,                   // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
+    *(ul32 *)(buf + 5) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
     *(ul32 *)(buf + 11) = sym.get_gotplt_addr(ctx);
   }
-
-  *(ul32 *)(buf + 5) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
 }
 
 template <>
@@ -528,7 +528,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
 
-      if (relax_tlsgd(ctx, sym))
+      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)
         i++;
       else
         sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
@@ -542,7 +542,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
 
-      if (relax_tlsld(ctx))
+      if (ctx.arg.relax && !ctx.arg.shared)
         i++;
       else
         ctx.needs_tlsld.store(true, std::memory_order_relaxed);
