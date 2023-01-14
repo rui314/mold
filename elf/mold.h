@@ -1487,23 +1487,6 @@ public:
 };
 
 //
-// arch-s390x.cc
-//
-
-class S390XTlsGetOffsetSection : public Chunk<S390X> {
-public:
-  S390XTlsGetOffsetSection() {
-    this->name = ".tls_get_offset";
-    this->shdr.sh_type = SHT_PROGBITS;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = 4;
-    this->shdr.sh_size = 28;
-  }
-
-  void copy_buf(Context<S390X> &ctx) override;
-};
-
-//
 // arch-sparc.cc
 //
 
@@ -1623,11 +1606,6 @@ template <> struct ContextExtras<PPC64V2> {
 template <> struct ContextExtras<SPARC64> {
   SparcTlsGetAddrSection *tls_get_addr_sec = nullptr;
   Symbol<SPARC64> *tls_get_addr_sym = nullptr;
-};
-
-template <> struct ContextExtras<S390X> {
-  S390XTlsGetOffsetSection *tls_get_offset_sec = nullptr;
-  Symbol<S390X> *tls_get_offset_sym = nullptr;
 };
 
 template <> struct ContextExtras<ALPHA> {

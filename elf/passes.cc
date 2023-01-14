@@ -117,12 +117,6 @@ void create_synthetic_sections(Context<E> &ctx) {
   if constexpr (is_ppc64v1<E>)
     ctx.extra.opd = push(new PPC64OpdSection);
 
-  if constexpr (is_s390x<E>) {
-    if (ctx.arg.is_static)
-      ctx.extra.tls_get_offset_sec = push(new S390XTlsGetOffsetSection);
-    ctx.extra.tls_get_offset_sym = get_symbol(ctx, "__tls_get_offset");
-  }
-
   if constexpr (is_sparc<E>) {
     if (ctx.arg.is_static)
       ctx.extra.tls_get_addr_sec = push(new SparcTlsGetAddrSection);

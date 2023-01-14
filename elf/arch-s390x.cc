@@ -203,14 +203,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_PC32DBL:
     case R_390_PLT32DBL:
-      if (ctx.is_static && &sym == ctx.extra.tls_get_offset_sym) {
-        // __tls_get_offset() in libc.a is stub code that calls abort().
-        // So we provide a replacement function.
-        *(ub32 *)loc = (ctx.extra.tls_get_offset_sec->shdr.sh_addr - P) >> 1;
-      } else {
-        check_dbl(S + A - P, -(1LL << 32), 1LL << 32);
-        *(ub32 *)loc = (S + A - P) >> 1;
-      }
+      check_dbl(S + A - P, -(1LL << 32), 1LL << 32);
+      *(ub32 *)loc = (S + A - P) >> 1;
       break;
     case R_390_GOT12:
     case R_390_GOTPLT12:
@@ -468,7 +462,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_390_TLS_GD32:
     case R_390_TLS_GD64:
-      if (ctx.arg.relax && !sym.is_imported && !ctx.arg.shared) {
+      // We always want to relax calls to __tls_get_offset() in statically-
+      // linked executables because __tls_get_offset() in libc.a just calls
+      // abort().
+      if (ctx.arg.is_static ||
+          (ctx.arg.relax && !sym.is_imported && !ctx.arg.shared)) {
         // do nothing
       } else if (ctx.arg.relax && !sym.is_imported && ctx.arg.shared &&
                  !ctx.arg.z_dlopen) {
@@ -479,7 +477,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_390_TLS_LDM32:
     case R_390_TLS_LDM64: {
-      bool do_relax = ctx.arg.relax && !ctx.arg.shared;
+      bool do_relax = ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared);
       if (!do_relax)
         ctx.needs_tlsld.store(true, std::memory_order_relaxed);
       break;
@@ -495,30 +493,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Fatal(ctx) << *this << ": scan_relocations: " << rel;
     }
   }
-}
-
-// __tls_get_offset() in libc.a just calls abort(), assuming that the
-// linker always relaxes TLS calls for statically-linkd executables.
-// We don't always do that because we believe --relax and --static
-// should be orthogonal.
-//
-// This section provides a replacement for __tls_get_offset() in libc.a.
-void S390XTlsGetOffsetSection::copy_buf(Context<E> &ctx) {
-  static const u8 insn[] = {
-    0xc0, 0x10, 0, 0, 0, 0,             // larl %r1, GOT
-    0xb9, 0x08, 0x00, 0x21,             // agr  %r2, %r1
-    0xe3, 0x20, 0x20, 0x08, 0x00, 0x04, // lg   %r2, 8(%r2)
-    0xc0, 0x11, 0, 0, 0, 0,             // lgfi %r1, TLS_BLOCK_SIZE
-    0xb9, 0x09, 0x00, 0x21,             // sgr  %r2, %r1
-    0x07, 0xfe,                         // br   %r14
-  };
-
-  assert(this->shdr.sh_size == sizeof(insn));
-
-  u8 *loc = ctx.buf + this->shdr.sh_offset;
-  memcpy(loc, insn, sizeof(insn));
-  *(ub32 *)(loc + 2) = (ctx.got->shdr.sh_addr - this->shdr.sh_addr) >> 1;
-  *(ub32 *)(loc + 18) = ctx.tp_addr - ctx.tls_begin;
 }
 
 } // namespace mold::elf
