@@ -40,6 +40,10 @@ arch-*)
   pacman -Sy
   pacman -S --needed --noconfirm base-devel zlib openssl cmake util-linux
   ;;
+void-*)
+  xbps-install -Sy make cmake openssl-devel zlib-devel gcc
+  xbps-install -Sy glibc-devel tar diffutils util-linux
+  ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"
   exit 1
