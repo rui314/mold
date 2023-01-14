@@ -276,19 +276,30 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_TLS_GD32:
       if (sym.has_tlsgd(ctx))
         *(ub32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
+      else if (sym.has_gottp(ctx))
+        *(ub32 *)loc = sym.get_gottp_addr(ctx) + A - GOT;
       else
         *(ub32 *)loc = S + A - ctx.tp_addr;
       break;
     case R_390_TLS_GD64:
       if (sym.has_tlsgd(ctx))
         *(ub64 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
+      else if (sym.has_gottp(ctx))
+        *(ub64 *)loc = sym.get_gottp_addr(ctx) + A - GOT;
       else
         *(ub64 *)loc = S + A - ctx.tp_addr;
       break;
     case R_390_TLS_GDCALL:
-      if (!sym.has_tlsgd(ctx)) {
-        static u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
-        memcpy(loc, nop, sizeof(nop));
+      if (sym.has_tlsgd(ctx)) {
+        // do nothing
+      } else if (sym.has_gottp(ctx)) {
+        // lg %r2, 0(%r2, %r12)
+        static u8 insn[] = { 0xe3, 0x22, 0xc0, 0x00, 0x00, 0x04 };
+        memcpy(loc, insn, sizeof(insn));
+      } else {
+        // nop
+        static u8 insn[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
+        memcpy(loc, insn, sizeof(insn));
       }
       break;
     case R_390_TLS_LDM32:
@@ -313,8 +324,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_390_TLS_LDCALL:
       if (!ctx.got->has_tlsld(ctx)) {
-        static u8 nop[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
-        memcpy(loc, nop, sizeof(nop));
+        // nop
+        static u8 insn[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
+        memcpy(loc, insn, sizeof(insn));
       }
       break;
     default:
@@ -456,15 +468,22 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_390_TLS_GD32:
     case R_390_TLS_GD64:
-      if (bool do_relax = ctx.arg.relax && !ctx.arg.shared && !sym.is_imported;
-          !do_relax)
+      if (ctx.arg.relax && !sym.is_imported && !ctx.arg.shared) {
+        // do nothing
+      } else if (ctx.arg.relax && !sym.is_imported && ctx.arg.shared &&
+                 !ctx.arg.z_dlopen) {
+        sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
+      } else {
         sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
+      }
       break;
     case R_390_TLS_LDM32:
-    case R_390_TLS_LDM64:
-      if (bool do_relax = ctx.arg.relax && !ctx.arg.shared; !do_relax)
+    case R_390_TLS_LDM64: {
+      bool do_relax = ctx.arg.relax && !ctx.arg.shared;
+      if (!do_relax)
         ctx.needs_tlsld.store(true, std::memory_order_relaxed);
       break;
+    }
     case R_390_TLS_LE32:
     case R_390_TLS_LE64:
     case R_390_TLS_LDO32:
