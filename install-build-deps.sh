@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/bin/sh
 set -e
-source /etc/os-release
+. /etc/os-release
 
 set -x
 
@@ -41,7 +41,8 @@ arch-*)
   pacman -S --needed --noconfirm base-devel zlib openssl cmake util-linux
   ;;
 void-*)
-  xbps-install -Sy make cmake openssl-devel zlib-devel gcc
+  xbps-install -Sy xbps
+  xbps-install -Sy bash make cmake openssl-devel zlib-devel gcc
   xbps-install -Sy glibc-devel tar diffutils util-linux
   ;;
 *)
