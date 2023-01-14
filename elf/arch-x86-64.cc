@@ -234,8 +234,37 @@ static void relax_gd_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
   }
 }
 
+static void relax_gd_to_ie(u8 *loc, ElfRel<E> rel, u64 val) {
+  switch (rel.r_type) {
+  case R_X86_64_PLT32:
+  case R_X86_64_PC32:
+  case R_X86_64_GOTPCREL:
+  case R_X86_64_GOTPCRELX: {
+    static const u8 insn[] = {
+      0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+      0x48, 0x03, 0x05, 0, 0, 0, 0,             // add foo@gottpoff(%rip), %rax
+    };
+    memcpy(loc - 4, insn, sizeof(insn));
+    *(ul32 *)(loc + 8) = val - 12;
+    break;
+  }
+  case R_X86_64_PLTOFF64: {
+    static const u8 insn[] = {
+      0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+      0x48, 0x03, 0x05, 0, 0, 0, 0,             // add foo@gottpoff(%rip), %rax
+      0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00,       // nop
+    };
+    memcpy(loc - 3, insn, sizeof(insn));
+    *(ul32 *)(loc + 9) = val - 13;
+    break;
+  }
+  default:
+    unreachable();
+  }
+}
+
 // Rewrite a function call to __tls_get_addr to a cheaper instruction
-// sequence. The difference from relax_ld_to_le is that we are
+// sequence. The difference from relax_gd_to_le is that we are
 // materializing a Dynamic Thread Pointer for the current ELF module
 // instead of an address for a particular thread-local variable.
 static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
@@ -416,6 +445,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_X86_64_TLSGD:
       if (sym.has_tlsgd(ctx)) {
         write32s(sym.get_tlsgd_addr(ctx) + A - P);
+      } else if (sym.has_gottp(ctx)) {
+        relax_gd_to_ie(loc, rels[i + 1], sym.get_gottp_addr(ctx) - P);
+        i++;
       } else {
         relax_gd_to_le(loc, rels[i + 1], S - ctx.tp_addr);
         i++;
@@ -662,7 +694,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (sym.is_imported)
         sym.flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
       break;
-    case R_X86_64_TLSGD: {
+    case R_X86_64_TLSGD:
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_TLSGD";
 
@@ -675,13 +707,17 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_X86_64_GOTPCRELX)
         Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
 
-      if (relax_tlsgd(ctx, sym))
+      if (ctx.arg.relax && !sym.is_imported && !ctx.arg.shared) {
         i++;
-      else
+      } else if (ctx.arg.relax && !sym.is_imported && ctx.arg.shared &&
+                 !ctx.arg.z_dlopen) {
+        sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
+        i++;
+      } else {
         sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
+      }
       break;
-    }
-    case R_X86_64_TLSLD: {
+    case R_X86_64_TLSLD:
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_TLSLD";
 
@@ -694,12 +730,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_X86_64_GOTPCRELX)
         Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
 
-      if (relax_tlsld(ctx))
+      if (ctx.arg.relax && !ctx.arg.shared)
         i++;
       else
         ctx.needs_tlsld.store(true, std::memory_order_relaxed);
       break;
-    }
     case R_X86_64_GOTTPOFF: {
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTTPOFF";

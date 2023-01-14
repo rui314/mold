@@ -456,12 +456,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_390_TLS_GD32:
     case R_390_TLS_GD64:
-      if (!relax_tlsgd(ctx, sym))
+      if (bool do_relax = ctx.arg.relax && !ctx.arg.shared && !sym.is_imported;
+          !do_relax)
         sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
       break;
     case R_390_TLS_LDM32:
     case R_390_TLS_LDM64:
-      if (!relax_tlsld(ctx))
+      if (bool do_relax = ctx.arg.relax && !ctx.arg.shared; !do_relax)
         ctx.needs_tlsld.store(true, std::memory_order_relaxed);
       break;
     case R_390_TLS_LE32:

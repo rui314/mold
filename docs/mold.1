@@ -1198,6 +1198,8 @@ Mark DSO non-deletable at runtime.
 .It Fl z Cm nodlopen
 Mark DSO not available to
 .Xr dlopen 3 .
+This option makes it possible for the linker to optimize thread-local \
+variable accesses by rewriting instructions for some targets.
 .Pp
 .It Fl z Cm nodump
 Mark DSO not available to
