@@ -673,8 +673,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTPCRELX";
 
-      bool do_relax = ctx.arg.relax && !sym.is_imported &&
-                      sym.is_relative() && relax_gotpcrelx(loc - 2);
+      // We always want to relax GOTX relocations because the static
+      // PIE relies on this relaxation.
+      bool do_relax = !sym.is_imported && sym.is_relative() &&
+                      relax_gotpcrelx(loc - 2);
       if (!do_relax)
         sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
@@ -683,8 +685,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_REX_GOTPCRELX";
 
-      bool do_relax = ctx.arg.relax && !sym.is_imported &&
-                      sym.is_relative() && relax_rex_gotpcrelx(loc - 3);
+      bool do_relax = !sym.is_imported && sym.is_relative() &&
+                      relax_rex_gotpcrelx(loc - 3);
       if (!do_relax)
         sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;

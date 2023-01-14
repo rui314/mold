@@ -504,8 +504,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
     case R_386_GOT32X: {
-      bool do_relax = ctx.arg.relax && !sym.is_imported &&
-                      sym.is_relative() && relax_got32x(loc - 2);
+      // We always want to relax GOT32X because static PIE doesn't
+      // work without it.
+      bool do_relax = !sym.is_imported && sym.is_relative() &&
+                      relax_got32x(loc - 2);
       if (!do_relax)
         sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
       break;
