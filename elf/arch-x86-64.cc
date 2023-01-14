@@ -709,7 +709,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_X86_64_GOTPCRELX)
         Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
 
-      if (ctx.arg.relax && !sym.is_imported && !ctx.arg.shared) {
+      if (ctx.arg.is_static ||
+          (ctx.arg.relax && !sym.is_imported && !ctx.arg.shared)) {
+        // We always relax if -static because libc.a doesn't contain
+        // __tls_get_addr().
         i++;
       } else if (ctx.arg.relax && !sym.is_imported && ctx.arg.shared &&
                  !ctx.arg.z_dlopen) {
@@ -732,7 +735,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_X86_64_GOTPCRELX)
         Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
 
-      if (ctx.arg.relax && !ctx.arg.shared)
+      // We always relax if -static because libc.a doesn't contain
+      // __tls_get_addr().
+      if (ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared))
         i++;
       else
         ctx.needs_tlsld.store(true, std::memory_order_relaxed);

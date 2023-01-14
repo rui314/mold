@@ -45,4 +45,7 @@ $QEMU $t/exe2 | grep -q '1 2 3 4 5 6'
 if test_cflags -static; then
   $CC -B. -o $t/exe3 $t/a.o $t/b.o $t/c.o -static
   $QEMU $t/exe3 | grep -q '1 2 3 4 5 6'
+
+  $CC -B. -o $t/exe4 $t/a.o $t/b.o $t/c.o -static -Wl,-no-relax
+  $QEMU $t/exe4 | grep -q '1 2 3 4 5 6'
 fi

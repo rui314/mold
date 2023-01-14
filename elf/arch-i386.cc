@@ -530,7 +530,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
 
-      if (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)
+      // We always relax if -static because libc.a doesn't contain
+      // __tls_get_addr().
+      if (ctx.arg.is_static ||
+          (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported))
         i++;
       else
         sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
@@ -544,7 +547,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           ty != R_386_GOT32 && ty != R_386_GOT32X)
         Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
 
-      if (ctx.arg.relax && !ctx.arg.shared)
+      // We always relax if -static because libc.a doesn't contain
+      // __tls_get_addr().
+      if (ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared))
         i++;
       else
         ctx.needs_tlsld.store(true, std::memory_order_relaxed);
