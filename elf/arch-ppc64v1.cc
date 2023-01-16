@@ -42,6 +42,8 @@
 // In PPCV1, it may have an OPD address in addition to these. OPD address
 // is used for relocations that refers the address of a function as a
 // function pointer.
+//
+// https://github.com/rui314/psabi/blob/main/ppc64v1.pdf
 
 #include "mold.h"
 

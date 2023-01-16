@@ -51,7 +51,7 @@
 // confusing. Since the runtime only cares about segments, we should be
 // able to name sections whatever we want.
 //
-// https://openpowerfoundation.org/specifications/64bitelfabi/
+// https://github.com/rui314/psabi/blob/main/ppc64v2.pdf
 
 #include "mold.h"
 

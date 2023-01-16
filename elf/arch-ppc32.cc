@@ -38,7 +38,7 @@
 // doesn't seems to be worth its complexity. Our PLT simply doesn't rely
 // on a %r30 value.
 //
-// https://github.com/rui314/mold/wiki/ppc32-psabi.pdf
+// https://github.com/rui314/psabi/blob/main/ppc32.pdf
 
 #include "mold.h"
 

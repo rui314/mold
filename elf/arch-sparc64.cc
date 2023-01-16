@@ -54,8 +54,7 @@
 // This scheme is very similar to i386. That may not be a coincidence
 // because the i386 ELF psABI is created by Sun Microsystems too.
 //
-// https://docs.oracle.com/cd/E36784_01/html/E36857/chapter6-62988.html
-// https://docs.oracle.com/cd/E19120-01/open.solaris/819-0690/chapter8-40/index.html
+// https://github.com/rui314/psabi/blob/main/sparc.pdf
 
 #include "mold.h"
 

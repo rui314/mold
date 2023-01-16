@@ -31,7 +31,7 @@
 // assume that %ebx is set to .got. For PDE, we need to create position-
 // dependent PLT entries which don't use %ebx.
 //
-// https://github.com/rui314/mold/wiki/i386-psabi.pdf
+// https://github.com/rui314/psabi/blob/main/i386.pdf
 
 #include "mold.h"
 
