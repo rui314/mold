@@ -812,7 +812,8 @@ R"(# This is an output of the mold linker's --print-dependencies option.
 # regular undefined or weak undefined, respectively.
 #
 # If you want to obtain dependency information per function granularity,
-# compile source files with the -ffunction-sections compiler flag.)";
+# compile source files with the -ffunction-sections compiler flag.
+)";
 
   auto println = [&](auto &src, Symbol<E> &sym, ElfSym<E> &esym) {
     if (InputSection<E> *isec = sym.get_input_section())
