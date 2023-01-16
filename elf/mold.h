@@ -2533,9 +2533,24 @@ inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
 }
 
 template <typename E>
+inline u64 to_plt_offset(i32 pltidx) {
+  if constexpr (is_ppc64v1<E>) {
+    // The PPC64 ELFv1 ABI requires PLT entries to be vary in size
+    // depending on their indices. For entries whose PLT index is
+    // less than 32768, the entry size is 8 bytes. Other entries are
+    // 12 bytes long.
+    if (pltidx < 0x8000)
+      return E::plt_hdr_size + pltidx * 8;
+    return E::plt_hdr_size + 0x8000 * 8 + (pltidx - 0x8000) * 12;
+  } else {
+    return E::plt_hdr_size + pltidx * E::plt_size;
+  }
+}
+
+template <typename E>
 inline u64 Symbol<E>::get_plt_addr(Context<E> &ctx) const {
   if (i32 idx = get_plt_idx(ctx); idx != -1)
-    return ctx.plt->shdr.sh_addr + E::plt_hdr_size + idx * E::plt_size;
+    return ctx.plt->shdr.sh_addr + to_plt_offset<E>(idx);
   return ctx.pltgot->shdr.sh_addr + get_pltgot_idx(ctx) * E::pltgot_size;
 }
 

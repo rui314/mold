@@ -90,9 +90,35 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
 
 template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  i64 offset = ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 4;
-  *(ub32 *)(buf + 0) = 0x3800'0000 | sym.get_plt_idx(ctx);   // li %r0, PLT_INDEX
-  *(ub32 *)(buf + 4) = 0x4b00'0000 | (offset & 0x00ff'ffff); // b  plt0
+  ub32 *loc = (ub32 *)buf;
+  i64 idx = sym.get_plt_idx(ctx);
+
+  // The PPC64 ELFv1 ABI requires PLT entries to be vary in size depending
+  // on their indices. Unlike other targets, .got.plt is filled not by us
+  // but by the loader, so we don't have a control over where the initial
+  // call to the PLT entry jumps to. So we need to strictly follow the PLT
+  // section layout as the loader expect it to be.
+  if (idx < 0x8000) {
+    static const ub32 insn[] = {
+      0x3800'0000, // li      r0, PLT_INDEX
+      0x4b00'0000, // b       plt0
+    };
+
+    memcpy(loc, insn, sizeof(insn));
+    loc[0] |= idx;
+    loc[1] |= (ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 4) & 0x00ff'ffff;
+  } else {
+    static const ub32 insn[] = {
+      0x3c00'0000, // lis     r0, PLT_INDEX@high
+      0x6000'0000, // ori     r0, r0, PLT_INDEX@lo
+      0x4b00'0000, // b       plt0
+    };
+
+    memcpy(loc, insn, sizeof(insn));
+    loc[0] |= high(idx);
+    loc[1] |= lo(idx);
+    loc[2] |= (ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 8) & 0x00ff'ffff;
+  }
 }
 
 // .plt.got is not necessary on PPC64 because range extension thunks

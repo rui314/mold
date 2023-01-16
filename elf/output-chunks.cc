@@ -1428,7 +1428,7 @@ void PltSection<E>::update_shdr(Context<E> &ctx) {
   if (symbols.empty())
     this->shdr.sh_size = 0;
   else
-    this->shdr.sh_size = E::plt_hdr_size + symbols.size() * E::plt_size;
+    this->shdr.sh_size = to_plt_offset<E>(symbols.size());
 }
 
 template <typename E>
@@ -1437,7 +1437,7 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
   write_plt_header(ctx, buf);
 
   for (i64 i = 0; i < symbols.size(); i++)
-    write_plt_entry(ctx, buf + E::plt_hdr_size + i * E::plt_size, *symbols[i]);
+    write_plt_entry(ctx, buf + to_plt_offset<E>(i), *symbols[i]);
 }
 
 template <typename E>
