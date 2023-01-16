@@ -286,13 +286,13 @@ list(APPEND MOLD_ELF_TARGETS
 list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/cmdline.cc
   elf/dwarf.cc
+  elf/elf-main.cc
   elf/gc-sections.cc
   elf/icf.cc
   elf/input-files.cc
   elf/input-sections.cc
   elf/linker-script.cc
   elf/lto.cc
-  elf/main.cc
   elf/mapfile.cc
   elf/output-chunks.cc
   elf/passes.cc
