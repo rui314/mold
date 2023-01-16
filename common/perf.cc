@@ -1,4 +1,4 @@
-#include "mold.h"
+#include "common.h"
 
 #include <functional>
 #include <iomanip>

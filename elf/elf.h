@@ -1,8 +1,7 @@
 #pragma once
 
-#include "../integers.h"
+#include "../common/integers.h"
 
-#include <cstdint>
 #include <ostream>
 #include <string>
 #include <type_traits>

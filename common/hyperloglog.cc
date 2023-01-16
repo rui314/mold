@@ -4,7 +4,7 @@
 // For more info, read
 // https://engineering.fb.com/2018/12/13/data-infrastructure/hyperloglog
 
-#include "mold.h"
+#include "common.h"
 
 #include <cmath>
 

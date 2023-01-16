@@ -25,7 +25,7 @@
 
 #pragma once
 
-#include "mold.h"
+#include "common.h"
 #include "filetype.h"
 
 namespace mold {

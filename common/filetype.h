@@ -1,7 +1,7 @@
 #pragma once
 
-#include "mold.h"
-#include "elf/elf.h"
+#include "common.h"
+#include "../elf/elf.h"
 
 namespace mold {
 

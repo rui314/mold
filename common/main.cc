@@ -1,4 +1,4 @@
-#include "mold.h"
+#include "common.h"
 #include "config.h"
 
 #include <cstring>

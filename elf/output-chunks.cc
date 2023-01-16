@@ -1,5 +1,5 @@
 #include "mold.h"
-#include "../sha.h"
+#include "../common/sha.h"
 
 #include <cctype>
 #include <set>

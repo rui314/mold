@@ -341,8 +341,16 @@ endif()
 
 # Add other non-template source files.
 target_sources(mold PRIVATE
-  compress.cc
-  demangle.cc
+  common/compress.cc
+  common/demangle.cc
+  common/filepath.cc
+  common/glob.cc
+  common/hyperloglog.cc
+  common/main.cc
+  common/multi-glob.cc
+  common/perf.cc
+  common/tar.cc
+  common/uuid.cc
   elf/arch-alpha.cc
   elf/arch-arm32.cc
   elf/arch-arm64.cc
@@ -357,16 +365,8 @@ target_sources(mold PRIVATE
   elf/arch-sparc64.cc
   elf/arch-x86-64.cc
   elf/elf.cc
-  filepath.cc
   git-hash.cc
-  glob.cc
-  hyperloglog.cc
-  main.cc
-  multi-glob.cc
-  perf.cc
-  tar.cc
   third-party/rust-demangle/rust-demangle.c
-  uuid.cc
   )
 
 if(MOLD_IS_SOLD)

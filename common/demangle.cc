@@ -1,4 +1,4 @@
-#include "mold.h"
+#include "common.h"
 
 #include <cstdlib>
 
@@ -6,7 +6,7 @@
 #include <cxxabi.h>
 #endif
 
-#include "third-party/rust-demangle/rust-demangle.h"
+#include "../third-party/rust-demangle/rust-demangle.h"
 
 namespace mold {
 

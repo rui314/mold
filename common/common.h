@@ -32,7 +32,7 @@
 #endif
 
 #define XXH_INLINE_ALL 1
-#include "third-party/xxhash/xxhash.h"
+#include "../third-party/xxhash/xxhash.h"
 
 #ifdef NDEBUG
 # define unreachable() __builtin_unreachable()

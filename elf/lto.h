@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../integers.h"
+#include "../common/integers.h"
 
 namespace mold {
 

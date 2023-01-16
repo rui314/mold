@@ -14,7 +14,7 @@
 // a little bit. However, if a shard size is large enough, that loss
 // is negligible in practice.
 
-#include "mold.h"
+#include "common.h"
 
 #include <tbb/parallel_for_each.h>
 #include <zlib.h>
