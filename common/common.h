@@ -647,13 +647,13 @@ public:
   }
 
   Counter &operator++(int) {
-    if (enabled)
+    if (enabled) [[unlikely]]
       values.local()++;
     return *this;
   }
 
   Counter &operator+=(int delta) {
-    if (enabled)
+    if (enabled) [[unlikely]]
       values.local() += delta;
     return *this;
   }

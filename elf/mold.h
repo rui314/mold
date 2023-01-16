@@ -2535,7 +2535,7 @@ inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
 template <typename E>
 inline u64 to_plt_offset(i32 pltidx) {
   if constexpr (is_ppc64v1<E>) {
-    // The PPC64 ELFv1 ABI requires PLT entries to be vary in size
+    // The PPC64 ELFv1 ABI requires PLT entries to vary in size
     // depending on their indices. For entries whose PLT index is
     // less than 32768, the entry size is 8 bytes. Other entries are
     // 12 bytes long.
