@@ -260,15 +260,15 @@ add_custom_target(git_hash
   COMMAND ${CMAKE_COMMAND}
     -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
     -DOUTPUT_FILE=${CMAKE_BINARY_DIR}/git-hash.cc
-    -P ${CMAKE_SOURCE_DIR}/update-git-hash.cmake
-  DEPENDS update-git-hash.cmake
+    -P ${CMAKE_SOURCE_DIR}/common/update-git-hash.cmake
+  DEPENDS common/update-git-hash.cmake
   BYPRODUCTS git-hash.cc
   VERBATIM)
 
 add_dependencies(mold git_hash)
 
 # Create config.h file
-configure_file(config.h.in config.h)
+configure_file(common/config.h.in config.h)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # Almost all functions are template in mold which take a target type
