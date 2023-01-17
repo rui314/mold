@@ -110,7 +110,7 @@
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
-      <Command>COPY /Y $(ProjectDir)..\..\bin\mimalloc-redirect32.dll $(OutputPath)</Command>
+      <Command>COPY /Y "$(ProjectDir)..\..\bin\mimalloc-redirect32.dll" "$(OutputPath)"</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>Copy mimalloc-redirect32.dll to the output directory</Message>
@@ -138,7 +138,7 @@
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
-      <Command>COPY /Y $(ProjectDir)..\..\bin\mimalloc-redirect.dll $(OutputPath)</Command>
+      <Command>COPY /Y "$(ProjectDir)..\..\bin\mimalloc-redirect.dll" "$(OutputPath)"</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>copy mimalloc-redirect.dll to the output directory</Message>
@@ -170,7 +170,7 @@
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
-      <Command>COPY /Y $(ProjectDir)..\..\bin\mimalloc-redirect32.dll $(OutputPath)</Command>
+      <Command>COPY /Y "$(ProjectDir)..\..\bin\mimalloc-redirect32.dll" "$(OutputPath)"</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>Copy mimalloc-redirect32.dll to the output directory</Message>
@@ -202,7 +202,7 @@
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
     </Link>
     <PostBuildEvent>
-      <Command>COPY /Y $(ProjectDir)..\..\bin\mimalloc-redirect.dll $(OutputPath)</Command>
+      <Command>COPY /Y "$(ProjectDir)..\..\bin\mimalloc-redirect.dll" "$(OutputPath)"</Command>
     </PostBuildEvent>
     <PostBuildEvent>
       <Message>copy mimalloc-redirect.dll to the output directory</Message>

@@ -12,8 +12,8 @@ is a general purpose allocator with excellent [performance](#performance) charac
 Initially developed by Daan Leijen for the run-time systems of the
 [Koka](https://koka-lang.github.io) and [Lean](https://github.com/leanprover/lean) languages.
 
-Latest release tag: `v2.0.7` (2022-11-03).  
-Latest stable  tag: `v1.7.7` (2022-11-03).
+Latest release tag: `v2.0.9` (2022-12-23).
+Latest stable  tag: `v1.7.9` (2022-12-23).
 
 mimalloc is a drop-in replacement for `malloc` and can be used in other programs
 without code changes, for example, on dynamically linked ELF-based systems (Linux, BSD, etc.) you can use it as:
@@ -27,6 +27,8 @@ It also has an easy way to override the default allocator in [Windows](#override
   to integrate and adapt in other projects. For runtime systems it
   provides hooks for a monotonic _heartbeat_ and deferred freeing (for
   bounded worst-case times with reference counting).
+  Partly due to its simplicity, mimalloc has been ported to many systems (Windows, macOS,
+  Linux, WASM, various BSD's, Haiku, MUSL, etc) and has excellent support for dynamic overriding.
 - __free list sharding__: instead of one big free list (per size class) we have
   many smaller lists per "mimalloc page" which reduces fragmentation and
   increases locality --
@@ -36,13 +38,13 @@ It also has an easy way to override the default allocator in [Windows](#override
   per mimalloc page, but for each page we have multiple free lists. In particular, there
   is one list for thread-local `free` operations, and another one for concurrent `free`
   operations. Free-ing from another thread can now be a single CAS without needing
-  sophisticated coordination between threads. Since there will be 
+  sophisticated coordination between threads. Since there will be
   thousands of separate free lists, contention is naturally distributed over the heap,
   and the chance of contending on a single location will be low -- this is quite
   similar to randomized algorithms like skip lists where adding
   a random oracle removes the need for a more complex algorithm.
 - __eager page reset__: when a "page" becomes empty (with increased chance
-  due to free list sharding) the memory is marked to the OS as unused ("reset" or "purged")
+  due to free list sharding) the memory is marked to the OS as unused (reset or decommitted)
   reducing (real) memory pressure and fragmentation, especially in long running
   programs.
 - __secure__: _mimalloc_ can be built in secure mode, adding guard pages,
@@ -50,20 +52,19 @@ It also has an easy way to override the default allocator in [Windows](#override
   heap vulnerabilities. The performance penalty is usually around 10% on average
   over our benchmarks.
 - __first-class heaps__: efficiently create and use multiple heaps to allocate across different regions.
-  A heap can be destroyed at once instead of deallocating each object separately.  
+  A heap can be destroyed at once instead of deallocating each object separately.
 - __bounded__: it does not suffer from _blowup_ \[1\], has bounded worst-case allocation
-  times (_wcat_), bounded space overhead (~0.2% meta-data, with low internal fragmentation),
-  and has no internal points of contention using only atomic operations.
+  times (_wcat_) (upto OS primitives), bounded space overhead (~0.2% meta-data, with low
+  internal fragmentation), and has no internal points of contention using only atomic operations.
 - __fast__: In our benchmarks (see [below](#performance)),
   _mimalloc_ outperforms other leading allocators (_jemalloc_, _tcmalloc_, _Hoard_, etc),
-  and often uses less memory. A nice property
-  is that it does consistently well over a wide range of benchmarks. There is also good huge OS page
-  support for larger server programs.
+  and often uses less memory. A nice property is that it does consistently well over a wide range
+  of benchmarks. There is also good huge OS page support for larger server programs.
 
 The [documentation](https://microsoft.github.io/mimalloc) gives a full overview of the API.
-You can read more on the design of _mimalloc_ in the [technical report](https://www.microsoft.com/en-us/research/publication/mimalloc-free-list-sharding-in-action) which also has detailed benchmark results.   
+You can read more on the design of _mimalloc_ in the [technical report](https://www.microsoft.com/en-us/research/publication/mimalloc-free-list-sharding-in-action) which also has detailed benchmark results.
 
-Enjoy!  
+Enjoy!
 
 ### Branches
 
@@ -77,6 +78,12 @@ Note: the `v2.x` version has a new algorithm for managing internal mimalloc page
   and fragmentation compared to mimalloc `v1.x` (especially for large workloads). Should otherwise have similar performance
   (see [below](#performance)); please report if you observe any significant performance regression.
 
+* 2022-12-23, `v1.7.9`, `v2.0.9`: Supports building with asan and improved [Valgrind] support. Support abitrary large
+  alignments (in particular for `std::pmr` pools). 
+  Added C++ STL allocators attached to a specific heap (thanks @vmarkovtsev). 
+  Heap walks now visit all object (including huge objects). Support Windows nano server containers (by Johannes Schindelin,@dscho). 
+  Various small bug fixes.
+
 * 2022-11-03, `v1.7.7`, `v2.0.7`: Initial support for [Valgrind] for leak testing and heap block overflow detection. Initial
   support for attaching heaps to a speficic memory area (only in v2). Fix `realloc` behavior for zero size blocks, remove restriction to integral multiple of the alignment in `alloc_align`, improved aligned allocation performance, reduced contention with many threads on few processors (thank you @dposluns!), vs2022 support, support `pkg-config`, .
 
@@ -87,7 +94,7 @@ Note: the `v2.x` version has a new algorithm for managing internal mimalloc page
 
 * 2022-02-14, `v1.7.5`, `v2.0.5` (alpha): fix malloc override on
   Windows 11, fix compilation with musl, potentially reduced
-  committed memory, add `bin/minject` for Windows, 
+  committed memory, add `bin/minject` for Windows,
   improved wasm support, faster aligned allocation,
   various small fixes.
 
@@ -99,9 +106,9 @@ Note: the `v2.x` version has a new algorithm for managing internal mimalloc page
   thread_id on Android, prefer 2-6TiB area for aligned allocation to work better on pre-windows 8, various small fixes.
 
 * 2021-04-06, `v1.7.1`, `v2.0.1` (beta): fix bug in arena allocation for huge pages, improved aslr on large allocations, initial M1 support (still experimental).
-  
+
 * 2021-01-31, `v2.0.0`: beta release 2.0: new slice algorithm for managing internal mimalloc pages.
-  
+
 * 2021-01-31, `v1.7.0`: stable release 1.7: support explicit user provided memory regions, more precise statistics,
   improve macOS overriding, initial support for Apple M1, improved DragonFly support, faster memcpy on Windows, various small fixes.
 
@@ -115,9 +122,9 @@ Special thanks to:
   memory model bugs using the [genMC] model checker.
 * Weipeng Liu (@pongba), Zhuowei Li, Junhua Wang, and Jakub Szymanski, for their early support of mimalloc and deployment
   at large scale services, leading to many improvements in the mimalloc algorithms for large workloads.
-* Jason Gibson (@jasongibson) for exhaustive testing on large scale workloads and server environments, and finding complex bugs 
+* Jason Gibson (@jasongibson) for exhaustive testing on large scale workloads and server environments, and finding complex bugs
   in (early versions of) `mimalloc`.
-* Manuel Pöter (@mpoeter) and Sam Gross(@colesbury) for finding an ABA concurrency issue in abandoned segment reclamation. Sam also created the [no GIL](https://github.com/colesbury/nogil) Python fork which 
+* Manuel Pöter (@mpoeter) and Sam Gross(@colesbury) for finding an ABA concurrency issue in abandoned segment reclamation. Sam also created the [no GIL](https://github.com/colesbury/nogil) Python fork which
   uses mimalloc internally.
 
 
@@ -304,8 +311,8 @@ or via environment variables:
    of a thread to not allocate in the huge OS pages; this prevents threads that are short lived
    and allocate just a little to take up space in the huge OS page area (which cannot be reset).
    The huge pages are usually allocated evenly among NUMA nodes.
-   We can use `MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=N` where `N` is the numa node (starting at 0) to allocate all 
-   the huge pages at a specific numa node instead. 
+   We can use `MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=N` where `N` is the numa node (starting at 0) to allocate all
+   the huge pages at a specific numa node instead.
 
 Use caution when using `fork` in combination with either large or huge OS pages: on a fork, the OS uses copy-on-write
 for all pages in the original process including the huge OS pages. When any memory is now written in that area, the
@@ -342,24 +349,24 @@ When _mimalloc_ is built using debug mode, various checks are done at runtime to
 
 ## Valgrind
 
-Generally, we recommend using the standard allocator with the amazing [Valgrind] tool (and 
-also for other address sanitizers). 
-However, it is possible to build mimalloc with Valgrind support. This has a small performance 
-overhead but does allow detecting memory leaks and byte-precise buffer overflows directly on final 
+Generally, we recommend using the standard allocator with the amazing [Valgrind] tool (and
+also for other address sanitizers).
+However, it is possible to build mimalloc with Valgrind support. This has a small performance
+overhead but does allow detecting memory leaks and byte-precise buffer overflows directly on final
 executables. To build with valgrind support, use the `MI_VALGRIND=ON` cmake option:
 
 ```
 > cmake ../.. -DMI_VALGRIND=ON
 ```
 
-This can also be combined with secure mode or debug mode. 
+This can also be combined with secure mode or debug mode.
 You can then run your programs directly under valgrind:
 
 ```
 > valgrind <myprogram>
 ```
 
-If you rely on overriding `malloc`/`free` by mimalloc (instead of using the `mi_malloc`/`mi_free` API directly), 
+If you rely on overriding `malloc`/`free` by mimalloc (instead of using the `mi_malloc`/`mi_free` API directly),
 you also need to tell `valgrind` to not intercept those calls itself, and use:
 
 ```
@@ -367,8 +374,8 @@ you also need to tell `valgrind` to not intercept those calls itself, and use:
 ```
 
 By setting the `MIMALLOC_SHOW_STATS` environment variable you can check that mimalloc is indeed
-used and not the standard allocator. Even though the [Valgrind option][valgrind-soname] 
-is called `--soname-synonyms`, this also 
+used and not the standard allocator. Even though the [Valgrind option][valgrind-soname]
+is called `--soname-synonyms`, this also
 works when overriding with a static library or object file. Unfortunately, it is not possible to
 dynamically override mimalloc using `LD_PRELOAD` together with `valgrind`.
 See also the `test/test-wrong.c` file to test with `valgrind`.
@@ -573,7 +580,7 @@ The _alloc-test_, by
 [OLogN Technologies AG](http://ithare.com/testing-memory-allocators-ptmalloc2-tcmalloc-hoard-jemalloc-while-trying-to-simulate-real-world-loads/), is a very allocation intensive benchmark doing millions of
 allocations in various size classes. The test is scaled such that when an
 allocator performs almost identically on _alloc-test1_ as _alloc-testN_ it
-means that it scales linearly. 
+means that it scales linearly.
 
 The _sh6bench_ and _sh8bench_ benchmarks are
 developed by [MicroQuill](http://www.microquill.com/) as part of SmartHeap.
@@ -754,4 +761,3 @@ free list encoding](https://github.com/microsoft/mimalloc/blob/783e3377f79ee82af
 * 2019-10-07, `v1.1.0`: stable release 1.1.
 * 2019-09-01, `v1.0.8`: pre-release 8: more robust windows dynamic overriding, initial huge page support.
 * 2019-08-10, `v1.0.6`: pre-release 6: various performance improvements.
-

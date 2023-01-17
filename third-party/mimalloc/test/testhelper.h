@@ -19,12 +19,12 @@ static int failed = 0;
 
 static bool check_result(bool result, const char* testname, const char* fname, long lineno) {
   if (!(result)) {
-    failed++; 
+    failed++;
     fprintf(stderr,"\n  FAILED: %s: %s:%ld\n", testname, fname, lineno);
-    /* exit(1); */ 
-  } 
-  else {    
-    ok++;                               
+    /* exit(1); */
+  }
+  else {
+    ok++;
     fprintf(stderr, "ok.\n");
   }
   return true;

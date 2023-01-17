@@ -229,8 +229,9 @@ static void mi_page_queue_remove(mi_page_queue_t* queue, mi_page_t* page) {
 static void mi_page_queue_push(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_t* page) {
   mi_assert_internal(mi_page_heap(page) == heap);
   mi_assert_internal(!mi_page_queue_contains(queue, page));
-
+  #if MI_HUGE_PAGE_ABANDON
   mi_assert_internal(_mi_page_segment(page)->kind != MI_SEGMENT_HUGE);
+  #endif
   mi_assert_internal(page->xblock_size == queue->block_size ||
                       (page->xblock_size > MI_MEDIUM_OBJ_SIZE_MAX) ||
                         (mi_page_is_in_full(page) && mi_page_queue_is_full(queue)));
@@ -304,7 +305,7 @@ size_t _mi_page_queue_append(mi_heap_t* heap, mi_page_queue_t* pq, mi_page_queue
   for (mi_page_t* page = append->first; page != NULL; page = page->next) {
     // inline `mi_page_set_heap` to avoid wrong assertion during absorption;
     // in this case it is ok to be delayed freeing since both "to" and "from" heap are still alive.
-    mi_atomic_store_release(&page->xheap, (uintptr_t)heap); 
+    mi_atomic_store_release(&page->xheap, (uintptr_t)heap);
     // set the flag to delayed free (not overriding NEVER_DELAYED_FREE) which has as a
     // side effect that it spins until any DELAYED_FREEING is finished. This ensures
     // that after appending only the new heap will be used for delayed free operations.

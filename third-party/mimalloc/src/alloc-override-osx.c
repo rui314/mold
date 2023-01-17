@@ -19,8 +19,8 @@ terms of the MIT license. A copy of the license can be found in the file
    This is done through the malloc zone interface.
    It seems to be most robust in combination with interposing
    though or otherwise we may get zone errors as there are could
-   be allocations done by the time we take over the 
-   zone. 
+   be allocations done by the time we take over the
+   zone.
 ------------------------------------------------------ */
 
 #include <AvailabilityMacros.h>
@@ -215,7 +215,7 @@ static malloc_zone_t mi_malloc_zone = {
   .zone_name = "mimalloc",
   .batch_malloc = &zone_batch_malloc,
   .batch_free = &zone_batch_free,
-  .introspect = &mi_introspect,  
+  .introspect = &mi_introspect,
 #if defined(MAC_OS_X_VERSION_10_6) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6)
   #if defined(MAC_OS_X_VERSION_10_14) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_14)
   .version = 10,
@@ -242,7 +242,7 @@ static malloc_zone_t mi_malloc_zone = {
 #if defined(MI_OSX_INTERPOSE) && defined(MI_SHARED_LIB_EXPORT)
 
 // ------------------------------------------------------
-// Override malloc_xxx and malloc_zone_xxx api's to use only 
+// Override malloc_xxx and malloc_zone_xxx api's to use only
 // our mimalloc zone. Since even the loader uses malloc
 // on macOS, this ensures that all allocations go through
 // mimalloc (as all calls are interposed).
@@ -254,7 +254,7 @@ static malloc_zone_t mi_malloc_zone = {
 static inline malloc_zone_t* mi_get_default_zone(void)
 {
   static bool init;
-  if mi_unlikely(!init) { 
+  if mi_unlikely(!init) {
     init = true;
     malloc_zone_register(&mi_malloc_zone);  // by calling register we avoid a zone error on free (see <http://eatmyrandom.blogspot.com/2010/03/mallocfree-interception-on-mac-os-x.html>)
   }
@@ -272,7 +272,7 @@ static malloc_zone_t* mi_malloc_create_zone(vm_size_t size, unsigned flags) {
   return mi_get_default_zone();
 }
 
-static malloc_zone_t* mi_malloc_default_zone (void) {   
+static malloc_zone_t* mi_malloc_default_zone (void) {
   return mi_get_default_zone();
 }
 
@@ -292,11 +292,11 @@ static kern_return_t mi_malloc_get_all_zones (task_t task, memory_reader_t mr, v
   return KERN_SUCCESS;
 }
 
-static const char* mi_malloc_get_zone_name(malloc_zone_t* zone) {  
+static const char* mi_malloc_get_zone_name(malloc_zone_t* zone) {
   return (zone == NULL ? mi_malloc_zone.zone_name : zone->zone_name);
 }
 
-static void mi_malloc_set_zone_name(malloc_zone_t* zone, const char* name) {  
+static void mi_malloc_set_zone_name(malloc_zone_t* zone, const char* name) {
   MI_UNUSED(zone); MI_UNUSED(name);
 }
 
@@ -306,7 +306,7 @@ static int mi_malloc_jumpstart(uintptr_t cookie) {
 }
 
 static void mi__malloc_fork_prepare(void) {
-  // nothing  
+  // nothing
 }
 static void mi__malloc_fork_parent(void) {
   // nothing
@@ -367,13 +367,13 @@ __attribute__((used)) static const struct mi_interpose_s _mi_zone_interposes[]  
   MI_INTERPOSE_MI(malloc_destroy_zone),
   MI_INTERPOSE_MI(malloc_get_all_zones),
   MI_INTERPOSE_MI(malloc_get_zone_name),
-  MI_INTERPOSE_MI(malloc_jumpstart),  
+  MI_INTERPOSE_MI(malloc_jumpstart),
   MI_INTERPOSE_MI(malloc_printf),
   MI_INTERPOSE_MI(malloc_set_zone_name),
   MI_INTERPOSE_MI(_malloc_fork_child),
   MI_INTERPOSE_MI(_malloc_fork_parent),
   MI_INTERPOSE_MI(_malloc_fork_prepare),
-  
+
   MI_INTERPOSE_ZONE(zone_batch_free),
   MI_INTERPOSE_ZONE(zone_batch_malloc),
   MI_INTERPOSE_ZONE(zone_calloc),
@@ -416,7 +416,7 @@ static inline malloc_zone_t* mi_get_default_zone(void)
 }
 
 #if defined(__clang__)
-__attribute__((constructor(0))) 
+__attribute__((constructor(0)))
 #else
 __attribute__((constructor))      // seems not supported by g++-11 on the M1
 #endif

@@ -37,10 +37,15 @@ static void fail_aslr();              // issue #372
 static void tsan_numa_test();         // issue #414
 static void strdup_test();            // issue #445 
 static void bench_alloc_large(void);  // issue #xxx
+static void heap_thread_free_huge();
+
+static void test_stl_allocators();
+
 
 int main() {
   mi_stats_reset();  // ignore earlier allocations
-
+  heap_thread_free_huge();
+  /*
    heap_thread_free_large();
    heap_no_delete();
    heap_late_free();
@@ -49,8 +54,10 @@ int main() {
    large_alloc();
    tsan_numa_test();
    strdup_test();
-
+  */
+  test_stl_allocators();
   test_mt_shutdown();
+  
   //fail_aslr();
   bench_alloc_large();
   mi_stats_print(NULL);
@@ -127,6 +134,43 @@ static bool test_stl_allocator2() {
   return vec.size() == 0;
 }
 
+static bool test_stl_allocator3() {
+  std::vector<int, mi_heap_stl_allocator<int> > vec;
+  vec.push_back(1);
+  vec.pop_back();
+  return vec.size() == 0;
+}
+
+static bool test_stl_allocator4() {
+  std::vector<some_struct, mi_heap_stl_allocator<some_struct> > vec;
+  vec.push_back(some_struct());
+  vec.pop_back();
+  return vec.size() == 0;
+}
+
+static bool test_stl_allocator5() {
+  std::vector<int, mi_heap_destroy_stl_allocator<int> > vec;
+  vec.push_back(1);
+  vec.pop_back();
+  return vec.size() == 0;
+}
+
+static bool test_stl_allocator6() {
+  std::vector<some_struct, mi_heap_destroy_stl_allocator<some_struct> > vec;
+  vec.push_back(some_struct());
+  vec.pop_back();
+  return vec.size() == 0;
+}
+
+static void test_stl_allocators() {
+  test_stl_allocator1();
+  test_stl_allocator2();
+  test_stl_allocator3();
+  test_stl_allocator4();
+  test_stl_allocator5();
+  test_stl_allocator6();
+}
+
 // issue 445
 static void strdup_test() {
 #ifdef _MSC_VER
@@ -142,7 +186,7 @@ static void strdup_test() {
 // Issue #202
 static void heap_no_delete_worker() {
   mi_heap_t* heap = mi_heap_new();
-  void* q = mi_heap_malloc(heap, 1024);
+  void* q = mi_heap_malloc(heap, 1024); (void)(q);
   // mi_heap_delete(heap); // uncomment to prevent assertion
 }
 
@@ -199,7 +243,17 @@ static void heap_thread_free_large() {
   }
 }
 
+static void heap_thread_free_huge_worker() {
+  mi_free(shared_p);
+}
 
+static void heap_thread_free_huge() {
+  for (int i = 0; i < 100; i++) {
+    shared_p = mi_malloc(1024 * 1024 * 1024);
+    auto t1 = std::thread(heap_thread_free_huge_worker);
+    t1.join();
+  }
+}
 
 static void test_mt_shutdown()
 {

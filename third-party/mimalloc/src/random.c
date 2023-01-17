@@ -168,9 +168,9 @@ If we cannot get good randomness, we fall back to weak randomness based on a tim
 
 #if defined(_WIN32)
 
-#if defined(MI_USE_RTLGENRANDOM) || defined(__cplusplus)
-// We prefer to use BCryptGenRandom instead of (the unofficial) RtlGenRandom but when using 
-// dynamic overriding, we observed it can raise an exception when compiled with C++, and 
+#if defined(MI_USE_RTLGENRANDOM) // || defined(__cplusplus)
+// We prefer to use BCryptGenRandom instead of (the unofficial) RtlGenRandom but when using
+// dynamic overriding, we observed it can raise an exception when compiled with C++, and
 // sometimes deadlocks when also running under the VS debugger.
 // In contrast, issue #623 implies that on Windows Server 2019 we need to use BCryptGenRandom.
 // To be continued..
@@ -187,10 +187,27 @@ static bool os_random_buf(void* buf, size_t buf_len) {
   return (RtlGenRandom(buf, (ULONG)buf_len) != 0);
 }
 #else
-#pragma comment (lib,"bcrypt.lib")
-#include <bcrypt.h>
+
+#ifndef BCRYPT_USE_SYSTEM_PREFERRED_RNG
+#define BCRYPT_USE_SYSTEM_PREFERRED_RNG 0x00000002
+#endif
+
+typedef LONG (NTAPI *PBCryptGenRandom)(HANDLE, PUCHAR, ULONG, ULONG);
+static  PBCryptGenRandom pBCryptGenRandom = NULL;
+
 static bool os_random_buf(void* buf, size_t buf_len) {
-  return (BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)buf_len, BCRYPT_USE_SYSTEM_PREFERRED_RNG) >= 0);
+  if (pBCryptGenRandom == NULL) {
+    HINSTANCE hDll = LoadLibrary(TEXT("bcrypt.dll"));
+    if (hDll != NULL) {
+      pBCryptGenRandom = (PBCryptGenRandom)(void (*)(void))GetProcAddress(hDll, "BCryptGenRandom");
+    }
+  }
+  if (pBCryptGenRandom == NULL) {
+    return false;
+  }
+  else {
+    return (pBCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)buf_len, BCRYPT_USE_SYSTEM_PREFERRED_RNG) >= 0);
+  }
 }
 #endif
 
@@ -203,7 +220,7 @@ static bool os_random_buf(void* buf, size_t buf_len) {
 static bool os_random_buf(void* buf, size_t buf_len) {
   #if defined(MAC_OS_X_VERSION_10_15) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_15
     // We prefere CCRandomGenerateBytes as it returns an error code while arc4random_buf
-    // may fail silently on macOS. See PR #390, and <https://opensource.apple.com/source/Libc/Libc-1439.40.11/gen/FreeBSD/arc4random.c.auto.html>      
+    // may fail silently on macOS. See PR #390, and <https://opensource.apple.com/source/Libc/Libc-1439.40.11/gen/FreeBSD/arc4random.c.auto.html>
     return (CCRandomGenerateBytes(buf, buf_len) == kCCSuccess);
   #else
     // fall back on older macOS
@@ -281,7 +298,7 @@ static bool os_random_buf(void* buf, size_t buf_len) {
 
 uintptr_t _mi_os_random_weak(uintptr_t extra_seed) {
   uintptr_t x = (uintptr_t)&_mi_os_random_weak ^ extra_seed; // ASLR makes the address random
-  
+
   #if defined(_WIN32)
     LARGE_INTEGER pcount;
     QueryPerformanceCounter(&pcount);
@@ -303,21 +320,39 @@ uintptr_t _mi_os_random_weak(uintptr_t extra_seed) {
   return x;
 }
 
-void _mi_random_init(mi_random_ctx_t* ctx) {
+static void mi_random_init_ex(mi_random_ctx_t* ctx, bool use_weak) {
   uint8_t key[32];
-  if (!os_random_buf(key, sizeof(key))) {
+  if (use_weak || !os_random_buf(key, sizeof(key))) {
     // if we fail to get random data from the OS, we fall back to a
     // weak random source based on the current time
     #if !defined(__wasi__)
-    _mi_warning_message("unable to use secure randomness\n");
+    if (!use_weak) { _mi_warning_message("unable to use secure randomness\n"); }
     #endif
     uintptr_t x = _mi_os_random_weak(0);
     for (size_t i = 0; i < 8; i++) {  // key is eight 32-bit words.
       x = _mi_random_shuffle(x);
       ((uint32_t*)key)[i] = (uint32_t)x;
     }
+    ctx->weak = true;
+  }
+  else {
+    ctx->weak = false;
   }
   chacha_init(ctx, key, (uintptr_t)ctx /*nonce*/ );
+}
+
+void _mi_random_init(mi_random_ctx_t* ctx) {
+  mi_random_init_ex(ctx, false);
+}
+
+void _mi_random_init_weak(mi_random_ctx_t * ctx) {
+  mi_random_init_ex(ctx, true);
+}
+
+void _mi_random_reinit_if_weak(mi_random_ctx_t * ctx) {
+  if (ctx->weak) {
+    _mi_random_init(ctx);
+  }
 }
 
 /* --------------------------------------------------------

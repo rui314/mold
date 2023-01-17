@@ -94,7 +94,8 @@ static mi_option_desc_t options[_mi_option_last] =
   { 8,    UNINIT, MI_OPTION(max_segment_reclaim)},// max. number of segment reclaims from the abandoned segments per try.  
   { 1,    UNINIT, MI_OPTION(allow_decommit) },    // decommit slices when no longer used (after decommit_delay milli-seconds)
   { 500,  UNINIT, MI_OPTION(segment_decommit_delay) }, // decommit delay in milli-seconds for freed segments
-  { 2,    UNINIT, MI_OPTION(decommit_extend_delay) }
+  { 1,    UNINIT, MI_OPTION(decommit_extend_delay) },
+  { 0,    UNINIT, MI_OPTION(destroy_on_exit)}     // release all OS memory on process exit; careful with dangling pointer or after-exit frees!
 };
 
 static void mi_option_init(mi_option_desc_t* desc);
@@ -106,7 +107,8 @@ void _mi_options_init(void) {
   for(int i = 0; i < _mi_option_last; i++ ) {
     mi_option_t option = (mi_option_t)i;
     long l = mi_option_get(option); MI_UNUSED(l); // initialize
-    if (option != mi_option_verbose) {
+    // if (option != mi_option_verbose)
+    {
       mi_option_desc_t* desc = &options[option];
       _mi_verbose_message("option '%s': %ld\n", desc->name, desc->value);
     }
@@ -176,16 +178,29 @@ static void mi_cdecl mi_out_stderr(const char* msg, void* arg) {
   #ifdef _WIN32
   // on windows with redirection, the C runtime cannot handle locale dependent output
   // after the main thread closes so we use direct console output.
-  if (!_mi_preloading()) { 
+  if (!_mi_preloading()) {
     // _cputs(msg);  // _cputs cannot be used at is aborts if it fails to lock the console
     static HANDLE hcon = INVALID_HANDLE_VALUE;
+    static bool hconIsConsole;
     if (hcon == INVALID_HANDLE_VALUE) {
+      CONSOLE_SCREEN_BUFFER_INFO sbi;
       hcon = GetStdHandle(STD_ERROR_HANDLE);
+      hconIsConsole = ((hcon != INVALID_HANDLE_VALUE) && GetConsoleScreenBufferInfo(hcon, &sbi));
     }
     const size_t len = strlen(msg);
-    if (hcon != INVALID_HANDLE_VALUE && len > 0 && len < UINT32_MAX) {
+    if (len > 0 && len < UINT32_MAX) {
       DWORD written = 0;
-      WriteConsoleA(hcon, msg, (DWORD)len, &written, NULL);
+      if (hconIsConsole) {
+        WriteConsoleA(hcon, msg, (DWORD)len, &written, NULL);
+      }
+      else if (hcon != INVALID_HANDLE_VALUE) {
+        // use direct write if stderr was redirected
+        WriteFile(hcon, msg, (DWORD)len, &written, NULL);
+      }
+      else {
+        // finally fall back to fputs after all
+        fputs(msg, stderr);
+      }
     }
   }
   #else
@@ -280,7 +295,7 @@ static _Atomic(size_t) warning_count; // = 0;  // when >= max_warning_count stop
 // inside the C runtime causes another message.
 // In some cases (like on macOS) the loader already allocates which
 // calls into mimalloc; if we then access thread locals (like `recurse`)
-// this may crash as the access may call _tlv_bootstrap that tries to 
+// this may crash as the access may call _tlv_bootstrap that tries to
 // (recursively) invoke malloc again to allocate space for the thread local
 // variables on demand. This is why we use a _mi_preloading test on such
 // platforms. However, C code generator may move the initial thread local address
@@ -346,7 +361,7 @@ void _mi_fprintf( mi_output_fun* out, void* arg, const char* fmt, ... ) {
 static void mi_vfprintf_thread(mi_output_fun* out, void* arg, const char* prefix, const char* fmt, va_list args) {
   if (prefix != NULL && strlen(prefix) <= 32 && !_mi_is_main_thread()) {
     char tprefix[64];
-    snprintf(tprefix, sizeof(tprefix), "%sthread 0x%zx: ", prefix, _mi_thread_id());
+    snprintf(tprefix, sizeof(tprefix), "%sthread 0x%llx: ", prefix, (unsigned long long)_mi_thread_id());
     mi_vfprintf(out, arg, tprefix, fmt, args);
   }
   else {
@@ -406,7 +421,7 @@ static _Atomic(void*) mi_error_arg;     // = NULL
 
 static void mi_error_default(int err) {
   MI_UNUSED(err);
-#if (MI_DEBUG>0) 
+#if (MI_DEBUG>0)
   if (err==EFAULT) {
     #ifdef _MSC_VER
     __debugbreak();
@@ -479,12 +494,13 @@ static bool mi_getenv(const char* name, char* result, size_t result_size) {
   MI_UNUSED(result_size);
   return false;
 }
-#elif defined _WIN32
+#else
+#if defined _WIN32
 // On Windows use GetEnvironmentVariable instead of getenv to work
 // reliably even when this is invoked before the C runtime is initialized.
 // i.e. when `_mi_preloading() == true`.
 // Note: on windows, environment names are not case sensitive.
-# include <windows.h>
+#include <windows.h>
 static bool mi_getenv(const char* name, char* result, size_t result_size) {
   result[0] = 0;
   size_t len = GetEnvironmentVariableA(name, result, (DWORD)result_size);
@@ -493,25 +509,24 @@ static bool mi_getenv(const char* name, char* result, size_t result_size) {
 #elif !defined(MI_USE_ENVIRON) || (MI_USE_ENVIRON!=0)
 // On Posix systemsr use `environ` to acces environment variables
 // even before the C runtime is initialized.
-# if defined(__APPLE__) && defined(__has_include) && __has_include(<crt_externs.h>)
-#  include <crt_externs.h>
+#if defined(__APPLE__) && defined(__has_include) && __has_include(<crt_externs.h>)
+#include <crt_externs.h>
 static char** mi_get_environ(void) {
   return (*_NSGetEnviron());
 }
-# else
+#else
 extern char** environ;
 static char** mi_get_environ(void) {
   return environ;
 }
-# endif
-static inline int mi_strnicmp(const char* s, const char* t, size_t n) {
-  if (n==0) return 0;
+#endif
+static int mi_strnicmp(const char* s, const char* t, size_t n) {
+  if (n == 0) return 0;
   for (; *s != 0 && *t != 0 && n > 0; s++, t++, n--) {
     if (toupper(*s) != toupper(*t)) break;
   }
-  return (n==0 ? 0 : *s - *t);
+  return (n == 0 ? 0 : *s - *t);
 }
-
 static bool mi_getenv(const char* name, char* result, size_t result_size) {
   if (name==NULL) return false;
   const size_t len = strlen(name);
@@ -554,9 +569,10 @@ static bool mi_getenv(const char* name, char* result, size_t result_size) {
     return false;
   }
 }
+#endif  // !MI_USE_ENVIRON
 #endif  // !MI_NO_GETENV
 
-static void mi_option_init(mi_option_desc_t* desc) {  
+static void mi_option_init(mi_option_desc_t* desc) {
   // Read option value from the environment
   char s[64+1];
   char buf[64+1];

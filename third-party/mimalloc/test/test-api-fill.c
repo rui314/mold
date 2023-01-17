@@ -328,7 +328,7 @@ bool check_debug_fill_freed(uint8_t* p, size_t size) {
 #if MI_VALGRIND
   (void)p; (void)size;
   return true; // when compiled with valgrind we don't fill on purpose
-#else  
+#else
   if(!p)
     return false;
 
@@ -337,6 +337,6 @@ bool check_debug_fill_freed(uint8_t* p, size_t size) {
     result &= p[i] == MI_DEBUG_FREED;
   }
   return result;
-#endif  
+#endif
 }
 #endif

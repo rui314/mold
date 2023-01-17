@@ -91,7 +91,7 @@ static bool chance(size_t perc, random_t r) {
 
 static void* alloc_items(size_t items, random_t r) {
   if (chance(1, r)) {
-    if (chance(1, r) && allow_large_objects) items *= 10000;       // 0.01% giant
+    if (chance(1, r) && allow_large_objects) items *= 50000;       // 0.01% giant
     else if (chance(10, r) && allow_large_objects) items *= 1000;  // 0.1% huge
     else items *= 100;                                             // 1% large objects;
   }
@@ -221,7 +221,7 @@ static void test_leak(void) {
 }
 #endif
 
-int main(int argc, char** argv) {  
+int main(int argc, char** argv) {
   // > mimalloc-test-stress [THREADS] [SCALE] [ITER]
   if (argc >= 2) {
     char* end;
@@ -266,7 +266,7 @@ int main(int argc, char** argv) {
   //mi_debug_show_arenas();
   #endif
   mi_stats_print(NULL);
-#endif  
+#endif
   //bench_end_program();
   return 0;
 }

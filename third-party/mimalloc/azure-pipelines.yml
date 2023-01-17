@@ -13,7 +13,7 @@ trigger:
     include:
     - v*
 
-jobs:  
+jobs:
 - job:
   displayName: Windows
   pool:
@@ -55,7 +55,7 @@ jobs:
   displayName: Linux
   pool:
     vmImage:
-     ubuntu-18.04
+     ubuntu-22.04
   strategy:
     matrix:
       Debug:

@@ -33,12 +33,12 @@ terms of the MIT license. A copy of the license can be found in the file
 
 
 mi_decl_nodiscard size_t mi_malloc_size(const void* p) mi_attr_noexcept {
-  //if (!mi_is_in_heap_region(p)) return 0;
+  // if (!mi_is_in_heap_region(p)) return 0;
   return mi_usable_size(p);
 }
 
 mi_decl_nodiscard size_t mi_malloc_usable_size(const void *p) mi_attr_noexcept {
-  //if (!mi_is_in_heap_region(p)) return 0;
+  // if (!mi_is_in_heap_region(p)) return 0;
   return mi_usable_size(p);
 }
 
@@ -91,7 +91,7 @@ mi_decl_nodiscard mi_decl_restrict void* mi_aligned_alloc(size_t alignment, size
       #endif
       return NULL;
     }
-  */  
+  */
   // C11 also requires alignment to be a power-of-two (and > 0) which is checked in mi_malloc_aligned
   void* p = mi_malloc_aligned(size, alignment);
   mi_assert_internal(((uintptr_t)p % alignment) == 0);
@@ -110,7 +110,7 @@ mi_decl_nodiscard int mi_reallocarr( void* p, size_t count, size_t size ) mi_att
     errno = EINVAL;
     return EINVAL;
   }
-  void** op = (void**)p;  
+  void** op = (void**)p;
   void* newp = mi_reallocarray(*op, count, size);
   if mi_unlikely(newp == NULL) { return errno; }
   *op = newp;
