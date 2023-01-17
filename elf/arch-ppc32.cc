@@ -30,7 +30,7 @@
 // 0x10000 (or 65536) bytes.
 //
 // Since each object file has its own .got2, %r30 refers to different
-// places in a merged .got2 for two functions that are came from different
+// places in a merged .got2 for two functions that came from different
 // input files. Therefore, %r30 makes sense only within a single function.
 //
 // Technically, we can reuse a %r30 value in our PLT if we create a PLT
@@ -46,11 +46,11 @@ namespace mold::elf {
 
 using E = PPC32;
 
-static u64 lo(u64 x)       { return x & 0xffff; }
-static u64 hi(u64 x)       { return x >> 16; }
-static u64 ha(u64 x)       { return (x + 0x8000) >> 16; }
-static u64 high(u64 x)     { return (x >> 16) & 0xffff; }
-static u64 higha(u64 x)    { return ((x + 0x8000) >> 16) & 0xffff; }
+static u64 lo(u64 x)    { return x & 0xffff; }
+static u64 hi(u64 x)    { return x >> 16; }
+static u64 ha(u64 x)    { return (x + 0x8000) >> 16; }
+static u64 high(u64 x)  { return (x >> 16) & 0xffff; }
+static u64 higha(u64 x) { return ((x + 0x8000) >> 16) & 0xffff; }
 
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {

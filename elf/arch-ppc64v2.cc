@@ -59,11 +59,11 @@ namespace mold::elf {
 
 using E = PPC64V2;
 
-static u64 lo(u64 x)       { return x & 0xffff; }
-static u64 hi(u64 x)       { return x >> 16; }
-static u64 ha(u64 x)       { return (x + 0x8000) >> 16; }
-static u64 high(u64 x)     { return (x >> 16) & 0xffff; }
-static u64 higha(u64 x)    { return ((x + 0x8000) >> 16) & 0xffff; }
+static u64 lo(u64 x)    { return x & 0xffff; }
+static u64 hi(u64 x)    { return x >> 16; }
+static u64 ha(u64 x)    { return (x + 0x8000) >> 16; }
+static u64 high(u64 x)  { return (x >> 16) & 0xffff; }
+static u64 higha(u64 x) { return ((x + 0x8000) >> 16) & 0xffff; }
 
 // .plt is used only for lazy symbol resolution on PPC64. All PLT
 // calls are made via range extension thunks even if they are within
