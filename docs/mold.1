@@ -305,6 +305,15 @@ with
 .Nm
 as
 .Pa /usr/bin/ld .
+Specifically,
+.Nm
+runs a given command with the LD_PRELOAD environment set to intercept
+.Xr exec 3
+family functions and replaces argv[0] with itself if it is
+.Pa ld,
+.Pa ld.gold
+or
+.Pa ld.lld .
 .Pp
 .It Fl -shuffle-sections
 .It Fl -shuffle-sections Ns = Ns Ar number
