@@ -7,13 +7,20 @@
 # libstdc++ and libcrypto but dynamically-linked to libc, libm, libz
 # and librt, as they almost always exist on any Linux systems.
 
-if [ $# -ne 1 ]; then
+case $# in
+0)
+  arch=$(uname -m)
+  [[ $arch = arm* ]] && arch=arm
+  ;;
+1)
+  arch="$1"
+  ;;
+*)
   echo "Usage: $0 [ x86_64 | aarch64 | arm | ppc64le | s390x ]"
   exit 1
-fi
+esac
 
-arch=$1
-echo $arch | grep -Eq '^(x86_64|aarch64|arm|ppc64le|s390x)$' || \
+echo "$arch" | grep -Eq '^(x86_64|aarch64|arm|ppc64le|s390x)$' || \
   { echo "Error: no docker image for $arch"; exit 1; }
 
 version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' $(dirname $0)/CMakeLists.txt)
