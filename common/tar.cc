@@ -27,9 +27,7 @@ struct UstarHeader {
 
     // We need to convince the compiler that sum isn't too big to silence
     // -Werror=format-truncation.
-    if (01'000'000 < sum)
-      __builtin_unreachable();
-
+    ASSUME(sum < 01'000'000);
     snprintf(checksum, sizeof(checksum), "%06o", sum);
   }
 
