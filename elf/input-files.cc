@@ -1020,18 +1020,6 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
   if (!this->is_alive)
     return;
 
-  auto report_undef = [&](Symbol<E> &sym) {
-    std::stringstream ss;
-    if (std::string_view source = this->get_source_name(); !source.empty())
-      ss << ">>> referenced by " << source << "\n";
-    else
-      ss << ">>> referenced by " << *this << "\n";
-
-    typename decltype(ctx.undef_errors)::accessor acc;
-    ctx.undef_errors.insert(acc, {sym.name(), {}});
-    acc->second.push_back(ss.str());
-  };
-
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];
@@ -1040,17 +1028,9 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
 
     std::scoped_lock lock(sym.mu);
 
-    // If a protected/hidden undefined symbol is resolved to an
-    // imported symbol, it's handled as if no symbols were found.
-    if (sym.file && sym.file->is_dso &&
-        (sym.visibility == STV_PROTECTED || sym.visibility == STV_HIDDEN)) {
-      report_undef(sym);
-      continue;
-    }
-
-    if (sym.file &&
-        (!sym.esym().is_undef() || sym.file->priority <= this->priority))
-      continue;
+    if (sym.file)
+      if (!sym.esym().is_undef() || sym.file->priority <= this->priority)
+        continue;
 
     // If a symbol name is in the form of "foo@version", search for
     // symbol "foo" and check if the symbol has version "version".
@@ -1094,9 +1074,6 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
       continue;
     }
 
-    if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
-      report_undef(sym);
-
     // Traditionally, remaining undefined symbols cause a link failure
     // only when we are creating an executable. Undefined symbols in
     // shared objects are promoted to dynamic symbols, so that they'll
@@ -1107,15 +1084,13 @@ void ObjectFile<E>::claim_unresolved_symbols(Context<E> &ctx) {
     // promoted to dynamic symbols for compatibility with other linkers.
     // Some major programs, notably Firefox, depend on the behavior
     // (they use this loophole to export symbols from libxul.so).
-    if (ctx.arg.shared && sym.visibility != STV_HIDDEN &&
-        (!ctx.arg.z_defs || ctx.arg.unresolved_symbols != UNRESOLVED_ERROR)) {
+    if (ctx.arg.shared && sym.visibility != STV_HIDDEN && !ctx.arg.z_defs) {
       claim(true);
       continue;
     }
 
     // Convert remaining undefined symbols to absolute symbols with value 0.
-    if (ctx.arg.unresolved_symbols != UNRESOLVED_ERROR || ctx.arg.noinhibit_exec)
-      claim(false);
+    claim(false);
   }
 }
 

@@ -2830,4 +2830,28 @@ inline bool relax_tlsdesc(Context<E> &ctx, Symbol<E> &sym) {
   return ctx.arg.relax && !ctx.arg.shared && !sym.is_imported;
 }
 
+// Returns true if esym has already been resolved.
+template <typename E>
+bool is_resolved(Symbol<E> &sym, const ElfSym<E> &esym) {
+  assert(sym.file);
+
+  // A non-weak undefined symbol must be promoted to an imported
+  // symbol or resolved to an defined symbol. Otherwise, it's an
+  // undefined symbol error.
+  //
+  // Every ELF file has an absolute local symbol as its first symbol.
+  // Referring to that symbol is always valid.
+  bool is_undef = esym.is_undef() && !esym.is_weak() && sym.sym_idx;
+  if (!sym.is_imported && is_undef && sym.esym().is_undef())
+    return false;
+
+  // If a protected/hidden undefined symbol is resolved to other .so,
+  // it's handled as if no symbols were found.
+  if (sym.file->is_dso &&
+      (sym.visibility == STV_PROTECTED || sym.visibility == STV_HIDDEN))
+    return false;
+
+  return true;
+}
+
 } // namespace mold::elf
