@@ -24,7 +24,12 @@ struct UstarHeader {
     int sum = 0;
     for (i64 i = 0; i < sizeof(*this); i++)
       sum += ((u8 *)this)[i];
-    assert(sum < 01000000);
+
+    // We need to convince the compiler that sum isn't too big to silence
+    // -Werror=format-truncation.
+    if (01'000'000 < sum)
+      __builtin_unreachable();
+
     snprintf(checksum, sizeof(checksum), "%06o", sum);
   }
 
