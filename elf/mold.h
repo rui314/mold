@@ -330,9 +330,6 @@ private:
   std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
 };
 
-template <typename E>
-void report_undef_errors(Context<E> &ctx);
-
 //
 // tls.cc
 //
@@ -1432,6 +1429,7 @@ template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_relocations(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
 template <typename E> void create_output_symtab(Context<E> &);
+template <typename E> void report_undef_errors(Context<E> &);
 template <typename E> void create_reloc_sections(Context<E> &);
 template <typename E> void copy_chunks(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);

@@ -440,40 +440,9 @@ void InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
   acc->second.push_back(ss.str());
 }
 
-// Report all undefined symbols, grouped by symbol.
-template <typename E>
-void report_undef_errors(Context<E> &ctx) {
-  constexpr i64 max_errors = 3;
-
-  for (auto &pair : ctx.undef_errors) {
-    std::string_view sym_name = pair.first;
-    std::span<std::string> errors = pair.second;
-
-    if (ctx.arg.demangle)
-      sym_name = demangle(sym_name);
-
-    std::stringstream ss;
-    ss << "undefined symbol: " << sym_name << "\n";
-
-    for (i64 i = 0; i < errors.size() && i < max_errors; i++)
-      ss << errors[i];
-
-    if (errors.size() > max_errors)
-      ss << ">>> referenced " << (errors.size() - max_errors) << " more times\n";
-
-    if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR)
-      Error(ctx) << ss.str();
-    else if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
-      Warn(ctx) << ss.str();
-  }
-
-  ctx.checkpoint();
-}
-
 using E = MOLD_TARGET;
 
 template struct CieRecord<E>;
 template class InputSection<E>;
-template void report_undef_errors(Context<E> &);
 
 } // namespace mold::elf

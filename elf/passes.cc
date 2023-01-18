@@ -1379,6 +1379,36 @@ void scan_relocations(Context<E> &ctx) {
     Warn(ctx) << "creating a DT_TEXTREL in an output file";
 }
 
+// Report all undefined symbols, grouped by symbol.
+template <typename E>
+void report_undef_errors(Context<E> &ctx) {
+  constexpr i64 max_errors = 3;
+
+  for (auto &pair : ctx.undef_errors) {
+    std::string_view sym_name = pair.first;
+    std::span<std::string> errors = pair.second;
+
+    if (ctx.arg.demangle)
+      sym_name = demangle(sym_name);
+
+    std::stringstream ss;
+    ss << "undefined symbol: " << sym_name << "\n";
+
+    for (i64 i = 0; i < errors.size() && i < max_errors; i++)
+      ss << errors[i];
+
+    if (errors.size() > max_errors)
+      ss << ">>> referenced " << (errors.size() - max_errors) << " more times\n";
+
+    if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR)
+      Error(ctx) << ss.str();
+    else if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
+      Warn(ctx) << ss.str();
+  }
+
+  ctx.checkpoint();
+}
+
 template <typename E>
 void create_reloc_sections(Context<E> &ctx) {
   Timer t(ctx, "create_reloc_sections");
@@ -1419,6 +1449,10 @@ void copy_chunks(Context<E> &ctx) {
       copy(*chunk);
   });
 
+  // Undefined symbols in SHF_ALLOC sections are found by scan_relocations(),
+  // but those in non-SHF_ALLOC sections cannot be found until we copy section
+  // contents. So we need to call this function again to report possible
+  // undefined errors.
   report_undef_errors(ctx);
 
   if constexpr (is_arm32<E>)
@@ -2570,6 +2604,7 @@ template void compute_section_sizes(Context<E> &);
 template void sort_output_sections(Context<E> &);
 template void claim_unresolved_symbols(Context<E> &);
 template void scan_relocations(Context<E> &);
+template void report_undef_errors(Context<E> &);
 template void create_reloc_sections(Context<E> &);
 template void copy_chunks(Context<E> &);
 template void construct_relr(Context<E> &);
