@@ -1232,7 +1232,7 @@ public:
   std::vector<ElfShdr<E>> elf_sections2;
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
-  std::vector<const char *> symvers;
+  BitVector has_symver;
   std::vector<ComdatGroupRef<E>> comdat_groups;
   bool exclude_libs = false;
   std::map<u32, u32> gnu_properties;

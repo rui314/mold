@@ -486,7 +486,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   this->symbols.resize(this->elf_syms.size());
 
   i64 num_globals = this->elf_syms.size() - this->first_global;
-  symvers.resize(num_globals);
+  has_symver.resize(num_globals);
 
   for (i64 i = 0; i < this->first_global; i++)
     this->symbols[i] = &this->local_syms[i];
@@ -501,14 +501,13 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 
     // Parse symbol version after atsign
     if (i64 pos = name.find('@'); pos != name.npos) {
-      std::string_view ver = name.substr(pos + 1);
+      std::string_view ver = name.substr(pos);
       name = name.substr(0, pos);
 
-      if (!ver.empty() && ver != "@") {
-        if (ver.starts_with('@'))
+      if (ver != "@" && ver != "@@") {
+        if (ver.starts_with("@@"))
           key = name;
-        if (!esym.is_undef())
-          symvers[i - this->first_global] = ver.data();
+        has_symver.set(i - this->first_global);
       }
     }
 

@@ -90,16 +90,6 @@ template<> struct hash<Digest> {
 
 namespace mold::elf {
 
-class BitVector {
-public:
-  BitVector(u32 size) : vec((size + 7) / 8) {}
-  bool get(u32 idx) const { return vec[idx / 8] & (1 << (idx % 8)); }
-  void set(u32 idx) { vec[idx / 8] |= 1 << (idx % 8); }
-
-private:
-  std::vector<u8> vec;
-};
-
 template <typename E>
 static void uniquify_cies(Context<E> &ctx) {
   Timer t(ctx, "uniquify_cies");
