@@ -564,7 +564,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags.fetch_or(NEEDS_GOT | NEEDS_PLT, std::memory_order_relaxed);
+      sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
     case R_ARM_ABS32:
@@ -579,12 +579,12 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_PLT32:
     case R_ARM_THM_JUMP24:
       if (sym.is_imported)
-        sym.flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
+        sym.flags |= NEEDS_PLT;
       break;
     case R_ARM_GOT_PREL:
     case R_ARM_GOT_BREL:
     case R_ARM_TARGET2:
-      sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
+      sym.flags |= NEEDS_GOT;
       break;
     case R_ARM_MOVT_PREL:
     case R_ARM_THM_MOVT_PREL:
@@ -592,17 +592,17 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_pcrel(ctx, sym, rel);
       break;
     case R_ARM_TLS_GD32:
-      sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
+      sym.flags |= NEEDS_TLSGD;
       break;
     case R_ARM_TLS_LDM32:
-      ctx.needs_tlsld.store(true, std::memory_order_relaxed);
+      ctx.needs_tlsld = true;
       break;
     case R_ARM_TLS_IE32:
-      sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
+      sym.flags |= NEEDS_GOTTP;
       break;
     case R_ARM_TLS_GOTDESC:
       if (!relax_tlsdesc(ctx, sym))
-        sym.flags.fetch_or(NEEDS_TLSDESC, std::memory_order_relaxed);
+        sym.flags |= NEEDS_TLSDESC;
       break;
     case R_ARM_REL32:
     case R_ARM_BASE_PREL:

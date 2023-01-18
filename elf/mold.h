@@ -71,8 +71,8 @@ struct SectionFragment {
 
   MergedSection<E> &output_section;
   u32 offset = -1;
-  std::atomic_uint8_t p2align = 0;
-  std::atomic_bool is_alive = false;
+  Atomic<u8> p2align = 0;
+  Atomic<bool> is_alive = false;
 };
 
 // Additional class members for dynamic symbols. Because most symbols
@@ -226,7 +226,7 @@ struct FdeRecord {
   u32 output_offset = -1;
   u32 rel_idx = -1;
   u16 cie_idx = -1;
-  std::atomic_bool is_alive = true;
+  Atomic<bool> is_alive = true;
 };
 
 // A struct to hold target-dependent input section members.
@@ -2037,10 +2037,10 @@ public:
   u16 ver_idx = 0;
 
   // `flags` has NEEDS_ flags.
-  std::atomic_uint8_t flags = 0;
+  Atomic<u8> flags = 0;
 
   tbb::spin_mutex mu;
-  std::atomic_uint8_t visibility = STV_DEFAULT;
+  Atomic<u8> visibility = STV_DEFAULT;
 
   bool is_weak : 1 = false;
   bool write_to_symtab : 1 = false; // for --strip-all and the like

@@ -486,7 +486,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags.fetch_or(NEEDS_GOT | NEEDS_PLT, std::memory_order_relaxed);
+      sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
     case R_386_8:
@@ -503,7 +503,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_386_GOT32:
     case R_386_GOTPC:
-      sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
+      sym.flags |= NEEDS_GOT;
       break;
     case R_386_GOT32X: {
       // We always want to relax GOT32X because static PIE doesn't
@@ -511,17 +511,17 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       bool do_relax = !sym.is_imported && sym.is_relative() &&
                       relax_got32x(loc - 2);
       if (!do_relax)
-        sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
+        sym.flags |= NEEDS_GOT;
       break;
     }
     case R_386_PLT32:
       if (sym.is_imported)
-        sym.flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
+        sym.flags |= NEEDS_PLT;
       break;
     case R_386_TLS_GOTIE:
     case R_386_TLS_LE:
     case R_386_TLS_IE:
-      sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
+      sym.flags |= NEEDS_GOTTP;
       break;
     case R_386_TLS_GD:
       if (i + 1 == rels.size())
@@ -538,7 +538,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
           (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported))
         i++;
       else
-        sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
+        sym.flags |= NEEDS_TLSGD;
       break;
     case R_386_TLS_LDM:
       if (i + 1 == rels.size())
@@ -554,11 +554,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared))
         i++;
       else
-        ctx.needs_tlsld.store(true, std::memory_order_relaxed);
+        ctx.needs_tlsld = true;
       break;
     case R_386_TLS_GOTDESC:
       if (!relax_tlsdesc(ctx, sym))
-        sym.flags.fetch_or(NEEDS_TLSDESC, std::memory_order_relaxed);
+        sym.flags |= NEEDS_TLSDESC;
       break;
     case R_386_GOTOFF:
     case R_386_TLS_LDO_32:

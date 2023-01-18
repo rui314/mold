@@ -187,6 +187,32 @@ private:
 };
 
 //
+// Atomics
+//
+
+// This is the same as std::atomic except that the default memory
+// order is relaxed instead of sequential consistency.
+template <typename T>
+struct Atomic : std::atomic<T> {
+  static constexpr std::memory_order relaxed = std::memory_order_relaxed;
+
+  using std::atomic<T>::atomic;
+
+  void operator=(T val) { store(val); }
+  operator T() const { return load(); }
+
+  void store(T val, std::memory_order order = relaxed) {
+    std::atomic<T>::store(val, order);
+  }
+
+  T load(std::memory_order order = relaxed) const {
+    return std::atomic<T>::load(order);
+  }
+
+  T operator|=(T val) { return std::atomic<T>::fetch_or(val, relaxed); }
+};
+
+//
 // Utility functions
 //
 

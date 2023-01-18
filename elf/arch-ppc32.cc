@@ -348,7 +348,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags.fetch_or(NEEDS_GOT | NEEDS_PLT, std::memory_order_relaxed);
+      sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
     case R_PPC_ADDR32:
@@ -381,22 +381,22 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC_PLT16_HI:
     case R_PPC_PLT16_HA:
     case R_PPC_PLT32:
-      sym.flags.fetch_or(NEEDS_GOT, std::memory_order_relaxed);
+      sym.flags |= NEEDS_GOT;
       break;
     case R_PPC_REL24:
     case R_PPC_PLTREL24:
     case R_PPC_PLTREL32:
       if (sym.is_imported)
-        sym.flags.fetch_or(NEEDS_PLT, std::memory_order_relaxed);
+        sym.flags |= NEEDS_PLT;
       break;
     case R_PPC_GOT_TLSGD16:
-      sym.flags.fetch_or(NEEDS_TLSGD, std::memory_order_relaxed);
+      sym.flags |= NEEDS_TLSGD;
       break;
     case R_PPC_GOT_TLSLD16:
-      ctx.needs_tlsld.store(true, std::memory_order_relaxed);
+      ctx.needs_tlsld = true;
       break;
     case R_PPC_GOT_TPREL16:
-      sym.flags.fetch_or(NEEDS_GOTTP, std::memory_order_relaxed);
+      sym.flags |= NEEDS_GOTTP;
       break;
     case R_PPC_LOCAL24PC:
     case R_PPC_TLS:

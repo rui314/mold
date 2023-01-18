@@ -53,7 +53,7 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
     // Symbol can refer either a section fragment or an input section.
     // Mark a fragment as alive.
     if (SectionFragment<E> *frag = sym.get_frag()) {
-      frag->is_alive.store(true, std::memory_order_relaxed);
+      frag->is_alive = true;
       continue;
     }
 
@@ -81,7 +81,7 @@ static void collect_root_set(Context<E> &ctx,
   auto enqueue_symbol = [&](Symbol<E> *sym) {
     if (sym) {
       if (SectionFragment<E> *frag = sym->get_frag())
-        frag->is_alive.store(true, std::memory_order_relaxed);
+        frag->is_alive = true;
       else
         enqueue_section(sym->get_input_section());
     }

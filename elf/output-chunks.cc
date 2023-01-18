@@ -1946,8 +1946,7 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
       if (const char *key = map.get_key(j))
-        if (SectionFragment<E> &frag = map.values[j];
-            frag.is_alive.load(std::memory_order_relaxed))
+        if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
           fragments.push_back({{key, map.key_sizes[j]}, &frag});
 
     // Sort fragments to make output deterministic.
@@ -1986,8 +1985,7 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (SectionFragment<E> &frag = map.values[j];
-          frag.is_alive.load(std::memory_order_relaxed))
+      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
         frag.offset += shard_offsets[i];
   });
 
