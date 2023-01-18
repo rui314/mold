@@ -221,11 +221,16 @@ void do_resolve_symbols(Context<E> &ctx) {
     Timer t(ctx, "eliminate_comdats");
 
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      file->resolve_comdat_groups();
+      for (ComdatGroupRef<E> &ref : file->comdat_groups)
+        update_minimum(ref.group->owner, file->priority);
     });
 
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      file->eliminate_duplicate_comdat_groups();
+      for (ComdatGroupRef<E> &ref : file->comdat_groups)
+        if (ref.group->owner != file->priority)
+          for (u32 i : ref.members)
+            if (file->sections[i])
+              file->sections[i]->kill();
     });
   }
 
@@ -1198,11 +1203,90 @@ void compute_section_sizes(Context<E> &ctx) {
         osec->shdr.sh_addralign = std::max<u32>(osec->shdr.sh_addralign, align);
 }
 
+// Find all unresolved symbols and attach them to the most appropriate files.
+// Note that even a symbol that will be reported as an undefined symbol will
+// get an owner file in this function. Such symbol will be reported by
+// ObjectFile<E>::scan_relocations().
 template <typename E>
 void claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "claim_unresolved_symbols");
+
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->claim_unresolved_symbols(ctx);
+    if (!file->is_alive)
+      return;
+
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
+      const ElfSym<E> &esym = file->elf_syms[i];
+      Symbol<E> &sym = *file->symbols[i];
+      if (!esym.is_undef())
+        continue;
+
+      std::scoped_lock lock(sym.mu);
+
+      if (sym.file)
+        if (!sym.esym().is_undef() || sym.file->priority <= file->priority)
+          continue;
+
+      // If a symbol name is in the form of "foo@version", search for
+      // symbol "foo" and check if the symbol has version "version".
+      std::string_view key = file->symbol_strtab.data() + esym.st_name;
+      if (i64 pos = key.find('@'); pos != key.npos) {
+        Symbol<E> *sym2 = get_symbol(ctx, key.substr(0, pos));
+        if (sym2->file && sym2->file->is_dso &&
+            sym2->get_version() == key.substr(pos + 1)) {
+          file->symbols[i] = sym2;
+          continue;
+        }
+      }
+
+      auto claim = [&](bool is_imported) {
+        if (sym.is_traced)
+          SyncOut(ctx) << "trace-symbol: " << *file << ": unresolved"
+                       << (esym.is_weak() ? " weak" : "")
+                       << " symbol " << sym;
+
+        sym.file = file;
+        sym.origin = 0;
+        sym.value = 0;
+        sym.sym_idx = i;
+        sym.is_weak = false;
+        sym.is_imported = is_imported;
+        sym.is_exported = false;
+        sym.ver_idx = is_imported ? 0 : ctx.default_version;
+      };
+
+      if (esym.is_undef_weak()) {
+        if (ctx.arg.shared && sym.visibility != STV_HIDDEN &&
+            ctx.arg.z_dynamic_undefined_weak) {
+          // Global weak undefined symbols are promoted to dynamic symbols
+          // when when linking a DSO, unless `-z nodynamic_undefined_weak`
+          // was given.
+          claim(true);
+        } else {
+          // Otherwise, weak undefs are converted to absolute symbols with value 0.
+          claim(false);
+        }
+        continue;
+      }
+
+      // Traditionally, remaining undefined symbols cause a link failure
+      // only when we are creating an executable. Undefined symbols in
+      // shared objects are promoted to dynamic symbols, so that they'll
+      // get another chance to be resolved at run-time. You can change the
+      // behavior by passing `-z defs` to the linker.
+      //
+      // Even if `-z defs` is given, weak undefined symbols are still
+      // promoted to dynamic symbols for compatibility with other linkers.
+      // Some major programs, notably Firefox, depend on the behavior
+      // (they use this loophole to export symbols from libxul.so).
+      if (ctx.arg.shared && sym.visibility != STV_HIDDEN && !ctx.arg.z_defs) {
+        claim(true);
+        continue;
+      }
+
+      // Convert remaining undefined symbols to absolute symbols with value 0.
+      claim(false);
+    }
   });
 }
 
