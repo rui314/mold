@@ -43,7 +43,7 @@ arch-*)
 void-*)
   xbps-install -Sy xbps
   xbps-install -Sy bash make cmake openssl-devel zlib-devel gcc
-  xbps-install -Sy glibc-devel tar diffutils util-linux
+  xbps-install -Sy tar diffutils util-linux
   ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"
