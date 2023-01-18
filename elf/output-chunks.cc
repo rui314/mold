@@ -2007,8 +2007,7 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
       if (const char *key = map.get_key(j))
-        if (SectionFragment<E> &frag = map.values[j];
-            frag.is_alive.load(std::memory_order_relaxed))
+        if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
           memcpy(buf + frag.offset, key, map.key_sizes[j]);
   });
 }
