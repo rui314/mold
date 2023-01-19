@@ -310,7 +310,7 @@ list(APPEND MOLD_MACHO_TEMPLATE_FILES
   macho/input-files.cc
   macho/input-sections.cc
   macho/lto.cc
-  macho/main.cc
+  macho/macho-main.cc
   macho/mapfile.cc
   macho/output-chunks.cc
   macho/tapi.cc
