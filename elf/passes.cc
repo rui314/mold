@@ -1264,8 +1264,7 @@ void claim_unresolved_symbols(Context<E> &ctx) {
         if (ctx.arg.shared && sym.visibility != STV_HIDDEN &&
             ctx.arg.z_dynamic_undefined_weak) {
           // Global weak undefined symbols are promoted to dynamic symbols
-          // when when linking a DSO, unless `-z nodynamic_undefined_weak`
-          // was given.
+          // when linking a DSO unless `-z nodynamic_undefined_weak` was given.
           claim(true);
         } else {
           // Otherwise, weak undefs are converted to absolute symbols with value 0.

@@ -849,22 +849,22 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
 //
 // Ties are broken by file priority.
 template <typename E>
-static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_lazy) {
-  if (esym.is_common()) {
-    assert(!file->is_dso);
-    if (is_lazy)
-      return (6 << 24) + file->priority;
-    return (5 << 24) + file->priority;
-  }
+static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_in_archive) {
+  auto get_sym_rank = [&] {
+    if (esym.is_common()) {
+      assert(!file->is_dso);
+      return is_in_archive ? 6 : 5;
+    }
 
-  if (file->is_dso || is_lazy) {
+    if (file->is_dso || is_in_archive)
+      return (esym.st_bind == STB_WEAK) ? 4 : 3;
+
     if (esym.st_bind == STB_WEAK)
-      return (4 << 24) + file->priority;
-    return (3 << 24) + file->priority;
-  }
-  if (esym.st_bind == STB_WEAK)
-    return (2 << 24) + file->priority;
-  return (1 << 24) + file->priority;
+      return 2;
+    return 1;
+  };
+
+  return (get_sym_rank() << 24) + file->priority;
 }
 
 template <typename E>
