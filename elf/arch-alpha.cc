@@ -252,8 +252,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       ctx.needs_tlsld = true;
       break;
     case R_ALPHA_GOTTPREL:
-    case R_ALPHA_TPRELHI:
       sym.flags |= NEEDS_GOTTP;
+      break;
+    case R_ALPHA_TPRELHI:
+    case R_ALPHA_TPRELLO:
+      check_tlsle(ctx, sym, rel);
       break;
     case R_ALPHA_GPREL32:
     case R_ALPHA_LITUSE:
@@ -263,7 +266,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ALPHA_GPRELLOW:
     case R_ALPHA_DTPRELHI:
     case R_ALPHA_DTPRELLO:
-    case R_ALPHA_TPRELLO:
       break;
     default:
       Fatal(ctx) << *this << ": unknown relocation: " << rel;

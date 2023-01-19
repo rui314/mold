@@ -398,13 +398,15 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC_GOT_TPREL16:
       sym.flags |= NEEDS_GOTTP;
       break;
+    case R_PPC_TPREL16_LO:
+    case R_PPC_TPREL16_HI:
+    case R_PPC_TPREL16_HA:
+      check_tlsle(ctx, sym, rel);
+      break;
     case R_PPC_LOCAL24PC:
     case R_PPC_TLS:
     case R_PPC_TLSGD:
     case R_PPC_TLSLD:
-    case R_PPC_TPREL16_LO:
-    case R_PPC_TPREL16_HI:
-    case R_PPC_TPREL16_HA:
     case R_PPC_DTPREL16_LO:
     case R_PPC_DTPREL16_HI:
     case R_PPC_DTPREL16_HA:

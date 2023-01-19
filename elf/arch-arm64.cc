@@ -537,6 +537,16 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (!relax_tlsdesc(ctx, sym))
         sym.flags |= NEEDS_TLSDESC;
       break;
+    case R_AARCH64_TLSLE_MOVW_TPREL_G0:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G0_NC:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G1:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G1_NC:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G2:
+    case R_AARCH64_TLSLE_ADD_TPREL_HI12:
+    case R_AARCH64_TLSLE_ADD_TPREL_LO12:
+    case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+      check_tlsle(ctx, sym, rel);
+      break;
     case R_AARCH64_ADD_ABS_LO12_NC:
     case R_AARCH64_ADR_PREL_LO21:
     case R_AARCH64_CONDBR19:
@@ -556,14 +566,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_PREL16:
     case R_AARCH64_PREL32:
     case R_AARCH64_PREL64:
-    case R_AARCH64_TLSLE_MOVW_TPREL_G0:
-    case R_AARCH64_TLSLE_MOVW_TPREL_G0_NC:
-    case R_AARCH64_TLSLE_MOVW_TPREL_G1:
-    case R_AARCH64_TLSLE_MOVW_TPREL_G1_NC:
-    case R_AARCH64_TLSLE_MOVW_TPREL_G2:
-    case R_AARCH64_TLSLE_ADD_TPREL_HI12:
-    case R_AARCH64_TLSLE_ADD_TPREL_LO12:
-    case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
     case R_AARCH64_TLSGD_ADD_LO12_NC:
     case R_AARCH64_TLSDESC_CALL:
       break;

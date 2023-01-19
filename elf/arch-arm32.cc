@@ -604,6 +604,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (!relax_tlsdesc(ctx, sym))
         sym.flags |= NEEDS_TLSDESC;
       break;
+    case R_ARM_TLS_LE32:
+      check_tlsle(ctx, sym, rel);
+      break;
     case R_ARM_REL32:
     case R_ARM_BASE_PREL:
     case R_ARM_GOTOFF32:
@@ -614,7 +617,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_THM_MOVW_PREL_NC:
     case R_ARM_THM_MOVW_ABS_NC:
     case R_ARM_TLS_LDO32:
-    case R_ARM_TLS_LE32:
     case R_ARM_TLS_CALL:
     case R_ARM_THM_TLS_CALL:
     case R_ARM_V4BX:

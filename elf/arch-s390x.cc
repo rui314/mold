@@ -486,6 +486,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
     case R_390_TLS_LE32:
     case R_390_TLS_LE64:
+      check_tlsle(ctx, sym, rel);
+      break;
     case R_390_TLS_LDO32:
     case R_390_TLS_LDO64:
     case R_390_TLS_GDCALL:

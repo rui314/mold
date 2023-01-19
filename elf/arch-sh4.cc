@@ -350,10 +350,12 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SH_TLS_IE_32:
       sym.flags |= NEEDS_GOTTP;
       break;
+    case R_SH_TLS_LE_32:
+      check_tlsle(ctx, sym, rel);
+      break;
     case R_SH_GOTPC:
     case R_SH_GOTOFF:
     case R_SH_TLS_LDO_32:
-    case R_SH_TLS_LE_32:
       break;
     default:
       Fatal(ctx) << *this << ": unknown relocation: " << rel;

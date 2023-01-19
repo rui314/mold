@@ -583,6 +583,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (!ctx.arg.is_static && ctx.extra.tls_get_addr_sym->is_imported)
         ctx.extra.tls_get_addr_sym->flags |= NEEDS_PLT;
       break;
+    case R_SPARC_TLS_LE_HIX22:
+    case R_SPARC_TLS_LE_LOX10:
+      check_tlsle(ctx, sym, rel);
+      break;
     case R_SPARC_GOTDATA_OP_LOX10:
     case R_SPARC_GOTDATA_OP:
     case R_SPARC_GOTDATA_LOX10:
@@ -597,8 +601,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_TLS_IE_LD:
     case R_SPARC_TLS_IE_LDX:
     case R_SPARC_TLS_IE_LO10:
-    case R_SPARC_TLS_LE_HIX22:
-    case R_SPARC_TLS_LE_LOX10:
     case R_SPARC_SIZE32:
       break;
     default:

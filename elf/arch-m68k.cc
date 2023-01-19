@@ -319,12 +319,14 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_68K_TLS_IE8:
       sym.flags |= NEEDS_GOTTP;
       break;
-    case R_68K_TLS_LDO32:
-    case R_68K_TLS_LDO16:
-    case R_68K_TLS_LDO8:
     case R_68K_TLS_LE32:
     case R_68K_TLS_LE16:
     case R_68K_TLS_LE8:
+      check_tlsle(ctx, sym, rel);
+      break;
+    case R_68K_TLS_LDO32:
+    case R_68K_TLS_LDO16:
+    case R_68K_TLS_LDO8:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;

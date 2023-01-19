@@ -310,6 +310,15 @@ void InputSection<E>::scan_toc_rel(Context<E> &ctx, Symbol<E> &sym,
 }
 
 template <typename E>
+void InputSection<E>::check_tlsle(Context<E> &ctx, Symbol<E> &sym,
+                                  const ElfRel<E> &rel) {
+  if (ctx.arg.shared)
+    Error(ctx) << *this << ": relocation " << rel << " against `" << sym
+               << "` can not be used when making a shared object;"
+               << " recompile with -fPIC";
+}
+
+template <typename E>
 static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
                          Symbol<E> &sym, const ElfRel<E> &rel, u8 *loc,
                          u64 S, i64 A, u64 P, ElfRel<E> *&dynrel,

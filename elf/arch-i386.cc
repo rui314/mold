@@ -519,7 +519,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_PLT;
       break;
     case R_386_TLS_GOTIE:
-    case R_386_TLS_LE:
     case R_386_TLS_IE:
       sym.flags |= NEEDS_GOTTP;
       break;
@@ -559,6 +558,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_386_TLS_GOTDESC:
       if (!relax_tlsdesc(ctx, sym))
         sym.flags |= NEEDS_TLSDESC;
+      break;
+    case R_386_TLS_LE:
+      check_tlsle(ctx, sym, rel);
       break;
     case R_386_GOTOFF:
     case R_386_TLS_LDO_32:

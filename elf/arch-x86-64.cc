@@ -766,11 +766,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_TLSDESC;
       break;
     }
+    case R_X86_64_TPOFF32:
+    case R_X86_64_TPOFF64:
+      check_tlsle(ctx, sym, rel);
+      break;
     case R_X86_64_GOTOFF64:
     case R_X86_64_DTPOFF32:
     case R_X86_64_DTPOFF64:
-    case R_X86_64_TPOFF32:
-    case R_X86_64_TPOFF64:
     case R_X86_64_SIZE32:
     case R_X86_64_SIZE64:
     case R_X86_64_TLSDESC_CALL:
