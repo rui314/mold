@@ -695,7 +695,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOT;
       break;
     case R_RISCV_TLS_GOT_HI20:
-      ctx.has_gottp_rel = true;
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_RISCV_TLS_GD_HI20:

@@ -1793,7 +1793,6 @@ struct Context {
 
   std::vector<Chunk<E> *> chunks;
   std::atomic_bool needs_tlsld = false;
-  std::atomic_bool has_gottp_rel = false;
   std::atomic_bool has_textrel = false;
   std::atomic_uint32_t num_ifunc_dynrels = 0;
 

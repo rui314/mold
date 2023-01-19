@@ -748,8 +748,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (rel.r_addend != -4)
         Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTTPOFF";
 
-      ctx.has_gottp_rel = true;
-
       bool do_relax = ctx.arg.relax && !ctx.arg.shared &&
                       !sym.is_imported && relax_gottpoff(loc - 3);
       if (!do_relax)
