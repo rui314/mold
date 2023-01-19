@@ -74,9 +74,8 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
           sym->file && !sym->file->is_dso)
         return sym->get_addr(ctx);
 
-    for (Chunk<E> *chunk : ctx.chunks)
-      if (chunk->name == ".text")
-        return chunk->shdr.sh_addr;
+    if (OutputSection<E> *osec = find_section(ctx, ".text"))
+      return osec->shdr.sh_addr;
     return 0;
   };
 

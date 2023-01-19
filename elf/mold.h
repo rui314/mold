@@ -2437,6 +2437,15 @@ OutputSection<E> *find_section(Context<E> &ctx, u32 sh_type) {
 }
 
 template <typename E>
+OutputSection<E> *find_section(Context<E> &ctx, std::string_view name) {
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      if (osec->name == name)
+        return osec;
+  return nullptr;
+}
+
+template <typename E>
 u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
   if (SectionFragment<E> *frag = get_frag()) {
     if (!frag->is_alive) {
