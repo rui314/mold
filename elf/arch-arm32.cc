@@ -731,15 +731,7 @@ static void sort_exidx(Context<E> &ctx, OutputSection<E> &osec) {
 void fixup_arm_exidx_section(Context<E> &ctx) {
   Timer t(ctx, "fixup_arm_exidx_section");
 
-  auto find_exidx = [&]() -> OutputSection<E> * {
-    for (Chunk<E> *chunk : ctx.chunks)
-      if (OutputSection<E> *osec = chunk->to_osec())
-        if (osec->shdr.sh_type == SHT_ARM_EXIDX)
-          return osec;
-    return nullptr;
-  };
-
-  OutputSection<E> *exidx = find_exidx();
+  OutputSection<E> *exidx = find_section(ctx, SHT_ARM_EXIDX);
   if (!exidx)
     return;
 

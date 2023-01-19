@@ -333,14 +333,9 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   }
 
   // Add PT_ARM_EDXIDX
-  if constexpr (is_arm32<E>) {
-    for (Chunk<E> *chunk : ctx.chunks) {
-      if (chunk->shdr.sh_type == SHT_ARM_EXIDX) {
-        define(PT_ARM_EXIDX, PF_R, 4, chunk);
-        break;
-      }
-    }
-  }
+  if constexpr (is_arm32<E>)
+    if (OutputSection<E> *osec = find_section(ctx, SHT_ARM_EXIDX))
+      define(PT_ARM_EXIDX, PF_R, 4, osec);
 
   // Set p_paddr if --physical-image-base was given. --physical-image-base
   // is typically used in embedded programming to specify the base address
@@ -755,26 +750,19 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_STRSZ, ctx.dynstr->shdr.sh_size);
   }
 
-  auto has_output_section = [&](u32 sh_type) {
-    for (Chunk<E> *chunk : ctx.chunks)
-      if (chunk->shdr.sh_type == sh_type)
-        return true;
-    return false;
-  };
-
-  if (has_output_section(SHT_INIT_ARRAY)) {
+  if (find_section(ctx, SHT_INIT_ARRAY)) {
     define(DT_INIT_ARRAY, ctx.__init_array_start->value);
     define(DT_INIT_ARRAYSZ,
            ctx.__init_array_end->value - ctx.__init_array_start->value);
   }
 
-  if (has_output_section(SHT_PREINIT_ARRAY)) {
+  if (find_section(ctx, SHT_PREINIT_ARRAY)) {
     define(DT_PREINIT_ARRAY, ctx.__preinit_array_start->value);
     define(DT_PREINIT_ARRAYSZ,
            ctx.__preinit_array_end->value - ctx.__preinit_array_start->value);
   }
 
-  if (has_output_section(SHT_FINI_ARRAY)) {
+  if (find_section(ctx, SHT_FINI_ARRAY)) {
     define(DT_FINI_ARRAY, ctx.__fini_array_start->value);
     define(DT_FINI_ARRAYSZ,
            ctx.__fini_array_end->value - ctx.__fini_array_start->value);

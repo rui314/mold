@@ -2428,6 +2428,15 @@ inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
 }
 
 template <typename E>
+OutputSection<E> *find_section(Context<E> &ctx, u32 sh_type) {
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      if (osec->shdr.sh_type == sh_type)
+        return osec;
+  return nullptr;
+}
+
+template <typename E>
 u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
   if (SectionFragment<E> *frag = get_frag()) {
     if (!frag->is_alive) {
