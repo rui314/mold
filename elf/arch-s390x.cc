@@ -178,7 +178,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_PC12DBL:
     case R_390_PLT12DBL:
       check_dbl(S + A - P, -(1 << 12), 1 << 12);
-      *(ul16 *)loc = ((S + A - P) >> 1) & 0x0fff;
+      *(ul16 *)loc |= bits(S + A - P, 12, 1);
       break;
     case R_390_PC16:
       check(S + A - P, -(1 << 15), 1 << 15);
