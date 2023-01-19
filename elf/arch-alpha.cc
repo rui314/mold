@@ -305,9 +305,9 @@ u64 AlphaGotSection::get_addr(Symbol<E> &sym, i64 addend) {
   return this->shdr.sh_addr + (it - entries.begin()) * sizeof(Word<E>);
 }
 
-i64 AlphaGotSection::get_reldyn_size(Context<E> &ctx) {
+i64 AlphaGotSection::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
-  for (Entry &e : entries)
+  for (const Entry &e : entries)
     if (e.sym->is_imported || (ctx.arg.pic && !e.sym->is_absolute()))
       n++;
   return n;
@@ -320,9 +320,8 @@ void AlphaGotSection::finalize() {
 }
 
 void AlphaGotSection::copy_buf(Context<E> &ctx) {
-  ElfRel<E> *dynrel = nullptr;
-  if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset + reldyn_offset);
+  ElfRel<E> *dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+                                    reldyn_offset);
 
   for (i64 i = 0; i < entries.size(); i++) {
     Entry &e = entries[i];

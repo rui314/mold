@@ -374,6 +374,7 @@ public:
   virtual ~Chunk() = default;
   virtual ChunkKind kind() { return SYNTHETIC; }
   virtual OutputSection<E> *to_osec() { return nullptr; }
+  virtual i64 get_reldyn_size(Context<E> &ctx) const { return 0; }
   virtual void copy_buf(Context<E> &ctx) {}
   virtual void write_to(Context<E> &ctx, u8 *buf) { unreachable(); }
   virtual void update_shdr(Context<E> &ctx) {}
@@ -396,6 +397,9 @@ public:
   i64 num_local_symtab = 0;
   i64 strtab_size = 0;
   i64 strtab_offset = 0;
+
+  // Offset in .rel.dyn
+  i64 reldyn_offset = 0;
 
   // For --section-order
   i64 sect_order = 0;
@@ -510,7 +514,7 @@ public:
 
   u64 get_tlsld_addr(Context<E> &ctx) const;
   bool has_tlsld(Context<E> &ctx) const { return tlsld_idx != -1; }
-  i64 get_reldyn_size(Context<E> &ctx) const;
+  i64 get_reldyn_size(Context<E> &ctx) const override;
   void copy_buf(Context<E> &ctx) override;
 
   void compute_symtab_size(Context<E> &ctx) override;
@@ -616,7 +620,6 @@ public:
   }
 
   void update_shdr(Context<E> &ctx) override;
-  void copy_buf(Context<E> &ctx) override;
   void sort(Context<E> &ctx);
 };
 
@@ -863,6 +866,7 @@ public:
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
   void update_shdr(Context<E> &ctx) override;
+  i64 get_reldyn_size(Context<E> &ctx) const override { return symbols.size(); }
   void copy_buf(Context<E> &ctx) override;
 
   bool is_relro;
@@ -1476,6 +1480,7 @@ public:
   }
 
   void add_symbol(Context<PPC64V1> &ctx, Symbol<PPC64V1> *sym);
+  i64 get_reldyn_size(Context<PPC64V1> &ctx) const override;
   void copy_buf(Context<PPC64V1> &ctx) override;
 
   static constexpr i64 ENTRY_SIZE = sizeof(Word<PPC64V1>) * 3;
@@ -1516,7 +1521,7 @@ public:
   void add_symbol(Symbol<ALPHA> &sym, i64 addend);
   void finalize();
   u64 get_addr(Symbol<ALPHA> &sym, i64 addend);
-  i64 get_reldyn_size(Context<ALPHA> &ctx);
+  i64 get_reldyn_size(Context<ALPHA> &ctx) const override;
   void copy_buf(Context<ALPHA> &ctx) override;
 
   struct Entry {
@@ -1524,8 +1529,6 @@ public:
     Symbol<ALPHA> *sym;
     i64 addend;
   };
-
-  i64 reldyn_offset = 0;
 
 private:
   std::vector<Entry> entries;

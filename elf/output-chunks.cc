@@ -412,22 +412,11 @@ void InterpSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void RelDynSection<E>::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_link = ctx.dynsym->shndx;
+  i64 offset = 0;
 
-  // .rel.dyn contents are also filled by GotSection::copy_buf() and
-  // by InputSection::apply_reloc_alloc().
-  i64 offset = ctx.got->get_reldyn_size(ctx);
-
-  offset += ctx.copyrel->symbols.size() * sizeof(ElfRel<E>);
-  offset += ctx.copyrel_relro->symbols.size() * sizeof(ElfRel<E>);
-
-  if constexpr (is_ppc64v1<E>)
-    if (ctx.arg.pic)
-      offset += ctx.extra.opd->symbols.size() * sizeof(ElfRel<E>) * 2;
-
-  if constexpr (is_alpha<E>) {
-    ctx.extra.got->reldyn_offset = offset;
-    offset += ctx.extra.got->get_reldyn_size(ctx) * sizeof(ElfRel<E>);
+  for (Chunk<E> *chunk : ctx.chunks) {
+    chunk->reldyn_offset = offset;
+    offset += chunk->get_reldyn_size(ctx) * sizeof(ElfRel<E>);
   }
 
   for (ObjectFile<E> *file : ctx.objs) {
@@ -436,29 +425,7 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   }
 
   this->shdr.sh_size = offset;
-}
-
-template <typename E>
-void RelDynSection<E>::copy_buf(Context<E> &ctx) {
-  ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset +
-                                 ctx.got->get_reldyn_size(ctx));
-
-  for (Symbol<E> *sym : ctx.copyrel->symbols)
-    *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
-
-  for (Symbol<E> *sym : ctx.copyrel_relro->symbols)
-    *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx), 0);
-
-  if constexpr (is_ppc64v1<E>) {
-    if (ctx.arg.pic) {
-      for (Symbol<E> *sym : ctx.extra.opd->symbols) {
-        u64 addr = sym->get_opd_addr(ctx);
-        *rel++ = ElfRel<E>(addr, E::R_RELATIVE, 0,
-                           sym->get_addr(ctx, NO_PLT | NO_OPD));
-        *rel++ = ElfRel<E>(addr + 8, E::R_RELATIVE, 0, ctx.extra.TOC->value);
-      }
-    }
-  }
+  this->shdr.sh_link = ctx.dynsym->shndx;
 }
 
 template <typename E>
@@ -1251,7 +1218,7 @@ i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   for (GotEntry<E> &ent : get_got_entries(ctx))
     if (!ent.is_relr(ctx) && ent.r_type != R_NONE)
       n++;
-  return n * sizeof(ElfRel<E>);
+  return n;
 }
 
 // Fill .got and .rel.dyn.
@@ -1273,7 +1240,8 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     if (ctx.dynamic && ctx.arg.is_static && ctx.arg.pie)
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
-  ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
+  ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+                                 this->reldyn_offset);
 
   for (GotEntry<E> &ent : get_got_entries(ctx)) {
     if (ent.is_relr(ctx) || ent.r_type == R_NONE) {
@@ -2294,6 +2262,13 @@ template <typename E>
 void CopyrelSection<E>::copy_buf(Context<E> &ctx) {
   if (this->shdr.sh_type == SHT_PROGBITS)
     memset(ctx.buf + this->shdr.sh_offset, 0, this->shdr.sh_size);
+
+  ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+                                 this->reldyn_offset);
+
+  for (Symbol<E> *sym : symbols)
+    *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx),
+                       0);
 }
 
 template <typename E>

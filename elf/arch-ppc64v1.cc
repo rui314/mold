@@ -666,13 +666,30 @@ void PPC64OpdSection::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   this->shdr.sh_size += ENTRY_SIZE;
 }
 
+i64 PPC64OpdSection::get_reldyn_size(Context<E> &ctx) const {
+  if (ctx.arg.pic)
+    return symbols.size() * 2;
+  return 0;
+}
+
 void PPC64OpdSection::copy_buf(Context<E> &ctx) {
   ub64 *buf = (ub64 *)(ctx.buf + this->shdr.sh_offset);
 
+  ElfRel<E> *rel = nullptr;
+  if (ctx.arg.pic)
+    rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset + reldyn_offset);
+
   for (Symbol<E> *sym : symbols) {
-    *buf++ = sym->get_addr(ctx, NO_PLT | NO_OPD);
+    u64 addr = sym->get_addr(ctx, NO_PLT | NO_OPD);
+    *buf++ = addr;
     *buf++ = ctx.extra.TOC->value;
     *buf++ = 0;
+
+    if (ctx.arg.pic) {
+      u64 loc = sym->get_opd_addr(ctx);
+      *rel++ = ElfRel<E>(loc, E::R_RELATIVE, 0, addr);
+      *rel++ = ElfRel<E>(loc + 8, E::R_RELATIVE, 0, ctx.extra.TOC->value);
+    }
   }
 }
 
