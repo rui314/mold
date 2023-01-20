@@ -209,7 +209,19 @@ struct Atomic : std::atomic<T> {
     return std::atomic<T>::load(order);
   }
 
+  T exchange(T val, std::memory_order order = relaxed) {
+    return std::atomic<T>::exchange(val, order);
+  }
+
   T operator|=(T val) { return std::atomic<T>::fetch_or(val, relaxed); }
+
+  bool test_and_set() {
+    // A relaxed load + branch (assuming miss) takes only around 20 cycles,
+    // while an atomic RMW can easily take hundreds on x86. We note that it's
+    // common that another thread beat us in marking, so doing an optimistic
+    // early test tends to improve performance in the ~20% ballpark.
+    return load() || exchange(true);
+  }
 };
 
 //
@@ -284,17 +296,6 @@ void update_maximum(std::atomic<T> &atomic, u64 new_val, Compare cmp = {}) {
   while (cmp(old_val, new_val) &&
          !atomic.compare_exchange_weak(old_val, new_val,
                                        std::memory_order_relaxed));
-}
-
-// An optimized "mark" operation for parallel mark-and-sweep algorithms.
-// Returns true if `visited` was false and updated to true.
-inline bool fast_mark(std::atomic<bool> &visited) {
-  // A relaxed load + branch (assuming miss) takes only around 20 cycles,
-  // while an atomic RMW can easily take hundreds on x86. We note that it's
-  // common that another thread beat us in marking, so doing an optimistic
-  // early test tends to improve performance in the ~20% ballpark.
-  return !visited.load(std::memory_order_relaxed) &&
-         !visited.exchange(true, std::memory_order_relaxed);
 }
 
 template <typename T, typename U>

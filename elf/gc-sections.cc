@@ -30,7 +30,7 @@ static bool should_keep(const InputSection<E> &isec) {
 
 template <typename E>
 static bool mark_section(InputSection<E> *isec) {
-  return isec && isec->is_alive && fast_mark(isec->is_visited);
+  return isec && isec->is_alive && !isec->is_visited.test_and_set();
 }
 
 template <typename E>

@@ -294,7 +294,7 @@ public:
   bool uncompressed : 1 = false;
 
   // For garbage collection
-  std::atomic_bool is_visited = false;
+  Atomic<bool> is_visited = false;
 
   // For ICF
   //
@@ -1186,7 +1186,7 @@ public:
   std::string filename;
   bool is_dso = false;
   u32 priority;
-  std::atomic_bool is_alive = false;
+  Atomic<bool> is_alive = false;
   std::string_view shstrtab;
   std::string_view symbol_strtab;
 
