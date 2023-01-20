@@ -1497,17 +1497,15 @@ template <typename E>
 void RelPltSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
 
-  for (i64 i = 0; i < ctx.plt->symbols.size(); i++) {
-    Symbol<E> &sym = *ctx.plt->symbols[i];
-
+  for (Symbol<E> *sym : ctx.plt->symbols) {
     // SPARC doesn't have a .got.plt because its role is merged to .plt.
     // On SPARC, .plt is writable (!) and the dynamic linker directly
     // modifies .plt's machine instructions as it resolves dynamic symbols.
     // Therefore, it doesn't need a separate section to store the symbol
     // resolution results. That is of course horrible from the security
     // point of view, though.
-    u64 addr = is_sparc<E> ? sym.get_plt_addr(ctx) : sym.get_gotplt_addr(ctx);
-    buf[i] = ElfRel<E>(addr, E::R_JUMP_SLOT, sym.get_dynsym_idx(ctx), 0);
+    u64 addr = is_sparc<E> ? sym->get_plt_addr(ctx) : sym->get_gotplt_addr(ctx);
+    *buf++ = ElfRel<E>(addr, E::R_JUMP_SLOT, sym->get_dynsym_idx(ctx), 0);
   }
 }
 
