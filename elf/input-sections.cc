@@ -431,25 +431,56 @@ std::string_view InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) con
   return "";
 }
 
-// Record an undefined symbol error which will be displayed all at
-// once by report_undef_errors().
+// Test if the symbol a given relocation refers to has already been resolved.
+// If not, record that error and returns true.
 template <typename E>
-void InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) {
-  std::stringstream ss;
-  if (std::string_view source = file.get_source_name(); !source.empty())
-    ss << ">>> referenced by " << source << "\n";
-  else
-    ss << ">>> referenced by " << *this << "\n";
-
-  ss << ">>>               " << file;
-  if (std::string_view func = get_func_name(ctx, rel.r_offset); !func.empty())
-    ss << ":(" << func << ")";
+bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) {
+  // If a relocation refers to a linker-synthesized symbol for a
+  // section fragment, it's always been resolved.
+  if (file.elf_syms.size() <= rel.r_sym)
+    return false;
 
   Symbol<E> &sym = *file.symbols[rel.r_sym];
+  const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
+  assert(sym.file);
 
-  typename decltype(ctx.undef_errors)::accessor acc;
-  ctx.undef_errors.insert(acc, {sym.name(), {}});
-  acc->second.push_back(ss.str());
+  auto record = [&] {
+    std::stringstream ss;
+    if (std::string_view source = file.get_source_name(); !source.empty())
+      ss << ">>> referenced by " << source << "\n";
+    else
+      ss << ">>> referenced by " << *this << "\n";
+
+    ss << ">>>               " << file;
+    if (std::string_view func = get_func_name(ctx, rel.r_offset); !func.empty())
+      ss << ":(" << func << ")";
+
+    typename decltype(ctx.undef_errors)::accessor acc;
+    ctx.undef_errors.insert(acc, {sym.name(), {}});
+    acc->second.push_back(ss.str());
+  };
+
+  // A non-weak undefined symbol must be promoted to an imported
+  // symbol or resolved to an defined symbol. Otherwise, it's an
+  // undefined symbol error.
+  //
+  // Every ELF file has an absolute local symbol as its first symbol.
+  // Referring to that symbol is always valid.
+  bool is_undef = esym.is_undef() && !esym.is_weak() && sym.sym_idx;
+  if (!sym.is_imported && is_undef && sym.esym().is_undef()) {
+    record();
+    return true;
+  }
+
+  // If a protected/hidden undefined symbol is resolved to other .so,
+  // it's handled as if no symbols were found.
+  if (sym.file->is_dso &&
+      (sym.visibility == STV_PROTECTED || sym.visibility == STV_HIDDEN)) {
+    record();
+    return true;
+  }
+
+  return false;
 }
 
 using E = MOLD_TARGET;

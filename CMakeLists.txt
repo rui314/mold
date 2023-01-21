@@ -69,6 +69,10 @@ if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
     -ggnu-pubnames)
 endif()
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  target_compile_options(mold PRIVATE -D_GLIBCXX_ASSERTIONS)
+endif()
+
 # Build mold with -flto if -DMOLD_LTO=ON
 option(MOLD_LTO "Build mold with link-time optimization enabled")
 if(MOLD_LTO)

@@ -389,17 +389,11 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_NONE)
+    if (rel.r_type == R_NONE || record_undef_error(ctx, rel))
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
     u8 *loc = base + rel.r_offset;
-
-    if (!is_resolved(sym, esym)) {
-      record_undef_error(ctx, rel);
-      continue;
-    }
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
@@ -473,17 +467,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_NONE)
+    if (rel.r_type == R_NONE || record_undef_error(ctx, rel))
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
-
-    if (!is_resolved(sym, esym)) {
-      record_undef_error(ctx, rel);
-      continue;
-    }
 
     if (sym.is_ifunc())
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
