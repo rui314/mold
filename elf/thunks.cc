@@ -130,7 +130,7 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
 // Scan relocations to collect symbols that need thunks.
 template <typename E>
 static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
-                      RangeExtensionThunk<E> &thunk, i64 cur_thunk) {
+                      RangeExtensionThunk<E> &thunk) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   std::vector<RangeExtensionRef> &range_extn = isec.extra.range_extn;
   range_extn.resize(rels.size());
@@ -159,7 +159,7 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
 
     // Otherwise, add the symbol to the current thunk if it's not
     // added already.
-    range_extn[i].thunk_idx = cur_thunk;
+    range_extn[i].thunk_idx = thunk.thunk_idx;
     range_extn[i].sym_idx = -1;
 
     if (sym.flags.exchange(-1) == 0) {
@@ -241,14 +241,14 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
     // Create a thunk for input sections between B and C and place it at D.
     offset = align_to(offset, RangeExtensionThunk<E>::alignment);
-    RangeExtensionThunk<E> *thunk = new RangeExtensionThunk<E>(osec, offset);
-    i64 cur_thunk = osec.thunks.size();
+    RangeExtensionThunk<E> *thunk =
+      new RangeExtensionThunk<E>(osec, osec.thunks.size(), offset);
     osec.thunks.emplace_back(thunk);
 
     // Scan relocations between B and C to collect symbols that need thunks.
     tbb::parallel_for_each(m.begin() + b, m.begin() + c,
                            [&](InputSection<E> *isec) {
-      scan_rels(ctx, *isec, *thunk, cur_thunk);
+      scan_rels(ctx, *isec, *thunk);
     });
 
     // Now that we know the number of symbols in the thunk, we can compute
@@ -264,7 +264,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
 
     // Assign offsets within the thunk to the symbols.
     for (i64 i = 0; Symbol<E> *sym : thunk->symbols) {
-      sym->extra.thunk_idx = cur_thunk;
+      sym->extra.thunk_idx = thunk->thunk_idx;
       sym->extra.thunk_sym_idx = i++;
     }
 
@@ -276,7 +276,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       std::span<RangeExtensionRef> range_extn = isec->extra.range_extn;
 
       for (i64 i = 0; i < rels.size(); i++)
-        if (range_extn[i].thunk_idx == cur_thunk)
+        if (range_extn[i].thunk_idx == thunk->thunk_idx)
           range_extn[i].sym_idx = syms[rels[i].r_sym]->extra.thunk_sym_idx;
     });
 
