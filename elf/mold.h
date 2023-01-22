@@ -63,10 +63,6 @@ struct SectionFragment {
   SectionFragment(MergedSection<E> *sec, bool is_alive)
     : output_section(*sec), is_alive(is_alive) {}
 
-  SectionFragment(const SectionFragment &other)
-    : output_section(other.output_section), offset(other.offset),
-      p2align(other.p2align.load()), is_alive(other.is_alive.load()) {}
-
   u64 get_addr(Context<E> &ctx) const;
 
   MergedSection<E> &output_section;
@@ -204,20 +200,6 @@ template <typename E>
 struct FdeRecord {
   FdeRecord(u32 input_offset, u32 rel_idx)
     : input_offset(input_offset), rel_idx(rel_idx) {}
-
-  FdeRecord(const FdeRecord &other)
-    : input_offset(other.input_offset), output_offset(other.output_offset),
-      rel_idx(other.rel_idx), cie_idx(other.cie_idx),
-      is_alive(other.is_alive.load()) {}
-
-  FdeRecord &operator=(const FdeRecord<E> &other) {
-    input_offset = other.input_offset;
-    output_offset = other.output_offset;
-    rel_idx = other.rel_idx;
-    cie_idx = other.cie_idx;
-    is_alive = other.is_alive.load();
-    return *this;
-  }
 
   i64 size(ObjectFile<E> &file) const;
   std::string_view get_contents(ObjectFile<E> &file) const;

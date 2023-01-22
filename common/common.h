@@ -198,6 +198,13 @@ struct Atomic : std::atomic<T> {
 
   using std::atomic<T>::atomic;
 
+  Atomic(const Atomic<T> &other) { store(other.load()); }
+
+  Atomic<T> &operator=(const Atomic<T> &other) {
+    store(other.load());
+    return *this;
+  }
+
   void operator=(T val) { store(val); }
   operator T() const { return load(); }
 
