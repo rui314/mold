@@ -1,4 +1,4 @@
-#include "mold.h"
+#include "../elf/mold.h"
 
 #include <fcntl.h>
 #include <filesystem>
