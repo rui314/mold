@@ -31,7 +31,7 @@ static i64 now_nsec() {
 #else
   struct timespec t;
   clock_gettime(CLOCK_MONOTONIC, &t);
-  return (i64)t.tv_sec * 1000000000 + t.tv_nsec;
+  return (i64)t.tv_sec * 1'000'000'000 + t.tv_nsec;
 #endif
 }
 
@@ -46,7 +46,7 @@ static std::pair<i64, i64> get_usage() {
   return {to_nsec(user), to_nsec(kernel)};
 #else
   auto to_nsec = [](struct timeval t) -> i64 {
-    return (i64)t.tv_sec * 1000000000 + t.tv_usec * 1000;
+    return (i64)t.tv_sec * 1'000'000'000 + t.tv_usec * 1'000;
   };
 
   struct rusage ru;
@@ -79,9 +79,9 @@ void TimerRecord::stop() {
 
 static void print_rec(TimerRecord &rec, i64 indent) {
   printf(" % 8.3f % 8.3f % 8.3f  %s%s\n",
-         ((double)rec.user / 1000000000),
-         ((double)rec.sys / 1000000000),
-         (((double)rec.end - rec.start) / 1000000000),
+         ((double)rec.user / 1'000'000'000),
+         ((double)rec.sys / 1'000'000'000),
+         (((double)rec.end - rec.start) / 1'000'000'000),
          std::string(indent * 2, ' ').c_str(),
          rec.name.c_str());
 
