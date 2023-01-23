@@ -839,7 +839,6 @@ public:
   std::string name;
   u8 *data = nullptr;
   i64 size = 0;
-  i64 mtime = 0;
   bool given_fullpath = true;
   MappedFile *parent = nullptr;
   MappedFile *thin_parent = nullptr;
@@ -873,15 +872,6 @@ MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
 
   mf->name = path;
   mf->size = st.st_size;
-
-#ifdef _WIN32
-    mf->mtime = st.st_mtime;
-#elif defined(__APPLE__)
-    mf->mtime = (u64)st.st_mtimespec.tv_sec * 1'000'000'000 +
-                st.st_mtimespec.tv_nsec;
-#else
-    mf->mtime = (u64)st.st_mtim.tv_sec * 1'000'000'000 + st.st_mtim.tv_nsec;
-#endif
 
   if (st.st_size > 0) {
 #ifdef _WIN32
