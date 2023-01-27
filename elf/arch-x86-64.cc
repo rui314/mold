@@ -422,13 +422,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc = G + GOTPLT + A - P;
       break;
     case R_X86_64_GOTPCRELX:
+      // We always want to relax GOTPCRELX relocs even if --no-relax
+      // was given because some static PIE runtime code depends on these
+      // relaxations.
       if (!sym.is_imported && !sym.is_ifunc() && sym.is_relative()) {
         u32 insn = relax_gotpcrelx(loc - 2);
         i64 val = S + A - P;
         if (insn && (i32)val == val) {
           loc[-2] = insn >> 8;
           loc[-1] = insn;
-          write32s(val);
+          *(ul32 *)loc = val;
           break;
         }
       }
@@ -442,7 +445,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           loc[-3] = insn >> 16;
           loc[-2] = insn >> 8;
           loc[-1] = insn;
-          write32s(val);
+          *(ul32 *)loc = val;
           break;
         }
       }

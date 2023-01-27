@@ -13,7 +13,7 @@ extern char foo[5000L * 1000 * 1000];
 extern char bar[1000 * 1000];
 
 int main() {
-  printf("%d\n", bar[0]);
+  printf("%d %d\n", foo[0], bar[0]);
 }
 EOF
 
