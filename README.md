@@ -314,6 +314,7 @@ have sponsored $128/month or more:
 <a href="https://cybozu-global.com/"><img src="docs/cyboze-logo.png" align=center height=120 width=133 alt=Cybozu></a>
 
 - [Uber](https://uber.com)
+- [G-Research](https://www.gresearch.co.uk)
 - [Signal Slot Inc.](https://github.com/signal-slot)
 
 ### Individual sponsors
