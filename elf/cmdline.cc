@@ -39,6 +39,7 @@ Options:
   -S, --strip-debug           Strip .debug_* sections
   -T FILE, --script FILE      Read linker script
   -X, --discard-locals        Discard temporary local symbols
+  -Y DIR                      Add DIR to default library search path
   -e SYMBOL, --entry SYMBOL   Set program entry point
   -f SHLIB, --auxiliary SHLIB Set DT_AUXILIARY to the specified value
   -h LIBNAME, --soname LIBNAME
@@ -401,6 +402,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   ctx.page_size = E::page_size;
   ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
 
+  std::vector<std::string> default_library_paths;
   bool version_shown = false;
   bool warn_shared_textrel = false;
   std::optional<SeparateCodeKind> z_separate_code;
@@ -636,6 +638,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.filler = parse_hex(ctx, "filler", arg);
     } else if (read_arg("L") || read_arg("library-path")) {
       ctx.arg.library_paths.push_back(std::string(arg));
+    } else if (read_arg("Y")) {
+      default_library_paths.push_back(std::string(arg));
     } else if (read_arg("sysroot")) {
       ctx.arg.sysroot = arg;
     } else if (read_arg("unique")) {
@@ -1135,6 +1139,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       args = args.subspan(1);
     }
   }
+
+  ctx.arg.library_paths.insert(ctx.arg.library_paths.end(),
+          default_library_paths.begin(),
+          default_library_paths.end());
 
   if (!ctx.arg.sysroot.empty()) {
     for (std::string &path : ctx.arg.library_paths) {
