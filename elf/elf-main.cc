@@ -181,6 +181,10 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
         if (ObjectFile<E> *file = new_lto_obj(ctx, child, mf->name))
           ctx.objs.push_back(file);
         break;
+      case FileType::ELF_DSO:
+        Warn(ctx) << mf->name << "(" << child->name
+                  << "): shared object file in an archive is ignored";
+        break;
       default:
         break;
       }
