@@ -403,6 +403,7 @@ std::string rel_to_string<RV64LE>(u32 r_type) {
   case R_RISCV_SET32: return "R_RISCV_SET32";
   case R_RISCV_32_PCREL: return "R_RISCV_32_PCREL";
   case R_RISCV_IRELATIVE: return "R_RISCV_IRELATIVE";
+  case R_RISCV_PLT32: return "R_RISCV_PLT32";
   }
   return "unknown (" + std::to_string(r_type) + ")";
 }

@@ -756,6 +756,7 @@ enum : u32 {
   R_RISCV_SET32 = 56,
   R_RISCV_32_PCREL = 57,
   R_RISCV_IRELATIVE = 58,
+  R_RISCV_PLT32 = 59,
 };
 
 enum : u32 {

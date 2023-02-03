@@ -493,6 +493,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_SET32:
       *(U32<E> *)loc = S + A;
       break;
+    case R_RISCV_PLT32:
     case R_RISCV_32_PCREL:
       *(U32<E> *)loc = S + A - P;
       break;
@@ -676,6 +677,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT:
+    case R_RISCV_PLT32:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
