@@ -938,8 +938,6 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
       sym.sym_idx = i;
       sym.ver_idx = ctx.default_version;
       sym.is_weak = esym.is_weak();
-      sym.is_imported = false;
-      sym.is_exported = false;
     }
   }
 }
@@ -1066,8 +1064,6 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     sym.sym_idx = i;
     sym.ver_idx = ctx.default_version;
     sym.is_weak = false;
-    sym.is_imported = false;
-    sym.is_exported = false;
 
     sections.push_back(std::move(isec));
   }
@@ -1347,8 +1343,6 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];
       sym.is_weak = false;
-      sym.is_imported = false;
-      sym.is_exported = false;
     }
   }
 }
