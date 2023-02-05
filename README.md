@@ -222,9 +222,9 @@ If `mold` is in `.comment`, the file is created by mold.
 <details><summary>Online manual</summary>
 
 Since mold is a drop-in replacement, you should be able to use it
-without reading its manual. But just in case you need it, it's available
-online at <a href=https://rui314.github.io/mold.html>here</a>.
-You can also read the same manual by `man mold`.
+without reading its manual. But just in case you need it,
+[mold's man page](docs/mold.md) is also available. You can read the
+same manual by `man mold`.
 
 </details>
 
