@@ -263,8 +263,8 @@ mostly a single-person open-source project, and just like other
 open-source projects, we are not legally obligated to keep maintaining
 it. A legally-binding commercial license contract addresses the
 concern. By purchasing a license, you are guaranteed that mold will be
-maintained for you. Please [contact us](mailto:contact@bluewhale.systems)
-for a commercial license inquiry.
+maintained for you. Please visit [our website](https://bluewhale.systems)
+for the details of the commercial license.
 
 ## Sponsors
 
