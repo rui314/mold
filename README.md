@@ -154,19 +154,6 @@ rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
 If you want to use mold for all projects, put the above snippet to
 `~/.cargo/config.toml`.
 
-If you are using macOS, you can modify `config.toml` in a similar manner.
-Here is an example with `mold` installed via [Homebrew](https://brew.sh).
-
-```toml
-[target.x86_64-apple-darwin]
-linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
-
-[target.aarch64-apple-darwin]
-linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
-```
-
 </details>
 
 <details><summary>If you are using Nim</summary>
@@ -183,13 +170,6 @@ The above example uses `gcc` as the linker driver.
 Use the `fuse-ld` option. If your GCC is recent enough to recognize this option.
 
 If you want to use mold for all projects, put the above snippet to `~/.config/config.nims`.
-
-If you are using macOS, you can modify config.nims in a similar manner. Here is an example with mold installed via Homebrew.
-
-```nim
-when findExe("ld64.mold").len > 0 and defined(macosx):
-  switch("passL", "-fuse-ld=ld64.mold")
-```
 
 </details>
 
@@ -209,20 +189,6 @@ Internally, mold invokes a given command with `LD_PRELOAD` environment
 variable set to its companion shared object file. The shared object
 file intercepts all function calls to `exec(3)`-family functions to
 replace `argv[0]` with `mold` if it is `ld`, `ld.gold` or `ld.lld`.
-
-</details>
-
-<details><summary>On macOS</summary>
-
-mold/macOS is available as an alpha version. It can be used to build not
-only macOS apps but also iOS apps because their binary formats are the same.
-
-The command name of mold/macOS is `ld64.mold`. If you build mold on macOS,
-it still produces `mold` and `ld.mold`, but these executables are useful
-only for cross compilation (i.e. building Linux apps on macOS.)
-
-If you find any issue with mold/macOS, please file it to
-<a href=https://github.com/rui314/mold/issues>our GitHub Issues</a>.
 
 </details>
 
