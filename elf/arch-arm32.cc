@@ -359,8 +359,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     }
-    case R_ARM_JUMP24:
-    case R_ARM_PLT32: {
+    case R_ARM_JUMP24: {
       if (sym.is_remaining_undef_weak()) {
         *(ul32 *)loc = 0xe320'f000; // NOP
         break;
@@ -378,6 +377,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
       break;
     }
+    case R_ARM_PLT32:
+      if (sym.is_remaining_undef_weak()) {
+        *(ul32 *)loc = 0xe320'f000; // NOP
+      } else {
+        u64 val = (T ? get_arm_thunk_addr() : S) + A - P;
+        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
+      }
+      break;
     case R_ARM_THM_JUMP11:
       assert(T);
       check(S + A - P, -(1 << 11), 1 << 11);

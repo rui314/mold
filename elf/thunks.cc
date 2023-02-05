@@ -70,7 +70,8 @@ static bool needs_thunk_rel(const ElfRel<E> &r) {
     return ty == R_AARCH64_JUMP26 || ty == R_AARCH64_CALL26;
   } else if constexpr (is_arm32<E>) {
     return ty == R_ARM_JUMP24 || ty == R_ARM_THM_JUMP24 ||
-           ty == R_ARM_CALL   || ty == R_ARM_THM_CALL;
+           ty == R_ARM_CALL   || ty == R_ARM_THM_CALL   ||
+           ty == R_ARM_PLT32;
   } else if constexpr (is_ppc32<E>) {
     return ty == R_PPC_REL24  || ty == R_PPC_PLTREL24 || ty == R_PPC_LOCAL24PC;
   } else {
@@ -105,7 +106,8 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   if constexpr (is_arm32<E>) {
     bool is_thumb = sym.get_addr(ctx) & 1;
     if ((rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
-        (rel.r_type == R_ARM_JUMP24 && is_thumb))
+        (rel.r_type == R_ARM_JUMP24 && is_thumb) ||
+        (rel.r_type == R_ARM_PLT32 && is_thumb))
       return false;
   }
 
