@@ -80,7 +80,7 @@ Archive input files as a tar file\.
 \fB\-\-reverse\-sections\fR
 Reverses the order of input sections before assigning them the offsets in the output file\.
 .IP
-This option is useful for finding bugs that depend on an initialization order of global objects\. In C++, constructors of global objects in a single source file are guaranteed to be executed in the source order, but there's no such guarantee across compilation units\. Usually, constructors are executed the order given to the linker, but depending on it is a mistake\.
+This option is useful for finding bugs that depend on an initialization order of global objects\. In C++, constructors of global objects in a single source file are guaranteed to be executed in the source order, but there's no such guarantee across compilation units\. Usually, constructors are executed in the order given to the linker, but depending on it is a mistake\.
 .IP
 By reversing the order of input sections using \fB\-\-reverse\-sections\fR, you can easily test that your program works in the reversed initialization order\.
 .TP
@@ -214,7 +214,7 @@ By default, shared libraries given to the linker are unconditionally added to th
 .IP
 The \fB\-\-no\-as\-needed\fR option restores the default behavior for subsequent files\.
 .TP
-\fB\-\-build\-id\fR=[ \fBnone\fR | \fBmd5\fR | \fBsha1\fR | \fBsha256\fR | \fBuuid\fR | \fB0x\fR\fIhexstring\fR ]
+\fB\-\-build\-id\fR=[ \fBmd5\fR | \fBsha1\fR | \fBsha256\fR | \fBuuid\fR | \fB0x\fR\fIhexstring\fR | \fBnone\fR ]
 Create a \fB\.note\.gnu\.build\-id\fR section containing a byte string to uniquely identify an output file\. \fBsha256\fR compute a 256\-bit cryptographic hash of an output file and set it to build\-id\. \fBmd5\fR and \fBsha1\fR compute the same hash but truncate it to 128 and 160 bits, respectively, before setting it to build\-id\. \fBuuid\fR sets a random 128\-bit UUID\. \fB0x\fR\fIhexstring\fR sets \fIhexstring\fR\.
 .TP
 \fB\-\-build\-id\fR
@@ -223,7 +223,7 @@ Synonym for \fB\-\-build\-id=sha256\fR\.
 \fB\-\-no\-build\-id\fR
 Synonym for \fB\-\-build\-id=none\fR\.
 .TP
-\fB\-\-compress\-debug\-sections\fR=[ \fBnone\fR | \fBzlib\fR | \fBzlib\-gabi\fR | \fBzstd\fR ]
+\fB\-\-compress\-debug\-sections\fR=[ \fBzlib\fR | \fBzlib\-gabi\fR | \fBzstd\fR | \fBnone\fR ]
 Compress DWARF debug info (\fB\.debug_*\fR sections) using the zlib or zstd compression algorithm\. \fB\-zlib\-gabi\fR is an alias for \fB\-zlib\fR\.
 .TP
 \fB\-\-defsym\fR=\fIsymbol\fR=\fIvalue\fR
@@ -283,7 +283,7 @@ Create a \fB\.gdb_index\fR section to speed up GNU debugger\. To use this, you n
 \fB\-\-hash\-style\fR=[ \fBsysv\fR | \fBgnu\fR | \fBboth\fR | \fBnone\fR ]
 Set hash style\.
 .TP
-\fB\-\-icf\fR=[ \fBnone\fR | \fBsafe\fR | \fBall\fR ], \fB\-\-no\-icf\fR
+\fB\-\-icf\fR=[ \fBsafe\fR | \fBall\fR | \fBnone\fR ], \fB\-\-no\-icf\fR
 It is not uncommon for a program to contain many identical functions that differ only in name\. For example, a C++ template \fBstd::vector\fR is very likely to be instantiated to the identical code for \fBstd::vector<int>\fR and \fBstd::vector<unsigned>\fR because the container cares only about the size of the parameter type\. Identical Code Folding (ICF) is a size optimization to identify and merge such identical functions\.
 .IP
 If \fB\-\-icf=all\fR is given, \fBmold\fR tries to merge all identical functions\. This reduces the size of the output most, but it is not a "safe" optimization\. It is guaranteed in C and C++ that two pointers pointing two different functions will never be equal, but \fB\-\-icf=all\fR breaks that assumption as two identical functions have the same address after merging\. So a care must be taken when you use thsi flag that your program does not depend on the function pointer uniqueness\.
@@ -309,7 +309,7 @@ Report undefined symbols (even with \fB\-\-shared\fR)\.
 \fB\-\-noinhibit\-exec\fR
 Create an output file even if errors occur\.
 .TP
-\fB\-\-pack\-dyn\-relocs\fR=[ \fBnone\fR | \fBrelr\fR ]
+\fB\-\-pack\-dyn\-relocs\fR=[ \fBrelr\fR | \fBnone\fR ]
 If \fBrelr\fR is specified, all \fBR_*_RELATIVE\fR relocations are put into \fB\.relr\.dyn\fR section instead of \fB\.rel\.dyn\fR or \fB\.rela\.dyn\fR section\. Since \fB\.relr\.dyn\fR section uses a space\-efficient encoding scheme, specifying this flag can reduce the size of the output\. This is typically most effective for position\-independent executable\.
 .IP
 Note that a runtime loader has to support \fB\.relr\.dyn\fR to run executables or shared libraries linked with \fB\-\-pack\-dyn\-relocs=relr\fR\. As of 2022, only ChromeOS, Android and Fuchsia support it \.
@@ -370,7 +370,7 @@ Print name of each input file\.
 By default, \fBmold\fR warns on a symbol specified by a version script or by \fB\-\-export\-dynamic\-symbol\fR if it is not defined\. You can silence the warning by \fB\-\-undefined\-version\fR\.
 .TP
 \fB\-\-unique\fR=\fIpattern\fR
-Don't merge input sections that match \fIpattern\fR\.
+Don't merge input sections that match the given glob pattern \fIpattern\fR\.
 .TP
 \fB\-\-unresolved\-symbols\fR=[ \fBreport\-all\fR | \fBignore\-all\fR | \fBignore\-in\-object\-files\fR | \fBignore\-in\-shared\-libs\fR ]
 How to handle undefined symbols\.
@@ -393,7 +393,7 @@ When archive files (\fB\.a\fR files) are given to the linker, only object files 
 \fB\-\-wrap\fR=\fIsymbol\fR
 Make \fIsymbol\fR to be resolved to \fB__wrap_\fR\fIsymbol\fR\. The original symbol can be resolved as \fB__real_\fR\fIsymbol\fR\. This option is typically used for wrapping an existing function\.
 .TP
-\fB\-z cet\-report\fR=[ \fBnone\fR | \fBwarning\fR | \fBerror\fR ]
+\fB\-z cet\-report\fR=[ \fBwarning\fR | \fBerror\fR | \fBnone\fR]
 Intel Control\-flow Enforcement Technology (CET) is a new x86 feature available since Tiger Lake which is released in 2020\. It defines new instructions to harden security to protect programs from control hijacking attacks\. You can tell compiler to use the feature by specifying the \fB\-fcf\-protection\fR flag\.
 .IP
 \fB\-z cet\-report\fR flag is used to make sure that all object files were compiled with a correct \fB\-fcf\-protection\fR flag\. If \fBwarning\fR or \fBerror\fR are given, \fBmold\fR prints out a warning or an error message if an object file was not compiled with the compiler flag\.
@@ -410,7 +410,7 @@ Mark object requiring immediate \fB$ORIGIN\fR processing at runtime\.
 Turn on \fBGNU_PROPERTY_X86_FEATURE_1_IBT\fR bit in \fB\.note\.gnu\.property\fR section to indicate that the output uses IBT\-enabled PLT\. This option implies \fB\-z ibtplt\fR\.
 .TP
 \fB\-z ibtplt\fR
-Generate Intel Branch Tracking (IBT)\-enabled PLT which is the default on x86\-64\.
+Generate Intel Branch Tracking (IBT)\-enabled PLT which is the default on x86\-64\. This is the default\.
 .TP
 \fB\-z execstack\fR, \fB\-z noexecstack\fR
 By default, the pages for the stack area (i\.e\. the pages where local variables reside) are not executable for security reasons\. \fB\-z execstack\fR makes it executable\. \fB\-z noexecstack\fR restores the default behavior\.
@@ -469,6 +469,12 @@ Mark object to interpose all DSOs but executable\.
 .TP
 \fB\-(\fR, \fB\-)\fR, \fB\-EL\fR, \fB\-O\fR\fInumber\fR, \fB\-\-allow\-shlib\-undefined\fR, \fB\-\-dc\fR, \fB\-\-dp\fR, \fB\-\-end\-group\fR, \fB\-\-no\-add\-needed\fR, \fB\-\-no\-allow\-shlib\-undefined\fR, \fB\-\-no\-copy\-dt\-needed\-entries\fR, \fB\-\-no\-fatal\-warnings\fR, \fB\-\-nostdlib\fR, \fB\-\-rpath\-link=Ar dir\fR, \fB\-\-sort\-common\fR, \fB\-\-sort\-section\fR, \fB\-\-start\-group\fR, \fB\-\-warn\-constructors\fR, \fB\-\-warn\-once\fR, \fB\-\-fix\-cortex\-a53\-835769\fR, \fB\-\-fix\-cortex\-a53\-843419\fR, \fB\-z combreloc\fR, \fB\-z common\-page\-size\fR, \fB\-z nocombreloc\fR
 Ignored
+.SH "ENVIRONMENT VARIABLES"
+.IP "\[ci]" 4
+\fBMOLD_DEBUG\fR: If this variable is set to a non\-empty string, \fBmold\fR embeds its command\-line options to the output file's \fB\.comment\fR section\.
+.IP "\[ci]" 4
+\fBMOLD_REPRO\fR Setting this variable to a non\-empty string has the same effect as passign the \fB\-\-repro\fR option\.
+.IP "" 0
 .SH "SEE ALSO"
 gold(1), ld(1), elf(5), ld\.so(8)
 .SH "AUTHOR"

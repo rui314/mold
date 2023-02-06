@@ -171,7 +171,7 @@ arguments.
   order of global objects. In C++, constructors of global objects in a
   single source file are guaranteed to be executed in the source order, but
   there's no such guarantee across compilation units. Usually, constructors
-  are executed  the order given to the linker, but depending on it is a
+  are executed in the order given to the linker, but depending on it is a
   mistake.
 
   By reversing the order of input sections using `--reverse-sections`, you
@@ -370,7 +370,7 @@ arguments.
   The `--no-as-needed` option restores the default behavior for subsequent
   files.
 
-* `--build-id`=[ `none` | `md5` | `sha1` | `sha256` | `uuid` | `0x`_hexstring_ ]:
+* `--build-id`=[ `md5` | `sha1` | `sha256` | `uuid` | `0x`_hexstring_ | `none` ]:
   Create a `.note.gnu.build-id` section containing a byte string to uniquely
   identify an output file. `sha256` compute a 256-bit cryptographic hash of
   an output file and set it to build-id. `md5` and `sha1` compute the same
@@ -384,7 +384,7 @@ arguments.
 * `--no-build-id`:
   Synonym for `--build-id=none`.
 
-* `--compress-debug-sections`=[ `none` | `zlib` | `zlib-gabi` | `zstd` ]:
+* `--compress-debug-sections`=[ `zlib` | `zlib-gabi` | `zstd` | `none` ]:
   Compress DWARF debug info (`.debug_*` sections) using the zlib or zstd
   compression algorithm. `-zlib-gabi` is an alias for `-zlib`.
 
@@ -471,7 +471,7 @@ arguments.
 * `--hash-style`=[ `sysv` | `gnu` | `both` | `none` ]:
   Set hash style.
 
-* `--icf`=[ `none` | `safe` | `all` ], `--no-icf`:
+* `--icf`=[ `safe` | `all` | `none` ], `--no-icf`:
   It is not uncommon for a program to contain many identical functions that
   differ only in name. For example, a C++ template `std::vector` is very
   likely to be instantiated to the identical code for `std::vector<int>` and
@@ -517,7 +517,7 @@ arguments.
 *  `--noinhibit-exec`:
   Create an output file even if errors occur.
 
-* `--pack-dyn-relocs`=[ `none` | `relr` ]:
+* `--pack-dyn-relocs`=[ `relr` | `none` ]:
   If `relr` is specified, all `R_*_RELATIVE` relocations are put into
   `.relr.dyn` section instead of `.rel.dyn` or `.rela.dyn` section. Since
   `.relr.dyn` section uses a space-efficient encoding scheme, specifying
@@ -605,7 +605,7 @@ arguments.
   warning by `--undefined-version`.
 
 * `--unique`=_pattern_:
-  Don't merge input sections that match _pattern_.
+  Don't merge input sections that match the given glob pattern _pattern_.
 
 * `--unresolved-symbols`=[ `report-all` | `ignore-all` | `ignore-in-object-files` | `ignore-in-shared-libs` ]:
   How to handle undefined symbols.
@@ -642,7 +642,7 @@ arguments.
   be resolved as `__real_`_symbol_. This option is typically used for
   wrapping an existing function.
 
-* `-z cet-report`=[ `none` | `warning` | `error` ]:
+* `-z cet-report`=[ `warning` | `error` | `none`]:
   Intel Control-flow Enforcement Technology (CET) is a new x86 feature
   available since Tiger Lake which is released in 2020. It defines new
   instructions to harden security to protect programs from control hijacking
@@ -675,7 +675,7 @@ arguments.
 
 * `-z ibtplt`:
   Generate Intel Branch Tracking (IBT)-enabled PLT which is the default on
-  x86-64.
+  x86-64. This is the default.
 
 * `-z execstack`, `-z noexecstack`:
   By default, the pages for the stack area (i.e. the pages where local
@@ -759,6 +759,16 @@ arguments.
 
 * `-(`, `-)`, `-EL`, `-O`_number_, `--allow-shlib-undefined`, `--dc`, `--dp`, `--end-group`, `--no-add-needed`, `--no-allow-shlib-undefined`, `--no-copy-dt-needed-entries`, `--no-fatal-warnings`, `--nostdlib`, `--rpath-link=Ar dir`, `--sort-common`, `--sort-section`, `--start-group`, `--warn-constructors`, `--warn-once`, `--fix-cortex-a53-835769`, `--fix-cortex-a53-843419`, `-z combreloc`, `-z common-page-size`, `-z nocombreloc`:
   Ignored
+
+## ENVIRONMENT VARIABLES
+
+* `MOLD_DEBUG`:
+  If this variable is set to a non-empty string, `mold` embeds its
+  command-line options to the output file's `.comment` section.
+
+* `MOLD_REPRO`
+  Setting this variable to a non-empty string has the same effect as
+  passign the `--repro` option.
 
 ## SEE ALSO
 
