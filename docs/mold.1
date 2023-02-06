@@ -144,8 +144,8 @@ Omit \fB\.debug_*\fR sections from the output file\.
 \fB\-T\fR \fIfile\fR, \fB\-\-script\fR=\fIfile\fR
 Read linker script from \fIfile\fR\.
 .TP
-\fB\-X,\fR\-\-discard\-locals\fB\fR
-Discard temporary local symbols to reduce the sizes of the symbol table and the string table\. Temporary local symbols are local symbols starting with \.L`\. Compilers usually generate such symbols for unnamed program elements such as string literals or floating\-point literals\.
+\fB\-X\fR, \fB\-\-discard\-locals\fR
+Discard temporary local symbols to reduce the sizes of the symbol table and the string table\. Temporary local symbols are local symbols starting with \fB\.L\fR\. Compilers usually generate such symbols for unnamed program elements such as string literals or floating\-point literals\.
 .TP
 \fB\-e\fR \fIsymbol\fR, \fB\-\-entry\fR=\fIsymbol\fR
 Use \fIsymbol\fR as the entry point symbol instead of the default entry point symbol \fB_start\fR\.

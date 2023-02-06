@@ -270,7 +270,7 @@ arguments.
 * `-T` _file_, `--script`=_file_:
   Read linker script from _file_.
 
-* `-X, `--discard-locals`:
+* `-X`, `--discard-locals`:
   Discard temporary local symbols to reduce the sizes of the symbol table and
   the string table. Temporary local symbols are local symbols starting with
   `.L`. Compilers usually generate such symbols for unnamed program elements
