@@ -58,9 +58,18 @@ ElfShdr<E> *InputFile<E>::find_section(i64 type) {
 
 template <typename E>
 void InputFile<E>::clear_symbols() {
-  for (Symbol<E> *sym : get_global_syms())
-    if (__atomic_load_n(&sym->file, __ATOMIC_RELAXED) == this)
-      sym->clear();
+  for (Symbol<E> *sym : get_global_syms()) {
+    if (__atomic_load_n(&sym->file, __ATOMIC_ACQUIRE) == this) {
+      sym->origin = 0;
+      sym->value = -1;
+      sym->sym_idx = -1;
+      sym->ver_idx = 0;
+      sym->is_weak = false;
+      sym->is_imported = false;
+      sym->is_exported = false;
+      __atomic_store_n(&sym->file, nullptr, __ATOMIC_RELEASE);
+    }
+  }
 }
 
 // Find the source filename. It should be listed in symtab as STT_FILE.

@@ -1987,7 +1987,6 @@ public:
   i64 get_output_sym_idx(Context<E> &ctx) const;
   const ElfSym<E> &esym() const;
   void add_aux(Context<E> &ctx);
-  void clear();
 
   // A symbol is owned by a file. If two or more files define the
   // same symbol, the one with the strongest definition owns the symbol.
@@ -2785,18 +2784,6 @@ inline void Symbol<E>::add_aux(Context<E> &ctx) {
     aux_idx = sz;
     ctx.symbol_aux.resize(sz + 1);
   }
-}
-
-template <typename E>
-inline void Symbol<E>::clear() {
-  file = nullptr;
-  origin = 0;
-  value = -1;
-  sym_idx = -1;
-  ver_idx = 0;
-  is_weak = false;
-  is_imported = false;
-  is_exported = false;
 }
 
 inline bool is_c_identifier(std::string_view s) {
