@@ -353,6 +353,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_cjtype(loc, S + A - P);
       } else {
         assert(removed_bytes == 0);
+        // Calling an undefined weak symbol does not make sense.
+        // We make such call into an infinite loop. This should
+        // help debugging of a faulty program.
         u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
         check(val, -(1LL << 31), 1LL << 31);
         write_utype(loc, val);
@@ -370,14 +373,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - P;
       break;
     case R_RISCV_PCREL_HI20:
-      if (sym.esym().is_undef_weak()) {
-        // Calling an undefined weak symbol does not make sense.
-        // We make such call into an infinite loop. This should
-        // help debugging of a faulty program.
-        *(ul32 *)loc = 0;
-      } else {
-        *(ul32 *)loc = S + A - P;
-      }
+      *(ul32 *)loc = S + A - P;
       break;
     case R_RISCV_PCREL_LO12_I:
     case R_RISCV_PCREL_LO12_S:
