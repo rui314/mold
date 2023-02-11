@@ -75,7 +75,7 @@ Print out dependency information for input files\.
 Each line of the output for this option shows that which file depends on which file to use which symbol\. This option is useful to debug why some object file in a static archive got linked or why some shared library is kept in an output file's dependency list even with \fB\-\-as\-needed\fR\.
 .TP
 \fB\-\-repro\fR
-Archive input files as a tar file\.
+Archive input files as well as a text file containing command line options as a tar file so that you can run \fBmold\fR with the exact same inputs again\. This is useful to report a bug with a reproducer\. The output filename is \fBpath/to/output\.tar\fR where \fBpath/to/output\fR is an output filename specified by \fB\-o\fR\.
 .TP
 \fB\-\-reverse\-sections\fR
 Reverses the order of input sections before assigning them the offsets in the output file\.

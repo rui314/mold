@@ -161,7 +161,11 @@ arguments.
   kept in an output file's dependency list even with `--as-needed`.
 
 * `--repro`:
-  Archive input files as a tar file.
+  Archive input files as well as a text file containing command line options
+  as a tar file so that you can run `mold` with the exact same inputs again.
+  This is useful to report a bug with a reproducer. The output filename is
+  `path/to/output.tar` where `path/to/output` is an output filename specified
+  by `-o`.
 
 * `--reverse-sections`:
   Reverses the order of input sections before assigning them the offsets in
