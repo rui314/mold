@@ -3,8 +3,11 @@ option(MOLD_ENABLE_QEMU_TESTS_RV32 "Enable tests for RV32" OFF)
 
 function(add_target TRIPLE)
   set(HOST ${CMAKE_HOST_SYSTEM_PROCESSOR})
+
   if(${HOST} MATCHES "arm.*")
     set(HOST arm)
+  elseif(${HOST} STREQUAL "ppc64")
+    set(HOST powerpc64)
   endif()
 
   if(${TRIPLE} MATCHES "${HOST}-.*")
