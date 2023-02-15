@@ -4,6 +4,9 @@
 # .text is writable on sparc, which is not compatible with --execute-only
 [ $MACHINE = sparc64 ] && skip
 
+# GCC emits data to .text for PPC64, so PPC64 is not compatible with -execute-only
+[ $MACHINE = ppc64 ] && skip
+
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 int main() {
