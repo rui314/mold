@@ -209,7 +209,7 @@ static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
     break;
   case IFUNC:
     dynrel();
-    ctx.num_ifunc_dynrels.fetch_add(1, std::memory_order_relaxed);
+    ctx.num_ifunc_dynrels++;
     break;
   default:
     unreachable();
