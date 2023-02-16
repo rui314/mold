@@ -1453,14 +1453,8 @@ struct ElfPhdr<E> {
 // with a newly computed value.
 //
 // We don't want to have too many `if (REL)`s and `if (RELA)`s in our
-// codebase, so we write dynamic relocations in the following manner:
-//
-// - We always create a dynamic relocation with an addend. If it's REL,
-//   the addend will be discarded.
-//
-// - We also always write an addend to the relocated place by default
-//   even though it's redundant for RELA. If RELA, the written value
-//   will be ovewritten by the dynamic linker at load-time.
+// codebase, so ElfRel always takes r_addend as a constructor argument.
+// If it's REL, the argument will simply be ignored.
 template <typename E> requires E::is_le && E::is_rela
 struct ElfRel<E> {
   ElfRel() = default;

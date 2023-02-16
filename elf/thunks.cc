@@ -265,9 +265,10 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     });
 
     // Assign offsets within the thunk to the symbols.
-    for (i64 i = 0; Symbol<E> *sym : thunk->symbols) {
-      sym->extra.thunk_idx = thunk->thunk_idx;
-      sym->extra.thunk_sym_idx = i++;
+    for (i64 i = 0; i < thunk->symbols.size(); i++) {
+      Symbol<E> &sym = *thunk->symbols[i];
+      sym.extra.thunk_idx = thunk->thunk_idx;
+      sym.extra.thunk_sym_idx = i;
     }
 
     // Scan relocations again to fix symbol offsets in the last thunk.

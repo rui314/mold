@@ -15,16 +15,16 @@
 // TLV needs a coordination between the compiler, the linker and the
 // runtime to work correctly.
 //
-// An ELF exectuable or a shared library using TLV contains a "TLS
-// template image" in the PT_TLS segment. For each newly created thread
-// including the initial one, the runtime allocates a contiguous memory
-// for TLS template images for an executable and its depending shared
-// libraries and copies template images there. That per-thread memory is
-// called the "TLS block". After allocating and initializing a TLS block,
-// the runtime sets a register to refer to the TLS block, so that the
-// thread-local variables are accessible relative to the register.
+// An ELF exectuable or a shared library using TLV contains a "TLS template
+// image" in the PT_TLS segment. For each newly created thread including the
+// initial one, the runtime allocates a contiguous memory for an executable
+// and its depending shared libraries and copies template images there. That
+// per-thread memory is called the "TLS block". After allocating and
+// initializing a TLS block, the runtime sets a register to refer to the TLS
+// block, so that the thread-local variables are accessible relative to the
+// register.
 //
-// The register referring the per-thread storage is called the Thread
+// The register referring to the per-thread storage is called the Thread
 // Pointer (TP). TP is part of the thread's context. When the kernel
 // scheduler switches threads, TP is saved and restored automatically just
 // like other registers are.
@@ -33,7 +33,8 @@
 // for new threads, and no one writes to it at runtime.
 //
 // Now, let's think about how to access a TLV. We need to know the TLV's
-// address to access it which can be done in various ways as follows:
+// address to access it which can be done in several different ways as
+// follows:
 //
 //  1. If we are creating an executable, we know the exact size of the TLS
 //     template image we are creating, and we know where the TP will be
@@ -52,50 +53,50 @@
 //     each TLV whose TP-relative address is only known at process startup
 //     time, we create a GOT entry to store its TP-relative address. We
 //     also emit a dynamic relocation to let the runtime to fill the GOT
-//     entry with a per-TLV TP-relative address.
+//     entry with a TP-relative address.
 //
 //     Computing a TLV address in this scheme needs at least two machine
-//     instructions; first one loads a value from a GOT entry, and the
-//     second adds the loaded value to TP.
+//     instructions in most ISAs; first instruction loads a value from a
+//     GOT entry, and the second one adds the loaded value to TP.
 //
 //  3. Now, think about libraries that you dynamically load with dlopen.
-//     Even the runtime doesn't know how many bytes has to be reserved for
-//     such libraries, so TLVs in dlopen'ed libraries cannot be allocated
-//     in the initial TLS block.
+//     The TLS block for such library has to be allocated separately from
+//     the initial TLS block, so we now have two or more discontiguous
+//     TLS blocks. There's no easy formula to compute an address of a TLV
+//     in a separate TLS block.
 //
-//     The address of such TLV is obtained by calling a libc-provided
-//     function, __tls_get_addr(). The function takes two arguments; a
-//     module ID to identify the ELF file and the TLV's offset within the
-//     ELF file's TLS template image. Accessing a TLV is sometimes
-//     compiled to a function call! The module ID and the offset are
-//     usually stored to GOT as two consecutive words.
+//     The address of a TLV in a separate TLS block can be obtained by
+//     calling a libc-provided function, __tls_get_addr(). The function
+//     takes two arguments; a module ID to identify the ELF file and the
+//     TLV's offset within the ELF file's TLS template image. Accessing a
+//     TLV is sometimes compiled to a function call! The module ID and the
+//     offset are usually stored to GOT as two consecutive words.
 //
 // The last access method is the most generic, so the compiler emits such
 // code by default. But that's the most expensive one, so the linker
 // rewrites instructions if possible so that 3) is relaxed to 2) or even
 // to 1).
 //
-// 1) is often called the Local Exec access model. 2) is Initial Exec, and
-// 3) is called General Dynamic.
+// 1) is called the Local Exec access model. 2) is Initial Exec, and 3) is
+// General Dynamic.
 //
-// There's also a trick that the compiler can use if it knows two TLVs are
-// in the same ELF file (usually in the same file as the code is). In this
-// case, we can call __tls_get_addr() only once with a module ID and the
-// offset 0 to obtain the base address of the ELF file's TLS block.
-// The base address obtained this way is sometimes called Dynamic Thread
-// Pointer or DTP. We can then compute TLVs' addresses by adding their
-// DTP-relative addresses to DTP. This access model is called the Local
-// Dynamic.
+// There's another little trick that the compiler can use if it knows two
+// TLVs are in the same ELF file (usually in the same file as the code is).
+// In this case, we can call __tls_get_addr() only once with a module ID and
+// the offset 0 to obtain the base address of the ELF file's TLS block. The
+// base address obtained this way is sometimes called Dynamic Thread Pointer
+// or DTP. We can then compute TLVs' addresses by adding their DTP-relative
+// addresses to DTP. This access model is called the Local Dynamic.
 //
 //
 // === TLS Descriptor access model ===
 //
 // As described above, there are arguably too many different TLS access
-// models from the most generic one you can use in any ELF file to the
-// most efficient one you can use only in the main executable. Compiling
-// source code with an appropriate TLS access model is bothersome.
-// To solve the problem, a new TLS access model was proposed. That is
-// called the TLS Descriptor (TLSDESC) model.
+// models from the most generic one you can use in any ELF file to the most
+// efficient one you can use only when building a main executable. Compiling
+// source code with an appropriate TLS access model is bothersome. To solve
+// the problem, a new TLS access model was proposed. That is called the TLS
+// Descriptor (TLSDESC) model.
 //
 // For a TLV compiled with TLSDESC, we allocate two consecutive GOT slots
 // and create a TLSDESC dynamic relocation for them. The dynamic linker
