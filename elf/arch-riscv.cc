@@ -44,7 +44,7 @@
 // considered as an atomic unit. If we delete 4 bytes from the middle of a
 // section, all contents after that point needs to be shifted by 4. Symbol
 // values and relocation offsets have to be adjusted accordingly if they
-// refer past the deleted bytes.
+// refer to past the deleted bytes.
 //
 // In mold, we use `r_deltas` to memorize how many bytes have be adjusted
 // for relocations. For symbols, we directly mutate their `value` member.
@@ -769,7 +769,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
 
     // Handling R_RISCV_ALIGN is mandatory.
     //
-    // R_RISCV_ALIGN refers NOP instructions. We need to eliminate some
+    // R_RISCV_ALIGN refers to NOP instructions. We need to eliminate some
     // or all of the instructions so that the instruction that immediately
     // follows the NOPs is aligned to a specified alignment boundary.
     if (r.r_type == R_RISCV_ALIGN) {
@@ -799,15 +799,14 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
     switch (r.r_type) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
-      // These relocations refer an AUIPC + JALR instruction pair to
+      // These relocations refer to an AUIPC + JALR instruction pair to
       // allow to jump to anywhere in PC ± 2 GiB. If the jump target is
       // close enough to PC, we can use C.J, C.JAL or JAL instead.
       i64 dist = compute_distance(ctx, sym, isec, r);
       if (dist & 1)
         break;
 
-      std::string_view contents = isec.contents;
-      i64 rd = get_rd(*(ul32 *)(contents.data() + r.r_offset + 4));
+      i64 rd = get_rd(*(ul32 *)(isec.contents.data() + r.r_offset + 4));
 
       if (rd == 0 && sign_extend(dist, 11) == dist && use_rvc) {
         // If rd is x0 and the jump target is within ±2 KiB, we can use
@@ -825,13 +824,13 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
     }
     case R_RISCV_HI20:
       // If the upper 20 bits are all zero, we can remove LUI.
-      // The corresponding instructions referred by LO12_I/LO12_S
+      // The corresponding instructions referred to by LO12_I/LO12_S
       // relocations will use the zero register instead.
       if (bits(sym.get_addr(ctx), 31, 12) == 0)
         delta += 4;
       break;
     case R_RISCV_TPREL_HI20:
-    case R_RISCV_TPREL_ADD: {
+    case R_RISCV_TPREL_ADD:
       // These relocations are used to add a high 20-bit value to the
       // thread pointer. The following two instructions materializes
       // TP + HI20(foo) in %r5, for example.
@@ -851,11 +850,10 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       //  sw   t0,%tprel_lo(foo)(tp)
       //
       // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
-      i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
-      if (sign_extend(val, 11) == val)
+      if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
+          sign_extend(val, 11) == val)
         delta += 4;
       break;
-    }
     }
   }
 
