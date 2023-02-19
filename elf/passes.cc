@@ -274,12 +274,10 @@ void resolve_symbols(Context<E> &ctx) {
     // Redo name resolution from scratch.
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       file->clear_symbols();
-      file->is_alive = !file->is_in_lib;
     });
 
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
       file->clear_symbols();
-      file->is_alive = !file->is_needed;
     });
 
     // Remove IR object files.
