@@ -1,3 +1,5 @@
+#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2
+
 // RISC instructions are usually up to 4 bytes long, so the immediates of
 // their branch instructions are naturally smaller than 32 bits.  This is
 // contrary to x86-64 on which branch instructions take 4 bytes immediates
@@ -199,12 +201,11 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   //
   //  ................................ <input sections> ............
   //     A    B    C    D
-  //                   ^
-  //                   We insert a thunk for the current batch just before D
-  //          <--->      The current batch, which is smaller than batch_size
-  //     <-------->      smaller than max_distance
-  //          <--------> Smaller than max_distance
-  //     <-------------> Reachable from the current batch
+  //                    ^ We insert a thunk for the current batch just before D
+  //          <--->       The current batch, which is smaller than batch_size
+  //     <-------->       Smaller than max_distance
+  //          <-------->  Smaller than max_distance
+  //     <------------->  Reachable from the current batch
   i64 a = 0;
   i64 b = 0;
   i64 c = 0;
@@ -213,7 +214,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   i64 thunk_idx = 0;
 
   while (b < m.size()) {
-    // Move D foward as far as we can jump from B to anywhere in a thunk after D.
+    // Move D foward as far as we can jump from B to anywhere in a thunk at D.
     while (d < m.size() &&
            align_to(offset, 1 << m[d]->p2align) + m[d]->sh_size + max_thunk_size <
            m[b]->offset + max_distance<E>()) {
@@ -293,12 +294,12 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   osec.shdr.sh_size = offset;
 }
 
-#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2
 using E = MOLD_TARGET;
 
 static_assert(max_thunk_size / E::thunk_size < INT16_MAX);
 
 template void create_range_extension_thunks(Context<E> &, OutputSection<E> &);
-#endif
 
 } // namespace mold::elf
+
+#endif

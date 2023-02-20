@@ -2553,12 +2553,13 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
     return;
 
   // Reset to the initial state so that this function is idempotent
-  std::vector<ObjectFile<E> *> files = ctx.objs;
-  std::erase(files, ctx.internal_obj);
   properties.clear();
 
   // Obtain the list of keys
+  std::vector<ObjectFile<E> *> files = ctx.objs;
+  std::erase(files, ctx.internal_obj);
   std::set<u32> keys;
+
   for (ObjectFile<E> *file : files)
     for (std::pair<u32, u32> kv : file->gnu_properties)
       keys.insert(kv.first);

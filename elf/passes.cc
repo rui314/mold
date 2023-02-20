@@ -634,7 +634,7 @@ get_start_stop_name(Context<E> &ctx, Chunk<E> &chunk) {
     if (ctx.arg.start_stop) {
       auto isalnum = [](char c) {
         return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') ||
-          ('0' <= c && c <= '9');
+               ('0' <= c && c <= '9');
       };
 
       std::string s{chunk.name};
@@ -771,19 +771,20 @@ void add_synthetic_symbols(Context<E> &ctx) {
 template <typename E>
 void check_cet_errors(Context<E> &ctx) {
   bool warning = (ctx.arg.z_cet_report == CET_REPORT_WARNING);
-  assert(warning || (ctx.arg.z_cet_report == CET_REPORT_ERROR));
+  assert(warning || ctx.arg.z_cet_report == CET_REPORT_ERROR);
 
   auto has_feature = [](ObjectFile<E> *file, u32 feature) {
     return std::any_of(file->gnu_properties.begin(), file->gnu_properties.end(),
-                       [&](auto kv) {
-                         return kv.first == GNU_PROPERTY_X86_FEATURE_1_AND
-                             && (kv.second & feature);
-                       });
+                       [&](std::pair<u32, u32> kv) {
+      return kv.first == GNU_PROPERTY_X86_FEATURE_1_AND &&
+             (kv.second & feature);
+    });
   };
 
   for (ObjectFile<E> *file : ctx.objs) {
     if (file == ctx.internal_obj)
       continue;
+
     if (!has_feature(file, GNU_PROPERTY_X86_FEATURE_1_IBT)) {
       if (warning)
         Warn(ctx) << *file << ": -cet-report=warning: "
