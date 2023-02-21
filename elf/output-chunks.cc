@@ -49,9 +49,22 @@ u64 get_eflags(Context<E> &ctx) {
       return 0;
 
     u32 ret = objs[0]->get_ehdr().e_flags;
-    for (i64 i = 1; i < objs.size(); i++)
-      if (objs[i]->get_ehdr().e_flags & EF_RISCV_RVC)
+    for (i64 i = 1; i < objs.size(); i++) {
+      u32 flags = objs[i]->get_ehdr().e_flags;
+      if (flags & EF_RISCV_RVC)
         ret |= EF_RISCV_RVC;
+
+      if ((flags & EF_RISCV_FLOAT_ABI) != (ret & EF_RISCV_FLOAT_ABI))
+        Error(ctx) << *objs[i]
+                   << ": cannot link object files with different floating-point ABI from "
+                   << *objs[0];
+
+      if ((flags & EF_RISCV_RVE) != (ret & EF_RISCV_RVE))
+        Error(ctx) << *objs[i]
+                   << ": cannot link object files with different EF_RISCV_RVE from "
+                   << *objs[0];
+
+    }
     return ret;
   }
 
