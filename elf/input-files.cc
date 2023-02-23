@@ -1262,11 +1262,13 @@ void SharedFile<E>::parse(Context<E> &ctx) {
     this->elf_syms2.push_back(esyms[i]);
     this->versyms.push_back(ver);
 
-    if (is_hidden) {
-      std::string_view mangled_name = save_string(
-        ctx, std::string(name) + "@" + std::string(version_strings[ver]));
-      this->symbols.push_back(get_symbol(ctx, mangled_name, name));
-    } else {
+    std::string_view mangled_name = save_string(
+      ctx, std::string(name) + "@" + std::string(version_strings[ver]));
+    this->symbols.push_back(get_symbol(ctx, mangled_name, name));
+
+    if (!is_hidden) {
+      this->elf_syms2.push_back(esyms[i]);
+      this->versyms.push_back(ver);
       this->symbols.push_back(get_symbol(ctx, name));
     }
   }
