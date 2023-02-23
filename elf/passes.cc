@@ -1226,23 +1226,6 @@ void claim_unresolved_symbols(Context<E> &ctx) {
         if (!sym.esym().is_undef() || sym.file->priority <= file->priority)
           continue;
 
-      // If a symbol name is in the form of "foo@version", search for
-      // symbol "foo" and check if the symbol has version "version".
-      if (file->has_symver.get(i - file->first_global)) {
-        std::string_view str = file->symbol_strtab.data() + esym.st_name;
-        i64 pos = str.find('@');
-        assert(pos != str.npos);
-
-        std::string_view name = str.substr(0, pos);
-        std::string_view ver = str.substr(pos + 1);
-
-        Symbol<E> *sym2 = get_symbol(ctx, name);
-        if (sym2->file && sym2->file->is_dso && sym2->get_version() == ver) {
-          file->symbols[i] = sym2;
-          continue;
-        }
-      }
-
       auto claim = [&](bool is_imported) {
         if (sym.is_traced)
           SyncOut(ctx) << "trace-symbol: " << *file << ": unresolved"
