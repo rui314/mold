@@ -2469,15 +2469,32 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
       return isec->leader->get_addr() + value;
 
     if (isec->name() == ".eh_frame") {
-      // .eh_frame contents are parsed and reconstructed by the linker,
-      // so pointing to a specific location in a source .eh_frame
-      // section doesn't make much sense. However, CRT files contain
-      // symbols pointing to the very beginning and ending of the section.
-      if (name() == "__EH_FRAME_BEGIN__" || name() == "__EH_FRAME_LIST__" ||
-          name() == ".eh_frame_seg" || esym().st_type == STT_SECTION)
-        return ctx.eh_frame->shdr.sh_addr;
+      auto test = [this](const char *pattern) {
+      if (name() == pattern)
+        return true;
 
-      if (name() == "__FRAME_END__" || name() == "__EH_FRAME_LIST_END__")
+      // If LTO was enabled when building GCC and its CRT itself, then GCC
+      // will be able to move around the .eh_frame marker symbols. A suffix
+      // seems to be attached in such cases; we detect it here.
+      //
+      // This tests for `<pattern>.lto_priv.*`. It's a little convoluted
+      // but this is the best we can do without compile-time string
+      // concatenation.
+      if (name().starts_with(pattern) && name().substr(strlen(pattern)).starts_with(".lto_priv."))
+        return true;
+
+      return false;
+    };
+
+    // .eh_frame contents are parsed and reconstructed by the linker,
+    // so pointing to a specific location in a source .eh_frame
+    // section doesn't make much sense. However, CRT files contain
+    // symbols pointing to the very beginning and ending of the section.
+    if (test("__EH_FRAME_BEGIN__") || test("__EH_FRAME_LIST__") ||
+          test(".eh_frame_seg") || esym().st_type == STT_SECTION)
+    return ctx.eh_frame->shdr.sh_addr;
+
+      if (test("__FRAME_END__") || test("__EH_FRAME_LIST_END__"))
         return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
 
       // ARM object files contain "$d" local symbol at the beginning
