@@ -78,7 +78,7 @@ static bool needs_thunk_rel(const ElfRel<E> &r) {
     return ty == R_PPC_REL24  || ty == R_PPC_PLTREL24 || ty == R_PPC_LOCAL24PC;
   } else {
     static_assert(is_ppc64<E>);
-    return ty == R_PPC64_REL24;
+    return ty == R_PPC64_REL24 || R_PPC64_REL24_NOTOC;
   }
 }
 
@@ -110,6 +110,17 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
     if ((rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
         (rel.r_type == R_ARM_JUMP24 && is_thumb) ||
         (rel.r_type == R_ARM_PLT32 && is_thumb))
+      return false;
+  }
+
+  // PowerPC before Power9 lacks PC-relative load/store instructions.
+  // Functions compiled for Power9 or earlier assume that r2 points to
+  // GOT+0x8000, while those for Power10 uses r2 as a scratch register.
+  // We need to a thunk to reconstruct r2 for interworking.
+  if constexpr (is_ppc64v2<E>) {
+    if (rel.r_type == R_PPC64_REL24 && !sym.esym().preserves_r2())
+      return false;
+    if (rel.r_type == R_PPC64_REL24_NOTOC && sym.esym().uses_toc())
       return false;
   }
 

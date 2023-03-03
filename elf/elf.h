@@ -933,9 +933,13 @@ enum : u32 {
   R_PPC64_REL24_NOTOC = 116,
   R_PPC64_PLTSEQ = 119,
   R_PPC64_PLTCALL = 120,
+  R_PPC64_PLTSEQ_NOTOC = 121,
+  R_PPC64_PLTCALL_NOTOC = 122,
   R_PPC64_PCREL_OPT = 123,
   R_PPC64_PCREL34 = 132,
   R_PPC64_GOT_PCREL34 = 133,
+  R_PPC64_PLT_PCREL34 = 134,
+  R_PPC64_PLT_PCREL34_NOTOC = 135,
   R_PPC64_TPREL34 = 146,
   R_PPC64_DTPREL34 = 147,
   R_PPC64_GOT_TLSGD_PCREL34 = 148,
@@ -1575,6 +1579,9 @@ struct ElfSym<PPC64V2> {
   bool is_common() const { return st_shndx == SHN_COMMON; }
   bool is_weak() const { return st_bind == STB_WEAK; }
   bool is_undef_weak() const { return is_undef() && is_weak(); }
+
+  bool preserves_r2() const { return ppc_local_entry != 1; }
+  bool uses_toc() const { return ppc_local_entry > 1; }
 
   ul32 st_name;
 

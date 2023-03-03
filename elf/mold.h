@@ -1584,6 +1584,7 @@ template <> struct ContextExtras<PPC64V1> {
 
 template <> struct ContextExtras<PPC64V2> {
   Symbol<PPC64V2> *TOC = nullptr;
+  Atomic<bool> is_power10 = false;
 };
 
 template <> struct ContextExtras<SPARC64> {

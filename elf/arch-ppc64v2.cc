@@ -65,6 +65,10 @@ static u64 ha(u64 x)    { return (x + 0x8000) >> 16; }
 static u64 high(u64 x)  { return (x >> 16) & 0xffff; }
 static u64 higha(u64 x) { return ((x + 0x8000) >> 16) & 0xffff; }
 
+static u64 prefix34(u64 x) {
+  return bits(x, 33, 16) | (bits(x, 15, 0) << 32);
+}
+
 // .plt is used only for lazy symbol resolution on PPC64. All PLT
 // calls are made via range extension thunks even if they are within
 // reach. Thunks read addresses from .got.plt and jump there.
@@ -140,10 +144,11 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 static u64 get_local_entry_offset(Context<E> &ctx, Symbol<E> &sym) {
   i64 val = sym.esym().ppc_local_entry;
   assert(val <= 7);
-  if (val == 0 || val == 1)
-    return 0;
   if (val == 7)
     Fatal(ctx) << sym << ": local entry offset 7 is reserved";
+
+  if (val == 0 || val == 1)
+    return 0;
   return 1 << val;
 }
 
@@ -178,6 +183,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 GOT = ctx.got->shdr.sh_addr;
     u64 TOC = ctx.extra.TOC->value;
 
+    auto r2save_thunk_addr = [&] { return get_thunk_addr(i); };
+    auto no_r2save_thunk_addr = [&] { return get_thunk_addr(i) + 4; };
+
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
       if (name() == ".toc")
@@ -195,22 +203,34 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_TOC16_LO_DS:
       *(ul16 *)loc |= (S + A - TOC) & 0xfffc;
       break;
-    case R_PPC64_REL24: {
-      i64 val = S + A - P + get_local_entry_offset(ctx, sym);
-      if (sym.has_plt(ctx) || sign_extend(val, 25) != val)
-        val = get_thunk_addr(i) + A - P;
+    case R_PPC64_REL24:
+      if (sym.has_plt(ctx) || !sym.esym().preserves_r2()) {
+        i64 val = r2save_thunk_addr() + A - P;
+        *(ul32 *)loc |= bits(val, 25, 2) << 2;
 
-      check(val, -(1 << 25), 1 << 25);
-      *(ul32 *)loc |= bits(val, 25, 2) << 2;
-
-      // If a callee is an external function, PLT saves %r2 to the
-      // caller's r2 save slot. We need to restore it after function
-      // return. To do so, there's usually a NOP as a placeholder
-      // after a BL. 0x6000'0000 is a NOP.
-      if (sym.has_plt(ctx) && *(ul32 *)(loc + 4) == 0x6000'0000)
-        *(ul32 *)(loc + 4) = 0xe841'0018; // ld r2, 24(r1)
+        // The thunk saves %r2 to the caller's r2 save slot. We need to
+        // restore it after function return. To do so, there's usually a
+        // NOP as a placeholder after a BL. 0x6000'0000 is a NOP.
+        if (*(ul32 *)(loc + 4) == 0x6000'0000)
+          *(ul32 *)(loc + 4) = 0xe841'0018; // ld r2, 24(r1)
+      } else {
+        i64 val = S + get_local_entry_offset(ctx, sym) + A - P;
+        if (sign_extend(val, 25) != val)
+          val = no_r2save_thunk_addr() + A - P;
+        *(ul32 *)loc |= bits(val, 25, 2) << 2;
+      }
       break;
-    }
+    case R_PPC64_REL24_NOTOC:
+      if (sym.has_plt(ctx) || sym.esym().uses_toc()) {
+        i64 val = no_r2save_thunk_addr() + A - P;
+        *(ul32 *)loc |= bits(val, 25, 2) << 2;
+      } else {
+        i64 val = S + A - P;
+        if (sign_extend(val, 25) != val)
+          val = no_r2save_thunk_addr() + A - P;
+        *(ul32 *)loc |= bits(val, 25, 2) << 2;
+      }
+      break;
     case R_PPC64_REL64:
       *(ul64 *)loc = S + A - P;
       break;
@@ -232,8 +252,22 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_PLT16_LO_DS:
       *(ul16 *)loc |= (G + GOT - TOC) & 0xfffc;
       break;
+    case R_PPC64_PLT_PCREL34:
+    case R_PPC64_PLT_PCREL34_NOTOC:
+    case R_PPC64_GOT_PCREL34:
+      *(ul64 *)loc |= prefix34(G + GOT - P);
+      break;
+    case R_PPC64_PCREL34:
+      *(ul64 *)loc |= prefix34(S + A - P);
+      break;
     case R_PPC64_GOT_TPREL16_HA:
       *(ul16 *)loc = ha(sym.get_gottp_addr(ctx) - TOC);
+      break;
+    case R_PPC64_GOT_TPREL16_LO_DS:
+      *(ul16 *)loc |= (sym.get_gottp_addr(ctx) - TOC) & 0xfffc;
+      break;
+    case R_PPC64_GOT_TPREL_PCREL34:
+      *(ul64 *)loc |= prefix34(sym.get_gottp_addr(ctx) - P);
       break;
     case R_PPC64_GOT_TLSGD16_HA:
       *(ul16 *)loc = ha(sym.get_tlsgd_addr(ctx) - TOC);
@@ -241,11 +275,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_GOT_TLSGD16_LO:
       *(ul16 *)loc = lo(sym.get_tlsgd_addr(ctx) - TOC);
       break;
+    case R_PPC64_GOT_TLSGD_PCREL34:
+      *(ul64 *)loc |= prefix34(sym.get_tlsgd_addr(ctx) - P);
+      break;
     case R_PPC64_GOT_TLSLD16_HA:
       *(ul16 *)loc = ha(ctx.got->get_tlsld_addr(ctx) - TOC);
       break;
     case R_PPC64_GOT_TLSLD16_LO:
       *(ul16 *)loc = lo(ctx.got->get_tlsld_addr(ctx) - TOC);
+      break;
+    case R_PPC64_GOT_TLSLD_PCREL34:
+      *(ul64 *)loc |= prefix34(ctx.got->get_tlsld_addr(ctx) - P);
       break;
     case R_PPC64_DTPREL16_HA:
       *(ul16 *)loc = ha(S + A - ctx.dtp_addr);
@@ -253,17 +293,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_DTPREL16_LO:
       *(ul16 *)loc = lo(S + A - ctx.dtp_addr);
       break;
+    case R_PPC64_DTPREL34:
+      *(ul64 *)loc |= prefix34(S + A - ctx.dtp_addr);
+      break;
     case R_PPC64_TPREL16_HA:
       *(ul16 *)loc = ha(S + A - ctx.tp_addr);
       break;
     case R_PPC64_TPREL16_LO:
       *(ul16 *)loc = lo(S + A - ctx.tp_addr);
       break;
-    case R_PPC64_GOT_TPREL16_LO_DS:
-      *(ul16 *)loc |= (sym.get_gottp_addr(ctx) - TOC) & 0xfffc;
-      break;
     case R_PPC64_PLTSEQ:
+    case R_PPC64_PLTSEQ_NOTOC:
     case R_PPC64_PLTCALL:
+    case R_PPC64_PLTCALL_NOTOC:
     case R_PPC64_TLS:
     case R_PPC64_TLSGD:
     case R_PPC64_TLSLD:
@@ -349,19 +391,30 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_PPC64_GOT_TPREL16_HA:
+    case R_PPC64_GOT_TPREL_PCREL34:
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_PPC64_REL24:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
+    case R_PPC64_REL24_NOTOC:
+      if (sym.is_imported)
+        sym.flags |= NEEDS_PLT;
+      ctx.extra.is_power10 = true;
+      break;
     case R_PPC64_PLT16_HA:
+    case R_PPC64_PLT_PCREL34:
+    case R_PPC64_PLT_PCREL34_NOTOC:
+    case R_PPC64_GOT_PCREL34:
       sym.flags |= NEEDS_GOT;
       break;
     case R_PPC64_GOT_TLSGD16_HA:
+    case R_PPC64_GOT_TLSGD_PCREL34:
       sym.flags |= NEEDS_TLSGD;
       break;
     case R_PPC64_GOT_TLSLD16_HA:
+    case R_PPC64_GOT_TLSLD_PCREL34:
       ctx.needs_tlsld = true;
       break;
     case R_PPC64_TPREL16_HA:
@@ -378,8 +431,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_PLT16_HI:
     case R_PPC64_PLT16_LO:
     case R_PPC64_PLT16_LO_DS:
+    case R_PPC64_PCREL34:
     case R_PPC64_PLTSEQ:
+    case R_PPC64_PLTSEQ_NOTOC:
     case R_PPC64_PLTCALL:
+    case R_PPC64_PLTCALL_NOTOC:
     case R_PPC64_GOT_TPREL16_LO_DS:
     case R_PPC64_GOT_TLSGD16_LO:
     case R_PPC64_GOT_TLSLD16_LO:
@@ -388,6 +444,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_TLSLD:
     case R_PPC64_DTPREL16_HA:
     case R_PPC64_DTPREL16_LO:
+    case R_PPC64_DTPREL34:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
@@ -402,12 +459,17 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   // If the destination is PLT, we read an address from .got.plt or .got
   // and jump there.
   static const ul32 plt_thunk[] = {
-    // Save r2 to the r2 save slot reserved in the caller's stack frame
     0xf841'0018, // std   r2, 24(r1)
-
-    // Jump to a PLT entry
     0x3d82'0000, // addis r12, r2, foo@gotplt@toc@ha
     0xe98c'0000, // ld    r12, foo@gotplt@toc@lo(r12)
+    0x7d89'03a6, // mtctr r12
+    0x4e80'0420, // bctr
+  };
+
+  static const ul32 plt_thunk_power10[] = {
+    0xf841'0018, // std   r2, 24(r1)
+    0x0410'0000, // pld   r12, foo@gotplt@pcrel
+    0xe580'0000,
     0x7d89'03a6, // mtctr r12
     0x4e80'0420, // bctr
   };
@@ -415,33 +477,52 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   // If the destination is a non-imported function, we directly jump
   // to its local entry point.
   static const ul32 local_thunk[] = {
-    // Jump to a local entry point
+    0xf841'0018, // std   r2, 24(r1)
     0x3d82'0000, // addis r12, r2,  foo@toc@ha
     0x398c'0000, // addi  r12, r12, foo@toc@lo
     0x7d89'03a6, // mtctr r12
     0x4e80'0420, // bctr
-    0x6000'0000, // nop
+  };
+
+  static const ul32 local_thunk_power10[] = {
+    0xf841'0018, // std   r2, 24(r1)
+    0x0610'0000, // pla   r12, foo@pcrel
+    0x3980'0000,
+    0x7d89'03a6, // mtctr r12
+    0x4e80'0420, // bctr
   };
 
   static_assert(E::thunk_size == sizeof(plt_thunk));
+  static_assert(E::thunk_size == sizeof(plt_thunk_power10));
   static_assert(E::thunk_size == sizeof(local_thunk));
+  static_assert(E::thunk_size == sizeof(local_thunk_power10));
 
   for (i64 i = 0; i < symbols.size(); i++) {
     Symbol<E> &sym = *symbols[i];
     ul32 *loc = (ul32 *)(buf + i * E::thunk_size);
 
     if (sym.has_plt(ctx)) {
-      memcpy(loc, plt_thunk, sizeof(plt_thunk));
       u64 got = sym.has_got(ctx) ? sym.get_got_addr(ctx) : sym.get_gotplt_addr(ctx);
-      i64 val = got - ctx.extra.TOC->value;
-      loc[1] |= higha(val);
-      loc[2] |= lo(val);
+
+      if (ctx.extra.is_power10) {
+        memcpy(loc, plt_thunk_power10, E::thunk_size);
+        *(ul64 *)(loc + 1) |= prefix34(got - get_addr(i) - 4);
+      } else {
+        i64 val = got - ctx.extra.TOC->value;
+        memcpy(loc, plt_thunk, E::thunk_size);
+        loc[1] |= higha(val);
+        loc[2] |= lo(val);
+      }
     } else {
-      memcpy(loc, local_thunk, sizeof(local_thunk));
-      i64 val = sym.get_addr(ctx) + get_local_entry_offset(ctx, sym) -
-                ctx.extra.TOC->value;
-      loc[0] |= higha(val);
-      loc[1] |= lo(val);
+      if (ctx.extra.is_power10) {
+        memcpy(loc, local_thunk_power10, E::thunk_size);
+        *(ul64 *)(loc + 1) |= prefix34(sym.get_addr(ctx) - get_addr(i) - 4);
+      } else {
+        i64 val = sym.get_addr(ctx) - ctx.extra.TOC->value;
+        memcpy(loc, local_thunk, E::thunk_size);
+        loc[1] |= higha(val);
+        loc[2] |= lo(val);
+      }
     }
   }
 }
