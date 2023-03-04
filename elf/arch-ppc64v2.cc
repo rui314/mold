@@ -4,18 +4,26 @@
 // with "ppc64" which refers the original, big-endian PowerPC systems.
 //
 // PPC64 is a bit tricky to support because PC-relative load/store
-// instructions are generally not available. Therefore, it's not easy
-// for position-independent code to load a value from, for example,
-// .got, as we can't do that with [PC + the offset to the .got entry].
+// instructions hadn't been available until Power10 which debuted in 2021.
+// Prior to Power10, it wasn't easy for position-independent code (PIC) to
+// load a value from, for example, .got, as we can't do that with [PC +
+// the offset to the .got entry].
 //
-// We can get the program counter by the following four instructions
+// In the following, I'll explain how PIC is supported on pre-Power10
+// systems first and then explain what has changed with Power10.
+//
+//
+// Position-independent call on Power9 or earlier:
+//
+// We can get the program counter on older PPC64 systems with the
+// following four instructions
 //
 //   mflr  r1  // save the current link register to r1
 //   bl    .+4 // branch to the next instruction as if it were a function
 //   mflr  r0  // copy the return address to r0
 //   mtlr  r1  // restore the original link register value
 //
-// , but that's too expensive to do if we do this for each load/store.
+// , but it's too expensive to do if we do this for each load/store.
 //
 // As a workaround, most functions are compiled in such a way that r2 is
 // assumed to always contain the address of .got + 0x8000. With this, we
@@ -27,9 +35,9 @@
 // calls are usually within the same ELF module, so this mechanism is
 // efficient.
 //
-// In PPC64, a function usually have two entry points, global and local.
-// The global entry point is usually 8 bytes precedes the local entry
-// point. In between is the following instructions:
+// A function compiled for pre-Power10 usually has two entry points,
+// global and local. The global entry point is usually 8 bytes precedes
+// the local entry point. In between is the following instructions:
 //
 //   addis r2, r12, .TOC.@ha
 //   addi  r2, r2,  .TOC.@lo + 4;
@@ -45,6 +53,20 @@
 // address to r12 (e.g. from .got.plt with a r2-relative load) and branch
 // to that address. Then the callee computes its own TOC pointer using
 // r12.
+//
+//
+// Position-independent call on Power10:
+//
+// Power10 added 8-bytes-long instructions to the ISA. Some of them are
+// PC-relative load/store instructions that take 34 bits offsets.
+// Functions compiled with `-mcpu=power10` use these instructions for PIC.
+// r2 does not have a special meaning in such fucntions.
+//
+// When a fucntion compiled for Power10 calls a function that uses the TOC
+// pointer, we need to compute a correct value for TOC and set it to r2
+// before transferring the control to the callee. Thunks are responsible
+// for doing it.
+//
 //
 // Note on section names: the PPC64 psABI uses a weird naming convention
 // which calls .got.plt .plt. We ignored that part because it's just
