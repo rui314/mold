@@ -66,6 +66,6 @@ if(MOLD_ENABLE_QEMU_TESTS_RV32)
   add_target(riscv32-linux-gnu)
 endif()
 
-if(MOLD_ENABLE_QEMU_TESTS_RV32)
+if(MOLD_ENABLE_QEMU_TESTS_POWER10)
   add_target(powerpc64le_power10-linux-gnu)
 endif()
