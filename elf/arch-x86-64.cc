@@ -606,6 +606,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       else
         *(ul64 *)loc = S + A - ctx.dtp_addr;
       break;
+    case R_X86_64_GOTPC64:
+      // PC-relative relocation doesn't make sense for non-memory-allocated
+      // section, but GCC 6.3.0 seems to create this reloc for
+      // _GLOBAL_OFFSET_TABLE_.
+      *(ul64 *)loc = ctx.gotplt->shdr.sh_addr + A;
+      break;
     case R_X86_64_SIZE32:
       write32(sym.esym().st_size + A);
       break;
