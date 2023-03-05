@@ -1623,11 +1623,11 @@ struct Context {
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
     bool allow_multiple_definition = false;
+    bool apply_dynamic_relocs = true;
     bool color_diagnostics = false;
     bool default_symver = false;
     bool demangle = true;
     bool discard_all = false;
-    bool apply_dynamic_relocs = true;
     bool discard_locals = false;
     bool eh_frame_hdr = true;
     bool emit_relocs = false;
@@ -1667,6 +1667,7 @@ struct Context {
     bool stats = false;
     bool strip_all = false;
     bool strip_debug = false;
+    bool suppress_warnings = false;
     bool trace = false;
     bool undefined_version = false;
     bool warn_common = false;

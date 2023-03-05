@@ -159,7 +159,7 @@ private:
 template <typename Context>
 class Error {
 public:
-  Error(Context &ctx) : out(ctx, std::cerr) {
+  Error(Context &ctx) : out(ctx, std::cerr), suppress(ctx.arg.suppress_warnings) {
     if (ctx.arg.noinhibit_exec) {
       out << add_color(ctx, "warning");
     } else {
@@ -169,12 +169,14 @@ public:
   }
 
   template <class T> Error &operator<<(T &&val) {
-    out << std::forward<T>(val);
+    if (!suppress)
+      out << std::forward<T>(val);
     return *this;
   }
 
 private:
   SyncOut<Context> out;
+  bool suppress;
 };
 
 template <typename Context>
