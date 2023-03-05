@@ -27,7 +27,7 @@ version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' $(dirname $0)/CMakeLists
 dest=mold-$version-$arch-linux
 set -e -x
 
-docker run --platform linux/$arch -it --rm -v "$(pwd):/mold" \
+docker run --platform linux/$arch -i --rm -v "$(pwd):/mold" \
   -e "OWNER=$(id -u):$(id -g)" rui314/mold-builder:latest \
   bash -c "mkdir /tmp/build &&
 cd /tmp/build &&

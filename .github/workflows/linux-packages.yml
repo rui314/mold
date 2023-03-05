@@ -1,0 +1,15 @@
+name: linux-packages
+on:
+  push:
+    branches: [ main ]
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v3
+    - name: build
+      run: ./dist.sh x86_64
+    - name: upload
+      uses: actions/upload-artifact@v3
+      with:
+        path: mold-*-linux.tar.gz
