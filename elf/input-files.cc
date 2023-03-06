@@ -324,7 +324,6 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
     std::unique_ptr<InputSection<E>> &isec = sections[i];
     if (isec && isec->is_alive && isec->name() == ".eh_frame") {
       read_ehframe(ctx, *isec);
-      isec->is_alive = false;
     }
   }
 }
