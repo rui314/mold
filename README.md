@@ -73,13 +73,12 @@ necessary packages. You may want to run it as root.
 
 ```shell
 git clone https://github.com/rui314/mold.git
-mkdir mold/build
-cd mold/build
+cd mold
 git checkout v1.10.1
-../install-build-deps.sh
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ ..
-cmake --build . -j $(nproc)
-sudo cmake --install .
+# Install required build dependencies
+./install-build-deps.sh
+# Build then install mold 
+./build-and-install.sh
 ```
 
 You may need to pass a C++20 compiler command name to `cmake`.
