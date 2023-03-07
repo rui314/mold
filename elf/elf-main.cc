@@ -742,6 +742,7 @@ int elf_main(int argc, char **argv) {
 using E = MOLD_TARGET;
 
 template void read_file(Context<E> &, MappedFile<Context<E>> *);
+template MappedFile<Context<E>> *open_library(Context<E> &, std::string);
 
 #ifdef MOLD_X86_64
 
