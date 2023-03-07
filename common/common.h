@@ -106,24 +106,27 @@ static u64 combine_hash(u64 a, u64 b) {
 template <typename Context>
 class SyncOut {
 public:
-  SyncOut(Context &ctx, std::ostream &out = std::cout) : out(out) {
+  SyncOut(Context &ctx, std::ostream *out = &std::cout) : out(out) {
     opt_demangle = ctx.arg.demangle;
   }
 
   ~SyncOut() {
-    std::scoped_lock lock(mu);
-    out << ss.str() << "\n";
+    if (out) {
+      std::scoped_lock lock(mu);
+      *out << ss.str() << "\n";
+    }
   }
 
   template <class T> SyncOut &operator<<(T &&val) {
-    ss << std::forward<T>(val);
+    if (out)
+      ss << std::forward<T>(val);
     return *this;
   }
 
   static inline std::mutex mu;
 
 private:
-  std::ostream &out;
+  std::ostream *out;
   std::stringstream ss;
 };
 
@@ -137,7 +140,7 @@ static std::string add_color(Context &ctx, std::string msg) {
 template <typename Context>
 class Fatal {
 public:
-  Fatal(Context &ctx) : out(ctx, std::cerr) {
+  Fatal(Context &ctx) : out(ctx, &std::cerr) {
     out << add_color(ctx, "fatal");
   }
 
@@ -159,7 +162,7 @@ private:
 template <typename Context>
 class Error {
 public:
-  Error(Context &ctx) : out(ctx, std::cerr), suppress(ctx.arg.suppress_warnings) {
+  Error(Context &ctx) : out(ctx, &std::cerr) {
     if (ctx.arg.noinhibit_exec) {
       out << add_color(ctx, "warning");
     } else {
@@ -169,20 +172,19 @@ public:
   }
 
   template <class T> Error &operator<<(T &&val) {
-    if (!suppress)
-      out << std::forward<T>(val);
+    out << std::forward<T>(val);
     return *this;
   }
 
 private:
   SyncOut<Context> out;
-  bool suppress;
 };
 
 template <typename Context>
 class Warn {
 public:
-  Warn(Context &ctx) : out(ctx, std::cerr) {
+  Warn(Context &ctx)
+    : out(ctx, ctx.arg.suppress_warnings ? nullptr : &std::cerr) {
     if (ctx.arg.fatal_warnings) {
       out << add_color(ctx, "error");
       ctx.has_error = true;
@@ -321,7 +323,12 @@ inline void append(std::vector<T> &vec1, std::vector<U> vec2) {
 
 template <typename T>
 inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
+  i64 size = 0;
+  for (std::vector<T> &v : vec)
+    size += v.size();
+
   std::vector<T> ret;
+  ret.reserve(size);
   for (std::vector<T> &v : vec)
     append(ret, v);
   return ret;
