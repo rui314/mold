@@ -578,7 +578,7 @@ static size_t find_null(std::string_view data, u64 entsize) {
 template <typename E>
 static std::unique_ptr<MergeableSection<E>>
 split_section(Context<E> &ctx, InputSection<E> &sec) {
-  if (!sec.is_alive || sec.sh_size == 0 || sec.relsec_idx != -1)
+  if (!sec.is_alive || sec.relsec_idx != -1)
     return nullptr;
 
   const ElfShdr<E> &shdr = sec.shdr();
@@ -589,6 +589,9 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), shdr.sh_type,
                                                shdr.sh_flags);
   rec->p2align = sec.p2align;
+
+  if (sec.sh_size == 0)
+    return rec;
 
   // If thes section contents are compressed, uncompress them.
   sec.uncompress(ctx);
@@ -729,7 +732,7 @@ void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
       continue;
 
     std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[get_shndx(esym)];
-    if (!m)
+    if (!m || m->fragments.empty())
       continue;
 
     SectionFragment<E> *frag;
