@@ -290,13 +290,13 @@ list(APPEND MOLD_ELF_TARGETS
 list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/cmdline.cc
   elf/dwarf.cc
-  elf/elf-main.cc
   elf/gc-sections.cc
   elf/icf.cc
   elf/input-files.cc
   elf/input-sections.cc
   elf/linker-script.cc
   elf/lto.cc
+  elf/main.cc
   elf/mapfile.cc
   elf/output-chunks.cc
   elf/passes.cc
@@ -314,7 +314,7 @@ list(APPEND MOLD_MACHO_TEMPLATE_FILES
   macho/input-files.cc
   macho/input-sections.cc
   macho/lto.cc
-  macho/macho-main.cc
+  macho/main.cc
   macho/mapfile.cc
   macho/output-chunks.cc
   macho/tapi.cc
