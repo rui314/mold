@@ -78,7 +78,7 @@ static bool needs_thunk_rel(const ElfRel<E> &r) {
     return ty == R_PPC_REL24  || ty == R_PPC_PLTREL24 || ty == R_PPC_LOCAL24PC;
   } else {
     static_assert(is_ppc64<E>);
-    return ty == R_PPC64_REL24 || R_PPC64_REL24_NOTOC;
+    return ty == R_PPC64_REL24 || ty == R_PPC64_REL24_NOTOC;
   }
 }
 
