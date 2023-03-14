@@ -32,6 +32,14 @@ jobs:
         cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++-12 ${{ matrix.target }} ..
         cmake --build . -j$(nproc)
         ctest . -j$(nproc)
+    - name: archive test results
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results-clang
+        path: |
+          build/out
+          build/Testing
 
   build-gcc:
     runs-on: ubuntu-20.04
