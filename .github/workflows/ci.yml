@@ -34,7 +34,7 @@ jobs:
         ctest . -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
-      if: always()
+      if: failure()
       with:
         name: test-results-clang
         path: |
@@ -84,9 +84,9 @@ jobs:
         ctest . -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
-      if: always()
+      if: failure()
       with:
-        name: test-results
+        name: test-results-gcc
         path: |
           build/out
           build/Testing
