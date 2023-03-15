@@ -15,10 +15,10 @@ int fn2();
 int main() { fn2(); }
 EOF
 
-$CC -o $t/exe1 $t/a.o -L$t -Wl,--as-needed -lbar -Wl,--allow-shlib-undefined
+$CC -B. -o $t/exe1 $t/a.o -L$t -Wl,--as-needed -lbar -Wl,--allow-shlib-undefined
 readelf -W --dynamic $t/exe1 > $t/log1
 ! grep -q libfoo $t/log1 || false
 
-$CC -o $t/exe2 $t/a.o -L$t -Wl,--as-needed -lbar -lfoo
+$CC -B. -o $t/exe2 $t/a.o -L$t -Wl,--as-needed -lbar -lfoo
 readelf -W --dynamic $t/exe2 > $t/log2
 grep -q libfoo $t/log2
