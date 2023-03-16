@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = x86_64 ] || skip
+
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
 char foo[4000L * 1000 * 1000];
 char bar[1000 * 1000];

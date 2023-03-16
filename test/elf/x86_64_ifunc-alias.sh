@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = x86_64 ] || skip
+
 supports_ifunc || skip
 test_cflags -static || skip
 

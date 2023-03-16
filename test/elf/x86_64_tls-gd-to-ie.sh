@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = x86_64 ] || skip
+
 cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc - -mcmodel=large
 #include <stdio.h>
 
