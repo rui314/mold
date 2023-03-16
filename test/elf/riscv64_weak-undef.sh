@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = riscv64 ] || skip
+
 cat <<EOF | $CC -c -o $t/a.o -xassembler -
 .globl foo
 .weak bar

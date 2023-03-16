@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = riscv64 ] || skip
+
 set -x
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
