@@ -1,19 +1,19 @@
 // This file implements the PowerPC ELFv2 ABI which was standardized in
 // 2014. Modern little-endian PowerPC systems are based on this ABI.
 // The ABI is often referred to as "ppc64le". This shouldn't be confused
-// with "ppc64" which refers the original, big-endian PowerPC systems.
+// with "ppc64" which refers to the original, big-endian PowerPC systems.
 //
 // PPC64 is a bit tricky to support because PC-relative load/store
 // instructions hadn't been available until Power10 which debuted in 2021.
-// Prior to Power10, it wasn't easy for position-independent code (PIC) to
-// load a value from, for example, .got, as we can't do that with [PC +
+// Prior to Power10, it wasn't trivial for position-independent code (PIC)
+// to load a value from, for example, .got, as we can't do that with [PC +
 // the offset to the .got entry].
 //
 // In the following, I'll explain how PIC is supported on pre-Power10
 // systems first and then explain what has changed with Power10.
 //
 //
-// Position-independent call on Power9 or earlier:
+// Position-independent code on Power9 or earlier:
 //
 // We can get the program counter on older PPC64 systems with the
 // following four instructions
@@ -36,7 +36,7 @@
 // efficient.
 //
 // A function compiled for pre-Power10 usually has two entry points,
-// global and local. The global entry point is usually 8 bytes precedes
+// global and local. The global entry point usually 8 bytes precedes
 // the local entry point. In between is the following instructions:
 //
 //   addis r2, r12, .TOC.@ha
@@ -55,7 +55,7 @@
 // r12.
 //
 //
-// Position-independent call on Power10:
+// Position-independent code on Power10:
 //
 // Power10 added 8-bytes-long instructions to the ISA. Some of them are
 // PC-relative load/store instructions that take 34 bits offsets.
@@ -66,6 +66,11 @@
 // pointer, we need to compute a correct value for TOC and set it to r2
 // before transferring the control to the callee. Thunks are responsible
 // for doing it.
+//
+// `_NOTOC` relocations such as `R_PPC64_REL24_NOTOC` indicate that the
+// callee does not use TOC (i.e. compiled with `-mcpu=power10`). If a
+// function using TOC is referenced via a `_NOTOC` relocation, that call
+// is made through a range extension thunk.
 //
 //
 // Note on section names: the PPC64 psABI uses a weird naming convention
