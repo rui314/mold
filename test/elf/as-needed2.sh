@@ -14,7 +14,7 @@ int foo();
 int baz() { return foo(); }
 EOF
 
-$CC -shared -o $t/libbaz.so -Wl,--soname,libbaz.so -L$t $t/a.o -lfoo
+$CC -B. -shared -o $t/libbaz.so -Wl,--soname,libbaz.so -L$t $t/a.o -lfoo
 
 cat <<EOF | $CC -c -o $t/b.o -xc -
 #include <stdio.h>
@@ -24,9 +24,9 @@ int main() {
 }
 EOF
 
-$CC -o $t/exe $t/b.o -L$t -Wl,--as-needed -lbaz -lbar -lfoo
+$CC -B. -o $t/exe $t/b.o -L$t -Wl,--as-needed -lbaz -lbar -lfoo
 
 readelf --dynamic $t/exe > $t/log
-! grep -q libfoo $t/log || false
-! grep -q libbar $t/log || false
 grep -q libbaz $t/log || false
+! grep -q libbar $t/log || false
+grep -q libfoo $t/log || false
