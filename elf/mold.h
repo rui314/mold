@@ -2472,32 +2472,21 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
       return isec->leader->get_addr() + value;
 
     if (isec->name() == ".eh_frame") {
-      auto test = [this](const char *pattern) {
-      if (name() == pattern)
-        return true;
-
-      // If LTO was enabled when building GCC and its CRT itself, then GCC
-      // will be able to move around the .eh_frame marker symbols. A suffix
-      // seems to be attached in such cases; we detect it here.
+      // .eh_frame contents are parsed and reconstructed by the linker,
+      // so pointing to a specific location in a source .eh_frame
+      // section doesn't make much sense. However, CRT files contain
+      // symbols pointing to the very beginning and ending of the section.
       //
-      // This tests for `<pattern>.lto_priv.*`. It's a little convoluted
-      // but this is the best we can do without compile-time string
-      // concatenation.
-      if (name().starts_with(pattern) && name().substr(strlen(pattern)).starts_with(".lto_priv."))
-        return true;
+      // If LTO is enabled, GCC may add `.lto_priv.<whatever>` as a symbol
+      // suffix. That's why we use starts_with() instead of `==` here.
+      if (name().starts_with("__EH_FRAME_BEGIN__") ||
+          name().starts_with("__EH_FRAME_LIST__") ||
+          name().starts_with(".eh_frame_seg") ||
+          esym().st_type == STT_SECTION)
+        return ctx.eh_frame->shdr.sh_addr;
 
-      return false;
-    };
-
-    // .eh_frame contents are parsed and reconstructed by the linker,
-    // so pointing to a specific location in a source .eh_frame
-    // section doesn't make much sense. However, CRT files contain
-    // symbols pointing to the very beginning and ending of the section.
-    if (test("__EH_FRAME_BEGIN__") || test("__EH_FRAME_LIST__") ||
-          test(".eh_frame_seg") || esym().st_type == STT_SECTION)
-    return ctx.eh_frame->shdr.sh_addr;
-
-      if (test("__FRAME_END__") || test("__EH_FRAME_LIST_END__"))
+      if (name().starts_with("__FRAME_END__") ||
+          name().starts_with("__EH_FRAME_LIST_END__"))
         return ctx.eh_frame->shdr.sh_addr + ctx.eh_frame->shdr.sh_size;
 
       // ARM object files contain "$d" local symbol at the beginning
@@ -2506,7 +2495,7 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
       if (name() == "$d" || name().starts_with("$d."))
         return ctx.eh_frame->shdr.sh_addr;
 
-      Fatal(ctx) << "symbol referring .eh_frame is not supported: "
+      Fatal(ctx) << "symbol referring to .eh_frame is not supported: "
                  << *this << " " << *file;
     }
 
