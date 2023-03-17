@@ -766,6 +766,24 @@ arguments.
 
 ## ENVIRONMENT VARIABLES
 
+* `MOLD_JOBS`:
+  If this variable is set to `1`, only one process of `mold` runs actively.
+  A mold process invoked while other active mold process is running will wait
+  before doing anything until the active process exits.
+
+  The purpose of this environment is to reduce the peak memory usage. Since
+  mold is highly parallelized, there's no point to run it simultaneously.
+  If you run N instances of mold in parallel, it would take N times more
+  time and N times more memory. If you run them serially, it would still
+  take N more times to finish, but their peak memory usage is reduced to
+  normal.
+
+  If your build system tend to invoke multiple linker processses
+  simultaneously, you may want to try to set this environment variable to
+  `1` see if it could improve overall performance.
+
+  Currently, any value other than `1` is silently ignored.
+
 * `MOLD_DEBUG`:
   If this variable is set to a non-empty string, `mold` embeds its
   command-line options to the output file's `.comment` section.

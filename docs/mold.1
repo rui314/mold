@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "February 2023" ""
+.TH "MOLD" "1" "March 2023" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -470,6 +470,14 @@ Mark object to interpose all DSOs but executable\.
 \fB\-(\fR, \fB\-)\fR, \fB\-EL\fR, \fB\-O\fR\fInumber\fR, \fB\-\-allow\-shlib\-undefined\fR, \fB\-\-dc\fR, \fB\-\-dp\fR, \fB\-\-end\-group\fR, \fB\-\-no\-add\-needed\fR, \fB\-\-no\-allow\-shlib\-undefined\fR, \fB\-\-no\-copy\-dt\-needed\-entries\fR, \fB\-\-no\-fatal\-warnings\fR, \fB\-\-nostdlib\fR, \fB\-\-rpath\-link=Ar dir\fR, \fB\-\-sort\-common\fR, \fB\-\-sort\-section\fR, \fB\-\-start\-group\fR, \fB\-\-warn\-constructors\fR, \fB\-\-warn\-once\fR, \fB\-\-fix\-cortex\-a53\-835769\fR, \fB\-\-fix\-cortex\-a53\-843419\fR, \fB\-z combreloc\fR, \fB\-z common\-page\-size\fR, \fB\-z nocombreloc\fR
 Ignored
 .SH "ENVIRONMENT VARIABLES"
+.IP "\[ci]" 4
+\fBMOLD_JOBS\fR: If this variable is set to \fB1\fR, only one process of \fBmold\fR runs actively\. A mold process invoked while other active mold process is running will wait before doing anything until the active process exits\.
+.IP
+The purpose of this environment is to reduce the peak memory usage\. Since mold is highly parallelized, there's no point to run it simultaneously\. If you run N instances of mold in parallel, it would take N times more time and N times more memory\. If you run them serially, it would still take N more times to finish, but their peak memory usage is reduced to normal\.
+.IP
+If your build system tend to invoke multiple linker processses simultaneously, you may want to try to set this environment variable to \fB1\fR see if it could improve overall performance
+.IP
+Currently, any value other than \fB1\fR is silently ignored\.
 .IP "\[ci]" 4
 \fBMOLD_DEBUG\fR: If this variable is set to a non\-empty string, \fBmold\fR embeds its command\-line options to the output file's \fB\.comment\fR section\.
 .IP "\[ci]" 4

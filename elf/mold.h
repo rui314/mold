@@ -1384,6 +1384,13 @@ template <typename E>
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv);
 
 //
+// jobs.cc
+//
+
+template <typename E> void acquire_global_lock(Context<E> &ctx);
+template <typename E> void release_global_lock(Context<E> &ctx);
+
+//
 // commandline.cc
 //
 
@@ -1734,8 +1741,11 @@ struct Context {
 
   std::vector<VersionPattern> version_patterns;
   u16 default_version = VER_NDX_GLOBAL;
-  bool default_version_from_version_script = false; // true if default_version is set by a wildcard in version script.
   i64 page_size = -1;
+  std::optional<int> global_lock_fd;
+
+  // true if default_version is set by a wildcard in version script.
+  bool default_version_from_version_script = false;
 
   // Reader context
   bool as_needed = false;
