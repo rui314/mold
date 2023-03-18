@@ -442,7 +442,15 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
 
   Symbol<E> &sym = *file.symbols[rel.r_sym];
   const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
-  assert(sym.file);
+
+  // If a symbol is defined in a comdat group, and the comdat group is
+  // discarded, the symbol may not have an owner. It is technically an
+  // violation of the One Definition Rule, so it is a programmer's fault.
+  if (!sym.file) {
+    Error(ctx) << *this << ": " << sym << " refers to a discarded COMDAT section"
+               << " probably due to an ODR violation";
+    return true;
+  }
 
   auto record = [&] {
     std::stringstream ss;
