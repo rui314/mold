@@ -20,47 +20,47 @@ missing command-line options, please file a bug at
 
 Mold supports a very limited set of linker script features, which is just
 sufficient to read `/usr/lib/x86_64-linux-gnu/libc.so` on Linux systems (on
-Linux, that file is despite its name not a shared library but an ASCII linker
-script that loads a real `libc.so` file.)
+Linux, that file is contrary to its name not a shared library but an ASCII
+linker script that loads a real `libc.so` file.)
 
-Beyond that, we have no plan to support any linker script features. The linker
-script is an ad-hoc, over-designed, complex language which we believe needs to
-be disrupted by a simpler mechanism. We have a plan to add a replacement for
-the linker script to `mold` instead.
+Beyond that, we have no plan to support any additional linker script features.
+The linker script is an ad-hoc, over-designed, complex language which we
+believe needs to be replaced by a simpler mechanism. We have a plan to add a
+replacement for the linker script to `mold` instead.
 
 ### Archive symbol resolution
 
 Traditionally, Unix linkers are sensitive to the order in which input files
-appear on command line. They process input files from the first (leftmost)
+appear on the command line. They process input files from the first (leftmost)
 file to the last (rightmost) file one-by-one. While reading input files, they
 maintain sets of defined and undefined symbols. When visiting an archive file
 (`.a` files), they pull out object files to resolve as many undefined symbols
-as possible and go on to the next input file. Object files that weren't pulled
-out will never have a chance for a second look.
+as possible and move on to the next input file. Object files that weren't
+pulled out will never have a chance for a second look.
 
-Due to this semantics, you usually have to add archive files at the end of a
+Due to this behavior, you usually have to add archive files at the end of a
 command line, so that when a linker reaches archive files, it knows what
 symbols remain as undefined.
 
 If you put archive files at the beginning of a command line, a linker doesn't
-have any undefined symbol, and thus no object files will be pulled out from
-archives. You can change the processing order by `--start-group` and
+have any undefined symbols, and thus no object files will be pulled out from
+archives. You can change the processing order by using the `--start-group` and
 `--end-group` options, though they make a linker slower.
 
-`mold` as well as LLVM lld(1) linker take a different approach. They memorize
-what symbols can be resolved from archive files instead of forgetting it after
-processing each archive. Therefore, `mold` and lld(1) can "go back" in a
-command line to pull out object files from archives if they are needed to
-resolve remaining undefined symbols. They are not sensitive to the input file
-order.
+`mold`, as well as the LLVM lld(1) linker, takes a different approach. They
+remember which symbols can be resolved from archive files instead of
+forgetting them after processing each archive. Therefore, `mold` and lld(1)
+can "go back" in a command line to pull out object files from archives if they
+are needed to resolve remaining undefined symbols. They are not sensitive to
+the input file order.
 
 `--start-group` and `--end-group` are still accepted by `mold` and lld(1)
 for compatibility with traditional linkers, but they are silently ignored.
 
 ### Dynamic symbol resolution
 
-Some Unix linker features are unable to be understood without understanding
-the semantics of dynamic symbol resolution. Therefore, even though that's not
+Some Unix linker features are difficult to understand without comprehending
+the semantics of dynamic symbol resolution. Therefore, even though it's not
 specific to `mold`, we'll explain it here.
 
 We use "ELF module" or just "module" as a collective term to refer to an
@@ -72,14 +72,14 @@ imported. The point is that imported symbols are not bound to any specific
 shared library until runtime.
 
 Here is how the Unix dynamic linker resolves dynamic symbols. Upon the start
-of an ELF program, the dynamic linker construct a list of ELF modules which as
-a whole consist of a complete program. The executable file is always at the
-beginning of the list followed by its depending shared libraries. An imported
-symbol is searched from the beginning of the list to the end. If two or more
-modules define the same symbol, the one that appears first in the list takes
-precedence over the others.
+of an ELF program, the dynamic linker constructs a list of ELF modules which,
+as a whole, consist of a complete program. The executable file is always at
+the beginning of the list followed by its dependent shared libraries. An
+imported symbol is searched from the beginning of the list to the end. If two
+or more modules define the same symbol, the one that appears first in the list
+takes precedence over the others.
 
-This Unix semantics are contrary to systems such as Windows that have the
+This Unix semantics are contrary to systems such as Windows that have a
 two-level namespace for dynamic symbols. On Windows, for example, dynamic
 symbols are represented as a tuple of (`symbol-name`, `shared-library-name`),
 so that each dynamic symbol is guaranteed to be resolved from some specific
@@ -87,12 +87,12 @@ library.
 
 Typically, an ELF module that exports a symbol also imports the same symbol.
 Such a symbol is usually resolved to itself, but that's not the case if a
-module that appears before in the symbol search list provides another
+module that appears before it in the symbol search list provides another
 definition of the same symbol.
 
-Let me take `malloc` as an example. Assume that you define your version of
+Let's take `malloc` as an example. Assume that you define your version of
 `malloc` in your main executable file. Then, all `malloc` calls from any
-module are resolved to your function instead of that in libc, because the
+module are resolved to your function instead of the one in libc, because the
 executable is always at the beginning of the dynamic symbol search list. Note
 that even `malloc` calls within libc are resolved to your definition since
 libc exports and imports `malloc`. Therefore, by defining `malloc` yourself,
@@ -103,39 +103,38 @@ These Unix semantics are tricky and sometimes considered harmful. For example,
 assume that you accidentally define `atoi` as a global function in your
 executable that behaves completely differently from the one in the C standard.
 Then, all `atoi` function calls from any modules (even function calls within
-libc) are redirected to your function instead of the one in libc which
-will very likely to cause a problem.
+libc) are redirected to your function instead of the one in libc, which will
+very likely cause a problem.
 
 That is a somewhat surprising consequence for an accidental name conflict. On
 the other hand, this semantic is sometimes useful because it allows users to
 override library functions without rebuilding modules containing them.
 
-Whether good or bad, you should keep this semantics in mind to understand the
-Unix linkers behaviors.
+Whether good or bad, you should keep these semantics in mind to understand
+Unix linkers' behaviors.
 
 ### Build reproducibility
 
 `mold`'s output is deterministic. That is, if you pass the same object files
 and the same command-line options to the same version of `mold`, it is
-guaranteed that `mold` produces the bit-by-bit identical same output. The
-linker's internal randomness, such as the timing of thread scheduling or
-iteration orders of hash tables, doesn't affect the output.
+guaranteed that `mold` produces the bit-by-bit identical output. The linker's
+internal randomness, such as the timing of thread scheduling or iteration
+orders of hash tables, doesn't affect the output.
 
-`mold` does not have any host-specific default settings. This is contrary to
-the GNU linkers to which some configurable values, such as system-dependent
+`mold` does not have any host-specific default settings. This is contrary to the
+GNU linkers, for which some configurable values, such as system-dependent
 library search paths, are hard-coded. `mold` depends only on its command-line
 arguments.
-
 
 ## MOLD-SPECIFIC OPTIONS
 
 * `--chroot`=_dir_:
-  Set _dir_ to root directory.
+  Set _dir_ as the root directory.
 
 * `--color-diagnostics`=[ _auto_ | _always_ | _never_ ]:
-  Show diagnostics messages in color using ANSI escape sequences. `auto`
-  means that `mold` prints out messages in color only if the standard output
-  is connected to a TTY. Default is `auto`.
+  Show diagnostic messages in color using ANSI escape sequences. `auto` means
+  that `mold` prints out messages in color only if the standard output is
+  connected to a TTY. Default is `auto`.
 
 * `--color-diagnostics`:
   Synonym for `--color-diagnostics=auto`.
@@ -144,10 +143,9 @@ arguments.
   Synonym for `--color-diagnostics=never`.
 
 * `--fork`, `--no-fork`:
-  Spawn a child process and let it do the actual linking. When linking a
-  large program, the OS kernel can take a few hundred milliseconds to
-  terminate a `mold` process. `--fork` hides that latency. By default, it
-  does fork.
+  Spawn a child process and let it do the actual linking. When linking a large
+  program, the OS kernel can take a few hundred milliseconds to terminate a
+  `mold` process. `--fork` hides that latency. By default, it does fork.
 
 * `--perf`:
   Print performance statistics.
@@ -155,57 +153,55 @@ arguments.
 * `--print-dependencies`:
   Print out dependency information for input files.
 
-  Each line of the output for this option shows that which file depends on
-  which file to use which symbol. This option is useful to debug why some
+  Each line of the output for this option shows which file depends on which
+  file to use a specific symbol. This option is useful for debugging why some
   object file in a static archive got linked or why some shared library is
   kept in an output file's dependency list even with `--as-needed`.
 
 * `--repro`:
-  Archive input files as well as a text file containing command line options
-  as a tar file so that you can run `mold` with the exact same inputs again.
-  This is useful to report a bug with a reproducer. The output filename is
-  `path/to/output.tar` where `path/to/output` is an output filename specified
+  Archive input files, as well as a text file containing command line options,
+  in a tar file so that you can run `mold` with the exact same inputs again.
+  This is useful for reporting a bug with a reproducer. The output filename is
+  `path/to/output.tar`, where `path/to/output` is an output filename specified
   by `-o`.
 
 * `--reverse-sections`:
-  Reverses the order of input sections before assigning them the offsets in
-  the output file.
+  Reverse the order of input sections before assigning them the offsets in the
+  output file.
 
-  This option is useful for finding bugs that depend on an initialization
-  order of global objects. In C++, constructors of global objects in a
-  single source file are guaranteed to be executed in the source order, but
-  there's no such guarantee across compilation units. Usually, constructors
-  are executed in the order given to the linker, but depending on it is a
-  mistake.
+  This option is useful for finding bugs that depend on the initialization
+  order of global objects. In C++, constructors of global objects in a single
+  source file are guaranteed to be executed in the source order, but there's
+  no such guarantee across compilation units. Usually, constructors are
+  executed in the order given to the linker, but depending on it is a mistake.
 
-  By reversing the order of input sections using `--reverse-sections`, you
-  can easily test that your program works in the reversed initialization
-  order.
+  By reversing the order of input sections using `--reverse-sections`, you can
+  easily test that your program works in the reversed initialization order.
 
 * `--run` _command_ _arg_...:
-  Run `command` with `mold` `/usr/bin/ld`. Specifically, `mold` runs a given
+  Run _command_ with `mold` `/usr/bin/ld`. Specifically, `mold` runs a given
   command with the `LD_PRELOAD` environment set to intercept exec(3) family
-  functions and replaces `argv[0]` with itself if it is `ld`, `ld.gold` or
+  functions and replaces `argv[0]` with itself if it is `ld`, `ld.gold`, or
   `ld.lld`.
 
 * `--shuffle-sections`, `--shuffle-sections`=_number_:
-  Randomizes the output by shuffling the order of input sections before
-  assigning them the offsets in the output file. If _number_ is given, it's
-  used as a seed for the random number generator, so that the linker
-  produces the same output for the same seed. If no seed is given, a
-  random number is used as a seed.
+  Randomize the output by shuffling the order of input sections before
+  assigning them the offsets in the output file. If a _number_ is given, it's
+  used as a seed for the random number generator, so that the linker produces
+  the same output for the same seed. If no seed is given, a random number is
+  used as a seed.
 
-  This option is useful for benchmarking. Modern CPUs are sensitive to
-  program's memory layout. A seeming benign change in program layout such
-  as a small size increase of a function in the middle of a program can
-  affect program's performance. Therefore, even if you write new code and
-  get a good benchmark result, it is hard to say whether or not the new code
-  improves the programs performance; it is possible that the new memory
-  layout happens to perform better.
+  This option is useful for benchmarking. Modern CPUs are sensitive to a
+  program's memory layout. A seemingly benign change in program layout, such
+  as a small size increase of a function in the middle of a program, can
+  affect the program's performance. Therefore, even if you write new code and
+  get a good benchmark result, it is hard to say whether the new code improves
+  the program's performance; it is possible that the new memory layout happens
+  to perform better.
 
-  By running a benchmark multiple time with randomized memory layouts using
-  `--shuffle-sections`, you can isolate your program's real performance
-  number from the randomness caused by memory layout changes.
+  By running a benchmark multiple times with randomized memory layouts using
+  `--shuffle-sections`, you can isolate your program's real performance number
+  from the randomness caused by memory layout changes.
 
 * `--stats`:
   Print input statistics.
@@ -214,10 +210,10 @@ arguments.
   Use _count_ number of threads.
 
 * `--threads`, `--no-threads`:
-  Use multiple threads. By default, `mold` uses as many threads as the
-  number of cores or 32, whichever is the smallest. The reason why it is
-  capped to 32 is because `mold` doesn't scale well beyond that point. To
-  use only one thread, pass `-no-threads` or `-thread-count=1`.
+  Use multiple threads. By default, `mold` uses as many threads as the number of
+  cores or 32, whichever is smaller. The reason it is capped at 32 is because
+  `mold` doesn't scale well beyond that point. To use only one thread, pass
+  `--no-threads` or `--thread-count=1`.
 
 * `--quick-exit`, `--no-quick-exit`:
   Use or do not use `quick_exit` to exit.
@@ -234,9 +230,9 @@ arguments.
   Report version and target information to stdout.
 
 * `-E`, `--export-dynamic`, `--no-export-dynamic`:
-  When creating an executable, using the `-E` option causes all global
-  symbols to be put into the dynamic symbol table, so that the symbols are
-  visible from other ELF modules at runtime.
+  When creating an executable, using the `-E` option causes all global symbols
+  to be put into the dynamic symbol table, so that the symbols are visible
+  from other ELF modules at runtime.
 
   By default, or if `--no-export-dynamic` is given, only symbols that are
   referenced by DSOs at link-time are exported from an executable.
@@ -247,26 +243,25 @@ arguments.
 * `-I` _file_, `--dynamic-linker`=_file_, `--no-dynamic-linker`:
   Set the dynamic linker path to _file_. If no `-I` option is given, or if
   `--no-dynamic-linker` is given, no dynamic linker path is set to an output
-  file. This is contrary to the GNU linkers which sets a default dynamic
-  linker path in that case. This difference doesn't usually make any
-  difference because the compiler driver always passes `-I` to the linker.
+  file. This is contrary to the GNU linkers which set a default dynamic linker
+  path in that case. This difference doesn't usually make any difference
+  because the compiler driver always passes `-I` to the linker.
 
 * `-L` _dir_, `--library-path`=_dir_:
   Add _dir_ to the list of library search paths from which `mold` searches
   libraries for the `-l` option.
 
-  Unlike the GNU linkers, `mold` does not have the default search paths.
-  This difference doesn't usually make any difference because the compiler
-  driver always passes all necessary search paths to the linker.
+  Unlike the GNU linkers, `mold` does not have default search paths. This
+  difference doesn't usually make any difference because the compiler driver
+  always passes all necessary search paths to the linker.
 
 * `-M`, `--print-map`:
   Write a map file to stdout.
 
 * `-N`, `--omagic`, `--no-omagic`:
   Force `mold` to emit an output file with an old-fashioned memory layout.
-  First, it makes the first data segment to not be aligned to a page
-  boundary. Second, text segments are marked as writable if the option is
-  given.
+  First, it makes the first data segment not aligned to a page boundary.
+  Second, text segments are marked as writable if the option is given.
 
 * `-S`, `--strip-debug`:
   Omit `.debug_*` sections from the output file.
@@ -281,31 +276,32 @@ arguments.
   such as string literals or floating-point literals.
 
 * `-e` _symbol_, `--entry`=_symbol_:
-  Use _symbol_ as the entry point symbol instead of the default entry point
-  symbol `_start`.
+
+  Use _symbol_ as the entry point symbol instead of the default entry
+  point symbol _start.
 
 * `-f` _shlib_, `--auxiliary`=_shlib_:
   Set the `DT_AUXILIARY` dynamic section field to _shlib_.
 
 * `-h` _libname_, `--soname`=_libname_:
-  Set the `DT_SONAME` dynamic section field to _libname_. This option is
-  used when creating a shared object file. Typically, when you create
-  `libfoo.so`, you want to pass `--soname=foo` to a linker.
+  Set the `DT_SONAME` dynamic section field to _libname_. This option is used
+  when creating a shared object file. Typically, when you create `libfoo.so`,
+  you want to pass `--soname=foo` to a linker.
 
 * `-l` _libname_:
   Search for `lib`_libname_`.so` or `lib`_libname_`.a` from library search
   paths.
 
 * `-m` _target_:
-  Choose a target.
+  Choose a _target_.
 
 * `-o` _file_, `--output`=_file_:
   Use _file_ as the output file name instead of the default name `a.out`.
 
 * `-r`, `--relocatable`:
   Instead of generating an executable or a shared object file, combine input
-  object files to generate another object file that can be used as an input
-  to a linker.
+  object files to generate another object file that can be used as an input to
+  a linker.
 
 * `--relocatable-merge-sections`:
   By default, `mold` doesn't merge input sections by name when merging input
@@ -332,11 +328,10 @@ arguments.
   Do not link against shared libraries.
 
 * `--Bsymbolic`:
-  When creating a shared library, make global symbols export-only (i.e. do
-  not import the same symbol). As a result, references within a shared
-  library is always resolved locally, negating symbol override at runtime.
-  See "Dynamic symbol resolution" for more information about symbol imports
-  and exports.
+  When creating a shared library, make global symbols export-only (i.e. do not
+  import the same symbol). As a result, references within a shared library are
+  always resolved locally, negating symbol override at runtime. See "Dynamic
+  symbol resolution" for more information about symbol imports and exports.
 
 * `--Bsymbolic-functions`:
   This option has the same effect as `--Bsymbolic` but works only for function
@@ -358,10 +353,10 @@ arguments.
   Alias for `--section-start=.text=`_address_.
 
 * `--allow-multiple-definition`:
-  Normally, the linker reports an error if there are more than one
-  definition of a symbol. This option changes the default behavior so that
-  it doesn't report an error for duplicate definitions and instead use the
-  first definition.
+  Normally, the linker reports an error if there are more than one definition
+  of a symbol. This option changes the default behavior so that it doesn't
+  report an error for duplicate definitions and instead use the first
+  definition.
 
 * `--as-needed`, `--no-as-needed`:
   By default, shared libraries given to the linker are unconditionally added
@@ -376,10 +371,10 @@ arguments.
 
 * `--build-id`=[ `md5` | `sha1` | `sha256` | `uuid` | `0x`_hexstring_ | `none` ]:
   Create a `.note.gnu.build-id` section containing a byte string to uniquely
-  identify an output file. `sha256` compute a 256-bit cryptographic hash of
-  an output file and set it to build-id. `md5` and `sha1` compute the same
-  hash but truncate it to 128 and 160 bits, respectively, before setting it
-  to build-id. `uuid` sets a random 128-bit UUID. `0x`_hexstring_ sets
+  identify an output file. `sha256` compute a 256-bit cryptographic hash of an
+  output file and set it to build-id. `md5` and `sha1` compute the same hash
+  but truncate it to 128 and 160 bits, respectively, before setting it to
+  build-id. `uuid` sets a random 128-bit UUID. `0x`_hexstring_ sets
   _hexstring_.
 
 * `--build-id`:
@@ -390,20 +385,20 @@ arguments.
 
 * `--compress-debug-sections`=[ `zlib` | `zlib-gabi` | `zstd` | `none` ]:
   Compress DWARF debug info (`.debug_*` sections) using the zlib or zstd
-  compression algorithm. `-zlib-gabi` is an alias for `-zlib`.
+  compression algorithm. `zlib-gabi` is an alias for `zlib`.
 
 * `--defsym`=_symbol_=_value_:
   Define _symbol_ as an alias for _value_.
 
-  _value_ is either an integer (in decimal or hexadecimal with `0x` prefix)
-  or a symbol name. If an integer is given as a value, _symbol_ is defined
-  as an absolute symbol with the given value.
+  _value_ is either an integer (in decimal or hexadecimal with `0x` prefix) or
+  a symbol name. If an integer is given as a value, _symbol_ is defined as an
+  absolute symbol with the given value.
 
 * `--default-symver`:
   Use soname as a symbol version and append that version to all symbols.
 
 * `--demangle`, `--no-demangle`:
-  Demangle C++ and Ruts symbols in log messages.
+  Demangle C++ and Rust symbols in log messages.
 
 * `--dependency-file`=_file_:
   Write a dependency file to _file_. The contents of the written file is
@@ -415,9 +410,9 @@ arguments.
 
 * `--dynamic-list`=_file_:
   Read a list of dynamic symbols from _file_. Same as
-  `--export-dynamic-symbol-list`, except that it implies `--Bsymbolic`.
-  If _file_ does not exist in the current directory, it is searched from
-  library search paths for the sake of compatibility with GNU ld.
+  `--export-dynamic-symbol-list`, except that it implies `--Bsymbolic`. If
+  _file_ does not exist in the current directory, it is searched from library
+  search paths for the sake of compatibility with GNU ld.
 
 * `--eh-frame-hdr`, `--no-eh-frame-hdr`:
   Create `.eh_frame_hdr` section.
@@ -427,20 +422,20 @@ arguments.
   applies relocations to other sections, and relocation sections themselves
   are discarded.
 
-  The `--emit-relocs` instructs the linker to leave relocation sections in
-  the output file. Some post-link binary analysis or optimization tools such
-  as LLVM Bolt need them.
+  The `--emit-relocs` instructs the linker to leave relocation sections in the
+  output file. Some post-link binary analysis or optimization tools such as
+  LLVM Bolt need them.
 
 * `--enable-new-dtags`, `--disable-new-dtags`:
   By default, `mold` emits `DT_RUNPATH` for `--rpath`. If you pass
-  `--disable-new-dtags`, mold emits `DT_RPATH` for `--rpath` instead.
+  `--disable-new-dtags`, `mold` emits `DT_RPATH` for `--rpath` instead.
 
 * `--execute-only`:
-  Traditionally, most processors require both executable and readable bits
-  to 1 to make the page executable, which allows machine code to be read as
-  data at runtime. This is actually what an attacker often does after gaining
-  a limited control of a process to find pieces of machine code they can use
-  to gain the full control of the process. As a mitigation, some recent
+  Traditionally, most processors require both executable and readable bits to
+  1 to make the page executable, which allows machine code to be read as data
+  at runtime. This is actually what an attacker often does after gaining a
+  limited control of a process to find pieces of machine code they can use to
+  gain the full control of the process. As a mitigation, some recent
   processors allows "execute-only" pages. If a page is execute-only, you can
   call a function there as long as you know its address but can't read it as
   data.
@@ -453,8 +448,8 @@ arguments.
 
 * `--export-dynamic-symbol`=_symbol_:
   Put symbols matching _symbol_ in the dynamic symbol table. _symbol_ may be a
-  glob pattern in the same syntax as for the `--export-dynamic-`_symbol-list_
-  or `--version-script` options.
+  glob pattern in the same syntax as for the `--export-dynamic-symbol-list` or
+  `--version-script` options.
 
 * `--export-dynamic-symbol-list`=_file_:
   Read a list of dynamic symbols from _file_.
@@ -483,25 +478,24 @@ arguments.
   the parameter type. Identical Code Folding (ICF) is a size optimization to
   identify and merge such identical functions.
 
-  If `--icf=all` is given, `mold` tries to merge all identical functions.
-  This reduces the size of the output most, but it is not a "safe"
-  optimization. It is guaranteed in C and C++ that two pointers pointing two
-  different functions will never be equal, but `--icf=all` breaks that
-  assumption as two identical functions have the same address after merging.
-  So a care must be taken when you use thsi flag that your program does not
-  depend on the function pointer uniqueness.
+  If `--icf=all` is given, `mold` tries to merge all identical functions. This
+  reduces the size of the output most, but it is not a "safe" optimization. It
+  is guaranteed in C and C++ that two pointers pointing two different
+  functions will never be equal, but `--icf=all` breaks that assumption as two
+  identical functions have the same address after merging. So a care must be
+  taken when you use this flag that your program does not depend on the
+  function pointer uniqueness.
 
   `--icf=safe` is a flag to merge functions only when it is safe to do so.
-  That is, if a program does not take an address of a function, it is safe
-  to merge that function with other function, as you cannot compare a
-  function pointer with something else without taking an address of a
-  function.
+  That is, if a program does not take an address of a function, it is safe to
+  merge that function with other function, as you cannot compare a function
+  pointer with something else without taking an address of a function.
 
-  `--icf=safe` needs to be used with a compiler that supports
-  `.llvm_addrsig` section which contains the information as to what symbols
-  are address-taken. LLVM/Clang supports that section by default. Since GCC
-  does not support it yet, you cannot use `--icf=safe` with GCC (it doesn't
-  do any harm but can't optimize at all.)
+  `--icf=safe` needs to be used with a compiler that supports `.llvm_addrsig`
+  section which contains the information as to what symbols are address-taken.
+  LLVM/Clang supports that section by default. Since GCC does not support it
+  yet, you cannot use `--icf=safe` with GCC (it doesn't do any harm but can't
+  optimize at all.)
 
   `--icf=none` and `--no-icf` disables ICF.
 
@@ -518,26 +512,26 @@ arguments.
 * `--no-undefined`:
   Report undefined symbols (even with `--shared`).
 
-*  `--noinhibit-exec`:
+* `--noinhibit-exec`:
   Create an output file even if errors occur.
 
 * `--pack-dyn-relocs`=[ `relr` | `none` ]:
   If `relr` is specified, all `R_*_RELATIVE` relocations are put into
   `.relr.dyn` section instead of `.rel.dyn` or `.rela.dyn` section. Since
-  `.relr.dyn` section uses a space-efficient encoding scheme, specifying
-  this flag can reduce the size of the output. This is typically most
-  effective for position-independent executable.
+  `.relr.dyn` section uses a space-efficient encoding scheme, specifying this
+  flag can reduce the size of the output. This is typically most effective for
+  position-independent executable.
 
   Note that a runtime loader has to support `.relr.dyn` to run executables or
   shared libraries linked with `--pack-dyn-relocs=relr`. As of 2022, only
-  ChromeOS, Android and Fuchsia support it .
+  ChromeOS, Android and Fuchsia support it.
 
 * `--package-metadata`=_string_:
-  Embed _string_ to a `.note.package` section. This option in intended to be
+  Embed _string_ to a `.note.package` section. This option is intended to be
   used by a package management command such as rpm(8) to embed metadata
   regarding a package to each executable file.
 
-* `--pie`, `-pic-executable`, `--no-pie`, `-no-pic-executable`:
+* `--pie`, `--pic-executable`, `--no-pie`, `--no-pic-executable`:
   Create a position-independent executable.
 
 * `--print-gc-sections`, `--no-print-gc-sections`:
@@ -547,9 +541,9 @@ arguments.
   Print folded identical sections.
 
 * `--push-state`, `--pop-state`:
-  `--push-state` saves the current values of `--as-needed`,
-  `--whole-archive`, `--static`, and `--start-lib`. The saved values can be
-  restored by `--pop-state`.
+  `--push-state` saves the current values of `--as-needed`, `--whole-archive`,
+  `--static`, and `--start-lib`. The saved values can be restored by
+  pop-state.
 
   `--push-state` and `--pop-state` pairs can nest.
 
@@ -559,40 +553,40 @@ arguments.
   you can append `--push-state --as-needed -lfoo --pop-state` to the linker
   command line options.
 
-* `--relax`, `--no-relax`:
-  Rewrite machine instructions with more efficient ones for some
-  relocations. The feature is enabled by default.
+* `--relax, --no-relax`:
+  Rewrite machine instructions with more efficient ones for some relocations.
+  The feature is enabled by default.
 
 * `--require-defined`=_symbol_:
-  Like `--undefined`, except the new symbol must be defined by the end of
-  the link.
+  Like `--undefined`, except the new symbol must be defined by the end of the
+  link.
 
 * `--retain-symbols-file`=_file_:
   Keep only symbols listed in _file_. _file_ is a text file containing a
   symbol name on each line. `mold` discards all local symbols as well as
   global symbol that are not in _file_. Note that this option removes symbols
-  only from _.symtab_ section and does not affect _.dynsym_ section, which is
+  only from `.symtab` section and does not affect `.dynsym` section, which is
   used for dynamic linking.
 
 * `--rpath`=_dir_:
   Add _dir_ to runtime search paths.
 
-* `--section-start=`_section_=_address_:
-  Set _address_ to _section_. _address_ is a hexadecimal number that may
-  start with an optional `0x`.
+* `--section-start`=_section_=_address_:
+  Set _address_ to section. _address_ is a hexadecimal number that may start
+  with an optional `0x`.
 
-* `--shared`, `-Bshareable`:
+* `--shared`, `--Bshareable`:
   Create a share library.
 
 * `--spare-dynamic-tags`=_number_:
-  Reserve the given _number_ of tags in _.dynamic_ section.
+  Reserve the given _number_ of tags in `.dynamic` section.
 
 * `--start-lib`, `--end-lib`:
-  Handle object files between `--start-lib` and `--end-lib` as if they were
-  in an archive file. That means object files between them are linked only
-  when they are needed to resolve undefined symbols. The options are useful
-  if you want to link object files only when they are needed but want to
-  avoid the overhead of running ar(3).
+  Handle object files between `--start-lib` and `--end-lib` as if they were in
+  an archive file. That means object files between them are linked only when
+  they are needed to resolve undefined symbols. The options are useful if you
+  want to link object files only when they are needed but want to avoid the
+  overhead of running ar(3).
 
 * `--static`:
   Do not link against shared libraries.
@@ -605,8 +599,8 @@ arguments.
 
 * `--undefined-version`, `--no-undefined-version`:
   By default, `mold` warns on a symbol specified by a version script or by
-  `--export-dynamic-symbol` if it is not defined. You can silence the
-  warning by `--undefined-version`.
+  `--export-dynamic-symbol` if it is not defined. You can silence the warning
+  by `--undefined-version`.
 
 * `--unique`=_pattern_:
   Don't merge input sections that match the given glob pattern _pattern_.
@@ -623,8 +617,8 @@ arguments.
   Warn about common symbols.
 
 * `--warn-once`:
-  Only warn once for each undefined symbol instead of warn for each
-  relocation referring an undefined symbol.
+  Only warn once for each undefined symbol instead of warn for each relocation
+  referring an undefined symbol.
 
 * `--warn-unresolved-symbols`, `--error-unresolved-symbols`:
   Normally, the linker reports an error for unresolved symbols.
@@ -635,33 +629,32 @@ arguments.
   When archive files (`.a` files) are given to the linker, only object files
   that are needed to resolve undefined symbols are extracted from them and
   linked to an output file. `--whole-archive` changes that behavior for
-  subsequent archives so that the linker extracts all object files and link
-  them to an output. For example, if you are creating a shared object file
-  and you want to include all archive members to the output, you should pass
+  subsequent archives so that the linker extracts all object files and links
+  them to an output. For example, if you are creating a shared object file and
+  you want to include all archive members to the output, you should pass
   `--whole-archive`. `--no-whole-archive` restores the default behavior for
   subsequent archives.
 
 * `--wrap`=_symbol_:
-  Make _symbol_ to be resolved to `__wrap_`_symbol_. The original symbol can
-  be resolved as `__real_`_symbol_. This option is typically used for
-  wrapping an existing function.
+  Make _symbol_ be resolved to `__wrap_`_symbol_. The original symbol can be
+  resolved as `__real_`_symbol_. This option is typically used for wrapping an
+  existing function.
 
-* `-z cet-report`=[ `warning` | `error` | `none`]:
+* `-z cet-report`=[ `warning` | `error` | `none` ]:
   Intel Control-flow Enforcement Technology (CET) is a new x86 feature
   available since Tiger Lake which is released in 2020. It defines new
   instructions to harden security to protect programs from control hijacking
-  attacks. You can tell compiler to use the feature by specifying the
+  attacks. You can tell the compiler to use the feature by specifying the
   `-fcf-protection` flag.
 
   `-z cet-report` flag is used to make sure that all object files were
-  compiled with a correct `-fcf-protection` flag. If `warning` or `error`
-  are given, `mold` prints out a warning or an error message if an object
-  file was not compiled with the compiler flag.
+  compiled with a correct `-fcf-protection` flag. If `warning` or `error` are
+  given, `mold` prints out a warning or an error message if an object file was
+  not compiled with the compiler flag.
 
   `mold` looks for `GNU_PROPERTY_X86_FEATURE_1_IBT` bit and
   `GNU_PROPERTY_X86_FEATURE_1_SHSTK` bit in `.note.gnu.property` section to
-  determine whether or not an object file was compiled with
-  `-fcf-protection`.
+  determine whether or not an object file was compiled with `-fcf-protection`.
 
 * `-z now`, `-z lazy`:
   By default, functions referring to other ELF modules are resolved by the
@@ -673,9 +666,9 @@ arguments.
   Mark object requiring immediate `$ORIGIN` processing at runtime.
 
 * `-z ibt`:
-  Turn on `GNU_PROPERTY_X86_FEATURE_1_IBT` bit in `.note.gnu.property`
-  section to indicate that the output uses IBT-enabled PLT. This option
-  implies `-z ibtplt`.
+  Turn on `GNU_PROPERTY_X86_FEATURE_1_IBT` bit in `.note.gnu.property` section
+  to indicate that the output uses IBT-enabled PLT. This option implies `-z
+  ibtplt`.
 
 * `-z ibtplt`:
   Generate Intel Branch Tracking (IBT)-enabled PLT which is the default on
@@ -687,7 +680,7 @@ arguments.
   makes it executable. `-z noexecstack` restores the default behavior.
 
 * `-z keep-text-section-prefix`, `-z nokeep-text-section-prefix`:
-  Keep `.text.hot`, `.text.unknown`, `.text.unlikely`, `.text.startup` and
+  Keep `.text.hot`, `.text.unknown`, `.text.unlikely`, `.text.startup`, and
   `.text.exit` as separate sections in the final binary instead of merging
   them as `.text`.
 
@@ -699,14 +692,14 @@ arguments.
   during program execution.
 
   `-z relro` puts such sections into a special segment called `relro`. The
-  dynamic linker make a relro segment read-only after it finishes its job.
+  dynamic linker makes a relro segment read-only after it finishes its job.
 
   By default, `mold` generates a relro segment. `-z norelro` disables the
   feature.
 
 * `-z separate-loadable-segments`, `-z separate-code`, `-z noseparate-code`:
-  If one memory page contains multiple segments, the page protection bits
-  are set in such a way that needed attributes (writable or executable) are
+  If one memory page contains multiple segments, the page protection bits are
+  set in such a way that the needed attributes (writable or executable) are
   satisfied for all segments. This usually happens at a boundary of two
   segments with two different attributes.
 
@@ -729,25 +722,25 @@ arguments.
 
 * `-z text`, `-z notext`, `-z textoff`:
   `mold` by default reports an error if dynamic relocations are created in
-  read-only sections. If `-z notext` or `-z textoff` are given, `mold`
-  creates such dynamic relocations without reporting an error. `-z text`
-  restores the default behavior.
+  read-only sections. If `-z notext` or `-z textoff` are given, `mold` creates
+  such dynamic relocations without reporting an error. `-z text` restores the
+  default behavior.
 
 * `-z max-page-size`=_number_:
   Some CPU ISAs support multiple different memory page sizes. This option
   specifies the maximum page size that an output binary can run on. The
-  default value is 4 KiB for i386, x86-64 and RISC-V, and 64 KiB for ARM64.
+  default value is 4 KiB for i386, x86-64, and RISC-V, and 64 KiB for ARM64.
 
 * `-z nodefaultlib`:
-  Make the dynamic loader to ignore default search paths.
+  Make the dynamic loader ignore default search paths.
 
 * `-z nodelete`:
   Mark DSO non-deletable at runtime.
 
 * `-z nodlopen`:
   Mark DSO not available to dlopen(3). This option makes it possible for the
-  linker to optimize thread-local variable accesses by rewriting
-  instructions for some targets.
+  linker to optimize thread-local variable accesses by rewriting instructions
+  for some targets.
 
 * `-z nodump`:
   Mark DSO not available to dldump(3).
@@ -767,30 +760,30 @@ arguments.
 ## ENVIRONMENT VARIABLES
 
 * `MOLD_JOBS`:
-  If this variable is set to `1`, only one process of `mold` runs actively.
-  A mold process invoked while other active mold process is running will wait
+  If this variable is set to `1`, only one process of `mold` runs actively. A
+  mold process invoked while another active mold process is running will wait
   before doing anything until the active process exits.
 
-  The purpose of this environment is to reduce the peak memory usage. Since
-  mold is highly parallelized, there's no point to run it simultaneously.
-  If you run N instances of mold in parallel, it would take N times more
-  time and N times more memory. If you run them serially, it would still
-  take N more times to finish, but their peak memory usage is reduced to
+  The purpose of this environment variable is to reduce peak memory usage.
+  Since mold is highly parallelized, there's no point in running it
+  simultaneously. If you run N instances of mold in parallel, it would take N
+  times more time and N times more memory. If you run them serially, it would
+  still take N times more to finish, but their peak memory usage is reduced to
   normal.
 
-  If your build system tend to invoke multiple linker processses
+  If your build system tends to invoke multiple linker processes
   simultaneously, you may want to try to set this environment variable to
-  `1` see if it could improve overall performance.
+  `1` to see if it could improve overall performance.
 
-  Currently, any value other than `1` is silently ignored.
+  Currently, any value other than 1 is silently ignored.
 
 * `MOLD_DEBUG`:
   If this variable is set to a non-empty string, `mold` embeds its
-  command-line options to the output file's `.comment` section.
+  command-line options in the output file's `.comment` section.
 
-* `MOLD_REPRO`
-  Setting this variable to a non-empty string has the same effect as
-  passign the `--repro` option.
+* `MOLD_REPRO`:
+  Setting this variable to a non-empty string has the same effect as passing
+  the `--repro` option.
 
 ## SEE ALSO
 
