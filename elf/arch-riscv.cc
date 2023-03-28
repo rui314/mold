@@ -315,16 +315,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       if (sym.value < r_offset) {
         for (i64 j = i - 1; j >= 0; j--)
-          if (rels[j].r_type != R_RISCV_NONE &&
-              rels[j].r_type != R_RISCV_RELAX &&
-              sym.value == rels[j].r_offset - get_r_delta(j))
-            return j;
+          if (u32 ty = rels[j].r_type;
+              ty == R_RISCV_GOT_HI20 || ty == R_RISCV_TLS_GOT_HI20 ||
+              ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20)
+            if (sym.value == rels[j].r_offset - get_r_delta(j))
+              return j;
       } else {
         for (i64 j = i + 1; j < rels.size(); j++)
-          if (rels[j].r_type != R_RISCV_NONE &&
-              rels[j].r_type != R_RISCV_RELAX &&
-              sym.value == rels[j].r_offset - get_r_delta(j))
-            return j;
+          if (u32 ty = rels[j].r_type;
+              ty == R_RISCV_GOT_HI20 || ty == R_RISCV_TLS_GOT_HI20 ||
+              ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20)
+            if (sym.value == rels[j].r_offset - get_r_delta(j))
+              return j;
       }
 
       Fatal(ctx) << *this << ": paired relocation is missing: " << i;
@@ -422,7 +424,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         val = S + A - P;
         break;
       default:
-        Fatal(ctx) << "bad paired relocation type: " << rel2;
+        unreachable();
       }
 
       if (rel.r_type == R_RISCV_PCREL_LO12_I)
