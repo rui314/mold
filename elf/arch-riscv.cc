@@ -309,6 +309,27 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
                    << lo << ", " << hi << ")";
     };
 
+    auto find_paired_reloc = [&] {
+      Symbol<E> &sym = *file.symbols[rels[i].r_sym];
+      assert(sym.get_input_section() == this);
+
+      if (sym.value < r_offset) {
+        for (i64 j = i - 1; j >= 0; j--)
+          if (rels[j].r_type != R_RISCV_NONE &&
+              rels[j].r_type != R_RISCV_RELAX &&
+              sym.value == rels[j].r_offset - get_r_delta(j))
+            return j;
+      } else {
+        for (i64 j = i + 1; j < rels.size(); j++)
+          if (rels[j].r_type != R_RISCV_NONE &&
+              rels[j].r_type != R_RISCV_RELAX &&
+              sym.value == rels[j].r_offset - get_r_delta(j))
+            return j;
+      }
+
+      Fatal(ctx) << *this << ": paired relocation is missing: " << i;
+    };
+
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
     u64 P = get_addr() + r_offset;
@@ -364,21 +385,52 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_GOT_HI20:
-      *(ul32 *)loc = G + GOT + A - P;
+      write_utype(loc, G + GOT + A - P);
       break;
     case R_RISCV_TLS_GOT_HI20:
-      *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - P;
+      write_utype(loc, sym.get_gottp_addr(ctx) + A - P);
       break;
     case R_RISCV_TLS_GD_HI20:
-      *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - P;
+      write_utype(loc, sym.get_tlsgd_addr(ctx) + A - P);
       break;
     case R_RISCV_PCREL_HI20:
-      *(ul32 *)loc = S + A - P;
+      write_utype(loc, S + A - P);
       break;
     case R_RISCV_PCREL_LO12_I:
-    case R_RISCV_PCREL_LO12_S:
-      // These relocations are handled in the next loop.
+    case R_RISCV_PCREL_LO12_S: {
+      i64 idx2 = find_paired_reloc();
+      const ElfRel<E> &rel2 = rels[idx2];
+      Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
+
+      u64 S = sym2.get_addr(ctx);
+      u64 A = rel2.r_addend;
+      u64 P = get_addr() + rel2.r_offset - get_r_delta(idx2);
+      u64 G = sym2.get_got_idx(ctx) * sizeof(Word<E>);
+      u64 val;
+
+      switch (rel2.r_type) {
+      case R_RISCV_GOT_HI20:
+        val = G + GOT + A - P;
+        break;
+      case R_RISCV_TLS_GOT_HI20:
+        val = sym2.get_gottp_addr(ctx) + A - P;
+        break;
+      case R_RISCV_TLS_GD_HI20:
+        val = sym2.get_tlsgd_addr(ctx) + A - P;
+        break;
+      case R_RISCV_PCREL_HI20:
+        val = S + A - P;
+        break;
+      default:
+        Fatal(ctx) << "bad paired relocation type: " << rel2;
+      }
+
+      if (rel.r_type == R_RISCV_PCREL_LO12_I)
+        write_itype(loc, val);
+      else
+        write_stype(loc, val);
       break;
+    }
     case R_RISCV_HI20:
       assert(removed_bytes == 0 || removed_bytes == 4);
       if (removed_bytes == 0) {
@@ -495,42 +547,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     default:
       unreachable();
-    }
-  }
-
-  // Handle PC-relative LO12 relocations. In the above loop, pcrel HI20
-  // relocations overwrote instructions with full 32-bit values to allow
-  // their corresponding pcrel LO12 relocations to read their values.
-  for (i64 i = 0; i < rels.size(); i++) {
-    switch (rels[i].r_type) {
-    case R_RISCV_PCREL_LO12_I:
-    case R_RISCV_PCREL_LO12_S: {
-      Symbol<E> &sym = *file.symbols[rels[i].r_sym];
-      assert(sym.get_input_section() == this);
-
-      u8 *loc = base + rels[i].r_offset - get_r_delta(i);
-      u32 val = *(ul32 *)(base + sym.value);
-
-      if (rels[i].r_type == R_RISCV_PCREL_LO12_I)
-        write_itype(loc, val);
-      else
-        write_stype(loc, val);
-    }
-    }
-  }
-
-  // Restore the original instructions pcrel HI20 relocations overwrote.
-  for (i64 i = 0; i < rels.size(); i++) {
-    switch (rels[i].r_type) {
-    case R_RISCV_GOT_HI20:
-    case R_RISCV_PCREL_HI20:
-    case R_RISCV_TLS_GOT_HI20:
-    case R_RISCV_TLS_GD_HI20: {
-      u8 *loc = base + rels[i].r_offset - get_r_delta(i);
-      u32 val = *(ul32 *)loc;
-      memcpy(loc, contents.data() + rels[i].r_offset, 4);
-      write_utype(loc, val);
-    }
     }
   }
 }
