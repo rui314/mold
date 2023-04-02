@@ -246,17 +246,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
 
-  std::span<std::unique_ptr<RangeExtensionThunk<E>>> thunks =
-    output_section->thunks;
-
-  auto get_tls_trampoline_addr = [&](u64 addr) {
-    for (;;) {
-      assert(!thunks.empty());
-      i64 disp = output_section->shdr.sh_addr + thunks[0]->offset - addr;
+  auto get_tls_trampoline_addr = [&, i = 0](u64 addr) mutable {
+    for (; i < output_section->thunks.size(); i++) {
+      i64 disp = output_section->shdr.sh_addr + output_section->thunks[i]->offset -
+                 addr;
       if (is_jump_reachable(disp))
         return disp;
-      thunks = thunks.subspan(1);
     }
+    unreachable();
   };
 
   for (i64 i = 0; i < rels.size(); i++) {
