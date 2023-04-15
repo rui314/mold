@@ -152,7 +152,7 @@ u64 get_tp_addr(Context<E> &ctx) {
     return 0;
 
   // On x86, SPARC and s390x, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
-  // and %a0/%a1 on s390x) refers past the end of the TLS block for
+  // and %a0/%a1 on s390x) refers to past the end of the TLS block for
   // historical reasons. TLVs are accessed with negative offsets from TP.
   if constexpr (is_x86<E> || is_sparc<E> || is_s390x<E>)
     return align_to(phdr->p_vaddr + phdr->p_memsz, phdr->p_align);
@@ -179,7 +179,8 @@ u64 get_tp_addr(Context<E> &ctx) {
   return phdr->p_vaddr;
 }
 
-// Returns the address when __tls_get_addr would be called with offset 0.
+// Returns the address __tls_get_addr() would return if it's called
+// with offset 0.
 template <typename E>
 u64 get_dtp_addr(Context<E> &ctx) {
   ElfPhdr<E> *phdr = get_tls_segment(ctx);
