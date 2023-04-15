@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-supports_ifunc || skip
-
 cat <<EOF | $CC -fno-PIE -o $t/a.o -c -xc -
 #include <dlfcn.h>
 #include <stdio.h>

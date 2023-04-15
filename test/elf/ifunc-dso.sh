@@ -11,7 +11,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -fPIC -shared -o $t/b.so -xc -
+cat <<EOF | $CC -fPIC -o $t/b.o -c -xc -
 #include <stdio.h>
 
 __attribute__((ifunc("resolve_foobar")))
@@ -28,5 +28,8 @@ static Func *resolve_foobar(void) {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.so
+$CC -B. -o $t/c.so $t/b.o -shared
+readelf -W --dyn-syms $t/c.so | grep -Eq '(IFUNC|<OS specific>: 10).*foobar'
+
+$CC -B. -o $t/exe $t/a.o $t/c.so
 $QEMU $t/exe | grep -q 'Hello world'
