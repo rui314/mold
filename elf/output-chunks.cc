@@ -1529,7 +1529,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
   memset(&esym, 0, sizeof(esym));
 
   esym.st_name = st_name;
-  esym.st_type = sym.esym().st_type;
+  esym.st_type = sym.get_type();
   esym.st_size = sym.esym().st_size;
 
   if (sym.is_local(ctx))
