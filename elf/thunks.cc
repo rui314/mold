@@ -1,5 +1,3 @@
-#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2
-
 // RISC instructions are usually up to 4 bytes long, so the immediates of
 // their branch instructions are naturally smaller than 32 bits.  This is
 // contrary to x86-64 on which branch instructions take 4 bytes immediates
@@ -21,6 +19,8 @@
 // That said, the total size of thunks still isn't that much. Therefore,
 // we don't need to try too hard to reduce thunk size to the absolute
 // minimum.
+
+#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2
 
 #include "mold.h"
 
@@ -116,7 +116,7 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   // PowerPC before Power9 lacks PC-relative load/store instructions.
   // Functions compiled for Power9 or earlier assume that r2 points to
   // GOT+0x8000, while those for Power10 uses r2 as a scratch register.
-  // We need to a thunk to reconstruct r2 for interworking.
+  // We need to a thunk to recompute r2 for interworking.
   if constexpr (is_ppc64v2<E>) {
     if (rel.r_type == R_PPC64_REL24 && !sym.esym().preserves_r2())
       return false;
@@ -203,12 +203,13 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   // We manage progress using four offsets which increase monotonically.
   // The locations they point to are always A <= B <= C <= D.
   //
+  // Input sections between B and C are in the current batch.
+  //
   // A is the input section with the smallest address than can reach
   // anywhere from the current batch.
   //
   // D is the input section with the largest address such that the thunk
-  // is reachable from the current batch if it's inserted right before D
-  // but at least partially unreacahble if it's inserted after D.
+  // is reachable from the current batch if it's inserted right before D.
   //
   //  ................................ <input sections> ............
   //     A    B    C    D
