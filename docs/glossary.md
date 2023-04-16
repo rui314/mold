@@ -13,7 +13,7 @@ you need to understand to read mold code.
 A .so file. Short for Dynamic Shared Object. Often called as a
 shared library, a dynamic libray or a shared object as well.
 
-An DSO contains common functions and data that are used by multiple
+A DSO contains common functions and data that are used by multiple
 executables and/or other DSOs. At runtime, a DSO is loaded to a
 contiguous region in the virtual address.
 
@@ -24,11 +24,11 @@ cannot be executed because it's not self-contained. For example,
 if you compile a C source file containing a call of `printf`,
 the actual function code of `printf` is not included in the resulting
 object file. You include `stdio.h`, but that teaches the compiler
-only about `printf`'s type, and the compiler still don't know what
+only about `printf`'s type, and the compiler still doesn't know what
 `printf` actually does. Therefore, it cannot emit code for `printf`.
 
 You need to link an object file with other object file or a shared
-library to make it exectuable.
+library to make it executable.
 
 ## Virtual address space
 
@@ -42,7 +42,7 @@ Unless you are doing the kernel programming, all addresses you
 handle are virtual addresses.
 
 The OS kernel controls the MMU so that each process owns the entire
-virtual address space. So, even if two process uses the same virtual
+virtual address space. So, even if two processes use the same virtual
 address, they don't conflict. They are mapped to different physical
 addresses.
 
@@ -70,16 +70,16 @@ example, if you compile a function which calls a non-local function
 ```
 
 The above `callq` is the instruction to call a function at the
-machine code level. It's opcode is `0xe8` in x86-64, so the
+machine code level. Its opcode is `0xe8` in x86-64, so the
 instruction begins with `0xe8`. The following four bytes are
 displacement; that is, the address of the branch target relative to
 the end of this `callq` instruction. Notice that the displacement is
 0. The compiler couldn't fill the displacement because it has no
-idea as to where `foo` will be at runtime. So, the compiler write 0
-as a placeholder and instead write a relocation `R_X86_64_PLT32`
+idea as to where `foo` will be at runtime. So, the compiler writes 0
+as a placeholder and instead writes a relocation `R_X86_64_PLT32`
 with `foo` as its associated symbol. The linker reads this
 relocation, computes the offsets between this call instruction and
-function `foo` and overwrite the placeholder value 0 with an actual
+function `foo` and overwrites the placeholder value 0 with an actual
 displacement.
 
 There are many different types of relocations. For example, if you
@@ -139,7 +139,7 @@ identify a function or a data in C++, because for example `foo` may
 be in a namespace or defined as a static member in some class. If
 `foo` is an overloaded function, we need to distinguish different
 `foo`s by its type. Therefore, C++ compiler mangles an identifier by
-appending nmaepsace names, type information and such so that
+appending namepsace names, type information and such so that
 different things get different names.
 
 For example, a function `int foo(int)` in a namespace `bar` is
