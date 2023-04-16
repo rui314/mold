@@ -74,79 +74,52 @@
 
 namespace mold::elf {
 
-static u32 itype(u32 val) {
-  return val << 20;
+static void write_itype(u8 *loc, u32 val) {
+  *(ul32 *)loc &= 0b000000'00000'11111'111'11111'1111111;
+  *(ul32 *)loc |= bits(val, 11, 0) << 20;
 }
 
-static u32 stype(u32 val) {
-  return bits(val, 11, 5) << 25 | bits(val, 4, 0) << 7;
+static void write_stype(u8 *loc, u32 val) {
+  *(ul32 *)loc &= 0b000000'11111'11111'111'00000'1111111;
+  *(ul32 *)loc |= bits(val, 11, 5) << 25 | bits(val, 4, 0) << 7;
 }
 
-static u32 btype(u32 val) {
-  return bit(val, 12) << 31 | bits(val, 10, 5) << 25 |
-         bits(val, 4, 1) << 8 | bit(val, 11) << 7;
+static void write_btype(u8 *loc, u32 val) {
+  *(ul32 *)loc &= 0b000000'11111'11111'111'00000'1111111;
+  *(ul32 *)loc |= bit(val, 12) << 31   | bits(val, 10, 5) << 25 |
+                  bits(val, 4, 1) << 8 | bit(val, 11) << 7;
 }
 
-static u32 utype(u32 val) {
+static void write_utype(u8 *loc, u32 val) {
+  *(ul32 *)loc &= 0b000000'00000'00000'000'11111'1111111;
+
   // U-type instructions are used in combination with I-type
   // instructions. U-type insn sets an immediate to the upper 20-bits
   // of a register. I-type insn sign-extends a 12-bits immediate and
   // adds it to a register value to construct a complete value. 0x800
   // is added here to compensate for the sign-extension.
-  return (val + 0x800) & 0xffff'f000;
-}
-
-static u32 jtype(u32 val) {
-  return bit(val, 20) << 31 | bits(val, 10, 1)  << 21 |
-         bit(val, 11) << 20 | bits(val, 19, 12) << 12;
-}
-
-static u32 cbtype(u32 val) {
-  return bit(val, 8) << 12 | bit(val, 4) << 11 | bit(val, 3) << 10 |
-         bit(val, 7) << 6  | bit(val, 6) << 5  | bit(val, 2) << 4  |
-         bit(val, 1) << 3  | bit(val, 5) << 2;
-}
-
-static u32 cjtype(u32 val) {
-  return bit(val, 11) << 12 | bit(val, 4)  << 11 | bit(val, 9) << 10 |
-         bit(val, 8)  << 9  | bit(val, 10) << 8  | bit(val, 6) << 7  |
-         bit(val, 7)  << 6  | bit(val, 3)  << 5  | bit(val, 2) << 4  |
-         bit(val, 1)  << 3  | bit(val, 5)  << 2;
-}
-
-static void write_itype(u8 *loc, u32 val) {
-  *(ul32 *)loc &= 0b000000'00000'11111'111'11111'1111111;
-  *(ul32 *)loc |= itype(val);
-}
-
-static void write_stype(u8 *loc, u32 val) {
-  *(ul32 *)loc &= 0b000000'11111'11111'111'00000'1111111;
-  *(ul32 *)loc |= stype(val);
-}
-
-static void write_btype(u8 *loc, u32 val) {
-  *(ul32 *)loc &= 0b000000'11111'11111'111'00000'1111111;
-  *(ul32 *)loc |= btype(val);
-}
-
-static void write_utype(u8 *loc, u32 val) {
-  *(ul32 *)loc &= 0b000000'00000'00000'000'11111'1111111;
-  *(ul32 *)loc |= utype(val);
+  *(ul32 *)loc |= (val + 0x800) & 0xffff'f000;
 }
 
 static void write_jtype(u8 *loc, u32 val) {
   *(ul32 *)loc &= 0b000000'00000'00000'000'11111'1111111;
-  *(ul32 *)loc |= jtype(val);
+  *(ul32 *)loc |= bit(val, 20) << 31 | bits(val, 10, 1)  << 21 |
+                  bit(val, 11) << 20 | bits(val, 19, 12) << 12;
 }
 
 static void write_cbtype(u8 *loc, u32 val) {
   *(ul16 *)loc &= 0b111'000'111'00000'11;
-  *(ul16 *)loc |= cbtype(val);
+  *(ul16 *)loc |= bit(val, 8) << 12 | bit(val, 4) << 11 | bit(val, 3) << 10 |
+                  bit(val, 7) << 6  | bit(val, 6) << 5  | bit(val, 2) << 4  |
+                  bit(val, 1) << 3  | bit(val, 5) << 2;
 }
 
 static void write_cjtype(u8 *loc, u32 val) {
   *(ul16 *)loc &= 0b111'00000000000'11;
-  *(ul16 *)loc |= cjtype(val);
+  *(ul16 *)loc |= bit(val, 11) << 12 | bit(val, 4)  << 11 | bit(val, 9) << 10 |
+                  bit(val, 8)  << 9  | bit(val, 10) << 8  | bit(val, 6) << 7  |
+                  bit(val, 7)  << 6  | bit(val, 3)  << 5  | bit(val, 2) << 4  |
+                  bit(val, 1)  << 3  | bit(val, 5)  << 2;
 }
 
 static void overwrite_uleb(u8 *loc, u64 val) {
