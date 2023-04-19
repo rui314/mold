@@ -876,8 +876,11 @@ MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
     fd = ::open(path.c_str(), O_RDONLY);
 #endif
 
-  if (fd == -1)
+  if (fd == -1) {
+    if (errno != ENOENT)
+      Fatal(ctx) << "opening " << path << " failed: " << errno_string();
     return nullptr;
+  }
 
   struct stat st;
   if (fstat(fd, &st) == -1)
