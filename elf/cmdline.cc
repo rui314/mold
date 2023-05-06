@@ -994,7 +994,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("strip-all") || read_flag("s")) {
       ctx.arg.strip_all = true;
     } else if (read_flag("strip-debug") || read_flag("S")) {
-      ctx.arg.strip_all = true;
+      ctx.arg.strip_debug = true;
     } else if (read_flag("warn-unresolved-symbols")) {
       ctx.arg.unresolved_symbols = UNRESOLVED_WARN;
     } else if (read_flag("error-unresolved-symbols")) {
