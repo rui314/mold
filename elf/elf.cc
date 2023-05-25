@@ -414,6 +414,10 @@ std::string rel_to_string<RV64LE>(u32 r_type) {
   CASE(R_RISCV_PLT32);
   CASE(R_RISCV_SET_ULEB128);
   CASE(R_RISCV_SUB_ULEB128);
+  CASE(R_RISCV_TLSDESC_HI20);
+  CASE(R_RISCV_TLSDESC_LOAD_LO12);
+  CASE(R_RISCV_TLSDESC_ADD_LO12);
+  CASE(R_RISCV_TLSDESC_CALL);
   }
   return unknown_type(r_type);
 }
