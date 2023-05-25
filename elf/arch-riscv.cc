@@ -69,6 +69,7 @@
 
 #if MOLD_RV64LE || MOLD_RV64BE || MOLD_RV32LE || MOLD_RV32BE
 
+#include "elf.h"
 #include "mold.h"
 
 #include <regex>
@@ -258,7 +259,8 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 // while the other "followers" point to the leader's label (address).
 static bool is_paired_reloc_leader(u32 ty) {
   return ty == R_RISCV_GOT_HI20 || ty == R_RISCV_TLS_GOT_HI20 ||
-         ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20;
+         ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20 ||
+         ty == R_RISCV_TLSDESC_HI20;
 }
 
 template <>
@@ -460,6 +462,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         set_rs1(loc, 4);
       break;
     }
+    case R_RISCV_TLSDESC_HI20: {
+      u64 desc = sym.get_tlsdesc_addr(ctx);
+      write_utype(loc, desc + A - P);
+      break;
+    }
+    case R_RISCV_TLSDESC_LOAD_LO12:
+    case R_RISCV_TLSDESC_ADD_LO12: {
+      i64 idx2 = find_paired_reloc();
+      const ElfRel<E> &rel2 = rels[idx2];
+      Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
+
+      u64 A = rel2.r_addend;
+      u64 P = get_addr() + rel2.r_offset - get_r_delta(idx2);
+      u64 desc = sym2.get_tlsdesc_addr(ctx);
+      write_itype(loc, desc + A - P);
+      break;
+    }
+    case R_RISCV_TLSDESC_CALL:
+      break;
     case R_RISCV_ADD8:
       loc += S + A;
       break;
@@ -698,6 +719,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_TLS_GD_HI20:
       sym.flags |= NEEDS_TLSGD;
       break;
+    case R_RISCV_TLSDESC_HI20:
+      sym.flags |= NEEDS_TLSDESC;
+      break;
     case R_RISCV_32_PCREL:
     case R_RISCV_PCREL_HI20:
       scan_pcrel(ctx, sym, rel);
@@ -714,6 +738,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_PCREL_LO12_S:
     case R_RISCV_LO12_I:
     case R_RISCV_LO12_S:
+    case R_RISCV_TLSDESC_LOAD_LO12:
+    case R_RISCV_TLSDESC_ADD_LO12:
+    case R_RISCV_TLSDESC_CALL:
     case R_RISCV_ADD8:
     case R_RISCV_ADD16:
     case R_RISCV_ADD32:
