@@ -1934,6 +1934,7 @@ struct RV64 {
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
+  static constexpr u32 R_TLSDESC = R_RISCV_TLSDESC;
 };
 
 struct RV64LE : RV64 {
@@ -1965,6 +1966,7 @@ struct RV32 {
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
+  static constexpr u32 R_TLSDESC = R_RISCV_TLSDESC;
 };
 
 struct RV32LE : RV32 {
