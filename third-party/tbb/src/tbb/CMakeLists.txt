@@ -55,6 +55,7 @@ target_compile_definitions(tbb
                            $<$<CONFIG:DEBUG>:TBB_USE_DEBUG>
                            PRIVATE
                            __TBB_BUILD
+                           ${TBB_RESUMABLE_TASKS_USE_THREADS}
                            $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_DYNAMIC_LOAD_ENABLED=0>
                            $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_SOURCE_DIRECTLY_INCLUDED=1>)
 
