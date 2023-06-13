@@ -73,6 +73,10 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_options(mold PRIVATE -D_GLIBCXX_ASSERTIONS)
 endif()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+  set(OPENBSD ON)
+endif()
+
 # Build mold with -flto if -DMOLD_LTO=ON
 option(MOLD_LTO "Build mold with link-time optimization enabled")
 if(MOLD_LTO)
@@ -147,7 +151,7 @@ check_cxx_source_compiles(
   "static_assert(sizeof(void *) == 4); int main() {}" P32)
 
 cmake_dependent_option(MOLD_USE_MIMALLOC "Use mimalloc" ON
-  "NOT APPLE; NOT ANDROID; NOT P32" OFF)
+  "NOT APPLE; NOT ANDROID; NOT OPENBSD; NOT P32" OFF)
 cmake_dependent_option(
   MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
   MOLD_USE_MIMALLOC OFF)
