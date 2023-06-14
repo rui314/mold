@@ -692,7 +692,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("pie") || read_flag("pic-executable")) {
       ctx.arg.pic = true;
       ctx.arg.pie = true;
-    } else if (read_flag("no-pie") || read_flag("no-pic-executable")) {
+    } else if (read_flag("no-pie") || read_flag("no-pic-executable") ||
+               read_flag("nopie")) {
       ctx.arg.pic = false;
       ctx.arg.pie = false;
     } else if (read_flag("relax")) {
