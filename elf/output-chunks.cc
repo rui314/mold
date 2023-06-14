@@ -344,10 +344,15 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     }
   }
 
-  // Add PT_ARM_EDXIDX
+  // Create a PT_ARM_EDXIDX
   if constexpr (is_arm32<E>)
     if (OutputSection<E> *osec = find_section(ctx, SHT_ARM_EXIDX))
       define(PT_ARM_EXIDX, PF_R, 4, osec);
+
+  // Create a PT_OPENBSD_RANDOMIZE
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (chunk->name == ".openbsd.randomdata")
+      define(PT_OPENBSD_RANDOMIZE, PF_R | PF_W, 1, chunk);
 
   // Set p_paddr if --physical-image-base was given. --physical-image-base
   // is typically used in embedded programming to specify the base address
