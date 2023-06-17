@@ -217,6 +217,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ub32 *)(loc + 4) = 0xe841'0028; // ld r2, 40(r1)
       break;
     }
+    case R_PPC64_REL32:
+      *(ub32 *)loc = S + A - P;
+      break;
     case R_PPC64_REL64:
       *(ub64 *)loc = S + A - P;
       break;
@@ -377,6 +380,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_TPREL16_LO:
       check_tlsle(ctx, sym, rel);
       break;
+    case R_PPC64_REL32:
     case R_PPC64_REL64:
     case R_PPC64_TOC16_HA:
     case R_PPC64_TOC16_LO:

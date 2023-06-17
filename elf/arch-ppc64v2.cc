@@ -251,6 +251,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc |= bits(val, 25, 2) << 2;
       }
       break;
+    case R_PPC64_REL32:
+      *(ul32 *)loc = S + A - P;
+      break;
     case R_PPC64_REL64:
       *(ul64 *)loc = S + A - P;
       break;
@@ -441,6 +444,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_TPREL16_LO:
       check_tlsle(ctx, sym, rel);
       break;
+    case R_PPC64_REL32:
     case R_PPC64_REL64:
     case R_PPC64_TOC16_HA:
     case R_PPC64_TOC16_LO:
