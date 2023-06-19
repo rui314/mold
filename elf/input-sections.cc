@@ -361,7 +361,7 @@ static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
   case DYNREL:
     apply_dynrel();
     break;
-  case IFUNC: {
+  case IFUNC:
     if constexpr (supports_ifunc<E>) {
       u64 addr = sym.get_addr(ctx, NO_PLT) + A;
       *dynrel++ = ElfRel<E>(P, E::R_IRELATIVE, 0, addr);
@@ -371,7 +371,6 @@ static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
       unreachable();
     }
     break;
-  }
   default:
     unreachable();
   }
@@ -401,11 +400,10 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     return;
 
   // Copy data
-  if constexpr (is_riscv<E>) {
+  if constexpr (is_riscv<E>)
     copy_contents_riscv(ctx, buf);
-  } else {
+  else
     uncompress_to(ctx, buf);
-  }
 
   // Apply relocations
   if (!ctx.arg.relocatable) {
