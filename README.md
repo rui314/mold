@@ -167,7 +167,7 @@ example, `gcc` is used as the linker driver. Use the `-fuse-ld` option if your
 GCC is recent enough to recognize this option.
 
 If you want to use mold for all projects, add the above snippet to
-`~/.config/config.nims`.
+`~/.config/nim/config.nims`.
 
 </details>
 
