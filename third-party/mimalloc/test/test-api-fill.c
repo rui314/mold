@@ -5,7 +5,7 @@ terms of the MIT license. A copy of the license can be found in the file
 "LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #include "mimalloc.h"
-#include "mimalloc-types.h"
+#include "mimalloc/types.h"
 
 #include "testhelper.h"
 
@@ -164,7 +164,7 @@ int main(void) {
     mi_free(p);
   };
 
-#if MI_DEBUG >= 2
+#if (MI_DEBUG >= 2) && !MI_TSAN
   // ---------------------------------------------------
   // Debug filling
   // ---------------------------------------------------
@@ -271,7 +271,7 @@ int main(void) {
     mi_free(p);
   };
 
-
+  #if !(MI_TRACK_VALGRIND || MI_TRACK_ASAN)
   CHECK_BODY("fill-freed-small") {
     size_t malloc_size = MI_SMALL_SIZE_MAX / 2;
     uint8_t* p = (uint8_t*)mi_malloc(malloc_size);
@@ -286,6 +286,7 @@ int main(void) {
     // First sizeof(void*) bytes will contain housekeeping data, skip these
     result = check_debug_fill_freed(p + sizeof(void*), malloc_size - sizeof(void*));
   };
+  #endif
 #endif
 
   // ---------------------------------------------------
@@ -309,7 +310,7 @@ bool check_zero_init(uint8_t* p, size_t size) {
 
 #if MI_DEBUG >= 2
 bool check_debug_fill_uninit(uint8_t* p, size_t size) {
-#if MI_VALGRIND
+#if MI_TRACK_VALGRIND || MI_TRACK_ASAN
   (void)p; (void)size;
   return true; // when compiled with valgrind we don't init on purpose
 #else
@@ -325,7 +326,7 @@ bool check_debug_fill_uninit(uint8_t* p, size_t size) {
 }
 
 bool check_debug_fill_freed(uint8_t* p, size_t size) {
-#if MI_VALGRIND
+#if MI_TRACK_VALGRIND
   (void)p; (void)size;
   return true; // when compiled with valgrind we don't fill on purpose
 #else

@@ -33,8 +33,8 @@ we therefore test the API over various inputs. Please add more tests :-)
 #endif
 
 #include "mimalloc.h"
-// #include "mimalloc-internal.h"
-#include "mimalloc-types.h" // for MI_DEBUG and MI_ALIGNMENT_MAX
+// #include "mimalloc/internal.h"
+#include "mimalloc/types.h" // for MI_DEBUG and MI_ALIGNMENT_MAX
 
 #include "testhelper.h"
 
@@ -46,12 +46,20 @@ bool test_heap2(void);
 bool test_stl_allocator1(void);
 bool test_stl_allocator2(void);
 
+bool mem_is_zero(uint8_t* p, size_t size) {
+  if (p==NULL) return false;
+  for (size_t i = 0; i < size; ++i) {
+    if (p[i] != 0) return false;
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Main testing
 // ---------------------------------------------------------------------------
 int main(void) {
   mi_option_disable(mi_option_verbose);
-
+  
   // ---------------------------------------------------
   // Malloc
   // ---------------------------------------------------
@@ -149,7 +157,8 @@ int main(void) {
     for (size_t align = 1; align <= MI_ALIGNMENT_MAX && ok; align *= 2) {
       void* ps[8];
       for (int i = 0; i < 8 && ok; i++) {
-        ps[i] = mi_malloc_aligned(align*5 /*size*/, align);
+        ps[i] = mi_malloc_aligned(align*13  // size
+                                 , align);
         if (ps[i] == NULL || (uintptr_t)(ps[i]) % align != 0) {
           ok = false;
         }
@@ -211,6 +220,11 @@ int main(void) {
     result = mi_heap_contains_block(heap, p);
     mi_heap_destroy(heap);
   }
+  CHECK_BODY("mimalloc-aligned12") {
+    void* p = mi_malloc_aligned(0x100, 0x100);
+    result = (((uintptr_t)p % 0x100) == 0); // #602
+    mi_free(p);
+  }
   CHECK_BODY("malloc-aligned-at1") {
     void* p = mi_malloc_aligned_at(48,32,0); result = (p != NULL && ((uintptr_t)(p) + 0) % 32 == 0); mi_free(p);
   };
@@ -225,6 +239,21 @@ int main(void) {
       ok = (p != NULL && (uintptr_t)(p) % 16 == 0); mi_free(p);
     }
     result = ok;
+  };
+  CHECK_BODY("zalloc-aligned-small1") {
+    size_t zalloc_size = MI_SMALL_SIZE_MAX / 2;
+    uint8_t* p = (uint8_t*)mi_zalloc_aligned(zalloc_size, MI_MAX_ALIGN_SIZE * 2);
+    result = mem_is_zero(p, zalloc_size);
+    mi_free(p);
+  };
+  CHECK_BODY("rezalloc_aligned-small1") {
+    size_t zalloc_size = MI_SMALL_SIZE_MAX / 2;
+    uint8_t* p = (uint8_t*)mi_zalloc_aligned(zalloc_size, MI_MAX_ALIGN_SIZE * 2);
+    result = mem_is_zero(p, zalloc_size);
+    zalloc_size *= 3;
+    p = (uint8_t*)mi_rezalloc_aligned(p, zalloc_size, MI_MAX_ALIGN_SIZE * 2);
+    result = result && mem_is_zero(p, zalloc_size);
+    mi_free(p);
   };
 
   // ---------------------------------------------------
@@ -285,7 +314,7 @@ int main(void) {
 // Larger test functions
 // ---------------------------------------------------
 
-bool test_heap1() {
+bool test_heap1(void) {
   mi_heap_t* heap = mi_heap_new();
   int* p1 = mi_heap_malloc_tp(heap,int);
   int* p2 = mi_heap_malloc_tp(heap,int);
@@ -294,7 +323,7 @@ bool test_heap1() {
   return true;
 }
 
-bool test_heap2() {
+bool test_heap2(void) {
   mi_heap_t* heap = mi_heap_new();
   int* p1 = mi_heap_malloc_tp(heap,int);
   int* p2 = mi_heap_malloc_tp(heap,int);
@@ -305,7 +334,7 @@ bool test_heap2() {
   return true;
 }
 
-bool test_stl_allocator1() {
+bool test_stl_allocator1(void) {
 #ifdef __cplusplus
   std::vector<int, mi_stl_allocator<int> > vec;
   vec.push_back(1);
@@ -318,7 +347,7 @@ bool test_stl_allocator1() {
 
 struct some_struct  { int i; int j; double z; };
 
-bool test_stl_allocator2() {
+bool test_stl_allocator2(void) {
 #ifdef __cplusplus
   std::vector<some_struct, mi_stl_allocator<some_struct> > vec;
   vec.push_back(some_struct());

@@ -6,7 +6,7 @@ terms of the MIT license. A copy of the license can be found in the file
 -----------------------------------------------------------------------------*/
 
 #include "mimalloc.h"
-#include "mimalloc-internal.h"
+#include "mimalloc/internal.h"
 
 #if defined(MI_MALLOC_OVERRIDE)
 
@@ -195,7 +195,7 @@ static malloc_introspection_t mi_introspect = {
   .log = &intro_log,
   .force_lock = &intro_force_lock,
   .force_unlock = &intro_force_unlock,
-#if defined(MAC_OS_X_VERSION_10_6) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6)
+#if defined(MAC_OS_X_VERSION_10_6) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6) && !defined(__ppc__)
   .statistics = &intro_statistics,
   .zone_locked = &intro_zone_locked,
 #endif
@@ -216,7 +216,7 @@ static malloc_zone_t mi_malloc_zone = {
   .batch_malloc = &zone_batch_malloc,
   .batch_free = &zone_batch_free,
   .introspect = &mi_introspect,
-#if defined(MAC_OS_X_VERSION_10_6) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6)
+#if defined(MAC_OS_X_VERSION_10_6) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6) && !defined(__ppc__)
   #if defined(MAC_OS_X_VERSION_10_14) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_14)
   .version = 10,
   #else
@@ -420,7 +420,7 @@ __attribute__((constructor(0)))
 #else
 __attribute__((constructor))      // seems not supported by g++-11 on the M1
 #endif
-static void _mi_macos_override_malloc() {
+static void _mi_macos_override_malloc(void) {
   malloc_zone_t* purgeable_zone = NULL;
 
   #if defined(MAC_OS_X_VERSION_10_6) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_6)

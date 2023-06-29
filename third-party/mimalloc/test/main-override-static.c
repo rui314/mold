@@ -20,6 +20,7 @@ static void negative_stat(void);
 static void alloc_huge(void);
 static void test_heap_walk(void);
 static void test_heap_arena(void);
+static void test_align(void);
 
 int main() {
   mi_version();
@@ -37,6 +38,7 @@ int main() {
   // alloc_huge();
   // test_heap_walk();
   // test_heap_arena();
+  // test_align();
   
   void* p1 = malloc(78);
   void* p2 = malloc(24);
@@ -66,6 +68,13 @@ int main() {
   // test_process_info();
   
   return 0;
+}
+
+static void test_align() {
+  void* p = mi_malloc_aligned(256, 256);
+  if (((uintptr_t)p % 256) != 0) {
+    fprintf(stderr, "%p is not 256 alignend!\n", p);
+  }
 }
 
 static void invalid_free() {

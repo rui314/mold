@@ -37,15 +37,20 @@ static void fail_aslr();              // issue #372
 static void tsan_numa_test();         // issue #414
 static void strdup_test();            // issue #445 
 static void bench_alloc_large(void);  // issue #xxx
+//static void test_large_migrate(void); // issue #691
 static void heap_thread_free_huge();
+static void test_std_string();        // issue #697
 
 static void test_stl_allocators();
 
 
 int main() {
-  mi_stats_reset();  // ignore earlier allocations
-  heap_thread_free_huge();
+  // mi_stats_reset();  // ignore earlier allocations
+  
+  // test_std_string();
+  // heap_thread_free_huge();
   /*
+   heap_thread_free_huge();
    heap_thread_free_large();
    heap_no_delete();
    heap_late_free();
@@ -55,12 +60,13 @@ int main() {
    tsan_numa_test();
    strdup_test();
   */
-  test_stl_allocators();
-  test_mt_shutdown();
+  // test_stl_allocators();
+  // test_mt_shutdown();
+  // test_large_migrate();
   
   //fail_aslr();
-  bench_alloc_large();
-  mi_stats_print(NULL);
+  // bench_alloc_large();
+  // mi_stats_print(NULL);
   return 0;
 }
 
@@ -99,6 +105,10 @@ static void various_tests() {
   delete t;
   t = new (std::nothrow) Test(42);
   delete t;
+  auto tbuf = new unsigned char[sizeof(Test)];
+  t = new (tbuf) Test(42);
+  t->~Test();
+  delete tbuf;
 }
 
 class Static {
@@ -134,6 +144,7 @@ static bool test_stl_allocator2() {
   return vec.size() == 0;
 }
 
+#if MI_HAS_HEAP_STL_ALLOCATOR
 static bool test_stl_allocator3() {
   std::vector<int, mi_heap_stl_allocator<int> > vec;
   vec.push_back(1);
@@ -161,15 +172,54 @@ static bool test_stl_allocator6() {
   vec.pop_back();
   return vec.size() == 0;
 }
+#endif
 
 static void test_stl_allocators() {
   test_stl_allocator1();
   test_stl_allocator2();
+#if MI_HAS_HEAP_STL_ALLOCATOR
   test_stl_allocator3();
   test_stl_allocator4();
   test_stl_allocator5();
   test_stl_allocator6();
+#endif
 }
+
+#if 0
+// issue #691
+static char* cptr;
+
+static void* thread1_allocate()
+{
+  cptr = mi_calloc_tp(char,22085632);
+  return NULL;
+}
+
+static void* thread2_free()
+{
+  assert(cptr);
+  mi_free(cptr);
+  cptr = NULL;
+  return NULL;
+}
+
+static void test_large_migrate(void) {
+  auto t1 = std::thread(thread1_allocate);
+  t1.join();
+  auto t2 = std::thread(thread2_free);
+  t2.join();
+  /*
+  pthread_t thread1, thread2;
+
+  pthread_create(&thread1, NULL, &thread1_allocate, NULL);
+  pthread_join(thread1, NULL);
+
+  pthread_create(&thread2, NULL, &thread2_free, NULL);
+  pthread_join(thread2, NULL);
+  */
+  return;
+}
+#endif
 
 // issue 445
 static void strdup_test() {
@@ -195,6 +245,13 @@ static void heap_no_delete() {
   t1.join();
 }
 
+
+// Issue #697
+static void test_std_string() {
+  std::string path = "/Users/xxxx/Library/Developer/Xcode/DerivedData/xxxxxxxxxx/Build/Intermediates.noindex/xxxxxxxxxxx/arm64/XX_lto.o/0.arm64.lto.o";
+  std::string path1 = "/Users/xxxx/Library/Developer/Xcode/DerivedData/xxxxxxxxxx/Build/Intermediates.noindex/xxxxxxxxxxx/arm64/XX_lto.o/1.arm64.lto.o";
+  std::cout << path + "\n>>>            " + path1 + "\n>>>            " << std::endl;
+}
 
 // Issue #204
 static volatile void* global_p;

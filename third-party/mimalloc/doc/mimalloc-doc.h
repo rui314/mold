@@ -821,12 +821,12 @@ typedef enum mi_option_e {
   mi_option_eager_region_commit, ///< Eagerly commit large (256MiB) memory regions (enabled by default, except on Windows)
   mi_option_segment_reset,   ///< Experimental
   mi_option_reset_delay,     ///< Delay in milli-seconds before resetting a page (100ms by default)
-  mi_option_reset_decommits, ///< Experimental
+  mi_option_purge_decommits, ///< Experimental
 
   // v2.x specific options
-  mi_option_allow_decommit,  ///< Enable decommitting memory (=on)
-  mi_option_decommit_delay,  ///< Decommit page memory after N milli-seconds delay (25ms).
-  mi_option_segment_decommit_delay, ///< Decommit large segment memory after N milli-seconds delay (500ms).
+  mi_option_allow_purge,  ///< Enable decommitting memory (=on)
+  mi_option_purge_delay,  ///< Decommit page memory after N milli-seconds delay (25ms).
+  mi_option_segment_purge_delay, ///< Decommit large segment memory after N milli-seconds delay (500ms).
 
   _mi_option_last
 } mi_option_t;
@@ -927,7 +927,7 @@ template<class T> struct mi_stl_allocator { }
 
 /*! \page build Building
 
-Checkout the sources from Github:
+Checkout the sources from GitHub:
 ```
 git clone https://github.com/microsoft/mimalloc
 ```

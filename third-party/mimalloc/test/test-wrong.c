@@ -5,11 +5,14 @@ terms of the MIT license. A copy of the license can be found in the file
 "LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 
-/* test file for valgrind support.
+/* test file for valgrind/asan support.
+
+   VALGRIND:
+   ----------
    Compile in an "out/debug" folder:
 
    > cd out/debug
-   > cmake ../.. -DMI_VALGRIND=1
+   > cmake ../.. -DMI_TRACK_VALGRIND=1
    > make -j8
 
    and then compile this file as:
@@ -19,6 +22,25 @@ terms of the MIT license. A copy of the license can be found in the file
    and test as:
 
    > valgrind ./test-wrong
+
+   
+   ASAN
+   ----------
+   Compile in an "out/debug" folder:
+
+   > cd out/debug
+   > cmake ../.. -DMI_TRACK_ASAN=1
+   > make -j8
+
+   and then compile this file as:
+
+   > clang -g -o test-wrong -I../../include ../../test/test-wrong.c libmimalloc-asan-debug.a -lpthread -fsanitize=address -fsanitize-recover=address
+
+   and test as:
+
+   > ASAN_OPTIONS=verbosity=1:halt_on_error=0 ./test-wrong
+
+
 */
 #include <stdio.h>
 #include <stdlib.h>
