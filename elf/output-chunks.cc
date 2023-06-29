@@ -216,8 +216,8 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     phdr.p_flags = flags;
     phdr.p_align = std::max<u64>(min_align, chunk->shdr.sh_addralign);
     phdr.p_offset = chunk->shdr.sh_offset;
-    phdr.p_filesz =
-      (chunk->shdr.sh_type == SHT_NOBITS) ? 0 : (u64)chunk->shdr.sh_size;
+    if (chunk->shdr.sh_type != SHT_NOBITS)
+      phdr.p_filesz = chunk->shdr.sh_size;
     phdr.p_vaddr = chunk->shdr.sh_addr;
     phdr.p_paddr = chunk->shdr.sh_addr;
     phdr.p_memsz = chunk->shdr.sh_size;
@@ -226,7 +226,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   auto append = [&](Chunk<E> *chunk) {
     ElfPhdr<E> &phdr = vec.back();
     phdr.p_align = std::max<u64>(phdr.p_align, chunk->shdr.sh_addralign);
-    if (!(chunk->shdr.sh_type == SHT_NOBITS))
+    if (chunk->shdr.sh_type != SHT_NOBITS)
       phdr.p_filesz = chunk->shdr.sh_addr + chunk->shdr.sh_size - phdr.p_vaddr;
     phdr.p_memsz = chunk->shdr.sh_addr + chunk->shdr.sh_size - phdr.p_vaddr;
   };
@@ -325,11 +325,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
   // contain any segments. It controls executable bit of stack area.
-  ElfPhdr<E> phdr = {};
-  phdr.p_type = PT_GNU_STACK,
-  phdr.p_flags = ctx.arg.z_execstack ? (PF_R | PF_W | PF_X) : (PF_R | PF_W),
-  phdr.p_align = 1;
-  vec.push_back(phdr);
+  vec.push_back(ElfPhdr<E>{
+    .p_type = PT_GNU_STACK,
+    .p_flags = ctx.arg.z_execstack ? (PF_R | PF_W | PF_X) : (PF_R | PF_W),
+    .p_align = 1,
+  });
 
   // Create a PT_GNU_RELRO.
   if (ctx.arg.z_relro) {
