@@ -519,7 +519,7 @@ void ipc_worker::release_handle(thread_handle handle, bool join) {
 }
 
 void ipc_worker::start_shutdown(bool join) {
-    state_t s = my_state.load(std::memory_order_relaxed);;
+    state_t s = my_state.load(std::memory_order_relaxed);
 
     do {
         __TBB_ASSERT( s!=st_quit, nullptr );
@@ -538,7 +538,7 @@ void ipc_worker::start_shutdown(bool join) {
 }
 
 void ipc_worker::start_stopping(bool join) {
-    state_t s = my_state.load(std::memory_order_relaxed);;
+    state_t s = my_state.load(std::memory_order_relaxed);
 
     while( !my_state.compare_exchange_strong( s, st_quit ) ) {};
     if( s==st_normal || s==st_starting ) {

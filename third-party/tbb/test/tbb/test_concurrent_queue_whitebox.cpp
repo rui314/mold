@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -51,7 +51,8 @@ public:
         value_type elem = value_type(thread_id);
         for (std::size_t i = 0; i < elem_num; ++i) {
             q.push(elem);
-            q.try_pop(elem);
+            bool res = q.try_pop(elem);
+            CHECK_FAST(res);
         }
     }
 
@@ -83,20 +84,18 @@ void test_flogger_help( Q& q, std::size_t items_per_page ) {
     REQUIRE_MESSAGE(q.my_queue_representation->head_counter < hack_val, "Failed wraparound test");
 }
 
-template <typename T>
-void test_flogger() {
-    {
-        tbb::concurrent_queue<T> q;
-        test_flogger_help(q, q.my_queue_representation->items_per_page);
-    }
-    {
-        tbb::concurrent_bounded_queue<T> q;
+//! \brief \ref error_guessing
+TEST_CASE("Test CQ Wrapparound") {
+    for (int i = 0; i < 1000; ++i) {
+        tbb::concurrent_queue<int> q;
         test_flogger_help(q, q.my_queue_representation->items_per_page);
     }
 }
 
 //! \brief \ref error_guessing
-TEST_CASE("Test Wrapparound") {
-    test_flogger<int>();
-    // TODO: add test with unsigned char
+TEST_CASE("Test CBQ Wrapparound") {
+    for (int i = 0; i < 1000; ++i) {
+        tbb::concurrent_bounded_queue<int> q;
+        test_flogger_help(q, q.my_queue_representation->items_per_page);
+    }
 }

@@ -3,7 +3,7 @@
 Testing Approach 
 ================
 
-You can face four main hazard types in the libraries for parallelism:
+There are four main types of errors/hazards you can encounter in the development of libraries for parallelism:
 
 * Interface correspondence to specification
 * Memory errors
@@ -28,4 +28,4 @@ They are covered by:
 Continuous Integration triggers all the tests on each commit. This ensures that:
 
 * Issues are detected, starting from the early development phase and up to the moment of integration of changes into the library.
-* The highest quality of the library even in such error-prone domains as parallelism.
+* The highest quality of the library is maintained even in such error-prone domains as parallelism.

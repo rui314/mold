@@ -60,17 +60,19 @@ protected:
     static constexpr size_type pointers_per_long_table = sizeof(size_type) * 8;
 public:
     segment_table( const allocator_type& alloc = allocator_type() )
-        : my_segment_table_allocator(alloc), my_segment_table(my_embedded_table)
+        : my_segment_table_allocator(alloc), my_segment_table(nullptr)
         , my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
     }
 
     segment_table( const segment_table& other )
         : my_segment_table_allocator(segment_table_allocator_traits::
                                      select_on_container_copy_construction(other.my_segment_table_allocator))
-        , my_segment_table(my_embedded_table), my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
+        , my_segment_table(nullptr), my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
         try_call( [&] {
             internal_transfer(other, copy_segment_body_type{*this});
@@ -80,9 +82,10 @@ public:
     }
 
     segment_table( const segment_table& other, const allocator_type& alloc )
-        : my_segment_table_allocator(alloc), my_segment_table(my_embedded_table)
+        : my_segment_table_allocator(alloc), my_segment_table(nullptr)
         , my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
         try_call( [&] {
             internal_transfer(other, copy_segment_body_type{*this});
@@ -92,17 +95,19 @@ public:
     }
 
     segment_table( segment_table&& other )
-        : my_segment_table_allocator(std::move(other.my_segment_table_allocator)), my_segment_table(my_embedded_table)
+        : my_segment_table_allocator(std::move(other.my_segment_table_allocator)), my_segment_table(nullptr)
         , my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
         internal_move(std::move(other));
     }
 
     segment_table( segment_table&& other, const allocator_type& alloc )
-        : my_segment_table_allocator(alloc), my_segment_table(my_embedded_table), my_first_block{}
+        : my_segment_table_allocator(alloc), my_segment_table(nullptr), my_first_block{}
         , my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
         using is_equal_type = typename segment_table_allocator_traits::is_always_equal;
         internal_move_construct_with_allocator(std::move(other), alloc, is_equal_type());

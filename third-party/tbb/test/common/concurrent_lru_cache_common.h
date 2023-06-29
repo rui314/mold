@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 
 
 #include "test.h"
+#include "utils.h"
 #include <tbb/concurrent_lru_cache.h>
 
 //-----------------------------------------------------------------------------
@@ -114,10 +115,17 @@ namespace concurrent_lru_cache_helpers {
         }
 
         ~instance_counter() {
-            if (! --(*my_p_count))
+            bool is_last = ! --(*my_p_count);
+#if __GNUC__ == 12
+        // GCC 12 warns about using my_p_count after delete.
+        // The test was investigated and no problems were detected
+        // The following statement silence the warning
+        static bool unused_is_last = is_last;
+        utils::suppress_unused_warning(unused_is_last);
+#endif
+            if (is_last)
                 delete(my_p_count);
         }
-
         std::size_t instances_count() const { return *my_p_count; }
     };
 

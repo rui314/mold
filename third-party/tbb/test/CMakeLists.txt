@@ -361,17 +361,29 @@ unset(_sde_find_name)
 # Common target for the tbbbind related tests
 add_custom_target(test_suite_arena_constraints)
 
+# Check support for --no-as-needed linker option
+if (MINGW OR NOT WIN32)
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_REQUIRED_LIBRARIES "-Wl,--no-as-needed")
+    check_cxx_source_compiles("int main(int, char*[]) { return 0; }" LINKER_HAS_NO_AS_NEEDED)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+endif()
+
 if (TARGET TBB::tbb)
     # Define the tests
     tbb_add_test(SUBDIR tbb NAME test_tick_count DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_allocators DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_arena_priorities DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_dynamic_link DEPENDENCIES TBB::tbb)
-    if (WIN32)
-        tbb_add_test(SUBDIR tbb NAME test_numa_dist DEPENDENCIES TBB::tbb)
+    if (LINKER_HAS_NO_AS_NEEDED)
+        # The linker may not detect a dependency on pthread in static variable constructors.
+        target_link_libraries(test_dynamic_link PRIVATE "-Wl,--no-as-needed")
     endif()
     if (APPLE OR ANDROID_PLATFORM)
-        target_link_libraries(test_dynamic_link PRIVATE -rdynamic) # for the test_dynamic_link
+        target_link_libraries(test_dynamic_link PRIVATE -rdynamic)
+    endif()
+    if (WIN32)
+        tbb_add_test(SUBDIR tbb NAME test_numa_dist DEPENDENCIES TBB::tbb)
     endif()
     tbb_add_test(SUBDIR tbb NAME test_collaborative_call_once DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_concurrent_lru_cache DEPENDENCIES TBB::tbb)

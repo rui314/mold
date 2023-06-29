@@ -14,6 +14,7 @@
    ../tbb_userguide/Flow_Graph
    ../tbb_userguide/work_isolation
    ../tbb_userguide/Exceptions_and_Cancellation
+   ../tbb_userguide/Floating_Point_Settings
    ../tbb_userguide/Containers
    ../tbb_userguide/Mutual_Exclusion
    ../tbb_userguide/Timing

@@ -436,17 +436,11 @@ void task_arena_impl::initialize(d1::task_arena_base& ta) {
     (void)governor::get_thread_data();
     if (ta.my_max_concurrency < 1) {
 #if __TBB_ARENA_BINDING
-
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
         d1::constraints arena_constraints = d1::constraints{}
             .set_core_type(ta.core_type())
             .set_max_threads_per_core(ta.max_threads_per_core())
             .set_numa_id(ta.my_numa_id);
         ta.my_max_concurrency = (int)default_concurrency(arena_constraints);
-#else /*!__TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT*/
-        ta.my_max_concurrency = (int)default_concurrency(ta.my_numa_id);
-#endif /*!__TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT*/
-
 #else /*!__TBB_ARENA_BINDING*/
         ta.my_max_concurrency = (int)governor::default_num_threads();
 #endif /*!__TBB_ARENA_BINDING*/
@@ -736,15 +730,11 @@ int task_arena_impl::max_concurrency(const d1::task_arena_base *ta) {
 
 #if __TBB_ARENA_BINDING
     if (ta) {
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
         d1::constraints arena_constraints = d1::constraints{}
             .set_numa_id(ta->my_numa_id)
             .set_core_type(ta->core_type())
             .set_max_threads_per_core(ta->max_threads_per_core());
         return (int)default_concurrency(arena_constraints);
-#else /*!__TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT*/
-        return (int)default_concurrency(ta->my_numa_id);
-#endif /*!__TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT*/
     }
 #endif /*!__TBB_ARENA_BINDING*/
 

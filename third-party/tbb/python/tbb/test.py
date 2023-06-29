@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Copyright (c) 2016-2021 Intel Corporation
+# Copyright (c) 2016-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -82,6 +82,29 @@ def test(arg=None):
         say("[%d] Work done (%fms)." % (get_tid(), mseconds*10))
         return res
 
+    # special flag to to be set by thread calling async work
+    spin_flag = None
+    def timeout_work(param):
+        say("[%d] Spin wait work start..." % get_tid())
+        while spin_flag:
+            time.sleep(0.0001) # yield equivalent
+        say("[%d] Work done." % get_tid())
+        return str(param) if param != None else None
+
+    def prepare_timeout_exception():
+        nonlocal spin_flag
+        spin_flag = True # lock threads in timeout_work
+
+    def check_timeout_exception(pool_object, func):
+        nonlocal spin_flag
+        try:
+            func(pool_object)
+        except TimeoutError:
+            say("Good. Got expected timeout exception.")
+        else:
+            assert False, "Expected exception !"
+        spin_flag = False # unlock threads in timeout_work
+
     ### Test copy/pasted from multiprocessing
     pool = Pool(4)  # start worker threads
 
@@ -105,13 +128,9 @@ def test(arg=None):
     assert next(it) == 4
 
     # Test apply_sync exceptions
-    result = pool.apply_async(time.sleep, (3,))
-    try:
-        say(result.get(timeout=1))  # raises `TimeoutError`
-    except TimeoutError:
-        say("Good. Got expected timeout exception.")
-    else:
-        assert False, "Expected exception !"
+    prepare_timeout_exception()
+    result = pool.apply_async(timeout_work, (None,))
+    check_timeout_exception(result, lambda result : say(result.get(timeout=1)))
     assert result.get() is None  # sleep() returns None
 
     def cb(s):
@@ -126,23 +145,15 @@ def test(arg=None):
         str, range(10, 3, -1)))
 
     # Test map_async()
-    result = pool.map_async(work, range(10), callback=cb)
-    try:
-        result.get(timeout=0.01)  # raises `TimeoutError`
-    except TimeoutError:
-        say("Good. Got expected timeout exception.")
-    else:
-        assert False, "Expected exception !"
+    prepare_timeout_exception()
+    result = pool.map_async(timeout_work, range(10), callback=cb)
+    check_timeout_exception(result, lambda result : result.get(timeout=0.01))
     say(result.get())
 
     # Test imap_async()
-    result = pool.imap_async(work, range(3, 10), callback=cb)
-    try:
-        result.get(timeout=0.01)  # raises `TimeoutError`
-    except TimeoutError:
-        say("Good. Got expected timeout exception.")
-    else:
-        assert False, "Expected exception !"
+    prepare_timeout_exception()
+    result = pool.imap_async(timeout_work, range(3, 10), callback=cb)
+    check_timeout_exception(result, lambda result : result.get(timeout=0.01))
     for i in result.get():
         say("Item:", i)
     say("### Loop again:")
@@ -150,13 +161,9 @@ def test(arg=None):
         say("Item2:", i)
 
     # Test imap_unordered_async()
-    result = pool.imap_unordered_async(work, range(10, 3, -1), callback=cb)
-    try:
-        say(result.get(timeout=0.01))  # raises `TimeoutError`
-    except TimeoutError:
-        say("Good. Got expected timeout exception.")
-    else:
-        assert False, "Expected exception !"
+    prepare_timeout_exception()
+    result = pool.imap_unordered_async(timeout_work, range(10, 3, -1), callback=cb)
+    check_timeout_exception(result, lambda result : result.get(timeout=0.01))
     for i in result.get():
         say("Item1:", i)
     for i in result.get():

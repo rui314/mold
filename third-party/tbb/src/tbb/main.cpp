@@ -100,6 +100,7 @@ void __TBB_InitOnce::remove_ref() {
     if( k==0 ) {
         governor::release_resources();
         ITT_FINI_ITTLIB();
+        ITT_RELEASE_RESOURCES();
     }
 }
 

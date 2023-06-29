@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -301,7 +301,7 @@ test_multifunction_to_limiter(int _max, int _nparallel) {
     emit_sum = 0;
     receive_count = 0;
     receive_sum = 0;
-    local_cnt = 0;;
+    local_cnt = 0;
     mf_node.try_put(1);
     g.wait_for_all();
     CHECK_MESSAGE( (emit_count == receive_count), "counts do not match");

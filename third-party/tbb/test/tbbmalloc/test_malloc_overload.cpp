@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -449,10 +449,19 @@ TEST_CASE("Main set of tests") {
     CheckMemalignFuncOverload(aligned_alloc, free);
 #endif
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#if __INTEL_COMPILER
+   #pragma warning(push)
+   #pragma warning(disable: 1478)
+#elif __GNUC__
+   #pragma GCC diagnostic push
+   #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
     struct mallinfo info = mallinfo();
-#pragma GCC diagnostic pop
+#if __INTEL_COMPILER
+    #pragma warning(pop)
+#elif __GNUC__
+    #pragma GCC diagnostic pop
+#endif
     // right now mallinfo initialized by zero
     REQUIRE((!info.arena && !info.ordblks && !info.smblks && !info.hblks
            && !info.hblkhd && !info.usmblks && !info.fsmblks

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -27,6 +27,24 @@
 namespace tbb {
 namespace detail {
 namespace d2 {
+
+template <typename QueueRep, typename Allocator>
+std::pair<bool, ticket_type> internal_try_pop_impl(void* dst, QueueRep& queue, Allocator& alloc ) {
+    ticket_type ticket{};
+    do {
+        // Basically, we need to read `head_counter` before `tail_counter`. To achieve it we build happens-before on `head_counter`
+        ticket = queue.head_counter.load(std::memory_order_acquire);
+        do {
+            if (static_cast<std::ptrdiff_t>(queue.tail_counter.load(std::memory_order_relaxed) - ticket) <= 0) { // queue is empty
+                // Queue is empty
+                return { false, ticket };
+            }
+            // Queue had item with ticket k when we looked.  Attempt to get that item.
+            // Another thread snatched the item, retry.
+        } while (!queue.head_counter.compare_exchange_strong(ticket, ticket + 1));
+    } while (!queue.choose(ticket).pop(dst, ticket, queue, alloc));
+    return { true, ticket };
+}
 
 // A high-performance thread-safe non-blocking concurrent queue.
 // Multiple threads may each push and pop concurrently.
@@ -148,10 +166,7 @@ public:
 
     // Clear the queue. not thread-safe.
     void clear() {
-        while (!empty()) {
-            T value;
-            try_pop(value);
-        }
+        my_queue_representation->clear(my_allocator);
     }
 
     // Return allocator object
@@ -181,20 +196,7 @@ private:
     }
 
     bool internal_try_pop( void* dst ) {
-        ticket_type k;
-        do {
-            k = my_queue_representation->head_counter.load(std::memory_order_relaxed);
-            do {
-                if (static_cast<std::ptrdiff_t>(my_queue_representation->tail_counter.load(std::memory_order_relaxed) - k) <= 0) {
-                    // Queue is empty
-                    return false;
-                }
-
-                // Queue had item with ticket k when we looked. Attempt to get that item.
-                // Another thread snatched the item, retry.
-            } while (!my_queue_representation->head_counter.compare_exchange_strong(k, k + 1));
-        } while (!my_queue_representation->choose(k).pop(dst, k, *my_queue_representation, my_allocator));
-        return true;
+        return internal_try_pop_impl(dst, *my_queue_representation, my_allocator).first;
     }
 
     template <typename Container, typename Value, typename A>
@@ -375,12 +377,12 @@ public:
     }
 
     // Attempt to dequeue an item from head of queue.
-    /** Does not wait for item to become available.
-        Returns true if successful; false otherwise. */
-    bool pop( T& result ) {
-        return internal_pop(&result);
+    void pop( T& result ) {
+        internal_pop(&result);
     }
 
+    /** Does not wait for item to become available.
+        Returns true if successful; false otherwise. */
     bool try_pop( T& result ) {
         return internal_pop_if_present(&result);
     }
@@ -410,10 +412,7 @@ public:
 
     // Clear the queue. not thread-safe.
     void clear() {
-        while (!empty()) {
-            T value;
-            try_pop(value);
-        }
+        my_queue_representation->clear(my_allocator);
     }
 
     // Return allocator object
@@ -482,7 +481,7 @@ private:
         return true;
     }
 
-    bool internal_pop( void* dst ) {
+    void internal_pop( void* dst ) {
         std::ptrdiff_t target;
         // This loop is a single pop operation; abort_counter should not be re-read inside
         unsigned old_abort_counter = my_abort_counter.load(std::memory_order_relaxed);
@@ -508,25 +507,17 @@ private:
         } while (!my_queue_representation->choose(target).pop(dst, target, *my_queue_representation, my_allocator));
 
         r1::notify_bounded_queue_monitor(my_monitors, cbq_slots_avail_tag, target);
-        return true;
     }
 
     bool internal_pop_if_present( void* dst ) {
-        ticket_type ticket;
-        do {
-            ticket = my_queue_representation->head_counter.load(std::memory_order_relaxed);
-            do {
-                if (static_cast<std::ptrdiff_t>(my_queue_representation->tail_counter.load(std::memory_order_relaxed) - ticket) <= 0) { // queue is empty
-                    // Queue is empty
-                    return false;
-                }
-                // Queue had item with ticket k when we looked.  Attempt to get that item.
-                // Another thread snatched the item, retry.
-            } while (!my_queue_representation->head_counter.compare_exchange_strong(ticket, ticket + 1));
-        } while (!my_queue_representation->choose(ticket).pop(dst, ticket, *my_queue_representation, my_allocator));
+        bool present{};
+        ticket_type ticket{};
+        std::tie(present, ticket) = internal_try_pop_impl(dst, *my_queue_representation, my_allocator);
 
-        r1::notify_bounded_queue_monitor(my_monitors, cbq_slots_avail_tag, ticket);
-        return true;
+        if (present) {
+            r1::notify_bounded_queue_monitor(my_monitors, cbq_slots_avail_tag, ticket);
+        }
+        return present;
     }
 
     void internal_abort() {

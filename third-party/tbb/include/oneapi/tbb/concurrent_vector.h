@@ -1031,7 +1031,7 @@ private:
                     this->delete_segment(seg_idx - 1);
                 }
             }
-            if (!k) this->my_first_block.store(0, std::memory_order_relaxed);;
+            if (!k) this->my_first_block.store(0, std::memory_order_relaxed);
         }
     }
 

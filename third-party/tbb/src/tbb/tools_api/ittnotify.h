@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
 @brief Public User API functions and types
 @mainpage
 
-The Instrumentation and Tracing Technology API (ITT API) is used to 
+The Instrumentation and Tracing Technology API (ITT API) is used to
 annotate a user's program with additional information
 that can be used by correctness and performance tools. The user inserts
 calls in their program. Those calls generate information that is collected
@@ -188,7 +188,12 @@ The same ID may not be reused for different instances, unless a previous
 
 #if ITT_PLATFORM==ITT_PLATFORM_WIN
 /* use __forceinline (VC++ specific) */
+#if defined(__MINGW32__) && !defined(__cplusplus)
+#define ITT_INLINE           static __inline__ __attribute__((__always_inline__,__gnu_inline__))
+#else
 #define ITT_INLINE           static __forceinline
+#endif /* __MINGW32__ */
+
 #define ITT_INLINE_ATTRIBUTE /* nothing */
 #else  /* ITT_PLATFORM==ITT_PLATFORM_WIN */
 /*
@@ -249,20 +254,20 @@ The same ID may not be reused for different instances, unless a previous
 #define ITTNOTIFY_VOID(n) (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)
 #define ITTNOTIFY_DATA(n) (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)
 
-#define ITTNOTIFY_VOID_D0(n,d)       (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d)
-#define ITTNOTIFY_VOID_D1(n,d,x)     (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x)
-#define ITTNOTIFY_VOID_D2(n,d,x,y)   (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y)
-#define ITTNOTIFY_VOID_D3(n,d,x,y,z) (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y,z)
-#define ITTNOTIFY_VOID_D4(n,d,x,y,z,a)     (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y,z,a)
-#define ITTNOTIFY_VOID_D5(n,d,x,y,z,a,b)   (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y,z,a,b)
-#define ITTNOTIFY_VOID_D6(n,d,x,y,z,a,b,c) (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y,z,a,b,c)
-#define ITTNOTIFY_DATA_D0(n,d)       (!(d)->flags) ?       0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d)
-#define ITTNOTIFY_DATA_D1(n,d,x)     (!(d)->flags) ?       0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x)
-#define ITTNOTIFY_DATA_D2(n,d,x,y)   (!(d)->flags) ?       0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y)
-#define ITTNOTIFY_DATA_D3(n,d,x,y,z) (!(d)->flags) ?       0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y,z)
-#define ITTNOTIFY_DATA_D4(n,d,x,y,z,a)     (!(d)->flags) ? 0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y,z,a)
-#define ITTNOTIFY_DATA_D5(n,d,x,y,z,a,b)   (!(d)->flags) ? 0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y,z,a,b)
-#define ITTNOTIFY_DATA_D6(n,d,x,y,z,a,b,c) (!(d)->flags) ? 0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y,z,a,b,c)
+#define ITTNOTIFY_VOID_D0(n,d)       (d == NULL) ? (void)0 : (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d)
+#define ITTNOTIFY_VOID_D1(n,d,x)     (d == NULL) ? (void)0 : (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x)
+#define ITTNOTIFY_VOID_D2(n,d,x,y)   (d == NULL) ? (void)0 : (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y)
+#define ITTNOTIFY_VOID_D3(n,d,x,y,z) (d == NULL) ? (void)0 : (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y,z)
+#define ITTNOTIFY_VOID_D4(n,d,x,y,z,a)     (d == NULL) ? (void)0 : (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y,z,a)
+#define ITTNOTIFY_VOID_D5(n,d,x,y,z,a,b)   (d == NULL) ? (void)0 : (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y,z,a,b)
+#define ITTNOTIFY_VOID_D6(n,d,x,y,z,a,b,c) (d == NULL) ? (void)0 : (!(d)->flags) ? (void)0 : (!ITTNOTIFY_NAME(n)) ? (void)0 : ITTNOTIFY_NAME(n)(d,x,y,z,a,b,c)
+#define ITTNOTIFY_DATA_D0(n,d)       (d == NULL) ? 0 : (!(d)->flags) ?       0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d)
+#define ITTNOTIFY_DATA_D1(n,d,x)     (d == NULL) ? 0 : (!(d)->flags) ?       0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x)
+#define ITTNOTIFY_DATA_D2(n,d,x,y)   (d == NULL) ? 0 : (!(d)->flags) ?       0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y)
+#define ITTNOTIFY_DATA_D3(n,d,x,y,z) (d == NULL) ? 0 : (!(d)->flags) ?       0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y,z)
+#define ITTNOTIFY_DATA_D4(n,d,x,y,z,a)     (d == NULL) ? 0 : (!(d)->flags) ? 0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y,z,a)
+#define ITTNOTIFY_DATA_D5(n,d,x,y,z,a,b)   (d == NULL) ? 0 : (!(d)->flags) ? 0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y,z,a,b)
+#define ITTNOTIFY_DATA_D6(n,d,x,y,z,a,b,c) (d == NULL) ? 0 : (!(d)->flags) ? 0 : (!ITTNOTIFY_NAME(n)) ?       0 : ITTNOTIFY_NAME(n)(d,x,y,z,a,b,c)
 
 #ifdef ITT_STUB
 #undef ITT_STUB
@@ -589,6 +594,18 @@ typedef enum __itt_suppress_mode {
     __itt_unsuppress_range,
     __itt_suppress_range
 } __itt_suppress_mode_t;
+
+/**
+ * @enum __itt_collection_state
+ * @brief Enumerator for collection state. All non-work states have negative values.
+ */
+typedef enum {
+    __itt_collection_uninitialized = 0, /* uninitialized */
+    __itt_collection_init_fail = 1, /* failed to init */
+    __itt_collection_collector_absent = 2, /* non work state collector exists */
+    __itt_collection_collector_exists = 3, /* work state collector exists */
+    __itt_collection_init_successful = 4 /* success to init */
+} __itt_collection_state;
 
 /**
  * @brief Mark a range of memory for error suppression or unsuppression for error types included in mask
@@ -3867,6 +3884,125 @@ ITT_STUBV(ITTAPI, void, module_unload_with_sections,  (__itt_module_object* modu
 #else  /* INTEL_NO_MACRO_BODY */
 #define __itt_module_unload_with_sections_ptr  0
 #endif /* INTEL_NO_MACRO_BODY */
+/** @endcond */
+
+/** @cond exclude_from_documentation */
+#pragma pack(push, 8)
+
+typedef struct ___itt_histogram
+{
+    const __itt_domain* domain;      /*!< Domain of the histogram*/
+    const char* nameA;               /*!< Name of the histogram */
+#if defined(UNICODE) || defined(_UNICODE)
+    const wchar_t* nameW;
+#else  /* UNICODE || _UNICODE */
+    void* nameW;
+#endif /* UNICODE || _UNICODE */
+    __itt_metadata_type x_type;     /*!< Type of the histogram X axis */
+    __itt_metadata_type y_type;     /*!< Type of the histogram Y axis */
+    int   extra1;                   /*!< Reserved to the runtime */
+    void* extra2;                   /*!< Reserved to the runtime */
+    struct ___itt_histogram* next;
+}  __itt_histogram;
+
+#pragma pack(pop)
+/** @endcond */
+
+/**
+ * @brief Create a typed histogram instance with given name/domain.
+ * @param[in] domain The domain controlling the call.
+ * @param[in] name   The name of the histogram.
+ * @param[in] x_type The type of the X axis in histogram (may be 0 to calculate batch statistics).
+ * @param[in] y_type The type of the Y axis in histogram.
+*/
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+__itt_histogram* ITTAPI __itt_histogram_createA(const __itt_domain* domain, const char* name, __itt_metadata_type x_type, __itt_metadata_type y_type);
+__itt_histogram* ITTAPI __itt_histogram_createW(const __itt_domain* domain, const wchar_t* name, __itt_metadata_type x_type, __itt_metadata_type y_type);
+#if defined(UNICODE) || defined(_UNICODE)
+#  define __itt_histogram_create     __itt_histogram_createW
+#  define __itt_histogram_create_ptr __itt_histogram_createW_ptr
+#else /* UNICODE */
+#  define __itt_histogram_create     __itt_histogram_createA
+#  define __itt_histogram_create_ptr __itt_histogram_createA_ptr
+#endif /* UNICODE */
+#else /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+__itt_histogram* ITTAPI __itt_histogram_create(const __itt_domain* domain, const char* name, __itt_metadata_type x_type, __itt_metadata_type y_type);
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+
+/** @cond exclude_from_documentation */
+#ifndef INTEL_NO_MACRO_BODY
+#ifndef INTEL_NO_ITTNOTIFY_API
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+ITT_STUB(ITTAPI, __itt_histogram*, histogram_createA, (const __itt_domain* domain, const char* name, __itt_metadata_type x_type, __itt_metadata_type y_type))
+ITT_STUB(ITTAPI, __itt_histogram*, histogram_createW, (const __itt_domain* domain, const wchar_t* name, __itt_metadata_type x_type, __itt_metadata_type y_type))
+#else  /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+ITT_STUB(ITTAPI, __itt_histogram*, histogram_create, (const __itt_domain* domain, const char* name, __itt_metadata_type x_type, __itt_metadata_type y_type))
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+#define __itt_histogram_createA     ITTNOTIFY_DATA(histogram_createA)
+#define __itt_histogram_createA_ptr ITTNOTIFY_NAME(histogram_createA)
+#define __itt_histogram_createW     ITTNOTIFY_DATA(histogram_createW)
+#define __itt_histogram_createW_ptr ITTNOTIFY_NAME(histogram_createW)
+#else /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#define __itt_histogram_create     ITTNOTIFY_DATA(histogram_create)
+#define __itt_histogram_create_ptr ITTNOTIFY_NAME(histogram_create)
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#else  /* INTEL_NO_ITTNOTIFY_API */
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+#define __itt_histogram_createA(domain, name, x_type, y_type) (__itt_histogram*)0
+#define __itt_histogram_createA_ptr 0
+#define __itt_histogram_createW(domain, name, x_type, y_type) (__itt_histogram*)0
+#define __itt_histogram_createW_ptr 0
+#else /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#define __itt_histogram_create(domain, name, x_type, y_type) (__itt_histogram*)0
+#define __itt_histogram_create_ptr 0
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#endif /* INTEL_NO_ITTNOTIFY_API */
+#else  /* INTEL_NO_MACRO_BODY */
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+#define __itt_histogram_createA_ptr 0
+#define __itt_histogram_createW_ptr 0
+#else /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#define __itt_histogram_create_ptr 0
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#endif /* INTEL_NO_MACRO_BODY */
+/** @endcond */
+
+/**
+ * @brief Submit statistics for a histogram instance.
+ * @param[in] histogram    Pointer to the histogram instance to which the histogram statistic is to be dumped.
+ * @param[in] length  The number of elements in dumped axis data array.
+ * @param[in] x_data  The X axis dumped data itself (may be NULL to calculate batch statistics).
+ * @param[in] y_data  The Y axis dumped data itself.
+*/
+void ITTAPI __itt_histogram_submit(__itt_histogram* histogram, size_t length, void* x_data, void* y_data);
+
+/** @cond exclude_from_documentation */
+#ifndef INTEL_NO_MACRO_BODY
+#ifndef INTEL_NO_ITTNOTIFY_API
+ITT_STUBV(ITTAPI, void, histogram_submit, (__itt_histogram* histogram, size_t length, void* x_data, void* y_data))
+#define __itt_histogram_submit     ITTNOTIFY_VOID(histogram_submit)
+#define __itt_histogram_submit_ptr ITTNOTIFY_NAME(histogram_submit)
+#else  /* INTEL_NO_ITTNOTIFY_API */
+#define __itt_histogram_submit(histogram, length, x_data, y_data)
+#define __itt_histogram_submit_ptr 0
+#endif /* INTEL_NO_ITTNOTIFY_API */
+#else  /* INTEL_NO_MACRO_BODY */
+#define __itt_histogram_submit_ptr 0
+#endif /* INTEL_NO_MACRO_BODY */
+
+/**
+* @brief function allows to obtain the current collection state at the moment
+* @return collection state as a enum __itt_collection_state
+*/
+__itt_collection_state __itt_get_collection_state(void);
+
+/**
+* @brief function releases resources allocated by ITT API static part
+* this API should be called from the library destructor
+* @return void
+*/
+void __itt_release_resources(void);
 /** @endcond */
 
 #ifdef __cplusplus

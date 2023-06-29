@@ -68,4 +68,4 @@ redirect the standard routines to these functions.
 
    ../tbb_userguide/Which_Dynamic_Libraries_to_Use
    ../tbb_userguide/Allocator_Configuration
-   ../tbb_userguide/Automically_Replacing_malloc
+   ../tbb_userguide/automatically-replacing-malloc

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -223,6 +223,16 @@ concurrent_unordered_map( std::initializer_list<std::pair<Key, T>>, std::size_t,
 -> concurrent_unordered_map<std::remove_const_t<Key>, T, Hash,
                             std::equal_to<std::remove_const_t<Key>>, Alloc>;
 
+#if __APPLE__ && __TBB_CLANG_VERSION == 100000
+// An explicit deduction guide is required for copy/move constructor with allocator for APPLE LLVM 10.0.0
+// due to an issue with generating an implicit deduction guide for these constructors under several strange surcumstances.
+// Currently the issue takes place because the last template parameter for Traits is boolean, it should not affect the deduction guides
+// The issue reproduces only on this version of the compiler
+template <typename Key, typename T, typename Hash, typename KeyEq, typename Alloc>
+concurrent_unordered_map( concurrent_unordered_map<Key, T, Hash, KeyEq, Alloc>, Alloc )
+-> concurrent_unordered_map<Key, T, Hash, KeyEq, Alloc>;
+#endif
+
 #endif // __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
 
 template <typename Key, typename T, typename Hash, typename KeyEqual, typename Allocator>
@@ -372,6 +382,15 @@ concurrent_unordered_multimap( std::initializer_list<std::pair<Key, T>>, std::si
 -> concurrent_unordered_multimap<std::remove_const_t<Key>, T, Hash,
                                  std::equal_to<std::remove_const_t<Key>>, Alloc>;
 
+#if __APPLE__ && __TBB_CLANG_VERSION == 100000
+// An explicit deduction guide is required for copy/move constructor with allocator for APPLE LLVM 10.0.0
+// due to an issue with generating an implicit deduction guide for these constructors under several strange surcumstances.
+// Currently the issue takes place because the last template parameter for Traits is boolean, it should not affect the deduction guides
+// The issue reproduces only on this version of the compiler
+template <typename Key, typename T, typename Hash, typename KeyEq, typename Alloc>
+concurrent_unordered_multimap( concurrent_unordered_multimap<Key, T, Hash, KeyEq, Alloc>, Alloc )
+-> concurrent_unordered_multimap<Key, T, Hash, KeyEq, Alloc>;
+#endif
 #endif // __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
 
 template <typename Key, typename T, typename Hash, typename KeyEqual, typename Allocator>

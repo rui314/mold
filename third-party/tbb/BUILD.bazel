@@ -36,7 +36,7 @@ cc_library(
         "include/oneapi/tbb/detail/*.h",
     ]),
     copts = ["-w"] + select({
-        "@bazel_tools//platforms:windows": [""],
+        "@platforms//os:windows": [""],
         "//conditions:default": ["-mwaitpkg"],
     }),
     defines =
@@ -47,7 +47,7 @@ cc_library(
             ],
         }) +
         select({
-            "@bazel_tools//platforms:osx": ["_XOPEN_SOURCE"],
+            "@platforms//os:osx": ["_XOPEN_SOURCE"],
             "//conditions:default": [],
         }),
     includes = [
@@ -55,8 +55,8 @@ cc_library(
     ],
     linkopts =
         select({
-            "@bazel_tools//platforms:windows": [],
-            "@bazel_tools//platforms:linux": [
+            "@platforms//os:windows": [],
+            "@platforms//os:linux": [
                 "-ldl",
                 "-pthread",
                 "-lrt",

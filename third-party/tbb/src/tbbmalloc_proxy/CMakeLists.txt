@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,10 @@ endif()
 add_library(tbbmalloc_proxy 
     function_replacement.cpp
     proxy.cpp)
+
+if (WIN32)
+    target_sources(tbbmalloc_proxy PRIVATE tbbmalloc_proxy.rc)
+endif()
 
 add_library(TBB::tbbmalloc_proxy ALIAS tbbmalloc_proxy)
 

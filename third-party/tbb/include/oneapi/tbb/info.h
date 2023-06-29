@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2019-2021 Intel Corporation
+    Copyright (c) 2019-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -49,7 +49,6 @@ struct constraints {
         max_concurrency = maximal_concurrency;
         return *this;
     }
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
     constraints& set_core_type(core_type_id id) {
         core_type = id;
         return *this;
@@ -58,14 +57,11 @@ struct constraints {
         max_threads_per_core = threads_number;
         return *this;
     }
-#endif
 
     numa_node_id numa_id = -1;
     int max_concurrency = -1;
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
     core_type_id core_type = -1;
     int max_threads_per_core = -1;
-#endif
 };
 
 } // namespace d1
@@ -96,7 +92,6 @@ inline int default_concurrency(numa_node_id id = -1) {
     return r1::numa_default_concurrency(id);
 }
 
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
 inline std::vector<core_type_id> core_types() {
     std::vector<int> core_type_indexes(r1::core_type_count());
     r1::fill_core_type_indices(core_type_indexes.data());
@@ -107,22 +102,17 @@ inline int default_concurrency(constraints c) {
     if (c.max_concurrency > 0) { return c.max_concurrency; }
     return r1::constraints_default_concurrency(c);
 }
-#endif /*__TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT*/
 
 } // namespace d1
 } // namespace detail
 
 inline namespace v1 {
 using detail::d1::numa_node_id;
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
 using detail::d1::core_type_id;
-#endif
 
 namespace info {
 using detail::d1::numa_nodes;
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
 using detail::d1::core_types;
-#endif
 
 using detail::d1::default_concurrency;
 } // namespace info

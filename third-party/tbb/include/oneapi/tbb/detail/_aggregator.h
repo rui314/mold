@@ -155,14 +155,17 @@ public:
 // template<class U, class V> friend class aggregating_functor;
 template <typename AggregatingClass, typename OperationList>
 class aggregating_functor {
-    AggregatingClass* my_object;
+    AggregatingClass* my_object{nullptr};
 public:
     aggregating_functor() = default;
     aggregating_functor( AggregatingClass* object ) : my_object(object) {
         __TBB_ASSERT(my_object, nullptr);
     }
 
-    void operator()( OperationList* op_list ) { my_object->handle_operations(op_list); }
+    void operator()( OperationList* op_list ) {
+        __TBB_ASSERT(my_object, nullptr);
+        my_object->handle_operations(op_list);
+    }
 }; // class aggregating_functor
 
 

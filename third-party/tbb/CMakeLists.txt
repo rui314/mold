@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -216,18 +216,16 @@ else()
     if (TBB_BUILD)
         add_subdirectory(src/tbb)
     endif()
-    if (NOT "${CMAKE_SYSTEM_PROCESSOR}" MATCHES "mips")
-        if (TBBMALLOC_BUILD)
-            add_subdirectory(src/tbbmalloc)
-            if(TBBMALLOC_PROXY_BUILD AND NOT "${MSVC_CXX_ARCHITECTURE_ID}" MATCHES "ARM64")
-                add_subdirectory(src/tbbmalloc_proxy)
-            endif()
+    if (TBBMALLOC_BUILD)
+        add_subdirectory(src/tbbmalloc)
+        if(TBBMALLOC_PROXY_BUILD AND NOT "${MSVC_CXX_ARCHITECTURE_ID}" MATCHES "ARM64")
+            add_subdirectory(src/tbbmalloc_proxy)
         endif()
-        if (APPLE OR NOT BUILD_SHARED_LIBS)
-            message(STATUS "TBBBind build targets are disabled due to unsupported environment")
-        else()
-            add_subdirectory(src/tbbbind)
-        endif()
+    endif()
+    if (APPLE OR NOT BUILD_SHARED_LIBS)
+        message(STATUS "TBBBind build targets are disabled due to unsupported environment")
+    else()
+        add_subdirectory(src/tbbbind)
     endif()
 
     # -------------------------------------------------------------------
@@ -279,10 +277,27 @@ endif()
 
 if (ANDROID_PLATFORM)
     if ("${ANDROID_STL}" STREQUAL "c++_shared")
-        configure_file(
-        "${ANDROID_NDK}/sources/cxx-stl/llvm-libc++/libs/${ANDROID_ABI}/libc++_shared.so"
-        "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libc++_shared.so"
-        COPYONLY)
+        if (${ANDROID_NDK_MAJOR} GREATER_EQUAL "25")
+            if(ANDROID_ABI STREQUAL "arm64-v8a")
+                set(ANDROID_TOOLCHAIN_NAME "aarch64-linux-android")
+            elseif(ANDROID_ABI STREQUAL "x86_64")
+                set(ANDROID_TOOLCHAIN_NAME "x86_64-linux-android")
+            elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
+                set(ANDROID_TOOLCHAIN_NAME "arm-linux-androideabi")
+            elseif(ANDROID_ABI STREQUAL "x86")
+                set(ANDROID_TOOLCHAIN_NAME "i686-linux-android")
+            endif()
+
+            configure_file(
+            "${ANDROID_TOOLCHAIN_ROOT}/sysroot/usr/lib/${ANDROID_TOOLCHAIN_NAME}/libc++_shared.so"
+            "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libc++_shared.so"
+            COPYONLY)
+        else()
+            configure_file(
+                "${ANDROID_NDK}/sources/cxx-stl/llvm-libc++/libs/${ANDROID_ABI}/libc++_shared.so"
+                "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/libc++_shared.so"
+                COPYONLY)
+        endif()
     endif()
     # This custom target may be implemented without separate CMake script, but it requires
     # ADB(Android Debug Bridge) executable file availability, so to incapsulate this requirement

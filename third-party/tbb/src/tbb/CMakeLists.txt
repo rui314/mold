@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,6 +45,7 @@ add_library(tbb
 add_library(TBB::tbb ALIAS tbb)
 
 if (WIN32)
+    target_sources(tbb PRIVATE tbb.rc)
     set_target_properties(tbb PROPERTIES OUTPUT_NAME "tbb${TBB_BINARY_VERSION}")
 endif()
 
@@ -55,7 +56,6 @@ target_compile_definitions(tbb
                            $<$<CONFIG:DEBUG>:TBB_USE_DEBUG>
                            PRIVATE
                            __TBB_BUILD
-                           ${TBB_RESUMABLE_TASKS_USE_THREADS}
                            $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_DYNAMIC_LOAD_ENABLED=0>
                            $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_SOURCE_DIRECTLY_INCLUDED=1>)
 
@@ -93,8 +93,8 @@ tbb_handle_ipo(tbb)
 
 if (TBB_DEF_FILE_PREFIX) # If there's no prefix, assume we're using export directives
     set_target_properties(tbb PROPERTIES
-        LINK_FLAGS ${TBB_LINK_DEF_FILE_FLAG}${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbb.def
-        LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbb.def
+        LINK_FLAGS "${TBB_LINK_DEF_FILE_FLAG}\"${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbb.def\""
+        LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbb.def"
     )
 endif()
 

@@ -193,10 +193,11 @@ public:
     d1::task* pop( const lane_selector_t& next_lane ) {
         d1::task* popped = nullptr;
         unsigned lane = 0;
-        do {
-            lane = next_lane( /*out_of=*/N );
-            __TBB_ASSERT( lane < N, "Incorrect lane index." );
-        } while( !empty() && !(popped = try_pop( lane )) );
+        for (atomic_backoff b; !empty() && !popped; b.pause()) {
+            lane = next_lane( /*out_of=*/N);
+            __TBB_ASSERT(lane < N, "Incorrect lane index.");
+            popped = try_pop(lane);
+        }
         return popped;
     }
 

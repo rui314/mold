@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -67,6 +67,9 @@ set(TBB_IPO_LINK_FLAGS $<$<NOT:$<CONFIG:Debug>>:-flto>)
 if (MINGW AND CMAKE_SYSTEM_PROCESSOR MATCHES "i.86")
     list (APPEND TBB_COMMON_COMPILE_FLAGS -msse2)
 endif ()
+
+# Gnu flags to prevent compiler from optimizing out security checks
+set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} -fno-strict-overflow -fno-delete-null-pointer-checks -fwrapv)
 
 # TBB malloc settings
 set(TBBMALLOC_LIB_COMPILE_FLAGS -fno-rtti -fno-exceptions)

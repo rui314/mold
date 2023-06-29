@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include <common/custom_allocators.h>
 
 #include <tbb/concurrent_queue.h>
+#include <unordered_set>
 
 //! \file test_concurrent_queue.cpp
 //! \brief Test for [containers.concurrent_queue containers.concurrent_bounded_queue] specification
@@ -199,3 +200,84 @@ TEST_CASE("Test exception in allocation") {
 }
 
 #endif // TBB_USE_EXCEPTIONS
+
+struct TrackableItem {
+    static std::unordered_set<TrackableItem*> object_addresses;
+#if TBB_USE_EXCEPTIONS
+    static std::size_t global_count_for_exceptions;
+#endif
+
+    TrackableItem() {
+#if TBB_USE_EXCEPTIONS
+        if (global_count_for_exceptions++ % 3 == 0) throw 1;
+#endif
+        bool res = object_addresses.emplace(this).second;
+        CHECK(res);
+    }
+
+    ~TrackableItem() {
+        auto it = object_addresses.find(this);
+        CHECK(it != object_addresses.end());
+        object_addresses.erase(it);
+    }
+};
+
+template <typename Container>
+void fill_and_catch(Container& q, std::size_t elements_count) {
+    CHECK(TrackableItem::object_addresses.size() == 0);
+    for (std::size_t i = 0; i < elements_count; ++i) {
+#if TBB_USE_EXCEPTIONS
+        try {
+#endif
+            q.emplace();
+#if TBB_USE_EXCEPTIONS
+        } catch (int exception) {
+            CHECK(exception == 1);
+        }
+#endif
+    }
+#if TBB_USE_EXCEPTIONS
+    CHECK(TrackableItem::object_addresses.size() == 2 * elements_count / 3);
+#else
+    CHECK(TrackableItem::object_addresses.size() == elements_count);
+#endif
+}
+
+std::unordered_set<TrackableItem*> TrackableItem::object_addresses;
+#if TBB_USE_EXCEPTIONS
+std::size_t TrackableItem::global_count_for_exceptions = 0;
+#endif
+
+template <typename Container>
+void test_tracking_dtors_on_clear() {
+    static_assert(std::is_same<typename Container::value_type, TrackableItem>::value, "Incorrect test setup");
+    const std::size_t elements_count = 100000;
+    {
+        Container q;
+        fill_and_catch(q, elements_count);
+
+        q.clear();
+        
+        CHECK(q.empty());
+        CHECK(TrackableItem::object_addresses.empty());
+#if TBB_USE_EXCEPTIONS
+        TrackableItem::global_count_for_exceptions = 0;
+#endif
+    }
+    {
+        {
+            Container q;
+            fill_and_catch(q, elements_count);
+        } // Dtor of q would be called here
+        CHECK(TrackableItem::object_addresses.empty());
+#if TBB_USE_EXCEPTIONS
+        TrackableItem::global_count_for_exceptions = 0;
+#endif
+    }
+}
+
+//! \brief \ref regression \ref error_guessing
+TEST_CASE("Test clear and dtor with TrackableItem") {
+    test_tracking_dtors_on_clear<oneapi::tbb::concurrent_queue<TrackableItem>>();
+    test_tracking_dtors_on_clear<oneapi::tbb::concurrent_bounded_queue<TrackableItem>>();
+}

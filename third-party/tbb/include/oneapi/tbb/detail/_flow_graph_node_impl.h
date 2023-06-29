@@ -159,8 +159,8 @@ private:
         };
         graph_task* bypass_t;
         operation_type(const input_type& e, op_type t) :
-            type(char(t)), elem(const_cast<input_type*>(&e)) {}
-        operation_type(op_type t) : type(char(t)), r(nullptr) {}
+            type(char(t)), elem(const_cast<input_type*>(&e)), bypass_t(nullptr) {}
+        operation_type(op_type t) : type(char(t)), r(nullptr), bypass_t(nullptr) {}
     };
 
     bool forwarder_busy;

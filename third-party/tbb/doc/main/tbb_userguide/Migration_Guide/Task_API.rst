@@ -361,7 +361,7 @@ is not guaranteed to be executed next by the current thread.
         
         tbb::task_spawn(child);
         
-        root.wait_for_all();;
+        root.wait_for_all();
     }
 
 In oneTBB, this can be done using ``oneapi::tbb::task_group``. 

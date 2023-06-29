@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -16,13 +16,17 @@
 
 #include "ittnotify_config.h"
 
-#if ITT_PLATFORM==ITT_PLATFORM_WIN && _MSC_VER
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+
+#if defined _MSC_VER
 
 #pragma warning (disable: 593)   /* parameter "XXXX" was set but never used                 */
 #pragma warning (disable: 344)   /* typedef name has already been declared (with same type) */
 #pragma warning (disable: 174)   /* expression has no effect                                */
 #pragma warning (disable: 4127)  /* conditional expression is constant                      */
 #pragma warning (disable: 4306)  /* conversion from '?' to '?' of greater size              */
+
+#endif
 
 #endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
 

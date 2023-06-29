@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@
 #include "tools_api/ittnotify.h"
 #include "tools_api/legacy/ittnotify.h"
 extern "C" void __itt_fini_ittlib(void);
+extern "C" void __itt_release_resources(void);
 
 #if _WIN32||_WIN64
     #undef _T
@@ -75,6 +76,7 @@ extern const tchar
 #define ITT_NOTIFY(name,obj)            __itt_##name(const_cast<void*>(static_cast<volatile void*>(obj)))
 #define ITT_THREAD_SET_NAME(name)       __itt_thread_set_name(name)
 #define ITT_FINI_ITTLIB()               __itt_fini_ittlib()
+#define ITT_RELEASE_RESOURCES()         __itt_release_resources()
 #define ITT_SYNC_CREATE(obj, type, name) __itt_sync_create((void*)(obj), type, name, 2)
 #define ITT_STACK_CREATE(obj)           obj = __itt_stack_caller_create()
 #define ITT_STACK_DESTROY(obj)          (obj!=nullptr) ? __itt_stack_caller_destroy(static_cast<__itt_caller>(obj)) : ((void)0)
@@ -94,6 +96,7 @@ extern const tchar
 #define ITT_NOTIFY(name,obj)            ((void)0)
 #define ITT_THREAD_SET_NAME(name)       ((void)0)
 #define ITT_FINI_ITTLIB()               ((void)0)
+#define ITT_RELEASE_RESOURCES()         ((void)0)
 #define ITT_SYNC_CREATE(obj, type, name) ((void)0)
 #define ITT_STACK_CREATE(obj)           ((void)0)
 #define ITT_STACK_DESTROY(obj)          ((void)0)

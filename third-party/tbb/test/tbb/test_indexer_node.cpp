@@ -280,7 +280,7 @@ public:
             reset_outputCheck(SIZE, Count);
 
             for(int i=0; i < Count*SIZE; i++) {
-                CHECK_MESSAGE(outq2.try_get(v), "");;
+                CHECK_MESSAGE(outq2.try_get(v), "");
                 input_node_helper<SIZE, IType>::check_value(v);
             }
             check_outputCheck(SIZE, Count);

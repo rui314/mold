@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -374,16 +374,12 @@
     #define __TBB_ARENA_BINDING 1
 #endif
 
-#if (TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION || __TBB_BUILD) && __TBB_ARENA_BINDING
-    #define __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT 1
-#endif
-
 #ifndef __TBB_ENQUEUE_ENFORCED_CONCURRENCY
     #define __TBB_ENQUEUE_ENFORCED_CONCURRENCY 1
 #endif
 
 #if !defined(__TBB_SURVIVE_THREAD_SWITCH) && \
-          (_WIN32 || _WIN64 || __APPLE__ || (__unix__ && !__ANDROID__))
+          (_WIN32 || _WIN64 || __APPLE__ || (defined(__unix__) && !__ANDROID__))
     #define __TBB_SURVIVE_THREAD_SWITCH 1
 #endif /* __TBB_SURVIVE_THREAD_SWITCH */
 

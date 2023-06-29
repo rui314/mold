@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@
 #include <string>
 #include <cstring>
 #include <cstddef>
-#include <cstdio>
 #include <iterator>
 #include <type_traits>
 
@@ -99,13 +98,7 @@ void set(Minimal& minimal_ref, ValueType new_value) {
 
 template <typename KeyType>
 void set(std::string& string_ref, KeyType key) {
-    static char buffer[20];
-#if _MSC_VER && __STDC_SECURE_LIB__>=200411
-    sprintf_s(buffer, sizeof(buffer), "%f", static_cast<float>(key));
-#else
-    sprintf(buffer, "%f", static_cast<float>(key));
-#endif
-    string_ref = buffer;
+    string_ref = std::to_string(static_cast<float>(key));
 }
 
 

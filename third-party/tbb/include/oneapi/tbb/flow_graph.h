@@ -1183,8 +1183,9 @@ protected:
 
         buffer_operation(const T& e, op_type t) : type(char(t))
                                                   , elem(const_cast<T*>(&e)) , ltask(nullptr)
+                                                  , r(nullptr)
         {}
-        buffer_operation(op_type t) : type(char(t)),  ltask(nullptr) {}
+        buffer_operation(op_type t) : type(char(t)), elem(nullptr), ltask(nullptr), r(nullptr) {}
     };
 
     bool forwarder_busy;
@@ -1271,12 +1272,14 @@ protected:
 
     //! Register successor
     virtual void internal_reg_succ(buffer_operation *op) {
+        __TBB_ASSERT(op->r, nullptr);
         my_successors.register_successor(*(op->r));
         op->status.store(SUCCEEDED, std::memory_order_release);
     }
 
     //! Remove successor
     virtual void internal_rem_succ(buffer_operation *op) {
+        __TBB_ASSERT(op->r, nullptr);
         my_successors.remove_successor(*(op->r));
         op->status.store(SUCCEEDED, std::memory_order_release);
     }
@@ -1330,12 +1333,14 @@ protected:
     }
 
     virtual bool internal_push(buffer_operation *op) {
+        __TBB_ASSERT(op->elem, nullptr);
         this->push_back(*(op->elem));
         op->status.store(SUCCEEDED, std::memory_order_release);
         return true;
     }
 
     virtual void internal_pop(buffer_operation *op) {
+        __TBB_ASSERT(op->elem, nullptr);
         if(this->pop_back(*(op->elem))) {
             op->status.store(SUCCEEDED, std::memory_order_release);
         }
@@ -1345,6 +1350,7 @@ protected:
     }
 
     virtual void internal_reserve(buffer_operation *op) {
+        __TBB_ASSERT(op->elem, nullptr);
         if(this->reserve_front(*(op->elem))) {
             op->status.store(SUCCEEDED, std::memory_order_release);
         }

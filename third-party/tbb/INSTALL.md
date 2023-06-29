@@ -77,6 +77,19 @@ cmake <options> ..
 cpack
 ```
 
+## Installation from vcpkg
+
+You can download and install oneTBB using the [vcpkg](https://github.com/Microsoft/vcpkg) dependency manager:
+```sh
+  git clone https://github.com/Microsoft/vcpkg.git
+  cd vcpkg
+  ./bootstrap-vcpkg.sh #.\bootstrap-vcpkg.bat(for Windows)
+  ./vcpkg integrate install
+  ./vcpkg install tbb
+```
+
+The oneTBB port in vcpkg is kept up to date by Microsoft* team members and community contributors. If the version is out of date, create an issue or pull request on the [vcpkg repository](https://github.com/Microsoft/vcpkg).
+
 ## Example of Installation
 
 ### Single-configuration generators

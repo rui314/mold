@@ -221,7 +221,7 @@ private:
         }
         acquire_task_pool();
         std::size_t H =  head.load(std::memory_order_relaxed); // mirror
-        d1::task** new_task_pool = task_pool_ptr;;
+        d1::task** new_task_pool = task_pool_ptr;
         __TBB_ASSERT( my_task_pool_size >= min_task_pool_size, nullptr);
         // Count not skipped tasks. Consider using std::count_if.
         for ( std::size_t i = H; i < T; ++i )

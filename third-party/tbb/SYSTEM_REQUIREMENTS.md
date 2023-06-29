@@ -21,6 +21,7 @@ This document provides details about hardware, operating system, and software pr
 - [Supported Hardware](#supported-hardware)
 - [Software](#software)
   - [Supported Operating Systems](#supported-operating-systems)
+  - [Community-Supported Platforms](#community-supported-platforms)
   - [Supported Compilers](#supported-compilers)
 
 
@@ -53,6 +54,12 @@ This document provides details about hardware, operating system, and software pr
   - macOS* 10.15, 11.x
 - Systems with Android* operating systems
   - Android* 9
+
+### Community-Supported Platforms
+- MinGW*
+- FreeBSD*
+- Microsoft* Windows* on ARM*/ARM64*
+- macOS* on ARM64*
 
 ### Supported Compilers
 - Intel* oneAPI DPC++/C++ Compiler

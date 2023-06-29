@@ -1068,6 +1068,7 @@ protected:
                 __TBB_ASSERT(!handle.empty(), "Extracted handle in merge is empty");
 
                 if (!insert(std::move(handle)).second) {
+                    __TBB_ASSERT(!handle.empty(), "Handle should not be empty if insert fails");
                     //If the insertion fails - return the node into source
                     source.insert(std::move(handle));
                 }

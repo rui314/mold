@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -39,4 +39,5 @@ set(TBB_TESTS_ENVIRONMENT ${TBB_TESTS_ENVIRONMENT}
     "LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/cmake/suppressions/lsan.suppressions")
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TBB_SANITIZE_OPTION}")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${TBB_SANITIZE_OPTION}")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${TBB_SANITIZE_OPTION}")

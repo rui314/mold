@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -79,8 +79,9 @@ struct message {
 template<typename V>
 typename std::enable_if<!std::is_default_constructible<V>::value, std::vector<V>>::type get_values( test_push_receiver<V>& rr ) {
     std::vector<V> messages;
-    int val = 0;
-    for(V tmp(0); rr.try_get(tmp); ++val) {
+    V tmp(0);
+
+    while (rr.try_get(tmp)) {
         messages.push_back(tmp);
     }
     return messages;
@@ -89,8 +90,9 @@ typename std::enable_if<!std::is_default_constructible<V>::value, std::vector<V>
 template<typename V>
 typename std::enable_if<std::is_default_constructible<V>::value, std::vector<V>>::type get_values( test_push_receiver<V>& rr ) {
     std::vector<V> messages;
-    int val = 0;
-    for(V tmp; rr.try_get(tmp); ++val) {
+    V tmp;
+
+    while (rr.try_get(tmp)) {
         messages.push_back(tmp);
     }
     return messages;

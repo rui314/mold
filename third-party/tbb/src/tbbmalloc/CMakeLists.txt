@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,10 @@ add_library(tbbmalloc
     large_objects.cpp
     tbbmalloc.cpp
     ../tbb/itt_notify.cpp)
+    
+if (WIN32)
+    target_sources(tbbmalloc PRIVATE tbbmalloc.rc)
+endif()
 
 add_library(TBB::tbbmalloc ALIAS tbbmalloc)
 
@@ -75,8 +79,8 @@ tbb_handle_ipo(tbbmalloc)
 
 if (TBB_DEF_FILE_PREFIX) # If there's no prefix, assume we're using export directives
     set_target_properties(tbbmalloc PROPERTIES
-        LINK_FLAGS ${TBB_LINK_DEF_FILE_FLAG}${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbbmalloc.def
-        LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbbmalloc.def
+        LINK_FLAGS "${TBB_LINK_DEF_FILE_FLAG}\"${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbbmalloc.def\""
+        LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbbmalloc.def"
     )
 endif()
 

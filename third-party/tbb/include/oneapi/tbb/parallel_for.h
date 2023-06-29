@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -79,6 +79,7 @@ struct start_for : public task {
     start_for( const Range& range, const Body& body, Partitioner& partitioner, small_object_allocator& alloc ) :
         my_range(range),
         my_body(body),
+        my_parent(nullptr),
         my_partition(partitioner),
         my_allocator(alloc) {}
     //! Splitting constructor used to generate children.
@@ -86,6 +87,7 @@ struct start_for : public task {
     start_for( start_for& parent_, typename Partitioner::split_type& split_obj, small_object_allocator& alloc ) :
         my_range(parent_.my_range, get_range_split_object<Range>(split_obj)),
         my_body(parent_.my_body),
+        my_parent(nullptr),
         my_partition(parent_.my_partition, split_obj),
         my_allocator(alloc) {}
     //! Construct right child from the given range as response to the demand.
@@ -93,6 +95,7 @@ struct start_for : public task {
     start_for( start_for& parent_, const Range& r, depth_t d, small_object_allocator& alloc ) :
         my_range(r),
         my_body(parent_.my_body),
+        my_parent(nullptr),
         my_partition(parent_.my_partition, split()),
         my_allocator(alloc)
     {

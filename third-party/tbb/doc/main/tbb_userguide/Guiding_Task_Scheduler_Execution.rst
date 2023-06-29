@@ -61,8 +61,9 @@ assign a NUMA node identifier to the ``task_arena::constraints::numa_id`` field.
 
 The processors with `Intel® Hybrid Technology <https://www.intel.com/content/www/us/en/products/docs/processors/core/core-processors-with-hybrid-technology-brief.html>`_
 contain several core types, each is suited for different purposes.
-For example, some applications may improve their performance by preferring execution on the most performant cores.
-To set execution preference, assign specific core type identifier to the ``task_arena::constraints::core_type`` field.
+In most cases, systems with hybrid CPU architecture show reasonable performance without involving additional API calls.
+However, in some exceptional scenarios, performance may be tuned by setting the preferred core type.
+To set the preferred core type for the execution, assign a specific core type identifier to the ``task_arena::constraints::core_type`` field.
 
 The example shows how to set the most performant core type as preferable for work execution:
 

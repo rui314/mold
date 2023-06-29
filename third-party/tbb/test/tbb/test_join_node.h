@@ -1199,7 +1199,7 @@ public:
             reset_outputCheck(TUPLE_SIZE, Count);
 
             for(int i = 0; i < Count; i++) {
-                CHECK_MESSAGE(outq2.try_get(v), "");;
+                CHECK_MESSAGE(outq2.try_get(v), "");
                 input_node_helper<TUPLE_SIZE, JType>::check_value(i, v, not_out_of_order);
             }
             check_outputCheck(TUPLE_SIZE, Count);

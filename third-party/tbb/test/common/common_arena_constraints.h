@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2019-2021 Intel Corporation
+    Copyright (c) 2019-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 #ifndef __TBB_test_common_arena_constraints_H_
 #define __TBB_test_common_arena_constraints_H_
-
-#define TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION 1
 
 #if _WIN32 || _WIN64
 #define _CRT_SECURE_NO_WARNINGS

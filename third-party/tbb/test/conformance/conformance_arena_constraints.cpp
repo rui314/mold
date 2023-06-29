@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2019-2021 Intel Corporation
+    Copyright (c) 2019-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -56,6 +56,21 @@ TEST_CASE("Test NUMA topology traversal correctness") {
 
     REQUIRE_MESSAGE(numa_nodes_info.empty(), "Some available NUMA nodes indexes were not detected.");
 }
+
+#if __HYBRID_CPUS_TESTING
+//! Testing NUMA topology traversal correctness
+//! \brief \ref interface \ref requirement
+TEST_CASE("Test core types topology traversal correctness") {
+    system_info::initialize();
+    std::vector<index_info> core_types_info = system_info::get_cpu_kinds_info();
+    std::vector<tbb::core_type_id> core_types = tbb::info::core_types();
+
+    REQUIRE_MESSAGE(core_types_info.size() == core_types.size(), "Wrong core types number detected.");
+    for (unsigned i = 0; i < core_types.size(); ++i) {
+        REQUIRE_MESSAGE(core_types[i] == core_types_info[i].index, "Wrong core type index detected.");
+    }
+}
+#endif /*__HYBRID_CPUS_TESTING*/
 
 #else /*!__TBB_HWLOC_VALID_ENVIRONMENT*/
 

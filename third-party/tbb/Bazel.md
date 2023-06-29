@@ -33,7 +33,7 @@ example
 
 _WORKSPACE.bazel_:
 ```python
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+load("@platforms//tools/build_defs/repo:git.bzl", "git_repository")
 
 git_repository(
     name = "oneTBB",

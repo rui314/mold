@@ -29,7 +29,7 @@ if BUILD_TYPE == 'oneapi' or BUILD_TYPE == 'dita':
     project = u'Intel® oneAPI Threading Building Blocks (oneTBB)'
 else:
     project = u'oneTBB'
-copyright = u'2022, Intel Corporation'
+copyright = u'2023, Intel Corporation'
 author = u'Intel'
 
 # The short X.Y version

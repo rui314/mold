@@ -17,10 +17,6 @@
 /* Flow Graph Code Example for the Userguide.
 */
 
-//! Enable extended task_arena constraints feature for supporting Intel Hybrid Technology
-//! and Intel Hyper-Threading Technology.
-#define TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION 1
-
 #include <oneapi/tbb/flow_graph.h>
 #include <vector>
 

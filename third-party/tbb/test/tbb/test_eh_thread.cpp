@@ -54,15 +54,16 @@ void limitThreads(size_t limit)
     CHECK_MESSAGE(0 == ret, "setrlimit has returned an error");
 }
 
-static bool g_exception_caught = false;
-static std::mutex m;
-static std::condition_variable cv;
-static std::atomic<bool> stop{ false };
+size_t getThreadLimit() {
+    rlimit rlim;
+
+    int ret = getrlimit(RLIMIT_NPROC, &rlim);
+    CHECK_MESSAGE(0 == ret, "getrlimit has returned an error");
+    return rlim.rlim_cur;
+}
 
 static void* thread_routine(void*)
 {
-    std::unique_lock<std::mutex> lock(m);
-    cv.wait(lock, [] { return stop == true; });
     return nullptr;
 }
 
@@ -94,32 +95,17 @@ TEST_CASE("Too many threads") {
     }
 
     // Some systems set really big limit (e.g. >45К) for the number of processes/threads
-    limitThreads(1024);
-
-    std::thread /* isolate test */ ([] {
-        std::vector<Thread> threads;
-        stop = false;
-        auto finalize = [&] {
-            stop = true;
-            cv.notify_all();
-            for (auto& t : threads) {
-                t.join();
-            }
-        };
-
-        for (int i = 0;; ++i) {
+    limitThreads(1);
+    if (getThreadLimit() == 1) {
+        for (int attempt = 0; attempt < 5; ++attempt) {
             Thread thread;
-            if (!thread.isValid()) {
-                break;
-            }
-            threads.push_back(thread);
-            if (i == 1024) {
-                WARN_MESSAGE(false, "setrlimit seems having no effect");
-                finalize();
+            if (thread.isValid()) {
+                WARN_MESSAGE(false, "We were able to create a thread. setrlimit seems having no effect");
+                thread.join();
                 return;
             }
         }
-        g_exception_caught = false;
+        bool g_exception_caught = false;
         try {
             // Initialize the library to create worker threads
             tbb::parallel_for(0, 2, [](int) {});
@@ -132,9 +118,10 @@ TEST_CASE("Too many threads") {
         }
         // Do not CHECK to avoid memory allocation (we can be out of memory)
         if (!g_exception_caught) {
-            FAIL("No exception was caught");
+            FAIL("No exception was thrown on library initialization");
         }
-        finalize();
-    }).join();
+    } else {
+        WARN_MESSAGE(false, "setrlimit seems having no effect");
+    }
 }
 #endif

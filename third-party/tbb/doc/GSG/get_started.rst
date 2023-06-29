@@ -9,6 +9,8 @@ Get Started with |short_name|
 
 .. include:: before_beginning_and_example.rst
 
+.. include:: hybrid_cpu_support.rst
+
 Find more
 *********
 
