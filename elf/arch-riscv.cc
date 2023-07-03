@@ -127,6 +127,7 @@ static void overwrite_uleb(u8 *loc, u64 val) {
     *loc++ = 0b1000'0000 | (val & 0b0111'1111);
     val >>= 7;
   }
+  *loc = val & 0b0111'1111;
 }
 
 // Returns the rd register of an R/I/U/J-type instruction.
@@ -527,6 +528,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_32_PCREL:
       *(U32<E> *)loc = S + A - P;
       break;
+    case R_RISCV_SET_ULEB128:
+      overwrite_uleb(loc, S + A);
+      break;
+    case R_RISCV_SUB_ULEB128: {
+      u8 *p = loc;
+      u64 val = read_uleb(p);
+      overwrite_uleb(loc, val - (S + A));
+      break;
+    }
     default:
       unreachable();
     }
@@ -726,6 +736,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_SET8:
     case R_RISCV_SET16:
     case R_RISCV_SET32:
+    case R_RISCV_SET_ULEB128:
+    case R_RISCV_SUB_ULEB128:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
