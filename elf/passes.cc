@@ -1605,8 +1605,14 @@ void parse_symbol_version(Context<E> &ctx) {
       if (sym->file != file)
         continue;
 
-      const char *name = file->symbol_strtab.data() + file->elf_syms[i].st_name;
-      std::string_view ver = strchr(name, '@') + 1;
+      std::string_view ver;
+
+      if (file->is_lto_obj) {
+        ver = file->lto_symbol_versions[i - file->first_global];
+      } else {
+        const char *name = file->symbol_strtab.data() + file->elf_syms[i].st_name;
+        ver = strchr(name, '@') + 1;
+      }
 
       bool is_default = false;
       if (ver.starts_with('@')) {

@@ -641,10 +641,30 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   // Initialize object symbols
   std::vector<ElfSym<E>> *esyms = new std::vector<ElfSym<E>>(1);
+  obj->has_symver.resize(plugin_symbols.size());
+  obj->lto_symbol_versions.resize(plugin_symbols.size());
 
-  for (PluginSymbol &psym : plugin_symbols) {
+  for (i64 i = 0; i < plugin_symbols.size(); i++) {
+    PluginSymbol &psym = plugin_symbols[i];
     esyms->push_back(to_elf_sym<E>(psym));
-    obj->symbols.push_back(get_symbol(ctx, save_string(ctx, psym.name)));
+
+    std::string_view key = save_string(ctx, psym.name);
+    std::string_view name = key;
+
+    // Parse symbol version after atsign
+    if (i64 pos = name.find('@'); pos != name.npos) {
+      std::string_view ver = name.substr(pos);
+      name = name.substr(0, pos);
+
+      if (ver != "@" && ver != "@@") {
+        if (ver.starts_with("@@"))
+          key = name;
+        obj->has_symver.set(i);
+        obj->lto_symbol_versions[i] = ver.substr(1);
+      }
+    }
+
+    obj->symbols.push_back(get_symbol(ctx, key, name));
   }
 
   obj->elf_syms = *esyms;

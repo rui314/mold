@@ -1254,6 +1254,9 @@ public:
   i64 num_areas = 0;
   i64 area_offset = 0;
 
+  // For LTO
+  std::vector<std::string_view> lto_symbol_versions;
+
   // For PPC32
   InputSection<E> *ppc32_got2 = nullptr;
 
