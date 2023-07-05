@@ -666,16 +666,13 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
 
   // Set `referenced_by_regular_obj` bit.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (file->is_lto_obj)
-      return;
-
-    for (i64 i = file->first_global; i < file->symbols.size(); i++) {
-      Symbol<E> &sym = *file->symbols[i];
-
-      if (sym.file && !sym.file->is_dso &&
-          ((ObjectFile<E> *)sym.file)->is_lto_obj) {
-        std::scoped_lock lock(sym.mu);
-        sym.referenced_by_regular_obj = true;
+    if (!file->is_lto_obj) {
+      for (Symbol<E> *sym : file->get_global_syms()) {
+        if (sym->file && !sym->file->is_dso &&
+            ((ObjectFile<E> *)sym->file)->is_lto_obj) {
+          std::scoped_lock lock(sym->mu);
+          sym->referenced_by_regular_obj = true;
+        }
       }
     }
   });
