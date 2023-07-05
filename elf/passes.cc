@@ -1262,6 +1262,7 @@ void claim_unresolved_symbols(Context<E> &ctx) {
         Symbol<E> *sym2 = get_symbol(ctx, name);
         if (sym2->file && sym2->file->is_dso && sym2->get_version() == ver) {
           file->symbols[i] = sym2;
+          sym2->is_imported = true;
           continue;
         }
       }
