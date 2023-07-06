@@ -45,7 +45,7 @@
 //
 //  2. If we are creating a shared library, we don't exactly know where
 //     its TLS template image will be copied to in terms of the
-//     TP-relative address, because we don't know how large is the main
+//     TP-relative address, because we don't know how large the main
 //     executable's and other libraries' TLS template images are. Only the
 //     runtime knows the exact TP-relative address.
 //
@@ -56,17 +56,17 @@
 //     entry with a TP-relative address.
 //
 //     Computing a TLV address in this scheme needs at least two machine
-//     instructions in most ISAs; first instruction loads a value from a
-//     GOT entry, and the second one adds the loaded value to TP.
+//     instructions in most ISAs; the first instruction loads a value from
+//     the GOT entry, and the second one adds the loaded value to TP.
 //
-//  3. Now, think about libraries that you dynamically load with dlopen.
+//  3. Now, think about libraries that are dynamically loaded with dlopen.
 //     The TLS block for such library has to be allocated separately from
 //     the initial TLS block, so we now have two or more discontiguous
 //     TLS blocks. There's no easy formula to compute an address of a TLV
 //     in a separate TLS block.
 //
 //     The address of a TLV in a separate TLS block can be obtained by
-//     calling a libc-provided function, __tls_get_addr(). The function
+//     calling the libc-provided function, __tls_get_addr(). The function
 //     takes two arguments; a module ID to identify the ELF file and the
 //     TLV's offset within the ELF file's TLS template image. Accessing a
 //     TLV is sometimes compiled to a function call! The module ID and the
@@ -87,7 +87,6 @@
 // base address obtained this way is sometimes called Dynamic Thread Pointer
 // or DTP. We can then compute TLVs' addresses by adding their DTP-relative
 // addresses to DTP. This access model is called the Local Dynamic.
-//
 //
 // === TLS Descriptor access model ===
 //
@@ -151,32 +150,31 @@ u64 get_tp_addr(Context<E> &ctx) {
   if (!phdr)
     return 0;
 
-  // On x86, SPARC and s390x, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
-  // and %a0/%a1 on s390x) refers to past the end of the TLS block for
-  // historical reasons. TLVs are accessed with negative offsets from TP.
-  if constexpr (is_x86<E> || is_sparc<E> || is_s390x<E>)
+  if constexpr (is_x86<E> || is_sparc<E> || is_s390x<E>) {
+    // On x86, SPARC and s390x, TP (%gs on i386, %fs on x86-64, %g7 on SPARC
+    // and %a0/%a1 on s390x) refers to past the end of the TLS block for
+    // historical reasons. TLVs are accessed with negative offsets from TP.
     return align_to(phdr->p_vaddr + phdr->p_memsz, phdr->p_align);
-
-  // On ARM, SH4 and Alpha, the runtime appends two words at the beginning
-  // of TLV template image when copying TLVs to the TLS block, so we need
-  // to offset it.
-  if constexpr (is_arm<E> || is_sh4<E> || is_alpha<E>)
+  } else if constexpr (is_arm<E> || is_sh4<E> || is_alpha<E>) {
+    // On ARM, SH4 and Alpha, the runtime appends two words at the beginning
+    // of TLV template image when copying TLVs to the TLS block, so we need
+    // to offset it.
     return align_down(phdr->p_vaddr - sizeof(Word<E>) * 2, phdr->p_align);
-
-  // On PPC and m68k, TP is 0x7000 (28 KiB) past the beginning of the TLV
-  // block to maximize the addressable range for load/store instructions
-  // with 16-bits signed immediates. It's not exactly 0x8000 (32 KiB) off
-  // because there's a small implementation-defined piece of data before
-  // the TLV block, and the runtime wants to access them efficiently too.
-  if constexpr (is_ppc<E> || is_m68k<E>)
+  } else if constexpr (is_ppc<E> || is_m68k<E>) {
+    // On PPC and m68k, TP is 0x7000 (28 KiB) past the beginning of the TLV
+    // block to maximize the addressable range for load/store instructions
+    // with 16-bits signed immediates. It's not exactly 0x8000 (32 KiB) off
+    // because there's a small implementation-defined piece of data before
+    // the TLV block, and the runtime wants to access them efficiently too.
     return phdr->p_vaddr + 0x7000;
-
-  // RISC-V just uses the beginning of the main executable's TLV block as
-  // TP. RISC-V load/store instructions usually take 12-bits signed
-  // immediates, so the beginning of TLV ± 2 KiB is accessible with a
-  // single load/store instruction.
-  assert(is_riscv<E>);
-  return phdr->p_vaddr;
+  } else {
+    // RISC-V just uses the beginning of the main executable's TLV block as
+    // TP. RISC-V load/store instructions usually take 12-bits signed
+    // immediates, so the beginning of the TLS block ± 2 KiB is accessible
+    // with a single load/store instruction.
+    static_assert(is_riscv<E>);
+    return phdr->p_vaddr;
+  }
 }
 
 // Returns the address __tls_get_addr() would return if it's called
@@ -187,22 +185,22 @@ u64 get_dtp_addr(Context<E> &ctx) {
   if (!phdr)
     return 0;
 
-  // On PPC64 and m68k, R_DTPOFF is resolved to the address 0x8000 (32
-  // KiB) past the start of the TLS block. The bias maximizes the
-  // accessible range for load/store instructions with 16-bits signed
-  // immediates. That is, if the offset were right at the beginning of
-  // the start of the TLS block, the half of addressible space (negative
-  // immediates) would have been wasted.
-  if constexpr (is_ppc<E> || is_m68k<E>)
+  if constexpr (is_ppc<E> || is_m68k<E>) {
+    // On PPC64 and m68k, R_DTPOFF is resolved to the address 0x8000
+    // (32 KiB) past the start of the TLS block. The bias maximizes the
+    // accessible range for load/store instructions with 16-bits signed
+    // immediates. That is, if the offset were right at the beginning of
+    // the start of the TLS block, the half of addressible space (negative
+    // immediates) would have been wasted.
     return phdr->p_vaddr + 0x8000;
-
-  // On RISC-V, the bias is 0x800 as the load/store instructions in the
-  // ISA usually have a 12-bit immediate.
-  if constexpr (is_riscv<E>)
+  } else if constexpr (is_riscv<E>) {
+    // On RISC-V, the bias is 0x800 as the load/store instructions in the
+    // ISA usually have a 12-bit immediate.
     return phdr->p_vaddr + 0x800;
-
-  // On other targets, DTP simply refers to the beginning of the TLS block.
-  return phdr->p_vaddr;
+  } else {
+    // On other targets, DTP simply refers to the beginning of the TLS block.
+    return phdr->p_vaddr;
+  }
 }
 
 using E = MOLD_TARGET;

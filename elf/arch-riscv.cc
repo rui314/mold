@@ -509,7 +509,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_cjtype(loc, S + A - P);
       break;
     case R_RISCV_SUB6:
-      *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
+      *loc = (*loc & 0b1100'0000) | ((*loc - S - A) & 0b0011'1111);
       break;
     case R_RISCV_SET6:
       *loc = (*loc & 0b1100'0000) | ((S + A) & 0b0011'1111);
@@ -587,7 +587,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *(U64<E> *)loc -= S + A;
       break;
     case R_RISCV_SUB6:
-      *loc = (*loc & 0b1100'0000) | ((*loc - (S + A)) & 0b0011'1111);
+      *loc = (*loc & 0b1100'0000) | ((*loc - S - A) & 0b0011'1111);
       break;
     case R_RISCV_SET6:
       *loc = (*loc & 0b1100'0000) | ((S + A) & 0b0011'1111);
