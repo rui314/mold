@@ -51,7 +51,7 @@ jobs:
         # Install cross toolchains
         dpkg --add-architecture i386
         ./install-build-deps.sh update
-        apt-get install -y sudo qemu-user gdb zstd dwarfdump {gcc,g++}-10-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha}-linux-gnu {gcc,g++}-10-arm-linux-gnueabihf
+        apt-get install -y sudo qemu-user gdb zstd dwarfdump {gcc,g++}-10-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha,mips,mipsel}-linux-gnu {gcc,g++}-10-arm-linux-gnueabihf {gcc,g++}-10-{mips64,mips64el}-linux-gnuabi64
 
         for i in i686 aarch64 riscv64 powerpc powerpc64 powerpc64le s390x sparc64 m68k sh4 alpha; do
           ln -sf /usr/bin/$i-linux-gnu-gcc-10 /usr/bin/$i-linux-gnu-gcc

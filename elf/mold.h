@@ -484,9 +484,10 @@ public:
     this->shdr.sh_addralign = sizeof(Word<E>);
 
     // We always create a .got so that _GLOBAL_OFFSET_TABLE_ has
-    // something to point to. s390x psABI defines GOT[1] as a
-    // reserved slot, so we allocate one more on s390x.
-    this->shdr.sh_size = (is_s390x<E> ? 2 : 1) * sizeof(Word<E>);
+    // something to point to. s390x/MIPS psABIs define GOT[1] as a
+    // reserved slot, so we allocate one more for them.
+    i64 n = (is_s390x<E> || is_mips<E>) ? 2 : 1;
+    this->shdr.sh_size = n * sizeof(Word<E>);
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -1260,6 +1261,9 @@ public:
   // For PPC32
   InputSection<E> *ppc32_got2 = nullptr;
 
+  // For MIPS
+  u64 mips_gp0 = 0;
+
 private:
   ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
              std::string archive_name, bool is_in_lib);
@@ -1530,6 +1534,48 @@ private:
 };
 
 //
+// arch-mips64.cc
+//
+
+template <typename E>
+class MipsGotSection : public Chunk<E> {
+public:
+  MipsGotSection() {
+    this->name = ".mips_got";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE | SHF_MIPS_GPREL;
+    this->shdr.sh_addralign = 8;
+    this->shdr.sh_size = 8;
+  }
+
+  void add_got_symbol(Symbol<E> &sym, i64 addend);
+  void add_gotpage_symbol(Symbol<E> &sym, i64 addend);
+  void finalize(Context<E> &ctx);
+
+  u64 get_got_addr(Context<E> &ctx, Symbol<E> &sym,i64 addend);
+  u64 get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym,i64 addend);
+  u64 get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym,i64 addend);
+
+  i64 get_reldyn_size(Context<E> &ctx) const override;
+  void copy_buf(Context<E> &ctx) override;
+
+  struct Entry {
+    bool operator==(const Entry &) const = default;
+    Symbol<E> *sym;
+    i64 addend;
+    u64 addr;
+  };
+
+private:
+  std::vector<Entry> got_syms;
+  std::vector<Entry> gotpage_syms;
+
+  std::vector<u64> abs_addrs;
+  std::vector<u64> rel_addrs;
+  std::mutex mu;
+};
+
+//
 // main.cc
 //
 
@@ -1607,6 +1653,11 @@ template <> struct ContextExtras<ALPHA> {
   AlphaGotSection *got = nullptr;
 };
 
+template <typename E> requires is_mips<E>
+struct ContextExtras<E> {
+  MipsGotSection<E> *got = nullptr;
+};
+
 // Context represents a context object for each invocation of the linker.
 // It contains command line flags, pointers to singleton objects
 // (such as linker-synthesized output sections), unique_ptrs for
@@ -1649,7 +1700,7 @@ struct Context {
     bool fork = true;
     bool gc_sections = false;
     bool gdb_index = false;
-    bool hash_style_gnu = true;
+    bool hash_style_gnu = !is_mips<E>;
     bool hash_style_sysv = true;
     bool icf = false;
     bool icf_all = false;
@@ -1715,7 +1766,7 @@ struct Context {
     std::string dependency_file;
     std::string directory;
     std::string dynamic_linker;
-    std::string entry = "_start";
+    std::string entry = is_mips<E> ? "__start" : "_start";
     std::string fini = "_fini";
     std::string init = "_init";
     std::string output = "a.out";
@@ -1876,6 +1927,7 @@ struct Context {
   Symbol<E> *_edata = nullptr;
   Symbol<E> *_end = nullptr;
   Symbol<E> *_etext = nullptr;
+  Symbol<E> *_gp = nullptr;
   Symbol<E> *edata = nullptr;
   Symbol<E> *end = nullptr;
   Symbol<E> *etext = nullptr;

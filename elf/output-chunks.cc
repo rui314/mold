@@ -722,6 +722,8 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   } else if constexpr (is_ppc32<E>) {
     if (ctx.gotplt->shdr.sh_size)
       define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr + GotPltSection<E>::HDR_SIZE);
+  } else if constexpr (is_mips<E>) {
+    define(DT_PLTGOT, ctx.got->shdr.sh_addr);
   } else {
     if (ctx.gotplt->shdr.sh_size)
       define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr);
@@ -830,6 +832,16 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     // the first PLT entry. I don't know why it's 32 bytes off, but
     // it's what it is.
     define(DT_PPC64_GLINK, ctx.plt->shdr.sh_addr + E::plt_hdr_size - 32);
+  }
+
+  if constexpr (is_mips<E>) {
+    define(DT_MIPS_RLD_VERSION, 1);
+    define(DT_MIPS_FLAGS, 0);
+    define(DT_MIPS_BASE_ADDRESS, ctx.arg.image_base);
+    define(DT_MIPS_LOCAL_GOTNO, 2);
+    define(DT_MIPS_SYMTABNO, ctx.dynsym->symbols.size());
+    define(DT_MIPS_GOTSYM, 0);
+    define(DT_MIPS_OPTIONS, 0);
   }
 
   // GDB needs a DT_DEBUG entry in an executable to store a word-size
@@ -1260,6 +1272,11 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   if constexpr (is_arm64<E>)
     if (ctx.dynamic && ctx.arg.is_static && ctx.arg.pie)
       buf[0] = ctx.dynamic->shdr.sh_addr;
+
+  // It is not clear how the runtime uses it, but all MIPS binaries
+  // have this value in GOT[1].
+  if constexpr (is_mips<E>)
+    buf[1] = E::is_64 ? 0x8000'0000'0000'0000 : 0x8000'0000;
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                                  this->reldyn_offset);

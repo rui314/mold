@@ -141,6 +141,26 @@ ObjectFile<E>::read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr) {
 }
 
 template <typename E>
+static u64 read_mips_gp0(Context<E> &ctx, InputSection<E> &isec) {
+  std::string_view data = isec.contents;
+  while (!data.empty()) {
+    if (data.size() < sizeof(MipsOptions<E>))
+      Fatal(ctx) << isec << ": corrupted .MIPS.options section";
+
+    MipsOptions<E> *opt = (MipsOptions<E> *)data.data();
+    if (opt->kind == ODK_REGINFO) {
+      if (data.size() < sizeof(MipsOptions<E>) + sizeof(MipsRegInfo<E>))
+        Fatal(ctx) << isec << ": corrupted .MIPS.options section";
+      MipsRegInfo<E> *info = (MipsRegInfo<E> *)(opt + 1);
+      return info->ri_gp_value;
+    }
+
+    data = data.substr(opt->size);
+  }
+  return 0;
+}
+
+template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
@@ -203,8 +223,11 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       // area in GNU linkers. We ignore that section because silently
       // making the stack area executable is too dangerous. Tell our
       // users about the difference if that matters.
+      //
+      // MIPS object files don't contain .note.GNU-stack for some reason,
+      // so ignore this error on MIPS.
       if (name == ".note.GNU-stack" && !ctx.arg.relocatable) {
-        if (shdr.sh_flags & SHF_EXECINSTR) {
+        if ((shdr.sh_flags & SHF_EXECINSTR) && !is_mips<E>) {
           if (!ctx.arg.z_execstack && !ctx.arg.z_execstack_if_needed)
             Warn(ctx) << *this << ": this file may cause a segmentation"
               " fault because it requires an executable stack. See"
@@ -258,6 +281,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if constexpr (is_ppc32<E>)
         if (name == ".got2")
           ppc32_got2 = this->sections[i].get();
+
+      if constexpr (is_mips<E>)
+        if (name == ".MIPS.options")
+          mips_gp0 = read_mips_gp0(ctx, *this->sections[i]);
 
       // Save debug sections for --gdb-index.
       if (ctx.arg.gdb_index) {

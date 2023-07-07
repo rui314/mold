@@ -523,6 +523,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                    << "   elf32ppc\n   elf64ppc\n   elf64lppc\n   elf64_s390\n"
                    << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n   elf64alpha";
       version_shown = true;
+    } else if (read_flag("mips32") || read_flag("mips32r2") ||
+               read_flag("mips32r3") || read_flag("mips32r4") ||
+               read_flag("mips32r5") || read_flag("mips32r6") ||
+               read_flag("mips64") || read_flag("mips64r2") ||
+               read_flag("mips64r3") || read_flag("mips64r4") ||
+               read_flag("mips64r5") || read_flag("mips64r6")) {
+      // Ignore useless MIPS-specific flags
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
         ctx.arg.emulation = X86_64::target_name;
@@ -556,6 +563,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.emulation = SH4::target_name;
       } else if (arg == "elf64alpha") {
         ctx.arg.emulation = ALPHA::target_name;
+      } else if (arg == "elf64ltsmip") {
+        ctx.arg.emulation = MIPS64LE::target_name;
+      } else if (arg == "elf64btsmip") {
+        ctx.arg.emulation = MIPS64BE::target_name;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }
@@ -1051,6 +1062,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("filter") || read_arg("F")) {
       ctx.arg.filter.push_back(arg);
     } else if (read_arg("O")) {
+    } else if (read_flag("EB")) {
+    } else if (read_flag("EL")) {
     } else if (read_flag("O0")) {
     } else if (read_flag("O1")) {
     } else if (read_flag("O2")) {

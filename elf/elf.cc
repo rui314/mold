@@ -918,4 +918,92 @@ std::string rel_to_string<ALPHA>(u32 r_type) {
   return "unknown (" + std::to_string(r_type) + ")";
 }
 
+template <>
+std::string rel_to_string<MIPS64LE>(u32 r_type) {
+  switch (r_type) {
+  case R_MIPS_NONE: return "R_MIPS_NONE";
+  case R_MIPS_16: return "R_MIPS_16";
+  case R_MIPS_32: return "R_MIPS_32";
+  case R_MIPS_REL32: return "R_MIPS_REL32";
+  case R_MIPS_26: return "R_MIPS_26";
+  case R_MIPS_HI16: return "R_MIPS_HI16";
+  case R_MIPS_LO16: return "R_MIPS_LO16";
+  case R_MIPS_GPREL16: return "R_MIPS_GPREL16";
+  case R_MIPS_LITERAL: return "R_MIPS_LITERAL";
+  case R_MIPS_GOT16: return "R_MIPS_GOT16";
+  case R_MIPS_PC16: return "R_MIPS_PC16";
+  case R_MIPS_CALL16: return "R_MIPS_CALL16";
+  case R_MIPS_GPREL32: return "R_MIPS_GPREL32";
+  case R_MIPS_UNUSED1: return "R_MIPS_UNUSED1";
+  case R_MIPS_UNUSED2: return "R_MIPS_UNUSED2";
+  case R_MIPS_UNUSED3: return "R_MIPS_UNUSED3";
+  case R_MIPS_SHIFT5: return "R_MIPS_SHIFT5";
+  case R_MIPS_SHIFT6: return "R_MIPS_SHIFT6";
+  case R_MIPS_64: return "R_MIPS_64";
+  case R_MIPS_GOT_DISP: return "R_MIPS_GOT_DISP";
+  case R_MIPS_GOT_PAGE: return "R_MIPS_GOT_PAGE";
+  case R_MIPS_GOT_OFST: return "R_MIPS_GOT_OFST";
+  case R_MIPS_GOT_HI16: return "R_MIPS_GOT_HI16";
+  case R_MIPS_GOT_LO16: return "R_MIPS_GOT_LO16";
+  case R_MIPS_SUB: return "R_MIPS_SUB";
+  case R_MIPS_INSERT_A: return "R_MIPS_INSERT_A";
+  case R_MIPS_INSERT_B: return "R_MIPS_INSERT_B";
+  case R_MIPS_DELETE: return "R_MIPS_DELETE";
+  case R_MIPS_HIGHER: return "R_MIPS_HIGHER";
+  case R_MIPS_HIGHEST: return "R_MIPS_HIGHEST";
+  case R_MIPS_CALL_HI16: return "R_MIPS_CALL_HI16";
+  case R_MIPS_CALL_LO16: return "R_MIPS_CALL_LO16";
+  case R_MIPS_SCN_DISP: return "R_MIPS_SCN_DISP";
+  case R_MIPS_REL16: return "R_MIPS_REL16";
+  case R_MIPS_ADD_IMMEDIATE: return "R_MIPS_ADD_IMMEDIATE";
+  case R_MIPS_PJUMP: return "R_MIPS_PJUMP";
+  case R_MIPS_RELGOT: return "R_MIPS_RELGOT";
+  case R_MIPS_JALR: return "R_MIPS_JALR";
+  case R_MIPS_TLS_DTPMOD32: return "R_MIPS_TLS_DTPMOD32";
+  case R_MIPS_TLS_DTPREL32: return "R_MIPS_TLS_DTPREL32";
+  case R_MIPS_TLS_DTPMOD64: return "R_MIPS_TLS_DTPMOD64";
+  case R_MIPS_TLS_DTPREL64: return "R_MIPS_TLS_DTPREL64";
+  case R_MIPS_TLS_GD: return "R_MIPS_TLS_GD";
+  case R_MIPS_TLS_LDM: return "R_MIPS_TLS_LDM";
+  case R_MIPS_TLS_DTPREL_HI16: return "R_MIPS_TLS_DTPREL_HI16";
+  case R_MIPS_TLS_DTPREL_LO16: return "R_MIPS_TLS_DTPREL_LO16";
+  case R_MIPS_TLS_GOTTPREL: return "R_MIPS_TLS_GOTTPREL";
+  case R_MIPS_TLS_TPREL32: return "R_MIPS_TLS_TPREL32";
+  case R_MIPS_TLS_TPREL64: return "R_MIPS_TLS_TPREL64";
+  case R_MIPS_TLS_TPREL_HI16: return "R_MIPS_TLS_TPREL_HI16";
+  case R_MIPS_TLS_TPREL_LO16: return "R_MIPS_TLS_TPREL_LO16";
+  case R_MIPS_GLOB_DAT: return "R_MIPS_GLOB_DAT";
+  case R_MIPS_PC21_S2: return "R_MIPS_PC21_S2";
+  case R_MIPS_PC26_S2: return "R_MIPS_PC26_S2";
+  case R_MIPS_PC18_S3: return "R_MIPS_PC18_S3";
+  case R_MIPS_PC19_S2: return "R_MIPS_PC19_S2";
+  case R_MIPS_PCHI16: return "R_MIPS_PCHI16";
+  case R_MIPS_PCLO16: return "R_MIPS_PCLO16";
+  case R_MIPS16_26: return "R_MIPS16_26";
+  case R_MIPS16_GPREL: return "R_MIPS16_GPREL";
+  case R_MIPS16_GOT16: return "R_MIPS16_GOT16";
+  case R_MIPS16_CALL16: return "R_MIPS16_CALL16";
+  case R_MIPS16_HI16: return "R_MIPS16_HI16";
+  case R_MIPS16_LO16: return "R_MIPS16_LO16";
+  case R_MIPS16_TLS_GD: return "R_MIPS16_TLS_GD";
+  case R_MIPS16_TLS_LDM: return "R_MIPS16_TLS_LDM";
+  case R_MIPS16_TLS_DTPREL_HI16: return "R_MIPS16_TLS_DTPREL_HI16";
+  case R_MIPS16_TLS_DTPREL_LO16: return "R_MIPS16_TLS_DTPREL_LO16";
+  case R_MIPS16_TLS_GOTTPREL: return "R_MIPS16_TLS_GOTTPREL";
+  case R_MIPS16_TLS_TPREL_HI16: return "R_MIPS16_TLS_TPREL_HI16";
+  case R_MIPS16_TLS_TPREL_LO16: return "R_MIPS16_TLS_TPREL_LO16";
+  case R_MIPS_COPY: return "R_MIPS_COPY";
+  case R_MIPS_JUMP_SLOT: return "R_MIPS_JUMP_SLOT";
+  case R_MIPS_NUM: return "R_MIPS_NUM";
+  case R_MIPS_PC32: return "R_MIPS_PC32";
+  case R_MIPS_EH: return "R_MIPS_EH";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
+template <>
+std::string rel_to_string<MIPS64BE>(u32 r_type) {
+  return rel_to_string<MIPS64LE>(r_type);
+}
+
 } // namespace mold::elf

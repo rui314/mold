@@ -126,6 +126,9 @@ void create_synthetic_sections(Context<E> &ctx) {
   if constexpr (is_alpha<E>)
     ctx.extra.got = push(new AlphaGotSection);
 
+  if constexpr (is_mips<E>)
+    ctx.extra.got = push(new MipsGotSection<E>);
+
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
   if (ctx.dynamic) {
@@ -743,6 +746,9 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
   if constexpr (is_ppc32<E>)
     ctx.extra._SDA_BASE_ = add("_SDA_BASE_");
+
+  if constexpr (is_mips<E>)
+    ctx._gp = add("_gp");
 
   for (Chunk<E> *chunk : ctx.chunks) {
     if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
@@ -1745,6 +1751,7 @@ void clear_padding(Context<E> &ctx) {
 //   .got
 //   .toc
 //   .alpha_got
+//   .mips_got
 //   <writable RELRO bss>
 //   .relro_padding
 //   <writable non-RELRO data>
@@ -1830,6 +1837,8 @@ void sort_output_sections_regular(Context<E> &ctx) {
       return 2;
     if (chunk->name == ".alpha_got")
       return 3;
+    if (chunk->name == ".mips_got")
+      return 4;
     if (chunk == ctx.relro_padding)
       return INT_MAX;
     return 0;
@@ -2259,17 +2268,25 @@ i64 set_osec_offsets(Context<E> &ctx) {
     else
       set_virtual_addresses_by_order(ctx);
 
-    i64 fileoff = set_file_offsets(ctx);
-
     // Assigning new offsets may change the contents and the length
     // of the program header, so repeat it until converge.
-    if (!ctx.phdr)
-      return fileoff;
+    i64 fileoff = set_file_offsets(ctx);
 
-    i64 sz = ctx.phdr->shdr.sh_size;
-    ctx.phdr->update_shdr(ctx);
-    if (sz == ctx.phdr->shdr.sh_size)
-      return fileoff;
+    if (ctx.phdr) {
+      i64 sz = ctx.phdr->shdr.sh_size;
+      ctx.phdr->update_shdr(ctx);
+      if (sz != ctx.phdr->shdr.sh_size)
+        continue;
+    }
+
+    if constexpr (is_mips<E>) {
+      i64 sz = ctx.extra.got->shdr.sh_size;
+      ctx.extra.got->finalize(ctx);
+      if (sz != ctx.extra.got->shdr.sh_size)
+        continue;
+    }
+
+    return fileoff;
   }
 }
 
@@ -2443,6 +2460,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
       ctx.extra.TOC->value = 0;
     }
   }
+
+  // MIPS' _gp symbol.
+  if (ctx._gp)
+    start(ctx._gp, ctx.got, 0x7ff0);
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : sections) {

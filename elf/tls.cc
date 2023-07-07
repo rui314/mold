@@ -167,6 +167,8 @@ u64 get_tp_addr(Context<E> &ctx) {
     // because there's a small implementation-defined piece of data before
     // the TLV block, and the runtime wants to access them efficiently too.
     return phdr->p_vaddr + 0x7000;
+  } else if constexpr (is_mips<E>) {
+    return 0;
   } else {
     // RISC-V just uses the beginning of the main executable's TLV block as
     // TP. RISC-V load/store instructions usually take 12-bits signed
@@ -197,6 +199,8 @@ u64 get_dtp_addr(Context<E> &ctx) {
     // On RISC-V, the bias is 0x800 as the load/store instructions in the
     // ISA usually have a 12-bit immediate.
     return phdr->p_vaddr + 0x800;
+  } else if constexpr (is_mips<E>) {
+    return 0;
   } else {
     // On other targets, DTP simply refers to the beginning of the TLS block.
     return phdr->p_vaddr;
