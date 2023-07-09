@@ -2,7 +2,7 @@
 // processors support two different instruction encodings: Thumb and
 // ARM (in a narrower sense). Thumb instructions are either 16 bits or
 // 32 bits, while ARM instructions are all 32 bits. Feature-wise,
-// thumb is a subset of ARM, so not all ARM instructions are
+// Thumb is a subset of ARM, so not all ARM instructions are
 // representable in Thumb.
 //
 // ARM processors originally supported only ARM instructions. Thumb
@@ -12,14 +12,16 @@
 // be switched using BX (branch and mode exchange)-family instructions.
 // We need to use that instructions to, for example, call a function
 // encoded in Thumb from a function encoded in ARM. Sometimes, the
-// linker even has to emit an interworking thunk code to switch mode.
+// linker even has to emit interworking thunk code to switch mode.
 //
 // ARM instructions are aligned to 4 byte boundaries. Thumb are to 2
-// byte boundaries.
+// byte boundaries. So the least significant bit of a function address
+// is always 0.
 //
-// You can distinguish Thumb functions from ARM functions by looking
-// at the least significant bit (LSB) of its "address". If LSB is 0,
-// it's ARM; otherwise, Thumb.
+// To distinguish Thumb functions from ARM fucntions, the LSB of a
+// function address is repurposed as a boolean flag. If the LSB is 0,
+// the function referred to by the address is encoded in ARM;
+// otherwise, Thumb.
 //
 // For example, if a symbol `foo` is of type STT_FUNC and has value
 // 0x2001, `foo` is a function using Thumb instructions whose address
