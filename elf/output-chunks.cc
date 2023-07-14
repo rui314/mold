@@ -3156,6 +3156,7 @@ template class OutputShdr<E>;
 template class OutputPhdr<E>;
 template class InterpSection<E>;
 template class OutputSection<E>;
+template class SymbolAddend<E>;
 template class GotSection<E>;
 template class GotPltSection<E>;
 template class PltSection<E>;
