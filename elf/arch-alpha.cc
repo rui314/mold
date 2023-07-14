@@ -110,7 +110,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_ALPHA_LITERAL:
       if (A)
-        *(ul16 *)loc = ctx.extra.got->get_addr(sym, A) - GP;
+        *(ul16 *)loc = ctx.got->get_gota_addr(ctx, &sym, A) - GP;
       else
         *(ul16 *)loc = GOT + G - GP;
       break;
@@ -222,7 +222,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_ALPHA_LITERAL:
       if (rel.r_addend)
-        ctx.extra.got->add_symbol(sym, rel.r_addend);
+        ctx.got->add_gota_symbol(ctx, &sym, rel.r_addend);
       else
         sym.flags |= NEEDS_GOT;
       break;
@@ -257,72 +257,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     default:
       Fatal(ctx) << *this << ": unknown relocation: " << rel;
-    }
-  }
-}
-
-// An R_ALPHA_LITERAL relocation may request the linker to create a GOT
-// entry for an external symbol with a non-zero addend. This is an unusual
-// request which is not found in any other targets.
-//
-// Referring an external symbol with a non-zero addend is a bad practice
-// because we need to create as many dynamic relocations as the number of
-// distinctive addends for the same symbol.
-//
-// We don't want to mess up the implementation of the common GOT section
-// for Alpha. So we create another GOT-like section, .alpha_got. Any GOT
-// entry for an R_ALPHA_LITERAL reloc with a non-zero addend is created
-// not in .got but in .alpha_got.
-//
-// Since .alpha_got entries are accessed relative to GP, .alpha_got
-// needs to be close enough to .got. It's actually placed next to .got.
-void AlphaGotSection::add_symbol(Symbol<E> &sym, i64 addend) {
-  assert(addend);
-  std::scoped_lock lock(mu);
-  entries.push_back({&sym, addend});
-}
-
-bool operator<(const AlphaGotSection::Entry &a, const AlphaGotSection::Entry &b) {
-  return std::tuple(a.sym->file->priority, a.sym->sym_idx, a.addend) <
-         std::tuple(b.sym->file->priority, b.sym->sym_idx, b.addend);
-};
-
-u64 AlphaGotSection::get_addr(Symbol<E> &sym, i64 addend) {
-  auto it = std::lower_bound(entries.begin(), entries.end(), Entry{&sym, addend});
-  assert(it != entries.end());
-  return this->shdr.sh_addr + (it - entries.begin()) * sizeof(Word<E>);
-}
-
-i64 AlphaGotSection::get_reldyn_size(Context<E> &ctx) const {
-  i64 n = 0;
-  for (const Entry &e : entries)
-    if (e.sym->is_imported || (ctx.arg.pic && !e.sym->is_absolute()))
-      n++;
-  return n;
-}
-
-void AlphaGotSection::finalize() {
-  sort(entries);
-  remove_duplicates(entries);
-  shdr.sh_size = entries.size() * sizeof(Word<E>);
-}
-
-void AlphaGotSection::copy_buf(Context<E> &ctx) {
-  ElfRel<E> *dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                                    reldyn_offset);
-
-  for (i64 i = 0; i < entries.size(); i++) {
-    Entry &e = entries[i];
-    u64 P = this->shdr.sh_addr + sizeof(Word<E>) * i;
-    ul64 *buf = (ul64 *)(ctx.buf + this->shdr.sh_offset + sizeof(Word<E>) * i);
-
-    if (e.sym->is_imported) {
-      *buf = ctx.arg.apply_dynamic_relocs ? e.addend : 0;
-      *dynrel++ = ElfRel<E>(P, E::R_ABS, e.sym->get_dynsym_idx(ctx), e.addend);
-    } else {
-      *buf = e.sym->get_addr(ctx) + e.addend;
-      if (ctx.arg.pic && !e.sym->is_absolute())
-        *dynrel++ = ElfRel<E>(P, E::R_RELATIVE, 0, *buf);
     }
   }
 }

@@ -200,8 +200,7 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
            chunk == ctx.got || chunk == ctx.dynamic ||
            chunk == ctx.relro_padding ||
            (ctx.arg.z_now && ctx.gotplt && chunk == ctx.gotplt) ||
-           chunk->name == ".alpha_got" || chunk->name == ".toc" ||
-           chunk->name.ends_with(".rel.ro");
+           chunk->name == ".toc" || chunk->name.ends_with(".rel.ro");
   return false;
 }
 
@@ -1063,10 +1062,23 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
 }
 
 template <typename E>
+bool SymbolAddend<E>::operator<(const SymbolAddend<E> &other) const {
+  return std::tuple(sym->file->priority, sym->sym_idx, addend) <
+         std::tuple(other.sym->file->priority, other.sym->sym_idx, other.addend);
+}
+
+template <typename E>
 void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_got_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
   this->shdr.sh_size += sizeof(Word<E>);
   got_syms.push_back(sym);
+}
+
+template <typename E>
+void GotSection<E>::add_gota_symbol(Context<E> &ctx, Symbol<E> *sym, i64 addend) {
+  assert(addend != 0);
+  std::scoped_lock lock(mu);
+  gota_syms.push_back({sym, addend});
 }
 
 template <typename E>
@@ -1100,6 +1112,16 @@ void GotSection<E>::add_tlsld(Context<E> &ctx) {
     return;
   tlsld_idx = this->shdr.sh_size / sizeof(Word<E>);
   this->shdr.sh_size += sizeof(Word<E>) * 2;
+}
+
+template <typename E>
+u64 GotSection<E>::get_gota_addr(Context<E> &ctx, Symbol<E> *sym,
+                                 i64 addend) const {
+  auto it = std::lower_bound(gota_syms.begin(), gota_syms.end(),
+                             SymbolAddend<E>{sym, addend});
+  assert(it != gota_syms.end());
+  i64 idx = it - gota_syms.begin() + NUM_RESERVED;
+  return this->shdr.sh_addr + idx * sizeof(Word<E>);
 }
 
 template <typename E>
@@ -1138,6 +1160,32 @@ struct GotEntry {
 template <typename E>
 static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
   std::vector<GotEntry<E>> entries;
+
+  // Create GOT entries for symbols with addends
+  for (i64 i = 0; i < ctx.got->gota_syms.size(); i++) {
+    SymbolAddend<E> &ent = ctx.got->gota_syms[i];
+    Symbol<E> *sym = ent.sym;
+    u64 addend = ent.addend;
+    i64 idx = GotSection<E>::NUM_RESERVED + i;
+
+    // If a symbol is imported, let the dynamic linker to resolve it.
+    if (sym->is_imported) {
+      entries.push_back({idx, addend, E::R_GLOB_DAT, sym});
+      continue;
+    }
+
+    // We do not allow IFUNC with addend because referring to a middle of
+    // a function doesn't make sense.
+    if constexpr (supports_ifunc<E>)
+      assert(!sym->is_ifunc());
+
+    // If we know an address at link-time, fill that GOT entry now.
+    // It may need a base relocation, though.
+    if (ctx.arg.pic && sym->is_relative())
+      entries.push_back({idx, sym->get_addr(ctx, NO_PLT) + addend, E::R_RELATIVE});
+    else
+      entries.push_back({idx, sym->get_addr(ctx, NO_PLT) + addend});
+  }
 
   // Create GOT entries for ordinary symbols
   for (Symbol<E> *sym : ctx.got->got_syms) {
