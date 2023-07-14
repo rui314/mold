@@ -475,14 +475,6 @@ public:
 };
 
 template <typename E>
-struct SymbolAddend {
-  bool operator==(const SymbolAddend &) const = default;
-  bool operator<(const SymbolAddend &) const;
-  Symbol<E> *sym;
-  i64 addend;
-};
-
-template <typename E>
 class GotSection : public Chunk<E> {
 public:
   GotSection() {
@@ -490,17 +482,19 @@ public:
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
-    this->shdr.sh_size = NUM_RESERVED * sizeof(Word<E>);
+
+    // We always create a .got so that _GLOBAL_OFFSET_TABLE_ has
+    // something to point to. s390x psABI defines GOT[1] as a
+    // reserved slot, so we allocate one more on s390x.
+    this->shdr.sh_size = (is_s390x<E> ? 2 : 1) * sizeof(Word<E>);
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
-  void add_gota_symbol(Context<E> &ctx, Symbol<E> *sym, i64 addend);
   void add_gottp_symbol(Context<E> &ctx, Symbol<E> *sym);
   void add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym);
   void add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym);
   void add_tlsld(Context<E> &ctx);
 
-  u64 get_gota_addr(Context<E> &ctx, Symbol<E> *sym, i64 addend) const;
   u64 get_tlsld_addr(Context<E> &ctx) const;
   bool has_tlsld(Context<E> &ctx) const { return tlsld_idx != -1; }
   i64 get_reldyn_size(Context<E> &ctx) const override;
@@ -510,20 +504,13 @@ public:
   void populate_symtab(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> got_syms;
-  std::vector<SymbolAddend<E>> gota_syms;
   std::vector<Symbol<E> *> gottp_syms;
   std::vector<Symbol<E> *> tlsgd_syms;
   std::vector<Symbol<E> *> tlsdesc_syms;
   u32 tlsld_idx = -1;
-  std::mutex mu;
 
   void construct_relr(Context<E> &ctx);
   std::vector<u64> relr;
-
-  // We always create a .got so that _GLOBAL_OFFSET_TABLE_ has
-  // something to point to. s390x psABI defines GOT[1] as a
-  // reserved slot, so we allocate one more on s390x.
-  static constexpr i64 NUM_RESERVED = is_s390x<E> ? 2 : 1;
 };
 
 template <typename E>
@@ -1513,6 +1500,36 @@ public:
 };
 
 //
+// arch-alpha.cc
+//
+
+class AlphaGotSection : public Chunk<ALPHA> {
+public:
+  AlphaGotSection() {
+    this->name = ".alpha_got";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+    this->shdr.sh_addralign = 8;
+  }
+
+  void add_symbol(Symbol<ALPHA> &sym, i64 addend);
+  void finalize();
+  u64 get_addr(Symbol<ALPHA> &sym, i64 addend);
+  i64 get_reldyn_size(Context<ALPHA> &ctx) const override;
+  void copy_buf(Context<ALPHA> &ctx) override;
+
+  struct Entry {
+    bool operator==(const Entry &) const = default;
+    Symbol<ALPHA> *sym;
+    i64 addend;
+  };
+
+private:
+  std::vector<Entry> entries;
+  std::mutex mu;
+};
+
+//
 // main.cc
 //
 
@@ -1584,6 +1601,10 @@ template <> struct ContextExtras<PPC64V2> {
 template <> struct ContextExtras<SPARC64> {
   SparcTlsGetAddrSection *tls_get_addr_sec = nullptr;
   Symbol<SPARC64> *tls_get_addr_sym = nullptr;
+};
+
+template <> struct ContextExtras<ALPHA> {
+  AlphaGotSection *got = nullptr;
 };
 
 // Context represents a context object for each invocation of the linker.

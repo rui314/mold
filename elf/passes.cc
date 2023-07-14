@@ -123,6 +123,9 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.extra.tls_get_addr_sym = get_symbol(ctx, "__tls_get_addr");
   }
 
+  if constexpr (is_alpha<E>)
+    ctx.extra.got = push(new AlphaGotSection);
+
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
   if (ctx.dynamic) {
@@ -1340,12 +1343,6 @@ void scan_relocations(Context<E> &ctx) {
           vec[i].push_back(sym);
   });
 
-  // Handle GOT-generating relocations with addends
-  sort(ctx.got->gota_syms);
-  remove_duplicates(ctx.got->gota_syms);
-  ctx.got->shdr.sh_size += ctx.got->gota_syms.size() * sizeof(Word<E>);
-
-  // Handle GOT-generating relocations without addends
   std::vector<Symbol<E> *> syms = flatten(vec);
   ctx.symbol_aux.reserve(syms.size());
 
@@ -1401,6 +1398,9 @@ void scan_relocations(Context<E> &ctx) {
 
   if (ctx.needs_tlsld)
     ctx.got->add_tlsld(ctx);
+
+  if constexpr (is_alpha<E>)
+    ctx.extra.got->finalize();
 
   if (ctx.has_textrel && ctx.arg.warn_textrel)
     Warn(ctx) << "creating a DT_TEXTREL in an output file";
@@ -1744,6 +1744,7 @@ void clear_padding(Context<E> &ctx) {
 //   <writable RELRO data>
 //   .got
 //   .toc
+//   .alpha_got
 //   <writable RELRO bss>
 //   .relro_padding
 //   <writable non-RELRO data>
@@ -1827,6 +1828,8 @@ void sort_output_sections_regular(Context<E> &ctx) {
       return 1;
     if (chunk->name == ".toc")
       return 2;
+    if (chunk->name == ".alpha_got")
+      return 3;
     if (chunk == ctx.relro_padding)
       return INT_MAX;
     return 0;
