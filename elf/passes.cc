@@ -2279,13 +2279,6 @@ i64 set_osec_offsets(Context<E> &ctx) {
         continue;
     }
 
-    if constexpr (is_mips<E>) {
-      i64 sz = ctx.extra.got->shdr.sh_size;
-      ctx.extra.got->finalize(ctx);
-      if (sz != ctx.extra.got->shdr.sh_size)
-        continue;
-    }
-
     return fileoff;
   }
 }

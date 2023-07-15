@@ -1550,28 +1550,35 @@ public:
 
   void add_got_symbol(Symbol<E> &sym, i64 addend);
   void add_gotpage_symbol(Symbol<E> &sym, i64 addend);
-  void finalize(Context<E> &ctx);
 
-  u64 get_got_addr(Context<E> &ctx, Symbol<E> &sym,i64 addend);
-  u64 get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym,i64 addend);
-  u64 get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym,i64 addend);
+  u64 get_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
+  u64 get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym,i64 addend) const;
+  u64 get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym,i64 addend) const;
 
+  void update_shdr(Context<E> &ctx) override;
   i64 get_reldyn_size(Context<E> &ctx) const override;
   void copy_buf(Context<E> &ctx) override;
 
-  struct Entry {
-    bool operator==(const Entry &) const = default;
+  struct GotEntry {
+    u64 val = 0;
+    i64 r_type = R_NONE;
+    Symbol<E> *sym = nullptr;
+  };
+
+  struct SymbolAddend {
+    bool operator==(const SymbolAddend &) const = default;
+    bool operator<(const SymbolAddend &) const;
+    u64 get_addr(Context<E> &ctx, i64 flags = 0) const;
+
     Symbol<E> *sym;
     i64 addend;
-    u64 addr;
   };
 
 private:
-  std::vector<Entry> got_syms;
-  std::vector<Entry> gotpage_syms;
+  std::vector<GotEntry> get_got_entries(Context<E> &ctx) const;
 
-  std::vector<u64> abs_addrs;
-  std::vector<u64> rel_addrs;
+  std::vector<SymbolAddend> got_syms;
+  std::vector<SymbolAddend> gotpage_syms;
   std::mutex mu;
 };
 

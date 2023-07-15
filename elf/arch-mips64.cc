@@ -2,6 +2,8 @@
 
 namespace mold::elf {
 
+static constexpr i64 BIAS = 0x8000;
+
 template <typename E>
 void write_plt_header(Context<E> &ctx, u8 *buf) {}
 
@@ -66,7 +68,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (rel.r_type2 == R_MIPS_64 && rel.r_type3 == R_NONE) {
         *(U64<E> *)loc |= val;
       } else if (rel.r_type2 == R_MIPS_SUB && rel.r_type3 == R_MIPS_HI16) {
-        *(U32<E> *)loc |= ((-val + 0x8000) >> 16) & 0xffff;
+        *(U32<E> *)loc |= ((-val + BIAS) >> 16) & 0xffff;
       } else if (rel.r_type2 == R_MIPS_SUB && rel.r_type3 == R_MIPS_LO16) {
         *(U32<E> *)loc |= -val & 0xffff;
       } else {
@@ -79,7 +81,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     auto write_hi16 = [&](u64 val) {
       if (rel.r_type2 == R_NONE && rel.r_type3 == R_NONE)
-        *(U32<E> *)loc |= ((val + 0x8000) >> 16) & 0xffff;
+        *(U32<E> *)loc |= ((val + BIAS) >> 16) & 0xffff;
       else
         write_combined(val);
     };
@@ -185,8 +187,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
-static constexpr i64 PAGE_HALF = 0x8000;
-
 template <typename E>
 void MipsGotSection<E>::add_got_symbol(Symbol<E> &sym, i64 addend) {
   std::scoped_lock lock(mu);
@@ -200,96 +200,97 @@ void MipsGotSection<E>::add_gotpage_symbol(Symbol<E> &sym, i64 addend) {
 }
 
 template <typename E>
-static bool compare(const typename MipsGotSection<E>::Entry &a,
-                    const typename MipsGotSection<E>::Entry &b) {
-  return std::tuple(a.sym->file->priority, a.sym->sym_idx, a.addend) <
-         std::tuple(b.sym->file->priority, b.sym->sym_idx, b.addend);
+bool MipsGotSection<E>::SymbolAddend::operator<(const SymbolAddend &other) const {
+  return std::tuple(sym->file->priority, sym->sym_idx, addend) <
+         std::tuple(other.sym->file->priority, other.sym->sym_idx, other.addend);
+};
+
+template <typename E>
+u64 MipsGotSection<E>::SymbolAddend::get_addr(Context<E> &ctx, i64 flags) const {
+  return sym->get_addr(ctx, flags) + addend;
 }
 
 template <typename E>
-void MipsGotSection<E>::finalize(Context<E> &ctx) {
-  // Finalize got_syms
-  sort(got_syms.begin(), got_syms.end(), compare<E>);
-
-  remove_duplicates(got_syms);
-
-  // Finalize gotpage_syms
-  for (Entry &ent : gotpage_syms)
-    ent.addr = ent.sym->get_addr(ctx) + ent.addend;
-
-  sort(gotpage_syms.begin(), gotpage_syms.end(),
-       [](const Entry &a, const Entry &b) {
-    return a.addr < b.addr;
-  });
-
-  i64 old_size = rel_addrs.size();
-  abs_addrs.clear();
-  rel_addrs.clear();
-
-  for (Entry &ent : gotpage_syms) {
-    if (ent.sym->is_absolute()) {
-      abs_addrs.push_back(ent.addr);
-    } else if (rel_addrs.empty() || rel_addrs.back() + PAGE_HALF < ent.addr) {
-      rel_addrs.push_back(ent.addr + PAGE_HALF);
-    }
-  }
-
-  // We want to shrink this section monotonically to prevent oscillation.
-  if (old_size != 0 && rel_addrs.size() < old_size)
-    rel_addrs.resize(old_size);
-
-  i64 num_entries = got_syms.size() + abs_addrs.size() + rel_addrs.size();
-  this->shdr.sh_size = num_entries * sizeof(Word<E>);
-}
-
-template <typename E>
-u64 MipsGotSection<E>::get_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) {
+u64
+MipsGotSection<E>::get_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const {
   auto it = std::lower_bound(got_syms.begin(), got_syms.end(),
-                             Entry{&sym, addend}, compare<E>);
+                             SymbolAddend{&sym, addend});
   assert(it != got_syms.end());
   return this->shdr.sh_addr + (it - got_syms.begin()) * sizeof(Word<E>);
 }
 
 template <typename E>
 u64 MipsGotSection<E>::get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym,
-                                            i64 addend) {
-  std::span<u64> vec = sym.is_absolute() ? abs_addrs : rel_addrs;
+                                            i64 addend) const {
+  auto it = std::lower_bound(gotpage_syms.begin(), gotpage_syms.end(),
+                             SymbolAddend{&sym, addend});
+  assert(it != gotpage_syms.end());
 
-  u64 addr = sym.get_addr(ctx) + addend;
-  auto it = std::lower_bound(vec.begin(), vec.end(), addr, [](u64 x, u64 y) {
-    return x + PAGE_HALF < y;
-  });
-  assert(*it - PAGE_HALF <= addr && addr < *it + PAGE_HALF);
-
-  i64 idx;
-  if (sym.is_absolute())
-    idx = it - vec.begin() + got_syms.size();
-  else
-    idx = it - vec.begin() + got_syms.size() + abs_addrs.size();
-  return this->shdr.sh_addr + idx * sizeof(Word<E>);
+  i64 idx = it - gotpage_syms.begin();
+  return this->shdr.sh_addr + (got_syms.size() + idx) * sizeof(Word<E>);
 }
 
 template <typename E>
 u64 MipsGotSection<E>::get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym,
-                                            i64 addend) {
-  std::span<u64> vec = sym.is_absolute() ? abs_addrs : rel_addrs;
+                                            i64 addend) const {
+  auto it = std::lower_bound(gotpage_syms.begin(), gotpage_syms.end(),
+                             SymbolAddend{&sym, addend});
+  assert(it != gotpage_syms.end());
+  return it->get_addr(ctx);
+}
 
-  u64 addr = sym.get_addr(ctx) + addend;
-  auto it = std::lower_bound(vec.begin(), vec.end(), addr,
-                             [](u64 page_addr, u64 addr) {
-    return page_addr + PAGE_HALF < addr;
-  });
-  assert(*it - PAGE_HALF <= addr && addr < *it + PAGE_HALF);
-  return *it;
+template <typename E>
+std::vector<typename MipsGotSection<E>::GotEntry>
+MipsGotSection<E>::get_got_entries(Context<E> &ctx) const {
+  std::vector<GotEntry> entries;
+
+  // Create GOT entries for ordinary symbols
+  for (const SymbolAddend &ent : got_syms) {
+    // If a symbol is imported, let the dynamic linker to resolve it.
+    if (ent.sym->is_imported) {
+      entries.push_back({0, E::R_GLOB_DAT, ent.sym});
+      continue;
+    }
+
+    // If we know an address at link-time, fill that GOT entry now.
+    // It may need a base relocation, though.
+    if (ctx.arg.pic && ent.sym->is_relative())
+      entries.push_back({ent.get_addr(ctx, NO_PLT), E::R_RELATIVE});
+    else
+      entries.push_back({ent.get_addr(ctx, NO_PLT)});
+  }
+
+  // Create GOT entries for GOT_PAGE and GOT_OFST relocs
+  for (const SymbolAddend &ent : gotpage_syms) {
+    if (ctx.arg.pic && ent.sym->is_relative())
+      entries.push_back({ent.get_addr(ctx), E::R_RELATIVE});
+    else
+      entries.push_back({ent.get_addr(ctx)});
+  }
+
+  return entries;
+}
+
+template <typename E>
+void MipsGotSection<E>::update_shdr(Context<E> &ctx) {
+  // Finalize got_syms
+  sort(got_syms);
+  remove_duplicates(got_syms);
+
+  // Finalize gotpage_syms
+  sort(gotpage_syms);
+  remove_duplicates(gotpage_syms);
+
+  this->shdr.sh_size = (got_syms.size() + gotpage_syms.size()) * sizeof(Word<E>);
 }
 
 template <typename E>
 i64 MipsGotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
-  for (const Entry &ent : got_syms)
-    if (ent.sym->is_imported || (ctx.arg.pic && ent.sym->is_relative()))
+  for (GotEntry &ent : get_got_entries(ctx))
+    if (ent.r_type != R_NONE)
       n++;
-  return n + rel_addrs.size();
+  return n;
 }
 
 template <typename E>
@@ -300,32 +301,13 @@ void MipsGotSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                                     this->reldyn_offset);
 
-  i64 i = 0;
-  for (; i < got_syms.size(); i++) {
-    Symbol<E> &sym = *got_syms[i].sym;
-    u64 loc = this->shdr.sh_addr + i * sizeof(Word<E>);
-    i64 A = got_syms[i].addend;
-
-    if (sym.is_imported) {
-      *dynrel++ = ElfRel<E>(loc, E::R_GLOB_DAT, sym.get_dynsym_idx(ctx), A);
-    } else if (ctx.arg.pic && sym.is_relative()) {
-      u64 val = sym.get_addr(ctx, NO_PLT) + A;
-      *dynrel++ = ElfRel<E>(loc, E::R_RELATIVE, sym.get_dynsym_idx(ctx), val);
-      if (ctx.arg.apply_dynamic_relocs)
-        buf[i] = val;
-    } else {
-      buf[i] = sym.get_addr(ctx, NO_PLT) + A;
-    }
-  }
-
-  for (u64 addr : abs_addrs)
-    buf[i++] = addr;
-
-  for (u64 addr : rel_addrs) {
-    if (ctx.arg.pic)
+  for (i64 i = 0; GotEntry &ent : get_got_entries(ctx)) {
+    if (ent.r_type != R_NONE)
       *dynrel++ = ElfRel<E>(this->shdr.sh_addr + i * sizeof(Word<E>),
-                            E::R_RELATIVE, 0, addr);
-    buf[i++] = addr;
+                            ent.r_type,
+                            ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
+                            ent.val);
+    buf[i++] = ent.val;
   }
 }
 
