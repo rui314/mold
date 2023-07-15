@@ -1738,12 +1738,23 @@ struct ElfRel<SPARC64> {
   ib64 r_addend;
 };
 
+static u8 get_mips_r_type2(u8 r_type) {
+  switch (r_type) {
+  case R_MIPS_REL32:
+  case R_MIPS_GLOB_DAT:
+  case R_MIPS_TLS_DTPMOD64:
+  case R_MIPS_TLS_DTPREL64:
+  case R_MIPS_TLS_TPREL64:
+    return R_MIPS_64;
+  }
+  return R_NONE;
+}
+
 template <>
 struct ElfRel<MIPS64LE> {
   ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
-    : r_offset(offset), r_sym(sym), r_type(type),
-      r_type2((type == R_MIPS_REL32 || type == R_MIPS_GLOB_DAT) ? R_MIPS_64 : 0),
+    : r_offset(offset), r_sym(sym), r_type(type), r_type2(get_mips_r_type2(type)),
       r_type3(0), r_padding(0), r_addend(addend) {}
 
   ul64 r_offset;
@@ -1760,8 +1771,7 @@ struct ElfRel<MIPS64BE> {
   ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
     : r_offset(offset), r_sym(sym), r_padding(0), r_type3(0),
-      r_type2((type == R_MIPS_REL32 || type == R_MIPS_GLOB_DAT) ? R_MIPS_64 : 0),
-      r_type(type), r_addend(addend) {}
+      r_type2(get_mips_r_type2(type)), r_type(type), r_addend(addend) {}
 
   ub64 r_offset;
   ub32 r_sym;

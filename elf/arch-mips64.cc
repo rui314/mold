@@ -32,6 +32,9 @@ void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   switch (rel.r_type) {
   case R_NONE:
     break;
+  case R_MIPS_64:
+    *(U64<E> *)loc = val;
+    break;
   default:
     Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
   }
@@ -79,6 +82,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
     };
 
+    auto write32 = [&](u64 val) {
+      if (rel.r_type2 == R_NONE && rel.r_type3 == R_NONE)
+        *(U32<E> *)loc = val;
+      else
+        write_combined(val);
+    };
+
     auto write_hi16 = [&](u64 val) {
       if (rel.r_type2 == R_NONE && rel.r_type3 == R_NONE)
         *(U32<E> *)loc |= ((val + BIAS) >> 16) & 0xffff;
@@ -98,11 +108,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 P = get_addr() + rel.r_offset;
 
     switch (rel.r_type) {
+    case R_MIPS_64:
+      *(U64<E> *)loc = S + A;
+      break;
     case R_MIPS_GPREL16:
       if (sym.is_local(ctx))
         write_lo16(S + A + GP0 - GP);
       else
         write_lo16(S + A - GP);
+      break;
+    case R_MIPS_GPREL32:
+      write32(S + A + GP0 - GP);
       break;
     case R_MIPS_GOT_DISP:
     case R_MIPS_CALL16:
@@ -115,6 +131,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_lo16(S + A - ctx.extra.got->get_gotpage_page_addr(ctx, sym, A));
       break;
     case R_MIPS_JALR:
+      break;
+    case R_MIPS_TLS_TPREL_HI16:
+      write_hi16(S + A - ctx.tp_addr);
+      break;
+    case R_MIPS_TLS_TPREL_LO16:
+      write_lo16(S + A - ctx.tp_addr);
+      break;
+    case R_MIPS_TLS_GOTTPREL:
+      write_lo16(ctx.extra.got->get_gottp_addr(ctx, sym) - GP);
       break;
     default:
       unreachable();
@@ -177,7 +202,17 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_MIPS_GOT_PAGE:
       ctx.extra.got->add_gotpage_symbol(sym, rel.r_addend);
       break;
+    case R_MIPS_TLS_GOTTPREL:
+      assert(rel.r_addend == 0);
+      ctx.extra.got->add_gottp_symbol(sym);
+      break;
+    case R_MIPS_TLS_TPREL_HI16:
+    case R_MIPS_TLS_TPREL_LO16:
+      check_tlsle(ctx, sym, rel);
+      break;
+    case R_MIPS_64:
     case R_MIPS_GPREL16:
+    case R_MIPS_GPREL32:
     case R_MIPS_GOT_OFST:
     case R_MIPS_JALR:
       break;
@@ -200,9 +235,21 @@ void MipsGotSection<E>::add_gotpage_symbol(Symbol<E> &sym, i64 addend) {
 }
 
 template <typename E>
+void MipsGotSection<E>::add_gottp_symbol(Symbol<E> &sym) {
+  std::scoped_lock lock(mu);
+  gottp_syms.push_back(&sym);
+}
+
+template <typename E>
 bool MipsGotSection<E>::SymbolAddend::operator<(const SymbolAddend &other) const {
   return std::tuple(sym->file->priority, sym->sym_idx, addend) <
          std::tuple(other.sym->file->priority, other.sym->sym_idx, other.addend);
+};
+
+template <typename E>
+static bool compare(const Symbol<E> *a, const Symbol<E> *b) {
+  return std::tuple(a->file->priority, a->sym_idx) <
+         std::tuple(b->file->priority, b->sym_idx);
 };
 
 template <typename E>
@@ -225,7 +272,6 @@ u64 MipsGotSection<E>::get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym,
   auto it = std::lower_bound(gotpage_syms.begin(), gotpage_syms.end(),
                              SymbolAddend{&sym, addend});
   assert(it != gotpage_syms.end());
-
   i64 idx = it - gotpage_syms.begin();
   return this->shdr.sh_addr + (got_syms.size() + idx) * sizeof(Word<E>);
 }
@@ -237,6 +283,16 @@ u64 MipsGotSection<E>::get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym,
                              SymbolAddend{&sym, addend});
   assert(it != gotpage_syms.end());
   return it->get_addr(ctx);
+}
+
+template <typename E>
+u64 MipsGotSection<E>::get_gottp_addr(Context<E> &ctx, Symbol<E> &sym) const {
+  auto it = std::lower_bound(gottp_syms.begin(), gottp_syms.end(),
+                             &sym, compare<E>);
+  assert(it != gottp_syms.end());
+  i64 idx = it - gottp_syms.begin();
+  return this->shdr.sh_addr +
+         (got_syms.size() + gotpage_syms.size() + idx) * sizeof(Word<E>);
 }
 
 template <typename E>
@@ -268,6 +324,26 @@ MipsGotSection<E>::get_got_entries(Context<E> &ctx) const {
       entries.push_back({ent.get_addr(ctx)});
   }
 
+  for (Symbol<E> *sym : gottp_syms) {
+    // If we know nothing about the symbol, let the dynamic linker
+    // to fill the GOT entry.
+    if (sym->is_imported) {
+      entries.push_back({0, E::R_TPOFF, sym});
+      continue;
+    }
+
+    // If we know the offset within the current thread vector,
+    // let the dynamic linker to adjust it.
+    if (ctx.arg.shared) {
+      entries.push_back({sym->get_addr(ctx) - ctx.tls_begin, E::R_TPOFF});
+      continue;
+    }
+
+    // Otherwise, we know the offset from the thread pointer (TP) at
+    // link-time, so we can fill the GOT entry directly.
+    entries.push_back({sym->get_addr(ctx) - ctx.tp_addr});
+  }
+
   return entries;
 }
 
@@ -276,12 +352,17 @@ void MipsGotSection<E>::update_shdr(Context<E> &ctx) {
   // Finalize got_syms
   sort(got_syms);
   remove_duplicates(got_syms);
+  this->shdr.sh_size = got_syms.size() * sizeof(Word<E>);
 
   // Finalize gotpage_syms
   sort(gotpage_syms);
   remove_duplicates(gotpage_syms);
+  this->shdr.sh_size += gotpage_syms.size() * sizeof(Word<E>);
 
-  this->shdr.sh_size = (got_syms.size() + gotpage_syms.size()) * sizeof(Word<E>);
+  // Finalize gottp_syms
+  sort(gottp_syms, compare<E>);
+  remove_duplicates(gottp_syms);
+  this->shdr.sh_size += gottp_syms.size() * sizeof(Word<E>);
 }
 
 template <typename E>
