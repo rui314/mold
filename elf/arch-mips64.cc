@@ -69,7 +69,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     auto write_combined = [&](u64 val) {
       if (rel.r_type2 == R_MIPS_64 && rel.r_type3 == R_NONE) {
-        *(U64<E> *)loc |= val;
+        *(U64<E> *)loc = val;
       } else if (rel.r_type2 == R_MIPS_SUB && rel.r_type3 == R_MIPS_HI16) {
         *(U32<E> *)loc |= ((-val + BIAS) >> 16) & 0xffff;
       } else if (rel.r_type2 == R_MIPS_SUB && rel.r_type3 == R_MIPS_LO16) {
@@ -141,6 +141,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_MIPS_TLS_GOTTPREL:
       write_lo16(ctx.extra.got->get_gottp_addr(ctx, sym) - GP);
       break;
+    case R_MIPS_TLS_DTPREL_HI16:
+      write_hi16(S + A - ctx.dtp_addr);
+      break;
+    case R_MIPS_TLS_DTPREL_LO16:
+      write_lo16(S + A - ctx.dtp_addr);
+      break;
+    case R_MIPS_TLS_GD:
+      write_lo16(ctx.extra.got->get_tlsgd_addr(ctx, sym) + A - GP);
+      break;
+    case R_MIPS_TLS_LDM:
+      write_lo16(ctx.extra.got->get_tlsld_addr(ctx) + A - GP);
+      break;
     default:
       unreachable();
     }
@@ -196,48 +208,47 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_MIPS_GOT_DISP:
-    case R_MIPS_CALL16:
-      ctx.extra.got->add_got_symbol(sym, rel.r_addend);
+    case R_MIPS_CALL16: {
+      std::scoped_lock lock(ctx.extra.got->mu);
+      ctx.extra.got->got_syms.push_back({&sym, rel.r_addend});
       break;
-    case R_MIPS_GOT_PAGE:
-      ctx.extra.got->add_gotpage_symbol(sym, rel.r_addend);
+    }
+    case R_MIPS_GOT_PAGE: {
+      std::scoped_lock lock(ctx.extra.got->mu);
+      ctx.extra.got->gotpage_syms.push_back({&sym, rel.r_addend});
       break;
-    case R_MIPS_TLS_GOTTPREL:
+    }
+    case R_MIPS_TLS_GOTTPREL: {
+      std::scoped_lock lock(ctx.extra.got->mu);
       assert(rel.r_addend == 0);
-      ctx.extra.got->add_gottp_symbol(sym);
+      ctx.extra.got->gottp_syms.push_back(&sym);
       break;
+    }
     case R_MIPS_TLS_TPREL_HI16:
     case R_MIPS_TLS_TPREL_LO16:
       check_tlsle(ctx, sym, rel);
+      break;
+    case R_MIPS_TLS_GD: {
+      std::scoped_lock lock(ctx.extra.got->mu);
+      assert(rel.r_addend == 0);
+      ctx.extra.got->tlsgd_syms.push_back(&sym);
+      break;
+    }
+    case R_MIPS_TLS_LDM:
+      ctx.extra.got->needs_tlsld = true;
       break;
     case R_MIPS_64:
     case R_MIPS_GPREL16:
     case R_MIPS_GPREL32:
     case R_MIPS_GOT_OFST:
     case R_MIPS_JALR:
+    case R_MIPS_TLS_DTPREL_HI16:
+    case R_MIPS_TLS_DTPREL_LO16:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
-}
-
-template <typename E>
-void MipsGotSection<E>::add_got_symbol(Symbol<E> &sym, i64 addend) {
-  std::scoped_lock lock(mu);
-  got_syms.push_back({&sym, addend});
-}
-
-template <typename E>
-void MipsGotSection<E>::add_gotpage_symbol(Symbol<E> &sym, i64 addend) {
-  std::scoped_lock lock(mu);
-  gotpage_syms.push_back({&sym, addend});
-}
-
-template <typename E>
-void MipsGotSection<E>::add_gottp_symbol(Symbol<E> &sym) {
-  std::scoped_lock lock(mu);
-  gottp_syms.push_back(&sym);
 }
 
 template <typename E>
@@ -263,7 +274,8 @@ MipsGotSection<E>::get_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) con
   auto it = std::lower_bound(got_syms.begin(), got_syms.end(),
                              SymbolAddend{&sym, addend});
   assert(it != got_syms.end());
-  return this->shdr.sh_addr + (it - got_syms.begin()) * sizeof(Word<E>);
+  i64 idx = it - got_syms.begin();
+  return this->shdr.sh_addr + idx * sizeof(Word<E>);
 }
 
 template <typename E>
@@ -272,8 +284,8 @@ u64 MipsGotSection<E>::get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym,
   auto it = std::lower_bound(gotpage_syms.begin(), gotpage_syms.end(),
                              SymbolAddend{&sym, addend});
   assert(it != gotpage_syms.end());
-  i64 idx = it - gotpage_syms.begin();
-  return this->shdr.sh_addr + (got_syms.size() + idx) * sizeof(Word<E>);
+  i64 idx = got_syms.size() + (it - gotpage_syms.begin());
+  return this->shdr.sh_addr + idx * sizeof(Word<E>);
 }
 
 template <typename E>
@@ -286,62 +298,103 @@ u64 MipsGotSection<E>::get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym,
 }
 
 template <typename E>
+u64 MipsGotSection<E>::get_tlsgd_addr(Context<E> &ctx, Symbol<E> &sym) const {
+  auto it = std::lower_bound(tlsgd_syms.begin(), tlsgd_syms.end(),
+                             &sym, compare<E>);
+  assert(it != tlsgd_syms.end());
+  i64 idx = got_syms.size() + gotpage_syms.size() + (it - tlsgd_syms.begin()) * 2;
+  return this->shdr.sh_addr + idx * sizeof(Word<E>);
+}
+
+template <typename E>
 u64 MipsGotSection<E>::get_gottp_addr(Context<E> &ctx, Symbol<E> &sym) const {
   auto it = std::lower_bound(gottp_syms.begin(), gottp_syms.end(),
                              &sym, compare<E>);
   assert(it != gottp_syms.end());
-  i64 idx = it - gottp_syms.begin();
-  return this->shdr.sh_addr +
-         (got_syms.size() + gotpage_syms.size() + idx) * sizeof(Word<E>);
+  i64 idx = got_syms.size() + gotpage_syms.size() + tlsgd_syms.size() * 2 +
+            (it - gottp_syms.begin());
+  return this->shdr.sh_addr + idx * sizeof(Word<E>);
+}
+
+template <typename E>
+u64 MipsGotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
+  assert(needs_tlsld);
+  i64 idx = got_syms.size() + gotpage_syms.size() + tlsgd_syms.size() * 2 +
+            gottp_syms.size();
+  return this->shdr.sh_addr + idx * sizeof(Word<E>);
 }
 
 template <typename E>
 std::vector<typename MipsGotSection<E>::GotEntry>
 MipsGotSection<E>::get_got_entries(Context<E> &ctx) const {
   std::vector<GotEntry> entries;
+  auto add = [&](GotEntry ent) { entries.push_back(ent); };
 
   // Create GOT entries for ordinary symbols
   for (const SymbolAddend &ent : got_syms) {
     // If a symbol is imported, let the dynamic linker to resolve it.
     if (ent.sym->is_imported) {
-      entries.push_back({0, E::R_GLOB_DAT, ent.sym});
+      add({0, E::R_GLOB_DAT, ent.sym});
       continue;
     }
 
     // If we know an address at link-time, fill that GOT entry now.
     // It may need a base relocation, though.
     if (ctx.arg.pic && ent.sym->is_relative())
-      entries.push_back({ent.get_addr(ctx, NO_PLT), E::R_RELATIVE});
+      add({ent.get_addr(ctx, NO_PLT), E::R_RELATIVE});
     else
-      entries.push_back({ent.get_addr(ctx, NO_PLT)});
+      add({ent.get_addr(ctx, NO_PLT)});
   }
 
   // Create GOT entries for GOT_PAGE and GOT_OFST relocs
   for (const SymbolAddend &ent : gotpage_syms) {
     if (ctx.arg.pic && ent.sym->is_relative())
-      entries.push_back({ent.get_addr(ctx), E::R_RELATIVE});
+      add({ent.get_addr(ctx), E::R_RELATIVE});
     else
-      entries.push_back({ent.get_addr(ctx)});
+      add({ent.get_addr(ctx)});
+  }
+
+  // Create GOT entries for TLVs
+  for (Symbol<E> *sym : tlsgd_syms) {
+    if (sym->is_imported) {
+      // If a symbol is imported, let the dynamic linker to resolve it.
+      add({0, E::R_DTPMOD, sym});
+      add({0, E::R_DTPOFF, sym});
+    } else if (ctx.arg.shared) {
+      // If we are creating a shared library, we know the TLV's offset
+      // within the current TLS block. We don't know the module ID though.
+      add({0, E::R_DTPMOD});
+      add({sym->get_addr(ctx) - ctx.dtp_addr});
+    } else {
+      // If we are creating an executable, we know both the module ID and the
+      // offset. Module ID 1 indicates the main executable.
+      add({1});
+      add({sym->get_addr(ctx) - ctx.dtp_addr});
+    }
   }
 
   for (Symbol<E> *sym : gottp_syms) {
-    // If we know nothing about the symbol, let the dynamic linker
-    // to fill the GOT entry.
     if (sym->is_imported) {
-      entries.push_back({0, E::R_TPOFF, sym});
-      continue;
+      // If we know nothing about the symbol, let the dynamic linker
+      // to fill the GOT entry.
+      add({0, E::R_TPOFF, sym});
+    } else if (ctx.arg.shared) {
+      // If we know the offset within the current thread vector,
+      // let the dynamic linker to adjust it.
+      add({sym->get_addr(ctx) - ctx.tls_begin, E::R_TPOFF});
+    } else {
+      // Otherwise, we know the offset from the thread pointer (TP) at
+      // link-time, so we can fill the GOT entry directly.
+      add({sym->get_addr(ctx) - ctx.tp_addr});
     }
+  }
 
-    // If we know the offset within the current thread vector,
-    // let the dynamic linker to adjust it.
-    if (ctx.arg.shared) {
-      entries.push_back({sym->get_addr(ctx) - ctx.tls_begin, E::R_TPOFF});
-      continue;
-    }
-
-    // Otherwise, we know the offset from the thread pointer (TP) at
-    // link-time, so we can fill the GOT entry directly.
-    entries.push_back({sym->get_addr(ctx) - ctx.tp_addr});
+  if (needs_tlsld) {
+    if (ctx.arg.shared)
+      add({0, E::R_DTPMOD});
+    else
+      add({1}); // 1 means the main executable
+    add({0});
   }
 
   return entries;
@@ -359,10 +412,18 @@ void MipsGotSection<E>::update_shdr(Context<E> &ctx) {
   remove_duplicates(gotpage_syms);
   this->shdr.sh_size += gotpage_syms.size() * sizeof(Word<E>);
 
+  // Finalize tlsgd_syms
+  sort(tlsgd_syms, compare<E>);
+  remove_duplicates(tlsgd_syms);
+  this->shdr.sh_size += tlsgd_syms.size() * 2 * sizeof(Word<E>);
+
   // Finalize gottp_syms
   sort(gottp_syms, compare<E>);
   remove_duplicates(gottp_syms);
   this->shdr.sh_size += gottp_syms.size() * sizeof(Word<E>);
+
+  if (needs_tlsld)
+    this->shdr.sh_size += 2 * sizeof(Word<E>);
 }
 
 template <typename E>

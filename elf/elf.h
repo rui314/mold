@@ -1738,15 +1738,9 @@ struct ElfRel<SPARC64> {
   ib64 r_addend;
 };
 
-static u8 get_mips_r_type2(u8 r_type) {
-  switch (r_type) {
-  case R_MIPS_REL32:
-  case R_MIPS_GLOB_DAT:
-  case R_MIPS_TLS_DTPMOD64:
-  case R_MIPS_TLS_DTPREL64:
-  case R_MIPS_TLS_TPREL64:
+static inline u8 get_mips_r_type2(u8 r_type) {
+  if (r_type == R_MIPS_REL32 || r_type == R_MIPS_GLOB_DAT)
     return R_MIPS_64;
-  }
   return R_NONE;
 }
 

@@ -505,9 +505,9 @@ public:
   void populate_symtab(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> got_syms;
-  std::vector<Symbol<E> *> gottp_syms;
   std::vector<Symbol<E> *> tlsgd_syms;
   std::vector<Symbol<E> *> tlsdesc_syms;
+  std::vector<Symbol<E> *> gottp_syms;
   u32 tlsld_idx = -1;
 
   void construct_relr(Context<E> &ctx);
@@ -1548,14 +1548,12 @@ public:
     this->shdr.sh_size = 8;
   }
 
-  void add_got_symbol(Symbol<E> &sym, i64 addend);
-  void add_gotpage_symbol(Symbol<E> &sym, i64 addend);
-  void add_gottp_symbol(Symbol<E> &sym);
-
   u64 get_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
   u64 get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
   u64 get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
   u64 get_gottp_addr(Context<E> &ctx, Symbol<E> &sym) const;
+  u64 get_tlsgd_addr(Context<E> &ctx, Symbol<E> &sym) const;
+  u64 get_tlsld_addr(Context<E> &ctx) const;
 
   void update_shdr(Context<E> &ctx) override;
   i64 get_reldyn_size(Context<E> &ctx) const override;
@@ -1576,12 +1574,13 @@ public:
     i64 addend;
   };
 
-private:
   std::vector<GotEntry> get_got_entries(Context<E> &ctx) const;
 
   std::vector<SymbolAddend> got_syms;
   std::vector<SymbolAddend> gotpage_syms;
+  std::vector<Symbol<E> *> tlsgd_syms;
   std::vector<Symbol<E> *> gottp_syms;
+  std::atomic_bool needs_tlsld = false;
   std::mutex mu;
 };
 
