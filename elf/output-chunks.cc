@@ -55,14 +55,12 @@ u64 get_eflags(Context<E> &ctx) {
         ret |= EF_RISCV_RVC;
 
       if ((flags & EF_RISCV_FLOAT_ABI) != (ret & EF_RISCV_FLOAT_ABI))
-        Error(ctx) << *objs[i]
-                   << ": cannot link object files with different floating-point ABI from "
-                   << *objs[0];
+        Error(ctx) << *objs[i] << ": cannot link object files with different"
+                   << " floating-point ABI from " << *objs[0];
 
       if ((flags & EF_RISCV_RVE) != (ret & EF_RISCV_RVE))
-        Error(ctx) << *objs[i]
-                   << ": cannot link object files with different EF_RISCV_RVE from "
-                   << *objs[0];
+        Error(ctx) << *objs[i] << ": cannot link object files with different"
+                   << " EF_RISCV_RVE from " << *objs[0];
 
     }
     return ret;
