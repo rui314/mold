@@ -662,7 +662,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.unresolved_symbols = UNRESOLVED_IGNORE;
       else
         Fatal(ctx) << "unknown --unresolved-symbols argument: " << arg;
-    } else if (read_arg("u") || read_arg("undefined")) {
+    } else if (read_arg("undefined") || read_arg("u")) {
       ctx.arg.undefined.push_back(arg);
     } else if (read_arg("require-defined")) {
       ctx.arg.require_defined.push_back(arg);
