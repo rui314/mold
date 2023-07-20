@@ -652,7 +652,14 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
       memset(&sym, 0, sizeof(sym));
       sym.st_type = STT_SECTION;
       sym.st_value = chunk->shdr.sh_addr;
-      sym.st_shndx = chunk->shndx;
+
+      if (ctx.symtab_shndx) {
+        U32<E> *xindex = (U32<E> *)(ctx.buf + ctx.symtab_shndx->shdr.sh_offset);
+        xindex[chunk->shndx] = chunk->shndx;
+        sym.st_shndx = SHN_XINDEX;
+      } else {
+        sym.st_shndx = chunk->shndx;
+      }
     }
   }
 
