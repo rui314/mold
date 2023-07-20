@@ -13,7 +13,7 @@ namespace mold {
 i64 HyperLogLog::get_cardinality() const {
   double z = 0;
   for (i64 val : buckets)
-    z += pow(2, -val);
+    z += std::ldexp(1.0, -val);
   return ALPHA * NBUCKETS * NBUCKETS / z;
 }
 
