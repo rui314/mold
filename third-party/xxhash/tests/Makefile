@@ -1,6 +1,6 @@
 # ################################################################
 # xxHash Makefile
-# Copyright (C) 2012-2020 Yann Collet
+# Copyright (C) 2012-2021 Yann Collet
 #
 # GPL v2 License
 #
@@ -51,7 +51,7 @@ default: all
 all: test
 
 .PHONY: test
-test: test_multiInclude test_unicode
+test: test_multiInclude test_unicode test_sanity
 
 .PHONY: test_multiInclude
 test_multiInclude:
@@ -100,6 +100,28 @@ test_unicode: $(XXHSUM) generate_unicode_test.c
 	$(SHELL) ./unicode_test.sh
 endif
 
+.PHONY: test_filename_escape
+test_filename_escape: $(XXHSUM)
+	./filename-escape.sh
+
+.PHONY: test_cli_comment_line
+test_cli_comment_line: $(XXHSUM)
+	$(SHELL) ./cli-comment-line.sh
+
+.PHONY: test_cli_ignore_missing
+test_cli_ignore_missing: $(XXHSUM)
+	$(SHELL) ./cli-ignore-missing.sh
+
+.PHONY: test_sanity
+test_sanity: sanity_test.c
+	$(CC) $(CFLAGS) $(LDFLAGS) sanity_test.c -o sanity_test$(EXT)
+	$(RUN_ENV) ./sanity_test$(EXT)
+
+.PHONY: sanity_test_vectors.h
+sanity_test_vectors.h: sanity_test_vectors_generator.c
+	$(CC) $(CFLAGS) $(LDFLAGS) sanity_test_vectors_generator.c -o sanity_test_vectors_generator$(EXT)
+	./sanity_test_vectors_generator$(EXT)
+
 xxhash.o: ../xxhash.c ../xxhash.h
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(LDFLAGS) -c -o $@ $<
 
@@ -110,3 +132,4 @@ clean:
 	@$(RM) *.o
 	@$(RM) multiInclude multiInclude_withxxhash
 	@$(RM) *.unicode generate_unicode_test$(EXT) unicode_test.* xxhsum*
+	@$(RM) sanity_test$(EXT) sanity_test_vectors_generator$(EXT)

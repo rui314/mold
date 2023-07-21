@@ -18,6 +18,8 @@ xxhsum_privateXXH
 xxhsum_inlinedXXH
 dispatch
 tests/generate_unicode_test
+tests/sanity_test
+tests/sanity_test_vectors_generator
 
 # local conf
 .clang_complete
@@ -45,3 +47,6 @@ infer-out
 tmp*
 tests/*.unicode
 tests/unicode_test*
+
+# Doxygen
+doxygen/

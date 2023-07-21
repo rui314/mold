@@ -4,31 +4,32 @@ xxhsum(1) -- print or check xxHash non-cryptographic checksums
 SYNOPSIS
 --------
 
-`xxhsum [<OPTION>] ... [<FILE>] ...`
-`xxhsum -b [<OPTION>] ...`
+`xxhsum` [*OPTION*]... [*FILE*]...  
+`xxhsum -b` [*OPTION*]...
 
-`xxh32sum` is equivalent to `xxhsum -H0`
-`xxh64sum` is equivalent to `xxhsum -H1`
-`xxh128sum` is equivalent to `xxhsum -H2`
+`xxh32sum` is equivalent to `xxhsum -H0`,
+`xxh64sum` is equivalent to `xxhsum -H1`,
+`xxh128sum` is equivalent to `xxhsum -H2`.
 
 
 DESCRIPTION
 -----------
 
-Print or check xxHash (32, 64 or 128 bits) checksums.
-When no <FILE>, read standard input, except if it's the console.
-When <FILE> is `-`, read standard input even if it's the console.
+Print or check xxHash (32, 64 or 128 bits) checksums.  
+When no *FILE*, read standard input, except if it's the console.
+When *FILE* is `-`, read standard input even if it's the console.
 
-`xxhsum` supports a command line syntax similar but not identical to md5sum(1).
-Differences are:
-`xxhsum` doesn't have text/binary mode switch (`-b`, `-t`);
-`xxhsum` always treats files as binary file;
-`xxhsum` has a hash bit width switch (`-H`);
+`xxhsum` supports a command line syntax similar but not identical to md5sum(1).  Differences are:
+
+* `xxhsum` doesn't have text mode switch (`-t`)
+* `xxhsum` doesn't have short binary mode switch (`-b`)
+* `xxhsum` always treats files as binary file
+* `xxhsum` has a hash selection switch (`-H`)
 
 As xxHash is a fast non-cryptographic checksum algorithm,
 `xxhsum` should not be used for security related purposes.
 
-`xxhsum -b` invokes benchmark mode. See [OPTIONS](#OPTIONS) and [EXAMPLES](#EXAMPLES) for details.
+`xxhsum -b` invokes benchmark mode. See OPTIONS and EXAMPLES for details.
 
 OPTIONS
 -------
@@ -36,10 +37,15 @@ OPTIONS
 * `-V`, `--version`:
   Displays xxhsum version and exits
 
-* `-H`<HASHTYPE>:
-  Hash selection. <HASHTYPE> means `0`=XXH32, `1`=XXH64, `2`=XXH128, `3`=XXH3.
-  Alternatively, <HASHTYPE> `32`=XXH32, `64`=XXH64, `128`=XXH128.
-  Default value is `1` (64bits)
+* `-H`*HASHTYPE*:
+  Hash selection. *HASHTYPE* means `0`=XXH32, `1`=XXH64, `2`=XXH128, `3`=XXH3.
+  Note that `-H3` triggers `--tag`, which can't be skipped
+  (this is to reduce risks of confusion with `-H2` (`XXH64`)).
+  Alternatively, *HASHTYPE* `32`=XXH32, `64`=XXH64, `128`=XXH128.
+  Default value is `1` (XXH64)
+
+* `--binary`:
+  Read in binary mode.
 
 * `--tag`:
   Output in the BSD style.
@@ -51,10 +57,10 @@ OPTIONS
 * `-h`, `--help`:
   Displays help and exits
 
-**The following four options are useful only when verifying checksums (`-c`)**
+### The following options are useful only when verifying checksums (-c):
 
-* `-c`, `--check` <FILE>:
-  Read xxHash sums from <FILE> and check them
+* `-c`, `--check` *FILE*:
+  Read xxHash sums from *FILE* and check them
 
 * `-q`, `--quiet`:
   Don't print OK for each successfully verified file
@@ -72,22 +78,22 @@ OPTIONS
 * `-w`, `--warn`:
   Emit a warning message about each improperly formatted checksum line.
 
-**The following options are useful only benchmark purpose**
+### The following options are useful only benchmark purpose:
 
 * `-b`:
-  Benchmark mode.  See [EXAMPLES](#EXAMPLES) for details.
+  Benchmark mode.  See EXAMPLES for details.
 
 * `-b#`:
   Specify ID of variant to be tested.
   Multiple variants can be selected, separated by a ',' comma.
 
-* `-B`<BLOCKSIZE>:
-  Only useful for benchmark mode (`-b`). See [EXAMPLES](#EXAMPLES) for details.
+* `-B`*BLOCKSIZE*:
+  Only useful for benchmark mode (`-b`). See *EXAMPLES* for details.
   <BLOCKSIZE> specifies benchmark mode's test data block size in bytes.
   Default value is 102400
 
-* `-i`<ITERATIONS>:
-  Only useful for benchmark mode (`-b`). See [EXAMPLES](#EXAMPLES) for details.
+* `-i`*ITERATIONS*:
+  Only useful for benchmark mode (`-b`). See *EXAMPLES* for details.
   <ITERATIONS> specifies number of iterations in benchmark. Single iteration
   lasts approximately 1000 milliseconds. Default value is 3
 

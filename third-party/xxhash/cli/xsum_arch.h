@@ -1,6 +1,6 @@
 /*
  * xxhsum - Command line interface for xxhash algorithms
- * Copyright (C) 2013-2020 Yann Collet
+ * Copyright (C) 2013-2021 Yann Collet
  *
  * GPL v2 License
  *
@@ -79,7 +79,7 @@
 #endif
 
 /* makes the next part easier */
-#if defined(__x86_64__) || defined(_M_AMD64) || defined(_M_X64)
+#if (defined(__x86_64__) || defined(_M_AMD64) || defined(_M_X64)) && !defined(_M_ARM64EC)
 #   define XSUM_ARCH_X64 1
 #   define XSUM_ARCH_X86 "x86_64"
 #elif defined(__i386__) || defined(_M_IX86) || defined(_M_IX86_FP)
@@ -102,11 +102,21 @@
 #  else
 #     define XSUM_ARCH XSUM_ARCH_X86
 #  endif
-#elif defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64)
-#  define XSUM_ARCH "aarch64 + NEON"
+#elif defined(__aarch64__) || defined(__arm64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
+#  if defined(__ARM_FEATURE_SVE)
+#    define XSUM_ARCH "aarch64 + SVE"
+#  else
+#    define XSUM_ARCH "aarch64 + NEON"
+#  endif
 #elif defined(__arm__) || defined(__thumb__) || defined(__thumb2__) || defined(_M_ARM)
 /* ARM has a lot of different features that can change xxHash significantly. */
-#  if defined(__thumb2__) || (defined(__thumb__) && (__thumb__ == 2 || __ARM_ARCH >= 7))
+#  ifdef __ARM_ARCH
+#    define XSUM_ARCH_ARM_VER XSUM_EXPAND_AND_QUOTE(__ARM_ARCH)
+#  else
+#    define XSUM_ARCH_ARM_VER XSUM_EXPAND_AND_QUOTE(_M_ARM)
+#  endif
+#  if defined(_M_ARM) /* windows arm is always thumb-2 */ \
+    || defined(__thumb2__) || (defined(__thumb__) && (__thumb__ == 2 || __ARM_ARCH >= 7))
 #    define XSUM_ARCH_THUMB " Thumb-2"
 #  elif defined(__thumb__)
 #    define XSUM_ARCH_THUMB " Thumb-1"
@@ -114,17 +124,17 @@
 #    define XSUM_ARCH_THUMB ""
 #  endif
 /* ARMv7 has unaligned by default */
-#  if defined(__ARM_FEATURE_UNALIGNED) || __ARM_ARCH >= 7 || defined(_M_ARMV7VE)
+#  if defined(__ARM_FEATURE_UNALIGNED) || __ARM_ARCH >= 7 || defined(_M_ARM)
 #    define XSUM_ARCH_UNALIGNED " + unaligned"
 #  else
 #    define XSUM_ARCH_UNALIGNED ""
 #  endif
-#  if defined(__ARM_NEON) || defined(__ARM_NEON__)
+#  if defined(__ARM_NEON) || defined(__ARM_NEON__) || defined(_M_ARM)
 #    define XSUM_ARCH_NEON " + NEON"
 #  else
 #    define XSUM_ARCH_NEON ""
 #  endif
-#  define XSUM_ARCH "ARMv" XSUM_EXPAND_AND_QUOTE(__ARM_ARCH) XSUM_ARCH_THUMB XSUM_ARCH_NEON XSUM_ARCH_UNALIGNED
+#  define XSUM_ARCH "ARMv" XSUM_ARCH_ARM_VER XSUM_ARCH_THUMB XSUM_ARCH_NEON XSUM_ARCH_UNALIGNED
 #elif defined(__powerpc64__) || defined(__ppc64__) || defined(__PPC64__)
 #  if defined(__GNUC__) && defined(__POWER9_VECTOR__)
 #    define XSUM_ARCH "ppc64 + POWER9 vector"
@@ -145,6 +155,12 @@
 #  define XSUM_ARCH "s390x"
 #elif defined(__s390__)
 #  define XSUM_ARCH "s390"
+#elif defined(__wasm__) || defined(__asmjs__) || defined(__EMSCRIPTEN__)
+#  if defined(__wasm_simd128__)
+#    define XSUM_ARCH "wasm/asmjs + simd128"
+#  else
+#    define XSUM_ARCH "wasm/asmjs"
+#  endif
 #else
 #  define XSUM_ARCH "unknown"
 #endif
