@@ -3,8 +3,8 @@
 [![CI](https://github.com/rui314/mold/actions/workflows/ci.yml/badge.svg)](https://github.com/rui314/mold/actions/workflows/ci.yml)
 [![build result](https://build.opensuse.org/projects/home:marxin:mold/packages/mold/badge.svg?type=default)](https://build.opensuse.org/package/show/home:marxin:mold/mold)
 
-<i>This repository contains a free, AGPL-licensed version of the mold linker.
-If you are looking for a commercial, non-AGPL version of the same linker,
+<i>This repository contains a free version of the mold linker.
+If you are looking for a commercial version that supports macOS
 please visit the
 [repository of the sold linker](https://github.com/bluewhalesystems/sold).</i>
 
@@ -241,24 +241,6 @@ the time. In this demo, the maximum parallelism is artificially capped at 16,
 so that the bars fit in the GIF.
 
 For details, please see the [design notes](docs/design.md).
-
-## License
-
-mold is available under the AGPL license. Note that this does not mean you
-have to license your program under AGPL if you use mold to link your program.
-The output of the mold linker is a derived work of the object files and
-libraries you pass to the linker, but not a derived work of the mold linker
-itself.
-
-In addition, you can also purchase a commercial, non-AGPL license with
-technical support from our company, Blue Whale Systems PTE LTD. If you are a
-large company, please consider obtaining a commercial license before having
-hundreds or thousands of your developers depend on mold. Mold is primarily a
-single-person open-source project, and like other open-source projects, we are
-not legally obligated to continue maintaining it. A legally-binding commercial
-license contract addresses this concern. By purchasing a license, you are
-guaranteed that mold will be maintained for you. Please visit [our
-website](https://bluewhale.systems) for details on the commercial license.
 
 ## Sponsors
 
