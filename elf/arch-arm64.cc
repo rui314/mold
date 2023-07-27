@@ -232,7 +232,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         i++;
       }
       break;
-    case R_AARCH64_ADR_PREL_PG_HI21: {
+    case R_AARCH64_ADR_PREL_PG_HI21:
+    case R_AARCH64_ADR_PREL_PG_HI21_NC: {
       // The ARM64 psABI defines that an `ADRP x0, foo` and `ADD x0, x0,
       // :lo12: foo` instruction pair to materialize a PC-relative address
       // in a register can be relaxed to `NOP` followed by `ADR x0, foo`
@@ -259,7 +260,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
 
       i64 val = page(S + A) - page(P);
-      check(val, -(1LL << 32), 1LL << 32);
+      if (rel.r_type == R_AARCH64_ADR_PREL_PG_HI21)
+        check(val, -(1LL << 32), 1LL << 32);
       write_adrp(loc, val);
       break;
     }
@@ -519,6 +521,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_AARCH64_ADR_PREL_PG_HI21:
+    case R_AARCH64_ADR_PREL_PG_HI21_NC:
       scan_pcrel(ctx, sym, rel);
       break;
     case R_AARCH64_TLSGD_ADR_PAGE21:
