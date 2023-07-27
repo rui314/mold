@@ -45,6 +45,10 @@ void-*)
   xbps-install -Sy bash make cmake openssl-devel zlib-devel gcc
   xbps-install -Sy tar diffutils util-linux
   ;;
+alpine-*)
+  apk update
+  apk add bash make openssl-dev linux-headers cmake zlib-dev gcc g++
+  ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"
   exit 1
