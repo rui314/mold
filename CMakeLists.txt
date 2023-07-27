@@ -442,6 +442,9 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
   if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
     install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
   endif()
+  if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE.third-party")
+    install(FILES "LICENSE.third-party" DESTINATION "${CMAKE_INSTALL_DOCDIR}")
+  endif()
 
   function(mold_install_relative_symlink OLD NEW)
     install(CODE "
