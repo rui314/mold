@@ -22,6 +22,5 @@ $CC -B. -o $t/exe $t/a.o \
 
 $OBJDUMP -dr $t/exe | grep -F -A7 '<fn1$thunk>:' > $t/log
 
-grep -Eq 'mov\s+ip, pc' $t/log
-grep -Eq 'bx\s+ip' $t/log
+grep -Eq 'bx\s+pc' $t/log
 grep -Eq 'add\s+ip, ip, pc' $t/log

@@ -638,13 +638,13 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   // It has two entry points: +0 for Thumb and +4 for ARM.
   const u8 entry[] = {
     // .thumb
-    0xfc, 0x46,             //    mov  ip, pc
-    0x60, 0x47,             //    bx   ip  # jumps to the following `ldr` insn
+    0x78, 0x47,             //    bx   pc  # jumps to 1f
+    0xc0, 0x46,             //    nop
     // .arm
-    0x04, 0xc0, 0x9f, 0xe5, //    ldr  ip, 2f
-    0x0f, 0xc0, 0x8c, 0xe0, // 1: add  ip, ip, pc
+    0x04, 0xc0, 0x9f, 0xe5, // 1: ldr  ip, 3f
+    0x0f, 0xc0, 0x8c, 0xe0, // 2: add  ip, ip, pc
     0x1c, 0xff, 0x2f, 0xe1, //    bx   ip
-    0x00, 0x00, 0x00, 0x00, // 2: .word sym - 1b
+    0x00, 0x00, 0x00, 0x00, // 3: .word sym - 2b
   };
 
   static_assert(E::thunk_hdr_size == sizeof(hdr));
