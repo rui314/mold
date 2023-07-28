@@ -9,9 +9,9 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "daily"
-      
-   - package-ecosystem: "docker" # See documentation for possible values
+
+  - package-ecosystem: "github-actions" # See documentation for possible values
     directory: "/" # Location of package manifests
     schedule:
       interval: "daily"
-      
+    
