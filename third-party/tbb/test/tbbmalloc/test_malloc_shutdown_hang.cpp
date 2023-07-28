@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -38,7 +38,7 @@ void allocatorRandomThrashing() {
     const int MAX_ITER = 10000;
     const int MAX_ALLOC = 10 * 1024 * 1024;
 
-    void *arr[ARRAY_SIZE] = {0};
+    void *arr[ARRAY_SIZE] = {nullptr};
     for (int i = 0; i < rand() % MAX_ITER; ++i) {
         // Random allocation size for random arrays
         for (int j = 0; j < rand() % ARRAY_SIZE; ++j) {
@@ -47,7 +47,7 @@ void allocatorRandomThrashing() {
         // Deallocate everything
         for (int j = 0; j < ARRAY_SIZE; ++j) {
             scalable_free(arr[j]);
-            arr[j] = NULL;
+            arr[j] = nullptr;
         }
     }
 }
@@ -63,7 +63,7 @@ void hangOnExitReproducer() {
 #if (_WIN32 || _WIN64) && !__TBB_WIN8UI_SUPPORT
 #include <process.h> // _spawnl
 void processSpawn(const char* self) {
-    _spawnl(_P_WAIT, self, self, "1", NULL);
+    _spawnl(_P_WAIT, self, self, "1", nullptr);
 }
 #elif __unix__ || __APPLE__
 #include <unistd.h> // fork/exec
@@ -73,7 +73,7 @@ void processSpawn(const char* self) {
     if (pid == -1) {
         REPORT("ERROR: fork failed.\n");
     } else if (pid == 0) { // child
-        execl(self, self, "1", NULL);
+        execl(self, self, "1", nullptr);
         REPORT("ERROR: exec never returns\n");
         exit(1);
     } else { // parent

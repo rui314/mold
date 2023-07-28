@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -147,9 +147,9 @@ public:
     }
 
     template <typename... Args>
-    void init_buckets_impl( segment_ptr_type ptr, size_type sz, Args&&... args ) {
+    void init_buckets_impl( segment_ptr_type ptr, size_type sz, const Args&... args ) {
         for (size_type i = 0; i < sz; ++i) {
-            bucket_allocator_traits::construct(my_allocator, ptr + i, std::forward<Args>(args)...);
+            bucket_allocator_traits::construct(my_allocator, ptr + i, args...);
         }
     }
 
@@ -292,7 +292,7 @@ public:
         if( sz >= mask ) { // TODO: add custom load_factor
             segment_index_type new_seg = tbb::detail::log2( mask+1 ); //optimized segment_index_of
             __TBB_ASSERT( is_valid(my_table[new_seg-1].load(std::memory_order_relaxed)), "new allocations must not publish new mask until segment has allocated");
-            static const segment_ptr_type is_allocating = segment_ptr_type(2);;
+            static const segment_ptr_type is_allocating = segment_ptr_type(2);
             segment_ptr_type disabled = nullptr;
             if (!(my_table[new_seg].load(std::memory_order_acquire))
                 && my_table[new_seg].compare_exchange_strong(disabled, is_allocating))
@@ -451,18 +451,18 @@ private:
             }
             ++k;
         }
-        my_bucket = 0; my_node = 0; my_index = k; // the end
+        my_bucket = nullptr; my_node = nullptr; my_index = k; // the end
     }
 
     template <typename Key, typename T, typename HashCompare, typename A
 #if __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
             , typename M
-			 >
-		__TBB_requires(tbb::detail::hash_compare<HashCompare, Key> &&
-					   ch_map_rw_scoped_lockable<M>)
+             >
+        __TBB_requires(tbb::detail::hash_compare<HashCompare, Key> &&
+                       ch_map_rw_scoped_lockable<M>)
 #else
-			 >
-		__TBB_requires(tbb::detail::hash_compare<HashCompare, Key>)
+             >
+        __TBB_requires(tbb::detail::hash_compare<HashCompare, Key>)
 #endif
     friend class concurrent_hash_map;
 
@@ -528,7 +528,7 @@ public:
     // Init range with container and grainsize specified
     hash_map_range( const map_type &map, size_type grainsize_ = 1 ) :
         my_begin( Iterator( map, 0, map.my_embedded_segment, map.my_embedded_segment->node_list.load(std::memory_order_relaxed) ) ),
-        my_end( Iterator( map, map.my_mask.load(std::memory_order_relaxed) + 1, 0, 0 ) ),
+        my_end( Iterator( map, map.my_mask.load(std::memory_order_relaxed) + 1, nullptr, nullptr ) ),
         my_grainsize( grainsize_ )
     {
         __TBB_ASSERT( grainsize_>0, "grainsize must be positive" );
@@ -728,7 +728,7 @@ protected:
     void rehash_bucket( bucket *b_new, const hashcode_type hash ) {
         __TBB_ASSERT( hash > 1, "The lowermost buckets can't be rehashed" );
         b_new->node_list.store(reinterpret_cast<node_base*>(empty_rehashed_flag), std::memory_order_release); // mark rehashed
-        hashcode_type mask = (1u << tbb::detail::log2(hash)) - 1; // get parent mask from the topmost bit
+        hashcode_type mask = (hashcode_type(1) << tbb::detail::log2(hash)) - 1; // get parent mask from the topmost bit
         bucket_accessor b_old( this, hash & mask );
 
         mask = (mask<<1) | 1; // get full mask for new bucket
@@ -786,7 +786,7 @@ public:
         void release() {
             if( my_node ) {
                 node::scoped_type::release();
-                my_node = 0;
+                my_node = nullptr;
             }
         }
 
@@ -802,7 +802,7 @@ public:
         }
 
         // Create empty result
-        const_accessor() : my_node(nullptr) {}
+        const_accessor() : my_node(nullptr), my_hash() {}
 
         // Destroy result after releasing the underlying reference.
         ~const_accessor() {
@@ -973,7 +973,7 @@ public:
                 hashcode_type h = b; bucket *b_old = bp;
                 do {
                     __TBB_ASSERT( h > 1, "The lowermost buckets can't be rehashed" );
-                    hashcode_type m = ( 1u<<tbb::detail::log2( h ) ) - 1; // get parent mask from the topmost bit
+                    hashcode_type m = ( hashcode_type(1) << tbb::detail::log2( h ) ) - 1; // get parent mask from the topmost bit
                     b_old = this->get_bucket( h &= m );
                 } while( rehash_required(b_old->node_list.load(std::memory_order_relaxed)) );
                 // now h - is index of the root rehashed bucket b_old
@@ -1046,13 +1046,12 @@ public:
     iterator begin() { return iterator( *this, 0, this->my_embedded_segment, this->my_embedded_segment->node_list.load(std::memory_order_relaxed) ); }
     const_iterator begin() const { return const_iterator( *this, 0, this->my_embedded_segment, this->my_embedded_segment->node_list.load(std::memory_order_relaxed) ); }
     const_iterator cbegin() const { return const_iterator( *this, 0, this->my_embedded_segment, this->my_embedded_segment->node_list.load(std::memory_order_relaxed) ); }
-    iterator end() { return iterator( *this, 0, 0, 0 ); }
-    const_iterator end() const { return const_iterator( *this, 0, 0, 0 ); }
-    const_iterator cend() const { return const_iterator( *this, 0, 0, 0 ); }
+    iterator end() { return iterator( *this, 0, nullptr, nullptr ); }
+    const_iterator end() const { return const_iterator( *this, 0, nullptr, nullptr ); }
+    const_iterator cend() const { return const_iterator( *this, 0, nullptr, nullptr ); }
     std::pair<iterator, iterator> equal_range( const Key& key ) { return internal_equal_range( key, end() ); }
     std::pair<const_iterator, const_iterator> equal_range( const Key& key ) const { return internal_equal_range( key, end() ); }
 
-#if __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
     template <typename K>
     typename std::enable_if<hash_compare_is_transparent<K>::value,
                             std::pair<iterator, iterator>>::type equal_range( const K& key ) {
@@ -1064,7 +1063,6 @@ public:
                             std::pair<const_iterator, const_iterator>>::type equal_range( const K& key ) const {
         return internal_equal_range(key, end());
     }
-#endif // __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
 
     // Number of items in table.
     size_type size() const { return this->my_size.load(std::memory_order_acquire); }
@@ -1100,13 +1098,11 @@ public:
         return const_cast<concurrent_hash_map*>(this)->lookup</*insert*/false>(key, nullptr, nullptr, /*write=*/false, &do_not_allocate_node);
     }
 
-#if __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
     template <typename K>
     typename std::enable_if<hash_compare_is_transparent<K>::value,
                             size_type>::type count( const K& key ) const {
         return const_cast<concurrent_hash_map*>(this)->lookup</*insert*/false>(key, nullptr, nullptr, /*write=*/false, &do_not_allocate_node);
     }
-#endif // __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
 
     // Find item and acquire a read lock on the item.
     /** Return true if item is found, false otherwise. */
@@ -1122,7 +1118,6 @@ public:
         return lookup</*insert*/false>(key, nullptr, &result, /*write=*/true, &do_not_allocate_node);
     }
 
-#if __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
     template <typename K>
     typename std::enable_if<hash_compare_is_transparent<K>::value,
                             bool>::type find( const_accessor& result, const K& key ) {
@@ -1136,7 +1131,6 @@ public:
         result.release();
         return lookup</*insert*/false>(key, nullptr, &result, /*write=*/true, &do_not_allocate_node);
     }
-#endif // __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
 
     // Insert item (if not already present) and acquire a read lock on the item.
     /** Returns true if item is new. */
@@ -1152,13 +1146,12 @@ public:
         return lookup</*insert*/true>(key, nullptr, &result, /*write=*/true, &allocate_node_default_construct<>);
     }
 
-#if __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
     template <typename K>
     typename std::enable_if<hash_compare_is_transparent<K>::value &&
                             std::is_constructible<key_type, const K&>::value,
                             bool>::type insert( const_accessor& result, const K& key ) {
         result.release();
-        return lookup</*insert*/true>(key, nullptr, &result, /*write=*/true, &allocate_node_default_construct<K>);
+        return lookup</*insert*/true>(key, nullptr, &result, /*write=*/false, &allocate_node_default_construct<K>);
     }
 
     template <typename K>
@@ -1168,7 +1161,6 @@ public:
         result.release();
         return lookup</*insert*/true>(key, nullptr, &result, /*write=*/true, &allocate_node_default_construct<K>);
     }
-#endif // __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
 
     // Insert item by copying if there is no such key present already and acquire a read lock on the item.
     /** Returns true if item is new. */
@@ -1247,13 +1239,11 @@ public:
         return internal_erase(key);
     }
 
-#if __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
     template <typename K>
     typename std::enable_if<hash_compare_is_transparent<K>::value,
                             bool>::type erase( const K& key ) {
         return internal_erase(key);
     }
-#endif // __TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
 
     // Erase item by const_accessor.
     /** Return true if item was erased by particularly this call. */
@@ -1281,7 +1271,7 @@ protected:
 
     // Insert or find item and optionally acquire a lock on the item.
     template <bool OpInsert, typename K, typename AllocateNodeType>
-    bool lookup( const K &key, const T *t, const_accessor *result, bool write, AllocateNodeType allocate_node, node *tmp_n  = 0)
+    bool lookup( const K &key, const T *t, const_accessor *result, bool write, AllocateNodeType allocate_node, node *tmp_n  = nullptr)
     {
         __TBB_ASSERT( !result || !result->my_node, nullptr );
         bool return_value;
@@ -1325,7 +1315,7 @@ protected:
                         goto restart; // b.release() is done in ~b().
                     // insert and set flag to grow the container
                     grow_segment = this->insert_new_node( b(), n = tmp_n, m );
-                    tmp_n = 0;
+                    tmp_n = nullptr;
                     return_value = true;
                 }
             } else { // find or count
@@ -1482,7 +1472,7 @@ protected:
         h &= m;
         bucket *b = this->get_bucket( h );
         while (rehash_required(b->node_list.load(std::memory_order_relaxed))) {
-            m = ( 1u<<tbb::detail::log2( h ) ) - 1; // get parent mask from the topmost bit
+            m = ( hashcode_type(1) << tbb::detail::log2( h ) ) - 1; // get parent mask from the topmost bit
             b = this->get_bucket( h &= m );
         }
         node *n = search_bucket( key, b );
@@ -1497,7 +1487,7 @@ protected:
         hashcode_type mask = source.my_mask.load(std::memory_order_relaxed);
         if( this->my_mask.load(std::memory_order_relaxed) == mask ) { // optimized version
             this->reserve(source.my_size.load(std::memory_order_relaxed)); // TODO: load_factor?
-            bucket *dst = 0, *src = 0;
+            bucket *dst = nullptr, *src = nullptr;
             bool rehashing_required = false;
             for( hashcode_type k = 0; k <= mask; k++ ) {
                 if( k & (k-2) ) ++dst,src++; // not the beginning of a segment
@@ -1603,7 +1593,7 @@ protected:
             return n->storage();
         else if( this->check_mask_race( h, m ) )
             goto restart;
-        return 0;
+        return nullptr;
     }
 };
 

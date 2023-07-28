@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -204,7 +204,7 @@ class event {
     const std::string my_name;
 
     static void emit_trace(const std::string &input) {
-        itt_metadata_str_add( ITT_DOMAIN_FLOW, NULL, FLOW_NULL, USER_EVENT, ( "FGA::DATAID::" + input ).c_str() );
+        itt_metadata_str_add( ITT_DOMAIN_FLOW, nullptr, FLOW_NULL, USER_EVENT, ( "FGA::DATAID::" + input ).c_str() );
     }
 
 public:

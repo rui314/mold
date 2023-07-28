@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -59,7 +59,7 @@ void DrawBitmap() {
     if (m_pRenderTarget) {
         m_pRenderTarget->BeginDraw();
         if (m_pBitmap)
-            hr = m_pBitmap->CopyFromMemory(NULL, (BYTE *)g_pImg, 4 * g_sizex);
+            hr = m_pBitmap->CopyFromMemory(nullptr, (BYTE *)g_pImg, 4 * g_sizex);
         DisplayError("DrawBitmap error", hr);
         m_pRenderTarget->DrawBitmap(m_pBitmap);
         m_pRenderTarget->EndDraw();
@@ -82,7 +82,7 @@ LRESULT CALLBACK InternalWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lPa
             // Check to make sure our window exists before we tell it to repaint.
             // This will fail the first time (while the window is being created).
             if (hwnd) {
-                InvalidateRect(hwnd, NULL, FALSE);
+                InvalidateRect(hwnd, nullptr, FALSE);
                 UpdateWindow(hwnd);
             }
             return 0L;
@@ -162,12 +162,11 @@ void video::terminate() {
         m_pRenderTarget->Release();
     if (m_pD2DFactory)
         m_pD2DFactory->Release();
-    g_video = 0;
+    g_video = nullptr;
     running = false;
-    if (g_pImg) {
-        delete[] g_pImg;
-        g_pImg = 0;
-    }
+
+    delete[] g_pImg;
+    g_pImg = nullptr;
 }
 
 //////////// drawing area constructor & destructor /////////////

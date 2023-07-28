@@ -14,6 +14,7 @@
 
 # Add code signing as post-install step.
 if (DEFINED TBB_SIGNTOOL)
+    file(TO_CMAKE_PATH "${TBB_SIGNTOOL}" TBB_SIGNTOOL)
     install(CODE "
     file(GLOB_RECURSE FILES_TO_SIGN \${CMAKE_INSTALL_PREFIX}/*${CMAKE_SHARED_LIBRARY_SUFFIX})
     execute_process(COMMAND ${TBB_SIGNTOOL} \${FILES_TO_SIGN} ${TBB_SIGNTOOL_ARGS})

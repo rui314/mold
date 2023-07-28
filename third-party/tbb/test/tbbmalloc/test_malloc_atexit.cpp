@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ bool exe_isMallocOverloaded()
 {
     const size_t reqSz = 8;
     void *o = malloc(reqSz);
-    bool ret = __TBB_malloc_safer_msize(o, NULL) >= reqSz;
+    bool ret = __TBB_malloc_safer_msize(o, nullptr) >= reqSz;
     free(o);
     return ret;
 }
@@ -111,10 +111,10 @@ void TestReplacedAllocFunc()
     if (sigaction(SIGSEGV, &sa, &sa_default))
         ASSERT(0, "sigaction failed");
 
-    ASSERT(malloc_usable_size(p) >= 16, NULL);
+    ASSERT(malloc_usable_size(p) >= 16, nullptr);
     free(p);
     // no more unsafe actions, restore SIGSEGV
-    if (sigaction(SIGSEGV, &sa_default, NULL))
+    if (sigaction(SIGSEGV, &sa_default, nullptr))
         ASSERT(0, "sigaction failed");
 }
 #else

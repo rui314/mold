@@ -29,7 +29,7 @@ static void doDummyWork(std::size_t N) {
 class DummyBody {
     int m_numIters;
 public:
-    explicit DummyBody( int iters ) : m_numIters( iters ) {}
+    explicit DummyBody( int iters = 0 ) : m_numIters( iters ) {}
     void operator()( int ) const {
         doDummyWork(m_numIters);
     }

@@ -230,6 +230,110 @@ TEST_CASE("terminate_on_exception: nested") {
     delete c0;
 }
 
+//! Testing setting the same value but different objects
+//! \brief \ref interface \ref error_guessing
+TEST_CASE("setting same value") {
+    const std::size_t value = 2;
+
+    oneapi::tbb::global_control* ctl1 = new oneapi::tbb::global_control(oneapi::tbb::global_control::max_allowed_parallelism, value);
+    oneapi::tbb::global_control* ctl2 = new oneapi::tbb::global_control(oneapi::tbb::global_control::max_allowed_parallelism, value);
+
+    std::size_t active = oneapi::tbb::global_control::active_value(oneapi::tbb::global_control::max_allowed_parallelism);
+    REQUIRE(active == value);
+    delete ctl2;
+
+    active = oneapi::tbb::global_control::active_value(oneapi::tbb::global_control::max_allowed_parallelism);
+    REQUIRE_MESSAGE(active == value, "Active value should not change, because of value duplication");
+    delete ctl1;
+}
+
+//! Testing lifetime control conformance
+//! \brief \ref interface \ref requirement
+TEST_CASE("prolong lifetime simple") {
+    tbb::task_scheduler_handle hdl1{ tbb::attach{} };
+    {
+        tbb::parallel_for(0, 10, utils::DummyBody());
+
+        tbb::task_scheduler_handle hdl2;
+        hdl2 = tbb::task_scheduler_handle{ tbb::attach{} };
+        hdl2.release();
+    }
+    bool ok = tbb::finalize(hdl1, std::nothrow);
+    REQUIRE(ok);
+}
+
+//! Testing handle check for emptiness
+//! \brief \ref interface \ref requirement
+TEST_CASE("null handle check") {
+    tbb::task_scheduler_handle hndl;
+    REQUIRE_FALSE(hndl);
+}
+
+//! Testing handle check for emptiness
+//! \brief \ref interface \ref requirement
+TEST_CASE("null handle check 2") {
+    tbb::task_scheduler_handle hndl{ tbb::attach{} };
+    bool not_empty = (bool)hndl;
+
+    tbb::finalize(hndl, std::nothrow);
+
+    REQUIRE(not_empty);
+    REQUIRE_FALSE(hndl);
+}
+
+//! Testing handle check for emptiness
+//! \brief \ref interface \ref requirement
+TEST_CASE("null handle check 3") {
+    tbb::task_scheduler_handle handle1{ tbb::attach{} };
+    tbb::task_scheduler_handle handle2(std::move(handle1));
+
+    bool handle1_empty = !handle1;
+    bool handle2_not_empty = (bool)handle2;
+
+    tbb::finalize(handle2, std::nothrow);
+
+    REQUIRE(handle1_empty);
+    REQUIRE(handle2_not_empty);
+}
+
+//! Testing  task_scheduler_handle is created on one thread and destroyed on another.
+//! \brief \ref interface \ref requirement
+TEST_CASE("cross thread 1") {
+    // created task_scheduler_handle, parallel_for on another thread - finalize
+    tbb::task_scheduler_handle handle{ tbb::attach{} };
+    utils::NativeParallelFor(1, [&](int) {
+        tbb::parallel_for(0, 10, utils::DummyBody());
+        bool res = tbb::finalize(handle, std::nothrow);
+        REQUIRE(res);
+    });
+}
+
+//! Testing  task_scheduler_handle is created on one thread and destroyed on another.
+//! \brief \ref interface \ref requirement
+TEST_CASE("cross thread 2") {
+    // created task_scheduler_handle, called parallel_for on this thread, killed the thread - and finalize on another thread
+    tbb::task_scheduler_handle handle;
+    utils::NativeParallelFor(1, [&](int) {
+        handle = tbb::task_scheduler_handle{ tbb::attach{} };
+        tbb::parallel_for(0, 10, utils::DummyBody());
+    });
+    bool res = tbb::finalize(handle, std::nothrow);
+    REQUIRE(res);
+}
+
+//! Testing multiple wait
+//! \brief \ref interface \ref requirement
+TEST_CASE("simple prolong lifetime 3") {
+    // Parallel region
+    tbb::parallel_for(0, 10, utils::DummyBody());
+    // Termination
+    tbb::task_scheduler_handle handle = tbb::task_scheduler_handle{ tbb::attach{} };
+    bool res = tbb::finalize(handle, std::nothrow);
+    REQUIRE(res);
+    // New parallel region
+    tbb::parallel_for(0, 10, utils::DummyBody());
+}
+
 // The test cannot work correctly with statically linked runtime.
 // TODO: investigate a failure in debug with MSVC
 #if !_MSC_VER || (defined(_DLL) && !defined(_DEBUG))
@@ -289,20 +393,3 @@ TEST_CASE("terminate_on_exception: enabled") {
     CHECK(terminate_handler_called);
 }
 #endif
-
-//! Testing setting the same value but different objects
-//! \brief \ref interface \ref error_guessing
-TEST_CASE("setting same value") {
-    const std::size_t value = 2;
-
-    oneapi::tbb::global_control* ctl1 = new oneapi::tbb::global_control(oneapi::tbb::global_control::max_allowed_parallelism, value);
-    oneapi::tbb::global_control* ctl2 = new oneapi::tbb::global_control(oneapi::tbb::global_control::max_allowed_parallelism, value);
-
-    std::size_t active = oneapi::tbb::global_control::active_value(oneapi::tbb::global_control::max_allowed_parallelism);
-    REQUIRE(active == value);
-    delete ctl2;
-
-    active = oneapi::tbb::global_control::active_value(oneapi::tbb::global_control::max_allowed_parallelism);
-    REQUIRE_MESSAGE(active == value, "Active value should not change, because of value duplication");
-    delete ctl1;
-}

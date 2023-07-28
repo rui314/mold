@@ -1,14 +1,22 @@
 # mold: A Modern Linker
 
-mold is a faster drop-in replacement for existing Unix linkers.
-It is several times faster than the LLVM lld linker, the second-fastest
-open-source linker which I originally created a few years ago.
-mold is designed to increase developer productivity by reducing
-build time, especially in rapid debug-edit-rebuild cycles.
+[![CI](https://github.com/rui314/mold/actions/workflows/ci.yml/badge.svg)](https://github.com/rui314/mold/actions/workflows/ci.yml)
+[![build result](https://build.opensuse.org/projects/home:marxin:mold/packages/mold/badge.svg?type=default)](https://build.opensuse.org/package/show/home:marxin:mold/mold)
 
-Here is a performance comparison of GNU gold, LLVM lld, and mold for
-linking final debuginfo-enabled executables of major large programs
-on a simulated 8-core 16-threads machine.
+<i>This repository contains a free version of the mold linker.
+If you are looking for a commercial version that supports macOS
+please visit the
+[repository of the sold linker](https://github.com/bluewhalesystems/sold).</i>
+
+mold is a faster drop-in replacement for existing Unix linkers. It is several
+times quicker than the LLVM lld linker, the second-fastest open-source linker,
+which I initially developed a few years ago. mold aims to enhance developer
+productivity by minimizing build time, particularly in rapid
+debug-edit-rebuild cycles.
+
+Here is a performance comparison of GNU gold, LLVM lld, and mold when linking
+final debuginfo-enabled executables for major large programs on a simulated
+8-core, 16-thread machine.
 
 ![Link speed comparison](docs/comparison.png)
 
@@ -18,45 +26,46 @@ on a simulated 8-core 16-threads machine.
 | Clang 13 (3.18 GiB)           | 64.12s   | 5.82s    | 2.90s
 | Firefox 89 libxul (1.64 GiB)  | 32.95s   | 6.80s    | 1.42s
 
-mold is so fast that it is only 2x _slower_ than `cp` on the same
-machine. Feel free to [file a bug](https://github.com/rui314/mold/issues)
-if you find mold is not faster than other linkers.
+mold is so fast that it is only 2x _slower_ than the `cp` command on the same
+machine. If you find that mold is not faster than other linkers, please feel
+free to [file a bug report](https://github.com/rui314/mold/issues).
 
 mold supports x86-64, i386, ARM64, ARM32, 64-bit/32-bit little/big-endian
-RISC-V, 64-bit big-endian PowerPC ELFv1, 64-bit little-endian PowerPC ELFv2,
-s390x and SPARC64.
+RISC-V, 32-bit PowerPC, 64-bit big-endian PowerPC ELFv1, 64-bit little-endian
+PowerPC ELFv2, s390x, SPARC64, m68k, SH-4, and DEC Alpha.
 
-## Why does the speed of linking matter?
+mold/macOS is commercial software. For mold/macOS, please visit
+https://github.com/bluewhalesystems/sold.
 
-If you are using a compiled language such as C, C++ or Rust, a build
-consists of two phases. In the first phase, a compiler compiles
-source files into object files (`.o` files). In the second phase,
-a linker takes all object files to combine them into a single executable
-or a shared library file.
+## Why does linking speed matter?
 
-The second phase takes a long time if your build output is large.
-mold can make it faster, saving your time and keeping you from being
-distracted while waiting for a long build to finish. The difference is
-most noticeable when you are in rapid debug-edit-rebuild cycles.
+If you are using a compiled language such as C, C++, or Rust, a build consists
+of two phases. In the first phase, a compiler compiles source files into
+object files (`.o` files). In the second phase, a linker takes all object
+files and combines them into a single executable or shared library file.
 
-## Install
+The second phase can be time-consuming if your build output is large. mold can
+speed up this process, saving you time and preventing distractions while
+waiting for a lengthy build to finish. The difference is most noticeable
+during rapid debug-edit-rebuild cycles.
 
-Binary packages for the following systems are currently available.
+## Installation
+
+Binary packages for the following systems are currently available:
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/mold.svg)](https://repology.org/project/mold/versions)
 
-## How to build
+## How to Build
 
-mold is written in C++20, so if you build mold yourself, you need a
-recent version of a C++ compiler and a C++ standard library. GCC 10.2
-or Clang 12.0.0 (or later) as well as libstdc++ 10 or libc++ 7 (or
-later) are recommended.
+mold is written in C++20, so if you build mold yourself, you will need a
+recent version of a C++ compiler and a C++ standard library. We recommend GCC
+10.2 or Clang 12.0.0 (or later) and libstdc++ 10 or libc++ 7 (or later).
 
-### Install dependencies
+### Install Dependencies
 
 To install build dependencies, run `./install-build-deps.sh` in this
-directory. It recognizes your Linux distribution and tries to install
-necessary packages. You may want to run it as root.
+directory. It will detect your Linux distribution and attempt to install the
+necessary packages. You may need to run it as root.
 
 ### Compile mold
 
@@ -64,59 +73,58 @@ necessary packages. You may want to run it as root.
 git clone https://github.com/rui314/mold.git
 mkdir mold/build
 cd mold/build
-git checkout v1.5.1
+git checkout v2.0.0
 ../install-build-deps.sh
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ ..
 cmake --build . -j $(nproc)
 sudo cmake --install .
 ```
 
-You may need to pass a C++20 compiler command name to `cmake`.
-In the above case, `c++` is passed. If it doesn't work for you,
-try a specific version of a compiler such as `g++-10` or `clang++-12`.
+You might need to pass a C++20 compiler command name to `cmake`. In the
+example above, `c++` is passed. If that doesn't work for you, try a specific
+version of a compiler, such as `g++-10` or `clang++-12`.
 
-By default, `mold` is installed to `/usr/local/bin`. You can change
-that by passing `-DCMAKE_INSTALL_PREFIX=<directory>`. For other cmake
-options, see the comments in `CMakeLists.txt`.
+By default, `mold` is installed to `/usr/local/bin`. You can change the
+installation location by passing `-DCMAKE_INSTALL_PREFIX=<directory>`.
+For other cmake options, see the comments in `CMakeLists.txt`.
 
-If you don't use a recent enough Linux distribution, or if for any reason
-`cmake` in the above commands doesn't work for you, you can use Docker to
-build it in a Docker environment. To do so, just run `./dist.sh` in this
-directory instead of `cmake`. The shell script pulls a Docker image,
-builds mold and auxiliary files inside it, and packs them into a
-single tar file `mold-$version-$arch-linux.tar.gz`.  You can extract
-the tar file anywhere and use `mold` executable in it.
+If you are not using a recent enough Linux distribution, or if `cmake` does
+not work for you for any reason, you can use Docker to build mold in a Docker
+environment. To do so, run `./dist.sh` in this directory instead of using
+`cmake`. The shell script will pull a Docker image, build mold and auxiliary
+files inside it, and package them into a single tar file named
+`mold-$version-$arch-linux.tar.gz`. You can extract the tar file anywhere and
+use the mold executable within it.
 
 ## How to use
 
 <details><summary>A classic way to use mold</summary>
 
-On Unix, the linker command (which is usually `/usr/bin/ld`) is
-invoked indirectly by the compiler driver (which is usually `cc`,
-`gcc` or `clang`), which is typically in turn indirectly invoked by
-`make` or some other build system command.
+On Unix, the linker command (usually `/usr/bin/ld`) is indirectly invoked by
+the compiler driver (typically `cc`, `gcc`, or `clang`), which is in turn
+indirectly invoked by `make` or another build system command.
 
-If you can specify an additional command line option to your compiler
-driver by modifying build system's config files, add one of the
-following flags to use `mold` instead of `/usr/bin/ld`:
+If you can specify an additional command line option for your compiler driver
+by modifying the build system's config files, add one of the following flags
+to use mold instead of `/usr/bin/ld`:
 
-- Clang: pass `-fuse-ld=mold`
+- For Clang: pass `-fuse-ld=mold`
 
-- GCC 12.1.0 or later: pass `-fuse-ld=mold`
+- For GCC 12.1.0 or later: pass `-fuse-ld=mold`
 
-- GCC before 12.1.0: `-fuse-ld` does not accept `mold` as a valid
-  argument, so you need to use `-B` option instead. `-B` is an option
-  to tell GCC where to look for external commands such as `ld`.
+- For GCC before 12.1.0: the `-fuse-ld` option does not accept `mold` as a
+  valid argument, so you need to use the `-B` option instead. The `-B` option
+  tells GCC where to look for external commands like `ld`.
 
-  If you have installed mold with `make install`, there should be a
-  directory named `/usr/libexec/mold` (or `/usr/local/libexec/mold`,
-  depending on your `$PREFIX`), and `ld` command should be there. The
-  `ld` is actually a symlink to `mold`. So, all you need is to pass
-  `-B/usr/libexec/mold` (or `-B/usr/local/libexec/mold`) to GCC.
+  If you have installed mold with `make install`, there should be a directory
+  named `/usr/libexec/mold` (or `/usr/local/libexec/mold`, depending on your
+  `$PREFIX`), and the `ld` command should be there. The `ld` is actually a
+  symlink to `mold`. So, all you need is to pass `-B/usr/libexec/mold` (or
+  `-B/usr/local/libexec/mold`) to GCC.
 
-If you haven't installed `mold` to any `$PATH`, you can still pass
-`-fuse-ld=/absolute/path/to/mold` to clang to use mold. GCC does not
-take an absolute path as an argument for `-fuse-ld` though.
+If you haven't installed `ld.mold` to any `$PATH`, you can still pass
+`-fuse-ld=/absolute/path/to/mold` to clang to use mold. However, GCC does not
+accept an absolute path as an argument for `-fuse-ld`.
 
 </details>
 
@@ -130,80 +138,70 @@ linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
 ```
 
-where `/path/to/mold` is an absolute path to `mold` exectuable. In the
-above example, we use `clang` as a linker driver as it can always take
-the `-fuse-ldd` option. If your GCC is recent enough to recognize the
-option, you may be able to remove the `linker = "clang"` line.
+where `/path/to/mold` is an absolute path to the mold executable. In the
+example above, we use `clang` as a linker driver since it always accepts the
+`-fuse-ld` option. If your GCC is recent enough to recognize the option, you
+may be able to remove the `linker = "clang"` line.
 
 ```toml
 [target.x86_64-unknown-linux-gnu]
 rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
 ```
 
-If you want to use mold for all projects, put the above snippet to
+If you want to use mold for all projects, add the above snippet to
 `~/.cargo/config.toml`.
 
-If you are using macOS, you can modify `config.toml` in a similar manner.
-Here is an example with `mold` installed via [Homebrew](https://brew.sh).
+</details>
 
-```toml
-[target.x86_64-apple-darwin]
-linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+<details><summary>If you are using Nim</summary>
 
-[target.aarch64-apple-darwin]
-linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+Create `config.nims` in your project directory with the following:
+
+```nim
+when findExe("mold").len > 0 and defined(linux):
+  switch("passL", "-fuse-ld=mold")
 ```
+
+where `mold` must be included in the `PATH` environment variable. In this
+example, `gcc` is used as the linker driver. Use the `-fuse-ld` option if your
+GCC is recent enough to recognize this option.
+
+If you want to use mold for all projects, add the above snippet to
+`~/.config/config.nims`.
 
 </details>
 
 <details><summary>mold -run</summary>
 
-It is sometimes very hard to pass an appropriate command line option
-to `cc` to specify an alternative linker.  To deal with the situation,
-mold has a feature to intercept all invocations of `ld`, `ld.lld` or
-`ld.gold` and redirect it to itself. To use the feature, run `make`
-(or another build command) as a subcommand of mold as follows:
+It is sometimes very hard to pass an appropriate command line option to `cc`
+to specify an alternative linker. To address this situation, mold has a
+feature to intercept all invocations of `ld`, `ld.lld`, or `ld.gold` and
+redirect them to itself. To use this feature, run `make` (or another build
+command) as a subcommand of mold as follows:
 
 ```shell
 mold -run make <make-options-if-any>
 ```
 
-Internally, mold invokes a given command with `LD_PRELOAD` environment
-variable set to its companion shared object file. The shared object
-file intercepts all function calls to `exec(3)`-family functions to
-replace `argv[0]` with `mold` if it is `ld`, `ld.gold` or `ld.lld`.
-
-</details>
-
-<details><summary>On macOS</summary>
-
-mold/macOS is available as an alpha version. It can be used to build not
-only macOS apps but also iOS apps because their binary formats are the same.
-
-The command name of mold/macOS is `ld64.mold`. If you build mold on macOS,
-it still produces `mold` and `ld.mold`, but these executables are useful
-only for cross compilation (i.e. building Linux apps on macOS.)
-
-If you find any issue with mold/macOS, please file it to
-<a href=https://github.com/rui314/mold/issues>our GitHub Issues</a>.
+Internally, mold invokes the given command with the `LD_PRELOAD` environment
+variable set to its companion shared object file. The shared object file
+intercepts all function calls to `exec(3)`-family functions to replace
+`argv[0]` with `mold` if it is `ld`, `ld.gold`, or `ld.lld`.
 
 </details>
 
 <details><summary>GitHub Actions</summary>
 
-You can use our <a href=https://github.com/rui314/setup-mold>setup-mold</a>
-GitHub Action to speed up GitHub-hosted continuous build. GitHub Actions
-runs on a two-core machine, but mold is still significantly faster than
-the default GNU linker there especially when a program being linked is
-large.
+You can use our [setup-mold](https://github.com/rui314/setup-mold) GitHub
+Action to speed up GitHub-hosted continuous builds. Although GitHub Actions
+run on a two-core machine, mold is still significantly faster than the default
+GNU linker, especially when linking large programs.
 
 </details>
 
 <details><summary>Verify that you are using mold</summary>
 
-mold leaves its identification string in `.comment` section in an output
+mold leaves its identification string in the `.comment` section of an output
 file. You can print it out to verify that you are actually using mold.
 
 ```shell
@@ -214,66 +212,55 @@ String dump of section '.comment':
   [    2b]  mold 9a1679b47d9b22012ec7dfbda97c8983956716f7
 ```
 
-If `mold` is in `.comment`, the file is created by mold.
+If `mold` is present in the `.comment` section, the file was created by mold.
 
 </details>
 
 <details><summary>Online manual</summary>
 
-Since mold is a drop-in replacement, you should be able to use it
-without reading its manual. But just in case you need it, it's available
-online at <a href=https://rui314.github.io/mold.html>here</a>.
-You can also read the same manual by `man mold`.
+Since mold is a drop-in replacement, you should be able to use it without
+reading its manual. However, if you need it, [mold's man page](docs/mold.md)
+is available. You can read the same manual by running `man mold`.
 
 </details>
 
 ## Why is mold so fast?
 
-One reason is because it simply uses faster algorithms and efficient
-data structures than other linkers do. The other reason is that the
-new linker is highly parallelized.
+One reason is that it utilizes faster algorithms and more efficient data
+structures compared to other linkers. Another reason is that mold is highly
+parallelized.
 
-Here is a side-by-side comparison of per-core CPU usage of lld (left)
-and mold (right). They are linking the same program, Chromium
-executable.
+Here is a side-by-side comparison of per-core CPU usage for lld (left) and
+mold (right), linking the same program, a Chromium executable.
 
 ![CPU usage comparison in htop animation](docs/htop.gif)
 
-As you can see, mold uses all available cores throughout its execution
-and finishes quickly. On the other hand, lld failed to use available
-cores most of the time. In this demo, the maximum parallelism is
-artificially capped to 16 so that the bars fit in the GIF.
+As you can see, mold uses all available cores throughout its execution and
+finishes quickly. In contrast, lld fails to utilize available cores most of
+the time. In this demo, the maximum parallelism is artificially capped at 16,
+so that the bars fit in the GIF.
 
-For details, please read [design notes](docs/design.md).
+For details, please see the [design notes](docs/design.md).
 
-## License
-
-mold is available under AGPL. Note that that does not mean that you
-have to license your program under AGPL if you use mold to link your
-program. An output of the mold linker is a derived work of the object
-files and libraries you pass to the linker but not a derived work of
-the mold linker itself.
-
-Besides that, you can also buy a commercial, non-AGPL license with
-technical support from our company, Blue Whale Systems PTE LTD. If you
-are a big company, please consider obtaining it before making hundreds
-or thousands of developers of your company to depend on mold. mold is
-mostly a single-person open-source project, and just like other
-open-source projects, we are not legally obligated to keep maintaining
-it. A legally-binding commercial license contract addresses the
-concern. By purchasing a license, you are guaranteed that mold will be
-maintained for you. Please [contact us](mailto:contact@bluewhale.systems)
-for a commercial license inquiry.
-
-## Acknowledgement
+## Sponsors
 
 We accept donations via [GitHub Sponsors](https://github.com/sponsors/rui314)
-and [OpenCollective](https://opencollective.com/mold-linker).
-We thank you to everybody who sponsors our project. In particular,
-we'd like to acknowledge the following people and organizations who
-have sponsored $128/month or more:
+and [OpenCollective](https://opencollective.com/mold-linker). We thank
+everyone who sponsors our project. In particular, we'd like to acknowledge the
+following people and organizations who have sponsored $128/month or more:
+
+### Corporate sponsors
+
+<a href="https://mercury.com/"><img src="docs/mercury-logo.png" align=center height=120 width=400 alt=Mercury></a>
+<a href="https://cybozu-global.com/"><img src="docs/cyboze-logo.png" align=center height=120 width=133 alt=Cybozu></a>
+
+- [Uber](https://uber.com)
+- [G-Research](https://www.gresearch.co.uk)
+- [Signal Slot Inc.](https://github.com/signal-slot)
+
+### Individual sponsors
 
 - [300baud](https://github.com/300baud)
-- [Mercury](https://github.com/MercuryTechnologies)
+- [Johan Andersson](https://github.com/repi)
 - [Wei Wu](https://github.com/lazyparser)
-- [Signal Slot Inc.](https://github.com/signal-slot)
+- [kyle-elliott](https://github.com/kyle-elliott)

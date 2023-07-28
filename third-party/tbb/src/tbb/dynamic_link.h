@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -29,8 +29,8 @@
     and CLOSE_INTERNAL_NAMESPACE to override the following default definitions. **/
 
 #include <cstddef>
-#if _WIN32
-#include <Windows.h>
+#ifdef _WIN32
+#include <windows.h>
 #endif /* _WIN32 */
 
 namespace tbb {
@@ -45,7 +45,7 @@ typedef void (*pointer_to_handler)();
 // prevent warnings from some compilers (g++ 4.1)
 #if __TBB_WEAK_SYMBOLS_PRESENT
 #define DLD(s,h) {#s, (pointer_to_handler*)(void*)(&h), (pointer_to_handler)&s}
-#define DLD_NOWEAK(s,h) {#s, (pointer_to_handler*)(void*)(&h), NULL}
+#define DLD_NOWEAK(s,h) {#s, (pointer_to_handler*)(void*)(&h), nullptr}
 #else
 #define DLD(s,h) {#s, (pointer_to_handler*)(void*)(&h)}
 #define DLD_NOWEAK(s,h) DLD(s,h)
@@ -95,7 +95,7 @@ const int DYNAMIC_LINK_DEFAULT       = DYNAMIC_LINK_GLOBAL | DYNAMIC_LINK_LOAD |
 bool dynamic_link( const char* library,
                    const dynamic_link_descriptor descriptors[],
                    std::size_t required,
-                   dynamic_link_handle* handle = 0,
+                   dynamic_link_handle* handle = nullptr,
                    int flags = DYNAMIC_LINK_DEFAULT );
 
 void dynamic_unlink( dynamic_link_handle handle );

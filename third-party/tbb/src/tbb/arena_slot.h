@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -119,18 +119,18 @@ public:
     //! Deallocate task pool that was allocated by means of allocate_task_pool.
     void free_task_pool( ) {
         // TODO: understand the assertion and modify
-        // __TBB_ASSERT( !task_pool /* TODO: == EmptyTaskPool */, NULL);
+        // __TBB_ASSERT( !task_pool /* TODO: == EmptyTaskPool */, nullptr);
         if( task_pool_ptr ) {
-           __TBB_ASSERT( my_task_pool_size, NULL);
+           __TBB_ASSERT( my_task_pool_size, nullptr);
            cache_aligned_deallocate( task_pool_ptr );
-           task_pool_ptr = NULL;
+           task_pool_ptr = nullptr;
            my_task_pool_size = 0;
         }
     }
 
     //! Get a task from the local pool.
     /** Called only by the pool owner.
-        Returns the pointer to the task or NULL if a suitable task is not found.
+        Returns the pointer to the task or nullptr if a suitable task is not found.
         Resets the pool if it is empty. **/
     d1::task* get_task(execution_data_ext&, isolation_type);
 
@@ -157,7 +157,7 @@ public:
     //! Spawn newly created tasks
     void spawn(d1::task& t) {
         std::size_t T = prepare_task_pool(1);
-        __TBB_ASSERT(is_poisoned(task_pool_ptr[T]), NULL);
+        __TBB_ASSERT(is_poisoned(task_pool_ptr[T]), nullptr);
         task_pool_ptr[T] = &t;
         commit_spawned_tasks(T + 1);
         if (!is_task_pool_published()) {
@@ -195,7 +195,7 @@ public:
 #endif
 private:
     //! Get a task from the local pool at specified location T.
-    /** Returns the pointer to the task or NULL if the task cannot be executed,
+    /** Returns the pointer to the task or nullptr if the task cannot be executed,
         e.g. proxy has been deallocated or isolation constraint is not met.
         tasks_omitted tells if some tasks have been omitted.
         Called only by the pool owner. The caller should guarantee that the
@@ -213,16 +213,16 @@ private:
 
         std::size_t new_size = num_tasks;
         if ( !my_task_pool_size ) {
-            __TBB_ASSERT( !is_task_pool_published() && is_quiescent_local_task_pool_reset(), NULL );
-            __TBB_ASSERT( !task_pool_ptr, NULL );
+            __TBB_ASSERT( !is_task_pool_published() && is_quiescent_local_task_pool_reset(), nullptr);
+            __TBB_ASSERT( !task_pool_ptr, nullptr);
             if ( num_tasks < min_task_pool_size ) new_size = min_task_pool_size;
             allocate_task_pool( new_size );
             return 0;
         }
         acquire_task_pool();
         std::size_t H =  head.load(std::memory_order_relaxed); // mirror
-        d1::task** new_task_pool = task_pool_ptr;;
-        __TBB_ASSERT( my_task_pool_size >= min_task_pool_size, NULL );
+        d1::task** new_task_pool = task_pool_ptr;
+        __TBB_ASSERT( my_task_pool_size >= min_task_pool_size, nullptr);
         // Count not skipped tasks. Consider using std::count_if.
         for ( std::size_t i = H; i < T; ++i )
             if ( new_task_pool[i] ) ++new_size;
@@ -315,7 +315,7 @@ private:
         task_pool.store( task_pool_ptr, std::memory_order_release );
     }
 
-    //! Locks victim's task pool, and returns pointer to it. The pointer can be NULL.
+    //! Locks victim's task pool, and returns pointer to it. The pointer can be nullptr.
     /** Garbles victim_arena_slot->task_pool for the duration of the lock. **/
     d1::task** lock_task_pool() {
         d1::task** victim_task_pool;
@@ -347,7 +347,7 @@ private:
     /** Restores victim_arena_slot->task_pool munged by lock_task_pool. **/
     void unlock_task_pool(d1::task** victim_task_pool) {
         __TBB_ASSERT(task_pool.load(std::memory_order_relaxed) == LockedTaskPool, "victim arena slot is not locked");
-        __TBB_ASSERT(victim_task_pool != LockedTaskPool, NULL);
+        __TBB_ASSERT(victim_task_pool != LockedTaskPool, nullptr);
         task_pool.store(victim_task_pool, std::memory_order_release);
     }
 

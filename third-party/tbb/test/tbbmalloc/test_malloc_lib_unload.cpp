@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,7 +19,6 @@
 
 #if _USRDLL
 #include "common/utils_assert.h"
-#include <stdlib.h> // for NULL
 
 const char *globalCallMsg = "A TBB allocator function call is resolved into wrong implementation.";
 
@@ -51,7 +50,7 @@ extern "C" int anchor() {
 extern "C" void *scalable_malloc(size_t)
 {
     ASSERT(0, globalCallMsg);
-    return NULL;
+    return nullptr;
 }
 extern "C" void scalable_free (void *)
 {
@@ -64,17 +63,17 @@ extern "C" void safer_scalable_free (void *, void (*)(void*))
 extern "C" void *scalable_realloc(void *, size_t)
 {
     ASSERT(0, globalCallMsg);
-    return NULL;
+    return nullptr;
 }
 extern "C" void *safer_scalable_realloc(void *, size_t, void *)
 {
     ASSERT(0, globalCallMsg);
-    return NULL;
+    return nullptr;
 }
 extern "C" void *scalable_calloc(size_t, size_t)
 {
     ASSERT(0, globalCallMsg);
-    return NULL;
+    return nullptr;
 }
 extern "C" int scalable_posix_memalign(void **, size_t, size_t)
 {
@@ -84,17 +83,17 @@ extern "C" int scalable_posix_memalign(void **, size_t, size_t)
 extern "C" void *scalable_aligned_malloc(size_t, size_t)
 {
     ASSERT(0, globalCallMsg);
-    return NULL;
+    return nullptr;
 }
 extern "C" void *scalable_aligned_realloc(void *, size_t, size_t)
 {
     ASSERT(0, globalCallMsg);
-    return NULL;
+    return nullptr;
 }
 extern "C" void *safer_scalable_aligned_realloc(void *, size_t, size_t, void *)
 {
     ASSERT(0, globalCallMsg);
-    return NULL;
+    return nullptr;
 }
 extern "C" void scalable_aligned_free(void *)
 {

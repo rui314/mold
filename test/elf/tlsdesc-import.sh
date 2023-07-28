@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-if [ $MACHINE = x86_64 ]; then
+if [ $MACHINE = x86_64 -o $MACHINE = arm ]; then
   dialect=gnu2
 elif [ $MACHINE = aarch64 ]; then
   dialect=desc

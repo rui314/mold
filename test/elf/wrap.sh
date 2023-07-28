@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $CC -c -o $t/a.o -xc -
+cat <<EOF | $CC -fPIC -shared -o $t/a.so -xc -
 #include <stdio.h>
 
 void foo() {
@@ -33,11 +33,11 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o
+$CC -B. -o $t/exe $t/a.so $t/b.o
 $QEMU $t/exe | grep -q '^foo$'
 
-$CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-wrap,foo
+$CC -B. -o $t/exe $t/a.so $t/b.o -Wl,-wrap,foo
 $QEMU $t/exe | grep -q '^wrap_foo$'
 
-$CC -B. -o $t/exe $t/a.o $t/c.o -Wl,-wrap,foo
+$CC -B. -o $t/exe $t/a.so $t/c.o -Wl,-wrap,foo
 $QEMU $t/exe | grep -q '^foo$'

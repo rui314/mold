@@ -3,7 +3,6 @@
 
 # Skip if 32 bits as we use very large addresses in this test.
 [ $MACHINE = i386 ] && skip
-[ $MACHINE = arm32 ] && skip
 [ $MACHINE = riscv32 ] && skip
 
 # It looks like SPARC's runtime can't handle PLT if it's too far from GOT.

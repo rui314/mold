@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -229,4 +229,30 @@ TEST_CASE("try_release"){
     tbb::flow::overwrite_node<int> on(g);
 
     CHECK_MESSAGE ((on.try_release()== true), "try_release should return true");
+}
+
+//! Test for cancel register_predecessor_task
+//! \brief \ref error_guessing
+TEST_CASE("Cancel register_predecessor_task") {
+    tbb::flow::graph g;
+    // Cancel graph context for preventing tasks execution and
+    // calling cancel method of spawned tasks
+    g.cancel();
+
+    // To spawn register_predecessor_task internal buffer of overwrite_node
+    // should be valid and successor should failed during putting an item to it
+    oneapi::tbb::flow::overwrite_node<size_t> node(g);
+    // Reserving join_node always fails during putting an item to it
+    tbb::flow::join_node<std::tuple<size_t>, tbb::flow::reserving> j_node(g);
+
+    // Make internal buffer of overwrite_node valid
+    node.try_put(1);
+    // Making an edge attempts pushing an item to join_node
+    // that immediately fails and tries to reverse an edge into PULL state
+    // by spawning register_predecessor_task, which will be cancelled
+    // during execution
+    tbb::flow::make_edge(node, tbb::flow::input_port<0>(j_node));
+
+    // Wait for cancellation of spawned tasks
+    g.wait_for_all();
 }

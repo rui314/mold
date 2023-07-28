@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,15 +17,16 @@
 #ifndef __TBB_task_arena_H
 #define __TBB_task_arena_H
 
-#include "detail/_namespace_injection.h"
-#include "detail/_task.h"
-#include "detail/_exception.h"
-#include "detail/_aligned_space.h"
-#include "detail/_small_object_pool.h"
+#include "detail/_config.h"
 
-#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
+#include "detail/_aligned_space.h"
+#include "detail/_attach.h"
+#include "detail/_exception.h"
+#include "detail/_namespace_injection.h"
+#include "detail/_small_object_pool.h"
+#include "detail/_task.h"
+
 #include "detail/_task_handle.h"
-#endif
 
 #if __TBB_ARENA_BINDING
 #include "info.h"
@@ -97,20 +98,16 @@ TBB_EXPORT void __TBB_EXPORTED_FUNC submit(d1::task&, d1::task_group_context&, a
 } // namespace r1
 
 namespace d2 {
-#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
 inline void enqueue_impl(task_handle&& th, d1::task_arena_base* ta) {
-    if (th == nullptr) {
-        throw_exception(exception_id::bad_task_handle);
-    }
+    __TBB_ASSERT(th != nullptr, "Attempt to schedule empty task_handle");
 
     auto& ctx = task_handle_accessor::ctx_of(th);
 
     // Do not access th after release
     r1::enqueue(*task_handle_accessor::release(th), ctx, ta);
 }
-#endif// __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
+} //namespace d2
 
-}
 namespace d1 {
 
 static constexpr int priority_stride = INT_MAX / 4;
@@ -133,9 +130,9 @@ protected:
 
     std::atomic<do_once_state> my_initialization_state;
 
-    //! NULL if not currently initialized.
+    //! nullptr if not currently initialized.
     std::atomic<r1::arena*> my_arena;
-    static_assert(sizeof(std::atomic<r1::arena*>) == sizeof(r1::arena*), 
+    static_assert(sizeof(std::atomic<r1::arena*>) == sizeof(r1::arena*),
         "To preserve backward compatibility we need the equal size of an atomic pointer and a pointer");
 
     //! Concurrency level for deferred initialization
@@ -190,13 +187,8 @@ protected:
         , my_num_reserved_slots(reserved_for_masters)
         , my_priority(a_priority)
         , my_numa_id(constraints_.numa_id)
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
         , my_core_type(constraints_.core_type)
         , my_max_threads_per_core(constraints_.max_threads_per_core)
-#else
-        , my_core_type(automatic)
-        , my_max_threads_per_core(automatic)
-#endif
         {}
 #endif /*__TBB_ARENA_BINDING*/
 public:
@@ -283,10 +275,8 @@ public:
             constraints{}
                 .set_numa_id(s.my_numa_id)
                 .set_max_concurrency(s.my_max_concurrency)
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
                 .set_core_type(s.my_core_type)
                 .set_max_threads_per_core(s.my_max_threads_per_core)
-#endif
             , s.my_num_reserved_slots, s.my_priority)
     {}
 #else
@@ -307,6 +297,11 @@ public:
             mark_initialized();
         }
     }
+
+    //! Creates an instance of task_arena attached to the current arena of the thread
+    explicit task_arena(d1::attach)
+        : task_arena(attach{})
+    {}
 
     //! Forces allocation of the resources for the task_arena as specified in constructor arguments
     void initialize() {
@@ -335,10 +330,8 @@ public:
         if( !is_active() ) {
             my_numa_id = constraints_.numa_id;
             my_max_concurrency = constraints_.max_concurrency;
-#if __TBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION_PRESENT
             my_core_type = constraints_.core_type;
             my_max_threads_per_core = constraints_.max_threads_per_core;
-#endif
             my_num_reserved_slots = reserved_for_masters;
             my_priority = a_priority;
             r1::initialize(*this);
@@ -357,6 +350,11 @@ public:
             }
             mark_initialized();
         }
+    }
+
+    //! Attaches this instance to the current arena of the thread
+    void initialize(d1::attach) {
+        initialize(attach{});
     }
 
     //! Removes the reference to the internal arena representation.
@@ -391,12 +389,10 @@ public:
 
     //! Enqueues a task into the arena to process a functor wrapped in task_handle, and immediately returns.
     //! Does not require the calling thread to join the arena
-#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
     void enqueue(d2::task_handle&& th) {
         initialize();
         d2::enqueue_impl(std::move(th), this);
     }
-#endif //__TBB_PREVIEW_TASK_GROUP_EXTENSIONS
 
     //! Joins the arena and executes a mutable functor, then returns
     //! If not possible to join, wraps the functor into a task, enqueues it and waits for task completion
@@ -466,7 +462,6 @@ inline int max_concurrency() {
     return r1::max_concurrency(nullptr);
 }
 
-#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
 inline void enqueue(d2::task_handle&& th) {
     d2::enqueue_impl(std::move(th), nullptr);
 }
@@ -475,7 +470,6 @@ template<typename F>
 inline void enqueue(F&& f) {
     enqueue_impl(std::forward<F>(f), nullptr);
 }
-#endif //__TBB_PREVIEW_TASK_GROUP_EXTENSIONS
 
 using r1::submit;
 
@@ -484,6 +478,7 @@ using r1::submit;
 
 inline namespace v1 {
 using detail::d1::task_arena;
+using detail::d1::attach;
 
 #if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
 using detail::d1::is_inside_task;
@@ -494,9 +489,7 @@ using detail::d1::current_thread_index;
 using detail::d1::max_concurrency;
 using detail::d1::isolate;
 
-#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
 using detail::d1::enqueue;
-#endif
 } // namespace this_task_arena
 
 } // inline namespace v1

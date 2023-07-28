@@ -1,6 +1,7 @@
 #include "mold.h"
-#include "../cmdline.h"
+#include "../common/cmdline.h"
 
+#include <random>
 #include <regex>
 #include <sstream>
 #include <sys/stat.h>
@@ -16,7 +17,7 @@
 
 namespace mold::elf {
 
-static const char helpmsg[] = R"(
+inline const char helpmsg[] = R"(
 Options:
   --help                      Report usage information
   -v, --version               Report version information
@@ -81,11 +82,11 @@ Options:
     --no-demangle
   --enable-new-dtags          Emit DT_RUNPATH for --rpath (default)
     --disable-new-dtags       Emit DT_RPATH for --rpath
+  --execute-only              Make executable segments unreadable
   --dp                        Ignored
   --dynamic-list              Read a list of dynamic symbols (implies -Bsymbolic)
   --eh-frame-hdr              Create .eh_frame_hdr section
     --no-eh-frame-hdr
-  --enable-new-dtags          Ignored
   --exclude-libs LIB,LIB,..   Mark all symbols in given libraries hidden
   --export-dynamic-symbol     Put symbols matching glob in the dynamic symbol table
   --export-dynamic-symbol-list
@@ -98,14 +99,14 @@ Options:
   --gc-sections               Remove unreferenced sections
     --no-gc-sections
   --gdb-index                 Create .gdb_index for faster gdb startup
-  --hash-style [sysv,gnu,both]
+  --hash-style [sysv,gnu,both,none]
                               Set hash style
   --icf=[all,safe,none]       Fold identical code
     --no-icf
   --ignore-data-address-equality
                               Allow merging non-executable sections with --icf
   --image-base ADDR           Set the base address to a given value
-  --init SYMBOL               Call SYMBOl at load-time
+  --init SYMBOL               Call SYMBOL at load-time
   --no-undefined              Report undefined symbols (even with --shared)
   --noinhibit-exec            Create an output file even if errors occur
   --oformat=binary            Omit ELF, section and program headers
@@ -149,6 +150,8 @@ Options:
   --threads                   Use multiple threads (default)
     --no-threads
   --trace                     Print name of each input file
+  --undefined-version         Do not report version scripts that refer undefined symbols
+    --no-undefined-version    Report version scripts that refer undefined symbols (default)
   --unique PATTERN            Don't merge input sections that match a given pattern
   --unresolved-symbols [report-all,ignore-all,ignore-in-object-files,ignore-in-shared-libs]
                               How to handle unresolved symbols
@@ -183,18 +186,21 @@ Options:
   -z nodump                   Mark DSO not available to dldump
   -z now                      Disable lazy function resolution
   -z origin                   Mark object requiring immediate $ORIGIN processing at runtime
+  -z pack-relative-relocs     Alias for --pack-dyn-relocs=relr
+    -z nopack-relative-relocs
   -z separate-loadable-segments
                               Separate all loadable segments to different pages
     -z separate-code          Separate code and data into different pages
     -z noseparate-code        Allow overlap in pages
+  -z stack-size=VALUE         Set size of stack segment
   -z relro                    Make some sections read-only after relocation (default)
     -z norelro
   -z text                     Report error if DT_TEXTREL is set
     -z notext
     -z textoff
 
-mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf64-powerpc elf64-powerpc elf64-powerpcle elf64-s390 elf64-sparc
-mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf32briscv elf64lriscv elf64briscv elf64_s390 elf64_sparc)";
+mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf32-powerpc elf64-powerpc elf64-powerpc elf64-powerpcle elf64-s390 elf64-sparc elf32-m68k elf32-sh-linux elf64-alpha
+mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf32briscv elf64lriscv elf64briscv elf32ppc elf32ppclinux elf64ppc elf64lppc elf64_s390 elf64_sparc m68kelf shlelf_linux elf64alpha)";
 
 static std::vector<std::string> add_dashes(std::string name) {
   // Single-letter option
@@ -314,6 +320,63 @@ static bool is_file(std::string_view path) {
 }
 
 template <typename E>
+static std::vector<SectionOrder>
+parse_section_order(Context<E> &ctx, std::string_view arg) {
+  auto flags = std::regex_constants::ECMAScript | std::regex_constants::icase |
+               std::regex_constants::optimize;
+  static std::regex re1(R"(^\s*(TEXT|DATA|RODATA|BSS)(?:\s|$))", flags);
+  static std::regex re2(R"(^\s*([a-zA-Z0-9_.][^\s]*|EHDR|PHDR)(?:\s|$))", flags);
+  static std::regex re3(R"(^\s*=(0x[0-9a-f]+|\d+)(?:\s|$))", flags);
+  static std::regex re4(R"(^\s*%(0x[0-9a-f]+|\d*)(?:\s|$))", flags);
+  static std::regex re5(R"(^\s*!(\S+)(?:\s|$))", flags);
+
+  std::vector<SectionOrder> vec;
+  arg = string_trim(arg);
+
+  while (!arg.empty()) {
+    SectionOrder ord;
+    std::cmatch m;
+
+    if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re1)) {
+      ord.type = SectionOrder::GROUP;
+      ord.name = m[1].str();
+    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re2)) {
+      ord.type = SectionOrder::SECTION;
+      ord.name = m[1].str();
+    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re3)) {
+      ord.type = SectionOrder::ADDR;
+      std::string s = m[1];
+      ord.value = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
+    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re4)) {
+      ord.type = SectionOrder::ALIGN;
+      std::string s = m[1];
+      ord.value = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
+    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re5)) {
+      ord.type = SectionOrder::SYMBOL;
+      ord.name = m[1].str();
+    } else {
+      Fatal(ctx) << "--section-order: parse error: " << arg;
+    }
+
+    vec.push_back(ord);
+    arg = arg.substr(m[0].length());
+  }
+
+  bool is_first = true;
+  for (SectionOrder &ord : vec) {
+    if (ord.type == SectionOrder::SECTION) {
+      if (is_first) {
+        is_first = false;
+      } else if (ord.name == "EHDR")
+        Fatal(ctx) << "--section-order: EHDR must be the first "
+                   << "section specifier: " << arg;
+    }
+  }
+
+  return vec;
+}
+
+template <typename E>
 static std::variant<Symbol<E> *, u64>
 parse_defsym_value(Context<E> &ctx, std::string_view s) {
   if (s.starts_with("0x") || s.starts_with("0X")) {
@@ -342,6 +405,18 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   bool version_shown = false;
   bool warn_shared_textrel = false;
+  std::optional<SeparateCodeKind> z_separate_code;
+  std::optional<bool> z_relro;
+  std::optional<u64> shuffle_sections_seed;
+  std::unordered_set<std::string_view> rpaths;
+
+  auto add_rpath = [&](std::string_view arg) {
+    if (rpaths.insert(arg).second) {
+      if (!ctx.arg.rpaths.empty())
+        ctx.arg.rpaths += ':';
+      ctx.arg.rpaths += arg;
+    }
+  };
 
   // RISC-V object files contains lots of local symbols, so by default
   // we discard them. This is compatible with GNU ld.
@@ -447,33 +522,53 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                    << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n"
                    << "   aarch64linux\n   armelf_linux_eabi\n   elf64lriscv\n"
                    << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
-                   << "   elf64ppc\n   elf64lppc\n   elf64_s390\n   elf64_sparc";
+                   << "   elf32ppc\n   elf64ppc\n   elf64lppc\n   elf64_s390\n"
+                   << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n   elf64alpha";
       version_shown = true;
+    } else if (read_flag("mips32") || read_flag("mips32r2") ||
+               read_flag("mips32r3") || read_flag("mips32r4") ||
+               read_flag("mips32r5") || read_flag("mips32r6") ||
+               read_flag("mips64") || read_flag("mips64r2") ||
+               read_flag("mips64r3") || read_flag("mips64r4") ||
+               read_flag("mips64r5") || read_flag("mips64r6")) {
+      // Ignore useless MIPS-specific flags
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
-        ctx.arg.emulation = MachineType::X86_64;
+        ctx.arg.emulation = X86_64::target_name;
       } else if (arg == "elf_i386") {
-        ctx.arg.emulation = MachineType::I386;
+        ctx.arg.emulation = I386::target_name;
       } else if (arg == "aarch64linux") {
-        ctx.arg.emulation = MachineType::ARM64;
+        ctx.arg.emulation = ARM64::target_name;
       } else if (arg == "armelf_linux_eabi") {
-        ctx.arg.emulation = MachineType::ARM32;
+        ctx.arg.emulation = ARM32::target_name;
       } else if (arg == "elf64lriscv") {
-        ctx.arg.emulation = MachineType::RV64LE;
+        ctx.arg.emulation = RV64LE::target_name;
       } else if (arg == "elf64briscv") {
-        ctx.arg.emulation = MachineType::RV64BE;
+        ctx.arg.emulation = RV64BE::target_name;
       } else if (arg == "elf32lriscv") {
-        ctx.arg.emulation = MachineType::RV32LE;
+        ctx.arg.emulation = RV32LE::target_name;
       } else if (arg == "elf32briscv") {
-        ctx.arg.emulation = MachineType::RV32BE;
+        ctx.arg.emulation = RV32BE::target_name;
+      } else if (arg == "elf32ppc" || arg == "elf32ppclinux") {
+        ctx.arg.emulation = PPC32::target_name;
       } else if (arg == "elf64ppc") {
-        ctx.arg.emulation = MachineType::PPC64V1;
+        ctx.arg.emulation = PPC64V1::target_name;
       } else if (arg == "elf64lppc") {
-        ctx.arg.emulation = MachineType::PPC64V2;
+        ctx.arg.emulation = PPC64V2::target_name;
       } else if (arg == "elf64_s390") {
-        ctx.arg.emulation = MachineType::S390X;
+        ctx.arg.emulation = S390X::target_name;
       } else if (arg == "elf64_sparc") {
-        ctx.arg.emulation = MachineType::SPARC64;
+        ctx.arg.emulation = SPARC64::target_name;
+      } else if (arg == "m68kelf") {
+        ctx.arg.emulation = M68K::target_name;
+      } else if (arg == "shlelf_linux") {
+        ctx.arg.emulation = SH4::target_name;
+      } else if (arg == "elf64alpha") {
+        ctx.arg.emulation = ALPHA::target_name;
+      } else if (arg == "elf64ltsmip") {
+        ctx.arg.emulation = MIPS64LE::target_name;
+      } else if (arg == "elf64btsmip") {
+        ctx.arg.emulation = MIPS64BE::target_name;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }
@@ -494,15 +589,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       append(ctx.arg.exclude_libs, split_by_comma_or_colon(arg));
     } else if (read_flag("q") || read_flag("emit-relocs")) {
       ctx.arg.emit_relocs = true;
+      ctx.arg.discard_locals = false;
     } else if (read_arg("e") || read_arg("entry")) {
       ctx.arg.entry = arg;
     } else if (read_arg("Map")) {
       ctx.arg.Map = arg;
       ctx.arg.print_map = true;
     } else if (read_flag("print-dependencies")) {
-      ctx.arg.print_dependencies = 1;
-    } else if (read_flag("print-dependencies=full")) {
-      ctx.arg.print_dependencies = 2;
+      ctx.arg.print_dependencies = true;
     } else if (read_flag("print-map") || read_flag("M")) {
       ctx.arg.print_map = true;
     } else if (read_flag("Bstatic") || read_flag("dn") || read_flag("static")) {
@@ -517,6 +611,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.spare_dynamic_tags = parse_number(ctx, "spare-dynamic-tags", arg);
     } else if (read_flag("start-lib")) {
       remaining.push_back("--start-lib");
+    } else if (read_flag("start-stop")) {
+      ctx.arg.start_stop = true;
     } else if (read_arg("dependency-file")) {
       ctx.arg.dependency_file = arg;
     } else if (read_arg("defsym")) {
@@ -541,7 +637,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_SHUFFLE;
     } else if (read_eq("shuffle-sections")) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_SHUFFLE;
-      ctx.arg.shuffle_sections_seed = parse_number(ctx, "shuffle-sections", arg);
+      shuffle_sections_seed = parse_number(ctx, "shuffle-sections", arg);
     } else if (read_flag("reverse-sections")) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_REVERSE;
     } else if (read_flag("rosegment")) {
@@ -568,7 +664,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.unresolved_symbols = UNRESOLVED_IGNORE;
       else
         Fatal(ctx) << "unknown --unresolved-symbols argument: " << arg;
-    } else if (read_arg("u") || read_arg("undefined")) {
+    } else if (read_arg("undefined") || read_arg("u")) {
       ctx.arg.undefined.push_back(arg);
     } else if (read_arg("require-defined")) {
       ctx.arg.require_defined.push_back(arg);
@@ -586,6 +682,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       } else if (arg == "both") {
         ctx.arg.hash_style_sysv = true;
         ctx.arg.hash_style_gnu = true;
+      } else if (arg == "none") {
+        ctx.arg.hash_style_sysv = false;
+        ctx.arg.hash_style_gnu = false;
       } else {
         Fatal(ctx) << "invalid --hash-style argument: " << arg;
       }
@@ -607,7 +706,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("pie") || read_flag("pic-executable")) {
       ctx.arg.pic = true;
       ctx.arg.pie = true;
-    } else if (read_flag("no-pie") || read_flag("no-pic-executable")) {
+    } else if (read_flag("no-pie") || read_flag("no-pic-executable") ||
+               read_flag("nopie")) {
       ctx.arg.pic = false;
       ctx.arg.pie = false;
     } else if (read_flag("relax")) {
@@ -620,6 +720,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.gdb_index = false;
     } else if (read_flag("r") || read_flag("relocatable")) {
       ctx.arg.relocatable = true;
+      ctx.arg.emit_relocs = true;
+      ctx.arg.discard_locals = false;
+    } else if (read_flag("relocatable-merge-sections")) {
+      ctx.arg.relocatable_merge_sections = true;
     } else if (read_flag("perf")) {
       ctx.arg.perf = true;
     } else if (read_flag("pack-dyn-relocs=relr")) {
@@ -656,6 +760,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.enable_new_dtags = true;
     } else if (read_flag("disable-new-dtags")) {
       ctx.arg.enable_new_dtags = false;
+    } else if (read_flag("execute-only")) {
+      ctx.arg.execute_only = true;
     } else if (read_arg("compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
         ctx.arg.compress_debug_sections = COMPRESS_ZLIB;
@@ -678,12 +784,22 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.oformat_binary = true;
     } else if (read_arg("retain-symbols-file")) {
       read_retain_symbols_file(ctx, arg);
+    } else if (read_arg("section-align")) {
+      size_t pos = arg.find('=');
+      if (pos == arg.npos || pos == arg.size() - 1)
+        Fatal(ctx) << "--section-align: syntax error: " << arg;
+      i64 value = parse_number(ctx, "section-align", arg.substr(pos + 1));
+      if (!has_single_bit(value))
+        Fatal(ctx) << "--section-align=" << arg << ": value must be a power of 2";
+      ctx.arg.section_align[arg.substr(0, pos)] = value;
     } else if (read_arg("section-start")) {
       size_t pos = arg.find('=');
       if (pos == arg.npos || pos == arg.size() - 1)
-        Fatal(ctx) << "-section-start: syntax error: " << arg;
+        Fatal(ctx) << "--section-start: syntax error: " << arg;
       ctx.arg.section_start[arg.substr(0, pos)] =
         parse_hex(ctx, "section-start", arg.substr(pos + 1));
+    } else if (read_arg("section-order")) {
+      ctx.arg.section_order = parse_section_order(ctx, arg);
     } else if (read_arg("Tbss")) {
       ctx.arg.section_start[".bss"] = parse_hex(ctx, "Tbss", arg);
     } else if (read_arg("Tdata")) {
@@ -710,15 +826,18 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.page_size = parse_number(ctx, "-z max-page-size", arg);
       if (!has_single_bit(ctx.page_size))
         Fatal(ctx) << "-z max-page-size " << arg << ": value must be a power of 2";
+    } else if (read_z_arg("start-stop-visibility")) {
+      if (arg != "hidden")
+        Fatal(ctx) << "-z start-stop-visibility: unsupported visibility: " << arg;
     } else if (read_z_flag("noexecstack")) {
       ctx.arg.z_execstack = false;
     } else if (read_z_flag("relro")) {
-      ctx.arg.z_relro = true;
+      z_relro = true;
     } else if (read_z_flag("norelro")) {
-      ctx.arg.z_relro = false;
+      z_relro = false;
     } else if (read_z_flag("defs")) {
       ctx.arg.z_defs = true;
-    } else if (read_z_flag("nodefs")) {
+    } else if (read_z_flag("undefs")) {
       ctx.arg.z_defs = false;
     } else if (read_z_flag("nodlopen")) {
       ctx.arg.z_dlopen = false;
@@ -751,12 +870,22 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_origin = true;
     } else if (read_z_flag("nodefaultlib")) {
       ctx.arg.z_nodefaultlib = true;
+    } else if (read_z_flag("pack-relative-relocs")) {
+      ctx.arg.pack_dyn_relocs_relr = true;
+    } else if (read_z_flag("nopack-relative-relocs")) {
+      ctx.arg.pack_dyn_relocs_relr = false;
     } else if (read_z_flag("separate-loadable-segments")) {
-      ctx.arg.z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
+      z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
     } else if (read_z_flag("separate-code")) {
-      ctx.arg.z_separate_code = SEPARATE_CODE;
+      z_separate_code = SEPARATE_CODE;
     } else if (read_z_flag("noseparate-code")) {
-      ctx.arg.z_separate_code = NOSEPARATE_CODE;
+      z_separate_code = NOSEPARATE_CODE;
+    } else if (read_z_arg("stack-size")) {
+      ctx.arg.z_stack_size = parse_number(ctx, "-z stack-size", arg);
+    } else if (read_z_flag("dynamic-undefined-weak")) {
+      ctx.arg.z_dynamic_undefined_weak = true;
+    } else if (read_z_flag("nodynamic-undefined-weak")) {
+      ctx.arg.z_dynamic_undefined_weak = false;
     } else if (read_flag("no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag("fatal-warnings")) {
@@ -792,6 +921,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.ignore_data_address_equality = true;
     } else if (read_arg("image-base")) {
       ctx.arg.image_base = parse_number(ctx, "image-base", arg);
+    } else if (read_arg("physical-image-base")) {
+      ctx.arg.physical_image_base = parse_number(ctx, "physical-image-base", arg);
     } else if (read_flag("print-icf-sections")) {
       ctx.arg.print_icf_sections = true;
     } else if (read_flag("no-print-icf-sections")) {
@@ -886,17 +1017,16 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("error-unresolved-symbols")) {
       ctx.arg.unresolved_symbols = UNRESOLVED_ERROR;
     } else if (read_arg("rpath")) {
-      if (!ctx.arg.rpaths.empty())
-        ctx.arg.rpaths += ":";
-      ctx.arg.rpaths += arg;
+      add_rpath(arg);
     } else if (read_arg("R")) {
       if (is_file(arg))
         Fatal(ctx) << "-R" << arg
                    << ": -R as an alias for --just-symbols is not supported";
-
-      if (!ctx.arg.rpaths.empty())
-        ctx.arg.rpaths += ":";
-      ctx.arg.rpaths += arg;
+      add_rpath(arg);
+    } else if (read_flag("undefined-version")) {
+      ctx.arg.undefined_version = true;
+    } else if (read_flag("no-undefined-version")) {
+      ctx.arg.undefined_version = false;
     } else if (read_flag("build-id")) {
       ctx.arg.build_id.kind = BuildId::HASH;
       ctx.arg.build_id.hash_size = 20;
@@ -934,6 +1064,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("filter") || read_arg("F")) {
       ctx.arg.filter.push_back(arg);
     } else if (read_arg("O")) {
+    } else if (read_flag("EB")) {
+    } else if (read_flag("EL")) {
     } else if (read_flag("O0")) {
     } else if (read_flag("O1")) {
     } else if (read_flag("O2")) {
@@ -953,7 +1085,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("no-add-needed")) {
     } else if (read_flag("no-call-graph-profile-sort")) {
     } else if (read_flag("no-copy-dt-needed-entries")) {
-    } else if (read_flag("no-undefined-version")) {
     } else if (read_arg("sort-section")) {
     } else if (read_flag("sort-common")) {
     } else if (read_flag("dc")) {
@@ -966,11 +1097,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("warn-constructors")) {
     } else if (read_flag("warn-execstack")) {
     } else if (read_flag("no-warn-execstack")) {
+    } else if (read_flag("secure-plt")) {
     } else if (read_arg("rpath-link")) {
     } else if (read_z_flag("combreloc")) {
     } else if (read_z_flag("nocombreloc")) {
     } else if (read_z_arg("common-page-size")) {
     } else if (read_flag("no-keep-memory")) {
+    } else if (read_arg("max-cache-size")) {
     } else if (read_arg("version-script")) {
       // --version-script, --dynamic-list and --export-dynamic-symbol[-list]
       // are treated as positional arguments even if they are actually not
@@ -1050,6 +1183,26 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.relocatable)
     ctx.arg.is_static = true;
 
+  if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_SHUFFLE) {
+    if (shuffle_sections_seed)
+      ctx.arg.shuffle_sections_seed = *shuffle_sections_seed;
+    else
+      ctx.arg.shuffle_sections_seed =
+        ((u64)std::random_device()() << 32) | std::random_device()();
+  }
+
+  // --section-order implies `-z separate-loadable-segments`
+  if (z_separate_code)
+    ctx.arg.z_separate_code = *z_separate_code;
+  else if (!ctx.arg.section_order.empty())
+    ctx.arg.z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
+
+  // --section-order implies `-z norelro`
+  if (z_relro)
+    ctx.arg.z_relro = *z_relro;
+  else if (!ctx.arg.section_order.empty())
+    ctx.arg.z_relro = false;
+
   if (!ctx.arg.shared) {
     if (!ctx.arg.filter.empty())
       Fatal(ctx) << "-filter may not be used without -shared";
@@ -1057,18 +1210,21 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
 
-  if (!ctx.arg.apply_dynamic_relocs && !is_rela<E>)
+  if (!ctx.arg.apply_dynamic_relocs && !E::is_rela)
     Fatal(ctx) << "--no-apply-dynamic-relocs may not be used on "
-               << E::machine_type;
+               << E::target_name;
 
   if (is_sparc<E> && ctx.arg.apply_dynamic_relocs)
     Fatal(ctx) << "--apply-dynamic-relocs may not be used on SPARC64";
 
-  if (ctx.arg.thread_count == 0)
-    ctx.arg.thread_count = get_default_thread_count();
+  if (!ctx.arg.section_start.empty() && !ctx.arg.section_order.empty())
+    Fatal(ctx) << "--section-start may not be used with --section-order";
 
   if (ctx.arg.image_base % ctx.page_size)
     Fatal(ctx) << "-image-base must be a multiple of -max-page-size";
+
+  if (ctx.arg.thread_count == 0)
+    ctx.arg.thread_count = get_default_thread_count();
 
   if (char *env = getenv("MOLD_REPRO"); env && env[0])
     ctx.arg.repro = true;
@@ -1089,6 +1245,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     ctx.arg.warn_textrel = true;
 
   ctx.arg.undefined.push_back(ctx.arg.entry);
+
+  // --oformat=binary implies --strip-all because without a section
+  // header, there's no way to identify the locations of a symbol
+  // table in an output file in the first place.
+  if (ctx.arg.oformat_binary)
+    ctx.arg.strip_all = true;
 
   // By default, mold tries to ovewrite to an output file if exists
   // because at least on Linux, writing to an existing file is much

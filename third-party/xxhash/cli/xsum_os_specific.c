@@ -1,6 +1,6 @@
 /*
  * xxhsum - Command line interface for xxhash algorithms
- * Copyright (C) 2013-2020 Yann Collet
+ * Copyright (C) 2013-2021 Yann Collet
  *
  * GPL v2 License
  *
@@ -39,10 +39,36 @@
     typedef struct stat XSUM_stat_t;
 #endif
 
-#if (defined(__linux__) && (XSUM_PLATFORM_POSIX_VERSION >= 1)) \
+#if defined(__EMSCRIPTEN__) && defined(XSUM_NODE_JS)
+#  include <unistd.h>   /* isatty */
+#  include <emscripten.h> /* EM_ASM_INT */
+
+/* The Emscripten SDK does not properly detect when the standard streams
+ * are piped to node.js, and there does not seem to be any way to tell in
+ * plain C. To work around it, inline JavaScript is used to call Node's
+ * isatty() function. */
+static int XSUM_IS_CONSOLE(FILE* stdStream)
+{
+    /* https://github.com/iliakan/detect-node */
+    int is_node = EM_ASM_INT((
+        return (Object.prototype.toString.call(
+            typeof process !== 'undefined' ? process : 0
+        ) == '[object process]') | 0
+    ));
+    if (is_node) {
+        return EM_ASM_INT(
+            return require('node:tty').isatty($0),
+            fileno(stdStream)
+        );
+    } else {
+        return isatty(fileno(stdStream));
+    }
+}
+#elif defined(__EMSCRIPTEN__) || (defined(__linux__) && (XSUM_PLATFORM_POSIX_VERSION >= 1)) \
  || (XSUM_PLATFORM_POSIX_VERSION >= 200112L) \
  || defined(__DJGPP__) \
- || defined(__MSYS__)
+ || defined(__MSYS__) \
+ || defined(__HAIKU__)
 #  include <unistd.h>   /* isatty */
 #  define XSUM_IS_CONSOLE(stdStream) isatty(fileno(stdStream))
 #elif defined(MSDOS) || defined(OS2)
@@ -216,7 +242,6 @@ static int XSUM_stat(const char* infilename, XSUM_stat_t* statbuf)
 XSUM_ATTRIBUTE((__format__(__printf__, 2, 0)))
 static int XSUM_vasprintf(char** strp, const char* format, va_list ap)
 {
-    int ret;
     int size;
     va_list copy;
     /*
@@ -234,6 +259,7 @@ static int XSUM_vasprintf(char** strp, const char* format, va_list ap)
         *strp = NULL;
         return size;
     } else {
+        int ret;
         *strp = (char*) malloc((size_t)size + 1);
         if (*strp == NULL) {
             return -1;

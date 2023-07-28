@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -205,8 +205,9 @@ void task_dispatcher::execute_and_wait(d1::task* t, d1::wait_context& wait_ctx, 
     // Do not create non-trivial objects on the stack of this function. They will never be destroyed.
     assert_pointer_valid(m_thread_data);
 
+    m_suspend_point->finilize_resume();
     // Basically calls the user callback passed to the tbb::task::suspend function
-    m_thread_data->do_post_resume_action();
+    do_post_resume_action();
 
     // Endless loop here because coroutine could be reused
     d1::task* resume_task{};
@@ -217,8 +218,8 @@ void task_dispatcher::execute_and_wait(d1::task* t, d1::wait_context& wait_ctx, 
         assert_task_valid(resume_task);
         __TBB_ASSERT(this == m_thread_data->my_task_dispatcher, nullptr);
 
-        m_thread_data->set_post_resume_action(thread_data::post_resume_action::cleanup, this);
-       
+        m_thread_data->set_post_resume_action(post_resume_action::cleanup, this);
+
     } while (resume(static_cast<suspend_point_type::resume_task*>(resume_task)->m_target));
     // This code might be unreachable
 }

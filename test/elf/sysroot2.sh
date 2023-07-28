@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-mkdir -p $t/sysroot/foo
+mkdir -p $t/bin $t/sysroot/foo
 
 cat <<EOF > $t/a.script
 INPUT(=/foo/x.o)
@@ -36,4 +36,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe -Wl,--sysroot=$t/sysroot \
+  $t/a.script $t/sysroot/b.script $t/c.o
+
+$CC -B. -o $t/exe -Wl,--sysroot=$(realpath $t)/bin/../sysroot \
   $t/a.script $t/sysroot/b.script $t/c.o

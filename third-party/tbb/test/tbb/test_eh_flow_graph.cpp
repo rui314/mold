@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -285,14 +285,6 @@ struct sequencer_body {
     size_t operator()(const BufferItemType &s) {
         CHECK_MESSAGE( (s), "sequencer item out of range (== 0)");
         return size_t(s) - 1;
-    }
-};
-
-// --------- body to compare the "priorities" of objects for priority_queue_node  five priority levels 0-4.
-template<class T>
-struct myLess {
-    bool operator()(const T &t1, const T &t2) {
-        return (int(t1) % 5) < (int(t2) % 5);
     }
 };
 
@@ -1917,7 +1909,7 @@ void test_indexer_node() {
     run_indexer_node_test<std::tuple<int,int>, nonThrowing, isThrowing>();
     g_Wakeup_Msg = "indexer_node(is,is): Missed wakeup or machine is overloaded?";
     run_indexer_node_test<std::tuple<int,int>, isThrowing,  isThrowing>();
-    g_Wakeup_Msg = g_Orig_Wakeup_Msg;;
+    g_Wakeup_Msg = g_Orig_Wakeup_Msg;
 }
 
 ///////////////////////////////////////////////

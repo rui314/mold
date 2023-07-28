@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -36,10 +36,10 @@ template< typename T > class receiver;
         #elif __TBB_GCC_VERSION >= 40800
             #define CODEPTR() ( __builtin_return_address(0))
         #else
-            #define CODEPTR() NULL
+            #define CODEPTR() nullptr
         #endif
     #else
-        #define CODEPTR() NULL
+        #define CODEPTR() nullptr
     #endif /* __TBB_FLOW_TRACE_CODEPTR */
 
 static inline void fgt_alias_port(void *node, void *p, bool visible) {
@@ -53,7 +53,7 @@ static inline void fgt_composite ( void* codeptr, void *node, void *graph ) {
     itt_make_task_group( ITT_DOMAIN_FLOW, node, FLOW_NODE, graph, FLOW_GRAPH, FLOW_COMPOSITE_NODE );
     suppress_unused_warning( codeptr );
 #if __TBB_FLOW_TRACE_CODEPTR
-    if (codeptr != NULL) {
+    if (codeptr != nullptr) {
         register_node_addr(ITT_DOMAIN_FLOW, node, FLOW_NODE, CODE_ADDRESS, &codeptr);
     }
 #endif
@@ -116,7 +116,7 @@ static inline void fgt_internal_create_output_port( void* codeptr, void *node, v
     itt_make_task_group(ITT_DOMAIN_FLOW, p, FLOW_OUTPUT_PORT, node, FLOW_NODE, name_index);
     suppress_unused_warning( codeptr );
 #if __TBB_FLOW_TRACE_CODEPTR
-    if (codeptr != NULL) {
+    if (codeptr != nullptr) {
         register_node_addr(ITT_DOMAIN_FLOW, node, FLOW_NODE, CODE_ADDRESS, &codeptr);
     }
 #endif
@@ -217,7 +217,7 @@ static inline void fgt_multiinput_multioutput_node( void* codeptr, string_resour
     itt_make_task_group( ITT_DOMAIN_FLOW, n, FLOW_NODE, g, FLOW_GRAPH, t );
     suppress_unused_warning( codeptr );
 #if __TBB_FLOW_TRACE_CODEPTR
-    if (codeptr != NULL) {
+    if (codeptr != nullptr) {
         register_node_addr(ITT_DOMAIN_FLOW, n, FLOW_NODE, CODE_ADDRESS, &codeptr);
     }
 #endif
@@ -259,11 +259,11 @@ static inline void fgt_remove_edge( void *output_port, void *input_port ) {
 }
 
 static inline void fgt_graph( void *g ) {
-    itt_make_task_group( ITT_DOMAIN_FLOW, g, FLOW_GRAPH, NULL, FLOW_NULL, FLOW_GRAPH );
+    itt_make_task_group( ITT_DOMAIN_FLOW, g, FLOW_GRAPH, nullptr, FLOW_NULL, FLOW_GRAPH );
 }
 
 static inline void fgt_begin_body( void *body ) {
-    itt_task_begin( ITT_DOMAIN_FLOW, body, FLOW_BODY, NULL, FLOW_NULL, FLOW_BODY );
+    itt_task_begin( ITT_DOMAIN_FLOW, body, FLOW_BODY, nullptr, FLOW_NULL, FLOW_BODY );
 }
 
 static inline void fgt_end_body( void * ) {
@@ -287,7 +287,7 @@ static inline void fgt_async_commit( void *node, void * /*graph*/) {
 }
 
 static inline void fgt_reserve_wait( void *graph ) {
-    itt_region_begin( ITT_DOMAIN_FLOW, graph, FLOW_GRAPH, NULL, FLOW_NULL, FLOW_NULL );
+    itt_region_begin( ITT_DOMAIN_FLOW, graph, FLOW_GRAPH, nullptr, FLOW_NULL, FLOW_NULL );
 }
 
 static inline void fgt_release_wait( void *graph ) {
@@ -296,7 +296,7 @@ static inline void fgt_release_wait( void *graph ) {
 
 #else // TBB_USE_PROFILING_TOOLS
 
-#define CODEPTR() NULL
+#define CODEPTR() nullptr
 
 static inline void fgt_alias_port(void * /*node*/, void * /*p*/, bool /*visible*/ ) { }
 

@@ -6,10 +6,11 @@
         var wapLocalCode = 'us-en'; // Dynamically set per localized site, see mapping table for values
         var wapSection = "oneapi-tbb"; // WAP team will give you a unique section for your site
         // Load TMS
-        (function () {
-          var url = 'https://www.intel.com/content/dam/www/global/wap/tms-loader.js'; // WAP file URL
-          var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true; po.src = url;
-          var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
+            (function () {
+              var url = 'https://www.intel.com/content/dam/www/global/wap/tms-loader.js'; // WAP file URL
+              var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true; po.src = url;
+              var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
         })();
       </script>
+      <link href="{{ pathto("_static/style.css", True) }}" rel="stylesheet" type="text/css">
 {% endblock %}

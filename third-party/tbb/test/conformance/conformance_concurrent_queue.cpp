@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -1319,7 +1319,7 @@ void TestMoveConstructors() {
     T::construction_num = T::destruction_num = 0;
     CQ dst_queue( std::move(src_queue), allocator<T>(1) );
     CHECK(T::construction_num == size);
-    CHECK(T::destruction_num == size * 2); // One item is used by the queue destructor
+    CHECK(T::destruction_num == size);
 
     TestQueueOperabilityAfterDataMove<T>( src_queue );
 
@@ -1584,4 +1584,96 @@ TEST_CASE("concurrent_queue iterator comparisons") {
 //! \brief \ref interface \ref requirement
 TEST_CASE("concurrent_bounded_queue iterator comparisons") {
     TestQueueIteratorComparisons<oneapi::tbb::concurrent_bounded_queue<int>>();
+}
+
+class MinimalisticObject {
+public:
+    struct flag {};
+
+    MinimalisticObject() = delete;
+    MinimalisticObject(flag) : underlying_obj(default_obj) {}
+
+    MinimalisticObject(const MinimalisticObject&) = delete;
+    MinimalisticObject& operator=(const MinimalisticObject&) = delete;
+
+    std::size_t get_obj() const { return underlying_obj; }
+    std::size_t get_default_obj() const { return default_obj; }
+
+protected:
+    static constexpr std::size_t default_obj = 42;
+    std::size_t underlying_obj;
+    friend struct MoveAssignableMinimalisticObject;
+};
+
+struct MoveAssignableMinimalisticObject : MinimalisticObject {
+public:
+    using MinimalisticObject::MinimalisticObject;
+
+    MoveAssignableMinimalisticObject& operator=(MoveAssignableMinimalisticObject&& other) {
+        if (this != &other) {
+            underlying_obj = other.underlying_obj;
+            other.underlying_obj = 0;
+        }
+        return *this;
+    }
+};
+
+template <typename Container>
+void test_basics(Container& container, std::size_t desired_size) {
+    CHECK(!container.empty());
+
+    std::size_t counter = 0;
+    for (auto it = container.unsafe_begin(); it != container.unsafe_end(); ++it) {
+        CHECK(it->get_obj() == it->get_default_obj());
+        ++counter;
+    }
+    CHECK(counter == desired_size);
+
+    container.clear();
+    CHECK(container.empty());
+}
+
+template <template <class...> class Container>
+void test_with_minimalistic_objects() {
+    // Test with MinimalisticObject and no pop operations
+    const std::size_t elements_count = 100;
+    {
+        Container<MinimalisticObject> default_container;
+
+        for (std::size_t i = 0; i < elements_count; ++i) {
+            default_container.emplace(MinimalisticObject::flag{});
+        }
+        test_basics(default_container, elements_count);
+    }
+    // Test with MoveAssignableMinimalisticObject with pop operation
+    {
+        Container<MoveAssignableMinimalisticObject> default_container;
+
+        for (std::size_t i = 0; i < elements_count; ++i) {
+            default_container.emplace(MinimalisticObject::flag{});
+        }
+        test_basics(default_container, elements_count);
+
+        // Refill again
+        for (std::size_t i = 0; i < elements_count; ++i) {
+            default_container.emplace(MinimalisticObject::flag{});
+        }
+
+        MoveAssignableMinimalisticObject result(MinimalisticObject::flag{});
+
+        std::size_t element_counter = 0;
+        while (!default_container.empty()) {
+            CHECK(default_container.try_pop(result));
+            ++element_counter;
+        }
+
+        CHECK(element_counter == elements_count);
+        CHECK(default_container.empty());
+    }
+}
+
+//! \brief \ref requirement
+TEST_CASE("Test with minimalistic object type") {
+    test_with_minimalistic_objects<oneapi::tbb::concurrent_queue>();
+    test_with_minimalistic_objects<oneapi::tbb::concurrent_bounded_queue>();
 }

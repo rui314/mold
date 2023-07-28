@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -88,13 +88,7 @@ void throw_exception ( exception_id eid ) {
     case exception_id::invalid_load_factor: DO_THROW(std::out_of_range, ("Invalid hash load factor")); break;
     case exception_id::invalid_key: DO_THROW(std::out_of_range, ("invalid key")); break;
     case exception_id::bad_tagged_msg_cast: DO_THROW(std::runtime_error, ("Illegal tagged_msg cast")); break;
-#if __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
     case exception_id::unsafe_wait: DO_THROW(unsafe_wait, ("Unsafe to wait further")); break;
-#endif
-#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
-    case exception_id::bad_task_handle:                   DO_THROW(std::runtime_error, ("Attempt to schedule empty task_handle")); break;
-    case exception_id::bad_task_handle_wrong_task_group:  DO_THROW(std::runtime_error, ("Attempt to schedule task_handle into different task_group")); break;
-#endif
     default: __TBB_ASSERT ( false, "Unknown exception ID" );
     }
     __TBB_ASSERT(false, "Unreachable code");
@@ -158,7 +152,7 @@ bool gcc_rethrow_exception_broken() {
         is_broken = std::uncaught_exception();
     }
     if( is_broken ) fix_broken_rethrow();
-    __TBB_ASSERT( !std::uncaught_exception(), NULL );
+    __TBB_ASSERT( !std::uncaught_exception(), nullptr);
     return is_broken;
 }
 #else

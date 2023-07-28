@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 #endif
 
 #include "common/test.h"
+#include "common/utils.h"
 #include <tbb/concurrent_lru_cache.h>
 #include <common/concurrent_lru_cache_common.h>
 
@@ -125,3 +126,28 @@ TEST_CASE("basic test for eviction of only unused items 2") {
     REQUIRE_MESSAGE(is_correct, "cache should not evict items in use");
 }
 
+//! \brief \ref error_guessing
+TEST_CASE("basic test for handling case when number_of_lru_history_items is zero") {
+    auto foo = [] (int) {
+        return utils::LifeTrackableObject{};
+    };
+    using cache_type =  tbb::concurrent_lru_cache<int, utils::LifeTrackableObject, decltype(foo)>;
+    cache_type cache{foo, 0};
+    
+    for(int i = 0; i < 10; ++i) {
+        // Check that no history is stored when my_history_list_capacity is 0.
+        // In this case, when trying to fill the cache, the items will be deleted if reference was not taken.
+        const utils::LifeTrackableObject* obj_addr = &cache[1].value();
+        REQUIRE_MESSAGE(utils::LifeTrackableObject::is_alive(obj_addr) == false, "when number_of_lru_history_items is zero, element must be erased after use");
+    }
+
+    cache_type::handle h = cache[1];
+    const utils::LifeTrackableObject* obj_addr = &h.value();
+    auto& object_set = utils::LifeTrackableObject::set();
+    for(int i = 0; i < 10; ++i) {
+        // Verify that item will still be alive if there is a handle holding that item.
+        cache[1];
+        REQUIRE_MESSAGE(utils::LifeTrackableObject::is_alive(obj_addr), "the object with the key=1 was destroyed but should not");
+        REQUIRE_MESSAGE(object_set.size() == 1, "no other values should be added");
+    }
+}

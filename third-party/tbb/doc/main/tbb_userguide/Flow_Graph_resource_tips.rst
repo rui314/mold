@@ -15,3 +15,4 @@ in a flow graph.
    ../tbb_userguide/use_limiter_node
    ../tbb_userguide/use_concurrency_limits
    ../tbb_userguide/create_token_based_system
+   ../tbb_userguide/attach_flow_graph_to_arena

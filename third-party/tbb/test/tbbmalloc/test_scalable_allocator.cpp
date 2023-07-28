@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -88,7 +88,7 @@ public:
     NullAllocator() { }
     NullAllocator(const NullAllocator&) { }
     ~NullAllocator() { }
-    void *allocate(size_t) { return NULL; }
+    void *allocate(size_t) { return nullptr; }
     void deallocate(void *, size_t) { REQUIRE(false); }
 };
 
@@ -110,11 +110,11 @@ struct FixedPool {
 static void *fixedBufGetMem(intptr_t pool_id, size_t &bytes)
 {
     if (((FixedPool*)pool_id)->used)
-        return NULL;
+        return nullptr;
 
     ((FixedPool*)pool_id)->used = true;
     bytes = ((FixedPool*)pool_id)->size;
-    return bytes? ((FixedPool*)pool_id)->buf : NULL;
+    return bytes? ((FixedPool*)pool_id)->buf : nullptr;
 }
 #endif
 
@@ -145,7 +145,7 @@ void TestSmallFixedSizePool()
    on creation failure. Instead test same functionality via low-level interface.
    TODO: add support for configuration with disabled exceptions to pools.
 */
-        rml::MemPoolPolicy pol(fixedBufGetMem, NULL, 0, /*fixedSizePool=*/true,
+        rml::MemPoolPolicy pol(fixedBufGetMem, nullptr, 0, /*fixedSizePool=*/true,
                                /*keepMemTillDestroy=*/false);
         rml::MemoryPool *pool;
         FixedPool fixedPool(buf, sz);
@@ -163,7 +163,7 @@ void TestSmallFixedSizePool()
     REQUIRE_MESSAGE(allocated, "Maximal buf size should be enough to create working fixed_pool");
 #if TBB_USE_EXCEPTIONS
     try {
-        tbb::fixed_pool pool(NULL, 10*1024*1024);
+        tbb::fixed_pool pool(nullptr, 10*1024*1024);
         REQUIRE_MESSAGE(false, "Useless allocator with no memory must not be created");
     } catch (std::invalid_argument&) {
     } catch (...) {

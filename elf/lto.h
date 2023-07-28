@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../inttypes.h"
+#include "../common/integers.h"
 
 namespace mold {
 
@@ -153,7 +153,7 @@ enum PluginLevel {
 };
 
 enum PluginLinkerAPIVersion {
-  LAPI_V0 = 0,
+  LAPI_V0,
   LAPI_V1,
 };
 

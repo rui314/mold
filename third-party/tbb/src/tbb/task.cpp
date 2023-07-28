@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -47,29 +47,29 @@ void suspend(suspend_callback_type suspend_callback, void* user_callback) {
 void resume(suspend_point_type* sp) {
     assert_pointers_valid(sp, sp->m_arena);
     task_dispatcher& task_disp = sp->m_resume_task.m_target;
-    __TBB_ASSERT(task_disp.m_thread_data == nullptr, nullptr);
 
-    // TODO: remove this work-around
-    // Prolong the arena's lifetime while all coroutines are alive
-    // (otherwise the arena can be destroyed while some tasks are suspended).
-    arena& a = *sp->m_arena;
-    a.my_references += arena::ref_external;
+    if (sp->try_notify_resume()) {
+        // TODO: remove this work-around
+        // Prolong the arena's lifetime while all coroutines are alive
+        // (otherwise the arena can be destroyed while some tasks are suspended).
+        arena& a = *sp->m_arena;
+        a.my_references += arena::ref_external;
 
-    if (task_disp.m_properties.critical_task_allowed) {
-        // The target is not in the process of executing critical task, so the resume task is not critical.
-        a.my_resume_task_stream.push(&sp->m_resume_task, random_lane_selector(sp->m_random));
-    } else {
-#if __TBB_PREVIEW_CRITICAL_TASKS
-        // The target is in the process of executing critical task, so the resume task is critical.
-        a.my_critical_task_stream.push(&sp->m_resume_task, random_lane_selector(sp->m_random));
-#endif
+        if (task_disp.m_properties.critical_task_allowed) {
+            // The target is not in the process of executing critical task, so the resume task is not critical.
+            a.my_resume_task_stream.push(&sp->m_resume_task, random_lane_selector(sp->m_random));
+        } else {
+    #if __TBB_PREVIEW_CRITICAL_TASKS
+            // The target is in the process of executing critical task, so the resume task is critical.
+            a.my_critical_task_stream.push(&sp->m_resume_task, random_lane_selector(sp->m_random));
+    #endif
+        }
+        // Do not access target after that point.
+        a.advertise_new_work<arena::wakeup>();
+        // Release our reference to my_arena.
+        a.on_thread_leaving<arena::ref_external>();
     }
 
-    // Do not access target after that point.
-    a.advertise_new_work<arena::wakeup>();
-
-    // Release our reference to my_arena.
-    a.on_thread_leaving<arena::ref_external>();
 }
 
 suspend_point_type* current_suspend_point() {
@@ -92,9 +92,7 @@ static task_dispatcher& create_coroutine(thread_data& td) {
     return *task_disp;
 }
 
-void task_dispatcher::suspend(suspend_callback_type suspend_callback, void* user_callback) {
-    __TBB_ASSERT(suspend_callback != nullptr, nullptr);
-    __TBB_ASSERT(user_callback != nullptr, nullptr);
+void task_dispatcher::internal_suspend() {
     __TBB_ASSERT(m_thread_data != nullptr, nullptr);
 
     arena_slot* slot = m_thread_data->my_arena_slot;
@@ -105,13 +103,22 @@ void task_dispatcher::suspend(suspend_callback_type suspend_callback, void* user
     bool is_recalled = default_task_disp.get_suspend_point()->m_is_owner_recalled.load(std::memory_order_acquire);
     task_dispatcher& target = is_recalled ? default_task_disp : create_coroutine(*m_thread_data);
 
-    thread_data::suspend_callback_wrapper callback = { suspend_callback, user_callback, get_suspend_point() };
-    m_thread_data->set_post_resume_action(thread_data::post_resume_action::callback, &callback);
     resume(target);
 
     if (m_properties.outermost) {
         recall_point();
     }
+}
+
+void task_dispatcher::suspend(suspend_callback_type suspend_callback, void* user_callback) {
+    __TBB_ASSERT(suspend_callback != nullptr, nullptr);
+    __TBB_ASSERT(user_callback != nullptr, nullptr);
+    suspend_callback(user_callback, get_suspend_point());
+
+    __TBB_ASSERT(m_thread_data != nullptr, nullptr);
+    __TBB_ASSERT(m_thread_data->my_post_resume_action == post_resume_action::none, nullptr);
+    __TBB_ASSERT(m_thread_data->my_post_resume_arg == nullptr, nullptr);
+    internal_suspend();
 }
 
 bool task_dispatcher::resume(task_dispatcher& target) {
@@ -121,8 +128,6 @@ bool task_dispatcher::resume(task_dispatcher& target) {
         __TBB_ASSERT(&target != this, "We cannot resume to ourself");
         __TBB_ASSERT(td != nullptr, "This task dispatcher must be attach to a thread data");
         __TBB_ASSERT(td->my_task_dispatcher == this, "Thread data must be attached to this task dispatcher");
-        __TBB_ASSERT(td->my_post_resume_action != thread_data::post_resume_action::none, "The post resume action must be set");
-        __TBB_ASSERT(td->my_post_resume_arg, "The post resume action must have an argument");
 
         // Change the task dispatcher
         td->detach_task_dispatcher();
@@ -131,13 +136,14 @@ bool task_dispatcher::resume(task_dispatcher& target) {
     __TBB_ASSERT(m_suspend_point != nullptr, "Suspend point must be created");
     __TBB_ASSERT(target.m_suspend_point != nullptr, "Suspend point must be created");
     // Swap to the target coroutine.
-    m_suspend_point->m_co_context.resume(target.m_suspend_point->m_co_context);
+
+    m_suspend_point->resume(target.m_suspend_point);
     // Pay attention that m_thread_data can be changed after resume
     if (m_thread_data) {
         thread_data* td = m_thread_data;
         __TBB_ASSERT(td != nullptr, "This task dispatcher must be attach to a thread data");
         __TBB_ASSERT(td->my_task_dispatcher == this, "Thread data must be attached to this task dispatcher");
-        td->do_post_resume_action();
+        do_post_resume_action();
 
         // Remove the recall flag if the thread in its original task dispatcher
         arena_slot* slot = td->my_arena_slot;
@@ -151,54 +157,43 @@ bool task_dispatcher::resume(task_dispatcher& target) {
     return false;
 }
 
-void thread_data::do_post_resume_action() {
-    __TBB_ASSERT(my_post_resume_action != thread_data::post_resume_action::none, "The post resume action must be set");
-    __TBB_ASSERT(my_post_resume_arg, "The post resume action must have an argument");
-
-    switch (my_post_resume_action) {
+void task_dispatcher::do_post_resume_action() {
+    thread_data* td = m_thread_data;
+    switch (td->my_post_resume_action) {
     case post_resume_action::register_waiter:
     {
-        static_cast<market_concurrent_monitor::resume_context*>(my_post_resume_arg)->notify();
-        break;
-    }
-    case post_resume_action::resume:
-    {
-        r1::resume(static_cast<suspend_point_type*>(my_post_resume_arg));
-        break;
-    }
-    case post_resume_action::callback:
-    {
-        suspend_callback_wrapper callback = *static_cast<suspend_callback_wrapper*>(my_post_resume_arg);
-        callback();
+        __TBB_ASSERT(td->my_post_resume_arg, "The post resume action must have an argument");
+        static_cast<market_concurrent_monitor::resume_context*>(td->my_post_resume_arg)->notify();
         break;
     }
     case post_resume_action::cleanup:
     {
-        task_dispatcher* to_cleanup = static_cast<task_dispatcher*>(my_post_resume_arg);
+        __TBB_ASSERT(td->my_post_resume_arg, "The post resume action must have an argument");
+        task_dispatcher* to_cleanup = static_cast<task_dispatcher*>(td->my_post_resume_arg);
         // Release coroutine's reference to my_arena
-        my_arena->on_thread_leaving<arena::ref_external>();
+        td->my_arena->on_thread_leaving<arena::ref_external>();
         // Cache the coroutine for possible later re-usage
-        my_arena->my_co_cache.push(to_cleanup);
+        td->my_arena->my_co_cache.push(to_cleanup);
         break;
     }
     case post_resume_action::notify:
     {
-        suspend_point_type* sp = static_cast<suspend_point_type*>(my_post_resume_arg);
-        sp->m_is_owner_recalled.store(true, std::memory_order_release);
-        // Do not access sp because it can be destroyed after the store
+        __TBB_ASSERT(td->my_post_resume_arg, "The post resume action must have an argument");
+        suspend_point_type* sp = static_cast<suspend_point_type*>(td->my_post_resume_arg);
+        sp->recall_owner();
+        // Do not access sp because it can be destroyed after recall
 
-        auto is_our_suspend_point = [sp](market_context ctx) {
-            return  std::uintptr_t(sp) == ctx.my_uniq_addr;
+        auto is_our_suspend_point = [sp] (market_context ctx) {
+            return std::uintptr_t(sp) == ctx.my_uniq_addr;
         };
-        my_arena->my_market->get_wait_list().notify(is_our_suspend_point);
+        td->my_arena->my_market->get_wait_list().notify(is_our_suspend_point);
         break;
     }
     default:
-        __TBB_ASSERT(false, "Unknown post resume action");
+        __TBB_ASSERT(td->my_post_resume_action == post_resume_action::none, "Unknown post resume action");
+        __TBB_ASSERT(td->my_post_resume_arg == nullptr, "The post resume argument should not be set");
     }
-
-    my_post_resume_action = post_resume_action::none;
-    my_post_resume_arg = nullptr;
+    td->clear_post_resume_action();
 }
 
 #else

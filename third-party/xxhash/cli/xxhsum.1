@@ -1,25 +1,41 @@
-.TH "XXHSUM" "1" "November 2021" "xxhsum 0.8.1" "User Commands"
+.TH "XXHSUM" "1" "July 2023" "xxhsum 0.8.2" "User Commands"
 .SH "NAME"
 \fBxxhsum\fR \- print or check xxHash non\-cryptographic checksums
 .SH "SYNOPSIS"
-\fBxxhsum [<OPTION>] \|\.\|\.\|\. [<FILE>] \|\.\|\.\|\.\fR \fBxxhsum \-b [<OPTION>] \|\.\|\.\|\.\fR
+\fBxxhsum\fR [\fIOPTION\fR]\|\.\|\.\|\. [\fIFILE\fR]\|\.\|\.\|\.
+.br
+\fBxxhsum \-b\fR [\fIOPTION\fR]\|\.\|\.\|\.
 .P
-\fBxxh32sum\fR is equivalent to \fBxxhsum \-H0\fR \fBxxh64sum\fR is equivalent to \fBxxhsum \-H1\fR \fBxxh128sum\fR is equivalent to \fBxxhsum \-H2\fR
+\fBxxh32sum\fR is equivalent to \fBxxhsum \-H0\fR, \fBxxh64sum\fR is equivalent to \fBxxhsum \-H1\fR, \fBxxh128sum\fR is equivalent to \fBxxhsum \-H2\fR\.
 .SH "DESCRIPTION"
-Print or check xxHash (32, 64 or 128 bits) checksums\. When no \fIFILE\fR, read standard input, except if it\'s the console\. When \fIFILE\fR is \fB\-\fR, read standard input even if it\'s the console\.
+Print or check xxHash (32, 64 or 128 bits) checksums\.
+.br
+When no \fIFILE\fR, read standard input, except if it's the console\. When \fIFILE\fR is \fB\-\fR, read standard input even if it's the console\.
 .P
-\fBxxhsum\fR supports a command line syntax similar but not identical to md5sum(1)\. Differences are: \fBxxhsum\fR doesn\'t have text/binary mode switch (\fB\-b\fR, \fB\-t\fR); \fBxxhsum\fR always treats files as binary file; \fBxxhsum\fR has a hash bit width switch (\fB\-H\fR);
+\fBxxhsum\fR supports a command line syntax similar but not identical to md5sum(1)\. Differences are:
+.IP "\[ci]" 4
+\fBxxhsum\fR doesn't have text mode switch (\fB\-t\fR)
+.IP "\[ci]" 4
+\fBxxhsum\fR doesn't have short binary mode switch (\fB\-b\fR)
+.IP "\[ci]" 4
+\fBxxhsum\fR always treats files as binary file
+.IP "\[ci]" 4
+\fBxxhsum\fR has a hash selection switch (\fB\-H\fR)
+.IP "" 0
 .P
 As xxHash is a fast non\-cryptographic checksum algorithm, \fBxxhsum\fR should not be used for security related purposes\.
 .P
-\fBxxhsum \-b\fR invokes benchmark mode\. See \fIOPTIONS\fR and \fIEXAMPLES\fR for details\.
+\fBxxhsum \-b\fR invokes benchmark mode\. See OPTIONS and EXAMPLES for details\.
 .SH "OPTIONS"
 .TP
 \fB\-V\fR, \fB\-\-version\fR
 Displays xxhsum version and exits
 .TP
 \fB\-H\fR\fIHASHTYPE\fR
-Hash selection\. \fIHASHTYPE\fR means \fB0\fR=XXH32, \fB1\fR=XXH64, \fB2\fR=XXH128, \fB3\fR=XXH3\. Alternatively, \fIHASHTYPE\fR \fB32\fR=XXH32, \fB64\fR=XXH64, \fB128\fR=XXH128\. Default value is \fB1\fR (64bits)
+Hash selection\. \fIHASHTYPE\fR means \fB0\fR=XXH32, \fB1\fR=XXH64, \fB2\fR=XXH128, \fB3\fR=XXH3\. Note that \fB\-H3\fR triggers \fB\-\-tag\fR, which can't be skipped (this is to reduce risks of confusion with \fB\-H2\fR (\fBXXH64\fR))\. Alternatively, \fIHASHTYPE\fR \fB32\fR=XXH32, \fB64\fR=XXH64, \fB128\fR=XXH128\. Default value is \fB1\fR (XXH64)
+.TP
+\fB\-\-binary\fR
+Read in binary mode\.
 .TP
 \fB\-\-tag\fR
 Output in the BSD style\.
@@ -29,39 +45,37 @@ Set output hexadecimal checksum value as little endian convention\. By default, 
 .TP
 \fB\-h\fR, \fB\-\-help\fR
 Displays help and exits
-.P
-\fBThe following four options are useful only when verifying checksums (\fB\-c\fR)\fR
+.SS "The following options are useful only when verifying checksums (\-c):"
 .TP
 \fB\-c\fR, \fB\-\-check\fR \fIFILE\fR
 Read xxHash sums from \fIFILE\fR and check them
 .TP
 \fB\-q\fR, \fB\-\-quiet\fR
-Don\'t print OK for each successfully verified file
+Don't print OK for each successfully verified file
 .TP
 \fB\-\-strict\fR
 Return an error code if any line in the file is invalid, not just if some checksums are wrong\. This policy is disabled by default, though UI will prompt an informational message if any line in the file is detected invalid\.
 .TP
 \fB\-\-status\fR
-Don\'t output anything\. Status code shows success\.
+Don't output anything\. Status code shows success\.
 .TP
 \fB\-w\fR, \fB\-\-warn\fR
 Emit a warning message about each improperly formatted checksum line\.
-.P
-\fBThe following options are useful only benchmark purpose\fR
+.SS "The following options are useful only benchmark purpose:"
 .TP
 \fB\-b\fR
-Benchmark mode\. See \fIEXAMPLES\fR for details\.
+Benchmark mode\. See EXAMPLES for details\.
 .TP
 \fB\-b#\fR
-Specify ID of variant to be tested\. Multiple variants can be selected, separated by a \',\' comma\.
+Specify ID of variant to be tested\. Multiple variants can be selected, separated by a ',' comma\.
 .TP
 \fB\-B\fR\fIBLOCKSIZE\fR
-Only useful for benchmark mode (\fB\-b\fR)\. See \fIEXAMPLES\fR for details\. \fIBLOCKSIZE\fR specifies benchmark mode\'s test data block size in bytes\. Default value is 102400
+Only useful for benchmark mode (\fB\-b\fR)\. See \fIEXAMPLES\fR for details\. \fIBLOCKSIZE\fR specifies benchmark mode's test data block size in bytes\. Default value is 102400
 .TP
 \fB\-i\fR\fIITERATIONS\fR
 Only useful for benchmark mode (\fB\-b\fR)\. See \fIEXAMPLES\fR for details\. \fIITERATIONS\fR specifies number of iterations in benchmark\. Single iteration lasts approximately 1000 milliseconds\. Default value is 3
 .SH "EXIT STATUS"
-\fBxxhsum\fR exit \fB0\fR on success, \fB1\fR if at least one file couldn\'t be read or doesn\'t have the same checksum as the \fB\-c\fR option\.
+\fBxxhsum\fR exit \fB0\fR on success, \fB1\fR if at least one file couldn't be read or doesn't have the same checksum as the \fB\-c\fR option\.
 .SH "EXAMPLES"
 Output xxHash (64bit) checksum values of specific files to standard output
 .IP "" 4

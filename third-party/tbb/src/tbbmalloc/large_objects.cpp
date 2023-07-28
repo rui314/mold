@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -63,7 +63,7 @@ void LargeObjectCache::setHugeSizeThreshold(size_t value)
 
 bool LargeObjectCache::sizeInCacheRange(size_t size)
 {
-    return size <= maxHugeSize && (size <= defaultMaxHugeSize || size >= hugeSizeThreshold);
+    return size < maxHugeSize && (size <= defaultMaxHugeSize || size >= hugeSizeThreshold);
 }
 
 /* ----------------------------------------------------------------------------------------------------- */
@@ -123,8 +123,8 @@ class CacheBinFunctor {
 
     public:
         OperationPreprocessor(typename LargeObjectCacheImpl<Props>::CacheBin *bin) :
-            bin(bin), lclTime(0), opGet(NULL), opClean(NULL), cleanTime(0),
-            lastGetOpTime(0), updateUsedSize(0), head(NULL), isCleanAll(false)  {}
+            bin(bin), lclTime(0), opGet(nullptr), opClean(nullptr), cleanTime(0),
+            lastGetOpTime(0), updateUsedSize(0), head(nullptr), isCleanAll(false)  {}
         void operator()(CacheBinOperation* opList);
         uintptr_t getTimeRange() const { return -lclTime; }
 
@@ -134,7 +134,7 @@ class CacheBinFunctor {
 public:
     CacheBinFunctor(typename LargeObjectCacheImpl<Props>::CacheBin *bin, ExtMemoryPool *extMemPool,
                     typename LargeObjectCacheImpl<Props>::BinBitMask *bitMask, int idx) :
-        bin(bin), extMemPool(extMemPool), bitMask(bitMask), idx(idx), toRelease(NULL), needCleanup(false) {}
+        bin(bin), extMemPool(extMemPool), bitMask(bitMask), idx(idx), toRelease(nullptr), needCleanup(false) {}
     void operator()(CacheBinOperation* opList);
 
     bool isCleanupNeeded() const { return needCleanup; }
@@ -305,7 +305,7 @@ template<typename Props> void CacheBinFunctor<Props>::
         case CBOP_PUT_LIST:
             {
                 LargeMemoryBlock *head = opCast<OpPutList>(*op).head;
-                LargeMemoryBlock *curr = head, *prev = NULL;
+                LargeMemoryBlock *curr = head, *prev = nullptr;
 
                 int num = 0;
                 do {
@@ -323,7 +323,7 @@ template<typename Props> void CacheBinFunctor<Props>::
                     num += 1;
 
                     STAT_increment(getThreadId(), ThreadCommonCounters, cacheLargeObj);
-                } while ((curr = curr->next) != NULL);
+                } while ((curr = curr->next) != nullptr);
 
                 LargeMemoryBlock *tail = prev;
                 addToPutList(head, tail, num);
@@ -408,7 +408,7 @@ template<typename Props> void CacheBinFunctor<Props>::operator()(CacheBinOperati
             if ( prep.lastGetOpTime )
                 bin->setLastGet( prep.lastGetOpTime + endTime );
         } else if ( LargeMemoryBlock *curr = prep.head ) {
-            curr->prev = NULL;
+            curr->prev = nullptr;
             while ( curr ) {
                 // Update local times to global times
                 curr->age += endTime;
@@ -432,7 +432,7 @@ template<typename Props> void CacheBinFunctor<Props>::operator()(CacheBinOperati
         CacheBinOperation *opNext = opClean->next;
         prep.commitOperation( opClean );
 
-        while ((opClean = opNext) != NULL) {
+        while ((opClean = opNext) != nullptr) {
             opNext = opClean->next;
             prep.commitOperation(opClean);
         }
@@ -461,7 +461,7 @@ template<typename Props> void LargeObjectCacheImpl<Props>::
 template<typename Props> LargeMemoryBlock *LargeObjectCacheImpl<Props>::
     CacheBin::get(ExtMemoryPool *extMemPool, size_t size, BinBitMask *bitMask, int idx)
 {
-    LargeMemoryBlock *lmb=NULL;
+    LargeMemoryBlock *lmb=nullptr;
     OpGet data = {&lmb, size};
     CacheBinOperation op(data);
     ExecuteOperation( &op, extMemPool, bitMask, idx );
@@ -481,7 +481,7 @@ template<typename Props> void LargeObjectCacheImpl<Props>::
 template<typename Props> bool LargeObjectCacheImpl<Props>::
     CacheBin::cleanToThreshold(ExtMemoryPool *extMemPool, BinBitMask *bitMask, uintptr_t currTime, int idx)
 {
-    LargeMemoryBlock *toRelease = NULL;
+    LargeMemoryBlock *toRelease = nullptr;
 
     /* oldest may be more recent then age, that's why cast to signed type
        was used. age overflow is also processed correctly. */
@@ -505,7 +505,7 @@ template<typename Props> bool LargeObjectCacheImpl<Props>::
 template<typename Props> bool LargeObjectCacheImpl<Props>::
     CacheBin::releaseAllToBackend(ExtMemoryPool *extMemPool, BinBitMask *bitMask, int idx)
 {
-    LargeMemoryBlock *toRelease = NULL;
+    LargeMemoryBlock *toRelease = nullptr;
 
     if (last.load(std::memory_order_relaxed)) {
         OpCleanAll data = {&toRelease};
@@ -543,7 +543,7 @@ template<typename Props> LargeMemoryBlock *LargeObjectCacheImpl<Props>::
     MALLOC_ASSERT( !last.load(std::memory_order_relaxed) ||
         (last.load(std::memory_order_relaxed)->age != 0 && last.load(std::memory_order_relaxed)->age != -1U), ASSERT_TEXT );
     MALLOC_ASSERT( (tail==head && num==1) || (tail!=head && num>1), ASSERT_TEXT );
-    LargeMemoryBlock *toRelease = NULL;
+    LargeMemoryBlock *toRelease = nullptr;
     if (size < hugeSizeThreshold && !lastCleanedAge) {
         // 1st object of such size was released.
         // Not cache it, and remember when this occurs
@@ -552,9 +552,9 @@ template<typename Props> LargeMemoryBlock *LargeObjectCacheImpl<Props>::
         toRelease = tail;
         tail = tail->prev;
         if (tail)
-            tail->next = NULL;
+            tail->next = nullptr;
         else
-            head = NULL;
+            head = nullptr;
         num--;
     }
     if (num) {
@@ -587,7 +587,7 @@ template<typename Props> LargeMemoryBlock *LargeObjectCacheImpl<Props>::
     if (result) {
         first = result->next;
         if (first)
-            first->prev = NULL;
+            first->prev = nullptr;
         else {
             last.store(nullptr, std::memory_order_relaxed);
             oldest.store(0, std::memory_order_relaxed);
@@ -646,14 +646,14 @@ template<typename Props> LargeMemoryBlock *LargeObjectCacheImpl<Props>::
     } while (last.load(std::memory_order_relaxed) &&
         (intptr_t)(currTime - last.load(std::memory_order_relaxed)->age) > ageThreshold.load(std::memory_order_relaxed));
 
-    LargeMemoryBlock *toRelease = NULL;
+    LargeMemoryBlock *toRelease = nullptr;
     if (last.load(std::memory_order_relaxed)) {
         toRelease = last.load(std::memory_order_relaxed)->next;
         oldest.store(last.load(std::memory_order_relaxed)->age, std::memory_order_relaxed);
-        last.load(std::memory_order_relaxed)->next = NULL;
+        last.load(std::memory_order_relaxed)->next = nullptr;
     } else {
         toRelease = first;
-        first = NULL;
+        first = nullptr;
         oldest.store(0, std::memory_order_relaxed);
         if (!usedSize.load(std::memory_order_relaxed))
             bitMask->set(idx, false);
@@ -667,11 +667,11 @@ template<typename Props> LargeMemoryBlock *LargeObjectCacheImpl<Props>::
 template<typename Props> LargeMemoryBlock *LargeObjectCacheImpl<Props>::
     CacheBin::cleanAll(BinBitMask *bitMask, int idx)
 {
-    if (!last.load(std::memory_order_relaxed)) return NULL;
+    if (!last.load(std::memory_order_relaxed)) return nullptr;
 
     LargeMemoryBlock *toRelease = first;
-    last.store(NULL, std::memory_order_relaxed);
-    first = NULL;
+    last.store(nullptr, std::memory_order_relaxed);
+    first = nullptr;
     oldest.store(0, std::memory_order_relaxed);
     cachedSize.store(0, std::memory_order_relaxed);
     if (!usedSize.load(std::memory_order_relaxed))
@@ -941,7 +941,7 @@ void LargeObjectCache::putList(LargeMemoryBlock *list)
                 }
             }
         }
-        tail->next = NULL;
+        tail->next = nullptr;
         if (curr->unalignedSize < maxLargeSize)
             largeCache.putList(extMemPool, curr);
         else
@@ -953,7 +953,7 @@ void LargeObjectCache::put(LargeMemoryBlock *largeBlock)
 {
     size_t blockSize = largeBlock->unalignedSize;
     if (sizeInCacheRange(blockSize)) {
-        largeBlock->next = NULL;
+        largeBlock->next = nullptr;
         if (blockSize < maxLargeSize)
             largeCache.putList(extMemPool, largeBlock);
         else
@@ -970,7 +970,7 @@ LargeMemoryBlock *LargeObjectCache::get(size_t size)
         return size < maxLargeSize ?
             largeCache.get(extMemPool, size) : hugeCache.get(extMemPool, size);
     }
-    return NULL;
+    return nullptr;
 }
 
 LargeMemoryBlock *ExtMemoryPool::mallocLargeObject(MemoryPool *pool, size_t allocationSize)
@@ -983,14 +983,14 @@ LargeMemoryBlock *ExtMemoryPool::mallocLargeObject(MemoryPool *pool, size_t allo
     if (!lmb) {
         BackRefIdx backRefIdx = BackRefIdx::newBackRef(/*largeObj=*/true);
         if (backRefIdx.isInvalid())
-            return NULL;
+            return nullptr;
 
         // unalignedSize is set in getLargeBlock
         lmb = backend.getLargeBlock(allocationSize);
         if (!lmb) {
             removeBackRef(backRefIdx);
             loc.updateCacheState(decrease, allocationSize);
-            return NULL;
+            return nullptr;
         }
         lmb->backRefIdx = backRefIdx;
         lmb->pool = pool;

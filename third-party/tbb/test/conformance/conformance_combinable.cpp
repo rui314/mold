@@ -55,16 +55,16 @@ const double EXPECTED_SUM = (REPETITIONS + 1) * N;
 // also operator=
 //
 
-class minimal {
+class minimalCombinable {
 private:
     int my_value;
 public:
-    minimal(int val=0) : my_value(val) { ++construction_counter; }
-    minimal( const minimal &m ) : my_value(m.my_value) { ++construction_counter; }
-    minimal& operator=(const minimal& other) { my_value = other.my_value; return *this; }
-    minimal& operator+=(const minimal& other) { my_value += other.my_value; return *this; }
+    minimalCombinable(int val=0) : my_value(val) { ++construction_counter; }
+    minimalCombinable( const minimalCombinable&m ) : my_value(m.my_value) { ++construction_counter; }
+    minimalCombinable& operator=(const minimalCombinable& other) { my_value = other.my_value; return *this; }
+    minimalCombinable& operator+=(const minimalCombinable& other) { my_value += other.my_value; return *this; }
     operator int() const { return my_value; }
-    ~minimal() { ++destruction_counter; }
+    ~minimalCombinable() { ++destruction_counter; }
     void set_value( const int i ) { my_value = i; }
     int value( ) const { return my_value; }
 };
@@ -340,7 +340,7 @@ RunParallelTests() {
     // REMARK("Running RunParallelTests\n");
     RunParallelScalarTests<int>("int");
     RunParallelScalarTests<double>("double");
-    RunParallelScalarTests<minimal>("minimal");
+    RunParallelScalarTests<minimalCombinable>("minimalCombinable");
     RunParallelVectorTests<int>("std::vector<int, oneapi::tbb::tbb_allocator<int> >");
     RunParallelVectorTests<double>("std::vector<double, oneapi::tbb::tbb_allocator<double> >");
 }
@@ -382,7 +382,7 @@ void RunAssignmentAndCopyConstructorTests() {
     // REMARK("Running assignment and copy constructor tests:\n");
     RunAssignmentAndCopyConstructorTest<int>("int");
     RunAssignmentAndCopyConstructorTest<double>("double");
-    RunAssignmentAndCopyConstructorTest<minimal>("minimal");
+    RunAssignmentAndCopyConstructorTest<minimalCombinable>("minimalCombinable");
 }
 
 void RunMoveSemanticsForStateTrackableObjectTest() {

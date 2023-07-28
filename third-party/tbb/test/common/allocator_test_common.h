@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -247,14 +247,14 @@ struct Body: utils::NoAssign {
         for(std::size_t j=0; j < size * sizeof(value_type); ++j)
             REQUIRE_MESSAGE(s[j] == PseudoRandomValue(i, t), "Thread safety test failed");
         a.deallocate(array[i], size);
-        array[i] = 0;
+        array[i] = nullptr;
     }
 
     void operator()(std::size_t thread_id) const {
         pointer_type array[256];
 
         for(std::size_t k = 0; k < 256; ++k)
-            array[k] = 0;
+            array[k] = nullptr;
         for(std::size_t k = 0; k < max_k; ++k) {
             std::size_t i = static_cast<unsigned char>(PseudoRandomValue(k, thread_id));
             if(!array[i]) check_allocate(array, i, thread_id);

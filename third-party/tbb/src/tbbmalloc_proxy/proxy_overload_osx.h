@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -95,7 +95,7 @@ static size_t impl_malloc_usable_size(struct _malloc_zone_t *, const void *ptr)
 {
     // malloc_usable_size() is used by macOS* to recognize which memory manager
     // allocated the address, so our wrapper must not redirect to the original function.
-    return __TBB_malloc_safer_msize(const_cast<void*>(ptr), NULL);
+    return __TBB_malloc_safer_msize(const_cast<void*>(ptr), nullptr);
 }
 
 static void *impl_malloc(struct _malloc_zone_t *, size_t size);
@@ -117,7 +117,7 @@ static size_t impl_pressure_relief(struct _malloc_zone_t *, size_t  /* goal */)
     return 0;
 }
 
-static malloc_zone_t *system_zone = NULL;
+static malloc_zone_t *system_zone = nullptr;
 
 struct DoMallocReplacement {
     DoMallocReplacement() {
@@ -158,8 +158,8 @@ struct DoMallocReplacement {
         void* ptr = malloc(1);
         // get all registered memory zones
         unsigned zcount = 0;
-        malloc_zone_t** zone_array = NULL;
-        kern_return_t errorcode = malloc_get_all_zones(mach_task_self(),NULL,(vm_address_t**)&zone_array,&zcount);
+        malloc_zone_t** zone_array = nullptr;
+        kern_return_t errorcode = malloc_get_all_zones(mach_task_self(),nullptr,(vm_address_t**)&zone_array,&zcount);
         if (!errorcode && zone_array && zcount>0) {
             // find the zone that allocated ptr
             for (unsigned i=0; i<zcount; ++i) {

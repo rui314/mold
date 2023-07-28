@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -384,7 +384,7 @@
             graph_task* bypass_t;
             // constructor for value parameter
             queueing_port_operation(const T& e, op_type t) :
-                type(char(t)), my_val(e)
+                type(char(t)), my_val(e), my_arg(nullptr)
                 , bypass_t(nullptr)
             {}
             // constructor for pointer parameter
@@ -393,7 +393,7 @@
                 , bypass_t(nullptr)
             {}
             // constructor with no parameter
-            queueing_port_operation(op_type t) : type(char(t))
+            queueing_port_operation(op_type t) : type(char(t)), my_arg(nullptr)
                 , bypass_t(nullptr)
             {}
         };
@@ -422,6 +422,7 @@
                     break;
                 case get__item:
                     if(!this->buffer_empty()) {
+                        __TBB_ASSERT(current->my_arg, nullptr);
                         *(current->my_arg) = this->front();
                         current->status.store( SUCCEEDED, std::memory_order_release);
                     }
@@ -547,12 +548,12 @@
             input_type *my_arg;
             // constructor for value parameter
             key_matching_port_operation(const input_type& e, op_type t) :
-                type(char(t)), my_val(e) {}
+                type(char(t)), my_val(e), my_arg(nullptr) {}
             // constructor for pointer parameter
             key_matching_port_operation(const input_type* p, op_type t) :
                 type(char(t)), my_arg(const_cast<input_type*>(p)) {}
             // constructor with no parameter
-            key_matching_port_operation(op_type t) : type(char(t)) {}
+            key_matching_port_operation(op_type t) : type(char(t)), my_arg(nullptr) {}
         };
 
         typedef aggregating_functor<class_type, key_matching_port_operation> handler_type;
@@ -573,6 +574,7 @@
                     break;
                 case get__item:
                     // use current_key from FE for item
+                    __TBB_ASSERT(current->my_arg, nullptr);
                     if(!this->find_with_key(my_join->current_key, *(current->my_arg))) {
                         __TBB_ASSERT(false, "Failed to find item corresponding to current_key.");
                     }
@@ -667,12 +669,12 @@
 
     template<typename InputTuple, typename OutputTuple>
     class join_node_FE<reserving, InputTuple, OutputTuple> : public reserving_forwarding_base {
-    public:
+    private:
         static const int N = std::tuple_size<OutputTuple>::value;
         typedef OutputTuple output_type;
         typedef InputTuple input_type;
         typedef join_node_base<reserving, InputTuple, OutputTuple> base_node_type; // for forwarding
-
+    public:
         join_node_FE(graph &g) : reserving_forwarding_base(g), my_node(nullptr) {
             ports_with_no_inputs = N;
             join_helper<N>::set_join_node_pointer(my_inputs, this);
@@ -910,7 +912,7 @@
                     }
                     break;
                 case inc_count: {  // called from input ports
-                        count_element_type *p = 0;
+                        count_element_type *p = nullptr;
                         unref_key_type &t = current->my_val;
                         if(!(this->find_ref_with_key(t,p))) {
                             count_element_type ev;
@@ -1212,10 +1214,10 @@
     //  using tuple_element.  The class PT is the port type (reserving_port, queueing_port, key_matching_port)
     //  and should match the typename.
 
-    template<int N, template<class> class PT, typename OutputTuple, typename JP>
-    class unfolded_join_node : public join_base<N,PT,OutputTuple,JP>::type {
+    template<int M, template<class> class PT, typename OutputTuple, typename JP>
+    class unfolded_join_node : public join_base<M,PT,OutputTuple,JP>::type {
     public:
-        typedef typename wrap_tuple_elements<N, PT, OutputTuple>::type input_ports_type;
+        typedef typename wrap_tuple_elements<M, PT, OutputTuple>::type input_ports_type;
         typedef OutputTuple output_type;
     private:
         typedef join_node_base<JP, input_ports_type, output_type > base_type;

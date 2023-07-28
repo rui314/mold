@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -60,17 +60,19 @@ protected:
     static constexpr size_type pointers_per_long_table = sizeof(size_type) * 8;
 public:
     segment_table( const allocator_type& alloc = allocator_type() )
-        : my_segment_table_allocator(alloc), my_segment_table(my_embedded_table)
+        : my_segment_table_allocator(alloc), my_segment_table(nullptr)
         , my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
     }
 
     segment_table( const segment_table& other )
         : my_segment_table_allocator(segment_table_allocator_traits::
                                      select_on_container_copy_construction(other.my_segment_table_allocator))
-        , my_segment_table(my_embedded_table), my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
+        , my_segment_table(nullptr), my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
         try_call( [&] {
             internal_transfer(other, copy_segment_body_type{*this});
@@ -80,9 +82,10 @@ public:
     }
 
     segment_table( const segment_table& other, const allocator_type& alloc )
-        : my_segment_table_allocator(alloc), my_segment_table(my_embedded_table)
+        : my_segment_table_allocator(alloc), my_segment_table(nullptr)
         , my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
         try_call( [&] {
             internal_transfer(other, copy_segment_body_type{*this});
@@ -92,17 +95,19 @@ public:
     }
 
     segment_table( segment_table&& other )
-        : my_segment_table_allocator(std::move(other.my_segment_table_allocator)), my_segment_table(my_embedded_table)
+        : my_segment_table_allocator(std::move(other.my_segment_table_allocator)), my_segment_table(nullptr)
         , my_first_block{}, my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
         internal_move(std::move(other));
     }
 
     segment_table( segment_table&& other, const allocator_type& alloc )
-        : my_segment_table_allocator(alloc), my_segment_table(my_embedded_table), my_first_block{}
+        : my_segment_table_allocator(alloc), my_segment_table(nullptr), my_first_block{}
         , my_size{}, my_segment_table_allocation_failed{}
     {
+        my_segment_table.store(my_embedded_table, std::memory_order_relaxed);
         zero_table(my_embedded_table, pointers_per_embedded_table);
         using is_equal_type = typename segment_table_allocator_traits::is_always_equal;
         internal_move_construct_with_allocator(std::move(other), alloc, is_equal_type());
@@ -120,7 +125,7 @@ public:
         return *this;
     }
 
-    segment_table& operator=( segment_table&& other ) 
+    segment_table& operator=( segment_table&& other )
         noexcept(derived_type::is_noexcept_assignment)
     {
         using pocma_type = typename segment_table_allocator_traits::propagate_on_container_move_assignment;
@@ -133,7 +138,7 @@ public:
         return *this;
     }
 
-    void swap( segment_table& other ) 
+    void swap( segment_table& other )
         noexcept(derived_type::is_noexcept_swap)
     {
         using is_equal_type = typename segment_table_allocator_traits::is_always_equal;
@@ -184,9 +189,7 @@ public:
     }
 
     void delete_segment( segment_index_type seg_index ) {
-        segment_type disabled_segment = nullptr;
-        // Set the pointer to the segment to NULL in the table
-        segment_type segment_to_delete = get_table()[seg_index].exchange(disabled_segment);
+        segment_type segment_to_delete = self()->nullify_segment(get_table(), seg_index);
         if (segment_to_delete == segment_allocation_failure_tag) {
             return;
         }
@@ -296,7 +299,7 @@ public:
                         throw_exception(exception_id::bad_alloc);
                     }
                     backoff.pause();
-                    table = my_segment_table.load(std::memory_order_acquire); 
+                    table = my_segment_table.load(std::memory_order_acquire);
                 } while (table == my_embedded_table);
             }
         }
@@ -542,8 +545,8 @@ protected:
     }
 
     segment_table_allocator_type my_segment_table_allocator;
-    atomic_segment my_embedded_table[pointers_per_embedded_table];
     std::atomic<segment_table_type> my_segment_table;
+    atomic_segment my_embedded_table[pointers_per_embedded_table];
     // Number of segments in first block
     std::atomic<size_type> my_first_block;
     // Number of elements in table

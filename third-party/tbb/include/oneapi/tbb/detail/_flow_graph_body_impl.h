@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -260,13 +260,18 @@ public:
             next_task = nullptr;
         else if (next_task)
             next_task = prioritize_task(my_node.graph_reference(), *next_task);
-        finalize(ed);
+        finalize<forward_task_bypass>(ed);
         return next_task;
+    }
+
+    task* cancel(execution_data& ed) override {
+        finalize<forward_task_bypass>(ed);
+        return nullptr;
     }
 };
 
 //! A task that calls a node's apply_body_bypass function, passing in an input of type Input
-//  return the task* unless it is SUCCESSFULLY_ENQUEUED, in which case return NULL
+//  return the task* unless it is SUCCESSFULLY_ENQUEUED, in which case return nullptr
 template< typename NodeType, typename Input >
 class apply_body_task_bypass : public graph_task {
     NodeType &my_node;
@@ -284,9 +289,13 @@ public:
             next_task = nullptr;
         else if (next_task)
             next_task = prioritize_task(my_node.graph_reference(), *next_task);
-        finalize(ed);
+        finalize<apply_body_task_bypass>(ed);
         return next_task;
+    }
 
+    task* cancel(execution_data& ed) override {
+        finalize<apply_body_task_bypass>(ed);
+        return nullptr;
     }
 };
 
@@ -304,10 +313,14 @@ public:
             next_task = nullptr;
         else if (next_task)
             next_task = prioritize_task(my_node.graph_reference(), *next_task);
-        finalize(ed);
+        finalize<input_node_task_bypass>(ed);
         return next_task;
     }
 
+    task* cancel(execution_data& ed) override {
+        finalize<input_node_task_bypass>(ed);
+        return nullptr;
+    }
 };
 
 // ------------------------ end of node task bodies -----------------------------------

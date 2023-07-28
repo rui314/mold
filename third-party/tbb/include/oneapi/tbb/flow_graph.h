@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -179,9 +179,9 @@ static inline std::pair<graph_task*, graph_task*> order_tasks(graph_task* first,
 // submit task if necessary. Returns the non-enqueued task if there is one.
 static inline graph_task* combine_tasks(graph& g, graph_task* left, graph_task* right) {
     // if no RHS task, don't change left.
-    if (right == NULL) return left;
-    // right != NULL
-    if (left == NULL) return right;
+    if (right == nullptr) return left;
+    // right != nullptr
+    if (left == nullptr) return right;
     if (left == SUCCESSFULLY_ENQUEUED) return right;
     // left contains a task
     if (right != SUCCESSFULLY_ENQUEUED) {
@@ -407,7 +407,7 @@ namespace d1 {
 using namespace graph_policy_namespace;
 
 template <typename C, typename N>
-graph_iterator<C,N>::graph_iterator(C *g, bool begin) : my_graph(g), current_node(NULL)
+graph_iterator<C,N>::graph_iterator(C *g, bool begin) : my_graph(g), current_node(nullptr)
 {
     if (begin) current_node = my_graph->my_nodes;
     //else it is an end iterator by default
@@ -430,7 +430,7 @@ void graph_iterator<C,N>::internal_forward() {
 }
 
 //! Constructs a graph with isolated task_group_context
-inline graph::graph() : my_wait_context(0), my_nodes(NULL), my_nodes_last(NULL), my_task_arena(NULL) {
+inline graph::graph() : my_wait_context(0), my_nodes(nullptr), my_nodes_last(nullptr), my_task_arena(nullptr) {
     prepare_task_arena();
     own_context = true;
     cancelled = false;
@@ -441,7 +441,7 @@ inline graph::graph() : my_wait_context(0), my_nodes(NULL), my_nodes_last(NULL),
 }
 
 inline graph::graph(task_group_context& use_this_context) :
-    my_wait_context(0), my_context(&use_this_context), my_nodes(NULL), my_nodes_last(NULL), my_task_arena(NULL) {
+    my_wait_context(0), my_context(&use_this_context), my_nodes(nullptr), my_nodes_last(nullptr), my_task_arena(nullptr) {
     prepare_task_arena();
     own_context = false;
     cancelled = false;
@@ -470,7 +470,7 @@ inline void graph::release_wait() {
 }
 
 inline void graph::register_node(graph_node *n) {
-    n->next = NULL;
+    n->next = nullptr;
     {
         spin_mutex::scoped_lock lock(nodelist_mutex);
         n->prev = my_nodes_last;
@@ -489,7 +489,7 @@ inline void graph::remove_node(graph_node *n) {
         if (my_nodes_last == n) my_nodes_last = n->prev;
         if (my_nodes == n) my_nodes = n->next;
     }
-    n->prev = n->next = NULL;
+    n->prev = n->next = nullptr;
 }
 
 inline void graph::reset( reset_flags f ) {
@@ -747,7 +747,7 @@ private:
     graph_task* apply_body_bypass( ) {
         output_type v;
         if ( !try_reserve_apply_body(v) )
-            return NULL;
+            return nullptr;
 
         graph_task *last_task = my_successors.try_put_task(v);
         if ( last_task )
@@ -1182,9 +1182,10 @@ protected:
         successor_type *r;
 
         buffer_operation(const T& e, op_type t) : type(char(t))
-                                                  , elem(const_cast<T*>(&e)) , ltask(NULL)
+                                                  , elem(const_cast<T*>(&e)) , ltask(nullptr)
+                                                  , r(nullptr)
         {}
-        buffer_operation(op_type t) : type(char(t)),  ltask(NULL) {}
+        buffer_operation(op_type t) : type(char(t)), elem(nullptr), ltask(nullptr), r(nullptr) {}
     };
 
     bool forwarder_busy;
@@ -1200,7 +1201,7 @@ protected:
     void handle_operations_impl(buffer_operation *op_list, derived_type* derived) {
         __TBB_ASSERT(static_cast<class_type*>(derived) == this, "'this' is not a base class for derived");
 
-        buffer_operation *tmp = NULL;
+        buffer_operation *tmp = nullptr;
         bool try_forwarding = false;
         while (op_list) {
             tmp = op_list;
@@ -1255,10 +1256,10 @@ protected:
     //! This is executed by an enqueued task, the "forwarder"
     virtual graph_task *forward_task() {
         buffer_operation op_data(try_fwd_task);
-        graph_task *last_task = NULL;
+        graph_task *last_task = nullptr;
         do {
             op_data.status = WAIT;
-            op_data.ltask = NULL;
+            op_data.ltask = nullptr;
             my_aggregator.execute(&op_data);
 
             // workaround for icc bug
@@ -1271,12 +1272,14 @@ protected:
 
     //! Register successor
     virtual void internal_reg_succ(buffer_operation *op) {
+        __TBB_ASSERT(op->r, nullptr);
         my_successors.register_successor(*(op->r));
         op->status.store(SUCCEEDED, std::memory_order_release);
     }
 
     //! Remove successor
     virtual void internal_rem_succ(buffer_operation *op) {
+        __TBB_ASSERT(op->r, nullptr);
         my_successors.remove_successor(*(op->r));
         op->status.store(SUCCEEDED, std::memory_order_release);
     }
@@ -1314,7 +1317,7 @@ protected:
             return;
         }
         // Try forwarding, giving each successor a chance
-        graph_task* last_task = NULL;
+        graph_task* last_task = nullptr;
         size_type counter = my_successors.size();
         for (; counter > 0 && derived->is_item_valid(); --counter)
             derived->try_put_and_add_task(last_task);
@@ -1330,12 +1333,14 @@ protected:
     }
 
     virtual bool internal_push(buffer_operation *op) {
+        __TBB_ASSERT(op->elem, nullptr);
         this->push_back(*(op->elem));
         op->status.store(SUCCEEDED, std::memory_order_release);
         return true;
     }
 
     virtual void internal_pop(buffer_operation *op) {
+        __TBB_ASSERT(op->elem, nullptr);
         if(this->pop_back(*(op->elem))) {
             op->status.store(SUCCEEDED, std::memory_order_release);
         }
@@ -1345,6 +1350,7 @@ protected:
     }
 
     virtual void internal_reserve(buffer_operation *op) {
+        __TBB_ASSERT(op->elem, nullptr);
         if(this->reserve_front(*(op->elem))) {
             op->status.store(SUCCEEDED, std::memory_order_release);
         }
@@ -1471,7 +1477,7 @@ protected:
             // we haven't succeeded queueing the item, but for some reason the
             // call returned a task (if another request resulted in a successful
             // forward this could happen.)  Queue the task and reset the pointer.
-            spawn_in_graph_arena(graph_reference(), *ft); ft = NULL;
+            spawn_in_graph_arena(graph_reference(), *ft); ft = nullptr;
         }
         else if(!ft && op_data.status ==SUCCEEDED) {
             ft = SUCCESSFULLY_ENQUEUED;
@@ -1812,7 +1818,7 @@ private:
         this->destroy_item(0);
         if(this->my_tail > 1) {
             // push the last element down heap
-            __TBB_ASSERT(this->my_item_valid(this->my_tail - 1), NULL);
+            __TBB_ASSERT(this->my_item_valid(this->my_tail - 1), nullptr);
             this->move_item(0,this->my_tail - 1);
         }
         --(this->my_tail);
@@ -1886,6 +1892,7 @@ private:
     size_t my_threshold;
     size_t my_count; // number of successful puts
     size_t my_tries; // number of active put attempts
+    size_t my_future_decrement; // number of active decrement 
     reservable_predecessor_cache< T, spin_mutex > my_predecessors;
     spin_mutex my_mutex;
     broadcast_cache< T > my_successors;
@@ -1894,12 +1901,19 @@ private:
     threshold_regulator< limiter_node<T, DecrementType>, DecrementType > decrement;
 
     graph_task* decrement_counter( long long delta ) {
+        if ( delta > 0 && size_t(delta) > my_threshold ) {
+            delta = my_threshold;
+        }
+
         {
             spin_mutex::scoped_lock lock(my_mutex);
-            if( delta > 0 && size_t(delta) > my_count ) {
+            if ( delta > 0 && size_t(delta) > my_count ) {
+                if( my_tries > 0 ) {
+                    my_future_decrement += (size_t(delta) - my_count);
+                }
                 my_count = 0;
             }
-            else if( delta < 0 && size_t(-delta) > my_threshold - my_count ) {
+            else if ( delta < 0 && size_t(-delta) > my_threshold - my_count ) {
                 my_count = my_threshold;
             }
             else {
@@ -1919,28 +1933,39 @@ private:
         return ( my_count + my_tries < my_threshold && !my_predecessors.empty() && !my_successors.empty() );
     }
 
-    // only returns a valid task pointer or NULL, never SUCCESSFULLY_ENQUEUED
+    // only returns a valid task pointer or nullptr, never SUCCESSFULLY_ENQUEUED
     graph_task* forward_task() {
         input_type v;
-        graph_task* rval = NULL;
+        graph_task* rval = nullptr;
         bool reserved = false;
-            {
-                spin_mutex::scoped_lock lock(my_mutex);
-                if ( check_conditions() )
-                    ++my_tries;
-                else
-                    return NULL;
-            }
+
+        {
+            spin_mutex::scoped_lock lock(my_mutex);
+            if ( check_conditions() )
+                ++my_tries;
+            else
+                return nullptr;
+        }
 
         //SUCCESS
         // if we can reserve and can put, we consume the reservation
         // we increment the count and decrement the tries
-        if ( (my_predecessors.try_reserve(v)) == true ){
-            reserved=true;
-            if ( (rval = my_successors.try_put_task(v)) != NULL ){
+        if ( (my_predecessors.try_reserve(v)) == true ) {
+            reserved = true;
+            if ( (rval = my_successors.try_put_task(v)) != nullptr ) {
                 {
                     spin_mutex::scoped_lock lock(my_mutex);
                     ++my_count;
+                    if ( my_future_decrement ) {
+                        if ( my_count > my_future_decrement ) {
+                            my_count -= my_future_decrement;
+                            my_future_decrement = 0;
+                        }
+                        else {
+                            my_future_decrement -= my_count;
+                            my_count = 0;
+                        }
+                    }
                     --my_tries;
                     my_predecessors.try_consume();
                     if ( check_conditions() ) {
@@ -1988,8 +2013,8 @@ private:
 public:
     //! Constructor
     limiter_node(graph &g, size_t threshold)
-        : graph_node(g), my_threshold(threshold), my_count(0), my_tries(0), my_predecessors(this)
-        , my_successors(this), decrement(this)
+        : graph_node(g), my_threshold(threshold), my_count(0), my_tries(0), my_future_decrement(0),
+        my_predecessors(this), my_successors(this), decrement(this)
     {
         initialize();
     }
@@ -2065,13 +2090,12 @@ protected:
         {
             spin_mutex::scoped_lock lock(my_mutex);
             if ( my_count + my_tries >= my_threshold )
-                return NULL;
+                return nullptr;
             else
                 ++my_tries;
         }
 
         graph_task* rtask = my_successors.try_put_task(t);
-
         if ( !rtask ) {  // try_put_task failed.
             spin_mutex::scoped_lock lock(my_mutex);
             --my_tries;
@@ -2085,22 +2109,31 @@ protected:
         else {
             spin_mutex::scoped_lock lock(my_mutex);
             ++my_count;
+            if ( my_future_decrement ) {
+                if ( my_count > my_future_decrement ) {
+                    my_count -= my_future_decrement;
+                    my_future_decrement = 0;
+                }
+                else {
+                    my_future_decrement -= my_count;
+                    my_count = 0;
+                }
+            }
             --my_tries;
-             }
+        }
         return rtask;
     }
 
     graph& graph_reference() const override { return my_graph; }
 
-    void reset_node( reset_flags f) override {
+    void reset_node( reset_flags f ) override {
         my_count = 0;
-        if(f & rf_clear_edges) {
+        if ( f & rf_clear_edges ) {
             my_predecessors.clear();
             my_successors.clear();
         }
-        else
-        {
-            my_predecessors.reset( );
+        else {
+            my_predecessors.reset();
         }
         decrement.reset_receiver(f);
     }
@@ -2820,6 +2853,9 @@ protected:
 
 template<typename Input, typename Ports, typename Gateway, typename Body>
 class async_body: public async_body_base<Gateway> {
+private:
+    Body my_body;
+
 public:
     typedef async_body_base<Gateway> base_type;
     typedef Gateway gateway_type;
@@ -2827,14 +2863,11 @@ public:
     async_body(const Body &body, gateway_type *gateway)
         : base_type(gateway), my_body(body) { }
 
-    void operator()( const Input &v, Ports & ) {
+    void operator()( const Input &v, Ports & ) noexcept(noexcept(my_body(v, std::declval<gateway_type&>()))) {
         my_body(v, *this->my_gateway);
     }
 
     Body get_body() { return my_body; }
-
-private:
-    Body my_body;
 };
 
 //! Implements async node
@@ -3111,7 +3144,12 @@ protected:
             if ( !register_predecessor(s, o) ) {
                 register_successor(o, s);
             }
-            finalize(ed);
+            finalize<register_predecessor_task>(ed);
+            return nullptr;
+        }
+
+        task* cancel(execution_data& ed) override {
+            finalize<register_predecessor_task>(ed);
             return nullptr;
         }
 
@@ -3168,7 +3206,7 @@ protected:
     template<typename X, typename Y> friend class round_robin_cache;
     graph_task *try_put_task( const T &v ) override {
         spin_mutex::scoped_lock l( this->my_mutex );
-        return this->my_buffer_is_valid ? NULL : this->try_put_task_impl(v);
+        return this->my_buffer_is_valid ? nullptr : this->try_put_task_impl(v);
     }
 }; // write_once_node
 

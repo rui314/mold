@@ -1,4 +1,4 @@
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2021-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,8 +48,9 @@ jobs:
       - uses: actions/checkout@v2
       - name: Run scan
         run: |
+          command -v clang-format-10
           cp -r examples examples_formatted
-          find examples_formatted -regex '.*\.\(cpp\|hpp\)' -exec clang-format-9 -style=file -i {} \;
+          find examples_formatted -regex '.*\.\(cpp\|hpp\)' -exec clang-format-10 -style=file -i {} \;
           diff -r examples examples_formatted
 
   documentation:
@@ -62,12 +63,13 @@ jobs:
       - uses: actions/checkout@v2
       - name: Install prerequisites
         run: |
+          pip3 install -U Jinja2
           pip3 install git+https://github.com/executablebooks/sphinx-book-theme.git
           echo GITHUB_SHA_SHORT=${GITHUB_SHA::8} >> $GITHUB_ENV
           mkdir html
       - name: Build documentation
         run: |
-          export BUILD_TYPE=${BUILD_TYPE} && sphinx-build doc/main html
+          export BUILD_TYPE=${BUILD_TYPE} && sphinx-build doc html
           tar -czvf html.tar.gz html/
       - name: Save docs
         uses: actions/upload-artifact@v2.2.1
@@ -104,6 +106,26 @@ jobs:
           git commit --reset-author --amend -m "Update from GitHub Actions"
           git push --force origin gh-pages
 
+  copyright_check:
+    if: ${{ github.ref != 'refs/heads/master' }}
+    runs-on: [ubuntu-20.04]
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Run check
+        run: |
+          sed -i \
+            -e "/Copyright (c) .* Intel Corporation/s/ \([0-9]\+\)[-0-9]*/ \\1-$(date +%Y)/" \
+            -e "/Copyright (c) .* Intel Corporation/s/$(date +%Y)-$(date +%Y)/$(date +%Y)/" \
+            $(git diff --diff-filter=d --name-only ${{ github.event.pull_request.base.sha }})
+          git checkout -- third-party-programs.txt
+          git diff > years.diff
+          if [[ -s years.diff ]]; then
+            echo "Wrong copyright years"
+            cat years.diff
+            exit 1
+          fi
   python_module_test_ubuntu18-04:
     runs-on: [ubuntu-18.04]
     timeout-minutes: 15
@@ -188,22 +210,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-2016
-            generator: Visual Studio 15 2017
+          - os: windows-2019
+            generator: Visual Studio 16 2019
             c_compiler: cl
             cxx_compiler: cl
             std: 14
             build_type: relwithdebinfo
             preview: 'ON'
-            job_name: windows_cl2017_cxx14_relwithdebinfo_preview=ON
-          - os: windows-2019
-            generator: Visual Studio 16 2019
+            job_name: windows_cl2019_cxx14_relwithdebinfo_preview=ON
+          - os: windows-2022
+            generator: Visual Studio 17 2022
             c_compiler: cl
             cxx_compiler: cl
             std: 17
             build_type: relwithdebinfo
             preview: 'OFF'
-            job_name: windows_cl2019_cxx17_relwithdebinfo_preview=OFF
+            job_name: windows_cl2022_cxx17_relwithdebinfo_preview=OFF
     steps:
       - uses: actions/checkout@v2
       - name: Run testing
@@ -288,22 +310,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-2016
-            generator: Visual Studio 15 2017
+          - os: windows-2019
+            generator: Visual Studio 16 2019
             c_compiler: cl
             cxx_compiler: cl
             std: 14
             build_type: relwithdebinfo
             preview: 'ON'
-            job_name: examples_windows_cl2017_cxx14_relwithdebinfo_preview=ON
-          - os: windows-2019
-            generator: Visual Studio 16 2019
+            job_name: examples_windows_cl2019_cxx14_relwithdebinfo_preview=ON
+          - os: windows-2022
+            generator: Visual Studio 17 2022
             c_compiler: cl
             cxx_compiler: cl
             std: 17
             build_type: relwithdebinfo
             preview: 'OFF'
-            job_name: examples_windows_cl2019_cxx17_relwithdebinfo_preview=OFF
+            job_name: examples_windows_cl2022_cxx17_relwithdebinfo_preview=OFF
     steps:
       - uses: actions/checkout@v2
       - name: Run testing

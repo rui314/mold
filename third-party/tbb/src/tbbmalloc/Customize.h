@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -37,12 +37,14 @@
 #define MALLOC_ITT_SYNC_RELEASING(pointer) ITT_NOTIFY(sync_releasing, (pointer))
 #define MALLOC_ITT_SYNC_CANCEL(pointer) ITT_NOTIFY(sync_cancel, (pointer))
 #define MALLOC_ITT_FINI_ITTLIB()        ITT_FINI_ITTLIB()
+#define MALLOC_ITT_RELEASE_RESOURCES()  ITT_RELEASE_RESOURCES()
 #else
 #define MALLOC_ITT_SYNC_PREPARE(pointer) ((void)0)
 #define MALLOC_ITT_SYNC_ACQUIRED(pointer) ((void)0)
 #define MALLOC_ITT_SYNC_RELEASING(pointer) ((void)0)
 #define MALLOC_ITT_SYNC_CANCEL(pointer) ((void)0)
 #define MALLOC_ITT_FINI_ITTLIB()        ((void)0)
+#define MALLOC_ITT_RELEASE_RESOURCES()  ((void)0)
 #endif
 
 inline intptr_t BitScanRev(uintptr_t x) {

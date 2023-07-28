@@ -405,7 +405,7 @@ class binding_handler {
     affinity_masks_container affinity_backup;
     system_topology::affinity_mask handler_affinity_mask;
 
-#if WIN32
+#ifdef _WIN32
     affinity_masks_container affinity_buffer;
     int my_numa_node_id;
     int my_core_type_id;
@@ -415,7 +415,7 @@ class binding_handler {
 public:
     binding_handler( std::size_t size, int numa_node_id, int core_type_id, int max_threads_per_core )
         : affinity_backup(size)
-#if WIN32
+#ifdef _WIN32
         , affinity_buffer(size)
         , my_numa_node_id(numa_node_id)
         , my_core_type_id(core_type_id)
@@ -424,7 +424,7 @@ public:
     {
         for (std::size_t i = 0; i < size; ++i) {
             affinity_backup[i] = system_topology::instance().allocate_process_affinity_mask();
-#if WIN32
+#ifdef _WIN32
             affinity_buffer[i] = system_topology::instance().allocate_process_affinity_mask();
 #endif
         }
@@ -436,7 +436,7 @@ public:
     ~binding_handler() {
         for (std::size_t i = 0; i < affinity_backup.size(); ++i) {
             system_topology::instance().free_affinity_mask(affinity_backup[i]);
-#if WIN32
+#ifdef _WIN32
             system_topology::instance().free_affinity_mask(affinity_buffer[i]);
 #endif
         }
@@ -452,7 +452,7 @@ public:
 
         topology.store_current_affinity_mask(affinity_backup[slot_num]);
 
-#if WIN32
+#ifdef _WIN32
         // TBBBind supports only systems where NUMA nodes and core types do not cross the border
         // between several processor groups. So if a certain NUMA node or core type constraint
         // specified, then the constraints affinity mask will not cross the processor groups' border.

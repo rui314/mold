@@ -1,7 +1,7 @@
 /*
  * xxHash - Extremely Fast Hash algorithm
  * Development source file for `xxh3`
- * Copyright (C) 2019-2020 Yann Collet
+ * Copyright (C) 2019-2021 Yann Collet
  *
  * BSD 2-Clause License (https://www.opensource.org/licenses/bsd-license.php)
  *

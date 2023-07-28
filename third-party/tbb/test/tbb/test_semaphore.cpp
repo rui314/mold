@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -90,14 +90,6 @@ void test_semaphore( int sem_init_cnt, int extra_threads ) {
 
     pCount = 0;
     utils::NativeParallelFor(n_threads, body);
-
-    if (extra_threads == 0) {
-        double allPWaits = 0;
-        for (auto item : tot_times) {
-            allPWaits += item;
-        }
-        allPWaits /= static_cast<double>(n_threads * n_iters);
-    }
     REQUIRE_MESSAGE(!pCount, "not all threads decremented pCount");
 
     int max_count = -1;
@@ -203,7 +195,7 @@ public:
     }
 }; // class ProduceConsumeBody
 
-// send a bunch of non-null "tokens" to consumer, then a NULL
+// send a bunch of non-null "tokens" to consumer, then a nullptr
 void FilterBase::Produce( const int ) {
     nextBuffer[0] = 0; // just in case we provide no tokens
     sBarrier.wait();

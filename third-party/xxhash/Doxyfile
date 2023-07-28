@@ -2,13 +2,13 @@
 DOXYFILE_ENCODING      = UTF-8
 
 PROJECT_NAME           = "xxHash"
-PROJECT_NUMBER         = "0.8.0"
+PROJECT_NUMBER         = "0.8.2"
 PROJECT_BRIEF          = "Extremely fast non-cryptographic hash function"
 OUTPUT_DIRECTORY       = doxygen
 OUTPUT_LANGUAGE        = English
 
 # We already separate the internal docs.
-INTERNAL_DOCS          = YES
+INTERNAL_DOCS          = NO
 # Consistency
 SORT_MEMBER_DOCS       = NO
 BRIEF_MEMBER_DESC      = YES
@@ -28,8 +28,10 @@ MARKDOWN_SUPPORT       = YES
 
 # xxHash is a C library
 OPTIMIZE_OUTPUT_FOR_C  = YES
-# So we can document the internals
-EXTRACT_STATIC         = YES
+# We hide private part from public document
+EXTRACT_STATIC         = NO
+# We hide private part from public document
+EXTRACT_PRIVATE        = NO
 # Document the macros
 MACRO_EXPANSION        = YES
 EXPAND_ONLY_PREDEF     = YES
@@ -42,6 +44,9 @@ PREDEFINED             = "XXH_DOXYGEN=" \
                          "XSUM_API=" \
                          "XXH_STATIC_LINKING_ONLY" \
                          "XXH_IMPLEMENTATION" \
+                         "XXH_PUREF=[[gnu::pure]]" \
+                         "XXH_CONSTF=[[gnu::const]]" \
+                         "XXH_MALLOCF=[[gnu::malloc]]" \
                          "XXH_ALIGN(N)=alignas(N)" \
                          "XXH_ALIGN_MEMBER(align,type)=alignas(align) type"
 

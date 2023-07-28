@@ -115,13 +115,13 @@ the overhead of copying a ``TextSlice``.
        oneapi::tbb::parallel_pipeline(
            ntoken,
            oneapi::tbb::make_filter<void,TextSlice*>(
-               oneapi::tbb::filter::serial_in_order, MyInputFunc(input_file) )
+               oneapi::tbb::filter_mode::serial_in_order, MyInputFunc(input_file) )
        &
            oneapi::tbb::make_filter<TextSlice*,TextSlice*>(
-               oneapi::tbb::filter::parallel, MyTransformFunc() )
+               oneapi::tbb::filter_mode::parallel, MyTransformFunc() )
        &
            oneapi::tbb::make_filter<TextSlice*,void>(
-               oneapi::tbb::filter::serial_in_order, MyOutputFunc(output_file) ) );
+               oneapi::tbb::filter_mode::serial_in_order, MyOutputFunc(output_file) ) );
    } 
 
 
@@ -172,11 +172,11 @@ equivalent version of the previous example that does this follows:
 
 
    void RunPipeline( int ntoken, FILE* input_file, FILE* output_file ) {
-       oneapi::tbb::filter<void,TextSlice*> f1( oneapi::tbb::filter::serial_in_order, 
+       oneapi::tbb::filter<void,TextSlice*> f1( oneapi::tbb::filter_mode::serial_in_order, 
                                           MyInputFunc(input_file) );
-       oneapi::tbb::filter<TextSlice*,TextSlice*> f2(oneapi::tbb::filter::parallel, 
+       oneapi::tbb::filter<TextSlice*,TextSlice*> f2(oneapi::tbb::filter_mode::parallel, 
                                                MyTransformFunc() );
-       oneapi::tbb::filter<TextSlice*,void> f3(oneapi::tbb::filter::serial_in_order, 
+       oneapi::tbb::filter<TextSlice*,void> f3(oneapi::tbb::filter_mode::serial_in_order, 
                                          MyOutputFunc(output_file) );
        oneapi::tbb::filter<void,void> f = f1 & f2 & f3;
        oneapi::tbb::parallel_pipeline(ntoken,f);

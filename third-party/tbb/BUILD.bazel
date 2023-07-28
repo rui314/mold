@@ -1,4 +1,4 @@
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2021-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,27 +35,33 @@ cc_library(
         "include/oneapi/tbb/*.h",
         "include/oneapi/tbb/detail/*.h",
     ]),
-    copts = [
-        "-w",
-    ],
+    copts = ["-w"] + select({
+        "@platforms//os:windows": [""],
+        "//conditions:default": ["-mwaitpkg"],
+    }),
     defines =
         select({
             "@platforms//cpu:x86_64": ["__TBB_NO_IMPLICIT_LINKAGE"],
             "//conditions:default": [
                 "USE_PTHREAD",
             ],
+        }) +
+        select({
+            "@platforms//os:osx": ["_XOPEN_SOURCE"],
+            "//conditions:default": [],
         }),
     includes = [
         "include",
     ],
     linkopts =
         select({
-            "@bazel_tools//platforms:windows": [],
-            "//conditions:default": [
+            "@platforms//os:windows": [],
+            "@platforms//os:linux": [
                 "-ldl",
                 "-pthread",
                 "-lrt",
             ],
+            "//conditions:default": ["-pthread"],
         }),
     local_defines = select({
         "@platforms//cpu:x86_64": [

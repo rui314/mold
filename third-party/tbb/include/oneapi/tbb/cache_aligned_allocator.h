@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -123,7 +123,7 @@ private:
         std::size_t cache_line_alignment = correct_alignment(alignment);
         std::size_t space = correct_size(bytes) + cache_line_alignment;
         std::uintptr_t base = reinterpret_cast<std::uintptr_t>(m_upstream->allocate(space));
-        __TBB_ASSERT(base != 0, "Upstream resource returned NULL.");
+        __TBB_ASSERT(base != 0, "Upstream resource returned nullptr.");
 
         // Round up to the next cache line (align the base address)
         std::uintptr_t result = (base + cache_line_alignment) & ~(cache_line_alignment - 1);

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2017-2021 Intel Corporation
+    Copyright (c) 2017-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -519,7 +519,7 @@ void ipc_worker::release_handle(thread_handle handle, bool join) {
 }
 
 void ipc_worker::start_shutdown(bool join) {
-    state_t s = my_state.load(std::memory_order_relaxed);;
+    state_t s = my_state.load(std::memory_order_relaxed);
 
     do {
         __TBB_ASSERT( s!=st_quit, nullptr );
@@ -538,7 +538,7 @@ void ipc_worker::start_shutdown(bool join) {
 }
 
 void ipc_worker::start_stopping(bool join) {
-    state_t s = my_state.load(std::memory_order_relaxed);;
+    state_t s = my_state.load(std::memory_order_relaxed);
 
     while( !my_state.compare_exchange_strong( s, st_quit ) ) {};
     if( s==st_normal || s==st_starting ) {
@@ -567,21 +567,16 @@ void ipc_worker::run() {
         if( my_server.my_slack>=0 ) {
             my_client.process(j);
         } else {
-            ipc_thread_monitor::cookie c;
-            // Prepare to wait
-            my_thread_monitor.prepare_wait(c);
             // Check/set the invariant for sleeping
-            state = my_state.load(std::memory_order_acquire);
+            state = my_state.load(std::memory_order_seq_cst);
             if( state!=st_quit && state!=st_stop && my_server.try_insert_in_asleep_list(*this) ) {
                 if( my_server.my_n_thread > 1 ) my_server.release_active_thread();
-                my_thread_monitor.commit_wait(c);
+                my_thread_monitor.wait();
                 my_server.propagate_chain_reaction();
-            } else {
-                // Invariant broken
-                my_thread_monitor.cancel_wait();
             }
         }
-        state = my_state.load(std::memory_order_acquire);
+        // memory_order_seq_cst to be strictly ordered after thread_monitor::wait
+        state = my_state.load(std::memory_order_seq_cst);
     }
     my_client.cleanup(j);
 
@@ -663,7 +658,8 @@ void ipc_waker::run() {
     // which would create race with the launching thread and
     // complications in handle management on Windows.
 
-    while( my_state.load(std::memory_order_acquire)!=st_quit ) {
+    // memory_order_seq_cst to be strictly ordered after thread_monitor::wait on the next iteration
+    while( my_state.load(std::memory_order_seq_cst)!=st_quit ) {
         bool have_to_sleep = false;
         if( my_server.my_slack.load(std::memory_order_acquire)>0 ) {
             if( my_server.wait_active_thread() ) {
@@ -678,15 +674,9 @@ void ipc_waker::run() {
             have_to_sleep = true;
         }
         if( have_to_sleep ) {
-            ipc_thread_monitor::cookie c;
-            // Prepare to wait
-            my_thread_monitor.prepare_wait(c);
             // Check/set the invariant for sleeping
-            if( my_state.load(std::memory_order_acquire)!=st_quit && my_server.my_slack.load(std::memory_order_acquire)<0 ) {
-                my_thread_monitor.commit_wait(c);
-            } else {
-                // Invariant broken
-                my_thread_monitor.cancel_wait();
+            if( my_server.my_slack.load(std::memory_order_acquire)<0 ) {
+                my_thread_monitor.wait();
             }
         }
     }

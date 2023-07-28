@@ -55,24 +55,3 @@ grep -Eq 'lea \s*0x.+\(%rip\),%r14 .*<foo>' $t/log
 grep -Eq 'lea \s*0x.+\(%rip\),%r15 .*<foo>' $t/log
 grep -Eq 'call.*<foo>' $t/log
 grep -Eq 'jmp.*<foo>' $t/log
-
-$CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-no-relax
-$OBJDUMP -d $t/exe | grep -A20 '<bar>:' > $t/log
-
-grep -Eq 'mov \s*0x.+\(%rip\),%rax' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%rcx' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%rdx' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%rbx' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%rbp' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%rsi' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%rdi' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%r8 ' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%r9 ' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%r10' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%r11' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%r12' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%r13' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%r14' $t/log
-grep -Eq 'mov \s*0x.+\(%rip\),%r15' $t/log
-grep -Eq 'call.*\(%rip\)' $t/log
-grep -Eq 'jmp.*\(%rip\)' $t/log

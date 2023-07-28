@@ -47,3 +47,8 @@ target_link_libraries(static-override PUBLIC mimalloc-static)
 
 add_executable(static-override-cxx  main-override.cpp)
 target_link_libraries(static-override-cxx PUBLIC mimalloc-static)
+
+
+## test memory errors
+add_executable(test-wrong  test-wrong.c)
+target_link_libraries(test-wrong PUBLIC mimalloc)

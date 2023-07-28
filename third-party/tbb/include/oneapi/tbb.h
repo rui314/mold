@@ -37,9 +37,7 @@
 #if TBB_PREVIEW_CONCURRENT_LRU_CACHE
 #include "tbb/concurrent_lru_cache.h"
 #endif
-#if TBB_PREVIEW_COLLABORATIVE_CALL_ONCE
 #include "oneapi/tbb/collaborative_call_once.h"
-#endif
 #include "oneapi/tbb/concurrent_priority_queue.h"
 #include "oneapi/tbb/concurrent_queue.h"
 #include "oneapi/tbb/concurrent_unordered_map.h"

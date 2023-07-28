@@ -65,7 +65,7 @@
 // conditions.
 
 #include "mold.h"
-#include "../sha.h"
+#include "../common/sha.h"
 
 #include <array>
 #include <cstdio>
@@ -151,10 +151,6 @@ static bool is_leaf(Context<E> &ctx, InputSection<E> &isec) {
       return false;
 
   return true;
-}
-
-static u64 combine_hash(u64 a, u64 b) {
-  return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
 }
 
 template <typename E>
@@ -290,7 +286,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
       hash_symbol(*isec.file.symbols[rel.r_sym]);
       hash(rel.r_type);
       hash(rel.r_offset - fde.input_offset);
-      hash(isec.file.cies[fde.cie_idx].input_section.get_addend(rel));
+      hash(get_addend(isec.file.cies[fde.cie_idx].input_section, rel));
     }
   }
 
@@ -298,7 +294,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     const ElfRel<E> &rel = isec.get_rels(ctx)[i];
     hash(rel.r_offset);
     hash(rel.r_type);
-    hash(isec.get_addend(rel));
+    hash(get_addend(isec, rel));
     hash_symbol(*isec.file.symbols[rel.r_sym]);
   }
 
@@ -391,21 +387,20 @@ static void gather_edges(Context<E> &ctx,
     InputSection<E> &isec = *sections[i];
     i64 idx = edge_indices[i];
 
-    for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
-      const ElfRel<E> &rel = isec.get_rels(ctx)[j];
+    for (ElfRel<E> &rel : isec.get_rels(ctx)) {
       Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-      if (!sym.get_frag())
-        if (InputSection<E> *isec = sym.get_input_section())
-          if (isec->icf_eligible)
-            edges[idx++] = isec->icf_idx;
-    }
+      if (InputSection<E> *isec = sym.get_input_section())
+        if (isec->icf_eligible)
+          edges[idx++] = isec->icf_idx;
+  }
   });
 }
 
 template <typename E>
 static i64 propagate(std::span<std::vector<Digest>> digests,
                      std::span<u32> edges, std::span<u32> edge_indices,
-                     bool &slot, tbb::affinity_partitioner &ap) {
+                     bool &slot, BitVector &converged,
+                     tbb::affinity_partitioner &ap) {
   static Counter round("icf_round");
   round++;
 
@@ -413,7 +408,7 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
   tbb::enumerable_thread_specific<i64> changed;
 
   tbb::parallel_for((i64)0, num_digests, [&](i64 i) {
-    if (digests[slot][i] == digests[!slot][i])
+    if (converged.get(i))
       return;
 
     SHA256Hash sha;
@@ -422,14 +417,18 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
-    for (i64 j : edges.subspan(begin, end - begin)) {
+    for (i64 j : edges.subspan(begin, end - begin))
       sha.update(digests[slot][j].data(), HASH_SIZE);
-    }
 
     digests[!slot][i] = digest_final(sha);
 
-    if (digests[slot][i] != digests[!slot][i])
+    if (digests[slot][i] == digests[!slot][i]) {
+      // This node has converged. Skip further iterations as it will
+      // yield the same hash.
+      converged.set(i);
+    } else {
       changed.local()++;
+    }
   }, ap);
 
   slot = !slot;
@@ -504,10 +503,14 @@ void icf_sections(Context<E> &ctx) {
   std::vector<InputSection<E> *> sections = gather_sections(ctx);
 
   // We allocate 3 arrays to store hashes for each vertex.
-  // Index 0 and 1 are used for tree hashes from the previous iteration and the current iteration.
-  // They switch roles every iteration --- see `slot` below.
-  // Index 2 stores the initial, single-vertex hash --- this is combined with hashes from the connected vertices to
-  // form the tree hash described above.
+  //
+  // Index 0 and 1 are used for tree hashes from the previous
+  // iteration and the current iteration. They switch roles every
+  // iteration. See `slot` below.
+  //
+  // Index 2 stores the initial, single-vertex hash. This is combined
+  // with hashes from the connected vertices to form the tree hash
+  // described above.
   std::vector<std::vector<Digest>> digests(3);
   digests[0] = compute_digests<E>(ctx, sections);
   digests[1].resize(digests[0].size());
@@ -517,6 +520,7 @@ void icf_sections(Context<E> &ctx) {
   std::vector<u32> edge_indices;
   gather_edges<E>(ctx, sections, edges, edge_indices);
 
+  BitVector converged(digests[0].size());
   bool slot = 0;
 
   // Execute the propagation rounds until convergence is obtained.
@@ -537,7 +541,7 @@ void icf_sections(Context<E> &ctx) {
     // which is a necessary (but not sufficient) condition for convergence.
     i64 num_changed = -1;
     for (;;) {
-      i64 n = propagate<E>(digests, edges, edge_indices, slot, ap);
+      i64 n = propagate<E>(digests, edges, edge_indices, slot, converged, ap);
       if (n == num_changed)
         break;
       num_changed = n;
@@ -550,7 +554,7 @@ void icf_sections(Context<E> &ctx) {
       // count_num_classes requires sorting which is O(n log n), so do a little
       // more work beforehand to amortize that log factor.
       for (i64 i = 0; i < 10; i++)
-        propagate<E>(digests, edges, edge_indices, slot, ap);
+        propagate<E>(digests, edges, edge_indices, slot, converged, ap);
 
       i64 n = count_num_classes<E>(digests[slot], ap);
       if (n == num_classes)
@@ -586,17 +590,17 @@ void icf_sections(Context<E> &ctx) {
   if (ctx.arg.print_icf_sections)
     print_icf_sections(ctx);
 
-  // Re-assign input sections to symbols.
+  // Eliminate duplicate sections.
+  // Symbols pointing to eliminated sections will be redirected on the fly when
+  // exporting to the symtab.
   {
-    Timer t(ctx, "reassign");
+    Timer t(ctx, "sweep");
+    static Counter eliminated("icf_eliminated");
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (Symbol<E> *sym : file->symbols) {
-        if (sym->file == file) {
-          InputSection<E> *isec = sym->get_input_section();
-          if (isec && isec->leader && isec->leader != isec) {
-            isec->kill();
-            isec->killed_by_icf = true;
-          }
+      for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+        if (isec && isec->is_alive && isec->is_killed_by_icf()) {
+          isec->kill();
+          eliminated++;
         }
       }
     });

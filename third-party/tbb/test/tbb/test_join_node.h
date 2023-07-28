@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -32,7 +32,6 @@
 #include "common/utils.h"
 #include "common/checktype.h"
 #include "common/graph_utils.h"
-#include "common/test_follows_and_precedes_api.h"
 
 #include <type_traits>
 
@@ -1173,7 +1172,7 @@ public:
         INFO("\n");
         for(int i = 0; i < MaxPorts; ++i) {
             for(int j = 0; j < MaxNInputs; ++j) {
-                all_input_nodes[i][j] = NULL;
+                all_input_nodes[i][j] = nullptr;
             }
         }
         for(int nInputs = 1; nInputs<=MaxNInputs; ++nInputs) {
@@ -1200,7 +1199,7 @@ public:
             reset_outputCheck(TUPLE_SIZE, Count);
 
             for(int i = 0; i < Count; i++) {
-                CHECK_MESSAGE(outq2.try_get(v), "");;
+                CHECK_MESSAGE(outq2.try_get(v), "");
                 input_node_helper<TUPLE_SIZE, JType>::check_value(i, v, not_out_of_order);
             }
             check_outputCheck(TUPLE_SIZE, Count);

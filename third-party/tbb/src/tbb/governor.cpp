@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -41,11 +41,9 @@ namespace r1 {
 
 void clear_address_waiter_table();
 
-#if __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
 //! global_control.cpp contains definition
 bool remove_and_check_if_empty(d1::global_control& gc);
 bool is_present(d1::global_control& gc);
-#endif // __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
 
 namespace rml {
 tbb_server* make_private_server( tbb_client& client );
@@ -88,7 +86,7 @@ void governor::release_resources () {
 }
 
 rml::tbb_server* governor::create_rml_server ( rml::tbb_client& client ) {
-    rml::tbb_server* server = NULL;
+    rml::tbb_server* server = nullptr;
     if( !UsePrivateRML ) {
         ::rml::factory::status_type status = theRMLServerFactory.make_server( server, client );
         if( status != ::rml::factory::st_success ) {
@@ -97,7 +95,7 @@ rml::tbb_server* governor::create_rml_server ( rml::tbb_client& client ) {
         }
     }
     if ( !server ) {
-        __TBB_ASSERT( UsePrivateRML, NULL );
+        __TBB_ASSERT( UsePrivateRML, nullptr);
         server = rml::make_private_server( client );
     }
     __TBB_ASSERT( server, "Failed to create RML server" );
@@ -132,12 +130,12 @@ void governor::one_time_init() {
 static std::uintptr_t get_stack_base(std::size_t stack_size) {
     // Stacks are growing top-down. Highest address is called "stack base",
     // and the lowest is "stack limit".
-#if USE_WINTHREAD
+#if __TBB_USE_WINAPI
     suppress_unused_warning(stack_size);
     NT_TIB* pteb = (NT_TIB*)NtCurrentTeb();
     __TBB_ASSERT(&pteb < pteb->StackBase && &pteb > pteb->StackLimit, "invalid stack info in TEB");
-    return pteb->StackBase;
-#else /* USE_PTHREAD */
+    return reinterpret_cast<std::uintptr_t>(pteb->StackBase);
+#else
     // There is no portable way to get stack base address in Posix, so we use
     // non-portable method (on all modern Linux) or the simplified approach
     // based on the common sense assumptions. The most important assumption
@@ -164,7 +162,7 @@ static std::uintptr_t get_stack_base(std::size_t stack_size) {
         stack_base = reinterpret_cast<std::uintptr_t>(&anchor);
     }
     return stack_base;
-#endif /* USE_PTHREAD */
+#endif /* __TBB_USE_WINAPI */
 }
 
 #if (_WIN32||_WIN64) && !__TBB_DYNAMIC_LOAD_ENABLED
@@ -198,8 +196,7 @@ void governor::init_external_thread() {
     stack_size = a.my_market->worker_stack_size();
     std::uintptr_t stack_base = get_stack_base(stack_size);
     task_dispatcher& task_disp = td.my_arena_slot->default_task_dispatcher();
-    task_disp.set_stealing_threshold(calculate_stealing_threshold(stack_base, stack_size));
-    td.attach_task_dispatcher(task_disp);
+    td.enter_task_dispatcher(task_disp, calculate_stealing_threshold(stack_base, stack_size));
 
     td.my_arena_slot->occupy();
     a.my_market->add_external_thread(td);
@@ -213,34 +210,47 @@ void governor::init_external_thread() {
 
 void governor::auto_terminate(void* tls) {
     __TBB_ASSERT(get_thread_data_if_initialized() == nullptr ||
-        get_thread_data_if_initialized() == tls, NULL);
+        get_thread_data_if_initialized() == tls, nullptr);
     if (tls) {
         thread_data* td = static_cast<thread_data*>(tls);
+
+        auto clear_tls = [td] {
+            td->~thread_data();
+            cache_aligned_deallocate(td);
+            clear_thread_data();
+        };
 
         // Only external thread can be inside an arena during termination.
         if (td->my_arena_slot) {
             arena* a = td->my_arena;
             market* m = a->my_market;
 
+            // If the TLS slot is already cleared by OS or underlying concurrency
+            // runtime, restore its value to properly clean up arena
+            if (!is_thread_data_set(td)) {
+                set_thread_data(*td);
+            }
+
             a->my_observers.notify_exit_observers(td->my_last_observer, td->my_is_worker);
 
-            td->my_task_dispatcher->m_stealing_threshold = 0;
-            td->detach_task_dispatcher();
+            td->leave_task_dispatcher();
             td->my_arena_slot->release();
             // Release an arena
             a->on_thread_leaving<arena::ref_external>();
 
             m->remove_external_thread(*td);
+
+            // The tls should be cleared before market::release because
+            // market can destroy the tls key if we keep the last reference
+            clear_tls();
+
             // If there was an associated arena, it added a public market reference
             m->release( /*is_public*/ true, /*blocking_terminate*/ false);
+        } else {
+            clear_tls();
         }
-
-        td->~thread_data();
-        cache_aligned_deallocate(td);
-
-        clear_thread_data();
     }
-    __TBB_ASSERT(get_thread_data_if_initialized() == nullptr, NULL);
+    __TBB_ASSERT(get_thread_data_if_initialized() == nullptr, nullptr);
 }
 
 void governor::initialize_rml_factory () {
@@ -248,7 +258,6 @@ void governor::initialize_rml_factory () {
     UsePrivateRML = res != ::rml::factory::st_success;
 }
 
-#if __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
 void __TBB_EXPORTED_FUNC get(d1::task_scheduler_handle& handle) {
     handle.m_ctl = new(allocate_memory(sizeof(global_control))) global_control(global_control::scheduler_handle, 1);
 }
@@ -300,7 +309,6 @@ bool __TBB_EXPORTED_FUNC finalize(d1::task_scheduler_handle& handle, std::intptr
         return ok;
     }
 }
-#endif // __TBB_SUPPORTS_WORKERS_WAITING_IN_TERMINATE
 
 #if __TBB_ARENA_BINDING
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -152,7 +152,7 @@ public:
     void CopyTo(void* newSpace) const override {
         _unwind_space guard((pointer_type)newSpace);
         (void) new(newSpace) Wrapper(value_space);
-        guard.space = NULL;
+        guard.space = nullptr;
     }
     ~Wrapper() { }
 };
@@ -203,7 +203,7 @@ public:
             (void) new(vp++) value_type(other[i]);
             ++(guard.already_built);
         }
-        guard.space = NULL;
+        guard.space = nullptr;
     }
     explicit Wrapper(const Wrapper& other) : WrapperBase() {
         // we have to do the heavy lifting to copy contents
@@ -214,7 +214,7 @@ public:
             (void) new(dp) value_type(*sp);
             ++(guard.already_built);
         }
-        guard.space = NULL;
+        guard.space = nullptr;
     }
 
     void CopyTo(void* newSpace) const override {
@@ -361,7 +361,7 @@ private:
             return h->value();
         }
         template<typename U>
-        bool variant_is_a() const { return dynamic_cast<const Wrapper<U>*>(punned_cast<const WrapperBase *>(&my_space)) != NULL; }
+        bool variant_is_a() const { return dynamic_cast<const Wrapper<U>*>(punned_cast<const WrapperBase *>(&my_space)) != nullptr; }
 
         bool variant_is_default_constructed() const {return variant_is_a<default_constructed>();}
 

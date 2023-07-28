@@ -92,7 +92,6 @@ public:
 
     // Include constructors of base type
     using base_type::base_type;
-    using base_type::operator=;
 
     // Required for implicit deduction guides
     concurrent_map() = default;
@@ -103,6 +102,11 @@ public:
     // Required to respect the rule of 5
     concurrent_map& operator=( const concurrent_map& ) = default;
     concurrent_map& operator=( concurrent_map&& ) = default;
+
+    concurrent_map& operator=( std::initializer_list<value_type> il ) {
+        base_type::operator= (il);
+        return *this;
+    }
 
     // Observers
     mapped_type& at(const key_type& key) {
@@ -239,7 +243,6 @@ public:
     // Include constructors of base_type
     using base_type::base_type;
     using base_type::insert;
-    using base_type::operator=;
 
     // Required for implicit deduction guides
     concurrent_multimap() = default;
@@ -250,6 +253,11 @@ public:
     // Required to respect the rule of 5
     concurrent_multimap& operator=( const concurrent_multimap& ) = default;
     concurrent_multimap& operator=( concurrent_multimap&& ) = default;
+
+    concurrent_multimap& operator=( std::initializer_list<value_type> il ) {
+        base_type::operator= (il);
+        return *this;
+    }
 
     template <typename P>
     typename std::enable_if<std::is_constructible<value_type, P&&>::value,

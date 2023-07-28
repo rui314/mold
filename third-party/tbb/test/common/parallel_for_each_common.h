@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -36,12 +36,12 @@
 constexpr std::size_t depths_nubmer = 20;
 static std::atomic<int> g_values_counter;
 
-class value_t {
+class value_t : public utils::NoAfterlife {
     size_t x;
     value_t& operator=(const value_t&);
 public:
     value_t(size_t xx) : x(xx) { ++g_values_counter; }
-    value_t(const value_t& v) : x(v.x) { ++g_values_counter; }
+    value_t(const value_t& v) : utils::NoAfterlife(v), x(v.x) { ++g_values_counter; }
     value_t(value_t&& v) : x(v.x) { ++g_values_counter; }
     ~value_t() { --g_values_counter; }
     size_t value() const volatile { return x; }

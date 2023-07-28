@@ -14,7 +14,6 @@
     limitations under the License.
 */
 
-#define TBB_PREVIEW_MUTEXES 1
 #include "test_mutex.h"
 
 #include <tbb/spin_mutex.h>
@@ -30,7 +29,7 @@
 #include <oneapi/tbb/detail/_machine.h>
 
 //! \file test_mutex.cpp
-//! \brief Test for [mutex.spin_mutex mutex.spin_rw_mutex mutex.queuing_mutex mutex.queuing_rw_mutexmutex.speculative_spin_mutex mutex.speculative_spin_rw_mutex] specifications
+//! \brief Test for [mutex.spin_mutex mutex.spin_rw_mutex mutex.queuing_mutex mutex.queuing_rw_mutex mutex.mutex mutex.rw_mutex mutex.speculative_spin_mutex mutex.speculative_spin_rw_mutex] specifications
 
 // TODO: Investigate why RTM doesn't work on some macOS.
 // TODO: Consider adding Thread Sanitizer (note that accesses inside the transaction
@@ -131,6 +130,11 @@ TEST_CASE("test upgrade/downgrade with queueing_rw_mutex") {
 }
 
 //! \brief \ref error_guessing
+TEST_CASE("test upgrade/downgrade with rw_mutex") {
+    test_rwm_upgrade_downgrade<tbb::rw_mutex>();
+}
+
+//! \brief \ref error_guessing
 TEST_CASE("test upgrade/downgrade with speculative_spin_rw_mutex") {
     test_rwm_upgrade_downgrade<tbb::speculative_spin_rw_mutex>();
 }
@@ -146,6 +150,11 @@ TEST_CASE("test queuing_mutex with native threads") {
 }
 
 //! \brief \ref error_guessing
+TEST_CASE("test mutex with native threads") {
+    test_with_native_threads::test<tbb::mutex>();
+}
+
+//! \brief \ref error_guessing
 TEST_CASE("test spin_rw_mutex with native threads") {
     test_with_native_threads::test<tbb::spin_rw_mutex>();
     test_with_native_threads::test_rw<tbb::spin_rw_mutex>();
@@ -155,6 +164,12 @@ TEST_CASE("test spin_rw_mutex with native threads") {
 TEST_CASE("test queuing_rw_mutex with native threads") {
     test_with_native_threads::test<tbb::queuing_rw_mutex>();
     test_with_native_threads::test_rw<tbb::queuing_rw_mutex>();
+}
+
+//! \brief \ref error_guessing
+TEST_CASE("test rw_mutex with native threads") {
+    test_with_native_threads::test<tbb::rw_mutex>();
+    test_with_native_threads::test_rw<tbb::rw_mutex>();
 }
 
 //! Test scoped_lock::is_writer getter
@@ -176,9 +191,9 @@ concept rw_mutexes = (... && tbb::detail::rw_scoped_lockable<Args>);
 
 //! \brief \ref error_guessing
 TEST_CASE("internal mutex concepts") {
-    static_assert(mutexes<tbb::spin_mutex, tbb::speculative_spin_mutex, tbb::null_mutex, tbb::queuing_mutex,
-                          tbb::spin_rw_mutex, tbb::speculative_spin_rw_mutex, tbb::null_rw_mutex, tbb::queuing_rw_mutex>);
-    static_assert(rw_mutexes<tbb::spin_rw_mutex, tbb::speculative_spin_rw_mutex,
+    static_assert(mutexes<tbb::spin_mutex, oneapi::tbb::mutex, tbb::speculative_spin_mutex, tbb::null_mutex, tbb::queuing_mutex,
+                          tbb::spin_rw_mutex, oneapi::tbb::rw_mutex, tbb::speculative_spin_rw_mutex, tbb::null_rw_mutex, tbb::queuing_rw_mutex>);
+    static_assert(rw_mutexes<tbb::spin_rw_mutex, oneapi::tbb::rw_mutex, tbb::speculative_spin_rw_mutex,
                              tbb::null_rw_mutex, tbb::queuing_rw_mutex>);
 }
 #endif // __TBB_CPP20_CONCEPTS_PRESENT

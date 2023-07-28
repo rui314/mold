@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ namespace Log {
     static const unsigned RECORDS_COUNT = 8 * 8;
     static const unsigned RECORD_LENGTH = MAX_PATH;
 
-    // Need to add 1 to count of records, because last record must be always NULL
+    // Need to add 1 to count of records, because last record must be always nullptr
     static char *records[RECORDS_COUNT + 1];
     static bool replacement_status = true;
 
@@ -250,7 +250,7 @@ size_t compareStrings( const char *str1, const char *str2 )
 // Dictionary contains opcodes for several full asm instructions
 // + one opcode byte for the next asm instruction for safe address processing
 // RETURN: 1 + the index of the matched pattern, or 0 if no match found.
-static UINT CheckOpcodes( const char ** opcodes, void *inpAddr, bool abortOnError, const FunctionInfo* functionInfo = NULL)
+static UINT CheckOpcodes( const char ** opcodes, void *inpAddr, bool abortOnError, const FunctionInfo* functionInfo = nullptr)
 {
     static size_t opcodesStringsCount = 0;
     static size_t maxOpcodesLength = 0;
@@ -262,7 +262,7 @@ static UINT CheckOpcodes( const char ** opcodes, void *inpAddr, bool abortOnErro
     // Get the values for static variables
     // max length and number of patterns
     if( !opcodesStringsCount || opcodes_pointer != (size_t)opcodes ){
-        while( *(opcodes + opcodesStringsCount)!= NULL ){
+        while( *(opcodes + opcodesStringsCount)!= nullptr ){
             if( (i=strlen(*(opcodes + opcodesStringsCount))) > maxOpcodesLength )
                 maxOpcodesLength = i;
             opcodesStringsCount++;
@@ -440,7 +440,7 @@ static bool InsertTrampoline(void *inpAddr, void *targetAddr, const char ** opco
     if (!VirtualProtect(inpAddr, MAX_PROBE_SIZE, PAGE_EXECUTE_WRITECOPY, &origProt))
         return FALSE;
 
-    const char* pattern = NULL;
+    const char* pattern = nullptr;
     if ( origFunc ){ // Need to store original function code
         UCHAR * const codePtr = (UCHAR *)inpAddr;
         if ( *codePtr == 0xE9 ){ // JMP relative instruction
@@ -448,7 +448,7 @@ static bool InsertTrampoline(void *inpAddr, void *targetAddr, const char ** opco
             // instead of moving it somewhere we use the target of the jump as the original function.
             unsigned offsetInJmp = *(unsigned*)(codePtr + 1);
             *origFunc = (void*)(Ptr2Addrint(inpAddr) + offsetInJmp + SIZE_OF_RELJUMP);
-            origFunc = NULL; // now it must be ignored by InsertTrampoline32/64
+            origFunc = nullptr; // now it must be ignored by InsertTrampoline32/64
         } else {
             // find the right opcode pattern
             UINT opcodeIdx = CheckOpcodes( opcodes, inpAddr, /*abortOnError=*/true );
@@ -571,12 +571,12 @@ bool IsPrologueKnown(const char* dllName, const char *funcName, const char **opc
 // Public Windows API
 extern "C" __declspec(dllexport) int TBB_malloc_replacement_log(char *** function_replacement_log_ptr)
 {
-    if (function_replacement_log_ptr != NULL) {
+    if (function_replacement_log_ptr != nullptr) {
         *function_replacement_log_ptr = Log::records;
     }
 
     // If we have no logs -> return false status
-    return Log::replacement_status && Log::records[0] != NULL ? 0 : -1;
+    return Log::replacement_status && Log::records[0] != nullptr ? 0 : -1;
 }
 
 #endif /* !__TBB_WIN8UI_SUPPORT && defined(_WIN32) */

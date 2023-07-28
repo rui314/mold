@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -44,7 +44,6 @@ function(tbb_add_test)
         # Expand the linker rpath by the CMAKE_LIBRARY_OUTPUT_DIRECTORY path since clang compiler from Android SDK
         # doesn't respect the -L flag.
         target_link_libraries(${_tbb_test_TARGET_NAME} PRIVATE "-Wl,--rpath-link,${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
-        target_link_libraries(${_tbb_test_TARGET_NAME} PRIVATE -rdynamic) # for the test_dynamic_link
         add_test(NAME ${_tbb_test_TARGET_NAME}
                  COMMAND ${CMAKE_COMMAND}
                          -DBINARIES_PATH=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
@@ -64,9 +63,9 @@ function(tbb_add_test)
     # Prefer using target_link_options instead of target_link_libraries to specify link options because
     # target_link_libraries may incorrectly handle some options (on Windows, for example).
     if (COMMAND target_link_options)
-        target_link_options(${_tbb_test_TARGET_NAME} PRIVATE ${TBB_COMMON_LINK_FLAGS})
+        target_link_options(${_tbb_test_TARGET_NAME} PRIVATE ${TBB_COMMON_LINK_FLAGS} ${TBB_TEST_LINK_FLAGS})
     else()
-        target_link_libraries(${_tbb_test_TARGET_NAME} PRIVATE ${TBB_COMMON_LINK_FLAGS})
+        target_link_libraries(${_tbb_test_TARGET_NAME} PRIVATE ${TBB_COMMON_LINK_FLAGS} ${TBB_TEST_LINK_FLAGS})
     endif()
 
     target_compile_definitions(${_tbb_test_TARGET_NAME} PRIVATE
@@ -94,7 +93,6 @@ function(tbb_add_c_test)
     target_include_directories(${_tbb_test_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR})
 
     if (ANDROID_PLATFORM)
-        target_link_libraries(${_tbb_test_NAME} PRIVATE -rdynamic) # for the test_dynamic_link
         add_test(NAME ${_tbb_test_NAME}
                 COMMAND ${CMAKE_COMMAND}
                         -DBINARIES_PATH=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
@@ -269,7 +267,7 @@ function(tbb_add_tbbbind_test)
     endif()
 
     # Disable all HWLOC dependent tests in case of unsupported environment.
-    if (TBB_WINDOWS_DRIVER OR ANDROID_PLATFORM)
+    if (TBB_WINDOWS_DRIVER OR ANDROID_PLATFORM OR APPLE OR NOT BUILD_SHARED_LIBS)
         return()
     endif()
     ProcessorCount(SYSTEM_CONCURRENCY)
@@ -363,12 +361,30 @@ unset(_sde_find_name)
 # Common target for the tbbbind related tests
 add_custom_target(test_suite_arena_constraints)
 
+# Check support for --no-as-needed linker option
+if (MINGW OR NOT WIN32)
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_REQUIRED_LIBRARIES "-Wl,--no-as-needed")
+    check_cxx_source_compiles("int main(int, char*[]) { return 0; }" LINKER_HAS_NO_AS_NEEDED)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+endif()
+
 if (TARGET TBB::tbb)
     # Define the tests
     tbb_add_test(SUBDIR tbb NAME test_tick_count DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_allocators DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_arena_priorities DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_dynamic_link DEPENDENCIES TBB::tbb)
+    if (LINKER_HAS_NO_AS_NEEDED)
+        # The linker may not detect a dependency on pthread in static variable constructors.
+        target_link_libraries(test_dynamic_link PRIVATE "-Wl,--no-as-needed")
+    endif()
+    if (APPLE OR ANDROID_PLATFORM)
+        target_link_libraries(test_dynamic_link PRIVATE -rdynamic)
+    endif()
+    if (WIN32)
+        tbb_add_test(SUBDIR tbb NAME test_numa_dist DEPENDENCIES TBB::tbb)
+    endif()
     tbb_add_test(SUBDIR tbb NAME test_collaborative_call_once DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_concurrent_lru_cache DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_concurrent_unordered_map DEPENDENCIES TBB::tbb)
@@ -394,7 +410,6 @@ if (TARGET TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_concurrent_queue DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_resumable_tasks DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_mutex DEPENDENCIES TBB::tbb)
-    tbb_add_test(SUBDIR tbb NAME test_adaptive_mutex DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_function_node DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_multifunction_node DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_broadcast_node DEPENDENCIES TBB::tbb)
@@ -409,6 +424,8 @@ if (TARGET TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_join_node DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_join_node_key_matching DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_join_node_msg_key_matching DEPENDENCIES TBB::tbb)
+    tbb_add_test(SUBDIR tbb NAME test_join_node_msg_key_matching_n_args DEPENDENCIES TBB::tbb)
+    tbb_add_test(SUBDIR tbb NAME test_join_node_preview DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_limiter_node DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_priority_queue_node DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_queue_node DEPENDENCIES TBB::tbb)
@@ -461,8 +478,10 @@ if (TARGET TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_tick_count DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_allocators DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_mutex DEPENDENCIES TBB::tbb)
+    tbb_add_test(SUBDIR conformance NAME conformance_task_group DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_task_group_context DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_task_arena DEPENDENCIES TBB::tbb)
+    tbb_add_test(SUBDIR conformance NAME conformance_collaborative_call_once DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_concurrent_lru_cache DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_concurrent_unordered_map DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_concurrent_unordered_set DEPENDENCIES TBB::tbb)
@@ -572,7 +591,6 @@ if (TARGET TBB::tbbmalloc)
             ${TBBMALLOC_LIB_COMPILE_FLAGS}
         )
         if (ANDROID_PLATFORM)
-            target_link_libraries(test_malloc_whitebox PRIVATE -rdynamic) # for the test_dynamic_link
             add_test(NAME test_malloc_whitebox
                     COMMAND ${CMAKE_COMMAND}
                             -DBINARIES_PATH=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}
@@ -602,7 +620,7 @@ if (TARGET TBB::tbbmalloc)
         endif()
 
         # Thread Sanitizer overloads memory management routines that conflicts with tbbmalloc_proxy.
-        if (BUILD_SHARED_LIBS AND NOT TBB_SANITIZE MATCHES "thread")
+        if (BUILD_SHARED_LIBS AND NOT TBB_SANITIZE MATCHES "thread" AND TBBMALLOC_PROXY_BUILD AND NOT MSVC_CXX_ARCHITECTURE_ID MATCHES "ARM64")
             # Define TBB malloc proxy tests
             tbb_add_lib_test(SUBDIR tbbmalloc NAME test_malloc_atexit DEPENDENCIES TBB::tbbmalloc_proxy TBB::tbbmalloc)
             tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_atexit DEPENDENCIES TBB::tbbmalloc_proxy TBB::tbbmalloc _test_malloc_atexit)

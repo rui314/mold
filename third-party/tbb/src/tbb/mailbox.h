@@ -82,11 +82,11 @@ struct task_proxy : public d1::task {
         return nullptr;
     }
 
-    virtual task* execute(d1::execution_data&) {
+    task* execute(d1::execution_data&) override {
         __TBB_ASSERT_RELEASE(false, nullptr);
         return nullptr;
     }
-    virtual task* cancel(d1::execution_data&) {
+    task* cancel(d1::execution_data&) override {
         __TBB_ASSERT_RELEASE(false, nullptr);
         return nullptr;
     }

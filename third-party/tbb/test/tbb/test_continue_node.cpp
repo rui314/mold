@@ -259,8 +259,11 @@ struct lightweight_policy_body {
     {
         my_count = 0;
     }
-    lightweight_policy_body& operator=(const lightweight_policy_body&) = delete;
-    void operator()(tbb::flow::continue_msg) {
+
+    lightweight_policy_body( const lightweight_policy_body& ) = default;
+    lightweight_policy_body& operator=( const lightweight_policy_body& ) = delete;
+
+    void operator()( tbb::flow::continue_msg ) {
         ++my_count;
         std::thread::id body_thread_id = std::this_thread::get_id();
         CHECK_MESSAGE( (body_thread_id == my_thread_id), "Body executed as not lightweight");

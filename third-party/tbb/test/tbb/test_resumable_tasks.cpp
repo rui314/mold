@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -90,14 +90,16 @@ private:
 };
 
 struct SuspendBody {
-    SuspendBody(AsyncActivity& a_) :
-        m_asyncActivity(a_) {}
+    SuspendBody(AsyncActivity& a_, std::thread::id id) :
+        m_asyncActivity(a_), thread_id(id) {}
     void operator()(tbb::task::suspend_point tag) {
+        CHECK(thread_id == std::this_thread::get_id());
         m_asyncActivity.submit(tag);
     }
 
 private:
     AsyncActivity& m_asyncActivity;
+    std::thread::id thread_id;
 };
 
 class InnermostArenaBody {
@@ -113,14 +115,14 @@ private:
     struct InnermostInnerParFor {
         InnermostInnerParFor(AsyncActivity& a_) : m_asyncActivity(a_) {}
         void operator()(int) const {
-            tbb::task::suspend(SuspendBody(m_asyncActivity));
+            tbb::task::suspend(SuspendBody(m_asyncActivity, std::this_thread::get_id()));
         }
         AsyncActivity& m_asyncActivity;
     };
     struct InnermostOuterParFor {
         InnermostOuterParFor(AsyncActivity& a_) : m_asyncActivity(a_) {}
         void operator()(int) const {
-            tbb::task::suspend(SuspendBody(m_asyncActivity));
+            tbb::task::suspend(SuspendBody(m_asyncActivity, std::this_thread::get_id()));
             InnermostInnerParFor inner_inner_body(m_asyncActivity);
             tbb::parallel_for(0, N, inner_inner_body);
         }
@@ -142,7 +144,7 @@ public:
     }
 
     void operator()(int i) const {
-        tbb::task::suspend(SuspendBody(m_asyncActivity));
+        tbb::task::suspend([&] (tbb::task::suspend_point sp) { m_asyncActivity.submit(sp); });
 
         tbb::task_arena& nested_arena = (i % 3 == 0) ?
             m_outermostArena : (i % 3 == 1 ? m_innermostArena : m_innermostArenaDefault);
@@ -315,7 +317,7 @@ void TestCleanupMaster() {
             for (int k = 0; k < j*10 + 1; ++k) {
                 tg.run([&asyncActivity, j, &iter_executed] {
                     utils::doDummyWork(j * 10);
-                    tbb::task::suspend(SuspendBody(asyncActivity));
+                    tbb::task::suspend(SuspendBody(asyncActivity, std::this_thread::get_id()));
                     iter_executed++;
                 });
                 iter_spawned++;
@@ -333,7 +335,7 @@ public:
     ParForSuspendBody(AsyncActivity& a_, int iters) : asyncActivity(a_), m_numIters(iters) {}
     void operator()(int) const {
         utils::doDummyWork(m_numIters);
-        tbb::task::suspend(SuspendBody(asyncActivity));
+        tbb::task::suspend(SuspendBody(asyncActivity, std::this_thread::get_id()));
     }
 };
 
@@ -347,7 +349,7 @@ void TestNativeThread() {
         for (int i = 0; i < 10; i++) {
             arena.execute([&tg, &asyncActivity, &iter]() {
                 tg.run([&asyncActivity]() {
-                    tbb::task::suspend(SuspendBody(asyncActivity));
+                    tbb::task::suspend(SuspendBody(asyncActivity, std::this_thread::get_id()));
                 });
                 iter++;
             });
@@ -390,7 +392,9 @@ void TestObservers() {
     do {
         arena.execute([] {
             tbb::parallel_for(0, 10, [](int) {
-                tbb::task::suspend([](tbb::task::suspend_point tag) {
+                auto thread_id = std::this_thread::get_id();
+                tbb::task::suspend([thread_id](tbb::task::suspend_point tag) {
+                    CHECK(thread_id == std::this_thread::get_id());
                     tbb::task::resume(tag);
                 });
             }, tbb::simple_partitioner());

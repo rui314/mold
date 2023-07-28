@@ -24,7 +24,7 @@ set(TBB_WARNING_LEVEL $<$<NOT:$<CXX_COMPILER_ID:Intel>>:/W4> $<$<BOOL:${TBB_STRI
 # Warning suppression C4324: structure was padded due to alignment specifier
 set(TBB_WARNING_SUPPRESS /wd4324)
 
-set(TBB_TEST_COMPILE_FLAGS /bigobj)
+set(TBB_TEST_COMPILE_FLAGS ${TBB_TEST_COMPILE_FLAGS} /bigobj)
 if (MSVC_VERSION LESS_EQUAL 1900)
     # Warning suppression C4503 for VS2015 and earlier:
     # decorated name length exceeded, name was truncated.
@@ -72,14 +72,15 @@ if (TBB_WINDOWS_DRIVER)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "(Clang|IntelLLVM)")
-    if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86|AMD64)")
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86|AMD64|i.86)")
         set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} -mrtm -mwaitpkg)
     endif()
-    set(TBB_OPENMP_NO_LINK_FLAG TRUE)
     set(TBB_IPO_COMPILE_FLAGS $<$<NOT:$<CONFIG:Debug>>:-flto>)
+    set(TBB_IPO_LINK_FLAGS $<$<NOT:$<CONFIG:Debug>>:-flto>)
 else()
     set(TBB_IPO_COMPILE_FLAGS $<$<NOT:$<CONFIG:Debug>>:/GL>)
     set(TBB_IPO_LINK_FLAGS $<$<NOT:$<CONFIG:Debug>>:-LTCG> $<$<NOT:$<CONFIG:Debug>>:-INCREMENTAL:NO>)
 endif()
 
 set(TBB_OPENMP_FLAG /openmp)
+set(TBB_OPENMP_NO_LINK_FLAG TRUE) # TBB_OPENMP_FLAG will be used only on compilation but not on linkage

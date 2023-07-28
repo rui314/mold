@@ -1,6 +1,6 @@
 /*
  * xxhsum - Command line interface for xxhash algorithms
- * Copyright (C) 2013-2020 Yann Collet
+ * Copyright (C) 2013-2021 Yann Collet
  *
  * GPL v2 License
  *
@@ -130,32 +130,34 @@ static const XSUM_testdata64_t XSUM_XXH64_testdata[] = {
 /* XXH3_64bits, seeded */
 static const XSUM_testdata64_t XSUM_XXH3_testdata[] = {
     {    0,       0, 0x2D06800538D394C2ULL },  /* empty string */
-    {    0, PRIME64, 0xA8A6B918B2F0364AULL },  /* empty string */
+    {    0, PRIME64, 0xA8A6B918B2F0364AULL },
     {    1,       0, 0xC44BDFF4074EECDBULL },  /*  1 -  3 */
-    {    1, PRIME64, 0x032BE332DD766EF8ULL },  /*  1 -  3 */
+    {    1, PRIME64, 0x032BE332DD766EF8ULL },
     {    6,       0, 0x27B56A84CD2D7325ULL },  /*  4 -  8 */
-    {    6, PRIME64, 0x84589C116AB59AB9ULL },  /*  4 -  8 */
+    {    6, PRIME64, 0x84589C116AB59AB9ULL },
     {   12,       0, 0xA713DAF0DFBB77E7ULL },  /*  9 - 16 */
-    {   12, PRIME64, 0xE7303E1B2336DE0EULL },  /*  9 - 16 */
+    {   12, PRIME64, 0xE7303E1B2336DE0EULL },
     {   24,       0, 0xA3FE70BF9D3510EBULL },  /* 17 - 32 */
-    {   24, PRIME64, 0x850E80FC35BDD690ULL },  /* 17 - 32 */
+    {   24, PRIME64, 0x850E80FC35BDD690ULL },
     {   48,       0, 0x397DA259ECBA1F11ULL },  /* 33 - 64 */
-    {   48, PRIME64, 0xADC2CBAA44ACC616ULL },  /* 33 - 64 */
+    {   48, PRIME64, 0xADC2CBAA44ACC616ULL },
     {   80,       0, 0xBCDEFBBB2C47C90AULL },  /* 65 - 96 */
-    {   80, PRIME64, 0xC6DD0CB699532E73ULL },  /* 65 - 96 */
+    {   80, PRIME64, 0xC6DD0CB699532E73ULL },
     {  195,       0, 0xCD94217EE362EC3AULL },  /* 129-240 */
-    {  195, PRIME64, 0xBA68003D370CB3D9ULL },  /* 129-240 */
+    {  195, PRIME64, 0xBA68003D370CB3D9ULL },
 
     {  403,       0, 0xCDEB804D65C6DEA4ULL },  /* one block, last stripe is overlapping */
-    {  403, PRIME64, 0x6259F6ECFD6443FDULL },  /* one block, last stripe is overlapping */
+    {  403, PRIME64, 0x6259F6ECFD6443FDULL },
     {  512,       0, 0x617E49599013CB6BULL },  /* one block, finishing at stripe boundary */
-    {  512, PRIME64, 0x3CE457DE14C27708ULL },  /* one block, finishing at stripe boundary */
+    {  512, PRIME64, 0x3CE457DE14C27708ULL },
     { 2048,       0, 0xDD59E2C3A5F038E0ULL },  /* 2 blocks, finishing at block boundary */
-    { 2048, PRIME64, 0x66F81670669ABABCULL },  /* 2 blocks, finishing at block boundary */
+    { 2048, PRIME64, 0x66F81670669ABABCULL },
+    { 2099,       0, 0xC6B9D9B3FC9AC765ULL },  /* 2 blocks + 1 partial block, to detect off-by-one scrambling issues, like #816 */
+    { 2099, PRIME64, 0x184F316843663974ULL },
     { 2240,       0, 0x6E73A90539CF2948ULL },  /* 3 blocks, finishing at stripe boundary */
-    { 2240, PRIME64, 0x757BA8487D1B5247ULL },  /* 3 blocks, finishing at stripe boundary */
+    { 2240, PRIME64, 0x757BA8487D1B5247ULL },
     { 2367,       0, 0xCB37AEB9E5D361EDULL },  /* 3 blocks, last stripe is overlapping */
-    { 2367, PRIME64, 0xD2DB3415B942B42AULL }   /* 3 blocks, last stripe is overlapping */
+    { 2367, PRIME64, 0xD2DB3415B942B42AULL }
 };
 /* XXH3_64bits, custom secret */
 static const XSUM_testdata64_t XSUM_XXH3_withSecret_testdata[] = {
@@ -178,32 +180,32 @@ static const XSUM_testdata64_t XSUM_XXH3_withSecret_testdata[] = {
 /* XXH3_128bits, seeded */
 static const XSUM_testdata128_t XSUM_XXH128_testdata[] = {
     {    0,       0, { 0x6001C324468D497FULL, 0x99AA06D3014798D8ULL } },  /* empty string */
-    {    0, PRIME32, { 0x5444F7869C671AB0ULL, 0x92220AE55E14AB50ULL } },  /* empty string */
+    {    0, PRIME32, { 0x5444F7869C671AB0ULL, 0x92220AE55E14AB50ULL } },
     {    1,       0, { 0xC44BDFF4074EECDBULL, 0xA6CD5E9392000F6AULL } },  /*  1 -  3 */
-    {    1, PRIME32, { 0xB53D5557E7F76F8DULL, 0x89B99554BA22467CULL } },  /*  1 -  3 */
+    {    1, PRIME32, { 0xB53D5557E7F76F8DULL, 0x89B99554BA22467CULL } },
     {    6,       0, { 0x3E7039BDDA43CFC6ULL, 0x082AFE0B8162D12AULL } },  /*  4 -  8 */
-    {    6, PRIME32, { 0x269D8F70BE98856EULL, 0x5A865B5389ABD2B1ULL } },  /*  4 -  8 */
+    {    6, PRIME32, { 0x269D8F70BE98856EULL, 0x5A865B5389ABD2B1ULL } },
     {   12,       0, { 0x061A192713F69AD9ULL, 0x6E3EFD8FC7802B18ULL } },  /*  9 - 16 */
-    {   12, PRIME32, { 0x9BE9F9A67F3C7DFBULL, 0xD7E09D518A3405D3ULL } },  /*  9 - 16 */
+    {   12, PRIME32, { 0x9BE9F9A67F3C7DFBULL, 0xD7E09D518A3405D3ULL } },
     {   24,       0, { 0x1E7044D28B1B901DULL, 0x0CE966E4678D3761ULL } },  /* 17 - 32 */
-    {   24, PRIME32, { 0xD7304C54EBAD40A9ULL, 0x3162026714A6A243ULL } },  /* 17 - 32 */
+    {   24, PRIME32, { 0xD7304C54EBAD40A9ULL, 0x3162026714A6A243ULL } },
     {   48,       0, { 0xF942219AED80F67BULL, 0xA002AC4E5478227EULL } },  /* 33 - 64 */
-    {   48, PRIME32, { 0x7BA3C3E453A1934EULL, 0x163ADDE36C072295ULL } },  /* 33 - 64 */
+    {   48, PRIME32, { 0x7BA3C3E453A1934EULL, 0x163ADDE36C072295ULL } },
     {   81,       0, { 0x5E8BAFB9F95FB803ULL, 0x4952F58181AB0042ULL } },  /* 65 - 96 */
-    {   81, PRIME32, { 0x703FBB3D7A5F755CULL, 0x2724EC7ADC750FB6ULL } },  /* 65 - 96 */
+    {   81, PRIME32, { 0x703FBB3D7A5F755CULL, 0x2724EC7ADC750FB6ULL } },
     {  222,       0, { 0xF1AEBD597CEC6B3AULL, 0x337E09641B948717ULL } },  /* 129-240 */
-    {  222, PRIME32, { 0xAE995BB8AF917A8DULL, 0x91820016621E97F1ULL } },  /* 129-240 */
+    {  222, PRIME32, { 0xAE995BB8AF917A8DULL, 0x91820016621E97F1ULL } },
 
     {  403,       0, { 0xCDEB804D65C6DEA4ULL, 0x1B6DE21E332DD73DULL } },  /* one block, last stripe is overlapping */
-    {  403, PRIME64, { 0x6259F6ECFD6443FDULL, 0xBED311971E0BE8F2ULL } },  /* one block, last stripe is overlapping */
+    {  403, PRIME64, { 0x6259F6ECFD6443FDULL, 0xBED311971E0BE8F2ULL } },
     {  512,       0, { 0x617E49599013CB6BULL, 0x18D2D110DCC9BCA1ULL } },  /* one block, finishing at stripe boundary */
-    {  512, PRIME64, { 0x3CE457DE14C27708ULL, 0x925D06B8EC5B8040ULL } },  /* one block, finishing at stripe boundary */
+    {  512, PRIME64, { 0x3CE457DE14C27708ULL, 0x925D06B8EC5B8040ULL } },
     { 2048,       0, { 0xDD59E2C3A5F038E0ULL, 0xF736557FD47073A5ULL } },  /* 2 blocks, finishing at block boundary */
-    { 2048, PRIME32, { 0x230D43F30206260BULL, 0x7FB03F7E7186C3EAULL } },  /* 2 blocks, finishing at block boundary */
+    { 2048, PRIME32, { 0x230D43F30206260BULL, 0x7FB03F7E7186C3EAULL } },
     { 2240,       0, { 0x6E73A90539CF2948ULL, 0xCCB134FBFA7CE49DULL } },  /* 3 blocks, finishing at stripe boundary */
-    { 2240, PRIME32, { 0xED385111126FBA6FULL, 0x50A1FE17B338995FULL } },  /* 3 blocks, finishing at stripe boundary */
+    { 2240, PRIME32, { 0xED385111126FBA6FULL, 0x50A1FE17B338995FULL } },
     { 2367,       0, { 0xCB37AEB9E5D361EDULL, 0xE89C0F6FF369B427ULL } },  /* 3 blocks, last stripe is overlapping */
-    { 2367, PRIME32, { 0x6F5360AE69C2F406ULL, 0xD23AAE4B76C31ECBULL } }   /* 3 blocks, last stripe is overlapping */
+    { 2367, PRIME32, { 0x6F5360AE69C2F406ULL, 0xD23AAE4B76C31ECBULL } }
 };
 
 /* XXH128, custom secret */
@@ -568,7 +570,7 @@ static void XSUM_testXXH128_withSecret(const void* data, const void* secret, siz
     XXH128_hash_t Nresult = testData->Nresult;
     if (len == 0) {
         data = NULL;
-    } else if (len>0) {
+    } else {
         assert(data != NULL);
     }
     {   XXH128_hash_t const Dresult = XXH3_128bits_withSecret(data, len, secret, secretSize);

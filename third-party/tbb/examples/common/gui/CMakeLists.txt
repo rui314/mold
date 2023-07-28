@@ -121,6 +121,7 @@ if  (NOT _find_index EQUAL -1)
     elseif ("${EXAMPLES_UI_MODE}" STREQUAL "x")
         set_x_ui_project_settings()
     endif()
+    target_compile_options(UI_LIB_${PROJECT_NAME} PRIVATE ${TBB_CXX_STD_FLAG})
 endif()
 
 unset(_available_ui_modes)

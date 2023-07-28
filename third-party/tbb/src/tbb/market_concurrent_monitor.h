@@ -46,7 +46,7 @@ public:
         , my_suspend_point(my_curr_dispatcher->get_suspend_point())
     {}
 
-    virtual ~resume_node() {
+    ~resume_node() override {
         if (this->my_skipped_wakeup) {
             spin_wait_until_eq(this->my_notify_calls, 1);
         }

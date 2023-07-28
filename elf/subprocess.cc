@@ -1,6 +1,7 @@
-#ifndef _WIN32
+#if !defined(_WIN32) && !defined(__APPLE__)
 
 #include "mold.h"
+#include "config.h"
 
 #include <filesystem>
 #include <signal.h>
@@ -9,10 +10,6 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-#ifdef __FreeBSD__
-# include <sys/sysctl.h>
-#endif
 
 namespace mold::elf {
 
@@ -70,13 +67,11 @@ static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
   if (std::filesystem::is_regular_file(path, ec) && !ec)
     return path;
 
-#ifdef LIBDIR
-  // If not found, search $(LIBDIR)/mold, which is /usr/local/lib/mold
+  // If not found, search $(MOLD_LIBDIR)/mold, which is /usr/local/lib/mold
   // by default.
-  path = LIBDIR "/mold/mold-wrapper.so";
+  path = MOLD_LIBDIR "/mold/mold-wrapper.so";
   if (std::filesystem::is_regular_file(path, ec) && !ec)
     return path;
-#endif
 
   // Look for ../lib/mold/mold-wrapper.so
   path = self.parent_path() / "../lib/mold/mold-wrapper.so";
@@ -84,28 +79,6 @@ static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
     return path;
 
   Fatal(ctx) << "mold-wrapper.so is missing";
-}
-
-static std::string get_self_path() {
-#ifdef __FreeBSD__
-  // /proc may not be mounted on FreeBSD. The proper way to get the
-  // current executable's path is to use sysctl(2).
-  int mib[4];
-  mib[0] = CTL_KERN;
-  mib[1] = KERN_PROC;
-  mib[2] = KERN_PROC_PATHNAME;
-  mib[3] = -1;
-
-  size_t size;
-  sysctl(mib, 4, NULL, &size, NULL, 0);
-
-  std::string path;
-  path.resize(size);
-  sysctl(mib, 4, path.data(), &size, NULL, 0);
-  return path;
-#else
-  return std::filesystem::read_symlink("/proc/self/exe");
-#endif
 }
 
 template <typename E>

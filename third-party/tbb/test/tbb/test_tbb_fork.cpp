@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -16,8 +16,6 @@
 
 //! \file test_tbb_fork.cpp
 //! \brief Test for [sched.global_control] specification
-
-#define TBB_PREVIEW_WAITING_FOR_WORKERS 1
 
 #include "tbb/global_control.h"
 #include "tbb/blocked_range.h"
@@ -113,13 +111,13 @@ class RunWorkersBody : utils::NoAssign {
 public:
     RunWorkersBody(bool waitWorkers) : wait_workers(waitWorkers) {}
     void operator()(const int /*threadID*/) const {
-        tbb::task_scheduler_handle tsi = tbb::task_scheduler_handle::get();
+        tbb::task_scheduler_handle tsi{tbb::attach{}};
         CallParallelFor();
         if (wait_workers) {
             bool ok = tbb::finalize(tsi, std::nothrow);
-            ASSERT(ok, NULL);
+            ASSERT(ok, nullptr);
         } else {
-            tbb::task_scheduler_handle::release(tsi);
+            tsi.release();
         }
     }
 };
@@ -138,24 +136,24 @@ class RunInNativeThread : utils::NoAssign {
 public:
     RunInNativeThread(bool blocking_) : blocking(blocking_) {}
     void operator()(const int /*threadID*/) const {
-        tbb::task_scheduler_handle tsi = tbb::task_scheduler_handle::get();
+        tbb::task_scheduler_handle tsi = tbb::task_scheduler_handle{tbb::attach{}};
         CallParallelFor();
         if (blocking) {
             bool ok = tbb::finalize(tsi, std::nothrow);
             ASSERT(!ok, "Nested blocking terminate must fail.");
         } else {
-            tbb::task_scheduler_handle::release(tsi);
+            tsi.release();
         }
     }
 };
 
 void TestTasksInThread()
 {
-    tbb::task_scheduler_handle sch = tbb::task_scheduler_handle::get();
+    tbb::task_scheduler_handle sch{tbb::attach{}};
     CallParallelFor();
     utils::NativeParallelFor(2, RunInNativeThread(/*blocking=*/false));
     bool ok = tbb::finalize(sch, std::nothrow);
-    ASSERT(ok, NULL);
+    ASSERT(ok, nullptr);
 }
 
 #if TBB_REVAMP_TODO
@@ -186,7 +184,7 @@ void TestSchedulerMemLeaks()
                 arena.enqueue([&]{});
             }
             bool ok = tbb::finalize(sch, std::nothrow);
-            ASSERT(ok, NULL);
+            ASSERT(ok, nullptr);
         }
 #if _MSC_VER && _DEBUG
         _CrtMemCheckpoint(&stateAfter);
@@ -205,24 +203,25 @@ void TestNestingTSI()
 {
     // nesting with and without blocking is possible
     for (int i=0; i<2; i++) {
-        tbb::task_scheduler_handle schBlock = tbb::task_scheduler_handle::get();
+        tbb::task_scheduler_handle schBlock = tbb::task_scheduler_handle{tbb::attach{}};
         CallParallelFor();
-        tbb::task_scheduler_handle schBlock1 = tbb::task_scheduler_handle::get();
+        tbb::task_scheduler_handle schBlock1;
+        schBlock1 = tbb::task_scheduler_handle{tbb::attach{}};
         CallParallelFor();
         if (i) {
-            tbb::task_scheduler_handle::release(schBlock1);
+            schBlock1.release();
         } else {
             bool ok = tbb::finalize(schBlock1, std::nothrow);
             ASSERT(!ok, "Nested blocking terminate must fail.");
         }
         bool ok = tbb::finalize(schBlock, std::nothrow);
-        ASSERT(ok, NULL);
+        ASSERT(ok, nullptr);
     }
     {
-        tbb::task_scheduler_handle schBlock = tbb::task_scheduler_handle::get();
+        tbb::task_scheduler_handle schBlock{tbb::attach{}};
         utils::NativeParallelFor(1, RunInNativeThread(/*blocking=*/true));
         bool ok = tbb::finalize(schBlock, std::nothrow);
-        ASSERT(ok, NULL);
+        ASSERT(ok, nullptr);
     }
 }
 
@@ -253,15 +252,15 @@ int main()
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sa.sa_handler = SigHandler;
-    if (sigaction(SIGCHLD, &sa, NULL))
+    if (sigaction(SIGCHLD, &sa, nullptr))
         ASSERT(0, "sigaction failed");
-    if (sigaction(SIGALRM, &sa, NULL))
+    if (sigaction(SIGALRM, &sa, nullptr))
         ASSERT(0, "sigaction failed");
     // block SIGCHLD and SIGALRM, the mask is inherited by worker threads
     sigemptyset(&sig_set);
     sigaddset(&sig_set, SIGCHLD);
     sigaddset(&sig_set, SIGALRM);
-    if (pthread_sigmask(SIG_BLOCK, &sig_set, NULL))
+    if (pthread_sigmask(SIG_BLOCK, &sig_set, nullptr))
         ASSERT(0, "pthread_sigmask failed");
 #endif
     utils::suppress_unused_warning(child);
@@ -269,20 +268,20 @@ int main()
         for (int i=0; i<20; i++) {
             tbb::global_control ctl(tbb::global_control::max_allowed_parallelism, threads);
             {
-                tbb::task_scheduler_handle sch = tbb::task_scheduler_handle::get();
+                tbb::task_scheduler_handle sch{tbb::attach{}};
                 bool ok = tbb::finalize( sch, std::nothrow );
-                ASSERT(ok, NULL);
+                ASSERT(ok, nullptr);
             }
-            tbb::task_scheduler_handle sch = tbb::task_scheduler_handle::get();
+            tbb::task_scheduler_handle sch{tbb::attach{}};
             CallParallelFor();
             bool ok = tbb::finalize( sch, std::nothrow );
-            ASSERT(ok, NULL);
+            ASSERT(ok, nullptr);
 #if _WIN32||_WIN64
             // check that there is no alive threads after terminate()
             for (TidTableType::const_iterator it = tidTable.begin();
                 it != tidTable.end(); ++it) {
                 if (masterTid != it->first) {
-                    ASSERT(threadTerminated(it->second.h), NULL);
+                    ASSERT(threadTerminated(it->second.h), nullptr);
                 }
             }
             tidTable.clear();
@@ -302,11 +301,11 @@ int main()
                     if (0 != sigwait(&sig_set, &sig))
                         ASSERT(0, "sigwait failed");
                     alarm(0);
-                    w_ret = waitpid(pid, NULL, WNOHANG);
+                    w_ret = waitpid(pid, nullptr, WNOHANG);
                     ASSERT(w_ret>=0, "waitpid failed");
                     if (!w_ret) {
-                        ASSERT(!kill(pid, SIGKILL), NULL);
-                        w_ret = waitpid(pid, NULL, 0);
+                        ASSERT(!kill(pid, SIGKILL), nullptr);
+                        w_ret = waitpid(pid, nullptr, 0);
                         ASSERT(w_ret!=-1, "waitpid failed");
 
                         ASSERT(0, "Hang after fork");

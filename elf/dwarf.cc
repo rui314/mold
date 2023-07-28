@@ -77,7 +77,7 @@ read_compunits(Context<E> &ctx, ObjectFile<E> &file) {
   while (!data.empty()) {
     if (data.size() < 4)
       Fatal(ctx) << *file.debug_info << ": corrupted .debug_info";
-    if (*(U32<E> *)data.data() == 0xffffffff)
+    if (*(U32<E> *)data.data() == 0xffff'ffff)
       Fatal(ctx) << *file.debug_info << ": --gdb-index: DWARF64 not supported";
     i64 len = *(U32<E> *)data.data() + 4;
     vec.push_back(data.substr(0, len));
@@ -295,7 +295,7 @@ public:
 // Read value of the given DW_FORM_* form. If a value is not scalar,
 // returns a dummy value 0.
 template <typename E>
-inline u64 DebugInfoReader<E>::read(u64 form) {
+u64 DebugInfoReader<E>::read(u64 form) {
   switch (form) {
   case DW_FORM_flag_present:
     return 0;

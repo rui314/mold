@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.13)
 project(libmimalloc C CXX)
 
 set(CMAKE_C_STANDARD 11)
@@ -6,14 +6,18 @@ set(CMAKE_CXX_STANDARD 17)
 
 option(MI_SECURE            "Use full security mitigations (like guard pages, allocation randomization, double-free mitigation, and free-list corruption detection)" OFF)
 option(MI_DEBUG_FULL        "Use full internal heap invariant checking in DEBUG mode (expensive)" OFF)
-option(MI_PADDING           "Enable padding to detect heap block overflow (used only in DEBUG mode)" ON)
+option(MI_PADDING           "Enable padding to detect heap block overflow (always on in DEBUG or SECURE mode, or with Valgrind/ASAN)" OFF)
 option(MI_OVERRIDE          "Override the standard malloc interface (e.g. define entry points for malloc() etc)" ON)
 option(MI_XMALLOC           "Enable abort() call on memory allocation failure by default" OFF)
 option(MI_SHOW_ERRORS       "Show error and warning messages by default (only enabled by default in DEBUG mode)" OFF)
+option(MI_TRACK_VALGRIND    "Compile with Valgrind support (adds a small overhead)" OFF)
+option(MI_TRACK_ASAN        "Compile with address sanitizer support (adds a small overhead)" OFF)
+option(MI_TRACK_ETW         "Compile with Windows event tracing (ETW) support (adds a small overhead)" OFF)
 option(MI_USE_CXX           "Use the C++ compiler to compile the library (instead of the C compiler)" OFF)
 option(MI_SEE_ASM           "Generate assembly files" OFF)
 option(MI_OSX_INTERPOSE     "Use interpose to override standard malloc on macOS" ON)
-option(MI_OSX_ZONE          "Use malloc zone to override standard malloc on macOS" ON) 
+option(MI_OSX_ZONE          "Use malloc zone to override standard malloc on macOS" ON)
+option(MI_WIN_REDIRECT      "Use redirection module ('mimalloc-redirect') on Windows if compiling mimalloc as a DLL" ON)
 option(MI_LOCAL_DYNAMIC_TLS "Use slightly slower, dlopen-compatible TLS mechanism (Unix)" OFF)
 option(MI_BUILD_SHARED      "Build shared library" ON)
 option(MI_BUILD_STATIC      "Build static library" ON)
@@ -21,38 +25,43 @@ option(MI_BUILD_OBJECT      "Build object library" ON)
 option(MI_BUILD_TESTS       "Build test executables" ON)
 option(MI_DEBUG_TSAN        "Build with thread sanitizer (needs clang)" OFF)
 option(MI_DEBUG_UBSAN       "Build with undefined-behavior sanitizer (needs clang++)" OFF)
-option(MI_SKIP_COLLECT_ON_EXIT, "Skip collecting memory on program exit" OFF)
+option(MI_SKIP_COLLECT_ON_EXIT "Skip collecting memory on program exit" OFF)
+option(MI_NO_PADDING        "Force no use of padding even in DEBUG mode etc." OFF)
 
 # deprecated options
 option(MI_CHECK_FULL        "Use full internal invariant checking in DEBUG mode (deprecated, use MI_DEBUG_FULL instead)" OFF)
 option(MI_INSTALL_TOPLEVEL  "Install directly into $CMAKE_INSTALL_PREFIX instead of PREFIX/lib/mimalloc-version (deprecated)" OFF)
 option(MI_USE_LIBATOMIC     "Explicitly link with -latomic (on older systems) (deprecated and detected automatically)" OFF)
 
+include(CheckIncludeFiles)
 include(GNUInstallDirs)
 include("cmake/mimalloc-config-version.cmake")
 
 set(mi_sources
-    src/stats.c
-    src/random.c
-    src/os.c
-    src/bitmap.c
-    src/arena.c
-    src/segment-cache.c
-    src/segment.c
-    src/page.c
     src/alloc.c
     src/alloc-aligned.c
     src/alloc-posix.c
+    src/arena.c
+    src/bitmap.c
     src/heap.c
+    src/init.c
     src/options.c
-    src/init.c)
+    src/os.c
+    src/page.c
+    src/random.c
+    src/segment.c
+    src/segment-map.c
+    src/stats.c
+    src/prim/prim.c)
 
+set(mi_cflags "")
+set(mi_libraries "")
 
 # -----------------------------------------------------------------------------
 # Convenience: set default build type depending on the build directory
 # -----------------------------------------------------------------------------
 
-message(STATUS "")    
+message(STATUS "")
 if (NOT CMAKE_BUILD_TYPE)
   if ("${CMAKE_BINARY_DIR}" MATCHES ".*(D|d)ebug$" OR  MI_DEBUG_FULL)
     message(STATUS "No build type selected, default to: Debug")
@@ -83,8 +92,8 @@ if(MI_OVERRIDE)
     if(MI_OSX_ZONE)
       # use zone's on macOS
       message(STATUS "  Use malloc zone to override malloc (MI_OSX_ZONE=ON)")
-      list(APPEND mi_sources src/alloc-override-osx.c)
-      list(APPEND mi_defines MI_OSX_ZONE=1)      
+      list(APPEND mi_sources src/prim/osx/alloc-override-zone.c)
+      list(APPEND mi_defines MI_OSX_ZONE=1)
       if (NOT MI_OSX_INTERPOSE)
         message(STATUS "  WARNING: zone overriding usually also needs interpose (use -DMI_OSX_INTERPOSE=ON)")
       endif()
@@ -103,9 +112,73 @@ if(MI_OVERRIDE)
   endif()
 endif()
 
+if(WIN32)
+  if (MI_WIN_REDIRECT)
+    if (MSVC_C_ARCHITECTURE_ID MATCHES "ARM")
+      message(STATUS "Cannot use redirection on Windows ARM (MI_WIN_REDIRECT=OFF)")
+      set(MI_WIN_REDIRECT OFF)
+    endif()
+  endif()
+  if (NOT MI_WIN_REDIRECT)
+    # use a negative define for backward compatibility
+    list(APPEND mi_defines MI_WIN_NOREDIRECT=1)
+  endif()
+endif()
+
 if(MI_SECURE)
   message(STATUS "Set full secure build (MI_SECURE=ON)")
-  list(APPEND mi_defines MI_SECURE=4)
+  list(APPEND mi_defines MI_SECURE=4)  
+endif()
+
+if(MI_TRACK_VALGRIND)
+  CHECK_INCLUDE_FILES("valgrind/valgrind.h;valgrind/memcheck.h" MI_HAS_VALGRINDH)
+  if (NOT MI_HAS_VALGRINDH)
+    set(MI_TRACK_VALGRIND OFF)
+    message(WARNING "Cannot find the 'valgrind/valgrind.h' and 'valgrind/memcheck.h' -- install valgrind first")
+    message(STATUS  "Compile **without** Valgrind support (MI_TRACK_VALGRIND=OFF)")
+  else()
+    message(STATUS "Compile with Valgrind support (MI_TRACK_VALGRIND=ON)")
+    list(APPEND mi_defines MI_TRACK_VALGRIND=1)
+  endif()
+endif()
+
+if(MI_TRACK_ASAN)
+  if (APPLE AND MI_OVERRIDE)
+    set(MI_TRACK_ASAN OFF)
+    message(WARNING "Cannot enable address sanitizer support on macOS if MI_OVERRIDE is ON (MI_TRACK_ASAN=OFF)")
+  endif()
+  if (MI_TRACK_VALGRIND)
+    set(MI_TRACK_ASAN OFF)
+    message(WARNING "Cannot enable address sanitizer support with also Valgrind support enabled (MI_TRACK_ASAN=OFF)")
+  endif()
+  if(MI_TRACK_ASAN)
+    CHECK_INCLUDE_FILES("sanitizer/asan_interface.h" MI_HAS_ASANH)
+    if (NOT MI_HAS_ASANH)
+      set(MI_TRACK_ASAN OFF)
+      message(WARNING "Cannot find the 'sanitizer/asan_interface.h' -- install address sanitizer support first")
+      message(STATUS  "Compile **without** address sanitizer support (MI_TRACK_ASAN=OFF)")
+    else()
+      message(STATUS "Compile with address sanitizer support (MI_TRACK_ASAN=ON)")
+      list(APPEND mi_defines MI_TRACK_ASAN=1)
+      list(APPEND mi_cflags -fsanitize=address)
+      list(APPEND mi_libraries -fsanitize=address)
+    endif()
+  endif()
+endif()
+
+if(MI_TRACK_ETW)
+  if(NOT WIN32)
+    set(MI_TRACK_ETW OFF)
+    message(WARNING "Can only enable ETW support on Windows (MI_TRACK_ETW=OFF)")
+  endif()
+  if (MI_TRACK_VALGRIND OR MI_TRACK_ASAN)
+    set(MI_TRACK_ETW OFF)
+    message(WARNING "Cannot enable ETW support with also Valgrind or ASAN support enabled (MI_TRACK_ETW=OFF)")
+  endif()
+  if(MI_TRACK_ETW)
+    message(STATUS "Compile with Windows event tracing support (MI_TRACK_ETW=ON)")
+    list(APPEND mi_defines MI_TRACK_ETW=1)
+  endif()
 endif()
 
 if(MI_SEE_ASM)
@@ -128,9 +201,14 @@ if(MI_DEBUG_FULL)
   list(APPEND mi_defines MI_DEBUG=3)   # full invariant checking
 endif()
 
-if(NOT MI_PADDING)
-  message(STATUS "Disable padding of heap blocks in debug mode (MI_PADDING=OFF)")
+if(MI_NO_PADDING)
+  message(STATUS "Suppress any padding of heap blocks (MI_NO_PADDING=ON)")
   list(APPEND mi_defines MI_PADDING=0)
+else()
+  if(MI_PADDING)
+    message(STATUS "Enable explicit padding of heap blocks (MI_PADDING=ON)")
+    list(APPEND mi_defines MI_PADDING=1)
+  endif()
 endif()
 
 if(MI_XMALLOC)
@@ -148,27 +226,27 @@ if(MI_DEBUG_TSAN)
     message(STATUS "Build with thread sanitizer (MI_DEBUG_TSAN=ON)")
     list(APPEND mi_defines MI_TSAN=1)
     list(APPEND mi_cflags -fsanitize=thread -g -O1)
-    list(APPEND CMAKE_EXE_LINKER_FLAGS -fsanitize=thread)
+    list(APPEND mi_libraries -fsanitize=thread)
   else()
-    message(WARNING "Can only use thread sanitizer with clang (MI_DEBUG_TSAN=ON but ignored)")    
-  endif()  
+    message(WARNING "Can only use thread sanitizer with clang (MI_DEBUG_TSAN=ON but ignored)")
+  endif()
 endif()
 
 if(MI_DEBUG_UBSAN)
-  if(CMAKE_BUILD_TYPE MATCHES "Debug")    
+  if(CMAKE_BUILD_TYPE MATCHES "Debug")
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
       message(STATUS "Build with undefined-behavior sanitizer (MI_DEBUG_UBSAN=ON)")
       list(APPEND mi_cflags -fsanitize=undefined -g -fno-sanitize-recover=undefined)
-      list(APPEND CMAKE_EXE_LINKER_FLAGS -fsanitize=undefined)
+      list(APPEND mi_libraries -fsanitize=undefined)
       if (NOT MI_USE_CXX)
         message(STATUS "(switch to use C++ due to MI_DEBUG_UBSAN)")
         set(MI_USE_CXX "ON")
       endif()
     else()
-      message(WARNING "Can only use undefined-behavior sanitizer with clang++ (MI_DEBUG_UBSAN=ON but ignored)")    
-    endif()  
+      message(WARNING "Can only use undefined-behavior sanitizer with clang++ (MI_DEBUG_UBSAN=ON but ignored)")
+    endif()
   else()
-    message(WARNING "Can only use thread sanitizer with a debug build (CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})")    
+    message(WARNING "Can only use thread sanitizer with a debug build (CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE})")
   endif()
 endif()
 
@@ -179,17 +257,22 @@ if(MI_USE_CXX)
   if(CMAKE_CXX_COMPILER_ID MATCHES "AppleClang|Clang")
     list(APPEND mi_cflags -Wno-deprecated)
   endif()
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Intel")
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Intel" AND NOT CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
     list(APPEND mi_cflags -Kc++)
   endif()
 endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "Haiku")
+   SET(CMAKE_INSTALL_LIBDIR ~/config/non-packaged/lib)
+   SET(CMAKE_INSTALL_INCLUDEDIR ~/config/non-packaged/headers)
+ endif()
 
 # Compiler flags
 if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU")
   list(APPEND mi_cflags -Wall -Wextra -Wno-unknown-pragmas -fvisibility=hidden)
   if(NOT MI_USE_CXX)
     list(APPEND mi_cflags -Wstrict-prototypes)
-  endif()  
+  endif()
   if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang")
     list(APPEND mi_cflags -Wpedantic -Wno-static-in-inline)
   endif()
@@ -217,18 +300,26 @@ endif()
 # extra needed libraries
 if(WIN32)
   list(APPEND mi_libraries psapi shell32 user32 advapi32 bcrypt)
+  set(pc_libraries "-lpsapi -lshell32 -luser32 -ladvapi32 -lbcrypt")
 else()
+  set(pc_libraries "")
   find_library(MI_LIBPTHREAD pthread)
-  if (MI_LIBPTHREAD)                      
+  if (MI_LIBPTHREAD)
     list(APPEND mi_libraries ${MI_LIBPTHREAD})
+    set(pc_libraries "${pc_libraries} -pthread")
   endif()
   find_library(MI_LIBRT rt)
   if(MI_LIBRT)
     list(APPEND mi_libraries ${MI_LIBRT})
-  endif()  
+    set(pc_libraries "${pc_libraries} -lrt")
+  endif()
   find_library(MI_LIBATOMIC atomic)
-  if (MI_LIBATOMIC OR MI_USE_LIBATOMIC) 
-    list(APPEND mi_libraries atomic)
+  if (NOT MI_LIBATOMIC AND MI_USE_LIBATOMIC)
+    set(MI_LIBATOMIC atomic)
+  endif()
+  if (MI_LIBATOMIC)
+    list(APPEND mi_libraries ${MI_LIBATOMIC})
+    set(pc_libraries "${pc_libraries} -latomic")
   endif()
 endif()
 
@@ -243,7 +334,7 @@ set(mi_install_libdir   "${CMAKE_INSTALL_LIBDIR}")
 # are either installed at top level, or use versioned directories for side-by-side installation (default)
 if (MI_INSTALL_TOPLEVEL)
   set(mi_install_objdir     "${CMAKE_INSTALL_LIBDIR}")
-  set(mi_install_incdir     "${CMAKE_INSTALL_INCLUDEDIR}")        
+  set(mi_install_incdir     "${CMAKE_INSTALL_INCLUDEDIR}")
   set(mi_install_cmakedir   "${CMAKE_INSTALL_LIBDIR}/cmake/mimalloc")
 else()
   set(mi_install_objdir     "${CMAKE_INSTALL_LIBDIR}/mimalloc-${mi_version}")       # for static library and object files
@@ -251,16 +342,21 @@ else()
   set(mi_install_cmakedir   "${CMAKE_INSTALL_LIBDIR}/cmake/mimalloc-${mi_version}") # for cmake package info
 endif()
 
+set(mi_basename "mimalloc")
 if(MI_SECURE)
-  set(mi_basename "mimalloc-secure")
-else()
-  set(mi_basename "mimalloc")
+  set(mi_basename "${mi_basename}-secure")
 endif()
-
+if(MI_TRACK_VALGRIND)
+  set(mi_basename "${mi_basename}-valgrind")
+endif()
+if(MI_TRACK_ASAN)
+  set(mi_basename "${mi_basename}-asan")
+endif()
 string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LC)
 if(NOT(CMAKE_BUILD_TYPE_LC MATCHES "^(release|relwithdebinfo|minsizerel|none)$"))
   set(mi_basename "${mi_basename}-${CMAKE_BUILD_TYPE_LC}") #append build type (e.g. -debug) if not a release version
 endif()
+
 if(MI_BUILD_SHARED)
   list(APPEND mi_build_targets "shared")
 endif()
@@ -299,13 +395,13 @@ if(MI_BUILD_SHARED)
   set_target_properties(mimalloc PROPERTIES VERSION ${mi_version} SOVERSION ${mi_version_major} OUTPUT_NAME ${mi_basename} )
   target_compile_definitions(mimalloc PRIVATE ${mi_defines} MI_SHARED_LIB MI_SHARED_LIB_EXPORT)
   target_compile_options(mimalloc PRIVATE ${mi_cflags})
-  target_link_libraries(mimalloc PUBLIC ${mi_libraries})
+  target_link_libraries(mimalloc PRIVATE ${mi_libraries})
   target_include_directories(mimalloc PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
       $<INSTALL_INTERFACE:${mi_install_incdir}>
   )
-  if(WIN32)
-    # On windows copy the mimalloc redirection dll too.
+  if(WIN32 AND MI_WIN_REDIRECT)
+    # On windows, link and copy the mimalloc redirection dll too.
     if(CMAKE_SIZEOF_VOID_P EQUAL 4)
       set(MIMALLOC_REDIRECT_SUFFIX "32")
     else()
@@ -319,7 +415,7 @@ if(MI_BUILD_SHARED)
     install(FILES "$<TARGET_FILE_DIR:mimalloc>/mimalloc-redirect${MIMALLOC_REDIRECT_SUFFIX}.dll" DESTINATION ${mi_install_libdir})
   endif()
 
-  install(TARGETS mimalloc EXPORT mimalloc DESTINATION ${mi_install_libdir} LIBRARY)  
+  install(TARGETS mimalloc EXPORT mimalloc DESTINATION ${mi_install_libdir} LIBRARY)
   install(EXPORT mimalloc DESTINATION ${mi_install_cmakedir})
 endif()
 
@@ -329,7 +425,7 @@ if (MI_BUILD_STATIC)
   set_property(TARGET mimalloc-static PROPERTY POSITION_INDEPENDENT_CODE ON)
   target_compile_definitions(mimalloc-static PRIVATE ${mi_defines} MI_STATIC_LIB)
   target_compile_options(mimalloc-static PRIVATE ${mi_cflags})
-  target_link_libraries(mimalloc-static PUBLIC ${mi_libraries})
+  target_link_libraries(mimalloc-static PRIVATE ${mi_libraries})
   target_include_directories(mimalloc-static PUBLIC
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
       $<INSTALL_INTERFACE:${mi_install_incdir}>
@@ -366,15 +462,32 @@ if (MI_BUILD_OBJECT)
       $<INSTALL_INTERFACE:${mi_install_incdir}>
   )
 
+  # Copy the generated object file (`static.o`) to the output directory (as `mimalloc.o`)
+  if(NOT WIN32)
+    set(mimalloc-obj-static "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/mimalloc-obj.dir/src/static.c${CMAKE_C_OUTPUT_EXTENSION}")
+    set(mimalloc-obj-out    "${CMAKE_CURRENT_BINARY_DIR}/${mi_basename}${CMAKE_C_OUTPUT_EXTENSION}")
+    add_custom_command(OUTPUT ${mimalloc-obj-out} DEPENDS mimalloc-obj COMMAND "${CMAKE_COMMAND}" -E copy "${mimalloc-obj-static}" "${mimalloc-obj-out}")
+    add_custom_target(mimalloc-obj-target ALL DEPENDS ${mimalloc-obj-out})      
+  endif()
+
   # the following seems to lead to cmake warnings/errors on some systems, disable for now :-(
   # install(TARGETS mimalloc-obj EXPORT mimalloc DESTINATION ${mi_install_objdir})
 
   # the FILES expression can also be: $<TARGET_OBJECTS:mimalloc-obj>
   # but that fails cmake versions less than 3.10 so we leave it as is for now
-  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/mimalloc-obj.dir/src/static.c${CMAKE_C_OUTPUT_EXTENSION}
+  install(FILES ${mimalloc-obj-static}
           DESTINATION ${mi_install_objdir}
           RENAME ${mi_basename}${CMAKE_C_OUTPUT_EXTENSION} )
 endif()
+
+# pkg-config file support
+include("cmake/JoinPaths.cmake")
+join_paths(includedir_for_pc_file "\${prefix}" "${CMAKE_INSTALL_INCLUDEDIR}")
+join_paths(libdir_for_pc_file "\${prefix}" "${CMAKE_INSTALL_LIBDIR}")
+
+configure_file(mimalloc.pc.in mimalloc.pc @ONLY)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mimalloc.pc"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig/")
 
 # -----------------------------------------------------------------------------
 # API surface testing

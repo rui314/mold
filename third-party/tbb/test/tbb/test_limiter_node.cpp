@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 #include "common/utils.h"
 #include "common/utils_assert.h"
 #include "common/test_follows_and_precedes_api.h"
+#include "tbb/global_control.h"
 
 #include <atomic>
 
@@ -124,18 +125,6 @@ struct put_dec_body : utils::NoAssign {
     }
 
 };
-
-template< typename Sender, typename Receiver >
-void make_edge_impl(Sender& sender, Receiver& receiver){
-#if __GNUC__ < 12 && !TBB_USE_DEBUG
-    // Seemingly, GNU compiler generates incorrect code for the call of limiter.register_successor in release (-03)
-    // The function pointer to make_edge workarounds the issue for unknown reason
-    auto make_edge_ptr = tbb::flow::make_edge<int>;
-    make_edge_ptr(sender, receiver);
-#else
-    tbb::flow::make_edge(sender, receiver);
-#endif
-}
 
 template< typename T >
 void test_puts_with_decrements( int num_threads, tbb::flow::limiter_node< T >& lim , tbb::flow::graph& g) {
@@ -312,7 +301,7 @@ test_multifunction_to_limiter(int _max, int _nparallel) {
     emit_sum = 0;
     receive_count = 0;
     receive_sum = 0;
-    local_cnt = 0;;
+    local_cnt = 0;
     mf_node.try_put(1);
     g.wait_for_all();
     CHECK_MESSAGE( (emit_count == receive_count), "counts do not match");
@@ -367,7 +356,7 @@ void test_reserve_release_messages() {
     broad.try_put(1); //failed message retrieved.
     g.wait_for_all();
 
-    make_edge_impl(limit, output_queue); //putting the successor back
+    tbb::flow::make_edge(limit, output_queue); //putting the successor back
 
     broad.try_put(1);  //drop the count
 
@@ -465,7 +454,7 @@ void test_try_put_without_successors() {
         }
     );
 
-    make_edge_impl(ln, fn);
+    tbb::flow::make_edge(ln, fn);
 
     g.wait_for_all();
     CHECK((counter == i * try_put_num / 2));
@@ -517,6 +506,35 @@ void test_deduction_guides() {
 }
 #endif
 
+void test_decrement_while_try_put_task() {
+    constexpr int threshold = 50000;
+
+    tbb::flow::graph graph{};
+    std::atomic<int> processed;
+    tbb::flow::input_node<int> input{ graph, [&](tbb::flow_control & fc) -> int {
+        static int i = {};
+        if (i++ >= threshold) fc.stop();
+        return i;
+    }};
+    tbb::flow::limiter_node<int, int> blockingNode{ graph, 1 };
+    tbb::flow::multifunction_node<int, std::tuple<int>> processing{ graph, tbb::flow::serial,
+        [&](const int & value, typename decltype(processing)::output_ports_type & out) {
+            if (value != threshold)
+                std::get<0>(out).try_put(1);
+            processed.store(value);
+        }};
+
+    tbb::flow::make_edge(input, blockingNode);
+    tbb::flow::make_edge(blockingNode, processing);
+    tbb::flow::make_edge(processing, blockingNode.decrementer());
+
+    input.activate();
+
+    graph.wait_for_all();
+    CHECK_MESSAGE(processed.load() == threshold, "decrementer terminate flow graph work");
+}
+
+
 //! Test puts on limiter_node with decrements and varying parallelism levels
 //! \brief \ref error_guessing
 TEST_CASE("Serial and parallel tests") {
@@ -535,6 +553,12 @@ TEST_CASE("Serial and parallel tests") {
 //! \brief \ref error_guessing
 TEST_CASE("Test continue_msg reception") {
     test_continue_msg_reception();
+}
+
+//! Test put message on decrementer port does not stop message flow
+//! \brief \ref error_guessing
+TEST_CASE("Test try_put to decrementer while try_put to limiter_node") {
+    test_decrement_while_try_put_task();
 }
 
 //! Test multifunction_node connected to limiter_node
@@ -578,3 +602,24 @@ TEST_CASE( "Deduction guides" ) {
     test_deduction_guides();
 }
 #endif
+
+struct TestLargeStruct {
+    char bytes[512]{ 0 };
+};
+
+//! Test correct node deallocation while using small_object_pool.
+//! (see https://github.com/oneapi-src/oneTBB/issues/639)
+//! \brief \ref error_guessing
+TEST_CASE("Test correct node deallocation while using small_object_pool") {
+    tbb::flow::graph graph;
+    tbb::flow::queue_node<TestLargeStruct> input_node( graph );
+    tbb::flow::function_node<TestLargeStruct> func( graph, tbb::flow::serial,
+        [](const TestLargeStruct& input) { return input; } );
+
+    tbb::flow::make_edge( input_node, func );
+    CHECK( input_node.try_put( TestLargeStruct{} ) );
+    graph.wait_for_all();
+
+    tbb::task_scheduler_handle handle{ tbb::attach{} };
+    tbb::finalize( handle, std::nothrow );
+}

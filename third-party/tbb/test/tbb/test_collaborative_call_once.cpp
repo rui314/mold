@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2021 Intel Corporation
+    Copyright (c) 2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -13,8 +13,6 @@
     See the License for the specific language governing permissions and
     limitations under the License.
 */
-
-#define TBB_PREVIEW_COLLABORATIVE_CALL_ONCE 1
 
 #if _MSC_VER && !defined(__INTEL_COMPILER)
 // unreachable code
@@ -40,7 +38,7 @@
 #include "tbb/task_arena.h"
 
 //! \file test_collaborative_call_once.cpp
-//! \brief Tests for [preview] functionality
+//! \brief Tests for [algorithms.collaborative_call_once] functionality
 
 struct increment_functor {
     int ct{0};
@@ -213,11 +211,14 @@ TEST_CASE("only calls once - move only argument") {
 TEST_CASE("only calls once - stress test") {
 #if TBB_TEST_LOW_WORKLOAD
     constexpr std::size_t N = 32;
-#elif __TBB_x86_32 || __aarch32__  || __ANDROID__
+#elif __TBB_x86_32 || __arm__  || __ANDROID__
     // Some C++ implementations allocate 8MB stacks for std::thread on 32 bit platforms
     // that makes impossible to create more than ~500 threads.
     // Android has been added to decrease testing time.
     constexpr std::size_t N = tbb::detail::d0::max_nfs_size * 2;
+#elif __TBB_USE_THREAD_SANITIZER
+    // Reduce execution time under Thread Sanitizer
+    constexpr std::size_t N = tbb::detail::d0::max_nfs_size + 64;
 #else 
     constexpr std::size_t N = tbb::detail::d0::max_nfs_size * 4;
 #endif
@@ -284,7 +285,7 @@ TEST_CASE("handles exceptions - state reset") {
 TEST_CASE("handles exceptions - stress test") {
 #if TBB_TEST_LOW_WORKLOAD
     constexpr std::size_t N = 32;
-#elif __TBB_x86_32 || __aarch32__ || __ANDROID__
+#elif __TBB_x86_32 || __arm__ || __ANDROID__
     // Some C++ implementations allocate 8MB stacks for std::thread on 32 bit platforms
     // that makes impossible to create more than ~500 threads.
     // Android has been added to decrease testing time.

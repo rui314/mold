@@ -40,7 +40,7 @@ Notable aspects of the design include:
   per mimalloc page, but for each page we have multiple free lists. In particular, there
   is one list for thread-local `free` operations, and another one for concurrent `free`
   operations. Free-ing from another thread can now be a single CAS without needing
-  sophisticated coordination between threads. Since there will be 
+  sophisticated coordination between threads. Since there will be
   thousands of separate free lists, contention is naturally distributed over the heap,
   and the chance of contending on a single location will be low -- this is quite
   similar to randomized algorithms like skip lists where adding
@@ -414,7 +414,7 @@ void mi_register_error(mi_error_fun* errfun, void* arg);
 bool mi_is_in_heap_region(const void* p);
 
 /// Reserve OS memory for use by mimalloc. Reserved areas are used
-/// before allocating from the OS again. By reserving a large area upfront, 
+/// before allocating from the OS again. By reserving a large area upfront,
 /// allocation can be more efficient, and can be better managed on systems
 /// without `mmap`/`VirtualAlloc` (like WASM for example).
 /// @param size        The size to reserve.
@@ -423,7 +423,7 @@ bool mi_is_in_heap_region(const void* p);
 /// @return \a 0 if successful, and an error code otherwise (e.g. `ENOMEM`).
 int  mi_reserve_os_memory(size_t size, bool commit, bool allow_large);
 
-/// Manage a particular memory area for use by mimalloc. 
+/// Manage a particular memory area for use by mimalloc.
 /// This is just like `mi_reserve_os_memory` except that the area should already be
 /// allocated in some manner and available for use my mimalloc.
 /// @param start       Start of the memory area
@@ -499,7 +499,7 @@ void mi_process_info(size_t* elapsed_msecs, size_t* user_msecs, size_t* system_m
 /// \{
 
 /// The maximum supported alignment size (currently 1MiB).
-#define MI_ALIGNMENT_MAX   (1024*1024UL)   
+#define MI_ALIGNMENT_MAX   (1024*1024UL)
 
 /// Allocate \a size bytes aligned by \a alignment.
 /// @param size  number of bytes to allocate.
@@ -813,7 +813,7 @@ typedef enum mi_option_e {
   mi_option_page_reset,      ///< Reset page memory after \a mi_option_reset_delay milliseconds when it becomes free.
   mi_option_abandoned_page_reset, //< Reset free page memory when a thread terminates.
   mi_option_use_numa_nodes,  ///< Pretend there are at most N NUMA nodes; Use 0 to use the actual detected NUMA nodes at runtime.
-  mi_option_eager_commit_delay,  ///< the first N segments per thread are not eagerly committed (=1). 
+  mi_option_eager_commit_delay,  ///< the first N segments per thread are not eagerly committed (=1).
   mi_option_os_tag,          ///< OS tag to assign to mimalloc'd memory
   mi_option_limit_os_alloc,  ///< If set to 1, do not use OS memory for allocation (but only pre-reserved arenas)
 
@@ -821,12 +821,12 @@ typedef enum mi_option_e {
   mi_option_eager_region_commit, ///< Eagerly commit large (256MiB) memory regions (enabled by default, except on Windows)
   mi_option_segment_reset,   ///< Experimental
   mi_option_reset_delay,     ///< Delay in milli-seconds before resetting a page (100ms by default)
-  mi_option_reset_decommits, ///< Experimental
+  mi_option_purge_decommits, ///< Experimental
 
   // v2.x specific options
-  mi_option_allow_decommit,  ///< Enable decommitting memory (=on)
-  mi_option_decommit_delay,  ///< Decommit page memory after N milli-seconds delay (25ms).
-  mi_option_segment_decommit_delay, ///< Decommit large segment memory after N milli-seconds delay (500ms).
+  mi_option_allow_purge,  ///< Enable decommitting memory (=on)
+  mi_option_purge_delay,  ///< Decommit page memory after N milli-seconds delay (25ms).
+  mi_option_segment_purge_delay, ///< Decommit large segment memory after N milli-seconds delay (500ms).
 
   _mi_option_last
 } mi_option_t;
@@ -927,7 +927,7 @@ template<class T> struct mi_stl_allocator { }
 
 /*! \page build Building
 
-Checkout the sources from Github:
+Checkout the sources from GitHub:
 ```
 git clone https://github.com/microsoft/mimalloc
 ```
@@ -1097,7 +1097,7 @@ or via environment variables.
    `MIMALLOC_EAGER_COMMIT_DELAY=N` (`N` is 1 by default) to delay the initial `N` segments (of 4MiB)
    of a thread to not allocate in the huge OS pages; this prevents threads that are short lived
    and allocate just a little to take up space in the huge OS page area (which cannot be reset).
-- `MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=N`: where N is the numa node. This reserves the huge pages at a specific numa node. 
+- `MIMALLOC_RESERVE_HUGE_OS_PAGES_AT=N`: where N is the numa node. This reserves the huge pages at a specific numa node.
    (`N` is -1 by default to reserve huge pages evenly among the given number of numa nodes (or use the available ones as detected))
 
 Use caution when using `fork` in combination with either large or huge OS pages: on a fork, the OS uses copy-on-write

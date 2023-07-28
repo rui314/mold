@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -253,7 +253,7 @@ private:
     void handle_operations( cpq_operation* op_list ) {
         call_itt_notify(acquired, this);
         cpq_operation* tmp, *pop_list = nullptr;
-        __TBB_ASSERT(mark == data.size(), NULL);
+        __TBB_ASSERT(mark == data.size(), nullptr);
 
         // First pass processes all constant (amortized; reallocation may happen) time pushes and pops.
         while(op_list) {
@@ -266,7 +266,7 @@ private:
             // aggregator::insert_operation.
             // TODO: enable
             call_itt_notify(acquired, &(op_list->status));
-            __TBB_ASSERT(op_list->type != INVALID_OP, NULL);
+            __TBB_ASSERT(op_list->type != INVALID_OP, nullptr);
 
             tmp = op_list;
             op_list = op_list->next.load(std::memory_order_relaxed);
@@ -280,7 +280,7 @@ private:
                     tmp->status.store(uintptr_t(SUCCEEDED), std::memory_order_release);
 
                     data.pop_back();
-                    __TBB_ASSERT(mark <= data.size(), NULL);
+                    __TBB_ASSERT(mark <= data.size(), nullptr);
                 } else { // no convenient item to pop; postpone
                     tmp->next.store(pop_list, std::memory_order_relaxed);
                     pop_list = tmp;
@@ -311,11 +311,11 @@ private:
         while(pop_list) {
             tmp = pop_list;
             pop_list = pop_list->next.load(std::memory_order_relaxed);
-            __TBB_ASSERT(tmp->type == POP_OP, NULL);
+            __TBB_ASSERT(tmp->type == POP_OP, nullptr);
             if (data.empty()) {
                 tmp->status.store(uintptr_t(FAILED), std::memory_order_release);
             } else {
-                __TBB_ASSERT(mark <= data.size(), NULL);
+                __TBB_ASSERT(mark <= data.size(), nullptr);
                 if (mark < data.size() &&
                     my_compare(data[0], data.back()))
                 {
@@ -336,7 +336,7 @@ private:
         // heapify any leftover pushed elements before doing the next
         // batch of operations
         if (mark < data.size()) heapify();
-        __TBB_ASSERT(mark == data.size(), NULL);
+        __TBB_ASSERT(mark == data.size(), nullptr);
         call_itt_notify(releasing, this);
     }
 

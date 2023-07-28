@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2018-2021 Intel Corporation
+    Copyright (c) 2018-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ void CheckWindowsProxyDisablingViaMemSize( size_t ObjectSize ) {
      * If msize returns 0 - tbbmalloc doesn't contain this object in it`s memory
      * Also msize check that proxy lib is linked
      */
-    REQUIRE_MESSAGE(!__TBB_malloc_safer_msize(ptr,NULL), "Malloc replacement is not deactivated");
+    REQUIRE_MESSAGE(!__TBB_malloc_safer_msize(ptr,nullptr), "Malloc replacement is not deactivated");
     free(ptr);
 }
 

@@ -4,15 +4,13 @@ Advanced Topic: Other Kinds of Iteration Spaces
 ===============================================
 
 
-The examples so far have used the class ``blocked_range<T>`` to specify
-ranges. This class is useful in many situations, but it does not fit
-every situation. You can use |full_name|
-to define your own iteration space objects. The object must specify how
-it can be split into subspaces by providing a basic splitting
-constructor, an optional proportional splitting constructor (accompanied
-with a trait value that enables its usage), and two predicate methods.
-If your class is called ``R``, the methods and constructors should be as
-follows:
+The examples so far have used the class ``blocked_range<T>`` to specify ranges.
+This class is useful in many situations, but it does not fit every situation.
+You can use |full_name| to define your own iteration space objects. The object
+must specify how it can be split into subspaces by providing a basic splitting
+constructor, an optional proportional splitting constructor, and two predicate
+methods. If your class is called ``R``, the methods and constructors should be
+as follows:
 
 
 ::
@@ -25,10 +23,8 @@ follows:
        bool is_divisible() const;
        // Splits r into subranges r and *this
        R( R& r, split );
-       // Splits r into subranges r and *this in proportion p
+       // (optional) Splits r into subranges r and *this in proportion p
        R( R& r, proportional_split p );
-       // Allows usage of proportional splitting constructor
-       static const bool is_splittable_in_proportion = true;
        ...
    };
        
@@ -60,9 +56,7 @@ constructor is optional and takes the second argument of type
 that return the values of the proportion. These values should be used to
 split ``r`` accordingly, so that the updated ``r`` corresponds to the
 left part of the proportion, and the constructed object corresponds to
-the right part. The proportional splitting constructor will be used only
-if the static constant ``is_splittable_in_proportion`` is defined in the
-class and assigned the value of ``true``.
+the right part.
 
 
 Both splitting constructors should guarantee that the updated ``r`` part

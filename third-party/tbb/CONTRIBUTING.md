@@ -38,18 +38,21 @@ You can use issues to report a problem, make a feature request, or add comments 
 
 You can find all [open oneTBB pull requests](https://github.com/oneapi-src/oneTBB/pulls) on GitHub. 
 
-No anonymous contributions are accepted. The name in the commit message Signed-of-by line and your email must match the change authorship information.  Make sure your .gitconfig is set up correctly so you can use `git commit -s` for signing your patches: 
+No anonymous contributions are accepted. The name in the commit message Signed-off-by line and your email must match the change authorship information.  Make sure your .gitconfig is set up correctly so you can use `git commit -s` for signing your patches: 
 
 `git config --global user.name "Taylor Developer"`
 
 `git config --global user.email taylor.developer@company.com`
  
-
-Before contributing changes directly to the oneTBB repository: 
+### Before contributing changes directly to the oneTBB repository
 
 * Make sure you can build the product and run all the tests with your patch. 
 * For a larger feature, provide a relevant test. 
 * Document your code. The oneTBB project uses reStructuredText for documentation.  
+* Update the copyright year in the first line of the changing file(s). 
+  For example, if you commit your changes in 2022:
+  * the copyright year should be `2005-2022` for existing files
+  * the copyright year should be `2022` for new files
 * Submit a pull request into the master branch. You can submit changes with a pull request (preferred) or by sending an email patch.  
 
 Continuous Integration (CI) testing is enabled for the repository. Your pull request must pass all checks before it can be merged. We will review your contribution and may provide feedback to guide you if any additional fixes or modifications are necessary. When reviewed and accepted, your pull request will be merged into our GitHub repository. 

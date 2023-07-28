@@ -7,6 +7,7 @@ canonical_name() {
   case $1 in
   i?86) echo i386 ;;
   arm*) echo arm ;;
+  powerpc) echo ppc ;;
   powerpc64) echo ppc64 ;;
   powerpc64le) echo ppc64le ;;
   *) echo $1
@@ -15,23 +16,10 @@ canonical_name() {
 
 HOST=$(canonical_name $(uname -m))
 
-if [ -n "$TRIPLE" ]; then
-  MACHINE=$(canonical_name $(echo $TRIPLE | sed 's/-.*//'))
-else
-  MACHINE=$HOST
-fi
-
 # Set tool names
-if [ -n "$TRIPLE" ]; then
-  CC="${TEST_CC:-$TRIPLE-gcc}"
-  CXX="${TEST_CXX:-$TRIPLE-g++}"
-  GCC="${TEST_GCC:-$TRIPLE-gcc}"
-  GXX="${TEST_GXX:-$TRIPLE-g++}"
-  OBJDUMP="$TRIPLE-objdump"
-  OBJCOPY="$TRIPLE-objcopy"
-  STRIP="$TRIPLE-strip"
-  QEMU="qemu-$MACHINE -L /usr/$TRIPLE"
-else
+if [ "$TRIPLE" = "" ]; then
+  MACHINE=$HOST
+  TESTDIR=out/test/elf/$HOST
   CC="${TEST_CC:-cc}"
   CXX="${TEST_CXX:-c++}"
   GCC="${TEST_GCC:-gcc}"
@@ -40,6 +28,29 @@ else
   OBJCOPY=objcopy
   STRIP=strip
   QEMU=
+elif [ "$TRIPLE" = powerpc64le_power10-linux-gnu ]; then
+  TRIPLE=powerpc64le-linux-gnu
+  MACHINE=ppc64le
+  TESTDIR=out/test/elf/ppc64le-power10
+  CC="${TEST_CC:-$TRIPLE-gcc} -mcpu=power10"
+  CXX="${TEST_CXX:-$TRIPLE-g++} -mcpu=power10"
+  GCC="${TEST_GCC:-$TRIPLE-gcc} -mcpu=power10"
+  GXX="${TEST_GXX:-$TRIPLE-g++} -mcpu=power10"
+  OBJDUMP="$TRIPLE-objdump"
+  OBJCOPY="$TRIPLE-objcopy"
+  STRIP="$TRIPLE-strip"
+  QEMU="qemu-ppc64le -L /usr/$TRIPLE -cpu power10"
+else
+  MACHINE=$(canonical_name $(echo $TRIPLE | sed 's/-.*//'))
+  TESTDIR=out/test/elf/$MACHINE
+  CC="${TEST_CC:-$TRIPLE-gcc}"
+  CXX="${TEST_CXX:-$TRIPLE-g++}"
+  GCC="${TEST_GCC:-$TRIPLE-gcc}"
+  GXX="${TEST_GXX:-$TRIPLE-g++}"
+  OBJDUMP="$TRIPLE-objdump"
+  OBJCOPY="$TRIPLE-objcopy"
+  STRIP="$TRIPLE-strip"
+  QEMU="qemu-$MACHINE -L /usr/$TRIPLE"
 fi
 
 # Common functions
@@ -76,5 +87,5 @@ trap on_exit EXIT
 # Print out the startup message
 testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
-t=out/test/elf/$MACHINE/$testname
+t=$TESTDIR/$testname
 mkdir -p $t

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ public:
 
     // Include constructors of base_type;
     using base_type::base_type;
-    using base_type::operator=;
+
     // Required for implicit deduction guides
     concurrent_unordered_set() = default;
     concurrent_unordered_set( const concurrent_unordered_set& ) = default;
@@ -78,6 +78,11 @@ public:
     // Required to respect the rule of 5
     concurrent_unordered_set& operator=( const concurrent_unordered_set& ) = default;
     concurrent_unordered_set& operator=( concurrent_unordered_set&& ) = default;
+
+    concurrent_unordered_set& operator=( std::initializer_list<value_type> il ) {
+        base_type::operator= (il);
+        return *this;
+    }
 
     template <typename OtherHash, typename OtherKeyEqual>
     void merge( concurrent_unordered_set<key_type, OtherHash, OtherKeyEqual, allocator_type>& source ) {
@@ -158,6 +163,15 @@ template <typename T, typename Hash, typename Alloc,
 concurrent_unordered_set( std::initializer_list<T>, std::size_t, Hash, Alloc )
 -> concurrent_unordered_set<T, Hash, std::equal_to<T>, Alloc>;
 
+#if __APPLE__ && __TBB_CLANG_VERSION == 100000
+// An explicit deduction guide is required for copy/move constructor with allocator for APPLE LLVM 10.0.0
+// due to an issue with generating an implicit deduction guide for these constructors under several strange surcumstances.
+// Currently the issue takes place because the last template parameter for Traits is boolean, it should not affect the deduction guides
+// The issue reproduces only on this version of the compiler
+template <typename T, typename Hash, typename KeyEq, typename Alloc>
+concurrent_unordered_set( concurrent_unordered_set<T, Hash, KeyEq, Alloc>, Alloc )
+-> concurrent_unordered_set<T, Hash, KeyEq, Alloc>;
+#endif
 #endif // __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
 
 template <typename Key, typename Hash, typename KeyEqual, typename Allocator>
@@ -193,7 +207,6 @@ public:
 
     // Include constructors of base_type;
     using base_type::base_type;
-    using base_type::operator=;
 
     // Required for implicit deduction guides
     concurrent_unordered_multiset() = default;
@@ -204,6 +217,11 @@ public:
     // Required to respect the rule of 5
     concurrent_unordered_multiset& operator=( const concurrent_unordered_multiset& ) = default;
     concurrent_unordered_multiset& operator=( concurrent_unordered_multiset&& ) = default;
+
+    concurrent_unordered_multiset& operator=( std::initializer_list<value_type> il ) {
+        base_type::operator= (il);
+        return *this;
+    }
 
     template <typename OtherHash, typename OtherKeyEqual>
     void merge( concurrent_unordered_set<key_type, OtherHash, OtherKeyEqual, allocator_type>& source ) {
@@ -283,6 +301,15 @@ template <typename T, typename Hash, typename Alloc,
 concurrent_unordered_multiset( std::initializer_list<T>, std::size_t, Hash, Alloc )
 -> concurrent_unordered_multiset<T, Hash, std::equal_to<T>, Alloc>;
 
+#if __APPLE__ && __TBB_CLANG_VERSION == 100000
+// An explicit deduction guide is required for copy/move constructor with allocator for APPLE LLVM 10.0.0
+// due to an issue with generating an implicit deduction guide for these constructors under several strange surcumstances.
+// Currently the issue takes place because the last template parameter for Traits is boolean, it should not affect the deduction guides
+// The issue reproduces only on this version of the compiler
+template <typename T, typename Hash, typename KeyEq, typename Alloc>
+concurrent_unordered_multiset( concurrent_unordered_multiset<T, Hash, KeyEq, Alloc>, Alloc )
+-> concurrent_unordered_multiset<T, Hash, KeyEq, Alloc>;
+#endif
 #endif // __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
 
 template <typename Key, typename Hash, typename KeyEqual, typename Allocator>

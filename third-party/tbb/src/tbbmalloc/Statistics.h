@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -63,7 +63,7 @@ static inline int STAT_increment(int thread, int bin, int ctr)
 
 static inline void initStatisticsCollection() {
 #if defined(MALLOCENV_COLLECT_STATISTICS)
-    if (NULL != getenv(MALLOCENV_COLLECT_STATISTICS))
+    if (nullptr != getenv(MALLOCENV_COLLECT_STATISTICS))
         reportAllocationStatistics = true;
 #endif
 }

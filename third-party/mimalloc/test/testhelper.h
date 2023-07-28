@@ -7,7 +7,9 @@ terms of the MIT license. A copy of the license can be found in the file
 #ifndef TESTHELPER_H_
 #define TESTHELPER_H_
 
+#include <stdbool.h>
 #include <stdio.h>
+#include <errno.h>
 
 // ---------------------------------------------------------------------------
 // Test macros: CHECK(name,predicate) and CHECK_BODY(name,body)
@@ -15,27 +17,25 @@ terms of the MIT license. A copy of the license can be found in the file
 static int ok = 0;
 static int failed = 0;
 
-#define CHECK_BODY(name,body) \
- do { \
-  fprintf(stderr,"test: %s...  ", name ); \
-  bool result = true;                                     \
-  do { body } while(false);                                \
-  if (!(result)) {                                        \
-    failed++; \
-    fprintf(stderr,                                       \
-            "\n  FAILED: %s:%d:\n  %s\n",                 \
-            __FILE__,                                     \
-            __LINE__,                                     \
-            #body);                                       \
-    /* exit(1); */ \
-  } \
-  else { \
-    ok++;                               \
-    fprintf(stderr,"ok.\n");                    \
-  }                                             \
- } while (false)
+static bool check_result(bool result, const char* testname, const char* fname, long lineno) {
+  if (!(result)) {
+    failed++;
+    fprintf(stderr,"\n  FAILED: %s: %s:%ld\n", testname, fname, lineno);
+    /* exit(1); */
+  }
+  else {
+    ok++;
+    fprintf(stderr, "ok.\n");
+  }
+  return true;
+}
 
-#define CHECK(name,expr)      CHECK_BODY(name,{ result = (expr); })
+#define CHECK_BODY(name) \
+  fprintf(stderr,"test: %s...  ", name ); \
+  errno = 0; \
+  for(bool done = false, result = true; !done; done = check_result(result,name,__FILE__,__LINE__))
+
+#define CHECK(name,expr)      CHECK_BODY(name){ result = (expr); }
 
 // Print summary of test. Return value can be directly use as a return value for main().
 static inline int print_test_summary(void)

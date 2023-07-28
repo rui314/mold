@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@
 
 #include "pover_global.hpp" // for declaration of DEFINE and INIT
 
-DEFINE class video *gVideo INIT(0);
+DEFINE class video *gVideo INIT(nullptr);
 
 DEFINE int n_next_frame_calls INIT(0);
 DEFINE int frame_skips INIT(10);

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -727,13 +727,13 @@ public:
         iterator end() const { return iterator(my_instance.first_value_node(my_end_node)); }
 
         const_range_type( const concurrent_unordered_base& table )
-            : my_instance(table), my_begin_node(const_cast<node_ptr>(&table.my_head)), my_end_node(nullptr)
+            : my_instance(table), my_begin_node(my_instance.first_value_node(const_cast<node_ptr>(&table.my_head))), my_end_node(nullptr)
         {
             set_midpoint();
         }
     private:
         void set_midpoint() const {
-            if (my_begin_node == my_end_node) {
+            if (empty()) {
                 my_midpoint_node = my_end_node;
             } else {
                 sokey_type invalid_key = ~sokey_type(0);
@@ -831,6 +831,12 @@ private:
             return new_segment;
         }
 
+        segment_type nullify_segment( typename base_type::segment_table_type table, size_type segment_index ) {
+            segment_type target_segment = table[segment_index].load(std::memory_order_relaxed);
+            table[segment_index].store(nullptr, std::memory_order_relaxed);
+            return target_segment;
+        }
+
         // deallocate_segment is required by the segment_table base class, but
         // in unordered, it is also necessary to call the destructor during deallocation
         void deallocate_segment( segment_type address, size_type index ) {
@@ -911,7 +917,7 @@ private:
             node_allocator_traits::deallocate(dummy_node_allocator, node, 1);
         } else {
             // GCC 11.1 issues a warning here that incorrect destructor might be called for dummy_nodes
-            #if (__TBB_GCC_VERSION >= 110100 && __TBB_GCC_VERSION < 120000 ) && !__clang__ && !__INTEL_COMPILER
+            #if (__TBB_GCC_VERSION >= 110100 && __TBB_GCC_VERSION < 130000 ) && !__clang__ && !__INTEL_COMPILER
             volatile
             #endif
             value_node_ptr val_node = static_cast<value_node_ptr>(node);

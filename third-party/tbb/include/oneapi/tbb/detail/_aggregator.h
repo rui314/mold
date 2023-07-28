@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -87,7 +87,7 @@ public:
             start_handle_operations(handle_operations);
             // The operation with 'short' life time can already be destroyed
             if (long_life_time)
-                __TBB_ASSERT(op->status.load(std::memory_order_relaxed), NULL);
+                __TBB_ASSERT(op->status.load(std::memory_order_relaxed), nullptr);
         }
         // Not first; wait for op to be ready
         else if (!status) { // operation is blocking here.
@@ -155,14 +155,17 @@ public:
 // template<class U, class V> friend class aggregating_functor;
 template <typename AggregatingClass, typename OperationList>
 class aggregating_functor {
-    AggregatingClass* my_object;
+    AggregatingClass* my_object{nullptr};
 public:
     aggregating_functor() = default;
     aggregating_functor( AggregatingClass* object ) : my_object(object) {
         __TBB_ASSERT(my_object, nullptr);
     }
 
-    void operator()( OperationList* op_list ) { my_object->handle_operations(op_list); }
+    void operator()( OperationList* op_list ) {
+        __TBB_ASSERT(my_object, nullptr);
+        my_object->handle_operations(op_list);
+    }
 }; // class aggregating_functor
 
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -95,7 +95,7 @@ public:
         body(std::forward<ItemArg>(item));
 
         #if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
-        #pragma warning (push)
+        #pragma warning (pop)
         #endif
     }
 
@@ -112,7 +112,7 @@ public:
         body(std::forward<ItemArg>(item), *feeder);
 
         #if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
-        #pragma warning (push)
+        #pragma warning (pop)
         #endif
     }
 };
@@ -306,7 +306,9 @@ struct input_block_handling_task : public task {
     ~input_block_handling_task() {
         for(std::size_t counter = 0; counter < max_block_size; ++counter) {
             (task_pool.begin() + counter)->~iteration_task();
-            (block_iteration_space.begin() + counter)->~Item();
+            if (counter < my_size) {
+                (block_iteration_space.begin() + counter)->~Item();
+            }
         }
     }
 

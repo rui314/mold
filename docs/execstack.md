@@ -23,10 +23,10 @@ process.
 
 To prevent this type of attack, the stack area is no longer executable
 since the early 2000s. On Linux, the stack's executable-ness is
-controlled by a bit in an executable, and the loader respect that
+controlled by a bit in an executable, and the loader respects that
 bit. The bit is set by the linker.
 
-GCC had (and still have) a feature that depends on the executable
+GCC had (and still has) a feature that depends on the executable
 stack, so they invented a way to tell the linker to mark the stack
 executable. Specifically, if an object file contains a
 `.note.GNU-stack` section with the `SHF_EXECSTACK` bit, GNU linker
@@ -48,8 +48,8 @@ feature which still depends on the executable stack.
 
 # How to fix it?
 
-If you know what you are doing, pass `-z execstack` to mold. Beaware
+If you know what you are doing, pass `-z execstack` to mold. Beware
 that this will significantly weaken your program's security.
 
 If you don't want to pass `-z execstack`, rewrite your code so that
-your code does not depends on the executable stack.
+your code does not depend on the executable stack.

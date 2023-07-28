@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -68,7 +68,7 @@ static void *getMallocMem(intptr_t /*pool_id*/, size_t &bytes)
 {
     void *rawPtr = malloc(bytes+sizeof(MallocPoolHeader)+1);
     if (!rawPtr)
-        return NULL;
+        return nullptr;
     // +1 to check working with unaligned space
     void *ret = (void *)((uintptr_t)rawPtr+sizeof(MallocPoolHeader)+1);
 
@@ -203,7 +203,7 @@ void TestSharedPool()
 void *CrossThreadGetMem(intptr_t pool_id, size_t &bytes)
 {
     if (poolSpace[pool_id].pos + bytes > poolSpace[pool_id].bufSize)
-        return NULL;
+        return nullptr;
 
     void *ret = poolSpace[pool_id].space + poolSpace[pool_id].pos;
     poolSpace[pool_id].pos += bytes;
@@ -398,7 +398,7 @@ void TestFixedBufferPool()
     const int ITERS = 7;
     const size_t MAX_OBJECT = 7*1024*1024;
     void *ptrs[ITERS];
-    rml::MemPoolPolicy pol(fixedBufGetMem, NULL, 0, /*fixedSizePool=*/true,
+    rml::MemPoolPolicy pol(fixedBufGetMem, nullptr, 0, /*fixedSizePool=*/true,
                            /*keepMemTillDestroy=*/false);
     rml::MemoryPool *pool;
     {
@@ -620,9 +620,9 @@ void TestEntries()
     bool ok = pool_destroy(pool);
     REQUIRE(ok);
 
-    bool fail = rml::pool_destroy(NULL);
+    bool fail = rml::pool_destroy(nullptr);
     REQUIRE(!fail);
-    fail = rml::pool_reset(NULL);
+    fail = rml::pool_reset(nullptr);
     REQUIRE(!fail);
 }
 
@@ -635,13 +635,13 @@ rml::MemoryPool *CreateUsablePool(size_t size)
     rml::MemPoolError res = pool_create_v1(0, &okPolicy, &pool);
     if (res != rml::POOL_OK) {
         REQUIRE_MESSAGE((!getMemAll && !putMemAll), "No callbacks after fail.");
-        return NULL;
+        return nullptr;
     }
     void *o = pool_malloc(pool, size);
     if (!getMemSuccessful) {
         // no memory from callback, valid reason to leave
         REQUIRE_MESSAGE(!o, "The pool must be unusable.");
-        return NULL;
+        return nullptr;
     }
     REQUIRE_MESSAGE(o, "Created pool must be useful.");
     REQUIRE_MESSAGE((getMemSuccessful == 1 || getMemSuccessful == 5 || getMemAll > getMemSuccessful),
@@ -688,8 +688,8 @@ void TestPoolCreation()
 {
     putMemAll = getMemAll = getMemSuccessful = 0;
 
-    rml::MemPoolPolicy nullPolicy(NULL, putMemFree),
-        emptyFreePolicy(getMemMalloc, NULL),
+    rml::MemPoolPolicy nullPolicy(nullptr, putMemFree),
+        emptyFreePolicy(getMemMalloc, nullptr),
         okPolicy(getMemMalloc, putMemFree);
     rml::MemoryPool *pool;
 
@@ -748,7 +748,7 @@ public:
 void TestPoolDetection()
 {
     const int POOLS = 4;
-    rml::MemPoolPolicy pol(fixedBufGetMem, NULL, 0, /*fixedSizePool=*/true,
+    rml::MemPoolPolicy pol(fixedBufGetMem, nullptr, 0, /*fixedSizePool=*/true,
                            /*keepMemTillDestroy=*/false);
     rml::MemoryPool *pools[POOLS];
     FixedPoolHead<BUF_SIZE*POOLS> head[POOLS];

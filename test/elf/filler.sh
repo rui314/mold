@@ -19,9 +19,9 @@ EOF
 
 $CC -B. -static -Wl,--filler,0xfe -o $t/exe1 $t/a.o
 sed -i -e 's/--filler 0xfe/--filler 0x00/' $t/exe1
-hexdump -C $t/exe1 > $t/txt1
+od -x $t/exe1 > $t/txt1
 
 $CC -B. -static -Wl,--filler,0x00 -o $t/exe2 $t/a.o
-hexdump -C $t/exe2 > $t/txt2
+od -x $t/exe2 > $t/txt2
 
 diff -q $t/txt1 $t/txt2

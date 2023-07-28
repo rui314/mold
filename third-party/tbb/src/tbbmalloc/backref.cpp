@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -39,8 +39,8 @@ struct BackRefBlock : public BlockI {
     std::atomic<bool> addedToForUse;
 
     BackRefBlock(const BackRefBlock *blockToUse, intptr_t num) :
-        nextForUse(NULL), bumpPtr((FreeObject*)((uintptr_t)blockToUse + slabSize - sizeof(void*))),
-        freeList(NULL), nextRawMemBlock(NULL), allocatedCount(0), myNum(num),
+        nextForUse(nullptr), bumpPtr((FreeObject*)((uintptr_t)blockToUse + slabSize - sizeof(void*))),
+        freeList(nullptr), nextRawMemBlock(nullptr), allocatedCount(0), myNum(num),
         addedToForUse(false) {
         memset(&blockMutex, 0, sizeof(MallocMutex));
 
@@ -149,7 +149,7 @@ void BackRefMain::initEmptyBackRefBlock(BackRefBlock *newBl)
 {
     intptr_t nextLU = lastUsed+1;
     new (newBl) BackRefBlock(newBl, nextLU);
-    MALLOC_ASSERT(nextLU < dataSz, NULL);
+    MALLOC_ASSERT(nextLU < dataSz, nullptr);
     backRefBl[nextLU] = newBl;
     // lastUsed is read in getBackRef, and access to backRefBl[lastUsed]
     // is possible only after checking backref against current lastUsed
@@ -162,7 +162,7 @@ bool BackRefMain::requestNewSpace()
     static_assert(!(blockSpaceSize % BackRefBlock::bytes),
                          "Must request space for whole number of blocks.");
 
-    if (backRefMain.load(std::memory_order_relaxed)->dataSz <= lastUsed + 1) // no space in main
+    if (BackRefMain::dataSz <= lastUsed + 1) // no space in main
         return false;
 
     // only one thread at a time may add blocks
@@ -181,7 +181,7 @@ bool BackRefMain::requestNewSpace()
 
     MallocMutex::scoped_lock lock(mainMutex); // ... and share under lock
 
-    const size_t numOfUnusedIdxs = backRefMain.load(std::memory_order_relaxed)->dataSz - lastUsed - 1;
+    const size_t numOfUnusedIdxs = BackRefMain::dataSz - lastUsed - 1;
     if (numOfUnusedIdxs <= 0) { // no space in main under lock, roll back
         backend->putBackRefSpace(newBl, blockSpaceSize, isRawMemUsed);
         return false;
@@ -229,7 +229,7 @@ BackRefBlock *BackRefMain::findFreeBlock()
         }
     } else // allocate new data node
         if (!requestNewSpace())
-            return NULL;
+            return nullptr;
     return active.load(std::memory_order_acquire); // reread because of requestNewSpace
 }
 
@@ -241,7 +241,7 @@ void *getBackRef(BackRefIdx backRefIdx)
         || backRefIdx.getMain() > (backRefMain.load(std::memory_order_relaxed)->lastUsed.load(std::memory_order_acquire))
         || backRefIdx.getOffset() >= BR_MAX_CNT)
     {
-        return NULL;
+        return nullptr;
     }
     std::atomic<void*>& backRefEntry = *(std::atomic<void*>*)(
             (uintptr_t)backRefMain.load(std::memory_order_relaxed)->backRefBl[backRefIdx.getMain()]
@@ -270,7 +270,7 @@ BackRefIdx BackRefIdx::newBackRef(bool largeObj)
         blockToUse = backRefMain.load(std::memory_order_relaxed)->findFreeBlock();
         if (!blockToUse)
             return BackRefIdx();
-        toUse = NULL;
+        toUse = nullptr;
         { // the block is locked to find a reference
             MallocMutex::scoped_lock lock(blockToUse->blockMutex);
 
@@ -289,7 +289,7 @@ BackRefIdx BackRefIdx::newBackRef(bool largeObj)
                     MALLOC_ASSERT((uintptr_t)blockToUse->bumpPtr
                                   < (uintptr_t)blockToUse+sizeof(BackRefBlock),
                                   ASSERT_TEXT);
-                    blockToUse->bumpPtr = NULL;
+                    blockToUse->bumpPtr = nullptr;
                 }
             }
             if (toUse) {

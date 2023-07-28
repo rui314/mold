@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2018-2021 Intel Corporation
+    Copyright (c) 2018-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -44,7 +44,7 @@ static inline bool GetBoolEnvironmentVariable( const char * name ) {
         if (s[index] != '1') return false;
         index++;
         // Memory access after incrementing is safe, since the getenv() returns a
-        // NULL terminated string, and even if the character getting by index is '1',
+        // null-terminated string, and even if the character getting by index is '1',
         // and this character is the end of string, after incrementing we will get
         // an index of character, that contains '\0'
         index += std::strspn(&s[index], " ");
@@ -55,7 +55,7 @@ static inline bool GetBoolEnvironmentVariable( const char * name ) {
 
 static inline long GetIntegralEnvironmentVariable( const char * name ) {
     if ( const char* s = std::getenv(name) ) {
-        char* end = NULL;
+        char* end = nullptr;
         errno = 0;
         long value = std::strtol(s, &end, 10);
 

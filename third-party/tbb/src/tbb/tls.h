@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ class basic_tls {
 #if __TBB_USE_POSIX
     typedef pthread_key_t tls_key_t;
 public:
-    int  create( tls_dtor_t dtor = NULL ) {
+    int  create( tls_dtor_t dtor = nullptr ) {
         return pthread_key_create(&my_key, dtor);
     }
     int  destroy()      { return pthread_key_delete(my_key); }
@@ -59,7 +59,7 @@ public:
     T    get()          { return (T)TlsGetValue(my_key); }
 #else /*!__TBB_WIN8UI_SUPPORT*/
     int create() {
-        tls_key_t tmp = FlsAlloc(NULL);
+        tls_key_t tmp = FlsAlloc(nullptr);
         if( tmp== (DWORD)0xFFFFFFFF )
             return (DWORD)0xFFFFFFFF;
         my_key = tmp;

@@ -174,8 +174,6 @@ static void TestPreviewNames() {
     TestTypeDefinitionPresence2( blocked_rangeNd<int,4> );
     TestTypeDefinitionPresence2( concurrent_lru_cache<int, int> );
     TestTypeDefinitionPresence( isolated_task_group );
-    TestTypeDefinitionPresence( collaborative_once_flag );
-    TestFuncDefinitionPresence( collaborative_call_once, (tbb::collaborative_once_flag&, const Body&), void );
 }
 #endif
 
@@ -237,6 +235,8 @@ static void DefinitionPresence() {
     TestTypeDefinitionPresence( blocked_range<int> );
     TestTypeDefinitionPresence( blocked_range2d<int> );
     TestTypeDefinitionPresence( blocked_range3d<int> );
+    TestTypeDefinitionPresence( collaborative_once_flag );
+    TestFuncDefinitionPresence( collaborative_call_once, (tbb::collaborative_once_flag&, const Body&), void );
     TestFuncDefinitionPresence( parallel_invoke, (const Body&, const Body&, const Body&), void );
     TestFuncDefinitionPresence( parallel_for_each, (int*, int*, const Body1&), void );
     TestFuncDefinitionPresence( parallel_for, (int, int, int, const Body1&), void );

@@ -21,6 +21,7 @@
 
 #include <initializer_list>
 #include <vector>
+#include <type_traits>
 
 namespace initializer_list_support_tests {
 
@@ -33,6 +34,9 @@ void test_ctor( std::initializer_list<ElementType> init, const ContainerType& ex
 template <typename ContainerType, typename ElementType>
 void test_assignment_operator( std::initializer_list<ElementType> init, const ContainerType& expected ) {
     ContainerType cont;
+    static_assert(std::is_same< decltype(cont = init), ContainerType& >::value == true,
+        "ContainerType::operator=(std::intializer_list) must return ContainerType&");
+
     cont = init;
     REQUIRE_MESSAGE(cont == expected, "Assignment from the initializer_list failed");
 }

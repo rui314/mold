@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ void ReportError( const char* filename, int line, const char* expression, const 
     fflush(stdout); fflush(stderr);
 
 #if _MSC_VER && _DEBUG
-    if(1 == _CrtDbgReport(_CRT_ASSERT, filename, line, NULL, "%s\r\n%s", expression, message?message:""))
+    if(1 == _CrtDbgReport(_CRT_ASSERT, filename, line, nullptr, "%s\r\n%s", expression, message?message:""))
         _CrtDbgBreak();
 #else
     abort();

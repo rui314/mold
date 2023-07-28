@@ -127,10 +127,12 @@ concept can_call_parallel_for_each_with_cbs = requires( ContainerBasedSequence c
     tbb::parallel_for_each(const_cbs, body, ctx);
 };
 
+using CorrectCBS = test_concepts::container_based_sequence::Correct;
+
 template <typename Body>
 concept can_call_parallel_for_each =
-    can_call_parallel_for_each_with_iterator<test_concepts::container_based_sequence::iterator, Body> &&
-    can_call_parallel_for_each_with_cbs<test_concepts::container_based_sequence::Correct, Body>;
+    can_call_parallel_for_each_with_iterator<CorrectCBS::iterator, Body> &&
+    can_call_parallel_for_each_with_cbs<CorrectCBS, Body>;
 
 template <typename Iterator>
 using CorrectBody = test_concepts::parallel_for_each_body::Correct<decltype(*std::declval<Iterator>())>;
@@ -144,10 +146,9 @@ void test_pfor_each_iterator_constraints() {
 
 void test_pfor_each_container_based_sequence_constraints() {
     using namespace test_concepts::container_based_sequence;
-    using iterator = test_concepts::container_based_sequence::iterator;
-    static_assert(can_call_parallel_for_each_with_cbs<Correct, CorrectBody<iterator>>);
-    static_assert(!can_call_parallel_for_each_with_cbs<NoBegin, CorrectBody<iterator>>);
-    static_assert(!can_call_parallel_for_each_with_cbs<NoEnd, CorrectBody<iterator>>);
+    static_assert(can_call_parallel_for_each_with_cbs<Correct, CorrectBody<Correct::iterator>>);
+    static_assert(!can_call_parallel_for_each_with_cbs<NoBegin, CorrectBody<NoBegin::iterator>>);
+    static_assert(!can_call_parallel_for_each_with_cbs<NoEnd, CorrectBody<NoEnd::iterator>>);
 }
 
 void test_pfor_each_body_constraints() {

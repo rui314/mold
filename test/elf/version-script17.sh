@@ -19,7 +19,7 @@ cat <<'EOF' > $t/c.ver
 { local: *; global: xyz; };
 EOF
 
-$CC -B. -o $t/exe2 $t/a.o $t/b.so -Wl,--version-script=$t/c.ver
+$CC -B. -o $t/exe2 $t/a.o $t/b.so -Wl,--version-script=$t/c.ver -Wl,--undefined-version
 nm -g $t/exe2 > $t/log2
 ! grep -q foo $t/log2 || false
 

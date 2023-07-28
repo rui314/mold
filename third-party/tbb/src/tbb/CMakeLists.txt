@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2022 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,6 +45,7 @@ add_library(tbb
 add_library(TBB::tbb ALIAS tbb)
 
 if (WIN32)
+    target_sources(tbb PRIVATE tbb.rc)
     set_target_properties(tbb PROPERTIES OUTPUT_NAME "tbb${TBB_BINARY_VERSION}")
 endif()
 
@@ -79,7 +80,6 @@ target_compile_options(tbb
     ${TBB_WARNING_SUPPRESS}
     ${TBB_LIB_COMPILE_FLAGS}
     ${TBB_COMMON_COMPILE_FLAGS}
-    ${TBB_IPO_COMPILE_FLAGS}
 )
 
 # Avoid use of target_link_libraries here as it changes /DEF option to \DEF on Windows.
@@ -89,10 +89,12 @@ set_target_properties(tbb PROPERTIES
     SOVERSION ${TBB_BINARY_VERSION}
 )
 
+tbb_handle_ipo(tbb)
+
 if (TBB_DEF_FILE_PREFIX) # If there's no prefix, assume we're using export directives
     set_target_properties(tbb PROPERTIES
-        LINK_FLAGS ${TBB_LINK_DEF_FILE_FLAG}${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbb.def
-        LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbb.def
+        LINK_FLAGS "${TBB_LINK_DEF_FILE_FLAG}\"${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbb.def\""
+        LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/def/${TBB_DEF_FILE_PREFIX}-tbb.def"
     )
 endif()
 
@@ -103,14 +105,12 @@ if (COMMAND target_link_options)
         PRIVATE
         ${TBB_LIB_LINK_FLAGS}
         ${TBB_COMMON_LINK_FLAGS}
-        ${TBB_IPO_LINK_FLAGS}
     )
 else()
     target_link_libraries(tbb
         PRIVATE
         ${TBB_LIB_LINK_FLAGS}
         ${TBB_COMMON_LINK_FLAGS}
-        ${TBB_IPO_LINK_FLAGS}
     )
 endif()
 
@@ -123,7 +123,7 @@ target_link_libraries(tbb
 
 tbb_install_target(tbb)
 
-if (WIN32)
+if (MSVC)
     # Create a copy of target linker file (tbb<ver>[_debug].lib) with legacy name (tbb[_debug].lib)
     # to support previous user experience for linkage.
     install(FILES

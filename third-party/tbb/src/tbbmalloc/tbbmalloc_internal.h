@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -67,7 +67,7 @@
 #define TRACEF(x) ((void)0)
 #endif /* MALLOC_TRACE */
 
-#define ASSERT_TEXT NULL
+#define ASSERT_TEXT nullptr
 
 #define COLLECT_STATISTICS ( MALLOC_DEBUG && MALLOCENV_COLLECT_STATISTICS )
 #ifndef USE_INTERNAL_TID
@@ -253,7 +253,7 @@ public:
     void unregisterThread(TLSRemote *tls);
     bool cleanup(bool cleanOnlyUnused);
     void markUnused();
-    void reset() { head = NULL; }
+    void reset() { head = nullptr; }
 };
 
 class LifoList {
@@ -447,31 +447,31 @@ private:
     void parseSystemMemInfo() {
         bool hpAvailable  = false;
         bool thpAvailable = false;
-        unsigned long long hugePageSize = 0;
+        long long hugePageSize = -1;
 
 #if __unix__
         // Check huge pages existence
-        unsigned long long meminfoHugePagesTotal = 0;
+        long long meminfoHugePagesTotal = 0;
 
         parseFileItem meminfoItems[] = {
             // Parse system huge page size
-            { "Hugepagesize: %llu kB", hugePageSize },
+            { "Hugepagesize: %lld kB", hugePageSize },
             // Check if there are preallocated huge pages on the system
             // https://www.kernel.org/doc/Documentation/vm/hugetlbpage.txt
-            { "HugePages_Total: %llu", meminfoHugePagesTotal } };
+            { "HugePages_Total: %lld", meminfoHugePagesTotal } };
 
         parseFile</*BUFF_SIZE=*/100>("/proc/meminfo", meminfoItems);
 
         // Double check another system information regarding preallocated
         // huge pages if there are no information in /proc/meminfo
-        unsigned long long vmHugePagesTotal = 0;
+        long long vmHugePagesTotal = 0;
 
-        parseFileItem vmItem[] = { { "%llu", vmHugePagesTotal } };
+        parseFileItem vmItem[] = { { "%lld", vmHugePagesTotal } };
 
         // We parse a counter number, it can't be huge
         parseFile</*BUFF_SIZE=*/100>("/proc/sys/vm/nr_hugepages", vmItem);
 
-        if (meminfoHugePagesTotal > 0 || vmHugePagesTotal > 0) {
+        if (hugePageSize > -1 && (meminfoHugePagesTotal > 0 || vmHugePagesTotal > 0)) {
             MALLOC_ASSERT(hugePageSize != 0, "Huge Page size can't be zero if we found preallocated.");
 
             // Any non zero value clearly states that there are preallocated
@@ -480,11 +480,11 @@ private:
         }
 
         // Check if there is transparent huge pages support on the system
-        unsigned long long thpPresent = 'n';
+        long long thpPresent = 'n';
         parseFileItem thpItem[] = { { "[alwa%cs] madvise never\n", thpPresent } };
         parseFile</*BUFF_SIZE=*/100>("/sys/kernel/mm/transparent_hugepage/enabled", thpItem);
 
-        if (thpPresent == 'y') {
+        if (hugePageSize > -1 && thpPresent == 'y') {
             MALLOC_ASSERT(hugePageSize != 0, "Huge Page size can't be zero if we found thp existence.");
             thpAvailable = true;
         }
@@ -670,7 +670,7 @@ class RecursiveMallocCallProtector {
     
 public:
 
-    RecursiveMallocCallProtector() : lock_acquired(NULL) {
+    RecursiveMallocCallProtector() : lock_acquired(nullptr) {
         lock_acquired = new (scoped_lock_space) MallocMutex::scoped_lock( rmc_mutex );
         if (canUsePthread)
             owner_thread.store(pthread_self(), std::memory_order_relaxed);

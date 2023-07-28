@@ -21,8 +21,8 @@
 #include "_utils.h"
 #if __TBB_CPP20_CONCEPTS_PRESENT
 #include <concepts>
-#include <iterator>
 #endif
+#include <iterator>
 
 namespace tbb {
 namespace detail {
@@ -73,10 +73,10 @@ auto get_range_split_object( PartitionerSplitType& split_obj )
     return range_split_object_provider<Range>::get(split_obj);
 }
 
-#if __TBB_CPP20_CONCEPTS_PRESENT
 template <typename Range>
 using range_iterator_type = decltype(std::begin(std::declval<Range&>()));
 
+#if __TBB_CPP20_CONCEPTS_PRESENT
 template <typename Iterator>
 using iterator_reference_type = typename std::iterator_traits<Iterator>::reference;
 

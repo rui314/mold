@@ -17,8 +17,6 @@
 #ifndef __TBB_mutex_H
 #define __TBB_mutex_H
 
-#if __TBB_PREVIEW_MUTEXES
-
 #include "detail/_namespace_injection.h"
 #include "detail/_utils.h"
 #include "detail/_scoped_lock.h"
@@ -93,7 +91,5 @@ using detail::d1::mutex;
 } // namespace v1
 
 } // namespace tbb
-
-#endif /* __TBB_PREVIEW_MUTEXES */
 
 #endif // __TBB_mutex_H

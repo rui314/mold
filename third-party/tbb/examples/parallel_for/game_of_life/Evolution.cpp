@@ -125,8 +125,8 @@ void ParallelEvolution::Run(double execution_time, int nthread) {
             break;
         }
     }
-    if (pGlobControl)
-        delete pGlobControl;
+    delete pGlobControl;
+    pGlobControl = nullptr;
 }
 
 /**

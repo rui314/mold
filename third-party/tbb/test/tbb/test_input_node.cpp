@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -74,7 +74,7 @@ class my_input_body {
 
 public:
 
-    my_input_body() : ninvocations(NULL) { my_count = 0; }
+    my_input_body() : ninvocations(nullptr) { my_count = 0; }
     my_input_body(int &_inv) : ninvocations(&_inv)  { my_count = 0; }
 
     T operator()( tbb::flow_control& fc ) {

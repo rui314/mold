@@ -361,14 +361,13 @@ is not guaranteed to be executed next by the current thread.
         
         tbb::task_spawn(child);
         
-        root.wait_for_all();;
+        root.wait_for_all();
     }
 
-In oneTBB this can be done using the preview feature of ``oneapi::tbb::task_group``. 
+In oneTBB, this can be done using ``oneapi::tbb::task_group``. 
 
 .. code:: cpp
    
-    #define TBB_PREVIEW_TASK_GROUP_EXTENSIONS 1
     #include <oneapi/tbb/task_group.h>
     
     // Assuming OtherTask is defined.
@@ -421,11 +420,10 @@ and waiting on it is implemented as follows:
         // i.e. after the callback is called  
     }
 
-In oneTBB this can be done using the preview feature of ``oneapi::tbb::task_group``.
+In oneTBB, this can be done using ``oneapi::tbb::task_group``.
 
 .. code:: cpp
 
-    #define TBB_PREVIEW_TASK_GROUP_EXTENSIONS 1
     #include <oneapi/tbb/task_group.h>
 
     int main(){

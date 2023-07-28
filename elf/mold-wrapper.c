@@ -22,7 +22,7 @@ static char *get_mold_path() {
   exit(1);
 }
 
-static void debug_print(char *fmt, ...) {
+static void debug_print(const char *fmt, ...) {
   if (!getenv("MOLD_WRAPPER_DEBUG"))
     return;
 
@@ -61,7 +61,8 @@ static bool is_ld(const char *path) {
     ptr--;
 
   return !strcmp(ptr, "ld") || !strcmp(ptr, "ld.lld") ||
-         !strcmp(ptr, "ld.gold") || !strcmp(ptr, "ld.bfd");
+         !strcmp(ptr, "ld.gold") || !strcmp(ptr, "ld.bfd") ||
+         !strcmp(ptr, "ld.mold");
 }
 
 int execvpe(const char *file, char *const *argv, char *const *envp) {

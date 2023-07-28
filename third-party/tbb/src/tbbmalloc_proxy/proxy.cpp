@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2022 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -260,6 +260,7 @@ int mallopt(int /*param*/, int /*value*/) __THROW
     return 1;
 }
 
+#if defined(__GLIBC__) || defined(__ANDROID__)
 struct mallinfo mallinfo() __THROW
 {
     struct mallinfo m;
@@ -267,6 +268,7 @@ struct mallinfo mallinfo() __THROW
 
     return m;
 }
+#endif
 
 #if __ANDROID__
 // Android doesn't have malloc_usable_size, provide it to be compatible
@@ -354,7 +356,7 @@ inline size_t arrayLength(const T(&)[N]) {
 
 void __TBB_malloc_safer_delete( void *ptr)
 {
-    __TBB_malloc_safer_free( ptr, NULL );
+    __TBB_malloc_safer_free( ptr, nullptr );
 }
 
 void* safer_aligned_malloc( size_t size, size_t alignment )
@@ -366,7 +368,7 @@ void* safer_aligned_malloc( size_t size, size_t alignment )
 // we do not support _expand();
 void* safer_expand( void *, size_t )
 {
-    return NULL;
+    return nullptr;
 }
 
 #define __TBB_ORIG_ALLOCATOR_REPLACEMENT_WRAPPER(CRTLIB)                                             \
@@ -465,7 +467,7 @@ const char* known_bytecodes[] = {
     "6A1C68********E8",       // release _msize() 8.0.50727.4053, 9.0
  #endif
 #endif // _WIN64/_WIN32
-    NULL
+    nullptr
     };
 
 #define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY(CRT_VER,function_name,dbgsuffix) \
@@ -475,11 +477,11 @@ const char* known_bytecodes[] = {
 
 #define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY_NO_FALLBACK(CRT_VER,function_name,dbgsuffix) \
     ReplaceFunctionWithStore( #CRT_VER #dbgsuffix ".dll", #function_name, \
-      (FUNCPTR)__TBB_malloc_safer_##function_name##_##CRT_VER##dbgsuffix, 0, NULL );
+      (FUNCPTR)__TBB_malloc_safer_##function_name##_##CRT_VER##dbgsuffix, 0, nullptr );
 
 #define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_ENTRY_REDIRECT(CRT_VER,function_name,dest_func,dbgsuffix) \
     ReplaceFunctionWithStore( #CRT_VER #dbgsuffix ".dll", #function_name, \
-      (FUNCPTR)__TBB_malloc_safer_##dest_func##_##CRT_VER##dbgsuffix, 0, NULL );
+      (FUNCPTR)__TBB_malloc_safer_##dest_func##_##CRT_VER##dbgsuffix, 0, nullptr );
 
 #define __TBB_ORIG_ALLOCATOR_REPLACEMENT_CALL_IMPL(CRT_VER,dbgsuffix)                             \
     if (BytecodesAreKnown(#CRT_VER #dbgsuffix ".dll")) {                                          \
@@ -726,7 +728,7 @@ void doMallocReplacement()
             continue;
         for (size_t i = 0; i < arrayLength(c_routines_to_replace); i++)
         {
-            ReplaceFunctionWithStore( modules_to_replace[j].name, c_routines_to_replace[i]._func, c_routines_to_replace[i]._fptr, NULL, NULL,  c_routines_to_replace[i]._on_error );
+            ReplaceFunctionWithStore( modules_to_replace[j].name, c_routines_to_replace[i]._func, c_routines_to_replace[i]._fptr, nullptr, nullptr,  c_routines_to_replace[i]._on_error );
         }
         if ( strcmp(modules_to_replace[j].name, "ucrtbase.dll") == 0 ) {
             HMODULE ucrtbase_handle = GetModuleHandle("ucrtbase.dll");
@@ -755,7 +757,7 @@ void doMallocReplacement()
             // replacement should be skipped for this particular case.
             if ( (strcmp(modules_to_replace[j].name, "msvcr120.dll") == 0) && (strcmp(cxx_routines_to_replace[i]._func, "??_V@YAXPAX@Z") == 0) ) continue;
 #endif
-            ReplaceFunctionWithStore( modules_to_replace[j].name, cxx_routines_to_replace[i]._func, cxx_routines_to_replace[i]._fptr, NULL, NULL,  cxx_routines_to_replace[i]._on_error );
+            ReplaceFunctionWithStore( modules_to_replace[j].name, cxx_routines_to_replace[i]._func, cxx_routines_to_replace[i]._fptr, nullptr, nullptr,  cxx_routines_to_replace[i]._on_error );
         }
     }
 }

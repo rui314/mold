@@ -1,25 +1,39 @@
-# Bazel build support
+# Bazel* build support
 
-The main build system of oneTBB is CMake.
-Bazel support is community-based.
-The maintainers do not use Bazel internally.
-The Bazel configuration may not include recommended compiler and linker flags used in official CMake configuration.
+The main build system of oneTBB is CMake*.
+[Bazel*](https://bazel.build/) support is community-based.
+The Bazel configuration may not include recommended compiler and/or linker flags used in the official CMake configuration.
 
-The Bazel build of oneTBB currently only aims for a subset of oneTBB that suffices restricted use cases of the usage of oneTBB.
-Pull requests to improve the Bazel build experience are welcomed.
+---
+**NOTE**
 
-The standard approach of how Bazel handles third-party libraries is static linking. 
-Even this is not recommended by the oneTBB maintainers this is chosen since this is considered as the best practice in the Bazel ecosystem.
+Bazel is not recommended for use by oneTBB maintainers. Thus, it is not used internally. 
 
-## Example usage
+---
 
-1. [Install Bazel](https://docs.bazel.build/versions/main/install.html).
 
-2. Create the following files in one folder (this folder will be considered as the workspace folder):
+The Bazel oneTBB build is currently only intended for a subset of oneTBB that suffices restricted use cases.
+Pull requests to improve the Bazel build experience are welcome.
+
+The standard Bazel approach to handling third-party libraries is static linking. It is the best practice within the Bazel ecosystem.
+
+## Using oneTBB as a dependency
+
+This example demonstrates how to use oneTBB as a dependency within a Bazel project.
+
+The following file structure is assumed:
+
+```
+example
+├── .bazelrc
+├── BUILD.bazel
+├── main.cpp
+└── WORKSPACE.bazel
+```
 
 _WORKSPACE.bazel_:
-```
-load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+```python
+load("@platforms//tools/build_defs/repo:git.bzl", "git_repository")
 
 git_repository(
     name = "oneTBB",
@@ -28,8 +42,11 @@ git_repository(
 )
 ```
 
-_BUILD_:
-```
+In the *WORKSPACE* file, the oneTBB GitHub* repository is fetched. 
+
+_BUILD.bazel_:
+
+```python
 cc_binary(
     name = "Demo",
     srcs = ["main.cpp"],
@@ -37,8 +54,11 @@ cc_binary(
 )
 ```
 
+The *BUILD* file defines a binary named `Demo` that has a dependency to oneTBB.
+
 _main.cpp_:
-```
+
+```c++
 #include "oneapi/tbb/version.h"
 
 #include <iostream>
@@ -54,7 +74,23 @@ int main() {
 }
 ```
 
-3. Switch to the folder where you create the files.
+The expected output of this program is the current version of oneTBB.
 
-4. Execute the command `bazel run //:Demo`.
-As an expected output, you should see the oneTBB version.
+Switch to the folder with the files created earlier and run the binary with `bazel run //:Demo`.
+
+## Build oneTBB using Bazel
+
+Run ```bazel build //...``` in the oneTBB root directory.
+
+## Compiler support
+
+The Bazel build uses the compiler flag `-mwaitpkg` in non-Windows* builds.
+This flag is supported by the GNU* Compiler Collection (GCC) version 9.3, Clang* 12, and newer versions of those tools.
+
+
+---
+**NOTE**
+
+To use the Bazel build with earlier versions of GCC, remove `-mwaitpkg` flag as it leads to errors during compilation.
+
+---
