@@ -140,6 +140,62 @@ ObjectFile<E>::read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr) {
   }
 }
 
+static inline std::string_view read_string(std::string_view &str) {
+  i64 pos = str.find_first_of('\0');
+  std::string_view val = str.substr(0, pos);
+  str = str.substr(pos + 1);
+  return val;
+}
+
+// <format-version>
+// [ <section-length> "vendor-name" <file-tag> <size> <attribute>*]+ ]*
+template <typename E>
+static void read_riscv_attributes(Context<E> &ctx, ObjectFile<E> &file,
+                                  std::string_view data) {
+const char *begin = data.data();
+  if (data.empty())
+    Fatal(ctx) << file << ": corrupted .riscv.attributes section";
+
+  if (u8 format_version = data[0]; format_version != 'A')
+    return;
+  data = data.substr(1);
+
+  while (!data.empty()) {
+    i64 sz = *(U32<E> *)data.data();
+    if (data.size() < sz)
+      Fatal(ctx) << file << ": corrupted .riscv.attributes section";
+
+    std::string_view p(data.data() + 4, sz - 4);
+    data = data.substr(sz);
+
+    if (!p.starts_with("riscv\0"sv))
+      continue;
+    p = p.substr(6);
+
+    if (!p.starts_with(ELF_TAG_FILE))
+      Fatal(ctx) << file << ": corrupted .riscv.attributes section";
+    p = p.substr(5); // skip the tag and the sub-sub-section size
+
+    while (!p.empty()) {
+      i64 tag = read_uleb(p);
+
+      switch (tag) {
+      case ELF_TAG_RISCV_STACK_ALIGN:
+        file.extra.stack_align = read_uleb(p);
+        break;
+      case ELF_TAG_RISCV_ARCH:
+        file.extra.arch = read_string(p);
+        break;
+      case ELF_TAG_RISCV_UNALIGNED_ACCESS:
+        file.extra.unaligned_access = read_uleb(p);
+        break;
+      default:
+        break;
+      }
+    }
+  }
+}
+
 template <typename E>
 static u64 read_mips_gp0(Context<E> &ctx, InputSection<E> &isec) {
   std::string_view data = isec.contents;
@@ -169,6 +225,17 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC) &&
         shdr.sh_type != SHT_LLVM_ADDRSIG && !ctx.arg.relocatable)
       continue;
+
+    if constexpr (is_arm<E>)
+      if (shdr.sh_type == SHT_ARM_ATTRIBUTES)
+        continue;
+
+    if constexpr (is_riscv<E>) {
+      if (shdr.sh_type == SHT_RISCV_ATTRIBUTES) {
+        read_riscv_attributes(ctx, *this, this->get_string(ctx, shdr));
+        continue;
+      }
+    }
 
     switch (shdr.sh_type) {
     case SHT_GROUP: {
@@ -212,7 +279,6 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     case SHT_REL:
     case SHT_RELA:
     case SHT_NULL:
-    case SHT_ARM_ATTRIBUTES:
       break;
     default: {
       std::string_view name = this->shstrtab.data() + shdr.sh_name;

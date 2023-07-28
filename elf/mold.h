@@ -1192,6 +1192,13 @@ protected:
 
 template <typename E> struct ObjectFileExtras {};
 
+template <typename E> requires is_riscv<E>
+struct ObjectFileExtras<E> {
+  std::optional<i64> stack_align;
+  std::optional<std::string_view> arch;
+  std::optional<bool> unaligned_access;
+};
+
 template <> struct ObjectFileExtras<PPC32> {
   InputSection<PPC32> *got2 = nullptr;
 };
@@ -1466,6 +1473,20 @@ void fixup_arm_exidx_section(Context<ARM32> &ctx);
 // arch-riscv64.cc
 //
 
+template <typename E> requires is_riscv<E>
+class RiscvAttributesSection : public Chunk<E> {
+public:
+  RiscvAttributesSection() {
+    this->name = ".riscv.attributes";
+    this->shdr.sh_type = SHT_RISCV_ATTRIBUTES;
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+
+  std::vector<u8> contents;
+};
+
 template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx);
 
@@ -1646,6 +1667,11 @@ struct SectionOrder {
 
 // Target-specific context members
 template <typename E> struct ContextExtras {};
+
+template <typename E> requires is_riscv<E>
+struct ContextExtras<E> {
+  RiscvAttributesSection<E> *riscv_attributes = nullptr;
+};
 
 template <> struct ContextExtras<PPC32> {
   Symbol<PPC32> *_SDA_BASE_ = nullptr;

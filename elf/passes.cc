@@ -112,6 +112,8 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.note_package = push(new NotePackageSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
+  if constexpr (is_riscv<E>)
+    ctx.extra.riscv_attributes = push(new RiscvAttributesSection<E>);
 
   if constexpr (is_ppc64v1<E>)
     ctx.extra.opd = push(new PPC64OpdSection);

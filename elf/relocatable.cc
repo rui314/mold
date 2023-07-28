@@ -54,6 +54,9 @@ static void r_create_synthetic_sections(Context<E> &ctx) {
   ctx.symtab = push(new SymtabSection<E>);
   ctx.shstrtab = push(new ShstrtabSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
+
+  if constexpr (is_riscv<E>)
+    ctx.extra.riscv_attributes = push(new RiscvAttributesSection<E>);
 }
 
 // Create SHT_GROUP (i.e. comdat group) sections. We uniquify comdat

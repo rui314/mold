@@ -929,6 +929,250 @@ i64 riscv_resize_sections(Context<E> &ctx) {
   return set_osec_offsets(ctx);
 }
 
+// ISA name handlers
+//
+// An example of ISA name is "rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0".
+// An ISA name starts with the base name (e.g. "rv64i2p1") followed by
+// ISA extensions separated by underscores.
+//
+// There are lots of ISA extensions defined for RISC-V, and they are
+// identified by name. Some extensions are of single-letter alphabet such
+// as "m" or "q". Newer extension names start with "z" followed by one or
+// more alphabets (i.e. "zicsr"). "s" and "x" prefixes are reserved
+// for supervisor- level extensions and private extensions, respectively.
+//
+// Each extension consists of a name, a major version and a minor version.
+// For example, "m2p0" indicates the "m" extension of version 2.0. "p" is
+// just a separator.
+//
+// Each RISC-V object file contains an ISA string enumerating extensions
+// used by the object file. We need to merge input objects' ISA strings
+// into a single ISA string.
+//
+// In order to guarantee string uniqueness, extensions have to be ordered
+// in a specific manner. The exact rule is unfortunately a bit complicated.
+//
+// The following functions takes care of ISA strings.
+
+struct Extn {
+  std::string_view name;
+  i64 major;
+  i64 minor;
+};
+
+// As per the RISC-V spec, the extension names must be sorted in a very
+// specific way, and unfortunately that's not just an alphabetical order.
+// For example, rv64imafd is a legal ISA string, whereas rv64iafdm is not.
+// The exact rule is somewhat arbitrary.
+//
+// This function returns true if the first extension name should precede
+// the second one as per the rule.
+static bool extn_name_less(const Extn &e1, const Extn &e2) {
+  auto get_single_letter_rank = [](char c) -> i64 {
+    std::string_view exts = "iemafdqlcbkjtpvnh";
+    size_t pos = exts.find_first_of(c);
+    if (pos != exts.npos)
+      return pos;
+    return c - 'a' + exts.size();
+  };
+
+  auto get_rank = [&](std::string_view str) -> i64 {
+    switch (str[0]) {
+    case 'x':
+      return 1 << 20;
+    case 's':
+      return 1 << 19;
+    case 'z':
+      return (1 << 18) + get_single_letter_rank(str[1]);
+    default:
+      return get_single_letter_rank(str[0]);
+    }
+  };
+
+  return std::tuple{get_rank(e1.name), e1.name} <
+         std::tuple{get_rank(e2.name), e2.name};
+}
+
+static bool extn_version_less(const Extn &e1, const Extn &e2) {
+  return std::tuple{e1.major, e1.minor} <
+         std::tuple{e2.major, e2.minor};
+}
+
+static std::optional<Extn> read_extn_string(std::string_view &str) {
+  Extn extn;
+
+  size_t pos = str.find_first_of("0123456789");
+  if (pos == str.npos)
+    return {};
+
+  extn.name = str.substr(0, pos);
+  str = str.substr(pos);
+
+  size_t nread;
+  extn.major = std::stoul(std::string(str), &nread, 10);
+  str = str.substr(nread);
+  if (str.size() < 2 || str[0] != 'p')
+    return {};
+  str = str.substr(1);
+
+  extn.minor = std::stoul(std::string(str), &nread, 10);
+  str = str.substr(nread);
+  if (str.empty() || str[0] == '_')
+    return extn;
+  return {};
+}
+
+static std::vector<Extn> parse_arch_string(std::string_view str) {
+  if (str.size() < 5)
+    return {};
+
+  // Parse the base part
+  std::string_view base = str.substr(0, 5);
+  if (base != "rv32i" && base != "rv32e" && base != "rv64i" && base != "rv64e")
+    return {};
+  str = str.substr(4);
+
+  std::optional<Extn> extn = read_extn_string(str);
+  if (!extn)
+    return {};
+
+  std::vector<Extn> vec;
+  extn->name = base;
+  vec.push_back(*extn);
+
+  // Parse extensions
+  while (!str.empty()) {
+    if (str[0] != '_')
+      return {};
+    str = str.substr(1);
+
+    std::optional<Extn> extn = read_extn_string(str);
+    if (!extn)
+      return {};
+    vec.push_back(*extn);
+  }
+  return vec;
+}
+
+static std::vector<Extn> merge_extensions(std::span<Extn> x, std::span<Extn> y) {
+  std::vector<Extn> vec;
+
+  // The base part (i.e. "rv64i" or "rv32i") must match.
+  if (x[0].name != y[0].name)
+    return {};
+
+  // Merge ISA extension strings
+  while (!x.empty() && !y.empty()) {
+    if (x[0].name == y[0].name) {
+      vec.push_back(extn_version_less(x[0], y[0]) ? y[0] : x[0]);
+      x = x.subspan(1);
+      y = y.subspan(1);
+    } else if (extn_name_less(x[0], y[0])) {
+      vec.push_back(x[0]);
+      x = x.subspan(1);
+    } else {
+      vec.push_back(y[0]);
+      y = y.subspan(1);
+    }
+  }
+
+  vec.insert(vec.end(), x.begin(), x.end());
+  vec.insert(vec.end(), y.begin(), y.end());
+  return vec;
+}
+
+static std::string to_string(std::span<Extn> v) {
+  std::string str = std::string(v[0].name) + std::to_string(v[0].major) +
+                    "p" + std::to_string(v[0].minor);
+
+  for (i64 i = 1; i < v.size(); i++)
+    str += "_" + std::string(v[i].name) + std::to_string(v[i].major) +
+           "p" + std::to_string(v[i].minor);
+  return str;
+}
+
+//
+// Output .riscv.attributes class
+//
+
+template <typename E> requires is_riscv<E>
+void RiscvAttributesSection<E>::update_shdr(Context<E> &ctx) {
+  if (!contents.empty())
+    return;
+
+  i64 stack = -1;
+  std::vector<Extn> arch;
+  bool unaligned = false;
+
+  for (ObjectFile<E> *file : ctx.objs) {
+    if (file->extra.stack_align) {
+      i64 val = *file->extra.stack_align;
+      if (stack != -1 && stack != val)
+        Error(ctx) << *file << ": stack alignment requirement mistmatch";
+      stack = val;
+    }
+
+    if (file->extra.arch) {
+      std::vector<Extn> arch2 = parse_arch_string(*file->extra.arch);
+      if (arch2.empty())
+        Error(ctx) << *file << ": corrupted .riscv.attributes ISA string: "
+                   << *file->extra.arch;
+
+      if (arch.empty()) {
+        arch = arch2;
+      } else {
+        arch = merge_extensions(arch, arch2);
+        if (arch.empty())
+          Error(ctx) << *file << ": incompatible .riscv.attributes ISA string: "
+                     << *file->extra.arch;
+      }
+    }
+
+    if (file->extra.unaligned_access.value_or(false))
+      unaligned = true;
+  }
+
+  if (arch.empty())
+    return;
+
+  std::string arch_str = to_string(arch);
+  contents.resize(arch_str.size() + 100);
+
+  u8 *p = (u8 *)contents.data();
+  *p++ = 'A';                             // Format version
+  U32<E> *sub_sz = (U32<E> *)p;           // Sub-section length
+  p += 4;
+  p += write_string(p, "riscv");          // Vendor name
+  u8 *sub_sub_start = p;
+  *p++ = ELF_TAG_FILE;                    // Sub-section tag
+  U32<E> *sub_sub_sz = (U32<E> *)p;       // Sub-sub-section length
+  p += 4;
+
+  if (stack != -1) {
+    p += write_uleb(p, ELF_TAG_RISCV_STACK_ALIGN);
+    p += write_uleb(p, stack);
+  }
+
+  p += write_uleb(p, ELF_TAG_RISCV_ARCH);
+  p += write_string(p, arch_str);
+
+  if (unaligned) {
+    p += write_uleb(p, ELF_TAG_RISCV_UNALIGNED_ACCESS);
+    p += write_uleb(p, 1);
+  }
+
+  i64 sz = p - (u8 *)contents.data();
+  *sub_sz = sz - 1;
+  *sub_sub_sz = p - sub_sub_start;
+  contents.resize(sz);
+  this->shdr.sh_size = sz;
+}
+
+template <typename E> requires is_riscv<E>
+void RiscvAttributesSection<E>::copy_buf(Context<E> &ctx) {
+  memcpy(ctx.buf + this->shdr.sh_offset, contents.data(), contents.size());
+}
+
 #define INSTANTIATE(E)                                                       \
   template void write_plt_header(Context<E> &, u8 *);                        \
   template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);            \
@@ -939,7 +1183,8 @@ i64 riscv_resize_sections(Context<E> &ctx) {
   template void InputSection<E>::apply_reloc_nonalloc(Context<E> &, u8 *);   \
   template void InputSection<E>::copy_contents_riscv(Context<E> &, u8 *);    \
   template void InputSection<E>::scan_relocations(Context<E> &);             \
-  template i64 riscv_resize_sections(Context<E> &);
+  template i64 riscv_resize_sections(Context<E> &);                          \
+  template class RiscvAttributesSection<E>;
 
 INSTANTIATE(RV64LE);
 INSTANTIATE(RV64BE);

@@ -213,11 +213,15 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     phdr.p_flags = flags;
     phdr.p_align = std::max<u64>(min_align, chunk->shdr.sh_addralign);
     phdr.p_offset = chunk->shdr.sh_offset;
+
     if (chunk->shdr.sh_type != SHT_NOBITS)
       phdr.p_filesz = chunk->shdr.sh_size;
+
     phdr.p_vaddr = chunk->shdr.sh_addr;
     phdr.p_paddr = chunk->shdr.sh_addr;
-    phdr.p_memsz = chunk->shdr.sh_size;
+
+    if (chunk->shdr.sh_flags & SHF_ALLOC)
+      phdr.p_memsz = chunk->shdr.sh_size;
   };
 
   auto append = [&](Chunk<E> *chunk) {
@@ -348,6 +352,10 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   if constexpr (is_arm32<E>)
     if (OutputSection<E> *osec = find_section(ctx, SHT_ARM_EXIDX))
       define(PT_ARM_EXIDX, PF_R, 4, osec);
+
+  // Create a PT_RISCV_ATTRIBUTES
+  if constexpr (is_riscv<E>)
+    define(PT_RISCV_ATTRIBUTES, PF_R, 1, ctx.extra.riscv_attributes);
 
   // Create a PT_OPENBSD_RANDOMIZE
   for (Chunk<E> *chunk : ctx.chunks)
