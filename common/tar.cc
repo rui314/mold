@@ -50,6 +50,8 @@ struct UstarHeader {
   char pad[12];
 };
 
+static_assert(sizeof(UstarHeader) == 512);
+
 static std::string encode_path(std::string basedir, std::string path) {
   path = path_clean(basedir + "/" + path);
 
@@ -81,6 +83,7 @@ void TarWriter::append(std::string path, std::string_view data) {
 
   std::string attr = encode_path(basedir, path);
   snprintf(pax.size, sizeof(pax.size), "%011zo", attr.size());
+  pax.name[0] = '/';
   pax.typeflag[0] = 'x';
   pax.finalize();
   fwrite(&pax, sizeof(pax), 1, out);
