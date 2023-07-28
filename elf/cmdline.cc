@@ -1,6 +1,7 @@
 #include "mold.h"
 #include "../common/cmdline.h"
 
+#include <random>
 #include <regex>
 #include <sstream>
 #include <sys/stat.h>
@@ -406,6 +407,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   bool warn_shared_textrel = false;
   std::optional<SeparateCodeKind> z_separate_code;
   std::optional<bool> z_relro;
+  std::optional<u64> shuffle_sections_seed;
   std::unordered_set<std::string_view> rpaths;
 
   auto add_rpath = [&](std::string_view arg) {
@@ -635,7 +637,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_SHUFFLE;
     } else if (read_eq("shuffle-sections")) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_SHUFFLE;
-      ctx.arg.shuffle_sections_seed = parse_number(ctx, "shuffle-sections", arg);
+      shuffle_sections_seed = parse_number(ctx, "shuffle-sections", arg);
     } else if (read_flag("reverse-sections")) {
       ctx.arg.shuffle_sections = SHUFFLE_SECTIONS_REVERSE;
     } else if (read_flag("rosegment")) {
@@ -1180,6 +1182,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (ctx.arg.relocatable)
     ctx.arg.is_static = true;
+
+  if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_SHUFFLE) {
+    if (shuffle_sections_seed)
+      ctx.arg.shuffle_sections_seed = *shuffle_sections_seed;
+    else
+      ctx.arg.shuffle_sections_seed =
+        ((u64)std::random_device()() << 32) | std::random_device()();
+  }
 
   // --section-order implies `-z separate-loadable-segments`
   if (z_separate_code)

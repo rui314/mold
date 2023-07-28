@@ -4,7 +4,6 @@
 #include <functional>
 #include <map>
 #include <optional>
-#include <random>
 #include <regex>
 #include <shared_mutex>
 #include <tbb/parallel_for_each.h>
@@ -1109,37 +1108,35 @@ template <typename E>
 void shuffle_sections(Context<E> &ctx) {
   Timer t(ctx, "shuffle_sections");
 
-  auto is_eligible = [](OutputSection<E> &osec) {
-    return osec.name != ".init" && osec.name != ".fini" &&
-           osec.name != ".ctors" && osec.name != ".dtors" &&
-           osec.name != ".init_array" && osec.name != ".preinit_array" &&
-           osec.name != ".fini_array";
+  auto is_eligible = [](OutputSection<E> *osec) {
+    if (osec) {
+      std::string_view name = osec->name;
+      return name != ".init" && name != ".fini" &&
+             name != ".ctors" && name != ".dtors" &&
+             name != ".init_array" && name != ".preinit_array" &&
+             name != ".fini_array";
+    }
+    return false;
   };
 
   switch (ctx.arg.shuffle_sections) {
-  case SHUFFLE_SECTIONS_NONE:
-    unreachable();
   case SHUFFLE_SECTIONS_SHUFFLE: {
-    u64 seed;
-    if (ctx.arg.shuffle_sections_seed)
-      seed = *ctx.arg.shuffle_sections_seed;
-    else
-      seed = ((u64)std::random_device()() << 32) | std::random_device()();
-
     tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-      if (OutputSection<E> *osec = chunk->to_osec())
-        if (is_eligible(*osec))
-          shuffle(osec->members, seed + hash_string(osec->name));
+      if (OutputSection<E> *osec = chunk->to_osec(); is_eligible(osec)) {
+        u64 seed = ctx.arg.shuffle_sections_seed + hash_string(osec->name);
+        shuffle(osec->members, seed);
+      }
     });
     break;
   }
   case SHUFFLE_SECTIONS_REVERSE:
     tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-      if (OutputSection<E> *osec = chunk->to_osec())
-        if (is_eligible(*osec))
-          std::reverse(osec->members.begin(), osec->members.end());
+      if (OutputSection<E> *osec = chunk->to_osec(); is_eligible(osec))
+        std::reverse(osec->members.begin(), osec->members.end());
     });
     break;
+  default:
+    unreachable();
   }
 }
 

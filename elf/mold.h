@@ -1766,10 +1766,10 @@ struct Context {
     i64 spare_dynamic_tags = 5;
     i64 thread_count = 0;
     i64 z_stack_size = 0;
+    u64 shuffle_sections_seed;
     std::string_view emulation;
     std::optional<Glob> unique;
     std::optional<u64> physical_image_base;
-    std::optional<u64> shuffle_sections_seed;
     std::string Map;
     std::string chroot;
     std::string dependency_file;
