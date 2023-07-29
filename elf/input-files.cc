@@ -278,11 +278,11 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
       if constexpr (is_ppc32<E>)
         if (name == ".got2")
-          ppc32_got2 = this->sections[i].get();
+          extra.got2 = this->sections[i].get();
 
       if constexpr (is_mips<E>)
         if (name == ".MIPS.options")
-          mips_gp0 = read_mips_gp0(ctx, *this->sections[i]);
+          extra.gp0 = read_mips_gp0(ctx, *this->sections[i]);
 
       // Save debug sections for --gdb-index.
       if (ctx.arg.gdb_index) {

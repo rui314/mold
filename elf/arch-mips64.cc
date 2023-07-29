@@ -50,7 +50,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
                            file.reldyn_offset + this->reldyn_offset);
 
   u64 GP = ctx._gp->get_addr(ctx);
-  u64 GP0 = file.mips_gp0;
+  u64 GP0 = file.extra.gp0;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];

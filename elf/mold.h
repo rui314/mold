@@ -1190,6 +1190,17 @@ protected:
   std::vector<Symbol<E>> frag_syms;
 };
 
+template <typename E> struct ObjectFileExtras {};
+
+template <> struct ObjectFileExtras<PPC32> {
+  InputSection<PPC32> *got2 = nullptr;
+};
+
+template <typename E> requires is_mips<E>
+struct ObjectFileExtras<E> {
+  u64 gp0 = 0;
+};
+
 // ObjectFile represents an input .o file.
 template <typename E>
 class ObjectFile : public InputFile<E> {
@@ -1258,11 +1269,8 @@ public:
   // For LTO
   std::vector<std::string_view> lto_symbol_versions;
 
-  // For PPC32
-  InputSection<E> *ppc32_got2 = nullptr;
-
-  // For MIPS
-  u64 mips_gp0 = 0;
+  // Target-specific member
+  [[no_unique_address]] ObjectFileExtras<E> extra;
 
 private:
   ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
