@@ -251,9 +251,11 @@ following people and organizations who have sponsored $128/month or more:
 
 ### Corporate sponsors
 
-<a href="https://mercury.com"><img src="docs/mercury-logo.png" align=center height=120 width=400 alt=Mercury style="padding:10px"></a>
-<a href="https://cybozu-global.com"><img src="docs/cyboze-logo.png" align=center height=120 width=133 alt=Cybozu style="padding:10px"></a>
-<a href="https://www.emergetools.com"><img src="docs/emerge-tools-logo.png" align=center height=120 width=240 alt="Emerge Tools" style="padding:10px"></a>
+<a href="https://mercury.com"><img src="docs/mercury-logo.png" align=center height=120 width=400 alt=Mercury></a>
+
+<a href="https://cybozu-global.com"><img src="docs/cyboze-logo.png" align=center height=120 width=133 alt=Cybozu></a>
+
+<a href="https://www.emergetools.com"><img src="docs/emerge-tools-logo.png" align=center height=120 width=240 alt="Emerge Tools"></a><br>
 
 - [Uber](https://uber.com)
 - [G-Research](https://www.gresearch.co.uk)
