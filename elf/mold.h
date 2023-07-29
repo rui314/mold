@@ -2173,7 +2173,7 @@ public:
   // In this case, we use the address of the `foo`'s PLT entry in the
   // main executable (whose address is fixed at link-time) as its
   // address. In order to guarantee pointer equality, we also need to
-  // fill foo's GOT entries in DSOs with the addres of the foo's PLT
+  // fill foo's GOT entries in DSOs with the address of the foo's PLT
   // entry instead of `foo`'s real address. We can do that by setting a
   // symbol value to `foo`'s dynamic symbol. If a symbol value is set,
   // the dynamic loader initialize `foo`'s GOT entries with that value
