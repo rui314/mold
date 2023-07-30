@@ -939,11 +939,13 @@ i64 riscv_resize_sections(Context<E> &ctx) {
 // identified by name. Some extensions are of single-letter alphabet such
 // as "m" or "q". Newer extension names start with "z" followed by one or
 // more alphabets (i.e. "zicsr"). "s" and "x" prefixes are reserved
-// for supervisor- level extensions and private extensions, respectively.
+// for supervisor-level extensions and private extensions, respectively.
 //
 // Each extension consists of a name, a major version and a minor version.
 // For example, "m2p0" indicates the "m" extension of version 2.0. "p" is
-// just a separator.
+// just a separator. Versions are often omitted in documents, but they are
+// mandatory in .riscv.attributes. Likewise, abbreviations as "g" (which
+// is short for "IMAFD") are not allowed in .riscv.attributes.
 //
 // Each RISC-V object file contains an ISA string enumerating extensions
 // used by the object file. We need to merge input objects' ISA strings
