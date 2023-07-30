@@ -957,7 +957,7 @@ i64 riscv_resize_sections(Context<E> &ctx) {
 // The following functions takes care of ISA strings.
 
 struct Extn {
-  std::string_view name;
+  std::string name;
   i64 major;
   i64 minor;
 };
@@ -1084,12 +1084,12 @@ static std::vector<Extn> merge_extensions(std::span<Extn> x, std::span<Extn> y) 
 }
 
 static std::string to_string(std::span<Extn> v) {
-  std::string str = std::string(v[0].name) + std::to_string(v[0].major) +
-                    "p" + std::to_string(v[0].minor);
+  std::string str = v[0].name + std::to_string(v[0].major) + "p" +
+                    std::to_string(v[0].minor);
 
   for (i64 i = 1; i < v.size(); i++)
-    str += "_" + std::string(v[i].name) + std::to_string(v[i].major) +
-           "p" + std::to_string(v[i].minor);
+    str += "_" + v[i].name + std::to_string(v[i].major) + "p" +
+           std::to_string(v[i].minor);
   return str;
 }
 
