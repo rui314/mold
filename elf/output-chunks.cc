@@ -355,7 +355,8 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create a PT_RISCV_ATTRIBUTES
   if constexpr (is_riscv<E>)
-    define(PT_RISCV_ATTRIBUTES, PF_R, 1, ctx.extra.riscv_attributes);
+    if (ctx.extra.riscv_attributes->shdr.sh_size)
+      define(PT_RISCV_ATTRIBUTES, PF_R, 1, ctx.extra.riscv_attributes);
 
   // Create a PT_OPENBSD_RANDOMIZE
   for (Chunk<E> *chunk : ctx.chunks)
