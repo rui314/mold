@@ -5,6 +5,9 @@ cat <<EOF | $CC -march=rv64imafd_xfoo1p5 -o $t/a.o -c -xc -
 void foo() {}
 EOF
 
+# The compiler might not create .riscv.attributes
+readelf --sections $t/a.o | grep -Fq .riscv.attributes || skip
+
 cat <<EOF | $CC -march=rv64imafd_xfoo2p0 -o $t/b.o -c -xc -
 void bar() {}
 EOF
