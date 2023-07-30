@@ -1012,4 +1012,114 @@ std::string rel_to_string<MIPS64BE>(u32 r_type) {
   return rel_to_string<MIPS64LE>(r_type);
 }
 
+template <>
+std::string rel_to_string<LOONGARCH64>(u32 r_type) {
+  switch (r_type) {
+  case R_LARCH_NONE: return "R_LARCH_NONE";
+  case R_LARCH_32: return "R_LARCH_32";
+  case R_LARCH_64: return "R_LARCH_64";
+  case R_LARCH_RELATIVE: return "R_LARCH_RELATIVE";
+  case R_LARCH_COPY: return "R_LARCH_COPY";
+  case R_LARCH_JUMP_SLOT: return "R_LARCH_JUMP_SLOT";
+  case R_LARCH_TLS_DTPMOD32: return "R_LARCH_TLS_DTPMOD32";
+  case R_LARCH_TLS_DTPMOD64: return "R_LARCH_TLS_DTPMOD64";
+  case R_LARCH_TLS_DTPREL32: return "R_LARCH_TLS_DTPREL32";
+  case R_LARCH_TLS_DTPREL64: return "R_LARCH_TLS_DTPREL64";
+  case R_LARCH_TLS_TPREL32: return "R_LARCH_TLS_TPREL32";
+  case R_LARCH_TLS_TPREL64: return "R_LARCH_TLS_TPREL64";
+  case R_LARCH_IRELATIVE: return "R_LARCH_IRELATIVE";
+  case R_LARCH_MARK_LA: return "R_LARCH_MARK_LA";
+  case R_LARCH_MARK_PCREL: return "R_LARCH_MARK_PCREL";
+  case R_LARCH_SOP_PUSH_PCREL: return "R_LARCH_SOP_PUSH_PCREL";
+  case R_LARCH_SOP_PUSH_ABSOLUTE: return "R_LARCH_SOP_PUSH_ABSOLUTE";
+  case R_LARCH_SOP_PUSH_DUP: return "R_LARCH_SOP_PUSH_DUP";
+  case R_LARCH_SOP_PUSH_GPREL: return "R_LARCH_SOP_PUSH_GPREL";
+  case R_LARCH_SOP_PUSH_TLS_TPREL: return "R_LARCH_SOP_PUSH_TLS_TPREL";
+  case R_LARCH_SOP_PUSH_TLS_GOT: return "R_LARCH_SOP_PUSH_TLS_GOT";
+  case R_LARCH_SOP_PUSH_TLS_GD: return "R_LARCH_SOP_PUSH_TLS_GD";
+  case R_LARCH_SOP_PUSH_PLT_PCREL: return "R_LARCH_SOP_PUSH_PLT_PCREL";
+  case R_LARCH_SOP_ASSERT: return "R_LARCH_SOP_ASSERT";
+  case R_LARCH_SOP_NOT: return "R_LARCH_SOP_NOT";
+  case R_LARCH_SOP_SUB: return "R_LARCH_SOP_SUB";
+  case R_LARCH_SOP_SL: return "R_LARCH_SOP_SL";
+  case R_LARCH_SOP_SR: return "R_LARCH_SOP_SR";
+  case R_LARCH_SOP_ADD: return "R_LARCH_SOP_ADD";
+  case R_LARCH_SOP_AND: return "R_LARCH_SOP_AND";
+  case R_LARCH_SOP_IF_ELSE: return "R_LARCH_SOP_IF_ELSE";
+  case R_LARCH_SOP_POP_32_S_10_5: return "R_LARCH_SOP_POP_32_S_10_5";
+  case R_LARCH_SOP_POP_32_U_10_12: return "R_LARCH_SOP_POP_32_U_10_12";
+  case R_LARCH_SOP_POP_32_S_10_12: return "R_LARCH_SOP_POP_32_S_10_12";
+  case R_LARCH_SOP_POP_32_S_10_16: return "R_LARCH_SOP_POP_32_S_10_16";
+  case R_LARCH_SOP_POP_32_S_10_16_S2: return "R_LARCH_SOP_POP_32_S_10_16_S2";
+  case R_LARCH_SOP_POP_32_S_5_20: return "R_LARCH_SOP_POP_32_S_5_20";
+  case R_LARCH_SOP_POP_32_S_0_5_10_16_S2: return "R_LARCH_SOP_POP_32_S_0_5_10_16_S2";
+  case R_LARCH_SOP_POP_32_S_0_10_10_16_S2: return "R_LARCH_SOP_POP_32_S_0_10_10_16_S2";
+  case R_LARCH_SOP_POP_32_U: return "R_LARCH_SOP_POP_32_U";
+  case R_LARCH_ADD8: return "R_LARCH_ADD8";
+  case R_LARCH_ADD16: return "R_LARCH_ADD16";
+  case R_LARCH_ADD24: return "R_LARCH_ADD24";
+  case R_LARCH_ADD32: return "R_LARCH_ADD32";
+  case R_LARCH_ADD64: return "R_LARCH_ADD64";
+  case R_LARCH_SUB8: return "R_LARCH_SUB8";
+  case R_LARCH_SUB16: return "R_LARCH_SUB16";
+  case R_LARCH_SUB24: return "R_LARCH_SUB24";
+  case R_LARCH_SUB32: return "R_LARCH_SUB32";
+  case R_LARCH_SUB64: return "R_LARCH_SUB64";
+  case R_LARCH_GNU_VTINHERIT: return "R_LARCH_GNU_VTINHERIT";
+  case R_LARCH_GNU_VTENTRY: return "R_LARCH_GNU_VTENTRY";
+  case R_LARCH_B16: return "R_LARCH_B16";
+  case R_LARCH_B21: return "R_LARCH_B21";
+  case R_LARCH_B26: return "R_LARCH_B26";
+  case R_LARCH_ABS_HI20: return "R_LARCH_ABS_HI20";
+  case R_LARCH_ABS_LO12: return "R_LARCH_ABS_LO12";
+  case R_LARCH_ABS64_LO20: return "R_LARCH_ABS64_LO20";
+  case R_LARCH_ABS64_HI12: return "R_LARCH_ABS64_HI12";
+  case R_LARCH_PCALA_HI20: return "R_LARCH_PCALA_HI20";
+  case R_LARCH_PCALA_LO12: return "R_LARCH_PCALA_LO12";
+  case R_LARCH_PCALA64_LO20: return "R_LARCH_PCALA64_LO20";
+  case R_LARCH_PCALA64_HI12: return "R_LARCH_PCALA64_HI12";
+  case R_LARCH_GOT_PC_HI20: return "R_LARCH_GOT_PC_HI20";
+  case R_LARCH_GOT_PC_LO12: return "R_LARCH_GOT_PC_LO12";
+  case R_LARCH_GOT64_PC_LO20: return "R_LARCH_GOT64_PC_LO20";
+  case R_LARCH_GOT64_PC_HI12: return "R_LARCH_GOT64_PC_HI12";
+  case R_LARCH_GOT_HI20: return "R_LARCH_GOT_HI20";
+  case R_LARCH_GOT_LO12: return "R_LARCH_GOT_LO12";
+  case R_LARCH_GOT64_LO20: return "R_LARCH_GOT64_LO20";
+  case R_LARCH_GOT64_HI12: return "R_LARCH_GOT64_HI12";
+  case R_LARCH_TLS_LE_HI20: return "R_LARCH_TLS_LE_HI20";
+  case R_LARCH_TLS_LE_LO12: return "R_LARCH_TLS_LE_LO12";
+  case R_LARCH_TLS_LE64_LO20: return "R_LARCH_TLS_LE64_LO20";
+  case R_LARCH_TLS_LE64_HI12: return "R_LARCH_TLS_LE64_HI12";
+  case R_LARCH_TLS_IE_PC_HI20: return "R_LARCH_TLS_IE_PC_HI20";
+  case R_LARCH_TLS_IE_PC_LO12: return "R_LARCH_TLS_IE_PC_LO12";
+  case R_LARCH_TLS_IE64_PC_LO20: return "R_LARCH_TLS_IE64_PC_LO20";
+  case R_LARCH_TLS_IE64_PC_HI12: return "R_LARCH_TLS_IE64_PC_HI12";
+  case R_LARCH_TLS_IE_HI20: return "R_LARCH_TLS_IE_HI20";
+  case R_LARCH_TLS_IE_LO12: return "R_LARCH_TLS_IE_LO12";
+  case R_LARCH_TLS_IE64_LO20: return "R_LARCH_TLS_IE64_LO20";
+  case R_LARCH_TLS_IE64_HI12: return "R_LARCH_TLS_IE64_HI12";
+  case R_LARCH_TLS_LD_PC_HI20: return "R_LARCH_TLS_LD_PC_HI20";
+  case R_LARCH_TLS_LD_HI20: return "R_LARCH_TLS_LD_HI20";
+  case R_LARCH_TLS_GD_PC_HI20: return "R_LARCH_TLS_GD_PC_HI20";
+  case R_LARCH_TLS_GD_HI20: return "R_LARCH_TLS_GD_HI20";
+  case R_LARCH_32_PCREL: return "R_LARCH_32_PCREL";
+  case R_LARCH_RELAX: return "R_LARCH_RELAX";
+  case R_LARCH_DELETE: return "R_LARCH_DELETE";
+  case R_LARCH_ALIGN: return "R_LARCH_ALIGN";
+  case R_LARCH_PCREL20_S2: return "R_LARCH_PCREL20_S2";
+  case R_LARCH_CFA: return "R_LARCH_CFA";
+  case R_LARCH_ADD6: return "R_LARCH_ADD6";
+  case R_LARCH_SUB6: return "R_LARCH_SUB6";
+  case R_LARCH_ADD_ULEB128: return "R_LARCH_ADD_ULEB128";
+  case R_LARCH_SUB_ULEB128: return "R_LARCH_SUB_ULEB128";
+  case R_LARCH_64_PCREL: return "R_LARCH_64_PCREL";
+  }
+  return "unknown (" + std::to_string(r_type) + ")";
+}
+
+template <>
+std::string rel_to_string<LOONGARCH32>(u32 r_type) {
+  return rel_to_string<LOONGARCH64>(r_type);
+}
+
 } // namespace mold::elf

@@ -5,6 +5,7 @@
 [ $MACHINE = ppc64le ] && skip
 [ $MACHINE = alpha ] && skip
 [[ $MACHINE = mips* ]] && skip
+[[ $MACHINE = loongarch* ]] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIE -
 extern int foo;

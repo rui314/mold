@@ -26,6 +26,8 @@ struct SH4;
 struct ALPHA;
 struct MIPS64LE;
 struct MIPS64BE;
+struct LOONGARCH32;
+struct LOONGARCH64;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -232,6 +234,7 @@ enum : u32 {
   EM_X86_64 = 62,
   EM_AARCH64 = 183,
   EM_RISCV = 243,
+  EM_LOONGARCH = 258,
   EM_ALPHA = 0x9026,
 };
 
@@ -390,6 +393,15 @@ enum : u32 {
   ELF_TAG_RISCV_STACK_ALIGN = 4,
   ELF_TAG_RISCV_ARCH = 5,
   ELF_TAG_RISCV_UNALIGNED_ACCESS = 6,
+};
+
+enum : u32 {
+  EF_LOONGARCH_ABI_SOFT_FLOAT = 0x1,
+  EF_LOONGARCH_ABI_SINGLE_FLOAT = 0x2,
+  EF_LOONGARCH_ABI_DOUBLE_FLOAT = 0x3,
+  EF_LOONGARCH_ABI_MODIFIER_MASK = 0x7,
+  EF_LOONGARCH_OBJABI_V1 = 0x40,
+  EF_LOONGARCH_OBJABI_MASK = 0xC0,
 };
 
 //
@@ -1325,6 +1337,107 @@ enum : u32 {
   R_MIPS_EH = 249,
 };
 
+enum : u32 {
+  R_LARCH_NONE = 0,
+  R_LARCH_32 = 1,
+  R_LARCH_64 = 2,
+  R_LARCH_RELATIVE = 3,
+  R_LARCH_COPY = 4,
+  R_LARCH_JUMP_SLOT = 5,
+  R_LARCH_TLS_DTPMOD32 = 6,
+  R_LARCH_TLS_DTPMOD64 = 7,
+  R_LARCH_TLS_DTPREL32 = 8,
+  R_LARCH_TLS_DTPREL64 = 9,
+  R_LARCH_TLS_TPREL32 = 10,
+  R_LARCH_TLS_TPREL64 = 11,
+  R_LARCH_IRELATIVE = 12,
+  R_LARCH_MARK_LA = 20,
+  R_LARCH_MARK_PCREL = 21,
+  R_LARCH_SOP_PUSH_PCREL = 22,
+  R_LARCH_SOP_PUSH_ABSOLUTE = 23,
+  R_LARCH_SOP_PUSH_DUP = 24,
+  R_LARCH_SOP_PUSH_GPREL = 25,
+  R_LARCH_SOP_PUSH_TLS_TPREL = 26,
+  R_LARCH_SOP_PUSH_TLS_GOT = 27,
+  R_LARCH_SOP_PUSH_TLS_GD = 28,
+  R_LARCH_SOP_PUSH_PLT_PCREL = 29,
+  R_LARCH_SOP_ASSERT = 30,
+  R_LARCH_SOP_NOT = 31,
+  R_LARCH_SOP_SUB = 32,
+  R_LARCH_SOP_SL = 33,
+  R_LARCH_SOP_SR = 34,
+  R_LARCH_SOP_ADD = 35,
+  R_LARCH_SOP_AND = 36,
+  R_LARCH_SOP_IF_ELSE = 37,
+  R_LARCH_SOP_POP_32_S_10_5 = 38,
+  R_LARCH_SOP_POP_32_U_10_12 = 39,
+  R_LARCH_SOP_POP_32_S_10_12 = 40,
+  R_LARCH_SOP_POP_32_S_10_16 = 41,
+  R_LARCH_SOP_POP_32_S_10_16_S2 = 42,
+  R_LARCH_SOP_POP_32_S_5_20 = 43,
+  R_LARCH_SOP_POP_32_S_0_5_10_16_S2 = 44,
+  R_LARCH_SOP_POP_32_S_0_10_10_16_S2 = 45,
+  R_LARCH_SOP_POP_32_U = 46,
+  R_LARCH_ADD8 = 47,
+  R_LARCH_ADD16 = 48,
+  R_LARCH_ADD24 = 49,
+  R_LARCH_ADD32 = 50,
+  R_LARCH_ADD64 = 51,
+  R_LARCH_SUB8 = 52,
+  R_LARCH_SUB16 = 53,
+  R_LARCH_SUB24 = 54,
+  R_LARCH_SUB32 = 55,
+  R_LARCH_SUB64 = 56,
+  R_LARCH_GNU_VTINHERIT = 57,
+  R_LARCH_GNU_VTENTRY = 58,
+  R_LARCH_B16 = 64,
+  R_LARCH_B21 = 65,
+  R_LARCH_B26 = 66,
+  R_LARCH_ABS_HI20 = 67,
+  R_LARCH_ABS_LO12 = 68,
+  R_LARCH_ABS64_LO20 = 69,
+  R_LARCH_ABS64_HI12 = 70,
+  R_LARCH_PCALA_HI20 = 71,
+  R_LARCH_PCALA_LO12 = 72,
+  R_LARCH_PCALA64_LO20 = 73,
+  R_LARCH_PCALA64_HI12 = 74,
+  R_LARCH_GOT_PC_HI20 = 75,
+  R_LARCH_GOT_PC_LO12 = 76,
+  R_LARCH_GOT64_PC_LO20 = 77,
+  R_LARCH_GOT64_PC_HI12 = 78,
+  R_LARCH_GOT_HI20 = 79,
+  R_LARCH_GOT_LO12 = 80,
+  R_LARCH_GOT64_LO20 = 81,
+  R_LARCH_GOT64_HI12 = 82,
+  R_LARCH_TLS_LE_HI20 = 83,
+  R_LARCH_TLS_LE_LO12 = 84,
+  R_LARCH_TLS_LE64_LO20 = 85,
+  R_LARCH_TLS_LE64_HI12 = 86,
+  R_LARCH_TLS_IE_PC_HI20 = 87,
+  R_LARCH_TLS_IE_PC_LO12 = 88,
+  R_LARCH_TLS_IE64_PC_LO20 = 89,
+  R_LARCH_TLS_IE64_PC_HI12 = 90,
+  R_LARCH_TLS_IE_HI20 = 91,
+  R_LARCH_TLS_IE_LO12 = 92,
+  R_LARCH_TLS_IE64_LO20 = 93,
+  R_LARCH_TLS_IE64_HI12 = 94,
+  R_LARCH_TLS_LD_PC_HI20 = 95,
+  R_LARCH_TLS_LD_HI20 = 96,
+  R_LARCH_TLS_GD_PC_HI20 = 97,
+  R_LARCH_TLS_GD_HI20 = 98,
+  R_LARCH_32_PCREL = 99,
+  R_LARCH_RELAX = 100,
+  R_LARCH_DELETE = 101,
+  R_LARCH_ALIGN = 102,
+  R_LARCH_PCREL20_S2 = 103,
+  R_LARCH_CFA = 104,
+  R_LARCH_ADD6 = 105,
+  R_LARCH_SUB6 = 106,
+  R_LARCH_ADD_ULEB128 = 107,
+  R_LARCH_SUB_ULEB128 = 108,
+  R_LARCH_64_PCREL = 109,
+};
+
 //
 // DWARF data types
 //
@@ -1815,6 +1928,8 @@ template <typename E> static constexpr bool is_sh4 = std::is_same_v<E, SH4>;
 template <typename E> static constexpr bool is_alpha = std::is_same_v<E, ALPHA>;
 template <typename E> static constexpr bool is_mips64le = std::is_same_v<E, MIPS64LE>;
 template <typename E> static constexpr bool is_mips64be = std::is_same_v<E, MIPS64BE>;
+template <typename E> static constexpr bool is_loongarch32 = std::is_same_v<E, LOONGARCH32>;
+template <typename E> static constexpr bool is_loongarch64 = std::is_same_v<E, LOONGARCH64>;
 
 template <typename E> static constexpr bool is_x86 = is_x86_64<E> || is_i386<E>;
 template <typename E> static constexpr bool is_arm = is_arm64<E> || is_arm32<E>;
@@ -1826,6 +1941,7 @@ template <typename E> static constexpr bool is_ppc = is_ppc64<E> || is_ppc32<E>;
 template <typename E> static constexpr bool is_sparc = is_sparc64<E>;
 template <typename E> static constexpr bool is_mips64 = is_mips64le<E> || is_mips64be<E>;
 template <typename E> static constexpr bool is_mips = is_mips64<E>;
+template <typename E> static constexpr bool is_loongarch = is_loongarch32<E> || is_loongarch64<E>;
 
 struct X86_64 {
   static constexpr std::string_view target_name = "x86_64";
@@ -2247,6 +2363,52 @@ struct MIPS64BE {
   static constexpr u32 R_DTPOFF = R_MIPS_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_MIPS_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_MIPS_TLS_DTPMOD64;
+};
+
+struct LOONGARCH64 {
+  static constexpr std::string_view target_name = "loongarch64";
+  static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 16384;
+  static constexpr u32 e_machine = EM_LOONGARCH;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
+
+  static constexpr u32 R_COPY = R_LARCH_COPY;
+  static constexpr u32 R_GLOB_DAT = R_LARCH_64;
+  static constexpr u32 R_JUMP_SLOT = R_LARCH_JUMP_SLOT;
+  static constexpr u32 R_ABS = R_LARCH_64;
+  static constexpr u32 R_DYNAMIC = R_LARCH_64;
+  static constexpr u32 R_RELATIVE = R_LARCH_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_LARCH_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_LARCH_TLS_DTPREL64;
+  static constexpr u32 R_TPOFF = R_LARCH_TLS_TPREL64;
+  static constexpr u32 R_DTPMOD = R_LARCH_TLS_DTPMOD64;
+};
+
+struct LOONGARCH32 {
+  static constexpr std::string_view target_name = "loongarch32";
+  static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 16384;
+  static constexpr u32 e_machine = EM_LOONGARCH;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
+
+  static constexpr u32 R_COPY = R_LARCH_COPY;
+  static constexpr u32 R_GLOB_DAT = R_LARCH_32;
+  static constexpr u32 R_JUMP_SLOT = R_LARCH_JUMP_SLOT;
+  static constexpr u32 R_ABS = R_LARCH_32;
+  static constexpr u32 R_DYNAMIC = R_LARCH_32;
+  static constexpr u32 R_RELATIVE = R_LARCH_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_LARCH_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_LARCH_TLS_DTPREL32;
+  static constexpr u32 R_TPOFF = R_LARCH_TLS_TPREL32;
+  static constexpr u32 R_DTPMOD = R_LARCH_TLS_DTPMOD32;
 };
 
 } // namespace mold::elf
