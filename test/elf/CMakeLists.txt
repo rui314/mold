@@ -11,6 +11,8 @@ function(add_target TRIPLE)
     set(HOST arm)
   elseif(${HOST} STREQUAL "ppc64")
     set(HOST powerpc64)
+  elseif(${HOST} STREQUAL "ppc64le")
+    set(HOST powerpc64le)
   endif()
 
   if(${TRIPLE} MATCHES "${HOST}-.*")
