@@ -55,9 +55,9 @@ enum : u32 {
 
 enum : u32 {
   SHN_UNDEF = 0,
+  SHN_LORESERVE = 0xff00,
   SHN_ABS = 0xfff1,
   SHN_COMMON = 0xfff2,
-  SHN_LORESERVE = 0xff00,
   SHN_XINDEX = 0xffff,
 };
 

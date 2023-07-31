@@ -655,6 +655,11 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
   // Write the initial NUL byte to .strtab.
   ctx.buf[ctx.strtab->shdr.sh_offset] = '\0';
 
+  if (ctx.symtab_shndx) {
+    ElfShdr<E> &shdr = ctx.symtab_shndx->shdr;
+    memset(ctx.buf + shdr.sh_offset, 0, shdr.sh_size);
+  }
+
   // Create section symbols
   for (Chunk<E> *chunk : ctx.chunks) {
     if (chunk->shndx) {
@@ -1606,12 +1611,12 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
     return SHN_UNDEF;
   };
 
-  u32 shndx = 0;
+  i64 shndx = -1;
   if (sym.has_copyrel) {
     shndx = sym.is_copyrel_readonly ? ctx.copyrel_relro->shndx : ctx.copyrel->shndx;
     esym.st_value = sym.get_addr(ctx);
   } else if (sym.file->is_dso || sym.esym().is_undef()) {
-    shndx = SHN_UNDEF;
+    esym.st_shndx = SHN_UNDEF;
     if (sym.is_canonical)
       esym.st_value = sym.get_plt_addr(ctx);
   } else if (Chunk<E> *osec = sym.get_output_section()) {
@@ -1624,7 +1629,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
     esym.st_value = sym.get_addr(ctx);
   } else if (!sym.get_input_section()) {
     // Absolute symbol
-    shndx = SHN_ABS;
+    esym.st_shndx = SHN_ABS;
     esym.st_value = sym.get_addr(ctx);
   } else if (sym.get_type() == STT_TLS) {
     shndx = get_st_shndx(sym);
@@ -1640,17 +1645,12 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
   // or greater than SHN_LORESERVE (= 65280), the real index is stored
   // to a SHT_SYMTAB_SHNDX section which contains a parallel array of
   // the symbol table.
-  if (shn_xindex) {
-    *shn_xindex = shndx;
-    if (shndx == SHN_UNDEF || shndx == SHN_ABS || shndx == SHN_COMMON)
-      esym.st_shndx = shndx;
-    else
-      esym.st_shndx = SHN_XINDEX;
-  } else {
-    if (shndx >= SHN_LORESERVE && shndx != SHN_ABS && shndx != SHN_COMMON)
-      Fatal(ctx) << sym << ": internal error: output symbol index too large: "
-                 << shndx;
+  if (0 <= shndx && shndx < SHN_LORESERVE) {
     esym.st_shndx = shndx;
+  } else if (SHN_LORESERVE <= shndx) {
+    assert(shn_xindex);
+    esym.st_shndx = SHN_XINDEX;
+    *shn_xindex = shndx;
   }
 
   return esym;
