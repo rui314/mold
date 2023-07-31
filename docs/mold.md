@@ -697,6 +697,10 @@ arguments.
   By default, `mold` generates a relro segment. `-z norelro` disables the
   feature.
 
+* `-z sectionheader`, `-z nosectionheader`:
+  `-z nosectionheader` tell the linker to omit the section header.
+  By default, the linker does not omit the section header.
+
 * `-z separate-loadable-segments`, `-z separate-code`, `-z noseparate-code`:
   If one memory page contains multiple segments, the page protection bits are
   set in such a way that the needed attributes (writable or executable) are

@@ -1794,6 +1794,7 @@ struct Context {
     bool z_now = false;
     bool z_origin = false;
     bool z_relro = true;
+    bool z_sectionheader = true;
     bool z_shstk = false;
     bool z_text = false;
     i64 filler = -1;

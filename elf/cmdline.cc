@@ -188,6 +188,8 @@ Options:
   -z origin                   Mark object requiring immediate $ORIGIN processing at runtime
   -z pack-relative-relocs     Alias for --pack-dyn-relocs=relr
     -z nopack-relative-relocs
+  -z sectionheader            Do not omit section header (default)
+    -z nosectionheader        Omit section header
   -z separate-loadable-segments
                               Separate all loadable segments to different pages
     -z separate-code          Separate code and data into different pages
@@ -886,6 +888,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_dynamic_undefined_weak = true;
     } else if (read_z_flag("nodynamic-undefined-weak")) {
       ctx.arg.z_dynamic_undefined_weak = false;
+    } else if (read_z_flag("sectionheader")) {
+      ctx.arg.z_sectionheader = true;
+    } else if (read_z_flag("nosectionheader")) {
+      ctx.arg.z_sectionheader = false;
     } else if (read_flag("no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag("fatal-warnings")) {

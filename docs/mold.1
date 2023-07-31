@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "March 2023" ""
+.TH "MOLD" "1" "July 2023" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -424,6 +424,9 @@ Some sections such as \fB\.dynamic\fR have to be writable only during an executa
 \fB\-z relro\fR puts such sections into a special segment called \fBrelro\fR\. The dynamic linker makes a relro segment read\-only after it finishes its job\.
 .IP
 By default, \fBmold\fR generates a relro segment\. \fB\-z norelro\fR disables the feature\.
+.TP
+\fB\-z sectionheader\fR, \fB\-z nosectionheader\fR
+\fB\-z nosectionheader\fR tell the linker to omit the section header\. By default, the linker does not omit the section header\.
 .TP
 \fB\-z separate\-loadable\-segments\fR, \fB\-z separate\-code\fR, \fB\-z noseparate\-code\fR
 If one memory page contains multiple segments, the page protection bits are set in such a way that the needed attributes (writable or executable) are satisfied for all segments\. This usually happens at a boundary of two segments with two different attributes\.

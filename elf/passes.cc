@@ -57,7 +57,8 @@ void create_synthetic_sections(Context<E> &ctx) {
     else
       ctx.phdr = push(new OutputPhdr<E>(0));
 
-    ctx.shdr = push(new OutputShdr<E>);
+    if (ctx.arg.z_sectionheader)
+      ctx.shdr = push(new OutputShdr<E>);
   }
 
   ctx.got = push(new GotSection<E>);
@@ -81,7 +82,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.copyrel = push(new CopyrelSection<E>(false));
   ctx.copyrel_relro = push(new CopyrelSection<E>(true));
 
-  if (!ctx.arg.oformat_binary)
+  if (ctx.shdr)
     ctx.shstrtab = push(new ShstrtabSection<E>);
 
   if (!ctx.arg.dynamic_linker.empty())
@@ -2522,7 +2523,8 @@ i64 compress_debug_sections(Context<E> &ctx) {
     ctx.chunks[i] = comp;
   });
 
-  ctx.shstrtab->update_shdr(ctx);
+  if (ctx.shstrtab)
+    ctx.shstrtab->update_shdr(ctx);
 
   if (ctx.ehdr)
     ctx.ehdr->update_shdr(ctx);

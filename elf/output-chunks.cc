@@ -101,10 +101,12 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
 
   // If e_shstrndx is too large, a dummy value is set to e_shstrndx.
   // The real value is stored to the zero'th section's sh_link field.
-  if (ctx.shstrtab->shndx < SHN_LORESERVE)
-    hdr.e_shstrndx = ctx.shstrtab->shndx;
-  else
-    hdr.e_shstrndx = SHN_XINDEX;
+  if (ctx.shstrtab) {
+    if (ctx.shstrtab->shndx < SHN_LORESERVE)
+      hdr.e_shstrndx = ctx.shstrtab->shndx;
+    else
+      hdr.e_shstrndx = SHN_XINDEX;
+  }
 
   if (ctx.arg.relocatable)
     hdr.e_type = ET_REL;
@@ -140,7 +142,7 @@ void OutputShdr<E>::copy_buf(Context<E> &ctx) {
   if (UINT16_MAX < shnum)
     hdr->sh_size = shnum;
 
-  if (SHN_LORESERVE <= ctx.shstrtab->shndx)
+  if (ctx.shstrtab && SHN_LORESERVE <= ctx.shstrtab->shndx)
     hdr->sh_link = ctx.shstrtab->shndx;
 
   for (Chunk<E> *chunk : ctx.chunks)
