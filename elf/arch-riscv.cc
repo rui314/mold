@@ -297,7 +297,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     };
 
     auto find_paired_reloc = [&] {
-      Symbol<E> &sym = *file.symbols[rels[i].r_sym];
       assert(sym.get_input_section() == this);
 
       if (sym.value < r_offset) {
