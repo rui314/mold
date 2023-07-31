@@ -273,11 +273,19 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       comdat_groups.push_back({group, (u32)i, entries.subspan(1)});
       break;
     }
+    case SHT_REL:
+      if constexpr (E::is_rela)
+        Fatal(ctx) << *this << ": REL-type relocation table is not supported"
+                   << " for this target";
+      break;
+    case SHT_RELA:
+      if constexpr (!E::is_rela)
+        Fatal(ctx) << *this <<": RELA-type relocation table is not supported"
+                   << " for this target";
+      break;
     case SHT_SYMTAB:
     case SHT_SYMTAB_SHNDX:
     case SHT_STRTAB:
-    case SHT_REL:
-    case SHT_RELA:
     case SHT_NULL:
       break;
     default: {
