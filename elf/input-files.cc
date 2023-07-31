@@ -177,17 +177,17 @@ const char *begin = data.data();
     p = p.substr(5); // skip the tag and the sub-sub-section size
 
     while (!p.empty()) {
-      i64 tag = read_uleb(p);
+      i64 tag = read_uleb(&p);
 
       switch (tag) {
       case ELF_TAG_RISCV_STACK_ALIGN:
-        file.extra.stack_align = read_uleb(p);
+        file.extra.stack_align = read_uleb(&p);
         break;
       case ELF_TAG_RISCV_ARCH:
         file.extra.arch = read_string(p);
         break;
       case ELF_TAG_RISCV_UNALIGNED_ACCESS:
-        file.extra.unaligned_access = read_uleb(p);
+        file.extra.unaligned_access = read_uleb(&p);
         break;
       default:
         break;
@@ -908,7 +908,7 @@ void ObjectFile<E>::mark_addrsig(Context<E> &ctx) {
     u8 *end = cur + llvm_addrsig->contents.size();
 
     while (cur != end) {
-      Symbol<E> &sym = *this->symbols[read_uleb(cur)];
+      Symbol<E> &sym = *this->symbols[read_uleb(&cur)];
       if (sym.file == this)
         if (InputSection<E> *isec = sym.get_input_section())
           isec->address_significant = true;

@@ -216,7 +216,7 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
                << dwarf_version;
   }
 
-  u32 abbrev_code = read_uleb(cu);
+  u32 abbrev_code = read_uleb(&cu);
 
   // Find a .debug_abbrev record corresponding to the .debug_info record.
   // We assume the .debug_info record at a given offset is of
@@ -224,14 +224,14 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   u8 *abbrev = get_buffer(ctx, ctx.debug_abbrev) + abbrev_offset;
 
   for (;;) {
-    u32 code = read_uleb(abbrev);
+    u32 code = read_uleb(&abbrev);
     if (code == 0)
       Fatal(ctx) << file << ": --gdb-index: .debug_abbrev does not contain"
                  << " a record for the first .debug_info record";
 
     if (code == abbrev_code) {
       // Found a record
-      u64 abbrev_tag = read_uleb(abbrev);
+      u64 abbrev_tag = read_uleb(&abbrev);
       if (abbrev_tag != DW_TAG_compile_unit && abbrev_tag != DW_TAG_skeleton_unit)
         Fatal(ctx) << file << ": --gdb-index: the first entry's tag is not"
                    << " DW_TAG_compile_unit/DW_TAG_skeleton_unit but 0x"
@@ -240,15 +240,15 @@ find_compunit(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
     }
 
     // Skip an uninteresting record
-    read_uleb(abbrev); // tag
+    read_uleb(&abbrev); // tag
     abbrev++; // has_children byte
     for (;;) {
-      u64 name = read_uleb(abbrev);
-      u64 form = read_uleb(abbrev);
+      u64 name = read_uleb(&abbrev);
+      u64 form = read_uleb(&abbrev);
       if (name == 0 && form == 0)
         break;
       if (form == DW_FORM_implicit_const)
-        read_uleb(abbrev);
+        read_uleb(&abbrev);
     }
   }
 
@@ -348,7 +348,7 @@ u64 DebugInfoReader<E>::read(u64 form) {
   case DW_FORM_ref_udata:
   case DW_FORM_loclistx:
   case DW_FORM_rnglistx:
-    return read_uleb(cu);
+    return read_uleb(&cu);
   case DW_FORM_string:
     cu += strlen((char *)cu) + 1;
     return 0;
@@ -391,19 +391,19 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
     case DW_RLE_end_of_list:
       return vec;
     case DW_RLE_base_addressx:
-      base = addrx[read_uleb(rnglist)];
+      base = addrx[read_uleb(&rnglist)];
       break;
     case DW_RLE_startx_endx:
-      vec.push_back(addrx[read_uleb(rnglist)]);
-      vec.push_back(addrx[read_uleb(rnglist)]);
+      vec.push_back(addrx[read_uleb(&rnglist)]);
+      vec.push_back(addrx[read_uleb(&rnglist)]);
       break;
     case DW_RLE_startx_length:
-      vec.push_back(addrx[read_uleb(rnglist)]);
-      vec.push_back(vec.back() + read_uleb(rnglist));
+      vec.push_back(addrx[read_uleb(&rnglist)]);
+      vec.push_back(vec.back() + read_uleb(&rnglist));
       break;
     case DW_RLE_offset_pair:
-      vec.push_back(base + read_uleb(rnglist));
-      vec.push_back(base + read_uleb(rnglist));
+      vec.push_back(base + read_uleb(&rnglist));
+      vec.push_back(base + read_uleb(&rnglist));
       break;
     case DW_RLE_base_address:
       base = *(Word<E> *)rnglist;
@@ -418,7 +418,7 @@ read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
     case DW_RLE_start_length:
       vec.push_back(*(Word<E> *)rnglist);
       rnglist += sizeof(Word<E>);
-      vec.push_back(vec.back() + read_uleb(rnglist));
+      vec.push_back(vec.back() + read_uleb(&rnglist));
       break;
     }
   }
@@ -455,8 +455,8 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
 
   // Read all interesting debug records.
   for (;;) {
-    u64 name = read_uleb(abbrev);
-    u64 form = read_uleb(abbrev);
+    u64 name = read_uleb(&abbrev);
+    u64 form = read_uleb(&abbrev);
     if (name == 0 && form == 0)
       break;
 

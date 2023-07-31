@@ -530,12 +530,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_SET_ULEB128:
       overwrite_uleb(loc, S + A);
       break;
-    case R_RISCV_SUB_ULEB128: {
-      u8 *p = loc;
-      u64 val = read_uleb(p);
-      overwrite_uleb(loc, val - S - A);
+    case R_RISCV_SUB_ULEB128:
+      overwrite_uleb(loc, read_uleb(loc) - S - A);
       break;
-    }
     default:
       unreachable();
     }
@@ -613,12 +610,9 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_SET_ULEB128:
       overwrite_uleb(loc, S + A);
       break;
-    case R_RISCV_SUB_ULEB128: {
-      u8 *p = loc;
-      u64 val = read_uleb(p);
-      overwrite_uleb(loc, val - S - A);
+    case R_RISCV_SUB_ULEB128:
+      overwrite_uleb(loc, read_uleb(loc) - S - A);
       break;
-    }
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
                  << rel;
