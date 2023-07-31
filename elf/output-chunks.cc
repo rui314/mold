@@ -1642,7 +1642,10 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
   // the symbol table.
   if (shn_xindex) {
     *shn_xindex = shndx;
-    esym.st_shndx = SHN_XINDEX;
+    if (shndx == SHN_UNDEF || shndx == SHN_ABS || shndx == SHN_COMMON)
+      esym.st_shndx = shndx;
+    else
+      esym.st_shndx = SHN_XINDEX;
   } else {
     if (shndx >= SHN_LORESERVE && shndx != SHN_ABS && shndx != SHN_COMMON)
       Fatal(ctx) << sym << ": internal error: output symbol index too large: "
