@@ -54,7 +54,7 @@ fi
 if [ $MACHINE = x86_64 -o $MACHINE = aarch64 ]; then
   $CXX -c -o $t/e.o $t/a.cc -mcmodel=large -fno-PIC
 
-  $CXX -B. -o $t/exe9 $t/e.o $static
+  $CXX -B. -o $t/exe9 $t/e.o -no-pie $static
   $QEMU $t/exe9
 
   $CXX -B. -o $t/exe10 $t/e.o -no-pie
