@@ -479,6 +479,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_ABS64:
       scan_dyn_absrel(ctx, sym, rel);
       break;
+    case R_AARCH64_MOVW_UABS_G3:
+      scan_absrel(ctx, sym, rel);
+      break;
     case R_AARCH64_ADR_GOT_PAGE:
       // An ADR_GOT_PAGE and GOT_LO12_NC relocation pair is used to load a
       // symbol's address from GOT. If the GOT value is a link-time
@@ -527,24 +530,14 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_TLSGD_ADR_PAGE21:
       sym.flags |= NEEDS_TLSGD;
       break;
-    case R_AARCH64_TLSDESC_ADR_PAGE21:
-    case R_AARCH64_TLSDESC_LD64_LO12:
-    case R_AARCH64_TLSDESC_ADD_LO12:
+    case R_AARCH64_TLSDESC_CALL:
       if (!relax_tlsdesc(ctx, sym))
         sym.flags |= NEEDS_TLSDESC;
       break;
-    case R_AARCH64_TLSLE_MOVW_TPREL_G0:
-    case R_AARCH64_TLSLE_MOVW_TPREL_G0_NC:
-    case R_AARCH64_TLSLE_MOVW_TPREL_G1:
-    case R_AARCH64_TLSLE_MOVW_TPREL_G1_NC:
     case R_AARCH64_TLSLE_MOVW_TPREL_G2:
-    case R_AARCH64_TLSLE_ADD_TPREL_HI12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12:
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
       check_tlsle(ctx, sym, rel);
-      break;
-    case R_AARCH64_MOVW_UABS_G3:
-      scan_absrel(ctx, sym, rel);
       break;
     case R_AARCH64_ADD_ABS_LO12_NC:
     case R_AARCH64_ADR_PREL_LO21:
@@ -565,7 +558,14 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_PREL32:
     case R_AARCH64_PREL64:
     case R_AARCH64_TLSGD_ADD_LO12_NC:
-    case R_AARCH64_TLSDESC_CALL:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G0:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G0_NC:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G1:
+    case R_AARCH64_TLSLE_MOVW_TPREL_G1_NC:
+    case R_AARCH64_TLSLE_ADD_TPREL_HI12:
+    case R_AARCH64_TLSDESC_ADR_PAGE21:
+    case R_AARCH64_TLSDESC_LD64_LO12:
+    case R_AARCH64_TLSDESC_ADD_LO12:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
