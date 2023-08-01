@@ -477,6 +477,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
+    case R_AARCH64_MOVW_UABS_G3:
       scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_AARCH64_ADR_GOT_PAGE:
@@ -558,7 +559,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_MOVW_UABS_G1_NC:
     case R_AARCH64_MOVW_UABS_G2:
     case R_AARCH64_MOVW_UABS_G2_NC:
-    case R_AARCH64_MOVW_UABS_G3:
     case R_AARCH64_PREL16:
     case R_AARCH64_PREL32:
     case R_AARCH64_PREL64:
