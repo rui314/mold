@@ -1196,7 +1196,7 @@ template <typename E> requires is_riscv<E>
 struct ObjectFileExtras<E> {
   std::optional<i64> stack_align;
   std::optional<std::string_view> arch;
-  std::optional<bool> unaligned_access;
+  bool unaligned_access = false;
 };
 
 template <> struct ObjectFileExtras<PPC32> {

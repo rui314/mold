@@ -1123,7 +1123,7 @@ void RiscvAttributesSection<E>::update_shdr(Context<E> &ctx) {
       }
     }
 
-    if (file->extra.unaligned_access.value_or(false))
+    if (file->extra.unaligned_access)
       unaligned = true;
   }
 
