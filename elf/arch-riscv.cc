@@ -697,6 +697,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_TLSGD;
       break;
     case R_RISCV_32_PCREL:
+    case R_RISCV_PCREL_HI20:
       scan_pcrel(ctx, sym, rel);
       break;
     case R_RISCV_TPREL_HI20:
@@ -707,7 +708,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_RISCV_BRANCH:
     case R_RISCV_JAL:
-    case R_RISCV_PCREL_HI20:
     case R_RISCV_PCREL_LO12_I:
     case R_RISCV_PCREL_LO12_S:
     case R_RISCV_LO12_I:
