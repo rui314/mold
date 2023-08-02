@@ -108,30 +108,6 @@ void InputSection<E>::uncompress_to(Context<E> &ctx, u8 *buf) {
 }
 
 template <typename E>
-static Action get_rel_action(Context<E> &ctx, Symbol<E> &sym,
-                             const Action table[3][4]) {
-  auto get_output_type = [&] {
-    if (ctx.arg.shared)
-      return 0;
-    if (ctx.arg.pie)
-      return 1;
-    return 2;
-  };
-
-  auto get_sym_type = [&] {
-    if (sym.is_absolute())
-      return 0;
-    if (!sym.is_imported)
-      return 1;
-    if (sym.get_type() != STT_FUNC)
-      return 2;
-    return 3;
-  };
-
-  return table[get_output_type()][get_sym_type()];
-}
-
-template <typename E>
 static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
                      const ElfRel<E> &rel, Action action) {
   bool writable = (isec.shdr().sh_flags & SHF_WRITE);
@@ -217,18 +193,38 @@ static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
 }
 
 template <typename E>
+static inline i64 get_output_type(Context<E> &ctx) {
+  if (ctx.arg.shared)
+    return 0;
+  if (ctx.arg.pie)
+    return 1;
+  return 2;
+}
+
+template <typename E>
+static inline i64 get_sym_type(Symbol<E> &sym) {
+  if (sym.is_absolute())
+    return 0;
+  if (!sym.is_imported)
+    return 1;
+  if (sym.get_type() != STT_FUNC)
+    return 2;
+  return 3;
+}
+
+template <typename E>
 static Action get_pcrel_action(Context<E> &ctx, Symbol<E> &sym) {
   // This is for PC-relative relocations (e.g. R_X86_64_PC32).
   // We cannot promote them to dynamic relocations because the dynamic
   // linker generally does not support PC-relative relocations.
-  constexpr static Action table[3][4] = {
+  static Action table[3][4] = {
     // Absolute  Local    Imported data  Imported code
     {  ERROR,    NONE,    ERROR,         PLT    },  // Shared object
     {  ERROR,    NONE,    COPYREL,       PLT    },  // Position-independent exec
     {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
   };
 
-  return get_rel_action(ctx, sym, table);
+  return table[get_output_type(ctx)][get_sym_type(sym)];
 }
 
 template <typename E>
@@ -238,14 +234,14 @@ static Action get_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
   // generally does not support dynamic relocations smaller than the
   // word size, we need to report an error if a relocation cannot be
   // resolved at link-time.
-  constexpr static Action table[3][4] = {
+  static Action table[3][4] = {
     // Absolute  Local    Imported data  Imported code
     {  NONE,     ERROR,   ERROR,         ERROR },  // Shared object
     {  NONE,     ERROR,   ERROR,         ERROR },  // Position-independent exec
     {  NONE,     NONE,    COPYREL,       CPLT  },  // Position-dependent exec
   };
 
-  return get_rel_action(ctx, sym, table);
+  return table[get_output_type(ctx)][get_sym_type(sym)];
 }
 
 template <typename E>
@@ -256,14 +252,14 @@ static Action get_dyn_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
   // This is a decision table for absolute relocations for the word
   // size data (e.g. R_X86_64_64). Unlike the absrel_table, we can emit
   // a dynamic relocation if we cannot resolve an address at link-time.
-  constexpr static Action table[3][4] = {
+  static Action table[3][4] = {
     // Absolute  Local    Imported data  Imported code
     {  NONE,     BASEREL, DYNREL,        DYNREL   },  // Shared object
     {  NONE,     BASEREL, DYNREL,        DYNREL   },  // Position-independent exec
     {  NONE,     NONE,    DYN_COPYREL,   DYN_CPLT },  // Position-dependent exec
   };
 
-  return get_rel_action(ctx, sym, table);
+  return table[get_output_type(ctx)][get_sym_type(sym)];
 }
 
 template <typename E>
@@ -275,14 +271,14 @@ static Action get_ppc64_toc_action(Context<E> &ctx, Symbol<E> &sym) {
   // PLTs for .toc sections. PPC64's .toc is a compiler-generated
   // GOT-like section, and no user-generated code directly uses values
   // in it.
-  constexpr static Action table[3][4] = {
+  static Action table[3][4] = {
     // Absolute  Local    Imported data  Imported code
     {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
     {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
     {  NONE,     NONE,    DYNREL,        DYNREL },  // Position-dependent exec
   };
 
-  return get_rel_action(ctx, sym, table);
+  return table[get_output_type(ctx)][get_sym_type(sym)];
 }
 
 template <typename E>
@@ -325,7 +321,7 @@ static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
                          Action action) {
   bool writable = (isec.shdr().sh_flags & SHF_WRITE);
 
-  auto apply_dynrel = [&] {
+  auto emit_abs_dynrel = [&] {
     *dynrel++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
     if (ctx.arg.apply_dynamic_relocs)
       *(Word<E> *)loc = A;
@@ -348,18 +344,18 @@ static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
     break;
   case DYN_COPYREL:
     if (writable || !ctx.arg.z_copyreloc)
-      apply_dynrel();
+      emit_abs_dynrel();
     else
       *(Word<E> *)loc = S + A;
     break;
   case DYN_CPLT:
     if (writable)
-      apply_dynrel();
+      emit_abs_dynrel();
     else
       *(Word<E> *)loc = S + A;
     break;
   case DYNREL:
-    apply_dynrel();
+    emit_abs_dynrel();
     break;
   case IFUNC:
     if constexpr (supports_ifunc<E>) {
@@ -380,8 +376,8 @@ template <typename E>
 void InputSection<E>::apply_dyn_absrel(Context<E> &ctx, Symbol<E> &sym,
                                        const ElfRel<E> &rel, u8 *loc,
                                        u64 S, i64 A, u64 P,
-                                       ElfRel<E> *&dynrel) {
-  apply_absrel(ctx, *this, sym, rel, loc, S, A, P, dynrel,
+                                       ElfRel<E> **dynrel) {
+  apply_absrel(ctx, *this, sym, rel, loc, S, A, P, *dynrel,
                get_dyn_absrel_action(ctx, sym));
 }
 
@@ -389,8 +385,8 @@ template <typename E>
 void InputSection<E>::apply_toc_rel(Context<E> &ctx, Symbol<E> &sym,
                                     const ElfRel<E> &rel, u8 *loc,
                                     u64 S, i64 A, u64 P,
-                                    ElfRel<E> *&dynrel) {
-  apply_absrel(ctx, *this, sym, rel, loc, S, A, P, dynrel,
+                                    ElfRel<E> **dynrel) {
+  apply_absrel(ctx, *this, sym, rel, loc, S, A, P, *dynrel,
                get_ppc64_toc_action(ctx, sym));
 }
 

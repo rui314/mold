@@ -323,11 +323,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if constexpr (E::is_64)
         *(U32<E> *)loc = S + A;
       else
-        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
+        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_RISCV_64:
       assert(E::is_64);
-      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
+      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_RISCV_BRANCH:
       check(S + A - P, -(1 << 12), 1 << 12);

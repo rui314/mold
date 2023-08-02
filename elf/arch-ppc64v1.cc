@@ -183,10 +183,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
-      apply_toc_rel(ctx, sym, rel, loc, S, A, P, dynrel);
+      apply_toc_rel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_PPC64_TOC:
-      apply_toc_rel(ctx, *ctx.extra.TOC, rel, loc, TOC, A, P, dynrel);
+      apply_toc_rel(ctx, *ctx.extra.TOC, rel, loc, TOC, A, P, &dynrel);
       break;
     case R_PPC64_TOC16_HA:
       *(ub16 *)loc = ha(S + A - TOC);

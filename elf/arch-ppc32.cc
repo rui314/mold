@@ -172,7 +172,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_PPC_ADDR32:
     case R_PPC_UADDR32:
-      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, dynrel);
+      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_PPC_ADDR14:
       *(ub32 *)loc |= bits(S + A, 15, 2) << 2;

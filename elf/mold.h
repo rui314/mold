@@ -300,10 +300,10 @@ private:
   void check_tlsle(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
 
   void apply_dyn_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
-                        u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel);
+                        u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> **dynrel);
 
   void apply_toc_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
-                     u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> *&dynrel);
+                     u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> **dynrel);
 
   void copy_contents_riscv(Context<E> &ctx, u8 *buf);
 
