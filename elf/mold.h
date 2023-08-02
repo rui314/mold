@@ -486,8 +486,7 @@ public:
     // We always create a .got so that _GLOBAL_OFFSET_TABLE_ has
     // something to point to. s390x/MIPS psABIs define GOT[1] as a
     // reserved slot, so we allocate one more for them.
-    i64 n = (is_s390x<E> || is_mips<E>) ? 2 : 1;
-    this->shdr.sh_size = n * sizeof(Word<E>);
+    this->shdr.sh_size = (is_s390x<E> ? 2 : 1) * sizeof(Word<E>);
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
@@ -1574,15 +1573,11 @@ public:
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE | SHF_MIPS_GPREL;
     this->shdr.sh_addralign = 8;
-    this->shdr.sh_size = 8;
   }
 
   u64 get_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
   u64 get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
   u64 get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
-  u64 get_gottp_addr(Context<E> &ctx, Symbol<E> &sym) const;
-  u64 get_tlsgd_addr(Context<E> &ctx, Symbol<E> &sym) const;
-  u64 get_tlsld_addr(Context<E> &ctx) const;
 
   void update_shdr(Context<E> &ctx) override;
   i64 get_reldyn_size(Context<E> &ctx) const override;
@@ -1605,11 +1600,10 @@ public:
 
   std::vector<GotEntry> get_got_entries(Context<E> &ctx) const;
 
+  static constexpr i64 NUM_RESERVED = 2;
+
   std::vector<SymbolAddend> got_syms;
   std::vector<SymbolAddend> gotpage_syms;
-  std::vector<Symbol<E> *> tlsgd_syms;
-  std::vector<Symbol<E> *> gottp_syms;
-  std::atomic_bool needs_tlsld = false;
   std::mutex mu;
 };
 

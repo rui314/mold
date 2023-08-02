@@ -1352,6 +1352,9 @@ void scan_relocations(Context<E> &ctx) {
   std::vector<Symbol<E> *> syms = flatten(vec);
   ctx.symbol_aux.reserve(syms.size());
 
+  if (ctx.needs_tlsld)
+    ctx.got->add_tlsld(ctx);
+
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
     sym->add_aux(ctx);
@@ -1401,9 +1404,6 @@ void scan_relocations(Context<E> &ctx) {
 
     sym->flags = 0;
   }
-
-  if (ctx.needs_tlsld)
-    ctx.got->add_tlsld(ctx);
 
   if constexpr (is_alpha<E>)
     ctx.extra.got->finalize();
@@ -1748,10 +1748,10 @@ void clear_padding(Context<E> &ctx) {
 //   <writable tdata>
 //   <writable tbss>
 //   <writable RELRO data>
+//   .mips_got
 //   .got
 //   .toc
 //   .alpha_got
-//   .mips_got
 //   <writable RELRO bss>
 //   .relro_padding
 //   <writable non-RELRO data>
@@ -1831,13 +1831,13 @@ void sort_output_sections_regular(Context<E> &ctx) {
     if (chunk->shdr.sh_type == SHT_NOTE)
       return -chunk->shdr.sh_addralign;
 
-    if (chunk == ctx.got)
-      return 1;
-    if (chunk->name == ".toc")
-      return 2;
-    if (chunk->name == ".alpha_got")
-      return 3;
     if (chunk->name == ".mips_got")
+      return 1;
+    if (chunk == ctx.got)
+      return 2;
+    if (chunk->name == ".toc")
+      return 3;
+    if (chunk->name == ".alpha_got")
       return 4;
     if (chunk == ctx.relro_padding)
       return INT_MAX;
@@ -2455,8 +2455,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // MIPS' _gp symbol.
-  if (ctx._gp)
-    start(ctx._gp, ctx.got, 0x7ff0);
+  if constexpr (is_mips<E>)
+    start(ctx._gp, ctx.extra.got, 0x7ff0);
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : sections) {

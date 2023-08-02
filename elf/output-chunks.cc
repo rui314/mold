@@ -199,8 +199,8 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
            chunk == ctx.got || chunk == ctx.dynamic ||
            chunk == ctx.relro_padding ||
            (ctx.arg.z_now && ctx.gotplt && chunk == ctx.gotplt) ||
-           chunk->name == ".alpha_got" || chunk->name == ".toc" ||
-           chunk->name.ends_with(".rel.ro");
+           chunk->name == ".alpha_got" || chunk->name == ".mips_got" ||
+           chunk->name == ".toc" || chunk->name.ends_with(".rel.ro");
   return false;
 }
 
@@ -743,7 +743,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     if (ctx.gotplt->shdr.sh_size)
       define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr + GotPltSection<E>::HDR_SIZE);
   } else if constexpr (is_mips<E>) {
-    define(DT_PLTGOT, ctx.got->shdr.sh_addr);
+    define(DT_PLTGOT, ctx.extra.got->shdr.sh_addr);
   } else {
     if (ctx.gotplt->shdr.sh_size)
       define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr);
@@ -1293,11 +1293,6 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   if constexpr (is_arm64<E>)
     if (ctx.dynamic && ctx.arg.is_static && ctx.arg.pie)
       buf[0] = ctx.dynamic->shdr.sh_addr;
-
-  // It is not clear how the runtime uses it, but all MIPS binaries
-  // have this value in GOT[1].
-  if constexpr (is_mips<E>)
-    buf[1] = E::is_64 ? 0x8000'0000'0000'0000 : 0x8000'0000;
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                                  this->reldyn_offset);
