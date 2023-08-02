@@ -1170,6 +1170,7 @@ struct GotEntry {
 template <typename E>
 static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
   std::vector<GotEntry<E>> entries;
+  auto add = [&](GotEntry<E> ent) { entries.push_back(ent); };
 
   // Create GOT entries for ordinary symbols
   for (Symbol<E> *sym : ctx.got->got_syms) {
@@ -1177,14 +1178,14 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
 
     // If a symbol is imported, let the dynamic linker to resolve it.
     if (sym->is_imported) {
-      entries.push_back({idx, 0, E::R_GLOB_DAT, sym});
+      add({idx, 0, E::R_GLOB_DAT, sym});
       continue;
     }
 
     // IFUNC always needs to be fixed up by the dynamic linker.
     if constexpr (supports_ifunc<E>) {
       if (sym->is_ifunc()) {
-        entries.push_back({idx, sym->get_addr(ctx, NO_PLT), E::R_IRELATIVE});
+        add({idx, sym->get_addr(ctx, NO_PLT), E::R_IRELATIVE});
         continue;
       }
     }
@@ -1192,9 +1193,9 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
     // If we know an address at link-time, fill that GOT entry now.
     // It may need a base relocation, though.
     if (ctx.arg.pic && sym->is_relative())
-      entries.push_back({idx, sym->get_addr(ctx, NO_PLT), E::R_RELATIVE});
+      add({idx, sym->get_addr(ctx, NO_PLT), E::R_RELATIVE});
     else
-      entries.push_back({idx, sym->get_addr(ctx, NO_PLT)});
+      add({idx, sym->get_addr(ctx, NO_PLT)});
   }
 
   // Create GOT entries for TLVs.
@@ -1203,23 +1204,23 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
 
     // If a symbol is imported, let the dynamic linker to resolve it.
     if (sym->is_imported) {
-      entries.push_back({idx, 0, E::R_DTPMOD, sym});
-      entries.push_back({idx + 1, 0, E::R_DTPOFF, sym});
+      add({idx, 0, E::R_DTPMOD, sym});
+      add({idx + 1, 0, E::R_DTPOFF, sym});
       continue;
     }
 
     // If we are creating a shared library, we know the TLV's offset
     // within the current TLS block. We don't know the module ID though.
     if (ctx.arg.shared) {
-      entries.push_back({idx, 0, E::R_DTPMOD});
-      entries.push_back({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
+      add({idx, 0, E::R_DTPMOD});
+      add({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
       continue;
     }
 
     // If we are creating an executable, we know both the module ID and the
     // offset. Module ID 1 indicates the main executable.
-    entries.push_back({idx, 1});
-    entries.push_back({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
+    add({idx, 1});
+    add({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
   }
 
   if constexpr (supports_tlsdesc<E>) {
@@ -1227,9 +1228,9 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
       // _TLS_MODULE_BASE_ is a linker-synthesized virtual symbol that
       // refers the begining of the TLS block.
       if (sym == ctx._TLS_MODULE_BASE_)
-        entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC});
+        add({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC});
       else
-        entries.push_back({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC, sym});
+        add({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC, sym});
     }
   }
 
@@ -1239,27 +1240,27 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
     // If we know nothing about the symbol, let the dynamic linker
     // to fill the GOT entry.
     if (sym->is_imported) {
-      entries.push_back({idx, 0, E::R_TPOFF, sym});
+      add({idx, 0, E::R_TPOFF, sym});
       continue;
     }
 
     // If we know the offset within the current thread vector,
     // let the dynamic linker to adjust it.
     if (ctx.arg.shared) {
-      entries.push_back({idx, sym->get_addr(ctx) - ctx.tls_begin, E::R_TPOFF});
+      add({idx, sym->get_addr(ctx) - ctx.tls_begin, E::R_TPOFF});
       continue;
     }
 
     // Otherwise, we know the offset from the thread pointer (TP) at
     // link-time, so we can fill the GOT entry directly.
-    entries.push_back({idx, sym->get_addr(ctx) - ctx.tp_addr});
+    add({idx, sym->get_addr(ctx) - ctx.tp_addr});
   }
 
   if (ctx.got->tlsld_idx != -1) {
     if (ctx.arg.shared)
-      entries.push_back({ctx.got->tlsld_idx, 0, E::R_DTPMOD});
+      add({ctx.got->tlsld_idx, 0, E::R_DTPMOD});
     else
-      entries.push_back({ctx.got->tlsld_idx, 1}); // 1 means the main executable
+      add({ctx.got->tlsld_idx, 1}); // 1 means the main executable
   }
 
   return entries;
