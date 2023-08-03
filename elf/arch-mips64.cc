@@ -57,6 +57,7 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   case R_NONE:
     break;
   case R_MIPS_64:
+    assert(rel.r_type2 == R_NONE);
     *(U64<E> *)loc = val;
     break;
   default:
@@ -84,11 +85,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    [[maybe_unused]] auto check = [&](i64 val, i64 lo, i64 hi) {
+    auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
+                   << lo << ", " << hi << "); recompile with -mxgot";
     };
 
     auto write_combined = [&](u64 val) {
@@ -114,17 +115,23 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     };
 
     auto write_hi16 = [&](u64 val) {
+      check(val, -(1LL << 31), 1LL << 31);
       if (rel.r_type2 == R_NONE && rel.r_type3 == R_NONE)
         *(U32<E> *)loc |= ((val + BIAS) >> 16) & 0xffff;
       else
         write_combined(val);
     };
 
-    auto write_lo16 = [&](u64 val) {
+    auto write_lo16_nc = [&](u64 val) {
       if (rel.r_type2 == R_NONE && rel.r_type3 == R_NONE)
         *(U32<E> *)loc |= val & 0xffff;
       else
         write_combined(val);
+    };
+
+    auto write_lo16 = [&](u64 val) {
+      check(val, -(1 << 15), 1 << 15);
+      write_lo16_nc(val);
     };
 
     u64 S = sym.get_addr(ctx);
@@ -139,9 +146,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_MIPS_GPREL16:
       if (sym.is_local(ctx))
-        write_lo16(S + A + GP0 - GP);
+        write_lo16_nc(S + A + GP0 - GP);
       else
-        write_lo16(S + A - GP);
+        write_lo16_nc(S + A - GP);
       break;
     case R_MIPS_GPREL32:
       write32(S + A + GP0 - GP);
@@ -165,7 +172,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_lo16(ctx.extra.got->get_gotpage_got_addr(ctx, sym, A) - GP);
       break;
     case R_MIPS_GOT_OFST:
-      write_lo16(S + A - ctx.extra.got->get_gotpage_page_addr(ctx, sym, A));
+      write_lo16(0);
       break;
     case R_MIPS_JALR:
       break;
@@ -173,7 +180,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_hi16(S + A - ctx.tp_addr);
       break;
     case R_MIPS_TLS_TPREL_LO16:
-      write_lo16(S + A - ctx.tp_addr);
+      write_lo16_nc(S + A - ctx.tp_addr);
       break;
     case R_MIPS_TLS_GOTTPREL:
       write_lo16(sym.get_gottp_addr(ctx) - GP);
@@ -182,13 +189,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_hi16(S + A - ctx.dtp_addr);
       break;
     case R_MIPS_TLS_DTPREL_LO16:
-      write_lo16(S + A - ctx.dtp_addr);
+      write_lo16_nc(S + A - ctx.dtp_addr);
       break;
     case R_MIPS_TLS_GD:
-      write_lo16(sym.get_tlsgd_addr(ctx) + A - GP);
+      write_lo16(sym.get_tlsgd_addr(ctx) - GP);
       break;
     case R_MIPS_TLS_LDM:
-      write_lo16(ctx.got->get_tlsld_addr(ctx) + A - GP);
+      write_lo16(ctx.got->get_tlsld_addr(ctx) - GP);
       break;
     default:
       unreachable();
@@ -356,7 +363,7 @@ MipsGotSection<E>::get_got_entries(Context<E> &ctx) const {
   for (const SymbolAddend &ent : got_syms) {
     // If a symbol is imported, let the dynamic linker to resolve it.
     if (ent.sym->is_imported) {
-      add({0, E::R_GLOB_DAT, ent.sym});
+      add({0, E::R_DYNAMIC, ent.sym});
       continue;
     }
 

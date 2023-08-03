@@ -318,7 +318,7 @@ void AlphaGotSection::copy_buf(Context<E> &ctx) {
 
     if (e.sym->is_imported) {
       *buf = ctx.arg.apply_dynamic_relocs ? e.addend : 0;
-      *dynrel++ = ElfRel<E>(P, E::R_ABS, e.sym->get_dynsym_idx(ctx), e.addend);
+      *dynrel++ = ElfRel<E>(P, E::R_DYNAMIC, e.sym->get_dynsym_idx(ctx), e.addend);
     } else {
       *buf = e.sym->get_addr(ctx) + e.addend;
       if (ctx.arg.pic && !e.sym->is_absolute())

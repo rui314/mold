@@ -1866,6 +1866,7 @@ struct X86_64 {
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_X86_64_JUMP_SLOT;
   static constexpr u32 R_ABS = R_X86_64_64;
+  static constexpr u32 R_DYNAMIC = R_X86_64_64;
   static constexpr u32 R_RELATIVE = R_X86_64_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_X86_64_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_X86_64_DTPOFF64;
@@ -1889,6 +1890,7 @@ struct I386 {
   static constexpr u32 R_GLOB_DAT = R_386_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_386_JUMP_SLOT;
   static constexpr u32 R_ABS = R_386_32;
+  static constexpr u32 R_DYNAMIC = R_386_32;
   static constexpr u32 R_RELATIVE = R_386_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_386_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_386_TLS_DTPOFF32;
@@ -1914,6 +1916,7 @@ struct ARM64 {
   static constexpr u32 R_GLOB_DAT = R_AARCH64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_AARCH64_JUMP_SLOT;
   static constexpr u32 R_ABS = R_AARCH64_ABS64;
+  static constexpr u32 R_DYNAMIC = R_AARCH64_ABS64;
   static constexpr u32 R_RELATIVE = R_AARCH64_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_AARCH64_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_AARCH64_TLS_DTPREL64;
@@ -1939,6 +1942,7 @@ struct ARM32 {
   static constexpr u32 R_GLOB_DAT = R_ARM_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_ARM_JUMP_SLOT;
   static constexpr u32 R_ABS = R_ARM_ABS32;
+  static constexpr u32 R_DYNAMIC = R_ARM_ABS32;
   static constexpr u32 R_RELATIVE = R_ARM_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_ARM_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_ARM_TLS_DTPOFF32;
@@ -1962,6 +1966,7 @@ struct RV64LE {
   static constexpr u32 R_GLOB_DAT = R_RISCV_64;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
   static constexpr u32 R_ABS = R_RISCV_64;
+  static constexpr u32 R_DYNAMIC = R_RISCV_64;
   static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
@@ -1984,6 +1989,7 @@ struct RV64BE {
   static constexpr u32 R_GLOB_DAT = R_RISCV_64;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
   static constexpr u32 R_ABS = R_RISCV_64;
+  static constexpr u32 R_DYNAMIC = R_RISCV_64;
   static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
@@ -2006,6 +2012,7 @@ struct RV32LE {
   static constexpr u32 R_GLOB_DAT = R_RISCV_32;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
   static constexpr u32 R_ABS = R_RISCV_32;
+  static constexpr u32 R_DYNAMIC = R_RISCV_32;
   static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
@@ -2028,6 +2035,7 @@ struct RV32BE {
   static constexpr u32 R_GLOB_DAT = R_RISCV_32;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
   static constexpr u32 R_ABS = R_RISCV_32;
+  static constexpr u32 R_DYNAMIC = R_RISCV_32;
   static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
@@ -2052,6 +2060,7 @@ struct PPC32 {
   static constexpr u32 R_GLOB_DAT = R_PPC_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_PPC_JMP_SLOT;
   static constexpr u32 R_ABS = R_PPC_ADDR32;
+  static constexpr u32 R_DYNAMIC = R_PPC_ADDR32;
   static constexpr u32 R_RELATIVE = R_PPC_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_PPC_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_PPC_DTPREL32;
@@ -2075,6 +2084,7 @@ struct PPC64V1 {
   static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
   static constexpr u32 R_ABS = R_PPC64_ADDR64;
+  static constexpr u32 R_DYNAMIC = R_PPC64_ADDR64;
   static constexpr u32 R_RELATIVE = R_PPC64_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_PPC64_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_PPC64_DTPREL64;
@@ -2099,6 +2109,7 @@ struct PPC64V2 {
   static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
   static constexpr u32 R_ABS = R_PPC64_ADDR64;
+  static constexpr u32 R_DYNAMIC = R_PPC64_ADDR64;
   static constexpr u32 R_RELATIVE = R_PPC64_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_PPC64_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_PPC64_DTPREL64;
@@ -2121,6 +2132,7 @@ struct S390X {
   static constexpr u32 R_GLOB_DAT = R_390_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_390_JMP_SLOT;
   static constexpr u32 R_ABS = R_390_64;
+  static constexpr u32 R_DYNAMIC = R_390_64;
   static constexpr u32 R_RELATIVE = R_390_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_390_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_390_TLS_DTPOFF;
@@ -2143,6 +2155,7 @@ struct SPARC64 {
   static constexpr u32 R_GLOB_DAT = R_SPARC_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_SPARC_JMP_SLOT;
   static constexpr u32 R_ABS = R_SPARC_64;
+  static constexpr u32 R_DYNAMIC = R_SPARC_64;
   static constexpr u32 R_RELATIVE = R_SPARC_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_SPARC_IRELATIVE;
   static constexpr u32 R_DTPOFF = R_SPARC_TLS_DTPOFF64;
@@ -2165,6 +2178,7 @@ struct M68K {
   static constexpr u32 R_GLOB_DAT = R_68K_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_68K_JMP_SLOT;
   static constexpr u32 R_ABS = R_68K_32;
+  static constexpr u32 R_DYNAMIC = R_68K_32;
   static constexpr u32 R_RELATIVE = R_68K_RELATIVE;
   static constexpr u32 R_DTPOFF = R_68K_TLS_DTPREL32;
   static constexpr u32 R_TPOFF = R_68K_TLS_TPREL32;
@@ -2186,6 +2200,7 @@ struct SH4 {
   static constexpr u32 R_GLOB_DAT = R_SH_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_SH_JMP_SLOT;
   static constexpr u32 R_ABS = R_SH_DIR32;
+  static constexpr u32 R_DYNAMIC = R_SH_DIR32;
   static constexpr u32 R_RELATIVE = R_SH_RELATIVE;
   static constexpr u32 R_DTPOFF = R_SH_TLS_DTPOFF32;
   static constexpr u32 R_TPOFF = R_SH_TLS_TPOFF32;
@@ -2207,6 +2222,7 @@ struct ALPHA {
   static constexpr u32 R_GLOB_DAT = R_ALPHA_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_ALPHA_JMP_SLOT;
   static constexpr u32 R_ABS = R_ALPHA_REFQUAD;
+  static constexpr u32 R_DYNAMIC = R_ALPHA_REFQUAD;
   static constexpr u32 R_RELATIVE = R_ALPHA_RELATIVE;
   static constexpr u32 R_DTPOFF = R_ALPHA_DTPREL64;
   static constexpr u32 R_TPOFF = R_ALPHA_TPREL64;
@@ -2227,7 +2243,8 @@ struct MIPS64LE {
   static constexpr u32 R_COPY = R_MIPS_COPY;
   static constexpr u32 R_GLOB_DAT = R_MIPS_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_MIPS_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_MIPS_GLOB_DAT;
+  static constexpr u32 R_ABS = R_MIPS_64;
+  static constexpr u32 R_DYNAMIC = R_MIPS_REL32;
   static constexpr u32 R_RELATIVE = R_MIPS_REL32;
   static constexpr u32 R_DTPOFF = R_MIPS_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_MIPS_TLS_TPREL64;
@@ -2248,7 +2265,8 @@ struct MIPS64BE {
   static constexpr u32 R_COPY = R_MIPS_COPY;
   static constexpr u32 R_GLOB_DAT = R_MIPS_GLOB_DAT;
   static constexpr u32 R_JUMP_SLOT = R_MIPS_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_MIPS_GLOB_DAT;
+  static constexpr u32 R_ABS = R_MIPS_64;
+  static constexpr u32 R_DYNAMIC = R_MIPS_REL32;
   static constexpr u32 R_RELATIVE = R_MIPS_REL32;
   static constexpr u32 R_DTPOFF = R_MIPS_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_MIPS_TLS_TPREL64;

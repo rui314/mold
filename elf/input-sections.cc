@@ -322,7 +322,7 @@ static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
   bool writable = (isec.shdr().sh_flags & SHF_WRITE);
 
   auto emit_abs_dynrel = [&] {
-    *dynrel++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
+    *dynrel++ = ElfRel<E>(P, E::R_DYNAMIC, sym.get_dynsym_idx(ctx), A);
     if (ctx.arg.apply_dynamic_relocs)
       *(Word<E> *)loc = A;
   };

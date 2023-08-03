@@ -428,7 +428,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   // It looks like the SPARC's dynamic linker takes both RELA's r_addend
   // and the value at the relocated place. So we don't want to write
   // values to relocated places.
-  if (is_sparc<E>)
+  if constexpr (is_sparc<E>)
     ctx.arg.apply_dynamic_relocs = false;
 
   auto read_arg = [&](std::string name) {
@@ -1216,12 +1216,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
 
-  if (!ctx.arg.apply_dynamic_relocs && !E::is_rela)
-    Fatal(ctx) << "--no-apply-dynamic-relocs may not be used on "
-               << E::target_name;
+  if constexpr (!E::is_rela || is_mips<E>)
+    if (!ctx.arg.apply_dynamic_relocs)
+      Fatal(ctx) << "--no-apply-dynamic-relocs may not be used on "
+                 << E::target_name;
 
-  if (is_sparc<E> && ctx.arg.apply_dynamic_relocs)
-    Fatal(ctx) << "--apply-dynamic-relocs may not be used on SPARC64";
+  if constexpr (is_sparc<E>)
+    if (ctx.arg.apply_dynamic_relocs)
+      Fatal(ctx) << "--apply-dynamic-relocs may not be used on SPARC64";
 
   if (!ctx.arg.section_start.empty() && !ctx.arg.section_order.empty())
     Fatal(ctx) << "--section-start may not be used with --section-order";
