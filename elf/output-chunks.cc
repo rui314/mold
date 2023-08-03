@@ -2124,7 +2124,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         Symbol<E> &sym = *file->symbols[rel.r_sym];
         u64 loc = cie.output_offset + rel.r_offset - cie.input_offset;
         u64 val = sym.get_addr(ctx) + get_addend(cie.input_section, rel);
-        apply_reloc(ctx, rel, loc, val);
+        apply_eh_reloc(ctx, rel, loc, val);
       }
     }
 
@@ -2149,7 +2149,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         Symbol<E> &sym = *file->symbols[rel.r_sym];
         u64 loc = offset + rel.r_offset - fde.input_offset;
         u64 val = sym.get_addr(ctx) + get_addend(cie.input_section, rel);
-        apply_reloc(ctx, rel, loc, val);
+        apply_eh_reloc(ctx, rel, loc, val);
 
         if (eh_hdr_begin && is_first) {
           // Write to .eh_frame_hdr

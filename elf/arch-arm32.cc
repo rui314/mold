@@ -231,8 +231,8 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 // ARM does not use .eh_frame for exception handling. Instead, it uses
 // .ARM.exidx and .ARM.extab. So this function is empty.
 template <>
-void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
-                                    u64 offset, u64 val) {}
+void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
+                                       u64 offset, u64 val) {}
 
 // ARM and Thumb branch instructions can jump within ±16 MiB.
 static bool is_jump_reachable(i64 val) {

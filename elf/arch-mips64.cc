@@ -49,8 +49,8 @@ template <typename E>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {}
 
 template <typename E>
-void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
-                                    u64 offset, u64 val) {
+void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
+                                       u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
   switch (rel.r_type) {
@@ -435,8 +435,8 @@ void MipsGotSection<E>::copy_buf(Context<E> &ctx) {
   template void write_plt_header(Context<E> &, u8 *);                        \
   template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);            \
   template void write_pltgot_entry(Context<E> &, u8 *, Symbol<E> &);         \
-  template void                                                              \
-  EhFrameSection<E>::apply_reloc(Context<E> &, const ElfRel<E> &, u64, u64); \
+  template void EhFrameSection<E>::                                          \
+    apply_eh_reloc(Context<E> &, const ElfRel<E> &, u64, u64);               \
   template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);      \
   template void InputSection<E>::apply_reloc_nonalloc(Context<E> &, u8 *);   \
   template void InputSection<E>::scan_relocations(Context<E> &);             \

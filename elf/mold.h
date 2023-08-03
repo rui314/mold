@@ -800,7 +800,7 @@ public:
   }
 
   void construct(Context<E> &ctx);
-  void apply_reloc(Context<E> &ctx, const ElfRel<E> &rel, u64 offset, u64 val);
+  void apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel, u64 offset, u64 val);
   void copy_buf(Context<E> &ctx) override;
 };
 

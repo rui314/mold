@@ -129,8 +129,8 @@ template <>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {}
 
 template <>
-void EhFrameSection<E>::apply_reloc(Context<E> &ctx, const ElfRel<E> &rel,
-                                    u64 offset, u64 val) {
+void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
+                                       u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
   switch (rel.r_type) {
