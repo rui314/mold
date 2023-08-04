@@ -62,7 +62,6 @@ add_target(powerpc64-linux-gnu)
 add_target(powerpc64le-linux-gnu)
 add_target(sparc64-linux-gnu)
 add_target(s390x-linux-gnu)
-add_target(m68k-linux-gnu)
 add_target(sh4-linux-gnu)
 add_target(alpha-linux-gnu)
 
@@ -72,4 +71,13 @@ endif()
 
 if(MOLD_ENABLE_QEMU_TESTS_POWER10)
   add_target(powerpc64le_power10-linux-gnu)
+endif()
+
+if(MOLD_ENABLE_QEMU_TESTS_M68K)
+  add_target(m68k-linux-gnu)
+endif()
+
+if(MOLD_ENABLE_QEMU_TESTS_MIPS64)
+  add_target(mips64-linux-gnuabi64)
+  add_target(mips64el-linux-gnuabi64)
 endif()
