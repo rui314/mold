@@ -57,7 +57,6 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   case R_NONE:
     break;
   case R_MIPS_64:
-    assert(rel.r_type2 == R_NONE);
     *(U64<E> *)loc = val;
     break;
   default:
@@ -92,46 +91,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
                    << lo << ", " << hi << "); recompile with -mxgot";
     };
 
-    auto write_combined = [&](u64 val) {
-      if (rel.r_type2 == R_MIPS_64 && rel.r_type3 == R_NONE) {
-        *(U64<E> *)loc = val;
-      } else if (rel.r_type2 == R_MIPS_SUB && rel.r_type3 == R_MIPS_HI16) {
-        *(U32<E> *)loc |= ((-val + BIAS) >> 16) & 0xffff;
-      } else if (rel.r_type2 == R_MIPS_SUB && rel.r_type3 == R_MIPS_LO16) {
-        *(U32<E> *)loc |= -val & 0xffff;
-      } else {
-        Error(ctx) << *this << ": unsupported relocation combination: "
-                   << rel_to_string<E>(rel.r_type) << " "
-                   << rel_to_string<E>(rel.r_type2) << " "
-                   << rel_to_string<E>(rel.r_type3);
-      }
-    };
-
-    auto write32 = [&](u64 val) {
-      if (rel.r_type2 == R_NONE && rel.r_type3 == R_NONE)
-        *(U32<E> *)loc = val;
-      else
-        write_combined(val);
-    };
-
     auto write_hi16 = [&](u64 val) {
       check(val, -(1LL << 31), 1LL << 31);
-      if (rel.r_type2 == R_NONE && rel.r_type3 == R_NONE)
-        *(U32<E> *)loc |= ((val + BIAS) >> 16) & 0xffff;
-      else
-        write_combined(val);
-    };
-
-    auto write_lo16_nc = [&](u64 val) {
-      if (rel.r_type2 == R_NONE && rel.r_type3 == R_NONE)
-        *(U32<E> *)loc |= val & 0xffff;
-      else
-        write_combined(val);
+      *(U32<E> *)loc |= ((val + BIAS) >> 16) & 0xffff;
     };
 
     auto write_lo16 = [&](u64 val) {
       check(val, -(1 << 15), 1 << 15);
-      write_lo16_nc(val);
+      *(U32<E> *)loc |= val & 0xffff;
+    };
+
+    auto write_lo16_nc = [&](u64 val) {
+      *(U32<E> *)loc |= val & 0xffff;
     };
 
     u64 S = sym.get_addr(ctx);
@@ -144,14 +115,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_MIPS_64:
       apply_toc_rel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
-    case R_MIPS_GPREL16:
-      if (sym.is_local(ctx))
-        write_lo16_nc(S + A + GP0 - GP);
-      else
-        write_lo16_nc(S + A - GP);
+    case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_HI16 << 16): {
+      u64 val = sym.is_local(ctx) ? (S + A + GP0 - GP) : (S + A - GP);
+      write_hi16(-val);
       break;
-    case R_MIPS_GPREL32:
-      write32(S + A + GP0 - GP);
+    }
+    case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_LO16 << 16): {
+      u64 val = sym.is_local(ctx) ? (S + A + GP0 - GP) : (S + A - GP);
+      write_lo16_nc(-val);
+      break;
+    }
+    case R_MIPS_GPREL32 | (R_MIPS_64 << 8):
+      *(U64<E> *)loc = S + A + GP0 - GP;
       break;
     case R_MIPS_GOT_DISP:
       if (A == 0)
@@ -293,8 +268,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_MIPS_TLS_LDM:
       ctx.needs_tlsld = true;
       break;
-    case R_MIPS_GPREL16:
-    case R_MIPS_GPREL32:
+    case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_HI16 << 16):
+    case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_LO16 << 16):
+    case R_MIPS_GPREL32 | (R_MIPS_64 << 8):
     case R_MIPS_GOT_OFST:
     case R_MIPS_JALR:
     case R_MIPS_TLS_DTPREL_HI16:

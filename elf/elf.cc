@@ -2,6 +2,12 @@
 
 namespace mold::elf {
 
+static std::string unknown_type(u32 r_type) {
+  char buf[50];
+  snprintf(buf, sizeof(buf), "unknown (0x%x)", r_type);
+  return buf;
+}
+
 template <>
 std::string rel_to_string<X86_64>(u32 r_type) {
   switch (r_type) {
@@ -46,7 +52,7 @@ std::string rel_to_string<X86_64>(u32 r_type) {
   case R_X86_64_GOTPCRELX: return "R_X86_64_GOTPCRELX";
   case R_X86_64_REX_GOTPCRELX: return "R_X86_64_REX_GOTPCRELX";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -95,7 +101,7 @@ std::string rel_to_string<I386>(u32 r_type) {
   case R_386_IRELATIVE: return "R_386_IRELATIVE";
   case R_386_GOT32X: return "R_386_GOT32X";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -206,7 +212,7 @@ std::string rel_to_string<ARM64>(u32 r_type) {
   case R_AARCH64_TLSDESC: return "R_AARCH64_TLSDESC";
   case R_AARCH64_IRELATIVE: return "R_AARCH64_IRELATIVE";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -348,7 +354,7 @@ std::string rel_to_string<ARM32>(u32 r_type) {
   case R_ARM_THM_BF18: return "R_ARM_THM_BF18";
   case R_ARM_IRELATIVE: return "R_ARM_IRELATIVE";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -407,7 +413,7 @@ std::string rel_to_string<RV64LE>(u32 r_type) {
   case R_RISCV_SET_ULEB128: return "R_RISCV_SET_ULEB128";
   case R_RISCV_SUB_ULEB128: return "R_RISCV_SUB_ULEB128";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -504,7 +510,7 @@ std::string rel_to_string<PPC32>(u32 r_type) {
   case R_PPC_REL16_HI: return "R_PPC_REL16_HI";
   case R_PPC_REL16_HA: return "R_PPC_REL16_HA";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -623,7 +629,7 @@ std::string rel_to_string<PPC64V1>(u32 r_type) {
   case R_PPC64_REL16_HI: return "R_PPC64_REL16_HI";
   case R_PPC64_REL16_HA: return "R_PPC64_REL16_HA";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -720,7 +726,7 @@ std::string rel_to_string<SPARC64>(u32 r_type) {
   case R_SPARC_GOTDATA_OP: return "R_SPARC_GOTDATA_OP";
   case R_SPARC_IRELATIVE: return "R_SPARC_IRELATIVE";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -793,7 +799,7 @@ std::string rel_to_string<S390X>(u32 r_type) {
   case R_390_PC24DBL: return "R_390_PC24DBL";
   case R_390_PLT24DBL: return "R_390_PLT24DBL";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -841,7 +847,7 @@ std::string rel_to_string<M68K>(u32 r_type) {
   case R_68K_TLS_DTPREL32: return "R_68K_TLS_DTPREL32";
   case R_68K_TLS_TPREL32: return "R_68K_TLS_TPREL32";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -875,7 +881,7 @@ std::string rel_to_string<SH4>(u32 r_type) {
   case R_SH_GOTPC: return "R_SH_GOTPC";
   case R_SH_GOTPLT32: return "R_SH_GOTPLT32";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -915,7 +921,7 @@ std::string rel_to_string<ALPHA>(u32 r_type) {
   case R_ALPHA_TPRELLO: return "R_ALPHA_TPRELLO";
   case R_ALPHA_TPREL16: return "R_ALPHA_TPREL16";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>
@@ -998,7 +1004,7 @@ std::string rel_to_string<MIPS64LE>(u32 r_type) {
   case R_MIPS_PC32: return "R_MIPS_PC32";
   case R_MIPS_EH: return "R_MIPS_EH";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>

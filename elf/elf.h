@@ -1749,42 +1749,16 @@ struct ElfRel<SPARC64> {
   ib64 r_addend;
 };
 
-static inline u8 get_mips64_r_type2(u8 r_type) {
-  if (r_type == R_MIPS_REL32 || r_type == R_MIPS_GLOB_DAT)
-    return R_MIPS_64;
-  return R_NONE;
-}
-
 template <>
 struct ElfRel<MIPS64LE> {
   ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
-    : r_offset(offset), r_sym(sym), r_type(type), r_type2(get_mips64_r_type2(type)),
-      r_type3(0), r_padding(0), r_addend(addend) {}
+    : r_offset(offset), r_sym(sym), r_type(type), r_addend(addend) {}
 
   ul64 r_offset;
   ul32 r_sym;
-  u8 r_padding;
-  u8 r_type3;
-  u8 r_type2;
-  u8 r_type;
+  ub32 r_type;
   il64 r_addend;
-};
-
-template <>
-struct ElfRel<MIPS64BE> {
-  ElfRel() = default;
-  ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
-    : r_offset(offset), r_sym(sym), r_padding(0), r_type3(0),
-      r_type2(get_mips64_r_type2(type)), r_type(type), r_addend(addend) {}
-
-  ub64 r_offset;
-  ub32 r_sym;
-  u8 r_padding;
-  u8 r_type3;
-  u8 r_type2;
-  u8 r_type;
-  ib64 r_addend;
 };
 
 // .MIPS.options section
@@ -2241,11 +2215,11 @@ struct MIPS64LE {
   static constexpr u32 pltgot_size = 0;
 
   static constexpr u32 R_COPY = R_MIPS_COPY;
-  static constexpr u32 R_GLOB_DAT = R_MIPS_GLOB_DAT;
+  static constexpr u32 R_GLOB_DAT = R_MIPS_GLOB_DAT | (R_MIPS_64 << 8);
   static constexpr u32 R_JUMP_SLOT = R_MIPS_JUMP_SLOT;
   static constexpr u32 R_ABS = R_MIPS_64;
-  static constexpr u32 R_DYNAMIC = R_MIPS_REL32;
-  static constexpr u32 R_RELATIVE = R_MIPS_REL32;
+  static constexpr u32 R_DYNAMIC = R_MIPS_REL32 | (R_MIPS_64 << 8);
+  static constexpr u32 R_RELATIVE = R_MIPS_REL32 | (R_MIPS_64 << 8);
   static constexpr u32 R_DTPOFF = R_MIPS_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_MIPS_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_MIPS_TLS_DTPMOD64;
@@ -2263,11 +2237,11 @@ struct MIPS64BE {
   static constexpr u32 pltgot_size = 0;
 
   static constexpr u32 R_COPY = R_MIPS_COPY;
-  static constexpr u32 R_GLOB_DAT = R_MIPS_GLOB_DAT;
+  static constexpr u32 R_GLOB_DAT = R_MIPS_GLOB_DAT | (R_MIPS_64 << 8);
   static constexpr u32 R_JUMP_SLOT = R_MIPS_JUMP_SLOT;
   static constexpr u32 R_ABS = R_MIPS_64;
-  static constexpr u32 R_DYNAMIC = R_MIPS_REL32;
-  static constexpr u32 R_RELATIVE = R_MIPS_REL32;
+  static constexpr u32 R_DYNAMIC = R_MIPS_REL32 | (R_MIPS_64 << 8);
+  static constexpr u32 R_RELATIVE = R_MIPS_REL32 | (R_MIPS_64 << 8);
   static constexpr u32 R_DTPOFF = R_MIPS_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_MIPS_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_MIPS_TLS_DTPMOD64;
