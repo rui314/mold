@@ -1607,6 +1607,9 @@ public:
   std::mutex mu;
 };
 
+template <typename E>
+void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie);
+
 //
 // main.cc
 //

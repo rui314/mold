@@ -62,7 +62,7 @@ if [ $MACHINE = x86_64 -o $MACHINE = aarch64 ]; then
 fi
 
 # riscv64-linux-gnu-strip crashes for some reason
-if [ $MACHINE != riscv32 ]; then
+if [ $MACHINE != riscv32 ] && [[ $MACHINE != mips* ]]; then
   $CXX -B. -o $t/exe11 $t/b.o -pie
   $STRIP $t/exe11
   $QEMU $t/exe11

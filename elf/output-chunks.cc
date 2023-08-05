@@ -2118,6 +2118,9 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       if (ctx.arg.relocatable)
         continue;
 
+      if constexpr (is_mips<E>)
+        mips_rewrite_cie(ctx, base + cie.output_offset, cie);
+
       for (const ElfRel<E> &rel : cie.get_rels()) {
         assert(rel.r_offset - cie.input_offset < contents.size());
 

@@ -1102,10 +1102,11 @@ void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
     for (ElfRel<E> &rel : cie.get_rels()) {
       Symbol<E> &sym = *this->symbols[rel.r_sym];
 
-      if (ctx.arg.pic && rel.r_type == E::R_ABS)
-        Error(ctx) << *this << ": relocation " << rel << " in .eh_frame can not"
-                   << " be used when making a position-independent output;"
-                   << " recompile with -fPIE or -fPIC";
+      if constexpr (!is_mips<E>)
+        if (ctx.arg.pic && rel.r_type == E::R_ABS)
+          Error(ctx) << *this << ": relocation " << rel << " in .eh_frame can"
+                     << " not be used when making a position-independent output;"
+                     << " recompile with -fPIE or -fPIC";
 
       if (sym.is_imported) {
         if (sym.get_type() != STT_FUNC)

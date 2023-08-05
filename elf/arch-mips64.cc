@@ -57,7 +57,9 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   case R_NONE:
     break;
   case R_MIPS_64:
-    *(U64<E> *)loc = val;
+    // We relocate R_MIPS_64 in .eh_frame as a relative relocation.
+    // See the comment for mips_rewrite_cie() below.
+    *(U64<E> *)loc = val - this->shdr.sh_addr - offset;
     break;
   default:
     Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
@@ -68,7 +70,7 @@ template <typename E>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  [[maybe_unused]] ElfRel<E> *dynrel = nullptr;
+  ElfRel<E> *dynrel = nullptr;
   if (ctx.reldyn)
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
@@ -414,6 +416,74 @@ void MipsGotSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+// MIPS .eh_frame contains absolute addresses (i.e. R_MIPS_64 relocations)
+// even if compiled with -fPIC. Instead of emitting dynamic relocations,
+// we rewrite CIEs to convert absolute addresses to relative ones.
+template <typename E>
+void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie) {
+  u8 *aug = buf + 9; // Skip Length, CIE ID and Version fields
+  if (*aug != 'z')
+    return;
+  aug++;
+
+  // Skip Augmentation String
+  u8 *p = aug + strlen((char *)aug) + 1;
+
+  read_uleb(&p); // Skip Code Alignment Factor
+  read_uleb(&p); // Skip Data Alignment Factor
+  p++;           // Skip Return Address Register
+  read_uleb(&p); // Skip Augmentation Data Length
+
+  auto rewrite = [&](u8 *ptr) {
+    i64 sz;
+
+    switch (*ptr & 0xf) {
+    case DW_EH_PE_absptr:
+      sz = sizeof(Word<E>);
+      break;
+    case DW_EH_PE_udata4:
+    case DW_EH_PE_sdata4:
+      sz = 4;
+      break;
+    case DW_EH_PE_udata8:
+    case DW_EH_PE_sdata8:
+      sz = 8;
+      break;
+    default:
+      Fatal(ctx) << cie.input_section << ": unknown pointer size";
+    }
+
+    if ((*ptr & 0x70) == DW_EH_PE_absptr) {
+      if (sz == 4)
+        *ptr = (*ptr & 0x80) | DW_EH_PE_pcrel | DW_EH_PE_sdata4;
+      else
+        *ptr = (*ptr & 0x80) | DW_EH_PE_pcrel | DW_EH_PE_sdata8;
+    }
+    return sz;
+  };
+
+  // Now p points to the beginning of Augmentation Data
+  for (; *aug; aug++) {
+    switch (*aug) {
+    case 'L':
+    case 'R':
+      rewrite(p);
+      p++;
+      break;
+    case 'P':
+      p += rewrite(p) + 1;
+      break;
+    case 'S':
+    case 'B':
+      break;
+    default:
+      Error(ctx) << cie.input_section
+                 << ": unknown argumentation string in CIE: '"
+                 << (char)*aug << "'";
+    }
+  }
+}
+
 #define INSTANTIATE(E)                                                       \
   template void write_plt_header(Context<E> &, u8 *);                        \
   template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);            \
@@ -423,7 +493,9 @@ void MipsGotSection<E>::copy_buf(Context<E> &ctx) {
   template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);      \
   template void InputSection<E>::apply_reloc_nonalloc(Context<E> &, u8 *);   \
   template void InputSection<E>::scan_relocations(Context<E> &);             \
-  template class MipsGotSection<E>;
+  template class MipsGotSection<E>;                                          \
+  template void mips_rewrite_cie(Context<E> &, u8 *, CieRecord<E> &);
+
 
 INSTANTIATE(MIPS64LE);
 INSTANTIATE(MIPS64BE);
