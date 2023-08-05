@@ -1,4 +1,8 @@
-// This file contains an incomplete implementation of MIPS support.
+// MIPS is a RISC ISA developed in the '80s. The processor was once fairly
+// popular; for examples, Silicon Graphics workstations and Nintendo 64
+// game consoles are based on the processor. Even though it's no longer a
+// popular choice when creating a new system, there are still many uses of
+// the ISA especially in the network router segment.
 //
 // The MIPS psABIs are in a sad state due to the lack of ownership of the
 // ABI. The last major Unix vendor in the MIPS market was Silicon
@@ -9,29 +13,45 @@
 // a result, the MIPS ABIs left as probably the most diverged ABI compared
 // to the other psABIs.
 //
-// In our MIPS support, we prioritize simplicity of implementation over
-// marginal runtime efficiency. Specifically, we made the following
-// decisions to support MIPS:
+// Specifically, the MIPS ABIs has the following issues:
 //
-// 1. In many environments, the compiler still emits machine code for the
-//    small code model. That is, all references to GOT entries use a
-//    single GP-relative instruction which assumes that all GOT entries
-//    are within GP ± 32 KiB. If this assumption cannot be maintained, the
-//    linker often creates multiple GOT sections for multiple GP values.
-//
-//    We simply do not support multi-GOT. Instead, we'll print out an
-//    error message to ask the user to recompile code with the medium code
-//    model with the `-mxgot` option if a GOT became too large.
+// 1. Since the ISA does not support PC-relative addressing, each function
+//    first materializes the address of GOT + 0x7ff0 in the GP register
+//    and access GOT entries relative to the GP's value. This GP-relative
+//    access is usually done with a single load instruction with a 16-bit
+//    offset. That means only GP ± 32 KiB is addressable. If GOT is larger
+//    than that, the linker is expected to create a GOT section for each
+//    input file and associate a different GP value for each GOT. This
+//    method is called "multi-GOT". Multi-GOT is not necessary for other
+//    ABIs because other processors either simply support PC-relative
+//    addressing or use two instructions to access GOT entries.
 //
 // 2. The MIPS ABIs require .dynsym entries to be sorted in a very
 //    specific manner to represent some dynamic relocations implicitly
 //    rather than explicitly in the .rela.dyn section. This feature is
 //    called "Quickstart" in the MIPS documentation.
 //
-//    We do not sort .dynsym entries. Quickstart still kicks in at the
+// 3. Unlike other psABIs, a MIPS relocation record can have up to three
+//    types -- that is, each record has not only r_type but also r_type2
+//    and r_type3. A relocated value is computed by the combination of all
+//    the relocation types.
+//
+// In our MIPS support, we prioritize simplicity of implementation over
+// marginal runtime efficiency. Specifically, we made the following
+// decisions for simplification:
+//
+// 1. We do not support multi-GOT. Instead, we'll print out an error
+//    message to ask the user to recompile code with the medium code model
+//    with the `-mxgot` option if the (single) GOT became too large.
+//
+// 2. We do not sort .dynsym entries. Quickstart still kicks in at the
 //    load-time (there's no way to tell the loader to disable Quickstart),
 //    and the loader writes resolved addresses to the beginning of
 //    .mips_got. We just ignore these relocated values.
+//
+// 3. Instead of supporting arbitrary combinations of relocation types, we
+//    support only a limited set of them. This works because, in practice,
+//    the compiler emits only a limted set of relocation types.
 
 #include "mold.h"
 
