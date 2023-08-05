@@ -525,7 +525,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                    << "   aarch64linux\n   armelf_linux_eabi\n   elf64lriscv\n"
                    << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
                    << "   elf32ppc\n   elf64ppc\n   elf64lppc\n   elf64_s390\n"
-                   << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n   elf64alpha";
+                   << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n"
+                   << "   elf64alpha\n   elf64ltsmip\n   elf64btsmip";
       version_shown = true;
     } else if (read_flag("mips32") || read_flag("mips32r2") ||
                read_flag("mips32r3") || read_flag("mips32r4") ||
