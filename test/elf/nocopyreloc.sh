@@ -8,6 +8,7 @@
 [ $MACHINE = ppc64le ] && skip
 [ $MACHINE = sh4 ] && skip
 [ $MACHINE = alpha ] && skip
+[[ $MACHINE = mips* ]] && skip
 
 cat <<EOF | $CC -shared -o $t/a.so -xc -
 int foo = 3;

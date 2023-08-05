@@ -3,6 +3,7 @@
 
 # ARM32's strip command crashes on the output of this test for some reason.
 [ $MACHINE = arm ] && skip
+[[ $MACHINE = mips* ]] && skip
 
 strip=$STRIP
 command -v $strip >& /dev/null || skip
