@@ -39,6 +39,8 @@ namespace mold::elf {
 
 static constexpr i64 BIAS = 0x8000;
 
+// We don't support lazy symbol resolution for MIPS. All dynamic symbols
+// are resolved eagerly on process startup.
 template <typename E>
 void write_plt_header(Context<E> &ctx, u8 *buf) {}
 
@@ -250,7 +252,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       assert(rel.r_addend == 0);
       sym.flags |= NEEDS_GOT;
       break;
-    case R_MIPS_GOT_PAGE: {
+    case R_MIPS_GOT_PAGE:
+    case R_MIPS_GOT_OFST: {
       std::scoped_lock lock(ctx.extra.got->mu);
       ctx.extra.got->gotpage_syms.push_back({&sym, rel.r_addend});
       break;
@@ -273,7 +276,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_HI16 << 16):
     case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_LO16 << 16):
     case R_MIPS_GPREL32 | (R_MIPS_64 << 8):
-    case R_MIPS_GOT_OFST:
     case R_MIPS_JALR:
     case R_MIPS_TLS_DTPREL_HI16:
     case R_MIPS_TLS_DTPREL_LO16:
@@ -374,6 +376,7 @@ void MipsGotSection<E>::update_shdr(Context<E> &ctx) {
   sort(gotpage_syms);
   remove_duplicates(gotpage_syms);
 
+  // The first two slots are reserved followed by slots for Quickstart.
   i64 n = NUM_RESERVED + ctx.dynsym->symbols.size() +
           got_syms.size() + gotpage_syms.size();
   this->shdr.sh_size = n * sizeof(Word<E>);

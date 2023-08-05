@@ -1755,6 +1755,8 @@ struct ElfRel<MIPS64LE> {
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
     : r_offset(offset), r_sym(sym), r_type(type), r_addend(addend) {}
 
+  // In the little-endian MIPS64, r_sym and r_type are reversed with r_type
+  // being stored in big-endian order. It's extremely odd though.
   ul64 r_offset;
   ul32 r_sym;
   ub32 r_type;
