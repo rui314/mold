@@ -53,13 +53,10 @@ jobs:
         ./install-build-deps.sh update
         apt-get install -y sudo qemu-user gdb zstd dwarfdump {gcc,g++}-10-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha,mips,mipsel}-linux-gnu {gcc,g++}-10-arm-linux-gnueabihf {gcc,g++}-10-{mips64,mips64el}-linux-gnuabi64
 
-        for i in i686 aarch64 riscv64 powerpc powerpc64 powerpc64le s390x sparc64 m68k sh4 alpha; do
-          ln -sf /usr/bin/$i-linux-gnu-gcc-10 /usr/bin/$i-linux-gnu-gcc
-          ln -sf /usr/bin/$i-linux-gnu-g++-10 /usr/bin/$i-linux-gnu-g++
+        for i in {i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha,mips,mipsel}-linux-gnu arm-linux-gnueabihf {mips64,mips64el}-linux-gnuabi64; do
+          ln -sf /usr/bin/$i-gcc-10 /usr/bin/$i-gcc
+          ln -sf /usr/bin/$i-g++-10 /usr/bin/$i-g++
         done
-
-        ln -sf /usr/bin/arm-linux-gnueabihf-gcc-10 /usr/bin/arm-linux-gnueabihf-gcc
-        ln -sf /usr/bin/arm-linux-gnueabihf-g++-10 /usr/bin/arm-linux-gnueabihf-g++
 
         # Install a RV32 toolchain from third party since it's not available
         # as an Ubuntu package.
