@@ -101,7 +101,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   u64 GP = file.extra.got->shdr.sh_addr + 0x7ff0;
 
   u64 GP0 = file.extra.gp0;
-  MipsGotSection<E> &got = *file.extra.got;
+  MipsGotSection<E> *got = file.extra.got;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -157,14 +157,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_MIPS_CALL16:
     case R_MIPS_CALL_LO16:
     case R_MIPS_GOT_LO16:
-      write_lo16(got.get_got_addr(ctx, sym, A) - GP);
+      write_lo16(got->get_got_addr(ctx, sym, A) - GP);
       break;
     case R_MIPS_CALL_HI16:
     case R_MIPS_GOT_HI16:
-      write_hi16(got.get_got_addr(ctx, sym, A) - GP);
+      write_hi16(got->get_got_addr(ctx, sym, A) - GP);
       break;
     case R_MIPS_GOT_PAGE:
-      write_lo16(got.get_gotpage_addr(ctx, sym, A) - GP);
+      write_lo16(got->get_gotpage_addr(ctx, sym, A) - GP);
       break;
     case R_MIPS_GOT_OFST:
       write_lo16(0);
@@ -178,7 +178,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_lo16_nc(S + A - ctx.tp_addr);
       break;
     case R_MIPS_TLS_GOTTPREL:
-      write_lo16(got.get_gottp_addr(ctx, sym) - GP);
+      write_lo16(got->get_gottp_addr(ctx, sym) - GP);
       break;
     case R_MIPS_TLS_DTPREL_HI16:
       write_hi16(S + A - ctx.dtp_addr);
@@ -187,10 +187,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_lo16_nc(S + A - ctx.dtp_addr);
       break;
     case R_MIPS_TLS_GD:
-      write_lo16(got.get_tlsgd_addr(ctx, sym) - GP);
+      write_lo16(got->get_tlsgd_addr(ctx, sym) - GP);
       break;
     case R_MIPS_TLS_LDM:
-      write_lo16(got.get_tlsld_addr(ctx) - GP);
+      write_lo16(got->get_tlsld_addr(ctx) - GP);
       break;
     default:
       unreachable();
@@ -240,7 +240,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
-  MipsGotSection<E> &got = *file.extra.got;
+  MipsGotSection<E> *got = file.extra.got;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -259,15 +259,15 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_MIPS_CALL_LO16:
     case R_MIPS_GOT_HI16:
     case R_MIPS_GOT_LO16:
-      got.got_syms.push_back({&sym, rel.r_addend});
+      got->got_syms.push_back({&sym, rel.r_addend});
       break;
     case R_MIPS_GOT_PAGE:
     case R_MIPS_GOT_OFST:
-      got.gotpage_syms.push_back({&sym, rel.r_addend});
+      got->gotpage_syms.push_back({&sym, rel.r_addend});
       break;
     case R_MIPS_TLS_GOTTPREL:
       assert(rel.r_addend == 0);
-      got.gottp_syms.push_back(&sym);
+      got->gottp_syms.push_back(&sym);
       break;
     case R_MIPS_TLS_TPREL_HI16:
     case R_MIPS_TLS_TPREL_LO16:
@@ -275,11 +275,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_MIPS_TLS_GD:
       assert(rel.r_addend == 0);
-      got.tlsgd_syms.push_back(&sym);
+      got->tlsgd_syms.push_back(&sym);
       break;
     case R_MIPS_TLS_LDM:
       assert(rel.r_addend == 0);
-      got.has_tlsld = true;
+      got->has_tlsld = true;
       break;
     case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_HI16 << 16):
     case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_LO16 << 16):
