@@ -194,12 +194,8 @@ bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
   u64 type = chunk->shdr.sh_type;
 
   if (flags & SHF_WRITE)
-    return (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
+    return chunk->is_relro || (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
            type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
-           chunk == ctx.got || chunk == ctx.dynamic ||
-           chunk == ctx.relro_padding ||
-           (ctx.arg.z_now && ctx.gotplt && chunk == ctx.gotplt) ||
-           chunk->name == ".alpha_got" || chunk->name == ".mips_got" ||
            chunk->name == ".toc" || chunk->name.ends_with(".rel.ro");
   return false;
 }
@@ -2294,7 +2290,7 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
     sym2->is_imported = true;
     sym2->is_exported = true;
     sym2->has_copyrel = true;
-    sym2->is_copyrel_readonly = is_relro;
+    sym2->is_copyrel_readonly = this->is_relro;
     sym2->value = offset;
     ctx.dynsym->add_symbol(ctx, sym2);
   }
@@ -2307,7 +2303,7 @@ void CopyrelSection<E>::update_shdr(Context<E> &ctx) {
   // segment for it. We turn a .copyrel.rel.ro into a regular section
   // if it is very small to avoid the cost of the extra segment.
   constexpr i64 threshold = 4096;
-  if (is_relro && ctx.arg.z_relro && this->shdr.sh_size < threshold)
+  if (this->is_relro && ctx.arg.z_relro && this->shdr.sh_size < threshold)
     this->shdr.sh_type = SHT_PROGBITS;
 }
 

@@ -64,7 +64,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.got = push(new GotSection<E>);
 
   if constexpr (!is_sparc<E>)
-    ctx.gotplt = push(new GotPltSection<E>);
+    ctx.gotplt = push(new GotPltSection<E>(ctx));
 
   ctx.reldyn = push(new RelDynSection<E>);
   ctx.relplt = push(new RelPltSection<E>);

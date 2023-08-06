@@ -368,6 +368,7 @@ public:
   std::string_view name;
   ElfShdr<E> shdr = { .sh_addralign = 1 };
   i64 shndx = 0;
+  bool is_relro = false;
 
   // Some synethetic sections add local symbols to the output.
   // For example, range extension thunks adds function_name@thunk
@@ -479,6 +480,7 @@ class GotSection : public Chunk<E> {
 public:
   GotSection() {
     this->name = ".got";
+    this->is_relro = true;
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
@@ -516,8 +518,9 @@ public:
 template <typename E>
 class GotPltSection : public Chunk<E> {
 public:
-  GotPltSection() {
+  GotPltSection(Context<E> &ctx) {
     this->name = ".got.plt";
+    this->is_relro = ctx.arg.z_now;
     this->shdr.sh_type = is_ppc64<E> ? SHT_NOBITS : SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
@@ -669,6 +672,7 @@ class DynamicSection : public Chunk<E> {
 public:
   DynamicSection() {
     this->name = ".dynamic";
+    this->is_relro = true;
     this->shdr.sh_type = SHT_DYNAMIC;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
@@ -841,8 +845,9 @@ public:
 template <typename E>
 class CopyrelSection : public Chunk<E> {
 public:
-  CopyrelSection(bool is_relro) : is_relro(is_relro) {
+  CopyrelSection(bool is_relro) {
     this->name = is_relro ? ".copyrel.rel.ro" : ".copyrel";
+    this->is_relro = is_relro;
     this->shdr.sh_type = SHT_NOBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
   }
@@ -852,7 +857,6 @@ public:
   i64 get_reldyn_size(Context<E> &ctx) const override { return symbols.size(); }
   void copy_buf(Context<E> &ctx) override;
 
-  bool is_relro;
   std::vector<Symbol<E> *> symbols;
 };
 
@@ -1040,6 +1044,7 @@ class RelroPaddingSection : public Chunk<E> {
 public:
   RelroPaddingSection() {
     this->name = ".relro_padding";
+    this->is_relro = true;
     this->shdr.sh_type = SHT_NOBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = 1;
@@ -1539,6 +1544,7 @@ class AlphaGotSection : public Chunk<ALPHA> {
 public:
   AlphaGotSection() {
     this->name = ".alpha_got";
+    this->is_relro = true;
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = 8;
@@ -1570,6 +1576,7 @@ class MipsGotSection : public Chunk<E> {
 public:
   MipsGotSection() {
     this->name = ".mips_got";
+    this->is_relro = true;
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE | SHF_MIPS_GPREL;
     this->shdr.sh_addralign = 8;
