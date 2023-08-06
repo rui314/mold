@@ -383,13 +383,19 @@ u64 MipsGotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
 }
 
 template <typename E>
-std::vector<typename MipsGotSection<E>::GotEntry>
-MipsGotSection<E>::get_got_entries(Context<E> &ctx) const {
+struct GotEntry {
+  u64 val = 0;
+  i64 r_type = R_NONE;
+  Symbol<E> *sym = nullptr;
+};
+
+template <typename E>
+std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx, MipsGotSection<E> &got) {
   std::vector<GotEntry> entries;
   auto add = [&](GotEntry ent) { entries.push_back(ent); };
 
   // Create GOT entries for ordinary symbols
-  for (const SymbolAddend &ent : got_syms) {
+  for (const SymbolAddend &ent : got.got_syms) {
     if (ent.sym->is_imported) {
       // If a symbol is imported, let the dynamic linker to resolve it.
       add({0, E::R_DYNAMIC, ent.sym});
@@ -403,7 +409,7 @@ MipsGotSection<E>::get_got_entries(Context<E> &ctx) const {
   }
 
   // Create GOT entries for GOT_PAGE and GOT_OFST relocs
-  for (const SymbolAddend &ent : gotpage_syms) {
+  for (const SymbolAddend &ent : got.gotpage_syms) {
     if (ctx.arg.pic && ent.sym->is_relative())
       add({ent.get_addr(ctx), E::R_RELATIVE});
     else
@@ -411,7 +417,7 @@ MipsGotSection<E>::get_got_entries(Context<E> &ctx) const {
   }
 
   // Create GOT entries for TLVs.
-  for (Symbol<E> *sym : tlsgd_syms) {
+  for (Symbol<E> *sym : got.tlsgd_syms) {
     if (sym->is_imported) {
       // If a symbol is imported, let the dynamic linker to resolve it.
       add({0, E::R_DTPMOD, sym});
@@ -429,7 +435,7 @@ MipsGotSection<E>::get_got_entries(Context<E> &ctx) const {
     }
   }
 
-  for (Symbol<E> *sym : gottp_syms) {
+  for (Symbol<E> *sym : got.gottp_syms) {
     if (sym->is_imported) {
       // If we know nothing about the symbol, let the dynamic linker
       // to fill the GOT entry.
@@ -445,7 +451,7 @@ MipsGotSection<E>::get_got_entries(Context<E> &ctx) const {
     }
   }
 
-  if (has_tlsld) {
+  if (got.has_tlsld) {
     if (ctx.arg.shared)
       add({0, E::R_DTPMOD});
     else
@@ -480,7 +486,7 @@ void MipsGotSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 i64 MipsGotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
-  for (GotEntry &ent : get_got_entries(ctx))
+  for (GotEntry &ent : get_got_entries(ctx, *this))
     if (ent.r_type != R_NONE)
       n++;
   return n;

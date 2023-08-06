@@ -1612,12 +1612,6 @@ public:
   i64 get_reldyn_size(Context<E> &ctx) const override;
   void copy_buf(Context<E> &ctx) override;
 
-  struct GotEntry {
-    u64 val = 0;
-    i64 r_type = R_NONE;
-    Symbol<E> *sym = nullptr;
-  };
-
   struct SymbolAddend {
     bool operator==(const SymbolAddend &) const = default;
     bool operator<(const SymbolAddend &) const;
@@ -1626,8 +1620,6 @@ public:
     Symbol<E> *sym;
     i64 addend;
   };
-
-  std::vector<GotEntry> get_got_entries(Context<E> &ctx) const;
 
   std::vector<SymbolAddend> got_syms;
   std::vector<SymbolAddend> gotpage_syms;
