@@ -128,8 +128,12 @@ void create_synthetic_sections(Context<E> &ctx) {
   if constexpr (is_alpha<E>)
     ctx.extra.got = push(new AlphaGotSection);
 
-  if constexpr (is_mips<E>)
-    ctx.extra.got = push(new MipsGotSection<E>);
+  if constexpr (is_mips<E>) {
+    ctx.extra.quickstart = push(new MipsQuickstartSection<E>);
+
+    for (ObjectFile<E> *file : ctx.objs)
+      file->extra.got = push(new MipsGotSection<E>(ctx, *file));
+  }
 
   // If .dynamic exists, .dynsym and .dynstr must exist as well
   // since .dynamic refers them.
@@ -1748,7 +1752,6 @@ void clear_padding(Context<E> &ctx) {
 //   <writable tdata>
 //   <writable tbss>
 //   <writable RELRO data>
-//   .mips_got
 //   .got
 //   .toc
 //   .alpha_got
@@ -1831,14 +1834,12 @@ void sort_output_sections_regular(Context<E> &ctx) {
     if (chunk->shdr.sh_type == SHT_NOTE)
       return -chunk->shdr.sh_addralign;
 
-    if (chunk->name == ".mips_got")
-      return 1;
     if (chunk == ctx.got)
-      return 2;
+      return 1;
     if (chunk->name == ".toc")
-      return 3;
+      return 2;
     if (chunk->name == ".alpha_got")
-      return 4;
+      return 3;
     if (chunk == ctx.relro_padding)
       return INT_MAX;
     return 0;
@@ -2456,7 +2457,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // MIPS' _gp symbol.
   if constexpr (is_mips<E>)
-    start(ctx._gp, ctx.extra.got, 0x7ff0);
+    start(ctx._gp, ctx.extra.quickstart, 0x7ff0);
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : sections) {

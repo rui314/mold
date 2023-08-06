@@ -53,13 +53,6 @@ else
   QEMU="qemu-$MACHINE -L /usr/$TRIPLE"
 fi
 
-if [[ "$TRIPLE" = mips* ]]; then
-  CC="$CC -mxgot"
-  CXX="$CXX -mxgot"
-  GCC="$GCC -mxgot"
-  GXX="$GXX -mxgot"
-fi
-
 # Common functions
 test_cflags() {
   echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null

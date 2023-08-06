@@ -739,7 +739,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     if (ctx.gotplt->shdr.sh_size)
       define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr + GotPltSection<E>::HDR_SIZE);
   } else if constexpr (is_mips<E>) {
-    define(DT_PLTGOT, ctx.extra.got->shdr.sh_addr);
+    define(DT_PLTGOT, ctx.extra.quickstart->shdr.sh_addr);
   } else {
     if (ctx.gotplt->shdr.sh_size)
       define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr);
@@ -830,7 +830,18 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   if (ctx.arg.z_interpose)
     flags1 |= DF_1_INTERPOSE;
 
-  if (!ctx.got->gottp_syms.empty())
+  auto has_gottp_syms = [&] {
+    if constexpr (is_mips<E>) {
+      for (ObjectFile<E> *file : ctx.objs)
+        if (!file->extra.got->gottp_syms.empty())
+          return true;
+      return false;
+    } else {
+      return !ctx.got->gottp_syms.empty();
+    }
+  };
+
+  if (has_gottp_syms())
     flags |= DF_STATIC_TLS;
   if (ctx.has_textrel)
     flags |= DF_TEXTREL;

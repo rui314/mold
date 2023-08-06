@@ -50,6 +50,7 @@ template <typename E> struct CieRecord;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
 template <typename E> class RelocSection;
+template <typename E> class MipsGotSection;
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
@@ -1209,6 +1210,7 @@ template <> struct ObjectFileExtras<PPC32> {
 
 template <typename E> requires is_mips<E>
 struct ObjectFileExtras<E> {
+  MipsGotSection<E> *got = nullptr;
   u64 gp0 = 0;
 };
 
@@ -1572,10 +1574,27 @@ private:
 //
 
 template <typename E>
+class MipsQuickstartSection : public Chunk<E> {
+public:
+  MipsQuickstartSection() {
+    this->name = ".mips_quickstart";
+    this->is_relro = true;
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE | SHF_MIPS_GPREL;
+    this->shdr.sh_addralign = 8;
+  }
+
+  static constexpr i64 NUM_RESERVED = 2;
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+};
+
+template <typename E>
 class MipsGotSection : public Chunk<E> {
 public:
-  MipsGotSection() {
-    this->name = ".mips_got";
+  MipsGotSection(Context<E> &ctx, const ObjectFile<E> &file) {
+    this->name = save_string(ctx, ".mips_got." + std::to_string(file.priority));
     this->is_relro = true;
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE | SHF_MIPS_GPREL;
@@ -1585,6 +1604,9 @@ public:
   u64 get_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
   u64 get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
   u64 get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
+  u64 get_tlsgd_addr(Context<E> &ctx, Symbol<E> &sym) const;
+  u64 get_gottp_addr(Context<E> &ctx, Symbol<E> &sym) const;
+  u64 get_tlsld_addr(Context<E> &ctx) const;
 
   void update_shdr(Context<E> &ctx) override;
   i64 get_reldyn_size(Context<E> &ctx) const override;
@@ -1607,11 +1629,11 @@ public:
 
   std::vector<GotEntry> get_got_entries(Context<E> &ctx) const;
 
-  static constexpr i64 NUM_RESERVED = 2;
-
   std::vector<SymbolAddend> got_syms;
   std::vector<SymbolAddend> gotpage_syms;
-  std::mutex mu;
+  std::vector<Symbol<E> *> tlsgd_syms;
+  std::vector<Symbol<E> *> gottp_syms;
+  bool has_tlsld = false;
 };
 
 template <typename E>
@@ -1702,7 +1724,7 @@ template <> struct ContextExtras<ALPHA> {
 
 template <typename E> requires is_mips<E>
 struct ContextExtras<E> {
-  MipsGotSection<E> *got = nullptr;
+  MipsQuickstartSection<E> *quickstart = nullptr;
 };
 
 // Context represents a context object for each invocation of the linker.
