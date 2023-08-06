@@ -386,6 +386,8 @@ get_got_entries(Context<E> &ctx, const MipsGotSection<E> &got) {
   using SymbolAddend = typename MipsGotSection<E>::SymbolAddend;
 
   std::vector<GotEntry<E>> entries;
+  entries.reserve(got.shdr.sh_size / sizeof(Word<E>));
+
   auto add = [&](GotEntry<E> ent) { entries.push_back(ent); };
 
   // Create GOT entries for ordinary symbols
