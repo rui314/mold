@@ -1412,6 +1412,9 @@ void scan_relocations(Context<E> &ctx) {
   if constexpr (is_alpha<E>)
     ctx.extra.got->finalize();
 
+  if constexpr (is_mips<E>)
+    mips_merge_got_sections(ctx);
+
   if (ctx.has_textrel && ctx.arg.warn_textrel)
     Warn(ctx) << "creating a DT_TEXTREL in an output file";
 }

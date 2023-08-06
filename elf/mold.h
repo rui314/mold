@@ -1628,6 +1628,9 @@ public:
 };
 
 template <typename E>
+void mips_merge_got_sections(Context<E> &ctx);
+
+template <typename E>
 void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie);
 
 //

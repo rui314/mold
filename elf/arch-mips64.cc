@@ -33,22 +33,19 @@
 //
 // 3. Unlike other psABIs, a MIPS relocation record can have up to three
 //    types -- that is, each record has not only r_type but also r_type2
-//    and r_type3. A relocated value is computed by the combination of all
+//    and r_type3. A relocated value is computed as the combination of all
 //    the relocation types.
 //
 // In our MIPS support, we prioritize simplicity of implementation over
 // marginal runtime efficiency. Specifically, we made the following
 // decisions for simplification:
 //
-// 1. We always create a GOT section for each input object file regardless
-//    of the total GOT size.
-//
-// 2. We do not sort .dynsym entries. Quickstart still kicks in at the
+// 1. We do not sort .dynsym entries. Quickstart still kicks in at the
 //    load-time (there's no way to tell the loader to disable Quickstart),
 //    and the loader writes resolved addresses to our placeholder section
 //    `.mips_quickstart`. We just ignore these relocated values.
 //
-// 3. Instead of supporting arbitrary combinations of relocation types, we
+// 2. Instead of supporting arbitrary combinations of relocation types, we
 //    support only a limited set of them. This works because, in practice,
 //    the compiler emits only a limted set of relocation types.
 
@@ -528,6 +525,40 @@ void MipsQuickstartSection<E>::copy_buf(Context<E> &ctx) {
         buf[i + NUM_RESERVED] = sym->get_addr(ctx, NO_PLT);
 }
 
+// We merge consective .mips_got sections to reduce the total number of
+// .mips_got entries. Note that each .mips_got should be equal or smaller
+// than 64 KiB so that all of its entries are within its GP ± 32 KiB.
+template <typename E>
+void mips_merge_got_sections(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs)
+    file->extra.got->update_shdr(ctx);
+
+  for (i64 i = 0; i < ctx.objs.size(); i++) {
+    MipsGotSection<E> &got = *ctx.objs[i]->extra.got;
+
+    for (i++; i < ctx.objs.size(); i++) {
+      MipsGotSection<E> &got2 = *ctx.objs[i]->extra.got;
+      if (got.shdr.sh_size + got2.shdr.sh_size >= 65536)
+        break;
+
+      append(got.got_syms, got2.got_syms);
+      append(got.gotpage_syms, got2.gotpage_syms);
+      append(got.tlsgd_syms, got2.tlsgd_syms);
+      append(got.gottp_syms, got2.gottp_syms);
+      got.has_tlsld = got.has_tlsld || got2.has_tlsld;
+
+      got2.got_syms.clear();
+      got2.gotpage_syms.clear();
+      got2.tlsgd_syms.clear();
+      got2.gottp_syms.clear();
+      got2.has_tlsld = false;
+
+      got.update_shdr(ctx);
+      ctx.objs[i]->extra.got = &got;
+    }
+  }
+}
+
 // MIPS .eh_frame contains absolute addresses (i.e. R_MIPS_64 relocations)
 // even if compiled with -fPIC. Instead of emitting base relocations, we
 // rewrite CIEs so that we can write relative addresse instead of absolute
@@ -608,6 +639,7 @@ void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie) {
   template void InputSection<E>::scan_relocations(Context<E> &);             \
   template class MipsGotSection<E>;                                          \
   template class MipsQuickstartSection<E>;                                   \
+  template void mips_merge_got_sections(Context<E> &);                       \
   template void mips_rewrite_cie(Context<E> &, u8 *, CieRecord<E> &);
 
 
