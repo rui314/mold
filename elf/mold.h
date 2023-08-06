@@ -1602,8 +1602,7 @@ public:
   }
 
   u64 get_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
-  u64 get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
-  u64 get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
+  u64 get_gotpage_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
   u64 get_tlsgd_addr(Context<E> &ctx, Symbol<E> &sym) const;
   u64 get_gottp_addr(Context<E> &ctx, Symbol<E> &sym) const;
   u64 get_tlsld_addr(Context<E> &ctx) const;

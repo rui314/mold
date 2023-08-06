@@ -101,6 +101,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   u64 GP = file.extra.got->shdr.sh_addr + 0x7ff0;
 
   u64 GP0 = file.extra.gp0;
+  MipsGotSection<E> &got = *file.extra.got;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -156,14 +157,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_MIPS_CALL16:
     case R_MIPS_CALL_LO16:
     case R_MIPS_GOT_LO16:
-      write_lo16(file.extra.got->get_got_addr(ctx, sym, A) - GP);
+      write_lo16(got.get_got_addr(ctx, sym, A) - GP);
       break;
     case R_MIPS_CALL_HI16:
     case R_MIPS_GOT_HI16:
-      write_hi16(file.extra.got->get_got_addr(ctx, sym, A) - GP);
+      write_hi16(got.get_got_addr(ctx, sym, A) - GP);
       break;
     case R_MIPS_GOT_PAGE:
-      write_lo16(file.extra.got->get_gotpage_got_addr(ctx, sym, A) - GP);
+      write_lo16(got.get_gotpage_addr(ctx, sym, A) - GP);
       break;
     case R_MIPS_GOT_OFST:
       write_lo16(0);
@@ -177,7 +178,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_lo16_nc(S + A - ctx.tp_addr);
       break;
     case R_MIPS_TLS_GOTTPREL:
-      write_lo16(file.extra.got->get_gottp_addr(ctx, sym) - GP);
+      write_lo16(got.get_gottp_addr(ctx, sym) - GP);
       break;
     case R_MIPS_TLS_DTPREL_HI16:
       write_hi16(S + A - ctx.dtp_addr);
@@ -186,10 +187,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_lo16_nc(S + A - ctx.dtp_addr);
       break;
     case R_MIPS_TLS_GD:
-      write_lo16(file.extra.got->get_tlsgd_addr(ctx, sym) - GP);
+      write_lo16(got.get_tlsgd_addr(ctx, sym) - GP);
       break;
     case R_MIPS_TLS_LDM:
-      write_lo16(file.extra.got->get_tlsld_addr(ctx) - GP);
+      write_lo16(got.get_tlsld_addr(ctx) - GP);
       break;
     default:
       unreachable();
@@ -239,6 +240,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  MipsGotSection<E> &got = *file.extra.got;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -257,15 +259,15 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_MIPS_CALL_LO16:
     case R_MIPS_GOT_HI16:
     case R_MIPS_GOT_LO16:
-      file.extra.got->got_syms.push_back({&sym, rel.r_addend});
+      got.got_syms.push_back({&sym, rel.r_addend});
       break;
     case R_MIPS_GOT_PAGE:
     case R_MIPS_GOT_OFST:
-      file.extra.got->gotpage_syms.push_back({&sym, rel.r_addend});
+      got.gotpage_syms.push_back({&sym, rel.r_addend});
       break;
     case R_MIPS_TLS_GOTTPREL:
       assert(rel.r_addend == 0);
-      file.extra.got->gottp_syms.push_back(&sym);
+      got.gottp_syms.push_back(&sym);
       break;
     case R_MIPS_TLS_TPREL_HI16:
     case R_MIPS_TLS_TPREL_LO16:
@@ -273,11 +275,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_MIPS_TLS_GD:
       assert(rel.r_addend == 0);
-      file.extra.got->tlsgd_syms.push_back(&sym);
+      got.tlsgd_syms.push_back(&sym);
       break;
     case R_MIPS_TLS_LDM:
       assert(rel.r_addend == 0);
-      file.extra.got->has_tlsld = true;
+      got.has_tlsld = true;
       break;
     case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_HI16 << 16):
     case R_MIPS_GPREL16 | (R_MIPS_SUB << 8) | (R_MIPS_LO16 << 16):
@@ -344,20 +346,12 @@ u64 MipsGotSection<E>::get_got_addr(Context<E> &ctx, Symbol<E> &sym,
 }
 
 template <typename E>
-u64 MipsGotSection<E>::get_gotpage_got_addr(Context<E> &ctx, Symbol<E> &sym,
+u64 MipsGotSection<E>::get_gotpage_addr(Context<E> &ctx, Symbol<E> &sym,
                                             i64 addend) const {
   auto it = std::lower_bound(gotpage_syms.begin(), gotpage_syms.end(),
                              SymbolAddend{&sym, addend});
   i64 idx = get_gotpage_offset(*this) + (it - gotpage_syms.begin());
   return this->shdr.sh_addr + idx * sizeof(Word<E>);
-}
-
-template <typename E>
-u64 MipsGotSection<E>::get_gotpage_page_addr(Context<E> &ctx, Symbol<E> &sym,
-                                            i64 addend) const {
-  auto it = std::lower_bound(gotpage_syms.begin(), gotpage_syms.end(),
-                             SymbolAddend{&sym, addend});
-  return it->get_addr(ctx);
 }
 
 template <typename E>
@@ -390,9 +384,12 @@ struct GotEntry {
 };
 
 template <typename E>
-std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx, MipsGotSection<E> &got) {
-  std::vector<GotEntry> entries;
-  auto add = [&](GotEntry ent) { entries.push_back(ent); };
+std::vector<GotEntry<E>>
+get_got_entries(Context<E> &ctx, const MipsGotSection<E> &got) {
+  using SymbolAddend = typename MipsGotSection<E>::SymbolAddend;
+
+  std::vector<GotEntry<E>> entries;
+  auto add = [&](GotEntry<E> ent) { entries.push_back(ent); };
 
   // Create GOT entries for ordinary symbols
   for (const SymbolAddend &ent : got.got_syms) {
@@ -486,7 +483,7 @@ void MipsGotSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 i64 MipsGotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
-  for (GotEntry &ent : get_got_entries(ctx, *this))
+  for (GotEntry<E> &ent : get_got_entries(ctx, *this))
     if (ent.r_type != R_NONE)
       n++;
   return n;
@@ -500,7 +497,7 @@ void MipsGotSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                                     this->reldyn_offset);
 
-  for (i64 i = 0; GotEntry &ent : get_got_entries(ctx)) {
+  for (i64 i = 0; GotEntry<E> &ent : get_got_entries(ctx, *this)) {
     if (ent.r_type != R_NONE)
       *dynrel++ = ElfRel<E>(this->shdr.sh_addr + i * sizeof(Word<E>),
                             ent.r_type,
@@ -532,8 +529,9 @@ void MipsQuickstartSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 // MIPS .eh_frame contains absolute addresses (i.e. R_MIPS_64 relocations)
-// even if compiled with -fPIC. Instead of emitting dynamic relocations,
-// we rewrite CIEs to convert absolute addresses to relative ones.
+// even if compiled with -fPIC. Instead of emitting base relocations, we
+// rewrite CIEs so that we can write relative addresse instead of absolute
+// ones to .eh_frame.
 template <typename E>
 void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie) {
   u8 *aug = buf + 9; // Skip Length, CIE ID and Version fields
