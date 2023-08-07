@@ -296,11 +296,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     auto find_paired_reloc = [&] {
       assert(sym.get_input_section() == this);
 
-      if (sym.value < r_offset) {
+      if (sym.value <= r_offset) {
         for (i64 j = i - 1; j >= 0; j--)
           if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
               return j;
-      } else {
+      }
+      if (sym.value >= r_offset) {
         for (i64 j = i + 1; j < rels.size(); j++)
           if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
               return j;
