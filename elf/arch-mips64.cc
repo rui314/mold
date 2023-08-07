@@ -373,12 +373,14 @@ u64 MipsGotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
   return this->shdr.sh_addr + get_tlsld_offset(*this) * sizeof(Word<E>);
 }
 
+namespace {
 template <typename E>
 struct GotEntry {
   u64 val = 0;
   i64 r_type = R_NONE;
   Symbol<E> *sym = nullptr;
 };
+}
 
 template <typename E>
 std::vector<GotEntry<E>>
@@ -386,8 +388,6 @@ get_got_entries(Context<E> &ctx, const MipsGotSection<E> &got) {
   using SymbolAddend = typename MipsGotSection<E>::SymbolAddend;
 
   std::vector<GotEntry<E>> entries;
-  entries.reserve(got.shdr.sh_size / sizeof(Word<E>));
-
   auto add = [&](GotEntry<E> ent) { entries.push_back(ent); };
 
   // Create GOT entries for ordinary symbols

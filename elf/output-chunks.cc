@@ -1147,6 +1147,7 @@ u64 GotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
   return this->shdr.sh_addr + tlsld_idx * sizeof(Word<E>);
 }
 
+namespace {
 template <typename E>
 struct GotEntry {
   bool is_relr(Context<E> &ctx) const {
@@ -1158,6 +1159,7 @@ struct GotEntry {
   i64 r_type = R_NONE;
   Symbol<E> *sym = nullptr;
 };
+}
 
 // Get .got and .rel.dyn contents.
 //
