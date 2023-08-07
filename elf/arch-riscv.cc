@@ -254,6 +254,13 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
+// Within a paired relocation, the "leader" is the one that points to the symbol to relocate against,
+// while the other "followers" point to the leader's label (address).
+static bool is_paired_reloc_leader(u32 ty) {
+  return ty == R_RISCV_GOT_HI20 || ty == R_RISCV_TLS_GOT_HI20 ||
+         ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20;
+}
+
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
@@ -284,23 +291,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
                    << lo << ", " << hi << ")";
     };
 
-    auto is_hi20 = [](const ElfRel<E> &r) {
-      u32 ty = r.r_type;
-      return ty == R_RISCV_GOT_HI20 || ty == R_RISCV_TLS_GOT_HI20 ||
-             ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20;
-    };
-
     auto find_paired_reloc = [&] {
       assert(sym.get_input_section() == this);
 
       if (sym.value < r_offset) {
         for (i64 j = i - 1; j >= 0; j--)
-          if (is_hi20(rels[j]) && sym.value == rels[j].r_offset - get_r_delta(j))
-            return j;
+          if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
+              return j;
       } else {
         for (i64 j = i + 1; j < rels.size(); j++)
-          if (is_hi20(rels[j]) && sym.value == rels[j].r_offset - get_r_delta(j))
-            return j;
+          if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
+              return j;
       }
 
       Fatal(ctx) << *this << ": paired relocation is missing: " << i;
