@@ -464,24 +464,69 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_TLSDESC_HI20: {
-      u64 desc = sym.get_tlsdesc_addr(ctx);
-      write_utype(loc, desc + A - P);
+      if (removed_bytes == 0) {
+        u64 desc = sym.get_tlsdesc_addr(ctx);
+        write_utype(loc, desc + A - P);
+      }
       break;
     }
-    case R_RISCV_TLSDESC_LOAD_LO12:
+    case R_RISCV_TLSDESC_LOAD_LO12: {
+      i64 idx2 = find_paired_reloc();
+      const ElfRel<E> &rel2 = rels[idx2];
+      Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
+      u64 A = rel2.r_addend;
+      u64 P = get_addr() + rel2.r_offset - get_r_delta(idx2);
+      if (sym2.has_tlsdesc(ctx)) {
+        u64 desc = sym2.get_tlsdesc_addr(ctx);
+        write_itype(loc, desc + A - P);
+      }
+      break;
+    }
     case R_RISCV_TLSDESC_ADD_LO12: {
       i64 idx2 = find_paired_reloc();
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
-
+      u64 S = sym2.get_addr(ctx);
       u64 A = rel2.r_addend;
       u64 P = get_addr() + rel2.r_offset - get_r_delta(idx2);
-      u64 desc = sym2.get_tlsdesc_addr(ctx);
-      write_itype(loc, desc + A - P);
+      if (sym2.has_tlsdesc(ctx)) {
+        u64 desc = sym2.get_tlsdesc_addr(ctx);
+        write_itype(loc, desc + A - P);
+      } else if (sym2.has_gottp(ctx)) {
+        u64 desc = sym2.get_gottp_addr(ctx);
+        *(ul32 *)loc = 0x517; // auipc a0,<hi20>
+        write_utype(loc, desc + A - P);
+      } else {
+        if (removed_bytes == 0) {
+          *(ul32 *)loc = 0x537; // lui a0,<hi20>
+          write_utype(loc, S + A - ctx.tp_addr);
+        }
+      }
       break;
     }
-    case R_RISCV_TLSDESC_CALL:
+    case R_RISCV_TLSDESC_CALL: {
+      i64 idx2 = find_paired_reloc();
+      const ElfRel<E> &rel2 = rels[idx2];
+      Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
+      u64 S = sym2.get_addr(ctx);
+      u64 A = rel2.r_addend;
+      u64 P = get_addr() + rel2.r_offset - get_r_delta(idx2);
+      if (sym2.has_tlsdesc(ctx)) {
+        // Do nothing
+      } else if (sym2.has_gottp(ctx)) {
+        u64 desc = sym2.get_gottp_addr(ctx);
+        *(ul32 *)loc = 0x52503; // {ld,lw} a0,<hi20>
+        write_itype(loc, desc + A - P);
+      } else {
+        u64 val = S + A - ctx.tp_addr;
+        if (sign_extend(val, 11) == val)
+          *(ul32 *)loc = 0x513; // addi a0,zero,<lo12>
+        else
+          *(ul32 *)loc = 0x50513; // addi a0,a0,<lo12>
+        write_itype(loc, val);
+      }
       break;
+    }
     case R_RISCV_ADD8:
       loc += S + A;
       break;
@@ -721,7 +766,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_TLSGD;
       break;
     case R_RISCV_TLSDESC_HI20:
-      sym.flags |= NEEDS_TLSDESC;
+      scan_tlsdesc(ctx, sym);
       break;
     case R_RISCV_32_PCREL:
     case R_RISCV_PCREL_HI20:
@@ -831,6 +876,21 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
     isec.extra.r_deltas[i] = delta;
 
+    auto find_paired_reloc = [&] {
+      if (sym.value <= r.r_offset) {
+        for (i64 j = i - 1; j >= 0; j--)
+          if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset)
+              return j;
+      }
+      if (sym.value >= r.r_offset) {
+        for (i64 j = i + 1; j < rels.size(); j++)
+          if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset)
+              return j;
+      }
+
+      Fatal(ctx) << isec << ": paired relocation is missing: " << i;
+    };
+
     // Handling R_RISCV_ALIGN is mandatory.
     //
     // R_RISCV_ALIGN refers to NOP instructions. We need to eliminate some
@@ -927,6 +987,29 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
           sign_extend(val, 11) == val)
         delta += 4;
       break;
+    case R_RISCV_TLSDESC_HI20:
+      if (!sym.has_tlsdesc(ctx))
+        delta += 4;
+      break;
+    case R_RISCV_TLSDESC_LOAD_LO12: {
+      i64 idx2 = find_paired_reloc();
+      const ElfRel<E> &rel2 = rels[idx2];
+      Symbol<E> &sym2 = *isec.file.symbols[rel2.r_sym];
+      if (!sym2.has_tlsdesc(ctx))
+        delta += 4;
+      break;
+    }
+    case R_RISCV_TLSDESC_ADD_LO12: {
+      i64 idx2 = find_paired_reloc();
+      const ElfRel<E> &rel2 = rels[idx2];
+      Symbol<E> &sym2 = *isec.file.symbols[rel2.r_sym];
+      if (!sym2.has_tlsdesc(ctx) && !sym2.has_gottp(ctx)) {
+        if (i64 val = sym2.get_addr(ctx) + rel2.r_addend - ctx.tp_addr;
+            sign_extend(val, 11) == val)
+          delta += 4;
+      }
+      break;
+    }
     }
   }
 
