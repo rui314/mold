@@ -1211,25 +1211,21 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.got->tlsgd_syms) {
     i64 idx = sym->get_tlsgd_idx(ctx);
 
-    // If a symbol is imported, let the dynamic linker to resolve it.
     if (sym->is_imported) {
+      // If a symbol is imported, let the dynamic linker to resolve it.
       add({idx, 0, E::R_DTPMOD, sym});
       add({idx + 1, 0, E::R_DTPOFF, sym});
-      continue;
-    }
-
-    // If we are creating a shared library, we know the TLV's offset
-    // within the current TLS block. We don't know the module ID though.
-    if (ctx.arg.shared) {
+    } else if (ctx.arg.shared) {
+      // If we are creating a shared library, we know the TLV's offset
+      // within the current TLS block. We don't know the module ID though.
       add({idx, 0, E::R_DTPMOD});
       add({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
-      continue;
+    } else {
+      // If we are creating an executable, we know both the module ID and
+      // the offset. Module ID 1 indicates the main executable.
+      add({idx, 1});
+      add({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
     }
-
-    // If we are creating an executable, we know both the module ID and the
-    // offset. Module ID 1 indicates the main executable.
-    add({idx, 1});
-    add({idx + 1, sym->get_addr(ctx) - ctx.dtp_addr});
   }
 
   if constexpr (supports_tlsdesc<E>) {
@@ -1246,23 +1242,19 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.got->gottp_syms) {
     i64 idx = sym->get_gottp_idx(ctx);
 
-    // If we know nothing about the symbol, let the dynamic linker
-    // to fill the GOT entry.
     if (sym->is_imported) {
+      // If we know nothing about the symbol, let the dynamic linker
+      // to fill the GOT entry.
       add({idx, 0, E::R_TPOFF, sym});
-      continue;
-    }
-
-    // If we know the offset within the current thread vector,
-    // let the dynamic linker to adjust it.
-    if (ctx.arg.shared) {
+    } else if (ctx.arg.shared) {
+      // If we know the offset within the current thread vector,
+      // let the dynamic linker to adjust it.
       add({idx, sym->get_addr(ctx) - ctx.tls_begin, E::R_TPOFF});
-      continue;
+    } else {
+      // Otherwise, we know the offset from the thread pointer (TP) at
+      // link-time, so we can fill the GOT entry directly.
+      add({idx, sym->get_addr(ctx) - ctx.tp_addr});
     }
-
-    // Otherwise, we know the offset from the thread pointer (TP) at
-    // link-time, so we can fill the GOT entry directly.
-    add({idx, sym->get_addr(ctx) - ctx.tp_addr});
   }
 
   if (ctx.got->tlsld_idx != -1) {
