@@ -335,12 +335,6 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           is_debug_section(shdr, name))
         continue;
 
-      // Save .llvm_addrsig for --icf=safe.
-      if (shdr.sh_type == SHT_LLVM_ADDRSIG && !ctx.arg.relocatable) {
-        llvm_addrsig = std::make_unique<InputSection<E>>(ctx, *this, name, i);
-        continue;
-      }
-
       // If an output file doesn't have a section header (i.e.
       // --oformat=binary is given), we discard all non-memory-allocated
       // sections. This is because without a section header, we can't find
@@ -350,13 +344,25 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
       this->sections[i] = std::make_unique<InputSection<E>>(ctx, *this, name, i);
 
+      // Save .llvm_addrsig for --icf=safe.
+      if (shdr.sh_type == SHT_LLVM_ADDRSIG && !ctx.arg.relocatable) {
+        llvm_addrsig = std::move(this->sections[i]);
+        continue;
+      }
+
       if constexpr (is_ppc32<E>)
         if (name == ".got2")
           extra.got2 = this->sections[i].get();
 
-      if constexpr (is_mips<E>)
+      if constexpr (is_mips<E>) {
+        if (name == ".MIPS.abiflags") {
+          extra.abi_flags = std::move(this->sections[i]);
+          continue;
+        }
+
         if (name == ".MIPS.options")
           extra.gp0 = read_mips_gp0(ctx, *this->sections[i]);
+      }
 
       // Save debug sections for --gdb-index.
       if (ctx.arg.gdb_index) {

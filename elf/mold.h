@@ -1210,6 +1210,7 @@ template <> struct ObjectFileExtras<PPC32> {
 
 template <typename E> requires is_mips<E>
 struct ObjectFileExtras<E> {
+  std::unique_ptr<InputSection<E>> abi_flags;
   MipsGotSection<E> *got = nullptr;
   u64 gp0 = 0;
 };
@@ -1628,6 +1629,22 @@ public:
 };
 
 template <typename E>
+class MipsABIFlagsSection : public Chunk<E> {
+public:
+  MipsABIFlagsSection() {
+    this->name = ".MIPS.abiflags";
+    this->shdr.sh_type = SHT_MIPS_ABIFLAGS;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = 8;
+  }
+
+  std::string_view contents;
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+};
+
+template <typename E>
 void mips_merge_got_sections(Context<E> &ctx);
 
 template <typename E>
@@ -1719,6 +1736,7 @@ template <> struct ContextExtras<ALPHA> {
 template <typename E> requires is_mips<E>
 struct ContextExtras<E> {
   MipsQuickstartSection<E> *quickstart = nullptr;
+  MipsABIFlagsSection<E> *abi_flags = nullptr;
 };
 
 // Context represents a context object for each invocation of the linker.

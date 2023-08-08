@@ -130,6 +130,7 @@ void create_synthetic_sections(Context<E> &ctx) {
 
   if constexpr (is_mips<E>) {
     ctx.extra.quickstart = push(new MipsQuickstartSection<E>);
+    ctx.extra.abi_flags = push(new MipsABIFlagsSection<E>);
 
     for (ObjectFile<E> *file : ctx.objs)
       file->extra.got = push(new MipsGotSection<E>(ctx, *file));

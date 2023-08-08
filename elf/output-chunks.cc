@@ -38,13 +38,13 @@ static u32 djb_hash(std::string_view name) {
 
 template <typename E>
 u64 get_eflags(Context<E> &ctx) {
+  std::vector<ObjectFile<E> *> objs = ctx.objs;
+  std::erase(objs, ctx.internal_obj);
+
   if constexpr (is_arm32<E>)
     return EF_ARM_EABI_VER5;
 
   if constexpr (is_riscv<E>) {
-    std::vector<ObjectFile<E> *> objs = ctx.objs;
-    std::erase(objs, ctx.internal_obj);
-
     if (objs.empty())
       return 0;
 
@@ -67,6 +67,15 @@ u64 get_eflags(Context<E> &ctx) {
 
   if constexpr (is_ppc64v2<E>)
     return 2;
+
+  if constexpr (is_mips<E>) {
+    // Real MIPS e_flags computation is much more complicated.
+    // For now, we just copy the first object's e_flags to the output.
+    if (objs.empty())
+      return 0;
+    return objs[0]->get_ehdr().e_flags;
+  }
+
   return 0;
 }
 
@@ -355,6 +364,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   if constexpr (is_riscv<E>)
     if (ctx.extra.riscv_attributes->shdr.sh_size)
       define(PT_RISCV_ATTRIBUTES, PF_R, 1, ctx.extra.riscv_attributes);
+
+  // Create a PT_MIPS_ABIFLAGS
+  if constexpr (is_mips<E>)
+    if (ctx.extra.abi_flags->shdr.sh_size)
+      define(PT_MIPS_ABIFLAGS, PF_R, 8, ctx.extra.abi_flags);
 
   // Create a PT_OPENBSD_RANDOMIZE
   for (Chunk<E> *chunk : ctx.chunks)

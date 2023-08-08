@@ -527,6 +527,27 @@ void MipsQuickstartSection<E>::copy_buf(Context<E> &ctx) {
         buf[i + NUM_RESERVED] = sym->get_addr(ctx, NO_PLT);
 }
 
+template <typename E>
+void MipsABIFlagsSection<E>::update_shdr(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs) {
+    if (file->extra.abi_flags) {
+      contents = file->extra.abi_flags->contents;
+      break;
+    }
+  }
+
+  this->shdr.sh_size = contents.size();
+}
+
+// .MIPS.abiflags section contains ABI info such as ISA level.
+// We need to merge input .MIPS.abiflags sections into a single
+// .MIPS.abiflags section. But for now, we just pick the first one.
+template <typename E>
+void MipsABIFlagsSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  memcpy(buf, contents.data(), contents.size());
+}
+
 // We merge consective .mips_got sections to reduce the total number of
 // .mips_got entries. Note that each .mips_got should be equal or smaller
 // than 64 KiB so that all of its entries are within its GP ± 32 KiB.
@@ -641,6 +662,7 @@ void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie) {
   template void InputSection<E>::scan_relocations(Context<E> &);             \
   template class MipsGotSection<E>;                                          \
   template class MipsQuickstartSection<E>;                                   \
+  template class MipsABIFlagsSection<E>;                                     \
   template void mips_merge_got_sections(Context<E> &);                       \
   template void mips_rewrite_cie(Context<E> &, u8 *, CieRecord<E> &);
 
