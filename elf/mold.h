@@ -1831,6 +1831,7 @@ struct Context {
     bool z_nodefaultlib = false;
     bool z_now = false;
     bool z_origin = false;
+    bool z_pack_relative_relocs = false;
     bool z_relro = true;
     bool z_sectionheader = true;
     bool z_shstk = false;

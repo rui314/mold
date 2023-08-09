@@ -2373,12 +2373,13 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
            std::tuple(((SharedFile<E> *)b->file)->soname, b->ver_idx);
   });
 
-  // Resize of .gnu.version
+  // Resize .gnu.version
   ctx.versym->contents.resize(ctx.dynsym->symbols.size(), 1);
   ctx.versym->contents[0] = 0;
 
   // Allocate a large enough buffer for .gnu.version_r.
-  contents.resize((sizeof(ElfVerneed<E>) + sizeof(ElfVernaux<E>)) * syms.size());
+  contents.resize((sizeof(ElfVerneed<E>) + sizeof(ElfVernaux<E>)) *
+                  (syms.size() + 1));
 
   // Fill .gnu.version_r.
   u8 *buf = (u8 *)&contents[0];
@@ -2394,14 +2395,14 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
       verneed->vn_next = ptr - (u8 *)verneed;
 
     verneed = (ElfVerneed<E> *)ptr;
-    ptr += sizeof(*verneed);
+    ptr += sizeof(ElfVerneed<E>);
     verneed->vn_version = 1;
     verneed->vn_file = ctx.dynstr->find_string(((SharedFile<E> *)file)->soname);
     verneed->vn_aux = sizeof(ElfVerneed<E>);
     aux = nullptr;
   };
 
-  auto add_entry = [&](Symbol<E> *sym) {
+  auto add_entry = [&](std::string_view verstr) {
     verneed->vn_cnt++;
 
     if (aux)
@@ -2409,21 +2410,50 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
     aux = (ElfVernaux<E> *)ptr;
     ptr += sizeof(*aux);
 
-    std::string_view verstr = sym->get_version();
     aux->vna_hash = elf_hash(verstr);
     aux->vna_other = ++veridx;
     aux->vna_name = ctx.dynstr->add_string(verstr);
   };
 
+  // Create version entries.
   for (i64 i = 0; i < syms.size(); i++) {
     if (i == 0 || syms[i - 1]->file != syms[i]->file) {
       start_group(syms[i]->file);
-      add_entry(syms[i]);
+      add_entry(syms[i]->get_version());
     } else if (syms[i - 1]->ver_idx != syms[i]->ver_idx) {
-      add_entry(syms[i]);
+      add_entry(syms[i]->get_version());
     }
 
     ctx.versym->contents[syms[i]->get_dynsym_idx(ctx)] = veridx;
+  }
+
+  if (ctx.arg.z_pack_relative_relocs) {
+    // If `-z pack-relative-relocs` is specified, we'll create a .relr.dyn
+    // section and store base relocation records to that section instead of
+    // to the usual .rela.dyn section.
+    //
+    // .relr.dyn is relatively new feature and not supported by glibc until
+    // 2.38 which was released in 2022. Executables built with `-z
+    // pack-relative-relocs` don't work and usually crash immediately on
+    // startup if libc doesn't support it.
+    //
+    // In the following code, we'll add a dependency to a dummy version name
+    // "GLIBC_ABI_DT_RELR" so that executables built with the option failed
+    // with a more friendly "version `GLIBC_ABI_DT_RELR' not found" error
+    // message. glibc 2.38 or later knows about this dummy version name and
+    // simply ignores it.
+    auto find_glibc2 = [&]() -> InputFile<E> * {
+      for (Symbol<E> *sym : syms)
+        if (((SharedFile<E> *)sym->file)->soname.starts_with("libc.so.") &&
+            sym->get_version().starts_with("GLIBC_2."))
+          return sym->file;
+      return nullptr;
+    };
+
+    if (InputFile<E> *file = find_glibc2()) {
+      start_group(file);
+      add_entry("GLIBC_ABI_DT_RELR");
+    }
   }
 
   // Resize .gnu.version_r to fit to its contents.
