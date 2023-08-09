@@ -26,8 +26,8 @@ struct SH4;
 struct ALPHA;
 struct MIPS64LE;
 struct MIPS64BE;
-struct LOONGARCH32;
 struct LOONGARCH64;
+struct LOONGARCH32;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -1930,8 +1930,8 @@ template <typename E> static constexpr bool is_sh4 = std::is_same_v<E, SH4>;
 template <typename E> static constexpr bool is_alpha = std::is_same_v<E, ALPHA>;
 template <typename E> static constexpr bool is_mips64le = std::is_same_v<E, MIPS64LE>;
 template <typename E> static constexpr bool is_mips64be = std::is_same_v<E, MIPS64BE>;
-template <typename E> static constexpr bool is_loongarch32 = std::is_same_v<E, LOONGARCH32>;
 template <typename E> static constexpr bool is_loongarch64 = std::is_same_v<E, LOONGARCH64>;
+template <typename E> static constexpr bool is_loongarch32 = std::is_same_v<E, LOONGARCH32>;
 
 template <typename E> static constexpr bool is_x86 = is_x86_64<E> || is_i386<E>;
 template <typename E> static constexpr bool is_arm = is_arm64<E> || is_arm32<E>;
@@ -1943,7 +1943,7 @@ template <typename E> static constexpr bool is_ppc = is_ppc64<E> || is_ppc32<E>;
 template <typename E> static constexpr bool is_sparc = is_sparc64<E>;
 template <typename E> static constexpr bool is_mips64 = is_mips64le<E> || is_mips64be<E>;
 template <typename E> static constexpr bool is_mips = is_mips64<E>;
-template <typename E> static constexpr bool is_loongarch = is_loongarch32<E> || is_loongarch64<E>;
+template <typename E> static constexpr bool is_loongarch = is_loongarch64<E> || is_loongarch32<E>;
 
 struct X86_64 {
   static constexpr std::string_view target_name = "x86_64";

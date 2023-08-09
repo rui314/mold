@@ -1114,7 +1114,7 @@ std::string rel_to_string<LOONGARCH64>(u32 r_type) {
   case R_LARCH_SUB_ULEB128: return "R_LARCH_SUB_ULEB128";
   case R_LARCH_64_PCREL: return "R_LARCH_64_PCREL";
   }
-  return "unknown (" + std::to_string(r_type) + ")";
+  return unknown_type(r_type);
 }
 
 template <>

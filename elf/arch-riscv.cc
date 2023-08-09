@@ -122,14 +122,6 @@ static void write_cjtype(u8 *loc, u32 val) {
                   bit(val, 1)  << 3  | bit(val, 5)  << 2;
 }
 
-static void overwrite_uleb(u8 *loc, u64 val) {
-  while (*loc & 0b1000'0000) {
-    *loc++ = 0b1000'0000 | (val & 0b0111'1111);
-    val >>= 7;
-  }
-  *loc = val & 0b0111'1111;
-}
-
 // Returns the rd register of an R/I/U/J-type instruction.
 static u32 get_rd(u32 val) {
   return bits(val, 11, 7);

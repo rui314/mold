@@ -38,39 +38,31 @@ static i64 alau64_hi32(i64 val, i64 pc) {
   return (val - ((val & 0x800l) << 21)) - (pc & ~0xffffffffl);
 }
 
-static void writeJ20(u8 *loc, u32 val) {
+static void write_j20(u8 *loc, u32 val) {
   *(ul32 *)loc &= 0b11111110'00000000'00000000'00011111;
   *(ul32 *)loc |= (val & 0xfffff) << 5;
 }
 
-static void writeK12(u8 *loc, u32 val) {
+static void write_k12(u8 *loc, u32 val) {
   *(ul32 *)loc &= 0b11111111'11110000'00000011'11111111;
   *(ul32 *)loc |= (val & 0xfff) << 10;
 }
 
-static void writeD5k16(u8 *loc, u32 val) {
+static void write_d5k16(u8 *loc, u32 val) {
   u32 hi = val >> 16;
   *(ul32 *)loc &= 0b11111100'00000000'00000011'11100000;
   *(ul32 *)loc |= ((val & 0xffff) << 10) | (hi & 0x1f);
 }
 
-static void writeD10k16(u8 *loc, u32 val) {
+static void write_d10k16(u8 *loc, u32 val) {
   u32 hi = val >> 16;
   *(ul32 *)loc &= 0b11111100'00000000'00000000'00000000;
   *(ul32 *)loc |= ((val & 0xffff) << 10) | (hi & 0x3ff);
 }
 
-static void writeK16(u8 *loc, u32 val) {
+static void write_k16(u8 *loc, u32 val) {
   *(ul32 *)loc &= 0b11111100'00000000'00000011'11111111;
   *(ul32 *)loc |= (val & 0xffff) << 10;
-}
-
-static void overwrite_uleb(u8 *loc, u64 val) {
-  while (*loc & 0b1000'0000) {
-    *loc++ = 0b1000'0000 | (val & 0b0111'1111);
-    val >>= 7;
-  }
-  *loc = val & 0b0111'1111;
 }
 
 template <typename E>
@@ -110,9 +102,9 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   else
     memcpy(buf, insn_32, sizeof(insn_32));
 
-  writeJ20(buf, hi20(offset));
-  writeK12(buf + 8, lo12(offset));
-  writeK12(buf + 16, lo12(offset));
+  write_j20(buf, hi20(offset));
+  write_k12(buf + 8, lo12(offset));
+  write_k12(buf + 16, lo12(offset));
 }
 
 static const ul32 plt_entry_64[] = {
@@ -144,8 +136,8 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   else
     memcpy(buf, plt_entry_32, sizeof(plt_entry_32));
 
-  writeJ20(buf, hi20(offset));
-  writeK12(buf + 4, lo12(offset));
+  write_j20(buf, hi20(offset));
+  write_k12(buf + 4, lo12(offset));
 }
 
 template <typename E>
@@ -163,8 +155,8 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   else
     memcpy(buf, plt_entry_32, sizeof(plt_entry_32));
 
-  writeJ20(buf, hi20(offset));
-  writeK12(buf + 4, lo12(offset));
+  write_j20(buf, hi20(offset));
+  write_k12(buf + 4, lo12(offset));
 }
 
 template <typename E>
@@ -241,18 +233,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    auto checkrange = [&](i64 val, i64 lo, i64 hi) {
+    auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
                    << lo << ", " << hi << ")";
     };
 
-    auto checkalign = [&](i64 val, i64 align) {
-      if (val & (align - 1))
+    auto check_branch = [&](i64 val, i64 lo, i64 hi) {
+      if (val & 0b11)
         Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " unaligned: " << val << " needs "
-                   << align << " bytes aligned";
+                   << sym << " unaligned: " << val << " needs 4 bytes aligned";
+      check(val, lo, hi);
     };
 
     u64 S = sym.get_addr(ctx);
@@ -284,183 +276,122 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     }
-    case R_LARCH_B16: {
-      i64 val = S + A - P;
-      checkrange(val, -(1ll << 17), 1ll << 17);
-      checkalign(val, 4);
-      writeK16(loc, val >> 2);
+    case R_LARCH_B16:
+      check_branch(S + A - P, -(1 << 17), 1 << 17);
+      write_k16(loc, (S + A - P) >> 2);
       break;
-    }
-    case R_LARCH_B21: {
-      i64 val = S + A - P;
-      checkrange(val, -(1ll << 22), 1ll << 22);
-      checkalign(val, 4);
-      writeD5k16(loc, val >> 2);
+    case R_LARCH_B21:
+      check_branch(S + A - P, -(1 << 22), 1 << 22);
+      write_d5k16(loc, (S + A - P) >> 2);
       break;
-    }
-    case R_LARCH_B26: {
-      i64 val = S + A - P;
-      checkrange(val, -(1ll << 27), 1ll << 27);
-      checkalign(val, 4);
-      writeD10k16(loc, val >> 2);
+    case R_LARCH_B26:
+      check_branch(S + A - P, -(1 << 27), 1 << 27);
+      write_d10k16(loc, (S + A - P) >> 2);
       break;
-    }
-    case R_LARCH_ABS_HI20: {
-      i64 val = S + A;
-      writeJ20(loc, val >> 12);
+    case R_LARCH_ABS_HI20:
+      write_j20(loc, (S + A) >> 12);
       break;
-    }
-    case R_LARCH_ABS_LO12: {
-      i64 val = S + A;
-      writeK12(loc, val);
+    case R_LARCH_ABS_LO12:
+      write_k12(loc, S + A);
       break;
-    }
-    case R_LARCH_ABS64_LO20: {
-      i64 val = S + A;
-      writeJ20(loc, val >> 32);
+    case R_LARCH_ABS64_LO20:
+      write_j20(loc, (S + A) >> 32);
       break;
-    }
-    case R_LARCH_ABS64_HI12: {
-      i64 val = S + A;
-      writeK12(loc, val >> 52);
+    case R_LARCH_ABS64_HI12:
+      write_k12(loc, (S + A) >> 52);
       break;
-    }
     case R_LARCH_PCALA_HI20: {
       i64 val = alau32_hi20(S + A, P);
-      checkrange(val, -(1ll << 31), 1ll << 31);
-      writeJ20(loc, val >> 12);
+      check(val, -(1LL << 31), 1LL << 31);
+      write_j20(loc, val >> 12);
       break;
     }
-    case R_LARCH_PCALA_LO12: {
-      i64 val = S + A;
-      writeK12(loc, val);
+    case R_LARCH_PCALA_LO12:
+      write_k12(loc, S + A);
       break;
-    }
-    case R_LARCH_PCALA64_LO20: {
-      i64 val = alau64_hi32(S + A, P);
-      writeJ20(loc, val >> 32);
+    case R_LARCH_PCALA64_LO20:
+      write_j20(loc, alau64_hi32(S + A, P) >> 32);
       break;
-    }
-    case R_LARCH_PCALA64_HI12: {
-      i64 val = alau64_hi32(S + A, P);
-      writeK12(loc, val >> 52);
+    case R_LARCH_PCALA64_HI12:
+      write_k12(loc, alau64_hi32(S + A, P) >> 52);
       break;
-    }
     case R_LARCH_GOT_PC_HI20: {
       i64 val = alau32_hi20(GP + G + A, P);
-      checkrange(val, -(1ll << 31), 1ll << 31);
-      writeJ20(loc, val >> 12);
+      check(val, -(1LL << 31), 1LL << 31);
+      write_j20(loc, val >> 12);
       break;
     }
-    case R_LARCH_GOT_PC_LO12: {
-      i64 val = get_got_or_gd() + A;
-      writeK12(loc, val);
+    case R_LARCH_GOT_PC_LO12:
+      write_k12(loc, get_got_or_gd() + A);
       break;
-    }
-    case R_LARCH_GOT64_PC_LO20: {
-      i64 val = alau64_hi32(get_got_or_gd() + A, P);
-      writeJ20(loc, val >> 32);
+    case R_LARCH_GOT64_PC_LO20:
+      write_j20(loc, alau64_hi32(get_got_or_gd() + A, P) >> 32);
       break;
-    }
-    case R_LARCH_GOT64_PC_HI12: {
-      i64 val = alau64_hi32(get_got_or_gd() + A, P);
-      writeK12(loc, val >> 52);
+    case R_LARCH_GOT64_PC_HI12:
+      write_k12(loc, alau64_hi32(get_got_or_gd() + A, P) >> 52);
       break;
-    }
-    case R_LARCH_GOT_HI20: {
-      i64 val = GP + G + A;
-      writeJ20(loc, val >> 12);
+    case R_LARCH_GOT_HI20:
+      write_j20(loc, (GP + G + A) >> 12);
       break;
-    }
-    case R_LARCH_GOT_LO12: {
-      i64 val = get_got_or_gd() + A;
-      writeK12(loc, val);
+    case R_LARCH_GOT_LO12:
+      write_k12(loc, get_got_or_gd() + A);
       break;
-    }
-    case R_LARCH_GOT64_LO20: {
-      i64 val = get_got_or_gd() + A;
-      writeJ20(loc, val >> 32);
+    case R_LARCH_GOT64_LO20:
+      write_j20(loc, (get_got_or_gd() + A) >> 32);
       break;
-    }
-    case R_LARCH_GOT64_HI12: {
-      i64 val = get_got_or_gd() + A;
-      writeK12(loc, val >> 52);
+    case R_LARCH_GOT64_HI12:
+      write_k12(loc, (get_got_or_gd() + A) >> 52);
       break;
-    }
-    case R_LARCH_TLS_LE_HI20: {
-      i64 val = S + A - TP;
-      writeJ20(loc, val >> 12);
+    case R_LARCH_TLS_LE_HI20:
+      write_j20(loc, (S + A - TP) >> 12);
       break;
-    }
-    case R_LARCH_TLS_LE_LO12: {
-      i64 val = S + A - TP;
-      writeK12(loc, val);
+    case R_LARCH_TLS_LE_LO12:
+      write_k12(loc, S + A - TP);
       break;
-    }
-    case R_LARCH_TLS_LE64_LO20: {
-      i64 val = S + A - TP;
-      writeJ20(loc, val >> 32);
+    case R_LARCH_TLS_LE64_LO20:
+      write_j20(loc, (S + A - TP) >> 32);
       break;
-    }
-    case R_LARCH_TLS_LE64_HI12: {
-      i64 val = S + A - TP;
-      writeK12(loc, val >> 52);
+    case R_LARCH_TLS_LE64_HI12:
+      write_k12(loc, (S + A - TP) >> 52);
       break;
-    }
     case R_LARCH_TLS_IE_PC_HI20: {
       i64 val = alau32_hi20(IE + A, P);
-      checkrange(val, -(1ll << 31), 1ll << 31);
-      writeJ20(loc, val >> 12);
+      check(val, -(1LL << 31), 1LL << 31);
+      write_j20(loc, val >> 12);
       break;
     }
-    case R_LARCH_TLS_IE_PC_LO12: {
-      i64 val = IE + A;
-      writeK12(loc, val);
+    case R_LARCH_TLS_IE_PC_LO12:
+      write_k12(loc, IE + A);
       break;
-    }
-    case R_LARCH_TLS_IE64_PC_LO20: {
-      i64 val = alau64_hi32(IE + A, P);
-      writeJ20(loc, val >> 32);
+    case R_LARCH_TLS_IE64_PC_LO20:
+      write_j20(loc, alau64_hi32(IE + A, P) >> 32);
       break;
-    }
-    case R_LARCH_TLS_IE64_PC_HI12: {
-      i64 val = alau64_hi32(IE + A, P);
-      writeK12(loc, val >> 52);
+    case R_LARCH_TLS_IE64_PC_HI12:
+      write_k12(loc, alau64_hi32(IE + A, P) >> 52);
       break;
-    }
-    case R_LARCH_TLS_IE_HI20: {
-      i64 val = IE + A;
-      writeJ20(loc, val >> 12);
+    case R_LARCH_TLS_IE_HI20:
+      write_j20(loc, (IE + A) >> 12);
       break;
-    }
-    case R_LARCH_TLS_IE_LO12: {
-      i64 val = IE + A;
-      writeK12(loc, val);
+    case R_LARCH_TLS_IE_LO12:
+      write_k12(loc, IE + A);
       break;
-    }
-    case R_LARCH_TLS_IE64_LO20: {
-      i64 val = IE + A;
-      writeJ20(loc, val >> 32);
+    case R_LARCH_TLS_IE64_LO20:
+      write_j20(loc, (IE + A) >> 32);
       break;
-    }
-    case R_LARCH_TLS_IE64_HI12: {
-      i64 val = IE + A;
-      writeK12(loc, val >> 52);
+    case R_LARCH_TLS_IE64_HI12:
+      write_k12(loc, (IE + A) >> 52);
       break;
-    }
     case R_LARCH_TLS_LD_PC_HI20:
     case R_LARCH_TLS_GD_PC_HI20: {
       i64 val = alau32_hi20(GD + A, P);
-      checkrange(val, -(1ll << 31), 1ll << 31);
-      writeJ20(loc, val >> 12);
+      check(val, -(1LL << 31), 1LL << 31);
+      write_j20(loc, val >> 12);
       break;
     }
     case R_LARCH_TLS_LD_HI20:
-    case R_LARCH_TLS_GD_HI20: {
-      i64 val = GD + A;
-      writeJ20(loc, val >> 12);
+    case R_LARCH_TLS_GD_HI20:
+      write_j20(loc, (GD + A) >> 12);
       break;
-    }
     case R_LARCH_ADD6:
       *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) + S + A) & 0b0011'1111);
       break;
@@ -506,7 +437,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     default:
       unreachable();
     }
-
   }
 }
 

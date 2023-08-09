@@ -434,6 +434,14 @@ inline i64 uleb_size(u64 val) {
   return 9;
 }
 
+inline void overwrite_uleb(u8 *loc, u64 val) {
+  while (*loc & 0b1000'0000) {
+    *loc++ = 0b1000'0000 | (val & 0b0111'1111);
+    val >>= 7;
+  }
+  *loc = val & 0b0111'1111;
+}
+
 template <typename Context>
 std::string_view save_string(Context &ctx, const std::string &str) {
   u8 *buf = new u8[str.size() + 1];
