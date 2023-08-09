@@ -66,7 +66,6 @@ add_target(sh4-linux-gnu)
 add_target(alpha-linux-gnu)
 add_target(mips64-linux-gnuabi64)
 add_target(mips64el-linux-gnuabi64)
-add_target(loongarch64-linux-gnu)
 
 if(MOLD_ENABLE_QEMU_TESTS_RV32)
   add_target(riscv32-linux-gnu)
@@ -78,4 +77,8 @@ endif()
 
 if(MOLD_ENABLE_QEMU_TESTS_M68K)
   add_target(m68k-linux-gnu)
+endif()
+
+if(MOLD_ENABLE_QEMU_TESTS_LOONGARCH)
+  add_target(loongarch64-linux-gnu)
 endif()
