@@ -19,10 +19,10 @@
 // image" in the PT_TLS segment. For each newly created thread including the
 // initial one, the runtime allocates a contiguous memory for an executable
 // and its depending shared libraries and copies template images there. That
-// per-thread memory is called the "TLS block". After allocating and
-// initializing a TLS block, the runtime sets a register to refer to the TLS
-// block, so that the thread-local variables are accessible relative to the
-// register.
+// per-thread memory is called the "initial TLS block". After allocating and
+// initializing the initial TLS block, the runtime sets a register to refer
+// to the initial TLS block, so that the thread-local variables are
+// accessible relative to the register.
 //
 // The register referring to the per-thread storage is called the Thread
 // Pointer (TP). TP is part of the thread's context. When the kernel
@@ -37,8 +37,8 @@
 // follows:
 //
 //  1. If we are creating an executable, we know the exact size of the TLS
-//     template image we are creating, and we know where the TP will be
-//     set to after the template is copied to the TLS block. Therefore,
+//     template image we are creating, and we know where the TP will be set
+//     to after the template is copied to the initial TLS block. Therefore,
 //     the TP-relative address of a TLV in the main executable is known at
 //     link-time. That means, computing a TLV's address can be as easy as
 //     `add %dst, %tp, <link-time constant>`.
@@ -50,9 +50,9 @@
 //     runtime knows the exact TP-relative address.
 //
 //     We can solve the problem with an indirection. Specifically, for
-//     each TLV whose TP-relative address is only known at process startup
+//     each TLV whose TP-relative address is known only at process startup
 //     time, we create a GOT entry to store its TP-relative address. We
-//     also emit a dynamic relocation to let the runtime to fill the GOT
+//     then emit a dynamic relocation to let the runtime to fill the GOT
 //     entry with a TP-relative address.
 //
 //     Computing a TLV address in this scheme needs at least two machine
@@ -60,10 +60,10 @@
 //     the GOT entry, and the second one adds the loaded value to TP.
 //
 //  3. Now, think about libraries that are dynamically loaded with dlopen.
-//     The TLS block for such library has to be allocated separately from
-//     the initial TLS block, so we now have two or more discontiguous
-//     TLS blocks. There's no easy formula to compute an address of a TLV
-//     in a separate TLS block.
+//     The TLS block for such library may not be allocated next to the
+//     initial TLS block, so we can have two or more discontiguous TLS
+//     blocks. There's no easy formula to compute an address of a TLV in a
+//     separate TLS block.
 //
 //     The address of a TLV in a separate TLS block can be obtained by
 //     calling the libc-provided function, __tls_get_addr(). The function
