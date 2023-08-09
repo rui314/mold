@@ -172,7 +172,7 @@ u64 get_tp_addr(Context<E> &ctx) {
     // TP. RISC-V load/store instructions usually take 12-bits signed
     // immediates, so the beginning of the TLS block ± 2 KiB is accessible
     // with a single load/store instruction.
-    static_assert(is_riscv<E>);
+    static_assert(is_riscv<E> || is_loongarch<E>);
     return phdr->p_vaddr;
   }
 }

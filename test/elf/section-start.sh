@@ -5,6 +5,9 @@
 # but instead refers "function descriptors" in .opd.
 [ $MACHINE = ppc64 ] && skip
 
+# The crt*.o compiled with B26 caused far form GOT.
+[[ $MACHINE = loongarch* ]] && skip
+
 [ $MACHINE = arm ] && flags=-marm
 
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIC $flags -

@@ -2,6 +2,7 @@
 . $(dirname $0)/common.inc
 
 [ $MACHINE = riscv64 -o $MACHINE = riscv32 ] && skip
+[[ $MACHINE = loongarch* ]] && skip
 
 # musl libc does not support init/fini on ARM
 # https://github.com/rui314/mold/issues/951

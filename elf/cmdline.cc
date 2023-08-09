@@ -201,8 +201,8 @@ Options:
     -z notext
     -z textoff
 
-mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf32-powerpc elf64-powerpc elf64-powerpc elf64-powerpcle elf64-s390 elf64-sparc elf32-m68k elf32-sh-linux elf64-alpha
-mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf32briscv elf64lriscv elf64briscv elf32ppc elf32ppclinux elf64ppc elf64lppc elf64_s390 elf64_sparc m68kelf shlelf_linux elf64alpha)";
+mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf32-powerpc elf64-powerpc elf64-powerpc elf64-powerpcle elf64-s390 elf64-sparc elf32-m68k elf32-sh-linux elf64-alpha elf32-loongarch elf64-loongarch
+mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf32briscv elf64lriscv elf64briscv elf32ppc elf32ppclinux elf64ppc elf64lppc elf64_s390 elf64_sparc m68kelf shlelf_linux elf64alpha elf32loongarch elf64loongarch)";
 
 static std::vector<std::string> add_dashes(std::string name) {
   // Single-letter option
@@ -526,7 +526,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                    << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
                    << "   elf32ppc\n   elf64ppc\n   elf64lppc\n   elf64_s390\n"
                    << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n"
-                   << "   elf64alpha\n   elf64ltsmip\n   elf64btsmip";
+                   << "   elf64alpha\n   elf64ltsmip\n   elf64btsmip\n"
+                   << "   elf32loongarch\n   elf64loongarch";
       version_shown = true;
     } else if (read_flag("mips32") || read_flag("mips32r2") ||
                read_flag("mips32r3") || read_flag("mips32r4") ||
@@ -572,6 +573,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.emulation = MIPS64LE::target_name;
       } else if (arg == "elf64btsmip") {
         ctx.arg.emulation = MIPS64BE::target_name;
+      } else if (arg == "elf32loongarch") {
+        ctx.arg.emulation = LOONGARCH32::target_name;
+      } else if (arg == "elf64loongarch") {
+        ctx.arg.emulation = LOONGARCH64::target_name;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }

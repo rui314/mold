@@ -5,6 +5,7 @@
 [ $MACHINE = ppc64le ] && skip
 [ $MACHINE = alpha ] && skip
 [[ $MACHINE = mips* ]] && skip
+[[ $MACHINE = loongarch* ]] && skip
 
 cat <<EOF | $CC -fPIC -shared -o $t/a.so -xc -
 __attribute__((aligned(32))) int foo = 5;
