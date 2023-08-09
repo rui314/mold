@@ -503,47 +503,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_SUB_ULEB128:
       overwrite_uleb(loc, read_uleb(loc) - S - A);
       break;
-    // A stack machine (read: global mutable state) is necessary for properly
-    // computing these relocs, and these relocs are already deprecated after
-    // the release of LoongArch ELF psABI v2.00, so we are not going to
-    // implement them.
-    case R_LARCH_SOP_PUSH_PCREL:
-    case R_LARCH_SOP_PUSH_ABSOLUTE:
-    case R_LARCH_SOP_PUSH_DUP:
-    case R_LARCH_SOP_PUSH_GPREL:
-    case R_LARCH_SOP_PUSH_TLS_TPREL:
-    case R_LARCH_SOP_PUSH_TLS_GOT:
-    case R_LARCH_SOP_PUSH_TLS_GD:
-    case R_LARCH_SOP_PUSH_PLT_PCREL:
-    case R_LARCH_SOP_ASSERT:
-    case R_LARCH_SOP_NOT:
-    case R_LARCH_SOP_SUB:
-    case R_LARCH_SOP_SL:
-    case R_LARCH_SOP_SR:
-    case R_LARCH_SOP_ADD:
-    case R_LARCH_SOP_AND:
-    case R_LARCH_SOP_IF_ELSE:
-    case R_LARCH_SOP_POP_32_S_10_5:
-    case R_LARCH_SOP_POP_32_U_10_12:
-    case R_LARCH_SOP_POP_32_S_10_12:
-    case R_LARCH_SOP_POP_32_S_10_16:
-    case R_LARCH_SOP_POP_32_S_10_16_S2:
-    case R_LARCH_SOP_POP_32_S_5_20:
-    case R_LARCH_SOP_POP_32_S_0_5_10_16_S2:
-    case R_LARCH_SOP_POP_32_S_0_10_10_16_S2:
-    case R_LARCH_SOP_POP_32_U:
-    // Nor are we implementing these two reloc types that were probably added
-    // without much thought, and already proposed to be removed.
-    // See https://github.com/loongson/LoongArch-Documentation/issues/51
-    case R_LARCH_ADD24:
-    case R_LARCH_SUB24:
-    // Similarly for these two, long deprecated and unused even before the
-    // inception of LoongArch.
-    case R_LARCH_GNU_VTINHERIT:
-    case R_LARCH_GNU_VTENTRY:
-      Error(ctx) << *this << ": cannot handle deprecated relocation "
-                 << rel << " against symbol " << sym;
-      break;
     default:
       unreachable();
     }
@@ -748,20 +707,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_LARCH_ADD_ULEB128:
     case R_LARCH_SUB_ULEB128:
       break;
-    case R_LARCH_PCREL20_S2:
-    case R_LARCH_ALIGN:
-      Error(ctx) << *this << ": cannot handle " << rel << " relocation";
-      break;
-    case R_LARCH_SOP_PUSH_PCREL ... R_LARCH_SOP_POP_32_U:
-    case R_LARCH_ADD24:
-    case R_LARCH_SUB24:
-    case R_LARCH_GNU_VTINHERIT:
-    case R_LARCH_GNU_VTENTRY:
-    case R_LARCH_CFA:
-    case R_LARCH_DELETE:
-      Error(ctx) << *this << ": cannot handle deprecated relocation "
-                 << rel << " against symbol " << sym;
-      break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
@@ -780,4 +725,5 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 INSTANTIATE(LOONGARCH64);
 INSTANTIATE(LOONGARCH32);
+
 } // namespace mold::elf
