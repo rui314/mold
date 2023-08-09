@@ -31,11 +31,11 @@ static u32 hi20(u32 val) { return (val + 0x800) >> 12; }
 static u32 lo12(u32 val) { return val & 0xfff; }
 
 static i64 alau32_hi20(i64 val, i64 pc) {
-  return ((val + ((val & 0x800) << 1)) & ~0xfffl) - (pc & ~0xfffl);
+  return ((val + ((val & 0x800) << 1)) & ~0xfffL) - (pc & ~0xfffL);
 }
 
 static i64 alau64_hi32(i64 val, i64 pc) {
-  return (val - ((val & 0x800l) << 21)) - (pc & ~0xffffffffl);
+  return (val - ((val & 0x800l) << 21)) - (pc & ~0xffffffffL);
 }
 
 static void write_j20(u8 *loc, u32 val) {
@@ -89,29 +89,27 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     0x4c00'01e0, // jr        $t3
   };
 
-  u64 gotplt = ctx.gotplt->shdr.sh_addr;
-  u64 plt = ctx.plt->shdr.sh_addr;
-  u32 offset = gotplt - plt;
-
-  if constexpr (E::is_64)
-    if (gotplt - plt + 0x8000'0800 > 0xffff'ffff)
-      Error(ctx) << "Overflow when make plt header";
-
   if constexpr (E::is_64)
     memcpy(buf, insn_64, sizeof(insn_64));
   else
     memcpy(buf, insn_32, sizeof(insn_32));
 
-  write_j20(buf, hi20(offset));
-  write_k12(buf + 8, lo12(offset));
-  write_k12(buf + 16, lo12(offset));
+  u64 gotplt = ctx.gotplt->shdr.sh_addr;
+  u64 plt = ctx.plt->shdr.sh_addr;
+
+  if (gotplt - plt + 0x8000'0800 > 0xffff'ffff)
+    Error(ctx) << "overflow when make PLT header";
+
+  write_j20(buf, hi20(gotplt - plt));
+  write_k12(buf + 8, lo12(gotplt - plt));
+  write_k12(buf + 16, lo12(gotplt - plt));
 }
 
 static const ul32 plt_entry_64[] = {
   0x1c00000f, // pcaddu12i $t3, %hi(%pcrel(func@.got.plt))
   0x28c001ef, // ld.d      $t3, $t3, %lo(%pcrel(func@.got.plt))
   0x4c0001ed, // jirl      $t1, $t3, 0
-  0x03400000, // nop
+  0x03400000, // nop;
 };
 
 static const ul32 plt_entry_32[] = {
@@ -123,40 +121,36 @@ static const ul32 plt_entry_32[] = {
 
 template <typename E>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  u64 gotplt = sym.get_gotplt_addr(ctx);
-  u64 plt = sym.get_plt_addr(ctx);
-  u32 offset = gotplt - plt;
-
-  if constexpr (E::is_64)
-    if (gotplt - plt + 0x8000'0800 > 0xffff'ffff)
-      Error(ctx) << "Overflow when make plt entry";
-
   if constexpr (E::is_64)
     memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
   else
     memcpy(buf, plt_entry_32, sizeof(plt_entry_32));
 
-  write_j20(buf, hi20(offset));
-  write_k12(buf + 4, lo12(offset));
+  u64 gotplt = sym.get_gotplt_addr(ctx);
+  u64 plt = sym.get_plt_addr(ctx);
+
+  if (gotplt - plt + 0x8000'0800 > 0xffff'ffff)
+    Error(ctx) << "overflow when make PLT entry";
+
+  write_j20(buf, hi20(gotplt - plt));
+  write_k12(buf + 4, lo12(gotplt - plt));
 }
 
 template <typename E>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  u64 got = sym.get_got_addr(ctx);
-  u64 plt = sym.get_plt_addr(ctx);
-  u32 offset = got - plt;
-
-  if constexpr (E::is_64)
-    if (got - plt + 0x8000'0800 > 0xffff'ffff)
-      Error(ctx) << "Overflow when make pltgot entry";
-
   if constexpr (E::is_64)
     memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
   else
     memcpy(buf, plt_entry_32, sizeof(plt_entry_32));
 
-  write_j20(buf, hi20(offset));
-  write_k12(buf + 4, lo12(offset));
+  u64 got = sym.get_got_addr(ctx);
+  u64 plt = sym.get_plt_addr(ctx);
+
+  if (got - plt + 0x8000'0800 > 0xffff'ffff)
+    Error(ctx) << "overflow when make PLTGOT entry";
+
+  write_j20(buf, hi20(got - plt));
+  write_k12(buf + 4, lo12(got - plt));
 }
 
 template <typename E>
@@ -219,15 +213,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_NONE)
-      continue;
 
-    // Maybe do something in the future.
-    if (rel.r_type == R_LARCH_RELAX)
-      continue;
-
-    // Relocation notes, ignore them.
-    if (rel.r_type == R_LARCH_MARK_LA || rel.r_type == R_LARCH_MARK_PCREL)
+    if (rel.r_type == R_NONE || rel.r_type == R_LARCH_RELAX ||
+        rel.r_type == R_LARCH_MARK_LA || rel.r_type == R_LARCH_MARK_PCREL)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -250,32 +238,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
     u64 P = get_addr() + rel.r_offset;
-    u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
-    u64 GP = ctx.got->shdr.sh_addr;
-    u64 TP = ctx.tp_addr;
-    u64 GD = sym.has_tlsgd(ctx) ? sym.get_tlsgd_addr(ctx) : 0;
-    u64 IE = sym.has_gottp(ctx) ? sym.get_gottp_addr(ctx) : 0;
-
-    auto get_got_or_gd = [&]() {
-      if (sym.has_tlsgd(ctx))
-        return GD;
-      else
-        return GP + G;
-    };
+    u64 G = (sym.has_tlsgd(ctx) ? sym.get_tlsgd_idx(ctx) : sym.get_got_idx(ctx)) *
+            sizeof(Word<E>);
+    u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
-    case R_LARCH_32: {
+    case R_LARCH_32:
       if constexpr (E::is_64)
         *(U32<E> *)loc = S + A;
       else
         apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
-    }
-    case R_LARCH_64: {
+    case R_LARCH_64:
       assert(E::is_64);
       apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
-    }
     case R_LARCH_B16:
       check_branch(S + A - P, -(1 << 17), 1 << 17);
       write_k16(loc, (S + A - P) >> 2);
@@ -316,81 +293,81 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, alau64_hi32(S + A, P) >> 52);
       break;
     case R_LARCH_GOT_PC_HI20: {
-      i64 val = alau32_hi20(GP + G + A, P);
+      i64 val = alau32_hi20(GOT + G + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
     }
     case R_LARCH_GOT_PC_LO12:
-      write_k12(loc, get_got_or_gd() + A);
+      write_k12(loc, GOT + G + A);
       break;
     case R_LARCH_GOT64_PC_LO20:
-      write_j20(loc, alau64_hi32(get_got_or_gd() + A, P) >> 32);
+      write_j20(loc, alau64_hi32(GOT + G + A, P) >> 32);
       break;
     case R_LARCH_GOT64_PC_HI12:
-      write_k12(loc, alau64_hi32(get_got_or_gd() + A, P) >> 52);
+      write_k12(loc, alau64_hi32(GOT + G + A, P) >> 52);
       break;
     case R_LARCH_GOT_HI20:
-      write_j20(loc, (GP + G + A) >> 12);
+      write_j20(loc, (GOT + G + A) >> 12);
       break;
     case R_LARCH_GOT_LO12:
-      write_k12(loc, get_got_or_gd() + A);
+      write_k12(loc, GOT + G + A);
       break;
     case R_LARCH_GOT64_LO20:
-      write_j20(loc, (get_got_or_gd() + A) >> 32);
+      write_j20(loc, (GOT + G + A) >> 32);
       break;
     case R_LARCH_GOT64_HI12:
-      write_k12(loc, (get_got_or_gd() + A) >> 52);
+      write_k12(loc, (GOT + G + A) >> 52);
       break;
     case R_LARCH_TLS_LE_HI20:
-      write_j20(loc, (S + A - TP) >> 12);
+      write_j20(loc, (S + A - ctx.tp_addr) >> 12);
       break;
     case R_LARCH_TLS_LE_LO12:
-      write_k12(loc, S + A - TP);
+      write_k12(loc, S + A - ctx.tp_addr);
       break;
     case R_LARCH_TLS_LE64_LO20:
-      write_j20(loc, (S + A - TP) >> 32);
+      write_j20(loc, (S + A - ctx.tp_addr) >> 32);
       break;
     case R_LARCH_TLS_LE64_HI12:
-      write_k12(loc, (S + A - TP) >> 52);
+      write_k12(loc, (S + A - ctx.tp_addr) >> 52);
       break;
     case R_LARCH_TLS_IE_PC_HI20: {
-      i64 val = alau32_hi20(IE + A, P);
+      i64 val = alau32_hi20(sym.get_gottp_addr(ctx) + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
     }
     case R_LARCH_TLS_IE_PC_LO12:
-      write_k12(loc, IE + A);
+      write_k12(loc, sym.get_gottp_addr(ctx) + A);
       break;
     case R_LARCH_TLS_IE64_PC_LO20:
-      write_j20(loc, alau64_hi32(IE + A, P) >> 32);
+      write_j20(loc, alau64_hi32(sym.get_gottp_addr(ctx) + A, P) >> 32);
       break;
     case R_LARCH_TLS_IE64_PC_HI12:
-      write_k12(loc, alau64_hi32(IE + A, P) >> 52);
+      write_k12(loc, alau64_hi32(sym.get_gottp_addr(ctx) + A, P) >> 52);
       break;
     case R_LARCH_TLS_IE_HI20:
-      write_j20(loc, (IE + A) >> 12);
+      write_j20(loc, (sym.get_gottp_addr(ctx) + A) >> 12);
       break;
     case R_LARCH_TLS_IE_LO12:
-      write_k12(loc, IE + A);
+      write_k12(loc, sym.get_gottp_addr(ctx) + A);
       break;
     case R_LARCH_TLS_IE64_LO20:
-      write_j20(loc, (IE + A) >> 32);
+      write_j20(loc, (sym.get_gottp_addr(ctx) + A) >> 32);
       break;
     case R_LARCH_TLS_IE64_HI12:
-      write_k12(loc, (IE + A) >> 52);
+      write_k12(loc, (sym.get_gottp_addr(ctx) + A) >> 52);
       break;
     case R_LARCH_TLS_LD_PC_HI20:
     case R_LARCH_TLS_GD_PC_HI20: {
-      i64 val = alau32_hi20(GD + A, P);
+      i64 val = alau32_hi20(sym.get_tlsgd_addr(ctx) + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
     }
     case R_LARCH_TLS_LD_HI20:
     case R_LARCH_TLS_GD_HI20:
-      write_j20(loc, (GD + A) >> 12);
+      write_j20(loc, (sym.get_tlsgd_addr(ctx) + A) >> 12);
       break;
     case R_LARCH_ADD6:
       *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) + S + A) & 0b0011'1111);
@@ -541,13 +518,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (rel.r_type == R_NONE)
-      continue;
 
-    if (rel.r_type == R_LARCH_RELAX)
-      continue;
-
-    if (rel.r_type == R_LARCH_MARK_LA || rel.r_type == R_LARCH_MARK_PCREL)
+    if (rel.r_type == R_NONE || rel.r_type == R_LARCH_RELAX ||
+        rel.r_type == R_LARCH_MARK_LA || rel.r_type == R_LARCH_MARK_PCREL)
       continue;
 
     if (record_undef_error(ctx, rel))
@@ -561,7 +534,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= (NEEDS_GOT | NEEDS_PLT);
+      sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
     case R_LARCH_32:
