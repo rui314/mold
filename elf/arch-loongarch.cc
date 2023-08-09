@@ -168,13 +168,13 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
     *loc += val;
     break;
   case R_LARCH_ADD16:
-    *(U16<E> *)loc += val;
+    *(ul16 *)loc += val;
     break;
   case R_LARCH_ADD32:
-    *(U32<E> *)loc += val;
+    *(ul32 *)loc += val;
     break;
   case R_LARCH_ADD64:
-    *(U64<E> *)loc += val;
+    *(ul64 *)loc += val;
     break;
   case R_LARCH_SUB6:
     *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) - val) & 0b0011'1111);
@@ -183,19 +183,19 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
     *loc -= val;
     break;
   case R_LARCH_SUB16:
-    *(U16<E> *)loc -= val;
+    *(ul16 *)loc -= val;
     break;
   case R_LARCH_SUB32:
-    *(U32<E> *)loc -= val;
+    *(ul32 *)loc -= val;
     break;
   case R_LARCH_SUB64:
-    *(U64<E> *)loc -= val;
+    *(ul64 *)loc -= val;
     break;
   case R_LARCH_32_PCREL:
-    *(U32<E> *)loc = val - this->shdr.sh_addr - offset;
+    *(ul32 *)loc = val - this->shdr.sh_addr - offset;
     break;
   case R_LARCH_64_PCREL:
-    *(U64<E> *)loc = val - this->shdr.sh_addr - offset;
+    *(ul64 *)loc = val - this->shdr.sh_addr - offset;
     break;
   default:
     Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
@@ -245,7 +245,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_LARCH_32:
       if constexpr (E::is_64)
-        *(U32<E> *)loc = S + A;
+        *(ul32 *)loc = S + A;
       else
         apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
@@ -376,13 +376,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *loc += S + A;
       break;
     case R_LARCH_ADD16:
-      *(U16<E> *)loc += S + A;
+      *(ul16 *)loc += S + A;
       break;
     case R_LARCH_ADD32:
-      *(U32<E> *)loc += S + A;
+      *(ul32 *)loc += S + A;
       break;
     case R_LARCH_ADD64:
-      *(U64<E> *)loc += S + A;
+      *(ul64 *)loc += S + A;
       break;
     case R_LARCH_SUB6:
       *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) - S - A) & 0b0011'1111);
@@ -391,19 +391,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *loc -= S + A;
       break;
     case R_LARCH_SUB16:
-      *(U16<E> *)loc -= S + A;
+      *(ul16 *)loc -= S + A;
       break;
     case R_LARCH_SUB32:
-      *(U32<E> *)loc -= S + A;
+      *(ul32 *)loc -= S + A;
       break;
     case R_LARCH_SUB64:
-      *(U64<E> *)loc -= S + A;
+      *(ul64 *)loc -= S + A;
       break;
     case R_LARCH_32_PCREL:
-      *(U32<E> *)loc = S + A - P;
+      *(ul32 *)loc = S + A - P;
       break;
     case R_LARCH_64_PCREL:
-      *(U64<E> *)loc = S + A - P;
+      *(ul64 *)loc = S + A - P;
       break;
     case R_LARCH_ADD_ULEB128:
       overwrite_uleb(loc, read_uleb(loc) + S + A);
@@ -443,13 +443,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_LARCH_32:
-      *(U32<E> *)loc = S + A;
+      *(ul32 *)loc = S + A;
       break;
     case R_LARCH_64:
       if (std::optional<u64> val = get_tombstone(sym, frag))
-        *(U64<E> *)loc = *val;
+        *(ul64 *)loc = *val;
       else
-        *(U64<E> *)loc = S + A;
+        *(ul64 *)loc = S + A;
       break;
     case R_LARCH_ADD6:
       *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) + S + A) & 0b0011'1111);
@@ -458,13 +458,13 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *loc += S + A;
       break;
     case R_LARCH_ADD16:
-      *(U16<E> *)loc += S + A;
+      *(ul16 *)loc += S + A;
       break;
     case R_LARCH_ADD32:
-      *(U32<E> *)loc += S + A;
+      *(ul32 *)loc += S + A;
       break;
     case R_LARCH_ADD64:
-      *(U64<E> *)loc += S + A;
+      *(ul64 *)loc += S + A;
       break;
     case R_LARCH_SUB6:
       *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) - S - A) & 0b0011'1111);
@@ -473,25 +473,25 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *loc -= S + A;
       break;
     case R_LARCH_SUB16:
-      *(U16<E> *)loc -= S + A;
+      *(ul16 *)loc -= S + A;
       break;
     case R_LARCH_SUB32:
-      *(U32<E> *)loc -= S + A;
+      *(ul32 *)loc -= S + A;
       break;
     case R_LARCH_SUB64:
-      *(U64<E> *)loc -= S + A;
+      *(ul64 *)loc -= S + A;
       break;
     case R_LARCH_TLS_DTPREL32:
       if (std::optional<u64> val = get_tombstone(sym, frag))
-        *(U32<E> *)loc = *val;
+        *(ul32 *)loc = *val;
       else
-        *(U32<E> *)loc = S + A - ctx.dtp_addr;
+        *(ul32 *)loc = S + A - ctx.dtp_addr;
       break;
     case R_LARCH_TLS_DTPREL64:
       if (std::optional<u64> val = get_tombstone(sym, frag))
-        *(U64<E> *)loc = *val;
+        *(ul64 *)loc = *val;
       else
-        *(U64<E> *)loc = S + A - ctx.dtp_addr;
+        *(ul64 *)loc = S + A - ctx.dtp_addr;
       break;
     case R_LARCH_ADD_ULEB128:
       overwrite_uleb(loc, read_uleb(loc) + S + A);
