@@ -162,7 +162,7 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   case R_NONE:
     break;
   case R_LARCH_ADD6:
-    *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) + val) & 0b0011'1111);
+    *loc = (*loc & 0b1100'0000) | ((*loc + val) & 0b0011'1111);
     break;
   case R_LARCH_ADD8:
     *loc += val;
@@ -177,7 +177,7 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
     *(ul64 *)loc += val;
     break;
   case R_LARCH_SUB6:
-    *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) - val) & 0b0011'1111);
+    *loc = (*loc & 0b1100'0000) | ((*loc - val) & 0b0011'1111);
     break;
   case R_LARCH_SUB8:
     *loc -= val;
@@ -370,7 +370,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_j20(loc, (sym.get_tlsgd_addr(ctx) + A) >> 12);
       break;
     case R_LARCH_ADD6:
-      *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) + S + A) & 0b0011'1111);
+      *loc = (*loc & 0b1100'0000) | ((*loc + S + A) & 0b0011'1111);
       break;
     case R_LARCH_ADD8:
       *loc += S + A;
@@ -385,7 +385,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc += S + A;
       break;
     case R_LARCH_SUB6:
-      *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) - S - A) & 0b0011'1111);
+      *loc = (*loc & 0b1100'0000) | ((*loc - S - A) & 0b0011'1111);
       break;
     case R_LARCH_SUB8:
       *loc -= S + A;
@@ -452,7 +452,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
         *(ul64 *)loc = S + A;
       break;
     case R_LARCH_ADD6:
-      *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) + S + A) & 0b0011'1111);
+      *loc = (*loc & 0b1100'0000) | ((*loc + S + A) & 0b0011'1111);
       break;
     case R_LARCH_ADD8:
       *loc += S + A;
@@ -467,7 +467,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc += S + A;
       break;
     case R_LARCH_SUB6:
-      *loc = (*loc & 0b1100'0000) | (((*loc & 0b0011'1111) - S - A) & 0b0011'1111);
+      *loc = (*loc & 0b1100'0000) | ((*loc - S - A) & 0b0011'1111);
       break;
     case R_LARCH_SUB8:
       *loc -= S + A;
