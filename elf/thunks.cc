@@ -145,7 +145,7 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
 // Scan relocations to collect symbols that need thunks.
 template <typename E>
 static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
-                      RangeExtensionThunk<E> &thunk) {
+                      RangeExtensionThunk<E> &thunk, i64 thunk_idx) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   std::vector<RangeExtensionRef> &range_extn = isec.extra.range_extn;
   range_extn.resize(rels.size());
@@ -174,7 +174,7 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
 
     // Otherwise, add the symbol to the current thunk if it's not
     // added already.
-    range_extn[i].thunk_idx = thunk.thunk_idx;
+    range_extn[i].thunk_idx = thunk_idx;
     range_extn[i].sym_idx = -1;
 
     if (sym.flags.exchange(-1) == 0) {
@@ -223,7 +223,9 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
   i64 c = 0;
   i64 d = 0;
   i64 offset = 0;
-  i64 thunk_idx = 0;
+
+  // The smallest thunk index that is reachable from the current batch.
+  i64 t = 0;
 
   while (b < m.size()) {
     // Move D foward as far as we can jump from B to anywhere in a thunk at D.
@@ -250,20 +252,20 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       a++;
 
     // Erase references to out-of-range thunks.
-    while (thunk_idx < osec.thunks.size() &&
-           osec.thunks[thunk_idx]->offset < m[a]->offset)
-      reset_thunk(*osec.thunks[thunk_idx++]);
+    while (t < osec.thunks.size() &&
+           osec.thunks[t]->offset < m[a]->offset)
+      reset_thunk(*osec.thunks[t++]);
 
     // Create a thunk for input sections between B and C and place it at D.
     offset = align_to(offset, RangeExtensionThunk<E>::alignment);
-    RangeExtensionThunk<E> *thunk =
-      new RangeExtensionThunk<E>(osec, osec.thunks.size(), offset);
+    i64 thunk_idx = osec.thunks.size();
+    RangeExtensionThunk<E> *thunk = new RangeExtensionThunk<E>(osec, offset);
     osec.thunks.emplace_back(thunk);
 
     // Scan relocations between B and C to collect symbols that need thunks.
     tbb::parallel_for_each(m.begin() + b, m.begin() + c,
                            [&](InputSection<E> *isec) {
-      scan_rels(ctx, *isec, *thunk);
+      scan_rels(ctx, *isec, *thunk, thunk_idx);
     });
 
     // Now that we know the number of symbols in the thunk, we can compute
@@ -280,7 +282,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     // Assign offsets within the thunk to the symbols.
     for (i64 i = 0; i < thunk->symbols.size(); i++) {
       Symbol<E> &sym = *thunk->symbols[i];
-      sym.extra.thunk_idx = thunk->thunk_idx;
+      sym.extra.thunk_idx = thunk_idx;
       sym.extra.thunk_sym_idx = i;
     }
 
@@ -292,7 +294,7 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       std::span<RangeExtensionRef> range_extn = isec->extra.range_extn;
 
       for (i64 i = 0; i < rels.size(); i++)
-        if (range_extn[i].thunk_idx == thunk->thunk_idx)
+        if (range_extn[i].thunk_idx == thunk_idx)
           range_extn[i].sym_idx = syms[rels[i].r_sym]->extra.thunk_sym_idx;
     });
 
@@ -300,8 +302,8 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     b = c;
   }
 
-  while (thunk_idx < osec.thunks.size())
-    reset_thunk(*osec.thunks[thunk_idx++]);
+  while (t < osec.thunks.size())
+    reset_thunk(*osec.thunks[t++]);
 
   osec.shdr.sh_size = offset;
 }
