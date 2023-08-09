@@ -28,7 +28,6 @@
 namespace mold::elf {
 
 static u64 hi20(u64 val) { return (val + 0x800) & 0xffff'f000; }
-static u64 lo12(u64 val) { return val & 0xfff; }
 
 static i64 alau32_hi20(i64 val, i64 pc) {
   return ((val + ((val & 0x800) << 1)) & ~0xfffL) - (pc & ~0xfffL);
@@ -101,8 +100,8 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     Error(ctx) << "overflow when make PLT header";
 
   write_j20(buf, hi20(gotplt - plt) >> 12);
-  write_k12(buf + 8, lo12(gotplt - plt));
-  write_k12(buf + 16, lo12(gotplt - plt));
+  write_k12(buf + 8, gotplt - plt);
+  write_k12(buf + 16, gotplt - plt);
 }
 
 static const ul32 plt_entry_64[] = {
@@ -133,7 +132,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
     Error(ctx) << "overflow when make PLT entry";
 
   write_j20(buf, hi20(gotplt - plt) >> 12);
-  write_k12(buf + 4, lo12(gotplt - plt));
+  write_k12(buf + 4, gotplt - plt);
 }
 
 template <typename E>
@@ -150,7 +149,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
     Error(ctx) << "overflow when make PLTGOT entry";
 
   write_j20(buf, hi20(got - plt) >> 12);
-  write_k12(buf + 4, lo12(got - plt));
+  write_k12(buf + 4, got - plt);
 }
 
 template <typename E>
