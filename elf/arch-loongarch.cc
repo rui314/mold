@@ -66,7 +66,7 @@ static void write_j20(u8 *loc, u32 val) {
 
 static void write_k12(u8 *loc, u32 val) {
   // opcode, [11:0], rj, rd
-  *(ul32 *)loc &= 0b111111111111'0000000000'11111'11111;
+  *(ul32 *)loc &= 0b1111111111'000000000000'11111'11111;
   *(ul32 *)loc |= bits(val, 11, 0) << 10;
 }
 
