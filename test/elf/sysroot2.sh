@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[[ $MACHINE = loongarch* ]] && skip
+
 mkdir -p $t/bin $t/sysroot/foo
 
 cat <<EOF > $t/a.script

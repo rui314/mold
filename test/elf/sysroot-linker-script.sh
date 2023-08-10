@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[[ $MACHINE = loongarch* ]] && skip
+
 cat <<EOF | $CC -o $t/a.o -c -xc -
 void foo() {}
 EOF

@@ -51,7 +51,7 @@ jobs:
         # Install cross toolchains
         dpkg --add-architecture i386
         ./install-build-deps.sh update
-        apt-get install -y sudo qemu-user gdb zstd dwarfdump {gcc,g++}-10-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha,mips,mipsel}-linux-gnu {gcc,g++}-10-arm-linux-gnueabihf {gcc,g++}-10-{mips64,mips64el}-linux-gnuabi64
+        apt-get install -y sudo qemu-user gdb zstd dwarfdump xz-utils {gcc,g++}-10-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha,mips,mipsel}-linux-gnu {gcc,g++}-10-arm-linux-gnueabihf {gcc,g++}-10-{mips64,mips64el}-linux-gnuabi64
 
         for i in {i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha,mips,mipsel}-linux-gnu arm-linux-gnueabihf {mips64,mips64el}-linux-gnuabi64; do
           ln -sf /usr/bin/$i-gcc-10 /usr/bin/$i-gcc
@@ -67,7 +67,24 @@ jobs:
         ln -sf /usr/local/rv32/bin/riscv32-unknown-linux-gnu-objdump /usr/bin/riscv32-linux-gnu-objdump
         echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-gcc -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-gcc
         echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-g++ -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-g++
-        chmod 755 /usr/bin/riscv32-linux-gnu-gcc /usr/bin/riscv32-linux-gnu-g++
+        chmod 755 /usr/bin/riscv32-linux-gnu-{gcc,g++}
+
+        # Install a LoongArch toolchain
+        mkdir /usr/local/larch
+        wget -O- -q https://github.com/loongson/build-tools/releases/download/2023.08.08/CLFS-loongarch64-8.1-x86_64-cross-tools-gcc-glibc.tar.xz | tar -C /usr/local/larch --strip-components=1 --xz -xf -
+
+        ln -sf /usr/local/larch/target /usr/loongarch64-linux-gnu
+        cp -r /usr/local/larch/loongarch64-unknown-linux-gnu/lib/* /usr/loongarch64-linux-gnu/lib64/
+
+        ln -sf /usr/local/larch/bin/loongarch64-unknown-linux-gnu-objdump /usr/bin/loongarch64-linux-gnu-objdump
+        ln -sf /usr/local/larch/bin/loongarch64-unknown-linux-gnu-strip /usr/bin/loongarch64-linux-gnu-strip
+        echo '/usr/local/larch/bin/loongarch64-unknown-linux-gnu-gcc -L/usr/local/larch/loongarch64-unknown-linux-gnu "$@"' > /usr/bin/loongarch64-linux-gnu-gcc
+        echo '/usr/local/larch/bin/loongarch64-unknown-linux-gnu-g++ -L/usr/local/larch/loongarch64-unknown-linux-gnu "$@"' > /usr/bin/loongarch64-linux-gnu-g++
+        chmod 755 /usr/bin/loongarch64-linux-gnu-{gcc,g++}
+
+        wget -O/usr/local/bin/qemu-loongarch64 -q https://github.com/loongson/build-tools/releases/download/2023.08.08/qemu-loongarch64
+        chmod 755 /usr/local/bin/qemu-loongarch64
+
       shell: bash
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
@@ -76,7 +93,7 @@ jobs:
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
-        cmake -DMOLD_ENABLE_QEMU_TESTS=On -DMOLD_ENABLE_QEMU_TESTS_RV32=On ..
+        cmake -DMOLD_ENABLE_QEMU_TESTS=On -DMOLD_ENABLE_QEMU_TESTS_RV32=On -DMOLD_ENABLE_QEMU_TESTS_LOONGARCH=On ..
         cmake --build . -j$(nproc)
         ctest . -j$(nproc)
     - name: archive test results
