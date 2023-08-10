@@ -31,7 +31,7 @@ static u64 page(u64 val) {
   return val & 0xffff'ffff'ffff'f000;
 }
 
-static u64 mid20(u64 val, u64 pc) {
+static u64 hi20(u64 val, u64 pc) {
   // A PC-relative address with a 32 bit offset is materialized in a
   // register with the following instructions:
   //
@@ -49,8 +49,8 @@ static u64 mid20(u64 val, u64 pc) {
   return page(val + 0x800) - page(pc);
 }
 
-static u64 hi32(u64 val, u64 pc) {
-  u64 x = mid20(val, pc);
+static u64 hi64(u64 val, u64 pc) {
+  u64 x = hi20(val, pc);
   if ((val & 0x800) && !(x & 0x8000'0000))
     return x - 0x1'0000'0000;
   if (!(val & 0x800) && (x & 0x8000'0000))
@@ -122,26 +122,26 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   u64 gotplt = ctx.gotplt->shdr.sh_addr;
   u64 plt = ctx.plt->shdr.sh_addr;
 
-  if (gotplt - plt + 0x8000'0800 > 0xffff'ffff)
-    Error(ctx) << "overflow when make PLT header";
+  if ((i32)(gotplt - plt) != gotplt - plt)
+    Error(ctx) << "PLT header overflow";
 
-  write_j20(buf, mid20(gotplt, plt) >> 12);
+  write_j20(buf, hi20(gotplt, plt) >> 12);
   write_k12(buf + 8, gotplt - plt);
   write_k12(buf + 16, gotplt - plt);
 }
 
 static const ul32 plt_entry_64[] = {
-  0x1c00000f, // pcaddu12i $t3, %hi(%pcrel(func@.got.plt))
-  0x28c001ef, // ld.d      $t3, $t3, %lo(%pcrel(func@.got.plt))
-  0x4c0001ed, // jirl      $t1, $t3, 0
-  0x03400000, // nop;
+  0x1c00'000f, // pcaddu12i $t3, %hi(%pcrel(func@.got.plt))
+  0x28c0'01ef, // ld.d      $t3, $t3, %lo(%pcrel(func@.got.plt))
+  0x4c00'01ed, // jirl      $t1, $t3, 0
+  0x0340'0000, // nop
 };
 
 static const ul32 plt_entry_32[] = {
-  0x1c00000f, // pcaddu12i $t3, %hi(%pcrel(func@.got.plt))
-  0x288001ef, // ld.w      $t3, $t3, %lo(%pcrel(func@.got.plt))
-  0x4c0001ed, // jirl      $t1, $t3, 0
-  0x03400000, // nop
+  0x1c00'000f, // pcaddu12i $t3, %hi(%pcrel(func@.got.plt))
+  0x2880'01ef, // ld.w      $t3, $t3, %lo(%pcrel(func@.got.plt))
+  0x4c00'01ed, // jirl      $t1, $t3, 0
+  0x0340'0000, // nop
 };
 
 template <typename E>
@@ -154,10 +154,10 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u64 gotplt = sym.get_gotplt_addr(ctx);
   u64 plt = sym.get_plt_addr(ctx);
 
-  if (gotplt - plt + 0x8000'0800 > 0xffff'ffff)
-    Error(ctx) << "overflow when make PLT entry";
+  if ((i32)(gotplt - plt) != gotplt - plt)
+    Error(ctx) << "PLT entry overflow";
 
-  write_j20(buf, mid20(gotplt, plt) >> 12);
+  write_j20(buf, hi20(gotplt, plt) >> 12);
   write_k12(buf + 4, gotplt - plt);
 }
 
@@ -171,10 +171,10 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u64 got = sym.get_got_addr(ctx);
   u64 plt = sym.get_plt_addr(ctx);
 
-  if (got - plt + 0x8000'0800 > 0xffff'ffff)
-    Error(ctx) << "overflow when make PLTGOT entry";
+  if ((i32)(got - plt) != got - plt)
+    Error(ctx) << "PLTGOT entry overflow";
 
-  write_j20(buf, mid20(got, plt) >> 12);
+  write_j20(buf, hi20(got, plt) >> 12);
   write_k12(buf + 4, got - plt);
 }
 
@@ -303,7 +303,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, (S + A) >> 52);
       break;
     case R_LARCH_PCALA_HI20: {
-      i64 val = mid20(S + A, P);
+      i64 val = hi20(S + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
@@ -312,13 +312,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, S + A);
       break;
     case R_LARCH_PCALA64_LO20:
-      write_j20(loc, hi32(S + A, P) >> 32);
+      write_j20(loc, hi64(S + A, P) >> 32);
       break;
     case R_LARCH_PCALA64_HI12:
-      write_k12(loc, hi32(S + A, P) >> 52);
+      write_k12(loc, hi64(S + A, P) >> 52);
       break;
     case R_LARCH_GOT_PC_HI20: {
-      i64 val = mid20(GOT + G + A, P);
+      i64 val = hi20(GOT + G + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
@@ -327,10 +327,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, GOT + G + A);
       break;
     case R_LARCH_GOT64_PC_LO20:
-      write_j20(loc, hi32(GOT + G + A, P) >> 32);
+      write_j20(loc, hi64(GOT + G + A, P) >> 32);
       break;
     case R_LARCH_GOT64_PC_HI12:
-      write_k12(loc, hi32(GOT + G + A, P) >> 52);
+      write_k12(loc, hi64(GOT + G + A, P) >> 52);
       break;
     case R_LARCH_GOT_HI20:
       write_j20(loc, (GOT + G + A) >> 12);
@@ -357,7 +357,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, (S + A - ctx.tp_addr) >> 52);
       break;
     case R_LARCH_TLS_IE_PC_HI20: {
-      i64 val = mid20(sym.get_gottp_addr(ctx) + A, P);
+      i64 val = hi20(sym.get_gottp_addr(ctx) + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
@@ -366,10 +366,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, sym.get_gottp_addr(ctx) + A);
       break;
     case R_LARCH_TLS_IE64_PC_LO20:
-      write_j20(loc, hi32(sym.get_gottp_addr(ctx) + A, P) >> 32);
+      write_j20(loc, hi64(sym.get_gottp_addr(ctx) + A, P) >> 32);
       break;
     case R_LARCH_TLS_IE64_PC_HI12:
-      write_k12(loc, hi32(sym.get_gottp_addr(ctx) + A, P) >> 52);
+      write_k12(loc, hi64(sym.get_gottp_addr(ctx) + A, P) >> 52);
       break;
     case R_LARCH_TLS_IE_HI20:
       write_j20(loc, (sym.get_gottp_addr(ctx) + A) >> 12);
@@ -385,7 +385,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_LARCH_TLS_LD_PC_HI20:
     case R_LARCH_TLS_GD_PC_HI20: {
-      i64 val = mid20(sym.get_tlsgd_addr(ctx) + A, P);
+      i64 val = hi20(sym.get_tlsgd_addr(ctx) + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
@@ -529,7 +529,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
                  << rel;
       break;
     }
-
   }
 }
 
