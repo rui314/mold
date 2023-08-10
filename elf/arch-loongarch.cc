@@ -125,7 +125,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   if ((i32)(gotplt - plt) != gotplt - plt)
     Error(ctx) << "PLT header overflow";
 
-  write_j20(buf, hi20(gotplt, plt) >> 12);
+  write_j20(buf, (gotplt - plt + 0x800) >> 12);
   write_k12(buf + 8, gotplt - plt);
   write_k12(buf + 16, gotplt - plt);
 }
@@ -157,7 +157,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if ((i32)(gotplt - plt) != gotplt - plt)
     Error(ctx) << "PLT entry overflow";
 
-  write_j20(buf, hi20(gotplt, plt) >> 12);
+  write_j20(buf, (gotplt - plt + 0x800) >> 12);
   write_k12(buf + 4, gotplt - plt);
 }
 
@@ -174,7 +174,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if ((i32)(got - plt) != got - plt)
     Error(ctx) << "PLTGOT entry overflow";
 
-  write_j20(buf, hi20(got, plt) >> 12);
+  write_j20(buf, (got - plt + 0x800) >> 12);
   write_k12(buf + 4, got - plt);
 }
 
@@ -240,7 +240,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     const ElfRel<E> &rel = rels[i];
 
     if (rel.r_type == R_NONE || rel.r_type == R_LARCH_RELAX ||
-        rel.r_type == R_LARCH_MARK_LA || rel.r_type == R_LARCH_MARK_PCREL)
+        rel.r_type == R_LARCH_MARK_LA || rel.r_type == R_LARCH_MARK_PCREL ||
+        rel.r_type == R_LARCH_ALIGN)
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
@@ -544,7 +545,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     const ElfRel<E> &rel = rels[i];
 
     if (rel.r_type == R_NONE || rel.r_type == R_LARCH_RELAX ||
-        rel.r_type == R_LARCH_MARK_LA || rel.r_type == R_LARCH_MARK_PCREL)
+        rel.r_type == R_LARCH_MARK_LA || rel.r_type == R_LARCH_MARK_PCREL ||
+        rel.r_type == R_LARCH_ALIGN)
       continue;
 
     if (record_undef_error(ctx, rel))
