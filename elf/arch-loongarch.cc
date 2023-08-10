@@ -27,10 +27,26 @@
 
 namespace mold::elf {
 
-static u64 hi20(u64 val) { return (val + 0x800) & 0xffff'f000; }
+static u64 page(u64 val) {
+  return val & 0xffff'ffff'ffff'f000;
+}
 
-static i64 alau32_hi20(i64 val, i64 pc) {
-  return ((val + ((val & 0x800) << 1)) & ~0xfffL) - (pc & ~0xfffL);
+static u64 mid20(u64 val, u64 pc) {
+  // A PC-relative address with a 32 bit offset is materialized in a
+  // register with the following instructions:
+  //
+  //   pcalau12i rN, %hi20(sym)
+  //   addi.d    rN, zero, %lo12(sym)
+  //
+  // pcalau12i materializes bits [63:12] by computing (pc + imm << 12)
+  // and zero-clear [11:0]. addi.d sign-extends its 12 bit immediate and
+  // add it to the register. To compensate the sign-extension, pcalau12i
+  // needs to materialize a 0x1000 larger value than the desired [63:12]
+  // if [11:0] is sign-extended.
+  //
+  // This is similar but different from RISC-V because RISC-V's auipc
+  // doesn't zero-clear [11:0].
+  return page(val + 0x800) - page(pc);
 }
 
 static i64 alau64_hi32(i64 val, i64 pc) {
@@ -99,7 +115,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (gotplt - plt + 0x8000'0800 > 0xffff'ffff)
     Error(ctx) << "overflow when make PLT header";
 
-  write_j20(buf, hi20(gotplt - plt) >> 12);
+  write_j20(buf, mid20(gotplt, plt) >> 12);
   write_k12(buf + 8, gotplt - plt);
   write_k12(buf + 16, gotplt - plt);
 }
@@ -131,7 +147,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if (gotplt - plt + 0x8000'0800 > 0xffff'ffff)
     Error(ctx) << "overflow when make PLT entry";
 
-  write_j20(buf, hi20(gotplt - plt) >> 12);
+  write_j20(buf, mid20(gotplt, plt) >> 12);
   write_k12(buf + 4, gotplt - plt);
 }
 
@@ -148,7 +164,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if (got - plt + 0x8000'0800 > 0xffff'ffff)
     Error(ctx) << "overflow when make PLTGOT entry";
 
-  write_j20(buf, hi20(got - plt) >> 12);
+  write_j20(buf, mid20(got, plt) >> 12);
   write_k12(buf + 4, got - plt);
 }
 
@@ -277,7 +293,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, (S + A) >> 52);
       break;
     case R_LARCH_PCALA_HI20: {
-      i64 val = alau32_hi20(S + A, P);
+      i64 val = mid20(S + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
@@ -292,7 +308,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, alau64_hi32(S + A, P) >> 52);
       break;
     case R_LARCH_GOT_PC_HI20: {
-      i64 val = alau32_hi20(GOT + G + A, P);
+      i64 val = mid20(GOT + G + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
@@ -331,7 +347,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, (S + A - ctx.tp_addr) >> 52);
       break;
     case R_LARCH_TLS_IE_PC_HI20: {
-      i64 val = alau32_hi20(sym.get_gottp_addr(ctx) + A, P);
+      i64 val = mid20(sym.get_gottp_addr(ctx) + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
@@ -359,7 +375,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_LARCH_TLS_LD_PC_HI20:
     case R_LARCH_TLS_GD_PC_HI20: {
-      i64 val = alau32_hi20(sym.get_tlsgd_addr(ctx) + A, P);
+      i64 val = mid20(sym.get_tlsgd_addr(ctx) + A, P);
       check(val, -(1LL << 31), 1LL << 31);
       write_j20(loc, val >> 12);
       break;
