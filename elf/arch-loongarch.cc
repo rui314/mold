@@ -49,8 +49,13 @@ static u64 mid20(u64 val, u64 pc) {
   return page(val + 0x800) - page(pc);
 }
 
-static i64 alau64_hi32(i64 val, i64 pc) {
-  return (val - ((val & 0x800l) << 21)) - (pc & ~0xffffffffL);
+static u64 hi32(u64 val, u64 pc) {
+  u64 x = mid20(val, pc);
+  if ((val & 0x800) && !(x & 0x8000'0000))
+    return x - 0x1'0000'0000;
+  if (!(val & 0x800) && (x & 0x8000'0000))
+    return x + 0x1'0000'0000;
+  return x;
 }
 
 static void write_j20(u8 *loc, u32 val) {
@@ -302,10 +307,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, S + A);
       break;
     case R_LARCH_PCALA64_LO20:
-      write_j20(loc, alau64_hi32(S + A, P) >> 32);
+      write_j20(loc, hi32(S + A, P) >> 32);
       break;
     case R_LARCH_PCALA64_HI12:
-      write_k12(loc, alau64_hi32(S + A, P) >> 52);
+      write_k12(loc, hi32(S + A, P) >> 52);
       break;
     case R_LARCH_GOT_PC_HI20: {
       i64 val = mid20(GOT + G + A, P);
@@ -317,10 +322,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, GOT + G + A);
       break;
     case R_LARCH_GOT64_PC_LO20:
-      write_j20(loc, alau64_hi32(GOT + G + A, P) >> 32);
+      write_j20(loc, hi32(GOT + G + A, P) >> 32);
       break;
     case R_LARCH_GOT64_PC_HI12:
-      write_k12(loc, alau64_hi32(GOT + G + A, P) >> 52);
+      write_k12(loc, hi32(GOT + G + A, P) >> 52);
       break;
     case R_LARCH_GOT_HI20:
       write_j20(loc, (GOT + G + A) >> 12);
@@ -356,10 +361,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, sym.get_gottp_addr(ctx) + A);
       break;
     case R_LARCH_TLS_IE64_PC_LO20:
-      write_j20(loc, alau64_hi32(sym.get_gottp_addr(ctx) + A, P) >> 32);
+      write_j20(loc, hi32(sym.get_gottp_addr(ctx) + A, P) >> 32);
       break;
     case R_LARCH_TLS_IE64_PC_HI12:
-      write_k12(loc, alau64_hi32(sym.get_gottp_addr(ctx) + A, P) >> 52);
+      write_k12(loc, hi32(sym.get_gottp_addr(ctx) + A, P) >> 52);
       break;
     case R_LARCH_TLS_IE_HI20:
       write_j20(loc, (sym.get_gottp_addr(ctx) + A) >> 12);
