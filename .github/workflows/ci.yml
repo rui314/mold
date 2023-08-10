@@ -76,8 +76,10 @@ jobs:
         ln -sf /usr/local/larch/target /usr/loongarch64-linux-gnu
         cp -r /usr/local/larch/loongarch64-unknown-linux-gnu/lib/* /usr/loongarch64-linux-gnu/lib64/
 
-        ln -sf /usr/local/larch/bin/loongarch64-unknown-linux-gnu-objdump /usr/bin/loongarch64-linux-gnu-objdump
-        ln -sf /usr/local/larch/bin/loongarch64-unknown-linux-gnu-strip /usr/bin/loongarch64-linux-gnu-strip
+        for i in objdump objcopy strip; do
+          ln -sf /usr/local/larch/bin/loongarch64-unknown-linux-gnu-$i /usr/bin/loongarch64-linux-gnu-$i
+        done
+
         echo '/usr/local/larch/bin/loongarch64-unknown-linux-gnu-gcc -L/usr/local/larch/loongarch64-unknown-linux-gnu "$@"' > /usr/bin/loongarch64-linux-gnu-gcc
         echo '/usr/local/larch/bin/loongarch64-unknown-linux-gnu-g++ -L/usr/local/larch/loongarch64-unknown-linux-gnu "$@"' > /usr/bin/loongarch64-linux-gnu-g++
         chmod 755 /usr/bin/loongarch64-linux-gnu-{gcc,g++}
