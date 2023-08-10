@@ -1,26 +1,19 @@
-// This file contains LoongArch-specific code. LoongArch is a clean RISC
-// ISA. It supports PC-relative load/store instructions. All instructions
-// are 4 bytes long.
+// LoongArch is a new RISC ISA announced in 2021 by Loongson. The ISA
+// feels like a modernized MIPS with a hint of RISC-V flavor, although
+// it's not compatible with either one.
 //
-// This file support LoongArch psABI v2 with relaxation not implemented.
-// The reloactions from 20 to 46, 49 and 54 are deprecated in psABI v2.
+// While LoongArch is a fresh and clean ISA, its technological advantage
+// over other modern RISC ISAs such as RISC-V doesn't seem to be very
+// significant. It appears that the real selling point of LoongArch is
+// that the ISA is developed and controlled by a Chinese company,
+// reflecting a desire for domestic CPUs. Loongson is actively working on
+// bootstrapping the entire ecosystem for LoongArch, sending patches to
+// Linux, GCC, LLVM, etc.
 //
-// The TLSGD and TLSLD relocation type share GOT relocation type, which
-// means can not think the symbol value as relocation value directly. It
-// needs judgement like has_tlsgd(). How they share relocation types follows.
-// a), TLS_{LD, GD}_PC_HI20 + GOT_PC_LO12 + GOT64_PC_LO20 + GOT64_PC_HI12,
-// b), TLS_{LD, GD}_HI20 + GOT_LO12 + GOT64_LO20, GOT64_HI12.
+// All instructions are 4 bytes long in LoongArch and aligned to 4-byte
+// boundaries. The psABI defines a few linker relaxations. We haven't
+// supported them yet, though.
 //
-// LoongArch use 2 instructions to get a 32bits address, and use 4 instruc-
-// tions to get a 64bits address. It gets the 4K-page of the address plus
-// 2KB at first. Then absolute instructions (ld, st, addi) get the detail.
-// When the loaded address from got is local address, relaxation will
-// relax it from pcalau12i+ld to pcalau12i+addi.
-// When the load address range is PC ±1MB and 4bytes-align, relaxation
-// will relax it from pcalau12i+addi to pcaddi.
-// At present, relaxation is not implemented.
-//
-// https://reviews.llvm.org/D138135
 // https://loongson.github.io/LoongArch-Documentation/LoongArch-ELF-ABI-EN.html
 
 #include "mold.h"
@@ -35,21 +28,36 @@ static u64 hi20(u64 val, u64 pc) {
   // A PC-relative address with a 32 bit offset is materialized in a
   // register with the following instructions:
   //
-  //   pcalau12i rN, %hi20(sym)
-  //   addi.d    rN, zero, %lo12(sym)
+  //   pcalau12i $rN, %hi20(sym)
+  //   addi.d    $rN, $zero, %lo12(sym)
   //
-  // pcalau12i materializes bits [63:12] by computing (pc + imm << 12)
-  // and zero-clear [11:0]. addi.d sign-extends its 12 bit immediate and
-  // add it to the register. To compensate the sign-extension, pcalau12i
+  // PCALAU12I materializes bits [63:12] by computing (pc + imm << 12)
+  // and zero-clear [11:0]. ADDI.D sign-extends its 12 bit immediate and
+  // add it to the register. To compensate the sign-extension, PCALAU12I
   // needs to materialize a 0x1000 larger value than the desired [63:12]
   // if [11:0] is sign-extended.
   //
-  // This is similar but different from RISC-V because RISC-V's auipc
+  // This is similar but different from RISC-V because RISC-V's AUIPC
   // doesn't zero-clear [11:0].
   return page(val + 0x800) - page(pc);
 }
 
 static u64 hi64(u64 val, u64 pc) {
+  // A PC-relative 64-bit address is materialized with the following
+  // instructions for the large code model:
+  //
+  //   pcalau12i $rX, %pc_hi20(sym)
+  //   addi.d    $rY, $zero, %pc_lo12(sym)
+  //   lu32i.d   $rY, %pc64_lo20(sym)
+  //   lu52i.d   $rY, $r12, %pc64_hi12(sym)
+  //   add.d     $rX, $rX, $rY
+  //
+  // PCALAU12I computes (pc + imm << 12) and sign-extends the 32 bit
+  // result to 64 bits. ADDI.D sets a sign-extended 12 bit value to a
+  // register. lu32i.d and lu52i.d simply set bits to [51:31] and to
+  // [63:53], respectively.
+  //
+  // Compensating all the sign-extensions is a bit complicated.
   u64 x = hi20(val, pc);
   if ((val & 0x800) && !(x & 0x8000'0000))
     return x - 0x1'0000'0000;
@@ -261,11 +269,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check(val, lo, hi);
     };
 
+    // Unlike other psABIs, the LoongArch ABI uses the same relocation
+    // types to refer to GOT entries for thread-local symbols and regular
+    // ones. Therefore, G may refer to a TLSGD or a regular GOT slot
+    // depending on the symbol type.
+    //
+    // Note that as of August 2023, both GCC and Clang treat TLSLD relocs
+    // as if they were TLSGD relocs for LoongArch, which is a clear bug.
+    // We need to handle TLSLD relocs as synonyms for TLSGD relocs for the
+    // sake of bug compatibility.
+    auto get_tls_idx = [&] {
+      if (sym.has_tlsgd(ctx))
+        return sym.get_tlsgd_idx(ctx);
+      return sym.get_got_idx(ctx);
+    };
+
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
     u64 P = get_addr() + rel.r_offset;
-    u64 G = (sym.has_tlsgd(ctx) ? sym.get_tlsgd_idx(ctx) : sym.get_got_idx(ctx)) *
-            sizeof(Word<E>);
+    u64 G = get_tls_idx() * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
@@ -642,14 +664,14 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
-#define INSTANTIATE(E)                                                          \
-  template void write_plt_header(Context<E> &, u8 *);                           \
-  template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);               \
-  template void write_pltgot_entry(Context<E> &, u8 *, Symbol<E> &);            \
-  template void                                                                 \
-  EhFrameSection<E>::apply_eh_reloc(Context<E> &, const ElfRel<E> &, u64, u64); \
-  template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);         \
-  template void InputSection<E>::apply_reloc_nonalloc(Context<E> &, u8 *);      \
+#define INSTANTIATE(E)                                                       \
+  template void write_plt_header(Context<E> &, u8 *);                        \
+  template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);            \
+  template void write_pltgot_entry(Context<E> &, u8 *, Symbol<E> &);         \
+  template void EhFrameSection<E>::                                          \
+    apply_eh_reloc(Context<E> &, const ElfRel<E> &, u64, u64);               \
+  template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);      \
+  template void InputSection<E>::apply_reloc_nonalloc(Context<E> &, u8 *);   \
   template void InputSection<E>::scan_relocations(Context<E> &);
 
 INSTANTIATE(LOONGARCH64);
