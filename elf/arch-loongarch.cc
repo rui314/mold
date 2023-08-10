@@ -59,30 +59,35 @@ static u64 hi32(u64 val, u64 pc) {
 }
 
 static void write_j20(u8 *loc, u32 val) {
-  *(ul32 *)loc &= 0b11111110'00000000'00000000'00011111;
-  *(ul32 *)loc |= (val & 0xfffff) << 5;
+  // opcode, [19:0], rd
+  *(ul32 *)loc &= 0b1111111'00000000000000000000'11111;
+  *(ul32 *)loc |= bits(val, 19, 0) << 5;
 }
 
 static void write_k12(u8 *loc, u32 val) {
-  *(ul32 *)loc &= 0b11111111'11110000'00000011'11111111;
-  *(ul32 *)loc |= (val & 0xfff) << 10;
+  // opcode, [11:0], rj, rd
+  *(ul32 *)loc &= 0b111111111111'0000000000'11111'11111;
+  *(ul32 *)loc |= bits(val, 11, 0) << 10;
 }
 
 static void write_d5k16(u8 *loc, u32 val) {
-  u32 hi = val >> 16;
-  *(ul32 *)loc &= 0b11111100'00000000'00000011'11100000;
-  *(ul32 *)loc |= ((val & 0xffff) << 10) | (hi & 0x1f);
+  // opcode, [15:0], rj, [20:16]
+  *(ul32 *)loc &= 0b111111'0000000000000000'11111'00000;
+  *(ul32 *)loc |= bits(val, 15, 0) << 10;
+  *(ul32 *)loc |= bits(val, 20, 16);
 }
 
 static void write_d10k16(u8 *loc, u32 val) {
-  u32 hi = val >> 16;
-  *(ul32 *)loc &= 0b11111100'00000000'00000000'00000000;
-  *(ul32 *)loc |= ((val & 0xffff) << 10) | (hi & 0x3ff);
+  // opcode, [15:0], [25:16]
+  *(ul32 *)loc &= 0b111111'0000000000000000'0000000000;
+  *(ul32 *)loc |= bits(val, 15, 0) << 10;
+  *(ul32 *)loc |= bits(val, 25, 16);
 }
 
 static void write_k16(u8 *loc, u32 val) {
-  *(ul32 *)loc &= 0b11111100'00000000'00000011'11111111;
-  *(ul32 *)loc |= (val & 0xffff) << 10;
+  // opcode, [15:0], rj, rd
+  *(ul32 *)loc &= 0b111111'0000000000000000'11111'11111;
+  *(ul32 *)loc |= bits(val, 15, 0) << 10;
 }
 
 template <typename E>
