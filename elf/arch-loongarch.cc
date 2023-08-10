@@ -16,9 +16,13 @@
 //
 // https://loongson.github.io/LoongArch-Documentation/LoongArch-ELF-ABI-EN.html
 
+#if MOLD_LOONGARCH64 || MOLD_LOONGARCH32
+
 #include "mold.h"
 
 namespace mold::elf {
+
+using E = MOLD_TARGET;
 
 static u64 page(u64 val) {
   return val & 0xffff'ffff'ffff'f000;
@@ -98,8 +102,8 @@ static void write_k16(u8 *loc, u32 val) {
   *(ul32 *)loc |= bits(val, 15, 0) << 10;
 }
 
-template <typename E>
-void write_plt_header(Context<E> &ctx, u8 *buf) {
+template <>
+void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   static const ul32 insn_64[] = {
     0x1c00'000e, // pcaddu12i $t2, %hi(%pcrel(.got.plt))
     0x0011'bdad, // sub.d     $t1, $t1, $t3
@@ -152,8 +156,8 @@ static const ul32 plt_entry_32[] = {
   0x0340'0000, // nop
 };
 
-template <typename E>
-void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+template <>
+void write_plt_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if constexpr (E::is_64)
     memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
   else
@@ -169,8 +173,8 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   write_k12(buf + 4, gotplt - plt);
 }
 
-template <typename E>
-void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+template <>
+void write_pltgot_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if constexpr (E::is_64)
     memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
   else
@@ -186,7 +190,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   write_k12(buf + 4, got - plt);
 }
 
-template <typename E>
+template <>
 void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                     u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
@@ -235,7 +239,7 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
-template <typename E>
+template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
@@ -465,7 +469,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   }
 }
 
-template <typename E>
+template <>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
@@ -555,7 +559,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   }
 }
 
-template <typename E>
+template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
 
@@ -664,17 +668,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
-#define INSTANTIATE(E)                                                       \
-  template void write_plt_header(Context<E> &, u8 *);                        \
-  template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);            \
-  template void write_pltgot_entry(Context<E> &, u8 *, Symbol<E> &);         \
-  template void EhFrameSection<E>::                                          \
-    apply_eh_reloc(Context<E> &, const ElfRel<E> &, u64, u64);               \
-  template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);      \
-  template void InputSection<E>::apply_reloc_nonalloc(Context<E> &, u8 *);   \
-  template void InputSection<E>::scan_relocations(Context<E> &);
-
-INSTANTIATE(LOONGARCH64);
-INSTANTIATE(LOONGARCH32);
-
 } // namespace mold::elf
+
+#endif

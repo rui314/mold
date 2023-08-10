@@ -292,6 +292,8 @@ list(APPEND MOLD_ELF_TARGETS
   S390X SPARC64 M68K SH4 ALPHA MIPS64LE MIPS64BE LOONGARCH32 LOONGARCH64)
 
 list(APPEND MOLD_ELF_TEMPLATE_FILES
+  elf/arch-loongarch.cc
+  elf/arch-riscv.cc
   elf/cmdline.cc
   elf/dwarf.cc
   elf/gc-sections.cc
@@ -364,13 +366,11 @@ target_sources(mold PRIVATE
   elf/arch-arm32.cc
   elf/arch-arm64.cc
   elf/arch-i386.cc
-  elf/arch-loongarch.cc
   elf/arch-m68k.cc
   elf/arch-mips64.cc
   elf/arch-ppc32.cc
   elf/arch-ppc64v1.cc
   elf/arch-ppc64v2.cc
-  elf/arch-riscv.cc
   elf/arch-s390x.cc
   elf/arch-sh4.cc
   elf/arch-sparc64.cc

@@ -67,12 +67,16 @@
 //
 // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
 
+#if MOLD_RV64LE || MOLD_RV64BE || MOLD_RV32LE || MOLD_RV32BE
+
 #include "mold.h"
 
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 
 namespace mold::elf {
+
+using E = MOLD_TARGET;
 
 static void write_itype(u8 *loc, u32 val) {
   *(ul32 *)loc &= 0b000000'00000'11111'111'11111'1111111;
@@ -133,8 +137,8 @@ static void set_rs1(u8 *loc, u32 rs1) {
   *(ul32 *)loc |= rs1 << 15;
 }
 
-template <typename E>
-void write_plt_header(Context<E> &ctx, u8 *buf) {
+template <>
+void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   static const ul32 insn_64[] = {
     0x0000'0397, // auipc  t2, %pcrel_hi(.got.plt)
     0x41c3'0333, // sub    t1, t1, t3               # .plt entry + hdr + 12
@@ -183,8 +187,8 @@ static const ul32 plt_entry_32[] = {
   0x0000'0013, // nop
 };
 
-template <typename E>
-void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+template <>
+void write_plt_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if constexpr (E::is_64)
     memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
   else
@@ -196,8 +200,8 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   write_itype(buf + 4, gotplt - plt);
 }
 
-template <typename E>
-void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
+template <>
+void write_pltgot_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if constexpr (E::is_64)
     memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
   else
@@ -209,7 +213,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   write_itype(buf + 4, got - plt);
 }
 
-template <typename E>
+template <>
 void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                        u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
@@ -252,7 +256,7 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
-template <typename E>
+template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
@@ -531,7 +535,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   }
 }
 
-template <typename E>
+template <>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
@@ -613,7 +617,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   }
 }
 
-template <typename E>
+template <>
 void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
   // If a section is not relaxed, we can copy it as a one big chunk.
   if (extra.r_deltas.empty()) {
@@ -640,7 +644,7 @@ void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
   memcpy(buf, contents.data() + pos, contents.size() - pos);
 }
 
-template <typename E>
+template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
 
@@ -873,8 +877,8 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
 // linker to align the location referred to by the relocation to a
 // specified byte boundary. We at least have to interpret them to satisfy
 // the alignment constraints.
-template <typename E>
-i64 riscv_resize_sections(Context<E> &ctx) {
+template <>
+i64 riscv_resize_sections<E>(Context<E> &ctx) {
   Timer t(ctx, "riscv_resize_sections");
 
   // True if we can use the 2-byte instructions. This is usually true on
@@ -1082,7 +1086,7 @@ static std::string to_string(std::span<Extn> v) {
 // Output .riscv.attributes class
 //
 
-template <typename E> requires is_riscv<E>
+template <>
 void RiscvAttributesSection<E>::update_shdr(Context<E> &ctx) {
   if (!contents.empty())
     return;
@@ -1155,27 +1159,11 @@ void RiscvAttributesSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_size = sz;
 }
 
-template <typename E> requires is_riscv<E>
+template <>
 void RiscvAttributesSection<E>::copy_buf(Context<E> &ctx) {
   memcpy(ctx.buf + this->shdr.sh_offset, contents.data(), contents.size());
 }
 
-#define INSTANTIATE(E)                                                       \
-  template void write_plt_header(Context<E> &, u8 *);                        \
-  template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);            \
-  template void write_pltgot_entry(Context<E> &, u8 *, Symbol<E> &);         \
-  template void EhFrameSection<E>::                                          \
-    apply_eh_reloc(Context<E> &, const ElfRel<E> &, u64, u64);               \
-  template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);      \
-  template void InputSection<E>::apply_reloc_nonalloc(Context<E> &, u8 *);   \
-  template void InputSection<E>::copy_contents_riscv(Context<E> &, u8 *);    \
-  template void InputSection<E>::scan_relocations(Context<E> &);             \
-  template i64 riscv_resize_sections(Context<E> &);                          \
-  template class RiscvAttributesSection<E>;
-
-INSTANTIATE(RV64LE);
-INSTANTIATE(RV64BE);
-INSTANTIATE(RV32LE);
-INSTANTIATE(RV32BE);
-
 } // namespace mold::elf
+
+#endif
