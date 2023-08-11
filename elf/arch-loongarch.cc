@@ -250,8 +250,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     auto check_branch = [&](i64 val, i64 lo, i64 hi) {
       if (val & 0b11)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " unaligned: " << val << " needs 4 bytes aligned";
+        Error(ctx) << *this << ": misaligned symbol " << sym
+                   << " for relocation " << rel;
       check(val, lo, hi);
     };
 
