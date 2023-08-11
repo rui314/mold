@@ -1,6 +1,4 @@
 option(MOLD_ENABLE_QEMU_TESTS "Enable tests on non-native targets" OFF)
-option(MOLD_ENABLE_QEMU_TESTS_RV32 "Enable tests for RV32" OFF)
-option(MOLD_ENABLE_QEMU_TESTS_POWER10 "Enable tests for Power10" OFF)
 
 function(add_target TRIPLE)
   set(HOST ${CMAKE_HOST_SYSTEM_PROCESSOR})
@@ -67,18 +65,22 @@ add_target(alpha-linux-gnu)
 add_target(mips64-linux-gnuabi64)
 add_target(mips64el-linux-gnuabi64)
 
+option(MOLD_ENABLE_QEMU_TESTS_RV32 "Enable tests for RV32" OFF)
 if(MOLD_ENABLE_QEMU_TESTS_RV32)
   add_target(riscv32-linux-gnu)
 endif()
 
+option(MOLD_ENABLE_QEMU_TESTS_POWER10 "Enable tests for Power10" OFF)
 if(MOLD_ENABLE_QEMU_TESTS_POWER10)
   add_target(powerpc64le_power10-linux-gnu)
 endif()
 
+option(MOLD_ENABLE_QEMU_TESTS_M68K "Enable tests for m68k" OFF)
 if(MOLD_ENABLE_QEMU_TESTS_M68K)
   add_target(m68k-linux-gnu)
 endif()
 
+option(MOLD_ENABLE_QEMU_TESTS_LOONGARCH "Enable tests for LoongArch" OFF)
 if(MOLD_ENABLE_QEMU_TESTS_LOONGARCH)
   add_target(loongarch64-linux-gnu)
 endif()
