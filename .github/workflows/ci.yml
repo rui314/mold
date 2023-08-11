@@ -61,13 +61,16 @@ jobs:
         # Install a RV32 toolchain from third party since it's not available
         # as an Ubuntu package.
         mkdir /usr/local/rv32
-        wget -O- -q https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2022.08.26/riscv32-glibc-ubuntu-20.04-nightly-2022.08.26-nightly.tar.gz | tar -C /usr/local/rv32 --strip-components=1 -xzf -
+        wget -O- -q https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.07.07/riscv32-glibc-ubuntu-20.04-gcc-nightly-2023.07.07-nightly.tar.gz | tar -C /usr/local/rv32 --strip-components=1 -xzf -
 
         ln -sf /usr/local/rv32/sysroot /usr/riscv32-linux-gnu
-        ln -sf /usr/local/rv32/bin/riscv32-unknown-linux-gnu-objdump /usr/bin/riscv32-linux-gnu-objdump
         echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-gcc -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-gcc
         echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-g++ -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-g++
         chmod 755 /usr/bin/riscv32-linux-gnu-{gcc,g++}
+
+        for i in objdump objcopy strip; do
+          ln -sf /usr/local/rv32/bin/riscv32-unknown-linux-gnu-$i /usr/bin/riscv32-linux-gnu-$i
+        done
 
         # Install a LoongArch toolchain
         mkdir /usr/local/larch
