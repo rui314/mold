@@ -8,9 +8,6 @@
 # It looks like SPARC's runtime can't handle PLT if it's too far from GOT.
 [ $MACHINE = sparc64 ] && skip
 
-# The crt*.o compiled with B26 caused far form GOT.
-[[ $MACHINE = loongarch* ]] && skip
-
 cat <<EOF > $t/a.c
 #include <stdio.h>
 

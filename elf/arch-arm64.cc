@@ -590,7 +590,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     u64 P = output_section.shdr.sh_addr + offset + i * E::thunk_size;
 
     u8 *loc = buf + i * E::thunk_size;
-    memcpy(loc , data, sizeof(data));
+    memcpy(loc, data, sizeof(data));
     write_adrp(loc, page(S) - page(P));
     *(ul32 *)(loc + 4) |= bits(S, 11, 0) << 10;
   }

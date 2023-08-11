@@ -20,7 +20,8 @@
 // we don't need to try too hard to reduce thunk size to the absolute
 // minimum.
 
-#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2
+#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2 || \
+    MOLD_LOONGARCH64 || MOLD_LOONGARCH32
 
 #include "mold.h"
 
@@ -37,7 +38,9 @@ static consteval i64 max_distance() {
   // and therefore the least two bits are always zero. So the branch
   // operand is effectively 28 bits long. That means the branch range is
   // [-2^27, 2^27) or PC ± 128 MiB.
-  if (is_arm64<E>)
+  //
+  // LoongArch's BR instruction also takes a 26 bit immediate.
+  if (is_arm64<E> || is_loongarch<E>)
     return 1 << 27;
 
   // ARM32's Thumb branch has 24 bits immediate, and the instructions are
@@ -76,9 +79,11 @@ static bool needs_thunk_rel(const ElfRel<E> &r) {
            ty == R_ARM_PLT32;
   } else if constexpr (is_ppc32<E>) {
     return ty == R_PPC_REL24  || ty == R_PPC_PLTREL24 || ty == R_PPC_LOCAL24PC;
-  } else {
-    static_assert(is_ppc64<E>);
+  } else if constexpr (is_ppc64<E>) {
     return ty == R_PPC64_REL24 || ty == R_PPC64_REL24_NOTOC;
+  } else {
+    static_assert(is_loongarch<E>);
+    return ty == R_LARCH_B26;
   }
 }
 

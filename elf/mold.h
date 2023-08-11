@@ -114,7 +114,7 @@ public:
            idx * E::thunk_size;
   }
 
-  static constexpr i64 alignment = 4;
+  static constexpr i64 alignment = 16;
 
   OutputSection<E> &output_section;
   i64 offset;

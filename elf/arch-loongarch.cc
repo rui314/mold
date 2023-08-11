@@ -11,8 +11,12 @@
 // Linux, GCC, LLVM, etc.
 //
 // All instructions are 4 bytes long in LoongArch and aligned to 4-byte
-// boundaries. The psABI defines a few linker relaxations. We haven't
-// supported them yet, though.
+// boundaries. It has 32 general-purpose registers. Among these, $t0 - $t8
+// (aliases for $r12 - $r20) are temporary registers that we can use in
+// our PLT and range extension thunks.
+//
+// The psABI defines a few linker relaxations. We haven't supported them
+// yet.
 //
 // https://loongson.github.io/LoongArch-Documentation/LoongArch-ELF-ABI-EN.html
 
@@ -33,7 +37,7 @@ static u64 hi20(u64 val, u64 pc) {
   // register with the following instructions:
   //
   //   pcalau12i $rN, %hi20(sym)
-  //   addi.d    $rN, $zero, %lo12(sym)
+  //   addi.d    $rN, $rN, %lo12(sym)
   //
   // PCALAU12I materializes bits [63:12] by computing (pc + imm << 12)
   // and zero-clear [11:0]. ADDI.D sign-extends its 12 bit immediate and
@@ -313,10 +317,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check_branch(S + A - P, -(1 << 22), 1 << 22);
       write_d5k16(loc, (S + A - P) >> 2);
       break;
-    case R_LARCH_B26:
-      check_branch(S + A - P, -(1 << 27), 1 << 27);
-      write_d10k16(loc, (S + A - P) >> 2);
+    case R_LARCH_B26: {
+      i64 val = S + A - P;
+      if (val < -(1 << 27) || (1 << 27) <= val)
+        val = get_thunk_addr(i) + A - P;
+      write_d10k16(loc, val >> 2);
       break;
+    }
     case R_LARCH_ABS_HI20:
       write_j20(loc, (S + A) >> 12);
       break;
@@ -665,6 +672,30 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
+  }
+}
+
+template <>
+void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
+
+  static const ul32 insn[] = {
+    0x1a00'000c, // pcalau12i $t0, 0
+    0x02c0'018c, // addi.d    $t0, $t0, 0
+    0x4c00'0180, // jirl      $zero, $t0, 0
+    0x0340'0000, // nop
+  };
+
+  static_assert(E::thunk_size == sizeof(insn));
+
+  for (i64 i = 0; i < symbols.size(); i++) {
+    u64 S = symbols[i]->get_addr(ctx);
+    u64 P = output_section.shdr.sh_addr + offset + i * E::thunk_size;
+
+    u8 *loc = buf + i * E::thunk_size;
+    memcpy(loc, insn, sizeof(insn));
+    write_j20(loc, hi20(S, P) >> 12);
+    write_k12(loc + 4, S);
   }
 }
 
