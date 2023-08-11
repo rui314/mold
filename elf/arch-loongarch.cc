@@ -60,10 +60,9 @@ static u64 hi64(u64 val, u64 pc) {
   //   lu52i.d   $rY, $r12, %pc64_hi12(sym)
   //   add.d     $rX, $rX, $rY
   //
-  // PCALAU12I computes (pc + imm << 12) and sign-extends the 32 bit
-  // result to 64 bits. ADDI.D sets a sign-extended 12 bit value to a
-  // register. lu32i.d and lu52i.d simply set bits to [51:31] and to
-  // [63:53], respectively.
+  // PCALAU12I computes (pc + imm << 12) to materialize a 64-bit value.
+  // ADDI.D adds a sign-extended 12 bit value to a register. LU32I.D and
+  // LU52I.D simply set bits to [51:31] and to [63:53], respectively.
   //
   // Compensating all the sign-extensions is a bit complicated.
   u64 x = hi20(val, pc);
@@ -109,7 +108,7 @@ static void write_k16(u8 *loc, u32 val) {
 template <>
 void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   static const ul32 insn_64[] = {
-    0x1c00'000e, // pcaddu12i $t2, %hi(%pcrel(.got.plt))
+    0x1a00'000e, // pcalau12i $t2, %hi(%pcrel(.got.plt))
     0x0011'bdad, // sub.d     $t1, $t1, $t3
     0x28c0'01cf, // ld.d      $t3, $t2, %lo(%pcrel(.got.plt)) # _dl_runtime_resolve
     0x02ff'51ad, // addi.d    $t1, $t1, -44                   # .plt entry
@@ -120,7 +119,7 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   };
 
   static const ul32 insn_32[] = {
-    0x1c00'000e, // pcaddu12i $t2, %hi(%pcrel(.got.plt))
+    0x1a00'000e, // pcalau12i $t2, %hi(%pcrel(.got.plt))
     0x0011'3dad, // sub.w     $t1, $t1, $t3
     0x2880'01cf, // ld.w      $t3, $t2, %lo(%pcrel(.got.plt)) # _dl_runtime_resolve
     0x02bf'51ad, // addi.w    $t1, $t1, -44                   # .plt entry
@@ -141,20 +140,20 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   if ((i32)(gotplt - plt) != gotplt - plt)
     Error(ctx) << "PLT header overflow";
 
-  write_j20(buf, (gotplt - plt + 0x800) >> 12);
-  write_k12(buf + 8, gotplt - plt);
-  write_k12(buf + 16, gotplt - plt);
+  write_j20(buf, hi20(gotplt, plt) >> 12);
+  write_k12(buf + 8, gotplt);
+  write_k12(buf + 16, gotplt);
 }
 
 static const ul32 plt_entry_64[] = {
-  0x1c00'000f, // pcaddu12i $t3, %hi(%pcrel(func@.got.plt))
+  0x1a00'000f, // pcalau12i $t3, %hi(%pcrel(func@.got.plt))
   0x28c0'01ef, // ld.d      $t3, $t3, %lo(%pcrel(func@.got.plt))
   0x4c00'01ed, // jirl      $t1, $t3, 0
   0x0340'0000, // nop
 };
 
 static const ul32 plt_entry_32[] = {
-  0x1c00'000f, // pcaddu12i $t3, %hi(%pcrel(func@.got.plt))
+  0x1a00'000f, // pcalau12i $t3, %hi(%pcrel(func@.got.plt))
   0x2880'01ef, // ld.w      $t3, $t3, %lo(%pcrel(func@.got.plt))
   0x4c00'01ed, // jirl      $t1, $t3, 0
   0x0340'0000, // nop
@@ -173,8 +172,8 @@ void write_plt_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if ((i32)(gotplt - plt) != gotplt - plt)
     Error(ctx) << "PLT entry overflow";
 
-  write_j20(buf, (gotplt - plt + 0x800) >> 12);
-  write_k12(buf + 4, gotplt - plt);
+  write_j20(buf, hi20(gotplt, plt) >> 12);
+  write_k12(buf + 4, gotplt);
 }
 
 template <>
@@ -190,13 +189,13 @@ void write_pltgot_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if ((i32)(got - plt) != got - plt)
     Error(ctx) << "PLTGOT entry overflow";
 
-  write_j20(buf, (got - plt + 0x800) >> 12);
-  write_k12(buf + 4, got - plt);
+  write_j20(buf, hi20(got, plt) >> 12);
+  write_k12(buf + 4, got);
 }
 
 template <>
 void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
-                                    u64 offset, u64 val) {
+                                       u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
 
   switch (rel.r_type) {
