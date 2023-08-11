@@ -161,13 +161,10 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
     0x000e'0067, // jr     t3
   };
 
-  if constexpr (E::is_64)
-    memcpy(buf, insn_64, sizeof(insn_64));
-  else
-    memcpy(buf, insn_32, sizeof(insn_32));
-
   u64 gotplt = ctx.gotplt->shdr.sh_addr;
   u64 plt = ctx.plt->shdr.sh_addr;
+
+  memcpy(buf, E::is_64 ? insn_64 : insn_32, E::plt_hdr_size);
   write_utype(buf, gotplt - plt);
   write_itype(buf + 8, gotplt - plt);
   write_itype(buf + 16, gotplt - plt);
@@ -189,26 +186,20 @@ static const ul32 plt_entry_32[] = {
 
 template <>
 void write_plt_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  if constexpr (E::is_64)
-    memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
-  else
-    memcpy(buf, plt_entry_32, sizeof(plt_entry_32));
-
   u64 gotplt = sym.get_gotplt_addr(ctx);
   u64 plt = sym.get_plt_addr(ctx);
+
+  memcpy(buf, E::is_64 ? plt_entry_64 : plt_entry_32, E::plt_size);
   write_utype(buf, gotplt - plt);
   write_itype(buf + 4, gotplt - plt);
 }
 
 template <>
 void write_pltgot_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  if constexpr (E::is_64)
-    memcpy(buf, plt_entry_64, sizeof(plt_entry_64));
-  else
-    memcpy(buf, plt_entry_32, sizeof(plt_entry_32));
-
   u64 got = sym.get_got_addr(ctx);
   u64 plt = sym.get_plt_addr(ctx);
+
+  memcpy(buf, E::is_64 ? plt_entry_64 : plt_entry_32, E::plt_size);
   write_utype(buf, got - plt);
   write_itype(buf + 4, got - plt);
 }
