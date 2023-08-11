@@ -132,9 +132,6 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   u64 gotplt = ctx.gotplt->shdr.sh_addr;
   u64 plt = ctx.plt->shdr.sh_addr;
 
-  if ((i32)(gotplt - plt) != gotplt - plt)
-    Error(ctx) << "PLT header overflow";
-
   memcpy(buf, E::is_64 ? insn_64 : insn_32, E::plt_hdr_size);
   write_j20(buf, hi20(gotplt, plt) >> 12);
   write_k12(buf + 8, gotplt);
@@ -160,9 +157,6 @@ void write_plt_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u64 gotplt = sym.get_gotplt_addr(ctx);
   u64 plt = sym.get_plt_addr(ctx);
 
-  if ((i32)(gotplt - plt) != gotplt - plt)
-    Error(ctx) << "PLT entry overflow";
-
   memcpy(buf, E::is_64 ? plt_entry_64 : plt_entry_32, E::plt_size);
   write_j20(buf, hi20(gotplt, plt) >> 12);
   write_k12(buf + 4, gotplt);
@@ -172,9 +166,6 @@ template <>
 void write_pltgot_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u64 got = sym.get_got_addr(ctx);
   u64 plt = sym.get_plt_addr(ctx);
-
-  if ((i32)(got - plt) != got - plt)
-    Error(ctx) << "PLTGOT entry overflow";
 
   memcpy(buf, E::is_64 ? plt_entry_64 : plt_entry_32, E::plt_size);
   write_j20(buf, hi20(got, plt) >> 12);
