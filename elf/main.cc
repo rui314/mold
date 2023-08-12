@@ -458,7 +458,6 @@ int elf_main(int argc, char **argv) {
     });
   }
 
-  Timer t_total(ctx, "total");
   Timer t_before_copy(ctx, "before_copy");
 
   // Apply -exclude-libs
@@ -728,7 +727,6 @@ int elf_main(int argc, char **argv) {
   if (ctx.has_lto_object)
     lto_cleanup(ctx);
 
-  t_total.stop();
   t_all.stop();
 
   if (ctx.arg.print_map)
