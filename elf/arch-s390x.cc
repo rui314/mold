@@ -482,7 +482,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_390_TLS_LDCALL:
       break;
     default:
-      Fatal(ctx) << *this << ": scan_relocations: " << rel;
+      Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
 }

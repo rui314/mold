@@ -592,7 +592,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_SIZE32:
       break;
     default:
-      Fatal(ctx) << *this << ": scan_relocations: " << rel;
+      Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
 }
