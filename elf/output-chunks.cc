@@ -183,32 +183,6 @@ i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
   return PF_R | (write ? PF_W : PF_NONE) | (exec ? PF_X : PF_NONE);
 }
 
-// PT_GNU_RELRO segment is a security mechanism to make more pages
-// read-only than we could have done without it.
-//
-// Traditionally, sections are either read-only or read-write.  If a
-// section contains dynamic relocations, it must have been put into a
-// read-write segment so that the program loader can mutate its
-// contents in memory, even if no one will write to it at runtime.
-//
-// RELRO segment allows us to make such pages writable only when a
-// program is being loaded. After that, the page becomes read-only.
-//
-// Some sections, such as .init, .fini, .got, .dynamic, contain
-// dynamic relocations but doesn't have to be writable at runtime,
-// so they are put into a RELRO segment.
-template <typename E>
-bool is_relro(Context<E> &ctx, Chunk<E> *chunk) {
-  u64 flags = chunk->shdr.sh_flags;
-  u64 type = chunk->shdr.sh_type;
-
-  if (flags & SHF_WRITE)
-    return chunk->is_relro || (flags & SHF_TLS) || type == SHT_INIT_ARRAY ||
-           type == SHT_FINI_ARRAY || type == SHT_PREINIT_ARRAY ||
-           chunk->name == ".toc" || chunk->name.ends_with(".rel.ro");
-  return false;
-}
-
 template <typename E>
 static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   std::vector<ElfPhdr<E>> vec;
@@ -345,11 +319,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   // Create a PT_GNU_RELRO.
   if (ctx.arg.z_relro) {
     for (i64 i = 0; i < ctx.chunks.size(); i++) {
-      if (!is_relro(ctx, ctx.chunks[i]))
+      if (!ctx.chunks[i]->is_relro)
         continue;
 
       define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i++]);
-      while (i < ctx.chunks.size() && is_relro(ctx, ctx.chunks[i]))
+      while (i < ctx.chunks.size() && ctx.chunks[i]->is_relro)
         append(ctx.chunks[i++]);
       vec.back().p_align = 1;
     }
@@ -912,6 +886,31 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
   std::vector<Word<E>> contents = create_dynamic_section(ctx);
   assert(this->shdr.sh_size == contents.size() * sizeof(contents[0]));
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
+}
+
+template <typename E>
+OutputSection<E>::OutputSection(std::string_view name, u32 type, u64 flags) {
+  this->name = name;
+  this->shdr.sh_type = type;
+  this->shdr.sh_flags = flags;
+
+  // PT_GNU_RELRO segment is a security mechanism to make more pages
+  // read-only than we could have done without it.
+  //
+  // Traditionally, sections are either read-only or read-write. If a
+  // section contains dynamic relocations, it must have been put into a
+  // read-write segment so that the program loader can mutate its
+  // contents in memory, even if no one will write to it at runtime.
+  //
+  // RELRO segment allows us to make such pages writable only when a
+  // program is being loaded. After that, the page becomes read-only.
+  //
+  // Some sections, such as .init, .fini, .got, .dynamic, contain
+  // dynamic relocations but doesn't have to be writable at runtime,
+  // so they are put into a RELRO segment.
+  this->is_relro = (name == ".toc" || name.ends_with(".rel.ro") ||
+                    type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY ||
+                    type == SHT_PREINIT_ARRAY || (flags & SHF_TLS));
 }
 
 template <typename E>
@@ -3218,7 +3217,6 @@ template class CompressedSection<E>;
 template class RelocSection<E>;
 template class ComdatGroupSection<E>;
 template i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
-template bool is_relro(Context<E> &, Chunk<E> *);
 template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &, u32, U32<E> *);
 
 } // namespace mold::elf

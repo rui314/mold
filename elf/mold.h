@@ -334,9 +334,6 @@ template <typename E>
 i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
 
 template <typename E>
-bool is_relro(Context<E> &ctx, Chunk<E> *chunk);
-
-template <typename E>
 std::string_view get_output_name(Context<E> &ctx, std::string_view name, u64 flags);
 
 template <typename E>
@@ -452,12 +449,7 @@ public:
 template <typename E>
 class OutputSection : public Chunk<E> {
 public:
-  OutputSection(std::string_view name, u32 type, u64 flags) {
-    this->name = name;
-    this->shdr.sh_type = type;
-    this->shdr.sh_flags = flags;
-  }
-
+  OutputSection(std::string_view name, u32 type, u64 flags);
   ChunkKind kind() override { return OUTPUT_SECTION; }
   OutputSection<E> *to_osec() override { return this; }
   void copy_buf(Context<E> &ctx) override;

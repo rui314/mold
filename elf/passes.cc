@@ -1827,7 +1827,7 @@ void sort_output_sections_regular(Context<E> &ctx) {
     bool writable = (flags & SHF_WRITE);
     bool exec = (flags & SHF_EXECINSTR);
     bool tls = (flags & SHF_TLS);
-    bool relro = is_relro(ctx, chunk);
+    bool relro = chunk->is_relro;
     bool is_bss = (type == SHT_NOBITS);
 
     return (1 << 10) | (!alloc << 9) | (writable << 8) | (exec << 7) |
@@ -1966,7 +1966,7 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
 
   auto get_flags = [&](Chunk<E> *chunk) {
     i64 flags = to_phdr_flags(ctx, chunk);
-    if (is_relro(ctx, chunk))
+    if (chunk->is_relro)
       return flags | RELRO;
     return flags;
   };
