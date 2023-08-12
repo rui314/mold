@@ -36,7 +36,7 @@ static u64 hi20(u64 val, u64 pc) {
   // A PC-relative address with a 32 bit offset is materialized in a
   // register with the following instructions:
   //
-  //   pcalau12i $rN, %hi20(sym)
+  //   pcalau12i $rN, %pc_hi20(sym)
   //   addi.d    $rN, $rN, %lo12(sym)
   //
   // PCALAU12I materializes bits [63:12] by computing (pc + imm << 12)
@@ -55,7 +55,7 @@ static u64 hi64(u64 val, u64 pc) {
   // instructions for the large code model:
   //
   //   pcalau12i $rX, %pc_hi20(sym)
-  //   addi.d    $rY, $zero, %pc_lo12(sym)
+  //   addi.d    $rY, $zero, %lo12(sym)
   //   lu32i.d   $rY, %pc64_lo20(sym)
   //   lu52i.d   $rY, $r12, %pc64_hi12(sym)
   //   add.d     $rX, $rX, $rY
@@ -108,24 +108,24 @@ static void write_k16(u8 *loc, u32 val) {
 template <>
 void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   static const ul32 insn_64[] = {
-    0x1a00'000e, // pcalau12i $t2, %hi(%pcrel(.got.plt))
+    0x1a00'000e, // pcalau12i $t2, %pc_hi20(.got.plt)
     0x0011'bdad, // sub.d     $t1, $t1, $t3
-    0x28c0'01cf, // ld.d      $t3, $t2, %lo(%pcrel(.got.plt)) # _dl_runtime_resolve
-    0x02ff'51ad, // addi.d    $t1, $t1, -44                   # .plt entry
-    0x02c0'01cc, // addi.d    $t0, $t2, %lo(%pcrel(.got.plt)) # &.got.plt
-    0x0045'05ad, // srli.d    $t1, $t1, 1                     # .plt entry offset
-    0x28c0'218c, // ld.d      $t0, $t0, 8                     # link map
+    0x28c0'01cf, // ld.d      $t3, $t2, %lo12(.got.plt) # _dl_runtime_resolve
+    0x02ff'51ad, // addi.d    $t1, $t1, -44             # .plt entry
+    0x02c0'01cc, // addi.d    $t0, $t2, %lo12(.got.plt) # &.got.plt
+    0x0045'05ad, // srli.d    $t1, $t1, 1               # .plt entry offset
+    0x28c0'218c, // ld.d      $t0, $t0, 8               # link map
     0x4c00'01e0, // jr        $t3
   };
 
   static const ul32 insn_32[] = {
-    0x1a00'000e, // pcalau12i $t2, %hi(%pcrel(.got.plt))
+    0x1a00'000e, // pcalau12i $t2, %pc_hi20(.got.plt)
     0x0011'3dad, // sub.w     $t1, $t1, $t3
-    0x2880'01cf, // ld.w      $t3, $t2, %lo(%pcrel(.got.plt)) # _dl_runtime_resolve
-    0x02bf'51ad, // addi.w    $t1, $t1, -44                   # .plt entry
-    0x0280'01cc, // addi.w    $t0, $t2, %lo(%pcrel(.got.plt)) # &.got.plt
-    0x0044'89ad, // srli.w    $t1, $t1, 2                     # .plt entry offset
-    0x2880'118c, // ld.w      $t0, $t0, 4                     # link map
+    0x2880'01cf, // ld.w      $t3, $t2, %lo12(.got.plt) # _dl_runtime_resolve
+    0x02bf'51ad, // addi.w    $t1, $t1, -44             # .plt entry
+    0x0280'01cc, // addi.w    $t0, $t2, %lo12(.got.plt) # &.got.plt
+    0x0044'89ad, // srli.w    $t1, $t1, 2               # .plt entry offset
+    0x2880'118c, // ld.w      $t0, $t0, 4               # link map
     0x4c00'01e0, // jr        $t3
   };
 
@@ -139,15 +139,15 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
 }
 
 static const ul32 plt_entry_64[] = {
-  0x1a00'000f, // pcalau12i $t3, %hi(%pcrel(func@.got.plt))
-  0x28c0'01ef, // ld.d      $t3, $t3, %lo(%pcrel(func@.got.plt))
+  0x1a00'000f, // pcalau12i $t3, %pc_hi20(func@.got.plt)
+  0x28c0'01ef, // ld.d      $t3, $t3, %lo12(func@.got.plt)
   0x4c00'01ed, // jirl      $t1, $t3, 0
   0x0340'0000, // nop
 };
 
 static const ul32 plt_entry_32[] = {
-  0x1a00'000f, // pcalau12i $t3, %hi(%pcrel(func@.got.plt))
-  0x2880'01ef, // ld.w      $t3, $t3, %lo(%pcrel(func@.got.plt))
+  0x1a00'000f, // pcalau12i $t3, %pc_hi20(func@.got.plt)
+  0x2880'01ef, // ld.w      $t3, $t3, %lo12(func@.got.plt)
   0x4c00'01ed, // jirl      $t1, $t3, 0
   0x0340'0000, // nop
 };
