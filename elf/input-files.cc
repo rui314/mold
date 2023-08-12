@@ -152,7 +152,7 @@ static inline std::string_view read_string(std::string_view &str) {
 template <typename E>
 static void read_riscv_attributes(Context<E> &ctx, ObjectFile<E> &file,
                                   std::string_view data) {
-const char *begin = data.data();
+  const char *begin = data.data();
   if (data.empty())
     Fatal(ctx) << file << ": corrupted .riscv.attributes section";
 
@@ -767,13 +767,14 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 // atomic unit of mergeable section "section pieces".
 //
 // This feature is typically used for string literals. String literals
-// are usually put into a mergeable section by a compiler. If the same
-// string literal happen to occur in two different translation units,
-// a linker merges them into a single instance of a string, so that
-// a linker's output doesn't contain duplicate string literals.
+// are usually put into a mergeable section by the compiler. If the same
+// string literal happens to occur in two different translation units,
+// the linker merges them into a single instance of a string, so that
+// the linker's output doesn't contain duplicate string literals.
 //
-// Handling symbols in mergeable sections is a bit tricky. Assume that
-// we have a mergeable section with the following contents and symbols:
+// Handling symbols in the mergeable sections is a bit tricky. Assume
+// that we have a mergeable section with the following contents and
+// symbols:
 //
 //   Hello world\0foo bar\0
 //   ^            ^
@@ -782,23 +783,23 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 //
 // '\0' represents a NUL byte. This mergeable section contains two
 // section pieces, "Hello world" and "foo bar". The first string is
-// referred by two symbols, .rodata and .L.str0, and the second by
+// referred to by two symbols, .rodata and .L.str0, and the second by
 // .L.str1. .rodata is a section symbol and therefore a local symbol
-// and refers the begining of the section.
+// and refers to the beginning of the section.
 //
 // In this example, there are actually two different ways to point to
-// string "foo bar", because .rodata+12 and .L.str1+0 refer the same
+// string "foo bar", because .rodata+12 and .L.str1+0 refer to the same
 // place in the section. This kind of "out-of-bound" reference occurs
-// only when a symbol is a section symbol. In other words, compiler
-// may use an offset from the beginning of a section to refer any
+// only when a symbol is a section symbol. In other words, the compiler
+// may use an offset from the beginning of a section to refer to any
 // section piece in a section, but it doesn't do for any other types
 // of symbols.
 //
-// In mold, we attach section pieces symbols. If a relocation refers a
-// section symbol whose section is a mergeable section, we create a
-// new dummy symbol with a section piece and redirect the relocation
-// to the symbol. If a non-section symbol refers a section piece, the
-// section piece is attached to the symbol.
+// In mold, we attach symbols to section pieces. If a relocation refers
+// to a section symbol, and that symbol's section is a mergeable one,
+// we create a new dummy symbol for a section piece and redirect the
+// relocation to this new symbol. If a non-section symbol refers to a
+// section piece, the section piece is attached to the symbol.
 template <typename E>
 void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
   mergeable_sections.resize(sections.size());
