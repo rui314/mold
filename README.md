@@ -32,7 +32,8 @@ free to [file a bug report](https://github.com/rui314/mold/issues).
 
 mold supports x86-64, i386, ARM64, ARM32, 64-bit/32-bit little/big-endian
 RISC-V, 32-bit PowerPC, 64-bit big-endian PowerPC ELFv1, 64-bit little-endian
-PowerPC ELFv2, s390x, SPARC64, m68k, SH-4, and DEC Alpha.
+PowerPC ELFv2, s390x, 64-bit/32-bit LoongArch, SPARC64, m68k, SH-4, and DEC
+Alpha.
 
 mold/macOS is commercial software. For mold/macOS, please visit
 https://github.com/bluewhalesystems/sold.
@@ -73,7 +74,7 @@ necessary packages. You may need to run it as root.
 git clone https://github.com/rui314/mold.git
 mkdir mold/build
 cd mold/build
-git checkout v2.0.0
+git checkout v2.1.0
 ../install-build-deps.sh
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ ..
 cmake --build . -j $(nproc)
