@@ -2426,7 +2426,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
     ctx.versym->contents[syms[i]->get_dynsym_idx(ctx)] = veridx;
   }
 
-  if (ctx.arg.z_pack_relative_relocs) {
+  if (ctx.arg.pack_dyn_relocs_relr) {
     // If `-z pack-relative-relocs` is specified, we'll create a .relr.dyn
     // section and store base relocation records to that section instead of
     // to the usual .rela.dyn section.
