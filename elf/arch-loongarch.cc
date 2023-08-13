@@ -47,30 +47,40 @@ static u64 hi20(u64 val, u64 pc) {
   //
   // This is similar but different from RISC-V because RISC-V's AUIPC
   // doesn't zero-clear [11:0].
-  return page(val + 0x800) - page(pc);
+  return bits(page(val + 0x800) - page(pc), 31, 12);
 }
 
 static u64 hi64(u64 val, u64 pc) {
   // A PC-relative 64-bit address is materialized with the following
   // instructions for the large code model:
   //
-  //   pcalau12i $rX, %pc_hi20(sym)
-  //   addi.d    $rY, $zero, %lo12(sym)
-  //   lu32i.d   $rY, %pc64_lo20(sym)
-  //   lu52i.d   $rY, $r12, %pc64_hi12(sym)
-  //   add.d     $rX, $rX, $rY
+  //   pcalau12i $rN, %pc_hi20(sym)
+  //   addi.d    $rM, $zero, %lo12(sym)
+  //   lu32i.d   $rM, %pc64_lo20(sym)
+  //   lu52i.d   $rM, $r12, %pc64_hi12(sym)
+  //   add.d     $rN, $rN, $rM
   //
   // PCALAU12I computes (pc + imm << 12) to materialize a 64-bit value.
   // ADDI.D adds a sign-extended 12 bit value to a register. LU32I.D and
   // LU52I.D simply set bits to [51:31] and to [63:53], respectively.
   //
   // Compensating all the sign-extensions is a bit complicated.
-  u64 x = hi20(val, pc);
-  if ((val & 0x800) && !(x & 0x8000'0000))
-    return x - 0x1'0000'0000;
-  if (!(val & 0x800) && (x & 0x8000'0000))
-    return x + 0x1'0000'0000;
-  return x;
+  bool x = val & 0x800;
+  bool y = (page(val + 0x800) - page(pc)) & 0x8000'0000;
+
+  if (x && !y)
+    val -= 0x1'0000'0000;
+  else if (!x && y)
+    val += 0x1'0000'0000;
+  return val;
+}
+
+static u64 higher20(u64 val, u64 pc) {
+  return bits(hi64(val, pc), 51, 32);
+}
+
+static u64 highest12(u64 val, u64 pc) {
+  return bits(hi64(val, pc), 63, 52);
 }
 
 static void write_j20(u8 *loc, u32 val) {
@@ -133,7 +143,7 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   u64 plt = ctx.plt->shdr.sh_addr;
 
   memcpy(buf, E::is_64 ? insn_64 : insn_32, E::plt_hdr_size);
-  write_j20(buf, hi20(gotplt, plt) >> 12);
+  write_j20(buf, hi20(gotplt, plt));
   write_k12(buf + 8, gotplt);
   write_k12(buf + 16, gotplt);
 }
@@ -158,7 +168,7 @@ void write_plt_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u64 plt = sym.get_plt_addr(ctx);
 
   memcpy(buf, E::is_64 ? plt_entry_64 : plt_entry_32, E::plt_size);
-  write_j20(buf, hi20(gotplt, plt) >> 12);
+  write_j20(buf, hi20(gotplt, plt));
   write_k12(buf + 4, gotplt);
 }
 
@@ -168,7 +178,7 @@ void write_pltgot_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   u64 plt = sym.get_plt_addr(ctx);
 
   memcpy(buf, E::is_64 ? plt_entry_64 : plt_entry_32, E::plt_size);
-  write_j20(buf, hi20(got, plt) >> 12);
+  write_j20(buf, hi20(got, plt));
   write_k12(buf + 4, got);
 }
 
@@ -314,35 +324,31 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_ABS64_HI12:
       write_k12(loc, (S + A) >> 52);
       break;
-    case R_LARCH_PCALA_HI20: {
-      i64 val = hi20(S + A, P);
-      check(val, -(1LL << 31), 1LL << 31);
-      write_j20(loc, val >> 12);
+    case R_LARCH_PCALA_HI20:
+      check(S + A - P, -(1LL << 31), 1LL << 31);
+      write_j20(loc, hi20(S + A, P));
       break;
-    }
     case R_LARCH_PCALA_LO12:
       write_k12(loc, S + A);
       break;
     case R_LARCH_PCALA64_LO20:
-      write_j20(loc, hi64(S + A, P) >> 32);
+      write_j20(loc, higher20(S + A, P));
       break;
     case R_LARCH_PCALA64_HI12:
-      write_k12(loc, hi64(S + A, P) >> 52);
+      write_k12(loc, highest12(S + A, P));
       break;
-    case R_LARCH_GOT_PC_HI20: {
-      i64 val = hi20(GOT + G + A, P);
-      check(val, -(1LL << 31), 1LL << 31);
-      write_j20(loc, val >> 12);
+    case R_LARCH_GOT_PC_HI20:
+      check(GOT + G + A - P, -(1LL << 31), 1LL << 31);
+      write_j20(loc, hi20(GOT + G + A, P));
       break;
-    }
     case R_LARCH_GOT_PC_LO12:
       write_k12(loc, GOT + G + A);
       break;
     case R_LARCH_GOT64_PC_LO20:
-      write_j20(loc, hi64(GOT + G + A, P) >> 32);
+      write_j20(loc, higher20(GOT + G + A, P));
       break;
     case R_LARCH_GOT64_PC_HI12:
-      write_k12(loc, hi64(GOT + G + A, P) >> 52);
+      write_k12(loc, highest12(GOT + G + A, P));
       break;
     case R_LARCH_GOT_HI20:
       write_j20(loc, (GOT + G + A) >> 12);
@@ -368,20 +374,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_TLS_LE64_HI12:
       write_k12(loc, (S + A - ctx.tp_addr) >> 52);
       break;
-    case R_LARCH_TLS_IE_PC_HI20: {
-      i64 val = hi20(sym.get_gottp_addr(ctx) + A, P);
-      check(val, -(1LL << 31), 1LL << 31);
-      write_j20(loc, val >> 12);
+    case R_LARCH_TLS_IE_PC_HI20:
+      check(sym.get_gottp_addr(ctx) + A - P, -(1LL << 31), 1LL << 31);
+      write_j20(loc, hi20(sym.get_gottp_addr(ctx) + A, P));
       break;
-    }
     case R_LARCH_TLS_IE_PC_LO12:
       write_k12(loc, sym.get_gottp_addr(ctx) + A);
       break;
     case R_LARCH_TLS_IE64_PC_LO20:
-      write_j20(loc, hi64(sym.get_gottp_addr(ctx) + A, P) >> 32);
+      write_j20(loc, higher20(sym.get_gottp_addr(ctx) + A, P));
       break;
     case R_LARCH_TLS_IE64_PC_HI12:
-      write_k12(loc, hi64(sym.get_gottp_addr(ctx) + A, P) >> 52);
+      write_k12(loc, highest12(sym.get_gottp_addr(ctx) + A, P));
       break;
     case R_LARCH_TLS_IE_HI20:
       write_j20(loc, (sym.get_gottp_addr(ctx) + A) >> 12);
@@ -396,12 +400,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, (sym.get_gottp_addr(ctx) + A) >> 52);
       break;
     case R_LARCH_TLS_LD_PC_HI20:
-    case R_LARCH_TLS_GD_PC_HI20: {
-      i64 val = hi20(sym.get_tlsgd_addr(ctx) + A, P);
-      check(val, -(1LL << 31), 1LL << 31);
-      write_j20(loc, val >> 12);
+    case R_LARCH_TLS_GD_PC_HI20:
+      check(sym.get_tlsgd_addr(ctx) + A - P, -(1LL << 31), 1LL << 31);
+      write_j20(loc, hi20(sym.get_tlsgd_addr(ctx) + A, P));
       break;
-    }
+
     case R_LARCH_TLS_LD_HI20:
     case R_LARCH_TLS_GD_HI20:
       write_j20(loc, (sym.get_tlsgd_addr(ctx) + A) >> 12);
@@ -671,7 +674,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     u64 S = sym->get_addr(ctx);
 
     memcpy(buf, insn, sizeof(insn));
-    write_j20(buf, hi20(S, P) >> 12);
+    write_j20(buf, hi20(S, P));
     write_k12(buf + 4, S);
 
     buf += sizeof(insn);
