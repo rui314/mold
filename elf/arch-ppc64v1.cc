@@ -410,8 +410,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-
   // If the destination is .plt.got, we save the current r2, read an
   // address of a function descriptor from .got, restore %r2 and jump
   // to the function.
@@ -466,26 +464,29 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   static_assert(E::thunk_size == sizeof(plt_thunk));
   static_assert(E::thunk_size == sizeof(local_thunk));
 
-  for (i64 i = 0; i < symbols.size(); i++) {
-    Symbol<E> &sym = *symbols[i];
-    ub32 *loc = (ub32 *)(buf + i * E::thunk_size);
+  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
+  u64 P = output_section.shdr.sh_addr + offset;
 
-    if (sym.has_got(ctx)) {
-      memcpy(loc, pltgot_thunk, sizeof(pltgot_thunk));
-      i64 val = sym.get_got_addr(ctx) - ctx.extra.TOC->value;
-      loc[1] |= higha(val);
-      loc[2] |= lo(val);
-    } else if(sym.has_plt(ctx)) {
-      memcpy(loc, plt_thunk, sizeof(plt_thunk));
-      i64 val = sym.get_gotplt_addr(ctx) - ctx.extra.TOC->value;
-      loc[1] |= higha(val);
-      loc[2] |= lo(val);
+  for (Symbol<E> *sym : symbols) {
+    if (sym->has_got(ctx)) {
+      i64 val = sym->get_got_addr(ctx) - ctx.extra.TOC->value;
+      memcpy(buf, pltgot_thunk, sizeof(pltgot_thunk));
+      *(ub32 *)(buf + 4) |= higha(val);
+      *(ub32 *)(buf + 8) |= lo(val);
+    } else if(sym->has_plt(ctx)) {
+      i64 val = sym->get_gotplt_addr(ctx) - ctx.extra.TOC->value;
+      memcpy(buf, plt_thunk, sizeof(plt_thunk));
+      *(ub32 *)(buf + 4) |= higha(val);
+      *(ub32 *)(buf + 8) |= lo(val);
     } else {
-      memcpy(loc, local_thunk, sizeof(local_thunk));
-      i64 val = sym.get_addr(ctx, NO_OPD) - ctx.extra.TOC->value;
-      loc[0] |= higha(val);
-      loc[1] |= lo(val);
+      i64 val = sym->get_addr(ctx, NO_OPD) - ctx.extra.TOC->value;
+      memcpy(buf, local_thunk, sizeof(local_thunk));
+      *(ub32 *)buf |= higha(val);
+      *(ub32 *)(buf + 4) |= lo(val);
     }
+
+    buf += E::thunk_size;
+    P += E::thunk_size;
   }
 }
 

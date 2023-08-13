@@ -655,8 +655,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-
   static const ul32 insn[] = {
     0x1a00'000c, // pcalau12i $t0, 0
     0x02c0'018c, // addi.d    $t0, $t0, 0
@@ -666,14 +664,18 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   static_assert(E::thunk_size == sizeof(insn));
 
-  for (i64 i = 0; i < symbols.size(); i++) {
-    u64 S = symbols[i]->get_addr(ctx);
-    u64 P = output_section.shdr.sh_addr + offset + i * E::thunk_size;
+  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
+  u64 P = output_section.shdr.sh_addr + offset;
 
-    u8 *loc = buf + i * E::thunk_size;
-    memcpy(loc, insn, sizeof(insn));
-    write_j20(loc, hi20(S, P) >> 12);
-    write_k12(loc + 4, S);
+  for (Symbol<E> *sym : symbols) {
+    u64 S = sym->get_addr(ctx);
+
+    memcpy(buf, insn, sizeof(insn));
+    write_j20(buf, hi20(S, P) >> 12);
+    write_k12(buf + 4, S);
+
+    buf += sizeof(insn);
+    P += sizeof(insn);
   }
 }
 

@@ -623,8 +623,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-
   // TLS trampoline code. ARM32's TLSDESC is designed so that this
   // common piece of code is factored out from object files to reduce
   // output size. Since no one provide, the linker has to synthesize it.
@@ -650,15 +648,18 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   static_assert(E::thunk_hdr_size == sizeof(hdr));
   static_assert(E::thunk_size == sizeof(entry));
 
+  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
   memcpy(buf, hdr, sizeof(hdr));
+  buf += sizeof(hdr);
 
-  for (i64 i = 0; i < symbols.size(); i++) {
-    u8 *loc = buf + sizeof(hdr) + i * sizeof(entry);
-    memcpy(loc, entry, sizeof(entry));
+  u64 P = output_section.shdr.sh_addr + offset + sizeof(hdr);
 
-    u64 S = symbols[i]->get_addr(ctx);
-    u64 P = output_section.shdr.sh_addr + offset + sizeof(hdr) + i * sizeof(entry);
-    *(ul32 *)(loc + 16) = S - P - 16;
+  for (Symbol<E> *sym : symbols) {
+    memcpy(buf, entry, sizeof(entry));
+    *(ul32 *)(buf + 16) = sym->get_addr(ctx) - P - 16;
+
+    buf += sizeof(entry);
+    P += sizeof(entry);
   }
 }
 

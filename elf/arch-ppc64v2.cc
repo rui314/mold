@@ -478,8 +478,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-
   // If the destination is PLT, we read an address from .got.plt or .got
   // and jump there.
   static const ul32 plt_thunk[] = {
@@ -521,33 +519,37 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   static_assert(E::thunk_size == sizeof(local_thunk));
   static_assert(E::thunk_size == sizeof(local_thunk_power10));
 
-  for (i64 i = 0; i < symbols.size(); i++) {
-    Symbol<E> &sym = *symbols[i];
-    ul32 *loc = (ul32 *)(buf + i * E::thunk_size);
+  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
+  u64 P = output_section.shdr.sh_addr + offset;
 
-    if (sym.has_plt(ctx)) {
-      u64 got = sym.has_got(ctx) ? sym.get_got_addr(ctx) : sym.get_gotplt_addr(ctx);
+  for (Symbol<E> *sym : symbols) {
+    if (sym->has_plt(ctx)) {
+      u64 got =
+        sym->has_got(ctx) ? sym->get_got_addr(ctx) : sym->get_gotplt_addr(ctx);
 
       if (ctx.extra.is_power10) {
-        memcpy(loc, plt_thunk_power10, E::thunk_size);
-        *(ul64 *)(loc + 1) |= prefix34(got - get_addr(i) - 4);
+        memcpy(buf, plt_thunk_power10, E::thunk_size);
+        *(ul64 *)(buf + 1) |= prefix34(got - P - 4);
       } else {
         i64 val = got - ctx.extra.TOC->value;
-        memcpy(loc, plt_thunk, E::thunk_size);
-        loc[1] |= higha(val);
-        loc[2] |= lo(val);
+        memcpy(buf, plt_thunk, E::thunk_size);
+        *(ul32 *)(buf + 4) |= higha(val);
+        *(ul32 *)(buf + 8) |= lo(val);
       }
     } else {
       if (ctx.extra.is_power10) {
-        memcpy(loc, local_thunk_power10, E::thunk_size);
-        *(ul64 *)(loc + 1) |= prefix34(sym.get_addr(ctx) - get_addr(i) - 4);
+        memcpy(buf, local_thunk_power10, E::thunk_size);
+        *(ul64 *)(buf + 1) |= prefix34(sym->get_addr(ctx) - P - 4);
       } else {
-        i64 val = sym.get_addr(ctx) - ctx.extra.TOC->value;
-        memcpy(loc, local_thunk, E::thunk_size);
-        loc[1] |= higha(val);
-        loc[2] |= lo(val);
+        i64 val = sym->get_addr(ctx) - ctx.extra.TOC->value;
+        memcpy(buf, local_thunk, E::thunk_size);
+        *(ul32 *)(buf + 4) |= higha(val);
+        *(ul32 *)(buf + 8) |= lo(val);
       }
     }
+
+    buf += E::thunk_size;
+    P += E::thunk_size;
   }
 }
 

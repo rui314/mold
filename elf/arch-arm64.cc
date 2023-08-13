@@ -575,8 +575,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <>
 void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-
   static const ul32 data[] = {
     0x9000'0010, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
     0x9100'0210, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC
@@ -585,14 +583,18 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   static_assert(E::thunk_size == sizeof(data));
 
-  for (i64 i = 0; i < symbols.size(); i++) {
-    u64 S = symbols[i]->get_addr(ctx);
-    u64 P = output_section.shdr.sh_addr + offset + i * E::thunk_size;
+  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
+  u64 P = output_section.shdr.sh_addr + offset;
 
-    u8 *loc = buf + i * E::thunk_size;
-    memcpy(loc, data, sizeof(data));
-    write_adrp(loc, page(S) - page(P));
-    *(ul32 *)(loc + 4) |= bits(S, 11, 0) << 10;
+  for (Symbol<E> *sym : symbols) {
+    u64 S = sym->get_addr(ctx);
+
+    memcpy(buf, data, sizeof(data));
+    write_adrp(buf, page(S) - page(P));
+    *(ul32 *)(buf + 4) |= bits(S, 11, 0) << 10;
+
+    buf += sizeof(data);
+    P += sizeof(data);
   }
 }
 
