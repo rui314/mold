@@ -78,6 +78,8 @@ EOF
 $CC -c -o $t/d.o $t/d.s
 $CC -B. -o $t/exe $t/c.so $t/d.o -no-pie
 $QEMU $t/exe | grep -q '^56$'
+$CC -B. -o $t/exe $t/c.so $t/d.s -pie
+$QEMU $t/exe | grep -q '^56$'
 
 # Copyrel
 cat <<'EOF' > $t/d.s
