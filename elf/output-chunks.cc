@@ -1245,7 +1245,7 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
       if (sym->is_imported)
         add({idx, 0, E::R_TLSDESC, sym});
       else
-        add({idx, sym->get_addr(ctx) - ctx.dtp_addr, E::R_TLSDESC});
+        add({idx, sym->get_addr(ctx) - ctx.tls_begin, E::R_TLSDESC});
     }
   }
 
