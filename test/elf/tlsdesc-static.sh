@@ -26,8 +26,8 @@ cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -c -o $t/b.o -xc -
 _Thread_local int foo;
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o -static
-$QEMU $t/exe | grep -q 42
+$CC -B. -o $t/exe1 $t/a.o $t/b.o -static
+$QEMU $t/exe1 | grep -q 42
 
-$CC -B. -o $t/exe $t/a.o $t/b.o -static -Wl,-no-relax
-$QEMU $t/exe | grep -q 42
+$CC -B. -o $t/exe2 $t/a.o $t/b.o -static -Wl,-no-relax
+$QEMU $t/exe2 | grep -q 42

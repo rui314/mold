@@ -2423,7 +2423,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // this symbol.
   if (ctx._TLS_MODULE_BASE_) {
     ctx._TLS_MODULE_BASE_->set_output_section(sections[0]);
-    ctx._TLS_MODULE_BASE_->value = ctx.tls_begin;
+    ctx._TLS_MODULE_BASE_->value = ctx.dtp_addr;
   }
 
   // __GNU_EH_FRAME_HDR

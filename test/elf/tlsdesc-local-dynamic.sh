@@ -9,7 +9,7 @@ else
   skip
 fi
 
-cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -c -o $t/a.o -xc -
+cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -ftls-model=local-dynamic -c -o $t/a.o -xc -
 extern _Thread_local int foo;
 
 int get_foo() {
@@ -23,7 +23,7 @@ int get_bar() {
 }
 EOF
 
-cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -c -o $t/b.o -xc -
+cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -ftls-model=local-dynamic -c -o $t/b.o -xc -
 #include <stdio.h>
 
 _Thread_local int foo;
@@ -41,13 +41,5 @@ EOF
 $CC -B. -o $t/exe1 $t/a.o $t/b.o
 $QEMU $t/exe1 | grep -q '42 5'
 
-$CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,-no-relax
+$CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,--no-relax
 $QEMU $t/exe2 | grep -q '42 5'
-
-$CC -B. -shared -o $t/c.so $t/a.o
-$CC -B. -o $t/exe3 $t/b.o $t/c.so
-$QEMU $t/exe3 | grep -q '42 5'
-
-$CC -B. -shared -o $t/c.so $t/a.o -Wl,-no-relax
-$CC -B. -o $t/exe4 $t/b.o $t/c.so -Wl,-no-relax
-$QEMU $t/exe4 | grep -q '42 5'
