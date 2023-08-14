@@ -1141,9 +1141,6 @@ void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
   this->shdr.sh_size += sizeof(Word<E>) * 2;
   tlsdesc_syms.push_back(sym);
-
-  if (sym != ctx._TLS_MODULE_BASE_)
-    ctx.dynsym->add_symbol(ctx, sym);
 }
 
 template <typename E>
@@ -1243,12 +1240,12 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
 
   if constexpr (supports_tlsdesc<E>) {
     for (Symbol<E> *sym : ctx.got->tlsdesc_syms) {
-      // _TLS_MODULE_BASE_ is a linker-synthesized virtual symbol that
-      // refers the begining of the TLS block.
-      if (sym == ctx._TLS_MODULE_BASE_)
-        add({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC});
+      i64 idx = sym->get_tlsdesc_idx(ctx);
+
+      if (sym->is_imported)
+        add({idx, 0, E::R_TLSDESC, sym});
       else
-        add({sym->get_tlsdesc_idx(ctx), 0, E::R_TLSDESC, sym});
+        add({idx, sym->get_addr(ctx) - ctx.dtp_addr, E::R_TLSDESC});
     }
   }
 
