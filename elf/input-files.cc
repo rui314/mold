@@ -152,7 +152,6 @@ static inline std::string_view read_string(std::string_view &str) {
 template <typename E>
 static void read_riscv_attributes(Context<E> &ctx, ObjectFile<E> &file,
                                   std::string_view data) {
-  const char *begin = data.data();
   if (data.empty())
     Fatal(ctx) << file << ": corrupted .riscv.attributes section";
 
