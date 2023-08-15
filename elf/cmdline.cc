@@ -402,7 +402,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::vector<std::string> remaining;
   std::string_view arg;
 
-  ctx.page_size = E::page_size;
   ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
 
   bool version_shown = false;

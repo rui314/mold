@@ -1574,7 +1574,7 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
-template<typename E>
+template <typename E>
 ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
                          U32<E> *shn_xindex) {
   ElfSym<E> esym;

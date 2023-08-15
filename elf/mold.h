@@ -319,9 +319,9 @@ private:
 // tls.cc
 //
 
-template<typename E> u64 get_tls_begin(Context<E> &);
-template<typename E> u64 get_tp_addr(Context<E> &);
-template<typename E> u64 get_dtp_addr(Context<E> &);
+template <typename E> u64 get_tls_begin(Context<E> &);
+template <typename E> u64 get_tp_addr(Context<E> &);
+template <typename E> u64 get_dtp_addr(Context<E> &);
 
 //
 // output-chunks.cc
@@ -675,7 +675,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
-template<typename E>
+template <typename E>
 ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
                          U32<E> *shndx);
 
@@ -1133,11 +1133,11 @@ public:
 
   virtual ~InputFile() = default;
 
-  template<typename T> std::span<T>
-  get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
+  template <typename T>
+  std::span<T> get_data(Context<E> &ctx, const ElfShdr<E> &shdr);
 
-  template<typename T> std::span<T>
-  get_data(Context<E> &ctx, i64 idx);
+  template <typename T>
+  std::span<T> get_data(Context<E> &ctx, i64 idx);
 
   std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
   std::string_view get_string(Context<E> &ctx, i64 idx);
@@ -1869,7 +1869,7 @@ struct Context {
 
   std::vector<VersionPattern> version_patterns;
   u16 default_version = VER_NDX_GLOBAL;
-  i64 page_size = -1;
+  i64 page_size = E::page_size;
   std::optional<int> global_lock_fd;
 
   // true if default_version is set by a wildcard in version script.
@@ -2484,7 +2484,7 @@ InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) const {
          (rel.r_offset % sizeof(Word<E>)) == 0;
 }
 
-template<typename E>
+template <typename E>
 inline bool InputSection<E>::is_killed_by_icf() const {
   return this->leader && this->leader != this;
 }
@@ -2839,7 +2839,7 @@ inline bool Symbol<E>::is_local(Context<E> &ctx) const {
 // A remaining weak undefined symbol is promoted to a dynamic symbol
 // in DSO and resolved to 0 in an executable. This function returns
 // true if it's latter.
-template<typename E>
+template <typename E>
 inline bool Symbol<E>::is_remaining_undef_weak() const {
   return !is_imported && esym().is_undef_weak();
 }

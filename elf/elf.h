@@ -1903,47 +1903,42 @@ enum : u32 {
 // Machine descriptions
 //
 
-template <typename E>
-static constexpr bool supports_ifunc = requires { E::R_IRELATIVE; };
+template <typename E> concept supports_ifunc = requires { E::R_IRELATIVE; };
+template <typename E> concept supports_tlsdesc = requires { E::R_TLSDESC; };
+template <typename E> concept needs_thunk = requires { E::thunk_size; };
 
-template <typename E>
-static constexpr bool supports_tlsdesc = requires { E::R_TLSDESC; };
+template <typename E> concept is_x86_64 = std::same_as<E, X86_64>;
+template <typename E> concept is_i386 = std::same_as<E, I386>;
+template <typename E> concept is_arm64 = std::same_as<E, ARM64>;
+template <typename E> concept is_arm32 = std::same_as<E, ARM32>;
+template <typename E> concept is_rv64le = std::same_as<E, RV64LE>;
+template <typename E> concept is_rv64be = std::same_as<E, RV64BE>;
+template <typename E> concept is_rv32le = std::same_as<E, RV32LE>;
+template <typename E> concept is_rv32be = std::same_as<E, RV32BE>;
+template <typename E> concept is_ppc32 = std::same_as<E, PPC32>;
+template <typename E> concept is_ppc64v1 = std::same_as<E, PPC64V1>;
+template <typename E> concept is_ppc64v2 = std::same_as<E, PPC64V2>;
+template <typename E> concept is_s390x = std::same_as<E, S390X>;
+template <typename E> concept is_sparc64 = std::same_as<E, SPARC64>;
+template <typename E> concept is_m68k = std::same_as<E, M68K>;
+template <typename E> concept is_sh4 = std::same_as<E, SH4>;
+template <typename E> concept is_alpha = std::same_as<E, ALPHA>;
+template <typename E> concept is_mips64le = std::same_as<E, MIPS64LE>;
+template <typename E> concept is_mips64be = std::same_as<E, MIPS64BE>;
+template <typename E> concept is_loongarch64 = std::same_as<E, LOONGARCH64>;
+template <typename E> concept is_loongarch32 = std::same_as<E, LOONGARCH32>;
 
-template <typename E>
-static constexpr bool needs_thunk = requires { E::thunk_size; };
-
-template <typename E> static constexpr bool is_x86_64 = std::is_same_v<E, X86_64>;
-template <typename E> static constexpr bool is_i386 = std::is_same_v<E, I386>;
-template <typename E> static constexpr bool is_arm64 = std::is_same_v<E, ARM64>;
-template <typename E> static constexpr bool is_arm32 = std::is_same_v<E, ARM32>;
-template <typename E> static constexpr bool is_rv64le = std::is_same_v<E, RV64LE>;
-template <typename E> static constexpr bool is_rv64be = std::is_same_v<E, RV64BE>;
-template <typename E> static constexpr bool is_rv32le = std::is_same_v<E, RV32LE>;
-template <typename E> static constexpr bool is_rv32be = std::is_same_v<E, RV32BE>;
-template <typename E> static constexpr bool is_ppc32 = std::is_same_v<E, PPC32>;
-template <typename E> static constexpr bool is_ppc64v1 = std::is_same_v<E, PPC64V1>;
-template <typename E> static constexpr bool is_ppc64v2 = std::is_same_v<E, PPC64V2>;
-template <typename E> static constexpr bool is_s390x = std::is_same_v<E, S390X>;
-template <typename E> static constexpr bool is_sparc64 = std::is_same_v<E, SPARC64>;
-template <typename E> static constexpr bool is_m68k = std::is_same_v<E, M68K>;
-template <typename E> static constexpr bool is_sh4 = std::is_same_v<E, SH4>;
-template <typename E> static constexpr bool is_alpha = std::is_same_v<E, ALPHA>;
-template <typename E> static constexpr bool is_mips64le = std::is_same_v<E, MIPS64LE>;
-template <typename E> static constexpr bool is_mips64be = std::is_same_v<E, MIPS64BE>;
-template <typename E> static constexpr bool is_loongarch64 = std::is_same_v<E, LOONGARCH64>;
-template <typename E> static constexpr bool is_loongarch32 = std::is_same_v<E, LOONGARCH32>;
-
-template <typename E> static constexpr bool is_x86 = is_x86_64<E> || is_i386<E>;
-template <typename E> static constexpr bool is_arm = is_arm64<E> || is_arm32<E>;
-template <typename E> static constexpr bool is_rv64 = is_rv64le<E> || is_rv64be<E>;
-template <typename E> static constexpr bool is_rv32 = is_rv32le<E> || is_rv32be<E>;
-template <typename E> static constexpr bool is_riscv = is_rv64<E> || is_rv32<E>;
-template <typename E> static constexpr bool is_ppc64 = is_ppc64v1<E> || is_ppc64v2<E>;
-template <typename E> static constexpr bool is_ppc = is_ppc64<E> || is_ppc32<E>;
-template <typename E> static constexpr bool is_sparc = is_sparc64<E>;
-template <typename E> static constexpr bool is_mips64 = is_mips64le<E> || is_mips64be<E>;
-template <typename E> static constexpr bool is_mips = is_mips64<E>;
-template <typename E> static constexpr bool is_loongarch = is_loongarch64<E> || is_loongarch32<E>;
+template <typename E> concept is_x86 = is_x86_64<E> || is_i386<E>;
+template <typename E> concept is_arm = is_arm64<E> || is_arm32<E>;
+template <typename E> concept is_rv64 = is_rv64le<E> || is_rv64be<E>;
+template <typename E> concept is_rv32 = is_rv32le<E> || is_rv32be<E>;
+template <typename E> concept is_riscv = is_rv64<E> || is_rv32<E>;
+template <typename E> concept is_ppc64 = is_ppc64v1<E> || is_ppc64v2<E>;
+template <typename E> concept is_ppc = is_ppc64<E> || is_ppc32<E>;
+template <typename E> concept is_sparc = is_sparc64<E>;
+template <typename E> concept is_mips64 = is_mips64le<E> || is_mips64be<E>;
+template <typename E> concept is_mips = is_mips64<E>;
+template <typename E> concept is_loongarch = is_loongarch64<E> || is_loongarch32<E>;
 
 struct X86_64 {
   static constexpr std::string_view target_name = "x86_64";
@@ -2045,33 +2040,39 @@ struct ARM32 {
   static constexpr u32 R_TLSDESC = R_ARM_TLS_DESC;
 };
 
-struct RV64LE {
+struct RV64 {
+  static constexpr bool is_64 = true;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 4096;
+  static constexpr u32 e_machine = EM_RISCV;
+  static constexpr u32 plt_hdr_size = 32;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
+
+  static constexpr u32 R_COPY = R_RISCV_COPY;
+  static constexpr u32 R_GLOB_DAT = R_RISCV_64;
+  static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
+  static constexpr u32 R_ABS = R_RISCV_64;
+  static constexpr u32 R_DYNAMIC = R_RISCV_64;
+  static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
+  static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
+  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
+  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
+  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
+};
+
+struct RV64LE : RV64 {
   static constexpr std::string_view target_name = "riscv64";
-  static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_RISCV;
-  static constexpr u32 plt_hdr_size = 32;
-  static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
-
-  static constexpr u32 R_COPY = R_RISCV_COPY;
-  static constexpr u32 R_GLOB_DAT = R_RISCV_64;
-  static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_RISCV_64;
-  static constexpr u32 R_DYNAMIC = R_RISCV_64;
-  static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
-  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
-  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
 };
 
-struct RV64BE {
+struct RV64BE : RV64 {
   static constexpr std::string_view target_name = "riscv64be";
-  static constexpr bool is_64 = true;
   static constexpr bool is_le = false;
+};
+
+struct RV32 {
+  static constexpr bool is_64 = false;
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
@@ -2080,61 +2081,25 @@ struct RV64BE {
   static constexpr u32 pltgot_size = 16;
 
   static constexpr u32 R_COPY = R_RISCV_COPY;
-  static constexpr u32 R_GLOB_DAT = R_RISCV_64;
+  static constexpr u32 R_GLOB_DAT = R_RISCV_32;
   static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_RISCV_64;
-  static constexpr u32 R_DYNAMIC = R_RISCV_64;
+  static constexpr u32 R_ABS = R_RISCV_32;
+  static constexpr u32 R_DYNAMIC = R_RISCV_32;
   static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
   static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
-  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
-  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
+  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
+  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
+  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
 };
 
-struct RV32LE {
+struct RV32LE : RV32 {
   static constexpr std::string_view target_name = "riscv32";
-  static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_RISCV;
-  static constexpr u32 plt_hdr_size = 32;
-  static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
-
-  static constexpr u32 R_COPY = R_RISCV_COPY;
-  static constexpr u32 R_GLOB_DAT = R_RISCV_32;
-  static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_RISCV_32;
-  static constexpr u32 R_DYNAMIC = R_RISCV_32;
-  static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
-  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
-  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
 };
 
-struct RV32BE {
+struct RV32BE : RV32 {
   static constexpr std::string_view target_name = "riscv32be";
-  static constexpr bool is_64 = false;
   static constexpr bool is_le = false;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_RISCV;
-  static constexpr u32 plt_hdr_size = 32;
-  static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
-
-  static constexpr u32 R_COPY = R_RISCV_COPY;
-  static constexpr u32 R_GLOB_DAT = R_RISCV_32;
-  static constexpr u32 R_JUMP_SLOT = R_RISCV_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_RISCV_32;
-  static constexpr u32 R_DYNAMIC = R_RISCV_32;
-  static constexpr u32 R_RELATIVE = R_RISCV_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_RISCV_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
-  static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
-  static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
 };
 
 struct PPC32 {
@@ -2162,17 +2127,11 @@ struct PPC32 {
   static constexpr u32 R_DTPMOD = R_PPC_DTPMOD32;
 };
 
-struct PPC64V1 {
-  static constexpr std::string_view target_name = "ppc64v1";
+struct PPC64 {
   static constexpr bool is_64 = true;
-  static constexpr bool is_le = false;
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_PPC64;
-  static constexpr u32 plt_hdr_size = 52;
-  static constexpr u32 pltgot_size = 0;
-  static constexpr u32 thunk_hdr_size = 0;
-  static constexpr u32 thunk_size = 28;
 
   static constexpr u32 R_COPY = R_PPC64_COPY;
   static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
@@ -2186,29 +2145,23 @@ struct PPC64V1 {
   static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
 };
 
-struct PPC64V2 {
+struct PPC64V1 : PPC64 {
+  static constexpr std::string_view target_name = "ppc64v1";
+  static constexpr bool is_le = false;
+  static constexpr u32 plt_hdr_size = 52;
+  static constexpr u32 pltgot_size = 0;
+  static constexpr u32 thunk_hdr_size = 0;
+  static constexpr u32 thunk_size = 28;
+};
+
+struct PPC64V2 : PPC64 {
   static constexpr std::string_view target_name = "ppc64v2";
-  static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 65536;
-  static constexpr u32 e_machine = EM_PPC64;
   static constexpr u32 plt_hdr_size = 60;
   static constexpr u32 plt_size = 4;
   static constexpr u32 pltgot_size = 0;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 20;
-
-  static constexpr u32 R_COPY = R_PPC64_COPY;
-  static constexpr u32 R_GLOB_DAT = R_PPC64_GLOB_DAT;
-  static constexpr u32 R_JUMP_SLOT = R_PPC64_JMP_SLOT;
-  static constexpr u32 R_ABS = R_PPC64_ADDR64;
-  static constexpr u32 R_DYNAMIC = R_PPC64_ADDR64;
-  static constexpr u32 R_RELATIVE = R_PPC64_RELATIVE;
-  static constexpr u32 R_IRELATIVE = R_PPC64_IRELATIVE;
-  static constexpr u32 R_DTPOFF = R_PPC64_DTPREL64;
-  static constexpr u32 R_TPOFF = R_PPC64_TPREL64;
-  static constexpr u32 R_DTPMOD = R_PPC64_DTPMOD64;
 };
 
 struct S390X {
@@ -2323,10 +2276,8 @@ struct ALPHA {
   static constexpr u32 R_DTPMOD = R_ALPHA_DTPMOD64;
 };
 
-struct MIPS64LE {
-  static constexpr std::string_view target_name = "mips64le";
+struct MIPS64 {
   static constexpr bool is_64 = true;
-  static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_MIPS;
@@ -2345,26 +2296,14 @@ struct MIPS64LE {
   static constexpr u32 R_DTPMOD = R_MIPS_TLS_DTPMOD64;
 };
 
-struct MIPS64BE {
-  static constexpr std::string_view target_name = "mips64";
-  static constexpr bool is_64 = true;
-  static constexpr bool is_le = false;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_MIPS;
-  static constexpr u32 plt_hdr_size = 0;
-  static constexpr u32 plt_size = 0;
-  static constexpr u32 pltgot_size = 0;
+struct MIPS64LE : MIPS64 {
+  static constexpr std::string_view target_name = "mips64le";
+  static constexpr bool is_le = true;
+};
 
-  static constexpr u32 R_COPY = R_MIPS_COPY;
-  static constexpr u32 R_GLOB_DAT = R_MIPS_GLOB_DAT | (R_MIPS_64 << 8);
-  static constexpr u32 R_JUMP_SLOT = R_MIPS_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_MIPS_64;
-  static constexpr u32 R_DYNAMIC = R_MIPS_REL32 | (R_MIPS_64 << 8);
-  static constexpr u32 R_RELATIVE = R_MIPS_REL32 | (R_MIPS_64 << 8);
-  static constexpr u32 R_DTPOFF = R_MIPS_TLS_DTPREL64;
-  static constexpr u32 R_TPOFF = R_MIPS_TLS_TPREL64;
-  static constexpr u32 R_DTPMOD = R_MIPS_TLS_DTPMOD64;
+struct MIPS64BE : MIPS64 {
+  static constexpr std::string_view target_name = "mips64be";
+  static constexpr bool is_le = false;
 };
 
 struct LOONGARCH64 {

@@ -55,9 +55,7 @@ enum PluginApiVersion {
 
 struct PluginTagValue {
   PluginTagValue(PluginTag tag, int val) : tag(tag), val(val) {}
-
-  template <typename T>
-  PluginTagValue(PluginTag tag, T *ptr) : tag(tag), ptr((void *)ptr) {}
+  PluginTagValue(PluginTag tag, auto *ptr) : tag(tag), ptr((void *)ptr) {}
 
   PluginTag tag;
   union {

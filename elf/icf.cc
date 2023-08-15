@@ -81,7 +81,7 @@ static constexpr int64_t HASH_SIZE = 16;
 typedef std::array<uint8_t, HASH_SIZE> Digest;
 
 namespace std {
-template<> struct hash<Digest> {
+template <> struct hash<Digest> {
   size_t operator()(const Digest &k) const {
     return *(int64_t *)&k[0];
   }

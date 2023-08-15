@@ -33,7 +33,7 @@ void apply_exclude_libs(Context<E> &ctx) {
 
 template <typename E>
 void create_synthetic_sections(Context<E> &ctx) {
-  auto push = [&]<typename T>(T *x) {
+  auto push = [&](auto *x) {
     ctx.chunks.push_back(x);
     ctx.chunk_pool.emplace_back(x);
     return x;
