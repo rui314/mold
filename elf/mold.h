@@ -100,7 +100,7 @@ struct SymbolAux<PPC64V1> : SymbolAux<X86_64> {
 template <typename E>
 class RangeExtensionThunk {};
 
-template <typename E> requires needs_thunk<E>
+template <needs_thunk E>
 class RangeExtensionThunk<E> {
 public:
   RangeExtensionThunk(OutputSection<E> &osec, i64 offset)
@@ -216,12 +216,12 @@ struct FdeRecord {
 template <typename E>
 struct InputSectionExtras {};
 
-template <typename E> requires needs_thunk<E>
+template <needs_thunk E>
 struct InputSectionExtras<E> {
   std::vector<RangeExtensionRef> range_extn;
 };
 
-template <typename E> requires is_riscv<E>
+template <is_riscv E>
 struct InputSectionExtras<E> {
   std::vector<i32> r_deltas;
 };
@@ -1188,18 +1188,19 @@ protected:
 
 template <typename E> struct ObjectFileExtras {};
 
-template <typename E> requires is_riscv<E>
+template <is_riscv E>
 struct ObjectFileExtras<E> {
   std::optional<i64> stack_align;
   std::optional<std::string_view> arch;
   bool unaligned_access = false;
 };
 
-template <> struct ObjectFileExtras<PPC32> {
+template <>
+struct ObjectFileExtras<PPC32> {
   InputSection<PPC32> *got2 = nullptr;
 };
 
-template <typename E> requires is_mips<E>
+template <is_mips E>
 struct ObjectFileExtras<E> {
   std::unique_ptr<InputSection<E>> abi_flags;
   MipsGotSection<E> *got = nullptr;
@@ -1472,7 +1473,7 @@ void fixup_arm_exidx_section(Context<ARM32> &ctx);
 // arch-riscv.cc
 //
 
-template <typename E> requires is_riscv<E>
+template <is_riscv E>
 class RiscvAttributesSection : public Chunk<E> {
 public:
   RiscvAttributesSection() {
@@ -1486,7 +1487,7 @@ public:
   std::vector<u8> contents;
 };
 
-template <typename E> requires is_riscv<E>
+template <is_riscv E>
 u64 get_eflags(Context<E> &ctx);
 
 template <typename E>
@@ -1645,7 +1646,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
-template <typename E> requires is_mips<E>
+template <is_mips E>
 u64 get_eflags(Context<E> &ctx);
 
 template <typename E>
@@ -1707,37 +1708,43 @@ struct SectionOrder {
 };
 
 // Target-specific context members
-template <typename E> struct ContextExtras {};
+template <typename E>
+struct ContextExtras {};
 
-template <typename E> requires is_riscv<E>
+template <is_riscv E>
 struct ContextExtras<E> {
   RiscvAttributesSection<E> *riscv_attributes = nullptr;
 };
 
-template <> struct ContextExtras<PPC32> {
+template <>
+struct ContextExtras<PPC32> {
   Symbol<PPC32> *_SDA_BASE_ = nullptr;
 };
 
-template <> struct ContextExtras<PPC64V1> {
+template <>
+struct ContextExtras<PPC64V1> {
   PPC64OpdSection *opd = nullptr;
   Symbol<PPC64V1> *TOC = nullptr;
 };
 
-template <> struct ContextExtras<PPC64V2> {
+template <>
+struct ContextExtras<PPC64V2> {
   Symbol<PPC64V2> *TOC = nullptr;
   Atomic<bool> is_power10 = false;
 };
 
-template <> struct ContextExtras<SPARC64> {
+template <>
+struct ContextExtras<SPARC64> {
   SparcTlsGetAddrSection *tls_get_addr_sec = nullptr;
   Symbol<SPARC64> *tls_get_addr_sym = nullptr;
 };
 
-template <> struct ContextExtras<ALPHA> {
+template <>
+struct ContextExtras<ALPHA> {
   AlphaGotSection *got = nullptr;
 };
 
-template <typename E> requires is_mips<E>
+template <is_mips E>
 struct ContextExtras<E> {
   MipsQuickstartSection<E> *quickstart = nullptr;
   MipsABIFlagsSection<E> *abi_flags = nullptr;
@@ -2058,7 +2065,7 @@ enum {
 template <typename E>
 struct SymbolExtras {};
 
-template <typename E> requires needs_thunk<E>
+template <needs_thunk E>
 struct SymbolExtras<E> {
   // For range extension thunks
   i16 thunk_idx = -1;
