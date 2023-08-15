@@ -2,6 +2,7 @@
 
 #include "../common/integers.h"
 
+#include <concepts>
 #include <ostream>
 #include <string>
 #include <type_traits>
