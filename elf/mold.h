@@ -1486,7 +1486,8 @@ public:
   std::vector<u8> contents;
 };
 
-template <> u64 get_eflags(Context<ARM32> &ctx);
+template <typename E> requires is_riscv<E>
+u64 get_eflags(Context<E> &ctx);
 
 template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx);
