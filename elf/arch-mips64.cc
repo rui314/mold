@@ -576,6 +576,16 @@ void mips_merge_got_sections(Context<E> &ctx) {
   }
 }
 
+// Real MIPS e_flags computation is much more complicated.
+// For now, we just copy the first object's e_flags to the output.
+template <>
+u64 get_eflags(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs)
+    if (file != ctx.internal_obj)
+      return file->get_ehdr().e_flags;
+  return 0;
+}
+
 // MIPS .eh_frame contains absolute addresses (i.e. R_MIPS_64 relocations)
 // even if compiled with -fPIC. Instead of emitting base relocations, we
 // rewrite CIEs so that we can write relative addresse instead of absolute

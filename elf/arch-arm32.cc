@@ -663,6 +663,11 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+template <>
+u64 get_eflags(Context<E> &ctx) {
+  return EF_ARM_EABI_VER5;
+}
+
 // ARM executables use an .ARM.exidx section to look up an exception
 // handling record for the current instruction pointer. The table needs
 // to be sorted by their addresses.

@@ -38,44 +38,6 @@ static u32 djb_hash(std::string_view name) {
 
 template <typename E>
 u64 get_eflags(Context<E> &ctx) {
-  std::vector<ObjectFile<E> *> objs = ctx.objs;
-  std::erase(objs, ctx.internal_obj);
-
-  if constexpr (is_arm32<E>)
-    return EF_ARM_EABI_VER5;
-
-  if constexpr (is_riscv<E>) {
-    if (objs.empty())
-      return 0;
-
-    u32 ret = objs[0]->get_ehdr().e_flags;
-    for (i64 i = 1; i < objs.size(); i++) {
-      u32 flags = objs[i]->get_ehdr().e_flags;
-      if (flags & EF_RISCV_RVC)
-        ret |= EF_RISCV_RVC;
-
-      if ((flags & EF_RISCV_FLOAT_ABI) != (ret & EF_RISCV_FLOAT_ABI))
-        Error(ctx) << *objs[i] << ": cannot link object files with different"
-                   << " floating-point ABI from " << *objs[0];
-
-      if ((flags & EF_RISCV_RVE) != (ret & EF_RISCV_RVE))
-        Error(ctx) << *objs[i] << ": cannot link object files with different"
-                   << " EF_RISCV_RVE from " << *objs[0];
-    }
-    return ret;
-  }
-
-  if constexpr (is_ppc64v2<E>)
-    return 2;
-
-  if constexpr (is_mips<E>) {
-    // Real MIPS e_flags computation is much more complicated.
-    // For now, we just copy the first object's e_flags to the output.
-    if (objs.empty())
-      return 0;
-    return objs[0]->get_ehdr().e_flags;
-  }
-
   return 0;
 }
 

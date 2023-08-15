@@ -553,4 +553,9 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+template <>
+u64 get_eflags(Context<E> &ctx) {
+  return 2;
+}
+
 } // namespace mold::elf

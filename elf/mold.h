@@ -1465,10 +1465,11 @@ template <typename E> void show_stats(Context<E> &);
 // arch-arm32.cc
 //
 
+template <> u64 get_eflags(Context<ARM32> &ctx);
 void fixup_arm_exidx_section(Context<ARM32> &ctx);
 
 //
-// arch-riscv64.cc
+// arch-riscv.cc
 //
 
 template <typename E> requires is_riscv<E>
@@ -1484,6 +1485,8 @@ public:
 
   std::vector<u8> contents;
 };
+
+template <> u64 get_eflags(Context<ARM32> &ctx);
 
 template <typename E>
 i64 riscv_resize_sections(Context<E> &ctx);
@@ -1512,6 +1515,12 @@ public:
 
   std::vector<Symbol<PPC64V1> *> symbols;
 };
+
+//
+// arch-ppc64v2.cc
+//
+
+template <> u64 get_eflags(Context<PPC64V2> &ctx);
 
 //
 // arch-sparc.cc
@@ -1634,6 +1643,9 @@ public:
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 };
+
+template <typename E> requires is_mips<E>
+u64 get_eflags(Context<E> &ctx);
 
 template <typename E>
 void mips_merge_got_sections(Context<E> &ctx);

@@ -725,14 +725,37 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
-template <typename E>
+template <>
+u64 get_eflags(Context<E> &ctx) {
+  std::vector<ObjectFile<E> *> objs = ctx.objs;
+  std::erase(objs, ctx.internal_obj);
+
+  if (objs.empty())
+    return 0;
+
+  u32 ret = objs[0]->get_ehdr().e_flags;
+  for (i64 i = 1; i < objs.size(); i++) {
+    u32 flags = objs[i]->get_ehdr().e_flags;
+    if (flags & EF_RISCV_RVC)
+      ret |= EF_RISCV_RVC;
+
+    if ((flags & EF_RISCV_FLOAT_ABI) != (ret & EF_RISCV_FLOAT_ABI))
+      Error(ctx) << *objs[i] << ": cannot link object files with different"
+                 << " floating-point ABI from " << *objs[0];
+
+    if ((flags & EF_RISCV_RVE) != (ret & EF_RISCV_RVE))
+      Error(ctx) << *objs[i] << ": cannot link object files with different"
+                 << " EF_RISCV_RVE from " << *objs[0];
+  }
+  return ret;
+}
+
 static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
   return isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
          (isec->shdr().sh_flags & SHF_EXECINSTR);
 }
 
 // Returns the distance between a relocated place and a symbol.
-template <typename E>
 static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
                             InputSection<E> &isec, const ElfRel<E> &rel) {
   // We handle absolute symbols as if they were infinitely far away
@@ -754,7 +777,6 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
 }
 
 // Scan relocations to shrink sections.
-template <typename E>
 static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   isec.extra.r_deltas.resize(rels.size() + 1);
