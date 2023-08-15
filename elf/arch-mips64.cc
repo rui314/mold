@@ -49,24 +49,28 @@
 //    support only a limited set of them. This works because, in practice,
 //    the compiler emits only a limted set of relocation types.
 
+#if MOLD_MIPS64LE || MOLD_MIPS64BE
+
 #include "mold.h"
 
 namespace mold::elf {
+
+using E = MOLD_TARGET;
 
 static constexpr i64 BIAS = 0x8000;
 
 // We don't support lazy symbol resolution for MIPS. All dynamic symbols
 // are resolved eagerly on process startup.
-template <typename E>
+template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {}
 
-template <typename E>
+template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {}
 
-template <typename E>
+template <>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {}
 
-template <typename E>
+template <>
 void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
                                        u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
@@ -84,7 +88,7 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
-template <typename E>
+template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
@@ -195,7 +199,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   }
 }
 
-template <typename E>
+template <>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
@@ -231,7 +235,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   }
 }
 
-template <typename E>
+template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
 
@@ -297,7 +301,6 @@ bool MipsGotSection<E>::SymbolAddend::operator<(const SymbolAddend &other) const
          std::tuple(other.sym->file->priority, other.sym->sym_idx, other.addend);
 };
 
-template <typename E>
 static bool compare(const Symbol<E> *a, const Symbol<E> *b) {
   return std::tuple(a->file->priority, a->sym_idx) <
          std::tuple(b->file->priority, b->sym_idx);
@@ -308,27 +311,22 @@ u64 MipsGotSection<E>::SymbolAddend::get_addr(Context<E> &ctx, i64 flags) const 
   return sym->get_addr(ctx, flags) + addend;
 }
 
-template <typename E>
 static inline i64 get_gotpage_offset(const MipsGotSection<E> &got) {
   return got.got_syms.size();
 }
 
-template <typename E>
 static inline i64 get_tlsgd_offset(const MipsGotSection<E> &got) {
   return get_gotpage_offset(got) + got.gotpage_syms.size();
 }
 
-template <typename E>
 static inline i64 get_gottp_offset(const MipsGotSection<E> &got) {
   return get_tlsgd_offset(got) + got.tlsgd_syms.size() * 2;
 }
 
-template <typename E>
 static inline i64 get_tlsld_offset(const MipsGotSection<E> &got) {
   return get_gottp_offset(got) + got.gottp_syms.size();
 }
 
-template <typename E>
 static inline i64 get_num_got_entries(const MipsGotSection<E> &got) {
   return get_tlsld_offset(got) + got.has_tlsld * 2;
 }
@@ -353,16 +351,14 @@ u64 MipsGotSection<E>::get_gotpage_addr(Context<E> &ctx, Symbol<E> &sym,
 
 template <typename E>
 u64 MipsGotSection<E>::get_tlsgd_addr(Context<E> &ctx, Symbol<E> &sym) const {
-  auto it = std::lower_bound(tlsgd_syms.begin(), tlsgd_syms.end(),
-                             &sym, compare<E>);
+  auto it = std::lower_bound(tlsgd_syms.begin(), tlsgd_syms.end(), &sym, compare);
   i64 idx = get_tlsgd_offset(*this) + (it - tlsgd_syms.begin()) * 2;
   return this->shdr.sh_addr + idx * sizeof(Word<E>);
 }
 
 template <typename E>
 u64 MipsGotSection<E>::get_gottp_addr(Context<E> &ctx, Symbol<E> &sym) const {
-  auto it = std::lower_bound(gottp_syms.begin(), gottp_syms.end(),
-                             &sym, compare<E>);
+  auto it = std::lower_bound(gottp_syms.begin(), gottp_syms.end(), &sym, compare);
   i64 idx = get_gottp_offset(*this) + (it - gottp_syms.begin());
   return this->shdr.sh_addr + idx * sizeof(Word<E>);
 }
@@ -374,7 +370,6 @@ u64 MipsGotSection<E>::get_tlsld_addr(Context<E> &ctx) const {
 }
 
 namespace {
-template <typename E>
 struct GotEntry {
   u64 val = 0;
   i64 r_type = R_NONE;
@@ -382,13 +377,12 @@ struct GotEntry {
 };
 }
 
-template <typename E>
-std::vector<GotEntry<E>>
+std::vector<GotEntry>
 get_got_entries(Context<E> &ctx, const MipsGotSection<E> &got) {
   using SymbolAddend = typename MipsGotSection<E>::SymbolAddend;
 
-  std::vector<GotEntry<E>> entries;
-  auto add = [&](GotEntry<E> ent) { entries.push_back(ent); };
+  std::vector<GotEntry> entries;
+  auto add = [&](GotEntry ent) { entries.push_back(ent); };
 
   // Create GOT entries for ordinary symbols
   for (const SymbolAddend &ent : got.got_syms) {
@@ -469,11 +463,11 @@ void MipsGotSection<E>::update_shdr(Context<E> &ctx) {
   remove_duplicates(gotpage_syms);
 
   // Finalize tlsgd_syms
-  sort(tlsgd_syms, compare<E>);
+  sort(tlsgd_syms, compare);
   remove_duplicates(tlsgd_syms);
 
   // Finalize gottp_syms
-  sort(gottp_syms, compare<E>);
+  sort(gottp_syms, compare);
   remove_duplicates(gottp_syms);
 
   this->shdr.sh_size = get_num_got_entries(*this) * sizeof(Word<E>);
@@ -482,7 +476,7 @@ void MipsGotSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 i64 MipsGotSection<E>::get_reldyn_size(Context<E> &ctx) const {
   i64 n = 0;
-  for (GotEntry<E> &ent : get_got_entries(ctx, *this))
+  for (GotEntry &ent : get_got_entries(ctx, *this))
     if (ent.r_type != R_NONE)
       n++;
   return n;
@@ -496,7 +490,7 @@ void MipsGotSection<E>::copy_buf(Context<E> &ctx) {
   ElfRel<E> *dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                                     this->reldyn_offset);
 
-  for (i64 i = 0; GotEntry<E> &ent : get_got_entries(ctx, *this)) {
+  for (i64 i = 0; GotEntry &ent : get_got_entries(ctx, *this)) {
     if (ent.r_type != R_NONE)
       *dynrel++ = ElfRel<E>(this->shdr.sh_addr + i * sizeof(Word<E>),
                             ent.r_type,
@@ -506,13 +500,13 @@ void MipsGotSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
-template <typename E>
+template <>
 void MipsQuickstartSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_size = (NUM_RESERVED + ctx.dynsym->symbols.size()) *
                        sizeof(Word<E>);
 }
 
-template <typename E>
+template <>
 void MipsQuickstartSection<E>::copy_buf(Context<E> &ctx) {
   U64<E> *buf = (U64<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
@@ -527,7 +521,7 @@ void MipsQuickstartSection<E>::copy_buf(Context<E> &ctx) {
         buf[i + NUM_RESERVED] = sym->get_addr(ctx, NO_PLT);
 }
 
-template <typename E>
+template <>
 void MipsABIFlagsSection<E>::update_shdr(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs) {
     if (file->extra.abi_flags) {
@@ -542,7 +536,7 @@ void MipsABIFlagsSection<E>::update_shdr(Context<E> &ctx) {
 // .MIPS.abiflags section contains ABI info such as ISA level.
 // We need to merge input .MIPS.abiflags sections into a single
 // .MIPS.abiflags section. But for now, we just pick the first one.
-template <typename E>
+template <>
 void MipsABIFlagsSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
   memcpy(buf, contents.data(), contents.size());
@@ -551,7 +545,7 @@ void MipsABIFlagsSection<E>::copy_buf(Context<E> &ctx) {
 // We merge consective .mips_got sections to reduce the total number of
 // .mips_got entries. Note that each .mips_got should be equal or smaller
 // than 64 KiB so that all of its entries are within its GP ± 32 KiB.
-template <typename E>
+template <>
 void mips_merge_got_sections(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
     file->extra.got->update_shdr(ctx);
@@ -586,7 +580,7 @@ void mips_merge_got_sections(Context<E> &ctx) {
 // even if compiled with -fPIC. Instead of emitting base relocations, we
 // rewrite CIEs so that we can write relative addresse instead of absolute
 // ones to .eh_frame.
-template <typename E>
+template <>
 void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie) {
   u8 *aug = buf + 9; // Skip Length, CIE ID and Version fields
   if (*aug != 'z')
@@ -651,23 +645,8 @@ void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie) {
   }
 }
 
-#define INSTANTIATE(E)                                                       \
-  template void write_plt_header(Context<E> &, u8 *);                        \
-  template void write_plt_entry(Context<E> &, u8 *, Symbol<E> &);            \
-  template void write_pltgot_entry(Context<E> &, u8 *, Symbol<E> &);         \
-  template void EhFrameSection<E>::                                          \
-    apply_eh_reloc(Context<E> &, const ElfRel<E> &, u64, u64);               \
-  template void InputSection<E>::apply_reloc_alloc(Context<E> &, u8 *);      \
-  template void InputSection<E>::apply_reloc_nonalloc(Context<E> &, u8 *);   \
-  template void InputSection<E>::scan_relocations(Context<E> &);             \
-  template class MipsGotSection<E>;                                          \
-  template class MipsQuickstartSection<E>;                                   \
-  template class MipsABIFlagsSection<E>;                                     \
-  template void mips_merge_got_sections(Context<E> &);                       \
-  template void mips_rewrite_cie(Context<E> &, u8 *, CieRecord<E> &);
-
-
-INSTANTIATE(MIPS64LE);
-INSTANTIATE(MIPS64BE);
+template class MipsGotSection<E>;
 
 } // namespace mold::elf
+
+#endif

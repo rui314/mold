@@ -294,6 +294,7 @@ list(APPEND MOLD_ELF_TARGETS
 
 list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/arch-loongarch.cc
+  elf/arch-mips64.cc
   elf/arch-riscv.cc
   elf/cmdline.cc
   elf/dwarf.cc
