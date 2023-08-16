@@ -1,7 +1,5 @@
 # mold: A Modern Linker
 
-[![CI](https://github.com/rui314/mold/actions/workflows/ci.yml/badge.svg)](https://github.com/rui314/mold/actions/workflows/ci.yml)
-
 <i>This repository contains a free version of the mold linker.
 If you are looking for a commercial version that supports macOS
 please visit the
