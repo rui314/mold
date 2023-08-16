@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022 Intel Corporation
+# Copyright (c) 2021-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -65,6 +65,7 @@ jobs:
         run: |
           pip3 install -U Jinja2
           pip3 install git+https://github.com/executablebooks/sphinx-book-theme.git
+          pip3 install sphinx-tabs
           echo GITHUB_SHA_SHORT=${GITHUB_SHA::8} >> $GITHUB_ENV
           mkdir html
       - name: Build documentation
@@ -126,8 +127,8 @@ jobs:
             cat years.diff
             exit 1
           fi
-  python_module_test_ubuntu18-04:
-    runs-on: [ubuntu-18.04]
+  python_module_test_ubuntu_latest:
+    runs-on: [ubuntu-latest]
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v2
@@ -146,7 +147,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-18.04
+          - os: ubuntu-latest
             c_compiler: gcc
             cxx_compiler: g++
             std: 14
@@ -246,7 +247,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-18.04
+          - os: ubuntu-latest
             c_compiler: gcc
             cxx_compiler: g++
             std: 14

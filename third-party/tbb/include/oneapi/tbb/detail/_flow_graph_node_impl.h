@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -361,7 +361,7 @@ public:
     template<typename Body>
     function_input(
         graph &g, size_t max_concurrency, Body& body, node_priority_t a_priority )
-      : base_type(g, max_concurrency, a_priority, noexcept(body(input_type())))
+      : base_type(g, max_concurrency, a_priority, noexcept(tbb::detail::invoke(body, input_type())))
       , my_body( new function_body_leaf< input_type, output_type, Body>(body) )
       , my_init_body( new function_body_leaf< input_type, output_type, Body>(body) ) {
     }
@@ -392,7 +392,7 @@ public:
         // There is an extra copied needed to capture the
         // body execution without the try_put
         fgt_begin_body( my_body );
-        output_type v = (*my_body)(i);
+        output_type v = tbb::detail::invoke(*my_body, i);
         fgt_end_body( my_body );
         return v;
     }
@@ -496,7 +496,7 @@ public:
     // constructor
     template<typename Body>
     multifunction_input(graph &g, size_t max_concurrency,Body& body, node_priority_t a_priority )
-      : base_type(g, max_concurrency, a_priority, noexcept(body(input_type(), my_output_ports)))
+      : base_type(g, max_concurrency, a_priority, noexcept(tbb::detail::invoke(body, input_type(), my_output_ports)))
       , my_body( new multifunction_body_leaf<input_type, output_ports_type, Body>(body) )
       , my_init_body( new multifunction_body_leaf<input_type, output_ports_type, Body>(body) )
       , my_output_ports(init_output_ports<output_ports_type>::call(g, my_output_ports)){

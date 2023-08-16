@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -91,6 +91,64 @@ void WorkProducingTest(Context&... context) {
     }
 }
 
+#if __TBB_CPP17_INVOKE_PRESENT
+
+class ForEachInvokeItem {
+public:
+    ForEachInvokeItem(std::size_t rv, std::vector<std::size_t>& cv) : real_value(rv), change_vector(cv) {}
+
+    void do_action() const { ++change_vector[real_value]; }
+
+    void do_action_and_feed(oneapi::tbb::feeder<ForEachInvokeItem>& feeder) const {
+        CHECK_MESSAGE(change_vector.size() % 2 == 0, "incorrect test setup");
+        std::size_t shift = change_vector.size() / 2;
+        std::cout << "Process " << real_value << std::endl;
+        ++change_vector[real_value];
+        if (real_value < shift) {
+            std::cout << "Add " << real_value + shift << std::endl;
+            feeder.add(ForEachInvokeItem(real_value + shift, change_vector));
+        }
+    }
+private:
+    std::size_t real_value;
+    std::vector<std::size_t>& change_vector;
+};
+
+template <template <class T> typename IteratorType>
+void test_pfor_each_invoke_basic() {
+    const std::size_t items_count = 10;
+    std::vector<ForEachInvokeItem> items_to_proceed;
+    std::vector<std::size_t> change_vector(2 * items_count, 0);
+
+    for (std::size_t i = 0; i < items_count; ++i) {
+        items_to_proceed.emplace_back(i, change_vector);
+    }
+
+    using iterator_type = IteratorType<ForEachInvokeItem>;
+
+    // Test without feeder
+    oneapi::tbb::parallel_for_each(iterator_type(items_to_proceed.data()),
+                                   iterator_type(items_to_proceed.data() + items_count),
+                                   &ForEachInvokeItem::do_action);
+
+    for (std::size_t i = 0; i < items_count; ++i) {
+        CHECK(change_vector[i] == 1);
+        CHECK(change_vector[i + items_count] == 0);
+        change_vector[i] = 0; // reset
+    }
+
+    // Test with feeder
+    oneapi::tbb::parallel_for_each(iterator_type(items_to_proceed.data()),
+                                   iterator_type(items_to_proceed.data() + items_count),
+                                   &ForEachInvokeItem::do_action_and_feed);
+
+    for (auto item : change_vector) {
+        CHECK(item == 1);
+    }
+}
+
+#endif
+
 //! Test that all elements were produced
 //! \brief \ref requirement \ref stress
 TEST_CASE("Test that all elements in range were produced through body (without task_group_context)") {
@@ -116,3 +174,14 @@ TEST_CASE("Move Semantics | Item: MoveOnly") {
     //  parallel_for_each uses is_copy_constructible to support non-copyable types
     DoTestMoveSemantics<TestMoveSem::MoveOnly>();
 }
+
+#if __TBB_CPP17_INVOKE_PRESENT
+//! Test that parallel_for_each uses std::invoke to run the body
+//! \brief \ref requirement
+TEST_CASE("parallel_for_each and std::invoke") {
+    test_pfor_each_invoke_basic<utils::InputIterator>();
+    test_pfor_each_invoke_basic<utils::ForwardIterator>();
+    test_pfor_each_invoke_basic<utils::RandomIterator>();
+}
+
+#endif

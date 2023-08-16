@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 #define CONFORMANCE_MULTIFUNCTION_NODE
 
 #include "conformance_flowgraph.h"
+#include "common/test_invoke.h"
 
 //! \file conformance_multifunction_node.cpp
 //! \brief Test for [flow_graph.function_node] specification
@@ -51,7 +52,7 @@ TEST_CASE("multifunction_node priority"){
     conformance::test_priority<oneapi::tbb::flow::multifunction_node<input_msg, std::tuple<int>>, input_msg>(oneapi::tbb::flow::unlimited);
 }
 
-//! Test function_node has a user-settable concurrency limit. It can be set to one of predefined values. 
+//! Test function_node has a user-settable concurrency limit. It can be set to one of predefined values.
 //! The user can also provide a value of type std::size_t to limit concurrency.
 //! Test that not more than limited threads works in parallel.
 //! \brief \ref interface
@@ -135,3 +136,53 @@ TEST_CASE("Test function_node Output and Input class") {
     using Body = conformance::copy_counting_object<int>;
     conformance::test_output_input_class<oneapi::tbb::flow::multifunction_node<Body, std::tuple<Body>>, Body>();
 }
+
+#if __TBB_CPP17_INVOKE_PRESENT
+//! Test that multifunction_node uses std::invoke to execute the body
+//! \brief \ref interface \ref requirement
+TEST_CASE("Test multifunction_node and std::invoke") {
+    using namespace oneapi::tbb::flow;
+
+    using output_type1 = test_invoke::SmartID<std::size_t>;
+    using input_type = test_invoke::SmartID<output_type1>;
+
+    using output_tuple1 = std::tuple<output_type1, output_type1>;
+    using output_tuple2 = std::tuple<std::size_t>;
+
+    using first_mf_node_type = multifunction_node<input_type, output_tuple1>;
+    using second_mf_node_type = multifunction_node<output_type1, output_tuple2>;
+
+    using first_ports_type = typename first_mf_node_type::output_ports_type;
+    using second_ports_type = typename second_mf_node_type::output_ports_type;
+
+    graph g;
+
+    auto first_body = &input_type::template send_id<first_ports_type>;
+    auto second_body = &output_type1::template send_id<second_ports_type>;
+
+    first_mf_node_type mf1(g, unlimited, first_body);
+    second_mf_node_type mf21(g, unlimited, second_body);
+    second_mf_node_type mf22(g, unlimited, second_body);
+
+    buffer_node<std::size_t> buf(g);
+
+    make_edge(output_port<0>(mf1), mf21);
+    make_edge(output_port<1>(mf1), mf22);
+
+    make_edge(output_port<0>(mf21), buf);
+    make_edge(output_port<0>(mf22), buf);
+
+    mf1.try_put(input_type{output_type1{1}});
+
+    g.wait_for_all();
+
+    std::size_t buf_size = 0;
+    std::size_t tmp = 0;
+    while(buf.try_get(tmp)) {
+        ++buf_size;
+        CHECK(tmp == 1);
+    }
+
+    CHECK(buf_size == 2);
+}
+#endif

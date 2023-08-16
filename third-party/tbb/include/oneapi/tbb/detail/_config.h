@@ -28,6 +28,12 @@
 /* Check which standard library we use. */
 #include <cstddef>
 
+#ifdef __has_include
+#if __has_include(<version>)
+#include <version>
+#endif
+#endif
+
 #include "_export.h"
 
 #if _MSC_VER
@@ -220,7 +226,7 @@
 /** Library features presence macros **/
 
 #define __TBB_CPP14_INTEGER_SEQUENCE_PRESENT       (__TBB_LANG >= 201402L)
-#define __TBB_CPP17_INVOKE_RESULT_PRESENT          (__TBB_LANG >= 201703L)
+#define __TBB_CPP17_INVOKE_PRESENT                 (__TBB_LANG >= 201703L)
 
 // TODO: Remove the condition(__INTEL_COMPILER > 2021) from the __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
 // macro when this feature start working correctly on this compiler.
@@ -265,7 +271,7 @@
 #if defined(__cpp_impl_three_way_comparison) && defined(__cpp_lib_three_way_comparison)
     #define __TBB_CPP20_COMPARISONS_PRESENT ((__cpp_impl_three_way_comparison >= 201907L) && (__cpp_lib_three_way_comparison >= 201907L))
 #else
-    #define __TBB_CPP20_COMPARISONS_PRESENT __TBB_CPP20_PRESENT
+    #define __TBB_CPP20_COMPARISONS_PRESENT 0
 #endif
 
 #define __TBB_RESUMABLE_TASKS                           (!__TBB_WIN8UI_SUPPORT && !__ANDROID__ && !__QNXNTO__ && (!__linux__ || __GLIBC__))

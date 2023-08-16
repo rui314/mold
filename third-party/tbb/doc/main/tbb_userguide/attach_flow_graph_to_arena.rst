@@ -1,7 +1,7 @@
 .. _attach_flow_graph_to_arena:
 
 Attach Flow Graph to an Arbitrary Task Arena
-======================
+=============================================
 
 
 |short_name| ``task_arena`` interface provides mechanisms to guide tasks

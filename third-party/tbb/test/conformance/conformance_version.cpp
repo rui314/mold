@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -48,5 +48,5 @@ TEST_CASE("Test version string") {
 //! \brief \ref requirement
 TEST_CASE("Test interface version") {
     REQUIRE(TBB_INTERFACE_VERSION / 1000 == TBB_INTERFACE_VERSION_MAJOR);
-    REQUIRE(TBB_INTERFACE_VERSION % 100 / 10 == TBB_INTERFACE_VERSION_MINOR);
+    REQUIRE(TBB_INTERFACE_VERSION % 1000 / 10 == TBB_INTERFACE_VERSION_MINOR);
 }

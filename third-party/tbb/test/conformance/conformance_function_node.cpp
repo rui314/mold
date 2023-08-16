@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #endif
 
 #include "conformance_flowgraph.h"
+#include "common/test_invoke.h"
 
 using input_msg = conformance::message</*default_ctor*/true, /*copy_ctor*/true, /*copy_assign*/false>;
 using output_msg = conformance::message</*default_ctor*/false, /*copy_ctor*/true, /*copy_assign*/false>;
@@ -75,6 +76,42 @@ void test_deduction_guides() {
 }
 
 #endif
+
+#if __TBB_CPP17_INVOKE_PRESENT
+
+template <typename InputType, typename OutputType1, typename OutputType2,
+          typename Body1, typename Body2>
+void test_fn_invoke_basic(const Body1& body1, const Body2& body2) {
+    using namespace oneapi::tbb::flow;
+
+    graph g;
+
+    function_node<InputType, OutputType1> f1(g, unlimited, body1);
+    function_node<OutputType1, OutputType2> f2(g, unlimited, body2);
+    buffer_node<OutputType2> buf(g);
+
+    make_edge(f1, f2);
+    make_edge(f2, buf);
+
+    f1.try_put(InputType{OutputType1{1}});
+
+    g.wait_for_all();
+
+    std::size_t result = 0;
+    CHECK(buf.try_get(result));
+    CHECK(result == 1);
+    CHECK(!buf.try_get(result));
+}
+
+void test_fn_invoke() {
+    using output_type = test_invoke::SmartID<std::size_t>;
+    using input_type = test_invoke::SmartID<output_type>;
+    // Testing pointer to member function
+    test_fn_invoke_basic<input_type, output_type, std::size_t>(&input_type::get_id, &output_type::get_id);
+    // Testing pointer to member object
+    test_fn_invoke_basic<input_type, output_type, std::size_t>(&input_type::id, &output_type::id);
+}
+#endif // __TBB_CPP17_INVOKE_PRESENT
 
 //! Test calling function body
 //! \brief \ref interface \ref requirement
@@ -168,3 +205,11 @@ TEST_CASE("Test function_node Output and Input class") {
     using Body = conformance::copy_counting_object<int>;
     conformance::test_output_input_class<oneapi::tbb::flow::function_node<Body, Body>, Body>();
 }
+
+#if __TBB_CPP17_INVOKE_PRESENT
+//! Test that function_node uses std::invoke to execute the body
+//! \brief \ref interface \ref requirement
+TEST_CASE("Test function_node and std::invoke") {
+    test_fn_invoke();
+}
+#endif

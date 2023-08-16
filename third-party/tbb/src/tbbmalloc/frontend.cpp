@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -601,7 +601,9 @@ public:
         // should be called only for the current thread
         bool released = cleanBins ? cleanupBlockBins() : false;
         // both cleanups to be called, and the order is not important
-        return released | lloc.externalCleanup(&memPool->extMemPool) | freeSlabBlocks.externalCleanup();
+        bool lloc_cleaned = lloc.externalCleanup(&memPool->extMemPool);
+        bool free_slab_blocks_cleaned = freeSlabBlocks.externalCleanup();
+        return released || lloc_cleaned || free_slab_blocks_cleaned;
     }
     bool cleanupBlockBins();
     void markUsed() { unused.store(false, std::memory_order_relaxed); } // called by owner when TLS touched
@@ -802,7 +804,8 @@ static inline unsigned int highestBitPos(unsigned int n)
 unsigned int getSmallObjectIndex(unsigned int size)
 {
     unsigned int result = (size-1)>>3;
-    if (sizeof(void*)==8) {
+    constexpr bool is_64bit = (8 == sizeof(void*));
+    if (is_64bit) {
         // For 64-bit malloc, 16 byte alignment is needed except for bin 0.
         if (result) result |= 1; // 0,1,3,5,7; bins 2,4,6 are not aligned to 16 bytes
     }
@@ -927,7 +930,7 @@ static MallocMutex publicFreeListLock; // lock for changes of publicFreeList
 LifoList::LifoList( ) : top(nullptr)
 {
     // MallocMutex assumes zero initialization
-    memset(&lock, 0, sizeof(MallocMutex));
+    memset(static_cast<void*>(&lock), 0, sizeof(MallocMutex));
 }
 
 void LifoList::push(Block *block)
@@ -1263,7 +1266,7 @@ Block* Bin::getPrivatizedFreeListBlock()
     Block* block;
     MALLOC_ASSERT( this, ASSERT_TEXT );
     // if this method is called, active block usage must be unsuccessful
-    MALLOC_ASSERT( !activeBlk && !mailbox.load(std::memory_order_relaxed) || activeBlk && activeBlk->isFull, ASSERT_TEXT );
+    MALLOC_ASSERT( (!activeBlk && !mailbox.load(std::memory_order_relaxed)) || (activeBlk && activeBlk->isFull), ASSERT_TEXT );
 
 // the counter should be changed    STAT_increment(getThreadId(), ThreadCommonCounters, lockPublicFreeList);
     if (!mailbox.load(std::memory_order_acquire)) // hotpath is empty mailbox
@@ -1863,7 +1866,6 @@ FreeObject *StartupBlock::allocate(size_t size)
 {
     FreeObject *result;
     StartupBlock *newBlock = nullptr;
-    bool newBlockUnused = false;
 
     /* Objects must be aligned on their natural bounds,
        and objects bigger than word on word's bound. */
@@ -2718,7 +2720,7 @@ rml::MemPoolError pool_create_v1(intptr_t pool_id, const MemPoolPolicy *policy,
         *pool = nullptr;
         return NO_MEMORY;
     }
-    memset(memPool, 0, sizeof(rml::internal::MemoryPool));
+    memset(static_cast<void*>(memPool), 0, sizeof(rml::internal::MemoryPool));
     if (!memPool->init(pool_id, policy)) {
         internalFree(memPool);
         *pool = nullptr;

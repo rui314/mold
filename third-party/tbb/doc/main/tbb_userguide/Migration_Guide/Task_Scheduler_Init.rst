@@ -140,7 +140,8 @@ to set the stack size for oneTBB worker threads:
 
 Terminating oneTBB scheduler
 ---------------------------------------
-:ref:`task_scheduler_handle_reference`
+
+`task_scheduler_handle <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/task_scheduler/scheduling_controls/task_scheduler_handle_cls.html>`_
 allows waiting for oneTBB worker threads completion:
 
 .. code:: cpp

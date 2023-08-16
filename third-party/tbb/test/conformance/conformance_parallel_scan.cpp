@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 
 #define DOCTEST_CONFIG_SUPER_FAST_ASSERTS
 #include "common/test.h"
+#include "common/test_invoke.h"
 
 #include "oneapi/tbb/parallel_scan.h"
 
@@ -134,3 +135,39 @@ TEST_CASE_TEMPLATE("Test parallel scan with body", Partitioner, default_partitio
 
     CHECK((control==output));
 }
+
+#if __TBB_CPP17_INVOKE_PRESENT
+template <typename... Args>
+void test_pscan_invoke(const std::vector<std::size_t>& desired_vector,
+                       std::vector<std::size_t>& result_vector,
+                       Args&&... args) {
+    auto result = oneapi::tbb::parallel_scan(std::forward<Args>(args)...);
+    CHECK(desired_vector == result_vector);
+    CHECK(result.get() == result_vector.back());
+
+    for (std::size_t& item : result_vector) item = 0;
+}
+
+//! Test that parallel_scan uses std::invoke to run the body
+//! \brief \ref requirement
+TEST_CASE("parallel_scan and std::invoke") {
+    const std::size_t iterations = 1000000;
+    std::vector<std::size_t> desired_vector(iterations);
+
+    for (std::size_t i = 1; i < iterations; ++i) {
+        desired_vector[i] = desired_vector[i - 1] + i;
+    }
+
+    std::vector<std::size_t> change_vector(iterations, 0);
+    test_invoke::SmartRange<test_invoke::SmartValue> range(0, iterations, change_vector);
+    test_invoke::SmartValue identity(0);
+
+    auto scan = &test_invoke::SmartRange<test_invoke::SmartValue>::scan;
+    auto combine = &test_invoke::SmartValue::operator+;
+
+    test_pscan_invoke(desired_vector, change_vector, range, identity, scan, combine);
+    test_pscan_invoke(desired_vector, change_vector, range, identity, scan, combine, oneapi::tbb::auto_partitioner());
+    test_pscan_invoke(desired_vector, change_vector, range, identity, scan, combine, oneapi::tbb::simple_partitioner());
+}
+
+#endif // __TBB_CPP17_INVOKE_PRESENT

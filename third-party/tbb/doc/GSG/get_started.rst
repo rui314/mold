@@ -1,17 +1,24 @@
 .. _Get_Started_Guide:
 
-Get Started with |short_name|
-==============================
+Get Started with |full_name|
+=============================
 
-.. include:: intro_gsg.rst
+|short_name| Get Started Guide provides the information you need to begin working with oneTBB. 
+It is helpful for new users of parallel programming and experienced developers that want to improve code performance. 
 
-.. include:: system_requirements.rst
+It is recommended for you to have a basic knowledge of C++ programming and some experience with parallel programming concepts. 
 
-.. include:: before_beginning_and_example.rst
 
-.. include:: hybrid_cpu_support.rst
+To start using oneTBB, follow the next steps:
+*********************************************
 
-Find more
-*********
+#. Learn what :ref:`oneTBB is<intro>` and see the :ref:`System Requirements<system_requirements>`. 
+#. :ref:`Install oneTBB<installation>`.
+#. Run your program using oneTBB following the :ref:`Next Steps <next_steps>`. 
+#. Learn how to :ref:`Integrate oneTBB into your project <integrate>` using CMake* and pkg-config tool. 
+#. See :ref:`oneTBB Samples <samples>`. 
 
-See our `documentation <https://oneapi-src.github.io/oneTBB/>`_ to learn more about |short_name|.
+
+   
+   
+

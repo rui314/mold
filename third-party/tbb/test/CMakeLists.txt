@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -50,10 +50,10 @@ function(tbb_add_test)
                          -DTEST_NAME=${_tbb_test_TARGET_NAME}
                          -P ${PROJECT_SOURCE_DIR}/cmake/android/test_launcher.cmake)
     else()
-        add_test(NAME ${_tbb_test_TARGET_NAME} COMMAND ${_tbb_test_TARGET_NAME} --force-colors=1 WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+        add_test(NAME ${_tbb_test_TARGET_NAME} COMMAND ${_tbb_test_TARGET_NAME} --force-colors=1 WORKING_DIRECTORY ${TBB_TEST_WORKING_DIRECTORY})
         # Additional testing scenarios if Intel(R) Software Development Emulator is found
         if (UNIX AND ";test_mutex;conformance_mutex;" MATCHES ";${_tbb_test_TARGET_NAME};" AND SDE_EXE)
-            add_test(NAME ${_tbb_test_TARGET_NAME}_SDE COMMAND ${SDE_EXE} -nhm -rtm_mode disabled -- ./${_tbb_test_TARGET_NAME} --force-colors=1 WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+            add_test(NAME ${_tbb_test_TARGET_NAME}_SDE COMMAND ${SDE_EXE} -nhm -rtm_mode disabled -- ./${_tbb_test_TARGET_NAME} --force-colors=1 WORKING_DIRECTORY ${TBB_TEST_WORKING_DIRECTORY})
             set_property(TEST ${_tbb_test_TARGET_NAME}_SDE PROPERTY ENVIRONMENT ${TBB_TESTS_ENVIRONMENT} APPEND)
         endif()
     endif()
@@ -77,7 +77,7 @@ function(tbb_add_test)
     target_link_libraries(${_tbb_test_TARGET_NAME} PRIVATE ${_tbb_test_DEPENDENCIES} Threads::Threads ${TBB_COMMON_LINK_LIBS})
 
     if (COMMAND _tbb_run_memcheck)
-        _tbb_run_memcheck(${_tbb_test_NAME})
+        _tbb_run_memcheck(${_tbb_test_NAME} ${_tbb_test_SUBDIR})
     endif()
 endfunction()
 
@@ -99,7 +99,7 @@ function(tbb_add_c_test)
                         -DTEST_NAME=${_tbb_test_NAME}
                         -P ${PROJECT_SOURCE_DIR}/cmake/android/test_launcher.cmake)
     else()
-        add_test(NAME ${_tbb_test_NAME} COMMAND ${_tbb_test_NAME} --force-colors=1 WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+        add_test(NAME ${_tbb_test_NAME} COMMAND ${_tbb_test_NAME} --force-colors=1 WORKING_DIRECTORY ${TBB_TEST_WORKING_DIRECTORY})
     endif()
 
     set_property(TEST ${_tbb_test_NAME} PROPERTY ENVIRONMENT ${TBB_TESTS_ENVIRONMENT} APPEND)
@@ -423,6 +423,7 @@ if (TARGET TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_indexer_node DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_join_node DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_join_node_key_matching DEPENDENCIES TBB::tbb)
+    tbb_add_test(SUBDIR tbb NAME test_join_node_key_matching_n_args DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_join_node_msg_key_matching DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_join_node_msg_key_matching_n_args DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_join_node_preview DEPENDENCIES TBB::tbb)

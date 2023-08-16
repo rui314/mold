@@ -16,7 +16,6 @@ It also describes features that are not included in the oneTBB specification.
 .. toctree::
     :titlesonly:
 
-    info_namespace
     parallel_for_each_semantics
     parallel_sort_ranges_extension
     scalable_memory_pools/malloc_replacement_log

@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,4 +18,7 @@ set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
 set(CPACK_PACKAGE_VERSION "${TBB_VERSION}")
 string(TOLOWER ${CPACK_PACKAGE_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}_${TBB_OUTPUT_DIR_BASE}_${CMAKE_BUILD_TYPE} CPACK_PACKAGE_FILE_NAME)
 set(CPACK_GENERATOR ZIP)
-include(CPack)
+# Note: this is an internal non-documented variable set by CPack 
+if (NOT CPack_CMake_INCLUDED)
+    include(CPack)
+endif()

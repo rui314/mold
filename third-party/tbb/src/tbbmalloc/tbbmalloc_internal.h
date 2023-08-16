@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -339,12 +339,12 @@ public:
 // Block header is used during block coalescing
 // and must be preserved in used blocks.
 class BlockI {
-#if __clang__
+#if __clang__ && !__INTEL_COMPILER
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
     intptr_t     blockState[2];
-#if __clang__
+#if __clang__ && !__INTEL_COMPILER
     #pragma clang diagnostic pop // "-Wunused-private-field"
 #endif
 };

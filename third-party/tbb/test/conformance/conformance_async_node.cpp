@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #endif
 
 #include "conformance_flowgraph.h"
+#include "common/test_invoke.h"
 
 //! \file conformance_async_node.cpp
 //! \brief Test for [flow_graph.async_node] specification
@@ -82,7 +83,7 @@ TEST_CASE("async_node broadcast"){
     conformance::test_forwarding<oneapi::tbb::flow::async_node<input_msg, int>, input_msg, int>(1, oneapi::tbb::flow::unlimited, fun);
 }
 
-//! Test async_node has a user-settable concurrency limit. It can be set to one of predefined values. 
+//! Test async_node has a user-settable concurrency limit. It can be set to one of predefined values.
 //! The user can also provide a value of type std::size_t to limit concurrency.
 //! Test that not more than limited threads works in parallel.
 //! \brief \ref requirement
@@ -136,3 +137,32 @@ TEST_CASE("async_node with rejecting policy"){
     CHECK_MESSAGE((flag.load()), "The body of assync_node must submits the messages to an external activity for processing outside of the graph");
     thr.join();
 }
+
+#if __TBB_CPP17_INVOKE_PRESENT
+//! Test that async_node uses std::invoke to run the body
+//! \brief \ref requirement
+TEST_CASE("async_node and std::invoke") {
+    using namespace oneapi::tbb::flow;
+
+    using start_node_type = function_node<std::size_t, test_invoke::SmartID<std::size_t>>;
+    using async_node_type = async_node<test_invoke::SmartID<std::size_t>, std::size_t>;
+
+    auto async_body = &test_invoke::SmartID<std::size_t>::template send_id_to_gateway<typename async_node_type::gateway_type>;
+
+    graph g;
+    start_node_type starter(g, serial, [](std::size_t i) -> test_invoke::SmartID<std::size_t> { return {i}; });
+    async_node_type activity_submitter(g, serial, async_body);
+    buffer_node<std::size_t> buf(g);
+
+    make_edge(starter, activity_submitter);
+    make_edge(activity_submitter, buf);
+
+    starter.try_put(1);
+
+    g.wait_for_all();
+    std::size_t result = 0;
+    CHECK(buf.try_get(result));
+    CHECK(result == 1);
+    CHECK(!buf.try_get(result));
+}
+#endif

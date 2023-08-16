@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -110,9 +110,9 @@ static inline void machine_pause(int32_t delay) {
 
 #if defined(__GNUC__) || defined(__clang__)
 namespace gnu_builtins {
-    inline uintptr_t clz(unsigned int x) { return __builtin_clz(x); }
-    inline uintptr_t clz(unsigned long int x) { return __builtin_clzl(x); }
-    inline uintptr_t clz(unsigned long long int x) { return __builtin_clzll(x); }
+    inline uintptr_t clz(unsigned int x) { return static_cast<uintptr_t>(__builtin_clz(x)); }
+    inline uintptr_t clz(unsigned long int x) { return static_cast<uintptr_t>(__builtin_clzl(x)); }
+    inline uintptr_t clz(unsigned long long int x) { return static_cast<uintptr_t>(__builtin_clzll(x)); }
 }
 #elif defined(_MSC_VER)
 #pragma intrinsic(__TBB_W(_BitScanReverse))
@@ -221,8 +221,8 @@ T machine_reverse_bits(T src) {
     return builtin_bitreverse(fixed_width_cast(src));
 #else /* Generic */
     T dst;
-    unsigned char *original = (unsigned char *) &src;
-    unsigned char *reversed = (unsigned char *) &dst;
+    unsigned char *original = reinterpret_cast<unsigned char *>(&src);
+    unsigned char *reversed = reinterpret_cast<unsigned char *>(&dst);
 
     for ( int i = sizeof(T) - 1; i >= 0; i-- ) {
         reversed[i] = reverse_byte( original[sizeof(T) - i - 1] );

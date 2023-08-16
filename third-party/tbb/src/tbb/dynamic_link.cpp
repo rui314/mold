@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 */
 
 #include "dynamic_link.h"
+#include "environment.h"
 
 #include "oneapi/tbb/detail/_template_helpers.h"
 #include "oneapi/tbb/detail/_utils.h"
@@ -414,7 +415,9 @@ namespace r1 {
         if (local_binding) {
             flags = flags | RTLD_LOCAL;
 #if (__linux__ && __GLIBC__) && !__TBB_USE_SANITIZERS
-            flags = flags | RTLD_DEEPBIND;
+            if( !GetBoolEnvironmentVariable("TBB_ENABLE_SANITIZERS") ) {
+                flags = flags | RTLD_DEEPBIND;
+            }
 #endif
         } else {
             flags = flags | RTLD_GLOBAL;

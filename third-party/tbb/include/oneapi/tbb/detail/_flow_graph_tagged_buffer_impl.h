@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -130,7 +130,7 @@ private:
             const value_type &v) {
         size_t l_mask = p_sz-1;
         __TBB_ASSERT(my_key, "Error: value-to-key functor not provided");
-        size_t h = this->hash((*my_key)(v)) & l_mask;
+        size_t h = this->hash(tbb::detail::invoke(*my_key, v)) & l_mask;
         __TBB_ASSERT(p_free_list, "Error: free list not set up.");
         element_type* my_elem = p_free_list; p_free_list = (element_type *)(p_free_list->second);
         (void) new(&(my_elem->first)) value_type(v);
@@ -200,7 +200,7 @@ public:
     bool insert_with_key(const value_type &v) {
         pointer_type p = nullptr;
         __TBB_ASSERT(my_key, "Error: value-to-key functor not provided");
-        if(find_ref_with_key((*my_key)(v), p)) {
+        if(find_ref_with_key(tbb::detail::invoke(*my_key, v), p)) {
             p->~value_type();
             (void) new(p) value_type(v);  // copy-construct into the space
             return false;
@@ -217,7 +217,7 @@ public:
         for(element_type* p = pointer_array[i]; p; p = (element_type *)(p->second)) {
             pointer_type pv = reinterpret_cast<pointer_type>(&(p->first));
             __TBB_ASSERT(my_key, "Error: value-to-key functor not provided");
-            if(this->equal((*my_key)(*pv), k)) {
+            if(this->equal(tbb::detail::invoke(*my_key, *pv), k)) {
                 v = pv;
                 return true;
             }
@@ -241,7 +241,7 @@ public:
         for(element_type* p = pointer_array[h]; p; prev = p, p = (element_type *)(p->second)) {
             value_type *vp = reinterpret_cast<value_type *>(&(p->first));
             __TBB_ASSERT(my_key, "Error: value-to-key functor not provided");
-            if(this->equal((*my_key)(*vp), k)) {
+            if(this->equal(tbb::detail::invoke(*my_key, *vp), k)) {
                 vp->~value_type();
                 if(prev) prev->second = p->second;
                 else pointer_array[h] = (element_type *)(p->second);

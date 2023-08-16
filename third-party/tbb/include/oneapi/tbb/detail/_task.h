@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2022 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -103,7 +103,7 @@ class wait_context {
 
     void add_reference(std::int64_t delta) {
         call_itt_task_notify(releasing, this);
-        std::uint64_t r = m_ref_count.fetch_add(delta) + delta;
+        std::uint64_t r = m_ref_count.fetch_add(static_cast<std::uint64_t>(delta)) + static_cast<std::uint64_t>(delta);
 
         __TBB_ASSERT_EX((r & overflow_mask) == 0, "Overflow is detected");
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include <type_traits>
 #include <cstdint>
 #include <atomic>
+#include <functional>
 
 #include "_config.h"
 #include "_assert.h"
@@ -177,7 +178,7 @@ inline ArgIntegerType modulo_power_of_two(ArgIntegerType arg, DivisorIntegerType
 //! A function to check if passed in pointer is aligned on a specific border
 template<typename T>
 constexpr bool is_aligned(T* pointer, std::uintptr_t alignment) {
-    return 0 == ((std::uintptr_t)pointer & (alignment - 1));
+    return 0 == (reinterpret_cast<std::uintptr_t>(pointer) & (alignment - 1));
 }
 
 #if TBB_USE_ASSERT
@@ -339,6 +340,22 @@ concept adaptive_same_as =
     std::convertible_to<T, U>;
 #endif
 #endif // __TBB_CPP20_CONCEPTS_PRESENT
+
+template <typename F, typename... Args>
+auto invoke(F&& f, Args&&... args)
+#if __TBB_CPP17_INVOKE_PRESENT
+    noexcept(std::is_nothrow_invocable_v<F, Args...>)
+    -> std::invoke_result_t<F, Args...>
+{
+    return std::invoke(std::forward<F>(f), std::forward<Args>(args)...);
+}
+#else // __TBB_CPP17_INVOKE_PRESENT
+    noexcept(noexcept(std::forward<F>(f)(std::forward<Args>(args)...)))
+    -> decltype(std::forward<F>(f)(std::forward<Args>(args)...))
+{
+    return std::forward<F>(f)(std::forward<Args>(args)...);
+}
+#endif // __TBB_CPP17_INVOKE_PRESENT
 
 } // namespace d0
 

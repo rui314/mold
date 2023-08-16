@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,10 +31,18 @@ endif()
 
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/memcheck)
 
-function(_tbb_run_memcheck test_target)
+function(_tbb_run_memcheck test_target subdir)
     set(target_name memcheck-${test_target})
+    if(${subdir} STREQUAL "tbbmalloc")
+	# Valgring intercepts all allocation symbols with its own by default,
+	# so it disables using tbbmalloc. In case of tbbmalloc tests
+	# intercept allocation symbols only in the default system libraries,
+	# but not in any other shared library or the executable
+	# defining public malloc or operator new related functions.
+	set(option "--soname-synonyms=somalloc=nouserintercepts")
+    endif()
     add_custom_target(${target_name} 
-        COMMAND ${VALGRIND_EXE} --leak-check=full --show-leak-kinds=all --log-file=${CMAKE_BINARY_DIR}/memcheck/${target_name}.log -v $<TARGET_FILE:${test_target}>)
+        COMMAND ${VALGRIND_EXE} ${option} --leak-check=full --show-leak-kinds=all --log-file=${CMAKE_BINARY_DIR}/memcheck/${target_name}.log -v $<TARGET_FILE:${test_target}>)
     add_dependencies(memcheck-all ${target_name})
 endfunction()
 

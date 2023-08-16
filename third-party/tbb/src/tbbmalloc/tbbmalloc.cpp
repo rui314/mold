@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -67,6 +67,7 @@ void init_tbbmalloc() {
                                  |GET_MODULE_HANDLE_EX_FLAG_PIN,
                                  (LPCTSTR)&scalable_malloc, &lib);
     MALLOC_ASSERT(lib && ret, "Allocator can't find itself.");
+    tbb::detail::suppress_unused_warning(ret);
     SetErrorMode (prev_mode);
 #endif /* USE_PTHREAD && !__TBB_SOURCE_DIRECTLY_INCLUDED */
 }

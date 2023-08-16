@@ -25,3 +25,10 @@ or edges, and therefore no tasks are spawned.
    graph g;
    g.wait_for_all();
 
+The graph object does not own the nodes associated with it. You need to make sure that the graph object's lifetime is longer than the lifetimes of all nodes added to the graph and any activity associated with the graph. 
+
+.. tip:: Call ``wait_for_all`` on a graph object before destroying it to make sure all activities are complete. 
+
+ Even when using smart pointers, be aware of the order of destruction for nodes and the graph to make sure that nodes are not deleted before the graph.
+
+

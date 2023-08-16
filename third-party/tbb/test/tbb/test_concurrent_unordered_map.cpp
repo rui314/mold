@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -258,3 +258,9 @@ TEST_CASE("container_range concept for concurrent_unordered_multimap ranges") {
     static_assert(test_concepts::container_range<typename tbb::concurrent_unordered_multimap<int, int>::const_range_type>);
 }
 #endif // __TBB_CPP20_CONCEPTS_PRESENT
+
+//! \brief \ref regression
+TEST_CASE("reserve(0) issue regression test") {
+    test_reserve_regression<oneapi::tbb::concurrent_unordered_map<int, int>>();
+    test_reserve_regression<oneapi::tbb::concurrent_unordered_multimap<int, int>>();
+}

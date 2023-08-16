@@ -33,6 +33,7 @@ Here are [Release Notes](RELEASE_NOTES.md) and [System Requirements](SYSTEM_REQU
 * [oneTBB Testing Approach](https://oneapi-src.github.io/oneTBB/main/intro/testing_approach.html)
 * [Basic support for the Bazel build system](Bazel.md)
 * [oneTBB Discussions](https://github.com/oneapi-src/oneTBB/discussions)
+* [WASM Support](WASM_Support.md)
 
 ## Installation 
 See [Installation from Sources](INSTALL.md) to learn how to install oneTBB. 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -109,7 +109,7 @@ template <typename Input, typename Output, typename B>
 class function_body_leaf : public function_body< Input, Output > {
 public:
     function_body_leaf( const B &_body ) : body(_body) { }
-    Output operator()(const Input &i) override { return body(i); }
+    Output operator()(const Input &i) override { return tbb::detail::invoke(body,i); }
     B get_body() { return body; }
     function_body_leaf* clone() override {
         return new function_body_leaf< Input, Output, B >(body);
@@ -184,7 +184,7 @@ class multifunction_body_leaf : public multifunction_body<Input, OutputSet> {
 public:
     multifunction_body_leaf(const B &_body) : body(_body) { }
     void operator()(const Input &input, OutputSet &oset) override {
-        body(input, oset); // body may explicitly put() to one or more of oset.
+        tbb::detail::invoke(body, input, oset); // body may explicitly put() to one or more of oset.
     }
     void* get_body_ptr() override { return &body; }
     multifunction_body_leaf* clone() override {
@@ -218,7 +218,7 @@ template <typename Input, typename Output, typename B>
 class type_to_key_function_body_leaf : public type_to_key_function_body<Input, Output> {
 public:
     type_to_key_function_body_leaf( const B &_body ) : body(_body) { }
-    Output operator()(const Input &i) override { return body(i); }
+    Output operator()(const Input &i) override { return tbb::detail::invoke(body, i); }
     type_to_key_function_body_leaf* clone() override {
         return new type_to_key_function_body_leaf< Input, Output, B>(body);
     }
@@ -231,7 +231,7 @@ class type_to_key_function_body_leaf<Input,Output&,B> : public type_to_key_funct
 public:
     type_to_key_function_body_leaf( const B &_body ) : body(_body) { }
     const Output& operator()(const Input &i) override {
-        return body(i);
+        return tbb::detail::invoke(body, i);
     }
     type_to_key_function_body_leaf* clone() override {
         return new type_to_key_function_body_leaf< Input, Output&, B>(body);

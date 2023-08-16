@@ -16,8 +16,12 @@
    :maxdepth: 2
 
    /GSG/get_started
+   /GSG/intro
+   /GSG/system_requirements
    /GSG/installation
-   /GSG/examples
+   /GSG/next_steps 
+   /GSG/integrate
+   /GSG/samples
 
 
 .. toctree::

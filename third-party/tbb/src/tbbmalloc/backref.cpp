@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -42,13 +42,13 @@ struct BackRefBlock : public BlockI {
         nextForUse(nullptr), bumpPtr((FreeObject*)((uintptr_t)blockToUse + slabSize - sizeof(void*))),
         freeList(nullptr), nextRawMemBlock(nullptr), allocatedCount(0), myNum(num),
         addedToForUse(false) {
-        memset(&blockMutex, 0, sizeof(MallocMutex));
+        memset(static_cast<void*>(&blockMutex), 0, sizeof(MallocMutex));
 
         MALLOC_ASSERT(!(num >> CHAR_BIT*sizeof(BackRefIdx::main_t)),
                       "index in BackRefMain must fit to BackRefIdx::main");
     }
     // clean all but header
-    void zeroSet() { memset(this+1, 0, BackRefBlock::bytes-sizeof(BackRefBlock)); }
+    void zeroSet() { memset(static_cast<void*>(this+1), 0, BackRefBlock::bytes-sizeof(BackRefBlock)); }
     static const int bytes = slabSize;
 };
 
@@ -106,7 +106,7 @@ bool initBackRefMain(Backend *backend)
     main->allRawMemBlocks = nullptr;
     main->rawMemUsed = rawMemUsed;
     main->lastUsed = -1;
-    memset(&main->requestNewSpaceMutex, 0, sizeof(MallocMutex));
+    memset(static_cast<void*>(&main->requestNewSpaceMutex), 0, sizeof(MallocMutex));
     for (int i=0; i<BackRefMain::leaves; i++) {
         BackRefBlock *bl = (BackRefBlock*)((uintptr_t)main + BackRefMain::bytes + i*BackRefBlock::bytes);
         bl->zeroSet();

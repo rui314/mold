@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 #include "common/parallel_reduce_common.h"
 #include "common/concurrency_tracker.h"
+#include "common/test_invoke.h"
 
 #include "../tbb/test_partitioner.h"
 
@@ -69,7 +70,7 @@ void TestDeterministicReductionFor() {
         deterministic_reduce_invoker(range, measurement_body, Partitioner());
         REQUIRE_MESSAGE( benchmark_body.my_value == measurement_body.my_value,
         "parallel_deterministic_reduce behaves differently from run to run" );
-        
+
         Type lambda_measurement_result = deterministic_reduce_invoker<Type>( range,
             [](const oneapi::tbb::blocked_range<int>& br, Type value) -> Type {
                 utils::ConcurrencyTracker ct;
@@ -130,3 +131,46 @@ TEST_CASE("Test partitioners interaction with various ranges") {
         parallel_deterministic_reduce(Range6(false, true), body, oneapi::tbb::simple_partitioner());
     }
 }
+
+#if __TBB_CPP17_INVOKE_PRESENT
+
+template <typename Body, typename Reduction>
+void test_preduce_invoke_basic(const Body& body, const Reduction& reduction) {
+    const std::size_t iterations = 100000;
+    const std::size_t result = iterations * (iterations - 1) / 2;
+
+    test_invoke::SmartRange<test_invoke::SmartValue> range(0, iterations);
+    test_invoke::SmartValue identity(0);
+
+    CHECK(result == oneapi::tbb::parallel_reduce(range, identity, body, reduction).get());
+    CHECK(result == oneapi::tbb::parallel_reduce(range, identity, body, reduction, oneapi::tbb::simple_partitioner()).get());
+    CHECK(result == oneapi::tbb::parallel_reduce(range, identity, body, reduction, oneapi::tbb::auto_partitioner()).get());
+    CHECK(result == oneapi::tbb::parallel_reduce(range, identity, body, reduction, oneapi::tbb::static_partitioner()).get());
+    oneapi::tbb::affinity_partitioner aff;
+    CHECK(result == oneapi::tbb::parallel_reduce(range, identity, body, reduction, aff).get());
+
+    CHECK(result == oneapi::tbb::parallel_deterministic_reduce(range, identity, body, reduction).get());
+    CHECK(result == oneapi::tbb::parallel_deterministic_reduce(range, identity, body, reduction, oneapi::tbb::simple_partitioner()).get());
+    CHECK(result == oneapi::tbb::parallel_deterministic_reduce(range, identity, body, reduction, oneapi::tbb::static_partitioner()).get());
+}
+
+//! Test that parallel_reduce uses std::invoke to run the body
+//! \brief \ref interface \ref requirement
+TEST_CASE("parallel_[deterministic_]reduce and std::invoke") {
+    auto regular_reduce = [](const test_invoke::SmartRange<test_invoke::SmartValue>& range, const test_invoke::SmartValue& idx) {
+        test_invoke::SmartValue result = idx;
+        for (auto i = range.begin(); i.get() != range.end().get(); ++i) {
+            result = result + i;
+        }
+        return result;
+    };
+    auto regular_join = [](const test_invoke::SmartValue& lhs, const test_invoke::SmartValue& rhs) {
+        return lhs + rhs;
+    };
+
+    test_preduce_invoke_basic(&test_invoke::SmartRange<test_invoke::SmartValue>::reduction, &test_invoke::SmartValue::operator+);
+    test_preduce_invoke_basic(&test_invoke::SmartRange<test_invoke::SmartValue>::reduction, regular_join);
+    test_preduce_invoke_basic(regular_reduce, &test_invoke::SmartValue::operator+);
+}
+
+#endif

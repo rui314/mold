@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -363,6 +363,7 @@ inline void CoalRequestQ::blockWasProcessed()
 {
     bkndSync->binsModified();
     int prev = inFlyBlocks.fetch_sub(1);
+    tbb::detail::suppress_unused_warning(prev);
     MALLOC_ASSERT(prev > 0, ASSERT_TEXT);
 }
 
@@ -748,7 +749,7 @@ int Backend::IndexedBins::getMinNonemptyBin(unsigned startBin) const
 FreeBlock *Backend::IndexedBins::findBlock(int nativeBin, BackendSync *sync, size_t size,
         bool needAlignedBlock, bool alignedBin, int *numOfLockedBins)
 {
-    for (int i=getMinNonemptyBin(nativeBin); i<freeBinsNum; i=getMinNonemptyBin(i+1))
+    for (int i=getMinNonemptyBin(nativeBin); i<(int)freeBinsNum; i=getMinNonemptyBin(i+1))
         if (FreeBlock *block = getFromBin(i, sync, size, needAlignedBlock, alignedBin, /*wait=*/false, numOfLockedBins))
             return block;
 
@@ -814,7 +815,9 @@ FreeBlock *Backend::genericGetBlock(int num, size_t size, bool needAlignedBlock)
         if (block)
             break;
 
-        if (!(scanCoalescQ(/*forceCoalescQDrop=*/true) | extMemPool->softCachesCleanup())) {
+        bool retScanCoalescQ = scanCoalescQ(/*forceCoalescQDrop=*/true);
+        bool retSoftCachesCleanup = extMemPool->softCachesCleanup();
+        if (!(retScanCoalescQ || retSoftCachesCleanup)) {
             // bins are not updated,
             // only remaining possibility is to ask for more memory
             block = askMemFromOS(totalReqSize, startModifiedCnt, &lockedBinsThreshold,
@@ -1410,7 +1413,7 @@ bool Backend::clean()
 void Backend::IndexedBins::verify()
 {
 #if MALLOC_DEBUG
-    for (int i=0; i<freeBinsNum; i++) {
+    for (int i=0; i<(int)freeBinsNum; i++) {
         for (FreeBlock *fb = freeBins[i].head.load(std::memory_order_relaxed); fb; fb=fb->next) {
             uintptr_t mySz = fb->myL.value;
             MALLOC_ASSERT(mySz>GuardedSize::MAX_SPEC_VAL, ASSERT_TEXT);

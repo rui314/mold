@@ -1,4 +1,4 @@
-# Copyright (c) 2017-2021 Intel Corporation
+# Copyright (c) 2017-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -43,14 +43,36 @@ if (NOT _tbbmalloc_proxy_ix EQUAL -1)
     set(TBB_FIND_REQUIRED_tbbmalloc ${TBB_FIND_REQUIRED_tbbmalloc_proxy})
 endif()
 unset(_tbbmalloc_proxy_ix)
+
+if (CMAKE_SIZEOF_VOID_P STREQUAL "8")
+    set(_tbb_intel_arch intel64)
+else ()
+    set(_tbb_intel_arch ia32)
+    set(_tbb_arch_suffix 32)
+endif()
+
 @TBB_HANDLE_SUBDIRS@
 foreach (_tbb_component ${TBB_FIND_COMPONENTS})
+    unset(_tbb_release_dll CACHE)
+    unset(_tbb_debug_dll   CACHE)
+    unset(_tbb_release_lib CACHE)
+    unset(_tbb_debug_lib   CACHE)
+
     set(TBB_${_tbb_component}_FOUND 0)
     @TBB_HANDLE_BIN_VERSION@
-    get_filename_component(_tbb_release_lib "${_tbb_root}/@TBB_LIB_REL_PATH@/${_tbb_subdir}/@TBB_LIB_PREFIX@${_tbb_component}${_bin_version}.@TBB_LIB_EXT@" ABSOLUTE)
+
+    find_library(_tbb_release_lib
+        NAMES @TBB_LIB_PREFIX@${_tbb_component}${_bin_version}.@TBB_LIB_EXT@
+        PATHS ${_tbb_root}
+        PATH_SUFFIXES "@TBB_LIB_REL_PATH@/${_tbb_intel_arch}/${_tbb_subdir}" "@TBB_LIB_REL_PATH@${_tbb_arch_suffix}/${_tbb_subdir}" "@TBB_LIB_REL_PATH@${_tbb_arch_suffix}" "@TBB_LIB_REL_PATH@"
+    )
 
     if (NOT TBB_FIND_RELEASE_ONLY)
-        get_filename_component(_tbb_debug_lib "${_tbb_root}/@TBB_LIB_REL_PATH@/${_tbb_subdir}/@TBB_LIB_PREFIX@${_tbb_component}${_bin_version}_debug.@TBB_LIB_EXT@" ABSOLUTE)
+        find_library(_tbb_debug_lib
+            NAMES @TBB_LIB_PREFIX@${_tbb_component}${_bin_version}_debug.@TBB_LIB_EXT@
+            PATHS ${_tbb_root}
+            PATH_SUFFIXES "@TBB_LIB_REL_PATH@/${_tbb_intel_arch}/${_tbb_subdir}" "@TBB_LIB_REL_PATH@${_tbb_arch_suffix}/${_tbb_subdir}" "@TBB_LIB_REL_PATH@${_tbb_arch_suffix}" "@TBB_LIB_REL_PATH@"
+        )
     endif()
 
     if (EXISTS "${_tbb_release_lib}" OR EXISTS "${_tbb_debug_lib}")
@@ -63,15 +85,17 @@ foreach (_tbb_component ${TBB_FIND_COMPONENTS})
             unset(_tbb_current_realpath)
             unset(_tbb_include_dir)
 
-            if (EXISTS "${_tbb_release_lib}")
+            @TBB_HANDLE_IMPLIB@
+
+            if (EXISTS "${_tbb_release_dll}")
                 set_target_properties(TBB::${_tbb_component} PROPERTIES
-                                      IMPORTED_LOCATION_RELEASE "${_tbb_release_lib}"@TBB_IMPLIB_RELEASE@)
+                                      IMPORTED_LOCATION_RELEASE "${_tbb_release_dll}"@TBB_IMPLIB_RELEASE@)
                 set_property(TARGET TBB::${_tbb_component} APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
             endif()
 
-            if (EXISTS "${_tbb_debug_lib}")
+            if (EXISTS "${_tbb_debug_dll}")
                 set_target_properties(TBB::${_tbb_component} PROPERTIES
-                                      IMPORTED_LOCATION_DEBUG "${_tbb_debug_lib}"@TBB_IMPLIB_DEBUG@)
+                                      IMPORTED_LOCATION_DEBUG "${_tbb_debug_dll}"@TBB_IMPLIB_DEBUG@)
                 set_property(TARGET TBB::${_tbb_component} APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
             endif()
 
@@ -93,6 +117,10 @@ foreach (_tbb_component ${TBB_FIND_COMPONENTS})
     endif()
 endforeach()
 list(REMOVE_DUPLICATES TBB_IMPORTED_TARGETS)
+unset(_tbb_release_dll)
+unset(_tbb_debug_dll)
 unset(_tbb_release_lib)
 unset(_tbb_debug_lib)
 unset(_tbb_root)
+unset(_tbb_intel_arch)
+unset(_tbb_arch_suffix)

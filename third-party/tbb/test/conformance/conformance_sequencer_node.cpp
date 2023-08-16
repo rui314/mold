@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@
 #define SEQUENCER_NODE
 
 #include "conformance_flowgraph.h"
+#include "common/test_invoke.h"
 
 //! \file conformance_sequencer_node.cpp
 //! \brief Test for [flow_graph.sequencer_node] specification
@@ -130,7 +131,7 @@ TEST_CASE("queue_node methods"){
     CHECK_MESSAGE((node.try_get(tmp) == false), "Getting from sequencer should not succeed");
 }
 
-//! The example demonstrates ordering capabilities of the sequencer_node. 
+//! The example demonstrates ordering capabilities of the sequencer_node.
 //! While being processed in parallel, the data is passed to the successor node in the exact same order it was read.
 //! \brief \ref requirement
 TEST_CASE("sequencer_node ordering"){
@@ -161,3 +162,53 @@ TEST_CASE("sequencer_node ordering"){
 
     g.wait_for_all();
 }
+
+#if __TBB_CPP17_INVOKE_PRESENT
+//! Test that sequencer node uses std::invoke to execute the body
+//! \brief \ref requirement
+TEST_CASE("sequencer_node and std::invoke") {
+    using namespace oneapi::tbb::flow;
+
+    graph g;
+
+    function_node<std::size_t, test_invoke::SmartID<std::size_t>> starter(g, unlimited, [](std::size_t x) { return test_invoke::SmartID(x); });
+    sequencer_node<test_invoke::SmartID<std::size_t>> seq1(g, &test_invoke::SmartID<std::size_t>::get_id); // Member function
+    sequencer_node<test_invoke::SmartID<std::size_t>> seq2(g, &test_invoke::SmartID<std::size_t>::id); // Member object
+
+    std::size_t expected_item = 0;
+
+    function_node<test_invoke::SmartID<std::size_t>, std::size_t> check(g, serial, [&](const test_invoke::SmartID<std::size_t>& x) {
+        CHECK(x.id == expected_item);
+        ++expected_item;
+        return x.id;
+    });
+
+    // Build the first graph
+    make_edge(starter, seq1);
+    make_edge(seq1, check);
+
+    std::size_t objects_count = 10;
+    for (std::size_t i = 0; i < objects_count; ++i) {
+        starter.try_put(objects_count - i - 1);
+    }
+
+    g.wait_for_all();
+
+    CHECK(expected_item == objects_count);
+
+    // Rebuild the graph
+    g.reset(reset_flags::rf_clear_edges);
+    make_edge(starter, seq2);
+    make_edge(seq2, check);
+    expected_item = 0;
+
+    for (std::size_t i = 0; i < objects_count; ++i) {
+        starter.try_put(objects_count - i - 1);
+    }
+
+    g.wait_for_all();
+
+    CHECK(expected_item == objects_count);
+}
+
+#endif // __TBB_CPP17_INVOKE_PRESENT

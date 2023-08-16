@@ -31,7 +31,7 @@ LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 //
 // Version
 //
-#define TBB_VERNUMBERS TBB_VERSION_MAJOR,TBB_VERSION_MINOR
+#define TBB_VERNUMBERS TBB_VERSION_MAJOR,TBB_VERSION_MINOR,TBB_VERSION_PATCH
 #define TBB_VERSION TBB_VERSION_STRING
 
 VS_VERSION_INFO VERSIONINFO
@@ -54,7 +54,7 @@ BEGIN
             VALUE "CompanyName", "Intel Corporation\0"
             VALUE "FileDescription", "oneAPI Threading Building Blocks (oneTBB) library\0"
             VALUE "FileVersion", TBB_VERSION "\0"
-            VALUE "LegalCopyright", "Copyright 2005-2022 Intel Corporation.  All Rights Reserved.\0"
+            VALUE "LegalCopyright", "Copyright 2005-2023 Intel Corporation.  All Rights Reserved.\0"
             VALUE "LegalTrademarks", "\0"
 #ifndef TBB_USE_DEBUG
             VALUE "OriginalFilename", "tbb12.dll\0"

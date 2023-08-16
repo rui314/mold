@@ -1,4 +1,4 @@
-# Copyright (c) 2021 Intel Corporation
+# Copyright (c) 2021-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,5 +20,5 @@ Name: oneAPI Threading Building Blocks (oneTBB)
 Description: C++ library for parallel programming on multi-core processors.
 URL: https://github.com/oneapi-src/oneTBB
 Version: @TBB_VERSION@
-Libs: -L${libdir} -l@_tbb_pc_lib_name@
+Libs: -L${libdir} @_tbb_pc_extra_libdir@ -l@_tbb_pc_lib_name@
 Cflags: -I${includedir}

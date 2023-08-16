@@ -112,8 +112,15 @@ if (NOT DEFINED BUILD_SHARED_LIBS)
 endif()
 
 if (NOT BUILD_SHARED_LIBS)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    if(NOT DEFINED CMAKE_POSITION_INDEPENDENT_CODE)
+        set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+    endif()
     message(WARNING "You are building oneTBB as a static library. This is highly discouraged and such configuration is not supported. Consider building a dynamic library to avoid unforeseen issues.")
+endif()
+
+# Prevent searching HWLOC by pkg-config on macOS
+if (APPLE)
+    set(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH ON)
 endif()
 
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -121,6 +128,14 @@ if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     message(STATUS "CMAKE_BUILD_TYPE is not specified. Using default: ${CMAKE_BUILD_TYPE}")
     # Possible values of build type for cmake-gui
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
+endif()
+
+if (CMAKE_BUILD_TYPE)
+    string(TOLOWER ${CMAKE_BUILD_TYPE} _tbb_build_type)
+    if (_tbb_build_type STREQUAL "debug")
+        set(TBB_ENABLE_IPO OFF)
+    endif()
+    unset(_tbb_build_type)
 endif()
 
 # -------------------------------------------------------------------
@@ -170,6 +185,13 @@ foreach(output_type LIBRARY ARCHIVE PDB RUNTIME)
         unset(_tbb_suffix_upper)
     endif()
 endforeach()
+
+if (CMAKE_CONFIGURATION_TYPES)
+    # We can't use generator expressions in a cmake variable name.
+    set(TBB_TEST_WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${TBB_OUTPUT_DIR_BASE}_$<LOWER_CASE:$<CONFIG>>)
+else()
+    set(TBB_TEST_WORKING_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+endif()
 
 # -------------------------------------------------------------------
 

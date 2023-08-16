@@ -56,7 +56,8 @@ extensions = [
     'sphinx.ext.imgmath',
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
-    'sphinx.ext.githubpages'
+    'sphinx.ext.githubpages', 
+    'sphinx_tabs.tabs'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -77,7 +78,7 @@ master_doc = 'index'
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+language = 'en'
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -132,7 +133,7 @@ if BUILD_TYPE == 'dita':
 else:
     html_theme_options = {
         'repository_url': 'https://github.com/oneapi-src/oneTBB',
-        'path_to_docs': 'doc/main',
+        'path_to_docs': 'doc',
         'use_issues_button': True,
         'use_edit_page_button': True,
         'repository_branch': 'master',
@@ -154,9 +155,15 @@ if BUILD_TYPE == 'oneapi'  or BUILD_TYPE == 'dita':
 else:
     html_js_files = ['custom.js']
 
+html_theme_options = { 
+    "logo": {
+        "text": "oneTBB Documentation",
+    }
+}
     
 html_logo = '_static/oneAPI-rgb-rev-100.png'
 html_favicon = '_static/favicons.png'
+
 
 # Custom sidebar templates, must be a dictionary that maps document names
 # to template names.

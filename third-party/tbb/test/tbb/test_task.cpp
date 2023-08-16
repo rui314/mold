@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -785,7 +785,7 @@ TEST_CASE("Test with priority inversion") {
     // take first core on execute
     utils::SpinBarrier barrier(thread_number + 1);
     test_arena.execute([&] {
-        tbb::parallel_for(std::uint32_t(0), thread_number + 1, [&] (std::uint32_t&) {
+        tbb::parallel_for(std::uint32_t(0), thread_number + 1, [&] (std::uint32_t) {
             barrier.wait();
             submit(worker_task, test_arena, test_context, true);
         });

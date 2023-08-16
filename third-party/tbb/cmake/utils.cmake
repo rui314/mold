@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -47,7 +47,10 @@ endmacro()
 
 macro(tbb_handle_ipo target)
     if (TBB_IPO_PROPERTY)
-        set_target_properties(${target} PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+        set_target_properties(${target} PROPERTIES 
+            INTERPROCEDURAL_OPTIMIZATION TRUE
+            INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
+        )
     elseif (TBB_IPO_FLAGS)
         target_compile_options(${target} PRIVATE ${TBB_IPO_COMPILE_FLAGS})
         if (COMMAND target_link_options)
