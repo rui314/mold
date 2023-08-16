@@ -1327,7 +1327,6 @@ SharedFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 template <typename E>
 SharedFile<E>::SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
   : InputFile<E>(ctx, mf) {
-  this->is_needed = ctx.as_needed;
   this->is_alive = !ctx.as_needed;
 }
 

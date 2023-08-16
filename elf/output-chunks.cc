@@ -150,8 +150,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   std::vector<ElfPhdr<E>> vec;
 
   auto define = [&](u64 type, u64 flags, i64 min_align, Chunk<E> *chunk) {
-    vec.push_back({});
-    ElfPhdr<E> &phdr = vec.back();
+    ElfPhdr<E> phdr = {};
     phdr.p_type = type;
     phdr.p_flags = flags;
     phdr.p_align = std::max<u64>(min_align, chunk->shdr.sh_addralign);
@@ -165,14 +164,15 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
     if (chunk->shdr.sh_flags & SHF_ALLOC)
       phdr.p_memsz = chunk->shdr.sh_size;
+    vec.push_back(phdr);
   };
 
   auto append = [&](Chunk<E> *chunk) {
     ElfPhdr<E> &phdr = vec.back();
     phdr.p_align = std::max<u64>(phdr.p_align, chunk->shdr.sh_addralign);
-    if (chunk->shdr.sh_type != SHT_NOBITS)
-      phdr.p_filesz = chunk->shdr.sh_addr + chunk->shdr.sh_size - phdr.p_vaddr;
     phdr.p_memsz = chunk->shdr.sh_addr + chunk->shdr.sh_size - phdr.p_vaddr;
+    if (chunk->shdr.sh_type != SHT_NOBITS)
+      phdr.p_filesz = phdr.p_memsz;
   };
 
   auto is_bss = [](Chunk<E> *chunk) {
@@ -551,8 +551,11 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
 
   if (!ctx.dynsym->symbols.empty()) {
     i64 offset = dynsym_offset;
-    for (Symbol<E> *sym : std::span<Symbol<E> *>(ctx.dynsym->symbols).subspan(1))
-      offset += write_string(base + offset, sym->name());
+
+    for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
+      Symbol<E> &sym = *ctx.dynsym->symbols[i];
+      offset += write_string(base + offset, sym.name());
+    }
   }
 }
 
@@ -1100,7 +1103,15 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
+  // TLSDESC's GOT slot values may vary depending on libc, so we
+  // always emit a dynamic relocation for each TLSDESC entry.
+  //
+  // If dynamic relocation is not available (i.e. if we are creating a
+  // non-PIC executable), we always relax TLSDESC relocations so that
+  // no TLSDESC relocation exist at runtime.
   assert(supports_tlsdesc<E>);
+  assert(ctx.arg.pic);
+
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
   this->shdr.sh_size += sizeof(Word<E>) * 2;
   tlsdesc_syms.push_back(sym);
@@ -1108,8 +1119,7 @@ void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_tlsld(Context<E> &ctx) {
-  if (tlsld_idx != -1)
-    return;
+  assert(tlsld_idx == -1);
   tlsld_idx = this->shdr.sh_size / sizeof(Word<E>);
   this->shdr.sh_size += sizeof(Word<E>) * 2;
 }
@@ -2313,16 +2323,14 @@ template <typename E>
 void VerneedSection<E>::construct(Context<E> &ctx) {
   Timer t(ctx, "fill_verneed");
 
-  if (ctx.dynsym->symbols.empty())
-    return;
-
   // Create a list of versioned symbols and sort by file and version.
-  std::vector<Symbol<E> *> syms(ctx.dynsym->symbols.begin() + 1,
-                                ctx.dynsym->symbols.end());
+  std::vector<Symbol<E> *> syms;
 
-  std::erase_if(syms, [](Symbol<E> *sym) {
-    return !sym->file->is_dso || sym->ver_idx <= VER_NDX_LAST_RESERVED;
-  });
+  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
+    Symbol<E> &sym = *ctx.dynsym->symbols[i];
+    if (sym.file->is_dso && VER_NDX_LAST_RESERVED < sym.ver_idx)
+      syms.push_back(&sym);
+  }
 
   if (syms.empty())
     return;
