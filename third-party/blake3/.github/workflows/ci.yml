@@ -1,0 +1,330 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - "*"
+    # not on tags
+  pull_request:
+
+env:
+  BLAKE3_CI: "1"
+  RUSTFLAGS: "-D warnings"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  library_tests:
+    name: ${{ matrix.target.name }} ${{ matrix.channel }}
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [
+          { "os": "ubuntu-latest",  "toolchain": "x86_64-unknown-linux-gnu", "name": "Linux GNU" },
+          { "os": "macOS-latest",   "toolchain": "x86_64-apple-darwin",      "name": "macOS" },
+          { "os": "windows-latest", "toolchain": "x86_64-pc-windows-msvc",   "name": "Windows MSVC" },
+          { "os": "windows-latest", "toolchain": "x86_64-pc-windows-gnu",    "name": "Windows GNU" }
+        ]
+        channel: [
+          "stable",
+          "beta",
+          "nightly",
+          # The current MSRV. This crate doesn't have an official MSRV policy,
+          # but in practice we'll probably do what libc does:
+          # https://github.com/rust-lang/libs-team/issues/72.
+          # This test target is here so that we notice if we accidentally bump
+          # the MSRV, but it's not a promise that we won't bump it.
+          "1.66.1",
+        ]
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ format('{0}-{1}', matrix.channel, matrix.target.toolchain) }}
+        profile: minimal
+        override: true
+    # Print the compiler version, for debugging.
+    - name: print compiler version
+      run: cargo run --quiet
+      working-directory: ./tools/compiler_version
+    # Print out instruction set support, for debugging.
+    - name: print instruction set support
+      run: cargo run --quiet
+      working-directory: ./tools/instruction_set_support
+    # Default tests plus Rayon and RustCrypto trait implementations.
+    - run: cargo test --features=rayon,traits-preview
+    # Same but with only one thread in the Rayon pool. This can find deadlocks.
+    - name: "again with RAYON_NUM_THREADS=1"
+      run: cargo test --features=rayon,traits-preview
+      env:
+        RAYON_NUM_THREADS: 1
+    # no_std tests.
+    - run: cargo test --no-default-features
+
+    # A matrix of different test settings:
+    # - debug vs release
+    # - assembly vs Rust+C intrinsics vs pure Rust intrinsics
+    # - different levels of SIMD support
+    #
+    # Full SIMD support.
+    - run: cargo test --features=
+    - run: cargo test --features=prefer_intrinsics
+    - run: cargo test --features=pure
+    - run: cargo test --features= --release
+    - run: cargo test --features=prefer_intrinsics --release
+    - run: cargo test --features=pure --release
+    # No AVX-512.
+    - run: cargo test --features=no_avx512
+    - run: cargo test --features=no_avx512,prefer_intrinsics
+    - run: cargo test --features=no_avx512,pure
+    - run: cargo test --features=no_avx512 --release
+    - run: cargo test --features=no_avx512,prefer_intrinsics --release
+    - run: cargo test --features=no_avx512,pure --release
+    # No AVX2.
+    - run: cargo test --features=no_avx512,no_avx2
+    - run: cargo test --features=no_avx512,no_avx2,prefer_intrinsics
+    - run: cargo test --features=no_avx512,no_avx2,pure
+    - run: cargo test --features=no_avx512,no_avx2 --release
+    - run: cargo test --features=no_avx512,no_avx2,prefer_intrinsics --release
+    - run: cargo test --features=no_avx512,no_avx2,pure --release
+    # No SSE4.1
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,prefer_intrinsics
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,pure
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41 --release
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,prefer_intrinsics --release
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,pure --release
+    # No SSE2
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2,prefer_intrinsics
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2,pure
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2 --release
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2,prefer_intrinsics --release
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2,pure --release
+
+    # Test benchmarks. RUSTC_BOOTSTRAP=1 lets this run on non-nightly toolchains.
+    - run: cargo test --benches --features=rayon
+      env:
+        RUSTC_BOOTSTRAP: 1
+    # Test vectors.
+    - name: test vectors
+      run: cargo test
+      working-directory: ./test_vectors
+    - name: test vectors intrinsics
+      run: cargo test --features=prefer_intrinsics
+      working-directory: ./test_vectors
+    - name: test vectors pure
+      run: cargo test --features=pure
+      working-directory: ./test_vectors
+    # Test C code.
+    - name: cargo test C bindings assembly
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+    - name: cargo test C bindings intrinsics
+      run: cargo test --features=prefer_intrinsics
+      working-directory: ./c/blake3_c_rust_bindings
+    # Reference impl doc test.
+    - name: reference impl doc test
+      run: cargo test
+      working-directory: ./reference_impl
+
+  b3sum_tests:
+    name: b3sum ${{ matrix.target.name }} ${{ matrix.channel }}
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [
+          { "os": "ubuntu-latest",  "toolchain": "x86_64-unknown-linux-gnu", "name": "Linux GNU" },
+          { "os": "macOS-latest",   "toolchain": "x86_64-apple-darwin",      "name": "macOS" },
+          { "os": "windows-latest", "toolchain": "x86_64-pc-windows-msvc",   "name": "Windows MSVC" },
+          { "os": "windows-latest", "toolchain": "x86_64-pc-windows-gnu",    "name": "Windows GNU" }
+        ]
+        channel: [
+          "stable",
+          "beta",
+          "nightly",
+          # The b3sum MSRV is sometimes higher than the blake3 crate's, because
+          # b3sum depends on Clap. We check in the b3sum Cargo.lock, so Clap
+          # update shouldn't randomly break us here.
+          "1.66.1",
+        ]
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ format('{0}-{1}', matrix.channel, matrix.target.toolchain) }}
+        profile: minimal
+        override: true
+    # Test b3sum.
+    - name: test b3sum
+      run: cargo test
+      working-directory: ./b3sum
+    - name: test b3sum --no-default-features
+      run: cargo test --no-default-features
+      working-directory: ./b3sum
+
+  cross_tests:
+    name: cross ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - i586-unknown-linux-musl
+          - i686-unknown-linux-musl
+          - armv7-unknown-linux-gnueabihf
+          - aarch64-unknown-linux-gnu
+          - mips-unknown-linux-gnu
+
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    - run: cargo install cross
+    # Test the portable implementation on everything.
+    - run: cross test --target ${{ matrix.arch }}
+    # Test building for ancient i386 processors without guaranteed SSE2 support.
+    - run: cross rustc --target ${{ matrix.arch }} -- -C target-cpu=i386
+      if: startsWith(matrix.arch, 'i586-') || startsWith(matrix.arch, 'i686-')
+    # Test the NEON implementation on ARM targets.
+    - run: cross test --target ${{ matrix.arch }} --features=neon
+      if: startsWith(matrix.arch, 'armv7-') || startsWith(matrix.arch, 'aarch64-')
+    # NEON is enabled by default on aarch64, disabling it through the no_neon feature.
+    - run: cross test --target ${{ matrix.arch }} --features=no_neon
+      if: startsWith(matrix.arch, 'aarch64-')
+    # Test vectors. Note that this uses a hacky script due to path dependency limitations.
+    - run: ./test_vectors/cross_test.sh --target ${{ matrix.arch }}
+    # C code. Same issue with the hacky script.
+    - run: ./c/blake3_c_rust_bindings/cross_test.sh --target ${{ matrix.arch }}
+    - run: ./c/blake3_c_rust_bindings/cross_test.sh --target ${{ matrix.arch }} --features=neon
+      if: startsWith(matrix.arch, 'armv7-') || startsWith(matrix.arch, 'aarch64-')
+
+  # Currently only on x86.
+  c_tests:
+    name: C Makefile tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    # Test the intrinsics-based implementations.
+    - run: make -f Makefile.testing test
+      working-directory: ./c
+    - run: make -f Makefile.testing clean && rm blake3_sse2.c
+      working-directory: ./c
+    - run: BLAKE3_NO_SSE2=1 make -f Makefile.testing test
+      working-directory: ./c
+    - run: make -f Makefile.testing clean && rm blake3_sse41.c
+      working-directory: ./c
+    - run: BLAKE3_NO_SSE2=1 BLAKE3_NO_SSE41=1 make -f Makefile.testing test
+      working-directory: ./c
+    - run: make -f Makefile.testing clean && rm blake3_avx2.c
+      working-directory: ./c
+    - run: BLAKE3_NO_SSE2=1 BLAKE3_NO_SSE41=1 BLAKE3_NO_AVX2=1 make -f Makefile.testing test
+      working-directory: ./c
+    - run: make -f Makefile.testing clean && rm blake3_avx512.c
+      working-directory: ./c
+    - run: BLAKE3_NO_SSE2=1 BLAKE3_NO_SSE41=1 BLAKE3_NO_AVX2=1 BLAKE3_NO_AVX512=1 make -f Makefile.testing test
+      working-directory: ./c
+    # Test the assembly implementations.
+    - run: make -f Makefile.testing test_asm
+      working-directory: ./c
+    - run: make -f Makefile.testing clean && rm blake3_sse2_x86-64_unix.S
+      working-directory: ./c
+    - run: BLAKE3_NO_SSE2=1 make -f Makefile.testing test_asm
+      working-directory: ./c
+    - run: make -f Makefile.testing clean && rm blake3_sse41_x86-64_unix.S
+      working-directory: ./c
+    - run: BLAKE3_NO_SSE2=1 BLAKE3_NO_SSE41=1 make -f Makefile.testing test_asm
+      working-directory: ./c
+    - run: make -f Makefile.testing clean && rm blake3_avx2_x86-64_unix.S
+      working-directory: ./c
+    - run: BLAKE3_NO_SSE2=1 BLAKE3_NO_SSE41=1 BLAKE3_NO_AVX2=1 make -f Makefile.testing test_asm
+      working-directory: ./c
+    - run: make -f Makefile.testing clean && rm blake3_avx512_x86-64_unix.S
+      working-directory: ./c
+    - run: BLAKE3_NO_SSE2=1 BLAKE3_NO_SSE41=1 BLAKE3_NO_AVX2=1 BLAKE3_NO_AVX512=1 make -f Makefile.testing test_asm
+      working-directory: ./c
+    # Restore the files we deleted above.
+    - run: git checkout .
+    # Build the example.
+    - run: make -f Makefile.testing example
+      working-directory: ./c
+
+  # Note that this jobs builds AArch64 binaries from an x86_64 host.
+  build_apple_silicon:
+    name: build for Apple Silicon
+    runs-on: macOS-latest
+    strategy:
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-apple-darwin
+        override: true
+    - name: build blake3
+      run: cargo build --target aarch64-apple-darwin
+    - name: build b3sum
+      run: cargo build --target aarch64-apple-darwin
+      working-directory: ./b3sum
+
+  build_tinycc:
+    name: build with the Tiny C Compiler
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: install TCC
+      run: sudo apt-get install -y tcc
+    - name: compile
+      run: >
+        tcc -shared -O3 -o libblake3.so \
+          -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 \
+          blake3.c blake3_dispatch.c blake3_portable.c
+      working-directory: ./c
+
+  # See https://github.com/BLAKE3-team/BLAKE3/issues/271 for why we test this.
+  # Note that this isn't guaranteed to execute on an AVX-512-supporting server,
+  # but hopefully at least some of the time it will.
+  gcc54:
+    name: "compile and test with GCC 5.4"
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - uses: addnab/docker-run-action@v3
+      with:
+        image: gcc:5.4
+        options: -v ${{ github.workspace }}:/work
+        run: |
+          cat /proc/cpuinfo
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          cd /work
+          ~/.cargo/bin/cargo test --features prefer_intrinsics
+
+  # CMake build test (Library only), current macOS/Linux only.
+  cmake_build:
+    name: CMake ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macOS-latest", "windows-latest"]
+        compiler: [gcc, clang, cl]
+        exclude:
+          - os: windows-latest
+            compiler: gcc
+          - os: ubuntu-latest
+            compiler: msvc
+          - os: macOS-latest
+            compiler: msvc
+    steps:
+      - uses: actions/checkout@v3
+      - name: CMake generation
+        run: cmake -S c -B c/build -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/target
+      - name: CMake build / install
+        run: cmake --build c/build --target install

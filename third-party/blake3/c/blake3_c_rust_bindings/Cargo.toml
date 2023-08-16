@@ -1,0 +1,29 @@
+# These are Rust bindings for the C implementation of BLAKE3. As there is a
+# native (and faster) Rust implementation of BLAKE3 provided in this same repo,
+# these bindings are not expected to be used in production. They're intended
+# for testing and benchmarking.
+
+[package]
+name = "blake3_c_rust_bindings"
+version = "0.0.0"
+description = "TESTING ONLY Rust bindings for the BLAKE3 C implementation"
+edition = "2021"
+
+[features]
+# By default the x86-64 build uses assembly implementations. This feature makes
+# the build use the C intrinsics implementations instead.
+prefer_intrinsics = []
+# Activate NEON bindings. We don't currently do any CPU feature detection for
+# this. If this Cargo feature is on, the NEON gets used.
+neon = []
+
+[dev-dependencies]
+arrayref = "0.3.5"
+arrayvec = { version = "0.7.0", default-features = false }
+page_size = "0.4.1"
+rand = "0.7.2"
+rand_chacha = "0.2.1"
+reference_impl = { path = "../../reference_impl" }
+
+[build-dependencies]
+cc = "1.0.48"

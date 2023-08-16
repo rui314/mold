@@ -1,0 +1,101 @@
+[package]
+name = "blake3"
+version = "1.4.1"
+authors = ["Jack O'Connor <oconnor663@gmail.com>", "Samuel Neves"]
+description = "the BLAKE3 hash function"
+repository = "https://github.com/BLAKE3-team/BLAKE3"
+license = "CC0-1.0 OR Apache-2.0"
+documentation = "https://docs.rs/blake3"
+readme = "README.md"
+edition = "2021"
+
+[features]
+default = ["std"]
+
+# The NEON implementation does not participate in dynamic feature detection,
+# which is currently x86-only. If "neon" is on, NEON support is assumed. Note
+# that AArch64 always supports NEON, but support on ARMv7 varies. The NEON
+# implementation uses C intrinsics and requires a C compiler.
+neon = []
+
+# This crate uses libstd for std::io trait implementations, and also for
+# runtime CPU feature detection. This feature is enabled by default. If you use
+# --no-default-features, the only way to use the SIMD implementations in this
+# crate is to enable the corresponding instruction sets statically for the
+# entire build, with e.g. RUSTFLAGS="-C target-cpu=native".
+std = ["digest/std"]
+
+# The "rayon" feature (defined below as an optional dependency) enables the
+# `Hasher::update_rayon` method, for multithreaded hashing. However, even if
+# this feature is enabled, all other APIs remain single-threaded.
+
+# This crate implements traits from the RustCrypto project, exposed here as the
+# "traits-preview" feature. However, these traits aren't stable, and they're
+# expected to change in incompatible ways before they reach 1.0. For that
+# reason, this crate makes no SemVer guarantees for this feature, and callers
+# who use it should expect breaking changes between patch versions of this
+# crate. (The "*-preview" feature name follows the conventions of the RustCrypto
+# "signature" crate.)
+traits-preview = ["digest"]
+
+# ---------- Features below this line are undocumented and unstable. ----------
+# The following features are mainly intended for testing and benchmarking, and
+# they might change or disappear at any time without a major version bump.
+
+# By default on x86_64, this crate uses Samuel Neves' hand-written assembly
+# implementations for SSE4.1, AVX2, and AVX512. (These provide both the best
+# runtime performance, and the fastest build times.) And by default on 32-bit
+# x86, this crate uses Rust intrinsics implementations for SSE4.1 and AVX2, and
+# a C intrinsics implementation for AVX-512. In both cases, if a C compiler is
+# not detected, or if AVX-512 support is missing from the detected compiler,
+# build.rs automatically falls back to a pure Rust build. This feature forces
+# that fallback, for testing purposes. (Note that in CI testing, we set the
+# BLAKE3_CI environment variable, which instructs build.rs to error out rather
+# than doing an automatic fallback.)
+pure = []
+
+# As described above, on x86_64 this crate use assembly implementations by
+# default. Enabling the "prefer_intrinsics" feature makes this crate use
+# intrinsics implementations on both 32-bit and 64-bit x86, again for testing
+# purposes.
+prefer_intrinsics = []
+
+# Disable individual instruction sets. CI testing uses these flags to simulate
+# different levels of hardware SIMD support. Note that code for the
+# corresponding instruction set is still compiled; only detection is disabled.
+#
+# As noted above, these flags are *for testing only* and are not stable. It's
+# possible that some users might find that their particular use case performs
+# better if e.g. AVX-512 is disabled, because of issues like CPU downclocking.
+# If that comes up, and if disabling the instruction set here at the feature
+# level turns out to be the right approach, then we can design a stable
+# feature. Until then, we reserve the right to break these features in a patch
+# release.
+no_sse2 = []
+no_sse41 = []
+no_avx2 = []
+no_avx512 = []
+no_neon = []
+
+[package.metadata.docs.rs]
+# Document Hasher::update_rayon on docs.rs.
+features = ["rayon"]
+
+[dependencies]
+arrayref = "0.3.5"
+arrayvec = { version = "0.7.0", default-features = false }
+constant_time_eq = "0.3.0"
+rayon = { version = "1.2.1", optional = true }
+cfg-if = "1.0.0"
+digest = { version = "0.10.1", features = [ "mac" ], optional = true }
+
+[dev-dependencies]
+hex = "0.4.2"
+page_size = "0.5.0"
+rand = "0.8.0"
+rand_chacha = "0.3.0"
+reference_impl = { path = "./reference_impl" }
+hmac = "0.12.0"
+
+[build-dependencies]
+cc = "1.0.4"
