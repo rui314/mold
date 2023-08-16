@@ -121,8 +121,19 @@ else()
   target_link_libraries(mold PRIVATE zlibstatic)
 endif()
 
-# Find zstd compression library. Just like zlib, if libzstd.so is not
-# found, we compile a bundled one and statically-link it to mold.
+# Find BLAKE3 cryptographic hash library. Just like zlib, if libblkae3.so
+# is not found, we compile a bundled one and statically-link it to mold.
+find_package(BLAKE3 QUIET)
+if(BLAKE3_FOUND)
+  target_link_libraries(mold PRIVATE BLAKE3::blake3)
+else()
+  add_subdirectory(third-party/blake3/c EXCLUDE_FROM_ALL)
+  target_link_libraries(mold PRIVATE blake3)
+  target_include_directories(mold PUBLIC third-party/blake3/c)
+endif()
+
+# Find zstd compression library. If libzstd.so is not found, we compile a
+# bundled one and statically-link it to mold.
 include(CheckIncludeFile)
 check_include_file(zstd.h HAVE_ZSTD_H)
 
@@ -235,11 +246,6 @@ if(NOT APPLE AND NOT WIN32)
   set_target_properties(mold-wrapper PROPERTIES PREFIX "")
   target_link_libraries(mold-wrapper PRIVATE ${CMAKE_DL_LIBS})
   target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
-endif()
-
-if(NOT APPLE AND NOT WIN32 AND NOT MOLD_MOSTLY_STATIC)
-  find_package(OpenSSL REQUIRED COMPONENTS Crypto)
-  target_link_libraries(mold PRIVATE OpenSSL::Crypto)
 endif()
 
 # If atomics doesn't work by default, add -latomic.

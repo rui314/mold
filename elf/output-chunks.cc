@@ -1,5 +1,5 @@
 #include "mold.h"
-#include "../common/sha.h"
+#include "blake3.h"
 
 #include <cctype>
 #include <set>
@@ -2519,19 +2519,28 @@ void BuildIdSection<E>::copy_buf(Context<E> &ctx) {
   memcpy(base + 3, "GNU", 4);           // Name string
 }
 
+// BLAKE3 is a cryptographic hash function just like SHA256.
+// We use it instead of SHA256 because it's faster.
+static void blake3_hash(u8 *buf, i64 size, u8 *out) {
+  blake3_hasher hasher;
+  blake3_hasher_init(&hasher);
+  blake3_hasher_update(&hasher, buf, size);
+  blake3_hasher_finalize(&hasher, out, BLAKE3_OUT_LEN);
+}
+
 template <typename E>
-static void compute_sha256(Context<E> &ctx, i64 offset) {
+static void compute_blake3(Context<E> &ctx, i64 offset) {
   u8 *buf = ctx.buf;
   i64 filesize = ctx.output_file->filesize;
 
   i64 shard_size = 4096 * 1024;
   i64 num_shards = align_to(filesize, shard_size) / shard_size;
-  std::vector<u8> shards(num_shards * SHA256_SIZE);
+  std::vector<u8> shards(num_shards * BLAKE3_OUT_LEN);
 
   tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
     u8 *begin = buf + shard_size * i;
     u8 *end = (i == num_shards - 1) ? buf + filesize : begin + shard_size;
-    sha256_hash(begin, end - begin, shards.data() + i * SHA256_SIZE);
+    blake3_hash(begin, end - begin, shards.data() + i * BLAKE3_OUT_LEN);
 
 #ifndef _WIN32
     // We call munmap early for each chunk so that the last munmap
@@ -2543,10 +2552,10 @@ static void compute_sha256(Context<E> &ctx, i64 offset) {
 #endif
    });
 
-  assert(ctx.arg.build_id.size() <= SHA256_SIZE);
+  assert(ctx.arg.build_id.size() <= BLAKE3_OUT_LEN);
 
-  u8 digest[SHA256_SIZE];
-  sha256_hash(shards.data(), shards.size(), digest);
+  u8 digest[BLAKE3_OUT_LEN];
+  blake3_hash(shards.data(), shards.size(), digest);
   memcpy(buf + offset, digest, ctx.arg.build_id.size());
 
 #ifndef _WIN32
@@ -2567,11 +2576,7 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
                  ctx.arg.build_id.value);
     return;
   case BuildId::HASH:
-    // Modern x86 processors have purpose-built instructions to accelerate
-    // SHA256 computation, and SHA256 outperforms MD5 on such computers.
-    // So, we always compute SHA256 and truncate it if smaller digest was
-    // requested.
-    compute_sha256(ctx, this->shdr.sh_offset + HEADER_SIZE);
+    compute_blake3(ctx, this->shdr.sh_offset + HEADER_SIZE);
     return;
   case BuildId::UUID: {
     std::array<u8, 16> uuid = get_uuid_v4();
