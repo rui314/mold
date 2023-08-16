@@ -150,40 +150,67 @@ static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
   case NONE:
     break;
   case ERROR:
+    // Print out the "recompile with -fPIC" error message.
     error();
     break;
   case COPYREL:
+    // Create a copy relocation.
     if (!ctx.arg.z_copyreloc)
       error();
     copyrel();
     break;
   case DYN_COPYREL:
+    // Same as COPYREL but try to avoid creating a copy relocation by
+    // creating a dynamic relocation instead if the relocation is in
+    // a writable section.
+    //
+    // GHC (Glasgow Haskell Compiler) places a small amount of data in
+    // .text before each function and access that data with a fixed
+    // offset. The function breaks if we copy-relocate the data. For such
+    // programs, we should avoid copy relocations if possible.
+    //
+    // Besides GHC, copy relocation is a hacky solution, so if we can
+    // represent a relocation either with copyrel or dynrel, we prefer
+    // dynamic relocation.
     if (writable || !ctx.arg.z_copyreloc)
       dynrel();
     else
       copyrel();
     break;
   case PLT:
+    // Create a PLT entry.
     sym.flags |= NEEDS_PLT;
     break;
   case CPLT:
+    // Create a canonical PLT entry.
     sym.flags |= NEEDS_CPLT;
     break;
   case DYN_CPLT:
+    // Same as CPLT but try to avoid creating a canonical PLT creating by
+    // creating a dynamic relocation instead if the relocation is in a
+    // writable section. The motivation behind it is hte same as DYN_COPYREL.
     if (writable)
       dynrel();
     else
       sym.flags |= NEEDS_CPLT;
     break;
   case DYNREL:
+    // Create a dynamic relocation.
     dynrel();
     break;
   case BASEREL:
+    // Create a base relocation.
     check_textrel();
     if (!isec.is_relr_reloc(ctx, rel))
       isec.file.num_dynrel++;
     break;
   case IFUNC:
+    // Create an IRELATIVE relocation for a GNU ifunc symbol.
+    //
+    // We usually create an IRELATIVE relocation in .got for each ifunc.
+    // However, if a statically-initialized pointer is initialized to an
+    // ifunc's address, we have no choice other than emitting an IRELATIVE
+    // relocation for each such pointer.
     dynrel();
     ctx.num_ifunc_dynrels++;
     break;
@@ -230,9 +257,9 @@ static Action get_pcrel_action(Context<E> &ctx, Symbol<E> &sym) {
 template <typename E>
 static Action get_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
   // This is a decision table for absolute relocations that is smaller
-  // than the word size (e.g. R_X86_64_32). Since the dynamic linker
+  // than the pointer size (e.g. R_X86_64_32). Since the dynamic linker
   // generally does not support dynamic relocations smaller than the
-  // word size, we need to report an error if a relocation cannot be
+  // pointer size, we need to report an error if a relocation cannot be
   // resolved at link-time.
   static Action table[3][4] = {
     // Absolute  Local    Imported data  Imported code
@@ -249,7 +276,7 @@ static Action get_dyn_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
   if (sym.is_ifunc())
     return IFUNC;
 
-  // This is a decision table for absolute relocations for the word
+  // This is a decision table for absolute relocations for the pointer
   // size data (e.g. R_X86_64_64). Unlike the absrel_table, we can emit
   // a dynamic relocation if we cannot resolve an address at link-time.
   static Action table[3][4] = {
