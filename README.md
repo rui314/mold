@@ -1,7 +1,6 @@
 # mold: A Modern Linker
 
 [![CI](https://github.com/rui314/mold/actions/workflows/ci.yml/badge.svg)](https://github.com/rui314/mold/actions/workflows/ci.yml)
-[![build result](https://build.opensuse.org/projects/home:marxin:mold/packages/mold/badge.svg?type=default)](https://build.opensuse.org/package/show/home:marxin:mold/mold)
 
 <i>This repository contains a free version of the mold linker.
 If you are looking for a commercial version that supports macOS
