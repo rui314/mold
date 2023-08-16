@@ -267,7 +267,7 @@ static void relax_gd_to_ie(u8 *loc, ElfRel<E> rel, u64 val) {
 // sequence. The difference from relax_gd_to_le is that we are
 // materializing a Dynamic Thread Pointer for the current ELF module
 // instead of an address for a particular thread-local variable.
-static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
+static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
   switch (rel.r_type) {
   case R_X86_64_PLT32:
   case R_X86_64_PC32: {
@@ -281,7 +281,7 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
       0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
     };
     memcpy(loc - 3, insn, sizeof(insn));
-    *(ul32 *)(loc + 5) = val;
+    *(ul32 *)(loc + 5) = tls_size;
     break;
   }
   case R_X86_64_GOTPCREL:
@@ -297,7 +297,7 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
       0x90,                         // nop
     };
     memcpy(loc - 3, insn, sizeof(insn));
-    *(ul32 *)(loc + 5) = val;
+    *(ul32 *)(loc + 5) = tls_size;
     break;
   }
   case R_X86_64_PLTOFF64: {
@@ -308,14 +308,12 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
     //  48 01 d8                       add    %rbx, %rax
     //  ff d0                          call   *%rax
     static const u8 insn[] = {
-      0x31, 0xc0,                   // xor %eax, %eax
-      0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
-      0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
-      0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
-      0x0f, 0x1f, 0x44, 0x00, 0x00, // nop
+      0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
+      0x48, 0x2d, 0, 0, 0, 0,                   // sub $tls_size, %rax
+      0x0f, 0x1f, 0x80, 0x00, 0x00, 0x00, 0x00, // nop
     };
     memcpy(loc - 3, insn, sizeof(insn));
-    *(ul32 *)(loc + 5) = val;
+    *(ul32 *)(loc + 8) = tls_size;
     break;
   }
   default:
@@ -452,23 +450,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write32s(G + GOTPLT + A - P);
       break;
     case R_X86_64_TLSGD:
-      if (sym.has_tlsgd(ctx)) {
+      if (sym.has_tlsgd(ctx))
         write32s(sym.get_tlsgd_addr(ctx) + A - P);
-      } else if (sym.has_gottp(ctx)) {
-        relax_gd_to_ie(loc, rels[i + 1], sym.get_gottp_addr(ctx) - P);
-        i++;
-      } else {
-        relax_gd_to_le(loc, rels[i + 1], S - ctx.tp_addr);
-        i++;
-      }
+      else if (sym.has_gottp(ctx))
+        relax_gd_to_ie(loc, rels[++i], sym.get_gottp_addr(ctx) - P);
+      else
+        relax_gd_to_le(loc, rels[++i], S - ctx.tp_addr);
       break;
     case R_X86_64_TLSLD:
-      if (ctx.got->has_tlsld(ctx)) {
+      if (ctx.got->has_tlsld(ctx))
         write32s(ctx.got->get_tlsld_addr(ctx) + A - P);
-      } else {
-        relax_ld_to_le(loc, rels[i + 1], ctx.tp_addr - ctx.tls_begin);
-        i++;
-      }
+      else
+        relax_ld_to_le(loc, rels[++i], ctx.tp_addr - ctx.tls_begin);
       break;
     case R_X86_64_DTPOFF32:
       write32s(S + A - ctx.dtp_addr);

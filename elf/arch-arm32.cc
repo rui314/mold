@@ -336,12 +336,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         break;
       }
 
-      // Just like THM_CALL, ARM_CALL relocation refers either BL or
+      // Just like THM_CALL, ARM_CALL relocation refers to either BL or
       // BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
       bool is_bl = ((*(ul32 *)loc & 0xff00'0000) == 0xeb00'0000);
       bool is_blx = ((*(ul32 *)loc & 0xfe00'0000) == 0xfa00'0000);
       if (!is_bl && !is_blx)
-        Fatal(ctx) << *this << ": R_ARM_CALL refers neither BL nor BLX";
+        Fatal(ctx) << *this << ": R_ARM_CALL refers to neither BL nor BLX";
 
       u64 val = S + A - P;
       if (is_jump_reachable(val)) {
@@ -364,7 +364,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         break;
       }
 
-      // These relocs refers a B (unconditional branch) instruction.
+      // These relocs refers to a B (unconditional branch) instruction.
       // Unlike BL or BLX, we can't rewrite B to BX in place when the
       // processor mode switch is required because BX doesn't takes an
       // immediate; it takes only a register. So if mode switch is

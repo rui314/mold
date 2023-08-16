@@ -71,6 +71,7 @@
 
 #include "mold.h"
 
+#include <regex>
 #include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 
@@ -958,11 +959,13 @@ i64 riscv_resize_sections<E>(Context<E> &ctx) {
 //
 // The following functions takes care of ISA strings.
 
+namespace {
 struct Extn {
   std::string name;
   i64 major;
   i64 minor;
 };
+}
 
 // As per the RISC-V spec, the extension names must be sorted in a very
 // specific way, and unfortunately that's not just an alphabetical order.
@@ -1003,26 +1006,14 @@ static bool extn_version_less(const Extn &e1, const Extn &e2) {
 }
 
 static std::optional<Extn> read_extn_string(std::string_view &str) {
-  Extn extn;
+  auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
+  static std::regex re(R"(^([a-z]+)(\d+)p(\d+))", flags);
 
-  size_t pos = str.find_first_of("0123456789");
-  if (pos == str.npos)
-    return {};
-
-  extn.name = str.substr(0, pos);
-  str = str.substr(pos);
-
-  size_t nread;
-  extn.major = std::stoul(std::string(str), &nread, 10);
-  str = str.substr(nread);
-  if (str.size() < 2 || str[0] != 'p')
-    return {};
-  str = str.substr(1);
-
-  extn.minor = std::stoul(std::string(str), &nread, 10);
-  str = str.substr(nread);
-  if (str.empty() || str[0] == '_')
-    return extn;
+  std::cmatch m;
+  if (std::regex_search(str.begin(), str.end(), m, re)) {
+    str = str.substr(m.length());
+    return Extn{m[1], (i64)std::stoul(m[2]), (i64)std::stoul(m[3])};
+  }
   return {};
 }
 

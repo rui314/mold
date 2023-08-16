@@ -404,7 +404,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check(sym.get_tlsgd_addr(ctx) + A - P, -(1LL << 31), 1LL << 31);
       write_j20(loc, hi20(sym.get_tlsgd_addr(ctx) + A, P));
       break;
-
     case R_LARCH_TLS_LD_HI20:
     case R_LARCH_TLS_GD_HI20:
       write_j20(loc, (sym.get_tlsgd_addr(ctx) + A) >> 12);
