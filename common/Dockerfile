@@ -11,13 +11,7 @@ RUN apt-get update && \
   apt-get update && \
   apt-get install -y --no-install-recommends build-essential wget libstdc++-11-dev zlib1g-dev gcc-10 g++-10 python3 && \
   \
-  mkdir /openssl && cd /openssl && \
-  wget -O- -q https://www.openssl.org/source/openssl-3.0.7.tar.gz | tar --strip-components=1 -xzf - && \
-  ./Configure --prefix=/usr/local --libdir=lib && \
-  make -j$(nproc) && \
-  make -j$(nproc) install && \
-  ldconfig && \
   mkdir /cmake && cd /cmake && \
   wget -O- -q https://github.com/Kitware/CMake/releases/download/v3.24.2/cmake-3.24.2.tar.gz | tar --strip-components=1 -xzf - && \
   ./bootstrap --parallel=$(nproc) && make -j$(nproc) && make -j$(nproc) install && \
-  rm -rf /var/lib/apt/lists/* /cmake /openssl
+  rm -rf /var/lib/apt/lists/* /cmake

@@ -21,15 +21,15 @@ ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-*)
   apt-get install -y file
   ;;
 fedora-*)
-  dnf install -y gcc-g++ cmake openssl-devel zlib-devel
+  dnf install -y gcc-g++ cmake zlib-devel
   dnf install -y glibc-static file libstdc++-static diffutils util-linux
   ;;
 opensuse-leap-*)
-  zypper install -y make cmake zlib-devel libopenssl-devel gcc-c++ gcc11-c++
+  zypper install -y make cmake zlib-devel gcc-c++ gcc11-c++
   zypper install -y glibc-devel-static tar diffutils util-linux
   ;;
 opensuse-tumbleweed-*)
-  zypper install -y make cmake zlib-devel libopenssl-devel gcc-c++
+  zypper install -y make cmake zlib-devel gcc-c++
   zypper install -y glibc-devel-static tar diffutils util-linux
   ;;
 gentoo-*)
@@ -38,16 +38,16 @@ gentoo-*)
   ;;
 arch-*)
   pacman -Sy
-  pacman -S --needed --noconfirm base-devel zlib openssl cmake util-linux
+  pacman -S --needed --noconfirm base-devel zlib cmake util-linux
   ;;
 void-*)
   xbps-install -Sy xbps
-  xbps-install -Sy bash make cmake openssl-devel zlib-devel gcc
+  xbps-install -Sy bash make cmake zlib-devel gcc
   xbps-install -Sy tar diffutils util-linux
   ;;
 alpine-*)
   apk update
-  apk add bash make openssl-dev linux-headers cmake zlib-dev gcc g++
+  apk add bash make linux-headers cmake zlib-dev gcc g++
   ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"
