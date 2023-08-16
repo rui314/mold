@@ -10,7 +10,7 @@ include(FeatureSummary)
 include(GNUInstallDirs)
 
 # default SIMD compiler flag configuration (can be overriden by toolchains or CLI)
-if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+if(MSVC)
   set(BLAKE3_CFLAGS_SSE2 "/arch:SSE2" CACHE STRING "the compiler flags to enable SSE2")
   # MSVC has no dedicated sse4.1 flag (see https://learn.microsoft.com/en-us/cpp/build/reference/arch-x86?view=msvc-170)
   set(BLAKE3_CFLAGS_SSE4.1 "/arch:AVX" CACHE STRING "the compiler flags to enable SSE4.1")
@@ -67,7 +67,7 @@ endmacro()
 if(CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_AMD64_NAMES OR BLAKE3_USE_AMD64_ASM)
   set(BLAKE3_SIMD_AMD64_ASM ON)
 
-  if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+  if(MSVC)
     enable_language(ASM_MASM)
     target_sources(blake3 PRIVATE
       blake3_avx2_x86-64_windows_msvc.asm
