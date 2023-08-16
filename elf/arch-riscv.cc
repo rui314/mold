@@ -1010,7 +1010,7 @@ static std::optional<Extn> read_extn_string(std::string_view &str) {
   static std::regex re(R"(^([a-z]+)(\d+)p(\d+))", flags);
 
   std::cmatch m;
-  if (std::regex_search(str.begin(), str.end(), m, re)) {
+  if (std::regex_search(str.data(), str.data() + str.size(), m, re)) {
     str = str.substr(m.length());
     return Extn{m[1], (i64)std::stoul(m[2]), (i64)std::stoul(m[3])};
   }
