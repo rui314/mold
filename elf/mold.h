@@ -1410,7 +1410,7 @@ template <typename E> void acquire_global_lock(Context<E> &ctx);
 template <typename E> void release_global_lock(Context<E> &ctx);
 
 //
-// commandline.cc
+// cmdline.cc
 //
 
 template <typename E>
@@ -1488,7 +1488,7 @@ public:
 template <is_riscv E>
 u64 get_eflags(Context<E> &ctx);
 
-template <typename E>
+template <is_riscv E>
 i64 riscv_resize_sections(Context<E> &ctx);
 
 //
@@ -1647,10 +1647,10 @@ public:
 template <is_mips E>
 u64 get_eflags(Context<E> &ctx);
 
-template <typename E>
+template <is_mips E>
 void mips_merge_got_sections(Context<E> &ctx);
 
-template <typename E>
+template <is_mips E>
 void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie);
 
 //
@@ -1939,9 +1939,9 @@ struct Context {
   bool overwrite_output_file = true;
 
   std::vector<Chunk<E> *> chunks;
-  std::atomic_bool needs_tlsld = false;
-  std::atomic_bool has_textrel = false;
-  std::atomic_uint32_t num_ifunc_dynrels = 0;
+  Atomic<bool> needs_tlsld = false;
+  Atomic<bool> has_textrel = false;
+  Atomic<u32> num_ifunc_dynrels = 0;
 
   tbb::concurrent_hash_map<std::string_view, std::vector<std::string>> undef_errors;
 

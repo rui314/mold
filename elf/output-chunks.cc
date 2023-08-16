@@ -1012,7 +1012,8 @@ void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
 
     for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks) {
       // For ARM32, we emit additional symbol "$t", "$a" and "$d" for
-      // each thunk to mark the beginning of ARM code.
+      // each thunk to mark the beginning of Thumb code, ARM code and
+      // data, respectively.
       if constexpr (is_arm32<E>)
         this->num_local_symtab += thunk->symbols.size() * 4;
       else

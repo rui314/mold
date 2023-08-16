@@ -345,7 +345,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 // Since elf_main is a template, we can't run it without a type parameter.
 // We speculatively run elf_main with X86_64, and if the speculation was
 // wrong, re-run it with an actual machine type.
-template <typename E>
 static int redo_main(int argc, char **argv, std::string_view target) {
   if (target == I386::target_name)
     return elf_main<I386>(argc, argv);
@@ -411,7 +410,7 @@ int elf_main(int argc, char **argv) {
   // Redo if -m is not x86-64.
   if constexpr (is_x86_64<E>)
     if (ctx.arg.emulation != X86_64::target_name)
-      return redo_main<E>(argc, argv, ctx.arg.emulation);
+      return redo_main(argc, argv, ctx.arg.emulation);
 
   Timer t_all(ctx, "all");
 
@@ -755,11 +754,6 @@ int elf_main(int argc, char **argv) {
   return 0;
 }
 
-using E = MOLD_TARGET;
-
-template void read_file(Context<E> &, MappedFile<Context<E>> *);
-template MappedFile<Context<E>> *open_library(Context<E> &, std::string);
-
 #ifdef MOLD_X86_64
 
 extern template int elf_main<I386>(int, char **);
@@ -787,6 +781,8 @@ int main(int argc, char **argv) {
 }
 
 #else
+
+using E = MOLD_TARGET;
 
 template int elf_main<E>(int, char **);
 
