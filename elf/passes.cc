@@ -1504,11 +1504,8 @@ void construct_relr(Context<E> &ctx) {
   Timer t(ctx, "construct_relr");
 
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (OutputSection<E> *osec = chunk->to_osec())
-      osec->construct_relr(ctx);
+    chunk->construct_relr(ctx);
   });
-
-  ctx.got->construct_relr(ctx);
 }
 
 template <typename E>

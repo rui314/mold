@@ -353,6 +353,7 @@ public:
   virtual ChunkKind kind() { return SYNTHETIC; }
   virtual OutputSection<E> *to_osec() { return nullptr; }
   virtual i64 get_reldyn_size(Context<E> &ctx) const { return 0; }
+  virtual void construct_relr(Context<E> &ctx) {}
   virtual void copy_buf(Context<E> &ctx) {}
   virtual void write_to(Context<E> &ctx, u8 *buf) { unreachable(); }
   virtual void update_shdr(Context<E> &ctx) {}
@@ -382,6 +383,9 @@ public:
 
   // For --section-order
   i64 sect_order = 0;
+
+  // For --pack-dyn-relocs=relr
+  std::vector<u64> relr;
 };
 
 // ELF header
@@ -450,6 +454,7 @@ public:
   OutputSection(std::string_view name, u32 type, u64 flags);
   ChunkKind kind() override { return OUTPUT_SECTION; }
   OutputSection<E> *to_osec() override { return this; }
+  void construct_relr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
 
@@ -457,10 +462,6 @@ public:
   void populate_symtab(Context<E> &ctx) override;
 
   std::vector<InputSection<E> *> members;
-
-  void construct_relr(Context<E> &ctx);
-  std::vector<u64> relr;
-
   std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
   std::unique_ptr<RelocSection<E>> reloc_sec;
 };
@@ -492,6 +493,7 @@ public:
   i64 get_reldyn_size(Context<E> &ctx) const override;
   void copy_buf(Context<E> &ctx) override;
 
+  void construct_relr(Context<E> &ctx) override;
   void compute_symtab_size(Context<E> &ctx) override;
   void populate_symtab(Context<E> &ctx) override;
 
@@ -500,9 +502,6 @@ public:
   std::vector<Symbol<E> *> tlsdesc_syms;
   std::vector<Symbol<E> *> gottp_syms;
   u32 tlsld_idx = -1;
-
-  void construct_relr(Context<E> &ctx);
-  std::vector<u64> relr;
 };
 
 template <typename E>

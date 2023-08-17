@@ -448,10 +448,9 @@ template <typename E>
 void RelrDynSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_link = ctx.dynsym->shndx;
 
-  i64 n = ctx.got->relr.size();
+  i64 n = 0;
   for (Chunk<E> *chunk : ctx.chunks)
-    if (OutputSection<E> *osec = chunk->to_osec())
-      n += osec->relr.size();
+    n += chunk->relr.size();
   this->shdr.sh_size = n * sizeof(Word<E>);
 }
 
@@ -459,13 +458,9 @@ template <typename E>
 void RelrDynSection<E>::copy_buf(Context<E> &ctx) {
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
 
-  for (u64 val : ctx.got->relr)
-    *buf++ = (val & 1) ? val : (ctx.got->shdr.sh_addr + val);
-
   for (Chunk<E> *chunk : ctx.chunks)
-    if (OutputSection<E> *osec = chunk->to_osec())
-      for (u64 val : osec->relr)
-        *buf++ = (val & 1) ? val : (osec->shdr.sh_addr + val);
+    for (u64 val : chunk->relr)
+      *buf++ = (val & 1) ? val : (chunk->shdr.sh_addr + val);
 }
 
 template <typename E>
@@ -997,7 +992,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
 
   // Compress them
   std::vector<u64> pos = flatten(shards);
-  relr = encode_relr(pos, sizeof(Word<E>));
+  this->relr = encode_relr(pos, sizeof(Word<E>));
 }
 
 // Compute spaces needed for thunk symbols
@@ -1305,7 +1300,7 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
     if (ent.is_relr(ctx))
       pos.push_back(ent.idx * sizeof(Word<E>));
 
-  relr = encode_relr(pos, sizeof(Word<E>));
+  this->relr = encode_relr(pos, sizeof(Word<E>));
 }
 
 template <typename E>
