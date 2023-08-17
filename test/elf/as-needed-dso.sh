@@ -15,10 +15,7 @@ int fn2();
 int main() { fn2(); }
 EOF
 
-$CC -B. -o $t/exe1 $t/a.o -L$t -Wl,--as-needed -lbar -Wl,--allow-shlib-undefined
-readelf -W --dynamic $t/exe1 > $t/log1
-! grep -q libfoo $t/log1 || false
-
-$CC -B. -o $t/exe2 $t/a.o -L$t -Wl,--as-needed -lbar -lfoo
-readelf -W --dynamic $t/exe2 > $t/log2
-grep -q libfoo $t/log2
+$CC -B. -o $t/exe $t/a.o -L$t -Wl,--as-needed -lbar -lfoo
+readelf -W --dynamic $t/exe > $t/log2
+grep -q libbar $t/log2
+! grep -q libfoo $t/log2 || false
