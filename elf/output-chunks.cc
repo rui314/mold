@@ -849,10 +849,15 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-OutputSection<E>::OutputSection(std::string_view name, u32 type, u64 flags) {
+OutputSection<E>::OutputSection(Context<E> &ctx, std::string_view name,
+                                u32 type, u64 flags) {
   this->name = name;
   this->shdr.sh_type = type;
   this->shdr.sh_flags = flags;
+
+  if (auto it = ctx.arg.section_align.find(name);
+      it != ctx.arg.section_align.end())
+    this->shdr.sh_addralign = it->second;
 
   // PT_GNU_RELRO segment is a security mechanism to make more pages
   // read-only than we could have done without it.

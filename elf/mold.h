@@ -125,9 +125,6 @@ struct RangeExtensionRef {
   i16 sym_idx = -1;
 };
 
-template <typename E>
-void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec);
-
 //
 // input-sections.cc
 //
@@ -451,7 +448,7 @@ public:
 template <typename E>
 class OutputSection : public Chunk<E> {
 public:
-  OutputSection(std::string_view name, u32 type, u64 flags);
+  OutputSection(Context<E> &ctx, std::string_view name, u32 type, u64 flags);
   ChunkKind kind() override { return OUTPUT_SECTION; }
   OutputSection<E> *to_osec() override { return this; }
   void construct_relr(Context<E> &ctx) override;
@@ -460,6 +457,8 @@ public:
 
   void compute_symtab_size(Context<E> &ctx) override;
   void populate_symtab(Context<E> &ctx) override;
+
+  void create_range_extension_thunks(Context<E> &ctx);
 
   std::vector<InputSection<E> *> members;
   std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;

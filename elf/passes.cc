@@ -539,7 +539,7 @@ void create_output_sections(Context<E> &ctx) {
         }
 
         std::unique_ptr<OutputSection<E>> osec =
-          std::make_unique<OutputSection<E>>(key.name, key.type, key.flags);
+          std::make_unique<OutputSection<E>>(ctx, key.name, key.type, key.flags);
 
         std::unique_lock lock(mu);
         auto [it, inserted] = map.insert({key, osec.get()});
@@ -1184,18 +1184,15 @@ void compute_section_sizes(Context<E> &ctx) {
       }
     });
 
-    i64 offset = 0;
-    i64 p2align = 0;
+    ElfShdr<E> &shdr = osec->shdr;
+    shdr.sh_size = 0;
 
     for (i64 i = 0; i < groups.size(); i++) {
-      offset = align_to(offset, 1 << groups[i].p2align);
-      groups[i].offset = offset;
-      offset += groups[i].size;
-      p2align = std::max(p2align, groups[i].p2align);
+      shdr.sh_size = align_to(shdr.sh_size, 1 << groups[i].p2align);
+      groups[i].offset = shdr.sh_size;
+      shdr.sh_size += groups[i].size;
+      shdr.sh_addralign = std::max<u32>(shdr.sh_addralign, 1 << groups[i].p2align);
     }
-
-    osec->shdr.sh_size = offset;
-    osec->shdr.sh_addralign = 1 << p2align;
 
     // Assign offsets to input sections.
     tbb::parallel_for_each(groups, [](Group &group) {
@@ -1216,23 +1213,12 @@ void compute_section_sizes(Context<E> &ctx) {
   // inserting thunks. This pass cannot be parallelized. That is,
   // create_range_extension_thunks is parallelized internally, but the
   // function itself is not thread-safe.
-  if constexpr (needs_thunk<E>) {
-    for (Chunk<E> *chunk : ctx.chunks) {
-      OutputSection<E> *osec = chunk->to_osec();
-      if (osec && (osec->shdr.sh_flags & SHF_EXECINSTR) && !ctx.arg.relocatable) {
-        create_range_extension_thunks(ctx, *osec);
-
-        for (InputSection<E> *isec : osec->members)
-          osec->shdr.sh_addralign =
-            std::max<u32>(osec->shdr.sh_addralign, 1 << isec->p2align);
-      }
-    }
-  }
-
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (OutputSection<E> *osec = chunk->to_osec())
-      if (u32 align = ctx.arg.section_align[osec->name])
-        osec->shdr.sh_addralign = std::max<u32>(osec->shdr.sh_addralign, align);
+  if constexpr (needs_thunk<E>)
+    if (!ctx.arg.relocatable)
+      for (Chunk<E> *chunk : ctx.chunks)
+        if (OutputSection<E> *osec = chunk->to_osec())
+          if (osec->shdr.sh_flags & SHF_EXECINSTR)
+            osec->create_range_extension_thunks(ctx);
 }
 
 // Find all unresolved symbols and attach them to the most appropriate files.

@@ -190,8 +190,8 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
 }
 
 template <>
-void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
-  std::span<InputSection<E> *> m = osec.members;
+void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
+  std::span<InputSection<E> *> m = members;
   if (m.empty())
     return;
 
@@ -257,15 +257,14 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
       a++;
 
     // Erase references to out-of-range thunks.
-    while (t < osec.thunks.size() &&
-           osec.thunks[t]->offset < m[a]->offset)
-      reset_thunk(*osec.thunks[t++]);
+    while (t < thunks.size() && thunks[t]->offset < m[a]->offset)
+      reset_thunk(*thunks[t++]);
 
     // Create a thunk for input sections between B and C and place it at D.
     offset = align_to(offset, RangeExtensionThunk<E>::alignment);
-    i64 thunk_idx = osec.thunks.size();
-    RangeExtensionThunk<E> *thunk = new RangeExtensionThunk<E>(osec, offset);
-    osec.thunks.emplace_back(thunk);
+    i64 thunk_idx = thunks.size();
+    RangeExtensionThunk<E> *thunk = new RangeExtensionThunk<E>(*this, offset);
+    thunks.emplace_back(thunk);
 
     // Scan relocations between B and C to collect symbols that need thunks.
     tbb::parallel_for_each(m.begin() + b, m.begin() + c,
@@ -307,10 +306,14 @@ void create_range_extension_thunks(Context<E> &ctx, OutputSection<E> &osec) {
     b = c;
   }
 
-  while (t < osec.thunks.size())
-    reset_thunk(*osec.thunks[t++]);
+  while (t < thunks.size())
+    reset_thunk(*thunks[t++]);
 
-  osec.shdr.sh_size = offset;
+  this->shdr.sh_size = offset;
+
+  for (InputSection<E> *isec : members)
+    this->shdr.sh_addralign =
+      std::max<u32>(this->shdr.sh_addralign, 1 << isec->p2align);
 }
 
 } // namespace mold::elf
