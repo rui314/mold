@@ -1538,7 +1538,8 @@ bool SharedFile<E>::is_readonly(Symbol<E> *sym) {
   u64 val = sym->esym().st_value;
 
   for (ElfPhdr<E> &phdr : this->get_phdrs())
-    if (phdr.p_type == PT_LOAD && !(phdr.p_flags & PF_W) &&
+    if ((phdr.p_type == PT_LOAD || phdr.p_type == PT_GNU_RELRO) &&
+        !(phdr.p_flags & PF_W) &&
         phdr.p_vaddr <= val && val < phdr.p_vaddr + phdr.p_memsz)
       return true;
   return false;
