@@ -476,6 +476,16 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     if (sym.is_ifunc())
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
+    if (rel.r_type == R_386_TLS_GD || rel.r_type == R_386_TLS_LDM) {
+      if (i + 1 == rels.size())
+        Fatal(ctx) << *this << ": " << rel << " must be followed by PLT or GOT32";
+
+      if (u32 ty = rels[i + 1].r_type;
+          ty != R_386_PLT32 && ty != R_386_PC32 &&
+          ty != R_386_GOT32 && ty != R_386_GOT32X)
+        Fatal(ctx) << *this << ": " << rel << " must be followed by PLT or GOT32";
+    }
+
     switch (rel.r_type) {
     case R_386_8:
     case R_386_16:
@@ -511,14 +521,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_386_TLS_GD:
-      if (i + 1 == rels.size())
-        Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
-
-      if (u32 ty = rels[i + 1].r_type;
-          ty != R_386_PLT32 && ty != R_386_PC32 &&
-          ty != R_386_GOT32 && ty != R_386_GOT32X)
-        Fatal(ctx) << *this << ": TLS_GD reloc must be followed by PLT or GOT32";
-
       // We always relax if -static because libc.a doesn't contain
       // __tls_get_addr().
       if (ctx.arg.is_static ||
@@ -528,14 +530,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_TLSGD;
       break;
     case R_386_TLS_LDM:
-      if (i + 1 == rels.size())
-        Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
-
-      if (u32 ty = rels[i + 1].r_type;
-          ty != R_386_PLT32 && ty != R_386_PC32 &&
-          ty != R_386_GOT32 && ty != R_386_GOT32X)
-        Fatal(ctx) << *this << ": TLS_LDM reloc must be followed by PLT or GOT32";
-
       // We always relax if -static because libc.a doesn't contain
       // __tls_get_addr().
       if (ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared))

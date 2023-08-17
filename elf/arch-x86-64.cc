@@ -646,6 +646,19 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     if (sym.is_ifunc())
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
+    if (rel.r_type == R_X86_64_TLSGD || rel.r_type == R_X86_64_TLSLD) {
+      if (i + 1 == rels.size())
+        Fatal(ctx) << *this << ": " << rel
+                   << " must be followed by PLT or GOTPCREL";
+
+      if (u32 ty = rels[i + 1].r_type;
+          ty != R_X86_64_PLT32 && ty != R_X86_64_PC32 &&
+          ty != R_X86_64_PLTOFF64 && ty != R_X86_64_GOTPCREL &&
+          ty != R_X86_64_GOTPCRELX)
+        Fatal(ctx) << *this << ": " << rel
+                   << " must be followed by PLT or GOTPCREL";
+    }
+
     switch (rel.r_type) {
     case R_X86_64_8:
     case R_X86_64_16:
@@ -678,18 +691,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_PLT;
       break;
     case R_X86_64_TLSGD:
-      if (rel.r_addend != -4)
-        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_TLSGD";
-
-      if (i + 1 == rels.size())
-        Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
-
-      if (u32 ty = rels[i + 1].r_type;
-          ty != R_X86_64_PLT32 && ty != R_X86_64_PC32 &&
-          ty != R_X86_64_PLTOFF64 && ty != R_X86_64_GOTPCREL &&
-          ty != R_X86_64_GOTPCRELX)
-        Fatal(ctx) << *this << ": TLSGD reloc must be followed by PLT or GOTPCREL";
-
       if (ctx.arg.is_static ||
           (ctx.arg.relax && !sym.is_imported && !ctx.arg.shared)) {
         // We always relax if -static because libc.a doesn't contain
@@ -704,18 +705,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       }
       break;
     case R_X86_64_TLSLD:
-      if (rel.r_addend != -4)
-        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_TLSLD";
-
-      if (i + 1 == rels.size())
-        Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
-
-      if (u32 ty = rels[i + 1].r_type;
-          ty != R_X86_64_PLT32 && ty != R_X86_64_PC32 &&
-          ty != R_X86_64_PLTOFF64 && ty != R_X86_64_GOTPCREL &&
-          ty != R_X86_64_GOTPCRELX)
-        Fatal(ctx) << *this << ": TLSLD reloc must be followed by PLT or GOTPCREL";
-
       // We always relax if -static because libc.a doesn't contain
       // __tls_get_addr().
       if (ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared))
@@ -724,19 +713,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         ctx.needs_tlsld = true;
       break;
     case R_X86_64_GOTTPOFF: {
-      if (rel.r_addend != -4)
-        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTTPOFF";
-
       bool do_relax = ctx.arg.relax && !ctx.arg.shared &&
-                      !sym.is_imported && relax_gottpoff(loc - 3);
+           !sym.is_imported && relax_gottpoff(loc - 3);
       if (!do_relax)
         sym.flags |= NEEDS_GOTTP;
       break;
     }
-    case R_X86_64_GOTPC32_TLSDESC: {
-      if (rel.r_addend != -4)
-        Fatal(ctx) << *this << ": bad r_addend for R_X86_64_GOTPC32_TLSDESC";
-
+    case R_X86_64_GOTPC32_TLSDESC:
       if (relax_gotpc32_tlsdesc(loc - 3) == 0)
         Fatal(ctx) << *this << ": GOTPC32_TLSDESC relocation is used"
                    << " against an invalid code sequence";
@@ -744,7 +727,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (!relax_tlsdesc(ctx, sym))
         sym.flags |= NEEDS_TLSDESC;
       break;
-    }
     case R_X86_64_TPOFF32:
     case R_X86_64_TPOFF64:
       check_tlsle(ctx, sym, rel);

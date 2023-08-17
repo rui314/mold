@@ -1833,6 +1833,7 @@ void sort_output_sections_regular(Context<E> &ctx) {
            (!tls << 6) | (!relro << 5) | (is_bss << 4);
   };
 
+  // Ties are broken by additional rules
   auto get_rank2 = [&](Chunk<E> *chunk) -> i64 {
     if (chunk->shdr.sh_type == SHT_NOTE)
       return -chunk->shdr.sh_addralign;
@@ -1849,14 +1850,8 @@ void sort_output_sections_regular(Context<E> &ctx) {
   };
 
   sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
-    // Sort sections by segments
-    i64 x = get_rank1(a);
-    i64 y = get_rank1(b);
-    if (x != y)
-      return x < y;
-
-    // Ties are broken by additional rules
-    return get_rank2(a) < get_rank2(b);
+    return std::tuple{get_rank1(a), get_rank2(a)} <
+           std::tuple{get_rank1(b), get_rank2(b)};
   });
 }
 
