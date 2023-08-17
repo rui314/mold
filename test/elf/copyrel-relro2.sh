@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[[ $MACHINE = mips* ]] && skip
+
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIE -
 #include <setjmp.h>
 #include <signal.h>
