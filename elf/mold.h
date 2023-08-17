@@ -646,7 +646,6 @@ public:
     this->shdr.sh_flags = SHF_ALLOC;
   }
 
-  void keep() { this->shdr.sh_size = 1; }
   i64 add_string(std::string_view str);
   i64 find_string(std::string_view str);
   void copy_buf(Context<E> &ctx) override;
@@ -713,7 +712,6 @@ public:
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
-  void keep() { this->symbols.resize(1); }
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
   void finalize(Context<E> &ctx);
   void update_shdr(Context<E> &ctx) override;

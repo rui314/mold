@@ -105,8 +105,14 @@ void create_synthetic_sections(Context<E> &ctx) {
   if (ctx.arg.emit_relocs)
     ctx.eh_frame_reloc = push(new EhFrameRelocSection<E>);
 
-  if (ctx.arg.shared || !ctx.dsos.empty() || ctx.arg.pie)
+  if (ctx.arg.shared || !ctx.dsos.empty() || ctx.arg.pie) {
     ctx.dynamic = push(new DynamicSection<E>);
+
+    // If .dynamic exists, .dynsym and .dynstr must exist as well
+    // since .dynamic refers to them.
+    ctx.dynstr->shdr.sh_size = 1;
+    ctx.dynsym->symbols.resize(1);
+  }
 
   ctx.versym = push(new VersymSection<E>);
   ctx.verneed = push(new VerneedSection<E>);
@@ -134,13 +140,6 @@ void create_synthetic_sections(Context<E> &ctx) {
 
     for (ObjectFile<E> *file : ctx.objs)
       file->extra.got = push(new MipsGotSection<E>(ctx, *file));
-  }
-
-  // If .dynamic exists, .dynsym and .dynstr must exist as well
-  // since .dynamic refers them.
-  if (ctx.dynamic) {
-    ctx.dynstr->keep();
-    ctx.dynsym->keep();
   }
 }
 
