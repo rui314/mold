@@ -413,13 +413,10 @@ static u64 canonicalize_type(std::string_view name, u64 type) {
 }
 
 struct OutputSectionKey {
+  bool operator==(const OutputSectionKey &) const = default;
   std::string_view name;
   u64 type;
   u64 flags;
-
-  bool operator==(const OutputSectionKey &other) const {
-    return name == other.name && type == other.type && flags == other.flags;
-  }
 };
 
 template <typename E>
