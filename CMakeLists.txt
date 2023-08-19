@@ -98,7 +98,7 @@ if(MOLD_USE_TSAN)
   target_link_options(mold PRIVATE -fsanitize=thread)
 endif()
 
-# Statically-link libstdc++ and libcrypto if -DMOLD_MOSTLY_STATIC=ON.
+# Statically-link libstdc++ if -DMOLD_MOSTLY_STATIC=ON.
 #
 # This option is intended to be used by `./dist.sh` script to create a
 # mold binary that works on various Linux distros. You probably don't
@@ -106,13 +106,12 @@ endif()
 option(MOLD_MOSTLY_STATIC "Statically link libstdc++ and libcrypto" OFF)
 if(MOLD_MOSTLY_STATIC)
   target_link_options(mold PRIVATE -static-libstdc++)
-  target_link_libraries(mold PRIVATE libcrypto.a)
 endif()
 
 # Find zlib. If libz.so is not found, we compile a bundled one and
 # statically-link it to mold.
 find_package(ZLIB QUIET)
-if(ZLIB_FOUND)
+if(ZLIB_FOUND AND NOT MOLD_MOSTLY_STATIC)
   target_link_libraries(mold PRIVATE ZLIB::ZLIB)
 else()
   add_subdirectory(third-party/zlib EXCLUDE_FROM_ALL)
@@ -124,7 +123,7 @@ endif()
 # Find BLAKE3 cryptographic hash library. Just like zlib, if libblkae3.so
 # is not found, we compile a bundled one and statically-link it to mold.
 find_package(BLAKE3 QUIET)
-if(BLAKE3_FOUND)
+if(BLAKE3_FOUND AND NOT MOLD_MOSTLY_STATIC)
   target_link_libraries(mold PRIVATE BLAKE3::blake3)
 else()
   add_subdirectory(third-party/blake3/c EXCLUDE_FROM_ALL)
@@ -137,7 +136,7 @@ endif()
 include(CheckIncludeFile)
 check_include_file(zstd.h HAVE_ZSTD_H)
 
-if(HAVE_ZSTD_H)
+if(HAVE_ZSTD_H AND NOT MOLD_MOSTLY_STATIC)
   target_link_libraries(mold PRIVATE zstd)
 else()
   add_subdirectory(third-party/zstd/build/cmake EXCLUDE_FROM_ALL)
