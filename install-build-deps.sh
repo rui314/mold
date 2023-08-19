@@ -12,12 +12,12 @@ set -x
 case "$ID-$VERSION_ID" in
 ubuntu-20.* | pop-20.*)
   apt-get update
-  apt-get install -y cmake libssl-dev zlib1g-dev gcc g++ g++-10
+  apt-get install -y cmake zlib1g-dev gcc g++ g++-10
   apt-get install -y file
   ;;
 ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-*)
   apt-get update
-  apt-get install -y cmake libssl-dev zlib1g-dev gcc g++
+  apt-get install -y cmake zlib1g-dev gcc g++
   apt-get install -y file
   ;;
 fedora-*)
