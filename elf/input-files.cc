@@ -424,12 +424,9 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
 template <typename E>
 void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
-  for (i64 i = 0; i < sections.size(); i++) {
-    std::unique_ptr<InputSection<E>> &isec = sections[i];
-    if (isec && isec->is_alive && isec->name() == ".eh_frame") {
+  for (std::unique_ptr<InputSection<E>> &isec : sections)
+    if (isec && isec->is_alive && isec->name() == ".eh_frame")
       read_ehframe(ctx, *isec);
-    }
-  }
 }
 
 // .eh_frame contains data records explaining how to handle exceptions.
