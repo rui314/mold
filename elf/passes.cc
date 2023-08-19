@@ -313,11 +313,9 @@ template <typename E>
 void kill_eh_frame_sections(Context<E> &ctx) {
   Timer t(ctx, "kill_eh_frame_sections");
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (isec && isec->name() == ".eh_frame")
-        isec->is_alive = false;
-  });
+  for (ObjectFile<E> *file : ctx.objs)
+    if (file->eh_frame_section)
+      file->eh_frame_section->is_alive = false;
 }
 
 template <typename E>

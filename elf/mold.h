@@ -1235,6 +1235,7 @@ public:
   std::vector<FdeRecord<E>> fdes;
   BitVector has_symver;
   std::vector<ComdatGroupRef<E>> comdat_groups;
+  InputSection<E> *eh_frame_section = nullptr;
   bool exclude_libs = false;
   std::map<u32, u32> gnu_properties;
   bool is_lto_obj = false;
@@ -1280,8 +1281,8 @@ private:
   void initialize_symbols(Context<E> &ctx);
   void sort_relocations(Context<E> &ctx);
   void initialize_ehframe_sections(Context<E> &ctx);
-  void read_note_gnu_property(Context <E> &ctx, const ElfShdr <E> &shdr);
-  void read_ehframe(Context<E> &ctx, InputSection<E> &isec);
+  void parse_note_gnu_property(Context <E> &ctx, const ElfShdr <E> &shdr);
+  void parse_ehframe(Context<E> &ctx);
   void override_symbol(Context<E> &ctx, Symbol<E> &sym,
                        const ElfSym<E> &esym, i64 symidx);
   void merge_visibility(Context<E> &ctx, Symbol<E> &sym, u8 visibility);

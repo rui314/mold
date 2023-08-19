@@ -104,7 +104,7 @@ static bool is_debug_section(const ElfShdr<E> &shdr, std::string_view name) {
 
 template <typename E>
 void
-ObjectFile<E>::read_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr) {
+ObjectFile<E>::parse_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr) {
   std::string_view data = this->get_string(ctx, shdr);
 
   while (!data.empty()) {
@@ -310,7 +310,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       }
 
       if (name == ".note.gnu.property") {
-        read_note_gnu_property(ctx, shdr);
+        parse_note_gnu_property(ctx, shdr);
         continue;
       }
 
@@ -348,6 +348,9 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         llvm_addrsig = std::move(this->sections[i]);
         continue;
       }
+
+      if (name == ".eh_frame")
+        eh_frame_section = this->sections[i].get();
 
       if constexpr (is_ppc32<E>)
         if (name == ".got2")
@@ -422,13 +425,6 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   }
 }
 
-template <typename E>
-void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
-  for (std::unique_ptr<InputSection<E>> &isec : sections)
-    if (isec && isec->is_alive && isec->name() == ".eh_frame")
-      read_ehframe(ctx, *isec);
-}
-
 // .eh_frame contains data records explaining how to handle exceptions.
 // When an exception is thrown, the runtime searches a record from
 // .eh_frame with the current program counter as a key. A record that
@@ -459,7 +455,11 @@ void ObjectFile<E>::initialize_ehframe_sections(Context<E> &ctx) {
 //
 // This function parses an input .eh_frame section.
 template <typename E>
-void ObjectFile<E>::read_ehframe(Context<E> &ctx, InputSection<E> &isec) {
+void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
+  if (!eh_frame_section)
+    return;
+
+  InputSection<E> &isec = *eh_frame_section;
   std::span<ElfRel<E>> rels = isec.get_rels(ctx);
   i64 cies_begin = cies.size();
   i64 fdes_begin = fdes.size();
@@ -949,7 +949,7 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
   initialize_sections(ctx);
   initialize_symbols(ctx);
   sort_relocations(ctx);
-  initialize_ehframe_sections(ctx);
+  parse_ehframe(ctx);
 }
 
 // Symbols with higher priorities overwrites symbols with lower priorities.
