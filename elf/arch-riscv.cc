@@ -853,7 +853,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       break;
     }
     case R_RISCV_HI20: {
-      u64 val = sym.get_addr(ctx);
+      u64 val = sym.get_addr(ctx) + r.r_addend;
       i64 rd = get_rd(isec.contents.data() + r.r_offset);
 
       if (sign_extend(val, 11) == val) {
