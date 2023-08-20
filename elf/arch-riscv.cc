@@ -424,9 +424,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_stype(loc, S + A);
 
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
-      // accessible relative to the zero register. If the upper 20 bits
-      // are all zero, the corresponding LUI might have been removed.
-      if (bits(S + A, 31, 12) == 0)
+      // accessible relative to the zero register because if that's the
+      // case, corresponding LUI might have been removed by relaxation.
+      if (sign_extend(S + A, 11) == S + A)
         set_rs1(loc, 0);
       break;
     case R_RISCV_TPREL_HI20:
@@ -856,10 +856,10 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       u64 val = sym.get_addr(ctx);
       i64 rd = get_rd(isec.contents.data() + r.r_offset);
 
-      if (bits(val, 31, 12) == 0) {
-        // If the upper 20 bits are all zero, we can remove LUI.
-        // The corresponding instructions referred to by LO12_I/LO12_S
-        // relocations will use the zero register instead.
+      if (sign_extend(val, 11) == val) {
+        // We can replace `lui t0, %hi(foo)` and `add t0, t0, %lo(foo)`
+        // instruction pair with `add t0, x0, %lo(foo)` if foo's bits
+        // [32:11] are all one or all zero.
         delta += 4;
       } else if (use_rvc && rd != 0 && rd != 2 && sign_extend(val, 17) == val) {
         // If the upper 20 bits can actually be represented in 6 bits,

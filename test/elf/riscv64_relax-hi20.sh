@@ -21,8 +21,8 @@ EOF
 
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .globl foo, bar, baz
-foo = 0x42
-bar = 0xcafe
+foo = 0xf00
+bar = 0xba
 baz = 0x11beef
 EOF
 
@@ -39,7 +39,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o -Wl,--no-relax
-$QEMU $t/exe1 | grep -q '42 cafe 11beef'
+$QEMU $t/exe1 | grep -q 'f00 ba 11beef'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o
-$QEMU $t/exe2 | grep -q '42 cafe 11beef'
+$QEMU $t/exe2 | grep -q 'f00 ba 11beef'
