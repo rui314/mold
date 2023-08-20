@@ -128,8 +128,8 @@ static void write_cjtype(u8 *loc, u32 val) {
 }
 
 // Returns the rd register of an R/I/U/J-type instruction.
-static u32 get_rd(u32 val) {
-  return bits(val, 11, 7);
+static u32 get_rd(const char *loc) {
+  return bits(*(u32 *)loc, 11, 7);
 }
 
 static void set_rs1(u8 *loc, u32 rs1) {
@@ -327,7 +327,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
-      u32 rd = get_rd(*(ul32 *)(contents.data() + rel.r_offset + 4));
+      u32 rd = get_rd(contents.data() + rel.r_offset + 4);
 
       if (removed_bytes == 4) {
         // auipc + jalr -> jal
@@ -402,8 +402,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_HI20:
-      assert(removed_bytes == 0 || removed_bytes == 4);
-      if (removed_bytes == 0) {
+      if (removed_bytes == 2) {
+        // Rewrite LUI with C.LUI
+        i64 val = S + A + 0x800; // +0x800 just like write_utype()
+        i64 rd = get_rd(contents.data() + rel.r_offset);
+
+        *(ul16 *)loc = 0b011'0'00000'00000'01;
+        *(ul16 *)loc |= bit(val, 17) << 12;
+        *(ul16 *)loc |= rd << 7;
+        *(ul16 *)loc |= bits(val, 16, 12) << 2;
+      } else if (removed_bytes == 0) {
         check(S + A, -(1LL << 31), 1LL << 31);
         write_utype(loc, S + A);
       }
@@ -828,13 +836,13 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       if (dist & 1)
         break;
 
-      i64 rd = get_rd(*(ul32 *)(isec.contents.data() + r.r_offset + 4));
+      i64 rd = get_rd(isec.contents.data() + r.r_offset + 4);
 
-      if (rd == 0 && sign_extend(dist, 11) == dist && use_rvc) {
+      if (use_rvc && rd == 0 && sign_extend(dist, 11) == dist) {
         // If rd is x0 and the jump target is within ±2 KiB, we can use
         // C.J, saving 6 bytes.
         delta += 6;
-      } else if (rd == 1 && sign_extend(dist, 11) == dist && use_rvc && !E::is_64) {
+      } else if (use_rvc && !E::is_64 && rd == 1 && sign_extend(dist, 11) == dist) {
         // If rd is x1 and the jump target is within ±2 KiB, we can use
         // C.JAL. This is RV32 only because C.JAL is RV32-only instruction.
         delta += 6;
@@ -844,13 +852,22 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       }
       break;
     }
-    case R_RISCV_HI20:
-      // If the upper 20 bits are all zero, we can remove LUI.
-      // The corresponding instructions referred to by LO12_I/LO12_S
-      // relocations will use the zero register instead.
-      if (bits(sym.get_addr(ctx), 31, 12) == 0)
+    case R_RISCV_HI20: {
+      u64 val = sym.get_addr(ctx);
+      i64 rd = get_rd(isec.contents.data() + r.r_offset);
+
+      if (bits(val, 31, 12) == 0) {
+        // If the upper 20 bits are all zero, we can remove LUI.
+        // The corresponding instructions referred to by LO12_I/LO12_S
+        // relocations will use the zero register instead.
         delta += 4;
+      } else if (use_rvc && rd != 0 && rd != 2 && sign_extend(val, 17) == val) {
+        // If the upper 20 bits can actually be represented in 6 bits,
+        // we can use C.LUI instead of LUI.
+        delta += 2;
+      }
       break;
+    }
     case R_RISCV_TPREL_HI20:
     case R_RISCV_TPREL_ADD:
       // These relocations are used to add a high 20-bit value to the
