@@ -112,6 +112,12 @@ static void write_jtype(u8 *loc, u32 val) {
                   bit(val, 11) << 20 | bits(val, 19, 12) << 12;
 }
 
+static void write_citype(u8 *loc, u32 val) {
+  val += 0x800;
+  *(ul16 *)loc &= 0b111'0'11111'00000'11;
+  *(ul16 *)loc |= bit(val, 17) << 12 | bits(val, 16, 12) << 2;
+}
+
 static void write_cbtype(u8 *loc, u32 val) {
   *(ul16 *)loc &= 0b111'000'111'00000'11;
   *(ul16 *)loc |= bit(val, 8) << 12 | bit(val, 4) << 11 | bit(val, 3) << 10 |
@@ -327,27 +333,30 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
-      u32 rd = get_rd(contents.data() + rel.r_offset + 4);
+      i64 val = S + A - P;
+      i64 rd = get_rd(contents.data() + rel.r_offset + 4);
+
+      // Calling an undefined weak symbol does not make sense.
+      // We make such call into an infinite loop. This should
+      // help debugging of a faulty program.
+      if (sym.esym().is_undef_weak())
+        val = 0;
 
       if (removed_bytes == 4) {
         // auipc + jalr -> jal
         *(ul32 *)loc = (rd << 7) | 0b1101111;
-        write_jtype(loc, S + A - P);
+        write_jtype(loc, val);
       } else if (removed_bytes == 6 && rd == 0) {
         // auipc + jalr -> c.j
         *(ul16 *)loc = 0b101'00000000000'01;
-        write_cjtype(loc, S + A - P);
+        write_cjtype(loc, val);
       } else if (removed_bytes == 6 && rd == 1) {
         // auipc + jalr -> c.jal
         assert(!E::is_64);
         *(ul16 *)loc = 0b001'00000000000'01;
-        write_cjtype(loc, S + A - P);
+        write_cjtype(loc, val);
       } else {
         assert(removed_bytes == 0);
-        // Calling an undefined weak symbol does not make sense.
-        // We make such call into an infinite loop. This should
-        // help debugging of a faulty program.
-        u64 val = sym.esym().is_undef_weak() ? 0 : S + A - P;
         check(val, -(1LL << 31), 1LL << 31);
         write_utype(loc, val);
         write_itype(loc + 4, val);
@@ -404,13 +413,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_HI20:
       if (removed_bytes == 2) {
         // Rewrite LUI with C.LUI
-        i64 val = S + A + 0x800; // +0x800 just like write_utype()
         i64 rd = get_rd(contents.data() + rel.r_offset);
-
-        *(ul16 *)loc = 0b011'0'00000'00000'01;
-        *(ul16 *)loc |= bit(val, 17) << 12;
-        *(ul16 *)loc |= rd << 7;
-        *(ul16 *)loc |= bits(val, 16, 12) << 2;
+        *(ul16 *)loc = 0b011'0'00000'00000'01 | (rd << 7);
+        write_citype(loc, S + A);
       } else if (removed_bytes == 0) {
         check(S + A, -(1LL << 31), 1LL << 31);
         write_utype(loc, S + A);
