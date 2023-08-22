@@ -2000,7 +2000,7 @@ struct ARM64 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 0;
-  static constexpr u32 thunk_size = 12;
+  static constexpr u32 thunk_size = 16;
 
   static constexpr u32 R_COPY = R_AARCH64_COPY;
   static constexpr u32 R_GLOB_DAT = R_AARCH64_GLOB_DAT;
