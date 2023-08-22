@@ -298,7 +298,7 @@ inline u64 bits(u64 val, u64 hi, u64 lo) {
 
 inline i64 sign_extend(u64 val, i64 size) {
   return (i64)(val << (63 - size)) >> (63 - size);
-};
+}
 
 template <typename T, typename Compare = std::less<T>>
 void update_minimum(std::atomic<T> &atomic, u64 new_val, Compare cmp = {}) {

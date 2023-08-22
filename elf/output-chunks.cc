@@ -1638,6 +1638,8 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
 
 template <typename E>
 void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
+  assert(!finalized);
+
   if (symbols.empty())
     symbols.resize(1);
 
@@ -1650,6 +1652,9 @@ void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 template <typename E>
 void DynsymSection<E>::finalize(Context<E> &ctx) {
   Timer t(ctx, "DynsymSection::finalize");
+  assert(!finalized);
+  finalized = true;
+
   if (symbols.empty())
     return;
 

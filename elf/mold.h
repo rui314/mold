@@ -716,6 +716,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> symbols;
+  bool finalized = false;
 };
 
 template <typename E>
