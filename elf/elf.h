@@ -2025,8 +2025,8 @@ struct ARM32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u32 thunk_hdr_size = 12;
-  static constexpr u32 thunk_size = 20;
+  static constexpr u32 thunk_hdr_size = 16;
+  static constexpr u32 thunk_size = 16;
 
   static constexpr u32 R_COPY = R_ARM_COPY;
   static constexpr u32 R_GLOB_DAT = R_ARM_GLOB_DAT;

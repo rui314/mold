@@ -630,6 +630,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0xe08e'0000, // add r0, lr, r0
     0xe590'1004, // ldr r1, [r0, #4]
     0xe12f'ff11, // bx  r1
+    0xe320'f000, // nop
   };
 
   // This is a range extension and mode switch thunk.
@@ -639,9 +640,8 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     0x78, 0x47,             //    bx   pc  # jumps to 1f
     0xc0, 0x46,             //    nop
     // .arm
-    0x04, 0xc0, 0x9f, 0xe5, // 1: ldr  ip, 3f
-    0x0f, 0xc0, 0x8c, 0xe0, // 2: add  ip, ip, pc
-    0x1c, 0xff, 0x2f, 0xe1, //    bx   ip
+    0x00, 0xc0, 0x9f, 0xe5, // 1: ldr  ip, 3f
+    0x0f, 0xf0, 0x8c, 0xe0, // 2: add  pc, ip, pc
     0x00, 0x00, 0x00, 0x00, // 3: .word sym - 2b
   };
 
@@ -656,7 +656,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : symbols) {
     memcpy(buf, entry, sizeof(entry));
-    *(ul32 *)(buf + 16) = sym->get_addr(ctx) - P - 16;
+    *(ul32 *)(buf + 12) = sym->get_addr(ctx) - P - 16;
 
     buf += sizeof(entry);
     P += sizeof(entry);

@@ -1073,7 +1073,7 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
         if constexpr (is_arm32<E>) {
           write_esym(this->strtab_offset, 0);
           write_esym(this->strtab_offset + 3, 4);
-          write_esym(this->strtab_offset + 6, 16);
+          write_esym(this->strtab_offset + 6, 12);
         }
       }
     }
