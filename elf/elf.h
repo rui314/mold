@@ -2172,8 +2172,8 @@ struct S390X {
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_S390X;
-  static constexpr u32 plt_hdr_size = 32;
-  static constexpr u32 plt_size = 32;
+  static constexpr u32 plt_hdr_size = 64;
+  static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
 
   static constexpr u32 R_COPY = R_390_COPY;
