@@ -51,24 +51,20 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     // Compute PLT_INDEX
     0xa7, 0x15, 0x00, 0x02,             //    bras  %r1, 1f
     0xb9, 0x09, 0x00, 0x01,             // 1: sgr   %r0, %r1
-    0xa7, 0x0b, 0xff, 0xb6,             //    aghi  %r0, -74
-    0xeb, 0x00, 0x00, 0x04, 0x00, 0x0c, //    srlg  %r0, %r0, 4
-    // Multiply PLT_INDEX by 24 (i.e. sizeof(ElfRel<E>))
-    0xeb, 0x10, 0x00, 0x01, 0x00, 0x0d, //    sllg  %r1, %r0, 1
+    0xa7, 0x0b, 0xff, 0xc6,             //    aghi  %r0, -58
+    0xeb, 0x10, 0x00, 0x01, 0x00, 0x0c, //    srlg  %r1, %r0, 1
     0xb9, 0x08, 0x00, 0x01,             //    agr   %r0, %r1
-    0xeb, 0x00, 0x00, 0x03, 0x00, 0x0d, //    sllg  %r0, %r0, 3
     0xe3, 0x00, 0xf0, 0x38, 0x00, 0x24, //    stg   %r0, 56(%r15)
     // Branch to _dl_runtime_resolve
     0xc0, 0x10, 0, 0, 0, 0,             //    larl  %r1, GOTPLT_OFFSET
     0xd2, 0x07, 0xf0, 0x30, 0x10, 0x08, //    mvc   48(8, %r15), 8(%r1)
     0xe3, 0x10, 0x10, 0x10, 0x00, 0x04, //    lg    %r1, 16(%r1)
     0x07, 0xf1,                         //    br    %r1
-    0x07, 0x00, 0x07, 0x00,             //    nopr; nopr
   };
 
   memcpy(buf, insn, sizeof(insn));
-  *(ub32 *)(buf + 42) =
-    (ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 40) >> 1;
+  *(ub32 *)(buf + 30) =
+    (ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 28) >> 1;
 }
 
 template <>
