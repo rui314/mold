@@ -112,25 +112,26 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     0x7c08'03a6, // mtlr    r0
 
     // Compute the PLT entry index
-    0xe80b'002c, // ld      r0, 44(r11)
-    0x7d8b'6050, // subf    r12, r11, r12
-    0x7d60'5a14, // add     r11, r0, r11
-    0x380c'ffcc, // addi    r0, r12, -52
+    0x398c'ffd4, // addi    r12, r12, -44
+    0x7c0b'6050, // subf    r0, r11, r12
     0x7800'f082, // rldicl  r0, r0, 62, 2
+
+    // Compute the address of .got.plt
+    0x3d6b'0000, // addis   r11, r11, GOTPLT_OFFSET@ha
+    0x396b'0000, // addi    r11, r11, GOTPLT_OFFSET@lo
 
     // Load .got.plt[0] and .got.plt[1] and branch to .got.plt[0]
     0xe98b'0000, // ld      r12, 0(r11)
     0x7d89'03a6, // mtctr   r12
     0xe96b'0008, // ld      r11, 8(r11)
     0x4e80'0420, // bctr
-
-    // .quad .got.plt - .plt - 8
-    0x0000'0000,
-    0x0000'0000,
   };
 
   memcpy(buf, insn, sizeof(insn));
-  *(ul64 *)(buf + 52) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 8;
+
+  i64 val = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 8;
+  *(ul32 *)(buf + 28) |= higha(val);
+  *(ul32 *)(buf + 32) |= lo(val);
 }
 
 template <>

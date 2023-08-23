@@ -2158,7 +2158,7 @@ struct PPC64V1 : PPC64 {
 struct PPC64V2 : PPC64 {
   static constexpr std::string_view target_name = "ppc64v2";
   static constexpr bool is_le = true;
-  static constexpr u32 plt_hdr_size = 60;
+  static constexpr u32 plt_hdr_size = 52;
   static constexpr u32 plt_size = 4;
   static constexpr u32 pltgot_size = 0;
   static constexpr u32 thunk_hdr_size = 0;
