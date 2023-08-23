@@ -72,22 +72,22 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     0x7d88'02a6, // mflr    r12
     0x429f'0005, // bcl     20, 31, 4 // obtain PC
     0x7d68'02a6, // mflr    r11
-    0xe84b'0024, // ld      r2,36(r11)
     0x7d88'03a6, // mtlr    r12
-    0x7d62'5a14, // add     r11,r2,r11
+    0x3d6b'0000, // addis   r11, r11, GOTPLT_OFFSET@ha
+    0x396b'0000, // addi    r11, r11, GOTPLT_OFFSET@lo
     0xe98b'0000, // ld      r12,0(r11)
     0xe84b'0008, // ld      r2,8(r11)
     0x7d89'03a6, // mtctr   r12
     0xe96b'0010, // ld      r11,16(r11)
     0x4e80'0420, // bctr
-    // .quad .got.plt - .plt - 8
-    0x0000'0000,
-    0x0000'0000,
   };
 
   static_assert(sizeof(insn) == E::plt_hdr_size);
   memcpy(buf, insn, sizeof(insn));
-  *(ub64 *)(buf + 44) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 8;
+
+  i64 val = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 8;
+  *(ub32 *)(buf + 16) |= higha(val);
+  *(ub32 *)(buf + 20) |= lo(val);
 }
 
 template <>
