@@ -74,8 +74,7 @@ cd mold/build
 git checkout v2.1.0
 ../install-build-deps.sh
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ ..
-cmake --build . -j $(nproc)
-sudo cmake --install .
+sudo cmake --build . --target install -j $(nproc)
 ```
 
 You might need to pass a C++20 compiler command name to `cmake`. In the
