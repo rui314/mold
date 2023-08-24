@@ -274,7 +274,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     // as if they were TLSGD relocs for LoongArch, which is a clear bug.
     // We need to handle TLSLD relocs as synonyms for TLSGD relocs for the
     // sake of bug compatibility.
-    auto get_tls_idx = [&] {
+    auto get_got_idx = [&] {
       if (sym.has_tlsgd(ctx))
         return sym.get_tlsgd_idx(ctx);
       return sym.get_got_idx(ctx);
@@ -283,7 +283,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
     u64 P = get_addr() + rel.r_offset;
-    u64 G = get_tls_idx() * sizeof(Word<E>);
+    u64 G = get_got_idx() * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {

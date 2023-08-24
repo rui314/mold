@@ -195,14 +195,14 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   static const ul32 insn[] = {
-    0xe52d'e004, // push {lr}
-    0xe59f'e004, // ldr lr, 2f
+    0xe52d'e004, //    push {lr}
+    0xe59f'e004, //    ldr lr, 2f
     0xe08f'e00e, // 1: add lr, pc, lr
-    0xe5be'f008, // ldr pc, [lr, #8]!
+    0xe5be'f008, //    ldr pc, [lr, #8]!
     0x0000'0000, // 2: .word .got.plt - 1b - 8
-    0xe320'f000, // nop
-    0xe320'f000, // nop
-    0xe320'f000, // nop
+    0xe320'f000, //    nop
+    0xe320'f000, //    nop
+    0xe320'f000, //    nop
   };
 
   memcpy(buf, insn, sizeof(insn));
@@ -211,8 +211,8 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
 
 static const ul32 plt_entry[] = {
   0xe59f'c004, // 1: ldr ip, 2f
-  0xe08c'c00f, // add ip, ip, pc
-  0xe59c'f000, // ldr pc, [ip]
+  0xe08c'c00f, //    add ip, ip, pc
+  0xe59c'f000, //    ldr pc, [ip]
   0x0000'0000, // 2: .word sym@GOT - 1b
 };
 
