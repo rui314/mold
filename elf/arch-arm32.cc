@@ -469,10 +469,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_TLS_GOTDESC:
       if (sym.has_tlsdesc(ctx)) {
         // A is odd if the corresponding TLS_CALL is Thumb.
-        if (A & 1)
-          *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 6;
-        else
-          *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - 4;
+        *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - ((A & 1) ? 6 : 4);
+      } else if (sym.has_gottp(ctx)) {
+        *(ul32 *)loc = sym.get_gottp_addr(ctx) - P + A - ((A & 1) ? 5 : 8);
       } else {
         *(ul32 *)loc = S - ctx.tp_addr;
       }
@@ -481,9 +480,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsdesc(ctx)) {
         // BL <tls_trampoline>
         *(ul32 *)loc = 0xeb00'0000 | bits(get_tls_trampoline_addr(P + 8), 25, 2);
+      } else if (sym.has_gottp(ctx)) {
+        *(ul32 *)loc = 0xe79f'0000; // ldr r0, [pc, r0]
       } else {
-        // BL -> NOP
-        *(ul32 *)loc = 0xe320'f000;
+        *(ul32 *)loc = 0xe320'f000; // nop
       }
       break;
     case R_ARM_THM_TLS_CALL:
@@ -491,9 +491,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         u64 val = align_to(get_tls_trampoline_addr(P + 4), 4);
         write_thm_b_imm(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
+      } else if (sym.has_gottp(ctx)) {
+        *(ul16 *)loc = 0x4478;         // add r0, pc
+        *(ul16 *)(loc + 2) = 0x6800;   // ldr r0, [r0]
       } else {
-        // BL -> NOP.W
-        *(ul32 *)loc = 0x8000'f3af;
+        *(ul32 *)loc = 0x8000'f3af;    // nop.w
       }
       break;
     default:
@@ -594,9 +596,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_TLS_IE32:
       sym.flags |= NEEDS_GOTTP;
       break;
-    case R_ARM_TLS_GOTDESC:
-      if (!relax_tlsdesc(ctx, sym))
-        sym.flags |= NEEDS_TLSDESC;
+    case R_ARM_TLS_CALL:
+    case R_ARM_THM_TLS_CALL:
+      scan_tlsdesc(ctx, sym);
       break;
     case R_ARM_TLS_LE32:
       check_tlsle(ctx, sym, rel);
@@ -611,9 +613,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_THM_MOVW_PREL_NC:
     case R_ARM_THM_MOVW_ABS_NC:
     case R_ARM_TLS_LDO32:
-    case R_ARM_TLS_CALL:
-    case R_ARM_THM_TLS_CALL:
     case R_ARM_V4BX:
+    case R_ARM_TLS_GOTDESC:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;

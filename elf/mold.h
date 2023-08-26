@@ -291,7 +291,7 @@ private:
   void scan_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
   void scan_dyn_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
   void scan_toc_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
-
+  void scan_tlsdesc(Context<E> &ctx, Symbol<E> &sym);
   void check_tlsle(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
 
   void apply_dyn_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,

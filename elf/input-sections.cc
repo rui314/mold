@@ -333,6 +333,26 @@ void InputSection<E>::scan_toc_rel(Context<E> &ctx, Symbol<E> &sym,
 }
 
 template <typename E>
+void InputSection<E>::scan_tlsdesc(Context<E> &ctx, Symbol<E> &sym) {
+  if (ctx.arg.is_static ||
+      (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)) {
+    // Relax TLSDESC to Local Exec
+    //
+    // TLSDESC relocs must always be relaxed for statically-linked
+    // executables even if -no-relax is given. It is because a
+    // statically-linked executable doesn't contain a trampoline
+    // function needed for TLSDESC.
+  } else if (ctx.arg.relax && (!ctx.arg.shared || !ctx.arg.z_dlopen)) {
+    // In this condition, TP-relative offset of the thread-local
+    // variable is known at process startup time, so we can relax
+    // it to Initial Exec (i.e. GOTTP).
+    sym.flags |= NEEDS_GOTTP;
+  } else {
+    sym.flags |= NEEDS_TLSDESC;
+  }
+}
+
+template <typename E>
 void InputSection<E>::check_tlsle(Context<E> &ctx, Symbol<E> &sym,
                                   const ElfRel<E> &rel) {
   if (ctx.arg.shared)
