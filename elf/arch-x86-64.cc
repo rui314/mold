@@ -466,6 +466,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_X86_64_GOTPC32_TLSDESC:
+      // x86-64 TLSDESC uses the following code sequence to materialize
+      // a TP-relative address in %rax.
+      //
+      //   leaq    foo@TLSDESC(%rip), %rax
+      //   call    *foo@TLSCALL(%rax)
+      //
+      // We may relax the instructions to the following for executable
+      //
+      //   mov     $foo@TPOFF, %rax
+      //   nop
+      //
+      // or to the following for non-dlopen'd DSO.
+      //
+      //   mov     foo@GOTTPOFF(%rip), %rax
+      //   nop
       if (sym.has_tlsdesc(ctx)) {
         write32s(sym.get_tlsdesc_addr(ctx) + A - P);
       } else if (sym.has_gottp(ctx)) {
@@ -482,12 +497,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write32s(S - ctx.tp_addr);
       }
       break;
-    case R_X86_64_SIZE32:
-      write32(sym.esym().st_size + A);
-      break;
-    case R_X86_64_SIZE64:
-      *(ul64 *)loc = sym.esym().st_size + A;
-      break;
     case R_X86_64_TLSDESC_CALL:
       if (sym.has_tlsdesc(ctx)) {
         // Do nothing
@@ -496,6 +505,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         loc[0] = 0x66;
         loc[1] = 0x90;
       }
+      break;
+    case R_X86_64_SIZE32:
+      write32(sym.esym().st_size + A);
+      break;
+    case R_X86_64_SIZE64:
+      *(ul64 *)loc = sym.esym().st_size + A;
       break;
     default:
       unreachable();

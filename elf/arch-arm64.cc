@@ -369,6 +369,27 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A, 11, 0) << 10;
       break;
     case R_AARCH64_TLSDESC_ADR_PAGE21:
+      // ARM64 TLSDESC uses the following code sequence to materialize
+      // a TP-relative address in x0.
+      //
+      //   adrp    xN, :tlsdesc:foo
+      //   ldr     x1, [xN, #:tlsdesc_lo12:foo]
+      //   add     x0, xN, :tlsdesc_lo12:foo
+      //   blr     x1
+      //
+      // We may relax the instructions to the following for executable
+      //
+      //   nop
+      //   nop
+      //   movz    x0, :tls_offset_hi:foo, lsl #16
+      //   movk    x0, :tls_offset_lo:foo
+      //
+      // or to the following for non-dlopen'd DSO.
+      //
+      //   nop
+      //   nop
+      //   adrp    x0, :gottprel:foo
+      //   ldr     x0, [x0, :gottprel_lo12:foo]
       if (sym.has_tlsdesc(ctx)) {
         i64 val = page(sym.get_tlsdesc_addr(ctx) + A) - page(P);
         check(val, -(1LL << 32), 1LL << 32);

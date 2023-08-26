@@ -467,6 +467,27 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = S + A - ctx.tp_addr;
       break;
     case R_ARM_TLS_GOTDESC:
+      // ARM32 TLSDESC uses the following code sequence to materialize
+      // a TP-relative address in r0.
+      //
+      //       ldr     r0, .L2
+      //  .L1: bl      foo(tlscall)
+      //       ...
+      //  .L2: .word   foo(tlsdesc) + (. - .L1)
+      //
+      // We may relax the instructions to the following for executable
+      //
+      //       ldr     r0, .L2
+      //  .L1: nop
+      //       ...
+      //  .L2: .word   foo(tpoff)
+      //
+      // or to the following for non-dlopen'd DSO.
+      //
+      //       ldr     r0, .L2
+      //  .L1: ldr r0, [pc, r0]
+      //       ...
+      //  .L2: .word   foo(gottpoff) + (. - .L1)
       if (sym.has_tlsdesc(ctx)) {
         // A is odd if the corresponding TLS_CALL is Thumb.
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - ((A & 1) ? 6 : 4);
@@ -492,6 +513,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_thm_b_imm(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       } else if (sym.has_gottp(ctx)) {
+        // Since `ldr r0, [pc, r0]` is not representable in Thumb,
+        // we use two instructions instead.
         *(ul16 *)loc = 0x4478;         // add r0, pc
         *(ul16 *)(loc + 2) = 0x6800;   // ldr r0, [r0]
       } else {
