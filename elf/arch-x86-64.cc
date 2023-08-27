@@ -472,14 +472,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   leaq    foo@TLSDESC(%rip), %rax
       //   call    *foo@TLSCALL(%rax)
       //
-      // We may relax the instructions to the following for executable
-      //
-      //   mov     $foo@TPOFF, %rax
-      //   nop
-      //
-      // or to the following for non-dlopen'd DSO.
+      // We may relax the instructions to the following for non-dlopen'd DSO
       //
       //   mov     foo@GOTTPOFF(%rip), %rax
+      //   nop
+      //
+      // or to the following for executable.
+      //
+      //   mov     $foo@TPOFF, %rax
       //   nop
       if (sym.has_tlsdesc(ctx)) {
         write32s(sym.get_tlsdesc_addr(ctx) + A - P);

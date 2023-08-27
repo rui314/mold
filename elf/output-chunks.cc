@@ -1215,6 +1215,9 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
     for (Symbol<E> *sym : ctx.got->tlsdesc_syms) {
       i64 idx = sym->get_tlsdesc_idx(ctx);
 
+      // The values set to TLSDESC GOT slots vary depending on libc,
+      // so we can't precompute them. We always emit a dynamic
+      // relocation for each incoming TLSDESC reloc.
       if (sym->is_imported)
         add({idx, 0, E::R_TLSDESC, sym});
       else

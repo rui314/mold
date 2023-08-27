@@ -377,19 +377,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   add     x0, xN, :tlsdesc_lo12:foo
       //   blr     x1
       //
-      // We may relax the instructions to the following for executable
-      //
-      //   nop
-      //   nop
-      //   movz    x0, :tls_offset_hi:foo, lsl #16
-      //   movk    x0, :tls_offset_lo:foo
-      //
-      // or to the following for non-dlopen'd DSO.
+      // We may relax the instructions to the following for non-dlopen'd DSO
       //
       //   nop
       //   nop
       //   adrp    x0, :gottprel:foo
       //   ldr     x0, [x0, :gottprel_lo12:foo]
+      //
+      // or to the following for executable.
+      //
+      //   nop
+      //   nop
+      //   movz    x0, :tls_offset_hi:foo, lsl #16
+      //   movk    x0, :tls_offset_lo:foo
       if (sym.has_tlsdesc(ctx)) {
         i64 val = page(sym.get_tlsdesc_addr(ctx) + A) - page(P);
         check(val, -(1LL << 32), 1LL << 32);
@@ -399,37 +399,31 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_AARCH64_TLSDESC_LD64_LO12:
-      if (sym.has_tlsdesc(ctx)) {
+      if (sym.has_tlsdesc(ctx))
         *(ul32 *)loc |= bits(sym.get_tlsdesc_addr(ctx) + A, 11, 3) << 10;
-      } else {
+      else
         *(ul32 *)loc = 0xd503'201f; // nop
-      }
       break;
     case R_AARCH64_TLSDESC_ADD_LO12:
       if (sym.has_tlsdesc(ctx)) {
         *(ul32 *)loc |= bits(sym.get_tlsdesc_addr(ctx) + A, 11, 0) << 10;
       } else if (sym.has_gottp(ctx)) {
-        // add x0, x0, #0 -> adrp x0, 0
-        *(ul32 *)loc = 0x9000'0000;
+        *(ul32 *)loc = 0x9000'0000; // adrp x0, 0
         write_adrp(loc, page(sym.get_gottp_addr(ctx) + A) - page(P));
       } else {
-        // add x0, x0, #0 -> movz x0, #tls_ofset_hi, lsl #16
-        i64 val = (S + A - ctx.tp_addr);
-        check(val, -(1LL << 32), 1LL << 32);
-        *(ul32 *)loc = 0xd2a0'0000 | (bits(val, 32, 16) << 5);
+        *(ul32 *)loc = 0xd2a0'0000; // movz x0, 0, lsl #16
+        *(ul32 *)loc |= bits(S + A - ctx.tp_addr, 32, 16) << 5;
       }
       break;
     case R_AARCH64_TLSDESC_CALL:
       if (sym.has_tlsdesc(ctx)) {
         // Do nothing
       } else if (sym.has_gottp(ctx)) {
-        // blr x1 -> ldr x0, [x0]
-        *(ul32 *)loc = 0xf940'0000;
+        *(ul32 *)loc = 0xf940'0000; // ldr x0, [x0, 0]
         *(ul32 *)loc |= bits(sym.get_gottp_addr(ctx) + A, 11, 3) << 10;
       } else {
-        // blr x1 -> movk x0, #tls_ofset_lo
-        u32 offset_lo = (S + A - ctx.tp_addr) & 0xffff;
-        *(ul32 *)loc = 0xf280'0000 | (offset_lo << 5);
+        *(ul32 *)loc = 0xf280'0000; // movk x0, 0
+        *(ul32 *)loc |= bits(S + A - ctx.tp_addr, 15, 0) << 5;
       }
       break;
     default:
