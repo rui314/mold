@@ -336,10 +336,12 @@ list(APPEND MOLD_MACHO_TEMPLATE_FILES
 
 function(mold_instantiate_templates SOURCE TARGET)
   set(PATH ${CMAKE_BINARY_DIR}/${SOURCE}.${TARGET}.cc)
-  file(WRITE ${PATH} "#define MOLD_${TARGET} 1
+  if(NOT EXISTS ${PATH})
+    file(WRITE ${PATH} "#define MOLD_${TARGET} 1
 #define MOLD_TARGET ${TARGET}
 #include \"${CMAKE_SOURCE_DIR}/${SOURCE}\"
 ")
+  endif()
   target_sources(mold PRIVATE ${PATH})
 endfunction()
 
