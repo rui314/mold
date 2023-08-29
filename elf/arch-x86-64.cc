@@ -253,6 +253,11 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
     //
     //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
     //  e8 00 00 00 00          call   __tls_get_addr
+    //
+    // The instructions are so short that we cannot rewrite them with
+    // "mov %fs:0, %rax" which is 9 bytes long. We use a shorter code
+    // sequence instead. Since "xor %eax, %eax" zero-clears %rax, the
+    // meaning is equivalent.
     static const u8 insn[] = {
       0x31, 0xc0,                   // xor %eax, %eax
       0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
@@ -714,7 +719,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_X86_64_GOTTPOFF: {
       bool do_relax = ctx.arg.relax && !ctx.arg.shared &&
-           !sym.is_imported && relax_gottpoff(loc - 3);
+                      !sym.is_imported && relax_gottpoff(loc - 3);
       if (!do_relax)
         sym.flags |= NEEDS_GOTTP;
       break;

@@ -260,20 +260,21 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     while (t < thunks.size() && thunks[t]->offset < m[a]->offset)
       reset_thunk(*thunks[t++]);
 
-    // Create a thunk for input sections between B and C and place it at D.
+    // Create a new thunk and place it at D.
     offset = align_to(offset, RangeExtensionThunk<E>::alignment);
     i64 thunk_idx = thunks.size();
     RangeExtensionThunk<E> *thunk = new RangeExtensionThunk<E>(*this, offset);
     thunks.emplace_back(thunk);
 
-    // Scan relocations between B and C to collect symbols that need thunks.
+    // Scan relocations between B and C to collect symbols that need
+    // entries in the new thunk.
     tbb::parallel_for_each(m.begin() + b, m.begin() + c,
                            [&](InputSection<E> *isec) {
       scan_rels(ctx, *isec, *thunk, thunk_idx);
     });
 
     // Now that we know the number of symbols in the thunk, we can compute
-    // its size.
+    // the thunk's size.
     assert(thunk->size() < max_thunk_size);
     offset += thunk->size();
 
