@@ -238,7 +238,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // :lo12: foo` instruction pair to materialize a PC-relative address
       // in a register can be relaxed to `NOP` followed by `ADR x0, foo`
       // if foo is in PC ± 1 MiB.
-      if (ctx.arg.relax && i + 1 < rels.size() &&
+      if (ctx.arg.relax && sym.is_relative() && i + 1 < rels.size() &&
           sign_extend(S + A - P - 4, 20) == S + A - P - 4) {
         const ElfRel<E> &rel2 = rels[i + 1];
         if (rel2.r_type == R_AARCH64_ADD_ABS_LO12_NC &&
