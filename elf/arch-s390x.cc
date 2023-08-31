@@ -458,22 +458,22 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       // linked executables because __tls_get_offset() in libc.a just calls
       // abort().
       if (ctx.arg.is_static ||
-          (ctx.arg.relax && !sym.is_imported && !ctx.arg.shared)) {
-        // do nothing
-      } else if (ctx.arg.relax && !sym.is_imported && ctx.arg.shared &&
-                 !ctx.arg.z_dlopen) {
+          (ctx.arg.relax && sym.is_tprel_linktime_const(ctx))) {
+        // Do nothing
+      } else if (ctx.arg.relax && sym.is_tprel_runtime_const(ctx)) {
         sym.flags |= NEEDS_GOTTP;
       } else {
         sym.flags |= NEEDS_TLSGD;
       }
       break;
     case R_390_TLS_LDM32:
-    case R_390_TLS_LDM64: {
-      bool do_relax = ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared);
-      if (!do_relax)
+    case R_390_TLS_LDM64:
+      if (ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared)) {
+        // Do nothing
+      } else {
         ctx.needs_tlsld = true;
+      }
       break;
-    }
     case R_390_TLS_LE32:
     case R_390_TLS_LE64:
       check_tlsle(ctx, sym, rel);

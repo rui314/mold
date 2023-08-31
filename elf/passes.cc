@@ -679,10 +679,10 @@ template <typename E>
 void add_synthetic_symbols(Context<E> &ctx) {
   ObjectFile<E> &obj = *ctx.internal_obj;
 
-  auto add = [&](std::string_view name) {
+  auto add = [&](std::string_view name, u32 type = STT_NOTYPE) {
     ElfSym<E> esym;
     memset(&esym, 0, sizeof(esym));
-    esym.st_type = STT_NOTYPE;
+    esym.st_type = type;
     esym.st_shndx = SHN_ABS;
     esym.st_bind = STB_GLOBAL;
     esym.st_visibility = STV_HIDDEN;
@@ -728,7 +728,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
     ctx.__dso_handle = add("__dso_handle");
 
   if constexpr (supports_tlsdesc<E>)
-    ctx._TLS_MODULE_BASE_ = add("_TLS_MODULE_BASE_");
+    ctx._TLS_MODULE_BASE_ = add("_TLS_MODULE_BASE_", STT_TLS);
 
   if constexpr (is_riscv<E>)
     if (!ctx.arg.shared)

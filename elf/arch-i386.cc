@@ -503,15 +503,15 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_386_GOTPC:
       sym.flags |= NEEDS_GOT;
       break;
-    case R_386_GOT32X: {
-      // We always want to relax GOT32X because static PIE doesn't
-      // work without it.
-      bool do_relax = !sym.is_imported && sym.is_relative() &&
-                      relax_got32x(loc - 2);
-      if (!do_relax)
+    case R_386_GOT32X:
+      // We always want to relax GOT32X even if --no-relax is given
+      // because static PIE doesn't work without it.
+      if (sym.is_pcrel_linktime_const(ctx) && relax_got32x(loc - 2)) {
+        // Do nothing
+      } else {
         sym.flags |= NEEDS_GOT;
+      }
       break;
-    }
     case R_386_PLT32:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
@@ -523,8 +523,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_386_TLS_GD:
       // We always relax if -static because libc.a doesn't contain
       // __tls_get_addr().
-      if (ctx.arg.is_static ||
-          (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported))
+      if (ctx.arg.is_static || (ctx.arg.relax && sym.is_tprel_linktime_const(ctx)))
         i++;
       else
         sym.flags |= NEEDS_TLSGD;

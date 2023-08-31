@@ -2128,6 +2128,10 @@ public:
   bool is_ifunc() const { return get_type() == STT_GNU_IFUNC; }
   bool is_remaining_undef_weak() const;
 
+  bool is_pcrel_linktime_const(Context<E> &ctx) const;
+  bool is_tprel_linktime_const(Context<E> &ctx) const;
+  bool is_tprel_runtime_const(Context<E> &ctx) const;
+
   InputSection<E> *get_input_section() const;
   Chunk<E> *get_output_section() const;
   SectionFragment<E> *get_frag() const;
@@ -2857,6 +2861,28 @@ inline bool Symbol<E>::is_local(Context<E> &ctx) const {
 template <typename E>
 inline bool Symbol<E>::is_remaining_undef_weak() const {
   return !is_imported && esym().is_undef_weak();
+}
+
+// Returns true if the symbol's PC-relative address is known at link-time.
+template <typename E>
+inline bool Symbol<E>::is_pcrel_linktime_const(Context<E> &ctx) const {
+  return !is_imported && !is_ifunc() && is_relative();
+}
+
+// Returns true if the symbol's Thread Pointer-relative address is
+// known at link-time.
+template <typename E>
+inline bool Symbol<E>::is_tprel_linktime_const(Context<E> &ctx) const {
+  assert(get_type() == STT_TLS);
+  return !ctx.arg.shared && !is_imported;
+}
+
+// Returns true if the symbol's Thread Pointer-relative address is
+// known at load-time.
+template <typename E>
+inline bool Symbol<E>::is_tprel_runtime_const(Context<E> &ctx) const {
+  assert(get_type() == STT_TLS);
+  return !ctx.arg.shared || !is_imported || !ctx.arg.z_dlopen;
 }
 
 template <typename E>

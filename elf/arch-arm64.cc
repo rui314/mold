@@ -238,10 +238,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // :lo12: foo` instruction pair to materialize a PC-relative address
       // in a register can be relaxed to `NOP` followed by `ADR x0, foo`
       // if foo is in PC ± 1 MiB.
-      if (ctx.arg.relax && sym.is_relative() && i + 1 < rels.size() &&
-          sign_extend(S + A - P - 4, 20) == S + A - P - 4) {
+      if (ctx.arg.relax && sym.is_pcrel_linktime_const(ctx) &&
+          i + 1 < rels.size()) {
+        i64 val = S + A - P - 4;
         const ElfRel<E> &rel2 = rels[i + 1];
-        if (rel2.r_type == R_AARCH64_ADD_ABS_LO12_NC &&
+        if (sign_extend(val, 20) == val &&
+            rel2.r_type == R_AARCH64_ADD_ABS_LO12_NC &&
             rel2.r_sym == rel.r_sym &&
             rel2.r_offset == rel.r_offset + 4 &&
             rel2.r_addend == rel.r_addend &&
@@ -252,7 +254,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           if (reg1 == reg2) {
             *(ul32 *)loc = 0xd503'201f;              // nop
             *(ul32 *)(loc + 4) = 0x1000'0000 | reg1; // adr
-            write_adr(loc + 4, S + A - P - 4);
+            write_adr(loc + 4, val);
             i++;
             break;
           }
@@ -510,8 +512,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       // symbol's address from GOT. If the GOT value is a link-time
       // constant, we may be able to rewrite the ADRP+LDR instruction pair
       // with an ADRP+ADD, eliminating a GOT memory load.
-      if (ctx.arg.relax && sym.is_relative() && !sym.is_imported &&
-          !sym.is_ifunc() && i + 1 < rels.size()) {
+      if (ctx.arg.relax && sym.is_pcrel_linktime_const(ctx) &&
+          i + 1 < rels.size()) {
         // ADRP+LDR must be consecutive and use the same register to relax.
         const ElfRel<E> &rel2 = rels[i + 1];
         if (rel2.r_type == R_AARCH64_LD64_GOT_LO12_NC &&

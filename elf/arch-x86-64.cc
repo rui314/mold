@@ -406,7 +406,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // We always want to relax GOTPCRELX relocs even if --no-relax
       // was given because some static PIE runtime code depends on these
       // relaxations.
-      if (!sym.is_imported && !sym.is_ifunc() && sym.is_relative()) {
+      if (sym.is_pcrel_linktime_const(ctx)) {
         u32 insn = relax_gotpcrelx(loc - 2);
         i64 val = S + A - P;
         if (insn && (i32)val == val) {
@@ -419,7 +419,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write32s(G + GOTPLT + A - P);
       break;
     case R_X86_64_REX_GOTPCRELX:
-      if (!sym.is_imported && !sym.is_ifunc() && sym.is_relative()) {
+      if (sym.is_pcrel_linktime_const(ctx)) {
         u32 insn = relax_rex_gotpcrelx(loc - 3);
         i64 val = S + A - P;
         if (insn && (i32)val == val) {
@@ -697,12 +697,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_X86_64_TLSGD:
       if (ctx.arg.is_static ||
-          (ctx.arg.relax && !sym.is_imported && !ctx.arg.shared)) {
+          (ctx.arg.relax && sym.is_tprel_linktime_const(ctx))) {
         // We always relax if -static because libc.a doesn't contain
         // __tls_get_addr().
         i++;
-      } else if (ctx.arg.relax && !sym.is_imported && ctx.arg.shared &&
-                 !ctx.arg.z_dlopen) {
+      } else if (ctx.arg.relax && sym.is_tprel_runtime_const(ctx)) {
         sym.flags |= NEEDS_GOTTP;
         i++;
       } else {
@@ -717,13 +716,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       else
         ctx.needs_tlsld = true;
       break;
-    case R_X86_64_GOTTPOFF: {
-      bool do_relax = ctx.arg.relax && !ctx.arg.shared &&
-                      !sym.is_imported && relax_gottpoff(loc - 3);
-      if (!do_relax)
+    case R_X86_64_GOTTPOFF:
+      if (ctx.arg.relax && relax_gottpoff(loc - 3) &&
+          sym.is_tprel_linktime_const(ctx)) {
+        // do nothing
+      } else {
         sym.flags |= NEEDS_GOTTP;
-      break;
-    }
+      }
     case R_X86_64_TLSDESC_CALL:
       scan_tlsdesc(ctx, sym);
       break;

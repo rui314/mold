@@ -335,7 +335,7 @@ void InputSection<E>::scan_toc_rel(Context<E> &ctx, Symbol<E> &sym,
 template <typename E>
 void InputSection<E>::scan_tlsdesc(Context<E> &ctx, Symbol<E> &sym) {
   if (ctx.arg.is_static ||
-      (ctx.arg.relax && !ctx.arg.shared && !sym.is_imported)) {
+      (ctx.arg.relax && sym.is_tprel_linktime_const(ctx))) {
     // Relax TLSDESC to Local Exec. In this case, we directly materialize
     // a TP-relative offset, so no dynamic relocation is needed.
     //
@@ -343,7 +343,7 @@ void InputSection<E>::scan_tlsdesc(Context<E> &ctx, Symbol<E> &sym) {
     // executables even if -no-relax is given. It is because a
     // statically-linked executable doesn't contain a trampoline
     // function needed for TLSDESC.
-  } else if (ctx.arg.relax && (!ctx.arg.shared || !ctx.arg.z_dlopen)) {
+  } else if (ctx.arg.relax && sym.is_tprel_runtime_const(ctx)) {
     // In this condition, TP-relative offset of a thread-local variable
     // is known at process startup time, so we can relax TLSDESC to the
     // code that reads the TP-relative offset from GOT and add TP to it.

@@ -288,36 +288,32 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // We always have to relax a GOT load to a load immediate if a
       // symbol is local, because R_SPARC_GOTDATA_OP cannot represent
       // an addend for a local symbol.
-      if (sym.is_imported || sym.is_ifunc()) {
+      if (sym.is_absolute()) {
+        i64 val = S + A;
+        *(ub32 *)loc |= bits(val < 0 ? ~val : val, 31, 10);
+      } else if (sym.is_pcrel_linktime_const(ctx)) {
+        i64 val = S + A - GOT;
+        *(ub32 *)loc |= bits(val < 0 ? ~val : val, 31, 10);
+      } else {
         *(ub32 *)loc |= bits(G, 31, 10);
-      } else if (sym.is_absolute()) {
-        i64 val = S + A;
-        *(ub32 *)loc |= bits(val < 0 ? ~val : val, 31, 10);
-      } else {
-        i64 val = S + A - GOT;
-        *(ub32 *)loc |= bits(val < 0 ? ~val : val, 31, 10);
       }
       break;
-    case R_SPARC_GOTDATA_OP_LOX10: {
-      if (sym.is_imported || sym.is_ifunc()) {
+    case R_SPARC_GOTDATA_OP_LOX10:
+      if (sym.is_absolute()) {
+        i64 val = S + A;
+        *(ub32 *)loc |= bits(val, 9, 0) | (val < 0 ? 0b1'1100'0000'0000 : 0);
+      } else if (sym.is_pcrel_linktime_const(ctx)) {
+        i64 val = S + A - GOT;
+        *(ub32 *)loc |= bits(val, 9, 0) | (val < 0 ? 0b1'1100'0000'0000 : 0);
+      } else {
         *(ub32 *)loc |= bits(G, 9, 0);
-      } else if (sym.is_absolute()) {
-        i64 val = S + A;
-        *(ub32 *)loc |= bits(val, 9, 0) | (val < 0 ? 0b1'1100'0000'0000 : 0);
-      } else {
-        i64 val = S + A - GOT;
-        *(ub32 *)loc |= bits(val, 9, 0) | (val < 0 ? 0b1'1100'0000'0000 : 0);
       }
       break;
-    }
     case R_SPARC_GOTDATA_OP:
-      if (sym.is_imported || sym.is_ifunc())
-        break;
-
       if (sym.is_absolute()) {
         // ldx [ %g2 + %g1 ], %g1  →  nop
         *(ub32 *)loc = 0x0100'0000;
-      } else {
+      } else if (sym.is_pcrel_linktime_const(ctx)) {
         // ldx [ %g2 + %g1 ], %g1  →  add %g2, %g1, %g1
         *(ub32 *)loc &= 0b00'11111'000000'11111'1'11111111'11111;
         *(ub32 *)loc |= 0b10'00000'000000'00000'0'00000000'00000;
