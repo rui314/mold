@@ -1,15 +1,9 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-if [ $MACHINE = x86_64 -o $MACHINE = i386 -o $MACHINE = arm ]; then
-  dialect=gnu2
-elif [ $MACHINE = aarch64 ]; then
-  dialect=desc
-else
-  skip
-fi
+supports_tlsdesc || skip
 
-cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -c -o $t/a.o -xc -
+cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc - $tlsdesc_opt
 static _Thread_local int foo[10000] = { 3, [9999] = 5 };
 
 int get_foo(int idx) { return foo[idx]; }
@@ -17,7 +11,7 @@ EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
 
-cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -c -o $t/c.o -xc -
+cat <<EOF | $GCC -fPIC -c -o $t/c.o -xc - $tlsdesc_opt
 #include <assert.h>
 #include <dlfcn.h>
 #include <stdio.h>

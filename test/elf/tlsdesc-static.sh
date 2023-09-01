@@ -1,17 +1,10 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+supports_tlsdesc || skip
 test_cflags -static || skip
 
-if [ $MACHINE = x86_64 -o $MACHINE = i386 -o $MACHINE = arm ]; then
-  dialect=gnu2
-elif [ $MACHINE = aarch64 ]; then
-  dialect=desc
-else
-  skip
-fi
-
-cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -c -o $t/a.o -xc -
+cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc - $tlsdesc_opt
 #include <stdio.h>
 
 extern _Thread_local int foo;
@@ -22,7 +15,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -c -o $t/b.o -xc -
+cat <<EOF | $GCC -fPIC -c -o $t/b.o -xc - $tlsdesc_opt
 _Thread_local int foo;
 EOF
 

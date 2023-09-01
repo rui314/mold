@@ -338,20 +338,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = sym.get_gottp_addr(ctx) + A;
       break;
     case R_386_TLS_GD:
-      if (sym.has_tlsgd(ctx)) {
+      if (sym.has_tlsgd(ctx))
         *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - GOT;
-      } else {
-        relax_gd_to_le(loc, rels[i + 1], S - ctx.tp_addr);
-        i++;
-      }
+      else
+        relax_gd_to_le(loc, rels[++i], S - ctx.tp_addr);
       break;
     case R_386_TLS_LDM:
-      if (ctx.got->has_tlsld(ctx)) {
+      if (ctx.got->has_tlsld(ctx))
         *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
-      } else {
-        relax_ld_to_le(loc, rels[i + 1], ctx.tp_addr - ctx.tls_begin);
-        i++;
-      }
+        else
+        relax_ld_to_le(loc, rels[++i], ctx.tp_addr - ctx.tls_begin);
       break;
     case R_386_TLS_LDO_32:
       *(ul32 *)loc = S + A - ctx.dtp_addr;

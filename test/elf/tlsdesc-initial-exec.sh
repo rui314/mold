@@ -1,26 +1,20 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-if [ $MACHINE = x86_64 -o $MACHINE = i386 -o $MACHINE = arm ]; then
-  dialect=gnu2
-elif [ $MACHINE = aarch64 ]; then
-  dialect=desc
-else
-  skip
-fi
+supports_tlsdesc || skip
 
-cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -fPIC -c -o $t/a.o -xc -
+cat <<EOF | $GCC -fPIC -fPIC -c -o $t/a.o -xc - $tlsdesc_opt
 _Thread_local int foo = 5;
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
 
-cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -fPIC -c -o $t/c.o -xc -
+cat <<EOF | $GCC -fPIC -fPIC -c -o $t/c.o -xc - $tlsdesc_opt
 extern _Thread_local int foo;
 int get_foo1() { return foo; }
 EOF
 
-cat <<EOF | $GCC -fPIC -mtls-dialect=$dialect -fPIE -c -o $t/d.o -xc -
+cat <<EOF | $GCC -fPIC -fPIE -c -o $t/d.o -xc - $tlsdesc_opt
 #include <stdio.h>
 
 extern _Thread_local int foo;

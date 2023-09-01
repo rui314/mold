@@ -53,6 +53,12 @@ else
   QEMU="qemu-$MACHINE -L /usr/$TRIPLE"
 fi
 
+if [ $MACHINE = x86_64 -o $MACHINE = i386 -o $MACHINE = arm ]; then
+  tlsdesc_opt=-mtls-dialect=gnu2
+elif [ $MACHINE = aarch64 ]; then
+  tlsdesc_opt=-mtls-dialect=desc
+fi
+
 # Common functions
 test_cflags() {
   echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null
@@ -61,6 +67,10 @@ test_cflags() {
 supports_ifunc() {
   echo 'void x() __attribute__((ifunc("y"))); void *y() { return 0; }' | \
     $CC -c -o /dev/null -xc - >& /dev/null
+}
+
+supports_tlsdesc() {
+  [ -n "$tlsdesc_opt" ]
 }
 
 skip() {
