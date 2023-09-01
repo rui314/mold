@@ -725,6 +725,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       } else {
         sym.flags |= NEEDS_GOTTP;
       }
+      break;
     case R_X86_64_TLSDESC_CALL:
       scan_tlsdesc(ctx, sym);
       break;
