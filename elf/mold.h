@@ -2970,9 +2970,8 @@ inline std::string_view Symbol<E>::name() const {
 template <typename E>
 inline void Symbol<E>::add_aux(Context<E> &ctx) {
   if (aux_idx == -1) {
-    i64 sz = ctx.symbol_aux.size();
-    aux_idx = sz;
-    ctx.symbol_aux.resize(sz + 1);
+    aux_idx = ctx.symbol_aux.size();
+    ctx.symbol_aux.resize(aux_idx + 1);
   }
 }
 
@@ -2994,17 +2993,6 @@ inline bool is_c_identifier(std::string_view s) {
     if (!is_alnum(s[i]))
       return false;
   return true;
-}
-
-template <typename E>
-inline bool relax_tlsdesc(Context<E> &ctx, Symbol<E> &sym) {
-  // TLSDESC relocs must be always relaxed for statically-linked
-  // executables even if -no-relax is given. It is because a
-  // statically-linked executable doesn't contain a tranpoline
-  // function needed for TLSDESC.
-  if (ctx.arg.is_static)
-    return true;
-  return ctx.arg.relax && !ctx.arg.shared && !sym.is_imported;
 }
 
 } // namespace mold::elf

@@ -938,23 +938,24 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 // bit. An address must be even and thus its LSB is 0 (odd address is not
 // representable in this encoding and such relocation must be stored to
 // the .rel.dyn section). A bitmap has LSB 1.
-static std::vector<u64> encode_relr(std::span<u64> pos, i64 word_size) {
+template <typename E>
+static std::vector<u64> encode_relr(std::span<u64> pos) {
   std::vector<u64> vec;
-  u64 num_bits = word_size * 8 - 1;
-  u64 max_delta = num_bits * word_size;
+  i64 num_bits = sizeof(Word<E>) * 8 - 1;
+  i64 max_delta = sizeof(Word<E>) * num_bits;
 
   for (i64 i = 0; i < pos.size();) {
     assert(i == 0 || pos[i - 1] <= pos[i]);
-    assert(pos[i] % word_size == 0);
+    assert(pos[i] % sizeof(Word<E>) == 0);
 
     vec.push_back(pos[i]);
-    u64 base = pos[i] + word_size;
+    u64 base = pos[i] + sizeof(Word<E>);
     i++;
 
     for (;;) {
       u64 bits = 0;
       for (; i < pos.size() && pos[i] - base < max_delta; i++)
-        bits |= 1LL << ((pos[i] - base) / word_size);
+        bits |= 1LL << ((pos[i] - base) / sizeof(Word<E>));
 
       if (!bits)
         break;
@@ -997,7 +998,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
 
   // Compress them
   std::vector<u64> pos = flatten(shards);
-  this->relr = encode_relr(pos, sizeof(Word<E>));
+  this->relr = encode_relr<E>(pos);
 }
 
 // Compute spaces needed for thunk symbols
@@ -1327,7 +1328,7 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
     if (ent.is_relr(ctx))
       pos.push_back(ent.idx * sizeof(Word<E>));
 
-  this->relr = encode_relr(pos, sizeof(Word<E>));
+  this->relr = encode_relr<E>(pos);
 }
 
 template <typename E>
