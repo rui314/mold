@@ -381,7 +381,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc = S + A - P;
       break;
     case R_X86_64_GOT32:
-      write32s(G + A);
+      write32(G + A);
       break;
     case R_X86_64_GOT64:
       *(ul64 *)loc = G + A;
