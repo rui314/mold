@@ -474,8 +474,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // x86-64 TLSDESC uses the following code sequence to materialize
       // a TP-relative address in %rax.
       //
-      //   leaq    foo@TLSDESC(%rip), %rax
-      //   call    *foo@TLSCALL(%rax)
+      //   lea    0(%rip), %rax
+      //       R_X86_64_GOTPC32_TLSDESC    foo
+      //   call   *(%rax)
+      //       R_X86_64_TLSDESC_CALL       foo
       //
       // We may relax the instructions to the following for non-dlopen'd DSO
       //
@@ -696,8 +698,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_PLT;
       break;
     case R_X86_64_TLSGD:
-      if (ctx.arg.is_static ||
-          (ctx.arg.relax && sym.is_tprel_linktime_const(ctx))) {
+      if ((ctx.arg.relax && sym.is_tprel_linktime_const(ctx)) ||
+          ctx.arg.is_static) {
         // We always relax if -static because libc.a doesn't contain
         // __tls_get_addr().
         i++;

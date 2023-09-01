@@ -471,16 +471,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // a TP-relative address in r0.
       //
       //       ldr     r0, .L2
-      //  .L1: bl      foo(tlscall)
-      //       ...
-      //  .L2: .word   foo(tlsdesc) + (. - .L1)
+      //  .L1: bl      foo
+      //           R_ARM_TLS_CALL
+      //  .L2: .word   foo + . - .L1
+      //           R_ARM_TLS_GOTDESC
       //
       // We may relax the instructions to the following for non-dlopen'd DSO
       //
       //       ldr     r0, .L2
       //  .L1: ldr r0, [pc, r0]
       //       ...
-      //  .L2: .word   foo(gottpoff) + (. - .L1)
+      //  .L2: .word   foo(gottpoff) + . - .L1
       //
       // or to the following for executable.
       //

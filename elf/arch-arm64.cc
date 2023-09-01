@@ -374,10 +374,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // ARM64 TLSDESC uses the following code sequence to materialize
       // a TP-relative address in x0.
       //
-      //   adrp    xN, :tlsdesc:foo
-      //   ldr     x1, [xN, #:tlsdesc_lo12:foo]
-      //   add     x0, xN, :tlsdesc_lo12:foo
+      //   adrp    x0, 0
+      //       R_AARCH64_TLSDESC_ADR_PAGE21 foo
+      //   ldr     x1, [x0]
+      //       R_AARCH64_TLSDESC_LD64_LO12  foo
+      //   add     x0, x0, #0
+      //       R_AARCH64_TLSDESC_ADD_LO12   foo
       //   blr     x1
+      //       R_AARCH64_TLSDESC_CALL       foo
       //
       // We may relax the instructions to the following for non-dlopen'd DSO
       //
