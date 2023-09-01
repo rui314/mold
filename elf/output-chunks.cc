@@ -1215,9 +1215,11 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
     for (Symbol<E> *sym : ctx.got->tlsdesc_syms) {
       i64 idx = sym->get_tlsdesc_idx(ctx);
 
-      // The values set to TLSDESC GOT slots vary depending on libc,
-      // so we can't precompute them. We always emit a dynamic
-      // relocation for each incoming TLSDESC reloc.
+      // TLSDESC uses two consecutive GOT slots, and a single TLSDESC
+      // dynamic relocation fills both. The actual values of the slots
+      // vary depending on libc, so we can't precompute their values.
+      // We always emit a dynamic relocation for each incoming TLSDESC
+      // reloc.
       if (sym->is_imported)
         add({idx, 0, E::R_TLSDESC, sym});
       else
@@ -1293,8 +1295,25 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
                          ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
                          ent.val);
 
-      if (ctx.arg.apply_dynamic_relocs)
-        buf[ent.idx] = ent.val;
+      bool is_tlsdesc = false;
+      if constexpr (supports_tlsdesc<E>)
+        is_tlsdesc = (ent.r_type == E::R_TLSDESC);
+
+      if (ctx.arg.apply_dynamic_relocs) {
+        if (is_tlsdesc && !is_arm32<E>) {
+          // A single TLSDESC relocation fixes two consecutive GOT slots
+          // where one slot holds a function pointer and the other an
+          // argument to the function. An addend should be applied not to
+          // the function pointer but to the function argument, which is
+          // usually stored to the second slot.
+          //
+          // ARM32 employs the inverted layout for some reason, so an
+          // addend is applied to the first slot.
+          buf[ent.idx + 1] = ent.val;
+        } else {
+          buf[ent.idx] = ent.val;
+        }
+      }
     }
   }
 }

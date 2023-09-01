@@ -360,13 +360,32 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc = sym.esym().st_size + A;
       break;
     case R_386_TLS_GOTDESC:
+      // i386 TLSDESC uses the following code sequence to materialize
+      // a TP-relative address in %eax.
+      //
+      //   lea    0(%ebx), %eax
+      //       R_386_TLS_GOTDESC   foo
+      //   call   *(%eax)
+      //       R_386_TLS_DESC_CALL foo
+      //
+      // We may relax the instructions to the following for non-dlopen'd DSO
+      //
+      //   mov     foo@GOTTPOFF(%ebx), %eax
+      //   nop
+      //
+      // or to the following for executable.
+      //
+      //   mov     $foo@TPOFF, %eax
+      //   nop
       if (sym.has_tlsdesc(ctx)) {
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - GOT;
+      } else if (sym.has_gottp(ctx)) {
+        loc[-2] = 0x8b;
+        loc[-1] = 0x83;
+        *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - GOT;
       } else {
-        static const u8 insn[] = {
-          0x8d, 0x05, 0, 0, 0, 0, // lea 0, %eax
-        };
-        memcpy(loc - 2, insn, sizeof(insn));
+        loc[-2] = 0x90;
+        loc[-1] = 0xb8;
         *(ul32 *)loc = S + A - ctx.tp_addr;
       }
       break;
@@ -538,8 +557,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         ctx.needs_tlsld = true;
       break;
     case R_386_TLS_GOTDESC:
-      if (!relax_tlsdesc(ctx, sym))
-        sym.flags |= NEEDS_TLSDESC;
+      scan_tlsdesc(ctx, sym);
       break;
     case R_386_TLS_LE:
       check_tlsle(ctx, sym, rel);

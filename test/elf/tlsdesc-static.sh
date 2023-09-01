@@ -3,7 +3,7 @@
 
 test_cflags -static || skip
 
-if [ $MACHINE = x86_64 -o $MACHINE = arm ]; then
+if [ $MACHINE = x86_64 -o $MACHINE = i386 -o $MACHINE = arm ]; then
   dialect=gnu2
 elif [ $MACHINE = aarch64 ]; then
   dialect=desc
