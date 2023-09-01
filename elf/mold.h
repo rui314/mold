@@ -2881,8 +2881,9 @@ inline bool Symbol<E>::is_tprel_linktime_const(Context<E> &ctx) const {
 // known at load-time.
 template <typename E>
 inline bool Symbol<E>::is_tprel_runtime_const(Context<E> &ctx) const {
+  // Returns true unless we are creating a dlopen'able DSO.
   assert(get_type() == STT_TLS);
-  return !ctx.arg.shared || !is_imported || !ctx.arg.z_dlopen;
+  return !(ctx.arg.shared && ctx.arg.z_dlopen);
 }
 
 template <typename E>
