@@ -2866,7 +2866,7 @@ inline bool Symbol<E>::is_remaining_undef_weak() const {
 // Returns true if the symbol's PC-relative address is known at link-time.
 template <typename E>
 inline bool Symbol<E>::is_pcrel_linktime_const(Context<E> &ctx) const {
-  return !is_imported && !is_ifunc() && is_relative();
+  return !is_imported && !is_ifunc() && (is_relative() || !ctx.arg.pic);
 }
 
 // Returns true if the symbol's Thread Pointer-relative address is
