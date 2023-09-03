@@ -3168,7 +3168,11 @@ template <typename E>
 void ComdatGroupSection<E>::update_shdr(Context<E> &ctx) {
   assert(ctx.arg.relocatable);
   this->shdr.sh_link = ctx.symtab->shndx;
-  this->shdr.sh_info = sym.get_output_sym_idx(ctx);
+
+  if (sym.esym().st_type == STT_SECTION)
+    this->shdr.sh_info = sym.get_input_section()->output_section->shndx;
+  else
+    this->shdr.sh_info = sym.get_output_sym_idx(ctx);
 }
 
 template <typename E>

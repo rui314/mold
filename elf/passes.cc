@@ -472,10 +472,7 @@ get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
   const ElfShdr<E> &shdr = isec.shdr();
   std::string_view name = get_output_name(ctx, isec.name(), shdr.sh_flags);
   u64 type = canonicalize_type<E>(name, shdr.sh_type);
-  u64 flags = shdr.sh_flags & ~(u64)SHF_COMPRESSED;
-
-  if (!ctx.arg.relocatable)
-    flags &= ~(u64)SHF_GROUP & ~(u64)SHF_GNU_RETAIN;
+  u64 flags = shdr.sh_flags & ~(u64)(SHF_COMPRESSED | SHF_GROUP | SHF_GNU_RETAIN);
 
   // .init_array is usually writable. We don't want to create multiple
   // .init_array output sections, so make it always writable.
@@ -502,6 +499,8 @@ void create_output_sections(Context<E> &ctx) {
   std::unordered_map<OutputSectionKey, OutputSection<E> *, Hash> map;
   std::shared_mutex mu;
 
+  i64 size = ctx.osec_pool.size();
+
   // Instantiate output sections
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Make a per-thread cache of the main map to avoid lock contention.
@@ -515,6 +514,15 @@ void create_output_sections(Context<E> &ctx) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
       if (!isec || !isec->is_alive)
         continue;
+
+      const ElfShdr<E> &shdr = isec->shdr();
+      if (ctx.arg.relocatable && (shdr.sh_flags & SHF_GROUP)) {
+        OutputSection<E> *osec =
+          new OutputSection<E>(ctx, isec->name(), shdr.sh_type, shdr.sh_flags);
+        isec->output_section = osec;
+        ctx.osec_pool.emplace_back(osec);
+        continue;
+      }
 
       OutputSectionKey key = get_output_section_key(ctx, *isec);
 
@@ -536,7 +544,6 @@ void create_output_sections(Context<E> &ctx) {
         std::unique_lock lock(mu);
         auto [it, inserted] = map.insert({key, osec.get()});
         OutputSection<E> *ret = it->second;
-        lock.unlock();
 
         if (inserted)
           ctx.osec_pool.emplace_back(std::move(osec));
@@ -550,29 +557,29 @@ void create_output_sections(Context<E> &ctx) {
   });
 
   // Add input sections to output sections
+  std::vector<Chunk<E> *> chunks;
+  for (i64 i = size; i < ctx.osec_pool.size(); i++)
+    chunks.push_back(ctx.osec_pool[i].get());
+
   for (ObjectFile<E> *file : ctx.objs)
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (isec && isec->is_alive)
         isec->output_section->members.push_back(isec.get());
 
   // Add output sections and mergeable sections to ctx.chunks
-  std::vector<Chunk<E> *> vec;
-  for (std::pair<const OutputSectionKey, OutputSection<E> *> &kv : map)
-    vec.push_back(kv.second);
-
   for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
     if (osec->shdr.sh_size)
-      vec.push_back(osec.get());
+      chunks.push_back(osec.get());
 
   // Sections are added to the section lists in an arbitrary order
   // because they are created in parallel. Sort them to to make the
   // output deterministic.
-  tbb::parallel_sort(vec.begin(), vec.end(), [](Chunk<E> *x, Chunk<E> *y) {
+  tbb::parallel_sort(chunks.begin(), chunks.end(), [](Chunk<E> *x, Chunk<E> *y) {
     return std::tuple(x->name, x->shdr.sh_type, x->shdr.sh_flags) <
            std::tuple(y->name, y->shdr.sh_type, y->shdr.sh_flags);
   });
 
-  append(ctx.chunks, vec);
+  append(ctx.chunks, chunks);
 }
 
 // Create a dummy object file containing linker-synthesized
