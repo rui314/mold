@@ -973,33 +973,30 @@ template <typename E>
 void check_symbol_types(Context<E> &ctx) {
   Timer t(ctx, "check_symbol_types");
 
-  auto check = [&](InputFile<E> *file) {
-    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
-      const ElfSym<E> &esym = file->elf_syms[i];
-      Symbol<E> &sym = *file->symbols[i];
+  std::vector<InputFile<E> *> files;
+  append(files, ctx.objs);
+  append(files, ctx.dsos);
 
-      if (!sym.file)
+  tbb::parallel_for_each(files.begin(), files.end(), [&](InputFile<E> *file) {
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
+      Symbol<E> &sym = *file->symbols[i];
+      if (!sym.file || sym.file == file)
         continue;
 
-      u32 x = sym.esym().st_type;
-      if (x == STT_GNU_IFUNC)
-        x = STT_FUNC;
+      const ElfSym<E> &esym1 = sym.esym();
+      const ElfSym<E> &esym2 = file->elf_syms[i];
 
-      u32 y = esym.st_type;
-      if (y == STT_GNU_IFUNC)
-        y = STT_FUNC;
+      u32 ty1 = (esym1.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym1.st_type;
+      u32 ty2 = (esym2.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym2.st_type;
 
-      if (x != STT_NOTYPE && y != STT_NOTYPE && x != y)
+      if (ty1 != STT_NOTYPE && ty2 != STT_NOTYPE && ty1 != ty2)
         Warn(ctx) << "symbol type mismatch: " << sym << '\n'
                   << ">>> defined in " << *sym.file << " as "
-                  << stt_to_string<E>(sym.esym().st_type) << '\n'
+                  << stt_to_string<E>(esym1.st_type) << '\n'
                   << ">>> defined in " << *file << " as "
-                  << stt_to_string<E>(esym.st_type);
+                  << stt_to_string<E>(esym2.st_type);
     }
-  };
-
-  tbb::parallel_for_each(ctx.objs, check);
-  tbb::parallel_for_each(ctx.dsos, check);
+  });
 }
 
 template <typename E>
