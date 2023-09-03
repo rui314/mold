@@ -196,26 +196,6 @@ static void read_riscv_attributes(Context<E> &ctx, ObjectFile<E> &file,
 }
 
 template <typename E>
-static u64 read_mips_gp0(Context<E> &ctx, InputSection<E> &isec) {
-  std::string_view data = isec.contents;
-  while (!data.empty()) {
-    if (data.size() < sizeof(MipsOptions<E>))
-      Fatal(ctx) << isec << ": corrupted .MIPS.options section";
-
-    MipsOptions<E> *opt = (MipsOptions<E> *)data.data();
-    if (opt->kind == ODK_REGINFO) {
-      if (data.size() < sizeof(MipsOptions<E>) + sizeof(MipsRegInfo<E>))
-        Fatal(ctx) << isec << ": corrupted .MIPS.options section";
-      MipsRegInfo<E> *info = (MipsRegInfo<E> *)(opt + 1);
-      return info->ri_gp_value;
-    }
-
-    data = data.substr(opt->size);
-  }
-  return 0;
-}
-
-template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
@@ -294,11 +274,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       // area in GNU linkers. We ignore that section because silently
       // making the stack area executable is too dangerous. Tell our
       // users about the difference if that matters.
-      //
-      // MIPS object files don't contain .note.GNU-stack for some reason,
-      // so ignore this error on MIPS.
       if (name == ".note.GNU-stack" && !ctx.arg.relocatable) {
-        if ((shdr.sh_flags & SHF_EXECINSTR) && !is_mips<E>) {
+        if (shdr.sh_flags & SHF_EXECINSTR) {
           if (!ctx.arg.z_execstack && !ctx.arg.z_execstack_if_needed)
             Warn(ctx) << *this << ": this file may cause a segmentation"
               " fault because it requires an executable stack. See"
@@ -355,16 +332,6 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if constexpr (is_ppc32<E>)
         if (name == ".got2")
           extra.got2 = this->sections[i].get();
-
-      if constexpr (is_mips<E>) {
-        if (name == ".MIPS.abiflags") {
-          extra.abi_flags = std::move(this->sections[i]);
-          continue;
-        }
-
-        if (name == ".MIPS.options")
-          extra.gp0 = read_mips_gp0(ctx, *this->sections[i]);
-      }
 
       // Save debug sections for --gdb-index.
       if (ctx.arg.gdb_index) {
@@ -1105,11 +1072,10 @@ void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
     for (ElfRel<E> &rel : cie.get_rels()) {
       Symbol<E> &sym = *this->symbols[rel.r_sym];
 
-      if constexpr (!is_mips<E>)
-        if (ctx.arg.pic && rel.r_type == E::R_ABS)
-          Error(ctx) << *this << ": relocation " << rel << " in .eh_frame can"
-                     << " not be used when making a position-independent output;"
-                     << " recompile with -fPIE or -fPIC";
+      if (ctx.arg.pic && rel.r_type == E::R_ABS)
+        Error(ctx) << *this << ": relocation " << rel << " in .eh_frame can"
+                   << " not be used when making a position-independent output;"
+                   << " recompile with -fPIE or -fPIC";
 
       if (sym.is_imported) {
         if (sym.get_type() != STT_FUNC)

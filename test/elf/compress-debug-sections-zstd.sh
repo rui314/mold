@@ -4,7 +4,6 @@
 # arm-linux-gnueabihf-objcopy crashes on x86-64
 [ $MACHINE = arm ] && skip
 [ $MACHINE = riscv32 ] && skip
-[[ $MACHINE = mips* ]] && skip
 
 command -v zstdcat >& /dev/null || skip
 

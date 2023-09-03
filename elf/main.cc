@@ -70,10 +70,6 @@ std::string_view get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
       return SH4::target_name;
     case EM_ALPHA:
       return ALPHA::target_name;
-    case EM_MIPS:
-      if (is_64)
-        return is_le ? MIPS64LE::target_name : MIPS64BE::target_name;
-      return "";
     case EM_LOONGARCH:
       return is_64 ? LOONGARCH64::target_name : LOONGARCH32::target_name;
     default:
@@ -376,10 +372,6 @@ static int redo_main(int argc, char **argv, std::string_view target) {
     return elf_main<SH4>(argc, argv);
   if (target == ALPHA::target_name)
     return elf_main<ALPHA>(argc, argv);
-  if (target == MIPS64LE::target_name)
-    return elf_main<MIPS64LE>(argc, argv);
-  if (target == MIPS64BE::target_name)
-    return elf_main<MIPS64BE>(argc, argv);
   if (target == LOONGARCH32::target_name)
     return elf_main<LOONGARCH32>(argc, argv);
   if (target == LOONGARCH64::target_name)
@@ -771,8 +763,6 @@ extern template int elf_main<SPARC64>(int, char **);
 extern template int elf_main<M68K>(int, char **);
 extern template int elf_main<SH4>(int, char **);
 extern template int elf_main<ALPHA>(int, char **);
-extern template int elf_main<MIPS64LE>(int, char **);
-extern template int elf_main<MIPS64BE>(int, char **);
 extern template int elf_main<LOONGARCH32>(int, char **);
 extern template int elf_main<LOONGARCH64>(int, char **);
 

@@ -48,7 +48,6 @@ template <typename E> struct CieRecord;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
 template <typename E> class RelocSection;
-template <typename E> class MipsGotSection;
 
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
@@ -476,7 +475,7 @@ public:
     this->shdr.sh_addralign = sizeof(Word<E>);
 
     // We always create a .got so that _GLOBAL_OFFSET_TABLE_ has
-    // something to point to. s390x/MIPS psABIs define GOT[1] as a
+    // something to point to. s390x psABI define GOT[1] as a
     // reserved slot, so we allocate one more for them.
     this->shdr.sh_size = (is_s390x<E> ? 2 : 1) * sizeof(Word<E>);
   }
@@ -1195,13 +1194,6 @@ struct ObjectFileExtras<PPC32> {
   InputSection<PPC32> *got2 = nullptr;
 };
 
-template <is_mips E>
-struct ObjectFileExtras<E> {
-  std::unique_ptr<InputSection<E>> abi_flags;
-  MipsGotSection<E> *got = nullptr;
-  u64 gp0 = 0;
-};
-
 // ObjectFile represents an input .o file.
 template <typename E>
 class ObjectFile : public InputFile<E> {
@@ -1568,89 +1560,6 @@ private:
 };
 
 //
-// arch-mips64.cc
-//
-
-template <typename E>
-class MipsQuickstartSection : public Chunk<E> {
-public:
-  MipsQuickstartSection() {
-    this->name = ".mips_quickstart";
-    this->is_relro = true;
-    this->shdr.sh_type = SHT_PROGBITS;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE | SHF_MIPS_GPREL;
-    this->shdr.sh_addralign = 8;
-  }
-
-  static constexpr i64 NUM_RESERVED = 2;
-
-  void update_shdr(Context<E> &ctx) override;
-  void copy_buf(Context<E> &ctx) override;
-};
-
-template <typename E>
-class MipsGotSection : public Chunk<E> {
-public:
-  MipsGotSection(Context<E> &ctx, const ObjectFile<E> &file) {
-    this->name = save_string(ctx, ".mips_got." + std::to_string(file.priority));
-    this->is_relro = true;
-    this->shdr.sh_type = SHT_PROGBITS;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE | SHF_MIPS_GPREL;
-    this->shdr.sh_addralign = 8;
-  }
-
-  u64 get_got_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
-  u64 get_gotpage_addr(Context<E> &ctx, Symbol<E> &sym, i64 addend) const;
-  u64 get_tlsgd_addr(Context<E> &ctx, Symbol<E> &sym) const;
-  u64 get_gottp_addr(Context<E> &ctx, Symbol<E> &sym) const;
-  u64 get_tlsld_addr(Context<E> &ctx) const;
-
-  void update_shdr(Context<E> &ctx) override;
-  i64 get_reldyn_size(Context<E> &ctx) const override;
-  void copy_buf(Context<E> &ctx) override;
-
-  struct SymbolAddend {
-    bool operator==(const SymbolAddend &) const = default;
-    bool operator<(const SymbolAddend &) const;
-    u64 get_addr(Context<E> &ctx, i64 flags = 0) const;
-
-    Symbol<E> *sym;
-    i64 addend;
-  };
-
-  std::vector<SymbolAddend> got_syms;
-  std::vector<SymbolAddend> gotpage_syms;
-  std::vector<Symbol<E> *> tlsgd_syms;
-  std::vector<Symbol<E> *> gottp_syms;
-  bool has_tlsld = false;
-};
-
-template <typename E>
-class MipsABIFlagsSection : public Chunk<E> {
-public:
-  MipsABIFlagsSection() {
-    this->name = ".MIPS.abiflags";
-    this->shdr.sh_type = SHT_MIPS_ABIFLAGS;
-    this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = 8;
-  }
-
-  std::string_view contents;
-
-  void update_shdr(Context<E> &ctx) override;
-  void copy_buf(Context<E> &ctx) override;
-};
-
-template <is_mips E>
-u64 get_eflags(Context<E> &ctx);
-
-template <is_mips E>
-void mips_merge_got_sections(Context<E> &ctx);
-
-template <is_mips E>
-void mips_rewrite_cie(Context<E> &ctx, u8 *buf, CieRecord<E> &cie);
-
-//
 // main.cc
 //
 
@@ -1739,12 +1648,6 @@ struct ContextExtras<ALPHA> {
   AlphaGotSection *got = nullptr;
 };
 
-template <is_mips E>
-struct ContextExtras<E> {
-  MipsQuickstartSection<E> *quickstart = nullptr;
-  MipsABIFlagsSection<E> *abi_flags = nullptr;
-};
-
 // Context represents a context object for each invocation of the linker.
 // It contains command line flags, pointers to singleton objects
 // (such as linker-synthesized output sections), unique_ptrs for
@@ -1787,7 +1690,7 @@ struct Context {
     bool fork = true;
     bool gc_sections = false;
     bool gdb_index = false;
-    bool hash_style_gnu = !is_mips<E>;
+    bool hash_style_gnu = true;
     bool hash_style_sysv = true;
     bool icf = false;
     bool icf_all = false;
@@ -1854,7 +1757,7 @@ struct Context {
     std::string dependency_file;
     std::string directory;
     std::string dynamic_linker;
-    std::string entry = is_mips<E> ? "__start" : "_start";
+    std::string entry = "_start";
     std::string fini = "_fini";
     std::string init = "_init";
     std::string output = "a.out";
@@ -2015,7 +1918,6 @@ struct Context {
   Symbol<E> *_edata = nullptr;
   Symbol<E> *_end = nullptr;
   Symbol<E> *_etext = nullptr;
-  Symbol<E> *_gp = nullptr;
   Symbol<E> *edata = nullptr;
   Symbol<E> *end = nullptr;
   Symbol<E> *etext = nullptr;

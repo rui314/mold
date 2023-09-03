@@ -525,16 +525,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                    << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
                    << "   elf32ppc\n   elf64ppc\n   elf64lppc\n   elf64_s390\n"
                    << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n"
-                   << "   elf64alpha\n   elf64ltsmip\n   elf64btsmip\n"
-                   << "   elf64loongarch\n   elf32loongarch";
+                   << "   elf64alpha\n   elf64loongarch\n   elf32loongarch";
       version_shown = true;
-    } else if (read_flag("mips32") || read_flag("mips32r2") ||
-               read_flag("mips32r3") || read_flag("mips32r4") ||
-               read_flag("mips32r5") || read_flag("mips32r6") ||
-               read_flag("mips64") || read_flag("mips64r2") ||
-               read_flag("mips64r3") || read_flag("mips64r4") ||
-               read_flag("mips64r5") || read_flag("mips64r6")) {
-      // Ignore useless MIPS-specific flags
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
         ctx.arg.emulation = X86_64::target_name;
@@ -568,10 +560,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.emulation = SH4::target_name;
       } else if (arg == "elf64alpha") {
         ctx.arg.emulation = ALPHA::target_name;
-      } else if (arg == "elf64ltsmip") {
-        ctx.arg.emulation = MIPS64LE::target_name;
-      } else if (arg == "elf64btsmip") {
-        ctx.arg.emulation = MIPS64BE::target_name;
       } else if (arg == "elf64loongarch") {
         ctx.arg.emulation = LOONGARCH64::target_name;
       } else if (arg == "elf32loongarch") {
@@ -1217,7 +1205,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
 
-  if constexpr (!E::is_rela || is_mips<E>)
+  if constexpr (!E::is_rela)
     if (!ctx.arg.apply_dynamic_relocs)
       Fatal(ctx) << "--no-apply-dynamic-relocs may not be used on "
                  << E::target_name;

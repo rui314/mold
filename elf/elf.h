@@ -25,8 +25,6 @@ struct SPARC64;
 struct M68K;
 struct SH4;
 struct ALPHA;
-struct MIPS64LE;
-struct MIPS64BE;
 struct LOONGARCH64;
 struct LOONGARCH32;
 
@@ -92,7 +90,6 @@ enum : u32 {
   SHT_ARM_EXIDX = 0x70000001,
   SHT_ARM_ATTRIBUTES = 0x70000003,
   SHT_RISCV_ATTRIBUTES = 0x70000003,
-  SHT_MIPS_ABIFLAGS = 0x7000002a,
 };
 
 enum : u32 {
@@ -107,7 +104,6 @@ enum : u32 {
   SHF_TLS = 0x400,
   SHF_COMPRESSED = 0x800,
   SHF_GNU_RETAIN = 0x200000,
-  SHF_MIPS_GPREL = 0x10000000,
   SHF_EXCLUDE = 0x80000000,
 };
 
@@ -192,7 +188,6 @@ enum : u32 {
   PT_OPENBSD_RANDOMIZE = 0x65a3dbe6,
   PT_ARM_EXIDX = 0x70000001,
   PT_RISCV_ATTRIBUTES = 0x70000003,
-  PT_MIPS_ABIFLAGS = 0x70000003,
 };
 
 enum : u32 {
@@ -227,7 +222,6 @@ enum : u32 {
   EM_NONE = 0,
   EM_386 = 3,
   EM_68K = 4,
-  EM_MIPS = 8,
   EM_PPC = 20,
   EM_PPC64 = 21,
   EM_S390X = 22,
@@ -297,13 +291,6 @@ enum : u32 {
   DT_VERNEEDNUM = 0x6fffffff,
   DT_PPC_GOT = 0x70000000,
   DT_PPC64_GLINK = 0x70000000,
-  DT_MIPS_RLD_VERSION = 0x70000001,
-  DT_MIPS_FLAGS = 0x70000005,
-  DT_MIPS_BASE_ADDRESS = 0x70000006,
-  DT_MIPS_LOCAL_GOTNO = 0x7000000a,
-  DT_MIPS_SYMTABNO = 0x70000011,
-  DT_MIPS_GOTSYM = 0x70000013,
-  DT_MIPS_OPTIONS = 0x70000029,
   DT_AUXILIARY = 0x7ffffffd,
   DT_FILTER = 0x7fffffff,
 };
@@ -1262,85 +1249,6 @@ enum : u32 {
 };
 
 enum : u32 {
-  R_MIPS_NONE = 0,
-  R_MIPS_16 = 1,
-  R_MIPS_32 = 2,
-  R_MIPS_REL32 = 3,
-  R_MIPS_26 = 4,
-  R_MIPS_HI16 = 5,
-  R_MIPS_LO16 = 6,
-  R_MIPS_GPREL16 = 7,
-  R_MIPS_LITERAL = 8,
-  R_MIPS_GOT16 = 9,
-  R_MIPS_PC16 = 10,
-  R_MIPS_CALL16 = 11,
-  R_MIPS_GPREL32 = 12,
-  R_MIPS_UNUSED1 = 13,
-  R_MIPS_UNUSED2 = 14,
-  R_MIPS_UNUSED3 = 15,
-  R_MIPS_SHIFT5 = 16,
-  R_MIPS_SHIFT6 = 17,
-  R_MIPS_64 = 18,
-  R_MIPS_GOT_DISP = 19,
-  R_MIPS_GOT_PAGE = 20,
-  R_MIPS_GOT_OFST = 21,
-  R_MIPS_GOT_HI16 = 22,
-  R_MIPS_GOT_LO16 = 23,
-  R_MIPS_SUB = 24,
-  R_MIPS_INSERT_A = 25,
-  R_MIPS_INSERT_B = 26,
-  R_MIPS_DELETE = 27,
-  R_MIPS_HIGHER = 28,
-  R_MIPS_HIGHEST = 29,
-  R_MIPS_CALL_HI16 = 30,
-  R_MIPS_CALL_LO16 = 31,
-  R_MIPS_SCN_DISP = 32,
-  R_MIPS_REL16 = 33,
-  R_MIPS_ADD_IMMEDIATE = 34,
-  R_MIPS_PJUMP = 35,
-  R_MIPS_RELGOT = 36,
-  R_MIPS_JALR = 37,
-  R_MIPS_TLS_DTPMOD32 = 38,
-  R_MIPS_TLS_DTPREL32 = 39,
-  R_MIPS_TLS_DTPMOD64 = 40,
-  R_MIPS_TLS_DTPREL64 = 41,
-  R_MIPS_TLS_GD = 42,
-  R_MIPS_TLS_LDM = 43,
-  R_MIPS_TLS_DTPREL_HI16 = 44,
-  R_MIPS_TLS_DTPREL_LO16 = 45,
-  R_MIPS_TLS_GOTTPREL = 46,
-  R_MIPS_TLS_TPREL32 = 47,
-  R_MIPS_TLS_TPREL64 = 48,
-  R_MIPS_TLS_TPREL_HI16 = 49,
-  R_MIPS_TLS_TPREL_LO16 = 50,
-  R_MIPS_GLOB_DAT = 51,
-  R_MIPS_PC21_S2 = 60,
-  R_MIPS_PC26_S2 = 61,
-  R_MIPS_PC18_S3 = 62,
-  R_MIPS_PC19_S2 = 63,
-  R_MIPS_PCHI16 = 64,
-  R_MIPS_PCLO16 = 65,
-  R_MIPS16_26 = 100,
-  R_MIPS16_GPREL = 101,
-  R_MIPS16_GOT16 = 102,
-  R_MIPS16_CALL16 = 103,
-  R_MIPS16_HI16 = 104,
-  R_MIPS16_LO16 = 105,
-  R_MIPS16_TLS_GD = 106,
-  R_MIPS16_TLS_LDM = 107,
-  R_MIPS16_TLS_DTPREL_HI16 = 108,
-  R_MIPS16_TLS_DTPREL_LO16 = 109,
-  R_MIPS16_TLS_GOTTPREL = 110,
-  R_MIPS16_TLS_TPREL_HI16 = 111,
-  R_MIPS16_TLS_TPREL_LO16 = 112,
-  R_MIPS_COPY = 126,
-  R_MIPS_JUMP_SLOT = 127,
-  R_MIPS_NUM = 218,
-  R_MIPS_PC32 = 248,
-  R_MIPS_EH = 249,
-};
-
-enum : u32 {
   R_LARCH_NONE = 0,
   R_LARCH_32 = 1,
   R_LARCH_64 = 2,
@@ -1865,41 +1773,6 @@ struct ElfRel<SPARC64> {
   ib64 r_addend;
 };
 
-template <>
-struct ElfRel<MIPS64LE> {
-  ElfRel() = default;
-  ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
-    : r_offset(offset), r_sym(sym), r_type(type), r_addend(addend) {}
-
-  // In the little-endian MIPS64, r_sym and r_type are reversed, with
-  // r_type being stored in big-endian order. It's extremely odd though.
-  ul64 r_offset;
-  ul32 r_sym;
-  ub32 r_type;
-  il64 r_addend;
-};
-
-// .MIPS.options section
-template <typename E>
-struct MipsOptions {
-  u8 kind;
-  u8 size;
-  U16<E> section;
-  U32<E> info;
-};
-
-template <typename E>
-struct MipsRegInfo {
-  U32<E> ri_gprmask;
-  U32<E> ri_pad;
-  U32<E> ri_cprmask[4];
-  U64<E> ri_gp_value;
-};
-
-enum : u32 {
-  ODK_REGINFO = 1,
-};
-
 //
 // Machine descriptions
 //
@@ -1924,8 +1797,6 @@ template <typename E> concept is_sparc64 = std::same_as<E, SPARC64>;
 template <typename E> concept is_m68k = std::same_as<E, M68K>;
 template <typename E> concept is_sh4 = std::same_as<E, SH4>;
 template <typename E> concept is_alpha = std::same_as<E, ALPHA>;
-template <typename E> concept is_mips64le = std::same_as<E, MIPS64LE>;
-template <typename E> concept is_mips64be = std::same_as<E, MIPS64BE>;
 template <typename E> concept is_loongarch64 = std::same_as<E, LOONGARCH64>;
 template <typename E> concept is_loongarch32 = std::same_as<E, LOONGARCH32>;
 
@@ -1937,8 +1808,6 @@ template <typename E> concept is_riscv = is_rv64<E> || is_rv32<E>;
 template <typename E> concept is_ppc64 = is_ppc64v1<E> || is_ppc64v2<E>;
 template <typename E> concept is_ppc = is_ppc64<E> || is_ppc32<E>;
 template <typename E> concept is_sparc = is_sparc64<E>;
-template <typename E> concept is_mips64 = is_mips64le<E> || is_mips64be<E>;
-template <typename E> concept is_mips = is_mips64<E>;
 template <typename E> concept is_loongarch = is_loongarch64<E> || is_loongarch32<E>;
 
 struct X86_64 {
@@ -2275,36 +2144,6 @@ struct ALPHA {
   static constexpr u32 R_DTPOFF = R_ALPHA_DTPREL64;
   static constexpr u32 R_TPOFF = R_ALPHA_TPREL64;
   static constexpr u32 R_DTPMOD = R_ALPHA_DTPMOD64;
-};
-
-struct MIPS64 {
-  static constexpr bool is_64 = true;
-  static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 4096;
-  static constexpr u32 e_machine = EM_MIPS;
-  static constexpr u32 plt_hdr_size = 0;
-  static constexpr u32 plt_size = 0;
-  static constexpr u32 pltgot_size = 0;
-
-  static constexpr u32 R_COPY = R_MIPS_COPY;
-  static constexpr u32 R_GLOB_DAT = R_MIPS_GLOB_DAT | (R_MIPS_64 << 8);
-  static constexpr u32 R_JUMP_SLOT = R_MIPS_JUMP_SLOT;
-  static constexpr u32 R_ABS = R_MIPS_64;
-  static constexpr u32 R_DYNAMIC = R_MIPS_REL32 | (R_MIPS_64 << 8);
-  static constexpr u32 R_RELATIVE = R_MIPS_REL32 | (R_MIPS_64 << 8);
-  static constexpr u32 R_DTPOFF = R_MIPS_TLS_DTPREL64;
-  static constexpr u32 R_TPOFF = R_MIPS_TLS_TPREL64;
-  static constexpr u32 R_DTPMOD = R_MIPS_TLS_DTPMOD64;
-};
-
-struct MIPS64LE : MIPS64 {
-  static constexpr std::string_view target_name = "mips64le";
-  static constexpr bool is_le = true;
-};
-
-struct MIPS64BE : MIPS64 {
-  static constexpr std::string_view target_name = "mips64be";
-  static constexpr bool is_le = false;
 };
 
 struct LOONGARCH64 {

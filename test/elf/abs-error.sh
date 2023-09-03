@@ -6,8 +6,6 @@
 [ $MACHINE = ppc64le ] && skip
 [ $MACHINE = s390x ] && skip
 [ $MACHINE = alpha ] && skip
-[ $MACHINE = mips64el ] && skip
-[ $MACHINE = mips64 ] && skip
 [[ $MACHINE = loongarch* ]] && skip
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xassembler -

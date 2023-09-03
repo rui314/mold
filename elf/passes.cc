@@ -133,14 +133,6 @@ void create_synthetic_sections(Context<E> &ctx) {
 
   if constexpr (is_alpha<E>)
     ctx.extra.got = push(new AlphaGotSection);
-
-  if constexpr (is_mips<E>) {
-    ctx.extra.quickstart = push(new MipsQuickstartSection<E>);
-    ctx.extra.abi_flags = push(new MipsABIFlagsSection<E>);
-
-    for (ObjectFile<E> *file : ctx.objs)
-      file->extra.got = push(new MipsGotSection<E>(ctx, *file));
-  }
 }
 
 template <typename E>
@@ -751,9 +743,6 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
   if constexpr (is_ppc32<E>)
     ctx.extra._SDA_BASE_ = add("_SDA_BASE_");
-
-  if constexpr (is_mips<E>)
-    ctx._gp = add("_gp");
 
   for (Chunk<E> *chunk : ctx.chunks) {
     if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
@@ -1393,9 +1382,6 @@ void scan_relocations(Context<E> &ctx) {
 
   if constexpr (is_alpha<E>)
     ctx.extra.got->finalize();
-
-  if constexpr (is_mips<E>)
-    mips_merge_got_sections(ctx);
 
   if (ctx.has_textrel && ctx.arg.warn_textrel)
     Warn(ctx) << "creating a DT_TEXTREL in an output file";
@@ -2431,10 +2417,6 @@ void fix_synthetic_symbols(Context<E> &ctx) {
       ctx.extra.TOC->value = 0;
     }
   }
-
-  // MIPS' _gp symbol.
-  if constexpr (is_mips<E>)
-    start(ctx._gp, ctx.extra.quickstart, 0x7ff0);
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : sections) {

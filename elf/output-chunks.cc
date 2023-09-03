@@ -301,11 +301,6 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     if (ctx.extra.riscv_attributes->shdr.sh_size)
       define(PT_RISCV_ATTRIBUTES, PF_R, 1, ctx.extra.riscv_attributes);
 
-  // Create a PT_MIPS_ABIFLAGS
-  if constexpr (is_mips<E>)
-    if (ctx.extra.abi_flags->shdr.sh_size)
-      define(PT_MIPS_ABIFLAGS, PF_R, 8, ctx.extra.abi_flags);
-
   // Create a PT_OPENBSD_RANDOMIZE
   for (Chunk<E> *chunk : ctx.chunks)
     if (chunk->name == ".openbsd.randomdata")
@@ -686,8 +681,6 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   } else if constexpr (is_ppc32<E>) {
     if (ctx.gotplt->shdr.sh_size)
       define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr + GotPltSection<E>::HDR_SIZE);
-  } else if constexpr (is_mips<E>) {
-    define(DT_PLTGOT, ctx.extra.quickstart->shdr.sh_addr);
   } else {
     if (ctx.gotplt->shdr.sh_size)
       define(DT_PLTGOT, ctx.gotplt->shdr.sh_addr);
@@ -778,18 +771,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   if (ctx.arg.z_interpose)
     flags1 |= DF_1_INTERPOSE;
 
-  auto has_gottp_syms = [&] {
-    if constexpr (is_mips<E>) {
-      for (ObjectFile<E> *file : ctx.objs)
-        if (!file->extra.got->gottp_syms.empty())
-          return true;
-      return false;
-    } else {
-      return !ctx.got->gottp_syms.empty();
-    }
-  };
-
-  if (has_gottp_syms())
+  if (!ctx.got->gottp_syms.empty())
     flags |= DF_STATIC_TLS;
   if (ctx.has_textrel)
     flags |= DF_TEXTREL;
@@ -807,16 +789,6 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     // the first PLT entry. I don't know why it's 32 bytes off, but
     // it's what it is.
     define(DT_PPC64_GLINK, ctx.plt->shdr.sh_addr + E::plt_hdr_size - 32);
-  }
-
-  if constexpr (is_mips<E>) {
-    define(DT_MIPS_RLD_VERSION, 1);
-    define(DT_MIPS_FLAGS, 0);
-    define(DT_MIPS_BASE_ADDRESS, ctx.arg.image_base);
-    define(DT_MIPS_LOCAL_GOTNO, 2);
-    define(DT_MIPS_SYMTABNO, ctx.dynsym->symbols.size());
-    define(DT_MIPS_GOTSYM, 0);
-    define(DT_MIPS_OPTIONS, 0);
   }
 
   // GDB needs a DT_DEBUG entry in an executable to store a word-size
@@ -2129,9 +2101,6 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
 
       if (ctx.arg.relocatable)
         continue;
-
-      if constexpr (is_mips<E>)
-        mips_rewrite_cie(ctx, base + cie.output_offset, cie);
 
       for (const ElfRel<E> &rel : cie.get_rels()) {
         assert(rel.r_offset - cie.input_offset < contents.size());

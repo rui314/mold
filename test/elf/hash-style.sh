@@ -2,7 +2,6 @@
 . $(dirname $0)/common.inc
 
 # MIPS ABIs are not compatible with .gnu.hash
-[[ $MACHINE = mips* ]] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 void foo() {}
