@@ -496,7 +496,15 @@ public:
 
     i64 sz = sizeof(Entry) * this->nbuckets;
     free(entries);
+
+#if _WIN32
+    // Even though std::aligned_alloc is defined in C++17, MSVC doesn't
+    // seem to provide that function.
+    entries = (Entry *)_aligned_malloc(sz, alignof(Entry));
+#else
     entries = (Entry *)std::aligned_alloc(alignof(Entry), sz);
+#endif
+
     memset(entries, 0, sz);
   }
 
