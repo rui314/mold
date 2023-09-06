@@ -8,6 +8,7 @@
 #include <bitset>
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
@@ -495,7 +496,7 @@ public:
 
     i64 sz = sizeof(Entry) * this->nbuckets;
     free(entries);
-    entries = (Entry *)aligned_alloc(alignof(Entry), sz);
+    entries = (Entry *)std::aligned_alloc(alignof(Entry), sz);
     memset(entries, 0, sz);
   }
 
