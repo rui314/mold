@@ -1935,8 +1935,8 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
       if (const char *key = map.get_key(j))
-        if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
-          fragments.push_back({{key, map.key_sizes[j]}, &frag});
+        if (SectionFragment<E> &frag = map.entries[j].value; frag.is_alive)
+          fragments.push_back({{key, map.entries[j].keylen}, &frag});
 
     // Sort fragments to make output deterministic.
     tbb::parallel_sort(fragments.begin(), fragments.end(),
@@ -1974,7 +1974,7 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
+      if (SectionFragment<E> &frag = map.entries[j].value; frag.is_alive)
         frag.offset += shard_offsets[i];
   });
 
@@ -1996,8 +1996,8 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
       if (const char *key = map.get_key(j))
-        if (SectionFragment<E> &frag = map.values[j]; frag.is_alive)
-          memcpy(buf + frag.offset, key, map.key_sizes[j]);
+        if (SectionFragment<E> &frag = map.entries[j].value; frag.is_alive)
+          memcpy(buf + frag.offset, key, map.entries[j].keylen);
   });
 }
 
@@ -2767,14 +2767,14 @@ void GdbIndexSection<E>::construct(Context<E> &ctx) {
              !ent->owner.compare_exchange_weak(old_val, file));
 
       ent->num_attrs++;
-      name.entry_idx = ent - map.values;
+      name.entry_idx = map.get_idx(ent);
     }
   });
 
   // Assign offsets for names and attributes within each file.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (GdbIndexName &name : file->gdb_names) {
-      MapEntry &ent = map.values[name.entry_idx];
+      MapEntry &ent = map.entries[name.entry_idx].value;
       if (ent.owner == file) {
         ent.attr_offset = file->attrs_size;
         file->attrs_size += (ent.num_attrs + 1) * 4;
@@ -2857,16 +2857,17 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
 
   for (i64 i = 0; i < map.nbuckets; i++) {
     if (map.get_key(i)) {
-      u32 hash = map.values[i].hash;
+      MapEntry &ent = map.entries[i].value;
+      u32 hash = ent.hash;
       u32 step = (hash & mask) | 1;
       u32 j = hash & mask;
 
       while (*(U32<E> *)(buf + j * 8))
         j = (j + step) & mask;
 
-      ObjectFile<E> &file = *map.values[i].owner;
-      *(ul32 *)(buf + j * 8) = file.names_offset + map.values[i].name_offset;
-      *(ul32 *)(buf + j * 8 + 4) = file.attrs_offset + map.values[i].attr_offset;
+      ObjectFile<E> &file = *ent.owner;
+      *(ul32 *)(buf + j * 8) = file.names_offset + ent.name_offset;
+      *(ul32 *)(buf + j * 8 + 4) = file.attrs_offset + ent.attr_offset;
     }
   }
 
@@ -2879,7 +2880,7 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
     std::atomic_uint32_t *attrs = (std::atomic_uint32_t *)buf;
 
     for (GdbIndexName &name : file->gdb_names) {
-      MapEntry &ent = map.values[name.entry_idx];
+      MapEntry &ent = map.entries[name.entry_idx].value;
       u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
       attrs[idx + ++attrs[idx]] = name.attr;
     }
@@ -2893,7 +2894,7 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
       if (map.get_key(j)) {
-        MapEntry &ent = map.values[j];
+        MapEntry &ent = map.entries[j].value;
         u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
         u32 *start = attrs + idx + 1;
         std::sort(start, start + attrs[idx]);
@@ -2910,9 +2911,10 @@ void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
       if (const char *key = map.get_key(j)) {
-        ObjectFile<E> &file = *map.values[j].owner;
-        std::string_view name{key, map.key_sizes[j]};
-        write_string(buf + file.names_offset + map.values[j].name_offset, name);
+        MapEntry &ent = map.entries[j].value;
+        ObjectFile<E> &file = *ent.owner;
+        std::string_view name{key, map.entries[j].keylen};
+        write_string(buf + file.names_offset + ent.name_offset, name);
       }
     }
   });

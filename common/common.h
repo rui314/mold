@@ -478,52 +478,52 @@ public:
   }
 
   ~ConcurrentMap() {
-    if (keys) {
-      free((void *)keys);
-      free((void *)key_sizes);
-      free((void *)values);
-    }
+    free(entries);
   }
 
+  // In order to avoid unnecessary cache-line false sharing, we want
+  // to make this object to be aligned to a reasonably large
+  // power-of-two address.
+  struct alignas(32) Entry {
+    std::atomic<const char *> key;
+    T value;
+    u32 keylen;
+  };
+
   void resize(i64 nbuckets) {
-    this->~ConcurrentMap();
+    this->nbuckets = std::max<i64>(MIN_NBUCKETS, bit_ceil(nbuckets));
 
-    nbuckets = std::max<i64>(MIN_NBUCKETS, bit_ceil(nbuckets));
-
-    this->nbuckets = nbuckets;
-    keys = (std::atomic<const char *> *)calloc(nbuckets, sizeof(char *));
-    key_sizes = (u32 *)malloc(nbuckets * sizeof(u32));
-    values = (T *)malloc(nbuckets * sizeof(T));
+    i64 sz = sizeof(Entry) * this->nbuckets;
+    free(entries);
+    entries = (Entry *)aligned_alloc(alignof(Entry), sz);
+    memset(entries, 0, sz);
   }
 
   std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
-    if (!keys)
-      return {nullptr, false};
-
     assert(has_single_bit(nbuckets));
+
     i64 idx = hash & (nbuckets - 1);
     i64 retry = 0;
 
     while (retry < MAX_RETRY) {
-      const char *ptr = keys[idx].load(std::memory_order_acquire);
+      Entry &ent = entries[idx];
+      const char *ptr = ent.key.load(std::memory_order_acquire);
       if (ptr == marker) {
         pause();
         continue;
       }
 
       if (ptr == nullptr) {
-        if (!keys[idx].compare_exchange_weak(ptr, marker,
-                                             std::memory_order_acquire))
+        if (!ent.key.compare_exchange_weak(ptr, marker, std::memory_order_acquire))
           continue;
-        new (values + idx) T(val);
-        key_sizes[idx] = key.size();
-        keys[idx].store(key.data(), std::memory_order_release);
-        return {values + idx, true};
+        new (&ent.value) T(val);
+        ent.keylen = key.size();
+        ent.key.store(key.data(), std::memory_order_release);
+        return {&ent.value, true};
       }
 
-      if (key.size() == key_sizes[idx] &&
-          memcmp(ptr, key.data(), key_sizes[idx]) == 0)
-        return {values + idx, false};
+      if (key == std::string_view(ptr, ent.keylen))
+        return {&ent.value, false};
 
       u64 mask = nbuckets / NUM_SHARDS - 1;
       idx = (idx & ~mask) | ((idx + 1) & mask);
@@ -535,16 +535,20 @@ public:
   }
 
   const char *get_key(i64 idx) {
-    return keys[idx].load(std::memory_order_relaxed);
+    return entries[idx].key.load(std::memory_order_relaxed);
+  }
+
+  i64 get_idx(T *value) const {
+    uintptr_t addr = (uintptr_t)value - (uintptr_t)value % sizeof(Entry);
+    return (Entry *)addr - entries;
   }
 
   static constexpr i64 MIN_NBUCKETS = 2048;
   static constexpr i64 NUM_SHARDS = 16;
   static constexpr i64 MAX_RETRY = 128;
 
+  Entry *entries = nullptr;
   i64 nbuckets = 0;
-  u32 *key_sizes = nullptr;
-  T *values = nullptr;
 
 private:
   static void pause() {
@@ -555,9 +559,7 @@ private:
 #endif
   }
 
-private:
-  std::atomic<const char *> *keys = nullptr;
-  static constexpr const char *marker = "marker";
+  static constexpr char *marker = "marker";
 };
 
 //
