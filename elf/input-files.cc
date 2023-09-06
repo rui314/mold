@@ -1188,9 +1188,6 @@ void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
   this->output_sym_indices.resize(this->elf_syms.size(), -1);
 
   auto is_alive = [&](Symbol<E> &sym) -> bool {
-    if (!ctx.arg.gc_sections)
-      return true;
-
     if (SectionFragment<E> *frag = sym.get_frag())
       return frag->is_alive;
     if (InputSection<E> *isec = sym.get_input_section())
@@ -1236,30 +1233,29 @@ void ObjectFile<E>::populate_symtab(Context<E> &ctx) {
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   i64 strtab_off = this->strtab_offset;
 
-  auto write_sym = [&](Symbol<E> &sym, i64 &symtab_idx) {
+  auto write_sym = [&](Symbol<E> &sym, i64 idx) {
     U32<E> *xindex = nullptr;
     if (ctx.symtab_shndx)
-      xindex = (U32<E> *)(ctx.buf + ctx.symtab_shndx->shdr.sh_offset) + symtab_idx;
+      xindex = (U32<E> *)(ctx.buf + ctx.symtab_shndx->shdr.sh_offset) + idx;
 
-    symtab_base[symtab_idx++] = to_output_esym(ctx, sym, strtab_off, xindex);
+    symtab_base[idx] = to_output_esym(ctx, sym, strtab_off, xindex);
     strtab_off += write_string(strtab_base + strtab_off, sym.name());
   };
 
   i64 local_symtab_idx = this->local_symtab_idx;
   i64 global_symtab_idx = this->global_symtab_idx;
-  for (i64 i = 1; i < this->first_global; i++) {
-    Symbol<E> &sym = *this->symbols[i];
-    if (sym.write_to_symtab)
-      write_sym(sym, local_symtab_idx);
-  }
+
+  for (i64 i = 1; i < this->first_global; i++)
+    if (Symbol<E> &sym = *this->symbols[i]; sym.write_to_symtab)
+      write_sym(sym, local_symtab_idx++);
 
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
     if (sym.file == this && sym.write_to_symtab) {
       if (sym.is_local(ctx))
-        write_sym(sym, local_symtab_idx);
+        write_sym(sym, local_symtab_idx++);
       else
-        write_sym(sym, global_symtab_idx);
+        write_sym(sym, global_symtab_idx++);
     }
   }
 }

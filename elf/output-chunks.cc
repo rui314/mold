@@ -3083,10 +3083,9 @@ void RelocSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void RelocSection<E>::copy_buf(Context<E> &ctx) {
   auto write = [&](ElfRel<E> &out, InputSection<E> &isec, const ElfRel<E> &rel) {
+    Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
     i64 symidx = 0;
     i64 addend = 0;
-
-    Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
 
     if (sym.esym().st_type == STT_SECTION) {
       if (SectionFragment<E> *frag = sym.get_frag()) {
@@ -3106,9 +3105,8 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
           // COMDAT-eliminated section.
         }
       }
-    } else {
-      if (sym.sym_idx)
-        symidx = sym.get_output_sym_idx(ctx);
+    } else if (sym.write_to_symtab) {
+      symidx = sym.get_output_sym_idx(ctx);
       addend = get_addend(isec, rel);
     }
 
