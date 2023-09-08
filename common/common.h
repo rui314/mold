@@ -516,24 +516,35 @@ public:
 
     while (retry < MAX_RETRY) {
       Entry &ent = entries[idx];
-      const char *ptr = ent.key.load(std::memory_order_acquire);
-      if (ptr == marker) {
-        pause();
-        continue;
-      }
+      const char *ptr = nullptr;
+      bool claimed = ent.key.compare_exchange_weak(ptr, (char *)-1,
+                                                   std::memory_order_acquire);
 
-      if (ptr == nullptr) {
-        if (!ent.key.compare_exchange_weak(ptr, marker, std::memory_order_acquire))
-          continue;
+      // If we successfully claimed the ownership of an unused slot,
+      // copy values to it.
+      if (claimed) {
         new (&ent.value) T(val);
         ent.keylen = key.size();
         ent.key.store(key.data(), std::memory_order_release);
         return {&ent.value, true};
       }
 
+      // Loop on a spurious failure.
+      if (ptr == nullptr)
+        continue;
+
+      // If someone is copying values to the slot, do busy wait.
+      while (ptr == (char *)-1) {
+        pause();
+        ptr = ent.key.load(std::memory_order_acquire);
+      }
+
+      // If the same key is already present, this is the slot we are
+      // looking for.
       if (key == std::string_view(ptr, ent.keylen))
         return {&ent.value, false};
 
+      // Otherwise, move on to the next slot.
       u64 mask = nbuckets / NUM_SHARDS - 1;
       idx = (idx & ~mask) | ((idx + 1) & mask);
       retry++;
@@ -567,8 +578,6 @@ private:
     asm volatile("yield");
 #endif
   }
-
-  static constexpr char *marker = "marker";
 };
 
 //
