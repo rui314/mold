@@ -140,13 +140,6 @@ ObjectFile<E>::parse_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr) 
   }
 }
 
-static inline std::string_view read_string(std::string_view &str) {
-  i64 pos = str.find_first_of('\0');
-  std::string_view val = str.substr(0, pos);
-  str = str.substr(pos + 1);
-  return val;
-}
-
 // <format-version>
 // [ <section-length> "vendor-name" <file-tag> <size> <attribute>*]+ ]*
 template <typename E>
@@ -182,9 +175,12 @@ static void read_riscv_attributes(Context<E> &ctx, ObjectFile<E> &file,
       case ELF_TAG_RISCV_STACK_ALIGN:
         file.extra.stack_align = read_uleb(&p);
         break;
-      case ELF_TAG_RISCV_ARCH:
-        file.extra.arch = read_string(p);
+      case ELF_TAG_RISCV_ARCH: {
+        i64 pos = p.find_first_of('\0');
+        file.extra.arch = p.substr(0, pos);
+        p = p.substr(pos + 1);
         break;
+      }
       case ELF_TAG_RISCV_UNALIGNED_ACCESS:
         file.extra.unaligned_access = read_uleb(&p);
         break;
