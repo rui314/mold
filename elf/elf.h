@@ -744,6 +744,7 @@ enum : u32 {
   R_RISCV_TLS_DTPREL64 = 9,
   R_RISCV_TLS_TPREL32 = 10,
   R_RISCV_TLS_TPREL64 = 11,
+  R_RISCV_TLSDESC = 12,
   R_RISCV_BRANCH = 16,
   R_RISCV_JAL = 17,
   R_RISCV_CALL = 18,
@@ -784,6 +785,10 @@ enum : u32 {
   R_RISCV_PLT32 = 59,
   R_RISCV_SET_ULEB128 = 60,
   R_RISCV_SUB_ULEB128 = 61,
+  R_RISCV_TLSDESC_HI20 = 62,
+  R_RISCV_TLSDESC_LOAD_LO12 = 63,
+  R_RISCV_TLSDESC_ADD_LO12 = 64,
+  R_RISCV_TLSDESC_CALL = 65,
 };
 
 enum : u32 {
@@ -1929,6 +1934,7 @@ struct RV64 {
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD64;
+  static constexpr u32 R_TLSDESC = R_RISCV_TLSDESC;
 };
 
 struct RV64LE : RV64 {
@@ -1960,6 +1966,7 @@ struct RV32 {
   static constexpr u32 R_DTPOFF = R_RISCV_TLS_DTPREL32;
   static constexpr u32 R_TPOFF = R_RISCV_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_RISCV_TLS_DTPMOD32;
+  static constexpr u32 R_TLSDESC = R_RISCV_TLSDESC;
 };
 
 struct RV32LE : RV32 {
