@@ -502,7 +502,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         if (sym2.has_tlsdesc(ctx)) {
           // Do nothing
         } else if (sym2.has_gottp(ctx)) {
-          *(ul32 *)loc = 0x52503;   // {ld,lw} a0,<hi20>
+          // {ld,lw} a0, <lo12>(a0)
+          *(ul32 *)loc = E::is_64 ? 0x53503 : 0x52503;
           write_itype(loc, sym2.get_gottp_addr(ctx) + A - P);
         } else {
           i64 val = S + A - ctx.tp_addr;
