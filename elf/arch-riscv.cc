@@ -255,12 +255,31 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
-// Within a paired relocation, the "leader" is the one that points to the symbol to relocate against,
-// while the other "followers" point to the leader's label (address).
-static bool is_paired_reloc_leader(u32 ty) {
-  return ty == R_RISCV_GOT_HI20 || ty == R_RISCV_TLS_GOT_HI20 ||
-         ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20 ||
-         ty == R_RISCV_TLSDESC_HI20;
+template <typename E>
+static i64 find_paired_reloc(Context<E> &ctx, InputSection<E> &isec,
+                             std::span<const ElfRel<E>> rels, Symbol<E> &sym,
+                             i64 i) {
+  auto is_hi20 = [](u32 ty) {
+    return ty == R_RISCV_GOT_HI20 || ty == R_RISCV_TLS_GOT_HI20 ||
+           ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20 ||
+           ty == R_RISCV_TLSDESC_HI20;
+  };
+
+  auto get_r_delta = [&](i64 idx) {
+    return isec.extra.r_deltas.empty() ? 0 : isec.extra.r_deltas[idx];
+  };
+
+  if (sym.value <= rels[i].r_offset - get_r_delta(i)) {
+    for (i64 j = i - 1; j >= 0; j--)
+      if (is_hi20(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
+        return j;
+  } else {
+    for (i64 j = i + 1; j < rels.size(); j++)
+      if (is_hi20(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
+        return j;
+  }
+
+  Fatal(ctx) << isec << ": paired relocation is missing: " << i;
 }
 
 template <>
@@ -291,23 +310,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
                    << lo << ", " << hi << ")";
-    };
-
-    auto find_paired_reloc = [&] {
-      assert(sym.get_input_section() == this);
-
-      if (sym.value <= r_offset) {
-        for (i64 j = i - 1; j >= 0; j--)
-          if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
-              return j;
-      }
-      if (sym.value >= r_offset) {
-        for (i64 j = i + 1; j < rels.size(); j++)
-          if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
-              return j;
-      }
-
-      Fatal(ctx) << *this << ": paired relocation is missing: " << i;
     };
 
     u64 S = sym.get_addr(ctx);
@@ -381,7 +383,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_PCREL_LO12_I:
     case R_RISCV_PCREL_LO12_S: {
-      i64 idx2 = find_paired_reloc();
+      i64 idx2 = find_paired_reloc(ctx, *this, rels, sym, i);
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
 
@@ -471,7 +473,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_TLSDESC_LOAD_LO12: {
-      i64 idx2 = find_paired_reloc();
+      i64 idx2 = find_paired_reloc(ctx, *this, rels, sym, i);;
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
       u64 A = rel2.r_addend;
@@ -483,7 +485,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_TLSDESC_ADD_LO12: {
-      i64 idx2 = find_paired_reloc();
+      i64 idx2 = find_paired_reloc(ctx, *this, rels, sym, i);
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
       u64 S = sym2.get_addr(ctx);
@@ -505,7 +507,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_TLSDESC_CALL: {
-      i64 idx2 = find_paired_reloc();
+      i64 idx2 = find_paired_reloc(ctx, *this, rels, sym, i);
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
       u64 S = sym2.get_addr(ctx);
@@ -876,21 +878,6 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
     isec.extra.r_deltas[i] = delta;
 
-    auto find_paired_reloc = [&] {
-      if (sym.value <= r.r_offset) {
-        for (i64 j = i - 1; j >= 0; j--)
-          if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset)
-              return j;
-      }
-      if (sym.value >= r.r_offset) {
-        for (i64 j = i + 1; j < rels.size(); j++)
-          if (is_paired_reloc_leader(rels[j].r_type) && sym.value == rels[j].r_offset)
-              return j;
-      }
-
-      Fatal(ctx) << isec << ": paired relocation is missing: " << i;
-    };
-
     // Handling R_RISCV_ALIGN is mandatory.
     //
     // R_RISCV_ALIGN refers to NOP instructions. We need to eliminate some
@@ -992,7 +979,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
         delta += 4;
       break;
     case R_RISCV_TLSDESC_LOAD_LO12: {
-      i64 idx2 = find_paired_reloc();
+      i64 idx2 = find_paired_reloc(ctx, isec, rels, sym, i);
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *isec.file.symbols[rel2.r_sym];
       if (!sym2.has_tlsdesc(ctx))
@@ -1000,7 +987,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       break;
     }
     case R_RISCV_TLSDESC_ADD_LO12: {
-      i64 idx2 = find_paired_reloc();
+      i64 idx2 = find_paired_reloc(ctx, isec, rels, sym, i);
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *isec.file.symbols[rel2.r_sym];
       if (!sym2.has_tlsdesc(ctx) && !sym2.has_gottp(ctx)) {
