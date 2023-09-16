@@ -255,31 +255,11 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
-template <typename E>
-static i64 find_paired_reloc(Context<E> &ctx, InputSection<E> &isec,
-                             std::span<const ElfRel<E>> rels, Symbol<E> &sym,
-                             i64 i) {
-  auto is_hi20 = [](u32 ty) {
-    return ty == R_RISCV_GOT_HI20 || ty == R_RISCV_TLS_GOT_HI20 ||
-           ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20 ||
-           ty == R_RISCV_TLSDESC_HI20;
-  };
-
-  auto get_r_delta = [&](i64 idx) {
-    return isec.extra.r_deltas.empty() ? 0 : isec.extra.r_deltas[idx];
-  };
-
-  if (sym.value <= rels[i].r_offset - get_r_delta(i)) {
-    for (i64 j = i - 1; j >= 0; j--)
-      if (is_hi20(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
-        return j;
-  } else {
-    for (i64 j = i + 1; j < rels.size(); j++)
-      if (is_hi20(rels[j].r_type) && sym.value == rels[j].r_offset - get_r_delta(j))
-        return j;
-  }
-
-  Fatal(ctx) << isec << ": paired relocation is missing: " << i;
+static inline bool is_hi20(const ElfRel<E> &rel) {
+  u32 ty = rel.r_type;
+  return ty == R_RISCV_GOT_HI20 || ty == R_RISCV_TLS_GOT_HI20 ||
+         ty == R_RISCV_TLS_GD_HI20 || ty == R_RISCV_PCREL_HI20 ||
+         ty == R_RISCV_TLSDESC_HI20;
 }
 
 template <>
@@ -310,6 +290,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
                    << lo << ", " << hi << ")";
+    };
+
+    auto find_paired_reloc = [&] {
+      if (sym.value <= rels[i].r_offset - get_r_delta(i)) {
+        for (i64 j = i - 1; j >= 0; j--)
+          if (is_hi20(rels[j]) && sym.value == rels[j].r_offset - get_r_delta(j))
+            return j;
+      } else {
+        for (i64 j = i + 1; j < rels.size(); j++)
+          if (is_hi20(rels[j]) && sym.value == rels[j].r_offset - get_r_delta(j))
+            return j;
+      }
+
+      Fatal(ctx) << *this << ": paired relocation is missing: " << i;
     };
 
     u64 S = sym.get_addr(ctx);
@@ -383,7 +377,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_PCREL_LO12_I:
     case R_RISCV_PCREL_LO12_S: {
-      i64 idx2 = find_paired_reloc(ctx, *this, rels, sym, i);
+      i64 idx2 = find_paired_reloc();
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
 
@@ -472,7 +466,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_TLSDESC_LOAD_LO12:
     case R_RISCV_TLSDESC_ADD_LO12:
     case R_RISCV_TLSDESC_CALL: {
-      i64 idx2 = find_paired_reloc(ctx, *this, rels, sym, i);
+      i64 idx2 = find_paired_reloc();
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
 
@@ -895,6 +889,20 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
     if (sym.file == ctx.internal_obj)
       continue;
 
+    auto find_paired_reloc = [&] {
+      if (sym.value <= rels[i].r_offset) {
+        for (i64 j = i - 1; j >= 0; j--)
+          if (is_hi20(rels[j]) && sym.value == rels[j].r_offset)
+            return j;
+      } else {
+        for (i64 j = i + 1; j < rels.size(); j++)
+          if (is_hi20(rels[j]) && sym.value == rels[j].r_offset)
+            return j;
+      }
+
+      Fatal(ctx) << isec << ": paired relocation is missing: " << i;
+    };
+
     switch (r.r_type) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
@@ -968,8 +976,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       break;
     case R_RISCV_TLSDESC_LOAD_LO12:
     case R_RISCV_TLSDESC_ADD_LO12: {
-      i64 idx2 = find_paired_reloc(ctx, isec, rels, sym, i);
-      const ElfRel<E> &rel2 = rels[idx2];
+      const ElfRel<E> &rel2 = rels[find_paired_reloc()];
       Symbol<E> &sym2 = *isec.file.symbols[rel2.r_sym];
 
       if (r.r_type == R_RISCV_TLSDESC_LOAD_LO12) {
