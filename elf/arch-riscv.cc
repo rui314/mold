@@ -949,21 +949,21 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
     case R_RISCV_TPREL_ADD:
       // These relocations are used to add a high 20-bit value to the
       // thread pointer. The following two instructions materializes
-      // TP + HI20(foo) in %r5, for example.
+      // TP + %tprel_hi20(foo) in %t0, for example.
       //
-      //  lui  a5,%tprel_hi(foo)         # R_RISCV_TPREL_HI20 (symbol)
-      //  add  a5,a5,tp,%tprel_add(foo)  # R_RISCV_TPREL_ADD (symbol)
+      //  lui  t0, %tprel_hi(foo)         # R_RISCV_TPREL_HI20
+      //  add  t0, t0, tp                 # R_RISCV_TPREL_ADD
       //
-      // Then thread-local variable `foo` is accessed with a low 12-bit
-      // offset like this:
+      // Then thread-local variable `foo` is accessed with the low
+      // 12-bit offset like this:
       //
-      //  sw   t0,%tprel_lo(foo)(a5)     # R_RISCV_TPREL_LO12_S (symbol)
+      //  sw   t0, %tprel_lo(foo)(t0)     # R_RISCV_TPREL_LO12_S
       //
-      // However, if the variable is at TP ±2 KiB, TP + HI20(foo) is the
-      // same as TP, so we can instead access the thread-local variable
-      // directly using TP like this:
+      // However, if the variable is at TP ± 2 KiB, TP + %tprel_hi20(foo)
+      // is the same as TP, so we can instead access the thread-local
+      // variable directly using TP like this:
       //
-      //  sw   t0,%tprel_lo(foo)(tp)
+      //  sw   t0, %tprel_lo(foo)(tp)
       //
       // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
       if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
