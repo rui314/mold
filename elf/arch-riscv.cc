@@ -134,11 +134,6 @@ static void write_cjtype(u8 *loc, u32 val) {
                   bit(val, 1)  << 3  | bit(val, 5)  << 2;
 }
 
-// Returns the rd register of an R/I/U/J-type instruction.
-static u32 get_rd(const char *loc) {
-  return bits(*(u32 *)loc, 11, 7);
-}
-
 static void set_rs1(u8 *loc, u32 rs1) {
   assert(rs1 < 32);
   *(ul32 *)loc &= 0b111111'11111'00000'111'11111'1111111;
@@ -306,6 +301,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       Fatal(ctx) << *this << ": paired relocation is missing: " << i;
     };
 
+    auto get_rd = [&](i64 offset) {
+      // Returns the rd register of an R/I/U/J-type instruction.
+      return bits(*(u32 *)(contents.data() + offset), 11, 7);
+    };
+
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
     u64 P = get_addr() + r_offset;
@@ -334,7 +334,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT: {
       i64 val = S + A - P;
-      i64 rd = get_rd(contents.data() + rel.r_offset + 4);
+      i64 rd = get_rd(rel.r_offset + 4);
 
       // Calling an undefined weak symbol does not make sense.
       // We make such call into an infinite loop. This should
@@ -413,7 +413,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_HI20:
       if (removed_bytes == 2) {
         // Rewrite LUI with C.LUI
-        i64 rd = get_rd(contents.data() + rel.r_offset);
+        i64 rd = get_rd(rel.r_offset);
         *(ul16 *)loc = 0b011'0'00000'00000'01 | (rd << 7);
         write_citype(loc, S + A);
       } else if (removed_bytes == 0) {
@@ -853,6 +853,10 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   isec.extra.r_deltas.resize(rels.size() + 1);
 
+  auto get_rd = [&](i64 offset) {
+    return bits(*(u32 *)(isec.contents.data() + offset), 11, 7);
+  };
+
   i64 delta = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
@@ -913,7 +917,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
       if (dist & 1)
         break;
 
-      i64 rd = get_rd(isec.contents.data() + r.r_offset + 4);
+      i64 rd = get_rd(r.r_offset + 4);
 
       if (use_rvc && rd == 0 && sign_extend(dist, 11) == dist) {
         // If rd is x0 and the jump target is within ±2 KiB, we can use
@@ -931,7 +935,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
     }
     case R_RISCV_HI20: {
       u64 val = sym.get_addr(ctx) + r.r_addend;
-      i64 rd = get_rd(isec.contents.data() + r.r_offset);
+      i64 rd = get_rd(r.r_offset);
 
       if (sign_extend(val, 11) == val) {
         // We can replace `lui t0, %hi(foo)` and `add t0, t0, %lo(foo)`
