@@ -303,7 +303,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     auto get_rd = [&](i64 offset) {
       // Returns the rd register of an R/I/U/J-type instruction.
-      return bits(*(u32 *)(contents.data() + offset), 11, 7);
+      return bits(*(ul32 *)(contents.data() + offset), 11, 7);
     };
 
     u64 S = sym.get_addr(ctx);
@@ -854,7 +854,7 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
   isec.extra.r_deltas.resize(rels.size() + 1);
 
   auto get_rd = [&](i64 offset) {
-    return bits(*(u32 *)(isec.contents.data() + offset), 11, 7);
+    return bits(*(ul32 *)(isec.contents.data() + offset), 11, 7);
   };
 
   i64 delta = 0;
