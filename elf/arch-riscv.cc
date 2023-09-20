@@ -114,9 +114,8 @@ static void write_jtype(u8 *loc, u32 val) {
 }
 
 static void write_citype(u8 *loc, u32 val) {
-  val += 0x800;
   *(ul16 *)loc &= 0b111'0'11111'00000'11;
-  *(ul16 *)loc |= bit(val, 17) << 12 | bits(val, 16, 12) << 2;
+  *(ul16 *)loc |= bit(val, 5) << 12 | bits(val, 4, 0) << 2;
 }
 
 static void write_cbtype(u8 *loc, u32 val) {
@@ -415,7 +414,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // Rewrite LUI with C.LUI
         i64 rd = get_rd(rel.r_offset);
         *(ul16 *)loc = 0b011'0'00000'00000'01 | (rd << 7);
-        write_citype(loc, S + A);
+        write_citype(loc, (S + A + 0x800) >> 12);
       } else if (removed_bytes == 0) {
         check(S + A, -(1LL << 31), 1LL << 31);
         write_utype(loc, S + A);
