@@ -9,7 +9,7 @@ RUN apt-get update && \
   apt-get install -y --no-install-recommends software-properties-common && \
   add-apt-repository -y ppa:ubuntu-toolchain-r/test && \
   apt-get update && \
-  apt-get install -y --no-install-recommends build-essential wget libstdc++-11-dev zlib1g-dev gcc-10 g++-10 python3 && \
+  apt-get install -y --no-install-recommends build-essential wget libstdc++-11-dev zlib1g-dev gcc-10 g++-10 python3 libssl-dev && \
   \
   mkdir /cmake && cd /cmake && \
   wget -O- -q https://github.com/Kitware/CMake/releases/download/v3.24.2/cmake-3.24.2.tar.gz | tar --strip-components=1 -xzf - && \
