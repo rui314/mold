@@ -345,7 +345,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 A = rel.r_addend;
     u64 P = get_addr() + rel.r_offset;
     u64 G = sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr;
-    u64 GOTPLT = ctx.gotplt->shdr.sh_addr;
+    u64 GOT = ctx.gotplt->shdr.sh_addr;
 
     switch (rel.r_type) {
     case R_X86_64_8:
@@ -388,19 +388,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_X86_64_GOTOFF64:
     case R_X86_64_PLTOFF64:
-      *(ul64 *)loc = S + A - GOTPLT;
+      *(ul64 *)loc = S + A - GOT;
       break;
     case R_X86_64_GOTPC32:
-      write32s(GOTPLT + A - P);
+      write32s(GOT + A - P);
       break;
     case R_X86_64_GOTPC64:
-      *(ul64 *)loc = GOTPLT + A - P;
+      *(ul64 *)loc = GOT + A - P;
       break;
     case R_X86_64_GOTPCREL:
-      write32s(G + GOTPLT + A - P);
+      write32s(G + GOT + A - P);
       break;
     case R_X86_64_GOTPCREL64:
-      *(ul64 *)loc = G + GOTPLT + A - P;
+      *(ul64 *)loc = G + GOT + A - P;
       break;
     case R_X86_64_GOTPCRELX:
       // We always want to relax GOTPCRELX relocs even if --no-relax
@@ -416,7 +416,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           break;
         }
       }
-      write32s(G + GOTPLT + A - P);
+      write32s(G + GOT + A - P);
       break;
     case R_X86_64_REX_GOTPCRELX:
       if (sym.is_pcrel_linktime_const(ctx)) {
@@ -430,7 +430,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           break;
         }
       }
-      write32s(G + GOTPLT + A - P);
+      write32s(G + GOT + A - P);
       break;
     case R_X86_64_TLSGD:
       if (sym.has_tlsgd(ctx))
