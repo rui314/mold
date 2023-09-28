@@ -632,6 +632,27 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
   });
 }
 
+// An ARM64 function with a non-standard calling convention is marked with
+// STO_AARCH64_VARIANT_PCS bit in the symbol table.
+//
+// A function with that bit is not safe to be called through a lazy PLT
+// stub because the PLT resolver may clobber registers that should be
+// preserved in a non-standard calling convention.
+//
+// To solve the problem, the dynamic linker scans the dynamic symbol table
+// at process startup time and resolve symbols with STO_AARCH64_VARIANT_PCS
+// bit eagerly, so that the PLT resolver won't be called for that symbol
+// lazily. As an optimization, it does so only when DT_AARCH64_VARIANT_PCS
+// is set in the dynamic section.
+//
+// This function returns true if DT_AARCH64_VARIANT_PCS needs to be set.
+static bool contains_variant_pcs(Context<ARM64> &ctx) {
+  for (Symbol<ARM64> *sym : ctx.plt->symbols)
+    if (sym->esym().arm64_variant_pcs)
+      return true;
+  return false;
+}
+
 template <typename E>
 static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   std::vector<Word<E>> vec;
@@ -780,6 +801,10 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_FLAGS, flags);
   if (flags1)
     define(DT_FLAGS_1, flags1);
+
+  if constexpr (is_arm64<E>)
+    if (contains_variant_pcs(ctx))
+      define(DT_AARCH64_VARIANT_PCS, 1);
 
   if constexpr (is_ppc32<E>)
     define(DT_PPC_GOT, ctx.gotplt->shdr.sh_addr);
@@ -1560,6 +1585,9 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
     esym.st_bind = STB_GLOBAL;
   else
     esym.st_bind = sym.esym().st_bind;
+
+  if constexpr (is_arm64<E>)
+    esym.arm64_variant_pcs = sym.esym().arm64_variant_pcs;
 
   if constexpr (is_ppc64v2<E>)
     esym.ppc_local_entry = sym.esym().ppc_local_entry;

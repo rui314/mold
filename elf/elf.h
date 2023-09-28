@@ -291,6 +291,7 @@ enum : u32 {
   DT_VERNEEDNUM = 0x6fffffff,
   DT_PPC_GOT = 0x70000000,
   DT_PPC64_GLINK = 0x70000000,
+  DT_AARCH64_VARIANT_PCS = 0x70000005,
   DT_AUXILIARY = 0x7ffffffd,
   DT_FILTER = 0x7fffffff,
 };
@@ -1707,6 +1708,35 @@ struct ElfNhdr {
 //
 // Target-specific ELF data types
 //
+
+template <>
+struct ElfSym<ARM64> {
+  bool is_undef() const { return st_shndx == SHN_UNDEF; }
+  bool is_abs() const { return st_shndx == SHN_ABS; }
+  bool is_common() const { return st_shndx == SHN_COMMON; }
+  bool is_weak() const { return st_bind == STB_WEAK; }
+  bool is_undef_weak() const { return is_undef() && is_weak(); }
+
+  ul32 st_name;
+
+#ifdef __LITTLE_ENDIAN__
+  u8 st_type : 4;
+  u8 st_bind : 4;
+  u8 st_visibility : 2;
+  u8 : 5;
+  u8 arm64_variant_pcs : 1; // ARM64-specific
+#else
+  u8 st_bind : 4;
+  u8 st_type : 4;
+  u8 arm64_variant_pcs : 1;
+  u8 : 6;
+  u8 st_visibility : 2;
+#endif
+
+  ul16 st_shndx;
+  ul64 st_value;
+  ul64 st_size;
+};
 
 template <>
 struct ElfSym<PPC64V2> {
