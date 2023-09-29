@@ -838,7 +838,7 @@ u64 get_eflags(Context<E> &ctx) {
   return ret;
 }
 
-static bool is_resizable(Context<E> &ctx, InputSection<E> *isec) {
+static bool is_resizable(InputSection<E> *isec) {
   return isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
          (isec->shdr().sh_flags & SHF_EXECINSTR);
 }
@@ -1038,7 +1038,7 @@ i64 riscv_resize_sections<E>(Context<E> &ctx) {
   // This step should only shrink sections.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (is_resizable(ctx, isec.get()))
+      if (is_resizable(isec.get()))
         shrink_section(ctx, *isec, use_rvc);
   });
 
