@@ -982,8 +982,8 @@ void check_symbol_types(Context<E> &ctx) {
       const ElfSym<E> &esym1 = sym.esym();
       const ElfSym<E> &esym2 = file->elf_syms[i];
 
-      u32 ty1 = (esym1.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym1.st_type;
-      u32 ty2 = (esym2.st_type == STT_GNU_IFUNC) ? STT_FUNC : esym2.st_type;
+      u32 ty1 = (esym1.st_type == STT_GNU_IFUNC) ? (u32)STT_FUNC : esym1.st_type;
+      u32 ty2 = (esym2.st_type == STT_GNU_IFUNC) ? (u32)STT_FUNC : esym2.st_type;
 
       if (ty1 != STT_NOTYPE && ty2 != STT_NOTYPE && ty1 != ty2)
         Warn(ctx) << "symbol type mismatch: " << sym << '\n'
