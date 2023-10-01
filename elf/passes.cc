@@ -1672,12 +1672,85 @@ void compute_import_export(Context<E> &ctx) {
   });
 }
 
+// Compute the "address-taken" bit for each input section.
+//
+// As a space-saving optimization, we want to merge two read-only objects
+// into a single object if their contents are equivalent. That
+// optimization is called the Identical Code Folding or ICF.
+//
+// A catch is that comparing object contents is not enough to determine if
+// two objects can be merged safely; we need to take care of pointer
+// equivalence.
+//
+// In C/C++, two pointers are equivalent if and only if they are taken for
+// the same object. Merging two objects into a single object can break
+// this assumption because two distinctive pointers would become
+// equivalent as a result of merging. We can still merge one object with
+// another if no pointer to the object was taken in code, because without
+// a pointer, comparing its address becomes moot.
+//
+// In mold, each input section has an "address-taken" bit. If there is a
+// pointer-taking reference to the object, it's set to true. At the ICF
+// stage, we merge only objects whose addresses were not taken.
+//
+// For functions, address-taking relocations are separated from
+// non-address-taking ones. For example, x86-64 uses R_X86_64_PLT32 for
+// direct function calls (e.g., "call foo" to call the function foo) while
+// R_X86_64_PC32 or R_X86_64_GOT32 are used for pointer-taking operations.
+//
+// Unfortunately, for data, we can't distinguish between address-taking
+// relocations and non-address-taking ones. LLVM generates an "address
+// significance" table in the ".llvm_addrsig" section to mark symbols
+// whose addresses are taken in code. If that table is available, we use
+// that information in this function. Otherwise, we conservatively assume
+// that all data items are address-taken.
 template <typename E>
-void mark_addrsig(Context<E> &ctx) {
-  Timer t(ctx, "mark_addrsig");
+void compute_address_significance(Context<E> &ctx) {
+  Timer t(ctx, "compute_address_significance");
 
+  // Flip address-taken bit for executable sections first.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->mark_addrsig(ctx);
+    for (std::unique_ptr<InputSection<E>> &src : file->sections)
+      if (src && src->is_alive && (src->shdr().sh_flags & SHF_ALLOC))
+        for (const ElfRel<E> &r : src->get_rels(ctx))
+          if (!is_func_call_rel(r))
+            if (InputSection<E> *dst = file->symbols[r.r_sym]->get_input_section())
+              if (!dst->address_taken && (dst->shdr().sh_flags & SHF_EXECINSTR))
+                dst->address_taken = true;
+  });
+
+  auto mark = [](Symbol<E> *sym) {
+    if (sym)
+      if (InputSection<E> *isec = sym->get_input_section())
+        isec->address_taken = true;
+  };
+
+  // Some symbols' pointer values are leaked to the dynamic section.
+  mark(get_symbol(ctx, ctx.arg.entry));
+  mark(get_symbol(ctx, ctx.arg.init));
+  mark(get_symbol(ctx, ctx.arg.fini));
+
+  // Exported symbols are conservatively considered address-taken.
+  if (ctx.dynsym)
+    for (Symbol<E> *sym : ctx.dynsym->symbols)
+      if (sym->is_imported)
+        mark(sym);
+
+  // Handle data objects.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (InputSection<E> *sec = file->llvm_addrsig.get()) {
+      u8 *p = (u8 *)sec->contents.data();
+      u8 *end = p + sec->contents.size();
+      while (p != end) {
+        Symbol<E> *sym = file->symbols[read_uleb(&p)];
+        if (InputSection<E> *isec = sym->get_input_section())
+          isec->address_taken = true;
+      }
+    } else {
+      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+        if (isec && !(isec->shdr().sh_flags & SHF_EXECINSTR))
+          isec->address_taken = true;
+    }
   });
 }
 
@@ -2622,7 +2695,7 @@ template void create_output_symtab(Context<E> &);
 template void apply_version_script(Context<E> &);
 template void parse_symbol_version(Context<E> &);
 template void compute_import_export(Context<E> &);
-template void mark_addrsig(Context<E> &);
+template void compute_address_significance(Context<E> &);
 template void clear_padding(Context<E> &);
 template void compute_section_headers(Context<E> &);
 template i64 set_osec_offsets(Context<E> &);

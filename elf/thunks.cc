@@ -68,27 +68,6 @@ static constexpr i64 max_thunk_size = 102400;
 
 static_assert(max_thunk_size / E::thunk_size < INT16_MAX);
 
-// Returns true if a given relocation is of type used for function calls.
-template <typename E>
-static bool needs_thunk_rel(const ElfRel<E> &r) {
-  u32 ty = r.r_type;
-
-  if constexpr (is_arm64<E>) {
-    return ty == R_AARCH64_JUMP26 || ty == R_AARCH64_CALL26;
-  } else if constexpr (is_arm32<E>) {
-    return ty == R_ARM_JUMP24 || ty == R_ARM_THM_JUMP24 ||
-           ty == R_ARM_CALL   || ty == R_ARM_THM_CALL   ||
-           ty == R_ARM_PLT32;
-  } else if constexpr (is_ppc32<E>) {
-    return ty == R_PPC_REL24  || ty == R_PPC_PLTREL24 || ty == R_PPC_LOCAL24PC;
-  } else if constexpr (is_ppc64<E>) {
-    return ty == R_PPC64_REL24 || ty == R_PPC64_REL24_NOTOC;
-  } else {
-    static_assert(is_loongarch<E>);
-    return ty == R_LARCH_B26;
-  }
-}
-
 template <typename E>
 static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
                          Symbol<E> &sym, const ElfRel<E> &rel) {
@@ -157,7 +136,7 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
-    if (!needs_thunk_rel(rel))
+    if (!is_func_call_rel(rel))
       continue;
 
     // Skip if the symbol is undefined. apply_reloc() will report an error.

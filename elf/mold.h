@@ -263,12 +263,14 @@ public:
   u32 relsec_idx = -1;
   u32 reldyn_offset = 0;
 
+  bool uncompressed = false;
+
   // For COMDAT de-duplication and garbage collection
   std::atomic_bool is_alive = true;
   u8 p2align = 0;
 
-  bool address_significant : 1 = false;
-  bool uncompressed : 1 = false;
+  // For ICF
+  Atomic<bool> address_taken = false;
 
   // For garbage collection
   Atomic<bool> is_visited = false;
@@ -1210,7 +1212,6 @@ public:
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
   void convert_undefined_weak_symbols(Context<E> &ctx);
-  void mark_addrsig(Context<E> &ctx);
   void scan_relocations(Context<E> &ctx);
   void convert_common_symbols(Context<E> &ctx);
   void compute_symtab_size(Context<E> &ctx);
@@ -1440,7 +1441,7 @@ template <typename E> void copy_chunks(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
-template <typename E> void mark_addrsig(Context<E> &);
+template <typename E> void compute_address_significance(Context<E> &);
 template <typename E> void clear_padding(Context<E> &);
 template <typename E> void compute_section_headers(Context<E> &);
 template <typename E> i64 set_osec_offsets(Context<E> &);

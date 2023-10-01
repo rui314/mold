@@ -1848,6 +1848,44 @@ template <typename E> concept is_ppc = is_ppc64<E> || is_ppc32<E>;
 template <typename E> concept is_sparc = is_sparc64<E>;
 template <typename E> concept is_loongarch = is_loongarch64<E> || is_loongarch32<E>;
 
+// Returns true if a given relocation is of type used for direct
+// function call.
+template <typename E>
+inline bool is_func_call_rel(const ElfRel<E> &r) {
+  u32 ty = r.r_type;
+
+  if constexpr (is_x86_64<E>) {
+    return ty == R_X86_64_PLT32 || ty == R_X86_64_PLTOFF64;
+  } else if constexpr (is_i386<E>) {
+    return ty == R_386_PLT32;
+  } else if constexpr (is_arm64<E>) {
+    return ty == R_AARCH64_JUMP26 || ty == R_AARCH64_CALL26;
+  } else if constexpr (is_arm32<E>) {
+    return ty == R_ARM_JUMP24 || ty == R_ARM_THM_JUMP24 ||
+           ty == R_ARM_CALL   || ty == R_ARM_THM_CALL   ||
+           ty == R_ARM_PLT32;
+  } else if constexpr (is_riscv<E>) {
+    return ty == R_RISCV_CALL || ty == R_RISCV_CALL_PLT;
+  } else if constexpr (is_ppc32<E>) {
+    return ty == R_PPC_REL24  || ty == R_PPC_PLTREL24 || ty == R_PPC_LOCAL24PC;
+  } else if constexpr (is_ppc64<E>) {
+    return ty == R_PPC64_REL24 || ty == R_PPC64_REL24_NOTOC;
+  } else if constexpr (is_s390x<E>) {
+    return ty == R_390_PLT32DBL;
+  } else if constexpr (is_sparc64<E>) {
+    return ty == R_SPARC_WPLT30 || ty == R_SPARC_WDISP30;
+  } else if constexpr (is_m68k<E>) {
+    return ty == R_68K_PLT32;
+  } else if constexpr (is_sh4<E>) {
+    return ty == R_SH_PLT32;
+  } else if constexpr (is_alpha<E>) {
+    return false;
+  } else {
+    static_assert(is_loongarch<E>);
+    return ty == R_LARCH_B26;
+  }
+}
+
 struct X86_64 {
   static constexpr std::string_view target_name = "x86_64";
   static constexpr bool is_64 = true;

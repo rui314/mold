@@ -496,17 +496,15 @@ int elf_main(int argc, char **argv) {
   // Set is_imported and is_exported bits for each symbol.
   compute_import_export(ctx);
 
-  // Read address-significant section information.
-  if (ctx.arg.icf && !ctx.arg.icf_all)
-    mark_addrsig(ctx);
-
   // Garbage-collect unreachable sections.
   if (ctx.arg.gc_sections)
     gc_sections(ctx);
 
   // Merge identical read-only sections.
-  if (ctx.arg.icf)
+  if (ctx.arg.icf) {
+    compute_address_significance(ctx);
     icf_sections(ctx);
+  }
 
   // Compute sizes of sections containing mergeable strings.
   compute_merged_section_sizes(ctx);

@@ -867,33 +867,6 @@ void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
 }
 
 template <typename E>
-void ObjectFile<E>::mark_addrsig(Context<E> &ctx) {
-  // Parse a .llvm_addrsig section.
-  if (llvm_addrsig) {
-    u8 *cur = (u8 *)llvm_addrsig->contents.data();
-    u8 *end = cur + llvm_addrsig->contents.size();
-
-    while (cur != end) {
-      Symbol<E> &sym = *this->symbols[read_uleb(&cur)];
-      if (sym.file == this)
-        if (InputSection<E> *isec = sym.get_input_section())
-          isec->address_significant = true;
-    }
-  }
-
-  // We treat a symbol's address as significant if
-  //
-  // 1. we have no address significance information for the symbol, or
-  // 2. the symbol can be referenced from the outside in an address-
-  //    significant manner.
-  for (Symbol<E> *sym : this->symbols)
-    if (sym->file == this)
-      if (InputSection<E> *isec = sym->get_input_section())
-        if (!llvm_addrsig || sym->is_exported)
-          isec->address_significant = true;
-}
-
-template <typename E>
 void ObjectFile<E>::parse(Context<E> &ctx) {
   sections.resize(this->elf_sections.size());
   symtab_sec = this->find_section(SHT_SYMTAB);

@@ -115,21 +115,19 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
   const ElfShdr<E> &shdr = isec.shdr();
   std::string_view name = isec.name();
 
-  bool is_alloc = (shdr.sh_flags & SHF_ALLOC);
-  bool is_exec = (shdr.sh_flags & SHF_EXECINSTR) ||
-                 ctx.arg.ignore_data_address_equality;
-  bool is_relro = (name == ".data.rel.ro" ||
-                   name.starts_with(".data.rel.ro."));
-  bool is_readonly = !(shdr.sh_flags & SHF_WRITE) || is_relro;
-  bool is_bss = (shdr.sh_type == SHT_NOBITS);
-  bool is_empty = (shdr.sh_size == 0);
-  bool is_init = (shdr.sh_type == SHT_INIT_ARRAY || name == ".init");
-  bool is_fini = (shdr.sh_type == SHT_FINI_ARRAY || name == ".fini");
-  bool is_enumerable = is_c_identifier(name);
-  bool is_addr_taken = !ctx.arg.icf_all && isec.address_significant;
+  if (shdr.sh_size == 0 || !(shdr.sh_flags & SHF_ALLOC) ||
+      shdr.sh_type == SHT_NOBITS || is_c_identifier(name))
+    return false;
 
-  return is_alloc && is_exec && is_readonly && !is_bss && !is_empty &&
-         !is_init && !is_fini && !is_enumerable && !is_addr_taken;
+  if (shdr.sh_flags & SHF_EXECINSTR) {
+    return (ctx.arg.icf_all || !isec.address_taken) &&
+           name != ".init" && name != ".fini";
+  } else {
+    bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
+    bool is_relro = isec.output_section && isec.output_section->is_relro;
+    return (ctx.arg.ignore_data_address_equality || !isec.address_taken) &&
+           (is_readonly || is_relro);
+  }
 }
 
 static Digest digest_final(blake3_hasher *hasher) {
