@@ -883,6 +883,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_sectionheader = true;
     } else if (read_z_flag("nosectionheader")) {
       ctx.arg.z_sectionheader = false;
+    } else if (read_z_flag("rewrite-endbr")) {
+      ctx.arg.z_rewrite_endbr = true;
     } else if (read_flag("no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag("fatal-warnings")) {
