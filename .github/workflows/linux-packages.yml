@@ -13,3 +13,11 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         path: mold-*-linux.tar.gz
+    - name: archive test results
+      uses: actions/upload-artifact@v3
+      if: failure()
+      with:
+        name: test-results-linux-packages
+        path: |
+          build/out
+          build/Testing
