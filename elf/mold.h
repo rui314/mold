@@ -224,8 +224,7 @@ struct InputSectionExtras<E> {
 template <typename E>
 class InputSection {
 public:
-  InputSection(Context<E> &ctx, ObjectFile<E> &file, std::string_view name,
-               i64 shndx);
+  InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx);
 
   void uncompress(Context<E> &ctx);
   void uncompress_to(Context<E> &ctx, u8 *buf);

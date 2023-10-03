@@ -362,7 +362,7 @@ u64 DebugInfoReader<E>::read(u64 form) {
 // Read a range list from .debug_ranges starting at the given offset.
 template <typename E>
 static std::vector<u64>
-read_debug_range(Context<E> &ctx, ObjectFile<E> &file, Word<E> *range) {
+read_debug_range(Word<E> *range) {
   std::vector<u64> vec;
   u64 base = 0;
 
@@ -381,8 +381,7 @@ read_debug_range(Context<E> &ctx, ObjectFile<E> &file, Word<E> *range) {
 // Read a range list from .debug_rnglists starting at the given offset.
 template <typename E>
 static std::vector<u64>
-read_rnglist_range(Context<E> &ctx, ObjectFile<E> &file, u8 *rnglist,
-                   Word<E> *addrx) {
+read_rnglist_range(u8 *rnglist, Word<E> *addrx) {
   std::vector<u64> vec;
   u64 base = 0;
 
@@ -486,20 +485,20 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
     if (dwarf_version <= 4) {
        Word<E> *range_begin =
         (Word<E> *)(get_buffer(ctx, ctx.debug_ranges) + ranges.value);
-      return read_debug_range(ctx, file, range_begin);
+      return read_debug_range<E>(range_begin);
     }
 
     assert(dwarf_version == 5);
 
     u8 *buf = get_buffer(ctx, ctx.debug_rnglists);
     if (ranges.form == DW_FORM_sec_offset)
-      return read_rnglist_range(ctx, file, buf + ranges.value, addrx);
+      return read_rnglist_range<E>(buf + ranges.value, addrx);
 
     if (!rnglists_base)
       Fatal(ctx) << file << ": --gdb-index: missing DW_AT_rnglists_base";
 
     u8 *base = buf + *rnglists_base;
-    return read_rnglist_range(ctx, file, base + *(U32<E> *)base, addrx);
+    return read_rnglist_range<E>(base + *(U32<E> *)base, addrx);
   }
 
   // Handle a contiguous address range.

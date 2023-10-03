@@ -521,7 +521,7 @@ struct OpdSymbol {
 };
 
 static Symbol<E> *
-get_opd_sym_at(Context<E> &ctx, std::span<OpdSymbol> syms, u64 offset) {
+get_opd_sym_at(std::span<OpdSymbol> syms, u64 offset) {
   auto it = std::lower_bound(syms.begin(), syms.end(), OpdSymbol{offset});
   if (it == syms.end())
     return nullptr;
@@ -616,7 +616,7 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
         if (sym.get_input_section() != opd)
           continue;
 
-        Symbol<E> *real_sym = get_opd_sym_at(ctx, opd_syms, r.r_addend);
+        Symbol<E> *real_sym = get_opd_sym_at(opd_syms, r.r_addend);
         if (!real_sym)
           Fatal(ctx) << *isec << ": cannot find a symbol in .opd for " << r
                      << " at offset 0x" << std::hex << (u64)r.r_addend;
