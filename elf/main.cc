@@ -505,10 +505,8 @@ int elf_main(int argc, char **argv) {
     gc_sections(ctx);
 
   // Merge identical read-only sections.
-  if (ctx.arg.icf) {
-    compute_address_significance(ctx);
+  if (ctx.arg.icf)
     icf_sections(ctx);
-  }
 
   // Compute sizes of sections containing mergeable strings.
   compute_merged_section_sizes(ctx);
