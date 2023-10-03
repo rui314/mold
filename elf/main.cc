@@ -191,7 +191,8 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
         break;
       }
     }
-    ctx.visited.insert(mf->name);
+    if (!ctx.whole_archive)
+      ctx.visited.insert(mf->name);
     return;
   case FileType::TEXT:
     parse_linker_script(ctx, mf);
