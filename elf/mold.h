@@ -1939,6 +1939,8 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
 template <typename E>
 int elf_main(int argc, char **argv);
 
+int redo_main(int argc, char **argv, std::string_view target);
+
 int main(int argc, char **argv);
 
 template <typename E>
