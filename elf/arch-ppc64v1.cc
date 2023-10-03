@@ -465,7 +465,6 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   static_assert(E::thunk_size == sizeof(local_thunk));
 
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-  u64 P = output_section.shdr.sh_addr + offset;
 
   for (Symbol<E> *sym : symbols) {
     if (sym->has_got(ctx)) {
@@ -486,7 +485,6 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
     }
 
     buf += E::thunk_size;
-    P += E::thunk_size;
   }
 }
 
