@@ -385,6 +385,7 @@ target_sources(mold PRIVATE
   elf/arch-sparc64.cc
   elf/arch-x86-64.cc
   elf/elf.cc
+  elf/main-mono.cc
   git-hash.cc
   third-party/rust-demangle/rust-demangle.c
   )
