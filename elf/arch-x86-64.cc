@@ -64,28 +64,41 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
 
 template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  static const u8 insn[] = {
-    0xf3, 0x0f, 0x1e, 0xfa, // endbr64
-    0x41, 0xbb, 0, 0, 0, 0, // mov $index_in_relplt, %r11d
-    0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
-  };
+  // Only a canonical PLT can be address-taken; there's no way to take
+  // an address of a non-canonical PLT. Therefore, a non-canonical PLT
+  // doesn't have to start with an endbr64.
+  if (sym.is_canonical) {
+    static const u8 insn[] = {
+      0xf3, 0x0f, 0x1e, 0xfa, // endbr64
+      0x41, 0xbb, 0, 0, 0, 0, // mov $index_in_relplt, %r11d
+      0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
+    };
 
-  memcpy(buf, insn, sizeof(insn));
-  *(ul32 *)(buf + 6) = sym.get_plt_idx(ctx);
-  *(ul32 *)(buf + 12) = sym.get_gotplt_addr(ctx) - sym.get_plt_addr(ctx) - 16;
+    memcpy(buf, insn, sizeof(insn));
+    *(ul32 *)(buf + 6) = sym.get_plt_idx(ctx);
+    *(ul32 *)(buf + 12) = sym.get_gotplt_addr(ctx) - sym.get_plt_addr(ctx) - 16;
+  } else {
+    static const u8 insn[] = {
+      0x41, 0xbb, 0, 0, 0, 0, // mov $index_in_relplt, %r11d
+      0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
+      0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+    };
+
+    memcpy(buf, insn, sizeof(insn));
+    *(ul32 *)(buf + 2) = sym.get_plt_idx(ctx);
+    *(ul32 *)(buf + 8) = sym.get_gotplt_addr(ctx) - sym.get_plt_addr(ctx) - 12;
+  }
 }
 
 template <>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   static const u8 insn[] = {
-    0xf3, 0x0f, 0x1e, 0xfa, // endbr64
     0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-    0xcc, 0xcc, 0xcc, 0xcc, // (padding)
     0xcc, 0xcc,             // (padding)
   };
 
   memcpy(buf, insn, sizeof(insn));
-  *(ul32 *)(buf + 6) = sym.get_got_addr(ctx) - sym.get_plt_addr(ctx) - 10;
+  *(ul32 *)(buf + 2) = sym.get_got_addr(ctx) - sym.get_plt_addr(ctx) - 6;
 }
 
 template <>

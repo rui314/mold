@@ -1895,7 +1895,7 @@ struct X86_64 {
   static constexpr u32 e_machine = EM_X86_64;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
+  static constexpr u32 pltgot_size = 8;
 
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
