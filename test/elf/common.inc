@@ -69,7 +69,14 @@ supports_ifunc() {
     $CC -c -o /dev/null -xc - >& /dev/null
 }
 
+is_musl() {
+  ldd --help 2>&1 | grep -q musl
+}
+
 supports_tlsdesc() {
+  # musl's tlsdesc on arm32 seems to be broken
+  [ $MACHINE = arm ] && is_musl && return 1
+
   [ -n "$tlsdesc_opt" ]
 }
 
