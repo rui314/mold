@@ -3,7 +3,7 @@
 
 # Skip if libc is musl because musl does not fully support GNU-style
 # symbol versioning.
-ldd --help 2>&1 | grep -q musl && skip
+is_musl && skip
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 int foo1() { return 1; }

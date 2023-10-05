@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-ldd --help 2>&1 | grep -q musl && skip
+is_musl && skip
 
 [ $MACHINE = x86_64 ] || skip
 

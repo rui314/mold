@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # Skip if libc is musl
-ldd --help 2>&1 | grep -q musl && skip
+is_musl && skip
 
 # Skip if target is not x86-64
 [ $MACHINE = x86_64 ] || skip

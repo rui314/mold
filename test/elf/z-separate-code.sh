@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # musl doesn't work with `-z noseparate-code`
-ldd --help 2>&1 | grep -q musl && skip
+is_musl && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>

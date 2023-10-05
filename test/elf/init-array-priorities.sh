@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # musl does not support GNU-style init/fini priorities
-ldd --help 2>&1 | grep -q musl && skip
+is_musl && skip
 
 cat <<'EOF' | $CC -c -o $t/a.o -xc -
 #include <stdio.h>
