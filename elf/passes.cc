@@ -1715,7 +1715,7 @@ void compute_address_significance(Context<E> &ctx) {
         for (const ElfRel<E> &r : src->get_rels(ctx))
           if (!is_func_call_rel(r))
             if (InputSection<E> *dst = file->symbols[r.r_sym]->get_input_section())
-              if (!(dst->shdr().sh_flags & SHF_EXECINSTR))
+              if (dst->shdr().sh_flags & SHF_EXECINSTR)
                 dst->address_taken = true;
   });
 
