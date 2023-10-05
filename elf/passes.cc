@@ -1733,7 +1733,7 @@ void compute_address_significance(Context<E> &ctx) {
   // Exported symbols are conservatively considered address-taken.
   if (ctx.dynsym)
     for (Symbol<E> *sym : ctx.dynsym->symbols)
-      if (sym->is_imported)
+      if (sym->is_exported)
         mark(sym);
 
   // Handle data objects.
