@@ -707,17 +707,13 @@ int elf_main(int argc, char **argv) {
 }
 
 #ifdef MOLD_X86_64
-
 int main(int argc, char **argv) {
   return elf_main<X86_64>(argc, argv);
 }
-
-#else
+#endif
 
 using E = MOLD_TARGET;
 
 template int elf_main<E>(int, char **);
-
-#endif
 
 } // namespace mold::elf
