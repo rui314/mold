@@ -362,7 +362,7 @@ int elf_main(int argc, char **argv) {
   // Redo if -m is not x86-64.
   if constexpr (is_x86_64<E>)
     if (ctx.arg.emulation != X86_64::target_name)
-      return redo_main(argc, argv, ctx.arg.emulation);
+      return redo_main(ctx, argc, argv);
 
   Timer t_all(ctx, "all");
 
@@ -706,8 +706,18 @@ int elf_main(int argc, char **argv) {
   return 0;
 }
 
+#ifdef MOLD_X86_64
+
+int main(int argc, char **argv) {
+  return elf_main<X86_64>(argc, argv);
+}
+
+#else
+
 using E = MOLD_TARGET;
 
 template int elf_main<E>(int, char **);
+
+#endif
 
 } // namespace mold::elf

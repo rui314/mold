@@ -1409,6 +1409,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 // passes.cc
 //
 
+template <typename E> int redo_main(Context<E> &, int argc, char **argv);
 template <typename E> void create_internal_file(Context<E> &);
 template <typename E> void apply_exclude_libs(Context<E> &);
 template <typename E> void create_synthetic_sections(Context<E> &);
@@ -1938,8 +1939,6 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
 template <typename E>
 int elf_main(int argc, char **argv);
-
-int redo_main(int argc, char **argv, std::string_view target);
 
 int main(int argc, char **argv);
 
