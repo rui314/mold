@@ -17,4 +17,4 @@ EOF
 
 echo "'$t/b.o' '$t/c.o'" > $t/rsp
 
-$CC -o $t/exe $t/a.o -Wl,@$t/rsp
+$CC -B. -o $t/exe $t/a.o -Wl,@$t/rsp

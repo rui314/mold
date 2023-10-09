@@ -6,7 +6,10 @@ namespace mold {
 
 template <typename Context>
 std::vector<std::string_view>
-read_response_file(Context &ctx, std::string_view path) {
+read_response_file(Context &ctx, std::string_view path, i64 depth) {
+  if (depth > 10)
+    Fatal(ctx) << path << ": response file nesting too deep";
+
   std::vector<std::string_view> vec;
   MappedFile<Context> *mf = MappedFile<Context>::must_open(ctx, std::string(path));
   u8 *data = mf->data;
@@ -50,14 +53,23 @@ read_response_file(Context &ctx, std::string_view path) {
   };
 
   for (i64 i = 0; i < mf->size;) {
-    if (isspace(data[i]))
+    if (isspace(data[i])) {
       i++;
-    else if (data[i] == '\'')
+      continue;
+    }
+
+    if (data[i] == '\'')
       i = read_quoted(i + 1, '\'');
     else if (data[i] == '\"')
       i = read_quoted(i + 1, '\"');
     else
       i = read_unquoted(i);
+
+    if (vec.back().starts_with('@')) {
+      std::string_view path = vec.back().substr(1);
+      vec.pop_back();
+      append(vec, read_response_file(ctx, path, depth + 1));
+    }
   }
   return vec;
 }
@@ -68,7 +80,7 @@ std::vector<std::string_view> expand_response_files(Context &ctx, char **argv) {
   std::vector<std::string_view> vec;
   for (i64 i = 0; argv[i]; i++) {
     if (argv[i][0] == '@')
-      append(vec, read_response_file(ctx, argv[i] + 1));
+      append(vec, read_response_file(ctx, argv[i] + 1, 1));
     else
       vec.push_back(argv[i]);
   }
