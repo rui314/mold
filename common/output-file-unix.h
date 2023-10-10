@@ -52,14 +52,13 @@ class MemoryMappedOutputFile : public OutputFile<Context> {
 public:
   MemoryMappedOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
     : OutputFile<Context>(path, filesize, true) {
-    i64 fd;
-    std::tie(fd, output_tmpfile) = open_or_create_file(ctx, path, filesize, perm);
+    std::tie(this->fd, output_tmpfile) =
+      open_or_create_file(ctx, path, filesize, perm);
 
     this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
-                           MAP_SHARED, fd, 0);
+                           MAP_SHARED, this->fd, 0);
     if (this->buf == MAP_FAILED)
       Fatal(ctx) << path << ": mmap failed: " << errno_string();
-    ::close(fd);
 
     mold::output_buffer_start = this->buf;
     mold::output_buffer_end = this->buf + filesize;
@@ -73,6 +72,7 @@ public:
   void close(Context &ctx) override {
     Timer t(ctx, "close_file");
 
+    ::close(this->fd);
     if (!this->is_unmapped)
       munmap(this->buf, this->filesize);
 
@@ -90,39 +90,6 @@ public:
 
 private:
   int fd2 = -1;
-};
-
-template <typename Context>
-class MallocOutputFile : public OutputFile<Context> {
-public:
-  MallocOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile<Context>(path, filesize, false), perm(perm) {
-    this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
-                           MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    if (this->buf == MAP_FAILED)
-      Fatal(ctx) << "mmap failed: " << errno_string();
-  }
-
-  void close(Context &ctx) override {
-    Timer t(ctx, "close_file");
-
-    if (this->path == "-") {
-      fwrite(this->buf, this->filesize, 1, stdout);
-      fclose(stdout);
-      return;
-    }
-
-    i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, perm);
-    if (fd == -1)
-      Fatal(ctx) << "cannot open " << this->path << ": " << errno_string();
-
-    FILE *fp = fdopen(fd, "w");
-    fwrite(this->buf, this->filesize, 1, fp);
-    fclose(fp);
-  }
-
-private:
-  i64 perm;
 };
 
 template <typename Context>

@@ -244,6 +244,85 @@ struct Atomic : std::atomic<T> {
 };
 
 //
+// perf.cc
+//
+
+// Counter is used to collect statistics numbers.
+class Counter {
+public:
+  Counter(std::string_view name, i64 value = 0) : name(name), values(value) {
+    static std::mutex mu;
+    std::scoped_lock lock(mu);
+    instances.push_back(this);
+  }
+
+  Counter &operator++(int) {
+    if (enabled) [[unlikely]]
+      values.local()++;
+    return *this;
+  }
+
+  Counter &operator+=(int delta) {
+    if (enabled) [[unlikely]]
+      values.local() += delta;
+    return *this;
+  }
+
+  static void print();
+
+  static inline bool enabled = false;
+
+private:
+  i64 get_value();
+
+  std::string_view name;
+  tbb::enumerable_thread_specific<i64> values;
+
+  static inline std::vector<Counter *> instances;
+};
+
+// Timer and TimeRecord records elapsed time (wall clock time)
+// used by each pass of the linker.
+struct TimerRecord {
+  TimerRecord(std::string name, TimerRecord *parent = nullptr);
+  void stop();
+
+  std::string name;
+  TimerRecord *parent;
+  tbb::concurrent_vector<TimerRecord *> children;
+  i64 start;
+  i64 end;
+  i64 user;
+  i64 sys;
+  bool stopped = false;
+};
+
+void
+print_timer_records(tbb::concurrent_vector<std::unique_ptr<TimerRecord>> &);
+
+template <typename Context>
+class Timer {
+public:
+  Timer(Context &ctx, std::string name, Timer *parent = nullptr) {
+    record = new TimerRecord(name, parent ? parent->record : nullptr);
+    ctx.timer_records.push_back(std::unique_ptr<TimerRecord>(record));
+  }
+
+  Timer(const Timer &) = delete;
+
+  ~Timer() {
+    record->stop();
+  }
+
+  void stop() {
+    record->stop();
+  }
+
+private:
+  TimerRecord *record;
+};
+
+//
 // Bit vector
 //
 
@@ -595,13 +674,46 @@ public:
 
   u8 *buf = nullptr;
   std::string path;
-  i64 filesize;
-  bool is_mmapped;
+  i64 fd = -1;
+  i64 filesize = 0;
+  bool is_mmapped = false;
   bool is_unmapped = false;
 
 protected:
   OutputFile(std::string path, i64 filesize, bool is_mmapped)
     : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
+};
+
+template <typename Context>
+class MallocOutputFile : public OutputFile<Context> {
+public:
+  MallocOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
+    : OutputFile<Context>(path, filesize, false), perm(perm) {
+    this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
+                           MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (this->buf == MAP_FAILED)
+      Fatal(ctx) << "mmap failed: " << errno_string();
+  }
+
+  void close(Context &ctx) override {
+    Timer t(ctx, "close_file");
+    FILE *fp;
+
+    if (this->path == "-") {
+      fp = stdout;
+    } else {
+      i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, perm);
+      if (fd == -1)
+        Fatal(ctx) << "cannot open " << this->path << ": " << errno_string();
+      fp = fdopen(fd, "w");
+    }
+
+    fwrite(this->buf, this->filesize, 1, fp);
+    fclose(fp);
+  }
+
+private:
+  i64 perm;
 };
 
 //
@@ -737,85 +849,6 @@ public:
 
 private:
   std::vector<std::vector<u8>> shards;
-};
-
-//
-// perf.cc
-//
-
-// Counter is used to collect statistics numbers.
-class Counter {
-public:
-  Counter(std::string_view name, i64 value = 0) : name(name), values(value) {
-    static std::mutex mu;
-    std::scoped_lock lock(mu);
-    instances.push_back(this);
-  }
-
-  Counter &operator++(int) {
-    if (enabled) [[unlikely]]
-      values.local()++;
-    return *this;
-  }
-
-  Counter &operator+=(int delta) {
-    if (enabled) [[unlikely]]
-      values.local() += delta;
-    return *this;
-  }
-
-  static void print();
-
-  static inline bool enabled = false;
-
-private:
-  i64 get_value();
-
-  std::string_view name;
-  tbb::enumerable_thread_specific<i64> values;
-
-  static inline std::vector<Counter *> instances;
-};
-
-// Timer and TimeRecord records elapsed time (wall clock time)
-// used by each pass of the linker.
-struct TimerRecord {
-  TimerRecord(std::string name, TimerRecord *parent = nullptr);
-  void stop();
-
-  std::string name;
-  TimerRecord *parent;
-  tbb::concurrent_vector<TimerRecord *> children;
-  i64 start;
-  i64 end;
-  i64 user;
-  i64 sys;
-  bool stopped = false;
-};
-
-void
-print_timer_records(tbb::concurrent_vector<std::unique_ptr<TimerRecord>> &);
-
-template <typename Context>
-class Timer {
-public:
-  Timer(Context &ctx, std::string name, Timer *parent = nullptr) {
-    record = new TimerRecord(name, parent ? parent->record : nullptr);
-    ctx.timer_records.push_back(std::unique_ptr<TimerRecord>(record));
-  }
-
-  Timer(const Timer &) = delete;
-
-  ~Timer() {
-    record->stop();
-  }
-
-  void stop() {
-    record->stop();
-  }
-
-private:
-  TimerRecord *record;
 };
 
 //
