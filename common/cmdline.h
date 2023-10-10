@@ -12,64 +12,63 @@ read_response_file(Context &ctx, std::string_view path, i64 depth) {
 
   std::vector<std::string_view> vec;
   MappedFile<Context> *mf = MappedFile<Context>::must_open(ctx, std::string(path));
-  u8 *data = mf->data;
+  std::string_view data((char *)mf->data, mf->size);
 
-  auto read_quoted = [&](i64 i, char quote) {
-    std::string buf;
-    while (i < mf->size && data[i] != quote) {
-      if (data[i] == '\\') {
-        buf.append(1, data[i + 1]);
-        i += 2;
-      } else {
-        buf.append(1, data[i++]);
-      }
-    }
-    if (i >= mf->size)
-      Fatal(ctx) << path << ": premature end of input";
-    vec.push_back(save_string(ctx, buf));
-    return i + 1;
-  };
-
-  auto read_unquoted = [&](i64 i) {
-    std::string buf;
-
-    while (i < mf->size) {
-      if (data[i] == '\\' && i + 1 < mf->size) {
-        buf.append(1, data[i + 1]);
-        i += 2;
-        continue;
-      }
-
-      if (!isspace(data[i])) {
-        buf.append(1, data[i++]);
-        continue;
-      }
-
-      break;
-    }
-
-    vec.push_back(save_string(ctx, buf));
-    return i;
-  };
-
-  for (i64 i = 0; i < mf->size;) {
-    if (isspace(data[i])) {
-      i++;
+  while (!data.empty()) {
+    if (isspace(data[0])) {
+      data = data.substr(1);
       continue;
     }
 
-    if (data[i] == '\'')
-      i = read_quoted(i + 1, '\'');
-    else if (data[i] == '\"')
-      i = read_quoted(i + 1, '\"');
-    else
-      i = read_unquoted(i);
+    auto read_quoted = [&]() {
+      char quote = data[0];
+      data = data.substr(1);
 
-    if (vec.back().starts_with('@')) {
-      std::string_view path = vec.back().substr(1);
-      vec.pop_back();
-      append(vec, read_response_file(ctx, path, depth + 1));
-    }
+      std::string buf;
+      while (!data.empty() && data[0] != quote) {
+        if (data[0] == '\\' && data.size() >= 1) {
+          buf.append(1, data[1]);
+          data = data.substr(2);
+        } else {
+          buf.append(1, data[0]);
+          data = data.substr(1);
+        }
+      }
+      if (data.empty())
+        Fatal(ctx) << path << ": premature end of input";
+      data = data.substr(1);
+      return save_string(ctx, buf);
+    };
+
+    auto read_unquoted = [&] {
+      std::string buf;
+      while (!data.empty()) {
+        if (data[0] == '\\' && data.size() >= 1) {
+          buf.append(1, data[1]);
+          data = data.substr(2);
+          continue;
+        }
+
+        if (!isspace(data[0])) {
+          buf.append(1, data[0]);
+          data = data.substr(1);
+          continue;
+        }
+        break;
+      }
+      return save_string(ctx, buf);
+    };
+
+    std::string_view tok;
+    if (data[0] == '\'' || data[0] == '\"')
+      tok = read_quoted();
+    else
+      tok = read_unquoted();
+
+    if (tok.starts_with('@'))
+      append(vec, read_response_file(ctx, tok.substr(1), depth + 1));
+    else
+      vec.push_back(tok);
   }
   return vec;
 }
