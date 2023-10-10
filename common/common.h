@@ -905,9 +905,9 @@ MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
 
   i64 fd;
 #ifdef _WIN32
-    fd = ::_open(path.c_str(), O_RDONLY);
+  fd = ::_open(path.c_str(), O_RDONLY);
 #else
-    fd = ::open(path.c_str(), O_RDONLY);
+  fd = ::open(path.c_str(), O_RDONLY);
 #endif
 
   if (fd == -1) {
@@ -943,7 +943,7 @@ MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
     if (mf->data == MAP_FAILED)
       Fatal(ctx) << path << ": mmap failed: " << errno_string();
 #endif
-    }
+  }
 
   close(fd);
   return mf;

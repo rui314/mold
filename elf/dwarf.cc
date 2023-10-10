@@ -483,7 +483,7 @@ read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset) {
   // Handle non-contiguous address ranges.
   if (ranges.form) {
     if (dwarf_version <= 4) {
-       Word<E> *range_begin =
+      Word<E> *range_begin =
         (Word<E> *)(get_buffer(ctx, ctx.debug_ranges) + ranges.value);
       return read_debug_range<E>(range_begin);
     }
