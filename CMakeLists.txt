@@ -303,8 +303,8 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/arch-loongarch.cc
   elf/arch-riscv.cc
   elf/cmdline.cc
-  elf/dwarf.cc
   elf/gc-sections.cc
+  elf/gdb-index.cc
   elf/icf.cc
   elf/input-files.cc
   elf/input-sections.cc

@@ -679,6 +679,7 @@ public:
   virtual ~OutputFile() = default;
 
   u8 *buf = nullptr;
+  std::vector<u8> buf2;
   std::string path;
   i64 fd = -1;
   i64 filesize = 0;
@@ -718,6 +719,8 @@ public:
     }
 
     fwrite(this->buf, this->filesize, 1, fp);
+    if (!this->buf2.empty())
+      fwrite(this->buf2.data(), this->buf2.size(), 1, fp);
     fclose(fp);
   }
 

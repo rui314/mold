@@ -2732,316 +2732,25 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
-// This page explains the format of .gdb_index:
-// https://sourceware.org/gdb/onlinedocs/gdb/Index-Section-Format.html
-template <typename E>
-void GdbIndexSection<E>::construct(Context<E> &ctx) {
-  Timer t(ctx, "GdbIndexSection::construct");
-
-  std::atomic_bool has_debug_info = false;
-
-  // Read debug sections
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (file->debug_info) {
-      // Read compilation units from .debug_info.
-      file->compunits = read_compunits(ctx, *file);
-
-      // Count the number of address areas contained in this file.
-      file->num_areas = estimate_address_areas(ctx, *file);
-      has_debug_info = true;
-    }
-  });
-
-  if (!has_debug_info)
-    return;
-
-  // Initialize `area_offset` and `compunits_idx`.
-  for (i64 i = 0; i < ctx.objs.size() - 1; i++) {
-    ctx.objs[i + 1]->area_offset =
-      ctx.objs[i]->area_offset + ctx.objs[i]->num_areas * 20;
-    ctx.objs[i + 1]->compunits_idx =
-      ctx.objs[i]->compunits_idx + ctx.objs[i]->compunits.size();
-  }
-
-  // Read .debug_gnu_pubnames and .debug_gnu_pubtypes.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->gdb_names = read_pubnames(ctx, *file);
-  });
-
-  // Estimate the unique number of pubnames.
-  HyperLogLog estimator;
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    HyperLogLog e;
-    for (GdbIndexName &name : file->gdb_names)
-      e.insert(name.hash);
-    estimator.merge(e);
-  });
-
-  // Uniquify pubnames by inserting all name strings into a concurrent
-  // hashmap.
-  map.resize(estimator.get_cardinality() * 2);
-  tbb::enumerable_thread_specific<i64> num_names;
-
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (GdbIndexName &name : file->gdb_names) {
-      MapEntry *ent;
-      bool inserted;
-      std::tie(ent, inserted) = map.insert(name.name, name.hash, {file, name.hash});
-      if (inserted)
-        num_names.local()++;
-
-      ObjectFile<E> *old_val = ent->owner;
-      while (file->priority < old_val->priority &&
-             !ent->owner.compare_exchange_weak(old_val, file));
-
-      ent->num_attrs++;
-      name.entry_idx = map.get_idx(ent);
-    }
-  });
-
-  // Assign offsets for names and attributes within each file.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (GdbIndexName &name : file->gdb_names) {
-      MapEntry &ent = map.entries[name.entry_idx].value;
-      if (ent.owner == file) {
-        ent.attr_offset = file->attrs_size;
-        file->attrs_size += (ent.num_attrs + 1) * 4;
-        ent.name_offset = file->names_size;
-        file->names_size += name.name.size() + 1;
-      }
-    }
-  });
-
-  // Compute per-file name and attributes offsets.
-  for (i64 i = 0; i < ctx.objs.size() - 1; i++)
-    ctx.objs[i + 1]->attrs_offset =
-      ctx.objs[i]->attrs_offset + ctx.objs[i]->attrs_size;
-
-  ctx.objs[0]->names_offset =
-    ctx.objs.back()->attrs_offset + ctx.objs.back()->attrs_size;
-
-  for (i64 i = 0; i < ctx.objs.size() - 1; i++)
-    ctx.objs[i + 1]->names_offset =
-      ctx.objs[i]->names_offset + ctx.objs[i]->names_size;
-
-  // .gdb_index contains an on-disk hash table for pubnames and
-  // pubtypes. We aim 75% utilization. As per the format specification,
-  // It must be a power of two.
-  i64 num_symtab_entries =
-    std::max<i64>(bit_ceil(num_names.combine(std::plus()) * 4 / 3), 16);
-
-  // Now that we can compute the size of this section.
-  ObjectFile<E> &last = *ctx.objs.back();
-  i64 compunits_size = (last.compunits_idx + last.compunits.size()) * 16;
-  i64 areas_size = last.area_offset + last.num_areas * 20;
-  i64 offset = sizeof(header);
-
-  header.cu_list_offset = offset;
-  offset += compunits_size;
-
-  header.cu_types_offset = offset;
-  header.areas_offset = offset;
-  offset += areas_size;
-
-  header.symtab_offset = offset;
-  offset += num_symtab_entries * 8;
-
-  header.const_pool_offset = offset;
-  offset += last.names_offset + last.names_size;
-
-  this->shdr.sh_size = offset;
-}
-
-template <typename E>
-void GdbIndexSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *buf = ctx.buf + this->shdr.sh_offset;
-
-  // Write section header.
-  memcpy(buf, &header, sizeof(header));
-  buf += sizeof(header);
-
-  // Write compilation unit list.
-  for (ObjectFile<E> *file : ctx.objs) {
-    if (file->debug_info) {
-      u64 offset = file->debug_info->offset;
-      for (std::string_view cu : file->compunits) {
-        *(ul64 *)buf = offset;
-        *(ul64 *)(buf + 8) = cu.size();
-        buf += 16;
-        offset += cu.size();
-      }
-    }
-  }
-
-  // Skip address areas. It'll be filled by write_address_areas.
-  buf += header.symtab_offset - header.areas_offset;
-
-  // Write an on-disk hash table for names.
-  u32 symtab_size = header.const_pool_offset - header.symtab_offset;
-  memset(buf, 0, symtab_size);
-
-  assert(has_single_bit(symtab_size / 8));
-  u32 mask = symtab_size / 8 - 1;
-
-  for (i64 i = 0; i < map.nbuckets; i++) {
-    if (map.get_key(i)) {
-      MapEntry &ent = map.entries[i].value;
-      u32 hash = ent.hash;
-      u32 step = (hash & mask) | 1;
-      u32 j = hash & mask;
-
-      while (*(U32<E> *)(buf + j * 8))
-        j = (j + step) & mask;
-
-      ObjectFile<E> &file = *ent.owner;
-      *(ul32 *)(buf + j * 8) = file.names_offset + ent.name_offset;
-      *(ul32 *)(buf + j * 8 + 4) = file.attrs_offset + ent.attr_offset;
-    }
-  }
-
-  buf += symtab_size;
-
-  // Write CU vector
-  memset(buf, 0, ctx.objs[0]->names_offset);
-
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    std::atomic_uint32_t *attrs = (std::atomic_uint32_t *)buf;
-
-    for (GdbIndexName &name : file->gdb_names) {
-      MapEntry &ent = map.entries[name.entry_idx].value;
-      u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
-      attrs[idx + ++attrs[idx]] = name.attr;
-    }
-  });
-
-  // Sort CU vector for build reproducibility
-  const i64 shard_size = map.nbuckets / map.NUM_SHARDS;
-
-  tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
-    u32 *attrs = (u32 *)buf;
-
-    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
-      if (map.get_key(j)) {
-        MapEntry &ent = map.entries[j].value;
-        u32 idx = (ent.owner.load()->attrs_offset + ent.attr_offset) / 4;
-        u32 *start = attrs + idx + 1;
-        std::sort(start, start + attrs[idx]);
-      }
-    }
-  });
-
-  // .gdb_index contents are little-endian, so swap bytes if big-endian.
-  if constexpr (std::endian::native == std::endian::big)
-    for (i64 i = 0; i < ctx.objs[0]->names_offset; i += 4)
-      *(u32 *)(buf + i) = bswap(*(u32 *)(buf + i));
-
-  // Write pubnames and pubtypes.
-  tbb::parallel_for((i64)0, (i64)map.NUM_SHARDS, [&](i64 i) {
-    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
-      if (const char *key = map.get_key(j)) {
-        MapEntry &ent = map.entries[j].value;
-        ObjectFile<E> &file = *ent.owner;
-        std::string_view name{key, map.entries[j].keylen};
-        write_string(buf + file.names_offset + ent.name_offset, name);
-      }
-    }
-  });
-}
-
-template <typename E>
-void GdbIndexSection<E>::write_address_areas(Context<E> &ctx) {
-  Timer t(ctx, "GdbIndexSection::write_address_areas");
-
-  if (this->shdr.sh_size == 0)
-    return;
-
-  u8 *base = ctx.buf + this->shdr.sh_offset;
-
-  for (Chunk<E> *chunk : ctx.chunks) {
-    std::string_view name = chunk->name;
-    if (name == ".debug_info")
-      ctx.debug_info = chunk;
-    if (name == ".debug_abbrev")
-      ctx.debug_abbrev = chunk;
-    if (name == ".debug_ranges")
-      ctx.debug_ranges = chunk;
-    if (name == ".debug_addr")
-      ctx.debug_addr = chunk;
-    if (name == ".debug_rnglists")
-      ctx.debug_rnglists = chunk;
-  }
-
-  assert(ctx.debug_info);
-  assert(ctx.debug_abbrev);
-
-  struct Entry {
-    ul64 start;
-    ul64 end;
-    ul32 attr;
-  };
-
-  // Read address ranges from debug sections and copy them to .gdb_index.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (!file->debug_info)
-      return;
-
-    Entry *begin = (Entry *)(base + header.areas_offset + file->area_offset);
-    Entry *e = begin;
-    u64 offset = file->debug_info->offset;
-
-    for (i64 i = 0; i < file->compunits.size(); i++) {
-      std::vector<u64> addrs = read_address_areas(ctx, *file, offset);
-
-      for (i64 j = 0; j < addrs.size(); j += 2) {
-        // Skip an empty range
-        if (addrs[j] == addrs[j + 1])
-          continue;
-
-        // Gdb crashes if there are entries with address 0.
-        if (addrs[j] == 0)
-          continue;
-
-        assert(e < begin + file->num_areas);
-        e->start = addrs[j];
-        e->end = addrs[j + 1];
-        e->attr = file->compunits_idx + i;
-        e++;
-      }
-      offset += file->compunits[i].size();
-    }
-
-    // Fill trailing null entries with dummy values because gdb
-    // crashes if there are entries with address 0.
-    u64 filler;
-    if (e == begin)
-      filler = ctx.etext->get_addr(ctx) - 1;
-    else
-      filler = e[-1].start;
-
-    for (; e < begin + file->num_areas; e++) {
-      e->start = filler;
-      e->end = filler;
-      e->attr = file->compunits_idx;
-    }
-  });
-}
-
 template <typename E>
 CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   assert(chunk.name.starts_with(".debug"));
   this->name = chunk.name;
+  this->is_compressed = true;
 
-  uncompressed.reset(new u8[chunk.shdr.sh_size]);
-  chunk.write_to(ctx, uncompressed.get());
+  this->uncompressed_data.resize(chunk.shdr.sh_size);
+  u8 *buf = this->uncompressed_data.data();
+
+  chunk.write_to(ctx, buf);
 
   switch (ctx.arg.compress_debug_sections) {
   case COMPRESS_ZLIB:
     chdr.ch_type = ELFCOMPRESS_ZLIB;
-    compressed.reset(new ZlibCompressor(uncompressed.get(), chunk.shdr.sh_size));
+    compressed.reset(new ZlibCompressor(buf, chunk.shdr.sh_size));
     break;
   case COMPRESS_ZSTD:
     chdr.ch_type = ELFCOMPRESS_ZSTD;
-    compressed.reset(new ZstdCompressor(uncompressed.get(), chunk.shdr.sh_size));
+    compressed.reset(new ZstdCompressor(buf, chunk.shdr.sh_size));
     break;
   default:
     unreachable();
@@ -3057,8 +2766,10 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   this->shndx = chunk.shndx;
 
   // We don't need to keep the original data unless --gdb-index is given.
-  if (!ctx.arg.gdb_index)
-    uncompressed.reset(nullptr);
+  if (!ctx.arg.gdb_index) {
+    this->uncompressed_data.clear();
+    this->uncompressed_data.shrink_to_fit();
+  }
 }
 
 template <typename E>

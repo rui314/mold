@@ -72,9 +72,17 @@ public:
   void close(Context &ctx) override {
     Timer t(ctx, "close_file");
 
-    ::close(this->fd);
     if (!this->is_unmapped)
       munmap(this->buf, this->filesize);
+
+    if (this->buf2.empty()) {
+      ::close(this->fd);
+    } else {
+      FILE *out = fdopen(this->fd, "w");
+      fseek(out, 0, SEEK_END);
+      fwrite(&this->buf2[0], this->buf2.size(), 1, out);
+      fclose(out);
+    }
 
     // If an output file already exists, open a file and then remove it.
     // This is the fastest way to unlink a file, as it does not make the

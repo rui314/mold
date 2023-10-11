@@ -597,10 +597,6 @@ int elf_main(int argc, char **argv) {
   // Here, we construct output .eh_frame contents.
   ctx.eh_frame->construct(ctx);
 
-  // Handle --gdb-index.
-  if (ctx.arg.gdb_index)
-    ctx.gdb_index->construct(ctx);
-
   // If --emit-relocs is given, we'll copy relocation sections from input
   // files to an output file.
   if (ctx.arg.emit_relocs)
@@ -646,18 +642,18 @@ int elf_main(int argc, char **argv) {
   // Copy input sections to the output file and apply relocations.
   copy_chunks(ctx);
 
-  // Some part of .gdb_index couldn't be computed until other debug
-  // sections are complete. We have complete debug sections now, so
-  // write the rest of .gdb_index.
-  if (ctx.gdb_index)
-    ctx.gdb_index->write_address_areas(ctx);
-
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.
   ctx.reldyn->sort(ctx);
 
   // Zero-clear paddings between sections
   clear_padding(ctx);
+
+  // .gdb_index's contents cannot be constructed before applying
+  // relocations to other debug sections. We have relocated debug
+  // sections now, so write the .gdb_index section.
+  if (ctx.gdb_index)
+    write_gdb_index(ctx);
 
   // .note.gnu.build-id section contains a cryptographic hash of the
   // entire output file. Now that we wrote everything except build-id,

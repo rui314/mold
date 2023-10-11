@@ -355,13 +355,14 @@ public:
   virtual void write_to(Context<E> &ctx, u8 *buf) { unreachable(); }
   virtual void update_shdr(Context<E> &ctx) {}
 
-  // For --gdb-index
-  virtual u8 *get_uncompressed_data() { return nullptr; }
-
   std::string_view name;
   ElfShdr<E> shdr = { .sh_addralign = 1 };
   i64 shndx = 0;
   bool is_relro = false;
+
+  // For --gdb-index
+  bool is_compressed = false;
+  std::vector<u8> uncompressed_data;
 
   // Some synethetic sections add local symbols to the output.
   // For example, range extension thunks adds function_name@thunk
@@ -949,13 +950,6 @@ private:
   std::map<u32, u32> properties;
 };
 
-struct GdbIndexName {
-  std::string_view name;
-  u32 hash = 0;
-  u32 attr = 0;
-  u32 entry_idx = 0;
-};
-
 template <typename E>
 class GdbIndexSection : public Chunk<E> {
 public:
@@ -964,38 +958,6 @@ public:
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_addralign = 4;
   }
-
-  void construct(Context<E> &ctx);
-  void copy_buf(Context<E> &ctx) override;
-  void write_address_areas(Context<E> &ctx);
-
-private:
-  struct SectionHeader {
-    ul32 version = 7;
-    ul32 cu_list_offset = 0;
-    ul32 cu_types_offset = 0;
-    ul32 areas_offset = 0;
-    ul32 symtab_offset = 0;
-    ul32 const_pool_offset = 0;
-  };
-
-  struct MapEntry {
-    MapEntry(ObjectFile<E> *owner, u32 hash) : owner(owner), hash(hash) {}
-
-    MapEntry(const MapEntry &other)
-      : owner(other.owner.load()), num_attrs(other.num_attrs.load()),
-        hash(other.hash), name_offset(other.name_offset),
-        attr_offset(other.attr_offset) {}
-
-    std::atomic<ObjectFile<E> *> owner;
-    std::atomic_uint32_t num_attrs = 0;
-    u32 hash = 0;
-    u32 name_offset = -1;
-    u32 attr_offset = -1;
-  };
-
-  SectionHeader header;
-  ConcurrentMap<MapEntry> map;
 };
 
 template <typename E>
@@ -1003,12 +965,10 @@ class CompressedSection : public Chunk<E> {
 public:
   CompressedSection(Context<E> &ctx, Chunk<E> &chunk);
   void copy_buf(Context<E> &ctx) override;
-  u8 *get_uncompressed_data() override { return uncompressed.get(); }
 
 private:
   ElfChdr<E> chdr = {};
   std::unique_ptr<Compressor> compressed;
-  std::unique_ptr<u8[]> uncompressed;
 };
 
 template <typename E>
@@ -1060,22 +1020,10 @@ private:
 };
 
 //
-// dwarf.cc
+// gdb-index.cc
 //
 
-template <typename E>
-std::vector<std::string_view>
-read_compunits(Context<E> &ctx, ObjectFile<E> &file);
-
-template <typename E>
-std::vector<GdbIndexName> read_pubnames(Context<E> &ctx, ObjectFile<E> &file);
-
-template <typename E>
-i64 estimate_address_areas(Context<E> &ctx, ObjectFile<E> &file);
-
-template <typename E>
-std::vector<u64>
-read_address_areas(Context<E> &ctx, ObjectFile<E> &file, i64 offset);
+template <typename E> void write_gdb_index(Context<E> &ctx);
 
 //
 // input-files.cc
@@ -1246,19 +1194,8 @@ public:
 
   // For .gdb_index
   InputSection<E> *debug_info = nullptr;
-  InputSection<E> *debug_ranges = nullptr;
-  InputSection<E> *debug_rnglists = nullptr;
   InputSection<E> *debug_pubnames = nullptr;
   InputSection<E> *debug_pubtypes = nullptr;
-  std::vector<std::string_view> compunits;
-  std::vector<GdbIndexName> gdb_names;
-  i64 compunits_idx = 0;
-  i64 attrs_size = 0;
-  i64 attrs_offset = 0;
-  i64 names_size = 0;
-  i64 names_offset = 0;
-  i64 num_areas = 0;
-  i64 area_offset = 0;
 
   // For LTO
   std::vector<std::string_view> lto_symbol_versions;
@@ -1885,11 +1822,11 @@ struct Context {
   [[no_unique_address]] ContextExtras<E> extra;
 
   // For --gdb-index
-  Chunk<E> *debug_info = nullptr;
-  Chunk<E> *debug_abbrev = nullptr;
-  Chunk<E> *debug_ranges = nullptr;
-  Chunk<E> *debug_addr = nullptr;
-  Chunk<E> *debug_rnglists = nullptr;
+  std::span<u8> debug_info;
+  std::span<u8> debug_abbrev;
+  std::span<u8> debug_ranges;
+  std::span<u8> debug_addr;
+  std::span<u8> debug_rnglists;
 
   // For thread-local variables
   u64 tls_begin = 0;

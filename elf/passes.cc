@@ -76,6 +76,14 @@ void apply_exclude_libs(Context<E> &ctx) {
 }
 
 template <typename E>
+static bool has_debug_info_section(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs)
+    if (file->debug_info)
+      return true;
+  return false;
+}
+
+template <typename E>
 void create_synthetic_sections(Context<E> &ctx) {
   auto push = [&](auto *x) {
     ctx.chunks.push_back(x);
@@ -135,7 +143,7 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.buildid = push(new BuildIdSection<E>);
   if (ctx.arg.eh_frame_hdr)
     ctx.eh_frame_hdr = push(new EhFrameHdrSection<E>);
-  if (ctx.arg.gdb_index)
+  if (ctx.arg.gdb_index && has_debug_info_section(ctx))
     ctx.gdb_index = push(new GdbIndexSection<E>);
   if (ctx.arg.z_relro && ctx.arg.section_order.empty() &&
       ctx.arg.z_separate_code != SEPARATE_LOADABLE_SEGMENTS)
@@ -1846,6 +1854,7 @@ void clear_padding(Context<E> &ctx) {
 //   <writable non-RELRO bss>
 //   <non-memory-allocated sections>
 //   <section header>
+//   .gdb_index
 //
 // .interp and some other linker-synthesized sections are placed at the
 // beginning of a file because they are needed by loader. Especially on
@@ -1856,6 +1865,10 @@ void clear_padding(Context<E> &ctx) {
 // included in a core crash dump even if it's truncated by ulimit. In
 // particular, if .note.gnu.build-id is in a truncated core file, you
 // can at least identify which executable has crashed.
+//
+// .gdb_index cannot be constructed before applying relocations to
+// other debug sections, so we create it after completing other part
+// of the output file and append it to the very end of the file.
 //
 // A PT_NOTE segment will contain multiple .note sections if exists,
 // but there's no way to represent a gap between .note sections.
@@ -1902,6 +1915,8 @@ void sort_output_sections_regular(Context<E> &ctx) {
     if (chunk == ctx.relplt)
       return 11;
     if (chunk == ctx.shdr)
+      return INT32_MAX - 1;
+    if (chunk == ctx.gdb_index)
       return INT32_MAX;
 
     bool alloc = (flags & SHF_ALLOC);
@@ -2305,8 +2320,9 @@ void compute_section_headers(Context<E> &ctx) {
     chunk->update_shdr(ctx);
 
   // Remove empty chunks.
-  std::erase_if(ctx.chunks, [](Chunk<E> *chunk) {
-    return chunk->kind() != OUTPUT_SECTION && chunk->shdr.sh_size == 0;
+  std::erase_if(ctx.chunks, [&](Chunk<E> *chunk) {
+    return chunk->kind() != OUTPUT_SECTION && chunk != ctx.gdb_index &&
+           chunk->shdr.sh_size == 0;
   });
 
   // Set section indices.
