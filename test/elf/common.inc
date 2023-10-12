@@ -59,6 +59,13 @@ elif [ $MACHINE = aarch64 ]; then
   tlsdesc_opt=-mtls-dialect=desc
 fi
 
+if [ $MACHINE = ppc64le -a -e /proc/cpuinfo ] && grep -q POWER10 /proc/cpuinfo; then
+  CC="$CC -mcpu=power10"
+  CXX="$CXX -mcpu=power10"
+  GCC="$GCC -mcpu=power10"
+  GXX="$GXX -mcpu=power10"
+fi
+
 # Common functions
 test_cflags() {
   echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null

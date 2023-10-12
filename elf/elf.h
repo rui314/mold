@@ -2088,7 +2088,7 @@ struct PPC64V2 : PPC64 {
   static constexpr u32 plt_size = 4;
   static constexpr u32 pltgot_size = 0;
   static constexpr u32 thunk_hdr_size = 0;
-  static constexpr u32 thunk_size = 20;
+  static constexpr u32 thunk_size = 24;
 };
 
 struct S390X {

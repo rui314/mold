@@ -92,8 +92,9 @@ static u64 ha(u64 x)    { return (x + 0x8000) >> 16; }
 static u64 high(u64 x)  { return (x >> 16) & 0xffff; }
 static u64 higha(u64 x) { return ((x + 0x8000) >> 16) & 0xffff; }
 
-static u64 prefix34(u64 x) {
-  return bits(x, 33, 16) | (bits(x, 15, 0) << 32);
+static void write34(u8 *loc, u64 x) {
+  *(ul32 *)loc |= bits(x, 33, 16);
+  *(ul32 *)(loc + 4) |= bits(x, 15, 0);
 }
 
 // .plt is used only for lazy symbol resolution on PPC64. All PLT
@@ -205,7 +206,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 TOC = ctx.extra.TOC->value;
 
     auto r2save_thunk_addr = [&] { return get_thunk_addr(i); };
-    auto no_r2save_thunk_addr = [&] { return get_thunk_addr(i) + 4; };
+    auto no_r2save_thunk_addr = [&] { return get_thunk_addr(i) + 8; };
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
@@ -279,10 +280,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_PLT_PCREL34:
     case R_PPC64_PLT_PCREL34_NOTOC:
     case R_PPC64_GOT_PCREL34:
-      *(ul64 *)loc |= prefix34(G + GOT - P);
+      write34(loc, G + GOT - P);
       break;
     case R_PPC64_PCREL34:
-      *(ul64 *)loc |= prefix34(S + A - P);
+      write34(loc, S + A - P);
       break;
     case R_PPC64_GOT_TPREL16_HA:
       *(ul16 *)loc = ha(sym.get_gottp_addr(ctx) - TOC);
@@ -291,7 +292,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc |= (sym.get_gottp_addr(ctx) - TOC) & 0xfffc;
       break;
     case R_PPC64_GOT_TPREL_PCREL34:
-      *(ul64 *)loc |= prefix34(sym.get_gottp_addr(ctx) - P);
+      write34(loc, sym.get_gottp_addr(ctx) - P);
       break;
     case R_PPC64_GOT_TLSGD16_HA:
       *(ul16 *)loc = ha(sym.get_tlsgd_addr(ctx) - TOC);
@@ -300,7 +301,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = lo(sym.get_tlsgd_addr(ctx) - TOC);
       break;
     case R_PPC64_GOT_TLSGD_PCREL34:
-      *(ul64 *)loc |= prefix34(sym.get_tlsgd_addr(ctx) - P);
+      write34(loc, sym.get_tlsgd_addr(ctx) - P);
       break;
     case R_PPC64_GOT_TLSLD16_HA:
       *(ul16 *)loc = ha(ctx.got->get_tlsld_addr(ctx) - TOC);
@@ -309,7 +310,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = lo(ctx.got->get_tlsld_addr(ctx) - TOC);
       break;
     case R_PPC64_GOT_TLSLD_PCREL34:
-      *(ul64 *)loc |= prefix34(ctx.got->get_tlsld_addr(ctx) - P);
+      write34(loc, ctx.got->get_tlsld_addr(ctx) - P);
       break;
     case R_PPC64_DTPREL16_HA:
       *(ul16 *)loc = ha(S + A - ctx.dtp_addr);
@@ -318,7 +319,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = lo(S + A - ctx.dtp_addr);
       break;
     case R_PPC64_DTPREL34:
-      *(ul64 *)loc |= prefix34(S + A - ctx.dtp_addr);
+      write34(loc, S + A - ctx.dtp_addr);
       break;
     case R_PPC64_TPREL16_HA:
       *(ul16 *)loc = ha(S + A - ctx.tp_addr);
@@ -483,6 +484,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   // and jump there.
   static const ul32 plt_thunk[] = {
     0xf841'0018, // std   r2, 24(r1)
+    0x6000'0000, // nop
     0x3d82'0000, // addis r12, r2, foo@gotplt@toc@ha
     0xe98c'0000, // ld    r12, foo@gotplt@toc@lo(r12)
     0x7d89'03a6, // mtctr r12
@@ -491,6 +493,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   static const ul32 plt_thunk_power10[] = {
     0xf841'0018, // std   r2, 24(r1)
+    0x6000'0000, // nop
     0x0410'0000, // pld   r12, foo@gotplt@pcrel
     0xe580'0000,
     0x7d89'03a6, // mtctr r12
@@ -501,6 +504,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
   // to its local entry point.
   static const ul32 local_thunk[] = {
     0xf841'0018, // std   r2, 24(r1)
+    0x6000'0000, // nop
     0x3d82'0000, // addis r12, r2,  foo@toc@ha
     0x398c'0000, // addi  r12, r12, foo@toc@lo
     0x7d89'03a6, // mtctr r12
@@ -509,6 +513,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   static const ul32 local_thunk_power10[] = {
     0xf841'0018, // std   r2, 24(r1)
+    0x6000'0000, // nop
     0x0610'0000, // pla   r12, foo@pcrel
     0x3980'0000,
     0x7d89'03a6, // mtctr r12
@@ -530,22 +535,22 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
       if (ctx.extra.is_power10) {
         memcpy(buf, plt_thunk_power10, E::thunk_size);
-        *(ul64 *)(buf + 1) |= prefix34(got - P - 4);
+       write34(buf + 8, got - P - 8);
       } else {
         i64 val = got - ctx.extra.TOC->value;
         memcpy(buf, plt_thunk, E::thunk_size);
-        *(ul32 *)(buf + 4) |= higha(val);
-        *(ul32 *)(buf + 8) |= lo(val);
+        *(ul32 *)(buf + 8) |= higha(val);
+        *(ul32 *)(buf + 12) |= lo(val);
       }
     } else {
       if (ctx.extra.is_power10) {
         memcpy(buf, local_thunk_power10, E::thunk_size);
-        *(ul64 *)(buf + 1) |= prefix34(sym->get_addr(ctx) - P - 4);
+        write34(buf + 8, sym->get_addr(ctx) - P - 8);
       } else {
         i64 val = sym->get_addr(ctx) - ctx.extra.TOC->value;
         memcpy(buf, local_thunk, E::thunk_size);
-        *(ul32 *)(buf + 4) |= higha(val);
-        *(ul32 *)(buf + 8) |= lo(val);
+        *(ul32 *)(buf + 8) |= higha(val);
+        *(ul32 *)(buf + 12) |= lo(val);
       }
     }
 
