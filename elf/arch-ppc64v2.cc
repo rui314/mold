@@ -327,6 +327,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_TPREL16_LO:
       *(ul16 *)loc = lo(S + A - ctx.tp_addr);
       break;
+    case R_PPC64_TPREL34:
+      write34(loc, S + A - ctx.tp_addr);
+      break;
     case R_PPC64_PLTSEQ:
     case R_PPC64_PLTSEQ_NOTOC:
     case R_PPC64_PLTCALL:
@@ -444,6 +447,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_PPC64_TPREL16_HA:
     case R_PPC64_TPREL16_LO:
+    case R_PPC64_TPREL34:
       check_tlsle(ctx, sym, rel);
       break;
     case R_PPC64_REL32:
