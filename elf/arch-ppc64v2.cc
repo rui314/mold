@@ -532,6 +532,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
   u64 P = output_section.shdr.sh_addr + offset;
+  u64 TOC = ctx.extra.TOC->value;
 
   for (Symbol<E> *sym : symbols) {
     if (sym->has_plt(ctx)) {
@@ -542,20 +543,19 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
         memcpy(buf, plt_thunk_power10, E::thunk_size);
         write34(buf + 8, got - P - 8);
       } else {
-        i64 val = got - ctx.extra.TOC->value;
         memcpy(buf, plt_thunk, E::thunk_size);
-        *(ul32 *)(buf + 8) |= higha(val);
-        *(ul32 *)(buf + 12) |= lo(val);
+        *(ul32 *)(buf + 8) |= higha(got - TOC);
+        *(ul32 *)(buf + 12) |= lo(got - TOC);
       }
     } else {
+      u64 S = sym->get_addr(ctx);
       if (ctx.extra.is_power10) {
         memcpy(buf, local_thunk_power10, E::thunk_size);
-        write34(buf + 8, sym->get_addr(ctx) - P - 8);
+        write34(buf + 8, S - P - 8);
       } else {
-        i64 val = sym->get_addr(ctx) - ctx.extra.TOC->value;
         memcpy(buf, local_thunk, E::thunk_size);
-        *(ul32 *)(buf + 8) |= higha(val);
-        *(ul32 *)(buf + 12) |= lo(val);
+        *(ul32 *)(buf + 8) |= higha(S - TOC);
+        *(ul32 *)(buf + 12) |= lo(S - TOC);
       }
     }
 
