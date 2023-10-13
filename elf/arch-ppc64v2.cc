@@ -93,8 +93,9 @@ static u64 high(u64 x)  { return (x >> 16) & 0xffff; }
 static u64 higha(u64 x) { return ((x + 0x8000) >> 16) & 0xffff; }
 
 static void write34(u8 *loc, u64 x) {
-  *(ul32 *)loc |= bits(x, 33, 16);
-  *(ul32 *)(loc + 4) |= bits(x, 15, 0);
+  ul32 *buf = (ul32 *)loc;
+  buf[0] = (buf[0] & 0xfffc'0000) | bits(x, 33, 16);
+  buf[1] = (buf[1] & 0xffff'0000) | bits(x, 15, 0);
 }
 
 // .plt is used only for lazy symbol resolution on PPC64. All PLT
@@ -539,7 +540,7 @@ void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
 
       if (ctx.extra.is_power10) {
         memcpy(buf, plt_thunk_power10, E::thunk_size);
-       write34(buf + 8, got - P - 8);
+        write34(buf + 8, got - P - 8);
       } else {
         i64 val = got - ctx.extra.TOC->value;
         memcpy(buf, plt_thunk, E::thunk_size);

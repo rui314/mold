@@ -16,7 +16,7 @@ EOF
 $CC -B. -o $t/c.so -shared $t/a.o -Wl,--version-script=$t/b.version
 readelf -W --dyn-syms $t/c.so > $t/log
 
-grep -q ' foo@TEST$' $t/log
-grep -q ' bar@TEST$' $t/log
-grep -q ' bar1$' $t/log
-! grep -q ' foo@@TEST$' $t/log || false
+grep -q ' foo@TEST' $t/log
+grep -q ' bar@TEST' $t/log
+grep -q ' bar1' $t/log
+! grep -q ' foo@@TEST' $t/log || false

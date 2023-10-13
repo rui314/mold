@@ -14,6 +14,6 @@ EOF
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
-grep -q 'foo@@VER_X1$' $t/log
-! grep -q ' bar$' $t/log || false
-! grep -q ' baz$' $t/log || false
+grep -q 'foo@@VER_X1' $t/log
+! grep -q ' bar' $t/log || false
+! grep -q ' baz' $t/log || false

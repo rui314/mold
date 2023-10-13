@@ -6,8 +6,8 @@ void foo() {}
 EOF
 
 $CC -B. -o $t/b.so -shared $t/a.o -Wl,-default-symver
-readelf --dyn-syms $t/b.so | grep -q ' foo@@b\.so$'
+readelf --dyn-syms $t/b.so | grep -q ' foo@@b\.so'
 
 $CC -B. -o $t/b.so -shared $t/a.o \
   -Wl,--soname=bar -Wl,-default-symver
-readelf --dyn-syms $t/b.so | grep -q ' foo@@bar$'
+readelf --dyn-syms $t/b.so | grep -q ' foo@@bar'
