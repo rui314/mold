@@ -400,6 +400,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
   this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  bool is_power10 = false;
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -430,7 +431,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_REL24_NOTOC:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
-      ctx.extra.is_power10 = true;
+      is_power10 = true;
       break;
     case R_PPC64_PLT16_HA:
     case R_PPC64_PLT_PCREL34:
@@ -481,6 +482,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
+
+  if (is_power10 && !ctx.extra.is_power10)
+    ctx.extra.is_power10 = true;
 }
 
 template <>
