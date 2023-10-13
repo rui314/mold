@@ -689,10 +689,13 @@ class MallocOutputFile : public OutputFile<Context> {
 public:
   MallocOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
     : OutputFile<Context>(path, filesize, false), perm(perm) {
-    this->buf = (u8 *)mmap(NULL, filesize, PROT_READ | PROT_WRITE,
-                           MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    if (this->buf == MAP_FAILED)
-      Fatal(ctx) << "mmap failed: " << errno_string();
+    this->buf = (u8 *)malloc(filesize);
+    if (!this->buf)
+      Fatal(ctx) << "malloc failed";
+  }
+
+  ~MallocOutputFile() {
+    free(this->buf);
   }
 
   void close(Context &ctx) override {
