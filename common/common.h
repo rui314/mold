@@ -225,8 +225,14 @@ struct Atomic : std::atomic<T> {
   void operator=(T val) { store(val); }
   operator T() const { return load(); }
 
-  void store(T val) { std::atomic<T>::store(val, relaxed); }
-  T load() const { return std::atomic<T>::load(relaxed); }
+  void store(T val, std::memory_order order = relaxed) {
+    std::atomic<T>::store(val, order);
+  }
+
+  T load(std::memory_order order = relaxed) const {
+    return std::atomic<T>::load(order);
+  }
+
   T exchange(T val) { return std::atomic<T>::exchange(val, relaxed); }
   T operator|=(T val) { return std::atomic<T>::fetch_or(val, relaxed); }
   T operator++() { return std::atomic<T>::fetch_add(1, relaxed) + 1; }
@@ -565,7 +571,7 @@ public:
   // to make this object to be aligned to a reasonably large
   // power-of-two address.
   struct alignas(32) Entry {
-    std::atomic<const char *> key;
+    Atomic<const char *> key;
     T value;
     u32 keylen;
   };
@@ -634,7 +640,7 @@ public:
   }
 
   const char *get_key(i64 idx) {
-    return entries[idx].key.load(std::memory_order_relaxed);
+    return entries[idx].key;
   }
 
   i64 get_idx(T *value) const {
