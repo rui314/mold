@@ -257,7 +257,7 @@ public:
   i32 fde_begin = -1;
   i32 fde_end = -1;
 
-  u32 offset = -1;
+  u64 offset = -1;
   u32 shndx = -1;
   u32 relsec_idx = -1;
   u32 reldyn_offset = 0;

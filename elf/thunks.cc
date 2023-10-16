@@ -212,16 +212,6 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   i64 t = 0;
 
   while (b < m.size()) {
-    // Move D foward as far as we can jump from B to anywhere in a thunk at D.
-    while (d < m.size() &&
-           align_to(offset, 1 << m[d]->p2align) + m[d]->sh_size + max_thunk_size <
-           m[b]->offset + max_distance()) {
-      offset = align_to(offset, 1 << m[d]->p2align);
-      m[d]->offset = offset;
-      offset += m[d]->sh_size;
-      d++;
-    }
-
     // Move C forward so that C is apart from B by BATCH_SIZE. We want
     // to make sure that there's at least one section between B and C
     // to ensure progress.
@@ -230,10 +220,24 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
            m[c]->offset + m[c]->sh_size < m[b]->offset + batch_size)
       c++;
 
+    // Move D foward as far as we can jump from B to anywhere in a thunk at D.
+    d = c;
+    while (d < m.size() &&
+           align_to(offset, 1 << m[d]->p2align) + m[d]->sh_size + max_thunk_size <
+           m[b]->offset + max_distance())
+      d++;
+
     // Move A forward so that A is reachable from C.
     i64 c_offset = (c == m.size()) ? offset : m[c]->offset;
-    while (a < m.size() && m[a]->offset + max_distance() < c_offset)
+    while (a < b && a < m.size() && m[a]->offset + max_distance() < c_offset)
       a++;
+
+    // Assign offsets to all sections before D.
+    for (i64 i = b; i < d; i++) {
+      offset = align_to(offset, 1 << m[i]->p2align);
+      m[i]->offset = offset;
+      offset += m[i]->sh_size;
+    }
 
     // Erase references to out-of-range thunks.
     while (t < thunks.size() && thunks[t]->offset < m[a]->offset)
