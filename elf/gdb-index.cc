@@ -356,7 +356,11 @@ read_rnglist_range(std::vector<std::pair<u64, u64>> &vec, u8 *rnglist,
     case DW_RLE_offset_pair: {
       u64 val1 = read_uleb(&rnglist);
       u64 val2 = read_uleb(&rnglist);
-      vec.emplace_back(base + val1, base + val2);
+
+      // If the base is 0, this address range is for an eliminated
+      // section. We only emit it if it's alive.
+      if (base)
+        vec.emplace_back(base + val1, base + val2);
       break;
     }
     case DW_RLE_base_address:
