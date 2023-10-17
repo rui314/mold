@@ -261,13 +261,13 @@ u64 read_scalar(Context<E> &ctx, u8 **p, u64 form) {
   case DW_FORM_strx2:
   case DW_FORM_addrx2:
   case DW_FORM_ref2: {
-    u64 val = *(U16<E> *)(*p);
+    u64 val = *(U16<E> *)*p;
     *p += 2;
     return val;
   }
   case DW_FORM_strx3:
   case DW_FORM_addrx3: {
-    u64 val = *(U24<E> *)(*p);
+    u64 val = *(U24<E> *)*p;
     *p += 3;
     return val;
   }
@@ -275,26 +275,26 @@ u64 read_scalar(Context<E> &ctx, u8 **p, u64 form) {
   case DW_FORM_strx4:
   case DW_FORM_addrx4:
   case DW_FORM_ref4: {
-    u64 val = *(U32<E> *)(*p);
+    u64 val = *(U32<E> *)*p;
     *p += 4;
     return val;
   }
   case DW_FORM_data8:
   case DW_FORM_ref8: {
-    u64 val = *(U64<E> *)(*p);
+    u64 val = *(U64<E> *)*p;
     *p += 8;
     return val;
   }
   case DW_FORM_strp:
   case DW_FORM_sec_offset:
   case DW_FORM_line_strp: {
-    u64 val = *(Offset *)(*p);
+    u64 val = *(Offset *)*p;
     *p += sizeof(Offset);
     return val;
   }
   case DW_FORM_addr:
   case DW_FORM_ref_addr: {
-    u64 val = *(Word<E> *)(*p);
+    u64 val = *(Word<E> *)*p;
     *p += sizeof(Word<E>);
     return val;
   }
@@ -306,7 +306,7 @@ u64 read_scalar(Context<E> &ctx, u8 **p, u64 form) {
   case DW_FORM_rnglistx:
     return read_uleb(p);
   case DW_FORM_string:
-    *p += strlen((char *)(*p)) + 1;
+    *p += strlen((char *)*p) + 1;
     return 0;
   default:
     Fatal(ctx) << "--gdb-index: unhandled debug info form: 0x"
@@ -332,30 +332,30 @@ read_debug_range(Word<E> *range, u64 base) {
 // Read a range list from .debug_rnglists starting at the given offset.
 template <typename E>
 static void
-read_rnglist_range(std::vector<std::pair<u64, u64>> &vec, u8 *rnglist,
+read_rnglist_range(std::vector<std::pair<u64, u64>> &vec, u8 *p,
                    Word<E> *addrx, u64 base) {
   for (;;) {
-    switch (*rnglist++) {
+    switch (*p++) {
     case DW_RLE_end_of_list:
       return;
     case DW_RLE_base_addressx:
-      base = addrx[read_uleb(&rnglist)];
+      base = addrx[read_uleb(&p)];
       break;
     case DW_RLE_startx_endx: {
-      u64 val1 = read_uleb(&rnglist);
-      u64 val2 = read_uleb(&rnglist);
+      u64 val1 = read_uleb(&p);
+      u64 val2 = read_uleb(&p);
       vec.emplace_back(addrx[val1], addrx[val2]);
       break;
     }
     case DW_RLE_startx_length: {
-      u64 val1 = read_uleb(&rnglist);
-      u64 val2 = read_uleb(&rnglist);
+      u64 val1 = read_uleb(&p);
+      u64 val2 = read_uleb(&p);
       vec.emplace_back(addrx[val1], addrx[val1] + val2);
       break;
     }
     case DW_RLE_offset_pair: {
-      u64 val1 = read_uleb(&rnglist);
-      u64 val2 = read_uleb(&rnglist);
+      u64 val1 = read_uleb(&p);
+      u64 val2 = read_uleb(&p);
 
       // If the base is 0, this address range is for an eliminated
       // section. We only emit it if it's alive.
@@ -364,20 +364,20 @@ read_rnglist_range(std::vector<std::pair<u64, u64>> &vec, u8 *rnglist,
       break;
     }
     case DW_RLE_base_address:
-      base = *(Word<E> *)rnglist;
-      rnglist += sizeof(Word<E>);
+      base = *(Word<E> *)p;
+      p += sizeof(Word<E>);
       break;
     case DW_RLE_start_end: {
-      u64 val1 = ((Word<E> *)rnglist)[0];
-      u64 val2 = ((Word<E> *)rnglist)[1];
-      rnglist += sizeof(Word<E>) * 2;
+      u64 val1 = ((Word<E> *)p)[0];
+      u64 val2 = ((Word<E> *)p)[1];
+      p += sizeof(Word<E>) * 2;
       vec.emplace_back(val1, val2);
       break;
     }
     case DW_RLE_start_length: {
-      u64 val1 = *(Word<E> *)rnglist;
-      rnglist += sizeof(Word<E>);
-      u64 val2 = read_uleb(&rnglist);
+      u64 val1 = *(Word<E> *)p;
+      p += sizeof(Word<E>);
+      u64 val2 = read_uleb(&p);
       vec.emplace_back(val1, val1 + val2);
       break;
     }
@@ -678,9 +678,11 @@ void write_gdb_index(Context<E> &ctx) {
   });
 
   ConcurrentMap<MapValue> map(estimator.get_cardinality() * 3 / 2);
+  Atomic<i64> num_entries;
 
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
     cu.entries.reserve(cu.nametypes.size());
+    i64 count = 0;
 
     for (NameType &nt : cu.nametypes) {
       MapValue *ent;
@@ -688,13 +690,16 @@ void write_gdb_index(Context<E> &ctx) {
       MapValue value = {nt.name, nt.hash};
       std::tie(ent, inserted) = map.insert(nt.name, nt.hash, value);
       ent->count++;
+      if (inserted)
+        count++;
       cu.entries.push_back(ent);
     }
+    num_entries += count;
   });
 
   // Sort symbols for build reproducibility
   std::vector<MapValue *> entries;
-  entries.reserve(estimator.get_cardinality());
+  entries.reserve(num_entries);
 
   for (i64 i = 0; i < map.nbuckets; i++)
     if (map.entries[i].key)
@@ -714,7 +719,7 @@ void write_gdb_index(Context<E> &ctx) {
   for (Compunit &cu : cus)
     hdr.symtab_offset += cu.ranges.size() * 20;
 
-  i64 ht_size = bit_ceil(estimator.get_cardinality() * 5 / 4);
+  i64 ht_size = bit_ceil(num_entries * 5 / 4);
   hdr.const_pool_offset = hdr.symtab_offset + ht_size * 8;
 
   i64 offset = 0;
