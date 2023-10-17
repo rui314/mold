@@ -448,8 +448,8 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
   // Handle non-contiguous address ranges.
   if (ranges.form) {
     if (hdr.version <= 4) {
-      Word<E> *range_begin = (Word<E> *)(&ctx.debug_ranges[0] + ranges.value);
-      return read_debug_range<E>(range_begin, low_pc.value);
+      Word<E> *p = (Word<E> *)(&ctx.debug_ranges[0] + ranges.value);
+      return read_debug_range<E>(p, low_pc.value);
     }
 
     assert(hdr.version == 5);
@@ -528,10 +528,9 @@ static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
   };
 
   Compunit *cu = get_cu(file.debug_info->offset + hdr.debug_info_offset);
-
-  u8 *p = (u8 *)&hdr + sizeof(hdr);
   i64 size = hdr.size + offsetof(PubnamesHdr, size) + sizeof(hdr.size);
-  u8 *end = p + size;
+  u8 *p = (u8 *)&hdr + sizeof(hdr);
+  u8 *end = (u8 *)&hdr + size;
 
   while (p < end) {
     if (*(Offset *)p == 0)
@@ -558,13 +557,16 @@ static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
 template <typename E>
 static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
                           ObjectFile<E> &file) {
-  auto read = [&](InputSection<E> &isec) {
-    isec.uncompress(ctx);
-    if (isec.contents.empty())
-      return;
+  for (InputSection<E> *isec : { file.debug_pubnames, file.debug_pubtypes }) {
+    if (!isec)
+      continue;
 
-    u8 *p = (u8*)&isec.contents[0];
-    u8 *end = p + isec.contents.size();
+    isec->uncompress(ctx);
+    if (isec->contents.empty())
+      continue;
+
+    u8 *p = (u8*)&isec->contents[0];
+    u8 *end = p + isec->contents.size();
 
     while (p < end) {
       if (*(U32<E> *)p == 0xffff'ffff)
@@ -573,11 +575,6 @@ static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
         p += read_pubnames_cu(ctx, *(PubnamesHdr32<E> *)p, cus, file);
     }
   };
-
-  if (file.debug_pubnames)
-    read(*file.debug_pubnames);
-  if (file.debug_pubtypes)
-    read(*file.debug_pubtypes);
 }
 
 template <typename E>
@@ -601,9 +598,7 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
   }
 
   // Read address ranges for each compunit.
-  tbb::parallel_for((i64)0, (i64)cus.size(), [&](i64 i) {
-    Compunit &cu = cus[i];
-
+  tbb::parallel_for_each(cus, [&](Compunit &cu) {
     switch (cu.kind) {
     case DWARF2_32:
       cu.ranges = read_address_ranges<E, CuHdrDwarf2_32<E>>(ctx, cu);
