@@ -72,7 +72,13 @@ struct SectionHeader {
 };
 
 struct NameType {
-  auto operator<=>(const NameType &) const = default;
+  bool operator==(const NameType &) const = default;
+
+  bool operator<(const NameType &other) const {
+    return std::tuple(hash, type, name) <
+           std::tuple(other.hash, other.type, other.name);
+  }
+
   std::string_view name;
   u32 hash;
   u8 type;
