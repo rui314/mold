@@ -62,6 +62,61 @@
 
 namespace mold::elf {
 
+enum DwarfKind { DWARF2_32, DWARF5_32, DWARF2_64, DWARF5_64 };
+
+template <typename E>
+struct CuHdrDwarf2_32 {
+  U32<E> size;
+  U16<E> version;
+  U32<E> abbrev_offset;
+  u8 address_size;
+};
+
+template <typename E>
+struct CuHdrDwarf5_32 {
+  U32<E> size;
+  U16<E> version;
+  u8 unit_type;
+  u8 address_size;
+  U32<E> abbrev_offset;
+};
+
+template <typename E>
+struct CuHdrDwarf2_64 {
+  U32<E> magic;
+  U64<E> size;
+  U16<E> version;
+  U64<E> abbrev_offset;
+  u8 address_size;
+};
+
+template <typename E>
+struct CuHdrDwarf5_64 {
+  U32<E> magic;
+  U64<E> size;
+  U16<E> version;
+  u8 unit_type;
+  u8 address_size;
+  U64<E> abbrev_offset;
+};
+
+template <typename E>
+struct PubnamesHdr32 {
+  U32<E> size;
+  U16<E> version;
+  U32<E> debug_info_offset;
+  U32<E> debug_info_size;
+};
+
+template <typename E>
+struct PubnamesHdr64 {
+  U32<E> magic;
+  U64<E> size;
+  U16<E> version;
+  U64<E> debug_info_offset;
+  U64<E> debug_info_size;
+};
+
 struct SectionHeader {
   ul32 version = 7;
   ul32 cu_list_offset = 0;
@@ -93,6 +148,7 @@ struct MapValue {
 };
 
 struct Compunit {
+  DwarfKind kind;
   i64 offset;
   i64 size;
   std::vector<std::pair<u64, u64>> ranges;
@@ -112,40 +168,40 @@ static u32 gdb_hash(std::string_view name) {
 }
 
 template <typename E>
-u8 * find_cu_abbrev(Context<E> &ctx, u8 **p, i64 dwarf_version) {
-  i64 abbrev_offset;
+static DwarfKind get_dwarf_kind(Context<E> &ctx, u8 *p) {
+  if (*(U32<E> *)p == 0xffff'ffff) {
+    CuHdrDwarf2_64<E> &hdr = *(CuHdrDwarf2_64<E> *)p;
+    if (hdr.version > 5)
+      Fatal(ctx) << "--gdb-index: DWARF version " << hdr.version
+                 << " is not supported";
+    return (hdr.version == 5) ? DWARF5_64 : DWARF2_64;
+  }
 
-  switch (dwarf_version) {
-  case 2:
-  case 3:
-  case 4:
-    abbrev_offset = *(U32<E> *)*p;
-    if (i64 address_size = (*p)[4]; address_size != sizeof(Word<E>))
-      Fatal(ctx) << "--gdb-index: unsupported address size " << address_size;
-    *p += 5;
-    break;
-  case 5: {
-    abbrev_offset = *(U32<E> *)(*p + 2);
-    if (i64 address_size = (*p)[1]; address_size != sizeof(Word<E>))
-      Fatal(ctx) << "--gdb-index: unsupported address size " << address_size;
+  CuHdrDwarf2_32<E> &hdr = *(CuHdrDwarf2_32<E> *)p;
+  if (hdr.version > 5)
+    Fatal(ctx) << "--gdb-index: DWARF version " << hdr.version
+               << " is not supported";
+  return (hdr.version == 5) ? DWARF5_32 : DWARF2_32;
+}
 
-    switch (i64 unit_type = (*p)[0]; unit_type) {
+template <typename E, typename CuHdr>
+u8 *find_cu_abbrev(Context<E> &ctx, u8 **p, const CuHdr &hdr) {
+  if (hdr.address_size != sizeof(Word<E>))
+    Fatal(ctx) << "--gdb-index: unsupported address size " << hdr.address_size;
+
+  if constexpr (requires { hdr.unit_type; }) {
+    switch (hdr.unit_type) {
     case DW_UT_compile:
     case DW_UT_partial:
-      *p += 6;
       break;
     case DW_UT_skeleton:
     case DW_UT_split_compile:
-      *p += 14;
+      *p += 8;
       break;
     default:
-      Fatal(ctx) << "--gdb-index: unknown DW_UT_* value: 0x"
-                 << std::hex << unit_type;
+      Fatal(ctx) << "--gdb-index: unknown CU header unit type: 0x"
+                 << std::hex << hdr.unit_type;
     }
-    break;
-  }
-  default:
-    Fatal(ctx) << "--gdb-index: unknown DWARF version: " << dwarf_version;
   }
 
   i64 abbrev_code = read_uleb(p);
@@ -153,7 +209,7 @@ u8 * find_cu_abbrev(Context<E> &ctx, u8 **p, i64 dwarf_version) {
   // Find a .debug_abbrev record corresponding to the .debug_info record.
   // We assume the .debug_info record at a given offset is of
   // DW_TAG_compile_unit which describes a compunit.
-  u8 *abbrev = &ctx.debug_abbrev[0] + abbrev_offset;
+  u8 *abbrev = &ctx.debug_abbrev[0] + hdr.abbrev_offset;
 
   for (;;) {
     u32 code = read_uleb(&abbrev);
@@ -190,7 +246,7 @@ u8 * find_cu_abbrev(Context<E> &ctx, u8 **p, i64 dwarf_version) {
 
 // .debug_info contains variable-length fields.
 // This function reads one scalar value from a given location.
-template <typename E>
+template <typename E, typename Offset>
 u64 read_scalar(Context<E> &ctx, u8 **p, u64 form) {
   switch (form) {
   case DW_FORM_flag_present:
@@ -216,9 +272,6 @@ u64 read_scalar(Context<E> &ctx, u8 **p, u64 form) {
     return val;
   }
   case DW_FORM_data4:
-  case DW_FORM_strp:
-  case DW_FORM_sec_offset:
-  case DW_FORM_line_strp:
   case DW_FORM_strx4:
   case DW_FORM_addrx4:
   case DW_FORM_ref4: {
@@ -230,6 +283,13 @@ u64 read_scalar(Context<E> &ctx, u8 **p, u64 form) {
   case DW_FORM_ref8: {
     u64 val = *(U64<E> *)(*p);
     *p += 8;
+    return val;
+  }
+  case DW_FORM_strp:
+  case DW_FORM_sec_offset:
+  case DW_FORM_line_strp: {
+    u64 val = *(Offset *)(*p);
+    *p += sizeof(Offset);
     return val;
   }
   case DW_FORM_addr:
@@ -270,10 +330,10 @@ read_debug_range(Word<E> *range, u64 base) {
 }
 
 // Read a range list from .debug_rnglists starting at the given offset.
-template <typename E>
+template <typename E, typename Offset>
 static void
 read_rnglist_range(std::vector<std::pair<u64, u64>> &vec, u8 *rnglist,
-                   Word<E> *addrx, u64 base) {
+                   Offset *addrx, u64 base) {
   for (;;) {
     switch (*rnglist++) {
     case DW_RLE_end_of_list:
@@ -329,16 +389,15 @@ read_rnglist_range(std::vector<std::pair<u64, u64>> &vec, u8 *rnglist,
 // ranges are read from .debug_ranges (or .debug_rnglists for DWARF5).
 // Otherwise, a range is read directly from .debug_info (or possibly
 // from .debug_addr for DWARF5).
-template <typename E>
+template <typename E, typename CuHdr>
 static std::vector<std::pair<u64, u64>>
-read_address_ranges(Context<E> &ctx, i64 offset) {
+read_address_ranges(Context<E> &ctx, const Compunit &cu) {
   // Read .debug_info to find the record at a given offset.
-  u8 *p = &ctx.debug_info[0] + offset;
+  u8 *p = &ctx.debug_info[0] + cu.offset;
+  CuHdr &hdr = *(CuHdr *)p;
+  p += sizeof(hdr);
 
-  i64 dwarf_version = *(U16<E> *)(p + 4);
-  p += 6;
-
-  u8 *abbrev = find_cu_abbrev(ctx, &p, dwarf_version);
+  u8 *abbrev = find_cu_abbrev(ctx, &p, hdr);
 
   // Now, read debug info records.
   struct Record {
@@ -346,11 +405,13 @@ read_address_ranges(Context<E> &ctx, i64 offset) {
     u64 value = 0;
   };
 
+  using Offset = decltype(hdr.size);
+
   Record low_pc;
   Record high_pc;
   Record ranges;
   u64 rnglists_base = -1;
-  Word<E> *addrx = nullptr;
+  Offset *addrx = nullptr;
 
   // Read all interesting debug records.
   for (;;) {
@@ -359,7 +420,7 @@ read_address_ranges(Context<E> &ctx, i64 offset) {
     if (name == 0 && form == 0)
       break;
 
-    u64 val = read_scalar(ctx, &p, form);
+    u64 val = read_scalar<E, Offset>(ctx, &p, form);
 
     switch (name) {
     case DW_AT_low_pc:
@@ -372,7 +433,7 @@ read_address_ranges(Context<E> &ctx, i64 offset) {
       rnglists_base = val;
       break;
     case DW_AT_addr_base:
-      addrx = (Word<E> *)(&ctx.debug_addr[0] + val);
+      addrx = (Offset *)(&ctx.debug_addr[0] + val);
       break;
     case DW_AT_ranges:
       ranges = {form, val};
@@ -382,12 +443,12 @@ read_address_ranges(Context<E> &ctx, i64 offset) {
 
   // Handle non-contiguous address ranges.
   if (ranges.form) {
-    if (dwarf_version <= 4) {
+    if (hdr.version <= 4) {
       Word<E> *range_begin = (Word<E> *)(&ctx.debug_ranges[0] + ranges.value);
       return read_debug_range<E>(range_begin, low_pc.value);
     }
 
-    assert(dwarf_version == 5);
+    assert(hdr.version == 5);
 
     std::vector<std::pair<u64, u64>> vec;
 
@@ -450,6 +511,38 @@ read_address_ranges(Context<E> &ctx, i64 offset) {
   return {};
 }
 
+template <typename E, typename PubnamesHdr>
+static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
+                            std::vector<Compunit> &cus, ObjectFile<E> &file) {
+  using Offset = decltype(hdr.size);
+
+  auto get_cu = [&](i64 offset) {
+    for (i64 i = 0; i < cus.size(); i++)
+      if (cus[i].offset == offset)
+        return &cus[i];
+    Fatal(ctx) << file << ": corrupted debug_info_offset";
+  };
+
+  Compunit *cu = get_cu(file.debug_info->offset + hdr.debug_info_offset);
+
+  i64 size = hdr.size + offsetof(PubnamesHdr, size) + sizeof(hdr.size);
+  u8 *p = (u8 *)&hdr + size;
+  u8 *end = p + size;
+
+  while (p < end) {
+    if (*(Offset *)p == 0)
+      break;
+    p += sizeof(Offset);
+
+    u8 type = *p++;
+    std::string_view name = (char *)p;
+    p += name.size() + 1;
+    cu->nametypes.push_back({name, gdb_hash(name), type});
+  }
+
+  return size;
+}
+
 // Parses .debug_gnu_pubnames and .debug_gnu_pubtypes. These sections
 // start with a 14 bytes header followed by (4-byte offset, 1-byte type,
 // null-terminated string) tuples.
@@ -461,42 +554,19 @@ read_address_ranges(Context<E> &ctx, i64 offset) {
 template <typename E>
 static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
                           ObjectFile<E> &file) {
-  auto get_cu = [&](i64 offset) {
-    for (i64 i = 0; i < cus.size(); i++)
-      if (cus[i].offset == offset)
-        return &cus[i];
-    Fatal(ctx) << file << ": corrupted debug_info_offset";
-  };
-
   auto read = [&](InputSection<E> &isec) {
     isec.uncompress(ctx);
-    std::string_view contents = isec.contents;
+    if (isec.contents.empty())
+      return;
 
-    while (!contents.empty()) {
-      if (contents.size() < 14)
-        Fatal(ctx) << isec << ": corrupted header";
+    u8 *p = (u8*)&isec.contents[0];
+    u8 *end = p + isec.contents.size();
 
-      u32 len = *(U32<E> *)contents.data() + 4;
-      u32 debug_info_offset = *(U32<E> *)(contents.data() + 6);
-      Compunit *cu = get_cu(file.debug_info->offset + debug_info_offset);
-
-      std::string_view data = contents.substr(14, len - 14);
-      contents = contents.substr(len);
-
-      while (!data.empty()) {
-        u32 offset = *(U32<E> *)data.data();
-        data = data.substr(4);
-        if (offset == 0)
-          break;
-
-        u8 type = data[0];
-        data = data.substr(1);
-
-        std::string_view name = data.data();
-        data = data.substr(name.size() + 1);
-
-        cu->nametypes.push_back({name, gdb_hash(name), type});
-      }
+    while (p < end) {
+      if (*(U32<E> *)p == 0xffff'ffff)
+        p += read_pubnames_cu(ctx, *(PubnamesHdr64<E> *)p, cus, file);
+      else
+        p += read_pubnames_cu(ctx, *(PubnamesHdr32<E> *)p, cus, file);
     }
   };
 
@@ -515,19 +585,38 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
   u8 *end = begin + ctx.debug_info.size();
 
   for (u8 *p = begin; p < end;) {
-    if (*(U32<E> *)p == 0xffff'ffff)
-      Fatal(ctx) << "--gdb-index: DWARF64 is not not supported";
-    i64 len = *(U32<E> *)p + 4;
-    cus.push_back(Compunit{p - begin, len});
-    p += len;
+    DwarfKind kind = get_dwarf_kind(ctx, p);
+    i64 size;
+    if (kind == DWARF2_32 || kind == DWARF5_32)
+      size = ((CuHdrDwarf2_32<E> *)p)->size + 4;
+    else
+      size = ((CuHdrDwarf2_64<E> *)p)->size + 12;
+
+    cus.push_back(Compunit{kind, p - begin, size});
+    p += size;
   }
 
   // Read address ranges for each compunit.
   tbb::parallel_for((i64)0, (i64)cus.size(), [&](i64 i) {
-    cus[i].ranges = read_address_ranges(ctx, cus[i].offset);
+    Compunit &cu = cus[i];
+
+    switch (cu.kind) {
+    case DWARF2_32:
+      cu.ranges = read_address_ranges<E, CuHdrDwarf2_32<E>>(ctx, cu);
+      break;
+    case DWARF5_32:
+      cu.ranges = read_address_ranges<E, CuHdrDwarf5_32<E>>(ctx, cu);
+      break;
+    case DWARF2_64:
+      cu.ranges = read_address_ranges<E, CuHdrDwarf2_64<E>>(ctx, cu);
+      break;
+    case DWARF5_64:
+      cu.ranges = read_address_ranges<E, CuHdrDwarf5_64<E>>(ctx, cu);
+      break;
+    }
 
     // Remove empty ranges
-    std::erase_if(cus[i].ranges, [](std::pair<u64, u64> p) {
+    std::erase_if(cu.ranges, [](std::pair<u64, u64> p) {
       return p.first == 0 || p.first == p.second;
     });
   });
