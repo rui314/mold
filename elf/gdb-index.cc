@@ -606,6 +606,8 @@ void write_gdb_index(Context<E> &ctx) {
 
   // Sort symbols for build reproducibility
   std::vector<MapValue *> entries;
+  entries.reserve(estimator.get_cardinality());
+
   for (i64 i = 0; i < map.nbuckets; i++)
     if (map.entries[i].key)
       entries.push_back(&map.entries[i].value);
@@ -685,9 +687,10 @@ void write_gdb_index(Context<E> &ctx) {
   // Write types
   for (i64 i = 0; i < cus.size(); i++) {
     Compunit &cu = cus[i];
+    u8 *base = buf + hdr.const_pool_offset;
 
     for (i64 j = 0; j < cu.nametypes.size(); j++) {
-      ul32 *p = (ul32 *)(buf + hdr.const_pool_offset + cu.entries[j]->type_offset);
+      ul32 *p = (ul32 *)(base + cu.entries[j]->type_offset);
       i64 idx = ++p[0];
       p[idx] = (cu.nametypes[j].type << 24) | i;
     }
