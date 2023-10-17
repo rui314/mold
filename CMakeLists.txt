@@ -69,6 +69,7 @@ if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
     -Wno-sign-compare
     -Wno-unused-function
     -Wno-unused-parameter
+    -Wno-missing-field-initializers
     -ggnu-pubnames)
 endif()
 

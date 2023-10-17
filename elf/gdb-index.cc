@@ -518,7 +518,7 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
     if (*(U32<E> *)p == 0xffff'ffff)
       Fatal(ctx) << "--gdb-index: DWARF64 is not not supported";
     i64 len = *(U32<E> *)p + 4;
-    cus.push_back(Compunit{p - begin, len, {}, {}, {}});
+    cus.push_back(Compunit{p - begin, len});
     p += len;
   }
 
