@@ -199,7 +199,7 @@ u8 *find_cu_abbrev(Context<E> &ctx, u8 **p, const CuHdr &hdr) {
       *p += 8;
       break;
     default:
-      Fatal(ctx) << "--gdb-index: unknown CU header unit type: 0x"
+      Fatal(ctx) << "--gdb-index: unknown unit type: 0x"
                  << std::hex << hdr.unit_type;
     }
   }
@@ -330,10 +330,10 @@ read_debug_range(Word<E> *range, u64 base) {
 }
 
 // Read a range list from .debug_rnglists starting at the given offset.
-template <typename E, typename Offset>
+template <typename E>
 static void
 read_rnglist_range(std::vector<std::pair<u64, u64>> &vec, u8 *rnglist,
-                   Offset *addrx, u64 base) {
+                   Word<E> *addrx, u64 base) {
   for (;;) {
     switch (*rnglist++) {
     case DW_RLE_end_of_list:
@@ -411,7 +411,7 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
   Record high_pc;
   Record ranges;
   u64 rnglists_base = -1;
-  Offset *addrx = nullptr;
+  Word<E> *addrx = nullptr;
 
   // Read all interesting debug records.
   for (;;) {
@@ -433,7 +433,7 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
       rnglists_base = val;
       break;
     case DW_AT_addr_base:
-      addrx = (Offset *)(&ctx.debug_addr[0] + val);
+      addrx = (Word<E> *)(&ctx.debug_addr[0] + val);
       break;
     case DW_AT_ranges:
       ranges = {form, val};
@@ -451,8 +451,8 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
     assert(hdr.version == 5);
 
     std::vector<std::pair<u64, u64>> vec;
-
     u8 *buf = &ctx.debug_rnglists[0];
+
     if (ranges.form == DW_FORM_sec_offset) {
       read_rnglist_range<E>(vec, buf + ranges.value, addrx, low_pc.value);
     } else {
@@ -461,7 +461,7 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
 
       u8 *base = buf + rnglists_base;
       i64 num_offsets = *(U32<E> *)(base - 4);
-      U32<E> *offsets = (U32<E> *)base;
+      Offset *offsets = (Offset *)base;
 
       for (i64 i = 0; i < num_offsets; i++)
         read_rnglist_range<E>(vec, base + offsets[i], addrx, low_pc.value);
