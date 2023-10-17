@@ -529,8 +529,8 @@ static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
 
   Compunit *cu = get_cu(file.debug_info->offset + hdr.debug_info_offset);
 
+  u8 *p = (u8 *)&hdr + sizeof(hdr);
   i64 size = hdr.size + offsetof(PubnamesHdr, size) + sizeof(hdr.size);
-  u8 *p = (u8 *)&hdr + size;
   u8 *end = p + size;
 
   while (p < end) {
