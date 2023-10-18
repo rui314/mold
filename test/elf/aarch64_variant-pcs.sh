@@ -3,7 +3,7 @@
 
 [ $MACHINE = aarch64 ] || skip
 
-cat <<EOF | $CC -c -o $t/a.o -fPIC -xassembler -
+cat <<EOF | $CC -c -o $t/a.o -fPIC -xassembler - 2> /dev/null || skip
 .global foo
 .type foo, %function
 .variant_pcs foo
