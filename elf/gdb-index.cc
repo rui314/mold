@@ -719,7 +719,7 @@ void write_gdb_index(Context<E> &ctx) {
   for (Compunit &cu : cus)
     hdr.symtab_offset += cu.ranges.size() * 20;
 
-  i64 ht_size = bit_ceil(num_entries * 5 / 4);
+  i64 ht_size = bit_ceil(num_entries * 5 / 4 + 1);
   hdr.const_pool_offset = hdr.symtab_offset + ht_size * 8;
 
   i64 offset = 0;
