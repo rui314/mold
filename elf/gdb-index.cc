@@ -24,8 +24,8 @@
 //
 // The mapping from names to compunits is 1:n while the mapping from
 // address ranges to compunits is 1:1. That is, two object files may
-// define the same type name (with the same definition), while there
-// should be no two functions that overlap with each other in memory.
+// define the same type name, while there should be no two functions
+// that overlap with each other in memory.
 //
 // .gdb_index contains an on-disk hash table for names, so gdb can
 // lookup names without loading all strings into memory and construct an
@@ -44,8 +44,8 @@
 // If an object file is compiled with -ffunction-sections, it contains
 // more than one .text section, and it has as many address ranges as
 // the number of .text sections. Such discontiguous address ranges are
-// stored to .debug_ranges in DWARF 2/3/4/5 and
-// .debug_rnglists/.debug_addr in DWARF 5.
+// stored to .debug_ranges in DWARF 2/3/4 and .debug_rnglists/.debug_addr
+// in DWARF 5.
 //
 // .debug_info section contains DWARF debug info. Although we don't need
 // to parse the whole .debug_info section to read address ranges, we
@@ -767,7 +767,7 @@ void write_gdb_index(Context<E> &ctx) {
 
   for (MapValue *ent : entries) {
     u32 hash = ent->hash;
-    u32 step = (hash & mask) | 1;
+    u32 step = ((hash * 17) & mask) | 1;
     u32 j = hash & mask;
 
     while (ht[j * 2] || ht[j * 2 + 1])
