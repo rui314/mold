@@ -65,14 +65,12 @@ static u64 hi64(u64 val, u64 pc) {
   // LU52I.D simply set bits to [51:31] and to [63:53], respectively.
   //
   // Compensating all the sign-extensions is a bit complicated.
-  bool x = val & 0x800;
-  bool y = (page(val + 0x800) - page(pc)) & 0x8000'0000;
-
-  if (x && !y)
-    return val - 0x1'0000'0000;
-  if (!x && y)
-    return val + 0x1'0000'0000;
-  return val;
+  u64 x = page(val) - page(pc);
+  if (val & 0x800)
+    x += 0x1000 - 0x1'0000'0000;
+  if (x & 0x8000'0000)
+    x += 0x1'0000'0000;
+  return x;
 }
 
 static u64 higher20(u64 val, u64 pc) {
@@ -328,7 +326,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, S + A);
       break;
     case R_LARCH_PCALA_HI20:
-      check(S + A - P, -(1LL << 31), 1LL << 31);
       write_j20(loc, hi20(S + A, P));
       break;
     case R_LARCH_PCALA64_LO20:
@@ -587,6 +584,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_LARCH_B26:
+    case R_LARCH_PCALA_HI20:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
@@ -620,7 +618,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_LARCH_ABS_LO12:
     case R_LARCH_ABS64_LO20:
     case R_LARCH_ABS64_HI12:
-    case R_LARCH_PCALA_HI20:
     case R_LARCH_PCALA_LO12:
     case R_LARCH_PCALA64_LO20:
     case R_LARCH_PCALA64_HI12:
