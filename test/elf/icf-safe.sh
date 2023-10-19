@@ -1,7 +1,14 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $GCC -c -o $t/a.o -ffunction-sections -fdata-sections -xc -
+# GCC 11 or older uses R_390_PLT32DBL to take an address of a function
+# instead of R_390_PC32DBL
+if [ $MACHINE = s390x ]; then
+  echo 'void *foo() { return foo; }' | $CC -c -o $t/a.o -xc -
+  readelf -r $t/a.o | grep -q R_390_PLT32DBL && skip
+fi
+
+cat <<EOF | $CC -c -o $t/a.o -ffunction-sections -fdata-sections -xc -
 int bar() {
   return 5;
 }
@@ -34,7 +41,7 @@ EOF
 $CC -B. -o $t/exe1 -Wl,-icf=safe $t/a.o $t/b.o
 $QEMU $t/exe1 | grep -q '^0 0$'
 
-cat <<EOF | $GCC -c -o $t/c.o -ffunction-sections -fdata-sections -xc -
+cat <<EOF | $CC -c -o $t/c.o -ffunction-sections -fdata-sections -xc -
 int foo1();
 int foo2();
 int foo3();
