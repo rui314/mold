@@ -4,12 +4,12 @@
 [ $MACHINE = x86_64 ] || skip
 test_cflags -fcf-protection || skip
 
-cat <<EOF | $GCC -o $t/a.o -c -xc - -ffunction-sections -O -fcf-protection
+cat <<EOF | $CC -o $t/a.o -c -xc - -ffunction-sections -O -fcf-protection
 int foo() { return 3; }
 int bar() { return foo(); }
 EOF
 
-cat <<EOF | $GCC -o $t/b.o -c -xc - -ffunction-sections -O -fcf-protection
+cat <<EOF | $CC -o $t/b.o -c -xc - -ffunction-sections -O -fcf-protection
 int main() {}
 EOF
 
