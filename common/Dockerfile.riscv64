@@ -1,0 +1,8 @@
+# This dockerfile creates a reproducible build environment for mold.
+#
+# $ docker build --platform riscv64 -t rui314/mold-builder-riscv64:latest --push - < common/Dockerfile.riscv64
+
+FROM riscv64/ubuntu:20.04
+RUN apt-get update && \
+  DEBIAN_FRONTEND=noninteractive TZ=UTC apt-get install -y --no-install-recommends build-essential gcc-10 g++-10 cmake && \
+  rm -rf /var/lib/apt/lists
