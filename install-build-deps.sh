@@ -36,7 +36,7 @@ gentoo-*)
   emerge-webrsync
   emerge dev-util/cmake
   ;;
-arch-* | archarm-*)
+arch-* | archarm-* | artix-*)
   pacman -Sy
   pacman -S --needed --noconfirm base-devel cmake util-linux
   ;;
