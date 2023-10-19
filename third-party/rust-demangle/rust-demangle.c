@@ -70,6 +70,54 @@ static char next(struct rust_demangler *rdm) {
     return c;
 }
 
+struct hex_nibbles {
+    const char *nibbles;
+    size_t nibbles_len;
+};
+
+static struct hex_nibbles parse_hex_nibbles(struct rust_demangler *rdm) {
+    struct hex_nibbles hex;
+
+    hex.nibbles = NULL;
+    hex.nibbles_len = 0;
+
+    size_t start = rdm->next, hex_len = 0;
+    while (!eat(rdm, '_')) {
+        char c = next(rdm);
+        CHECK_OR(IS_DIGIT(c) || (c >= 'a' && c <= 'f'), return hex);
+        hex_len++;
+    }
+
+    hex.nibbles = rdm->sym + start;
+    hex.nibbles_len = hex_len;
+    return hex;
+}
+
+static struct hex_nibbles
+parse_hex_nibbles_for_const_uint(struct rust_demangler *rdm) {
+    struct hex_nibbles hex = parse_hex_nibbles(rdm);
+    CHECK_OR(!rdm->errored, return hex);
+
+    // Trim leading `0`s.
+    while (hex.nibbles_len > 0 && *hex.nibbles == '0') {
+        hex.nibbles++;
+        hex.nibbles_len--;
+    }
+
+    return hex;
+}
+
+static struct hex_nibbles
+parse_hex_nibbles_for_const_bytes(struct rust_demangler *rdm) {
+    struct hex_nibbles hex = parse_hex_nibbles(rdm);
+    CHECK_OR(!rdm->errored && (hex.nibbles_len % 2 == 0), return hex);
+    return hex;
+}
+
+static uint8_t decode_hex_nibble(char nibble) {
+    return nibble >= 'a' ? 10 + (nibble - 'a') : nibble - '0';
+}
+
 static uint64_t parse_integer_62(struct rust_demangler *rdm) {
     if (eat(rdm, '_'))
         return 0;
@@ -118,7 +166,10 @@ static struct rust_mangled_ident parse_ident(struct rust_demangler *rdm) {
     ident.punycode = NULL;
     ident.punycode_len = 0;
 
-    bool is_punycode = eat(rdm, 'u');
+    bool is_punycode = false;
+    if (rdm->version != -1) {
+        is_punycode = eat(rdm, 'u');
+    }
 
     char c = next(rdm);
     CHECK_OR(IS_DIGIT(c), return ident);
@@ -128,8 +179,10 @@ static struct rust_mangled_ident parse_ident(struct rust_demangler *rdm) {
         while (IS_DIGIT(peek(rdm)))
             len = len * 10 + (next(rdm) - '0');
 
-    // Skip past the optional `_` separator.
-    eat(rdm, '_');
+    if (rdm->version != -1) {
+        // Skip past the optional `_` separator.
+        eat(rdm, '_');
+    }
 
     size_t start = rdm->next;
     rdm->next += len;
@@ -183,6 +236,63 @@ static void print_uint64_hex(struct rust_demangler *rdm, uint64_t x) {
 }
 
 static void
+print_quoted_escaped_char(struct rust_demangler *rdm, char quote, uint32_t c) {
+    CHECK_OR(c < 0xd800 || (c > 0xdfff && c < 0x10ffff), return);
+
+    switch (c) {
+    case '\0':
+        PRINT("\\0");
+        break;
+
+    case '\t':
+        PRINT("\\t");
+        break;
+
+    case '\r':
+        PRINT("\\r");
+        break;
+
+    case '\n':
+        PRINT("\\n");
+        break;
+
+    case '\\':
+        PRINT("\\\\");
+        break;
+
+    case '"':
+        if (quote == '"') {
+            PRINT("\\\"");
+        } else {
+            PRINT("\"");
+        }
+        break;
+
+    case '\'':
+        if (quote == '\'') {
+            PRINT("\\'");
+        } else {
+            PRINT("'");
+        }
+        break;
+
+    default:
+        if (c >= 0x20 && c <= 0x7e) {
+            // Printable ASCII
+            char v = (char)c;
+            print_str(rdm, &v, 1);
+        } else {
+            // FIXME show printable unicode characters without hex encoding
+            PRINT("\\u{");
+            char s[9] = {0};
+            sprintf(s, "%" PRIx32, c);
+            PRINT(s);
+            PRINT("}");
+        }
+    }
+}
+
+static void
 print_ident(struct rust_demangler *rdm, struct rust_mangled_ident ident) {
     if (rdm->errored || rdm->skipping_printing)
         return;
@@ -197,12 +307,12 @@ print_ident(struct rust_demangler *rdm, struct rust_mangled_ident ident) {
     while (cap < ident.ascii_len) {
         cap *= 2;
         // Check for overflows.
-        CHECK_OR((cap * 4) / 4 == cap, return );
+        CHECK_OR((cap * 4) / 4 == cap, return);
     }
 
     // Store the output codepoints as groups of 4 UTF-8 bytes.
     uint8_t *out = (uint8_t *)malloc(cap * 4);
-    CHECK_OR(out, return );
+    CHECK_OR(out, return);
 
     // Populate initial output from ASCII fragment.
     for (len = 0; len < ident.ascii_len; len++) {
@@ -342,14 +452,15 @@ static void demangle_generic_arg(struct rust_demangler *rdm);
 static void demangle_type(struct rust_demangler *rdm);
 static bool demangle_path_maybe_open_generics(struct rust_demangler *rdm);
 static void demangle_dyn_trait(struct rust_demangler *rdm);
-static void demangle_const(struct rust_demangler *rdm);
-static void demangle_const_uint(struct rust_demangler *rdm);
+static void demangle_const(struct rust_demangler *rdm, bool in_value);
+static void demangle_const_uint(struct rust_demangler *rdm, char ty_tag);
+static void demangle_const_str_literal(struct rust_demangler *rdm);
 
 /// Optionally enter a binder ('G') for late-bound lifetimes,
 /// printing e.g. `for<'a, 'b> `, and make those lifetimes visible
 /// to the caller (via depth level, which the caller should reset).
 static void demangle_binder(struct rust_demangler *rdm) {
-    CHECK_OR(!rdm->errored, return );
+    CHECK_OR(!rdm->errored, return);
 
     uint64_t bound_lifetimes = parse_opt_integer_62(rdm, 'G');
     if (bound_lifetimes > 0) {
@@ -365,7 +476,7 @@ static void demangle_binder(struct rust_demangler *rdm) {
 }
 
 static void demangle_path(struct rust_demangler *rdm, bool in_value) {
-    CHECK_OR(!rdm->errored, return );
+    CHECK_OR(!rdm->errored, return);
 
     char tag = next(rdm);
     switch (tag) {
@@ -383,7 +494,7 @@ static void demangle_path(struct rust_demangler *rdm, bool in_value) {
     }
     case 'N': {
         char ns = next(rdm);
-        CHECK_OR(IS_LOWER(ns) || IS_UPPER(ns), return );
+        CHECK_OR(IS_LOWER(ns) || IS_UPPER(ns), return);
 
         demangle_path(rdm, in_value);
 
@@ -428,6 +539,7 @@ static void demangle_path(struct rust_demangler *rdm, bool in_value) {
         rdm->skipping_printing = true;
         demangle_path(rdm, in_value);
         rdm->skipping_printing = was_skipping_printing;
+        __attribute__((fallthrough));
     case 'Y':
         PRINT("<");
         demangle_type(rdm);
@@ -460,7 +572,7 @@ static void demangle_path(struct rust_demangler *rdm, bool in_value) {
         break;
     }
     default:
-        ERROR_AND(return );
+        ERROR_AND(return);
     }
 }
 
@@ -469,7 +581,7 @@ static void demangle_generic_arg(struct rust_demangler *rdm) {
         uint64_t lt = parse_integer_62(rdm);
         print_lifetime_from_index(rdm, lt);
     } else if (eat(rdm, 'K'))
-        demangle_const(rdm);
+        demangle_const(rdm, false);
     else
         demangle_type(rdm);
 }
@@ -525,7 +637,7 @@ static const char *basic_type(char tag) {
 }
 
 static void demangle_type(struct rust_demangler *rdm) {
-    CHECK_OR(!rdm->errored, return );
+    CHECK_OR(!rdm->errored, return);
 
     char tag = next(rdm);
 
@@ -565,11 +677,11 @@ static void demangle_type(struct rust_demangler *rdm) {
         demangle_type(rdm);
         if (tag == 'A') {
             PRINT("; ");
-            demangle_const(rdm);
+            demangle_const(rdm, true);
         }
         PRINT("]");
         break;
-    case 'T':
+    case 'T': {
         PRINT("(");
         size_t i;
         for (i = 0; !rdm->errored && !eat(rdm, 'E'); i++) {
@@ -581,6 +693,7 @@ static void demangle_type(struct rust_demangler *rdm) {
             PRINT(",");
         PRINT(")");
         break;
+    }
     case 'F': {
         uint64_t old_bound_lifetime_depth = rdm->bound_lifetime_depth;
         demangle_binder(rdm);
@@ -652,7 +765,7 @@ static void demangle_type(struct rust_demangler *rdm) {
         // Restore `bound_lifetime_depth` to outside the binder.
         rdm->bound_lifetime_depth = old_bound_lifetime_depth;
 
-        CHECK_OR(eat(rdm, 'L'), return );
+        CHECK_OR(eat(rdm, 'L'), return);
         uint64_t lt = parse_integer_62(rdm);
         if (lt) {
             PRINT(" + ");
@@ -709,7 +822,7 @@ static bool demangle_path_maybe_open_generics(struct rust_demangler *rdm) {
 }
 
 static void demangle_dyn_trait(struct rust_demangler *rdm) {
-    CHECK_OR(!rdm->errored, return );
+    CHECK_OR(!rdm->errored, return);
 
     bool open = demangle_path_maybe_open_generics(rdm);
 
@@ -730,22 +843,17 @@ static void demangle_dyn_trait(struct rust_demangler *rdm) {
         PRINT(">");
 }
 
-static void demangle_const(struct rust_demangler *rdm) {
-    CHECK_OR(!rdm->errored, return );
+static void demangle_const(struct rust_demangler *rdm, bool in_value) {
+    CHECK_OR(!rdm->errored, return);
 
-    if (eat(rdm, 'B')) {
-        size_t backref = parse_integer_62(rdm);
-        if (!rdm->skipping_printing) {
-            size_t old_next = rdm->next;
-            rdm->next = backref;
-            demangle_const(rdm);
-            rdm->next = old_next;
-        }
-        return;
-    }
+    bool opened_brace = false;
 
     char ty_tag = next(rdm);
     switch (ty_tag) {
+    case 'p':
+        PRINT("_");
+        break;
+
     // Unsigned integer types.
     case 'h':
     case 't':
@@ -753,66 +861,464 @@ static void demangle_const(struct rust_demangler *rdm) {
     case 'y':
     case 'o':
     case 'j':
+        demangle_const_uint(rdm, ty_tag);
         break;
 
-    default:
-        ERROR_AND(return );
+    case 'a':
+    case 's':
+    case 'l':
+    case 'x':
+    case 'n':
+    case 'i':
+        if (eat(rdm, 'n')) {
+            PRINT("-");
+        }
+        demangle_const_uint(rdm, ty_tag);
+        break;
+
+    case 'b': {
+        struct hex_nibbles hex = parse_hex_nibbles_for_const_uint(rdm);
+        CHECK_OR(!rdm->errored && hex.nibbles_len <= 1, return);
+        uint8_t v = hex.nibbles_len > 0 ? decode_hex_nibble(hex.nibbles[0]) : 0;
+        CHECK_OR(v <= 1, return);
+        PRINT(v == 1 ? "true" : "false");
+        break;
     }
 
-    if (eat(rdm, 'p'))
-        PRINT("_");
-    else {
-        demangle_const_uint(rdm);
-        if (rdm->verbose)
-            PRINT(basic_type(ty_tag));
+    case 'c': {
+        struct hex_nibbles hex = parse_hex_nibbles_for_const_uint(rdm);
+        CHECK_OR(!rdm->errored && hex.nibbles_len <= 6, return);
+
+        uint32_t c = 0;
+        for (size_t i = 0; i < hex.nibbles_len; i++)
+            c = (c << 4) | decode_hex_nibble(hex.nibbles[i]);
+
+        PRINT("'");
+        print_quoted_escaped_char(rdm, '\'', c);
+        PRINT("'");
+
+        break;
+    }
+
+    case 'e':
+        // NOTE(eddyb) a string literal `"..."` has type `&str`, so
+        // to get back the type `str`, `*"..."` syntax is needed
+        // (even if that may not be valid in Rust itself).
+        if (!in_value) {
+            opened_brace = true;
+            PRINT("{");
+        }
+        PRINT("*");
+
+        demangle_const_str_literal(rdm);
+        break;
+
+    case 'R':
+    case 'Q':
+        if (ty_tag == 'R' && eat(rdm, 'e')) {
+            // NOTE(eddyb) this prints `"..."` instead of `&*"..."`, which
+            // is what `Re..._` would imply (see comment for `str` above).
+            demangle_const_str_literal(rdm);
+            break;
+        }
+
+        if (!in_value) {
+            opened_brace = true;
+            PRINT("{");
+        }
+
+        PRINT("&");
+        if (ty_tag != 'R') {
+            PRINT("mut ");
+        }
+
+        demangle_const(rdm, true);
+        break;
+
+    case 'A': {
+        if (!in_value) {
+            opened_brace = true;
+            PRINT("{");
+        }
+
+        PRINT("[");
+
+        size_t i = 0;
+        while (!eat(rdm, 'E')) {
+            CHECK_OR(!rdm->errored, return);
+
+            if (i > 0)
+                PRINT(", ");
+
+            demangle_const(rdm, true);
+
+            i += 1;
+        }
+
+        PRINT("]");
+        break;
+    }
+
+    case 'T': {
+        if (!in_value) {
+            opened_brace = true;
+            PRINT("{");
+        }
+
+        PRINT("(");
+
+        size_t i = 0;
+        while (!eat(rdm, 'E')) {
+            CHECK_OR(!rdm->errored, return);
+
+            if (i > 0)
+                PRINT(", ");
+
+            demangle_const(rdm, true);
+
+            i += 1;
+        }
+
+        if (i == 1)
+            PRINT(",");
+
+        PRINT(")");
+        break;
+    }
+
+    case 'V':
+        if (!in_value) {
+            opened_brace = true;
+            PRINT("{");
+        }
+
+        demangle_path(rdm, true);
+
+        switch (next(rdm)) {
+        case 'U':
+            break;
+
+        case 'T': {
+            PRINT("(");
+
+            size_t i = 0;
+            while (!eat(rdm, 'E')) {
+                CHECK_OR(!rdm->errored, return);
+
+                if (i > 0)
+                    PRINT(", ");
+
+                demangle_const(rdm, true);
+
+                i += 1;
+            }
+
+            PRINT(")");
+            break;
+        }
+
+        case 'S': {
+            PRINT(" { ");
+
+            size_t i = 0;
+            while (!eat(rdm, 'E')) {
+                CHECK_OR(!rdm->errored, return);
+
+                if (i > 0)
+                    PRINT(", ");
+
+                parse_disambiguator(rdm);
+
+                struct rust_mangled_ident name = parse_ident(rdm);
+                print_ident(rdm, name);
+
+                PRINT(": ");
+
+                demangle_const(rdm, true);
+
+                i += 1;
+            }
+
+            PRINT(" }");
+            break;
+        }
+
+        default:
+            ERROR_AND(return);
+        }
+
+        break;
+
+    case 'B': {
+        size_t backref = parse_integer_62(rdm);
+        if (!rdm->skipping_printing) {
+            size_t old_next = rdm->next;
+            rdm->next = backref;
+            demangle_const(rdm, in_value);
+            rdm->next = old_next;
+        }
+        break;
+    }
+
+    default:
+        ERROR_AND(return);
+    }
+
+    if (opened_brace) {
+        PRINT("}");
     }
 }
 
-static void demangle_const_uint(struct rust_demangler *rdm) {
-    CHECK_OR(!rdm->errored, return );
+static void demangle_const_uint(struct rust_demangler *rdm, char ty_tag) {
+    CHECK_OR(!rdm->errored, return);
 
-    uint64_t value = 0;
-    size_t hex_len = 0;
-    while (!eat(rdm, '_')) {
-        value <<= 4;
-
-        char c = next(rdm);
-        if (IS_DIGIT(c))
-            value |= c - '0';
-        else if (c >= 'a' && c <= 'f')
-            value |= 10 + (c - 'a');
-        else
-            ERROR_AND(return );
-        hex_len++;
-    }
+    struct hex_nibbles hex = parse_hex_nibbles_for_const_uint(rdm);
+    CHECK_OR(!rdm->errored, return);
 
     // Print anything that doesn't fit in `uint64_t` verbatim.
-    if (hex_len > 16) {
+    if (hex.nibbles_len > 16) {
         PRINT("0x");
-        print_str(rdm, rdm->sym + (rdm->next - hex_len), hex_len);
-        return;
+        print_str(rdm, hex.nibbles, hex.nibbles_len);
+    } else {
+        uint64_t v = 0;
+        for (size_t i = 0; i < hex.nibbles_len; i++)
+            v = (v << 4) | decode_hex_nibble(hex.nibbles[i]);
+        print_uint64(rdm, v);
     }
 
-    print_uint64(rdm, value);
+    if (rdm->verbose)
+        PRINT(basic_type(ty_tag));
+}
+
+// UTF-8 uses an unary encoding for its "length" field (`1`s followed by a `0`).
+struct utf8_byte {
+    // Decoded "length" field of an UTF-8 byte, including the special cases:
+    // - `0` indicates this is a lone ASCII byte
+    // - `1` indicates a continuation byte (cannot start an UTF-8 sequence)
+    size_t seq_len;
+
+    // Remaining (`payload_width`) bits in the UTF-8 byte, contributing to
+    // the Unicode scalar value being encoded in the UTF-8 sequence.
+    uint8_t payload;
+    size_t payload_width;
+};
+static struct utf8_byte utf8_decode(uint8_t byte) {
+    struct utf8_byte utf8;
+
+    utf8.seq_len = 0;
+    utf8.payload = byte;
+    utf8.payload_width = 8;
+
+    // FIXME(eddyb) figure out if using "count leading ones/zeros" is an option.
+    while (utf8.seq_len <= 6) {
+        uint8_t msb = 0x80 >> utf8.seq_len;
+        utf8.payload &= ~msb;
+        utf8.payload_width--;
+        if ((byte & msb) == 0)
+            break;
+        utf8.seq_len++;
+    }
+
+    return utf8;
+}
+
+static void demangle_const_str_literal(struct rust_demangler *rdm) {
+    CHECK_OR(!rdm->errored, return);
+
+    struct hex_nibbles hex = parse_hex_nibbles_for_const_bytes(rdm);
+    CHECK_OR(!rdm->errored, return);
+
+    PRINT("\"");
+    for (size_t i = 0; i < hex.nibbles_len; i += 2) {
+        struct utf8_byte utf8 = utf8_decode(
+            (decode_hex_nibble(hex.nibbles[i]) << 4) |
+            decode_hex_nibble(hex.nibbles[i + 1])
+        );
+        uint32_t c = utf8.payload;
+        if (utf8.seq_len > 0) {
+            CHECK_OR(utf8.seq_len >= 2 && utf8.seq_len <= 4, return);
+            for (size_t extra = utf8.seq_len - 1; extra > 0; extra--) {
+                i += 2;
+                utf8 = utf8_decode(
+                    (decode_hex_nibble(hex.nibbles[i]) << 4) |
+                    decode_hex_nibble(hex.nibbles[i + 1])
+                );
+                CHECK_OR(utf8.seq_len == 1, return);
+                c = (c << utf8.payload_width) | utf8.payload;
+            }
+        }
+        print_quoted_escaped_char(rdm, '"', c);
+    }
+    PRINT("\"");
+}
+
+static bool is_rust_hash(struct rust_mangled_ident name) {
+    if (name.ascii[0] != 'h') {
+        return false;
+    }
+    for (size_t i = 1; i < name.ascii_len; i++) {
+        if (!IS_DIGIT(name.ascii[i]) &&
+            !(name.ascii[i] >= 'a' && name.ascii[i] <= 'f')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void print_legacy_ident(
+    struct rust_demangler *rdm, struct rust_mangled_ident ident
+) {
+    if (rdm->errored || rdm->skipping_printing)
+        return;
+
+    CHECK_OR(!ident.punycode, return);
+
+    if (ident.ascii[0] == '_' && ident.ascii[1] == '$') {
+        ident.ascii += 1;
+        ident.ascii_len -= 1;
+    }
+
+    while (1) {
+        if (ident.ascii_len == 0) {
+            break;
+        } else if (ident.ascii[0] == '.') {
+            if (ident.ascii_len >= 2 && ident.ascii[1] == '.') {
+                PRINT("::");
+                ident.ascii += 2;
+                ident.ascii_len -= 2;
+            } else {
+                PRINT(".");
+                ident.ascii += 1;
+                ident.ascii_len -= 1;
+            }
+        } else if (ident.ascii[0] == '$') {
+            const char *end_ptr =
+                (const char *)memchr(&ident.ascii[1], '$', ident.ascii_len - 1);
+            if (!end_ptr)
+                break;
+            const char *escape = &ident.ascii[1];
+            size_t escape_len = end_ptr - escape;
+
+            if (strncmp(escape, "SP", 2) == 0) {
+                PRINT("@");
+            } else if (strncmp(escape, "BP", 2) == 0) {
+                PRINT("*");
+            } else if (strncmp(escape, "RF", 2) == 0) {
+                PRINT("&");
+            } else if (strncmp(escape, "LT", 2) == 0) {
+                PRINT("<");
+            } else if (strncmp(escape, "GT", 2) == 0) {
+                PRINT(">");
+            } else if (strncmp(escape, "LP", 2) == 0) {
+                PRINT("(");
+            } else if (strncmp(escape, "RP", 2) == 0) {
+                PRINT(")");
+            } else if (strncmp(escape, "C", 1) == 0) {
+                PRINT(",");
+            } else {
+                if (escape[0] != 'u') {
+                    break;
+                }
+
+                const char *digits = &escape[1];
+                size_t digits_len = escape_len - 1;
+
+                bool invalid = false;
+                for (size_t i = 1; i < digits_len; i++) {
+                    if (!IS_DIGIT(digits[i]) &&
+                        !(digits[i] >= 'a' && digits[i] <= 'f')) {
+                        invalid = true;
+                        break;
+                    }
+                }
+                if (invalid)
+                    break;
+
+                struct hex_nibbles hex;
+
+                hex.nibbles = digits;
+                hex.nibbles_len = digits_len;
+
+                uint32_t c = 0;
+                for (size_t i = 0; i < hex.nibbles_len; i++)
+                    c = (c << 4) | decode_hex_nibble(hex.nibbles[i]);
+
+                if (!(c < 0xd800 || (c > 0xdfff && c < 0x10ffff))) {
+                    break; // Not a valid unicode scalar
+                }
+
+                if (c >= 0x20 && c <= 0x7e) {
+                    // Printable ASCII
+                    char v = (char)c;
+                    print_str(rdm, &v, 1);
+                } else {
+                    // FIXME show printable unicode characters without hex
+                    // encoding
+                    PRINT("\\u{");
+                    char s[9] = {0};
+                    sprintf(s, "%" PRIx32, c);
+                    PRINT(s);
+                    PRINT("}");
+                }
+            }
+
+            ident.ascii += escape_len + 2;
+            ident.ascii_len -= escape_len + 2;
+        } else {
+            bool found = false;
+            for (size_t i = 0; i < ident.ascii_len; i++) {
+                if (ident.ascii[i] == '$' || ident.ascii[i] == '.') {
+                    print_str(rdm, ident.ascii, i);
+                    ident.ascii += i;
+                    ident.ascii_len -= i;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                break;
+            }
+        }
+    }
+
+    print_str(rdm, ident.ascii, ident.ascii_len);
+}
+
+static void demangle_legacy_path(struct rust_demangler *rdm) {
+    bool first = true;
+
+    while (1) {
+        if (eat(rdm, 'E')) {
+            // FIXME Maybe check if at end of symbol?
+            return;
+        }
+
+        struct rust_mangled_ident name = parse_ident(rdm);
+
+        if (!rdm->verbose && peek(rdm) == 'E' && is_rust_hash(name)) {
+            // Skip printing the hash if verbose mode is disabled.
+            eat(rdm, 'E');
+            break;
+        }
+
+        if (!first) {
+            PRINT("::");
+        }
+        first = false;
+
+        print_legacy_ident(rdm, name);
+
+        CHECK_OR(!rdm->errored, return);
+    }
 }
 
 bool rust_demangle_with_callback(
-    const char *mangled, int flags,
+    const char *whole_mangled_symbol, int flags,
     void (*callback)(const char *data, size_t len, void *opaque), void *opaque
 ) {
-    // Rust symbols always start with _R.
-    if (mangled[0] == '_' && mangled[1] == 'R')
-        mangled += 2;
-    else
-        return false;
-
-    // Paths always start with uppercase characters.
-    if (!IS_UPPER(mangled[0]))
-        return false;
-
     struct rust_demangler rdm;
 
-    rdm.sym = mangled;
+    rdm.sym = whole_mangled_symbol;
     rdm.sym_len = 0;
 
     rdm.callback_opaque = opaque;
@@ -822,26 +1328,84 @@ bool rust_demangle_with_callback(
     rdm.errored = false;
     rdm.skipping_printing = false;
     rdm.verbose = (flags & RUST_DEMANGLE_FLAG_VERBOSE) != 0;
-    rdm.version = 0;
+    rdm.version = -2; // Invalid version
     rdm.bound_lifetime_depth = 0;
 
-    // Rust symbols use only [_0-9a-zA-Z] characters.
-    for (const char *p = mangled; *p; p++) {
-        if (!(*p == '_' || IS_DIGIT(*p) || IS_LOWER(*p) || IS_UPPER(*p)))
+    // Rust symbols always start with R, _R or __R for the v0 scheme or ZN, _ZN
+    // or __ZN for the legacy scheme.
+    if (strncmp(rdm.sym, "_R", 2) == 0) {
+        rdm.sym += 2;
+        rdm.version = 0; // v0
+    } else if (rdm.sym[0] == 'R') {
+        // On Windows, dbghelp strips leading underscores, so we accept "R..."
+        // form too.
+        rdm.sym += 1;
+        rdm.version = 0; // v0
+    } else if (strncmp(rdm.sym, "__R", 3) == 0) {
+        // On OSX, symbols are prefixed with an extra _
+        rdm.sym += 3;
+        rdm.version = 0; // v0
+    } else if (strncmp(rdm.sym, "_ZN", 3) == 0) {
+        rdm.sym += 3;
+        rdm.version = -1; // legacy
+    } else if (strncmp(rdm.sym, "ZN", 2) == 0) {
+        // On Windows, dbghelp strips leading underscores, so we accept "R..."
+        // form too.
+        rdm.sym += 2;
+        rdm.version = -1; // legacy
+    } else if (strncmp(rdm.sym, "__ZN", 4) == 0) {
+        // On OSX, symbols are prefixed with an extra _
+        rdm.sym += 4;
+        rdm.version = -1; // legacy
+    } else {
+        return false;
+    }
+
+    if (rdm.version != -1) {
+        // Paths always start with uppercase characters.
+        if (!IS_UPPER(rdm.sym[0]))
             return false;
+    }
+
+    // Rust symbols only use ASCII characters.
+    for (const char *p = rdm.sym; *p; p++) {
+        if ((*p & 0x80) != 0)
+            return false;
+
+        if (*p == '.' && strncmp(p, ".llvm.", 6) == 0) {
+            // Ignore .llvm.<hash> suffixes
+            break;
+        }
+
         rdm.sym_len++;
     }
 
-    demangle_path(&rdm, true);
+    if (rdm.version == -1) {
+        demangle_legacy_path(&rdm);
+    } else {
+        demangle_path(&rdm, true);
 
-    // Skip instantiating crate.
-    if (!rdm.errored && rdm.next < rdm.sym_len) {
-        rdm.skipping_printing = true;
-        demangle_path(&rdm, false);
+        // Skip instantiating crate.
+        if (!rdm.errored && rdm.next < rdm.sym_len && peek(&rdm) >= 'A' &&
+            peek(&rdm) <= 'Z') {
+            rdm.skipping_printing = true;
+            demangle_path(&rdm, false);
+        }
     }
 
-    // It's an error to not reach the end.
-    rdm.errored |= rdm.next != rdm.sym_len;
+    if (!rdm.errored && (rdm.sym_len - rdm.next > 0)) {
+        for (const char *p = rdm.sym + rdm.next; *p; p++) {
+            // FIXME match is_symbol_like from rustc-demangle
+            if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+                  (*p >= '0' && *p <= '9') || *p == '.')) {
+                // Suffix is not a symbol like string
+                return false;
+            }
+        }
+
+        // Print LLVM produced suffix
+        print_str(&rdm, rdm.sym + rdm.next, rdm.sym_len - rdm.next);
+    }
 
     return !rdm.errored;
 }

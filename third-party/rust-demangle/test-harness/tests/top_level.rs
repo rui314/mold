@@ -56,8 +56,6 @@ fn ok_err(sym: &str) -> bool {
     }
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle() {
     t_err!("test");
@@ -66,8 +64,6 @@ fn demangle() {
     t!("_ZN4test1a2bcE", "test::a::bc");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_dollars() {
     t!("_ZN4$RP$E", ")");
@@ -77,16 +73,12 @@ fn demangle_dollars() {
     t!("_ZN35Bar$LT$$u5b$u32$u3b$$u20$4$u5d$$GT$E", "Bar<[u32; 4]>");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_many_dollars() {
     t!("_ZN13test$u20$test4foobE", "test test::foob");
     t!("_ZN12test$BP$test4foobE", "test*test::foob");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_osx() {
     t!(
@@ -97,8 +89,6 @@ fn demangle_osx() {
     t!("__ZN4core5slice89_$LT$impl$u20$core..iter..traits..IntoIterator$u20$for$u20$$RF$$u27$a$u20$$u5b$T$u5d$$GT$9into_iter17h450e234d27262170E", "core::slice::<impl core::iter::traits::IntoIterator for &'a [T]>::into_iter::h450e234d27262170");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_windows() {
     t!("ZN4testE", "test");
@@ -106,8 +96,6 @@ fn demangle_windows() {
     t!("ZN12test$RF$test4foobE", "test&test::foob");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_elements_beginning_with_underscore() {
     t!("_ZN13_$LT$test$GT$E", "<test>");
@@ -115,8 +103,6 @@ fn demangle_elements_beginning_with_underscore() {
     t!("_ZN15__STATIC_FMTSTRE", "__STATIC_FMTSTR");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_trait_impls() {
     t!(
@@ -125,8 +111,6 @@ fn demangle_trait_impls() {
     );
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_without_hash() {
     let s = "_ZN3foo17h05af221e174051e9E";
@@ -134,8 +118,6 @@ fn demangle_without_hash() {
     t_nohash!(s, "foo");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_without_hash_edgecases() {
     // One element, no hash.
@@ -154,8 +136,6 @@ fn demangle_without_hash_edgecases() {
     t_nohash!("_ZN3foo17hg5af221e174051e9E", "foo::hg5af221e174051e9");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_thinlto() {
     // One element, no hash.
@@ -167,23 +147,17 @@ fn demangle_thinlto() {
     );
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_llvm_ir_branch_labels() {
     t!("_ZN4core5slice77_$LT$impl$u20$core..ops..index..IndexMut$LT$I$GT$$u20$for$u20$$u5b$T$u5d$$GT$9index_mut17haf9727c2edfbc47bE.exit.i.i", "core::slice::<impl core::ops::index::IndexMut<I> for [T]>::index_mut::haf9727c2edfbc47b.exit.i.i");
     t_nohash!("_ZN4core5slice77_$LT$impl$u20$core..ops..index..IndexMut$LT$I$GT$$u20$for$u20$$u5b$T$u5d$$GT$9index_mut17haf9727c2edfbc47bE.exit.i.i", "core::slice::<impl core::ops::index::IndexMut<I> for [T]>::index_mut.exit.i.i");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_ignores_suffix_that_doesnt_look_like_a_symbol() {
     t_err!("_ZN3fooE.llvm moocow");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn dont_panic() {
     rust_demangle_c_test_harness::demangle("_ZN2222222222222222222222EE").to_string();
@@ -199,22 +173,16 @@ fn dont_panic() {
     .to_string();
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn invalid_no_chop() {
     t_err!("_ZNfooE");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn handle_assoc_types() {
     t!("_ZN151_$LT$alloc..boxed..Box$LT$alloc..boxed..FnBox$LT$A$C$$u20$Output$u3d$R$GT$$u20$$u2b$$u20$$u27$a$GT$$u20$as$u20$core..ops..function..FnOnce$LT$A$GT$$GT$9call_once17h69e8f44b3723e1caE", "<alloc::boxed::Box<alloc::boxed::FnBox<A, Output=R> + 'a> as core::ops::function::FnOnce<A>>::call_once::h69e8f44b3723e1ca");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn handle_bang() {
     t!(
@@ -238,14 +206,20 @@ fn limit_recursion() {
 }
 
 // FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
+#[ignore = "would slowly use up all RAM before being OOM-killed"]
 #[test]
-fn limit_output() {
+fn limit_output_oom_hazard() {
     assert_ends_with!(
         rust_demangle_c_test_harness::demangle("RYFG_FGyyEvRYFF_EvRYFFEvERLB_B_B_ERLRjB_B_B_")
             .to_string(),
         "{size limit reached}"
     );
+}
+
+// FIXME(eddyb) port the relevant functionality to C.
+#[should_panic]
+#[test]
+fn limit_output() {
     // NOTE(eddyb) somewhat reduced version of the above, effectively
     // `<for<...> fn()>` with a larger number of lifetimes in `...`.
     assert_ends_with!(
