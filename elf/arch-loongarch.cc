@@ -338,7 +338,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, GOT + G + A);
       break;
     case R_LARCH_GOT_PC_HI20:
-      check(GOT + G + A - P, -(1LL << 31), 1LL << 31);
       write_j20(loc, hi20(GOT + G + A, P));
       break;
     case R_LARCH_GOT64_PC_LO20:
@@ -375,7 +374,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, sym.get_gottp_addr(ctx) + A);
       break;
     case R_LARCH_TLS_IE_PC_HI20:
-      check(sym.get_gottp_addr(ctx) + A - P, -(1LL << 31), 1LL << 31);
       write_j20(loc, hi20(sym.get_gottp_addr(ctx) + A, P));
       break;
     case R_LARCH_TLS_IE64_PC_LO20:
