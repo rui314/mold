@@ -1250,12 +1250,15 @@ void compute_section_sizes(Context<E> &ctx) {
   // inserting thunks. This pass cannot be parallelized. That is,
   // create_range_extension_thunks is parallelized internally, but the
   // function itself is not thread-safe.
-  if constexpr (needs_thunk<E>)
+  if constexpr (needs_thunk<E>) {
+    Timer t2(ctx, "create_range_extension_thunks");
+
     if (!ctx.arg.relocatable)
       for (Chunk<E> *chunk : ctx.chunks)
         if (OutputSection<E> *osec = chunk->to_osec())
           if (osec->shdr.sh_flags & SHF_EXECINSTR)
             osec->create_range_extension_thunks(ctx);
+  }
 }
 
 // Find all unresolved symbols and attach them to the most appropriate files.
