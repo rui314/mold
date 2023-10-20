@@ -764,22 +764,24 @@ arguments.
 ## ENVIRONMENT VARIABLES
 
 * `MOLD_JOBS`:
-  If this variable is set to `1`, only one process of `mold` runs actively. A
-  mold process invoked while another active mold process is running will wait
-  before doing anything until the active process exits.
+  If this variable is set to `1`, only one `mold` process will run at a time.
+  If a new mold process is initiated while another is already active, the new
+  process will wait until the active one completes before starting.
 
-  The purpose of this environment variable is to reduce peak memory usage.
-  Since mold is highly parallelized, there's no point in running it
-  simultaneously. If you run N instances of mold in parallel, it would take N
-  times more time and N times more memory. If you run them serially, it would
-  still take N times more to finish, but their peak memory usage is reduced to
-  normal.
+  The primary reason for this environment variable is to minimize peak memory
+  usage. Since mold is designed to operate with high parallelism, running
+  multiple mold instances simultaneously may not be beneficial. If you execute
+  N instances of mold concurrently, it could require N times the time and N
+  times the memory. On the other hand, running them one after the other might
+  still take N times longer, but the peak memory usage would be the same as
+  running just a single instance.
 
-  If your build system tends to invoke multiple linker processes
-  simultaneously, you may want to try to set this environment variable to
-  `1` to see if it could improve overall performance.
+  If your build system invokes multiple linker processes simultaneously and
+  some of them often get killed due to out-of-memory errors, you might
+  consider setting this environment variable to `1` to see if it addresses the
+  OOM issue.
 
-  Currently, any value other than 1 is silently ignored.
+  Currently, any value other than `1` is silently ignored.
 
 * `MOLD_DEBUG`:
   If this variable is set to a non-empty string, `mold` embeds its

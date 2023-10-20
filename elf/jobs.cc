@@ -1,3 +1,14 @@
+// Many build systems attempt to invoke as many linker processes as there
+// are cores, based on the assumption that the linker is single-threaded.
+// However, since mold is multi-threaded, such build systems' behavior is
+// not beneficial and just increases the overall peak memory usage.
+// On machines with limited memory, this could lead to an out-of-memory
+// error.
+//
+// This file implements a feature that limits the number of concurrent
+// mold processes to just 1 for each user. It is intended to be used as
+// `MOLD_JOBS=1 ninja` or `MOLD_JOBS=1 make -j$(nproc)`.
+
 #include "mold.h"
 
 #ifndef _WIN32
