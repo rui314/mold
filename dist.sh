@@ -1,4 +1,5 @@
 #!/bin/bash
+#
 # This script creates a mold binary distribution. The output is
 # written in this directory as `mold-$version-$arch-linux.tar.gz`
 # (e.g. `mold-1.0.3-x86_64-linux.tar.gz`).
@@ -27,14 +28,8 @@ version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' $(dirname $0)/CMakeLists
 dest=mold-$version-$arch-linux
 set -e -x
 
-if [ $arch = riscv64 ]; then
-  image=rui314/mold-builder-riscv64
-else
-  image=rui314/mold-builder
-fi
-
 docker run --platform linux/$arch -i --rm -v "$(pwd):/mold" \
-  -e "OWNER=$(id -u):$(id -g)" $image:latest \
+  -e "OWNER=$(id -u):$(id -g)" rui314/mold-builder-$arch:latest \
   bash -c "mkdir /build &&
 cd /build &&
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc-10 -DCMAKE_CXX_COMPILER=g++-10 -DMOLD_MOSTLY_STATIC=On /mold &&
