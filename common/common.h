@@ -640,10 +640,6 @@ public:
     return {nullptr, false};
   }
 
-  const char *get_key(i64 idx) {
-    return entries[idx].key;
-  }
-
   i64 get_idx(T *value) const {
     uintptr_t addr = (uintptr_t)value - (uintptr_t)value % sizeof(Entry);
     return (Entry *)addr - entries;

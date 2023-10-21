@@ -1958,10 +1958,12 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
 
     for (Entry *ent : entries) {
       SectionFragment<E> &frag = ent->value;
-      offset = align_to(offset, 1 << frag.p2align);
-      frag.offset = offset;
-      offset += ent->keylen;
-      p2align = std::max<i64>(p2align, frag.p2align);
+      if (frag.is_alive) {
+        offset = align_to(offset, 1 << frag.p2align);
+        frag.offset = offset;
+        offset += ent->keylen;
+        p2align = std::max<i64>(p2align, frag.p2align);
+      }
     }
 
     sizes[i] = offset;
@@ -1979,9 +1981,11 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
       align_to(shard_offsets[i - 1] + sizes[i - 1], alignment);
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
-    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (SectionFragment<E> &frag = map.entries[j].value; frag.is_alive)
+    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
+      SectionFragment<E> &frag = map.entries[j].value;
+      if (frag.is_alive)
         frag.offset += shard_offsets[i];
+    }
   });
 
   this->shdr.sh_size = shard_offsets[map.NUM_SHARDS];
@@ -2001,9 +2005,11 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
 
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (const char *key = map.get_key(j))
-        if (SectionFragment<E> &frag = map.entries[j].value; frag.is_alive)
+      if (const char *key = map.entries[j].key) {
+        SectionFragment<E> &frag = map.entries[j].value;
+        if (frag.is_alive)
           memcpy(buf + frag.offset, key, map.entries[j].keylen);
+      }
   });
 }
 
@@ -2011,7 +2017,7 @@ template <typename E>
 void MergedSection<E>::print_stats(Context<E> &ctx) {
   i64 used = 0;
   for (i64 i = 0; i < map.nbuckets; i++)
-    if (map.get_key(i))
+    if (map.entries[i].key)
       used++;
 
   SyncOut(ctx) << this->name
