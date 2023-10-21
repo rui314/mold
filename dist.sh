@@ -37,5 +37,4 @@ cmake --build . -j\$(nproc) &&
 [ $arch = arm ] || ctest -j\$(nproc) &&
 cmake --install . --prefix $dest --strip &&
 tar czf /mold/$dest.tar.gz $dest &&
-cp mold mold-wrapper.so /mold &&
 chown \$OWNER /mold/mold /mold/mold-wrapper.so /mold/$dest.tar.gz"

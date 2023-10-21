@@ -3,15 +3,7 @@
 *~
 **/.DS_Store
 .cache
-compile_commands.json
-/mold
-/test/tmp
-options.inc
 core
-ld
-ld64
-ld64.mold
 gentoo
-out
 /mold-*.tar.gz
 /build*
