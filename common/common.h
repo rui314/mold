@@ -23,6 +23,7 @@
 #include <sys/types.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
+#include <tbb/parallel_for.h>
 #include <vector>
 
 #ifdef _WIN32
@@ -646,6 +647,53 @@ public:
   i64 get_idx(T *value) const {
     uintptr_t addr = (uintptr_t)value - (uintptr_t)value % sizeof(Entry);
     return (Entry *)addr - entries;
+  }
+
+  // Return a list of map entries sorted in a deterministic order.
+  std::vector<Entry *> get_sorted_entries(i64 shard_idx) {
+    i64 shard_size = nbuckets / NUM_SHARDS;
+    i64 begin = shard_idx * shard_size;
+    i64 end = begin + shard_size;
+
+    i64 sz = 0;
+    for (i64 i = begin; i < end; i++)
+      if (entries[i].key)
+        sz++;
+
+    std::vector<Entry *> vec;
+    vec.reserve(sz);
+
+    // Since the shard is circular, we need to handle the last entries
+    // as if they were next to the first entries.
+    while (entries[end - 1].key)
+      vec.push_back(entries + --end);
+
+    // Find entries contiguous in the buckets and sort them.
+    i64 last = 0;
+    for (i64 i = begin; i < end;) {
+      while (i < end && entries[i].key)
+        vec.push_back(entries + i++);
+
+      std::sort(vec.begin() + last, vec.end(), [](Entry *a, Entry *b) {
+        if (a->keylen != b->keylen)
+          return a->keylen < b->keylen;
+        return memcmp(a->key, b->key, a->keylen) < 0;
+      });
+
+      last = vec.size();
+
+      while (i < end && !entries[i].key)
+        i++;
+    }
+    return vec;
+  }
+
+  std::vector<Entry *> get_sorted_entries_all() {
+    std::vector<std::vector<Entry *>> vec(NUM_SHARDS);
+    tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
+      vec[i] = get_sorted_entries(i);
+    });
+    return flatten(vec);
   }
 
   static constexpr i64 MIN_NBUCKETS = 2048;

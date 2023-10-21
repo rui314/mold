@@ -1947,58 +1947,36 @@ MergedSection<E>::insert(Context<E> &ctx, std::string_view data, u64 hash,
 template <typename E>
 void MergedSection<E>::assign_offsets(Context<E> &ctx) {
   std::vector<i64> sizes(map.NUM_SHARDS);
-  std::vector<i64> max_p2aligns(map.NUM_SHARDS);
-  shard_offsets.resize(map.NUM_SHARDS + 1);
-
-  i64 shard_size = map.nbuckets / map.NUM_SHARDS;
+  Atomic<i64> alignment = 1;
 
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
-    struct KeyVal {
-      std::string_view key;
-      SectionFragment<E> *val;
-    };
+    using Entry = typename decltype(map)::Entry;
+    std::vector<Entry *> entries = map.get_sorted_entries(i);
 
-    std::vector<KeyVal> fragments;
-    fragments.reserve(shard_size);
-
-    for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (const char *key = map.get_key(j))
-        if (SectionFragment<E> &frag = map.entries[j].value; frag.is_alive)
-          fragments.push_back({{key, map.entries[j].keylen}, &frag});
-
-    // Sort fragments to make output deterministic.
-    tbb::parallel_sort(fragments.begin(), fragments.end(),
-                       [](const KeyVal &a, const KeyVal &b) {
-      return std::tuple{(u32)a.val->p2align, a.key.size(), a.key} <
-             std::tuple{(u32)b.val->p2align, b.key.size(), b.key};
-    });
-
-    // Assign offsets.
     i64 offset = 0;
     i64 p2align = 0;
 
-    for (KeyVal &kv : fragments) {
-      SectionFragment<E> &frag = *kv.val;
+    for (Entry *ent : entries) {
+      SectionFragment<E> &frag = ent->value;
       offset = align_to(offset, 1 << frag.p2align);
       frag.offset = offset;
-      offset += kv.key.size();
+      offset += ent->keylen;
       p2align = std::max<i64>(p2align, frag.p2align);
     }
 
     sizes[i] = offset;
-    max_p2aligns[i] = p2align;
+    update_maximum(alignment, 1 << p2align);
 
     static Counter merged_strings("merged_strings");
-    merged_strings += fragments.size();
+    merged_strings += entries.size();
   });
 
-  i64 p2align = 0;
-  for (i64 x : max_p2aligns)
-    p2align = std::max(p2align, x);
+  i64 shard_size = map.nbuckets / map.NUM_SHARDS;
+  shard_offsets.resize(map.NUM_SHARDS + 1);
 
   for (i64 i = 1; i < map.NUM_SHARDS + 1; i++)
     shard_offsets[i] =
-      align_to(shard_offsets[i - 1] + sizes[i - 1], 1 << p2align);
+      align_to(shard_offsets[i - 1] + sizes[i - 1], alignment);
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
@@ -2007,7 +1985,7 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
   });
 
   this->shdr.sh_size = shard_offsets[map.NUM_SHARDS];
-  this->shdr.sh_addralign = 1 << p2align;
+  this->shdr.sh_addralign = alignment;
 }
 
 template <typename E>

@@ -140,7 +140,6 @@ struct NameType {
 };
 
 struct MapValue {
-  std::string_view name;
   u32 hash = 0;
   Atomic<u32> count = 0;
   u32 name_offset = 0;
@@ -678,36 +677,21 @@ void write_gdb_index(Context<E> &ctx) {
   });
 
   ConcurrentMap<MapValue> map(estimator.get_cardinality() * 3 / 2);
-  Atomic<i64> num_entries;
 
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
     cu.entries.reserve(cu.nametypes.size());
-    i64 count = 0;
-
     for (NameType &nt : cu.nametypes) {
       MapValue *ent;
       bool inserted;
-      MapValue value = {nt.name, nt.hash};
-      std::tie(ent, inserted) = map.insert(nt.name, nt.hash, value);
+      std::tie(ent, inserted) = map.insert(nt.name, nt.hash, MapValue{nt.hash});
       ent->count++;
-      if (inserted)
-        count++;
       cu.entries.push_back(ent);
     }
-    num_entries += count;
   });
 
   // Sort symbols for build reproducibility
-  std::vector<MapValue *> entries;
-  entries.reserve(num_entries);
-
-  for (i64 i = 0; i < map.nbuckets; i++)
-    if (map.entries[i].key)
-      entries.push_back(&map.entries[i].value);
-
-  tbb::parallel_sort(entries, [](MapValue *a, MapValue *b) {
-    return std::tuple(a->hash, a->name) < std::tuple(b->hash, b->name);
-  });
+  using Entry = typename decltype(map)::Entry;
+  std::vector<Entry *> entries = map.get_sorted_entries_all();
 
   // Compute sizes of each components
   SectionHeader hdr;
@@ -719,18 +703,18 @@ void write_gdb_index(Context<E> &ctx) {
   for (Compunit &cu : cus)
     hdr.symtab_offset += cu.ranges.size() * 20;
 
-  i64 ht_size = bit_ceil(num_entries * 5 / 4 + 1);
+  i64 ht_size = bit_ceil(entries.size() * 5 / 4 + 1);
   hdr.const_pool_offset = hdr.symtab_offset + ht_size * 8;
 
   i64 offset = 0;
-  for (MapValue *ent : entries) {
-    ent->type_offset = offset;
-    offset += ent->count * 4 + 4;
+  for (Entry *ent : entries) {
+    ent->value.type_offset = offset;
+    offset += ent->value.count * 4 + 4;
   }
 
-  for (MapValue *ent : entries) {
-    ent->name_offset = offset;
-    offset += ent->name.size() + 1;
+  for (Entry *ent : entries) {
+    ent->value.name_offset = offset;
+    offset += ent->keylen + 1;
   }
 
   i64 bufsize = hdr.const_pool_offset + offset;
@@ -765,16 +749,16 @@ void write_gdb_index(Context<E> &ctx) {
   u32 mask = ht_size - 1;
   ul32 *ht = (ul32 *)(buf + hdr.symtab_offset);
 
-  for (MapValue *ent : entries) {
-    u32 hash = ent->hash;
+  for (Entry *ent : entries) {
+    u32 hash = ent->value.hash;
     u32 step = ((hash * 17) & mask) | 1;
     u32 j = hash & mask;
 
     while (ht[j * 2] || ht[j * 2 + 1])
       j = (j + step) & mask;
 
-    ht[j * 2] = ent->name_offset;
-    ht[j * 2 + 1] = ent->type_offset;
+    ht[j * 2] = ent->value.name_offset;
+    ht[j * 2 + 1] = ent->value.type_offset;
   }
 
   // Write types
@@ -790,8 +774,9 @@ void write_gdb_index(Context<E> &ctx) {
   }
 
   // Write names
-  tbb::parallel_for_each(entries, [&](MapValue *ent) {
-    write_string(buf + hdr.const_pool_offset + ent->name_offset, ent->name);
+  tbb::parallel_for_each(entries, [&](Entry *ent) {
+    memcpy(buf + hdr.const_pool_offset + ent->value.name_offset,
+           ent->key, ent->keylen);
   });
 
   // Update the section size and rewrite the section header
