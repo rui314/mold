@@ -568,7 +568,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     }
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_GOT | NEEDS_PLT;
+      sym.flags |= NEEDS_GOT;
 
     switch (rel.r_type) {
     case R_LARCH_32:
@@ -583,7 +583,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_LARCH_B26:
     case R_LARCH_PCALA_HI20:
-      if (sym.is_imported)
+      if (sym.is_imported || sym.is_ifunc())
         sym.flags |= NEEDS_PLT;
       break;
     case R_LARCH_GOT_HI20:

@@ -410,7 +410,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_GOT | NEEDS_PLT;
+      sym.flags |= NEEDS_GOT;
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
@@ -424,11 +424,11 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_PPC64_REL24:
-      if (sym.is_imported)
+      if (sym.is_imported || sym.is_ifunc())
         sym.flags |= NEEDS_PLT;
       break;
     case R_PPC64_REL24_NOTOC:
-      if (sym.is_imported)
+      if (sym.is_imported || sym.is_ifunc())
         sym.flags |= NEEDS_PLT;
       ctx.extra.is_power10 = true;
       break;

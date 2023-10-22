@@ -213,9 +213,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
-    if (sym.is_ifunc())
-      Error(ctx) << sym << ": GNU ifunc symbol is not supported on Alpha";
-
     switch (rel.r_type) {
     case R_ALPHA_REFQUAD:
       scan_dyn_absrel(ctx, sym, rel);
