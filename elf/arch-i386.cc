@@ -489,7 +489,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     u8 *loc = (u8 *)(contents.data() + rel.r_offset);
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_GOT;
+      sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     if (rel.r_type == R_386_TLS_GD || rel.r_type == R_386_TLS_LDM) {
       if (i + 1 == rels.size())
@@ -528,7 +528,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       }
       break;
     case R_386_PLT32:
-      if (sym.is_imported || sym.is_ifunc())
+      if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
     case R_386_TLS_GOTIE:

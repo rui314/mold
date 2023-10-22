@@ -398,7 +398,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_GOT;
+      sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
     case R_390_64:
@@ -445,7 +445,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_390_PLTOFF16:
     case R_390_PLTOFF32:
     case R_390_PLTOFF64:
-      if (sym.is_imported || sym.is_ifunc())
+      if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
     case R_390_TLS_GOTIE20:

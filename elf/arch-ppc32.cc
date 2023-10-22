@@ -336,7 +336,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
     if (sym.is_ifunc())
-      sym.flags |= NEEDS_GOT;
+      sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
     case R_PPC_ADDR32:
@@ -374,7 +374,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC_REL24:
     case R_PPC_PLTREL24:
     case R_PPC_PLTREL32:
-      if (sym.is_imported || sym.is_ifunc())
+      if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
     case R_PPC_GOT_TLSGD16:
