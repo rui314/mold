@@ -25,14 +25,15 @@ template <typename E>
 void acquire_global_lock(Context<E> &ctx) {
 #ifndef _WIN32
   char *jobs = getenv("MOLD_JOBS");
-  if (!jobs || std::string(jobs) != "1")
+  if (!jobs || jobs != "1"s)
     return;
 
-  char *home = getenv("HOME");
-  if (!home)
-    home = getpwuid(getuid())->pw_dir;
+  std::string path;
+  if (char *dir = getenv("XDG_RUNTIME_DIR"))
+    path = dir + "/mold-lock"s;
+  else
+    path = "/tmp/mold-lock-"s + getpwuid(getuid())->pw_name;
 
-  std::string path = std::string(home) + "/.mold-lock";
   int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_CLOEXEC, 0600);
   if (fd == -1)
     return;
