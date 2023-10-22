@@ -66,7 +66,7 @@ EOF
 fi
 
 # Build mold in a container.
-docker run --platform linux/$arch -it --rm -v "$(realpath $(dirname $0)):/mold" \
+docker run --platform linux/$arch -i --rm -v "$(realpath $(dirname $0)):/mold" \
   -e "OWNER=$(id -u):$(id -g)" $image \
   bash -c "mkdir /build &&
 cd /build &&
