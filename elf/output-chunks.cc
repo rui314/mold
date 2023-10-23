@@ -883,31 +883,30 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
-  auto clear = [&](u8 *loc, i64 size) {
-    // As a special case, .init and .fini are filled with NOPs for s390x
-    // because the runtime executes the sections as if they were a single
-    // function. .init and .fini are superceded by .init_array and
-    // .fini_array but being actively used only on s390x.
-    if constexpr (is_s390x<E>) {
-      if (this->name == ".init" || this->name == ".fini") {
-        for (i64 i = 0; i < size; i += 2)
-          *(ub16 *)(loc + i) = 0x0700; // nop
-        return;
-      }
-    }
-    memset(loc, 0, size);
-  };
-
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
-    // Copy section contents to an output file
+    // Copy section contents to an output file.
     InputSection<E> &isec = *members[i];
     isec.write_to(ctx, buf + isec.offset);
 
-    // Clear trailing padding
+    // Clear trailing padding. We write trap or nop instructions for
+    // an executable segment so that a disassembler wouldn't try to
+    // disassemble garbage as instructions.
     u64 this_end = isec.offset + isec.sh_size;
-    u64 next_start = (i == members.size() - 1) ?
-      (u64)this->shdr.sh_size : members[i + 1]->offset;
-    clear(buf + this_end, next_start - this_end);
+    u64 next_start;
+    if (i + 1 < members.size())
+      next_start = members[i + 1]->offset;
+    else
+      next_start = this->shdr.sh_size;
+
+    u8 *loc = buf + this_end;
+    i64 size = next_start - this_end;
+
+    if (this->shdr.sh_flags & SHF_EXECINSTR) {
+      for (i64 i = 0; i + sizeof(E::filler) <= size; i += sizeof(E::filler))
+        memcpy(loc + i, E::filler, sizeof(E::filler));
+    } else {
+      memset(loc, 0, size);
+    }
   });
 
   if constexpr (needs_thunk<E>) {
