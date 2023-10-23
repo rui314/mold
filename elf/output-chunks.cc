@@ -2298,8 +2298,7 @@ void CopyrelSection<E>::update_shdr(Context<E> &ctx) {
   // a segment, so a .copyrel.rel.ro usually requires one extra
   // segment for it. We turn a .copyrel.rel.ro into a regular section
   // if it is very small to avoid the cost of the extra segment.
-  constexpr i64 threshold = 4096;
-  if (this->is_relro && ctx.arg.z_relro && this->shdr.sh_size < threshold)
+  if (this->is_relro && ctx.arg.z_relro && this->shdr.sh_size < E::page_size)
     this->shdr.sh_type = SHT_PROGBITS;
 }
 
