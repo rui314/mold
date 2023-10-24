@@ -1264,6 +1264,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.shared)
     ctx.overwrite_output_file = false;
 
+  if (!ctx.arg.chroot.empty()) {
+    if (!ctx.arg.Map.empty())
+      ctx.arg.Map = ctx.arg.chroot + "/" + ctx.arg.Map;
+
+    if (!ctx.arg.dependency_file.empty())
+      ctx.arg.dependency_file = ctx.arg.chroot + "/" + ctx.arg.dependency_file;
+  }
+
   if (version_shown && remaining.empty())
     exit(0);
   return remaining;
