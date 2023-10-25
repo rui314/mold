@@ -622,6 +622,12 @@ public:
   }
 
   void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+
+  // Offsets in .strtab for ARM32 mapping symbols
+  static constexpr i64 ARM = 1;
+  static constexpr i64 THUMB = 4;
+  static constexpr i64 DATA = 7;
 };
 
 template <typename E>

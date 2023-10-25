@@ -462,6 +462,14 @@ template <typename E>
 void StrtabSection<E>::update_shdr(Context<E> &ctx) {
   i64 offset = 1;
 
+  // ARM32 uses $a, $t and $t mapping symbols to mark the beginning of
+  // ARM, Thumb and data in text, respectively. These symbols don't
+  // affect correctness of the program but helps disassembler to
+  // disassemble machine code appropriately.
+  if constexpr (is_arm32<E>)
+    if (!ctx.arg.strip_all && !ctx.arg.retain_symbols_file)
+      offset += sizeof("$a\0$t\0$d");
+
   for (Chunk<E> *chunk : ctx.chunks) {
     chunk->strtab_offset = offset;
     offset += chunk->strtab_size;
@@ -478,6 +486,16 @@ void StrtabSection<E>::update_shdr(Context<E> &ctx) {
   }
 
   this->shdr.sh_size = (offset == 1) ? 0 : offset;
+}
+
+template <typename E>
+void StrtabSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  buf[0] = '\0';
+
+  if constexpr (is_arm32<E>)
+    if (!ctx.arg.strip_all && !ctx.arg.retain_symbols_file)
+      memcpy(buf + 1, "$a\0$t\0$d", 9);
 }
 
 template <typename E>
@@ -590,9 +608,6 @@ template <typename E>
 void SymtabSection<E>::copy_buf(Context<E> &ctx) {
   ElfSym<E> *buf = (ElfSym<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, sizeof(ElfSym<E>));
-
-  // Write the initial NUL byte to .strtab.
-  ctx.buf[ctx.strtab->shdr.sh_offset] = '\0';
 
   if (ctx.symtab_shndx) {
     ElfShdr<E> &shdr = ctx.symtab_shndx->shdr;
@@ -1000,15 +1015,12 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
 // Compute spaces needed for thunk symbols
 template <typename E>
 void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
-  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file || ctx.arg.relocatable)
+  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
     return;
 
   if constexpr (needs_thunk<E>) {
     this->strtab_size = 0;
     this->num_local_symtab = 0;
-
-    if constexpr (is_arm32<E>)
-      this->strtab_size = 9; // for "$t", "$a" and "$d" symbols
 
     for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks) {
       // For ARM32, we emit additional symbol "$t", "$a" and "$d" for
@@ -1040,37 +1052,30 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
     u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
     u8 *strtab = strtab_base + this->strtab_offset;
 
-    if constexpr (is_arm32<E>) {
-      // ARM uses these symbols to mark the begining of Thumb code, ARM
-      // code and data, respectively. Our thunk contains all of them.
-      strtab += write_string(strtab, "$t");
-      strtab += write_string(strtab, "$a");
-      strtab += write_string(strtab, "$d");
-    }
+    auto write_esym = [&](u64 addr, i64 st_name) {
+      memset(esym, 0, sizeof(*esym));
+      esym->st_name = st_name;
+      esym->st_type = STT_FUNC;
+      esym->st_shndx = this->shndx;
+      esym->st_value = addr;
+      esym++;
+    };
 
     for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks) {
       for (i64 i = 0; i < thunk->symbols.size(); i++) {
         Symbol<E> &sym = *thunk->symbols[i];
+        u64 addr = thunk->get_addr(i);
 
-        auto write_esym = [&](i64 st_name, i64 off) {
-          memset(esym, 0, sizeof(*esym));
-          esym->st_name = st_name;
-          esym->st_type = STT_FUNC;
-          esym->st_shndx = this->shndx;
-          esym->st_value = thunk->get_addr(i) + off;
-          esym++;
-        };
-
-        write_esym(strtab - strtab_base, 0);
+        write_esym(addr, strtab - strtab_base);
 
         strtab += write_string(strtab, sym.name()) - 1;
         strtab += write_string(strtab, "$thunk");
 
         // Emit "$t", "$a" and "$d" if ARM32.
         if constexpr (is_arm32<E>) {
-          write_esym(this->strtab_offset, 0);
-          write_esym(this->strtab_offset + 3, 4);
-          write_esym(this->strtab_offset + 6, 12);
+          write_esym(addr, ctx.strtab->THUMB);
+          write_esym(addr + 4, ctx.strtab->ARM);
+          write_esym(addr + 12, ctx.strtab->DATA);
         }
       }
     }
