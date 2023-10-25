@@ -1015,9 +1015,6 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
 // Compute spaces needed for thunk symbols
 template <typename E>
 void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
-  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
-    return;
-
   if constexpr (needs_thunk<E>) {
     this->strtab_size = 0;
     this->num_local_symtab = 0;
@@ -1042,7 +1039,7 @@ void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
 // disassembling and/or debugging our output.
 template <typename E>
 void OutputSection<E>::populate_symtab(Context<E> &ctx) {
-  if (this->strtab_size == 0)
+  if (this->num_local_symtab == 0)
     return;
 
   if constexpr (needs_thunk<E>) {
@@ -1334,9 +1331,6 @@ void GotSection<E>::construct_relr(Context<E> &ctx) {
 
 template <typename E>
 void GotSection<E>::compute_symtab_size(Context<E> &ctx) {
-  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
-    return;
-
   this->strtab_size = 0;
   this->num_local_symtab = 0;
 
@@ -1368,7 +1362,7 @@ void GotSection<E>::compute_symtab_size(Context<E> &ctx) {
 
 template <typename E>
 void GotSection<E>::populate_symtab(Context<E> &ctx) {
-  if (this->strtab_size == 0)
+  if (this->num_local_symtab == 0)
     return;
 
   ElfSym<E> *esym =
@@ -1459,19 +1453,19 @@ void PltSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void PltSection<E>::compute_symtab_size(Context<E> &ctx) {
-  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
-    return;
-
   this->num_local_symtab = symbols.size();
   this->strtab_size = 0;
 
   for (Symbol<E> *sym : symbols)
     this->strtab_size += sym->name().size() + sizeof("$plt");
+
+  if constexpr (is_arm32<E>)
+    this->num_local_symtab += symbols.size() * 2 + 2;
 }
 
 template <typename E>
 void PltSection<E>::populate_symtab(Context<E> &ctx) {
-  if (this->strtab_size == 0)
+  if (this->num_local_symtab == 0)
     return;
 
   ElfSym<E> *esym =
@@ -1480,16 +1474,30 @@ void PltSection<E>::populate_symtab(Context<E> &ctx) {
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   u8 *strtab = strtab_base + this->strtab_offset;
 
-  for (Symbol<E> *sym : symbols) {
+  auto write_esym = [&](u64 addr, i64 st_name) {
     memset(esym, 0, sizeof(*esym));
-    esym->st_name = strtab - strtab_base;
+    esym->st_name = st_name;
     esym->st_type = STT_FUNC;
     esym->st_shndx = this->shndx;
-    esym->st_value = sym->get_plt_addr(ctx);
+    esym->st_value = addr;
     esym++;
+  };
 
+  if constexpr (is_arm32<E>) {
+    write_esym(this->shdr.sh_addr, ctx.strtab->ARM);
+    write_esym(this->shdr.sh_addr + 16, ctx.strtab->DATA);
+  }
+
+  for (Symbol<E> *sym : symbols) {
+    u64 addr = sym->get_plt_addr(ctx);
+    write_esym(addr, strtab - strtab_base);
     strtab += write_string(strtab, sym->name()) - 1;
     strtab += write_string(strtab, "$plt");
+
+    if constexpr (is_arm32<E>) {
+      write_esym(addr, ctx.strtab->ARM);
+      write_esym(addr + 12, ctx.strtab->DATA);
+    }
   }
 }
 
@@ -1512,19 +1520,19 @@ void PltGotSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void PltGotSection<E>::compute_symtab_size(Context<E> &ctx) {
-  if (ctx.arg.strip_all || ctx.arg.retain_symbols_file)
-    return;
-
   this->num_local_symtab = symbols.size();
   this->strtab_size = 0;
 
   for (Symbol<E> *sym : symbols)
     this->strtab_size += sym->name().size() + sizeof("$pltgot");
+
+  if constexpr (is_arm32<E>)
+    this->num_local_symtab += symbols.size() * 2;
 }
 
 template <typename E>
 void PltGotSection<E>::populate_symtab(Context<E> &ctx) {
-  if (this->strtab_size == 0)
+  if (this->num_local_symtab == 0)
     return;
 
   ElfSym<E> *esym =
@@ -1533,16 +1541,25 @@ void PltGotSection<E>::populate_symtab(Context<E> &ctx) {
   u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
   u8 *strtab = strtab_base + this->strtab_offset;
 
-  for (Symbol<E> *sym : symbols) {
+  auto write_esym = [&](u64 addr, i64 st_name) {
     memset(esym, 0, sizeof(*esym));
-    esym->st_name = strtab - strtab_base;
+    esym->st_name = st_name;
     esym->st_type = STT_FUNC;
     esym->st_shndx = this->shndx;
-    esym->st_value = sym->get_plt_addr(ctx);
+    esym->st_value = addr;
     esym++;
+  };
 
+  for (Symbol<E> *sym : symbols) {
+    u64 addr = sym->get_plt_addr(ctx);
+    write_esym(addr, strtab - strtab_base);
     strtab += write_string(strtab, sym->name()) - 1;
     strtab += write_string(strtab, "$pltgot");
+
+    if constexpr (is_arm32<E>) {
+      write_esym(addr, ctx.strtab->ARM);
+      write_esym(addr + 12, ctx.strtab->DATA);
+    }
   }
 }
 

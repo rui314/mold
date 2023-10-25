@@ -200,9 +200,9 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     0xe08f'e00e, // 1: add lr, pc, lr
     0xe5be'f008, //    ldr pc, [lr, #8]!
     0x0000'0000, // 2: .word .got.plt - 1b - 8
-    0xe320'f000, //    nop
-    0xe320'f000, //    nop
-    0xe320'f000, //    nop
+    0x0000'0000, //    (padding)
+    0x0000'0000, //    (padding)
+    0x0000'0000, //    (padding)
   };
 
   memcpy(buf, insn, sizeof(insn));

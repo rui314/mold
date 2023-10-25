@@ -1535,9 +1535,11 @@ template <typename E>
 void create_output_symtab(Context<E> &ctx) {
   Timer t(ctx, "compute_symtab_size");
 
-  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    chunk->compute_symtab_size(ctx);
-  });
+  if (!ctx.arg.strip_all && !ctx.arg.retain_symbols_file) {
+    tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+      chunk->compute_symtab_size(ctx);
+    });
+  }
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->compute_symtab_size(ctx);
