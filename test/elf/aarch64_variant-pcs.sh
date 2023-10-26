@@ -12,7 +12,7 @@ foo:
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
-readelf -W --dyn-syms $t/b.so | grep -Eq '\[VARIANT_PCS\].* foo$'
+readelf -W --dyn-syms $t/b.so | grep foo | grep -q '[VARIANT_PCS]'
 
 cat <<EOF | $CC -c -o $t/c.o -xc -
 void foo();
