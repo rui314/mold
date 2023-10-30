@@ -1106,10 +1106,10 @@ void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   // always emit a dynamic relocation for each TLSDESC entry.
   //
   // If dynamic relocation is not available (i.e. if we are creating a
-  // non-PIC executable), we always relax TLSDESC relocations so that
-  // no TLSDESC relocation exist at runtime.
+  // statically-linked executable), we always relax TLSDESC relocations
+  // so that no TLSDESC relocation exist at runtime.
   assert(supports_tlsdesc<E>);
-  assert(ctx.arg.pic);
+  assert(!ctx.arg.is_static);
 
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
   this->shdr.sh_size += sizeof(Word<E>) * 2;
