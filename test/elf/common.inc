@@ -14,10 +14,12 @@ canonical_name() {
   esac
 }
 
-HOST=$(canonical_name $(uname -m))
+if [ -z "$HOST" ]; then
+  HOST=$(canonical_name $(uname -m))
+fi
 
 # Set tool names
-if [ "$TRIPLE" = "" ]; then
+if [ -z "$TRIPLE" ]; then
   MACHINE=$HOST
   TESTDIR=out/test/elf/$HOST
   CC="${TEST_CC:-cc}"

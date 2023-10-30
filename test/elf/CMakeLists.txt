@@ -1,8 +1,19 @@
 option(MOLD_ENABLE_QEMU_TESTS "Enable tests on non-native targets" OFF)
 
-function(add_target TRIPLE)
-  set(HOST ${CMAKE_HOST_SYSTEM_PROCESSOR})
+set(HOST ${CMAKE_HOST_SYSTEM_PROCESSOR})
 
+# CMAKE_HOST_SYSTEM_PROCESSOR returns "aarch64" on ARM32 userland
+# with ARM64 kernel. Here, we run `cc -dumpmachine` to determine the
+# compiler's default target.
+execute_process(COMMAND ${CMAKE_C_COMPILER} -dumpmachine
+  RESULT_VARIABLE EXIT_CODE
+  OUTPUT_VARIABLE ARCH
+  ERROR_QUIET)
+if(NOT EXIT_CODE AND ARCH MATCHES "([^-]+).*")
+  set(HOST ${CMAKE_MATCH_1})
+endif()
+
+function(add_target TRIPLE)
   if(${HOST} MATCHES "amd64")
     set(HOST x86_64)
   elseif(${HOST} MATCHES "arm.*")
@@ -39,12 +50,12 @@ function(add_target TRIPLE)
         COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
         WORKING_DIRECTORY ${mold_BINARY_DIR})
 
+      set_property(TEST ${TESTNAME} APPEND PROPERTY ENVIRONMENT "HOST=${HOST}")
+
       if(IS_NATIVE)
-        set_tests_properties(${TESTNAME} PROPERTIES
-          SKIP_REGULAR_EXPRESSION "skipped")
+        set_property(TEST ${TESTNAME} APPEND PROPERTY SKIP_REGULAR_EXPRESSION "skipped")
       else()
-        set_tests_properties(${TESTNAME} PROPERTIES
-          ENVIRONMENT "TRIPLE=${TRIPLE}")
+        set_property(TEST ${TESTNAME} APPEND PROPERTY ENVIRONMENT "TRIPLE=${TRIPLE}")
       endif()
     endforeach()
   endif()
