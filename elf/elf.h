@@ -2227,7 +2227,7 @@ struct LOONGARCH64 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 0;
-  static constexpr u32 thunk_size = 16;
+  static constexpr u32 thunk_size = 8;
   static constexpr u8 filler[] = { 0x00, 0x00, 0x2a, 0x00 };
 
   static constexpr u32 R_COPY = R_LARCH_COPY;
@@ -2253,7 +2253,7 @@ struct LOONGARCH32 {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 0;
-  static constexpr u32 thunk_size = 16;
+  static constexpr u32 thunk_size = 8;
   static constexpr u8 filler[] = { 0x00, 0x00, 0x2a, 0x00 };
 
   static constexpr u32 R_COPY = R_LARCH_COPY;
