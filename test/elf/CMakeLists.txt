@@ -74,10 +74,6 @@ add_target(s390x-linux-gnu)
 add_target(sh4-linux-gnu)
 add_target(alpha-linux-gnu)
 
-if(${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL loongarch64)
-  add_target(loongarch64-linux-gnu)
-endif()
-
 option(MOLD_ENABLE_QEMU_TESTS_RV32 "Enable tests for RV32" OFF)
 if(MOLD_ENABLE_QEMU_TESTS_RV32)
   add_target(riscv32-linux-gnu)
@@ -94,6 +90,6 @@ if(MOLD_ENABLE_QEMU_TESTS_M68K)
 endif()
 
 option(MOLD_ENABLE_QEMU_TESTS_LOONGARCH "Enable tests for LoongArch" OFF)
-if(MOLD_ENABLE_QEMU_TESTS_LOONGARCH)
+if(MOLD_ENABLE_QEMU_TESTS_LOONGARCH OR ${HOST} STREQUAL loongarch64)
   add_target(loongarch64-linux-gnu)
 endif()
