@@ -326,14 +326,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // It looks like R_LARCH_PCALA_LO12 is sometimes used for JIRL even
       // though the instruction takes a 16 bit immediate rather than 12 bits.
       // It is contrary to the psABI document, but GNU ld has special
-      // code to handle it. We accept it with a warning message.
-      if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000) {
-        Warn(ctx) << *this << ": invalid use of a R_LARCH_PCALA_LO12 relocation"
-                  << " against a JIRL instruction";
+      // code to handle it, so we accept it too.
+      if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000)
         write_k16(loc, sign_extend(S + A, 11) >> 2);
-      } else {
+      else
         write_k12(loc, S + A);
-      }
       break;
     case R_LARCH_PCALA_HI20:
       write_j20(loc, hi20(S + A, P));
