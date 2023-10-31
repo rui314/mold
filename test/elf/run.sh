@@ -4,7 +4,7 @@
 [ "$CC" = cc ] || skip
 
 # ASAN doesn't work with LD_PRELOAD
-nm mold-wrapper.so | grep -q '__[at]san_init' && skip
+nm mold | grep -q '__[at]san_init' && skip
 
 cat <<'EOF' | $CC -xc -c -o $t/a.o -
 #include <stdio.h>
