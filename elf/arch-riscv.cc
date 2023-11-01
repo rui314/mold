@@ -198,7 +198,7 @@ void write_plt_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 
 template <>
 void write_pltgot_entry<E>(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  u64 got = sym.get_got_addr(ctx);
+  u64 got = sym.get_got_pltgot_addr(ctx);
   u64 plt = sym.get_plt_addr(ctx);
 
   memcpy(buf, E::is_64 ? plt_entry_64 : plt_entry_32, E::plt_size);

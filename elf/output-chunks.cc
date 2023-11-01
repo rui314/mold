@@ -1082,7 +1082,14 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
 template <typename E>
 void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
   sym->set_got_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
-  this->shdr.sh_size += sizeof(Word<E>);
+
+  // An IFUNC symbol uses two GOT slots in a position-dependent
+  // executable.
+  if (sym->is_pde_ifunc(ctx))
+    this->shdr.sh_size += sizeof(Word<E>) * 2;
+  else
+    this->shdr.sh_size += sizeof(Word<E>);
+
   got_syms.push_back(sym);
 }
 
@@ -1176,7 +1183,12 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
     // IFUNC always needs to be fixed up by the dynamic linker.
     if constexpr (supports_ifunc<E>) {
       if (sym->is_ifunc()) {
-        add({idx, sym->get_addr(ctx, NO_PLT), E::R_IRELATIVE});
+        if (sym->is_pde_ifunc(ctx)) {
+          add({idx, sym->get_plt_addr(ctx)});
+          add({idx + 1, sym->get_addr(ctx, NO_PLT), E::R_IRELATIVE});
+        } else {
+          add({idx, sym->get_addr(ctx, NO_PLT), E::R_IRELATIVE});
+        }
         continue;
       }
     }
@@ -1656,8 +1668,15 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
     esym.st_shndx = SHN_ABS;
     esym.st_value = sym.get_addr(ctx);
   } else if (sym.get_type() == STT_TLS) {
+    // TLS symbol
     shndx = get_st_shndx(sym);
     esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
+  } else if (sym.is_pde_ifunc(ctx)) {
+    // IFUNC symbol in PDE that uses two GOT slots
+    shndx = get_st_shndx(sym);
+    esym.st_type = STT_FUNC;
+    esym.st_visibility = sym.visibility;
+    esym.st_value = sym.get_addr(ctx);
   } else {
     shndx = get_st_shndx(sym);
     esym.st_visibility = sym.visibility;

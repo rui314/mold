@@ -115,7 +115,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   };
 
   memcpy(buf, entry, sizeof(entry));
-  *(ub64 *)(buf + 24) = sym.get_got_addr(ctx) - sym.get_plt_addr(ctx) - 4;
+  *(ub64 *)(buf + 24) = sym.get_got_pltgot_addr(ctx) - sym.get_plt_addr(ctx) - 4;
 }
 
 template <>

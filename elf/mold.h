@@ -1940,6 +1940,7 @@ public:
   u64 get_tlsdesc_addr(Context<E> &ctx) const;
   u64 get_plt_addr(Context<E> &ctx) const;
   u64 get_opd_addr(Context<E> &ctx) const;
+  u64 get_got_pltgot_addr(Context<E> &ctx) const;
 
   void set_got_idx(Context<E> &ctx, i32 idx);
   void set_gottp_idx(Context<E> &ctx, i32 idx);
@@ -1973,6 +1974,7 @@ public:
   bool is_relative() const { return !is_absolute(); }
   bool is_local(Context<E> &ctx) const;
   bool is_ifunc() const { return get_type() == STT_GNU_IFUNC; }
+  bool is_pde_ifunc(Context<E> &ctx) const;
   bool is_remaining_undef_weak() const;
 
   bool is_pcrel_linktime_const(Context<E> &ctx) const;
@@ -2575,6 +2577,25 @@ inline u64 Symbol<E>::get_opd_addr(Context<E> &ctx) const {
 }
 
 template <typename E>
+inline u64 Symbol<E>::get_got_pltgot_addr(Context<E> &ctx) const {
+  // An ifunc symbol occupies two consecutive GOT slots in a
+  // position-dependent executable (PDE). The first slot contains the
+  // symbol's PLT address, and the second slot holds the resolved
+  // address. A PDE uses the ifunc symbol's PLT entry as the address
+  // for the symbol, akin to a canonical PLT.
+  //
+  // This function returns the address that the PLT entry should use
+  // to jump to the resolved address.
+  //
+  // Note that we don't use this function for PPC64. In PPC64, symbols
+  // are always accessed through the TOC table regardless of the
+  // -fno-PIE setting. We don't need canonical PLTs on the psABIs too.
+  if (is_pde_ifunc(ctx))
+    return get_got_addr(ctx) + sizeof(Word<E>);
+  return get_got_addr(ctx);
+}
+
+template <typename E>
 inline void Symbol<E>::set_got_idx(Context<E> &ctx, i32 idx) {
   assert(aux_idx != -1);
   assert(ctx.symbol_aux[aux_idx].got_idx < 0);
@@ -2700,6 +2721,12 @@ inline bool Symbol<E>::is_local(Context<E> &ctx) const {
   if (ctx.arg.relocatable)
     return esym().st_bind == STB_LOCAL;
   return !is_imported && !is_exported;
+}
+
+template <typename E>
+inline bool Symbol<E>::is_pde_ifunc(Context<E> &ctx) const {
+  // Returns true if this is an ifunc tha uses two GOT slots
+  return is_ifunc() && !ctx.arg.pic && !is_ppc64<E>;
 }
 
 // A remaining weak undefined symbol is promoted to a dynamic symbol

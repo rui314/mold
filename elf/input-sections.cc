@@ -7,7 +7,8 @@
 namespace mold::elf {
 
 typedef enum {
-  NONE, ERROR, COPYREL, DYN_COPYREL, PLT, CPLT, DYN_CPLT, DYNREL, BASEREL, IFUNC,
+  NONE, ERROR, COPYREL, DYN_COPYREL, PLT, CPLT, DYN_CPLT, DYNREL,
+  BASEREL, IFUNC_DYNREL,
 } Action;
 
 template <typename E>
@@ -203,7 +204,7 @@ static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
     if (!isec.is_relr_reloc(ctx, rel))
       isec.file.num_dynrel++;
     break;
-  case IFUNC:
+  case IFUNC_DYNREL:
     // Create an IRELATIVE relocation for a GNU ifunc symbol.
     //
     // We usually create an IRELATIVE relocation in .got for each ifunc.
@@ -273,7 +274,7 @@ static Action get_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
 template <typename E>
 static Action get_dyn_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
   if (sym.is_ifunc())
-    return IFUNC;
+    return ctx.arg.pic ? IFUNC_DYNREL : NONE;
 
   // This is a decision table for absolute relocations for the pointer
   // size data (e.g. R_X86_64_64). Unlike the absrel_table, we can emit
@@ -291,7 +292,7 @@ static Action get_dyn_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
 template <typename E>
 static Action get_ppc64_toc_action(Context<E> &ctx, Symbol<E> &sym) {
   if (sym.is_ifunc())
-    return IFUNC;
+    return IFUNC_DYNREL;
 
   // As a special case, we do not create copy relocations nor canonical
   // PLTs for .toc sections. PPC64's .toc is a compiler-generated
@@ -406,7 +407,7 @@ static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
   case DYNREL:
     emit_abs_dynrel();
     break;
-  case IFUNC:
+  case IFUNC_DYNREL:
     if constexpr (supports_ifunc<E>) {
       u64 addr = sym.get_addr(ctx, NO_PLT) + A;
       *dynrel++ = ElfRel<E>(P, E::R_IRELATIVE, 0, addr);

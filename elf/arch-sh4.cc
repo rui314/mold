@@ -169,7 +169,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 
     static_assert(sizeof(insn) == E::pltgot_size);
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 8) = sym.get_got_addr(ctx) - ctx.got->shdr.sh_addr;
+    *(ul32 *)(buf + 8) = sym.get_got_pltgot_addr(ctx) - ctx.got->shdr.sh_addr;
   } else {
     static const u8 insn[] = {
       0x01, 0xd0, //    mov.l   1f, r0
@@ -181,7 +181,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 
     static_assert(sizeof(insn) == E::pltgot_size);
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 8) = sym.get_got_addr(ctx);
+    *(ul32 *)(buf + 8) = sym.get_got_pltgot_addr(ctx);
   }
 }
 
