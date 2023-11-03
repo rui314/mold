@@ -397,7 +397,7 @@ template <typename E>
 void add_comment_string(Context<E> &ctx, std::string str) {
   MergedSection<E> *sec =
     MergedSection<E>::get_instance(ctx, ".comment", SHT_PROGBITS,
-                                   SHF_MERGE | SHF_STRINGS);
+                                   SHF_MERGE | SHF_STRINGS, 1);
 
   std::string_view buf = save_string(ctx, str);
   std::string_view data(buf.data(), buf.size() + 1);
@@ -1937,23 +1937,31 @@ void sort_output_sections_regular(Context<E> &ctx) {
 
   // Ties are broken by additional rules
   auto get_rank2 = [&](Chunk<E> *chunk) -> i64 {
-    if (chunk->shdr.sh_type == SHT_NOTE)
-      return -chunk->shdr.sh_addralign;
+    ElfShdr<E> &shdr = chunk->shdr;
+    if (shdr.sh_type == SHT_NOTE)
+      return -shdr.sh_addralign;
 
     if (chunk == ctx.got)
-      return 1;
-    if (chunk->name == ".toc")
       return 2;
-    if (chunk->name == ".alpha_got")
+    if (chunk->name == ".toc")
       return 3;
+    if (chunk->name == ".alpha_got")
+      return 4;
+
+    if (shdr.sh_flags & SHF_MERGE) {
+      if (shdr.sh_flags & SHF_STRINGS)
+        return (5LL << 32) | shdr.sh_entsize;
+      return (6LL << 32) | shdr.sh_entsize;
+    }
+
     if (chunk == ctx.relro_padding)
-      return INT_MAX;
+      return INT64_MAX;
     return 0;
   };
 
   sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
-    return std::tuple{get_rank1(a), get_rank2(a)} <
-           std::tuple{get_rank1(b), get_rank2(b)};
+    return std::tuple{get_rank1(a), get_rank2(a), a->name} <
+           std::tuple{get_rank1(b), get_rank2(b), b->name};
   });
 }
 

@@ -647,6 +647,9 @@ public:
 
   // Return a list of map entries sorted in a deterministic order.
   std::vector<Entry *> get_sorted_entries(i64 shard_idx) {
+    if (nbuckets == 0)
+      return {};
+
     i64 shard_size = nbuckets / NUM_SHARDS;
     i64 begin = shard_idx * shard_size;
     i64 end = begin + shard_size;

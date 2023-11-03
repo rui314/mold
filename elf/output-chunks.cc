@@ -865,7 +865,7 @@ OutputSection<E>::OutputSection(Context<E> &ctx, std::string_view name,
                                 u32 type, u64 flags) {
   this->name = name;
   this->shdr.sh_type = type;
-  this->shdr.sh_flags = flags;
+  this->shdr.sh_flags = flags & ~SHF_MERGE & ~SHF_STRINGS;
 
   if (auto it = ctx.arg.section_align.find(name);
       it != ctx.arg.section_align.end())
@@ -1917,29 +1917,30 @@ get_merged_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
     return name;
   if (ctx.arg.unique && ctx.arg.unique->match(name))
     return name;
-  if (name == ".rodata" || name.starts_with(".rodata."))
-    return (flags & SHF_STRINGS) ? ".rodata.str" : ".rodata.cst";
   return name;
 }
 
 template <typename E>
-MergedSection<E>::MergedSection(std::string_view name, u64 flags, u32 type) {
+MergedSection<E>::MergedSection(std::string_view name, i64 flags, i64 type,
+                                i64 entsize) {
   this->name = name;
   this->shdr.sh_flags = flags;
   this->shdr.sh_type = type;
+  this->shdr.sh_entsize = entsize;
 }
 
 template <typename E>
 MergedSection<E> *
 MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
-                               u64 type, u64 flags) {
+                               i64 type, i64 flags, i64 entsize) {
   name = get_merged_output_name(ctx, name, flags);
   flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
 
   auto find = [&]() -> MergedSection * {
     for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
-      if (std::tuple(name, flags, type) ==
-          std::tuple(osec->name, osec->shdr.sh_flags, osec->shdr.sh_type))
+      if (std::tuple(name, flags, type, entsize) ==
+          std::tuple(osec->name, osec->shdr.sh_flags, osec->shdr.sh_type,
+                     osec->shdr.sh_entsize))
         return osec.get();
     return nullptr;
   };
@@ -1957,7 +1958,7 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
   if (MergedSection *osec = find())
     return osec;
 
-  MergedSection *osec = new MergedSection(name, flags, type);
+  MergedSection *osec = new MergedSection(name, flags, type, entsize);
   ctx.merged_sections.emplace_back(osec);
   return osec;
 }

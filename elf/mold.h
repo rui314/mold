@@ -767,7 +767,8 @@ template <typename E>
 class MergedSection : public Chunk<E> {
 public:
   static MergedSection<E> *
-  get_instance(Context<E> &ctx, std::string_view name, u64 type, u64 flags);
+  get_instance(Context<E> &ctx, std::string_view name, i64 type, i64 flags,
+               i64 entsize);
 
   SectionFragment<E> *insert(Context<E> &ctx, std::string_view data,
                              u64 hash, i64 p2align);
@@ -780,7 +781,7 @@ public:
   HyperLogLog estimator;
 
 private:
-  MergedSection(std::string_view name, u64 flags, u32 type);
+  MergedSection(std::string_view name, i64 flags, i64 type, i64 entsize);
 
   ConcurrentMap<SectionFragment<E>> map;
   std::vector<i64> shard_offsets;

@@ -637,9 +637,16 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   if (!(shdr.sh_flags & SHF_MERGE))
     return nullptr;
 
+  i64 entsize = shdr.sh_entsize;
+  if (entsize == 0)
+    entsize = (shdr.sh_flags & SHF_STRINGS) ? 1 : (int)shdr.sh_addralign;
+
+  if (entsize == 0)
+    return nullptr;
+
   std::unique_ptr<MergeableSection<E>> rec(new MergeableSection<E>);
   rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), shdr.sh_type,
-                                               shdr.sh_flags);
+                                               shdr.sh_flags, entsize);
   rec->p2align = sec.p2align;
 
   if (sec.sh_size == 0)
@@ -650,18 +657,10 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 
   std::string_view data = sec.contents;
   const char *begin = data.data();
-  u64 entsize = shdr.sh_entsize;
   HyperLogLog estimator;
 
   // Split sections
   if (shdr.sh_flags & SHF_STRINGS) {
-    if (entsize == 0) {
-      // GHC (Glasgow Haskell Compiler) sometimes creates a mergeable
-      // string section with entsize of 0 instead of 1, though such
-      // entsize is technically wrong. This is a workaround for the issue.
-      entsize = 1;
-    }
-
     while (!data.empty()) {
       size_t end = find_null(data, entsize);
       if (end == data.npos)
@@ -678,11 +677,6 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
       estimator.insert(hash);
     }
   } else {
-    // OCaml compiler seems to create a mergeable non-string section with
-    // entisze of 0. Such section is malformed. We do not split such section.
-    if (entsize == 0)
-      return nullptr;
-
     if (data.size() % entsize)
       Fatal(ctx) << sec << ": section size is not multiple of sh_entsize";
 
