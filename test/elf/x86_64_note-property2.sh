@@ -1,6 +1,9 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# OneTBB isn't tsan-clean
+nm mold | grep -q '__tsan_init' && skip
+
 # Skip if target is not x86-64
 [ $MACHINE = x86_64 ] || skip
 
