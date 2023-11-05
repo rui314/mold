@@ -569,11 +569,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
 
-    if (!sym.file) {
-      record_undef_error(ctx, rel);
-      continue;
-    }
-
     if (sym.is_ifunc())
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
