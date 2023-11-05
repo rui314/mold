@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = i386 ] && skip
+[ $MACHINE = i686 ] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -ffunction-sections -fPIC
 #include <stdio.h>

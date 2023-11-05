@@ -5,7 +5,7 @@ export LC_ALL=C
 
 canonical_name() {
   case $1 in
-  i?86) echo i386 ;;
+  i?86) echo i686 ;;
   arm*) echo arm ;;
   powerpc) echo ppc ;;
   powerpc64) echo ppc64 ;;
@@ -55,10 +55,14 @@ else
   QEMU="qemu-$MACHINE -L /usr/$TRIPLE"
 fi
 
-if [ $MACHINE = x86_64 -o $MACHINE = i386 -o $MACHINE = arm ]; then
+if [ $MACHINE = x86_64 -o $MACHINE = i686 -o $MACHINE = arm ]; then
   tlsdesc_opt=-mtls-dialect=gnu2
 elif [ $MACHINE = aarch64 ]; then
   tlsdesc_opt=-mtls-dialect=desc
+fi
+
+if [ $MACHINE = i686 ]; then
+  QEMU="qemu-i386 -L /usr/$TRIPLE"
 fi
 
 if [ $MACHINE = ppc64le -a -e /proc/cpuinfo ] && grep -q POWER10 /proc/cpuinfo; then
