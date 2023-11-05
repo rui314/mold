@@ -2585,7 +2585,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
 
     Symbol<E> *sym2 = std::get<Symbol<E> *>(val);
-    if (sym2->file == ctx.internal_obj) {
+    if (sym2->file == ctx.internal_obj && sym2->esym().is_undef()) {
       Error(ctx) << "--defsym: undefined symbol: " << *sym2;
       continue;
     }
