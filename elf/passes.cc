@@ -643,32 +643,20 @@ void create_internal_file(Context<E> &ctx) {
   obj->is_alive = true;
   obj->priority = 1;
 
-  auto add = [&](Symbol<E> *sym) {
+  auto add = [&](Symbol<E> *sym, bool is_undef) {
     obj->symbols.push_back(sym);
 
     // An actual value will be set to a linker-synthesized symbol by
     // fix_synthetic_symbols(). Until then, `value` doesn't have a valid
     // value. 0xdeadbeef is a unique dummy value to make debugging easier
     // if the field is accidentally used before it gets a valid one.
-    sym->value = 0xdeadbeef;
+    if (!is_undef)
+      sym->value = 0xdeadbeef;
 
     ElfSym<E> esym;
     memset(&esym, 0, sizeof(esym));
     esym.st_type = STT_NOTYPE;
-    esym.st_shndx = SHN_ABS;
-    esym.st_bind = STB_GLOBAL;
-    esym.st_visibility = STV_DEFAULT;
-    ctx.internal_esyms.push_back(esym);
-  };
-
-  auto add_undef = [&](Symbol<E> *sym) {
-    obj->symbols.push_back(sym);
-    sym->value = 0xdeadbeef;
-
-    ElfSym<E> esym;
-    memset(&esym, 0, sizeof(esym));
-    esym.st_type = STT_NOTYPE;
-    esym.st_shndx = SHN_UNDEF;
+    esym.st_shndx = is_undef ? SHN_UNDEF : SHN_ABS;
     esym.st_bind = STB_GLOBAL;
     esym.st_visibility = STV_DEFAULT;
     ctx.internal_esyms.push_back(esym);
@@ -678,7 +666,7 @@ void create_internal_file(Context<E> &ctx) {
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
     std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
-    add(sym);
+    add(sym, false);
 
     if (Symbol<E> **ref = std::get_if<Symbol<E> *>(&val)) {
       // Add an undefined symbol to keep a reference to the defsym target.
@@ -686,14 +674,14 @@ void create_internal_file(Context<E> &ctx) {
       // The undefined symbol will never make to the final object file; we
       // double-check that the defsym target is not undefined in
       // fix_synthetic_symbols.
-      add_undef(*ref);
+      add(*ref, true);
     }
   }
 
   // Add --section-order symbols
   for (SectionOrder &ord : ctx.arg.section_order)
     if (ord.type == SectionOrder::SYMBOL)
-      add(get_symbol(ctx, ord.name));
+      add(get_symbol(ctx, ord.name), false);
 
   obj->elf_syms = ctx.internal_esyms;
   obj->has_symver.resize(ctx.internal_esyms.size() - 1);
