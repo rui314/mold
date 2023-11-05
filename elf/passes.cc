@@ -645,6 +645,7 @@ void create_internal_file(Context<E> &ctx) {
 
   auto add = [&](Symbol<E> *sym, bool is_undef) {
     obj->symbols.push_back(sym);
+    sym->sym_idx = ctx.internal_esyms.size();
 
     // An actual value will be set to a linker-synthesized symbol by
     // fix_synthetic_symbols(). Until then, `value` doesn't have a valid
@@ -812,20 +813,20 @@ void add_synthetic_symbols(Context<E> &ctx) {
     Symbol<E> *sym = ctx.arg.defsyms[i].first;
     std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
 
-    Symbol<E> *target = nullptr;
+    Symbol<E> *sym2 = nullptr;
     if (Symbol<E> **ref = std::get_if<Symbol<E> *>(&val))
-      target = *ref;
+      sym2 = *ref;
 
     // If the alias refers another symobl, copy ELF symbol attributes.
-    if (target) {
-      ElfSym<E> &esym = obj.elf_syms[i + 1];
-      esym.st_type = target->esym().st_type;
+    if (sym2 && sym2->file) {
+      ElfSym<E> &esym = (ElfSym<E> &)sym->esym();
+      esym.st_type = sym2->esym().st_type;
       if constexpr (is_ppc64v2<E>)
-        esym.ppc_local_entry = target->esym().ppc_local_entry;
+        esym.ppc_local_entry = sym2->esym().ppc_local_entry;
     }
 
-    // Make the target absolute if necessary.
-    if (!target || target->is_absolute())
+    // Make the defsym'ed symbol absolute if necessary.
+    if (!sym2 || sym2->is_absolute())
       sym->origin = 0;
   }
 
@@ -2584,7 +2585,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
 
     Symbol<E> *sym2 = std::get<Symbol<E> *>(val);
-    if (!sym2->file) {
+    if (sym2->file == ctx.internal_obj) {
       Error(ctx) << "--defsym: undefined symbol: " << *sym2;
       continue;
     }
