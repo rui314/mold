@@ -274,7 +274,7 @@ static Action get_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
 template <typename E>
 static Action get_dyn_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
   if (sym.is_ifunc())
-    return ctx.arg.pic ? IFUNC_DYNREL : NONE;
+    return sym.is_pde_ifunc(ctx) ? NONE : IFUNC_DYNREL;
 
   // This is a decision table for absolute relocations for the pointer
   // size data (e.g. R_X86_64_64). Unlike the absrel_table, we can emit
