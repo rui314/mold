@@ -29,5 +29,5 @@ int main() {
 }
 EOF
 
-$CC -fuse-ld=lld -o $t/exe1 $t/c.o $t/b.so -no-pie
+$CC -B. -o $t/exe1 $t/c.o $t/b.so -no-pie
 $QEMU $t/exe1 | grep -Eq '^(\S+) \1'

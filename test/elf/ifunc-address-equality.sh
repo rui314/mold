@@ -45,7 +45,7 @@ int main() {
 }
 EOF
 
-$CC -fuse-ld=lld -o $t/exe1 $t/a.o $t/b.o $t/c.o -no-pie
+$CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o -no-pie
 $QEMU $t/exe1 | grep -Eq '^(\S+) \1 (\S+) \2'
 
 readelf --dynamic $t/exe1 > $t/log1
