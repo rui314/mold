@@ -52,17 +52,18 @@ else
   OBJDUMP="$TRIPLE-objdump"
   OBJCOPY="$TRIPLE-objcopy"
   STRIP="$TRIPLE-strip"
-  QEMU="qemu-$MACHINE -L /usr/$TRIPLE"
+
+  if [ $MACHINE = i686 ]; then
+    QEMU="qemu-i386 -L /usr/$TRIPLE"
+  else
+    QEMU="qemu-$MACHINE -L /usr/$TRIPLE"
+  fi
 fi
 
 if [ $MACHINE = x86_64 -o $MACHINE = i686 -o $MACHINE = arm ]; then
   tlsdesc_opt=-mtls-dialect=gnu2
 elif [ $MACHINE = aarch64 ]; then
   tlsdesc_opt=-mtls-dialect=desc
-fi
-
-if [ $MACHINE = i686 ]; then
-  QEMU="qemu-i386 -L /usr/$TRIPLE"
 fi
 
 if [ $MACHINE = ppc64le -a -e /proc/cpuinfo ] && grep -q POWER10 /proc/cpuinfo; then
