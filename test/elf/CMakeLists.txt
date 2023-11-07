@@ -136,9 +136,24 @@ if(${HOST} STREQUAL "ppc64le" OR (HAS_qemu-ppc64le AND HAS_powerpc64le-linux-gnu
   add_target(ppc64le powerpc64le-linux-gnu)
 endif()
 
-if((${HOST} STREQUAL "ppc64le" AND "${CPUINFO}" MATCHES "POWER10") OR
-   (HAS_qemu-ppc64le AND HAS_powerpc64le-linux-gnu-gcc))
+if(${HOST} STREQUAL "ppc64le" AND "${CPUINFO}" MATCHES "POWER10")
   add_target(ppc64le powerpc64le-linux-gnu power10)
+elseif(HAS_qemu-ppc64le AND HAS_powerpc64le-linux-gnu-gcc)
+  file(WRITE "${CMAKE_BINARY_DIR}/empty.c" "")
+
+  execute_process(
+    COMMAND powerpc64le-linux-gnu-gcc -mcpu=power10 -E
+      "${CMAKE_BINARY_DIR}/empty.c"
+    RESULT_VARIABLE GCC_EXIT_CODE
+    OUTPUT_QUIET ERROR_QUIET)
+
+  execute_process(
+    COMMAND qemu-ppc64le -cpu help
+    OUTPUT_VARIABLE QEMU_CPUS)
+
+  if("${GCC_EXIT_CODE}" EQUAL "0" AND "${QEMU_CPUS}" MATCHES power10)
+    add_target(ppc64le powerpc64le-linux-gnu power10)
+  endif()
 endif()
 
 if(${HOST} STREQUAL "sparc64" OR (HAS_qemu-sparc64 AND HAS_sparc64-linux-gnu-gcc))
