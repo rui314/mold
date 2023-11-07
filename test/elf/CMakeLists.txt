@@ -151,7 +151,7 @@ elseif(HAS_qemu-ppc64le AND HAS_powerpc64le-linux-gnu-gcc)
     COMMAND qemu-ppc64le -cpu help
     OUTPUT_VARIABLE QEMU_CPUS)
 
-  if("${GCC_EXIT_CODE}" EQUAL "0" AND "${QEMU_CPUS}" MATCHES power10)
+  if("${GCC_EXIT_CODE}" EQUAL "0" AND "${QEMU_CPUS}" MATCHES power10_v2.0)
     add_target(ppc64le powerpc64le-linux-gnu power10)
   endif()
 endif()
