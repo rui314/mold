@@ -30,8 +30,7 @@ if [ -z "$TRIPLE" ]; then
   OBJCOPY=objcopy
   STRIP=strip
   QEMU=
-elif [ "$TRIPLE" = powerpc64le_power10-linux-gnu ]; then
-  TRIPLE=powerpc64le-linux-gnu
+elif [ "$TRIPLE" = powerpc64le-linux-gnu -a "$CPU" = power10 ]; then
   MACHINE=ppc64le
   TESTDIR=out/test/elf/ppc64le-power10
   CC="${TEST_CC:-$TRIPLE-gcc} -mcpu=power10"
@@ -64,13 +63,6 @@ if [ $MACHINE = x86_64 -o $MACHINE = i686 -o $MACHINE = arm ]; then
   tlsdesc_opt=-mtls-dialect=gnu2
 elif [ $MACHINE = aarch64 ]; then
   tlsdesc_opt=-mtls-dialect=desc
-fi
-
-if [ $MACHINE = ppc64le -a -e /proc/cpuinfo ] && grep -q POWER10 /proc/cpuinfo; then
-  CC="$CC -mcpu=power10"
-  CXX="$CXX -mcpu=power10"
-  GCC="$GCC -mcpu=power10"
-  GXX="$GXX -mcpu=power10"
 fi
 
 # Common functions

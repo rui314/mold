@@ -8,6 +8,10 @@
 # It looks like SPARC's runtime can't handle PLT if it's too far from GOT.
 [ $MACHINE = sparc64 ] && skip
 
+# qemu aborts with the "Unknown exception 0x5" error, although this
+# test passes on a real POWER10 machine.
+[ "$CPU" = power10 ] && skip
+
 cat <<EOF > $t/a.c
 #include <stdio.h>
 

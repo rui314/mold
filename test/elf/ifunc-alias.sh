@@ -16,5 +16,8 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o
-$QEMU $t/exe | grep -Eq '^(\S+) \1$'
+$CC -B. -o $t/exe1 $t/a.o -pie
+$QEMU $t/exe1 | grep -Eq '^(\S+) \1$'
+
+$CC -B. -o $t/exe2 $t/a.o -no-pie
+$QEMU $t/exe2 | grep -Eq '^(\S+) \1$'
