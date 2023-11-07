@@ -1,6 +1,9 @@
 option(MOLD_ENABLE_QEMU_TESTS "Enable tests on non-native targets" OFF)
-
 set(HOST ${CMAKE_HOST_SYSTEM_PROCESSOR})
+
+if(EXISTS "/proc/cpuinfo")
+  file(READ "/proc/cpuinfo" CPUINFO)
+endif()
 
 # CMAKE_HOST_SYSTEM_PROCESSOR returns "aarch64" on ARM32 userland
 # with ARM64 kernel. Here, we run `cc -dumpmachine` to determine the
@@ -54,11 +57,6 @@ if(MOLD_ENABLE_QEMU_TESTS)
   foreach(TRIPLE IN LISTS TRIPLES)
     find_program(HAS_${TRIPLE}-gcc ${TRIPLE}-gcc)
   endforeach()
-endif()
-
-if(EXISTS "/proc/cpuinfo")
-  file(READ "/proc/cpuinfo" CPUINFO)
-  string(REGEX MATCH "POWER10" IS_POWER10 "${CPUINFO}")
 endif()
 
 function(add_target ARCH TRIPLE)
@@ -138,7 +136,7 @@ if(${HOST} STREQUAL "ppc64le" OR (HAS_qemu-ppc64le AND HAS_powerpc64le-linux-gnu
   add_target(ppc64le powerpc64le-linux-gnu)
 endif()
 
-if((${HOST} STREQUAL "ppc64le" AND IS_POWER10) OR
+if((${HOST} STREQUAL "ppc64le" AND "${CPUINFO}" MATCHES "POWER10") OR
    (HAS_qemu-ppc64le AND HAS_powerpc64le-linux-gnu-gcc))
   add_target(ppc64le powerpc64le-linux-gnu power10)
 endif()
