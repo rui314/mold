@@ -1,4 +1,4 @@
-option(MOLD_ENABLE_QEMU_TESTS "Enable tests on non-native targets" OFF)
+option(MOLD_ENABLE_QEMU_TESTS "Enable tests on non-native targets" ON)
 set(HOST ${CMAKE_HOST_SYSTEM_PROCESSOR})
 
 if(EXISTS "/proc/cpuinfo")
