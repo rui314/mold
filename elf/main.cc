@@ -535,6 +535,11 @@ int elf_main(int argc, char **argv) {
   // because they are superceded by .init_array/.fini_array, though.
   sort_ctor_dtor(ctx);
 
+  // If .ctors/.dtors are to be placed to .init_array/.fini_array,
+  // we need to reverse their contents.
+  if (ctx.has_init_array && ctx.has_ctors)
+    reverse_ctors_in_init_array(ctx);
+
   // Handle --shuffle-sections
   if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_NONE)
     shuffle_sections(ctx);

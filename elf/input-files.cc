@@ -314,6 +314,15 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
       }
 
+      if (shdr.sh_type == SHT_INIT_ARRAY ||
+          shdr.sh_type == SHT_FINI_ARRAY ||
+          shdr.sh_type == SHT_PREINIT_ARRAY)
+        ctx.has_init_array = true;
+
+      if (name == ".ctors" || name.starts_with(".ctors.") ||
+          name == ".dtors" || name.starts_with(".dtors."))
+        ctx.has_ctors = true;
+
       if (name == ".eh_frame")
         eh_frame_section = this->sections[i].get();
 

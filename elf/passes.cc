@@ -513,6 +513,14 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
 template <typename E>
 static OutputSectionKey
 get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
+  if (ctx.has_init_array) {
+    std::string_view name = isec.name();
+    if (name == ".ctors" || name.starts_with(".ctors."))
+      return {".init_array", SHT_INIT_ARRAY, SHF_ALLOC | SHF_WRITE};
+    if (name == ".dtors" || name.starts_with(".dtors."))
+      return {".fini_array", SHT_FINI_ARRAY, SHF_ALLOC | SHF_WRITE};
+  }
+
   const ElfShdr<E> &shdr = isec.shdr();
   std::string_view name = get_output_name(ctx, isec.name(), shdr.sh_flags);
   u64 type = canonicalize_type<E>(name, shdr.sh_type);
@@ -523,6 +531,7 @@ get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
   // So is .fini_array.
   if (type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY)
     flags |= SHF_WRITE;
+
   return {name, type, flags};
 }
 
@@ -1079,8 +1088,14 @@ void sort_init_fini(Context<E> &ctx) {
           std::reverse(osec->members.begin(), osec->members.end());
 
         std::unordered_map<InputSection<E> *, i64> map;
-        for (InputSection<E> *isec : osec->members)
-          map.insert({isec, get_init_fini_priority(isec)});
+
+        for (InputSection<E> *isec : osec->members) {
+          std::string_view name = isec->name();
+          if (name.starts_with(".ctors") || name.starts_with(".dtors"))
+            map.insert({isec, 65535 - get_ctor_dtor_priority(isec)});
+          else
+            map.insert({isec, get_init_fini_priority(isec)});
+        }
 
         sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
           return map[a] < map[b];
@@ -1107,6 +1122,45 @@ void sort_ctor_dtor(Context<E> &ctx) {
         sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
           return map[a] < map[b];
         });
+      }
+    }
+  }
+}
+
+// .ctors/.dtors serves the purpose as .init_array/.fini_array, albeit
+// with very subtly differences. Both contain pointers to
+// initializer/finalizer functions. The runtime executes them one by one
+// but in the exact opposite order to one another. Therefore, if we are to
+// place the contents of .ctors/.dtors into .init_array/.fini_array, we
+// need to reverse them.
+//
+// It's unfortunate that we have both .ctors/.dtors and
+// .init_array/.fini_array in ELF for historical reasons, but that's
+// the reality we need to deal with.
+template <typename E>
+void reverse_ctors_in_init_array(Context<E> &ctx) {
+  Timer t(ctx, "reverse_ctors_in_init_array");
+
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (OutputSection<E> *osec = chunk->to_osec()) {
+      if (osec->name == ".init_array" || osec->name == ".fini_array") {
+        for (InputSection<E> *isec : osec->members) {
+          if (isec->name().starts_with(".ctors") ||
+              isec->name().starts_with(".dtors")) {
+            if (isec->sh_size % sizeof(Word<E>)) {
+              Error(ctx) << isec << ": section corrupted";
+              continue;
+            }
+
+            u8 *buf = (u8 *)isec->contents.data();
+            std::reverse((Word<E> *)buf, (Word<E> *)(buf + isec->sh_size));
+
+            std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+            for (ElfRel<E> &r : rels)
+              r.r_offset = isec->sh_size - r.r_offset - sizeof(Word<E>);
+            std::reverse(rels.begin(), rels.end());
+          }
+        }
       }
     }
   }
@@ -2746,6 +2800,7 @@ template void check_duplicate_symbols(Context<E> &);
 template void check_symbol_types(Context<E> &);
 template void sort_init_fini(Context<E> &);
 template void sort_ctor_dtor(Context<E> &);
+template void reverse_ctors_in_init_array(Context<E> &);
 template void shuffle_sections(Context<E> &);
 template void compute_section_sizes(Context<E> &);
 template void sort_output_sections(Context<E> &);

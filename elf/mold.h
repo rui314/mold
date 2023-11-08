@@ -1372,6 +1372,7 @@ template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void check_symbol_types(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> void sort_ctor_dtor(Context<E> &);
+template <typename E> void reverse_ctors_in_init_array(Context<E> &);
 template <typename E> void shuffle_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
 template <typename E> void sort_output_sections(Context<E> &);
@@ -1750,6 +1751,8 @@ struct Context {
 
   bool has_error = false;
   bool has_lto_object = false;
+  Atomic<bool> has_init_array = false;
+  Atomic<bool> has_ctors = false;
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
