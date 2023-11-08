@@ -1036,17 +1036,40 @@ void check_symbol_types(Context<E> &ctx) {
 }
 
 template <typename E>
+static i64 get_init_fini_priority(InputSection<E> *isec) {
+  static std::regex re(R"(\.(\d+)$)", std::regex_constants::optimize);
+  std::string_view name = isec->name();
+  std::cmatch m;
+  if (std::regex_search(name.data(), name.data() + name.size(), m, re))
+    return std::stoi(m[1]);
+  return 65536;
+}
+
+template <typename E>
+static i64 get_ctor_dtor_priority(InputSection<E> *isec) {
+  auto opts = std::regex_constants::optimize | std::regex_constants::ECMAScript;
+  static std::regex re1(R"((?:clang_rt\.)?crtbegin)", opts);
+  static std::regex re2(R"((?:clang_rt\.)?crtend)", opts);
+  static std::regex re3(R"(\.(\d+)$)", opts);
+
+  // crtbegin.o and crtend.o contain marker symbols such as
+  // __CTOR_LIST__ or __DTOR_LIST__. So they have to be at the
+  // beginning or end of the section.
+  std::smatch m;
+  if (std::regex_search(isec->file.filename, m, re1))
+    return -2;
+  if (std::regex_search(isec->file.filename, m, re2))
+    return 65536;
+
+  std::string name(isec->name());
+  if (std::regex_search(name, m, re3))
+    return std::stoi(m[1]);
+  return -1;
+}
+
+template <typename E>
 void sort_init_fini(Context<E> &ctx) {
   Timer t(ctx, "sort_init_fini");
-
-  auto get_priority = [](InputSection<E> *isec) {
-    static std::regex re(R"(\.(\d+)$)", std::regex_constants::optimize);
-    std::string_view name = isec->name();
-    std::cmatch m;
-    if (std::regex_search(name.data(), name.data() + name.size(), m, re))
-      return std::stoi(m[1]);
-    return 65536;
-  };
 
   for (Chunk<E> *chunk : ctx.chunks) {
     if (OutputSection<E> *osec = chunk->to_osec()) {
@@ -1057,7 +1080,7 @@ void sort_init_fini(Context<E> &ctx) {
 
         std::unordered_map<InputSection<E> *, i64> map;
         for (InputSection<E> *isec : osec->members)
-          map.insert({isec, get_priority(isec)});
+          map.insert({isec, get_init_fini_priority(isec)});
 
         sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
           return map[a] < map[b];
@@ -1071,27 +1094,6 @@ template <typename E>
 void sort_ctor_dtor(Context<E> &ctx) {
   Timer t(ctx, "sort_ctor_dtor");
 
-  auto get_priority = [](InputSection<E> *isec) {
-    auto opts = std::regex_constants::optimize | std::regex_constants::ECMAScript;
-    static std::regex re1(R"((?:clang_rt\.)?crtbegin)", opts);
-    static std::regex re2(R"((?:clang_rt\.)?crtend)", opts);
-    static std::regex re3(R"(\.(\d+)$)", opts);
-
-    // crtbegin.o and crtend.o contain marker symbols such as
-    // __CTOR_LIST__ or __DTOR_LIST__. So they have to be at the
-    // beginning or end of the section.
-    std::smatch m;
-    if (std::regex_search(isec->file.filename, m, re1))
-      return -2;
-    if (std::regex_search(isec->file.filename, m, re2))
-      return 65536;
-
-    std::string name(isec->name());
-    if (std::regex_search(name, m, re3))
-      return std::stoi(m[1]);
-    return -1;
-  };
-
   for (Chunk<E> *chunk : ctx.chunks) {
     if (OutputSection<E> *osec = chunk->to_osec()) {
       if (osec->name == ".ctors" || osec->name == ".dtors") {
@@ -1100,7 +1102,7 @@ void sort_ctor_dtor(Context<E> &ctx) {
 
         std::unordered_map<InputSection<E> *, i64> map;
         for (InputSection<E> *isec : osec->members)
-          map.insert({isec, get_priority(isec)});
+          map.insert({isec, get_ctor_dtor_priority(isec)});
 
         sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
           return map[a] < map[b];
