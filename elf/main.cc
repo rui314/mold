@@ -484,11 +484,6 @@ int elf_main(int argc, char **argv) {
   if constexpr (is_ppc64v1<E>)
     ppc64v1_rewrite_opd(ctx);
 
-  // If .ctors/.dtors are to be placed to .init_array/.fini_array,
-  // we need to reverse their contents.
-  if (ctx.has_init_array && ctx.has_ctors)
-    fixup_ctors_in_init_array(ctx);
-
   // Bin input sections into output sections.
   create_output_sections(ctx);
 
@@ -539,6 +534,11 @@ int elf_main(int argc, char **argv) {
   // Likewise, .ctors and .dtors have to be sorted. They are rare
   // because they are superceded by .init_array/.fini_array, though.
   sort_ctor_dtor(ctx);
+
+  // If .ctors/.dtors are to be placed to .init_array/.fini_array,
+  // we need to reverse their contents.
+  if (ctx.has_init_array && ctx.has_ctors)
+    fixup_ctors_in_init_array(ctx);
 
   // Handle --shuffle-sections
   if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_NONE)
