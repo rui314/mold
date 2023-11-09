@@ -1372,7 +1372,7 @@ template <typename E> void check_duplicate_symbols(Context<E> &);
 template <typename E> void check_symbol_types(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> void sort_ctor_dtor(Context<E> &);
-template <typename E> void reverse_ctors_in_init_array(Context<E> &);
+template <typename E> void fixup_ctors_in_init_array(Context<E> &);
 template <typename E> void shuffle_sections(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
 template <typename E> void sort_output_sections(Context<E> &);

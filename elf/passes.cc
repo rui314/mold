@@ -510,15 +510,29 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
   return name;
 }
 
+// Returns true if a given input section is a .ctors/.dtors that
+// should be put into .init_array/.fini_array.
+//
+// CRT object files contain .ctors/.dtors sections without any
+// relocations. They contain sentinel values, 0 and -1, to mark the
+// beginning and the end of the initializer/finalizer pointer arrays. We
+// do not place them into .init_array/.fini_array because such invalid
+// pointer values would simply make the program to crash.
+template <typename E>
+static bool is_ctors_in_init_array(Context<E> &ctx, InputSection<E> &isec) {
+  std::string_view name = isec.name();
+  return ctx.has_init_array && !isec.get_rels(ctx).empty() &&
+         (name == ".ctors" || name.starts_with(".ctors.") ||
+          name == ".dtors" || name.starts_with(".dtors."));
+}
+
 template <typename E>
 static OutputSectionKey
 get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
-  if (ctx.has_init_array) {
-    std::string_view name = isec.name();
-    if (name == ".ctors" || name.starts_with(".ctors."))
+  if (is_ctors_in_init_array(ctx, isec)) {
+    if (isec.name().starts_with(".ctors"))
       return {".init_array", SHT_INIT_ARRAY, SHF_ALLOC | SHF_WRITE};
-    if (name == ".dtors" || name.starts_with(".dtors."))
-      return {".fini_array", SHT_FINI_ARRAY, SHF_ALLOC | SHF_WRITE};
+    return {".fini_array", SHT_FINI_ARRAY, SHF_ALLOC | SHF_WRITE};
   }
 
   const ElfShdr<E> &shdr = isec.shdr();
@@ -533,6 +547,40 @@ get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
     flags |= SHF_WRITE;
 
   return {name, type, flags};
+}
+
+// .ctors/.dtors serves the purpose as .init_array/.fini_array, albeit
+// with very subtly differences. Both contain pointers to
+// initializer/finalizer functions. The runtime executes them one by one
+// but in the exact opposite order to one another. Therefore, if we are to
+// place the contents of .ctors/.dtors into .init_array/.fini_array, we
+// need to reverse them.
+//
+// It's unfortunate that we have both .ctors/.dtors and
+// .init_array/.fini_array in ELF for historical reasons, but that's
+// the reality we need to deal with.
+template <typename E>
+void fixup_ctors_in_init_array(Context<E> &ctx) {
+  Timer t(ctx, "fixup_ctors_in_init_array");
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (isec && is_ctors_in_init_array(ctx, *isec)) {
+        if (isec->sh_size % sizeof(Word<E>)) {
+          Error(ctx) << *isec << ": section corrupted";
+          continue;
+        }
+
+        std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+        for (ElfRel<E> &r : rels)
+          r.r_offset = isec->sh_size - r.r_offset - sizeof(Word<E>);
+        std::reverse(rels.begin(), rels.end());
+
+        u8 *buf = (u8 *)isec->contents.data();
+        std::reverse((Word<E> *)buf, (Word<E> *)(buf + isec->sh_size));
+      }
+    }
+  });
 }
 
 // Create output sections for input sections.
@@ -1122,45 +1170,6 @@ void sort_ctor_dtor(Context<E> &ctx) {
         sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
           return map[a] < map[b];
         });
-      }
-    }
-  }
-}
-
-// .ctors/.dtors serves the purpose as .init_array/.fini_array, albeit
-// with very subtly differences. Both contain pointers to
-// initializer/finalizer functions. The runtime executes them one by one
-// but in the exact opposite order to one another. Therefore, if we are to
-// place the contents of .ctors/.dtors into .init_array/.fini_array, we
-// need to reverse them.
-//
-// It's unfortunate that we have both .ctors/.dtors and
-// .init_array/.fini_array in ELF for historical reasons, but that's
-// the reality we need to deal with.
-template <typename E>
-void reverse_ctors_in_init_array(Context<E> &ctx) {
-  Timer t(ctx, "reverse_ctors_in_init_array");
-
-  for (Chunk<E> *chunk : ctx.chunks) {
-    if (OutputSection<E> *osec = chunk->to_osec()) {
-      if (osec->name == ".init_array" || osec->name == ".fini_array") {
-        for (InputSection<E> *isec : osec->members) {
-          if (isec->name().starts_with(".ctors") ||
-              isec->name().starts_with(".dtors")) {
-            if (isec->sh_size % sizeof(Word<E>)) {
-              Error(ctx) << isec << ": section corrupted";
-              continue;
-            }
-
-            u8 *buf = (u8 *)isec->contents.data();
-            std::reverse((Word<E> *)buf, (Word<E> *)(buf + isec->sh_size));
-
-            std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-            for (ElfRel<E> &r : rels)
-              r.r_offset = isec->sh_size - r.r_offset - sizeof(Word<E>);
-            std::reverse(rels.begin(), rels.end());
-          }
-        }
       }
     }
   }
@@ -2791,6 +2800,7 @@ template void kill_eh_frame_sections(Context<E> &);
 template void resolve_section_pieces(Context<E> &);
 template void convert_common_symbols(Context<E> &);
 template void compute_merged_section_sizes(Context<E> &);
+template void fixup_ctors_in_init_array(Context<E> &);
 template void create_output_sections(Context<E> &);
 template void add_synthetic_symbols(Context<E> &);
 template void check_cet_errors(Context<E> &);
@@ -2800,7 +2810,6 @@ template void check_duplicate_symbols(Context<E> &);
 template void check_symbol_types(Context<E> &);
 template void sort_init_fini(Context<E> &);
 template void sort_ctor_dtor(Context<E> &);
-template void reverse_ctors_in_init_array(Context<E> &);
 template void shuffle_sections(Context<E> &);
 template void compute_section_sizes(Context<E> &);
 template void sort_output_sections(Context<E> &);
