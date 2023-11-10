@@ -109,6 +109,8 @@ Options:
                               Allow merging non-executable sections with --icf
   --image-base ADDR           Set the base address to a given value
   --init SYMBOL               Call SYMBOL at load-time
+  --nmagic                    Do not page align sections
+    --no-nmagic
   --no-undefined              Report undefined symbols (even with --shared)
   --noinhibit-exec            Create an output file even if errors occur
   --oformat=binary            Omit ELF, section and program headers
@@ -894,6 +896,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_rewrite_endbr = true;
     } else if (read_flag("no-undefined")) {
       ctx.arg.z_defs = true;
+    } else if (read_flag("nmagic")) {
+      ctx.arg.nmagic = true;
+    } else if (read_flag("no-nmagic")) {
+      ctx.arg.nmagic = false;
     } else if (read_flag("fatal-warnings")) {
       ctx.arg.fatal_warnings = true;
     } else if (read_flag("no-fatal-warnings")) {
@@ -1205,6 +1211,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (z_relro)
     ctx.arg.z_relro = *z_relro;
   else if (!ctx.arg.section_order.empty())
+    ctx.arg.z_relro = false;
+
+  if (ctx.arg.nmagic)
     ctx.arg.z_relro = false;
 
   if (!ctx.arg.shared) {

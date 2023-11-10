@@ -2257,7 +2257,7 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
       i64 flags1 = get_flags(chunks[i - 1]);
       i64 flags2 = get_flags(chunks[i]);
 
-      if (flags1 != flags2) {
+      if (!ctx.arg.nmagic && flags1 != flags2) {
         switch (ctx.arg.z_separate_code) {
         case SEPARATE_LOADABLE_SEGMENTS:
           addr = align_to(addr, ctx.page_size);

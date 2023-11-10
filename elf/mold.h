@@ -1650,6 +1650,7 @@ struct Context {
     bool ignore_data_address_equality = false;
     bool is_static = false;
     bool lto_pass2 = false;
+    bool nmagic = false;
     bool noinhibit_exec = false;
     bool oformat_binary = false;
     bool omagic = false;
