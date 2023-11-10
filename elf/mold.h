@@ -768,7 +768,7 @@ class MergedSection : public Chunk<E> {
 public:
   static MergedSection<E> *
   get_instance(Context<E> &ctx, std::string_view name, i64 type, i64 flags,
-               i64 entsize);
+               i64 entsize, i64 addralign);
 
   SectionFragment<E> *insert(Context<E> &ctx, std::string_view data,
                              u64 hash, i64 p2align);

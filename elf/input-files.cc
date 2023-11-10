@@ -653,9 +653,13 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   if (entsize == 0)
     return nullptr;
 
+  i64 addralign = shdr.sh_addralign;
+  if (addralign == 0)
+    addralign = 1;
+
   std::unique_ptr<MergeableSection<E>> rec(new MergeableSection<E>);
   rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), shdr.sh_type,
-                                               shdr.sh_flags, entsize);
+                                               shdr.sh_flags, entsize, addralign);
   rec->p2align = sec.p2align;
 
   if (sec.sh_size == 0)
