@@ -1290,17 +1290,17 @@ void SharedFile<E>::parse(Context<E> &ctx) {
       continue;
 
     std::string_view name = this->symbol_strtab.data() + esyms[i].st_name;
-    bool is_hidden = (!vers.empty() && (vers[i] & VERSYM_HIDDEN));
+    bool is_default = vers.empty() || !(vers[i] & VERSYM_HIDDEN);
 
     this->elf_syms2.push_back(esyms[i]);
     this->versyms.push_back(ver);
 
-    if (is_hidden) {
+    if (is_default) {
+      this->symbols.push_back(get_symbol(ctx, name));
+    } else {
       std::string_view mangled_name = save_string(
         ctx, std::string(name) + "@" + std::string(version_strings[ver]));
       this->symbols.push_back(get_symbol(ctx, mangled_name, name));
-    } else {
-      this->symbols.push_back(get_symbol(ctx, name));
     }
   }
 
