@@ -1612,9 +1612,6 @@ template <typename E>
 void apply_version_script(Context<E> &ctx) {
   Timer t(ctx, "apply_version_script");
 
-  // If all patterns are simple (i.e. not containing any meta-
-  // characters and is not a C++ name), we can simply look up
-  // symbols.
   auto is_simple = [&] {
     for (VersionPattern &v : ctx.version_patterns)
       if (v.is_cpp || v.pattern.find_first_of("*?[") != v.pattern.npos)
@@ -1622,6 +1619,9 @@ void apply_version_script(Context<E> &ctx) {
     return true;
   };
 
+  // If all patterns are simple (i.e. not containing any meta-
+  // characters and is not a C++ name), we can simply look up
+  // symbols.
   if (is_simple()) {
     for (VersionPattern &v : ctx.version_patterns) {
       Symbol<E> *sym = get_symbol(ctx, v.pattern);
@@ -1747,44 +1747,124 @@ void compute_import_export(Context<E> &ctx) {
   if (!ctx.arg.shared) {
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
       for (Symbol<E> *sym : file->symbols) {
-        if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN) {
-          if (sym->ver_idx != VER_NDX_LOCAL ||
-              !ctx.default_version_from_version_script) {
-            std::scoped_lock lock(sym->mu);
-            sym->is_exported = true;
-          }
+        if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN &&
+            sym->ver_idx != VER_NDX_LOCAL) {
+          std::scoped_lock lock(sym->mu);
+          sym->is_exported = true;
         }
       }
     });
   }
 
+  auto should_export = [&](Symbol<E> &sym) {
+    if (sym.visibility == STV_HIDDEN)
+      return false;
+
+    switch (sym.ver_idx) {
+    case -1:
+      if (ctx.arg.shared)
+        return !((ObjectFile<E> *)sym.file)->exclude_libs;
+      return ctx.arg.export_dynamic;
+    case VER_NDX_LOCAL:
+      return false;
+    default:
+      return true;
+    }
+  };
+
   // Export symbols that are not hidden or marked as local.
   // We also want to mark imported symbols as such.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->get_global_syms()) {
-      if (!sym->file || sym->visibility == STV_HIDDEN ||
-          sym->ver_idx == VER_NDX_LOCAL)
-        continue;
-
-      // If we are using a symbol in a DSO, we need to import it at runtime.
-      if (sym->file != file && sym->file->is_dso && !sym->is_absolute()) {
-        std::scoped_lock lock(sym->mu);
-        sym->is_imported = true;
+      // If we are using a symbol in a DSO, we need to import it.
+      if (sym->file && sym->file->is_dso) {
+        if (!sym->is_absolute()) {
+          std::scoped_lock lock(sym->mu);
+          sym->is_imported = true;
+        }
         continue;
       }
 
-      // If we are creating a DSO, all global symbols are exported by default.
-      if (sym->file == file) {
-        std::scoped_lock lock(sym->mu);
+      // If we have a definition of a symbol, we may want to export it.
+      if (sym->file == file && should_export(*sym)) {
         sym->is_exported = true;
 
-        if (ctx.arg.shared && sym->visibility != STV_PROTECTED &&
+        // Exported symbols are marked as imported as well by default
+        // for DSOs.
+        if (ctx.arg.shared &&
+            sym->visibility != STV_PROTECTED &&
             !ctx.arg.Bsymbolic &&
             !(ctx.arg.Bsymbolic_functions && sym->get_type() == STT_FUNC))
           sym->is_imported = true;
       }
     }
   });
+
+
+  // Apply --dynamic-list, --export-dynamic-symbol and
+  // --export-dynamic-symbol-list options.
+  //
+  // The semantics of these options vary depending on whether we are
+  // creating an executalbe or a shared object.
+  //
+  // For executable, matched symbols are exported.
+  //
+  // For shared objects, matched symbols are imported if it is already
+  // exported so that they are interposable. In other words, symbols
+  // that did not match will be bound locally within the output file,
+  // effectively turning them into protected symbols.
+  MultiGlob matcher;
+  MultiGlob cpp_matcher;
+
+  auto handle_match = [&](Symbol<E> *sym) {
+    if (ctx.arg.shared) {
+      if (sym->is_exported)
+        sym->is_imported = true;
+    } else {
+      if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN)
+        sym->is_exported = true;
+    }
+  };
+
+  for (DynamicPattern &p : ctx.dynamic_list_patterns) {
+    if (p.is_cpp) {
+      if (!cpp_matcher.add(p.pattern, 1))
+        Fatal(ctx) << p.source << ": invalid dynamic list entry: "
+                   << p.pattern;
+      continue;
+    }
+
+    if (p.pattern.find_first_of("*?[") != p.pattern.npos) {
+      if (!matcher.add(p.pattern, 1))
+        Fatal(ctx) << p.source << ": invalid dynamic list entry: "
+                   << p.pattern;
+      continue;
+    }
+
+    handle_match(get_symbol(ctx, p.pattern));
+  }
+
+  if (!matcher.empty() || !cpp_matcher.empty()) {
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      for (Symbol<E> *sym : file->get_global_syms()) {
+        if (sym->file != file)
+          continue;
+        if (ctx.arg.shared && !sym->is_exported)
+          continue;
+
+        std::string_view name = sym->name();
+
+        if (matcher.find(name)) {
+          handle_match(sym);
+        } else if (!cpp_matcher.empty()) {
+          if (std::optional<std::string_view> s = cpp_demangle(name))
+            name = *s;
+          if (cpp_matcher.find(name))
+            handle_match(sym);
+        }
+      }
+    });
+  }
 }
 
 // Compute the "address-taken" bit for each input section.

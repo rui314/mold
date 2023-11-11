@@ -9,10 +9,10 @@ EOF
 cat <<EOF | $CXX -fPIC -c -o $t/b.o -xc -
 int foo = 5;
 int bar = 6;
+int quux = 100;
 EOF
 
-$CC -B. -shared -Wl,--version-script=$t/a.ver \
-  -o $t/c.so $t/b.o
+$CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 
 cat <<'EOF' > $t/d.ver
 VER_Y1 { local; *; };

@@ -312,7 +312,6 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
 
     if (tok[0] == "*") {
       ctx.default_version = (is_global ? ver_idx : (u32)VER_NDX_LOCAL);
-      ctx.default_version_from_version_script = true;
     } else if (is_global) {
       ctx.version_patterns.push_back({unquote(tok[0]), current_file<E>->name,
                                       ver_str, ver_idx, is_cpp});
@@ -367,7 +366,9 @@ void parse_version_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 }
 
 template <typename E>
-void read_dynamic_list_commands(Context<E> &ctx, std::span<std::string_view> &tok,
+void read_dynamic_list_commands(Context<E> &ctx,
+                                std::vector<DynamicPattern> &result,
+                                std::span<std::string_view> &tok,
                                 bool is_cpp) {
   while (!tok.empty() && tok[0] != "}") {
     if (tok[0] == "extern") {
@@ -376,11 +377,11 @@ void read_dynamic_list_commands(Context<E> &ctx, std::span<std::string_view> &to
       if (!tok.empty() && tok[0] == "\"C\"") {
         tok = tok.subspan(1);
         tok = skip(ctx, tok, "{");
-        read_dynamic_list_commands(ctx, tok, false);
+        read_dynamic_list_commands(ctx, result, tok, false);
       } else {
         tok = skip(ctx, tok, "\"C++\"");
         tok = skip(ctx, tok, "{");
-        read_dynamic_list_commands(ctx, tok, true);
+        read_dynamic_list_commands(ctx, result, tok, true);
       }
 
       tok = skip(ctx, tok, "}");
@@ -388,29 +389,32 @@ void read_dynamic_list_commands(Context<E> &ctx, std::span<std::string_view> &to
       continue;
     }
 
-    if (tok[0] == "*")
-      ctx.default_version = VER_NDX_GLOBAL;
-    else
-      ctx.version_patterns.push_back({unquote(tok[0]), current_file<E>->name,
-                                      "global", VER_NDX_GLOBAL, is_cpp});
-
+    result.push_back({unquote(tok[0]), "", is_cpp});
     tok = skip(ctx, tok.subspan(1), ";");
   }
 }
 
 template <typename E>
-void parse_dynamic_list(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  current_file<E> = mf;
-  std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
+std::vector<DynamicPattern>
+parse_dynamic_list(Context<E> &ctx, std::string_view path) {
+  std::string_view contents =
+    MappedFile<Context<E>>::must_open(ctx, std::string(path))->get_contents();
+  std::vector<std::string_view> vec = tokenize(ctx, contents);
   std::span<std::string_view> tok = vec;
+  std::vector<DynamicPattern> result;
 
   tok = skip(ctx, tok, "{");
-  read_dynamic_list_commands(ctx, tok, false);
+  read_dynamic_list_commands(ctx, result, tok, false);
   tok = skip(ctx, tok, "}");
   tok = skip(ctx, tok, ";");
 
   if (!tok.empty())
     SyntaxError(ctx, tok[0]) << "trailing garbage token";
+
+  for (DynamicPattern &p : result)
+    p.source = path;
+
+  return result;
 }
 
 using E = MOLD_TARGET;
@@ -418,6 +422,7 @@ using E = MOLD_TARGET;
 template void parse_linker_script(Context<E> &, MappedFile<Context<E>> *);
 template std::string_view get_script_output_type(Context<E> &, MappedFile<Context<E>> *);
 template void parse_version_script(Context<E> &, MappedFile<Context<E>> *);
-template void parse_dynamic_list(Context<E> &, MappedFile<Context<E>> *);
+template std::vector<DynamicPattern> parse_dynamic_list(Context<E> &, std::string_view);
+
 
 } // namespace mold::elf

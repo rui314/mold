@@ -299,22 +299,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       if (!mf)
         Fatal(ctx) << "--version-script: file not found: " << arg;
       parse_version_script(ctx, mf);
-    } else if (remove_prefix(arg, "--dynamic-list=")) {
-      MappedFile<Context<E>> *mf = find_from_search_paths(ctx, std::string(arg));
-      if (!mf)
-        Fatal(ctx) << "--dynamic-list: file not found: " << arg;
-      parse_dynamic_list(ctx, mf);
-    } else if (remove_prefix(arg, "--export-dynamic-symbol=")) {
-      if (arg == "*")
-        ctx.default_version = VER_NDX_GLOBAL;
-      else
-        ctx.version_patterns.push_back({arg, "--export-dynamic-symbol",
-                                        "global", VER_NDX_GLOBAL, false});
-    } else if (remove_prefix(arg, "--export-dynamic-symbol-list=")) {
-      MappedFile<Context<E>> *mf = find_from_search_paths(ctx, std::string(arg));
-      if (!mf)
-        Fatal(ctx) << "--export-dynamic-symbol-list: file not found: " << arg;
-      parse_dynamic_list(ctx, mf);
     } else if (arg == "--push-state") {
       state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static,
                        ctx.in_lib});

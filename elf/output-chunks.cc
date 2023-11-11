@@ -2550,8 +2550,12 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   for (std::string_view verstr : ctx.arg.version_definitions)
     write(verstr, idx++, 0);
 
-  for (Symbol<E> *sym : std::span<Symbol<E> *>(ctx.dynsym->symbols).subspan(1))
-    ctx.versym->contents[sym->get_dynsym_idx(ctx)] = sym->ver_idx;
+  for (Symbol<E> *sym : std::span<Symbol<E> *>(ctx.dynsym->symbols).subspan(1)) {
+    i64 ver = sym->ver_idx;
+    if (ver == -1)
+      ver = VER_NDX_GLOBAL;
+    ctx.versym->contents[sym->get_dynsym_idx(ctx)] = ver;
+  }
 }
 
 template <typename E>

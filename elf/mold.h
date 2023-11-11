@@ -1281,8 +1281,15 @@ get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
 template <typename E>
 void parse_version_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
 
+struct DynamicPattern {
+  std::string_view pattern;
+  std::string_view source;
+  bool is_cpp = false;
+};
+
 template <typename E>
-void parse_dynamic_list(Context<E> &ctx, MappedFile<Context<E>> *mf);
+std::vector<DynamicPattern>
+parse_dynamic_list(Context<E> &ctx, std::string_view path);
 
 //
 // lto.cc
@@ -1733,12 +1740,10 @@ struct Context {
   } arg;
 
   std::vector<VersionPattern> version_patterns;
-  u16 default_version = VER_NDX_GLOBAL;
+  std::vector<DynamicPattern> dynamic_list_patterns;
+  i64 default_version = -1;
   i64 page_size = E::page_size;
   std::optional<int> global_lock_fd;
-
-  // true if default_version is set by a wildcard in version script.
-  bool default_version_from_version_script = false;
 
   // Reader context
   bool as_needed = false;
@@ -2034,7 +2039,7 @@ public:
   i32 sym_idx = -1;
 
   i32 aux_idx = -1;
-  u16 ver_idx = 0;
+  i32 ver_idx = -1;
 
   // `flags` has NEEDS_ flags.
   Atomic<u8> flags = 0;
