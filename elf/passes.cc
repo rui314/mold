@@ -1761,7 +1761,7 @@ void compute_import_export(Context<E> &ctx) {
       return false;
 
     switch (sym.ver_idx) {
-    case -1:
+    case VER_NDX_UNSPECIFIED:
       if (ctx.arg.shared)
         return !((ObjectFile<E> *)sym.file)->exclude_libs;
       return ctx.arg.export_dynamic;

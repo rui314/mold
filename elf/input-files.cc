@@ -63,7 +63,7 @@ void InputFile<E>::clear_symbols() {
       sym->origin = 0;
       sym->value = -1;
       sym->sym_idx = -1;
-      sym->ver_idx = 0;
+      sym->ver_idx = VER_NDX_UNSPECIFIED;
       sym->is_weak = false;
       sym->is_imported = false;
       sym->is_exported = false;
@@ -1355,6 +1355,9 @@ std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
   ElfVerdef<E> *ver = (ElfVerdef<E> *)verdef.data();
 
   for (;;) {
+    if (ver->vd_ndx == VER_NDX_UNSPECIFIED)
+      Fatal(ctx) << *this << ": symbol version too large";
+
     if (ret.size() <= ver->vd_ndx)
       ret.resize(ver->vd_ndx + 1);
 

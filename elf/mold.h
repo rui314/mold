@@ -1741,7 +1741,7 @@ struct Context {
 
   std::vector<VersionPattern> version_patterns;
   std::vector<DynamicPattern> dynamic_list_patterns;
-  i64 default_version = -1;
+  i64 default_version = VER_NDX_UNSPECIFIED;
   i64 page_size = E::page_size;
   std::optional<int> global_lock_fd;
 
@@ -2039,7 +2039,7 @@ public:
   i32 sym_idx = -1;
 
   i32 aux_idx = -1;
-  i32 ver_idx = -1;
+  u16 ver_idx = VER_NDX_UNSPECIFIED;
 
   // `flags` has NEEDS_ flags.
   Atomic<u8> flags = 0;

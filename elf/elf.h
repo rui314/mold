@@ -161,6 +161,7 @@ enum : u32 {
   VER_NDX_LOCAL = 0,
   VER_NDX_GLOBAL = 1,
   VER_NDX_LAST_RESERVED = 1,
+  VER_NDX_UNSPECIFIED = 0xffff,
 };
 
 enum : u32 {
