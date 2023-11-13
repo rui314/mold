@@ -23,5 +23,5 @@ cat <<EOF | $CC -xc -c -o $t/b.o -
 __attribute__((tls_model("global-dynamic"))) _Thread_local int foo;
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o
+$CC -B. -o $t/exe $t/a.o $t/b.o -no-pie
 $QEMU $t/exe | grep -q '3 5 3 5'

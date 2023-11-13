@@ -19,7 +19,7 @@ EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
 
-cat <<EOF | $GCC -c -o $t/c.o -xc -
+cat <<EOF | $GCC -c -o $t/c.o -xc - -fPIC
 #include <stdio.h>
 
 _Thread_local int baz;
