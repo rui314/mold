@@ -817,26 +817,27 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
   // Handle --defsym symbols.
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
-    Symbol<E> *sym = ctx.arg.defsyms[i].first;
+    Symbol<E> *sym1 = ctx.arg.defsyms[i].first;
     std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
 
-    Symbol<E> *target = nullptr;
-    if (Symbol<E> **ref = std::get_if<Symbol<E> *>(&val))
-      target = *ref;
+    if (Symbol<E> **ref = std::get_if<Symbol<E> *>(&val)) {
+      Symbol<E> *sym2 = *ref;
+      if (!sym2->file) {
+        Error(ctx) << "--defsym: undefined symbol: " << *sym2;
+        continue;
+      }
 
-    // If the alias refers another symobl, copy ELF symbol attributes.
-    if (target) {
       ElfSym<E> &esym = obj.elf_syms[i + 1];
-      esym.st_type = target->esym().st_type;
+      esym.st_type = sym2->esym().st_type;
       if constexpr (is_ppc64v2<E>)
-        esym.ppc_local_entry = target->esym().ppc_local_entry;
+        esym.ppc_local_entry = sym2->esym().ppc_local_entry;
+
+      if (sym2->is_absolute())
+        sym1->origin = 0;
+    } else {
+      sym1->origin = 0;
     }
-
-    // Make the target absolute if necessary.
-    if (!target || target->is_absolute())
-      sym->origin = 0;
   }
-
 }
 
 template <typename E>
@@ -2715,18 +2716,12 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     if (u64 *addr = std::get_if<u64>(&val)) {
       sym->origin = 0;
       sym->value = *addr;
-      continue;
+    } else {
+      Symbol<E> *sym2 = std::get<Symbol<E> *>(val);
+      sym->value = sym2->value;
+      sym->origin = sym2->origin;
+      sym->visibility = sym2->visibility.load();
     }
-
-    Symbol<E> *sym2 = std::get<Symbol<E> *>(val);
-    if (!sym2->file) {
-      Error(ctx) << "--defsym: undefined symbol: " << *sym2;
-      continue;
-    }
-
-    sym->value = sym2->value;
-    sym->origin = sym2->origin;
-    sym->visibility = sym2->visibility.load();
   }
 
 
