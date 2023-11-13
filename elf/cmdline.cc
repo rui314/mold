@@ -660,9 +660,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       else
         Fatal(ctx) << "unknown --unresolved-symbols argument: " << arg;
     } else if (read_arg("undefined") || read_arg("u")) {
-      ctx.arg.undefined.push_back(arg);
+      ctx.arg.undefined.push_back(get_symbol(ctx, arg));
     } else if (read_arg("require-defined")) {
-      ctx.arg.require_defined.push_back(arg);
+      ctx.arg.require_defined.push_back(get_symbol(ctx, arg));
     } else if (read_arg("init")) {
       ctx.arg.init = arg;
     } else if (read_arg("fini")) {
@@ -1238,7 +1238,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.shared && warn_shared_textrel)
     ctx.arg.warn_textrel = true;
 
-  ctx.arg.undefined.push_back(ctx.arg.entry);
+  ctx.arg.undefined.push_back(get_symbol(ctx, ctx.arg.entry));
+
+  for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
+    std::variant<Symbol<E> *, u64> &val = ctx.arg.defsyms[i].second;
+    if (Symbol<E> **sym = std::get_if<Symbol<E> *>(&val))
+      ctx.arg.undefined.push_back(*sym);
+  }
 
   // --oformat=binary implies --strip-all because without a section
   // header, there's no way to identify the locations of a symbol

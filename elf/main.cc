@@ -507,9 +507,9 @@ int elf_main(int argc, char **argv) {
     write_repro_file(ctx);
 
   // Handle --require-defined
-  for (std::string_view name : ctx.arg.require_defined)
-    if (!get_symbol(ctx, name)->file)
-      Error(ctx) << "--require-defined: undefined symbol: " << name;
+  for (Symbol<E> *sym : ctx.arg.require_defined)
+    if (!sym->file)
+      Error(ctx) << "--require-defined: undefined symbol: " << *sym;
 
   // .init_array and .fini_array contents have to be sorted by
   // a special rule. Sort them.

@@ -709,8 +709,9 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
     get_symbol(ctx, y)->referenced_by_regular_obj = true;
   }
 
-  // Handle --entry
-  get_symbol(ctx, ctx.arg.entry)->referenced_by_regular_obj = true;
+  // Keep some symbols
+  for (Symbol<E> *sym : ctx.arg.undefined)
+    sym->referenced_by_regular_obj = true;
 
   // all_symbols_read_hook() calls add_input_file() and add_input_library()
   LOG << "all symbols read\n";

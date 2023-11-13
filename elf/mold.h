@@ -1726,6 +1726,8 @@ struct Context {
     std::unordered_set<std::string_view> ignore_ir_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<SectionOrder> section_order;
+    std::vector<Symbol<E> *> require_defined;
+    std::vector<Symbol<E> *> undefined;
     std::vector<std::pair<Symbol<E> *, std::variant<Symbol<E> *, u64>>> defsyms;
     std::vector<std::string> library_paths;
     std::vector<std::string> plugin_opt;
@@ -1733,9 +1735,7 @@ struct Context {
     std::vector<std::string_view> auxiliary;
     std::vector<std::string_view> exclude_libs;
     std::vector<std::string_view> filter;
-    std::vector<std::string_view> require_defined;
     std::vector<std::string_view> trace_symbol;
-    std::vector<std::string_view> undefined;
     u64 image_base = 0x200000;
   } arg;
 
