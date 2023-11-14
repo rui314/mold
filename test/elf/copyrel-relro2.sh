@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIE -
 #include <setjmp.h>
 #include <signal.h>
@@ -32,7 +31,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -fPIC -shared -o $t/b.so -xc -
+cat <<EOF | $CC -B. -fPIC -shared -o $t/b.so -xc -
 __attribute__((section (".data.rel.ro"))) char readonly[100] = "abc";
 char readwrite[100] = "abc";
 EOF

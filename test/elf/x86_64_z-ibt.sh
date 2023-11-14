@@ -2,6 +2,7 @@
 . $(dirname $0)/common.inc
 
 [ $MACHINE = x86_64 ] || skip
+echo endbr64 | $CC -o /dev/null -c -xassembler - 2> /dev/null || skip
 
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .globl main
