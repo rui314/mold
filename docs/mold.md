@@ -597,6 +597,9 @@ arguments.
 * `--trace`:
   Print name of each input file.
 
+* `-y` _symbol_, `--trace-symbol`=_symbol_:
+  Trace references to symbols.
+
 * `--undefined-version`, `--no-undefined-version`:
   By default, `mold` warns on a symbol specified by a version script or by
   `--export-dynamic-symbol` if it is not defined. You can silence the warning

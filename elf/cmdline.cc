@@ -150,6 +150,8 @@ Options:
   --threads                   Use multiple threads (default)
     --no-threads
   --trace                     Print name of each input file
+  -y SYMBOL, --trace-symbol SYMBOL
+                              Trace references to symbols
   --undefined-version         Do not report version scripts that refer undefined symbols
     --no-undefined-version    Report version scripts that refer undefined symbols (default)
   --unique PATTERN            Don't merge input sections that match a given pattern
