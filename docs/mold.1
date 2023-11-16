@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "July 2023" ""
+.TH "MOLD" "1" "November 2023" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -178,6 +178,9 @@ Omit \fB\.symtab\fR section from the output file\.
 .TP
 \fB\-u\fR \fIsymbol\fR, \fB\-\-undefined\fR=\fIsymbol\fR
 If \fIsymbol\fR remains as an undefined symbol after reading all object files, and if there is a static archive that contains an object file defining \fIsymbol\fR, pull out the object file and link it so that the output file contains a definition of \fIsymbol\fR\.
+.TP
+\fB\-y\fR \fIsymbol\fR, \fB\-\-trace\-symbol\fR=\fIsymbol\fR
+Trace references to \fIsymbol\fR\.
 .TP
 \fB\-\-Bdynamic\fR
 Link against shared libraries\.
@@ -366,9 +369,6 @@ Set target system root directory to \fIdir\fR\.
 \fB\-\-trace\fR
 Print name of each input file\.
 .TP
-\fB\-y\fR \fIsymbol\fR, \fB\-\-trace\fR=\fIsymbol\fR
-Trace references to \fIsymbols\fR.
-.TP
 \fB\-\-undefined\-version\fR, \fB\-\-no\-undefined\-version\fR
 By default, \fBmold\fR warns on a symbol specified by a version script or by \fB\-\-export\-dynamic\-symbol\fR if it is not defined\. You can silence the warning by \fB\-\-undefined\-version\fR\.
 .TP
@@ -478,13 +478,13 @@ Ignored
 .SH "ENVIRONMENT VARIABLES"
 .TP
 \fBMOLD_JOBS\fR
-If this variable is set to \fB1\fR, only one process of \fBmold\fR runs actively\. A mold process invoked while another active mold process is running will wait before doing anything until the active process exits\.
+If this variable is set to \fB1\fR, only one \fBmold\fR process will run at a time\. If a new mold process is initiated while another is already active, the new process will wait until the active one completes before starting\.
 .IP
-The purpose of this environment variable is to reduce peak memory usage\. Since mold is highly parallelized, there's no point in running it simultaneously\. If you run N instances of mold in parallel, it would take N times more time and N times more memory\. If you run them serially, it would still take N times more to finish, but their peak memory usage is reduced to normal\.
+The primary reason for this environment variable is to minimize peak memory usage\. Since mold is designed to operate with high parallelism, running multiple mold instances simultaneously may not be beneficial\. If you execute N instances of mold concurrently, it could require N times the time and N times the memory\. On the other hand, running them one after the other might still take N times longer, but the peak memory usage would be the same as running just a single instance\.
 .IP
-If your build system tends to invoke multiple linker processes simultaneously, you may want to try to set this environment variable to \fB1\fR to see if it could improve overall performance\.
+If your build system invokes multiple linker processes simultaneously and some of them often get killed due to out\-of\-memory errors, you might consider setting this environment variable to \fB1\fR to see if it addresses the OOM issue\.
 .IP
-Currently, any value other than 1 is silently ignored\.
+Currently, any value other than \fB1\fR is silently ignored\.
 .TP
 \fBMOLD_DEBUG\fR
 If this variable is set to a non\-empty string, \fBmold\fR embeds its command\-line options in the output file's \fB\.comment\fR section\.
