@@ -129,12 +129,13 @@ timestamp="$(git log -1 --format=%ci)"
 
 # Build mold in a container.
 docker run --platform linux/$arch -i --rm -v "$(realpath $(dirname $0)):/mold" $image \
-  bash -c "mkdir -p /build/mold &&
-cd /build/mold &&
-cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=On /mold &&
-cmake --build . -j$(nproc) &&
-ctest -j$(nproc) &&
-cmake --install . --prefix $dest --strip &&
-find $dest -print | xargs touch --no-dereference --date='$timestamp' &&
-find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /mold/$dest.tar.gz &&
+  bash -c "set -e
+mkdir -p /build/mold
+cd /build/mold
+cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=On /mold
+cmake --build . -j$(nproc)
+ctest -j$(nproc)
+cmake --install . --prefix $dest --strip
+find $dest -print | xargs touch --no-dereference --date='$timestamp'
+find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /mold/$dest.tar.gz
 chown $(id -u):$(id -g) /mold/$dest.tar.gz"
