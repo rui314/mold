@@ -52,6 +52,8 @@ Options:
   -s, --strip-all             Strip .symtab section
   -u SYMBOL, --undefined SYMBOL
                               Force to resolve SYMBOL
+  -y SYMBOL, --trace-symbol SYMBOL
+                              Trace references to SYMBOL
   --Bdynamic, --dy            Link against shared libraries (default)
   --Bstatic, --dn, --static   Do not link against shared libraries
   --Bsymbolic                 Bind global symbols locally
@@ -140,9 +142,9 @@ Options:
   --shuffle-sections[=SEED]   Randomize the output by shuffling input sections
   --sort-common               Ignored
   --sort-section              Ignored
-  --spare-dynamic-tags NUMBER Reserve give number of tags in .dynamic section
+  --spare-dynamic-tags NUMBER Reserve given number of tags in .dynamic section
   --spare-program-headers NUMBER
-                              Reserve give number of slots in the program header
+                              Reserve given number of slots in the program header
   --start-lib                 Give following object files in-archive-file semantics
     --end-lib                 End the effect of --start-lib
   --stats                     Print input statistics
@@ -152,8 +154,6 @@ Options:
   --threads                   Use multiple threads (default)
     --no-threads
   --trace                     Print name of each input file
-  -y SYMBOL, --trace-symbol SYMBOL
-                              Trace references to symbols
   --undefined-version         Do not report version scripts that refer undefined symbols
     --no-undefined-version    Report version scripts that refer undefined symbols (default)
   --unique PATTERN            Don't merge input sections that match a given pattern
