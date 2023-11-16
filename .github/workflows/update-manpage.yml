@@ -8,7 +8,7 @@ on:
       - 'docs/mold.md'
 
 jobs:
-  update-mold:
+  update-manpage:
     runs-on: ubuntu-latest
 
     steps:
@@ -29,4 +29,4 @@ jobs:
     - name: Commit and push if mold.1 is updated
       run: |
         git add docs/mold.1
-        git diff --staged --quiet || (git commit -m "Update mold.1" && git push)
+        git diff --staged --quiet || (git commit -m "Update mold.1 (automated commit)" && git push)
