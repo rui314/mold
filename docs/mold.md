@@ -584,6 +584,9 @@ arguments.
 * `--spare-dynamic-tags`=_number_:
   Reserve the given _number_ of tags in `.dynamic` section.
 
+* `--spare-program-headers`=_number_:
+  Reserve the given _number_ of entries in the program header.
+
 * `--start-lib`, `--end-lib`:
   Handle object files between `--start-lib` and `--end-lib` as if they were in
   an archive file. That means object files between them are linked only when
