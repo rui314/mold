@@ -1700,6 +1700,7 @@ struct Context {
     bool z_text = false;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
+    i64 spare_program_headers = 0;
     i64 thread_count = 0;
     i64 z_stack_size = 0;
     u64 shuffle_sections_seed;

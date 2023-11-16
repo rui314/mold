@@ -352,6 +352,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     }
   }
 
+  vec.resize(vec.size() + ctx.arg.spare_program_headers);
   return vec;
 }
 

@@ -141,6 +141,8 @@ Options:
   --sort-common               Ignored
   --sort-section              Ignored
   --spare-dynamic-tags NUMBER Reserve give number of tags in .dynamic section
+  --spare-program-headers NUMBER
+                              Reserve give number of slots in the program header
   --start-lib                 Give following object files in-archive-file semantics
     --end-lib                 End the effect of --start-lib
   --stats                     Print input statistics
@@ -606,6 +608,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.shared = true;
     } else if (read_arg("spare-dynamic-tags")) {
       ctx.arg.spare_dynamic_tags = parse_number(ctx, "spare-dynamic-tags", arg);
+    } else if (read_arg("spare-program-headers")) {
+      ctx.arg.spare_program_headers
+        = parse_number(ctx, "spare-program-headers", arg);
     } else if (read_flag("start-lib")) {
       remaining.push_back("--start-lib");
     } else if (read_flag("start-stop")) {
