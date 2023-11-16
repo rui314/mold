@@ -357,6 +357,9 @@ Create a share library\.
 \fB\-\-spare\-dynamic\-tags\fR=\fInumber\fR
 Reserve the given \fInumber\fR of tags in \fB\.dynamic\fR section\.
 .TP
+\fB\-\-spare\-program\-headers\fR=\fInumber\fR
+Reserve the given \fInumber\fR of entries in the program header\.
+.TP
 \fB\-\-start\-lib\fR, \fB\-\-end\-lib\fR
 Handle object files between \fB\-\-start\-lib\fR and \fB\-\-end\-lib\fR as if they were in an archive file\. That means object files between them are linked only when they are needed to resolve undefined symbols\. The options are useful if you want to link object files only when they are needed but want to avoid the overhead of running ar(3)\.
 .TP
