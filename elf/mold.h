@@ -1752,6 +1752,7 @@ struct Context {
   bool is_static;
   bool in_lib = false;
   i64 file_priority = 10000;
+  MappedFile<Context<E>> *script_file = nullptr;
   std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
 

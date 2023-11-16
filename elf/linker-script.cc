@@ -11,9 +11,6 @@
 namespace mold::elf {
 
 template <typename E>
-static thread_local MappedFile<Context<E>> *current_file;
-
-template <typename E>
 void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok);
 
 static std::string_view get_line(std::string_view input, const char *pos) {
@@ -37,7 +34,7 @@ template <typename E>
 class SyntaxError {
 public:
   SyntaxError(Context<E> &ctx, std::string_view errpos) : out(ctx) {
-    std::string_view contents = current_file<E>->get_contents();
+    std::string_view contents = ctx.script_file->get_contents();
     std::string_view line = get_line(contents, errpos.data());
 
     i64 lineno = 1;
@@ -48,7 +45,7 @@ public:
     i64 column = errpos.data() - line.data();
 
     std::stringstream ss;
-    ss << current_file<E>->name << ":" << lineno << ": ";
+    ss << ctx.script_file->name << ":" << lineno << ": ";
     i64 indent = (i64)ss.tellp() + strlen("mold: ");
     ss << line << "\n" << std::setw(indent + column) << " " << "^ ";
     out << ss.str();
@@ -118,7 +115,7 @@ template <typename E>
 static std::span<std::string_view>
 skip(Context<E> &ctx, std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty())
-    Fatal(ctx) << current_file<E>->name << ": expected '" << str
+    Fatal(ctx) << ctx.script_file->name << ": expected '" << str
                << "', but got EOF";
   if (tok[0] != str)
     SyntaxError(ctx, tok[0]) << "expected '" << str << "'";
@@ -140,7 +137,7 @@ read_output_format(Context<E> &ctx, std::span<std::string_view> tok) {
   while (!tok.empty() && tok[0] != ")")
     tok = tok.subspan(1);
   if (tok.empty())
-    Fatal(ctx) << current_file<E>->name << ": expected ')', but got EOF";
+    Fatal(ctx) << ctx.script_file->name << ": expected ')', but got EOF";
   return tok.subspan(1);
 }
 
@@ -158,7 +155,7 @@ static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view to
 
   // GNU ld prepends the sysroot if a pathname starts with '/' and the
   // script being processed is in the sysroot. We do the same.
-  if (str.starts_with('/') && is_in_sysroot(ctx, current_file<E>->name))
+  if (str.starts_with('/') && is_in_sysroot(ctx, ctx.script_file->name))
     return MappedFile<Context<E>>::must_open(ctx, ctx.arg.sysroot + str);
 
   if (str.starts_with('=')) {
@@ -205,13 +202,13 @@ read_group(Context<E> &ctx, std::span<std::string_view> tok) {
   }
 
   if (tok.empty())
-    Fatal(ctx) << current_file<E>->name << ": expected ')', but got EOF";
+    Fatal(ctx) << ctx.script_file->name << ": expected ')', but got EOF";
   return tok.subspan(1);
 }
 
 template <typename E>
 void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  current_file<E> = mf;
+  ctx.script_file = mf;
 
   std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
   std::span<std::string_view> tok = vec;
@@ -241,7 +238,7 @@ void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 template <typename E>
 std::string_view
 get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  current_file<E> = mf;
+  ctx.script_file = mf;
 
   std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
   std::span<std::string_view> tok = vec;
@@ -313,10 +310,10 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
     if (tok[0] == "*") {
       ctx.default_version = (is_global ? ver_idx : (u32)VER_NDX_LOCAL);
     } else if (is_global) {
-      ctx.version_patterns.push_back({unquote(tok[0]), current_file<E>->name,
+      ctx.version_patterns.push_back({unquote(tok[0]), ctx.script_file->name,
                                       ver_str, ver_idx, is_cpp});
     } else {
-      ctx.version_patterns.push_back({unquote(tok[0]), current_file<E>->name,
+      ctx.version_patterns.push_back({unquote(tok[0]), ctx.script_file->name,
                                       ver_str, VER_NDX_LOCAL, is_cpp});
     }
 
@@ -357,7 +354,7 @@ void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
 
 template <typename E>
 void parse_version_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
-  current_file<E> = mf;
+  ctx.script_file = mf;
   std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
   std::span<std::string_view> tok = vec;
   read_version_script(ctx, tok);
