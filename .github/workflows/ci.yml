@@ -23,15 +23,15 @@ jobs:
       run: sudo ./install-build-deps.sh
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
-    - name: build and test
+    - name: build
       run: |
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         sudo apt-get install -y clang++-12
         mkdir build
-        cd build
-        cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++-12 ${{ matrix.target }} ..
+        cmake -S . -B build -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++-12 ${{ matrix.target }}
         cmake --build . -j$(nproc)
-        ctest . -j$(nproc)
+    - name: test
+      run: ctest build -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
@@ -47,6 +47,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: install-build-deps
+      shell: bash
       run: |
         # Install cross toolchains
         ./install-build-deps.sh
@@ -85,14 +86,14 @@ jobs:
         chmod 755 /usr/local/bin/qemu-loongarch64
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
-    - name: build and test
+    - name: build
       run: |
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
-        cd build
-        cmake ..
+        cmake -S . -B build
         cmake --build . -j$(nproc)
-        ctest . -j$(nproc)
+    - name: test
+      run: ctest build -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
@@ -114,12 +115,11 @@ jobs:
     - uses: actions/checkout@v3
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
-    - name: build and test
+    - name: build
       run: |
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
-        cd build
-        cmake ${{ matrix.target }} ..
+        cmake -S . -B build ${{ matrix.target }}
         cmake --build . -j$(sysctl -n hw.physicalcpu)
 
   build-windows:
@@ -129,6 +129,5 @@ jobs:
     - name: build
       run: |
         mkdir build
-        cd build
-        cmake -T clangcl ..
+        cmake -S . -B build -T clangcl
         cmake --build . -j $Env:NUMBER_OF_PROCESSORS
