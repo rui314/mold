@@ -20,7 +20,7 @@ jobs:
     - uses: actions/checkout@v3
     - uses: rui314/setup-mold@staging
     - name: install-build-deps
-      run: sudo ./install-build-deps.sh update
+      run: sudo ./install-build-deps.sh
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: build and test
@@ -49,14 +49,8 @@ jobs:
     - name: install-build-deps
       run: |
         # Install cross toolchains
-        dpkg --add-architecture i386
-        ./install-build-deps.sh update
-        apt-get install -y sudo qemu-user gdb zstd dwarfdump xz-utils {gcc,g++}-10-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha}-linux-gnu {gcc,g++}-10-arm-linux-gnueabihf
-
-        for i in {i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha}-linux-gnu arm-linux-gnueabihf; do
-          ln -sf /usr/bin/$i-gcc-10 /usr/bin/$i-gcc
-          ln -sf /usr/bin/$i-g++-10 /usr/bin/$i-g++
-        done
+        ./install-build-deps.sh
+        ./install-cross-tools.sh
 
         # Install a RV32 toolchain from third party since it's not available
         # as an Ubuntu package.
@@ -89,8 +83,6 @@ jobs:
 
         wget -O/usr/local/bin/qemu-loongarch64 -q https://github.com/loongson/build-tools/releases/download/2023.08.08/qemu-loongarch64
         chmod 755 /usr/local/bin/qemu-loongarch64
-
-      shell: bash
     - name: ccache
       uses: hendrikmuhs/ccache-action@v1
     - name: build and test
