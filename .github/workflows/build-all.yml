@@ -1,4 +1,4 @@
-name: Build tarballs
+name: Build all tarballs
 
 on:
   schedule:
