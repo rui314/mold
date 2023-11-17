@@ -31,7 +31,7 @@ jobs:
         cmake -S . -B b -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++-12 ${{ matrix.target }}
         cmake --build b -j$(nproc)
     - name: test
-      run: ctest b -j$(nproc)
+      run: ctest --test-dir b -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
@@ -91,7 +91,7 @@ jobs:
         cmake -S . -B b
         cmake --build b -j$(nproc)
     - name: test
-      run: ctest b -j$(nproc)
+      run: ctest --test-dir b -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
