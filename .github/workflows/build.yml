@@ -5,8 +5,12 @@ on:
     branches: [ main ]
 
 jobs:
-  build-and-push:
+  build-tarballs:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        target: [ x86_64, aarch64, arm, riscv64, ppc64le, s390x ]
 
     permissions:
       contents: read
@@ -30,7 +34,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
 
     - name: Build a tarball
-      run: ./dist.sh
+      run: ./dist.sh ${{ matrix.target }}
 
     - name: Upload artifact
       uses: actions/upload-artifact@v2

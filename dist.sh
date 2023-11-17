@@ -58,16 +58,17 @@ dest=mold-$version-$arch-linux
 
 if [ "$GITHUB_REPOSITORY" = '' ]; then
   image=mold-builder-$arch
+  docker_build="docker build --platform $arch -t $image"
 else
-  image="ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch"
-  cache="--push --cache-to type=inline --cache-from type=registry,ref=$image"
+  image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
+  docker_build="docker buildx build --platform $arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch"
 fi
 
 # Create a Docker image.
 case $arch in
 x86_64)
   # Debian 8 (Jessie) released in April 2015
-  cat <<EOF | docker buildx build --platform $arch -t $image $cache -
+  cat <<EOF | $docker_build -
 FROM debian:jessie-20210326
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# //g' /etc/apt/sources.list && \
@@ -103,7 +104,7 @@ EOF
   ;;
 aarch64 | arm | ppc64le | s390x)
   # Debian 10 (Bullseye) released in July 2019
-  cat <<EOF | docker buildx build --platform $arch -t $image $cache -
+  cat <<EOF | $docker_build -
 FROM debian:bullseye-20231030
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# //g' /etc/apt/sources.list && \
@@ -117,7 +118,7 @@ EOF
   ;;
 riscv64)
   # snapshot.debian.org is not available for RISC-V binaries
-  cat <<EOF | docker buildx build --platform $arch -t $image $cache -
+  cat <<EOF | $docker_build -
 FROM riscv64/debian:unstable-20231030
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN apt-get update && \
