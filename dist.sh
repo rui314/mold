@@ -42,7 +42,11 @@ usage() {
 case $# in
 0)
   arch=$(uname -m)
-  [[ $arch = arm* ]] && arch=arm
+  if [ $arch = arm64 ]; then
+    arch=aarch64
+  elif [[ $arch = arm* ]]; then
+    arch=arm
+  fi
   ;;
 1)
   arch="$1"
@@ -58,10 +62,10 @@ dest=mold-$version-$arch-linux
 
 if [ "$GITHUB_REPOSITORY" = '' ]; then
   image=mold-builder-$arch
-  docker_build="docker build --platform $arch -t $image"
+  docker_build="docker build --platform linux/$arch -t $image"
 else
   image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
-  docker_build="docker buildx build --platform $arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch"
+  docker_build="docker buildx build --platform linux/$arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch"
 fi
 
 # Create a Docker image.
@@ -81,8 +85,8 @@ RUN sed -i -e '/^deb/d' -e 's/^# //g' /etc/apt/sources.list && \
 RUN mkdir -p /build/cmake && \
   cd /build/cmake && \
   wget -O- --no-check-certificate https://cmake.org/files/v3.27/cmake-3.27.7.tar.gz | tar xzf - --strip-components=1 && \
-  ./bootstrap --parallel=$(nproc) && \
-  make -j$(nproc) && \
+  ./bootstrap --parallel=\$(nproc) && \
+  make -j\$(nproc) && \
   make install && \
   rm -rf /build
 
@@ -96,7 +100,7 @@ RUN mkdir -p /build/gcc && \
   wget -O- http://ftp.gnu.org/gnu/mpc/mpc-1.2.1.tar.gz | tar xzf - --strip-components=1 -C mpc && \
   wget -O- http://ftp.gnu.org/gnu/mpfr/mpfr-4.1.0.tar.gz | tar xzf - --strip-components=1 -C mpfr && \
   ./configure --prefix=/usr --enable-languages=c,c++ --disable-bootstrap --disable-multilib && \
-  make -j$(nproc) && \
+  make -j\$(nproc) && \
   make install && \
   ln -sf /usr/lib64/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6 && \
   rm -rf /build
@@ -140,8 +144,8 @@ docker run --platform linux/$arch -i --rm -v "$(realpath $(dirname $0)):/mold" $
 mkdir -p /build/mold
 cd /build/mold
 cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=On /mold
-cmake --build . -j$(nproc)
-ctest -j$(nproc)
+cmake --build . -j\$(nproc)
+ctest -j\$(nproc)
 cmake --install . --prefix $dest --strip
 find $dest -print | xargs touch --no-dereference --date='$timestamp'
 find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /mold/$dest.tar.gz
