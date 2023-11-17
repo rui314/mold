@@ -27,11 +27,14 @@ jobs:
       run: |
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         sudo apt-get install -y clang++-12
-        mkdir b
-        cmake -S . -B b -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++-12 ${{ matrix.target }}
-        cmake --build b -j$(nproc)
+        mkdir build
+        cd build
+        cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++-12 ${{ matrix.target }} ..
+        cmake --build . -j$(nproc)
     - name: test
-      run: ctest --test-dir b -j$(nproc)
+      run: |
+        cd build
+        ctest -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
@@ -87,11 +90,14 @@ jobs:
     - name: build
       run: |
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
-        mkdir b
-        cmake -S . -B b
-        cmake --build b -j$(nproc)
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build . -j$(nproc)
     - name: test
-      run: ctest --test-dir b -j$(nproc)
+      run: |
+        cd build
+        ctest -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
@@ -114,9 +120,10 @@ jobs:
     - name: build
       run: |
         echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
-        mkdir b
-        cmake -S . -B b ${{ matrix.target }}
-        cmake --build b -j$(sysctl -n hw.physicalcpu)
+        mkdir build
+        cd build
+        cmake ${{ matrix.target }} ..
+        cmake --build . -j$(sysctl -n hw.physicalcpu)
 
   build-windows:
     runs-on: windows-latest
@@ -124,6 +131,7 @@ jobs:
     - uses: actions/checkout@v3
     - name: build
       run: |
-        mkdir b
-        cmake -S . -B b -T clangcl
-        cmake --build b -j $Env:NUMBER_OF_PROCESSORS
+        mkdir build
+        cd build
+        cmake -T clangcl ..
+        cmake --build . -j $Env:NUMBER_OF_PROCESSORS
