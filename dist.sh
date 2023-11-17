@@ -33,6 +33,7 @@
 #  $ docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
 set -e -x
+cd "$(dirname $0)"
 
 usage() {
   echo "Usage: $0 [ x86_64 | aarch64 | arm | riscv64 | ppc64le | s390x ]"
@@ -57,7 +58,7 @@ esac
 
 echo "$arch" | grep -Eq '^(x86_64|aarch64|arm|riscv64|ppc64le|s390x)$' || usage
 
-version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' $(dirname $0)/CMakeLists.txt)
+version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' CMakeLists.txt)
 dest=mold-$version-$arch-linux
 
 if [ "$GITHUB_REPOSITORY" = '' ]; then
@@ -139,8 +140,8 @@ esac
 timestamp="$(git log -1 --format=%ci)"
 
 # Build mold in a container.
-docker run --platform linux/$arch -i --rm -v "$(realpath $(dirname $0)):/mold" $image \
-  bash -c "set -e
+docker run --platform linux/$arch -i --rm -v "$(pwd):/mold" $image bash -c "
+set -e
 mkdir -p /build/mold
 cd /build/mold
 cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=On /mold
@@ -149,4 +150,5 @@ ctest -j\$(nproc)
 cmake --install . --prefix $dest --strip
 find $dest -print | xargs touch --no-dereference --date='$timestamp'
 find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /mold/$dest.tar.gz
-chown $(id -u):$(id -g) /mold/$dest.tar.gz"
+chown $(id -u):$(id -g) /mold/$dest.tar.gz
+"
