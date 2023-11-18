@@ -63,23 +63,23 @@ dest=mold-$version-$arch-linux
 
 if [ "$GITHUB_REPOSITORY" = '' ]; then
   image=mold-builder-$arch
-  docker_build="docker build --platform linux/$arch -t $image"
+  docker_build="docker build --platform linux/$arch -t $image -"
 else
   image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
-  docker_build="docker buildx build --platform linux/$arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch"
+  docker_build="docker buildx build --platform linux/$arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch -"
 fi
 
 # Create a Docker image.
 case $arch in
 x86_64)
   # Debian 8 (Jessie) released in April 2015
-  cat <<EOF | $docker_build -
-FROM debian:jessie-20210326
+  cat <<EOF | $docker_build
+FROM debian:jessie-20210326@sha256:32ad5050caffb2c7e969dac873bce2c370015c2256ff984b70c1c08b3a2816a0
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
-RUN sed -i -e '/^deb/d' -e 's/^# //g' /etc/apt/sources.list && \
-  echo 'Acquire { Retries "10"; http::timeout "10"; Check-Valid-Until "false"; };' > /etc/apt/apt.conf.d/80-retries && \
+RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.list && \
+  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --force-yes --no-install-recommends wget bzip2 file make autoconf gcc g++ libssl-dev && \
+  apt-get install -y --no-install-recommends wget bzip2 file make autoconf gcc g++ libssl-dev && \
   rm -rf /var/lib/apt/lists
 
 # Build CMake 3.27
@@ -109,11 +109,16 @@ EOF
   ;;
 aarch64 | arm | ppc64le | s390x)
   # Debian 10 (Bullseye) released in July 2019
-  cat <<EOF | $docker_build -
-FROM debian:bullseye-20231030
+  [ $arch = aarch64 ] && digest=d5ed76c5265576982e6599b6f12392290d9b52b315b19b28b640aaba6e8af002
+  [ $arch = arm ]     && digest=bede2623dae269454c5b6dd4af15a10810a5f4ef75963d4eb6531628f98bd633
+  [ $arch = ppc64le ] && digest=255f385e735469493b3465befad59a16f9d46f41d0b50e4fa6d5928c5ee7702a
+  [ $arch = s390x ]   && digest=96fb9ce5d3ce7f3dab7c34c18edfee093904cbc7fc19162dbcca22b2cc273b9d
+
+  cat <<EOF | $docker_build
+FROM debian:bullseye-20231030@sha256:$digest
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
-RUN sed -i -e '/^deb/d' -e 's/^# //g' /etc/apt/sources.list && \
-  echo 'Acquire { Retries "10"; http::timeout "10"; Check-Valid-Until "false"; };' > /etc/apt/apt.conf.d/80-retries && \
+RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.list && \
+  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
   apt-get install -y --no-install-recommends build-essential gcc-10 g++-10 cmake && \
   ln -sf /usr/bin/gcc-10 /usr/bin/cc && \
@@ -123,8 +128,8 @@ EOF
   ;;
 riscv64)
   # snapshot.debian.org is not available for RISC-V binaries
-  cat <<EOF | $docker_build -
-FROM riscv64/debian:unstable-20231030
+  cat <<EOF | $docker_build
+FROM riscv64/debian:unstable-20231030@sha256:08e14c8ad60f5006293870c82f7ae92b4c3ab35069c1e4a61ba8cd63fa233956
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN apt-get update && \
   apt-get install -y --no-install-recommends build-essential gcc-12 g++-12 cmake && \
