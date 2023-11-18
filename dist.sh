@@ -65,6 +65,8 @@ if [ "$GITHUB_REPOSITORY" = '' ]; then
   image=mold-builder-$arch
   docker_build="docker build --platform linux/$arch -t $image -"
 else
+  # If this script is running on GitHub Actions, we want to cache
+  # the created Docker image in GitHub's Docker repostiory.
   image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
   docker_build="docker buildx build --platform linux/$arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch -"
 fi
@@ -109,6 +111,10 @@ EOF
   ;;
 aarch64 | arm | ppc64le | s390x)
   # Debian 10 (Bullseye) released in July 2019
+  #
+  # We don't want to build GCC for these targets with Qemu becuase
+  # that'd take extremely long time. Also I believe old build machines
+  # are usually x86-64.
   [ $arch = aarch64 ] && digest=d5ed76c5265576982e6599b6f12392290d9b52b315b19b28b640aaba6e8af002
   [ $arch = arm ]     && digest=bede2623dae269454c5b6dd4af15a10810a5f4ef75963d4eb6531628f98bd633
   [ $arch = ppc64le ] && digest=255f385e735469493b3465befad59a16f9d46f41d0b50e4fa6d5928c5ee7702a
@@ -129,7 +135,7 @@ EOF
 riscv64)
   # snapshot.debian.org is not available for RISC-V binaries
   cat <<EOF | $docker_build
-FROM riscv64/debian:unstable-20231030@sha256:08e14c8ad60f5006293870c82f7ae92b4c3ab35069c1e4a61ba8cd63fa233956
+FROM riscv64/debian:unstable-20231030@sha256:be1882409392c1f68f23e1e04bd965c49398f4a358b1a15f7b1820c0b39ede5b
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN apt-get update && \
   apt-get install -y --no-install-recommends build-essential gcc-12 g++-12 cmake && \
