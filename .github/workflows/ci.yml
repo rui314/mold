@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v3
-    - uses: rui314/setup-mold@staging
+    - uses: rui314/setup-mold@v1
     - name: install-build-deps
       run: sudo ./install-build-deps.sh
     - name: ccache
