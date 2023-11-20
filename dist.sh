@@ -146,6 +146,10 @@ EOF
   ;;
 esac
 
+# Source tarballs available on GitHub don't contain .git history.
+# Clone the repo if missing.
+[ -d .git ] || git clone --branch v$version --depth 1 --bare https://github.com/rui314/mold .git
+
 # We use the timestamp of the last Git commit as the file timestamp
 # for build artifacts.
 timestamp="$(git log -1 --format=%ci)"
