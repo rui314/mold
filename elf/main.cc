@@ -631,6 +631,9 @@ int elf_main(int argc, char **argv) {
   // Copy input sections to the output file and apply relocations.
   copy_chunks(ctx);
 
+  if (ctx.arg.z_rewrite_endbr)
+    rewrite_endbr(ctx);
+
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.
   ctx.reldyn->sort(ctx);

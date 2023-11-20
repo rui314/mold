@@ -1390,6 +1390,7 @@ template <typename E> void create_output_symtab(Context<E> &);
 template <typename E> void report_undef_errors(Context<E> &);
 template <typename E> void create_reloc_sections(Context<E> &);
 template <typename E> void copy_chunks(Context<E> &);
+template <typename E> void rewrite_endbr(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
@@ -2162,6 +2163,9 @@ public:
   // For LTO. True if the symbol is referenced by a regular object (as
   // opposed to IR object).
   bool referenced_by_regular_obj : 1 = false;
+
+  // For `-z rewrite-endbr`
+  bool address_taken : 1 = false;
 
   // Target-dependent extra members.
   [[no_unique_address]] SymbolExtras<E> extra;

@@ -457,18 +457,6 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
       apply_reloc_alloc(ctx, buf);
     else
       apply_reloc_nonalloc(ctx, buf);
-
-    if constexpr (is_x86_64<E>) {
-      u8 endbr[] = {0xf3, 0x0f, 0x1e, 0xfa};
-      u8 nop[] = {0x0f, 0x1f, 0x40, 0x00};
-
-      // Rewrite the leading endbr instruction with a nop if the section
-      // is not address-taken.
-      if (ctx.arg.z_rewrite_endbr && (shdr().sh_flags & SHF_EXECINSTR) &&
-          !address_taken && sh_size >= 4 && memcmp(buf, endbr, 4) == 0) {
-        memcpy(buf, nop, 4);
-      }
-    }
   }
 }
 
