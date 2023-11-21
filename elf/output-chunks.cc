@@ -195,6 +195,13 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     if ((chunk->shdr.sh_flags & SHF_ALLOC) && !is_tbss(chunk))
       chunks.push_back(chunk);
 
+  // The ELF spec says that "loadable segment entries in the program
+  // header table appear in ascending order, sorted on the p_vaddr
+  // member".
+  sort(chunks, [](Chunk<E> *a, Chunk<E> *b) {
+    return a->shdr.sh_addr < b->shdr.sh_addr;
+  });
+
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr && (ctx.phdr->shdr.sh_flags & SHF_ALLOC))
     define(PT_PHDR, PF_R, sizeof(Word<E>), ctx.phdr);
@@ -208,7 +215,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     Chunk<E> *first = chunks[i++];
     if (is_note(first)) {
       i64 flags = to_phdr_flags(ctx, first);
-      define(PT_NOTE, flags, first->shdr.sh_addralign, first);
+      define(PT_NOTE, flags, 1, first);
 
       while (i < chunks.size() &&
              is_note(ctx.chunks[i]) &&
@@ -218,8 +225,6 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   }
 
   // Create PT_LOAD segments.
-  i64 pt_load_begin = vec.size();
-
   for (i64 i = 0; i < chunks.size();) {
     Chunk<E> *first = chunks[i++];
     i64 flags = to_phdr_flags(ctx, first);
@@ -240,14 +245,6 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
            to_phdr_flags(ctx, chunks[i]) == flags)
       append(chunks[i++]);
   }
-
-  // The ELF spec says that "loadable segment entries in the program
-  // header table appear in ascending order, sorted on the p_vaddr
-  // member".
-  std::stable_sort(vec.begin() + pt_load_begin, vec.end(),
-                   [](const ElfPhdr<E> &a, const ElfPhdr<E> &b) {
-    return a.p_vaddr < b.p_vaddr;
-  });
 
   // Create a PT_TLS.
   for (i64 i = 0; i < ctx.chunks.size();) {
