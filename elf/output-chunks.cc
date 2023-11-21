@@ -281,13 +281,12 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   // Create a PT_GNU_RELRO.
   if (ctx.arg.z_relro) {
     for (i64 i = 0; i < ctx.chunks.size(); i++) {
-      if (!ctx.chunks[i]->is_relro)
-        continue;
-
-      define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i++]);
-      while (i < ctx.chunks.size() && ctx.chunks[i]->is_relro)
-        append(ctx.chunks[i++]);
-      vec.back().p_align = 1;
+      if (ctx.chunks[i]->is_relro && !is_tbss(ctx.chunks[i])) {
+        define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i++]);
+        while (i < ctx.chunks.size() && ctx.chunks[i]->is_relro)
+          append(ctx.chunks[i++]);
+        vec.back().p_align = 1;
+      }
     }
   }
 
