@@ -176,8 +176,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   };
 
   auto is_bss = [](Chunk<E> *chunk) {
-    return chunk->shdr.sh_type == SHT_NOBITS &&
-           !(chunk->shdr.sh_flags & SHF_TLS);
+    return chunk->shdr.sh_type == SHT_NOBITS;
   };
 
   auto is_tbss = [](Chunk<E> *chunk) {
@@ -186,9 +185,15 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   };
 
   auto is_note = [](Chunk<E> *chunk) {
-    ElfShdr<E> &shdr = chunk->shdr;
-    return (shdr.sh_type == SHT_NOTE) && (shdr.sh_flags & SHF_ALLOC);
+    return chunk->shdr.sh_type == SHT_NOTE;
   };
+
+  // When we are creating PT_LOAD segments, we consider only
+  // the following chunks.
+  std::vector<Chunk<E> *> chunks;
+  for (Chunk<E> *chunk : ctx.chunks)
+    if ((chunk->shdr.sh_flags & SHF_ALLOC) && !is_tbss(chunk))
+      chunks.push_back(chunk);
 
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr && (ctx.phdr->shdr.sh_flags & SHF_ALLOC))
@@ -199,62 +204,58 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     define(PT_INTERP, PF_R, 1, ctx.interp);
 
   // Create a PT_NOTE for SHF_NOTE sections.
-  for (i64 i = 0, end = ctx.chunks.size(); i < end;) {
-    Chunk<E> *first = ctx.chunks[i++];
-    if (!is_note(first))
-      continue;
+  for (i64 i = 0; i < chunks.size();) {
+    Chunk<E> *first = chunks[i++];
+    if (is_note(first)) {
+      i64 flags = to_phdr_flags(ctx, first);
+      define(PT_NOTE, flags, first->shdr.sh_addralign, first);
 
-    i64 flags = to_phdr_flags(ctx, first);
-    i64 alignment = first->shdr.sh_addralign;
-    define(PT_NOTE, flags, alignment, first);
-
-    while (i < end && is_note(ctx.chunks[i]) &&
-           to_phdr_flags(ctx, ctx.chunks[i]) == flags)
-      append(ctx.chunks[i++]);
+      while (i < chunks.size() &&
+             is_note(ctx.chunks[i]) &&
+             to_phdr_flags(ctx, ctx.chunks[i]) == flags)
+        append(ctx.chunks[i++]);
+    }
   }
 
   // Create PT_LOAD segments.
-  {
-    i64 idx = vec.size();
-    std::vector<Chunk<E> *> chunks = ctx.chunks;
-    std::erase_if(chunks, is_tbss);
+  i64 pt_load_begin = vec.size();
 
-    for (i64 i = 0, end = chunks.size(); i < end;) {
-      Chunk<E> *first = chunks[i++];
-      if (!(first->shdr.sh_flags & SHF_ALLOC))
-        continue;
+  for (i64 i = 0; i < chunks.size();) {
+    Chunk<E> *first = chunks[i++];
+    i64 flags = to_phdr_flags(ctx, first);
+    define(PT_LOAD, flags, ctx.page_size, first);
 
-      i64 flags = to_phdr_flags(ctx, first);
-      define(PT_LOAD, flags, ctx.page_size, first);
-
-      // Add contiguous ALLOC sections as long as they have the same
-      // section flags and there's no on-disk gap in between.
-      if (!is_bss(first))
-        while (i < end && !is_bss(chunks[i]) &&
-               to_phdr_flags(ctx, chunks[i]) == flags &&
-               chunks[i]->shdr.sh_offset - first->shdr.sh_offset ==
-               chunks[i]->shdr.sh_addr - first->shdr.sh_addr)
-          append(chunks[i++]);
-
-      while (i < end && is_bss(chunks[i]) &&
-             to_phdr_flags(ctx, chunks[i]) == flags)
+    // Add contiguous ALLOC sections as long as they have the same
+    // section flags and there's no on-disk gap in between.
+    if (!is_bss(first))
+      while (i < chunks.size() &&
+             !is_bss(chunks[i]) &&
+             to_phdr_flags(ctx, chunks[i]) == flags &&
+             chunks[i]->shdr.sh_offset - first->shdr.sh_offset ==
+             chunks[i]->shdr.sh_addr - first->shdr.sh_addr)
         append(chunks[i++]);
-    }
 
-    // The ELF spec says that "loadable segment entries in the program
-    // header table appear in ascending order, sorted on the p_vaddr
-    // member".
-    std::stable_sort(vec.begin() + idx, vec.end(),
-                     [](const ElfPhdr<E> &a, const ElfPhdr<E> &b) {
-      return a.p_vaddr < b.p_vaddr;
-    });
+    while (i < chunks.size() &&
+           is_bss(chunks[i]) &&
+           to_phdr_flags(ctx, chunks[i]) == flags)
+      append(chunks[i++]);
   }
 
+  // The ELF spec says that "loadable segment entries in the program
+  // header table appear in ascending order, sorted on the p_vaddr
+  // member".
+  std::stable_sort(vec.begin() + pt_load_begin, vec.end(),
+                   [](const ElfPhdr<E> &a, const ElfPhdr<E> &b) {
+    return a.p_vaddr < b.p_vaddr;
+  });
+
   // Create a PT_TLS.
-  for (i64 i = 0; i < ctx.chunks.size(); i++) {
-    if (ctx.chunks[i]->shdr.sh_flags & SHF_TLS) {
-      define(PT_TLS, PF_R, 1, ctx.chunks[i++]);
-      while (i < ctx.chunks.size() && (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
+  for (i64 i = 0; i < ctx.chunks.size();) {
+    Chunk<E> *first = ctx.chunks[i++];
+    if (first->shdr.sh_flags & SHF_TLS) {
+      define(PT_TLS, PF_R, 1, first);
+      while (i < ctx.chunks.size() &&
+             (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
         append(ctx.chunks[i++]);
     }
   }
@@ -280,11 +281,12 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create a PT_GNU_RELRO.
   if (ctx.arg.z_relro) {
-    for (i64 i = 0; i < ctx.chunks.size(); i++) {
-      if (ctx.chunks[i]->is_relro && !is_tbss(ctx.chunks[i])) {
-        define(PT_GNU_RELRO, PF_R, 1, ctx.chunks[i++]);
-        while (i < ctx.chunks.size() && ctx.chunks[i]->is_relro)
-          append(ctx.chunks[i++]);
+    for (i64 i = 0; i < chunks.size();) {
+      Chunk<E> *first = chunks[i++];
+      if (first->is_relro) {
+        define(PT_GNU_RELRO, PF_R, 1, first);
+        while (i < chunks.size() && chunks[i]->is_relro)
+          append(chunks[i++]);
         vec.back().p_align = 1;
       }
     }
