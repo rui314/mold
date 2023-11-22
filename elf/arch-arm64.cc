@@ -602,7 +602,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 }
 
 template <>
-void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
+void Thunk<E>::copy_buf(Context<E> &ctx) {
   static const ul32 insn[] = {
     0x9000'0010, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
     0x9100'0210, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC

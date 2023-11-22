@@ -484,7 +484,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 }
 
 template <>
-void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
+void Thunk<E>::copy_buf(Context<E> &ctx) {
   // If the destination is PLT, we read an address from .got.plt or .got
   // and jump there.
   static const ul32 plt_thunk[] = {

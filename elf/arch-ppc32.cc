@@ -408,7 +408,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 }
 
 template <>
-void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
+void Thunk<E>::copy_buf(Context<E> &ctx) {
   static const ub32 local_thunk[] = {
     // Get this thunk's address
     0x7c08'02a6, // mflr    r0

@@ -2889,7 +2889,7 @@ void show_stats(Context<E> &ctx) {
     static Counter thunk_bytes("thunk_bytes");
     for (Chunk<E> *chunk : ctx.chunks)
       if (OutputSection<E> *osec = chunk->to_osec())
-        for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : osec->thunks)
+        for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks)
           thunk_bytes += thunk->size();
   }
 

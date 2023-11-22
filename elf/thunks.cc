@@ -119,7 +119,7 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   return -max_distance() <= val && val < max_distance();
 }
 
-static void reset_thunk(RangeExtensionThunk<E> &thunk) {
+static void reset_thunk(Thunk<E> &thunk) {
   for (Symbol<E> *sym : thunk.symbols) {
     sym->extra.thunk_idx = -1;
     sym->extra.thunk_sym_idx = -1;
@@ -129,10 +129,10 @@ static void reset_thunk(RangeExtensionThunk<E> &thunk) {
 
 // Scan relocations to collect symbols that need thunks.
 static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
-                      RangeExtensionThunk<E> &thunk, i64 thunk_idx) {
+                      Thunk<E> &thunk, i64 thunk_idx) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
-  std::vector<RangeExtensionRef> &range_extn = isec.extra.range_extn;
-  range_extn.resize(rels.size());
+  std::vector<ThunkRef> &thunk_refs = isec.extra.thunk_refs;
+  thunk_refs.resize(rels.size());
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -151,15 +151,15 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
     // This relocation needs a thunk. If the symbol is already in a
     // previous thunk, reuse it.
     if (sym.extra.thunk_idx != -1) {
-      range_extn[i].thunk_idx = sym.extra.thunk_idx;
-      range_extn[i].sym_idx = sym.extra.thunk_sym_idx;
+      thunk_refs[i].thunk_idx = sym.extra.thunk_idx;
+      thunk_refs[i].sym_idx = sym.extra.thunk_sym_idx;
       continue;
     }
 
     // Otherwise, add the symbol to the current thunk if it's not
     // added already.
-    range_extn[i].thunk_idx = thunk_idx;
-    range_extn[i].sym_idx = -1;
+    thunk_refs[i].thunk_idx = thunk_idx;
+    thunk_refs[i].sym_idx = -1;
 
     if (sym.flags.exchange(-1) == 0) {
       std::scoped_lock lock(thunk.mu);
@@ -170,8 +170,6 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
 
 template <>
 void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
-  using Thunk = RangeExtensionThunk<E>;
-
   std::span<InputSection<E> *> m = members;
   if (m.empty())
     return;
@@ -215,7 +213,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     // Move D foward as far as we can jump from B to a thunk at D.
     auto d_thunk_end = [&] {
       u64 d_end = align_to(offset, 1 << m[d]->p2align) + m[d]->sh_size;
-      return align_to(d_end, Thunk::alignment) + max_thunk_size;
+      return align_to(d_end, Thunk<E>::alignment) + max_thunk_size;
     };
 
     while (d < m.size() &&
@@ -243,9 +241,9 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
       reset_thunk(*thunks[t++]);
 
     // Create a new thunk and place it at D.
-    offset = align_to(offset, Thunk::alignment);
+    offset = align_to(offset, Thunk<E>::alignment);
     i64 thunk_idx = thunks.size();
-    Thunk *thunk = new Thunk(*this, offset);
+    Thunk<E> *thunk = new Thunk<E>(*this, offset);
     thunks.emplace_back(thunk);
 
     // Scan relocations between B and C to collect symbols that need
@@ -278,11 +276,11 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
                            [&](InputSection<E> *isec) {
       std::span<Symbol<E> *> syms = isec->file.symbols;
       std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
-      std::span<RangeExtensionRef> range_extn = isec->extra.range_extn;
+      std::span<ThunkRef> thunk_refs = isec->extra.thunk_refs;
 
       for (i64 i = 0; i < rels.size(); i++)
-        if (range_extn[i].thunk_idx == thunk_idx)
-          range_extn[i].sym_idx = syms[rels[i].r_sym]->extra.thunk_sym_idx;
+        if (thunk_refs[i].thunk_idx == thunk_idx)
+          thunk_refs[i].sym_idx = syms[rels[i].r_sym]->extra.thunk_sym_idx;
     });
 
     // Move B forward to point to the begining of the next batch.

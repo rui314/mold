@@ -95,12 +95,12 @@ struct SymbolAux<PPC64V1> : SymbolAux<X86_64> {
 //
 
 template <typename E>
-class RangeExtensionThunk {};
+class Thunk {};
 
 template <needs_thunk E>
-class RangeExtensionThunk<E> {
+class Thunk<E> {
 public:
-  RangeExtensionThunk(OutputSection<E> &osec, i64 offset)
+  Thunk(OutputSection<E> &osec, i64 offset)
     : output_section(osec), offset(offset) {}
 
   i64 size() const { return E::thunk_hdr_size + symbols.size() * E::thunk_size; }
@@ -119,7 +119,7 @@ public:
   std::vector<Symbol<E> *> symbols;
 };
 
-struct RangeExtensionRef {
+struct ThunkRef {
   i16 thunk_idx = -1;
   i16 sym_idx = -1;
 };
@@ -212,7 +212,7 @@ struct InputSectionExtras {};
 
 template <needs_thunk E>
 struct InputSectionExtras<E> {
-  std::vector<RangeExtensionRef> range_extn;
+  std::vector<ThunkRef> thunk_refs;
 };
 
 template <is_riscv E>
@@ -462,7 +462,7 @@ public:
   void create_range_extension_thunks(Context<E> &ctx);
 
   std::vector<InputSection<E> *> members;
-  std::vector<std::unique_ptr<RangeExtensionThunk<E>>> thunks;
+  std::vector<std::unique_ptr<Thunk<E>>> thunks;
   std::unique_ptr<RelocSection<E>> reloc_sec;
 };
 
@@ -2314,7 +2314,7 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 template <typename E>
 u64 InputSection<E>::get_thunk_addr(i64 idx) {
   if constexpr (needs_thunk<E>) {
-    RangeExtensionRef ref = extra.range_extn[idx];
+    ThunkRef ref = extra.thunk_refs[idx];
     assert(ref.thunk_idx != -1);
     return output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx);
   }

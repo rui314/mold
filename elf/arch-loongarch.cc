@@ -653,7 +653,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 }
 
 template <>
-void RangeExtensionThunk<E>::copy_buf(Context<E> &ctx) {
+void Thunk<E>::copy_buf(Context<E> &ctx) {
   static const ul32 insn[] = {
     0x1e00'000c, // pcaddu18i $t0, 0
     0x4c00'0180, // jirl      $zero, $t0, 0

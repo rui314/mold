@@ -925,8 +925,7 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   });
 
   if constexpr (needs_thunk<E>) {
-    tbb::parallel_for_each(thunks,
-                           [&](std::unique_ptr<RangeExtensionThunk<E>> &thunk) {
+    tbb::parallel_for_each(thunks, [&](std::unique_ptr<Thunk<E>> &thunk) {
       thunk->copy_buf(ctx);
     });
   }
@@ -1019,7 +1018,7 @@ void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
     this->strtab_size = 0;
     this->num_local_symtab = 0;
 
-    for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks) {
+    for (std::unique_ptr<Thunk<E>> &thunk : thunks) {
       // For ARM32, we emit additional symbol "$t", "$a" and "$d" for
       // each thunk to mark the beginning of Thumb code, ARM code and
       // data, respectively.
@@ -1058,7 +1057,7 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
       esym++;
     };
 
-    for (std::unique_ptr<RangeExtensionThunk<E>> &thunk : thunks) {
+    for (std::unique_ptr<Thunk<E>> &thunk : thunks) {
       for (i64 i = 0; i < thunk->symbols.size(); i++) {
         Symbol<E> &sym = *thunk->symbols[i];
         u64 addr = thunk->get_addr(i);
