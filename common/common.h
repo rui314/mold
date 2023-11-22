@@ -565,7 +565,7 @@ public:
   }
 
   ~ConcurrentMap() {
-    free(entries);
+    free(entries_buf);
   }
 
   // In order to avoid unnecessary cache-line false sharing, we want
@@ -579,19 +579,15 @@ public:
 
   void resize(i64 nbuckets) {
     this->nbuckets = std::max<i64>(MIN_NBUCKETS, bit_ceil(nbuckets));
+    free(entries_buf);
 
-    i64 sz = sizeof(Entry) * this->nbuckets;
-    free(entries);
-
-#if _WIN32
     // Even though std::aligned_alloc is defined in C++17, MSVC doesn't
-    // seem to provide that function.
-    entries = (Entry *)_aligned_malloc(sz, alignof(Entry));
-#else
-    entries = (Entry *)std::aligned_alloc(alignof(Entry), sz);
-#endif
-
-    memset(entries, 0, sz);
+    // seem to provide that function. C11's aligned_alloc may not be always
+    // avialalbe. Therefore, we'll align the buffer ourselves.
+    i64 size = sizeof(Entry) * this->nbuckets;
+    entries_buf = malloc(size + alignof(Entry) - 1);
+    entries = (Entry *)align_to((u64)entries_buf, alignof(Entry));
+    memset(entries, 0, size);
   }
 
   std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
@@ -699,6 +695,7 @@ public:
   static constexpr i64 NUM_SHARDS = 16;
   static constexpr i64 MAX_RETRY = 128;
 
+  void *entries_buf = nullptr;
   Entry *entries = nullptr;
   i64 nbuckets = 0;
 
