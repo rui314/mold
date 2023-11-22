@@ -149,11 +149,11 @@ template <typename E>
 static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   std::vector<ElfPhdr<E>> vec;
 
-  auto define = [&](u64 type, u64 flags, i64 min_align, Chunk<E> *chunk) {
+  auto define = [&](u64 type, u64 flags, Chunk<E> *chunk) {
     ElfPhdr<E> phdr = {};
     phdr.p_type = type;
     phdr.p_flags = flags;
-    phdr.p_align = std::max<u64>(min_align, chunk->shdr.sh_addralign);
+    phdr.p_align = chunk->shdr.sh_addralign;
     phdr.p_offset = chunk->shdr.sh_offset;
 
     if (chunk->shdr.sh_type != SHT_NOBITS)
@@ -204,18 +204,18 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr && (ctx.phdr->shdr.sh_flags & SHF_ALLOC))
-    define(PT_PHDR, PF_R, sizeof(Word<E>), ctx.phdr);
+    define(PT_PHDR, PF_R, ctx.phdr);
 
   // Create a PT_INTERP.
   if (ctx.interp)
-    define(PT_INTERP, PF_R, 1, ctx.interp);
+    define(PT_INTERP, PF_R, ctx.interp);
 
   // Create a PT_NOTE for SHF_NOTE sections.
   for (i64 i = 0; i < chunks.size();) {
     Chunk<E> *first = chunks[i++];
     if (is_note(first)) {
       i64 flags = to_phdr_flags(ctx, first);
-      define(PT_NOTE, flags, 1, first);
+      define(PT_NOTE, flags, first);
 
       while (i < chunks.size() &&
              is_note(ctx.chunks[i]) &&
@@ -228,7 +228,8 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   for (i64 i = 0; i < chunks.size();) {
     Chunk<E> *first = chunks[i++];
     i64 flags = to_phdr_flags(ctx, first);
-    define(PT_LOAD, flags, ctx.page_size, first);
+    define(PT_LOAD, flags, first);
+    vec.back().p_align = std::max<u64>(ctx.page_size, vec.back().p_align);
 
     // Add contiguous ALLOC sections as long as they have the same
     // section flags and there's no on-disk gap in between.
@@ -250,7 +251,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   for (i64 i = 0; i < ctx.chunks.size();) {
     Chunk<E> *first = ctx.chunks[i++];
     if (first->shdr.sh_flags & SHF_TLS) {
-      define(PT_TLS, PF_R, 1, first);
+      define(PT_TLS, PF_R, first);
       while (i < ctx.chunks.size() &&
              (ctx.chunks[i]->shdr.sh_flags & SHF_TLS))
         append(ctx.chunks[i++]);
@@ -259,11 +260,11 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Add PT_DYNAMIC
   if (ctx.dynamic && ctx.dynamic->shdr.sh_size)
-    define(PT_DYNAMIC, PF_R | PF_W, 1, ctx.dynamic);
+    define(PT_DYNAMIC, PF_R | PF_W, ctx.dynamic);
 
   // Add PT_GNU_EH_FRAME
   if (ctx.eh_frame_hdr)
-    define(PT_GNU_EH_FRAME, PF_R, 1, ctx.eh_frame_hdr);
+    define(PT_GNU_EH_FRAME, PF_R, ctx.eh_frame_hdr);
 
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
   // contain any segments. It controls executable bit of stack area.
@@ -281,7 +282,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     for (i64 i = 0; i < chunks.size();) {
       Chunk<E> *first = chunks[i++];
       if (first->is_relro) {
-        define(PT_GNU_RELRO, PF_R, 1, first);
+        define(PT_GNU_RELRO, PF_R, first);
         while (i < chunks.size() && chunks[i]->is_relro)
           append(chunks[i++]);
         vec.back().p_align = 1;
@@ -292,17 +293,17 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   // Create a PT_ARM_EDXIDX
   if constexpr (is_arm32<E>)
     if (OutputSection<E> *osec = find_section(ctx, SHT_ARM_EXIDX))
-      define(PT_ARM_EXIDX, PF_R, 4, osec);
+      define(PT_ARM_EXIDX, PF_R, osec);
 
   // Create a PT_RISCV_ATTRIBUTES
   if constexpr (is_riscv<E>)
     if (ctx.extra.riscv_attributes->shdr.sh_size)
-      define(PT_RISCV_ATTRIBUTES, PF_R, 1, ctx.extra.riscv_attributes);
+      define(PT_RISCV_ATTRIBUTES, PF_R, ctx.extra.riscv_attributes);
 
   // Create a PT_OPENBSD_RANDOMIZE
   for (Chunk<E> *chunk : ctx.chunks)
     if (chunk->name == ".openbsd.randomdata")
-      define(PT_OPENBSD_RANDOMIZE, PF_R | PF_W, 1, chunk);
+      define(PT_OPENBSD_RANDOMIZE, PF_R | PF_W, chunk);
 
   // Set p_paddr if --physical-image-base was given. --physical-image-base
   // is typically used in embedded programming to specify the base address
