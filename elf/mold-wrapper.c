@@ -138,7 +138,7 @@ int posix_spawnp(pid_t *pid, const char *file,
 		 const posix_spawnattr_t *attrp,
 		 char *const *argv, char *const *envp) {
   debug_print("posix_spawnp %s\n", file);
-  if (!strcmp(file, "ld") || is_ld(file))
+  if (is_ld(file))
     file = get_mold_path();
   typeof(posix_spawnp) *real = dlsym(RTLD_NEXT, "posix_spawnp");
   return real(pid, file, file_actions, attrp, argv, envp);
