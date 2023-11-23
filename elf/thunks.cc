@@ -177,9 +177,8 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   // Initialize input sections with a dummy offset so that we can
   // distinguish sections that have got an address with the one who
   // haven't.
-  tbb::parallel_for_each(m, [](InputSection<E> *isec) {
+  for (InputSection<E> *isec : m)
     isec->offset = -1;
-  });
 
   // We create thunks from the beginning of the section to the end.
   // We manage progress using four offsets which increase monotonically.
