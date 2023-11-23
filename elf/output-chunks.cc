@@ -50,10 +50,9 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
     if (ctx.arg.relocatable)
       return 0;
 
-    if (!ctx.arg.entry.empty())
-      if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.entry);
-          sym->file && !sym->file->is_dso)
-        return sym->get_addr(ctx);
+    if (Symbol<E> &sym = *ctx.arg.entry;
+        sym.file && !sym.file->is_dso)
+      return sym.get_addr(ctx);
 
     if (OutputSection<E> *osec = find_section(ctx, ".text"))
       return osec->shdr.sh_addr;
@@ -763,13 +762,13 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_VERDEFNUM, ctx.verdef->shdr.sh_info);
   }
 
-  if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.init);
-      sym->file && !sym->file->is_dso)
-    define(DT_INIT, sym->get_addr(ctx));
+  if (Symbol<E> &sym = *ctx.arg.init;
+      sym.file && !sym.file->is_dso)
+    define(DT_INIT, sym.get_addr(ctx));
 
-  if (Symbol<E> *sym = get_symbol(ctx, ctx.arg.fini);
-      sym->file && !sym->file->is_dso)
-    define(DT_FINI, sym->get_addr(ctx));
+  if (Symbol<E> &sym = *ctx.arg.fini;
+      sym.file && !sym.file->is_dso)
+    define(DT_FINI, sym.get_addr(ctx));
 
   if (ctx.hash)
     define(DT_HASH, ctx.hash->shdr.sh_addr);

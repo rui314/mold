@@ -1608,7 +1608,12 @@ struct ContextExtras<ALPHA> {
 // resource management, and other miscellaneous objects.
 template <typename E>
 struct Context {
-  Context() = default;
+  Context() {
+    arg.entry = get_symbol(*this, "_start");
+    arg.fini = get_symbol(*this, "_fini");
+    arg.init = get_symbol(*this, "_init");
+  }
+
   Context(const Context<E> &) = delete;
 
   void checkpoint() {
@@ -1625,6 +1630,9 @@ struct Context {
     CompressKind compress_debug_sections = COMPRESS_NONE;
     SeparateCodeKind z_separate_code = NOSEPARATE_CODE;
     ShuffleSectionsKind shuffle_sections = SHUFFLE_SECTIONS_NONE;
+    Symbol<E> *entry = nullptr;
+    Symbol<E> *fini = nullptr;
+    Symbol<E> *init = nullptr;
     UnresolvedKind unresolved_symbols = UNRESOLVED_ERROR;
     bool Bsymbolic = false;
     bool Bsymbolic_functions = false;
@@ -1714,9 +1722,6 @@ struct Context {
     std::string dependency_file;
     std::string directory;
     std::string dynamic_linker;
-    std::string entry = "_start";
-    std::string fini = "_fini";
-    std::string init = "_init";
     std::string output = "a.out";
     std::string package_metadata;
     std::string plugin;

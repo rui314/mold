@@ -638,15 +638,14 @@ void ppc64v1_scan_symbols(Context<E> &ctx) {
   });
 
   // Functions referenced by the ELF header also have to have .opd entries.
-  auto mark = [&](std::string_view name) {
-    if (!name.empty())
-      if (Symbol<E> &sym = *get_symbol(ctx, name); !sym.is_imported)
-        sym.flags |= NEEDS_PPC_OPD;
-  };
+  if (!ctx.arg.entry->is_imported)
+    ctx.arg.entry->flags |= NEEDS_PPC_OPD;
 
-  mark(ctx.arg.entry);
-  mark(ctx.arg.init);
-  mark(ctx.arg.fini);
+  if (!ctx.arg.init->is_imported)
+    ctx.arg.init->flags |= NEEDS_PPC_OPD;
+
+  if (!ctx.arg.fini->is_imported)
+    ctx.arg.fini->flags |= NEEDS_PPC_OPD;
 }
 
 void PPC64OpdSection::add_symbol(Context<E> &ctx, Symbol<E> *sym) {

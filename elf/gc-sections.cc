@@ -114,8 +114,6 @@ static void collect_root_set(Context<E> &ctx,
   });
 
   // Add sections referenced by root symbols.
-  enqueue_symbol(get_symbol(ctx, ctx.arg.entry));
-
   for (Symbol<E> *sym : ctx.arg.undefined)
     enqueue_symbol(sym);
 

@@ -592,7 +592,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.emit_relocs = true;
       ctx.arg.discard_locals = false;
     } else if (read_arg("e") || read_arg("entry")) {
-      ctx.arg.entry = arg;
+      ctx.arg.entry = get_symbol(ctx, arg);
     } else if (read_arg("Map")) {
       ctx.arg.Map = arg;
       ctx.arg.print_map = true;
@@ -673,9 +673,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("require-defined")) {
       ctx.arg.require_defined.push_back(get_symbol(ctx, arg));
     } else if (read_arg("init")) {
-      ctx.arg.init = arg;
+      ctx.arg.init = get_symbol(ctx, arg);
     } else if (read_arg("fini")) {
-      ctx.arg.fini = arg;
+      ctx.arg.fini = get_symbol(ctx, arg);
     } else if (read_arg("hash-style")) {
       if (arg == "sysv") {
         ctx.arg.hash_style_sysv = true;
@@ -1254,7 +1254,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.shared && warn_shared_textrel)
     ctx.arg.warn_textrel = true;
 
-  ctx.arg.undefined.push_back(get_symbol(ctx, ctx.arg.entry));
+  ctx.arg.undefined.push_back(ctx.arg.entry);
 
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
     std::variant<Symbol<E> *, u64> &val = ctx.arg.defsyms[i].second;

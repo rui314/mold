@@ -1587,9 +1587,9 @@ void rewrite_endbr(Context<E> &ctx) {
     });
 
     // Some symbols are implicitly address-taken
-    get_symbol(ctx, ctx.arg.entry)->address_taken = true;
-    get_symbol(ctx, ctx.arg.init)->address_taken = true;
-    get_symbol(ctx, ctx.arg.fini)->address_taken = true;
+    ctx.arg.entry->address_taken = true;
+    ctx.arg.init->address_taken = true;
+    ctx.arg.fini->address_taken = true;
 
     // Rewrite endbr64 with nop
     u8 endbr[] = {0xf3, 0x0f, 0x1e, 0xfa};
@@ -1952,9 +1952,9 @@ void compute_address_significance(Context<E> &ctx) {
   };
 
   // Some symbols' pointer values are leaked to the dynamic section.
-  mark(get_symbol(ctx, ctx.arg.entry));
-  mark(get_symbol(ctx, ctx.arg.init));
-  mark(get_symbol(ctx, ctx.arg.fini));
+  mark(ctx.arg.entry);
+  mark(ctx.arg.init);
+  mark(ctx.arg.fini);
 
   // Exported symbols are conservatively considered address-taken.
   if (ctx.dynsym)
