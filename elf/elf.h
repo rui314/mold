@@ -1869,7 +1869,7 @@ struct X86_64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
-  static constexpr u8 filler[] = { 0xcc };
+  static constexpr u8 filler[] = { 0xcc }; // int3
 
   static constexpr u32 R_COPY = R_X86_64_COPY;
   static constexpr u32 R_GLOB_DAT = R_X86_64_GLOB_DAT;
@@ -1894,7 +1894,7 @@ struct I386 {
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u8 filler[] = { 0xcc };
+  static constexpr u8 filler[] = { 0xcc }; // int3
 
   static constexpr u32 R_COPY = R_386_COPY;
   static constexpr u32 R_GLOB_DAT = R_386_GLOB_DAT;
@@ -1921,7 +1921,7 @@ struct ARM64 {
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 16;
-  static constexpr u8 filler[] = { 0x00, 0x7d, 0x20, 0xd4 };
+  static constexpr u8 filler[] = { 0x00, 0x7d, 0x20, 0xd4 }; // brk
 
   static constexpr u32 R_COPY = R_AARCH64_COPY;
   static constexpr u32 R_GLOB_DAT = R_AARCH64_GLOB_DAT;
@@ -1948,7 +1948,7 @@ struct ARM32 {
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 16;
   static constexpr u32 thunk_size = 16;
-  static constexpr u8 filler[] = { 0xff, 0xde };
+  static constexpr u8 filler[] = { 0xff, 0xde }; // udf
 
   static constexpr u32 R_COPY = R_ARM_COPY;
   static constexpr u32 R_GLOB_DAT = R_ARM_GLOB_DAT;
@@ -1974,7 +1974,7 @@ struct RV64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u8 filler[] = { 0x02, 0x90 };
+  static constexpr u8 filler[] = { 0x02, 0x90 }; // ebreak
 
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_64;
@@ -2007,7 +2007,7 @@ struct RV32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u8 filler[] = { 0x02, 0x90 };
+  static constexpr u8 filler[] = { 0x02, 0x90 }; // ebreak
 
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_32;
@@ -2044,7 +2044,7 @@ struct PPC32 {
   static constexpr u32 pltgot_size = 36;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 36;
-  static constexpr u8 filler[] = { 0x7f, 0xe0, 0x00, 0x08 };
+  static constexpr u8 filler[] = { 0x7f, 0xe0, 0x00, 0x08 }; // trap
 
   static constexpr u32 R_COPY = R_PPC_COPY;
   static constexpr u32 R_GLOB_DAT = R_PPC_GLOB_DAT;
@@ -2086,7 +2086,7 @@ struct PPC64V1 : PPC64 {
   static constexpr u32 pltgot_size = 0;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 28;
-  static constexpr u8 filler[] = { 0x7f, 0xe0, 0x00, 0x08 };
+  static constexpr u8 filler[] = { 0x7f, 0xe0, 0x00, 0x08 }; // trap
 };
 
 struct PPC64V2 : PPC64 {
@@ -2097,7 +2097,7 @@ struct PPC64V2 : PPC64 {
   static constexpr u32 pltgot_size = 0;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 24;
-  static constexpr u8 filler[] = { 0x08, 0x00, 0xe0, 0x7f };
+  static constexpr u8 filler[] = { 0x08, 0x00, 0xe0, 0x7f }; // trap
 };
 
 struct S390X {
@@ -2110,7 +2110,7 @@ struct S390X {
   static constexpr u32 plt_hdr_size = 48;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u8 filler[] = { 0x07, 0x00 };
+  static constexpr u8 filler[] = { 0x07, 0x00 }; // nop
 
   static constexpr u32 R_COPY = R_390_COPY;
   static constexpr u32 R_GLOB_DAT = R_390_GLOB_DAT;
@@ -2134,7 +2134,7 @@ struct SPARC64 {
   static constexpr u32 plt_hdr_size = 128;
   static constexpr u32 plt_size = 32;
   static constexpr u32 pltgot_size = 32;
-  static constexpr u8 filler[] = { 0x91, 0xd0, 0x20, 0x05 };
+  static constexpr u8 filler[] = { 0x91, 0xd0, 0x20, 0x05 }; // ta 5
 
   static constexpr u32 R_COPY = R_SPARC_COPY;
   static constexpr u32 R_GLOB_DAT = R_SPARC_GLOB_DAT;
@@ -2158,7 +2158,7 @@ struct M68K {
   static constexpr u32 plt_hdr_size = 18;
   static constexpr u32 plt_size = 14;
   static constexpr u32 pltgot_size = 8;
-  static constexpr u8 filler[] = { 0x4a, 0xfc };
+  static constexpr u8 filler[] = { 0x4a, 0xfc }; // illegal
 
   static constexpr u32 R_COPY = R_68K_COPY;
   static constexpr u32 R_GLOB_DAT = R_68K_GLOB_DAT;
@@ -2181,7 +2181,7 @@ struct SH4 {
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 12;
-  static constexpr u8 filler[] = { 0x00, 0x00 };
+  static constexpr u8 filler[] = { 0x00, 0x90 }; // nop
 
   static constexpr u32 R_COPY = R_SH_COPY;
   static constexpr u32 R_GLOB_DAT = R_SH_GLOB_DAT;
@@ -2204,7 +2204,7 @@ struct ALPHA {
   static constexpr u32 plt_hdr_size = 0;
   static constexpr u32 plt_size = 0;
   static constexpr u32 pltgot_size = 0;
-  static constexpr u8 filler[] = { 0x81, 0x00, 0x00, 0x00 };
+  static constexpr u8 filler[] = { 0x81, 0x00, 0x00, 0x00 }; // bugchk
 
   static constexpr u32 R_COPY = R_ALPHA_COPY;
   static constexpr u32 R_GLOB_DAT = R_ALPHA_GLOB_DAT;
@@ -2229,7 +2229,7 @@ struct LOONGARCH64 {
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 8;
-  static constexpr u8 filler[] = { 0x00, 0x00, 0x2a, 0x00 };
+  static constexpr u8 filler[] = { 0x00, 0x00, 0x2a, 0x00 }; // break 0
 
   static constexpr u32 R_COPY = R_LARCH_COPY;
   static constexpr u32 R_GLOB_DAT = R_LARCH_64;
@@ -2255,7 +2255,7 @@ struct LOONGARCH32 {
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 0;
   static constexpr u32 thunk_size = 8;
-  static constexpr u8 filler[] = { 0x00, 0x00, 0x2a, 0x00 };
+  static constexpr u8 filler[] = { 0x00, 0x00, 0x2a, 0x00 }; // break 0
 
   static constexpr u32 R_COPY = R_LARCH_COPY;
   static constexpr u32 R_GLOB_DAT = R_LARCH_32;
