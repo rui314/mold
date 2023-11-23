@@ -1547,12 +1547,12 @@ void copy_chunks(Context<E> &ctx) {
   // sections first. This is because REL-type relocation sections (as
   // opposed to RELA-type) stores relocation addends to target sections.
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (chunk->shdr.sh_type != (E::is_rela ? SHT_RELA : SHT_REL))
+    if (chunk->shdr.sh_type != SHT_REL)
       copy(*chunk);
   });
 
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (chunk->shdr.sh_type == (E::is_rela ? SHT_RELA : SHT_REL))
+    if (chunk->shdr.sh_type == SHT_REL)
       copy(*chunk);
   });
 
