@@ -20,7 +20,7 @@ ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-*)
   apt-get install -y cmake gcc g++
   apt-get install -y file
   ;;
-fedora-*)
+fedora-* | amzn-*)
   dnf install -y gcc-g++ cmake
   dnf install -y glibc-static file libstdc++-static diffutils util-linux
   ;;
