@@ -11,16 +11,15 @@
 namespace mold {
 
 std::string_view demangle(std::string_view name) {
-  static thread_local char *p;
-  if (p)
-    free(p);
+  static thread_local char *buf;
+  free(buf);
 
   // Try to demangle as a Rust symbol. Since legacy-style Rust symbols
   // are also valid as a C++ mangled name, we need to call this before
   // cpp_demangle.
-  p = rust_demangle(std::string(name).c_str(), 0);
-  if (p)
-    return p;
+  buf = rust_demangle(std::string(name).c_str(), 0);
+  if (buf)
+    return buf;
 
   // Try to demangle as a C++ symbol.
   if (std::optional<std::string_view> s = cpp_demangle(name))
