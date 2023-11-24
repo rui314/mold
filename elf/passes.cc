@@ -1592,7 +1592,7 @@ void rewrite_endbr(Context<E> &ctx) {
     ctx.arg.fini->address_taken = true;
 
     // Rewrite endbr64 with nop
-    u8 endbr[] = {0xf3, 0x0f, 0x1e, 0xfa};
+    u8 endbr64[] = {0xf3, 0x0f, 0x1e, 0xfa};
     u8 nop[] = {0x0f, 0x1f, 0x40, 0x00};
 
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -1600,10 +1600,12 @@ void rewrite_endbr(Context<E> &ctx) {
         if (sym->file == file && sym->esym().st_type == STT_FUNC &&
             !sym->address_taken) {
           if (InputSection<E> *isec = sym->get_input_section()) {
-            u8 *buf = ctx.buf + isec->output_section->shdr.sh_offset +
-                      isec->offset + sym->value;
-            if (memcmp(buf, endbr, 4) == 0)
-              memcpy(buf, nop, 4);
+            if (OutputSection<E> *osec = isec->output_section) {
+              u8 *buf = ctx.buf + osec->shdr.sh_offset + isec->offset +
+                        sym->value;
+              if (memcmp(buf, endbr64, 4) == 0)
+                memcpy(buf, nop, 4);
+            }
           }
         }
       }
