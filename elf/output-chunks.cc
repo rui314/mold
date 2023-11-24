@@ -1920,14 +1920,11 @@ get_merged_output_name(Context<E> &ctx, std::string_view name, u64 flags,
   // GCC seems to create sections named ".rodata.strN.<mangled-symbol-name>.M".
   // We want to eliminate the symbol name part from the section name.
   if ((flags & SHF_STRINGS) && name.starts_with(".rodata.")) {
-    if (entsize == 1 && addralign == 1)
-      return ".rodata.str1.1";
-    if (entsize == 2 && addralign == 2)
-      return ".rodata.str2.2";
-    if (entsize == 4 && addralign == 4)
-      return ".rodata.str4.4";
-    return save_string(ctx,".rodata.str"s + std::to_string(entsize) + "." +
-                       std::to_string(addralign));
+    std::string name2 = ".rodata.str"s + std::to_string(entsize) +
+                        "." + std::to_string(addralign);
+    if (name == name2)
+      return name;
+    return save_string(ctx, name2);
   }
 
   return name;
