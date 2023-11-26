@@ -2417,8 +2417,6 @@ InputFile<E>::get_string(Context<E> &ctx, const ElfShdr<E> &shdr) {
 
 template <typename E>
 inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
-  assert(idx < elf_sections.size());
-
   if (elf_sections.size() <= idx)
     Fatal(ctx) << *this << ": invalid section index: " << idx;
   return this->get_string(ctx, elf_sections[idx]);
