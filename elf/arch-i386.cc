@@ -254,6 +254,34 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
   }
 }
 
+static u32 relax_tlsdesc_to_ie(u8 *loc) {
+  switch ((loc[0] << 8) | loc[1]) {
+  case 0x8d83: return 0x8b83; // lea 0(%ebx), %eax -> mov 0(%ebx), %eax
+  case 0x8d9b: return 0x8b9b; // lea 0(%ebx), %ebx -> mov 0(%ebx), %ebx
+  case 0x8d8b: return 0x8b8b; // lea 0(%ebx), %ecx -> mov 0(%ebx), %ecx
+  case 0x8d93: return 0x8b93; // lea 0(%ebx), %edx -> mov 0(%ebx), %edx
+  case 0x8db3: return 0x8bb3; // lea 0(%ebx), %esi -> mov 0(%ebx), %esi
+  case 0x8dbb: return 0x8bbb; // lea 0(%ebx), %edi -> mov 0(%ebx), %edi
+  case 0x8da3: return 0x8ba3; // lea 0(%ebx), %esp -> mov 0(%ebx), %esp
+  case 0x8dab: return 0x8bab; // lea 0(%ebx), %ebp -> mov 0(%ebx), %ebp
+  }
+  return 0;
+}
+
+static u32 relax_tlsdesc_to_le(u8 *loc) {
+  switch ((loc[0] << 8) | loc[1]) {
+  case 0x8d83: return 0x90b8; // lea 0(%ebx), %eax -> mov $0, %eax
+  case 0x8d9b: return 0x90bb; // lea 0(%ebx), %ebx -> mov $0, %ebx
+  case 0x8d8b: return 0x90b9; // lea 0(%ebx), %ecx -> mov $0, %ecx
+  case 0x8d93: return 0x90ba; // lea 0(%ebx), %edx -> mov $0, %edx
+  case 0x8db3: return 0x90be; // lea 0(%ebx), %esi -> mov $0, %esi
+  case 0x8dbb: return 0x90bf; // lea 0(%ebx), %edi -> mov $0, %edi
+  case 0x8da3: return 0x90bc; // lea 0(%ebx), %esp -> mov $0, %esp
+  case 0x8dab: return 0x90bd; // lea 0(%ebx), %ebp -> mov $0, %ebp
+  }
+  return 0;
+}
+
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
@@ -373,15 +401,30 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //
       //   mov     $foo@TPOFF, %eax
       //   nop
+      //
+      // We allow the following alternative code sequence too because
+      // LLVM emits such code.
+      //
+      //   lea    0(%ebx), %reg
+      //       R_386_TLS_GOTDESC   foo
+      //   mov    %reg, %eax
+      //   call   *(%eax)
+      //       R_386_TLS_DESC_CALL foo
       if (sym.has_tlsdesc(ctx)) {
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - GOT;
       } else if (sym.has_gottp(ctx)) {
-        loc[-2] = 0x8b;
-        loc[-1] = 0x83;
+        u32 insn = relax_tlsdesc_to_ie(loc - 2);
+        if (!insn)
+          Fatal(ctx) << *this << ": illegal instruction sequence for TLSDESC";
+        loc[-2] = insn >> 8;
+        loc[-1] = insn;
         *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - GOT;
       } else {
-        loc[-2] = 0x90;
-        loc[-1] = 0xb8;
+        u32 insn = relax_tlsdesc_to_le(loc - 2);
+        if (!insn)
+          Fatal(ctx) << *this << ": illegal instruction sequence for TLSDESC";
+        loc[-2] = insn >> 8;
+        loc[-1] = insn;
         *(ul32 *)loc = S + A - ctx.tp_addr;
       }
       break;
