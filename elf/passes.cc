@@ -1646,18 +1646,54 @@ template <typename E>
 void apply_version_script(Context<E> &ctx) {
   Timer t(ctx, "apply_version_script");
 
-  auto is_simple = [&] {
-    for (VersionPattern &v : ctx.version_patterns)
-      if (v.is_cpp || v.pattern.find_first_of("*?[") != v.pattern.npos)
-        return false;
-    return true;
-  };
+  // Assign versions to symbols specified with `extern "C++"` or
+  // wildcard patterns first.
+  MultiGlob matcher;
+  MultiGlob cpp_matcher;
 
-  // If all patterns are simple (i.e. not containing any meta-
-  // characters and is not a C++ name), we can simply look up
-  // symbols.
-  if (is_simple()) {
-    for (VersionPattern &v : ctx.version_patterns) {
+  for (i64 i = 0; i < ctx.version_patterns.size(); i++) {
+    VersionPattern &v = ctx.version_patterns[i];
+    if (v.is_cpp) {
+      if (!cpp_matcher.add(v.pattern, i))
+        Fatal(ctx) << "invalid version pattern: " << v.pattern;
+    } else if (v.pattern.find_first_of("*?[") != v.pattern.npos) {
+      if (!matcher.add(v.pattern, i))
+        Fatal(ctx) << "invalid version pattern: " << v.pattern;
+    }
+  }
+
+  if (!matcher.empty() || !cpp_matcher.empty()) {
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      for (Symbol<E> *sym : file->get_global_syms()) {
+        if (sym->file != file)
+          continue;
+
+        std::string_view name = sym->name();
+        i64 match = INT64_MAX;
+
+        if (std::optional<u32> idx = matcher.find(name))
+          match = std::min<i64>(match, *idx);
+
+        // Match non-mangled symbols against the C++ pattern as well.
+        // Weird, but required to match other linkers' behavior.
+        if (!cpp_matcher.empty()) {
+          if (std::optional<std::string_view> s = cpp_demangle(name))
+            name = *s;
+          if (std::optional<u32> idx = cpp_matcher.find(name))
+            match = std::min<i64>(match, *idx);
+        }
+
+        if (match != INT64_MAX)
+          sym->ver_idx = ctx.version_patterns[match].ver_idx;
+      }
+    });
+  }
+
+  // Next, assign versions to symbols specified by exact name.
+  // In other words, exact matches have higher precedence over
+  // wildcard or `extern "C++"` patterns.
+  for (VersionPattern &v : ctx.version_patterns) {
+    if (!v.is_cpp && v.pattern.find_first_of("*?[") == v.pattern.npos) {
       Symbol<E> *sym = get_symbol(ctx, v.pattern);
 
       if (!sym->file && !ctx.arg.undefined_version)
@@ -1667,48 +1703,7 @@ void apply_version_script(Context<E> &ctx) {
       if (sym->file && !sym->file->is_dso)
         sym->ver_idx = v.ver_idx;
     }
-    return;
   }
-
-  // Otherwise, use glob pattern matchers.
-  MultiGlob matcher;
-  MultiGlob cpp_matcher;
-
-  for (i64 i = 0; i < ctx.version_patterns.size(); i++) {
-    VersionPattern &v = ctx.version_patterns[i];
-    if (v.is_cpp) {
-      if (!cpp_matcher.add(v.pattern, i))
-        Fatal(ctx) << "invalid version pattern: " << v.pattern;
-    } else {
-      if (!matcher.add(v.pattern, i))
-        Fatal(ctx) << "invalid version pattern: " << v.pattern;
-    }
-  }
-
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->get_global_syms()) {
-      if (sym->file != file)
-        continue;
-
-      std::string_view name = sym->name();
-      i64 match = INT64_MAX;
-
-      if (std::optional<u32> idx = matcher.find(name))
-        match = std::min<i64>(match, *idx);
-
-      // Match non-mangled symbols against the C++ pattern as well.
-      // Weird, but required to match other linkers' behavior.
-      if (!cpp_matcher.empty()) {
-        if (std::optional<std::string_view> s = cpp_demangle(name))
-          name = *s;
-        if (std::optional<u32> idx = cpp_matcher.find(name))
-          match = std::min<i64>(match, *idx);
-      }
-
-      if (match != INT64_MAX)
-        sym->ver_idx = ctx.version_patterns[match].ver_idx;
-    }
-  });
 }
 
 template <typename E>
