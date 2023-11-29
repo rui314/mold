@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+nm mold | grep -q '__tsan_init' && skip
+
 [ $MACHINE = m68k ] && skip
 [ $MACHINE = sh4 ] && skip
 
