@@ -40,7 +40,9 @@ jobs:
       if: failure()
       with:
         name: test-results-clang
-        path: b/out b/Testing
+        path: |
+          build/out
+          build/Testing
 
   build-gcc:
     runs-on: ubuntu-20.04
