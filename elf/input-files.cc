@@ -324,7 +324,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         ctx.has_ctors = true;
 
       if (name == ".eh_frame")
-        eh_frame_section = this->sections[i].get();
+        eh_frame_sections.push_back(this->sections[i].get());
 
       if constexpr (is_ppc32<E>)
         if (name == ".got2")
@@ -416,78 +416,75 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 // This function parses an input .eh_frame section.
 template <typename E>
 void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
-  if (!eh_frame_section)
-    return;
+  for (InputSection<E> *isec : eh_frame_sections) {
+    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+    i64 cies_begin = cies.size();
+    i64 fdes_begin = fdes.size();
 
-  InputSection<E> &isec = *eh_frame_section;
-  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
-  i64 cies_begin = cies.size();
-  i64 fdes_begin = fdes.size();
+    // Read CIEs and FDEs until empty.
+    std::string_view contents = this->get_string(ctx, isec->shdr());
+    i64 rel_idx = 0;
 
-  // Read CIEs and FDEs until empty.
-  std::string_view contents = this->get_string(ctx, isec.shdr());
-  i64 rel_idx = 0;
+    for (std::string_view data = contents; !data.empty();) {
+      i64 size = *(U32<E> *)data.data();
+      if (size == 0)
+        break;
 
-  for (std::string_view data = contents; !data.empty();) {
-    i64 size = *(U32<E> *)data.data();
-    if (size == 0)
-      break;
+      i64 begin_offset = data.data() - contents.data();
+      i64 end_offset = begin_offset + size + 4;
+      i64 id = *(U32<E> *)(data.data() + 4);
+      data = data.substr(size + 4);
 
-    i64 begin_offset = data.data() - contents.data();
-    i64 end_offset = begin_offset + size + 4;
-    i64 id = *(U32<E> *)(data.data() + 4);
-    data = data.substr(size + 4);
+      i64 rel_begin = rel_idx;
+      while (rel_idx < rels.size() && rels[rel_idx].r_offset < end_offset)
+        rel_idx++;
+      assert(rel_idx == rels.size() || begin_offset <= rels[rel_begin].r_offset);
 
-    i64 rel_begin = rel_idx;
-    while (rel_idx < rels.size() && rels[rel_idx].r_offset < end_offset)
-      rel_idx++;
-    assert(rel_idx == rels.size() || begin_offset <= rels[rel_begin].r_offset);
+      if (id == 0) {
+        // This is CIE.
+        cies.emplace_back(ctx, *this, *isec, begin_offset, rels, rel_begin);
+      } else {
+        // This is FDE.
+        if (rel_begin == rel_idx || rels[rel_begin].r_sym == 0) {
+          // FDE has no valid relocation, which means FDE is dead from
+          // the beginning. Compilers usually don't create such FDE, but
+          // `ld -r` tend to generate such dead FDEs.
+          continue;
+        }
 
-    if (id == 0) {
-      // This is CIE.
-      cies.emplace_back(ctx, *this, isec, begin_offset, rels, rel_begin);
-    } else {
-      // This is FDE.
-      if (rel_begin == rel_idx || rels[rel_begin].r_sym == 0) {
-        // FDE has no valid relocation, which means FDE is dead from
-        // the beginning. Compilers usually don't create such FDE, but
-        // `ld -r` tend to generate such dead FDEs.
-        continue;
+        if (rels[rel_begin].r_offset - begin_offset != 8)
+          Fatal(ctx) << *isec << ": FDE's first relocation should have offset 8";
+
+        fdes.emplace_back(begin_offset, rel_begin);
       }
+    }
 
-      if (rels[rel_begin].r_offset - begin_offset != 8)
-        Fatal(ctx) << isec << ": FDE's first relocation should have offset 8";
+    // Associate CIEs to FDEs.
+    auto find_cie = [&](i64 offset) {
+      for (i64 i = cies_begin; i < cies.size(); i++)
+        if (cies[i].input_offset == offset)
+          return i;
+      Fatal(ctx) << *isec << ": bad FDE pointer";
+    };
 
-      fdes.emplace_back(begin_offset, rel_begin);
+    for (i64 i = fdes_begin; i < fdes.size(); i++) {
+      i64 cie_offset = *(I32<E> *)(contents.data() + fdes[i].input_offset + 4);
+      fdes[i].cie_idx = find_cie(fdes[i].input_offset + 4 - cie_offset);
     }
   }
 
-  // Associate CIEs to FDEs.
-  auto find_cie = [&](i64 offset) {
-    for (i64 i = cies_begin; i < cies.size(); i++)
-      if (cies[i].input_offset == offset)
-        return i;
-    Fatal(ctx) << isec << ": bad FDE pointer";
-  };
-
-  for (i64 i = fdes_begin; i < fdes.size(); i++) {
-    i64 cie_offset = *(I32<E> *)(contents.data() + fdes[i].input_offset + 4);
-    fdes[i].cie_idx = find_cie(fdes[i].input_offset + 4 - cie_offset);
-  }
-
-  auto get_isec = [&](const FdeRecord<E> &fde) -> InputSection<E> * {
-    return get_section(this->elf_syms[rels[fde.rel_idx].r_sym]);
+  auto get_isec = [&](const FdeRecord<E> &fde) {
+    return get_section(this->elf_syms[fde.get_rels(*this)[0].r_sym]);
   };
 
   // We assume that FDEs for the same input sections are contiguous
   // in `fdes` vector.
-  std::stable_sort(fdes.begin() + fdes_begin, fdes.end(),
-                   [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
+  sort(fdes, [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
     return get_isec(a)->get_priority() < get_isec(b)->get_priority();
   });
 
   // Associate FDEs to input sections.
-  for (i64 i = fdes_begin; i < fdes.size();) {
+  for (i64 i = 0; i < fdes.size();) {
     InputSection<E> *isec = get_isec(fdes[i]);
     assert(isec->fde_begin == -1);
     isec->fde_begin = i++;

@@ -1183,7 +1183,7 @@ public:
   std::vector<FdeRecord<E>> fdes;
   BitVector has_symver;
   std::vector<ComdatGroupRef<E>> comdat_groups;
-  InputSection<E> *eh_frame_section = nullptr;
+  std::vector<InputSection<E> *> eh_frame_sections;
   bool exclude_libs = false;
   std::map<u32, u32> gnu_properties;
   bool is_lto_obj = false;

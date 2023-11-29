@@ -356,8 +356,8 @@ void kill_eh_frame_sections(Context<E> &ctx) {
   Timer t(ctx, "kill_eh_frame_sections");
 
   for (ObjectFile<E> *file : ctx.objs)
-    if (file->eh_frame_section)
-      file->eh_frame_section->is_alive = false;
+    for (InputSection<E> *sec : file->eh_frame_sections)
+      sec->is_alive = false;
 }
 
 template <typename E>
