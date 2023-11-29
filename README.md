@@ -255,13 +255,14 @@ following people and organizations who have sponsored $128/month or more:
 
 <a href="https://www.emergetools.com"><img src="docs/emerge-tools-logo.png" align=center height=120 width=240 alt="Emerge Tools"></a><br>
 
-- [Uber](https://uber.com)
 - [G-Research](https://www.gresearch.co.uk)
 - [Signal Slot Inc.](https://github.com/signal-slot)
+- [GlareDB](https://github.com/GlareDB)
 
 ### Individual sponsors
 
-- [300baud](https://github.com/300baud)
-- [Johan Andersson](https://github.com/repi)
 - [Wei Wu](https://github.com/lazyparser)
 - [kyle-elliott](https://github.com/kyle-elliott)
+- [Bryant Biggs](https://github.com/bryantbiggs)
+- [kraptor23](https://github.com/kraptor23)
+- [Jinkyu Yi](https://github.com/jincreator)
