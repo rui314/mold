@@ -462,14 +462,15 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 
 // Get the name of a function containin a given offset.
 template <typename E>
-std::string_view InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) const {
-  for (const ElfSym<E> &esym : file.elf_syms) {
+std::string_view
+InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) const {
+  for (Symbol<E> *sym : file.symbols) {
+    const ElfSym<E> &esym = sym->esym();
     if (esym.st_shndx == shndx && esym.st_type == STT_FUNC &&
         esym.st_value <= offset && offset < esym.st_value + esym.st_size) {
-      std::string_view name = file.symbol_strtab.data() + esym.st_name;
       if (ctx.arg.demangle)
-        return demangle(name);
-      return name;
+        return demangle(*sym);
+      return sym->name();
     }
   }
   return "";
@@ -508,7 +509,7 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
       ss << ":(" << func << ")";
 
     typename decltype(ctx.undef_errors)::accessor acc;
-    ctx.undef_errors.insert(acc, {sym.name(), {}});
+    ctx.undef_errors.insert(acc, {&sym, {}});
     acc->second.push_back(ss.str());
   };
 

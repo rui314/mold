@@ -1492,14 +1492,13 @@ void report_undef_errors(Context<E> &ctx) {
   constexpr i64 max_errors = 3;
 
   for (auto &pair : ctx.undef_errors) {
-    std::string_view sym_name = pair.first;
+    Symbol<E> *sym = pair.first;
     std::span<std::string> errors = pair.second;
 
-    if (ctx.arg.demangle)
-      sym_name = demangle(sym_name);
-
     std::stringstream ss;
-    ss << "undefined symbol: " << sym_name << "\n";
+    ss << "undefined symbol: "
+       << (ctx.arg.demangle ? demangle(*sym) : sym->name())
+       << "\n";
 
     for (i64 i = 0; i < errors.size() && i < max_errors; i++)
       ss << errors[i];
@@ -1677,7 +1676,7 @@ void apply_version_script(Context<E> &ctx) {
         // Match non-mangled symbols against the C++ pattern as well.
         // Weird, but required to match other linkers' behavior.
         if (!cpp_matcher.empty()) {
-          if (std::optional<std::string_view> s = cpp_demangle(name))
+          if (std::optional<std::string_view> s = demangle_cpp(name))
             name = *s;
           if (std::optional<u32> idx = cpp_matcher.find(name))
             match = std::min<i64>(match, *idx);
@@ -1886,7 +1885,7 @@ void compute_import_export(Context<E> &ctx) {
         if (matcher.find(name)) {
           handle_match(sym);
         } else if (!cpp_matcher.empty()) {
-          if (std::optional<std::string_view> s = cpp_demangle(name))
+          if (std::optional<std::string_view> s = demangle_cpp(name))
             name = *s;
           if (cpp_matcher.find(name))
             handle_match(sym);

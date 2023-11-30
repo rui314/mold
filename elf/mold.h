@@ -1188,6 +1188,7 @@ public:
   std::map<u32, u32> gnu_properties;
   bool is_lto_obj = false;
   bool needs_executable_stack = false;
+  bool is_rust_obj = false;
 
   u64 num_dynrel = 0;
   u64 reldyn_offset = 0;
@@ -1806,7 +1807,7 @@ struct Context {
   Atomic<bool> has_textrel = false;
   Atomic<u32> num_ifunc_dynrels = 0;
 
-  tbb::concurrent_hash_map<std::string_view, std::vector<std::string>> undef_errors;
+  tbb::concurrent_hash_map<Symbol<E> *, std::vector<std::string>> undef_errors;
 
   // Output chunks
   OutputEhdr<E> *ehdr = nullptr;
@@ -2176,6 +2177,9 @@ public:
   [[no_unique_address]] SymbolExtras<E> extra;
 };
 
+template <typename E>
+std::string_view demangle(const Symbol<E> &sym);
+
 // If we haven't seen the same `key` before, create a new instance
 // of Symbol and returns it. Otherwise, returns the previously-
 // instantiated object. `key` is usually the same as `name`.
@@ -2195,7 +2199,7 @@ Symbol<E> *get_symbol(Context<E> &ctx, std::string_view name) {
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
   if (opt_demangle)
-    out << demangle(sym.name());
+    out << demangle(sym);
   else
     out << sym.name();
   return out;

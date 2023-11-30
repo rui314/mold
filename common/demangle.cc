@@ -10,24 +10,7 @@
 
 namespace mold {
 
-std::string_view demangle(std::string_view name) {
-  static thread_local char *buf;
-  free(buf);
-
-  // Try to demangle as a Rust symbol. Since legacy-style Rust symbols
-  // are also valid as a C++ mangled name, we need to call this before
-  // cpp_demangle.
-  buf = rust_demangle(std::string(name).c_str(), 0);
-  if (buf)
-    return buf;
-
-  // Try to demangle as a C++ symbol.
-  if (std::optional<std::string_view> s = cpp_demangle(name))
-    return *s;
-  return name;
-}
-
-std::optional<std::string_view> cpp_demangle(std::string_view name) {
+std::optional<std::string_view> demangle_cpp(std::string_view name) {
   static thread_local char *buf;
   static thread_local size_t buflen;
 
@@ -44,6 +27,15 @@ std::optional<std::string_view> cpp_demangle(std::string_view name) {
   }
 #endif
 
+  return {};
+}
+
+std::optional<std::string_view> demangle_rust(std::string_view name) {
+  static thread_local char *buf;
+  free(buf);
+  buf = rust_demangle(std::string(name).c_str(), 0);
+  if (buf)
+    return buf;
   return {};
 }
 

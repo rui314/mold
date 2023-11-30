@@ -11,6 +11,31 @@
 namespace mold::elf {
 
 template <typename E>
+static bool is_rust_symbol(const Symbol<E> &sym) {
+  // The legacy Rust mangling scheme is indistinguishtable from C++.
+  // We don't want to accidentally demangle C++ symbols as Rust ones.
+  // So, the legacy mangling scheme will be demangled only when we
+  // know the object file was created by rustc.
+  if (sym.file && !sym.file->is_dso && ((ObjectFile<E> *)sym.file)->is_rust_obj)
+    return true;
+
+  // "_R" is the prefix of the new Rust mangling scheme.
+  return sym.name().starts_with("_R");
+}
+
+template <typename E>
+std::string_view demangle(const Symbol<E> &sym) {
+  if (is_rust_symbol(sym)) {
+    if (std::optional<std::string_view> s = demangle_rust(sym.name()))
+      return *s;
+  } else {
+    if (std::optional<std::string_view> s = demangle_cpp(sym.name()))
+      return *s;
+  }
+  return sym.name();
+}
+
+template <typename E>
 InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
   : mf(mf), filename(mf->name) {
   if (mf->size < sizeof(ElfEhdr<E>))
@@ -298,6 +323,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if ((ctx.arg.strip_all || ctx.arg.strip_debug) &&
           is_debug_section(shdr, name))
         continue;
+
+      if (name == ".comment" &&
+          this->get_string(ctx, shdr).starts_with("rustc "))
+        is_rust_obj = true;
 
       // If an output file doesn't have a section header (i.e.
       // --oformat=binary is given), we discard all non-memory-allocated
@@ -1512,6 +1541,7 @@ using E = MOLD_TARGET;
 template class InputFile<E>;
 template class ObjectFile<E>;
 template class SharedFile<E>;
+template std::string_view demangle(const Symbol<E> &);
 template std::ostream &operator<<(std::ostream &, const InputFile<E> &);
 
 } // namespace mold::elf
