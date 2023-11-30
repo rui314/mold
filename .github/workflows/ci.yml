@@ -41,8 +41,8 @@ jobs:
       with:
         name: test-results-clang
         path: |
-          build/out
-          build/Testing
+          build
+          !biuld/CMakeFiles
 
   build-gcc:
     runs-on: ubuntu-20.04
@@ -105,7 +105,9 @@ jobs:
       if: failure()
       with:
         name: test-results-gcc
-        path: b/out b/Testing
+        path: |
+          build
+          !biuld/CMakeFiles
 
   build-macos:
     runs-on: macos-11
