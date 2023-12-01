@@ -2034,6 +2034,10 @@ public:
     TAG_MASK = 0b11,
   };
 
+  static_assert(alignof(InputSection<E>) >= 4);
+  static_assert(alignof(Chunk<E>) >= 4);
+  static_assert(alignof(SectionFragment<E>) >= 4);
+
   uintptr_t origin = 0;
 
   // `value` contains symbol value. If it's an absolute symbol, it is
