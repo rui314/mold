@@ -42,7 +42,7 @@ jobs:
         name: test-results-clang
         path: |
           build
-          !biuld/CMakeFiles
+          !build/CMakeFiles
 
   build-gcc:
     runs-on: ubuntu-20.04
@@ -107,7 +107,7 @@ jobs:
         name: test-results-gcc
         path: |
           build
-          !biuld/CMakeFiles
+          !build/CMakeFiles
 
   build-macos:
     runs-on: macos-11
