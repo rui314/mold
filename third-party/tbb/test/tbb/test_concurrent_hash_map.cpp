@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -570,13 +570,13 @@ public:
 
         bool upgrade_to_writer() const {
             // upgrade_to_writer should return false if the mutex simulates
-            // reaquiring the lock on upgrade operation
+            // reacquiring the lock on upgrade operation
             return !SimulateReacquiring;
         }
 
         bool downgrade_to_reader() const {
             // downgrade_to_reader should return false if the mutex simulates
-            // reaquiring the lock on upgrade operation
+            // reacquiring the lock on upgrade operation
             return !SimulateReacquiring;
         }
 

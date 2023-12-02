@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -222,7 +222,7 @@ int test_serial() {
    return 0;
 }
 
-// reported bug in limiter (http://software.intel.com/en-us/comment/1752355)
+// reported bug in limiter (https://community.intel.com/t5/Intel-oneAPI-Threading-Building/multifun-node-try-put-several-messages-to-one-successor-crashes/m-p/922844)
 #define DECREMENT_OUTPUT 1  // the port number of the decrement output of the multifunction_node
 #define LIMITER_OUTPUT 0    // port number of the integer output
 

@@ -104,7 +104,7 @@ void suppress_unused_warning( const T& ) {}
  */
 static const size_t HUGE_PAGE_SIZE = 2 * 1024 * 1024;
 
-/********** End of global default constatns *********/
+/********** End of global default constants *********/
 
 /********** Various numeric parameters controlling allocations ********/
 
@@ -576,6 +576,9 @@ struct ExtMemoryPool {
                       fixedPool;
     TLSKey            tlsPointerKey;  // per-pool TLS key
 
+    std::atomic<int> softCachesCleanupInProgress;
+    std::atomic<int> hardCachesCleanupInProgress;
+
     bool init(intptr_t poolId, rawAllocType rawAlloc, rawFreeType rawFree,
               size_t granularity, bool keepAllMemory, bool fixedPool);
     bool initTLS();
@@ -586,7 +589,7 @@ struct ExtMemoryPool {
      // true if something has been released
     bool softCachesCleanup();
     bool releaseAllLocalCaches();
-    bool hardCachesCleanup();
+    bool hardCachesCleanup(bool wait);
     void *remap(void *ptr, size_t oldSize, size_t newSize, size_t alignment);
     bool reset() {
         loc.reset();
@@ -669,13 +672,16 @@ class RecursiveMallocCallProtector {
     char scoped_lock_space[sizeof(MallocMutex::scoped_lock)+1];
     
 public:
-
     RecursiveMallocCallProtector() : lock_acquired(nullptr) {
         lock_acquired = new (scoped_lock_space) MallocMutex::scoped_lock( rmc_mutex );
         if (canUsePthread)
             owner_thread.store(pthread_self(), std::memory_order_relaxed);
         autoObjPtr.store(&scoped_lock_space, std::memory_order_relaxed);
     }
+
+    RecursiveMallocCallProtector(RecursiveMallocCallProtector&) = delete;
+    RecursiveMallocCallProtector& operator=(RecursiveMallocCallProtector) = delete;
+
     ~RecursiveMallocCallProtector() {
         if (lock_acquired) {
             autoObjPtr.store(nullptr, std::memory_order_relaxed);

@@ -401,4 +401,3 @@ using type_identity_t = typename type_identity<T>::type;
 } // namespace tbb
 
 #endif // __TBB_detail__template_helpers_H
-

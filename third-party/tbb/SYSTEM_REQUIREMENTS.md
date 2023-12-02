@@ -44,10 +44,10 @@ This document provides details about hardware, operating system, and software pr
   - Microsoft* Windows* Server 2022
 - Systems with Linux* operating systems:
   - Oracle Linux* 8
-  - Amazon* Linux* 2
+  - Amazon* Linux 2, 2022
   - Debian* 9, 10, 11
-  - Fedora* 36, 37
-  - Rocky* Linux* 9
+  - Fedora* 36, 37, 38
+  - Rocky* Linux* 8, 9
   - Red Hat* Enterprise Linux* 8, 9
   - SuSE* Linux* Enterprise Server 15
   - Ubuntu* 20.04, 22.04
@@ -64,12 +64,12 @@ This document provides details about hardware, operating system, and software pr
 
 ### Supported Compilers
 - Intel* oneAPI DPC++/C++ Compiler
-- Intel* C++ Compiler 19.0 and 19.1 version
+- Intel® C++ Compiler Classic 2021.1 - 2021.9
 - Microsoft* Visual C++ 14.2 (Microsoft* Visual Studio* 2019, Windows* OS only)
 - Microsoft* Visual C++ 14.3 (Microsoft* Visual Studio* 2022, Windows* OS only)
 - For each supported Linux* operating system, the standard gcc version provided with that operating system is supported:
-  - GNU Compilers (gcc) 4.8.5 - 11.2.1
-  - GNU C Library (glibc) version 2.17 - 2.34
+  - GNU Compilers (gcc) 8.x – 12.x
+  - GNU C Library (glibc) version 2.28 – 2.36
   - Clang* 6.0.0 - 13.0.0
 
 ## Limitations

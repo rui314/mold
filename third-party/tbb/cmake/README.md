@@ -1,13 +1,13 @@
-# Build system description
+# Build System Description
 
-The project uses CMake build configuration.
+The project uses CMake* build configuration.
 
 The following controls are available during the configure stage:
 ```
 TBB_TEST:BOOL - Enable testing (ON by default)
 TBB_STRICT:BOOL - Treat compiler warnings as errors (ON by default)
 TBB_SANITIZE:STRING - Sanitizer parameter, passed to compiler/linker
-TBB_SIGNTOOL:FILEPATH - Tool for digital signing, used in post install step for libraries if provided.
+TBB_SIGNTOOL:FILEPATH - Tool for digital signing, used in post-install step for libraries if provided.
 TBB_SIGNTOOL_ARGS:STRING - Additional arguments for TBB_SIGNTOOL, used if TBB_SIGNTOOL is set.
 TBB_BUILD:BOOL - Enable Intel(R) oneAPI Threading Building Blocks (oneTBB) build (ON by default)
 TBBMALLOC_BUILD:BOOL - Enable Intel(R) oneAPI Threading Building Blocks (oneTBB) memory allocator build (ON by default)
@@ -20,11 +20,11 @@ TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH - Disable HWLOC automatic search by pkg-confi
 TBB_ENABLE_IPO - Enable Interprocedural Optimization (IPO) during the compilation (ON by default)
 ```
 
-## Configure, build, and test
+## Configure, Build, and Test
 
 ### Preparation
 
-To perform out-of-source build, create a build directory and go there:
+To perform an out-of-source build, create a build directory and go there:
 
 ```bash
 mkdir /tmp/my-build
@@ -39,14 +39,16 @@ cmake <options> <repo_root>
 
 Some useful options:
 - `-G <generator>` - specify particular project generator. See `cmake --help` for details.
-- `-DCMAKE_BUILD_TYPE=Debug` - specify for Debug build. It is not applicable for multiconfig generators, e.g. for Visual Studio* generator.
+- `-DCMAKE_BUILD_TYPE=Debug` - specify for Debug build. It is not applicable for multi-config generators, e.g., Microsoft* Visual Studio* generator.
 
-#### TBBBind library configuration
+#### TBBBind Library Configuration
 
-The TBBbind library has three versions: `tbbbind`, `tbbbind_2_0`, and `tbbbind_2_5`. Each of these versions is linked with corresponding HWLOC library version: 
-- `tbbbind` links with HWLOC 1.11.x 
-- `tbbbind_2_0` links with HWLOC 2.1–2.4
-- `tbbbind_2_5` links with HWLOC 2.5 and later
+> **_TIP:_** It is recommended to install the HWLOC* library. See [oneTBB documentation](https://oneapi-src.github.io/oneTBB/GSG/next_steps.html#hybrid-cpu-and-numa-support) for details.
+
+The TBBbind library has three versions: `tbbbind`, `tbbbind_2_0`, and `tbbbind_2_5`. Each of these versions is linked with the corresponding HWLOC* library version: 
+- `tbbbind` links with `HWLOC 1.11.x`
+- `tbbbind_2_0` links with `HWLOC 2.1–2.4`
+- `tbbbind_2_5` links with `HWLOC 2.5` and later
 
 The search for a suitable version of the HWLOC library is enabled by default. If you want to use a specific version of the library, you can specify the path to it manually using the following CMake variables:
 
@@ -63,17 +65,17 @@ The search for a suitable version of the HWLOC library is enabled by default. If
 Windows* OS requires an additional variable for correct TBBBind library building:
  - `CMAKE_HWLOC_<HWLOC_VER>_DLL_PATH` - path to the corresponding HWLOC version `.dll` file.
 
-`HWLOC_VER` substring used earlier can be replaced with one of the three values:
+The `HWLOC_VER` substring used earlier can be replaced with one of the three values:
 - `1_11` for the `tbbbind` library configuration
 - `2` for the `tbbbind_2_0` library configuration
 - `2_5` for the `tbbbind_2_5` library configuration
 
-If you specify variables for several TBBBind versions, the building process for all of these versions is performed during single build session.
+If you specify variables for several TBBBind versions, the building process for all of these versions is performed during a single build session.
 
 ---
 **TIP**
 
-Specify the `TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH` to disable HWLOC libraries automatic search.
+Specify the `TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH` to turn off the HWLOC library's automatic search.
 
 ---
 
@@ -85,24 +87,24 @@ cmake --build . <options>
 ```
 
 Some useful options:
-- `--target <target>` - specific target, "all" is default.
-- `--config <Release|Debug>` - build configuration, applicable only for multiconfig generators, e.g. Visual Studio* generator.
+- `--target <target>` - specific target, "all" is the default.
+- `--config <Release|Debug>` - build configuration, applicable only for multi-config generators, e.g., Visual Studio* generator.
 
 The binaries are placed to `./<compiler-id>_<compiler-ver>_cxx<stdver>_<build-type>`. For example, `./gnu_4.8_cxx11_release`.
 
-#### Build for 32-bit
+#### Build For 32-bit
 
 * **Intel(R) Compiler**. Source Intel(R) C++ Compiler with `ia32` and build as usual.
-* **MSVC**. Use switch for [generator](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html) (e.g. `-A Win32` for [VS2019](https://cmake.org/cmake/help/latest/generator/Visual%20Studio%2016%202019.html)) during the configuration stage and then build as usual.
+* **MSVC**. Use switch for [generator](https://cmake.org/cmake/help/latest/manual/cmake-generators.7.html) (e.g., `-A Win32` for [VS2019](https://cmake.org/cmake/help/latest/generator/Visual%20Studio%2016%202019.html)) during the configuration stage and then build as usual.
 * **GCC/Clang**. Specify `-m32` during the configuration. It can be `CXXFLAGS=-m32 cmake ..` or `cmake -DCMAKE_CXX_FLAGS=-m32 ..`
-* For any other compiler, which builds for 64-bit by default, specify 32-bit compiler key during the configuration as above.
+* For any other compiler, which builds for 64-bit by default, specify a 32-bit compiler key during the configuration as above.
 
-#### Windows* OS specific builds
+#### Windows* OS-Specific Builds
 
 ---
 **NOTE**
 
-Following builds require CMake version 3.15 or higher. 
+The following builds require CMake version 3.15 or higher. 
 
 ---
 
@@ -123,12 +125,12 @@ cmake -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ..
 ```bash
 cmake -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug -DCMAKE_BUILD_TYPE=Debug ..
 ```
-* **Windows* OS 10 Universal Windows application build**. Set `CMAKE_SYSTEM_NAME` to `WindowsStore` and `CMAKE_SYSTEM_VERSION` to `10.0`.
+* **Windows OS 10 Universal Windows application build**. Set `CMAKE_SYSTEM_NAME` to `WindowsStore` and `CMAKE_SYSTEM_VERSION` to `10.0`.
 
 ---
 **NOTE**
 
-Set `TBB_NO_APPCONTAINER` to `ON` in order to apply `/APPCONTAINER:NO` option during the compilation (used for testing).
+Set `TBB_NO_APPCONTAINER` to `ON` to apply the `/APPCONTAINER:NO` option during the compilation (used for testing).
 
 ---
 
@@ -136,16 +138,31 @@ Set `TBB_NO_APPCONTAINER` to `ON` in order to apply `/APPCONTAINER:NO` option du
 cmake -DCMAKE_SYSTEM_NAME:STRING=WindowsStore -DCMAKE_SYSTEM_VERSION:STRING=10.0 ..
 ```
 
-* **Universal Windows* OS Driver build**. Set `TBB_WINDOWS_DRIVER` to `ON` and use static linkage with CRT.
+* **Universal Windows OS Driver build**. Set `TBB_WINDOWS_DRIVER` to `ON` and use static linkage with CRT.
 
 ```bash
 cmake -DTBB_WINDOWS_DRIVER=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ..
 ```
 
+#### Example
+
+```bash
+cmake -DCMAKE_CXX_COMPILER=icpc -DCMAKE_C_COMPILER=icc -DTBB_TEST=off -DCMAKE_HWLOC_1_11_LIBRARY_PATH=<path_to_hwloc_library_file>/libhwloc.so.15
+-DCMAKE_HWLOC_1_11_INCLUDE_PATH=<path_to_hwloc_header_directory> -DCMAKE_INSTALL_PREFIX=<path_to_install_oneTBB>/oneTBB_install ..
+make -j8 && make install
+```
+
+---
+**NOTE**
+
+The library path points to a file, while the include path points to a directory and not to ``hwloc.h``.
+
+---
+
 ### Test
 
 #### Build test
-To build a test, use the default target 'all':
+To build a test, use the default target ``all``:
 ```
 cmake --build .
 ```
@@ -155,14 +172,14 @@ Or use a specific test target:
 cmake --build . --target <test> # e.g. test_version
 ```
 
-#### Run test
+#### Run Test
 
 You can run a test by using CTest:
 ```bash
 ctest
 ```
 
-Or by using 'test' target:
+Or by using the ``test`` target:
 ```bash
 cmake --build . --target test # currently does not work on Windows* OS
 ```
@@ -170,7 +187,7 @@ cmake --build . --target test # currently does not work on Windows* OS
 ## Installation
 See [Installation from Sources](../INSTALL.md) to learn how to install oneTBB. 
 
-## Sanitizers - сonfigure, build, and run
+## Sanitizers - Configure, Build, and Run
 
 ```bash
 mkdir build
@@ -180,7 +197,7 @@ make -j
 ctest -V
 ```
 
-## Valgrind memcheck - configure, build, and run
+## Valgrind Memcheck - Configure, Build, and Run
 
 ### Prerequisites
 * Valgrind tool executable
@@ -192,9 +209,9 @@ cmake -DTBB_VALGRIND_MEMCHECK=ON ..
 make -j memcheck-<test name> # or memcheck-all to scan all tests 
 ```
 
-## Test specification
+## Test Specification
 
-Use Doxygen to generate oneTBB test specification:
+Use Doxygen* to generate oneTBB test specification:
 
 ```bash
 mkdir build
@@ -203,12 +220,12 @@ cmake -DTBB_TEST_SPEC=ON ..
 make test_spec
 ```
 
-## TBBConfig - integration of binary packages
+## TBBConfig - Integration of Binary Packages
 
-It is a configuration module that is used for integration of prebuilt oneTBB. It consists of two files (TBBConfig.cmake and TBBConfigVersion.cmake) and can be used via [find_package](https://cmake.org/cmake/help/latest/command/find_package.html) function.
+It is a configuration module that is used for the integration of prebuilt oneTBB. It consists of two files (``TBBConfig.cmake`` and ``TBBConfigVersion.cmake``) and can be used via the [find_package](https://cmake.org/cmake/help/latest/command/find_package.html) function.
 
-How to use this module in your CMake project:
- 1. Let CMake know where to search for TBBConfig, e.g. specify location of TBBConfig.cmake in `TBB_DIR` (for more details about search paths see [find_package](https://cmake.org/cmake/help/latest/command/find_package.html)).
+To use this module in your CMake project:
+ 1. Let CMake know where to search for TBBConfig, e.g. specify the location of ``TBBConfig.cmake`` in `TBB_DIR` (for more details about search paths, see [find_package](https://cmake.org/cmake/help/latest/command/find_package.html)).
  2. Use [find_package](https://cmake.org/cmake/help/latest/command/find_package.html) to find oneTBB.
  3. Use provided variables and/or imported targets (described below) to work with the found oneTBB.
 
@@ -223,14 +240,14 @@ target_link_libraries(foo TBB::tbb)
 oneTBB components can be passed to [find_package](https://cmake.org/cmake/help/latest/command/find_package.html) after keyword ``COMPONENTS`` or ``REQUIRED``.
 Use basic names of components (`tbb`, `tbbmalloc`, etc.).
 
-If components are not specified then the default set is used: `tbb`, `tbbmalloc` and ``tbbmalloc_proxy``.
+If components are not specified, then the default set is used: `tbb`, `tbbmalloc`, and ``tbbmalloc_proxy``.
 
-If `tbbmalloc_proxy` is requested, `tbbmalloc` component will also be added and set as dependency for `tbbmalloc_proxy`.
+If `tbbmalloc_proxy` is requested, the `tbbmalloc` component is also added and set as a dependency for `tbbmalloc_proxy`.
 
 TBBConfig creates [imported targets](https://cmake.org/cmake/help/latest/manual/cmake-buildsystem.7.html#imported-targets>) as
-shared libraries using the following format: `TBB::<component>` (for example, `TBB::tbb`, `TBB::tbbmalloc`).
+shared libraries using the following format: `TBB::<component>`. For example, `TBB::tbb` or `TBB::tbbmalloc`.
 
-Set `TBB_FIND_RELEASE_ONLY` to `TRUE` before calling `find_package` in order to search only for release oneTBB version. This variable helps to avoid simultaneous linkage of release and debug oneTBB versions when CMake configuration is `Debug` but a third-party component depends on release oneTBB version.
+To search only for release oneTBB version, set `TBB_FIND_RELEASE_ONLY` to `TRUE` before calling `find_package`. This variable helps to avoid simultaneous linkage of release and debug oneTBB versions when CMake configuration is `Debug,` but a third-party component depends on the release oneTBB version.
 
 Variables set during TBB configuration:
 
@@ -241,14 +258,14 @@ Variable | Description
 `TBB_VERSION`           | oneTBB version (format: `<major>.<minor>.<patch>.<tweak>`)
 `TBB_IMPORTED_TARGETS`  | All created oneTBB imported targets (not supported for builds from source code)
 
-Starting from [oneTBB 2021.1](https://github.com/oneapi-src/oneTBB/releases/tag/v2021.1) GitHub release TBBConfig files in the binary packages are located under `<tbb-root>/lib/cmake/TBB`.
+Starting from [oneTBB 2021.1](https://github.com/oneapi-src/oneTBB/releases/tag/v2021.1), GitHub* release TBBConfig files in the binary packages are located under `<tbb-root>/lib/cmake/TBB`.
 For example, `TBB_DIR` should be set to `<tbb-root>/lib/cmake/TBB`.
 
 TBBConfig files are automatically created during the build from source code and can be installed together with the library.
-Also oneTBB provides a helper function that creates TBBConfig files from predefined templates: see `tbb_generate_config` in `cmake/config_generation.cmake`.
+Also, oneTBB provides a helper function that creates TBBConfig files from predefined templates. See `tbb_generate_config` in `cmake/config_generation.cmake`.
 
-## oneTBB Python Module support
-`TBB4PY_BUILD` Cmake option provides ability to build Python module for oneTBB.
+## oneTBB Python Module Support
+The `TBB4PY_BUILD` Cmake option provides the ability to build a Python module for oneTBB.
 
 ### Targets:
  - `irml` - build IPC RML server
@@ -258,30 +275,30 @@ Also oneTBB provides a helper function that creates TBBConfig files from predefi
  - Python version 3.5 or newer
  - SWIG version 3.0.6 or newer
 
-## CMake files
+## CMake Files
 
-### Compile/link options
+### Compile and Link Options
 
 Compile and link options may be specific for certain compilers. This part is handled in `cmake/compilers/*` files.
 
 Options in TBB CMake are handled via variables in two ways for convenience:
 
 *  by options group
-*  by specific option
+*  by the specific option
 
-#### Options group
+#### Options Group
 
-Naming convention is the following: `TBB_<SCOPE>_<STAGE>_<CATEGORY>`, where
+Naming convention is the following: `TBB_<SCOPE>_<STAGE>_<CATEGORY>`, where:
 
-*  `<SCOPE>` could be
+*  `<SCOPE>` can be:
     *  `LIB` - options applied during libraries build.
     *  `TEST` - options applied during test build.
     *  `BENCH` - options applied during benchmarks build.
     *  `COMMON` - options applied during all (libraries, test, benchmarks) builds.
-*  `<STAGE>` could be
+*  `<STAGE>` can be:
     *  `COMPILE` - options applied during the compilation.
     *  `LINK` - options applied during the linkage.
-*  `<CATEGORY>` could be
+*  `<CATEGORY>` can be:
     *  `FLAGS` - list of flags
     *  `LIBS` - list of libraries
 
@@ -289,17 +306,17 @@ Naming convention is the following: `TBB_<SCOPE>_<STAGE>_<CATEGORY>`, where
 
 Variable | Description
 --- | ---
-`TBB_COMMON_COMPILE_FLAGS` | Applied to libraries, tests and benchmarks as compile options
+`TBB_COMMON_COMPILE_FLAGS` | Applied to libraries, tests, and benchmarks as compile options
 `TBB_LIB_LINK_FLAGS`       | Applied to libraries as link options
 `TBB_LIB_LINK_LIBS `       | Applied to libraries as link libraries
 `TBB_TEST_COMPILE_FLAGS`   | Applied to tests as compile options
 
-Please specify the `LINK` options prefixed with dash(-) for MSVC(Visual Studio) compiler with CMake < 3.13 to avoid issues caused by `target_link_libraries` CMake command usage.
+Specify the `LINK` options prefixed with a dash(-) for MSVC(Visual Studio) compiler with CMake < 3.13 to avoid issues caused by `target_link_libraries` CMake command usage.
 
-#### Specific options
+#### Specific Options
 
-If the option used only in part of the places (library, tests, benchmarks) as well as adding this option to the group of other options is not possible,
+If the option is used only in part of the places (library, tests, benchmarks) and adding this option to the group of other options is not possible,
 then the option must be named using common sense.
 
-Warnings supperssions should be added into `TBB_WARNING_SUPPRESS` variable which is applied during the compilation of libraries, tests and benchmarks.
-Additional warnings should be added into `TBB_WARNING_TEST_FLAGS` variable which is applied during the compilation of tests.
+Warning suppressions should be added to the `TBB_WARNING_SUPPRESS` variable, which is applied during the compilation of libraries, tests, and benchmarks.
+Additional warnings should be added to the `TBB_WARNING_TEST_FLAGS` variable, which is applied during the compilation of tests.

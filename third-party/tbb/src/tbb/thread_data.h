@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2022 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@
 #include "mailbox.h"
 #include "misc.h" // FastRandom
 #include "small_object_pool_impl.h"
+#include "intrusive_list.h"
 
 #include <atomic>
 
@@ -39,8 +40,9 @@ class task;
 class arena_slot;
 class task_group_context;
 class task_dispatcher;
+class thread_dispatcher_client;
 
-class context_list : public intrusive_list<intrusive_list_node> {
+class context_list : public intrusive_list<d1::intrusive_list_node> {
 public:
     bool orphaned{false};
 
@@ -61,10 +63,10 @@ public:
         cache_aligned_deallocate(this);
     }
 
-    void remove(intrusive_list_node& val) {
+    void remove(d1::intrusive_list_node& val) {
         mutex::scoped_lock lock(m_mutex);
 
-        intrusive_list<intrusive_list_node>::remove(val);
+        intrusive_list<d1::intrusive_list_node>::remove(val);
 
         if (orphaned && empty()) {
             lock.release();
@@ -72,10 +74,10 @@ public:
         }
     }
 
-    void push_front(intrusive_list_node& val) {
+    void push_front(d1::intrusive_list_node& val) {
         mutex::scoped_lock lock(m_mutex);
 
-        intrusive_list<intrusive_list_node>::push_front(val);
+        intrusive_list<d1::intrusive_list_node>::push_front(val);
     }
 
     void orphan() {
@@ -93,14 +95,15 @@ public:
 // Thread Data
 //------------------------------------------------------------------------
 class thread_data : public ::rml::job
-                  , public intrusive_list_node
+                  , public d1::intrusive_list_node
                   , no_copy {
 public:
     thread_data(unsigned short index, bool is_worker)
         : my_arena_index{ index }
         , my_is_worker{ is_worker }
         , my_task_dispatcher{ nullptr }
-        , my_arena{}
+        , my_arena{ nullptr }
+        , my_last_client{ nullptr }
         , my_arena_slot{}
         , my_random{ this }
         , my_last_observer{ nullptr }
@@ -134,8 +137,7 @@ public:
     void detach_task_dispatcher();
     void enter_task_dispatcher(task_dispatcher& task_disp, std::uintptr_t stealing_threshold);
     void leave_task_dispatcher();
-    template <typename T>
-    void propagate_task_group_state(std::atomic<T> d1::task_group_context::* mptr_state, d1::task_group_context& src, T new_state);
+    void propagate_task_group_state(std::atomic<uint32_t> d1::task_group_context::* mptr_state, d1::task_group_context& src, uint32_t new_state);
 
     //! Index of the arena slot the scheduler occupies now, or occupied last time
     unsigned short my_arena_index;
@@ -148,6 +150,8 @@ public:
 
     //! The arena that I own (if external thread) or am servicing at the moment (if worker)
     arena* my_arena;
+
+    thread_dispatcher_client* my_last_client;
 
     //! Pointer to the slot in the arena we own at the moment
     arena_slot* my_arena_slot;
@@ -230,6 +234,21 @@ inline void thread_data::enter_task_dispatcher(task_dispatcher& task_disp, std::
 inline void thread_data::leave_task_dispatcher() {
     my_task_dispatcher->set_stealing_threshold(0);
     detach_task_dispatcher();
+}
+
+inline void thread_data::propagate_task_group_state(std::atomic<std::uint32_t> d1::task_group_context::* mptr_state, d1::task_group_context& src, std::uint32_t new_state) {
+    mutex::scoped_lock lock(my_context_list->m_mutex);
+    // Acquire fence is necessary to ensure that the subsequent node->my_next load
+    // returned the correct value in case it was just inserted in another thread.
+    // The fence also ensures visibility of the correct ctx.my_parent value.
+    for (context_list::iterator it = my_context_list->begin(); it != my_context_list->end(); ++it) {
+        d1::task_group_context& ctx = __TBB_get_object_ref(d1::task_group_context, my_node, &(*it));
+        if ((ctx.*mptr_state).load(std::memory_order_relaxed) != new_state)
+            task_group_context_impl::propagate_task_group_state(ctx, mptr_state, src, new_state);
+    }
+    // Sync up local propagation epoch with the global one. Release fence prevents
+    // reordering of possible store to *mptr_state after the sync point.
+    my_context_list->epoch.store(the_context_state_propagation_epoch.load(std::memory_order_relaxed), std::memory_order_release);
 }
 
 } // namespace r1

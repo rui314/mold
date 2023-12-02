@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -51,7 +51,7 @@ class task_group_base;
 namespace r1 {
 // Forward declarations
 class tbb_exception_ptr;
-class market;
+class cancellation_disseminator;
 class thread_data;
 class task_dispatcher;
 template <bool>
@@ -407,7 +407,7 @@ public:
     }
 private:
     //// TODO: cleanup friends
-    friend class r1::market;
+    friend class r1::cancellation_disseminator;
     friend class r1::thread_data;
     friend class r1::task_dispatcher;
     template <bool>

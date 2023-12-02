@@ -42,7 +42,7 @@ namespace internal {
 #if _WIN32||_WIN64
 #define MALLOCLIB_NAME "tbbmalloc" DEBUG_SUFFIX ".dll"
 #elif __APPLE__
-#define MALLOCLIB_NAME "libtbbmalloc" DEBUG_SUFFIX ".dylib"
+#define MALLOCLIB_NAME "libtbbmalloc" DEBUG_SUFFIX ".2.dylib"
 #elif __FreeBSD__ || __NetBSD__ || __OpenBSD__ || __sun || _AIX || __ANDROID__
 #define MALLOCLIB_NAME "libtbbmalloc" DEBUG_SUFFIX ".so"
 #elif __unix__
@@ -98,6 +98,10 @@ struct RegisterProcessShutdownNotification {
         // MALLOC_ASSERT(ret, "Allocator can't load itself.");
         dlopen(MALLOCLIB_NAME, RTLD_NOW);
     }
+
+    RegisterProcessShutdownNotification(RegisterProcessShutdownNotification&) = delete;
+    RegisterProcessShutdownNotification& operator=(const RegisterProcessShutdownNotification&) = delete;
+
     ~RegisterProcessShutdownNotification() {
         __TBB_mallocProcessShutdownNotification(false);
     }

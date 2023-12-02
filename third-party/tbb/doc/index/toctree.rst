@@ -9,6 +9,7 @@
    /main/intro/intro_os
    /main/intro/Benefits
    /main/intro/testing_approach
+   /main/intro/limitations.rst
 
 
 .. toctree::

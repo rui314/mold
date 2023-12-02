@@ -446,6 +446,17 @@ if (TARGET TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_eh_thread DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_global_control DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_task DEPENDENCIES TBB::tbb)
+
+    if (TBB_FUZZ_TESTING AND NOT WIN32)
+        if (NOT ((CMAKE_CXX_COMPILER_ID STREQUAL Clang) OR (CMAKE_CXX_COMPILER_ID STREQUAL IntelLLVM)))
+            message(FATAL_ERROR "Fuzzing requires Clang or IntelLLVM compiler.")
+        endif()
+        tbb_add_test(SUBDIR tbb NAME test_fuzzing)
+        add_dependencies(test_fuzzing test_task)
+        target_compile_definitions(test_fuzzing PRIVATE CMD="$<TARGET_FILE:test_task> >/dev/null 2>&1")
+        target_link_options(test_fuzzing PRIVATE -fsanitize=fuzzer)
+    endif()
+
     tbb_add_test(SUBDIR tbb NAME test_concurrent_monitor DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_scheduler_mix DEPENDENCIES TBB::tbb)
 
@@ -456,9 +467,11 @@ if (TARGET TBB::tbb)
     )
 
     # HWLOC related test
-    tbb_add_tbbbind_test(SUBDIR tbb NAME test_arena_constraints)
+    if (NOT TBB_EMSCRIPTEN)
+        tbb_add_tbbbind_test(SUBDIR tbb NAME test_arena_constraints)
+    endif()
 
-    if (NOT "${CMAKE_SYSTEM_PROCESSOR}" MATCHES "mips")
+    if ((NOT "${CMAKE_SYSTEM_PROCESSOR}" MATCHES "mips") AND (NOT TBB_EMSCRIPTEN))
         # TODO: Fix for MIPS
         tbb_add_test(SUBDIR tbb NAME test_tbb_fork DEPENDENCIES TBB::tbb)
     endif()
@@ -533,7 +546,9 @@ if (TARGET TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_graph DEPENDENCIES TBB::tbb)
 
     # HWLOC related conformance
-    tbb_add_tbbbind_test(SUBDIR conformance NAME conformance_arena_constraints)
+    if (NOT TBB_EMSCRIPTEN)
+        tbb_add_tbbbind_test(SUBDIR conformance NAME conformance_arena_constraints)
+    endif()
 
     if (MSVC AND BUILD_SHARED_LIBS AND CMAKE_VERSION VERSION_GREATER 3.13) # LINK_OPTIONS property first appeared in 3.13
                                                     # version of the CMake
@@ -551,27 +566,28 @@ endif()
 if (TARGET TBB::tbbmalloc)
     # TBB allocator tests
     if (NOT "${CMAKE_SYSTEM_PROCESSOR}" MATCHES "mips")
-        # Define TBB malloc tests
-        tbb_add_test(SUBDIR tbbmalloc NAME test_scalable_allocator DEPENDENCIES TBB::tbbmalloc)
-        tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_pools DEPENDENCIES TBB::tbbmalloc)
-        tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_init_shutdown DEPENDENCIES TBB::tbbmalloc)
-        tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_regression DEPENDENCIES TBB::tbbmalloc)
-        if (TARGET TBB::tbb)
-            tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_shutdown_hang DEPENDENCIES TBB::tbb TBB::tbbmalloc)
+        if (NOT TBB_EMSCRIPTEN)
+            # Define TBB malloc tests
+	    tbb_add_test(SUBDIR tbbmalloc NAME test_scalable_allocator DEPENDENCIES TBB::tbbmalloc)
+            tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_pools DEPENDENCIES TBB::tbbmalloc)
+            tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_init_shutdown DEPENDENCIES TBB::tbbmalloc)
+            tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_regression DEPENDENCIES TBB::tbbmalloc)
+            if (TARGET TBB::tbb)
+                tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_shutdown_hang DEPENDENCIES TBB::tbb TBB::tbbmalloc)
+            endif()
+
+            if (NOT (WINDOWS_STORE OR TBB_WINDOWS_DRIVER))
+                # TODO: Consider adding following tests on WINDOWS_STORE and TBB_WINDOWS_DRIVER platforms
+                tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_compliance DEPENDENCIES TBB::tbbmalloc)
+                tbb_add_lib_test(SUBDIR tbbmalloc NAME test_malloc_used_by_lib DEPENDENCIES TBB::tbbmalloc)
+                tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_used_by_lib DEPENDENCIES _test_malloc_used_by_lib)
+                tbb_add_lib_test(SUBDIR tbbmalloc NAME test_malloc_lib_unload)
+                tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_lib_unload DEPENDENCIES _test_malloc_lib_unload)
+            endif()
+
+            enable_language(C)
+            tbb_add_c_test(SUBDIR tbbmalloc NAME test_malloc_pure_c DEPENDENCIES TBB::tbbmalloc)
         endif()
-
-        if (NOT (WINDOWS_STORE OR TBB_WINDOWS_DRIVER))
-            # TODO: Consider adding following tests on WINDOWS_STORE and TBB_WINDOWS_DRIVER platforms
-            tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_compliance DEPENDENCIES TBB::tbbmalloc)
-            tbb_add_lib_test(SUBDIR tbbmalloc NAME test_malloc_used_by_lib DEPENDENCIES TBB::tbbmalloc)
-            tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_used_by_lib DEPENDENCIES _test_malloc_used_by_lib)
-            tbb_add_lib_test(SUBDIR tbbmalloc NAME test_malloc_lib_unload)
-            tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_lib_unload DEPENDENCIES _test_malloc_lib_unload)
-        endif()
-
-        enable_language(C)
-        tbb_add_c_test(SUBDIR tbbmalloc NAME test_malloc_pure_c DEPENDENCIES TBB::tbbmalloc)
-
         # ----------------------------------------------------------------------------------------
         # Whitebox testing
 
@@ -624,7 +640,9 @@ if (TARGET TBB::tbbmalloc)
         if (BUILD_SHARED_LIBS AND NOT TBB_SANITIZE MATCHES "thread" AND TBBMALLOC_PROXY_BUILD AND NOT MSVC_CXX_ARCHITECTURE_ID MATCHES "ARM64")
             # Define TBB malloc proxy tests
             tbb_add_lib_test(SUBDIR tbbmalloc NAME test_malloc_atexit DEPENDENCIES TBB::tbbmalloc_proxy TBB::tbbmalloc)
-            tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_atexit DEPENDENCIES TBB::tbbmalloc_proxy TBB::tbbmalloc _test_malloc_atexit)
+	    if (NOT TBB_EMSCRIPTEN)
+	        tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_atexit DEPENDENCIES TBB::tbbmalloc_proxy TBB::tbbmalloc _test_malloc_atexit)
+	    endif()
             tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_overload DEPENDENCIES TBB::tbbmalloc_proxy)
             tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_overload_disable DEPENDENCIES TBB::tbbmalloc_proxy TBB::tbbmalloc) # safer_msize call need to be available
             tbb_add_test(SUBDIR tbbmalloc NAME test_malloc_new_handler DEPENDENCIES TBB::tbbmalloc_proxy)

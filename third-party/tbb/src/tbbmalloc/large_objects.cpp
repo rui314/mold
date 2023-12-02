@@ -134,7 +134,7 @@ class CacheBinFunctor {
 public:
     CacheBinFunctor(typename LargeObjectCacheImpl<Props>::CacheBin *bin, ExtMemoryPool *extMemPool,
                     typename LargeObjectCacheImpl<Props>::BinBitMask *bitMask, int idx) :
-        bin(bin), extMemPool(extMemPool), bitMask(bitMask), idx(idx), toRelease(nullptr), needCleanup(false) {}
+        bin(bin), extMemPool(extMemPool), bitMask(bitMask), idx(idx), toRelease(nullptr), needCleanup(false), currTime(0) {}
     void operator()(CacheBinOperation* opList);
 
     bool isCleanupNeeded() const { return needCleanup; }
@@ -1020,17 +1020,33 @@ void ExtMemoryPool::freeLargeObjectList(LargeMemoryBlock *head)
 
 bool ExtMemoryPool::softCachesCleanup()
 {
-    return loc.regularCleanup();
+    bool ret = false;
+    if (!softCachesCleanupInProgress.exchange(1, std::memory_order_acq_rel)) {
+        ret = loc.regularCleanup();
+        softCachesCleanupInProgress.store(0, std::memory_order_release);
+    }
+    return ret;
 }
 
-bool ExtMemoryPool::hardCachesCleanup()
+bool ExtMemoryPool::hardCachesCleanup(bool wait)
 {
+    if (hardCachesCleanupInProgress.exchange(1, std::memory_order_acq_rel)) {
+        if (!wait)
+            return false;
+
+        AtomicBackoff backoff;
+        while (hardCachesCleanupInProgress.exchange(1, std::memory_order_acq_rel))
+            backoff.pause();
+    }
+
     // thread-local caches must be cleaned before LOC,
     // because object from thread-local cache can be released to LOC
     bool ret = releaseAllLocalCaches();
     ret |= orphanedBlocks.cleanup(&backend);
     ret |= loc.cleanAll();
     ret |= backend.clean();
+
+    hardCachesCleanupInProgress.store(0, std::memory_order_release);
     return ret;
 }
 

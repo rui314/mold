@@ -1547,9 +1547,9 @@ TEST_CASE("testing iterators") {
     TestQueueIteratorWorks();
 }
 
-//! Test concurrent oprations support
+//! Test concurrent operations support
 //! \brief \ref requirement
-TEST_CASE("testing concurrent oprations support") {
+TEST_CASE("testing concurrent operations support") {
     TestConcurrentPushPop();
 }
 

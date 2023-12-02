@@ -106,6 +106,7 @@ option(TBB_CPF "Enable preview features of the library" OFF)
 option(TBB_FIND_PACKAGE "Enable search for external oneTBB using find_package instead of build from sources" OFF)
 option(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH "Disable HWLOC automatic search by pkg-config tool" OFF)
 option(TBB_ENABLE_IPO "Enable Interprocedural Optimization (IPO) during the compilation" ON)
+option(TBB_FUZZ_TESTING "Enable fuzz testing" OFF)
 
 if (NOT DEFINED BUILD_SHARED_LIBS)
     set(BUILD_SHARED_LIBS ON)
@@ -116,11 +117,6 @@ if (NOT BUILD_SHARED_LIBS)
         set(CMAKE_POSITION_INDEPENDENT_CODE ON)
     endif()
     message(WARNING "You are building oneTBB as a static library. This is highly discouraged and such configuration is not supported. Consider building a dynamic library to avoid unforeseen issues.")
-endif()
-
-# Prevent searching HWLOC by pkg-config on macOS
-if (APPLE)
-    set(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH ON)
 endif()
 
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -197,6 +193,11 @@ endif()
 
 # -------------------------------------------------------------------
 # Common dependencies
+#force -pthread during compilation for Emscripten
+if (EMSCRIPTEN)
+   set(THREADS_HAVE_PTHREAD_ARG TRUE)
+endif()
+
 set(THREADS_PREFER_PTHREAD_FLAG TRUE)
 find_package(Threads REQUIRED)
 # -------------------------------------------------------------------
@@ -244,7 +245,7 @@ else()
             add_subdirectory(src/tbbmalloc_proxy)
         endif()
     endif()
-    if (APPLE OR NOT BUILD_SHARED_LIBS)
+    if (NOT BUILD_SHARED_LIBS)
         message(STATUS "TBBBind build targets are disabled due to unsupported environment")
     else()
         add_subdirectory(src/tbbbind)

@@ -25,6 +25,7 @@ add_library(tbb
     itt_notify.cpp
     main.cpp
     market.cpp
+    tcm_adaptor.cpp
     misc.cpp
     misc_ex.cpp
     observer_proxy.cpp
@@ -39,6 +40,9 @@ add_library(tbb
     task.cpp
     task_dispatcher.cpp
     task_group_context.cpp
+    thread_dispatcher.cpp
+    thread_request_serializer.cpp
+    threading_control.cpp
     version.cpp
     queuing_rw_mutex.cpp)
 
@@ -56,6 +60,7 @@ target_compile_definitions(tbb
                            $<$<CONFIG:DEBUG>:TBB_USE_DEBUG>
                            PRIVATE
                            __TBB_BUILD
+                           ${TBB_RESUMABLE_TASKS_USE_THREADS}
                            $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_DYNAMIC_LOAD_ENABLED=0>
                            $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_SOURCE_DIRECTLY_INCLUDED=1>)
 

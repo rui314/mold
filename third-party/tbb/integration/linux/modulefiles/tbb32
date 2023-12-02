@@ -1,6 +1,6 @@
 #%Module1.0###################################################################
 #
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,16 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Why all the directory and filename boilerplate code? It is needed in order
-# to properly remove symbolic links used in assembly of the modulefiles
-# folder as well as those found within the oneAPI installation folders.
-# Without it many modulefiles will fail to work as expected.
-
-# IMPORTANT: quotes around "$variables" and "[expressions]" are there
-# to insure that paths/filenames which include spaces are handled properly.
-
 # This modulefile requires Environment Modules 4.1 or later.
 # Type `module --version` to determine the current installed version.
+
+##############################################################################
 
 set min_tcl_ver 8.4
 if { $tcl_version < $min_tcl_ver } {
@@ -33,72 +27,42 @@ if { $tcl_version < $min_tcl_ver } {
     exit 1
 }
 
-# get full pathname for this script file
+# if modulefile script name is a symlink, resolve it to get the fully
+# qualified pathname that points to the actual modulefile script
+# see: https://wiki.tcl-lang.org/page/file+normalize
 set scriptpath "${ModulesCurrentModulefile}"
+set scriptpath "[file dirname [file normalize "$scriptpath/___"]]"
 
-# if modulefile script name is a symlink, resolve it
-if { "[file type "$scriptpath"]" eq "link" } {
-    set scriptpath "[file readlink "$scriptpath"]"
+# define componentroot, modulefilepath, modulefilename and modulefilever
+set modulefilename "[file tail [file dirname "${scriptpath}"]]"
+set modulefilever "[file tail "${scriptpath}"]"
+set modulefilepath "${scriptpath}"
+set componentroot "[file dirname [file dirname [file dirname [file dirname "${scriptpath}"]]]]"
+
+##############################################################################
+
+module-whatis "Name: Intel(R) oneAPI Threading Building Blocks"
+module-whatis "Version: $modulefilename/$modulefilever"
+module-whatis "Description: Flexible threading library for adding parallelism to complex applications across accelerated architectures."
+module-whatis "URL: https://www.intel.com/content/www/us/en/developer/tools/oneapi/onetbb.html"
+module-whatis "Dependencies: none"
+
+proc ModulesHelp { } {
+    global modulefilename
+    global modulefilever
+    module whatis "${modulefilename}/${modulefilever}"
 }
 
-# if fullpath contains links, resolve them
-set scriptpath "[file normalize "$scriptpath"]"
+##############################################################################
 
-# get directory holding this modulefile script and others
-set modulefileroot "[file dirname "$scriptpath"]"
+# Define environment variables needed for an isolated component install.
 
-# get name of modulefile script we are loading
-set modulefilename "[file tail "$scriptpath"]"
-
-# determine modulefile script version
-set modulefilever "[file dirname "$modulefileroot"]"
-set modulefilever "[file tail "$modulefilever"]"
-
-# point to component top-level root folder
-set componentroot "[file dirname "$modulefileroot"]"
-set componentroot "[file dirname "$componentroot"]"
-
-# get component folder name
-set componentname "[file tail "$componentroot"]"
-
-# get oneAPI top-level root folder
-set oneapiroot "[file dirname "$componentroot"]"
-
-# disallow loading multiple versions of this modulefile
-# disallow loading multiple architectures of this modulefile
-# if only 64-bit architecture exists the test still works
-set mname32 $modulefilename
-set mname64 [string trimright $mname32 "32"]
-if { [string equal "$mname32" "$mname64"] } {
-    append mname32 "32"
-}
-conflict $mname32
-conflict $mname64
-
-
-# On load print component name and version being loaded
-if { [ module-info mode load ] } {
-    puts stderr "Loading $modulefilename version $modulefilever"
-}
-
-# On `module unload` print component module name and version being removed
-# Include `module list` message only if this modulefile loads dependent modules
-if { [ module-info mode ] == "unload" || [ module-info mode ] == "remove" } {
-    puts stderr "Removing $modulefilename version $modulefilever"
-    puts stderr "Use `module list` to view any remaining dependent modules."
-}
-
-
-# ###### Component Specific env vars setup ###################################
-
-set tbbroot "$componentroot/$modulefilever"
+set tbbroot "$componentroot"
 set tbb_target_arch "ia32"
-
-module-whatis "Intel(R) oneAPI Threading Building Blocks for $tbb_target_arch."
 
 setenv TBBROOT "$tbbroot"
 
-prepend-path CPATH "$tbbroot/include"
-prepend-path LIBRARY_PATH "$tbbroot/lib/$tbb_target_arch/gcc4.8"
-prepend-path LD_LIBRARY_PATH "$tbbroot/lib/$tbb_target_arch/gcc4.8"
+prepend-path CPATH "$tbbroot/include32:$tbbroot/include"
+prepend-path LIBRARY_PATH "$tbbroot/lib32"
+prepend-path LD_LIBRARY_PATH "$tbbroot/lib32"
 prepend-path CMAKE_PREFIX_PATH "$tbbroot"

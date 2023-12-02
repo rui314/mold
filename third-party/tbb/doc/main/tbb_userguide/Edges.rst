@@ -37,8 +37,8 @@ it and then connect that to the first node with an edge.
        g.wait_for_all();
 
 
-Now there are two ``function_node``s, ``n`` and ``m``. The call to ``make_edge`` creates
-an edge from ``n`` to ``m``. The node n is created with unlimited concurrency,
+Now there are two ``function_node`` ``s``, ``n`` and ``m``. The call to ``make_edge`` creates
+an edge from ``n`` to ``m``. The node ``n`` is created with unlimited concurrency,
 while ``m`` has a concurrency limit of 1. The invocations of ``n`` can all
 proceed in parallel, while the invocations of ``m`` will be serialized.
 Because there is an edge from ``n`` to ``m``, each value ``v``, returned by ``n``, will

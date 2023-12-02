@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -369,7 +369,7 @@ void check_unequal( const T& cont1, const T& cont2 ) {
     REQUIRE_MESSAGE(cont1 != cont2, "Containers should be unequal");
     REQUIRE_MESSAGE(cont2 != cont1, "Containers should be unequal");
     REQUIRE_MESSAGE(!(cont1 == cont2), "Containers should not be equal");
-    REQUIRE_MESSAGE(!(cont2 == cont1), "Containers shuold not be equal");
+    REQUIRE_MESSAGE(!(cont2 == cont1), "Containers should not be equal");
 }
 
 // Break value for maps

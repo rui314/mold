@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -18,8 +18,10 @@
 
 #include "main.h"
 #include "governor.h"
+#include "threading_control.h"
 #include "environment.h"
 #include "market.h"
+#include "tcm_adaptor.h"
 #include "misc.h"
 #include "itt_notify.h"
 
@@ -40,9 +42,9 @@ bool governor::UsePrivateRML;
 bool governor::is_rethrow_broken;
 
 //------------------------------------------------------------------------
-// market data
-market* market::theMarket;
-market::global_market_mutex_type market::theMarketMutex;
+// threading_control data
+threading_control* threading_control::g_threading_control;
+threading_control::global_mutex_type threading_control::g_threading_control_mutex;
 
 //------------------------------------------------------------------------
 // context propagation data
@@ -90,8 +92,10 @@ static check_observer_proxy_count the_check_observer_proxy_count;
 //------------------------------------------------------------------------
 
 void __TBB_InitOnce::add_ref() {
-    if( ++count==1 )
+    if (++count == 1) {
         governor::acquire_resources();
+        tcm_adaptor::initialize();
+    }
 }
 
 void __TBB_InitOnce::remove_ref() {
@@ -117,8 +121,10 @@ void DoOneTimeInitialization() {
     // No fence required for load of InitializationDone, because we are inside a critical section.
     if( !__TBB_InitOnce::InitializationDone ) {
         __TBB_InitOnce::add_ref();
-        if( GetBoolEnvironmentVariable("TBB_VERSION") )
+        if( GetBoolEnvironmentVariable("TBB_VERSION") ) {
             PrintVersion();
+            tcm_adaptor::print_version();
+        }
         bool itt_present = false;
 #if __TBB_USE_ITT_NOTIFY
         ITT_DoUnsafeOneTimeInitialization();

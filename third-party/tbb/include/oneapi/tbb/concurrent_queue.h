@@ -685,7 +685,7 @@ concurrent_bounded_queue( It, It, Alloc = Alloc() )
 #endif /* __TBB_CPP17_DEDUCTION_GUIDES_PRESENT */
 
 } //namespace d2
-} // namesapce detail
+} // namespace detail
 
 inline namespace v1 {
 

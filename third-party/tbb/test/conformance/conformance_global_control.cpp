@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -64,12 +64,14 @@ void TestStackSizeThreadsControl() {
     utils::NativeParallelFor( threads, StackSizeRun(threads, &barr1, &barr2) );
 }
 
-void RunWorkersLimited(size_t parallelism, bool wait)
+void RunWorkersLimited(size_t parallelism)
 {
     oneapi::tbb::global_control s(oneapi::tbb::global_control::max_allowed_parallelism, parallelism);
-    // try both configuration with already sleeping workers and with not yet sleeping
-    if (wait)
-        utils::Sleep(10);
+    // TODO: consider better testing approach
+    // Sleep is required because after destruction global_control on the previous iteration,
+    // it recalls the maximum concurrency and excessive worker threads might populate the arena.
+    // So, we need to wait when arena becomes empty but it is unreliable and might sporadically fail.
+    utils::Sleep(100);
     const std::size_t expected_threads = (utils::get_platform_max_threads()==1)? 1 : parallelism;
     utils::ExactConcurrencyLevel::check(expected_threads);
 }
@@ -90,12 +92,10 @@ void TestWorkersConstraints()
     }
     const size_t limit_par = utils::min(max_parallelism, 4U);
     // check that constrains are really met
-    for (int wait=0; wait<2; wait++) {
-        for (size_t num=2; num<limit_par; num++)
-            RunWorkersLimited(num, wait==1);
-        for (size_t num=limit_par; num>1; num--)
-            RunWorkersLimited(num, wait==1);
-    }
+    for (size_t num=2; num<limit_par; num++)
+        RunWorkersLimited(num);
+    for (size_t num=limit_par; num>1; num--)
+        RunWorkersLimited(num);
 }
 
 struct SetUseRun: utils::NoAssign {
@@ -136,6 +136,10 @@ void TestAutoInit()
     if (max_parallelism > 2) {
         // after autoinit it's possible to decrease workers number
         oneapi::tbb::global_control s(oneapi::tbb::global_control::max_allowed_parallelism, max_parallelism-1);
+        // TODO: consider better testing approach
+        // Sleep is required because after previous concurrency check, the arena is still populated with workers.
+        // So, we need to wait when arena becomes empty but it is unreliable and might sporadically fail.
+        utils::Sleep(100);
         utils::ExactConcurrencyLevel::check(max_parallelism-1);
     }
 }
@@ -201,7 +205,16 @@ TEST_CASE("setting stack size") {
 //! \brief \ref interface \ref requirement
 TEST_CASE("setting max number of threads") {
     TestWorkersConstraints();
+}
+//! Testing concurrenct setting concurrency
+//! \brief \ref interface \ref requirement
+TEST_CASE("concurrenct setting concurrency") {
     TestConcurrentSetUseConcurrency();
+}
+
+//! Testing auto initialization
+//! \brief \ref interface \ref requirement
+TEST_CASE("auto initialization") {
     TestAutoInit();
 }
 
@@ -336,7 +349,7 @@ TEST_CASE("simple prolong lifetime 3") {
 
 // The test cannot work correctly with statically linked runtime.
 // TODO: investigate a failure in debug with MSVC
-#if !_MSC_VER || (defined(_DLL) && !defined(_DEBUG))
+#if (!_MSC_VER || (defined(_DLL) && !defined(_DEBUG))) && !EMSCRIPTEN
 #include <csetjmp>
 
 // Overall, the test case is not safe because the dtors might not be called during long jump.

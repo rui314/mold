@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -63,6 +63,8 @@
 #include "oneapi/tbb/queuing_rw_mutex.h"
 #include "oneapi/tbb/spin_mutex.h"
 #include "oneapi/tbb/spin_rw_mutex.h"
+#include "oneapi/tbb/mutex.h"
+#include "oneapi/tbb/rw_mutex.h"
 #include "oneapi/tbb/task.h"
 #include "oneapi/tbb/task_arena.h"
 #include "oneapi/tbb/task_group.h"

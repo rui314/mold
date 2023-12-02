@@ -1555,10 +1555,13 @@ DOCTEST_CLANG_SUPPRESS_WARNING_WITH_PUSH("-Wunused-comparison")
                 , m_at(at) {}
 
         DOCTEST_NOINLINE operator Result() {
+// TODO: upstream the change to doctest : Work-around for the warning: 'address will never be NULL'
+DOCTEST_GCC_SUPPRESS_WARNING_WITH_PUSH("-Waddress")
 // this is needed only for MSVC 2015
 DOCTEST_MSVC_SUPPRESS_WARNING_WITH_PUSH(4800) // 'int': forcing value to bool
             bool res = static_cast<bool>(lhs);
 DOCTEST_MSVC_SUPPRESS_WARNING_POP
+DOCTEST_GCC_SUPPRESS_WARNING_POP
             if(m_at & assertType::is_false) { //!OCLINT bitwise operator in conditional
                 res = !res;
             }

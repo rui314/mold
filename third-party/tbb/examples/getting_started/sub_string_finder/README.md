@@ -1,5 +1,5 @@
 # Sub_string_finder sample
-An example that uses the `parallel_for` template in a substring matching program. The [oneAPI Threading Building Blocks [](https://software.intel.com/content/www/us/en/develop/documentation/get-started-with-onetbb/top.html) describes this example.
+An example that uses the `parallel_for` template in a substring matching program. The [oneAPI Threading Building Blocks Get Started Guide](https://www.intel.com/content/www/us/en/docs/onetbb/get-started-guide/current/overview.html) describes this example.
 
 For each position in a string, the program displays the length of the largest matching substring elsewhere in the string. The program also displays the location of a largest match for each position. Consider the string "babba" as an example. Starting at position 0, "ba" is the largest substring with a match elsewhere in the string (position 3).
 

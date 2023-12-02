@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -305,7 +305,8 @@ __itt_global _N_(_ittapi_global) = {
     __itt_collection_uninitialized,                /* collection state */
     NULL,                                          /* counter_list */
     0,                                             /* ipt_collect_events */
-    NULL                                           /* histogram_list */
+    NULL,                                          /* histogram_list */
+    NULL                                           /* counter_metadata_list */
 };
 
 typedef void (__itt_api_init_t)(__itt_global*, __itt_group_id);
@@ -850,6 +851,169 @@ static __itt_histogram* ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(histogram_create),_in
     return (__itt_histogram*)h;
 }
 
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+static __itt_counter ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(counter_createW_v3),_init))(const __itt_domain* domain, const wchar_t* name, __itt_metadata_type type)
+{
+    __itt_counter_info_t *h_tail = NULL, *h = NULL;
+
+    if (name == NULL || domain == NULL)
+    {
+        return NULL;
+    }
+
+    ITT_MUTEX_INIT_AND_LOCK(_N_(_ittapi_global));
+    if (_N_(_ittapi_global).api_initialized)
+    {
+        if (ITTNOTIFY_NAME(counter_createW_v3) && ITTNOTIFY_NAME(counter_createW_v3) != ITT_VERSIONIZE(ITT_JOIN(_N_(counter_createW_v3),_init)))
+        {
+            __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+            return ITTNOTIFY_NAME(counter_createW_v3)(domain, name, type);
+        }
+        else
+        {
+            __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+            return NULL;
+        }
+    }
+    if (__itt_is_collector_available())
+    {
+        for (h_tail = NULL, h = _N_(_ittapi_global).counter_list; h != NULL; h_tail = h, h = h->next)
+        {
+            if (h->nameW != NULL  && h->type == (int)type && !wcscmp(h->nameW, name) && ((h->domainW == NULL && domain->nameW == NULL) ||
+                (h->domainW != NULL && domain->nameW != NULL && !wcscmp(h->domainW, domain->nameW)))) break;
+
+        }
+        if (h == NULL)
+        {
+            NEW_COUNTER_W(&_N_(_ittapi_global),h,h_tail,name,domain->nameW,type);
+        }
+    }
+    __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+    return (__itt_counter)h;
+}
+
+static __itt_counter ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(counter_createA_v3),_init))(const __itt_domain* domain, const char* name, __itt_metadata_type type)
+#else  /* ITT_PLATFORM!=ITT_PLATFORM_WIN */
+static __itt_counter ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(counter_create_v3),_init))(const __itt_domain* domain, const char* name, __itt_metadata_type type)
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+{
+    __itt_counter_info_t *h_tail = NULL, *h = NULL;
+
+    if (name == NULL || domain == NULL)
+    {
+        return NULL;
+    }
+
+    ITT_MUTEX_INIT_AND_LOCK(_N_(_ittapi_global));
+    if (_N_(_ittapi_global).api_initialized)
+    {
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+        if (ITTNOTIFY_NAME(counter_createA_v3) && ITTNOTIFY_NAME(counter_createA_v3) != ITT_VERSIONIZE(ITT_JOIN(_N_(counter_createA_v3),_init)))
+        {
+            __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+            return ITTNOTIFY_NAME(counter_createA_v3)(domain, name, type);
+        }
+#else
+        if (ITTNOTIFY_NAME(counter_create_v3) && ITTNOTIFY_NAME(counter_create_v3) != ITT_VERSIONIZE(ITT_JOIN(_N_(counter_create_v3),_init)))
+        {
+            if (PTHREAD_SYMBOLS) __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+            return ITTNOTIFY_NAME(counter_create_v3)(domain, name, type);
+        }
+#endif
+        else
+        {
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+            __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+#else
+            if (PTHREAD_SYMBOLS) __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+#endif
+            return NULL;
+        }
+    }
+    if (__itt_is_collector_available())
+    {
+        for (h_tail = NULL, h = _N_(_ittapi_global).counter_list; h != NULL; h_tail = h, h = h->next)
+        {
+            if (h->nameA != NULL  && h->type == (int)type && !__itt_fstrcmp(h->nameA, name) && ((h->domainA == NULL && domain->nameA == NULL) ||
+                (h->domainA != NULL && domain->nameA != NULL && !__itt_fstrcmp(h->domainA, domain->nameA)))) break;
+        }
+        if (h == NULL)
+        {
+            NEW_COUNTER_A(&_N_(_ittapi_global),h,h_tail,name,domain->nameA,type);
+        }
+    }
+    if (PTHREAD_SYMBOLS) __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+    return (__itt_counter)h;
+}
+
+static void ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(bind_context_metadata_to_counter),_init))(__itt_counter counter, size_t length, __itt_context_metadata* metadata)
+{
+    __itt_counter_metadata *h_tail = NULL, *h = NULL;
+
+    if (counter == NULL || length == 0 || metadata == NULL)
+    {
+        return;
+    }
+
+    ITT_MUTEX_INIT_AND_LOCK(_N_(_ittapi_global));
+    if (_N_(_ittapi_global).api_initialized)
+    {
+        if (ITTNOTIFY_NAME(bind_context_metadata_to_counter) && ITTNOTIFY_NAME(bind_context_metadata_to_counter) != ITT_VERSIONIZE(ITT_JOIN(_N_(bind_context_metadata_to_counter),_init)))
+        {
+            if (PTHREAD_SYMBOLS) __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+            ITTNOTIFY_NAME(bind_context_metadata_to_counter)(counter, length, metadata);
+        }
+        else
+        {
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+            __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+#else
+            if (PTHREAD_SYMBOLS) __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+#endif
+            return;
+        }
+    }
+    if (__itt_is_collector_available())
+    {
+        size_t item;
+        char* str_valueA = NULL;
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+        wchar_t* str_valueW = NULL;
+#endif
+        unsigned long long value = 0;
+        __itt_context_type type = __itt_context_unknown;
+
+        for (item = 0; item < length; item++)
+        {
+            type = metadata[item].type;
+            for (h_tail = NULL, h = _N_(_ittapi_global).counter_metadata_list; h != NULL; h_tail = h, h = h->next)
+            {
+                if (h->counter != NULL && h->counter == counter && h->type == type) break;
+            }
+            if (h == NULL && counter != NULL && type != __itt_context_unknown)
+            {
+                if (type == __itt_context_nameA || type == __itt_context_deviceA || type == __itt_context_unitsA || type == __itt_context_pci_addrA)
+                {
+                    str_valueA = (char*)(metadata[item].value);
+                    NEW_COUNTER_METADATA_STR_A(&_N_(_ittapi_global),h,h_tail,counter,type,str_valueA);
+                }
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+                else if (type == __itt_context_nameW || type == __itt_context_deviceW || type == __itt_context_unitsW || type == __itt_context_pci_addrW)
+                {
+                    str_valueW = (wchar_t*)(metadata[item].value);
+                    NEW_COUNTER_METADATA_STR_W(&_N_(_ittapi_global),h,h_tail,counter,type,str_valueW);
+                }
+#endif
+                else if (type >= __itt_context_tid && type <= __itt_context_cpu_cycles_flag)
+                {
+                    value = *(unsigned long long*)(metadata[item].value);
+                    NEW_COUNTER_METADATA_NUM(&_N_(_ittapi_global),h,h_tail,counter,type,value);
+                }
+            }
+        }
+    }
+    if (PTHREAD_SYMBOLS) __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+}
 /* -------------------------------------------------------------------------- */
 
 static void ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(pause),_init))(void)
@@ -873,6 +1037,30 @@ static void ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(resume),_init))(void)
     if (ITTNOTIFY_NAME(resume) && ITTNOTIFY_NAME(resume) != ITT_VERSIONIZE(ITT_JOIN(_N_(resume),_init)))
     {
         ITTNOTIFY_NAME(resume)();
+    }
+}
+
+static void ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(pause_scoped),_init))(__itt_collection_scope scope)
+{
+    if (!_N_(_ittapi_global).api_initialized && _N_(_ittapi_global).thread_list == NULL)
+    {
+        __itt_init_ittlib_name(NULL, __itt_group_all);
+    }
+    if (ITTNOTIFY_NAME(pause_scoped) && ITTNOTIFY_NAME(pause_scoped) != ITT_VERSIONIZE(ITT_JOIN(_N_(pause_scoped),_init)))
+    {
+        ITTNOTIFY_NAME(pause_scoped)(scope);
+    }
+}
+
+static void ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(resume_scoped),_init))(__itt_collection_scope scope)
+{
+    if (!_N_(_ittapi_global).api_initialized && _N_(_ittapi_global).thread_list == NULL)
+    {
+        __itt_init_ittlib_name(NULL, __itt_group_all);
+    }
+    if (ITTNOTIFY_NAME(resume_scoped) && ITTNOTIFY_NAME(resume_scoped) != ITT_VERSIONIZE(ITT_JOIN(_N_(resume_scoped),_init)))
+    {
+        ITTNOTIFY_NAME(resume_scoped)(scope);
     }
 }
 
@@ -1393,6 +1581,20 @@ static void __itt_free_allocated_resources(void)
         current_histogram = tmp;
     }
     _N_(_ittapi_global).histogram_list = NULL;
+
+    
+    __itt_counter_metadata* current_counter_metadata = _N_(_ittapi_global).counter_metadata_list;
+    while (current_counter_metadata != NULL)
+    {
+        __itt_counter_metadata* tmp = current_counter_metadata->next;
+        free((char*)current_counter_metadata->str_valueA);
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+        free((wchar_t*)current_counter_metadata->str_valueW);
+#endif
+        free(current_counter_metadata);
+        current_counter_metadata = tmp;
+    }
+    _N_(_ittapi_global).counter_metadata_list = NULL;
 }
 
 ITT_EXTERN_C int _N_(init_ittlib)(const char* lib_name, __itt_group_id init_groups)

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -227,6 +227,8 @@ static void DefinitionPresence() {
     TestTypeDefinitionPresence( queuing_rw_mutex );
     TestTypeDefinitionPresence( spin_mutex );
     TestTypeDefinitionPresence( spin_rw_mutex );
+    TestTypeDefinitionPresence( mutex );
+    TestTypeDefinitionPresence( rw_mutex );
     TestTypeDefinitionPresence( speculative_spin_mutex );
     TestTypeDefinitionPresence( speculative_spin_rw_mutex );
     TestTypeDefinitionPresence( task_group_context );

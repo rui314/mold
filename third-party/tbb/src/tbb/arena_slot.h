@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -167,6 +167,11 @@ public:
 
     bool is_task_pool_published() const {
         return task_pool.load(std::memory_order_relaxed) != EmptyTaskPool;
+    }
+
+    bool is_empty() const {
+        return task_pool.load(std::memory_order_relaxed) == EmptyTaskPool ||
+               head.load(std::memory_order_relaxed) >= tail.load(std::memory_order_relaxed);
     }
 
     bool is_occupied() const {

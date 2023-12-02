@@ -822,3 +822,19 @@ TEST_CASE("raii_guard move ctor") {
     tbb::detail::d0::raii_guard<decltype(func)> guard1(func);
     tbb::detail::d0::raii_guard<decltype(func)> guard2(std::move(guard1));
 }
+
+//! \brief \ref error_guessing
+TEST_CASE("Check correct arena destruction with enqueue") {
+    for (int i = 0; i < 100; ++i) {
+        tbb::task_scheduler_handle handle{ tbb::attach{} };
+        {
+            tbb::task_arena a(2, 0);
+
+            a.enqueue([] {
+                tbb::parallel_for(0, 100, [] (int) { std::this_thread::sleep_for(std::chrono::nanoseconds(10)); });
+            });
+            std::this_thread::sleep_for(std::chrono::microseconds(1));
+        }
+        tbb::finalize(handle, std::nothrow_t{});
+    }
+}

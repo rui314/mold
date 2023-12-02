@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -320,30 +320,57 @@ void ITTAPI __itt_resume(void);
 /** @brief Detach collection */
 void ITTAPI __itt_detach(void);
 
+/**
+ * @enum __itt_collection_scope
+ * @brief Enumerator for collection scopes
+ */
+typedef enum {
+    __itt_collection_scope_host    = 1 << 0,
+    __itt_collection_scope_offload = 1 << 1,
+    __itt_collection_scope_all     = 0x7FFFFFFF
+} __itt_collection_scope;
+
+/** @brief Pause scoped collection */
+void ITTAPI __itt_pause_scoped(__itt_collection_scope);
+/** @brief Resume scoped collection */
+void ITTAPI __itt_resume_scoped(__itt_collection_scope);
+  
 /** @cond exclude_from_documentation */
 #ifndef INTEL_NO_MACRO_BODY
 #ifndef INTEL_NO_ITTNOTIFY_API
-ITT_STUBV(ITTAPI, void, pause,  (void))
-ITT_STUBV(ITTAPI, void, resume, (void))
-ITT_STUBV(ITTAPI, void, detach, (void))
-#define __itt_pause      ITTNOTIFY_VOID(pause)
-#define __itt_pause_ptr  ITTNOTIFY_NAME(pause)
-#define __itt_resume     ITTNOTIFY_VOID(resume)
-#define __itt_resume_ptr ITTNOTIFY_NAME(resume)
-#define __itt_detach     ITTNOTIFY_VOID(detach)
-#define __itt_detach_ptr ITTNOTIFY_NAME(detach)
+ITT_STUBV(ITTAPI, void, pause,         (void))
+ITT_STUBV(ITTAPI, void, pause_scoped,  (__itt_collection_scope))
+ITT_STUBV(ITTAPI, void, resume,        (void))
+ITT_STUBV(ITTAPI, void, resume_scoped, (__itt_collection_scope))
+ITT_STUBV(ITTAPI, void, detach,        (void))
+#define __itt_pause             ITTNOTIFY_VOID(pause)
+#define __itt_pause_ptr         ITTNOTIFY_NAME(pause)
+#define __itt_pause_scoped      ITTNOTIFY_VOID(pause_scoped)
+#define __itt_pause_scoped_ptr  ITTNOTIFY_NAME(pause_scoped)
+#define __itt_resume            ITTNOTIFY_VOID(resume)
+#define __itt_resume_ptr        ITTNOTIFY_NAME(resume)
+#define __itt_resume_scoped     ITTNOTIFY_VOID(resume_scoped)
+#define __itt_resume_scoped_ptr ITTNOTIFY_NAME(resume_scoped)
+#define __itt_detach            ITTNOTIFY_VOID(detach)
+#define __itt_detach_ptr        ITTNOTIFY_NAME(detach)
 #else  /* INTEL_NO_ITTNOTIFY_API */
 #define __itt_pause()
-#define __itt_pause_ptr  0
+#define __itt_pause_ptr           0
+#define __itt_pause_scoped(scope)
+#define __itt_pause_scoped_ptr    0
 #define __itt_resume()
-#define __itt_resume_ptr 0
+#define __itt_resume_ptr          0
+#define __itt_resume_scoped(scope)
+#define __itt_resume_scoped_ptr   0
 #define __itt_detach()
-#define __itt_detach_ptr 0
+#define __itt_detach_ptr          0
 #endif /* INTEL_NO_ITTNOTIFY_API */
 #else  /* INTEL_NO_MACRO_BODY */
-#define __itt_pause_ptr  0
-#define __itt_resume_ptr 0
-#define __itt_detach_ptr 0
+#define __itt_pause_ptr           0
+#define __itt_pause_scoped_ptr    0
+#define __itt_resume_ptr          0
+#define __itt_resume_scoped_ptr   0
+#define __itt_detach_ptr          0
 #endif /* INTEL_NO_MACRO_BODY */
 /** @endcond */
 /** @} control group */
@@ -353,7 +380,7 @@ ITT_STUBV(ITTAPI, void, detach, (void))
  * @defgroup Intel Processor Trace control
  * API from this group provides control over collection and analysis of Intel Processor Trace (Intel PT) data
  * Information about Intel Processor Trace technology can be found here (Volume 3 chapter 35):
- * https://software.intel.com/sites/default/files/managed/39/c5/325462-sdm-vol-1-2abcd-3abcd.pdf
+ * https://github.com/tpn/pdfs/blob/master/Intel%2064%20and%20IA-32%20Architectures%20Software%20Developer's%20Manual%20-%20Combined%20Volumes%201-4%20-%20May%202018%20(325462-sdm-vol-1-2abcd-3abcd).pdf
  * Use this API to mark particular code regions for loading detailed performance statistics.
  * This mode makes your analysis faster and more accurate.
  * @{
@@ -587,8 +614,8 @@ ITT_STUBV(ITTAPI, void, suppress_pop, (void))
 /** @endcond */
 
 /**
- * @enum __itt_model_disable
- * @brief Enumerator for the disable methods
+ * @enum __itt_suppress_mode
+ * @brief Enumerator for the suppressing modes
  */
 typedef enum __itt_suppress_mode {
     __itt_unsuppress_range,
@@ -597,12 +624,12 @@ typedef enum __itt_suppress_mode {
 
 /**
  * @enum __itt_collection_state
- * @brief Enumerator for collection state. All non-work states have negative values.
+ * @brief Enumerator for collection state.
  */
 typedef enum {
     __itt_collection_uninitialized = 0, /* uninitialized */
     __itt_collection_init_fail = 1, /* failed to init */
-    __itt_collection_collector_absent = 2, /* non work state collector exists */
+    __itt_collection_collector_absent = 2, /* non work state collector is absent */
     __itt_collection_collector_exists = 3, /* work state collector exists */
     __itt_collection_init_successful = 4 /* success to init */
 } __itt_collection_state;
@@ -2345,7 +2372,7 @@ ITT_STUBV(ITTAPI, void, task_end_overlapped,   (const __itt_domain *domain, __it
 
 /**
  * @defgroup markers Markers
- * Markers represent a single discreet event in time. Markers have a scope,
+ * Markers represent a single discrete event in time. Markers have a scope,
  * described by an enumerated type __itt_scope. Markers are created by
  * the API call __itt_marker. A marker instance can be given an ID for use in
  * adding metadata.
@@ -4005,6 +4032,173 @@ __itt_collection_state __itt_get_collection_state(void);
 void __itt_release_resources(void);
 /** @endcond */
 
+/**
+ * @brief Create a typed counter with given domain pointer, string name and counter type
+*/
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+__itt_counter ITTAPI __itt_counter_createA_v3(const __itt_domain* domain, const char* name, __itt_metadata_type type);
+__itt_counter ITTAPI __itt_counter_createW_v3(const __itt_domain* domain, const wchar_t* name, __itt_metadata_type type);
+#if defined(UNICODE) || defined(_UNICODE)
+#  define __itt_counter_create_v3     __itt_counter_createW_v3
+#  define __itt_counter_create_v3_ptr __itt_counter_createW_v3_ptr
+#else /* UNICODE */
+#  define __itt_counter_create_v3     __itt_counter_createA_v3
+#  define __itt_counter_create_v3_ptr __itt_counter_createA_v3_ptr
+#endif /* UNICODE */
+#else /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+__itt_counter ITTAPI __itt_counter_create_v3(const __itt_domain* domain, const char* name, __itt_metadata_type type);
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+
+#ifndef INTEL_NO_MACRO_BODY
+#ifndef INTEL_NO_ITTNOTIFY_API
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+ITT_STUB(ITTAPI, __itt_counter, counter_createA_v3, (const __itt_domain* domain, const char* name, __itt_metadata_type type))
+ITT_STUB(ITTAPI, __itt_counter, counter_createW_v3, (const __itt_domain* domain, const wchar_t* name, __itt_metadata_type type))
+#else  /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+ITT_STUB(ITTAPI, __itt_counter, counter_create_v3,  (const __itt_domain* domain, const char* name, __itt_metadata_type type))
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+#define __itt_counter_createA_v3     ITTNOTIFY_DATA(counter_createA_v3)
+#define __itt_counter_createA_v3_ptr ITTNOTIFY_NAME(counter_createA_v3)
+#define __itt_counter_createW_v3     ITTNOTIFY_DATA(counter_createW_v3)
+#define __itt_counter_createW_v3_ptr ITTNOTIFY_NAME(counter_createW_v3)
+#else /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#define __itt_counter_create_v3     ITTNOTIFY_DATA(counter_create_v3)
+#define __itt_counter_create_v3_ptr ITTNOTIFY_NAME(counter_create_v3)
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#else  /* INTEL_NO_ITTNOTIFY_API */
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+#define __itt_counter_createA_v3(domain, name, type) (__itt_counter)0
+#define __itt_counter_createA_v3_ptr 0
+#define __itt_counter_createW_v3(domain, name, type) (__itt_counter)0
+#define __itt_counter_create_typedW_ptr 0
+#else /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#define __itt_counter_create_v3(domain, name, type) (__itt_counter)0
+#define __itt_counter_create_v3_ptr  0
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#endif /* INTEL_NO_ITTNOTIFY_API */
+#else  /* INTEL_NO_MACRO_BODY */
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
+#define __itt_counter_createA_v3_ptr 0
+#define __itt_counter_createW_v3_ptr 0
+#else /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#define __itt_counter_create_v3_ptr  0
+#endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
+#endif /* INTEL_NO_MACRO_BODY */
+/** @endcond */
+
+/**
+ * @brief Set the counter value api
+ */
+void ITTAPI __itt_counter_set_value_v3(__itt_counter counter, void *value_ptr);
+
+#ifndef INTEL_NO_MACRO_BODY
+#ifndef INTEL_NO_ITTNOTIFY_API
+ITT_STUBV(ITTAPI, void, counter_set_value_v3, (__itt_counter counter, void *value_ptr))
+#define __itt_counter_set_value_v3     ITTNOTIFY_VOID(counter_set_value_v3)
+#define __itt_counter_set_value_v3_ptr ITTNOTIFY_NAME(counter_set_value_v3)
+#else  /* INTEL_NO_ITTNOTIFY_API */
+#define __itt_counter_set_value_v3(counter, value_ptr)
+#define __itt_counter_set_value_v3_ptr 0
+#endif /* INTEL_NO_ITTNOTIFY_API */
+#else  /* INTEL_NO_MACRO_BODY */
+#define __itt_counter_set_value_v3_ptr 0
+#endif /* INTEL_NO_MACRO_BODY */
+/** @endcond */
+
+/**
+ * @brief describes the type of context metadata
+*/
+typedef enum {
+    __itt_context_unknown = 0,              /*!< Undefined type */
+    __itt_context_nameA,                    /*!< ASCII string char* type */
+    __itt_context_nameW,                    /*!< Unicode string wchar_t* type */
+    __itt_context_deviceA,                  /*!< ASCII string char* type */
+    __itt_context_deviceW,                  /*!< Unicode string wchar_t* type */
+    __itt_context_unitsA,                   /*!< ASCII string char* type */
+    __itt_context_unitsW,                   /*!< Unicode string wchar_t* type */
+    __itt_context_pci_addrA,                /*!< ASCII string char* type */
+    __itt_context_pci_addrW,                /*!< Unicode string wchar_t* type */
+    __itt_context_tid,                      /*!< Unsigned 64-bit integer type */
+    __itt_context_max_val,                  /*!< Unsigned 64-bit integer type */
+    __itt_context_bandwidth_flag,           /*!< Unsigned 64-bit integer type */
+    __itt_context_latency_flag,             /*!< Unsigned 64-bit integer type */
+    __itt_context_occupancy_flag,           /*!< Unsigned 64-bit integer type */
+    __itt_context_on_thread_flag,           /*!< Unsigned 64-bit integer type */
+    __itt_context_is_abs_val_flag,          /*!< Unsigned 64-bit integer type */
+    __itt_context_cpu_instructions_flag,    /*!< Unsigned 64-bit integer type */
+    __itt_context_cpu_cycles_flag           /*!< Unsigned 64-bit integer type */
+} __itt_context_type;
+
+#if defined(UNICODE) || defined(_UNICODE)
+#  define __itt_context_name __itt_context_nameW
+#  define __itt_context_device __itt_context_deviceW
+#  define __itt_context_units __itt_context_unitsW
+#  define __itt_context_pci_addr __itt_context_pci_addrW
+#else  /* UNICODE || _UNICODE */
+#  define __itt_context_name __itt_context_nameA
+#  define __itt_context_device __itt_context_deviceA
+#  define __itt_context_units __itt_context_unitsA
+#  define __itt_context_pci_addr __itt_context_pci_addrA
+#endif /* UNICODE || _UNICODE */
+
+/** @cond exclude_from_documentation */
+#pragma pack(push, 8)
+
+typedef struct ___itt_context_metadata
+{
+    __itt_context_type type;    /*!< Type of the context metadata value */
+    void* value;                /*!< Pointer to context metadata value itself */
+}  __itt_context_metadata;
+
+#pragma pack(pop)
+/** @endcond */
+
+/** @cond exclude_from_documentation */
+#pragma pack(push, 8)
+
+typedef struct ___itt_counter_metadata
+{
+    __itt_counter counter;              /*!< Associated context metadata counter */
+    __itt_context_type type;            /*!< Type of the context metadata value */
+    const char* str_valueA;             /*!< String context metadata value */
+#if defined(UNICODE) || defined(_UNICODE)
+    const wchar_t* str_valueW;
+#else  /* UNICODE || _UNICODE */
+    void* str_valueW;
+#endif /* UNICODE || _UNICODE */
+    unsigned long long value;           /*!< Numeric context metadata value */
+    int   extra1;                       /*!< Reserved to the runtime */
+    void* extra2;                       /*!< Reserved to the runtime */
+    struct ___itt_counter_metadata* next;
+}  __itt_counter_metadata;
+
+#pragma pack(pop)
+/** @endcond */
+
+/**
+ * @brief Bind context metadata to counter instance
+ * @param[in] counter   Pointer to the counter instance to which the context metadata is to be associated.
+ * @param[in] length    The number of elements in context metadata array.
+ * @param[in] metadata  The context metadata itself.
+*/
+void ITTAPI __itt_bind_context_metadata_to_counter(__itt_counter counter, size_t length, __itt_context_metadata* metadata);
+
+/** @cond exclude_from_documentation */
+#ifndef INTEL_NO_MACRO_BODY
+#ifndef INTEL_NO_ITTNOTIFY_API
+ITT_STUBV(ITTAPI, void, bind_context_metadata_to_counter, (__itt_counter counter, size_t length, __itt_context_metadata* metadata))
+#define __itt_bind_context_metadata_to_counter     ITTNOTIFY_VOID(bind_context_metadata_to_counter)
+#define __itt_bind_context_metadata_to_counter_ptr ITTNOTIFY_NAME(bind_context_metadata_to_counter)
+#else  /* INTEL_NO_ITTNOTIFY_API */
+#define __itt_bind_context_metadata_to_counter(counter, length, metadata)
+#define __itt_bind_context_metadata_to_counter_ptr 0
+#endif /* INTEL_NO_ITTNOTIFY_API */
+#else  /* INTEL_NO_MACRO_BODY */
+#define __itt_bind_context_metadata_to_counter_ptr 0
+#endif /* INTEL_NO_MACRO_BODY */
+/** @endcond */
+
 #ifdef __cplusplus
 }
 #endif /* __cplusplus */
@@ -4423,7 +4617,7 @@ typedef enum __itt_error_code
 {
     __itt_error_success       = 0, /*!< no error */
     __itt_error_no_module     = 1, /*!< module can't be loaded */
-    /* %1$s -- library name; win: %2$d -- system error code; unx: %2$s -- system error message. */
+    /* %1$s -- library name; win: %2$d -- system error code; unix: %2$s -- system error message. */
     __itt_error_no_symbol     = 2, /*!< symbol not found */
     /* %1$s -- library name, %2$s -- symbol name. */
     __itt_error_unknown_group = 3, /*!< unknown group specified */

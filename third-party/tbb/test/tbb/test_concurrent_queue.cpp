@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -219,6 +219,7 @@ struct TrackableItem {
         auto it = object_addresses.find(this);
         CHECK(it != object_addresses.end());
         object_addresses.erase(it);
+        CHECK(object_addresses.count(this) == 0);
     }
 };
 

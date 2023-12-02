@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2019-2022 Intel Corporation
+    Copyright (c) 2019-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 
 #include "tbb/parallel_for.h"
 
-#if __TBB_HWLOC_VALID_ENVIRONMENT
+#if __TBB_HWLOC_VALID_ENVIRONMENT && __HWLOC_CPUBIND_PRESENT
 //! Test affinity and default_concurrency correctness for all available constraints.
 //! \brief \ref error_guessing
 TEST_CASE("Test affinity and default_concurrency correctness for all available constraints.") {
@@ -87,7 +87,7 @@ TEST_CASE("Test constraints propagation during arenas copy construction") {
         test_constraints_affinity_and_concurrency(constraints, copied_affinity);
     }
 }
-#endif /*__TBB_HWLOC_VALID_ENVIRONMENT*/
+#endif /*__TBB_HWLOC_VALID_ENVIRONMENT && __HWLOC_CPUBIND_PRESENT */
 
 // The test cannot be stabilized with TBB malloc under Thread Sanitizer
 #if !__TBB_USE_THREAD_SANITIZER

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2019-2021 Intel Corporation
+    Copyright (c) 2019-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -76,7 +76,7 @@ class system_topology {
 
     // Binding threads that locate in another Windows Processor groups
     // is allowed only if machine topology contains several Windows Processors groups
-    // and process affinity mask wasn`t limited manually (affinity mask cannot violates
+    // and process affinity mask wasn't limited manually (affinity mask cannot violates
     // processors group boundaries).
     bool intergroup_binding_allowed(std::size_t groups_num) { return groups_num > 1; }
 
@@ -104,6 +104,7 @@ private:
         if ( initialization_state != topology_loaded )
             return;
 
+#if __TBB_CPUBIND_PRESENT
         // Getting process affinity mask
         if ( intergroup_binding_allowed(groups_num) ) {
             process_cpu_affinity_mask  = hwloc_bitmap_dup(hwloc_topology_get_complete_cpuset (topology));
@@ -115,6 +116,10 @@ private:
             assertion_hwloc_wrapper(hwloc_get_cpubind, topology, process_cpu_affinity_mask, 0);
             hwloc_cpuset_to_nodeset(topology, process_cpu_affinity_mask, process_node_affinity_mask);
         }
+#else
+        process_cpu_affinity_mask  = hwloc_bitmap_dup(hwloc_topology_get_complete_cpuset (topology));
+        process_node_affinity_mask = hwloc_bitmap_dup(hwloc_topology_get_complete_nodeset(topology));
+#endif
 
         number_of_processors_groups = groups_num;
     }

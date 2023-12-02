@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -1487,9 +1487,9 @@ void test_heterogeneous_lookup() {
     test_heterogeneous_equal_range();
 }
 
-//! Test consruction with hash_compare
+//! Test construction with hash_compare
 //! \brief \ref interface \ref requirement
-TEST_CASE("testing consruction with hash_compare") {
+TEST_CASE("testing construction with hash_compare") {
     TestHashCompareConstructors();
 }
 

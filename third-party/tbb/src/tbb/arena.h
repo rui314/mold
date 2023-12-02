@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@
 #include <cstring>
 
 #include "oneapi/tbb/detail/_task.h"
+#include "oneapi/tbb/detail/_utils.h"
+#include "oneapi/tbb/spin_mutex.h"
 
 #include "scheduler_common.h"
 #include "intrusive_list.h"
@@ -28,11 +30,11 @@
 #include "arena_slot.h"
 #include "rml_tbb.h"
 #include "mailbox.h"
-#include "market.h"
 #include "governor.h"
 #include "concurrent_monitor.h"
 #include "observer_proxy.h"
-#include "oneapi/tbb/spin_mutex.h"
+#include "thread_control_monitor.h"
+#include "threading_control_client.h"
 
 namespace tbb {
 namespace detail {
@@ -40,6 +42,7 @@ namespace r1 {
 
 class task_dispatcher;
 class task_group_context;
+class threading_control;
 class allocate_root_with_context_proxy;
 
 #if __TBB_ARENA_BINDING
@@ -133,11 +136,10 @@ struct stack_anchor_type {
     stack_anchor_type(const stack_anchor_type&) = delete;
 };
 
-#if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
 class atomic_flag {
     static const std::uintptr_t SET = 1;
-    static const std::uintptr_t EMPTY = 0;
-    std::atomic<std::uintptr_t> my_state;
+    static const std::uintptr_t UNSET = 0;
+    std::atomic<std::uintptr_t> my_state{UNSET};
 public:
     bool test_and_set() {
         std::uintptr_t state = my_state.load(std::memory_order_acquire);
@@ -149,13 +151,13 @@ public:
                 // We interrupted clear transaction
                 return false;
             }
-            if (state != EMPTY) {
+            if (state != UNSET) {
                 // We lost our epoch
                 return false;
             }
             // We are too late but still in the same epoch
             __TBB_fallthrough;
-        case EMPTY:
+        case UNSET:
             return my_state.compare_exchange_strong(state, SET);
         }
     }
@@ -165,21 +167,17 @@ public:
         std::uintptr_t state = my_state.load(std::memory_order_acquire);
         if (state == SET && my_state.compare_exchange_strong(state, busy)) {
             if (pred()) {
-                return my_state.compare_exchange_strong(busy, EMPTY);
+                return my_state.compare_exchange_strong(busy, UNSET);
             }
             // The result of the next operation is discarded, always false should be returned.
             my_state.compare_exchange_strong(busy, SET);
         }
         return false;
     }
-    void clear() {
-        my_state.store(EMPTY, std::memory_order_release);
-    }
-    bool test() {
-        return my_state.load(std::memory_order_acquire) != EMPTY;
+    bool test(std::memory_order order = std::memory_order_acquire) {
+        return my_state.load(order) != UNSET;
     }
 };
-#endif
 
 //! The structure of an arena, except the array of slots.
 /** Separated in order to simplify padding.
@@ -220,44 +218,29 @@ struct arena_base : padded<intrusive_list_node> {
     //! The total number of workers that are requested from the resource manager.
     int my_total_num_workers_requested;
 
-    //! The number of workers that are really requested from the resource manager.
-    //! Possible values are in [0, my_max_num_workers]
-    int my_num_workers_requested;
-
     //! The index in the array of per priority lists of arenas this object is in.
     /*const*/ unsigned my_priority_level;
 
-    //! The max priority level of arena in market.
+    //! The max priority level of arena in permit manager.
     std::atomic<bool> my_is_top_priority{false};
 
     //! Current task pool state and estimate of available tasks amount.
-    /** The estimate is either 0 (SNAPSHOT_EMPTY) or infinity (SNAPSHOT_FULL).
-        Special state is "busy" (any other unsigned value).
-        Note that the implementation of arena::is_busy_or_empty() requires
-        my_pool_state to be unsigned. */
-    using pool_state_t = std::uintptr_t ;
-    std::atomic<pool_state_t> my_pool_state;
+    atomic_flag my_pool_state;
 
     //! The list of local observers attached to this arena.
     observer_list my_observers;
 
 #if __TBB_ARENA_BINDING
     //! Pointer to internal observer that allows to bind threads in arena to certain NUMA node.
-    numa_binding_observer* my_numa_binding_observer;
+    numa_binding_observer* my_numa_binding_observer{nullptr};
 #endif /*__TBB_ARENA_BINDING*/
 
     // Below are rarely modified members
 
-    //! The market that owns this arena.
-    market* my_market;
+    threading_control* my_threading_control;
 
     //! Default task group context.
     d1::task_group_context* my_default_ctx;
-
-#if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
-    // arena needs an extra worker despite a global limit
-    std::atomic<bool> my_global_concurrency_mode;
-#endif /* __TBB_ENQUEUE_ENFORCED_CONCURRENCY */
 
     //! Waiting object for external threads that cannot join the arena.
     concurrent_monitor my_exit_monitors;
@@ -265,15 +248,11 @@ struct arena_base : padded<intrusive_list_node> {
     //! Coroutines (task_dispathers) cache buffer
     arena_co_cache my_co_cache;
 
-#if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
     // arena needs an extra worker despite the arena limit
-    atomic_flag my_local_concurrency_flag;
+    atomic_flag my_mandatory_concurrency;
     // the number of local mandatory concurrency requests
-    int my_local_concurrency_requests;
-#endif /* __TBB_ENQUEUE_ENFORCED_CONCURRENCY*/
+    int my_mandatory_requests;
 
-    //! ABA prevention marker.
-    std::uintptr_t my_aba_epoch;
     //! The number of slots in the arena.
     unsigned my_num_slots;
     //! The number of reserved slots (can be occupied only by external threads).
@@ -281,11 +260,7 @@ struct arena_base : padded<intrusive_list_node> {
     //! The number of workers requested by the external thread owning the arena.
     unsigned my_max_num_workers;
 
-    //! The target serialization epoch for callers of adjust_job_count_estimate
-    int my_adjust_demand_target_epoch;
-
-    //! The current serialization epoch for callers of adjust_job_count_estimate
-    d1::waitable_atomic<int> my_adjust_demand_current_epoch;
+    threading_control_client my_tc_client;
 
 #if TBB_USE_ASSERT
     //! Used to trap accesses to the object after its destruction.
@@ -306,17 +281,19 @@ public:
     };
 
     //! Constructor
-    arena ( market& m, unsigned max_num_workers, unsigned num_reserved_slots, unsigned priority_level);
+    arena(threading_control* control, unsigned max_num_workers, unsigned num_reserved_slots, unsigned priority_level);
 
     //! Allocate an instance of arena.
-    static arena& allocate_arena( market& m, unsigned num_slots, unsigned num_reserved_slots,
-                                  unsigned priority_level );
+    static arena& allocate_arena(threading_control* control, unsigned num_slots, unsigned num_reserved_slots,
+                                  unsigned priority_level);
 
-    static int unsigned num_arena_slots ( unsigned num_slots ) {
-        return max(2u, num_slots);
+    static arena& create(threading_control* control, unsigned num_slots, unsigned num_reserved_slots, unsigned arena_priority_level, d1::constraints constraints = d1::constraints{});
+
+    static int unsigned num_arena_slots ( unsigned num_slots, unsigned num_reserved_slots ) {
+        return num_reserved_slots == 0 ? num_slots : max(2u, num_slots);
     }
 
-    static int allocation_size ( unsigned num_slots ) {
+    static int allocation_size( unsigned num_slots ) {
         return sizeof(base_type) + num_slots * (sizeof(mail_outbox) + sizeof(arena_slot) + sizeof(task_dispatcher));
     }
 
@@ -328,13 +305,7 @@ public:
     }
 
     //! Completes arena shutdown, destructs and deallocates it.
-    void free_arena ();
-
-    //! No tasks to steal since last snapshot was taken
-    static const pool_state_t SNAPSHOT_EMPTY = 0;
-
-    //! At least one task has been offered for stealing since the last snapshot started
-    static const pool_state_t SNAPSHOT_FULL = pool_state_t(-1);
+    void free_arena();
 
     //! The number of least significant bits for external references
     static const unsigned ref_external_bits = 12; // up to 4095 external and 1M workers
@@ -342,9 +313,6 @@ public:
     //! Reference increment values for externals and workers
     static const unsigned ref_external = 1;
     static const unsigned ref_worker   = 1 << ref_external_bits;
-
-    //! No tasks to steal or snapshot is being taken.
-    static bool is_busy_or_empty( pool_state_t s ) { return s < SNAPSHOT_FULL; }
 
     //! The number of workers active in the arena.
     unsigned num_workers_active() const {
@@ -355,6 +323,8 @@ public:
     bool is_recall_requested() const {
         return num_workers_active() > my_num_workers_allotted.load(std::memory_order_relaxed);
     }
+
+    void request_workers(int mandatory_delta, int workers_delta, bool wakeup_threads = false);
 
     //! If necessary, raise a flag that there is new job in arena.
     template<arena::new_work_type work_type> void advertise_new_work();
@@ -372,8 +342,7 @@ public:
 #endif
 
     //! Check if there is job anywhere in arena.
-    /** Return true if no job or if arena is being cleaned up. */
-    bool is_out_of_work();
+    void out_of_work();
 
     //! enqueue a task into starvation-resistance queue
     void enqueue_task(d1::task&, d1::task_group_context&, thread_data&);
@@ -382,11 +351,18 @@ public:
     void process(thread_data&);
 
     //! Notification that the thread leaves its arena
-    template<unsigned ref_param>
-    inline void on_thread_leaving ( );
 
-    //! Check for the presence of enqueued tasks at all priority levels
+    void on_thread_leaving(unsigned ref_param);
+
+    //! Check for the presence of enqueued tasks
     bool has_enqueued_tasks();
+
+    //! Check for the presence of any tasks
+    bool has_tasks();
+
+    bool is_empty() { return my_pool_state.test() == /* EMPTY */ false; }
+
+    thread_control_monitor& get_waiting_threads_monitor();
 
     static const std::size_t out_of_arena = ~size_t(0);
     //! Tries to occupy a slot in the arena. On success, returns the slot index; if no slot is available, returns out_of_arena.
@@ -397,118 +373,43 @@ public:
 
     std::uintptr_t calculate_stealing_threshold();
 
+    unsigned priority_level() { return my_priority_level; }
+
+    bool has_request() { return my_total_num_workers_requested; }
+
+    unsigned references() const { return my_references.load(std::memory_order_acquire); }
+
+    bool is_arena_workerless() const { return my_max_num_workers == 0; }
+
+    void set_top_priority(bool);
+
+    bool is_top_priority() const;
+
+    bool try_join();
+
+    void set_allotment(unsigned allotment);
+
+    int update_concurrency(unsigned concurrency);
+
+    std::pair</*min workers = */ int, /*max workers = */ int> update_request(int mandatory_delta, int workers_delta);
+
     /** Must be the last data field */
     arena_slot my_slots[1];
 }; // class arena
 
-template<unsigned ref_param>
-inline void arena::on_thread_leaving ( ) {
-    //
-    // Implementation of arena destruction synchronization logic contained various
-    // bugs/flaws at the different stages of its evolution, so below is a detailed
-    // description of the issues taken into consideration in the framework of the
-    // current design.
-    //
-    // In case of using fire-and-forget tasks (scheduled via task::enqueue())
-    // external thread is allowed to leave its arena before all its work is executed,
-    // and market may temporarily revoke all workers from this arena. Since revoked
-    // workers never attempt to reset arena state to EMPTY and cancel its request
-    // to RML for threads, the arena object is destroyed only when both the last
-    // thread is leaving it and arena's state is EMPTY (that is its external thread
-    // left and it does not contain any work).
-    // Thus resetting arena to EMPTY state (as earlier TBB versions did) should not
-    // be done here (or anywhere else in the external thread to that matter); doing so
-    // can result either in arena's premature destruction (at least without
-    // additional costly checks in workers) or in unnecessary arena state changes
-    // (and ensuing workers migration).
-    //
-    // A worker that checks for work presence and transitions arena to the EMPTY
-    // state (in snapshot taking procedure arena::is_out_of_work()) updates
-    // arena::my_pool_state first and only then arena::my_num_workers_requested.
-    // So the check for work absence must be done against the latter field.
-    //
-    // In a time window between decrementing the active threads count and checking
-    // if there is an outstanding request for workers. New worker thread may arrive,
-    // finish remaining work, set arena state to empty, and leave decrementing its
-    // refcount and destroying. Then the current thread will destroy the arena
-    // the second time. To preclude it a local copy of the outstanding request
-    // value can be stored before decrementing active threads count.
-    //
-    // But this technique may cause two other problem. When the stored request is
-    // zero, it is possible that arena still has threads and they can generate new
-    // tasks and thus re-establish non-zero requests. Then all the threads can be
-    // revoked (as described above) leaving this thread the last one, and causing
-    // it to destroy non-empty arena.
-    //
-    // The other problem takes place when the stored request is non-zero. Another
-    // thread may complete the work, set arena state to empty, and leave without
-    // arena destruction before this thread decrements the refcount. This thread
-    // cannot destroy the arena either. Thus the arena may be "orphaned".
-    //
-    // In both cases we cannot dereference arena pointer after the refcount is
-    // decremented, as our arena may already be destroyed.
-    //
-    // If this is the external thread, the market is protected by refcount to it.
-    // In case of workers market's liveness is ensured by the RML connection
-    // rundown protocol, according to which the client (i.e. the market) lives
-    // until RML server notifies it about connection termination, and this
-    // notification is fired only after all workers return into RML.
-    //
-    // Thus if we decremented refcount to zero we ask the market to check arena
-    // state (including the fact if it is alive) under the lock.
-    //
-    std::uintptr_t aba_epoch = my_aba_epoch;
-    unsigned priority_level = my_priority_level;
-    market* m = my_market;
-    __TBB_ASSERT(my_references.load(std::memory_order_relaxed) >= ref_param, "broken arena reference counter");
-#if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
-    // When there is no workers someone must free arena, as
-    // without workers, no one calls is_out_of_work().
-    // Skip workerless arenas because they have no demand for workers.
-    // TODO: consider more strict conditions for the cleanup,
-    // because it can create the demand of workers,
-    // but the arena can be already empty (and so ready for destroying)
-    // TODO: Fix the race: while we check soft limit and it might be changed.
-    if( ref_param==ref_external && my_num_slots != my_num_reserved_slots
-        && 0 == m->my_num_workers_soft_limit.load(std::memory_order_relaxed) &&
-        !my_global_concurrency_mode.load(std::memory_order_relaxed) ) {
-        is_out_of_work();
-        // We expect, that in worst case it's enough to have num_priority_levels-1
-        // calls to restore priorities and yet another is_out_of_work() to conform
-        // that no work was found. But as market::set_active_num_workers() can be called
-        // concurrently, can't guarantee last is_out_of_work() return true.
-    }
-#endif
-
-    // Release our reference to sync with arena destroy
-    unsigned remaining_ref = my_references.fetch_sub(ref_param, std::memory_order_release) - ref_param;
-    if (remaining_ref == 0) {
-        m->try_destroy_arena( this, aba_epoch, priority_level );
-    }
-}
-
-template<arena::new_work_type work_type>
+template <arena::new_work_type work_type>
 void arena::advertise_new_work() {
-    auto is_related_arena = [&] (market_context context) {
-        return this == context.my_arena_addr;
-    };
+    bool is_mandatory_needed = false;
+    bool are_workers_needed = false;
 
-    if( work_type == work_enqueued ) {
-        atomic_fence_seq_cst();
-#if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
-        if ( my_market->my_num_workers_soft_limit.load(std::memory_order_acquire) == 0 &&
-            my_global_concurrency_mode.load(std::memory_order_acquire) == false )
-            my_market->enable_mandatory_concurrency(this);
-
-        if (my_max_num_workers == 0 && my_num_reserved_slots == 1 && my_local_concurrency_flag.test_and_set()) {
-            my_market->adjust_demand(*this, /* delta = */ 1, /* mandatory = */ true);
-        }
-#endif /* __TBB_ENQUEUE_ENFORCED_CONCURRENCY */
+    if (work_type != work_spawned) {
         // Local memory fence here and below is required to avoid missed wakeups; see the comment below.
         // Starvation resistant tasks require concurrency, so missed wakeups are unacceptable.
-    }
-    else if( work_type == wakeup ) {
         atomic_fence_seq_cst();
+    }
+
+    if (work_type == work_enqueued && my_num_slots > my_num_reserved_slots) {
+        is_mandatory_needed = my_mandatory_concurrency.test_and_set();
     }
 
     // Double-check idiom that, in case of spawning, is deliberately sloppy about memory fences.
@@ -517,38 +418,19 @@ void arena::advertise_new_work() {
     // fence might hurt overall performance more than it helps, because the fence would be executed
     // on every task pool release, even when stealing does not occur.  Since TBB allows parallelism,
     // but never promises parallelism, the missed wakeup is not a correctness problem.
-    pool_state_t snapshot = my_pool_state.load(std::memory_order_acquire);
-    if( is_busy_or_empty(snapshot) ) {
-        // Attempt to mark as full.  The compare_and_swap below is a little unusual because the
-        // result is compared to a value that can be different than the comparand argument.
-        pool_state_t expected_state = snapshot;
-        my_pool_state.compare_exchange_strong( expected_state, SNAPSHOT_FULL );
-        if( expected_state == SNAPSHOT_EMPTY ) {
-            if( snapshot != SNAPSHOT_EMPTY ) {
-                // This thread read "busy" into snapshot, and then another thread transitioned
-                // my_pool_state to "empty" in the meantime, which caused the compare_and_swap above
-                // to fail.  Attempt to transition my_pool_state from "empty" to "full".
-                expected_state = SNAPSHOT_EMPTY;
-                if( !my_pool_state.compare_exchange_strong( expected_state, SNAPSHOT_FULL ) ) {
-                    // Some other thread transitioned my_pool_state from "empty", and hence became
-                    // responsible for waking up workers.
-                    return;
-                }
-            }
-            // This thread transitioned pool from empty to full state, and thus is responsible for
-            // telling the market that there is work to do.
-#if __TBB_ENQUEUE_ENFORCED_CONCURRENCY
-            if( work_type == work_spawned ) {
-                if ( my_global_concurrency_mode.load(std::memory_order_acquire) == true )
-                    my_market->mandatory_concurrency_disable( this );
-            }
-#endif /* __TBB_ENQUEUE_ENFORCED_CONCURRENCY */
-            // TODO: investigate adjusting of arena's demand by a single worker.
-            my_market->adjust_demand(*this, my_max_num_workers, /* mandatory = */ false);
+    are_workers_needed = my_pool_state.test_and_set();
 
-            // Notify all sleeping threads that work has appeared in the arena.
-            my_market->get_wait_list().notify(is_related_arena);
+    if (is_mandatory_needed || are_workers_needed) {
+        int mandatory_delta = is_mandatory_needed ? 1 : 0;
+        int workers_delta = are_workers_needed ? my_max_num_workers : 0;
+
+        if (is_mandatory_needed && is_arena_workerless()) {
+            // Set workers_delta to 1 to keep arena invariants consistent
+            workers_delta = 1;
         }
+
+        bool wakeup_workers = is_mandatory_needed || are_workers_needed;
+        request_workers(mandatory_delta, workers_delta, wakeup_workers);
     }
 }
 

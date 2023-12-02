@@ -25,7 +25,7 @@ pipeline.
 
 .. CAUTION:: 
    Since the body object provided to the filters of the
-   ``parallel_pipline`` might be copied, its ``operator()`` should not
+   ``parallel_pipeline`` might be copied, its ``operator()`` should not
    modify the body. Otherwise the modification might or might not become
    visible to the thread that invoked ``parallel_pipeline``, depending
    upon whether ``operator()`` is acting on the original or a copy. As a

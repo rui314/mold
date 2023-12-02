@@ -13,7 +13,7 @@ parallelized using Intel&reg; oneAPI Math Kernel Library or/and oneTBB.
 The module implements Pool class with the standard interface using oneTBB which can be used to replace Python's ThreadPool.
 Thanks to the monkey-patching technique implemented in class Monkey, no source code change is needed in order to enable threading composability in Python programs.
 
-For more information and examples, please refer to [online blog](http://software.intel.com/en-us/blogs/2016/04/04unleash-parallel-performance-of-python-programs).
+For more information and examples, please refer to [forum discussion](https://community.intel.com/t5/Intel-Distribution-for-Python/TBB-module-Unleash-parallel-performance-of-Python-programs/m-p/1074459).
 
 ## Directories
  - **rml** - The folder contains sources for building the plugin with cross-process dynamic thread scheduler implementation.

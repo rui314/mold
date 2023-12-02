@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -110,7 +110,8 @@ inline void enqueue_impl(task_handle&& th, d1::task_arena_base* ta) {
 
 namespace d1 {
 
-static constexpr int priority_stride = INT_MAX / 4;
+static constexpr unsigned num_priority_levels = 3;
+static constexpr int priority_stride = INT_MAX / (num_priority_levels + 1);
 
 class task_arena_base {
     friend struct r1::task_arena_impl;

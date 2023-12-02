@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -361,7 +361,6 @@ void test() {
 
 
 // TODO: nested arena case
-
 //! Test for setting a priority to arena
 //! \brief \ref requirement
 TEST_CASE("Arena priorities") {

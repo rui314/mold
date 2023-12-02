@@ -80,16 +80,19 @@ public:
     static const unsigned NumBins = (MaxSizeExp - MinSizeExp) * StepFactor;
 
     static size_t alignToBin(size_t size) {
+        MALLOC_ASSERT(size >= StepFactor, "Size must not be less than the StepFactor");
         size_t minorStepExp = BitScanRev(size) - StepFactorExp;
         return alignUp(size, 1ULL << minorStepExp);
     }
 
-    // Sizes between the power of 2 values are aproximated to StepFactor.
+    // Sizes between the power of 2 values are approximated to StepFactor.
     static int sizeToIdx(size_t size) {
         MALLOC_ASSERT(MinSize <= size && size <= MaxSize, ASSERT_TEXT);
         int sizeExp = (int)BitScanRev(size); // same as __TBB_Log2
+        MALLOC_ASSERT(sizeExp >= 0, "A shift amount (sizeExp) must not be negative");
         size_t majorStepSize = 1ULL << sizeExp;
         int minorStepExp = sizeExp - StepFactorExp;
+        MALLOC_ASSERT(minorStepExp >= 0, "A shift amount (minorStepExp) must not be negative");
         int minorIdx = (size - majorStepSize) >> minorStepExp;
         MALLOC_ASSERT(size == majorStepSize + ((size_t)minorIdx << minorStepExp),
             "Size is not aligned on the bin");
@@ -240,7 +243,7 @@ private:
     // for fast finding of used bins and bins with non-zero usedSize;
     // indexed from the end, as we need largest 1st
     BinBitMask   bitMask;
-    // bins with lists of recently freed large blocks cached for re-use
+    // bins with lists of recently freed large blocks cached for reuse
     CacheBin bin[numBins];
 
 public:

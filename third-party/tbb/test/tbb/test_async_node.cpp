@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -831,9 +831,9 @@ TEST_CASE("Inner enqueuing test"){
 }
 
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-//! Test deprecated follows and preceedes API
+//! Test deprecated follows and precedes API
 //! \brief \ref error_guessing
-TEST_CASE("Test follows and preceedes API"){
+TEST_CASE("Test follows and precedes API"){
     test_follows_and_precedes_api();
 }
 #endif

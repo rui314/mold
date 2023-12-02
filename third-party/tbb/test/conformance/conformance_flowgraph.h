@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2022 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -626,28 +626,31 @@ void test_copy_ctor_for_buffering_nodes(Args... node_args) {
 
 template<typename Node, typename InputType, typename ...Args>
 void test_priority(Args... node_args) {
-    std::size_t concurrency_limit = 1;
-    oneapi::tbb::global_control control(oneapi::tbb::global_control::max_allowed_parallelism, concurrency_limit);
+
 
     oneapi::tbb::flow::graph g;
-
     oneapi::tbb::flow::continue_node<InputType> source(g, dummy_functor<InputType>());
 
     track_first_id_functor<int>::first_id = -1;
     track_first_id_functor<int> low_functor(1);
     track_first_id_functor<int> high_functor(2);
 
+    // Due to args... we cannot create the nodes inside the lambda with old compilers
     Node high(g, node_args..., high_functor, oneapi::tbb::flow::node_priority_t(1));
     Node low(g, node_args..., low_functor);
 
-    make_edge(source, low);
-    make_edge(source, high);
+    tbb::task_arena a(1, 1);
+    a.execute([&] {
+        g.reset(); // attach to this arena
 
-    source.try_put(oneapi::tbb::flow::continue_msg());
+        make_edge(source, low);
+        make_edge(source, high);
+        source.try_put(oneapi::tbb::flow::continue_msg());
 
-    g.wait_for_all();
+        g.wait_for_all();
 
-    CHECK_MESSAGE((track_first_id_functor<int>::first_id == 2), "High priority node should execute first");
+        CHECK_MESSAGE((track_first_id_functor<int>::first_id == 2), "High priority node should execute first");
+    });
 }
 
 template<typename Node>

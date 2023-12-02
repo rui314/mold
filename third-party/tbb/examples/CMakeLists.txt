@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -73,3 +73,5 @@ tbb_add_example(task_arena fractal)
 tbb_add_example(task_group sudoku)
 
 tbb_add_example(test_all fibonacci)
+
+tbb_add_example(migration recursive_fibonacci)

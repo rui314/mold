@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -15,12 +15,14 @@
 */
 
 #include "governor.h"
+#include "threading_control.h"
 #include "main.h"
 #include "thread_data.h"
 #include "market.h"
 #include "arena.h"
 #include "dynamic_link.h"
 #include "concurrent_monitor.h"
+#include "thread_dispatcher.h"
 
 #include "oneapi/tbb/task_group.h"
 #include "oneapi/tbb/global_control.h"
@@ -108,6 +110,10 @@ void governor::one_time_init() {
     }
 }
 
+bool governor::does_client_join_workers(const rml::tbb_client &client) {
+    return ((const thread_dispatcher&)client).must_join_workers();
+}
+
 /*
     There is no portable way to get stack base address in Posix, however the modern
     Linux versions provide pthread_attr_np API that can be used  to obtain thread's
@@ -185,21 +191,20 @@ void governor::init_external_thread() {
     int num_reserved_slots = 1;
     unsigned arena_priority_level = 1; // corresponds to tbb::task_arena::priority::normal
     std::size_t stack_size = 0;
-    arena& a = *market::create_arena(num_slots, num_reserved_slots, arena_priority_level, stack_size);
-    // We need an internal reference to the market. TODO: is it legacy?
-    market::global_market(false);
+    threading_control* thr_control = threading_control::register_public_reference();
+    arena& a = arena::create(thr_control, num_slots, num_reserved_slots, arena_priority_level);
     // External thread always occupies the first slot
     thread_data& td = *new(cache_aligned_allocate(sizeof(thread_data))) thread_data(0, false);
     td.attach_arena(a, /*slot index*/ 0);
     __TBB_ASSERT(td.my_inbox.is_idle_state(false), nullptr);
 
-    stack_size = a.my_market->worker_stack_size();
+    stack_size = a.my_threading_control->worker_stack_size();
     std::uintptr_t stack_base = get_stack_base(stack_size);
     task_dispatcher& task_disp = td.my_arena_slot->default_task_dispatcher();
     td.enter_task_dispatcher(task_disp, calculate_stealing_threshold(stack_base, stack_size));
 
     td.my_arena_slot->occupy();
-    a.my_market->add_external_thread(td);
+    thr_control->register_thread(td);
     set_thread_data(td);
 #if (_WIN32||_WIN64) && !__TBB_DYNAMIC_LOAD_ENABLED
     // The external thread destructor is called from dllMain but it is not available with a static build.
@@ -223,7 +228,7 @@ void governor::auto_terminate(void* tls) {
         // Only external thread can be inside an arena during termination.
         if (td->my_arena_slot) {
             arena* a = td->my_arena;
-            market* m = a->my_market;
+            threading_control* thr_control = a->my_threading_control;
 
             // If the TLS slot is already cleared by OS or underlying concurrency
             // runtime, restore its value to properly clean up arena
@@ -236,16 +241,16 @@ void governor::auto_terminate(void* tls) {
             td->leave_task_dispatcher();
             td->my_arena_slot->release();
             // Release an arena
-            a->on_thread_leaving<arena::ref_external>();
+            a->on_thread_leaving(arena::ref_external);
 
-            m->remove_external_thread(*td);
+            thr_control->unregister_thread(*td);
 
             // The tls should be cleared before market::release because
             // market can destroy the tls key if we keep the last reference
             clear_tls();
 
             // If there was an associated arena, it added a public market reference
-            m->release( /*is_public*/ true, /*blocking_terminate*/ false);
+            thr_control->unregister_public_reference(/* blocking terminate =*/ false);
         } else {
             clear_tls();
         }
@@ -272,12 +277,10 @@ void release_impl(d1::task_scheduler_handle& handle) {
 
 bool finalize_impl(d1::task_scheduler_handle& handle) {
     __TBB_ASSERT_RELEASE(handle, "trying to finalize with null handle");
-    market::global_market_mutex_type::scoped_lock lock( market::theMarketMutex );
-    bool ok = true; // ok if theMarket does not exist yet
-    market* m = market::theMarket; // read the state of theMarket
-    if (m != nullptr) {
-        lock.release();
-        __TBB_ASSERT(is_present(*handle.m_ctl), "finalize or release was already called on this object");
+    __TBB_ASSERT(is_present(*handle.m_ctl), "finalize or release was already called on this object");
+
+    bool ok = true; // ok if threading_control does not exist yet
+    if (threading_control::is_present()) {
         thread_data* td = governor::get_thread_data_if_initialized();
         if (td) {
             task_dispatcher* task_disp = td->my_task_dispatcher;
@@ -286,12 +289,14 @@ bool finalize_impl(d1::task_scheduler_handle& handle) {
                 governor::auto_terminate(td);
             }
         }
+
         if (remove_and_check_if_empty(*handle.m_ctl)) {
-            ok = m->release(/*is_public*/ true, /*blocking_terminate*/ true);
+            ok = threading_control::unregister_lifetime_control(/*blocking_terminate*/ true);
         } else {
             ok = false;
         }
     }
+
     return ok;
 }
 
@@ -367,15 +372,18 @@ static void (*restore_affinity_ptr)( binding_handler* handler_ptr, int slot_num 
 int (*get_default_concurrency_ptr)( int numa_id, int core_type_id, int max_threads_per_core )
     = dummy_get_default_concurrency;
 
-#if _WIN32 || _WIN64 || __unix__
+#if _WIN32 || _WIN64 || __unix__ || __APPLE__
+
 // Table describing how to link the handlers.
 static const dynamic_link_descriptor TbbBindLinkTable[] = {
     DLD(__TBB_internal_initialize_system_topology, initialize_system_topology_ptr),
     DLD(__TBB_internal_destroy_system_topology, destroy_system_topology_ptr),
+#if __TBB_CPUBIND_PRESENT
     DLD(__TBB_internal_allocate_binding_handler, allocate_binding_handler_ptr),
     DLD(__TBB_internal_deallocate_binding_handler, deallocate_binding_handler_ptr),
     DLD(__TBB_internal_apply_affinity, apply_affinity_ptr),
     DLD(__TBB_internal_restore_affinity, restore_affinity_ptr),
+#endif
     DLD(__TBB_internal_get_default_concurrency, get_default_concurrency_ptr)
 };
 
@@ -390,6 +398,9 @@ static const unsigned LinkTableSize = sizeof(TbbBindLinkTable) / sizeof(dynamic_
 #if _WIN32 || _WIN64
 #define LIBRARY_EXTENSION ".dll"
 #define LIBRARY_PREFIX
+#elif __APPLE__
+#define LIBRARY_EXTENSION __TBB_STRING(.3.dylib)
+#define LIBRARY_PREFIX "lib"
 #elif __unix__
 #define LIBRARY_EXTENSION __TBB_STRING(.so.3)
 #define LIBRARY_PREFIX "lib"
@@ -418,7 +429,7 @@ int  core_types_count = 0;
 int* core_types_indexes = nullptr;
 
 const char* load_tbbbind_shared_object() {
-#if _WIN32 || _WIN64 || __unix__
+#if _WIN32 || _WIN64 || __unix__ || __APPLE__
 #if _WIN32 && !_WIN64
     // For 32-bit Windows applications, process affinity masks can only support up to 32 logical CPUs.
     SYSTEM_INFO si;
@@ -430,7 +441,7 @@ const char* load_tbbbind_shared_object() {
             return tbbbind_version;
         }
     }
-#endif /* _WIN32 || _WIN64 || __unix__ */
+#endif /* _WIN32 || _WIN64 || __unix__ || __APPLE__ */
     return nullptr;
 }
 

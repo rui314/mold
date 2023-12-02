@@ -12,6 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+if (EMSCRIPTEN)
+  set(TBB_EMSCRIPTEN 1)
+  set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} -fexceptions)
+  set(TBB_TEST_LINK_FLAGS  ${TBB_COMMON_LINK_FLAGS} -fexceptions -sINITIAL_MEMORY=65536000 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1)
+  set_property(TARGET Threads::Threads PROPERTY INTERFACE_LINK_LIBRARIES "-pthread")
+endif()
+
 if (MINGW)
     set(TBB_LINK_DEF_FILE_FLAG "")
     set(TBB_DEF_FILE_PREFIX "")
@@ -50,9 +57,12 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "(AMD64|amd64|i.86|x86)")
 endif()
 
 # Clang flags to prevent compiler from optimizing out security checks
-set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} -Wformat -Wformat-security -Werror=format-security
-	                                                  -fstack-protector-strong -fPIC)
-set(TBB_LIB_LINK_FLAGS ${TBB_LIB_LINK_FLAGS} -Wl,-z,relro,-z,now)
+set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} -Wformat -Wformat-security -Werror=format-security -fPIC $<$<NOT:$<BOOL:${EMSCRIPTEN}>>:-fstack-protector-strong>)
+
+# -z switch is not supported on MacOS
+if (NOT APPLE)
+    set(TBB_LIB_LINK_FLAGS ${TBB_LIB_LINK_FLAGS} -Wl,-z,relro,-z,now)
+endif()
 
 set(TBB_COMMON_LINK_LIBS ${CMAKE_DL_LIBS})
 

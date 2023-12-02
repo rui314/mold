@@ -17,6 +17,12 @@ After installing |short_name|, set the environment variables:
    * On Linux* OS: ``vars.{sh|csh} in <install_dir>/tbb/latest/env``
    * On Windows* OS: ``vars.bat in <install_dir>/tbb/latest/env``
 
+.. tip::
+
+   oneTBB can coordinate with Intel(R) OpenMP on CPU resources usage 
+   to avoid excessive oversubscription when both runtimes are used within a process.
+   To enable this feature set up ``TCM_ENABLE`` environment variable to ``1``.
+
 
 Build and Run a Sample 
 **********************

@@ -43,6 +43,12 @@ macro(tbb_install_target target)
                 NAMELINK_ONLY
                 COMPONENT devel)
     endif()
+    if (MSVC AND BUILD_SHARED_LIBS)
+        install(FILES $<TARGET_PDB_FILE:${target}>
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            COMPONENT devel
+            OPTIONAL)
+    endif()
 endmacro()
 
 macro(tbb_handle_ipo target)
