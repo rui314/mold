@@ -34,7 +34,7 @@ Options:
     --no-dynamic-linker
   -L DIR, --library-path DIR  Add DIR to library search path
   -M, --print-map             Write map file to stdout
-  -N, --omagic                Do not page align data, do not make text readonly
+  -N, --omagic                Do not page align data; do not make text readonly
     --no-omagic
   -O NUMBER                   Ignored
   -S, --strip-debug           Strip .debug_* sections
@@ -61,17 +61,17 @@ Options:
   --Bno-symbolic              Cancel --Bsymbolic and --Bsymbolic-functions
   --Map FILE                  Write map file to a given file
   --Tbss=ADDR                 Set address to .bss
-  --Tdata                     Set address to .data
-  --Ttext                     Set address to .text
+  --Tdata=ADDR                Set address to .data
+  --Ttext=ADDR                Set address to .text
   --allow-multiple-definition Allow multiple definitions
-  --apply-dynamic-relocs      Apply link-time values for dynamic relocations (defualt)
+  --apply-dynamic-relocs      Apply link-time values for dynamic relocations (default)
     --no-apply-dynamic-relocs
   --as-needed                 Only set DT_NEEDED if used
     --no-as-needed
   --build-id [none,md5,sha1,sha256,uuid,HEXSTRING]
                               Generate build ID
     --no-build-id
-  --chroot DIR                Set a given path to root directory
+  --chroot DIR                Set a given path to the root directory
   --color-diagnostics=[auto,always,never]
                               Use colors in diagnostics
   --color-diagnostics         Alias for --color-diagnostics=always
@@ -86,12 +86,12 @@ Options:
     --disable-new-dtags       Emit DT_RPATH for --rpath
   --execute-only              Make executable segments unreadable
   --dp                        Ignored
-  --dynamic-list              Read a list of dynamic symbols (implies -Bsymbolic)
+  --dynamic-list=FILE         Read a list of dynamic symbols (implies -Bsymbolic)
   --eh-frame-hdr              Create .eh_frame_hdr section
     --no-eh-frame-hdr
-  --exclude-libs LIB,LIB,..   Mark all symbols in given libraries hidden
+  --exclude-libs LIB,LIB,..   Mark all symbols in given libraries as hidden
   --export-dynamic-symbol     Put symbols matching glob in the dynamic symbol table
-  --export-dynamic-symbol-list
+  --export-dynamic-symbol-list=FILE
                               Read a list of dynamic symbols
   --fatal-warnings            Treat warnings as errors
     --no-fatal-warnings       Do not treat warnings as errors (default)
@@ -113,54 +113,54 @@ Options:
     --no-nmagic
   --no-undefined              Report undefined symbols (even with --shared)
   --noinhibit-exec            Create an output file even if errors occur
-  --oformat=binary            Omit ELF, section and program headers
+  --oformat=binary            Omit ELF, section, and program headers
   --pack-dyn-relocs=[relr,none]
                               Pack dynamic relocations
   --package-metadata=STRING   Set a given string to .note.package
   --perf                      Print performance statistics
-  --pie, --pic-executable     Create a position independent executable
+  --pie, --pic-executable     Create a position-independent executable
     --no-pie, --no-pic-executable
-  --pop-state                 Restore state of flags governing input file handling
+  --pop-state                 Restore the state of flags governing input file handling
   --print-gc-sections         Print removed unreferenced sections
     --no-print-gc-sections
   --print-icf-sections        Print folded identical sections
     --no-print-icf-sections
-  --push-state                Save state of flags governing input file handling
+  --push-state                Save the state of flags governing input file handling
   --quick-exit                Use quick_exit to exit (default)
     --no-quick-exit
   --relax                     Optimize instructions (default)
     --no-relax
-  --repro                     Embed input files to .repro section
+  --repro                     Embed input files in .repro section
   --require-defined SYMBOL    Require SYMBOL be defined in the final output
   --retain-symbols-file FILE  Keep only symbols listed in FILE
-  --reverse-sections          Reverses input sections in the output file
+  --reverse-sections          Reverse input sections in the output file
   --rosegment                 Put read-only non-executable sections in their own segment (default)
     --no-rosegment            Put read-only non-executable sections in an executable segment
-  --rpath DIR                 Add DIR to runtime search path
+  --rpath DIR                 Add DIR to the runtime search path
   --rpath-link DIR            Ignored
   --run COMMAND ARG...        Run COMMAND with mold as /usr/bin/ld
-  --section-start=SECTION=ADDR Set address to section
-  --shared, --Bshareable      Create a share library
+  --section-start=SECTION=ADDR Set address for section
+  --shared, --Bshareable      Create a shared library
   --shuffle-sections[=SEED]   Randomize the output by shuffling input sections
   --sort-common               Ignored
   --sort-section              Ignored
-  --spare-dynamic-tags NUMBER Reserve given number of tags in .dynamic section
+  --spare-dynamic-tags NUMBER Reserve the given number of tags in the .dynamic section
   --spare-program-headers NUMBER
-                              Reserve given number of slots in the program header
+                              Reserve the given number of slots in the program header
   --start-lib                 Give following object files in-archive-file semantics
     --end-lib                 End the effect of --start-lib
   --stats                     Print input statistics
-  --sysroot DIR               Set target system root directory
+  --sysroot DIR               Set the target system root directory
   --thread-count COUNT, --threads=COUNT
                               Use COUNT number of threads
   --threads                   Use multiple threads (default)
     --no-threads
-  --trace                     Print name of each input file
-  --undefined-version         Do not report version scripts that refer undefined symbols
-    --no-undefined-version    Report version scripts that refer undefined symbols (default)
+  --trace                     Print the name of each input file
+  --undefined-version         Do not report version scripts that refer to undefined symbols
+    --no-undefined-version    Report version scripts that refer to undefined symbols (default)
   --unique PATTERN            Don't merge input sections that match a given pattern
   --unresolved-symbols [report-all,ignore-all,ignore-in-object-files,ignore-in-shared-libs]
-                              How to handle unresolved symbols
+                              Handle unresolved symbols
   --version-script FILE       Read version script
   --warn-common               Warn about common symbols
     --no-warn-common
@@ -172,21 +172,21 @@ Options:
                               Report unresolved symbols as errors (default)
   --whole-archive             Include all objects from static archives
     --no-whole-archive
-  --wrap SYMBOL               Use wrapper function for a given symbol
+  --wrap SYMBOL               Use a wrapper function for a given symbol
   -z defs                     Report undefined symbols (even with --shared)
     -z nodefs
   -z common-page-size=VALUE   Ignored
-  -z execstack                Require executable stack
+  -z execstack                Require an executable stack
     -z noexecstack
-  -z execstack-if-needed      Make the stack area execuable if an input file explicitly requests it
+  -z execstack-if-needed      Make the stack area executable if an input file explicitly requests it
   -z initfirst                Mark DSO to be initialized first at runtime
-  -z interpose                Mark object to interpose all DSOs but executable
+  -z interpose                Mark object to interpose all DSOs but the executable
   -z keep-text-section-prefix Keep .text.{hot,unknown,unlikely,startup,exit} as separate sections in the final binary
     -z nokeep-text-section-prefix
   -z lazy                     Enable lazy function resolution (default)
   -z max-page-size=VALUE      Use VALUE as the memory page size
   -z nocopyreloc              Do not create copy relocations
-  -z nodefaultlib             Make the dynamic loader to ignore default search paths
+  -z nodefaultlib             Make the dynamic loader ignore default search paths
   -z nodelete                 Mark DSO non-deletable at runtime
   -z nodlopen                 Mark DSO not available to dlopen
   -z nodump                   Mark DSO not available to dldump
@@ -197,10 +197,10 @@ Options:
   -z sectionheader            Do not omit section header (default)
     -z nosectionheader        Omit section header
   -z separate-loadable-segments
-                              Separate all loadable segments to different pages
-    -z separate-code          Separate code and data into different pages
+                              Separate all loadable segments onto different pages
+    -z separate-code          Separate code and data onto different pages
     -z noseparate-code        Allow overlap in pages
-  -z stack-size=VALUE         Set size of stack segment
+  -z stack-size=VALUE         Set the size of the stack segment
   -z relro                    Make some sections read-only after relocation (default)
     -z norelro
   -z text                     Report error if DT_TEXTREL is set
