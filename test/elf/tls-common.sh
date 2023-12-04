@@ -17,4 +17,5 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
+readelf -WS $t/exe | grep -Fq .tls_common
 $QEMU $t/exe | grep -q '^foo=0$'

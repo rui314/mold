@@ -2260,7 +2260,7 @@ inline u64 InputSection<E>::get_addr() const {
 template <typename E>
 inline std::string_view InputSection<E>::name() const {
   if (file.elf_sections.size() <= shndx)
-    return ".common";
+    return (shdr().sh_flags & SHF_TLS) ? ".tls_common" : ".common";
   return file.shstrtab.data() + file.elf_sections[shndx].sh_name;
 }
 
