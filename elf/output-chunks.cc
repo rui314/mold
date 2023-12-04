@@ -793,6 +793,9 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     flags1 |= DF_1_ORIGIN;
   }
 
+  if (ctx.arg.Bsymbolic)
+    flags |= DF_SYMBOLIC;
+
   if (!ctx.arg.z_dlopen)
     flags1 |= DF_1_NOOPEN;
   if (ctx.arg.z_nodefaultlib)
