@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <signal.h>
 #include <tbb/global_control.h>
+#include <tbb/version.h>
 
 #ifdef USE_SYSTEM_MIMALLOC
 #include <mimalloc-new-delete.h>
@@ -106,6 +107,8 @@ void install_signal_handler() {
 
 #else
 
+static std::string sigabrt_msg;
+
 static void sighandler(int signo, siginfo_t *info, void *ucontext) {
   static std::mutex mu;
   std::scoped_lock lock{mu};
@@ -120,12 +123,7 @@ static void sighandler(int signo, siginfo_t *info, void *ucontext) {
     }
     break;
   case SIGABRT: {
-    const char msg[] =
-      "mold: aborted\n"
-      "mold: If mold failed due to a spurious failure of pthread_create, "
-      "it's likely because of https://github.com/oneapi-src/oneTBB/pull/824. "
-      "You should ensure that you are using 2021.9.0 or newer version of libtbb.\n";
-    (void)!write(STDERR_FILENO, msg, sizeof(msg) - 1);
+    (void)!write(STDERR_FILENO, &sigabrt_msg[0], sigabrt_msg.size());
     break;
   }
   }
@@ -139,10 +137,20 @@ void install_signal_handler() {
   sigemptyset(&action.sa_mask);
   action.sa_flags = SA_SIGINFO;
 
-  sigaction(SIGABRT, &action, NULL);
   sigaction(SIGINT, &action, NULL);
   sigaction(SIGTERM, &action, NULL);
   sigaction(SIGBUS, &action, NULL);
+
+  // OneTBB 2021.9.0 has the interface version 12090.
+  if (TBB_runtime_interface_version() < 12090) {
+    sigabrt_msg = "mold: aborted\n"
+      "mold: mold with libtbb version 2021.9.0 or older is known to be unstable "
+      "under heavy load. Your libtbb version is " +
+      std::string(TBB_runtime_version()) +
+      ". Please upgrade your libtbb library and try again.\n";
+
+    sigaction(SIGABRT, &action, NULL);
+  }
 }
 
 #endif
