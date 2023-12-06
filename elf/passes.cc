@@ -1964,11 +1964,8 @@ void compute_address_significance(Context<E> &ctx) {
     if (InputSection<E> *sec = file->llvm_addrsig.get()) {
       u8 *p = (u8 *)sec->contents.data();
       u8 *end = p + sec->contents.size();
-      while (p != end) {
-        Symbol<E> *sym = file->symbols[read_uleb(&p)];
-        if (InputSection<E> *isec = sym->get_input_section())
-          isec->address_taken = true;
-      }
+      while (p != end)
+        mark(file->symbols[read_uleb(&p)]);
     } else {
       for (std::unique_ptr<InputSection<E>> &isec : file->sections)
         if (isec && !(isec->shdr().sh_flags & SHF_EXECINSTR))
