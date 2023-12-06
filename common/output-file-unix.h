@@ -17,18 +17,14 @@ inline u32 get_umask() {
 // Resize and allocate space for a file.
 // File size should be 0 before calling, as this function does not handle shrinking.
 template <typename Context>
-static bool
-allocate_file(Context &ctx, int fd, i64 filesize) {
-#if defined(__linux__)
+static void allocate_file(Context &ctx, int fd, i64 filesize) {
+#ifdef __linux__
   if (fallocate(fd, 0, 0, filesize) == 0)
-    return true;
+    return;
 #endif
 
-  if (ftruncate(fd, filesize) == -1) {
+  if (ftruncate(fd, filesize) == -1)
     Fatal(ctx) << "ftruncate failed: " << errno_string();
-    return false;
-  }
-  return true;
 }
 
 template <typename Context>
