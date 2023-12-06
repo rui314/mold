@@ -14,19 +14,6 @@ inline u32 get_umask() {
   return orig_umask;
 }
 
-// Resize and allocate space for a file.
-// File size should be 0 before calling, as this function does not handle shrinking.
-template <typename Context>
-static void allocate_file(Context &ctx, int fd, i64 filesize) {
-#ifdef __linux__
-  if (fallocate(fd, 0, 0, filesize) == 0)
-    return;
-#endif
-
-  if (ftruncate(fd, filesize) == -1)
-    Fatal(ctx) << "ftruncate failed: " << errno_string();
-}
-
 template <typename Context>
 static std::pair<i64, char *>
 open_or_create_file(Context &ctx, std::string path, i64 filesize, i64 perm) {
@@ -52,10 +39,16 @@ open_or_create_file(Context &ctx, std::string path, i64 filesize, i64 perm) {
       Fatal(ctx) << "cannot open " << path2 << ": " << errno_string();
   }
 
-  allocate_file(ctx, fd, filesize);
-
   if (fchmod(fd, (perm & ~get_umask())) == -1)
     Fatal(ctx) << "fchmod failed: " << errno_string();
+
+#ifdef __linux__
+  if (fallocate(fd, 0, 0, filesize) == 0)
+    return {fd, path2};
+#endif
+
+  if (ftruncate(fd, filesize) == -1)
+    Fatal(ctx) << "ftruncate failed: " << errno_string();
   return {fd, path2};
 }
 
