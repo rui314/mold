@@ -14,14 +14,13 @@ canonical_name() {
   esac
 }
 
-if [ -z "$HOST" ]; then
-  HOST=$(canonical_name $(uname -m))
+if [ -z "$MACHINE" ]; then
+  MACHINE=$(canonical_name $(uname -m))
 fi
 
 # Set tool names
 if [ -z "$TRIPLE" ]; then
-  MACHINE=$HOST
-  TESTDIR=out/test/elf/$HOST
+  TESTDIR=out/test/elf/$MACHINE
   CC="${TEST_CC:-cc}"
   CXX="${TEST_CXX:-c++}"
   GCC="${TEST_GCC:-gcc}"
