@@ -1740,7 +1740,7 @@ struct ElfSym<ARM64> {
   u8 st_bind : 4;
   u8 st_type : 4;
   u8 arm64_variant_pcs : 1;
-  u8 : 6;
+  u8 : 5;
   u8 st_visibility : 2;
 #endif
 
