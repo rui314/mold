@@ -5,20 +5,46 @@
 
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .globl get_sym1, get_sym2, get_sym3, get_sym4, get_sym5
+.option norvc
 get_sym1:
-  la a0, sym1
+  .reloc ., R_RISCV_GOT_HI20, sym1
+  .reloc ., R_RISCV_RELAX
+  auipc a0, 0
+  .reloc ., R_RISCV_PCREL_LO12_I, get_sym1
+  .reloc ., R_RISCV_RELAX
+  ld a0, 0(a0)
   ret
 get_sym2:
-  la a0, sym2
+  .reloc ., R_RISCV_GOT_HI20, sym2
+  .reloc ., R_RISCV_RELAX
+  auipc a0, 0
+  .reloc ., R_RISCV_PCREL_LO12_I, get_sym2
+  .reloc ., R_RISCV_RELAX
+  ld a0, 0(a0)
   ret
 get_sym3:
-  la a0, sym3
+  .reloc ., R_RISCV_GOT_HI20, sym3
+  .reloc ., R_RISCV_RELAX
+  auipc a0, 0
+  .reloc ., R_RISCV_PCREL_LO12_I, get_sym3
+  .reloc ., R_RISCV_RELAX
+  ld a0, 0(a0)
   ret
 get_sym4:
-  la a0, sym4
+  .reloc ., R_RISCV_GOT_HI20, sym4
+  .reloc ., R_RISCV_RELAX
+  auipc a0, 0
+  .reloc ., R_RISCV_PCREL_LO12_I, get_sym4
+  .reloc ., R_RISCV_RELAX
+  ld a0, 0(a0)
   ret
 get_sym5:
-  la a0, sym5
+  .reloc ., R_RISCV_GOT_HI20, sym5
+  .reloc ., R_RISCV_RELAX
+  auipc a0, 0
+  .reloc ., R_RISCV_PCREL_LO12_I, get_sym5
+  .reloc ., R_RISCV_RELAX
+  ld a0, 0(a0)
   ret
 EOF
 
@@ -51,3 +77,5 @@ $QEMU $t/exe1 | grep -Eq '^0 ba beef 11beef deadbeef$'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o
 $QEMU $t/exe2 | grep -Eq '^0 ba beef 11beef deadbeef$'
+
+$OBJDUMP -d $t/exe2 | grep -A2 '<get_sym1>:' | grep -Eq $'li[ \t]+a0,0$'
