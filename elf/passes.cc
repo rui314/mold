@@ -1587,6 +1587,12 @@ void rewrite_endbr(Context<E> &ctx) {
     }
   });
 
+  // Exported symbols are conservatively assumed to be address-taken.
+  if (ctx.dynsym)
+    for (Symbol<E> *sym : ctx.dynsym->symbols)
+      if (sym && sym->is_exported)
+        sym->address_taken = true;
+
   // Some symbols are implicitly address-taken
   ctx.arg.entry->address_taken = true;
   ctx.arg.init->address_taken = true;
@@ -1956,7 +1962,7 @@ void compute_address_significance(Context<E> &ctx) {
   // Exported symbols are conservatively considered address-taken.
   if (ctx.dynsym)
     for (Symbol<E> *sym : ctx.dynsym->symbols)
-      if (sym->is_exported)
+      if (sym && sym->is_exported)
         mark(sym);
 
   // Handle data objects.
