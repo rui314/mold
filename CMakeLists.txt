@@ -1,31 +1,31 @@
 # You can customize a build by specifying CMake options. An option may be
 # given in the -Dvariable=value form. For a boolean variable, `ON` or `1`
-# means true while `OFF` or `0` means false.
+# means true, while `OFF` or `0` means false.
 #
 # Here are a couple of common cmake options:
 #
 #  -DCMAKE_C_COMPILER=<command-name>
 #
-#   Specifies a C compiler name to use. The default value is `cc`.
+#   Specifies the C compiler name to use. The default value is `cc`.
 #
 #  -DCMAKE_CXX_COMPILER=<command-name>
 #
-#   Specifies a C++ compiler name to use. The default value is `c++`.
+#   Specifies the C++ compiler name to use. The default value is `c++`.
 #
 #  -DCMAKE_INSTALL_PREFIX=<directory>
 #
-#   Specifies an install target directory. The default value is `/usr/local`.
+#   Specifies the install target directory. The default value is `/usr/local`.
 #
 #  -DCMAKE_BUILD_TYPE=[Debug | Release | RelWithDebInfo | MinSizeRel]
 #
-#   Specifies a build type. The default is `Release` which is the right
+#   Specifies the build type. The default is `Release`, which is the right
 #   option unless you are debugging mold.
 #
 # An example of a cmake command line is shown below:
 #
 #   $ cmake -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_CXX_COMPILER=g++-12 ..
 #
-# where `..` refers this directory.
+# where `..` refers to this directory.
 #
 # With cmake, you may run `cmake --install .` instead of `make install` to
 # install build artifacts to system directories. If you want to install
@@ -39,8 +39,8 @@
 # how to build mold. However, as a policy, we do not provide a way to
 # enable/disable any individual mold's feature. In other words, we do not
 # provide options like `--enable-foo` or `--disable-foo`. The motivation
-# behind it is build reproducibility. We want to guarantees that all builds
-# of the mold linker of the same version will have the exactly same set of
+# behind this is build reproducibility. We want to guarantee that all builds
+# of the mold linker of the same version will have the exact same set of
 # features and behave exactly the same.
 
 cmake_minimum_required(VERSION 3.14)
@@ -134,7 +134,7 @@ else()
   target_include_directories(mold PUBLIC third-party/blake3/c)
 endif()
 
-# Find zstd compression library. If libzstd.so is not found, we compile a
+# Find zstd compression library. If zstd.h is not found, we compile a
 # bundled one and statically-link it to mold.
 include(CheckIncludeFile)
 check_include_file(zstd.h HAVE_ZSTD_H)

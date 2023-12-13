@@ -1609,7 +1609,7 @@ void rewrite_endbr(Context<E> &ctx) {
         if (InputSection<E> *isec = sym->get_input_section()) {
           if (OutputSection<E> *osec = isec->output_section) {
             u8 *buf = ctx.buf + osec->shdr.sh_offset + isec->offset +
-              sym->value;
+                      sym->value;
             if (memcmp(buf, endbr64, 4) == 0)
               memcpy(buf, nop, 4);
           }

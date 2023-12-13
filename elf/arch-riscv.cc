@@ -512,6 +512,33 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_TLSDESC_HI20:
+      // RISC-V TLSDESC uses the following code sequence to materialize
+      // a TP-relative address in x0.
+      //
+      //   .L0:
+      //   auipc  tX, 0
+      //       R_RISCV_TLSDESC_HI20         foo
+      //   l[d|w] tY, tX, 0
+      //       R_RISCV_TLSDESC_LOAD_LO12_I  .L0
+      //   addi   a0, tX, 0
+      //       R_RISCV_TLSDESC_ADD_LO12_I   .L0
+      //   jalr   t0, tY
+      //       R_RISCV_TLSDESC_CALL         .L0
+      //
+      // For non-dlopen'd DSO, we may relax the instructions to the following:
+      //
+      //   auipc  a0, %gottp_hi(a0)
+      //   l[d|w] a0, %gottp_lo(a0)
+      //
+      // For executable, if the TP offset is small enough, we'll relax
+      // it to the following:
+      //
+      //   addi   a0, zero, %tpoff_lo(a0)
+      //
+      // Otherwise, the following sequence is used:
+      //
+      //   lui    a0, %tpoff_hi(a0)
+      //   addi   a0, a0, %tpoff_lo(a0)
       if (removed_bytes == 0)
         write_utype(loc, sym.get_tlsdesc_addr(ctx) + A - P);
       break;
