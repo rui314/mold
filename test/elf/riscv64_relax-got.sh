@@ -78,4 +78,4 @@ $QEMU $t/exe1 | grep -Eq '^0 ba beef 11beef deadbeef$'
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o
 $QEMU $t/exe2 | grep -Eq '^0 ba beef 11beef deadbeef$'
 
-$OBJDUMP -d $t/exe2 | grep -A2 '<get_sym1>:' | grep -Eq $'li[ \t]+a0,0$'
+$OBJDUMP -d $t/exe2 | grep -A2 '<get_sym2>:' | grep -Eq $'li[ \t]+a0,186$'
