@@ -1160,6 +1160,7 @@ public:
                                std::string archive_name, bool is_in_lib);
 
   void parse(Context<E> &ctx);
+  void initialize_symbols(Context<E> &ctx);
   void initialize_mergeable_sections(Context<E> &ctx);
   void resolve_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
@@ -1206,7 +1207,7 @@ public:
   InputSection<E> *debug_pubtypes = nullptr;
 
   // For LTO
-  std::vector<std::string_view> lto_symbol_versions;
+  std::vector<ElfSym<E>> lto_elf_syms;
 
   // Target-specific member
   [[no_unique_address]] ObjectFileExtras<E> extra;
@@ -1216,7 +1217,6 @@ private:
              std::string archive_name, bool is_in_lib);
 
   void initialize_sections(Context<E> &ctx);
-  void initialize_symbols(Context<E> &ctx);
   void sort_relocations(Context<E> &ctx);
   void initialize_ehframe_sections(Context<E> &ctx);
   void parse_note_gnu_property(Context <E> &ctx, const ElfShdr <E> &shdr);

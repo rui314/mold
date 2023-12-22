@@ -1723,6 +1723,9 @@ void parse_symbol_version(Context<E> &ctx) {
     verdefs[ctx.arg.version_definitions[i]] = i + VER_NDX_LAST_RESERVED + 1;
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (file == ctx.internal_obj)
+      return;
+
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       // Match VERSION part of symbol foo@VERSION with version definitions.
       if (!file->has_symver.get(i - file->first_global))
@@ -1732,14 +1735,8 @@ void parse_symbol_version(Context<E> &ctx) {
       if (sym->file != file)
         continue;
 
-      std::string_view ver;
-
-      if (file->is_lto_obj) {
-        ver = file->lto_symbol_versions[i - file->first_global];
-      } else {
-        const char *name = file->symbol_strtab.data() + file->elf_syms[i].st_name;
-        ver = strchr(name, '@') + 1;
-      }
+      const char *name = file->symbol_strtab.data() + file->elf_syms[i].st_name;
+      std::string_view ver = strchr(name, '@') + 1;
 
       bool is_default = false;
       if (ver.starts_with('@')) {

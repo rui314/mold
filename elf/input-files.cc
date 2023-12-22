@@ -524,29 +524,9 @@ void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
   }
 }
 
-// Returns a symbol object for a given key. This function handles
-// the -wrap option.
-template <typename E>
-static Symbol<E> *insert_symbol(Context<E> &ctx, const ElfSym<E> &esym,
-                                std::string_view key, std::string_view name) {
-  if (esym.is_undef() && name.starts_with("__real_") &&
-      ctx.arg.wrap.contains(name.substr(7))) {
-    return get_symbol(ctx, key.substr(7), name.substr(7));
-  }
-
-  Symbol<E> *sym = get_symbol(ctx, key, name);
-
-  if (esym.is_undef() && sym->is_wrapped) {
-    key = save_string(ctx, "__wrap_" + std::string(key));
-    name = save_string(ctx, "__wrap_" + std::string(name));
-    return get_symbol(ctx, key, name);
-  }
-  return sym;
-}
-
 template <typename E>
 void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
-  if (!symtab_sec)
+  if (this->elf_syms.empty())
     return;
 
   static Counter counter("all_syms");
@@ -590,6 +570,9 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
 
+    if (esym.is_common())
+      has_common_symbol = true;
+
     // Get a symbol name
     std::string_view key = this->symbol_strtab.data() + esym.st_name;
     std::string_view name = key;
@@ -606,9 +589,21 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
       }
     }
 
-    this->symbols[i] = insert_symbol(ctx, esym, key, name);
-    if (esym.is_common())
-      has_common_symbol = true;
+    // Handle --wrap option
+    Symbol<E> *sym;
+    if (esym.is_undef() && name.starts_with("__real_") &&
+        ctx.arg.wrap.contains(name.substr(7))) {
+      sym = get_symbol(ctx, key.substr(7), name.substr(7));
+    } else {
+      sym = get_symbol(ctx, key, name);
+      if (esym.is_undef() && sym->is_wrapped) {
+        key = save_string(ctx, "__wrap_" + std::string(key));
+        name = save_string(ctx, "__wrap_" + std::string(name));
+        sym = get_symbol(ctx, key, name);
+      }
+    }
+
+    this->symbols[i] = sym;
   }
 }
 

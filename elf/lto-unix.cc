@@ -639,36 +639,29 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     mf2->fd = -1;
   }
 
-  // Initialize object symbols
-  std::vector<ElfSym<E>> *esyms = new std::vector<ElfSym<E>>(1);
-  obj->has_symver.resize(plugin_symbols.size());
-  obj->lto_symbol_versions.resize(plugin_symbols.size());
+  // Create a symbol strtab
+  i64 strtab_size = 1;
+  for (PluginSymbol &psym : plugin_symbols)
+    strtab_size += strlen(psym.name) + 1;
+  std::string strtab(strtab_size, '\0');
+
+  // Initialize esyms
+  obj->lto_elf_syms.resize(plugin_symbols.size() + 1);
+  i64 strtab_offset = 1;
 
   for (i64 i = 0; i < plugin_symbols.size(); i++) {
     PluginSymbol &psym = plugin_symbols[i];
-    esyms->push_back(to_elf_sym<E>(psym));
+    obj->lto_elf_syms[i + 1] = to_elf_sym<E>(psym);
+    obj->lto_elf_syms[i + 1].st_name = strtab_offset;
 
-    std::string_view key = save_string(ctx, psym.name);
-    std::string_view name = key;
-
-    // Parse symbol version after atsign
-    if (i64 pos = name.find('@'); pos != name.npos) {
-      std::string_view ver = name.substr(pos);
-      name = name.substr(0, pos);
-
-      if (ver != "@" && ver != "@@") {
-        if (ver.starts_with("@@"))
-          key = name;
-        obj->has_symver.set(i);
-        obj->lto_symbol_versions[i] = ver.substr(1);
-      }
-    }
-
-    obj->symbols.push_back(get_symbol(ctx, key, name));
+    i64 len = strlen(psym.name);
+    memcpy(strtab.data() + strtab_offset, psym.name, len);
+    strtab_offset += len + 1;
   }
 
-  obj->elf_syms = *esyms;
-  obj->has_symver.resize(esyms->size());
+  obj->symbol_strtab = save_string(ctx, strtab);
+  obj->elf_syms = obj->lto_elf_syms;
+  obj->initialize_symbols(ctx);
   plugin_symbols.clear();
   return obj;
 }
