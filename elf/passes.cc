@@ -1656,8 +1656,22 @@ void apply_version_script(Context<E> &ctx) {
   MultiGlob matcher;
   MultiGlob cpp_matcher;
 
-  for (i64 i = 0; i < ctx.version_patterns.size(); i++) {
-    VersionPattern &v = ctx.version_patterns[i];
+  // The "local:" label has a special meaning in the version script.
+  // It can appear in any VERSION clause, and it hides matched symbols
+  // unless other non-local patterns match to them. In other words,
+  // "local:" has lower precedence than other version definitions.
+  //
+  // If two or more non-local patterns match to the same symbol, the
+  // last one takes precedence.
+  std::vector<VersionPattern> patterns = ctx.version_patterns;
+
+  std::stable_partition(patterns.begin(), patterns.end(),
+                        [](const VersionPattern &pat) {
+    return pat.ver_idx == VER_NDX_LOCAL;
+  });
+
+  for (i64 i = 0; i < patterns.size(); i++) {
+    VersionPattern &v = patterns[i];
     if (v.is_cpp) {
       if (!cpp_matcher.add(v.pattern, i))
         Fatal(ctx) << "invalid version pattern: " << v.pattern;
@@ -1674,22 +1688,22 @@ void apply_version_script(Context<E> &ctx) {
           continue;
 
         std::string_view name = sym->name();
-        i64 match = INT64_MAX;
+        i64 match = -1;
 
-        if (std::optional<u32> idx = matcher.find(name))
-          match = std::min<i64>(match, *idx);
+        if (std::optional<i64> idx = matcher.find(name))
+          match = std::max(match, *idx);
 
         // Match non-mangled symbols against the C++ pattern as well.
         // Weird, but required to match other linkers' behavior.
         if (!cpp_matcher.empty()) {
           if (std::optional<std::string_view> s = demangle_cpp(name))
             name = *s;
-          if (std::optional<u32> idx = cpp_matcher.find(name))
-            match = std::min<i64>(match, *idx);
+          if (std::optional<i64> idx = cpp_matcher.find(name))
+            match = std::max(match, *idx);
         }
 
-        if (match != INT64_MAX)
-          sym->ver_idx = ctx.version_patterns[match].ver_idx;
+        if (match != -1)
+          sym->ver_idx = patterns[match].ver_idx;
       }
     });
   }
@@ -1697,7 +1711,7 @@ void apply_version_script(Context<E> &ctx) {
   // Next, assign versions to symbols specified by exact name.
   // In other words, exact matches have higher precedence over
   // wildcard or `extern "C++"` patterns.
-  for (VersionPattern &v : ctx.version_patterns) {
+  for (VersionPattern &v : patterns) {
     if (!v.is_cpp && v.pattern.find_first_of("*?[") == v.pattern.npos) {
       Symbol<E> *sym = get_symbol(ctx, v.pattern);
 

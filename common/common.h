@@ -829,13 +829,13 @@ private:
 
 class MultiGlob {
 public:
-  bool add(std::string_view pat, u32 val);
+  bool add(std::string_view pat, i64 val);
   bool empty() const { return strings.empty(); }
-  std::optional<u32> find(std::string_view str);
+  std::optional<i64> find(std::string_view str);
 
 private:
   struct TrieNode {
-    u32 value = -1;
+    i64 value = -1;
     TrieNode *suffix_link = nullptr;
     std::unique_ptr<TrieNode> children[256];
   };
@@ -846,7 +846,7 @@ private:
 
   std::vector<std::string> strings;
   std::unique_ptr<TrieNode> root;
-  std::vector<std::pair<Glob, u32>> globs;
+  std::vector<std::pair<Glob, i64>> globs;
   std::once_flag once;
   bool is_compiled = false;
 };

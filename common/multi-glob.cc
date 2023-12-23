@@ -24,9 +24,9 @@
 
 namespace mold {
 
-std::optional<u32> MultiGlob::find(std::string_view str) {
+std::optional<i64> MultiGlob::find(std::string_view str) {
   std::call_once(once, [&] { compile(); });
-  u32 val = UINT32_MAX;
+  i64 val = -1;
 
   if (root) {
     // Match against simple glob patterns
@@ -36,7 +36,7 @@ std::optional<u32> MultiGlob::find(std::string_view str) {
       for (;;) {
         if (node->children[c]) {
           node = node->children[c].get();
-          val = std::min(val, node->value);
+          val = std::max(val, node->value);
           return;
         }
 
@@ -53,11 +53,11 @@ std::optional<u32> MultiGlob::find(std::string_view str) {
   }
 
   // Match against complex glob patterns
-  for (std::pair<Glob, u32> &glob : globs)
+  for (std::pair<Glob, i64> &glob : globs)
     if (glob.first.match(str))
-      val = std::min(val, glob.second);
+      val = std::max(val, glob.second);
 
-  if (val == UINT32_MAX)
+  if (val == -1)
     return {};
   return val;
 }
@@ -82,7 +82,7 @@ static std::string handle_stars(std::string_view pat) {
   return "\0"s + str + "\0"s;
 }
 
-bool MultiGlob::add(std::string_view pat, u32 val) {
+bool MultiGlob::add(std::string_view pat, i64 val) {
   assert(!is_compiled);
   assert(!pat.empty());
 
@@ -108,7 +108,7 @@ bool MultiGlob::add(std::string_view pat, u32 val) {
     node = node->children[c].get();
   }
 
-  node->value = std::min(node->value, val);
+  node->value = std::max(node->value, val);
   return true;
 }
 
@@ -157,7 +157,7 @@ void MultiGlob::fix_values() {
     for (std::unique_ptr<TrieNode> &child : node->children) {
       if (!child)
         continue;
-      child->value = std::min(child->value, child->suffix_link->value);
+      child->value = std::max(child->value, child->suffix_link->value);
       queue.push(child.get());
     }
   } while (!queue.empty());
