@@ -22,8 +22,9 @@ Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
 }
 
 template <typename E>
-Symbol<E> *get_symbol(Context<E> &ctx, std::string_view name) {
-  return get_symbol(ctx, name, name);
+Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key) {
+  std::string_view name = key.substr(0, key.find('@'));
+  return get_symbol(ctx, key, name);
 }
 
 template <typename E>
