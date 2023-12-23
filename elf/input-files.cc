@@ -10,6 +10,22 @@
 
 namespace mold::elf {
 
+// If we haven't seen the same `key` before, create a new instance
+// of Symbol and returns it. Otherwise, returns the previously-
+// instantiated object. `key` is usually the same as `name`.
+template <typename E>
+Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
+                      std::string_view name) {
+  typename decltype(ctx.symbol_map)::const_accessor acc;
+  ctx.symbol_map.insert(acc, {key, Symbol<E>(name)});
+  return const_cast<Symbol<E> *>(&acc->second);
+}
+
+template <typename E>
+Symbol<E> *get_symbol(Context<E> &ctx, std::string_view name) {
+  return get_symbol(ctx, name, name);
+}
+
 template <typename E>
 static bool is_rust_symbol(const Symbol<E> &sym) {
   // The legacy Rust mangling scheme is indistinguishtable from C++.
@@ -1536,6 +1552,8 @@ using E = MOLD_TARGET;
 template class InputFile<E>;
 template class ObjectFile<E>;
 template class SharedFile<E>;
+template Symbol<E> *get_symbol(Context<E> &, std::string_view, std::string_view);
+template Symbol<E> *get_symbol(Context<E> &, std::string_view);
 template std::string_view demangle(const Symbol<E> &);
 template std::ostream &operator<<(std::ostream &, const InputFile<E> &);
 
