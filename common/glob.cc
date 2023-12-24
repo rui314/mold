@@ -79,6 +79,14 @@ std::optional<Glob> Glob::compile(std::string_view pat) {
     case '*':
       vec.push_back({STAR});
       break;
+    case '\\':
+      if (pat.empty())
+        return {};
+      if (vec.empty() || vec.back().kind != STRING)
+        vec.push_back({STRING});
+      vec.back().str += pat[0];
+      pat = pat.substr(1);
+      break;
     default:
       if (vec.empty() || vec.back().kind != STRING)
         vec.push_back({STRING});
