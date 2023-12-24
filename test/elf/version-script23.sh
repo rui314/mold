@@ -5,7 +5,7 @@ cat <<'EOF' > $t/a.ver
 VER1 { foo\?; };
 EOF
 
-cat <<EOF | $CC -c -o $t/b.o -xassembler -
+cat <<EOF | $CC -c -o $t/b.o -xassembler - >& /dev/null || skip
 .globl "foo?"
 "foo?":
 EOF
