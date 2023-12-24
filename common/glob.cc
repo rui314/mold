@@ -101,7 +101,7 @@ bool Glob::do_match(std::string_view str, std::span<Element> elements) {
 
     switch (e.kind) {
     case STRING:
-      if (str.empty() || !str.starts_with(e.str))
+      if (!str.starts_with(e.str))
         return false;
       str = str.substr(e.str.size());
       break;
