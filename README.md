@@ -143,7 +143,7 @@ may be able to remove the `linker = "clang"` line.
 
 ```toml
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 ```
 
 If you want to use mold for all projects, add the above snippet to
