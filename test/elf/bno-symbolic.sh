@@ -3,7 +3,7 @@
 
 # GCC produces buggy code for this test case on s390x.
 # https://sourceware.org/bugzilla/show_bug.cgi?id=29655
-[ $MACHINE = s390x ] && $CC -v 2>&1 | grep -E '^gcc version 1[0-3]\.' && skip
+[ $MACHINE = s390x ] && $CC -v 2>&1 | grep -E '^gcc version 1[0-4]\.' && skip
 
 cat <<EOF | $CC -c -fPIC -o$t/a.o -xc -
 int foo = 4;
