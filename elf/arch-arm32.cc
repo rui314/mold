@@ -228,11 +228,24 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   *(ul32 *)(buf + 12) = sym.get_got_pltgot_addr(ctx) - sym.get_plt_addr(ctx) - 12;
 }
 
-// ARM does not use .eh_frame for exception handling. Instead, it uses
-// .ARM.exidx and .ARM.extab. So this function is empty.
 template <>
 void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
-                                       u64 offset, u64 val) {}
+                                       u64 offset, u64 val) {
+  u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
+
+  switch (rel.r_type) {
+  case R_NONE:
+    break;
+  case R_ARM_ABS32:
+    *(ul32 *)loc = val;
+    break;
+  case R_ARM_REL32:
+    *(ul32 *)loc = val - this->shdr.sh_addr - offset;
+    break;
+  default:
+    Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
+  }
+}
 
 // ARM and Thumb branch instructions can jump within ±16 MiB.
 static bool is_jump_reachable(i64 val) {
