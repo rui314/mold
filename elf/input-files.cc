@@ -356,7 +356,12 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
       // Save .llvm_addrsig for --icf=safe.
       if (shdr.sh_type == SHT_LLVM_ADDRSIG && !ctx.arg.relocatable) {
-        llvm_addrsig = std::move(this->sections[i]);
+        if (shdr.sh_link != 0) {
+          llvm_addrsig = std::move(this->sections[i]);
+        } else {
+          Warn(ctx) << *this << ": Ignoring .llvm_addrsig section without SH_LINK; " <<
+              "was the file processed by strip or objcopy -r?";
+        }
         continue;
       }
 
