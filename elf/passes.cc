@@ -1783,6 +1783,20 @@ void parse_symbol_version(Context<E> &ctx) {
   });
 }
 
+namespace {
+template <typename E>
+inline bool should_import_absolute_sym(const Symbol<E> *sym) {
+#ifdef __sun
+  // On illumos, symbols with shndx=SHN_ABS and st_value=0 are special
+  // and should be imported.
+  return sym->value == 0;
+#else
+  (void)sym;
+  return false;
+#endif
+}
+} // anonymous namespace
+
 template <typename E>
 void compute_import_export(Context<E> &ctx) {
   Timer t(ctx, "compute_import_export");
@@ -1823,7 +1837,7 @@ void compute_import_export(Context<E> &ctx) {
     for (Symbol<E> *sym : file->get_global_syms()) {
       // If we are using a symbol in a DSO, we need to import it.
       if (sym->file && sym->file->is_dso) {
-        if (!sym->is_absolute()) {
+        if (!sym->is_absolute() || should_import_absolute_sym(sym)) {
           std::scoped_lock lock(sym->mu);
           sym->is_imported = true;
         }
