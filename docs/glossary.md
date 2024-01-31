@@ -139,7 +139,7 @@ identify a function or a data in C++, because for example `foo` may
 be in a namespace or defined as a static member in some class. If
 `foo` is an overloaded function, we need to distinguish different
 `foo`s by its type. Therefore, C++ compiler mangles an identifier by
-appending namepsace names, type information and such so that
+appending namespace names, type information and such so that
 different things get different names.
 
 For example, a function `int foo(int)` in a namespace `bar` is
