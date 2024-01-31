@@ -35,7 +35,7 @@ library to make it executable.
 A pointer has a value like 0x803020 which is an address of the
 pointee. But it doesn't mean that the pointee resides at the
 physical memory address 0x803020 on the computer. Modern CPUs
-contains so-called Mmeory Management Unit (MMU), and all access to
+contains so-called Memory Management Unit (MMU), and all access to
 the memory are first translated by MMU to the physical address.
 The address before translation is called the "virtual address".
 Unless you are doing the kernel programming, all addresses you
