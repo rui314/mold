@@ -17,7 +17,7 @@ EOF
 $CC -fPIC -c -o $t/d.o $t/c.c
 
 # This test fails with older glibc
-$CC -o $t/exe1 $t/d.o $t/b.so 2> /dev/null || skip
+$CC -o $t/exe1 -pie $t/d.o $t/b.so 2> /dev/null || skip
 $QEMU $t/exe1 | grep -q 'foo=0x3' || skip
 
 $CC -B. -o $t/exe2 -pie $t/d.o $t/b.so
