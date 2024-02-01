@@ -2727,9 +2727,6 @@ inline bool Symbol<E>::has_plt(Context<E> &ctx) const {
 
 template <typename E>
 inline bool Symbol<E>::is_absolute() const {
-  if (file && file->is_dso)
-    return esym().is_abs();
-
   return !is_imported && !get_frag() && !get_input_section() &&
          !get_output_section();
 }
