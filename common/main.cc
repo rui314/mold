@@ -11,6 +11,10 @@
 #include <mimalloc-new-delete.h>
 #endif
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+
 #ifdef __FreeBSD__
 # include <sys/sysctl.h>
 # include <unistd.h>
@@ -49,7 +53,15 @@ std::string errno_string() {
 
 // Returns the path of the mold executable itself
 std::string get_self_path() {
-#ifdef __FreeBSD__
+#if __APPLE__
+    char path[8192];
+    u32 size = sizeof(path);
+    if (_NSGetExecutablePath(path, &size)) {
+      std::cerr << "_NSGetExecutablePath failed\n";
+      exit(1);
+    }
+    return path;
+#elif __FreeBSD__
   // /proc may not be mounted on FreeBSD. The proper way to get the
   // current executable's path is to use sysctl(2).
   int mib[4];
