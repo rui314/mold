@@ -246,7 +246,7 @@ static Action get_pcrel_action(Context<E> &ctx, Symbol<E> &sym) {
   // linker generally does not support PC-relative relocations.
   static Action table[3][4] = {
     // Absolute  Local    Imported data  Imported code
-    {  ERROR,    NONE,    ERROR,         PLT    },  // Shared object
+    {  NONE,     NONE,    ERROR,         PLT    },  // Shared object
     {  ERROR,    NONE,    COPYREL,       PLT    },  // Position-independent exec
     {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
   };
