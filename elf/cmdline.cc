@@ -437,7 +437,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     ctx.arg.apply_dynamic_relocs = false;
 
   auto read_arg = [&](std::string name) {
-    for (std::string opt : add_dashes(name)) {
+    for (const std::string &opt : add_dashes(name)) {
       if (args[0] == opt) {
         if (args.size() == 1)
           Fatal(ctx) << "option -" << name << ": argument missing";
@@ -457,7 +457,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   };
 
   auto read_eq = [&](std::string name) {
-    for (std::string opt : add_dashes(name)) {
+    for (const std::string &opt : add_dashes(name)) {
       if (args[0].starts_with(opt + "=")) {
         arg = args[0].substr(opt.size() + 1);
         args = args.subspan(1);
@@ -468,7 +468,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   };
 
   auto read_flag = [&](std::string name) {
-    for (std::string opt : add_dashes(name)) {
+    for (const std::string &opt : add_dashes(name)) {
       if (args[0] == opt) {
         args = args.subspan(1);
         return true;
