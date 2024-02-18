@@ -359,8 +359,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         if (shdr.sh_link != 0) {
           llvm_addrsig = std::move(this->sections[i]);
         } else {
-          Warn(ctx) << *this << ": Ignoring .llvm_addrsig section without SH_LINK; " <<
-              "was the file processed by strip or objcopy -r?";
+          Warn(ctx) << *this << ": ignoring .llvm_addrsig section without"
+                    << " sh_link; was the file processed by strip or objcopy -r?";
         }
         continue;
       }

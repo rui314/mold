@@ -53,7 +53,7 @@ inline bool is_gcc_lto_obj(Context &ctx, MappedFile *mf) {
     if (!ctx.arg.plugin.empty()) {
       std::string_view name = data + shdrs[shstrtab_idx].sh_offset + sec.sh_name;
       if (name.starts_with(".gnu.lto_.symtab."))
-      return true;
+        return true;
     }
 
     if (sec.sh_type != SHT_SYMTAB)
