@@ -240,6 +240,12 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     const ElfShdr<E> &shdr = this->elf_sections[i];
     std::string_view name = this->shstrtab.data() + shdr.sh_name;
 
+    if ((shdr.sh_flags & SHF_EXCLUDE) &&
+        name.starts_with(".gnu.offload_lto_.symtab.")) {
+      this->is_gcc_offload_obj = true;
+      continue;
+    }
+
     if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC) &&
         shdr.sh_type != SHT_LLVM_ADDRSIG && !ctx.arg.relocatable)
       continue;

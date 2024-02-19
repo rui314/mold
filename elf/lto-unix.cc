@@ -717,6 +717,18 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.arg.undefined)
     sym->referenced_by_regular_obj = true;
 
+  // Object files containing .gnu.offload_lto_.* sections need to be
+  // given to the LTO backend. Such sections contains code and data for
+  // peripherails (typically GPUs).
+  for (ObjectFile<E> *file : ctx.objs) {
+    if (!file->is_lto_obj && file->is_gcc_offload_obj) {
+      PluginInputFile pfile = create_plugin_input_file(ctx, file->mf);
+      int claimed = false;
+      claim_file_hook(&pfile, &claimed);
+      assert(!claimed);
+    }
+  }
+
   // all_symbols_read_hook() calls add_input_file() and add_input_library()
   LOG << "all symbols read\n";
   if (PluginStatus st = all_symbols_read_hook(); st != LDPS_OK)

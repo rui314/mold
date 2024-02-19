@@ -302,7 +302,7 @@ void resolve_symbols(Context<E> &ctx) {
 
   bool has_lto_obj = false;
   for (ObjectFile<E> *file : objs)
-    if (file->is_lto_obj)
+    if (file->is_lto_obj || file->is_gcc_offload_obj)
       has_lto_obj = true;
 
   if (has_lto_obj) {
