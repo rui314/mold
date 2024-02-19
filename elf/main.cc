@@ -139,7 +139,6 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile<Context<E>> *mf,
   file->archive_name = archive_name;
   file->is_in_lib = ctx.in_lib || (!archive_name.empty() && !ctx.whole_archive);
   file->is_alive = !file->is_in_lib;
-  ctx.has_lto_object = true;
   if (ctx.arg.trace)
     SyncOut(ctx) << "trace: " << *file;
   return file;
@@ -663,7 +662,7 @@ int elf_main(int argc, char **argv) {
   if (!ctx.arg.dependency_file.empty())
     write_dependency_file(ctx);
 
-  if (ctx.has_lto_object)
+  if (!ctx.arg.plugin.empty())
     lto_cleanup(ctx);
 
   t_all.stop();

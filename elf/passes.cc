@@ -300,7 +300,12 @@ void resolve_symbols(Context<E> &ctx) {
 
   do_resolve_symbols(ctx);
 
-  if (ctx.has_lto_object) {
+  bool has_lto_obj = false;
+  for (ObjectFile<E> *file : objs)
+    if (file->is_lto_obj)
+      has_lto_obj = true;
+
+  if (has_lto_obj) {
     // Do link-time optimization. We pass all IR object files to the
     // compiler backend to compile them into a few ELF object files.
     //

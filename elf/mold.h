@@ -1187,8 +1187,8 @@ public:
   std::vector<InputSection<E> *> eh_frame_sections;
   bool exclude_libs = false;
   std::map<u32, u32> gnu_properties;
-  bool is_lto_obj = false;
   bool needs_executable_stack = false;
+  bool is_lto_obj = false;
   bool is_rust_obj = false;
 
   u64 num_dynrel = 0;
@@ -1765,7 +1765,6 @@ struct Context {
   tbb::task_group tg;
 
   bool has_error = false;
-  bool has_lto_object = false;
   Atomic<bool> has_init_array = false;
   Atomic<bool> has_ctors = false;
 

@@ -238,6 +238,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
     const ElfShdr<E> &shdr = this->elf_sections[i];
+    std::string_view name = this->shstrtab.data() + shdr.sh_name;
 
     if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC) &&
         shdr.sh_type != SHT_LLVM_ADDRSIG && !ctx.arg.relocatable)
@@ -297,9 +298,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     case SHT_STRTAB:
     case SHT_NULL:
       break;
-    default: {
-      std::string_view name = this->shstrtab.data() + shdr.sh_name;
-
+    default:
       // .note.GNU-stack section controls executable-ness of the stack
       // area in GNU linkers. We ignore that section because silently
       // making the stack area executable is too dangerous. Tell our
@@ -343,7 +342,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
       if (name == ".comment" &&
           this->get_string(ctx, shdr).starts_with("rustc "))
-        is_rust_obj = true;
+        this->is_rust_obj = true;
 
       // If an output file doesn't have a section header (i.e.
       // --oformat=binary is given), we discard all non-memory-allocated
@@ -415,7 +414,6 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       static Counter counter("regular_sections");
       counter++;
       break;
-    }
     }
   }
 
