@@ -864,7 +864,7 @@ OutputSection<E>::OutputSection(Context<E> &ctx, std::string_view name,
                                 u32 type, u64 flags) {
   this->name = name;
   this->shdr.sh_type = type;
-  this->shdr.sh_flags = flags & ~SHF_MERGE & ~SHF_STRINGS;
+  this->shdr.sh_flags = flags & ~SHF_MERGE & ~SHF_STRINGS & ~SHF_COMPRESSED;
 
   if (auto it = ctx.arg.section_align.find(name);
       it != ctx.arg.section_align.end())
