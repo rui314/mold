@@ -9,7 +9,7 @@
 #include <unordered_set>
 
 #ifdef _WIN32
-# define _isatty isatty
+# define isatty _isatty
 # define STDERR_FILENO (_fileno(stderr))
 #else
 # include <unistd.h>

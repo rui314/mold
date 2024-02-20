@@ -20,6 +20,11 @@
 # include <unistd.h>
 #endif
 
+#ifdef _WIN32
+# define unlink _unlink
+# define write _write
+#endif
+
 namespace mold {
 
 std::string mold_version_string = MOLD_VERSION;
