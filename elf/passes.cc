@@ -513,29 +513,23 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
   return name;
 }
 
-// Returns true if a given input section is a .ctors/.dtors that
-// should be put into .init_array/.fini_array.
-//
-// CRT object files contain .ctors/.dtors sections without any
-// relocations. They contain sentinel values, 0 and -1, to mark the
-// beginning and the end of the initializer/finalizer pointer arrays. We
-// do not place them into .init_array/.fini_array because such invalid
-// pointer values would simply make the program to crash.
-template <typename E>
-static bool is_ctors_in_init_array(Context<E> &ctx, InputSection<E> &isec) {
-  std::string_view name = isec.name();
-  return ctx.has_init_array && !isec.get_rels(ctx).empty() &&
-         (name == ".ctors" || name.starts_with(".ctors.") ||
-          name == ".dtors" || name.starts_with(".dtors."));
-}
-
 template <typename E>
 static OutputSectionKey
 get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
-  if (is_ctors_in_init_array(ctx, isec)) {
-    if (isec.name().starts_with(".ctors"))
+  // If .init_array/.fini_array exist, .ctors/.dtors must be merged
+  // with them.
+  //
+  // CRT object files contain .ctors/.dtors sections without any
+  // relocations. They contain sentinel values, 0 and -1, to mark the
+  // beginning and the end of the initializer/finalizer pointer arrays.
+  // We do not place them into .init_array/.fini_array because such
+  // invalid pointer values would simply make the program to crash.
+  if (ctx.has_init_array && !isec.get_rels(ctx).empty()) {
+    std::string_view name = isec.name();
+    if (name == ".ctors" || name.starts_with(".ctors."))
       return {".init_array", SHT_INIT_ARRAY, SHF_ALLOC | SHF_WRITE};
-    return {".fini_array", SHT_FINI_ARRAY, SHF_ALLOC | SHF_WRITE};
+    if (name == ".dtors" || name.starts_with(".dtors."))
+      return {".fini_array", SHT_FINI_ARRAY, SHF_ALLOC | SHF_WRITE};
   }
 
   const ElfShdr<E> &shdr = isec.shdr();
