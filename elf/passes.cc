@@ -974,17 +974,16 @@ void write_repro_file(Context<E> &ctx) {
   tar->append("response.txt", save_string(ctx, create_response_file(ctx)));
   tar->append("version.txt", save_string(ctx, mold_version + "\n"));
 
-  std::unordered_set<std::string> seen;
+  std::unordered_set<std::string_view> seen;
+
   for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool) {
-    if (!mf->parent) {
-      std::string path = to_abs_path(mf->name).string();
-      if (seen.insert(path).second) {
-        // We reopen a file because we may have modified the contents of mf
-        // in memory, which is mapped with PROT_WRITE and MAP_PRIVATE.
-        MappedFile<Context<E>> *mf2 = MappedFile<Context<E>>::must_open(ctx, path);
-        tar->append(path, mf2->get_contents());
-        mf2->unmap();
-      }
+    if (!mf->parent && seen.insert(mf->name).second) {
+      // We reopen a file because we may have modified the contents of mf
+      // in memory, which is mapped with PROT_WRITE and MAP_PRIVATE.
+      MappedFile<Context<E>> *mf2 =
+        MappedFile<Context<E>>::must_open(ctx, mf->name);
+      tar->append(path, mf2->get_contents());
+      mf2->unmap();
     }
   }
 }
