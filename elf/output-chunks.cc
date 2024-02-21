@@ -860,36 +860,6 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-OutputSection<E>::OutputSection(Context<E> &ctx, std::string_view name,
-                                u32 type, u64 flags) {
-  this->name = name;
-  this->shdr.sh_type = type;
-  this->shdr.sh_flags = flags & ~SHF_MERGE & ~SHF_STRINGS & ~SHF_COMPRESSED;
-
-  if (auto it = ctx.arg.section_align.find(name);
-      it != ctx.arg.section_align.end())
-    this->shdr.sh_addralign = it->second;
-
-  // PT_GNU_RELRO segment is a security mechanism to make more pages
-  // read-only than we could have done without it.
-  //
-  // Traditionally, sections are either read-only or read-write. If a
-  // section contains dynamic relocations, it must have been put into a
-  // read-write segment so that the program loader can mutate its
-  // contents in memory, even if no one will write to it at runtime.
-  //
-  // RELRO segment allows us to make such pages writable only when a
-  // program is being loaded. After that, the page becomes read-only.
-  //
-  // Some sections, such as .init, .fini, .got, .dynamic, contain
-  // dynamic relocations but doesn't have to be writable at runtime,
-  // so they are put into a RELRO segment.
-  this->is_relro = (name == ".toc" || name.ends_with(".rel.ro") ||
-                    type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY ||
-                    type == SHT_PREINIT_ARRAY || (flags & SHF_TLS));
-}
-
-template <typename E>
 void OutputSection<E>::copy_buf(Context<E> &ctx) {
   if (this->shdr.sh_type != SHT_NOBITS)
     write_to(ctx, ctx.buf + this->shdr.sh_offset);

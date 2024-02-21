@@ -449,7 +449,11 @@ public:
 template <typename E>
 class OutputSection : public Chunk<E> {
 public:
-  OutputSection(Context<E> &ctx, std::string_view name, u32 type, u64 flags);
+  OutputSection(std::string_view name, u32 type) {
+    this->name = name;
+    this->shdr.sh_type = type;
+  }
+
   ChunkKind kind() override { return OUTPUT_SECTION; }
   OutputSection<E> *to_osec() override { return this; }
   void construct_relr(Context<E> &ctx) override;
@@ -464,6 +468,7 @@ public:
   std::vector<InputSection<E> *> members;
   std::vector<std::unique_ptr<Thunk<E>>> thunks;
   std::unique_ptr<RelocSection<E>> reloc_sec;
+  Atomic<u32> sh_flags;
 };
 
 template <typename E>
