@@ -568,10 +568,12 @@ void create_output_sections(Context<E> &ctx) {
         continue;
 
       const ElfShdr<E> &shdr = isec->shdr();
+      u32 sh_flags = shdr.sh_flags & ~SHF_MERGE & ~SHF_STRINGS &
+                     ~SHF_COMPRESSED & ~SHF_GNU_RETAIN;
 
-      if (ctx.arg.relocatable && (shdr.sh_flags & SHF_GROUP)) {
+      if (ctx.arg.relocatable && (sh_flags & SHF_GROUP)) {
         OutputSection<E> *osec = new OutputSection<E>(isec->name(), shdr.sh_type);
-        osec->sh_flags = shdr.sh_flags;
+        osec->sh_flags = sh_flags;
         isec->output_section = osec;
         ctx.osec_pool.emplace_back(osec);
         continue;
@@ -603,11 +605,8 @@ void create_output_sections(Context<E> &ctx) {
         return ret;
       };
 
-      u32 flags = shdr.sh_flags & ~SHF_MERGE & ~SHF_STRINGS & ~SHF_COMPRESSED &
-                  ~SHF_GROUP & ~SHF_GNU_RETAIN;
-
       OutputSection<E> *osec = get_or_insert();
-      osec->sh_flags |= flags;
+      osec->sh_flags |= sh_flags & ~SHF_GROUP;
       isec->output_section = osec;
       cache.insert({key, osec});
     }
