@@ -263,7 +263,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub16 *)loc = lo(S + A - ctx.dtp_addr);
       break;
     case R_PPC64_DTPREL16_LO_DS:
-      *(ub16 *)loc |= ((S + A - ctx.dtp_addr) & 0x3fff) << 2;
+      *(ub16 *)loc |= (S + A - ctx.dtp_addr) & 0xfffc;
       break;
     case R_PPC64_TPREL16_HA:
       *(ub16 *)loc = ha(S + A - ctx.tp_addr);
