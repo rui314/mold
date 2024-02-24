@@ -6,9 +6,9 @@ which I initially developed a few years ago. mold aims to enhance developer
 productivity by minimizing build time, particularly in rapid
 debug-edit-rebuild cycles.
 
-Here is a performance comparison of GNU gold, LLVM lld, and mold when linking
-final debuginfo-enabled executables for major large programs on a simulated
-16-core, 32-thread machine.
+Here is a performance comparison of GNU ld, GNU gold, LLVM lld, and
+mold when linking final debuginfo-enabled executables for major large
+programs on a simulated 16-core, 32-thread machine.
 
 ![Link speed comparison](docs/chart.svg)
 
