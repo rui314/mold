@@ -1,10 +1,5 @@
 # mold: A Modern Linker
 
-<i>This repository contains a free version of the mold linker.
-If you are looking for a commercial version that supports macOS
-please visit the
-[repository of the sold linker](https://github.com/bluewhalesystems/sold).</i>
-
 mold is a faster drop-in replacement for existing Unix linkers. It is several
 times quicker than the LLVM lld linker, the second-fastest open-source linker,
 which I initially developed a few years ago. mold aims to enhance developer
@@ -24,16 +19,13 @@ final debuginfo-enabled executables for major large programs on a simulated
 | Chromium 124 (1.35 GiB)       | N/A    | 27.40s   | 6.10s    | 1.52s
 
 mold is so fast that it is only 2x _slower_ than the `cp` command on the same
-machine. If you find that mold is not faster than other linkers, please feel
+machine. If you find that mold is not faster than other linkers, feel
 free to [file a bug report](https://github.com/rui314/mold/issues).
 
 mold supports x86-64, i386, ARM64, ARM32, 64-bit/32-bit little/big-endian
 RISC-V, 32-bit PowerPC, 64-bit big-endian PowerPC ELFv1, 64-bit little-endian
 PowerPC ELFv2, s390x, 64-bit/32-bit LoongArch, SPARC64, m68k, SH-4, and DEC
 Alpha.
-
-mold/macOS is commercial software. For mold/macOS, please visit
-https://github.com/bluewhalesystems/sold.
 
 ## Why does linking speed matter?
 
