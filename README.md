@@ -13,15 +13,15 @@ debug-edit-rebuild cycles.
 
 Here is a performance comparison of GNU gold, LLVM lld, and mold when linking
 final debuginfo-enabled executables for major large programs on a simulated
-8-core, 16-thread machine.
+16-core, 32-thread machine.
 
-![Link speed comparison](docs/comparison.png)
+![Link speed comparison](docs/chart.svg)
 
-| Program (linker output size)  | GNU gold | LLVM lld | mold
-|-------------------------------|----------|----------|--------
-| Chrome 96 (1.89 GiB)          | 53.86s   | 11.74s   | 2.21s
-| Clang 13 (3.18 GiB)           | 64.12s   | 5.82s    | 2.90s
-| Firefox 89 libxul (1.64 GiB)  | 32.95s   | 6.80s    | 1.42s
+| Program (linker output size)  | GNU ld | GNU gold | LLVM lld | mold
+|-------------------------------|--------|----------|----------|------
+| MySQL 8.3 (0.47 GiB)          | 10.84s | 7.47s    | 1.64s    | 0.46s
+| Clang 19 (1.56 GiB)           | 42.07s | 33.13s   | 5.20s    | 1.35s
+| Chromium 124 (1.35 GiB)       | N/A    | 27.40s   | 6.10s    | 1.52s
 
 mold is so fast that it is only 2x _slower_ than the `cp` command on the same
 machine. If you find that mold is not faster than other linkers, please feel
