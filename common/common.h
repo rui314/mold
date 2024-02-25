@@ -756,10 +756,19 @@ public:
     if (this->path == "-") {
       fp = stdout;
     } else {
+#ifdef _WIN32
+      int pmode = (perm & 0200) ? (_S_IREAD | _S_IWRITE) : _S_IREAD;
+      i64 fd = _open(this->path.c_str(), _O_RDWR | _O_CREAT | _O_BINARY, pmode);
+#else
       i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, perm);
+#endif
       if (fd == -1)
         Fatal(ctx) << "cannot open " << this->path << ": " << errno_string();
+#ifdef _WIN32
+      fp = _fdopen(fd, "wb");
+#else
       fp = fdopen(fd, "w");
+#endif
     }
 
     fwrite(this->buf, this->filesize, 1, fp);
@@ -992,13 +1001,52 @@ MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
 
-  i64 fd;
 #ifdef _WIN32
-  fd = ::_open(path.c_str(), O_RDONLY);
-#else
-  fd = ::open(path.c_str(), O_RDONLY);
-#endif
+  HANDLE file_handle =
+      CreateFileA(path.c_str(), GENERIC_READ,
+                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file_handle == INVALID_HANDLE_VALUE) {
+    auto err = GetLastError();
+    if (err != ERROR_FILE_NOT_FOUND)
+      Fatal(ctx) << "opening " << path << " failed: " << err;
+    return nullptr;
+  }
 
+  if (GetFileType(file_handle) != FILE_TYPE_DISK) {
+    CloseHandle(file_handle);
+    return nullptr;
+  }
+
+  DWORD size_hi;
+  DWORD size_lo = GetFileSize(file_handle, &size_hi);
+  if (size_lo == INVALID_FILE_SIZE)
+    Fatal(ctx) << path << ": GetFileSize failed: " << GetLastError();
+
+  uint64_t size = (uint64_t(size_hi) << 32) + size_lo;
+
+  MappedFile *mf = new MappedFile;
+  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
+
+  mf->name = path;
+  mf->size = size;
+  mf->file_handle = file_handle;
+
+  if (size > 0) {
+    HANDLE mapping_handle = CreateFileMapping(file_handle, nullptr,
+                                              PAGE_READONLY, 0, size, nullptr);
+    if (!mapping_handle)
+      Fatal(ctx) << path << ": CreateFileMapping failed: " << GetLastError();
+
+    mf->data = (u8 *)MapViewOfFile(mapping_handle, FILE_MAP_COPY, 0, 0, size);
+    CloseHandle(mapping_handle);
+    if (!mf->data)
+      Fatal(ctx) << path << ": MapViewOfFile failed: " << GetLastError();
+  }
+
+  return mf;
+#else
+  i64 fd = ::open(path.c_str(), O_RDONLY);
   if (fd == -1) {
     if (errno != ENOENT)
       Fatal(ctx) << "opening " << path << " failed: " << errno_string();
@@ -1016,26 +1064,15 @@ MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
   mf->size = st.st_size;
 
   if (st.st_size > 0) {
-#ifdef _WIN32
-    HANDLE handle = CreateFileMapping((HANDLE)_get_osfhandle(fd),
-                                      nullptr, PAGE_READWRITE, 0,
-                                      st.st_size, nullptr);
-    if (!handle)
-      Fatal(ctx) << path << ": CreateFileMapping failed: " << GetLastError();
-    mf->file_handle = handle;
-    mf->data = (u8 *)MapViewOfFile(handle, FILE_MAP_ALL_ACCESS, 0, 0, st.st_size);
-    if (!mf->data)
-      Fatal(ctx) << path << ": MapViewOfFile failed: " << GetLastError();
-#else
     mf->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE,
                           MAP_PRIVATE, fd, 0);
     if (mf->data == MAP_FAILED)
       Fatal(ctx) << path << ": mmap failed: " << errno_string();
-#endif
   }
 
   close(fd);
   return mf;
+#endif
 }
 
 template <typename Context>
