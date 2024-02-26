@@ -380,7 +380,9 @@ target_sources(mold PRIVATE
 if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16.0")
   # ccache needs this flag along with `sloppiness = pch_defines,time_macros`
   # to enable caching
-  target_compile_options(mold PRIVATE -fpch-preprocess)
+  if(NOT MSVC)
+    target_compile_options(mold PRIVATE -fpch-preprocess)
+  endif()
 endif()
 
 include(CTest)

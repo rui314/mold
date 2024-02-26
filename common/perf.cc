@@ -38,7 +38,7 @@ static i64 now_nsec() {
 static std::pair<i64, i64> get_usage() {
 #ifdef _WIN32
   auto to_nsec = [](FILETIME t) -> i64 {
-    return ((u64)t.dwHighDateTime << 32 + (u64)t.dwLowDateTime) * 100;
+    return (((u64)t.dwHighDateTime << 32) + (u64)t.dwLowDateTime) * 100;
   };
 
   FILETIME creation, exit, kernel, user;
