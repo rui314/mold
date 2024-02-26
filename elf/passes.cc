@@ -799,8 +799,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
     ctx._TLS_MODULE_BASE_ = add("_TLS_MODULE_BASE_", STT_TLS);
 
   if constexpr (is_riscv<E>)
-    if (!ctx.arg.shared)
-      ctx.__global_pointer = add("__global_pointer$");
+    ctx.__global_pointer = add("__global_pointer$");
 
   if constexpr (is_arm32<E>) {
     ctx.__exidx_start = add("__exidx_start");
