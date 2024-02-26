@@ -1023,7 +1023,7 @@ MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
   if (size_lo == INVALID_FILE_SIZE)
     Fatal(ctx) << path << ": GetFileSize failed: " << GetLastError();
 
-  uint64_t size = (uint64_t(size_hi) << 32) + size_lo;
+  u64 size = ((u64)size_hi << 32) + size_lo;
 
   MappedFile *mf = new MappedFile;
   ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
