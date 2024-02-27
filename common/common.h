@@ -585,9 +585,8 @@ public:
     // seem to provide that function. C11's aligned_alloc may not be always
     // avialalbe. Therefore, we'll align the buffer ourselves.
     i64 size = sizeof(Entry) * this->nbuckets;
-    entries_buf = malloc(size + alignof(Entry) - 1);
+    entries_buf = calloc(1, size + alignof(Entry) - 1);
     entries = (Entry *)align_to((u64)entries_buf, alignof(Entry));
-    memset(entries, 0, size);
   }
 
   std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
