@@ -177,6 +177,9 @@ void create_synthetic_sections(Context<E> &ctx) {
   if constexpr (is_ppc64v1<E>)
     ctx.extra.opd = push(new PPC64OpdSection);
 
+  if constexpr (is_ppc64v2<E>)
+    ctx.extra.save_restore = push(new PPC64SaveRestoreSection);
+
   if constexpr (is_sparc<E>) {
     if (ctx.arg.is_static)
       ctx.extra.tls_get_addr_sec = push(new SparcTlsGetAddrSection);
@@ -823,6 +826,11 @@ void add_synthetic_symbols(Context<E> &ctx) {
       }
     }
   }
+
+  if constexpr (is_ppc64v2<E>)
+    for (auto [label, insn] : ppc64_save_restore_insns)
+      if (!label.empty())
+        add(label);
 
   obj.elf_syms = ctx.internal_esyms;
   obj.has_symver.resize(ctx.internal_esyms.size() - 1);
@@ -2763,6 +2771,18 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     } else {
       ctx.extra.TOC->set_output_section(sections[0]);
       ctx.extra.TOC->value = 0;
+    }
+  }
+
+  // PPC64's _{save,rest}gpr{0,1}_{14,15,16,...,31} symbols
+  if constexpr (is_ppc64v2<E>) {
+    i64 offset = 0;
+    for (auto [label, insn] : ppc64_save_restore_insns) {
+      if (!label.empty())
+        if (Symbol<E> *sym = get_symbol(ctx, label);
+            sym->file == ctx.internal_obj)
+          start(sym, ctx.extra.save_restore, offset);
+      offset += 4;
     }
   }
 

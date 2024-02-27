@@ -568,6 +568,106 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+// GCC may emit references to the following functions in function prologue
+// and epiilogue if -Os is specified. For some reason, these functions are
+// not in libgcc.a and expected to be synthesized by the linker.
+const std::vector<std::pair<std::string_view, u32>>
+ppc64_save_restore_insns = {
+  { "_savegpr0_14", 0xf9c1ff70 }, // std r14,-144(r1)
+  { "_savegpr0_15", 0xf9e1ff78 }, // std r15,-136(r1)
+  { "_savegpr0_16", 0xfa01ff80 }, // std r16,-128(r1)
+  { "_savegpr0_17", 0xfa21ff88 }, // std r17,-120(r1)
+  { "_savegpr0_18", 0xfa41ff90 }, // std r18,-112(r1)
+  { "_savegpr0_19", 0xfa61ff98 }, // std r19,-104(r1)
+  { "_savegpr0_20", 0xfa81ffa0 }, // std r20,-96(r1)
+  { "_savegpr0_21", 0xfaa1ffa8 }, // std r21,-88(r1)
+  { "_savegpr0_22", 0xfac1ffb0 }, // std r22,-80(r1)
+  { "_savegpr0_23", 0xfae1ffb8 }, // std r23,-72(r1)
+  { "_savegpr0_24", 0xfb01ffc0 }, // std r24,-64(r1)
+  { "_savegpr0_25", 0xfb21ffc8 }, // std r25,-56(r1)
+  { "_savegpr0_26", 0xfb41ffd0 }, // std r26,-48(r1)
+  { "_savegpr0_27", 0xfb61ffd8 }, // std r27,-40(r1)
+  { "_savegpr0_28", 0xfb81ffe0 }, // std r28,-32(r1)
+  { "_savegpr0_29", 0xfba1ffe8 }, // std r29,-24(r1)
+  { "_savegpr0_30", 0xfbc1fff0 }, // std r30,-16(r1)
+  { "_savegpr0_31", 0xfbe1fff8 }, // std r31,-8(r1)
+  { "",             0xf8010010 }, // std r0,16(r1)
+  { "",             0x4e800020 }, // blr
+
+  { "_restgpr0_14", 0xe9c1ff70 }, // ld r14,-144(r1)
+  { "_restgpr0_15", 0xe9e1ff78 }, // ld r15,-136(r1)
+  { "_restgpr0_16", 0xea01ff80 }, // ld r16,-128(r1)
+  { "_restgpr0_17", 0xea21ff88 }, // ld r17,-120(r1)
+  { "_restgpr0_18", 0xea41ff90 }, // ld r18,-112(r1)
+  { "_restgpr0_19", 0xea61ff98 }, // ld r19,-104(r1)
+  { "_restgpr0_20", 0xea81ffa0 }, // ld r20,-96(r1)
+  { "_restgpr0_21", 0xeaa1ffa8 }, // ld r21,-88(r1)
+  { "_restgpr0_22", 0xeac1ffb0 }, // ld r22,-80(r1)
+  { "_restgpr0_23", 0xeae1ffb8 }, // ld r23,-72(r1)
+  { "_restgpr0_24", 0xeb01ffc0 }, // ld r24,-64(r1)
+  { "_restgpr0_25", 0xeb21ffc8 }, // ld r25,-56(r1)
+  { "_restgpr0_26", 0xeb41ffd0 }, // ld r26,-48(r1)
+  { "_restgpr0_27", 0xeb61ffd8 }, // ld r27,-40(r1)
+  { "_restgpr0_28", 0xeb81ffe0 }, // ld r28,-32(r1)
+  { "_restgpr0_29", 0xe8010010 }, // ld r0,16(r1)
+  { "",             0xeba1ffe8 }, // ld r29,-24(r1)
+  { "",             0x7c0803a6 }, // mtlr r0
+  { "",             0xebc1fff0 }, // ld r30,-16(r1)
+  { "",             0xebe1fff8 }, // ld r31,-8(r1)
+  { "",             0x4e800020 }, // blr
+  { "_restgpr0_30", 0xebc1fff0 }, // ld r30,-16(r1)
+  { "_restgpr0_31", 0xe8010010 }, // ld r0,16(r1)
+  { "",             0xebe1fff8 }, // ld r31,-8(r1)
+  { "",             0x7c0803a6 }, // mtlr r0
+  { "",             0x4e800020 }, // blr
+
+  { "_savegpr1_14", 0xf9ccff70 }, // std r14,-144(r12)
+  { "_savegpr1_15", 0xf9ecff78 }, // std r15,-136(r12)
+  { "_savegpr1_16", 0xfa0cff80 }, // std r16,-128(r12)
+  { "_savegpr1_17", 0xfa2cff88 }, // std r17,-120(r12)
+  { "_savegpr1_18", 0xfa4cff90 }, // std r18,-112(r12)
+  { "_savegpr1_19", 0xfa6cff98 }, // std r19,-104(r12)
+  { "_savegpr1_20", 0xfa8cffa0 }, // std r20,-96(r12)
+  { "_savegpr1_21", 0xfaacffa8 }, // std r21,-88(r12)
+  { "_savegpr1_22", 0xfaccffb0 }, // std r22,-80(r12)
+  { "_savegpr1_23", 0xfaecffb8 }, // std r23,-72(r12)
+  { "_savegpr1_24", 0xfb0cffc0 }, // std r24,-64(r12)
+  { "_savegpr1_25", 0xfb2cffc8 }, // std r25,-56(r12)
+  { "_savegpr1_26", 0xfb4cffd0 }, // std r26,-48(r12)
+  { "_savegpr1_27", 0xfb6cffd8 }, // std r27,-40(r12)
+  { "_savegpr1_28", 0xfb8cffe0 }, // std r28,-32(r12)
+  { "_savegpr1_29", 0xfbacffe8 }, // std r29,-24(r12)
+  { "_savegpr1_30", 0xfbccfff0 }, // std r30,-16(r12)
+  { "_savegpr1_31", 0xfbecfff8 }, // std r31,-8(r12)
+  { "",             0x4e800020 }, // blr
+
+  { "_restgpr1_14", 0xe9ccff70 }, // ld r14,-144(r12)
+  { "_restgpr1_15", 0xe9ecff78 }, // ld r15,-136(r12)
+  { "_restgpr1_16", 0xea0cff80 }, // ld r16,-128(r12)
+  { "_restgpr1_17", 0xea2cff88 }, // ld r17,-120(r12)
+  { "_restgpr1_18", 0xea4cff90 }, // ld r18,-112(r12)
+  { "_restgpr1_19", 0xea6cff98 }, // ld r19,-104(r12)
+  { "_restgpr1_20", 0xea8cffa0 }, // ld r20,-96(r12)
+  { "_restgpr1_21", 0xeaacffa8 }, // ld r21,-88(r12)
+  { "_restgpr1_22", 0xeaccffb0 }, // ld r22,-80(r12)
+  { "_restgpr1_23", 0xeaecffb8 }, // ld r23,-72(r12)
+  { "_restgpr1_24", 0xeb0cffc0 }, // ld r24,-64(r12)
+  { "_restgpr1_25", 0xeb2cffc8 }, // ld r25,-56(r12)
+  { "_restgpr1_26", 0xeb4cffd0 }, // ld r26,-48(r12)
+  { "_restgpr1_27", 0xeb6cffd8 }, // ld r27,-40(r12)
+  { "_restgpr1_28", 0xeb8cffe0 }, // ld r28,-32(r12)
+  { "_restgpr1_29", 0xebacffe8 }, // ld r29,-24(r12)
+  { "_restgpr1_30", 0xebccfff0 }, // ld r30,-16(r12)
+  { "_restgpr1_31", 0xebecfff8 }, // ld r31,-8(r12)
+  { "",             0x4e800020 }, // blr
+};
+
+void PPC64SaveRestoreSection::copy_buf(Context<E> &ctx) {
+  ul32 *buf = (ul32 *)(ctx.buf + this->shdr.sh_offset);
+  for (auto [label, insn] : ppc64_save_restore_insns)
+    *buf++ = insn;
+}
+
 template <>
 u64 get_eflags(Context<E> &ctx) {
   return 2;

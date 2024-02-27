@@ -1470,6 +1470,22 @@ public:
 // arch-ppc64v2.cc
 //
 
+extern const std::vector<std::pair<std::string_view, u32>>
+ppc64_save_restore_insns;
+
+class PPC64SaveRestoreSection : public Chunk<PPC64V2> {
+public:
+  PPC64SaveRestoreSection() {
+    this->name = ".save_restore_gprs";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
+    this->shdr.sh_addralign = 16;
+    this->shdr.sh_size = ppc64_save_restore_insns.size() * 4;
+  }
+
+  void copy_buf(Context<PPC64V2> &ctx) override;
+};
+
 template <> u64 get_eflags(Context<PPC64V2> &ctx);
 
 //
@@ -1594,6 +1610,7 @@ struct ContextExtras<PPC64V1> {
 
 template <>
 struct ContextExtras<PPC64V2> {
+  PPC64SaveRestoreSection *save_restore = nullptr;
   Symbol<PPC64V2> *TOC = nullptr;
   Atomic<bool> is_power10 = false;
 };
