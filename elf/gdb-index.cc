@@ -141,7 +141,7 @@ struct NameType {
 
 struct MapValue {
   u32 hash = 0;
-  Atomic<u32> count = 0;
+  Atomic<u32> count;
   u32 name_offset = 0;
   u32 type_offset = 0;
 };
