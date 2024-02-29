@@ -1434,7 +1434,7 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];
-      sym.is_weak = false;
+      sym.is_weak = true;
     }
   }
 }

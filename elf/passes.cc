@@ -1513,6 +1513,27 @@ void scan_relocations(Context<E> &ctx) {
     Warn(ctx) << "creating a DT_TEXTREL in an output file";
 }
 
+// Compute the is_weak bit for each imported symbol.
+//
+// If all references to a shared symbol is weak, the symbol is marked
+// as weak in .dynsym.
+template <typename E>
+void compute_imported_symbol_weakness(Context<E> &ctx) {
+  Timer t(ctx, "compute_imported_symbol_weakness");
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
+      const ElfSym<E> &esym = file->elf_syms[i];
+      Symbol<E> &sym = *file->symbols[i];
+
+      if (esym.is_undef() && !esym.is_weak() && sym.file && sym.file->is_dso) {
+        std::scoped_lock lock(sym.mu);
+        sym.is_weak = false;
+      }
+    }
+  });
+}
+
 // Report all undefined symbols, grouped by symbol.
 template <typename E>
 void report_undef_errors(Context<E> &ctx) {
@@ -2977,6 +2998,7 @@ template void shuffle_sections(Context<E> &);
 template void compute_section_sizes(Context<E> &);
 template void sort_output_sections(Context<E> &);
 template void claim_unresolved_symbols(Context<E> &);
+template void compute_imported_symbol_weakness(Context<E> &);
 template void scan_relocations(Context<E> &);
 template void report_undef_errors(Context<E> &);
 template void create_reloc_sections(Context<E> &);

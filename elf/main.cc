@@ -546,6 +546,9 @@ int elf_main(int argc, char **argv) {
   // .got.plt, .dynsym, .dynstr, etc.
   scan_relocations(ctx);
 
+  // Compute the is_weak bit for each imported symbol.
+  compute_imported_symbol_weakness(ctx);
+
   // Compute sizes of output sections while assigning offsets
   // within an output section to input sections.
   compute_section_sizes(ctx);
