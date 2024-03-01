@@ -216,7 +216,7 @@ struct Atomic : std::atomic<T> {
 
   using std::atomic<T>::atomic;
 
-  Atomic(const Atomic<T> &other) { store(other.load()); }
+  Atomic(const Atomic<T> &other) : std::atomic<T>(other.load()) {}
 
   Atomic<T> &operator=(const Atomic<T> &other) {
     store(other.load());
