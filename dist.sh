@@ -167,3 +167,5 @@ find $dest -print | xargs touch --no-dereference --date='$timestamp'
 find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /mold/$dest.tar.gz
 chown $(id -u):$(id -g) /mold/$dest.tar.gz
 "
+
+which sha256sum > /dev/null && sha256sum $dest.tar.gz
