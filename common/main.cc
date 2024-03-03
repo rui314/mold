@@ -154,9 +154,9 @@ void install_signal_handler() {
   sigemptyset(&action.sa_mask);
   action.sa_flags = SA_SIGINFO;
 
-  sigaction(SIGINT, &action, NULL);
-  sigaction(SIGTERM, &action, NULL);
+  sigaction(SIGSEGV, &action, NULL);
   sigaction(SIGBUS, &action, NULL);
+  sigaction(SIGABRT, &action, NULL);
 
   // OneTBB 2021.9.0 has the interface version 12090.
   if (TBB_runtime_interface_version() < 12090) {
