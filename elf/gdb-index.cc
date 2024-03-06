@@ -135,12 +135,12 @@ struct NameType {
   }
 
   std::string_view name;
-  u32 hash;
+  u64 hash;
   u8 type;
 };
 
 struct MapValue {
-  u32 hash = 0;
+  u32 gdb_hash = 0;
   Atomic<u32> count;
   u32 name_offset = 0;
   u32 type_offset = 0;
@@ -539,7 +539,7 @@ static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
     u8 type = *p++;
     std::string_view name = (char *)p;
     p += name.size() + 1;
-    cu->nametypes.push_back({name, gdb_hash(name), type});
+    cu->nametypes.push_back({name, hash_string(name), type});
   }
 
   return size;
@@ -683,7 +683,8 @@ void write_gdb_index(Context<E> &ctx) {
     for (NameType &nt : cu.nametypes) {
       MapValue *ent;
       bool inserted;
-      std::tie(ent, inserted) = map.insert(nt.name, nt.hash, MapValue{nt.hash});
+      std::tie(ent, inserted) = map.insert(nt.name, nt.hash,
+                                           MapValue{gdb_hash(nt.name)});
       ent->count++;
       cu.entries.push_back(ent);
     }
@@ -750,7 +751,7 @@ void write_gdb_index(Context<E> &ctx) {
   ul32 *ht = (ul32 *)(buf + hdr.symtab_offset);
 
   for (Entry *ent : entries) {
-    u32 hash = ent->value.hash;
+    u32 hash = ent->value.gdb_hash;
     u32 step = ((hash * 17) & mask) | 1;
     u32 j = hash & mask;
 
