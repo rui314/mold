@@ -47,6 +47,7 @@ cmake_minimum_required(VERSION 3.14)
 project(mold VERSION 2.4.1)
 
 include(CMakeDependentOption)
+include(CheckSymbolExists)
 include(GNUInstallDirs)
 
 # Build mold itself using mold if -DMOLD_USE_MOLD=ON
@@ -264,6 +265,8 @@ if(NOT APPLE AND NOT MSVC)
   target_compile_options(mold PRIVATE -pthread)
   target_link_options(mold PRIVATE -pthread)
 endif()
+
+check_symbol_exists(madvise sys/mman.h HAVE_MADVISE)
 
 # Create a .cc file containing the current git hash for `mold --version`.
 add_custom_target(git_hash

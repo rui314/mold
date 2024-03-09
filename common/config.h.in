@@ -1,2 +1,4 @@
 #define MOLD_VERSION "@mold_VERSION@"
 #define MOLD_LIBDIR "@CMAKE_INSTALL_FULL_LIBDIR@"
+
+#cmakedefine HAVE_MADVISE

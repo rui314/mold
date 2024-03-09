@@ -1,4 +1,6 @@
 #include "mold.h"
+
+#include "config.h"
 #include "blake3.h"
 
 #include <cctype>
@@ -2585,13 +2587,11 @@ static void compute_blake3(Context<E> &ctx, i64 offset) {
     u8 *end = (i == num_shards - 1) ? buf + filesize : begin + shard_size;
     blake3_hash(begin, end - begin, shards.data() + i * BLAKE3_OUT_LEN);
 
-#ifndef _WIN32
-    // We call munmap early for each chunk so that the last munmap
-    // gets cheaper. We assume that the .note.build-id section is
-    // at the beginning of an output file. This is an ugly performance
-    // hack, but we can save about 30 ms for a 2 GiB output.
+#ifdef HAVE_MADVISE
+    // Make the kernel page out the file contents we've just written
+    // so that subsequent close(2) call will become quicker.
     if (i > 0 && ctx.output_file->is_mmapped)
-      munmap(begin, end - begin);
+      madvise(begin, end - begin, MADV_DONTNEED);
 #endif
    });
 
@@ -2600,13 +2600,6 @@ static void compute_blake3(Context<E> &ctx, i64 offset) {
   u8 digest[BLAKE3_OUT_LEN];
   blake3_hash(shards.data(), shards.size(), digest);
   memcpy(buf + offset, digest, ctx.arg.build_id.size());
-
-#ifndef _WIN32
-  if (ctx.output_file->is_mmapped) {
-    munmap(buf, std::min(filesize, shard_size));
-    ctx.output_file->is_unmapped = true;
-  }
-#endif
 }
 
 template <typename E>
