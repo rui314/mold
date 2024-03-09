@@ -31,7 +31,7 @@ RUN echo 'USE="X ssl elogind -systemd corefonts truetype jpeg jpeg2k tiff zstd s
     echo 'ACCEPT_LICENSE="* -@EULA"' >> /etc/portage/make.conf && \
     echo 'FEATURES="\${FEATURE} noclean nostrip ccache -ipc-sandbox -network-sandbox -pid-sandbox -sandbox"' >> /etc/portage/make.conf && \
     echo 'CCACHE_DIR="/ccache"' >> /etc/portage/make.conf
-RUN emerge gdb lld clang vim emacs strace ccache xeyes dev-util/cmake dev-vcs/git && rm -rf /var/tmp/portage
+RUN emerge gdb lld clang vim emacs strace ccache xeyes dev-build/cmake dev-vcs/git && rm -rf /var/tmp/portage
 EOF
   set +e
 fi
