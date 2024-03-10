@@ -15,6 +15,10 @@ static bool should_keep(const InputSection<E> &isec) {
   u32 flags = isec.shdr().sh_flags;
   std::string_view name = isec.name();
 
+  if constexpr (is_ppc32<E>)
+    if (name == ".got2")
+      return true;
+
   return (flags & SHF_GNU_RETAIN) ||
          type == SHT_NOTE ||
          type == SHT_INIT_ARRAY ||
