@@ -505,7 +505,7 @@ void ShstrtabSection<E>::update_shdr(Context<E> &ctx) {
   i64 offset = 1;
 
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk->kind() != ChunkKind::HEADER && !chunk->name.empty()) {
+    if (!chunk->is_header() && !chunk->name.empty()) {
       auto [it, inserted] = map.insert({chunk->name, offset});
       chunk->shdr.sh_name = it->second;
       if (inserted)
@@ -522,7 +522,7 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
   base[0] = '\0';
 
   for (Chunk<E> *chunk : ctx.chunks)
-    if (chunk->kind() != ChunkKind::HEADER && !chunk->name.empty())
+    if (!chunk->is_header() && !chunk->name.empty())
       write_string(base + chunk->shdr.sh_name, chunk->name);
 }
 
@@ -2748,11 +2748,11 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   switch (ctx.arg.compress_debug_sections) {
   case COMPRESS_ZLIB:
     chdr.ch_type = ELFCOMPRESS_ZLIB;
-    compressed.reset(new ZlibCompressor(buf, chunk.shdr.sh_size));
+    compressor.reset(new ZlibCompressor(buf, chunk.shdr.sh_size));
     break;
   case COMPRESS_ZSTD:
     chdr.ch_type = ELFCOMPRESS_ZSTD;
-    compressed.reset(new ZstdCompressor(buf, chunk.shdr.sh_size));
+    compressor.reset(new ZstdCompressor(buf, chunk.shdr.sh_size));
     break;
   default:
     unreachable();
@@ -2764,7 +2764,7 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   this->shdr = chunk.shdr;
   this->shdr.sh_flags |= SHF_COMPRESSED;
   this->shdr.sh_addralign = 1;
-  this->shdr.sh_size = sizeof(chdr) + compressed->compressed_size;
+  this->shdr.sh_size = sizeof(chdr) + compressor->compressed_size;
   this->shndx = chunk.shndx;
 
   // We don't need to keep the original data unless --gdb-index is given.
@@ -2778,7 +2778,7 @@ template <typename E>
 void CompressedSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memcpy(base, &chdr, sizeof(chdr));
-  compressed->write_to(base + sizeof(chdr));
+  compressor->write_to(base + sizeof(chdr));
 }
 
 template <typename E>

@@ -340,14 +340,12 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym);
 template <typename E>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym);
 
-typedef enum { HEADER, OUTPUT_SECTION, SYNTHETIC } ChunkKind;
-
 // Chunk represents a contiguous region in an output file.
 template <typename E>
 class Chunk {
 public:
   virtual ~Chunk() = default;
-  virtual ChunkKind kind() { return SYNTHETIC; }
+  virtual bool is_header() { return false; }
   virtual OutputSection<E> *to_osec() { return nullptr; }
   virtual i64 get_reldyn_size(Context<E> &ctx) const { return 0; }
   virtual void construct_relr(Context<E> &ctx) {}
@@ -397,7 +395,7 @@ public:
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
-  ChunkKind kind() override { return HEADER; }
+  bool is_header() override { return true; }
   void copy_buf(Context<E> &ctx) override;
 };
 
@@ -411,7 +409,7 @@ public:
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
-  ChunkKind kind() override { return HEADER; }
+  bool is_header() override { return true; }
   void copy_buf(Context<E> &ctx) override;
 };
 
@@ -425,7 +423,7 @@ public:
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
-  ChunkKind kind() override { return HEADER; }
+  bool is_header() override { return true; }
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
@@ -454,7 +452,6 @@ public:
     this->shdr.sh_type = type;
   }
 
-  ChunkKind kind() override { return OUTPUT_SECTION; }
   OutputSection<E> *to_osec() override { return this; }
   void construct_relr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
@@ -980,7 +977,7 @@ public:
 
 private:
   ElfChdr<E> chdr = {};
-  std::unique_ptr<Compressor> compressed;
+  std::unique_ptr<Compressor> compressor;
 };
 
 template <typename E>
@@ -1053,11 +1050,8 @@ template <typename E> void write_gdb_index(Context<E> &ctx);
 // discards the other by eliminating all sections that the other
 // comdat section refers to.
 struct ComdatGroup {
-  ComdatGroup() = default;
-  ComdatGroup(const ComdatGroup &other) : owner(other.owner.load()) {}
-
   // The file priority of the owner file of this comdat section.
-  std::atomic_uint32_t owner = -1;
+  Atomic<u32> owner = -1;
 };
 
 template <typename E>
@@ -1197,12 +1191,12 @@ public:
   bool is_gcc_offload_obj = false;
   bool is_rust_obj = false;
 
-  u64 num_dynrel = 0;
-  u64 reldyn_offset = 0;
+  i64 num_dynrel = 0;
+  i64 reldyn_offset = 0;
 
-  u64 fde_idx = 0;
-  u64 fde_offset = 0;
-  u64 fde_size = 0;
+  i64 fde_idx = 0;
+  i64 fde_offset = 0;
+  i64 fde_size = 0;
 
   // For ICF
   std::unique_ptr<InputSection<E>> llvm_addrsig;

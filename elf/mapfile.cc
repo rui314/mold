@@ -75,7 +75,7 @@ void print_map(Context<E> &ctx) {
          << std::setw(6) << (u64)osec->shdr.sh_addralign
          << " " << osec->name << "\n";
 
-    if (osec->kind() != OUTPUT_SECTION)
+    if (!osec->to_osec())
       continue;
 
     std::span<InputSection<E> *> members = ((OutputSection<E> *)osec)->members;

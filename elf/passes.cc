@@ -2565,14 +2565,14 @@ void compute_section_headers(Context<E> &ctx) {
 
   // Remove empty chunks.
   std::erase_if(ctx.chunks, [&](Chunk<E> *chunk) {
-    return chunk->kind() != OUTPUT_SECTION && chunk != ctx.gdb_index &&
+    return !chunk->to_osec() && chunk != ctx.gdb_index &&
            chunk->shdr.sh_size == 0;
   });
 
   // Set section indices.
   i64 shndx = 1;
   for (i64 i = 0; i < ctx.chunks.size(); i++)
-    if (ctx.chunks[i]->kind() != HEADER)
+    if (!ctx.chunks[i]->is_header())
       ctx.chunks[i]->shndx = shndx++;
 
   if (ctx.symtab && SHN_LORESERVE <= shndx) {
@@ -2658,7 +2658,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   std::vector<Chunk<E> *> sections;
   for (Chunk<E> *chunk : ctx.chunks)
-    if (chunk->kind() != HEADER && (chunk->shdr.sh_flags & SHF_ALLOC))
+    if (!chunk->is_header() && (chunk->shdr.sh_flags & SHF_ALLOC))
       sections.push_back(chunk);
 
   auto find = [&](std::string name) -> Chunk<E> * {
