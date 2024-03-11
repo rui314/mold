@@ -130,6 +130,7 @@ static void sighandler(int signo, siginfo_t *info, void *ucontext) {
   static std::mutex mu;
   std::scoped_lock lock{mu};
 
+  // Handle disk full error
   switch (signo) {
   case SIGSEGV:
   case SIGBUS:
@@ -145,7 +146,12 @@ static void sighandler(int signo, siginfo_t *info, void *ucontext) {
   }
   }
 
-  _exit(1);
+  // Re-throw the signal
+  signal(SIGSEGV, SIG_DFL);
+  signal(SIGBUS, SIG_DFL);
+  signal(SIGABRT, SIG_DFL);
+
+  raise(signo);
 }
 
 void install_signal_handler() {
