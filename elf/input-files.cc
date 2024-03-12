@@ -234,6 +234,32 @@ static void read_riscv_attributes(Context<E> &ctx, ObjectFile<E> &file,
 }
 
 template <typename E>
+static bool is_known_section_type(const ElfShdr<E> &shdr) {
+  u32 ty = shdr.sh_type;
+  u32 flags = shdr.sh_flags;
+
+  if (ty == SHT_PROGBITS ||
+      ty == SHT_NOTE ||
+      ty == SHT_NOBITS ||
+      ty == SHT_INIT_ARRAY ||
+      ty == SHT_FINI_ARRAY ||
+      ty == SHT_PREINIT_ARRAY)
+    return true;
+
+  if (SHT_LOUSER <= ty && ty <= SHT_HIUSER && !(flags & SHF_ALLOC))
+    return true;
+  if (SHT_LOOS <= ty && ty <= SHT_HIOS && !(flags & SHF_OS_NONCONFORMING))
+    return true;
+  if (is_x86<E> && ty == SHT_X86_64_UNWIND)
+    return true;
+  if (is_arm32<E> && (ty == SHT_ARM_EXIDX || ty == SHT_ARM_ATTRIBUTES))
+    return true;
+  if (is_riscv<E> && ty == SHT_RISCV_ATTRIBUTES)
+    return true;
+  return false;
+}
+
+template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
@@ -305,6 +331,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     case SHT_NULL:
       break;
     default:
+      if (!is_known_section_type(shdr))
+        Fatal(ctx) << *this << ": " << name << ": unsupported section type: 0x"
+                   << std::hex << (u32)shdr.sh_type;
+
       // .note.GNU-stack section controls executable-ness of the stack
       // area in GNU linkers. We ignore that section because silently
       // making the stack area executable is too dangerous. Tell our
