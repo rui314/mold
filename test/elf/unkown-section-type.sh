@@ -1,10 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-# ARM assembler does not seem to accept a hexnum after the atsign
-[ $MACHINE = arm ] && skip
-
-cat <<EOF | $CC -o $t/a.o -c -xassembler -
+cat <<EOF | $CC -o $t/a.o -c -xassembler - 2> /dev/null || skip
 .section .my_section,"a",@0x80000000
 EOF
 
