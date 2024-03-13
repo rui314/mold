@@ -2505,7 +2505,6 @@ static i64 set_file_offsets(Context<E> &ctx) {
     }
 
     if (first.shdr.sh_type == SHT_NOBITS) {
-      fileoff = align_to(fileoff, first.shdr.sh_addralign);
       first.shdr.sh_offset = fileoff;
       i++;
       continue;
@@ -2548,10 +2547,9 @@ static i64 set_file_offsets(Context<E> &ctx) {
     while (i < chunks.size() &&
            (chunks[i]->shdr.sh_flags & SHF_ALLOC) &&
            chunks[i]->shdr.sh_type == SHT_NOBITS) {
-      fileoff = align_to(fileoff, chunks[i]->shdr.sh_addralign);
       chunks[i]->shdr.sh_offset = fileoff;
       i++;
-	}
+    }
   }
 
   return fileoff;
