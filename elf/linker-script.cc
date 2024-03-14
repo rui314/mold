@@ -170,6 +170,14 @@ static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view to
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));
 
+  // Try to open the file in the directory containing the linker script.
+  auto parent_path = [](std::string_view path) {
+    return filepath(path).lexically_normal().parent_path().string();
+  };
+  std::string path = parent_path(ctx.script_file->name) + "/" + str;
+  if (MappedFile<Context<E>> *mf = open_library(ctx, path))
+    return mf;
+
   if (MappedFile<Context<E>> *mf = open_library(ctx, str))
     return mf;
 
@@ -252,8 +260,7 @@ get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   if (tok.size() >= 3 && (tok[0] == "INPUT" || tok[0] == "GROUP") &&
       tok[1] == "(")
-    if (MappedFile<Context<E>> *mf =
-        MappedFile<Context<E>>::open(ctx, std::string(unquote(tok[2]))))
+    if (MappedFile<Context<E>> *mf = resolve_path(ctx, tok[2]))
       return get_machine_type(ctx, mf);
 
   return "";
