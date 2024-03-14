@@ -1623,6 +1623,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
     esym.st_value = sym.get_addr(ctx);
   } else if (sym.file->is_dso || sym.esym().is_undef()) {
     esym.st_shndx = SHN_UNDEF;
+    esym.st_size = 0;
     if (sym.is_canonical)
       esym.st_value = sym.get_plt_addr(ctx);
   } else if (Chunk<E> *osec = sym.get_output_section()) {
