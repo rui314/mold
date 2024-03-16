@@ -6,6 +6,8 @@ on:
   push:
     paths:
       - 'docs/mold.md'
+    branches:
+      - main
 
 jobs:
   update-manpage:
