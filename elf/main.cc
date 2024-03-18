@@ -364,7 +364,7 @@ int elf_main(int argc, char **argv) {
     on_complete = fork_child();
 #endif
 
-  acquire_global_lock(ctx);
+  acquire_global_lock();
 
   tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
                                ctx.arg.thread_count);
@@ -682,10 +682,11 @@ int elf_main(int argc, char **argv) {
 
   std::cout << std::flush;
   std::cerr << std::flush;
+
   if (on_complete)
     on_complete();
 
-  release_global_lock(ctx);
+  release_global_lock();
 
   if (ctx.arg.quick_exit)
     _exit(0);

@@ -886,6 +886,13 @@ std::optional<std::string_view> demangle_cpp(std::string_view name);
 std::optional<std::string_view> demangle_rust(std::string_view name);
 
 //
+// jbos.cc
+//
+
+void acquire_global_lock();
+void release_global_lock();
+
+//
 // compress.cc
 //
 

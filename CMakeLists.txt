@@ -305,7 +305,6 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/icf.cc
   elf/input-files.cc
   elf/input-sections.cc
-  elf/jobs.cc
   elf/linker-script.cc
   elf/lto.cc
   elf/main.cc
@@ -377,6 +376,12 @@ target_sources(mold PRIVATE
   git-hash.cc
   third-party/rust-demangle/rust-demangle.c
   )
+
+if(WIN32)
+  target_sources(mold PRIVATE common/jobs-win32.cc)
+else()
+  target_sources(mold PRIVATE common/jobs-unix.cc)
+endif()
 
 # Add frequently included header files for pre-compiling.
 # target_precompile_headers is supported by CMake 3.16.0 or newer.

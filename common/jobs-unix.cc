@@ -9,21 +9,20 @@
 // mold processes to just 1 for each user. It is intended to be used as
 // `MOLD_JOBS=1 ninja` or `MOLD_JOBS=1 make -j$(nproc)`.
 
-#include "mold.h"
+#include "common.h"
 
-#ifndef _WIN32
-# include <fcntl.h>
-# include <pwd.h>
-# include <sys/stat.h>
-# include <sys/types.h>
-# include <unistd.h>
-#endif
+#include <fcntl.h>
+#include <pwd.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-namespace mold::elf {
+namespace mold {
 
-template <typename E>
-void acquire_global_lock(Context<E> &ctx) {
-#ifndef _WIN32
+static int lock_fd = -1;
+
+void acquire_global_lock() {
   char *jobs = getenv("MOLD_JOBS");
   if (!jobs || jobs != "1"s)
     return;
@@ -40,22 +39,12 @@ void acquire_global_lock(Context<E> &ctx) {
 
   if (lockf(fd, F_LOCK, 0) == -1)
     return;
-
-  ctx.global_lock_fd = fd;
-#endif
+  lock_fd = fd;
 }
 
-template <typename E>
-void release_global_lock(Context<E> &ctx) {
-#ifndef _WIN32
-  if (ctx.global_lock_fd)
-    close(*ctx.global_lock_fd);
-#endif
+void release_global_lock() {
+  if (lock_fd != -1)
+    close(lock_fd);
 }
 
-using E = MOLD_TARGET;
-
-template void acquire_global_lock(Context<E> &);
-template void release_global_lock(Context<E> &);
-
-} // namespace mold::elf
+} // namespace mold

@@ -1344,13 +1344,6 @@ template <typename E>
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv);
 
 //
-// jobs.cc
-//
-
-template <typename E> void acquire_global_lock(Context<E> &ctx);
-template <typename E> void release_global_lock(Context<E> &ctx);
-
-//
 // cmdline.cc
 //
 
@@ -1770,7 +1763,6 @@ struct Context {
   std::vector<DynamicPattern> dynamic_list_patterns;
   i64 default_version = VER_NDX_UNSPECIFIED;
   i64 page_size = E::page_size;
-  std::optional<int> global_lock_fd;
 
   // Reader context
   bool as_needed = false;
