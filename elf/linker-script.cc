@@ -170,6 +170,11 @@ static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view to
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));
 
+  if (!str.starts_with('/'))
+    if (MappedFile<Context<E>> *mf =
+        open_library(ctx, path_clean(ctx.script_file->name + "/../" + str)))
+      return mf;
+
   if (MappedFile<Context<E>> *mf = open_library(ctx, str))
     return mf;
 
