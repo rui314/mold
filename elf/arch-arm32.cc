@@ -606,6 +606,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_TARGET1:
       scan_dyn_absrel(ctx, sym, rel);
       break;
+    case R_ARM_MOVW_ABS_NC:
+    case R_ARM_THM_MOVW_ABS_NC:
+      scan_absrel(ctx, sym, rel);
+      break;
     case R_ARM_THM_CALL:
     case R_ARM_CALL:
     case R_ARM_JUMP24:
@@ -646,9 +650,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_THM_JUMP11:
     case R_ARM_THM_JUMP19:
     case R_ARM_MOVW_PREL_NC:
-    case R_ARM_MOVW_ABS_NC:
     case R_ARM_THM_MOVW_PREL_NC:
-    case R_ARM_THM_MOVW_ABS_NC:
     case R_ARM_TLS_LDO32:
     case R_ARM_V4BX:
     case R_ARM_TLS_GOTDESC:
