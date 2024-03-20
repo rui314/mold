@@ -378,9 +378,15 @@ target_sources(mold PRIVATE
   )
 
 if(WIN32)
-  target_sources(mold PRIVATE common/jobs-win32.cc)
+  target_sources(mold PRIVATE
+    common/jobs-win32.cc
+    common/mapped-file-win32.cc
+    )
 else()
-  target_sources(mold PRIVATE common/jobs-unix.cc)
+  target_sources(mold PRIVATE
+    common/jobs-unix.cc
+    common/mapped-file-unix.cc
+    )
 endif()
 
 # Add frequently included header files for pre-compiling.

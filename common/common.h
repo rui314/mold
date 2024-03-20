@@ -960,7 +960,16 @@ public:
   void unmap();
 
   template <typename Context>
-  MappedFile *slice(Context &ctx, std::string name, u64 start, u64 size);
+  MappedFile *slice(Context &ctx, std::string name, u64 start, u64 size) {
+    MappedFile *mf = new MappedFile;
+    mf->name = name;
+    mf->data = data + start;
+    mf->size = size;
+    mf->parent = this;
+
+    ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
+    return mf;
+  }
 
   std::string_view get_contents() {
     return std::string_view((char *)data, size);
@@ -993,125 +1002,37 @@ public:
   bool given_fullpath = true;
   MappedFile *parent = nullptr;
   MappedFile *thin_parent = nullptr;
-  int fd = -1;
 
 #ifdef _WIN32
-  HANDLE file_handle = INVALID_HANDLE_VALUE;
+  HANDLE fd = INVALID_HANDLE_VALUE;
+#else
+  int fd = -1;
 #endif
 };
+
+MappedFile *open_file_impl(const std::string &path, std::string &error);
 
 template <typename Context>
 MappedFile *open_file(Context &ctx, std::string path) {
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
 
-#ifdef _WIN32
-  HANDLE file_handle =
-      CreateFileA(path.c_str(), GENERIC_READ,
-                  FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                  nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-  if (file_handle == INVALID_HANDLE_VALUE) {
-    auto err = GetLastError();
-    if (err != ERROR_FILE_NOT_FOUND)
-      Fatal(ctx) << "opening " << path << " failed: " << err;
-    return nullptr;
-  }
+  std::string error;
+  MappedFile *mf = open_file_impl(path, error);
+  if (!error.empty())
+    Fatal(ctx) << error;
 
-  if (GetFileType(file_handle) != FILE_TYPE_DISK) {
-    CloseHandle(file_handle);
-    return nullptr;
-  }
-
-  DWORD size_hi;
-  DWORD size_lo = GetFileSize(file_handle, &size_hi);
-  if (size_lo == INVALID_FILE_SIZE)
-    Fatal(ctx) << path << ": GetFileSize failed: " << GetLastError();
-
-  u64 size = ((u64)size_hi << 32) + size_lo;
-
-  MappedFile *mf = new MappedFile;
-  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
-
-  mf->name = path;
-  mf->size = size;
-  mf->file_handle = file_handle;
-
-  if (size > 0) {
-    HANDLE mapping_handle = CreateFileMapping(file_handle, nullptr,
-                                              PAGE_READONLY, 0, size, nullptr);
-    if (!mapping_handle)
-      Fatal(ctx) << path << ": CreateFileMapping failed: " << GetLastError();
-
-    mf->data = (u8 *)MapViewOfFile(mapping_handle, FILE_MAP_COPY, 0, 0, size);
-    CloseHandle(mapping_handle);
-    if (!mf->data)
-      Fatal(ctx) << path << ": MapViewOfFile failed: " << GetLastError();
-  }
-
+  if (mf)
+    ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
   return mf;
-#else
-  i64 fd = ::open(path.c_str(), O_RDONLY);
-  if (fd == -1) {
-    if (errno != ENOENT)
-      Fatal(ctx) << "opening " << path << " failed: " << errno_string();
-    return nullptr;
-  }
-
-  struct stat st;
-  if (fstat(fd, &st) == -1)
-    Fatal(ctx) << path << ": fstat failed: " << errno_string();
-
-  MappedFile *mf = new MappedFile;
-  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
-
-  mf->name = path;
-  mf->size = st.st_size;
-
-  if (st.st_size > 0) {
-    mf->data = (u8 *)mmap(nullptr, st.st_size, PROT_READ | PROT_WRITE,
-                          MAP_PRIVATE, fd, 0);
-    if (mf->data == MAP_FAILED)
-      Fatal(ctx) << path << ": mmap failed: " << errno_string();
-  }
-
-  close(fd);
-  return mf;
-#endif
 }
 
 template <typename Context>
 MappedFile *must_open_file(Context &ctx, std::string path) {
-  if (MappedFile *mf = open_file(ctx, path))
-    return mf;
-  Fatal(ctx) << "cannot open " << path << ": " << errno_string();
-}
-
-template <typename Context>
-MappedFile *
-MappedFile::slice(Context &ctx, std::string name, u64 start, u64 size) {
-  MappedFile *mf = new MappedFile;
-  mf->name = name;
-  mf->data = data + start;
-  mf->size = size;
-  mf->parent = this;
-
-  ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
+  MappedFile *mf = open_file(ctx, path);
+  if (!mf)
+    Fatal(ctx) << "cannot open " << path << ": " << errno_string();
   return mf;
-}
-
-inline void MappedFile::unmap() {
-  if (size == 0 || parent || !data)
-    return;
-
-#ifdef _WIN32
-  UnmapViewOfFile(data);
-  if (file_handle != INVALID_HANDLE_VALUE)
-    CloseHandle(file_handle);
-#else
-  munmap(data, size);
-#endif
-
-  data = nullptr;
 }
 
 } // namespace mold
