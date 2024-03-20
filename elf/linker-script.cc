@@ -150,13 +150,13 @@ static bool is_in_sysroot(Context<E> &ctx, std::string path) {
 }
 
 template <typename E>
-static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view tok) {
+static MappedFile *resolve_path(Context<E> &ctx, std::string_view tok) {
   std::string str(unquote(tok));
 
   // GNU ld prepends the sysroot if a pathname starts with '/' and the
   // script being processed is in the sysroot. We do the same.
   if (str.starts_with('/') && is_in_sysroot(ctx, ctx.script_file->name))
-    return MappedFile<Context<E>>::must_open(ctx, ctx.arg.sysroot + str);
+    return must_open_file(ctx, ctx.arg.sysroot + str);
 
   if (str.starts_with('=')) {
     std::string path;
@@ -164,23 +164,23 @@ static MappedFile<Context<E>> *resolve_path(Context<E> &ctx, std::string_view to
       path = str.substr(1);
     else
       path = ctx.arg.sysroot + str.substr(1);
-    return MappedFile<Context<E>>::must_open(ctx, path);
+    return must_open_file(ctx, path);
   }
 
   if (str.starts_with("-l"))
     return find_library(ctx, str.substr(2));
 
   if (!str.starts_with('/'))
-    if (MappedFile<Context<E>> *mf =
+    if (MappedFile *mf =
         open_library(ctx, path_clean(ctx.script_file->name + "/../" + str)))
       return mf;
 
-  if (MappedFile<Context<E>> *mf = open_library(ctx, str))
+  if (MappedFile *mf = open_library(ctx, str))
     return mf;
 
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string path = std::string(dir) + "/" + str;
-    if (MappedFile<Context<E>> *mf = open_library(ctx, path))
+    if (MappedFile *mf = open_library(ctx, path))
       return mf;
   }
 
@@ -201,7 +201,7 @@ read_group(Context<E> &ctx, std::span<std::string_view> tok) {
       continue;
     }
 
-    MappedFile<Context<E>> *mf = resolve_path(ctx, tok[0]);
+    MappedFile *mf = resolve_path(ctx, tok[0]);
     read_file(ctx, mf);
     tok = tok.subspan(1);
   }
@@ -212,7 +212,7 @@ read_group(Context<E> &ctx, std::span<std::string_view> tok) {
 }
 
 template <typename E>
-void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+void parse_linker_script(Context<E> &ctx, MappedFile *mf) {
   ctx.script_file = mf;
 
   std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
@@ -242,7 +242,7 @@ void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
 template <typename E>
 std::string_view
-get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+get_script_output_type(Context<E> &ctx, MappedFile *mf) {
   ctx.script_file = mf;
 
   std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
@@ -257,8 +257,8 @@ get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
   if (tok.size() >= 3 && (tok[0] == "INPUT" || tok[0] == "GROUP") &&
       tok[1] == "(")
-    if (MappedFile<Context<E>> *mf =
-        MappedFile<Context<E>>::open(ctx, std::string(unquote(tok[2]))))
+    if (MappedFile *mf =
+        open_file(ctx, std::string(unquote(tok[2]))))
       return get_machine_type(ctx, mf);
 
   return "";
@@ -358,7 +358,7 @@ void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
 }
 
 template <typename E>
-void parse_version_script(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+void parse_version_script(Context<E> &ctx, MappedFile *mf) {
   ctx.script_file = mf;
   std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
   std::span<std::string_view> tok = vec;
@@ -400,7 +400,7 @@ template <typename E>
 std::vector<DynamicPattern>
 parse_dynamic_list(Context<E> &ctx, std::string_view path) {
   std::string_view contents =
-    MappedFile<Context<E>>::must_open(ctx, std::string(path))->get_contents();
+    must_open_file(ctx, std::string(path))->get_contents();
   std::vector<std::string_view> vec = tokenize(ctx, contents);
   std::span<std::string_view> tok = vec;
   std::vector<DynamicPattern> result;
@@ -421,9 +421,9 @@ parse_dynamic_list(Context<E> &ctx, std::string_view path) {
 
 using E = MOLD_TARGET;
 
-template void parse_linker_script(Context<E> &, MappedFile<Context<E>> *);
-template std::string_view get_script_output_type(Context<E> &, MappedFile<Context<E>> *);
-template void parse_version_script(Context<E> &, MappedFile<Context<E>> *);
+template void parse_linker_script(Context<E> &, MappedFile *);
+template std::string_view get_script_output_type(Context<E> &, MappedFile *);
+template void parse_version_script(Context<E> &, MappedFile *);
 template std::vector<DynamicPattern> parse_dynamic_list(Context<E> &, std::string_view);
 
 

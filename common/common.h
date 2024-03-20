@@ -954,15 +954,12 @@ private:
 
 // MappedFile represents an mmap'ed input file.
 // mold uses mmap-IO only.
-template <typename Context>
 class MappedFile {
 public:
-  static MappedFile *open(Context &ctx, std::string path);
-  static MappedFile *must_open(Context &ctx, std::string path);
-
   ~MappedFile() { unmap(); }
   void unmap();
 
+  template <typename Context>
   MappedFile *slice(Context &ctx, std::string name, u64 start, u64 size);
 
   std::string_view get_contents() {
@@ -997,13 +994,14 @@ public:
   MappedFile *parent = nullptr;
   MappedFile *thin_parent = nullptr;
   int fd = -1;
+
 #ifdef _WIN32
   HANDLE file_handle = INVALID_HANDLE_VALUE;
 #endif
 };
 
 template <typename Context>
-MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
+MappedFile *open_file(Context &ctx, std::string path) {
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
     path = ctx.arg.chroot + "/" + path_clean(path);
 
@@ -1082,16 +1080,15 @@ MappedFile<Context> *MappedFile<Context>::open(Context &ctx, std::string path) {
 }
 
 template <typename Context>
-MappedFile<Context> *
-MappedFile<Context>::must_open(Context &ctx, std::string path) {
-  if (MappedFile *mf = MappedFile::open(ctx, path))
+MappedFile *must_open_file(Context &ctx, std::string path) {
+  if (MappedFile *mf = open_file(ctx, path))
     return mf;
   Fatal(ctx) << "cannot open " << path << ": " << errno_string();
 }
 
 template <typename Context>
-MappedFile<Context> *
-MappedFile<Context>::slice(Context &ctx, std::string name, u64 start, u64 size) {
+MappedFile *
+MappedFile::slice(Context &ctx, std::string name, u64 start, u64 size) {
   MappedFile *mf = new MappedFile;
   mf->name = name;
   mf->data = data + start;
@@ -1102,8 +1099,7 @@ MappedFile<Context>::slice(Context &ctx, std::string name, u64 start, u64 size) 
   return mf;
 }
 
-template <typename Context>
-void MappedFile<Context>::unmap() {
+inline void MappedFile::unmap() {
   if (size == 0 || parent || !data)
     return;
 

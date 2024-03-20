@@ -53,7 +53,7 @@ std::string_view demangle(const Symbol<E> &sym) {
 }
 
 template <typename E>
-InputFile<E>::InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
+InputFile<E>::InputFile(Context<E> &ctx, MappedFile *mf)
   : mf(mf), filename(mf->name) {
   if (mf->size < sizeof(ElfEhdr<E>))
     Fatal(ctx) << *this << ": file too small";
@@ -124,7 +124,7 @@ std::string_view InputFile<E>::get_source_name() const {
 }
 
 template <typename E>
-ObjectFile<E>::ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
+ObjectFile<E>::ObjectFile(Context<E> &ctx, MappedFile *mf,
                           std::string archive_name, bool is_in_lib)
   : InputFile<E>(ctx, mf), archive_name(archive_name), is_in_lib(is_in_lib) {
   this->is_alive = !is_in_lib;
@@ -132,7 +132,7 @@ ObjectFile<E>::ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
 
 template <typename E>
 ObjectFile<E> *
-ObjectFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf,
+ObjectFile<E>::create(Context<E> &ctx, MappedFile *mf,
                       std::string archive_name, bool is_in_lib) {
   ObjectFile<E> *obj = new ObjectFile<E>(ctx, mf, archive_name, is_in_lib);
   ctx.obj_pool.emplace_back(obj);
@@ -1313,14 +1313,14 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file) {
 
 template <typename E>
 SharedFile<E> *
-SharedFile<E>::create(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+SharedFile<E>::create(Context<E> &ctx, MappedFile *mf) {
   SharedFile<E> *obj = new SharedFile(ctx, mf);
   ctx.dso_pool.emplace_back(obj);
   return obj;
 }
 
 template <typename E>
-SharedFile<E>::SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf)
+SharedFile<E>::SharedFile(Context<E> &ctx, MappedFile *mf)
   : InputFile<E>(ctx, mf) {
   this->is_alive = !ctx.as_needed;
 }

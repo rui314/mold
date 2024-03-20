@@ -11,7 +11,7 @@ read_response_file(Context &ctx, std::string_view path, i64 depth) {
     Fatal(ctx) << path << ": response file nesting too deep";
 
   std::vector<std::string_view> vec;
-  MappedFile<Context> *mf = MappedFile<Context>::must_open(ctx, std::string(path));
+  MappedFile *mf = must_open_file(ctx, std::string(path));
   std::string_view data((char *)mf->data, mf->size);
 
   while (!data.empty()) {

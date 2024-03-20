@@ -999,12 +999,11 @@ void write_repro_file(Context<E> &ctx) {
 
   std::unordered_set<std::string_view> seen;
 
-  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool) {
+  for (std::unique_ptr<MappedFile> &mf : ctx.mf_pool) {
     if (!mf->parent && seen.insert(mf->name).second) {
       // We reopen a file because we may have modified the contents of mf
       // in memory, which is mapped with PROT_WRITE and MAP_PRIVATE.
-      MappedFile<Context<E>> *mf2 =
-        MappedFile<Context<E>>::must_open(ctx, mf->name);
+      MappedFile *mf2 = must_open_file(ctx, mf->name);
       tar->append(path, mf2->get_contents());
       mf2->unmap();
     }
@@ -2882,7 +2881,7 @@ void write_dependency_file(Context<E> &ctx) {
   std::vector<std::string> deps;
   std::unordered_set<std::string> seen;
 
-  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool)
+  for (std::unique_ptr<MappedFile> &mf : ctx.mf_pool)
     if (!mf->parent)
       if (std::string path = path_clean(mf->name); seen.insert(path).second)
         deps.push_back(path);
@@ -2946,7 +2945,7 @@ void show_stats(Context<E> &ctx) {
   }
 
   static Counter num_bytes("total_input_bytes");
-  for (std::unique_ptr<MappedFile<Context<E>>> &mf : ctx.mf_pool)
+  for (std::unique_ptr<MappedFile> &mf : ctx.mf_pool)
     num_bytes += mf->size;
 
   static Counter num_input_sections("input_sections");

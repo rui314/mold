@@ -27,7 +27,7 @@ namespace mold::elf {
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386).
 template <typename E>
-std::string_view get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+std::string_view get_machine_type(Context<E> &ctx, MappedFile *mf) {
   auto get_elf_type = [&](u8 *buf) -> std::string_view {
     bool is_le = (((ElfEhdr<I386> *)buf)->e_ident[EI_DATA] == ELFDATA2LSB);
     bool is_64;
@@ -83,12 +83,12 @@ std::string_view get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
   case FileType::GCC_LTO_OBJ:
     return get_elf_type(mf->data);
   case FileType::AR:
-    for (MappedFile<Context<E>> *child : read_fat_archive_members(ctx, mf))
+    for (MappedFile *child : read_fat_archive_members(ctx, mf))
       if (get_file_type(ctx, child) == FileType::ELF_OBJ)
         return get_elf_type(child->data);
     return "";
   case FileType::THIN_AR:
-    for (MappedFile<Context<E>> *child : read_thin_archive_members(ctx, mf))
+    for (MappedFile *child : read_thin_archive_members(ctx, mf))
       if (get_file_type(ctx, child) == FileType::ELF_OBJ)
         return get_elf_type(child->data);
     return "";
@@ -101,7 +101,7 @@ std::string_view get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 
 template <typename E>
 static void
-check_file_compatibility(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+check_file_compatibility(Context<E> &ctx, MappedFile *mf) {
   std::string_view target = get_machine_type(ctx, mf);
   if (target != ctx.arg.emulation)
     Fatal(ctx) << mf->name << ": incompatible file type: "
@@ -109,7 +109,7 @@ check_file_compatibility(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 }
 
 template <typename E>
-static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *mf,
+static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile *mf,
                                       std::string archive_name) {
   static Counter count("parsed_objs");
   count++;
@@ -126,7 +126,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile<Context<E>> *m
 }
 
 template <typename E>
-static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile<Context<E>> *mf,
+static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile *mf,
                                   std::string archive_name) {
   static Counter count("parsed_lto_objs");
   count++;
@@ -146,7 +146,7 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile<Context<E>> *mf,
 
 template <typename E>
 static SharedFile<E> *
-new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+new_shared_file(Context<E> &ctx, MappedFile *mf) {
   check_file_compatibility(ctx, mf);
 
   SharedFile<E> *file = SharedFile<E>::create(ctx, mf);
@@ -158,7 +158,7 @@ new_shared_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
 }
 
 template <typename E>
-void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
+void read_file(Context<E> &ctx, MappedFile *mf) {
   if (ctx.visited.contains(mf->name))
     return;
 
@@ -172,7 +172,7 @@ void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf) {
     return;
   case FileType::AR:
   case FileType::THIN_AR:
-    for (MappedFile<Context<E>> *child : read_archive_members(ctx, mf)) {
+    for (MappedFile *child : read_archive_members(ctx, mf)) {
       switch (get_file_type(ctx, child)) {
       case FileType::ELF_OBJ:
         ctx.objs.push_back(new_object_file(ctx, child, mf->name));
@@ -211,7 +211,7 @@ static std::string_view
 deduce_machine_type(Context<E> &ctx, std::span<std::string> args) {
   for (std::string_view arg : args)
     if (!arg.starts_with('-'))
-      if (auto *mf = MappedFile<Context<E>>::open(ctx, std::string(arg)))
+      if (auto *mf = open_file(ctx, std::string(arg)))
         if (std::string_view target = get_machine_type(ctx, mf);
             !target.empty())
           return target;
@@ -219,8 +219,8 @@ deduce_machine_type(Context<E> &ctx, std::span<std::string> args) {
 }
 
 template <typename E>
-MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
-  MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, path);
+MappedFile *open_library(Context<E> &ctx, std::string path) {
+  MappedFile *mf = open_file(ctx, path);
   if (!mf)
     return nullptr;
 
@@ -233,11 +233,11 @@ MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path) {
 }
 
 template <typename E>
-MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
+MappedFile *find_library(Context<E> &ctx, std::string name) {
   if (name.starts_with(':')) {
     for (std::string_view dir : ctx.arg.library_paths) {
       std::string path = std::string(dir) + "/" + name.substr(1);
-      if (MappedFile<Context<E>> *mf = open_library(ctx, path))
+      if (MappedFile *mf = open_library(ctx, path))
         return mf;
     }
     Fatal(ctx) << "library not found: " << name;
@@ -246,22 +246,22 @@ MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string name) {
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string stem = std::string(dir) + "/lib" + name;
     if (!ctx.is_static)
-      if (MappedFile<Context<E>> *mf = open_library(ctx, stem + ".so"))
+      if (MappedFile *mf = open_library(ctx, stem + ".so"))
         return mf;
-    if (MappedFile<Context<E>> *mf = open_library(ctx, stem + ".a"))
+    if (MappedFile *mf = open_library(ctx, stem + ".a"))
       return mf;
   }
   Fatal(ctx) << "library not found: " << name;
 }
 
 template <typename E>
-MappedFile<Context<E>> *find_from_search_paths(Context<E> &ctx, std::string name) {
-  if (MappedFile<Context<E>> *mf = MappedFile<Context<E>>::open(ctx, name))
+MappedFile *find_from_search_paths(Context<E> &ctx, std::string name) {
+  if (MappedFile *mf = open_file(ctx, name))
     return mf;
 
   for (std::string_view dir : ctx.arg.library_paths)
-    if (MappedFile<Context<E>> *mf =
-        MappedFile<Context<E>>::open(ctx, std::string(dir) + "/" + name))
+    if (MappedFile *mf =
+        open_file(ctx, std::string(dir) + "/" + name))
       return mf;
   return nullptr;
 }
@@ -294,7 +294,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     } else if (arg == "--end-lib") {
       ctx.in_lib = false;
     } else if (remove_prefix(arg, "--version-script=")) {
-      MappedFile<Context<E>> *mf = find_from_search_paths(ctx, std::string(arg));
+      MappedFile *mf = find_from_search_paths(ctx, std::string(arg));
       if (!mf)
         Fatal(ctx) << "--version-script: file not found: " << arg;
       parse_version_script(ctx, mf);
@@ -308,11 +308,11 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
         state.back();
       state.pop_back();
     } else if (remove_prefix(arg, "-l")) {
-      MappedFile<Context<E>> *mf = find_library(ctx, std::string(arg));
+      MappedFile *mf = find_library(ctx, std::string(arg));
       mf->given_fullpath = false;
       read_file(ctx, mf);
     } else {
-      read_file(ctx, MappedFile<Context<E>>::must_open(ctx, std::string(arg)));
+      read_file(ctx, must_open_file(ctx, std::string(arg)));
     }
   }
 

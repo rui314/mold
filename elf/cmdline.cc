@@ -297,8 +297,7 @@ split_by_comma_or_colon(std::string_view str) {
 
 template <typename E>
 static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
-  MappedFile<Context<E>> *mf =
-    MappedFile<Context<E>>::must_open(ctx, std::string(path));
+  MappedFile *mf = must_open_file(ctx, std::string(path));
   std::string_view data((char *)mf->data, mf->size);
 
   ctx.arg.retain_symbols_file.reset(new std::unordered_set<std::string_view>);

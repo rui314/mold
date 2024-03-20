@@ -1077,7 +1077,7 @@ struct MergeableSection {
 template <typename E>
 class InputFile {
 public:
-  InputFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
+  InputFile(Context<E> &ctx, MappedFile *mf);
   InputFile() : filename("<internal>") {}
 
   virtual ~InputFile() = default;
@@ -1106,7 +1106,7 @@ public:
   std::span<Symbol<E> *> get_global_syms();
   std::string_view get_source_name() const;
 
-  MappedFile<Context<E>> *mf = nullptr;
+  MappedFile *mf = nullptr;
   std::span<ElfShdr<E>> elf_sections;
   std::span<ElfSym<E>> elf_syms;
   std::vector<Symbol<E> *> symbols;
@@ -1155,7 +1155,7 @@ class ObjectFile : public InputFile<E> {
 public:
   ObjectFile() = default;
 
-  static ObjectFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf,
+  static ObjectFile<E> *create(Context<E> &ctx, MappedFile *mf,
                                std::string archive_name, bool is_in_lib);
 
   void parse(Context<E> &ctx);
@@ -1213,7 +1213,7 @@ public:
   [[no_unique_address]] ObjectFileExtras<E> extra;
 
 private:
-  ObjectFile(Context<E> &ctx, MappedFile<Context<E>> *mf,
+  ObjectFile(Context<E> &ctx, MappedFile *mf,
              std::string archive_name, bool is_in_lib);
 
   void initialize_sections(Context<E> &ctx);
@@ -1235,7 +1235,7 @@ private:
 template <typename E>
 class SharedFile : public InputFile<E> {
 public:
-  static SharedFile<E> *create(Context<E> &ctx, MappedFile<Context<E>> *mf);
+  static SharedFile<E> *create(Context<E> &ctx, MappedFile *mf);
 
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
@@ -1254,7 +1254,7 @@ public:
   std::vector<ElfSym<E>> elf_syms2;
 
 private:
-  SharedFile(Context<E> &ctx, MappedFile<Context<E>> *mf);
+  SharedFile(Context<E> &ctx, MappedFile *mf);
 
   std::string get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
@@ -1273,14 +1273,14 @@ private:
 //
 
 template <typename E>
-void parse_linker_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
+void parse_linker_script(Context<E> &ctx, MappedFile *mf);
 
 template <typename E>
 std::string_view
-get_script_output_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
+get_script_output_type(Context<E> &ctx, MappedFile *mf);
 
 template <typename E>
-void parse_version_script(Context<E> &ctx, MappedFile<Context<E>> *mf);
+void parse_version_script(Context<E> &ctx, MappedFile *mf);
 
 struct DynamicPattern {
   std::string_view pattern;
@@ -1297,7 +1297,7 @@ parse_dynamic_list(Context<E> &ctx, std::string_view path);
 //
 
 template <typename E>
-ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile<Context<E>> *mb);
+ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mb);
 
 template <typename E>
 std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx);
@@ -1770,7 +1770,7 @@ struct Context {
   bool is_static;
   bool in_lib = false;
   i64 file_priority = 10000;
-  MappedFile<Context<E>> *script_file = nullptr;
+  MappedFile *script_file = nullptr;
   std::unordered_set<std::string_view> visited;
   tbb::task_group tg;
 
@@ -1789,7 +1789,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> obj_pool;
   tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> dso_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
-  tbb::concurrent_vector<std::unique_ptr<MappedFile<Context<E>>>> mf_pool;
+  tbb::concurrent_vector<std::unique_ptr<MappedFile>> mf_pool;
   tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> chunk_pool;
   tbb::concurrent_vector<std::unique_ptr<OutputSection<E>>> osec_pool;
 
@@ -1897,16 +1897,16 @@ struct Context {
 };
 
 template <typename E>
-std::string_view get_machine_type(Context<E> &ctx, MappedFile<Context<E>> *mf);
+std::string_view get_machine_type(Context<E> &ctx, MappedFile *mf);
 
 template <typename E>
-MappedFile<Context<E>> *open_library(Context<E> &ctx, std::string path);
+MappedFile *open_library(Context<E> &ctx, std::string path);
 
 template <typename E>
-MappedFile<Context<E>> *find_library(Context<E> &ctx, std::string path);
+MappedFile *find_library(Context<E> &ctx, std::string path);
 
 template <typename E>
-void read_file(Context<E> &ctx, MappedFile<Context<E>> *mf);
+void read_file(Context<E> &ctx, MappedFile *mf);
 
 template <typename E>
 int elf_main(int argc, char **argv);
