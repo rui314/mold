@@ -49,12 +49,30 @@ void cleanup() {
     unlink(output_tmpfile);
 }
 
+#ifdef _WIN32
+std::string errno_string() {
+  LPVOID buf;
+  DWORD dw = GetLastError();
+
+  FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                FORMAT_MESSAGE_FROM_SYSTEM |
+                FORMAT_MESSAGE_IGNORE_INSERTS,
+                nullptr, dw,
+                MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                (LPTSTR)&buf, 0, nullptr);
+
+  std::string ret = buf;
+  LocalFree(buf);
+  return ret;
+}
+#else
 std::string errno_string() {
   // strerror is not thread-safe, so guard it with a lock.
   static std::mutex mu;
   std::scoped_lock lock(mu);
   return strerror(errno);
 }
+#endif
 
 // Returns the path of the mold executable itself
 std::string get_self_path() {

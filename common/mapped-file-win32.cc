@@ -10,7 +10,7 @@ MappedFile *open_file_impl(const std::string &path, std::string &error) {
   if (fd == INVALID_HANDLE_VALUE) {
     auto err = GetLastError();
     if (err != ERROR_FILE_NOT_FOUND)
-      error = "opening " + path + " failed: " + err;
+      error = "opening " + path + " failed: " + errno_string();
     return nullptr;
   }
 
@@ -23,7 +23,7 @@ MappedFile *open_file_impl(const std::string &path, std::string &error) {
   DWORD size_lo = GetFileSize(fd, &size_hi);
 
   if (size_lo == INVALID_FILE_SIZE) {
-    error = path + ": GetFileSize failed: " + GetLastError();
+    error = path + ": GetFileSize failed: " + errno_string();
     return nullptr;
   }
 
@@ -37,7 +37,7 @@ MappedFile *open_file_impl(const std::string &path, std::string &error) {
   if (size > 0) {
     HANDLE h = CreateFileMapping(fd, nullptr, PAGE_READONLY, 0, size, nullptr);
     if (!h) {
-      error = path + ": CreateFileMapping failed: " + GetLastError();
+      error = path + ": CreateFileMapping failed: " + errno_string();
       return nullptr;
     }
 
@@ -45,7 +45,7 @@ MappedFile *open_file_impl(const std::string &path, std::string &error) {
     CloseHandle(h);
 
     if (!mf->data) {
-      error = path + ": MapViewOfFile failed: " + GetLastError();
+      error = path + ": MapViewOfFile failed: " + errno_string();
       return nullptr;
     }
   }
