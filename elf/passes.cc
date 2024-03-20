@@ -2172,13 +2172,6 @@ void sort_output_sections_regular(Context<E> &ctx) {
       return 3;
     if (chunk->name == ".alpha_got")
       return 4;
-
-    if (shdr.sh_flags & SHF_MERGE) {
-      if (shdr.sh_flags & SHF_STRINGS)
-        return (5LL << 32) | shdr.sh_entsize;
-      return (6LL << 32) | shdr.sh_entsize;
-    }
-
     if (chunk == ctx.relro_padding)
       return INT64_MAX;
     return 0;
