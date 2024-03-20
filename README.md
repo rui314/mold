@@ -92,7 +92,7 @@ use the mold executable within it.
 
 On Unix, the linker command (usually `/usr/bin/ld`) is indirectly invoked by
 the compiler driver (typically `cc`, `gcc`, or `clang`), which is in turn
-indirectly invoked by `make` or another build system command.
+indirectly invoked by `make` or other build system commands.
 
 If you can specify an additional command line option for your compiler driver
 by modifying the build system's config files, add one of the following flags
@@ -165,18 +165,18 @@ If you want to use mold for all projects, add the above snippet to
 
 It is sometimes very hard to pass an appropriate command line option to `cc`
 to specify an alternative linker. To address this situation, mold has a
-feature to intercept all invocations of `ld`, `ld.lld`, or `ld.gold` and
-redirect them to itself. To use this feature, run `make` (or another build
+feature to intercept all invocations of `ld`, `ld.bfd`, `ld.lld`, or `ld.gold`
+and redirect them to itself. To use this feature, run `make` (or another build
 command) as a subcommand of mold as follows:
 
 ```shell
 mold -run make <make-options-if-any>
 ```
 
-Internally, mold invokes the given command with the `LD_PRELOAD` environment
+Internally, mold invokes a given command with the `LD_PRELOAD` environment
 variable set to its companion shared object file. The shared object file
 intercepts all function calls to `exec(3)`-family functions to replace
-`argv[0]` with `mold` if it is `ld`, `ld.gold`, or `ld.lld`.
+`argv[0]` with `mold` if it is `ld`, `ld.bf`, `ld.gold`, or `ld.lld`.
 
 </details>
 
@@ -184,7 +184,7 @@ intercepts all function calls to `exec(3)`-family functions to replace
 
 You can use our [setup-mold](https://github.com/rui314/setup-mold) GitHub
 Action to speed up GitHub-hosted continuous builds. Although GitHub Actions
-run on a two-core machine, mold is still significantly faster than the default
+run on a 4 core machine, mold is still significantly faster than the default
 GNU linker, especially when linking large programs.
 
 </details>
@@ -210,7 +210,7 @@ If `mold` is present in the `.comment` section, the file was created by mold.
 
 Since mold is a drop-in replacement, you should be able to use it without
 reading its manual. However, if you need it, [mold's man page](docs/mold.md)
-is available. You can read the same manual by running `man mold`.
+is available online. You can read the same manual by running `man mold`.
 
 </details>
 
@@ -234,10 +234,19 @@ For details, please see the [design notes](docs/design.md).
 
 ## Sponsors
 
-We accept donations via [GitHub Sponsors](https://github.com/sponsors/rui314)
-and [OpenCollective](https://opencollective.com/mold-linker). We thank
-everyone who sponsors our project. In particular, we'd like to acknowledge the
-following people and organizations who have sponsored $128/month or more:
+It is taken for granted nowadays that compiler toolchains can be easily
+installed and used for free, and people may not think too much about the
+individuals behind these "free tools". mold supports many projects, but it
+is essentially a one-person project. This situation is similar to the one
+depicted in the following xkcd illustration.
+
+[![xkcd 2347](https://imgs.xkcd.com/comics/dependency.png)](https://xkcd.com/2347)
+
+If you think that the "Nebraska guy" should be rewarded, please consider
+becoming our [GitHub sponsor](https://github.com/sponsors/rui314)!
+
+We thank everyone who sponsors our project. In particular, we'd like to acknowledge
+the following people and organizations who have sponsored $128/month or more:
 
 ### Corporate sponsors
 
