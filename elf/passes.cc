@@ -2172,6 +2172,8 @@ void sort_output_sections_regular(Context<E> &ctx) {
       return 3;
     if (chunk->name == ".alpha_got")
       return 4;
+    if (chunk->name.starts_with(".rodata"))
+      return 5;
 
     if (shdr.sh_flags & SHF_MERGE) {
       if (shdr.sh_flags & SHF_STRINGS)
