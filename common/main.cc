@@ -61,7 +61,7 @@ std::string errno_string() {
                 MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                 (LPTSTR)&buf, 0, nullptr);
 
-  std::string ret = buf;
+  std::string ret = (char *)buf;
   LocalFree(buf);
   return ret;
 }
