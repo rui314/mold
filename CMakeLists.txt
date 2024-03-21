@@ -381,11 +381,13 @@ if(WIN32)
   target_sources(mold PRIVATE
     common/jobs-win32.cc
     common/mapped-file-win32.cc
+    common/signal-win32.cc
     )
 else()
   target_sources(mold PRIVATE
     common/jobs-unix.cc
     common/mapped-file-unix.cc
+    common/signal-unix.cc
     )
 endif()
 
