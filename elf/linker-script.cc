@@ -150,8 +150,25 @@ static bool is_in_sysroot(Context<E> &ctx, std::string path) {
 }
 
 template <typename E>
-static MappedFile *resolve_path(Context<E> &ctx, std::string_view tok) {
+static MappedFile *
+resolve_path(Context<E> &ctx, std::string_view tok, bool check_target) {
   std::string str(unquote(tok));
+
+  auto open = [&](const std::string &path) -> MappedFile * {
+    MappedFile *mf = open_file(ctx, path);
+    if (!mf)
+      return nullptr;
+
+    if (check_target) {
+      std::string_view target = get_machine_type(ctx, mf);
+      if (!target.empty() && target != E::target_name) {
+        Warn(ctx) << path << ": skipping incompatible file: " << target
+                  << " (e_machine " << (int)E::e_machine << ")";
+        return nullptr;
+      }
+    }
+    return mf;
+  };
 
   // GNU ld prepends the sysroot if a pathname starts with '/' and the
   // script being processed is in the sysroot. We do the same.
@@ -171,16 +188,15 @@ static MappedFile *resolve_path(Context<E> &ctx, std::string_view tok) {
     return find_library(ctx, str.substr(2));
 
   if (!str.starts_with('/'))
-    if (MappedFile *mf =
-        open_library(ctx, path_clean(ctx.script_file->name + "/../" + str)))
+    if (MappedFile *mf = open(path_clean(ctx.script_file->name + "/../" + str)))
       return mf;
 
-  if (MappedFile *mf = open_library(ctx, str))
+  if (MappedFile *mf = open(str))
     return mf;
 
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string path = std::string(dir) + "/" + str;
-    if (MappedFile *mf = open_library(ctx, path))
+    if (MappedFile *mf = open(path))
       return mf;
   }
 
@@ -201,7 +217,7 @@ read_group(Context<E> &ctx, std::span<std::string_view> tok) {
       continue;
     }
 
-    MappedFile *mf = resolve_path(ctx, tok[0]);
+    MappedFile *mf = resolve_path(ctx, tok[0], true);
     read_file(ctx, mf);
     tok = tok.subspan(1);
   }
@@ -257,8 +273,7 @@ get_script_output_type(Context<E> &ctx, MappedFile *mf) {
 
   if (tok.size() >= 3 && (tok[0] == "INPUT" || tok[0] == "GROUP") &&
       tok[1] == "(")
-    if (MappedFile *mf =
-        open_file(ctx, std::string(unquote(tok[2]))))
+    if (MappedFile *mf = resolve_path(ctx, tok[2], false))
       return get_machine_type(ctx, mf);
 
   return "";

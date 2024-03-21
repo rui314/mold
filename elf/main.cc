@@ -208,13 +208,23 @@ void read_file(Context<E> &ctx, MappedFile *mf) {
 
 template <typename E>
 static std::string_view
-deduce_machine_type(Context<E> &ctx, std::span<std::string> args) {
-  for (std::string_view arg : args)
-    if (!arg.starts_with('-'))
-      if (auto *mf = open_file(ctx, std::string(arg)))
+detect_machine_type(Context<E> &ctx, std::vector<std::string> paths) {
+  std::erase(paths, "-");
+
+  for (const std::string &path : paths)
+    if (auto *mf = open_file(ctx, path))
+      if (get_file_type(ctx, mf) != FileType::TEXT)
         if (std::string_view target = get_machine_type(ctx, mf);
             !target.empty())
           return target;
+
+  for (const std::string &path : paths)
+    if (auto *mf = open_file(ctx, path))
+      if (get_file_type(ctx, mf) == FileType::TEXT)
+        if (std::string_view target = get_script_output_type(ctx, mf);
+            !target.empty())
+          return target;
+
   Fatal(ctx) << "-m option is missing";
 }
 
@@ -341,7 +351,7 @@ int elf_main(int argc, char **argv) {
 
   // If no -m option is given, deduce it from input files.
   if (ctx.arg.emulation.empty())
-    ctx.arg.emulation = deduce_machine_type(ctx, file_args);
+    ctx.arg.emulation = detect_machine_type(ctx, file_args);
 
   // Redo if -m is not x86-64.
   if constexpr (is_x86_64<E>)
