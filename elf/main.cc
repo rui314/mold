@@ -225,11 +225,12 @@ MappedFile *open_library(Context<E> &ctx, std::string path) {
     return nullptr;
 
   std::string_view target = get_machine_type(ctx, mf);
-  if (target.empty() || target == E::target_name)
-    return mf;
-  Warn(ctx) << path << ": skipping incompatible file " << target
-            << " " << (int)E::e_machine;
-  return nullptr;
+  if (!target.empty() && target != E::target_name) {
+    Warn(ctx) << path << ": skipping incompatible file: " << target
+              << " (e_machine " << (int)E::e_machine << ")";
+    return nullptr;
+  }
+  return mf;
 }
 
 template <typename E>
