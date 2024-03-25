@@ -801,8 +801,11 @@ void add_synthetic_symbols(Context<E> &ctx) {
   if constexpr (supports_tlsdesc<E>)
     ctx._TLS_MODULE_BASE_ = add("_TLS_MODULE_BASE_", STT_TLS);
 
-  if constexpr (is_riscv<E>)
+  if constexpr (is_riscv<E>) {
     ctx.__global_pointer = add("__global_pointer$");
+    if (ctx.dynamic && !ctx.arg.shared)
+      ctx.__global_pointer->is_exported = true;
+  }
 
   if constexpr (is_arm32<E>) {
     ctx.__exidx_start = add("__exidx_start");
