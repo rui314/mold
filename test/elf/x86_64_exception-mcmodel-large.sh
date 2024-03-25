@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || skip
 
 cat <<EOF | $CXX -c -o $t/a.o -xc++ -fPIC -
 int main() {

@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || skip
 test_cflags -fcf-protection || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -ffunction-sections -O -fcf-protection

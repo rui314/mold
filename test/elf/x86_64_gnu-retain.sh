@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || skip
 
 echo '.section foo,"R"' | $CC -o /dev/null -c -xassembler - 2> /dev/null || skip
 

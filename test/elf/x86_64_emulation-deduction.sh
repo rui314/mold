@@ -1,9 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-# Skip if target is not x86-64
-[ $MACHINE = x86_64 ] || skip
-
 cat <<EOF | $CC -o $t/a.o -c -xc -
 void _start() {}
 EOF

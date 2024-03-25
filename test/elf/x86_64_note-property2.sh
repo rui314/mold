@@ -4,9 +4,6 @@
 # OneTBB isn't tsan-clean
 nm mold | grep -q '__tsan_init' && skip
 
-# Skip if target is not x86-64
-[ $MACHINE = x86_64 ] || skip
-
 # Binutils 2.32 injects their own .note.gnu.property section interfering with the tests
 test_cflags -Xassembler -mx86-used-note=no && CFLAGS="-Xassembler -mx86-used-note=no" || CFLAGS=""
 

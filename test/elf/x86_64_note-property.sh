@@ -1,9 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-# Skip if target is not x86-64
-[ $MACHINE = x86_64 ] || skip
-
 echo endbr64 | $CC -o /dev/null -c -xassembler - 2> /dev/null || skip
 
 $CC -fcf-protection=branch -c /dev/null -o /dev/null -xc 2> /dev/null || skip

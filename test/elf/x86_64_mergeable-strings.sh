@@ -3,9 +3,6 @@
 
 test_cflags -static || skip
 
-# Skip if target is not x86-64
-[ $MACHINE = x86_64 ] || skip
-
 cat <<'EOF' | $CC -o $t/a.o -c -x assembler -
   .text
   .globl main

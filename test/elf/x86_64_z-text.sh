@@ -4,9 +4,6 @@
 # Skip if libc is musl
 is_musl && skip
 
-# Skip if target is not x86-64
-[ $MACHINE = x86_64 ] || skip
-
 cat <<'EOF' | $CC -c -o $t/a.o -x assembler -
 .globl fn1
 fn1:

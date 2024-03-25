@@ -2,7 +2,6 @@
 . $(dirname $0)/common.inc
 
 # Skip if target is not x86-64
-[ $MACHINE = x86_64 ] || skip
 echo ret | cc -c -o /dev/null -xassembler -Wa,-mrelax-relocations=yes - 2> /dev/null || skip
 
 cat <<EOF | $CC -o $t/a.o -c -x assembler -Wa,-mrelax-relocations=yes -

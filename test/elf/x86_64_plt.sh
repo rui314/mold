@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || skip
 
 cat <<'EOF' | $CC -o $t/a.o -c -x assembler -
   .text

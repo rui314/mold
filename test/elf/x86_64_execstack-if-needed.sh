@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || skip
 
 cat <<EOF | $CC -c -xassembler -o $t/a.o -
 .globl main

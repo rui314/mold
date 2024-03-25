@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || [[ $MACHINE = riscv* ]] || skip
 
 cat <<EOF | $CC -c -o $t/a.o -x assembler -
 .globl x, y

@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = x86_64 ] || skip
 
 cat <<'EOF' | $CC -fPIC -c -o $t/a.o -x assembler -
 .data
