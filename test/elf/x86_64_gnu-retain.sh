@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 echo '.section foo,"R"' | $CC -o /dev/null -c -xassembler - 2> /dev/null || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -

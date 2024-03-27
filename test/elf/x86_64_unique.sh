@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<EOF | $CC -c -o $t/a.o -x assembler -
 .section .data.foo.1,"aw",@progbits
 .ascii "a"

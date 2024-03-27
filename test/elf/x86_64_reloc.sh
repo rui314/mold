@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<'EOF' | $CC -fPIC -c -o $t/a.o -x assembler -
 .data
 .globl ext_var

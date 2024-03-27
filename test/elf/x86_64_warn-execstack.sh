@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .section .note.GNU-stack, "x"
 EOF

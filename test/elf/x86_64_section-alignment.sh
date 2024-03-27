@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<'EOF' | $CC -c -o $t/a.o -xc -
 #include <stdint.h>
 #include <stdio.h>

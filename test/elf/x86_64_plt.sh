@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<'EOF' | $CC -o $t/a.o -c -x assembler -
   .text
   .globl main

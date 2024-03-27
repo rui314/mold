@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<EOF | $GCC -ftls-model=local-dynamic -fPIC -c -o $t/a.o -xc - -mcmodel=large
 #include <stdio.h>
 

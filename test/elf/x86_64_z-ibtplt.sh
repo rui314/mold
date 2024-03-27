@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<EOF | $CC -fPIC -o $t/a.o -c -xc -
 #include <stdio.h>
 void hello() { printf("Hello"); }

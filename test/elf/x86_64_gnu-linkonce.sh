@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .globl __x86.get_pc_thunk.bx
 .section .gnu.linkonce.t.__x86.get_pc_thunk.bx,"ax"

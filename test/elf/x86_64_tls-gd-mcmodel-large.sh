@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<EOF | $GCC -mtls-dialect=gnu -fPIC -c -o $t/a.o -xc - -mcmodel=large
 #include <stdio.h>
 
@@ -25,7 +24,6 @@ _Thread_local int x3 = 3;
 static _Thread_local int x5 = 5;
 int get_x5() { return x5; }
 EOF
-
 
 cat <<EOF | $GCC -mtls-dialect=gnu -fPIC -c -o $t/c.o -xc - -mcmodel=large
 _Thread_local int x4 = 4;

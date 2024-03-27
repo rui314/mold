@@ -3,7 +3,6 @@
 
 is_musl && skip
 
-
 cat <<EOF | $CC -c -o $t/a.o -x assembler -
 .globl preinit, init, fini
 

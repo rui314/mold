@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<EOF | $CC -o $t/a.o -c -xc - -mcmodel=large
 #include <stdio.h>
 char arr1[0xc0000000];

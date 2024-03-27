@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-
 cat <<EOF | $CC -c -xassembler -o $t/a.o -
 .globl main
 main:

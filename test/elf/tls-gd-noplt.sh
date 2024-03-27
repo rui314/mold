@@ -25,7 +25,6 @@ __attribute__((tls_model("global-dynamic"))) static _Thread_local int x5 = 5;
 int get_x5() { return x5; }
 EOF
 
-
 cat <<EOF | $GCC -fPIC -fno-plt -c -o $t/c.o -xc -
 __attribute__((tls_model("global-dynamic"))) _Thread_local int x4 = 4;
 __attribute__((tls_model("global-dynamic"))) static _Thread_local int x6 = 6;
