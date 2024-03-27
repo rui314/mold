@@ -69,13 +69,14 @@ test_cflags() {
   echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null
 }
 
-supports_ifunc() {
-  echo 'void x() __attribute__((ifunc("y"))); void *y() { return 0; }' | \
-    $CC -c -o /dev/null -xc - >& /dev/null
+is_musl() {
+  ldd --version 2>&1 | grep -q musl
 }
 
-is_musl() {
-  ldd --help 2>&1 | grep -q musl
+supports_ifunc() {
+  ! is_musl && \
+    echo 'void x() __attribute__((ifunc("y"))); void *y() { return 0; }' | \
+    $CC -c -o /dev/null -xc - >& /dev/null
 }
 
 supports_tlsdesc() {
