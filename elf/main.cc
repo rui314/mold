@@ -84,12 +84,14 @@ std::string_view get_machine_type(Context<E> &ctx, MappedFile *mf) {
     return get_elf_type(mf->data);
   case FileType::AR:
     for (MappedFile *child : read_fat_archive_members(ctx, mf))
-      if (get_file_type(ctx, child) == FileType::ELF_OBJ)
+      if (FileType ty = get_file_type(ctx, child);
+          ty == FileType::ELF_OBJ || ty == FileType::GCC_LTO_OBJ)
         return get_elf_type(child->data);
     return "";
   case FileType::THIN_AR:
     for (MappedFile *child : read_thin_archive_members(ctx, mf))
-      if (get_file_type(ctx, child) == FileType::ELF_OBJ)
+      if (FileType ty = get_file_type(ctx, child);
+          ty == FileType::ELF_OBJ || ty == FileType::GCC_LTO_OBJ)
         return get_elf_type(child->data);
     return "";
   case FileType::TEXT:
