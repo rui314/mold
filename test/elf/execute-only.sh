@@ -6,6 +6,7 @@
 
 # GCC emits data to .text for PPC64, so PPC64 is not compatible with -execute-only
 [ $MACHINE = ppc64 ] && skip
+[ $MACHINE = ppc64le ] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
