@@ -60,14 +60,12 @@ necessary packages. You may need to run it as root.
 ### Compile mold
 
 ```shell
-git clone https://github.com/rui314/mold.git
-mkdir mold/build
-cd mold/build
-git checkout stable
-../install-build-deps.sh
-cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ ..
-cmake --build . -j $(nproc)
-sudo cmake --build . --target install
+git clone --branch stable https://github.com/rui314/mold.git
+cd mold
+./install-build-deps.sh
+cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ -B build
+cmake --build build -j$(nproc)
+sudo cmake --build build --target install
 ```
 
 You might need to pass a C++20 compiler command name to `cmake`. In the
