@@ -67,12 +67,11 @@ void apply_exclude_libs(Context<E> &ctx) {
   std::unordered_set<std::string_view> set(ctx.arg.exclude_libs.begin(),
                                            ctx.arg.exclude_libs.end());
 
-  for (ObjectFile<E> *file : ctx.objs) {
+  for (ObjectFile<E> *file : ctx.objs)
     if (!file->archive_name.empty())
       if (set.contains("ALL") ||
           set.contains(filepath(file->archive_name).filename().string()))
         file->exclude_libs = true;
-  }
 }
 
 template <typename E>
@@ -1720,12 +1719,16 @@ void apply_version_script(Context<E> &ctx) {
     return pat.ver_idx == VER_NDX_LOCAL;
   });
 
+  auto has_wildcard = [](std::string_view str) {
+    return str.find_first_of("*?[") != str.npos;
+  };
+
   for (i64 i = 0; i < patterns.size(); i++) {
     VersionPattern &v = patterns[i];
     if (v.is_cpp) {
       if (!cpp_matcher.add(v.pattern, i))
         Fatal(ctx) << "invalid version pattern: " << v.pattern;
-    } else if (v.pattern.find_first_of("*?[") != v.pattern.npos) {
+    } else if (has_wildcard(v.pattern)) {
       if (!matcher.add(v.pattern, i))
         Fatal(ctx) << "invalid version pattern: " << v.pattern;
     }
@@ -1762,7 +1765,7 @@ void apply_version_script(Context<E> &ctx) {
   // In other words, exact matches have higher precedence over
   // wildcard or `extern "C++"` patterns.
   for (VersionPattern &v : patterns) {
-    if (!v.is_cpp && v.pattern.find_first_of("*?[") == v.pattern.npos) {
+    if (!v.is_cpp && !has_wildcard(v.pattern)) {
       Symbol<E> *sym = get_symbol(ctx, v.pattern);
 
       if (!sym->file && !ctx.arg.undefined_version)
