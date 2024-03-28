@@ -1643,6 +1643,7 @@ struct Context {
     BuildId build_id;
     CetReportKind z_cet_report = CET_REPORT_NONE;
     CompressKind compress_debug_sections = COMPRESS_NONE;
+    MultiGlob undefined_glob;
     SeparateCodeKind z_separate_code = NOSEPARATE_CODE;
     ShuffleSectionsKind shuffle_sections = SHUFFLE_SECTIONS_NONE;
     Symbol<E> *entry = nullptr;

@@ -199,6 +199,19 @@ static void mark_live_objects(Context<E> &ctx) {
     if (sym->file)
       sym->file->is_alive = true;
 
+  if (!ctx.arg.undefined_glob.empty()) {
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      if (!file->is_alive) {
+        for (Symbol<E> *sym : file->get_global_syms()) {
+          if (sym->file == file && ctx.arg.undefined_glob.find(sym->name())) {
+            file->is_alive = true;
+            break;
+          }
+        }
+      }
+    });
+  }
+
   std::vector<InputFile<E> *> roots;
 
   for (InputFile<E> *file : ctx.objs)

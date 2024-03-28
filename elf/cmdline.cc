@@ -155,6 +155,7 @@ Options:
   --threads                   Use multiple threads (default)
     --no-threads
   --trace                     Print the name of each input file
+  --undefined-glob PATTERN    Force to resolve all symbols that match a given pattern
   --undefined-version         Do not report version scripts that refer to undefined symbols
     --no-undefined-version    Report version scripts that refer to undefined symbols (default)
   --unique PATTERN            Don't merge input sections that match a given pattern
@@ -763,6 +764,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         Fatal(ctx) << "unknown --unresolved-symbols argument: " << arg;
     } else if (read_arg("undefined") || read_arg("u")) {
       ctx.arg.undefined.push_back(get_symbol(ctx, arg));
+    } else if (read_arg("undefined-glob")) {
+      if (!ctx.arg.undefined_glob.add(arg, 0))
+        Fatal(ctx) << "--undefined-glob: invalid pattern: " << arg;
     } else if (read_arg("require-defined")) {
       ctx.arg.require_defined.push_back(get_symbol(ctx, arg));
     } else if (read_arg("init")) {
