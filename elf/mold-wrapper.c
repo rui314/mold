@@ -1,8 +1,5 @@
 #define _GNU_SOURCE 1
 
-#if !defined(__OpenBSD__) && !defined(__FreeBSD__)
-#  include <alloca.h>
-#endif
 #include <dlfcn.h>
 #include <spawn.h>
 #include <stdarg.h>
@@ -11,6 +8,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#if !defined(__OpenBSD__) && !defined(__FreeBSD__)
+# include <alloca.h>
+#endif
 
 extern char **environ;
 

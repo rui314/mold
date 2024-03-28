@@ -306,7 +306,6 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/input-files.cc
   elf/input-sections.cc
   elf/linker-script.cc
-  elf/lto.cc
   elf/main.cc
   elf/mapfile.cc
   elf/output-chunks.cc
@@ -317,19 +316,11 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/tls.cc
   )
 
-list(APPEND MOLD_MACHO_TARGETS X86_64 ARM64)
-
-list(APPEND MOLD_MACHO_TEMPLATE_FILES
-  macho/cmdline.cc
-  macho/dead-strip.cc
-  macho/input-files.cc
-  macho/input-sections.cc
-  macho/lto.cc
-  macho/main.cc
-  macho/mapfile.cc
-  macho/output-chunks.cc
-  macho/tapi.cc
-  )
+if(WIN32)
+  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/lto-win32.cc)
+else()
+  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/lto-unix.cc)
+endif()
 
 function(mold_instantiate_templates SOURCE TARGET)
   set(PATH ${CMAKE_BINARY_DIR}/${SOURCE}.${TARGET}.cc)
