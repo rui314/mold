@@ -10,7 +10,7 @@
 
 # qemu aborts with the "Unknown exception 0x5" error, although this
 # test passes on a real POWER10 machine.
-[ -n "$QEMU" -a "$CPU" = power10 ] && skip
+on_qemu && [ "$CPU" = power10 ] && skip
 
 cat <<EOF > $t/a.c
 #include <stdio.h>

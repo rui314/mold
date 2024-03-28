@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ "$QEMU" = '' ] || skip
+on_qemu && skip
 [ $MACHINE = riscv64 -o $MACHINE = riscv32 -o $MACHINE = sparc64 ] && skip
 
 command -v gdb >& /dev/null || skip

@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # qemu crashes if the ELF header is not mapped to memory
-[ -z "$QEMU" ] || skip
+on_qemu && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIC $flags -
 #include <stdio.h>

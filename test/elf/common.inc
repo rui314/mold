@@ -86,6 +86,10 @@ supports_tlsdesc() {
   [ -n "$tlsdesc_opt" ]
 }
 
+on_qemu() {
+  [ "$QEMU" != '' ] || grep -qw qemu /proc/cpuinfo 2> /dev/null
+}
+
 skip() {
   echo skipped
   trap - EXIT
