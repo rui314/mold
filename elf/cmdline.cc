@@ -1,5 +1,4 @@
 #include "mold.h"
-#include "../common/cmdline.h"
 
 #include <random>
 #include <regex>
@@ -209,6 +208,101 @@ Options:
 
 mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf32-powerpc elf64-powerpc elf64-powerpc elf64-powerpcle elf64-s390 elf64-sparc elf32-m68k elf32-sh-linux elf64-alpha elf64-loongarch elf32-loongarch
 mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf32briscv elf64lriscv elf64briscv elf32ppc elf32ppclinux elf64ppc elf64lppc elf64_s390 elf64_sparc m68kelf shlelf_linux elf64alpha elf64loongarch elf32loongarch)";
+
+template <typename E>
+static std::vector<std::string_view>
+read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
+  if (depth > 10)
+    Fatal(ctx) << path << ": response file nesting too deep";
+
+  std::vector<std::string_view> vec;
+  MappedFile *mf = must_open_file(ctx, std::string(path));
+  std::string_view data((char *)mf->data, mf->size);
+
+  while (!data.empty()) {
+    if (isspace(data[0])) {
+      data = data.substr(1);
+      continue;
+    }
+
+    auto read_quoted = [&]() {
+      char quote = data[0];
+      data = data.substr(1);
+
+      std::string buf;
+      while (!data.empty() && data[0] != quote) {
+        if (data[0] == '\\' && data.size() >= 1) {
+          buf.append(1, data[1]);
+          data = data.substr(2);
+        } else {
+          buf.append(1, data[0]);
+          data = data.substr(1);
+        }
+      }
+      if (data.empty())
+        Fatal(ctx) << path << ": premature end of input";
+      data = data.substr(1);
+      return save_string(ctx, buf);
+    };
+
+    auto read_unquoted = [&] {
+      std::string buf;
+      while (!data.empty()) {
+        if (data[0] == '\\' && data.size() >= 1) {
+          buf.append(1, data[1]);
+          data = data.substr(2);
+          continue;
+        }
+
+        if (!isspace(data[0])) {
+          buf.append(1, data[0]);
+          data = data.substr(1);
+          continue;
+        }
+        break;
+      }
+      return save_string(ctx, buf);
+    };
+
+    std::string_view tok;
+    if (data[0] == '\'' || data[0] == '\"')
+      tok = read_quoted();
+    else
+      tok = read_unquoted();
+
+    if (tok.starts_with('@'))
+      append(vec, read_response_file(ctx, tok.substr(1), depth + 1));
+    else
+      vec.push_back(tok);
+  }
+  return vec;
+}
+
+// Replace "@path/to/some/text/file" with its file contents.
+template <typename E>
+std::vector<std::string_view>
+expand_response_files(Context<E> &ctx, char **argv) {
+  std::vector<std::string_view> vec;
+  for (i64 i = 0; argv[i]; i++) {
+    if (argv[i][0] == '@')
+      append(vec, read_response_file(ctx, argv[i] + 1, 1));
+    else
+      vec.push_back(argv[i]);
+  }
+  return vec;
+}
+
+static inline std::string_view string_trim(std::string_view str) {
+  size_t pos = str.find_first_not_of(" \t");
+  if (pos == str.npos)
+    return "";
+  str = str.substr(pos);
+
+  pos = str.find_last_not_of(" \t");
+  if (pos == str.npos)
+    return str;
+  return str.substr(0, pos + 1);
+}
 
 static std::vector<std::string> add_dashes(std::string name) {
   // Single-letter option
@@ -1295,6 +1389,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
 using E = MOLD_TARGET;
 
+template std::vector<std::string_view> expand_response_files(Context<E> &, char **);
 template std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 
 } // namespace mold::elf

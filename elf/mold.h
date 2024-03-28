@@ -1348,6 +1348,9 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv);
 //
 
 template <typename E>
+std::vector<std::string_view> expand_response_files(Context<E> &ctx, char **argv);
+
+template <typename E>
 std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 
 //

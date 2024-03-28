@@ -1,6 +1,5 @@
 #include "mold.h"
 #include "../common/archive-file.h"
-#include "../common/cmdline.h"
 #include "../common/output-file.h"
 
 #include <cstring>
