@@ -4,11 +4,11 @@
 #include <tbb/global_control.h>
 
 #ifdef USE_SYSTEM_MIMALLOC
-#include <mimalloc-new-delete.h>
+# include <mimalloc-new-delete.h>
 #endif
 
 #ifdef __APPLE__
-#include <mach-o/dyld.h>
+# include <mach-o/dyld.h>
 #endif
 
 #ifdef __FreeBSD__
@@ -77,10 +77,6 @@ i64 get_default_thread_count() {
 } // namespace mold
 
 namespace mold::elf {
-int main(int argc, char **argv);
-}
-
-namespace mold::macho {
 int main(int argc, char **argv);
 }
 
