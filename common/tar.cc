@@ -100,13 +100,8 @@ void TarWriter::append(std::string path, std::string_view data) {
   fwrite(data.data(), data.size(), 1, out);
   fseek(out, align_to(ftell(out), BLOCK_SIZE), SEEK_SET);
 
-  // A tar file must ends with two empty blocks, so write such
-  // terminator and seek back.
-  u8 terminator[BLOCK_SIZE * 2] = {};
-  fwrite(&terminator, BLOCK_SIZE * 2, 1, out);
-  fseek(out, -BLOCK_SIZE * 2, SEEK_END);
-
-  assert(ftell(out) % BLOCK_SIZE == 0);
+  // A tar file must ends with two empty blocks
+  ftruncate(fileno(out), ftell(out) + BLOCK_SIZE * 2);
 }
 
 } // namespace mold
