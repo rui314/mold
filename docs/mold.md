@@ -603,6 +603,10 @@ arguments.
 * `--trace`:
   Print name of each input file.
 
+* `--undefined-glob`=_pattern_:
+  Synonym for `--undefined`, except that `--undefined-glob` takes a glob
+  pattern instead of just a single symbol name.
+
 * `--undefined-version`, `--no-undefined-version`:
   By default, `mold` warns on a symbol specified by a version script or by
   `--export-dynamic-symbol` if it is not defined. You can silence the warning
