@@ -1,5 +1,9 @@
 #include "common.h"
 
+#ifdef _WIN32
+# define ftruncate _chsize_s
+#endif
+
 namespace mold {
 
 // A tar file consists of one or more Ustar header followed by data.
