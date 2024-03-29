@@ -124,13 +124,12 @@ bool Glob::do_match(std::string_view str, std::span<Element> elements) {
         for (;;) {
           size_t pos = str.find(elements[0].str);
           if (pos == str.npos)
-            break;
+            return false;
           if (do_match(str.substr(pos + elements[0].str.size()),
                        elements.subspan(1)))
             return true;
           str = str.substr(pos + 1);
         }
-        return false;
       }
 
       // Other cases are handled here.

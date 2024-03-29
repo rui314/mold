@@ -42,23 +42,6 @@
 # define unreachable() assert(0 && "unreachable")
 #endif
 
-// __builtin_assume() is supported only by clang, and [[assume]] is
-// available only in C++23, so we use this macro when giving a hint to
-// the compiler's optimizer what's true.
-#define ASSUME(x) do { if (!(x)) __builtin_unreachable(); } while (0)
-
-// This is an assert() that is enabled even in the release build.
-#define ASSERT(x)                                       \
-  do {                                                  \
-    if (!(x)) {                                         \
-      std::cerr << "Assertion failed: (" << #x          \
-                << "), function " << __FUNCTION__       \
-                << ", file " << __FILE__                \
-                << ", line " << __LINE__ << ".\n";      \
-      std::abort();                                     \
-    }                                                   \
-  } while (0)
-
 inline uint64_t hash_string(std::string_view str) {
   return XXH3_64bits(str.data(), str.size());
 }
