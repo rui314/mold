@@ -21,13 +21,12 @@ bool CieRecord<E>::equals(const CieRecord<E> &other) const {
   if (x.size() != y.size())
     return false;
 
-  for (i64 i = 0; i < x.size(); i++) {
+  for (i64 i = 0; i < x.size(); i++)
     if (x[i].r_offset - input_offset != y[i].r_offset - other.input_offset ||
         x[i].r_type != y[i].r_type ||
         file.symbols[x[i].r_sym] != other.file.symbols[y[i].r_sym] ||
         get_addend(input_section, x[i]) != get_addend(other.input_section, y[i]))
       return false;
-  }
   return true;
 }
 

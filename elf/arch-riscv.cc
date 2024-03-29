@@ -176,14 +176,14 @@ static const ul32 plt_entry_64[] = {
   0x0000'0e17, // auipc   t3, %pcrel_hi(function@.got.plt)
   0x000e'3e03, // ld      t3, %pcrel_lo(1b)(t3)
   0x000e'0367, // jalr    t1, t3
-  0x0000'0013, // nop
+  0x0010'0073, // ebreak
 };
 
 static const ul32 plt_entry_32[] = {
   0x0000'0e17, // auipc   t3, %pcrel_hi(function@.got.plt)
   0x000e'2e03, // lw      t3, %pcrel_lo(1b)(t3)
   0x000e'0367, // jalr    t1, t3
-  0x0000'0013, // nop
+  0x0010'0073, // ebreak
 };
 
 template <>

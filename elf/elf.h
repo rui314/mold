@@ -1979,7 +1979,7 @@ struct RV64 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u8 filler[] = { 0x02, 0x90 }; // ebreak
+  static constexpr u8 filler[] = { 0x02, 0x90 }; // c.ebreak
 
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_64;
@@ -2012,7 +2012,7 @@ struct RV32 {
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u8 filler[] = { 0x02, 0x90 }; // ebreak
+  static constexpr u8 filler[] = { 0x02, 0x90 }; // c.ebreak
 
   static constexpr u32 R_COPY = R_RISCV_COPY;
   static constexpr u32 R_GLOB_DAT = R_RISCV_32;
