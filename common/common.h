@@ -564,10 +564,6 @@ public:
     resize(nbuckets);
   }
 
-  ~ConcurrentMap() {
-    free(entries_buf);
-  }
-
   // In order to avoid unnecessary cache-line false sharing, we want
   // to make this object to be aligned to a reasonably large
   // power-of-two address.
@@ -579,14 +575,13 @@ public:
 
   void resize(i64 nbuckets) {
     this->nbuckets = std::max<i64>(MIN_NBUCKETS, bit_ceil(nbuckets));
-    free(entries_buf);
 
     // Even though std::aligned_alloc is defined in C++17, MSVC doesn't
-    // seem to provide that function. C11's aligned_alloc may not be always
-    // avialalbe. Therefore, we'll align the buffer ourselves.
-    i64 size = sizeof(Entry) * this->nbuckets;
-    entries_buf = calloc(1, size + alignof(Entry) - 1);
-    entries = (Entry *)align_to((u64)entries_buf, alignof(Entry));
+    // seem to provide that function. C11's aligned_alloc may not always be
+    // available. Therefore, we'll align the buffer ourselves.
+    entries_buf.clear();
+    entries_buf.resize(sizeof(Entry) * this->nbuckets + alignof(Entry) - 1);
+    entries = (Entry *)align_to((uintptr_t)&entries_buf[0], alignof(Entry));
   }
 
   std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
@@ -694,7 +689,7 @@ public:
   static constexpr i64 NUM_SHARDS = 16;
   static constexpr i64 MAX_RETRY = 128;
 
-  void *entries_buf = nullptr;
+  std::vector<u8> entries_buf;
   Entry *entries = nullptr;
   i64 nbuckets = 0;
 
@@ -738,14 +733,9 @@ template <typename Context>
 class MallocOutputFile : public OutputFile<Context> {
 public:
   MallocOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
-    : OutputFile<Context>(path, filesize, false), perm(perm) {
-    this->buf = (u8 *)malloc(filesize);
-    if (!this->buf)
-      Fatal(ctx) << "malloc failed";
-  }
-
-  ~MallocOutputFile() {
-    free(this->buf);
+    : OutputFile<Context>(path, filesize, false), ptr(new u8[filesize]),
+      perm(perm) {
+    this->buf = ptr.get();
   }
 
   void close(Context &ctx) override {
@@ -777,6 +767,7 @@ public:
   }
 
 private:
+  std::unique_ptr<u8[]> ptr;
   i64 perm;
 };
 
