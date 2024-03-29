@@ -6,6 +6,8 @@
 
 namespace mold {
 
+static constexpr i64 BLOCK_SIZE = 512;
+
 // A tar file consists of one or more Ustar header followed by data.
 // Each Ustar header represents a single file in an archive.
 //
@@ -34,7 +36,7 @@ struct UstarHeader {
   char pad[12];
 };
 
-static_assert(sizeof(UstarHeader) == 512);
+static_assert(sizeof(UstarHeader) == BLOCK_SIZE);
 
 static void finalize(UstarHeader &hdr) {
   memset(hdr.checksum, ' ', sizeof(hdr.checksum));
@@ -79,7 +81,6 @@ TarWriter::~TarWriter() {
 
 void TarWriter::append(std::string path, std::string_view data) {
   // Write PAX header
-  static_assert(sizeof(UstarHeader) == BLOCK_SIZE);
   UstarHeader pax = {};
 
   std::string attr = encode_path(basedir, path);

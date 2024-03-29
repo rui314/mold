@@ -914,8 +914,6 @@ public:
   void append(std::string path, std::string_view data);
 
 private:
-  static constexpr i64 BLOCK_SIZE = 512;
-
   TarWriter(FILE *out, std::string basedir) : out(out), basedir(basedir) {}
 
   FILE *out = nullptr;

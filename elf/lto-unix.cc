@@ -721,7 +721,7 @@ std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
   // given to the LTO backend. Such sections contains code and data for
   // peripherails (typically GPUs).
   for (ObjectFile<E> *file : ctx.objs) {
-    if (!file->is_lto_obj && file->is_gcc_offload_obj) {
+    if (file->is_alive && !file->is_lto_obj && file->is_gcc_offload_obj) {
       PluginInputFile pfile = create_plugin_input_file(ctx, file->mf);
       int claimed = false;
       claim_file_hook(&pfile, &claimed);
