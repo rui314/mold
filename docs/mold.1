@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "November 2023" ""
+.TH "MOLD" "1" "March 2024" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -371,6 +371,9 @@ Set target system root directory to \fIdir\fR\.
 .TP
 \fB\-\-trace\fR
 Print name of each input file\.
+.TP
+\fB\-\-undefined\-glob\fR=\fIpattern\fR
+Synonym for \fB\-\-undefined\fR, except that \fB\-\-undefined\-glob\fR takes a glob pattern instead of just a single symbol name\.
 .TP
 \fB\-\-undefined\-version\fR, \fB\-\-no\-undefined\-version\fR
 By default, \fBmold\fR warns on a symbol specified by a version script or by \fB\-\-export\-dynamic\-symbol\fR if it is not defined\. You can silence the warning by \fB\-\-undefined\-version\fR\.
