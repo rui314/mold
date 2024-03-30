@@ -85,8 +85,8 @@ RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.lis
   rm -rf /var/lib/apt/lists
 
 # Build CMake 3.27
-RUN mkdir -p /build/cmake && \
-  cd /build/cmake && \
+RUN mkdir /build && \
+  cd /build && \
   wget -O- --no-check-certificate https://cmake.org/files/v3.27/cmake-3.27.7.tar.gz | tar xzf - --strip-components=1 && \
   ./bootstrap --parallel=\$(nproc) && \
   make -j\$(nproc) && \
@@ -94,8 +94,8 @@ RUN mkdir -p /build/cmake && \
   rm -rf /build
 
 # Build GCC 10
-RUN mkdir -p /build/gcc && \
-  cd /build/gcc && \
+RUN mkdir /build && \
+  cd /build && \
   wget -O- http://ftp.gnu.org/gnu/gcc/gcc-10.5.0/gcc-10.5.0.tar.gz | tar xzf - --strip-components=1 && \
   mkdir isl gmp mpc mpfr && \
   wget -O- http://gcc.gnu.org/pub/gcc/infrastructure/isl-0.18.tar.bz2 | tar xjf - --strip-components=1 -C isl && \
@@ -133,11 +133,12 @@ RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.lis
 EOF
   ;;
 riscv64)
-  # snapshot.debian.org is not available for RISC-V binaries
   cat <<EOF | $docker_build
-FROM riscv64/debian:unstable-20231030@sha256:be1882409392c1f68f23e1e04bd965c49398f4a358b1a15f7b1820c0b39ede5b
+FROM riscv64/debian:sid-20240311@sha256:8c02dbe4faa999b588e873cc1759dd9b340f39daf4d7aabdb2c1a87cdc586459
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
-RUN apt-get update && \
+RUN sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debian.sources && \
+  echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
+  apt-get update && \
   apt-get install -y --no-install-recommends build-essential gcc-12 g++-12 cmake && \
   ln -sf /usr/bin/gcc-12 /usr/bin/cc && \
   ln -sf /usr/bin/g++-12 /usr/bin/c++ && \
@@ -157,8 +158,8 @@ timestamp="$(git log -1 --format=%ci)"
 # Build mold in a container.
 docker run --platform linux/$arch -i --rm -v "$(pwd):/mold" $image bash -c "
 set -e
-mkdir -p /build/mold
-cd /build/mold
+mkdir /build
+cd /build
 cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=On /mold
 cmake --build . -j\$(nproc)
 ctest -j\$(nproc)
