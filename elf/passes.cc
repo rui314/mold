@@ -1009,8 +1009,8 @@ void write_repro_file(Context<E> &ctx) {
   if (!tar)
     Fatal(ctx) << "cannot open " << path << ": " << errno_string();
 
-  tar->append("response.txt", save_string(ctx, create_response_file(ctx)));
-  tar->append("version.txt", save_string(ctx, mold_version + "\n"));
+  tar->append("response.txt", create_response_file(ctx));
+  tar->append("version.txt", mold_version + "\n");
 
   std::unordered_set<std::string_view> seen;
 
