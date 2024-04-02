@@ -255,13 +255,22 @@ MappedFile *find_library(Context<E> &ctx, std::string name) {
     Fatal(ctx) << "library not found: " << name;
   }
 
+  std::vector<std::string> extensions;
+  if (ctx.is_static_preferred) {
+    extensions.push_back(".a");
+    extensions.push_back(".so");
+  } else {
+    if (!ctx.is_static)
+      extensions.push_back(".so");
+    extensions.push_back(".a");
+  }
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string stem = std::string(dir) + "/lib" + name;
-    if (!ctx.is_static)
-      if (MappedFile *mf = open_library(ctx, stem + ".so"))
+    for (std::string ext: extensions) {
+      if (MappedFile *mf = open_library(ctx, stem + ext)) {
         return mf;
-    if (MappedFile *mf = open_library(ctx, stem + ".a"))
-      return mf;
+      }
+    }
   }
   Fatal(ctx) << "library not found: " << name;
 }
@@ -284,6 +293,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 
   std::vector<std::tuple<bool, bool, bool, bool>> state;
   ctx.is_static = ctx.arg.is_static;
+  ctx.is_static_preferred = ctx.arg.is_static_preferred;
 
   while (!args.empty()) {
     std::string_view arg = args[0];
@@ -299,8 +309,12 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       ctx.whole_archive = false;
     } else if (arg == "--Bstatic") {
       ctx.is_static = true;
+      ctx.arg.is_static_preferred = false;
+    } else if (arg == "--Bstatic_preferred") {
+      ctx.arg.is_static_preferred = true;
     } else if (arg == "--Bdynamic") {
       ctx.is_static = false;
+      ctx.arg.is_static_preferred = false;
     } else if (arg == "--start-lib") {
       ctx.in_lib = true;
     } else if (arg == "--end-lib") {

@@ -55,6 +55,7 @@ Options:
                               Trace references to SYMBOL
   --Bdynamic, --dy            Link against shared libraries (default)
   --Bstatic, --dn, --static   Do not link against shared libraries
+  --Bstatic_preferred         Link against static if available, and shared otherwise
   --Bsymbolic                 Bind global symbols locally
   --Bsymbolic-functions       Bind global functions locally
   --Bno-symbolic              Cancel --Bsymbolic and --Bsymbolic-functions
@@ -696,9 +697,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.print_map = true;
     } else if (read_flag("Bstatic") || read_flag("dn") || read_flag("static")) {
       ctx.arg.is_static = true;
+      ctx.arg.is_static_preferred = false;
       remaining.push_back("--Bstatic");
+    } else if (read_flag("Bstatic_preferred")) {
+      ctx.arg.is_static_preferred = true;
+      remaining.push_back("--Bstatic_preferred");
     } else if (read_flag("Bdynamic") || read_flag("dy")) {
       ctx.arg.is_static = false;
+      ctx.arg.is_static_preferred = false;
       remaining.push_back("--Bdynamic");
     } else if (read_flag("shared") || read_flag("Bshareable")) {
       ctx.arg.shared = true;
