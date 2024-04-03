@@ -2510,19 +2510,21 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
     aux->vda_name = ctx.dynstr->add_string(verstr);
   };
 
-  std::string_view basename = ctx.arg.soname.empty() ?
-    ctx.arg.output : ctx.arg.soname;
-  write(basename, 1, VER_FLG_BASE);
+  if (!ctx.arg.soname.empty())
+    write(ctx.arg.soname, 1, VER_FLG_BASE);
+  else
+    write(ctx.arg.output, 1, VER_FLG_BASE);
 
   i64 idx = 2;
   for (std::string_view verstr : ctx.arg.version_definitions)
     write(verstr, idx++, 0);
 
-  for (Symbol<E> *sym : std::span<Symbol<E> *>(ctx.dynsym->symbols).subspan(1)) {
-    i64 ver = sym->ver_idx;
-    if (ver == VER_NDX_UNSPECIFIED)
-      ver = VER_NDX_GLOBAL;
-    ctx.versym->contents[sym->get_dynsym_idx(ctx)] = ver;
+  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
+    Symbol<E> &sym = *ctx.dynsym->symbols[i];
+    if (sym.ver_idx == VER_NDX_UNSPECIFIED)
+      ctx.versym->contents[sym.get_dynsym_idx(ctx)] = VER_NDX_GLOBAL;
+    else
+      ctx.versym->contents[sym.get_dynsym_idx(ctx)] = sym.ver_idx;
   }
 }
 
