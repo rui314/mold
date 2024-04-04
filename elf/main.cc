@@ -310,7 +310,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     } else if (arg == "--Bstatic") {
       ctx.is_static = true;
       ctx.arg.is_static_preferred = false;
-    } else if (arg == "--Bstatic_preferred") {
+    } else if (arg == "--Bstatic-preferred") {
       ctx.arg.is_static_preferred = true;
     } else if (arg == "--Bdynamic") {
       ctx.is_static = false;
