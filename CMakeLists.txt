@@ -346,7 +346,6 @@ target_sources(mold PRIVATE
   common/filepath.cc
   common/glob.cc
   common/hyperloglog.cc
-  common/main.cc
   common/multi-glob.cc
   common/perf.cc
   common/tar.cc

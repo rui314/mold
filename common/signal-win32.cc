@@ -4,6 +4,11 @@
 
 namespace mold {
 
+void cleanup() {
+  if (output_tmpfile)
+    _unlink(output_tmpfile);
+}
+
 std::string errno_string() {
   LPVOID buf;
   DWORD dw = GetLastError();

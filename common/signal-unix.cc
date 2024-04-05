@@ -3,6 +3,11 @@
 #include <signal.h>
 #include <tbb/version.h>
 
+#ifdef __FreeBSD__
+# include <sys/sysctl.h>
+# include <unistd.h>
+#endif
+
 namespace mold {
 
 std::string errno_string() {
@@ -10,6 +15,11 @@ std::string errno_string() {
   static std::mutex mu;
   std::scoped_lock lock(mu);
   return strerror(errno);
+}
+
+void cleanup() {
+  if (output_tmpfile)
+    unlink(output_tmpfile);
 }
 
 // mold mmap's an output file, and the mmap succeeds even if there's
@@ -50,6 +60,7 @@ static void sighandler(int signo, siginfo_t *info, void *ucontext) {
   signal(SIGBUS, SIG_DFL);
   signal(SIGABRT, SIG_DFL);
 
+  cleanup();
   raise(signo);
 }
 

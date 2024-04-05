@@ -71,14 +71,13 @@ inline u8 *output_buffer_start = nullptr;
 inline u8 *output_buffer_end = nullptr;
 
 inline std::string mold_version;
-extern std::string mold_version_string;
+inline std::string mold_version_string;
 extern std::string mold_git_hash;
 
 std::string errno_string();
 std::string get_self_path();
 void cleanup();
 void install_signal_handler();
-i64 get_default_thread_count();
 
 static u64 combine_hash(u64 a, u64 b) {
   return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));

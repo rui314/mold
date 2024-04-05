@@ -5,6 +5,7 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <tbb/global_control.h>
 #include <unordered_set>
 
 #ifdef _WIN32
@@ -291,6 +292,13 @@ expand_response_files(Context<E> &ctx, char **argv) {
       vec.push_back(argv[i]);
   }
   return vec;
+}
+
+static i64 get_default_thread_count() {
+  // mold doesn't scale well above 32 threads.
+  int n = tbb::global_control::active_value(
+    tbb::global_control::max_allowed_parallelism);
+  return std::min(n, 32);
 }
 
 static inline std::string_view string_trim(std::string_view str) {
