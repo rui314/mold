@@ -428,7 +428,7 @@ void compute_merged_section_sizes(Context<E> &ctx) {
 
   // Add an identification string to .comment.
   if (!ctx.arg.oformat_binary)
-    add_comment_string(ctx, mold_version);
+    add_comment_string(ctx, get_mold_version());
 
   // Embed command line arguments for debugging.
   if (char *env = getenv("MOLD_DEBUG"); env && env[0])
@@ -1010,7 +1010,7 @@ void write_repro_file(Context<E> &ctx) {
     Fatal(ctx) << "cannot open " << path << ": " << errno_string();
 
   tar->append("response.txt", create_response_file(ctx));
-  tar->append("version.txt", mold_version + "\n");
+  tar->append("version.txt", get_mold_version() + "\n");
 
   std::unordered_set<std::string_view> seen;
 

@@ -70,8 +70,6 @@ inline thread_local bool opt_demangle;
 inline u8 *output_buffer_start = nullptr;
 inline u8 *output_buffer_end = nullptr;
 
-inline std::string mold_version;
-inline std::string mold_version_string;
 extern std::string mold_git_hash;
 
 std::string errno_string();

@@ -1,5 +1,4 @@
 #include "mold.h"
-#include "config.h"
 #include "../common/archive-file.h"
 #include "../common/output-file.h"
 
@@ -27,13 +26,6 @@
 #endif
 
 namespace mold::elf {
-
-static std::string get_mold_version() {
-  if (mold_git_hash.empty())
-    return "mold "s + MOLD_VERSION + " (compatible with GNU ld)";
-  return "mold "s + MOLD_VERSION + " (" + mold_git_hash +
-         "; compatible with GNU ld)";
-}
 
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386).
@@ -349,7 +341,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 template <typename E>
 int elf_main(int argc, char **argv) {
   Context<E> ctx;
-  mold::mold_version = get_mold_version();
 
   // Process -run option first. process_run_subcommand() does not return.
   if (argc >= 2 && (argv[1] == "-run"sv || argv[1] == "--run"sv)) {

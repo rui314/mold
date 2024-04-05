@@ -52,6 +52,8 @@ template <typename E> class RelocSection;
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
+std::string get_mold_version();
+
 //
 // Mergeable section fragments
 //
