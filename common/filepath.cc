@@ -3,6 +3,10 @@
 #include <filesystem>
 #include <sys/stat.h>
 
+#ifdef __APPLE__
+# include <mach-o/dyld.h>
+#endif
+
 namespace mold {
 
 std::string get_realpath(std::string_view path) {
