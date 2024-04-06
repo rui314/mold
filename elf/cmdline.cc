@@ -1214,6 +1214,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("warn-constructors")) {
     } else if (read_flag("warn-execstack")) {
     } else if (read_flag("no-warn-execstack")) {
+    } else if (read_flag("long-plt")) {
     } else if (read_flag("secure-plt")) {
     } else if (read_arg("rpath-link")) {
     } else if (read_z_flag("combreloc")) {
