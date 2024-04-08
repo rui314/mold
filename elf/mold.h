@@ -1725,6 +1725,7 @@ struct Context {
     bool z_rewrite_endbr = false;
     bool z_sectionheader = true;
     bool z_shstk = false;
+    bool z_start_stop_visibility_protected = false;
     bool z_text = false;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;

@@ -197,6 +197,8 @@ Options:
     -z nopack-relative-relocs
   -z sectionheader            Do not omit section header (default)
     -z nosectionheader        Omit section header
+  -z start_stop_visibility=[hidden,protected]
+                              Specify symbol visibility for "__start_SECNAME" and "__stop_SECNAME" symbols
   -z separate-loadable-segments
                               Separate all loadable segments onto different pages
     -z separate-code          Separate code and data onto different pages
@@ -937,9 +939,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.page_size = parse_number(ctx, "-z max-page-size", arg);
       if (!has_single_bit(ctx.page_size))
         Fatal(ctx) << "-z max-page-size " << arg << ": value must be a power of 2";
-    } else if (read_z_arg("start-stop-visibility")) {
-      if (arg != "hidden")
-        Fatal(ctx) << "-z start-stop-visibility: unsupported visibility: " << arg;
+    } else if (read_z_flag("start-stop-visibility=protected")) {
+      ctx.arg.z_start_stop_visibility_protected = true;
+    } else if (read_z_flag("start-stop-visibility=hidden")) {
+      ctx.arg.z_start_stop_visibility_protected = false;
     } else if (read_z_flag("noexecstack")) {
       ctx.arg.z_execstack = false;
     } else if (read_z_flag("relro")) {

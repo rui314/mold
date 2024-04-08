@@ -830,14 +830,20 @@ void add_synthetic_symbols(Context<E> &ctx) {
   if constexpr (is_ppc32<E>)
     ctx.extra._SDA_BASE_ = add("_SDA_BASE_");
 
+  auto add_start_stop = [&](std::string s) {
+    add(save_string(ctx, s));
+    if (ctx.arg.z_start_stop_visibility_protected)
+      get_symbol(ctx, save_string(ctx, s))->is_exported = true;
+  };
+
   for (Chunk<E> *chunk : ctx.chunks) {
     if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
-      add(save_string(ctx, "__start_" + *name));
-      add(save_string(ctx, "__stop_" + *name));
+      add_start_stop("__start_" + *name);
+      add_start_stop("__stop_" + *name);
 
       if (ctx.arg.physical_image_base) {
-        add(save_string(ctx, "__phys_start_" + *name));
-        add(save_string(ctx, "__phys_stop_" + *name));
+        add_start_stop("__phys_start_" + *name);
+        add_start_stop("__phys_stop_" + *name);
       }
     }
   }
