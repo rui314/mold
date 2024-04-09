@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "March 2024" ""
+.TH "MOLD" "1" "April 2024" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -451,6 +451,11 @@ Report undefined symbols (even with \fB\-\-shared\fR)\.
 .TP
 \fB\-z shstk\fR
 Enforce shadow stack by turning \fBGNU_PROPERTY_X86_FEATURE_1_SHSTK\fR bit in \fB\.note\.gnu\.property\fR output section\. Shadow stack is part of Intel Control\-flow Enforcement Technology (CET), which is available since Tiger Lake (2020)\.
+.TP
+\fB\-z start_stop_visibility\fR=[ \fBhidden\fR | \fBprotected\fR ]
+If a section name is valid as a C identifier (i\.e\., it matches \fB/^[_a\-zA\-Z][_a\-zA\-Z0\-9]*$/\fR), mold creates \fB__start_SECNAME\fR and \fB__stop_SECNAME\fR symbols to mark the beginning and end of the section, where \fBSECNAME\fR is the section name\. By default, such symbols are created as hidden symbols\.
+.IP
+You can make these marker symbols visible from other ELF modules by passing \fB\-z start_stop_visibility=protected\fR\. Default is \fBhidden\fR\.
 .TP
 \fB\-z text\fR, \fB\-z notext\fR, \fB\-z textoff\fR
 \fBmold\fR by default reports an error if dynamic relocations are created in read\-only sections\. If \fB\-z notext\fR or \fB\-z textoff\fR are given, \fBmold\fR creates such dynamic relocations without reporting an error\. \fB\-z text\fR restores the default behavior\.
