@@ -734,6 +734,16 @@ arguments.
   Control-flow Enforcement Technology (CET), which is available since Tiger
   Lake (2020).
 
+* `-z start_stop_visibility`=[ `hidden` | `protected` ]:
+  If a section name is valid as a C identifier (i.e., it matches
+  `/^[_a-zA-Z][_a-zA-Z0-9]*$/`), mold creates `__start_SECNAME` and
+  `__stop_SECNAME` symbols to mark the beginning and end of the section,
+  where `SECNAME` is the section name. By default, such symbols are created
+  as hidden symbols.
+
+  You can make these marker symbols visible from other ELF modules by passing
+  `-z start_stop_visibility=protected`. Default is `hidden`.
+
 * `-z text`, `-z notext`, `-z textoff`:
   `mold` by default reports an error if dynamic relocations are created in
   read-only sections. If `-z notext` or `-z textoff` are given, `mold` creates
