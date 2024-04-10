@@ -49,6 +49,10 @@ Whether good or bad, you should keep these semantics in mind to understand Unix 
 \fBmold\fR's output is deterministic\. That is, if you pass the same object files and the same command\-line options to the same version of \fBmold\fR, it is guaranteed that \fBmold\fR produces the bit\-by\-bit identical output\. The linker's internal randomness, such as the timing of thread scheduling or iteration orders of hash tables, doesn't affect the output\.
 .P
 \fBmold\fR does not have any host\-specific default settings\. This is contrary to the GNU linkers, for which some configurable values, such as system\-dependent library search paths, are hard\-coded\. \fBmold\fR depends only on its command\-line arguments\.
+.SH "OPTION NOTATIONS"
+Multi\-letter long options may precede either a single dash or double dashes, except for those starting with the letter "o"\. For historical reasons, long options beginning with "o" must precede double dashes\.
+.P
+For example, you can spell \fB\-\-as\-needed\fR as \fB\-as\-needed\fR, but \fB\-\-omagic\fR must not be spelled as \fB\-omagic\fR\. \fB\-omagic\fR will be interpreted not as \fB\-\-omagic\fR but as \fB\-o magic\fR\.
 .SH "MOLD\-SPECIFIC OPTIONS"
 .TP
 \fB\-\-chroot\fR=\fIdir\fR
