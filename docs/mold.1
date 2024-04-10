@@ -198,8 +198,14 @@ When creating a shared library, make global symbols export\-only (i\.e\. do not 
 \fB\-\-Bsymbolic\-functions\fR
 This option has the same effect as \fB\-\-Bsymbolic\fR but works only for function symbols\. Data symbols remain being both imported and exported\.
 .TP
+\fB\-\-Bsymbolic\-non\-weak\fR
+This option has the same effect as \fB\-\-Bsymbolic\fR but works only for non\-weak symbols\. Weak symbols remain being both imported and exported\.
+.TP
+\fB\-\-Bsymbolic\-non\-weak\-functions\fR
+This option has the same effect as \fB\-\-Bsymbolic\fR but works only for non\-weak function symbols\. Data symbols and weak function symbols remain being both imported and exported\.
+.TP
 \fB\-\-Bno\-symbolic\fR
-Cancel \fB\-\-Bsymbolic\fR and \fB\-\-Bsymbolic\-functions\fR\.
+Cancel \fB\-\-Bsymbolic\fR, \fB\-\-Bsymbolic\-functions\fR, \fB\-\-Bsymbolic\-non\-weak\fR and \fB\-\-Bsymbolic\-non\-weak\-functions\fR\.
 .TP
 \fB\-\-Map\fR=\fIfile\fR
 Write map file to \fIfile\fR\.
