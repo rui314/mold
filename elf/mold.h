@@ -1550,6 +1550,14 @@ typedef enum {
 } UnresolvedKind;
 
 typedef enum {
+  BSYMBOLIC_NONE,
+  BSYMBOLIC_ALL,
+  BSYMBOLIC_FUNCTIONS,
+  BSYMBOLIC_NON_WEAK,
+  BSYMBOLIC_NON_WEAK_FUNCTIONS,
+} BsymbolicKind;
+
+typedef enum {
   SEPARATE_LOADABLE_SEGMENTS,
   SEPARATE_CODE,
   NOSEPARATE_CODE,
@@ -1652,8 +1660,7 @@ struct Context {
     Symbol<E> *fini = nullptr;
     Symbol<E> *init = nullptr;
     UnresolvedKind unresolved_symbols = UNRESOLVED_ERROR;
-    bool Bsymbolic = false;
-    bool Bsymbolic_functions = false;
+    BsymbolicKind Bsymbolic = BSYMBOLIC_NONE;
     bool allow_multiple_definition = false;
     bool apply_dynamic_relocs = true;
     bool color_diagnostics = false;

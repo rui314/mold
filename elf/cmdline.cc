@@ -56,9 +56,12 @@ Options:
                               Trace references to SYMBOL
   --Bdynamic, --dy            Link against shared libraries (default)
   --Bstatic, --dn, --static   Do not link against shared libraries
-  --Bsymbolic                 Bind global symbols locally
-  --Bsymbolic-functions       Bind global functions locally
-  --Bno-symbolic              Cancel --Bsymbolic and --Bsymbolic-functions
+  --Bsymbolic                 Bind all symbols locally
+  --Bsymbolic-functions       Bind function symbols locally
+  --Bsymbolic-non-weak        Bind all but weak symbols locally
+  --Bsymbolic-non-weak-functions
+                              Bind all but weak function symbols locally
+  --Bno-symbolic              Cancel --Bsymbolic options
   --Map FILE                  Write map file to a given file
   --Tbss=ADDR                 Set address to .bss
   --Tdata=ADDR                Set address to .data
@@ -684,12 +687,15 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("no-export-dynamic")) {
       ctx.arg.export_dynamic = false;
     } else if (read_flag("Bsymbolic")) {
-      ctx.arg.Bsymbolic = true;
+      ctx.arg.Bsymbolic = BSYMBOLIC_ALL;
     } else if (read_flag("Bsymbolic-functions")) {
-      ctx.arg.Bsymbolic_functions = true;
+      ctx.arg.Bsymbolic = BSYMBOLIC_FUNCTIONS;
+    } else if (read_flag("Bsymbolic-non-weak")) {
+      ctx.arg.Bsymbolic = BSYMBOLIC_NON_WEAK;
+    } else if (read_flag("Bsymbolic-non-weak-functions")) {
+      ctx.arg.Bsymbolic = BSYMBOLIC_NON_WEAK_FUNCTIONS;
     } else if (read_flag("Bno-symbolic")) {
-      ctx.arg.Bsymbolic = false;
-      ctx.arg.Bsymbolic_functions = false;
+      ctx.arg.Bsymbolic = BSYMBOLIC_NONE;
     } else if (read_arg("exclude-libs")) {
       append(ctx.arg.exclude_libs, split_by_comma_or_colon(arg));
     } else if (read_flag("q") || read_flag("emit-relocs")) {
@@ -1235,7 +1241,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       // cannot be done right here.
       remaining.push_back("--version-script=" + std::string(arg));
     } else if (read_arg("dynamic-list")) {
-      ctx.arg.Bsymbolic = true;
+      ctx.arg.Bsymbolic = BSYMBOLIC_ALL;
       append(ctx.dynamic_list_patterns, parse_dynamic_list(ctx, arg));
     } else if (read_arg("export-dynamic-symbol")) {
       ctx.dynamic_list_patterns.push_back({arg, "<command line>"});

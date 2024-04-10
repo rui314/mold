@@ -1899,6 +1899,26 @@ void compute_import_export(Context<E> &ctx) {
     }
   };
 
+  auto is_protected = [&](Symbol<E> &sym) {
+    if (sym.visibility == STV_PROTECTED)
+      return true;
+
+    switch (ctx.arg.Bsymbolic) {
+    case BSYMBOLIC_ALL:
+      return true;
+    case BSYMBOLIC_NONE:
+      return false;
+    case BSYMBOLIC_FUNCTIONS:
+      return sym.get_type() == STT_FUNC;
+    case BSYMBOLIC_NON_WEAK:
+      return !sym.is_weak;
+    case BSYMBOLIC_NON_WEAK_FUNCTIONS:
+      return !sym.is_weak && sym.get_type() == STT_FUNC;
+    default:
+      unreachable();
+    }
+  };
+
   // Export symbols that are not hidden or marked as local.
   // We also want to mark imported symbols as such.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -1916,10 +1936,7 @@ void compute_import_export(Context<E> &ctx) {
 
         // Exported symbols are marked as imported as well by default
         // for DSOs.
-        if (ctx.arg.shared &&
-            sym->visibility != STV_PROTECTED &&
-            !ctx.arg.Bsymbolic &&
-            !(ctx.arg.Bsymbolic_functions && sym->get_type() == STT_FUNC))
+        if (ctx.arg.shared && !is_protected(*sym))
           sym->is_imported = true;
       }
     }

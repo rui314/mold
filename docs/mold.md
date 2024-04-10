@@ -350,8 +350,18 @@ but as `-o magic`.
   This option has the same effect as `--Bsymbolic` but works only for function
   symbols. Data symbols remain being both imported and exported.
 
+* `--Bsymbolic-non-weak`:
+  This option has the same effect as `--Bsymbolic` but works only for non-weak
+  symbols. Weak symbols remain being both imported and exported.
+
+* `--Bsymbolic-non-weak-functions`:
+  This option has the same effect as `--Bsymbolic` but works only for non-weak
+  function symbols. Data symbols and weak function symbols remain being both
+  imported and exported.
+
 * `--Bno-symbolic`:
-  Cancel `--Bsymbolic` and `--Bsymbolic-functions`.
+  Cancel `--Bsymbolic`, `--Bsymbolic-functions`, `--Bsymbolic-non-weak` and
+  `--Bsymbolic-non-weak-functions`.
 
 * `--Map`=_file_:
   Write map file to _file_.
