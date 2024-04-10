@@ -126,6 +126,16 @@ GNU linkers, for which some configurable values, such as system-dependent
 library search paths, are hard-coded. `mold` depends only on its command-line
 arguments.
 
+## OPTION NOTATIONS
+
+Multi-letter long options may precede either a single dash or double dashes,
+except for those starting with the letter "o". For historical reasons, long
+options beginning with "o" must precede double dashes.
+
+For example, you can spell `--as-needed` as `-as-needed`, but `--omagic` must
+not be spelled as `-omagic`. `-omagic` will be interpreted not as `--omagic`
+but as `-o magic`.
+
 ## MOLD-SPECIFIC OPTIONS
 
 * `--chroot`=_dir_:
