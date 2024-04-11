@@ -173,10 +173,11 @@ struct CieRecord {
   }
 
   std::span<ElfRel<E>> get_rels() const {
-    i64 end = rel_idx;
-    while (end < rels.size() && rels[end].r_offset < input_offset + size())
-      end++;
-    return rels.subspan(rel_idx, end - rel_idx);
+    i64 end = input_offset + size();
+    i64 i = rel_idx;
+    while (i < rels.size() && rels[i].r_offset < end)
+      i++;
+    return rels.subspan(rel_idx, i - rel_idx);
   }
 
   bool equals(const CieRecord &other) const;
@@ -250,7 +251,7 @@ public:
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
-  u64 sh_size = -1;
+  i64 sh_size = -1;
 
   std::string_view contents;
 
@@ -259,10 +260,10 @@ public:
   i32 fde_begin = -1;
   i32 fde_end = -1;
 
-  u64 offset = -1;
-  u32 shndx = -1;
-  u32 relsec_idx = -1;
-  u32 reldyn_offset = 0;
+  i64 offset = -1;
+  i32 shndx = -1;
+  i32 relsec_idx = -1;
+  i32 reldyn_offset = 0;
 
   bool uncompressed = false;
 
@@ -284,7 +285,7 @@ public:
   // - `leader == this`: This section was retained.
   // - `leader != this`: This section was merged with another identical section.
   InputSection<E> *leader = nullptr;
-  u32 icf_idx = -1;
+  i32 icf_idx = -1;
   bool icf_eligible = false;
   bool icf_leaf = false;
 
@@ -505,7 +506,7 @@ public:
   std::vector<Symbol<E> *> tlsgd_syms;
   std::vector<Symbol<E> *> tlsdesc_syms;
   std::vector<Symbol<E> *> gottp_syms;
-  u32 tlsld_idx = -1;
+  i64 tlsld_idx = -1;
 };
 
 template <typename E>
@@ -763,8 +764,8 @@ public:
   static constexpr i64 HEADER_SIZE = 16;
   static constexpr i64 BLOOM_SHIFT = 26;
 
-  u32 num_buckets = -1;
-  u32 num_bloom = 1;
+  i64 num_buckets = -1;
+  i64 num_bloom = 1;
 };
 
 template <typename E>
@@ -823,7 +824,7 @@ public:
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
-  u32 num_fdes = 0;
+  i64 num_fdes = 0;
 };
 
 template <typename E>
@@ -1059,7 +1060,7 @@ struct ComdatGroup {
 template <typename E>
 struct ComdatGroupRef {
   ComdatGroup *group;
-  u32 sect_idx;
+  i32 sect_idx;
   std::span<U32<E>> members;
 };
 
@@ -1116,7 +1117,7 @@ public:
 
   std::string filename;
   bool is_dso = false;
-  u32 priority;
+  i64 priority;
   Atomic<bool> is_alive = false;
   std::string_view shstrtab;
   std::string_view symbol_strtab;
@@ -1579,7 +1580,7 @@ struct VersionPattern {
   std::string_view pattern;
   std::string_view source;
   std::string_view ver_str;
-  u16 ver_idx = -1;
+  i64 ver_idx = -1;
   bool is_cpp = false;
 };
 
@@ -1828,7 +1829,7 @@ struct Context {
   std::vector<Chunk<E> *> chunks;
   Atomic<bool> needs_tlsld = false;
   Atomic<bool> has_textrel = false;
-  Atomic<u32> num_ifunc_dynrels = 0;
+  Atomic<i32> num_ifunc_dynrels = 0;
 
   tbb::concurrent_hash_map<Symbol<E> *, std::vector<std::string>> undef_errors;
 

@@ -231,10 +231,9 @@ static void mark_live_objects(Context<E> &ctx) {
 
 template <typename E>
 void do_resolve_symbols(Context<E> &ctx) {
-  auto for_each_file = [&](std::function<void(InputFile<E> *)> fn) {
-    tbb::parallel_for_each(ctx.objs, fn);
-    tbb::parallel_for_each(ctx.dsos, fn);
-  };
+  std::vector<InputFile<E> *> files;
+  append(files, ctx.objs);
+  append(files, ctx.dsos);
 
   // Due to legacy reasons, archive members will only get included in the final
   // binary if they satisfy one of the undefined symbols in a non-archive object
@@ -259,7 +258,9 @@ void do_resolve_symbols(Context<E> &ctx) {
     Timer t(ctx, "extract_archive_members");
 
     // Register symbols
-    for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
+    tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+      file->resolve_symbols(ctx);
+    });
 
     // Mark reachable objects to decide which files to include into an output.
     // This also merges symbol visibility.
@@ -268,10 +269,13 @@ void do_resolve_symbols(Context<E> &ctx) {
     // Cleanup. The rule used for archive extraction isn't accurate for the
     // general case of symbol extraction, so reset the resolution to be redone
     // later.
-    for_each_file([](InputFile<E> *file) { file->clear_symbols(); });
+    tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+      file->clear_symbols();
+    });
 
     // Now that the symbol references are gone, remove the eliminated files from
     // the file list.
+    std::erase_if(files, [](InputFile<E> *file) { return !file->is_alive; });
     std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
     std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
   }
@@ -303,7 +307,9 @@ void do_resolve_symbols(Context<E> &ctx) {
   // Since we have turned on object files live bits, their symbols
   // may now have higher priority than before. So run the symbol
   // resolution pass again to get the final resolution result.
-  for_each_file([&](InputFile<E> *file) { file->resolve_symbols(ctx); });
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+    file->resolve_symbols(ctx);
+  });
 }
 
 template <typename E>
@@ -456,6 +462,8 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
 
 template <typename E>
 static u64 canonicalize_type(std::string_view name, u64 type) {
+  // Some old assemblers don't recognize these section names and
+  // create them as SHT_PROGBITS.
   if (type == SHT_PROGBITS) {
     if (name == ".init_array" || name.starts_with(".init_array."))
       return SHT_INIT_ARRAY;
@@ -463,9 +471,16 @@ static u64 canonicalize_type(std::string_view name, u64 type) {
       return SHT_FINI_ARRAY;
   }
 
+  // The x86-64 psABI defines SHT_X86_64_UNWIND for .eh_frame, allowing
+  // the linker to recognize the section not by name but by section type.
+  // However, that spec change was generally considered a mistake; it has
+  // just complicated the situation. As a result, .eh_frame on x86-64 may
+  // be either SHT_PROGBITS or SHT_X86_64_UNWIND. We use SHT_PROGBITS
+  // consistently.
   if constexpr (is_x86_64<E>)
     if (type == SHT_X86_64_UNWIND)
       return SHT_PROGBITS;
+
   return type;
 }
 

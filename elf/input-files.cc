@@ -320,7 +320,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       typename decltype(ctx.comdat_groups)::const_accessor acc;
       ctx.comdat_groups.insert(acc, {signature, ComdatGroup()});
       ComdatGroup *group = const_cast<ComdatGroup *>(&acc->second);
-      comdat_groups.push_back({group, (u32)i, entries.subspan(1)});
+      comdat_groups.push_back({group, (i32)i, entries.subspan(1)});
       break;
     }
     case SHT_REL:
