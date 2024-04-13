@@ -180,8 +180,6 @@ struct CieRecord {
     return rels.subspan(rel_idx, i - rel_idx);
   }
 
-  bool equals(const CieRecord &other) const;
-
   ObjectFile<E> &file;
   InputSection<E> &input_section;
   u32 input_offset = -1;
@@ -194,13 +192,29 @@ struct CieRecord {
 };
 
 template <typename E>
+bool cie_equals(const CieRecord<E> &a, const CieRecord<E> &b);
+
+template <typename E>
 struct FdeRecord {
   FdeRecord(u32 input_offset, u32 rel_idx)
     : input_offset(input_offset), rel_idx(rel_idx) {}
 
-  i64 size(ObjectFile<E> &file) const;
-  std::string_view get_contents(ObjectFile<E> &file) const;
-  std::span<ElfRel<E>> get_rels(ObjectFile<E> &file) const;
+  i64 size(ObjectFile<E> &file) const {
+    return *(U32<E> *)(file.cies[cie_idx].contents.data() + input_offset) + 4;
+  }
+
+  std::string_view get_contents(ObjectFile<E> &file) const {
+    return file.cies[cie_idx].contents.substr(input_offset, size(file));
+  }
+
+  std::span<ElfRel<E>> get_rels(ObjectFile<E> &file) const {
+    std::span<ElfRel<E>> rels = file.cies[cie_idx].rels;
+    i64 end = input_offset + size(file);
+    i64 i = rel_idx;
+    while (i < rels.size() && rels[i].r_offset < end)
+      i++;
+    return rels.subspan(rel_idx, i - rel_idx);
+  }
 
   u32 input_offset = -1;
   u32 output_offset = -1;
@@ -2226,26 +2240,6 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
 //
 // Inline objects and functions
 //
-
-template <typename E>
-inline i64 FdeRecord<E>::size(ObjectFile<E> &file) const {
-  return *(U32<E> *)(file.cies[cie_idx].contents.data() + input_offset) + 4;
-}
-
-template <typename E>
-inline std::string_view FdeRecord<E>::get_contents(ObjectFile<E> &file) const {
-  return file.cies[cie_idx].contents.substr(input_offset, size(file));
-}
-
-template <typename E>
-inline std::span<ElfRel<E>>
-FdeRecord<E>::get_rels(ObjectFile<E> &file) const {
-  std::span<ElfRel<E>> rels = file.cies[cie_idx].rels;
-  i64 end = rel_idx;
-  while (end < rels.size() && rels[end].r_offset < input_offset + size(file))
-    end++;
-  return rels.subspan(rel_idx, end - rel_idx);
-}
 
 template <typename E>
 inline std::ostream &

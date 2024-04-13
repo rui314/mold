@@ -2,7 +2,6 @@
 
 #include "integers.h"
 
-#include <array>
 #include <atomic>
 #include <bit>
 #include <bitset>
@@ -835,7 +834,7 @@ private:
 // uuid.cc
 //
 
-std::array<u8, 16> get_uuid_v4();
+void write_uuid_v4(u8 *buf);
 
 //
 // filepath.cc

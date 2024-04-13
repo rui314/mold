@@ -98,7 +98,7 @@ static void uniquify_cies(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs) {
     for (CieRecord<E> &cie : file->cies) {
       for (i64 i = 0; i < cies.size(); i++) {
-        if (cie.equals(*cies[i])) {
+        if (cie_equals(cie, *cies[i])) {
           cie.icf_idx = i;
           goto found;
         }

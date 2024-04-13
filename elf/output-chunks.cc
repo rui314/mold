@@ -1647,7 +1647,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
     shndx = get_st_shndx(sym);
     esym.st_type = STT_FUNC;
     esym.st_visibility = sym.visibility;
-    esym.st_value = sym.get_addr(ctx);
+    esym.st_value = sym.get_plt_addr(ctx);
   } else {
     shndx = get_st_shndx(sym);
     esym.st_visibility = sym.visibility;
@@ -2079,7 +2079,7 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
   std::vector<CieRecord<E> *> leaders;
   auto find_leader = [&](CieRecord<E> &cie) -> CieRecord<E> * {
     for (CieRecord<E> *leader : leaders)
-      if (cie.equals(*leader))
+      if (cie_equals(*leader, cie))
         return leader;
     return nullptr;
   };
@@ -2122,9 +2122,9 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
     I32<E> fde_addr;
   };
 
-  HdrEntry *eh_hdr_begin = nullptr;
+  HdrEntry *eh_hdr = nullptr;
   if (ctx.eh_frame_hdr)
-    eh_hdr_begin = (HdrEntry *)(ctx.buf + ctx.eh_frame_hdr->shdr.sh_offset +
+    eh_hdr = (HdrEntry *)(ctx.buf + ctx.eh_frame_hdr->shdr.sh_offset +
                    EhFrameHdrSection<E>::HEADER_SIZE);
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -2152,6 +2152,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
     // Copy FDEs.
     for (i64 i = 0; i < file->fdes.size(); i++) {
       FdeRecord<E> &fde = file->fdes[i];
+      std::span<ElfRel<E>> rels = fde.get_rels(*file);
       i64 offset = file->fde_offset + fde.output_offset;
 
       std::string_view contents = fde.get_contents(*file);
@@ -2163,23 +2164,24 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       if (ctx.arg.relocatable)
         continue;
 
-      bool is_first = true;
-      for (const ElfRel<E> &rel : fde.get_rels(*file)) {
+      for (const ElfRel<E> &rel : rels) {
         assert(rel.r_offset - fde.input_offset < contents.size());
 
         Symbol<E> &sym = *file->symbols[rel.r_sym];
         u64 loc = offset + rel.r_offset - fde.input_offset;
         u64 val = sym.get_addr(ctx) + get_addend(cie.input_section, rel);
         apply_eh_reloc(ctx, rel, loc, val);
+      }
 
-        if (eh_hdr_begin && is_first) {
-          // Write to .eh_frame_hdr
-          HdrEntry &ent = eh_hdr_begin[file->fde_idx + i];
-          u64 sh_addr = ctx.eh_frame_hdr->shdr.sh_addr;
-          ent.init_addr = val - sh_addr;
-          ent.fde_addr = this->shdr.sh_addr + offset - sh_addr;
-          is_first = false;
-        }
+      if (eh_hdr) {
+        // Write to .eh_frame_hdr
+        Symbol<E> &sym = *file->symbols[rels[0].r_sym];
+        u64 val = sym.get_addr(ctx) + get_addend(cie.input_section, rels[0]);
+        u64 sh_addr = ctx.eh_frame_hdr->shdr.sh_addr;
+
+        HdrEntry &ent = eh_hdr[file->fde_idx + i];
+        ent.init_addr = val - sh_addr;
+        ent.fde_addr = this->shdr.sh_addr + offset - sh_addr;
       }
     }
   });
@@ -2188,8 +2190,8 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   *(U32<E> *)(base + this->shdr.sh_size - 4) = 0;
 
   // Sort .eh_frame_hdr contents.
-  if (eh_hdr_begin) {
-    tbb::parallel_sort(eh_hdr_begin, eh_hdr_begin + ctx.eh_frame_hdr->num_fdes,
+  if (eh_hdr) {
+    tbb::parallel_sort(eh_hdr, eh_hdr + ctx.eh_frame_hdr->num_fdes,
                       [](const HdrEntry &a, const HdrEntry &b) {
       return a.init_addr < b.init_addr;
     });
@@ -2618,8 +2620,7 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
     compute_blake3(ctx, this->shdr.sh_offset + HEADER_SIZE);
     return;
   case BuildId::UUID: {
-    std::array<u8, 16> uuid = get_uuid_v4();
-    memcpy(ctx.buf + this->shdr.sh_offset + HEADER_SIZE, uuid.data(), 16);
+    write_uuid_v4(ctx.buf + this->shdr.sh_offset + HEADER_SIZE);
     return;
   }
   default:

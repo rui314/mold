@@ -1895,6 +1895,44 @@ void parse_symbol_version(Context<E> &ctx) {
 }
 
 template <typename E>
+static bool should_export(Context<E> &ctx, Symbol<E> &sym) {
+  if (sym.visibility == STV_HIDDEN)
+    return false;
+
+  switch (sym.ver_idx) {
+  case VER_NDX_UNSPECIFIED:
+    if (ctx.arg.shared)
+      return !((ObjectFile<E> *)sym.file)->exclude_libs;
+    return ctx.arg.export_dynamic;
+  case VER_NDX_LOCAL:
+    return false;
+  default:
+    return true;
+  }
+};
+
+template <typename E>
+static bool is_protected(Context<E> &ctx, Symbol<E> &sym) {
+  if (sym.visibility == STV_PROTECTED)
+    return true;
+
+  switch (ctx.arg.Bsymbolic) {
+  case BSYMBOLIC_ALL:
+    return true;
+  case BSYMBOLIC_NONE:
+    return false;
+  case BSYMBOLIC_FUNCTIONS:
+    return sym.get_type() == STT_FUNC;
+  case BSYMBOLIC_NON_WEAK:
+    return !sym.is_weak;
+  case BSYMBOLIC_NON_WEAK_FUNCTIONS:
+    return !sym.is_weak && sym.get_type() == STT_FUNC;
+  default:
+    unreachable();
+  }
+}
+
+template <typename E>
 void compute_import_export(Context<E> &ctx) {
   Timer t(ctx, "compute_import_export");
 
@@ -1912,42 +1950,6 @@ void compute_import_export(Context<E> &ctx) {
     });
   }
 
-  auto should_export = [&](Symbol<E> &sym) {
-    if (sym.visibility == STV_HIDDEN)
-      return false;
-
-    switch (sym.ver_idx) {
-    case VER_NDX_UNSPECIFIED:
-      if (ctx.arg.shared)
-        return !((ObjectFile<E> *)sym.file)->exclude_libs;
-      return ctx.arg.export_dynamic;
-    case VER_NDX_LOCAL:
-      return false;
-    default:
-      return true;
-    }
-  };
-
-  auto is_protected = [&](Symbol<E> &sym) {
-    if (sym.visibility == STV_PROTECTED)
-      return true;
-
-    switch (ctx.arg.Bsymbolic) {
-    case BSYMBOLIC_ALL:
-      return true;
-    case BSYMBOLIC_NONE:
-      return false;
-    case BSYMBOLIC_FUNCTIONS:
-      return sym.get_type() == STT_FUNC;
-    case BSYMBOLIC_NON_WEAK:
-      return !sym.is_weak;
-    case BSYMBOLIC_NON_WEAK_FUNCTIONS:
-      return !sym.is_weak && sym.get_type() == STT_FUNC;
-    default:
-      unreachable();
-    }
-  };
-
   // Export symbols that are not hidden or marked as local.
   // We also want to mark imported symbols as such.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -1960,17 +1962,16 @@ void compute_import_export(Context<E> &ctx) {
       }
 
       // If we have a definition of a symbol, we may want to export it.
-      if (sym->file == file && should_export(*sym)) {
+      if (sym->file == file && should_export(ctx, *sym)) {
         sym->is_exported = true;
 
         // Exported symbols are marked as imported as well by default
         // for DSOs.
-        if (ctx.arg.shared && !is_protected(*sym))
+        if (ctx.arg.shared && !is_protected(ctx, *sym))
           sym->is_imported = true;
       }
     }
   });
-
 
   // Apply --dynamic-list, --export-dynamic-symbol and
   // --export-dynamic-symbol-list options.

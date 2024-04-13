@@ -4,17 +4,14 @@
 
 namespace mold {
 
-std::array<u8, 16> get_uuid_v4() {
-  std::array<u8, 16> bytes;
-
+void write_uuid_v4(u8 *buf) {
   std::random_device rand;
-  u32 buf[4] = { rand(), rand(), rand(), rand() };
-  memcpy(bytes.data(), buf, 16);
+  u32 tmp[4] = { rand(), rand(), rand(), rand() };
+  memcpy(buf, tmp, 16);
 
   // Indicate that this is UUIDv4 as defined by RFC4122.
-  bytes[6] = (bytes[6] & 0b00001111) | 0b01000000;
-  bytes[8] = (bytes[8] & 0b00111111) | 0b10000000;
-  return bytes;
+  buf[6] = (buf[6] & 0b0000'1111) | 0b0100'0000;
+  buf[8] = (buf[8] & 0b0011'1111) | 0b1000'0000;
 }
 
 } // namespace mold

@@ -11,29 +11,29 @@ typedef enum {
   BASEREL, IFUNC_DYNREL,
 } Action;
 
-template <typename E>
-bool CieRecord<E>::equals(const CieRecord<E> &other) const {
-  if (get_contents() != other.get_contents())
-    return false;
-
-  std::span<const ElfRel<E>> x = get_rels();
-  std::span<const ElfRel<E>> y = other.get_rels();
-  if (x.size() != y.size())
-    return false;
-
-  for (i64 i = 0; i < x.size(); i++)
-    if (x[i].r_offset - input_offset != y[i].r_offset - other.input_offset ||
-        x[i].r_type != y[i].r_type ||
-        file.symbols[x[i].r_sym] != other.file.symbols[y[i].r_sym] ||
-        get_addend(input_section, x[i]) != get_addend(other.input_section, y[i]))
-      return false;
-  return true;
-}
-
 static i64 to_p2align(u64 alignment) {
   if (alignment == 0)
     return 0;
   return std::countr_zero(alignment);
+}
+
+template <typename E>
+bool cie_equals(const CieRecord<E> &a, const CieRecord<E> &b) {
+  if (a.get_contents() != b.get_contents())
+    return false;
+
+  std::span<const ElfRel<E>> x = a.get_rels();
+  std::span<const ElfRel<E>> y = b.get_rels();
+  if (x.size() != y.size())
+    return false;
+
+  for (i64 i = 0; i < x.size(); i++)
+    if (x[i].r_offset - a.input_offset != y[i].r_offset - b.input_offset ||
+        x[i].r_type != y[i].r_type ||
+        a.file.symbols[x[i].r_sym] != b.file.symbols[y[i].r_sym] ||
+        get_addend(a.input_section, x[i]) != get_addend(b.input_section, y[i]))
+      return false;
+  return true;
 }
 
 template <typename E>
@@ -537,7 +537,7 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
 
 using E = MOLD_TARGET;
 
-template struct CieRecord<E>;
+template bool cie_equals(const CieRecord<E> &, const CieRecord<E> &);
 template class InputSection<E>;
 
 } // namespace mold::elf
