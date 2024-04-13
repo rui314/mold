@@ -10,14 +10,14 @@ set -x
 case "$ID-$VERSION_ID" in
 ubuntu-20.* | pop-20.*)
   apt-get update
-  apt-get install -y cmake gcc g++ g++-10 file
+  apt-get install -y cmake gcc g++ g++-10
   ;;
 ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-*)
   apt-get update
-  apt-get install -y cmake gcc g++ file
+  apt-get install -y cmake gcc g++
   ;;
 fedora-* | amzn-* | rhel-*)
-  dnf install -y gcc-g++ cmake glibc-static file libstdc++-static diffutils util-linux
+  dnf install -y gcc-g++ cmake glibc-static libstdc++-static diffutils util-linux
   ;;
 opensuse-leap-*)
   zypper install -y make cmake gcc-c++ gcc11-c++ glibc-devel-static tar diffutils util-linux
