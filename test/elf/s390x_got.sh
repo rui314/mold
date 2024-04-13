@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = s390x ] || skip
-
 # GOT[0] must be set to the link-time address of .dynamic on s390x.
 
 cat <<EOF | $CC -c -fPIC -o $t/a.o -xc -

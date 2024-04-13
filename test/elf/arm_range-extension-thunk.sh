@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = arm ] || skip
-
 echo 'int main() {}' | $CC -c -o /dev/null -xc - -O0 -mthumb >& /dev/null \
   || skip
 

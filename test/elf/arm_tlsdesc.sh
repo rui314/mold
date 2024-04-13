@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = arm ] || skip
 is_musl && skip
 
 echo 'int main() {}' | $GCC -c -o /dev/null -xc - -O0 -mthumb >& /dev/null \

@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] || skip
-
 # Disable C extension
 if [ $MACHINE = riscv32 ]; then
     ISA=rv32g

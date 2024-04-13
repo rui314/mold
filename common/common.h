@@ -401,13 +401,11 @@ inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
   return ret;
 }
 
-template <typename T>
-inline void sort(T &vec) {
+inline void sort(auto &vec) {
   std::stable_sort(vec.begin(), vec.end());
 }
 
-template <typename T, typename U>
-inline void sort(T &vec, U less) {
+inline void sort(auto &vec, auto less) {
   std::stable_sort(vec.begin(), vec.end(), less);
 }
 
@@ -535,6 +533,9 @@ inline bool remove_prefix(std::string_view &s, std::string_view prefix) {
 // So you need to give a correct estimation of the final size before
 // using it. We use this hash map to uniquify pieces of data in
 // mergeable sections.
+//
+// We've implemented this ourselves because the performance of
+// conrurent hash map is critical for our linker.
 template <typename T>
 class ConcurrentMap {
 public:
@@ -840,8 +841,7 @@ std::array<u8, 16> get_uuid_v4();
 // filepath.cc
 //
 
-template <typename T>
-std::filesystem::path filepath(const T &path) {
+std::filesystem::path filepath(const auto &path) {
   return {path, std::filesystem::path::format::generic_format};
 }
 

@@ -1100,7 +1100,6 @@ public:
   ElfShdr<E> *find_section(i64 type);
 
   virtual void resolve_symbols(Context<E> &ctx) = 0;
-  void clear_symbols();
 
   virtual void
   mark_live_objects(Context<E> &ctx,
@@ -2043,7 +2042,7 @@ public:
 
   // A symbol is owned by a file. If two or more files define the
   // same symbol, the one with the strongest definition owns the symbol.
-  // If `file` is null, the symbol is equivalent to nonexistent.
+  // If `file` is null, the symbol is not defined by any input file.
   InputFile<E> *file = nullptr;
 
   // A symbol usually belongs to an input section, but it can belong

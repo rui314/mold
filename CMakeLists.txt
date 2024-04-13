@@ -346,6 +346,7 @@ target_sources(mold PRIVATE
   common/filepath.cc
   common/glob.cc
   common/hyperloglog.cc
+  common/malloc.cc
   common/multi-glob.cc
   common/perf.cc
   common/tar.cc
@@ -362,6 +363,7 @@ target_sources(mold PRIVATE
   elf/arch-sh4.cc
   elf/arch-sparc64.cc
   elf/arch-x86-64.cc
+  elf/config.cc
   elf/elf.cc
   git-hash.cc
   third-party/rust-demangle/rust-demangle.c

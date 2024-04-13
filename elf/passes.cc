@@ -230,6 +230,28 @@ static void mark_live_objects(Context<E> &ctx) {
 }
 
 template <typename E>
+static void clear_symbols(Context<E> &ctx) {
+  std::vector<InputFile<E> *> files;
+  append(files, ctx.objs);
+  append(files, ctx.dsos);
+
+  tbb::parallel_for_each(files, [](InputFile<E> *file) {
+    for (Symbol<E> *sym : file->get_global_syms()) {
+      if (__atomic_load_n(&sym->file, __ATOMIC_ACQUIRE) == file) {
+        sym->origin = 0;
+        sym->value = -1;
+        sym->sym_idx = -1;
+        sym->ver_idx = VER_NDX_UNSPECIFIED;
+        sym->is_weak = false;
+        sym->is_imported = false;
+        sym->is_exported = false;
+        __atomic_store_n(&sym->file, nullptr, __ATOMIC_RELEASE);
+      }
+    }
+  });
+}
+
+template <typename E>
 void do_resolve_symbols(Context<E> &ctx) {
   std::vector<InputFile<E> *> files;
   append(files, ctx.objs);
@@ -269,9 +291,7 @@ void do_resolve_symbols(Context<E> &ctx) {
     // Cleanup. The rule used for archive extraction isn't accurate for the
     // general case of symbol extraction, so reset the resolution to be redone
     // later.
-    tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-      file->clear_symbols();
-    });
+    clear_symbols(ctx);
 
     // Now that the symbol references are gone, remove the eliminated files from
     // the file list.
@@ -349,13 +369,7 @@ void resolve_symbols(Context<E> &ctx) {
     append(ctx.objs, lto_objs);
 
     // Redo name resolution from scratch.
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      file->clear_symbols();
-    });
-
-    tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-      file->clear_symbols();
-    });
+    clear_symbols(ctx);
 
     // Remove IR object files.
     for (ObjectFile<E> *file : ctx.objs)
@@ -864,8 +878,8 @@ void add_synthetic_symbols(Context<E> &ctx) {
   }
 
   if constexpr (is_ppc64v2<E>)
-    for (auto [label, insn] : ppc64_save_restore_insns)
-      if (!label.empty())
+    for (std::pair<std::string_view, u32> p : ppc64_save_restore_insns)
+      if (std::string_view label = p.first; !label.empty())
         add(label);
 
   obj.elf_syms = ctx.internal_esyms;
@@ -2855,7 +2869,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // PPC64's _{save,rest}gpr{0,1}_{14,15,16,...,31} symbols
   if constexpr (is_ppc64v2<E>) {
     i64 offset = 0;
-    for (auto [label, insn] : ppc64_save_restore_insns) {
+    for (std::pair<std::string_view, u32> p : ppc64_save_restore_insns) {
+      std::string_view label = p.first;
       if (!label.empty())
         if (Symbol<E> *sym = get_symbol(ctx, label);
             sym->file == ctx.internal_obj)

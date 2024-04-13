@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[[ $MACHINE = riscv* ]] || skip
-
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .globl get_sym1, get_sym2, get_sym3, get_sym4, get_sym5
 .option norvc

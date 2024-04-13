@@ -971,7 +971,7 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
       return;
 
     for (const ElfRel<E> &r : isec.get_rels(ctx))
-      if (r.r_type == E::R_ABS && (r.r_offset % sizeof(Word<E>)) == 0)
+      if (r.r_type == E::R_ABS && r.r_offset % sizeof(Word<E>) == 0)
         if (Symbol<E> &sym = *isec.file.symbols[r.r_sym];
             !sym.is_absolute() && !sym.is_imported)
           shards[i].push_back(isec.offset + r.r_offset);
@@ -2337,8 +2337,8 @@ void CopyrelSection<E>::copy_buf(Context<E> &ctx) {
                                  this->reldyn_offset);
 
   for (Symbol<E> *sym : symbols)
-    *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY, sym->get_dynsym_idx(ctx),
-                       0);
+    *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY,
+                       sym->get_dynsym_idx(ctx), 0);
 }
 
 template <typename E>

@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = i686 ] || skip
-
 cat <<'EOF' | $CC -fPIC -o $t/a.o -c -xassembler -
 .globl get_foo
 .type get_foo, @function

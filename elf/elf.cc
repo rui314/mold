@@ -1,14 +1,6 @@
 #include "mold.h"
-#include "config.h"
 
 namespace mold::elf {
-
-std::string get_mold_version() {
-  if (mold_git_hash.empty())
-    return "mold "s + MOLD_VERSION + " (compatible with GNU ld)";
-  return "mold "s + MOLD_VERSION + " (" + mold_git_hash +
-         "; compatible with GNU ld)";
-}
 
 static std::string unknown_type(u32 r_type) {
   char buf[50];

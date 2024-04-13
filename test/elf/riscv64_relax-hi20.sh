@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] || skip
-
 cat <<EOF | $CC -o $t/a.o -c -xassembler -
 .globl get_foo, get_foo2, get_bar, get_baz
 get_foo:

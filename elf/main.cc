@@ -21,8 +21,10 @@
 # include <unistd.h>
 #endif
 
-#if defined(USE_SYSTEM_MIMALLOC) && defined(MOLD_X86_64)
-# include <mimalloc-new-delete.h>
+#ifdef MOLD_X86_64
+int main(int argc, char **argv) {
+  return mold::elf::elf_main<mold::elf::X86_64>(argc, argv);
+}
 #endif
 
 namespace mold::elf {
@@ -718,9 +720,3 @@ using E = MOLD_TARGET;
 template int elf_main<E>(int, char **);
 
 } // namespace mold::elf
-
-#ifdef MOLD_X86_64
-int main(int argc, char **argv) {
-  return mold::elf::elf_main<mold::elf::X86_64>(argc, argv);
-}
-#endif

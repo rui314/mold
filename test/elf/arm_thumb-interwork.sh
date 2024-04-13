@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[[ $MACHINE == arm* ]] || skip
-
 echo 'int foo() { return 0; }' | $CC -o /dev/null -c -xc - -mthumb 2> /dev/null || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -mthumb
