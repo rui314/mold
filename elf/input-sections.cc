@@ -506,6 +506,7 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
     ss << ">>>               " << file;
     if (std::string_view func = get_func_name(ctx, rel.r_offset); !func.empty())
       ss << ":(" << func << ")";
+    ss << '\n';
 
     typename decltype(ctx.undef_errors)::accessor acc;
     ctx.undef_errors.insert(acc, {&sym, {}});
