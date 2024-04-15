@@ -946,42 +946,39 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
 // Symbols with higher priorities overwrites symbols with lower priorities.
 // Here is the list of priorities, from the highest to the lowest.
 //
-//  1. Strong defined symbol in .o
-//  2. Weak defined symbol in .o
-//  3. Strong defined symbol in .so
-//  4. Weak Defined symbol in .so
-//  5. Strong defined symbol in .a
-//  6. Weak Defined symbol in .a
-//  7. Common symbol in .o
-//  8. Common symbol in .a
-//  9. Unclaimed (nonexistent) symbol
+//  1. Strong defined symbol
+//  2. Weak defined symbol
+//  3. Strong defined symbol in a DSO/archive
+//  4. Weak Defined symbol in a DSO/archive
+//  5. Common symbol
+//  6. Common symbol in an archive
+//  7. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
 template <typename E>
-static i64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_in_archive) {
-  auto get_sym_rank = [&]() -> i64 {
+static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_in_archive) {
+  auto get_sym_rank = [&] {
     if (esym.is_common()) {
       assert(!file->is_dso);
-      return is_in_archive ? 8 : 7;
+      return is_in_archive ? 6 : 5;
     }
 
-    if (is_in_archive)
-      return (esym.st_bind == STB_WEAK) ? 6 : 5;
-    if (file->is_dso)
+    if (file->is_dso || is_in_archive)
       return (esym.st_bind == STB_WEAK) ? 4 : 3;
+
     if (esym.st_bind == STB_WEAK)
       return 2;
     return 1;
   };
 
-  return (get_sym_rank() << 32) + file->priority;
+  return (get_sym_rank() << 24) + file->priority;
 }
 
 template <typename E>
-static i64 get_rank(const Symbol<E> &sym) {
+static u64 get_rank(const Symbol<E> &sym) {
   if (!sym.file)
-    return (i64)9 << 32;
-  return get_rank(sym.file, sym.esym(), !sym.file->is_dso && !sym.file->is_alive);
+    return 7 << 24;
+  return get_rank(sym.file, sym.esym(), !sym.file->is_alive);
 }
 
 // Symbol's visibility is set to the most restrictive one. For example,
