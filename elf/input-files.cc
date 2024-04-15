@@ -1434,6 +1434,9 @@ template <typename E>
 void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
   for (i64 i = 0; i < this->symbols.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
+    if constexpr (is_riscv<E>)
+      if (sym.name() == "__global_pointer$")
+        continue;
     const ElfSym<E> &esym = this->elf_syms[i];
     if (esym.is_undef())
       continue;
