@@ -623,18 +623,18 @@ void create_output_sections(Context<E> &ctx) {
         continue;
       }
 
-      OutputSectionKey key = get_output_section_key(ctx, *isec);
-
-      if (auto it = cache.find(key); it != cache.end()) {
-        isec->output_section = it->second;
-        continue;
-      }
-
       auto get_or_insert = [&] {
+        OutputSectionKey key = get_output_section_key(ctx, *isec);
+
+        if (auto it = cache.find(key); it != cache.end())
+          return it->second;
+
         {
           std::shared_lock lock(mu);
-          if (auto it = map.find(key); it != map.end())
+          if (auto it = map.find(key); it != map.end()) {
+            cache.insert({key, it->second});
             return it->second;
+          }
         }
 
         std::unique_ptr<OutputSection<E>> osec =
@@ -646,13 +646,15 @@ void create_output_sections(Context<E> &ctx) {
 
         if (inserted)
           ctx.osec_pool.emplace_back(std::move(osec));
+        cache.insert({key, it->second});
         return ret;
       };
 
       OutputSection<E> *osec = get_or_insert();
-      osec->sh_flags |= sh_flags & ~SHF_GROUP;
+      sh_flags &= ~SHF_GROUP;
+      if ((osec->sh_flags & sh_flags) != sh_flags)
+        osec->sh_flags |= sh_flags;
       isec->output_section = osec;
-      cache.insert({key, osec});
     }
   });
 
