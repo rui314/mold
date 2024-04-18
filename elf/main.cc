@@ -488,6 +488,10 @@ int elf_main(int argc, char **argv) {
   // Bin input sections into output sections.
   create_output_sections(ctx);
 
+  // Handle --section-align options.
+  if (!ctx.arg.section_align.empty())
+    apply_section_align(ctx);
+
   // Add synthetic symbols such as __ehdr_start or __end.
   add_synthetic_symbols(ctx);
 

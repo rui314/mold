@@ -587,22 +587,46 @@ get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
   return {name, type};
 }
 
+template <typename E>
+static bool is_relro(OutputSection<E> &osec) {
+  // PT_GNU_RELRO segment is a security mechanism to make more pages
+  // read-only than we could have done without it.
+  //
+  // Traditionally, sections are either read-only or read-write. If a
+  // section contains dynamic relocations, it must have been put into a
+  // read-write segment so that the program loader can mutate its
+  // contents in memory, even if no one will write to it at runtime.
+  //
+  // RELRO segment allows us to make such pages writable only when a
+  // program is being loaded. After that, the page becomes read-only.
+  //
+  // Some sections, such as .init, .fini, .got, .dynamic, contain
+  // dynamic relocations but doesn't have to be writable at runtime,
+  // so they are put into a RELRO segment.
+  u32 type = osec.shdr.sh_type;
+  u32 flags = osec.shdr.sh_flags;
+
+  return osec.name == ".toc" || osec.name.ends_with(".rel.ro") ||
+         type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY ||
+         type == SHT_PREINIT_ARRAY || (flags & SHF_TLS);
+}
+
 // Create output sections for input sections.
 template <typename E>
 void create_output_sections(Context<E> &ctx) {
   Timer t(ctx, "create_output_sections");
 
-  std::unordered_map<OutputSectionKey, OutputSection<E> *, OutputSectionKey::Hash>
-    map;
+  using MapType = std::unordered_map<OutputSectionKey, OutputSection<E> *,
+                                     OutputSectionKey::Hash>;
+  MapType map;
   std::shared_mutex mu;
-
   i64 size = ctx.osec_pool.size();
 
   // Instantiate output sections
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Make a per-thread cache of the main map to avoid lock contention.
     // It makes a noticeable difference if we have millions of input sections.
-    decltype(map) cache;
+    MapType cache;
     {
       std::shared_lock lock(mu);
       cache = map;
@@ -661,32 +685,7 @@ void create_output_sections(Context<E> &ctx) {
 
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool) {
     osec->shdr.sh_flags = osec->sh_flags;
-
-    // Handle --section-align
-    if (!ctx.arg.section_align.empty())
-      if (auto it = ctx.arg.section_align.find(osec->name);
-          it != ctx.arg.section_align.end())
-        osec->shdr.sh_addralign = it->second;
-
-    // PT_GNU_RELRO segment is a security mechanism to make more pages
-    // read-only than we could have done without it.
-    //
-    // Traditionally, sections are either read-only or read-write. If a
-    // section contains dynamic relocations, it must have been put into a
-    // read-write segment so that the program loader can mutate its
-    // contents in memory, even if no one will write to it at runtime.
-    //
-    // RELRO segment allows us to make such pages writable only when a
-    // program is being loaded. After that, the page becomes read-only.
-    //
-    // Some sections, such as .init, .fini, .got, .dynamic, contain
-    // dynamic relocations but doesn't have to be writable at runtime,
-    // so they are put into a RELRO segment.
-    u32 type = osec->shdr.sh_type;
-    u32 flags = osec->shdr.sh_flags;
-    osec->is_relro = (osec->name == ".toc" || osec->name.ends_with(".rel.ro") ||
-                      type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY ||
-                      type == SHT_PREINIT_ARRAY || (flags & SHF_TLS));
+    osec->is_relro = is_relro(*osec);
   }
 
   // Add input sections to output sections
@@ -922,6 +921,15 @@ void add_synthetic_symbols(Context<E> &ctx) {
       sym1->origin = 0;
     }
   }
+}
+
+template <typename E>
+void apply_section_align(Context<E> &ctx) {
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      if (auto it = ctx.arg.section_align.find(osec->name);
+          it != ctx.arg.section_align.end())
+        osec->shdr.sh_addralign = it->second;
 }
 
 template <typename E>
@@ -3066,6 +3074,7 @@ template void compute_merged_section_sizes(Context<E> &);
 template void create_output_sections(Context<E> &);
 template void add_synthetic_symbols(Context<E> &);
 template void check_cet_errors(Context<E> &);
+template void apply_section_align(Context<E> &);
 template void print_dependencies(Context<E> &);
 template void write_repro_file(Context<E> &);
 template void check_duplicate_symbols(Context<E> &);
