@@ -130,9 +130,14 @@ find_package(BLAKE3 QUIET)
 if(BLAKE3_FOUND AND NOT MOLD_MOSTLY_STATIC)
   target_link_libraries(mold PRIVATE BLAKE3::blake3)
 else()
-  add_subdirectory(third-party/blake3/c EXCLUDE_FROM_ALL)
-  target_link_libraries(mold PRIVATE blake3)
-  target_include_directories(mold PUBLIC third-party/blake3/c)
+  function(mold_add_blake3)
+    set(BUILD_SHARED_LIBS OFF)
+    add_subdirectory(third-party/blake3/c EXCLUDE_FROM_ALL)
+    target_link_libraries(mold PRIVATE blake3)
+    target_include_directories(mold PUBLIC third-party/blake3/c)
+  endfunction()
+
+  mold_add_blake3()
 endif()
 
 # Find zstd compression library. If zstd.h is not found, we compile a
