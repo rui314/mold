@@ -69,14 +69,14 @@ void InputSection<E>::uncompress(Context<E> &ctx) {
     return;
 
   u8 *buf = new u8[sh_size];
-  uncompress_to(ctx, buf);
+  copy_contents(ctx, buf);
   contents = std::string_view((char *)buf, sh_size);
   ctx.string_pool.emplace_back(buf);
   uncompressed = true;
 }
 
 template <typename E>
-void InputSection<E>::uncompress_to(Context<E> &ctx, u8 *buf) {
+void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
   if (!(shdr().sh_flags & SHF_COMPRESSED) || uncompressed) {
     memcpy(buf, contents.data(), contents.size());
     return;
@@ -448,7 +448,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   if constexpr (is_riscv<E>)
     copy_contents_riscv(ctx, buf);
   else
-    uncompress_to(ctx, buf);
+    copy_contents(ctx, buf);
 
   // Apply relocations
   if (!ctx.arg.relocatable) {

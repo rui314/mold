@@ -768,7 +768,7 @@ template <>
 void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
   // If a section is not relaxed, we can copy it as a one big chunk.
   if (extra.r_deltas.empty()) {
-    uncompress_to(ctx, buf);
+    copy_contents(ctx, buf);
     return;
   }
 
