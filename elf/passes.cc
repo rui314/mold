@@ -889,9 +889,12 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
   // Make all synthetic symbols relative ones by associating them to
   // a dummy output section.
-  for (Symbol<E> *sym : obj.symbols)
-    if (sym->file == &obj)
+  for (Symbol<E> *sym : obj.symbols) {
+    if (sym->file == &obj) {
       sym->set_output_section(ctx.symtab);
+      sym->is_imported = false;
+    }
+  }
 
   // Handle --defsym symbols.
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
