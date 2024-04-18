@@ -502,10 +502,16 @@ struct OutputSectionKey {
   bool operator==(const OutputSectionKey &) const = default;
   std::string_view name;
   u64 type;
+
+  struct Hash {
+    size_t operator()(const OutputSectionKey &k) const {
+      return combine_hash(hash_string(k.name), std::hash<u64>{}(k.type));
+    }
+  };
 };
 
 template <typename E>
-std::string_view
+static std::string_view
 get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
   if (ctx.arg.relocatable && !ctx.arg.relocatable_merge_sections)
     return name;
@@ -586,13 +592,8 @@ template <typename E>
 void create_output_sections(Context<E> &ctx) {
   Timer t(ctx, "create_output_sections");
 
-  struct Hash {
-    size_t operator()(const OutputSectionKey &k) const {
-      return combine_hash(hash_string(k.name), std::hash<u64>{}(k.type));
-    }
-  };
-
-  std::unordered_map<OutputSectionKey, OutputSection<E> *, Hash> map;
+  std::unordered_map<OutputSectionKey, OutputSection<E> *, OutputSectionKey::Hash>
+    map;
   std::shared_mutex mu;
 
   i64 size = ctx.osec_pool.size();

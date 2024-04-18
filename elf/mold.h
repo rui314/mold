@@ -346,9 +346,6 @@ template <typename E>
 i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
 
 template <typename E>
-std::string_view get_output_name(Context<E> &ctx, std::string_view name, u64 flags);
-
-template <typename E>
 void write_plt_header(Context<E> &ctx, u8 *buf);
 
 template <typename E>
