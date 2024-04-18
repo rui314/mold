@@ -489,9 +489,6 @@ inline u64 read_uleb(std::string_view str) {
 }
 
 inline i64 uleb_size(u64 val) {
-#if __GNUC__
-#pragma GCC unroll 8
-#endif
   for (int i = 1; i < 9; i++)
     if (val < (1LL << (7 * i)))
       return i;
