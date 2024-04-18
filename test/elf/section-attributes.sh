@@ -12,7 +12,7 @@ cat <<EOF | $CC -o $t/b.o -c -xassembler -
 EOF
 
 cat <<EOF | $CC -o $t/c.o -c -xassembler -
-.section .foobar,"axT"
+.section .foobar,"ax"
 .ascii "bar\0"
 EOF
 
