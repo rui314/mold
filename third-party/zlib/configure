@@ -25,7 +25,7 @@ if test $SRCDIR = "."; then
     ZINCOUT="-I."
     SRCDIR=""
 else
-    ZINC='-include zconf.h'
+    ZINC='-I. -include zconf.h'
     ZINCOUT='-I. -I$(SRCDIR)'
     SRCDIR="$SRCDIR/"
 fi
@@ -44,7 +44,8 @@ STATICLIB=libz.a
 
 # extract zlib version numbers from zlib.h
 VER=`sed -n -e '/VERSION "/s/.*"\(.*\)".*/\1/p' < ${SRCDIR}zlib.h`
-VER1=`sed -n -e '/VERSION "/s/.*"\([0-9]*\)\\..*/\1/p' < ${SRCDIR}zlib.h`
+VER3=`echo ${VER}|sed -n -e 's/\([0-9]\{1,\}\(\\.[0-9]\{1,\}\)\{1,2\}\).*/\1/p'`
+VER1=`echo ${VER}|sed -n -e 's/\([0-9]\{1,\}\)\\..*/\1/p'`
 
 # establish commands for library building
 if "${CROSS_PREFIX}ar" --version >/dev/null 2>/dev/null || test $? -lt 126; then
@@ -263,7 +264,7 @@ if test "$gcc" -eq 1 && ($cc -c $test.c) >> configure.log 2>&1; then
         SHAREDLIB=libz$shared_ext
         SHAREDLIBV=libz.$VER$shared_ext
         SHAREDLIBM=libz.$VER1$shared_ext
-        LDSHARED=${LDSHARED-"$cc -dynamiclib -install_name $libdir/$SHAREDLIBM -compatibility_version $VER1 -current_version $VER"}
+        LDSHARED=${LDSHARED-"$cc -dynamiclib -install_name $libdir/$SHAREDLIBM -compatibility_version $VER1 -current_version $VER3"}
         if "${CROSS_PREFIX}libtool" -V 2>&1 | grep Apple > /dev/null; then
             AR="${CROSS_PREFIX}libtool"
         elif libtool -V 2>&1 | grep Apple > /dev/null; then
@@ -441,7 +442,7 @@ EOF
 if test $shared -eq 1; then
   echo Checking for shared library support... | tee -a configure.log
   # we must test in two steps (cc then ld), required at least on SunOS 4.x
-  if try $CC -w -c $SFLAGS $test.c &&
+  if try $CC -c $SFLAGS $test.c &&
      try $LDSHARED $SFLAGS -o $test$shared_ext $test.o; then
     echo Building shared library $SHAREDLIBV with $CC. | tee -a configure.log
   elif test -z "$old_cc" -a -z "$old_cflags"; then

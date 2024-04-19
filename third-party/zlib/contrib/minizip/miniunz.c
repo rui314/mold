@@ -79,7 +79,7 @@
 
 /* change_file_date : change the date/time of a file
     filename : the filename of the file where date/time must be modified
-    dosdate : the new date at the MSDos format (4 bytes)
+    dosdate : the new date at the MSDOS format (4 bytes)
     tmu_date : the SAME new date at the tm_unz format */
 static void change_file_date(const char *filename, uLong dosdate, tm_unz tmu_date) {
 #ifdef _WIN32
@@ -186,7 +186,7 @@ static int makedir(const char *newdir) {
 }
 
 static void do_banner(void) {
-    printf("MiniUnz 1.01b, demo of zLib + Unz package written by Gilles Vollant\n");
+    printf("MiniUnz 1.1, demo of zLib + Unz package written by Gilles Vollant\n");
     printf("more info at http://www.winimage.com/zLibDll/unzip.html\n\n");
 }
 
@@ -355,6 +355,20 @@ static int do_extract_currentfile(unzFile uf, const int* popt_extract_without_pa
             write_filename = filename_inzip;
         else
             write_filename = filename_withoutpath;
+
+        if (write_filename[0]!='\0')
+        {
+            const char* relative_check = write_filename;
+            while (relative_check[1]!='\0')
+            {
+                if (relative_check[0]=='.' && relative_check[1]=='.')
+                    write_filename = relative_check;
+                relative_check++;
+            }
+        }
+
+        while (write_filename[0]=='/' || write_filename[0]=='.')
+            write_filename++;
 
         err = unzOpenCurrentFilePassword(uf,password);
         if (err!=UNZ_OK)

@@ -34,7 +34,7 @@ namespace DotZLib
         }
 
         /// <summary>
-        /// Initializes a new instance of the checksum generator basewith a specified value
+        /// Initializes a new instance of the checksum generator base with a specified value
         /// </summary>
         /// <param name="initialValue">The value to set the current checksum to</param>
         public ChecksumGeneratorBase(uint initialValue)

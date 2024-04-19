@@ -267,7 +267,7 @@ static inline void append_bits(unsigned value, int bits,
     }
 }
 
-// Insert enough bits in the form of empty deflate blocks in front of the the
+// Insert enough bits in the form of empty deflate blocks in front of the
 // low bits bits of value, in order to bring the sequence to a byte boundary.
 // Then feed that to inflate(). This does what inflatePrime() does, except that
 // a negative value of bits is not supported. bits must be in 0..16. If the

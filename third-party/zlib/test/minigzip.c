@@ -149,12 +149,12 @@ static void pwinerror (s)
 #  include <unistd.h>       /* for unlink() */
 #endif
 
-void *myalloc(void *q, unsigned n, unsigned m) {
+static void *myalloc(void *q, unsigned n, unsigned m) {
     (void)q;
     return calloc(n, m);
 }
 
-void myfree(void *q, void *p) {
+static void myfree(void *q, void *p) {
     (void)q;
     free(p);
 }
@@ -167,7 +167,7 @@ typedef struct gzFile_s {
     z_stream strm;
 } *gzFile;
 
-gzFile gz_open(const char *path, int fd, const char *mode) {
+static gzFile gz_open(const char *path, int fd, const char *mode) {
     gzFile gz;
     int ret;
 
@@ -201,15 +201,15 @@ gzFile gz_open(const char *path, int fd, const char *mode) {
     return gz;
 }
 
-gzFile gzopen(const char *path, const char *mode) {
+static gzFile gzopen(const char *path, const char *mode) {
     return gz_open(path, -1, mode);
 }
 
-gzFile gzdopen(int fd, const char *mode) {
+static gzFile gzdopen(int fd, const char *mode) {
     return gz_open(NULL, fd, mode);
 }
 
-int gzwrite(gzFile gz, const void *buf, unsigned len) {
+static int gzwrite(gzFile gz, const void *buf, unsigned len) {
     z_stream *strm;
     unsigned char out[BUFLEN];
 
@@ -227,7 +227,7 @@ int gzwrite(gzFile gz, const void *buf, unsigned len) {
     return len;
 }
 
-int gzread(gzFile gz, void *buf, unsigned len) {
+static int gzread(gzFile gz, void *buf, unsigned len) {
     int ret;
     unsigned got;
     unsigned char in[1];
@@ -258,7 +258,7 @@ int gzread(gzFile gz, void *buf, unsigned len) {
     return len - strm->avail_out;
 }
 
-int gzclose(gzFile gz) {
+static int gzclose(gzFile gz) {
     z_stream *strm;
     unsigned char out[BUFLEN];
 
@@ -283,7 +283,7 @@ int gzclose(gzFile gz) {
     return Z_OK;
 }
 
-const char *gzerror(gzFile gz, int *err) {
+static const char *gzerror(gzFile gz, int *err) {
     *err = gz->err;
     return gz->msg;
 }
@@ -295,7 +295,7 @@ static char *prog;
 /* ===========================================================================
  * Display error message and exit
  */
-void error(const char *msg) {
+static void error(const char *msg) {
     fprintf(stderr, "%s: %s\n", prog, msg);
     exit(1);
 }
@@ -303,9 +303,9 @@ void error(const char *msg) {
 #ifdef USE_MMAP /* MMAP version, Miguel Albrecht <malbrech@eso.org> */
 
 /* Try compressing the input file at once using mmap. Return Z_OK if
- * if success, Z_ERRNO otherwise.
+ * success, Z_ERRNO otherwise.
  */
-int gz_compress_mmap(FILE *in, gzFile out) {
+static int gz_compress_mmap(FILE *in, gzFile out) {
     int len;
     int err;
     int ifd = fileno(in);
@@ -338,7 +338,7 @@ int gz_compress_mmap(FILE *in, gzFile out) {
  * Compress input to output then close both files.
  */
 
-void gz_compress(FILE *in, gzFile out) {
+static void gz_compress(FILE *in, gzFile out) {
     local char buf[BUFLEN];
     int len;
     int err;
@@ -366,7 +366,7 @@ void gz_compress(FILE *in, gzFile out) {
 /* ===========================================================================
  * Uncompress input to output then close both files.
  */
-void gz_uncompress(gzFile in, FILE *out) {
+static void gz_uncompress(gzFile in, FILE *out) {
     local char buf[BUFLEN];
     int len;
     int err;
@@ -390,7 +390,7 @@ void gz_uncompress(gzFile in, FILE *out) {
  * Compress the given file: create a corresponding .gz file and remove the
  * original.
  */
-void file_compress(char *file, char *mode) {
+static void file_compress(char *file, char *mode) {
     local char outfile[MAX_NAME_LEN];
     FILE  *in;
     gzFile out;
@@ -426,7 +426,7 @@ void file_compress(char *file, char *mode) {
 /* ===========================================================================
  * Uncompress the given file and remove the original.
  */
-void file_uncompress(char *file) {
+static void file_uncompress(char *file) {
     local char buf[MAX_NAME_LEN];
     char *infile, *outfile;
     FILE  *out;
