@@ -163,125 +163,22 @@ impl Args {
     }
 }
 
-enum Input {
-    Mmap(io::Cursor<memmap2::Mmap>),
-    File(File),
-    Stdin,
-}
-
-impl Input {
-    // Open an input file, using mmap if appropriate. "-" means stdin. Note
-    // that this convention applies both to command line arguments, and to
-    // filepaths that appear in a checkfile.
-    fn open(path: &Path, args: &Args) -> Result<Self> {
-        if path == Path::new("-") {
-            if args.keyed() {
-                bail!("Cannot open `-` in keyed mode");
-            }
-            return Ok(Self::Stdin);
+fn hash_path(args: &Args, path: &Path) -> Result<blake3::OutputReader> {
+    let mut hasher = args.base_hasher.clone();
+    if path == Path::new("-") {
+        if args.keyed() {
+            bail!("Cannot open `-` in keyed mode");
         }
-        let file = File::open(path)?;
-        if !args.no_mmap() {
-            if let Some(mmap) = maybe_memmap_file(&file)? {
-                return Ok(Self::Mmap(io::Cursor::new(mmap)));
-            }
-        }
-        Ok(Self::File(file))
-    }
-
-    fn hash(&mut self, args: &Args) -> Result<blake3::OutputReader> {
-        let mut hasher = args.base_hasher.clone();
-        match self {
-            // The fast path: If we mmapped the file successfully, hash using
-            // multiple threads. This doesn't work on stdin, or on some files,
-            // and it can also be disabled with --no-mmap.
-            Self::Mmap(cursor) => {
-                hasher.update_rayon(cursor.get_ref());
-            }
-            // The slower paths, for stdin or files we didn't/couldn't mmap.
-            // This is currently all single-threaded. Doing multi-threaded
-            // hashing without memory mapping is tricky, since all your worker
-            // threads have to stop every time you refill the buffer, and that
-            // ends up being a lot of overhead. To solve that, we need a more
-            // complicated double-buffering strategy where a background thread
-            // fills one buffer while the worker threads are hashing the other
-            // one. We might implement that in the future, but since this is
-            // the slow path anyway, it's not high priority.
-            Self::File(file) => {
-                copy_wide(file, &mut hasher)?;
-            }
-            Self::Stdin => {
-                let stdin = io::stdin();
-                let lock = stdin.lock();
-                copy_wide(lock, &mut hasher)?;
-            }
-        }
-        let mut output_reader = hasher.finalize_xof();
-        output_reader.set_position(args.seek());
-        Ok(output_reader)
-    }
-}
-
-impl Read for Input {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        match self {
-            Self::Mmap(cursor) => cursor.read(buf),
-            Self::File(file) => file.read(buf),
-            Self::Stdin => io::stdin().read(buf),
-        }
-    }
-}
-
-// A 16 KiB buffer is enough to take advantage of all the SIMD instruction sets
-// that we support, but `std::io::copy` currently uses 8 KiB. Most platforms
-// can support at least 64 KiB, and there's some performance benefit to using
-// bigger reads, so that's what we use here.
-fn copy_wide(mut reader: impl Read, hasher: &mut blake3::Hasher) -> io::Result<u64> {
-    let mut buffer = [0; 65536];
-    let mut total = 0;
-    loop {
-        match reader.read(&mut buffer) {
-            Ok(0) => return Ok(total),
-            Ok(n) => {
-                hasher.update(&buffer[..n]);
-                total += n as u64;
-            }
-            Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
-            Err(e) => return Err(e),
-        }
-    }
-}
-
-// Mmap a file, if it looks like a good idea. Return None in cases where we
-// know mmap will fail, or if the file is short enough that mmapping isn't
-// worth it. However, if we do try to mmap and it fails, return the error.
-fn maybe_memmap_file(file: &File) -> Result<Option<memmap2::Mmap>> {
-    let metadata = file.metadata()?;
-    let file_size = metadata.len();
-    Ok(if !metadata.is_file() {
-        // Not a real file.
-        None
-    } else if file_size > isize::max_value() as u64 {
-        // Too long to safely map.
-        // https://github.com/danburkert/memmap-rs/issues/69
-        None
-    } else if file_size == 0 {
-        // Mapping an empty file currently fails.
-        // https://github.com/danburkert/memmap-rs/issues/72
-        None
-    } else if file_size < 16 * 1024 {
-        // Mapping small files is not worth it.
-        None
+        hasher.update_reader(io::stdin().lock())?;
+    } else if args.no_mmap() {
+        hasher.update_reader(File::open(path)?)?;
     } else {
-        // Explicitly set the length of the memory map, so that filesystem
-        // changes can't race to violate the invariants we just checked.
-        let map = unsafe {
-            memmap2::MmapOptions::new()
-                .len(file_size as usize)
-                .map(file)?
-        };
-        Some(map)
-    })
+        // The fast path: Try to mmap the file and hash it with multiple threads.
+        hasher.update_mmap_rayon(path)?;
+    }
+    let mut output_reader = hasher.finalize_xof();
+    output_reader.set_position(args.seek());
+    Ok(output_reader)
 }
 
 fn write_hex_output(mut output: blake3::OutputReader, args: &Args) -> Result<()> {
@@ -477,8 +374,7 @@ fn parse_check_line(mut line: &str) -> Result<ParsedCheckLine> {
 }
 
 fn hash_one_input(path: &Path, args: &Args) -> Result<()> {
-    let mut input = Input::open(path, args)?;
-    let output = input.hash(args)?;
+    let output = hash_path(args, path)?;
     if args.raw() {
         write_raw_output(output, args)?;
         return Ok(());
@@ -522,15 +418,13 @@ fn check_one_line(line: &str, args: &Args) -> bool {
     } else {
         file_string
     };
-    let hash_result: Result<blake3::Hash> = Input::open(&file_path, args)
-        .and_then(|mut input| input.hash(args))
-        .map(|mut hash_output| {
+    let found_hash: blake3::Hash;
+    match hash_path(args, &file_path) {
+        Ok(mut output) => {
             let mut found_hash_bytes = [0; blake3::OUT_LEN];
-            hash_output.fill(&mut found_hash_bytes);
-            found_hash_bytes.into()
-        });
-    let found_hash: blake3::Hash = match hash_result {
-        Ok(hash) => hash,
+            output.fill(&mut found_hash_bytes);
+            found_hash = found_hash_bytes.into();
+        }
         Err(e) => {
             println!("{}: FAILED ({})", file_string, e);
             return false;
@@ -549,8 +443,18 @@ fn check_one_line(line: &str, args: &Args) -> bool {
 }
 
 fn check_one_checkfile(path: &Path, args: &Args, files_failed: &mut u64) -> Result<()> {
-    let checkfile_input = Input::open(path, args)?;
-    let mut bufreader = io::BufReader::new(checkfile_input);
+    let mut file;
+    let stdin;
+    let mut stdin_lock;
+    let mut bufreader: io::BufReader<&mut dyn Read>;
+    if path == Path::new("-") {
+        stdin = io::stdin();
+        stdin_lock = stdin.lock();
+        bufreader = io::BufReader::new(&mut stdin_lock);
+    } else {
+        file = File::open(path)?;
+        bufreader = io::BufReader::new(&mut file);
+    }
     let mut line = String::new();
     loop {
         line.clear();

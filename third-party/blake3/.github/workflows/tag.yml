@@ -23,18 +23,16 @@ jobs:
         ]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v4
         with:
           python-version: "3.x"
       - run: pip install PyGithub
       - run: sudo apt-get install musl-tools
         if: matrix.target.os == 'ubuntu-latest'
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          profile: minimal
-      - run: rustup target add ${{ matrix.target.rust-target }}
+          targets: ${{ matrix.target.rust-target }}
       - name: build b3sum
         id: build_b3sum
         run: python -u .github/workflows/build_b3sum.py ${{ matrix.target.rust-target }}

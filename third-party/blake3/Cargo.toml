@@ -1,6 +1,6 @@
 [package]
 name = "blake3"
-version = "1.4.1"
+version = "1.5.1"
 authors = ["Jack O'Connor <oconnor663@gmail.com>", "Samuel Neves"]
 description = "the BLAKE3 hash function"
 repository = "https://github.com/BLAKE3-team/BLAKE3"
@@ -23,11 +23,21 @@ neon = []
 # --no-default-features, the only way to use the SIMD implementations in this
 # crate is to enable the corresponding instruction sets statically for the
 # entire build, with e.g. RUSTFLAGS="-C target-cpu=native".
-std = ["digest/std"]
+std = []
 
-# The "rayon" feature (defined below as an optional dependency) enables the
-# `Hasher::update_rayon` method, for multithreaded hashing. However, even if
-# this feature is enabled, all other APIs remain single-threaded.
+# The `rayon` feature (disabled by default, but enabled for docs.rs) adds the
+# `update_rayon` and (in combination with `mmap` below) `update_mmap_rayon`
+# methods, for multithreaded hashing. However, even if this feature is enabled,
+# all other APIs remain single-threaded.
+rayon = ["dep:rayon", "std"]
+
+# The `mmap` feature (disabled by default, but enabled for docs.rs) adds the
+# `update_mmap` and (in combination with `rayon` above) `update_mmap_rayon`
+# helper methods for memory-mapped IO.
+mmap = ["std", "dep:memmap2"]
+
+# Implement the zeroize::Zeroize trait for types in this crate.
+zeroize = ["dep:zeroize", "arrayvec/zeroize"]
 
 # This crate implements traits from the RustCrypto project, exposed here as the
 # "traits-preview" feature. However, these traits aren't stable, and they're
@@ -78,24 +88,29 @@ no_avx512 = []
 no_neon = []
 
 [package.metadata.docs.rs]
-# Document Hasher::update_rayon on docs.rs.
-features = ["rayon"]
+# Document the rayon/mmap methods and the Serialize/Deserialize/Zeroize impls on docs.rs.
+features = ["mmap", "rayon", "serde", "zeroize"]
 
 [dependencies]
 arrayref = "0.3.5"
-arrayvec = { version = "0.7.0", default-features = false }
+arrayvec = { version = "0.7.4", default-features = false }
 constant_time_eq = "0.3.0"
-rayon = { version = "1.2.1", optional = true }
 cfg-if = "1.0.0"
 digest = { version = "0.10.1", features = [ "mac" ], optional = true }
+memmap2 = { version = "0.9", optional = true }
+rayon = { version = "1.2.1", optional = true }
+serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
+zeroize = { version = "1", default-features = false, features = ["zeroize_derive"], optional = true }
 
 [dev-dependencies]
+hmac = "0.12.0"
 hex = "0.4.2"
-page_size = "0.5.0"
+page_size = "0.6.0"
 rand = "0.8.0"
 rand_chacha = "0.3.0"
 reference_impl = { path = "./reference_impl" }
-hmac = "0.12.0"
+tempfile = "3.8.0"
+serde_json = "1.0.107"
 
 [build-dependencies]
 cc = "1.0.4"

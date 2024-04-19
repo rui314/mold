@@ -38,12 +38,10 @@ jobs:
         ]
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ format('{0}-{1}', matrix.channel, matrix.target.toolchain) }}
-        profile: minimal
-        override: true
     # Print the compiler version, for debugging.
     - name: print compiler version
       run: cargo run --quiet
@@ -52,13 +50,17 @@ jobs:
     - name: print instruction set support
       run: cargo run --quiet
       working-directory: ./tools/instruction_set_support
-    # Default tests plus Rayon and RustCrypto trait implementations.
-    - run: cargo test --features=rayon,traits-preview
+    # Default tests plus Rayon and trait implementations.
+    - run: cargo test --features=rayon,traits-preview,serde,zeroize
     # Same but with only one thread in the Rayon pool. This can find deadlocks.
     - name: "again with RAYON_NUM_THREADS=1"
-      run: cargo test --features=rayon,traits-preview
+      run: cargo test --features=rayon,traits-preview,serde,zeroize
       env:
         RAYON_NUM_THREADS: 1
+    # The mmap feature by itself (update_mmap_rayon is omitted).
+    - run: cargo test --features=mmap
+    # All public features put together.
+    - run: cargo test --features=mmap,rayon,traits-preview,serde,zeroize
     # no_std tests.
     - run: cargo test --no-default-features
 
@@ -129,6 +131,17 @@ jobs:
       run: cargo test
       working-directory: ./reference_impl
 
+    # the new guts crate
+    - name: guts test
+      run: cargo test --all-features
+      working-directory: ./rust/guts
+    - name: guts no_std build
+      run: cargo build --no-default-features
+      working-directory: ./rust/guts
+    - name: guts no_std test  # note that rust/guts/src/test.rs still uses libstd
+      run: cargo test --no-default-features
+      working-directory: ./rust/guts
+
   b3sum_tests:
     name: b3sum ${{ matrix.target.name }} ${{ matrix.channel }}
     runs-on: ${{ matrix.target.os }}
@@ -148,16 +161,14 @@ jobs:
           # The b3sum MSRV is sometimes higher than the blake3 crate's, because
           # b3sum depends on Clap. We check in the b3sum Cargo.lock, so Clap
           # update shouldn't randomly break us here.
-          "1.66.1",
+          "1.74.1",
         ]
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ format('{0}-{1}', matrix.channel, matrix.target.toolchain) }}
-        profile: minimal
-        override: true
     # Test b3sum.
     - name: test b3sum
       run: cargo test
@@ -177,14 +188,13 @@ jobs:
           - i686-unknown-linux-musl
           - armv7-unknown-linux-gnueabihf
           - aarch64-unknown-linux-gnu
-          - mips-unknown-linux-gnu
+          # Big-endian targets. See https://twitter.com/burntsushi5/status/1695483429997945092.
+          - powerpc64-unknown-linux-gnu
+          - s390x-unknown-linux-gnu
 
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
     - run: cargo install cross
     # Test the portable implementation on everything.
     - run: cross test --target ${{ matrix.arch }}
@@ -210,7 +220,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     # Test the intrinsics-based implementations.
     - run: make -f Makefile.testing test
       working-directory: ./c
@@ -262,12 +272,10 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-    - uses: actions/checkout@v3
-    - uses: actions-rs/toolchain@v1
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: stable
-        target: aarch64-apple-darwin
-        override: true
+        targets: aarch64-apple-darwin
     - name: build blake3
       run: cargo build --target aarch64-apple-darwin
     - name: build b3sum
@@ -278,7 +286,7 @@ jobs:
     name: build with the Tiny C Compiler
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: install TCC
       run: sudo apt-get install -y tcc
     - name: compile
@@ -295,7 +303,7 @@ jobs:
     name: "compile and test with GCC 5.4"
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: addnab/docker-run-action@v3
       with:
         image: gcc:5.4
@@ -308,7 +316,7 @@ jobs:
 
   # CMake build test (Library only), current macOS/Linux only.
   cmake_build:
-    name: CMake ${{ matrix.os }}
+    name: CMake ${{ matrix.os }} ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -323,8 +331,21 @@ jobs:
           - os: macOS-latest
             compiler: msvc
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: CMake generation
         run: cmake -S c -B c/build -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/target
       - name: CMake build / install
         run: cmake --build c/build --target install
+
+  miri_smoketest:
+    name: Miri smoketest
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    # Currently the test search "miri" only matches "test_miri_smoketest", but
+    # we might add more. If this accidentally picks up anything incompatible or
+    # slow, we can narrow it.
+    - run: cargo miri test miri

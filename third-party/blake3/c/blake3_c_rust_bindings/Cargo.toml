@@ -20,9 +20,9 @@ neon = []
 [dev-dependencies]
 arrayref = "0.3.5"
 arrayvec = { version = "0.7.0", default-features = false }
-page_size = "0.4.1"
-rand = "0.7.2"
-rand_chacha = "0.2.1"
+page_size = "0.6.0"
+rand = "0.8.5"
+rand_chacha = "0.3.1"
 reference_impl = { path = "../../reference_impl" }
 
 [build-dependencies]

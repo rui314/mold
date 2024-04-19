@@ -60,6 +60,20 @@ fn is_armv7() -> bool {
     target_components()[0] == "armv7"
 }
 
+fn endianness() -> String {
+    let endianness = env::var("CARGO_CFG_TARGET_ENDIAN").unwrap();
+    assert!(endianness == "little" || endianness == "big");
+    endianness
+}
+
+fn is_little_endian() -> bool {
+    endianness() == "little"
+}
+
+fn is_big_endian() -> bool {
+    endianness() == "big"
+}
+
 // Windows targets may be using the MSVC toolchain or the GNU toolchain. The
 // right compiler flags to use depend on the toolchain. (And we don't want to
 // use flag_if_supported, because we don't want features to be silently
@@ -253,7 +267,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    if (is_arm() && is_neon()) || (!is_no_neon() && !is_pure() && is_aarch64()) {
+    if is_neon() && is_big_endian() {
+        panic!("The NEON implementation doesn't support big-endian ARM.")
+    }
+
+    if (is_arm() && is_neon())
+        || (!is_no_neon() && !is_pure() && is_aarch64() && is_little_endian())
+    {
         println!("cargo:rustc-cfg=blake3_neon");
         build_neon_c_intrinsics();
     }

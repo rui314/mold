@@ -201,6 +201,7 @@ Alternatively, it is licensed under the Apache License 2.0.
 Here's a (non-exhaustive) list of protocols and software that use BLAKE3:
 
 * [Alephium](https://github.com/alephium/alephium/blob/master/crypto/src/main/scala/org/alephium/crypto/Blake3.scala)
+* [Bazel](https://github.com/bazelbuild/bazel/releases/tag/6.4.0)
 * [Chia](https://github.com/Chia-Network/chia-blockchain/blob/main/CHANGELOG.md#10beta8-aka-beta-18---2020-07-16)
 * [IPFS](https://github.com/ipfs/go-verifcid/issues/13)
 * [Farcaster](https://www.farcaster.xyz/)
@@ -211,6 +212,7 @@ Here's a (non-exhaustive) list of protocols and software that use BLAKE3:
 * [Saito](https://saito.tech/)
 * [Skale](https://github.com/skalenetwork/skale-consensus/pull/284)
 * [Solana](https://docs.rs/solana-program/1.9.5/solana_program/blake3/index.html)
+* [Tekken 8](https://en.bandainamcoent.eu/tekken/tekken-8)
 * [Wasmer](https://github.com/wasmerio/wasmer/blob/4f935a8c162bf604df223003e434e4f7ca253688/lib/cache/src/hash.rs#L21)
 
 

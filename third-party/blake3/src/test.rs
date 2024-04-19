@@ -628,3 +628,211 @@ const fn test_hash_const_conversions() {
     let hash = crate::Hash::from_bytes(bytes);
     _ = hash.as_bytes();
 }
+
+#[cfg(feature = "zeroize")]
+#[test]
+fn test_zeroize() {
+    use zeroize::Zeroize;
+
+    let mut hash = crate::Hash([42; 32]);
+    hash.zeroize();
+    assert_eq!(hash.0, [0u8; 32]);
+
+    let mut hasher = crate::Hasher {
+        chunk_state: crate::ChunkState {
+            cv: [42; 8],
+            chunk_counter: 42,
+            buf: [42; 64],
+            buf_len: 42,
+            blocks_compressed: 42,
+            flags: 42,
+            platform: crate::Platform::Portable,
+        },
+        key: [42; 8],
+        cv_stack: [[42; 32]; { crate::MAX_DEPTH + 1 }].into(),
+    };
+    hasher.zeroize();
+    assert_eq!(hasher.chunk_state.cv, [0; 8]);
+    assert_eq!(hasher.chunk_state.chunk_counter, 0);
+    assert_eq!(hasher.chunk_state.buf, [0; 64]);
+    assert_eq!(hasher.chunk_state.buf_len, 0);
+    assert_eq!(hasher.chunk_state.blocks_compressed, 0);
+    assert_eq!(hasher.chunk_state.flags, 0);
+    assert!(matches!(
+        hasher.chunk_state.platform,
+        crate::Platform::Portable
+    ));
+    assert_eq!(hasher.key, [0; 8]);
+    assert_eq!(&*hasher.cv_stack, &[[0u8; 32]; 0]);
+
+    let mut output_reader = crate::OutputReader {
+        inner: crate::Output {
+            input_chaining_value: [42; 8],
+            block: [42; 64],
+            counter: 42,
+            block_len: 42,
+            flags: 42,
+            platform: crate::Platform::Portable,
+        },
+        position_within_block: 42,
+    };
+
+    output_reader.zeroize();
+    assert_eq!(output_reader.inner.input_chaining_value, [0; 8]);
+    assert_eq!(output_reader.inner.block, [0; 64]);
+    assert_eq!(output_reader.inner.counter, 0);
+    assert_eq!(output_reader.inner.block_len, 0);
+    assert_eq!(output_reader.inner.flags, 0);
+    assert!(matches!(
+        output_reader.inner.platform,
+        crate::Platform::Portable
+    ));
+    assert_eq!(output_reader.position_within_block, 0);
+}
+
+#[test]
+#[cfg(feature = "std")]
+fn test_update_reader() -> Result<(), std::io::Error> {
+    // This is a brief test, since update_reader() is mostly a wrapper around update(), which already
+    // has substantial testing.
+    let mut input = vec![0; 1_000_000];
+    paint_test_input(&mut input);
+    assert_eq!(
+        crate::Hasher::new().update_reader(&input[..])?.finalize(),
+        crate::hash(&input),
+    );
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "std")]
+fn test_update_reader_interrupted() -> std::io::Result<()> {
+    use std::io;
+    struct InterruptingReader<'a> {
+        already_interrupted: bool,
+        slice: &'a [u8],
+    }
+    impl<'a> InterruptingReader<'a> {
+        fn new(slice: &'a [u8]) -> Self {
+            Self {
+                already_interrupted: false,
+                slice,
+            }
+        }
+    }
+    impl<'a> io::Read for InterruptingReader<'a> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if !self.already_interrupted {
+                self.already_interrupted = true;
+                return Err(io::Error::from(io::ErrorKind::Interrupted));
+            }
+            let take = std::cmp::min(self.slice.len(), buf.len());
+            buf[..take].copy_from_slice(&self.slice[..take]);
+            self.slice = &self.slice[take..];
+            Ok(take)
+        }
+    }
+
+    let input = b"hello world";
+    let mut reader = InterruptingReader::new(input);
+    let mut hasher = crate::Hasher::new();
+    hasher.update_reader(&mut reader)?;
+    assert_eq!(hasher.finalize(), crate::hash(input));
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "mmap")]
+// NamedTempFile isn't Miri-compatible
+#[cfg(not(miri))]
+fn test_mmap() -> Result<(), std::io::Error> {
+    // This is a brief test, since update_mmap() is mostly a wrapper around update(), which already
+    // has substantial testing.
+    use std::io::prelude::*;
+    let mut input = vec![0; 1_000_000];
+    paint_test_input(&mut input);
+    let mut tempfile = tempfile::NamedTempFile::new()?;
+    tempfile.write_all(&input)?;
+    tempfile.flush()?;
+    assert_eq!(
+        crate::Hasher::new()
+            .update_mmap(tempfile.path())?
+            .finalize(),
+        crate::hash(&input),
+    );
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "mmap")]
+#[cfg(target_os = "linux")]
+fn test_mmap_virtual_file() -> Result<(), std::io::Error> {
+    // Virtual files like /proc/version can't be mmapped, because their contents don't actually
+    // exist anywhere in memory. Make sure we fall back to regular file IO in these cases.
+    // Currently this is handled with a length check, where the assumption is that virtual files
+    // will always report length 0. If that assumption ever breaks, hopefully this test will catch
+    // it.
+    let virtual_filepath = "/proc/version";
+    let mut mmap_hasher = crate::Hasher::new();
+    // We'll fail right here if the fallback doesn't work.
+    mmap_hasher.update_mmap(virtual_filepath)?;
+    let mut read_hasher = crate::Hasher::new();
+    read_hasher.update_reader(std::fs::File::open(virtual_filepath)?)?;
+    assert_eq!(mmap_hasher.finalize(), read_hasher.finalize());
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "mmap")]
+#[cfg(feature = "rayon")]
+// NamedTempFile isn't Miri-compatible
+#[cfg(not(miri))]
+fn test_mmap_rayon() -> Result<(), std::io::Error> {
+    // This is a brief test, since update_mmap_rayon() is mostly a wrapper around update_rayon(),
+    // which already has substantial testing.
+    use std::io::prelude::*;
+    let mut input = vec![0; 1_000_000];
+    paint_test_input(&mut input);
+    let mut tempfile = tempfile::NamedTempFile::new()?;
+    tempfile.write_all(&input)?;
+    tempfile.flush()?;
+    assert_eq!(
+        crate::Hasher::new()
+            .update_mmap_rayon(tempfile.path())?
+            .finalize(),
+        crate::hash(&input),
+    );
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "std")]
+#[cfg(feature = "serde")]
+fn test_serde() {
+    let hash: crate::Hash = [7; 32].into();
+    let json = serde_json::to_string(&hash).unwrap();
+    assert_eq!(
+        json,
+        "[7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7]",
+    );
+    let hash2: crate::Hash = serde_json::from_str(&json).unwrap();
+    assert_eq!(hash, hash2);
+}
+
+// `cargo +nightly miri test` currently works, but it takes forever, because some of our test
+// inputs are quite large. Most of our unsafe code is platform specific and incompatible with Miri
+// anyway, but we'd like it to be possible for callers to run their own tests under Miri, assuming
+// they don't use incompatible features like Rayon or mmap. This test should get reasonable
+// coverage of our public API without using any large inputs, so we can run it in CI and catch
+// obvious breaks. (For example, constant_time_eq is not compatible with Miri.)
+#[test]
+fn test_miri_smoketest() {
+    let mut hasher = crate::Hasher::new_derive_key("Miri smoketest");
+    hasher.update(b"foo");
+    #[cfg(feature = "std")]
+    hasher.update_reader(&b"bar"[..]).unwrap();
+    assert_eq!(hasher.finalize(), hasher.finalize());
+    let mut reader = hasher.finalize_xof();
+    reader.set_position(999999);
+    reader.fill(&mut [0]);
+}
