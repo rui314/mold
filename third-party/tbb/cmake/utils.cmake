@@ -23,33 +23,31 @@ macro(tbb_remove_compile_flag flag)
 endmacro()
 
 macro(tbb_install_target target)
-    if (TBB_INSTALL)
+    install(TARGETS ${target}
+        EXPORT TBBTargets
+        LIBRARY
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            NAMELINK_SKIP
+            COMPONENT runtime
+        RUNTIME
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            COMPONENT runtime
+        ARCHIVE
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            COMPONENT devel)
+
+    if (BUILD_SHARED_LIBS)
         install(TARGETS ${target}
-            EXPORT TBBTargets
             LIBRARY
                 DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                NAMELINK_SKIP
-                COMPONENT runtime
-            RUNTIME
-                DESTINATION ${CMAKE_INSTALL_BINDIR}
-                COMPONENT runtime
-            ARCHIVE
-                DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                NAMELINK_ONLY
                 COMPONENT devel)
-
-        if (BUILD_SHARED_LIBS)
-            install(TARGETS ${target}
-                LIBRARY
-                    DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                    NAMELINK_ONLY
-                    COMPONENT devel)
-        endif()
-        if (MSVC AND BUILD_SHARED_LIBS)
-            install(FILES $<TARGET_PDB_FILE:${target}>
-                DESTINATION ${CMAKE_INSTALL_BINDIR}
-                COMPONENT devel
-                OPTIONAL)
-        endif()
+    endif()
+    if (MSVC AND BUILD_SHARED_LIBS)
+        install(FILES $<TARGET_PDB_FILE:${target}>
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+            COMPONENT devel
+            OPTIONAL)
     endif()
 endmacro()
 

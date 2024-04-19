@@ -23,8 +23,7 @@ oneTBB is a part of [oneAPI](https://oneapi.io). The current branch implements v
 > **_NOTE:_** Threading Building Blocks (TBB) is now called oneAPI Threading Building Blocks (oneTBB) to highlight that the tool is a part of the oneAPI ecosystem.
 
 ## Release Information
-
-See [Release Notes](RELEASE_NOTES.md) and [System Requirements](SYSTEM_REQUIREMENTS.md).
+Here are [Release Notes](RELEASE_NOTES.md) and [System Requirements](SYSTEM_REQUIREMENTS.md).
 
 ## Documentation
 * [oneTBB Specification](https://spec.oneapi.com/versions/latest/elements/oneTBB/source/nested-index.html)
@@ -40,7 +39,7 @@ See [Release Notes](RELEASE_NOTES.md) and [System Requirements](SYSTEM_REQUIREME
 See [Installation from Sources](INSTALL.md) to learn how to install oneTBB. 
 
 ## Support
-See our [documentation](./SUPPORT.md) to learn how to request help.
+Please report issues and suggestions via [GitHub issues](https://github.com/oneapi-src/oneTBB/issues). See our [documentation](./CONTRIBUTING.md##Issues) to learn how to work with them.
 
 ## How to Contribute
 We welcome community contributions, so check our [Contributing Guidelines](CONTRIBUTING.md)
@@ -49,6 +48,7 @@ to learn more.
 ## License
 oneAPI Threading Building Blocks is licensed under [Apache License, Version 2.0](LICENSE.txt).
 By its terms, contributions submitted to the project are also done under that license.
+
 
 ## Engineering team contacts
 * [Email us.](mailto:inteltbbdevelopers@intel.com)

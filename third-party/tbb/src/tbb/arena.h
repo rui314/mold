@@ -429,7 +429,8 @@ void arena::advertise_new_work() {
             workers_delta = 1;
         }
 
-        request_workers(mandatory_delta, workers_delta, /* wakeup_threads = */ true);
+        bool wakeup_workers = is_mandatory_needed || are_workers_needed;
+        request_workers(mandatory_delta, workers_delta, wakeup_workers);
     }
 }
 

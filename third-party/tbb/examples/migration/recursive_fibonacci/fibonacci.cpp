@@ -22,7 +22,6 @@
 #include <utility>
 
 int cutoff;
-bool testing_enabled;
 
 template <typename F>
 std::pair</* result */ unsigned long, /* time */ unsigned long> measure(F&& f,
@@ -49,7 +48,6 @@ int main(int argc, char* argv[]) {
     int numbers = argc > 1 ? strtol(argv[1], nullptr, 0) : 50;
     cutoff = argc > 2 ? strtol(argv[2], nullptr, 0) : 16;
     unsigned long ntrial = argc > 3 ? (unsigned long)strtoul(argv[3], nullptr, 0) : 20;
-    testing_enabled = argc > 4 ? (bool)strtol(argv[4], nullptr, 0) : false;
 
     auto res = measure(fibonacci_two_tasks, numbers, ntrial);
     std::cout << "Fibonacci two tasks impl N = " << res.first << " Avg time = " << res.second

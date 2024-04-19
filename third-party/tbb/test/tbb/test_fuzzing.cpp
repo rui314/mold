@@ -15,7 +15,7 @@
 */
 
 //! \file test_fuzzing.cpp
-//! \brief Test the [internal] of environment variables
+//! \brief Test the [fuzzing] of environment variables
 
 #include <fuzzer/FuzzedDataProvider.h>
 

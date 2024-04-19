@@ -33,9 +33,8 @@ long serial_fib(int n) {
 struct fib_continuation : task_emulation::base_task {
     fib_continuation(int& s) : sum(s) {}
 
-    task_emulation::base_task* execute() override {
+    void execute() override {
         sum = x + y;
-        return nullptr;
     }
 
     int x{ 0 }, y{ 0 };
@@ -45,8 +44,7 @@ struct fib_continuation : task_emulation::base_task {
 struct fib_computation : task_emulation::base_task {
     fib_computation(int n, int* x) : n(n), x(x) {}
 
-    task_emulation::base_task* execute() override {
-        task_emulation::base_task* bypass = nullptr;
+    void execute() override {
         if (n < cutoff) {
             *x = serial_fib(n);
         }
@@ -59,9 +57,15 @@ struct fib_computation : task_emulation::base_task {
             this->recycle_as_child_of(c);
             n = n - 2;
             x = &c.y;
-            bypass = this;
+
+            // Bypass is not supported by task_emulation and next_task executed directly.
+            // However, the old-TBB bypass behavior can be achieved with
+            // `return task_group::defer()` (check Migration Guide).
+            // Consider submit another task if recursion call is not acceptable
+            // i.e. instead of Recycling + Direct Body call
+            // submit task_emulation::run_task(c.create_child<fib_computation>(n - 2, &c.y));
+            this->operator()();
         }
-        return bypass;
     }
 
     int n;

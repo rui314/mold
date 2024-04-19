@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,14 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.1)
 
 # Enable CMake policies
-
-if (POLICY CMP0068)
-    # RPATH settings do not affect install_name on macOS since CMake 3.9
-    cmake_policy(SET CMP0068 NEW)
-endif()
 
 if (POLICY CMP0091)
     # The NEW behavior for this policy is to not place MSVC runtime library flags in the default
@@ -41,6 +36,12 @@ if (APPLE)
     if (NOT CMAKE_C_OSX_DEPLOYMENT_TARGET_FLAG)
         set(CMAKE_C_OSX_DEPLOYMENT_TARGET_FLAG "-mmacosx-version-min=" CACHE STRING "Minimum macOS version flag")
     endif()
+endif()
+
+# Until CMake 3.4.0 FindThreads.cmake requires C language enabled.
+# Enable C language before CXX to avoid possible override of CMAKE_SIZEOF_VOID_P.
+if (CMAKE_VERSION VERSION_LESS 3.4)
+    enable_language(C)
 endif()
 
 file(READ include/oneapi/tbb/version.h _tbb_version_info)
@@ -103,10 +104,9 @@ option(TBBMALLOC_BUILD "Enable tbbmalloc build" ON)
 cmake_dependent_option(TBBMALLOC_PROXY_BUILD "Enable tbbmalloc_proxy build" ON "TBBMALLOC_BUILD" OFF)
 option(TBB_CPF "Enable preview features of the library" OFF)
 option(TBB_FIND_PACKAGE "Enable search for external oneTBB using find_package instead of build from sources" OFF)
-option(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH "Disable HWLOC automatic search by pkg-config tool" ${CMAKE_CROSSCOMPILING})
+option(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH "Disable HWLOC automatic search by pkg-config tool" OFF)
 option(TBB_ENABLE_IPO "Enable Interprocedural Optimization (IPO) during the compilation" ON)
 option(TBB_FUZZ_TESTING "Enable fuzz testing" OFF)
-option(TBB_INSTALL "Enable installation" ON)
 
 if (NOT DEFINED BUILD_SHARED_LIBS)
     set(BUILD_SHARED_LIBS ON)
@@ -194,7 +194,7 @@ endif()
 # -------------------------------------------------------------------
 # Common dependencies
 #force -pthread during compilation for Emscripten
-if (EMSCRIPTEN AND NOT EMSCRIPTEN_WITHOUT_PTHREAD)
+if (EMSCRIPTEN)
    set(THREADS_HAVE_PTHREAD_ARG TRUE)
 endif()
 
@@ -250,39 +250,34 @@ else()
     else()
         add_subdirectory(src/tbbbind)
     endif()
-    if (TBB_INSTALL)
-        # -------------------------------------------------------------------
-        # Installation instructions
-        include(CMakePackageConfigHelpers)
 
-        install(DIRECTORY include/
-                DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-                COMPONENT devel)
+    # -------------------------------------------------------------------
+    # Installation instructions
+    include(CMakePackageConfigHelpers)
 
-        install(EXPORT ${PROJECT_NAME}Targets
-                NAMESPACE TBB::
-                DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-                COMPONENT devel)
-        file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
-                   "include(\${CMAKE_CURRENT_LIST_DIR}/${PROJECT_NAME}Targets.cmake)\n")
-        if (NOT BUILD_SHARED_LIBS)
-            file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
-                       "include(CMakeFindDependencyMacro)\nfind_dependency(Threads)\n")
-        endif()
+    install(DIRECTORY include/
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+            COMPONENT devel)
 
-        write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-                                         COMPATIBILITY AnyNewerVersion)
+    install(EXPORT ${PROJECT_NAME}Targets
+            NAMESPACE TBB::
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+            COMPONENT devel)
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
+               "include(\${CMAKE_CURRENT_LIST_DIR}/${PROJECT_NAME}Targets.cmake)\n")
 
-        install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
-                      "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
-                DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-                COMPONENT devel)
+    write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+                                     COMPATIBILITY AnyNewerVersion)
 
-        install(FILES "README.md"
-                DESTINATION ${CMAKE_INSTALL_DOCDIR}
-                COMPONENT devel)
-        # -------------------------------------------------------------------
-    endif()
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake"
+                  "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
+            COMPONENT devel)
+
+    install(FILES "README.md"
+            DESTINATION ${CMAKE_INSTALL_DOCDIR}
+            COMPONENT devel)
+    # -------------------------------------------------------------------
 endif()
 
 if (TBB_TEST)

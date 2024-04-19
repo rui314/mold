@@ -61,7 +61,7 @@ You can use the ``install`` components for partial installation.
 The following install components are supported:
 - `runtime` - oneTBB runtime package (core shared libraries and `.dll` files on Windows* OS).
 - `devel` - oneTBB development package (header files, CMake integration files, library symbolic links, and `.lib` files on Windows* OS).
-- `tbb4py` - [oneTBB Module for Python](https://github.com/oneapi-src/oneTBB/blob/master/python/README.md).
+- `tbb4py` - [oneTBB Module for Python](#onetbb-python-module-support).
 
 If you want to install specific components after configuration and build, run:
 

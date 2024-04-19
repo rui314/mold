@@ -46,4 +46,3 @@ TBB possible output:
     TBB: RML	private
     TBB: Tools support	disabled
 
-.. note:: The ``tbbmalloc`` library in oneTBB is fully binary compatible with TBB. 

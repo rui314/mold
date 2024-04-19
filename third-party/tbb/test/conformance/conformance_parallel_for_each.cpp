@@ -102,8 +102,10 @@ public:
     void do_action_and_feed(oneapi::tbb::feeder<ForEachInvokeItem>& feeder) const {
         CHECK_MESSAGE(change_vector.size() % 2 == 0, "incorrect test setup");
         std::size_t shift = change_vector.size() / 2;
+        std::cout << "Process " << real_value << std::endl;
         ++change_vector[real_value];
         if (real_value < shift) {
+            std::cout << "Add " << real_value + shift << std::endl;
             feeder.add(ForEachInvokeItem(real_value + shift, change_vector));
         }
     }

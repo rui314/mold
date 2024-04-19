@@ -19,7 +19,6 @@ This directory contains example usages of oneAPI Threading Building Blocks.
 | parallel_for_each/parallel_preorder | Parallel preorder traversal of a graph.
 | parallel_pipeline/square | Another string transformation example that squares numbers read from a file.
 | parallel_reduce/convex_hull | Parallel version of convex hull algorithm (quick hull).
-| parallel_reduce/pi | Parallel version of calculating &pi; by numerical integration.
 | parallel_reduce/primes | Parallel version of the Sieve of Eratosthenes.
 | task_arena/fractal |The example calculates two classical Mandelbrot fractals with different concurrency limits.
 | task_group/sudoku | Compute all solutions for a Sudoku board.

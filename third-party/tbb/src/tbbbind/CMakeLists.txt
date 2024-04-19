@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+if (DEFINED CMAKE_SKIP_BUILD_RPATH)
+    set(CMAKE_SKIP_BUILD_RPATH_OLD_VALUE ${CMAKE_SKIP_BUILD_RPATH})
+endif()
 set(CMAKE_SKIP_BUILD_RPATH TRUE)
 
 function(tbbbind_build TBBBIND_NAME REQUIRED_HWLOC_TARGET)
@@ -103,3 +106,10 @@ else()
     tbbbind_build(tbbbind_2_5 HWLOC::hwloc_2_5 )
 endif()
 
+
+if (DEFINED CMAKE_SKIP_BUILD_RPATH_OLD_VALUE)
+    set(CMAKE_SKIP_BUILD_RPATH ${CMAKE_SKIP_BUILD_RPATH_OLD_VALUE})
+    unset(CMAKE_SKIP_BUILD_RPATH_OLD_VALUE)
+else()
+    unset(CMAKE_SKIP_BUILD_RPATH)
+endif()

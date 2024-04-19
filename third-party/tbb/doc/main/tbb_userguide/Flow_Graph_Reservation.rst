@@ -63,7 +63,7 @@ messages and do not support ``try_get()`` or ``try_reserve()``.
        broadcast_node<int> bn(g);
        buffer_node<int> buf1(g);
        buffer_node<int> buf2(g);
-       typedef join_node<tuple<int,int>, reserving> join_type;
+       typedef join_node<tuple<int,int> reserving> join_type;
        join_type jn(g);
        buffer_node<join_type::output_type> buf_out(g);
        join_type::output_type tuple_out;
@@ -71,9 +71,9 @@ messages and do not support ``try_get()`` or ``try_reserve()``.
 
 
        // join_node predecessors are both reservable buffer_nodes
-       make_edge(buf1,input_port<0>(jn));
-       make_edge(bn,input_port<0>(jn));      // attach a broadcast_node
-       make_edge(buf2,input_port<1>(jn));
+       make_edge(buf1,input_port<0>jn));
+       make_edge(bn,input_port<0>jn));      // attach a broadcast_node
+       make_edge(buf2,input_port<1>jn));
        make_edge(jn, buf_out);
        bn.try_put(2);
        buf1.try_put(3);
@@ -81,7 +81,7 @@ messages and do not support ``try_get()`` or ``try_reserve()``.
        buf2.try_put(7);
        g.wait_for_all();
        while (buf_out.try_get(tuple_out)) {
-           printf("join_node output == (%d,%d)\n",get<0>(tuple_out), get<1>(tuple_out) );
+           printf("join_node output == (%d,%d)\n",get<0>tuple_out), get<1>tuple_out) );
        }
        if(buf1.try_get(icnt)) printf("buf1 had %d\n", icnt);
        else printf("buf1 was empty\n");

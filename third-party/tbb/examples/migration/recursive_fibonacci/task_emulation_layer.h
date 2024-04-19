@@ -47,45 +47,32 @@ class base_task {
 public:
     base_task() = default;
 
-    base_task(const base_task& t) : m_type(t.m_type), m_parent(t.m_parent), m_child_counter(t.m_child_counter.load())
+    base_task(const base_task& t) : m_parent(t.m_parent), m_child_counter(t.m_child_counter.load())
     {}
 
     virtual ~base_task() = default;
 
     void operator() () const {
-        task_type type_snapshot = m_type;
-
-        base_task* bypass = const_cast<base_task*>(this)->execute();
-
-        if (m_parent && m_type != task_type::recycled) {
-            if (m_parent->remove_child_reference() == 0) {
+        base_task* parent_snapshot = m_parent;
+        const_cast<base_task*>(this)->execute();
+        if (m_parent && parent_snapshot == m_parent && m_child_counter == 0) {
+            if (m_parent->remove_reference() == 0) {
                 m_parent->operator()();
+                delete m_parent;
             }
         }
 
-        if (m_type == task_type::allocated) {
+        if (m_child_counter == 0 && m_type == task_type::allocated) {
             delete this;
-        }
-
-        if (bypass != nullptr) {
-            m_type = type_snapshot;
-
-            // Bypass is not supported by task_emulation and next_task executed directly.
-            // However, the old-TBB bypass behavior can be achieved with
-            // `return task_group::defer()` (check Migration Guide).
-            // Consider submit another task if recursion call is not acceptable
-            // i.e. instead of Direct Body call
-            // submit task_emulation::run_task();
-            bypass->operator()();
         }
     }
 
-    virtual base_task* execute() = 0;
+    virtual void execute() = 0;
 
     template <typename C, typename... Args>
     C* allocate_continuation(std::uint64_t ref, Args&&... args) {
         C* continuation = new C{std::forward<Args>(args)...};
-        continuation->m_type = task_type::allocated;
+        continuation->m_type = task_type::continuation;
         continuation->reset_parent(reset_parent());
         continuation->m_child_counter = ref;
         return continuation;
@@ -98,7 +85,7 @@ public:
 
     template <typename F, typename... Args>
     F create_child_and_increment(Args&&... args) {
-        add_child_reference();
+        add_reference();
         return create_child_impl<F>(std::forward<Args>(args)...);
     }
 
@@ -109,36 +96,35 @@ public:
 
     template <typename F, typename... Args>
     F* allocate_child_and_increment(Args&&... args) {
-        add_child_reference();
+        add_reference();
         return allocate_child_impl<F>(std::forward<Args>(args)...);
     }
 
     template <typename C>
     void recycle_as_child_of(C& c) {
-        m_type = task_type::recycled;
         reset_parent(&c);
     }
 
     void recycle_as_continuation() {
-        m_type = task_type::recycled;
+        m_type = task_type::continuation;
     }
 
-    void add_child_reference() {
+    void add_reference() {
         ++m_child_counter;
     }
 
-    std::uint64_t remove_child_reference() {
+    std::uint64_t remove_reference() {
         return --m_child_counter;
     }
 
 protected:
     enum class task_type {
-        stack_based,
+        created,
         allocated,
-        recycled
+        continuation
     };
 
-    mutable task_type m_type;
+    task_type m_type;
 
 private:
     template <typename F, typename... Args>
@@ -150,7 +136,7 @@ private:
     template <typename F, typename... Args>
     F create_child_impl(Args&&... args) {
         F obj{std::forward<Args>(args)...};
-        obj.m_type = task_type::stack_based;
+        obj.m_type = task_type::created;
         obj.reset_parent(this);
         return obj;
     }
@@ -176,14 +162,13 @@ private:
 class root_task : public base_task {
 public:
     root_task(tbb::task_group& tg) : m_tg(tg), m_callback(m_tg.defer([] { /* Create empty callback to preserve reference for wait. */})) {
-        add_child_reference();
-        m_type = base_task::task_type::allocated;
+        add_reference();
+        m_type = base_task::task_type::continuation;
     }
 
 private:
-    base_task* execute() override {
+    void execute() override {
         m_tg.run(std::move(m_callback));
-        return nullptr;
     }
 
     tbb::task_group& m_tg;
@@ -193,7 +178,7 @@ private:
 template <typename F, typename... Args>
 F create_root_task(tbb::task_group& tg, Args&&... args) {
     F obj{std::forward<Args>(args)...};
-    obj.m_type = base_task::task_type::stack_based;
+    obj.m_type = base_task::task_type::created;
     obj.reset_parent(new root_task{tg});
     return obj;
 }
