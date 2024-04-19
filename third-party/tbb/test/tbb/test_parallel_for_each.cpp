@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,6 +21,105 @@
 
 //! \file test_parallel_for_each.cpp
 //! \brief Test for [algorithms.parallel_for_each]
+
+#if __TBB_CPP20_PRESENT
+// Fancy iterator type that models the C++20 iterator type
+// that defines the real iterator category using iterator_concept type
+// and iterator_category is always std::input_iterator_type
+// Similar iterators are used by C++20 ranges (e.g. std::ranges::iota_view::iterator)
+// parallel_for_each algorithm should detect such iterators with respect to iterator_concept value
+
+template <typename T, typename Category>
+struct cpp20_iterator {
+    static_assert(std::derived_from<Category, std::forward_iterator_tag>,
+                  "cpp20_iterator should be of at least forward iterator category");
+
+    using iterator_concept = Category;
+    using iterator_category = std::input_iterator_tag;
+    using value_type = T;
+    using difference_type = std::ptrdiff_t;
+
+    cpp20_iterator() = default;
+    explicit cpp20_iterator(T* ptr) : my_ptr(ptr) {}
+
+    T& operator*() const { return *my_ptr; }
+
+    cpp20_iterator& operator++() {
+        ++my_ptr;
+        return *this;
+    }
+
+    cpp20_iterator operator++(int) {
+        auto it = *this;
+        ++*this;
+        return it;
+    }
+
+    cpp20_iterator& operator--()
+        requires std::derived_from<Category, std::bidirectional_iterator_tag>
+    {
+        --my_ptr;
+        return *this;
+    }
+
+    cpp20_iterator operator--(int)
+        requires std::derived_from<Category, std::bidirectional_iterator_tag>
+    {
+        auto it = *this;
+        --*this;
+        return it;
+    }
+
+    cpp20_iterator& operator+=(difference_type n)
+        requires std::derived_from<Category, std::random_access_iterator_tag>
+    {
+        my_ptr += n;
+        return *this;
+    }
+
+    cpp20_iterator& operator-=(difference_type n)
+        requires std::derived_from<Category, std::random_access_iterator_tag>
+    {
+        my_ptr -= n;
+        return *this;
+    }
+
+    T& operator[](difference_type n) const
+        requires std::derived_from<Category, std::random_access_iterator_tag>
+    {
+        return my_ptr[n];
+    }
+
+    friend bool operator==(const cpp20_iterator&, const cpp20_iterator&) = default;
+
+    friend auto operator<=>(const cpp20_iterator&, const cpp20_iterator&)
+        requires std::derived_from<Category, std::random_access_iterator_tag> = default;
+
+    friend cpp20_iterator operator+(cpp20_iterator i, difference_type n)
+        requires std::derived_from<Category, std::random_access_iterator_tag>
+    {
+        return cpp20_iterator(i.my_ptr + n);
+    }
+
+    friend cpp20_iterator operator+(difference_type n, cpp20_iterator i)
+        requires std::derived_from<Category, std::random_access_iterator_tag>
+    {
+        return i + n;
+    }
+
+    friend cpp20_iterator operator-(cpp20_iterator i, difference_type n)
+        requires std::derived_from<Category, std::random_access_iterator_tag>
+    {
+        return cpp20_iterator(i.my_ptr - n);
+    }
+
+    friend difference_type operator-(const cpp20_iterator& x, const cpp20_iterator& y) {
+        return x.my_ptr - y.my_ptr;
+    }
+private:
+    T* my_ptr = nullptr;
+}; // class cpp20_iterator
+#endif // __TBB_CPP20_PRESENT
 
 //! Test forward access iterator support
 //! \brief \ref error_guessing \ref interface
@@ -172,3 +271,65 @@ TEST_CASE("parallel_for_each constraints") {
 }
 
 #endif // __TBB_CPP20_CONCEPTS_PRESENT
+
+#if __TBB_CPP20_PRESENT
+
+struct no_copy_move {
+    no_copy_move() = default;
+
+    no_copy_move(const no_copy_move&) = delete;
+    no_copy_move(no_copy_move&&) = delete;
+
+    no_copy_move& operator=(const no_copy_move&) = delete;
+    no_copy_move& operator=(no_copy_move&&) = delete;
+
+    int item = 0;
+};
+
+template <typename Category>
+void test_with_cpp20_iterator() {
+    constexpr std::size_t n = 1'000'000;
+
+    std::vector<no_copy_move> elements(n);
+
+    cpp20_iterator<no_copy_move, Category> begin(elements.data());
+    cpp20_iterator<no_copy_move, Category> end(elements.data() + n);
+
+    oneapi::tbb::parallel_for_each(begin, end, [](no_copy_move& element) {
+        element.item = 42;
+    });
+
+    for (std::size_t index = 0; index < n; ++index) {
+        CHECK(elements[index].item == 42);
+    }
+}
+
+//! \brief \ref error_guessing \ref regression
+TEST_CASE("parallel_for_each with cpp20 iterator") {
+    // Test that parallel_for_each threats ignores iterator_category type
+    // if iterator_concept type is defined for iterator
+
+    // For input iterators parallel_for_each requires element to be
+    // copyable or movable so since cpp20_iterator is at least forward
+    // parallel_for_each should work with cpp20_iterator
+    // on non-copyable and non-movable type
+
+    // test cpp20_iterator implementation
+    using cpp20_forward_iterator = cpp20_iterator<int, std::forward_iterator_tag>;
+    using cpp20_bidirectional_iterator = cpp20_iterator<int, std::bidirectional_iterator_tag>;
+    using cpp20_random_access_iterator = cpp20_iterator<int, std::random_access_iterator_tag>;
+
+    static_assert(std::forward_iterator<cpp20_forward_iterator>);
+    static_assert(!std::bidirectional_iterator<cpp20_forward_iterator>);
+
+    static_assert(std::bidirectional_iterator<cpp20_bidirectional_iterator>);
+    static_assert(!std::random_access_iterator<cpp20_bidirectional_iterator>);
+
+    static_assert(std::random_access_iterator<cpp20_random_access_iterator>);
+
+    test_with_cpp20_iterator<std::forward_iterator_tag>();
+    test_with_cpp20_iterator<std::bidirectional_iterator_tag>();
+    test_with_cpp20_iterator<std::random_access_iterator_tag>();
+}
+
+#endif // __TBB_CPP20_PRESENT

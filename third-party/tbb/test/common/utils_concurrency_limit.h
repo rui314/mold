@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2022 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -287,27 +287,44 @@ bool can_change_thread_priority() {
     return false;
 }
 
-void increase_thread_priority() {
 #if __unix__
-    pthread_t this_thread = pthread_self();
-    sched_param params;
-    params.sched_priority = sched_get_priority_max(SCHED_FIFO);
-    ASSERT(params.sched_priority != -1, nullptr);
-    int err = pthread_setschedparam(this_thread, SCHED_FIFO, &params);
-    ASSERT(err == 0, "Can not change thread priority.");
-#endif
-}
+class increased_priority_guard {
+public:
+    increased_priority_guard() : m_backup(get_current_schedparam()) {
+        increase_thread_priority();
+    }
 
-void decrease_thread_priority() {
-#if __unix__
-    pthread_t this_thread = pthread_self();
-    sched_param params;
-    params.sched_priority = sched_get_priority_min(SCHED_FIFO);
-    ASSERT(params.sched_priority != -1, nullptr);
-    int err = pthread_setschedparam(this_thread, SCHED_FIFO, &params);
-    ASSERT(err == 0, "Can not change thread priority.");
+    ~increased_priority_guard() {
+        // restore priority on destruction
+        pthread_t this_thread = pthread_self();
+        int err = pthread_setschedparam(this_thread, 
+            /*policy*/ m_backup.first, /*sched_param*/ &m_backup.second);
+        ASSERT(err == 0, nullptr);
+    }
+private:
+    std::pair<int, sched_param> get_current_schedparam() {
+        pthread_t this_thread = pthread_self();
+        sched_param params;
+        int policy = 0;
+        int err = pthread_getschedparam(this_thread, &policy, &params);
+        ASSERT(err == 0, nullptr);
+        return std::make_pair(policy, params);
+    }
+
+    void increase_thread_priority() {
+        pthread_t this_thread = pthread_self();
+        sched_param params;
+        params.sched_priority = sched_get_priority_max(SCHED_FIFO);
+        ASSERT(params.sched_priority != -1, nullptr);
+        int err = pthread_setschedparam(this_thread, SCHED_FIFO, &params);
+        ASSERT(err == 0, "Can not change thread priority.");
+    }
+
+    std::pair<int, sched_param> m_backup;
+};
+#else
+    class increased_priority_guard{};
 #endif
-}
 
 } // namespace utils
 

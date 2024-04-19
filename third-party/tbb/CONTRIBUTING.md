@@ -29,11 +29,6 @@ The DCO is an attestation attached to every contribution made by every developer
 
 As a contributor, you’ll want to be familiar with the oneTBB project and the repository layout. You should also know how to use it as explained in the [oneTBB documentation](https://oneapi-src.github.io/oneTBB/) and how to set up your build development environment to configure, build, and test oneTBB as explained in the [oneTBB Build System Description](cmake/README.md). 
 
-## Issues 
-If you face a problem, first check out open [oneTBB GitHub issues](https://github.com/oneapi-src/oneTBB/issues) to see if the issue you’d like to address is already reported. You may find users that have encountered the bug you’re finding or have similar ideas for changes or additions.
-
-You can use issues to report a problem, make a feature request, or add comments on an existing issue. 
-
 ## Pull Requests 
 
 You can find all [open oneTBB pull requests](https://github.com/oneapi-src/oneTBB/pulls) on GitHub. 

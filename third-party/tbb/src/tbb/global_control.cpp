@@ -49,6 +49,7 @@ protected:
     std::set<d1::global_control*, control_storage_comparator, tbb_allocator<d1::global_control*>> my_list{};
     spin_mutex my_list_mutex{};
 public:
+    virtual ~control_storage() = default;
     virtual std::size_t default_value() const = 0;
     virtual void apply_active(std::size_t new_active) {
         my_active_value = new_active;

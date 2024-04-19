@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -36,7 +36,15 @@
 #include "task.h" // for task::suspend_point
 
 #if _WIN32 || _WIN64
+#ifndef NOMINMAX
+#define NOMINMAX
+#define __TBB_DEFINED_NOMINMAX 1
+#endif
 #include <windows.h>
+#if __TBB_DEFINED_NOMINMAX
+#undef NOMINMAX
+#undef __TBB_DEFINED_NOMINMAX
+#endif
 #else
 #include <pthread.h>
 #endif

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2022 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -75,7 +75,7 @@ public:
         mValid = false;
         pthread_attr_t attr;
         // Limit the stack size not to consume all virtual memory on 32 bit platforms.
-        std::size_t stacksize = utils::max(128*1024, PTHREAD_STACK_MIN);
+        std::size_t stacksize = utils::max(std::size_t(128*1024), std::size_t(PTHREAD_STACK_MIN));
         if (pthread_attr_init(&attr) == 0 && pthread_attr_setstacksize(&attr, stacksize) == 0) {
             mValid = pthread_create(&mHandle, &attr, thread_routine, /* arg = */ nullptr) == 0;
         }

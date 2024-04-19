@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023 Intel Corporation
+# Copyright (c) 2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,24 +14,20 @@
 
 cmake_minimum_required(VERSION 3.5)
 
-project(square CXX)
+project(pi CXX)
 
 include(../../common/cmake/common.cmake)
 
 set_common_project_settings(tbb)
 
-add_executable(square gen_input.cpp square.cpp)
+add_executable(pi main.cpp pi.cpp)
 
-target_link_libraries(square TBB::tbb Threads::Threads)
-target_compile_options(square PRIVATE ${TBB_CXX_STD_FLAG})
+target_link_libraries(pi TBB::tbb Threads::Threads)
+target_compile_options(pi PRIVATE ${TBB_CXX_STD_FLAG})
 
-if (MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL IntelLLVM)
-    target_compile_options(square PRIVATE -D_CRT_SECURE_NO_WARNINGS)
-endif()
+set(EXECUTABLE "$<TARGET_FILE:pi>")
+set(ARGS "")
+set(PERF_ARGS auto 100000000000)
 
-set(EXECUTABLE "$<TARGET_FILE:square>")
-set(ARGS 0 input.txt output.txt)
-set(PERF_ARGS auto input.txt output.txt silent)
-
-add_execution_target(run_square square ${EXECUTABLE} "${ARGS}")
-add_execution_target(perf_run_square square ${EXECUTABLE} "${PERF_ARGS}")
+add_execution_target(run_pi pi ${EXECUTABLE} "${ARGS}")
+add_execution_target(perf_run_pi pi ${EXECUTABLE} "${PERF_ARGS}")

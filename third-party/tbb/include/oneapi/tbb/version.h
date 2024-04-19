@@ -29,18 +29,22 @@
 // Product version
 #define TBB_VERSION_MAJOR 2021
 // Update version
-#define TBB_VERSION_MINOR 11
+#define TBB_VERSION_MINOR 12
 // "Patch" version for custom releases
 #define TBB_VERSION_PATCH 0
 // Suffix string
 #define __TBB_VERSION_SUFFIX ""
 // Full official version string
-#define TBB_VERSION_STRING __TBB_STRING(TBB_VERSION_MAJOR) "." __TBB_STRING(TBB_VERSION_MINOR) __TBB_VERSION_SUFFIX
+#define TBB_VERSION_STRING              \
+    __TBB_STRING(TBB_VERSION_MAJOR) "." \
+    __TBB_STRING(TBB_VERSION_MINOR) "." \
+    __TBB_STRING(TBB_VERSION_PATCH)     \
+    __TBB_VERSION_SUFFIX
 
 // OneAPI oneTBB specification version
 #define ONETBB_SPEC_VERSION "1.0"
 // Full interface version
-#define TBB_INTERFACE_VERSION 12110
+#define TBB_INTERFACE_VERSION 12120
 // Major interface version
 #define TBB_INTERFACE_VERSION_MAJOR (TBB_INTERFACE_VERSION/1000)
 // Minor interface version
@@ -51,37 +55,37 @@
 #define __TBB_BINARY_VERSION 12
 
 //! TBB_VERSION support
-#ifndef ENDL
-#define ENDL "\n"
+#ifndef TBB_ENDL
+#define TBB_ENDL "\n"
 #endif
 
 //TBB_REVAMP_TODO: consider enabling version_string.ver generation
 //TBB_REVAMP_TODO: #include "version_string.ver"
 
-#define __TBB_ONETBB_SPEC_VERSION(N) #N ": SPECIFICATION VERSION\t" ONETBB_SPEC_VERSION ENDL
-#define __TBB_VERSION_NUMBER(N) #N ": VERSION\t\t" TBB_VERSION_STRING ENDL
-#define __TBB_INTERFACE_VERSION_NUMBER(N) #N ": INTERFACE VERSION\t" __TBB_STRING(TBB_INTERFACE_VERSION) ENDL
+#define __TBB_ONETBB_SPEC_VERSION(N) #N ": SPECIFICATION VERSION\t" ONETBB_SPEC_VERSION TBB_ENDL
+#define __TBB_VERSION_NUMBER(N) #N ": VERSION\t\t" TBB_VERSION_STRING TBB_ENDL
+#define __TBB_INTERFACE_VERSION_NUMBER(N) #N ": INTERFACE VERSION\t" __TBB_STRING(TBB_INTERFACE_VERSION) TBB_ENDL
 
 #ifndef TBB_USE_DEBUG
-    #define __TBB_VERSION_USE_DEBUG(N) #N ": TBB_USE_DEBUG\tundefined" ENDL
+    #define __TBB_VERSION_USE_DEBUG(N) #N ": TBB_USE_DEBUG\tundefined" TBB_ENDL
 #elif TBB_USE_DEBUG==0
-    #define __TBB_VERSION_USE_DEBUG(N) #N ": TBB_USE_DEBUG\t0" ENDL
+    #define __TBB_VERSION_USE_DEBUG(N) #N ": TBB_USE_DEBUG\t0" TBB_ENDL
 #elif TBB_USE_DEBUG==1
-    #define __TBB_VERSION_USE_DEBUG(N) #N ": TBB_USE_DEBUG\t1" ENDL
+    #define __TBB_VERSION_USE_DEBUG(N) #N ": TBB_USE_DEBUG\t1" TBB_ENDL
 #elif TBB_USE_DEBUG==2
-    #define __TBB_VERSION_USE_DEBUG(N) #N ": TBB_USE_DEBUG\t2" ENDL
+    #define __TBB_VERSION_USE_DEBUG(N) #N ": TBB_USE_DEBUG\t2" TBB_ENDL
 #else
     #error Unexpected value for TBB_USE_DEBUG
 #endif
 
 #ifndef TBB_USE_ASSERT
-    #define __TBB_VERSION_USE_ASSERT(N) #N ": TBB_USE_ASSERT\tundefined" ENDL
+    #define __TBB_VERSION_USE_ASSERT(N) #N ": TBB_USE_ASSERT\tundefined" TBB_ENDL
 #elif TBB_USE_ASSERT==0
-    #define __TBB_VERSION_USE_ASSERT(N) #N ": TBB_USE_ASSERT\t0" ENDL
+    #define __TBB_VERSION_USE_ASSERT(N) #N ": TBB_USE_ASSERT\t0" TBB_ENDL
 #elif TBB_USE_ASSERT==1
-    #define __TBB_VERSION_USE_ASSERT(N) #N ": TBB_USE_ASSERT\t1" ENDL
+    #define __TBB_VERSION_USE_ASSERT(N) #N ": TBB_USE_ASSERT\t1" TBB_ENDL
 #elif TBB_USE_ASSERT==2
-    #define __TBB_VERSION_USE_ASSERT(N) #N ": TBB_USE_ASSERT\t2" ENDL
+    #define __TBB_VERSION_USE_ASSERT(N) #N ": TBB_USE_ASSERT\t2" TBB_ENDL
 #else
     #error Unexpected value for TBB_USE_ASSERT
 #endif

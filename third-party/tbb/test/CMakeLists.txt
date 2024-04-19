@@ -29,6 +29,9 @@ function(tbb_add_test)
     add_executable(${_tbb_test_TARGET_NAME} ${_tbb_test_SUBDIR}/${_tbb_test_NAME}.cpp)
     target_include_directories(${_tbb_test_TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_CURRENT_SOURCE_DIR})
 
+    # cmake>=3.4 no longer adds flags to export symbols from executables (CMP0065)
+    set_property(TARGET ${_tbb_test_TARGET_NAME} PROPERTY ENABLE_EXPORTS TRUE)
+
     target_compile_options(${_tbb_test_TARGET_NAME}
         PRIVATE
         ${TBB_CXX_STD_FLAG}
@@ -558,7 +561,7 @@ if (TARGET TBB::tbb)
         target_include_directories(test_implicit_linkage_on_windows PRIVATE
         $<TARGET_PROPERTY:TBB::tbb,INTERFACE_INCLUDE_DIRECTORIES>)
         set_target_properties(test_implicit_linkage_on_windows PROPERTIES
-        LINK_OPTIONS /LIBPATH:$<TARGET_LINKER_FILE_DIR:TBB::tbb>)
+        LINK_OPTIONS LINKER:/LIBPATH:$<TARGET_LINKER_FILE_DIR:TBB::tbb>)
         add_dependencies(test_implicit_linkage_on_windows TBB::tbb)
     endif()
 endif()

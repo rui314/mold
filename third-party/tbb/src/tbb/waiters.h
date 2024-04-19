@@ -114,6 +114,7 @@ protected:
     void sleep(std::uintptr_t uniq_tag, Pred wakeup_condition) {
         my_arena.get_waiting_threads_monitor().wait<thread_control_monitor::thread_context>(wakeup_condition,
             market_context{uniq_tag, &my_arena});
+        reset_wait();
     }
 };
 
@@ -139,7 +140,6 @@ public:
         auto wakeup_condition = [&] { return !my_arena.is_empty() || !my_wait_ctx.continue_execution(); };
 
         sleep(std::uintptr_t(&my_wait_ctx), wakeup_condition);
-        my_backoff.reset_wait();
     }
 
     d1::wait_context* wait_ctx() {
@@ -176,11 +176,6 @@ public:
         auto wakeup_condition = [&] { return !my_arena.is_empty() || sp->m_is_owner_recalled.load(std::memory_order_relaxed); };
 
         sleep(std::uintptr_t(sp), wakeup_condition);
-        my_backoff.reset_wait();
-    }
-
-    void reset_wait() {
-        my_backoff.reset_wait();
     }
 
     d1::wait_context* wait_ctx() {

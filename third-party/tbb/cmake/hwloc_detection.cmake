@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,8 +46,6 @@ endforeach()
 unset(HWLOC_TARGET_NAME)
 
 if (NOT HWLOC_TARGET_EXPLICITLY_DEFINED AND
-    # No hwloc auto detection for cross compilation
-    NOT CMAKE_CROSSCOMPILING AND
     NOT TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH
 )
     find_package(PkgConfig QUIET)
