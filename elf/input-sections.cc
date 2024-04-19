@@ -107,6 +107,16 @@ void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
 }
 
 template <typename E>
+static bool
+is_relr_reloc(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel) {
+  ElfShdr<E> shdr = isec.shdr();
+  return ctx.arg.pack_dyn_relocs_relr &&
+         !(shdr.sh_flags & SHF_EXECINSTR) &&
+         shdr.sh_addralign % sizeof(Word<E>) == 0 &&
+         rel.r_offset % sizeof(Word<E>) == 0;
+}
+
+template <typename E>
 static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
                      const ElfRel<E> &rel, Action action) {
   bool writable = (isec.shdr().sh_flags & SHF_WRITE);
@@ -200,7 +210,7 @@ static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
   case BASEREL:
     // Create a base relocation.
     check_textrel();
-    if (!isec.is_relr_reloc(ctx, rel))
+    if (!is_relr_reloc(ctx, isec, rel))
       isec.file.num_dynrel++;
     break;
   case IFUNC_DYNREL:
@@ -383,7 +393,7 @@ static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
     *(Word<E> *)loc = S + A;
     break;
   case BASEREL:
-    if (isec.is_relr_reloc(ctx, rel)) {
+    if (is_relr_reloc(ctx, isec, rel)) {
       *(Word<E> *)loc = S + A;
     } else {
       *dynrel++ = ElfRel<E>(P, E::R_RELATIVE, 0, S + A);

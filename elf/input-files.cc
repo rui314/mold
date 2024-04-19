@@ -839,7 +839,9 @@ void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
 
       // Shrink vectors that we will never use again to reclaim memory.
       m->strings.clear();
+      m->strings.shrink_to_fit();
       m->hashes.clear();
+      m->hashes.shrink_to_fit();
     }
   }
 
@@ -1067,14 +1069,9 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     if (sym.is_traced)
       print_trace_symbol(ctx, *this, esym, sym);
 
-    if (esym.is_weak())
-      continue;
-
-    if (!sym.file)
-      continue;
-
-    bool keep = esym.is_undef() || (esym.is_common() && !sym.esym().is_common());
-    if (keep && !sym.file->is_alive.test_and_set()) {
+    if (sym.file && !esym.is_weak() &&
+        (esym.is_undef() || (esym.is_common() && !sym.esym().is_common())) &&
+        !sym.file->is_alive.test_and_set()) {
       feeder(sym.file);
 
       if (sym.is_traced)
@@ -1554,9 +1551,8 @@ void SharedFile<E>::populate_symtab(Context<E> &ctx) {
   u8 *strtab = ctx.buf + ctx.strtab->shdr.sh_offset;
   i64 strtab_off = this->strtab_offset;
 
-  for (i64 i = 0, j = this->first_global; j < this->elf_syms.size(); i++, j++) {
-    Symbol<E> &sym = *this->symbols[j];
-    if (sym.file != this || !sym.write_to_symtab)
+  for (i64 i = 0; Symbol<E> *sym : this->get_global_syms()) {
+    if (sym->file != this || !sym->write_to_symtab)
       continue;
 
     U32<E> *xindex = nullptr;
@@ -1564,8 +1560,9 @@ void SharedFile<E>::populate_symtab(Context<E> &ctx) {
       xindex = (U32<E> *)(ctx.buf + ctx.symtab_shndx->shdr.sh_offset) +
                this->global_symtab_idx + i;
 
-    *symtab++ = to_output_esym(ctx, sym, strtab_off, xindex);
-    strtab_off += write_string(strtab + strtab_off, sym.name());
+    *symtab++ = to_output_esym(ctx, *sym, strtab_off, xindex);
+    strtab_off += write_string(strtab + strtab_off, sym->name());
+    i++;
   }
 }
 

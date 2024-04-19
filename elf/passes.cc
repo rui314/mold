@@ -224,8 +224,7 @@ static void mark_live_objects(Context<E> &ctx) {
 
   tbb::parallel_for_each(roots, [&](InputFile<E> *file,
                                     tbb::feeder<InputFile<E> *> &feeder) {
-    if (file->is_alive)
-      file->mark_live_objects(ctx, [&](InputFile<E> *obj) { feeder.add(obj); });
+    file->mark_live_objects(ctx, [&](InputFile<E> *obj) { feeder.add(obj); });
   });
 }
 
@@ -667,12 +666,11 @@ void create_output_sections(Context<E> &ctx) {
 
         std::unique_lock lock(mu);
         auto [it, inserted] = map.insert({key, osec.get()});
-        OutputSection<E> *ret = it->second;
 
         if (inserted)
           ctx.osec_pool.emplace_back(std::move(osec));
         cache.insert({key, it->second});
-        return ret;
+        return it->second;
       };
 
       OutputSection<E> *osec = get_or_insert();

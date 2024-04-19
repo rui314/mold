@@ -107,7 +107,7 @@ endif()
 # This option is intended to be used by `./dist.sh` script to create a
 # mold binary that works on various Linux distros. You probably don't
 # need nor want to set this to ON.
-option(MOLD_MOSTLY_STATIC "Statically link libstdc++ and libcrypto" OFF)
+option(MOLD_MOSTLY_STATIC "Statically link libstdc++ and some other libraries" OFF)
 if(MOLD_MOSTLY_STATIC)
   target_link_options(mold PRIVATE -static-libstdc++)
 endif()
@@ -402,7 +402,7 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
-  # Create the ld and ld64 symlinks required for testing
+  # Create the ld symlinks required for testing
   if(NOT WIN32)
     add_custom_command(
       TARGET mold POST_BUILD
@@ -420,13 +420,8 @@ endif()
 if(NOT CMAKE_SKIP_INSTALL_RULES)
   install(TARGETS mold RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
   install(FILES docs/mold.1 DESTINATION ${CMAKE_INSTALL_MANDIR}/man1/)
-
-  if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
-    install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
-  endif()
-  if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE.third-party")
-    install(FILES "LICENSE.third-party" DESTINATION "${CMAKE_INSTALL_DOCDIR}")
-  endif()
+  install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DOCDIR})
+  install(FILES "LICENSE.third-party" DESTINATION "${CMAKE_INSTALL_DOCDIR}")
 
   function(mold_install_relative_symlink OLD NEW)
     install(CODE "

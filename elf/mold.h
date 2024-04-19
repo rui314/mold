@@ -340,7 +340,9 @@ template <typename E> u64 get_dtp_addr(Context<E> &);
 //
 
 template <typename E>
-u64 get_eflags(Context<E> &ctx);
+u64 get_eflags(Context<E> &ctx) {
+  return 0;
+}
 
 template <typename E>
 i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
@@ -2375,15 +2377,6 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   // as a tombstone value. .debug_loc and .debug_ranges reserve 0 as
   // the terminator marker, so we use 1 if that's the case.
   return (s == ".debug_loc" || s == ".debug_ranges") ? 1 : 0;
-}
-
-template <typename E>
-inline bool
-InputSection<E>::is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) const {
-  return ctx.arg.pack_dyn_relocs_relr &&
-         !(shdr().sh_flags & SHF_EXECINSTR) &&
-         (shdr().sh_addralign % sizeof(Word<E>)) == 0 &&
-         (rel.r_offset % sizeof(Word<E>)) == 0;
 }
 
 template <typename E>

@@ -11,10 +11,6 @@
 #include <tbb/parallel_scan.h>
 #include <tbb/parallel_sort.h>
 
-#ifndef _WIN32
-# include <sys/mman.h>
-#endif
-
 namespace mold::elf {
 
 // The hash function for .hash.
@@ -39,7 +35,16 @@ static u32 djb_hash(std::string_view name) {
 }
 
 template <typename E>
-u64 get_eflags(Context<E> &ctx) {
+static u64 get_entry_addr(Context<E> &ctx) {
+  if (ctx.arg.relocatable)
+    return 0;
+
+  if (Symbol<E> &sym = *ctx.arg.entry;
+      sym.file && !sym.file->is_dso)
+    return sym.get_addr(ctx);
+
+  if (OutputSection<E> *osec = find_section(ctx, ".text"))
+    return osec->shdr.sh_addr;
   return 0;
 }
 
@@ -48,26 +53,13 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
   ElfEhdr<E> &hdr = *(ElfEhdr<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(&hdr, 0, sizeof(hdr));
 
-  auto get_entry_addr = [&]() -> u64 {
-    if (ctx.arg.relocatable)
-      return 0;
-
-    if (Symbol<E> &sym = *ctx.arg.entry;
-        sym.file && !sym.file->is_dso)
-      return sym.get_addr(ctx);
-
-    if (OutputSection<E> *osec = find_section(ctx, ".text"))
-      return osec->shdr.sh_addr;
-    return 0;
-  };
-
   memcpy(&hdr.e_ident, "\177ELF", 4);
   hdr.e_ident[EI_CLASS] = E::is_64 ? ELFCLASS64 : ELFCLASS32;
   hdr.e_ident[EI_DATA] = E::is_le ? ELFDATA2LSB : ELFDATA2MSB;
   hdr.e_ident[EI_VERSION] = EV_CURRENT;
   hdr.e_machine = E::e_machine;
   hdr.e_version = EV_CURRENT;
-  hdr.e_entry = get_entry_addr();
+  hdr.e_entry = get_entry_addr(ctx);
   hdr.e_flags = get_eflags(ctx);
   hdr.e_ehsize = sizeof(ElfEhdr<E>);
 
@@ -922,11 +914,11 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 template <typename E>
 static std::vector<u64> encode_relr(std::span<u64> pos) {
   std::vector<u64> vec;
-  i64 num_bits = sizeof(Word<E>) * 8 - 1;
+  i64 num_bits = E::is_64 ? 63 : 31;
   i64 max_delta = sizeof(Word<E>) * num_bits;
 
   for (i64 i = 0; i < pos.size();) {
-    assert(i == 0 || pos[i - 1] <= pos[i]);
+    assert(i == 0 || pos[i - 1] < pos[i]);
     assert(pos[i] % sizeof(Word<E>) == 0);
 
     vec.push_back(pos[i]);
@@ -935,8 +927,11 @@ static std::vector<u64> encode_relr(std::span<u64> pos) {
 
     for (;;) {
       u64 bits = 0;
-      for (; i < pos.size() && pos[i] - base < max_delta; i++)
-        bits |= 1LL << ((pos[i] - base) / sizeof(Word<E>));
+      for (; i < pos.size() && pos[i] - base < max_delta; i++) {
+        assert(pos[i - 1] < pos[i]);
+        assert(pos[i] % sizeof(Word<E>) == 0);
+        bits |= (u64)1 << ((pos[i] - base) / sizeof(Word<E>));
+      }
 
       if (!bits)
         break;
@@ -967,14 +962,13 @@ void OutputSection<E>::construct_relr(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
     InputSection<E> &isec = *members[i];
-    if ((1 << isec.p2align) < sizeof(Word<E>))
-      return;
 
-    for (const ElfRel<E> &r : isec.get_rels(ctx))
-      if (r.r_type == E::R_ABS && r.r_offset % sizeof(Word<E>) == 0)
-        if (Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-            !sym.is_absolute() && !sym.is_imported)
-          shards[i].push_back(isec.offset + r.r_offset);
+    if (isec.shdr().sh_addralign % sizeof(Word<E>) == 0)
+      for (const ElfRel<E> &r : isec.get_rels(ctx))
+        if (r.r_type == E::R_ABS && r.r_offset % sizeof(Word<E>) == 0)
+          if (Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+              !sym.is_ifunc() && !sym.is_absolute() && !sym.is_imported)
+            shards[i].push_back(isec.offset + r.r_offset);
   });
 
   // Compress them
@@ -1077,7 +1071,7 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
   tlsgd_syms.push_back(sym);
 }
 
-template <typename E>
+template <supports_tlsdesc E>
 void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   // TLSDESC's GOT slot values may vary depending on libc, so we
   // always emit a dynamic relocation for each TLSDESC entry.
@@ -1085,7 +1079,6 @@ void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   // If dynamic relocation is not available (i.e. if we are creating a
   // statically-linked executable), we always relax TLSDESC relocations
   // so that no TLSDESC relocation exist at runtime.
-  assert(supports_tlsdesc<E>);
   assert(!ctx.arg.is_static);
 
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
@@ -1270,30 +1263,31 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   for (GotEntry<E> &ent : get_got_entries(ctx)) {
     if (ent.is_relr(ctx) || ent.r_type == R_NONE) {
       buf[ent.idx] = ent.val;
-    } else {
-      *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
-                         ent.r_type,
-                         ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
-                         ent.val);
+      continue;
+    }
 
-      bool is_tlsdesc = false;
-      if constexpr (supports_tlsdesc<E>)
-        is_tlsdesc = (ent.r_type == E::R_TLSDESC);
+    *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
+                       ent.r_type,
+                       ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
+                       ent.val);
 
-      if (ctx.arg.apply_dynamic_relocs) {
-        if (is_tlsdesc && !is_arm32<E>) {
-          // A single TLSDESC relocation fixes two consecutive GOT slots
-          // where one slot holds a function pointer and the other an
-          // argument to the function. An addend should be applied not to
-          // the function pointer but to the function argument, which is
-          // usually stored to the second slot.
-          //
-          // ARM32 employs the inverted layout for some reason, so an
-          // addend is applied to the first slot.
-          buf[ent.idx + 1] = ent.val;
-        } else {
-          buf[ent.idx] = ent.val;
-        }
+    bool is_tlsdesc = false;
+    if constexpr (supports_tlsdesc<E>)
+      is_tlsdesc = (ent.r_type == E::R_TLSDESC);
+
+    if (ctx.arg.apply_dynamic_relocs) {
+      if (is_tlsdesc && !is_arm32<E>) {
+        // A single TLSDESC relocation fixes two consecutive GOT slots
+        // where one slot holds a function pointer and the other an
+        // argument to the function. An addend should be applied not to
+        // the function pointer but to the function argument, which is
+        // usually stored to the second slot.
+        //
+        // ARM32 employs the inverted layout for some reason, so an
+        // addend is applied to the first slot.
+        buf[ent.idx + 1] = ent.val;
+      } else {
+        buf[ent.idx] = ent.val;
       }
     }
   }
@@ -2566,17 +2560,15 @@ static void blake3_hash(u8 *buf, i64 size, u8 *out) {
 }
 
 template <typename E>
-static void compute_blake3(Context<E> &ctx, i64 offset) {
-  u8 *buf = ctx.buf;
+static void compute_blake3(Context<E> &ctx, u8 *buf) {
+  i64 shard_size = 4 * 1024 * 1024;
   i64 filesize = ctx.output_file->filesize;
-
-  i64 shard_size = 4096 * 1024;
   i64 num_shards = align_to(filesize, shard_size) / shard_size;
   std::vector<u8> shards(num_shards * BLAKE3_OUT_LEN);
 
   tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
-    u8 *begin = buf + shard_size * i;
-    u8 *end = (i == num_shards - 1) ? buf + filesize : begin + shard_size;
+    u8 *begin = ctx.buf + shard_size * i;
+    u8 *end = (i == num_shards - 1) ? ctx.buf + filesize : begin + shard_size;
     blake3_hash(begin, end - begin, shards.data() + i * BLAKE3_OUT_LEN);
 
 #ifdef HAVE_MADVISE
@@ -2587,29 +2579,28 @@ static void compute_blake3(Context<E> &ctx, i64 offset) {
 #endif
    });
 
-  assert(ctx.arg.build_id.size() <= BLAKE3_OUT_LEN);
-
   u8 digest[BLAKE3_OUT_LEN];
   blake3_hash(shards.data(), shards.size(), digest);
-  memcpy(buf + offset, digest, ctx.arg.build_id.size());
+
+  assert(ctx.arg.build_id.size() <= BLAKE3_OUT_LEN);
+  memcpy(buf, digest, ctx.arg.build_id.size());
 }
 
 template <typename E>
 void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
   Timer t(ctx, "build_id");
+  u8 *buf = ctx.buf + this->shdr.sh_offset + HEADER_SIZE;
 
   switch (ctx.arg.build_id.kind) {
   case BuildId::HEX:
-    write_vector(ctx.buf + this->shdr.sh_offset + HEADER_SIZE,
-                 ctx.arg.build_id.value);
+    write_vector(buf, ctx.arg.build_id.value);
     return;
   case BuildId::HASH:
-    compute_blake3(ctx, this->shdr.sh_offset + HEADER_SIZE);
+    compute_blake3(ctx, buf);
     return;
-  case BuildId::UUID: {
-    write_uuid_v4(ctx.buf + this->shdr.sh_offset + HEADER_SIZE);
+  case BuildId::UUID:
+    write_uuid_v4(buf);
     return;
-  }
   default:
     unreachable();
   }
