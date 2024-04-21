@@ -864,7 +864,6 @@ public:
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
-  void update_shdr(Context<E> &ctx) override;
   i64 get_reldyn_size(Context<E> &ctx) const override { return symbols.size(); }
   void copy_buf(Context<E> &ctx) override;
 

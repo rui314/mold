@@ -2321,20 +2321,7 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-void CopyrelSection<E>::update_shdr(Context<E> &ctx) {
-  // SHT_NOBITS sections (i.e. BSS sections) have to be at the end of
-  // a segment, so a .copyrel.rel.ro usually requires one extra
-  // segment for it. We turn a .copyrel.rel.ro into a regular section
-  // if it is very small to avoid the cost of the extra segment.
-  if (this->is_relro && ctx.arg.z_relro && this->shdr.sh_size < E::page_size)
-    this->shdr.sh_type = SHT_PROGBITS;
-}
-
-template <typename E>
 void CopyrelSection<E>::copy_buf(Context<E> &ctx) {
-  if (this->shdr.sh_type == SHT_PROGBITS)
-    memset(ctx.buf + this->shdr.sh_offset, 0, this->shdr.sh_size);
-
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                                  this->reldyn_offset);
 

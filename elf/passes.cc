@@ -1566,7 +1566,7 @@ void scan_relocations(Context<E> &ctx) {
       ctx.got->add_tlsdesc_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_COPYREL) {
-      if (((SharedFile<E> *)sym->file)->is_readonly(sym))
+      if (ctx.arg.z_relro && ((SharedFile<E> *)sym->file)->is_readonly(sym))
         ctx.copyrel_relro->add_symbol(ctx, sym);
       else
         ctx.copyrel->add_symbol(ctx, sym);
