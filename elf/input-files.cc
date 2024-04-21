@@ -1471,15 +1471,15 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
 }
 
 template <typename E>
-std::span<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
+std::span<Symbol<E> *> SharedFile<E>::get_symbols_at(Symbol<E> *sym) {
   assert(sym->file == this);
 
-  std::call_once(init_aliases, [&] {
+  std::call_once(init_sorted_syms, [&] {
     for (Symbol<E> *sym : this->symbols)
       if (sym->file == this)
-        aliases.push_back(sym);
+        sorted_syms.push_back(sym);
 
-    tbb::parallel_sort(aliases.begin(), aliases.end(),
+    tbb::parallel_sort(sorted_syms.begin(), sorted_syms.end(),
                        [](Symbol<E> *a, Symbol<E> *b) {
       const ElfSym<E> &x = a->esym();
       const ElfSym<E> &y = b->esym();
@@ -1487,9 +1487,9 @@ std::span<Symbol<E> *> SharedFile<E>::find_aliases(Symbol<E> *sym) {
     });
   });
 
-  auto [begin, end] = std::equal_range(aliases.begin(), aliases.end(), sym,
-                                       [&](Symbol<E> *x, Symbol<E> *y) {
-    return x->esym().st_value < y->esym().st_value;
+  auto [begin, end] = std::equal_range(sorted_syms.begin(), sorted_syms.end(),
+                                       sym, [&](Symbol<E> *a, Symbol<E> *b) {
+    return a->esym().st_value < b->esym().st_value;
   });
 
   return {&*begin, (size_t)(end - begin)};

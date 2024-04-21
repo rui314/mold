@@ -396,7 +396,7 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
   Timer t(ctx, "sort_dynamic_relocs");
 
   ElfRel<E> *begin = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
-  ElfRel<E> *end = (ElfRel<E> *)((u8 *)begin + this->shdr.sh_size);
+  ElfRel<E> *end = begin + this->shdr.sh_size / sizeof(ElfRel<E>);
 
   auto get_rank = [](u32 r_type) {
     if (r_type == E::R_RELATIVE)
@@ -514,7 +514,7 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
   base[0] = '\0';
 
   for (Chunk<E> *chunk : ctx.chunks)
-    if (!chunk->is_header() && !chunk->name.empty())
+    if (chunk->shdr.sh_name)
       write_string(base + chunk->shdr.sh_name, chunk->name);
 }
 
@@ -547,17 +547,13 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   base[0] = '\0';
 
-  for (std::pair<std::string_view, i64> pair : strings)
-    write_string(base + pair.second, pair.first);
+  for (std::pair<std::string_view, i64> p : strings)
+    write_string(base + p.second, p.first);
 
-  if (!ctx.dynsym->symbols.empty()) {
-    i64 offset = dynsym_offset;
-
-    for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
-      Symbol<E> &sym = *ctx.dynsym->symbols[i];
-      offset += write_string(base + offset, sym.name());
-    }
-  }
+  i64 off = dynsym_offset;
+  for (Symbol<E> *sym : ctx.dynsym->symbols)
+    if (sym)
+      off += write_string(base + off, sym->name());
 }
 
 template <typename E>
@@ -1003,9 +999,6 @@ void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
 // disassembling and/or debugging our output.
 template <typename E>
 void OutputSection<E>::populate_symtab(Context<E> &ctx) {
-  if (this->num_local_symtab == 0)
-    return;
-
   if constexpr (needs_thunk<E>) {
     ElfSym<E> *esym =
       (ElfSym<E> *)(ctx.buf + ctx.symtab->shdr.sh_offset) + this->local_symtab_idx;
@@ -1405,7 +1398,6 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
-
   sym->set_plt_idx(ctx, symbols.size());
   symbols.push_back(sym);
   ctx.dynsym->add_symbol(ctx, sym);
@@ -1705,11 +1697,8 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
     u32 num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
     ctx.gnu_hash->num_buckets = num_buckets;
 
-    tbb::parallel_for((i64)(first_global - symbols.begin()), (i64)symbols.size(),
-                      [&](i64 i) {
-      Symbol<E> &sym = *symbols[i];
-      sym.set_dynsym_idx(ctx, i);
-      sym.set_djb_hash(ctx, djb_hash(sym.name()));
+    tbb::parallel_for_each(first_global, symbols.end(), [&](Symbol<E> *sym) {
+      sym->set_djb_hash(ctx, djb_hash(sym->name()));
     });
 
     tbb::parallel_sort(first_global, symbols.end(),
@@ -1717,10 +1706,8 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
       if (a->is_exported != b->is_exported)
         return b->is_exported;
 
-      u32 h1 = a->get_djb_hash(ctx) % num_buckets;
-      u32 h2 = b->get_djb_hash(ctx) % num_buckets;
-      return std::tuple(h1, a->get_dynsym_idx(ctx)) <
-             std::tuple(h2, b->get_dynsym_idx(ctx));
+      return std::tuple(a->get_djb_hash(ctx) % num_buckets, a->name()) <
+             std::tuple(b->get_djb_hash(ctx) % num_buckets, b->name());
     });
   }
 
@@ -1917,9 +1904,8 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
 
   auto find = [&]() -> MergedSection * {
     for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
-      if (std::tuple(name, flags, type, entsize) ==
-          std::tuple(osec->name, osec->shdr.sh_flags, osec->shdr.sh_type,
-                     osec->shdr.sh_entsize))
+      if (name == osec->name && flags == osec->shdr.sh_flags &&
+          type == osec->shdr.sh_type && entsize == osec->shdr.sh_entsize)
         return osec.get();
     return nullptr;
   };
@@ -2306,7 +2292,7 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   // For example, `environ`, `_environ` and `__environ` in libc.so are
   // aliases. If one of the symbols is copied by a copy relocation, other
   // symbols have to refer to the copied place as well.
-  for (Symbol<E> *sym2 : file.find_aliases(sym)) {
+  for (Symbol<E> *sym2 : file.get_symbols_at(sym)) {
     sym2->add_aux(ctx);
     sym2->is_imported = true;
     sym2->is_exported = true;
@@ -2338,6 +2324,30 @@ void VersymSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
+// If `-z pack-relative-relocs` is specified, we'll create a .relr.dyn
+// section and store base relocation records to that section instead of
+// to the usual .rela.dyn section.
+//
+// .relr.dyn is relatively new feature and not supported by glibc until
+// 2.38 which was released in 2022. If we don't do anything, executables
+// built with `-z pack-relative-relocs` 't work and would crash
+// immediately on startup with an older version of glibc.
+//
+// As a workaround, we'll add a dependency to a dummy version name
+// "GLIBC_ABI_DT_RELR" if `-z pack-relative-relocs` is given so that
+// executables built with the option failed with a more friendly "version
+// `GLIBC_ABI_DT_RELR' not found" error message. glibc 2.38 or later knows
+// about this dummy version name and simply ignores it.
+template <typename E>
+static InputFile<E> *find_glibc2(Context<E> &ctx) {
+  for (Symbol<E> *sym : ctx.dynsym->symbols)
+    if (sym && sym->file->is_dso &&
+        ((SharedFile<E> *)sym->file)->soname.starts_with("libc.so.") &&
+        sym->get_version().starts_with("GLIBC_2."))
+      return sym->file;
+  return nullptr;
+}
+
 template <typename E>
 void VerneedSection<E>::construct(Context<E> &ctx) {
   Timer t(ctx, "fill_verneed");
@@ -2360,8 +2370,8 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
   });
 
   // Resize .gnu.version
-  ctx.versym->contents.resize(ctx.dynsym->symbols.size(), 1);
-  ctx.versym->contents[0] = 0;
+  ctx.versym->contents.resize(ctx.dynsym->symbols.size(), VER_NDX_GLOBAL);
+  ctx.versym->contents[0] = VER_NDX_LOCAL;
 
   // Allocate a large enough buffer for .gnu.version_r.
   contents.resize((sizeof(ElfVerneed<E>) + sizeof(ElfVernaux<E>)) *
@@ -2373,7 +2383,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
   ElfVerneed<E> *verneed = nullptr;
   ElfVernaux<E> *aux = nullptr;
 
-  u16 veridx = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size();
+  i64 veridx = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size();
 
   auto start_group = [&](InputFile<E> *file) {
     this->shdr.sh_info++;
@@ -2394,7 +2404,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
     if (aux)
       aux->vna_next = sizeof(ElfVernaux<E>);
     aux = (ElfVernaux<E> *)ptr;
-    ptr += sizeof(*aux);
+    ptr += sizeof(ElfVernaux<E>);
 
     aux->vna_hash = elf_hash(verstr);
     aux->vna_other = ++veridx;
@@ -2414,29 +2424,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
   }
 
   if (ctx.arg.pack_dyn_relocs_relr) {
-    // If `-z pack-relative-relocs` is specified, we'll create a .relr.dyn
-    // section and store base relocation records to that section instead of
-    // to the usual .rela.dyn section.
-    //
-    // .relr.dyn is relatively new feature and not supported by glibc until
-    // 2.38 which was released in 2022. Executables built with `-z
-    // pack-relative-relocs` don't work and usually crash immediately on
-    // startup if libc doesn't support it.
-    //
-    // In the following code, we'll add a dependency to a dummy version name
-    // "GLIBC_ABI_DT_RELR" so that executables built with the option failed
-    // with a more friendly "version `GLIBC_ABI_DT_RELR' not found" error
-    // message. glibc 2.38 or later knows about this dummy version name and
-    // simply ignores it.
-    auto find_glibc2 = [&]() -> InputFile<E> * {
-      for (Symbol<E> *sym : syms)
-        if (((SharedFile<E> *)sym->file)->soname.starts_with("libc.so.") &&
-            sym->get_version().starts_with("GLIBC_2."))
-          return sym->file;
-      return nullptr;
-    };
-
-    if (InputFile<E> *file = find_glibc2()) {
+    if (InputFile<E> *file = find_glibc2(ctx)) {
       start_group(file);
       add_entry("GLIBC_ABI_DT_RELR");
     }
@@ -2465,8 +2453,8 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
     return;
 
   // Resize .gnu.version
-  ctx.versym->contents.resize(ctx.dynsym->symbols.size(), 1);
-  ctx.versym->contents[0] = 0;
+  ctx.versym->contents.resize(ctx.dynsym->symbols.size(), VER_NDX_GLOBAL);
+  ctx.versym->contents[0] = VER_NDX_LOCAL;
 
   // Allocate a buffer for .gnu.version_d.
   contents.resize((sizeof(ElfVerdef<E>) + sizeof(ElfVerdaux<E>)) *
@@ -2505,13 +2493,10 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   for (std::string_view verstr : ctx.arg.version_definitions)
     write(verstr, idx++, 0);
 
-  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
-    Symbol<E> &sym = *ctx.dynsym->symbols[i];
-    if (sym.ver_idx == VER_NDX_UNSPECIFIED)
-      ctx.versym->contents[sym.get_dynsym_idx(ctx)] = VER_NDX_GLOBAL;
-    else
+  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++)
+    if (Symbol<E> &sym = *ctx.dynsym->symbols[i];
+        !sym.file->is_dso && sym.ver_idx != VER_NDX_UNSPECIFIED)
       ctx.versym->contents[sym.get_dynsym_idx(ctx)] = sym.ver_idx;
-  }
 }
 
 template <typename E>

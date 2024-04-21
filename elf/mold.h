@@ -1253,7 +1253,7 @@ public:
 
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
-  std::span<Symbol<E> *> find_aliases(Symbol<E> *sym);
+  std::span<Symbol<E> *> get_symbols_at(Symbol<E> *sym);
   i64 get_alignment(Symbol<E> *sym);
   bool is_readonly(Symbol<E> *sym);
 
@@ -1277,9 +1277,9 @@ private:
   std::vector<u16> versyms;
   const ElfShdr<E> *symtab_sec;
 
-  // Used by find_aliases()
-  std::once_flag init_aliases;
-  std::vector<Symbol<E> *> aliases;
+  // Used by get_symbols_at()
+  std::once_flag init_sorted_syms;
+  std::vector<Symbol<E> *> sorted_syms;
 };
 
 //
