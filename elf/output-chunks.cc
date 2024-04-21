@@ -1071,7 +1071,7 @@ void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
   tlsgd_syms.push_back(sym);
 }
 
-template <supports_tlsdesc E>
+template <typename E>
 void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   // TLSDESC's GOT slot values may vary depending on libc, so we
   // always emit a dynamic relocation for each TLSDESC entry.
@@ -1079,6 +1079,7 @@ void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   // If dynamic relocation is not available (i.e. if we are creating a
   // statically-linked executable), we always relax TLSDESC relocations
   // so that no TLSDESC relocation exist at runtime.
+  assert(supports_tlsdesc<E>);
   assert(!ctx.arg.is_static);
 
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
