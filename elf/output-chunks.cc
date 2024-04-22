@@ -2022,14 +2022,16 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   i64 shard_size = map.nbuckets / map.NUM_SHARDS;
 
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
-    memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
+    // There might be gaps between strings to satisfy alignment requirements.
+    // If that's the case, we need to zero-clear them.
+    if (this->shdr.sh_addralign > 1)
+      memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
 
+    // Copy strings
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)
-      if (const char *key = map.entries[j].key) {
-        SectionFragment<E> &frag = map.entries[j].value;
-        if (frag.is_alive)
+      if (const char *key = map.entries[j].key)
+        if (SectionFragment<E> &frag = map.entries[j].value; frag.is_alive)
           memcpy(buf + frag.offset, key, map.entries[j].keylen);
-      }
   });
 }
 
