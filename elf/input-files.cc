@@ -1145,23 +1145,19 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
       continue;
     }
 
-    elf_sections2.push_back({});
-    ElfShdr<E> &shdr = elf_sections2.back();
-    memset(&shdr, 0, sizeof(shdr));
-
-    if (sym.get_type() == STT_TLS) {
+    ElfShdr<E> shdr = {};
+    if (sym.get_type() == STT_TLS)
       shdr.sh_flags = SHF_ALLOC | SHF_WRITE | SHF_TLS;
-    } else {
+    else
       shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
-    }
 
     shdr.sh_type = SHT_NOBITS;
     shdr.sh_size = this->elf_syms[i].st_size;
     shdr.sh_addralign = this->elf_syms[i].st_value;
+    elf_sections2.push_back(shdr);
 
     i64 idx = this->elf_sections.size() + elf_sections2.size() - 1;
-    std::unique_ptr<InputSection<E>> isec =
-      std::make_unique<InputSection<E>>(ctx, *this, idx);
+    auto isec = std::make_unique<InputSection<E>>(ctx, *this, idx);
 
     sym.file = this;
     sym.set_input_section(isec.get());
@@ -1169,7 +1165,6 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     sym.sym_idx = i;
     sym.ver_idx = ctx.default_version;
     sym.is_weak = false;
-
     sections.push_back(std::move(isec));
   }
 }
@@ -1399,32 +1394,31 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 // default version of the library) at load-time.
 template <typename E>
 std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
-  std::vector<std::string_view> ret(VER_NDX_LAST_RESERVED + 1);
-
   ElfShdr<E> *verdef_sec = this->find_section(SHT_GNU_VERDEF);
   if (!verdef_sec)
-    return ret;
+    return {};
 
   std::string_view verdef = this->get_string(ctx, *verdef_sec);
   std::string_view strtab = this->get_string(ctx, verdef_sec->sh_link);
 
-  ElfVerdef<E> *ver = (ElfVerdef<E> *)verdef.data();
+  std::vector<std::string_view> vec;
+  u8 *ptr = (u8 *)verdef.data();
 
   for (;;) {
+    ElfVerdef<E> *ver = (ElfVerdef<E> *)ptr;
     if (ver->vd_ndx == VER_NDX_UNSPECIFIED)
       Fatal(ctx) << *this << ": symbol version too large";
 
-    if (ret.size() <= ver->vd_ndx)
-      ret.resize(ver->vd_ndx + 1);
+    if (vec.size() <= ver->vd_ndx)
+      vec.resize(ver->vd_ndx + 1);
 
-    ElfVerdaux<E> *aux = (ElfVerdaux<E> *)((u8 *)ver + ver->vd_aux);
-    ret[ver->vd_ndx] = strtab.data() + aux->vda_name;
+    ElfVerdaux<E> *aux = (ElfVerdaux<E> *)(ptr + ver->vd_aux);
+    vec[ver->vd_ndx] = strtab.data() + aux->vda_name;
     if (!ver->vd_next)
       break;
-
-    ver = (ElfVerdef<E> *)((u8 *)ver + ver->vd_next);
+    ptr += ver->vd_next;
   }
-  return ret;
+  return vec;
 }
 
 template <typename E>

@@ -2834,8 +2834,11 @@ inline u32 Symbol<E>::get_type() const {
 
 template <typename E>
 inline std::string_view Symbol<E>::get_version() const {
-  if (file->is_dso)
-    return ((SharedFile<E> *)file)->version_strings[ver_idx];
+  if (file->is_dso) {
+    std::span<std::string_view> vers = ((SharedFile<E> *)file)->version_strings;
+    if (!vers.empty())
+      return vers[ver_idx];
+  }
   return "";
 }
 
