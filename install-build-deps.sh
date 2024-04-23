@@ -39,6 +39,10 @@ alpine-*)
   apk update
   apk add bash make linux-headers cmake gcc g++
   ;;
+clear-linux-*)
+  swupd update
+  swupd bundle-add c-basic diffutils
+  ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"
   exit 1
