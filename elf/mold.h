@@ -1133,6 +1133,9 @@ public:
   std::string_view shstrtab;
   std::string_view symbol_strtab;
 
+  bool has_init_array = false;
+  bool has_ctors = false;
+
   // To create an output .symtab
   u64 local_symtab_idx = 0;
   u64 global_symtab_idx = 0;
@@ -1802,8 +1805,6 @@ struct Context {
   tbb::task_group tg;
 
   bool has_error = false;
-  Atomic<bool> has_init_array = false;
-  Atomic<bool> has_ctors = false;
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;

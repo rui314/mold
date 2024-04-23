@@ -474,6 +474,17 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
 }
 
 template <typename E>
+static bool has_ctors_and_init_array(Context<E> &ctx) {
+  bool x = false;
+  bool y = false;
+  for (ObjectFile<E> *file : ctx.objs) {
+    x |= file->has_ctors;
+    y |= file->has_init_array;
+  }
+  return x && y;
+}
+
+template <typename E>
 static u64 canonicalize_type(std::string_view name, u64 type) {
   // Some old assemblers don't recognize these section names and
   // create them as SHT_PROGBITS.
@@ -563,7 +574,8 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
 
 template <typename E>
 static OutputSectionKey
-get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
+get_output_section_key(Context<E> &ctx, InputSection<E> &isec,
+                       bool ctors_in_init_array) {
   // If .init_array/.fini_array exist, .ctors/.dtors must be merged
   // with them.
   //
@@ -572,7 +584,7 @@ get_output_section_key(Context<E> &ctx, InputSection<E> &isec) {
   // beginning and the end of the initializer/finalizer pointer arrays.
   // We do not place them into .init_array/.fini_array because such
   // invalid pointer values would simply make the program to crash.
-  if (ctx.has_init_array && !isec.get_rels(ctx).empty()) {
+  if (ctors_in_init_array && !isec.get_rels(ctx).empty()) {
     std::string_view name = isec.name();
     if (name == ".ctors" || name.starts_with(".ctors."))
       return {".init_array", SHT_INIT_ARRAY};
@@ -620,6 +632,7 @@ void create_output_sections(Context<E> &ctx) {
   MapType map;
   std::shared_mutex mu;
   i64 size = ctx.osec_pool.size();
+  bool ctors_in_init_array = has_ctors_and_init_array(ctx);
 
   // Instantiate output sections
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -648,7 +661,8 @@ void create_output_sections(Context<E> &ctx) {
       }
 
       auto get_or_insert = [&] {
-        OutputSectionKey key = get_output_section_key(ctx, *isec);
+        OutputSectionKey key =
+          get_output_section_key(ctx, *isec, ctors_in_init_array);
 
         if (auto it = cache.find(key); it != cache.end())
           return it->second;
@@ -1239,29 +1253,30 @@ template <typename E>
 void fixup_ctors_in_init_array(Context<E> &ctx) {
   Timer t(ctx, "fixup_ctors_in_init_array");
 
-  for (Chunk<E> *chunk : ctx.chunks) {
-    if (OutputSection<E> *osec = chunk->to_osec()) {
-      if (osec->name == ".init_array" || osec->name == ".fini_array") {
-        for (InputSection<E> *isec : osec->members) {
-          if (isec->name().starts_with(".ctors") ||
-              isec->name().starts_with(".dtors")) {
-            if (isec->sh_size % sizeof(Word<E>)) {
-              Error(ctx) << *isec << ": section corrupted";
-              continue;
-            }
-
-            u8 *buf = (u8 *)isec->contents.data();
-            std::reverse((Word<E> *)buf, (Word<E> *)(buf + isec->sh_size));
-
-            std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-            for (ElfRel<E> &r : rels)
-              r.r_offset = isec->sh_size - r.r_offset - sizeof(Word<E>);
-            std::reverse(rels.begin(), rels.end());
-          }
+  auto fixup = [&](OutputSection<E> &osec) {
+    for (InputSection<E> *isec : osec.members) {
+      if (isec->name().starts_with(".ctors") ||
+          isec->name().starts_with(".dtors")) {
+        if (isec->sh_size % sizeof(Word<E>)) {
+          Error(ctx) << *isec << ": section corrupted";
+          continue;
         }
+
+        u8 *buf = (u8 *)isec->contents.data();
+        std::reverse((Word<E> *)buf, (Word<E> *)(buf + isec->sh_size));
+
+        std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+        for (ElfRel<E> &r : rels)
+          r.r_offset = isec->sh_size - r.r_offset - sizeof(Word<E>);
+        std::reverse(rels.begin(), rels.end());
       }
     }
-  }
+  };
+
+  if (OutputSection<E> *osec = find_section(ctx, ".init_array"))
+    fixup(*osec);
+  if (OutputSection<E> *osec = find_section(ctx, ".fini_array"))
+    fixup(*osec);
 }
 
 template <typename T>

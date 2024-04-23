@@ -386,11 +386,11 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (shdr.sh_type == SHT_INIT_ARRAY ||
           shdr.sh_type == SHT_FINI_ARRAY ||
           shdr.sh_type == SHT_PREINIT_ARRAY)
-        ctx.has_init_array = true;
+        this->has_init_array = true;
 
       if (name == ".ctors" || name.starts_with(".ctors.") ||
           name == ".dtors" || name.starts_with(".dtors."))
-        ctx.has_ctors = true;
+        this->has_ctors = true;
 
       if (name == ".eh_frame")
         eh_frame_sections.push_back(this->sections[i].get());
