@@ -27,7 +27,7 @@ opensuse-tumbleweed-*)
   ;;
 gentoo-*)
   emerge-webrsync
-  emerge dev-util/cmake
+  emerge dev-build/cmake
   ;;
 arch-* | archarm-* | artix-* | endeavouros-*)
   pacman -Sy --needed --noconfirm base-devel cmake util-linux
