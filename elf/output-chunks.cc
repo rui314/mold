@@ -2313,6 +2313,9 @@ void CopyrelSection<E>::copy_buf(Context<E> &ctx) {
                        sym->get_dynsym_idx(ctx), 0);
 }
 
+// .gnu.version section contains version indices as a parallel array for
+// .dynsym. If a dynamic symbol is a defined one, its version information
+// is in .gnu.version_d. Otherwise, it's in .gnu.version_r.
 template <typename E>
 void VersymSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_size = contents.size() * sizeof(contents[0]);
@@ -2489,7 +2492,7 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   else
     write(ctx.arg.output, 1, VER_FLG_BASE);
 
-  i64 idx = 2;
+  i64 idx = VER_NDX_LAST_RESERVED + 1;
   for (std::string_view verstr : ctx.arg.version_definitions)
     write(verstr, idx++, 0);
 
