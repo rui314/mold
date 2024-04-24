@@ -581,14 +581,9 @@ public:
       }
 
       // Otherwise, use CAS to atomically claim the ownership of the slot.
-      // We need to loop on a spurious failure.
       const char *ptr = nullptr;
-      bool claimed;
-
-      do {
-        claimed = ent.key.compare_exchange_weak(ptr, (char *)-1,
-                                                std::memory_order_acquire);
-      } while (!claimed && ptr == nullptr);
+      bool claimed = ent.key.compare_exchange_strong(ptr, (char *)-1,
+                                                     std::memory_order_acquire);
 
       // If we successfully claimed the ownership of the slot,
       // copy values to it.
