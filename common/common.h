@@ -828,12 +828,6 @@ private:
 };
 
 //
-// uuid.cc
-//
-
-void write_uuid_v4(u8 *buf);
-
-//
 // filepath.cc
 //
 

@@ -356,7 +356,6 @@ target_sources(mold PRIVATE
   common/multi-glob.cc
   common/perf.cc
   common/tar.cc
-  common/uuid.cc
   elf/arch-alpha.cc
   elf/arch-arm32.cc
   elf/arch-arm64.cc

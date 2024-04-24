@@ -4,6 +4,7 @@
 #include "blake3.h"
 
 #include <cctype>
+#include <random>
 #include <set>
 #include <shared_mutex>
 #include <span>
@@ -2455,16 +2456,20 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   if (ctx.arg.version_definitions.empty())
     return;
 
-  // Resize .gnu.version
+  // Resize .gnu.version and write to it
   ctx.versym->contents.resize(ctx.dynsym->symbols.size(), VER_NDX_GLOBAL);
   ctx.versym->contents[0] = VER_NDX_LOCAL;
 
-  // Allocate a buffer for .gnu.version_d.
+  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++)
+    if (Symbol<E> &sym = *ctx.dynsym->symbols[i];
+        !sym.file->is_dso && sym.ver_idx != VER_NDX_UNSPECIFIED)
+      ctx.versym->contents[sym.get_dynsym_idx(ctx)] = sym.ver_idx;
+
+  // Allocate a buffer for .gnu.version_d and write to it
   contents.resize((sizeof(ElfVerdef<E>) + sizeof(ElfVerdaux<E>)) *
                   (ctx.arg.version_definitions.size() + 1));
 
-  u8 *buf = (u8 *)&contents[0];
-  u8 *ptr = buf;
+  u8 *ptr = (u8 *)contents.data();
   ElfVerdef<E> *verdef = nullptr;
 
   auto write = [&](std::string_view verstr, i64 idx, i64 flags) {
@@ -2495,11 +2500,6 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   i64 idx = VER_NDX_LAST_RESERVED + 1;
   for (std::string_view verstr : ctx.arg.version_definitions)
     write(verstr, idx++, 0);
-
-  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++)
-    if (Symbol<E> &sym = *ctx.dynsym->symbols[i];
-        !sym.file->is_dso && sym.ver_idx != VER_NDX_UNSPECIFIED)
-      ctx.versym->contents[sym.get_dynsym_idx(ctx)] = sym.ver_idx;
 }
 
 template <typename E>
@@ -2551,33 +2551,6 @@ static void blake3_hash(u8 *buf, i64 size, u8 *out) {
 }
 
 template <typename E>
-static void compute_blake3(Context<E> &ctx, u8 *buf) {
-  i64 shard_size = 4 * 1024 * 1024;
-  i64 filesize = ctx.output_file->filesize;
-  i64 num_shards = align_to(filesize, shard_size) / shard_size;
-  std::vector<u8> shards(num_shards * BLAKE3_OUT_LEN);
-
-  tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
-    u8 *begin = ctx.buf + shard_size * i;
-    u8 *end = (i == num_shards - 1) ? ctx.buf + filesize : begin + shard_size;
-    blake3_hash(begin, end - begin, shards.data() + i * BLAKE3_OUT_LEN);
-
-#ifdef HAVE_MADVISE
-    // Make the kernel page out the file contents we've just written
-    // so that subsequent close(2) call will become quicker.
-    if (i > 0 && ctx.output_file->is_mmapped)
-      madvise(begin, end - begin, MADV_DONTNEED);
-#endif
-   });
-
-  u8 digest[BLAKE3_OUT_LEN];
-  blake3_hash(shards.data(), shards.size(), digest);
-
-  assert(ctx.arg.build_id.size() <= BLAKE3_OUT_LEN);
-  memcpy(buf, digest, ctx.arg.build_id.size());
-}
-
-template <typename E>
 void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
   Timer t(ctx, "build_id");
   u8 *buf = ctx.buf + this->shdr.sh_offset + HEADER_SIZE;
@@ -2586,12 +2559,42 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
   case BuildId::HEX:
     write_vector(buf, ctx.arg.build_id.value);
     return;
-  case BuildId::HASH:
-    compute_blake3(ctx, buf);
+  case BuildId::HASH: {
+    i64 shard_size = 4 * 1024 * 1024;
+    i64 filesize = ctx.output_file->filesize;
+    i64 num_shards = align_to(filesize, shard_size) / shard_size;
+    std::vector<u8> shards(num_shards * BLAKE3_OUT_LEN);
+
+    tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
+      u8 *begin = ctx.buf + shard_size * i;
+      u8 *end = (i == num_shards - 1) ? ctx.buf + filesize : begin + shard_size;
+      blake3_hash(begin, end - begin, shards.data() + i * BLAKE3_OUT_LEN);
+
+#ifdef HAVE_MADVISE
+      // Make the kernel page out the file contents we've just written
+      // so that subsequent close(2) call will become quicker.
+      if (i > 0 && ctx.output_file->is_mmapped)
+        madvise(begin, end - begin, MADV_DONTNEED);
+#endif
+    });
+
+    u8 digest[BLAKE3_OUT_LEN];
+    blake3_hash(shards.data(), shards.size(), digest);
+
+    assert(ctx.arg.build_id.size() <= BLAKE3_OUT_LEN);
+    memcpy(buf, digest, ctx.arg.build_id.size());
     return;
-  case BuildId::UUID:
-    write_uuid_v4(buf);
+  }
+  case BuildId::UUID: {
+    std::random_device rand;
+    u32 tmp[4] = { rand(), rand(), rand(), rand() };
+    memcpy(buf, tmp, 16);
+
+    // Indicate that this is UUIDv4 as defined by RFC4122
+    buf[6] = (buf[6] & 0b0000'1111) | 0b0100'0000;
+    buf[8] = (buf[8] & 0b0011'1111) | 0b1000'0000;
     return;
+  }
   default:
     unreachable();
   }
