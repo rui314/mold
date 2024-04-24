@@ -546,8 +546,8 @@ public:
   // power-of-two address.
   struct alignas(32) Entry {
     Atomic<const char *> key;
-    T value;
     u32 keylen;
+    T value;
   };
 
   void resize(i64 nbuckets) {
@@ -564,16 +564,33 @@ public:
   std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
     assert(has_single_bit(nbuckets));
 
-    i64 idx = hash & (nbuckets - 1);
-    i64 retry = 0;
+    i64 begin = hash & (nbuckets - 1);
+    u64 mask = nbuckets / NUM_SHARDS - 1;
 
-    while (retry < MAX_RETRY) {
+    for (i64 i = 0; i < MAX_RETRY; i++) {
+      i64 idx = (begin & ~mask) | ((begin + i) & mask);
       Entry &ent = entries[idx];
-      const char *ptr = nullptr;
-      bool claimed = ent.key.compare_exchange_weak(ptr, (char *)-1,
-                                                   std::memory_order_acquire);
 
-      // If we successfully claimed the ownership of an unused slot,
+      // It seems avoiding compare-and-exchange is faster overall at
+      // least on my Zen4 machine, so do it.
+      if (const char *ptr = ent.key.load(std::memory_order_acquire);
+          ptr != nullptr && ptr != (char *)-1) {
+        if (key == std::string_view(ptr, ent.keylen))
+          return {&ent.value, false};
+        continue;
+      }
+
+      // Otherwise, use CAS to atomically claim the ownership of the slot.
+      // We need to loop on a spurious failure.
+      const char *ptr = nullptr;
+      bool claimed;
+
+      do {
+        claimed = ent.key.compare_exchange_weak(ptr, (char *)-1,
+                                                std::memory_order_acquire);
+      } while (!claimed && ptr == nullptr);
+
+      // If we successfully claimed the ownership of the slot,
       // copy values to it.
       if (claimed) {
         new (&ent.value) T(val);
@@ -581,10 +598,6 @@ public:
         ent.key.store(key.data(), std::memory_order_release);
         return {&ent.value, true};
       }
-
-      // Loop on a spurious failure.
-      if (ptr == nullptr)
-        continue;
 
       // If someone is copying values to the slot, do busy wait.
       while (ptr == (char *)-1) {
@@ -596,11 +609,6 @@ public:
       // looking for.
       if (key == std::string_view(ptr, ent.keylen))
         return {&ent.value, false};
-
-      // Otherwise, move on to the next slot.
-      u64 mask = nbuckets / NUM_SHARDS - 1;
-      idx = (idx & ~mask) | ((idx + 1) & mask);
-      retry++;
     }
 
     assert(false && "ConcurrentMap is full");
