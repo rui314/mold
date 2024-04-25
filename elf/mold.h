@@ -63,7 +63,9 @@ struct SectionFragment {
   SectionFragment(MergedSection<E> *sec, bool is_alive)
     : output_section(*sec), is_alive(is_alive) {}
 
-  u64 get_addr(Context<E> &ctx) const;
+  u64 get_addr(Context<E> &ctx) const {
+    return output_section.shdr.sh_addr + offset;
+  }
 
   MergedSection<E> &output_section;
   u32 offset = -1;
@@ -2247,11 +2249,6 @@ inline std::ostream &
 operator<<(std::ostream &out, const InputSection<E> &isec) {
   out << isec.file << ":(" << isec.name() << ")";
   return out;
-}
-
-template <typename E>
-inline u64 SectionFragment<E>::get_addr(Context<E> &ctx) const {
-  return output_section.shdr.sh_addr + offset;
 }
 
 template <typename E>
