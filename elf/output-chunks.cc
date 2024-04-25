@@ -1943,10 +1943,8 @@ MergedSection<E>::insert(Context<E> &ctx, std::string_view data, u64 hash,
   // To remove such strings, use the `strip` command.
   bool is_alive = !ctx.arg.gc_sections || !(this->shdr.sh_flags & SHF_ALLOC);
 
-  SectionFragment<E> *frag;
-  bool inserted;
-  std::tie(frag, inserted) =
-    map.insert(data, hash, SectionFragment(this, is_alive));
+  SectionFragment<E> *frag =
+    map.insert(data, hash, SectionFragment(this, is_alive)).first;
   update_maximum(frag->p2align, p2align);
   return frag;
 }

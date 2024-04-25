@@ -400,12 +400,17 @@ void kill_eh_frame_sections(Context<E> &ctx) {
 }
 
 template <typename E>
-void resolve_section_pieces(Context<E> &ctx) {
-  Timer t(ctx, "resolve_section_pieces");
+void split_section_pieces(Context<E> &ctx) {
+  Timer t(ctx, "split_section_pieces");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->initialize_mergeable_sections(ctx);
   });
+}
+
+template <typename E>
+void resolve_section_pieces(Context<E> &ctx) {
+  Timer t(ctx, "resolve_section_pieces");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->resolve_section_pieces(ctx);
@@ -3081,6 +3086,7 @@ template void apply_exclude_libs(Context<E> &);
 template void create_synthetic_sections(Context<E> &);
 template void resolve_symbols(Context<E> &);
 template void kill_eh_frame_sections(Context<E> &);
+template void split_section_pieces(Context<E> &);
 template void resolve_section_pieces(Context<E> &);
 template void convert_common_symbols(Context<E> &);
 template void compute_merged_section_sizes(Context<E> &);

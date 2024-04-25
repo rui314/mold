@@ -434,6 +434,9 @@ int elf_main(int argc, char **argv) {
   // "Kill" .eh_frame input sections after symbol resolution.
   kill_eh_frame_sections(ctx);
 
+  // Split mergeable section contents into section pieces.
+  split_section_pieces(ctx);
+
   // Resolve mergeable section pieces to merge them.
   resolve_section_pieces(ctx);
 

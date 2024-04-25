@@ -757,9 +757,7 @@ private:
 
 class HyperLogLog {
 public:
-  HyperLogLog() : buckets(NBUCKETS) {}
-
-  void insert(u32 hash) {
+  void insert(u64 hash) {
     update_maximum(buckets[hash & (NBUCKETS - 1)], std::countl_zero(hash) + 1);
   }
 
@@ -774,7 +772,7 @@ private:
   static constexpr i64 NBUCKETS = 2048;
   static constexpr double ALPHA = 0.79402;
 
-  std::vector<std::atomic_uint8_t> buckets;
+  Atomic<u8> buckets[NBUCKETS];
 };
 
 //
