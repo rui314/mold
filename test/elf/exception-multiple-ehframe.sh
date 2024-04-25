@@ -28,9 +28,9 @@ int bar() {
 }
 EOF
 
-$OBJCOPY --rename-section .eh_frame=.eh_frame2 $t/a.o
+sed -i 's/\.eh_frame/.EH_FRAME/g' $t/a.o
 ./mold -r -o $t/c.o $t/a.o $t/b.o
-$OBJCOPY --rename-section .eh_frame2=.eh_frame $t/c.o
+sed -i 's/\.EH_FRAME/.eh_frame/g' $t/c.o
 
 cat <<EOF | $CXX -o $t/d.o -c -xc++ -
 #include <stdio.h>
@@ -44,5 +44,4 @@ int main() {
 EOF
 
 $CXX -B. -o $t/exe1 $t/d.o $t/c.o
-$QEMU $t/exe1
 $QEMU $t/exe1 | grep -q '^1 3$'
