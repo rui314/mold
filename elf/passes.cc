@@ -412,6 +412,10 @@ template <typename E>
 void resolve_section_pieces(Context<E> &ctx) {
   Timer t(ctx, "resolve_section_pieces");
 
+  // We aim 2/3 occupation ratio
+  for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
+    sec->map.resize(sec->estimator.get_cardinality() * 3 / 2);
+
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->resolve_section_pieces(ctx);
   });
@@ -440,6 +444,9 @@ void add_comment_string(Context<E> &ctx, std::string str) {
   MergedSection<E> *sec =
     MergedSection<E>::get_instance(ctx, ".comment", SHT_PROGBITS,
                                    SHF_MERGE | SHF_STRINGS, 1, 1);
+
+  if (sec->map.nbuckets == 0)
+    sec->map.resize(4096);
 
   std::string_view buf = save_string(ctx, str);
   std::string_view data(buf.data(), buf.size() + 1);

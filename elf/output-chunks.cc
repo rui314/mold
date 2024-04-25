@@ -1933,11 +1933,6 @@ template <typename E>
 SectionFragment<E> *
 MergedSection<E>::insert(Context<E> &ctx, std::string_view data, u64 hash,
                          i64 p2align) {
-  std::call_once(once_flag, [&] {
-    // We aim 2/3 occupation ratio
-    map.resize(estimator.get_cardinality() * 3 / 2);
-  });
-
   // Even if GC is enabled, we garbage-collect only memory-mapped strings.
   // Non-memory-allocated strings are typically identifiers used by debug info.
   // To remove such strings, use the `strip` command.

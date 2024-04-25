@@ -798,14 +798,13 @@ public:
   void write_to(Context<E> &ctx, u8 *buf) override;
   void print_stats(Context<E> &ctx);
 
+  ConcurrentMap<SectionFragment<E>> map;
   HyperLogLog estimator;
 
 private:
   MergedSection(std::string_view name, i64 flags, i64 type, i64 entsize);
 
-  ConcurrentMap<SectionFragment<E>> map;
   std::vector<i64> shard_offsets;
-  std::once_flag once_flag;
 };
 
 template <typename E>

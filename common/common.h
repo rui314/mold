@@ -535,10 +535,20 @@ inline bool remove_prefix(std::string_view &s, std::string_view prefix) {
 template <typename T>
 class ConcurrentMap {
 public:
-  ConcurrentMap() {}
+  ConcurrentMap() = default;
 
   ConcurrentMap(i64 nbuckets) {
     resize(nbuckets);
+  }
+
+  ~ConcurrentMap() {
+    if (entries) {
+#ifdef _WIN32
+      _aligned_free(entries);
+#else
+      munmap(entries, sizeof(Entry) * nbuckets);
+#endif
+    }
   }
 
   // In order to avoid unnecessary cache-line false sharing, we want
@@ -551,14 +561,19 @@ public:
   };
 
   void resize(i64 nbuckets) {
+    assert(!entries);
     this->nbuckets = std::max<i64>(MIN_NBUCKETS, bit_ceil(nbuckets));
+    i64 bufsize = sizeof(Entry) * this->nbuckets;
 
-    // Even though std::aligned_alloc is defined in C++17, MSVC doesn't
-    // seem to provide that function. C11's aligned_alloc may not always be
-    // available. Therefore, we'll align the buffer ourselves.
-    entries_buf.clear();
-    entries_buf.resize(sizeof(Entry) * this->nbuckets + alignof(Entry) - 1);
-    entries = (Entry *)align_to((uintptr_t)&entries_buf[0], alignof(Entry));
+    // Allocate a zero-initialized buffer. We use mmap() if available
+    // because it's faster than malloc() and memset().
+#ifdef _WIN32
+    entries = (Entry *)_aligned_malloc(bufsize, alignof(Entry));
+    memset((void *)entries, 0, bufsize);
+#else
+    entries = (Entry *)mmap(nullptr, bufsize, PROT_READ | PROT_WRITE,
+                            MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+#endif
   }
 
   std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
@@ -669,7 +684,6 @@ public:
   static constexpr i64 NUM_SHARDS = 16;
   static constexpr i64 MAX_RETRY = 128;
 
-  std::vector<u8> entries_buf;
   Entry *entries = nullptr;
   i64 nbuckets = 0;
 
