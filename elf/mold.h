@@ -1080,13 +1080,14 @@ struct ComdatGroupRef {
 template <typename E>
 struct MergeableSection {
   std::pair<SectionFragment<E> *, i64> get_fragment(i64 offset);
+  std::string_view get_contents(i64 idx);
 
   MergedSection<E> *parent;
-  u8 p2align = 0;
-  std::vector<std::string_view> strings;
-  std::vector<u64> hashes;
+  std::string_view contents;
   std::vector<u32> frag_offsets;
+  std::vector<u32> hashes;
   std::vector<SectionFragment<E> *> fragments;
+  u8 p2align = 0;
 };
 
 // InputFile is the base class of ObjectFile and SharedFile.
@@ -2389,6 +2390,14 @@ MergeableSection<E>::get_fragment(i64 offset) {
   auto it = std::upper_bound(vec.begin(), vec.end(), offset);
   i64 idx = it - 1 - vec.begin();
   return {fragments[idx], offset - vec[idx]};
+}
+
+template <typename E>
+std::string_view MergeableSection<E>::get_contents(i64 i) {
+  i64 cur = frag_offsets[i];
+  if (i == frag_offsets.size() - 1)
+    return contents.substr(cur);
+  return contents.substr(cur, frag_offsets[i + 1] - cur);
 }
 
 template <typename E>

@@ -668,13 +668,13 @@ void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   }
 }
 
-static size_t find_null(std::string_view data, u64 entsize) {
+static size_t find_null(std::string_view data, i64 pos, i64 entsize) {
   if (entsize == 1)
-    return data.find('\0');
+    return data.find('\0', pos);
 
-  for (i64 i = 0; i <= data.size() - entsize; i += entsize)
-    if (data.substr(i, entsize).find_first_not_of('\0') == data.npos)
-      return i;
+  for (; pos <= data.size() - entsize; pos += entsize)
+    if (data.substr(pos, entsize).find_first_not_of('\0') == data.npos)
+      return pos;
 
   return data.npos;
 }
@@ -717,60 +717,53 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   if (addralign == 0)
     addralign = 1;
 
-  std::unique_ptr<MergeableSection<E>> rec(new MergeableSection<E>);
-  rec->parent = MergedSection<E>::get_instance(ctx, sec.name(), shdr.sh_type,
+  std::unique_ptr<MergeableSection<E>> m(new MergeableSection<E>);
+  m->parent = MergedSection<E>::get_instance(ctx, sec.name(), shdr.sh_type,
                                                shdr.sh_flags, entsize, addralign);
-  rec->p2align = sec.p2align;
+  m->p2align = sec.p2align;
 
   if (sec.sh_size == 0)
-    return rec;
+    return m;
 
   // If thes section contents are compressed, uncompress them.
   sec.uncompress(ctx);
 
   std::string_view data = sec.contents;
-  const char *begin = data.data();
-  HyperLogLog estimator;
+  m->contents = sec.contents;
 
   // Split sections
   if (shdr.sh_flags & SHF_STRINGS) {
-    while (!data.empty()) {
-      size_t end = find_null(data, entsize);
+    for (i64 pos = 0; pos < data.size();) {
+      m->frag_offsets.push_back(pos);
+      size_t end = find_null(data, pos, entsize);
       if (end == data.npos)
         Fatal(ctx) << sec << ": string is not null terminated";
-
-      std::string_view substr = data.substr(0, end + entsize);
-      data = data.substr(end + entsize);
-
-      rec->strings.push_back(substr);
-      rec->frag_offsets.push_back(substr.data() - begin);
-
-      u64 hash = hash_string(substr);
-      rec->hashes.push_back(hash);
-      estimator.insert(hash);
+      pos = end + entsize;
     }
   } else {
     if (data.size() % entsize)
       Fatal(ctx) << sec << ": section size is not multiple of sh_entsize";
+    m->frag_offsets.reserve(data.size() / entsize);
 
-    while (!data.empty()) {
-      std::string_view substr = data.substr(0, entsize);
-      data = data.substr(entsize);
-
-      rec->strings.push_back(substr);
-      rec->frag_offsets.push_back(substr.data() - begin);
-
-      u64 hash = hash_string(substr);
-      rec->hashes.push_back(hash);
-      estimator.insert(hash);
-    }
+    for (i64 pos = 0; pos < data.size(); pos += entsize)
+      m->frag_offsets.push_back(pos);
   }
 
-  rec->parent->estimator.merge(estimator);
+  // Compute hashes for section pieces
+  HyperLogLog estimator;
+  m->hashes.reserve(m->frag_offsets.size());
+
+  for (i64 i = 0; i < m->frag_offsets.size(); i++) {
+    u64 hash = hash_string(m->get_contents(i));
+    m->hashes.push_back(hash);
+    estimator.insert(hash);
+  }
+
+  m->parent->estimator.merge(estimator);
 
   static Counter counter("string_fragments");
-  counter += rec->fragments.size();
-  return rec;
+  counter += m->frag_offsets.size();
+  return m;
 }
 
 // Usually a section is an atomic unit of inclusion or exclusion.
@@ -832,14 +825,15 @@ template <typename E>
 void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
   for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections) {
     if (m) {
-      m->fragments.reserve(m->strings.size());
-      for (i64 i = 0; i < m->strings.size(); i++)
-        m->fragments.push_back(m->parent->insert(ctx, m->strings[i], m->hashes[i],
-                                                 m->p2align));
+      m->fragments.reserve(m->frag_offsets.size());
 
-      // Shrink vectors that we will never use again to reclaim memory.
-      m->strings.clear();
-      m->strings.shrink_to_fit();
+      for (i64 i = 0; i < m->frag_offsets.size(); i++) {
+        SectionFragment<E> *frag =
+          m->parent->insert(ctx, m->get_contents(i), m->hashes[i], m->p2align);
+        m->fragments.push_back(frag);
+      }
+
+      // Reclaim memory as we'll never use this vector again
       m->hashes.clear();
       m->hashes.shrink_to_fit();
     }
