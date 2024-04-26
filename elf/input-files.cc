@@ -699,7 +699,7 @@ static size_t find_null(std::string_view data, i64 pos, i64 entsize) {
 template <typename E>
 static std::unique_ptr<MergeableSection<E>>
 split_section(Context<E> &ctx, InputSection<E> &sec) {
-  if (!sec.is_alive || sec.relsec_idx != -1)
+  if (!sec.is_alive || sec.relsec_idx != -1 || sec.sh_size == 0)
     return nullptr;
 
   const ElfShdr<E> &shdr = sec.shdr();
@@ -719,11 +719,8 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 
   std::unique_ptr<MergeableSection<E>> m(new MergeableSection<E>);
   m->parent = MergedSection<E>::get_instance(ctx, sec.name(), shdr.sh_type,
-                                               shdr.sh_flags, entsize, addralign);
+                                             shdr.sh_flags, entsize, addralign);
   m->p2align = sec.p2align;
-
-  if (sec.sh_size == 0)
-    return m;
 
   // If thes section contents are compressed, uncompress them.
   sec.uncompress(ctx);

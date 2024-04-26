@@ -103,12 +103,12 @@ void OutputShdr<E>::copy_buf(Context<E> &ctx) {
   ElfShdr<E> *hdr = (ElfShdr<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(hdr, 0, this->shdr.sh_size);
 
+  if (ctx.shstrtab && SHN_LORESERVE <= ctx.shstrtab->shndx)
+    hdr[0].sh_link = ctx.shstrtab->shndx;
+
   i64 shnum = ctx.shdr->shdr.sh_size / sizeof(ElfShdr<E>);
   if (UINT16_MAX < shnum)
-    hdr->sh_size = shnum;
-
-  if (ctx.shstrtab && SHN_LORESERVE <= ctx.shstrtab->shndx)
-    hdr->sh_link = ctx.shstrtab->shndx;
+    hdr[0].sh_size = shnum;
 
   for (Chunk<E> *chunk : ctx.chunks)
     if (chunk->shndx)

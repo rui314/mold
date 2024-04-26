@@ -2955,7 +2955,6 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
   }
 
-
   // --section-order symbols
   for (SectionOrder &ord : ctx.arg.section_order)
     if (ord.type == SectionOrder::SYMBOL)

@@ -524,6 +524,14 @@ inline bool remove_prefix(std::string_view &s, std::string_view prefix) {
 // Concurrent Map
 //
 
+static inline void pause() {
+#if defined(__x86_64__)
+  asm volatile("pause");
+#elif defined(__arm__) || defined(__aarch64__)
+  asm volatile("yield");
+#endif
+}
+
 // This is an implementation of a fast concurrent hash map. Unlike
 // ordinary hash tables, this impl just aborts if it becomes full.
 // So you need to give a correct estimation of the final size before
@@ -576,7 +584,7 @@ public:
 #endif
   }
 
-  std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
+  std::pair<T *, bool> insert(std::string_view key, u32 hash, const T &val) {
     assert(has_single_bit(nbuckets));
 
     i64 begin = hash & (nbuckets - 1);
@@ -586,8 +594,8 @@ public:
       i64 idx = (begin & ~mask) | ((begin + i) & mask);
       Entry &ent = entries[idx];
 
-      // It seems avoiding compare-and-exchange is faster overall at
-      // least on my Zen4 machine, so do it.
+      // It seems avoiding compare-and-swap is faster overall at least
+      // on my Zen4 machine, so do it.
       if (const char *ptr = ent.key.load(std::memory_order_acquire);
           ptr != nullptr && ptr != (char *)-1) {
         if (key == std::string_view(ptr, ent.keylen))
@@ -686,15 +694,6 @@ public:
 
   Entry *entries = nullptr;
   i64 nbuckets = 0;
-
-private:
-  static void pause() {
-#if defined(__x86_64__)
-    asm volatile("pause");
-#elif defined(__aarch64__)
-    asm volatile("yield");
-#endif
-  }
 };
 
 //
