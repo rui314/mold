@@ -1990,6 +1990,9 @@ void MergedSection<E>::assign_offsets(Context<E> &ctx) {
 
   this->shdr.sh_size = shard_offsets[map.NUM_SHARDS];
   this->shdr.sh_addralign = alignment;
+
+  if (this->shdr.sh_size > UINT32_MAX)
+    Fatal(ctx) << this->name << ": output section too large";
 }
 
 template <typename E>

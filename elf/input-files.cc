@@ -728,6 +728,9 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
   std::string_view data = sec.contents;
   m->contents = sec.contents;
 
+  if (data.size() > UINT32_MAX)
+    Fatal(ctx) << sec << ": mergeable section too large";
+
   // Split sections
   if (shdr.sh_flags & SHF_STRINGS) {
     for (i64 pos = 0; pos < data.size();) {

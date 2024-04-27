@@ -520,10 +520,6 @@ inline bool remove_prefix(std::string_view &s, std::string_view prefix) {
   return false;
 }
 
-//
-// Concurrent Map
-//
-
 static inline void pause() {
 #if defined(__x86_64__)
   asm volatile("pause");
@@ -531,6 +527,10 @@ static inline void pause() {
   asm volatile("yield");
 #endif
 }
+
+//
+// Concurrent Map
+//
 
 // This is an implementation of a fast concurrent hash map. Unlike
 // ordinary hash tables, this impl just aborts if it becomes full.
