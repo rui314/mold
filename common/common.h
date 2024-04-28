@@ -113,8 +113,11 @@ private:
 
 template <typename Context>
 static std::string add_color(Context &ctx, std::string msg) {
-  if (ctx.arg.color_diagnostics)
+  if (ctx.arg.color_diagnostics) {
+    if (msg == "warning")
+      return "mold: \033[0;1;35m" + msg + ":\033[0m ";
     return "mold: \033[0;1;31m" + msg + ":\033[0m ";
+  }
   return "mold: " + msg + ": ";
 }
 
