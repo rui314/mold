@@ -836,12 +836,14 @@ private:
   void compile();
   void fix_suffix_links(TrieNode &node);
   void fix_values();
+  i64 find_aho_corasick(std::string_view str);
 
   std::vector<std::string> strings;
   std::unique_ptr<TrieNode> root;
   std::vector<std::pair<Glob, i64>> globs;
   std::once_flag once;
   bool is_compiled = false;
+  bool prefix_match = false;
 };
 
 //

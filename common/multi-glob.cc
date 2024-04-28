@@ -28,29 +28,9 @@ std::optional<i64> MultiGlob::find(std::string_view str) {
   std::call_once(once, [&] { compile(); });
   i64 val = -1;
 
-  if (root) {
-    // Match against simple glob patterns
-    TrieNode *node = root.get();
-
-    auto walk = [&](u8 c) {
-      for (;;) {
-        if (node->children[c]) {
-          node = node->children[c].get();
-          val = std::max(val, node->value);
-          return;
-        }
-
-        if (!node->suffix_link)
-          return;
-        node = node->suffix_link;
-      }
-    };
-
-    walk('\0');
-    for (u8 c : str)
-      walk(c);
-    walk('\0');
-  }
+  // Match against simple glob patterns
+  if (root)
+    val = find_aho_corasick(str);
 
   // Match against complex glob patterns
   for (std::pair<Glob, i64> &glob : globs)
@@ -59,6 +39,36 @@ std::optional<i64> MultiGlob::find(std::string_view str) {
 
   if (val == -1)
     return {};
+  return val;
+}
+
+i64 MultiGlob::find_aho_corasick(std::string_view str) {
+  TrieNode *node = root.get();
+  i64 val = -1;
+
+  auto walk = [&](u8 c) {
+    for (;;) {
+      if (node->children[c]) {
+        node = node->children[c].get();
+        val = std::max(val, node->value);
+        return;
+      }
+
+      if (!node->suffix_link)
+        return;
+      node = node->suffix_link;
+    }
+  };
+
+  walk('\0');
+
+  for (u8 c : str) {
+    if (prefix_match && node == root.get())
+      return val;
+    walk(c);
+  }
+
+  walk('\0');
   return val;
 }
 
@@ -117,6 +127,16 @@ void MultiGlob::compile() {
   if (root) {
     fix_suffix_links(*root);
     fix_values();
+
+    // If no pattern starts with '*', set prefix_match to true.
+    // We'll use this flag for optimization.
+    prefix_match = true;
+    for (i64 i = 1; i < 256; i++) {
+      if (root->children[i]) {
+        prefix_match = false;
+        break;
+      }
+    }
   }
 }
 
