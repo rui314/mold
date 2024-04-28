@@ -40,12 +40,15 @@ static u64 get_entry_addr(Context<E> &ctx) {
   if (ctx.arg.relocatable)
     return 0;
 
-  if (Symbol<E> &sym = *ctx.arg.entry;
-      sym.file && !sym.file->is_dso)
-    return sym.get_addr(ctx);
+  if (Symbol<E> *sym = ctx.arg.entry) {
+    if (sym->file && !sym->file->is_dso)
+      return sym->get_addr(ctx);
+    Warn(ctx) << "entry symbol is not defined: " << *sym;
+    return 0;
+  }
 
-  if (OutputSection<E> *osec = find_section(ctx, ".text"))
-    return osec->shdr.sh_addr;
+  if (!ctx.arg.shared)
+    Warn(ctx) << "entry symbol was not specified";
   return 0;
 }
 
