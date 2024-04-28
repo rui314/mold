@@ -3,6 +3,8 @@
 
 nm mold | grep -q '__tsan_init' && skip
 
+which perl > /dev/null || skip
+
 [ $MACHINE = m68k ] && skip
 [ $MACHINE = sh4 ] && skip
 
@@ -28,9 +30,9 @@ int bar() {
 }
 EOF
 
-sed -i 's/\.eh_frame/.EH_FRAME/g' $t/a.o
+perl -i -0777 -pe 's/\.eh_frame/.EH_FRAME/g' $t/a.o
 ./mold -r -o $t/c.o $t/a.o $t/b.o
-sed -i 's/\.EH_FRAME/.eh_frame/g' $t/c.o
+perl -i -0777 -pe 's/\.EH_FRAME/.eh_frame/g' $t/c.o
 
 cat <<EOF | $CXX -o $t/d.o -c -xc++ -
 #include <stdio.h>
