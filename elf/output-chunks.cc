@@ -40,15 +40,12 @@ static u64 get_entry_addr(Context<E> &ctx) {
   if (ctx.arg.relocatable)
     return 0;
 
-  if (Symbol<E> *sym = ctx.arg.entry) {
-    if (sym->file && !sym->file->is_dso)
-      return sym->get_addr(ctx);
-    Warn(ctx) << "entry symbol is not defined: " << *sym;
-    return 0;
-  }
+  if (InputFile<E> *file = ctx.arg.entry->file)
+    if (!file->is_dso)
+      return ctx.arg.entry->get_addr(ctx);
 
   if (!ctx.arg.shared)
-    Warn(ctx) << "entry symbol was not specified";
+    Warn(ctx) << "entry symbol is not defined: " << *ctx.arg.entry;
   return 0;
 }
 
