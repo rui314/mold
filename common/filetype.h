@@ -25,9 +25,13 @@ enum class FileType {
 
 template <typename MappedFile>
 bool is_text_file(MappedFile *mf) {
+  auto istext = [](char c) {
+    return isprint(c) || c == '\n' || c == '\t';
+  };
+
   u8 *data = mf->data;
-  return mf->size >= 4 && isprint(data[0]) && isprint(data[1]) &&
-         isprint(data[2]) && isprint(data[3]);
+  return mf->size >= 4 && istext(data[0]) && istext(data[1]) &&
+         istext(data[2]) && istext(data[3]);
 }
 
 template <typename E, typename Context, typename MappedFile>
