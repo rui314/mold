@@ -3,7 +3,7 @@
 
 nm mold | grep -q '__tsan_init' && skip
 
-which perl > /dev/null || skip
+command -v perl > /dev/null || skip
 
 [ $MACHINE = m68k ] && skip
 [ $MACHINE = sh4 ] && skip
