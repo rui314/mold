@@ -96,12 +96,12 @@ RUN mkdir /build && \
 # Build GCC 10
 RUN mkdir /build && \
   cd /build && \
-  wget -O- http://ftp.gnu.org/gnu/gcc/gcc-10.5.0/gcc-10.5.0.tar.gz | tar xzf - --strip-components=1 && \
+  wget -O- --no-check-certificate https://ftpmirror.gnu.org/gnu/gcc/gcc-10.5.0/gcc-10.5.0.tar.gz | tar xzf - --strip-components=1 && \
   mkdir isl gmp mpc mpfr && \
-  wget -O- http://gcc.gnu.org/pub/gcc/infrastructure/isl-0.18.tar.bz2 | tar xjf - --strip-components=1 -C isl && \
-  wget -O- http://ftp.gnu.org/gnu/gmp/gmp-6.1.2.tar.bz2 | tar xjf - --strip-components=1 -C gmp && \
-  wget -O- http://ftp.gnu.org/gnu/mpc/mpc-1.2.1.tar.gz | tar xzf - --strip-components=1 -C mpc && \
-  wget -O- http://ftp.gnu.org/gnu/mpfr/mpfr-4.1.0.tar.gz | tar xzf - --strip-components=1 -C mpfr && \
+  wget -O- --no-check-certificate https://gcc.gnu.org/pub/gcc/infrastructure/isl-0.18.tar.bz2 | tar xjf - --strip-components=1 -C isl && \
+  wget -O- --no-check-certificate https://ftpmirror.gnu.org/gnu/gmp/gmp-6.1.2.tar.bz2 | tar xjf - --strip-components=1 -C gmp && \
+  wget -O- --no-check-certificate https://ftpmirror.gnu.org/gnu/mpc/mpc-1.2.1.tar.gz | tar xzf - --strip-components=1 -C mpc && \
+  wget -O- --no-check-certificate https://ftpmirror.gnu.org/gnu/mpfr/mpfr-4.1.0.tar.gz | tar xzf - --strip-components=1 -C mpfr && \
   ./configure --prefix=/usr --enable-languages=c,c++ --disable-bootstrap --disable-multilib && \
   make -j\$(nproc) && \
   make install && \
