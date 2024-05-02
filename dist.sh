@@ -166,8 +166,7 @@ ctest -j\$(nproc)
 cmake --install . --prefix $dest --strip
 find $dest -print | xargs touch --no-dereference --date='$timestamp'
 find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /mold/$dest.tar.gz
-chown $(id -u):$(id -g) /mold/$dest.tar.gz
 cp mold /mold
+chown $(id -u):$(id -g) /mold/$dest.tar.gz /mold/mold
+sha256sum /mold/$dest.tar.gz
 "
-
-which sha256sum > /dev/null && sha256sum $dest.tar.gz
