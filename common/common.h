@@ -526,7 +526,7 @@ inline bool remove_prefix(std::string_view &s, std::string_view prefix) {
 static inline void pause() {
 #if defined(__x86_64__)
   asm volatile("pause");
-#elif defined(__arm__) || defined(__aarch64__)
+#elif defined(__aarch64__)
   asm volatile("yield");
 #endif
 }
