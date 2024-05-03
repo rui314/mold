@@ -7,6 +7,10 @@
 # include <mach-o/dyld.h>
 #endif
 
+#ifdef __FreeBSD__
+# include <sys/sysctl.h>
+#endif
+
 namespace mold {
 
 std::string get_realpath(std::string_view path) {
