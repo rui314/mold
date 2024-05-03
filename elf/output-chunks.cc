@@ -1786,10 +1786,10 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-std::span<Symbol<E> *>
-GnuHashSection<E>::get_exported_symbols(Context<E> &ctx) {
+static std::span<Symbol<E> *> get_exported_symbols(Context<E> &ctx) {
   std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
-  auto it = std::partition_point(syms.begin() + 1, syms.end(), [](Symbol<E> *sym) {
+  auto it = std::partition_point(syms.begin() + 1, syms.end(),
+                                 [](Symbol<E> *sym) {
     return !sym->is_exported;
   });
   return syms.subspan(it - syms.begin());
@@ -1835,7 +1835,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
     constexpr i64 word_bits = sizeof(Word<E>) * 8;
 
-    i64 h = syms[i]->get_djb_hash(ctx);
+    u32 h = syms[i]->get_djb_hash(ctx);
     indices[i] = h % num_buckets;
 
     i64 idx = (h / word_bits) % num_bloom;

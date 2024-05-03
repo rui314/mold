@@ -771,7 +771,6 @@ public:
     this->shdr.sh_addralign = sizeof(Word<E>);
   }
 
-  std::span<Symbol<E> *> get_exported_symbols(Context<E> &ctx);
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
