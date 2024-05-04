@@ -1635,7 +1635,10 @@ void compute_imported_symbol_weakness(Context<E> &ctx) {
 // Report all undefined symbols, grouped by symbol.
 template <typename E>
 void report_undef_errors(Context<E> &ctx) {
-  constexpr i64 max_errors = 3;
+  constexpr i64 MAX_ERRORS = 3;
+
+  if (ctx.arg.unresolved_symbols == UNRESOLVED_IGNORE)
+    return;
 
   for (auto &pair : ctx.undef_errors) {
     Symbol<E> *sym = pair.first;
@@ -1646,16 +1649,20 @@ void report_undef_errors(Context<E> &ctx) {
        << (ctx.arg.demangle ? demangle(*sym) : sym->name())
        << "\n";
 
-    for (i64 i = 0; i < errors.size() && i < max_errors; i++)
+    for (i64 i = 0; i < errors.size() && i < MAX_ERRORS; i++)
       ss << errors[i];
 
-    if (errors.size() > max_errors)
-      ss << ">>> referenced " << (errors.size() - max_errors) << " more times\n";
+    if (MAX_ERRORS < errors.size())
+      ss << ">>> referenced " << (errors.size() - MAX_ERRORS) << " more times\n";
+
+    // Remove the trailing '\n' because Error/Warn adds it automatically
+    std::string msg = ss.str();
+    msg.pop_back();
 
     if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR)
-      Error(ctx) << ss.str();
-    else if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN)
-      Warn(ctx) << ss.str();
+      Error(ctx) << msg;
+    else
+      Warn(ctx) << msg;
   }
 
   ctx.checkpoint();
