@@ -995,7 +995,7 @@ void check_cet_errors(Context<E> &ctx) {
 
 template <typename E>
 void print_dependencies(Context<E> &ctx) {
-  SyncOut(ctx) <<
+  Out(ctx) <<
 R"(# This is an output of the mold linker's --print-dependencies option.
 #
 # Each line consists of 4 fields, <section1>, <section2>, <symbol-type> and
@@ -1009,13 +1009,13 @@ R"(# This is an output of the mold linker's --print-dependencies option.
 
   auto println = [&](auto &src, Symbol<E> &sym, ElfSym<E> &esym) {
     if (InputSection<E> *isec = sym.get_input_section())
-      SyncOut(ctx) << src << "\t" << *isec
-                   << "\t" << (esym.is_weak() ? 'w' : 'u')
-                   << "\t" << sym;
+      Out(ctx) << src << "\t" << *isec
+               << "\t" << (esym.is_weak() ? 'w' : 'u')
+               << "\t" << sym;
     else
-      SyncOut(ctx) << src << "\t" << *sym.file
-                   << "\t" << (esym.is_weak() ? 'w' : 'u')
-                   << "\t" << sym;
+      Out(ctx) << src << "\t" << *sym.file
+               << "\t" << (esym.is_weak() ? 'w' : 'u')
+               << "\t" << sym;
   };
 
   for (ObjectFile<E> *file : ctx.objs) {
@@ -1474,9 +1474,9 @@ void claim_unresolved_symbols(Context<E> &ctx) {
 
       auto claim = [&](bool is_imported) {
         if (sym.is_traced)
-          SyncOut(ctx) << "trace-symbol: " << *file << ": unresolved"
-                       << (esym.is_weak() ? " weak" : "")
-                       << " symbol " << sym;
+          Out(ctx) << "trace-symbol: " << *file << ": unresolved"
+                   << (esym.is_weak() ? " weak" : "")
+                   << " symbol " << sym;
 
         sym.file = file;
         sym.origin = 0;

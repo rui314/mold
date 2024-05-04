@@ -164,7 +164,7 @@ static void sweep(Context<E> &ctx) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
       if (isec && isec->is_alive && !isec->is_visited) {
         if (ctx.arg.print_gc_sections)
-          SyncOut(ctx) << "removing unused section " << *isec;
+          Out(ctx) << "removing unused section " << *isec;
         isec->kill();
         counter++;
       }

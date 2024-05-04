@@ -126,7 +126,7 @@ static PluginStatus message(PluginLevel level, const char *fmt, ...) {
 
   switch (level) {
   case LDPL_INFO:
-    SyncOut(ctx) << buf;
+    Out(ctx) << buf;
     break;
   case LDPL_WARNING:
     Warn(ctx) << buf;

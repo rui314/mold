@@ -1019,11 +1019,11 @@ template <typename E>
 static void print_trace_symbol(Context<E> &ctx, InputFile<E> &file,
                                const ElfSym<E> &esym, Symbol<E> &sym) {
   if (!esym.is_undef())
-    SyncOut(ctx) << "trace-symbol: " << file << ": definition of " << sym;
+    Out(ctx) << "trace-symbol: " << file << ": definition of " << sym;
   else if (esym.is_weak())
-    SyncOut(ctx) << "trace-symbol: " << file << ": weak reference to " << sym;
+    Out(ctx) << "trace-symbol: " << file << ": weak reference to " << sym;
   else
-    SyncOut(ctx) << "trace-symbol: " << file << ": reference to " << sym;
+    Out(ctx) << "trace-symbol: " << file << ": reference to " << sym;
 }
 
 template <typename E>
@@ -1078,8 +1078,8 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
       feeder(sym.file);
 
       if (sym.is_traced)
-        SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
-                     << " for " << sym;
+        Out(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
+                 << " for " << sym;
     }
   }
 }
@@ -1461,8 +1461,8 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
       feeder(sym.file);
 
       if (sym.is_traced)
-        SyncOut(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
-                     << " for " << sym;
+        Out(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
+                 << " for " << sym;
     }
   }
 }

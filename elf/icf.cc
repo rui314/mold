@@ -479,17 +479,17 @@ static void print_icf_sections(Context<E> &ctx) {
     if (begin == end)
       continue;
 
-    SyncOut(ctx) << "selected section " << *leader;
+    Out(ctx) << "selected section " << *leader;
 
     i64 n = 0;
     for (auto it = begin; it != end; it++) {
-      SyncOut(ctx) << "  removing identical section " << *it->second;
+      Out(ctx) << "  removing identical section " << *it->second;
       n++;
     }
     saved_bytes += leader->contents.size() * n;
   }
 
-  SyncOut(ctx) << "ICF saved " << saved_bytes << " bytes";
+  Out(ctx) << "ICF saved " << saved_bytes << " bytes";
 }
 
 template <typename E>

@@ -128,7 +128,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, MappedFile *mf,
   file->priority = ctx.file_priority++;
   ctx.tg.run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
-    SyncOut(ctx) << "trace: " << *file;
+    Out(ctx) << "trace: " << *file;
   return file;
 }
 
@@ -147,7 +147,7 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, MappedFile *mf,
   file->is_in_lib = ctx.in_lib || (!archive_name.empty() && !ctx.whole_archive);
   file->is_alive = !file->is_in_lib;
   if (ctx.arg.trace)
-    SyncOut(ctx) << "trace: " << *file;
+    Out(ctx) << "trace: " << *file;
   return file;
 }
 
@@ -160,7 +160,7 @@ new_shared_file(Context<E> &ctx, MappedFile *mf) {
   file->priority = ctx.file_priority++;
   ctx.tg.run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
-    SyncOut(ctx) << "trace: " << *file;
+    Out(ctx) << "trace: " << *file;
   return file;
 }
 

@@ -614,8 +614,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   while (!args.empty()) {
     if (read_flag("help")) {
-      SyncOut(ctx) << "Usage: " << ctx.cmdline_args[0]
-                   << " [options] file...\n" << helpmsg;
+      Out(ctx) << "Usage: " << ctx.cmdline_args[0]
+               << " [options] file...\n" << helpmsg;
       exit(0);
     }
 
@@ -626,19 +626,19 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("no-dynamic-linker")) {
       ctx.arg.dynamic_linker = "";
     } else if (read_flag("v")) {
-      SyncOut(ctx) << get_mold_version();
+      Out(ctx) << get_mold_version();
       version_shown = true;
     } else if (read_flag("version")) {
-      SyncOut(ctx) << get_mold_version();
+      Out(ctx) << get_mold_version();
       exit(0);
     } else if (read_flag("V")) {
-      SyncOut(ctx) << get_mold_version()
-                   << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n"
-                   << "   aarch64linux\n   armelf_linux_eabi\n   elf64lriscv\n"
-                   << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
-                   << "   elf32ppc\n   elf64ppc\n   elf64lppc\n   elf64_s390\n"
-                   << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n"
-                   << "   elf64alpha\n   elf64loongarch\n   elf32loongarch";
+      Out(ctx) << get_mold_version()
+               << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n"
+               << "   aarch64linux\n   armelf_linux_eabi\n   elf64lriscv\n"
+               << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
+               << "   elf32ppc\n   elf64ppc\n   elf64lppc\n   elf64_s390\n"
+               << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n"
+               << "   elf64alpha\n   elf64loongarch\n   elf32loongarch";
       version_shown = true;
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {

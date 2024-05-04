@@ -85,15 +85,15 @@ static u64 combine_hash(u64 a, u64 b) {
 //
 
 template <typename Context>
-class SyncOut {
+class Out {
 public:
-  SyncOut(Context &ctx) {}
+  Out(Context &ctx) {}
 
-  ~SyncOut() {
+  ~Out() {
     out << '\n';
   }
 
-  template <typename T> SyncOut &operator<<(T &&val) {
+  template <typename T> Out &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }

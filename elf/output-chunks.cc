@@ -2025,9 +2025,9 @@ void MergedSection<E>::print_stats(Context<E> &ctx) {
     if (map.entries[i].key)
       used++;
 
-  SyncOut(ctx) << this->name
-               << " estimation=" << estimator.get_cardinality()
-               << " actual=" << used;
+  Out(ctx) << this->name
+           << " estimation=" << estimator.get_cardinality()
+           << " actual=" << used;
 }
 
 template <typename E>
