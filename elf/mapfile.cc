@@ -86,7 +86,6 @@ void print_map(Context<E> &ctx) {
     tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
       InputSection<E> *mem = members[i];
       std::ostringstream ss;
-      opt_demangle = ctx.arg.demangle;
       u64 addr = osec->shdr.sh_addr + mem->offset;
 
       ss << std::showbase

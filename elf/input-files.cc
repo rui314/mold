@@ -17,7 +17,7 @@ template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
                       std::string_view name) {
   typename decltype(ctx.symbol_map)::const_accessor acc;
-  ctx.symbol_map.insert(acc, {key, Symbol<E>(name)});
+  ctx.symbol_map.insert(acc, {key, Symbol<E>(name, ctx.arg.demangle)});
   return const_cast<Symbol<E> *>(&acc->second);
 }
 
@@ -50,6 +50,15 @@ std::string_view demangle(const Symbol<E> &sym) {
       return *s;
   }
   return sym.name();
+}
+
+template <typename E>
+std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
+  if (sym.demangle)
+    out << demangle(sym);
+  else
+    out << sym.name();
+  return out;
 }
 
 template <typename E>
@@ -1562,6 +1571,7 @@ template class SharedFile<E>;
 template Symbol<E> *get_symbol(Context<E> &, std::string_view, std::string_view);
 template Symbol<E> *get_symbol(Context<E> &, std::string_view);
 template std::string_view demangle(const Symbol<E> &);
+template std::ostream &operator<<(std::ostream &, const Symbol<E> &);
 template std::ostream &operator<<(std::ostream &, const InputFile<E> &);
 
 } // namespace mold::elf

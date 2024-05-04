@@ -64,7 +64,6 @@ using namespace std::literals::string_view_literals;
 template <typename Context> class OutputFile;
 
 inline char *output_tmpfile;
-inline thread_local bool opt_demangle;
 
 inline u8 *output_buffer_start = nullptr;
 inline u8 *output_buffer_end = nullptr;
@@ -87,9 +86,7 @@ static u64 combine_hash(u64 a, u64 b) {
 template <typename Context>
 class SyncOut {
 public:
-  SyncOut(Context &ctx, std::ostream *out = &std::cout) : out(out) {
-    opt_demangle = ctx.arg.demangle;
-  }
+  SyncOut(Context &ctx, std::ostream *out = &std::cout) : out(out) {}
 
   ~SyncOut() {
     if (out) {

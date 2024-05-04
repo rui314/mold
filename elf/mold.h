@@ -1987,8 +1987,11 @@ template <typename E>
 class Symbol {
 public:
   Symbol() = default;
-  Symbol(std::string_view name) : nameptr(name.data()), namelen(name.size()) {}
-  Symbol(const Symbol<E> &other) : Symbol(other.name()) {}
+
+  Symbol(std::string_view name, bool demangle)
+    : nameptr(name.data()), namelen(name.size()), demangle(demangle) {}
+
+  Symbol(const Symbol<E> &other) : Symbol(other.name(), other.demangle) {}
 
   u64 get_addr(Context<E> &ctx, i64 flags = 0) const;
   u64 get_got_addr(Context<E> &ctx) const;
@@ -2216,6 +2219,9 @@ public:
   // For `-z rewrite-endbr`
   bool address_taken : 1 = false;
 
+  // If true, we try to dmenagle the sybmol when printing.
+  bool demangle : 1 = false;
+
   // Target-dependent extra members.
   [[no_unique_address]] SymbolExtras<E> extra;
 };
@@ -2231,13 +2237,7 @@ template <typename E>
 std::string_view demangle(const Symbol<E> &sym);
 
 template <typename E>
-std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
-  if (opt_demangle)
-    out << demangle(sym);
-  else
-    out << sym.name();
-  return out;
-}
+std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
 //
 // Inline objects and functions
