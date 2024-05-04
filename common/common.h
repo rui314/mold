@@ -18,6 +18,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <syncstream>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <tbb/concurrent_vector.h>
@@ -86,26 +87,19 @@ static u64 combine_hash(u64 a, u64 b) {
 template <typename Context>
 class SyncOut {
 public:
-  SyncOut(Context &ctx, std::ostream *out = &std::cout) : out(out) {}
+  SyncOut(Context &ctx) {}
 
   ~SyncOut() {
-    if (out) {
-      std::scoped_lock lock(mu);
-      *out << ss.str() << "\n";
-    }
+    out << '\n';
   }
 
   template <class T> SyncOut &operator<<(T &&val) {
-    if (out)
-      ss << std::forward<T>(val);
+    out << std::forward<T>(val);
     return *this;
   }
 
-  static inline std::mutex mu;
-
 private:
-  std::ostream *out;
-  std::stringstream ss;
+  std::osyncstream out{std::cout};
 };
 
 template <typename Context>
@@ -121,12 +115,13 @@ static std::string add_color(Context &ctx, std::string msg) {
 template <typename Context>
 class Fatal {
 public:
-  Fatal(Context &ctx) : out(ctx, &std::cerr) {
+  Fatal(Context &ctx) {
     out << add_color(ctx, "fatal");
   }
 
   [[noreturn]] ~Fatal() {
-    out.~SyncOut();
+    out << '\n';
+    out.emit();
     cleanup();
     _exit(1);
   }
@@ -137,13 +132,13 @@ public:
   }
 
 private:
-  SyncOut<Context> out;
+  std::osyncstream out{std::cerr};
 };
 
 template <typename Context>
 class Error {
 public:
-  Error(Context &ctx) : out(ctx, &std::cerr) {
+  Error(Context &ctx) {
     if (ctx.arg.noinhibit_exec) {
       out << add_color(ctx, "warning");
     } else {
@@ -152,35 +147,49 @@ public:
     }
   }
 
+  Error() {
+    out << '\n';
+  }
+
   template <class T> Error &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }
 
 private:
-  SyncOut<Context> out;
+  std::osyncstream out{std::cerr};
 };
 
 template <typename Context>
 class Warn {
 public:
-  Warn(Context &ctx)
-    : out(ctx, ctx.arg.suppress_warnings ? nullptr : &std::cerr) {
+  Warn(Context &ctx) {
+    if (ctx.arg.suppress_warnings)
+      return;
+
+    out.emplace(std::cerr);
+
     if (ctx.arg.fatal_warnings) {
-      out << add_color(ctx, "error");
+      *out << add_color(ctx, "error");
       ctx.has_error = true;
     } else {
-      out << add_color(ctx, "warning");
+      *out << add_color(ctx, "warning");
     }
   }
 
+  ~Warn() {
+    if (out)
+      *out << '\n';
+  }
+
   template <class T> Warn &operator<<(T &&val) {
-    out << std::forward<T>(val);
+    if (out)
+      *out << std::forward<T>(val);
     return *this;
   }
 
 private:
-  SyncOut<Context> out;
+  std::optional<std::osyncstream> out;
 };
 
 //
