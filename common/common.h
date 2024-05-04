@@ -528,6 +528,8 @@ static inline void pause() {
   asm volatile("pause");
 #elif defined(__aarch64__)
   asm volatile("yield");
+#elif defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_8A__)
+  asm volatile("yield");
 #endif
 }
 
