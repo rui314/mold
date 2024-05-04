@@ -93,7 +93,7 @@ public:
     out << '\n';
   }
 
-  template <class T> SyncOut &operator<<(T &&val) {
+  template <typename T> SyncOut &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }
@@ -102,21 +102,18 @@ private:
   std::osyncstream out{std::cout};
 };
 
-template <typename Context>
-static std::string add_color(Context &ctx, std::string msg) {
-  if (ctx.arg.color_diagnostics) {
-    if (msg == "warning")
-      return "mold: \033[0;1;35m" + msg + ":\033[0m ";
-    return "mold: \033[0;1;31m" + msg + ":\033[0m ";
-  }
-  return "mold: " + msg + ": ";
-}
+static std::string_view fatal_color = "mold: \033[0;1;31mfatal:\033[0m ";
+static std::string_view fatal_mono = "mold: fatal: ";
+static std::string_view error_color = "mold: \033[0;1;31merror:\033[0m ";
+static std::string_view error_mono = "mold: error: ";
+static std::string_view warning_color = "mold: \033[0;1;35mwarning:\033[0m ";
+static std::string_view warning_mono = "mold: warning: ";
 
 template <typename Context>
 class Fatal {
 public:
   Fatal(Context &ctx) {
-    out << add_color(ctx, "fatal");
+    out << (ctx.arg.color_diagnostics ? fatal_color : fatal_mono);
   }
 
   [[noreturn]] ~Fatal() {
@@ -126,7 +123,7 @@ public:
     _exit(1);
   }
 
-  template <class T> Fatal &operator<<(T &&val) {
+  template <typename T> Fatal &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }
@@ -140,18 +137,18 @@ class Error {
 public:
   Error(Context &ctx) {
     if (ctx.arg.noinhibit_exec) {
-      out << add_color(ctx, "warning");
+      out << (ctx.arg.color_diagnostics ? warning_color : warning_mono);
     } else {
-      out << add_color(ctx, "error");
+      out << (ctx.arg.color_diagnostics ? error_color : error_mono);
       ctx.has_error = true;
     }
   }
 
-  Error() {
+  ~Error() {
     out << '\n';
   }
 
-  template <class T> Error &operator<<(T &&val) {
+  template <typename T> Error &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }
@@ -170,10 +167,10 @@ public:
     out.emplace(std::cerr);
 
     if (ctx.arg.fatal_warnings) {
-      *out << add_color(ctx, "error");
+      *out << (ctx.arg.color_diagnostics ? error_color : error_mono);
       ctx.has_error = true;
     } else {
-      *out << add_color(ctx, "warning");
+      *out << (ctx.arg.color_diagnostics ? warning_color : warning_mono);
     }
   }
 
@@ -182,7 +179,7 @@ public:
       *out << '\n';
   }
 
-  template <class T> Warn &operator<<(T &&val) {
+  template <typename T> Warn &operator<<(T &&val) {
     if (out)
       *out << std::forward<T>(val);
     return *this;
