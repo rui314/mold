@@ -18,7 +18,6 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <syncstream>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <tbb/concurrent_vector.h>
@@ -84,14 +83,41 @@ static u64 combine_hash(u64 a, u64 b) {
 // Error output
 //
 
+// Some C++ stdlibs don't support std::osyncstream even though
+// it's is in the C++20 standard. So we implement it ourselves.
+class SyncStream {
+public:
+  SyncStream(std::ostream &out) : out(out) {}
+
+  ~SyncStream() {
+    emit();
+  }
+
+  template <typename T> SyncStream &operator<<(T &&val) {
+    ss << std::forward<T>(val);
+    return *this;
+  }
+
+  void emit() {
+    if (emitted)
+      return;
+
+    std::scoped_lock lock(mu);
+    out << ss.str() << '\n';
+    emitted = true;
+  }
+
+private:
+  std::ostream &out;
+  std::stringstream ss;
+  bool emitted = false;
+  static inline std::mutex mu;
+};
+
 template <typename Context>
 class Out {
 public:
   Out(Context &ctx) {}
-
-  ~Out() {
-    out << '\n';
-  }
 
   template <typename T> Out &operator<<(T &&val) {
     out << std::forward<T>(val);
@@ -99,7 +125,7 @@ public:
   }
 
 private:
-  std::osyncstream out{std::cout};
+  SyncStream out{std::cout};
 };
 
 static std::string_view fatal_color = "mold: \033[0;1;31mfatal:\033[0m ";
@@ -117,7 +143,6 @@ public:
   }
 
   [[noreturn]] ~Fatal() {
-    out << '\n';
     out.emit();
     cleanup();
     _exit(1);
@@ -129,7 +154,7 @@ public:
   }
 
 private:
-  std::osyncstream out{std::cerr};
+  SyncStream out{std::cerr};
 };
 
 template <typename Context>
@@ -144,17 +169,13 @@ public:
     }
   }
 
-  ~Error() {
-    out << '\n';
-  }
-
   template <typename T> Error &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }
 
 private:
-  std::osyncstream out{std::cerr};
+  SyncStream out{std::cerr};
 };
 
 template <typename Context>
@@ -174,11 +195,6 @@ public:
     }
   }
 
-  ~Warn() {
-    if (out)
-      *out << '\n';
-  }
-
   template <typename T> Warn &operator<<(T &&val) {
     if (out)
       *out << std::forward<T>(val);
@@ -186,7 +202,7 @@ public:
   }
 
 private:
-  std::optional<std::osyncstream> out;
+  std::optional<SyncStream> out;
 };
 
 //
