@@ -157,7 +157,7 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.eh_frame_reloc = push(new EhFrameRelocSection<E>);
 
   if (ctx.arg.shared || !ctx.dsos.empty() || ctx.arg.pie) {
-    ctx.dynamic = push(new DynamicSection<E>);
+    ctx.dynamic = push(new DynamicSection<E>(ctx));
 
     // If .dynamic exists, .dynsym and .dynstr must exist as well
     // since .dynamic refers to them.

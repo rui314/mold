@@ -690,13 +690,19 @@ private:
 template <typename E>
 class DynamicSection : public Chunk<E> {
 public:
-  DynamicSection() {
+  DynamicSection(Context<E> &ctx) {
     this->name = ".dynamic";
-    this->is_relro = true;
     this->shdr.sh_type = SHT_DYNAMIC;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
     this->shdr.sh_addralign = sizeof(Word<E>);
     this->shdr.sh_entsize = sizeof(ElfDyn<E>);
+
+    if (ctx.arg.z_rodynamic) {
+      this->shdr.sh_flags = SHF_ALLOC;
+      this->is_relro = false;
+    } else {
+      this->shdr.sh_flags = SHF_ALLOC | SHF_WRITE;
+      this->is_relro = true;
+    }
   }
 
   void update_shdr(Context<E> &ctx) override;
@@ -1754,6 +1760,7 @@ struct Context {
     bool z_origin = false;
     bool z_relro = true;
     bool z_rewrite_endbr = false;
+    bool z_rodynamic = false;
     bool z_sectionheader = true;
     bool z_shstk = false;
     bool z_start_stop_visibility_protected = false;

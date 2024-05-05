@@ -209,6 +209,7 @@ Options:
   -z stack-size=VALUE         Set the size of the stack segment
   -z relro                    Make some sections read-only after relocation (default)
     -z norelro
+  -z rodynamic                Make the .dynamic section read-only
   -z text                     Report error if DT_TEXTREL is set
     -z notext
     -z textoff
@@ -1008,6 +1009,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_sectionheader = false;
     } else if (read_z_flag("rewrite-endbr")) {
       ctx.arg.z_rewrite_endbr = true;
+    } else if (read_z_flag("rodynamic")) {
+      ctx.arg.z_rodynamic = true;
     } else if (read_flag("no-undefined")) {
       ctx.arg.z_defs = true;
     } else if (read_flag("nmagic")) {

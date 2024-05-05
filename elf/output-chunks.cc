@@ -272,7 +272,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Add PT_DYNAMIC
   if (ctx.dynamic && ctx.dynamic->shdr.sh_size)
-    define(PT_DYNAMIC, PF_R | PF_W, ctx.dynamic);
+    define(PT_DYNAMIC, to_phdr_flags(ctx, ctx.dynamic), ctx.dynamic);
 
   // Add PT_GNU_EH_FRAME
   if (ctx.eh_frame_hdr)
@@ -841,7 +841,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
 
   // GDB needs a DT_DEBUG entry in an executable to store a word-size
   // data for its own purpose. Its content is not important.
-  if (!ctx.arg.shared)
+  if (!ctx.arg.shared && !ctx.arg.z_rodynamic)
     define(DT_DEBUG, 0);
 
   define(DT_NULL, 0);

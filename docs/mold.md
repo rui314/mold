@@ -714,6 +714,9 @@ but as `-o magic`.
   `.text.exit` as separate sections in the final binary instead of merging
   them as `.text`.
 
+* `-z rodynamic`
+  Make the `.dynamic` section read-only.
+
 * `-z relro`, `-z norelro`:
   Some sections such as `.dynamic` have to be writable only during an
   executable or a shared library file is being loaded to memory. Once the
