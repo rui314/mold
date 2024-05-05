@@ -42,16 +42,16 @@ public:
       if (contents[i] == '\n')
         lineno++;
 
+    std::string label = ctx.script_file->name + ":" +
+                        std::to_string(lineno) + ": ";
+    i64 indent = strlen("mold: fatal: ") + label.size();
     i64 column = errpos.data() - line.data();
 
-    std::stringstream ss;
-    ss << ctx.script_file->name << ":" << lineno << ": ";
-    i64 indent = (i64)ss.tellp() + strlen("mold: ");
-    ss << line << "\n" << std::setw(indent + column) << " " << "^ ";
-    out << ss.str();
+    out << label << line << "\n"
+        << std::string(indent + column, ' ') << "^ ";
   }
 
-  template <class T> SyntaxError &operator<<(T &&val) {
+  template <typename T> SyntaxError &operator<<(T &&val) {
     out << std::forward<T>(val);
     return *this;
   }

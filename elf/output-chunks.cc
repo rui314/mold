@@ -36,6 +36,24 @@ static u32 djb_hash(std::string_view name) {
 }
 
 template <typename E>
+OutputSection<E> *find_section(Context<E> &ctx, u32 sh_type) {
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      if (osec->shdr.sh_type == sh_type)
+        return osec;
+  return nullptr;
+}
+
+template <typename E>
+OutputSection<E> *find_section(Context<E> &ctx, std::string_view name) {
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      if (osec->name == name)
+        return osec;
+  return nullptr;
+}
+
+template <typename E>
 static u64 get_entry_addr(Context<E> &ctx) {
   if (ctx.arg.relocatable)
     return 0;
@@ -2903,6 +2921,9 @@ template class GdbIndexSection<E>;
 template class CompressedSection<E>;
 template class RelocSection<E>;
 template class ComdatGroupSection<E>;
+
+template OutputSection<E> *find_section(Context<E> &, u32);
+template OutputSection<E> *find_section(Context<E> &, std::string_view);
 template i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
 template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &, u32, U32<E> *);
 

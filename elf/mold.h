@@ -342,6 +342,12 @@ template <typename E> u64 get_dtp_addr(Context<E> &);
 //
 
 template <typename E>
+OutputSection<E> *find_section(Context<E> &ctx, u32 sh_type);
+
+template <typename E>
+OutputSection<E> *find_section(Context<E> &ctx, std::string_view name);
+
+template <typename E>
 u64 get_eflags(Context<E> &ctx) {
   return 0;
 }
@@ -2452,24 +2458,6 @@ inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
 template <typename E>
 inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
   return sections[get_shndx(esym)].get();
-}
-
-template <typename E>
-OutputSection<E> *find_section(Context<E> &ctx, u32 sh_type) {
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (OutputSection<E> *osec = chunk->to_osec())
-      if (osec->shdr.sh_type == sh_type)
-        return osec;
-  return nullptr;
-}
-
-template <typename E>
-OutputSection<E> *find_section(Context<E> &ctx, std::string_view name) {
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (OutputSection<E> *osec = chunk->to_osec())
-      if (osec->name == name)
-        return osec;
-  return nullptr;
 }
 
 template <typename E>

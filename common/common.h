@@ -128,12 +128,12 @@ private:
   SyncStream out{std::cout};
 };
 
-static std::string_view fatal_color = "mold: \033[0;1;31mfatal:\033[0m ";
 static std::string_view fatal_mono = "mold: fatal: ";
-static std::string_view error_color = "mold: \033[0;1;31merror:\033[0m ";
+static std::string_view fatal_color = "mold: \033[0;1;31mfatal:\033[0m ";
 static std::string_view error_mono = "mold: error: ";
-static std::string_view warning_color = "mold: \033[0;1;35mwarning:\033[0m ";
+static std::string_view error_color = "mold: \033[0;1;31merror:\033[0m ";
 static std::string_view warning_mono = "mold: warning: ";
+static std::string_view warning_color = "mold: \033[0;1;35mwarning:\033[0m ";
 
 template <typename Context>
 class Fatal {

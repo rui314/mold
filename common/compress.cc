@@ -132,7 +132,7 @@ void ZlibCompressor::write_to(u8 *buf) {
     offsets[i] = offsets[i - 1] + shards[i - 1].size();
 
   tbb::parallel_for((i64)0, (i64)shards.size(), [&](i64 i) {
-    memcpy(&buf[offsets[i]], shards[i].data(), shards[i].size());
+    memcpy(buf + offsets[i], shards[i].data(), shards[i].size());
   });
 
   // Write a trailer
@@ -146,10 +146,10 @@ void ZlibCompressor::write_to(u8 *buf) {
 
 static std::vector<u8> zstd_compress(std::string_view input) {
   std::vector<u8> buf(ZSTD_COMPRESSBOUND(input.size()));
-  constexpr int level = 3; // compression level; must be between 1 to 22
+  constexpr int LEVEL = 3; // compression level; must be between 1 to 22
 
   size_t sz = ZSTD_compress(buf.data(), buf.size(), input.data(), input.size(),
-                            level);
+                            LEVEL);
   assert(!ZSTD_isError(sz));
   buf.resize(sz);
   buf.shrink_to_fit();
@@ -178,7 +178,7 @@ void ZstdCompressor::write_to(u8 *buf) {
     offsets[i] = offsets[i - 1] + shards[i - 1].size();
 
   tbb::parallel_for((i64)0, (i64)shards.size(), [&](i64 i) {
-    memcpy(&buf[offsets[i]], shards[i].data(), shards[i].size());
+    memcpy(buf + offsets[i], shards[i].data(), shards[i].size());
   });
 }
 
