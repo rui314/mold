@@ -714,7 +714,7 @@ but as `-o magic`.
   `.text.exit` as separate sections in the final binary instead of merging
   them as `.text`.
 
-* `-z rodynamic`
+* `-z rodynamic`:
   Make the `.dynamic` section read-only.
 
 * `-z relro`, `-z norelro`:
