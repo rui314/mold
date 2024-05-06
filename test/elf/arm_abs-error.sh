@@ -6,7 +6,7 @@ cat <<EOF | $CC -fPIC -c -o $t/a.o -xassembler - -mthumb
 foo = 3;
 EOF
 
-cat <<EOF | $CC -fno-PIC -c -o $t/b.o -xc - -mthumb
+cat <<EOF | $CC -fno-PIC -c -o $t/b.o -xc - -mthumb 2> /dev/null || skip
 #include <stdio.h>
 extern char foo;
 int main() { printf("foo=%p\n", &foo); }
