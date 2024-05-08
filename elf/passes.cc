@@ -205,6 +205,7 @@ static void mark_live_objects(Context<E> &ctx) {
         for (Symbol<E> *sym : file->get_global_syms()) {
           if (sym->file == file && ctx.arg.undefined_glob.find(sym->name())) {
             file->is_alive = true;
+            sym->gc_root = true;
             break;
           }
         }

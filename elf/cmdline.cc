@@ -1407,6 +1407,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.dependency_file = ctx.arg.chroot + "/" + ctx.arg.dependency_file;
   }
 
+  // Mark GC root symbols
+  for (Symbol<E> *sym : ctx.arg.undefined)
+    sym->gc_root = true;
+  for (Symbol<E> *sym : ctx.arg.require_defined)
+    sym->gc_root = true;
+  ctx.arg.entry->gc_root = true;
+
   if (version_shown && remaining.empty())
     exit(0);
   return remaining;

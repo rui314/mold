@@ -2225,6 +2225,9 @@ public:
   bool has_copyrel : 1 = false;
   bool is_copyrel_readonly : 1 = false;
 
+  // For --gc-sections
+  bool gc_root : 1 = false;
+
   // For LTO. True if the symbol is referenced by a regular object (as
   // opposed to IR object).
   bool referenced_by_regular_obj : 1 = false;

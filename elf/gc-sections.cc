@@ -110,27 +110,12 @@ static void collect_root_set(Context<E> &ctx,
     }
   });
 
-  // Add sections containing exported symbols
+  // Add sections containing gc root or exported symbols
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->symbols)
-      if (sym->file == file && sym->is_exported)
+      if (sym->file == file && (sym->gc_root || sym->is_exported))
         enqueue_symbol(sym);
   });
-
-  // Add sections referenced by root symbols.
-  for (Symbol<E> *sym : ctx.arg.undefined)
-    enqueue_symbol(sym);
-
-  for (Symbol<E> *sym : ctx.arg.require_defined)
-    enqueue_symbol(sym);
-
-  if (!ctx.arg.undefined_glob.empty()) {
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      for (Symbol<E> *sym : file->get_global_syms())
-        if (sym->file == file && ctx.arg.undefined_glob.find(sym->name()))
-          enqueue_symbol(sym);
-    });
-  }
 
   // .eh_frame consists of variable-length records called CIE and FDE
   // records, and they are a unit of inclusion or exclusion.
