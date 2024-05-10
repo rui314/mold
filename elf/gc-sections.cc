@@ -38,44 +38,10 @@ static bool mark_section(InputSection<E> *isec) {
 }
 
 template <typename E>
-static void visit(Context<E> &ctx, InputSection<E> *isec,
-                  tbb::feeder<InputSection<E> *> &feeder, i64 depth) {
-  assert(isec->is_visited);
-
-  // If this is a text section, .eh_frame may contain records
-  // describing how to handle exceptions for that function.
-  // We want to keep associated .eh_frame records.
-  for (FdeRecord<E> &fde : isec->get_fdes())
-    for (const ElfRel<E> &rel : fde.get_rels(isec->file).subspan(1))
-      if (Symbol<E> *sym = isec->file.symbols[rel.r_sym])
-        if (mark_section(sym->get_input_section()))
-          feeder.add(sym->get_input_section());
-
-  for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
-    Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
-
-    // Symbol can refer either a section fragment or an input section.
-    // Mark a fragment as alive.
-    if (SectionFragment<E> *frag = sym.get_frag()) {
-      frag->is_alive = true;
-      continue;
-    }
-
-    // Mark a section alive. For better performacne, we don't call
-    // `feeder.add` too often.
-    if (mark_section(sym.get_input_section())) {
-      if (depth < 3)
-        visit(ctx, sym.get_input_section(), feeder, depth + 1);
-      else
-        feeder.add(sym.get_input_section());
-    }
-  }
-}
-
-template <typename E>
-static void collect_root_set(Context<E> &ctx,
-                             tbb::concurrent_vector<InputSection<E> *> &rootset) {
+static tbb::concurrent_vector<InputSection<E> *>
+collect_root_set(Context<E> &ctx) {
   Timer t(ctx, "collect_root_set");
+  tbb::concurrent_vector<InputSection<E> *> rootset;
 
   auto enqueue_section = [&](InputSection<E> *isec) {
     if (mark_section(isec))
@@ -125,6 +91,43 @@ static void collect_root_set(Context<E> &ctx,
       for (const ElfRel<E> &rel : cie.get_rels())
         enqueue_symbol(file->symbols[rel.r_sym]);
   });
+
+  return rootset;
+}
+
+template <typename E>
+static void visit(Context<E> &ctx, InputSection<E> *isec,
+                  tbb::feeder<InputSection<E> *> &feeder, i64 depth) {
+  assert(isec->is_visited);
+
+  // If this is a text section, .eh_frame may contain records
+  // describing how to handle exceptions for that function.
+  // We want to keep associated .eh_frame records.
+  for (FdeRecord<E> &fde : isec->get_fdes())
+    for (const ElfRel<E> &rel : fde.get_rels(isec->file).subspan(1))
+      if (Symbol<E> *sym = isec->file.symbols[rel.r_sym])
+        if (mark_section(sym->get_input_section()))
+          feeder.add(sym->get_input_section());
+
+  for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
+    Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
+
+    // Symbol can refer to either a section fragment or an input section.
+    // Mark a fragment as alive.
+    if (SectionFragment<E> *frag = sym.get_frag()) {
+      frag->is_alive = true;
+      continue;
+    }
+
+    // Mark a section alive. For better performacne, we don't call
+    // `feeder.add` too often.
+    if (mark_section(sym.get_input_section())) {
+      if (depth < 3)
+        visit(ctx, sym.get_input_section(), feeder, depth + 1);
+      else
+        feeder.add(sym.get_input_section());
+    }
+  }
 }
 
 // Mark all reachable sections
@@ -134,7 +137,7 @@ static void mark(Context<E> &ctx,
   Timer t(ctx, "mark");
 
   tbb::parallel_for_each(rootset, [&](InputSection<E> *isec,
-                                    tbb::feeder<InputSection<E> *> &feeder) {
+                                      tbb::feeder<InputSection<E> *> &feeder) {
     visit(ctx, isec, feeder, 0);
   });
 }
@@ -160,9 +163,7 @@ static void sweep(Context<E> &ctx) {
 template <typename E>
 void gc_sections(Context<E> &ctx) {
   Timer t(ctx, "gc");
-
-  tbb::concurrent_vector<InputSection<E> *> rootset;
-  collect_root_set(ctx, rootset);
+  tbb::concurrent_vector<InputSection<E> *> rootset = collect_root_set(ctx);
   mark(ctx, rootset);
   sweep(ctx);
 }
