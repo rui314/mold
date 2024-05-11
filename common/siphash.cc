@@ -19,25 +19,25 @@
 
 namespace mold {
 
-#define ROUND                                   \
-  v0 += v1;                                     \
-  v1 = std::rotl(v1, 13);                       \
-  v1 ^= v0;                                     \
-  v0 = std::rotl(v0, 32);                       \
-  v2 += v3;                                     \
-  v3 = std::rotl(v3, 16);                       \
-  v3 ^= v2;                                     \
-  v0 += v3;                                     \
-  v3 = std::rotl(v3, 21);                       \
-  v3 ^= v0;                                     \
-  v2 += v1;                                     \
-  v1 = std::rotl(v1, 17);                       \
-  v1 ^= v2;                                     \
+#define ROUND                \
+  v0 += v1;                  \
+  v1 = std::rotl(v1, 13);    \
+  v1 ^= v0;                  \
+  v0 = std::rotl(v0, 32);    \
+  v2 += v3;                  \
+  v3 = std::rotl(v3, 16);    \
+  v3 ^= v2;                  \
+  v0 += v3;                  \
+  v3 = std::rotl(v3, 21);    \
+  v3 ^= v0;                  \
+  v2 += v1;                  \
+  v1 = std::rotl(v1, 17);    \
+  v1 ^= v2;                  \
   v2 = std::rotl(v2, 32)
 
-// SipHash-1-3
-#define COMPRESS do { ROUND; } while (0)
-#define FINALIZE do { ROUND; ROUND; ROUND; } while (0)
+// SipHash-2-4
+#define COMPRESS do { ROUND; ROUND; } while (0)
+#define FINALIZE do { ROUND; ROUND; ROUND; ROUND; } while (0)
 
 SipHash::SipHash(u8 *key) {
   u64 k0 = *(ul64 *)key;
