@@ -721,6 +721,25 @@ public:
 };
 
 //
+// siphash.cc
+//
+
+class SipHash {
+public:
+  SipHash(u8 *key);
+  void update(u8 *msg, i64 msglen);
+  void finish(u8 *out);
+
+private:
+  u64 k0, k1;
+  u64 v0, v1, v2, v3;
+
+  i64 total_bytes = 0;
+  u8 buf[8] = {};
+  i64 buflen = 0;
+};
+
+//
 // output-file.h
 //
 

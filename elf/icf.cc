@@ -65,10 +65,10 @@
 // conditions.
 
 #include "mold.h"
-#include "blake3.h"
 
 #include <array>
 #include <cstdio>
+#include <random>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
@@ -89,6 +89,14 @@ template <> struct hash<Digest> {
 }
 
 namespace mold::elf {
+
+static u8 hmac_key[16];
+
+static void init_hmac_key() {
+  std::random_device rand;
+  u32 tmp[4] = { rand(), rand(), rand(), rand() };
+  memcpy(hmac_key, tmp, 16);
+}
 
 template <typename E>
 static void uniquify_cies(Context<E> &ctx) {
@@ -128,17 +136,6 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
     return (ctx.arg.ignore_data_address_equality || !isec.address_taken) &&
            (is_readonly || is_relro);
   }
-}
-
-static Digest digest_final(blake3_hasher *hasher) {
-  assert(HASH_SIZE <= BLAKE3_OUT_LEN);
-
-  u8 buf[BLAKE3_OUT_LEN];
-  blake3_hasher_finalize(hasher, buf, BLAKE3_OUT_LEN);
-
-  Digest digest;
-  memcpy(digest.data(), buf, HASH_SIZE);
-  return digest;
 }
 
 template <typename E>
@@ -234,16 +231,15 @@ static void merge_leaf_nodes(Context<E> &ctx) {
 
 template <typename E>
 static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
-  blake3_hasher hasher;
-  blake3_hasher_init(&hasher);
+  SipHash hasher(hmac_key);
 
   auto hash = [&](auto val) {
-    blake3_hasher_update(&hasher, (u8 *)&val, sizeof(val));
+    hasher.update((u8 *)&val, sizeof(val));
   };
 
   auto hash_string = [&](std::string_view str) {
     hash(str.size());
-    blake3_hasher_update(&hasher, (u8 *)str.data(), str.size());
+    hasher.update((u8 *)str.data(), str.size());
   };
 
   auto hash_symbol = [&](Symbol<E> &sym) {
@@ -299,7 +295,9 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     hash_symbol(*isec.file.symbols[rel.r_sym]);
   }
 
-  return digest_final(&hasher);
+  Digest digest;
+  hasher.finish(digest.data());
+  return digest;
 }
 
 template <typename E>
@@ -412,17 +410,16 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
     if (converged.get(i))
       return;
 
-    blake3_hasher hasher;
-    blake3_hasher_init(&hasher);
-    blake3_hasher_update(&hasher, digests[2][i].data(), HASH_SIZE);
+    SipHash hasher(hmac_key);
+    hasher.update(digests[2][i].data(), HASH_SIZE);
 
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
     for (i64 j : edges.subspan(begin, end - begin))
-      blake3_hasher_update(&hasher, digests[slot][j].data(), HASH_SIZE);
+      hasher.update(digests[slot][j].data(), HASH_SIZE);
 
-    digests[!slot][i] = digest_final(&hasher);
+    hasher.finish(digests[!slot][i].data());
 
     if (digests[slot][i] == digests[!slot][i]) {
       // This node has converged. Skip further iterations as it will
@@ -498,6 +495,7 @@ void icf_sections(Context<E> &ctx) {
   if (ctx.objs.empty())
     return;
 
+  init_hmac_key();
   uniquify_cies(ctx);
   merge_leaf_nodes(ctx);
 
