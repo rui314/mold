@@ -394,7 +394,7 @@ static void gather_edges(Context<E> &ctx,
 template <typename E>
 static i64 propagate(std::span<std::vector<Digest>> digests,
                      std::span<u32> edges, std::span<u32> edge_indices,
-                     bool &slot, BitVector &converged,
+                     bool &slot, std::span<u8> converged,
                      tbb::affinity_partitioner &ap) {
   static Counter round("icf_round");
   round++;
@@ -403,7 +403,7 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
   tbb::enumerable_thread_specific<i64> changed;
 
   tbb::parallel_for((i64)0, num_digests, [&](i64 i) {
-    if (converged.get(i))
+    if (converged[i])
       return;
 
     SipHash hasher(hmac_key);
@@ -420,7 +420,7 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
     if (digests[slot][i] == digests[!slot][i]) {
       // This node has converged. Skip further iterations as it will
       // yield the same hash.
-      converged.set(i);
+      converged[i] = true;
     } else {
       changed.local()++;
     }
@@ -517,7 +517,7 @@ void icf_sections(Context<E> &ctx) {
   std::vector<u32> edge_indices;
   gather_edges<E>(ctx, sections, edges, edge_indices);
 
-  BitVector converged(digests[0].size());
+  std::vector<u8> converged(digests[0].size());
   bool slot = 0;
 
   // Execute the propagation rounds until convergence is obtained.
