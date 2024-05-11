@@ -12,6 +12,7 @@
 // Our implementation always outputs a 128 bit hash value.
 //
 // Here is the reference implementation:
+//
 //   https://github.com/veorq/SipHash/blob/master/siphash.c
 
 #include "common.h"
@@ -35,8 +36,8 @@ namespace mold {
   v2 = std::rotl(v2, 32)
 
 // SipHash-1-3
-#define C_ROUNDS ROUND
-#define D_ROUNDS ROUND; ROUND; ROUND
+#define COMPRESS do { ROUND; } while (0)
+#define FINALIZE do { ROUND; ROUND; ROUND; } while (0)
 
 SipHash::SipHash(u8 *key) {
   u64 k0 = *(ul64 *)key;
@@ -62,7 +63,7 @@ void SipHash::update(u8 *msg, i64 msglen) {
 
     u64 m = *(ul64 *)buf;
     v3 ^= m;
-    C_ROUNDS;
+    COMPRESS;
     v0 ^= m;
 
     msg += j;
@@ -73,7 +74,7 @@ void SipHash::update(u8 *msg, i64 msglen) {
   while (msglen >= 8) {
     u64 m = *(ul64 *)msg;
     v3 ^= m;
-    C_ROUNDS;
+    COMPRESS;
     v0 ^= m;
 
     msg += 8;
@@ -86,18 +87,18 @@ void SipHash::update(u8 *msg, i64 msglen) {
 
 void SipHash::finish(u8 *out) {
   memset(buf + buflen, 0, 8 - buflen);
-  u64 b = (total_bytes << 56) | *(ul64 *)buf;
 
+  u64 b = (total_bytes << 56) | *(ul64 *)buf;
   v3 ^= b;
-  C_ROUNDS;
+  COMPRESS;
   v0 ^= b;
 
   v2 ^= 0xee;
-  D_ROUNDS;
+  FINALIZE;
   *(ul64 *)out = v0 ^ v1 ^ v2 ^ v3;
 
   v1 ^= 0xdd;
-  D_ROUNDS;
+  FINALIZE;
   *(ul64 *)(out + 8) = v0 ^ v1 ^ v2 ^ v3;
 }
 

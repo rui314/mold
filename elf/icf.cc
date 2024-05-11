@@ -77,7 +77,7 @@
 
 static constexpr int64_t HASH_SIZE = 16;
 
-typedef std::array<uint8_t, HASH_SIZE> Digest;
+using Digest = std::array<uint8_t, HASH_SIZE>;
 
 namespace std {
 template <> struct hash<Digest> {
