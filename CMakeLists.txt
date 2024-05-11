@@ -355,6 +355,7 @@ target_sources(mold PRIVATE
   common/malloc.cc
   common/multi-glob.cc
   common/perf.cc
+  common/random.cc
   common/siphash.cc
   common/tar.cc
   elf/arch-alpha.cc

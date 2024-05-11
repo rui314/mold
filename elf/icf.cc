@@ -68,7 +68,6 @@
 
 #include <array>
 #include <cstdio>
-#include <random>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
@@ -91,12 +90,6 @@ template <> struct hash<Digest> {
 namespace mold::elf {
 
 static u8 hmac_key[16];
-
-static void init_hmac_key() {
-  std::random_device rand;
-  u32 tmp[4] = { rand(), rand(), rand(), rand() };
-  memcpy(hmac_key, tmp, 16);
-}
 
 template <typename E>
 static void uniquify_cies(Context<E> &ctx) {
@@ -498,7 +491,8 @@ void icf_sections(Context<E> &ctx) {
   if (ctx.objs.empty())
     return;
 
-  init_hmac_key();
+  get_random_bytes(hmac_key, sizeof(hmac_key));
+
   uniquify_cies(ctx);
   merge_leaf_nodes(ctx);
 

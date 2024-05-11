@@ -721,6 +721,12 @@ public:
 };
 
 //
+// random.cc
+//
+
+void get_random_bytes(u8 *buf, i64 size);
+
+//
 // siphash.cc
 //
 

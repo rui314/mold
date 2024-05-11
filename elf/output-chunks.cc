@@ -4,7 +4,6 @@
 #include "blake3.h"
 
 #include <cctype>
-#include <random>
 #include <set>
 #include <shared_mutex>
 #include <span>
@@ -2600,9 +2599,7 @@ void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
     return;
   }
   case BuildId::UUID: {
-    std::random_device rand;
-    u32 tmp[4] = { rand(), rand(), rand(), rand() };
-    memcpy(buf, tmp, 16);
+    get_random_bytes(buf, 16);
 
     // Indicate that this is UUIDv4 as defined by RFC4122
     buf[6] = (buf[6] & 0b0000'1111) | 0b0100'0000;
