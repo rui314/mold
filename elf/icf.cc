@@ -103,17 +103,21 @@ static void uniquify_cies(Context<E> &ctx) {
   Timer t(ctx, "uniquify_cies");
   std::vector<CieRecord<E> *> cies;
 
+  auto find = [&](CieRecord<E> &cie) -> i64 {
+    for (i64 i = 0; i < cies.size(); i++)
+      if (cie_equals(cie, *cies[i]))
+        return i;
+    return -1;
+  };
+
   for (ObjectFile<E> *file : ctx.objs) {
     for (CieRecord<E> &cie : file->cies) {
-      for (i64 i = 0; i < cies.size(); i++) {
-        if (cie_equals(cie, *cies[i])) {
-          cie.icf_idx = i;
-          goto found;
-        }
+      if (i64 idx = find(cie); idx != -1) {
+        cie.icf_idx = idx;
+      } else {
+        cie.icf_idx = cies.size();
+        cies.push_back(&cie);
       }
-      cie.icf_idx = cies.size();
-      cies.push_back(&cie);
-    found:;
     }
   }
 }
@@ -127,15 +131,14 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
       shdr.sh_type == SHT_NOBITS || is_c_identifier(name))
     return false;
 
-  if (shdr.sh_flags & SHF_EXECINSTR) {
+  if (shdr.sh_flags & SHF_EXECINSTR)
     return (ctx.arg.icf_all || !isec.address_taken) &&
            name != ".init" && name != ".fini";
-  } else {
-    bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
-    bool is_relro = isec.output_section && isec.output_section->is_relro;
-    return (ctx.arg.ignore_data_address_equality || !isec.address_taken) &&
-           (is_readonly || is_relro);
-  }
+
+  bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
+  bool is_relro = isec.output_section && isec.output_section->is_relro;
+  return (ctx.arg.ignore_data_address_equality || !isec.address_taken) &&
+         (is_readonly || is_relro);
 }
 
 template <typename E>
@@ -563,7 +566,7 @@ void icf_sections(Context<E> &ctx) {
     }
   }
 
-  // Group sections by BLAKE3 digest.
+  // Group sections by hash values.
   {
     Timer t(ctx, "group");
 
