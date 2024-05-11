@@ -38,8 +38,8 @@ namespace mold {
 #define D_ROUND for (i64 i = 0; i < 3; i++) ROUND
 
 SipHash::SipHash(u8 *key) {
-  k0 = *(ul64 *)key;
-  k1 = *(ul64 *)(key + 8);
+  u64 k0 = *(ul64 *)key;
+  u64 k1 = *(ul64 *)(key + 8);
   v0 = 0x736f6d6570736575 ^ k0;
   v1 = 0x646f72616e646f6d ^ k1 ^ 0xee;
   v2 = 0x6c7967656e657261 ^ k0;
