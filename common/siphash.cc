@@ -51,7 +51,7 @@ SipHash::SipHash(u8 *key) {
 void SipHash::update(u8 *msg, i64 msglen) {
   total_bytes += msglen;
 
-  if (buflen > 0) {
+  if (buflen) {
     if (buflen + msglen < 8) {
       memcpy(buf + buflen, msg, msglen);
       buflen += msglen;

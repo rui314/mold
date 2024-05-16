@@ -739,7 +739,7 @@ public:
 private:
   u64 v0, v1, v2, v3;
   u8 buf[8];
-  i64 buflen = 0;
+  u8 buflen = 0;
   i64 total_bytes = 0;
 };
 
