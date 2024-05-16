@@ -1025,6 +1025,9 @@ public:
   MappedFile *parent = nullptr;
   MappedFile *thin_parent = nullptr;
 
+  // For --dependency-file
+  bool is_dependency = true;
+
 #ifdef _WIN32
   HANDLE fd = INVALID_HANDLE_VALUE;
 #else

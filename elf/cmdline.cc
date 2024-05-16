@@ -227,6 +227,8 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
   MappedFile *mf = must_open_file(ctx, std::string(path));
   std::string_view data((char *)mf->data, mf->size);
 
+  mf->is_dependency = false;
+
   while (!data.empty()) {
     if (isspace(data[0])) {
       data = data.substr(1);

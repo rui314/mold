@@ -3004,7 +3004,7 @@ void write_dependency_file(Context<E> &ctx) {
   std::unordered_set<std::string> seen;
 
   for (std::unique_ptr<MappedFile> &mf : ctx.mf_pool)
-    if (!mf->parent)
+    if (mf->is_dependency && !mf->parent)
       if (std::string path = path_clean(mf->name); seen.insert(path).second)
         deps.push_back(path);
 
