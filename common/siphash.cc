@@ -35,9 +35,9 @@ namespace mold {
   v1 ^= v2;                  \
   v2 = std::rotl(v2, 32)
 
-// SipHash-2-4
-#define COMPRESS do { ROUND; ROUND; } while (0)
-#define FINALIZE do { ROUND; ROUND; ROUND; ROUND; } while (0)
+// SipHash-1-3
+#define COMPRESS do { ROUND; } while (0)
+#define FINALIZE do { ROUND; ROUND; ROUND; } while (0)
 
 SipHash::SipHash(u8 *key) {
   u64 k0 = *(ul64 *)key;
