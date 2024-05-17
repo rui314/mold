@@ -82,7 +82,10 @@ using Digest = std::array<uint8_t, HASH_SIZE>;
 namespace std {
 template <> struct hash<Digest> {
   size_t operator()(const Digest &k) const {
-    return *(int64_t *)&k[0];
+    static_assert(sizeof(size_t) <= HASH_SIZE);
+    size_t val;
+    memcpy(&val, k.data(), sizeof(size_t));
+    return val;
   }
 };
 }
