@@ -65,6 +65,7 @@
 // conditions.
 
 #include "mold.h"
+#include "../common/siphash.h"
 
 #include <array>
 #include <cstdio>
@@ -230,7 +231,7 @@ static void merge_leaf_nodes(Context<E> &ctx) {
 
 template <typename E>
 static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
-  SipHash hasher(hmac_key);
+  SipHash13_128 hasher(hmac_key);
 
   auto hash = [&](auto val) {
     hasher.update((u8 *)&val, sizeof(val));
@@ -409,7 +410,7 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
     if (converged[i])
       return;
 
-    SipHash hasher(hmac_key);
+    SipHash13_128 hasher(hmac_key);
     hasher.update(digests[2][i].data(), HASH_SIZE);
 
     i64 begin = edge_indices[i];
