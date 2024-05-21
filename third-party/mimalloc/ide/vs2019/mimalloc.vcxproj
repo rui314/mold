@@ -219,6 +219,7 @@
     </ClCompile>
     <ClCompile Include="..\..\src\heap.c" />
     <ClCompile Include="..\..\src\init.c" />
+    <ClCompile Include="..\..\src\libc.c" />
     <ClCompile Include="..\..\src\prim\prim.c" />
     <ClCompile Include="..\..\src\prim\windows\prim.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>

@@ -34,7 +34,7 @@ we therefore test the API over various inputs. Please add more tests :-)
 
 #include "mimalloc.h"
 // #include "mimalloc/internal.h"
-#include "mimalloc/types.h" // for MI_DEBUG and MI_ALIGNMENT_MAX
+#include "mimalloc/types.h" // for MI_DEBUG and MI_BLOCK_ALIGNMENT_MAX
 
 #include "testhelper.h"
 
@@ -45,6 +45,11 @@ bool test_heap1(void);
 bool test_heap2(void);
 bool test_stl_allocator1(void);
 bool test_stl_allocator2(void);
+
+bool test_stl_heap_allocator1(void);
+bool test_stl_heap_allocator2(void);
+bool test_stl_heap_allocator3(void);
+bool test_stl_heap_allocator4(void);
 
 bool mem_is_zero(uint8_t* p, size_t size) {
   if (p==NULL) return false;
@@ -59,7 +64,7 @@ bool mem_is_zero(uint8_t* p, size_t size) {
 // ---------------------------------------------------------------------------
 int main(void) {
   mi_option_disable(mi_option_verbose);
-  
+
   // ---------------------------------------------------
   // Malloc
   // ---------------------------------------------------
@@ -154,7 +159,7 @@ int main(void) {
   };
   CHECK_BODY("malloc-aligned6") {
     bool ok = true;
-    for (size_t align = 1; align <= MI_ALIGNMENT_MAX && ok; align *= 2) {
+    for (size_t align = 1; align <= MI_BLOCK_ALIGNMENT_MAX && ok; align *= 2) {
       void* ps[8];
       for (int i = 0; i < 8 && ok; i++) {
         ps[i] = mi_malloc_aligned(align*13  // size
@@ -170,16 +175,16 @@ int main(void) {
     result = ok;
   };
   CHECK_BODY("malloc-aligned7") {
-    void* p = mi_malloc_aligned(1024,MI_ALIGNMENT_MAX);
+    void* p = mi_malloc_aligned(1024,MI_BLOCK_ALIGNMENT_MAX);
     mi_free(p);
-    result = ((uintptr_t)p % MI_ALIGNMENT_MAX) == 0;
+    result = ((uintptr_t)p % MI_BLOCK_ALIGNMENT_MAX) == 0;
   };
   CHECK_BODY("malloc-aligned8") {
     bool ok = true;
     for (int i = 0; i < 5 && ok; i++) {
       int n = (1 << i);
-      void* p = mi_malloc_aligned(1024, n * MI_ALIGNMENT_MAX);
-      ok = ((uintptr_t)p % (n*MI_ALIGNMENT_MAX)) == 0;
+      void* p = mi_malloc_aligned(1024, n * MI_BLOCK_ALIGNMENT_MAX);
+      ok = ((uintptr_t)p % (n*MI_BLOCK_ALIGNMENT_MAX)) == 0;
       mi_free(p);
     }
     result = ok;
@@ -187,7 +192,7 @@ int main(void) {
   CHECK_BODY("malloc-aligned9") {
     bool ok = true;
     void* p[8];
-    size_t sizes[8] = { 8, 512, 1024 * 1024, MI_ALIGNMENT_MAX, MI_ALIGNMENT_MAX + 1, 2 * MI_ALIGNMENT_MAX, 8 * MI_ALIGNMENT_MAX, 0 };
+    size_t sizes[8] = { 8, 512, 1024 * 1024, MI_BLOCK_ALIGNMENT_MAX, MI_BLOCK_ALIGNMENT_MAX + 1, 2 * MI_BLOCK_ALIGNMENT_MAX, 8 * MI_BLOCK_ALIGNMENT_MAX, 0 };
     for (int i = 0; i < 28 && ok; i++) {
       int align = (1 << i);
       for (int j = 0; j < 8 && ok; j++) {
@@ -224,6 +229,28 @@ int main(void) {
     void* p = mi_malloc_aligned(0x100, 0x100);
     result = (((uintptr_t)p % 0x100) == 0); // #602
     mi_free(p);
+  }
+  CHECK_BODY("mimalloc-aligned13") {
+    bool ok = true;
+    for( size_t size = 1; size <= (MI_SMALL_SIZE_MAX * 2) && ok; size++ ) {
+      for(size_t align = 1; align <= size && ok; align *= 2 ) {
+        void* p[10];
+        for(int i = 0; i < 10 && ok; i++) {
+          p[i] = mi_malloc_aligned(size,align);;
+          ok = (p[i] != NULL && ((uintptr_t)(p[i]) % align) == 0);
+        }
+        for(int i = 0; i < 10 && ok; i++) {
+          mi_free(p[i]);
+        }       
+        /*
+        if (ok && align <= size && ((size + MI_PADDING_SIZE) & (align-1)) == 0) {
+          size_t bsize = mi_good_size(size);
+          ok = (align <= bsize && (bsize & (align-1)) == 0);
+        }
+        */
+      }
+    }
+    result = ok;
   }
   CHECK_BODY("malloc-aligned-at1") {
     void* p = mi_malloc_aligned_at(48,32,0); result = (p != NULL && ((uintptr_t)(p) + 0) % 32 == 0); mi_free(p);
@@ -295,14 +322,21 @@ int main(void) {
   // ---------------------------------------------------
   // various
   // ---------------------------------------------------
+  #if !defined(MI_TRACK_ASAN)   // realpath may leak with ASAN enabled (as the ASAN allocator intercepts it)
   CHECK_BODY("realpath") {
     char* s = mi_realpath( ".", NULL );
     // printf("realpath: %s\n",s);
     mi_free(s);
   };
+  #endif
 
   CHECK("stl_allocator1", test_stl_allocator1());
   CHECK("stl_allocator2", test_stl_allocator2());
+
+	CHECK("stl_heap_allocator1", test_stl_heap_allocator1());
+	CHECK("stl_heap_allocator2", test_stl_heap_allocator2());
+	CHECK("stl_heap_allocator3", test_stl_heap_allocator3());
+	CHECK("stl_heap_allocator4", test_stl_heap_allocator4());
 
   // ---------------------------------------------------
   // Done
@@ -353,6 +387,64 @@ bool test_stl_allocator2(void) {
   vec.push_back(some_struct());
   vec.pop_back();
   return vec.size() == 0;
+#else
+  return true;
+#endif
+}
+
+bool test_stl_heap_allocator1(void) {
+#ifdef __cplusplus
+  std::vector<some_struct, mi_heap_stl_allocator<some_struct> > vec;
+  vec.push_back(some_struct());
+  vec.pop_back();
+  return vec.size() == 0;
+#else
+  return true;
+#endif
+}
+
+bool test_stl_heap_allocator2(void) {
+#ifdef __cplusplus
+  std::vector<some_struct, mi_heap_destroy_stl_allocator<some_struct> > vec;
+  vec.push_back(some_struct());
+  vec.pop_back();
+  return vec.size() == 0;
+#else
+  return true;
+#endif
+}
+
+bool test_stl_heap_allocator3(void) {
+#ifdef __cplusplus
+	mi_heap_t* heap = mi_heap_new();
+	bool good = false;
+	{
+		mi_heap_stl_allocator<some_struct> myAlloc(heap);
+		std::vector<some_struct, mi_heap_stl_allocator<some_struct> > vec(myAlloc);
+		vec.push_back(some_struct());
+		vec.pop_back();
+		good = vec.size() == 0;
+	}
+	mi_heap_delete(heap);
+  return good;
+#else
+  return true;
+#endif
+}
+
+bool test_stl_heap_allocator4(void) {
+#ifdef __cplusplus
+	mi_heap_t* heap = mi_heap_new();
+	bool good = false;
+	{
+		mi_heap_destroy_stl_allocator<some_struct> myAlloc(heap);
+		std::vector<some_struct, mi_heap_destroy_stl_allocator<some_struct> > vec(myAlloc);
+		vec.push_back(some_struct());
+		vec.pop_back();
+		good = vec.size() == 0;
+	}
+	mi_heap_destroy(heap);
+  return good;
 #else
   return true;
 #endif

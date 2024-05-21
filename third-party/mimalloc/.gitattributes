@@ -10,3 +10,4 @@
 *.dll binary
 *.lib binary
 *.exe binary
+bin export-ignore
