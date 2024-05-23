@@ -546,6 +546,11 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if constexpr (is_sparc<E>)
     ctx.arg.apply_dynamic_relocs = false;
 
+  // For some reason, SH4 always stores relocation addends to
+  // relocated places even though its RELA.
+  if constexpr (is_sh4<E>)
+    ctx.arg.apply_dynamic_relocs = true;
+
   auto read_arg = [&](std::string name) {
     for (const std::string &opt : add_dashes(name)) {
       if (args[0] == opt) {
@@ -1343,7 +1348,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
 
-  if constexpr (!E::is_rela)
+  if constexpr (!E::is_rela || is_sh4<E>)
     if (!ctx.arg.apply_dynamic_relocs)
       Fatal(ctx) << "--no-apply-dynamic-relocs may not be used on "
                  << E::target_name;

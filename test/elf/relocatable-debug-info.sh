@@ -17,4 +17,7 @@ EOF
 ./mold --relocatable -o $t/c.o $t/a.o $t/b.o
 
 $CC -B. -o $t/exe $t/c.o
-$QEMU $t/exe
+$QEMU $t/exe | grep -q 'Hello world'
+
+$OBJDUMP --dwarf=info $t/c.o > /dev/null 2> $t/log
+! grep -q Warning $t/log || false

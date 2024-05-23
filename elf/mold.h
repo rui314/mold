@@ -262,8 +262,10 @@ public:
   std::string_view get_func_name(Context<E> &ctx, i64 offset) const;
   bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) const;
   bool is_killed_by_icf() const;
-
   bool record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
+
+  std::pair<SectionFragment<E> *, i64>
+  get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
@@ -320,9 +322,6 @@ private:
                      u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> **dynrel);
 
   void copy_contents_riscv(Context<E> &ctx, u8 *buf);
-
-  std::pair<SectionFragment<E> *, i64>
-  get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
   u64 get_thunk_addr(i64 idx);
 
@@ -2306,7 +2305,7 @@ i64 get_addend(InputSection<E> &isec, const ElfRel<E> &rel) {
 template <typename E>
 void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel);
 
-template <typename E> requires E::is_rela
+template <typename E> requires E::is_rela && (!is_sh4<E>)
 void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {}
 
 template <typename E>

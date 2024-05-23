@@ -91,6 +91,28 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
 }
 
 template <>
+void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
+  switch (rel.r_type) {
+  case R_SH_DIR32:
+  case R_SH_REL32:
+  case R_SH_TLS_GD_32:
+  case R_SH_TLS_LD_32:
+  case R_SH_TLS_LDO_32:
+  case R_SH_TLS_IE_32:
+  case R_SH_TLS_LE_32:
+  case R_SH_TLS_DTPMOD32:
+  case R_SH_TLS_DTPOFF32:
+  case R_SH_TLS_TPOFF32:
+  case R_SH_GOT32:
+  case R_SH_PLT32:
+  case R_SH_GOTOFF:
+  case R_SH_GOTPC:
+  case R_SH_GOTPLT32:
+    *(ul32 *)loc = val;
+  }
+}
+
+template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {

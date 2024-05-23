@@ -2810,33 +2810,41 @@ void RelocSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void RelocSection<E>::copy_buf(Context<E> &ctx) {
-  auto write = [&](ElfRel<E> &out, InputSection<E> &isec, const ElfRel<E> &rel) {
+  auto get_symidx_addend = [&](InputSection<E> &isec, const ElfRel<E> &rel)
+      -> std::pair<i64, i64> {
     Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-    i64 symidx = 0;
-    i64 addend = 0;
+
+    if (!(isec.shdr().sh_flags & SHF_ALLOC)) {
+      SectionFragment<E> *frag;
+      i64 frag_addend;
+      std::tie(frag, frag_addend) = isec.get_fragment(ctx, rel);
+      if (frag)
+        return {frag->output_section.shndx, frag->offset + frag_addend};
+    }
 
     if (sym.esym().st_type == STT_SECTION) {
-      if (SectionFragment<E> *frag = sym.get_frag()) {
-        symidx = frag->output_section.shndx;
-        addend = frag->offset + sym.value + get_addend(isec, rel);
-      } else {
-        InputSection<E> *target = sym.get_input_section();
+      if (SectionFragment<E> *frag = sym.get_frag())
+        return {frag->output_section.shndx,
+                frag->offset + sym.value + get_addend(isec, rel)};
 
-        if (OutputSection<E> *osec = target->output_section) {
-          symidx = osec->shndx;
-          addend = get_addend(isec, rel) + target->offset;
-        } else if (isec.name() == ".eh_frame") {
-          symidx = ctx.eh_frame->shndx;
-          addend = get_addend(isec, rel);
-        } else {
-          // This is usually a dead debug section referring a
-          // COMDAT-eliminated section.
-        }
-      }
-    } else if (sym.write_to_symtab) {
-      symidx = sym.get_output_sym_idx(ctx);
-      addend = get_addend(isec, rel);
+      InputSection<E> *isec2 = sym.get_input_section();
+      if (OutputSection<E> *osec = isec2->output_section)
+        return {osec->shndx, get_addend(isec, rel) + isec2->offset};
+
+      // This is usually a dead debug section referring to a
+      // COMDAT-eliminated section.
+      return {0, 0};
     }
+
+    if (sym.write_to_symtab)
+      return {sym.get_output_sym_idx(ctx), get_addend(isec, rel)};
+    return {0, 0};
+  };
+
+  auto write = [&](ElfRel<E> &out, InputSection<E> &isec, const ElfRel<E> &rel) {
+    i64 symidx;
+    i64 addend;
+    std::tie(symidx, addend) = get_symidx_addend(isec, rel);
 
     if constexpr (is_alpha<E>)
       if (rel.r_type == R_ALPHA_GPDISP || rel.r_type == R_ALPHA_LITUSE)
