@@ -124,8 +124,10 @@ public:
 };
 
 struct ThunkRef {
-  i16 thunk_idx = -1;
-  i16 sym_idx = -1;
+  static constexpr i64 MAX_SYM_IDX = (1 << 17) - 1;
+
+  i32 thunk_idx : 14 = -1;
+  i32 sym_idx : 18 = -1;
 };
 
 //

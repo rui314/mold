@@ -63,10 +63,10 @@ static consteval i64 max_distance() {
 // ARM64/ARM32/PPC, respectively.
 static constexpr i64 batch_size = max_distance() / 10;
 
-// We assume that a single thunk group is smaller than 100 KiB.
-static constexpr i64 max_thunk_size = 102400;
+// We assume that a single thunk group is smaller than 900 KiB.
+static constexpr i64 max_thunk_size = 900 * 1024;
 
-static_assert(max_thunk_size / E::thunk_size < INT16_MAX);
+static_assert(max_thunk_size / E::thunk_size < ThunkRef::MAX_SYM_IDX);
 
 template <typename E>
 static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
