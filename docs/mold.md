@@ -602,10 +602,18 @@ but as `-o magic`.
   Create a share library.
 
 * `--spare-dynamic-tags`=_number_:
-  Reserve the given _number_ of tags in `.dynamic` section.
+  Append the given number of `DT_NULL` entries to the end of the `.dynamic`
+  section, so that post-link processing tools can easily add new dynamic tags
+  by overwriting the null entries.
 
 * `--spare-program-headers`=_number_:
-  Reserve the given _number_ of entries in the program header.
+  Append the given number of `PT_NULL` entries to the end of the program
+  header, so that post-link processing tools can easily add new segments by
+  overwriting the null entries.
+
+  Note that ELF(5) requires all `PT_LOAD` segments to be sorted by `p_vaddr`.
+  Therefore, if you add a new LOAD segment, you may need to sort the entire
+  program header.
 
 * `--start-lib`, `--end-lib`:
   Handle object files between `--start-lib` and `--end-lib` as if they were in
