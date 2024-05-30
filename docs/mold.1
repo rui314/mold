@@ -365,10 +365,12 @@ Set \fIaddress\fR to section\. \fIaddress\fR is a hexadecimal number that may st
 Create a share library\.
 .TP
 \fB\-\-spare\-dynamic\-tags\fR=\fInumber\fR
-Reserve the given \fInumber\fR of tags in \fB\.dynamic\fR section\.
+Append the given number of \fBDT_NULL\fR entries to the end of the \fB\.dynamic\fR section, so that post\-link processing tools can easily add new dynamic tags by overwriting the null entries\.
 .TP
 \fB\-\-spare\-program\-headers\fR=\fInumber\fR
-Reserve the given \fInumber\fR of entries in the program header\.
+Append the given number of \fBPT_NULL\fR entries to the end of the program header, so that post\-link processing tools can easily add new segments by overwriting the null entries\.
+.IP
+Note that ELF(5) requires all \fBPT_LOAD\fR segments to be sorted by \fBp_vaddr\fR\. Therefore, if you add a new LOAD segment, you may need to sort the entire program header\.
 .TP
 \fB\-\-start\-lib\fR, \fB\-\-end\-lib\fR
 Handle object files between \fB\-\-start\-lib\fR and \fB\-\-end\-lib\fR as if they were in an archive file\. That means object files between them are linked only when they are needed to resolve undefined symbols\. The options are useful if you want to link object files only when they are needed but want to avoid the overhead of running ar(3)\.
