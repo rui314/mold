@@ -78,6 +78,11 @@ Print out dependency information for input files\.
 .IP
 Each line of the output for this option shows which file depends on which file to use a specific symbol\. This option is useful for debugging why some object file in a static archive got linked or why some shared library is kept in an output file's dependency list even with \fB\-\-as\-needed\fR\.
 .TP
+\fB\-\-relocatable\-merge\-sections\fR
+By default, \fBmold\fR doesn't merge input sections by name when merging input object files into a single output object file for \fB\-r\fR\. For example, \fB\.text\.foo\fR and \fB\.text\.bar\fR aren't merged for \fB\-r\fR even though they are merged into \fB\.text\fR based on the default section merging rules\.
+.IP
+This option changes the behavior so that \fBmold\fR merges input sections by name by the default section merging rules\.
+.TP
 \fB\-\-repro\fR
 Archive input files, as well as a text file containing command line options, in a tar file so that you can run \fBmold\fR with the exact same inputs again\. This is useful for reporting a bug with a reproducer\. The output filename is \fBpath/to/output\.tar\fR, where \fBpath/to/output\fR is an output filename specified by \fB\-o\fR\.
 .TP
@@ -97,6 +102,11 @@ Randomize the output by shuffling the order of input sections before assigning t
 This option is useful for benchmarking\. Modern CPUs are sensitive to a program's memory layout\. A seemingly benign change in program layout, such as a small size increase of a function in the middle of a program, can affect the program's performance\. Therefore, even if you write new code and get a good benchmark result, it is hard to say whether the new code improves the program's performance; it is possible that the new memory layout happens to perform better\.
 .IP
 By running a benchmark multiple times with randomized memory layouts using \fB\-\-shuffle\-sections\fR, you can isolate your program's real performance number from the randomness caused by memory layout changes\.
+.TP
+\fB\-\-spare\-program\-headers\fR=\fInumber\fR
+Append the given number of \fBPT_NULL\fR entries to the end of the program header, so that post\-link processing tools can easily add new segments by overwriting the null entries\.
+.IP
+Note that ELF requires all \fBPT_LOAD\fR segments to be sorted by \fBp_vaddr\fR\. Therefore, if you add a new LOAD segment, you may need to sort the entire program header\.
 .TP
 \fB\-\-stats\fR
 Print input statistics\.
@@ -171,11 +181,6 @@ Use \fIfile\fR as the output file name instead of the default name \fBa\.out\fR\
 .TP
 \fB\-r\fR, \fB\-\-relocatable\fR
 Instead of generating an executable or a shared object file, combine input object files to generate another object file that can be used as an input to a linker\.
-.TP
-\fB\-\-relocatable\-merge\-sections\fR
-By default, \fBmold\fR doesn't merge input sections by name when merging input object files into a single output object file for \fB\-r\fR\. For example, \fB\.text\.foo\fR and \fB\.text\.bar\fR aren't merged for \fB\-r\fR even though they are merged into \fB\.text\fR according to the default section merging rules\.
-.IP
-This option changes the behavior so that \fBmold\fR merges input sections by name by the default section merging rules\.
 .TP
 \fB\-s\fR, \fB\-\-strip\-all\fR
 Omit \fB\.symtab\fR section from the output file\.
@@ -367,11 +372,6 @@ Create a share library\.
 \fB\-\-spare\-dynamic\-tags\fR=\fInumber\fR
 Append the given number of \fBDT_NULL\fR entries to the end of the \fB\.dynamic\fR section, so that post\-link processing tools can easily add new dynamic tags by overwriting the null entries\.
 .TP
-\fB\-\-spare\-program\-headers\fR=\fInumber\fR
-Append the given number of \fBPT_NULL\fR entries to the end of the program header, so that post\-link processing tools can easily add new segments by overwriting the null entries\.
-.IP
-Note that ELF(5) requires all \fBPT_LOAD\fR segments to be sorted by \fBp_vaddr\fR\. Therefore, if you add a new LOAD segment, you may need to sort the entire program header\.
-.TP
 \fB\-\-start\-lib\fR, \fB\-\-end\-lib\fR
 Handle object files between \fB\-\-start\-lib\fR and \fB\-\-end\-lib\fR as if they were in an archive file\. That means object files between them are linked only when they are needed to resolve undefined symbols\. The options are useful if you want to link object files only when they are needed but want to avoid the overhead of running ar(3)\.
 .TP
@@ -443,7 +443,7 @@ Keep \fB\.text\.hot\fR, \fB\.text\.unknown\fR, \fB\.text\.unlikely\fR, \fB\.text
 Make the \fB\.dynamic\fR section read\-only\.
 .TP
 \fB\-z relro\fR, \fB\-z norelro\fR
-Some sections such as \fB\.dynamic\fR have to be writable only during an executable or a shared library file is being loaded to memory\. Once the dynamic linker finishes its job, such sections won't be mutated by anyone\. As a security mitigation, it is preferred to make such segments read\-only during program execution\.
+Some sections such as \fB\.dynamic\fR have to be writable only during a module is being loaded to memory\. Once the dynamic linker finishes its job, such sections won't be mutated by anyone\. As a security mitigation, it is preferred to make such segments read\-only during program execution\.
 .IP
 \fB\-z relro\fR puts such sections into a special segment called \fBrelro\fR\. The dynamic linker makes a relro segment read\-only after it finishes its job\.
 .IP
@@ -468,7 +468,7 @@ Report undefined symbols (even with \fB\-\-shared\fR)\.
 Enforce shadow stack by turning \fBGNU_PROPERTY_X86_FEATURE_1_SHSTK\fR bit in \fB\.note\.gnu\.property\fR output section\. Shadow stack is part of Intel Control\-flow Enforcement Technology (CET), which is available since Tiger Lake (2020)\.
 .TP
 \fB\-z start_stop_visibility\fR=[ \fBhidden\fR | \fBprotected\fR ]
-If a section name is valid as a C identifier (i\.e\., it matches \fB/^[_a\-zA\-Z][_a\-zA\-Z0\-9]*$/\fR), mold creates \fB__start_SECNAME\fR and \fB__stop_SECNAME\fR symbols to mark the beginning and end of the section, where \fBSECNAME\fR is the section name\. By default, such symbols are created as hidden symbols\.
+If a section name is valid as a C identifier (i\.e\., it matches \fB/^[_a\-zA\-Z][_a\-zA\-Z0\-9]*$/\fR), mold creates \fB__start_SECNAME\fR and \fB__stop_SECNAME\fR symbols to mark the beginning and end of the section, where \fBSECNAME\fR is the section name\.
 .IP
 You can make these marker symbols visible from other ELF modules by passing \fB\-z start_stop_visibility=protected\fR\. Default is \fBhidden\fR\.
 .TP
@@ -476,7 +476,7 @@ You can make these marker symbols visible from other ELF modules by passing \fB\
 \fBmold\fR by default reports an error if dynamic relocations are created in read\-only sections\. If \fB\-z notext\fR or \fB\-z textoff\fR are given, \fBmold\fR creates such dynamic relocations without reporting an error\. \fB\-z text\fR restores the default behavior\.
 .TP
 \fB\-z max\-page\-size\fR=\fInumber\fR
-Some CPU ISAs support multiple different memory page sizes\. This option specifies the maximum page size that an output binary can run on\. The default value is 4 KiB for i386, x86\-64, and RISC\-V, and 64 KiB for ARM64\.
+Some CPU ISAs support multiple memory page sizes\. This option specifies the maximum page size that an output binary can run on\. In general, binaries built for a larger page size can run on a system with a smaller page size, but not vice versa\. The default value is 4 KiB for i386, x86\-64, and RISC\-V, and 64 KiB for ARM64\.
 .TP
 \fB\-z nodefaultlib\fR
 Make the dynamic loader ignore default search paths\.
@@ -499,7 +499,7 @@ Mark DSO to be initialized first at runtime\.
 \fB\-z interpose\fR
 Mark object to interpose all DSOs but executable\.
 .TP
-\fB\-(\fR, \fB\-)\fR, \fB\-EL\fR, \fB\-O\fR\fInumber\fR, \fB\-\-allow\-shlib\-undefined\fR, \fB\-\-dc\fR, \fB\-\-dp\fR, \fB\-\-end\-group\fR, \fB\-\-no\-add\-needed\fR, \fB\-\-no\-allow\-shlib\-undefined\fR, \fB\-\-no\-copy\-dt\-needed\-entries\fR, \fB\-\-no\-fatal\-warnings\fR, \fB\-\-nostdlib\fR, \fB\-\-rpath\-link=Ar dir\fR, \fB\-\-sort\-common\fR, \fB\-\-sort\-section\fR, \fB\-\-start\-group\fR, \fB\-\-warn\-constructors\fR, \fB\-\-warn\-once\fR, \fB\-\-fix\-cortex\-a53\-835769\fR, \fB\-\-fix\-cortex\-a53\-843419\fR, \fB\-z combreloc\fR, \fB\-z common\-page\-size\fR, \fB\-z nocombreloc\fR
+\fB\-(\fR, \fB\-)\fR, \fB\-EL\fR, \fB\-O\fR\fInumber\fR, \fB\-\-allow\-shlib\-undefined\fR, \fB\-\-dc\fR, \fB\-\-dp\fR, \fB\-\-end\-group\fR, \fB\-\-no\-add\-needed\fR, \fB\-\-no\-allow\-shlib\-undefined\fR, \fB\-\-no\-copy\-dt\-needed\-entries\fR, \fB\-\-nostdlib\fR, \fB\-\-rpath\-link=Ar dir\fR, \fB\-\-sort\-common\fR, \fB\-\-sort\-section\fR, \fB\-\-start\-group\fR, \fB\-\-warn\-constructors\fR, \fB\-\-warn\-once\fR, \fB\-\-fix\-cortex\-a53\-835769\fR, \fB\-\-fix\-cortex\-a53\-843419\fR, \fB\-z combreloc\fR, \fB\-z common\-page\-size\fR, \fB\-z nocombreloc\fR
 Ignored
 .SH "ENVIRONMENT VARIABLES"
 .TP
