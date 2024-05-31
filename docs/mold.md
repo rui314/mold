@@ -168,6 +168,15 @@ but as `-o magic`.
   object file in a static archive got linked or why some shared library is
   kept in an output file's dependency list even with `--as-needed`.
 
+* `--relocatable-merge-sections`:
+  By default, `mold` doesn't merge input sections by name when merging input
+  object files into a single output object file for `-r`. For example,
+  `.text.foo` and `.text.bar` aren't merged for `-r` even though they are
+  merged into `.text` based on the default section merging rules.
+
+  This option changes the behavior so that `mold` merges input sections by
+  name by the default section merging rules.
+
 * `--repro`:
   Archive input files, as well as a text file containing command line options,
   in a tar file so that you can run `mold` with the exact same inputs again.
@@ -212,6 +221,15 @@ but as `-o magic`.
   By running a benchmark multiple times with randomized memory layouts using
   `--shuffle-sections`, you can isolate your program's real performance number
   from the randomness caused by memory layout changes.
+
+* `--spare-program-headers`=_number_:
+  Append the given number of `PT_NULL` entries to the end of the program
+  header, so that post-link processing tools can easily add new segments by
+  overwriting the null entries.
+
+  Note that ELF requires all `PT_LOAD` segments to be sorted by `p_vaddr`.
+  Therefore, if you add a new LOAD segment, you may need to sort the entire
+  program header.
 
 * `--stats`:
   Print input statistics.
@@ -312,15 +330,6 @@ but as `-o magic`.
   Instead of generating an executable or a shared object file, combine input
   object files to generate another object file that can be used as an input to
   a linker.
-
-* `--relocatable-merge-sections`:
-  By default, `mold` doesn't merge input sections by name when merging input
-  object files into a single output object file for `-r`. For example,
-  `.text.foo` and `.text.bar` aren't merged for `-r` even though they are
-  merged into `.text` according to the default section merging rules.
-
-  This option changes the behavior so that `mold` merges input sections by
-  name by the default section merging rules.
 
 * `-s`, `--strip-all`:
   Omit `.symtab` section from the output file.
@@ -606,15 +615,6 @@ but as `-o magic`.
   section, so that post-link processing tools can easily add new dynamic tags
   by overwriting the null entries.
 
-* `--spare-program-headers`=_number_:
-  Append the given number of `PT_NULL` entries to the end of the program
-  header, so that post-link processing tools can easily add new segments by
-  overwriting the null entries.
-
-  Note that ELF(5) requires all `PT_LOAD` segments to be sorted by `p_vaddr`.
-  Therefore, if you add a new LOAD segment, you may need to sort the entire
-  program header.
-
 * `--start-lib`, `--end-lib`:
   Handle object files between `--start-lib` and `--end-lib` as if they were in
   an archive file. That means object files between them are linked only when
@@ -726,11 +726,10 @@ but as `-o magic`.
   Make the `.dynamic` section read-only.
 
 * `-z relro`, `-z norelro`:
-  Some sections such as `.dynamic` have to be writable only during an
-  executable or a shared library file is being loaded to memory. Once the
-  dynamic linker finishes its job, such sections won't be mutated by anyone.
-  As a security mitigation, it is preferred to make such segments read-only
-  during program execution.
+  Some sections such as `.dynamic` have to be writable only during a module is
+  being loaded to memory. Once the dynamic linker finishes its job, such
+  sections won't be mutated by anyone. As a security mitigation, it is
+  preferred to make such segments read-only during program execution.
 
   `-z relro` puts such sections into a special segment called `relro`. The
   dynamic linker makes a relro segment read-only after it finishes its job.
@@ -769,8 +768,7 @@ but as `-o magic`.
   If a section name is valid as a C identifier (i.e., it matches
   `/^[_a-zA-Z][_a-zA-Z0-9]*$/`), mold creates `__start_SECNAME` and
   `__stop_SECNAME` symbols to mark the beginning and end of the section,
-  where `SECNAME` is the section name. By default, such symbols are created
-  as hidden symbols.
+  where `SECNAME` is the section name.
 
   You can make these marker symbols visible from other ELF modules by passing
   `-z start_stop_visibility=protected`. Default is `hidden`.
@@ -782,9 +780,11 @@ but as `-o magic`.
   default behavior.
 
 * `-z max-page-size`=_number_:
-  Some CPU ISAs support multiple different memory page sizes. This option
-  specifies the maximum page size that an output binary can run on. The
-  default value is 4 KiB for i386, x86-64, and RISC-V, and 64 KiB for ARM64.
+  Some CPU ISAs support multiple memory page sizes. This option specifies the
+  maximum page size that an output binary can run on. In general, binaries
+  built for a larger page size can run on a system with a smaller page size,
+  but not vice versa. The default value is 4 KiB for i386, x86-64, and RISC-V,
+  and 64 KiB for ARM64.
 
 * `-z nodefaultlib`:
   Make the dynamic loader ignore default search paths.
@@ -809,7 +809,7 @@ but as `-o magic`.
 * `-z interpose`:
   Mark object to interpose all DSOs but executable.
 
-* `-(`, `-)`, `-EL`, `-O`_number_, `--allow-shlib-undefined`, `--dc`, `--dp`, `--end-group`, `--no-add-needed`, `--no-allow-shlib-undefined`, `--no-copy-dt-needed-entries`, `--no-fatal-warnings`, `--nostdlib`, `--rpath-link=Ar dir`, `--sort-common`, `--sort-section`, `--start-group`, `--warn-constructors`, `--warn-once`, `--fix-cortex-a53-835769`, `--fix-cortex-a53-843419`, `-z combreloc`, `-z common-page-size`, `-z nocombreloc`:
+* `-(`, `-)`, `-EL`, `-O`_number_, `--allow-shlib-undefined`, `--dc`, `--dp`, `--end-group`, `--no-add-needed`, `--no-allow-shlib-undefined`, `--no-copy-dt-needed-entries`, `--nostdlib`, `--rpath-link=Ar dir`, `--sort-common`, `--sort-section`, `--start-group`, `--warn-constructors`, `--warn-once`, `--fix-cortex-a53-835769`, `--fix-cortex-a53-843419`, `-z combreloc`, `-z common-page-size`, `-z nocombreloc`:
   Ignored
 
 ## ENVIRONMENT VARIABLES
