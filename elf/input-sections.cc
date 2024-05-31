@@ -523,16 +523,22 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
     acc->second.push_back(ss.str());
   };
 
-  // A non-weak undefined symbol must be promoted to an imported
-  // symbol or resolved to an defined symbol. Otherwise, it's an
-  // undefined symbol error.
+  // A non-weak undefined symbol must be promoted to an imported symbol
+  // or resolved to an defined symbol. Otherwise, we need to report an
+  // error or warn on it.
   //
   // Every ELF file has an absolute local symbol as its first symbol.
   // Referring to that symbol is always valid.
   bool is_undef = esym.is_undef() && !esym.is_weak() && sym.sym_idx;
-  if (!sym.is_imported && is_undef && sym.esym().is_undef()) {
-    record();
-    return true;
+  if (is_undef && sym.esym().is_undef()) {
+    if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR && !sym.is_imported) {
+      record();
+      return true;
+    }
+    if (ctx.arg.unresolved_symbols == UNRESOLVED_WARN) {
+      record();
+      return false;
+    }
   }
 
   // If a protected/hidden undefined symbol is resolved to other .so,

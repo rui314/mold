@@ -1432,9 +1432,11 @@ void compute_section_sizes(Context<E> &ctx) {
 }
 
 // Find all unresolved symbols and attach them to the most appropriate files.
-// Note that even a symbol that will be reported as an undefined symbol will
-// get an owner file in this function. Such symbol will be reported by
-// ObjectFile<E>::scan_relocations().
+//
+// Note that even a symbol that will be reported as an undefined symbol
+// will get an owner file in this function. Such symbol will be reported
+// by ObjectFile<E>::scan_relocations(). This is because we want to report
+// errors only on symbols that are actually referenced.
 template <typename E>
 void claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "claim_unresolved_symbols");
@@ -1512,7 +1514,8 @@ void claim_unresolved_symbols(Context<E> &ctx) {
       // promoted to dynamic symbols for compatibility with other linkers.
       // Some major programs, notably Firefox, depend on the behavior
       // (they use this loophole to export symbols from libxul.so).
-      if (ctx.arg.shared && sym.visibility != STV_HIDDEN && !ctx.arg.z_defs) {
+      if (ctx.arg.shared && sym.visibility != STV_HIDDEN &&
+          ctx.arg.unresolved_symbols != UNRESOLVED_ERROR) {
         claim(true);
         continue;
       }

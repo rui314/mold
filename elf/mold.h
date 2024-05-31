@@ -1690,7 +1690,7 @@ struct Context {
     Symbol<E> *entry = nullptr;
     Symbol<E> *fini = nullptr;
     Symbol<E> *init = nullptr;
-    UnresolvedKind unresolved_symbols = UNRESOLVED_ERROR;
+    UnresolvedKind unresolved_symbols = UNRESOLVED_IGNORE;
     BsymbolicKind Bsymbolic = BSYMBOLIC_NONE;
     bool allow_multiple_definition = false;
     bool apply_dynamic_relocs = true;
@@ -1745,7 +1745,6 @@ struct Context {
     bool warn_once = false;
     bool warn_textrel = false;
     bool z_copyreloc = true;
-    bool z_defs = false;
     bool z_delete = true;
     bool z_dlopen = true;
     bool z_dump = true;
