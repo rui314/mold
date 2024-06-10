@@ -1261,21 +1261,14 @@ static std::optional<Extn> read_extn_string(std::string_view &str) {
 }
 
 static std::vector<Extn> parse_arch_string(std::string_view str) {
-  if (str.size() < 5)
-    return {};
-
-  // Parse the base part
-  std::string_view base = str.substr(0, 5);
-  if (base != "rv32i" && base != "rv32e" && base != "rv64i" && base != "rv64e")
-    return {};
-  str = str.substr(4);
-
   std::optional<Extn> extn = read_extn_string(str);
   if (!extn)
     return {};
+  auto &base = extn->name;
+  if (base != "rv32i" && base != "rv32e" && base != "rv64i" && base != "rv64e")
+    return {};
 
   std::vector<Extn> vec;
-  extn->name = base;
   vec.push_back(*extn);
 
   // Parse extensions
