@@ -1250,7 +1250,7 @@ static bool extn_version_less(const Extn &e1, const Extn &e2) {
 
 static std::optional<Extn> read_extn_string(std::string_view &str) {
   auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
-  static std::regex re(R"(^([a-z0-9]+)(\d+)p(\d+))", flags);
+  static std::regex re(R"(^([a-z][a-z0-9]*)(\d+)p(\d+))", flags);
 
   std::cmatch m;
   if (std::regex_search(str.data(), str.data() + str.size(), m, re)) {
