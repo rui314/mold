@@ -1248,39 +1248,25 @@ static bool extn_version_less(const Extn &e1, const Extn &e2) {
          std::tuple{e2.major, e2.minor};
 }
 
-static std::optional<Extn> read_extn_string(std::string_view &str) {
+static std::vector<Extn> parse_arch_string(std::string_view str) {
   auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
   static std::regex re(R"(^([a-z]|[a-z][a-z0-9]*[a-z])(\d+)p(\d+))", flags);
 
-  std::cmatch m;
-  if (std::regex_search(str.data(), str.data() + str.size(), m, re)) {
-    str = str.substr(m.length());
-    return Extn{m[1], (i64)std::stoul(m[2]), (i64)std::stoul(m[3])};
-  }
-  return {};
-}
-
-static std::vector<Extn> parse_arch_string(std::string_view str) {
-  std::optional<Extn> extn = read_extn_string(str);
-  if (!extn)
-    return {};
-  auto &base = extn->name;
-  if (base != "rv32i" && base != "rv32e" && base != "rv64i" && base != "rv64e")
-    return {};
-
   std::vector<Extn> vec;
-  vec.push_back(*extn);
 
-  // Parse extensions
-  while (!str.empty()) {
+  for (;;) {
+    std::cmatch m;
+    if (!std::regex_search(str.data(), str.data() + str.size(), m, re))
+      return {};
+
+    str = str.substr(m.length());
+    vec.push_back(Extn{m[1], (i64)std::stoul(m[2]), (i64)std::stoul(m[3])});
+
+    if (str.empty())
+      break;
     if (str[0] != '_')
       return {};
     str = str.substr(1);
-
-    std::optional<Extn> extn = read_extn_string(str);
-    if (!extn)
-      return {};
-    vec.push_back(*extn);
   }
   return vec;
 }
