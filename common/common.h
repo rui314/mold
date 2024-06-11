@@ -404,9 +404,9 @@ void update_maximum(std::atomic<T> &atomic, u64 new_val, Compare cmp = {}) {
                                        std::memory_order_relaxed));
 }
 
-template <typename T, typename U>
-inline void append(std::vector<T> &vec1, std::vector<U> vec2) {
-  vec1.insert(vec1.end(), vec2.begin(), vec2.end());
+template <typename T>
+inline void append(std::vector<T> &x, const auto &y) {
+  x.insert(x.end(), y.begin(), y.end());
 }
 
 template <typename T>

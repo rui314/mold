@@ -1250,25 +1250,21 @@ static bool extn_version_less(const Extn &e1, const Extn &e2) {
 
 static std::vector<Extn> parse_arch_string(std::string_view str) {
   auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
-  static std::regex re(R"(^([a-z]|[a-z][a-z0-9]*[a-z])(\d+)p(\d+))", flags);
+  static std::regex re(R"(^([a-z]|[a-z][a-z0-9]*[a-z])(\d+)p(\d+)(_|$))", flags);
 
   std::vector<Extn> vec;
 
   for (;;) {
     std::cmatch m;
-    if (!std::regex_search(str.data(), str.data() + str.size(), m, re))
+    if (!std::regex_search(str.begin(), str.end(), m, re))
       return {};
+
+    vec.push_back(Extn{m[1], (i64)std::stoul(m[2]), (i64)std::stoul(m[3])});
+    if (m[4].length() == 0)
+      return vec;
 
     str = str.substr(m.length());
-    vec.push_back(Extn{m[1], (i64)std::stoul(m[2]), (i64)std::stoul(m[3])});
-
-    if (str.empty())
-      break;
-    if (str[0] != '_')
-      return {};
-    str = str.substr(1);
   }
-  return vec;
 }
 
 static std::vector<Extn> merge_extensions(std::span<Extn> x, std::span<Extn> y) {
@@ -1293,8 +1289,8 @@ static std::vector<Extn> merge_extensions(std::span<Extn> x, std::span<Extn> y) 
     }
   }
 
-  vec.insert(vec.end(), x.begin(), x.end());
-  vec.insert(vec.end(), y.begin(), y.end());
+  append(vec, x);
+  append(vec, y);
   return vec;
 }
 
