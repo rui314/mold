@@ -1217,7 +1217,7 @@ struct Extn {
 //
 // This function returns true if the first extension name should precede
 // the second one as per the rule.
-static bool extn_name_less(const Extn &e1, const Extn &e2) {
+static bool extn_name_less(std::string_view x, std::string_view y) {
   auto get_single_letter_rank = [](char c) -> i64 {
     std::string_view exts = "iemafdqlcbkjtpvnh";
     size_t pos = exts.find_first_of(c);
@@ -1239,13 +1239,7 @@ static bool extn_name_less(const Extn &e1, const Extn &e2) {
     }
   };
 
-  return std::tuple{get_rank(e1.name), e1.name} <
-         std::tuple{get_rank(e2.name), e2.name};
-}
-
-static bool extn_version_less(const Extn &e1, const Extn &e2) {
-  return std::tuple{e1.major, e1.minor} <
-         std::tuple{e2.major, e2.minor};
+  return std::tuple{get_rank(x), x} < std::tuple{get_rank(y), y};
 }
 
 static std::vector<Extn> parse_arch_string(std::string_view str) {
@@ -1259,7 +1253,7 @@ static std::vector<Extn> parse_arch_string(std::string_view str) {
     if (!std::regex_search(str.data(), str.data() + str.size(), m, re))
       return {};
 
-    vec.push_back(Extn{m[1], (i64)std::stoul(m[2]), (i64)std::stoul(m[3])});
+    vec.emplace_back(m[1], std::stoul(m[2]), std::stoul(m[3]));
     if (m[4].length() == 0)
       return vec;
 
@@ -1277,10 +1271,13 @@ static std::vector<Extn> merge_extensions(std::span<Extn> x, std::span<Extn> y) 
   // Merge ISA extension strings
   while (!x.empty() && !y.empty()) {
     if (x[0].name == y[0].name) {
-      vec.push_back(extn_version_less(x[0], y[0]) ? y[0] : x[0]);
+      if (std::tuple{x[0].major, x[0].minor} < std::tuple{y[0].major, y[0].minor})
+        vec.push_back(y[0]);
+      else
+        vec.push_back(x[0]);
       x = x.subspan(1);
       y = y.subspan(1);
-    } else if (extn_name_less(x[0], y[0])) {
+    } else if (extn_name_less(x[0].name, y[0].name)) {
       vec.push_back(x[0]);
       x = x.subspan(1);
     } else {
@@ -1294,13 +1291,14 @@ static std::vector<Extn> merge_extensions(std::span<Extn> x, std::span<Extn> y) 
   return vec;
 }
 
-static std::string to_string(std::span<Extn> v) {
-  std::string str = v[0].name + std::to_string(v[0].major) + "p" +
-                    std::to_string(v[0].minor);
+static std::string to_string(const Extn &e) {
+  return e.name + std::to_string(e.major) + "p" + std::to_string(e.minor);
+}
 
+static std::string to_string(std::span<Extn> v) {
+  std::string str = to_string(v[0]);
   for (i64 i = 1; i < v.size(); i++)
-    str += "_" + v[i].name + std::to_string(v[i].major) + "p" +
-           std::to_string(v[i].minor);
+    str += "_" + to_string(v[i]);
   return str;
 }
 
@@ -1383,7 +1381,7 @@ void RiscvAttributesSection<E>::update_shdr(Context<E> &ctx) {
 
 template <>
 void RiscvAttributesSection<E>::copy_buf(Context<E> &ctx) {
-  memcpy(ctx.buf + this->shdr.sh_offset, contents.data(), contents.size());
+  write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
 } // namespace mold::elf
