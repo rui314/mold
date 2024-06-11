@@ -1256,7 +1256,7 @@ static std::vector<Extn> parse_arch_string(std::string_view str) {
 
   for (;;) {
     std::cmatch m;
-    if (!std::regex_search(str.cbegin(), str.cend(), m, re))
+    if (!std::regex_search(str.data(), str.data() + str.size(), m, re))
       return {};
 
     vec.push_back(Extn{m[1], (i64)std::stoul(m[2]), (i64)std::stoul(m[3])});
