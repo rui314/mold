@@ -1253,7 +1253,7 @@ static std::vector<Extn> parse_arch_string(std::string_view str) {
     if (!std::regex_search(str.data(), str.data() + str.size(), m, re))
       return {};
 
-    vec.emplace_back(m[1], std::stoul(m[2]), std::stoul(m[3]));
+    vec.emplace_back(m[1], (i64)std::stoul(m[2]), (i64)std::stoul(m[3]));
     if (m[4].length() == 0)
       return vec;
 
