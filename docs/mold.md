@@ -832,8 +832,6 @@ but as `-o magic`.
   consider setting this environment variable to `1` to see if it addresses the
   OOM issue.
 
-  Currently, any value other than `1` is silently ignored.
-
 * `MOLD_DEBUG`:
   If this variable is set to a non-empty string, `mold` embeds its
   command-line options in the output file's `.comment` section.
