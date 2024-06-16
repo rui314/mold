@@ -5,7 +5,7 @@
 [ $MACHINE = sh4 ] && skip
 
 static=
-test_cflags -static && static=-static
+test_cxxflags -static && static=-static
 
 # I don't know why, but we need -pthread on m68k
 static="$static -pthread"

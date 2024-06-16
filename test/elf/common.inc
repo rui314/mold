@@ -69,6 +69,10 @@ test_cflags() {
   echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null
 }
 
+test_cxxflags() {
+  echo 'int main() {}' | $CXX "$@" -o /dev/null -xc++ - >& /dev/null
+}
+
 is_musl() {
   ldd --version 2>&1 | grep -q musl
 }
