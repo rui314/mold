@@ -86,7 +86,11 @@ static SharedData *get_shared_data() {
     pthread_mutexattr_t mu_attr;
     pthread_mutexattr_init(&mu_attr);
     pthread_mutexattr_setpshared(&mu_attr, PTHREAD_PROCESS_SHARED);
+
+#ifndef __APPLE__
     pthread_mutexattr_setrobust(&mu_attr, PTHREAD_MUTEX_ROBUST);
+#endif
+
     pthread_mutex_init(&data->mu, &mu_attr);
 
     pthread_condattr_t cond_attr;
@@ -116,11 +120,14 @@ void acquire_global_lock() {
 
   pthread_mutex_t *mu = &shared_data->mu;
   pthread_cond_t *cond = &shared_data->cond;
+  int r = pthread_mutex_lock(mu);
 
+#ifndef __APPLE__
   // If the previous process got killed while holding the mutex, the
   // mutex has became inconsistent. We need to fix it in that case.
-  if (pthread_mutex_lock(mu) == EOWNERDEAD)
+  if (r == EOWNERDEAD)
     pthread_mutex_consistent(mu);
+#endif
 
   for (;;) {
     struct timespec ts;
