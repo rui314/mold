@@ -8,13 +8,11 @@
 #include <tbb/global_control.h>
 #include <unordered_set>
 
-#ifdef _WIN32
-# define isatty _isatty
-# ifndef STDERR_FILENO
-#  define STDERR_FILENO (_fileno(stderr))
-# endif
-#else
+#if __has_include(<unistd.h>)
 # include <unistd.h>
+#else
+# define isatty _isatty
+# define STDERR_FILENO (_fileno(stderr))
 #endif
 
 namespace mold::elf {
