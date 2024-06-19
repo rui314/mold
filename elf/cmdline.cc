@@ -10,7 +10,9 @@
 
 #ifdef _WIN32
 # define isatty _isatty
-# define STDERR_FILENO (_fileno(stderr))
+# ifndef STDERR_FILENO
+#  define STDERR_FILENO (_fileno(stderr))
+# endif
 #else
 # include <unistd.h>
 #endif
