@@ -60,6 +60,13 @@ std::string get_self_path() {
   path.resize(size);
   sysctl(mib, 4, path.data(), &size, NULL, 0);
   return path;
+#elif _WIN32
+  char path[32768];
+  if (!GetModuleFileName(nullptr, path, sizeof(path))) {
+    std::cerr << "GetModuleFileName failed\n";
+    exit(1);
+  }
+  return path;
 #else
   return std::filesystem::read_symlink("/proc/self/exe").string();
 #endif
