@@ -36,14 +36,9 @@ std::filesystem::path to_abs_path(std::filesystem::path path) {
 
 // Returns the path of the mold executable itself
 std::string get_self_path() {
-#if __APPLE__
-    char path[8192];
-    u32 size = sizeof(path);
-    if (_NSGetExecutablePath(path, &size)) {
-      std::cerr << "_NSGetExecutablePath failed\n";
-      exit(1);
-    }
-    return path;
+#if __APPLE__ || _WIN32
+  fprintf(stderr, "mold: get_self_path is not supported");
+  exit(1);
 #elif __FreeBSD__
   // /proc may not be mounted on FreeBSD. The proper way to get the
   // current executable's path is to use sysctl(2).
