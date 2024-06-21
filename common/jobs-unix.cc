@@ -69,15 +69,19 @@ static bool do_lock() {
 static SharedData *get_shared_data() {
   // Create a shared memory object and mmap it
   std::string name = "/mold-signal-" + std::to_string(getuid());
+  i64 size = sizeof(SharedData);
 
   int shm_fd = shm_open(name.c_str(), O_CREAT | O_RDWR, 0600);
   if (shm_fd == -1) {
     perror("shm_open");
-    exit(-1);
+    exit(1);
   }
 
-  i64 size = sizeof(SharedData);
-  ftruncate(shm_fd, size);
+  if (ftruncate(shm_fd, size) == -1) {
+    perror("ftruncate");
+    exit(1);
+  }
+
   SharedData *data = (SharedData *)mmap(0, size, PROT_READ | PROT_WRITE,
                                         MAP_SHARED, shm_fd, 0);
   close(shm_fd);
