@@ -38,6 +38,10 @@ static LONG WINAPI vectored_handler(_EXCEPTION_POINTERS *exception_info) {
     static const char msg[] =
       "mold: failed to write to an output file. Disk full?\n";
     (void)!_write(_fileno(stderr), msg, sizeof(msg) - 1);
+  } else if (rec->ExceptionCode == EXCEPTION_STACK_OVERFLOW) {
+    static const char msg[] =
+      "mold: stackoverflow.\n";
+    (void)!_write(_fileno(stderr), msg, sizeof(msg) - 1);
   }
 
   cleanup();
