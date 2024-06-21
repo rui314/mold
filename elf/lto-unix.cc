@@ -200,10 +200,7 @@ static PluginStatus release_input_file(const void *handle) {
   LOG << "release_input_file\n";
 
   ObjectFile<E> &file = *(ObjectFile<E> *)handle;
-  if (file.mf->fd != -1) {
-    close(file.mf->fd);
-    file.mf->fd = -1;
-  }
+  file.mf->close_fd();
   return LDPS_OK;
 }
 
@@ -570,7 +567,11 @@ static ElfSym<E> to_elf_sym(PluginSymbol &psym) {
 // Returns false if it's GCC.
 template <typename E>
 static bool is_llvm(Context<E> &ctx) {
+#ifdef __MINGW32__
+  return ctx.arg.plugin.ends_with("LLVMgold.dll");
+#else
   return ctx.arg.plugin.ends_with("LLVMgold.so");
+#endif
 }
 
 // Returns true if a given linker plugin supports the get_symbols_v3 API.
@@ -590,11 +591,11 @@ create_plugin_input_file(Context<E> &ctx, MappedFile *mf) {
   file.offset = mf->get_offset();
   file.filesize = mf->size;
 
-  if (mf2->fd == -1)
-    mf2->fd = open(file.name, O_RDONLY);
+  mf2->reopen_fd(file.name);
+
   file.fd = mf2->fd;
 
-  if (file.fd == -1)
+  if (!file.fd)
     Fatal(ctx) << "cannot open " << file.name << ": " << errno_string();
   return file;
 }
@@ -645,8 +646,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
   // open files" issue, we close fd only for GCC. This is ugly, though.
   if (!is_llvm(ctx)) {
     MappedFile *mf2 = mf->parent ? mf->parent : mf;
-    close(mf2->fd);
-    mf2->fd = -1;
+    mf2->close_fd();
   }
 
   // Create a symbol strtab

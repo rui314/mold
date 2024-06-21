@@ -1001,6 +1001,32 @@ public:
     return name;
   }
 
+  void close_fd() {
+#ifdef WIN32
+    if (fd != INVALID_HANDLE_VALUE) {
+      CloseHandle(fd);
+      fd = INVALID_HANDLE_VALUE;
+    }
+#else
+    if (fd != -1) {
+      close(fd);
+      fd = -1;
+    }
+#endif
+  }
+
+  void reopen_fd(const char *path) {
+#ifdef WIN32
+    if (fd != INVALID_HANDLE_VALUE)
+      fd = CreateFileA(path, GENERIC_READ,
+                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+#else
+    if (fd == -1)
+      fd = open(path, O_RDONLY);
+#endif
+  }
+
   std::string name;
   u8 *data = nullptr;
   i64 size = 0;

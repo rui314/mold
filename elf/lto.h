@@ -73,7 +73,11 @@ enum PluginOutputFileType {
 
 struct PluginInputFile {
   const char *name;
-  i32 fd;
+#if __MINGW32__
+  HANDLE fd;
+#else
+  int fd;
+#endif
   u64 offset;
   u64 filesize;
   void *handle;
