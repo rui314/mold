@@ -1072,14 +1072,16 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
     if (sym.is_traced)
       print_trace_symbol(ctx, *this, esym, sym);
 
-    if (sym.file && !esym.is_weak() &&
-        (esym.is_undef() || (esym.is_common() && !sym.esym().is_common())) &&
-        !sym.file->is_alive.test_and_set()) {
-      feeder(sym.file);
+    if (sym.file) {
+      bool undef_ref = esym.is_undef() && (!esym.is_weak() || sym.file->is_dso);
+      bool common_ref = esym.is_common() && !sym.esym().is_common();
 
-      if (sym.is_traced)
-        Out(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
-                 << " for " << sym;
+      if ((undef_ref || common_ref) && !sym.file->is_alive.test_and_set()) {
+        feeder(sym.file);
+        if (sym.is_traced)
+          Out(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
+                   << " for " << sym;
+      }
     }
   }
 }

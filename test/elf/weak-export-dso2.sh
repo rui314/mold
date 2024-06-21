@@ -18,4 +18,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/d.so $t/c.o $t/b.so -shared
-readelf -W --dyn-syms $t/d.so | grep -q 'WEAK   DEFAULT  UND foo'
+readelf -W --dyn-syms $t/d.so | grep -q 'WEAK   DEFAULT .* UND foo'
