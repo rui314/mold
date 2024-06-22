@@ -40,7 +40,7 @@ static LONG WINAPI vectored_handler(_EXCEPTION_POINTERS *exception_info) {
     (void)!_write(_fileno(stderr), msg, sizeof(msg) - 1);
   } else if (rec->ExceptionCode == EXCEPTION_STACK_OVERFLOW) {
     static const char msg[] =
-      "mold: stackoverflow.\n";
+      "mold: stack overflow\n";
     (void)!_write(_fileno(stderr), msg, sizeof(msg) - 1);
   }
 
