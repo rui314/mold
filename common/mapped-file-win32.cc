@@ -72,11 +72,10 @@ void MappedFile::close_fd() {
 }
 
 void MappedFile::reopen_fd(const std::string &path) {
-  if (fd != INVALID_HANDLE_VALUE)
-    CloseHandle(fd);
-  fd = CreateFileA(path.c_str(), GENERIC_READ,
-                   FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                   nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (fd == INVALID_HANDLE_VALUE)
+    fd = CreateFileA(path.c_str(), GENERIC_READ,
+                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                     nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
 }
 
 } // namespace mold

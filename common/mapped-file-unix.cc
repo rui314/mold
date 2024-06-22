@@ -44,9 +44,8 @@ void MappedFile::close_fd() {
 }
 
 void MappedFile::reopen_fd(const std::string &path) {
-  if (fd != -1)
-    close(fd);
-  fd = open(path.c_str(), O_RDONLY);
+  if (fd == -1)
+    fd = open(path.c_str(), O_RDONLY);
 }
 
 } // namespace mold
