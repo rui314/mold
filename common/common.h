@@ -963,6 +963,8 @@ class MappedFile {
 public:
   ~MappedFile() { unmap(); }
   void unmap();
+  void close_fd();
+  void reopen_fd(const std::string &path);
 
   template <typename Context>
   MappedFile *slice(Context &ctx, std::string name, u64 start, u64 size) {
@@ -999,32 +1001,6 @@ public:
       return thin_parent->name + ":" + name;
     }
     return name;
-  }
-
-  void close_fd() {
-#ifdef WIN32
-    if (fd != INVALID_HANDLE_VALUE) {
-      CloseHandle(fd);
-      fd = INVALID_HANDLE_VALUE;
-    }
-#else
-    if (fd != -1) {
-      close(fd);
-      fd = -1;
-    }
-#endif
-  }
-
-  void reopen_fd(const char *path) {
-#ifdef WIN32
-    if (fd != INVALID_HANDLE_VALUE)
-      fd = CreateFileA(path, GENERIC_READ,
-                       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-#else
-    if (fd == -1)
-      fd = open(path, O_RDONLY);
-#endif
   }
 
   std::string name;

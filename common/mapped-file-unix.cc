@@ -32,9 +32,21 @@ MappedFile *open_file_impl(const std::string &path, std::string &error) {
 void MappedFile::unmap() {
   if (size == 0 || parent || !data)
     return;
-
   munmap(data, size);
   data = nullptr;
+}
+
+void MappedFile::close_fd() {
+  if (fd == -1)
+    return;
+  close(fd);
+  fd = -1;
+}
+
+void MappedFile::reopen_fd(const std::string &path) {
+  if (fd != -1)
+    close(fd);
+  fd = open(path.c_str(), O_RDONLY);
 }
 
 } // namespace mold
