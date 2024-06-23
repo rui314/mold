@@ -139,3 +139,21 @@ jobs:
         cd build
         cmake -T clangcl ..
         cmake --build . -j $Env:NUMBER_OF_PROCESSORS
+
+  build-msys:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        pacboy: gcc-libs:p libwinpthread-git:p tbb:p zlib:p zstd:p dlfcn:p cc:p cmake:p ninja:p
+    - name: build
+      shell: msys2 {0}
+      run: |
+        mkdir build
+        cd build
+        cmake -GNinja -DMOLD_USE_MIMALLOC=OFF -DMOLD_USE_SYSTEM_TBB=ON -DMOLD_USE_MOLD=OFF ..
+        cmake --build . -j $(nproc)
