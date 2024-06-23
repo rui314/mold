@@ -821,7 +821,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_RISCV_64:
       if constexpr (!E::is_64)
-        Fatal(ctx) << *this << ": R_RISCV_64 cannot be used on RV32";
+        Error(ctx) << *this << ": R_RISCV_64 cannot be used on RV32";
       scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_RISCV_CALL:
@@ -854,7 +854,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_RISCV_GPREL_HI20:
       if (ctx.arg.shared)
-        Fatal(ctx) << *this << ": R_RISCV_GPREL_HI20 may not be used with -shared";
+        Error(ctx) << *this << ": R_RISCV_GPREL_HI20 may not be used with -shared";
       break;
     case R_RISCV_BRANCH:
     case R_RISCV_JAL:

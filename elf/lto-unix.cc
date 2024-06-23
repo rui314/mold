@@ -446,7 +446,7 @@ static void load_lto_plugin(Context<E> &ctx) {
     phase = 1;
     gctx<E> = &ctx;
 
-    void *handle = dlopen(ctx.arg.plugin.c_str(), RTLD_NOW | RTLD_GLOBAL);
+    void *handle = dlopen(ctx.arg.plugin.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!handle)
       Fatal(ctx) << "could not open plugin file: " << dlerror();
 
