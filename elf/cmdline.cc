@@ -542,16 +542,20 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if constexpr (is_riscv<E>)
     ctx.arg.discard_locals = true;
 
-  // It looks like the SPARC's dynamic linker takes both RELA's r_addend
-  // and the value at the relocated place. So we don't want to write
-  // values to relocated places.
-  if constexpr (is_sparc<E>)
+  // We generally don't need to write addends to relocated places if the
+  // relocation type is RELA because RELA records contain addends.
+  // However, there are too much code that wrongly assumes that addends
+  // are written to both RELA records and relocated places, so we write
+  // addends to relocated places by default. There are a few exceptions:
+  //
+  // - It looks like the SPARC's dynamic linker takes both RELA's r_addend
+  //   and the value at the relocated place. So we don't want to write
+  //   values to relocated places.
+  //
+  // - Static PIE binaries crash on startup in some RISC-V environment if
+  //   we write addends to relocated places.
+  if constexpr (is_sparc<E> || is_riscv<E>)
     ctx.arg.apply_dynamic_relocs = false;
-
-  // For some reason, SH4 always stores relocation addends to
-  // relocated places even though its RELA.
-  if constexpr (is_sh4<E>)
-    ctx.arg.apply_dynamic_relocs = true;
 
   auto read_arg = [&](std::string name) {
     for (const std::string &opt : add_dashes(name)) {
@@ -1360,6 +1364,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Fatal(ctx) << "-auxiliary may not be used without -shared";
   }
 
+  // Even though SH4 is RELA, addends in its relocation records are always
+  // zero, and actual addends are written to relocated places. So we need
+  // to handle it as an exception.
   if constexpr (!E::is_rela || is_sh4<E>)
     if (!ctx.arg.apply_dynamic_relocs)
       Fatal(ctx) << "--no-apply-dynamic-relocs may not be used on "
