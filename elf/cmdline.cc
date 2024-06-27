@@ -554,8 +554,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   //
   // - Static PIE binaries crash on startup in some RISC-V environment if
   //   we write addends to relocated places.
-  if constexpr (is_sparc<E> || is_riscv<E>)
-    ctx.arg.apply_dynamic_relocs = false;
+  ctx.arg.apply_dynamic_relocs = !is_sparc<E> && !is_riscv<E>;
 
   auto read_arg = [&](std::string name) {
     for (const std::string &opt : add_dashes(name)) {
