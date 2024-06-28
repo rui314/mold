@@ -61,6 +61,8 @@ target_compile_features(mold PRIVATE cxx_std_20)
 
 if(MINGW)
   target_link_libraries(mold PRIVATE dl)
+else()
+  target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
 if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
