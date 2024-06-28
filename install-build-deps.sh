@@ -43,6 +43,9 @@ clear-linux-*)
   swupd update
   swupd bundle-add c-basic diffutils
   ;;
+almalinux-*)
+  dnf install -y gcc-toolset-13-gcc-c++ gcc-toolset-13-libstdc++-devel cmake diffutils
+  ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"
   exit 1
