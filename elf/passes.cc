@@ -156,6 +156,8 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.verdef = push(new VerdefSection<E>);
   if (ctx.arg.emit_relocs)
     ctx.eh_frame_reloc = push(new EhFrameRelocSection<E>);
+  if (!ctx.arg.separate_debug_file.empty())
+    ctx.gnu_debuglink = push(new GnuDebuglinkSection<E>);
 
   if (ctx.arg.shared || !ctx.dsos.empty() || ctx.arg.pie) {
     ctx.dynamic = push(new DynamicSection<E>(ctx));
@@ -2602,6 +2604,24 @@ static i64 set_file_offsets(Context<E> &ctx) {
   return fileoff;
 }
 
+// Remove debug sections from ctx.chunks and save them to ctx.debug_chunks.
+// This is for --separate-debug-file.
+template <typename E>
+void separate_debug_sections(Context<E> &ctx) {
+  auto is_debug_section = [&](Chunk<E> *chunk) {
+    if (chunk->shdr.sh_flags & SHF_ALLOC)
+      return false;
+    return chunk == ctx.gdb_index || chunk == ctx.symtab || chunk == ctx.strtab ||
+           chunk->name.starts_with(".debug_");
+  };
+
+  auto mid = std::stable_partition(ctx.chunks.begin(), ctx.chunks.end(),
+                                   is_debug_section);
+
+  ctx.debug_chunks = {ctx.chunks.begin(), mid};
+  ctx.chunks.erase(ctx.chunks.begin(), mid);
+}
+
 template <typename E>
 void compute_section_headers(Context<E> &ctx) {
   // Update sh_size for each chunk.
@@ -2993,6 +3013,106 @@ void write_build_id(Context<E> &ctx) {
   ctx.buildid->copy_buf(ctx);
 }
 
+// A .gnu_debuglink section contains a filename and a CRC32 checksum of a
+// debug info file. When we are writing a .gnu_debuglink, we don't know
+// its CRC32 checksum because we haven't created a debug info file. So we
+// write a dummy value instead.
+//
+// We can't choose a random value as a dummy value for build
+// reproducibility. We also don't want to write a fixed value for all
+// files because the CRC checksum is in this section to prevent using
+// wrong file on debugging. gdb rejects a debug info file if its CRC
+// doesn't match with the one in .gdb_debuglink.
+//
+// Therefore, we'll try to make our CRC checksum as unique as possible.
+// We'll remember that checksum, and after creating a debug info file, add
+// a few bytes of garbage at the end of it so that the debug info file's
+// CRC checksum becomes the one that we have precomputed.
+template <typename E>
+void write_gnu_debuglink(Context<E> &ctx) {
+  Timer t(ctx, "write_gnu_debuglink");
+  u32 crc32;
+
+  if (ctx.buildid) {
+    crc32 = compute_crc32(0, ctx.buildid->contents.data(),
+                          ctx.buildid->contents.size());
+  } else {
+    std::vector<std::span<u8>> shards = get_shards(ctx);
+    std::vector<U64<E>> hashes(shards.size());
+
+    tbb::parallel_for((i64)0, (i64)shards.size(), [&](i64 i) {
+      hashes[i] = hash_string({(char *)shards[i].data(), shards[i].size()});
+    });
+    crc32 = compute_crc32(0, (u8 *)hashes.data(), hashes.size() * 8);
+  }
+
+  ctx.gnu_debuglink->crc32 = crc32;
+  ctx.gnu_debuglink->copy_buf(ctx);
+}
+
+// Write a separate debug file. This function is called after we finish
+// writing to the usual output file.
+template <typename E>
+void write_separate_debug_file(Context<E> &ctx) {
+  Timer t(ctx, "write_separate_debug_file");
+
+  // We want to write to the debug info file in background so that the
+  // user doesn't have to wait for it to complete.
+  if (!ctx.arg.stats && !ctx.arg.perf)
+    notify_parent();
+
+  // A debug info file contains all sections as the original file, though
+  // most of them can be empty as if they were bss sections. We convert
+  // real sections into dummy sections here.
+  for (i64 i = 0; i < ctx.chunks.size(); i++) {
+    Chunk<E> *chunk = ctx.chunks[i];
+    if (chunk != ctx.ehdr && chunk != ctx.shdr && chunk != ctx.shstrtab &&
+        chunk->shdr.sh_type != SHT_NOTE) {
+      Chunk<E> *sec = new OutputSection<E>(chunk->name, SHT_NULL);
+      sec->shdr = chunk->shdr;
+      sec->shdr.sh_type = SHT_NOBITS;
+
+      ctx.chunks[i] = sec;
+      ctx.chunk_pool.emplace_back(sec);
+    }
+  }
+
+  // Restore debug info sections that had been set aside while we were
+  // creating the main file.
+  tbb::parallel_for_each(ctx.debug_chunks, [&](Chunk<E> *chunk) {
+    chunk->compute_section_size(ctx);
+  });
+
+  append(ctx.chunks, ctx.debug_chunks);
+
+  // Write to the debug info file as if it were a regular output file.
+  compute_section_headers(ctx);
+  i64 filesize = set_osec_offsets(ctx);
+
+  ctx.output_file =
+    OutputFile<Context<E>>::open(ctx, ctx.arg.separate_debug_file,
+                                 filesize, 0666);
+  ctx.buf = ctx.output_file->buf;
+
+  copy_chunks(ctx);
+
+  if (ctx.gdb_index)
+    write_gdb_index(ctx);
+
+  // Reverse-compute a CRC32 value so that the CRC32 checksum embedded to
+  // the .gnu_debuglink section in the main executable matches with the
+  // debug info file's CRC32 checksum.
+  std::vector<u8> &buf2 = ctx.output_file->buf2;
+  i64 datalen = filesize + buf2.size();
+
+  u32 crc = compute_crc32(0, ctx.buf, filesize);
+  crc = compute_crc32(crc, buf2.data(), buf2.size());
+
+  std::vector<u8> trailer = crc32_solve(datalen, crc, ctx.gnu_debuglink->crc32);
+  append(ctx.output_file->buf2, trailer);
+  ctx.output_file->close(ctx);
+}
+
 // Write Makefile-style dependency rules to a file specified by
 // --dependency-file. This is analogous to the compiler's -M flag.
 template <typename E>
@@ -3126,11 +3246,14 @@ template void apply_version_script(Context<E> &);
 template void parse_symbol_version(Context<E> &);
 template void compute_import_export(Context<E> &);
 template void compute_address_significance(Context<E> &);
+template void separate_debug_sections(Context<E> &);
 template void compute_section_headers(Context<E> &);
 template i64 set_osec_offsets(Context<E> &);
 template void fix_synthetic_symbols(Context<E> &);
 template i64 compress_debug_sections(Context<E> &);
 template void write_build_id(Context<E> &);
+template void write_gnu_debuglink(Context<E> &);
+template void write_separate_debug_file(Context<E> &);
 template void write_dependency_file(Context<E> &);
 template void show_stats(Context<E> &);
 

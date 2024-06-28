@@ -900,6 +900,13 @@ void acquire_global_lock();
 void release_global_lock();
 
 //
+// crc32.cc
+//
+
+u32 compute_crc32(u32 crc, u8 *buf, i64 len);
+std::vector<u8> crc32_solve(i64 datalen, u32 current, u32 want);
+
+//
 // compress.cc
 //
 

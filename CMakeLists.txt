@@ -364,6 +364,7 @@ endforeach()
 # Add other non-template source files.
 target_sources(mold PRIVATE
   common/compress.cc
+  common/crc32.cc
   common/demangle.cc
   common/filepath.cc
   common/glob.cc

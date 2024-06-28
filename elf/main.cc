@@ -559,13 +559,16 @@ int elf_main(int argc, char **argv) {
   // Compute the is_weak bit for each imported symbol.
   compute_imported_symbol_weakness(ctx);
 
-  // Compute sizes of output sections while assigning offsets
-  // within an output section to input sections.
-  compute_section_sizes(ctx);
-
   // Sort sections by section attributes so that we'll have to
   // create as few segments as possible.
   sort_output_sections(ctx);
+
+  if (!ctx.arg.separate_debug_file.empty())
+    separate_debug_sections(ctx);
+
+  // Compute sizes of output sections while assigning offsets
+  // within an output section to input sections.
+  compute_section_sizes(ctx);
 
   // If --packed_dyn_relocs=relr was given, base relocations are stored
   // to a .relr.dyn section in a compressed form. Construct a compressed
@@ -659,8 +662,11 @@ int elf_main(int argc, char **argv) {
   // .gdb_index's contents cannot be constructed before applying
   // relocations to other debug sections. We have relocated debug
   // sections now, so write the .gdb_index section.
-  if (ctx.gdb_index)
+  if (ctx.gdb_index && ctx.arg.separate_debug_file.empty())
     write_gdb_index(ctx);
+
+  if (!ctx.arg.separate_debug_file.empty())
+    write_gnu_debuglink(ctx);
 
   t_copy.stop();
   ctx.checkpoint();
@@ -680,6 +686,9 @@ int elf_main(int argc, char **argv) {
   if (ctx.arg.print_map)
     print_map(ctx);
 
+  if (!ctx.arg.separate_debug_file.empty())
+    write_separate_debug_file(ctx);
+
   // Show stats numbers
   if (ctx.arg.stats)
     show_stats(ctx);
@@ -690,9 +699,7 @@ int elf_main(int argc, char **argv) {
   std::cout << std::flush;
   std::cerr << std::flush;
 
-  if (ctx.arg.fork)
-    notify_parent();
-
+  notify_parent();
   release_global_lock();
 
   if (ctx.arg.quick_exit)

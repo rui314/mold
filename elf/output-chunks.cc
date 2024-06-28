@@ -2948,6 +2948,20 @@ void ComdatGroupSection<E>::copy_buf(Context<E> &ctx) {
     *buf++ = chunk->shndx;
 }
 
+template <typename E>
+void GnuDebuglinkSection<E>::update_shdr(Context<E> &ctx) {
+  filename = std::filesystem::path(ctx.arg.separate_debug_file).filename();
+  this->shdr.sh_size = align_to(filename.size() + 1, 4) + 4;
+}
+
+template <typename E>
+void GnuDebuglinkSection<E>::copy_buf(Context<E> &ctx) {
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  memset(buf, 0, this->shdr.sh_size);
+  write_string(buf, filename);
+  *(U32<E> *)(buf + this->shdr.sh_size - 4) = crc32;
+}
+
 using E = MOLD_TARGET;
 
 template class Chunk<E>;
@@ -2986,6 +3000,7 @@ template class GdbIndexSection<E>;
 template class CompressedSection<E>;
 template class RelocSection<E>;
 template class ComdatGroupSection<E>;
+template class GnuDebuglinkSection<E>;
 
 template OutputSection<E> *find_section(Context<E> &, u32);
 template OutputSection<E> *find_section(Context<E> &, std::string_view);

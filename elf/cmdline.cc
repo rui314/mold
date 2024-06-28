@@ -143,6 +143,8 @@ Options:
   --rpath-link DIR            Ignored
   --run COMMAND ARG...        Run COMMAND with mold as /usr/bin/ld
   --section-start=SECTION=ADDR Set address for section
+  --separate-debug-file[=FILE] Separate debug info to the specified file
+    --no-separate-debug-file
   --shared, --Bshareable      Create a shared library
   --shuffle-sections[=SEED]   Randomize the output by shuffling input sections
   --sort-common               Ignored
@@ -526,6 +528,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::optional<SeparateCodeKind> z_separate_code;
   std::optional<bool> report_undefined;
   std::optional<bool> z_relro;
+  std::optional<std::string> separate_debug_file;
   std::optional<u64> shuffle_sections_seed;
   std::unordered_set<std::string_view> rpaths;
 
@@ -1003,6 +1006,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_origin = true;
     } else if (read_z_flag("nodefaultlib")) {
       ctx.arg.z_nodefaultlib = true;
+    } else if (read_eq("separate-debug-file")) {
+      separate_debug_file = arg;
+    } else if (read_flag("separate-debug-file")) {
+      separate_debug_file = "";
+    } else if (read_flag("no-separate-debug-file")) {
+      separate_debug_file.reset();
     } else if (read_z_flag("separate-loadable-segments")) {
       z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
     } else if (read_z_flag("separate-code")) {
@@ -1392,6 +1401,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       filepath(ctx.arg.output).filename().string() : std::string(ctx.arg.soname);
     ctx.arg.version_definitions.push_back(ver);
     ctx.default_version = VER_NDX_LAST_RESERVED + 1;
+  }
+
+  if (separate_debug_file) {
+    if (separate_debug_file->empty())
+      ctx.arg.separate_debug_file = ctx.arg.output + ".dbg";
+    else
+      ctx.arg.separate_debug_file = *separate_debug_file;
   }
 
   if (ctx.arg.shared && warn_shared_textrel)

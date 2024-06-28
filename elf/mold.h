@@ -994,6 +994,22 @@ private:
 };
 
 template <typename E>
+class GnuDebuglinkSection : public Chunk<E> {
+public:
+  GnuDebuglinkSection() {
+    this->name = ".gnu_debuglink";
+    this->shdr.sh_type = SHT_PROGBITS;
+    this->shdr.sh_addralign = 4;
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+
+  std::string filename;
+  u32 crc32 = 0;
+};
+
+template <typename E>
 class GdbIndexSection : public Chunk<E> {
 public:
   GdbIndexSection() {
@@ -1439,11 +1455,14 @@ template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
 template <typename E> void compute_address_significance(Context<E> &);
+template <typename E> void separate_debug_sections(Context<E> &);
 template <typename E> void compute_section_headers(Context<E> &);
 template <typename E> i64 set_osec_offsets(Context<E> &);
 template <typename E> void fix_synthetic_symbols(Context<E> &);
 template <typename E> i64 compress_debug_sections(Context<E> &);
 template <typename E> void write_build_id(Context<E> &);
+template <typename E> void write_gnu_debuglink(Context<E> &);
+template <typename E> void write_separate_debug_file(Context<E> &ctx);
 template <typename E> void write_dependency_file(Context<E> &);
 template <typename E> void show_stats(Context<E> &);
 
@@ -1807,6 +1826,7 @@ struct Context {
     std::string package_metadata;
     std::string plugin;
     std::string rpaths;
+    std::string separate_debug_file;
     std::string soname;
     std::string sysroot;
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
@@ -1885,6 +1905,9 @@ struct Context {
 
   tbb::concurrent_hash_map<Symbol<E> *, std::vector<std::string>> undef_errors;
 
+  // For --separate-debug-file
+  std::vector<Chunk<E> *> debug_chunks;
+
   // Output chunks
   OutputEhdr<E> *ehdr = nullptr;
   OutputShdr<E> *shdr = nullptr;
@@ -1900,6 +1923,7 @@ struct Context {
   DynstrSection<E> *dynstr = nullptr;
   HashSection<E> *hash = nullptr;
   GnuHashSection<E> *gnu_hash = nullptr;
+  GnuDebuglinkSection<E> *gnu_debuglink = nullptr;
   ShstrtabSection<E> *shstrtab = nullptr;
   PltSection<E> *plt = nullptr;
   PltGotSection<E> *pltgot = nullptr;
