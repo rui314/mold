@@ -569,6 +569,8 @@ template <typename E>
 static bool is_llvm(Context<E> &ctx) {
 #ifdef __MINGW32__
   return ctx.arg.plugin.ends_with("LLVMgold.dll");
+#elif __APPLE__
+  return ctx.arg.plugin.ends_with("LLVMgold.dylib");
 #else
   return ctx.arg.plugin.ends_with("LLVMgold.so");
 #endif
