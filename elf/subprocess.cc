@@ -14,10 +14,12 @@
 namespace mold::elf {
 
 #ifdef MOLD_X86_64
+static int pipe_write_fd = -1;
+
 // Exiting from a program with large memory usage is slow --
 // it may take a few hundred milliseconds. To hide the latency,
 // we fork a child and let it do the actual linking work.
-std::function<void()> fork_child() {
+void fork_child() {
   int pipefd[2];
   if (pipe(pipefd) == -1) {
     perror("pipe");
@@ -50,12 +52,16 @@ std::function<void()> fork_child() {
 
   // Child
   close(pipefd[0]);
+  pipe_write_fd = pipefd[1];
+}
 
-  return [=] {
-    char buf[] = {1};
-    [[maybe_unused]] int n = write(pipefd[1], buf, 1);
-    assert(n == 1);
-  };
+void notify_parent() {
+  if (pipe_write_fd == -1)
+    return;
+
+  char buf[] = {1};
+  [[maybe_unused]] int n = write(pipe_write_fd, buf, 1);
+  assert(n == 1);
 }
 #endif
 

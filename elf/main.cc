@@ -375,11 +375,9 @@ int elf_main(int argc, char **argv) {
                  << ": " << errno_string();
 
   // Fork a subprocess unless --no-fork is given.
-  std::function<void()> on_complete;
-
 #if !defined(_WIN32) && !defined(__APPLE__)
   if (ctx.arg.fork)
-    on_complete = fork_child();
+    fork_child();
 #endif
 
   acquire_global_lock();
@@ -706,8 +704,8 @@ int elf_main(int argc, char **argv) {
   std::cout << std::flush;
   std::cerr << std::flush;
 
-  if (on_complete)
-    on_complete();
+  if (ctx.arg.fork)
+    notify_parent();
 
   release_global_lock();
 

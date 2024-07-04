@@ -1367,7 +1367,8 @@ void print_map(Context<E> &ctx);
 // subprocess.cc
 //
 
-std::function<void()> fork_child();
+void fork_child();
+void notify_parent();
 
 template <typename E>
 [[noreturn]]
