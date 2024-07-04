@@ -176,7 +176,6 @@ void combine_objects(Context<E> &ctx) {
   ctx.buf = ctx.output_file->buf;
 
   copy_chunks(ctx);
-  clear_padding(ctx);
   ctx.output_file->close(ctx);
   ctx.checkpoint();
 

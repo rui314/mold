@@ -664,9 +664,6 @@ int elf_main(int argc, char **argv) {
   // so we sort them.
   ctx.reldyn->sort(ctx);
 
-  // Zero-clear paddings between sections
-  clear_padding(ctx);
-
   // .gdb_index's contents cannot be constructed before applying
   // relocations to other debug sections. We have relocated debug
   // sections now, so write the .gdb_index section.

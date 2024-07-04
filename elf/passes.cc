@@ -1720,6 +1720,22 @@ void copy_chunks(Context<E> &ctx) {
 
   if constexpr (is_arm32<E>)
     fixup_arm_exidx_section(ctx);
+
+  // Zero-clear paddings between chunks
+  auto zero = [&](Chunk<E> *chunk, i64 next_start) {
+    i64 pos = chunk->shdr.sh_offset + chunk->shdr.sh_size;
+    memset(ctx.buf + pos, 0, next_start - pos);
+  };
+
+  std::vector<Chunk<E> *> chunks = ctx.chunks;
+
+  std::erase_if(chunks, [](Chunk<E> *chunk) {
+    return chunk->shdr.sh_type == SHT_NOBITS;
+  });
+
+  for (i64 i = 1; i < chunks.size(); i++)
+    zero(chunks[i - 1], chunks[i]->shdr.sh_offset);
+  zero(chunks.back(), ctx.output_file->filesize);
 }
 
 // Rewrite the leading endbr64 instruction with a nop if a function
@@ -2166,26 +2182,6 @@ void compute_address_significance(Context<E> &ctx) {
           isec->address_taken = true;
     }
   });
-}
-
-template <typename E>
-void clear_padding(Context<E> &ctx) {
-  Timer t(ctx, "clear_padding");
-
-  auto zero = [&](Chunk<E> *chunk, i64 next_start) {
-    i64 pos = chunk->shdr.sh_offset + chunk->shdr.sh_size;
-    memset(ctx.buf + pos, 0, next_start - pos);
-  };
-
-  std::vector<Chunk<E> *> chunks = ctx.chunks;
-
-  std::erase_if(chunks, [](Chunk<E> *chunk) {
-    return chunk->shdr.sh_type == SHT_NOBITS;
-  });
-
-  for (i64 i = 1; i < chunks.size(); i++)
-    zero(chunks[i - 1], chunks[i]->shdr.sh_offset);
-  zero(chunks.back(), ctx.output_file->filesize);
 }
 
 // We want to sort output chunks in the following order.
@@ -3134,7 +3130,6 @@ template void apply_version_script(Context<E> &);
 template void parse_symbol_version(Context<E> &);
 template void compute_import_export(Context<E> &);
 template void compute_address_significance(Context<E> &);
-template void clear_padding(Context<E> &);
 template void compute_section_headers(Context<E> &);
 template i64 set_osec_offsets(Context<E> &);
 template void fix_synthetic_symbols(Context<E> &);
