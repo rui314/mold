@@ -1,7 +1,5 @@
 #include "mold.h"
-
 #include "config.h"
-#include "blake3.h"
 
 #include <cctype>
 #include <set>
@@ -2526,89 +2524,21 @@ void VerdefSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
-inline i64 BuildId::size() const {
-  switch (kind) {
-  case HEX:
-    return value.size();
-  case HASH:
-    return hash_size;
-  case UUID:
-    return 16;
-  default:
-    unreachable();
-  }
-}
-
 template <typename E>
 void BuildIdSection<E>::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_size = HEADER_SIZE + ctx.arg.build_id.size();
+  this->shdr.sh_size = ctx.arg.build_id.size() + 16; // +16 for the header
 }
 
 template <typename E>
 void BuildIdSection<E>::copy_buf(Context<E> &ctx) {
   U32<E> *base = (U32<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(base, 0, this->shdr.sh_size);
-  base[0] = 4;                          // Name size
-  base[1] = ctx.arg.build_id.size();    // Hash size
-  base[2] = NT_GNU_BUILD_ID;            // Type
-  memcpy(base + 3, "GNU", 4);           // Name string
-}
 
-// BLAKE3 is a cryptographic hash function just like SHA256.
-// We use it instead of SHA256 because it's faster.
-static void blake3_hash(u8 *buf, i64 size, u8 *out) {
-  blake3_hasher hasher;
-  blake3_hasher_init(&hasher);
-  blake3_hasher_update(&hasher, buf, size);
-  blake3_hasher_finalize(&hasher, out, BLAKE3_OUT_LEN);
-}
-
-template <typename E>
-void BuildIdSection<E>::write_buildid(Context<E> &ctx) {
-  Timer t(ctx, "build_id");
-  u8 *buf = ctx.buf + this->shdr.sh_offset + HEADER_SIZE;
-
-  switch (ctx.arg.build_id.kind) {
-  case BuildId::HEX:
-    write_vector(buf, ctx.arg.build_id.value);
-    return;
-  case BuildId::HASH: {
-    i64 shard_size = 4 * 1024 * 1024;
-    i64 filesize = ctx.output_file->filesize;
-    i64 num_shards = align_to(filesize, shard_size) / shard_size;
-    std::vector<u8> shards(num_shards * BLAKE3_OUT_LEN);
-
-    tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
-      u8 *begin = ctx.buf + shard_size * i;
-      u8 *end = (i == num_shards - 1) ? ctx.buf + filesize : begin + shard_size;
-      blake3_hash(begin, end - begin, shards.data() + i * BLAKE3_OUT_LEN);
-
-#ifdef HAVE_MADVISE
-      // Make the kernel page out the file contents we've just written
-      // so that subsequent close(2) call will become quicker.
-      if (i > 0 && ctx.output_file->is_mmapped)
-        madvise(begin, end - begin, MADV_DONTNEED);
-#endif
-    });
-
-    u8 digest[BLAKE3_OUT_LEN];
-    blake3_hash(shards.data(), shards.size(), digest);
-
-    assert(ctx.arg.build_id.size() <= BLAKE3_OUT_LEN);
-    memcpy(buf, digest, ctx.arg.build_id.size());
-    return;
-  }
-  case BuildId::UUID: {
-    get_random_bytes(buf, 16);
-
-    // Indicate that this is UUIDv4 as defined by RFC4122
-    buf[6] = (buf[6] & 0b0000'1111) | 0b0100'0000;
-    buf[8] = (buf[8] & 0b0011'1111) | 0b1000'0000;
-    return;
-  }
-  default:
-    unreachable();
-  }
+  base[0] = 4;                       // Name size
+  base[1] = ctx.arg.build_id.size(); // Hash size
+  base[2] = NT_GNU_BUILD_ID;         // Type
+  memcpy(base + 3, "GNU", 4);        // Name string
+  write_vector(base + 4, contents);  // Build ID
 }
 
 template <typename E>

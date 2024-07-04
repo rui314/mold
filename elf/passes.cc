@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "blake3.h"
 
 #include <fstream>
 #include <functional>
@@ -2995,6 +2996,65 @@ i64 compress_debug_sections(Context<E> &ctx) {
   return set_osec_offsets(ctx);
 }
 
+// BLAKE3 is a cryptographic hash function just like SHA256.
+// We use it instead of SHA256 because it's faster.
+static void blake3_hash(u8 *buf, i64 size, u8 *out) {
+  blake3_hasher hasher;
+  blake3_hasher_init(&hasher);
+  blake3_hasher_update(&hasher, buf, size);
+  blake3_hasher_finalize(&hasher, out, BLAKE3_OUT_LEN);
+}
+
+template <typename E>
+void compute_build_id(Context<E> &ctx) {
+  Timer t(ctx, "compute_build_id");
+
+  switch (ctx.arg.build_id.kind) {
+  case BuildId::HEX:
+    ctx.buildid->contents = ctx.arg.build_id.value;
+    break;
+  case BuildId::HASH: {
+    i64 shard_size = 4 * 1024 * 1024;
+    i64 filesize = ctx.output_file->filesize;
+    i64 num_shards = align_to(filesize, shard_size) / shard_size;
+    std::vector<u8> shards(num_shards * BLAKE3_OUT_LEN);
+
+    tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
+      u8 *begin = ctx.buf + shard_size * i;
+      u8 *end = (i == num_shards - 1) ? ctx.buf + filesize : begin + shard_size;
+      blake3_hash(begin, end - begin, shards.data() + i * BLAKE3_OUT_LEN);
+
+#ifdef HAVE_MADVISE
+      // Make the kernel page out the file contents we've just written
+      // so that subsequent close(2) call will become quicker.
+      if (i > 0 && ctx.output_file->is_mmapped)
+        madvise(begin, end - begin, MADV_DONTNEED);
+#endif
+    });
+
+    u8 buf[BLAKE3_OUT_LEN];
+    blake3_hash(shards.data(), shards.size(), buf);
+
+    assert(ctx.arg.build_id.size() <= BLAKE3_OUT_LEN);
+    ctx.buildid->contents = {buf, buf + ctx.arg.build_id.size()};
+    break;
+  }
+  case BuildId::UUID: {
+    u8 buf[16];
+    get_random_bytes(buf, 16);
+
+    // Indicate that this is UUIDv4 as defined by RFC4122
+    buf[6] = (buf[6] & 0b0000'1111) | 0b0100'0000;
+    buf[8] = (buf[8] & 0b0011'1111) | 0b1000'0000;
+    ctx.buildid->contents = {buf, buf + 16};
+    break;
+  }
+  default:
+    unreachable();
+  }
+}
+
+
 // Write Makefile-style dependency rules to a file specified by
 // --dependency-file. This is analogous to the compiler's -M flag.
 template <typename E>
@@ -3134,6 +3194,7 @@ template void compute_section_headers(Context<E> &);
 template i64 set_osec_offsets(Context<E> &);
 template void fix_synthetic_symbols(Context<E> &);
 template i64 compress_debug_sections(Context<E> &);
+template void compute_build_id(Context<E> &);
 template void write_dependency_file(Context<E> &);
 template void show_stats(Context<E> &);
 
