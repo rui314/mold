@@ -110,7 +110,7 @@ jobs:
           !build/CMakeFiles
 
   build-macos:
-    runs-on: macos-11
+    runs-on: macos-12
     strategy:
       matrix:
         target:
