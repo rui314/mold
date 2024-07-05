@@ -333,15 +333,15 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   )
 
 if(WIN32 AND NOT MINGW)
-  list(APPEND MOLD_ELF_TEMPLATE_FILES
-    elf/lto-win32.cc
-    elf/subprocess-win32.cc
-    )
+  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/lto-win32.cc)
 else()
-  list(APPEND MOLD_ELF_TEMPLATE_FILES
-    elf/lto-unix.cc
-    elf/subprocess-unix.cc
-    )
+  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/lto-unix.cc)
+endif()
+
+if(WIN32)
+  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/subprocess-win32.cc)
+else()
+  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/subprocess-unix.cc)
 endif()
 
 function(mold_instantiate_templates SOURCE TARGET)
