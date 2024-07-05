@@ -677,104 +677,6 @@ void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   }
 }
 
-static size_t find_null(std::string_view data, i64 pos, i64 entsize) {
-  if (entsize == 1)
-    return data.find('\0', pos);
-
-  for (; pos <= data.size() - entsize; pos += entsize)
-    if (data.substr(pos, entsize).find_first_not_of('\0') == data.npos)
-      return pos;
-
-  return data.npos;
-}
-
-// Mergeable sections (sections with SHF_MERGE bit) typically contain
-// string literals. Linker is expected to split the section contents
-// into null-terminated strings, merge them with mergeable strings
-// from other object files, and emit uniquified strings to an output
-// file.
-//
-// This mechanism reduces the size of an output file. If two source
-// files happen to contain the same string literal, the output will
-// contain only a single copy of it.
-//
-// It is less common than string literals, but mergeable sections can
-// contain fixed-sized read-only records too.
-//
-// This function splits the section contents into small pieces that we
-// call "section fragments". Section fragment is a unit of merging.
-//
-// We do not support mergeable sections that have relocations.
-template <typename E>
-static std::unique_ptr<MergeableSection<E>>
-split_section(Context<E> &ctx, InputSection<E> &sec) {
-  if (!sec.is_alive || sec.relsec_idx != -1 || sec.sh_size == 0)
-    return nullptr;
-
-  const ElfShdr<E> &shdr = sec.shdr();
-  if (!(shdr.sh_flags & SHF_MERGE))
-    return nullptr;
-
-  i64 entsize = shdr.sh_entsize;
-  if (entsize == 0)
-    entsize = (shdr.sh_flags & SHF_STRINGS) ? 1 : (int)shdr.sh_addralign;
-
-  if (entsize == 0)
-    return nullptr;
-
-  i64 addralign = shdr.sh_addralign;
-  if (addralign == 0)
-    addralign = 1;
-
-  std::unique_ptr<MergeableSection<E>> m(new MergeableSection<E>);
-  m->parent = MergedSection<E>::get_instance(ctx, sec.name(), shdr.sh_type,
-                                             shdr.sh_flags, entsize, addralign);
-  m->p2align = sec.p2align;
-
-  // If thes section contents are compressed, uncompress them.
-  sec.uncompress(ctx);
-
-  std::string_view data = sec.contents;
-  m->contents = sec.contents;
-
-  if (data.size() > UINT32_MAX)
-    Fatal(ctx) << sec << ": mergeable section too large";
-
-  // Split sections
-  if (shdr.sh_flags & SHF_STRINGS) {
-    for (i64 pos = 0; pos < data.size();) {
-      m->frag_offsets.push_back(pos);
-      size_t end = find_null(data, pos, entsize);
-      if (end == data.npos)
-        Fatal(ctx) << sec << ": string is not null terminated";
-      pos = end + entsize;
-    }
-  } else {
-    if (data.size() % entsize)
-      Fatal(ctx) << sec << ": section size is not multiple of sh_entsize";
-    m->frag_offsets.reserve(data.size() / entsize);
-
-    for (i64 pos = 0; pos < data.size(); pos += entsize)
-      m->frag_offsets.push_back(pos);
-  }
-
-  // Compute hashes for section pieces
-  HyperLogLog estimator;
-  m->hashes.reserve(m->frag_offsets.size());
-
-  for (i64 i = 0; i < m->frag_offsets.size(); i++) {
-    u64 hash = hash_string(m->get_contents(i));
-    m->hashes.push_back(hash);
-    estimator.insert(hash);
-  }
-
-  m->parent->estimator.merge(estimator);
-
-  static Counter counter("string_fragments");
-  counter += m->frag_offsets.size();
-  return m;
-}
-
 // Usually a section is an atomic unit of inclusion or exclusion.
 // Linker doesn't care about its contents. However, if a section is a
 // mergeable section (a section with SHF_MERGE bit set), the linker is
@@ -818,34 +720,45 @@ split_section(Context<E> &ctx, InputSection<E> &sec) {
 // section piece, the section piece is attached to the symbol.
 template <typename E>
 void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
-  mergeable_sections.resize(sections.size());
+  // Convert InputSections to MergeableSections
+  for (i64 i = 0; i < this->sections.size(); i++) {
+    InputSection<E> *isec = this->sections[i].get();
+    if (!isec || isec->sh_size == 0 || isec->relsec_idx != -1)
+      continue;
 
-  for (i64 i = 0; i < sections.size(); i++) {
-    if (std::unique_ptr<InputSection<E>> &isec = sections[i]) {
-      if (std::unique_ptr<MergeableSection<E>> m = split_section(ctx, *isec)) {
-        mergeable_sections[i] = std::move(m);
-        isec->is_alive = false;
-      }
+    MergedSection<E> *parent =
+      MergedSection<E>::get_instance(ctx, isec->name(), isec->shdr());
+
+    if (parent) {
+      this->mergeable_sections[i] =
+        std::make_unique<MergeableSection<E>>(ctx, *parent, this->sections[i]);
+      this->sections[i] = nullptr;
     }
   }
+
+  // Split section contents
+  for (std::unique_ptr<MergeableSection<E>> &sec : mergeable_sections)
+    if (sec)
+      sec->split_contents(ctx);
 }
 
 template <typename E>
 void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
   for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections) {
-    if (m) {
-      m->fragments.reserve(m->frag_offsets.size());
+    if (!m)
+      continue;
 
-      for (i64 i = 0; i < m->frag_offsets.size(); i++) {
-        SectionFragment<E> *frag =
-          m->parent->insert(ctx, m->get_contents(i), m->hashes[i], m->p2align);
-        m->fragments.push_back(frag);
-      }
+    m->fragments.reserve(m->frag_offsets.size());
 
-      // Reclaim memory as we'll never use this vector again
-      m->hashes.clear();
-      m->hashes.shrink_to_fit();
+    for (i64 i = 0; i < m->frag_offsets.size(); i++) {
+      SectionFragment<E> *frag =
+        m->parent.insert(ctx, m->get_contents(i), m->hashes[i], m->p2align);
+      m->fragments.push_back(frag);
     }
+
+    // Reclaim memory as we'll never use this vector again
+    m->hashes.clear();
+    m->hashes.shrink_to_fit();
   }
 
   // Attach section pieces to symbols.
@@ -872,24 +785,25 @@ void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
   }
 
   // Compute the size of frag_syms.
-  i64 nfrag_syms = 0;
+  std::vector<InputSection<E> *> vec;
   for (std::unique_ptr<InputSection<E>> &isec : sections)
     if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC))
-      for (ElfRel<E> &r : isec->get_rels(ctx))
-        if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
-            esym.st_type == STT_SECTION && mergeable_sections[get_shndx(esym)])
-          nfrag_syms++;
+      vec.push_back(isec.get());
+
+  i64 nfrag_syms = 0;
+  for (InputSection<E> *isec : vec)
+    for (ElfRel<E> &r : isec->get_rels(ctx))
+      if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
+          esym.st_type == STT_SECTION && mergeable_sections[get_shndx(esym)])
+        nfrag_syms++;
 
   this->frag_syms.resize(nfrag_syms);
 
-  // For each relocation referring a mergeable section symbol, we create
-  // a new dummy non-section symbol and redirect the relocation to the
-  // newly-created symbol.
+  // For each relocation referring to a mergeable section symbol, we
+  // create a new dummy non-section symbol and redirect the relocation
+  // to the newly created symbol.
   i64 idx = 0;
-  for (std::unique_ptr<InputSection<E>> &isec : sections) {
-    if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
-      continue;
-
+  for (InputSection<E> *isec : vec) {
     for (ElfRel<E> &r : isec->get_rels(ctx)) {
       const ElfSym<E> &esym = this->elf_syms[r.r_sym];
       if (esym.st_type != STT_SECTION)
@@ -929,6 +843,8 @@ void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
 template <typename E>
 void ObjectFile<E>::parse(Context<E> &ctx) {
   sections.resize(this->elf_sections.size());
+  mergeable_sections.resize(sections.size());
+
   symtab_sec = this->find_section(SHT_SYMTAB);
 
   if (symtab_sec) {

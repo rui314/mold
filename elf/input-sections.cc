@@ -552,9 +552,88 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
   return false;
 }
 
+template <typename E>
+MergeableSection<E>::MergeableSection(Context<E> &ctx, MergedSection<E> &parent,
+                                      std::unique_ptr<InputSection<E>> &isec)
+  : parent(parent), section(std::move(isec)), p2align(section->p2align) {
+  section->uncompress(ctx);
+}
+
+static size_t find_null(std::string_view data, i64 pos, i64 entsize) {
+  if (entsize == 1)
+    return data.find('\0', pos);
+
+  for (; pos <= data.size() - entsize; pos += entsize)
+    if (data.substr(pos, entsize).find_first_not_of('\0') == data.npos)
+      return pos;
+
+  return data.npos;
+}
+
+// Mergeable sections (sections with SHF_MERGE bit) typically contain
+// string literals. Linker is expected to split the section contents
+// into null-terminated strings, merge them with mergeable strings
+// from other object files, and emit uniquified strings to an output
+// file.
+//
+// This mechanism reduces the size of an output file. If two source
+// files happen to contain the same string literal, the output will
+// contain only a single copy of it.
+//
+// It is less common than string literals, but mergeable sections can
+// contain fixed-sized read-only records too.
+//
+// This function splits the section contents into small pieces that we
+// call "section fragments". Section fragment is a unit of merging.
+//
+// We do not support mergeable sections that have relocations.
+template <typename E>
+void MergeableSection<E>::split_contents(Context<E> &ctx) {
+  std::string_view data = section->contents;
+  if (data.size() > UINT32_MAX)
+    Fatal(ctx) << *section
+               << ": mergeable section too large";
+
+  i64 entsize = parent.shdr.sh_entsize;
+
+  // Split sections
+  if (parent.shdr.sh_flags & SHF_STRINGS) {
+    for (i64 pos = 0; pos < data.size();) {
+      frag_offsets.push_back(pos);
+      size_t end = find_null(data, pos, entsize);
+      if (end == data.npos)
+        Fatal(ctx) << *section << ": string is not null terminated";
+      pos = end + entsize;
+    }
+  } else {
+    if (data.size() % entsize)
+      Fatal(ctx) << *section << ": section size is not multiple of sh_entsize";
+    frag_offsets.reserve(data.size() / entsize);
+
+    for (i64 pos = 0; pos < data.size(); pos += entsize)
+      frag_offsets.push_back(pos);
+  }
+
+  // Compute hashes for section pieces
+  HyperLogLog estimator;
+  hashes.reserve(frag_offsets.size());
+
+  for (i64 i = 0; i < frag_offsets.size(); i++) {
+    u64 hash = hash_string(get_contents(i));
+    hashes.push_back(hash);
+    estimator.insert(hash);
+  }
+
+  parent.estimator.merge(estimator);
+
+  static Counter counter("string_fragments");
+  counter += frag_offsets.size();
+}
+
 using E = MOLD_TARGET;
 
 template bool cie_equals(const CieRecord<E> &, const CieRecord<E> &);
 template class InputSection<E>;
+template class MergeableSection<E>;
 
 } // namespace mold::elf

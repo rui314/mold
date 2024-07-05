@@ -1913,15 +1913,26 @@ MergedSection<E>::MergedSection(std::string_view name, i64 flags, i64 type,
 template <typename E>
 MergedSection<E> *
 MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
-                               i64 type, i64 flags,
-                               i64 entsize, i64 addralign) {
+                               const ElfShdr<E> &shdr) {
+  if (!(shdr.sh_flags & SHF_MERGE))
+    return nullptr;
+
+  i64 addralign = std::max<i64>(1, shdr.sh_addralign);
+  i64 flags = shdr.sh_flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
+
+  i64 entsize = shdr.sh_entsize;
+  if (entsize == 0)
+    entsize = (shdr.sh_flags & SHF_STRINGS) ? 1 : (i64)shdr.sh_addralign;
+  if (entsize == 0)
+    return nullptr;
+
   name = get_merged_output_name(ctx, name, flags, entsize, addralign);
-  flags = flags & ~(u64)SHF_GROUP & ~(u64)SHF_COMPRESSED;
 
   auto find = [&]() -> MergedSection * {
     for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
       if (name == osec->name && flags == osec->shdr.sh_flags &&
-          type == osec->shdr.sh_type && entsize == osec->shdr.sh_entsize)
+          shdr.sh_type == osec->shdr.sh_type &&
+          entsize == osec->shdr.sh_entsize)
         return osec.get();
     return nullptr;
   };
@@ -1939,7 +1950,7 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
   if (MergedSection *osec = find())
     return osec;
 
-  MergedSection *osec = new MergedSection(name, flags, type, entsize);
+  MergedSection *osec = new MergedSection(name, flags, shdr.sh_type, entsize);
   ctx.merged_sections.emplace_back(osec);
   return osec;
 }

@@ -47,6 +47,7 @@ template <typename E> class Symbol;
 template <typename E> struct CieRecord;
 template <typename E> struct Context;
 template <typename E> struct FdeRecord;
+template <typename E> class MergeableSection;
 template <typename E> class RelocSection;
 
 template <typename E>
@@ -799,8 +800,7 @@ template <typename E>
 class MergedSection : public Chunk<E> {
 public:
   static MergedSection<E> *
-  get_instance(Context<E> &ctx, std::string_view name, i64 type, i64 flags,
-               i64 entsize, i64 addralign);
+  get_instance(Context<E> &ctx, std::string_view name, const ElfShdr<E> &shdr);
 
   SectionFragment<E> *insert(Context<E> &ctx, std::string_view data,
                              u64 hash, i64 p2align);
@@ -1089,12 +1089,17 @@ struct ComdatGroupRef {
 };
 
 template <typename E>
-struct MergeableSection {
+class MergeableSection {
+public:
+  MergeableSection(Context<E> &ctx, MergedSection<E> &parent,
+                   std::unique_ptr<InputSection<E>> &isec);
+
+  void split_contents(Context<E> &ctx);
   std::pair<SectionFragment<E> *, i64> get_fragment(i64 offset);
   std::string_view get_contents(i64 idx);
 
-  MergedSection<E> *parent;
-  std::string_view contents;
+  MergedSection<E> &parent;
+  std::unique_ptr<InputSection<E>> section;
   std::vector<u32> frag_offsets;
   std::vector<u32> hashes;
   std::vector<SectionFragment<E> *> fragments;
@@ -2422,8 +2427,8 @@ template <typename E>
 std::string_view MergeableSection<E>::get_contents(i64 i) {
   i64 cur = frag_offsets[i];
   if (i == frag_offsets.size() - 1)
-    return contents.substr(cur);
-  return contents.substr(cur, frag_offsets[i + 1] - cur);
+    return section->contents.substr(cur);
+  return section->contents.substr(cur, frag_offsets[i + 1] - cur);
 }
 
 template <typename E>

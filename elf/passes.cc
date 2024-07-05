@@ -443,10 +443,13 @@ static std::string get_cmdline_args(Context<E> &ctx) {
 
 template <typename E>
 void add_comment_string(Context<E> &ctx, std::string str) {
-  MergedSection<E> *sec =
-    MergedSection<E>::get_instance(ctx, ".comment", SHT_PROGBITS,
-                                   SHF_MERGE | SHF_STRINGS, 1, 1);
+  ElfShdr<E> shdr = {};
+  shdr.sh_type = SHT_PROGBITS;
+  shdr.sh_flags = SHF_MERGE | SHF_STRINGS;
+  shdr.sh_entsize = 1;
+  shdr.sh_addralign = 1;
 
+  MergedSection<E> *sec = MergedSection<E>::get_instance(ctx, ".comment", shdr);
   if (sec->map.nbuckets == 0)
     sec->map.resize(4096);
 
