@@ -677,6 +677,29 @@ void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   }
 }
 
+template <typename E>
+void ObjectFile<E>::convert_mergeable_sections(Context<E> &ctx) {
+  // Convert InputSections to MergeableSections
+  for (i64 i = 0; i < this->sections.size(); i++) {
+    InputSection<E> *isec = this->sections[i].get();
+    if (!isec || isec->sh_size == 0 || isec->relsec_idx != -1)
+      continue;
+
+    const ElfShdr<E> &shdr = isec->shdr();
+    if (!(shdr.sh_flags & SHF_MERGE))
+      continue;
+
+    MergedSection<E> *parent =
+      MergedSection<E>::get_instance(ctx, isec->name(), shdr);
+
+    if (parent) {
+      this->mergeable_sections[i] =
+        std::make_unique<MergeableSection<E>>(ctx, *parent, this->sections[i]);
+      this->sections[i] = nullptr;
+    }
+  }
+}
+
 // Usually a section is an atomic unit of inclusion or exclusion.
 // Linker doesn't care about its contents. However, if a section is a
 // mergeable section (a section with SHF_MERGE bit set), the linker is
@@ -713,54 +736,17 @@ void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
 // section piece in a section, but it doesn't do for any other types
 // of symbols.
 //
-// In mold, we attach symbols to section pieces. If a relocation refers
-// to a section symbol, and that symbol's section is a mergeable one,
-// we create a new dummy symbol for a section piece and redirect the
-// relocation to this new symbol. If a non-section symbol refers to a
-// section piece, the section piece is attached to the symbol.
+// Section garbage collection and Identical Code Folding work on graphs
+// where sections or section pieces are vertices and relocations are
+// edges. To make it easy to handle them, we rewrite symbols and
+// relocations so that each non-absolute symbol always refers to either
+// a non-mergeable section or a section piece.
+//
+// We do that only for SHF_ALLOC sections because GC and ICF work only
+// on memory-allocated sections. Non-memory-allocated mergeable sections
+// are not handled here for performance reasons.
 template <typename E>
-void ObjectFile<E>::initialize_mergeable_sections(Context<E> &ctx) {
-  // Convert InputSections to MergeableSections
-  for (i64 i = 0; i < this->sections.size(); i++) {
-    InputSection<E> *isec = this->sections[i].get();
-    if (!isec || isec->sh_size == 0 || isec->relsec_idx != -1)
-      continue;
-
-    MergedSection<E> *parent =
-      MergedSection<E>::get_instance(ctx, isec->name(), isec->shdr());
-
-    if (parent) {
-      this->mergeable_sections[i] =
-        std::make_unique<MergeableSection<E>>(ctx, *parent, this->sections[i]);
-      this->sections[i] = nullptr;
-    }
-  }
-
-  // Split section contents
-  for (std::unique_ptr<MergeableSection<E>> &sec : mergeable_sections)
-    if (sec)
-      sec->split_contents(ctx);
-}
-
-template <typename E>
-void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
-  for (std::unique_ptr<MergeableSection<E>> &m : mergeable_sections) {
-    if (!m)
-      continue;
-
-    m->fragments.reserve(m->frag_offsets.size());
-
-    for (i64 i = 0; i < m->frag_offsets.size(); i++) {
-      SectionFragment<E> *frag =
-        m->parent.insert(ctx, m->get_contents(i), m->hashes[i], m->p2align);
-      m->fragments.push_back(frag);
-    }
-
-    // Reclaim memory as we'll never use this vector again
-    m->hashes.clear();
-    m->hashes.shrink_to_fit();
-  }
-
+void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
   // Attach section pieces to symbols.
   for (i64 i = 1; i < this->elf_syms.size(); i++) {
     Symbol<E> &sym = *this->symbols[i];
@@ -769,8 +755,9 @@ void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
     if (esym.is_abs() || esym.is_common() || esym.is_undef())
       continue;
 
-    std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[get_shndx(esym)];
-    if (!m || m->fragments.empty())
+    i64 shndx = get_shndx(esym);
+    std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[shndx];
+    if (!m || !m->parent.resolved)
       continue;
 
     SectionFragment<E> *frag;
@@ -785,17 +772,16 @@ void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
   }
 
   // Compute the size of frag_syms.
-  std::vector<InputSection<E> *> vec;
-  for (std::unique_ptr<InputSection<E>> &isec : sections)
-    if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC))
-      vec.push_back(isec.get());
-
   i64 nfrag_syms = 0;
-  for (InputSection<E> *isec : vec)
-    for (ElfRel<E> &r : isec->get_rels(ctx))
-      if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
-          esym.st_type == STT_SECTION && mergeable_sections[get_shndx(esym)])
-        nfrag_syms++;
+  for (std::unique_ptr<InputSection<E>> &isec : sections)
+    if (isec)
+      for (ElfRel<E> &r : isec->get_rels(ctx))
+        if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
+            esym.st_type == STT_SECTION)
+          if (std::unique_ptr<MergeableSection<E>> &m =
+              mergeable_sections[get_shndx(esym)])
+            if (m->parent.resolved)
+              nfrag_syms++;
 
   this->frag_syms.resize(nfrag_syms);
 
@@ -803,34 +789,38 @@ void ObjectFile<E>::resolve_section_pieces(Context<E> &ctx) {
   // create a new dummy non-section symbol and redirect the relocation
   // to the newly created symbol.
   i64 idx = 0;
-  for (InputSection<E> *isec : vec) {
-    for (ElfRel<E> &r : isec->get_rels(ctx)) {
-      const ElfSym<E> &esym = this->elf_syms[r.r_sym];
-      if (esym.st_type != STT_SECTION)
-        continue;
+  for (std::unique_ptr<InputSection<E>> &isec : sections) {
+    if (isec) {
+      for (ElfRel<E> &r : isec->get_rels(ctx)) {
+        const ElfSym<E> &esym = this->elf_syms[r.r_sym];
+        if (esym.st_type != STT_SECTION)
+          continue;
 
-      std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[get_shndx(esym)];
-      if (!m)
-        continue;
+        std::unique_ptr<MergeableSection<E>> &m =
+          mergeable_sections[get_shndx(esym)];
 
-      i64 r_addend = get_addend(*isec, r);
+        if (!m || !m->parent.resolved)
+          continue;
 
-      SectionFragment<E> *frag;
-      i64 in_frag_offset;
-      std::tie(frag, in_frag_offset) = m->get_fragment(esym.st_value + r_addend);
+        i64 r_addend = get_addend(*isec, r);
 
-      if (!frag)
-        Fatal(ctx) << *this << ": bad relocation at " << r.r_sym;
+        SectionFragment<E> *frag;
+        i64 in_frag_offset;
+        std::tie(frag, in_frag_offset) = m->get_fragment(esym.st_value + r_addend);
 
-      Symbol<E> &sym = this->frag_syms[idx];
-      sym.file = this;
-      sym.set_name("<fragment>");
-      sym.sym_idx = r.r_sym;
-      sym.visibility = STV_HIDDEN;
-      sym.set_frag(frag);
-      sym.value = in_frag_offset - r_addend;
-      r.r_sym = this->elf_syms.size() + idx;
-      idx++;
+        if (!frag)
+          Fatal(ctx) << *this << ": bad relocation at " << r.r_sym;
+
+        Symbol<E> &sym = this->frag_syms[idx];
+        sym.file = this;
+        sym.set_name("<fragment>");
+        sym.sym_idx = r.r_sym;
+        sym.visibility = STV_HIDDEN;
+        sym.set_frag(frag);
+        sym.value = in_frag_offset - r_addend;
+        r.r_sym = this->elf_syms.size() + idx;
+        idx++;
+      }
     }
   }
 

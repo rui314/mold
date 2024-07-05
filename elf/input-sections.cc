@@ -557,6 +557,9 @@ MergeableSection<E>::MergeableSection(Context<E> &ctx, MergedSection<E> &parent,
                                       std::unique_ptr<InputSection<E>> &isec)
   : parent(parent), section(std::move(isec)), p2align(section->p2align) {
   section->uncompress(ctx);
+
+  std::scoped_lock lock(parent.mu);
+  parent.members.push_back(this);
 }
 
 static size_t find_null(std::string_view data, i64 pos, i64 entsize) {
@@ -628,6 +631,17 @@ void MergeableSection<E>::split_contents(Context<E> &ctx) {
 
   static Counter counter("string_fragments");
   counter += frag_offsets.size();
+}
+
+template <typename E>
+void MergeableSection<E>::resolve_contents(Context<E> &ctx) {
+  fragments.reserve(frag_offsets.size());
+  for (i64 i = 0; i < frag_offsets.size(); i++)
+    fragments.push_back(parent.insert(ctx, get_contents(i), hashes[i], p2align));
+
+  // Reclaim memory as we'll never use this vector again
+  hashes.clear();
+  hashes.shrink_to_fit();
 }
 
 using E = MOLD_TARGET;

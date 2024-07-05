@@ -1971,7 +1971,26 @@ MergedSection<E>::insert(Context<E> &ctx, std::string_view data, u64 hash,
 }
 
 template <typename E>
+void MergedSection<E>::resolve(Context<E> &ctx) {
+  tbb::parallel_for_each(members, [&](MergeableSection<E> *sec) {
+    sec->split_contents(ctx);
+  });
+
+  // We aim 2/3 occupation ratio
+  map.resize(estimator.get_cardinality() * 3 / 2);
+
+  tbb::parallel_for_each(members, [&](MergeableSection<E> *sec) {
+    sec->resolve_contents(ctx);
+  });
+
+  resolved = true;
+}
+
+template <typename E>
 void MergedSection<E>::assign_offsets(Context<E> &ctx) {
+  if (!resolved)
+    resolve(ctx);
+
   std::vector<i64> sizes(map.NUM_SHARDS);
   Atomic<i64> alignment = 1;
 

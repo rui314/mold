@@ -148,8 +148,6 @@ static u64 r_set_osec_offsets(Context<E> &ctx) {
 
 template <typename E>
 void combine_objects(Context<E> &ctx) {
-  compute_merged_section_sizes(ctx);
-
   create_output_sections(ctx);
 
   r_create_synthetic_sections(ctx);

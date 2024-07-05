@@ -402,25 +402,50 @@ void kill_eh_frame_sections(Context<E> &ctx) {
 }
 
 template <typename E>
-void split_section_pieces(Context<E> &ctx) {
-  Timer t(ctx, "split_section_pieces");
+void create_merged_sections(Context<E> &ctx) {
+  Timer t(ctx, "create_merged_sections");
+
+  // Convert InputSections to MergeableSections.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->convert_mergeable_sections(ctx);
+  });
+
+  tbb::parallel_for_each(ctx.merged_sections,
+                         [&](std::unique_ptr<MergedSection<E>> &sec) {
+    if (sec->shdr.sh_flags & SHF_ALLOC)
+      sec->resolve(ctx);
+  });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->initialize_mergeable_sections(ctx);
+    file->reattach_section_pieces(ctx);
   });
-}
 
-template <typename E>
-void resolve_section_pieces(Context<E> &ctx) {
-  Timer t(ctx, "resolve_section_pieces");
+  // Add strings to .comment
+  if (!ctx.arg.oformat_binary) {
+    ElfShdr<E> shdr = {};
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_MERGE | SHF_STRINGS;
 
-  // We aim 2/3 occupation ratio
-  for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
-    sec->map.resize(sec->estimator.get_cardinality() * 3 / 2);
+    MergedSection<E> *sec = MergedSection<E>::get_instance(ctx, ".comment", shdr);
+    if (!sec->resolved) {
+      sec->map.resize(4096);
+      sec->resolved = true;
+    }
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->resolve_section_pieces(ctx);
-  });
+    auto add = [&](std::string str) {
+      std::string_view buf = save_string(ctx, str);
+      std::string_view data(buf.data(), buf.size() + 1);
+      sec->insert(ctx, data, hash_string(data), 0);
+    };
+
+    // Add an identification string to .comment.
+    add(get_mold_version());
+
+    // Embed command line arguments for debugging.
+    char *env = getenv("MOLD_DEBUG");
+    if (env && env[0])
+      add("mold command line: " + get_cmdline_args(ctx));
+  }
 }
 
 template <typename E>
@@ -439,41 +464,6 @@ static std::string get_cmdline_args(Context<E> &ctx) {
   for (i64 i = 2; i < ctx.cmdline_args.size(); i++)
     ss << " " << ctx.cmdline_args[i];
   return ss.str();
-}
-
-template <typename E>
-void add_comment_string(Context<E> &ctx, std::string str) {
-  ElfShdr<E> shdr = {};
-  shdr.sh_type = SHT_PROGBITS;
-  shdr.sh_flags = SHF_MERGE | SHF_STRINGS;
-  shdr.sh_entsize = 1;
-  shdr.sh_addralign = 1;
-
-  MergedSection<E> *sec = MergedSection<E>::get_instance(ctx, ".comment", shdr);
-  if (sec->map.nbuckets == 0)
-    sec->map.resize(4096);
-
-  std::string_view buf = save_string(ctx, str);
-  std::string_view data(buf.data(), buf.size() + 1);
-  sec->insert(ctx, data, hash_string(data), 0);
-}
-
-template <typename E>
-void compute_merged_section_sizes(Context<E> &ctx) {
-  Timer t(ctx, "compute_merged_section_sizes");
-
-  // Add an identification string to .comment.
-  if (!ctx.arg.oformat_binary)
-    add_comment_string(ctx, get_mold_version());
-
-  // Embed command line arguments for debugging.
-  if (char *env = getenv("MOLD_DEBUG"); env && env[0])
-    add_comment_string(ctx, "mold command line: " + get_cmdline_args(ctx));
-
-  tbb::parallel_for_each(ctx.merged_sections,
-                         [&](std::unique_ptr<MergedSection<E>> &sec) {
-    sec->assign_offsets(ctx);
-  });
 }
 
 template <typename T>
@@ -729,8 +719,7 @@ void create_output_sections(Context<E> &ctx) {
 
   // Add output sections and mergeable sections to ctx.chunks
   for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
-    if (osec->shdr.sh_size)
-      chunks.push_back(osec.get());
+    chunks.push_back(osec.get());
 
   // Sections are added to the section lists in an arbitrary order
   // because they are created in parallel. Sort them to to make the
@@ -1369,6 +1358,7 @@ void compute_section_sizes(Context<E> &ctx) {
     std::span<InputSection<E> *> members;
   };
 
+  // Assign offsets to OutputSection members
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
     OutputSection<E> *osec = chunk->to_osec();
     if (!osec)
@@ -1416,6 +1406,13 @@ void compute_section_sizes(Context<E> &ctx) {
     });
   });
 
+
+  // Assign offsets to MergedSection members
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    if (MergedSection<E> *sec = chunk->to_merged_section())
+      sec->assign_offsets(ctx);
+  });
+
   // On ARM32 or ARM64, we may need to create so-called "range extension
   // thunks" to extend branch instructions reach, as they can jump only
   // to ±16 MiB or ±128 MiB, respecitvely.
@@ -1425,7 +1422,7 @@ void compute_section_sizes(Context<E> &ctx) {
   // create_range_extension_thunks is parallelized internally, but the
   // function itself is not thread-safe.
   if constexpr (needs_thunk<E>) {
-    Timer t2(ctx, "create_range_extension_thunks");
+    Timer t(ctx, "create_range_extension_thunks");
 
     if (!ctx.arg.relocatable)
       for (Chunk<E> *chunk : ctx.chunks)
@@ -3162,10 +3159,8 @@ template void apply_exclude_libs(Context<E> &);
 template void create_synthetic_sections(Context<E> &);
 template void resolve_symbols(Context<E> &);
 template void kill_eh_frame_sections(Context<E> &);
-template void split_section_pieces(Context<E> &);
-template void resolve_section_pieces(Context<E> &);
+template void create_merged_sections(Context<E> &);
 template void convert_common_symbols(Context<E> &);
-template void compute_merged_section_sizes(Context<E> &);
 template void create_output_sections(Context<E> &);
 template void add_synthetic_symbols(Context<E> &);
 template void check_cet_errors(Context<E> &);

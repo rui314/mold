@@ -373,6 +373,7 @@ public:
   virtual ~Chunk() = default;
   virtual bool is_header() { return false; }
   virtual OutputSection<E> *to_osec() { return nullptr; }
+  virtual MergedSection<E> *to_merged_section() { return nullptr; }
   virtual i64 get_reldyn_size(Context<E> &ctx) const { return 0; }
   virtual void construct_relr(Context<E> &ctx) {}
   virtual void copy_buf(Context<E> &ctx) {}
@@ -805,13 +806,19 @@ public:
   SectionFragment<E> *insert(Context<E> &ctx, std::string_view data,
                              u64 hash, i64 p2align);
 
+  MergedSection<E> *to_merged_section() override { return this; }
+  void resolve(Context<E> &ctx);
   void assign_offsets(Context<E> &ctx);
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
   void print_stats(Context<E> &ctx);
 
+  std::vector<MergeableSection<E> *> members;
+  std::mutex mu;
+
   ConcurrentMap<SectionFragment<E>> map;
   HyperLogLog estimator;
+  bool resolved = false;
 
 private:
   MergedSection(std::string_view name, i64 flags, i64 type, i64 entsize);
@@ -1095,14 +1102,17 @@ public:
                    std::unique_ptr<InputSection<E>> &isec);
 
   void split_contents(Context<E> &ctx);
+  void resolve_contents(Context<E> &ctx);
   std::pair<SectionFragment<E> *, i64> get_fragment(i64 offset);
   std::string_view get_contents(i64 idx);
 
   MergedSection<E> &parent;
+  std::vector<SectionFragment<E> *> fragments;
+
+private:
   std::unique_ptr<InputSection<E>> section;
   std::vector<u32> frag_offsets;
   std::vector<u32> hashes;
-  std::vector<SectionFragment<E> *> fragments;
   u8 p2align = 0;
 };
 
@@ -1195,8 +1205,8 @@ public:
 
   void parse(Context<E> &ctx);
   void initialize_symbols(Context<E> &ctx);
-  void initialize_mergeable_sections(Context<E> &ctx);
-  void resolve_section_pieces(Context<E> &ctx);
+  void convert_mergeable_sections(Context<E> &ctx);
+  void reattach_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
@@ -1400,10 +1410,8 @@ template <typename E> void create_synthetic_sections(Context<E> &);
 template <typename E> void set_file_priority(Context<E> &);
 template <typename E> void resolve_symbols(Context<E> &);
 template <typename E> void kill_eh_frame_sections(Context<E> &);
-template <typename E> void split_section_pieces(Context<E> &);
-template <typename E> void resolve_section_pieces(Context<E> &);
+template <typename E> void create_merged_sections(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
-template <typename E> void compute_merged_section_sizes(Context<E> &);
 template <typename E> void create_output_sections(Context<E> &);
 template <typename E> void add_synthetic_symbols(Context<E> &);
 template <typename E> void apply_section_align(Context<E> &);
@@ -2353,7 +2361,7 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
   assert(!(shdr().sh_flags & SHF_ALLOC));
 
   const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
-  if (esym.st_type == STT_SECTION)
+  if (!esym.is_abs() && !esym.is_common() && !esym.is_undef())
     if (std::unique_ptr<MergeableSection<E>> &m =
         file.mergeable_sections[file.get_shndx(esym)])
       return m->get_fragment(esym.st_value + get_addend(*this, rel));

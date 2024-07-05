@@ -427,10 +427,7 @@ int elf_main(int argc, char **argv) {
   kill_eh_frame_sections(ctx);
 
   // Split mergeable section contents into section pieces.
-  split_section_pieces(ctx);
-
-  // Resolve mergeable section pieces to merge them.
-  resolve_section_pieces(ctx);
+  create_merged_sections(ctx);
 
   // Handle --relocatable. Since the linker's behavior is quite different
   // from the normal one when the option is given, the logic is implemented
@@ -463,9 +460,6 @@ int elf_main(int argc, char **argv) {
   // Merge identical read-only sections.
   if (ctx.arg.icf)
     icf_sections(ctx);
-
-  // Compute sizes of sections containing mergeable strings.
-  compute_merged_section_sizes(ctx);
 
   // Create linker-synthesized sections such as .got or .plt.
   create_synthetic_sections(ctx);
