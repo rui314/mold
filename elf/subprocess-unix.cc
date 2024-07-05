@@ -1,5 +1,3 @@
-#if !defined(_WIN32) && !defined(__APPLE__)
-
 #include "mold.h"
 #include "config.h"
 
@@ -90,6 +88,9 @@ static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
 template <typename E>
 [[noreturn]]
 void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
+#ifdef __APPLE__
+  Fatal(ctx) << "-run is not supported on macOS";
+#else
   assert(argv[1] == "-run"s || argv[1] == "--run"s);
 
   if (!argv[2])
@@ -117,6 +118,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   // Execute a given command
   execvp(argv[2], argv + 2);
   Fatal(ctx) << "mold -run failed: " << argv[2] << ": " << errno_string();
+#endif
 }
 
 using E = MOLD_TARGET;
@@ -124,5 +126,3 @@ using E = MOLD_TARGET;
 template void process_run_subcommand(Context<E> &, int, char **);
 
 } // namespace mold::elf
-
-#endif
