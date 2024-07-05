@@ -567,13 +567,7 @@ static ElfSym<E> to_elf_sym(PluginSymbol &psym) {
 // Returns false if it's GCC.
 template <typename E>
 static bool is_llvm(Context<E> &ctx) {
-#ifdef __MINGW32__
-  return ctx.arg.plugin.ends_with("LLVMgold.dll");
-#elif __APPLE__
-  return ctx.arg.plugin.ends_with("LLVMgold.dylib");
-#else
-  return ctx.arg.plugin.ends_with("LLVMgold.so");
-#endif
+  return ctx.arg.plugin.find("LLVMgold.") != ctx.arg.plugin.npos;
 }
 
 // Returns true if a given linker plugin supports the get_symbols_v3 API.
