@@ -865,6 +865,84 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
+template <typename T>
+static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
+  std::span<T> span(input);
+  std::vector<std::span<T>> vec;
+
+  while (span.size() >= unit) {
+    vec.push_back(span.subspan(0, unit));
+    span = span.subspan(unit);
+  }
+  if (!span.empty())
+    vec.push_back(span);
+  return vec;
+}
+
+
+// Assign offsets to OutputSection members
+template <typename E>
+void OutputSection<E>::compute_section_size(Context<E> &ctx) {
+  ElfShdr<E> &shdr = this->shdr;
+
+  // On most RISC systems, we need to create so-called "range extension
+  // thunks" to extend branch instructions reach, as their jump
+  // instructions' reach is limited. create_range_extension_thunks()
+  // computes the size of the section while inserting thunks.
+  if constexpr (needs_thunk<E>) {
+    if ((shdr.sh_flags & SHF_EXECINSTR) && !ctx.arg.relocatable) {
+      create_range_extension_thunks(ctx);
+      return;
+    }
+  }
+
+  // Since one output section may contain millions of input sections,
+  // we first split input sections into groups and assign offsets to
+  // groups.
+  struct Group {
+    std::span<InputSection<E> *> members;
+    i64 size = 0;
+    i64 p2align = 0;
+    i64 offset = 0;
+  };
+
+  std::span<InputSection<E> *> mem = members;
+  std::vector<Group> groups;
+  constexpr i64 group_size = 10000;
+
+  while (!mem.empty()) {
+    i64 sz = std::min<i64>(group_size, mem.size());
+    groups.push_back({mem.subspan(0, sz)});
+    mem = mem.subspan(sz);
+  }
+
+  tbb::parallel_for_each(groups, [](Group &group) {
+    for (InputSection<E> *isec : group.members) {
+      group.size = align_to(group.size, 1 << isec->p2align) + isec->sh_size;
+      group.p2align = std::max<i64>(group.p2align, isec->p2align);
+    }
+  });
+
+  shdr.sh_size = 0;
+
+  for (i64 i = 0; i < groups.size(); i++) {
+    shdr.sh_size = align_to(shdr.sh_size, 1 << groups[i].p2align);
+    groups[i].offset = shdr.sh_size;
+    shdr.sh_size += groups[i].size;
+    shdr.sh_addralign = std::max<u32>(shdr.sh_addralign, 1 << groups[i].p2align);
+  }
+
+  // Assign offsets to input sections.
+  tbb::parallel_for_each(groups, [](Group &group) {
+    i64 offset = group.offset;
+    for (InputSection<E> *isec : group.members) {
+      offset = align_to(offset, 1 << isec->p2align);
+      isec->offset = offset;
+      offset += isec->sh_size;
+    }
+  });
+}
+
 template <typename E>
 void OutputSection<E>::copy_buf(Context<E> &ctx) {
   if (this->shdr.sh_type != SHT_NOBITS)
@@ -2009,7 +2087,7 @@ void MergedSection<E>::resolve(Context<E> &ctx) {
 }
 
 template <typename E>
-void MergedSection<E>::assign_offsets(Context<E> &ctx) {
+void MergedSection<E>::compute_section_size(Context<E> &ctx) {
   if (!resolved)
     resolve(ctx);
 

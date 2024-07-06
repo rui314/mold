@@ -170,6 +170,10 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
 
 template <>
 void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
+  // This function is not thread-safe because it mutates symbols' members
+  static std::mutex mu;
+  std::scoped_lock lock(mu);
+
   std::span<InputSection<E> *> m = members;
   if (m.empty())
     return;
@@ -247,10 +251,8 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
 
     // Scan relocations between B and C to collect symbols that need
     // entries in the new thunk.
-    tbb::parallel_for_each(m.begin() + b, m.begin() + c,
-                           [&](InputSection<E> *isec) {
-      scan_rels(ctx, *isec, *thunk, thunk_idx);
-    });
+    for (i64 i = b; i < c; i++)
+      scan_rels(ctx, *m[i], *thunk, thunk_idx);
 
     // Now that we know the number of symbols in the thunk, we can compute
     // the thunk's size.
@@ -270,16 +272,15 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     }
 
     // Scan relocations again to fix symbol offsets in the last thunk.
-    tbb::parallel_for_each(m.begin() + b, m.begin() + c,
-                           [&](InputSection<E> *isec) {
-      std::span<Symbol<E> *> syms = isec->file.symbols;
-      std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
-      std::span<ThunkRef> thunk_refs = isec->extra.thunk_refs;
+    for (i64 i = b; i < c; i++) {
+      std::span<Symbol<E> *> syms = m[i]->file.symbols;
+      std::span<const ElfRel<E>> rels = m[i]->get_rels(ctx);
+      std::span<ThunkRef> thunk_refs = m[i]->extra.thunk_refs;
 
-      for (i64 i = 0; i < rels.size(); i++)
-        if (thunk_refs[i].thunk_idx == thunk_idx)
-          thunk_refs[i].sym_idx = syms[rels[i].r_sym]->extra.thunk_sym_idx;
-    });
+      for (i64 j = 0; j < rels.size(); j++)
+        if (thunk_refs[j].thunk_idx == thunk_idx)
+          thunk_refs[j].sym_idx = syms[rels[j].r_sym]->extra.thunk_sym_idx;
+    }
 
     // Move B forward to point to the begining of the next batch.
     b = c;

@@ -466,20 +466,6 @@ static std::string get_cmdline_args(Context<E> &ctx) {
   return ss.str();
 }
 
-template <typename T>
-static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
-  std::span<T> span(input);
-  std::vector<std::span<T>> vec;
-
-  while (span.size() >= unit) {
-    vec.push_back(span.subspan(0, unit));
-    span = span.subspan(unit);
-  }
-  if (!span.empty())
-    vec.push_back(span);
-  return vec;
-}
-
 template <typename E>
 static bool has_ctors_and_init_array(Context<E> &ctx) {
   bool x = false;
@@ -1351,84 +1337,24 @@ template <typename E>
 void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
-  struct Group {
-    i64 size = 0;
-    i64 p2align = 0;
-    i64 offset = 0;
-    std::span<InputSection<E> *> members;
-  };
-
-  // Assign offsets to OutputSection members
-  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    OutputSection<E> *osec = chunk->to_osec();
-    if (!osec)
-      return;
-
-    // This pattern will be processed in the next loop.
-    if constexpr (needs_thunk<E>)
-      if ((osec->shdr.sh_flags & SHF_EXECINSTR) && !ctx.arg.relocatable)
-        return;
-
-    // Since one output section may contain millions of input sections,
-    // we first split input sections into groups and assign offsets to
-    // groups.
-    std::vector<Group> groups;
-    constexpr i64 group_size = 10000;
-
-    for (std::span<InputSection<E> *> span : split(osec->members, group_size))
-      groups.push_back(Group{.members = span});
-
-    tbb::parallel_for_each(groups, [](Group &group) {
-      for (InputSection<E> *isec : group.members) {
-        group.size = align_to(group.size, 1 << isec->p2align) + isec->sh_size;
-        group.p2align = std::max<i64>(group.p2align, isec->p2align);
-      }
-    });
-
-    ElfShdr<E> &shdr = osec->shdr;
-    shdr.sh_size = 0;
-
-    for (i64 i = 0; i < groups.size(); i++) {
-      shdr.sh_size = align_to(shdr.sh_size, 1 << groups[i].p2align);
-      groups[i].offset = shdr.sh_size;
-      shdr.sh_size += groups[i].size;
-      shdr.sh_addralign = std::max<u32>(shdr.sh_addralign, 1 << groups[i].p2align);
-    }
-
-    // Assign offsets to input sections.
-    tbb::parallel_for_each(groups, [](Group &group) {
-      i64 offset = group.offset;
-      for (InputSection<E> *isec : group.members) {
-        offset = align_to(offset, 1 << isec->p2align);
-        isec->offset = offset;
-        offset += isec->sh_size;
-      }
-    });
-  });
-
-
-  // Assign offsets to MergedSection members
-  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (MergedSection<E> *sec = chunk->to_merged_section())
-      sec->assign_offsets(ctx);
-  });
-
-  // On ARM32 or ARM64, we may need to create so-called "range extension
-  // thunks" to extend branch instructions reach, as they can jump only
-  // to ±16 MiB or ±128 MiB, respecitvely.
-  //
-  // In the following loop, We compute the sizes of sections while
-  // inserting thunks. This pass cannot be parallelized. That is,
-  // create_range_extension_thunks is parallelized internally, but the
-  // function itself is not thread-safe.
   if constexpr (needs_thunk<E>) {
-    Timer t(ctx, "create_range_extension_thunks");
+    // Chunk<E>::compute_section_size may obtain a global lock to create
+    // range extension thunks. I don't know why, but using parallel_for
+    // loop both inside and outside of the lock may cause a deadlock. It
+    // might be a bug in TBB. For now, I'll avoid using parallel_for_each
+    // here.
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (chunk->shdr.sh_flags & SHF_EXECINSTR)
+        chunk->compute_section_size(ctx);
 
-    if (!ctx.arg.relocatable)
-      for (Chunk<E> *chunk : ctx.chunks)
-        if (OutputSection<E> *osec = chunk->to_osec())
-          if (osec->shdr.sh_flags & SHF_EXECINSTR)
-            osec->create_range_extension_thunks(ctx);
+    tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+      if (!(chunk->shdr.sh_flags & SHF_EXECINSTR))
+        chunk->compute_section_size(ctx);
+    });
+  } else {
+    tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+      chunk->compute_section_size(ctx);
+    });
   }
 }
 

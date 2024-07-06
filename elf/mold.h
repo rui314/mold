@@ -373,7 +373,7 @@ public:
   virtual ~Chunk() = default;
   virtual bool is_header() { return false; }
   virtual OutputSection<E> *to_osec() { return nullptr; }
-  virtual MergedSection<E> *to_merged_section() { return nullptr; }
+  virtual void compute_section_size(Context<E> &ctx) {}
   virtual i64 get_reldyn_size(Context<E> &ctx) const { return 0; }
   virtual void construct_relr(Context<E> &ctx) {}
   virtual void copy_buf(Context<E> &ctx) {}
@@ -480,6 +480,7 @@ public:
   }
 
   OutputSection<E> *to_osec() override { return this; }
+  void compute_section_size(Context<E> &ctx) override;
   void construct_relr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
@@ -806,9 +807,8 @@ public:
   SectionFragment<E> *insert(Context<E> &ctx, std::string_view data,
                              u64 hash, i64 p2align);
 
-  MergedSection<E> *to_merged_section() override { return this; }
   void resolve(Context<E> &ctx);
-  void assign_offsets(Context<E> &ctx);
+  void compute_section_size(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
   void print_stats(Context<E> &ctx);
