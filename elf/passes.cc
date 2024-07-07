@@ -2932,23 +2932,34 @@ static void blake3_hash(u8 *buf, i64 size, u8 *out) {
 }
 
 template <typename E>
-void compute_build_id(Context<E> &ctx) {
-  Timer t(ctx, "compute_build_id");
+std::vector<std::span<u8>> get_shards(Context<E> &ctx) {
+  constexpr i64 shard_size = 4 * 1024 * 1024; // 4 MiB
+  std::span<u8> buf = {ctx.buf, (size_t)ctx.output_file->filesize};
+  std::vector<std::span<u8>> vec;
+
+  while (!buf.empty()) {
+    i64 sz = std::min<i64>(shard_size, buf.size());
+    vec.push_back(buf.subspan(0, sz));
+    buf = buf.subspan(sz);
+  }
+  return vec;
+}
+
+template <typename E>
+void write_build_id(Context<E> &ctx) {
+  Timer t(ctx, "write_build_id");
 
   switch (ctx.arg.build_id.kind) {
   case BuildId::HEX:
     ctx.buildid->contents = ctx.arg.build_id.value;
     break;
   case BuildId::HASH: {
-    i64 shard_size = 4 * 1024 * 1024;
-    i64 filesize = ctx.output_file->filesize;
-    i64 num_shards = align_to(filesize, shard_size) / shard_size;
-    std::vector<u8> shards(num_shards * BLAKE3_OUT_LEN);
+    std::vector<std::span<u8>> shards = get_shards(ctx);
+    std::vector<u8> hashes(shards.size() * BLAKE3_OUT_LEN);
 
-    tbb::parallel_for((i64)0, num_shards, [&](i64 i) {
-      u8 *begin = ctx.buf + shard_size * i;
-      u8 *end = (i == num_shards - 1) ? ctx.buf + filesize : begin + shard_size;
-      blake3_hash(begin, end - begin, shards.data() + i * BLAKE3_OUT_LEN);
+    tbb::parallel_for((i64)0, (i64)shards.size(), [&](i64 i) {
+      blake3_hash(shards[i].data(), shards[i].size(),
+                  hashes.data() + i * BLAKE3_OUT_LEN);
 
 #ifdef HAVE_MADVISE
       // Make the kernel page out the file contents we've just written
@@ -2959,7 +2970,7 @@ void compute_build_id(Context<E> &ctx) {
     });
 
     u8 buf[BLAKE3_OUT_LEN];
-    blake3_hash(shards.data(), shards.size(), buf);
+    blake3_hash(hashes.data(), hashes.size(), buf);
 
     assert(ctx.arg.build_id.size() <= BLAKE3_OUT_LEN);
     ctx.buildid->contents = {buf, buf + ctx.arg.build_id.size()};
@@ -2978,8 +2989,9 @@ void compute_build_id(Context<E> &ctx) {
   default:
     unreachable();
   }
-}
 
+  ctx.buildid->copy_buf(ctx);
+}
 
 // Write Makefile-style dependency rules to a file specified by
 // --dependency-file. This is analogous to the compiler's -M flag.
@@ -3118,7 +3130,7 @@ template void compute_section_headers(Context<E> &);
 template i64 set_osec_offsets(Context<E> &);
 template void fix_synthetic_symbols(Context<E> &);
 template i64 compress_debug_sections(Context<E> &);
-template void compute_build_id(Context<E> &);
+template void write_build_id(Context<E> &);
 template void write_dependency_file(Context<E> &);
 template void show_stats(Context<E> &);
 

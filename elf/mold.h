@@ -1443,7 +1443,7 @@ template <typename E> void compute_section_headers(Context<E> &);
 template <typename E> i64 set_osec_offsets(Context<E> &);
 template <typename E> void fix_synthetic_symbols(Context<E> &);
 template <typename E> i64 compress_debug_sections(Context<E> &);
-template <typename E> void compute_build_id(Context<E> &);
+template <typename E> void write_build_id(Context<E> &);
 template <typename E> void write_dependency_file(Context<E> &);
 template <typename E> void show_stats(Context<E> &);
 

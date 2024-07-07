@@ -653,10 +653,8 @@ int elf_main(int argc, char **argv) {
   // .note.gnu.build-id section contains a cryptographic hash of the
   // entire output file. Now that we wrote everything except build-id,
   // we can compute it.
-  if (ctx.buildid) {
-    compute_build_id(ctx);
-    ctx.buildid->copy_buf(ctx);
-  }
+  if (ctx.buildid)
+    write_build_id(ctx);
 
   // .gdb_index's contents cannot be constructed before applying
   // relocations to other debug sections. We have relocated debug
