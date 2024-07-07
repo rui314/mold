@@ -774,14 +774,12 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
   // Compute the size of frag_syms.
   i64 nfrag_syms = 0;
   for (std::unique_ptr<InputSection<E>> &isec : sections)
-    if (isec)
+    if (isec && (isec->shdr().sh_flags & SHF_ALLOC))
       for (ElfRel<E> &r : isec->get_rels(ctx))
         if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
             esym.st_type == STT_SECTION)
-          if (std::unique_ptr<MergeableSection<E>> &m =
-              mergeable_sections[get_shndx(esym)])
-            if (m->parent.resolved)
-              nfrag_syms++;
+          if (mergeable_sections[get_shndx(esym)])
+            nfrag_syms++;
 
   this->frag_syms.resize(nfrag_syms);
 
@@ -790,20 +788,20 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
   // to the newly created symbol.
   i64 idx = 0;
   for (std::unique_ptr<InputSection<E>> &isec : sections) {
-    if (isec) {
+    if (isec && (isec->shdr().sh_flags & SHF_ALLOC)) {
       for (ElfRel<E> &r : isec->get_rels(ctx)) {
         const ElfSym<E> &esym = this->elf_syms[r.r_sym];
         if (esym.st_type != STT_SECTION)
           continue;
 
-        std::unique_ptr<MergeableSection<E>> &m =
-          mergeable_sections[get_shndx(esym)];
-
-        if (!m || !m->parent.resolved)
+        i64 shndx = get_shndx(esym);
+        std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[shndx];
+        if (!m)
           continue;
 
-        i64 r_addend = get_addend(*isec, r);
+        assert(m->parent.resolved);
 
+        i64 r_addend = get_addend(*isec, r);
         SectionFragment<E> *frag;
         i64 in_frag_offset;
         std::tie(frag, in_frag_offset) = m->get_fragment(esym.st_value + r_addend);
