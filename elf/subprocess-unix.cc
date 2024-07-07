@@ -60,6 +60,7 @@ void notify_parent() {
   char buf[] = {1};
   [[maybe_unused]] int n = write(pipe_write_fd, buf, 1);
   assert(n == 1);
+  pipe_write_fd = -1;
 }
 #endif
 
