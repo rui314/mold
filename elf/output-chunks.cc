@@ -2950,7 +2950,7 @@ void ComdatGroupSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void GnuDebuglinkSection<E>::update_shdr(Context<E> &ctx) {
-  filename = std::filesystem::path(ctx.arg.separate_debug_file).filename();
+  filename = std::filesystem::path(ctx.arg.separate_debug_file).filename().string();
   this->shdr.sh_size = align_to(filename.size() + 1, 4) + 4;
 }
 
