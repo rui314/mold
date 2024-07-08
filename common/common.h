@@ -905,7 +905,7 @@ void release_global_lock();
 //
 
 u32 compute_crc32(u32 crc, u8 *buf, i64 len);
-std::vector<u8> crc32_solve(i64 datalen, u32 current, u32 want);
+std::vector<u8> crc32_solve(u32 current, u32 desired);
 
 //
 // compress.cc

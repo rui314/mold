@@ -3102,13 +3102,13 @@ void write_separate_debug_file(Context<E> &ctx) {
   // Reverse-compute a CRC32 value so that the CRC32 checksum embedded to
   // the .gnu_debuglink section in the main executable matches with the
   // debug info file's CRC32 checksum.
-  std::vector<u8> &buf2 = ctx.output_file->buf2;
-  i64 datalen = filesize + buf2.size();
-
   u32 crc = compute_crc32(0, ctx.buf, filesize);
-  crc = compute_crc32(crc, buf2.data(), buf2.size());
 
-  std::vector<u8> trailer = crc32_solve(datalen, crc, ctx.gnu_debuglink->crc32);
+  std::vector<u8> &buf2 = ctx.output_file->buf2;
+  if (!buf2.empty())
+    crc = compute_crc32(crc, buf2.data(), buf2.size());
+
+  std::vector<u8> trailer = crc32_solve(crc, ctx.gnu_debuglink->crc32);
   append(ctx.output_file->buf2, trailer);
   ctx.output_file->close(ctx);
 }
