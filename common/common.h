@@ -2,6 +2,7 @@
 
 #include "integers.h"
 
+#include <array>
 #include <atomic>
 #include <bit>
 #include <bitset>
