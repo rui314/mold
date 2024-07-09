@@ -743,7 +743,7 @@ public:
   u8 *buf = nullptr;
   std::vector<u8> buf2;
   std::string path;
-  i64 fd = -1;
+  int fd = -1;
   i64 filesize = 0;
   bool is_mmapped = false;
   bool is_unmapped = false;
@@ -756,7 +756,7 @@ protected:
 template <typename Context>
 class MallocOutputFile : public OutputFile<Context> {
 public:
-  MallocOutputFile(Context &ctx, std::string path, i64 filesize, i64 perm)
+  MallocOutputFile(Context &ctx, std::string path, i64 filesize, int perm)
     : OutputFile<Context>(path, filesize, false), ptr(new u8[filesize]),
       perm(perm) {
     this->buf = ptr.get();
