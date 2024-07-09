@@ -1740,6 +1740,7 @@ struct Context {
     bool color_diagnostics = false;
     bool default_symver = false;
     bool demangle = true;
+    bool detach = true;
     bool discard_all = false;
     bool discard_locals = false;
     bool eh_frame_hdr = true;

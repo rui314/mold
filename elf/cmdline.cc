@@ -85,6 +85,8 @@ Options:
   --defsym=SYMBOL=VALUE       Define a symbol alias
   --demangle                  Demangle C++ symbols in log messages (default)
     --no-demangle
+  --detach                    Create separate debug info file in the background (default)
+    --no-detach
   --enable-new-dtags          Emit DT_RUNPATH for --rpath (default)
     --disable-new-dtags       Emit DT_RPATH for --rpath
   --execute-only              Make executable segments unreadable
@@ -759,6 +761,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.demangle = true;
     } else if (read_flag("no-demangle")) {
       ctx.arg.demangle = false;
+    } else if (read_flag("detach")) {
+      ctx.arg.detach = true;
+    } else if (read_flag("no-detach")) {
+      ctx.arg.detach = false;
     } else if (read_flag("default-symver")) {
       ctx.arg.default_symver = true;
     } else if (read_flag("noinhibit-exec")) {
@@ -1412,6 +1418,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (ctx.arg.shared && warn_shared_textrel)
     ctx.arg.warn_textrel = true;
+
+  // We don't want the background process to write to stdout
+  if (ctx.arg.stats || ctx.arg.perf)
+    ctx.arg.detach = false;
 
   ctx.arg.undefined.push_back(ctx.arg.entry);
 

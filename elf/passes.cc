@@ -3058,7 +3058,7 @@ void write_separate_debug_file(Context<E> &ctx) {
 
   // We want to write to the debug info file in background so that the
   // user doesn't have to wait for it to complete.
-  if (!ctx.arg.stats && !ctx.arg.perf)
+  if (ctx.arg.detach)
     notify_parent();
 
   // A debug info file contains all sections as the original file, though
