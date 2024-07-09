@@ -735,7 +735,7 @@ template <typename Context>
 class OutputFile {
 public:
   static std::unique_ptr<OutputFile<Context>>
-  open(Context &ctx, std::string path, i64 filesize, i64 perm);
+  open(Context &ctx, std::string path, i64 filesize, int perm);
 
   virtual void close(Context &ctx) = 0;
   virtual ~OutputFile() = default;
@@ -792,7 +792,7 @@ public:
 
 private:
   std::unique_ptr<u8[]> ptr;
-  i64 perm;
+  int perm;
 };
 
 //
