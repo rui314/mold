@@ -97,4 +97,17 @@ OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, int perm
   return std::unique_ptr<OutputFile<Context>>(file);
 }
 
+template <typename Context>
+LockingOutputFile<Context>::LockingOutputFile(Context &ctx, std::string path,
+                                              int perm)
+  : OutputFile<Context>(path, 0, true) {
+  Fatal(ctx) << "LockingOutputFile is not supported on Windows";
+}
+
+template <typename Context>
+void LockingOutputFile<Context>::resize(Context &ctx, i64 filesize) {}
+
+template <typename Context>
+void LockingOutputFile<Context>::close(Context &ctx) {}
+
 } // namespace mold

@@ -2,6 +2,7 @@
 
 #include <fcntl.h>
 #include <filesystem>
+#include <sys/file.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -141,6 +142,54 @@ OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, int perm
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
   return std::unique_ptr<OutputFile>(file);
+}
+
+// LockingOutputFile is similar to MemoryMappedOutputFile, but it doesn't
+// rename output files and instead acquires file lock using flock().
+template <typename Context>
+LockingOutputFile<Context>::LockingOutputFile(Context &ctx, std::string path,
+                                              int perm)
+  : OutputFile<Context>(path, 0, true) {
+  this->fd = ::open(path.c_str(), O_RDWR | O_CREAT, perm);
+  if (this->fd == -1)
+    Fatal(ctx) << "cannot open " << path << ": " << errno_string();
+  flock(this->fd, LOCK_EX);
+
+  // We may be overwriting to an existing debug info file. We want to
+  // make the file unusable so that gdb won't use it by accident until
+  // it's ready.
+  u8 buf[256] = {};
+  (void)!!write(this->fd, buf, sizeof(buf));
+}
+
+template <typename Context>
+void LockingOutputFile<Context>::resize(Context &ctx, i64 filesize) {
+  if (ftruncate(this->fd, filesize) == -1)
+    Fatal(ctx) << "ftruncate failed: " << errno_string();
+
+  this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
+                         MAP_SHARED, this->fd, 0);
+  if (this->buf == MAP_FAILED)
+    Fatal(ctx) << this->path << ": mmap failed: " << errno_string();
+
+  this->filesize = filesize;
+  mold::output_buffer_start = this->buf;
+  mold::output_buffer_end = this->buf + filesize;
+}
+
+template <typename Context>
+void LockingOutputFile<Context>::close(Context &ctx) {
+  if (!this->is_unmapped)
+    munmap(this->buf, this->filesize);
+
+  if (!this->buf2.empty()) {
+    FILE *out = fdopen(this->fd, "w");
+    fseek(out, 0, SEEK_END);
+    fwrite(&this->buf2[0], this->buf2.size(), 1, out);
+    fclose(out);
+  }
+
+  ::close(this->fd);
 }
 
 } // namespace mold

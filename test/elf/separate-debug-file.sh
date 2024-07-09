@@ -16,11 +16,12 @@ $CC -c -o $t/a.o $t/a.c -g
 $CC -B. -o $t/exe1 $t/a.o -Wl,--separate-debug-file
 readelf -SW $t/exe1 | grep -Fq .gnu_debuglink
 
+flock $t/exe1 true
+gdb $t/exe1 -ex 'list main' -ex 'quit' | grep -Fq printf
+
 $CC -c -o $t/a.o $t/a.c -g
 $CC -B. -o $t/exe2 $t/a.o -Wl,--separate-debug-file -Wl,--no-build-id
 readelf -SW $t/exe2 | grep -Fq .gnu_debuglink
 
-sleep 1
-
-gdb $t/exe1 -ex 'list main' -ex 'quit' | grep -Fq printf
+flock $t/exe2 true
 gdb $t/exe2 -ex 'list main' -ex 'quit' | grep -Fq printf

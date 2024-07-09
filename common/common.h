@@ -795,6 +795,14 @@ private:
   int perm;
 };
 
+template <typename Context>
+class LockingOutputFile : public OutputFile<Context> {
+public:
+  LockingOutputFile(Context &ctx, std::string path, int perm);
+  void resize(Context &ctx, i64 filesize);
+  void close(Context &ctx) override;
+};
+
 //
 // hyperloglog.cc
 //

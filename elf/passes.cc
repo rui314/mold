@@ -1,5 +1,6 @@
 #include "mold.h"
 #include "blake3.h"
+#include "../common/output-file.h"
 
 #include <fstream>
 #include <functional>
@@ -3056,6 +3057,10 @@ template <typename E>
 void write_separate_debug_file(Context<E> &ctx) {
   Timer t(ctx, "write_separate_debug_file");
 
+  // Open an output file early
+  LockingOutputFile<Context<E>> *file =
+    new LockingOutputFile<Context<E>>(ctx, ctx.arg.separate_debug_file, 0666);
+
   // We want to write to the debug info file in background so that the
   // user doesn't have to wait for it to complete.
   if (ctx.arg.detach)
@@ -3087,11 +3092,9 @@ void write_separate_debug_file(Context<E> &ctx) {
 
   // Write to the debug info file as if it were a regular output file.
   compute_section_headers(ctx);
-  i64 filesize = set_osec_offsets(ctx);
+  file->resize(ctx, set_osec_offsets(ctx));
 
-  ctx.output_file =
-    OutputFile<Context<E>>::open(ctx, ctx.arg.separate_debug_file,
-                                 filesize, 0666);
+  ctx.output_file.reset(file);
   ctx.buf = ctx.output_file->buf;
 
   copy_chunks(ctx);
@@ -3102,7 +3105,7 @@ void write_separate_debug_file(Context<E> &ctx) {
   // Reverse-compute a CRC32 value so that the CRC32 checksum embedded to
   // the .gnu_debuglink section in the main executable matches with the
   // debug info file's CRC32 checksum.
-  u32 crc = compute_crc32(0, ctx.buf, filesize);
+  u32 crc = compute_crc32(0, ctx.buf, ctx.output_file->filesize);
 
   std::vector<u8> &buf2 = ctx.output_file->buf2;
   if (!buf2.empty())
