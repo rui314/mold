@@ -174,6 +174,13 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.note_package = push(new NotePackageSection<E>);
   ctx.note_property = push(new NotePropertySection<E>);
 
+  if (!ctx.arg.oformat_binary) {
+    ElfShdr<E> shdr = {};
+    shdr.sh_type = SHT_PROGBITS;
+    shdr.sh_flags = SHF_MERGE | SHF_STRINGS;
+    ctx.comment = MergedSection<E>::get_instance(ctx, ".comment", shdr);
+  }
+
   if constexpr (is_riscv<E>)
     ctx.extra.riscv_attributes = push(new RiscvAttributesSection<E>);
 
@@ -422,33 +429,6 @@ void create_merged_sections(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->reattach_section_pieces(ctx);
   });
-
-  // Add strings to .comment
-  if (!ctx.arg.oformat_binary) {
-    ElfShdr<E> shdr = {};
-    shdr.sh_type = SHT_PROGBITS;
-    shdr.sh_flags = SHF_MERGE | SHF_STRINGS;
-
-    MergedSection<E> *sec = MergedSection<E>::get_instance(ctx, ".comment", shdr);
-    if (!sec->resolved) {
-      sec->map.resize(4096);
-      sec->resolved = true;
-    }
-
-    auto add = [&](std::string str) {
-      std::string_view buf = save_string(ctx, str);
-      std::string_view data(buf.data(), buf.size() + 1);
-      sec->insert(ctx, data, hash_string(data), 0);
-    };
-
-    // Add an identification string to .comment.
-    add(get_mold_version());
-
-    // Embed command line arguments for debugging.
-    char *env = getenv("MOLD_DEBUG");
-    if (env && env[0])
-      add("mold command line: " + get_cmdline_args(ctx));
-  }
 }
 
 template <typename E>
@@ -458,15 +438,6 @@ void convert_common_symbols(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->convert_common_symbols(ctx);
   });
-}
-
-template <typename E>
-static std::string get_cmdline_args(Context<E> &ctx) {
-  std::stringstream ss;
-  ss << ctx.cmdline_args[1];
-  for (i64 i = 2; i < ctx.cmdline_args.size(); i++)
-    ss << " " << ctx.cmdline_args[i];
-  return ss.str();
 }
 
 template <typename E>
@@ -1341,7 +1312,7 @@ void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
   if constexpr (needs_thunk<E>) {
-    // Chunk<E>::compute_section_size may obtain a global lock to create
+    // Chunk<E>::compute_section_size obtains a global lock to create
     // range extension thunks. I don't know why, but using parallel_for
     // loop both inside and outside of the lock may cause a deadlock. It
     // might be a bug in TBB. For now, I'll avoid using parallel_for_each

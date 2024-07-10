@@ -1944,6 +1944,7 @@ struct Context {
   NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
   RelroPaddingSection<E> *relro_padding = nullptr;
+  MergedSection<E> *comment = nullptr;
 
   [[no_unique_address]] ContextExtras<E> extra;
 

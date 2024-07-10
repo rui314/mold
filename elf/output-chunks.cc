@@ -2071,6 +2071,33 @@ MergedSection<E>::insert(Context<E> &ctx, std::string_view data, u64 hash,
 }
 
 template <typename E>
+static std::string get_cmdline_args(Context<E> &ctx) {
+  std::stringstream ss;
+  ss << ctx.cmdline_args[1];
+  for (i64 i = 2; i < ctx.cmdline_args.size(); i++)
+    ss << " " << ctx.cmdline_args[i];
+  return ss.str();
+}
+
+// Add strings to .comment
+template <typename E>
+static void add_comment_strings(Context<E> &ctx) {
+  auto add = [&](std::string str) {
+    std::string_view buf = save_string(ctx, str);
+    std::string_view data(buf.data(), buf.size() + 1);
+    ctx.comment->insert(ctx, data, hash_string(data), 0);
+  };
+
+  // Add an identification string to .comment.
+  add(get_mold_version());
+
+  // Embed command line arguments for debugging.
+  char *env = getenv("MOLD_DEBUG");
+  if (env && env[0])
+    add("mold command line: " + get_cmdline_args(ctx));
+}
+
+template <typename E>
 void MergedSection<E>::resolve(Context<E> &ctx) {
   tbb::parallel_for_each(members, [&](MergeableSection<E> *sec) {
     sec->split_contents(ctx);
@@ -2083,6 +2110,8 @@ void MergedSection<E>::resolve(Context<E> &ctx) {
     sec->resolve_contents(ctx);
   });
 
+  if (this == ctx.comment)
+    add_comment_strings(ctx);
   resolved = true;
 }
 
