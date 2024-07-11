@@ -206,7 +206,7 @@ but as `-o magic`.
   functions and replaces `argv[0]` with itself if it is `ld`, `ld.gold`, or
   `ld.lld`.
 
-* `--separate-debug-file`, `--separate-debug-file=_file_`
+* `--separate-debug-file`, `--separate-debug-file=_file_`:
   Bundle debug info sections into a separate file instead of embedding them in
   an output executable or a shared library. mold creates a debug info file in
   the background by default, so that you can start running your executable as
@@ -853,6 +853,8 @@ but as `-o magic`.
   some of them often get killed due to out-of-memory errors, you might
   consider setting this environment variable to `1` to see if it addresses the
   OOM issue.
+
+  Currently, any value other than `1` is silently ignored.
 
 * `MOLD_DEBUG`:
   If this variable is set to a non-empty string, `mold` embeds its

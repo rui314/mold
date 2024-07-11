@@ -277,12 +277,6 @@ if(NOT APPLE AND NOT MSVC)
   target_link_options(mold PRIVATE -pthread)
 endif()
 
-# shm_open needs -lrt
-find_library(LIBRT rt)
-if(LIBRT)
-  target_link_libraries(mold PRIVATE rt)
-endif()
-
 check_symbol_exists(madvise sys/mman.h HAVE_MADVISE)
 
 # Create a .cc file containing the current git hash for `mold --version`.
