@@ -65,6 +65,7 @@ foreach (_tbb_component ${TBB_FIND_COMPONENTS})
         NAMES @TBB_LIB_PREFIX@${_tbb_component}${_bin_version}.@TBB_LIB_EXT@
         PATHS ${_tbb_root}
         PATH_SUFFIXES "@TBB_LIB_REL_PATH@/${_tbb_intel_arch}/${_tbb_subdir}" "@TBB_LIB_REL_PATH@${_tbb_arch_suffix}/${_tbb_subdir}" "@TBB_LIB_REL_PATH@${_tbb_arch_suffix}" "@TBB_LIB_REL_PATH@"
+        NO_DEFAULT_PATH
     )
 
     if (NOT TBB_FIND_RELEASE_ONLY)
@@ -72,6 +73,7 @@ foreach (_tbb_component ${TBB_FIND_COMPONENTS})
             NAMES @TBB_LIB_PREFIX@${_tbb_component}${_bin_version}_debug.@TBB_LIB_EXT@
             PATHS ${_tbb_root}
             PATH_SUFFIXES "@TBB_LIB_REL_PATH@/${_tbb_intel_arch}/${_tbb_subdir}" "@TBB_LIB_REL_PATH@${_tbb_arch_suffix}/${_tbb_subdir}" "@TBB_LIB_REL_PATH@${_tbb_arch_suffix}" "@TBB_LIB_REL_PATH@"
+            NO_DEFAULT_PATH
         )
     endif()
 

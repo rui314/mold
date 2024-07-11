@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2022-2023 Intel Corporation
+    Copyright (c) 2022-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -69,6 +69,7 @@ public:
     unsigned max_num_workers();
 
     void adjust_demand(threading_control_client, int mandatory_delta, int workers_delta);
+    bool is_any_other_client_active();
 
     thread_control_monitor& get_waiting_threads_monitor();
 
@@ -116,6 +117,7 @@ public:
     static unsigned max_num_workers();
 
     void adjust_demand(threading_control_client client, int mandatory_delta, int workers_delta);
+    bool is_any_other_client_active();
 
     thread_control_monitor& get_waiting_threads_monitor();
 

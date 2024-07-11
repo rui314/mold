@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023 Intel Corporation
+# Copyright (c) 2021-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ on:
       - opened
       - synchronize
       - reopened
+
+permissions: read-all
 
 env:
   BUILD_CONCURRENCY: 2
@@ -57,7 +59,7 @@ jobs:
     needs: [codespell]
     env:
       BUILD_TYPE: oss
-    runs-on: [ubuntu-20.04]
+    runs-on: [ubuntu-22.04]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v2
@@ -80,6 +82,10 @@ jobs:
 
   pages:
     if: ${{ github.ref == 'refs/heads/master' }}
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
     runs-on: ubuntu-latest
     needs: [documentation]
     steps:
@@ -140,7 +146,7 @@ jobs:
           ctest -R python_test --output-on-failure --timeout ${TEST_TIMEOUT}
 
   linux-testing:
-    name: ${{ matrix.os }}_${{ matrix.cxx_compiler }}_cxx${{ matrix.std }}_${{ matrix.build_type }}_preview=${{ matrix.preview }}
+    name: ${{ matrix.os }}_${{ matrix.cxx_compiler }}_cxx${{ matrix.std }}_${{ matrix.build_type }}_preview=${{ matrix.preview }}${{ matrix.cmake_static }}
     runs-on: ['${{ matrix.os }}']
     timeout-minutes: 45
     strategy:
@@ -165,6 +171,13 @@ jobs:
             std: 20
             build_type: debug
             preview: 'ON'
+          - os: ubuntu-22.04
+            c_compiler: gcc-11
+            cxx_compiler: g++-11
+            std: 20
+            build_type: release
+            preview: 'ON'
+            cmake_static: -DBUILD_SHARED_LIBS=OFF
     steps:
       - uses: actions/checkout@v2
       - name: Run testing
@@ -172,13 +185,13 @@ jobs:
         run: |
           set -x
           mkdir build && cd build
-          cmake -DCMAKE_CXX_STANDARD=${{ matrix.std }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          cmake -DCMAKE_CXX_STANDARD=${{ matrix.std }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ${{ matrix.cmake_static }} \
             -DCMAKE_CXX_COMPILER=${{ matrix.cxx_compiler }} -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} -DTBB_CPF=${{ matrix.preview }} ..
           make VERBOSE=1 -j${BUILD_CONCURRENCY}
           ctest --timeout ${TEST_TIMEOUT} --output-on-failure
 
   macos-testing:
-    name: ${{ matrix.os }}_${{ matrix.cxx_compiler }}_cxx${{ matrix.std }}_${{ matrix.build_type }}_preview=${{ matrix.preview }}
+    name: ${{ matrix.os }}_${{ matrix.cxx_compiler }}_cxx${{ matrix.std }}_${{ matrix.build_type }}_preview=${{ matrix.preview }}${{ matrix.cmake_static }}
     runs-on: ['${{ matrix.os }}']
     timeout-minutes: 45
     strategy:
@@ -191,6 +204,13 @@ jobs:
             std: 14
             build_type: relwithdebinfo
             preview: 'ON'
+          - os: macos-13
+            c_compiler: clang
+            cxx_compiler: clang++
+            std: 20
+            build_type: release
+            preview: 'ON'
+            cmake_static: -DBUILD_SHARED_LIBS=OFF
     steps:
       - uses: actions/checkout@v2
       - name: Run testing
@@ -198,7 +218,7 @@ jobs:
         run: |
           set -x
           mkdir build && cd build
-          cmake -DCMAKE_CXX_STANDARD=${{ matrix.std }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          cmake -DCMAKE_CXX_STANDARD=${{ matrix.std }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} ${{ matrix.cmake_static }} \
             -DCMAKE_CXX_COMPILER=${{ matrix.cxx_compiler }} -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} -DTBB_CPF=${{ matrix.preview }} ..
           make VERBOSE=1 -j${MACOS_BUILD_CONCURRENCY}
           ctest --timeout ${TEST_TIMEOUT} --output-on-failure
@@ -219,6 +239,15 @@ jobs:
             build_type: relwithdebinfo
             preview: 'ON'
             job_name: windows_cl2019_cxx14_relwithdebinfo_preview=ON
+          - os: windows-2019
+            generator: Visual Studio 16 2019
+            c_compiler: cl
+            cxx_compiler: cl
+            std: 20
+            build_type: release
+            preview: 'ON'
+            job_name: windows_cl2019_cxx20_release_preview=ON-DBUILD_SHARED_LIBS=OFF
+            cmake_static: -DBUILD_SHARED_LIBS=OFF
           - os: windows-2022
             generator: Visual Studio 17 2022
             c_compiler: cl
@@ -233,7 +262,7 @@ jobs:
         run: |
           mkdir build
           cd build
-          cmake -G "${{ matrix.generator }}" -A x64 -DCMAKE_CXX_STANDARD=${{ matrix.std }} `
+          cmake -G "${{ matrix.generator }}" -A x64 -DCMAKE_CXX_STANDARD=${{ matrix.std }} ${{ matrix.cmake_static }} `
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx_compiler }} `
             -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} -DTBB_CPF=${{ matrix.preview }} ..
           cmake --build . --config ${{ matrix.build_type }} -j -v

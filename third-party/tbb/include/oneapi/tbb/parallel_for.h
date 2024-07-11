@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -319,7 +319,7 @@ void parallel_for_impl(Index first, Index last, Index step, const Function& f, P
 template <typename Index, typename Function>
     __TBB_requires(parallel_for_index<Index> && parallel_for_function<Function, Index>)
 void parallel_for(Index first, Index last, Index step, const Function& f) {
-    parallel_for_impl<Index,Function,const auto_partitioner>(first, last, step, f, auto_partitioner());
+    parallel_for_impl<Index,Function,const __TBB_DEFAULT_PARTITIONER>(first, last, step, f, __TBB_DEFAULT_PARTITIONER());
 }
 //! Parallel iteration over a range of integers with a step provided and simple partitioner
 template <typename Index, typename Function>
@@ -350,7 +350,7 @@ void parallel_for(Index first, Index last, Index step, const Function& f, affini
 template <typename Index, typename Function>
     __TBB_requires(parallel_for_index<Index> && parallel_for_function<Function, Index>)
 void parallel_for(Index first, Index last, const Function& f) {
-    parallel_for_impl<Index,Function,const auto_partitioner>(first, last, static_cast<Index>(1), f, auto_partitioner());
+    parallel_for_impl<Index,Function,const __TBB_DEFAULT_PARTITIONER>(first, last, static_cast<Index>(1), f, __TBB_DEFAULT_PARTITIONER());
 }
 //! Parallel iteration over a range of integers with a default step value and simple partitioner
 template <typename Index, typename Function>
@@ -395,7 +395,7 @@ void parallel_for_impl(Index first, Index last, Index step, const Function& f, P
 template <typename Index, typename Function>
     __TBB_requires(parallel_for_index<Index> && parallel_for_function<Function, Index>)
 void parallel_for(Index first, Index last, Index step, const Function& f, task_group_context &context) {
-    parallel_for_impl<Index,Function,const auto_partitioner>(first, last, step, f, auto_partitioner(), context);
+    parallel_for_impl<Index,Function,const __TBB_DEFAULT_PARTITIONER>(first, last, step, f, __TBB_DEFAULT_PARTITIONER(), context);
 }
 //! Parallel iteration over a range of integers with explicit step, task group context, and simple partitioner
 template <typename Index, typename Function>
@@ -426,7 +426,7 @@ void parallel_for(Index first, Index last, Index step, const Function& f, affini
 template <typename Index, typename Function>
     __TBB_requires(parallel_for_index<Index> && parallel_for_function<Function, Index>)
 void parallel_for(Index first, Index last, const Function& f, task_group_context &context) {
-    parallel_for_impl<Index,Function,const auto_partitioner>(first, last, static_cast<Index>(1), f, auto_partitioner(), context);
+    parallel_for_impl<Index,Function,const __TBB_DEFAULT_PARTITIONER>(first, last, static_cast<Index>(1), f, __TBB_DEFAULT_PARTITIONER(), context);
 }
 //! Parallel iteration over a range of integers with a default step value, explicit task group context, and simple partitioner
 template <typename Index, typename Function>

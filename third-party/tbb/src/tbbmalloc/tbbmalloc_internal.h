@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -102,7 +102,11 @@ void suppress_unused_warning( const T& ) {}
 /*
  * Default huge page size
  */
+#if defined __loongarch64
+static const size_t HUGE_PAGE_SIZE = 32 * 1024 * 1024;
+#else
 static const size_t HUGE_PAGE_SIZE = 2 * 1024 * 1024;
+#endif
 
 /********** End of global default constants *********/
 

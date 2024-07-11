@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -60,7 +60,6 @@ numa_binding_observer* construct_binding_observer( d1::task_arena* ta, int num_s
     if ((core_type >= 0 && core_type_count() > 1) || (numa_id >= 0 && numa_node_count() > 1) || max_threads_per_core > 0) {
         binding_observer = new(allocate_memory(sizeof(numa_binding_observer))) numa_binding_observer(ta, num_slots, numa_id, core_type, max_threads_per_core);
         __TBB_ASSERT(binding_observer, "Failure during NUMA binding observer allocation and construction");
-        binding_observer->observe(true);
     }
     return binding_observer;
 }
@@ -396,7 +395,7 @@ bool arena::is_top_priority() const {
 }
 
 bool arena::try_join() {
-    if (num_workers_active() < my_num_workers_allotted.load(std::memory_order_relaxed)) {
+    if (is_joinable()) {
         my_references += arena::ref_worker;
         return true;
     }
@@ -545,7 +544,7 @@ void task_arena_impl::initialize(d1::task_arena_base& ta) {
         .set_max_threads_per_core(ta.max_threads_per_core())
         .set_numa_id(ta.my_numa_id);
 #endif /*__TBB_ARENA_BINDING*/
-    
+
     if (ta.my_max_concurrency < 1) {
 #if __TBB_ARENA_BINDING
         ta.my_max_concurrency = (int)default_concurrency(arena_constraints);
@@ -554,6 +553,17 @@ void task_arena_impl::initialize(d1::task_arena_base& ta) {
 #endif /*!__TBB_ARENA_BINDING*/
     }
 
+#if __TBB_CPUBIND_PRESENT
+    numa_binding_observer* observer = construct_binding_observer(
+        static_cast<d1::task_arena*>(&ta), arena::num_arena_slots(ta.my_max_concurrency, ta.my_num_reserved_slots),
+        ta.my_numa_id, ta.core_type(), ta.max_threads_per_core());
+    if (observer) {
+        // TODO: Consider lazy initialization for internal arena so
+        // the direct calls to observer might be omitted until actual initialization. 
+        observer->on_scheduler_entry(true);
+    }
+#endif /*__TBB_CPUBIND_PRESENT*/
+
     __TBB_ASSERT(ta.my_arena.load(std::memory_order_relaxed) == nullptr, "Arena already initialized");
     unsigned priority_level = arena_priority_level(ta.my_priority);
     threading_control* thr_control = threading_control::register_public_reference();
@@ -561,8 +571,11 @@ void task_arena_impl::initialize(d1::task_arena_base& ta) {
 
     ta.my_arena.store(&a, std::memory_order_release);
 #if __TBB_CPUBIND_PRESENT
-    a.my_numa_binding_observer = construct_binding_observer(
-        static_cast<d1::task_arena*>(&ta), a.my_num_slots, ta.my_numa_id, ta.core_type(), ta.max_threads_per_core());
+    a.my_numa_binding_observer = observer;
+    if (observer) {
+        observer->on_scheduler_exit(true);
+        observer->observe(true);
+    }
 #endif /*__TBB_CPUBIND_PRESENT*/
 }
 

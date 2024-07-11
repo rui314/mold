@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2021-2022 Intel Corporation
+    Copyright (c) 2021-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -522,7 +522,7 @@ enum ACTIONS {
     num_actions
 };
 
-void global_actor();
+void global_actor(size_t arenaAfterStealing);
 
 template <ACTIONS action>
 struct actor;
@@ -543,8 +543,13 @@ struct actor<arena_destroy> {
 
 template <>
 struct actor<arena_action> {
-    static void do_it(Random& r) {
+    static void do_it(Random& r, size_t arenaAfterStealing) {
         static thread_local std::size_t arenaLevel = 0;
+
+        // treat arenas index as priority: we own some resource already,
+        // so may pretend only to low-priority resource
+        arenaLevel = std::max(arenaLevel, arenaAfterStealing);
+
         ArenaTable::ScopedLock lock;
         auto entry = arenaTable.acquire(r, lock);
         if (entry.first) {
@@ -561,11 +566,13 @@ struct actor<arena_action> {
                     tbb::this_task_arena::enqueue([&wctx] { wctx.release(); });
                     tbb::detail::d1::wait(wctx, ctx);
                 } else {
-                    global_actor();
+                    global_actor(0);
                 }
             };
             switch (r.get() % (16*num_arena_actions)) {
             case arena_execute:
+                // to prevent deadlock, potentially blocking operation
+                // may be called only for arenas with larger index
                 if (entry.second > arenaLevel) {
                     gStats.notify(Statistics::ArenaExecute);
                     auto oldArenaLevel = arenaLevel;
@@ -579,7 +586,9 @@ struct actor<arena_action> {
                 utils_fallthrough;
             default:
                 gStats.notify(Statistics::ArenaEnqueue);
-                entry.first->enqueue([] { global_actor(); });
+                // after stealing by a worker, the task will run in arena
+                // with index entry.second
+                entry.first->enqueue([ entry ] { global_actor(entry.second); });
                 break;
             }
             arenaTable.release(lock);
@@ -601,7 +610,7 @@ struct actor<parallel_algorithm> {
         auto doGlbAction = rnd.get() % 1000 == 42;
         auto body = [doGlbAction, sz](int i) {
             if (i == sz / 2 && doGlbAction) {
-                global_actor();
+                global_actor(0);
             }
         };
 
@@ -621,7 +630,7 @@ struct actor<parallel_algorithm> {
     }
 };
 
-void global_actor() {
+void global_actor(size_t arenaAfterStealing) {
     static thread_local std::uint64_t localNumActions{};
 
     while (globalNumActions < maxNumActions) {
@@ -629,7 +638,7 @@ void global_actor() {
         switch (rnd.get() % num_actions) {
         case arena_create:  gStats.notify(Statistics::ArenaCreate); actor<arena_create>::do_it(rnd);  break;
         case arena_destroy: gStats.notify(Statistics::ArenaDestroy); actor<arena_destroy>::do_it(rnd); break;
-        case arena_action:  gStats.notify(Statistics::ArenaAcquire); actor<arena_action>::do_it(rnd);  break;
+        case arena_action:  gStats.notify(Statistics::ArenaAcquire); actor<arena_action>::do_it(rnd, arenaAfterStealing);  break;
         case parallel_algorithm: gStats.notify(Statistics::ParallelAlgorithm); actor<parallel_algorithm>::do_it(rnd);  break;
         }
 
@@ -656,7 +665,7 @@ TEST_CASE("Stress test with mixing functionality") {
     utils::SpinBarrier startBarrier{numExtraThreads};
     utils::NativeParallelFor(numExtraThreads, [&startBarrier](std::size_t) {
         startBarrier.wait();
-        global_actor();
+        global_actor(0);
     });
 
     arenaTable.shutdown();

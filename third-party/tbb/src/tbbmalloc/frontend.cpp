@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -1521,7 +1521,7 @@ bool Block::readyToShare()
     {
         MallocMutex::scoped_lock scoped_cs(publicFreeListLock);
         if ( (oldVal=publicFreeList)==nullptr )
-            (intptr_t&)(publicFreeList) = UNUSABLE;
+            publicFreeList = reinterpret_cast<FreeObject *>(UNUSABLE);
     }
 #endif
     return oldVal==nullptr;

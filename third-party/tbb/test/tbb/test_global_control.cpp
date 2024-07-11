@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -245,11 +245,13 @@ TEST_CASE("prolong lifetime advanced") {
 }
 #endif
 
+#if !EMSCRIPTEN
 //! Testing multiple wait
 //! \brief \ref error_guessing
 TEST_CASE("prolong lifetime multiple wait") {
     TestBlockingTerminateNS::TestMultpleWait();
 }
+#endif
 
 //! \brief \ref regression
 TEST_CASE("test concurrent task_scheduler_handle destruction") {

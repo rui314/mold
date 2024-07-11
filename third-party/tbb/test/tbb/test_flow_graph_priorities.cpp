@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2018-2021 Intel Corporation
+    Copyright (c) 2018-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -842,6 +842,7 @@ TEST_CASE("Priority nodes take precedence"){
     }
 }
 
+#if !EMSCRIPTEN
 //! Test thread eager reaction
 //! \brief \ref error_guessing
 TEST_CASE("Thread eager reaction"){
@@ -849,6 +850,7 @@ TEST_CASE("Thread eager reaction"){
         ThreadsEagerReaction::test( static_cast<int>(p) );
     }
 }
+#endif
 
 //! Test prioritization under concurrency limits
 //! \brief \ref error_guessing
@@ -888,3 +890,4 @@ TEST_CASE("Exceptions") {
     Exceptions::test();
 }
 #endif
+

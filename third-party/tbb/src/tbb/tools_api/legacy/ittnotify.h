@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -245,7 +245,7 @@ extern "C" {
  *     only pauses tracing and analyzing memory access.
  *     It does not pause tracing or analyzing threading APIs.
  *   .
- * - Intel(R) Parallel Amplifier and Intel(R) VTune(TM) Amplifier XE:
+ * - Intel(R) VTune(TM) Profiler:
  *   - Does continue to record when new threads are started.
  *   .
  * - Other effects:

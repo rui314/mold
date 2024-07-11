@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -58,6 +58,24 @@ public:
         __TBB_ASSERT(t == nullptr, nullptr);
 
         if (is_worker_should_leave(slot)) {
+            if (!governor::hybrid_cpu()) {
+                static constexpr std::chrono::microseconds worker_wait_leave_duration(1000);
+                static_assert(worker_wait_leave_duration > std::chrono::steady_clock::duration(1), "Clock resolution is not enough for measured interval.");
+
+                for (auto t1 = std::chrono::steady_clock::now(), t2 = t1;
+                    std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1) < worker_wait_leave_duration;
+                    t2 = std::chrono::steady_clock::now())
+                {
+                    if (!my_arena.is_empty() && !my_arena.is_recall_requested()) {
+                        return true;
+                    }
+
+                    if (my_arena.my_threading_control->is_any_other_client_active()) {
+                        break;
+                    }
+                    d0::yield();
+                }
+            }
             // Leave dispatch loop
             return false;
         }
@@ -114,6 +132,7 @@ protected:
     void sleep(std::uintptr_t uniq_tag, Pred wakeup_condition) {
         my_arena.get_waiting_threads_monitor().wait<thread_control_monitor::thread_context>(wakeup_condition,
             market_context{uniq_tag, &my_arena});
+        reset_wait();
     }
 };
 
@@ -139,7 +158,6 @@ public:
         auto wakeup_condition = [&] { return !my_arena.is_empty() || !my_wait_ctx.continue_execution(); };
 
         sleep(std::uintptr_t(&my_wait_ctx), wakeup_condition);
-        my_backoff.reset_wait();
     }
 
     d1::wait_context* wait_ctx() {
@@ -176,11 +194,6 @@ public:
         auto wakeup_condition = [&] { return !my_arena.is_empty() || sp->m_is_owner_recalled.load(std::memory_order_relaxed); };
 
         sleep(std::uintptr_t(sp), wakeup_condition);
-        my_backoff.reset_wait();
-    }
-
-    void reset_wait() {
-        my_backoff.reset_wait();
     }
 
     d1::wait_context* wait_ctx() {

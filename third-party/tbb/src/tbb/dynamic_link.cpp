@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -34,7 +34,8 @@
     // Unify system calls
     #define dlopen( name, flags )   LoadLibrary( name )
     #define dlsym( handle, name )   GetProcAddress( handle, name )
-    #define dlclose( handle )       ( ! FreeLibrary( handle ) )
+    // FreeLibrary return bool value that is not used.
+    #define dlclose( handle )       (void)( ! FreeLibrary( handle ) )
     #define dlerror()               GetLastError()
 #ifndef PATH_MAX
     #define PATH_MAX                MAX_PATH

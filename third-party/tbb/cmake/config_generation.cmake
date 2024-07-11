@@ -92,6 +92,7 @@ set(_tbbbind_bin_version ${tbb_gen_cfg_TBBBIND_BINARY_VERSION})
                 NAMES \${_tbb_component}\${_bin_version}.dll
                 PATHS \${_tbb_root}
                 PATH_SUFFIXES \"redist/\${_tbb_intel_arch}/\${_tbb_subdir}\" \"bin\${_tbb_arch_suffix}/\${_tbb_subdir}\" \"bin\${_tbb_arch_suffix}/\" \"bin\"
+                NO_DEFAULT_PATH
             )
 
             if (EXISTS \"\${_tbb_debug_lib}\")
@@ -99,6 +100,7 @@ set(_tbbbind_bin_version ${tbb_gen_cfg_TBBBIND_BINARY_VERSION})
                     NAMES \${_tbb_component}\${_bin_version}_debug.dll
                     PATHS \${_tbb_root}
                     PATH_SUFFIXES \"redist/\${_tbb_intel_arch}/\${_tbb_subdir}\" \"bin\${_tbb_arch_suffix}/\${_tbb_subdir}\" \"bin\${_tbb_arch_suffix}/\" \"bin\"
+                    NO_DEFAULT_PATH
                 )
             endif()
 ")

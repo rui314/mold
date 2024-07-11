@@ -20,7 +20,7 @@ it with any compiler supporting ISO C++. The library differs from
 typical threading packages in the following ways:
 
 
--  **oneTBB enables you to specify logical paralleism instead of
+-  **oneTBB enables you to specify logical parallelism instead of
    threads**. Most threading packages require you to specify threads.
    Programming directly in terms of threads can be tedious and lead to
    inefficient programs, because threads are low-level, heavy constructs

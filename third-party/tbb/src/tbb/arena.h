@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -385,6 +385,10 @@ public:
 
     bool is_top_priority() const;
 
+    bool is_joinable() const {
+        return num_workers_active() < my_num_workers_allotted.load(std::memory_order_relaxed);
+    }
+
     bool try_join();
 
     void set_allotment(unsigned allotment);
@@ -429,8 +433,7 @@ void arena::advertise_new_work() {
             workers_delta = 1;
         }
 
-        bool wakeup_workers = is_mandatory_needed || are_workers_needed;
-        request_workers(mandatory_delta, workers_delta, wakeup_workers);
+        request_workers(mandatory_delta, workers_delta, /* wakeup_threads = */ true);
     }
 }
 

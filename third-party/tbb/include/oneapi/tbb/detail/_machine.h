@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -96,7 +96,7 @@ static inline void machine_pause(int32_t delay) {
 #if __TBB_x86_64 || __TBB_x86_32
     while (delay-- > 0) { _mm_pause(); }
 #elif __ARM_ARCH_7A__ || __aarch64__
-    while (delay-- > 0) { __asm__ __volatile__("yield" ::: "memory"); }
+    while (delay-- > 0) { __asm__ __volatile__("isb sy" ::: "memory"); }
 #else /* Generic */
     (void)delay; // suppress without including _template_helpers.h
     yield();

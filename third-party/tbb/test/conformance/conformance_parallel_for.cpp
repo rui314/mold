@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -399,7 +399,9 @@ TEST_CASE("Flog test") {
     Flog<parallel_tag, 10>();
     Flog<parallel_tag, 100>();
     Flog<parallel_tag, 1000>();
+#if !EMSCRIPTEN    
     Flog<parallel_tag, 10000>();
+#endif
 }
 
 //! Testing parallel for with different types and step

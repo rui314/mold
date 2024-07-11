@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -562,7 +562,7 @@ public:
 template<typename Range, typename Body>
     __TBB_requires(tbb_range<Range> && parallel_scan_body<Body, Range>)
 void parallel_scan( const Range& range, Body& body ) {
-    start_scan<Range, Body, auto_partitioner>::run(range,body,__TBB_DEFAULT_PARTITIONER());
+    start_scan<Range, Body, __TBB_DEFAULT_PARTITIONER>::run(range,body,__TBB_DEFAULT_PARTITIONER());
 }
 
 //! Parallel prefix with simple_partitioner

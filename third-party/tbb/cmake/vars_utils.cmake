@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,12 +26,20 @@ get_filename_component(TBB_VARS_TEMPLATE_NAME ${PROJECT_SOURCE_DIR}/integration/
 string(REPLACE ".in" "" TBB_VARS_NAME ${TBB_VARS_TEMPLATE_NAME})
 
 macro(tbb_gen_vars target)
+    if (NOT TBB_BUILD_APPLE_FRAMEWORKS)
+        set(BIN_PATH $<TARGET_FILE_DIR:${target}>)
+    else()
+        # For Apple* frameworks, the binaries are placed in a framework bundle. 
+        # When using an Apple* framework, you refer to the bundle, not the binary inside, so we take the bundle's path and go up one level.
+        # This path will then be used to generate the vars file, and the contents of the vars file will use the bundle's parent directory.
+        set(BIN_PATH $<TARGET_BUNDLE_DIR:${target}>/..)
+    endif()
     if (${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
         add_custom_command(TARGET ${target} POST_BUILD COMMAND
             ${CMAKE_COMMAND}
             -DBINARY_DIR=${CMAKE_BINARY_DIR}
             -DSOURCE_DIR=${PROJECT_SOURCE_DIR}
-            -DBIN_PATH=$<TARGET_FILE_DIR:${target}>
+            -DBIN_PATH=${BIN_PATH}
             -DVARS_TEMPLATE=${TBB_VARS_TEMPLATE}
             -DVARS_NAME=${TBB_VARS_NAME}
             -DTBB_INSTALL_VARS=${TBB_INSTALL_VARS}

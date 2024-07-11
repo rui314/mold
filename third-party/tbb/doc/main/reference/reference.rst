@@ -19,6 +19,7 @@ It also describes features that are not included in the oneTBB specification.
     parallel_for_each_semantics
     parallel_sort_ranges_extension
     scalable_memory_pools/malloc_replacement_log
+    rvalue_reduce
 
 Preview features
 ****************

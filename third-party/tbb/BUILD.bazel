@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022 Intel Corporation
+# Copyright (c) 2021-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -114,5 +114,18 @@ cc_library(
     ],
     deps = [
         ":tbbmalloc",
+    ],
+)
+
+cc_test(
+    name = "test_task",
+    srcs = [
+        "test/tbb/test_task.cpp",
+    ] + glob([
+        "test/common/*.h",
+    ]),
+    includes = ["test"],
+    deps = [
+        ":tbb",
     ],
 )

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2022-2023 Intel Corporation
+    Copyright (c) 2022-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ public:
     thread_dispatcher_client* create_client(arena& a);
     void register_client(thread_dispatcher_client* client);
     bool try_unregister_client(thread_dispatcher_client* client, std::uint64_t aba_epoch, unsigned priority);
+    bool is_any_client_in_need();
 
     void adjust_job_count_estimate(int delta);
     void release(bool blocking_terminate);

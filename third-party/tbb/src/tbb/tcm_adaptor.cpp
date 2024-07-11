@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2023 Intel Corporation
+    Copyright (c) 2023-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -137,11 +137,9 @@ public:
             // The permit has changed during the reading, so the callback will be invoked soon one more time and
             // we can just skip this renegotiation iteration.
             if (!new_permit.flags.stale) {
-                __TBB_ASSERT(
-                    new_permit.state != TCM_PERMIT_STATE_INACTIVE || new_concurrency == 0,
-                    "TCM did not nullify resources while deactivating the permit"
-                );
-                delta = update_concurrency(new_concurrency);
+                // If there is no other demand in TCM, the permit may still have granted concurrency but
+                // be in the deactivated state thus we enforce 0 allotment to preserve arena invariants.
+                delta = update_concurrency(new_permit.state != TCM_PERMIT_STATE_INACTIVE ? new_concurrency : 0);
             }
         }
         if (delta) {

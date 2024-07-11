@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023 Intel Corporation
+# Copyright (c) 2020-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -126,58 +126,70 @@ target_link_libraries(tbb
     ${TBB_COMMON_LINK_LIBS}
 )
 
+if(TBB_BUILD_APPLE_FRAMEWORKS)
+    set_target_properties(tbb PROPERTIES
+        FRAMEWORK TRUE
+        FRAMEWORK_VERSION ${TBB_BINARY_VERSION}.${TBB_BINARY_MINOR_VERSION}
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.intel.tbb
+        MACOSX_FRAMEWORK_IDENTIFIER com.intel.tbb
+        MACOSX_FRAMEWORK_BUNDLE_VERSION ${TBB_BINARY_VERSION}.${TBB_BINARY_MINOR_VERSION}
+        MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${TBB_BINARY_VERSION})
+endif()
+
 tbb_install_target(tbb)
 
-if (MSVC)
-    # Create a copy of target linker file (tbb<ver>[_debug].lib) with legacy name (tbb[_debug].lib)
-    # to support previous user experience for linkage.
-    install(FILES
-            $<TARGET_LINKER_FILE:tbb>
-            DESTINATION lib
-            CONFIGURATIONS RelWithDebInfo Release MinSizeRel
-            RENAME tbb.lib
-            COMPONENT devel
-    )
+if (TBB_INSTALL)
+    if (MSVC)
+        # Create a copy of target linker file (tbb<ver>[_debug].lib) with legacy name (tbb[_debug].lib)
+        # to support previous user experience for linkage.
+        install(FILES
+                $<TARGET_LINKER_FILE:tbb>
+                DESTINATION lib
+                CONFIGURATIONS RelWithDebInfo Release MinSizeRel
+                RENAME tbb.lib
+                COMPONENT devel
+        )
 
-    install(FILES
-            $<TARGET_LINKER_FILE:tbb>
-            DESTINATION lib
-            CONFIGURATIONS Debug
-            RENAME tbb_debug.lib
-            COMPONENT devel
-    )
+        install(FILES
+                $<TARGET_LINKER_FILE:tbb>
+                DESTINATION lib
+                CONFIGURATIONS Debug
+                RENAME tbb_debug.lib
+                COMPONENT devel
+        )
+    endif()
+
+    set(_tbb_pc_lib_name tbb)
+
+    if (WIN32)
+        set(_tbb_pc_lib_name ${_tbb_pc_lib_name}${TBB_BINARY_VERSION})
+    endif()
+
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(TBB_PC_NAME tbb)
+    else()
+        set(TBB_PC_NAME tbb32)
+    endif()
+
+    set(_prefix_for_pc_file "${CMAKE_INSTALL_PREFIX}")
+
+    if (IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
+        set(_libdir_for_pc_file "${CMAKE_INSTALL_LIBDIR}")
+    else()
+        set(_libdir_for_pc_file "\${prefix}/${CMAKE_INSTALL_LIBDIR}")
+    endif()
+
+    if (IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
+        set(_includedir_for_pc_file "${CMAKE_INSTALL_INCLUDEDIR}")
+    else()
+        set(_includedir_for_pc_file "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
+    endif()
+
+    configure_file(${PROJECT_SOURCE_DIR}/integration/pkg-config/tbb.pc.in ${CMAKE_CURRENT_BINARY_DIR}/${TBB_PC_NAME}.pc @ONLY)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${TBB_PC_NAME}.pc
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig/
+            COMPONENT devel)
 endif()
-
-set(_tbb_pc_lib_name tbb)
-
-if (WIN32)
-    set(_tbb_pc_lib_name ${_tbb_pc_lib_name}${TBB_BINARY_VERSION})
-endif()
-
-if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(TBB_PC_NAME tbb)
-else()
-    set(TBB_PC_NAME tbb32)
-endif()
-
-set(_prefix_for_pc_file "${CMAKE_INSTALL_PREFIX}")
-
-if (IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
-    set(_libdir_for_pc_file "${CMAKE_INSTALL_LIBDIR}")
-else()
-    set(_libdir_for_pc_file "\${prefix}/${CMAKE_INSTALL_LIBDIR}")
-endif()
-
-if (IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
-    set(_includedir_for_pc_file "${CMAKE_INSTALL_INCLUDEDIR}")
-else()
-    set(_includedir_for_pc_file "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
-endif()
-
-configure_file(${PROJECT_SOURCE_DIR}/integration/pkg-config/tbb.pc.in ${CMAKE_CURRENT_BINARY_DIR}/${TBB_PC_NAME}.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${TBB_PC_NAME}.pc
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig/
-        COMPONENT devel)
 
 if (COMMAND tbb_gen_vars)
     tbb_gen_vars(tbb)

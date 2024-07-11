@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@
 #include "common/test_invoke.h"
 
 #include "../tbb/test_partitioner.h"
+#include <list>
 
 //! \file conformance_parallel_reduce.cpp
 //! \brief Test for [algorithms.parallel_reduce algorithms.parallel_deterministic_reduce] specification
@@ -55,6 +56,59 @@ struct ReduceBody {
         my_value = op.join(my_value, y.my_value);
     }
 };
+
+template <typename T>
+class MoveOnlyWrapper {
+public:
+    MoveOnlyWrapper() = default;
+    MoveOnlyWrapper(const T& obj) : my_obj(obj) {}
+
+    MoveOnlyWrapper(MoveOnlyWrapper&&) = default;
+    MoveOnlyWrapper& operator=(MoveOnlyWrapper&&) = default;
+
+    MoveOnlyWrapper(const MoveOnlyWrapper&) = delete;
+    MoveOnlyWrapper& operator=(const MoveOnlyWrapper&) = delete;
+
+    bool operator==(const MoveOnlyWrapper& other) const { return my_obj == other.my_obj; }
+private:
+    T my_obj;
+}; // class MoveOnlyWrapper
+
+// The container wrapper that is copyable but the copy constructor fails if the source container is non-empty
+// If such an empty container is provided as an identity into parallel reduce algorithm with rvalue-friendly body,
+// it should only call the copy constructor while broadcasting the identity element into the leafs
+// and the identity element is an empty container for the further test
+template <typename T>
+class EmptyCopyList {
+public:
+    EmptyCopyList() = default;
+
+    EmptyCopyList(EmptyCopyList&&) = default;
+    EmptyCopyList& operator=(EmptyCopyList&&) = default;
+
+    EmptyCopyList(const EmptyCopyList& other) {
+        REQUIRE_MESSAGE(other.my_list.empty(), "reduce copied non-identity list");
+    }
+    EmptyCopyList& operator=(const EmptyCopyList& other) {
+        REQUIRE_MESSAGE(other.my_list.empty(), "reduce copied non-identity list");
+        return *this;
+    }
+
+    typename std::list<T>::iterator insert(typename std::list<T>::const_iterator pos, T&& item) {
+        return my_list.insert(pos, std::move(item));
+    }
+
+    void splice(typename std::list<T>::const_iterator pos, EmptyCopyList&& other) {
+        my_list.splice(pos, std::move(other.my_list));
+    }
+
+    typename std::list<T>::const_iterator end() const { return my_list.end(); }
+
+    bool operator==(const EmptyCopyList& other) const { return my_list == other.my_list; }
+
+private:
+    std::list<T> my_list;
+}; // class EmptyCopyList
 
 template <class Partitioner>
 void TestDeterministicReductionFor() {
@@ -174,3 +228,109 @@ TEST_CASE("parallel_[deterministic_]reduce and std::invoke") {
 }
 
 #endif
+
+template <typename Runner, typename... PartitionerContext>
+void test_vector_of_lists_rvalue_reduce_basic(const Runner& runner, PartitionerContext&&... args) {
+    constexpr std::size_t n_vectors = 10000;
+
+    using inner_type = MoveOnlyWrapper<int>;
+    using list_type = EmptyCopyList<inner_type>;
+    using vector_of_lists_type = std::vector<list_type>;
+
+    vector_of_lists_type vector_of_lists;
+
+    vector_of_lists.reserve(n_vectors);
+    for (std::size_t i = 0; i < n_vectors; ++i) {
+        list_type list;
+
+        list.insert(list.end(), inner_type{1});
+        list.insert(list.end(), inner_type{2});
+        list.insert(list.end(), inner_type{3});
+        list.insert(list.end(), inner_type{4});
+        list.insert(list.end(), inner_type{5});
+        vector_of_lists.emplace_back(std::move(list));
+    }
+
+    oneapi::tbb::blocked_range<std::size_t> range(0, n_vectors, n_vectors * 2);
+
+    auto reduce_body = [&](const decltype(range)& range_obj, list_type&& x) {
+        list_type new_list = std::move(x);
+
+        for (std::size_t index = range_obj.begin(); index != range_obj.end(); ++index) {
+            new_list.splice(new_list.end(), std::move(vector_of_lists[index]));
+        }
+        return new_list;
+    };
+
+    auto join_body = [&](list_type&& x, list_type&& y) {
+        list_type new_list = std::move(x);
+
+        new_list.splice(new_list.end(), std::move(y));
+        return new_list;
+    };
+
+    list_type result = runner(range, list_type{}, reduce_body, join_body, std::forward<PartitionerContext>(args)...);
+
+    list_type expected_result;
+
+    for (std::size_t i = 0; i < n_vectors; ++i) {
+        expected_result.insert(expected_result.end(), inner_type{1});
+        expected_result.insert(expected_result.end(), inner_type{2});
+        expected_result.insert(expected_result.end(), inner_type{3});
+        expected_result.insert(expected_result.end(), inner_type{4});
+        expected_result.insert(expected_result.end(), inner_type{5});
+    }
+
+    REQUIRE_MESSAGE(expected_result == result, "Incorrect reduce result");
+}
+
+struct ReduceRunner {
+    template <typename... Args>
+    auto operator()(Args&&... args) const -> decltype(oneapi::tbb::parallel_reduce(std::forward<Args>(args)...)) {
+        return oneapi::tbb::parallel_reduce(std::forward<Args>(args)...);
+    }
+};
+
+struct DeterministicReduceRunner {
+    template <typename... Args>
+    auto operator()(Args&&... args) const -> decltype(oneapi::tbb::parallel_deterministic_reduce(std::forward<Args>(args)...)) {
+        return oneapi::tbb::parallel_deterministic_reduce(std::forward<Args>(args)...);
+    }
+};
+
+void test_vector_of_lists_rvalue_reduce() {
+    ReduceRunner runner;
+    oneapi::tbb::affinity_partitioner af_partitioner;
+    oneapi::tbb::task_group_context context;
+
+    test_vector_of_lists_rvalue_reduce_basic(runner);
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::auto_partitioner{});
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::simple_partitioner{});
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::static_partitioner{});
+    test_vector_of_lists_rvalue_reduce_basic(runner, af_partitioner);
+
+    test_vector_of_lists_rvalue_reduce_basic(runner, context);
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::auto_partitioner{}, context);
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::simple_partitioner{}, context);
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::static_partitioner{}, context);
+    test_vector_of_lists_rvalue_reduce_basic(runner, af_partitioner, context);
+}
+
+void test_vector_of_lists_rvalue_deterministic_reduce() {
+    DeterministicReduceRunner runner;
+    oneapi::tbb::task_group_context context;
+
+    test_vector_of_lists_rvalue_reduce_basic(runner);
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::simple_partitioner{});
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::static_partitioner{});
+
+    test_vector_of_lists_rvalue_reduce_basic(runner, context);
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::simple_partitioner{}, context);
+    test_vector_of_lists_rvalue_reduce_basic(runner, oneapi::tbb::static_partitioner{}, context);
+}
+
+//! \brief \ref interface \ref requirement
+TEST_CASE("test rvalue optimization") {
+    test_vector_of_lists_rvalue_reduce();
+    test_vector_of_lists_rvalue_deterministic_reduce();
+}

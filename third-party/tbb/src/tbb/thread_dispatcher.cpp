@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2022-2023 Intel Corporation
+    Copyright (c) 2022-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -162,6 +162,18 @@ thread_dispatcher_client* thread_dispatcher::client_in_need(thread_dispatcher_cl
         return client_in_need(my_client_list, prev);
     }
     return client_in_need(my_client_list, my_next_client);
+}
+
+bool thread_dispatcher::is_any_client_in_need() {
+    client_list_mutex_type::scoped_lock lock(my_list_mutex, /*is_writer=*/false);
+    for (auto& priority_list : my_client_list) {
+        for (auto& client : priority_list) {
+            if (client.is_joinable()) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void thread_dispatcher::adjust_job_count_estimate(int delta) {

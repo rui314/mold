@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -42,6 +42,8 @@ namespace detail {
 namespace r1 {
 
 void clear_address_waiter_table();
+void global_control_acquire();
+void global_control_release();
 
 //! global_control.cpp contains definition
 bool remove_and_check_if_empty(d1::global_control& gc);
@@ -60,6 +62,7 @@ namespace system_topology {
 //------------------------------------------------------------------------
 
 void governor::acquire_resources () {
+    global_control_acquire();
 #if __TBB_USE_POSIX
     int status = theTLS.create(auto_terminate);
 #else
@@ -85,6 +88,7 @@ void governor::release_resources () {
 
     system_topology::destroy();
     dynamic_unlink_all();
+    global_control_release();
 }
 
 rml::tbb_server* governor::create_rml_server ( rml::tbb_client& client ) {

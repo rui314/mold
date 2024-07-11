@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -109,7 +109,6 @@ void TestTransaction(const char* name)
     REQUIRE_MESSAGE(n_transactions_attempted.load(std::memory_order_relaxed), "ERROR for " << name << ": transactions were never attempted");
 }
 
-
 //! \brief \ref error_guessing
 TEST_CASE("Transaction test") {
     if (have_TSX()) {
@@ -118,6 +117,7 @@ TEST_CASE("Transaction test") {
     }
 }
 #endif /* __TBB_TSX_TESTING_ENABLED_FOR_THIS_COMPILER */
+
 
 //! \brief \ref error_guessing
 TEST_CASE("test upgrade/downgrade with spin_rw_mutex") {
@@ -144,10 +144,12 @@ TEST_CASE("test spin_mutex with native threads") {
     test_with_native_threads::test<tbb::spin_mutex>();
 }
 
+#if !EMSCRIPTEN
 //! \brief \ref error_guessing
 TEST_CASE("test queuing_mutex with native threads") {
     test_with_native_threads::test<tbb::queuing_mutex>();
 }
+#endif
 
 //! \brief \ref error_guessing
 TEST_CASE("test mutex with native threads") {
@@ -160,11 +162,13 @@ TEST_CASE("test spin_rw_mutex with native threads") {
     test_with_native_threads::test_rw<tbb::spin_rw_mutex>();
 }
 
+#if !EMSCRIPTEN
 //! \brief \ref error_guessing
 TEST_CASE("test queuing_rw_mutex with native threads") {
     test_with_native_threads::test<tbb::queuing_rw_mutex>();
     test_with_native_threads::test_rw<tbb::queuing_rw_mutex>();
 }
+#endif
 
 //! \brief \ref error_guessing
 TEST_CASE("test rw_mutex with native threads") {
@@ -197,3 +201,4 @@ TEST_CASE("internal mutex concepts") {
                              tbb::null_rw_mutex, tbb::queuing_rw_mutex>);
 }
 #endif // __TBB_CPP20_CONCEPTS_PRESENT
+

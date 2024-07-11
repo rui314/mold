@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -34,6 +34,10 @@
 #  define ITT_OS_FREEBSD   4
 #endif /* ITT_OS_FREEBSD */
 
+#ifndef ITT_OS_OPENBSD
+#  define ITT_OS_OPENBSD   5
+#endif /* ITT_OS_OPENBSD */
+
 #ifndef ITT_OS
 #  if defined WIN32 || defined _WIN32
 #    define ITT_OS ITT_OS_WIN
@@ -41,6 +45,8 @@
 #    define ITT_OS ITT_OS_MAC
 #  elif defined( __FreeBSD__ )
 #    define ITT_OS ITT_OS_FREEBSD
+#  elif defined( __OpenBSD__ )
+#    define ITT_OS ITT_OS_OPENBSD
 #  else
 #    define ITT_OS ITT_OS_LINUX
 #  endif
@@ -62,6 +68,10 @@
 #  define ITT_PLATFORM_FREEBSD 4
 #endif /* ITT_PLATFORM_FREEBSD */
 
+#ifndef ITT_PLATFORM_OPENBSD
+#  define ITT_PLATFORM_OPENBSD 5
+#endif /* ITT_PLATFORM_OPENBSD */
+
 #ifndef ITT_PLATFORM
 #  if ITT_OS==ITT_OS_WIN
 #    define ITT_PLATFORM ITT_PLATFORM_WIN
@@ -69,6 +79,8 @@
 #    define ITT_PLATFORM ITT_PLATFORM_MAC
 #  elif ITT_OS==ITT_OS_FREEBSD
 #    define ITT_PLATFORM ITT_PLATFORM_FREEBSD
+#  elif ITT_OS==ITT_OS_OPENBSD
+#    define ITT_PLATFORM ITT_PLATFORM_OPENBSD
 #  else
 #    define ITT_PLATFORM ITT_PLATFORM_POSIX
 #  endif
@@ -235,7 +247,7 @@
 #define API_VERSION_BUILD    20230630
 
 #ifndef API_VERSION_NUM
-#define API_VERSION_NUM 3.24.2
+#define API_VERSION_NUM 3.24.4
 #endif /* API_VERSION_NUM */
 
 #define API_VERSION "ITT-API-Version " ITT_TO_STR(API_VERSION_NUM) \
@@ -634,7 +646,7 @@ typedef struct ___itt_global
         h->nameA   = NULL; \
         h->nameW   = name ? _wcsdup(name) : NULL; \
         h->domainA   = NULL; \
-        h->domainW   = name ? _wcsdup(domain) : NULL; \
+        h->domainW   = domain ? _wcsdup(domain) : NULL; \
         h->type = type; \
         h->index = 0; \
         h->next   = NULL; \

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2022-2023 Intel Corporation
+    Copyright (c) 2022-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -39,6 +39,7 @@ class thread_request_serializer : public thread_request_observer {
 public:
     thread_request_serializer(thread_dispatcher& td, int soft_limit);
     void set_active_num_workers(int soft_limit);
+    int num_workers_requested() { return my_total_request.load(std::memory_order_relaxed); }
     bool is_no_workers_avaliable() { return my_soft_limit == 0; }
 
 private:
@@ -48,7 +49,7 @@ private:
 
     thread_dispatcher& my_thread_dispatcher;
     int my_soft_limit{ 0 };
-    int my_total_request{ 0 };
+    std::atomic<int> my_total_request{ 0 };
     // my_pending_delta is set to pending_delta_base to have ability to hold negative values
     // consider increase base since thead number will be bigger than 1 << 15
     static constexpr std::uint64_t pending_delta_base = 1 << 15;
@@ -63,6 +64,7 @@ public:
     thread_request_serializer_proxy(thread_dispatcher& td, int soft_limit);
     void register_mandatory_request(int mandatory_delta);
     void set_active_num_workers(int soft_limit);
+    int num_workers_requested();
 
 private:
     void update(int delta) override;

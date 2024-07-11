@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -81,7 +81,7 @@ static const char api_version[] = API_VERSION "\0\n@(#) $Revision$\n";
 
 #if ITT_OS==ITT_OS_WIN
 static const char* ittnotify_lib_name = "libittnotify.dll";
-#elif ITT_OS==ITT_OS_LINUX || ITT_OS==ITT_OS_FREEBSD
+#elif ITT_OS==ITT_OS_LINUX || ITT_OS==ITT_OS_FREEBSD|| ITT_OS==ITT_OS_OPENBSD
 static const char* ittnotify_lib_name = "libittnotify.so";
 #elif ITT_OS==ITT_OS_MAC
 static const char* ittnotify_lib_name = "libittnotify.dylib";

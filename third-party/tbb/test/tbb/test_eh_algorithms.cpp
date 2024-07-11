@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -401,7 +401,7 @@ TEST_CASE("parallel_for and parallel_reduce exception handling test #0") {
         }
     }
 }
-
+#if !EMSCRIPTEN
 //! Testing parallel_for and parallel_reduce exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for and parallel_reduce exception handling test #1") {
@@ -486,8 +486,8 @@ TEST_CASE("parallel_for and parallel_reduce exception handling test #4") {
     }
 }
 
+#endif
 #endif /* TBB_USE_EXCEPTIONS */
-
 class ParForBodyToCancel {
 public:
     void operator()( const range_type& ) const {
@@ -698,6 +698,7 @@ TEST_CASE("parallel_for and parallel_reduce cancellation test #1") {
     }
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_for and parallel_reduce cancellation
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for and parallel_reduce cancellation test #2") {
@@ -718,6 +719,7 @@ TEST_CASE("parallel_for and parallel_reduce cancellation test #2") {
         }
     }
 }
+#endif
 
 //! Testing parallel_for and parallel_reduce cancellation
 //! \brief \ref error_guessing
@@ -1033,6 +1035,7 @@ void Test5_parallel_for_each () {
     }
 } // void Test5_parallel_for_each ()
 
+#if !EMSCRIPTEN
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for_each exception handling test #1") {
@@ -1053,6 +1056,7 @@ TEST_CASE("parallel_for_each exception handling test #1") {
         }
     }
 }
+#endif
 
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
@@ -1075,6 +1079,7 @@ TEST_CASE("parallel_for_each exception handling test #2") {
     }
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for_each exception handling test #3") {
@@ -1095,6 +1100,7 @@ TEST_CASE("parallel_for_each exception handling test #3") {
         }
     }
 }
+#endif
 
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
@@ -1117,6 +1123,7 @@ TEST_CASE("parallel_for_each exception handling test #4") {
     }
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for_each exception handling test #5") {
@@ -1139,7 +1146,7 @@ TEST_CASE("parallel_for_each exception handling test #5") {
         }
     }
 }
-
+#endif
 #endif /* TBB_USE_EXCEPTIONS */
 
 class ParForEachBodyToCancel {
@@ -1217,6 +1224,7 @@ void TestCancelation2_parallel_for_each () {
     RunCancellationTest<ParForEachWorker<body_to_cancel, Iterator>, Cancellator2>();
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_for_each cancellation test
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for_each cancellation test #1") {
@@ -1257,6 +1265,7 @@ TEST_CASE("parallel_for_each cancellation test #2") {
         }
     }
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests for tbb::parallel_pipeline
@@ -1608,6 +1617,7 @@ void TestWithDifferentFiltersAndConcurrency() {
 #endif
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_pipeline exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_pipeline exception handling test #1") {
@@ -1631,7 +1641,7 @@ TEST_CASE("parallel_pipeline exception handling test #3") {
 TEST_CASE("parallel_pipeline exception handling test #4") {
     TestWithDifferentFiltersAndConcurrency<Test4_pipeline>();
 }
-
+#endif
 #endif /* TBB_USE_EXCEPTIONS */
 
 class FilterToCancel  {
@@ -1727,6 +1737,7 @@ TEST_CASE("parallel_pipeline cancellation test #1") {
     }
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_pipeline cancellation
 //! \brief \ref error_guessing
 TEST_CASE("parallel_pipeline cancellation test #2") {
@@ -1748,3 +1759,4 @@ TEST_CASE("parallel_pipeline cancellation test #2") {
         }
     }
 }
+#endif

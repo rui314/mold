@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2017-2021 Intel Corporation
+    Copyright (c) 2017-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -245,6 +245,7 @@ TEST_CASE("Serial test") {
     SerialTest<N>();
 }
 
+#if !EMSCRIPTEN
 //! Testing blocked_rangeNd interface with parallel_for
 //! \brief \ref requirement
 TEST_CASE("Parallel test") {
@@ -253,6 +254,7 @@ TEST_CASE("Parallel test") {
         ParallelTest<N>();
     }
 }
+#endif
 
 //! Testing blocked_rangeNd with proportional splitting
 //! \brief \ref interface \ref requirement

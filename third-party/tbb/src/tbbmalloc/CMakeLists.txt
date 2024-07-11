@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023 Intel Corporation
+# Copyright (c) 2020-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -109,5 +109,15 @@ target_link_libraries(tbbmalloc
     ${TBB_COMMON_LINK_LIBS}
 )
 
-tbb_install_target(tbbmalloc)
+if(TBB_BUILD_APPLE_FRAMEWORKS)
+    set_target_properties(tbbmalloc PROPERTIES 
+        FRAMEWORK TRUE
+        FRAMEWORK_VERSION ${TBBMALLOC_BINARY_VERSION}.${TBB_BINARY_MINOR_VERSION}
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.intel.tbbmalloc
+        MACOSX_FRAMEWORK_IDENTIFIER com.intel.tbbmalloc
+        MACOSX_FRAMEWORK_BUNDLE_VERSION ${TBBMALLOC_BINARY_VERSION}.${TBB_BINARY_MINOR_VERSION}
+        MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${TBBMALLOC_BINARY_VERSION}
+    )
+endif()
 
+tbb_install_target(tbbmalloc)

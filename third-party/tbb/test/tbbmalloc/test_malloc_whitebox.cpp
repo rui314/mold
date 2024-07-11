@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -1257,7 +1257,11 @@ void TestTHP() {
     scalable_allocation_mode(USE_HUGE_PAGES, 1);
     REQUIRE_MESSAGE(hugePages.isEnabled, "Huge pages should be enabled via scalable_allocation_mode");
 
+#if defined __loongarch64
+    const int HUGE_PAGE_SIZE = 32 * 1024 * 1024;
+#else
     const int HUGE_PAGE_SIZE = 2 * 1024 * 1024;
+#endif
 
     // allocCount transparent huge pages should be allocated
     const int allocCount = 10;

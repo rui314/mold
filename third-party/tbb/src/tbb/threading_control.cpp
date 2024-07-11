@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2022-2023 Intel Corporation
+    Copyright (c) 2022-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -162,6 +162,10 @@ void threading_control_impl::adjust_demand(threading_control_client tc_client, i
     auto& c = *tc_client.get_pm_client();
     my_thread_request_serializer->register_mandatory_request(mandatory_delta);
     my_permit_manager->adjust_demand(c, mandatory_delta, workers_delta);
+}
+
+bool threading_control_impl::is_any_other_client_active() {
+    return my_thread_request_serializer->num_workers_requested() > 0 ? my_thread_dispatcher->is_any_client_in_need() : false;
 }
 
 thread_control_monitor& threading_control_impl::get_waiting_threads_monitor() {
@@ -387,6 +391,10 @@ unsigned threading_control::max_num_workers() {
 
 void threading_control::adjust_demand(threading_control_client client, int mandatory_delta, int workers_delta) {
     my_pimpl->adjust_demand(client, mandatory_delta, workers_delta);
+}
+
+bool threading_control::is_any_other_client_active() {
+    return my_pimpl->is_any_other_client_active();
 }
 
 thread_control_monitor& threading_control::get_waiting_threads_monitor() {

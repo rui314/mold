@@ -1,4 +1,4 @@
-# Copyright (c) 2016-2023 Intel Corporation
+# Copyright (c) 2016-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -89,8 +89,8 @@ class Pool(object):
 
     def __init__(self, nworkers=0, name="Pool"):
         """
-        \param nworkers (integer) number of worker threads to start
-        \param name (string) prefix for the worker threads' name
+        :param nworkers (integer) number of worker threads to start
+        :param name (string) prefix for the worker threads' name
         """
         self._closed = False
         self._tasks = task_group()
@@ -268,8 +268,8 @@ class Job:
 
     def __init__(self, func, args, kwds, apply_result):
         """
-        \param func/args/kwds used to call the function
-        \param apply_result ApplyResult object that holds the result
+        :param func/args/kwds used to call the function
+        :param apply_result ApplyResult object that holds the result
         of the function call
         """
         self._func = func
@@ -317,10 +317,10 @@ class ApplyResult(object):
 
     def __init__(self, collector=None, callback=None):
         """
-        \param collector when not None, the notify_ready() method of
+        :param collector when not None, the notify_ready() method of
         the collector will be called when the result from the Job is
         ready
-        \param callback when not None, function to call when the
+        :param callback when not None, function to call when the
         result becomes available (this is the parameter passed to the
         Pool::*_async() methods.
         """
@@ -404,7 +404,7 @@ class AbstractResultCollector(object):
 
     def __init__(self, to_notify):
         """
-        \param to_notify ApplyResult object to notify when all the
+        :param to_notify ApplyResult object to notify when all the
         results we're waiting for become available. Can be None.
         """
         self._to_notify = to_notify
@@ -414,7 +414,7 @@ class AbstractResultCollector(object):
         always be called BEFORE the Jobs get submitted to the work
         queue, and BEFORE the __iter__ and _get_result() methods can
         be called
-        \param apply_result ApplyResult object to add in our collection
+        :param apply_result ApplyResult object to add in our collection
         """
         raise NotImplementedError("Children classes must implement it")
 
@@ -422,7 +422,7 @@ class AbstractResultCollector(object):
         """Called by the ApplyResult object (already registered via
         register_result()) that it is now ready (ie. the Job's result
         is available or an exception has been raised).
-        \param apply_result ApplyResult object telling us that the job
+        :param apply_result ApplyResult object telling us that the job
         has been processed
         """
         raise NotImplementedError("Children classes must implement it")
@@ -431,8 +431,8 @@ class AbstractResultCollector(object):
         """Called by the CollectorIterator object to retrieve the
         result's values one after another (order defined by the
         implementation)
-        \param idx The index of the result we want, wrt collector's order
-        \param timeout integer telling how long to wait (in seconds)
+        :param idx The index of the result we want, wrt collector's order
+        :param timeout integer telling how long to wait (in seconds)
         for the result at index idx to be available, or None (wait
         forever)
         """
@@ -450,7 +450,7 @@ class CollectorIterator(object):
     AbstractResultCollector::__iter__() method"""
 
     def __init__(self, collector):
-        """\param AbstractResultCollector instance"""
+        """:param AbstractResultCollector instance"""
         self._collector = collector
         self._idx = 0
 
@@ -486,7 +486,7 @@ class UnorderedResultCollector(AbstractResultCollector):
 
     def __init__(self, to_notify=None):
         """
-        \param to_notify ApplyResult object to notify when all the
+        :param to_notify ApplyResult object to notify when all the
         results we're waiting for become available. Can be None.
         """
         AbstractResultCollector.__init__(self, to_notify)
@@ -499,7 +499,7 @@ class UnorderedResultCollector(AbstractResultCollector):
         always be called BEFORE the Jobs get submitted to the work
         queue, and BEFORE the __iter__ and _get_result() methods can
         be called
-        \param apply_result ApplyResult object to add in our collection
+        :param apply_result ApplyResult object to add in our collection
         """
         self._expected += 1
 
@@ -507,8 +507,8 @@ class UnorderedResultCollector(AbstractResultCollector):
         """Called by the CollectorIterator object to retrieve the
         result's values one after another, in the order the results have
         become available.
-        \param idx The index of the result we want, wrt collector's order
-        \param timeout integer telling how long to wait (in seconds)
+        :param idx The index of the result we want, wrt collector's order
+        :param timeout integer telling how long to wait (in seconds)
         for the result at index idx to be available, or None (wait
         forever)
         """
@@ -535,7 +535,7 @@ class UnorderedResultCollector(AbstractResultCollector):
         """Called by the ApplyResult object (already registered via
         register_result()) that it is now ready (ie. the Job's result
         is available or an exception has been raised).
-        \param apply_result ApplyResult object telling us that the job
+        :param apply_result ApplyResult object telling us that the job
         has been processed
         """
         first_item = False
@@ -560,9 +560,9 @@ class OrderedResultCollector(AbstractResultCollector):
 
     def __init__(self, to_notify=None, as_iterator=True):
         """
-        \param to_notify ApplyResult object to notify when all the
+        :param to_notify ApplyResult object to notify when all the
         results we're waiting for become available. Can be None.
-        \param as_iterator boolean telling whether the result value
+        :param as_iterator boolean telling whether the result value
         set on to_notify should be an iterator (available as soon as 1
         result arrived) or a list (available only after the last
         result arrived)
@@ -578,7 +578,7 @@ class OrderedResultCollector(AbstractResultCollector):
         always be called BEFORE the Jobs get submitted to the work
         queue, and BEFORE the __iter__ and _get_result() methods can
         be called
-        \param apply_result ApplyResult object to add in our collection
+        :param apply_result ApplyResult object to add in our collection
         """
         self._results.append(apply_result)
         self._remaining += 1
@@ -587,8 +587,8 @@ class OrderedResultCollector(AbstractResultCollector):
         """Called by the CollectorIterator object to retrieve the
         result's values one after another (order defined by the
         implementation)
-        \param idx The index of the result we want, wrt collector's order
-        \param timeout integer telling how long to wait (in seconds)
+        :param idx The index of the result we want, wrt collector's order
+        :param timeout integer telling how long to wait (in seconds)
         for the result at index idx to be available, or None (wait
         forever)
         """
@@ -600,7 +600,7 @@ class OrderedResultCollector(AbstractResultCollector):
         """Called by the ApplyResult object (already registered via
         register_result()) that it is now ready (ie. the Job's result
         is available or an exception has been raised).
-        \param apply_result ApplyResult object telling us that the job
+        :param apply_result ApplyResult object telling us that the job
         has been processed
         """
         got_first = False

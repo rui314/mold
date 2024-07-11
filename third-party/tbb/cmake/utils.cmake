@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2023 Intel Corporation
+# Copyright (c) 2020-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,31 +23,37 @@ macro(tbb_remove_compile_flag flag)
 endmacro()
 
 macro(tbb_install_target target)
-    install(TARGETS ${target}
-        EXPORT TBBTargets
-        LIBRARY
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            NAMELINK_SKIP
-            COMPONENT runtime
-        RUNTIME
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            COMPONENT runtime
-        ARCHIVE
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            COMPONENT devel)
-
-    if (BUILD_SHARED_LIBS)
+    if (TBB_INSTALL)
         install(TARGETS ${target}
+            EXPORT TBBTargets
             LIBRARY
                 DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                NAMELINK_ONLY
-                COMPONENT devel)
-    endif()
-    if (MSVC AND BUILD_SHARED_LIBS)
-        install(FILES $<TARGET_PDB_FILE:${target}>
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            COMPONENT devel
-            OPTIONAL)
+                NAMELINK_SKIP
+                COMPONENT runtime
+            RUNTIME
+                DESTINATION ${CMAKE_INSTALL_BINDIR}
+                COMPONENT runtime
+            ARCHIVE
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT devel
+            FRAMEWORK
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT runtime
+                OPTIONAL)
+
+        if (BUILD_SHARED_LIBS)
+            install(TARGETS ${target}
+                LIBRARY
+                    DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                    NAMELINK_ONLY
+                    COMPONENT devel)
+        endif()
+        if (MSVC AND BUILD_SHARED_LIBS)
+            install(FILES $<TARGET_PDB_FILE:${target}>
+                DESTINATION ${CMAKE_INSTALL_BINDIR}
+                COMPONENT devel
+                OPTIONAL)
+        endif()
     endif()
 endmacro()
 
