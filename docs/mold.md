@@ -152,6 +152,9 @@ but as `-o magic`.
 * `--no-color-diagnostics`:
   Synonym for `--color-diagnostics=never`.
 
+* `--detach`, `--no-detach:
+  Permit or do not permit mold to create a debug info file in the background.
+
 * `--fork`, `--no-fork`:
   Spawn a child process and let it do the actual linking. When linking a large
   program, the OS kernel can take a few hundred milliseconds to terminate a
@@ -202,6 +205,25 @@ but as `-o magic`.
   command with the `LD_PRELOAD` environment set to intercept exec(3) family
   functions and replaces `argv[0]` with itself if it is `ld`, `ld.gold`, or
   `ld.lld`.
+
+* `--separate-debug-file`, `--separate-debug-file=_file_`
+  Bundle debug info sections into a separate file instead of embedding them in
+  an output executable or a shared library. mold creates a debug info file in
+  the background by default, so that you can start running your executable as
+  soon as possible.
+
+  By default, the debug info file is created in the same directory as is the
+  output file, with the `.dbg` file extension. That filename is embedded into
+  the output file so that `gdb` can automatically find the debug info file for
+  the output file. For more info about gdb features related to separate debug
+  files, see
+  <https://sourceware.org/gdb/current/onlinedocs/gdb.html/Separate-Debug-Files.html>.
+
+  mold holds a file lock with flock(2) while creating a debug info file in the
+  background.
+
+  If you don't want to create a debug info file in the background, pass the
+  `--no-detach` option.
 
 * `--shuffle-sections`, `--shuffle-sections`=_number_:
   Randomize the output by shuffling the order of input sections before
