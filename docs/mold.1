@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "May 2024" ""
+.TH "MOLD" "1" "July 2024" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -54,71 +54,65 @@ Multi\-letter long options may precede either a single dash or double dashes, ex
 .P
 For example, you can spell \fB\-\-as\-needed\fR as \fB\-as\-needed\fR, but \fB\-\-omagic\fR must not be spelled as \fB\-omagic\fR\. \fB\-omagic\fR will be interpreted not as \fB\-\-omagic\fR but as \fB\-o magic\fR\.
 .SH "MOLD\-SPECIFIC OPTIONS"
-.TP
-\fB\-\-chroot\fR=\fIdir\fR
-Set \fIdir\fR as the root directory\.
-.TP
-\fB\-\-color\-diagnostics\fR=[ \fIauto\fR | \fIalways\fR | \fInever\fR ]
-Show diagnostic messages in color using ANSI escape sequences\. \fBauto\fR means that \fBmold\fR prints out messages in color only if the standard output is connected to a TTY\. Default is \fBauto\fR\.
-.TP
-\fB\-\-color\-diagnostics\fR
-Synonym for \fB\-\-color\-diagnostics=auto\fR\.
-.TP
-\fB\-\-no\-color\-diagnostics\fR
-Synonym for \fB\-\-color\-diagnostics=never\fR\.
-.TP
-\fB\-\-fork\fR, \fB\-\-no\-fork\fR
-Spawn a child process and let it do the actual linking\. When linking a large program, the OS kernel can take a few hundred milliseconds to terminate a \fBmold\fR process\. \fB\-\-fork\fR hides that latency\. By default, it does fork\.
-.TP
-\fB\-\-perf\fR
-Print performance statistics\.
-.TP
-\fB\-\-print\-dependencies\fR
-Print out dependency information for input files\.
+.IP "\[ci]" 4
+\fB\-\-chroot\fR=\fIdir\fR: Set \fIdir\fR as the root directory\.
+.IP "\[ci]" 4
+\fB\-\-color\-diagnostics\fR=[ \fIauto\fR | \fIalways\fR | \fInever\fR ]: Show diagnostic messages in color using ANSI escape sequences\. \fBauto\fR means that \fBmold\fR prints out messages in color only if the standard output is connected to a TTY\. Default is \fBauto\fR\.
+.IP "\[ci]" 4
+\fB\-\-color\-diagnostics\fR: Synonym for \fB\-\-color\-diagnostics=auto\fR\.
+.IP "\[ci]" 4
+\fB\-\-no\-color\-diagnostics\fR: Synonym for \fB\-\-color\-diagnostics=never\fR\.
+.IP "\[ci]" 4
+\fB\-\-detach\fR, `\-\-no\-detach: Permit or do not permit mold to create a debug info file in the background\.
+.IP "\[ci]" 4
+\fB\-\-fork\fR, \fB\-\-no\-fork\fR: Spawn a child process and let it do the actual linking\. When linking a large program, the OS kernel can take a few hundred milliseconds to terminate a \fBmold\fR process\. \fB\-\-fork\fR hides that latency\. By default, it does fork\.
+.IP "\[ci]" 4
+\fB\-\-perf\fR: Print performance statistics\.
+.IP "\[ci]" 4
+\fB\-\-print\-dependencies\fR: Print out dependency information for input files\.
 .IP
 Each line of the output for this option shows which file depends on which file to use a specific symbol\. This option is useful for debugging why some object file in a static archive got linked or why some shared library is kept in an output file's dependency list even with \fB\-\-as\-needed\fR\.
-.TP
-\fB\-\-relocatable\-merge\-sections\fR
-By default, \fBmold\fR doesn't merge input sections by name when merging input object files into a single output object file for \fB\-r\fR\. For example, \fB\.text\.foo\fR and \fB\.text\.bar\fR aren't merged for \fB\-r\fR even though they are merged into \fB\.text\fR based on the default section merging rules\.
+.IP "\[ci]" 4
+\fB\-\-relocatable\-merge\-sections\fR: By default, \fBmold\fR doesn't merge input sections by name when merging input object files into a single output object file for \fB\-r\fR\. For example, \fB\.text\.foo\fR and \fB\.text\.bar\fR aren't merged for \fB\-r\fR even though they are merged into \fB\.text\fR based on the default section merging rules\.
 .IP
 This option changes the behavior so that \fBmold\fR merges input sections by name by the default section merging rules\.
-.TP
-\fB\-\-repro\fR
-Archive input files, as well as a text file containing command line options, in a tar file so that you can run \fBmold\fR with the exact same inputs again\. This is useful for reporting a bug with a reproducer\. The output filename is \fBpath/to/output\.tar\fR, where \fBpath/to/output\fR is an output filename specified by \fB\-o\fR\.
-.TP
-\fB\-\-reverse\-sections\fR
-Reverse the order of input sections before assigning them the offsets in the output file\.
+.IP "\[ci]" 4
+\fB\-\-repro\fR: Archive input files, as well as a text file containing command line options, in a tar file so that you can run \fBmold\fR with the exact same inputs again\. This is useful for reporting a bug with a reproducer\. The output filename is \fBpath/to/output\.tar\fR, where \fBpath/to/output\fR is an output filename specified by \fB\-o\fR\.
+.IP "\[ci]" 4
+\fB\-\-reverse\-sections\fR: Reverse the order of input sections before assigning them the offsets in the output file\.
 .IP
 This option is useful for finding bugs that depend on the initialization order of global objects\. In C++, constructors of global objects in a single source file are guaranteed to be executed in the source order, but there's no such guarantee across compilation units\. Usually, constructors are executed in the order given to the linker, but depending on it is a mistake\.
 .IP
 By reversing the order of input sections using \fB\-\-reverse\-sections\fR, you can easily test that your program works in the reversed initialization order\.
-.TP
-\fB\-\-run\fR \fIcommand\fR \fIarg\fR\|\.\|\.\|\.
-Run \fIcommand\fR with \fBmold\fR \fB/usr/bin/ld\fR\. Specifically, \fBmold\fR runs a given command with the \fBLD_PRELOAD\fR environment set to intercept exec(3) family functions and replaces \fBargv[0]\fR with itself if it is \fBld\fR, \fBld\.gold\fR, or \fBld\.lld\fR\.
-.TP
-\fB\-\-shuffle\-sections\fR, \fB\-\-shuffle\-sections\fR=\fInumber\fR
-Randomize the output by shuffling the order of input sections before assigning them the offsets in the output file\. If a \fInumber\fR is given, it's used as a seed for the random number generator, so that the linker produces the same output for the same seed\. If no seed is given, a random number is used as a seed\.
+.IP "\[ci]" 4
+\fB\-\-run\fR \fIcommand\fR \fIarg\fR\|\.\|\.\|\.: Run \fIcommand\fR with \fBmold\fR \fB/usr/bin/ld\fR\. Specifically, \fBmold\fR runs a given command with the \fBLD_PRELOAD\fR environment set to intercept exec(3) family functions and replaces \fBargv[0]\fR with itself if it is \fBld\fR, \fBld\.gold\fR, or \fBld\.lld\fR\.
+.IP "\[ci]" 4
+\fB\-\-separate\-debug\-file\fR, \fB\-\-separate\-debug\-file=_file_\fR Bundle debug info sections into a separate file instead of embedding them in an output executable or a shared library\. mold creates a debug info file in the background by default, so that you can start running your executable as soon as possible\.
+.IP
+By default, the debug info file is created in the same directory as is the output file, with the \fB\.dbg\fR file extension\. That filename is embedded into the output file so that \fBgdb\fR can automatically find the debug info file for the output file\. For more info about gdb features related to separate debug files, see \fIhttps://sourceware\.org/gdb/current/onlinedocs/gdb\.html/Separate\-Debug\-Files\.html\fR\.
+.IP
+mold holds a file lock with flock(2) while creating a debug info file in the background\.
+.IP
+If you don't want to create a debug info file in the background, pass the \fB\-\-no\-detach\fR option\.
+.IP "\[ci]" 4
+\fB\-\-shuffle\-sections\fR, \fB\-\-shuffle\-sections\fR=\fInumber\fR: Randomize the output by shuffling the order of input sections before assigning them the offsets in the output file\. If a \fInumber\fR is given, it's used as a seed for the random number generator, so that the linker produces the same output for the same seed\. If no seed is given, a random number is used as a seed\.
 .IP
 This option is useful for benchmarking\. Modern CPUs are sensitive to a program's memory layout\. A seemingly benign change in program layout, such as a small size increase of a function in the middle of a program, can affect the program's performance\. Therefore, even if you write new code and get a good benchmark result, it is hard to say whether the new code improves the program's performance; it is possible that the new memory layout happens to perform better\.
 .IP
 By running a benchmark multiple times with randomized memory layouts using \fB\-\-shuffle\-sections\fR, you can isolate your program's real performance number from the randomness caused by memory layout changes\.
-.TP
-\fB\-\-spare\-program\-headers\fR=\fInumber\fR
-Append the given number of \fBPT_NULL\fR entries to the end of the program header, so that post\-link processing tools can easily add new segments by overwriting the null entries\.
+.IP "\[ci]" 4
+\fB\-\-spare\-program\-headers\fR=\fInumber\fR: Append the given number of \fBPT_NULL\fR entries to the end of the program header, so that post\-link processing tools can easily add new segments by overwriting the null entries\.
 .IP
 Note that ELF requires all \fBPT_LOAD\fR segments to be sorted by \fBp_vaddr\fR\. Therefore, if you add a new LOAD segment, you may need to sort the entire program header\.
-.TP
-\fB\-\-stats\fR
-Print input statistics\.
-.TP
-\fB\-\-thread\-count\fR=\fIcount\fR
-Use \fIcount\fR number of threads\.
-.TP
-\fB\-\-threads\fR, \fB\-\-no\-threads\fR
-Use multiple threads\. By default, \fBmold\fR uses as many threads as the number of cores or 32, whichever is smaller\. The reason it is capped at 32 is because \fBmold\fR doesn't scale well beyond that point\. To use only one thread, pass \fB\-\-no\-threads\fR or \fB\-\-thread\-count=1\fR\.
-.TP
-\fB\-\-quick\-exit\fR, \fB\-\-no\-quick\-exit\fR
-Use or do not use \fBquick_exit\fR to exit\.
+.IP "\[ci]" 4
+\fB\-\-stats\fR: Print input statistics\.
+.IP "\[ci]" 4
+\fB\-\-thread\-count\fR=\fIcount\fR: Use \fIcount\fR number of threads\.
+.IP "\[ci]" 4
+\fB\-\-threads\fR, \fB\-\-no\-threads\fR: Use multiple threads\. By default, \fBmold\fR uses as many threads as the number of cores or 32, whichever is smaller\. The reason it is capped at 32 is because \fBmold\fR doesn't scale well beyond that point\. To use only one thread, pass \fB\-\-no\-threads\fR or \fB\-\-thread\-count=1\fR\.
+.IP "\[ci]" 4
+\fB\-\-quick\-exit\fR, \fB\-\-no\-quick\-exit\fR: Use or do not use \fBquick_exit\fR to exit\.
+.IP "" 0
 .SH "GNU\-COMPATIBLE OPTIONS"
 .TP
 \fB\-\-help\fR
@@ -509,8 +503,6 @@ If this variable is set to \fB1\fR, only one \fBmold\fR process will run at a ti
 The primary reason for this environment variable is to minimize peak memory usage\. Since mold is designed to operate with high parallelism, running multiple mold instances simultaneously may not be beneficial\. If you execute N instances of mold concurrently, it could require N times the time and N times the memory\. On the other hand, running them one after the other might still take N times longer, but the peak memory usage would be the same as running just a single instance\.
 .IP
 If your build system invokes multiple linker processes simultaneously and some of them often get killed due to out\-of\-memory errors, you might consider setting this environment variable to \fB1\fR to see if it addresses the OOM issue\.
-.IP
-Currently, any value other than \fB1\fR is silently ignored\.
 .TP
 \fBMOLD_DEBUG\fR
 If this variable is set to a non\-empty string, \fBmold\fR embeds its command\-line options in the output file's \fB\.comment\fR section\.
