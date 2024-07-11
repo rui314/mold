@@ -1603,13 +1603,21 @@ void copy_chunks(Context<E> &ctx) {
   // For --relocatable and --emit-relocs, we want to copy non-relocation
   // sections first. This is because REL-type relocation sections (as
   // opposed to RELA-type) stores relocation addends to target sections.
+  //
+  // We also does that for SH4 because despite being RELA, we always need
+  // to write addends to relocated places for SH4.
+  auto is_rel = [](Chunk<E> &chunk) {
+    return chunk.shdr.sh_type == SHT_REL ||
+           (is_sh4<E> && chunk.shdr.sh_type == SHT_RELA);
+  };
+
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (chunk->shdr.sh_type != SHT_REL)
+    if (!is_rel(*chunk))
       copy(*chunk);
   });
 
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (chunk->shdr.sh_type == SHT_REL)
+    if (is_rel(*chunk))
       copy(*chunk);
   });
 
