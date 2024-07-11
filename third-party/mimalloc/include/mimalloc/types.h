@@ -24,7 +24,7 @@ terms of the MIT license. A copy of the license can be found in the file
 
 #include <stddef.h>   // ptrdiff_t
 #include <stdint.h>   // uintptr_t, uint16_t, etc
-#include "mimalloc/atomic.h"  // _Atomic
+#include "atomic.h"   // _Atomic
 
 #ifdef _MSC_VER
 #pragma warning(disable:4214) // bitfield is not int
@@ -319,6 +319,7 @@ typedef struct mi_page_s {
   mi_block_t*           local_free;        // list of deferred free blocks by this thread (migrates to `free`)
   uint16_t              used;              // number of blocks in use (including blocks in `thread_free`)
   uint8_t               block_size_shift;  // if not zero, then `(1 << block_size_shift) == block_size` (only used for fast path in `free.c:_mi_page_ptr_unalign`)
+  uint8_t               heap_tag;          // tag of the owning heap, used for separated heaps by object type
                                            // padding
   size_t                block_size;        // size available in each block (always `>0`)
   uint8_t*              page_start;        // start of the page area containing the blocks
@@ -538,6 +539,7 @@ struct mi_heap_s {
   size_t                page_retired_max;                    // largest retired index into the `pages` array.
   mi_heap_t*            next;                                // list of heaps per thread
   bool                  no_reclaim;                          // `true` if this heap should not reclaim abandoned pages
+  uint8_t               tag;                                 // custom tag, can be used for separating heaps based on the object types
   mi_page_t*            pages_free_direct[MI_PAGES_DIRECT];  // optimize: array where every entry points a page with possibly free blocks in the corresponding queue for that size.
   mi_page_queue_t       pages[MI_BIN_FULL + 1];              // queue of pages for each size class (or "bin")
 };

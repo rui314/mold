@@ -422,6 +422,7 @@ __attribute__((constructor(0)))
 #else
 __attribute__((constructor))      // seems not supported by g++-11 on the M1
 #endif
+__attribute__((used))
 static void _mi_macos_override_malloc(void) {
   malloc_zone_t* purgeable_zone = NULL;
 

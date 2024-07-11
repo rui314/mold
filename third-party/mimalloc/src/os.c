@@ -11,9 +11,7 @@ terms of the MIT license. A copy of the license can be found in the file
 
 
 /* -----------------------------------------------------------
-  Initialization.
-  On windows initializes support for aligned allocation and
-  large OS pages (if MIMALLOC_LARGE_OS_PAGES is true).
+  Initialization. 
 ----------------------------------------------------------- */
 
 static mi_os_mem_config_t mi_os_mem_config = {
@@ -21,7 +19,7 @@ static mi_os_mem_config_t mi_os_mem_config = {
   0,      // large page size (usually 2MiB)
   4096,   // allocation granularity
   true,   // has overcommit?  (if true we use MAP_NORESERVE on mmap systems)
-  false,  // must free whole? (on mmap systems we can free anywhere in a mapped range, but on Windows we must free the entire span)
+  false,  // can we partially free allocated blocks? (on mmap systems we can free anywhere in a mapped range, but on Windows we must free the entire span)
   true    // has virtual reserve? (if true we can reserve virtual address space without using commit or physical memory)
 };
 
@@ -239,7 +237,7 @@ static void* mi_os_prim_alloc_aligned(size_t size, size_t alignment, bool commit
     if (size >= (SIZE_MAX - alignment)) return NULL; // overflow
     const size_t over_size = size + alignment;
 
-    if (mi_os_mem_config.must_free_whole) {  // win32 virtualAlloc cannot free parts of an allocate block
+    if (!mi_os_mem_config.has_partial_free) {  // win32 virtualAlloc cannot free parts of an allocated block
       // over-allocate uncommitted (virtual) memory
       p = mi_os_prim_alloc(over_size, 1 /*alignment*/, false /* commit? */, false /* allow_large */, is_large, is_zero, stats);
       if (p == NULL) return NULL;
@@ -260,7 +258,7 @@ static void* mi_os_prim_alloc_aligned(size_t size, size_t alignment, bool commit
       p = mi_os_prim_alloc(over_size, 1, commit, false, is_large, is_zero, stats);
       if (p == NULL) return NULL;
 
-      // and selectively unmap parts around the over-allocated area. (noop on sbrk)
+      // and selectively unmap parts around the over-allocated area. 
       void* aligned_p = mi_align_up_ptr(p, alignment);
       size_t pre_size = (uint8_t*)aligned_p - (uint8_t*)p;
       size_t mid_size = _mi_align_up(size, _mi_os_page_size());
@@ -268,7 +266,7 @@ static void* mi_os_prim_alloc_aligned(size_t size, size_t alignment, bool commit
       mi_assert_internal(pre_size < over_size&& post_size < over_size&& mid_size >= size);
       if (pre_size > 0)  { mi_os_prim_free(p, pre_size, commit, stats); }
       if (post_size > 0) { mi_os_prim_free((uint8_t*)aligned_p + mid_size, post_size, commit, stats); }
-      // we can return the aligned pointer on `mmap` (and sbrk) systems
+      // we can return the aligned pointer on `mmap` systems
       p = aligned_p;
       *base = aligned_p; // since we freed the pre part, `*base == p`.
     }

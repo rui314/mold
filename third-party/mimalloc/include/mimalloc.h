@@ -8,7 +8,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #ifndef MIMALLOC_H
 #define MIMALLOC_H
 
-#define MI_MALLOC_VERSION 216   // major + 2 digits minor
+#define MI_MALLOC_VERSION 217   // major + 2 digits minor
 
 // ------------------------------------------------------
 // Compiler specific attributes
@@ -328,7 +328,7 @@ typedef enum mi_option_e {
   mi_option_allow_large_os_pages,       // allow large (2 or 4 MiB) OS pages, implies eager commit. If false, also disables THP for the process.
   mi_option_reserve_huge_os_pages,      // reserve N huge OS pages (1GiB pages) at startup
   mi_option_reserve_huge_os_pages_at,   // reserve huge OS pages at a specific NUMA node
-  mi_option_reserve_os_memory,          // reserve specified amount of OS memory in an arena at startup
+  mi_option_reserve_os_memory,          // reserve specified amount of OS memory in an arena at startup (internally, this value is in KiB; use `mi_option_get_size`)
   mi_option_deprecated_segment_cache,
   mi_option_deprecated_page_reset,
   mi_option_abandoned_page_purge,       // immediately purge delayed purges on thread termination
@@ -342,11 +342,12 @@ typedef enum mi_option_e {
   mi_option_max_warnings,               // issue at most N warning messages
   mi_option_max_segment_reclaim,        // max. percentage of the abandoned segments can be reclaimed per try (=10%)
   mi_option_destroy_on_exit,            // if set, release all memory on exit; sometimes used for dynamic unloading but can be unsafe
-  mi_option_arena_reserve,              // initial memory size in KiB for arena reservation (= 1 GiB on 64-bit)
+  mi_option_arena_reserve,              // initial memory size for arena reservation (= 1 GiB on 64-bit) (internally, this value is in KiB; use `mi_option_get_size`)
   mi_option_arena_purge_mult,           // multiplier for `purge_delay` for the purging delay for arenas (=10)
   mi_option_purge_extend_delay,
   mi_option_abandoned_reclaim_on_free,  // allow to reclaim an abandoned segment on a free (=1)
   mi_option_disallow_arena_alloc,       // 1 = do not use arena's for allocation (except if using specific arena id's)
+  mi_option_retry_on_oom,               // retry on out-of-memory for N milli seconds (=400), set to 0 to disable retries. (only on windows)
   _mi_option_last,
   // legacy option names
   mi_option_large_os_pages = mi_option_allow_large_os_pages,

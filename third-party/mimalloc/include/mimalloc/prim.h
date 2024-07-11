@@ -26,7 +26,7 @@ typedef struct mi_os_mem_config_s {
   size_t  large_page_size;      // 0 if not supported, usually 2MiB (4MiB on Windows)
   size_t  alloc_granularity;    // smallest allocation size (usually 4KiB, on Windows 64KiB)
   bool    has_overcommit;       // can we reserve more memory than can be actually committed?
-  bool    must_free_whole;      // must allocated blocks be freed as a whole (false for mmap, true for VirtualAlloc)
+  bool    has_partial_free;     // can allocated blocks be freed partially? (true for mmap, false for VirtualAlloc)
   bool    has_virtual_reserve;  // supports virtual address space reservation? (if true we can reserve virtual address space without using commit or physical memory)
 } mi_os_mem_config_t;
 
@@ -198,7 +198,7 @@ static inline void mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexce
     tcb[slot] = value;
   #elif defined(__APPLE__) && defined(__POWERPC__) // ppc, issue #781
     MI_UNUSED(ofs);
-    pthread_setspecific(slot, value);    
+    pthread_setspecific(slot, value);
   #endif
 }
 
@@ -208,11 +208,16 @@ static inline void mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexce
 // but unfortunately, it seems we cannot test for this reliably at this time (see issue #883)
 // Nevertheless, it seems needed on older graviton platforms (see issue #851).
 // For now, we only enable this for specific platforms.
-#if defined(__GNUC__) && (__GNUC__ >= 7) && defined(__aarch64__) /* special case aarch64 for older gcc versions (issue #851) */ \
-    && !defined(__APPLE__)  /* on apple (M1) the wrong register is read (tpidr_el0 instead of tpidrro_el0) so fall back to TLS slot assembly (<https://github.com/microsoft/mimalloc/issues/343#issuecomment-763272369>)*/ \
+#if !defined(__APPLE__)  /* on apple (M1) the wrong register is read (tpidr_el0 instead of tpidrro_el0) so fall back to TLS slot assembly (<https://github.com/microsoft/mimalloc/issues/343#issuecomment-763272369>)*/ \
+    && !defined(MI_LIBC_MUSL) \
     && (!defined(__clang_major__) || __clang_major__ >= 14)  /* older clang versions emit bad code; fall back to using the TLS slot (<https://lore.kernel.org/linux-arm-kernel/202110280952.352F66D8@keescook/T/>) */
-#define MI_USE_BUILTIN_THREAD_POINTER  1
+  #if    (defined(__GNUC__) && (__GNUC__ >= 7)  && defined(__aarch64__)) /* aarch64 for older gcc versions (issue #851) */ \
+      || (defined(__GNUC__) && (__GNUC__ >= 11) && defined(__x86_64__)) \
+      || (defined(__clang_major__) && (__clang_major__ >= 14) && (defined(__aarch64__) || defined(__x86_64__)))
+    #define MI_USE_BUILTIN_THREAD_POINTER  1
+  #endif
 #endif
+
 
 
 // defined in `init.c`; do not use these directly
@@ -222,7 +227,13 @@ extern bool _mi_process_is_initialized;             // has mi_process_init been 
 static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept;
 
 // Get a unique id for the current thread.
-#if defined(_WIN32)
+#if defined(MI_PRIM_THREAD_ID)
+
+static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
+  return MI_PRIM_THREAD_ID();  // used for example by CPython for a free threaded build (see python/cpython#115488)
+}
+
+#elif defined(_WIN32)
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -233,11 +244,11 @@ static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
   return (uintptr_t)NtCurrentTeb();
 }
 
-#elif MI_USE_BUILTIN_THREAD_POINTER 
+#elif MI_USE_BUILTIN_THREAD_POINTER
 
 static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
   // Works on most Unix based platforms with recent compilers
-  return (uintptr_t)__builtin_thread_pointer();  
+  return (uintptr_t)__builtin_thread_pointer();
 }
 
 #elif defined(MI_HAS_TLS_SLOT)

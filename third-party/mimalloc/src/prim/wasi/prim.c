@@ -23,7 +23,7 @@ void _mi_prim_mem_init( mi_os_mem_config_t* config ) {
   config->page_size = 64*MI_KiB; // WebAssembly has a fixed page size: 64KiB
   config->alloc_granularity = 16;
   config->has_overcommit = false;  
-  config->must_free_whole = true;
+  config->has_partial_free = false;
   config->has_virtual_reserve = false;
 }
 

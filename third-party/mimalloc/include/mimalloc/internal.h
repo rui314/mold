@@ -14,8 +14,8 @@ terms of the MIT license. A copy of the license can be found in the file
 // functions and macros.
 // --------------------------------------------------------------------------
 
-#include "mimalloc/types.h"
-#include "mimalloc/track.h"
+#include "types.h"
+#include "track.h"
 
 #if (MI_DEBUG>0)
 #define mi_trace_message(...)  _mi_trace_message(__VA_ARGS__)
@@ -88,6 +88,7 @@ mi_threadid_t _mi_thread_id(void) mi_attr_noexcept;
 mi_heap_t*    _mi_heap_main_get(void);     // statically allocated main backing heap
 void       _mi_thread_done(mi_heap_t* heap);
 void       _mi_thread_data_collect(void);
+void       _mi_tld_init(mi_tld_t* tld, mi_heap_t* bheap);
 
 // os.c
 void       _mi_os_init(void);                                            // called from process init
@@ -186,11 +187,13 @@ size_t     _mi_bin_size(uint8_t bin);           // for stats
 uint8_t    _mi_bin(size_t size);                // for stats
 
 // "heap.c"
+void       _mi_heap_init(mi_heap_t* heap, mi_tld_t* tld, mi_arena_id_t arena_id, bool noreclaim, uint8_t tag);
 void       _mi_heap_destroy_pages(mi_heap_t* heap);
 void       _mi_heap_collect_abandon(mi_heap_t* heap);
 void       _mi_heap_set_default_direct(mi_heap_t* heap);
 bool       _mi_heap_memid_is_suitable(mi_heap_t* heap, mi_memid_t memid);
 void       _mi_heap_unsafe_destroy_all(void);
+mi_heap_t* _mi_heap_by_tag(mi_heap_t* heap, uint8_t tag);
 
 // "stats.c"
 void       _mi_stats_done(mi_stats_t* stats);
@@ -379,10 +382,10 @@ static inline bool mi_mul_overflow(size_t count, size_t size, size_t* total) {
 }
 #else /* __builtin_umul_overflow is unavailable */
 static inline bool mi_mul_overflow(size_t count, size_t size, size_t* total) {
-  #define MI_MUL_NO_OVERFLOW ((size_t)1 << (4*sizeof(size_t)))  // sqrt(SIZE_MAX)
+  #define MI_MUL_COULD_OVERFLOW ((size_t)1 << (4*sizeof(size_t)))  // sqrt(SIZE_MAX)
   *total = count * size;
   // note: gcc/clang optimize this to directly check the overflow flag
-  return ((size >= MI_MUL_NO_OVERFLOW || count >= MI_MUL_NO_OVERFLOW) && size > 0 && (SIZE_MAX / size) < count);
+  return ((size >= MI_MUL_COULD_OVERFLOW || count >= MI_MUL_COULD_OVERFLOW) && size > 0 && (SIZE_MAX / size) < count);
 }
 #endif
 
@@ -546,6 +549,7 @@ static inline mi_heap_t* mi_page_heap(const mi_page_t* page) {
 static inline void mi_page_set_heap(mi_page_t* page, mi_heap_t* heap) {
   mi_assert_internal(mi_page_thread_free_flag(page) != MI_DELAYED_FREEING);
   mi_atomic_store_release(&page->xheap,(uintptr_t)heap);
+  if (heap != NULL) { page->heap_tag = heap->tag; }
 }
 
 // Thread free flag helpers
