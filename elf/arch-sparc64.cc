@@ -367,7 +367,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_SPARC_TLS_GD_CALL:
     case R_SPARC_TLS_LDM_CALL: {
       u64 addr;
-      if (ctx.arg.is_static)
+      if (ctx.arg.static_)
         addr = ctx.extra.tls_get_addr_sec->shdr.sh_addr;
       else
         addr = ctx.extra.tls_get_addr_sym->get_addr(ctx);
@@ -564,7 +564,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_SPARC_TLS_GD_CALL:
     case R_SPARC_TLS_LDM_CALL:
-      if (!ctx.arg.is_static)
+      if (!ctx.arg.static_)
         if (Symbol<E> &sym = *ctx.extra.tls_get_addr_sym; sym.is_imported)
           sym.flags |= NEEDS_PLT;
       break;

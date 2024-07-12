@@ -730,10 +730,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("print-map") || read_flag("M")) {
       ctx.arg.print_map = true;
     } else if (read_flag("Bstatic") || read_flag("dn") || read_flag("static")) {
-      ctx.arg.is_static = true;
+      ctx.arg.static_ = true;
       remaining.push_back("--Bstatic");
     } else if (read_flag("Bdynamic") || read_flag("dy")) {
-      ctx.arg.is_static = false;
+      ctx.arg.static_ = false;
       remaining.push_back("--Bdynamic");
     } else if (read_flag("shared") || read_flag("Bshareable")) {
       ctx.arg.shared = true;
@@ -917,7 +917,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.wrap.insert(arg);
     } else if (read_flag("omagic") || read_flag("N")) {
       ctx.arg.omagic = true;
-      ctx.arg.is_static = true;
+      ctx.arg.static_ = true;
     } else if (read_flag("no-omagic")) {
       ctx.arg.omagic = false;
     } else if (read_arg("oformat")) {
@@ -1347,7 +1347,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   }
 
   if (ctx.arg.relocatable)
-    ctx.arg.is_static = true;
+    ctx.arg.static_ = true;
 
   if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_SHUFFLE) {
     if (shuffle_sections_seed)

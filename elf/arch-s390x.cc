@@ -457,8 +457,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       // We always want to relax calls to __tls_get_offset() in statically-
       // linked executables because __tls_get_offset() in libc.a just calls
       // abort().
-      if ((ctx.arg.relax && sym.is_tprel_linktime_const(ctx)) ||
-          ctx.arg.is_static) {
+      if ((ctx.arg.relax && sym.is_tprel_linktime_const(ctx)) || ctx.arg.static_) {
         // Do nothing
       } else if (ctx.arg.relax && sym.is_tprel_runtime_const(ctx)) {
         sym.flags |= NEEDS_GOTTP;
@@ -468,7 +467,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_390_TLS_LDM32:
     case R_390_TLS_LDM64:
-      if (ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared)) {
+      if (ctx.arg.static_ || (ctx.arg.relax && !ctx.arg.shared)) {
         // Do nothing
       } else {
         ctx.needs_tlsld = true;

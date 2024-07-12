@@ -851,7 +851,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
 
 template <typename E>
 void DynamicSection<E>::update_shdr(Context<E> &ctx) {
-  if (ctx.arg.is_static && !ctx.arg.pie)
+  if (ctx.arg.static_ && !ctx.arg.pie)
     return;
 
   this->shdr.sh_size = create_dynamic_section(ctx).size() * sizeof(Word<E>);
@@ -1167,7 +1167,7 @@ void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   // statically-linked executable), we always relax TLSDESC relocations
   // so that no TLSDESC relocation exist at runtime.
   assert(supports_tlsdesc<E>);
-  assert(!ctx.arg.is_static);
+  assert(!ctx.arg.static_);
 
   sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
   this->shdr.sh_size += sizeof(Word<E>) * 2;
@@ -1342,7 +1342,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
   //
   // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be5
   if constexpr (is_arm64<E>)
-    if (ctx.dynamic && ctx.arg.is_static && ctx.arg.pie)
+    if (ctx.dynamic && ctx.arg.static_ && ctx.arg.pie)
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
   ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +

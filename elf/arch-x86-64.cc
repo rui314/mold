@@ -768,8 +768,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_PLT;
       break;
     case R_X86_64_TLSGD:
-      if ((ctx.arg.relax && sym.is_tprel_linktime_const(ctx)) ||
-          ctx.arg.is_static) {
+      if ((ctx.arg.relax && sym.is_tprel_linktime_const(ctx)) || ctx.arg.static_) {
         // We always relax if -static because libc.a doesn't contain
         // __tls_get_addr().
         i++;
@@ -783,7 +782,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_X86_64_TLSLD:
       // We always relax if -static because libc.a doesn't contain
       // __tls_get_addr().
-      if (ctx.arg.is_static || (ctx.arg.relax && !ctx.arg.shared))
+      if (ctx.arg.static_ || (ctx.arg.relax && !ctx.arg.shared))
         i++;
       else
         ctx.needs_tlsld = true;

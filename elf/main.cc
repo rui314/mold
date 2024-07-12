@@ -263,7 +263,7 @@ MappedFile *find_library(Context<E> &ctx, std::string name) {
 
   for (std::string_view dir : ctx.arg.library_paths) {
     std::string stem = std::string(dir) + "/lib" + name;
-    if (!ctx.is_static)
+    if (!ctx.static_)
       if (MappedFile *mf = open_library(ctx, stem + ".so"))
         return mf;
     if (MappedFile *mf = open_library(ctx, stem + ".a"))
@@ -289,7 +289,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   Timer t(ctx, "read_input_files");
 
   std::vector<std::tuple<bool, bool, bool, bool>> state;
-  ctx.is_static = ctx.arg.is_static;
+  ctx.static_ = ctx.arg.static_;
 
   while (!args.empty()) {
     std::string_view arg = args[0];
@@ -304,9 +304,9 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     } else if (arg == "--no-whole-archive") {
       ctx.whole_archive = false;
     } else if (arg == "--Bstatic") {
-      ctx.is_static = true;
+      ctx.static_ = true;
     } else if (arg == "--Bdynamic") {
-      ctx.is_static = false;
+      ctx.static_ = false;
     } else if (arg == "--start-lib") {
       ctx.in_lib = true;
     } else if (arg == "--end-lib") {
@@ -317,12 +317,11 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
         Fatal(ctx) << "--version-script: file not found: " << arg;
       parse_version_script(ctx, mf);
     } else if (arg == "--push-state") {
-      state.push_back({ctx.as_needed, ctx.whole_archive, ctx.is_static,
-                       ctx.in_lib});
+      state.push_back({ctx.as_needed, ctx.whole_archive, ctx.static_, ctx.in_lib});
     } else if (arg == "--pop-state") {
       if (state.empty())
         Fatal(ctx) << "no state pushed before popping";
-      std::tie(ctx.as_needed, ctx.whole_archive, ctx.is_static, ctx.in_lib) =
+      std::tie(ctx.as_needed, ctx.whole_archive, ctx.static_, ctx.in_lib) =
         state.back();
       state.pop_back();
     } else if (remove_prefix(arg, "-l")) {

@@ -191,7 +191,7 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.extra.save_restore = push(new PPC64SaveRestoreSection);
 
   if constexpr (is_sparc<E>) {
-    if (ctx.arg.is_static)
+    if (ctx.arg.static_)
       ctx.extra.tls_get_addr_sec = push(new SparcTlsGetAddrSection);
     ctx.extra.tls_get_addr_sym = get_symbol(ctx, "__tls_get_addr");
   }
@@ -2739,7 +2739,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // If we set values to these symbols in a static PIE, glibc attempts
   // to run ifunc initializers twice, with the second attempt with wrong
   // function addresses, causing a segmentation fault.
-  if (ctx.reldyn && ctx.arg.is_static && !ctx.arg.pie) {
+  if (ctx.reldyn && ctx.arg.static_ && !ctx.arg.pie) {
     stop(ctx.__rel_iplt_start, ctx.reldyn);
     stop(ctx.__rel_iplt_end, ctx.reldyn);
 

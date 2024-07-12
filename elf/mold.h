@@ -1757,7 +1757,7 @@ struct Context {
     bool icf = false;
     bool icf_all = false;
     bool ignore_data_address_equality = false;
-    bool is_static = false;
+    bool static_ = false;
     bool lto_pass2 = false;
     bool nmagic = false;
     bool noinhibit_exec = false;
@@ -1857,7 +1857,7 @@ struct Context {
   // Reader context
   bool as_needed = false;
   bool whole_archive = false;
-  bool is_static;
+  bool static_;
   bool in_lib = false;
   i64 file_priority = 10000;
   MappedFile *script_file = nullptr;
