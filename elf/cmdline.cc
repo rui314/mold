@@ -44,7 +44,8 @@ Options:
   -f SHLIB, --auxiliary SHLIB Set DT_AUXILIARY to the specified value
   -h LIBNAME, --soname LIBNAME
                               Set shared library name
-  -l LIBNAME                  Search for a given library
+  -l LIBNAME, --library LIBNAME
+                              Search for a given library
   -m TARGET                   Set target
   -o FILE, --output FILE      Set output filename
   -q, --emit-relocs           Leaves relocation sections in the output
@@ -1283,7 +1284,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       remaining.push_back("--whole-archive");
     } else if (read_flag("no-whole-archive")) {
       remaining.push_back("--no-whole-archive");
-    } else if (read_arg("l")) {
+    } else if (read_arg("l") || read_arg("library")) {
       remaining.push_back("-l" + std::string(arg));
     } else if (read_arg("script") || read_arg("T")) {
       remaining.push_back(std::string(arg));
