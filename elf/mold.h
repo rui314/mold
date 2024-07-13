@@ -2387,12 +2387,19 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
   assert(!(shdr().sh_flags & SHF_ALLOC));
 
   const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
-  if (!esym.is_abs() && !esym.is_common() && !esym.is_undef())
-    if (std::unique_ptr<MergeableSection<E>> &m =
-        file.mergeable_sections[file.get_shndx(esym)])
-      return m->get_fragment(esym.st_value + get_addend(*this, rel));
+  if (esym.is_abs() || esym.is_common() || esym.is_undef())
+    return {nullptr, 0};
 
-  return {nullptr, 0};
+  i64 shndx = file.get_shndx(esym);
+  std::unique_ptr<MergeableSection<E>> &m = file.mergeable_sections[shndx];
+  if (!m)
+    return {nullptr, 0};
+
+  if (esym.st_type == STT_SECTION)
+    return m->get_fragment(esym.st_value + get_addend(*this, rel));
+
+  std::pair<SectionFragment<E> *, i64> p = m->get_fragment(esym.st_value);
+  return {p.first, p.second + get_addend(*this, rel)};
 }
 
 template <typename E>
