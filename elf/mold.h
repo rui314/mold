@@ -1315,7 +1315,7 @@ public:
   std::vector<ElfSym<E>> elf_syms2;
 
 private:
-  SharedFile(Context<E> &ctx, MappedFile *mf);
+  SharedFile(Context<E> &ctx, MappedFile *mf) : InputFile<E>(ctx, mf) {}
 
   std::string get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
@@ -1333,12 +1333,20 @@ private:
 // linker-script.cc
 //
 
+struct ReaderContext {
+  bool as_needed = false;
+  bool in_lib = false;
+  bool static_ = false;
+  bool whole_archive = false;
+  tbb::task_group *tg = nullptr;
+};
+
 template <typename E>
-void parse_linker_script(Context<E> &ctx, MappedFile *mf);
+void parse_linker_script(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf);
 
 template <typename E>
 std::string_view
-get_script_output_type(Context<E> &ctx, MappedFile *mf);
+get_script_output_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf);
 
 template <typename E>
 void parse_version_script(Context<E> &ctx, MappedFile *mf);
@@ -1855,14 +1863,8 @@ struct Context {
   i64 page_size = E::page_size;
 
   // Reader context
-  bool as_needed = false;
-  bool whole_archive = false;
-  bool static_;
-  bool in_lib = false;
   i64 file_priority = 10000;
   MappedFile *script_file = nullptr;
-  std::unordered_set<std::string_view> visited;
-  tbb::task_group tg;
 
   bool has_error = false;
 
@@ -1990,16 +1992,17 @@ struct Context {
 };
 
 template <typename E>
-std::string_view get_machine_type(Context<E> &ctx, MappedFile *mf);
+std::string_view
+get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf);
 
 template <typename E>
-MappedFile *open_library(Context<E> &ctx, std::string path);
+MappedFile *open_library(Context<E> &ctx, ReaderContext &rctx, std::string path);
 
 template <typename E>
-MappedFile *find_library(Context<E> &ctx, std::string path);
+MappedFile *find_library(Context<E> &ctx, ReaderContext &rctx, std::string path);
 
 template <typename E>
-void read_file(Context<E> &ctx, MappedFile *mf);
+void read_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf);
 
 template <typename E>
 int elf_main(int argc, char **argv);

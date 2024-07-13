@@ -1204,12 +1204,6 @@ SharedFile<E> *SharedFile<E>::create(Context<E> &ctx, MappedFile *mf) {
 }
 
 template <typename E>
-SharedFile<E>::SharedFile(Context<E> &ctx, MappedFile *mf)
-  : InputFile<E>(ctx, mf) {
-  this->is_alive = !ctx.as_needed;
-}
-
-template <typename E>
 std::string SharedFile<E>::get_soname(Context<E> &ctx) {
   if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC))
     for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
