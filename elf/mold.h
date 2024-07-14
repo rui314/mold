@@ -60,7 +60,7 @@ std::string get_mold_version();
 //
 
 template <typename E>
-struct SectionFragment {
+struct alignas(4) SectionFragment {
   SectionFragment(MergedSection<E> *sec, bool is_alive)
     : output_section(*sec), is_alive(is_alive) {}
 
@@ -244,7 +244,7 @@ struct InputSectionExtras<E> {
 
 // InputSection represents a section in an input object file.
 template <typename E>
-class InputSection {
+class alignas(4) InputSection {
 public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx);
 
@@ -368,7 +368,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym);
 
 // Chunk represents a contiguous region in an output file.
 template <typename E>
-class Chunk {
+class alignas(4) Chunk {
 public:
   virtual ~Chunk() = default;
   virtual bool is_header() { return false; }
