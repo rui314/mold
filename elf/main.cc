@@ -101,7 +101,7 @@ get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
         return get_elf_type(child->data);
     return "";
   case FileType::TEXT:
-    return get_script_output_type(ctx, rctx, mf);
+    return Script(ctx, rctx, mf).get_script_output_type();
   default:
     return "";
   }
@@ -197,7 +197,7 @@ void read_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
     }
     return;
   case FileType::TEXT:
-    parse_linker_script(ctx, rctx, mf);
+    Script(ctx, rctx, mf).parse_linker_script();
     return;
   case FileType::GCC_LTO_OBJ:
   case FileType::LLVM_BITCODE:
@@ -234,7 +234,8 @@ detect_machine_type(Context<E> &ctx, std::vector<std::string> args) {
     } else if (!arg.starts_with('-')) {
       if (MappedFile *mf = open_file(ctx, arg))
         if (get_file_type(ctx, mf) == FileType::TEXT)
-          if (std::string_view target = get_script_output_type(ctx, rctx, mf);
+          if (std::string_view target =
+              Script(ctx, rctx, mf).get_script_output_type();
               !target.empty())
             return target;
     }
@@ -326,7 +327,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       MappedFile *mf = find_from_search_paths(ctx, std::string(arg));
       if (!mf)
         Fatal(ctx) << "--version-script: file not found: " << arg;
-      parse_version_script(ctx, mf);
+      Script(ctx, rctx, mf).parse_version_script();
     } else if (arg == "--push-state") {
       stack.push_back(rctx);
     } else if (arg == "--pop-state") {

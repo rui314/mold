@@ -10,9 +10,6 @@
 
 namespace mold::elf {
 
-template <typename E>
-void read_version_script(Context<E> &ctx, std::span<std::string_view> &tok);
-
 static std::string_view get_line(std::string_view input, const char *pos) {
   assert(input.data() <= pos);
   assert(pos < input.data() + input.size());
@@ -31,40 +28,27 @@ static std::string_view get_line(std::string_view input, const char *pos) {
 }
 
 template <typename E>
-class SyntaxError {
-public:
-  SyntaxError(Context<E> &ctx, std::string_view errpos) : out(ctx) {
-    std::string_view contents = ctx.script_file->get_contents();
-    std::string_view line = get_line(contents, errpos.data());
+void Script<E>::error(std::string_view pos, std::string msg) {
+  std::string_view input = mf->get_contents();
+  std::string_view line = get_line(input, pos.data());
 
-    i64 lineno = 1;
-    for (i64 i = 0; contents.data() + i < line.data(); i++)
-      if (contents[i] == '\n')
-        lineno++;
+  i64 lineno = 1;
+  for (i64 i = 0; input.data() + i < line.data(); i++)
+    if (input[i] == '\n')
+      lineno++;
 
-    std::string label = ctx.script_file->name + ":" +
-                        std::to_string(lineno) + ": ";
-    i64 indent = strlen("mold: fatal: ") + label.size();
-    i64 column = errpos.data() - line.data();
+  std::string label = mf->name + ":" + std::to_string(lineno) + ": ";
+  i64 indent = strlen("mold: fatal: ") + label.size();
+  i64 column = pos.data() - line.data();
 
-    out << label << line << "\n"
-        << std::string(indent + column, ' ') << "^ ";
-  }
-
-  template <typename T> SyntaxError &operator<<(T &&val) {
-    out << std::forward<T>(val);
-    return *this;
-  }
-
-  [[noreturn]] ~SyntaxError() = default;
-
-  Fatal<Context<E>> out;
-};
+  Fatal(ctx) << label << line << "\n"
+             << std::string(indent + column, ' ') << "^ " << msg;
+}
 
 template <typename E>
-static std::vector<std::string_view>
-tokenize(Context<E> &ctx, std::string_view input) {
-  std::vector<std::string_view> vec;
+void Script<E>::tokenize() {
+  std::string_view input = mf->get_contents();
+
   while (!input.empty()) {
     if (isspace(input[0])) {
       input = input.substr(1);
@@ -74,7 +58,7 @@ tokenize(Context<E> &ctx, std::string_view input) {
     if (input.starts_with("/*")) {
       i64 pos = input.find("*/", 2);
       if (pos == std::string_view::npos)
-        SyntaxError(ctx, input) << "unclosed comment";
+        error(input, "unclosed comment");
       input = input.substr(pos + 2);
       continue;
     }
@@ -90,8 +74,8 @@ tokenize(Context<E> &ctx, std::string_view input) {
     if (input[0] == '"') {
       i64 pos = input.find('"', 1);
       if (pos == std::string_view::npos)
-        SyntaxError(ctx, input) << "unclosed string literal";
-      vec.push_back(input.substr(0, pos + 1));
+        error(input, "unclosed string literal");
+      tokens.push_back(input.substr(0, pos + 1));
       input = input.substr(pos + 1);
       continue;
     }
@@ -105,20 +89,18 @@ tokenize(Context<E> &ctx, std::string_view input) {
     else if (pos == input.npos)
       pos = input.size();
 
-    vec.push_back(input.substr(0, pos));
+    tokens.push_back(input.substr(0, pos));
     input = input.substr(pos);
   }
-  return vec;
 }
 
 template <typename E>
-static std::span<std::string_view>
-skip(Context<E> &ctx, std::span<std::string_view> tok, std::string_view str) {
+std::span<std::string_view>
+Script<E>::skip(std::span<std::string_view> tok, std::string_view str) {
   if (tok.empty())
-    Fatal(ctx) << ctx.script_file->name << ": expected '" << str
-               << "', but got EOF";
+    Fatal(ctx) << mf->name << ": expected '" << str << "', but got EOF";
   if (tok[0] != str)
-    SyntaxError(ctx, tok[0]) << "expected '" << str << "'";
+    error(tok[0], "expected '" + std::string(str) + "'");
   return tok.subspan(1);
 }
 
@@ -131,13 +113,13 @@ static std::string_view unquote(std::string_view s) {
 }
 
 template <typename E>
-static std::span<std::string_view>
-read_output_format(Context<E> &ctx, std::span<std::string_view> tok) {
-  tok = skip(ctx, tok, "(");
+std::span<std::string_view>
+Script<E>::read_output_format(std::span<std::string_view> tok) {
+  tok = skip(tok, "(");
   while (!tok.empty() && tok[0] != ")")
     tok = tok.subspan(1);
   if (tok.empty())
-    Fatal(ctx) << ctx.script_file->name << ": expected ')', but got EOF";
+    Fatal(ctx) << mf->name << ": expected ')', but got EOF";
   return tok.subspan(1);
 }
 
@@ -149,9 +131,7 @@ static bool is_in_sysroot(Context<E> &ctx, std::string path) {
 }
 
 template <typename E>
-static MappedFile *
-resolve_path(Context<E> &ctx, ReaderContext &rctx, std::string_view tok,
-             bool check_target) {
+MappedFile *Script<E>::resolve_path(std::string_view tok, bool check_target) {
   std::string str(unquote(tok));
 
   auto open = [&](const std::string &path) -> MappedFile * {
@@ -172,7 +152,7 @@ resolve_path(Context<E> &ctx, ReaderContext &rctx, std::string_view tok,
 
   // GNU ld prepends the sysroot if a pathname starts with '/' and the
   // script being processed is in the sysroot. We do the same.
-  if (str.starts_with('/') && is_in_sysroot(ctx, ctx.script_file->name))
+  if (str.starts_with('/') && is_in_sysroot(ctx, mf->name))
     return must_open_file(ctx, ctx.arg.sysroot + str);
 
   if (str.starts_with('=')) {
@@ -188,8 +168,8 @@ resolve_path(Context<E> &ctx, ReaderContext &rctx, std::string_view tok,
     return find_library(ctx, rctx, str.substr(2));
 
   if (!str.starts_with('/'))
-    if (MappedFile *mf = open(path_clean(ctx.script_file->name + "/../" + str)))
-      return mf;
+    if (MappedFile *mf2 = open(path_clean(mf->name + "/../" + str)))
+      return mf2;
 
   if (MappedFile *mf = open(str))
     return mf;
@@ -200,49 +180,48 @@ resolve_path(Context<E> &ctx, ReaderContext &rctx, std::string_view tok,
       return mf;
   }
 
-  SyntaxError(ctx, tok) << "library not found: " << str;
+  error(tok, "library not found: " + str);
 }
 
 template <typename E>
-static std::span<std::string_view>
-read_group(Context<E> &ctx, ReaderContext &rctx, std::span<std::string_view> tok) {
-  tok = skip(ctx, tok, "(");
+std::span<std::string_view>
+Script<E>::read_group(std::span<std::string_view> tok) {
+  tok = skip(tok, "(");
 
   while (!tok.empty() && tok[0] != ")") {
     if (tok[0] == "AS_NEEDED") {
-      ReaderContext rctx2 = rctx;
-      rctx2.as_needed = true;
-      tok = read_group(ctx, rctx2, tok.subspan(1));
+      bool orig = rctx.as_needed;
+      rctx.as_needed = true;
+      tok = read_group(tok.subspan(1));
+      rctx.as_needed = orig;
       continue;
     }
 
-    MappedFile *mf = resolve_path(ctx, rctx, tok[0], true);
+    MappedFile *mf = resolve_path(tok[0], true);
     read_file(ctx, rctx, mf);
     tok = tok.subspan(1);
   }
 
   if (tok.empty())
-    Fatal(ctx) << ctx.script_file->name << ": expected ')', but got EOF";
+    Fatal(ctx) << mf->name << ": expected ')', but got EOF";
   return tok.subspan(1);
 }
 
 template <typename E>
-void parse_linker_script(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
-  ctx.script_file = mf;
-
-  std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
-  std::span<std::string_view> tok = vec;
+void Script<E>::parse_linker_script() {
+  std::call_once(once, [&] { tokenize(); });
+  std::span<std::string_view> tok = tokens;
 
   while (!tok.empty()) {
     if (tok[0] == "OUTPUT_FORMAT") {
-      tok = read_output_format(ctx, tok.subspan(1));
+      tok = read_output_format(tok.subspan(1));
     } else if (tok[0] == "INPUT" || tok[0] == "GROUP") {
-      tok = read_group(ctx, rctx, tok.subspan(1));
+      tok = read_group(tok.subspan(1));
     } else if (tok[0] == "VERSION") {
       tok = tok.subspan(1);
-      tok = skip(ctx, tok, "{");
-      read_version_script(ctx, tok);
-      tok = skip(ctx, tok, "}");
+      tok = skip(tok, "{");
+      tok = read_version_script(tok);
+      tok = skip(tok, "}");
     } else if (tok.size() > 3 && tok[1] == "=" && tok[3] == ";") {
       ctx.arg.defsyms.emplace_back(get_symbol(ctx, unquote(tok[0])),
                                    get_symbol(ctx, unquote(tok[2])));
@@ -250,18 +229,15 @@ void parse_linker_script(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
     } else if (tok[0] == ";") {
       tok = tok.subspan(1);
     } else {
-      SyntaxError(ctx, tok[0]) << "unknown linker script token";
+      error(tok[0], "unknown linker script token");
     }
   }
 }
 
 template <typename E>
-std::string_view
-get_script_output_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
-  ctx.script_file = mf;
-
-  std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
-  std::span<std::string_view> tok = vec;
+std::string_view Script<E>::get_script_output_type() {
+  std::call_once(once, [&] { tokenize(); });
+  std::span<std::string_view> tok = tokens;
 
   if (tok.size() >= 3 && tok[0] == "OUTPUT_FORMAT" && tok[1] == "(") {
     if (tok[2] == "elf64-x86-64")
@@ -272,14 +248,12 @@ get_script_output_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
 
   if (tok.size() >= 3 && (tok[0] == "INPUT" || tok[0] == "GROUP") &&
       tok[1] == "(")
-    if (MappedFile *mf = resolve_path(ctx, rctx, tok[2], false))
+    if (MappedFile *mf = resolve_path(tok[2], false))
       return get_machine_type(ctx, rctx, mf);
-
   return "";
 }
 
-static bool read_label(std::span<std::string_view> &tok,
-                       std::string label) {
+static bool read_label(std::span<std::string_view> &tok, std::string label) {
   if (tok.size() >= 1 && tok[0] == label + ":") {
     tok = tok.subspan(1);
     return true;
@@ -293,10 +267,10 @@ static bool read_label(std::span<std::string_view> &tok,
 }
 
 template <typename E>
-static void
-read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
-                             std::string_view ver_str, u16 ver_idx,
-                             bool is_global, bool is_cpp) {
+std::span<std::string_view>
+Script<E>::read_version_script_commands(std::span<std::string_view> tok,
+                                     std::string_view ver_str, u16 ver_idx,
+                                     bool is_global, bool is_cpp) {
   while (!tok.empty() && tok[0] != "}") {
     if (read_label(tok, "global")) {
       is_global = true;
@@ -313,40 +287,41 @@ read_version_script_commands(Context<E> &ctx, std::span<std::string_view> &tok,
 
       if (!tok.empty() && tok[0] == "\"C\"") {
         tok = tok.subspan(1);
-        tok = skip(ctx, tok, "{");
-        read_version_script_commands(ctx, tok, ver_str, ver_idx, is_global, false);
+        tok = skip(tok, "{");
+        tok = read_version_script_commands(tok, ver_str, ver_idx, is_global, false);
       } else {
-        tok = skip(ctx, tok, "\"C++\"");
-        tok = skip(ctx, tok, "{");
-        read_version_script_commands(ctx, tok, ver_str, ver_idx, is_global, true);
+        tok = skip(tok, "\"C++\"");
+        tok = skip(tok, "{");
+        tok = read_version_script_commands(tok, ver_str, ver_idx, is_global, true);
       }
 
-      tok = skip(ctx, tok, "}");
-      tok = skip(ctx, tok, ";");
+      tok = skip(tok, "}");
+      tok = skip(tok, ";");
       continue;
     }
 
     if (tok[0] == "*") {
       ctx.default_version = (is_global ? ver_idx : (u32)VER_NDX_LOCAL);
     } else if (is_global) {
-      ctx.version_patterns.push_back({unquote(tok[0]), ctx.script_file->name,
-                                      ver_str, ver_idx, is_cpp});
+      ctx.version_patterns.push_back({unquote(tok[0]), mf->name, ver_str,
+                                      ver_idx, is_cpp});
     } else {
-      ctx.version_patterns.push_back({unquote(tok[0]), ctx.script_file->name,
-                                      ver_str, VER_NDX_LOCAL, is_cpp});
+      ctx.version_patterns.push_back({unquote(tok[0]), mf->name, ver_str,
+                                      VER_NDX_LOCAL, is_cpp});
     }
 
     tok = tok.subspan(1);
 
     if (!tok.empty() && tok[0] == "}")
-      return;
-    tok = skip(ctx, tok, ";");
+      break;
+    tok = skip(tok, ";");
   }
+  return tok;
 }
 
 template <typename E>
-static void
-read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
+std::span<std::string_view>
+Script<E>::read_version_script(std::span<std::string_view> tok) {
   u16 next_ver = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size() + 1;
 
   while (!tok.empty() && tok[0] != "}") {
@@ -363,86 +338,87 @@ read_version_script(Context<E> &ctx, std::span<std::string_view> &tok) {
       tok = tok.subspan(1);
     }
 
-    tok = skip(ctx, tok, "{");
-    read_version_script_commands(ctx, tok, ver_str, ver_idx, true, false);
-    tok = skip(ctx, tok, "}");
+    tok = skip(tok, "{");
+    tok = read_version_script_commands(tok, ver_str, ver_idx, true, false);
+    tok = skip(tok, "}");
     if (!tok.empty() && tok[0] != ";")
       tok = tok.subspan(1);
-    tok = skip(ctx, tok, ";");
+    tok = skip(tok, ";");
   }
+  return tok;
 }
 
 template <typename E>
-void parse_version_script(Context<E> &ctx, MappedFile *mf) {
-  ctx.script_file = mf;
-  std::vector<std::string_view> vec = tokenize(ctx, mf->get_contents());
-  std::span<std::string_view> tok = vec;
-  read_version_script(ctx, tok);
+void Script<E>::parse_version_script() {
+  std::call_once(once, [&] { tokenize(); });
+  std::span<std::string_view> tok = tokens;
+  tok = read_version_script(tok);
   if (!tok.empty())
-    SyntaxError(ctx, tok[0]) << "trailing garbage token";
+    error(tok[0], "trailing garbage token");
 }
 
 template <typename E>
-void read_dynamic_list_commands(Context<E> &ctx,
-                                std::vector<DynamicPattern> &result,
-                                std::span<std::string_view> &tok,
-                                bool is_cpp) {
+std::span<std::string_view>
+Script<E>::read_dynamic_list_commands(std::span<std::string_view> tok,
+                                   std::vector<DynamicPattern> &result,
+                                   bool is_cpp) {
   while (!tok.empty() && tok[0] != "}") {
     if (tok[0] == "extern") {
       tok = tok.subspan(1);
 
       if (!tok.empty() && tok[0] == "\"C\"") {
         tok = tok.subspan(1);
-        tok = skip(ctx, tok, "{");
-        read_dynamic_list_commands(ctx, result, tok, false);
+        tok = skip(tok, "{");
+        tok = read_dynamic_list_commands(tok, result, false);
       } else {
-        tok = skip(ctx, tok, "\"C++\"");
-        tok = skip(ctx, tok, "{");
-        read_dynamic_list_commands(ctx, result, tok, true);
+        tok = skip(tok, "\"C++\"");
+        tok = skip(tok, "{");
+        tok = read_dynamic_list_commands(tok, result, true);
       }
 
-      tok = skip(ctx, tok, "}");
-      tok = skip(ctx, tok, ";");
+      tok = skip(tok, "}");
+      tok = skip(tok, ";");
       continue;
     }
 
     result.push_back({unquote(tok[0]), "", is_cpp});
-    tok = skip(ctx, tok.subspan(1), ";");
+    tok = skip(tok.subspan(1), ";");
   }
+  return tok;
+}
+
+template <typename E>
+std::vector<DynamicPattern> Script<E>::parse_dynamic_list() {
+  std::call_once(once, [&] { tokenize(); });
+  std::span<std::string_view> tok = tokens;
+  std::vector<DynamicPattern> result;
+
+  tok = skip(tok, "{");
+  tok = read_dynamic_list_commands(tok, result, false);
+  tok = skip(tok, "}");
+  tok = skip(tok, ";");
+
+  if (!tok.empty())
+    error(tok[0], "trailing garbage token");
+
+  for (DynamicPattern &p : result)
+    p.source = mf->name;
+  return result;
 }
 
 template <typename E>
 std::vector<DynamicPattern>
 parse_dynamic_list(Context<E> &ctx, std::string_view path) {
-  std::string_view contents =
-    must_open_file(ctx, std::string(path))->get_contents();
-  std::vector<std::string_view> vec = tokenize(ctx, contents);
-  std::span<std::string_view> tok = vec;
-  std::vector<DynamicPattern> result;
-
-  tok = skip(ctx, tok, "{");
-  read_dynamic_list_commands(ctx, result, tok, false);
-  tok = skip(ctx, tok, "}");
-  tok = skip(ctx, tok, ";");
-
-  if (!tok.empty())
-    SyntaxError(ctx, tok[0]) << "trailing garbage token";
-
-  for (DynamicPattern &p : result)
-    p.source = path;
-
-  return result;
+  ReaderContext rctx;
+  MappedFile *mf = must_open_file(ctx, std::string(path));
+  return Script(ctx, rctx, mf).parse_dynamic_list();
 }
 
 using E = MOLD_TARGET;
 
-template void parse_linker_script(Context<E> &, ReaderContext &, MappedFile *);
-template void parse_version_script(Context<E> &, MappedFile *);
+template class Script<E>;
 
-template std::string_view
-get_script_output_type(Context<E> &, ReaderContext &, MappedFile *);
-
-template std::vector<DynamicPattern>
-parse_dynamic_list(Context<E> &, std::string_view);
+template
+std::vector<DynamicPattern> parse_dynamic_list(Context<E> &, std::string_view);
 
 } // namespace mold::elf

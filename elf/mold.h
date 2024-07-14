@@ -1341,20 +1341,52 @@ struct ReaderContext {
   tbb::task_group *tg = nullptr;
 };
 
-template <typename E>
-void parse_linker_script(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf);
-
-template <typename E>
-std::string_view
-get_script_output_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf);
-
-template <typename E>
-void parse_version_script(Context<E> &ctx, MappedFile *mf);
-
 struct DynamicPattern {
   std::string_view pattern;
   std::string_view source;
   bool is_cpp = false;
+};
+
+template <typename E>
+class Script {
+public:
+  Script(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf)
+    : ctx(ctx), rctx(rctx), mf(mf) {}
+
+  std::string_view get_script_output_type();
+  void parse_linker_script();
+  void parse_version_script();
+  std::vector<DynamicPattern> parse_dynamic_list();
+
+private:
+  [[noreturn]] void error(std::string_view pos, std::string msg);
+
+  void tokenize();
+
+  std::span<std::string_view>
+  skip(std::span<std::string_view> tok, std::string_view str);
+
+  std::span<std::string_view> read_output_format(std::span<std::string_view> tok);
+  std::span<std::string_view> read_group(std::span<std::string_view> tok);
+
+  std::span<std::string_view>
+  read_version_script_commands(std::span<std::string_view> tok,
+                               std::string_view ver_str, u16 ver_idx,
+                               bool is_global, bool is_cpp);
+
+  std::span<std::string_view> read_version_script(std::span<std::string_view> tok);
+
+  MappedFile *resolve_path(std::string_view tok, bool check_target);
+
+  std::span<std::string_view>
+  read_dynamic_list_commands(std::span<std::string_view> tok,
+                             std::vector<DynamicPattern> &result, bool is_cpp);
+
+  Context<E> &ctx;
+  ReaderContext &rctx;
+  MappedFile *mf = mf;
+  std::once_flag once;
+  std::vector<std::string_view> tokens;
 };
 
 template <typename E>
@@ -1861,12 +1893,10 @@ struct Context {
   std::vector<DynamicPattern> dynamic_list_patterns;
   i64 default_version = VER_NDX_UNSPECIFIED;
   i64 page_size = E::page_size;
+  bool has_error = false;
 
   // Reader context
   i64 file_priority = 10000;
-  MappedFile *script_file = nullptr;
-
-  bool has_error = false;
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
