@@ -34,6 +34,15 @@
 # include <unistd.h>
 #endif
 
+// Somewhat surprisingly, on m68k, the maximum natural alignment is
+// two even for 4 or 8 byte objects. We need to align some objects to
+// at least 4 byte boundaries.
+#if __m68k__
+# define M68K_ALIGN_4 alignas(4)
+#else
+# define M68K_ALIGN_4
+#endif
+
 namespace mold::elf {
 
 template <typename E> class InputFile;
@@ -60,7 +69,7 @@ std::string get_mold_version();
 //
 
 template <typename E>
-struct alignas(4) SectionFragment {
+M68K_ALIGN_4 struct SectionFragment {
   SectionFragment(MergedSection<E> *sec, bool is_alive)
     : output_section(*sec), is_alive(is_alive) {}
 
@@ -244,7 +253,7 @@ struct InputSectionExtras<E> {
 
 // InputSection represents a section in an input object file.
 template <typename E>
-class alignas(4) InputSection {
+M68K_ALIGN_4 class InputSection {
 public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx);
 
@@ -368,7 +377,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym);
 
 // Chunk represents a contiguous region in an output file.
 template <typename E>
-class alignas(4) Chunk {
+M68K_ALIGN_4 class Chunk {
 public:
   virtual ~Chunk() = default;
   virtual bool is_header() { return false; }
