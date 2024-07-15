@@ -534,6 +534,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::optional<std::string> separate_debug_file;
   std::optional<u64> shuffle_sections_seed;
   std::unordered_set<std::string_view> rpaths;
+  std::vector<std::string_view> version_scripts;
 
   auto add_rpath = [&](std::string_view arg) {
     if (rpaths.insert(arg).second) {
@@ -1261,14 +1262,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("no-keep-memory")) {
     } else if (read_arg("max-cache-size")) {
     } else if (read_arg("version-script")) {
-      // --version-script is treated as positional arguments even though
-      // they are actually not positional. This is because linker scripts
-      // (a positional argument) can also specify a version script, and
-      // it's better to consolidate parsing in read_input_files. In
-      // particular, version scripts can modify ctx.default_version which
-      // we initialize *after* parsing non-positional args, so the parsing
-      // cannot be done right here.
-      remaining.push_back("--version-script=" + std::string(arg));
+      version_scripts.push_back(arg);
     } else if (read_arg("dynamic-list")) {
       ctx.arg.Bsymbolic = BSYMBOLIC_ALL;
       append(ctx.dynamic_list_patterns, parse_dynamic_list(ctx, arg));
@@ -1408,6 +1402,21 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       filepath(ctx.arg.output).filename().string() : std::string(ctx.arg.soname);
     ctx.arg.version_definitions.push_back(ver);
     ctx.default_version = VER_NDX_LAST_RESERVED + 1;
+  }
+
+  for (std::string_view path : version_scripts) {
+    auto open = [&] {
+      if (MappedFile *mf = open_file(ctx, std::string(path)))
+        return mf;
+      for (std::string_view dir : ctx.arg.library_paths)
+        if (MappedFile *mf =
+            open_file(ctx, std::string(dir) + "/" + std::string(path)))
+          return mf;
+      Fatal(ctx) << "--version-script: file not found: " << path;
+    };
+
+    ReaderContext rctx;
+    Script(ctx, rctx, open()).parse_version_script();
   }
 
   if (separate_debug_file) {

@@ -323,11 +323,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       rctx.in_lib = true;
     } else if (arg == "--end-lib") {
       rctx.in_lib = false;
-    } else if (remove_prefix(arg, "--version-script=")) {
-      MappedFile *mf = find_from_search_paths(ctx, std::string(arg));
-      if (!mf)
-        Fatal(ctx) << "--version-script: file not found: " << arg;
-      Script(ctx, rctx, mf).parse_version_script();
     } else if (arg == "--push-state") {
       stack.push_back(rctx);
     } else if (arg == "--pop-state") {
@@ -335,7 +330,8 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
         Fatal(ctx) << "no state pushed before popping";
       rctx = stack.back();
       stack.pop_back();
-    } else if (remove_prefix(arg, "-l")) {
+    } else if (arg.starts_with("-l")) {
+      arg = arg.substr(2);
       if (visited.contains(arg))
         continue;
       visited.insert(arg);

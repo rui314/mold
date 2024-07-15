@@ -535,14 +535,6 @@ std::string_view save_string(Context &ctx, const std::string &str) {
   return {(char *)buf, str.size()};
 }
 
-inline bool remove_prefix(std::string_view &s, std::string_view prefix) {
-  if (s.starts_with(prefix)) {
-    s = s.substr(prefix.size());
-    return true;
-  }
-  return false;
-}
-
 static inline void pause() {
 #if defined(__x86_64__)
   asm volatile("pause");
