@@ -282,17 +282,6 @@ MappedFile *find_library(Context<E> &ctx, ReaderContext &rctx, std::string name)
 }
 
 template <typename E>
-MappedFile *find_from_search_paths(Context<E> &ctx, std::string name) {
-  if (MappedFile *mf = open_file(ctx, name))
-    return mf;
-
-  for (std::string_view dir : ctx.arg.library_paths)
-    if (MappedFile *mf = open_file(ctx, std::string(dir) + "/" + name))
-      return mf;
-  return nullptr;
-}
-
-template <typename E>
 static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   Timer t(ctx, "read_input_files");
 
