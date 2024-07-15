@@ -4,6 +4,7 @@
 # Skip if 32 bits as we use very large addresses in this test.
 [ $MACHINE = i686 ] && skip
 [ $MACHINE = riscv32 ] && skip
+[ $MACHINE = m68k ] && skip
 
 # It looks like SPARC's runtime can't handle PLT if it's too far from GOT.
 [ $MACHINE = sparc64 ] && skip
