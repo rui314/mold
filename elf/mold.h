@@ -34,15 +34,6 @@
 # include <unistd.h>
 #endif
 
-// Somewhat surprisingly, on m68k, the maximum natural alignment is
-// two even for 4 or 8 byte objects. We need to align some objects to
-// at least 4 byte boundaries.
-#if __m68k__
-# define M68K_ALIGN_4 alignas(4)
-#else
-# define M68K_ALIGN_4
-#endif
-
 namespace mold::elf {
 
 template <typename E> class InputFile;
@@ -69,7 +60,7 @@ std::string get_mold_version();
 //
 
 template <typename E>
-M68K_ALIGN_4 struct SectionFragment {
+struct __attribute__((aligned(4))) SectionFragment {
   SectionFragment(MergedSection<E> *sec, bool is_alive)
     : output_section(*sec), is_alive(is_alive) {}
 
@@ -253,7 +244,7 @@ struct InputSectionExtras<E> {
 
 // InputSection represents a section in an input object file.
 template <typename E>
-M68K_ALIGN_4 class InputSection {
+class __attribute__((aligned(4))) InputSection {
 public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx);
 
@@ -377,7 +368,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym);
 
 // Chunk represents a contiguous region in an output file.
 template <typename E>
-M68K_ALIGN_4 class Chunk {
+class __attribute__((aligned(4))) Chunk {
 public:
   virtual ~Chunk() = default;
   virtual bool is_header() { return false; }
@@ -2181,6 +2172,10 @@ public:
     TAG_MASK = 0b11,
   };
 
+  // We want to make sure there are enough number of unused bits in
+  // pointers referring to these structures. In particular, we need
+  // __attribute__((aligned(4))) for m68k on which int, long, float
+  // and double are aligned only to two byte boundaries.
   static_assert(alignof(InputSection<E>) >= 4);
   static_assert(alignof(Chunk<E>) >= 4);
   static_assert(alignof(SectionFragment<E>) >= 4);
