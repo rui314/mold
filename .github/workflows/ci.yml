@@ -71,18 +71,14 @@ jobs:
 
         # Install a LoongArch toolchain
         mkdir /larch
-        wget -O- -q https://github.com/loongson/build-tools/releases/download/2023.08.08/CLFS-loongarch64-8.1-x86_64-cross-tools-gcc-glibc.tar.xz | tar -C /larch --strip-components=1 --xz -xf -
+        wget -O- -q https://github.com/loongson/build-tools/releases/download/2024.06.01/x86_64-cross-tools-loongarch64-binutils_2.42-gcc_14.1.0-glibc_2.39.tar.xz | tar -C /larch --strip-components=1 --xz -xf -
 
+        cp -r /larch/loongarch64-unknown-linux-gnu/lib/* /larch/target/lib64
         ln -sf /larch/target /usr/loongarch64-linux-gnu
-        cp -r /larch/loongarch64-unknown-linux-gnu/lib/* /usr/loongarch64-linux-gnu/lib64/
 
-        for i in objdump objcopy strip; do
+        for i in gcc g++ objdump objcopy strip; do
           ln -sf /larch/bin/loongarch64-unknown-linux-gnu-$i /usr/bin/loongarch64-linux-gnu-$i
         done
-
-        echo '/larch/bin/loongarch64-unknown-linux-gnu-gcc -L/larch/loongarch64-unknown-linux-gnu "$@"' > /usr/bin/loongarch64-linux-gnu-gcc
-        echo '/larch/bin/loongarch64-unknown-linux-gnu-g++ -L/larch/loongarch64-unknown-linux-gnu "$@"' > /usr/bin/loongarch64-linux-gnu-g++
-        chmod 755 /usr/bin/loongarch64-linux-gnu-{gcc,g++}
 
         wget -O /usr/local/bin/qemu-loongarch64 -q https://github.com/loongson/build-tools/releases/download/2023.08.08/qemu-loongarch64
         chmod 755 /usr/local/bin/qemu-loongarch64

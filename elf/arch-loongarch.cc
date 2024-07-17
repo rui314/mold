@@ -452,6 +452,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_SUB_ULEB128:
       overwrite_uleb(loc, read_uleb(loc) - S - A);
       break;
+    case R_LARCH_TLS_LE_HI20_R:
+      write_j20(loc, (S + A + 0x800 - ctx.tp_addr) >> 12);
+      break;
+    case R_LARCH_TLS_LE_LO12_R:
+      write_k12(loc, S + A - ctx.tp_addr);
+      break;
+    case R_LARCH_TLS_LE_ADD_R:
+      break;
     default:
       unreachable();
     }
@@ -610,6 +618,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_LARCH_TLS_LE_LO12:
     case R_LARCH_TLS_LE64_LO20:
     case R_LARCH_TLS_LE64_HI12:
+    case R_LARCH_TLS_LE_HI20_R:
+    case R_LARCH_TLS_LE_LO12_R:
       check_tlsle(ctx, sym, rel);
       break;
     case R_LARCH_B16:
@@ -645,6 +655,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_LARCH_SUB64:
     case R_LARCH_ADD_ULEB128:
     case R_LARCH_SUB_ULEB128:
+    case R_LARCH_TLS_LE_ADD_R:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;
