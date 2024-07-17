@@ -372,6 +372,15 @@ static i64 parse_number(Context<E> &ctx, std::string opt,
   return ret;
 }
 
+static char from_hex(char c) {
+  if ('0' <= c && c <= '9')
+    return c - '0';
+  if ('a' <= c && c <= 'f')
+    return c - 'a' + 10;
+  assert('A' <= c && c <= 'F');
+  return c - 'A' + 10;
+}
+
 template <typename E>
 static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg) {
   auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
@@ -382,19 +391,32 @@ static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg)
 
   arg = arg.substr(2);
 
-  auto fn = [](char c) {
-    if ('0' <= c && c <= '9')
-      return c - '0';
-    if ('a' <= c && c <= 'f')
-      return c - 'a' + 10;
-    assert('A' <= c && c <= 'F');
-    return c - 'A' + 10;
-  };
-
   std::vector<u8> vec;
   for (i64 i = 0; i < arg.size(); i += 2)
-    vec.push_back((fn(arg[i]) << 4) | fn(arg[i + 1]));
+    vec.push_back((from_hex(arg[i]) << 4) | from_hex(arg[i + 1]));
   return vec;
+}
+
+template <typename E>
+static std::string
+parse_encoded_package_metadata(Context<E> &ctx, std::string_view arg) {
+  auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
+  static std::regex re(R"(([^%]|%[0-9a-fA-F][0-9a-fA-F])*)", flags);
+
+  if (!std::regex_match(arg.begin(), arg.end(), re))
+    Fatal(ctx) << "--encoded-package-metadata: invalid string: " << arg;
+
+  std::ostringstream out;
+  while (!arg.empty()) {
+    if (arg[0] == '%') {
+      out << (char)((from_hex(arg[1]) << 4) | from_hex(arg[2]));
+      arg = arg.substr(3);
+    } else {
+      out << arg[0];
+      arg = arg.substr(1);
+    }
+  }
+  return out.str();
 }
 
 static std::vector<std::string_view>
@@ -411,49 +433,6 @@ split_by_comma_or_colon(std::string_view str) {
     str = str.substr(pos);
   }
   return vec;
-}
-
-/* Decode a hexadecimal character. Return -1 on error. */
-static int hexdecode(char c) {
-  if ('0' <= c && c <= '9')
-    return c - '0';
-  if ('A' <= c && c <= 'F')
-    return c - 'A' + 10;
-  if ('a' <= c && c <= 'f')
-    return c - 'a' + 10;
-  return -1;
-}
-
-template <typename E>
-static std::string parse_percent_encoded_string(Context<E> &ctx, std::string opt, std::string_view arg) {
-  std::string decoded;
-  int step = 1;
-  for (i64 i = 0; i < arg.size(); i += step) {
-    step = 1;
-    if (arg[i] != '%') {
-      decoded += arg[i];
-      continue;
-    }
-    if (i + 1 > arg.size()) {
-      Fatal(ctx) << "option --" << opt << ": invalid percent-encoded string: " << arg;
-    }
-    step++;
-    if (arg[i+1] == '%') {
-      decoded += '%';
-      continue;
-    }
-    if (i + 2 > arg.size()) {
-      Fatal(ctx) << "option --" << opt << ": invalid percent-encoded string: " << arg;
-    }
-    step++;
-    int hex1 = hexdecode(arg[i+1]);
-    int hex2 = hexdecode(arg[i+2]);
-    if (hex1 == -1 || hex2 == -1) {
-      Fatal(ctx) << "option --" << opt << ": invalid percent-encoded string: " << arg;
-    }
-    decoded += (char) ((hex1 << 4) + hex2);
-  }
-  return decoded;
 }
 
 template <typename E>
@@ -919,7 +898,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                read_z_flag("nopack-relative-relocs")) {
       ctx.arg.pack_dyn_relocs_relr = false;
     } else if (read_arg("encoded-package-metadata")) {
-      ctx.arg.package_metadata = parse_percent_encoded_string(ctx, "encoded-package-metadata", arg);
+      ctx.arg.package_metadata = parse_encoded_package_metadata(ctx, arg);
     } else if (read_arg("package-metadata")) {
       ctx.arg.package_metadata = arg;
     } else if (read_flag("stats")) {

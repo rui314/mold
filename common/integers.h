@@ -97,18 +97,10 @@ public:
   LittleEndian &operator-=(T x) { return *this = *this - x; }
   LittleEndian &operator&=(T x) { return *this = *this & x; }
   LittleEndian &operator|=(T x) { return *this = *this | x; }
-private:
 
+private:
   u8 val[SIZE];
 };
-
-using il16 = LittleEndian<i16>;
-using il32 = LittleEndian<i32>;
-using il64 = LittleEndian<i64>;
-using ul16 = LittleEndian<u16>;
-using ul24 = LittleEndian<u32, 3>;
-using ul32 = LittleEndian<u32>;
-using ul64 = LittleEndian<u64>;
 
 template <typename T, int SIZE = sizeof(T)>
 class BigEndian {
@@ -155,6 +147,14 @@ public:
 private:
   u8 val[SIZE];
 };
+
+using il16 = LittleEndian<i16>;
+using il32 = LittleEndian<i32>;
+using il64 = LittleEndian<i64>;
+using ul16 = LittleEndian<u16>;
+using ul24 = LittleEndian<u32, 3>;
+using ul32 = LittleEndian<u32>;
+using ul64 = LittleEndian<u64>;
 
 using ib16 = BigEndian<i16>;
 using ib32 = BigEndian<i32>;
