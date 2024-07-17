@@ -63,69 +63,42 @@ public:
   LittleEndian(T x) { *this = x; }
 
   operator T() const {
-    if constexpr (sizeof(T) == SIZE) {
+    if constexpr (SIZE == 3) {
+      return (val[2] << 16) | (val[1] << 8) | val[0];
+    } else {
+      static_assert(sizeof(T) == SIZE);
       T x;
       memcpy(&x, val, sizeof(T));
       if constexpr (std::endian::native == std::endian::big)
         x = bswap(x);
       return x;
-    } else {
-      static_assert(SIZE == 3);
-      return (val[2] << 16) | (val[1] << 8) | val[0];
     }
   }
 
   LittleEndian &operator=(T x) {
-    if constexpr (sizeof(T) == SIZE) {
-      if constexpr (std::endian::native == std::endian::big)
-        x = bswap(x);
-      memcpy(val, &x, sizeof(T));
-    } else {
-      static_assert(SIZE == 3);
+    if constexpr (SIZE == 3) {
       val[2] = x >> 16;
       val[1] = x >> 8;
       val[0] = x;
+    } else {
+      static_assert(sizeof(T) == SIZE);
+      if constexpr (std::endian::native == std::endian::big)
+        x = bswap(x);
+      memcpy(val, &x, sizeof(T));
     }
     return *this;
   }
 
-  LittleEndian &operator++() {
-    return *this = *this + 1;
-  }
-
-  LittleEndian operator++(int) {
-    T ret = *this;
-    *this = *this + 1;
-    return ret;
-  }
-
-  LittleEndian &operator--() {
-    return *this = *this - 1;
-  }
-
-  LittleEndian operator--(int) {
-    T ret = *this;
-    *this = *this - 1;
-    return ret;
-  }
-
-  LittleEndian &operator+=(T x) {
-    return *this = *this + x;
-  }
-
-  LittleEndian &operator-=(T x) {
-    return *this = *this - x;
-  }
-
-  LittleEndian &operator&=(T x) {
-    return *this = *this & x;
-  }
-
-  LittleEndian &operator|=(T x) {
-    return *this = *this | x;
-  }
-
+  LittleEndian &operator++()    { return *this = *this + 1; }
+  LittleEndian operator++(int)  { return ++*this - 1; }
+  LittleEndian &operator--()    { return *this = *this - 1; }
+  LittleEndian operator--(int)  { return --*this + 1; }
+  LittleEndian &operator+=(T x) { return *this = *this + x; }
+  LittleEndian &operator-=(T x) { return *this = *this - x; }
+  LittleEndian &operator&=(T x) { return *this = *this & x; }
+  LittleEndian &operator|=(T x) { return *this = *this | x; }
 private:
+
   u8 val[SIZE];
 };
 
@@ -144,67 +117,40 @@ public:
   BigEndian(T x) { *this = x; }
 
   operator T() const {
-    if constexpr (sizeof(T) == SIZE) {
+    if constexpr (SIZE == 3) {
+      return (val[0] << 16) | (val[1] << 8) | val[2];
+    } else {
+      static_assert(sizeof(T) == SIZE);
       T x;
       memcpy(&x, val, sizeof(T));
       if constexpr (std::endian::native == std::endian::little)
         x = bswap(x);
       return x;
-    } else {
-      static_assert(SIZE == 3);
-      return (val[0] << 16) | (val[1] << 8) | val[2];
     }
   }
 
   BigEndian &operator=(T x) {
-    if constexpr (sizeof(T) == SIZE) {
-      if constexpr (std::endian::native == std::endian::little)
-        x = bswap(x);
-      memcpy(val, &x, sizeof(T));
-    } else {
-      static_assert(SIZE == 3);
+    if constexpr (SIZE == 3) {
       val[0] = x >> 16;
       val[1] = x >> 8;
       val[2] = x;
+    } else {
+      static_assert(sizeof(T) == SIZE);
+      if constexpr (std::endian::native == std::endian::little)
+        x = bswap(x);
+      memcpy(val, &x, sizeof(T));
     }
     return *this;
   }
 
-  BigEndian &operator++() {
-    return *this = *this + 1;
-  }
-
-  BigEndian operator++(int) {
-    T ret = *this;
-    *this = *this + 1;
-    return ret;
-  }
-
-  BigEndian &operator--() {
-    return *this = *this - 1;
-  }
-
-  BigEndian operator--(int) {
-    T ret = *this;
-    *this = *this - 1;
-    return ret;
-  }
-
-  BigEndian &operator+=(T x) {
-    return *this = *this + x;
-  }
-
-  BigEndian &operator-=(T x) {
-    return *this = *this - x;
-  }
-
-  BigEndian &operator&=(T x) {
-    return *this = *this & x;
-  }
-
-  BigEndian &operator|=(T x) {
-    return *this = *this | x;
-  }
+  BigEndian &operator++()    { return *this = *this + 1; }
+  BigEndian operator++(int)  { return ++*this - 1; }
+  BigEndian &operator--()    { return *this = *this - 1; }
+  BigEndian operator--(int)  { return --*this + 1; }
+  BigEndian &operator+=(T x) { return *this = *this + x; }
+  BigEndian &operator-=(T x) { return *this = *this - x; }
+  BigEndian &operator&=(T x) { return *this = *this & x; }
+  BigEndian &operator|=(T x) { return *this = *this | x; }
 
 private:
   u8 val[SIZE];
