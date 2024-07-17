@@ -122,6 +122,8 @@ Options:
   --oformat=binary            Omit ELF, section, and program headers
   --pack-dyn-relocs=[relr,none]
                               Pack dynamic relocations
+  --encoded-package-metadata=PERCENT_ENCODED_STRING
+                              Set a given string to .note.package
   --package-metadata=STRING   Set a given string to .note.package
   --perf                      Print performance statistics
   --pie, --pic-executable     Create a position-independent executable
@@ -409,6 +411,49 @@ split_by_comma_or_colon(std::string_view str) {
     str = str.substr(pos);
   }
   return vec;
+}
+
+/* Decode a hexadecimal character. Return -1 on error. */
+static int hexdecode(char c) {
+  if ('0' <= c && c <= '9')
+    return c - '0';
+  if ('A' <= c && c <= 'F')
+    return c - 'A' + 10;
+  if ('a' <= c && c <= 'f')
+    return c - 'a' + 10;
+  return -1;
+}
+
+template <typename E>
+static std::string parse_percent_encoded_string(Context<E> &ctx, std::string opt, std::string_view arg) {
+  std::string decoded;
+  int step = 1;
+  for (i64 i = 0; i < arg.size(); i += step) {
+    step = 1;
+    if (arg[i] != '%') {
+      decoded += arg[i];
+      continue;
+    }
+    if (i + 1 > arg.size()) {
+      Fatal(ctx) << "option --" << opt << ": invalid percent-encoded string: " << arg;
+    }
+    step++;
+    if (arg[i+1] == '%') {
+      decoded += '%';
+      continue;
+    }
+    if (i + 2 > arg.size()) {
+      Fatal(ctx) << "option --" << opt << ": invalid percent-encoded string: " << arg;
+    }
+    step++;
+    int hex1 = hexdecode(arg[i+1]);
+    int hex2 = hexdecode(arg[i+2]);
+    if (hex1 == -1 || hex2 == -1) {
+      Fatal(ctx) << "option --" << opt << ": invalid percent-encoded string: " << arg;
+    }
+    decoded += (char) ((hex1 << 4) + hex2);
+  }
+  return decoded;
 }
 
 template <typename E>
@@ -873,6 +918,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("pack-dyn-relocs=none") ||
                read_z_flag("nopack-relative-relocs")) {
       ctx.arg.pack_dyn_relocs_relr = false;
+    } else if (read_arg("encoded-package-metadata")) {
+      ctx.arg.package_metadata = parse_percent_encoded_string(ctx, "encoded-package-metadata", arg);
     } else if (read_arg("package-metadata")) {
       ctx.arg.package_metadata = arg;
     } else if (read_flag("stats")) {
