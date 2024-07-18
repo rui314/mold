@@ -389,10 +389,8 @@ static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg)
   if (!std::regex_match(arg.begin(), arg.end(), re))
     Fatal(ctx) << "invalid build-id: " << arg;
 
-  arg = arg.substr(2);
-
   std::vector<u8> vec;
-  for (i64 i = 0; i < arg.size(); i += 2)
+  for (i64 i = 2; i < arg.size(); i += 2)
     vec.push_back((from_hex(arg[i]) << 4) | from_hex(arg[i + 1]));
   return vec;
 }
