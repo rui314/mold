@@ -92,7 +92,7 @@ function(add_target ARCH TRIPLE)
 
     if(IS_NATIVE)
       set_property(TEST ${TESTNAME} APPEND PROPERTY SKIP_REGULAR_EXPRESSION
-        "skipped")
+        "^skipped$")
     else()
       set_property(TEST ${TESTNAME} APPEND PROPERTY ENVIRONMENT
         "TRIPLE=${TRIPLE}")

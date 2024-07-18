@@ -120,3 +120,4 @@ testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
 t=$TESTDIR/$testname
 mkdir -p $t
+set -x
