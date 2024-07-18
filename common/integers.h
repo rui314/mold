@@ -46,122 +46,84 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-template <typename T>
-static inline T bswap(T val) {
-  switch (sizeof(T)) {
-  case 2:  return __builtin_bswap16(val);
-  case 4:  return __builtin_bswap32(val);
-  case 8:  return __builtin_bswap64(val);
-  default: __builtin_unreachable();
-  }
-}
-
-template <typename T, int SIZE = sizeof(T)>
-class LittleEndian {
+template <typename T, std::endian endian, int size = sizeof(T)>
+class Integer {
 public:
-  LittleEndian() = default;
-  LittleEndian(T x) { *this = x; }
+  Integer() = default;
+  Integer(T x) { *this = x; }
 
   operator T() const {
-    if constexpr (SIZE == 3) {
-      return (val[2] << 16) | (val[1] << 8) | val[0];
+    if (size == 3) {
+      if (endian == std::endian::little)
+        return (val[2] << 16) | (val[1] << 8) | val[0];
+      else
+        return (val[0] << 16) | (val[1] << 8) | val[2];
     } else {
-      static_assert(sizeof(T) == SIZE);
       T x;
-      memcpy(&x, val, sizeof(T));
-      if constexpr (std::endian::native == std::endian::big)
+      memcpy(&x, val, size);
+      if (endian != std::endian::native)
         x = bswap(x);
       return x;
     }
   }
 
-  LittleEndian &operator=(T x) {
-    if constexpr (SIZE == 3) {
-      val[2] = x >> 16;
-      val[1] = x >> 8;
-      val[0] = x;
+  Integer &operator=(T x) {
+    if (size == 3) {
+      if (endian == std::endian::little) {
+        val[0] = x;
+        val[1] = x >> 8;
+        val[2] = x >> 16;
+      } else {
+        val[0] = x >> 16;
+        val[1] = x >> 8;
+        val[2] = x;
+      }
     } else {
-      static_assert(sizeof(T) == SIZE);
-      if constexpr (std::endian::native == std::endian::big)
+      if (endian != std::endian::native)
         x = bswap(x);
-      memcpy(val, &x, sizeof(T));
+      memcpy(val, &x, size);
     }
     return *this;
   }
 
-  LittleEndian &operator++()    { return *this = *this + 1; }
-  LittleEndian operator++(int)  { return ++*this - 1; }
-  LittleEndian &operator--()    { return *this = *this - 1; }
-  LittleEndian operator--(int)  { return --*this + 1; }
-  LittleEndian &operator+=(T x) { return *this = *this + x; }
-  LittleEndian &operator-=(T x) { return *this = *this - x; }
-  LittleEndian &operator&=(T x) { return *this = *this & x; }
-  LittleEndian &operator|=(T x) { return *this = *this | x; }
+  Integer &operator++()    { return *this = *this + 1; }
+  Integer operator++(int)  { return ++*this - 1; }
+  Integer &operator--()    { return *this = *this - 1; }
+  Integer operator--(int)  { return --*this + 1; }
+  Integer &operator+=(T x) { return *this = *this + x; }
+  Integer &operator-=(T x) { return *this = *this - x; }
+  Integer &operator&=(T x) { return *this = *this & x; }
+  Integer &operator|=(T x) { return *this = *this | x; }
 
 private:
-  u8 val[SIZE];
-};
-
-template <typename T, int SIZE = sizeof(T)>
-class BigEndian {
-public:
-  BigEndian() = default;
-  BigEndian(T x) { *this = x; }
-
-  operator T() const {
-    if constexpr (SIZE == 3) {
-      return (val[0] << 16) | (val[1] << 8) | val[2];
-    } else {
-      static_assert(sizeof(T) == SIZE);
-      T x;
-      memcpy(&x, val, sizeof(T));
-      if constexpr (std::endian::native == std::endian::little)
-        x = bswap(x);
-      return x;
+  static T bswap(T x) {
+    switch (size) {
+    case 2:  return __builtin_bswap16(x);
+    case 4:  return __builtin_bswap32(x);
+    case 8:  return __builtin_bswap64(x);
+    default: __builtin_unreachable();
     }
   }
 
-  BigEndian &operator=(T x) {
-    if constexpr (SIZE == 3) {
-      val[0] = x >> 16;
-      val[1] = x >> 8;
-      val[2] = x;
-    } else {
-      static_assert(sizeof(T) == SIZE);
-      if constexpr (std::endian::native == std::endian::little)
-        x = bswap(x);
-      memcpy(val, &x, sizeof(T));
-    }
-    return *this;
-  }
+  u8 val[size];
+};;
 
-  BigEndian &operator++()    { return *this = *this + 1; }
-  BigEndian operator++(int)  { return ++*this - 1; }
-  BigEndian &operator--()    { return *this = *this - 1; }
-  BigEndian operator--(int)  { return --*this + 1; }
-  BigEndian &operator+=(T x) { return *this = *this + x; }
-  BigEndian &operator-=(T x) { return *this = *this - x; }
-  BigEndian &operator&=(T x) { return *this = *this & x; }
-  BigEndian &operator|=(T x) { return *this = *this | x; }
+using il16 = Integer<i16, std::endian::little>;
+using il32 = Integer<i32, std::endian::little>;
+using il64 = Integer<i64, std::endian::little>;
 
-private:
-  u8 val[SIZE];
-};
+using ul16 = Integer<u16, std::endian::little>;
+using ul24 = Integer<u32, std::endian::little, 3>;
+using ul32 = Integer<u32, std::endian::little>;
+using ul64 = Integer<u64, std::endian::little>;
 
-using il16 = LittleEndian<i16>;
-using il32 = LittleEndian<i32>;
-using il64 = LittleEndian<i64>;
-using ul16 = LittleEndian<u16>;
-using ul24 = LittleEndian<u32, 3>;
-using ul32 = LittleEndian<u32>;
-using ul64 = LittleEndian<u64>;
+using ib16 = Integer<i16, std::endian::big>;
+using ib32 = Integer<i32, std::endian::big>;
+using ib64 = Integer<i64, std::endian::big>;
 
-using ib16 = BigEndian<i16>;
-using ib32 = BigEndian<i32>;
-using ib64 = BigEndian<i64>;
-using ub16 = BigEndian<u16>;
-using ub24 = BigEndian<u32, 3>;
-using ub32 = BigEndian<u32>;
-using ub64 = BigEndian<u64>;
+using ub16 = Integer<u16, std::endian::big>;
+using ub24 = Integer<u32, std::endian::big, 3>;
+using ub32 = Integer<u32, std::endian::big>;
+using ub64 = Integer<u64, std::endian::big>;
 
 } // namespace mold

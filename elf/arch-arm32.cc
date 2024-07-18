@@ -666,7 +666,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
   // TLS trampoline code. ARM32's TLSDESC is designed so that this
   // common piece of code is factored out from object files to reduce
   // output size. Since no one provide, the linker has to synthesize it.
-  static ul32 hdr[] = {
+  static const ul32 hdr[] = {
     0xe08e'0000, // add r0, lr, r0
     0xe590'1004, // ldr r1, [r0, #4]
     0xe12f'ff11, // bx  r1
@@ -675,7 +675,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 
   // This is a range extension and mode switch thunk.
   // It has two entry points: +0 for Thumb and +4 for ARM.
-  const u8 entry[] = {
+  static const u8 entry[] = {
     // .thumb
     0x78, 0x47,             //    bx   pc  # jumps to 1f
     0xc0, 0x46,             //    nop
