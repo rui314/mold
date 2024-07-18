@@ -1320,7 +1320,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Fatal(ctx) << "unknown command line option: -dynamic; -dynamic is a "
                  << "macOS linker's option. mold does not support macOS.";
     } else {
-      if (args[0][0] == '-')
+      if (args[0].starts_with('-'))
         Fatal(ctx) << "unknown command line option: " << args[0];
       remaining.push_back(std::string(args[0]));
       args = args.subspan(1);
