@@ -580,10 +580,18 @@ but as `-o magic`.
   shared libraries linked with `--pack-dyn-relocs=relr`. As of 2022, only
   ChromeOS, Android and Fuchsia support it.
 
-* `--package-metadata`=_string_:
+* `--package-metadata`=_string_, `--encoded-package-metadata`=_string_:
   Embed _string_ to a `.note.package` section. This option is intended to be
   used by a package management command such as rpm(8) to embed metadata
   regarding a package to each executable file.
+
+  The difference between `--package-metadata` and `--encoded-package-metadata`
+  is that the former takes a plain string while the latter takes a
+  percent-encoded string. In other words, `--package-metadata={"foo":"bar"}`
+  is equivalent to `--encoded-package-metadata=%7B%22foo%22%3A%22bar%22%7D`.
+  The latter option is useful to use with the compiler's `-Wl,` option because
+  you can escape commas in a JSON string, which would otherwise be interpreted
+  as an argument separator by the compiler.
 
 * `--pie`, `--pic-executable`, `--no-pie`, `--no-pic-executable`:
   Create a position-independent executable.
