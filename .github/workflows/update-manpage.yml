@@ -8,6 +8,7 @@ on:
       - 'docs/mold.md'
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   update-manpage:
