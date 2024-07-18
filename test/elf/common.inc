@@ -58,11 +58,12 @@ else
   fi
 fi
 
-if [ $MACHINE = x86_64 -o $MACHINE = i686 -o $MACHINE = arm ]; then
-  tlsdesc_opt=-mtls-dialect=gnu2
-elif [ $MACHINE = aarch64 ]; then
-  tlsdesc_opt=-mtls-dialect=desc
-fi
+case $MACHINE in
+x86_64 | i686 | arm)
+  tlsdesc_opt=-mtls-dialect=gnu2 ;;
+aarch64)
+  tlsdesc_opt=-mtls-dialect=desc ;;
+esac
 
 # Common functions
 test_cflags() {
