@@ -27,7 +27,7 @@ opensuse-tumbleweed-*)
   ;;
 gentoo-*)
   emerge-webrsync
-  emerge dev-build/cmake
+  FEATURES='getbinpkg binpkg-request-signature' emerge dev-build/cmake
   ;;
 arch-* | archarm-* | artix-* | endeavouros-*)
   pacman -Sy --needed --noconfirm base-devel cmake util-linux
