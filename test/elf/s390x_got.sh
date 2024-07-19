@@ -10,9 +10,9 @@ extern char _DYNAMIC;
 extern void *got[];
 
 int main() {
-  printf("%p %p\n", &_DYNAMIC, got[0]);
+  printf("%d %p %p\n", &_DYNAMIC == got[0], &_DYNAMIC, got[0]);
 }
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-defsym=got=_GLOBAL_OFFSET_TABLE_ -no-pie
-$QEMU $t/exe | grep -Eq '^(\S+) \1$'
+$QEMU $t/exe | grep -Eq '^1'
