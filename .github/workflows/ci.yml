@@ -1,9 +1,7 @@
 name: CI
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
 env:
   UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 jobs:
@@ -103,6 +101,24 @@ jobs:
         path: |
           build
           !build/CMakeFiles
+
+  build-alpine:
+    runs-on: ubuntu-latest
+    container: alpine
+    steps:
+    - uses: actions/checkout@v2
+    - name: install-build-deps
+      run: ./install-build-deps.sh
+    - name: build
+      run: |
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build . -j$(nproc)
+    - name: test
+      run: |
+        cd build
+        ctest -j$(nproc)
 
   build-macos:
     runs-on: macos-12
