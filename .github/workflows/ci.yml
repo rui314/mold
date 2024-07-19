@@ -102,13 +102,20 @@ jobs:
           build
           !build/CMakeFiles
 
-  build-alpine:
+  build-distros:
+    strategy:
+      matrix:
+        distro:
+        - alpine
+        - archlinux
+        - fedora
+        - gentoo/stage3
+        - opensuse/tumbleweed
     runs-on: ubuntu-latest
-    container: alpine
+    container: ${{ matrix.distro }}
     steps:
     - uses: actions/checkout@v2
-    - name: install-build-deps
-      run: ./install-build-deps.sh
+    - run: ./install-build-deps.sh
     - name: build
       run: |
         mkdir build
