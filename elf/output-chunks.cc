@@ -2208,14 +2208,6 @@ template <typename E>
 void EhFrameSection<E>::construct(Context<E> &ctx) {
   Timer t(ctx, "eh_frame");
 
-  // If .eh_frame is missing in all input files, we don't want to
-  // create an output .eh_frame section.
-  if (std::all_of(ctx.objs.begin(), ctx.objs.end(),
-                  [](ObjectFile<E> *file) { return file->cies.empty(); })) {
-    this->shdr.sh_size = 0;
-    return;
-  }
-
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
