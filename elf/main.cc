@@ -578,7 +578,7 @@ int elf_main(int argc, char **argv) {
   // Reserve a space for dynamic symbol strings in .dynstr and sort
   // .dynsym contents if necessary. Beyond this point, no symbol will
   // be added to .dynsym.
-  ctx.dynsym->finalize(ctx);
+  sort_dynsyms(ctx);
 
   // Print reports about undefined symbols, if needed.
   if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR)

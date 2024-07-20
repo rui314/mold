@@ -1710,6 +1710,69 @@ void construct_relr(Context<E> &ctx) {
   });
 }
 
+// The hash function for .gnu.hash.
+static u32 djb_hash(std::string_view name) {
+  u32 h = 5381;
+  for (u8 c : name)
+    h = (h << 5) + h + c;
+  return h;
+}
+
+template <typename E>
+void sort_dynsyms(Context<E> &ctx) {
+  Timer t(ctx, "sort_dynsyms");
+
+  std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
+  if (syms.empty())
+    return;
+
+  // In any symtab, local symbols must precede global symbols.
+  auto first_global = std::stable_partition(syms.begin() + 1, syms.end(),
+                                            [&](Symbol<E> *sym) {
+    return sym->is_local(ctx);
+  });
+
+  // .gnu.hash imposes more restrictions on the order of the symbols in
+  // .dynsym.
+  if (ctx.gnu_hash) {
+    auto first_exported = std::stable_partition(first_global, syms.end(),
+                                                [&](Symbol<E> *sym) {
+      return !sym->is_exported;
+    });
+
+    // Count the number of exported symbols to compute the size of .gnu.hash.
+    i64 num_exported = syms.end() - first_exported;
+    u32 num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
+
+    tbb::parallel_for_each(first_exported, syms.end(), [&](Symbol<E> *sym) {
+      sym->set_djb_hash(ctx, djb_hash(sym->name()));
+    });
+
+    tbb::parallel_sort(first_exported, syms.end(),
+                       [&](Symbol<E> *a, Symbol<E> *b) {
+      return std::tuple(a->get_djb_hash(ctx) % num_buckets, a->name()) <
+             std::tuple(b->get_djb_hash(ctx) % num_buckets, b->name());
+    });
+
+    ctx.gnu_hash->num_buckets = num_buckets;
+    ctx.gnu_hash->num_exported = num_exported;
+  }
+
+  // Compute .dynstr size
+  ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
+
+  tbb::enumerable_thread_specific<i64> size;
+  tbb::parallel_for((i64)1, (i64)syms.size(), [&](i64 i) {
+    syms[i]->set_dynsym_idx(ctx, i);
+    size.local() += syms[i]->name().size() + 1;
+  });
+
+  ctx.dynstr->shdr.sh_size += size.combine(std::plus());
+
+  // ELF's symbol table sh_info holds the offset of the first global symbol.
+  ctx.dynsym->shdr.sh_info = first_global - syms.begin();
+}
+
 template <typename E>
 void create_output_symtab(Context<E> &ctx) {
   Timer t(ctx, "compute_symtab_size");
@@ -3223,6 +3286,7 @@ template void create_reloc_sections(Context<E> &);
 template void copy_chunks(Context<E> &);
 template void rewrite_endbr(Context<E> &);
 template void construct_relr(Context<E> &);
+template void sort_dynsyms(Context<E> &);
 template void create_output_symtab(Context<E> &);
 template void apply_version_script(Context<E> &);
 template void parse_symbol_version(Context<E> &);

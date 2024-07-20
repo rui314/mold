@@ -754,12 +754,10 @@ public:
   }
 
   void add_symbol(Context<E> &ctx, Symbol<E> *sym);
-  void finalize(Context<E> &ctx);
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<Symbol<E> *> symbols;
-  bool finalized = false;
 };
 
 template <typename E>
@@ -1487,6 +1485,7 @@ template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_relocations(Context<E> &);
 template <typename E> void compute_imported_symbol_weakness(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
+template <typename E> void sort_dynsyms(Context<E> &);
 template <typename E> void create_output_symtab(Context<E> &);
 template <typename E> void report_undef_errors(Context<E> &);
 template <typename E> void create_reloc_sections(Context<E> &);
