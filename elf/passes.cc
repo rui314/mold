@@ -2348,11 +2348,6 @@ void sort_output_sections(Context<E> &ctx) {
     sort_output_sections_by_order(ctx);
 }
 
-template <typename E>
-static bool is_tbss(Chunk<E> *chunk) {
-  return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
-}
-
 // This function assigns virtual addresses to output sections. Assigning
 // addresses is a bit tricky because we want to pack sections as tightly
 // as possible while not violating the constraints imposed by the hardware
@@ -2416,6 +2411,10 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
 
   auto alignment = [&](Chunk<E> *chunk) {
     return chunk == first_tls_chunk ? tls_alignment : (u64)chunk->shdr.sh_addralign;
+  };
+
+  auto is_tbss = [](Chunk<E> *chunk) {
+    return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
   };
 
   for (i64 i = 0; i < chunks.size(); i++) {
