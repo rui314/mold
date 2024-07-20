@@ -52,28 +52,30 @@ public:
   constexpr Integer() = default;
 
   constexpr Integer(T x) requires (endian == std::endian::little && size == 2)
-    : buf(x, x >> 8) {}
+    : buf{(u8)x, (u8)(x >> 8)} {}
 
   constexpr Integer(T x) requires (endian == std::endian::little && size == 3)
-    : buf(x, x >> 8, x >> 16) {}
+    : buf{(u8)x, (u8)(x >> 8), (u8)(x >> 16)} {}
 
   constexpr Integer(T x) requires (endian == std::endian::little && size == 4)
-    : buf(x, x >> 8, x >> 16, x >> 24) {}
+    : buf{(u8)x, (u8)(x >> 8), (u8)(x >> 16), (u8)(x >> 24)} {}
 
   constexpr Integer(T x) requires (endian == std::endian::little && size == 8)
-    : buf(x, x >> 8, x >> 16, x >> 24, x >> 32, x >> 40, x >> 48, x >> 56) {}
+    : buf{(u8)x,         (u8)(x >> 8),  (u8)(x >> 16), (u8)(x >> 24),
+          (u8)(x >> 32), (u8)(x >> 40), (u8)(x >> 48), (u8)(x >> 56)} {}
 
   constexpr Integer(T x) requires (endian == std::endian::big && size == 2)
-    : buf(x >> 8, x) {}
+    : buf{(u8)(x >> 8), (u8)x} {}
 
   constexpr Integer(T x) requires (endian == std::endian::big && size == 3)
-    : buf(x >> 16, x >> 8, x) {}
+    : buf{(u8)(x >> 16), (u8)(x >> 8), (u8)x} {}
 
   constexpr Integer(T x) requires (endian == std::endian::big && size == 4)
-    : buf(x >> 24, x >> 16, x >> 8, x) {}
+    : buf{(u8)(x >> 24), (u8)(x >> 16), (u8)(x >> 8), (u8)x} {}
 
   constexpr Integer(T x) requires (endian == std::endian::big && size == 8)
-    : buf(x >> 56, x >> 48, x >> 40, x >> 32, x >> 24, x >> 16, x >> 8, x) {}
+    : buf{(u8)(x >> 56), (u8)(x >> 48), (u8)(x >> 40), (u8)(x >> 32),
+          (u8)(x >> 24), (u8)(x >> 16), (u8)(x >> 8),  (u8)x} {}
 
   Integer &operator=(T x) {
     new (this) Integer(x);
