@@ -1801,30 +1801,30 @@ void DynsymSection<E>::finalize(Context<E> &ctx) {
     return sym->is_local(ctx);
   });
 
-  // We also place undefined symbols before defined symbols for .gnu.hash.
-  // Defined symbols are sorted by their hashes for .gnu.hash.
+  // .gnu.hash imposes more restrictions on the order of the symbols in
+  // .dynsym.
   if (ctx.gnu_hash) {
+    auto first_exported = std::stable_partition(first_global, symbols.end(),
+                                                [&](Symbol<E> *sym) {
+      return !sym->is_exported;
+    });
+
     // Count the number of exported symbols to compute the size of .gnu.hash.
-    i64 num_exported = 0;
-    for (i64 i = 1; i < symbols.size(); i++)
-      if (symbols[i]->is_exported)
-        num_exported++;
-
+    i64 num_exported = symbols.end() - first_exported;
     u32 num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
-    ctx.gnu_hash->num_buckets = num_buckets;
 
-    tbb::parallel_for_each(first_global, symbols.end(), [&](Symbol<E> *sym) {
+    tbb::parallel_for_each(first_exported, symbols.end(), [&](Symbol<E> *sym) {
       sym->set_djb_hash(ctx, djb_hash(sym->name()));
     });
 
-    tbb::parallel_sort(first_global, symbols.end(),
+    tbb::parallel_sort(first_exported, symbols.end(),
                        [&](Symbol<E> *a, Symbol<E> *b) {
-      if (a->is_exported != b->is_exported)
-        return b->is_exported;
-
       return std::tuple(a->get_djb_hash(ctx) % num_buckets, a->name()) <
              std::tuple(b->get_djb_hash(ctx) % num_buckets, b->name());
     });
+
+    ctx.gnu_hash->num_buckets = num_buckets;
+    ctx.gnu_hash->num_exported = num_exported;
   }
 
   // Compute .dynstr size
@@ -1901,33 +1901,19 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-static std::span<Symbol<E> *> get_exported_symbols(Context<E> &ctx) {
-  std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
-  auto it = std::partition_point(syms.begin() + 1, syms.end(),
-                                 [](Symbol<E> *sym) {
-    return !sym->is_exported;
-  });
-  return syms.subspan(it - syms.begin());
-}
-
-template <typename E>
 void GnuHashSection<E>::update_shdr(Context<E> &ctx) {
   if (ctx.dynsym->symbols.empty())
     return;
 
-  this->shdr.sh_link = ctx.dynsym->shndx;
-
-  i64 num_exported = get_exported_symbols(ctx).size();
-  if (num_exported) {
-    // We allocate 12 bits for each symbol in the bloom filter.
-    i64 num_bits = num_exported * 12;
-    num_bloom = bit_ceil(num_bits / (sizeof(Word<E>) * 8));
-  }
+  // We allocate 12 bits for each symbol in the bloom filter.
+  num_bloom = bit_ceil((num_exported * 12) / (sizeof(Word<E>) * 8));
 
   this->shdr.sh_size = HEADER_SIZE;                  // Header
   this->shdr.sh_size += num_bloom * sizeof(Word<E>); // Bloom filter
   this->shdr.sh_size += num_buckets * 4;             // Hash buckets
   this->shdr.sh_size += num_exported * 4;            // Hash values
+
+  this->shdr.sh_link = ctx.dynsym->shndx;
 }
 
 template <typename E>
@@ -1935,12 +1921,15 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
   memset(base, 0, this->shdr.sh_size);
 
-  std::span<Symbol<E> *> syms = get_exported_symbols(ctx);
-  std::vector<u32> indices(syms.size());
-  i64 exported_offset = ctx.dynsym->symbols.size() - syms.size();
+  i64 first_exported = ctx.dynsym->symbols.size() - num_exported;
+
+  std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
+  syms = syms.subspan(first_exported);
+
+  std::vector<u32> indices(num_exported);
 
   *(U32<E> *)base = num_buckets;
-  *(U32<E> *)(base + 4) = exported_offset;
+  *(U32<E> *)(base + 4) = first_exported;
   *(U32<E> *)(base + 8) = num_bloom;
   *(U32<E> *)(base + 12) = BLOOM_SHIFT;
 
@@ -1963,7 +1952,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 
   for (i64 i = 0; i < syms.size(); i++)
     if (!buckets[indices[i]])
-      buckets[indices[i]] = i + exported_offset;
+      buckets[indices[i]] = i + first_exported;
 
   // Write a hash table
   U32<E> *table = buckets + num_buckets;

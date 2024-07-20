@@ -796,6 +796,7 @@ public:
 
   i64 num_buckets = -1;
   i64 num_bloom = 1;
+  i64 num_exported = -1;
 };
 
 template <typename E>
