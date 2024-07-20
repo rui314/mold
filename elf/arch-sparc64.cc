@@ -599,7 +599,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 void SparcTlsGetAddrSection::copy_buf(Context<E> &ctx) {
   ub32 *buf = (ub32 *)(ctx.buf + this->shdr.sh_offset);
 
-  static const ub32 insn[] = {
+  constexpr ub32 insn[] = {
     0x0300'0000, // sethi  %hi(TP_SIZE), %g1
     0x8210'6000, // or   %g1, %lo(TP_SIZE), %g1
     0x8221'c001, // sub  %g7, %g1, %g1

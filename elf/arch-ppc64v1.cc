@@ -68,7 +68,7 @@ static u64 higha(u64 x) { return ((x + 0x8000) >> 16) & 0xffff; }
 // resolved addresses.
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
-  static const ub32 insn[] = {
+  constexpr ub32 insn[] = {
     0x7d88'02a6, // mflr    r12
     0x429f'0005, // bcl     20, 31, 4 // obtain PC
     0x7d68'02a6, // mflr    r11
@@ -101,7 +101,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   // call to the PLT entry jumps to. So we need to strictly follow the PLT
   // section layout as the loader expect it to be.
   if (idx < 0x8000) {
-    static const ub32 insn[] = {
+    constexpr ub32 insn[] = {
       0x3800'0000, // li      r0, PLT_INDEX
       0x4b00'0000, // b       plt0
     };
@@ -110,7 +110,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
     loc[0] |= idx;
     loc[1] |= (ctx.plt->shdr.sh_addr - sym.get_plt_addr(ctx) - 4) & 0x00ff'ffff;
   } else {
-    static const ub32 insn[] = {
+    constexpr ub32 insn[] = {
       0x3c00'0000, // lis     r0, PLT_INDEX@high
       0x6000'0000, // ori     r0, r0, PLT_INDEX@lo
       0x4b00'0000, // b       plt0
@@ -421,7 +421,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
   // If the destination is .plt.got, we save the current r2, read an
   // address of a function descriptor from .got, restore %r2 and jump
   // to the function.
-  static const ub32 pltgot_thunk[] = {
+  constexpr ub32 pltgot_thunk[] = {
     // Store the caller's %r2
     0xf841'0028, // std   %r2, 40(%r1)
 
@@ -439,7 +439,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
   };
 
   // If the destination is .plt, read a function descriptor from .got.plt.
-  static const ub32 plt_thunk[] = {
+  constexpr ub32 plt_thunk[] = {
     // Store the caller's %r2
     0xf841'0028, // std   %r2, 40(%r1)
 
@@ -458,7 +458,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 
   // If the destination is a non-imported function, we directly jump
   // to the function entry address.
-  static const ub32 local_thunk[] = {
+  constexpr ub32 local_thunk[] = {
     0x3d82'0000, // addis r12, r2,  foo@toc@ha
     0x398c'0000, // addi  r12, r12, foo@toc@lo
     0x7d89'03a6, // mtctr r12

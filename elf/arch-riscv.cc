@@ -141,7 +141,7 @@ static void set_rs1(u8 *loc, u32 rs1) {
 
 template <>
 void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
-  static const ul32 insn_64[] = {
+  constexpr ul32 insn_64[] = {
     0x0000'0397, // auipc  t2, %pcrel_hi(.got.plt)
     0x41c3'0333, // sub    t1, t1, t3               # .plt entry + hdr + 12
     0x0003'be03, // ld     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
@@ -152,7 +152,7 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
     0x000e'0067, // jr     t3
   };
 
-  static const ul32 insn_32[] = {
+  constexpr ul32 insn_32[] = {
     0x0000'0397, // auipc  t2, %pcrel_hi(.got.plt)
     0x41c3'0333, // sub    t1, t1, t3               # .plt entry + hdr + 12
     0x0003'ae03, // lw     t3, %pcrel_lo(1b)(t2)    # _dl_runtime_resolve
@@ -172,14 +172,14 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   write_itype(buf + 16, gotplt - plt);
 }
 
-static const ul32 plt_entry_64[] = {
+constexpr ul32 plt_entry_64[] = {
   0x0000'0e17, // auipc   t3, %pcrel_hi(function@.got.plt)
   0x000e'3e03, // ld      t3, %pcrel_lo(1b)(t3)
   0x000e'0367, // jalr    t1, t3
   0x0010'0073, // ebreak
 };
 
-static const ul32 plt_entry_32[] = {
+constexpr ul32 plt_entry_32[] = {
   0x0000'0e17, // auipc   t3, %pcrel_hi(function@.got.plt)
   0x000e'2e03, // lw      t3, %pcrel_lo(1b)(t3)
   0x000e'0367, // jalr    t1, t3

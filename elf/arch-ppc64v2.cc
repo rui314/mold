@@ -106,7 +106,7 @@ static void write34(u8 *loc, u64 x) {
 // resolved addresses.
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
-  static const ul32 insn[] = {
+  constexpr ul32 insn[] = {
     // Get PC
     0x7c08'02a6, // mflr    r0
     0x429f'0005, // bcl     20, 31, 4 // obtain PC
@@ -495,7 +495,7 @@ template <>
 void Thunk<E>::copy_buf(Context<E> &ctx) {
   // If the destination is PLT, we read an address from .got.plt or .got
   // and jump there.
-  static const ul32 plt_thunk[] = {
+  constexpr ul32 plt_thunk[] = {
     0xf841'0018, // std   r2, 24(r1)
     0x6000'0000, // nop
     0x3d82'0000, // addis r12, r2, foo@gotplt@toc@ha
@@ -504,7 +504,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
     0x4e80'0420, // bctr
   };
 
-  static const ul32 plt_thunk_power10[] = {
+  constexpr ul32 plt_thunk_power10[] = {
     0xf841'0018, // std   r2, 24(r1)
     0x6000'0000, // nop
     0x0410'0000, // pld   r12, foo@gotplt@pcrel
@@ -515,7 +515,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 
   // If the destination is a non-imported function, we directly jump
   // to its local entry point.
-  static const ul32 local_thunk[] = {
+  constexpr ul32 local_thunk[] = {
     0xf841'0018, // std   r2, 24(r1)
     0x6000'0000, // nop
     0x3d82'0000, // addis r12, r2,  foo@toc@ha
@@ -524,7 +524,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
     0x4e80'0420, // bctr
   };
 
-  static const ul32 local_thunk_power10[] = {
+  constexpr ul32 local_thunk_power10[] = {
     0xf841'0018, // std   r2, 24(r1)
     0x6000'0000, // nop
     0x0610'0000, // pla   r12, foo@pcrel

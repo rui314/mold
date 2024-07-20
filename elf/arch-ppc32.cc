@@ -54,7 +54,7 @@ static u64 higha(u64 x) { return ((x + 0x8000) >> 16) & 0xffff; }
 
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
-  static const ub32 insn[] = {
+  constexpr ub32 insn[] = {
     // Get the address of this PLT section
     0x7c08'02a6, //    mflr    r0
     0x429f'0005, //    bcl     20, 31, 4
@@ -88,7 +88,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   loc[5] |= lo(ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 4);
 }
 
-static const ub32 plt_entry[] = {
+constexpr ub32 plt_entry[] = {
   // Get the address of this PLT entry
   0x7c08'02a6, // mflr    r0
   0x429f'0005, // bcl     20, 31, 4
@@ -409,7 +409,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <>
 void Thunk<E>::copy_buf(Context<E> &ctx) {
-  static const ub32 local_thunk[] = {
+  constexpr ub32 local_thunk[] = {
     // Get this thunk's address
     0x7c08'02a6, // mflr    r0
     0x429f'0005, // bcl     20, 31, 4

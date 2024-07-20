@@ -4,8 +4,8 @@
 // reasons:
 //
 // 1. mold is always a cross linker and should not depend on what host it
-//    is running on. Users should be able to run mold on a big-endian
-//    SPARC machine to create a little-endian RV64 binary, for example.
+//    is running on. For example, users should be able to run mold on a
+//    big-endian SPARC machine to create a little-endian RV64 binary.
 //
 // 2. Even though data members in all ELF data strucutres are naturally
 //    aligned, they are not guaranteed to be aligned on memory. Because
@@ -13,7 +13,7 @@
 //    anything larger than 2 bytes may be unaligned in an mmap'ed memory.
 //    Unaligned access is an undefined behavior in C/C++, so we shouldn't
 //    cast an arbitrary pointer to a uint32_t, for example, to read a
-//    32-bits value.
+//    32 bit value.
 //
 // The data types defined in this file don't depend on host byte order and
 // don't do unaligned access.
@@ -49,41 +49,63 @@ typedef int64_t i64;
 template <typename T, std::endian endian, int size = sizeof(T)>
 class Integer {
 public:
-  Integer() = default;
-  Integer(T x) { *this = x; }
+  constexpr Integer() = default;
 
-  operator T() const {
-    if (size == 3) {
-      if (endian == std::endian::little)
-        return (val[2] << 16) | (val[1] << 8) | val[0];
-      else
-        return (val[0] << 16) | (val[1] << 8) | val[2];
-    } else {
-      T x;
-      memcpy(&x, val, size);
-      if (endian != std::endian::native)
-        x = bswap(x);
-      return x;
-    }
-  }
+  constexpr Integer(T x) requires (endian == std::endian::little && size == 2)
+    : buf(x, x >> 8) {}
+
+  constexpr Integer(T x) requires (endian == std::endian::little && size == 3)
+    : buf(x, x >> 8, x >> 16) {}
+
+  constexpr Integer(T x) requires (endian == std::endian::little && size == 4)
+    : buf(x, x >> 8, x >> 16, x >> 24) {}
+
+  constexpr Integer(T x) requires (endian == std::endian::little && size == 8)
+    : buf(x, x >> 8, x >> 16, x >> 24, x >> 32, x >> 40, x >> 48, x >> 56) {}
+
+  constexpr Integer(T x) requires (endian == std::endian::big && size == 2)
+    : buf(x >> 8, x) {}
+
+  constexpr Integer(T x) requires (endian == std::endian::big && size == 3)
+    : buf(x >> 16, x >> 8, x) {}
+
+  constexpr Integer(T x) requires (endian == std::endian::big && size == 4)
+    : buf(x >> 24, x >> 16, x >> 8, x) {}
+
+  constexpr Integer(T x) requires (endian == std::endian::big && size == 8)
+    : buf(x >> 56, x >> 48, x >> 40, x >> 32, x >> 24, x >> 16, x >> 8, x) {}
 
   Integer &operator=(T x) {
-    if (size == 3) {
-      if (endian == std::endian::little) {
-        val[0] = x;
-        val[1] = x >> 8;
-        val[2] = x >> 16;
-      } else {
-        val[0] = x >> 16;
-        val[1] = x >> 8;
-        val[2] = x;
-      }
-    } else {
-      if (endian != std::endian::native)
-        x = bswap(x);
-      memcpy(val, &x, size);
-    }
+    new (this) Integer(x);
     return *this;
+  }
+
+  operator T() const {
+    if constexpr (endian == std::endian::little) {
+      if constexpr (size == 2)
+        return buf[1] << 8 | buf[0];
+      else if constexpr (size == 3)
+        return buf[2] << 16 | buf[1] << 8 | buf[0];
+      else if constexpr (size == 4)
+        return buf[3] << 24 | buf[2] << 16 | buf[1] << 8 | buf[0];
+      else
+        return (u64)buf[7] << 56 | (u64)buf[6] << 48 |
+               (u64)buf[5] << 40 | (u64)buf[4] << 32 |
+               (u64)buf[3] << 24 | (u64)buf[2] << 16 |
+               (u64)buf[1] << 8  | (u64)buf[0];
+    } else {
+      if constexpr (size == 2)
+        return buf[0] << 8 | buf[1];
+      else if constexpr (size == 3)
+        return buf[0] << 16 | buf[1] << 8 | buf[2];
+      else if constexpr (size == 4)
+        return buf[0] << 24 | buf[1] << 16 | buf[2] << 8 | buf[3];
+      else
+        return (u64)buf[0] << 56 | (u64)buf[1] << 48 |
+               (u64)buf[2] << 40 | (u64)buf[3] << 32 |
+               (u64)buf[4] << 24 | (u64)buf[5] << 16 |
+               (u64)buf[6] << 8  | (u64)buf[7];
+    }
   }
 
   Integer &operator++()    { return *this = *this + 1; }
@@ -96,16 +118,7 @@ public:
   Integer &operator|=(T x) { return *this = *this | x; }
 
 private:
-  static T bswap(T x) {
-    switch (size) {
-    case 2:  return __builtin_bswap16(x);
-    case 4:  return __builtin_bswap32(x);
-    case 8:  return __builtin_bswap64(x);
-    default: __builtin_unreachable();
-    }
-  }
-
-  u8 val[size];
+  u8 buf[size];
 };;
 
 using il16 = Integer<i16, std::endian::little>;

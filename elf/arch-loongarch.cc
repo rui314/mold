@@ -115,7 +115,7 @@ static void write_d10k16(u8 *loc, u32 val) {
 
 template <>
 void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
-  static const ul32 insn_64[] = {
+  constexpr ul32 insn_64[] = {
     0x1a00'000e, // pcalau12i $t2, %pc_hi20(.got.plt)
     0x0011'bdad, // sub.d     $t1, $t1, $t3
     0x28c0'01cf, // ld.d      $t3, $t2, %lo12(.got.plt) # _dl_runtime_resolve
@@ -126,7 +126,7 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
     0x4c00'01e0, // jr        $t3
   };
 
-  static const ul32 insn_32[] = {
+  constexpr ul32 insn_32[] = {
     0x1a00'000e, // pcalau12i $t2, %pc_hi20(.got.plt)
     0x0011'3dad, // sub.w     $t1, $t1, $t3
     0x2880'01cf, // ld.w      $t3, $t2, %lo12(.got.plt) # _dl_runtime_resolve
@@ -146,14 +146,14 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   write_k12(buf + 16, gotplt);
 }
 
-static const ul32 plt_entry_64[] = {
+constexpr ul32 plt_entry_64[] = {
   0x1a00'000f, // pcalau12i $t3, %pc_hi20(func@.got.plt)
   0x28c0'01ef, // ld.d      $t3, $t3, %lo12(func@.got.plt)
   0x4c00'01ed, // jirl      $t1, $t3, 0
   0x0340'0000, // nop
 };
 
-static const ul32 plt_entry_32[] = {
+constexpr ul32 plt_entry_32[] = {
   0x1a00'000f, // pcalau12i $t3, %pc_hi20(func@.got.plt)
   0x2880'01ef, // ld.w      $t3, $t3, %lo12(func@.got.plt)
   0x4c00'01ed, // jirl      $t1, $t3, 0
@@ -665,7 +665,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <>
 void Thunk<E>::copy_buf(Context<E> &ctx) {
-  static const ul32 insn[] = {
+  constexpr ul32 insn[] = {
     0x1e00'000c, // pcaddu18i $t0, 0
     0x4c00'0180, // jirl      $zero, $t0, 0
   };

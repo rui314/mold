@@ -194,7 +194,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
 
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
-  static const ul32 insn[] = {
+  constexpr ul32 insn[] = {
     0xe52d'e004, //    push {lr}
     0xe59f'e004, //    ldr lr, 2f
     0xe08f'e00e, // 1: add lr, pc, lr
@@ -209,7 +209,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   *(ul32 *)(buf + 16) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 16;
 }
 
-static const ul32 plt_entry[] = {
+constexpr ul32 plt_entry[] = {
   0xe59f'c004, // 1: ldr ip, 2f
   0xe08c'c00f, //    add ip, ip, pc
   0xe59c'f000, //    ldr pc, [ip]
@@ -666,7 +666,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
   // TLS trampoline code. ARM32's TLSDESC is designed so that this
   // common piece of code is factored out from object files to reduce
   // output size. Since no one provide, the linker has to synthesize it.
-  static const ul32 hdr[] = {
+  constexpr ul32 hdr[] = {
     0xe08e'0000, // add r0, lr, r0
     0xe590'1004, // ldr r1, [r0, #4]
     0xe12f'ff11, // bx  r1
