@@ -467,6 +467,9 @@ int elf_main(int argc, char **argv) {
   if (!ctx.arg.allow_multiple_definition)
     check_duplicate_symbols(ctx);
 
+  if (!ctx.arg.allow_shlib_undefined)
+    check_shlib_undefined(ctx);
+
   // Warn if symbols with different types are defined under the same name.
   check_symbol_types(ctx);
 

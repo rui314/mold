@@ -1243,6 +1243,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.auxiliary.push_back(arg);
     } else if (read_arg("filter") || read_arg("F")) {
       ctx.arg.filter.push_back(arg);
+    } else if (read_flag("allow-shlib-undefined")) {
+      ctx.arg.allow_shlib_undefined = true;
+    } else if (read_flag("no-allow-shlib-undefined")) {
+      ctx.arg.allow_shlib_undefined = false;
     } else if (read_arg("O")) {
     } else if (read_flag("EB")) {
     } else if (read_flag("EL")) {
@@ -1260,8 +1264,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("enable-new-dtags")) {
     } else if (read_flag("disable-new-dtags")) {
     } else if (read_flag("nostdlib")) {
-    } else if (read_flag("allow-shlib-undefined")) {
-    } else if (read_flag("no-allow-shlib-undefined")) {
     } else if (read_flag("no-add-needed")) {
     } else if (read_flag("no-call-graph-profile-sort")) {
     } else if (read_flag("no-copy-dt-needed-entries")) {

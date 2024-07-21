@@ -1311,6 +1311,7 @@ public:
 
   std::string soname;
   std::vector<std::string_view> version_strings;
+  std::vector<std::string_view> dt_needed;
   std::vector<ElfSym<E>> elf_syms2;
 
 private:
@@ -1318,6 +1319,7 @@ private:
 
   std::string get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
+  std::vector<std::string_view> read_dt_needed(Context<E> &ctx);
   std::vector<std::string_view> read_verdef(Context<E> &ctx);
 
   std::vector<u16> versyms;
@@ -1474,6 +1476,7 @@ template <typename E> void check_cet_errors(Context<E> &);
 template <typename E> void print_dependencies(Context<E> &);
 template <typename E> void write_repro_file(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
+template <typename E> void check_shlib_undefined(Context<E> &);
 template <typename E> void check_symbol_types(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> void sort_ctor_dtor(Context<E> &);
@@ -1764,6 +1767,7 @@ struct Context {
 
   // Command-line arguments
   struct {
+    BsymbolicKind Bsymbolic = BSYMBOLIC_NONE;
     BuildId build_id;
     CetReportKind z_cet_report = CET_REPORT_NONE;
     CompressKind compress_debug_sections = COMPRESS_NONE;
@@ -1774,8 +1778,8 @@ struct Context {
     Symbol<E> *fini = nullptr;
     Symbol<E> *init = nullptr;
     UnresolvedKind unresolved_symbols = UNRESOLVED_IGNORE;
-    BsymbolicKind Bsymbolic = BSYMBOLIC_NONE;
     bool allow_multiple_definition = false;
+    bool allow_shlib_undefined = true;
     bool apply_dynamic_relocs = true;
     bool color_diagnostics = false;
     bool default_symver = false;
@@ -1797,7 +1801,6 @@ struct Context {
     bool icf = false;
     bool icf_all = false;
     bool ignore_data_address_equality = false;
-    bool static_ = false;
     bool lto_pass2 = false;
     bool nmagic = false;
     bool noinhibit_exec = false;
@@ -1819,6 +1822,7 @@ struct Context {
     bool rosegment = true;
     bool shared = false;
     bool start_stop = false;
+    bool static_ = false;
     bool stats = false;
     bool strip_all = false;
     bool strip_debug = false;
@@ -1854,8 +1858,6 @@ struct Context {
     i64 spare_program_headers = 0;
     i64 thread_count = 0;
     i64 z_stack_size = 0;
-    u64 shuffle_sections_seed;
-    std::string_view emulation;
     std::optional<Glob> unique;
     std::optional<u64> physical_image_base;
     std::string Map;
@@ -1870,6 +1872,7 @@ struct Context {
     std::string separate_debug_file;
     std::string soname;
     std::string sysroot;
+    std::string_view emulation;
     std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
     std::unordered_map<std::string_view, u64> section_align;
     std::unordered_map<std::string_view, u64> section_start;
@@ -1887,6 +1890,7 @@ struct Context {
     std::vector<std::string_view> filter;
     std::vector<std::string_view> trace_symbol;
     u64 image_base = 0x200000;
+    u64 shuffle_sections_seed = 0;
   } arg;
 
   std::vector<VersionPattern> version_patterns;

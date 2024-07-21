@@ -1224,6 +1224,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
   this->symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
   soname = get_soname(ctx);
+  dt_needed = read_dt_needed(ctx);
   version_strings = read_verdef(ctx);
 
   // Read a symbol table.
@@ -1263,6 +1264,35 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
   static Counter counter("dso_syms");
   counter += this->elf_syms.size();
+}
+
+template <typename E>
+std::vector<std::string_view> SharedFile<E>::read_dt_needed(Context<E> &ctx) {
+  // Get the contents of a .dynamic seciton
+  std::span<Word<E>> dynamic;
+  for (ElfPhdr<E> &phdr : this->get_phdrs()) {
+    if (phdr.p_type == PT_DYNAMIC) {
+      dynamic = {(Word<E> *)(this->mf->data + phdr.p_offset),
+                 phdr.p_memsz / sizeof(Word<E>)};
+      break;
+    }
+  }
+
+  // Find a string table
+  char *strtab = nullptr;
+  for (i64 i = 0; i < dynamic.size(); i += 2)
+    if (dynamic[i] == DT_STRTAB)
+      strtab = (char *)this->mf->data + dynamic[i + 1];
+
+  if (!strtab)
+    return {};
+
+  // Find all DT_NEEDED entries
+  std::vector<std::string_view> vec;
+  for (i64 i = 0; i < dynamic.size(); i += 2)
+    if (dynamic[i] == DT_NEEDED)
+      vec.push_back(strtab + dynamic[i + 1]);
+  return vec;
 }
 
 // Symbol versioning is a GNU extension to the ELF file format. I don't
@@ -1356,7 +1386,7 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
     if (sym.is_traced)
       print_trace_symbol(ctx, *this, esym, sym);
 
-    if (esym.is_undef() && !esym.is_weak() && sym.file && !sym.file->is_dso &&
+    if (esym.is_undef() && !esym.is_weak() && sym.file &&
         !sym.file->is_alive.test_and_set()) {
       feeder(sym.file);
 

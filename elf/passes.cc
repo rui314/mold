@@ -1082,6 +1082,55 @@ void check_duplicate_symbols(Context<E> &ctx) {
   ctx.checkpoint();
 }
 
+// If --no-allow-shlib-undefined is specified, we report errors on
+// unresolved symbols in shared libraries. This is useful when you are
+// creating a final executable and want to make sure that all symbols
+// including ones in shared libraries have been resolved.
+//
+// If you do not pass --no-allow-shlib-undefined, undefined symbols in
+// shared libraries will be reported as run-time error by the dynamic
+// linker.
+template <typename E>
+void check_shlib_undefined(Context<E> &ctx) {
+  Timer t(ctx, "check_shlib_undefined");
+
+  // Obtain a list of DSOs whose all DT_NEEDED files are known to us.
+  // If a DSO depends on an unknown library, that library may provide
+  // definitions for missing symbols, so we ignore such libraries.
+  std::vector<SharedFile<E> *> dsos = ctx.dsos;
+  std::unordered_set<std::string_view> sonames;
+
+  for (SharedFile<E> *file : dsos)
+    sonames.insert(file->soname);
+
+  std::erase_if(dsos, [&](SharedFile<E> *file) {
+    for (std::string_view needed : file->dt_needed)
+      if (sonames.count(needed) == 0)
+        return true;
+    return false;
+  });
+
+  auto is_sparc_register = [](const ElfSym<E> &esym) {
+    // Dynamic symbol table for SPARC contains bogus entries which
+    // we need to ignore
+    if constexpr (is_sparc<E>)
+      return esym.st_type == STT_SPARC_REGISTER;
+    return false;
+  };
+
+  // Check if all undefined symbols have been resolved.
+  for (SharedFile<E> *file : dsos) {
+    for (i64 i = 0; i < file->elf_syms.size(); i++) {
+      const ElfSym<E> &esym = file->elf_syms[i];
+      Symbol<E> &sym = *file->symbols[i];
+      if (esym.is_undef() && !esym.is_weak() && !is_sparc_register(esym) &&
+          !sym.file)
+        Error(ctx) << *file << ": --no-allow-shlib-undefined: undefined symbol: "
+                   << sym;
+    }
+  }
+}
+
 template <typename E>
 void check_symbol_types(Context<E> &ctx) {
   Timer t(ctx, "check_symbol_types");
@@ -3270,6 +3319,7 @@ template void apply_section_align(Context<E> &);
 template void print_dependencies(Context<E> &);
 template void write_repro_file(Context<E> &);
 template void check_duplicate_symbols(Context<E> &);
+template void check_shlib_undefined(Context<E> &);
 template void check_symbol_types(Context<E> &);
 template void sort_init_fini(Context<E> &);
 template void sort_ctor_dtor(Context<E> &);
