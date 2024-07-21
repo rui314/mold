@@ -1094,22 +1094,6 @@ template <typename E>
 void check_shlib_undefined(Context<E> &ctx) {
   Timer t(ctx, "check_shlib_undefined");
 
-  // Obtain a list of DSOs whose all DT_NEEDED files are known to us.
-  // If a DSO depends on an unknown library, that library may provide
-  // definitions for missing symbols, so we ignore such libraries.
-  std::vector<SharedFile<E> *> dsos = ctx.dsos;
-  std::unordered_set<std::string_view> sonames;
-
-  for (SharedFile<E> *file : dsos)
-    sonames.insert(file->soname);
-
-  std::erase_if(dsos, [&](SharedFile<E> *file) {
-    for (std::string_view needed : file->dt_needed)
-      if (sonames.count(needed) == 0)
-        return true;
-    return false;
-  });
-
   auto is_sparc_register = [](const ElfSym<E> &esym) {
     // Dynamic symbol table for SPARC contains bogus entries which
     // we need to ignore
@@ -1118,17 +1102,28 @@ void check_shlib_undefined(Context<E> &ctx) {
     return false;
   };
 
-  // Check if all undefined symbols have been resolved.
-  for (SharedFile<E> *file : dsos) {
+  // Obtain a list of known shared library names.
+  std::unordered_set<std::string_view> sonames;
+  for (SharedFile<E> *file : ctx.dsos)
+    sonames.insert(file->soname);
+
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+    // Skip the file if it depends on a file that we know nothing about.
+    // This is because missing symbols may be provided by that unknown file.
+    for (std::string_view needed : file->get_dt_needed(ctx))
+      if (sonames.count(needed) == 0)
+        return;
+
+    // Check if all undefined symbols have been resolved.
     for (i64 i = 0; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
-      if (esym.is_undef() && !esym.is_weak() && !is_sparc_register(esym) &&
-          !sym.file)
+      if (esym.is_undef() && !esym.is_weak() && !sym.file &&
+          !is_sparc_register(esym))
         Error(ctx) << *file << ": --no-allow-shlib-undefined: undefined symbol: "
                    << sym;
     }
-  }
+  });
 }
 
 template <typename E>

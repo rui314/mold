@@ -1301,6 +1301,7 @@ public:
   void resolve_symbols(Context<E> &ctx) override;
   std::span<Symbol<E> *> get_symbols_at(Symbol<E> *sym);
   i64 get_alignment(Symbol<E> *sym);
+  std::vector<std::string_view> get_dt_needed(Context<E> &ctx);
   bool is_readonly(Symbol<E> *sym);
 
   void mark_live_objects(Context<E> &ctx,
@@ -1311,7 +1312,6 @@ public:
 
   std::string soname;
   std::vector<std::string_view> version_strings;
-  std::vector<std::string_view> dt_needed;
   std::vector<ElfSym<E>> elf_syms2;
 
 private:

@@ -1224,7 +1224,6 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
   this->symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
   soname = get_soname(ctx);
-  dt_needed = read_dt_needed(ctx);
   version_strings = read_verdef(ctx);
 
   // Read a symbol table.
@@ -1267,16 +1266,13 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 }
 
 template <typename E>
-std::vector<std::string_view> SharedFile<E>::read_dt_needed(Context<E> &ctx) {
-  // Get the contents of a .dynamic seciton
+std::vector<std::string_view> SharedFile<E>::get_dt_needed(Context<E> &ctx) {
+  // Get the contents of the dynamic segment
   std::span<Word<E>> dynamic;
-  for (ElfPhdr<E> &phdr : this->get_phdrs()) {
-    if (phdr.p_type == PT_DYNAMIC) {
+  for (ElfPhdr<E> &phdr : this->get_phdrs())
+    if (phdr.p_type == PT_DYNAMIC)
       dynamic = {(Word<E> *)(this->mf->data + phdr.p_offset),
                  phdr.p_memsz / sizeof(Word<E>)};
-      break;
-    }
-  }
 
   // Find a string table
   char *strtab = nullptr;
