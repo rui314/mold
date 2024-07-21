@@ -2696,6 +2696,8 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
   if (ctx.arg.z_shstk)
     properties[GNU_PROPERTY_X86_FEATURE_1_AND] |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
 
+  properties[GNU_PROPERTY_X86_ISA_1_NEEDED] |= ctx.arg.z_x86_64_isa_level;
+
   std::erase_if(properties, [](std::pair<u32, u32> kv) {
     return kv.second == 0;
   });

@@ -1889,6 +1889,7 @@ struct Context {
     std::vector<std::string_view> exclude_libs;
     std::vector<std::string_view> filter;
     std::vector<std::string_view> trace_symbol;
+    u32 z_x86_64_isa_level = 0;
     u64 image_base = 0x200000;
     u64 shuffle_sections_seed = 0;
   } arg;

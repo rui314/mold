@@ -1064,6 +1064,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_rewrite_endbr = true;
     } else if (read_z_flag("rodynamic")) {
       ctx.arg.z_rodynamic = true;
+    } else if (read_z_flag("x86-64-v2")) {
+      ctx.arg.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V2;
+    } else if (read_z_flag("x86-64-v3")) {
+      ctx.arg.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V3;
+    } else if (read_z_flag("x86-64-v4")) {
+      ctx.arg.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V4;
     } else if (read_flag("nmagic")) {
       ctx.arg.nmagic = true;
     } else if (read_flag("no-nmagic")) {
