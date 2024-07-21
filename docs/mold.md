@@ -412,6 +412,23 @@ but as `-o magic`.
   report an error for duplicate definitions and instead use the first
   definition.
 
+* `--allow-shlib-undefined`, `--no-allow-shlib-undefined`:
+  Even if mold succeeds in linking a main executable without undefined symbol
+  errors, you may still encounter symbol lookup errors at runtime because the
+  dynamic linker cannot find some symbols in shared libraries in any ELF
+  module. This occurs because mold ignores undefined symbols in shared
+  libraries by default.
+
+  If you pass `--no-allow-shlib-undefined`, mold verifies that undefined
+  symbols in shared libraries given to the linker can be resolved at
+  link-time. In other words, this converts the runtime error to a link-time
+  error.
+
+  Note that you need to pass all shared libraries, including indirectly
+  dependent ones, to the linker as arguments for `-l`. If a shared library
+  depends on a library that's not passed to the linker, the verification will
+  be skipped for that file.
+
 * `--as-needed`, `--no-as-needed`:
   By default, shared libraries given to the linker are unconditionally added
   to the list of required libraries in an output file. However, shared
@@ -839,7 +856,7 @@ but as `-o magic`.
 * `-z interpose`:
   Mark object to interpose all DSOs but executable.
 
-* `-(`, `-)`, `-EL`, `-O`_number_, `--allow-shlib-undefined`, `--dc`, `--dp`, `--end-group`, `--no-add-needed`, `--no-allow-shlib-undefined`, `--no-copy-dt-needed-entries`, `--nostdlib`, `--rpath-link=Ar dir`, `--sort-common`, `--sort-section`, `--start-group`, `--warn-constructors`, `--warn-once`, `--fix-cortex-a53-835769`, `--fix-cortex-a53-843419`, `-z combreloc`, `-z common-page-size`, `-z nocombreloc`:
+* `-(`, `-)`, `-EL`, `-O`_number_, `--dc`, `--dp`, `--end-group`, `--no-add-needed`, `--no-copy-dt-needed-entries`, `--nostdlib`, `--rpath-link=Ar dir`, `--sort-common`, `--sort-section`, `--start-group`, `--warn-constructors`, `--warn-once`, `--fix-cortex-a53-835769`, `--fix-cortex-a53-843419`, `-z combreloc`, `-z common-page-size`, `-z nocombreloc`:
   Ignored
 
 ## ENVIRONMENT VARIABLES
