@@ -239,6 +239,13 @@ Alias for \fB\-\-section\-start=\.text=\fR\fIaddress\fR\.
 \fB\-\-allow\-multiple\-definition\fR
 Normally, the linker reports an error if there are more than one definition of a symbol\. This option changes the default behavior so that it doesn't report an error for duplicate definitions and instead use the first definition\.
 .TP
+\fB\-\-allow\-shlib\-undefined\fR, \fB\-\-no\-allow\-shlib\-undefined\fR
+Even if mold succeeds in linking a main executable without undefined symbol errors, you may still encounter symbol lookup errors at runtime because the dynamic linker cannot find some symbols in shared libraries in any ELF module\. This occurs because mold ignores undefined symbols in shared libraries by default\.
+.IP
+If you pass \fB\-\-no\-allow\-shlib\-undefined\fR, mold verifies that undefined symbols in shared libraries given to the linker can be resolved at link\-time\. In other words, this converts the runtime error to a link\-time error\.
+.IP
+Note that you need to pass all shared libraries, including indirectly dependent ones, to the linker as arguments for \fB\-l\fR\. If a shared library depends on a library that's not passed to the linker, the verification will be skipped for that file\.
+.TP
 \fB\-\-as\-needed\fR, \fB\-\-no\-as\-needed\fR
 By default, shared libraries given to the linker are unconditionally added to the list of required libraries in an output file\. However, shared libraries after \fB\-\-as\-needed\fR are added to the list only when at least one symbol is actually used by the output file\. In other words, shared libraries after \fB\-\-as\-needed\fR are not added to the list of needed libraries if they are not needed by a program\.
 .IP
@@ -513,7 +520,7 @@ Mark DSO to be initialized first at runtime\.
 \fB\-z interpose\fR
 Mark object to interpose all DSOs but executable\.
 .TP
-\fB\-(\fR, \fB\-)\fR, \fB\-EL\fR, \fB\-O\fR\fInumber\fR, \fB\-\-allow\-shlib\-undefined\fR, \fB\-\-dc\fR, \fB\-\-dp\fR, \fB\-\-end\-group\fR, \fB\-\-no\-add\-needed\fR, \fB\-\-no\-allow\-shlib\-undefined\fR, \fB\-\-no\-copy\-dt\-needed\-entries\fR, \fB\-\-nostdlib\fR, \fB\-\-rpath\-link=Ar dir\fR, \fB\-\-sort\-common\fR, \fB\-\-sort\-section\fR, \fB\-\-start\-group\fR, \fB\-\-warn\-constructors\fR, \fB\-\-warn\-once\fR, \fB\-\-fix\-cortex\-a53\-835769\fR, \fB\-\-fix\-cortex\-a53\-843419\fR, \fB\-z combreloc\fR, \fB\-z common\-page\-size\fR, \fB\-z nocombreloc\fR
+\fB\-(\fR, \fB\-)\fR, \fB\-EL\fR, \fB\-O\fR\fInumber\fR, \fB\-\-dc\fR, \fB\-\-dp\fR, \fB\-\-end\-group\fR, \fB\-\-no\-add\-needed\fR, \fB\-\-no\-copy\-dt\-needed\-entries\fR, \fB\-\-nostdlib\fR, \fB\-\-rpath\-link=Ar dir\fR, \fB\-\-sort\-common\fR, \fB\-\-sort\-section\fR, \fB\-\-start\-group\fR, \fB\-\-warn\-constructors\fR, \fB\-\-warn\-once\fR, \fB\-\-fix\-cortex\-a53\-835769\fR, \fB\-\-fix\-cortex\-a53\-843419\fR, \fB\-z combreloc\fR, \fB\-z common\-page\-size\fR, \fB\-z nocombreloc\fR
 Ignored
 .SH "ENVIRONMENT VARIABLES"
 .TP
