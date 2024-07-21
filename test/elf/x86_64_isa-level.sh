@@ -6,6 +6,7 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe2 $t/a.o -Wl,-z,x86-64-v2
+readelf -n $t/exe2 | grep -Fq 'Unknown note type: (0x00000005)' && skip
 readelf -n $t/exe2 | grep -q 'x86 ISA needed: .*x86-64-v2'
 
 $CC -B. -o $t/exe3 $t/a.o -Wl,-z,x86-64-v3
