@@ -335,9 +335,8 @@ private:
 // tls.cc
 //
 
-template <typename E> u64 get_tls_begin(Context<E> &);
-template <typename E> u64 get_tp_addr(Context<E> &);
-template <typename E> u64 get_dtp_addr(Context<E> &);
+template <typename E> u64 get_tp_addr(const ElfPhdr<E> &);
+template <typename E> u64 get_dtp_addr(const ElfPhdr<E> &);
 
 //
 // output-chunks.cc

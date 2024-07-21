@@ -361,9 +361,14 @@ void OutputPhdr<E>::update_shdr(Context<E> &ctx) {
   phdrs = create_phdr(ctx);
   this->shdr.sh_size = phdrs.size() * sizeof(ElfPhdr<E>);
 
-  ctx.tls_begin = get_tls_begin(ctx);
-  ctx.tp_addr = get_tp_addr(ctx);
-  ctx.dtp_addr = get_dtp_addr(ctx);
+  for (ElfPhdr<E> &phdr : phdrs) {
+    if (phdr.p_type == PT_TLS) {
+      ctx.tls_begin = phdr.p_vaddr;
+      ctx.tp_addr = get_tp_addr(phdr);
+      ctx.dtp_addr = get_dtp_addr(phdr);
+      break;
+    }
+  }
 }
 
 template <typename E>
