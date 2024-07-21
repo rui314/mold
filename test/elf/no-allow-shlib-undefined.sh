@@ -1,11 +1,11 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $CC -B. -shared -o $t/libfoo.so -xc -
+cat <<EOF | $CC -B. -shared -fPIC -o $t/libfoo.so -xc -
 void foo() {}
 EOF
 
-cat <<EOF | $CC -B. -shared -o $t/libbar.so -xc -
+cat <<EOF | $CC -B. -shared -fPIC -o $t/libbar.so -xc -
 void foo();
 void bar() { foo(); }
 EOF
