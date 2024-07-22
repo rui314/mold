@@ -28,6 +28,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #include <sys/mman.h>  // mmap
 #include <unistd.h>    // sysconf
 #include <fcntl.h>     // open, close, read, access
+#include <stdlib.h>
 
 #if defined(__linux__)
   #include <features.h>
@@ -770,7 +771,6 @@ bool _mi_prim_random_buf(void* buf, size_t buf_len) {
       defined(__sun) || \
       (defined(__APPLE__) && (MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7))
 
-#include <stdlib.h>
 bool _mi_prim_random_buf(void* buf, size_t buf_len) {
   arc4random_buf(buf, buf_len);
   return true;
