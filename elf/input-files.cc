@@ -1046,8 +1046,6 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
       continue;
 
     Symbol<E> &sym = *this->symbols[i];
-    std::scoped_lock lock(sym.mu);
-
     if (sym.file != this) {
       if (ctx.arg.warn_common)
         Warn(ctx) << *this << ": multiple common symbols: " << sym;
@@ -1068,7 +1066,6 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     i64 idx = this->elf_sections.size() + elf_sections2.size() - 1;
     auto isec = std::make_unique<InputSection<E>>(ctx, *this, idx);
 
-    sym.file = this;
     sym.set_input_section(isec.get());
     sym.value = 0;
     sym.sym_idx = i;
