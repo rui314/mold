@@ -256,7 +256,7 @@ static Action get_pcrel_action(Context<E> &ctx, Symbol<E> &sym) {
   static Action table[3][4] = {
     // Absolute  Local    Imported data  Imported code
     {  ERROR,    NONE,    ERROR,         PLT    },  // Shared object
-    {  ERROR,    NONE,    COPYREL,       PLT    },  // Position-independent exec
+    {  ERROR,    NONE,    COPYREL,       CPLT   },  // Position-independent exec
     {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
   };
 
