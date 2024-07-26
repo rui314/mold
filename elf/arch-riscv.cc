@@ -765,33 +765,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 }
 
 template <>
-void InputSection<E>::copy_contents_riscv(Context<E> &ctx, u8 *buf) {
-  // If a section is not relaxed, we can copy it as a one big chunk.
-  if (extra.r_deltas.empty()) {
-    copy_contents(ctx, buf);
-    return;
-  }
-
-  // A relaxed section is copied piece-wise.
-  std::span<const ElfRel<E>> rels = get_rels(ctx);
-  i64 pos = 0;
-
-  for (i64 i = 0; i < rels.size(); i++) {
-    i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
-    if (delta == 0)
-      continue;
-    assert(delta > 0);
-
-    const ElfRel<E> &r = rels[i];
-    memcpy(buf, contents.data() + pos, r.r_offset - pos);
-    buf += r.r_offset - pos;
-    pos = r.r_offset + delta;
-  }
-
-  memcpy(buf, contents.data() + pos, contents.size() - pos);
-}
-
-template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
 
@@ -918,11 +891,6 @@ u64 get_eflags(Context<E> &ctx) {
   return ret;
 }
 
-static bool is_resizable(InputSection<E> *isec) {
-  return isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
-         (isec->shdr().sh_flags & SHF_EXECINSTR);
-}
-
 // Returns the distance between a relocated place and a symbol.
 static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
                             InputSection<E> &isec, const ElfRel<E> &rel) {
@@ -945,7 +913,8 @@ static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
 }
 
 // Scan relocations to shrink sections.
-static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
+template <>
+void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   isec.extra.r_deltas.resize(rels.size() + 1);
 
@@ -1124,55 +1093,6 @@ static void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc)
 
   isec.extra.r_deltas[rels.size()] = delta;
   isec.sh_size -= delta;
-}
-
-// Shrink sections by interpreting relocations.
-//
-// This operation seems to be optional, because by default longest
-// instructions are being used. However, calling this function is actually
-// mandatory because of R_RISCV_ALIGN. R_RISCV_ALIGN is a directive to the
-// linker to align the location referred to by the relocation to a
-// specified byte boundary. We at least have to interpret them to satisfy
-// the alignment constraints.
-template <>
-i64 riscv_resize_sections<E>(Context<E> &ctx) {
-  Timer t(ctx, "riscv_resize_sections");
-
-  // True if we can use the 2-byte instructions. This is usually true on
-  // Unix because RV64GC is generally considered the baseline hardware.
-  bool use_rvc = get_eflags(ctx) & EF_RISCV_RVC;
-
-  // Find all the relocations that can be relaxed.
-  // This step should only shrink sections.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (is_resizable(isec.get()))
-        shrink_section(ctx, *isec, use_rvc);
-  });
-
-  // Fix symbol values.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->symbols) {
-      if (sym->file != file)
-        continue;
-
-      InputSection<E> *isec = sym->get_input_section();
-      if (!isec || isec->extra.r_deltas.empty())
-        continue;
-
-      std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
-      auto it = std::lower_bound(rels.begin(), rels.end(), sym->value,
-                                 [&](const ElfRel<E> &r, u64 val) {
-        return r.r_offset < val;
-      });
-
-      sym->value -= isec->extra.r_deltas[it - rels.begin()];
-    }
-  });
-
-  // Re-compute section offset again to finalize them.
-  compute_section_sizes(ctx);
-  return set_osec_offsets(ctx);
 }
 
 // ISA name handlers

@@ -322,6 +322,7 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   elf/output-chunks.cc
   elf/passes.cc
   elf/relocatable.cc
+  elf/shrink-sections.cc
   elf/thunks.cc
   elf/tls.cc
   )

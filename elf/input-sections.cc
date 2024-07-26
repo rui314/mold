@@ -453,11 +453,36 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   if (shdr().sh_type == SHT_NOBITS || sh_size == 0)
     return;
 
-  // Copy data
-  if constexpr (is_riscv<E>)
-    copy_contents_riscv(ctx, buf);
-  else
+  // Copy data. In RISC-V and LoongArch object files, sections are not
+  // an atomic unit of copying because of relaxation. That is, some
+  // relocations are allowed to remove bytes from the middle of a
+  // section and shrink the overall size of it.
+  if constexpr (is_riscv<E>) {
+    if (extra.r_deltas.empty()) {
+      // If a section is not relaxed, we can copy it as a one big chunk.
+      copy_contents(ctx, buf);
+    } else {
+      // A relaxed section is copied piece-wise.
+      std::span<const ElfRel<E>> rels = get_rels(ctx);
+      u8 *buf2 = buf;
+      i64 pos = 0;
+
+      for (i64 i = 0; i < rels.size(); i++) {
+        i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
+        if (delta == 0)
+          continue;
+        assert(delta > 0);
+
+        const ElfRel<E> &r = rels[i];
+        memcpy(buf2, contents.data() + pos, r.r_offset - pos);
+        buf2 += r.r_offset - pos;
+        pos = r.r_offset + delta;
+      }
+      memcpy(buf2, contents.data() + pos, contents.size() - pos);
+    }
+  } else {
     copy_contents(ctx, buf);
+  }
 
   // Apply relocations
   if (!ctx.arg.relocatable) {

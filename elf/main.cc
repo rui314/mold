@@ -619,7 +619,7 @@ int elf_main(int argc, char **argv) {
   // be replaced with shorter instruction sequences if destinations
   // are close enough. Do this optimization.
   if constexpr (is_riscv<E>)
-    filesize = riscv_resize_sections(ctx);
+    filesize = shrink_sections(ctx);
 
   // At this point, memory layout is fixed.
 

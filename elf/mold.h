@@ -324,8 +324,6 @@ private:
   void apply_toc_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
                      u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> **dynrel);
 
-  void copy_contents_riscv(Context<E> &ctx, u8 *buf);
-
   u64 get_thunk_addr(i64 idx);
 
   std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
@@ -1407,6 +1405,15 @@ template <typename E>
 void lto_cleanup(Context<E> &ctx);
 
 //
+// shrink-sections.cc
+//
+
+template <typename E> i64 shrink_sections(Context<E> &ctx);
+
+template <typename E>
+void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc);
+
+//
 // gc-sections.cc
 //
 
@@ -1535,9 +1542,6 @@ public:
 
 template <is_riscv E>
 u64 get_eflags(Context<E> &ctx);
-
-template <is_riscv E>
-i64 riscv_resize_sections(Context<E> &ctx);
 
 //
 // arch-ppc64v1.cc
