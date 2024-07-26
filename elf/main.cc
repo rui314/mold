@@ -621,6 +621,9 @@ int elf_main(int argc, char **argv) {
   if constexpr (is_riscv<E>)
     filesize = riscv_resize_sections(ctx);
 
+  if constexpr (is_loongarch<E>)
+    filesize = loongarch_resize_sections(ctx);
+
   // At this point, memory layout is fixed.
 
   // Set actual addresses to linker-synthesized symbols.

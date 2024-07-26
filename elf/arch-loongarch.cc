@@ -24,9 +24,13 @@
 
 #include "mold.h"
 
+#include <tbb/parallel_for_each.h>
+
 namespace mold::elf {
 
 using E = MOLD_TARGET;
+
+#define LOONGARCH_MAX_PAGESIZE 16384
 
 static u64 page(u64 val) {
   return val & 0xffff'ffff'ffff'f000;
@@ -238,6 +242,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
 
+  auto get_r_delta = [&](i64 idx) {
+    return extra.r_deltas.empty() ? 0 : extra.r_deltas[idx];
+  };
+
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
 
@@ -247,7 +255,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    u8 *loc = base + rel.r_offset;
+    i64 r_offset = rel.r_offset - get_r_delta(i);
+    i64 removed_bytes = get_r_delta(i + 1) - get_r_delta(i);
+    u8 *loc = base + r_offset;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
@@ -280,7 +290,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
-    u64 P = get_addr() + rel.r_offset;
+    u64 P = get_addr() + r_offset;
     u64 G = get_got_idx() * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
 
@@ -323,17 +333,33 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, (S + A) >> 52);
       break;
     case R_LARCH_PCALA_LO12:
+      if (i + 2 <= rels.size()
+          && rels[i+1].r_type == R_LARCH_RELAX
+          && extra.r_deltas[i+2] - extra.r_deltas[i+1] == 4) {
+          break;
+      }
       // It looks like R_LARCH_PCALA_LO12 is sometimes used for JIRL even
       // though the instruction takes a 16 bit immediate rather than 12 bits.
       // It is contrary to the psABI document, but GNU ld has special
       // code to handle it, so we accept it too.
-      if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000)
+      else if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000)
         write_k16(loc, sign_extend(S + A, 11) >> 2);
       else
         write_k12(loc, S + A);
       break;
     case R_LARCH_PCALA_HI20:
-      write_j20(loc, hi20(S + A, P));
+      if (i + 4 <= rels.size()
+          && rels[i+2].r_type == R_LARCH_PCALA_LO12
+          && rels[i+1].r_type == R_LARCH_RELAX
+          && rels[i+3].r_type == R_LARCH_RELAX
+          && extra.r_deltas[i+4] - extra.r_deltas[i+3] == 4) {
+        // relax pcalau12i/addi.d to pcaddi
+        i64 rd = bits(*(ul32 *)(contents.data() + rel.r_offset), 4, 0);
+        *(ul32 *)loc = rd | 0x18000000;
+        write_j20(loc, (S + A - P) >> 2);
+      } else {
+        write_j20(loc, hi20(S + A, P));
+      }
       break;
     case R_LARCH_PCALA64_LO20:
       write_j20(loc, higher20(S + A, P));
@@ -548,12 +574,43 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_SUB_ULEB128:
       overwrite_uleb(loc, read_uleb(loc) - S - A);
       break;
+    case R_LARCH_32_PCREL:
+      *(ul32 *)loc = S + A - (get_addr() + rel.r_offset);
+      break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
                  << rel;
       break;
     }
   }
+}
+
+template <>
+void InputSection<E>::copy_contents_loongarch(Context<E> &ctx, u8 *buf) {
+  // If a section is not relaxed, we can copy it as a one big chunk.
+  if (extra.r_deltas.empty()) {
+    copy_contents(ctx, buf);
+    return;
+  }
+
+  // A relaxed section is copied piece-wise.
+  std::span<const ElfRel<E>> rels = get_rels(ctx);
+  i64 pos = 0;
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    // The number of bytes removed from current reloc to next reloc.
+    i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
+    if (delta == 0)
+      continue;
+    assert(delta > 0);
+
+    const ElfRel<E> &r = rels[i];
+    memcpy(buf, contents.data() + pos, r.r_offset - pos);
+    buf += r.r_offset - pos;
+    pos = r.r_offset + delta;
+  }
+
+  memcpy(buf, contents.data() + pos, contents.size() - pos);
 }
 
 template <>
@@ -661,6 +718,234 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
+}
+
+static bool
+loongarch_relax_align(Context<E> &ctx, InputSection<E> &isec,
+        i64 &delta,
+        ElfRel<E> *rels, i64 &i,
+        InputSection<E> *sym_sec,
+        u64 symval, u64 pc) {
+  // Handling R_LARCH_ALIGN is mandatory.
+  //
+  // R_LARCH_ALIGN refers to NOP instructions. We need to eliminate some
+  // or all of the instructions so that the instruction that immediately
+  // follows the NOPs is aligned to a specified alignment boundary.
+
+  // The total bytes of NOPs is stored to r_addend, so the next
+  // instruction is r_addend away.
+  // NOTE: we can not adjust r_offset now as relocate and
+  // copy_contents_loongarch both use original r_offset.
+  u64 loc = isec.get_addr() + rels[i].r_offset - delta;
+  u64 addend, alignment, max = 0;
+  /* For R_LARCH_ALIGN, symval is sec_addr (sec) + rel->r_offset
+   + (alingmeng - 4).
+   If r_symndx is 0, alignment-4 is r_addend.
+   If r_symndx > 0, alignment-4 is 2^(r_addend & 0xff)-4.  */
+  if (rels[i].r_sym > 0) {
+      alignment = 1 << (rels[i].r_addend & 0xff);
+      max = rels[i].r_addend >> 8;
+  }
+  else
+      alignment = rels[i].r_addend + 4;
+  // The bytes of NOPs added by R_LARCH_ALIGN.
+  addend = alignment - 4;
+  assert(alignment <= (1 << isec.p2align));
+  u64 aligned_addr = ((loc - 1) & ~(alignment - 1)) + alignment;
+  u64 need_nop_bytes = aligned_addr - loc;
+
+  if (addend < need_nop_bytes) {
+    Error(ctx) << isec.file << ": align relax, " << need_nop_bytes
+               << " bytes required for alignment to " << alignment
+               << "-byte boundary, but only " << addend << " present";
+  }
+
+  /* If skipping more bytes than the specified maximum,
+     then the alignment is not done at all and delete all NOPs.  */
+  if (max > 0 && need_nop_bytes > max)
+      delta += addend;
+  else
+      delta += addend - need_nop_bytes;
+
+  return true;
+}
+
+static bool
+loongarch_relax_pcala_addi(Context<E> &ctx, InputSection<E> &isec,
+        ElfRel<E> *rels, i64 &i,
+        InputSection<E> *sym_sec,
+        u64 symval, u64 pc) {
+  u32 pca = *(u32 *)(isec.contents.data() + rels[i].r_offset);
+  u32 add = *(u32 *)(isec.contents.data() + rels[i+2].r_offset);
+  u32 rd = pca & 0x1f;
+  u64 max_alignment = 0;
+
+  for(int id = 0; id < ctx.chunks.size(); id++) {
+    OutputSection<E> *osec = ctx.chunks[id]->to_osec();
+    if (osec)
+        max_alignment = (u64)(osec->shdr.sh_addralign) > max_alignment ?
+            (u64)(osec->shdr.sh_addralign) : max_alignment;
+  }
+
+  // TODO: we should determine if sym_sec and isec belong
+  // to the same segment appropriately.
+  if (sym_sec->shdr().sh_flags & SHF_WRITE) {
+    max_alignment = LOONGARCH_MAX_PAGESIZE > max_alignment ? LOONGARCH_MAX_PAGESIZE : max_alignment;
+    if (symval > pc)
+      pc -= max_alignment;
+    else if (symval < pc)
+      pc += max_alignment;
+  } else {
+    if (symval > pc)
+      pc -= max_alignment;
+    else if (symval < pc)
+      pc += max_alignment;
+  }
+
+  const u32 addi_d = 0x02c00000;
+
+  /* Is pcalau12i + addi.d insns?  */
+  if (rels[i+2].r_type != R_LARCH_PCALA_LO12
+      || rels[i+1].r_type != R_LARCH_RELAX
+      || rels[i+3].r_type != R_LARCH_RELAX
+      || rels[i].r_offset + 4 != rels[i+2].r_offset
+      || (add & addi_d) != addi_d
+      /* Is pcalau12i $rd + addi.d $rd,$rd?  */
+      || (add & 0x1f) != rd
+      || ((add >> 5) & 0x1f) != rd
+      /* Can be relaxed to pcaddi?  */
+      || symval & 0x3 /* 4 bytes align.  */
+      || (i64)(symval - pc) < (i64)(i32)0xffe00000
+      || (i64)(symval - pc) > (i64)(i32)0x1ffffc)
+    return false;
+
+  return true;
+}
+
+static bool is_resizable(InputSection<E> *isec) {
+  return isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
+         (isec->shdr().sh_flags & SHF_EXECINSTR);
+}
+
+// Scan relocations to shrink sections. We do not delete bytes here,
+// instead we record how many bytes be deleted for each reloc, and
+// adjust sec.sh_size. When we copy inputsections to outputsections,
+// only remaining bytes will be copied, just like copy_contents_riscv.
+static void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
+  // NOTE: we may need to change ElfRel itself in some cases
+  // so we can not use InputSection::get_rels(ctx)
+  // This section has no need to be relocated.
+  if (isec.relsec_idx == -1 || !ctx.arg.relax)
+    return;
+
+  ObjectFile<E> &file = isec.file;
+  const ElfShdr<E> &shdr = file.elf_sections[isec.relsec_idx];
+  u8 *begin = file.mf->data + shdr.sh_offset;
+  u8 *end = begin + shdr.sh_size;
+  if (file.mf->data + file.mf->size < end)
+    Fatal(ctx) << file << ": section header is out of range: " << shdr.sh_offset;
+
+  u64 size = end - begin;
+  u64 len = size / sizeof(ElfRel<E>);
+  if (size % sizeof(ElfRel<E>))
+    Fatal(ctx) << file << ": corrupted section";
+  ElfRel<E> *rels = (ElfRel<E> *)begin;
+
+  isec.extra.r_deltas.resize(len + 1, 0);
+
+  // The number of bytes deleted until current reloc.
+  i64 delta = 0;
+
+    // rels are ordered by r_offset, ref: sort_relocations(Context<E> &ctx);
+  for (i64 i = 0; i < len; i++) {
+    ElfRel<E> &r = rels[i];
+    Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+    if (sym.is_ifunc())
+      continue;
+
+    // TODO: we should consider the delta when sym_sec == isec.
+    u64 symval = sym.get_addr(ctx) + r.r_addend;
+    u64 pc = isec.get_addr() + r.r_offset - delta;
+    InputSection<E> *sym_sec = sym.get_input_section();
+    isec.extra.r_deltas[i] = delta;
+
+
+    // Handling other relocations is optional.
+    if (r.r_type != R_LARCH_ALIGN && (i == len - 1 ||
+        rels[i + 1].r_type != R_LARCH_RELAX))
+      continue;
+
+    // Linker-synthesized symbols haven't been assigned their final
+    // values when we are shrinking sections because actual values can
+    // be computed only after we fix the file layout. Therefore, we
+    // assume that relocations against such symbols are always
+    // non-relaxable.
+    if (sym.file == ctx.internal_obj)
+      continue;
+
+
+    switch (r.r_type) {
+    case R_LARCH_ALIGN: {
+      if (align_pass)
+        loongarch_relax_align(ctx, isec, delta, rels, i, sym_sec, symval, pc);
+      break;
+    }
+    case R_LARCH_PCALA_HI20: {
+      if (align_pass
+          || (i + 4) > len
+          || !sym_sec
+          || !loongarch_relax_pcala_addi(ctx, isec, rels, i, sym_sec, symval, pc))
+        continue;
+
+      // NOTE: we should set delta of all rels of this symbol, and the index
+      isec.extra.r_deltas[i+1] = isec.extra.r_deltas[i+2] = isec.extra.r_deltas[i+3] = delta;
+      delta += 4;
+      i += 3;
+      break;
+    }
+    }
+  }
+
+  isec.extra.r_deltas[len] = delta;
+
+  isec.sh_size -= delta;
+}
+
+template <>
+i64 loongarch_resize_sections<E>(Context<E> &ctx) {
+  Timer t(ctx, "loongarch_resize_sections");
+
+  // Find all the relocations that can be relaxed.
+  // This step should only shrink sections.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (is_resizable(isec.get()))
+        shrink_section(ctx, *isec);
+  });
+
+  // Fix symbol values.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->symbols) {
+      if (sym->file != file)
+        continue;
+
+      InputSection<E> *isec = sym->get_input_section();
+      if (!isec || isec->extra.r_deltas.empty())
+        continue;
+
+      std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
+      auto it = std::lower_bound(rels.begin(), rels.end(), sym->value,
+                                 [&](const ElfRel<E> &r, u64 val) {
+        return r.r_offset < val;
+      });
+
+      sym->value -= isec->extra.r_deltas[it - rels.begin()];
+    }
+  });
+
+  // Re-compute section offset again to finalize them.
+  compute_section_sizes(ctx);
+  return set_osec_offsets(ctx);
 }
 
 template <>

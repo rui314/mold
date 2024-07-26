@@ -456,6 +456,8 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   // Copy data
   if constexpr (is_riscv<E>)
     copy_contents_riscv(ctx, buf);
+  else if constexpr (is_loongarch<E>)
+    copy_contents_loongarch(ctx, buf);
   else
     copy_contents(ctx, buf);
 
