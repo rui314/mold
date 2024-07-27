@@ -113,6 +113,12 @@ static void write_d10k16(u8 *loc, u32 val) {
   *(ul32 *)loc |= bits(val, 25, 16);
 }
 
+static void set_rj(u8 *loc, u32 rj) {
+  assert(rj < 32);
+  *(ul32 *)loc &= 0b111111'1111111111111111'00000'11111;
+  *(ul32 *)loc |= rj << 5;
+}
+
 template <>
 void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   constexpr ul32 insn_64[] = {
@@ -459,11 +465,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       overwrite_uleb(loc, read_uleb(loc) - S - A);
       break;
     case R_LARCH_TLS_LE_HI20_R:
-      write_j20(loc, (S + A + 0x800 - ctx.tp_addr) >> 12);
+      if (removed_bytes == 0)
+        write_j20(loc, (S + A + 0x800 - ctx.tp_addr) >> 12);
       break;
-    case R_LARCH_TLS_LE_LO12_R:
-      write_k12(loc, S + A - ctx.tp_addr);
+    case R_LARCH_TLS_LE_LO12_R: {
+      i64 val = S + A - ctx.tp_addr;
+      write_k12(loc, val);
+
+      // Rewrite `addi.d $t0, $t0, <offset>` with `addi.d $t0, $tp, <offset>`
+      // if the offset is directly accessible using tp. tp is r2.
+      if (sign_extend(val, 11) == val)
+        set_rj(loc, 2);
       break;
+    }
     case R_LARCH_TLS_LE_ADD_R:
       break;
     default:
@@ -677,8 +691,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
+    Symbol<E> &sym = *isec.file.symbols[r.r_sym];
     isec.extra.r_deltas[i] = delta;
 
+    // Handling R_LARCH_ALIGN is mandatory.
     if (r.r_type == R_LARCH_ALIGN) {
       i64 nop_size;
       if (r.r_sym) {
@@ -698,6 +714,36 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
 
       delta += next_loc - align_to(loc, alignment);
       continue;
+    }
+
+    // Handling other relocations is optional.
+    if (!ctx.arg.relax || i == rels.size() - 1 ||
+        rels[i + 1].r_type != R_LARCH_RELAX)
+      continue;
+
+    // Skip linker-synthesized symbols because their final addresses
+    // are not fixed yet.
+    if (sym.file == ctx.internal_obj)
+      continue;
+
+    switch (r.r_type) {
+    case R_LARCH_TLS_LE_HI20_R:
+    case R_LARCH_TLS_LE_ADD_R:
+      // LoongArch uses the following three instructions to access
+      // TP ± 2 GiB.
+      //
+      //  lu12i.w $t0, 0           # R_LARCH_TLS_LE_HI20_R
+      //  add.d   $t0, $t0, $tp    # R_LARCH_TLS_LE_ADD_R
+      //  addi.d  $t0, $t0, 0      # R_LARCH_TLS_LE_LO12_R
+      //
+      // If the thread-local variable is within TP ± 2 KiB, we can
+      // relax them into the following single instruction.
+      //
+      //  addi.d  $t0, $tp, <tp-offset>
+      if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
+          sign_extend(val, 11) == val)
+        delta += 4;
+      break;
     }
   }
 
