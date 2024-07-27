@@ -10,15 +10,16 @@
 // bootstrapping the entire ecosystem for LoongArch, sending patches to
 // Linux, GCC, LLVM, etc.
 //
-// All instructions are 4 bytes long in LoongArch and aligned to 4-byte
-// boundaries. It has 32 general-purpose registers. Among these, $t0 - $t8
-// (aliases for $r12 - $r20) are temporary registers that we can use in
-// our PLT and range extension thunks.
+// Speaking of the ISA, all instructions are 4 byte long and aligned to 4
+// byte boundaries in LoongArch. It has 32 general-purpose registers.
+// Among these, $t0 - $t8 (aliases for $r12 - $r20) are temporary
+// registers that we can use in our PLT and range extension thunks.
 //
-// The psABI defines a few linker relaxations. We haven't supported them
-// yet.
+// Just like RISC-V, LoongArch supports section-shrinking relaxations.
+// That is, it allows linkers to rewrite certain instruction sequences to
+// shorter ones. Sections are not an atomic unit of copying.
 //
-// https://loongson.github.io/LoongArch-Documentation/LoongArch-ELF-ABI-EN.html
+// https://github.com/loongson/la-abi-specs/blob/release/laelf.adoc
 
 #if MOLD_LOONGARCH64 || MOLD_LOONGARCH32
 
@@ -258,7 +259,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     i64 r_offset = rel.r_offset - get_r_delta(i);
-    [[maybe_unused]] i64 removed_bytes = get_r_delta(i + 1) - get_r_delta(i);
+    i64 removed_bytes = get_r_delta(i + 1) - get_r_delta(i);
     u8 *loc = base + r_offset;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
@@ -694,8 +695,17 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
     isec.extra.r_deltas[i] = delta;
 
-    // Handling R_LARCH_ALIGN is mandatory.
+    // A R_LARCH_ALIGN relocation refers to the beginning of a nop
+    // sequence. We need to remove some or all of them so that the
+    // instruction that immediately follows that is aligned to a specified
+    // boundary. To allow that, a R_LARCH_ALIGN relocation that requests
+    // 2^n alignment refers to 2^n - 4 bytes of nop instructions.
     if (r.r_type == R_LARCH_ALIGN) {
+      // The actual rule for storing the alignment size is a bit weird.
+      // In particular, the most significant 24 bits of r_addend is
+      // sometimes used to store to the upper limit of the alignment,
+      // allowing the instruction that follows nops _not_ to be aligned at
+      // all. I think that's a spec bug, so we don't want to support that.
       i64 nop_size;
       if (r.r_sym) {
         if (r.r_addend & ~0xff)
@@ -710,7 +720,8 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       u64 alignment = nop_size + 4;
 
       if (!has_single_bit(alignment))
-        Fatal(ctx) << isec << ": R_LARCH_ALIGN: invalid nop sequence: " << i;
+        Fatal(ctx) << isec << ": R_LARCH_ALIGN: invalid alignment requirement: "
+                   << i;
 
       delta += next_loc - align_to(loc, alignment);
       continue;

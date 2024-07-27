@@ -1,4 +1,5 @@
 // Shrink sections by interpreting relocations.
+// See file comments in arch-riscv.cc for details.
 
 #if MOLD_RV64LE || MOLD_RV64BE || MOLD_RV32LE || MOLD_RV32BE || \
     MOLD_LOONGARCH64 || MOLD_LOONGARCH32
