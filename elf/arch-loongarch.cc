@@ -702,15 +702,15 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
     // 2^n alignment refers to 2^n - 4 bytes of nop instructions.
     if (r.r_type == R_LARCH_ALIGN) {
       // The actual rule for storing the alignment size is a bit weird.
-      // In particular, the most significant 24 bits of r_addend is
-      // sometimes used to store to the upper limit of the alignment,
+      // In particular, the most significant 56 bits of r_addend is
+      // sometimes used to store the upper limit of the alignment,
       // allowing the instruction that follows nops _not_ to be aligned at
       // all. I think that's a spec bug, so we don't want to support that.
       i64 nop_size;
       if (r.r_sym) {
-        if (r.r_addend & ~0xff)
+        if (r.r_addend >> 8)
           Fatal(ctx) << isec << ": ternary R_LARCH_ALIGN is not supported: " << i;
-        nop_size = (1 << (r.r_addend & 0xff)) - 4;
+        nop_size = (1 << r.r_addend) - 4;
       } else {
         nop_size = r.r_addend;
       }
