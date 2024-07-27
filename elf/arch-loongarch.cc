@@ -238,6 +238,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
                            file.reldyn_offset + this->reldyn_offset);
 
+  auto get_r_delta = [&](i64 idx) {
+    return extra.r_deltas.empty() ? 0 : extra.r_deltas[idx];
+  };
+
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
 
@@ -247,7 +251,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    u8 *loc = base + rel.r_offset;
+    i64 r_offset = rel.r_offset - get_r_delta(i);
+    [[maybe_unused]] i64 removed_bytes = get_r_delta(i + 1) - get_r_delta(i);
+    u8 *loc = base + r_offset;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
       if (val < lo || hi <= val)
@@ -280,7 +286,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
-    u64 P = get_addr() + rel.r_offset;
+    u64 P = get_addr() + r_offset;
     u64 G = get_got_idx() * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
 
@@ -661,6 +667,42 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
+}
+
+template <>
+void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
+  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
+  isec.extra.r_deltas.resize(rels.size() + 1);
+  i64 delta = 0;
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<E> &r = rels[i];
+    isec.extra.r_deltas[i] = delta;
+
+    if (r.r_type == R_LARCH_ALIGN) {
+      i64 nop_size;
+      if (r.r_sym) {
+        if (r.r_addend & ~0xff)
+          Fatal(ctx) << isec << ": ternary R_LARCH_ALIGN is not supported: " << i;
+        nop_size = (1 << (r.r_addend & 0xff)) - 4;
+      } else {
+        nop_size = r.r_addend;
+      }
+
+      u64 loc = isec.get_addr() + r.r_offset - delta;
+      u64 next_loc = loc + nop_size;
+      u64 alignment = nop_size + 4;
+
+      if (!has_single_bit(alignment))
+        Fatal(ctx) << isec << ": R_LARCH_ALIGN: invalid nop sequence: " << i;
+
+      delta += next_loc - align_to(loc, alignment);
+      continue;
+    }
+  }
+
+  isec.extra.r_deltas[rels.size()] = delta;
+  isec.sh_size -= delta;
 }
 
 template <>

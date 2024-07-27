@@ -457,7 +457,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   // an atomic unit of copying because of relaxation. That is, some
   // relocations are allowed to remove bytes from the middle of a
   // section and shrink the overall size of it.
-  if constexpr (is_riscv<E>) {
+  if constexpr (is_riscv<E> || is_loongarch<E>) {
     if (extra.r_deltas.empty()) {
       // If a section is not relaxed, we can copy it as a one big chunk.
       copy_contents(ctx, buf);

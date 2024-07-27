@@ -1,6 +1,7 @@
 // Shrink sections by interpreting relocations.
 
-#if MOLD_RV64LE || MOLD_RV64BE || MOLD_RV32LE || MOLD_RV32BE
+#if MOLD_RV64LE || MOLD_RV64BE || MOLD_RV32LE || MOLD_RV32BE || \
+    MOLD_LOONGARCH64 || MOLD_LOONGARCH32
 
 #include "mold.h"
 

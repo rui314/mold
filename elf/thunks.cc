@@ -183,6 +183,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   // haven't.
   for (InputSection<E> *isec : m)
     isec->offset = -1;
+  thunks.clear();
 
   // We create thunks from the beginning of the section to the end.
   // We manage progress using four offsets which increase monotonically.
