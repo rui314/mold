@@ -822,44 +822,18 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 void rewrite_endbr(Context<E> &ctx) {
   Timer t(ctx, "rewrite_endbr");
 
-  auto mark = [&](Symbol<E> *sym) {
-    if (sym) {
-      std::scoped_lock lock(sym->mu);
-      sym->address_taken = true;
-    }
-  };
-
-  // Compute address-taken bit for each symbol
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC))
-        for (const ElfRel<E> &rel : isec->get_rels(ctx))
-          if (!is_func_call_rel(rel))
-            if (Symbol<E> *sym = file->symbols[rel.r_sym];
-                sym->esym().st_type == STT_FUNC)
-              mark(sym);
-  });
-
-  // Exported symbols are conservatively assumed to be address-taken.
-  if (ctx.dynsym)
-    for (Symbol<E> *sym : ctx.dynsym->symbols)
-      if (sym && sym->is_exported)
-        mark(sym);
-
-  // Some symbols are implicitly address-taken
-  mark(ctx.arg.entry);
-  mark(ctx.arg.init);
-  mark(ctx.arg.fini);
-
   constexpr u8 endbr64[] = {0xf3, 0x0f, 0x1e, 0xfa};
   constexpr u8 nop[] = {0x0f, 0x1f, 0x40, 0x00};
 
-  // Rewrite endbr64 with nop
+  // Rewrite all endbr64 instructions referred to by function symbols with
+  // NOPs. We handle only global symbols because the compiler doesn't emit
+  // a endbr64 for a file-scoped function in the first place if it's
+  // address is not taken within the file.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->symbols) {
-      if (sym->file == file && sym->esym().st_type == STT_FUNC &&
-          !sym->address_taken) {
-        if (InputSection<E> *isec = sym->get_input_section()) {
+    for (Symbol<E> *sym : file->get_global_syms()) {
+      if (sym->file == file && sym->esym().st_type == STT_FUNC) {
+        if (InputSection<E> *isec = sym->get_input_section();
+            isec && (isec->shdr().sh_flags & SHF_EXECINSTR)) {
           if (OutputSection<E> *osec = isec->output_section) {
             u8 *buf = ctx.buf + osec->shdr.sh_offset + isec->offset + sym->value;
             if (memcmp(buf, endbr64, 4) == 0)
@@ -869,6 +843,52 @@ void rewrite_endbr(Context<E> &ctx) {
       }
     }
   });
+
+  auto write_back = [&](InputSection<E> *isec, i64 offset) {
+    // If isec has an endbr64 at a given offset, copy that instruction to
+    // the output buffer, possibly overwriting a nop written in the above
+    // loop.
+    if (isec && isec->output_section &&
+        (isec->shdr().sh_flags & SHF_EXECINSTR) &&
+        0 <= offset && offset <= isec->contents.size() - 4 &&
+        memcmp(isec->contents.data() + offset, endbr64, 4) == 0)
+      memcpy(ctx.buf + isec->output_section->shdr.sh_offset + isec->offset + offset,
+             endbr64, 4);
+  };
+
+  // Write back endbr64 instructions if they are referred to by address-taking
+  // relocations.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC)) {
+        for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
+          if (!is_func_call_rel(rel)) {
+            Symbol<E> *sym = file->symbols[rel.r_sym];
+            if (sym->esym().st_type == STT_SECTION)
+              write_back(sym->get_input_section(), rel.r_addend);
+            else
+              write_back(sym->get_input_section(), sym->value);
+          }
+        }
+      }
+    }
+  });
+
+  // We record addresses of some symbols in the ELF header, .dynamic or in
+  // .dynsym. We need to retain endbr64s for such symbols.
+  auto keep = [&](Symbol<E> *sym) {
+    if (sym)
+      write_back(sym->get_input_section(), sym->value);
+  };
+
+  keep(ctx.arg.entry);
+  keep(ctx.arg.init);
+  keep(ctx.arg.fini);
+
+  if (ctx.dynsym)
+    for (Symbol<E> *sym : ctx.dynsym->symbols)
+      if (sym && sym->is_exported)
+        keep(sym);
 }
 
 } // namespace mold::elf
