@@ -1691,60 +1691,6 @@ void copy_chunks(Context<E> &ctx) {
   zero(chunks.back(), ctx.output_file->filesize);
 }
 
-// Rewrite the leading endbr64 instruction with a nop if a function
-// symbol's address was not taken.
-template <typename E>
-void rewrite_endbr(Context<E> &ctx) {
-  Timer t(ctx, "rewrite_endbr");
-  assert(is_x86_64<E>);
-
-  // Compute address-taken bit for each symbol
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
-      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC)) {
-        for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
-          Symbol<E> &sym = *file->symbols[rel.r_sym];
-          if (!is_func_call_rel(rel) && sym.esym().st_type == STT_FUNC) {
-            std::scoped_lock lock(sym.mu);
-            sym.address_taken = true;
-          }
-        }
-      }
-    }
-  });
-
-  // Exported symbols are conservatively assumed to be address-taken.
-  if (ctx.dynsym)
-    for (Symbol<E> *sym : ctx.dynsym->symbols)
-      if (sym && sym->is_exported)
-        sym->address_taken = true;
-
-  // Some symbols are implicitly address-taken
-  ctx.arg.entry->address_taken = true;
-  ctx.arg.init->address_taken = true;
-  ctx.arg.fini->address_taken = true;
-
-  // Rewrite endbr64 with nop
-  u8 endbr64[] = {0xf3, 0x0f, 0x1e, 0xfa};
-  u8 nop[] = {0x0f, 0x1f, 0x40, 0x00};
-
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->symbols) {
-      if (sym->file == file && sym->esym().st_type == STT_FUNC &&
-          !sym->address_taken) {
-        if (InputSection<E> *isec = sym->get_input_section()) {
-          if (OutputSection<E> *osec = isec->output_section) {
-            u8 *buf = ctx.buf + osec->shdr.sh_offset + isec->offset +
-                      sym->value;
-            if (memcmp(buf, endbr64, 4) == 0)
-              memcpy(buf, nop, 4);
-          }
-        }
-      }
-    }
-  });
-}
-
 template <typename E>
 void construct_relr(Context<E> &ctx) {
   Timer t(ctx, "construct_relr");
@@ -3328,7 +3274,6 @@ template void scan_relocations(Context<E> &);
 template void report_undef_errors(Context<E> &);
 template void create_reloc_sections(Context<E> &);
 template void copy_chunks(Context<E> &);
-template void rewrite_endbr(Context<E> &);
 template void construct_relr(Context<E> &);
 template void sort_dynsyms(Context<E> &);
 template void create_output_symtab(Context<E> &);

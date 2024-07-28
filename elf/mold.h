@@ -1505,7 +1505,6 @@ template <typename E> void create_output_symtab(Context<E> &);
 template <typename E> void report_undef_errors(Context<E> &);
 template <typename E> void create_reloc_sections(Context<E> &);
 template <typename E> void copy_chunks(Context<E> &);
-template <typename E> void rewrite_endbr(Context<E> &);
 template <typename E> void apply_version_script(Context<E> &);
 template <typename E> void parse_symbol_version(Context<E> &);
 template <typename E> void compute_import_export(Context<E> &);
@@ -1520,6 +1519,12 @@ template <typename E> void write_gnu_debuglink(Context<E> &);
 template <typename E> void write_separate_debug_file(Context<E> &ctx);
 template <typename E> void write_dependency_file(Context<E> &);
 template <typename E> void show_stats(Context<E> &);
+
+//
+// arch-x86-64.cc
+//
+
+void rewrite_endbr(Context<X86_64> &ctx);
 
 //
 // arch-arm32.cc

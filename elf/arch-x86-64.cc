@@ -28,6 +28,8 @@
 
 #include "mold.h"
 
+#include <tbb/parallel_for_each.h>
+
 namespace mold::elf {
 
 using E = X86_64;
@@ -813,6 +815,60 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
+}
+
+// Rewrite the leading endbr64 instruction with a nop if a function
+// symbol's address was not taken.
+void rewrite_endbr(Context<E> &ctx) {
+  Timer t(ctx, "rewrite_endbr");
+
+  auto mark = [&](Symbol<E> *sym) {
+    if (sym) {
+      std::scoped_lock lock(sym->mu);
+      sym->address_taken = true;
+    }
+  };
+
+  // Compute address-taken bit for each symbol
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC))
+        for (const ElfRel<E> &rel : isec->get_rels(ctx))
+          if (!is_func_call_rel(rel))
+            if (Symbol<E> *sym = file->symbols[rel.r_sym];
+                sym->esym().st_type == STT_FUNC)
+              mark(sym);
+  });
+
+  // Exported symbols are conservatively assumed to be address-taken.
+  if (ctx.dynsym)
+    for (Symbol<E> *sym : ctx.dynsym->symbols)
+      if (sym && sym->is_exported)
+        mark(sym);
+
+  // Some symbols are implicitly address-taken
+  mark(ctx.arg.entry);
+  mark(ctx.arg.init);
+  mark(ctx.arg.fini);
+
+  constexpr u8 endbr64[] = {0xf3, 0x0f, 0x1e, 0xfa};
+  constexpr u8 nop[] = {0x0f, 0x1f, 0x40, 0x00};
+
+  // Rewrite endbr64 with nop
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->symbols) {
+      if (sym->file == file && sym->esym().st_type == STT_FUNC &&
+          !sym->address_taken) {
+        if (InputSection<E> *isec = sym->get_input_section()) {
+          if (OutputSection<E> *osec = isec->output_section) {
+            u8 *buf = ctx.buf + osec->shdr.sh_offset + isec->offset + sym->value;
+            if (memcmp(buf, endbr64, 4) == 0)
+              memcpy(buf, nop, 4);
+          }
+        }
+      }
+    }
+  });
 }
 
 } // namespace mold::elf
