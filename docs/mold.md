@@ -227,12 +227,12 @@ but as `-o magic`.
   easily test that your program works in the reversed initialization order.
 
 * `--run` _command_ _arg_...:
-  Run _command_ with `mold` `/usr/bin/ld`. Specifically, `mold` runs a given
-  command with the `LD_PRELOAD` environment set to intercept exec(3) family
-  functions and replaces `argv[0]` with itself if it is `ld`, `ld.gold`, or
-  `ld.lld`.
+  Run _command_ with `mold` as `/usr/bin/ld`. Specifically, `mold` runs a
+  given command with the `LD_PRELOAD` environment set to intercept exec(3)
+  family functions and replaces `argv[0]` with itself if it is `ld`,
+  `ld.gold`, or `ld.lld`.
 
-* `--separate-debug-file`, `--separate-debug-file=_file_`:
+* `--separate-debug-file`, `--separate-debug-file`=_file_:
   Bundle debug info sections into a separate file instead of embedding them in
   an output executable or a shared library. mold creates a debug info file in
   the background by default, so that you can start running your executable as
