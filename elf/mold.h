@@ -1524,7 +1524,7 @@ template <typename E> void show_stats(Context<E> &);
 // arch-x86-64.cc
 //
 
-void rewrite_endbr(Context<X86_64> &ctx);
+void remove_landing_pads(Context<X86_64> &ctx);
 
 //
 // arch-arm32.cc
@@ -1832,6 +1832,7 @@ struct Context {
     bool relax = true;
     bool relocatable = false;
     bool relocatable_merge_sections = false;
+    bool remove_landing_pads = false;
     bool repro = false;
     bool rosegment = true;
     bool shared = false;
@@ -1861,7 +1862,6 @@ struct Context {
     bool z_now = false;
     bool z_origin = false;
     bool z_relro = true;
-    bool z_rewrite_endbr = false;
     bool z_rodynamic = false;
     bool z_sectionheader = true;
     bool z_shstk = false;

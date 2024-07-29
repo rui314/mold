@@ -138,6 +138,8 @@ Options:
     --no-quick-exit
   --relax                     Optimize instructions (default)
     --no-relax
+  --remove-landing-pads       Rewrite landing pad instructions with NOPs
+    --no-remove-landing-pads
   --repro                     Embed input files in .repro section
   --require-defined SYMBOL    Require SYMBOL be defined in the final output
   --retain-symbols-file FILE  Keep only symbols listed in FILE
@@ -975,6 +977,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.section_start[".text"] = parse_hex(ctx, "Ttext", arg);
     } else if (read_flag("repro")) {
       ctx.arg.repro = true;
+    } else if (read_flag("remove-landing-pads")) {
+      if constexpr (!is_x86_64<E>)
+        Fatal(ctx) << "--remove-landing-pads is supported only on x86-64";
+      ctx.arg.remove_landing_pads = true;
+    } else if (read_flag("no-remove-landing-pads")) {
+      ctx.arg.remove_landing_pads = false;
     } else if (read_z_flag("now")) {
       ctx.arg.z_now = true;
     } else if (read_z_flag("lazy")) {
@@ -1060,8 +1068,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_sectionheader = true;
     } else if (read_z_flag("nosectionheader")) {
       ctx.arg.z_sectionheader = false;
-    } else if (read_z_flag("rewrite-endbr")) {
-      ctx.arg.z_rewrite_endbr = true;
     } else if (read_z_flag("rodynamic")) {
       ctx.arg.z_rodynamic = true;
     } else if (read_z_flag("x86-64-v2")) {
