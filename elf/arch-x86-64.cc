@@ -301,9 +301,9 @@ static void relax_gd_to_ie(u8 *loc, ElfRel<E> rel, u64 val) {
 }
 
 // Rewrite a function call to __tls_get_addr to a cheaper instruction
-// sequence. The difference from relax_gd_to_le is that we are
-// materializing a Dynamic Thread Pointer for the current ELF module
-// instead of an address for a particular thread-local variable.
+// sequence. The difference from relax_gd_to_le is that we are materializing
+// the address of the beginning of TLS block instead of an address of a
+// particular thread-local variable.
 static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
   switch (rel.r_type) {
   case R_X86_64_PLT32:
@@ -313,10 +313,9 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
     //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
     //  e8 00 00 00 00          call   __tls_get_addr
     //
-    // The instructions are so short that we cannot rewrite them with
-    // "mov %fs:0, %rax" which is 9 bytes long. We use a shorter code
-    // sequence instead. Since "xor %eax, %eax" zero-clears %rax, the
-    // meaning is equivalent.
+    // Because the original instruction sequence is so short that we need a
+    // little bit of code golfing here. "mov %fs:0, %rax" is 9 byte long, so
+    // xor and mov is shorter. Note that `xor %eax, %eax` zero-clears %eax.
     static const u8 insn[] = {
       0x31, 0xc0,                   // xor %eax, %eax
       0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
