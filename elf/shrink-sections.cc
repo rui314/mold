@@ -82,6 +82,12 @@ i64 shrink_sections<E>(Context<E> &ctx) {
 
   // Find all relaxable relocations and record how many bytes we can save
   // into r_deltas.
+  //
+  // Technically speaking, relaxing relocations may allow more relocations
+  // to be relaxed because the distance between a branch instruction and
+  // its target may decrease as a result of relaxation. That said, the
+  // number of such relocations is negligible in practice, so don't bother
+  // to handle them. We scan relocations only once here.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (is_resizable(isec.get()))

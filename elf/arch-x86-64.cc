@@ -817,8 +817,21 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
-// Rewrite the leading endbr64 instruction with a nop if a function
-// symbol's address was not taken.
+// Intel CET is a relatively new CPU feature to enhance security by
+// protecting control flow integrity. If the feature is enabled, indirect
+// branches (i.e. branch instructions that take a register instead of a
+// immediate) must land on a "landing pad" instruction, or a CPU-level fault
+// will raise. That prevents an attacker to branch to a middle of a random
+// function, making ROP or JOP much harder to conduct.
+//
+// The problem here is that the compiler always emits a landing pad at the
+// beginning fo a global function because it doesn't know whether or not the
+// function's address is taken in other translation units. As a result, the
+// resulting binary contains more landing pads than necessary.
+//
+// This function rewrites a landing pad with a nop if the function's address
+// was not actually taken. We can do what the compiler cannot because we
+// know about all translation units.
 void remove_landing_pads(Context<E> &ctx) {
   Timer t(ctx, "remove_landing_pads");
 
