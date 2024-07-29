@@ -22,16 +22,17 @@
 //
 //  2. The compiler pessimistically emits two instructions to branch
 //     anywhere in PC ± 2 GiB, and the linker rewrites them with a single
-//     instruction if the branch target is close enough.RISC-V and
+//     instruction if the branch target is close enough. RISC-V and
 //     LoongArch take this approach.
 //
 // This file contains functions to support (2). For (1), see thunks.cc.
 //
 // With the presence of this code-shrinking relaxation, sections can no
-// longer be considered as an atomic unit. If we delete 4 bytes from the
-// middle of a section, section contents after that point needs to be
-// shifted by 4. Symbols values and relocations offsets have to be shifted
-// too if they refers to past the deleted bytes.
+// longer be considered as an atomic unit. If we delete an instruction
+// from the middle of a section, section contents after that point needs
+// to be shifted by the size of the instruction. Symbols values and
+// relocations offsets have to be shifted too if they refers to past the
+// deleted bytes.
 //
 // In mold, we use `r_deltas` to memorize how many bytes have be shifted
 // for relocations. For symbols, we directly mutate their `value` member.
@@ -43,9 +44,10 @@
 // as `if` or `for` are implemented using branch instructions. For other
 // targets, the compiler doesn't emit relocations for such branches
 // because they know at compile-time exactly how many bytes has to be
-// skipped. That's not true to RISC-V because the linker may delete bytes
-// between a branch and its destination. Therefore, all branches including
-// in-section ones have to be explicitly expressed with relocations.
+// skipped. That's not true in RISC-V and LoongArch because the linker may
+// delete bytes between a branch and its target. Therefore, all branches
+// including in-section ones have to be explicitly expressed with
+// relocations.
 //
 // Note that this mechanism only shrink sections and never enlarge, as
 // the compiler always emits the longest instruction sequence. This

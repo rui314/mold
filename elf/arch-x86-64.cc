@@ -820,7 +820,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 // Rewrite the leading endbr64 instruction with a nop if a function
 // symbol's address was not taken.
 void remove_landing_pads(Context<E> &ctx) {
-  Timer t(ctx, "rewrite_endbr");
+  Timer t(ctx, "remove_landing_pads");
 
   constexpr u8 endbr64[] = {0xf3, 0x0f, 0x1e, 0xfa};
   constexpr u8 nop[] = {0x0f, 0x1f, 0x40, 0x00};
