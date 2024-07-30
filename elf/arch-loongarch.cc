@@ -336,8 +336,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, (S + A) >> 52);
       break;
     case R_LARCH_PCALA_LO12:
-      if (removed_bytes == 4)
-        break;
       // It looks like R_LARCH_PCALA_LO12 is sometimes used for JIRL even
       // though the instruction takes a 16 bit immediate rather than 12 bits.
       // It is contrary to the psABI document, but GNU ld has special
@@ -348,15 +346,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_k12(loc, S + A);
       break;
     case R_LARCH_PCALA_HI20:
-      if (i + 4 <= rels.size()
-          && rels[i+2].r_type == R_LARCH_PCALA_LO12
-          && rels[i+1].r_type == R_LARCH_RELAX
-          && rels[i+3].r_type == R_LARCH_RELAX
-          && get_r_delta(i+3) - get_r_delta(i+2) == 4) {
-        // relax pcalau12i/addi.d to pcaddi
+      if (removed_bytes == 4) {
+	// pcalau12i/addi.d has been relaxed to pcaddi
         i64 rd = bits(*(ul32 *)(contents.data() + rel.r_offset), 4, 0);
         *(ul32 *)loc = rd | 0x18000000;
         write_j20(loc, (S + A - P) >> 2);
+	// skip the next R_LARCH_RELAX, R_LARCH_PCALA_LO12, R_LARCH_RELAX
+	i += 3;
       } else {
         write_j20(loc, hi20(S + A, P));
       }
@@ -769,7 +765,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
         delta += 4;
       break;
     case R_LARCH_PCALA_HI20:
-      if ((i+4) > rels.size())
+      if (i + 4 > rels.size())
         continue;
 
       ul32 pcala = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
@@ -791,9 +787,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
           || (i64)(symval - loc) > (i64)(i32)0x1ffffc)
         continue;
 
-      isec.extra.r_deltas[i+1] = isec.extra.r_deltas[i+2] = delta;
       delta += 4;
-      i += 2;
       break;
     }
   }
