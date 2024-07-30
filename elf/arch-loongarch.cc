@@ -336,26 +336,24 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, (S + A) >> 52);
       break;
     case R_LARCH_PCALA_LO12:
+      if (i >= 2 && get_r_delta(i-1) - get_r_delta(i-2) == 4) {
+        // pcalau12i/addi.d has been relaxed to pcaddi
+        i64 rd = bits(*(ul32 *)(contents.data() + rel.r_offset), 4, 0);
+        *(ul32 *)loc = rd | 0x18000000;
+        write_j20(loc, (S + A - P) >> 2);
+      }
       // It looks like R_LARCH_PCALA_LO12 is sometimes used for JIRL even
       // though the instruction takes a 16 bit immediate rather than 12 bits.
       // It is contrary to the psABI document, but GNU ld has special
       // code to handle it, so we accept it too.
-      if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000)
+      else if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000)
         write_k16(loc, sign_extend(S + A, 11) >> 2);
       else
         write_k12(loc, S + A);
       break;
     case R_LARCH_PCALA_HI20:
-      if (removed_bytes == 4) {
-	// pcalau12i/addi.d has been relaxed to pcaddi
-        i64 rd = bits(*(ul32 *)(contents.data() + rel.r_offset), 4, 0);
-        *(ul32 *)loc = rd | 0x18000000;
-        write_j20(loc, (S + A - P) >> 2);
-	// skip the next R_LARCH_RELAX, R_LARCH_PCALA_LO12, R_LARCH_RELAX
-	i += 3;
-      } else {
+      if (removed_bytes == 0)
         write_j20(loc, hi20(S + A, P));
-      }
       break;
     case R_LARCH_PCALA64_LO20:
       write_j20(loc, higher20(S + A, P));
