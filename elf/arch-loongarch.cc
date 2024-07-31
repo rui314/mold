@@ -336,17 +336,24 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, (S + A) >> 52);
       break;
     case R_LARCH_PCALA_LO12:
+      if (i >= 2 && get_r_delta(i-1) - get_r_delta(i-2) == 4) {
+        // pcalau12i/addi.d has been relaxed to pcaddi
+        i64 rd = bits(*(ul32 *)(contents.data() + rel.r_offset), 4, 0);
+        *(ul32 *)loc = rd | 0x18000000;
+        write_j20(loc, (S + A - P) >> 2);
+      }
       // It looks like R_LARCH_PCALA_LO12 is sometimes used for JIRL even
       // though the instruction takes a 16 bit immediate rather than 12 bits.
       // It is contrary to the psABI document, but GNU ld has special
       // code to handle it, so we accept it too.
-      if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000)
+      else if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000)
         write_k16(loc, sign_extend(S + A, 11) >> 2);
       else
         write_k12(loc, S + A);
       break;
     case R_LARCH_PCALA_HI20:
-      write_j20(loc, hi20(S + A, P));
+      if (removed_bytes == 0)
+        write_j20(loc, hi20(S + A, P));
       break;
     case R_LARCH_PCALA64_LO20:
       write_j20(loc, higher20(S + A, P));
@@ -754,6 +761,31 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
           sign_extend(val, 11) == val)
         delta += 4;
+      break;
+    case R_LARCH_PCALA_HI20:
+      if (i + 4 > rels.size())
+        continue;
+
+      ul32 pcala = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
+      ul32 addi = *(ul32 *)(isec.contents.data() + rels[i+2].r_offset);
+
+      i64 rd = pcala & 0x1f;
+      const ul32 addi_d = 0x02c00000;
+      const u64 loc = isec.get_addr() + r.r_offset - delta;
+
+      u64 symval = sym.get_addr(ctx) + r.r_addend;
+      /* Is pcalau12i + addi.d insns?  */
+      if (rels[i+2].r_type != R_LARCH_PCALA_LO12
+          || rels[i+3].r_type != R_LARCH_RELAX
+          || (addi & addi_d) != addi_d
+          /* Is pcalau12i $rd + addi.d $rd,$rd?  */
+          || (addi & 0x1f) != rd
+          || symval & 0x3 /* 4 bytes align */
+          || (i64)(symval - loc) < (i64)(i32)0xffe00000
+          || (i64)(symval - loc) > (i64)(i32)0x1ffffc)
+        continue;
+
+      delta += 4;
       break;
     }
   }
