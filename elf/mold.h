@@ -232,19 +232,13 @@ struct FdeRecord {
 template <typename E>
 struct InputSectionExtras {};
 
-template <typename E> requires (needs_thunk<E> && !is_loongarch<E>)
+template <needs_thunk E>
 struct InputSectionExtras<E> {
   std::vector<ThunkRef> thunk_refs;
 };
 
-template <is_riscv E>
+template <typename E> requires is_riscv<E> || is_loongarch<E>
 struct InputSectionExtras<E> {
-  std::vector<i32> r_deltas;
-};
-
-template <is_loongarch E>
-struct InputSectionExtras<E> {
-  std::vector<ThunkRef> thunk_refs;
   std::vector<i32> r_deltas;
 };
 

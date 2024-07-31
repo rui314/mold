@@ -9,6 +9,11 @@
 # It looks like SPARC's runtime can't handle PLT if it's too far from GOT.
 [ $MACHINE = sparc64 ] && skip
 
+# Current LoongArch compilers emit BL for function calls, but I believe
+# they'll emit PCADDU18I + JIRL (which is addressable PC ± 128 GiB) in the
+# future.
+[[ $MACHINE = loongarch* ]] && skip
+
 # qemu aborts with the "Unknown exception 0x5" error, although this
 # test passes on a real POWER10 machine.
 on_qemu && [ "$CPU" = power10 ] && skip

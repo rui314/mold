@@ -13,7 +13,7 @@
 // Speaking of the ISA, all instructions are 4 byte long and aligned to 4
 // byte boundaries in LoongArch. It has 32 general-purpose registers.
 // Among these, $t0 - $t8 (aliases for $r12 - $r20) are temporary
-// registers that we can use in our PLT and range extension thunks.
+// registers that we can use in our PLT.
 //
 // Just like RISC-V, LoongArch supports section-shrinking relaxations.
 // That is, it allows linkers to rewrite certain instruction sequences to
@@ -320,13 +320,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check_branch(S + A - P, -(1 << 22), 1 << 22);
       write_d5k16(loc, (S + A - P) >> 2);
       break;
-    case R_LARCH_B26: {
-      i64 val = S + A - P;
-      if (val < -(1 << 27) || (1 << 27) <= val)
-        val = get_thunk_addr(i) + A - P;
-      write_d10k16(loc, val >> 2);
+    case R_LARCH_B26:
+      check_branch(S + A - P, -(1 << 27), 1 << 27);
+      write_d10k16(loc, (S + A - P) >> 2);
       break;
-    }
     case R_LARCH_ABS_LO12:
       write_k12(loc, S + A);
       break;
@@ -824,30 +821,6 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
 
   isec.extra.r_deltas[rels.size()] = delta;
   isec.sh_size -= delta;
-}
-
-template <>
-void Thunk<E>::copy_buf(Context<E> &ctx) {
-  constexpr ul32 insn[] = {
-    0x1e00'000c, // pcaddu18i $t0, 0
-    0x4c00'0180, // jirl      $zero, $t0, 0
-  };
-
-  static_assert(E::thunk_size == sizeof(insn));
-
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-  u64 P = output_section.shdr.sh_addr + offset;
-
-  for (Symbol<E> *sym : symbols) {
-    u64 S = sym->get_addr(ctx);
-
-    memcpy(buf, insn, sizeof(insn));
-    write_j20(buf, (S - P + 0x20000) >> 18);
-    write_k16(buf + 4, (S - P) >> 2);
-
-    buf += sizeof(insn);
-    P += sizeof(insn);
-  }
 }
 
 } // namespace mold::elf
