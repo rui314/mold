@@ -1419,6 +1419,10 @@ template <typename E> i64 shrink_sections(Context<E> &ctx);
 template <typename E>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc);
 
+template <typename E>
+i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
+                     InputSection<E> &isec, const ElfRel<E> &rel);
+
 //
 // gc-sections.cc
 //

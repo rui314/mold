@@ -842,26 +842,6 @@ u64 get_eflags(Context<E> &ctx) {
 }
 
 // Returns the distance between a relocated place and a symbol.
-static i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
-                            InputSection<E> &isec, const ElfRel<E> &rel) {
-  // We handle absolute symbols as if they were infinitely far away
-  // because `shrink_section` may increase a distance between a branch
-  // instruction and an absolute symbol. Branching to an absolute
-  // location is extremely rare in real code, though.
-  if (sym.is_absolute())
-    return INT32_MAX;
-
-  // Likewise, relocations against weak undefined symbols won't be relaxed.
-  if (sym.esym().is_undef_weak())
-    return INT32_MAX;
-
-  // Compute a distance between the relocated place and the symbol.
-  i64 S = sym.get_addr(ctx);
-  i64 A = rel.r_addend;
-  i64 P = isec.get_addr() + rel.r_offset;
-  return S + A - P;
-}
-
 // Scan relocations to a given shrink section.
 template <>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
