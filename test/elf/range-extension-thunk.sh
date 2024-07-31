@@ -10,7 +10,7 @@
 [ $MACHINE = sparc64 ] && skip
 
 # Current LoongArch compilers emit BL for function calls, but I believe
-# they'll emit PCADDU18I + JIRL (which is addressable PC ± 128 GiB) in the
+# they'll emit PCADDU18I + JIRL (which can address PC ± 128 GiB) in the
 # future.
 [[ $MACHINE = loongarch* ]] && skip
 

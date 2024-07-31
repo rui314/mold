@@ -818,10 +818,14 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 // Intel CET is a relatively new CPU feature to enhance security by
 // protecting control flow integrity. If the feature is enabled, indirect
-// branches (i.e. branch instructions that take a register instead of a
+// branches (i.e. branch instructions that take a register instead of an
 // immediate) must land on a "landing pad" instruction, or a CPU-level fault
 // will raise. That prevents an attacker to branch to a middle of a random
 // function, making ROP or JOP much harder to conduct.
+//
+// On x86-64, the landing pad instruction is ENDBR64. That is actually a
+// repurposed NOP instruction to provide binary compatibility with older
+// hardware that doesn't support CET.
 //
 // The problem here is that the compiler always emits a landing pad at the
 // beginning fo a global function because it doesn't know whether or not the
@@ -839,8 +843,8 @@ void remove_landing_pads(Context<E> &ctx) {
 
   // Rewrite all endbr64 instructions referred to by function symbols with
   // NOPs. We handle only global symbols because the compiler doesn't emit
-  // a endbr64 for a file-scoped function in the first place if it's
-  // address is not taken within the file.
+  // an endbr64 for a file-scoped function in the first place if its address
+  // is not taken within the file.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->get_global_syms()) {
       if (sym->file == file && sym->esym().st_type == STT_FUNC) {
