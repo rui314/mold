@@ -471,6 +471,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_64_PCREL:
       *(ul64 *)loc = S + A - P;
       break;
+    case R_LARCH_CALL36:
+      if (removed_bytes == 0) {
+        write_j20(loc, (S + A - P + 0x20000) >> 18);
+        write_k16(loc + 4, (S + A - P) >> 2);
+      } else {
+        // Rewrite PCADDU18I + JIRL to B or BL
+        assert(removed_bytes == 4);
+        if (get_rd(*(ul32 *)(contents.data() + rel.r_offset + 4)) == 0)
+          *(ul32 *)loc = 0x5000'0000; // B
+        else
+          *(ul32 *)loc = 0x5400'0000; // BL
+        write_k16(loc, (S + A - P) >> 2);
+      }
+      break;
     case R_LARCH_ADD_ULEB128:
       overwrite_uleb(loc, read_uleb(loc) + S + A);
       break;
@@ -626,6 +640,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_LARCH_B26:
     case R_LARCH_PCALA_HI20:
+    case R_LARCH_CALL36:
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
@@ -791,6 +806,21 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
             is_addi_d && get_rd(insn1) == get_rd(insn2))
           delta += 4;
       }
+      break;
+    case R_LARCH_CALL36:
+      // A CALL36 relocation referes to the following instruction pair
+      // to jump to PC ± 128 GiB.
+      //
+      //   pcaddu18i $t0,       0         # R_LARCH_CALL36
+      //   jirl      $zero/$ra, $t0, 0
+      //
+      // If the displacement is PC ± 128 MiB, we can use B or BL instead.
+      // Note that $zero is $r0 and $ra is $r1.
+      if (i64 dist = compute_distance(ctx, sym, isec, r);
+          -(1 << 27) <= dist && dist < (1 << 27))
+        if (u32 jirl = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
+            get_rd(jirl) == 0 || get_rd(jirl) == 1)
+          delta += 4;
       break;
     }
   }
