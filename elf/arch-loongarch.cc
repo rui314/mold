@@ -733,23 +733,20 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       // sometimes used to store the upper limit of the alignment,
       // allowing the instruction that follows nops _not_ to be aligned at
       // all. I think that's a spec bug, so we don't want to support that.
-      i64 nop_size;
+      i64 alignment;
       if (r.r_sym) {
         if (r.r_addend >> 8)
           Fatal(ctx) << isec << ": ternary R_LARCH_ALIGN is not supported: " << i;
-        nop_size = (1 << r.r_addend) - 4;
+        alignment = 1 << r.r_addend;
       } else {
-        nop_size = r.r_addend;
+        if (!has_single_bit(r.r_addend + 4))
+          Fatal(ctx) << isec << ": R_LARCH_ALIGN: invalid alignment requirement: "
+                     << i;
+        alignment = r.r_addend + 4;
       }
 
       u64 loc = isec.get_addr() + r.r_offset - delta;
-      u64 next_loc = loc + nop_size;
-      u64 alignment = nop_size + 4;
-
-      if (!has_single_bit(alignment))
-        Fatal(ctx) << isec << ": R_LARCH_ALIGN: invalid alignment requirement: "
-                   << i;
-
+      u64 next_loc = loc + alignment - 4;
       delta += next_loc - align_to(loc, alignment);
       continue;
     }
@@ -802,7 +799,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
         u32 insn2 = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
         bool is_addi_d = (insn2 & 0xffc0'0000) == 0x02c0'0000;
 
-        if (dist % 4 == 0 && -(1 << 21) < dist && dist < (1 << 21) &&
+        if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21) &&
             is_addi_d && get_rd(insn1) == get_rd(insn2))
           delta += 4;
       }
