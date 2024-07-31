@@ -2282,7 +2282,7 @@ struct LOONGARCH64 {
   static constexpr u32 R_DTPOFF = R_LARCH_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_LARCH_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_LARCH_TLS_DTPMOD64;
-  static constexpr u32 R_FUNCALL[] = { R_LARCH_B26 };
+  static constexpr u32 R_FUNCALL[] = { R_LARCH_B26, R_LARCH_CALL36 };
 };
 
 struct LOONGARCH32 {
@@ -2306,7 +2306,7 @@ struct LOONGARCH32 {
   static constexpr u32 R_DTPOFF = R_LARCH_TLS_DTPREL32;
   static constexpr u32 R_TPOFF = R_LARCH_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_LARCH_TLS_DTPMOD32;
-  static constexpr u32 R_FUNCALL[] = { R_LARCH_B26 };
+  static constexpr u32 R_FUNCALL[] = { R_LARCH_B26, R_LARCH_CALL36 };
 };
 
 } // namespace mold::elf
