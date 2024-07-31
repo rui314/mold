@@ -17,15 +17,15 @@ EOF
 cat <<'EOF' | $CC -o $t/b.o -c -xassembler -
 .globl sym1, sym2, sym3
 sym1:
-  addi.w $a0, $r0, 1
+  li.d $a0, 1
   ret
 .space 1024 * 1024
 sym2:
-  addi.w $a0, $r0, 2
+  li.d $a0, 2
   ret
 .space 1024 * 1024
 sym3:
-  addi.w $a0, $r0, 3
+  li.d $a0, 3
   ret
 EOF
 
