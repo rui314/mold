@@ -119,6 +119,7 @@ i64 shrink_sections<E>(Context<E> &ctx) {
   return set_osec_offsets(ctx);
 }
 
+// Returns the distance between a relocated place and a symbol.
 template <>
 i64 compute_distance<E>(Context<E> &ctx, Symbol<E> &sym,
                         InputSection<E> &isec, const ElfRel<E> &rel) {
@@ -127,11 +128,11 @@ i64 compute_distance<E>(Context<E> &ctx, Symbol<E> &sym,
   // instruction and an absolute symbol. Branching to an absolute
   // location is extremely rare in real code, though.
   if (sym.is_absolute())
-    return INT32_MAX;
+    return INT64_MAX;
 
   // Likewise, relocations against weak undefined symbols won't be relaxed.
   if (sym.esym().is_undef_weak())
-    return INT32_MAX;
+    return INT64_MAX;
 
   // Compute a distance between the relocated place and the symbol.
   i64 S = sym.get_addr(ctx);

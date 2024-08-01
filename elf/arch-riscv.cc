@@ -841,7 +841,6 @@ u64 get_eflags(Context<E> &ctx) {
   return ret;
 }
 
-// Returns the distance between a relocated place and a symbol.
 // Scan relocations to a given shrink section.
 template <>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
