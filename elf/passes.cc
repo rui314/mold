@@ -1929,6 +1929,9 @@ static bool should_export(Context<E> &ctx, Symbol<E> &sym) {
 
   switch (sym.ver_idx) {
   case VER_NDX_UNSPECIFIED:
+    if (ctx.arg.dynamic_list_data)
+      if (u32 ty = sym.get_type(); ty != STT_FUNC && ty != STT_GNU_IFUNC)
+        return true;
     if (ctx.arg.shared)
       return !((ObjectFile<E> *)sym.file)->exclude_libs;
     return ctx.arg.export_dynamic;

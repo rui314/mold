@@ -93,6 +93,7 @@ Options:
   --execute-only              Make executable segments unreadable
   --dp                        Ignored
   --dynamic-list=FILE         Read a list of dynamic symbols (implies -Bsymbolic)
+  --dynamic-list-data         Add data symbols to dynamic symbols
   --eh-frame-hdr              Create .eh_frame_hdr section
     --no-eh-frame-hdr
   --exclude-libs LIB,LIB,..   Mark all symbols in given libraries as hidden
@@ -1304,6 +1305,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("dynamic-list")) {
       ctx.arg.Bsymbolic = BSYMBOLIC_ALL;
       append(ctx.dynamic_list_patterns, parse_dynamic_list(ctx, arg));
+    } else if (read_arg("dynamic-list-data")) {
+      ctx.arg.dynamic_list_data = true;
     } else if (read_arg("export-dynamic-symbol")) {
       ctx.dynamic_list_patterns.push_back({arg, "<command line>"});
     } else if (read_arg("export-dynamic-symbol-list")) {

@@ -1799,6 +1799,7 @@ struct Context {
     bool detach = true;
     bool discard_all = false;
     bool discard_locals = false;
+    bool dynamic_list_data = false;
     bool eh_frame_hdr = true;
     bool emit_relocs = false;
     bool enable_new_dtags = true;
