@@ -364,10 +364,70 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, highest12(S + A, P));
       break;
     case R_LARCH_GOT_PC_LO12:
-      write_k12(loc, GOT + G + A);
+      if (i >= 2 && get_r_delta(i-1) - get_r_delta(i-2) == 4) {
+        // pcalau12i/ld.d has been relaxed to pcalau12i/addi.d, and
+        // then the pair has been relaxed to pcaddi.
+        // loc stores 'ld.d', rewrite ld.d with pcaddi
+        *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc);
+        write_j20(loc, (S + A - P) >> 2);
+      } else {
+        if (i >= 2 &&
+          i + 1 < rels.size() &&
+          sym.is_local(ctx) &&
+          !sym.is_absolute() &&
+          !sym.is_ifunc() &&
+          ctx.arg.relax &&
+          rels[i-1].r_type == R_LARCH_RELAX &&
+          rels[i+1].r_type == R_LARCH_RELAX &&
+          rels[i-2].r_type == R_LARCH_GOT_PC_HI20 &&
+          rels[i-2].r_offset == rel.r_offset - 4) {
+          u32 insn1 = *(ul32 *)(contents.data() + rels[i-2].r_offset);
+          u32 insn2 = *(ul32 *)(contents.data() + rel.r_offset);
+          u32 rd = get_rd(insn1);
+
+          if (rd == get_rd(insn2)) {
+            // pcalau12i/ld.d has been relaxed to pcalau12i/addi.d
+            // rewrite the ld.d with addi.d
+            *(ul32 *)loc = 0x02c00000 | rd | (rd << 5);
+            write_k12(loc, S + A);
+            break;
+          }
+        }
+
+        // relax not applied.
+        write_k12(loc, GOT + G + A);
+      }
       break;
     case R_LARCH_GOT_PC_HI20:
-      write_j20(loc, hi20(GOT + G + A, P));
+      if (removed_bytes != 0) {
+        // The first instruction of pcalau12i/ld.d has been removed
+        assert(removed_bytes == 4);
+        break;
+      } else {
+        if (i + 3 < rels.size() &&
+          sym.is_local(ctx) &&
+          !sym.is_absolute() &&
+	  !sym.is_ifunc() &&
+          ctx.arg.relax &&
+          rels[i+1].r_type == R_LARCH_RELAX &&
+          rels[i+3].r_type == R_LARCH_RELAX &&
+          rels[i+2].r_type == R_LARCH_GOT_PC_LO12 &&
+          rels[i+2].r_offset == rel.r_offset + 4) {
+          u32 insn1 = *(ul32 *)(contents.data() + rel.r_offset);
+          u32 insn2 = *(ul32 *)(contents.data() + rels[i+2].r_offset);
+          u32 rd = get_rd(insn1);
+
+          if (rd == get_rd(insn2)) {
+            // pcalau12i/ld.d has been relaxed to pcalau12i/addi.d
+            // reloc the pcalau12i as R_LARCH_PLACA_HI20
+            write_j20(loc, hi20(S + A, P));
+            break;
+          }
+        }
+
+        // relax not applied.
+        write_j20(loc, hi20(GOT + G + A, P));
+      }
       break;
     case R_LARCH_GOT64_PC_LO20:
       write_j20(loc, higher20(GOT + G + A, P));
@@ -815,6 +875,39 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
         if (u32 jirl = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
             get_rd(jirl) == 0 || get_rd(jirl) == 1)
           delta += 4;
+      break;
+    case R_LARCH_GOT_PC_HI20:
+      // The following two instructions are used to load a
+      // symbol value from the GOT
+      //
+      //   pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20
+      //   ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12
+      //
+      // If the symbol is defined in the file current relocation belongs to,
+      // we can relax them to the following instructions and avoid memory load.
+      //
+      //   pcalau12i $t0, 0
+      //   addi.d    $t0, $t0, 0
+      if (sym.is_local(ctx) &&
+          !sym.is_absolute() &&
+          !sym.is_ifunc() &&
+          ctx.arg.relax &&
+          i + 3 < rels.size() &&
+          rels[i + 2].r_type == R_LARCH_GOT_PC_LO12 &&
+          rels[i + 2].r_offset == rels[i].r_offset + 4 &&
+          rels[i + 3].r_type == R_LARCH_RELAX) {
+          u32 insn1 = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
+          u32 insn2 = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
+
+          // relax pcalau12i/ld.d to pcalau12i/addi.d
+          if (get_rd(insn1) != get_rd(insn2))
+            continue;
+
+          i64 dist = compute_distance(ctx, sym, isec, r);
+          // the second phase: relax pcalau12i/addi.d to pcaddi
+          if (dist % 4 == 0 && -(1 << 21) < dist && dist < (1 << 21))
+            delta += 4;
+      }
       break;
     }
   }
