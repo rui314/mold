@@ -139,8 +139,6 @@ Options:
     --no-quick-exit
   --relax                     Optimize instructions (default)
     --no-relax
-  --remove-landing-pads       Rewrite landing pad instructions with NOPs
-    --no-remove-landing-pads
   --repro                     Embed input files in .repro section
   --require-defined SYMBOL    Require SYMBOL be defined in the final output
   --retain-symbols-file FILE  Keep only symbols listed in FILE
@@ -219,6 +217,8 @@ Options:
   -z stack-size=VALUE         Set the size of the stack segment
   -z relro                    Make some sections read-only after relocation (default)
     -z norelro
+  -z rewrite-endbr            Rewrite indirect branch target instructions with NOPs
+    -z norewrite-endbr
   -z rodynamic                Make the .dynamic section read-only
   -z text                     Report error if DT_TEXTREL is set
     -z notext
@@ -978,12 +978,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.section_start[".text"] = parse_hex(ctx, "Ttext", arg);
     } else if (read_flag("repro")) {
       ctx.arg.repro = true;
-    } else if (read_flag("remove-landing-pads")) {
-      if constexpr (!is_x86_64<E>)
-        Fatal(ctx) << "--remove-landing-pads is supported only on x86-64";
-      ctx.arg.remove_landing_pads = true;
-    } else if (read_flag("no-remove-landing-pads")) {
-      ctx.arg.remove_landing_pads = false;
     } else if (read_z_flag("now")) {
       ctx.arg.z_now = true;
     } else if (read_z_flag("lazy")) {
@@ -1077,6 +1071,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V3;
     } else if (read_z_flag("x86-64-v4")) {
       ctx.arg.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V4;
+    } else if (read_z_flag("rewrite-endbr")) {
+      if constexpr (!is_x86_64<E>)
+        Fatal(ctx) << "-z rewrite-endbr is supported only on x86-64";
+      ctx.arg.z_rewrite_endbr = true;
+    } else if (read_z_flag("norewrite-endbr")) {
+      ctx.arg.z_rewrite_endbr = false;
     } else if (read_flag("nmagic")) {
       ctx.arg.nmagic = true;
     } else if (read_flag("no-nmagic")) {

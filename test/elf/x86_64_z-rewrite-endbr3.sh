@@ -15,5 +15,5 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o -Wl,--remove-landing-pads
+$CC -B. -o $t/exe $t/a.o -Wl,-z,rewrite-endbr
 sde -cet 1 -- $t/exe | grep -q 'Hello world'

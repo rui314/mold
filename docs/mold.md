@@ -180,32 +180,6 @@ but as `-o magic`.
   This option changes the behavior so that `mold` merges input sections by
   name by the default section merging rules.
 
-* `--remove-landing-pads`, `--no-remove-landing-pads`:
-  As a security measure, a few CPU instruction sets have recently gained
-  support of landing pad instructions. If the feature is enabled, an
-  _indirect_ branch must "land" on a landing pad instruction, or a CPU-level
-  fault is raised. In other words, it restricts the locations to which
-  indirect branch instructions can jump to. The feature makes ROP or JOP
-  attacks harder to conduct.
-
-  To use the feature, a function whose pointer is taken needs to begin with a
-  landing pad because a function call via a function pointer is compiled to an
-  indirect branch. On the other hand, if a function is called only directly
-  (i.e. referred to only by _direct_ branch instructions), it doesn't have to
-  begin with it.
-
-  By default, the compiler always emits a landing pad at the beginning of each
-  global function because it doesn't know whether or not the function's
-  pointer is taken in another translation unit. As a result, the resulting
-  binary has more attack surface than necessary.
-
-  If `--remove-landing-pads` is given, mold conducts a whole program analysis
-  to identify functions whose addresses are actually taken and rewrites
-  landing pads with no-ops for non-address-taken functions, reducing the
-  attack surface.
-
-  This feature is currently available only on x86-64.
-
 * `--repro`:
   Archive input files, as well as a text file containing command line options,
   in a tar file so that you can run `mold` with the exact same inputs again.
@@ -293,6 +267,33 @@ but as `-o magic`.
 
 * `--quick-exit`, `--no-quick-exit`:
   Use or do not use `quick_exit` to exit.
+
+* `-z rewrite-endbr`, `-z norewrite-endbr`:
+  As a security measure, some CPU instruction sets have recently gained a
+  feature to protect control flow integrity by disallowing indirect branches
+  by default. If the feature is enabled, the instruction that is executed
+  immediately after an indirect branch must be an branch target marker
+  instruction, or a CPU-level fault will raise. The marker instruction is also
+  known as "landing pad" instruction, to which indirect branches can land.
+  This feature makes ROP attacks harder to conduct.
+
+  To use the feature, a function whose pointer is taken needs to begin with a
+  landing pad because a function call via a function pointer is compiled to an
+  indirect branch. On the other hand, if a function is called only directly
+  (i.e. referred to only by _direct_ branch instructions), it doesn't have to
+  begin with it.
+
+  By default, the compiler always emits a landing pad at the beginning of each
+  global function because it doesn't know whether or not the function's
+  pointer is taken in another translation unit. As a result, the resulting
+  binary has more attack surface than necessary.
+
+  If `--rewrite-endbr` is given, mold conducts a whole program analysis
+  to identify functions whose addresses are actually taken and rewrites
+  landing pads with no-ops for non-address-taken functions, reducing the
+  attack surface.
+
+  This feature is currently available only on x86-64.
 
 ## GNU-COMPATIBLE OPTIONS
 

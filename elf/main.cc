@@ -649,8 +649,8 @@ int elf_main(int argc, char **argv) {
   copy_chunks(ctx);
 
   if constexpr (is_x86_64<E>)
-    if (ctx.arg.remove_landing_pads)
-      remove_landing_pads(ctx);
+    if (ctx.arg.z_rewrite_endbr)
+      rewrite_endbr(ctx);
 
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.
