@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "July 2024" ""
+.TH "MOLD" "1" "August 2024" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -86,17 +86,6 @@ By default, \fBmold\fR doesn't merge input sections by name when merging input o
 .IP
 This option changes the behavior so that \fBmold\fR merges input sections by name by the default section merging rules\.
 .TP
-\fB\-\-remove\-landing\-pads\fR, \fB\-\-no\-remove\-landing\-pads\fR
-As a security measure, a few CPU instruction sets have recently gained support of landing pad instructions\. If the feature is enabled, an \fIindirect\fR branch must "land" on a landing pad instruction, or a CPU\-level fault is raised\. In other words, it restricts the locations to which indirect branch instructions can jump to\. The feature makes ROP or JOP attacks harder to conduct\.
-.IP
-To use the feature, a function whose pointer is taken needs to begin with a landing pad because a function call via a function pointer is compiled to an indirect branch\. On the other hand, if a function is called only directly (i\.e\. referred to only by \fIdirect\fR branch instructions), it doesn't have to begin with it\.
-.IP
-By default, the compiler always emits a landing pad at the beginning of each global function because it doesn't know whether or not the function's pointer is taken in another translation unit\. As a result, the resulting binary has more attack surface than necessary\.
-.IP
-If \fB\-\-remove\-landing\-pads\fR is given, mold conducts a whole program analysis to identify functions whose addresses are actually taken and rewrites landing pads with no\-ops for non\-address\-taken functions, reducing the attack surface\.
-.IP
-This feature is currently available only on x86\-64\.
-.TP
 \fB\-\-repro\fR
 Archive input files, as well as a text file containing command line options, in a tar file so that you can run \fBmold\fR with the exact same inputs again\. This is useful for reporting a bug with a reproducer\. The output filename is \fBpath/to/output\.tar\fR, where \fBpath/to/output\fR is an output filename specified by \fB\-o\fR\.
 .TP
@@ -142,6 +131,17 @@ Use multiple threads\. By default, \fBmold\fR uses as many threads as the number
 .TP
 \fB\-\-quick\-exit\fR, \fB\-\-no\-quick\-exit\fR
 Use or do not use \fBquick_exit\fR to exit\.
+.TP
+\fB\-z rewrite\-endbr\fR, \fB\-z norewrite\-endbr\fR
+As a security measure, some CPU instruction sets have recently gained a feature to protect control flow integrity by disallowing indirect branches by default\. If the feature is enabled, the instruction that is executed immediately after an indirect branch must be an branch target marker instruction, or a CPU\-level fault will raise\. The marker instruction is also known as "landing pad" instruction, to which indirect branches can land\. This feature makes ROP attacks harder to conduct\.
+.IP
+To use the feature, a function whose pointer is taken needs to begin with a landing pad because a function call via a function pointer is compiled to an indirect branch\. On the other hand, if a function is called only directly (i\.e\. referred to only by \fIdirect\fR branch instructions), it doesn't have to begin with it\.
+.IP
+By default, the compiler always emits a landing pad at the beginning of each global function because it doesn't know whether or not the function's pointer is taken in another translation unit\. As a result, the resulting binary has more attack surface than necessary\.
+.IP
+If \fB\-\-rewrite\-endbr\fR is given, mold conducts a whole program analysis to identify functions whose addresses are actually taken and rewrites landing pads with no\-ops for non\-address\-taken functions, reducing the attack surface\.
+.IP
+This feature is currently available only on x86\-64\.
 .SH "GNU\-COMPATIBLE OPTIONS"
 .TP
 \fB\-\-help\fR
