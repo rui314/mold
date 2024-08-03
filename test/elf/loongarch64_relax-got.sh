@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<'EOF' | $CC -g -o $t/a.o -c -xassembler -
+cat <<'EOF' | $CC -o $t/a.o -c -xassembler -
 .globl get_sym1, get_sym2, get_sym3, get_sym4, get_sym5
 get_sym1:
   la.global $a0, sym1
@@ -25,7 +25,7 @@ get_sym5:
   ret
 EOF
 
-cat <<EOF | $CC -g -o $t/b.o -c -xassembler -
+cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .data
 .globl sym1, sym2, sym3, sym4, sym5
 sym1:
@@ -40,7 +40,7 @@ sym5:
   .word 0xdeadbeef
 EOF
 
-cat <<EOF | $CC -g -o $t/c.o -c -xc -
+cat <<EOF | $CC -o $t/c.o -c -xc -
 #include <stdio.h>
 
 int get_sym1();
@@ -55,10 +55,10 @@ int main() {
 }
 EOF
 
-$CC -B. -g -o $t/exe1 $t/a.o $t/b.o $t/c.o -Wl,--no-relax
+$CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o -Wl,--no-relax
 $QEMU $t/exe1 | grep -Eq '^0 ba beef 11beef deadbeef$'
 
-$CC -B. -g -o $t/exe2 $t/a.o $t/b.o $t/c.o
+$CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o
 $QEMU $t/exe2 | grep -Eq '^0 ba beef 11beef deadbeef$'
 
 $OBJDUMP -d $t/exe2 | grep -A2 '<get_sym2>:' | grep -Eq $'pcaddi'
