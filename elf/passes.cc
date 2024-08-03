@@ -504,13 +504,6 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
       return ".ARM.extab";
   }
 
-  if constexpr (is_alpha<E>) {
-    if (name.starts_with(".sdata."))
-      return ".sdata";
-    if (name.starts_with(".sbss."))
-      return ".sbss";
-  }
-
   if (ctx.arg.z_keep_text_section_prefix) {
     static std::string_view prefixes[] = {
       ".text.hot.", ".text.unknown.", ".text.unlikely.", ".text.startup.",
@@ -528,6 +521,7 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
     ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
     ".ctors.", ".dtors.", ".gnu.warning.", ".openbsd.randomdata.",
+    ".sdata.", ".sbss.", ".srodata",
   };
 
   for (std::string_view prefix : prefixes) {
