@@ -529,17 +529,22 @@ but as `-o magic`.
   `--disable-new-dtags`, `mold` emits `DT_RPATH` for `--rpath` instead.
 
 * `--execute-only`:
-  Traditionally, most processors require both executable and readable bits to
-  1 to make the page executable, which allows machine code to be read as data
-  at runtime. This is actually what an attacker often does after gaining a
-  limited control of a process to find pieces of machine code they can use to
-  gain the full control of the process. As a mitigation, some recent
-  processors allows "execute-only" pages. If a page is execute-only, you can
-  call a function there as long as you know its address but can't read it as
-  data.
 
-  This option marks text segments execute-only. This option currently works
-  only on some ARM64 processors.
+  Traditionally, setting the executable bit to 1 for a memory page implies
+  that the page also become readable, which allows machine code to be read
+  as data at runtime. That is actually what an attacker often does after
+  gaining a limited control of a process to find pieces of machine code
+  they can use to gain the full control of the process. As a mitigation,
+  recent processors including some ARM64 ones allows "execute-only" pages.
+  If a page is execute-only, you can call a function there as long as you
+  know its address but can't read it as data.
+
+  This option marks text segments as execute-only by setting just the "X"
+  bit instead of "RX". Note that on most systems, the absence of the "R"
+  bit in the text segment serves just as a hint. If you run a program
+  linked with `--execute-only` on a processor that doesn't support
+  execute-only pages, your executable will likely still function normally,
+  but the text segment will remain readable.
 
 * `--exclude-libs`=_libraries_ ...:
   Mark all symbols in the given _libraries_ hidden.
