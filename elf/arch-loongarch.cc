@@ -398,6 +398,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
               // rewrite the ld.d insn with addi.d insn
               *(ul32 *)(loc + 4) = 0x02c00000 | rd | (rd << 5);
               write_k12(loc + 4, S + rels[i + 2].r_addend);
+              i += 3;
               break;
             }
           }
