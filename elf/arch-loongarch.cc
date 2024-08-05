@@ -377,11 +377,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           // loc stores 'ld.d', rewrite ld.d with pcaddi
           *(ul32 *)(loc) = 0x1800'0000 | get_rd(*(ul32 *)loc);
           write_j20(loc, (S + A - P) >> 2);
+          i += 3;
           break;
         case 0:
-          if (i + 3 < rels.size() &&
-            sym.is_pcrel_linktime_const(ctx);
-            ctx.arg.relax &&
+          if (ctx.arg.relax &&
+            sym.is_pcrel_linktime_const(ctx) &&
+            i + 3 < rels.size() &&
             rels[i + 1].r_type == R_LARCH_RELAX &&
             rels[i + 3].r_type == R_LARCH_RELAX &&
             rels[i + 2].r_type == R_LARCH_GOT_PC_LO12 &&
@@ -409,6 +410,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         default:
           unreachable();
       }
+      break;
     case R_LARCH_GOT64_PC_LO20:
       write_j20(loc, higher20(GOT + G + A, P));
       break;
@@ -870,7 +872,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       //   pcalau12i $t0, 0
       //   addi.d    $t0, $t0, 0
       if (ctx.arg.relax &&
-          sym.is_pcrel_linktime_const(ctx);
+          sym.is_pcrel_linktime_const(ctx) &&
           i + 3 < rels.size() &&
           rels[i + 2].r_type == R_LARCH_GOT_PC_LO12 &&
           rels[i + 2].r_offset == rels[i].r_offset + 4 &&
