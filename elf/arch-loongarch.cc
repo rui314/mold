@@ -422,7 +422,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         // Rewrite pcalau12i + ld.d with pcaddi
         assert(removed_bytes == 4);
-        *(ul32 *)(loc) = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
+        *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
         write_j20(loc, (S + A - P) >> 2);
         i += 3;
       }
