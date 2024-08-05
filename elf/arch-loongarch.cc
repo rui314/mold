@@ -118,6 +118,10 @@ static u32 get_rd(u32 insn) {
   return insn & 0x1f;
 }
 
+static u32 get_rj(u32 insn) {
+  return (insn >> 5) & 0x1f;
+}
+
 static void set_rj(u8 *loc, u32 rj) {
   assert(rj < 32);
   *(ul32 *)loc &= 0b111111'1111111111111111'00000'11111;
@@ -367,7 +371,45 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_k12(loc, GOT + G + A);
       break;
     case R_LARCH_GOT_PC_HI20:
-      write_j20(loc, hi20(GOT + G + A, P));
+      switch (removed_bytes) {
+        // pcalau12i/ld.d has been relaxed to pcaddi, the first insn has been removed.
+        case 4:
+          // loc stores 'ld.d', rewrite ld.d with pcaddi
+          *(ul32 *)(loc) = 0x1800'0000 | get_rd(*(ul32 *)loc);
+          write_j20(loc, (S + A - P) >> 2);
+          i += 3;
+          break;
+        case 0:
+          if (ctx.arg.relax &&
+            sym.is_pcrel_linktime_const(ctx) &&
+            i + 3 < rels.size() &&
+            rels[i + 1].r_type == R_LARCH_RELAX &&
+            rels[i + 3].r_type == R_LARCH_RELAX &&
+            rels[i + 2].r_type == R_LARCH_GOT_PC_LO12 &&
+            rels[i + 2].r_offset == rel.r_offset + 4) {
+            u32 insn1 = *(ul32 *)(contents.data() + rel.r_offset);
+            u32 insn2 = *(ul32 *)(contents.data() + rels[i + 2].r_offset);
+            u32 rd = get_rd(insn1);
+
+            if (rd == get_rd(insn2) && rd == get_rj(insn2)) {
+              // relax pcalau12i/ld.d to pcalau12i/addi.d
+              // reloc the pcalau12i as R_LARCH_PLACA_HI20
+              write_j20(loc, hi20(S + A, P));
+
+              // rewrite the ld.d insn with addi.d insn
+              *(ul32 *)(loc + 4) = 0x02c00000 | rd | (rd << 5);
+              write_k12(loc + 4, S + rels[i + 2].r_addend);
+              i += 3;
+              break;
+            }
+          }
+
+          // relax not applied.
+          write_j20(loc, hi20(GOT + G + A, P));
+          break;
+        default:
+          unreachable();
+      }
       break;
     case R_LARCH_GOT64_PC_LO20:
       write_j20(loc, higher20(GOT + G + A, P));
@@ -797,7 +839,8 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
         bool is_addi_d = (insn2 & 0xffc0'0000) == 0x02c0'0000;
 
         if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21) &&
-            is_addi_d && get_rd(insn1) == get_rd(insn2))
+            is_addi_d && get_rd(insn1) == get_rd(insn2) &&
+            get_rd(insn2) == get_rj(insn2))
           delta += 4;
       }
       break;
@@ -815,6 +858,37 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
         if (u32 jirl = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
             get_rd(jirl) == 0 || get_rd(jirl) == 1)
           delta += 4;
+      break;
+    case R_LARCH_GOT_PC_HI20:
+      // The following two instructions are used to load a
+      // symbol value from the GOT
+      //
+      //   pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20
+      //   ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12
+      //
+      // If the symbol is defined in the file current relocation belongs to,
+      // we can relax them to the following instructions and avoid memory load.
+      //
+      //   pcalau12i $t0, 0
+      //   addi.d    $t0, $t0, 0
+      if (ctx.arg.relax &&
+          sym.is_pcrel_linktime_const(ctx) &&
+          i + 3 < rels.size() &&
+          rels[i + 2].r_type == R_LARCH_GOT_PC_LO12 &&
+          rels[i + 2].r_offset == rels[i].r_offset + 4 &&
+          rels[i + 3].r_type == R_LARCH_RELAX) {
+          u32 insn1 = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
+          u32 insn2 = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
+
+          // relax pcalau12i/ld.d to pcalau12i/addi.d
+          if (get_rd(insn1) != get_rd(insn2) || get_rd(insn2) != get_rj(insn2))
+            continue;
+
+          i64 dist = compute_distance(ctx, sym, isec, r);
+          // the second phase: relax pcalau12i/addi.d to pcaddi
+          if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21))
+            delta += 4;
+      }
       break;
     }
   }
