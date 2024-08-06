@@ -123,8 +123,6 @@ Options:
   --oformat=binary            Omit ELF, section, and program headers
   --pack-dyn-relocs=[relr,none]
                               Pack dynamic relocations
-  --encoded-package-metadata=PERCENT_ENCODED_STRING
-                              Set a given string to .note.package
   --package-metadata=STRING   Set a given string to .note.package
   --perf                      Print performance statistics
   --pie, --pic-executable     Create a position-independent executable
