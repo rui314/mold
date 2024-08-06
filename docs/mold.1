@@ -360,11 +360,6 @@ If \fBrelr\fR is specified, all \fBR_*_RELATIVE\fR relocations are put into \fB\
 .IP
 Note that a runtime loader has to support \fB\.relr\.dyn\fR to run executables or shared libraries linked with \fB\-\-pack\-dyn\-relocs=relr\fR\. As of 2022, only ChromeOS, Android and Fuchsia support it\.
 .TP
-\fB\-\-package\-metadata\fR=\fIstring\fR, \fB\-\-encoded\-package\-metadata\fR=\fIstring\fR
-Embed \fIstring\fR to a \fB\.note\.package\fR section\. This option is intended to be used by a package management command such as rpm(8) to embed metadata regarding a package to each executable file\.
-.IP
-The difference between \fB\-\-package\-metadata\fR and \fB\-\-encoded\-package\-metadata\fR is that the former takes a plain string while the latter takes a percent\-encoded string\. In other words, \fB\-\-package\-metadata={"foo":"bar"}\fR is equivalent to \fB\-\-encoded\-package\-metadata=%7B%22foo%22%3A%22bar%22%7D\fR\. The latter option is useful to use with the compiler's \fB\-Wl,\fR option because you can escape commas in a JSON string, which would otherwise be interpreted as an argument separator by the compiler\.
-.TP
 \fB\-\-pie\fR, \fB\-\-pic\-executable\fR, \fB\-\-no\-pie\fR, \fB\-\-no\-pic\-executable\fR
 Create a position\-independent executable\.
 .TP
