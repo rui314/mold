@@ -187,6 +187,26 @@ GNU linker, especially when linking large programs.
 
 </details>
 
+<details><summary>If you are using Conan package manager</summary>
+
+You can configure [Conan](https://github.com/conan-io) to download the latest
+version of `mold` and use it as the linker when building your dependencies and
+projects from source.
+
+Add the following section to your _host_ profile targetting Linux:
+
+```
+[tool_requires]
+*:mold/[*]
+
+[conf]
+# The following config will only work with clang or gcc >= 12
+tools.build:exelinkflags=['-fuse-ld=mold']
+tools.build:sharedlinkflags=['-fuse-ld=mold']
+```
+
+</details>
+
 <details><summary>Verify that you are using mold</summary>
 
 mold leaves its identification string in the `.comment` section of an output
