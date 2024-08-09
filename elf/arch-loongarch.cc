@@ -313,20 +313,22 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     // ones. Therefore, G may refer to a TLSGD or a regular GOT slot
     // depending on the symbol type.
     //
-    // Note that as of August 2023, both GCC and Clang treat TLSLD relocs
-    // as if they were TLSGD relocs for LoongArch, which is a clear bug.
-    // We need to handle TLSLD relocs as synonyms for TLSGD relocs for the
-    // sake of bug compatibility.
-    auto get_got_idx = [&] {
-      if (sym.has_tlsgd(ctx))
-        return sym.get_tlsgd_idx(ctx);
-      return sym.get_got_idx(ctx);
-    };
+    // Note that even though LoongArch defines relocations for TLSLD, TLSLD
+    // is not actually supported on it. GCC and LLVM emit identical machine
+    // code for -ftls-model=global-dynamic and -ftls-model=local-dynamic,
+    // and we need to handle TLSLD relocations as equivalent to TLSGD
+    // relocations. This is clearly a compiler bug, but it's too late to
+    // fix. The only way to fix it would be to define a new set of
+    // relocations for true TLSLD and deprecate the current ones. But it
+    // appears that migrating to TLSDESC is a better choice, so it's
+    // unlikely to happen.
+    i64 got_idx =
+      sym.has_tlsgd(ctx) ? sym.get_tlsgd_idx(ctx) : sym.get_got_idx(ctx);
 
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
     u64 P = get_addr() + r_offset;
-    u64 G = get_got_idx() * sizeof(Word<E>);
+    u64 G = got_idx * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
@@ -481,13 +483,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_TLS_IE64_HI12:
       write_k12(loc, (sym.get_gottp_addr(ctx) + A) >> 52);
       break;
-    case R_LARCH_TLS_LD_PC_HI20:
     case R_LARCH_TLS_GD_PC_HI20:
+    case R_LARCH_TLS_LD_PC_HI20:
       check(sym.get_tlsgd_addr(ctx) + A - P, -(1LL << 31), 1LL << 31);
       write_j20(loc, hi20(sym.get_tlsgd_addr(ctx) + A, P));
       break;
-    case R_LARCH_TLS_LD_HI20:
     case R_LARCH_TLS_GD_HI20:
+    case R_LARCH_TLS_LD_HI20:
       write_j20(loc, (sym.get_tlsgd_addr(ctx) + A) >> 12);
       break;
     case R_LARCH_ADD6:
@@ -778,10 +780,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_LARCH_TLS_IE_PC_HI20:
       sym.flags |= NEEDS_GOTTP;
       break;
-    case R_LARCH_TLS_LD_PC_HI20:
     case R_LARCH_TLS_GD_PC_HI20:
-    case R_LARCH_TLS_LD_HI20:
+    case R_LARCH_TLS_LD_PC_HI20:
     case R_LARCH_TLS_GD_HI20:
+    case R_LARCH_TLS_LD_HI20:
       sym.flags |= NEEDS_TLSGD;
       break;
     case R_LARCH_32_PCREL:
