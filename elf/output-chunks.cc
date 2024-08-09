@@ -1730,21 +1730,18 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
     esym.st_type = STT_FUNC;
     esym.st_visibility = sym.visibility;
     esym.st_value = sym.get_plt_addr(ctx);
-  } else if (!isec->output_section) {
+  } else if ((isec->shdr().sh_flags & SHF_MERGE) &&
+             !(isec->shdr().sh_flags & SHF_ALLOC)) {
     // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
-    assert(!(isec->shdr().sh_flags & SHF_ALLOC));
-    assert(isec->shdr().sh_flags & SHF_MERGE);
-    assert(!sym.file->is_dso);
-
     ObjectFile<E> *file = (ObjectFile<E> *)sym.file;
-    MergeableSection<E> *m =
-      file->mergeable_sections[file->get_shndx(sym.esym())].get();
+    MergeableSection<E> &m =
+      *file->mergeable_sections[file->get_shndx(sym.esym())];
 
     SectionFragment<E> *frag;
     i64 frag_addend;
-    std::tie(frag, frag_addend) = m->get_fragment(sym.esym().st_value);
+    std::tie(frag, frag_addend) = m.get_fragment(sym.esym().st_value);
 
-    shndx = m->parent.shndx;
+    shndx = m.parent.shndx;
     esym.st_visibility = sym.visibility;
     esym.st_value = frag->get_addr(ctx) + frag_addend;
   } else {
