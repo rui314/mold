@@ -1283,6 +1283,8 @@ enum : u32 {
   R_LARCH_TLS_TPREL32 = 10,
   R_LARCH_TLS_TPREL64 = 11,
   R_LARCH_IRELATIVE = 12,
+  R_LARCH_TLS_DESC32 = 13,
+  R_LARCH_TLS_DESC64 = 14,
   R_LARCH_MARK_LA = 20,
   R_LARCH_MARK_PCREL = 21,
   R_LARCH_SOP_PUSH_PCREL = 22,
@@ -2282,6 +2284,7 @@ struct LOONGARCH64 {
   static constexpr u32 R_DTPOFF = R_LARCH_TLS_DTPREL64;
   static constexpr u32 R_TPOFF = R_LARCH_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_LARCH_TLS_DTPMOD64;
+  static constexpr u32 R_TLSDESC = R_LARCH_TLS_DESC64;
   static constexpr u32 R_FUNCALL[] = { R_LARCH_B26, R_LARCH_CALL36 };
 };
 
@@ -2306,6 +2309,7 @@ struct LOONGARCH32 {
   static constexpr u32 R_DTPOFF = R_LARCH_TLS_DTPREL32;
   static constexpr u32 R_TPOFF = R_LARCH_TLS_TPREL32;
   static constexpr u32 R_DTPMOD = R_LARCH_TLS_DTPMOD32;
+  static constexpr u32 R_TLSDESC = R_LARCH_TLS_DESC32;
   static constexpr u32 R_FUNCALL[] = { R_LARCH_B26, R_LARCH_CALL36 };
 };
 

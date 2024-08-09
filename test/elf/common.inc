@@ -61,7 +61,7 @@ fi
 case $MACHINE in
 x86_64 | i686 | arm)
   tlsdesc_opt=-mtls-dialect=gnu2 ;;
-aarch64)
+aarch64 | loongarch*)
   tlsdesc_opt=-mtls-dialect=desc ;;
 esac
 
