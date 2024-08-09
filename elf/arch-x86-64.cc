@@ -537,14 +537,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   call   *(%rax)
       //       R_X86_64_TLSDESC_CALL       foo
       //
-      // We may relax the instructions to the following for non-dlopen'd DSO
-      //
-      //   mov     foo@GOTTPOFF(%rip), %rax
-      //   nop
-      //
-      // or to the following for executable.
+      // We may relax the instructions to the following if its TP-relative
+      // address is known at link-time
       //
       //   mov     $foo@TPOFF, %rax
+      //   nop
+      //
+      // or to the following if the TP-relative address is known at
+      // process startup time.
+      //
+      //   mov     foo@GOTTPOFF(%rip), %rax
       //   nop
       //
       // We allow the following alternative code sequence too because

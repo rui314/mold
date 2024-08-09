@@ -383,19 +383,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   blr     x1
       //       R_AARCH64_TLSDESC_CALL       foo
       //
-      // We may relax the instructions to the following for non-dlopen'd DSO
-      //
-      //   nop
-      //   nop
-      //   adrp    x0, :gottprel:foo
-      //   ldr     x0, [x0, :gottprel_lo12:foo]
-      //
-      // or to the following for executable.
+      // We may relax the instructions to the following if its TP-relative
+      // address is known at link-time
       //
       //   nop
       //   nop
       //   movz    x0, :tls_offset_hi:foo, lsl #16
       //   movk    x0, :tls_offset_lo:foo
+      //
+      // or to the following if the TP-relative address is known at
+      // process startup time.
+      //
+      //   nop
+      //   nop
+      //   adrp    x0, :gottprel:foo
+      //   ldr     x0, [x0, :gottprel_lo12:foo]
       if (sym.has_tlsdesc(ctx)) {
         i64 val = page(sym.get_tlsdesc_addr(ctx) + A) - page(P);
         check(val, -(1LL << 32), 1LL << 32);

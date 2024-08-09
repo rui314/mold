@@ -559,19 +559,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   jirl      $ra, $ra, 0
       //       R_LARCH_TLS_DESC_CALL       foo
       //
-      // We may relax the instructions to the following for non-dlopen'd DSO
-      //
-      //   <nop>
-      //   <nop>
-      //   pcalau12i $a0, foo@GOTTP
-      //   ld.[dw]   $a0, $a0, foo@GOTTP
-      //
-      // or to the following for executable.
+      // We may relax the instructions to the following if its TP-relative
+      // address is known at link-time
       //
       //   <nop>
       //   <nop>
       //   lu12i.w   $a0, foo@TPOFF
       //   addi.w    $a0, $a0, foo@TPOFF
+      //
+      // or to the following if the TP-relative address is known at
+      // process startup time.
+      //
+      //   <nop>
+      //   <nop>
+      //   pcalau12i $a0, foo@GOTTP
+      //   ld.[dw]   $a0, $a0, foo@GOTTP
       //
       // Note that if section-shrinking relaxation is enabled, nop may be
       // completely deleted.

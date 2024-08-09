@@ -489,19 +489,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //  .L2: .word   foo + . - .L1
       //           R_ARM_TLS_GOTDESC
       //
-      // We may relax the instructions to the following for non-dlopen'd DSO
-      //
-      //       ldr     r0, .L2
-      //  .L1: ldr r0, [pc, r0]
-      //       ...
-      //  .L2: .word   foo(gottpoff) + . - .L1
-      //
-      // or to the following for executable.
+      // We may relax the instructions to the following if its TP-relative
+      // address is known at link-time
       //
       //       ldr     r0, .L2
       //  .L1: nop
       //       ...
       //  .L2: .word   foo(tpoff)
+      //
+      // or to the following if the TP-relative address is known at
+      // process startup time.
+      //
+      //       ldr     r0, .L2
+      //  .L1: ldr r0, [pc, r0]
+      //       ...
+      //  .L2: .word   foo(gottpoff) + . - .L1
       if (sym.has_tlsdesc(ctx)) {
         // A is odd if the corresponding TLS_CALL is Thumb.
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - ((A & 1) ? 6 : 4);
