@@ -1,0 +1,57 @@
+name: cross compile with android-ndk
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  cross-compile-for-android:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-20.04, macos-10.15]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - run:  brew install tree file
+
+      - run:  echo "ANDROID_NDK_HOME=${ANDROID_NDK_LATEST_HOME}" >> "$GITHUB_ENV"
+
+      - name: install prebuild openssl library
+        run:  |
+            curl -LO https://github.com/leleliu008/test/releases/download/20220103-1623/openssl-1.1.1g-bin.tar.xz
+            tar vxf openssl-1.1.1g-bin.tar.xz
+
+      - name: build and install mold
+        run: |
+          ANDROID_NDK_BASE=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$(uname | tr A-Z a-z)-$(uname -m)
+          ANDROID_NDK_BIND=$ANDROID_NDK_BASE/bin
+          SYSROOT=$ANDROID_NDK_BASE/sysroot
+
+          export PATH="$ANDROID_NDK_BIND:$PATH"
+
+          export CPPFLAGS="--sysroot $SYSROOT -I$PWD/openssl-1.1.1g-bin/arm64-v8a/include"
+          export CXXFLAGS="--sysroot $SYSROOT"
+          export   CFLAGS="--sysroot $SYSROOT"
+          export  LDFLAGS="--sysroot $SYSROOT -L$PWD/openssl-1.1.1g-bin/arm64-v8a/lib"
+
+          export CC=aarch64-linux-android21-clang
+          export CXX=${CC}++
+          export AR=llvm-ar
+          export STRIP=llvm-strip
+
+          make clean
+          make install PREFIX=$PWD/install.d OS=Android LTO=1
+
+      - run: tree install.d
+
+      - run: |
+          file install.d/lib/mold/mold-wrapper.so | grep 'ELF 64-bit LSB shared object, ARM aarch64,' ;;
+
+      - run: |
+          file install.d/bin/mold | grep 'ELF 64-bit LSB pie executable, ARM aarch64,' ;;
