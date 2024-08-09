@@ -264,7 +264,7 @@ public:
   std::span<FdeRecord<E>> get_fdes() const;
   std::string_view get_func_name(Context<E> &ctx, i64 offset) const;
   bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) const;
-  bool is_killed_by_icf() const;
+  bool icf_removed() const;
   bool record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
 
   std::pair<SectionFragment<E> *, i64>
@@ -2489,24 +2489,24 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   if (!isec || isec->is_alive)
     return {};
 
-  std::string_view s = name();
-  if (!s.starts_with(".debug"))
+  std::string_view str = name();
+  if (!str.starts_with(".debug"))
     return {};
 
   // If the section was dead due to ICF, we don't want to emit debug
   // info for that section but want to set real values to .debug_line so
   // that users can set a breakpoint inside a merged section.
-  if (isec->is_killed_by_icf() && s == ".debug_line")
+  if (isec->icf_removed() && str == ".debug_line")
     return {};
 
   // 0 is an invalid value in most debug info sections, so we use it
   // as a tombstone value. .debug_loc and .debug_ranges reserve 0 as
-  // the terminator marker, so we use 1 if that's the case.
-  return (s == ".debug_loc" || s == ".debug_ranges") ? 1 : 0;
+  // the terminator marker, so we use 1 if that'str the case.
+  return (str == ".debug_loc" || str == ".debug_ranges") ? 1 : 0;
 }
 
 template <typename E>
-inline bool InputSection<E>::is_killed_by_icf() const {
+inline bool InputSection<E>::icf_removed() const {
   return this->leader && this->leader != this;
 }
 
@@ -2616,7 +2616,7 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
     return value; // absolute symbol
 
   if (!isec->is_alive) {
-    if (isec->is_killed_by_icf())
+    if (isec->icf_removed())
       return isec->leader->get_addr() + value;
 
     if (isec->name() == ".eh_frame") {

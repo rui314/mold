@@ -1269,7 +1269,7 @@ std::vector<std::string_view> SharedFile<E>::get_dt_needed(Context<E> &ctx) {
   for (ElfPhdr<E> &phdr : this->get_phdrs())
     if (phdr.p_type == PT_DYNAMIC)
       dynamic = {(Word<E> *)(this->mf->data + phdr.p_offset),
-                 (size_t)(phdr.p_memsz / sizeof(Word<E>))};
+                 (size_t)phdr.p_memsz / sizeof(Word<E>)};
 
   // Find a string table
   char *strtab = nullptr;
