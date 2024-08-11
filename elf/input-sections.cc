@@ -170,8 +170,7 @@ static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
     break;
   case DYN_COPYREL:
     // Same as COPYREL but try to avoid creating a copy relocation by
-    // creating a dynamic relocation instead if the relocation is in
-    // a writable section.
+    // creating a dynamic relocation if possible.
     //
     // GHC (Glasgow Haskell Compiler) places a small amount of data in
     // .text before each function and access that data with a fixed
@@ -195,9 +194,9 @@ static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
     sym.flags |= NEEDS_CPLT;
     break;
   case DYN_CPLT:
-    // Same as CPLT but try to avoid creating a canonical PLT creating by
-    // creating a dynamic relocation instead if the relocation is in a
-    // writable section. The motivation behind it is hte same as DYN_COPYREL.
+    // Same as CPLT but try to avoid creating a canonical PLT by creating
+    // a dynamic relocation if possible. The motivation is the same as
+    // DYN_COPYREL.
     if (writable)
       dynrel();
     else
@@ -454,7 +453,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     return;
 
   // Copy data. In RISC-V and LoongArch object files, sections are not
-  // an atomic unit of copying because of relaxation. That is, some
+  // atomic unit of copying because of relaxation. That is, some
   // relocations are allowed to remove bytes from the middle of a
   // section and shrink the overall size of it.
   if constexpr (is_riscv<E> || is_loongarch<E>) {

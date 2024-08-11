@@ -1,12 +1,13 @@
-// Since RISC instructions are generally up to 32 bit long, there's no way
-// to embed very large immediates into their branch instructions. For
+// Since RISC instructions are generally up to 32 bits long, there's no
+// way to embed very large immediates into their branch instructions. For
 // example, RISC-V's JAL (jump and link) instruction can jump to only
 // within PC ± 1 MiB because its immediate is 21 bits long. If the
-// destination is further away, we need to use two instructions instead;
-// the first instruction being AUIPC which sets upper 20 bit of a
-// displacement to a register, and the second being JALR which specifies
-// the lower 12 bits and the register. Combined, they specify a 32 bit
-// displacement, which is sufficient to support the medium code model.
+// destination is further than that, we need to use two instructions
+// instead; the first instruction being AUIPC, which sets the upper 20
+// bits of a displacement to a register, and the second being JALR, which
+// specifies the lower 12 bits and the register. Combined, they specify a
+// 32-bit displacement, which is sufficient to support the medium code
+// model.
 //
 // However, always using two or more instructions for function calls is a
 // waste of time and space if the branch target is within a single
@@ -15,7 +16,7 @@
 //
 //  1. The compiler optimistically emits a single branch instruction for
 //     all function calls. The linker then checks if the branch target is
-//     reachable, and if not, redirect the branch to a linker-synthesized
+//     reachable, and if not, redirects the branch to a linker-synthesized
 //     code sequence that uses two or more instructions to branch further.
 //     That linker-synthesized code is called a "thunk". All RISC psABIs
 //     except RISC-V and LoongArch take this approach.
@@ -28,31 +29,31 @@
 // This file contains functions to support (2). For (1), see thunks.cc.
 //
 // With the presence of this code-shrinking relaxation, sections can no
-// longer be considered as an atomic unit. If we delete an instruction
-// from the middle of a section, section contents after that point needs
-// to be shifted by the size of the instruction. Symbols values and
-// relocations offsets have to be shifted too if they refers to past the
-// deleted bytes.
+// longer be considered as atomic units. If we delete an instruction from
+// the middle of a section, the section contents after that point need to
+// be shifted by the size of the instruction. Symbol values and relocation
+// offsets have to be shifted too if they refer to bytes past the deleted
+// ones.
 //
-// In mold, we use `r_deltas` to memorize how many bytes have be shifted
+// In mold, we use `r_deltas` to memorize how many bytes have been shifted
 // for relocations. For symbols, we directly mutate their `value` member.
 //
 // RISC-V and LoongArch object files tend to have way more relocations
 // than those for other targets. This is because all branches, including
-// ones that jump within the same section, are explicitly expressed with
-// relocations. Here is why we need them: all control-flow statements such
-// as `if` or `for` are implemented using branch instructions. For other
-// targets, the compiler doesn't emit relocations for such branches
-// because they know at compile-time exactly how many bytes has to be
+// those that jump within the same section, are explicitly expressed with
+// relocations. Here is why we need them: all control-flow statements,
+// such as `if` or `for`, are implemented using branch instructions. For
+// other targets, the compiler doesn't emit relocations for such branches
+// because it knows at compile-time exactly how many bytes have to be
 // skipped. That's not true in RISC-V and LoongArch because the linker may
-// delete bytes between a branch and its target. Therefore, all branches
-// including in-section ones have to be explicitly expressed with
+// delete bytes between a branch and its target. Therefore, all branches,
+// including in-section ones, have to be explicitly expressed with
 // relocations.
 //
-// Note that this mechanism only shrink sections and never enlarge, as
-// the compiler always emits the longest instruction sequence. This
-// makes the linker implementation a bit simpler because we don't need
-// to worry about oscillation.
+// Note that this mechanism only shrinks sections and never enlarges them,
+// as the compiler always emits the longest instruction sequence. This
+// makes the linker implementation a bit simpler because we don't need to
+// worry about oscillation.
 
 #if MOLD_RV64LE || MOLD_RV64BE || MOLD_RV32LE || MOLD_RV32BE || \
     MOLD_LOONGARCH64 || MOLD_LOONGARCH32

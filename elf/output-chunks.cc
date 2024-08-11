@@ -1335,7 +1335,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
   // arm64 psABI doesn't say anything about GOT[0], but glibc/arm64's code
-  // path for -static-pie wrongly assumed that GOT[0] refers _DYNAMIC.
+  // path for -static-pie wrongly assumed that GOT[0] refers to _DYNAMIC.
   //
   // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be5
   if constexpr (is_arm64<E>)
@@ -2421,8 +2421,8 @@ void VersymSection<E>::copy_buf(Context<E> &ctx) {
 //
 // .relr.dyn is relatively new feature and not supported by glibc until
 // 2.38 which was released in 2022. If we don't do anything, executables
-// built with `-z pack-relative-relocs` 't work and would crash
-// immediately on startup with an older version of glibc.
+// built with `-z pack-relative-relocs` would just crash immediately on
+// startup with an older version of glibc.
 //
 // As a workaround, we'll add a dependency to a dummy version name
 // "GLIBC_ABI_DT_RELR" if `-z pack-relative-relocs` is given so that
