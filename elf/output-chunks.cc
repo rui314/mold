@@ -858,7 +858,7 @@ void DynamicSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void DynamicSection<E>::copy_buf(Context<E> &ctx) {
   std::vector<Word<E>> contents = create_dynamic_section(ctx);
-  assert(this->shdr.sh_size == contents.size() * sizeof(contents[0]));
+  assert(this->shdr.sh_size == contents.size() * sizeof(Word<E>));
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
@@ -1000,25 +1000,24 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 // the .rel.dyn section). A bitmap has LSB 1.
 template <typename E>
 static std::vector<u64> encode_relr(std::span<u64> pos) {
+  for (i64 i = 0; i < pos.size(); i++) {
+    assert(pos[i] % sizeof(Word<E>) == 0);
+    assert(i == 0 || pos[i - 1] < pos[i]);
+  }
+
   std::vector<u64> vec;
   i64 num_bits = E::is_64 ? 63 : 31;
   i64 max_delta = sizeof(Word<E>) * num_bits;
 
   for (i64 i = 0; i < pos.size();) {
-    assert(i == 0 || pos[i - 1] < pos[i]);
-    assert(pos[i] % sizeof(Word<E>) == 0);
-
     vec.push_back(pos[i]);
     u64 base = pos[i] + sizeof(Word<E>);
     i++;
 
     for (;;) {
       u64 bits = 0;
-      for (; i < pos.size() && pos[i] - base < max_delta; i++) {
-        assert(pos[i - 1] < pos[i]);
-        assert(pos[i] % sizeof(Word<E>) == 0);
+      for (; i < pos.size() && pos[i] - base < max_delta; i++)
         bits |= (u64)1 << ((pos[i] - base) / sizeof(Word<E>));
-      }
 
       if (!bits)
         break;

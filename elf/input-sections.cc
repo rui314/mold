@@ -109,11 +109,13 @@ void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
 template <typename E>
 static bool
 is_relr_reloc(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel) {
-  ElfShdr<E> shdr = isec.shdr();
-  return ctx.arg.pack_dyn_relocs_relr &&
-         !(shdr.sh_flags & SHF_EXECINSTR) &&
-         shdr.sh_addralign % sizeof(Word<E>) == 0 &&
-         rel.r_offset % sizeof(Word<E>) == 0;
+  if (ctx.arg.pack_dyn_relocs_relr &&
+      rel.r_offset % sizeof(Word<E>) == 0) {
+    const ElfShdr<E> &shdr = isec.shdr();
+    return !(shdr.sh_flags & SHF_EXECINSTR) &&
+           shdr.sh_addralign % sizeof(Word<E>) == 0;
+  }
+  return false;
 }
 
 template <typename E>

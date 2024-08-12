@@ -304,7 +304,7 @@ static void relax_gd_to_ie(u8 *loc, ElfRel<E> rel, u64 val) {
 // sequence. The difference from relax_gd_to_le is that we are materializing
 // the address of the beginning of TLS block instead of an address of a
 // particular thread-local variable.
-static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
+static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, i64 tls_size) {
   switch (rel.r_type) {
   case R_X86_64_PLT32:
   case R_X86_64_PC32: {
@@ -315,7 +315,7 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
     //
     // Because the original instruction sequence is so short that we need a
     // little bit of code golfing here. "mov %fs:0, %rax" is 9 byte long, so
-    // xor and mov is shorter. Note that `xor %eax, %eax` zero-clears %eax.
+    // xor + mov is shorter. Note that `xor %eax, %eax` zero-clears %eax.
     static const u8 insn[] = {
       0x31, 0xc0,                   // xor %eax, %eax
       0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
@@ -332,13 +332,12 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
     //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
     //  ff 15 00 00 00 00       call   *__tls_get_addr@GOT(%rip)
     static const u8 insn[] = {
-      0x31, 0xc0,                   // xor %eax, %eax
+      0x48, 0x31, 0xc0,             // xor %rax, %rax
       0x64, 0x48, 0x8b, 0x00,       // mov %fs:(%rax), %rax
       0x48, 0x2d, 0, 0, 0, 0,       // sub $tls_size, %rax
-      0x90,                         // nop
     };
     memcpy(loc - 3, insn, sizeof(insn));
-    *(ul32 *)(loc + 5) = tls_size;
+    *(ul32 *)(loc + 6) = tls_size;
     break;
   }
   case R_X86_64_PLTOFF64: {
