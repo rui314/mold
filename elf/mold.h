@@ -1600,23 +1600,6 @@ public:
 template <> u64 get_eflags(Context<PPC64V2> &ctx);
 
 //
-// arch-sparc.cc
-//
-
-class SparcTlsGetAddrSection : public Chunk<SPARC64> {
-public:
-  SparcTlsGetAddrSection() {
-    this->name = ".tls_get_addr";
-    this->shdr.sh_type = SHT_PROGBITS;
-    this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-    this->shdr.sh_addralign = 4;
-    this->shdr.sh_size = 24;
-  }
-
-  void copy_buf(Context<SPARC64> &ctx) override;
-};
-
-//
 // arch-alpha.cc
 //
 
@@ -1747,7 +1730,6 @@ struct ContextExtras<PPC64V2> {
 
 template <>
 struct ContextExtras<SPARC64> {
-  SparcTlsGetAddrSection *tls_get_addr_sec = nullptr;
   Symbol<SPARC64> *tls_get_addr_sym = nullptr;
 };
 
