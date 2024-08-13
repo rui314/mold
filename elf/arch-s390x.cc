@@ -256,7 +256,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc = (GOT + A - P) >> 1;
       break;
     case R_390_GOTENT:
-      check(GOT + G + A - P, -(1LL << 32), 1LL << 32);
+      check_dbl(GOT + G + A - P, -(1LL << 32), 1LL << 32);
       *(ub32 *)loc = (GOT + G + A - P) >> 1;
       break;
     case R_390_TLS_LE32:
@@ -303,22 +303,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_390_TLS_LDM32:
       if (ctx.got->has_tlsld(ctx))
         *(ub32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
+      else
+        *(ub32 *)loc = ctx.dtp_addr - ctx.tp_addr;
       break;
     case R_390_TLS_LDM64:
       if (ctx.got->has_tlsld(ctx))
         *(ub64 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
-      break;
-    case R_390_TLS_LDO32:
-      if (ctx.got->has_tlsld(ctx))
-        *(ub32 *)loc = S + A - ctx.dtp_addr;
       else
-        *(ub32 *)loc = S + A - ctx.tp_addr;
-      break;
-    case R_390_TLS_LDO64:
-      if (ctx.got->has_tlsld(ctx))
-        *(ub64 *)loc = S + A - ctx.dtp_addr;
-      else
-        *(ub64 *)loc = S + A - ctx.tp_addr;
+        *(ub64 *)loc = ctx.dtp_addr - ctx.tp_addr;
       break;
     case R_390_TLS_LDCALL:
       if (!ctx.got->has_tlsld(ctx)) {
@@ -326,6 +318,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         static u8 insn[] = { 0xc0, 0x04, 0x00, 0x00, 0x00, 0x00 };
         memcpy(loc, insn, sizeof(insn));
       }
+      break;
+    case R_390_TLS_LDO32:
+      *(ub32 *)loc = S + A - ctx.dtp_addr;
+      break;
+    case R_390_TLS_LDO64:
+      *(ub64 *)loc = S + A - ctx.dtp_addr;
       break;
     default:
       unreachable();
