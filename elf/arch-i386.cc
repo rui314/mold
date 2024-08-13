@@ -226,7 +226,7 @@ static void relax_gd_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
 }
 
 // Relax LD to LE
-static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
+static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
   switch (rel.r_type) {
   case R_386_PLT32:
   case R_386_PC32: {
@@ -235,7 +235,7 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
       0x2d, 0, 0, 0, 0,       // sub $tls_size, %eax
     };
     memcpy(loc - 2, insn, sizeof(insn));
-    *(ul32 *)(loc + 5) = val;
+    *(ul32 *)(loc + 5) = tls_size;
     break;
   }
   case R_386_GOT32:
@@ -246,7 +246,7 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 val) {
       0x90,                   // nop
     };
     memcpy(loc - 2, insn, sizeof(insn));
-    *(ul32 *)(loc + 5) = val;
+    *(ul32 *)(loc + 5) = tls_size;
     break;
   }
   default:
@@ -374,7 +374,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_386_TLS_LDM:
       if (ctx.got->has_tlsld(ctx))
         *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - GOT;
-        else
+      else
         relax_ld_to_le(loc, rels[++i], ctx.tp_addr - ctx.tls_begin);
       break;
     case R_386_TLS_LDO_32:
