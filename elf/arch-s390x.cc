@@ -457,7 +457,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       // We always want to relax calls to __tls_get_offset() in statically-
       // linked executables because __tls_get_offset() in libc.a just calls
       // abort().
-      if ((ctx.arg.relax && sym.is_tprel_linktime_const(ctx)) || ctx.arg.static_) {
+      if (ctx.arg.static_ || (ctx.arg.relax && sym.is_tprel_linktime_const(ctx))) {
         // Do nothing
       } else if (ctx.arg.relax && sym.is_tprel_runtime_const(ctx)) {
         sym.flags |= NEEDS_GOTTP;

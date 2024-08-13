@@ -1730,7 +1730,7 @@ struct ContextExtras<PPC64V2> {
 
 template <>
 struct ContextExtras<SPARC64> {
-  Symbol<SPARC64> *tls_get_addr_sym = nullptr;
+  Symbol<SPARC64> *tls_get_addr = nullptr;
 };
 
 template <>
