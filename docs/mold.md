@@ -467,13 +467,13 @@ but as `-o magic`.
   The `--no-as-needed` option restores the default behavior for subsequent
   files.
 
-* `--build-id`=[ `md5` | `sha1` | `sha256` | `uuid` | `0x`_hexstring_ | `none` ]:
+* `--build-id`=[ `md5` | `sha1` | `sha256` | `fast` | `uuid` | `0x`_hexstring_ | `none` ]:
   Create a `.note.gnu.build-id` section containing a byte string to uniquely
   identify an output file. `sha256` compute a 256-bit cryptographic hash of an
   output file and set it to build-id. `md5` and `sha1` compute the same hash
   but truncate it to 128 and 160 bits, respectively, before setting it to
   build-id. `uuid` sets a random 128-bit UUID. `0x`_hexstring_ sets
-  _hexstring_.
+  _hexstring_. `fast` is a synonym for `sha256`.
 
 * `--build-id`:
   Synonym for `--build-id=sha256`.

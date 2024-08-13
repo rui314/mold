@@ -72,7 +72,7 @@ Options:
     --no-apply-dynamic-relocs
   --as-needed                 Only set DT_NEEDED if used
     --no-as-needed
-  --build-id [none,md5,sha1,sha256,uuid,HEXSTRING]
+  --build-id [none,md5,sha1,sha256,fast,uuid,HEXSTRING]
                               Generate build ID
     --no-build-id
   --chroot DIR                Set a given path to the root directory
@@ -1232,7 +1232,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       } else if (arg == "sha1") {
         ctx.arg.build_id.kind = BuildId::HASH;
         ctx.arg.build_id.hash_size = 20;
-      } else if (arg == "sha256") {
+      } else if (arg == "sha256" || arg == "fast") {
         ctx.arg.build_id.kind = BuildId::HASH;
         ctx.arg.build_id.hash_size = 32;
       } else if (arg.starts_with("0x") || arg.starts_with("0X")) {
