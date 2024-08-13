@@ -262,8 +262,8 @@ By default, shared libraries given to the linker are unconditionally added to th
 .IP
 The \fB\-\-no\-as\-needed\fR option restores the default behavior for subsequent files\.
 .TP
-\fB\-\-build\-id\fR=[ \fBmd5\fR | \fBsha1\fR | \fBsha256\fR | \fBuuid\fR | \fB0x\fR\fIhexstring\fR | \fBnone\fR ]
-Create a \fB\.note\.gnu\.build\-id\fR section containing a byte string to uniquely identify an output file\. \fBsha256\fR compute a 256\-bit cryptographic hash of an output file and set it to build\-id\. \fBmd5\fR and \fBsha1\fR compute the same hash but truncate it to 128 and 160 bits, respectively, before setting it to build\-id\. \fBuuid\fR sets a random 128\-bit UUID\. \fB0x\fR\fIhexstring\fR sets \fIhexstring\fR\.
+\fB\-\-build\-id\fR=[ \fBmd5\fR | \fBsha1\fR | \fBsha256\fR | \fBfast\fR | \fBuuid\fR | \fB0x\fR\fIhexstring\fR | \fBnone\fR ]
+Create a \fB\.note\.gnu\.build\-id\fR section containing a byte string to uniquely identify an output file\. \fBsha256\fR compute a 256\-bit cryptographic hash of an output file and set it to build\-id\. \fBmd5\fR and \fBsha1\fR compute the same hash but truncate it to 128 and 160 bits, respectively, before setting it to build\-id\. \fBuuid\fR sets a random 128\-bit UUID\. \fB0x\fR\fIhexstring\fR sets \fIhexstring\fR\. \fBfast\fR is a synonym for \fBsha256\fR\.
 .TP
 \fB\-\-build\-id\fR
 Synonym for \fB\-\-build\-id=sha256\fR\.
