@@ -20,7 +20,7 @@ fi
 
 # Set tool names
 if [ -z "$TRIPLE" ]; then
-  TESTDIR=out/test/elf/$MACHINE
+  TESTDIR=out/test/$MACHINE
   CC="${TEST_CC:-cc}"
   CXX="${TEST_CXX:-c++}"
   GCC="${TEST_GCC:-gcc}"
@@ -31,7 +31,7 @@ if [ -z "$TRIPLE" ]; then
   QEMU=
 elif [ "$TRIPLE" = powerpc64le-linux-gnu -a "$CPU" = power10 ]; then
   MACHINE=ppc64le
-  TESTDIR=out/test/elf/ppc64le-power10
+  TESTDIR=out/test/ppc64le-power10
   CC="${TEST_CC:-$TRIPLE-gcc} -mcpu=power10"
   CXX="${TEST_CXX:-$TRIPLE-g++} -mcpu=power10"
   GCC="${TEST_GCC:-$TRIPLE-gcc} -mcpu=power10"
@@ -42,7 +42,7 @@ elif [ "$TRIPLE" = powerpc64le-linux-gnu -a "$CPU" = power10 ]; then
   QEMU="qemu-ppc64le -L /usr/$TRIPLE -cpu power10"
 else
   MACHINE=$(canonical_name $(echo $TRIPLE | sed 's/-.*//'))
-  TESTDIR=out/test/elf/$MACHINE
+  TESTDIR=out/test/$MACHINE
   CC="${TEST_CC:-$TRIPLE-gcc}"
   CXX="${TEST_CXX:-$TRIPLE-g++}"
   GCC="${TEST_GCC:-$TRIPLE-gcc}"
@@ -88,7 +88,7 @@ supports_tlsdesc() {
   # musl's tlsdesc on arm32 seems to be broken
   [ $MACHINE = arm ] && is_musl && return 1
 
-  [ -n "$tlsdesc_opt" ]
+  [ "$tlsdesc_opt" != '' ]
 }
 
 on_qemu() {

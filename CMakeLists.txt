@@ -425,7 +425,7 @@ if(BUILD_TESTING)
   endif()
 
   if(${UNIX})
-    add_subdirectory(test/elf)
+    add_subdirectory(test)
   endif()
 endif()
 
