@@ -252,7 +252,7 @@ if(NOT APPLE AND NOT WIN32)
   # Remove the default `lib` prefix
   set_target_properties(mold-wrapper PROPERTIES PREFIX "")
   target_link_libraries(mold-wrapper PRIVATE ${CMAKE_DL_LIBS})
-  target_sources(mold-wrapper PRIVATE elf/mold-wrapper.c)
+  target_sources(mold-wrapper PRIVATE src/mold-wrapper.c)
 endif()
 
 # If atomics doesn't work by default, add -latomic.
@@ -284,15 +284,15 @@ add_custom_target(git_hash
   COMMAND ${CMAKE_COMMAND}
     -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
     -DOUTPUT_FILE=${CMAKE_BINARY_DIR}/git-hash.cc
-    -P ${CMAKE_SOURCE_DIR}/common/update-git-hash.cmake
-  DEPENDS common/update-git-hash.cmake
+    -P ${CMAKE_SOURCE_DIR}/lib/update-git-hash.cmake
+  DEPENDS lib/update-git-hash.cmake
   BYPRODUCTS git-hash.cc
   VERBATIM)
 
 add_dependencies(mold git_hash)
 
 # Create config.h file
-configure_file(common/config.h.in config.h)
+configure_file(lib/config.h.in config.h)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # Almost all functions are template in mold which take a target type
@@ -308,35 +308,35 @@ list(APPEND MOLD_ELF_TARGETS
   S390X SPARC64 M68K SH4 ALPHA LOONGARCH32 LOONGARCH64)
 
 list(APPEND MOLD_ELF_TEMPLATE_FILES
-  elf/arch-loongarch.cc
-  elf/arch-riscv.cc
-  elf/cmdline.cc
-  elf/gc-sections.cc
-  elf/gdb-index.cc
-  elf/icf.cc
-  elf/input-files.cc
-  elf/input-sections.cc
-  elf/linker-script.cc
-  elf/main.cc
-  elf/mapfile.cc
-  elf/output-chunks.cc
-  elf/passes.cc
-  elf/relocatable.cc
-  elf/shrink-sections.cc
-  elf/thunks.cc
-  elf/tls.cc
+  src/arch-loongarch.cc
+  src/arch-riscv.cc
+  src/cmdline.cc
+  src/gc-sections.cc
+  src/gdb-index.cc
+  src/icf.cc
+  src/input-files.cc
+  src/input-sections.cc
+  src/linker-script.cc
+  src/main.cc
+  src/mapfile.cc
+  src/output-chunks.cc
+  src/passes.cc
+  src/relocatable.cc
+  src/shrink-sections.cc
+  src/thunks.cc
+  src/tls.cc
   )
 
 if(WIN32 AND NOT MINGW)
-  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/lto-win32.cc)
+  list(APPEND MOLD_ELF_TEMPLATE_FILES src/lto-win32.cc)
 else()
-  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/lto-unix.cc)
+  list(APPEND MOLD_ELF_TEMPLATE_FILES src/lto-unix.cc)
 endif()
 
 if(WIN32)
-  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/subprocess-win32.cc)
+  list(APPEND MOLD_ELF_TEMPLATE_FILES src/subprocess-win32.cc)
 else()
-  list(APPEND MOLD_ELF_TEMPLATE_FILES elf/subprocess-unix.cc)
+  list(APPEND MOLD_ELF_TEMPLATE_FILES src/subprocess-unix.cc)
 endif()
 
 function(mold_instantiate_templates SOURCE TARGET)
@@ -358,46 +358,46 @@ endforeach()
 
 # Add other non-template source files.
 target_sources(mold PRIVATE
-  common/compress.cc
-  common/crc32.cc
-  common/demangle.cc
-  common/filepath.cc
-  common/glob.cc
-  common/hyperloglog.cc
-  common/malloc.cc
-  common/multi-glob.cc
-  common/perf.cc
-  common/random.cc
-  common/tar.cc
-  elf/arch-alpha.cc
-  elf/arch-arm32.cc
-  elf/arch-arm64.cc
-  elf/arch-i386.cc
-  elf/arch-m68k.cc
-  elf/arch-ppc32.cc
-  elf/arch-ppc64v1.cc
-  elf/arch-ppc64v2.cc
-  elf/arch-s390x.cc
-  elf/arch-sh4.cc
-  elf/arch-sparc64.cc
-  elf/arch-x86-64.cc
-  elf/config.cc
-  elf/elf.cc
   git-hash.cc
+  lib/compress.cc
+  lib/crc32.cc
+  lib/demangle.cc
+  lib/elf.cc
+  lib/filepath.cc
+  lib/glob.cc
+  lib/hyperloglog.cc
+  lib/malloc.cc
+  lib/multi-glob.cc
+  lib/perf.cc
+  lib/random.cc
+  lib/tar.cc
+  src/arch-alpha.cc
+  src/arch-arm32.cc
+  src/arch-arm64.cc
+  src/arch-i386.cc
+  src/arch-m68k.cc
+  src/arch-ppc32.cc
+  src/arch-ppc64v1.cc
+  src/arch-ppc64v2.cc
+  src/arch-s390x.cc
+  src/arch-sh4.cc
+  src/arch-sparc64.cc
+  src/arch-x86-64.cc
+  src/config.cc
   third-party/rust-demangle/rust-demangle.c
   )
 
 if(WIN32)
   target_sources(mold PRIVATE
-    common/jobs-win32.cc
-    common/mapped-file-win32.cc
-    common/signal-win32.cc
+    lib/jobs-win32.cc
+    lib/mapped-file-win32.cc
+    lib/signal-win32.cc
     )
 else()
   target_sources(mold PRIVATE
-    common/jobs-unix.cc
-    common/mapped-file-unix.cc
-    common/signal-unix.cc
+    lib/jobs-unix.cc
+    lib/mapped-file-unix.cc
+    lib/signal-unix.cc
     )
 endif()
 
