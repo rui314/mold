@@ -190,9 +190,6 @@ void create_synthetic_sections(Context<E> &ctx) {
   if constexpr (is_ppc64v2<E>)
     ctx.extra.save_restore = push(new PPC64SaveRestoreSection);
 
-  if constexpr (is_sparc<E>)
-    ctx.extra.tls_get_addr = get_symbol(ctx, "__tls_get_addr");
-
   if constexpr (is_alpha<E>)
     ctx.extra.got = push(new AlphaGotSection);
 }

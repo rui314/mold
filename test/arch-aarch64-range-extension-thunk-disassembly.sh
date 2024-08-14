@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = aarch64 ] || skip
-
 cat <<EOF | $CC -c -o $t/a.o -fPIC -xc -
 #include <stdio.h>
 

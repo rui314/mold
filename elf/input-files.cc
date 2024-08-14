@@ -243,7 +243,7 @@ static bool is_known_section_type(const ElfShdr<E> &shdr) {
     return true;
   if (SHT_LOOS <= ty && ty <= SHT_HIOS && !(flags & SHF_OS_NONCONFORMING))
     return true;
-  if (is_x86<E> && ty == SHT_X86_64_UNWIND)
+  if (is_x86_64<E> && ty == SHT_X86_64_UNWIND)
     return true;
   if (is_arm32<E> && (ty == SHT_ARM_EXIDX || ty == SHT_ARM_ATTRIBUTES))
     return true;

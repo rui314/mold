@@ -1856,7 +1856,7 @@ template <>
 struct ElfRel<SH4> {
   ElfRel() = default;
 
-  // Addend is ignored except for base relocations because  even though
+  // Addend is ignored except for base relocations because even though
   // SH4 is RELA, r_addend is ignored in most cases and works as if it
   // were REL.
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)

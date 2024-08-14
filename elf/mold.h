@@ -1748,6 +1748,9 @@ struct Context {
     arg.entry = get_symbol(*this, "_start");
     arg.fini = get_symbol(*this, "_fini");
     arg.init = get_symbol(*this, "_init");
+
+    if constexpr (is_sparc<E>)
+      extra.tls_get_addr = get_symbol(*this, "__tls_get_addr");
   }
 
   Context(const Context<E> &) = delete;
