@@ -51,7 +51,7 @@ static u64 hi20(u64 val, u64 pc) {
   return bits(page(val + 0x800) - page(pc), 31, 12);
 }
 
-static u64 hi64(u64 val, u64 pc) {
+static u64 higher20(u64 val, u64 pc) {
   // A PC-relative 64-bit address is materialized with the following
   // instructions for the large code model:
   //
@@ -65,21 +65,15 @@ static u64 hi64(u64 val, u64 pc) {
   // ADDI.D adds a sign-extended 12 bit value to a register. LU32I.D and
   // LU52I.D simply set bits to [51:31] and to [63:53], respectively.
   //
-  // Compensating all the sign-extensions is a bit complicated.
-  u64 x = page(val) - page(pc);
-  if (val & 0x800)
-    x += 0x1000 - 0x1'0000'0000;
-  if (x & 0x8000'0000)
-    x += 0x1'0000'0000;
-  return x;
-}
-
-static u64 higher20(u64 val, u64 pc) {
-  return bits(hi64(val, pc), 51, 32);
+  // Compensating all the sign-extensions is a bit complicated. The
+  // psABI gave the following formula.
+  val = val + 0x8000'0000 + ((val & 0x800) ? (0x1000 - 0x1'0000'0000) : 0);
+  return bits(page(val) - page(pc - 8), 51, 32);
 }
 
 static u64 highest12(u64 val, u64 pc) {
-  return bits(hi64(val, pc), 63, 52);
+  val = val + 0x8000'0000 + ((val & 0x800) ? (0x1000 - 0x1'0000'0000) : 0);
+  return bits(page(val) - page(pc - 12), 63, 52);
 }
 
 static void write_k12(u8 *loc, u32 val) {
