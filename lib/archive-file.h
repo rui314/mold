@@ -26,7 +26,6 @@
 #pragma once
 
 #include "common.h"
-#include "filetype.h"
 
 namespace mold {
 
@@ -164,14 +163,11 @@ std::vector<MappedFile *> read_fat_archive_members(Context &ctx, MappedFile *mf)
 
 template <typename Context, typename MappedFile>
 std::vector<MappedFile *> read_archive_members(Context &ctx, MappedFile *mf) {
-  switch (get_file_type(ctx, mf)) {
-  case FileType::AR:
+  std::string_view str = mf->get_contents();
+  if (str.starts_with("!<arch>\n"))
     return read_fat_archive_members(ctx, mf);
-  case FileType::THIN_AR:
-    return read_thin_archive_members(ctx, mf);
-  default:
-    unreachable();
-  }
+  assert(str.starts_with("!<thin>\n"));
+  return read_thin_archive_members(ctx, mf);
 }
 
 } // namespace mold

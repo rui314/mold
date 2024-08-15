@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "filetype.h"
 #include "../lib/archive-file.h"
 #include "../lib/output-file.h"
 

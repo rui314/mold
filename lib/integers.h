@@ -8,12 +8,12 @@
 //    big-endian SPARC machine to create a little-endian RV64 binary.
 //
 // 2. Even though data members in all ELF data strucutres are naturally
-//    aligned, they are not guaranteed to be aligned on memory. Because
-//    archive file (.a file) aligns each member only to a 2 byte boundary,
-//    anything larger than 2 bytes may be unaligned in an mmap'ed memory.
-//    Unaligned access is an undefined behavior in C/C++, so we shouldn't
-//    cast an arbitrary pointer to a uint32_t, for example, to read a
-//    32 bit value.
+//    aligned, they are not guaranteed to be aligned on memory because of
+//    archive files. Archive files (.a files) align each member only to a
+//    2 byte boundary, so anything larger than 2 bytes may be misaligned
+//    in an mmap'ed memory. Misaligned access is an undefined behavior in
+//    C/C++, so we shouldn't cast an arbitrary pointer to a uint32_t, for
+//    example, to read a 32 bit value.
 //
 // The data types defined in this file don't depend on host byte order and
 // don't do unaligned access.

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../lib/common.h"
-#include "../lib/elf.h"
+#include "elf.h"
 
 #include <atomic>
 #include <bitset>

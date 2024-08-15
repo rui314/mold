@@ -1,6 +1,6 @@
 #pragma once
 
-#include "integers.h"
+#include "../lib/integers.h"
 
 #include <concepts>
 #include <ostream>

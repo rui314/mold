@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common.h"
+#include "../lib/common.h"
 #include "elf.h"
 
 namespace mold {
@@ -140,23 +140,23 @@ FileType get_file_type(Context &ctx, MappedFile *mf) {
   return FileType::UNKNOWN;
 }
 
-inline std::string filetype_to_string(FileType type) {
-  switch (type) {
-  case FileType::UNKNOWN: return "UNKNOWN";
-  case FileType::EMPTY: return "EMPTY";
-  case FileType::ELF_OBJ: return "ELF_OBJ";
-  case FileType::ELF_DSO: return "ELF_DSO";
-  case FileType::AR: return "AR";
-  case FileType::THIN_AR: return "THIN_AR";
-  case FileType::TEXT: return "TEXT";
-  case FileType::GCC_LTO_OBJ: return "GCC_LTO_OBJ";
-  case FileType::LLVM_BITCODE: return "LLVM_BITCODE";
-  }
-  return "UNKNOWN";
-}
-
 inline std::ostream &operator<<(std::ostream &out, FileType type) {
-  out << filetype_to_string(type);
+  auto to_string = [&] {
+    switch (type) {
+    case FileType::UNKNOWN: return "UNKNOWN";
+    case FileType::EMPTY: return "EMPTY";
+    case FileType::ELF_OBJ: return "ELF_OBJ";
+    case FileType::ELF_DSO: return "ELF_DSO";
+    case FileType::AR: return "AR";
+    case FileType::THIN_AR: return "THIN_AR";
+    case FileType::TEXT: return "TEXT";
+    case FileType::GCC_LTO_OBJ: return "GCC_LTO_OBJ";
+    case FileType::LLVM_BITCODE: return "LLVM_BITCODE";
+    default: return "UNKNOWN";
+    }
+  };
+
+  out << to_string();
   return out;
 }
 

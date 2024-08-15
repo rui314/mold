@@ -1,3 +1,5 @@
+// This file contains functions to create a tar file.
+
 #include "common.h"
 
 #ifdef _WIN32

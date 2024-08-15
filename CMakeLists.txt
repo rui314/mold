@@ -362,7 +362,6 @@ target_sources(mold PRIVATE
   lib/compress.cc
   lib/crc32.cc
   lib/demangle.cc
-  lib/elf.cc
   lib/filepath.cc
   lib/glob.cc
   lib/hyperloglog.cc
@@ -384,6 +383,7 @@ target_sources(mold PRIVATE
   src/arch-sparc64.cc
   src/arch-x86-64.cc
   src/config.cc
+  src/elf.cc
   third-party/rust-demangle/rust-demangle.c
   )
 
