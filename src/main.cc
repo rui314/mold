@@ -579,6 +579,10 @@ int mold_main(int argc, char **argv) {
   if (ctx.arg.pack_dyn_relocs_relr)
     construct_relr(ctx);
 
+  // Convert an .ARM.exidx to a synthetic section.
+  if constexpr (is_arm32<E>)
+    create_arm_exidx_section(ctx);
+
   // Reserve a space for dynamic symbol strings in .dynstr and sort
   // .dynsym contents if necessary. Beyond this point, no symbol will
   // be added to .dynsym.

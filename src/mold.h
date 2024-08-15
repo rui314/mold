@@ -1528,7 +1528,20 @@ void rewrite_endbr(Context<X86_64> &ctx);
 // arch-arm32.cc
 //
 
+class Arm32ExidxSection : public Chunk<ARM32> {
+public:
+  Arm32ExidxSection(Context<ARM32> &ctx, OutputSection<ARM32> &osec);
+  void update_shdr(Context<ARM32> &ctx) override;
+  void copy_buf(Context<ARM32> &ctx) override;
+
+private:
+  std::vector<u8> get_contents(Context<ARM32> &ctx);
+
+  OutputSection<ARM32> &output_section;
+};
+
 template <> u64 get_eflags(Context<ARM32> &ctx);
+void create_arm_exidx_section(Context<ARM32> &ctx);
 void fixup_arm_exidx_section(Context<ARM32> &ctx);
 
 //
@@ -1704,6 +1717,11 @@ struct SectionOrder {
 // Target-specific context members
 template <typename E>
 struct ContextExtras {};
+
+template <>
+struct ContextExtras<ARM32> {
+  Arm32ExidxSection *exidx = nullptr;
+};
 
 template <is_riscv E>
 struct ContextExtras<E> {

@@ -1662,9 +1662,6 @@ void copy_chunks(Context<E> &ctx) {
   // undefined errors.
   report_undef_errors(ctx);
 
-  if constexpr (is_arm32<E>)
-    fixup_arm_exidx_section(ctx);
-
   // Zero-clear paddings between chunks
   auto zero = [&](Chunk<E> *chunk, i64 next_start) {
     i64 pos = chunk->shdr.sh_offset + chunk->shdr.sh_size;

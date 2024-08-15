@@ -295,8 +295,8 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create a PT_ARM_EDXIDX
   if constexpr (is_arm32<E>)
-    if (Chunk<E> *chunk = find_chunk(ctx, SHT_ARM_EXIDX))
-      define(PT_ARM_EXIDX, PF_R, chunk);
+    if (ctx.extra.exidx)
+      define(PT_ARM_EXIDX, PF_R, ctx.extra.exidx);
 
   // Create a PT_RISCV_ATTRIBUTES
   if constexpr (is_riscv<E>)
