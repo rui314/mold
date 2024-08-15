@@ -186,7 +186,7 @@ u64 get_dtp_addr(const ElfPhdr<E> &phdr) {
 
 using E = MOLD_TARGET;
 
-template u64 get_tp_addr<E>(const ElfPhdr<E> &);
-template u64 get_dtp_addr<E>(const ElfPhdr<E> &);
+template u64 get_tp_addr(const ElfPhdr<E> &);
+template u64 get_dtp_addr(const ElfPhdr<E> &);
 
 } // namespace mold

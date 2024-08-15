@@ -17,8 +17,7 @@ enum class FileType {
   LLVM_BITCODE,
 };
 
-template <typename MappedFile>
-bool is_text_file(MappedFile *mf) {
+inline bool is_text_file(MappedFile *mf) {
   auto istext = [](char c) {
     return isprint(c) || c == '\n' || c == '\t';
   };
@@ -28,8 +27,8 @@ bool is_text_file(MappedFile *mf) {
          istext(data[2]) && istext(data[3]);
 }
 
-template <typename E, typename Context, typename MappedFile>
-inline bool is_gcc_lto_obj(Context &ctx, MappedFile *mf) {
+template <typename E>
+inline bool is_gcc_lto_obj(MappedFile *mf, bool has_plugin) {
   const char *data = mf->get_contents().data();
   ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data;
   ElfShdr<E> *sh_begin = (ElfShdr<E> *)(data + ehdr.e_shoff);
@@ -46,7 +45,7 @@ inline bool is_gcc_lto_obj(Context &ctx, MappedFile *mf) {
     // the LTO linker plugin is available and falls back as regular
     // objects otherwise. GCC FAT LTO object can be identified by the
     // presence of `.gcc.lto_.symtab` section.
-    if (!ctx.arg.plugin.empty()) {
+    if (has_plugin) {
       std::string_view name = data + shdrs[shstrtab_idx].sh_offset + sec.sh_name;
       if (name.starts_with(".gnu.lto_.symtab."))
         return true;
@@ -81,9 +80,10 @@ inline bool is_gcc_lto_obj(Context &ctx, MappedFile *mf) {
   return false;
 }
 
-template <typename Context, typename MappedFile>
-FileType get_file_type(Context &ctx, MappedFile *mf) {
+template <typename E>
+FileType get_file_type(Context<E> &ctx, MappedFile *mf) {
   std::string_view data = mf->get_contents();
+  bool has_plugin = !ctx.arg.plugin.empty();
 
   if (data.empty())
     return FileType::EMPTY;
@@ -96,10 +96,10 @@ FileType get_file_type(Context &ctx, MappedFile *mf) {
 
       if (ehdr.e_type == ET_REL) {
         if (ehdr.e_ident[EI_CLASS] == ELFCLASS32) {
-          if (is_gcc_lto_obj<I386>(ctx, mf))
+          if (is_gcc_lto_obj<I386>(mf, has_plugin))
             return FileType::GCC_LTO_OBJ;
         } else {
-          if (is_gcc_lto_obj<X86_64>(ctx, mf))
+          if (is_gcc_lto_obj<X86_64>(mf, has_plugin))
             return FileType::GCC_LTO_OBJ;
         }
         return FileType::ELF_OBJ;
@@ -112,10 +112,10 @@ FileType get_file_type(Context &ctx, MappedFile *mf) {
 
       if (ehdr.e_type == ET_REL) {
         if (ehdr.e_ident[EI_CLASS] == ELFCLASS32) {
-          if (is_gcc_lto_obj<M68K>(ctx, mf))
+          if (is_gcc_lto_obj<M68K>(mf, has_plugin))
             return FileType::GCC_LTO_OBJ;
         } else {
-          if (is_gcc_lto_obj<SPARC64>(ctx, mf))
+          if (is_gcc_lto_obj<SPARC64>(mf, has_plugin))
             return FileType::GCC_LTO_OBJ;
         }
         return FileType::ELF_OBJ;
