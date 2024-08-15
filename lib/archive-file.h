@@ -75,7 +75,7 @@ struct ArHdr {
   }
 };
 
-template <typename Context, typename MappedFile>
+template <typename Context>
 std::vector<MappedFile *>
 read_thin_archive_members(Context &ctx, MappedFile *mf) {
   u8 *begin = mf->data;
@@ -123,7 +123,7 @@ read_thin_archive_members(Context &ctx, MappedFile *mf) {
   return vec;
 }
 
-template <typename Context, typename MappedFile>
+template <typename Context>
 std::vector<MappedFile *> read_fat_archive_members(Context &ctx, MappedFile *mf) {
   u8 *begin = mf->data;
   u8 *data = begin + 8;
@@ -161,7 +161,7 @@ std::vector<MappedFile *> read_fat_archive_members(Context &ctx, MappedFile *mf)
   return vec;
 }
 
-template <typename Context, typename MappedFile>
+template <typename Context>
 std::vector<MappedFile *> read_archive_members(Context &ctx, MappedFile *mf) {
   std::string_view str = mf->get_contents();
   if (str.starts_with("!<arch>\n"))
