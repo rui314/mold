@@ -25,20 +25,18 @@ static u32 elf_hash(std::string_view name) {
 }
 
 template <typename E>
-OutputSection<E> *find_section(Context<E> &ctx, u32 sh_type) {
+Chunk<E> *find_chunk(Context<E> &ctx, u32 sh_type) {
   for (Chunk<E> *chunk : ctx.chunks)
-    if (OutputSection<E> *osec = chunk->to_osec())
-      if (osec->shdr.sh_type == sh_type)
-        return osec;
+    if (chunk->shdr.sh_type == sh_type)
+      return chunk;
   return nullptr;
 }
 
 template <typename E>
-OutputSection<E> *find_section(Context<E> &ctx, std::string_view name) {
+Chunk<E> *find_chunk(Context<E> &ctx, std::string_view name) {
   for (Chunk<E> *chunk : ctx.chunks)
-    if (OutputSection<E> *osec = chunk->to_osec())
-      if (osec->name == name)
-        return osec;
+    if (chunk->name == name)
+      return chunk;
   return nullptr;
 }
 
@@ -267,6 +265,10 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   if (ctx.eh_frame_hdr)
     define(PT_GNU_EH_FRAME, PF_R, ctx.eh_frame_hdr);
 
+  // Add PT_GNU_PROPERTY
+  if (Chunk<E> *chunk = find_chunk(ctx, ".note.gnu.property"))
+    define(PT_GNU_PROPERTY, PF_R, chunk);
+
   // Add PT_GNU_STACK, which is a marker segment that doesn't really
   // contain any segments. It controls executable bit of stack area.
   {
@@ -293,8 +295,8 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
 
   // Create a PT_ARM_EDXIDX
   if constexpr (is_arm32<E>)
-    if (OutputSection<E> *osec = find_section(ctx, SHT_ARM_EXIDX))
-      define(PT_ARM_EXIDX, PF_R, osec);
+    if (Chunk<E> *chunk = find_chunk(ctx, SHT_ARM_EXIDX))
+      define(PT_ARM_EXIDX, PF_R, chunk);
 
   // Create a PT_RISCV_ATTRIBUTES
   if constexpr (is_riscv<E>)
@@ -734,19 +736,19 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_STRSZ, ctx.dynstr->shdr.sh_size);
   }
 
-  if (find_section(ctx, SHT_INIT_ARRAY)) {
+  if (find_chunk(ctx, SHT_INIT_ARRAY)) {
     define(DT_INIT_ARRAY, ctx.__init_array_start->value);
     define(DT_INIT_ARRAYSZ,
            ctx.__init_array_end->value - ctx.__init_array_start->value);
   }
 
-  if (find_section(ctx, SHT_PREINIT_ARRAY)) {
+  if (find_chunk(ctx, SHT_PREINIT_ARRAY)) {
     define(DT_PREINIT_ARRAY, ctx.__preinit_array_start->value);
     define(DT_PREINIT_ARRAYSZ,
            ctx.__preinit_array_end->value - ctx.__preinit_array_start->value);
   }
 
-  if (find_section(ctx, SHT_FINI_ARRAY)) {
+  if (find_chunk(ctx, SHT_FINI_ARRAY)) {
     define(DT_FINI_ARRAY, ctx.__fini_array_start->value);
     define(DT_FINI_ARRAYSZ,
            ctx.__fini_array_end->value - ctx.__fini_array_start->value);
@@ -2949,8 +2951,8 @@ template class RelocSection<E>;
 template class ComdatGroupSection<E>;
 template class GnuDebuglinkSection<E>;
 
-template OutputSection<E> *find_section(Context<E> &, u32);
-template OutputSection<E> *find_section(Context<E> &, std::string_view);
+template Chunk<E> *find_chunk(Context<E> &, u32);
+template Chunk<E> *find_chunk(Context<E> &, std::string_view);
 template i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
 template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &, u32, U32<E> *);
 

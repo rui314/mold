@@ -722,7 +722,11 @@ u64 get_eflags(Context<E> &ctx) {
 void fixup_arm_exidx_section(Context<E> &ctx) {
   Timer t(ctx, "fixup_arm_exidx_section");
 
-  OutputSection<E> *osec = find_section(ctx, SHT_ARM_EXIDX);
+  Chunk<E> *chunk = find_chunk(ctx, SHT_ARM_EXIDX);
+  if (!chunk)
+    return;
+
+  OutputSection<E> *osec = chunk->to_osec();
   if (!osec)
     return;
 
@@ -780,7 +784,7 @@ void fixup_arm_exidx_section(Context<E> &ctx) {
   // .ARM.exidx's sh_link should be set to the .text section index.
   // Runtime doesn't care about it, but the binutils's strip command does.
   if (ctx.shdr) {
-    if (Chunk<E> *text = find_section(ctx, ".text")) {
+    if (Chunk<E> *text = find_chunk(ctx, ".text")) {
       osec->shdr.sh_link = text->shndx;
       ctx.shdr->copy_buf(ctx);
     }

@@ -341,10 +341,10 @@ template <typename E> u64 get_dtp_addr(const ElfPhdr<E> &);
 //
 
 template <typename E>
-OutputSection<E> *find_section(Context<E> &ctx, u32 sh_type);
+Chunk<E> *find_chunk(Context<E> &ctx, u32 sh_type);
 
 template <typename E>
-OutputSection<E> *find_section(Context<E> &ctx, std::string_view name);
+Chunk<E> *find_chunk(Context<E> &ctx, std::string_view name);
 
 template <typename E>
 u64 get_eflags(Context<E> &ctx) {

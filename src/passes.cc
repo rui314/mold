@@ -1271,10 +1271,13 @@ void fixup_ctors_in_init_array(Context<E> &ctx) {
     }
   };
 
-  if (OutputSection<E> *osec = find_section(ctx, ".init_array"))
-    fixup(*osec);
-  if (OutputSection<E> *osec = find_section(ctx, ".fini_array"))
-    fixup(*osec);
+  if (Chunk<E> *chunk = find_chunk(ctx, ".init_array"))
+    if (OutputSection<E> *osec = chunk->to_osec())
+      fixup(*osec);
+
+  if (Chunk<E> *chunk = find_chunk(ctx, ".fini_array"))
+    if (OutputSection<E> *osec = chunk->to_osec())
+      fixup(*osec);
 }
 
 template <typename T>
