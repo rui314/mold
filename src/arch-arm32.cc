@@ -715,7 +715,7 @@ void create_arm_exidx_section(Context<E> &ctx) {
     OutputSection<E> *osec = ctx.chunks[i]->to_osec();
 
     if (osec && osec->shdr.sh_type == SHT_ARM_EXIDX) {
-      auto *sec = new Arm32ExidxSection(ctx, *osec);
+      auto *sec = new Arm32ExidxSection(*osec);
       ctx.extra.exidx = sec;
       ctx.chunks[i] = sec;
       ctx.chunk_pool.emplace_back(sec);
@@ -809,7 +809,7 @@ std::vector<u8> Arm32ExidxSection::get_contents(Context<E> &ctx) {
 
   // Remove duplicate adjacent entries. That is, if two adjacent functions
   // have the same compact unwind info or are both CANTUNWIND, we can
-  // merge them into a single range.
+  // merge them into a single address range.
   auto it = std::unique(ent, ent + num_entries,
                         [](const Entry &a, const Entry &b) {
     return a.val == b.val;
