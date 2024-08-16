@@ -2585,6 +2585,8 @@ inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
 
   if (esym.st_shndx == SHN_XINDEX)
     return symtab_shndx_sec[&esym - &this->elf_syms[0]];
+  if (esym.st_shndx >= SHN_LORESERVE)
+    return 0;
   return esym.st_shndx;
 }
 

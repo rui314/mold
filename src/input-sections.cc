@@ -499,12 +499,14 @@ template <typename E>
 std::string_view
 InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) const {
   for (Symbol<E> *sym : file.symbols) {
-    const ElfSym<E> &esym = sym->esym();
-    if (esym.st_shndx == shndx && esym.st_type == STT_FUNC &&
-        esym.st_value <= offset && offset < esym.st_value + esym.st_size) {
-      if (ctx.arg.demangle)
-        return demangle(*sym);
-      return sym->name();
+    if (sym->file == &file) {
+      const ElfSym<E> &esym = sym->esym();
+      if (esym.st_shndx == shndx && esym.st_type == STT_FUNC &&
+          esym.st_value <= offset && offset < esym.st_value + esym.st_size) {
+        if (ctx.arg.demangle)
+          return demangle(*sym);
+        return sym->name();
+      }
     }
   }
   return "";
