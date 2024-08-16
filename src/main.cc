@@ -623,8 +623,10 @@ int mold_main(int argc, char **argv) {
   // that they can jump to anywhere in ±2 GiB by default. They may
   // be replaced with shorter instruction sequences if destinations
   // are close enough. Do this optimization.
-  if constexpr (is_riscv<E> || is_loongarch<E>)
-    filesize = shrink_sections(ctx);
+  if constexpr (is_riscv<E> || is_loongarch<E>) {
+    shrink_sections(ctx);
+    filesize = set_osec_offsets(ctx);
+  }
 
   // At this point, memory layout is fixed.
 
@@ -636,8 +638,10 @@ int mold_main(int argc, char **argv) {
 
   // If --compress-debug-sections is given, compress .debug_* sections
   // using zlib.
-  if (ctx.arg.compress_debug_sections != COMPRESS_NONE)
-    filesize = compress_debug_sections(ctx);
+  if (ctx.arg.compress_debug_sections != COMPRESS_NONE) {
+    compress_debug_sections(ctx);
+    filesize = set_osec_offsets(ctx);
+  }
 
   // At this point, both memory and file layouts are fixed.
 

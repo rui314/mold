@@ -72,7 +72,7 @@ static bool is_resizable(InputSection<E> *isec) {
 }
 
 template <>
-i64 shrink_sections<E>(Context<E> &ctx) {
+void shrink_sections<E>(Context<E> &ctx) {
   Timer t(ctx, "shrink_sections");
 
   // True if we can use the 2-byte instructions. This is usually true on
@@ -114,10 +114,6 @@ i64 shrink_sections<E>(Context<E> &ctx) {
       sym->value -= isec->extra.r_deltas[it - rels.begin()];
     }
   });
-
-  // Re-compute section offset again to finalize them.
-  compute_section_sizes(ctx);
-  return set_osec_offsets(ctx);
 }
 
 // Returns the distance between a relocated place and a symbol.

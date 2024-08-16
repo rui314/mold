@@ -2939,7 +2939,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-i64 compress_debug_sections(Context<E> &ctx) {
+void compress_debug_sections(Context<E> &ctx) {
   Timer t(ctx, "compress_debug_sections");
 
   tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
@@ -2961,8 +2961,6 @@ i64 compress_debug_sections(Context<E> &ctx) {
     ctx.ehdr->update_shdr(ctx);
   if (ctx.shdr)
     ctx.shdr->update_shdr(ctx);
-
-  return set_osec_offsets(ctx);
 }
 
 // BLAKE3 is a cryptographic hash function just like SHA256.
@@ -3276,7 +3274,7 @@ template void separate_debug_sections(Context<E> &);
 template void compute_section_headers(Context<E> &);
 template i64 set_osec_offsets(Context<E> &);
 template void fix_synthetic_symbols(Context<E> &);
-template i64 compress_debug_sections(Context<E> &);
+template void compress_debug_sections(Context<E> &);
 template void write_build_id(Context<E> &);
 template void write_gnu_debuglink(Context<E> &);
 template void write_separate_debug_file(Context<E> &);
