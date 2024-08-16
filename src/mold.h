@@ -1532,7 +1532,9 @@ void rewrite_endbr(Context<X86_64> &ctx);
 class Arm32ExidxSection : public Chunk<ARM32> {
 public:
   Arm32ExidxSection(Context<ARM32> &ctx, OutputSection<ARM32> &osec);
+  void compute_section_size(Context<ARM32> &ctx) override;
   void update_shdr(Context<ARM32> &ctx) override;
+  void remove_duplicate_entries(Context<ARM32> &ctx);
   void copy_buf(Context<ARM32> &ctx) override;
 
 private:

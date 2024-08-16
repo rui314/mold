@@ -480,6 +480,10 @@ int mold_main(int argc, char **argv) {
   // Bin input sections into output sections.
   create_output_sections(ctx);
 
+  // Convert an .ARM.exidx to a synthetic section.
+  if constexpr (is_arm32<E>)
+    create_arm_exidx_section(ctx);
+
   // Handle --section-align options.
   if (!ctx.arg.section_align.empty())
     apply_section_align(ctx);
@@ -579,10 +583,6 @@ int mold_main(int argc, char **argv) {
   if (ctx.arg.pack_dyn_relocs_relr)
     construct_relr(ctx);
 
-  // Convert an .ARM.exidx to a synthetic section.
-  if constexpr (is_arm32<E>)
-    create_arm_exidx_section(ctx);
-
   // Reserve a space for dynamic symbol strings in .dynstr and sort
   // .dynsym contents if necessary. Beyond this point, no symbol will
   // be added to .dynsym.
@@ -626,6 +626,13 @@ int mold_main(int argc, char **argv) {
   if constexpr (is_riscv<E> || is_loongarch<E>) {
     shrink_sections(ctx);
     filesize = set_osec_offsets(ctx);
+  }
+
+  if constexpr (is_arm32<E>) {
+    if (ctx.extra.exidx) {
+      ctx.extra.exidx->remove_duplicate_entries(ctx);
+      filesize = set_osec_offsets(ctx);
+    }
   }
 
   // At this point, memory layout is fixed.

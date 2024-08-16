@@ -729,11 +729,14 @@ Arm32ExidxSection::Arm32ExidxSection(Context<ARM32> &ctx,
   this->shdr.sh_type = SHT_ARM_EXIDX;
   this->shdr.sh_flags = SHF_ALLOC;
   this->shdr.sh_addralign = 4;
-  this->shdr.sh_size = get_contents(ctx).size();
-  this->sect_order = osec.sect_order;
 
   for (InputSection<E> *isec : osec.members)
     isec->is_alive = false;
+}
+
+void Arm32ExidxSection::compute_section_size(Context<E> &ctx) {
+  output_section.compute_section_size(ctx);
+  this->shdr.sh_size = output_section.shdr.sh_size;
 }
 
 void Arm32ExidxSection::update_shdr(Context<E> &ctx) {
@@ -741,6 +744,10 @@ void Arm32ExidxSection::update_shdr(Context<E> &ctx) {
   // Runtime doesn't care about it, but the binutils's strip command does.
   if (Chunk<E> *chunk = find_chunk(ctx, ".text"))
     this->shdr.sh_link = chunk->shndx;
+}
+
+void Arm32ExidxSection::remove_duplicate_entries(Context<E> &ctx) {
+  this->shdr.sh_size = get_contents(ctx).size();
 }
 
 void Arm32ExidxSection::copy_buf(Context<E> &ctx) {
