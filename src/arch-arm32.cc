@@ -712,26 +712,19 @@ u64 get_eflags(Context<E> &ctx) {
 
 void create_arm_exidx_section(Context<E> &ctx) {
   for (i64 i = 0; i < ctx.chunks.size(); i++) {
-    if (ctx.chunks[i]->shdr.sh_type == SHT_ARM_EXIDX) {
-      auto *sec = new Arm32ExidxSection(ctx, *ctx.chunks[i]->to_osec());
+    OutputSection<E> *osec = ctx.chunks[i]->to_osec();
+
+    if (osec && osec->shdr.sh_type == SHT_ARM_EXIDX) {
+      auto *sec = new Arm32ExidxSection(ctx, *osec);
       ctx.extra.exidx = sec;
       ctx.chunks[i] = sec;
       ctx.chunk_pool.emplace_back(sec);
+
+      for (InputSection<E> *isec : osec->members)
+        isec->is_alive = false;
       break;
     }
   }
-}
-
-Arm32ExidxSection::Arm32ExidxSection(Context<ARM32> &ctx,
-                                     OutputSection<ARM32> &osec)
-  : output_section(osec) {
-  this->name = ".ARM.exidx";
-  this->shdr.sh_type = SHT_ARM_EXIDX;
-  this->shdr.sh_flags = SHF_ALLOC;
-  this->shdr.sh_addralign = 4;
-
-  for (InputSection<E> *isec : osec.members)
-    isec->is_alive = false;
 }
 
 void Arm32ExidxSection::compute_section_size(Context<E> &ctx) {
