@@ -1551,7 +1551,6 @@ private:
 
 template <> u64 get_eflags(Context<ARM32> &ctx);
 void create_arm_exidx_section(Context<ARM32> &ctx);
-void fixup_arm_exidx_section(Context<ARM32> &ctx);
 
 //
 // arch-riscv.cc

@@ -1347,11 +1347,9 @@ void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
   if constexpr (needs_thunk<E>) {
-    // Chunk<E>::compute_section_size obtains a global lock to create
-    // range extension thunks. I don't know why, but using parallel_for
-    // loop both inside and outside of the lock may cause a deadlock. It
-    // might be a bug in TBB. For now, I'll avoid using parallel_for_each
-    // here.
+    // We cannot use parallel-for for compute_section_size() which may
+    // call create_range_extension_thunks() because that function is
+    // not thread-safe.
     for (Chunk<E> *chunk : ctx.chunks)
       if (chunk->shdr.sh_flags & SHF_EXECINSTR)
         chunk->compute_section_size(ctx);

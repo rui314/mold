@@ -167,10 +167,6 @@ static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
 
 template <>
 void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
-  // This function is not thread-safe because it mutates symbols' members
-  static std::mutex mu;
-  std::scoped_lock lock(mu);
-
   std::span<InputSection<E> *> m = members;
   if (m.empty())
     return;
