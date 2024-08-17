@@ -567,9 +567,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     }
   };
 
-  // RISC-V object files contains lots of local symbols, so by default
-  // we discard them. This is compatible with GNU ld.
-  if constexpr (is_riscv<E>)
+  // RISC-V and LoongArch object files contains lots of local symbols,
+  // so by default we discard them. This is compatible with GNU ld.
+  if constexpr (is_riscv<E> || is_loongarch<E>)
     ctx.arg.discard_locals = true;
 
   // We generally don't need to write addends to relocated places if the
