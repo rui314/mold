@@ -1,7 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = riscv64 -o $MACHINE = riscv32 ] && skip
+[[ $MACHINE = riscv* ]] && skip
+[[ $MACHINE = loongarch* ]] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -x assembler -Wa,-L -
   .text

@@ -15,7 +15,7 @@ grep -Fq _start $t/log
 grep -Fq foo $t/log
 grep -Fq bar $t/log
 
-if [ $MACHINE '!=' riscv32 ] && [ $MACHINE '!=' riscv64 ]; then
+if [[ $MACHINE != riscv* ]] && [[ $MACHINE != loongarch* ]]; then
   grep -Fq .L.baz $t/log
 fi
 
@@ -25,6 +25,6 @@ readelf --symbols $t/exe > $t/log
 ! grep -Fq foo $t/log || false
 ! grep -Fq bar $t/log || false
 
-if [ $MACHINE '!=' riscv32 ] && [ $MACHINE '!=' riscv64 ]; then
+if [[ $MACHINE != riscv* ]] && [[ $MACHINE != loongarch* ]]; then
   ! grep -Fq .L.baz $t/log || false
 fi
