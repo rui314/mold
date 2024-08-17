@@ -429,7 +429,7 @@ split_by_comma_or_colon(std::string_view str) {
       break;
     }
     vec.push_back(str.substr(0, pos));
-    str = str.substr(pos);
+    str = str.substr(pos + 1);
   }
   return vec;
 }
