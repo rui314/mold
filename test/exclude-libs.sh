@@ -48,6 +48,12 @@ readelf --dyn-syms $t/f.so > $t/log
 ! grep -Fq bar $t/log || false
 grep -Fq baz $t/log
 
+$CC -B. -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a:d.a
+readelf --dyn-syms $t/f.so > $t/log
+! grep -Fq foo $t/log || false
+! grep -Fq bar $t/log || false
+grep -Fq baz $t/log
+
 $CC -B. -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=ALL
 readelf --dyn-syms $t/f.so > $t/log
 ! grep -Fq foo $t/log || false

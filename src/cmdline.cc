@@ -422,15 +422,13 @@ static std::vector<std::string_view>
 split_by_comma_or_colon(std::string_view str) {
   std::vector<std::string_view> vec;
 
-  while (!str.empty()) {
+  for (;;) {
     i64 pos = str.find_first_of(",:");
     if (pos == str.npos) {
       vec.push_back(str);
       break;
     }
-    if (pos > 0) {
-      vec.push_back(str.substr(0, pos));
-    }
+    vec.push_back(str.substr(0, pos));
     str = str.substr(pos + 1);
   }
   return vec;
