@@ -401,16 +401,6 @@ else()
     )
 endif()
 
-# Add frequently included header files for pre-compiling.
-# target_precompile_headers is supported by CMake 3.16.0 or newer.
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.16.0")
-  # ccache needs this flag along with `sloppiness = pch_defines,time_macros`
-  # to enable caching
-  if(NOT MSVC)
-    target_compile_options(mold PRIVATE -fpch-preprocess)
-  endif()
-endif()
-
 include(CTest)
 
 if(BUILD_TESTING)
