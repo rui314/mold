@@ -443,10 +443,9 @@ inline i64 write_string(void *buf, std::string_view str) {
 }
 
 template <typename T>
-inline i64 write_vector(void *buf, const std::vector<T> &vec) {
-  i64 sz = vec.size() * sizeof(T);
-  memcpy(buf, vec.data(), sz);
-  return sz;
+inline void write_vector(void *buf, const std::vector<T> &vec) {
+  if (!vec.empty())
+    memcpy(buf, vec.data(), vec.size() * sizeof(T));
 }
 
 inline void encode_uleb(std::vector<u8> &vec, u64 val) {

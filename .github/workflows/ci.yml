@@ -5,31 +5,26 @@ on:
 env:
   UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 jobs:
-  build-clang:
+  build-sanitizers:
     strategy:
       matrix:
         target:
+        - ''
+        - '-DMOLD_USE_ASAN=On'
         - '-DMOLD_USE_TSAN=On'
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v3
     - uses: rui314/setup-mold@staging
-    - name: install-build-deps
-      run: sudo ./install-build-deps.sh
-    - name: ccache
-      uses: hendrikmuhs/ccache-action@v1
+    - run: sudo ./install-build-deps.sh
     - name: build
       run: |
-        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
-        sudo apt-get install -y clang++-12
+        sudo apt-get install -y clang-18 clang gcc-multilib gdb dwarfdump zstd
         mkdir build
         cd build
-        cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++-12 ${{ matrix.target }} ..
+        cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 ${{ matrix.target }} ..
         cmake --build . -j$(nproc)
-    - name: test
-      run: |
-        cd build
-        ctest -j$(nproc)
+    - run: ctest --test-dir build -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
@@ -39,8 +34,8 @@ jobs:
           build
           !build/CMakeFiles
 
-  build-gcc:
-    runs-on: ubuntu-20.04
+  build-multi-archs:
+    runs-on: ubuntu-latest
     container: gcc:11.1.0
     steps:
     - uses: actions/checkout@v3
@@ -83,19 +78,13 @@ jobs:
         mkdir /sde
         wget -O- -q https://downloadmirror.intel.com/813591/sde-external-9.33.0-2024-01-07-lin.tar.xz | tar -C /sde --strip-components=1 --xz -xf -
         ln -s /sde/sde /usr/bin
-    - name: ccache
-      uses: hendrikmuhs/ccache-action@v1
     - name: build
       run: |
-        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
         cmake ..
         cmake --build . -j$(nproc)
-    - name: test
-      run: |
-        cd build
-        ctest -j$(nproc)
+    - run: ctest --test-dir build -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
@@ -114,6 +103,7 @@ jobs:
         - fedora
         - gentoo/stage3
         - opensuse/tumbleweed
+        - ubuntu:22.04
     runs-on: ubuntu-latest
     container: ${{ matrix.distro }}
     steps:
@@ -125,29 +115,17 @@ jobs:
         cd build
         cmake ..
         cmake --build . -j$(nproc)
-    - name: test
-      run: |
-        cd build
-        ctest -j$(nproc)
+    - run: ctest --test-dir build -j$(nproc)
 
   build-macos:
     runs-on: macos-12
-    strategy:
-      matrix:
-        target:
-        # Disable PCH for the default configuration. This prevents relying on implicit includes.
-        - '-DCMAKE_DISABLE_PRECOMPILE_HEADERS=On'
-        - '-DMOLD_USE_ASAN=On'
     steps:
     - uses: actions/checkout@v3
-    - name: ccache
-      uses: hendrikmuhs/ccache-action@v1
     - name: build
       run: |
-        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
-        cmake ${{ matrix.target }} ..
+        cmake ..
         cmake --build . -j$(sysctl -n hw.physicalcpu)
 
   build-windows:
@@ -176,5 +154,5 @@ jobs:
       run: |
         mkdir build
         cd build
-        cmake -GNinja -DMOLD_USE_MIMALLOC=OFF -DMOLD_USE_SYSTEM_TBB=ON -DMOLD_USE_MOLD=OFF ..
+        cmake -GNinja -DMOLD_USE_MIMALLOC=OFF -DMOLD_USE_SYSTEM_TBB=ON ..
         cmake --build . -j $(nproc)

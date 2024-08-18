@@ -1,6 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+nm mold | grep -q '__tsan_init' && skip
 echo 'int main() {}' | $CC -m32 -o $t/exe -xc - >& /dev/null || skip
 
 mkdir -p $t/foo

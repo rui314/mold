@@ -1,6 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+nm mold | grep -q '__tsan_init' && skip
 on_qemu && skip
 command -v gdb >& /dev/null || skip
 command -v flock >& /dev/null || skip
