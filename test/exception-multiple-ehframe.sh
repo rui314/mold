@@ -5,7 +5,6 @@ nm mold | grep -q '__tsan_init' && skip
 
 command -v perl > /dev/null || skip
 
-[ $MACHINE = m68k ] && skip
 [ $MACHINE = sh4 ] && skip
 
 cat <<EOF | $CXX -o $t/a.o -c -xc++ -

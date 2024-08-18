@@ -1,9 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = m68k ] && skip
-[ $MACHINE = sh4 ] && skip
-
 static=
 test_cxxflags -static && static=-static
 

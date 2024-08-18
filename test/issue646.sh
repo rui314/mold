@@ -1,9 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = m68k ] && skip
-[ $MACHINE = sh4 ] && skip
-
 cat <<EOF | $CXX -o $t/a.o -c -xc++ -
 #include <iostream>
 #include <stdexcept>

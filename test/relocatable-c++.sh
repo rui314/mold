@@ -4,10 +4,6 @@
 # OneTBB isn't tsan-clean
 nm mold | grep -q '__tsan_init' && skip
 
-# Ubuntu 22.04 GCC is broken
-[ $MACHINE = m68k ] && skip
-[ $MACHINE = sh4 ] && skip
-
 cat <<EOF | $CXX -c -o $t/a.o -xc++ -
 void hello();
 void world();
