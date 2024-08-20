@@ -548,7 +548,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //
       //   pcalau12i $a0, 0
       //       R_LARCH_TLS_DESC_PC_HI20    foo
-      //   addi.d    $a0, $a0, 0
+      //   addi.[dw] $a0, $a0, 0
       //       R_LARCH_TLS_DESC_PC_LO12    foo
       //   ld.d      $ra, $a0, 0
       //       R_LARCH_TLS_DESC_LD         foo
@@ -563,6 +563,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   lu12i.w   $a0, foo@TPOFF
       //   addi.w    $a0, $a0, foo@TPOFF
       //
+      // And we may relax the instructions to one instruction as following
+      // if its TP-relative address is small
+      //
+      //   <nop>
+      //   <nop>
+      //   <nop>
+      //   ori       $a0, $r0, foo@TPOFF
+      //
       // or to the following if the TP-relative address is known at
       // process startup time.
       //
@@ -573,11 +581,25 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //
       // Note that if section-shrinking relaxation is enabled, nop may be
       // completely deleted.
+      //
+      // If we could not transform tls desc model to initial-exec/local-exec
+      // model. We may try relax the frist two instructions to pcaddi as
+      // following.
+      //
+      //   pcaddi    $a0, 0
+      //   ld.d      $ra, $a0, 0
+      //   jirl      $ra, $ra, 0
       if (removed_bytes == 0) {
         if (sym.has_tlsdesc(ctx))
           write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
         else
           *(ul32 *)loc = 0x0340'0000; // nop
+      } else if (sym.has_tlsdesc(ctx)) {
+        // Rewrite pcalau12i + addi.d with pcaddi
+        assert(removed_bytes == 4);
+        *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
+        write_j20(loc, (sym.get_tlsdesc_addr(ctx) + A - P) >> 2);
+        i += 3;
       }
       break;
     case R_LARCH_TLS_DESC_PC_LO12:
@@ -589,7 +611,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_LARCH_TLS_DESC_LD:
-      if (sym.has_tlsdesc(ctx)) {
+      if (sym.has_tlsdesc(ctx) || removed_bytes == 4) {
         // Do nothing
       } else if (sym.has_gottp(ctx)) {
         *(ul32 *)loc = 0x1a00'0004; // pcalau12i $a0, 0
@@ -609,8 +631,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           *(ul32 *)loc = 0x2880'0084; // ld.w $a0, $a0, 0
         write_k12(loc, sym.get_gottp_addr(ctx) + A);
       } else {
-        *(ul32 *)loc = 0x0280'0084;   // addi.w $a0, $a0, 0
-        write_k12(loc, S + A - ctx.tp_addr);
+        i64 val = S + A - ctx.tp_addr;
+        if (val <= 0xfff)
+          *(ul32 *)loc = 0x0380'0004; // ori $a0, $r0, 0
+        else
+          *(ul32 *)loc = 0x0280'0084;   // addi.w $a0, $a0, 0
+        write_k12(loc, val);
       }
       break;
     case R_LARCH_TLS_LE_HI20_R:
@@ -965,10 +991,34 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
           delta += 4;
       }
       break;
-    case R_LARCH_TLS_DESC_PC_HI20:
+    case R_LARCH_TLS_DESC_PC_HI20: {
+      if (!sym.has_tlsdesc(ctx))
+        delta += 4;
+      else if (i + 3 < rels.size() &&
+          rels[i + 2].r_type == R_LARCH_TLS_DESC_PC_LO12 &&
+          rels[i + 2].r_offset == rels[i].r_offset + 4 &&
+          rels[i + 3].r_type == R_LARCH_RELAX) {
+        i64 dist = compute_distance(ctx, sym, isec, r);
+        u32 insn1 = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
+        u32 insn2 = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
+        bool is_addi_d = (insn2 & 0xffc0'0000) == 0x02c0'0000;
+
+        if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21) &&
+            is_addi_d && get_rd(insn1) == get_rd(insn2) &&
+            get_rd(insn2) == get_rj(insn2))
+          delta += 4;
+      }
+      break;
+    }
     case R_LARCH_TLS_DESC_PC_LO12:
       if (!sym.has_tlsdesc(ctx))
         delta += 4;
+      break;
+    case R_LARCH_TLS_DESC_LD:
+      if (!sym.has_tlsdesc(ctx) && !sym.has_gottp(ctx))
+        if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
+            val <= 0xfff)
+          delta += 4;
       break;
     }
   }
