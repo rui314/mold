@@ -996,7 +996,9 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
                  rels[i + 2].r_type == R_LARCH_TLS_DESC_PC_LO12 &&
                  rels[i + 2].r_offset == rels[i].r_offset + 4 &&
                  rels[i + 3].r_type == R_LARCH_RELAX) {
-        i64 dist = compute_distance(ctx, sym, isec, r);
+        u64 P = isec.get_addr() + r.r_offset;
+        i64 dist = sym.get_tlsdesc_addr(ctx) + r.r_addend - P;
+
         u32 insn1 = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
         u32 insn2 = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
 
