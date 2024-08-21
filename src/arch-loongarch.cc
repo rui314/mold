@@ -592,7 +592,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
         else
           *(ul32 *)loc = 0x0340'0000; // nop
-      } else if (sym.has_tlsdesc(ctx)) {
+      } else {
         // Rewrite pcalau12i + addi.d with pcaddi
         assert(removed_bytes == 4);
         *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
