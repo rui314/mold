@@ -563,32 +563,30 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   lu12i.w   $a0, foo@TPOFF
       //   addi.w    $a0, $a0, foo@TPOFF
       //
-      // And we may relax the instructions to one instruction as following
-      // if its TP-relative address is small
+      // or to the following if the TP offset is small enough.
       //
       //   <nop>
       //   <nop>
       //   <nop>
-      //   ori       $a0, $r0, foo@TPOFF
+      //   ori       $a0, $zero, foo@TPOFF
       //
-      // or to the following if the TP-relative address is known at
-      // process startup time.
+      // If the TP-relative address is known at process startup time, we
+      // may relax the instructions to the following.
       //
       //   <nop>
       //   <nop>
       //   pcalau12i $a0, foo@GOTTP
       //   ld.[dw]   $a0, $a0, foo@GOTTP
       //
-      // Note that if section-shrinking relaxation is enabled, nop may be
-      // completely deleted.
-      //
-      // If we could not transform tls desc model to initial-exec/local-exec
-      // model. We may try relax the frist two instructions to pcaddi as
-      // following.
+      // If we don't know anything about the symbol, we can still relax
+      // the first two instructions to a single pcaddi as shown below.
       //
       //   pcaddi    $a0, 0
       //   ld.d      $ra, $a0, 0
       //   jirl      $ra, $ra, 0
+      //
+      // Note that if section-shrinking relaxation is enabled, nop may be
+      // completely deleted.
       if (removed_bytes == 0) {
         if (sym.has_tlsdesc(ctx))
           write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
@@ -632,10 +630,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_k12(loc, sym.get_gottp_addr(ctx) + A);
       } else {
         i64 val = S + A - ctx.tp_addr;
-        if (val <= 0xfff)
-          *(ul32 *)loc = 0x0380'0004; // ori $a0, $r0, 0
+        if (val < 0x1000)
+          *(ul32 *)loc = 0x0380'0004; // ori    $a0, $zero, 0
         else
-          *(ul32 *)loc = 0x0280'0084;   // addi.w $a0, $a0, 0
+          *(ul32 *)loc = 0x0280'0084; // addi.w $a0, $a0, 0
         write_k12(loc, val);
       }
       break;
@@ -991,34 +989,30 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
           delta += 4;
       }
       break;
-    case R_LARCH_TLS_DESC_PC_HI20: {
-      if (!sym.has_tlsdesc(ctx))
+    case R_LARCH_TLS_DESC_PC_HI20:
+      if (!sym.has_tlsdesc(ctx)) {
         delta += 4;
-      else if (i + 3 < rels.size() &&
-          rels[i + 2].r_type == R_LARCH_TLS_DESC_PC_LO12 &&
-          rels[i + 2].r_offset == rels[i].r_offset + 4 &&
-          rels[i + 3].r_type == R_LARCH_RELAX) {
+      } else if (i + 3 < rels.size() &&
+                 rels[i + 2].r_type == R_LARCH_TLS_DESC_PC_LO12 &&
+                 rels[i + 2].r_offset == rels[i].r_offset + 4 &&
+                 rels[i + 3].r_type == R_LARCH_RELAX) {
         i64 dist = compute_distance(ctx, sym, isec, r);
         u32 insn1 = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
         u32 insn2 = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
-        bool is_addi_d = (insn2 & 0xffc0'0000) == 0x02c0'0000;
 
         if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21) &&
-            is_addi_d && get_rd(insn1) == get_rd(insn2) &&
-            get_rd(insn2) == get_rj(insn2))
+            get_rd(insn1) == get_rd(insn2) && get_rd(insn2) == get_rj(insn2))
           delta += 4;
       }
       break;
-    }
     case R_LARCH_TLS_DESC_PC_LO12:
       if (!sym.has_tlsdesc(ctx))
         delta += 4;
       break;
     case R_LARCH_TLS_DESC_LD:
-      if (!sym.has_tlsdesc(ctx) && !sym.has_gottp(ctx))
-        if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
-            val <= 0xfff)
-          delta += 4;
+      if (!sym.has_tlsdesc(ctx) && !sym.has_gottp(ctx) &&
+          sym.get_addr(ctx) + r.r_addend - ctx.tp_addr < 0x1000)
+        delta += 4;
       break;
     }
   }
