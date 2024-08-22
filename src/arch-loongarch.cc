@@ -591,7 +591,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (removed_bytes == 0) {
         if (sym.has_tlsdesc(ctx)) {
           if (i64 val = sym.get_tlsdesc_addr(ctx) + A - P;
-              val % 4 == 0 && -(1 << 21) <= val && val < (1 << 21)) {
+              ctx.arg.relax && -(1 << 21) <= val && val < (1 << 21)) {
             *(ul32 *)loc = 0x0340'0000; // nop
           } else {
             write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
@@ -605,7 +605,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (removed_bytes == 0) {
         if (sym.has_tlsdesc(ctx)) {
           if (i64 val = sym.get_tlsdesc_addr(ctx) + A - P;
-              val % 4 == 0 && -(1 << 21) <= val && val < (1 << 21)) {
+              ctx.arg.relax && -(1 << 21) <= val && val < (1 << 21)) {
             // If we can directly materialize the PC-relative address
             // with pcaddi, do that.
             *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
@@ -1003,7 +1003,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       if (sym.has_tlsdesc(ctx)) {
         u64 P = isec.get_addr() + r.r_offset;
         i64 dist = sym.get_tlsdesc_addr(ctx) + r.r_addend - P;
-        if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21))
+        if (-(1 << 21) <= dist && dist < (1 << 21))
           delta += 4;
       } else {
         delta += 4;
