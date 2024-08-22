@@ -581,32 +581,41 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // If we don't know anything about the symbol, we can still relax
       // the first two instructions to a single pcaddi as shown below.
       //
-      //   pcaddi    $a0, 0
+      //   <nop>
+      //   pcaddi    $a0, foo@GOTDESC
       //   ld.d      $ra, $a0, 0
       //   jirl      $ra, $ra, 0
       //
       // Note that if section-shrinking relaxation is enabled, nop may be
       // completely deleted.
-      if (sym.has_tlsdesc(ctx)) {
-        if (removed_bytes == 0) {
-          write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
+      if (removed_bytes == 0) {
+        if (sym.has_tlsdesc(ctx)) {
+          if (i64 val = sym.get_tlsdesc_addr(ctx) + A - P;
+              val % 4 == 0 && -(1 << 21) <= val && val < (1 << 21)) {
+            *(ul32 *)loc = 0x0340'0000; // nop
+          } else {
+            write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
+          }
         } else {
-          // Rewrite pcalau12i + addi.d with pcaddi
-          assert(removed_bytes == 4);
-          *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
-          write_j20(loc, (sym.get_tlsdesc_addr(ctx) + A - P) >> 2);
-          i += 3;
+          *(ul32 *)loc = 0x0340'0000; // nop
         }
-      } else if (removed_bytes == 0) {
-        *(ul32 *)loc = 0x0340'0000; // nop
       }
       break;
     case R_LARCH_TLS_DESC_PC_LO12:
       if (removed_bytes == 0) {
-        if (sym.has_tlsdesc(ctx))
-          write_k12(loc, sym.get_tlsdesc_addr(ctx) + A);
-        else
+        if (sym.has_tlsdesc(ctx)) {
+          if (i64 val = sym.get_tlsdesc_addr(ctx) + A - P;
+              val % 4 == 0 && -(1 << 21) <= val && val < (1 << 21)) {
+            // If we can directly materialize the PC-relative address
+            // with pcaddi, do that.
+            *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
+            write_j20(loc, val >> 2);
+          } else {
+            write_k12(loc, sym.get_tlsdesc_addr(ctx) + A);
+          }
+        } else {
           *(ul32 *)loc = 0x0340'0000; // nop
+        }
       }
       break;
     case R_LARCH_TLS_DESC_LD:
@@ -991,21 +1000,13 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       }
       break;
     case R_LARCH_TLS_DESC_PC_HI20:
-      if (!sym.has_tlsdesc(ctx)) {
-        delta += 4;
-      } else if (i + 3 < rels.size() &&
-                 rels[i + 2].r_type == R_LARCH_TLS_DESC_PC_LO12 &&
-                 rels[i + 2].r_offset == rels[i].r_offset + 4 &&
-                 rels[i + 3].r_type == R_LARCH_RELAX) {
+      if (sym.has_tlsdesc(ctx)) {
         u64 P = isec.get_addr() + r.r_offset;
         i64 dist = sym.get_tlsdesc_addr(ctx) + r.r_addend - P;
-
-        u32 insn1 = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
-        u32 insn2 = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
-
-        if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21) &&
-            get_rd(insn1) == get_rd(insn2) && get_rd(insn2) == get_rj(insn2))
+        if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21))
           delta += 4;
+      } else {
+        delta += 4;
       }
       break;
     case R_LARCH_TLS_DESC_PC_LO12:

@@ -32,8 +32,8 @@ $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o $t/d.o -Wl,--no-relax
 $QEMU $t/exe1 | grep -q 'foo bar'
 
 $OBJDUMP -d $t/exe1 > $t/exe1.objdump
-grep -A6 '<get_foo>:' $t/exe1.objdump | grep -Fq pcalau12i
-grep -A6 '<get_bar>:' $t/exe1.objdump | grep -Fq pcalau12i
+grep -A6 '<get_foo>:' $t/exe1.objdump | grep -Fq pcaddi
+grep -A6 '<get_bar>:' $t/exe1.objdump | grep -Fq pcaddi
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o $t/d.o -Wl,--relax
 $QEMU $t/exe2 | grep -q 'foo bar'
