@@ -590,8 +590,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // completely deleted.
       if (removed_bytes == 0) {
         if (sym.has_tlsdesc(ctx)) {
-          if (i64 val = sym.get_tlsdesc_addr(ctx) + A - P;
-              ctx.arg.relax && -(1 << 21) <= val && val < (1 << 21)) {
+          i64 dist = sym.get_tlsdesc_addr(ctx) + A - P;
+          if (ctx.arg.relax && -(1 << 21) <= dist && dist < (1 << 21)) {
             *(ul32 *)loc = 0x0340'0000; // nop
           } else {
             write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
@@ -604,12 +604,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_TLS_DESC_PC_LO12:
       if (removed_bytes == 0) {
         if (sym.has_tlsdesc(ctx)) {
-          if (i64 val = sym.get_tlsdesc_addr(ctx) + A - P;
-              ctx.arg.relax && -(1 << 21) <= val && val < (1 << 21)) {
+          i64 dist = sym.get_tlsdesc_addr(ctx) + A - P;
+          if (ctx.arg.relax && -(1 << 21) <= dist && dist < (1 << 21)) {
             // If we can directly materialize the PC-relative address
             // with pcaddi, do that.
             *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
-            write_j20(loc, val >> 2);
+            write_j20(loc, dist >> 2);
           } else {
             write_k12(loc, sym.get_tlsdesc_addr(ctx) + A);
           }
