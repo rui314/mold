@@ -46,3 +46,5 @@ $QEMU $t/exe1 | grep -q 'f00 10000f00 ba 11beef'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o
 $QEMU $t/exe2 | grep -q 'f00 10000f00 ba 11beef'
+
+[ $(stat --format='%s' $t/exe1) -gt $(stat --format='%s' $t/exe2) ]
