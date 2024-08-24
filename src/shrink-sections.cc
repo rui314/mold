@@ -87,8 +87,10 @@ void shrink_sections<E>(Context<E> &ctx) {
   // Technically speaking, relaxing relocations may allow more relocations
   // to be relaxed because the distance between a branch instruction and
   // its target may decrease as a result of relaxation. That said, the
-  // number of such relocations is negligible in practice, so don't bother
-  // to handle them. We scan relocations only once here.
+  // number of such relocations is negligible (I tried to self-host mold
+  // on RISC-V as an experiment and found that the mold-built .text is
+  // only ~0.04% larger than that of GNU ld), so we don't bother to handle
+  // them. We scan relocations only once here.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (is_resizable(isec.get()))
@@ -113,6 +115,12 @@ void shrink_sections<E>(Context<E> &ctx) {
 
       sym->value -= isec->extra.r_deltas[it - rels.begin()];
     }
+  });
+
+  // Recompute sizes of executable sections
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    if (chunk->to_osec() && (chunk->shdr.sh_flags & SHF_EXECINSTR))
+      chunk->compute_section_size(ctx);
   });
 }
 
