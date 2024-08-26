@@ -533,7 +533,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           *(ul32 *)loc = 0x5000'0000; // B
         else
           *(ul32 *)loc = 0x5400'0000; // BL
-        write_k16(loc, (S + A - P) >> 2);
+        write_d10k16(loc, (S + A - P) >> 2);
       }
       break;
     case R_LARCH_ADD_ULEB128:
