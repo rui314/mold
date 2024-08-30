@@ -19,10 +19,7 @@ ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-*)
 fedora-* | amzn-* | rhel-*)
   dnf install -y gcc-g++ cmake glibc-static libstdc++-static diffutils util-linux
   ;;
-opensuse-leap-*)
-  zypper install -y make cmake gcc-c++ gcc11-c++ glibc-devel-static tar diffutils util-linux
-  ;;
-opensuse-tumbleweed-*)
+opensuse-*)
   zypper install -y make cmake gcc-c++ glibc-devel-static tar diffutils util-linux
   ;;
 gentoo-*)
