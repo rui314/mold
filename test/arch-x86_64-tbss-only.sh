@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # Test if grep supports backreferences
-echo abab | grep -Eq '\(ab\)\1' && skip
+echo abab | grep -Eq '(ab)\1' || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 __thread char foo;
