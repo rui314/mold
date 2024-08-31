@@ -43,6 +43,10 @@ clear-linux-*)
 almalinux-*)
   dnf install -y gcc-toolset-13-gcc-c++ gcc-toolset-13-libstdc++-devel cmake diffutils
   ;;
+freebsd-*)
+  pkg update
+  pkg install -y cmake bash
+  ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"
   exit 1
