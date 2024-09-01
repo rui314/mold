@@ -155,9 +155,10 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     phdr.p_align = chunk->shdr.sh_addralign;
 
     if (chunk->shdr.sh_type == SHT_NOBITS) {
-      // p_offset is not significant for segments with a zero on-file
-      // size. We still want to align it with the page size because some
-      // loaders (at least FreeBSD's) are picky about it.
+      // p_offset indicates the in-file start offset and is not
+      // significant for segments with zero on-file size. We still want to
+      // keep it congruent with the virtual address modulo page size
+      // because some loaders (at least FreeBSD's) are picky about it.
       phdr.p_offset = chunk->shdr.sh_addr % ctx.page_size;
     } else {
       phdr.p_offset = chunk->shdr.sh_offset;
