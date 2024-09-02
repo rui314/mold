@@ -31,7 +31,7 @@ rm -f $t/d.a
 $CC -B. -Wl,--trace -o $t/exe $t/d.o $t/d.a > $t/log
 
 grep -Eq 'thin-archive/d.a\(.*long-long-long-filename.o\)' $t/log
-grep -Eq 'thin-archive/d.a\(.*/b.o\)' $t/log
+grep -Eq 'thin-archive/d.a\((.*/)?b.o\)' $t/log
 grep -Fq thin-archive/d.o $t/log
 
 $QEMU $t/exe | grep -q 15

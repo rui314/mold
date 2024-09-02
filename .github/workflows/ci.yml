@@ -156,3 +156,19 @@ jobs:
         cd build
         cmake -GNinja -DMOLD_USE_MIMALLOC=OFF -DMOLD_USE_SYSTEM_TBB=ON ..
         cmake --build . -j $(nproc)
+
+  build-freebsd:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Build and test
+      uses: vmactions/freebsd-vm@v1
+      with:
+        usesh: true
+        run: |
+          ./install-build-deps.sh
+          mkdir build
+          cd build
+          cmake ..
+          cmake --build . -j$(nproc)
+          ctest -j$(nproc)

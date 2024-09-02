@@ -16,7 +16,7 @@ int main() {
 EOF
 
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=`pwd`/mold \
-  $GCC -o $t/exe $t/a.o -B/usr/bin
+  $CC -o $t/exe $t/a.o -B/usr/bin
 readelf -p .comment $t/exe > $t/log
 grep -q mold $t/log
 

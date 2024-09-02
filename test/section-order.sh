@@ -3,6 +3,7 @@
 
 # qemu crashes if the ELF header is not mapped to memory
 on_qemu && skip
+[ "$(uname)" = FreeBSD ] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIC $flags -
 #include <stdio.h>

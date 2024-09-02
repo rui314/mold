@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+test_cflags -flto || skip
+
 cat <<EOF | $CC -fPIC -shared -o $t/a.so -xc -
 #include <stdio.h>
 

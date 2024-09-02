@@ -5,7 +5,7 @@
 nm mold | grep -q '__tsan_init' && skip
 
 echo 'foo = 0x1000' > $t/a.s
-seq 1 100000 | sed 's/.*/.section .data.\0,"aw"\n.globl x\0\nx\0: .word 0\n/g' >> $t/a.s
+seq 1 100000 | sed 's/.*/.section .data.&,"aw"\n.globl x&\nx&: .word 0\n/g' >> $t/a.s
 $CC -c -xassembler -o $t/a.o $t/a.s
 
 ./mold --relocatable -o $t/b.o $t/a.o

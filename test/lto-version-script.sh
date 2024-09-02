@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+test_cflags -flto || skip
+
 cat <<EOF | $CC -flto -c -fPIC -o $t/a.o -xc -
 void foo() {}
 void bar() {}

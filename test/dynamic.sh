@@ -9,7 +9,7 @@ readelf --dynamic $t/exe > $t/log
 grep -Eq 'Shared library:.*\blibc\b' $t/log
 
 readelf -W --dyn-syms --use-dynamic $t/exe > $t/log2
-grep -Eq 'FUNC\s+GLOBAL\s+DEFAULT.*UND\s+__libc_start_main' $t/log2
+grep -Eq 'FUNC\s+GLOBAL\s+DEFAULT.*UND\s+__libc_start' $t/log2
 
 cat <<EOF | $CC -c -fPIC -o $t/b.o -xc -
 #include <stdio.h>

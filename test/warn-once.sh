@@ -14,4 +14,4 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o -Wl,--warn-unresolved-symbols,--warn-once >& $t/log
 
-[ "$(grep 'undefined symbol:.* foo$' $t/log | wc -l)" = 1 ]
+[ $(grep 'undefined symbol:.* foo$' $t/log | wc -l) = 1 ]

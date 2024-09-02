@@ -6,6 +6,7 @@ export LC_ALL=C
 canonical_name() {
   case $1 in
   i?86) echo i686 ;;
+  amd64) echo x86_64 ;;
   arm*) echo arm ;;
   powerpc) echo ppc ;;
   powerpc64) echo ppc64 ;;
@@ -65,13 +66,19 @@ aarch64 | loongarch*)
   tlsdesc_opt=-mtls-dialect=desc ;;
 esac
 
+# We want to use GNU's binutils even on BSDs. `pkg install binutils`
+# installs GNU binutils under /usr/local/bin.
+if [ "$(uname)" = FreeBSD ]; then
+  export PATH="/usr/local/bin:$PATH"
+fi
+
 # Common functions
 test_cflags() {
-  echo 'int main() {}' | $CC "$@" -o /dev/null -xc - >& /dev/null
+  echo 'int main() {}' | $CC -B. "$@" -o /dev/null -xc - >& /dev/null
 }
 
 test_cxxflags() {
-  echo 'int main() {}' | $CXX "$@" -o /dev/null -xc++ - >& /dev/null
+  echo 'int main() {}' | $CXX -B. "$@" -o /dev/null -xc++ - >& /dev/null
 }
 
 is_musl() {
@@ -87,6 +94,9 @@ supports_ifunc() {
 supports_tlsdesc() {
   # musl's tlsdesc on arm32 seems to be broken
   [ $MACHINE = arm ] && is_musl && return 1
+
+  # FreeBSD's loader doesn't seem to support TLSDESC relocs in an executable
+  [ "$(uname)" = FreeBSD ] && return 1
 
   [ "$tlsdesc_opt" != '' ]
 }

@@ -1,8 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-echo 'int main() {}' | $CC -flto -o /dev/null -xc - >& /dev/null \
-  || skip
+test_cflags -flto || skip
 
 cat <<EOF | $CC -flto -c -fPIC -o $t/a.o -xc -
 void foo() {}

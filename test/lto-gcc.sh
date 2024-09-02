@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-echo 'int main() {}' | $GCC -flto -o /dev/null -xc - >& /dev/null \
+echo 'int main() {}' | $GCC -B. -flto -o /dev/null -xc - >& /dev/null \
   || skip
 
 cat <<EOF | $GCC -flto -c -o $t/a.o -xc -

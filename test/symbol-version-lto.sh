@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+test_cflags -flto || skip
+
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xc - -flto
 void foo_1() {}
 __asm__(".symver foo_1, foo@@VER1");

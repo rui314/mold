@@ -14,19 +14,19 @@ ar cr $t/d.a $t/b.o $t/c.o
 
 $CC -B. -nostdlib -o $t/exe $t/a.o $t/d.a
 
-readelf --symbols $t/exe > $t/readelf
-! grep -q fn1 $t/readelf || false
-! grep -q fn2 $t/readelf || false
+readelf --symbols $t/exe > $t/log
+! grep -q fn1 $t/log || false
+! grep -q fn2 $t/log || false
 
 $CC -B. -nostdlib -o $t/exe $t/a.o -Wl,--whole-archive $t/d.a
 
-readelf --symbols $t/exe > $t/readelf
-grep -q fn1 $t/readelf
-grep -q fn2 $t/readelf
+readelf --symbols $t/exe > $t/log
+grep -q fn1 $t/log
+grep -q fn2 $t/log
 
 $CC -B. -nostdlib -o $t/exe $t/a.o -Wl,--whole-archive \
   -Wl,--no-whole-archive $t/d.a
 
-readelf --symbols $t/exe > $t/readelf
-! grep -q fn1 $t/readelf || false
-! grep -q fn2 $t/readelf || false
+readelf --symbols $t/exe > $t/log
+! grep -q fn1 $t/log || false
+! grep -q fn2 $t/log || false

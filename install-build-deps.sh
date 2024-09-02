@@ -45,7 +45,7 @@ almalinux-*)
   ;;
 freebsd-*)
   pkg update
-  pkg install -y cmake bash
+  pkg install -y cmake bash binutils gcc
   ;;
 *)
   echo "Error: don't know anything about build dependencies on $ID-$VERSION_ID"

@@ -8,7 +8,7 @@ ldd mold-wrapper.so | grep -q libasan && skip
 nm mold | grep -q '__[at]san_init' && skip
 
 cat <<'EOF' > $t/a.sh
-#!/bin/bash
+#!/usr/bin/env bash
 echo "$0" "$@" $FOO
 EOF
 

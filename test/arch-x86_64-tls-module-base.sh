@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+supports_tlsdesc || skip
+
 cat <<EOF | $CC -fPIC -o $t/a.o -c -xassembler -
 .globl get_foo
 .type get_foo, @function

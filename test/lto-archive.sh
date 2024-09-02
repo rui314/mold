@@ -2,9 +2,7 @@
 . $(dirname $0)/common.inc
 
 [ "$CC" = cc ] || skip
-
-echo 'int main() {}' | $CC -flto -o /dev/null -xc - >& /dev/null \
-  || skip
+test_cflags -flto || skip
 
 cat <<EOF | $CC -o $t/a.o -c -flto -xc -
 #include <stdio.h>
