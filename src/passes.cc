@@ -1122,14 +1122,11 @@ void check_symbol_types(Context<E> &ctx) {
   append(files, ctx.dsos);
 
   auto canonicalize = [](u32 ty) -> u32 {
-    switch (ty) {
-    case STT_GNU_IFUNC:
+    if (ty == STT_GNU_IFUNC)
       return STT_FUNC;
-    case STT_COMMON:
+    if (ty == STT_COMMON)
       return STT_OBJECT;
-    default:
-      return ty;
-    }
+    return ty;
   };
 
   tbb::parallel_for_each(files.begin(), files.end(), [&](InputFile<E> *file) {
@@ -1196,19 +1193,21 @@ void sort_init_fini(Context<E> &ctx) {
         if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_REVERSE)
           std::reverse(osec->members.begin(), osec->members.end());
 
-        std::unordered_map<InputSection<E> *, i64> map;
+        typedef std::pair<InputSection<E> *, i64> P;
+        std::vector<P> vec;
 
         for (InputSection<E> *isec : osec->members) {
           std::string_view name = isec->name();
           if (name.starts_with(".ctors") || name.starts_with(".dtors"))
-            map.insert({isec, 65535 - get_ctor_dtor_priority(isec)});
+            vec.emplace_back(isec, 65535 - get_ctor_dtor_priority(isec));
           else
-            map.insert({isec, get_init_fini_priority(isec)});
+            vec.emplace_back(isec, get_init_fini_priority(isec));
         }
 
-        sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
-          return map[a] < map[b];
-        });
+        sort(vec, [&](const P &a, const P &b) { return a.second < b.second; });
+
+        for (i64 i = 0; i < vec.size(); i++)
+          osec->members[i] = vec[i].first;
       }
     }
   }
@@ -1224,13 +1223,16 @@ void sort_ctor_dtor(Context<E> &ctx) {
         if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_REVERSE)
           std::reverse(osec->members.begin(), osec->members.end());
 
-        std::unordered_map<InputSection<E> *, i64> map;
-        for (InputSection<E> *isec : osec->members)
-          map.insert({isec, get_ctor_dtor_priority(isec)});
+        typedef std::pair<InputSection<E> *, i64> P;
+        std::vector<P> vec;
 
-        sort(osec->members, [&](InputSection<E> *a, InputSection<E> *b) {
-          return map[a] < map[b];
-        });
+        for (InputSection<E> *isec : osec->members)
+          vec.emplace_back(isec, get_ctor_dtor_priority(isec));
+
+        sort(vec, [&](const P &a, const P &b) { return a.second < b.second; });
+
+        for (i64 i = 0; i < vec.size(); i++)
+          osec->members[i] = vec[i].first;
       }
     }
   }
