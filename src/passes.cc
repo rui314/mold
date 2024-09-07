@@ -1,6 +1,5 @@
 #include "mold.h"
 #include "blake3.h"
-#include "../lib/output-file.h"
 
 #include <fstream>
 #include <functional>
@@ -3076,8 +3075,8 @@ void write_separate_debug_file(Context<E> &ctx) {
   Timer t(ctx, "write_separate_debug_file");
 
   // Open an output file early
-  LockingOutputFile<Context<E>> *file =
-    new LockingOutputFile<Context<E>>(ctx, ctx.arg.separate_debug_file, 0666);
+  LockingOutputFile<E> *file =
+    new LockingOutputFile<E>(ctx, ctx.arg.separate_debug_file, 0666);
 
   // We want to write to the debug info file in background so that the
   // user doesn't have to wait for it to complete.

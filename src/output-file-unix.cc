@@ -1,4 +1,4 @@
-#include "common.h"
+#include "mold.h"
 
 #include <fcntl.h>
 #include <filesystem>
@@ -9,15 +9,15 @@
 
 namespace mold {
 
-inline u32 get_umask() {
+static u32 get_umask() {
   u32 orig_umask = umask(0);
   umask(orig_umask);
   return orig_umask;
 }
 
-template <typename Context>
+template <typename E>
 static int
-open_or_create_file(Context &ctx, std::string path, std::string tmpfile,
+open_or_create_file(Context<E> &ctx, std::string path, std::string tmpfile,
                     int perm) {
   // Reuse an existing file if exists and writable because on Linux,
   // writing to an existing file is much faster than creating a fresh
@@ -35,11 +35,11 @@ open_or_create_file(Context &ctx, std::string path, std::string tmpfile,
   return fd;
 }
 
-template <typename Context>
-class MemoryMappedOutputFile : public OutputFile<Context> {
+template <typename E>
+class MemoryMappedOutputFile : public OutputFile<E> {
 public:
-  MemoryMappedOutputFile(Context &ctx, std::string path, i64 filesize, int perm)
-    : OutputFile<Context>(path, filesize, true) {
+  MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize, int perm)
+    : OutputFile<E>(path, filesize, true) {
     std::filesystem::path dir = filepath(path).parent_path();
     std::string filename = filepath(path).filename().string();
     std::string tmpfile = dir / ("." + filename + "." + std::to_string(getpid()));
@@ -72,7 +72,7 @@ public:
       ::close(fd2);
   }
 
-  void close(Context &ctx) override {
+  void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
 
     if (!this->is_unmapped)
@@ -103,9 +103,9 @@ private:
   int fd2 = -1;
 };
 
-template <typename Context>
-std::unique_ptr<OutputFile<Context>>
-OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, int perm) {
+template <typename E>
+std::unique_ptr<OutputFile<E>>
+OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, int perm) {
   Timer t(ctx, "open_file");
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
@@ -120,7 +120,7 @@ OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, int perm
       is_special = true;
   }
 
-  OutputFile<Context> *file;
+  OutputFile<E> *file;
   if (is_special)
     file = new MallocOutputFile(ctx, path, filesize, perm);
   else
@@ -146,10 +146,10 @@ OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, int perm
 
 // LockingOutputFile is similar to MemoryMappedOutputFile, but it doesn't
 // rename output files and instead acquires file lock using flock().
-template <typename Context>
-LockingOutputFile<Context>::LockingOutputFile(Context &ctx, std::string path,
-                                              int perm)
-  : OutputFile<Context>(path, 0, true) {
+template <typename E>
+LockingOutputFile<E>::LockingOutputFile(Context<E> &ctx, std::string path,
+                                        int perm)
+  : OutputFile<E>(path, 0, true) {
   this->fd = ::open(path.c_str(), O_RDWR | O_CREAT, perm);
   if (this->fd == -1)
     Fatal(ctx) << "cannot open " << path << ": " << errno_string();
@@ -162,8 +162,8 @@ LockingOutputFile<Context>::LockingOutputFile(Context &ctx, std::string path,
   (void)!!write(this->fd, buf, sizeof(buf));
 }
 
-template <typename Context>
-void LockingOutputFile<Context>::resize(Context &ctx, i64 filesize) {
+template <typename E>
+void LockingOutputFile<E>::resize(Context<E> &ctx, i64 filesize) {
   if (ftruncate(this->fd, filesize) == -1)
     Fatal(ctx) << "ftruncate failed: " << errno_string();
 
@@ -177,8 +177,8 @@ void LockingOutputFile<Context>::resize(Context &ctx, i64 filesize) {
   mold::output_buffer_end = this->buf + filesize;
 }
 
-template <typename Context>
-void LockingOutputFile<Context>::close(Context &ctx) {
+template <typename E>
+void LockingOutputFile<E>::close(Context<E> &ctx) {
   if (!this->is_unmapped)
     munmap(this->buf, this->filesize);
 
@@ -191,5 +191,10 @@ void LockingOutputFile<Context>::close(Context &ctx) {
 
   ::close(this->fd);
 }
+
+using E = MOLD_TARGET;
+
+template class OutputFile<E>;
+template class LockingOutputFile<E>;
 
 } // namespace mold

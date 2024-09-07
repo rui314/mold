@@ -1,4 +1,4 @@
-#include "common.h"
+#include "mold.h"
 
 #include <fcntl.h>
 #include <filesystem>
@@ -6,11 +6,11 @@
 
 namespace mold {
 
-template <typename Context>
-class MemoryMappedOutputFile : public OutputFile<Context> {
+template <typename E>
+class MemoryMappedOutputFile : public OutputFile<E> {
 public:
-  MemoryMappedOutputFile(Context &ctx, std::string path, i64 filesize, int perm)
-      : OutputFile<Context>(path, filesize, true) {
+  MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize, int perm)
+      : OutputFile<E>(path, filesize, true) {
     // TODO: use intermediate temporary file for output.
     DWORD attrs = (perm & 0200) ? FILE_ATTRIBUTE_NORMAL : FILE_ATTRIBUTE_READONLY;
 
@@ -40,7 +40,7 @@ public:
       CloseHandle(handle);
   }
 
-  void close(Context &ctx) override {
+  void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
 
     UnmapViewOfFile(this->buf);
@@ -64,9 +64,9 @@ private:
   HANDLE handle;
 };
 
-template <typename Context>
-std::unique_ptr<OutputFile<Context>>
-OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, int perm) {
+template <typename E>
+std::unique_ptr<OutputFile<E>>
+OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, int perm) {
   Timer t(ctx, "open_file");
 
   if (path.starts_with('/') && !ctx.arg.chroot.empty())
@@ -86,7 +86,7 @@ OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, int perm
     }
   }
 
-  OutputFile<Context> *file;
+  OutputFile<E> *file;
   if (is_special)
     file = new MallocOutputFile(ctx, path, filesize, perm);
   else
@@ -94,20 +94,25 @@ OutputFile<Context>::open(Context &ctx, std::string path, i64 filesize, int perm
 
   if (ctx.arg.filler != -1)
     memset(file->buf, ctx.arg.filler, filesize);
-  return std::unique_ptr<OutputFile<Context>>(file);
+  return std::unique_ptr<OutputFile<E>>(file);
 }
 
-template <typename Context>
-LockingOutputFile<Context>::LockingOutputFile(Context &ctx, std::string path,
-                                              int perm)
-  : OutputFile<Context>(path, 0, true) {
+template <typename E>
+LockingOutputFile<E>::LockingOutputFile(Context<E> &ctx, std::string path,
+                                        int perm)
+  : OutputFile<E>(path, 0, true) {
   Fatal(ctx) << "LockingOutputFile is not supported on Windows";
 }
 
-template <typename Context>
-void LockingOutputFile<Context>::resize(Context &ctx, i64 filesize) {}
+template <typename E>
+void LockingOutputFile<E>::resize(Context<E> &ctx, i64 filesize) {}
 
-template <typename Context>
-void LockingOutputFile<Context>::close(Context &ctx) {}
+template <typename E>
+void LockingOutputFile<E>::close(Context<E> &ctx) {}
+
+using E = MOLD_TARGET;
+
+template class OutputFile<E>;
+template class LockingOutputFile<E>;
 
 } // namespace mold

@@ -334,9 +334,15 @@ else()
 endif()
 
 if(WIN32)
-  list(APPEND MOLD_ELF_TEMPLATE_FILES src/subprocess-win32.cc)
+  list(APPEND MOLD_ELF_TEMPLATE_FILES
+    src/output-file-win32.cc
+    src/subprocess-win32.cc
+    )
 else()
-  list(APPEND MOLD_ELF_TEMPLATE_FILES src/subprocess-unix.cc)
+  list(APPEND MOLD_ELF_TEMPLATE_FILES
+    src/output-file-unix.cc
+    src/subprocess-unix.cc
+  )
 endif()
 
 function(mold_instantiate_templates SOURCE TARGET)

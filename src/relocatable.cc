@@ -169,8 +169,7 @@ void combine_objects(Context<E> &ctx) {
   compute_section_headers(ctx);
 
   i64 filesize = r_set_osec_offsets(ctx);
-  ctx.output_file =
-    OutputFile<Context<E>>::open(ctx, ctx.arg.output, filesize, 0666);
+  ctx.output_file = OutputFile<E>::open(ctx, ctx.arg.output, filesize, 0666);
   ctx.buf = ctx.output_file->buf;
 
   copy_chunks(ctx);

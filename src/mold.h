@@ -1075,6 +1075,82 @@ private:
 };
 
 //
+// output-file.cc
+//
+
+template <typename E>
+class OutputFile {
+public:
+  static std::unique_ptr<OutputFile<E>>
+  open(Context<E> &ctx, std::string path, i64 filesize, int perm);
+
+  virtual void close(Context<E> &ctx) = 0;
+  virtual ~OutputFile() = default;
+
+  u8 *buf = nullptr;
+  std::vector<u8> buf2;
+  std::string path;
+  int fd = -1;
+  i64 filesize = 0;
+  bool is_mmapped = false;
+  bool is_unmapped = false;
+
+protected:
+  OutputFile(std::string path, i64 filesize, bool is_mmapped)
+    : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
+};
+
+template <typename E>
+class MallocOutputFile : public OutputFile<E> {
+public:
+  MallocOutputFile(Context<E> &ctx, std::string path, i64 filesize, int perm)
+    : OutputFile<E>(path, filesize, false), ptr(new u8[filesize]),
+      perm(perm) {
+    this->buf = ptr.get();
+  }
+
+  void close(Context<E> &ctx) override {
+    Timer t(ctx, "close_file");
+    FILE *fp;
+
+    if (this->path == "-") {
+      fp = stdout;
+    } else {
+#ifdef _WIN32
+      int pmode = (perm & 0200) ? (_S_IREAD | _S_IWRITE) : _S_IREAD;
+      i64 fd = _open(this->path.c_str(), _O_RDWR | _O_CREAT | _O_BINARY, pmode);
+#else
+      i64 fd = ::open(this->path.c_str(), O_RDWR | O_CREAT, perm);
+#endif
+      if (fd == -1)
+        Fatal(ctx) << "cannot open " << this->path << ": " << errno_string();
+#ifdef _WIN32
+      fp = _fdopen(fd, "wb");
+#else
+      fp = fdopen(fd, "w");
+#endif
+    }
+
+    fwrite(this->buf, this->filesize, 1, fp);
+    if (!this->buf2.empty())
+      fwrite(this->buf2.data(), this->buf2.size(), 1, fp);
+    fclose(fp);
+  }
+
+private:
+  std::unique_ptr<u8[]> ptr;
+  int perm;
+};
+
+template <typename E>
+class LockingOutputFile : public OutputFile<E> {
+public:
+  LockingOutputFile(Context<E> &ctx, std::string path, int perm);
+  void resize(Context<E> &ctx, i64 filesize);
+  void close(Context<E> &ctx) override;
+};
+
+//
 // gdb-index.cc
 //
 
@@ -1956,7 +2032,7 @@ struct Context {
   std::vector<ElfSym<E>> internal_esyms;
 
   // Output buffer
-  std::unique_ptr<OutputFile<Context<E>>> output_file;
+  std::unique_ptr<OutputFile<E>> output_file;
   u8 *buf = nullptr;
   bool overwrite_output_file = true;
 
@@ -3019,6 +3095,15 @@ inline bool is_c_identifier(std::string_view s) {
     if (!is_alnum(s[i]))
       return false;
   return true;
+}
+
+template <typename E>
+std::string_view save_string(Context<E> &ctx, const std::string &str) {
+  u8 *buf = new u8[str.size() + 1];
+  memcpy(buf, str.data(), str.size());
+  buf[str.size()] = '\0';
+  ctx.string_pool.push_back(std::unique_ptr<u8[]>(buf));
+  return {(char *)buf, str.size()};
 }
 
 } // namespace mold
