@@ -1470,6 +1470,14 @@ void scan_relocations(Context<E> &ctx) {
     file->scan_relocations(ctx);
   });
 
+  // Word-size absolute relocations (e.g. R_X86_64_64) are handled
+  // separately because they can be promoted to dynamic relocations.
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+    if (OutputSection<E> *osec = chunk->to_osec())
+      if (osec->shdr.sh_flags & SHF_ALLOC)
+        osec->scan_abs_relocations(ctx);
+  });
+
   // Exit if there was a relocation that refers an undefined symbol.
   ctx.checkpoint();
 
@@ -1530,6 +1538,15 @@ void scan_relocations(Context<E> &ctx) {
       ctx.got->add_tlsdesc_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_COPYREL) {
+      if (sym->esym().st_visibility == STV_PROTECTED)
+        Error(ctx) << *sym->file
+                   << ": cannot create a copy relocation for protected symbol '"
+                   << *sym << "'; recompile with -fPIC";
+      if (!ctx.arg.z_copyreloc)
+        Error(ctx) << "-z nocopyreloc: " << *sym->file
+                   << ": cannot create a copy relocation for symbol '" << *sym
+                   << "'; recompile with -fPIC";
+
       if (ctx.arg.z_relro && ((SharedFile<E> *)sym->file)->is_readonly(sym))
         ctx.copyrel_relro->add_symbol(ctx, sym);
       else

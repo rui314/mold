@@ -6,11 +6,6 @@
 
 namespace mold {
 
-typedef enum {
-  NONE, ERROR, COPYREL, DYN_COPYREL, PLT, CPLT, DYN_CPLT, DYNREL,
-  BASEREL, IFUNC_DYNREL,
-} Action;
-
 static i64 to_p2align(u64 alignment) {
   if (alignment == 0)
     return 0;
@@ -118,114 +113,33 @@ is_relr_reloc(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel) {
   return false;
 }
 
+typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT } Action;
+
 template <typename E>
-static void scan_rel(Context<E> &ctx, InputSection<E> &isec, Symbol<E> &sym,
-                     const ElfRel<E> &rel, Action action) {
-  bool writable = (isec.shdr().sh_flags & SHF_WRITE);
-
-  auto error = [&] {
-    std::string msg = sym.is_absolute() ? "-fno-PIC" : "-fPIC";
-    Error(ctx) << isec << ": " << rel << " relocation at offset 0x"
-               << std::hex << rel.r_offset << " against symbol `"
-               << sym << "' can not be used; recompile with " << msg;
-  };
-
-  auto check_textrel = [&] {
-    if (!writable) {
-      if (ctx.arg.z_text) {
-        error();
-      } else if (ctx.arg.warn_textrel) {
-        Warn(ctx) << isec << ": relocation against symbol `" << sym
-                  << "' in read-only section";
-      }
-      ctx.has_textrel = true;
-    }
-  };
-
-  auto copyrel = [&] {
-    assert(sym.is_imported);
-    if (sym.esym().st_visibility == STV_PROTECTED) {
-      Error(ctx) << isec
-                 << ": cannot make copy relocation for protected symbol '" << sym
-                 << "', defined in " << *sym.file << "; recompile with -fPIC";
-    }
-    sym.flags |= NEEDS_COPYREL;
-  };
-
-  auto dynrel = [&] {
-    check_textrel();
-    isec.file.num_dynrel++;
-  };
-
+static void do_action(Context<E> &ctx, Action action, InputSection<E> &isec,
+                      Symbol<E> &sym, const ElfRel<E> &rel) {
   switch (action) {
   case NONE:
     break;
   case ERROR:
-    // Print out the "recompile with -fPIC" error message.
-    error();
+    Error(ctx) << isec << ": " << rel << " relocation at offset 0x"
+               << std::hex << rel.r_offset << " against symbol `"
+               << sym << "' can not be used; recompile with "
+               << (sym.is_absolute() ? "-fno-PIC" : "-fPIC");
     break;
   case COPYREL:
-    // Create a copy relocation.
-    if (!ctx.arg.z_copyreloc)
-      error();
-    copyrel();
-    break;
-  case DYN_COPYREL:
-    // Same as COPYREL but try to avoid creating a copy relocation by
-    // creating a dynamic relocation if possible.
-    //
-    // GHC (Glasgow Haskell Compiler) places a small amount of data in
-    // .text before each function and access that data with a fixed
-    // offset. The function breaks if we copy-relocate the data. For such
-    // programs, we should avoid copy relocations if possible.
-    //
-    // Besides GHC, copy relocation is a hacky solution, so if we can
-    // represent a relocation either with copyrel or dynrel, we prefer
-    // dynamic relocation.
-    if (writable || !ctx.arg.z_copyreloc)
-      dynrel();
-    else
-      copyrel();
+    // Create a copy relocation
+    assert(sym.is_imported);
+    sym.flags |= NEEDS_COPYREL;
     break;
   case PLT:
-    // Create a PLT entry.
+    // Create a PLT entry
     sym.flags |= NEEDS_PLT;
     break;
   case CPLT:
-    // Create a canonical PLT entry.
+    // Create a canonical PLT entry
     sym.flags |= NEEDS_CPLT;
     break;
-  case DYN_CPLT:
-    // Same as CPLT but try to avoid creating a canonical PLT by creating
-    // a dynamic relocation if possible. The motivation is the same as
-    // DYN_COPYREL.
-    if (writable)
-      dynrel();
-    else
-      sym.flags |= NEEDS_CPLT;
-    break;
-  case DYNREL:
-    // Create a dynamic relocation.
-    dynrel();
-    break;
-  case BASEREL:
-    // Create a base relocation.
-    check_textrel();
-    if (!is_relr_reloc(ctx, isec, rel))
-      isec.file.num_dynrel++;
-    break;
-  case IFUNC_DYNREL:
-    // Create an IRELATIVE relocation for a GNU ifunc symbol.
-    //
-    // We usually create an IRELATIVE relocation in .got for each ifunc.
-    // However, if a statically-initialized pointer is initialized to an
-    // ifunc's address, we have no choice other than emitting an IRELATIVE
-    // relocation for each such pointer.
-    dynrel();
-    ctx.num_ifunc_dynrels++;
-    break;
-  default:
-    unreachable();
   }
 }
 
@@ -250,96 +164,39 @@ static inline i64 get_sym_type(Symbol<E> &sym) {
 }
 
 template <typename E>
-static Action get_pcrel_action(Context<E> &ctx, Symbol<E> &sym) {
+void InputSection<E>::scan_pcrel(Context<E> &ctx, Symbol<E> &sym,
+                                 const ElfRel<E> &rel) {
   // This is for PC-relative relocations (e.g. R_X86_64_PC32).
   // We cannot promote them to dynamic relocations because the dynamic
   // linker generally does not support PC-relative relocations.
-  static Action table[3][4] = {
+  static Action table[][4] = {
     // Absolute  Local    Imported data  Imported code
     {  ERROR,    NONE,    ERROR,         PLT    },  // Shared object
     {  ERROR,    NONE,    COPYREL,       CPLT   },  // Position-independent exec
     {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
   };
 
-  return table[get_output_type(ctx)][get_sym_type(sym)];
+  Action action = table[get_output_type(ctx)][get_sym_type(sym)];
+  do_action(ctx, action, *this, sym, rel);
 }
 
 template <typename E>
-static Action get_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
+void InputSection<E>::scan_absrel(Context<E> &ctx, Symbol<E> &sym,
+                                  const ElfRel<E> &rel) {
   // This is a decision table for absolute relocations that is smaller
   // than the pointer size (e.g. R_X86_64_32). Since the dynamic linker
   // generally does not support dynamic relocations smaller than the
   // pointer size, we need to report an error if a relocation cannot be
   // resolved at link-time.
-  static Action table[3][4] = {
+  static Action table[][4] = {
     // Absolute  Local    Imported data  Imported code
     {  NONE,     ERROR,   ERROR,         ERROR },  // Shared object
     {  NONE,     ERROR,   ERROR,         ERROR },  // Position-independent exec
     {  NONE,     NONE,    COPYREL,       CPLT  },  // Position-dependent exec
   };
 
-  return table[get_output_type(ctx)][get_sym_type(sym)];
-}
-
-template <typename E>
-static Action get_dyn_absrel_action(Context<E> &ctx, Symbol<E> &sym) {
-  if (sym.is_ifunc())
-    return sym.is_pde_ifunc(ctx) ? NONE : IFUNC_DYNREL;
-
-  // This is a decision table for absolute relocations for the pointer
-  // size data (e.g. R_X86_64_64). Unlike the absrel_table, we can emit
-  // a dynamic relocation if we cannot resolve an address at link-time.
-  static Action table[3][4] = {
-    // Absolute  Local    Imported data  Imported code
-    {  NONE,     BASEREL, DYNREL,        DYNREL   },  // Shared object
-    {  NONE,     BASEREL, DYNREL,        DYNREL   },  // Position-independent exec
-    {  NONE,     NONE,    DYN_COPYREL,   DYN_CPLT },  // Position-dependent exec
-  };
-
-  return table[get_output_type(ctx)][get_sym_type(sym)];
-}
-
-template <typename E>
-static Action get_ppc64_toc_action(Context<E> &ctx, Symbol<E> &sym) {
-  if (sym.is_ifunc())
-    return IFUNC_DYNREL;
-
-  // As a special case, we do not create copy relocations nor canonical
-  // PLTs for .toc sections. PPC64's .toc is a compiler-generated
-  // GOT-like section, and no user-generated code directly uses values
-  // in it.
-  static Action table[3][4] = {
-    // Absolute  Local    Imported data  Imported code
-    {  NONE,     BASEREL, DYNREL,        DYNREL },  // Shared object
-    {  NONE,     BASEREL, DYNREL,        DYNREL },  // Position-independent exec
-    {  NONE,     NONE,    DYNREL,        DYNREL },  // Position-dependent exec
-  };
-
-  return table[get_output_type(ctx)][get_sym_type(sym)];
-}
-
-template <typename E>
-void InputSection<E>::scan_pcrel(Context<E> &ctx, Symbol<E> &sym,
-                                 const ElfRel<E> &rel) {
-  scan_rel(ctx, *this, sym, rel, get_pcrel_action(ctx, sym));
-}
-
-template <typename E>
-void InputSection<E>::scan_absrel(Context<E> &ctx, Symbol<E> &sym,
-                                  const ElfRel<E> &rel) {
-  scan_rel(ctx, *this, sym, rel, get_absrel_action(ctx, sym));
-}
-
-template <typename E>
-void InputSection<E>::scan_dyn_absrel(Context<E> &ctx, Symbol<E> &sym,
-                                      const ElfRel<E> &rel) {
-  scan_rel(ctx, *this, sym, rel, get_dyn_absrel_action(ctx, sym));
-}
-
-template <typename E>
-void InputSection<E>::scan_toc_rel(Context<E> &ctx, Symbol<E> &sym,
-                                   const ElfRel<E> &rel) {
-  scan_rel(ctx, *this, sym, rel, get_ppc64_toc_action(ctx, sym));
+  Action action = table[get_output_type(ctx)][get_sym_type(sym)];
+  do_action(ctx, action, *this, sym, rel);
 }
 
 template <typename E>
@@ -371,82 +228,6 @@ void InputSection<E>::check_tlsle(Context<E> &ctx, Symbol<E> &sym,
     Error(ctx) << *this << ": relocation " << rel << " against `" << sym
                << "` can not be used when making a shared object;"
                << " recompile with -fPIC";
-}
-
-template <typename E>
-static void apply_absrel(Context<E> &ctx, InputSection<E> &isec,
-                         Symbol<E> &sym, const ElfRel<E> &rel, u8 *loc,
-                         u64 S, i64 A, u64 P, ElfRel<E> *&dynrel,
-                         Action action) {
-  bool writable = (isec.shdr().sh_flags & SHF_WRITE);
-
-  auto emit_abs_dynrel = [&] {
-    *dynrel++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
-    if (ctx.arg.apply_dynamic_relocs)
-      *(Word<E> *)loc = A;
-  };
-
-  switch (action) {
-  case COPYREL:
-  case CPLT:
-  case NONE:
-    *(Word<E> *)loc = S + A;
-    break;
-  case BASEREL:
-    if (is_relr_reloc(ctx, isec, rel)) {
-      *(Word<E> *)loc = S + A;
-    } else {
-      *dynrel++ = ElfRel<E>(P, E::R_RELATIVE, 0, S + A);
-      if (ctx.arg.apply_dynamic_relocs)
-        *(Word<E> *)loc = S + A;
-    }
-    break;
-  case DYN_COPYREL:
-    if (writable || !ctx.arg.z_copyreloc)
-      emit_abs_dynrel();
-    else
-      *(Word<E> *)loc = S + A;
-    break;
-  case DYN_CPLT:
-    if (writable)
-      emit_abs_dynrel();
-    else
-      *(Word<E> *)loc = S + A;
-    break;
-  case DYNREL:
-    emit_abs_dynrel();
-    break;
-  case IFUNC_DYNREL:
-    if constexpr (supports_ifunc<E>) {
-      u64 addr = sym.get_addr(ctx, NO_PLT) + A;
-      *dynrel++ = ElfRel<E>(P, E::R_IRELATIVE, 0, addr);
-      if (ctx.arg.apply_dynamic_relocs)
-        *(Word<E> *)loc = addr;
-    } else {
-      unreachable();
-    }
-    break;
-  default:
-    unreachable();
-  }
-}
-
-template <typename E>
-void InputSection<E>::apply_dyn_absrel(Context<E> &ctx, Symbol<E> &sym,
-                                       const ElfRel<E> &rel, u8 *loc,
-                                       u64 S, i64 A, u64 P,
-                                       ElfRel<E> **dynrel) {
-  apply_absrel(ctx, *this, sym, rel, loc, S, A, P, *dynrel,
-               get_dyn_absrel_action(ctx, sym));
-}
-
-template <typename E>
-void InputSection<E>::apply_toc_rel(Context<E> &ctx, Symbol<E> &sym,
-                                    const ElfRel<E> &rel, u8 *loc,
-                                    u64 S, i64 A, u64 P,
-                                    ElfRel<E> **dynrel) {
-  apply_absrel(ctx, *this, sym, rel, loc, S, A, P, *dynrel,
-               get_ppc64_toc_action(ctx, sym));
 }
 
 template <typename E>

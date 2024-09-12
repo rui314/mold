@@ -145,11 +145,6 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  ElfRel<E> *dynrel = nullptr;
-  if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                           file.reldyn_offset + this->reldyn_offset);
-
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE)
@@ -173,7 +168,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_AARCH64_ABS64:
-      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_AARCH64_LDST8_ABS_LO12_NC:
     case R_AARCH64_ADD_ABS_LO12_NC:
@@ -490,8 +484,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
-
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
@@ -507,9 +499,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
-    case R_AARCH64_ABS64:
-      scan_dyn_absrel(ctx, sym, rel);
-      break;
     case R_AARCH64_MOVW_UABS_G3:
       scan_absrel(ctx, sym, rel);
       break;
@@ -569,6 +558,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
       check_tlsle(ctx, sym, rel);
       break;
+    case R_AARCH64_ABS64:
     case R_AARCH64_ADD_ABS_LO12_NC:
     case R_AARCH64_ADR_PREL_LO21:
     case R_AARCH64_CONDBR19:

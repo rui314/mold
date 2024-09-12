@@ -186,11 +186,6 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  ElfRel<E> *dynrel = nullptr;
-  if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                           file.reldyn_offset + this->reldyn_offset);
-
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE)
@@ -210,12 +205,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     auto no_r2save_thunk_addr = [&] { return get_thunk_addr(i) + 8; };
 
     switch (rel.r_type) {
-    case R_PPC64_ADDR64:
-      if (name() == ".toc")
-        apply_toc_rel(ctx, sym, rel, loc, S, A, P, &dynrel);
-      else
-        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
-      break;
     case R_PPC64_TOC16_HA:
       *(ul16 *)loc = ha(S + A - TOC);
       break;
@@ -337,6 +326,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_TPREL34:
       write34(loc, S + A - ctx.tp_addr);
       break;
+    case R_PPC64_ADDR64:
     case R_PPC64_PLTSEQ:
     case R_PPC64_PLTSEQ_NOTOC:
     case R_PPC64_PLTCALL:
@@ -403,8 +393,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
-
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
@@ -419,12 +407,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
-    case R_PPC64_ADDR64:
-      if (name() == ".toc")
-        scan_toc_rel(ctx, sym, rel);
-      else
-        scan_dyn_absrel(ctx, sym, rel);
-      break;
     case R_PPC64_GOT_TPREL16_HA:
     case R_PPC64_GOT_TPREL_PCREL34:
       sym.flags |= NEEDS_GOTTP;
@@ -458,6 +440,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_TPREL34:
       check_tlsle(ctx, sym, rel);
       break;
+    case R_PPC64_ADDR64:
     case R_PPC64_REL32:
     case R_PPC64_REL64:
     case R_PPC64_TOC16_HA:

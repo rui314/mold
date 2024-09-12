@@ -256,11 +256,6 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  ElfRel<E> *dynrel = nullptr;
-  if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                           file.reldyn_offset + this->reldyn_offset);
-
   auto get_tls_trampoline_addr = [&, i = 0](u64 addr) mutable {
     for (; i < output_section->thunks.size(); i++) {
       i64 disp = output_section->shdr.sh_addr + output_section->thunks[i]->offset -
@@ -299,7 +294,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_ARM_ABS32:
     case R_ARM_TARGET1:
-      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_ARM_REL32:
       *(ul32 *)loc = S + A - P;
@@ -586,8 +580,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
-
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
@@ -602,12 +594,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
-    case R_ARM_ABS32:
-    case R_ARM_MOVT_ABS:
-    case R_ARM_THM_MOVT_ABS:
-    case R_ARM_TARGET1:
-      scan_dyn_absrel(ctx, sym, rel);
-      break;
     case R_ARM_MOVW_ABS_NC:
     case R_ARM_THM_MOVW_ABS_NC:
       scan_absrel(ctx, sym, rel);
@@ -646,6 +632,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_TLS_LE32:
       check_tlsle(ctx, sym, rel);
       break;
+    case R_ARM_ABS32:
+    case R_ARM_MOVT_ABS:
+    case R_ARM_THM_MOVT_ABS:
+    case R_ARM_TARGET1:
     case R_ARM_REL32:
     case R_ARM_BASE_PREL:
     case R_ARM_GOTOFF32:
@@ -762,7 +752,7 @@ std::vector<u8> Arm32ExidxSection::get_contents(Context<E> &ctx) {
   std::vector<u8> buf(output_section.shdr.sh_size);
 
   output_section.shdr.sh_addr = this->shdr.sh_addr;
-  output_section.write_to(ctx, buf.data());
+  output_section.write_to(ctx, buf.data(), nullptr);
 
   // .ARM.exidx records consists of a signed 31-bit relative address
   // and a 32-bit value. The relative address indicates the start

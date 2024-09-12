@@ -148,11 +148,6 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  ElfRel<E> *dynrel = nullptr;
-  if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                           file.reldyn_offset + this->reldyn_offset);
-
   u64 GOT2 = file.extra.got2 ? file.extra.got2->get_addr() : 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
@@ -170,10 +165,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
-    case R_PPC_ADDR32:
-    case R_PPC_UADDR32:
-      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
-      break;
     case R_PPC_ADDR14:
       *(ub32 *)loc |= bits(S + A, 15, 2) << 2;
       break;
@@ -275,6 +266,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC_GOT_TPREL16:
       *(ub16 *)loc = sym.get_gottp_addr(ctx) - GOT;
       break;
+    case R_PPC_ADDR32:
+    case R_PPC_UADDR32:
     case R_PPC_TLS:
     case R_PPC_TLSGD:
     case R_PPC_TLSLD:
@@ -323,8 +316,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
-
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
@@ -339,10 +330,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
 
     switch (rel.r_type) {
-    case R_PPC_ADDR32:
-    case R_PPC_UADDR32:
-      scan_dyn_absrel(ctx, sym, rel);
-      break;
     case R_PPC_ADDR14:
     case R_PPC_ADDR16:
     case R_PPC_UADDR16:
@@ -391,6 +378,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC_TPREL16_HA:
       check_tlsle(ctx, sym, rel);
       break;
+    case R_PPC_ADDR32:
+    case R_PPC_UADDR32:
     case R_PPC_LOCAL24PC:
     case R_PPC_TLS:
     case R_PPC_TLSGD:

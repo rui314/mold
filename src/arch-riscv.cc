@@ -210,11 +210,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
   u64 GP = ctx.__global_pointer ? ctx.__global_pointer->get_addr(ctx) : 0;
 
-  ElfRel<E> *dynrel = nullptr;
-  if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                           file.reldyn_offset + this->reldyn_offset);
-
   auto get_r_delta = [&](i64 idx) {
     return extra.r_deltas.empty() ? 0 : extra.r_deltas[idx];
   };
@@ -265,12 +260,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_32:
       if constexpr (E::is_64)
         *(U32<E> *)loc = S + A;
-      else
-        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_RISCV_64:
-      assert(E::is_64);
-      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_RISCV_BRANCH:
       check(S + A - P, -(1 << 12), 1 << 12);
@@ -716,8 +707,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
-
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
@@ -735,16 +724,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_32:
       if constexpr (E::is_64)
         scan_absrel(ctx, sym, rel);
-      else
-        scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_RISCV_HI20:
       scan_absrel(ctx, sym, rel);
-      break;
-    case R_RISCV_64:
-      if constexpr (!E::is_64)
-        Error(ctx) << *this << ": R_RISCV_64 cannot be used on RV32";
-      scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_RISCV_CALL:
     case R_RISCV_CALL_PLT:
@@ -778,6 +760,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (ctx.arg.shared)
         Error(ctx) << *this << ": R_RISCV_GPREL_HI20 may not be used with -shared";
       break;
+    case R_RISCV_64:
     case R_RISCV_BRANCH:
     case R_RISCV_JAL:
     case R_RISCV_PCREL_LO12_I:

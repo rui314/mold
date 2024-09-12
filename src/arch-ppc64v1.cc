@@ -154,11 +154,6 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  ElfRel<E> *dynrel = nullptr;
-  if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                           file.reldyn_offset + this->reldyn_offset);
-
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE)
@@ -182,11 +177,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 TOC = ctx.extra.TOC->value;
 
     switch (rel.r_type) {
-    case R_PPC64_ADDR64:
-      apply_toc_rel(ctx, sym, rel, loc, S, A, P, &dynrel);
-      break;
     case R_PPC64_TOC:
-      apply_toc_rel(ctx, *ctx.extra.TOC, rel, loc, TOC, A, P, &dynrel);
       break;
     case R_PPC64_TOC16_HA:
       *(ub16 *)loc = ha(S + A - TOC);
@@ -277,6 +268,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_GOT_TPREL16_LO_DS:
       *(ub16 *)loc |= (sym.get_gottp_addr(ctx) - TOC) & 0xfffc;
       break;
+    case R_PPC64_ADDR64:
     case R_PPC64_PLTSEQ:
     case R_PPC64_PLTCALL:
     case R_PPC64_TLS:
@@ -341,8 +333,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
-
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
@@ -362,10 +352,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       sym.flags |= NEEDS_PPC_OPD;
 
     switch (rel.r_type) {
-    case R_PPC64_ADDR64:
-    case R_PPC64_TOC:
-      scan_toc_rel(ctx, sym, rel);
-      break;
     case R_PPC64_GOT_TPREL16_HA:
       sym.flags |= NEEDS_GOTTP;
       break;
@@ -387,6 +373,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_TPREL16_LO_DS:
       check_tlsle(ctx, sym, rel);
       break;
+    case R_PPC64_ADDR64:
+    case R_PPC64_TOC:
     case R_PPC64_REL32:
     case R_PPC64_REL64:
     case R_PPC64_TOC16_HA:

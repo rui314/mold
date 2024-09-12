@@ -266,11 +266,6 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  ElfRel<E> *dynrel = nullptr;
-  if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                           file.reldyn_offset + this->reldyn_offset);
-
   auto get_r_delta = [&](i64 idx) {
     return extra.r_deltas.empty() ? 0 : extra.r_deltas[idx];
   };
@@ -329,12 +324,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_32:
       if constexpr (E::is_64)
         *(ul32 *)loc = S + A;
-      else
-        apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
-      break;
-    case R_LARCH_64:
-      assert(E::is_64);
-      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_LARCH_B16:
       check_branch(S + A - P, -(1 << 17), 1 << 17);
@@ -661,6 +650,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         set_rj(loc, 2);
       break;
     }
+    case R_LARCH_64:
     case R_LARCH_TLS_LE_ADD_R:
       break;
     default:
@@ -762,8 +752,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
-
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   // Scan relocations
@@ -787,12 +775,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_LARCH_32:
       if constexpr (E::is_64)
         scan_absrel(ctx, sym, rel);
-      else
-        scan_dyn_absrel(ctx, sym, rel);
-      break;
-    case R_LARCH_64:
-      assert(E::is_64);
-      scan_dyn_absrel(ctx, sym, rel);
       break;
     case R_LARCH_B26:
     case R_LARCH_PCALA_HI20:
@@ -829,6 +811,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_LARCH_TLS_DESC_CALL:
       scan_tlsdesc(ctx, sym);
       break;
+    case R_LARCH_64:
     case R_LARCH_B16:
     case R_LARCH_B21:
     case R_LARCH_ABS_HI20:

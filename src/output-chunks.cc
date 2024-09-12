@@ -404,11 +404,6 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
     offset += chunk->get_reldyn_size(ctx) * sizeof(ElfRel<E>);
   }
 
-  for (ObjectFile<E> *file : ctx.objs) {
-    file->reldyn_offset = offset;
-    offset += file->num_dynrel * sizeof(ElfRel<E>);
-  }
-
   this->shdr.sh_size = offset;
   this->shdr.sh_link = ctx.dynsym->shndx;
 }
@@ -951,14 +946,20 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
 
 template <typename E>
 void OutputSection<E>::copy_buf(Context<E> &ctx) {
-  if (this->shdr.sh_type != SHT_NOBITS)
-    write_to(ctx, ctx.buf + this->shdr.sh_offset);
+  if (this->shdr.sh_type != SHT_NOBITS) {
+    ElfRel<E> *rel = nullptr;
+    if (ctx.reldyn)
+      rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+                          this->reldyn_offset);
+
+    write_to(ctx, ctx.buf + this->shdr.sh_offset, rel);
+  }
 }
 
 template <typename E>
-void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
+void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) {
+  // Copy section contents to an output file.
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
-    // Copy section contents to an output file.
     InputSection<E> &isec = *members[i];
     isec.write_to(ctx, buf + isec.offset);
 
@@ -983,10 +984,44 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     }
   });
 
+  // Emit range extension thunks.
   if constexpr (needs_thunk<E>) {
     tbb::parallel_for_each(thunks, [&](std::unique_ptr<Thunk<E>> &thunk) {
       thunk->copy_buf(ctx);
     });
+  }
+
+  // Emit dynamic relocations.
+  for (AbsRel<E> &r : abs_rels) {
+    Word<E> *loc = (Word<E> *)(buf + r.isec->offset + r.offset);
+    u64 addr = this->shdr.sh_addr + r.isec->offset + r.offset;
+
+    switch (r.kind) {
+    case ABS_REL_NONE:
+    case ABS_REL_RELR:
+      *loc = r.sym->get_addr(ctx) + r.addend;
+      break;
+    case ABS_REL_BASEREL: {
+      u64 val = r.sym->get_addr(ctx) + r.addend;
+      *rel++ = ElfRel<E>(addr, E::R_RELATIVE, 0, val);
+      if (ctx.arg.apply_dynamic_relocs)
+        *loc = val;
+      break;
+    }
+    case ABS_REL_IFUNC:
+      if constexpr (supports_ifunc<E>) {
+        u64 val = r.sym->get_addr(ctx, NO_PLT) + r.addend;
+        *rel++ = ElfRel<E>(addr, E::R_IRELATIVE, 0, val);
+        if (ctx.arg.apply_dynamic_relocs)
+          *loc = val;
+      }
+      break;
+    case ABS_REL_DYNREL:
+      *rel++ = ElfRel<E>(addr, E::R_ABS, r.sym->get_dynsym_idx(ctx), r.addend);
+      if (ctx.arg.apply_dynamic_relocs)
+        *loc = r.addend;
+      break;
+    }
   }
 }
 
@@ -1039,35 +1074,92 @@ static std::vector<u64> encode_relr(std::span<u64> pos) {
 }
 
 template <typename E>
-void OutputSection<E>::construct_relr(Context<E> &ctx) {
-  if (!ctx.arg.pic)
-    return;
-  if (!(this->shdr.sh_flags & SHF_ALLOC))
-    return;
-  if (this->shdr.sh_addralign % sizeof(Word<E>))
-    return;
+static AbsRelKind get_abs_rel_kind(Context<E> &ctx, Symbol<E> &sym) {
+  if (sym.is_ifunc())
+    return sym.is_pde_ifunc(ctx) ? ABS_REL_NONE : ABS_REL_IFUNC;
 
-  // Skip it if it is a text section because .text doesn't usually
-  // contain any dynamic relocations.
-  if (this->shdr.sh_flags & SHF_EXECINSTR)
-    return;
+  if (sym.is_absolute())
+    return ABS_REL_NONE;
 
-  // Collect base relocations
-  std::vector<std::vector<u64>> shards(members.size());
+  // True if the symbol's address is in the output file.
+  if (!sym.is_imported || (sym.flags & NEEDS_CPLT) || (sym.flags & NEEDS_COPYREL))
+    return ctx.arg.pic ? ABS_REL_BASEREL : ABS_REL_NONE;
 
+  return ABS_REL_DYNREL;
+}
+
+// Scan word-size absolute relocations (e.g. R_X86_64_64). This is
+// separated from scan_relocations() because only such relocations can
+// be promoted to dynamic relocations.
+template <typename E>
+void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
+  std::vector<std::vector<AbsRel<E>>> shards(members.size());
+
+  // Collect all word-size absolute relocations
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
-    InputSection<E> &isec = *members[i];
-
-    if (isec.shdr().sh_addralign % sizeof(Word<E>) == 0)
-      for (const ElfRel<E> &r : isec.get_rels(ctx))
-        if (r.r_type == E::R_ABS && r.r_offset % sizeof(Word<E>) == 0)
-          if (Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-              !sym.is_ifunc() && !sym.is_absolute() && !sym.is_imported)
-            shards[i].push_back(isec.offset + r.r_offset);
+    InputSection<E> *isec = members[i];
+    for (const ElfRel<E> &r : isec->get_rels(ctx))
+      if (r.r_type == E::R_ABS)
+        shards[i].emplace_back(isec, r.r_offset, isec->file.symbols[r.r_sym],
+                               get_addend(*isec, r));
   });
 
-  // Compress them
-  std::vector<u64> pos = flatten(shards);
+  abs_rels = flatten(shards);
+
+  // We can sometimes avoid creating dynamic relocations in read-only
+  // sections by promoting symbols to canonical PLT or copy relocations.
+  if (!ctx.arg.pic && !(this->shdr.sh_flags & SHF_WRITE))
+    for (AbsRel<E> &r : abs_rels)
+      if (Symbol<E> &sym = *r.sym;
+          sym.is_imported && !sym.is_absolute())
+        sym.flags |= (sym.get_type() == STT_FUNC) ? NEEDS_CPLT : NEEDS_COPYREL;
+
+  // Now we can compute whether they need to be promoted to dynamic
+  // relocations or not.
+  for (AbsRel<E> &r : abs_rels)
+    r.kind = get_abs_rel_kind(ctx, *r.sym);
+
+  // If we have a relocation against a read-only section, we need to
+  // set the DT_TEXTREL flag for the loader.
+  for (AbsRel<E> &r : abs_rels) {
+    if (r.kind != ABS_REL_NONE && !(r.isec->shdr().sh_flags & SHF_WRITE)) {
+      if (ctx.arg.z_text) {
+        Error(ctx) << *r.isec << ": relocation at offset 0x"
+                   << std::hex << r.offset << " against symbol `"
+                   << *r.sym << "' can not be used; recompile with -fPIC";
+      } else if (ctx.arg.warn_textrel) {
+        Warn(ctx) << *r.isec << ": relocation against symbol `" << *r.sym
+                  << "' in read-only section";
+      }
+      ctx.has_textrel = true;
+    }
+  }
+
+  // If --pack-dyn-relocs=relr is enabled, base relocations are put into
+  // .relr.dyn.
+  if (ctx.arg.pack_dyn_relocs_relr)
+    for (AbsRel<E> &r : abs_rels)
+      if (r.kind == ABS_REL_BASEREL &&
+          r.isec->shdr().sh_addralign % sizeof(Word<E>) == 0 &&
+          r.offset % sizeof(Word<E>) == 0)
+        r.kind = ABS_REL_RELR;
+}
+
+template <typename E>
+i64 OutputSection<E>::get_reldyn_size(Context<E> &ctx) const {
+  i64 n = 0;
+  for (const AbsRel<E> &r : abs_rels)
+    if (r.kind != ABS_REL_NONE && r.kind != ABS_REL_RELR)
+      n++;
+  return n;
+}
+
+template <typename E>
+void OutputSection<E>::construct_relr(Context<E> &ctx) {
+  std::vector<u64> pos;
+  for (const AbsRel<E> &r : abs_rels)
+    if (r.kind == ABS_REL_RELR)
+      pos.push_back(r.isec->offset + r.offset);
   this->relr = encode_relr<E>(pos);
 }
 
@@ -1388,13 +1480,10 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void GotSection<E>::construct_relr(Context<E> &ctx) {
-  assert(ctx.arg.pack_dyn_relocs_relr);
-
   std::vector<u64> pos;
   for (GotEntry<E> &ent : get_got_entries(ctx))
     if (ent.is_relr(ctx))
       pos.push_back(ent.idx * sizeof(Word<E>));
-
   this->relr = encode_relr<E>(pos);
 }
 
@@ -2104,11 +2193,11 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
 
 template <typename E>
 void MergedSection<E>::copy_buf(Context<E> &ctx) {
-  write_to(ctx, ctx.buf + this->shdr.sh_offset);
+  write_to(ctx, ctx.buf + this->shdr.sh_offset, nullptr);
 }
 
 template <typename E>
-void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
+void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) {
   i64 shard_size = map.nbuckets / map.NUM_SHARDS;
 
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
@@ -2746,7 +2835,7 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   this->uncompressed_data.resize(chunk.shdr.sh_size);
   u8 *buf = this->uncompressed_data.data();
 
-  chunk.write_to(ctx, buf);
+  chunk.write_to(ctx, buf, nullptr);
 
   switch (ctx.arg.compress_debug_sections) {
   case COMPRESS_ZLIB:

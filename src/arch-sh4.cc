@@ -230,11 +230,6 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  ElfRel<E> *dynrel = nullptr;
-  if (ctx.reldyn)
-    dynrel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                           file.reldyn_offset + this->reldyn_offset);
-
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE)
@@ -251,7 +246,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_SH_DIR32:
-      apply_dyn_absrel(ctx, sym, rel, loc, S, A, P, &dynrel);
       break;
     case R_SH_REL32:
     case R_SH_PLT32:
@@ -323,8 +317,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
-
-  this->reldyn_offset = file.num_dynrel * sizeof(ElfRel<E>);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
   for (i64 i = 0; i < rels.size(); i++) {
@@ -338,9 +330,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << sym << ": GNU ifunc symbol is not supported on sh4";
 
     switch (rel.r_type) {
-    case R_SH_DIR32:
-      scan_dyn_absrel(ctx, sym, rel);
-      break;
     case R_SH_REL32:
       scan_pcrel(ctx, sym, rel);
       break;
@@ -363,6 +352,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SH_TLS_LE_32:
       check_tlsle(ctx, sym, rel);
       break;
+    case R_SH_DIR32:
     case R_SH_GOTPC:
     case R_SH_GOTOFF:
     case R_SH_TLS_LDO_32:

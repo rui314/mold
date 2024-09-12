@@ -313,8 +313,6 @@ public:
 private:
   void scan_pcrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
   void scan_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
-  void scan_dyn_absrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
-  void scan_toc_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
   void scan_tlsdesc(Context<E> &ctx, Symbol<E> &sym);
   void check_tlsle(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
 
@@ -374,7 +372,7 @@ public:
   virtual i64 get_reldyn_size(Context<E> &ctx) const { return 0; }
   virtual void construct_relr(Context<E> &ctx) {}
   virtual void copy_buf(Context<E> &ctx) {}
-  virtual void write_to(Context<E> &ctx, u8 *buf) { unreachable(); }
+  virtual void write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) { unreachable(); }
   virtual void update_shdr(Context<E> &ctx) {}
 
   std::string_view name;
@@ -467,6 +465,24 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+enum AbsRelKind {
+  ABS_REL_NONE,
+  ABS_REL_BASEREL,
+  ABS_REL_RELR,
+  ABS_REL_IFUNC,
+  ABS_REL_DYNREL,
+};
+
+// Represents a word-size absolute relocation (e.g. R_X86_64_64)
+template <typename E>
+struct AbsRel {
+  InputSection<E> *isec = nullptr;
+  i64 offset = 0;
+  Symbol<E> *sym = nullptr;
+  i64 addend = 0;
+  AbsRelKind kind = ABS_REL_NONE;
+};
+
 // Sections
 template <typename E>
 class OutputSection : public Chunk<E> {
@@ -478,18 +494,21 @@ public:
 
   OutputSection<E> *to_osec() override { return this; }
   void compute_section_size(Context<E> &ctx) override;
+  i64 get_reldyn_size(Context<E> &ctx) const override;
   void construct_relr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
-  void write_to(Context<E> &ctx, u8 *buf) override;
+  void write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) override;
 
   void compute_symtab_size(Context<E> &ctx) override;
   void populate_symtab(Context<E> &ctx) override;
 
+  void scan_abs_relocations(Context<E> &ctx);
   void create_range_extension_thunks(Context<E> &ctx);
 
   std::vector<InputSection<E> *> members;
   std::vector<std::unique_ptr<Thunk<E>>> thunks;
   std::unique_ptr<RelocSection<E>> reloc_sec;
+  std::vector<AbsRel<E>> abs_rels;
   Atomic<u32> sh_flags;
 };
 
@@ -806,7 +825,7 @@ public:
   void resolve(Context<E> &ctx);
   void compute_section_size(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
-  void write_to(Context<E> &ctx, u8 *buf) override;
+  void write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) override;
   void print_stats(Context<E> &ctx);
 
   std::vector<MergeableSection<E> *> members;
@@ -1323,9 +1342,6 @@ public:
   bool is_lto_obj = false;
   bool is_gcc_offload_obj = false;
   bool is_rust_obj = false;
-
-  i64 num_dynrel = 0;
-  i64 reldyn_offset = 0;
 
   i64 fde_idx = 0;
   i64 fde_offset = 0;
