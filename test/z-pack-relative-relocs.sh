@@ -8,8 +8,13 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o -pie -Wl,-z,pack-relative-relocs
+$CC -o $t/exe1 $t/a.o -pie -Wl,-z,pack-relative-relocs 2> /dev/null || skip
+$QEMU $t/exe1 2> /dev/null | grep -q Hello || skip
 
-readelf -W -V $t/exe > $t/log
-grep -F -A1 libc.so.6 $t/log | grep -Fq GLIBC_2. || skip
-grep -q GLIBC_ABI_DT_RELR $t/log
+$CC -B. -o $t/exe2 $t/a.o -pie -Wl,-z,pack-relative-relocs
+$QEMU $t/exe2 | grep -q Hello
+
+readelf --dynamic $t/exe2 > $t/log2
+grep -wq RELR $t/log2
+grep -wq RELRSZ $t/log2
+grep -wq RELRENT $t/log2
