@@ -101,18 +101,6 @@ void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
   }
 }
 
-template <typename E>
-static bool
-is_relr_reloc(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel) {
-  if (ctx.arg.pack_dyn_relocs_relr &&
-      rel.r_offset % sizeof(Word<E>) == 0) {
-    const ElfShdr<E> &shdr = isec.shdr();
-    return !(shdr.sh_flags & SHF_EXECINSTR) &&
-           shdr.sh_addralign % sizeof(Word<E>) == 0;
-  }
-  return false;
-}
-
 typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT } Action;
 
 template <typename E>
@@ -124,12 +112,10 @@ static void do_action(Context<E> &ctx, Action action, InputSection<E> &isec,
   case ERROR:
     Error(ctx) << isec << ": " << rel << " relocation at offset 0x"
                << std::hex << rel.r_offset << " against symbol `"
-               << sym << "' can not be used; recompile with "
-               << (sym.is_absolute() ? "-fno-PIC" : "-fPIC");
+               << sym << "' can not be used; recompile with -fPIC";
     break;
   case COPYREL:
     // Create a copy relocation
-    assert(sym.is_imported);
     sym.flags |= NEEDS_COPYREL;
     break;
   case PLT:

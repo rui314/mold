@@ -995,14 +995,15 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) {
   for (AbsRel<E> &r : abs_rels) {
     Word<E> *loc = (Word<E> *)(buf + r.isec->offset + r.offset);
     u64 addr = this->shdr.sh_addr + r.isec->offset + r.offset;
+    Symbol<E> &sym = *r.sym;
 
     switch (r.kind) {
     case ABS_REL_NONE:
     case ABS_REL_RELR:
-      *loc = r.sym->get_addr(ctx) + r.addend;
+      *loc = sym.get_addr(ctx) + r.addend;
       break;
     case ABS_REL_BASEREL: {
-      u64 val = r.sym->get_addr(ctx) + r.addend;
+      u64 val = sym.get_addr(ctx) + r.addend;
       *rel++ = ElfRel<E>(addr, E::R_RELATIVE, 0, val);
       if (ctx.arg.apply_dynamic_relocs)
         *loc = val;
@@ -1010,14 +1011,14 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) {
     }
     case ABS_REL_IFUNC:
       if constexpr (supports_ifunc<E>) {
-        u64 val = r.sym->get_addr(ctx, NO_PLT) + r.addend;
+        u64 val = sym.get_addr(ctx, NO_PLT) + r.addend;
         *rel++ = ElfRel<E>(addr, E::R_IRELATIVE, 0, val);
         if (ctx.arg.apply_dynamic_relocs)
           *loc = val;
       }
       break;
     case ABS_REL_DYNREL:
-      *rel++ = ElfRel<E>(addr, E::R_ABS, r.sym->get_dynsym_idx(ctx), r.addend);
+      *rel++ = ElfRel<E>(addr, E::R_ABS, sym.get_dynsym_idx(ctx), r.addend);
       if (ctx.arg.apply_dynamic_relocs)
         *loc = r.addend;
       break;

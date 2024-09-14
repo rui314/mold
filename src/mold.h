@@ -2614,7 +2614,7 @@ inline bool InputSection<E>::icf_removed() const {
 template <typename E>
 std::pair<SectionFragment<E> *, i64>
 MergeableSection<E>::get_fragment(i64 offset) {
-  std::vector<u32> &vec = frag_offsets;
+  std::span<u32> vec = frag_offsets;
   auto it = std::upper_bound(vec.begin(), vec.end(), offset);
   i64 idx = it - 1 - vec.begin();
   return {fragments[idx], offset - vec[idx]};
