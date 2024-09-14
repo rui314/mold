@@ -162,6 +162,8 @@ mkdir /build
 cd /build
 cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=On /mold
 cmake --build . -j\$(nproc)
+mv mold mold2
+./mold2 -run cmake --build . -j\$(nproc)
 ctest -j\$(nproc)
 cmake --install . --prefix $dest --strip
 find $dest -print | xargs touch --no-dereference --date='$timestamp'
