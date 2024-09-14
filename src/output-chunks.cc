@@ -1100,8 +1100,8 @@ void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
     InputSection<E> *isec = members[i];
     for (const ElfRel<E> &r : isec->get_rels(ctx))
       if (r.r_type == E::R_ABS)
-        shards[i].emplace_back(isec, r.r_offset, isec->file.symbols[r.r_sym],
-                               get_addend(*isec, r));
+        shards[i].push_back(AbsRel<E>{isec, r.r_offset, isec->file.symbols[r.r_sym],
+                                      get_addend(*isec, r)});
   });
 
   abs_rels = flatten(shards);

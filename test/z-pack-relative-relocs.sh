@@ -9,6 +9,7 @@ int main() {
 EOF
 
 $CC -o $t/exe1 $t/a.o -pie -Wl,-z,pack-relative-relocs 2> /dev/null || skip
+readelf -WS $t/exe1 | grep -Fq .relr.dyn || skip
 $QEMU $t/exe1 2> /dev/null | grep -q Hello || skip
 
 $CC -B. -o $t/exe2 $t/a.o -pie -Wl,-z,pack-relative-relocs

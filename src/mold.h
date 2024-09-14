@@ -477,7 +477,7 @@ enum AbsRelKind {
 template <typename E>
 struct AbsRel {
   InputSection<E> *isec = nullptr;
-  i64 offset = 0;
+  u64 offset = 0;
   Symbol<E> *sym = nullptr;
   i64 addend = 0;
   AbsRelKind kind = ABS_REL_NONE;
