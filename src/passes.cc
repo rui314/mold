@@ -261,76 +261,50 @@ void do_resolve_symbols(Context<E> &ctx) {
   append(files, ctx.objs);
   append(files, ctx.dsos);
 
-  // Due to legacy reasons, archive members will only get included in the final
-  // binary if they satisfy one of the undefined symbols in a non-archive object
-  // file. This is called archive extraction. In finalize_archive_extraction,
-  // this is processed as follows:
+  // Call resolve_symbols() to find the most appropriate file for each
+  // symbol. And then mark reachable objects to decide which files to
+  // include into an output.
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+    file->resolve_symbols(ctx);
+  });
+
+  mark_live_objects(ctx);
+
+  // Now that we know the exact set of input files that are to be
+  // included in the output file, we want to redo symbol resolution.
+  // This is because symbols defined by object files in archive files
+  // may have risen as a result of mark_live_objects().
   //
-  // 1. Do preliminary symbol resolution assuming all archive members
-  //    are included. This matches the undefined symbols with ones to be
-  //    extracted from archives.
-  //
-  // 2. Do a mark & sweep pass to eliminate unneeded archive members.
-  //
-  // Note that the symbol resolution inside finalize_archive_extraction uses a
-  // different rule. In order to prevent extracting archive members that can be
-  // satisfied by either non-archive object files or DSOs, the archive members
-  // are given a lower priority. This is not correct for the general case, where
-  // *extracted* object files have precedence over DSOs and even non-archive
-  // files that are passed earlier in the command line. Hence, the symbol
-  // resolution is thrown away once we determine which archive members to
-  // extract, and redone later with the formal rule.
-  {
-    Timer t(ctx, "extract_archive_members");
+  // To redo symbol resolution, we want to clear the state first.
+  clear_symbols(ctx);
 
-    // Register symbols
-    tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-      file->resolve_symbols(ctx);
-    });
-
-    // Mark reachable objects to decide which files to include into an output.
-    // This also merges symbol visibility.
-    mark_live_objects(ctx);
-
-    // Cleanup. The rule used for archive extraction isn't accurate for the
-    // general case of symbol extraction, so reset the resolution to be redone
-    // later.
-    clear_symbols(ctx);
-
-    // Now that the symbol references are gone, remove the eliminated files from
-    // the file list.
-    std::erase_if(files, [](InputFile<E> *file) { return !file->is_alive; });
-    std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
-    std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
-  }
+  std::erase_if(files, [](InputFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
 
   // COMDAT elimination needs to happen exactly here.
   //
-  // It needs to be after archive extraction, otherwise we might assign COMDAT
-  // leader to an archive member that is not supposed to be extracted.
+  // It needs to be after archive extraction, otherwise we might
+  // assign COMDAT leader to an archive member that is not supposed to
+  // be extracted.
   //
-  // It needs to happen before symbol resolution, otherwise we could eliminate
-  // a symbol that is already resolved to and cause dangling references.
-  {
-    Timer t(ctx, "eliminate_comdats");
+  // It needs to happen before the final symbol resolution, otherwise
+  // we could eliminate a symbol that is already resolved to and cause
+  // dangling references.
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+    for (ComdatGroupRef<E> &ref : file->comdat_groups)
+      update_minimum(ref.group->owner, file->priority);
+  });
 
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (ComdatGroupRef<E> &ref : file->comdat_groups)
-        update_minimum(ref.group->owner, file->priority);
-    });
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+    for (ComdatGroupRef<E> &ref : file->comdat_groups)
+      if (ref.group->owner != file->priority)
+        for (u32 i : ref.members)
+          if (file->sections[i])
+            file->sections[i]->kill();
+  });
 
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (ComdatGroupRef<E> &ref : file->comdat_groups)
-        if (ref.group->owner != file->priority)
-          for (u32 i : ref.members)
-            if (file->sections[i])
-              file->sections[i]->kill();
-    });
-  }
-
-  // Since we have turned on object files live bits, their symbols
-  // may now have higher priority than before. So run the symbol
-  // resolution pass again to get the final resolution result.
+  // Redo symbol resolution
   tbb::parallel_for_each(files, [&](InputFile<E> *file) {
     file->resolve_symbols(ctx);
   });
