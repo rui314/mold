@@ -422,9 +422,6 @@ int mold_main(int argc, char **argv) {
   // put together in a single phase.
   resolve_symbols(ctx);
 
-  // "Kill" .eh_frame input sections after symbol resolution.
-  kill_eh_frame_sections(ctx);
-
   // Split mergeable section contents into section pieces.
   create_merged_sections(ctx);
 

@@ -1569,7 +1569,6 @@ template <typename E> void apply_exclude_libs(Context<E> &);
 template <typename E> void create_synthetic_sections(Context<E> &);
 template <typename E> void set_file_priority(Context<E> &);
 template <typename E> void resolve_symbols(Context<E> &);
-template <typename E> void kill_eh_frame_sections(Context<E> &);
 template <typename E> void create_merged_sections(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void create_output_sections(Context<E> &);
