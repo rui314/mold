@@ -16,7 +16,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/b.o -Wl,--as-needed $t/libfoo.so $t/libfoo.a
-! readelf --dynamic $t/exe | grep -q libfoo || false
+readelf --dynamic $t/exe | grep -q libfoo
 
 $CC -B. -o $t/exe $t/b.o -Wl,--as-needed $t/libfoo.a $t/libfoo.so
 ! readelf --dynamic $t/exe | grep -q libfoo || false

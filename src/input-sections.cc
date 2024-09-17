@@ -324,6 +324,7 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
   // Every ELF file has an absolute local symbol as its first symbol.
   // Referring to that symbol is always valid.
   bool is_undef = esym.is_undef() && !esym.is_weak() && sym.sym_idx;
+
   if (is_undef && sym.esym().is_undef()) {
     if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR && !sym.is_imported) {
       record();
@@ -333,14 +334,6 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
       record();
       return false;
     }
-  }
-
-  // If a protected/hidden undefined symbol is resolved to other .so,
-  // it's handled as if no symbols were found.
-  if (sym.file->is_dso &&
-      (sym.visibility == STV_PROTECTED || sym.visibility == STV_HIDDEN)) {
-    record();
-    return true;
   }
 
   return false;

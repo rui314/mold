@@ -263,52 +263,77 @@ void resolve_symbols(Context<E> &ctx) {
   append(files, ctx.objs);
   append(files, ctx.dsos);
 
-  // Call resolve_symbols() to find the most appropriate file for each
-  // symbol. And then mark reachable objects to decide which files to
-  // include into an output.
-  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-    file->resolve_symbols(ctx);
-  });
-
-  mark_live_objects(ctx);
-
-  // Now that we know the exact set of input files that are to be
-  // included in the output file, we want to redo symbol resolution.
-  // This is because symbols defined by object files in archive files
-  // may have risen as a result of mark_live_objects().
-  //
-  // To redo symbol resolution, we want to clear the state first.
-  clear_symbols(ctx);
-
-  // COMDAT elimination needs to happen exactly here.
-  //
-  // It needs to be after archive extraction, otherwise we might
-  // assign COMDAT leader to an archive member that is not supposed to
-  // be extracted.
-  //
-  // It needs to happen before the final symbol resolution, otherwise
-  // we could eliminate a symbol that is already resolved to and cause
-  // dangling references.
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    if (file->is_alive)
-      for (ComdatGroupRef<E> &ref : file->comdat_groups)
-        update_minimum(ref.group->owner, file->priority);
-  });
-
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    if (file->is_alive)
-      for (ComdatGroupRef<E> &ref : file->comdat_groups)
-        if (ref.group->owner != file->priority)
-          for (u32 i : ref.members)
-            if (InputSection<E> *isec = file->sections[i].get())
-              isec->is_alive = false;
-  });
-
-  // Redo symbol resolution
-  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-    if (file->is_alive)
+  for (;;) {
+    // Call resolve_symbols() to find the most appropriate file for each
+    // symbol. And then mark reachable objects to decide which files to
+    // include into an output.
+    tbb::parallel_for_each(files, [&](InputFile<E> *file) {
       file->resolve_symbols(ctx);
-  });
+    });
+
+    mark_live_objects(ctx);
+
+    // Now that we know the exact set of input files that are to be
+    // included in the output file, we want to redo symbol resolution.
+    // This is because symbols defined by object files in archive files
+    // may have risen as a result of mark_live_objects().
+    //
+    // To redo symbol resolution, we want to clear the state first.
+    clear_symbols(ctx);
+
+    // COMDAT elimination needs to happen exactly here.
+    //
+    // It needs to be after archive extraction, otherwise we might
+    // assign COMDAT leader to an archive member that is not supposed to
+    // be extracted.
+    //
+    // It needs to happen before the final symbol resolution, otherwise
+    // we could eliminate a symbol that is already resolved to and cause
+    // dangling references.
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+      if (file->is_alive)
+        for (ComdatGroupRef<E> &ref : file->comdat_groups)
+          update_minimum(ref.group->owner, file->priority);
+    });
+
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+      if (file->is_alive)
+        for (ComdatGroupRef<E> &ref : file->comdat_groups)
+          if (ref.group->owner != file->priority)
+            for (u32 i : ref.members)
+              if (InputSection<E> *isec = file->sections[i].get())
+                isec->is_alive = false;
+    });
+
+    // Redo symbol resolution
+    tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+      if (file->is_alive)
+        file->resolve_symbols(ctx);
+    });
+
+    // Symbols with hidden visibility need to be resolved within the
+    // output file. If as a result of symbol resolution, a hidden symbol
+    // was resolved to a DSO, we'll redo symbol resolution from scratch
+    // with the flag to skip that symbol next time. This should be rare.
+    std::atomic_bool flag = false;
+
+    tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+      if (file->is_alive) {
+        for (Symbol<E> *sym : file->symbols) {
+          if (sym->file == file && sym->visibility == STV_HIDDEN) {
+            sym->skip_dso = true;
+            flag = true;
+          }
+        }
+      }
+    });
+
+    if (!flag)
+      return;
+
+    clear_symbols(ctx);
+    resolve_symbols(ctx);
+  }
 }
 
 template <typename E>

@@ -2432,6 +2432,8 @@ public:
   bool has_copyrel : 1 = false;
   bool is_copyrel_readonly : 1 = false;
 
+  bool skip_dso : 1 = false;
+
   // For --gc-sections
   bool gc_root : 1 = false;
 
