@@ -564,11 +564,15 @@ void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
   for (i64 i = 0; i < fdes.size();) {
     InputSection<E> *isec = get_isec(fdes[i]);
     assert(isec->fde_begin == -1);
-    isec->fde_begin = i++;
 
-    while (i < fdes.size() && isec == get_isec(fdes[i]))
-      i++;
-    isec->fde_end = i;
+    if (isec->is_alive) {
+      isec->fde_begin = i++;
+      while (i < fdes.size() && isec == get_isec(fdes[i]))
+        i++;
+      isec->fde_end = i;
+    } else {
+      fdes[i++].is_alive = false;
+    }
   }
 }
 
@@ -849,7 +853,6 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
   initialize_sections(ctx);
   initialize_symbols(ctx);
   sort_relocations(ctx);
-  parse_ehframe(ctx);
 }
 
 // Symbols with higher priorities overwrites symbols with lower priorities.

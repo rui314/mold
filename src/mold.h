@@ -1312,6 +1312,7 @@ public:
 
   void parse(Context<E> &ctx);
   void initialize_symbols(Context<E> &ctx);
+  void parse_ehframe(Context<E> &ctx);
   void convert_mergeable_sections(Context<E> &ctx);
   void reattach_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
@@ -1369,7 +1370,6 @@ private:
   void sort_relocations(Context<E> &ctx);
   void initialize_ehframe_sections(Context<E> &ctx);
   void parse_note_gnu_property(Context <E> &ctx, const ElfShdr <E> &shdr);
-  void parse_ehframe(Context<E> &ctx);
   void override_symbol(Context<E> &ctx, Symbol<E> &sym,
                        const ElfSym<E> &esym, i64 symidx);
   void merge_visibility(Context<E> &ctx, Symbol<E> &sym, u8 visibility);
@@ -1569,6 +1569,7 @@ template <typename E> void apply_exclude_libs(Context<E> &);
 template <typename E> void create_synthetic_sections(Context<E> &);
 template <typename E> void set_file_priority(Context<E> &);
 template <typename E> void resolve_symbols(Context<E> &);
+template <typename E> void parse_eh_frame_sections(Context<E> &);
 template <typename E> void create_merged_sections(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void create_output_sections(Context<E> &);

@@ -422,6 +422,9 @@ int mold_main(int argc, char **argv) {
   // put together in a single phase.
   resolve_symbols(ctx);
 
+  // Parse .eh_frame sections.
+  parse_eh_frame_sections(ctx);
+
   // Split mergeable section contents into section pieces.
   create_merged_sections(ctx);
 
