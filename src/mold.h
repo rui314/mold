@@ -2432,6 +2432,8 @@ public:
   bool has_copyrel : 1 = false;
   bool is_copyrel_readonly : 1 = false;
 
+  // For symbol resolution. This flag is used rarely. See a comment in
+  // resolve_symbols().
   bool skip_dso : 1 = false;
 
   // For --gc-sections

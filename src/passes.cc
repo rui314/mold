@@ -312,9 +312,9 @@ void resolve_symbols(Context<E> &ctx) {
     });
 
     // Symbols with hidden visibility need to be resolved within the
-    // output file. If as a result of symbol resolution, a hidden symbol
-    // was resolved to a DSO, we'll redo symbol resolution from scratch
-    // with the flag to skip that symbol next time. This should be rare.
+    // output file. If a hidden symbol was resolved to a DSO, we'll redo
+    // symbol resolution from scratch with the flag to skip that symbol
+    // next time. This should be rare.
     std::atomic_bool flag = false;
 
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
@@ -336,25 +336,25 @@ void resolve_symbols(Context<E> &ctx) {
   }
 }
 
+// Do link-time optimization. We pass all IR object files to the compiler
+// backend to compile them into a few ELF object files.
 template <typename E>
 void do_lto(Context<E> &ctx) {
   Timer t(ctx, "do_lto");
 
-  // Do link-time optimization. We pass all IR object files to the
-  // compiler backend to compile them into a few ELF object files.
-  //
-  // The compiler backend needs to know how symbols are resolved,
-  // so compute symbol visibility, import/export bits, etc early.
+  // The compiler backend needs to know how symbols are resolved, so
+  // compute symbol visibility, import/export bits, etc early.
   mark_live_objects(ctx);
   apply_version_script(ctx);
   parse_symbol_version(ctx);
   compute_import_export(ctx);
 
-  // Do LTO. It compiles IR object files into a few big ELF files.
+  // Invoke the LTO plugin. This step compiles IR object files into a few
+  // big ELF files.
   std::vector<ObjectFile<E> *> lto_objs = run_lto_plugin(ctx);
   append(ctx.objs, lto_objs);
 
-  // Redo name resolution from scratch.
+  // Redo name resolution.
   clear_symbols(ctx);
 
   // Remove IR object files.
@@ -1161,6 +1161,11 @@ template <typename E>
 void sort_init_fini(Context<E> &ctx) {
   Timer t(ctx, "sort_init_fini");
 
+  struct Entry {
+    InputSection<E> *sect;
+    i64 prio;
+  };
+
   for (Chunk<E> *chunk : ctx.chunks) {
     if (OutputSection<E> *osec = chunk->to_osec()) {
       if (osec->name == ".init_array" || osec->name == ".preinit_array" ||
@@ -1168,8 +1173,7 @@ void sort_init_fini(Context<E> &ctx) {
         if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_REVERSE)
           std::reverse(osec->members.begin(), osec->members.end());
 
-        typedef std::pair<InputSection<E> *, i64> P;
-        std::vector<P> vec;
+        std::vector<Entry> vec;
 
         for (InputSection<E> *isec : osec->members) {
           std::string_view name = isec->name();
@@ -1179,10 +1183,10 @@ void sort_init_fini(Context<E> &ctx) {
             vec.emplace_back(isec, get_init_fini_priority(isec));
         }
 
-        sort(vec, [&](const P &a, const P &b) { return a.second < b.second; });
+        sort(vec, [&](const Entry &a, const Entry &b) { return a.prio < b.prio; });
 
         for (i64 i = 0; i < vec.size(); i++)
-          osec->members[i] = vec[i].first;
+          osec->members[i] = vec[i].sect;
       }
     }
   }
@@ -1192,22 +1196,25 @@ template <typename E>
 void sort_ctor_dtor(Context<E> &ctx) {
   Timer t(ctx, "sort_ctor_dtor");
 
+  struct Entry {
+    InputSection<E> *sect;
+    i64 prio;
+  };
+
   for (Chunk<E> *chunk : ctx.chunks) {
     if (OutputSection<E> *osec = chunk->to_osec()) {
       if (osec->name == ".ctors" || osec->name == ".dtors") {
         if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_REVERSE)
           std::reverse(osec->members.begin(), osec->members.end());
 
-        typedef std::pair<InputSection<E> *, i64> P;
-        std::vector<P> vec;
-
+        std::vector<Entry> vec;
         for (InputSection<E> *isec : osec->members)
           vec.emplace_back(isec, get_ctor_dtor_priority(isec));
 
-        sort(vec, [&](const P &a, const P &b) { return a.second < b.second; });
+        sort(vec, [&](const Entry &a, const Entry &b) { return a.prio < b.prio; });
 
         for (i64 i = 0; i < vec.size(); i++)
-          osec->members[i] = vec[i].first;
+          osec->members[i] = vec[i].sect;
       }
     }
   }
@@ -1513,15 +1520,6 @@ void scan_relocations(Context<E> &ctx) {
       ctx.got->add_tlsdesc_symbol(ctx, sym);
 
     if (sym->flags & NEEDS_COPYREL) {
-      if (sym->esym().st_visibility == STV_PROTECTED)
-        Error(ctx) << *sym->file
-                   << ": cannot create a copy relocation for protected symbol '"
-                   << *sym << "'; recompile with -fPIC";
-      if (!ctx.arg.z_copyreloc)
-        Error(ctx) << "-z nocopyreloc: " << *sym->file
-                   << ": cannot create a copy relocation for symbol '" << *sym
-                   << "'; recompile with -fPIC";
-
       if (ctx.arg.z_relro && ((SharedFile<E> *)sym->file)->is_readonly(sym))
         ctx.copyrel_relro->add_symbol(ctx, sym);
       else
