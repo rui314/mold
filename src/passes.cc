@@ -256,7 +256,9 @@ static void clear_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-void do_resolve_symbols(Context<E> &ctx) {
+void resolve_symbols(Context<E> &ctx) {
+  Timer t(ctx, "resolve_symbols");
+
   std::vector<InputFile<E> *> files;
   append(files, ctx.objs);
   append(files, ctx.dsos);
@@ -278,10 +280,6 @@ void do_resolve_symbols(Context<E> &ctx) {
   // To redo symbol resolution, we want to clear the state first.
   clear_symbols(ctx);
 
-  std::erase_if(files, [](InputFile<E> *file) { return !file->is_alive; });
-  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
-  std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
-
   // COMDAT elimination needs to happen exactly here.
   //
   // It needs to be after archive extraction, otherwise we might
@@ -292,72 +290,56 @@ void do_resolve_symbols(Context<E> &ctx) {
   // we could eliminate a symbol that is already resolved to and cause
   // dangling references.
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    for (ComdatGroupRef<E> &ref : file->comdat_groups)
-      update_minimum(ref.group->owner, file->priority);
+    if (file->is_alive)
+      for (ComdatGroupRef<E> &ref : file->comdat_groups)
+        update_minimum(ref.group->owner, file->priority);
   });
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    for (ComdatGroupRef<E> &ref : file->comdat_groups)
-      if (ref.group->owner != file->priority)
-        for (u32 i : ref.members)
-          if (InputSection<E> *isec = file->sections[i].get())
-            isec->is_alive = false;
+    if (file->is_alive)
+      for (ComdatGroupRef<E> &ref : file->comdat_groups)
+        if (ref.group->owner != file->priority)
+          for (u32 i : ref.members)
+            if (InputSection<E> *isec = file->sections[i].get())
+              isec->is_alive = false;
   });
 
   // Redo symbol resolution
   tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-    file->resolve_symbols(ctx);
+    if (file->is_alive)
+      file->resolve_symbols(ctx);
   });
 }
 
 template <typename E>
-void resolve_symbols(Context<E> &ctx) {
-  Timer t(ctx, "resolve_symbols");
+void do_lto(Context<E> &ctx) {
+  Timer t(ctx, "do_lto");
 
-  std::vector<ObjectFile<E> *> objs = ctx.objs;
-  std::vector<SharedFile<E> *> dsos = ctx.dsos;
+  // Do link-time optimization. We pass all IR object files to the
+  // compiler backend to compile them into a few ELF object files.
+  //
+  // The compiler backend needs to know how symbols are resolved,
+  // so compute symbol visibility, import/export bits, etc early.
+  mark_live_objects(ctx);
+  apply_version_script(ctx);
+  parse_symbol_version(ctx);
+  compute_import_export(ctx);
 
-  do_resolve_symbols(ctx);
+  // Do LTO. It compiles IR object files into a few big ELF files.
+  std::vector<ObjectFile<E> *> lto_objs = run_lto_plugin(ctx);
+  append(ctx.objs, lto_objs);
 
-  bool has_lto_obj = false;
-  for (ObjectFile<E> *file : objs)
-    if (file->is_alive && (file->is_lto_obj || file->is_gcc_offload_obj))
-      has_lto_obj = true;
+  // Redo name resolution from scratch.
+  clear_symbols(ctx);
 
-  if (has_lto_obj) {
-    // Do link-time optimization. We pass all IR object files to the
-    // compiler backend to compile them into a few ELF object files.
-    //
-    // The compiler backend needs to know how symbols are resolved,
-    // so compute symbol visibility, import/export bits, etc early.
-    mark_live_objects(ctx);
-    apply_version_script(ctx);
-    parse_symbol_version(ctx);
-    compute_import_export(ctx);
+  // Remove IR object files.
+  for (ObjectFile<E> *file : ctx.objs)
+    if (file->is_lto_obj)
+      file->is_alive = false;
 
-    // Do LTO. It compiles IR object files into a few big ELF files.
-    std::vector<ObjectFile<E> *> lto_objs = do_lto(ctx);
+  std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
 
-    // do_resolve_symbols() have removed unreferenced files. Restore the
-    // original files here because some of them may have to be resurrected
-    // because they are referenced by the ELF files returned from do_lto().
-    ctx.objs = objs;
-    ctx.dsos = dsos;
-
-    append(ctx.objs, lto_objs);
-
-    // Redo name resolution from scratch.
-    clear_symbols(ctx);
-
-    // Remove IR object files.
-    for (ObjectFile<E> *file : ctx.objs)
-      if (file->is_lto_obj)
-        file->is_alive = false;
-
-    std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
-
-    do_resolve_symbols(ctx);
-  }
+  resolve_symbols(ctx);
 }
 
 template <typename E>
@@ -3223,6 +3205,7 @@ template void create_internal_file(Context<E> &);
 template void apply_exclude_libs(Context<E> &);
 template void create_synthetic_sections(Context<E> &);
 template void resolve_symbols(Context<E> &);
+template void do_lto(Context<E> &);
 template void parse_eh_frame_sections(Context<E> &);
 template void create_merged_sections(Context<E> &);
 template void convert_common_symbols(Context<E> &);

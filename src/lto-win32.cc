@@ -9,7 +9,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
 }
 
 template <typename E>
-std::vector<ObjectFile<E> *> do_lto(Context<E> &ctx) {
+std::vector<ObjectFile<E> *> run_lto_plugin(Context<E> &ctx) {
   return {};
 }
 
@@ -19,7 +19,7 @@ void lto_cleanup(Context<E> &ctx) {}
 using E = MOLD_TARGET;
 
 template ObjectFile<E> *read_lto_object(Context<E> &, MappedFile *);
-template std::vector<ObjectFile<E> *> do_lto(Context<E> &);
+template std::vector<ObjectFile<E> *> run_lto_plugin(Context<E> &);
 template void lto_cleanup(Context<E> &);
 
 } // namespace mold

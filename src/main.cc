@@ -340,6 +340,14 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 }
 
 template <typename E>
+static bool has_lto_obj(Context<E> &ctx) {
+  for (ObjectFile<E> *file : ctx.objs)
+    if (file->is_alive && (file->is_lto_obj || file->is_gcc_offload_obj))
+      return true;
+  return false;
+}
+
+template <typename E>
 int mold_main(int argc, char **argv) {
   Context<E> ctx;
 
@@ -410,19 +418,22 @@ int mold_main(int argc, char **argv) {
   if (!ctx.arg.relocatable)
     create_internal_file(ctx);
 
-  // resolve_symbols is 4 things in 1 phase:
-  //
-  // - Determine the set of object files to extract from archives.
-  // - Remove redundant COMDAT sections (e.g. duplicate inline functions).
-  // - Finally, the actual symbol resolution.
-  // - LTO, which requires preliminary symbol resolution before running
-  //   and a follow-up re-resolution after the LTO objects are emitted.
-  //
-  // These passes have complex interactions, and unfortunately has to be
-  // put together in a single phase.
+  // Resolve symbols by choosing the most appropriate file for each
+  // symbol. This pass also removes redundant comdat sections (e.g.
+  // duplicate inline functions).
   resolve_symbols(ctx);
 
-  // Parse .eh_frame sections.
+  // If there's an object file compiled with -flto, do link-time
+  // optimization.
+  if (has_lto_obj(ctx))
+    do_lto(ctx);
+
+  // Now that we know which object files are to be included to the
+  // final output, we can remove unnecessary files.
+  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
+
+  // Parse .eh_frame section contents.
   parse_eh_frame_sections(ctx);
 
   // Split mergeable section contents into section pieces.
