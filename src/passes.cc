@@ -1178,9 +1178,9 @@ void sort_init_fini(Context<E> &ctx) {
         for (InputSection<E> *isec : osec->members) {
           std::string_view name = isec->name();
           if (name.starts_with(".ctors") || name.starts_with(".dtors"))
-            vec.emplace_back(isec, 65535 - get_ctor_dtor_priority(isec));
+            vec.push_back({isec, 65535 - get_ctor_dtor_priority(isec)});
           else
-            vec.emplace_back(isec, get_init_fini_priority(isec));
+            vec.push_back({isec, get_init_fini_priority(isec)});
         }
 
         sort(vec, [&](const Entry &a, const Entry &b) { return a.prio < b.prio; });
@@ -1209,7 +1209,7 @@ void sort_ctor_dtor(Context<E> &ctx) {
 
         std::vector<Entry> vec;
         for (InputSection<E> *isec : osec->members)
-          vec.emplace_back(isec, get_ctor_dtor_priority(isec));
+          vec.push_back({isec, get_ctor_dtor_priority(isec)});
 
         sort(vec, [&](const Entry &a, const Entry &b) { return a.prio < b.prio; });
 
