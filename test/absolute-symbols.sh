@@ -8,7 +8,7 @@
 
 cat <<EOF | $CC -o $t/a.o -c -x assembler -
 .globl foo
-foo = 0x800008
+foo = 0xa00008
 EOF
 
 cat <<EOF | $CC -o $t/b.o -c -fno-PIC -xc -
@@ -36,4 +36,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe -no-pie $t/a.o $t/b.o
-$QEMU $t/exe | grep -q '^ip=0x80000.$'
+$QEMU $t/exe | grep -q '^ip=0xa0000.$'
