@@ -477,7 +477,7 @@ void StrtabSection<E>::update_shdr(Context<E> &ctx) {
   // affect correctness of the program but helps disassembler to
   // disassemble machine code appropriately.
   if constexpr (is_arm32<E>)
-    if (!ctx.arg.strip_all && !ctx.arg.retain_symbols_file)
+    if (!ctx.arg.strip_all)
       offset += sizeof("$a\0$t\0$d");
 
   for (Chunk<E> *chunk : ctx.chunks) {
@@ -504,7 +504,7 @@ void StrtabSection<E>::copy_buf(Context<E> &ctx) {
   buf[0] = '\0';
 
   if constexpr (is_arm32<E>)
-    if (!ctx.arg.strip_all && !ctx.arg.retain_symbols_file)
+    if (!ctx.arg.strip_all)
       memcpy(buf + 1, "$a\0$t\0$d", 9);
 }
 

@@ -1103,9 +1103,6 @@ static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
 
 template <typename E>
 void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
-  if (ctx.arg.strip_all)
-    return;
-
   this->output_sym_indices.resize(this->elf_syms.size(), -1);
 
   auto is_alive = [&](Symbol<E> &sym) -> bool {
@@ -1449,9 +1446,6 @@ bool SharedFile<E>::is_readonly(Symbol<E> *sym) {
 
 template <typename E>
 void SharedFile<E>::compute_symtab_size(Context<E> &ctx) {
-  if (ctx.arg.strip_all)
-    return;
-
   this->output_sym_indices.resize(this->elf_syms.size(), -1);
 
   // Compute the size of global symbols.

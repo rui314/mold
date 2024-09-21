@@ -438,8 +438,7 @@ template <typename E>
 static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
   MappedFile *mf = must_open_file(ctx, std::string(path));
   std::string_view data((char *)mf->data, mf->size);
-
-  ctx.arg.retain_symbols_file.reset(new std::unordered_set<std::string_view>);
+  std::vector<Symbol<E> *> vec;
 
   while (!data.empty()) {
     size_t pos = data.find('\n');
@@ -455,8 +454,10 @@ static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
 
     name = string_trim(name);
     if (!name.empty())
-      ctx.arg.retain_symbols_file->insert(name);
+      vec.push_back(get_symbol(ctx, name));
   }
+
+  ctx.arg.retain_symbols_file = std::move(vec);
 }
 
 static bool is_file(std::string_view path) {

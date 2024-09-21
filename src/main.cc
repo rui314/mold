@@ -392,8 +392,8 @@ int mold_main(int argc, char **argv) {
 
   // Handle --retain-symbols-file options if any.
   if (ctx.arg.retain_symbols_file)
-    for (std::string_view name : *ctx.arg.retain_symbols_file)
-      get_symbol(ctx, name)->write_to_symtab = true;
+    for (Symbol<E> *sym : *ctx.arg.retain_symbols_file)
+      sym->write_to_symtab = true;
 
   for (std::string_view arg : ctx.arg.trace_symbol)
     get_symbol(ctx, arg)->is_traced = true;
@@ -610,7 +610,8 @@ int mold_main(int argc, char **argv) {
   ctx.verneed->construct(ctx);
 
   // Compute .symtab and .strtab sizes for each file.
-  create_output_symtab(ctx);
+  if (!ctx.arg.strip_all)
+    create_output_symtab(ctx);
 
   // .eh_frame is a special section from the linker's point of view,
   // as its contents are parsed and reconstructed by the linker,

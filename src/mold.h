@@ -1990,7 +1990,7 @@ struct Context {
     std::string soname;
     std::string sysroot;
     std::string_view emulation;
-    std::unique_ptr<std::unordered_set<std::string_view>> retain_symbols_file;
+    std::optional<std::vector<Symbol<E> *>> retain_symbols_file;
     std::unordered_map<std::string_view, u64> section_align;
     std::unordered_map<std::string_view, u64> section_start;
     std::unordered_set<std::string_view> ignore_ir_file;
