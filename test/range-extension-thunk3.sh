@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = alpha ] && skip
 [ $MACHINE = sh4 ] && skip
 
 seq 1 10000 | sed 's/.*/void func&() {}/' > $t/a.c

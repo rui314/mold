@@ -305,7 +305,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 # on a multicore machine.
 list(APPEND MOLD_ELF_TARGETS
   X86_64 I386 ARM64 ARM32 RV32LE RV32BE RV64LE RV64BE PPC32 PPC64V1 PPC64V2
-  S390X SPARC64 M68K SH4 ALPHA LOONGARCH32 LOONGARCH64)
+  S390X SPARC64 M68K SH4 LOONGARCH32 LOONGARCH64)
 
 list(APPEND MOLD_ELF_TEMPLATE_FILES
   src/arch-loongarch.cc
@@ -376,7 +376,6 @@ target_sources(mold PRIVATE
   lib/perf.cc
   lib/random.cc
   lib/tar.cc
-  src/arch-alpha.cc
   src/arch-arm32.cc
   src/arch-arm64.cc
   src/arch-i386.cc

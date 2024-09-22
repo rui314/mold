@@ -3,7 +3,6 @@
 
 [ $MACHINE = ppc64 ] && skip
 [ $MACHINE = ppc64le ] && skip
-[ $MACHINE = alpha ] && skip
 [[ $MACHINE = loongarch* ]] && skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIE -

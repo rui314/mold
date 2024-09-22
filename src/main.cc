@@ -74,8 +74,6 @@ get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
       return M68K::target_name;
     case EM_SH:
       return SH4::target_name;
-    case EM_ALPHA:
-      return ALPHA::target_name;
     case EM_LOONGARCH:
       return is_64 ? LOONGARCH64::target_name : LOONGARCH32::target_name;
     default:

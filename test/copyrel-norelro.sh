@@ -1,7 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = alpha ] && skip
 [[ $MACHINE = ppc64* ]] && skip
 [[ $MACHINE = loongarch* ]] && skip
 
