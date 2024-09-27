@@ -17,7 +17,7 @@
 
 namespace mold {
 
-inline const char helpmsg[] = R"(
+static const char helpmsg[] = R"(
 Options:
   --help                      Report usage information
   -v, --version               Report version information
@@ -317,7 +317,7 @@ static i64 get_default_thread_count() {
   return std::min(n, 32);
 }
 
-static inline std::string_view string_trim(std::string_view str) {
+static std::string_view string_trim(std::string_view str) {
   size_t pos = str.find_first_not_of(" \t");
   if (pos == str.npos)
     return "";

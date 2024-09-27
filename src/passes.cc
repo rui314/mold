@@ -1229,33 +1229,30 @@ template <typename E>
 void fixup_ctors_in_init_array(Context<E> &ctx) {
   Timer t(ctx, "fixup_ctors_in_init_array");
 
-  auto fixup = [&](OutputSection<E> &osec) {
-    for (InputSection<E> *isec : osec.members) {
-      if (isec->name().starts_with(".ctors") ||
-          isec->name().starts_with(".dtors")) {
-        if (isec->sh_size % sizeof(Word<E>)) {
-          Error(ctx) << *isec << ": section corrupted";
-          continue;
-        }
+  auto reverse = [&](InputSection<E> &isec) {
+    if (isec.sh_size % sizeof(Word<E>))
+      Fatal(ctx) << isec << ": section corrupted";
 
-        u8 *buf = (u8 *)isec->contents.data();
-        std::reverse((Word<E> *)buf, (Word<E> *)(buf + isec->sh_size));
+    u8 *buf = (u8 *)isec.contents.data();
+    std::reverse((Word<E> *)buf, (Word<E> *)(buf + isec.sh_size));
 
-        std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-        for (ElfRel<E> &r : rels)
-          r.r_offset = isec->sh_size - r.r_offset - sizeof(Word<E>);
-        std::reverse(rels.begin(), rels.end());
-      }
-    }
+    std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+    for (ElfRel<E> &r : rels)
+      r.r_offset = isec.sh_size - r.r_offset - sizeof(Word<E>);
+    std::reverse(rels.begin(), rels.end());
   };
 
   if (Chunk<E> *chunk = find_chunk(ctx, ".init_array"))
     if (OutputSection<E> *osec = chunk->to_osec())
-      fixup(*osec);
+      for (InputSection<E> *isec : osec->members)
+        if (isec->name().starts_with(".ctors"))
+          reverse(*isec);
 
   if (Chunk<E> *chunk = find_chunk(ctx, ".fini_array"))
     if (OutputSection<E> *osec = chunk->to_osec())
-      fixup(*osec);
+      for (InputSection<E> *isec : osec->members)
+        if (isec->name().starts_with(".dtors"))
+          reverse(*isec);
 }
 
 template <typename T>
