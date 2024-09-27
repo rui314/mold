@@ -825,7 +825,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
 
   if constexpr (is_arm64<E>)
     if (contains_variant_pcs(ctx))
-      define(DT_AARCH64_VARIANT_PCS, 1);
+      define(DT_AARCH64_VARIANT_PCS, 0);
 
   if constexpr (is_ppc32<E>)
     define(DT_PPC_GOT, ctx.gotplt->shdr.sh_addr);
