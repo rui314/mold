@@ -127,10 +127,16 @@ struct SectionHeader {
 };
 
 struct NameType {
-  auto operator<=>(const NameType &) const = default;
+  bool operator==(const NameType &) const = default;
+
+  bool operator<(const NameType &other) const {
+    return std::tuple(hash, type, name) <
+           std::tuple(other.hash, other.type, other.name);
+  }
+
+  std::string_view name;
   u64 hash;
   u8 type;
-  std::string_view name;
 };
 
 struct MapValue {
@@ -533,7 +539,7 @@ static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
     u8 type = *p++;
     std::string_view name = (char *)p;
     p += name.size() + 1;
-    cu->nametypes.push_back({hash_string(name), type, name});
+    cu->nametypes.push_back({name, hash_string(name), type});
   }
 
   return size;
