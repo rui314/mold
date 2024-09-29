@@ -14,15 +14,6 @@ using Map =
   tbb::concurrent_hash_map<InputSection<E> *, std::vector<Symbol<E> *>>;
 
 template <typename E>
-static std::unique_ptr<std::ofstream> open_output_file(Context<E> &ctx) {
-  std::unique_ptr<std::ofstream> file(new std::ofstream);
-  file->open(ctx.arg.Map.c_str());
-  if (!file->is_open())
-    Fatal(ctx) << "cannot open " << ctx.arg.Map << ": " << errno_string();
-  return file;
-}
-
-template <typename E>
 static Map<E> get_map(Context<E> &ctx) {
   Map<E> map;
 
@@ -57,11 +48,13 @@ void print_map(Context<E> &ctx) {
   Timer t(ctx, "print_map");
 
   std::ostream *out = &std::cout;
-  std::unique_ptr<std::ofstream> file;
+  std::ofstream file;
 
   if (!ctx.arg.Map.empty()) {
-    file = open_output_file(ctx);
-    out = file.get();
+    file.open(ctx.arg.Map.c_str());
+    if (!file.is_open())
+      Fatal(ctx) << "cannot open " << ctx.arg.Map << ": " << errno_string();
+    out = &file;
   }
 
   // Construct a section-to-symbol map.
