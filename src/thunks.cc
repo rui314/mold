@@ -101,9 +101,9 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   // GOT+0x8000, while those for Power10 uses r2 as a scratch register.
   // We need to a thunk to recompute r2 for interworking.
   if constexpr (is_ppc64v2<E>) {
-    if (rel.r_type == R_PPC64_REL24 && !sym.esym().preserves_r2())
+    if (rel.r_type == R_PPC64_REL24 && !sym.esym().ppc64_preserves_r2())
       return false;
-    if (rel.r_type == R_PPC64_REL24_NOTOC && sym.esym().uses_toc())
+    if (rel.r_type == R_PPC64_REL24_NOTOC && sym.esym().ppc64_uses_toc())
       return false;
   }
 

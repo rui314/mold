@@ -848,7 +848,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
       ElfSym<E> &esym = obj.elf_syms[i + 1];
       esym.st_type = sym2->esym().st_type;
       if constexpr (is_ppc64v2<E>)
-        esym.ppc_local_entry = sym2->esym().ppc_local_entry;
+        esym.ppc64_local_entry = sym2->esym().ppc64_local_entry;
 
       if (sym2->is_absolute())
         sym1->origin = 0;

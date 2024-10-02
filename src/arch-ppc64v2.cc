@@ -172,7 +172,7 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 }
 
 static u64 get_local_entry_offset(Context<E> &ctx, Symbol<E> &sym) {
-  i64 val = sym.esym().ppc_local_entry;
+  i64 val = sym.esym().ppc64_local_entry;
   assert(val <= 7);
   if (val == 7)
     Fatal(ctx) << sym << ": local entry offset 7 is reserved";
@@ -216,7 +216,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc |= (S + A - TOC) & 0xfffc;
       break;
     case R_PPC64_REL24:
-      if (sym.has_plt(ctx) || !sym.esym().preserves_r2()) {
+      if (sym.has_plt(ctx) || !sym.esym().ppc64_preserves_r2()) {
         i64 val = r2save_thunk_addr() + A - P;
         *(ul32 *)loc |= bits(val, 25, 2) << 2;
 
@@ -233,7 +233,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_PPC64_REL24_NOTOC:
-      if (sym.has_plt(ctx) || sym.esym().uses_toc()) {
+      if (sym.has_plt(ctx) || sym.esym().ppc64_uses_toc()) {
         i64 val = no_r2save_thunk_addr() + A - P;
         *(ul32 *)loc |= bits(val, 25, 2) << 2;
       } else {

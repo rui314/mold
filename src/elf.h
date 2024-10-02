@@ -1474,18 +1474,36 @@ struct ElfSym<E> {
   bool is_weak() const { return st_bind == STB_WEAK; }
   bool is_undef_weak() const { return is_undef() && is_weak(); }
 
+  bool ppc64_preserves_r2() const { return ppc64_local_entry != 1; }
+  bool ppc64_uses_toc() const { return ppc64_local_entry > 1; }
+
   U32<E> st_name;
 
 #ifdef __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
-  u8 st_visibility : 2;
-  u8 : 6;
+  union {
+    u8 st_visibility : 2;
+    struct {
+      u8 : 7;
+      u8 arm64_variant_pcs : 1;
+    };
+    struct {
+      u8 : 5;
+      u8 ppc64_local_entry : 3;
+    };
+  };
 #else
   u8 st_bind : 4;
   u8 st_type : 4;
-  u8 : 6;
-  u8 st_visibility : 2;
+  union {
+    struct {
+      u8 : 6;
+      u8 st_visibility : 2;
+    };
+    u8 arm64_variant_pcs : 1;
+    u8 ppc64_local_entry : 3;
+  };
 #endif
 
   U16<E> st_shndx;
@@ -1710,67 +1728,6 @@ struct ElfNhdr {
 //
 // Target-specific ELF data types
 //
-
-template <>
-struct ElfSym<ARM64> {
-  bool is_undef() const { return st_shndx == SHN_UNDEF; }
-  bool is_abs() const { return st_shndx == SHN_ABS; }
-  bool is_common() const { return st_shndx == SHN_COMMON; }
-  bool is_weak() const { return st_bind == STB_WEAK; }
-  bool is_undef_weak() const { return is_undef() && is_weak(); }
-
-  ul32 st_name;
-
-#ifdef __LITTLE_ENDIAN__
-  u8 st_type : 4;
-  u8 st_bind : 4;
-  u8 st_visibility : 2;
-  u8 : 5;
-  u8 arm64_variant_pcs : 1; // ARM64-specific
-#else
-  u8 st_bind : 4;
-  u8 st_type : 4;
-  u8 arm64_variant_pcs : 1;
-  u8 : 5;
-  u8 st_visibility : 2;
-#endif
-
-  ul16 st_shndx;
-  ul64 st_value;
-  ul64 st_size;
-};
-
-template <>
-struct ElfSym<PPC64V2> {
-  bool is_undef() const { return st_shndx == SHN_UNDEF; }
-  bool is_abs() const { return st_shndx == SHN_ABS; }
-  bool is_common() const { return st_shndx == SHN_COMMON; }
-  bool is_weak() const { return st_bind == STB_WEAK; }
-  bool is_undef_weak() const { return is_undef() && is_weak(); }
-
-  bool preserves_r2() const { return ppc_local_entry != 1; }
-  bool uses_toc() const { return ppc_local_entry > 1; }
-
-  ul32 st_name;
-
-#ifdef __LITTLE_ENDIAN__
-  u8 st_type : 4;
-  u8 st_bind : 4;
-  u8 st_visibility : 2;
-  u8 : 3;
-  u8 ppc_local_entry : 3; // This is PPC64V2-specific
-#else
-  u8 st_bind : 4;
-  u8 st_type : 4;
-  u8 ppc_local_entry : 3;
-  u8 : 3;
-  u8 st_visibility : 2;
-#endif
-
-  ul16 st_shndx;
-  ul64 st_value;
-  ul64 st_size;
-};
 
 template <>
 struct ElfRel<SPARC64> {

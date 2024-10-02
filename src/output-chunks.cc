@@ -1769,7 +1769,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
     esym.arm64_variant_pcs = sym.esym().arm64_variant_pcs;
 
   if constexpr (is_ppc64v2<E>)
-    esym.ppc_local_entry = sym.esym().ppc_local_entry;
+    esym.ppc64_local_entry = sym.esym().ppc64_local_entry;
 
   auto get_st_shndx = [&](Symbol<E> &sym) -> u32 {
     if (SectionFragment<E> *frag = sym.get_frag())
