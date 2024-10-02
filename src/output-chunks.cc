@@ -674,6 +674,15 @@ static bool contains_variant_pcs(Context<ARM64> &ctx) {
   return false;
 }
 
+// RISC-V has the same feature but with different names.
+template <is_riscv E>
+static bool contains_variant_cc(Context<E> &ctx) {
+  for (Symbol<E> *sym : ctx.plt->symbols)
+    if (sym->esym().riscv_variant_cc)
+      return true;
+  return false;
+}
+
 template <typename E>
 static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   std::vector<Word<E>> vec;
@@ -826,6 +835,10 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   if constexpr (is_arm64<E>)
     if (contains_variant_pcs(ctx))
       define(DT_AARCH64_VARIANT_PCS, 0);
+
+  if constexpr (is_riscv<E>)
+    if (contains_variant_cc(ctx))
+      define(DT_RISCV_VARIANT_CC, 0);
 
   if constexpr (is_ppc32<E>)
     define(DT_PPC_GOT, ctx.gotplt->shdr.sh_addr);
@@ -1767,6 +1780,9 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
 
   if constexpr (is_arm64<E>)
     esym.arm64_variant_pcs = sym.esym().arm64_variant_pcs;
+
+  if constexpr (is_riscv<E>)
+    esym.riscv_variant_cc = sym.esym().riscv_variant_cc;
 
   if constexpr (is_ppc64v2<E>)
     esym.ppc64_local_entry = sym.esym().ppc64_local_entry;

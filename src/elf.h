@@ -296,6 +296,7 @@ enum : u32 {
   DT_VERNEEDNUM = 0x6fffffff,
   DT_PPC_GOT = 0x70000000,
   DT_PPC64_GLINK = 0x70000000,
+  DT_RISCV_VARIANT_CC = 0x70000001,
   DT_AARCH64_VARIANT_PCS = 0x70000005,
   DT_AUXILIARY = 0x7ffffffd,
   DT_FILTER = 0x7fffffff,
@@ -1489,6 +1490,10 @@ struct ElfSym<E> {
       u8 arm64_variant_pcs : 1;
     };
     struct {
+      u8 : 7;
+      u8 riscv_variant_cc : 1;
+    };
+    struct {
       u8 : 5;
       u8 ppc64_local_entry : 3;
     };
@@ -1502,6 +1507,7 @@ struct ElfSym<E> {
       u8 st_visibility : 2;
     };
     u8 arm64_variant_pcs : 1;
+    u8 riscv_variant_cc : 1;
     u8 ppc64_local_entry : 3;
   };
 #endif
@@ -1526,13 +1532,23 @@ struct ElfSym<E> {
 #ifdef __LITTLE_ENDIAN__
   u8 st_type : 4;
   u8 st_bind : 4;
-  u8 st_visibility : 2;
-  u8 : 6;
+  union {
+    u8 st_visibility : 2;
+    struct {
+      u8 : 7;
+      u8 riscv_variant_cc : 1;
+    };
+  };
 #else
   u8 st_bind : 4;
   u8 st_type : 4;
-  u8 : 6;
-  u8 st_visibility : 2;
+  union {
+    struct {
+      u8 : 6;
+      u8 st_visibility : 2;
+    };
+    u8 riscv_variant_cc : 1;
+  };
 #endif
 
   U16<E> st_shndx;
