@@ -1351,6 +1351,16 @@ enum : u32 {
   R_LARCH_TLS_DESC_PCREL20_S2 = 126,
 };
 
+// Returns true if a given relocation is of type used for direct
+// function call.
+template <typename E>
+inline bool is_func_call_rel(const ElfRel<E> &r) {
+  for (u32 r_type : E::R_FUNCALL)
+    if (r.r_type == r_type)
+      return true;
+  return false;
+}
+
 //
 // DWARF data types
 //
@@ -1465,7 +1475,7 @@ template <typename E> using U32 = std::conditional_t<E::is_le, ul32, ub32>;
 template <typename E> using U64 = std::conditional_t<E::is_le, ul64, ub64>;
 
 template <typename E> using Word = std::conditional_t<E::is_64, U64<E>, U32<E>>;
-template <typename E> using IWord = std::conditional_t<E::is_64, I64<E>, I32<E>>;
+template <typename E> using SWord = std::conditional_t<E::is_64, I64<E>, I32<E>>;
 
 template <typename E> requires E::is_64
 struct ElfSym<E> {
@@ -1622,7 +1632,7 @@ struct ElfPhdr<E> {
 // We don't want to have too many `if (REL)`s and `if (RELA)`s in our
 // codebase, so ElfRel always takes r_addend as a constructor argument.
 // If it's REL, the argument will simply be ignored.
-template <typename E> requires E::is_le && E::is_rela
+template <typename E> requires (E::is_le && E::is_rela)
 struct ElfRel<E> {
   ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
@@ -1631,10 +1641,10 @@ struct ElfRel<E> {
   Word<E> r_offset;
   std::conditional_t<E::is_64, U32<E>, u8> r_type;
   std::conditional_t<E::is_64, U32<E>, U24<E>> r_sym;
-  IWord<E> r_addend;
+  SWord<E> r_addend;
 };
 
-template <typename E> requires (!E::is_le) && E::is_rela
+template <typename E> requires (!E::is_le && E::is_rela)
 struct ElfRel<E> {
   ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
@@ -1643,10 +1653,10 @@ struct ElfRel<E> {
   Word<E> r_offset;
   std::conditional_t<E::is_64, U32<E>, U24<E>> r_sym;
   std::conditional_t<E::is_64, U32<E>, u8> r_type;
-  IWord<E> r_addend;
+  SWord<E> r_addend;
 };
 
-template <typename E> requires E::is_le && (!E::is_rela)
+template <typename E> requires (E::is_le && !E::is_rela)
 struct ElfRel<E> {
   ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend = 0)
@@ -1657,7 +1667,7 @@ struct ElfRel<E> {
   std::conditional_t<E::is_64, U32<E>, U24<E>> r_sym;
 };
 
-template <typename E> requires (!E::is_le) && (!E::is_rela)
+template <typename E> requires (!E::is_le && !E::is_rela)
 struct ElfRel<E> {
   ElfRel() = default;
   ElfRel(u64 offset, u32 type, u32 sym, i64 addend = 0)
@@ -1667,16 +1677,6 @@ struct ElfRel<E> {
   std::conditional_t<E::is_64, U32<E>, U24<E>> r_sym;
   std::conditional_t<E::is_64, U32<E>, u8> r_type;
 };
-
-// Returns true if a given relocation is of type used for direct
-// function call.
-template <typename E>
-inline bool is_func_call_rel(const ElfRel<E> &r) {
-  for (u32 r_type : E::R_FUNCALL)
-    if (r.r_type == r_type)
-      return true;
-  return false;
-}
 
 template <typename E>
 struct ElfDyn {

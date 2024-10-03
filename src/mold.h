@@ -2468,7 +2468,7 @@ inline i64 InputSection<E>::get_priority() const {
 template <typename E>
 i64 get_addend(u8 *loc, const ElfRel<E> &rel);
 
-template <typename E> requires E::is_rela && (!is_sh4<E>)
+template <typename E> requires (E::is_rela && !is_sh4<E>)
 inline i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   return rel.r_addend;
 }
@@ -2481,7 +2481,7 @@ i64 get_addend(InputSection<E> &isec, const ElfRel<E> &rel) {
 template <typename E>
 void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel);
 
-template <typename E> requires E::is_rela && (!is_sh4<E>)
+template <typename E> requires (E::is_rela && !is_sh4<E>)
 void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {}
 
 template <typename E>

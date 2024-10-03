@@ -121,7 +121,7 @@ public:
 
 private:
   u8 buf[size];
-};;
+};
 
 using il16 = Integer<i16, std::endian::little>;
 using il32 = Integer<i32, std::endian::little>;
