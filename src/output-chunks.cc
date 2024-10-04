@@ -1109,21 +1109,11 @@ template <typename E>
 void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
   std::vector<std::vector<AbsRel<E>>> shards(members.size());
 
-  auto is_absrel = [](const ElfRel<E> &r) {
-    // R_ARM_TARGET1 is typically used for entries in .init_array and can
-    // be interpreted as REL32 or ABS32 depending on the target.
-    // All targets we support handle it as if it were a synonym for ABS32.
-    if constexpr (is_arm32<E>)
-      if (r.r_type == R_ARM_TARGET1)
-        return true;
-    return r.r_type == E::R_ABS;
-  };
-
   // Collect all word-size absolute relocations
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
     InputSection<E> *isec = members[i];
     for (const ElfRel<E> &r : isec->get_rels(ctx))
-      if (is_absrel(r))
+      if (r.r_type == E::R_ABS)
         shards[i].push_back(AbsRel<E>{isec, r.r_offset, isec->file.symbols[r.r_sym],
                                       get_addend(*isec, r)});
   });

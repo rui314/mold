@@ -178,7 +178,7 @@ static PluginStatus add_input_file(const char *path) {
 
   MappedFile *mf = must_open_file(ctx, path);
 
-  ObjectFile<E> *file = ObjectFile<E>::create(ctx, mf, "", false);
+  ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, "", false);
   ctx.obj_pool.emplace_back(file);
   lto_objects<E>.push_back(file);
 

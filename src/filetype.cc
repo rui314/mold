@@ -1,23 +1,9 @@
-#pragma once
-
-#include "../lib/common.h"
-#include "elf.h"
+#include "mold.h"
+#include "../lib/archive-file.h"
 
 namespace mold {
 
-enum class FileType {
-  UNKNOWN,
-  EMPTY,
-  ELF_OBJ,
-  ELF_DSO,
-  AR,
-  THIN_AR,
-  TEXT,
-  GCC_LTO_OBJ,
-  LLVM_BITCODE,
-};
-
-inline bool is_text_file(MappedFile *mf) {
+static bool is_text_file(MappedFile *mf) {
   auto istext = [](char c) {
     return isprint(c) || c == '\n' || c == '\t';
   };
@@ -28,7 +14,7 @@ inline bool is_text_file(MappedFile *mf) {
 }
 
 template <typename E>
-inline bool is_gcc_lto_obj(MappedFile *mf, bool has_plugin) {
+static bool is_gcc_lto_obj(MappedFile *mf, bool has_plugin) {
   const char *data = mf->get_contents().data();
   ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)data;
   ElfShdr<E> *sh_begin = (ElfShdr<E> *)(data + ehdr.e_shoff);
@@ -140,24 +126,79 @@ FileType get_file_type(Context<E> &ctx, MappedFile *mf) {
   return FileType::UNKNOWN;
 }
 
-inline std::ostream &operator<<(std::ostream &out, FileType type) {
-  auto to_string = [&] {
-    switch (type) {
-    case FileType::UNKNOWN: return "UNKNOWN";
-    case FileType::EMPTY: return "EMPTY";
-    case FileType::ELF_OBJ: return "ELF_OBJ";
-    case FileType::ELF_DSO: return "ELF_DSO";
-    case FileType::AR: return "AR";
-    case FileType::THIN_AR: return "THIN_AR";
-    case FileType::TEXT: return "TEXT";
-    case FileType::GCC_LTO_OBJ: return "GCC_LTO_OBJ";
-    case FileType::LLVM_BITCODE: return "LLVM_BITCODE";
-    default: return "UNKNOWN";
-    }
-  };
+static std::string_view get_elf_type(u8 *buf) {
+  bool is_le = (buf[EI_DATA] == ELFDATA2LSB);
+  bool is_64 = (buf[EI_CLASS] == ELFCLASS64);
 
-  out << to_string();
-  return out;
+  auto *ehdr_le = (ElfEhdr<I386> *)buf;
+  auto *ehdr_be = (ElfEhdr<M68K> *)buf;
+
+  switch (is_le ? ehdr_le->e_machine : ehdr_be->e_machine) {
+  case EM_386:
+    return I386::name;
+  case EM_X86_64:
+    return X86_64::name;
+  case EM_ARM:
+    return ARM32::name;
+  case EM_AARCH64:
+    return ARM64::name;
+  case EM_RISCV:
+    if (is_le)
+      return is_64 ? RV64LE::name : RV32LE::name;
+    return is_64 ? RV64BE::name : RV32BE::name;
+  case EM_PPC:
+    return PPC32::name;
+  case EM_PPC64:
+    return is_le ? PPC64V2::name : PPC64V1::name;
+  case EM_S390X:
+    return S390X::name;
+  case EM_SPARC64:
+    return SPARC64::name;
+  case EM_68K:
+    return M68K::name;
+  case EM_SH:
+    return SH4::name;
+  case EM_LOONGARCH:
+    return is_64 ? LOONGARCH64::name : LOONGARCH32::name;
+  default:
+    return "";
+  }
 }
+
+// Read the beginning of a given file and returns its machine type
+// (e.g. EM_X86_64 or EM_386).
+template <typename E>
+std::string_view
+get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
+  switch (get_file_type(ctx, mf)) {
+  case FileType::ELF_OBJ:
+  case FileType::ELF_DSO:
+  case FileType::GCC_LTO_OBJ:
+    return get_elf_type(mf->data);
+  case FileType::AR:
+    for (MappedFile *child : read_fat_archive_members(ctx, mf))
+      if (FileType ty = get_file_type(ctx, child);
+          ty == FileType::ELF_OBJ || ty == FileType::GCC_LTO_OBJ)
+        return get_elf_type(child->data);
+    return "";
+  case FileType::THIN_AR:
+    for (MappedFile *child : read_thin_archive_members(ctx, mf))
+      if (FileType ty = get_file_type(ctx, child);
+          ty == FileType::ELF_OBJ || ty == FileType::GCC_LTO_OBJ)
+        return get_elf_type(child->data);
+    return "";
+  case FileType::TEXT:
+    return Script(ctx, rctx, mf).get_script_output_type();
+  default:
+    return "";
+  }
+}
+
+using E = MOLD_TARGET;
+
+template FileType get_file_type(Context<E> &, MappedFile *);
+
+template std::string_view
+get_machine_type(Context<E> &, ReaderContext &, MappedFile *);
 
 } // namespace mold

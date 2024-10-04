@@ -1,5 +1,4 @@
 #include "mold.h"
-#include "filetype.h"
 #include "../lib/archive-file.h"
 
 #include <cstring>
@@ -29,75 +28,6 @@ int main(int argc, char **argv) {
 
 namespace mold {
 
-static std::string_view get_elf_type(u8 *buf) {
-  auto *ehdr = (ElfEhdr<I386> *)buf;
-  auto *ehdr_be = (ElfEhdr<M68K> *)buf;
-
-  bool is_le = (ehdr->e_ident[EI_DATA] == ELFDATA2LSB);
-  bool is_64 = (ehdr->e_ident[EI_CLASS] == ELFCLASS64);
-  u32 e_machine = is_le ? ehdr->e_machine : ehdr_be->e_machine;
-
-  switch (e_machine) {
-  case EM_386:
-    return I386::name;
-  case EM_X86_64:
-    return X86_64::name;
-  case EM_ARM:
-    return ARM32::name;
-  case EM_AARCH64:
-    return ARM64::name;
-  case EM_RISCV:
-    if (is_le)
-      return is_64 ? RV64LE::name : RV32LE::name;
-    return is_64 ? RV64BE::name : RV32BE::name;
-  case EM_PPC:
-    return PPC32::name;
-  case EM_PPC64:
-    return is_le ? PPC64V2::name : PPC64V1::name;
-  case EM_S390X:
-    return S390X::name;
-  case EM_SPARC64:
-    return SPARC64::name;
-  case EM_68K:
-    return M68K::name;
-  case EM_SH:
-    return SH4::name;
-  case EM_LOONGARCH:
-    return is_64 ? LOONGARCH64::name : LOONGARCH32::name;
-  default:
-    return "";
-  }
-}
-
-// Read the beginning of a given file and returns its machine type
-// (e.g. EM_X86_64 or EM_386).
-template <typename E>
-std::string_view
-get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
-  switch (get_file_type(ctx, mf)) {
-  case FileType::ELF_OBJ:
-  case FileType::ELF_DSO:
-  case FileType::GCC_LTO_OBJ:
-    return get_elf_type(mf->data);
-  case FileType::AR:
-    for (MappedFile *child : read_fat_archive_members(ctx, mf))
-      if (FileType ty = get_file_type(ctx, child);
-          ty == FileType::ELF_OBJ || ty == FileType::GCC_LTO_OBJ)
-        return get_elf_type(child->data);
-    return "";
-  case FileType::THIN_AR:
-    for (MappedFile *child : read_thin_archive_members(ctx, mf))
-      if (FileType ty = get_file_type(ctx, child);
-          ty == FileType::ELF_OBJ || ty == FileType::GCC_LTO_OBJ)
-        return get_elf_type(child->data);
-    return "";
-  case FileType::TEXT:
-    return Script(ctx, rctx, mf).get_script_output_type();
-  default:
-    return "";
-  }
-}
-
 template <typename E>
 static void
 check_file_compatibility(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
@@ -116,8 +46,11 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, ReaderContext &rctx,
   check_file_compatibility(ctx, rctx, mf);
 
   bool in_lib = rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
-  ObjectFile<E> *file = ObjectFile<E>::create(ctx, mf, archive_name, in_lib);
+
+  ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, archive_name, in_lib);
+  ctx.obj_pool.emplace_back(file);
   file->priority = ctx.file_priority++;
+
   rctx.tg->run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
     Out(ctx) << "trace: " << *file;
@@ -148,9 +81,11 @@ static SharedFile<E> *
 new_shared_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
   check_file_compatibility(ctx, rctx, mf);
 
-  SharedFile<E> *file = SharedFile<E>::create(ctx, mf);
+  SharedFile<E> *file = new SharedFile<E>(ctx, mf);
+  ctx.dso_pool.emplace_back(file);
   file->priority = ctx.file_priority++;
   file->is_alive = !rctx.as_needed;
+
   rctx.tg->run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
     Out(ctx) << "trace: " << *file;

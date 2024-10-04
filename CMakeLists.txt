@@ -311,6 +311,7 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   src/arch-loongarch.cc
   src/arch-riscv.cc
   src/cmdline.cc
+  src/filetype.cc
   src/gc-sections.cc
   src/gdb-index.cc
   src/icf.cc

@@ -50,6 +50,8 @@ template <typename E> struct FdeRecord;
 template <typename E> class MergeableSection;
 template <typename E> class RelocSection;
 
+struct ReaderContext;
+
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
@@ -333,6 +335,29 @@ private:
 
 template <typename E> u64 get_tp_addr(const ElfPhdr<E> &);
 template <typename E> u64 get_dtp_addr(const ElfPhdr<E> &);
+
+//
+// filetype.cc
+//
+
+enum class FileType {
+  UNKNOWN,
+  EMPTY,
+  ELF_OBJ,
+  ELF_DSO,
+  AR,
+  THIN_AR,
+  TEXT,
+  GCC_LTO_OBJ,
+  LLVM_BITCODE,
+};
+
+template <typename E>
+FileType get_file_type(Context<E> &ctx, MappedFile *mf);
+
+template <typename E>
+std::string_view
+get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf);
 
 //
 // output-chunks.cc
@@ -1307,8 +1332,8 @@ class ObjectFile : public InputFile<E> {
 public:
   ObjectFile() = default;
 
-  static ObjectFile<E> *create(Context<E> &ctx, MappedFile *mf,
-                               std::string archive_name, bool is_in_lib);
+  ObjectFile(Context<E> &ctx, MappedFile *mf,
+             std::string archive_name, bool is_in_lib);
 
   void parse(Context<E> &ctx);
   void initialize_symbols(Context<E> &ctx);
@@ -1363,9 +1388,6 @@ public:
   [[no_unique_address]] ObjectFileExtras<E> extra;
 
 private:
-  ObjectFile(Context<E> &ctx, MappedFile *mf,
-             std::string archive_name, bool is_in_lib);
-
   void initialize_sections(Context<E> &ctx);
   void sort_relocations(Context<E> &ctx);
   void initialize_ehframe_sections(Context<E> &ctx);
@@ -1384,7 +1406,7 @@ private:
 template <typename E>
 class SharedFile : public InputFile<E> {
 public:
-  static SharedFile<E> *create(Context<E> &ctx, MappedFile *mf);
+  SharedFile(Context<E> &ctx, MappedFile *mf) : InputFile<E>(ctx, mf) {}
 
   void parse(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
@@ -1404,8 +1426,6 @@ public:
   std::vector<ElfSym<E>> elf_syms2;
 
 private:
-  SharedFile(Context<E> &ctx, MappedFile *mf) : InputFile<E>(ctx, mf) {}
-
   std::string get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
   std::vector<std::string_view> read_dt_needed(Context<E> &ctx);
