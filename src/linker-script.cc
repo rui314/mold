@@ -141,7 +141,7 @@ MappedFile *Script<E>::resolve_path(std::string_view tok, bool check_target) {
 
     if (check_target) {
       std::string_view target = get_machine_type(ctx, rctx, mf);
-      if (!target.empty() && target != E::target_name) {
+      if (!target.empty() && target != E::name) {
         Warn(ctx) << path << ": skipping incompatible file: " << target
                   << " (e_machine " << (int)E::e_machine << ")";
         return nullptr;
@@ -241,9 +241,9 @@ std::string_view Script<E>::get_script_output_type() {
 
   if (tok.size() >= 3 && tok[0] == "OUTPUT_FORMAT" && tok[1] == "(") {
     if (tok[2] == "elf64-x86-64")
-      return X86_64::target_name;
+      return X86_64::name;
     if (tok[2] == "elf32-i386")
-      return I386::target_name;
+      return I386::name;
   }
 
   if (tok.size() >= 3 && (tok[0] == "INPUT" || tok[0] == "GROUP") &&

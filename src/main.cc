@@ -29,58 +29,51 @@ int main(int argc, char **argv) {
 
 namespace mold {
 
+static std::string_view get_elf_type(u8 *buf) {
+  auto *ehdr = (ElfEhdr<I386> *)buf;
+  auto *ehdr_be = (ElfEhdr<M68K> *)buf;
+
+  bool is_le = (ehdr->e_ident[EI_DATA] == ELFDATA2LSB);
+  bool is_64 = (ehdr->e_ident[EI_CLASS] == ELFCLASS64);
+  u32 e_machine = is_le ? ehdr->e_machine : ehdr_be->e_machine;
+
+  switch (e_machine) {
+  case EM_386:
+    return I386::name;
+  case EM_X86_64:
+    return X86_64::name;
+  case EM_ARM:
+    return ARM32::name;
+  case EM_AARCH64:
+    return ARM64::name;
+  case EM_RISCV:
+    if (is_le)
+      return is_64 ? RV64LE::name : RV32LE::name;
+    return is_64 ? RV64BE::name : RV32BE::name;
+  case EM_PPC:
+    return PPC32::name;
+  case EM_PPC64:
+    return is_le ? PPC64V2::name : PPC64V1::name;
+  case EM_S390X:
+    return S390X::name;
+  case EM_SPARC64:
+    return SPARC64::name;
+  case EM_68K:
+    return M68K::name;
+  case EM_SH:
+    return SH4::name;
+  case EM_LOONGARCH:
+    return is_64 ? LOONGARCH64::name : LOONGARCH32::name;
+  default:
+    return "";
+  }
+}
+
 // Read the beginning of a given file and returns its machine type
 // (e.g. EM_X86_64 or EM_386).
 template <typename E>
 std::string_view
 get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
-  auto get_elf_type = [&](u8 *buf) -> std::string_view {
-    bool is_le = (((ElfEhdr<I386> *)buf)->e_ident[EI_DATA] == ELFDATA2LSB);
-    bool is_64;
-    u32 e_machine;
-
-    if (is_le) {
-      auto &ehdr = *(ElfEhdr<I386> *)buf;
-      is_64 = (ehdr.e_ident[EI_CLASS] == ELFCLASS64);
-      e_machine = ehdr.e_machine;
-    } else {
-      auto &ehdr = *(ElfEhdr<M68K> *)buf;
-      is_64 = (ehdr.e_ident[EI_CLASS] == ELFCLASS64);
-      e_machine = ehdr.e_machine;
-    }
-
-    switch (e_machine) {
-    case EM_386:
-      return I386::target_name;
-    case EM_X86_64:
-      return X86_64::target_name;
-    case EM_ARM:
-      return ARM32::target_name;
-    case EM_AARCH64:
-      return ARM64::target_name;
-    case EM_RISCV:
-      if (is_le)
-        return is_64 ? RV64LE::target_name : RV32LE::target_name;
-      return is_64 ? RV64BE::target_name : RV32BE::target_name;
-    case EM_PPC:
-      return PPC32::target_name;
-    case EM_PPC64:
-      return is_le ? PPC64V2::target_name : PPC64V1::target_name;
-    case EM_S390X:
-      return S390X::target_name;
-    case EM_SPARC64:
-      return SPARC64::target_name;
-    case EM_68K:
-      return M68K::target_name;
-    case EM_SH:
-      return SH4::target_name;
-    case EM_LOONGARCH:
-      return is_64 ? LOONGARCH64::target_name : LOONGARCH32::target_name;
-    default:
-      return "";
-    }
-  };
-
   switch (get_file_type(ctx, mf)) {
   case FileType::ELF_OBJ:
   case FileType::ELF_DSO:
@@ -249,7 +242,7 @@ MappedFile *open_library(Context<E> &ctx, ReaderContext &rctx, std::string path)
     return nullptr;
 
   std::string_view target = get_machine_type(ctx, rctx, mf);
-  if (!target.empty() && target != E::target_name) {
+  if (!target.empty() && target != E::name) {
     Warn(ctx) << path << ": skipping incompatible file: " << target
               << " (e_machine " << (int)E::e_machine << ")";
     return nullptr;
@@ -363,7 +356,7 @@ int mold_main(int argc, char **argv) {
 
   // Redo if -m is not x86-64.
   if constexpr (is_x86_64<E>)
-    if (ctx.arg.emulation != X86_64::target_name)
+    if (ctx.arg.emulation != X86_64::name)
       return redo_main(ctx, argc, argv);
 
   Timer t_all(ctx, "all");

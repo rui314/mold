@@ -21,37 +21,37 @@ template <typename E>
 int redo_main(Context<E> &ctx, int argc, char **argv) {
   std::string_view target = ctx.arg.emulation;
 
-  if (target == I386::target_name)
+  if (target == I386::name)
     return mold_main<I386>(argc, argv);
-  if (target == ARM64::target_name)
+  if (target == ARM64::name)
     return mold_main<ARM64>(argc, argv);
-  if (target == ARM32::target_name)
+  if (target == ARM32::name)
     return mold_main<ARM32>(argc, argv);
-  if (target == RV64LE::target_name)
+  if (target == RV64LE::name)
     return mold_main<RV64LE>(argc, argv);
-  if (target == RV64BE::target_name)
+  if (target == RV64BE::name)
     return mold_main<RV64BE>(argc, argv);
-  if (target == RV32LE::target_name)
+  if (target == RV32LE::name)
     return mold_main<RV32LE>(argc, argv);
-  if (target == RV32BE::target_name)
+  if (target == RV32BE::name)
     return mold_main<RV32BE>(argc, argv);
-  if (target == PPC32::target_name)
+  if (target == PPC32::name)
     return mold_main<PPC32>(argc, argv);
-  if (target == PPC64V1::target_name)
+  if (target == PPC64V1::name)
     return mold_main<PPC64V1>(argc, argv);
-  if (target == PPC64V2::target_name)
+  if (target == PPC64V2::name)
     return mold_main<PPC64V2>(argc, argv);
-  if (target == S390X::target_name)
+  if (target == S390X::name)
     return mold_main<S390X>(argc, argv);
-  if (target == SPARC64::target_name)
+  if (target == SPARC64::name)
     return mold_main<SPARC64>(argc, argv);
-  if (target == M68K::target_name)
+  if (target == M68K::name)
     return mold_main<M68K>(argc, argv);
-  if (target == SH4::target_name)
+  if (target == SH4::name)
     return mold_main<SH4>(argc, argv);
-  if (target == LOONGARCH32::target_name)
+  if (target == LOONGARCH32::name)
     return mold_main<LOONGARCH32>(argc, argv);
-  if (target == LOONGARCH64::target_name)
+  if (target == LOONGARCH64::name)
     return mold_main<LOONGARCH64>(argc, argv);
   unreachable();
 }
