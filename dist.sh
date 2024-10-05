@@ -163,6 +163,7 @@ cd /build
 cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=On /mold
 cmake --build . -j\$(nproc)
 mv mold mold2
+cmake -DCMAKE_EXE_LINKER_FLAGS='-Wl,--gc-sections,--icf=safe' .
 ./mold2 -run cmake --build . -j\$(nproc)
 ctest -j\$(nproc)
 cmake --install . --prefix $dest --strip

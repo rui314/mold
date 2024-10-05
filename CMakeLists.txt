@@ -50,12 +50,6 @@ include(CMakeDependentOption)
 include(CheckSymbolExists)
 include(GNUInstallDirs)
 
-# Build mold itself using mold if -DMOLD_USE_MOLD=ON
-option(MOLD_USE_MOLD "Use mold to build mold" OFF)
-if(MOLD_USE_MOLD)
-  add_link_options(-fuse-ld=mold -Wl,--gdb-index)
-endif()
-
 add_executable(mold)
 target_compile_features(mold PRIVATE cxx_std_20)
 
@@ -65,11 +59,23 @@ else()
   target_link_libraries(mold PRIVATE ${CMAKE_DL_LIBS})
 endif()
 
+# Build mold itself using mold if -DMOLD_USE_MOLD=ON
+option(MOLD_USE_MOLD "Use mold to build mold" OFF)
+if(MOLD_USE_MOLD)
+  target_link_options(mold PRIVATE -fuse-ld=mold -Wl,--gdb-index)
+
+  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_link_options(mold PRIVATE -Wl,--gc-sections,--icf=safe)
+  endif()
+endif()
+
 if(NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
   target_compile_options(mold PRIVATE
     -fno-exceptions
     -fno-unwind-tables
     -fno-asynchronous-unwind-tables
+    -ffunction-sections
+    -fdata-sections
     -Wall
     -Wextra
     -Wno-sign-compare
