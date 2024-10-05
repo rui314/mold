@@ -1,6 +1,9 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# This test is flaky on FreeBSD
+[ "$(uname)" = FreeBSD ] && skip
+
 cat <<EOF | $CC -B. -fPIC -shared -o $t/a.so -xassembler -
 .globl foo
 foo = 3;
