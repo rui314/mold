@@ -16,13 +16,13 @@
 //    example, to read a 32 bit value.
 //
 // The data types defined in this file don't depend on host byte order and
-// don't do unaligned access.
+// don't do unaligned access. Note that modern compilers are smart enough
+// to recognize shift and bitwise OR patterns and compile them into a
+// single load instruction.
 
 #pragma once
 
-#include <bit>
 #include <cstdint>
-#include <cstring>
 
 #if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
 # if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -46,44 +46,39 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-template <typename T, std::endian endian, int size = sizeof(T)>
+template <typename T, bool is_le, int size = sizeof(T)>
 class Integer {
 public:
   constexpr Integer() = default;
 
-  constexpr Integer(T x) requires (endian == std::endian::little && size == 2)
+  constexpr Integer(T x) requires (is_le && size == 2)
     : buf{(u8)x, (u8)(x >> 8)} {}
 
-  constexpr Integer(T x) requires (endian == std::endian::little && size == 3)
+  constexpr Integer(T x) requires (is_le && size == 3)
     : buf{(u8)x, (u8)(x >> 8), (u8)(x >> 16)} {}
 
-  constexpr Integer(T x) requires (endian == std::endian::little && size == 4)
+  constexpr Integer(T x) requires (is_le && size == 4)
     : buf{(u8)x, (u8)(x >> 8), (u8)(x >> 16), (u8)(x >> 24)} {}
 
-  constexpr Integer(T x) requires (endian == std::endian::little && size == 8)
+  constexpr Integer(T x) requires (is_le && size == 8)
     : buf{(u8)x,         (u8)(x >> 8),  (u8)(x >> 16), (u8)(x >> 24),
           (u8)(x >> 32), (u8)(x >> 40), (u8)(x >> 48), (u8)(x >> 56)} {}
 
-  constexpr Integer(T x) requires (endian == std::endian::big && size == 2)
+  constexpr Integer(T x) requires (!is_le && size == 2)
     : buf{(u8)(x >> 8), (u8)x} {}
 
-  constexpr Integer(T x) requires (endian == std::endian::big && size == 3)
+  constexpr Integer(T x) requires (!is_le && size == 3)
     : buf{(u8)(x >> 16), (u8)(x >> 8), (u8)x} {}
 
-  constexpr Integer(T x) requires (endian == std::endian::big && size == 4)
+  constexpr Integer(T x) requires (!is_le && size == 4)
     : buf{(u8)(x >> 24), (u8)(x >> 16), (u8)(x >> 8), (u8)x} {}
 
-  constexpr Integer(T x) requires (endian == std::endian::big && size == 8)
+  constexpr Integer(T x) requires (!is_le && size == 8)
     : buf{(u8)(x >> 56), (u8)(x >> 48), (u8)(x >> 40), (u8)(x >> 32),
           (u8)(x >> 24), (u8)(x >> 16), (u8)(x >> 8),  (u8)x} {}
 
-  Integer &operator=(T x) {
-    new (this) Integer(x);
-    return *this;
-  }
-
   operator T() const {
-    if constexpr (endian == std::endian::little) {
+    if constexpr (is_le) {
       if constexpr (size == 2)
         return buf[1] << 8 | buf[0];
       else if constexpr (size == 3)
@@ -110,6 +105,11 @@ public:
     }
   }
 
+  Integer &operator=(T x) {
+    new (this) Integer(x);
+    return *this;
+  }
+
   Integer &operator++()    { return *this = *this + 1; }
   Integer operator++(int)  { return ++*this - 1; }
   Integer &operator--()    { return *this = *this - 1; }
@@ -123,22 +123,22 @@ private:
   u8 buf[size];
 };
 
-using il16 = Integer<i16, std::endian::little>;
-using il32 = Integer<i32, std::endian::little>;
-using il64 = Integer<i64, std::endian::little>;
+using il16 = Integer<i16, true>;
+using il32 = Integer<i32, true>;
+using il64 = Integer<i64, true>;
 
-using ul16 = Integer<u16, std::endian::little>;
-using ul24 = Integer<u32, std::endian::little, 3>;
-using ul32 = Integer<u32, std::endian::little>;
-using ul64 = Integer<u64, std::endian::little>;
+using ul16 = Integer<u16, true>;
+using ul24 = Integer<u32, true, 3>;
+using ul32 = Integer<u32, true>;
+using ul64 = Integer<u64, true>;
 
-using ib16 = Integer<i16, std::endian::big>;
-using ib32 = Integer<i32, std::endian::big>;
-using ib64 = Integer<i64, std::endian::big>;
+using ib16 = Integer<i16, false>;
+using ib32 = Integer<i32, false>;
+using ib64 = Integer<i64, false>;
 
-using ub16 = Integer<u16, std::endian::big>;
-using ub24 = Integer<u32, std::endian::big, 3>;
-using ub32 = Integer<u32, std::endian::big>;
-using ub64 = Integer<u64, std::endian::big>;
+using ub16 = Integer<u16, false>;
+using ub24 = Integer<u32, false, 3>;
+using ub32 = Integer<u32, false>;
+using ub64 = Integer<u64, false>;
 
 } // namespace mold
