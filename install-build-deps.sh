@@ -12,7 +12,7 @@ ubuntu-20.* | pop-20.*)
   apt-get update
   apt-get install -y cmake gcc g++ g++-10
   ;;
-ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-*)
+ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-* | neon-*)
   apt-get update
   apt-get install -y cmake gcc g++
   ;;
