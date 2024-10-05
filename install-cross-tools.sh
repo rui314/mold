@@ -9,8 +9,8 @@ set -x
 #
 # Feel free to send me a PR if your OS is not on this list.
 
-case "$ID-$VERSION_ID" in
-ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-*)
+case "$ID" in
+ubuntu | pop | linuxmint | debian | raspbian)
   apt-get install -y qemu-user {gcc,g++}-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4}-linux-gnu {gcc,g++}-arm-linux-gnueabihf
   ;;
 *)

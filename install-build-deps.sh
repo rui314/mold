@@ -7,43 +7,40 @@ set -e
 
 set -x
 
-case "$ID-$VERSION_ID" in
-ubuntu-20.* | pop-20.*)
-  apt-get update
-  apt-get install -y cmake gcc g++ g++-10
-  ;;
-ubuntu-* | pop-* | linuxmint-* | debian-* | raspbian-* | neon-*)
+case "$ID" in
+ubuntu | pop | linuxmint | debian | raspbian | neon)
   apt-get update
   apt-get install -y cmake gcc g++
+  if [ "$ID-$VERSION_ID" = ubuntu-20.04 ]; then apt-get install -y g++-10; fi
   ;;
-fedora-* | amzn-* | rhel-*)
+fedora | amzn | rhel)
   dnf install -y gcc-g++ cmake glibc-static libstdc++-static diffutils util-linux
   ;;
 opensuse-*)
   zypper install -y make cmake gcc-c++ glibc-devel-static tar diffutils util-linux
   ;;
-gentoo-*)
+gentoo)
   emerge-webrsync
   FEATURES='getbinpkg binpkg-request-signature' emerge dev-build/cmake
   ;;
-arch-* | archarm-* | artix-* | endeavouros-*)
+arch | archarm | artix | endeavouros)
   pacman -Sy --needed --noconfirm base-devel cmake util-linux
   ;;
-void-*)
+void)
   xbps-install -Sy xbps bash make cmake gcc tar diffutils util-linux
   ;;
-alpine-*)
+alpine)
   apk update
   apk add bash make linux-headers cmake gcc g++
   ;;
-clear-linux-*)
+clear-linux-os)
   swupd update
   swupd bundle-add c-basic diffutils
   ;;
-almalinux-*)
+almalinux)
   dnf install -y gcc-toolset-13-gcc-c++ gcc-toolset-13-libstdc++-devel cmake diffutils
   ;;
-freebsd-*)
+freebsd)
   pkg update
   pkg install -y cmake bash binutils gcc
   ;;
