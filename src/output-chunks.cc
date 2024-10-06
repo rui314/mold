@@ -451,8 +451,6 @@ void RelDynSection<E>::sort(Context<E> &ctx) {
 
 template <typename E>
 void RelrDynSection<E>::update_shdr(Context<E> &ctx) {
-  this->shdr.sh_link = ctx.dynsym->shndx;
-
   i64 n = 0;
   for (Chunk<E> *chunk : ctx.chunks)
     n += chunk->relr.size();
