@@ -25,8 +25,13 @@
 # link glibc to mold, and a binary linked against a newer version of glibc
 # won't work on a system with an older version of glibc.
 #
-# We need GCC 10 or newer to build mold. If GCC 10 is not available on an
-# old Debian version, we'll build it ourselves.
+# We want to build mold with Clang rather than GCC because mold's
+# Identical Code Folding works best with the LLVM address significance
+# table (.llvm_addrsig). Building a release binary with GCC yields a
+# slightly larger binary than Clang's.
+#
+# We need a recent version of Clang to build mold. If it's not available
+# via apt-get, we'll build it ourselves.
 #
 # You may need to run the following command to use Docker with Qemu:
 #
@@ -107,41 +112,66 @@ RUN mkdir /build && \
   make install && \
   ln -sf /usr/lib64/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6 && \
   rm -rf /build
+
+# Build GNU binutils 2.43
+RUN mkdir /build && \
+  cd /build && \
+  wget -O- --no-check-certificate https://ftp.gnu.org/gnu/binutils/binutils-2.43.tar.gz | tar xzf - --strip-components=1 && \
+  ./configure --prefix=/usr && \
+  make -j\$(nproc) && \
+  make install && \
+  rm -fr /build
+
+# Build Python 3.12.7
+RUN mkdir /build && \
+  cd /build && \
+  wget -O- --no-check-certificate https://www.python.org/ftp/python/3.12.7/Python-3.12.7.tgz | tar xzf - --strip-components=1 && \
+  ./configure && \
+  make -j\$(nproc) && \
+  make install && \
+  ln -sf /usr/local/bin/python3 /usr/local/bin/python && \
+  rm -rf /build
+
+# Build LLVM 18.1.8
+RUN mkdir /build && \
+  cd /build && \
+  wget -O- --no-check-certificate https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-18.1.8.tar.gz | tar xzf - --strip-components=1 && \
+  mkdir b && \
+  cd b && \
+  cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=clang ../llvm && \
+  cmake --build . -j\$(nproc) && \
+  cmake --install . --strip && \
+  rm -rf /build
 EOF
   ;;
 aarch64 | arm | ppc64le | s390x)
   # Debian 10 (Bullseye) released in July 2019
   #
-  # We don't want to build GCC for these targets with Qemu becuase
+  # We don't want to build Clang for these targets with Qemu becuase
   # that'd take extremely long time. Also I believe old build machines
   # are usually x86-64.
-  [ $arch = aarch64 ] && digest=d5ed76c5265576982e6599b6f12392290d9b52b315b19b28b640aaba6e8af002
-  [ $arch = arm ]     && digest=bede2623dae269454c5b6dd4af15a10810a5f4ef75963d4eb6531628f98bd633
-  [ $arch = ppc64le ] && digest=255f385e735469493b3465befad59a16f9d46f41d0b50e4fa6d5928c5ee7702a
-  [ $arch = s390x ]   && digest=96fb9ce5d3ce7f3dab7c34c18edfee093904cbc7fc19162dbcca22b2cc273b9d
-
   cat <<EOF | $docker_build
-FROM debian:bullseye-20231030@sha256:$digest
+FROM debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-10 g++-10 cmake && \
-  ln -sf /usr/bin/gcc-10 /usr/bin/cc && \
-  ln -sf /usr/bin/g++-10 /usr/bin/c++ && \
+  apt-get install -y --no-install-recommends build-essential gcc-10 g++-10 clang-16 cmake && \
+  ln -sf /usr/bin/clang-16 /usr/bin/clang && \
+  ln -sf /usr/bin/clang++-16 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
 EOF
   ;;
 riscv64)
   cat <<EOF | $docker_build
-FROM riscv64/debian:sid-20240311@sha256:8c02dbe4faa999b588e873cc1759dd9b340f39daf4d7aabdb2c1a87cdc586459
+FROM riscv64/debian:unstable-20240926@sha256:25654919c2926f38952cdd14b3300d83d13f2d820715f78c9f4b7a1d9399bf48
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debian.sources && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-12 g++-12 cmake && \
-  ln -sf /usr/bin/gcc-12 /usr/bin/cc && \
-  ln -sf /usr/bin/g++-12 /usr/bin/c++ && \
+  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-18 cmake && \
+  ln -sf /usr/bin/clang-18 /usr/bin/clang && \
+  ln -sf /usr/bin/clang++-18 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
 EOF
   ;;
@@ -160,11 +190,11 @@ docker run --platform linux/$arch -i --rm -v "$(pwd):/mold" $image bash -c "
 set -e
 mkdir /build
 cd /build
-cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=On /mold
+cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=1 -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ /mold
 cmake --build . -j\$(nproc)
-mv mold mold2
-cmake -DCMAKE_EXE_LINKER_FLAGS='-Wl,--gc-sections,--icf=safe' .
-./mold2 -run cmake --build . -j\$(nproc)
+cmake --install .
+cmake -DMOLD_USE_MOLD=1 .
+cmake --build . -j\$(nproc)
 ctest -j\$(nproc)
 cmake --install . --prefix $dest --strip
 find $dest -print | xargs touch --no-dereference --date='$timestamp'

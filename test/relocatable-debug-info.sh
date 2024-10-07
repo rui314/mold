@@ -14,6 +14,10 @@ void hello();
 int main() { hello(); }
 EOF
 
+# It looks like objdump prints out a warning message for
+# object files compiled with Clang.
+$OBJDUMP --dwarf=info $t/a.o $t/b.o 2>&1 | grep -q 'Warning: DIE at offset' && skip
+
 ./mold --relocatable -o $t/c.o $t/a.o $t/b.o
 
 $CC -B. -o $t/exe $t/c.o

@@ -1,6 +1,10 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# Clang miscompiles the test code, so skip it if Clang.
+# https://github.com/llvm/llvm-project/issues/111338
+$CC --version | grep -q clang && skip
+
 supports_ifunc || skip
 
 cat <<EOF | $CC -c -fPIC -o $t/a.o -xc -
