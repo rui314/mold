@@ -278,8 +278,6 @@ public:
 
   std::string_view contents;
 
-  [[no_unique_address]] InputSectionExtras<E> extra;
-
   i32 fde_begin = -1;
   i32 fde_end = -1;
 
@@ -311,6 +309,8 @@ public:
   i32 icf_idx = -1;
   bool icf_eligible = false;
   bool icf_leaf = false;
+
+  [[no_unique_address]] InputSectionExtras<E> extra;
 
 private:
   void scan_pcrel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel);
@@ -1384,9 +1384,6 @@ public:
   // For LTO
   std::vector<ElfSym<E>> lto_elf_syms;
 
-  // Target-specific member
-  [[no_unique_address]] ObjectFileExtras<E> extra;
-
 private:
   void initialize_sections(Context<E> &ctx);
   void sort_relocations(Context<E> &ctx);
@@ -1400,6 +1397,10 @@ private:
 
   const ElfShdr<E> *symtab_sec;
   std::span<U32<E>> symtab_shndx_sec;
+
+public:
+  // Target-specific member
+  [[no_unique_address]] ObjectFileExtras<E> extra;
 };
 
 // SharedFile represents an input .so file.
@@ -2084,8 +2085,6 @@ struct Context {
   RelroPaddingSection<E> *relro_padding = nullptr;
   MergedSection<E> *comment = nullptr;
 
-  [[no_unique_address]] ContextExtras<E> extra;
-
   // For --gdb-index
   std::span<u8> debug_info;
   std::span<u8> debug_abbrev;
@@ -2125,6 +2124,8 @@ struct Context {
   Symbol<E> *edata = nullptr;
   Symbol<E> *end = nullptr;
   Symbol<E> *etext = nullptr;
+
+  [[no_unique_address]] ContextExtras<E> extra;
 };
 
 template <typename E>
