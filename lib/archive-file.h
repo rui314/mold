@@ -115,7 +115,7 @@ read_thin_archive_members(Context &ctx, MappedFile *mf) {
       continue;
 
     std::string path = name.starts_with('/') ?
-      name : (filepath(mf->name).parent_path() / name).string();
+      name : (path_dirname(mf->name) / name).string();
     vec.push_back(must_open_file(ctx, path));
     vec.back()->thin_parent = mf;
     data = body;

@@ -70,7 +70,6 @@ inline u8 *output_buffer_end = nullptr;
 extern std::string mold_git_hash;
 
 std::string errno_string();
-std::string get_self_path();
 void cleanup();
 void install_signal_handler();
 
@@ -790,12 +789,19 @@ private:
 // filepath.cc
 //
 
-std::filesystem::path filepath(const auto &path) {
-  return {path, std::filesystem::path::format::generic_format};
+inline std::filesystem::path path_dirname(std::string_view path) {
+  return std::filesystem::path(path).parent_path();
 }
 
-std::string get_realpath(std::string_view path);
-std::string path_clean(std::string_view path);
+inline std::string path_filename(std::string_view path) {
+  return std::filesystem::path(path).filename().string();
+}
+
+inline std::string path_clean(std::string_view path) {
+  return std::filesystem::path(path).lexically_normal().string();
+}
+
+std::string get_self_path();
 
 //
 // demangle.cc

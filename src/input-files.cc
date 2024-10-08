@@ -1200,7 +1200,7 @@ std::string SharedFile<E>::get_soname(Context<E> &ctx) {
   if (this->mf->given_fullpath)
     return this->filename;
 
-  return filepath(this->filename).filename().string();
+  return path_filename(this->filename);
 }
 
 template <typename E>

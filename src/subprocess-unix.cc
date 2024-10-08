@@ -106,7 +106,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   putenv(strdup(("MOLD_PATH=" + self).c_str()));
 
   // If ld, ld.lld or ld.gold is specified, run mold itself
-  if (std::string cmd = filepath(argv[2]).filename();
+  if (std::string cmd = path_filename(argv[2]);
       cmd == "ld" || cmd == "ld.lld" || cmd == "ld.gold") {
     std::vector<char *> args;
     args.push_back(argv[0]);

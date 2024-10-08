@@ -40,9 +40,9 @@ class MemoryMappedOutputFile : public OutputFile<E> {
 public:
   MemoryMappedOutputFile(Context<E> &ctx, std::string path, i64 filesize, int perm)
     : OutputFile<E>(path, filesize, true) {
-    std::filesystem::path dir = filepath(path).parent_path();
-    std::string filename = filepath(path).filename().string();
-    std::string tmpfile = dir / ("." + filename + "." + std::to_string(getpid()));
+    std::string pid = std::to_string(getpid());
+    std::string tmpfile =
+      path_dirname(path) / ("." + path_filename(path) + "." + pid);
 
     this->fd = open_or_create_file(ctx, path, tmpfile, perm);
 

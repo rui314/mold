@@ -1435,8 +1435,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     ctx.arg.repro = true;
 
   if (ctx.arg.default_symver) {
-    std::string ver = ctx.arg.soname.empty() ?
-      filepath(ctx.arg.output).filename().string() : std::string(ctx.arg.soname);
+    std::string ver = ctx.arg.soname;
+    if (ver.empty())
+      ver = path_filename(ctx.arg.output);
+
     ctx.arg.version_definitions.push_back(ver);
     ctx.default_version = VER_NDX_LAST_RESERVED + 1;
   }

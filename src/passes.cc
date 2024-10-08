@@ -60,16 +60,19 @@ template <typename E>
 void apply_exclude_libs(Context<E> &ctx) {
   Timer t(ctx, "apply_exclude_libs");
 
-  if (ctx.arg.exclude_libs.empty())
-    return;
-
   std::unordered_set<std::string_view> set(ctx.arg.exclude_libs.begin(),
                                            ctx.arg.exclude_libs.end());
 
+  if (set.contains("ALL")) {
+    for (ObjectFile<E> *file : ctx.objs)
+      if (!file->archive_name.empty())
+        file->exclude_libs = true;
+    return;
+  }
+
   for (ObjectFile<E> *file : ctx.objs)
     if (!file->archive_name.empty())
-      if (set.contains("ALL") ||
-          set.contains(filepath(file->archive_name).filename().string()))
+      if (set.contains(path_filename(file->archive_name)))
         file->exclude_libs = true;
 }
 
@@ -989,7 +992,7 @@ void write_repro_file(Context<E> &ctx) {
   std::string path = ctx.arg.output + ".repro.tar";
 
   std::unique_ptr<TarWriter> tar =
-    TarWriter::open(path, filepath(ctx.arg.output).filename().string() + ".repro");
+    TarWriter::open(path, path_filename(ctx.arg.output) + ".repro");
   if (!tar)
     Fatal(ctx) << "cannot open " << path << ": " << errno_string();
 
