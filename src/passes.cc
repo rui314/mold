@@ -2076,13 +2076,15 @@ void compute_address_significance(Context<E> &ctx) {
 
   // Flip address-taken bit for executable sections first.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &src : file->sections)
-      if (src && src->is_alive && (src->shdr().sh_flags & SHF_ALLOC))
-        for (const ElfRel<E> &r : src->get_rels(ctx))
-          if (!is_func_call_rel(r))
-            if (InputSection<E> *dst = file->symbols[r.r_sym]->get_input_section())
-              if (dst->shdr().sh_flags & SHF_EXECINSTR)
-                dst->address_taken = true;
+    if (!file->llvm_addrsig)
+      for (std::unique_ptr<InputSection<E>> &src : file->sections)
+        if (src && src->is_alive && (src->shdr().sh_flags & SHF_ALLOC))
+          for (const ElfRel<E> &r : src->get_rels(ctx))
+            if (!is_func_call_rel(r))
+              if (Symbol<E> *sym = file->symbols[r.r_sym];
+                  InputSection<E> *dst = sym->get_input_section())
+                if (dst->shdr().sh_flags & SHF_EXECINSTR)
+                  dst->address_taken = true;
   });
 
   auto mark = [](Symbol<E> *sym) {
