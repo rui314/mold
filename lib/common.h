@@ -796,7 +796,6 @@ std::filesystem::path filepath(const auto &path) {
 
 std::string get_realpath(std::string_view path);
 std::string path_clean(std::string_view path);
-std::filesystem::path to_abs_path(std::filesystem::path path);
 
 //
 // demangle.cc

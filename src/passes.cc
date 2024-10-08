@@ -1003,7 +1003,8 @@ void write_repro_file(Context<E> &ctx) {
       // We reopen a file because we may have modified the contents of mf
       // in memory, which is mapped with PROT_WRITE and MAP_PRIVATE.
       MappedFile *mf2 = must_open_file(ctx, mf->name);
-      tar->append(to_abs_path(mf->name).string(), mf2->get_contents());
+      tar->append(std::filesystem::absolute(mf->name).string(),
+                  mf2->get_contents());
       mf2->unmap();
     }
   }

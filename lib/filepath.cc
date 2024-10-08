@@ -28,12 +28,6 @@ std::string path_clean(std::string_view path) {
   return filepath(path).lexically_normal().string();
 }
 
-std::filesystem::path to_abs_path(std::filesystem::path path) {
-  if (path.is_absolute())
-    return path.lexically_normal();
-  return (std::filesystem::current_path() / path).lexically_normal();
-}
-
 // Returns the path of the mold executable itself
 std::string get_self_path() {
 #if __APPLE__ || _WIN32
