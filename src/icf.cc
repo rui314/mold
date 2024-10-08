@@ -133,7 +133,7 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
            name != ".init" && name != ".fini";
 
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
-  bool is_relro = isec.output_section && isec.output_section->is_relro;
+  bool is_relro = isec.name().starts_with(".data.rel.ro");
   return (ctx.arg.ignore_data_address_equality || !isec.address_taken) &&
          (is_readonly || is_relro);
 }
