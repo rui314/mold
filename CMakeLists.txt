@@ -64,7 +64,7 @@ option(MOLD_USE_MOLD "Use mold to build mold" OFF)
 if(MOLD_USE_MOLD)
   target_link_options(mold PRIVATE -fuse-ld=mold -Wl,--gdb-index)
 
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  if(CMAKE_BUILD_TYPE MATCHES "^Rel")
     target_link_options(mold PRIVATE -Wl,--gc-sections,--icf=safe)
   endif()
 endif()
