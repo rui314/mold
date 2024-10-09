@@ -193,7 +193,7 @@ if(MOLD_USE_MIMALLOC)
   if(MOLD_USE_SYSTEM_MIMALLOC)
     find_package(mimalloc REQUIRED)
     target_link_libraries(mold PRIVATE mimalloc)
-    target_compile_definitions(mold PRIVATE USE_SYSTEM_MIMALLOC)
+    target_sources(mold PRIVATE lib/mimalloc.cc)
   else()
     function(mold_add_mimalloc)
       set(MI_BUILD_STATIC ON CACHE INTERNAL "")
@@ -205,8 +205,6 @@ if(MOLD_USE_MIMALLOC)
 
     mold_add_mimalloc()
   endif()
-
-  target_sources(mold PRIVATE lib/mimalloc.cc)
 endif()
 
 # Find TBB. TBB (OneTBB or Intel TBB) is a high-level threading library.
