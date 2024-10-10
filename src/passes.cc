@@ -2074,17 +2074,34 @@ template <typename E>
 void compute_address_significance(Context<E> &ctx) {
   Timer t(ctx, "compute_address_significance");
 
-  // Flip address-taken bit for executable sections first.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (!file->llvm_addrsig)
-      for (std::unique_ptr<InputSection<E>> &src : file->sections)
-        if (src && src->is_alive && (src->shdr().sh_flags & SHF_ALLOC))
-          for (const ElfRel<E> &r : src->get_rels(ctx))
-            if (!is_func_call_rel(r))
-              if (Symbol<E> *sym = file->symbols[r.r_sym];
-                  InputSection<E> *dst = sym->get_input_section())
-                if (dst->shdr().sh_flags & SHF_EXECINSTR)
-                  dst->address_taken = true;
+    // If .llvm_addrsig is available, use it.
+    if (InputSection<E> *sec = file->llvm_addrsig.get()) {
+      u8 *p = (u8 *)sec->contents.data();
+      u8 *end = p + sec->contents.size();
+      while (p != end) {
+        Symbol<E> *sym = file->symbols[read_uleb(&p)];
+        if (InputSection<E> *isec = sym->get_input_section())
+          isec->address_taken = true;
+      }
+      return;
+    }
+
+    // Otherwise, infer address significance.
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
+        continue;
+
+      if (!(isec->shdr().sh_flags & SHF_EXECINSTR))
+        isec->address_taken = true;
+
+      for (const ElfRel<E> &r : isec->get_rels(ctx))
+        if (!is_func_call_rel(r))
+          if (Symbol<E> *sym = file->symbols[r.r_sym];
+              InputSection<E> *dst = sym->get_input_section())
+            if (dst->shdr().sh_flags & SHF_EXECINSTR)
+              dst->address_taken = true;
+    }
   });
 
   auto mark = [](Symbol<E> *sym) {
@@ -2103,20 +2120,6 @@ void compute_address_significance(Context<E> &ctx) {
     for (Symbol<E> *sym : ctx.dynsym->symbols)
       if (sym && sym->is_exported)
         mark(sym);
-
-  // Handle data objects.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (InputSection<E> *sec = file->llvm_addrsig.get()) {
-      u8 *p = (u8 *)sec->contents.data();
-      u8 *end = p + sec->contents.size();
-      while (p != end)
-        mark(file->symbols[read_uleb(&p)]);
-    } else {
-      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-        if (isec && !(isec->shdr().sh_flags & SHF_EXECINSTR))
-          isec->address_taken = true;
-    }
-  });
 }
 
 // We want to sort output chunks in the following order.
