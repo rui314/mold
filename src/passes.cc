@@ -487,7 +487,7 @@ get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
     ".text.", ".data.rel.ro.", ".data.", ".rodata.", ".bss.rel.ro.", ".bss.",
     ".init_array.", ".fini_array.", ".tbss.", ".tdata.", ".gcc_except_table.",
     ".ctors.", ".dtors.", ".gnu.warning.", ".openbsd.randomdata.",
-    ".sdata.", ".sbss.", ".srodata",
+    ".sdata.", ".sbss.", ".srodata", ".gnu.build.attributes.",
   };
 
   for (std::string_view prefix : prefixes) {
