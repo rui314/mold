@@ -956,7 +956,7 @@ public:
     this->name = ".gnu.version_r";
     this->shdr.sh_type = SHT_GNU_VERNEED;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = sizeof(Word<E>);
+    this->shdr.sh_addralign = 4;
   }
 
   void construct(Context<E> &ctx);
@@ -973,7 +973,7 @@ public:
     this->name = ".gnu.version_d";
     this->shdr.sh_type = SHT_GNU_VERDEF;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_addralign = 8;
+    this->shdr.sh_addralign = 4;
   }
 
   void construct(Context<E> &ctx);
