@@ -13,12 +13,12 @@ See <https://github.com/rui314/mold#how-to-use>.
 
 ### Compatibility
 
-**Mold** is designed to be a drop-in replacement for the GNU linkers for
+`mold` is designed to be a drop-in replacement for the GNU linkers for
 linking user-land programs. If your user-land program cannot be built due to
 missing command-line options, please file a bug at
 <https://github.com/rui314/mold/issues>.
 
-Mold supports a very limited set of linker script features, which is just
+`mold` supports a very limited set of linker script features, which is just
 sufficient to read `/usr/lib/x86_64-linux-gnu/libc.so` on Linux systems (on
 Linux, that file is contrary to its name not a shared library but an ASCII
 linker script that loads a real `libc.so` file.)
@@ -104,11 +104,10 @@ assume that you accidentally define `atoi` as a global function in your
 executable that behaves completely differently from the one in the C standard.
 Then, all `atoi` function calls from any modules (even function calls within
 libc) are redirected to your function instead of the one in libc, which will
-very likely cause a problem.
-
-That is a somewhat surprising consequence for an accidental name conflict. On
-the other hand, this semantic is sometimes useful because it allows users to
-override library functions without rebuilding modules containing them.
+very likely cause a problem. That is a somewhat surprising consequence for an
+accidental name conflict. On the other hand, this semantic is sometimes useful
+because it allows users to override library functions without rebuilding
+modules containing them.
 
 Whether good or bad, you should keep these semantics in mind to understand
 Unix linkers' behaviors.
@@ -117,7 +116,7 @@ Unix linkers' behaviors.
 
 `mold`'s output is deterministic. That is, if you pass the same object files
 and the same command-line options to the same version of `mold`, it is
-guaranteed that `mold` produces the bit-by-bit identical output. The linker's
+guaranteed that `mold` produces the bit-for-bit identical output. The linker's
 internal randomness, such as the timing of thread scheduling or iteration
 orders of hash tables, doesn't affect the output.
 
@@ -152,7 +151,7 @@ but as `-o magic`.
 * `--no-color-diagnostics`:
   Synonym for `--color-diagnostics=never`.
 
-* `--detach`, `--no-detach:
+* `--detach`, `--no-detach`:
   Permit or do not permit mold to create a debug info file in the background.
 
 * `--fork`, `--no-fork`:
