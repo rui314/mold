@@ -223,7 +223,7 @@ Options:
     -z textoff
 
 mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf32-powerpc elf64-powerpc elf64-powerpc elf64-powerpcle elf64-s390 elf64-sparc elf32-m68k elf32-sh-linux elf64-loongarch elf32-loongarch
-mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf32briscv elf64lriscv elf64briscv elf32ppc elf32ppclinux elf64ppc elf64lppc elf64_s390 elf64_sparc m68kelf shlelf_linux elf64loongarch elf32loongarch)";
+mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64linux aarch64elf elf32lriscv elf32briscv elf64lriscv elf64briscv elf32ppc elf32ppclinux elf64ppc elf64lppc elf64_s390 elf64_sparc m68kelf shlelf_linux shelf_linux elf64loongarch elf32loongarch)";
 
 template <typename E>
 static std::vector<std::string_view>
@@ -682,7 +682,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
                << "   elf32ppc\n   elf64ppc\n   elf64lppc\n   elf64_s390\n"
                << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n"
-               << "   elf64loongarch\n   elf32loongarch";
+               << "   shelf_linux\n   elf64loongarch\n   elf32loongarch";
       version_shown = true;
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
@@ -713,8 +713,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.emulation = SPARC64::name;
       } else if (arg == "m68kelf") {
         ctx.arg.emulation = M68K::name;
-      } else if (arg == "shlelf_linux") {
-        ctx.arg.emulation = SH4::name;
+      } else if (arg == "shlelf" || arg == "shlelf_linux") {
+        ctx.arg.emulation = SH4LE::name;
+      } else if (arg == "shelf" || arg == "shelf_linux") {
+        ctx.arg.emulation = SH4BE::name;
       } else if (arg == "elf64loongarch") {
         ctx.arg.emulation = LOONGARCH64::name;
       } else if (arg == "elf32loongarch") {

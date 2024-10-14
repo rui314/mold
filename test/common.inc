@@ -52,11 +52,11 @@ else
   OBJCOPY="$TRIPLE-objcopy"
   STRIP="$TRIPLE-strip"
 
-  if [ $MACHINE = i686 ]; then
-    QEMU="qemu-i386 -L /usr/$TRIPLE"
-  else
-    QEMU="qemu-$MACHINE -L /usr/$TRIPLE"
-  fi
+  case $MACHINE in
+  i686)   QEMU="qemu-i386 -L /usr/$TRIPLE" ;;
+  sh4aeb) QEMU="qemu-sh4eb -L /usr/$TRIPLE" ;;
+  *)      QEMU="qemu-$MACHINE -L /usr/$TRIPLE" ;;
+  esac
 fi
 
 case $MACHINE in

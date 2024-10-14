@@ -157,7 +157,7 @@ static std::string_view get_elf_type(u8 *buf) {
   case EM_68K:
     return M68K::name;
   case EM_SH:
-    return SH4::name;
+    return is_le ? SH4LE::name : SH4BE::name;
   case EM_LOONGARCH:
     return is_64 ? LOONGARCH64::name : LOONGARCH32::name;
   default:

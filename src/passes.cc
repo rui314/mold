@@ -47,8 +47,10 @@ int redo_main(Context<E> &ctx, int argc, char **argv) {
     return mold_main<SPARC64>(argc, argv);
   if (target == M68K::name)
     return mold_main<M68K>(argc, argv);
-  if (target == SH4::name)
-    return mold_main<SH4>(argc, argv);
+  if (target == SH4LE::name)
+    return mold_main<SH4LE>(argc, argv);
+  if (target == SH4BE::name)
+    return mold_main<SH4BE>(argc, argv);
   if (target == LOONGARCH32::name)
     return mold_main<LOONGARCH32>(argc, argv);
   if (target == LOONGARCH64::name)

@@ -23,7 +23,8 @@ struct PPC64V2;
 struct S390X;
 struct SPARC64;
 struct M68K;
-struct SH4;
+struct SH4LE;
+struct SH4BE;
 struct LOONGARCH64;
 struct LOONGARCH32;
 
@@ -1760,7 +1761,7 @@ struct ElfRel<SPARC64> {
 };
 
 template <>
-struct ElfRel<SH4> {
+struct ElfRel<SH4LE> {
   ElfRel() = default;
 
   // Addend is ignored except for base relocations because even though
@@ -1773,6 +1774,18 @@ struct ElfRel<SH4> {
   u8 r_type;
   ul24 r_sym;
   il32 r_addend;
+};
+
+template <>
+struct ElfRel<SH4BE> {
+  ElfRel() = default;
+  ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
+    : r_offset(offset), r_sym(sym), r_type(type), r_addend(sym ? 0 : addend) {}
+
+  ub32 r_offset;
+  ub24 r_sym;
+  u8 r_type;
+  ib32 r_addend;
 };
 
 //
@@ -1797,7 +1810,8 @@ template <typename E> concept is_ppc64v2 = std::same_as<E, PPC64V2>;
 template <typename E> concept is_s390x = std::same_as<E, S390X>;
 template <typename E> concept is_sparc64 = std::same_as<E, SPARC64>;
 template <typename E> concept is_m68k = std::same_as<E, M68K>;
-template <typename E> concept is_sh4 = std::same_as<E, SH4>;
+template <typename E> concept is_sh4le = std::same_as<E, SH4LE>;
+template <typename E> concept is_sh4be = std::same_as<E, SH4BE>;
 template <typename E> concept is_loongarch64 = std::same_as<E, LOONGARCH64>;
 template <typename E> concept is_loongarch32 = std::same_as<E, LOONGARCH32>;
 
@@ -1809,6 +1823,7 @@ template <typename E> concept is_riscv = is_rv64<E> || is_rv32<E>;
 template <typename E> concept is_ppc64 = is_ppc64v1<E> || is_ppc64v2<E>;
 template <typename E> concept is_ppc = is_ppc64<E> || is_ppc32<E>;
 template <typename E> concept is_sparc = is_sparc64<E>;
+template <typename E> concept is_sh4 = is_sh4le<E> || is_sh4be<E>;
 template <typename E> concept is_loongarch = is_loongarch64<E> || is_loongarch32<E>;
 
 struct X86_64 {
@@ -2124,9 +2139,7 @@ struct M68K {
 };
 
 struct SH4 {
-  static constexpr std::string_view name = "sh4";
   static constexpr bool is_64 = false;
-  static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_SH;
@@ -2144,6 +2157,16 @@ struct SH4 {
   static constexpr u32 R_TPOFF = R_SH_TLS_TPOFF32;
   static constexpr u32 R_DTPMOD = R_SH_TLS_DTPMOD32;
   static constexpr u32 R_FUNCALL[] = { R_SH_PLT32 };
+};
+
+struct SH4LE : SH4 {
+  static constexpr std::string_view name = "sh4";
+  static constexpr bool is_le = true;
+};
+
+struct SH4BE : SH4 {
+  static constexpr std::string_view name = "sh4be";
+  static constexpr bool is_le = false;
 };
 
 struct LOONGARCH64 {

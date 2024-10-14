@@ -28,6 +28,18 @@ done
 wget -O /usr/local/bin/qemu-loongarch64 -q https://github.com/loongson/build-tools/releases/download/2023.08.08/qemu-loongarch64
 chmod 755 /usr/local/bin/qemu-loongarch64
 
+# Install SH4 big-endian toolchain
+mkdir /sh4aeb
+wget -O- -q https://toolchains.bootlin.com/downloads/releases/toolchains/sh-sh4aeb/tarballs/sh-sh4aeb--glibc--stable-2024.05-1.tar.xz | tar -C /sh4aeb --strip-components=1 --xz -xf -
+ln -sf /sh4aeb/sh4aeb-buildroot-linux-gnu/sysroot /usr/sh4aeb-linux-gnu
+echo '/sh4aeb/bin/sh4aeb-linux-gcc -L/usr/sh4aeb-linux-gnu "$@"' > /usr/bin/sh4aeb-linux-gnu-gcc
+echo '/sh4aeb/bin/sh4aeb-linux-g++ -L/usr/sh4aeb-linux-gnu "$@"' > /usr/bin/sh4aeb-linux-gnu-g++
+chmod 755 /usr/bin/sh4aeb-linux-gnu-{gcc,g++}
+
+for i in objdump objcopy strip; do
+  ln -sf /sh4aeb/bin/sh4aeb-linux-$i /usr/bin/sh4aeb-linux-gnu-$i
+done
+
 # Install Intel SDE CPU emulator for CET-related tests
 mkdir /sde
 wget -O- -q https://downloadmirror.intel.com/813591/sde-external-9.33.0-2024-01-07-lin.tar.xz | tar -C /sde --strip-components=1 --xz -xf -

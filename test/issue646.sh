@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = sh4aeb ] && skip
+
 cat <<EOF | $CXX -o $t/a.o -c -xc++ -
 #include <iostream>
 #include <stdexcept>

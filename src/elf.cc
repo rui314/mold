@@ -857,7 +857,7 @@ std::string rel_to_string<M68K>(u32 r_type) {
 }
 
 template <>
-std::string rel_to_string<SH4>(u32 r_type) {
+std::string rel_to_string<SH4LE>(u32 r_type) {
   switch (r_type) {
   CASE(R_SH_NONE);
   CASE(R_SH_DIR32);
@@ -888,6 +888,11 @@ std::string rel_to_string<SH4>(u32 r_type) {
   CASE(R_SH_GOTPLT32);
   }
   return unknown_type(r_type);
+}
+
+template <>
+std::string rel_to_string<SH4BE>(u32 r_type) {
+  return rel_to_string<SH4LE>(r_type);
 }
 
 template <>

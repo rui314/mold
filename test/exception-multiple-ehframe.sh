@@ -1,8 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = sh4aeb ] && skip
 nm mold | grep -q '__tsan_init' && skip
-
 command -v perl > /dev/null || skip
 
 [ $MACHINE = sh4 ] && skip

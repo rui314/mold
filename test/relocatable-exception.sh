@@ -3,6 +3,7 @@
 
 [ $MACHINE = m68k ] && skip
 [ $MACHINE = sh4 ] && skip
+[ $MACHINE = sh4aeb ] && skip
 
 # OneTBB isn't tsan-clean
 nm mold | grep -q '__tsan_init' && skip
