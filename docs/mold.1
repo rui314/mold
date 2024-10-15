@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "August 2024" ""
+.TH "MOLD" "1" "October 2024" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -10,9 +10,9 @@
 .SS "How to use"
 See \fIhttps://github\.com/rui314/mold#how\-to\-use\fR\.
 .SS "Compatibility"
-\fBMold\fR is designed to be a drop\-in replacement for the GNU linkers for linking user\-land programs\. If your user\-land program cannot be built due to missing command\-line options, please file a bug at \fIhttps://github\.com/rui314/mold/issues\fR\.
+\fBmold\fR is designed to be a drop\-in replacement for the GNU linkers for linking user\-land programs\. If your user\-land program cannot be built due to missing command\-line options, please file a bug at \fIhttps://github\.com/rui314/mold/issues\fR\.
 .P
-Mold supports a very limited set of linker script features, which is just sufficient to read \fB/usr/lib/x86_64\-linux\-gnu/libc\.so\fR on Linux systems (on Linux, that file is contrary to its name not a shared library but an ASCII linker script that loads a real \fBlibc\.so\fR file\.)
+\fBmold\fR supports a very limited set of linker script features, which is just sufficient to read \fB/usr/lib/x86_64\-linux\-gnu/libc\.so\fR on Linux systems (on Linux, that file is contrary to its name not a shared library but an ASCII linker script that loads a real \fBlibc\.so\fR file\.)
 .P
 Beyond that, we have no plan to support any additional linker script features\. The linker script is an ad\-hoc, over\-designed, complex language which we believe needs to be replaced by a simpler mechanism\. We have a plan to add a replacement for the linker script to \fBmold\fR instead\.
 .SS "Archive symbol resolution"
@@ -40,13 +40,11 @@ Typically, an ELF module that exports a symbol also imports the same symbol\. Su
 .P
 Let's take \fBmalloc\fR as an example\. Assume that you define your version of \fBmalloc\fR in your main executable file\. Then, all \fBmalloc\fR calls from any module are resolved to your function instead of the one in libc, because the executable is always at the beginning of the dynamic symbol search list\. Note that even \fBmalloc\fR calls within libc are resolved to your definition since libc exports and imports \fBmalloc\fR\. Therefore, by defining \fBmalloc\fR yourself, you can overwrite a library function, and the \fBmalloc\fR in libc becomes dead code\.
 .P
-These Unix semantics are tricky and sometimes considered harmful\. For example, assume that you accidentally define \fBatoi\fR as a global function in your executable that behaves completely differently from the one in the C standard\. Then, all \fBatoi\fR function calls from any modules (even function calls within libc) are redirected to your function instead of the one in libc, which will very likely cause a problem\.
-.P
-That is a somewhat surprising consequence for an accidental name conflict\. On the other hand, this semantic is sometimes useful because it allows users to override library functions without rebuilding modules containing them\.
+These Unix semantics are tricky and sometimes considered harmful\. For example, assume that you accidentally define \fBatoi\fR as a global function in your executable that behaves completely differently from the one in the C standard\. Then, all \fBatoi\fR function calls from any modules (even function calls within libc) are redirected to your function instead of the one in libc, which will very likely cause a problem\. That is a somewhat surprising consequence for an accidental name conflict\. On the other hand, this semantic is sometimes useful because it allows users to override library functions without rebuilding modules containing them\.
 .P
 Whether good or bad, you should keep these semantics in mind to understand Unix linkers' behaviors\.
 .SS "Build reproducibility"
-\fBmold\fR's output is deterministic\. That is, if you pass the same object files and the same command\-line options to the same version of \fBmold\fR, it is guaranteed that \fBmold\fR produces the bit\-by\-bit identical output\. The linker's internal randomness, such as the timing of thread scheduling or iteration orders of hash tables, doesn't affect the output\.
+\fBmold\fR's output is deterministic\. That is, if you pass the same object files and the same command\-line options to the same version of \fBmold\fR, it is guaranteed that \fBmold\fR produces the bit\-for\-bit identical output\. The linker's internal randomness, such as the timing of thread scheduling or iteration orders of hash tables, doesn't affect the output\.
 .P
 \fBmold\fR does not have any host\-specific default settings\. This is contrary to the GNU linkers, for which some configurable values, such as system\-dependent library search paths, are hard\-coded\. \fBmold\fR depends only on its command\-line arguments\.
 .SH "OPTION NOTATIONS"
@@ -67,7 +65,7 @@ Synonym for \fB\-\-color\-diagnostics=auto\fR\.
 \fB\-\-no\-color\-diagnostics\fR
 Synonym for \fB\-\-color\-diagnostics=never\fR\.
 .TP
-\fB\-\-detach\fR, `\-\-no\-detach
+\fB\-\-detach\fR, \fB\-\-no\-detach\fR
 Permit or do not permit mold to create a debug info file in the background\.
 .TP
 \fB\-\-fork\fR, \fB\-\-no\-fork\fR
