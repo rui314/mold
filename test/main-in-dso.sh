@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = ppc64 ] && skip
+
 cat <<EOF | $CC -o $t/a.o -c -xc - -fPIC
 #include <stdio.h>
 int main() {

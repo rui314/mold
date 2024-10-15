@@ -16,6 +16,6 @@ $CC -B. -o $t/exe2 $t/a.o -pie -Wl,-z,pack-relative-relocs
 $QEMU $t/exe2 | grep -q Hello
 
 readelf --dynamic $t/exe2 > $t/log2
-grep -wq RELR $t/log2
-grep -wq RELRSZ $t/log2
-grep -wq RELRENT $t/log2
+grep -Ewq 'RELR|<unknown>: 24' $t/log2
+grep -Ewq 'RELRSZ|<unknown>: 23' $t/log2
+grep -Ewq 'RELRENT|<unknown>: 25' $t/log2
