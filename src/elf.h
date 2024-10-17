@@ -1933,8 +1933,10 @@ struct ARM32 {
   };
 };
 
-struct RV64 {
+struct RV64LE {
+  static constexpr std::string_view name = "riscv64";
   static constexpr bool is_64 = true;
+  static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
@@ -1956,18 +1958,15 @@ struct RV64 {
   static constexpr u32 R_FUNCALL[] = { R_RISCV_CALL, R_RISCV_CALL_PLT };
 };
 
-struct RV64LE : RV64 {
-  static constexpr std::string_view name = "riscv64";
-  static constexpr bool is_le = true;
-};
-
-struct RV64BE : RV64 {
+struct RV64BE : RV64LE {
   static constexpr std::string_view name = "riscv64be";
   static constexpr bool is_le = false;
 };
 
-struct RV32 {
+struct RV32LE {
+  static constexpr std::string_view name = "riscv32";
   static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_RISCV;
@@ -1989,12 +1988,7 @@ struct RV32 {
   static constexpr u32 R_FUNCALL[] = { R_RISCV_CALL, R_RISCV_CALL_PLT };
 };
 
-struct RV32LE : RV32 {
-  static constexpr std::string_view name = "riscv32";
-  static constexpr bool is_le = true;
-};
-
-struct RV32BE : RV32 {
+struct RV32BE : RV32LE {
   static constexpr std::string_view name = "riscv32be";
   static constexpr bool is_le = false;
 };
@@ -2138,8 +2132,10 @@ struct M68K {
   static constexpr u32 R_FUNCALL[] = { R_68K_PLT32 };
 };
 
-struct SH4 {
+struct SH4LE {
+  static constexpr std::string_view name = "sh4";
   static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_SH;
@@ -2159,12 +2155,7 @@ struct SH4 {
   static constexpr u32 R_FUNCALL[] = { R_SH_PLT32 };
 };
 
-struct SH4LE : SH4 {
-  static constexpr std::string_view name = "sh4";
-  static constexpr bool is_le = true;
-};
-
-struct SH4BE : SH4 {
+struct SH4BE : SH4LE {
   static constexpr std::string_view name = "sh4be";
   static constexpr bool is_le = false;
 };
