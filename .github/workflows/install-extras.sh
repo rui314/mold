@@ -31,6 +31,19 @@ done
 wget -O /usr/local/bin/qemu-loongarch64 -q https://github.com/loongson/build-tools/releases/download/2023.08.08/qemu-loongarch64
 chmod 755 /usr/local/bin/qemu-loongarch64
 
+# Install ARM64 big-endian toolchain
+mkdir /aarch64be
+wget -O- -q https://sources.buildroot.net/toolchain-external-arm-aarch64-be/arm-gnu-toolchain-13.3.rel1-x86_64-aarch64_be-none-linux-gnu.tar.xz | tar -C /aarch64be --strip-components=1 --xz -xf -
+
+ln -sf /aarch64be/aarch64_be-none-linux-gnu/libc /usr/aarch64_be-linux-gnu
+echo '/aarch64be/bin/aarch64_be-none-linux-gnu-gcc -L/usr/aarch64_be-linux-gnu "$@"' > /usr/bin/aarch64_be-linux-gnu-gcc
+echo '/aarch64be/bin/aarch64_be-none-linux-gnu-g++ -L/usr/aarch64_be-linux-gnu "$@"' > /usr/bin/aarch64_be-linux-gnu-g++
+chmod 755 /usr/bin/aarch64_be-linux-gnu-{gcc,g++}
+
+for i in objdump objcopy strip; do
+  ln -sf /aarch64be/bin/aarch64_be-none-linux-gnu-$i /usr/bin/aarch64_be-linux-gnu-$i
+done
+
 # Install SH4 big-endian toolchain
 mkdir /sh4aeb
 wget -O- -q https://toolchains.bootlin.com/downloads/releases/toolchains/sh-sh4aeb/tarballs/sh-sh4aeb--glibc--stable-2024.05-1.tar.xz | tar -C /sh4aeb --strip-components=1 --xz -xf -

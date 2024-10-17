@@ -20,7 +20,8 @@
 // we don't need to try too hard to reduce thunk size to the absolute
 // minimum.
 
-#if MOLD_ARM32 || MOLD_ARM64 || MOLD_PPC32 || MOLD_PPC64V1 || MOLD_PPC64V2
+#if MOLD_ARM32 || MOLD_ARM64LE || MOLD_ARM64BE || MOLD_PPC32 || \
+    MOLD_PPC64V1 || MOLD_PPC64V2
 
 #include "mold.h"
 

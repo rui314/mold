@@ -11,7 +11,8 @@ namespace mold {
 
 struct X86_64;
 struct I386;
-struct ARM64;
+struct ARM64LE;
+struct ARM64BE;
 struct ARM32;
 struct RV64LE;
 struct RV64BE;
@@ -1798,7 +1799,8 @@ template <typename E> concept needs_thunk = requires { E::thunk_size; };
 
 template <typename E> concept is_x86_64 = std::same_as<E, X86_64>;
 template <typename E> concept is_i386 = std::same_as<E, I386>;
-template <typename E> concept is_arm64 = std::same_as<E, ARM64>;
+template <typename E> concept is_arm64le = std::same_as<E, ARM64LE>;
+template <typename E> concept is_arm64be = std::same_as<E, ARM64BE>;
 template <typename E> concept is_arm32 = std::same_as<E, ARM32>;
 template <typename E> concept is_rv64le = std::same_as<E, RV64LE>;
 template <typename E> concept is_rv64be = std::same_as<E, RV64BE>;
@@ -1816,6 +1818,7 @@ template <typename E> concept is_loongarch64 = std::same_as<E, LOONGARCH64>;
 template <typename E> concept is_loongarch32 = std::same_as<E, LOONGARCH32>;
 
 template <typename E> concept is_x86 = is_x86_64<E> || is_i386<E>;
+template <typename E> concept is_arm64 = is_arm64le<E> || is_arm64be<E>;
 template <typename E> concept is_arm = is_arm64<E> || is_arm32<E>;
 template <typename E> concept is_rv64 = is_rv64le<E> || is_rv64be<E>;
 template <typename E> concept is_rv32 = is_rv32le<E> || is_rv32be<E>;
@@ -1876,7 +1879,7 @@ struct I386 {
   static constexpr u32 R_FUNCALL[] = { R_386_PLT32 };
 };
 
-struct ARM64 {
+struct ARM64LE {
   static constexpr std::string_view name = "arm64";
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
@@ -1901,6 +1904,11 @@ struct ARM64 {
   static constexpr u32 R_DTPMOD = R_AARCH64_TLS_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
   static constexpr u32 R_FUNCALL[] = { R_AARCH64_JUMP26, R_AARCH64_CALL26 };
+};
+
+struct ARM64BE : ARM64LE {
+  static constexpr std::string_view name = "arm64be";
+  static constexpr bool is_le = false;
 };
 
 struct ARM32 {

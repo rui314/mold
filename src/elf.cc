@@ -107,7 +107,7 @@ std::string rel_to_string<I386>(u32 r_type) {
 }
 
 template <>
-std::string rel_to_string<ARM64>(u32 r_type) {
+std::string rel_to_string<ARM64LE>(u32 r_type) {
   switch (r_type) {
   CASE(R_AARCH64_NONE);
   CASE(R_AARCH64_ABS64);
@@ -215,6 +215,11 @@ std::string rel_to_string<ARM64>(u32 r_type) {
   CASE(R_AARCH64_IRELATIVE);
   }
   return unknown_type(r_type);
+}
+
+template <>
+std::string rel_to_string<ARM64BE>(u32 r_type) {
+  return rel_to_string<ARM64LE>(r_type);
 }
 
 template <>

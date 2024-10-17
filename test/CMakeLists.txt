@@ -30,13 +30,14 @@ endif()
 
 if(MOLD_ENABLE_QEMU_TESTS)
   list(APPEND QEMU_ARCHS
-    x86_64 i386 arm aarch64 ppc ppc64 ppc64le sparc64 sh4 sh4eb s390x
-    riscv64 riscv32 m68k loongarch64)
+    x86_64 i386 arm aarch64 aarch64_be ppc ppc64 ppc64le sparc64 sh4 sh4eb
+    s390x riscv64 riscv32 m68k loongarch64)
 
   LIST(APPEND TRIPLES
     x86_64-linux-gnu
     i686-linux-gnu
     aarch64-linux-gnu
+    aarch64_be-linux-gnu
     arm-linux-gnueabihf
     riscv64-linux-gnu
     powerpc-linux-gnu
@@ -110,6 +111,10 @@ endif()
 
 if(${MACHINE} STREQUAL "aarch64" OR (HAS_qemu-aarch64 AND HAS_aarch64-linux-gnu-gcc))
   add_target(aarch64 aarch64-linux-gnu)
+endif()
+
+if(${MACHINE} STREQUAL "aarch64_be" OR (HAS_qemu-aarch64_be AND HAS_aarch64_be-linux-gnu-gcc))
+  add_target(aarch64_be aarch64_be-linux-gnu)
 endif()
 
 if(${MACHINE} STREQUAL "arm" OR (HAS_qemu-arm AND HAS_arm-linux-gnueabihf-gcc))

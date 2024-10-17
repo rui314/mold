@@ -141,7 +141,7 @@ static std::string_view get_elf_type(u8 *buf) {
   case EM_ARM:
     return ARM32::name;
   case EM_AARCH64:
-    return ARM64::name;
+    return is_le ? ARM64LE::name : ARM64BE::name;
   case EM_RISCV:
     if (is_le)
       return is_64 ? RV64LE::name : RV32LE::name;

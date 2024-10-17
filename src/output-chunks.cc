@@ -665,8 +665,9 @@ void SymtabSection<E>::copy_buf(Context<E> &ctx) {
 // is set in the dynamic section.
 //
 // This function returns true if DT_AARCH64_VARIANT_PCS needs to be set.
-static bool contains_variant_pcs(Context<ARM64> &ctx) {
-  for (Symbol<ARM64> *sym : ctx.plt->symbols)
+template <is_arm64 E>
+static bool contains_variant_pcs(Context<E> &ctx) {
+  for (Symbol<E> *sym : ctx.plt->symbols)
     if (sym->esym().arm64_variant_pcs)
       return true;
   return false;
