@@ -2166,6 +2166,7 @@ struct SH4LE {
 struct SH4BE : SH4LE {
   static constexpr std::string_view name = "sh4be";
   static constexpr bool is_le = false;
+  static constexpr u8 filler[] = { 0x90, 0x00 }; // nop
 };
 
 struct LOONGARCH64 {
