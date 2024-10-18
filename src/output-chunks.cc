@@ -846,7 +846,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     // PPC64_GLINK is defined by the psABI to refer 32 bytes before
     // the first PLT entry. I don't know why it's 32 bytes off, but
     // it's what it is.
-    define(DT_PPC64_GLINK, ctx.plt->shdr.sh_addr + E::plt_hdr_size - 32);
+    define(DT_PPC64_GLINK, ctx.plt->shdr.sh_addr + to_plt_offset<E>(0) - 32);
   }
 
   // GDB needs a DT_DEBUG entry in an executable to store a word-size

@@ -823,7 +823,7 @@ u64 get_eflags(Context<E> &ctx) {
   return ret;
 }
 
-// Scan relocations to a given shrink section.
+// Scan relocations to shrink a given section.
 template <>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
