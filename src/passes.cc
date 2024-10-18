@@ -2078,41 +2078,71 @@ template <typename E>
 void compute_address_significance(Context<E> &ctx) {
   Timer t(ctx, "compute_address_significance");
 
+  auto mark = [](Symbol<E> *sym) {
+    if (InputSection<E> *isec = sym->get_input_section()) {
+      sym->address_taken = true;
+      isec->address_taken = true;
+    }
+  };
+
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // If .llvm_addrsig is available, use it.
     if (InputSection<E> *sec = file->llvm_addrsig.get()) {
       u8 *p = (u8 *)sec->contents.data();
       u8 *end = p + sec->contents.size();
-      while (p != end) {
-        Symbol<E> *sym = file->symbols[read_uleb(&p)];
-        if (InputSection<E> *isec = sym->get_input_section())
-          isec->address_taken = true;
-      }
+      while (p != end)
+        mark(file->symbols[read_uleb(&p)]);
       return;
     }
 
-    // Otherwise, infer address significance.
+    // A function/data symbol may be referenced indirectly by a section
+    // symbol. For example, a function foo at offset 16 in .text can be
+    // referenced using a section symbol as .text + 16. If a relocation
+    // refers to a section symbol, we need to find a function/data symbol
+    // at a given offset.
+    std::vector<std::unordered_map<u64, Symbol<E> *>> syms(file->sections.size());
+    bool initialized = false;
+
+    auto get_sym = [&](Symbol<E> *sym,u64 offset) {
+      InputSection<E> *isec = sym->get_input_section();
+      assert(file == &isec->file);
+
+      if (!initialized)
+        for (Symbol<E> *sym : file->symbols)
+          if (sym && sym->file == file && sym->esym().st_type != STT_SECTION)
+            if (InputSection<E> *isec = sym->get_input_section())
+              if (isec->shdr().sh_flags & SHF_ALLOC)
+                syms[isec->shndx][sym->value] = sym;
+      initialized = true;
+
+      auto &map = syms[isec->shndx];
+      auto it = map.find(offset);
+      return (it == map.end()) ? nullptr : it->second;
+    };
+
+    // If .llvm_addrsig is not available, infer address significance.
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
       if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
         continue;
 
+      // Data sections are conservatively handled as address-taken.
       if (!(isec->shdr().sh_flags & SHF_EXECINSTR))
         isec->address_taken = true;
 
-      for (const ElfRel<E> &r : isec->get_rels(ctx))
-        if (!is_func_call_rel(r))
-          if (Symbol<E> *sym = file->symbols[r.r_sym];
-              InputSection<E> *dst = sym->get_input_section())
-            if (dst->shdr().sh_flags & SHF_EXECINSTR)
-              dst->address_taken = true;
+      for (const ElfRel<E> &r : isec->get_rels(ctx)) {
+        if (!is_func_call_rel(r)) {
+          if (Symbol<E> *sym = file->symbols[r.r_sym]; sym->file) {
+            if (sym->esym().st_type == STT_SECTION) {
+              if (Symbol<E> *sym2 = get_sym(sym, get_addend(*isec, r)))
+                mark(sym2);
+            } else {
+              mark(sym);
+            }
+          }
+        }
+      }
     }
   });
-
-  auto mark = [](Symbol<E> *sym) {
-    if (sym)
-      if (InputSection<E> *isec = sym->get_input_section())
-        isec->address_taken = true;
-  };
 
   // Some symbols' pointer values are leaked to the dynamic section.
   mark(ctx.arg.entry);
