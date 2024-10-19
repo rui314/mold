@@ -3,7 +3,7 @@
 
 test_cflags -fcf-protection || skip
 
-cat <<EOF | $CC -o $t/a.o -c -xc - -fno-function-sections -O -fcf-protection
+cat <<EOF | $CC -o $t/a.o -c -xc - -ffunction-sections -O -fcf-protection
 int foo() { return 3; }
 int bar() { return foo(); }
 EOF

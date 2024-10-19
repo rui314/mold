@@ -386,7 +386,7 @@ int mold_main(int argc, char **argv) {
   compute_import_export(ctx);
 
   // Set "address-taken" bits for input sections.
-  if (ctx.arg.icf || ctx.arg.z_rewrite_endbr)
+  if (ctx.arg.icf)
     compute_address_significance(ctx);
 
   // Garbage-collect unreachable sections.

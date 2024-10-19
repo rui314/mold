@@ -838,9 +838,9 @@ void rewrite_endbr(Context<E> &ctx) {
   // is not taken within the file.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->get_global_syms()) {
-      if (sym->file == file && sym->esym().st_type == STT_FUNC &&
-          !sym->address_taken) {
-        if (InputSection<E> *isec = sym->get_input_section()) {
+      if (sym->file == file && sym->esym().st_type == STT_FUNC) {
+        if (InputSection<E> *isec = sym->get_input_section();
+            isec && (isec->shdr().sh_flags & SHF_EXECINSTR)) {
           if (OutputSection<E> *osec = isec->output_section) {
             u8 *buf = ctx.buf + osec->shdr.sh_offset + isec->offset + sym->value;
             if (memcmp(buf, endbr64, 4) == 0)
@@ -850,6 +850,52 @@ void rewrite_endbr(Context<E> &ctx) {
       }
     }
   });
+
+  auto write_back = [&](InputSection<E> *isec, i64 offset) {
+    // If isec has an endbr64 at a given offset, copy that instruction to
+    // the output buffer, possibly overwriting a nop written in the above
+    // loop.
+    if (isec && isec->output_section &&
+        (isec->shdr().sh_flags & SHF_EXECINSTR) &&
+        0 <= offset && offset <= isec->contents.size() - 4 &&
+        memcmp(isec->contents.data() + offset, endbr64, 4) == 0)
+      memcpy(ctx.buf + isec->output_section->shdr.sh_offset + isec->offset + offset,
+             endbr64, 4);
+  };
+
+  // Write back endbr64 instructions if they are referred to by address-taking
+  // relocations.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC)) {
+        for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
+          if (!is_func_call_rel(rel)) {
+            Symbol<E> *sym = file->symbols[rel.r_sym];
+            if (sym->esym().st_type == STT_SECTION)
+              write_back(sym->get_input_section(), rel.r_addend);
+            else
+              write_back(sym->get_input_section(), sym->value);
+          }
+        }
+      }
+    }
+  });
+
+  // We record addresses of some symbols in the ELF header, .dynamic or in
+  // .dynsym. We need to retain endbr64s for such symbols.
+  auto keep = [&](Symbol<E> *sym) {
+    if (sym)
+      write_back(sym->get_input_section(), sym->value);
+  };
+
+  keep(ctx.arg.entry);
+  keep(ctx.arg.init);
+  keep(ctx.arg.fini);
+
+  if (ctx.dynsym)
+    for (Symbol<E> *sym : ctx.dynsym->symbols)
+      if (sym && sym->is_exported)
+        keep(sym);
 }
 
 } // namespace mold

@@ -2428,9 +2428,6 @@ public:
   // opposed to IR object).
   bool referenced_by_regular_obj : 1 = false;
 
-  // For `-z rewrite-endbr`
-  bool address_taken : 1 = false;
-
   // If true, we try to dmenagle the sybmol when printing.
   bool demangle : 1 = false;
 
