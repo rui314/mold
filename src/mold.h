@@ -1028,9 +1028,22 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
 private:
-  static constexpr i64 ENTRY_SIZE = E::is_64 ? 16 : 12;
+  struct Entry64 {
+    ul32 type;
+    ul32 size;
+    ul32 flags;
+    u32 padding;
+  };
 
-  std::map<u32, u32> properties;
+  struct Entry32 {
+    ul32 type;
+    ul32 size;
+    ul32 flags;
+  };
+
+  using Entry = std::conditional_t<E::is_64, Entry64, Entry32>;
+
+  std::vector<Entry> contents;
 };
 
 template <typename E>
@@ -1809,6 +1822,11 @@ struct SectionOrder {
 template <typename E>
 struct ContextExtras {};
 
+template <is_x86 E>
+struct ContextExtras<E> {
+  NotePropertySection<E> *note_property = nullptr;
+};
+
 template <>
 struct ContextExtras<ARM32> {
   Arm32ExidxSection *exidx = nullptr;
@@ -2080,7 +2098,6 @@ struct Context {
   VerdefSection<E> *verdef = nullptr;
   BuildIdSection<E> *buildid = nullptr;
   NotePackageSection<E> *note_package = nullptr;
-  NotePropertySection<E> *note_property = nullptr;
   GdbIndexSection<E> *gdb_index = nullptr;
   RelroPaddingSection<E> *relro_padding = nullptr;
   MergedSection<E> *comment = nullptr;

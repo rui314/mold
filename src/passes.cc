@@ -176,7 +176,6 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.versym = push(new VersymSection<E>);
   ctx.verneed = push(new VerneedSection<E>);
   ctx.note_package = push(new NotePackageSection<E>);
-  ctx.note_property = push(new NotePropertySection<E>);
 
   if (!ctx.arg.oformat_binary) {
     ElfShdr<E> shdr = {};
@@ -184,6 +183,9 @@ void create_synthetic_sections(Context<E> &ctx) {
     shdr.sh_flags = SHF_MERGE | SHF_STRINGS;
     ctx.comment = MergedSection<E>::get_instance(ctx, ".comment", shdr);
   }
+
+  if constexpr (is_x86<E>)
+    ctx.extra.note_property = push(new NotePropertySection<E>);
 
   if constexpr (is_riscv<E>)
     ctx.extra.riscv_attributes = push(new RiscvAttributesSection<E>);

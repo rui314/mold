@@ -2760,12 +2760,7 @@ void NotePackageSection<E>::copy_buf(Context<E> &ctx) {
 // Merges input files' .note.gnu.property values.
 template <typename E>
 void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
-  // The rules we support are only specified for x86 psABI
-  if (!is_x86<E>)
-    return;
-
-  // Reset to the initial state so that this function is idempotent
-  properties.clear();
+  std::map<u32, u32> map;
 
   // Obtain the list of keys
   std::vector<ObjectFile<E> *> files = ctx.objs;
@@ -2793,41 +2788,41 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
         key <= GNU_PROPERTY_X86_UINT32_AND_HI) {
       // An AND feature is set if all input objects have the property and
       // the feature.
-      if (std::all_of(files.begin(), files.end(), has_key)) {
-        properties[key] = 0xffff'ffff;
-        for (ObjectFile<E> *file : files)
-          properties[key] &= get_value(file, key);
-      }
+      map[key] = 0xffff'ffff;
+      for (ObjectFile<E> *file : files)
+        map[key] &= get_value(file, key);
     } else if (GNU_PROPERTY_X86_UINT32_OR_LO <= key &&
                key <= GNU_PROPERTY_X86_UINT32_OR_HI) {
       // An OR feature is set if some input object has the feature.
       for (ObjectFile<E> *file : files)
-        properties[key] |= get_value(file, key);
+        map[key] |= get_value(file, key);
     } else if (GNU_PROPERTY_X86_UINT32_OR_AND_LO <= key &&
                key <= GNU_PROPERTY_X86_UINT32_OR_AND_HI) {
       // An OR-AND feature is set if all input object files have the property
       // and some of them has the feature.
       if (std::all_of(files.begin(), files.end(), has_key))
         for (ObjectFile<E> *file : files)
-          properties[key] |= get_value(file, key);
+          map[key] |= get_value(file, key);
     }
   }
 
   if (ctx.arg.z_ibt)
-    properties[GNU_PROPERTY_X86_FEATURE_1_AND] |= GNU_PROPERTY_X86_FEATURE_1_IBT;
+    map[GNU_PROPERTY_X86_FEATURE_1_AND] |= GNU_PROPERTY_X86_FEATURE_1_IBT;
   if (ctx.arg.z_shstk)
-    properties[GNU_PROPERTY_X86_FEATURE_1_AND] |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
+    map[GNU_PROPERTY_X86_FEATURE_1_AND] |= GNU_PROPERTY_X86_FEATURE_1_SHSTK;
+  map[GNU_PROPERTY_X86_ISA_1_NEEDED] |= ctx.arg.z_x86_64_isa_level;
 
-  properties[GNU_PROPERTY_X86_ISA_1_NEEDED] |= ctx.arg.z_x86_64_isa_level;
+  // Serialize the map
+  contents.clear();
 
-  std::erase_if(properties, [](std::pair<u32, u32> kv) {
-    return kv.second == 0;
-  });
+  for (std::pair<u32, u32> kv : map)
+    if (kv.second)
+      contents.push_back({kv.first, 4, kv.second});
 
-  if (properties.empty())
+  if (contents.empty())
     this->shdr.sh_size = 0;
   else
-    this->shdr.sh_size = 16 + ENTRY_SIZE * properties.size();
+    this->shdr.sh_size = 16 + contents.size() * sizeof(contents[0]);
 }
 
 template <typename E>
@@ -2835,18 +2830,11 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
   U32<E> *buf = (U32<E> *)(ctx.buf + this->shdr.sh_offset);
   memset(buf, 0, this->shdr.sh_size);
 
-  buf[0] = 4;                              // Name size
-  buf[1] = ENTRY_SIZE * properties.size(); // Content size
-  buf[2] = NT_GNU_PROPERTY_TYPE_0;         // Type
-  memcpy(buf + 3, "GNU", 4);               // Name
-
-  i64 idx = 4;
-  for (std::pair<u32, u32> kv : properties) {
-    buf[idx] = kv.first;                   // Feature type
-    buf[idx + 1] = 4;                      // Feature size
-    buf[idx + 2] = kv.second;              // Feature flags
-    idx += ENTRY_SIZE / sizeof(U32<E>);
-  }
+  buf[0] = 4;                       // Name size
+  buf[1] = this->shdr.sh_size - 16; // Content size
+  buf[2] = NT_GNU_PROPERTY_TYPE_0;  // Type
+  memcpy(buf + 3, "GNU", 4);        // Name
+  write_vector(buf + 4, contents);  // Content
 }
 
 template <typename E>

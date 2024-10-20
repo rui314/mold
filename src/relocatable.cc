@@ -53,7 +53,9 @@ static void r_create_synthetic_sections(Context<E> &ctx) {
   ctx.strtab = push(new StrtabSection<E>);
   ctx.symtab = push(new SymtabSection<E>);
   ctx.shstrtab = push(new ShstrtabSection<E>);
-  ctx.note_property = push(new NotePropertySection<E>);
+
+  if constexpr (is_x86<E>)
+    ctx.extra.note_property = push(new NotePropertySection<E>);
 
   if constexpr (is_riscv<E>)
     ctx.extra.riscv_attributes = push(new RiscvAttributesSection<E>);
