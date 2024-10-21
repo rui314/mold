@@ -289,7 +289,7 @@ public:
   bool uncompressed = false;
 
   // For COMDAT de-duplication and garbage collection
-  std::atomic_bool is_alive = true;
+  Atomic<bool> is_alive = true;
   u8 p2align = 0;
 
   // For ICF
@@ -1029,16 +1029,16 @@ public:
 
 private:
   struct Entry64 {
-    ul32 type;
-    ul32 size;
-    ul32 flags;
-    u32 padding;
+    U32<E> type;
+    U32<E> size;
+    U32<E> flags;
+    u8 padding[4];
   };
 
   struct Entry32 {
-    ul32 type;
-    ul32 size;
-    ul32 flags;
+    U32<E> type;
+    U32<E> size;
+    U32<E> flags;
   };
 
   using Entry = std::conditional_t<E::is_64, Entry64, Entry32>;

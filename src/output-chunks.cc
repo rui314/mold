@@ -2760,8 +2760,6 @@ void NotePackageSection<E>::copy_buf(Context<E> &ctx) {
 // Merges input files' .note.gnu.property values.
 template <typename E>
 void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
-  std::map<u32, u32> map;
-
   // Obtain the list of keys
   std::vector<ObjectFile<E> *> files = ctx.objs;
   std::erase(files, ctx.internal_obj);
@@ -2779,6 +2777,8 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
   };
 
   // Merge values for each key
+  std::map<u32, u32> map;
+
   for (u32 key : keys) {
     auto has_key = [&](ObjectFile<E> *file) {
       return file->gnu_properties.contains(key);

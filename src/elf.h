@@ -52,10 +52,6 @@ std::ostream &operator<<(std::ostream &out, const ElfRel<E> &rel) {
 }
 
 enum : u32 {
-  R_NONE = 0,
-};
-
-enum : u32 {
   SHN_UNDEF = 0,
   SHN_LORESERVE = 0xff00,
   SHN_ABS = 0xfff1,
@@ -410,6 +406,10 @@ enum : u32 {
 //
 // Relocation types
 //
+
+enum : u32 {
+  R_NONE = 0,
+};
 
 enum : u32 {
   R_X86_64_NONE = 0,
