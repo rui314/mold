@@ -1,5 +1,4 @@
 #include "mold.h"
-#include "config.h"
 
 #include <filesystem>
 #include <signal.h>

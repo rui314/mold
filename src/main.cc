@@ -608,17 +608,17 @@ int mold_main(int argc, char **argv) {
   // so we sort them.
   ctx.reldyn->sort(ctx);
 
-  // .note.gnu.build-id section contains a cryptographic hash of the
-  // entire output file. Now that we wrote everything except build-id,
-  // we can compute it.
-  if (ctx.buildid)
-    write_build_id(ctx);
-
   // .gdb_index's contents cannot be constructed before applying
   // relocations to other debug sections. We have relocated debug
   // sections now, so write the .gdb_index section.
   if (ctx.gdb_index && ctx.arg.separate_debug_file.empty())
     write_gdb_index(ctx);
+
+  // .note.gnu.build-id section contains a cryptographic hash of the
+  // entire output file. Now that we wrote everything except build-id,
+  // we can compute it.
+  if (ctx.buildid)
+    write_build_id(ctx);
 
   if (!ctx.arg.separate_debug_file.empty())
     write_gnu_debuglink(ctx);

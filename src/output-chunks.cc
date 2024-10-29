@@ -1,5 +1,4 @@
 #include "mold.h"
-#include "config.h"
 
 #include <cctype>
 #include <set>

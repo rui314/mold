@@ -2994,7 +2994,7 @@ void write_build_id(Context<E> &ctx) {
       // Make the kernel page out the file contents we've just written
       // so that subsequent close(2) call will become quicker.
       if (i > 0 && ctx.output_file->is_mmapped)
-        madvise(begin, end - begin, MADV_DONTNEED);
+        madvise(shards[i].data(), shards[i].size(), MADV_DONTNEED);
 #endif
     });
 
