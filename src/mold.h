@@ -2054,7 +2054,7 @@ struct Context {
   // Output buffer
   std::unique_ptr<OutputFile<E>> output_file;
   u8 *buf = nullptr;
-  bool overwrite_output_file = true;
+  bool overwrite_output_file = false;
 
   std::vector<Chunk<E> *> chunks;
   Atomic<bool> needs_tlsld = false;

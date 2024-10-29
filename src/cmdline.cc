@@ -8,6 +8,10 @@
 #include <tbb/global_control.h>
 #include <unordered_set>
 
+#if __has_include(<sys/utsname.h>)
+# include <sys/utsname.h>
+#endif
+
 #if __has_include(<unistd.h>)
 # include <unistd.h>
 #else
@@ -537,6 +541,32 @@ parse_defsym_value(Context<E> &ctx, std::string_view s) {
   if (s.find_first_not_of("0123456789") == s.npos)
     return (u64)std::stoull(std::string(s), nullptr, 10);
   return get_symbol(ctx, s);
+}
+
+// Parses a kernel version string, e.g. "6.8.0-47-generic".
+static std::tuple<int, int, int>
+parse_kernel_version(std::string str) {
+  auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
+  static std::regex re(R"(^(\d+)\.(\d+)\.(\d+))", flags);
+  std::smatch m;
+
+  if (!std::regex_search(str, m, re))
+    return {0, 0, 0};
+  return {std::stoi(m[1]), std::stoi(m[2]), std::stoi(m[3])};
+}
+
+// Since 6.11.0, the Linux kernel no longer returns ETXTBSY for open(2)
+// on an executable file that is currently running. This function
+// returns true if we are running on a Linux kernel older than 6.11.0.
+static bool returns_etxtbsy() {
+#if HAVE_UNAME
+  struct utsname buf;
+  return uname(&buf) == 0 &&
+         strcmp(buf.sysname, "Linux") == 0 &&
+         parse_kernel_version(buf.release) < std::tuple{6, 11, 0};
+#else
+  return false;
+#endif
 }
 
 template <typename E>
@@ -1501,8 +1531,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   // However, that mechanism doesn't protect .so files. Therefore, we
   // want to disable this optimization if we are creating a shared
   // object file.
-  if (ctx.arg.shared)
-    ctx.overwrite_output_file = false;
+  ctx.overwrite_output_file = (!ctx.arg.shared && returns_etxtbsy());
 
   if (!ctx.arg.chroot.empty()) {
     if (!ctx.arg.Map.empty())

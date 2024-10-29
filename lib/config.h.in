@@ -2,3 +2,4 @@
 #define MOLD_LIBDIR "@CMAKE_INSTALL_FULL_LIBDIR@"
 
 #cmakedefine HAVE_MADVISE 1
+#cmakedefine HAVE_UNAME 1

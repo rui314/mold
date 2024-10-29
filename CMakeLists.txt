@@ -284,6 +284,7 @@ if(NOT APPLE AND NOT MSVC)
 endif()
 
 check_symbol_exists(madvise sys/mman.h HAVE_MADVISE)
+check_symbol_exists(uname sys/utsname.h HAVE_UNAME)
 
 # Create a .cc file containing the current git hash for `mold --version`.
 add_custom_target(git_hash
