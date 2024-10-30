@@ -251,6 +251,12 @@ struct Atomic : std::atomic<T> {
 };
 
 //
+// mimalloc.cc
+//
+
+void set_mimalloc_options();
+
+//
 // perf.cc
 //
 

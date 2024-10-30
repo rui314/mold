@@ -193,7 +193,6 @@ if(MOLD_USE_MIMALLOC)
   if(MOLD_USE_SYSTEM_MIMALLOC)
     find_package(mimalloc REQUIRED)
     target_link_libraries(mold PRIVATE mimalloc)
-    target_sources(mold PRIVATE lib/mimalloc.cc)
   else()
     function(mold_add_mimalloc)
       set(MI_BUILD_STATIC ON CACHE INTERNAL "")
@@ -381,6 +380,7 @@ target_sources(mold PRIVATE
   lib/filepath.cc
   lib/glob.cc
   lib/hyperloglog.cc
+  lib/mimalloc.cc
   lib/multi-glob.cc
   lib/perf.cc
   lib/random.cc

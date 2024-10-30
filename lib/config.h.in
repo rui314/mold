@@ -3,3 +3,5 @@
 
 #cmakedefine HAVE_MADVISE 1
 #cmakedefine HAVE_UNAME 1
+#cmakedefine MOLD_USE_MIMALLOC 1
+#cmakedefine MOLD_USE_SYSTEM_MIMALLOC 1
