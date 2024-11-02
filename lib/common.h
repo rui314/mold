@@ -595,14 +595,14 @@ public:
 #endif
   }
 
-  std::pair<T *, bool> insert(std::string_view key, u32 hash, const T &val) {
+  std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
     assert(has_single_bit(nbuckets));
 
-    i64 begin = hash & (nbuckets - 1);
+    u64 begin = hash & (nbuckets - 1);
     u64 mask = nbuckets / NUM_SHARDS - 1;
 
     for (i64 i = 0; i < MAX_RETRY; i++) {
-      i64 idx = (begin & ~mask) | ((begin + i) & mask);
+      u64 idx = (begin & ~mask) | ((begin + i) & mask);
       Entry &ent = entries[idx];
 
       // It seems avoiding compare-and-swap is faster overall at least
@@ -640,8 +640,8 @@ public:
         return {&ent.value, false};
     }
 
-    assert(false && "ConcurrentMap is full");
-    return {nullptr, false};
+    std::cerr << "ConcurrentMap is full\n";
+    abort();
   }
 
   i64 get_idx(T *value) const {
@@ -704,7 +704,7 @@ public:
   static constexpr i64 MAX_RETRY = 128;
 
   Entry *entries = nullptr;
-  i64 nbuckets = 0;
+  u64 nbuckets = 0;
 };
 
 //
