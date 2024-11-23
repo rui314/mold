@@ -1915,9 +1915,9 @@ void HashSection<E>::update_shdr(Context<E> &ctx) {
   if (ctx.dynsym->symbols.empty())
     return;
 
-  i64 header_size = 8;
+  i64 header_size = sizeof(Entry) * 2;
   i64 num_slots = ctx.dynsym->symbols.size();
-  this->shdr.sh_size = header_size + num_slots * 8;
+  this->shdr.sh_size = header_size + num_slots * sizeof(Entry) * 2;
   this->shdr.sh_link = ctx.dynsym->shndx;
 }
 
@@ -1927,9 +1927,9 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
   memset(base, 0, this->shdr.sh_size);
 
   std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
-  U32<E> *hdr = (U32<E> *)base;
-  U32<E> *buckets = (U32<E> *)(base + 8);
-  U32<E> *chains = buckets + syms.size();
+  Entry *hdr = (Entry *)base;
+  Entry *buckets = hdr + 2;
+  Entry *chains = buckets + syms.size();
 
   hdr[0] = hdr[1] = syms.size();
 

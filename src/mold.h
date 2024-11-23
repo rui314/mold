@@ -808,12 +808,18 @@ public:
     this->name = ".hash";
     this->shdr.sh_type = SHT_HASH;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_entsize = 4;
-    this->shdr.sh_addralign = 4;
+    this->shdr.sh_entsize = sizeof(Entry);
+    this->shdr.sh_addralign = sizeof(Entry);
   }
 
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
+
+private:
+  // Even though u32 should suffice for all targets, s390x uses u64.
+  // It looks like a spec bug, but we need to follow suit for the
+  // sake of binary compatibility.
+  using Entry = std::conditional_t<is_s390x<E>, U64<E>, U32<E>>;
 };
 
 template <typename E>
