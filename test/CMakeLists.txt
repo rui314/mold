@@ -16,7 +16,7 @@ if(NOT EXIT_CODE AND ARCH MATCHES "([^-]+).*")
   set(MACHINE ${CMAKE_MATCH_1})
 endif()
 
-if(${MACHINE} MATCHES "amd64" OR ${MACHINE} MATCHES "x86_64")
+if(${MACHINE} MATCHES "amd64")
   set(MACHINE x86_64)
 elseif(${MACHINE} MATCHES "i.86")
   set(MACHINE i686)
