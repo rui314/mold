@@ -731,7 +731,7 @@ void Arm32ExidxSection::remove_duplicate_entries(Context<E> &ctx) {
 
 void Arm32ExidxSection::copy_buf(Context<E> &ctx) {
   std::vector<u8> contents = get_contents(ctx);
-  assert(this->shdr.sh_size = contents.size());
+  assert(this->shdr.sh_size == contents.size());
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
