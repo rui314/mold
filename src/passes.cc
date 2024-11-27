@@ -3361,10 +3361,24 @@ void show_stats(Context<E> &ctx) {
             num_rels += isec->extra.r_deltas.size();
   }
 
+  static Counter alloc_dist_to_lower_limit("rel_reloc_offset_infimum", ctx.stats.relative_relocations_offset_infimum);
+  static Counter alloc_dist_to_upper_limit("rel_reloc_offset_supremum", ctx.stats.relative_relocations_offset_supremum);
+
   Counter::print();
 
   for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
     sec->print_stats(ctx);
+
+  for (ObjectFile<E> *obj : ctx.objs) {
+    for (std::unique_ptr<InputSection<E>> &sec : obj->sections) {
+      if (!sec || !sec->is_alive)
+        continue;
+      if (ctx.stats.relative_relocations_offset_infimum == sec->stats.relative_relocations_offset_infimum)
+        Out(ctx) << "'rel_reloc_offset_infimum' is relevant for " << *sec;
+      if (ctx.stats.relative_relocations_offset_supremum == sec->stats.relative_relocations_offset_supremum)
+        Out(ctx) << "'rel_reloc_offset_supremum' is relevant for " << *sec;
+    }
+  }
 }
 
 using E = MOLD_TARGET;
