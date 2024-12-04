@@ -3,8 +3,7 @@
 apt-get update
 apt-get install -y wget xz-utils
 
-# Install a RV32 toolchain from third party since it's not available
-# as an Ubuntu package.
+# Install a 32-bit RISC-V toolchain
 mkdir /rv32
 wget -O- -q https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.07.07/riscv32-glibc-ubuntu-20.04-gcc-nightly-2023.07.07-nightly.tar.gz | tar -C /rv32 --strip-components=1 -xzf -
 
@@ -19,7 +18,7 @@ done
 
 # Install a LoongArch toolchain
 mkdir /larch
-wget -O- -q https://github.com/loongson/build-tools/releases/download/2024.08.08/x86_64-cross-tools-loongarch64-binutils_2.43-gcc_14.2.0-glibc_2.40.tar.xz | tar -C /larch --strip-components=1 --xz -xf -
+wget -O- -q https://github.com/loongson/build-tools/releases/download/2024.11.01/x86_64-cross-tools-loongarch64-binutils_2.43.1-gcc_14.2.0-glibc_2.40.tar.xz | tar -C /larch --strip-components=1 --xz -xf -
 
 cp -r /larch/loongarch64-unknown-linux-gnu/lib/* /larch/target/lib64
 ln -sf /larch/target /usr/loongarch64-linux-gnu
@@ -28,7 +27,7 @@ for i in gcc g++ objdump objcopy strip; do
   ln -sf /larch/bin/loongarch64-unknown-linux-gnu-$i /usr/bin/loongarch64-linux-gnu-$i
 done
 
-wget -O /usr/local/bin/qemu-loongarch64 -q https://github.com/loongson/build-tools/releases/download/2023.08.08/qemu-loongarch64
+wget -O /usr/local/bin/qemu-loongarch64 -q https://github.com/loongson/build-tools/releases/download/2024.11.01/qemu-loongarch64
 chmod 755 /usr/local/bin/qemu-loongarch64
 
 # Install ARM64 big-endian toolchain
