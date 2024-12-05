@@ -5,7 +5,7 @@ apt-get install -y wget xz-utils
 
 # Install a 32-bit RISC-V toolchain
 mkdir /rv32
-wget -O- -q https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2023.07.07/riscv32-glibc-ubuntu-20.04-gcc-nightly-2023.07.07-nightly.tar.gz | tar -C /rv32 --strip-components=1 -xzf -
+wget -O- -q https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2024.11.22/riscv32-glibc-ubuntu-22.04-gcc-nightly-2024.11.22-nightly.tar.xz | tar -C /rv32 --strip-components=1 -xzf -
 
 ln -sf /rv32/sysroot /usr/riscv32-linux-gnu
 echo '/rv32/bin/riscv32-unknown-linux-gnu-gcc -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-gcc
