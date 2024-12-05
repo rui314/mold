@@ -699,9 +699,9 @@ public:
     return flatten(vec);
   }
 
-  static constexpr i64 MIN_NBUCKETS = 2048;
+  static constexpr i64 MIN_NBUCKETS = 4096;
   static constexpr i64 NUM_SHARDS = 16;
-  static constexpr i64 MAX_RETRY = 128;
+  static constexpr i64 MAX_RETRY = 256;
 
   Entry *entries = nullptr;
   u64 nbuckets = 0;
