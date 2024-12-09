@@ -366,33 +366,28 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       const ElfRel<E> &rel2 = rels[idx2];
       Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
 
+      auto write =
+        (rel.r_type == R_RISCV_PCREL_LO12_I) ? write_itype : write_stype;
+
       u64 S = sym2.get_addr(ctx);
       u64 A = rel2.r_addend;
       u64 P = get_addr() + rel2.r_offset - get_r_delta(idx2);
       u64 G = sym2.get_got_idx(ctx) * sizeof(Word<E>);
-      u64 val;
 
       switch (rel2.r_type) {
       case R_RISCV_GOT_HI20:
-        val = G + GOT + A - P;
+        write(loc, G + GOT + A - P);
         break;
       case R_RISCV_TLS_GOT_HI20:
-        val = sym2.get_gottp_addr(ctx) + A - P;
+        write(loc, sym2.get_gottp_addr(ctx) + A - P);
         break;
       case R_RISCV_TLS_GD_HI20:
-        val = sym2.get_tlsgd_addr(ctx) + A - P;
+        write(loc, sym2.get_tlsgd_addr(ctx) + A - P);
         break;
       case R_RISCV_PCREL_HI20:
-        val = S + A - P;
+        write(loc, S + A - P);
         break;
-      default:
-        unreachable();
       }
-
-      if (rel.r_type == R_RISCV_PCREL_LO12_I)
-        write_itype(loc, val);
-      else
-        write_stype(loc, val);
       break;
     }
     case R_RISCV_HI20:
