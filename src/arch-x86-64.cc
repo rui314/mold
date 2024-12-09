@@ -367,6 +367,7 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, i64 tls_size) {
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  RelocationsStats rels_stats;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -377,6 +378,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (ctx.arg.stats)
+        update_relocation_stats(rels_stats, i, val, lo, hi);
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
@@ -589,6 +592,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       unreachable();
     }
   }
+  if (ctx.arg.stats)
+    save_relocation_stats<E>(ctx, *this, rels_stats);
 }
 
 // This function is responsible for applying relocations against
@@ -606,6 +611,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 template <>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  RelocationsStats rels_stats;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -616,6 +622,8 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (ctx.arg.stats)
+        update_relocation_stats(rels_stats, i, val, lo, hi);
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
@@ -693,6 +701,8 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       break;
     }
   }
+  if (ctx.arg.stats)
+    save_relocation_stats<E>(ctx, *this, rels_stats);
 }
 
 // Linker has to create data structures in an output file to apply

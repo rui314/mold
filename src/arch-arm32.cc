@@ -253,6 +253,7 @@ static bool is_jump_reachable(i64 val) {
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  RelocationsStats rels_stats;
 
   auto get_tls_trampoline_addr = [&, i = 0](u64 addr) mutable {
     for (; i < output_section->thunks.size(); i++) {
@@ -273,6 +274,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u8 *loc = base + rel.r_offset;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (ctx.arg.stats)
+        update_relocation_stats(rels_stats, i, val, lo, hi);
       if (val < lo || hi <= val)
         Error(ctx) << *this << ": relocation " << rel << " against "
                    << sym << " out of range: " << val << " is not in ["
@@ -532,6 +535,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
+  if (ctx.arg.stats)
+    save_relocation_stats<E>(ctx, *this, rels_stats);
 }
 
 template <>
