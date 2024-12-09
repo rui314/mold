@@ -192,7 +192,7 @@ static void merge_leaf_nodes(Context<E> &ctx) {
   static Counter non_eligible("icf_non_eligibles");
   static Counter leaf("icf_leaf_nodes");
 
-  tbb::concurrent_unordered_map<InputSection<E> *, InputSection<E> *,
+  tbb::concurrent_unordered_map<InputSection<E> *, Atomic<InputSection<E> *>,
                                 LeafHasher<E>, LeafEq<E>> map;
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
@@ -209,8 +209,11 @@ static void merge_leaf_nodes(Context<E> &ctx) {
         leaf++;
         isec->icf_leaf = true;
         auto [it, inserted] = map.insert({isec.get(), isec.get()});
-        if (!inserted && isec->get_priority() < it->second->get_priority())
-          it->second = isec.get();
+        if (!inserted) {
+          InputSection<E> *isec2 = it->second.load();
+          while (isec->get_priority() < isec2->get_priority() &&
+                 !it->second.compare_exchange_strong(isec2, isec.get()));
+        }
       } else {
         eligible++;
         isec->icf_eligible = true;
@@ -568,14 +571,19 @@ void icf_sections(Context<E> &ctx) {
   {
     Timer t(ctx, "group");
 
-    auto *map = new tbb::concurrent_unordered_map<Digest, InputSection<E> *>;
+    auto *map =
+      new tbb::concurrent_unordered_map<Digest, Atomic<InputSection<E> *>>;
+
     std::span<Digest> digest = digests[slot];
 
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
       InputSection<E> *isec = sections[i];
       auto [it, inserted] = map->insert({digest[i], isec});
-      if (!inserted && isec->get_priority() < it->second->get_priority())
-        it->second = isec;
+      if (!inserted) {
+        InputSection<E> *isec2 = it->second.load();
+        while (isec->get_priority() < isec2->get_priority() &&
+               !it->second.compare_exchange_strong(isec2, isec));
+      }
     });
 
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
