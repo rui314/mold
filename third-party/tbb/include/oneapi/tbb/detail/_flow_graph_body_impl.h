@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 #error Do not #include this internal file directly; use public TBB headers instead.
 #endif
 
-// included in namespace tbb::detail::d1 (in flow_graph.h)
+// included in namespace tbb::detail::d2 (in flow_graph.h)
 
 typedef std::uint64_t tag_value;
 
@@ -53,7 +53,7 @@ namespace graph_policy_namespace {
     // K == type of field used for key-matching.  Each tag-matching port will be provided
     // functor that, given an object accepted by the port, will return the
     /// field of type K being used for matching.
-    template<typename K, typename KHash=tbb_hash_compare<typename std::decay<K>::type > >
+    template<typename K, typename KHash=d1::tbb_hash_compare<typename std::decay<K>::type > >
         __TBB_requires(tbb::detail::hash_compare<KHash, K>)
     struct key_matching {
         typedef K key_type;
@@ -77,7 +77,7 @@ template< typename Output >
 class input_body : no_assign {
 public:
     virtual ~input_body() {}
-    virtual Output operator()(flow_control& fc) = 0;
+    virtual Output operator()(d1::flow_control& fc) = 0;
     virtual input_body* clone() = 0;
 };
 
@@ -86,7 +86,7 @@ template< typename Output, typename Body>
 class input_body_leaf : public input_body<Output> {
 public:
     input_body_leaf( const Body &_body ) : body(_body) { }
-    Output operator()(flow_control& fc) override { return body(fc); }
+    Output operator()(d1::flow_control& fc) override { return body(fc); }
     input_body_leaf* clone() override {
         return new input_body_leaf< Output, Body >(body);
     }
@@ -249,12 +249,12 @@ template< typename NodeType >
 class forward_task_bypass : public graph_task {
     NodeType &my_node;
 public:
-    forward_task_bypass( graph& g, small_object_allocator& allocator, NodeType &n
+    forward_task_bypass( graph& g, d1::small_object_allocator& allocator, NodeType &n
                          , node_priority_t node_priority = no_priority
     ) : graph_task(g, allocator, node_priority),
     my_node(n) {}
 
-    task* execute(execution_data& ed) override {
+    d1::task* execute(d1::execution_data& ed) override {
         graph_task* next_task = my_node.forward_task();
         if (SUCCESSFULLY_ENQUEUED == next_task)
             next_task = nullptr;
@@ -264,7 +264,7 @@ public:
         return next_task;
     }
 
-    task* cancel(execution_data& ed) override {
+    d1::task* cancel(d1::execution_data& ed) override {
         finalize<forward_task_bypass>(ed);
         return nullptr;
     }
@@ -272,29 +272,57 @@ public:
 
 //! A task that calls a node's apply_body_bypass function, passing in an input of type Input
 //  return the task* unless it is SUCCESSFULLY_ENQUEUED, in which case return nullptr
-template< typename NodeType, typename Input >
-class apply_body_task_bypass : public graph_task {
+template< typename NodeType, typename Input, typename BaseTaskType = graph_task>
+class apply_body_task_bypass
+    : public BaseTaskType
+{
     NodeType &my_node;
     Input my_input;
+
+    using check_metainfo = std::is_same<BaseTaskType, graph_task>;
+    using without_metainfo = std::true_type;
+    using with_metainfo = std::false_type;
+
+    graph_task* call_apply_body_bypass_impl(without_metainfo) {
+        return my_node.apply_body_bypass(my_input
+                                         __TBB_FLOW_GRAPH_METAINFO_ARG(message_metainfo{}));
+    }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+    graph_task* call_apply_body_bypass_impl(with_metainfo) {
+        return my_node.apply_body_bypass(my_input, message_metainfo{this->get_msg_wait_context_vertices()});
+    }
+#endif
+
+    graph_task* call_apply_body_bypass() {
+        return call_apply_body_bypass_impl(check_metainfo{});
+    }
+
 public:
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+    template <typename Metainfo>
+    apply_body_task_bypass( graph& g, d1::small_object_allocator& allocator, NodeType &n, const Input &i,
+                            node_priority_t node_priority, Metainfo&& metainfo )
+        : BaseTaskType(g, allocator, node_priority, std::forward<Metainfo>(metainfo).waiters())
+        , my_node(n), my_input(i) {}
+#endif
 
-    apply_body_task_bypass( graph& g, small_object_allocator& allocator, NodeType &n, const Input &i
-                            , node_priority_t node_priority = no_priority
-    ) : graph_task(g, allocator, node_priority),
-        my_node(n), my_input(i) {}
+    apply_body_task_bypass( graph& g, d1::small_object_allocator& allocator, NodeType& n, const Input& i,
+                            node_priority_t node_priority = no_priority )
+        : BaseTaskType(g, allocator, node_priority), my_node(n), my_input(i) {}
 
-    task* execute(execution_data& ed) override {
-        graph_task* next_task = my_node.apply_body_bypass( my_input );
+    d1::task* execute(d1::execution_data& ed) override {
+        graph_task* next_task = call_apply_body_bypass();
         if (SUCCESSFULLY_ENQUEUED == next_task)
             next_task = nullptr;
         else if (next_task)
             next_task = prioritize_task(my_node.graph_reference(), *next_task);
-        finalize<apply_body_task_bypass>(ed);
+        BaseTaskType::template finalize<apply_body_task_bypass>(ed);
         return next_task;
     }
 
-    task* cancel(execution_data& ed) override {
-        finalize<apply_body_task_bypass>(ed);
+    d1::task* cancel(d1::execution_data& ed) override {
+        BaseTaskType::template finalize<apply_body_task_bypass>(ed);
         return nullptr;
     }
 };
@@ -304,10 +332,10 @@ template< typename NodeType >
 class input_node_task_bypass : public graph_task {
     NodeType &my_node;
 public:
-    input_node_task_bypass( graph& g, small_object_allocator& allocator, NodeType &n )
+    input_node_task_bypass( graph& g, d1::small_object_allocator& allocator, NodeType &n )
         : graph_task(g, allocator), my_node(n) {}
 
-    task* execute(execution_data& ed) override {
+    d1::task* execute(d1::execution_data& ed) override {
         graph_task* next_task = my_node.apply_body_bypass( );
         if (SUCCESSFULLY_ENQUEUED == next_task)
             next_task = nullptr;
@@ -317,7 +345,7 @@ public:
         return next_task;
     }
 
-    task* cancel(execution_data& ed) override {
+    d1::task* cancel(d1::execution_data& ed) override {
         finalize<input_node_task_bypass>(ed);
         return nullptr;
     }
@@ -343,6 +371,15 @@ protected:
         return result;
     }
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+    // Intentionally ignore the metainformation
+    // If there are more items associated with passed metainfo to be processed
+    // They should be stored in the buffer before the limiter_node
+    graph_task* try_put_task(const DecrementType& value, const message_metainfo&) override {
+        return try_put_task(value);
+    }
+#endif
+
     graph& graph_reference() const override {
         return my_node->my_graph;
     }
@@ -361,7 +398,14 @@ class threshold_regulator<T, continue_msg, void> : public continue_receiver, no_
 
     T *my_node;
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+    // Intentionally ignore the metainformation
+    // If there are more items associated with passed metainfo to be processed
+    // They should be stored in the buffer before the limiter_node
+    graph_task* execute(const message_metainfo&) override {
+#else
     graph_task* execute() override {
+#endif
         return my_node->decrement_counter( 1 );
     }
 

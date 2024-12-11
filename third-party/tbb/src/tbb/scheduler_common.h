@@ -23,6 +23,7 @@
 #include "oneapi/tbb/detail/_machine.h"
 #include "oneapi/tbb/task_group.h"
 #include "oneapi/tbb/cache_aligned_allocator.h"
+#include "oneapi/tbb/tbb_allocator.h"
 #include "itt_notify.h"
 #include "co_context.h"
 #include "misc.h"
@@ -42,6 +43,7 @@
 #include <cstdint>
 #include <exception>
 #include <memory> // unique_ptr
+#include <unordered_map>
 
 //! Mutex type for global locks in the scheduler
 using scheduler_mutex_type = __TBB_SCHEDULER_MUTEX_TYPE;
@@ -395,7 +397,7 @@ struct suspend_point_type {
 
     void finilize_resume() {
         m_stack_state.store(stack_state::active, std::memory_order_relaxed);
-        // Set the suspended state for the stack that we left. If the state is already notified, it means that 
+        // Set the suspended state for the stack that we left. If the state is already notified, it means that
         // someone already tried to resume our previous stack but failed. So, we need to resume it.
         // m_prev_suspend_point might be nullptr when destroying co_context based on threads
         if (m_prev_suspend_point && m_prev_suspend_point->m_stack_state.exchange(stack_state::suspended) == stack_state::notified) {
@@ -474,6 +476,13 @@ public:
     //! Suspend point (null if this task dispatcher has been never suspended)
     suspend_point_type* m_suspend_point{ nullptr };
 
+    //! Used to improve scalability of d1::wait_context by using per thread reference_counter
+    std::unordered_map<d1::wait_tree_vertex_interface*, d1::reference_vertex*,
+                       std::hash<d1::wait_tree_vertex_interface*>, std::equal_to<d1::wait_tree_vertex_interface*>,
+                       tbb_allocator<std::pair<d1::wait_tree_vertex_interface* const, d1::reference_vertex*>>
+                      >
+        m_reference_vertex_map;
+
     //! Attempt to get a task from the mailbox.
     /** Gets a task only if it has not been executed by its sender or a thief
         that has stolen it from the sender's task pool. Otherwise returns nullptr.
@@ -502,6 +511,14 @@ public:
             m_suspend_point->~suspend_point_type();
             cache_aligned_deallocate(m_suspend_point);
         }
+
+        for (auto& elem : m_reference_vertex_map) {
+            d1::reference_vertex*& node = elem.second;
+            node->~reference_vertex();
+            cache_aligned_deallocate(node);
+            poison_pointer(node);
+        }
+
         poison_pointer(m_thread_data);
         poison_pointer(m_suspend_point);
     }

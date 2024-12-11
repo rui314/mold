@@ -482,6 +482,7 @@ void
 run_one_functype_node_test(bool throwException, bool flog, const char * /*name*/) {
 
     std::stringstream ss;
+    std::string ss_str;
     char *saved_msg = const_cast<char *>(g_Wakeup_Msg);
     tbb::flow::graph g;
 
@@ -511,7 +512,8 @@ run_one_functype_node_test(bool throwException, bool flog, const char * /*name*/
     for(int iter = 0; iter < 2; ++iter) {  // run, reset, run again
         ss.clear();
         ss << saved_msg << " iter=" << iter << ", threads=" << g_NumThreads << ", throw=" << (throwException ? "T" : "F") << ", flow=" << (flog ? "T" : "F");
-        g_Wakeup_Msg = ss.str().c_str();
+        ss_str = ss.str();
+        g_Wakeup_Msg = ss_str.c_str();
         ResetGlobals(throwException,flog);
         if(throwException) {
             TRY();

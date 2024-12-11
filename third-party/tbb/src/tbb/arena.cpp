@@ -195,8 +195,6 @@ void arena::process(thread_data& tls) {
         return;
     }
 
-    my_tc_client.get_pm_client()->register_thread();
-
     __TBB_ASSERT( index >= my_num_reserved_slots, "Workers cannot occupy reserved slots" );
     tls.attach_arena(*this, index);
     // worker thread enters the dispatch loop to look for a work
@@ -235,8 +233,6 @@ void arena::process(thread_data& tls) {
     tls.my_inbox.detach();
     __TBB_ASSERT(tls.my_inbox.is_idle_state(true), nullptr);
     __TBB_ASSERT(is_alive(my_guard), nullptr);
-
-    my_tc_client.get_pm_client()->unregister_thread();
 
     // In contrast to earlier versions of TBB (before 3.0 U5) now it is possible
     // that arena may be temporarily left unpopulated by threads. See comments in
@@ -503,6 +499,7 @@ struct task_arena_impl {
     static void wait(d1::task_arena_base&);
     static int max_concurrency(const d1::task_arena_base*);
     static void enqueue(d1::task&, d1::task_group_context*, d1::task_arena_base*);
+    static d1::slot_id execution_slot(const d1::task_arena_base&);
 };
 
 void __TBB_EXPORTED_FUNC initialize(d1::task_arena_base& ta) {
@@ -533,6 +530,10 @@ void __TBB_EXPORTED_FUNC enqueue(d1::task& t, d1::task_group_context& ctx, d1::t
     task_arena_impl::enqueue(t, &ctx, ta);
 }
 
+d1::slot_id __TBB_EXPORTED_FUNC execution_slot(const d1::task_arena_base& arena) {
+    return task_arena_impl::execution_slot(arena);
+}
+
 void task_arena_impl::initialize(d1::task_arena_base& ta) {
     // Enforce global market initialization to properly initialize soft limit
     (void)governor::get_thread_data();
@@ -559,7 +560,7 @@ void task_arena_impl::initialize(d1::task_arena_base& ta) {
         ta.my_numa_id, ta.core_type(), ta.max_threads_per_core());
     if (observer) {
         // TODO: Consider lazy initialization for internal arena so
-        // the direct calls to observer might be omitted until actual initialization. 
+        // the direct calls to observer might be omitted until actual initialization.
         observer->on_scheduler_entry(true);
     }
 #endif /*__TBB_CPUBIND_PRESENT*/
@@ -624,6 +625,14 @@ void task_arena_impl::enqueue(d1::task& t, d1::task_group_context* c, d1::task_a
      a->enqueue_task(t, *ctx, *td);
 }
 
+d1::slot_id task_arena_impl::execution_slot(const d1::task_arena_base& ta) {
+    thread_data* td = governor::get_thread_data_if_initialized();
+    if (td && (td->is_attached_to(ta.my_arena.load(std::memory_order_relaxed)))) {
+        return td->my_arena_index;
+    }
+    return d1::slot_id(-1);
+}
+
 class nested_arena_context : no_copy {
 public:
     nested_arena_context(thread_data& td, arena& nested_arena, std::size_t slot_index)
@@ -633,9 +642,11 @@ public:
             m_orig_arena = td.my_arena;
             m_orig_slot_index = td.my_arena_index;
             m_orig_last_observer = td.my_last_observer;
+            m_orig_is_thread_registered = td.my_is_registered;
 
             td.detach_task_dispatcher();
             td.attach_arena(nested_arena, slot_index);
+            td.my_is_registered = false;
             if (td.my_inbox.is_idle_state(true))
                 td.my_inbox.set_is_idle(false);
             task_dispatcher& task_disp = td.my_arena_slot->default_task_dispatcher();
@@ -686,7 +697,7 @@ public:
             td.leave_task_dispatcher();
             td.my_arena_slot->release();
             td.my_arena->my_exit_monitors.notify_one(); // do not relax!
-
+            td.my_is_registered = m_orig_is_thread_registered;
             td.attach_arena(*m_orig_arena, m_orig_slot_index);
             td.attach_task_dispatcher(*m_orig_execute_data_ext.task_disp);
             __TBB_ASSERT(td.my_inbox.is_idle_state(false), nullptr);
@@ -702,6 +713,7 @@ private:
     unsigned            m_orig_slot_index{};
     bool                m_orig_fifo_tasks_allowed{};
     bool                m_orig_critical_task_allowed{};
+    bool                m_orig_is_thread_registered{};
 };
 
 class delegated_task : public d1::task {

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2023 Intel Corporation
+    Copyright (c) 2020-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -101,6 +101,7 @@ public:
     thread_data(unsigned short index, bool is_worker)
         : my_arena_index{ index }
         , my_is_worker{ is_worker }
+        , my_is_registered { false }
         , my_task_dispatcher{ nullptr }
         , my_arena{ nullptr }
         , my_last_client{ nullptr }
@@ -144,6 +145,8 @@ public:
 
     //! Indicates if the thread is created by RML
     const bool my_is_worker;
+
+    bool my_is_registered;
 
     //! The current task dipsatcher
     task_dispatcher* my_task_dispatcher;

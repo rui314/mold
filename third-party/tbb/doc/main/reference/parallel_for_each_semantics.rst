@@ -10,7 +10,7 @@ parallel_for_each Body semantics and requirements
 Description
 ***********
 
-This page clarifies `ParallelForEachBody <https://spec.oneapi.com/versions/latest/elements/oneTBB/source/named_requirements/algorithms/par_for_each_body.html>`_
+This page clarifies `ParallelForEachBody <https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/named_requirements/algorithms/par_for_each_body>`_
 named requirements for ``tbb::parallel_for_each`` algorithm specification.
 
 .. code:: cpp

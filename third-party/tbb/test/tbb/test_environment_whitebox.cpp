@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -130,7 +130,7 @@ std::vector<std::pair<std::string, bool>> initialize_cases( bool wrong_result ) 
     cases.push_back(std::make_pair("1              ", true));
     cases.push_back(std::make_pair("             1           ", true));
     cases.push_back(std::make_pair("         1", true));
-    cases.push_back(std::make_pair((std::string(large_length, ' ') + '1').c_str(), true));
+    cases.push_back(std::make_pair((std::string(large_length, ' ') + '1'), true));
 
     // Invalid cases
     cases.push_back(std::make_pair("", wrong_result));
@@ -150,7 +150,7 @@ std::vector<std::pair<std::string, bool>> initialize_cases( bool wrong_result ) 
     cases.push_back(std::make_pair("2018", wrong_result));
     cases.push_back(std::make_pair("ABC_123", wrong_result));
     cases.push_back(std::make_pair("true", wrong_result));
-    cases.push_back(std::make_pair(std::string(large_length, 'A').c_str(), wrong_result));
+    cases.push_back(std::make_pair(std::string(large_length, 'A'), wrong_result));
 
     prepare_random_cases(cases);
     return cases;
@@ -162,27 +162,27 @@ std::vector<std::pair<std::string, long>> initialize_cases( long wrong_result ) 
     // Valid cases
     for (long i = 0; i < 100; ++i) {
         ss << i;
-        cases.push_back(std::make_pair(ss.str().c_str(), i));
+        cases.push_back(std::make_pair(ss.str(), i));
         ss.str("");
 
         ss << "     " << i << "     ";
-        cases.push_back(std::make_pair(ss.str().c_str(), i));
+        cases.push_back(std::make_pair(ss.str(), i));
         ss.str("");
 
         ss << i << "     ";
-        cases.push_back(std::make_pair(ss.str().c_str(), i));
+        cases.push_back(std::make_pair(ss.str(), i));
         ss.str("");
 
         ss << "     " << i;
-        cases.push_back(std::make_pair(ss.str().c_str(), i));
+        cases.push_back(std::make_pair(ss.str(), i));
         ss.str("");
     }
 
     ss << LONG_MAX;
-    cases.push_back(std::make_pair(ss.str().c_str(), LONG_MAX));
+    cases.push_back(std::make_pair(ss.str(), LONG_MAX));
     ss.str("");
 
-    cases.push_back(std::make_pair((std::string(large_length, ' ') + '1').c_str(), 1L));
+    cases.push_back(std::make_pair((std::string(large_length, ' ') + '1'), 1L));
 
     // Invalid cases
     cases.push_back(std::make_pair("", wrong_result));
@@ -202,11 +202,11 @@ std::vector<std::pair<std::string, long>> initialize_cases( long wrong_result ) 
     cases.push_back(std::make_pair("false", wrong_result));
     cases.push_back(std::make_pair("1A", wrong_result));
     cases.push_back(std::make_pair("_123", wrong_result));
-    cases.push_back(std::make_pair(std::string(large_length, 'A').c_str(), wrong_result));
+    cases.push_back(std::make_pair(std::string(large_length, 'A'), wrong_result));
 
     // Prepare string with LONG_MAX + 1 value
     ss << LONG_MAX / 10 << (LONG_MAX % 10 + 1);
-    cases.push_back(std::make_pair(ss.str().c_str(), -1));
+    cases.push_back(std::make_pair(ss.str(), -1));
     ss.str("");
 
     prepare_random_cases(cases);

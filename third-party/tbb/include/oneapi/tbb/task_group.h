@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -45,7 +45,6 @@ namespace d1 {
 class delegate_base;
 class task_arena_base;
 class task_group_context;
-class task_group_base;
 }
 
 namespace r1 {
@@ -97,8 +96,8 @@ private:
     }
 public:
     template<typename FF>
-    function_task(FF&& f, d1::wait_context& wo, d1::task_group_context& ctx, d1::small_object_allocator& alloc)
-        : task_handle_task{wo, ctx, alloc},
+    function_task(FF&& f, d1::wait_tree_vertex_interface* vertex, d1::task_group_context& ctx, d1::small_object_allocator& alloc)
+        : task_handle_task{vertex, ctx, alloc},
           m_func(std::forward<FF>(f)) {}
 };
 
@@ -414,10 +413,19 @@ private:
     friend class r1::context_guard_helper;
     friend struct r1::task_arena_impl;
     friend struct r1::task_group_context_impl;
-    friend class task_group_base;
+    friend class d2::task_group_base;
 }; // class task_group_context
 
 static_assert(sizeof(task_group_context) == 128, "Wrong size of task_group_context");
+
+inline bool is_current_task_group_canceling() {
+    task_group_context* ctx = current_context();
+    return ctx ? ctx->is_group_execution_cancelled() : false;
+}
+
+} // namespace d1
+
+namespace d2 {
 
 enum task_group_status {
     not_complete,
@@ -431,77 +439,41 @@ class structured_task_group;
 class isolated_task_group;
 #endif
 
-template<typename F>
-class function_task : public task {
-    const F m_func;
-    wait_context& m_wait_ctx;
-    small_object_allocator m_allocator;
-
-    void finalize(const execution_data& ed) {
-        // Make a local reference not to access this after destruction.
-        wait_context& wo = m_wait_ctx;
-        // Copy allocator to the stack
-        auto allocator = m_allocator;
-        // Destroy user functor before release wait.
-        this->~function_task();
-        wo.release();
-
-        allocator.deallocate(this, ed);
-    }
-    task* execute(execution_data& ed) override {
-        task* res = d2::task_ptr_or_nullptr(m_func);
-        finalize(ed);
-        return res;
-    }
-    task* cancel(execution_data& ed) override {
-        finalize(ed);
-        return nullptr;
-    }
-public:
-    function_task(const F& f, wait_context& wo, small_object_allocator& alloc)
-        : m_func(f)
-        , m_wait_ctx(wo)
-        , m_allocator(alloc) {}
-
-    function_task(F&& f, wait_context& wo, small_object_allocator& alloc)
-        : m_func(std::move(f))
-        , m_wait_ctx(wo)
-        , m_allocator(alloc) {}
-};
-
 template <typename F>
-class function_stack_task : public task {
+class function_stack_task : public d1::task {
     const F& m_func;
-    wait_context& m_wait_ctx;
+    d1::wait_tree_vertex_interface* m_wait_tree_vertex;
 
     void finalize() {
-        m_wait_ctx.release();
+        m_wait_tree_vertex->release();
     }
-    task* execute(execution_data&) override {
+    task* execute(d1::execution_data&) override {
         task* res = d2::task_ptr_or_nullptr(m_func);
         finalize();
         return res;
     }
-    task* cancel(execution_data&) override {
+    task* cancel(d1::execution_data&) override {
         finalize();
         return nullptr;
     }
 public:
-    function_stack_task(const F& f, wait_context& wo) : m_func(f), m_wait_ctx(wo) {}
+    function_stack_task(const F& f, d1::wait_tree_vertex_interface* vertex) : m_func(f), m_wait_tree_vertex(vertex) {
+        m_wait_tree_vertex->reserve();
+    }
 };
 
 class task_group_base : no_copy {
 protected:
-    wait_context m_wait_ctx;
-    task_group_context m_context;
+    d1::wait_context_vertex m_wait_vertex;
+    d1::task_group_context m_context;
 
     template<typename F>
     task_group_status internal_run_and_wait(const F& f) {
-        function_stack_task<F> t{ f, m_wait_ctx };
-        m_wait_ctx.reserve();
+        function_stack_task<F> t{ f, r1::get_thread_reference_vertex(&m_wait_vertex) };
+
         bool cancellation_status = false;
         try_call([&] {
-            execute_and_wait(t, context(), m_wait_ctx, context());
+            execute_and_wait(t, context(), m_wait_vertex.get_context(), context());
         }).on_completion([&] {
             // TODO: the reset method is not thread-safe. Ensure the correct behavior.
             cancellation_status = context().is_group_execution_cancelled();
@@ -518,7 +490,7 @@ protected:
 
         bool cancellation_status = false;
         try_call([&] {
-            execute_and_wait(*acs::release(h), context(), m_wait_ctx, context());
+            execute_and_wait(*acs::release(h), context(), m_wait_vertex.get_context(), context());
         }).on_completion([&] {
             // TODO: the reset method is not thread-safe. Ensure the correct behavior.
             cancellation_status = context().is_group_execution_cancelled();
@@ -528,39 +500,39 @@ protected:
     }
 
     template<typename F>
-    task* prepare_task(F&& f) {
-        m_wait_ctx.reserve();
-        small_object_allocator alloc{};
-        return alloc.new_object<function_task<typename std::decay<F>::type>>(std::forward<F>(f), m_wait_ctx, alloc);
+    d1::task* prepare_task(F&& f) {
+        d1::small_object_allocator alloc{};
+        return alloc.new_object<function_task<typename std::decay<F>::type>>(std::forward<F>(f),
+            r1::get_thread_reference_vertex(&m_wait_vertex), context(), alloc);
     }
 
-    task_group_context& context() noexcept {
+    d1::task_group_context& context() noexcept {
         return m_context.actual_context();
     }
 
     template<typename F>
     d2::task_handle prepare_task_handle(F&& f) {
-        m_wait_ctx.reserve();
-        small_object_allocator alloc{};
+        d1::small_object_allocator alloc{};
         using function_task_t =  d2::function_task<typename std::decay<F>::type>;
-        d2::task_handle_task* function_task_p =  alloc.new_object<function_task_t>(std::forward<F>(f), m_wait_ctx, context(), alloc);
+        d2::task_handle_task* function_task_p =  alloc.new_object<function_task_t>(std::forward<F>(f),
+            r1::get_thread_reference_vertex(&m_wait_vertex), context(), alloc);
 
         return d2::task_handle_accessor::construct(function_task_p);
     }
 
 public:
     task_group_base(uintptr_t traits = 0)
-        : m_wait_ctx(0)
-        , m_context(task_group_context::bound, task_group_context::default_traits | traits)
+        : m_wait_vertex(0)
+        , m_context(d1::task_group_context::bound, d1::task_group_context::default_traits | traits)
     {}
 
-    task_group_base(task_group_context& ctx)
-        : m_wait_ctx(0)
+    task_group_base(d1::task_group_context& ctx)
+        : m_wait_vertex(0)
         , m_context(&ctx)
     {}
 
     ~task_group_base() noexcept(false) {
-        if (m_wait_ctx.continue_execution()) {
+        if (m_wait_vertex.continue_execution()) {
 #if __TBB_CPP17_UNCAUGHT_EXCEPTIONS_PRESENT
             bool stack_unwinding_in_progress = std::uncaught_exceptions() > 0;
 #else
@@ -570,7 +542,7 @@ public:
             // in case of missing wait (for the sake of better testability & debuggability)
             if (!context().is_group_execution_cancelled())
                 cancel();
-            d1::wait(m_wait_ctx, context());
+            d1::wait(m_wait_vertex.get_context(), context());
             if (!stack_unwinding_in_progress)
                 throw_exception(exception_id::missing_wait);
         }
@@ -579,7 +551,7 @@ public:
     task_group_status wait() {
         bool cancellation_status = false;
         try_call([&] {
-            d1::wait(m_wait_ctx, context());
+            d1::wait(m_wait_vertex.get_context(), context());
         }).on_completion([&] {
             // TODO: the reset method is not thread-safe. Ensure the correct behavior.
             cancellation_status = m_context.is_group_execution_cancelled();
@@ -595,12 +567,12 @@ public:
 
 class task_group : public task_group_base {
 public:
-    task_group() : task_group_base(task_group_context::concurrent_wait) {}
-    task_group(task_group_context& ctx) : task_group_base(ctx) {}
+    task_group() : task_group_base(d1::task_group_context::concurrent_wait) {}
+    task_group(d1::task_group_context& ctx) : task_group_base(ctx) {}
 
     template<typename F>
     void run(F&& f) {
-        spawn(*prepare_task(std::forward<F>(f)), context());
+        d1::spawn(*prepare_task(std::forward<F>(f)), context());
     }
 
     void run(d2::task_handle&& h) {
@@ -609,7 +581,7 @@ public:
         using acs = d2::task_handle_accessor;
         __TBB_ASSERT(&acs::ctx_of(h) == &context(), "Attempt to schedule task_handle into different task_group");
 
-        spawn(*acs::release(h), context());
+        d1::spawn(*acs::release(h), context());
     }
 
     template<typename F>
@@ -629,20 +601,20 @@ public:
 }; // class task_group
 
 #if TBB_PREVIEW_ISOLATED_TASK_GROUP
-class spawn_delegate : public delegate_base {
-    task* task_to_spawn;
-    task_group_context& context;
+class spawn_delegate : public d1::delegate_base {
+    d1::task* task_to_spawn;
+    d1::task_group_context& context;
     bool operator()() const override {
         spawn(*task_to_spawn, context);
         return true;
     }
 public:
-    spawn_delegate(task* a_task, task_group_context& ctx)
+    spawn_delegate(d1::task* a_task, d1::task_group_context& ctx)
         : task_to_spawn(a_task), context(ctx)
     {}
 };
 
-class wait_delegate : public delegate_base {
+class wait_delegate : public d1::delegate_base {
     bool operator()() const override {
         status = tg.wait();
         return true;
@@ -674,7 +646,7 @@ class isolated_task_group : public task_group {
 public:
     isolated_task_group() : task_group() {}
 
-    isolated_task_group(task_group_context& ctx) : task_group(ctx) {}
+    isolated_task_group(d1::task_group_context& ctx) : task_group(ctx) {}
 
     template<typename F>
     void run(F&& f) {
@@ -710,26 +682,20 @@ public:
     }
 }; // class isolated_task_group
 #endif // TBB_PREVIEW_ISOLATED_TASK_GROUP
-
-inline bool is_current_task_group_canceling() {
-    task_group_context* ctx = current_context();
-    return ctx ? ctx->is_group_execution_cancelled() : false;
-}
-
-} // namespace d1
+} // namespace d2
 } // namespace detail
 
 inline namespace v1 {
 using detail::d1::task_group_context;
-using detail::d1::task_group;
+using detail::d2::task_group;
 #if TBB_PREVIEW_ISOLATED_TASK_GROUP
-using detail::d1::isolated_task_group;
+using detail::d2::isolated_task_group;
 #endif
 
-using detail::d1::task_group_status;
-using detail::d1::not_complete;
-using detail::d1::complete;
-using detail::d1::canceled;
+using detail::d2::task_group_status;
+using detail::d2::not_complete;
+using detail::d2::complete;
+using detail::d2::canceled;
 
 using detail::d1::is_current_task_group_canceling;
 using detail::r1::missing_wait;

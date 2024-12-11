@@ -50,7 +50,7 @@ Type requirements
 -----------------
 
 The type of the mutex passed as a template argument for ``concurrent_hash_map`` should
-meet the requirements of `ReaderWriterMutex <https://spec.oneapi.com/versions/latest/elements/oneTBB/source/named_requirements/mutexes/rw_mutex.html>`_.
+meet the requirements of `ReaderWriterMutex <https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/named_requirements/mutexes/rw_mutex>`_.
 It should also provide the following API:
 
 .. cpp:function:: bool ReaderWriterMutex::scoped_lock::is_writer() const;

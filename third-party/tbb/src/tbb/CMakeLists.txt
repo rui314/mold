@@ -126,6 +126,25 @@ target_link_libraries(tbb
     ${TBB_COMMON_LINK_LIBS}
 )
 
+# Strip debug symbols into a separate .dbg file
+if(TBB_LINUX_SEPARATE_DBG)
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "release")
+        find_program(OBJCOPY_COMMAND objcopy)
+        if(NOT OBJCOPY_COMMAND)
+            message(WARNING "objcopy command not found in the system")
+        else()
+            add_custom_command(TARGET tbb POST_BUILD
+                COMMAND objcopy --only-keep-debug $<TARGET_FILE:tbb> $<TARGET_FILE:tbb>.dbg
+                COMMAND objcopy --strip-debug $<TARGET_FILE:tbb>
+                COMMAND objcopy --add-gnu-debuglink=$<TARGET_FILE:tbb>.dbg $<TARGET_FILE:tbb>
+                COMMENT "Creating and associating .dbg file with tbb"
+            )
+        endif()
+    else()
+        message(WARNING " TBB_LINUX_SEPARATE_DBG flag is not used on release config")
+    endif()
+endif()
+
 if(TBB_BUILD_APPLE_FRAMEWORKS)
     set_target_properties(tbb PROPERTIES
         FRAMEWORK TRUE
@@ -158,7 +177,13 @@ if (TBB_INSTALL)
                 COMPONENT devel
         )
     endif()
-
+    if(TBB_LINUX_SEPARATE_DBG)
+        install(FILES
+                $<TARGET_FILE:tbb>.dbg
+                DESTINATION lib
+                COMPONENT devel
+        )
+    endif()
     set(_tbb_pc_lib_name tbb)
 
     if (WIN32)

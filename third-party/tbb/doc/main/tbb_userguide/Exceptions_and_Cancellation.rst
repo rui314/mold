@@ -22,14 +22,11 @@ the following steps generally occur:
    thread that invoked the algorithm.
 
 
-The exception thrown in step 3 might be the original exception, or might
-merely be a summary of type ``captured_exception``. The latter usually
-occurs on current systems because propagating exceptions between threads
-requires support for the C++ ``std::exception_ptr`` functionality. As
-compilers evolve to support this functionality, future versions of
+As compilers evolve to support this functionality, future versions of
 oneTBB might throw the original exception. So be sure your code can
 catch either type of exception. The following example demonstrates
-exception handling.
+exception handling:
+
 
 
 ::

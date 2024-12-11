@@ -37,7 +37,7 @@ jobs:
     runs-on: [ubuntu-20.04]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run scan
         run: |
           sudo apt update && sudo apt install -y codespell
@@ -47,7 +47,7 @@ jobs:
     runs-on: [ubuntu-20.04]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run scan
         run: |
           command -v clang-format-10
@@ -62,7 +62,7 @@ jobs:
     runs-on: [ubuntu-22.04]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Install prerequisites
         run: |
           pip3 install -U Jinja2
@@ -90,7 +90,7 @@ jobs:
     needs: [documentation]
     steps:
       - name: Checkout gh-pages
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: gh-pages
           path: gh-pages
@@ -117,7 +117,7 @@ jobs:
     if: ${{ github.ref != 'refs/heads/master' }}
     runs-on: [ubuntu-20.04]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Run check
@@ -137,7 +137,7 @@ jobs:
     runs-on: [ubuntu-latest]
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run testing
         run: |
           mkdir build && cd build
@@ -179,7 +179,7 @@ jobs:
             preview: 'ON'
             cmake_static: -DBUILD_SHARED_LIBS=OFF
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run testing
         shell: bash
         run: |
@@ -212,7 +212,7 @@ jobs:
             preview: 'ON'
             cmake_static: -DBUILD_SHARED_LIBS=OFF
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run testing
         shell: bash
         run: |
@@ -257,7 +257,7 @@ jobs:
             preview: 'OFF'
             job_name: windows_cl2022_cxx17_relwithdebinfo_preview=OFF
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run testing
         run: |
           mkdir build
@@ -295,7 +295,7 @@ jobs:
             build_type: debug
             preview: 'ON'
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run testing
         shell: bash
         run: |
@@ -321,7 +321,7 @@ jobs:
             build_type: relwithdebinfo
             preview: 'ON'
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run testing
         shell: bash
         run: |
@@ -357,7 +357,7 @@ jobs:
             preview: 'OFF'
             job_name: examples_windows_cl2022_cxx17_relwithdebinfo_preview=OFF
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - name: Run testing
         run: |
           mkdir build

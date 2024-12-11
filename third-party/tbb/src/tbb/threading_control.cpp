@@ -334,7 +334,12 @@ bool threading_control::try_destroy_client(threading_control::client_snapshot de
 }
 
 void threading_control::set_active_num_workers(unsigned soft_limit) {
-    threading_control* thr_control = get_threading_control(/*public = */ false);
+    threading_control* thr_control{nullptr};
+    {
+        global_mutex_type::scoped_lock lock(g_threading_control_mutex);
+        thr_control = get_threading_control(/*public = */ false);
+    }
+
     if (thr_control != nullptr) {
         thr_control->my_pimpl->set_active_num_workers(soft_limit);
         thr_control->release(/*is_public=*/false, /*blocking_terminate=*/false);

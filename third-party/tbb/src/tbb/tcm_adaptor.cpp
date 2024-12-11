@@ -170,7 +170,7 @@ public:
         __TBB_ASSERT_EX(res == TCM_RESULT_SUCCESS, nullptr);
     }
 
-    void init(d1::constraints& constraints) {
+    void init(tcm_client_id_t client_id, d1::constraints& constraints) {
         __TBB_ASSERT(tcm_request_permit, nullptr);
         __TBB_ASSERT(tcm_deactivate_permit, nullptr);
 
@@ -190,6 +190,12 @@ public:
 
         my_permit_request.min_sw_threads = 0;
         my_permit_request.max_sw_threads = 0;
+        my_permit_request.flags.request_as_inactive = 1;
+
+        tcm_result_t res = tcm_request_permit(client_id, my_permit_request, this, &my_permit_handle, nullptr);
+        __TBB_ASSERT_EX(res == TCM_RESULT_SUCCESS, nullptr);
+
+        my_permit_request.flags.request_as_inactive = 0;
     }
 
     void register_thread() override {
@@ -279,7 +285,7 @@ pm_client* tcm_adaptor::create_client(arena& a) {
 }
 
 void tcm_adaptor::register_client(pm_client* c, d1::constraints& constraints) {
-    static_cast<tcm_client*>(c)->init(constraints);
+    static_cast<tcm_client*>(c)->init(my_impl->client_id, constraints);
 }
 
 void tcm_adaptor::unregister_and_destroy_client(pm_client& c) {

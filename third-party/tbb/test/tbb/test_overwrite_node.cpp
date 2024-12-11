@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -24,6 +24,7 @@
 #include "common/graph_utils.h"
 #include "common/test_follows_and_precedes_api.h"
 
+#include "test_buffering_try_put_and_wait.h"
 
 //! \file test_overwrite_node.cpp
 //! \brief Test for [flow_graph.overwrite_node] specification
@@ -183,6 +184,165 @@ void test_deduction_guides() {
 }
 #endif
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+void test_overwrite_node_try_put_and_wait() {
+    using namespace test_try_put_and_wait;
+
+    std::vector<int> start_work_items;
+    std::vector<int> new_work_items;
+    int wait_message = 10;
+
+    for (int i = 0; i < wait_message; ++i) {
+        start_work_items.emplace_back(i);
+        new_work_items.emplace_back(i + 1 + wait_message);
+    }
+
+    // Test push
+    {
+        std::vector<int> processed_items;
+
+        // Returns the index from which wait_for_all processing started
+        std::size_t after_start = test_buffer_push<tbb::flow::overwrite_node<int>>(start_work_items, wait_message,
+                                                                                   new_work_items, processed_items);
+
+        // It is expected that try_put_and_wait would process start_work_items (FIFO) and the wait_message
+        // and new_work_items (FIFO) would be processed in wait_for_all
+
+        CHECK_MESSAGE(after_start - 1 == start_work_items.size() + 1,
+                      "incorrect number of items processed by try_put_and_wait");
+        std::size_t check_index = 0;
+        for (auto item : start_work_items) {
+            CHECK_MESSAGE(processed_items[check_index++] == item, "unexpected start_work_items processing");
+        }
+        CHECK_MESSAGE(processed_items[check_index++] == wait_message, "unexpected wait_message processing");
+        for (auto item : new_work_items) {
+            CHECK_MESSAGE(processed_items[check_index++] == item, "unexpected new_work_items processing");
+        }
+    }
+    // Test pull
+    {
+        tbb::task_arena arena(1);
+
+        arena.execute([&] {
+            std::vector<int> processed_items;
+
+            tbb::flow::graph g;
+            tbb::flow::overwrite_node<int> buffer(g);
+            int start_message = 0;
+            int new_message = 1;
+
+            using function_node_type = tbb::flow::function_node<int, int, tbb::flow::rejecting>;
+
+            function_node_type function(g, tbb::flow::serial,
+                [&](int input) {
+                    if (input == wait_message) {
+                        buffer.try_put(new_message);
+                    }
+
+                    // Explicitly clean the buffer to prevent infinite try_get by the function_node
+                    if (input == new_message) {
+                        buffer.clear();
+                    }
+
+                    processed_items.emplace_back(input);
+                    return 0;
+                });
+
+            tbb::flow::make_edge(buffer, function);
+
+            buffer.try_put(start_message); // Occupies concurrency of function
+
+            buffer.try_put_and_wait(wait_message);
+
+            CHECK_MESSAGE(processed_items.size() == 2, "only the start_message and wait_message should be processed");
+            std::size_t check_index = 0;
+            CHECK_MESSAGE(processed_items[check_index++] == start_message, "unexpected start_message processing");
+            CHECK_MESSAGE(processed_items[check_index++] == wait_message, "unexpected wait_message processing");
+
+            g.wait_for_all();
+
+            CHECK_MESSAGE(processed_items[check_index++] == new_message, "unexpected new_message processing");
+            CHECK(check_index == processed_items.size());
+        });
+    }
+    // Test reserve
+    {
+        tbb::task_arena arena(1);
+
+        arena.execute([&] {
+            std::vector<int> processed_items;
+
+            tbb::flow::graph g;
+            tbb::flow::overwrite_node<int> buffer(g);
+            tbb::flow::limiter_node<int, int> limiter(g, 1);
+            int start_message = 0;
+            int new_message = 1;
+
+            using function_node_type = tbb::flow::function_node<int, int, tbb::flow::rejecting>;
+
+            function_node_type function(g, tbb::flow::serial,
+                [&](int input) {
+                    if (input == wait_message) {
+                        buffer.try_put(new_message);
+                    }
+
+                    // Explicitly clean the buffer to prevent infinite try_get by the function_node
+                    if (input == new_message) {
+                        buffer.clear();
+                    }
+
+                    processed_items.emplace_back(input);
+                    limiter.decrementer().try_put(1);
+                    return 0;
+                });
+
+            tbb::flow::make_edge(buffer, limiter);
+            tbb::flow::make_edge(limiter, function);
+
+            buffer.try_put(start_message); // Occupies concurrency of function
+
+            buffer.try_put_and_wait(wait_message);
+
+            CHECK_MESSAGE(processed_items.size() == 2, "only the start_message and wait_message should be processed");
+            std::size_t check_index = 0;
+            CHECK_MESSAGE(processed_items[check_index++] == start_message, "unexpected start_message processing");
+            CHECK_MESSAGE(processed_items[check_index++] == wait_message, "unexpected wait_message processing");
+
+            g.wait_for_all();
+
+            CHECK_MESSAGE(processed_items[check_index++] == new_message, "unexpected new_message processing");
+            CHECK(check_index == processed_items.size());
+        });
+    }
+    // Test explicit clear
+    {
+        tbb::flow::graph g;
+        tbb::flow::overwrite_node<int> buffer(g);
+
+        std::vector<int> processed_items;
+
+        tbb::flow::function_node<int, int> f(g, tbb::flow::serial,
+            [&](int input) {
+                processed_items.emplace_back(input);
+                buffer.clear();
+                return 0;
+            });
+
+        tbb::flow::make_edge(buffer, f);
+
+        buffer.try_put_and_wait(wait_message);
+
+        CHECK_MESSAGE(processed_items.size() == 1, "Incorrect number of processed items");
+        CHECK_MESSAGE(processed_items.back() == wait_message, "unexpected processing");
+
+        g.wait_for_all();
+
+        CHECK(processed_items.size() == 1);
+        CHECK(processed_items.back() == wait_message);
+    }
+}
+#endif
+
 //! Test read-write properties
 //! \brief \ref requirement \ref error_guessing
 TEST_CASE("Read-write"){
@@ -256,3 +416,10 @@ TEST_CASE("Cancel register_predecessor_task") {
     // Wait for cancellation of spawned tasks
     g.wait_for_all();
 }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+//! \brief \ref error_guessing
+TEST_CASE("test overwrite_node try_put_and_wait") {
+    test_overwrite_node_try_put_and_wait();
+}
+#endif

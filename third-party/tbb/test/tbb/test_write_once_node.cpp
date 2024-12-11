@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -207,6 +207,135 @@ void test_deduction_guides() {
 }
 #endif
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+void test_try_put_and_wait() {
+    int wait_message = 0;
+    int occupy_concurrency_message = 1;
+    int new_message = 2;
+
+    // Test push
+    {
+        tbb::task_arena arena(1);
+
+        std::vector<int> processed_items;
+
+        arena.execute([&] {
+            tbb::flow::graph g;
+
+            tbb::flow::write_once_node<int> wo_buffer(g);
+            tbb::flow::function_node<int, int> function(g, tbb::flow::serial,
+                [&](int input) {
+                    if (input == wait_message) {
+                        wo_buffer.clear();
+                        wo_buffer.try_put(new_message);
+                    }
+                    processed_items.emplace_back(input);
+                    return 0;
+                });
+
+            tbb::flow::make_edge(wo_buffer, function);
+
+            wo_buffer.try_put_and_wait(wait_message);
+
+            std::size_t check_index = 0;
+            CHECK_MESSAGE(processed_items.size() == 1, "Only the wait_message should be processed");
+            CHECK_MESSAGE(processed_items[check_index++] == wait_message, "Only the wait_message should be processed");
+
+            g.wait_for_all();
+
+            CHECK_MESSAGE(processed_items[check_index++] == new_message,
+                          "only the new_message should be processed in wait_for_all");
+            CHECK(check_index == processed_items.size());
+        });
+    }
+    // Test pull
+    {
+        std::vector<int> processed_items;
+        tbb::task_arena arena(1);
+
+        arena.execute([&] {
+            tbb::flow::graph g;
+
+            tbb::flow::write_once_node<int> wo_buffer(g);
+            tbb::flow::function_node<int, int, tbb::flow::rejecting> function(g, tbb::flow::serial,
+                [&](int input) {
+                    if (input == new_message || input == wait_message) {
+                        wo_buffer.clear();
+                    }
+
+                    if (input == wait_message) {
+                        wo_buffer.try_put(new_message);
+                    }
+                    processed_items.emplace_back(input);
+                    return 0;
+                });
+
+            tbb::flow::make_edge(wo_buffer, function);
+
+            function.try_put(occupy_concurrency_message);
+            wo_buffer.try_put_and_wait(wait_message);
+
+            std::size_t check_index = 0;
+            CHECK_MESSAGE(processed_items.size() == 2, "unexpected message processing for try_put_and_wait");
+            CHECK_MESSAGE(processed_items[check_index++] == occupy_concurrency_message,
+                          "occupy_concurrency_message should be processed first");
+            CHECK_MESSAGE(processed_items[check_index++] == wait_message,
+                          "wait_message was not processed");
+
+            g.wait_for_all();
+
+            CHECK_MESSAGE(processed_items[check_index++] == new_message,
+                          "only the new_message should be processed in wait_for_all");
+            CHECK(check_index == processed_items.size());
+        });
+    }
+    // Test reserve
+    {
+        std::vector<int> processed_items;
+        tbb::task_arena arena(1);
+
+        arena.execute([&] {
+            tbb::flow::graph g;
+
+            tbb::flow::write_once_node<int> wo_buffer(g);
+            tbb::flow::limiter_node<int, int> limiter(g, 1);
+            tbb::flow::function_node<int, int, tbb::flow::rejecting> function(g, tbb::flow::serial,
+                [&](int input) {
+                    if (input == new_message || input == wait_message) {
+                        wo_buffer.clear();
+                    }
+
+                    if (input == wait_message) {
+                        wo_buffer.try_put(new_message);
+                    }
+                    processed_items.emplace_back(input);
+                    limiter.decrementer().try_put(1);
+                    return 0;
+                });
+
+            tbb::flow::make_edge(wo_buffer, limiter);
+            tbb::flow::make_edge(limiter, function);
+
+            limiter.try_put(occupy_concurrency_message);
+            wo_buffer.try_put_and_wait(wait_message);
+
+            std::size_t check_index = 0;
+            CHECK_MESSAGE(processed_items.size() == 2, "unexpected message processing for try_put_and_wait");
+            CHECK_MESSAGE(processed_items[check_index++] == occupy_concurrency_message,
+                          "occupy_concurrency_message should be processed first");
+            CHECK_MESSAGE(processed_items[check_index++] == wait_message,
+                          "wait_message was not processed");
+
+            g.wait_for_all();
+
+            CHECK_MESSAGE(processed_items[check_index++] == new_message,
+                          "only the new_message should be processed in wait_for_all");
+            CHECK(check_index == processed_items.size());
+        });
+    }
+}
+#endif
+
 //! Test read-write properties
 //! \brief \ref requirement \ref error_guessing
 TEST_CASE("Read-write tests"){
@@ -242,5 +371,12 @@ TEST_CASE("Test follows and precedes API"){
 //! \brief \ref requirement
 TEST_CASE("Deduction guides"){
     test_deduction_guides();
+}
+#endif
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+//! \brief \ref error_guessing
+TEST_CASE("test write_once_node try_put_and_wait") {
+    test_try_put_and_wait();
 }
 #endif

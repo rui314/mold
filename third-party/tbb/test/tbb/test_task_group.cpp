@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -397,7 +397,7 @@ class test_exception : public std::exception
 public:
     test_exception ( const char* descr ) : m_strDescription(descr) {}
 
-    const char* what() const throw() override { return m_strDescription; }
+    const char* what() const noexcept override { return m_strDescription; }
 };
 
 using TestException = test_exception;
@@ -780,8 +780,11 @@ TEST_CASE("Thread safety test for the task group") {
 TEST_CASE("Fibonacci test for the task group") {
     for (unsigned p=MinThread; p <= MaxThread; ++p) {
         tbb::global_control limit(tbb::global_control::max_allowed_parallelism, p);
+        tbb::task_arena a(p);
         g_MaxConcurrency = p;
-        RunFibonacciTests<tbb::task_group>();
+        a.execute([] {
+            RunFibonacciTests<tbb::task_group>();
+        });
     }
 }
 
@@ -838,7 +841,10 @@ TEST_CASE("Thread safety test for the isolated task group") {
         }
         tbb::global_control limit(tbb::global_control::max_allowed_parallelism, p);
         g_MaxConcurrency = p;
-        TestThreadSafety<tbb::isolated_task_group>();
+        tbb::task_arena a(p);
+        a.execute([] {
+            TestThreadSafety<tbb::isolated_task_group>();
+        });
     }
 }
 #endif
@@ -849,7 +855,10 @@ TEST_CASE("Fibonacci test for the isolated task group") {
     for (unsigned p=MinThread; p <= MaxThread; ++p) {
         tbb::global_control limit(tbb::global_control::max_allowed_parallelism, p);
         g_MaxConcurrency = p;
-        RunFibonacciTests<tbb::isolated_task_group>();
+        tbb::task_arena a(p);
+        a.execute([] {
+            RunFibonacciTests<tbb::isolated_task_group>();
+        });
     }
 }
 
@@ -859,7 +868,10 @@ TEST_CASE("Cancellation and exception test for the isolated task group") {
     for (unsigned p=MinThread; p <= MaxThread; ++p) {
         tbb::global_control limit(tbb::global_control::max_allowed_parallelism, p);
         g_MaxConcurrency = p;
-        RunCancellationAndExceptionHandlingTests<tbb::isolated_task_group>();
+        tbb::task_arena a(p);
+        a.execute([] {
+            RunCancellationAndExceptionHandlingTests<tbb::isolated_task_group>();
+        });
     }
 }
 
@@ -869,7 +881,10 @@ TEST_CASE("Constant functor test for the isolated task group") {
     for (unsigned p=MinThread; p <= MaxThread; ++p) {
         tbb::global_control limit(tbb::global_control::max_allowed_parallelism, p);
         g_MaxConcurrency = p;
-        TestConstantFunctorRequirement<tbb::isolated_task_group>();
+        tbb::task_arena a(p);
+        a.execute([] {
+            TestConstantFunctorRequirement<tbb::isolated_task_group>();
+        });
     }
 }
 
@@ -879,7 +894,10 @@ TEST_CASE("Move semantics test for the isolated task group") {
     for (unsigned p=MinThread; p <= MaxThread; ++p) {
         tbb::global_control limit(tbb::global_control::max_allowed_parallelism, p);
         g_MaxConcurrency = p;
-        TestMoveSemantics<tbb::isolated_task_group>();
+        tbb::task_arena a(p);
+        a.execute([] {
+            TestMoveSemantics<tbb::isolated_task_group>();
+        });
     }
 }
 
@@ -1204,4 +1222,3 @@ TEST_CASE("task_handle cannot be scheduled into other task_group of the same con
 }
 
 #endif // TBB_USE_EXCEPTIONS
-

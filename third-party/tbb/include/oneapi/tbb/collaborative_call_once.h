@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2021 Intel Corporation
+    Copyright (c) 2021-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -31,6 +31,27 @@ namespace d1 {
     #pragma warning (push)
     #pragma warning (disable: 4324)
 #endif
+
+template <typename F>
+class collaborative_call_stack_task : public task {
+    const F& m_func;
+    wait_context& m_wait_ctx;
+
+    void finalize() {
+        m_wait_ctx.release();
+    }
+    task* execute(d1::execution_data&) override {
+        task* res = d2::task_ptr_or_nullptr(m_func);
+        finalize();
+        return res;
+    }
+    task* cancel(d1::execution_data&) override {
+        finalize();
+        return nullptr;
+    }
+public:
+    collaborative_call_stack_task(const F& f, wait_context& wctx) : m_func(f), m_wait_ctx(wctx) {}
+};
 
 constexpr std::uintptr_t collaborative_once_max_references = max_nfs_size;
 constexpr std::uintptr_t collaborative_once_references_mask = collaborative_once_max_references-1;
@@ -103,7 +124,7 @@ public:
                 task_group_context context{ task_group_context::bound,
                     task_group_context::default_traits | task_group_context::concurrent_wait };
 
-                function_stack_task<F> t{ std::forward<F>(f), m_storage.m_wait_context };
+                collaborative_call_stack_task<F> t{ std::forward<F>(f), m_storage.m_wait_context };
 
                 // Set the ready flag after entering the execute body to prevent
                 // moonlighting threads from occupying all slots inside the arena.
@@ -151,7 +172,7 @@ class collaborative_once_flag : no_copy {
             spin_wait_until_eq(m_state, expected);
         } while (!m_state.compare_exchange_strong(expected, desired));
     }
-    
+
     template <typename Fn>
     void do_collaborative_call_once(Fn&& f) {
         std::uintptr_t expected = m_state.load(std::memory_order_acquire);

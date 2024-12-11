@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 #error Do not #include this internal file directly; use public TBB headers instead.
 #endif
 
-// included in namespace tbb::detail::d1
+// included in namespace tbb::detail::d2
 
 // the change to key_matching (adding a K and KHash template parameter, making it a class)
 // means we have to pass this data to the key_matching_port.  All the ports have only one
@@ -73,40 +73,55 @@ struct make_sequence < 0, S... > {
     typedef sequence<S...> type;
 };
 
-//! type mimicking std::pair but with trailing fill to ensure each element of an array
-//* will have the correct alignment
-template<typename T1, typename T2, size_t REM>
-struct type_plus_align {
-    char first[sizeof(T1)];
-    T2 second;
-    char fill1[REM];
-};
-
-template<typename T1, typename T2>
-struct type_plus_align<T1,T2,0> {
-    char first[sizeof(T1)];
-    T2 second;
-};
-
 template<class U> struct alignment_of {
     typedef struct { char t; U    padded; } test_alignment;
     static const size_t value = sizeof(test_alignment) - sizeof(U);
 };
 
+template <typename... Types>
+struct max_alignment_helper;
+
+template <typename T1, typename... Types>
+struct max_alignment_helper<T1, Types...> {
+    using type = typename max_alignment_helper<T1, typename max_alignment_helper<Types...>::type>::type;
+};
+
+template <typename T1, typename T2>
+struct max_alignment_helper<T1, T2> {
+    using type = typename std::conditional<alignof(T1) < alignof(T2), T2, T1>::type;
+};
+
+template <typename... Types>
+using max_alignment_helper_t = typename max_alignment_helper<Types...>::type;
+
+#if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
+#pragma warning(push)
+#pragma warning(disable: 4324) // warning C4324: structure was padded due to alignment specifier
+#endif
+
 // T1, T2 are actual types stored.  The space defined for T1 in the type returned
 // is a char array of the correct size.  Type T2 should be trivially-constructible,
 // T1 must be explicitly managed.
-template<typename T1, typename T2>
-struct aligned_pair {
-    static const size_t t1_align = alignment_of<T1>::value;
-    static const size_t t2_align = alignment_of<T2>::value;
-    typedef type_plus_align<T1, T2, 0 > just_pair;
-    static const size_t max_align = t1_align < t2_align ? t2_align : t1_align;
-    static const size_t extra_bytes = sizeof(just_pair) % max_align;
-    static const size_t remainder = extra_bytes ? max_align - extra_bytes : 0;
-public:
-    typedef type_plus_align<T1,T2,remainder> type;
-};  // aligned_pair
+
+template <typename T1, typename T2>
+struct alignas(alignof(max_alignment_helper_t<T1, T2>)) aligned_pair {
+    char first[sizeof(T1)];
+    T2 second;
+};
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+template <typename T1, typename T2, typename T3>
+struct alignas(alignof(max_alignment_helper_t<T1, T2, T3>)) aligned_triple {
+    char first[sizeof(T1)];
+    T2 second;
+    T3 third;
+};
+#endif
+
+
+#if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
+#pragma warning(pop) // warning 4324 is back
+#endif
 
 // support for variant type
 // type we use when we're not storing a value

@@ -100,13 +100,12 @@ void thread_request_serializer_proxy::set_active_num_workers(int soft_limit) {
 
     if (soft_limit != 0) {
         my_is_mandatory_concurrency_enabled = false;
-        my_serializer.set_active_num_workers(soft_limit);
-    } else {
-        if (my_num_mandatory_requests > 0 && !my_is_mandatory_concurrency_enabled) {
-            my_is_mandatory_concurrency_enabled = true;
-            my_serializer.set_active_num_workers(1);
-        }
+    } else if (my_num_mandatory_requests > 0) {
+        my_is_mandatory_concurrency_enabled = true;
+        soft_limit = 1;
     }
+
+    my_serializer.set_active_num_workers(soft_limit);
 }
 
 int thread_request_serializer_proxy::num_workers_requested() { return my_serializer.num_workers_requested(); }

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2021-2023 Intel Corporation
+    Copyright (c) 2021-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 
 #include "tbb/parallel_for.h"
 #include "tbb/task_arena.h"
+#include "tbb/task_scheduler_observer.h"
 #include "tbb/global_control.h"
 #include "oneapi/tbb/mutex.h"
 
@@ -36,10 +37,33 @@
 
 namespace task_affinity_retention {
 
+class leaving_observer : public tbb::task_scheduler_observer {
+    std::atomic<int> my_thread_count{};
+public:
+    leaving_observer(tbb::task_arena& a) : tbb::task_scheduler_observer(a) {
+        observe(true);
+    }
+
+    void on_scheduler_entry(bool) override {
+        ++my_thread_count;
+    }
+
+    void on_scheduler_exit(bool) override {
+        --my_thread_count;
+    }
+
+    void wait_leave() {
+        while (my_thread_count.load() != 0) {
+            std::this_thread::yield();
+        }
+    }
+};
+
 template <typename PerBodyFunc> float test(PerBodyFunc&& body) {
     const std::size_t num_threads = 2 * utils::get_platform_max_threads();
     tbb::global_control concurrency(tbb::global_control::max_allowed_parallelism, num_threads);
     tbb::task_arena big_arena(static_cast<int>(num_threads));
+    leaving_observer observer(big_arena);
 
 #if __TBB_USE_THREAD_SANITIZER
     // Reduce execution time under Thread Sanitizer
@@ -77,8 +101,10 @@ template <typename PerBodyFunc> float test(PerBodyFunc&& body) {
                 tbb::static_partitioner()
             );
         });
-        // TODO:
-        //   - Consider introducing an observer to guarantee the threads left the arena.
+        // To avoid tasks stealing in the beginning of the parallel algorithm, the test waits for
+        // the threads to leave the arena, so that on the next iteration they have tasks assigned
+        // in their mailboxes and, thus, don't need to search for work to do in other task pools.
+        observer.wait_leave();
     }
 
     std::size_t range_shifts = 0;
@@ -142,12 +168,15 @@ void strict_test() {
 
 } // namespace task_affinity_retention
 
+// global_control::max_allowed_parallelism functionality is not covered by TCM
+#if !__TBB_TCM_TESTING_ENABLED
 //! Testing affinitized tasks are not stolen
 //! \brief \ref error_guessing
 TEST_CASE("Threads respect task affinity") {
     task_affinity_retention::relaxed_test();
     task_affinity_retention::strict_test();
 }
+#endif
 
 template <typename Range>
 void test_custom_range(int diff_mult) {

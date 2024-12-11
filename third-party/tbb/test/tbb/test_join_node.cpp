@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -153,4 +153,41 @@ TEST_CASE("Test removal of the predecessor while having none") {
     using namespace multiple_predecessors;
 
     test(connect_join_via_make_edge);
+}
+
+//! \brief \ref error_guessing
+TEST_CASE("Test reservation on the port") {
+    tbb::flow::graph g;
+
+    tbb::flow::buffer_node<int> buffer1(g), buffer2(g);
+    tbb::flow::join_node<std::tuple<int, int>, tbb::flow::reserving> join(g);
+    tbb::flow::buffer_node<std::tuple<int, int>> buffer3(g);
+
+    auto& port0 = tbb::flow::input_port<0>(join);
+    auto& port1 = tbb::flow::input_port<1>(join);
+
+    tbb::flow::make_edge(buffer1, port0);
+    tbb::flow::make_edge(buffer2, port1);
+    tbb::flow::make_edge(join, buffer3);
+
+    int value = -42;
+    bool result = port0.reserve(value);
+    CHECK_MESSAGE(!result, "Incorrect reserve return value");
+
+    result = port1.reserve(value);
+    CHECK_MESSAGE(!result, "Incorrect reserve return value");
+
+    buffer1.try_put(1);
+    g.wait_for_all();
+
+    result = port0.reserve(value);
+    CHECK_MESSAGE(result, "Incorrect reserve return value");
+    CHECK_MESSAGE(value == 1, "Incorrect reserved value");
+    port0.release();
+
+    buffer2.try_put(2);
+    g.wait_for_all();
+
+    result = port1.reserve(value);
+    CHECK_MESSAGE(result, "incorrect reserve return value");
 }

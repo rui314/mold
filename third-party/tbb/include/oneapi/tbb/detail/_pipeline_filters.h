@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -30,6 +30,12 @@ namespace detail {
 
 namespace d1 {
 class base_filter;
+}
+
+namespace d2 {
+template <typename Output>
+__TBB_requires(std::copyable<Output>)
+class input_node;
 }
 
 namespace r1 {
@@ -131,7 +137,7 @@ class flow_control {
     template<typename Body, typename InputType, typename OutputType > friend class concrete_filter;
     template<typename Output>
     __TBB_requires(std::copyable<Output>)
-    friend class input_node;
+    friend class d2::input_node;
 public:
     void stop() { is_pipeline_stopped = true; }
 };

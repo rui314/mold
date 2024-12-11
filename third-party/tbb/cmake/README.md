@@ -10,6 +10,7 @@ TBB_SANITIZE:STRING - Sanitizer parameter, passed to compiler/linker
 TBB_SIGNTOOL:FILEPATH - Tool for digital signing, used in post-install step for libraries if provided.
 TBB_SIGNTOOL_ARGS:STRING - Additional arguments for TBB_SIGNTOOL, used if TBB_SIGNTOOL is set.
 TBB_BUILD:BOOL - Enable Intel(R) oneAPI Threading Building Blocks (oneTBB) build (ON by default)
+TBB_FIND_PACKAGE - Enable search for external oneTBB using find_package instead of build from sources (OFF by default)
 TBBMALLOC_BUILD:BOOL - Enable Intel(R) oneAPI Threading Building Blocks (oneTBB) memory allocator build (ON by default)
 TBBMALLOC_PROXY_BUILD:BOOL - Enable Intel(R) oneAPI Threading Building Blocks (oneTBB) memory allocator proxy build (requires TBBMALLOC_BUILD. ON by default)
 TBB4PY_BUILD:BOOL - Enable Intel(R) oneAPI Threading Building Blocks (oneTBB) Python module build (OFF by default)
@@ -187,7 +188,14 @@ cmake --build . --target test # currently does not work on Windows* OS
 ```
 
 ## Installation
-See [Installation from Sources](../INSTALL.md) to learn how to install oneTBB. 
+See [Installation from Sources](../INSTALL.md) to learn how to install oneTBB.
+
+To install oneTBB from the release packages, use the following commands: 
+```bash
+tar -xvf oneapi-tbb-xxx.xx.x-*.tgz
+source env/vars.sh
+```
+
 
 ## Sanitizers - Configure, Build, and Run
 

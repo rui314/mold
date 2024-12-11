@@ -16,7 +16,7 @@
 
 # WASM Support
 
-oneTBB extends its capabilities by offering robust support for ``WASM``. 
+oneTBB extends its capabilities by offering robust support for ``WASM`` (see ``Limitation`` sections).
 
 ``WASM`` stands for WebAssembly, a low-level binary format for executing code in web browsers. 
 It is designed to be a portable target for compilers and efficient to parse and execute. 
@@ -58,3 +58,24 @@ To run tests, use:
 ctest
 ```
 
+# Limitations
+
+You can successfully build your application with oneTBB using WASM, but you may not achieve optimal performance immediately. This is due to the limitation with nested Web Workers: a Web Worker cannot schedule another worker without help from a browser thread. This can lead to unexpected performance outcomes, such as the application running in serial.
+Find more information in the [issue](https://github.com/emscripten-core/emscripten/discussions/21963) in the Emscripten repository.
+To workaround this issue, try one of the following ways:
+1. **Recommended Solution: Use the ``-sPROXY_TO_PTHREAD`` Flag**. 
+This flag splits the initial thread into a browser thread and a main thread (proxied by a Web Worker), effectively resolving the issue as the browser thread is always present in the event loop and can participate in Web Workers scheduling. Refer to the [Emscripten documentation](https://emscripten.org/docs/porting/pthreads.html) for more details about ``-sPROXY_TO_PTHREAD`` since using this flag may require refactoring the code.
+2. **Alternative Solution: Warm Up the oneTBB Thread Pool**
+Initialize the oneTBB thread pool before making the first call to oneTBB. This approach forces the browser thread to participate in Web Workers scheduling.
+```cpp
+    int num_threads = tbb::this_task_arena::max_concurrency();
+    std::atomic<int> barrier{num_threads};
+    tbb::parallel_for(0, num_threads, [&barrier] (int) {
+        barrier--;
+        while (barrier > 0) {
+            // Send browser thread to event loop
+            std::this_thread::yield();
+        }
+    }, tbb::static_partitioner{});
+```
+> **_NOTE:_** Be aware that it might cause delays on the browser side.

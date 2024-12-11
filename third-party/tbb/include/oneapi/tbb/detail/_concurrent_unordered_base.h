@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@
 
 namespace tbb {
 namespace detail {
-namespace d1 {
+namespace d2 {
 
 template <typename Traits>
 class concurrent_unordered_base;
@@ -171,7 +171,7 @@ public:
     value_node( sokey_type ord_key ) : base_type(ord_key) {}
     ~value_node() {}
     value_type* storage() {
-        return reinterpret_cast<value_type*>(&my_value);
+        return &my_value;
     }
 
     value_type& value() {
@@ -179,8 +179,9 @@ public:
     }
 
 private:
-    using aligned_storage_type = typename std::aligned_storage<sizeof(value_type)>::type;
-    aligned_storage_type my_value;
+    union {
+        value_type my_value;
+    };
 }; // class value_node
 
 template <typename Traits>
@@ -237,7 +238,7 @@ private:
     template <typename T>
     using is_transparent = dependent_bool<has_transparent_key_equal<key_type, hasher, key_equal>, T>;
 public:
-    using node_type = node_handle<key_type, value_type, value_node_type, allocator_type>;
+    using node_type = d1::node_handle<key_type, value_type, value_node_type, allocator_type>;
 
     explicit concurrent_unordered_base( size_type bucket_count, const hasher& hash = hasher(),
                                         const key_equal& equal = key_equal(), const allocator_type& alloc = allocator_type() )
@@ -441,7 +442,7 @@ public:
 
     std::pair<iterator, bool> insert( node_type&& nh ) {
         if (!nh.empty()) {
-            value_node_ptr insert_node = node_handle_accessor::get_node_ptr(nh);
+            value_node_ptr insert_node = d1::node_handle_accessor::get_node_ptr(nh);
             auto init_node = [&insert_node]( sokey_type order_key )->value_node_ptr {
                 insert_node->init(order_key);
                 return insert_node;
@@ -451,7 +452,7 @@ public:
                 // If the insertion succeeded - set node handle to the empty state
                 __TBB_ASSERT(insert_result.remaining_node == nullptr,
                             "internal_insert_node should not return the remaining node if the insertion succeeded");
-                node_handle_accessor::deactivate(nh);
+                d1::node_handle_accessor::deactivate(nh);
             }
             return { iterator(insert_result.node_with_equal_key), insert_result.inserted };
         }
@@ -521,12 +522,12 @@ public:
 
     node_type unsafe_extract( const_iterator pos ) {
         internal_extract(pos.get_node_ptr());
-        return node_handle_accessor::construct<node_type>(pos.get_node_ptr());
+        return d1::node_handle_accessor::construct<node_type>(pos.get_node_ptr());
     }
 
     node_type unsafe_extract( iterator pos ) {
         internal_extract(pos.get_node_ptr());
-        return node_handle_accessor::construct<node_type>(pos.get_node_ptr());
+        return d1::node_handle_accessor::construct<node_type>(pos.get_node_ptr());
     }
 
     node_type unsafe_extract( const key_type& key ) {
@@ -787,11 +788,11 @@ private:
     static constexpr size_type pointers_per_embedded_table = sizeof(size_type) * 8 - 1;
 
     class unordered_segment_table
-        : public segment_table<std::atomic<node_ptr>, allocator_type, unordered_segment_table, pointers_per_embedded_table>
+        : public d1::segment_table<std::atomic<node_ptr>, allocator_type, unordered_segment_table, pointers_per_embedded_table>
     {
         using self_type = unordered_segment_table;
         using atomic_node_ptr = std::atomic<node_ptr>;
-        using base_type = segment_table<std::atomic<node_ptr>, allocator_type, unordered_segment_table, pointers_per_embedded_table>;
+        using base_type = d1::segment_table<std::atomic<node_ptr>, allocator_type, unordered_segment_table, pointers_per_embedded_table>;
         using segment_type = typename base_type::segment_type;
         using base_allocator_type = typename base_type::allocator_type;
 
@@ -921,7 +922,7 @@ private:
             node_allocator_traits::deallocate(dummy_node_allocator, node, 1);
         } else {
             // GCC 11.1 issues a warning here that incorrect destructor might be called for dummy_nodes
-            #if (__TBB_GCC_VERSION >= 110100 && __TBB_GCC_VERSION < 140000 ) && !__clang__ && !__INTEL_COMPILER
+            #if (__TBB_GCC_VERSION >= 110100 && __TBB_GCC_VERSION < 150000 ) && !__clang__ && !__INTEL_COMPILER
             volatile
             #endif
             value_node_ptr val_node = static_cast<value_node_ptr>(node);
@@ -1212,7 +1213,7 @@ protected:
 
                     // Node handle with curr cannot be used directly in insert call, because
                     // the destructor of node_type will destroy curr
-                    node_type curr_node = node_handle_accessor::construct<node_type>(curr);
+                    node_type curr_node = d1::node_handle_accessor::construct<node_type>(curr);
 
                     // If the insertion fails - return ownership of the node to the source
                     if (!insert(std::move(curr_node)).second) {
@@ -1230,7 +1231,7 @@ protected:
                         curr->set_next(next_node);
                         source_prev->set_next(curr);
                         source_prev = curr;
-                        node_handle_accessor::deactivate(curr_node);
+                        d1::node_handle_accessor::deactivate(curr_node);
                     } else {
                         source.my_size.fetch_sub(1, std::memory_order_relaxed);
                     }
@@ -1507,7 +1508,7 @@ bool operator!=( const concurrent_unordered_base<Traits>& lhs,
 #pragma warning(pop) // warning 4127 is back
 #endif
 
-} // namespace d1
+} // namespace d2
 } // namespace detail
 } // namespace tbb
 

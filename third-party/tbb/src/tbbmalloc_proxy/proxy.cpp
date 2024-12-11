@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -431,14 +431,12 @@ void __TBB_malloc__free_base(void *ptr)
 const char* known_bytecodes[] = {
 #if _WIN64
 //  "========================================================" - 56 symbols
+    "E9********CCCC",         // multiple - jmp(0xE9) with address followed by empty space (0xCC - INT 3)
     "4883EC284885C974",       // release free()
     "4883EC284885C975",       // release _msize()
     "4885C974375348",         // release free() 8.0.50727.42, 10.0
-    "E907000000CCCC",         // release _aligned_msize(), _aligned_free() ucrtbase.dll
     "C7442410000000008B",     // release free() ucrtbase.dll 10.0.14393.33
-    "E90B000000CCCC",         // release _msize() ucrtbase.dll 10.0.14393.33
     "48895C24085748",         // release _aligned_msize() ucrtbase.dll 10.0.14393.33
-    "E903000000CCCC",         // release _aligned_msize() ucrtbase.dll 10.0.16299.522
     "48894C24084883EC28BA",   // debug prologue
     "4C894424184889542410",   // debug _aligned_msize() 10.0
     "48894C24084883EC2848",   // debug _aligned_free 10.0
@@ -602,8 +600,8 @@ _expand (by dummy implementation)
 ??_V@YAXPEAX@Z    void * operator new[](unsigned __int64) (intel64)
 ??3@YAXPEAX@Z     operator delete                         (intel64)
 ??_V@YAXPEAX@Z    operator delete[]                       (intel64)
-??2@YAPAXIABUnothrow_t@std@@@Z      void * operator new (size_t sz, const std::nothrow_t&) throw()  (optional)
-??_U@YAPAXIABUnothrow_t@std@@@Z     void * operator new[] (size_t sz, const std::nothrow_t&) throw() (optional)
+??2@YAPAXIABUnothrow_t@std@@@Z      void * operator new (size_t sz, const std::nothrow_t&) noexcept  (optional)
+??_U@YAPAXIABUnothrow_t@std@@@Z     void * operator new[] (size_t sz, const std::nothrow_t&) noexcept (optional)
 
 and these functions have runtime-specific replacement:
 realloc

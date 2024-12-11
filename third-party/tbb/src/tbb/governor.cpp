@@ -37,9 +37,17 @@
 #include <atomic>
 #include <algorithm>
 
+#ifdef EMSCRIPTEN
+#include <emscripten/stack.h>
+#endif
+
 namespace tbb {
 namespace detail {
 namespace r1 {
+
+#if TBB_USE_ASSERT
+std::atomic<int> the_observer_proxy_count;
+#endif /* TBB_USE_ASSERT */
 
 void clear_address_waiter_table();
 void global_control_acquire();
@@ -85,6 +93,12 @@ void governor::release_resources () {
     if( status )
         runtime_warning("failed to destroy task scheduler TLS: %s", std::strerror(status));
     clear_address_waiter_table();
+
+#if TBB_USE_ASSERT
+    if (the_observer_proxy_count != 0) {
+            runtime_warning("Leaked %ld observer_proxy objects\n", long(the_observer_proxy_count));
+    }
+#endif /* TBB_USE_ASSERT */
 
     system_topology::destroy();
     dynamic_unlink_all();
@@ -145,6 +159,9 @@ static std::uintptr_t get_stack_base(std::size_t stack_size) {
     NT_TIB* pteb = (NT_TIB*)NtCurrentTeb();
     __TBB_ASSERT(&pteb < pteb->StackBase && &pteb > pteb->StackLimit, "invalid stack info in TEB");
     return reinterpret_cast<std::uintptr_t>(pteb->StackBase);
+#elif defined(EMSCRIPTEN)
+    suppress_unused_warning(stack_size);
+    return reinterpret_cast<std::uintptr_t>(emscripten_stack_get_base());
 #else
     // There is no portable way to get stack base address in Posix, so we use
     // non-portable method (on all modern Linux) or the simplified approach

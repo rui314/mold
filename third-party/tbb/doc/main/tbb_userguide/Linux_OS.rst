@@ -25,12 +25,12 @@ structure for Linux\*, relative to *<tbb_install_dir>*
       - | ``LIBRARY_PATH``
 	| ``LD_LIBRARY_PATH``
 
-where
+Where:
 
 * ``<arch>`` - ``ia32`` or ``intel64``
+  
+   .. note:: Starting with oneTBB 2022.0, 32-bit binaries are supported only by the open-source version of the library. 
 
 * ``<lib>`` - ``libtbb``, ``libtbbmalloc``, ``libtbbmalloc_proxy`` or ``libtbbbind``
-
 * ``<variant>`` - ``_debug`` or empty
-
 * ``<version>`` - binary version in a form of ``<major>.<minor>``

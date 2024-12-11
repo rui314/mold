@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -1941,6 +1941,8 @@ TEST_CASE("Stress test with mixing functionality") {
     StressTestMixFunctionality();
 }
 
+// global_control::max_allowed_parallelism functionality is not covered by TCM
+#if !__TBB_TCM_TESTING_ENABLED
 //! \brief \ref stress
 TEST_CASE("Workers oversubscription") {
     std::size_t num_threads = utils::get_platform_max_threads();
@@ -1977,6 +1979,7 @@ TEST_CASE("Workers oversubscription") {
         );
     });
 }
+#endif
 
 #if TBB_USE_EXCEPTIONS
 //! The test for error in scheduling empty task_handle

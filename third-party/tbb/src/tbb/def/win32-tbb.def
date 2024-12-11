@@ -1,4 +1,4 @@
-; Copyright (c) 2005-2021 Intel Corporation
+; Copyright (c) 2005-2024 Intel Corporation
 ;
 ; Licensed under the Apache License, Version 2.0 (the "License");
 ; you may not use this file except in compliance with the License.
@@ -71,6 +71,7 @@ EXPORTS
 ?resume@r1@detail@tbb@@YAXPAUsuspend_point_type@123@@Z
 ?suspend@r1@detail@tbb@@YAXP6AXPAXPAUsuspend_point_type@123@@Z0@Z
 ?notify_waiters@r1@detail@tbb@@YAXI@Z
+?get_thread_reference_vertex@r1@detail@tbb@@YAPAVwait_tree_vertex_interface@d1@23@PAV4523@@Z
 
 ; Task dispatcher (task_dispatcher.cpp)
 ?spawn@r1@detail@tbb@@YAXAAVtask@d1@23@AAVtask_group_context@523@G@Z
@@ -99,6 +100,7 @@ EXPORTS
 ?terminate@r1@detail@tbb@@YAXAAVtask_arena_base@d1@23@@Z
 ?wait@r1@detail@tbb@@YAXAAVtask_arena_base@d1@23@@Z
 ?enqueue@r1@detail@tbb@@YAXAAVtask@d1@23@AAVtask_group_context@523@PAVtask_arena_base@523@@Z
+?execution_slot@r1@detail@tbb@@YAGABVtask_arena_base@d1@23@@Z
 
 ; System topology parsing and threads pinning (governor.cpp)
 ?numa_node_count@r1@detail@tbb@@YAIXZ

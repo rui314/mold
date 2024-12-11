@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -221,7 +221,37 @@ void notify_waiters(std::uintptr_t wait_ctx_addr) {
     governor::get_thread_data()->my_arena->get_waiting_threads_monitor().notify(is_related_wait_ctx);
 }
 
+d1::wait_tree_vertex_interface* get_thread_reference_vertex(d1::wait_tree_vertex_interface* top_wait_context) {
+    __TBB_ASSERT(top_wait_context, nullptr);
+    auto& dispatcher = *governor::get_thread_data()->my_task_dispatcher;
+
+    d1::reference_vertex* ref_counter{nullptr};
+    auto& reference_map = dispatcher.m_reference_vertex_map;
+    auto pos = reference_map.find(top_wait_context);
+    if (pos != reference_map.end()) {
+        ref_counter = pos->second;
+    } else {
+        constexpr std::size_t max_reference_vertex_map_size = 1000;
+        if (reference_map.size() > max_reference_vertex_map_size) {
+            // TODO: Research the possibility of using better approach for a clean-up
+            for (auto it = reference_map.begin(); it != reference_map.end();) {
+                if (it->second->get_num_child() == 0) {
+                    it->second->~reference_vertex();
+                    cache_aligned_deallocate(it->second);
+                    it = reference_map.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+
+        reference_map[top_wait_context] = ref_counter =
+            new (cache_aligned_allocate(sizeof(d1::reference_vertex))) d1::reference_vertex(top_wait_context, 0);
+    }
+
+    return ref_counter;
+}
+
 } // namespace r1
 } // namespace detail
 } // namespace tbb
-

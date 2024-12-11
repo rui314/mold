@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@
 #include "common/spin_barrier.h"
 #include "common/utils.h"
 #include "common/utils_concurrency_limit.h"
+#include "common/cpu_usertime.h"
 
 #include "oneapi/tbb/global_control.h"
 #include "oneapi/tbb/parallel_for.h"
@@ -345,6 +346,30 @@ TEST_CASE("simple prolong lifetime 3") {
     REQUIRE(res);
     // New parallel region
     tbb::parallel_for(0, 10, utils::DummyBody());
+}
+
+//! \brief \ref regression \ref interface \ref requirement
+TEST_CASE("Test worker threads remain inactive in enforced serial execution mode") {
+    auto num_threads = utils::get_platform_max_threads();
+    utils::SpinBarrier barrier{num_threads};
+
+    // Warm-up threads
+    tbb::parallel_for(std::size_t(0), num_threads, [&] (std::size_t) {
+        barrier.wait();
+    });
+
+    tbb::global_control control(tbb::global_control::max_allowed_parallelism, 1);
+
+    std::thread thr([&] {
+        tbb::parallel_for(0, 100000, [&] (int) {
+            utils::doDummyWork(100);
+        });
+    });
+
+    // Workers should sleep because of global_control enforced serial execution of tasks
+    TestCPUUserTime(utils::get_platform_max_threads() - 1);
+
+    thr.join();
 }
 
 // The test cannot work correctly with statically linked runtime.

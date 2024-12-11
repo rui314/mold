@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 
 namespace tbb {
 namespace detail {
-namespace d1 {
+namespace d2 {
 
 template <typename Input, typename Output>
 struct declare_body_types {
@@ -51,10 +51,10 @@ template <typename T, typename Input, typename Output>
 struct body_types<Output (T::*)(Input&)> : declare_body_types<Input, Output> {};
 
 template <typename T, typename Output>
-struct body_types<Output (T::*)(flow_control&) const> : declare_body_types<NoInputBody, Output> {};
+struct body_types<Output (T::*)(d1::flow_control&) const> : declare_body_types<NoInputBody, Output> {};
 
 template <typename T, typename Output>
-struct body_types<Output (T::*)(flow_control&)> : declare_body_types<NoInputBody, Output> {};
+struct body_types<Output (T::*)(d1::flow_control&)> : declare_body_types<NoInputBody, Output> {};
 
 template <typename Input, typename Output>
 struct body_types<Output (*)(Input&)> : declare_body_types<Input, Output> {};
@@ -63,7 +63,7 @@ template <typename Input, typename Output>
 struct body_types<Output (*)(const Input&)> : declare_body_types<Input, Output> {};
 
 template <typename Output>
-struct body_types<Output (*)(flow_control&)> : declare_body_types<NoInputBody, Output> {};
+struct body_types<Output (*)(d1::flow_control&)> : declare_body_types<NoInputBody, Output> {};
 
 template <typename Body>
 using input_t = typename body_types<Body>::input_type;
@@ -100,7 +100,7 @@ decltype(decide_on_operator_overload(std::declval<Body>())) decide_on_callable_t
 template <typename GraphOrSet, typename Body>
 input_node(GraphOrSet&&, Body)
 ->input_node<output_t<decltype(decide_on_callable_type<Body>(0))>>;
-    
+
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
 
 template <typename NodeSet>
@@ -268,7 +268,7 @@ template <typename NodeSet>
 write_once_node(const NodeSet&)
 ->write_once_node<decide_on_set_t<NodeSet>>;
 #endif // __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-} // namespace d1
+} // namespace d2
 } // namespace detail
 } // namespace tbb
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -77,6 +77,7 @@ _ZN3tbb6detail2r17suspendEPFvPvPNS1_18suspend_point_typeEES2_;
 _ZN3tbb6detail2r16resumeEPNS1_18suspend_point_typeE;
 _ZN3tbb6detail2r121current_suspend_pointEv;
 _ZN3tbb6detail2r114notify_waitersEm;
+_ZN3tbb6detail2r127get_thread_reference_vertexEPNS0_2d126wait_tree_vertex_interfaceE;
 
 /* Task dispatcher (task_dispatcher.cpp) */
 _ZN3tbb6detail2r114execution_slotEPKNS0_2d114execution_dataE;
@@ -105,6 +106,7 @@ _ZN3tbb6detail2r120isolate_within_arenaERNS0_2d113delegate_baseEl;
 _ZN3tbb6detail2r17enqueueERNS0_2d14taskEPNS2_15task_arena_baseE;
 _ZN3tbb6detail2r17enqueueERNS0_2d14taskERNS2_18task_group_contextEPNS2_15task_arena_baseE;
 _ZN3tbb6detail2r14waitERNS0_2d115task_arena_baseE;
+_ZN3tbb6detail2r114execution_slotERKNS0_2d115task_arena_baseE;
 
 /* System topology parsing and threads pinning (governor.cpp) */
 _ZN3tbb6detail2r115numa_node_countEv;

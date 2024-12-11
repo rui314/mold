@@ -19,6 +19,8 @@ The standard Bazel approach to handling third-party libraries is static linking.
 
 ## Using oneTBB as a dependency
 
+### Traditional WORKSPACE approach
+
 This example demonstrates how to use oneTBB as a dependency within a Bazel project.
 
 The following file structure is assumed:
@@ -77,6 +79,16 @@ int main() {
 The expected output of this program is the current version of oneTBB.
 
 Switch to the folder with the files created earlier and run the binary with `bazel run //:Demo`.
+
+### Bzlmod
+
+If you use Bzlmod, you can fetch oneTBB with the [Bazel Central Registry](https://registry.bazel.build/).
+
+Add the following line to your `MODULE.bazel` file:
+
+```bazel
+bazel_dep(name = "onetbb", version = "2021.13.0")
+```
 
 ## Build oneTBB using Bazel
 

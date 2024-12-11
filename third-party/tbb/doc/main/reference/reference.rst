@@ -3,13 +3,13 @@
 |short_name| API Reference
 ==========================
 
-For oneTBB API Reference, refer to `oneAPI Specification <https://spec.oneapi.com/>`_. The current supported
+For oneTBB API Reference, refer to `oneAPI Specification <https://github.com/uxlfoundation/oneAPI-spec>`_. The current supported
 version of oneAPI Specification is 1.0.
 
 Specification extensions
 ************************
 
-|full_name| implements the `oneTBB specification <https://spec.oneapi.com/versions/latest/elements/oneTBB/source/nested-index.html>`_.
+|full_name| implements the `oneTBB specification <https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/nested-index>`_.
 This document provides additional details or restrictions where necessary.
 It also describes features that are not included in the oneTBB specification.
 
@@ -50,3 +50,4 @@ The key properties of a preview feature are:
     concurrent_lru_cache_cls
     task_group_extensions
     custom_mutex_chmap
+    try_put_and_wait

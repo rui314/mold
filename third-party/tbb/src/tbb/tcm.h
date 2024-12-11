@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2023 Intel Corporation
+    Copyright (c) 2023-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -50,7 +50,8 @@ typedef struct _tcm_permit_flags_t {
   uint32_t stale : 1;
   uint32_t rigid_concurrency : 1;
   uint32_t exclusive : 1;
-  uint32_t reserved : 29;
+  uint32_t request_as_inactive : 1;
+  uint32_t reserved : 28;
 } tcm_permit_flags_t;
 
 typedef struct _tcm_callback_flags_t {

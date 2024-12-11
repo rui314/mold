@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -777,8 +777,8 @@ void TestConcurrentPushPop() {
 
 class Foo_exception : public std::bad_alloc {
 public:
-    virtual const char *what() const throw() override { return "out of Foo limit"; }
-    virtual ~Foo_exception() throw() {}
+    virtual const char *what() const noexcept override { return "out of Foo limit"; }
+    virtual ~Foo_exception() noexcept {}
 };
 
 #if TBB_USE_EXCEPTIONS

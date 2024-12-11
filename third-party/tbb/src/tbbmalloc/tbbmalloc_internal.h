@@ -232,9 +232,13 @@ template<unsigned NUM>
 class BitMaskMax : public BitMaskBasic<NUM> {
 public:
     void set(size_t idx, bool val) {
+        MALLOC_ASSERT(NUM >= idx + 1, ASSERT_TEXT);
+
         BitMaskBasic<NUM>::set(NUM - 1 - idx, val);
     }
     int getMaxTrue(unsigned startIdx) const {
+        MALLOC_ASSERT(NUM >= startIdx + 1, ASSERT_TEXT);
+
         int p = BitMaskBasic<NUM>::getMinTrue(NUM-startIdx-1);
         return -1==p? -1 : (int)NUM - 1 - p;
     }
@@ -496,7 +500,11 @@ private:
         MALLOC_ASSERT(!pageSize, "Huge page size can't be set twice. Double initialization.");
 
         // Initialize object variables
-        pageSize       = hugePageSize * 1024; // was read in KB from meminfo
+        if (hugePageSize > -1) {
+            pageSize = hugePageSize * 1024; // was read in KB from meminfo
+        } else {
+            pageSize = 0;
+        }
         isHPAvailable  = hpAvailable;
         isTHPAvailable = thpAvailable;
     }

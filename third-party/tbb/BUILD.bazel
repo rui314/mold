@@ -118,6 +118,47 @@ cc_library(
 )
 
 cc_test(
+    name = "test_mutex",
+    srcs = [
+        "test/tbb/test_mutex.cpp",
+        "test/tbb/test_mutex.h"
+    ] + glob([
+        "test/common/*.h",
+    ]),
+    includes = ["test"],
+    deps = [
+        ":tbb",
+    ],
+)
+
+cc_test(
+    name = "test_parallel_for",
+    srcs = [
+        "test/tbb/test_parallel_for.cpp",
+        "test/tbb/test_partitioner.h"
+    ] + glob([
+        "test/common/*.h",
+    ]),
+    includes = ["test"],
+    deps = [
+        ":tbb",
+    ],
+)
+
+cc_test(
+    name = "test_parallel_reduce",
+    srcs = [
+        "test/tbb/test_parallel_reduce.cpp",
+    ] + glob([
+        "test/common/*.h",
+    ]),
+    includes = ["test"],
+    deps = [
+        ":tbb",
+    ],
+)
+
+cc_test(
     name = "test_task",
     srcs = [
         "test/tbb/test_task.cpp",

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -157,6 +157,14 @@ void initialize_cache_aligned_allocator() {
 }
 
 //! Executed on very first call through allocate_handler
+/** Only one of initialize_allocate_handler() and initialize_cache_aligned_allocate_handler()
+    is called, since each one of them also initializes the other.
+
+    In the current implementation of oneTBB library initialization, cache_aligned_allocate() is
+    used, which in turn calls initialize_cache_aligned_allocate_handler(). As mentioned above,
+    that also initializes the regular allocate_handler.
+
+    Therefore, initialize_allocate_handler() is not called in the current library implementation. */
 static void* initialize_allocate_handler(std::size_t size) {
     initialize_cache_aligned_allocator();
     __TBB_ASSERT(allocate_handler != &initialize_allocate_handler, nullptr);

@@ -44,7 +44,6 @@ To do the replacement use one of the following methods:
 -  Alternatively, add the following parameters to the linker options for
    the .exe or .dll file that is loaded during application startup.
 
-
    For 32-bit code (note the triple underscore):
 
 
@@ -52,8 +51,7 @@ To do the replacement use one of the following methods:
 
 
       tbbmalloc_proxy.lib /INCLUDE:"___TBB_malloc_proxy"
-
-
+   
    For 64-bit code (note the double underscore):
 
 
