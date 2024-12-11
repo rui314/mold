@@ -1239,7 +1239,7 @@ template <typename E>
 void fixup_ctors_in_init_array(Context<E> &ctx) {
   Timer t(ctx, "fixup_ctors_in_init_array");
 
-  auto reverse = [&](InputSection<E> &isec) {
+  auto reverse_contents = [&](InputSection<E> &isec) {
     if (isec.sh_size % sizeof(Word<E>))
       Fatal(ctx) << isec << ": section corrupted";
 
@@ -1249,20 +1249,23 @@ void fixup_ctors_in_init_array(Context<E> &ctx) {
     std::span<ElfRel<E>> rels = isec.get_rels(ctx);
     for (ElfRel<E> &r : rels)
       r.r_offset = isec.sh_size - r.r_offset - sizeof(Word<E>);
-    std::reverse(rels.begin(), rels.end());
+
+    sort(rels, [](const ElfRel<E> &a, const ElfRel<E> &b) {
+      return a.r_offset < b.r_offset;
+    });
   };
 
   if (Chunk<E> *chunk = find_chunk(ctx, ".init_array"))
     if (OutputSection<E> *osec = chunk->to_osec())
       for (InputSection<E> *isec : osec->members)
         if (isec->name().starts_with(".ctors"))
-          reverse(*isec);
+          reverse_contents(*isec);
 
   if (Chunk<E> *chunk = find_chunk(ctx, ".fini_array"))
     if (OutputSection<E> *osec = chunk->to_osec())
       for (InputSection<E> *isec : osec->members)
         if (isec->name().starts_with(".dtors"))
-          reverse(*isec);
+          reverse_contents(*isec);
 }
 
 template <typename T>
