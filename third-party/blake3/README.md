@@ -1,4 +1,4 @@
-# <a href="#"><img src="media/BLAKE3.svg" alt="BLAKE3" height=50></a>
+# BLAKE3
 
 BLAKE3 is a cryptographic hash function that is:
 
@@ -68,12 +68,15 @@ This repository is the official implementation of BLAKE3. It includes:
 
 BLAKE3 was designed by:
 
-* [@oconnor663 ](https://github.com/oconnor663) (Jack O'Connor)
-* [@sneves](https://github.com/sneves) (Samuel Neves)
-* [@veorq](https://github.com/veorq) (Jean-Philippe Aumasson)
-* [@zookozcash](https://github.com/zookozcash) (Zooko)
+* [@oconnor663] (Jack O'Connor)
+* [@sneves] (Samuel Neves)
+* [@veorq] (Jean-Philippe Aumasson)
+* [@zookozcash] (Zooko)
 
 The development of BLAKE3 was sponsored by [Electric Coin Company](https://electriccoin.co).
+
+BLAKE3 is also [specified](https://c2sp.org/BLAKE3) in the [Community
+Cryptography Specification Project (C2SP)](https://c2sp.org).
 
 *NOTE: BLAKE3 is not a password hashing algorithm, because it's
 designed to be fast, whereas password hashing should not be fast. If you
@@ -187,14 +190,14 @@ bindings](https://github.com/sken77/BLAKE3jni).
 
 Please see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Intellectual property
+## Licenses
 
-The Rust code is copyright Jack O'Connor, 2019-2020. The C code is
-copyright Samuel Neves and Jack O'Connor, 2019-2020. The assembly code
-is copyright Samuel Neves, 2019-2020.
+This work is released into the public domain with [CC0 1.0](./LICENSE_CC0).
+Alternatively, it is licensed under any of the following:
 
-This work is released into the public domain with CC0 1.0.
-Alternatively, it is licensed under the Apache License 2.0.
+* [Apache 2.0](./LICENSE_A2)
+* [Apache 2.0 with LLVM exceptions](./LICENSE_A2LLVM)
+
 
 ## Adoption & deployment
 
@@ -218,6 +221,10 @@ Here's a (non-exhaustive) list of protocols and software that use BLAKE3:
 
 ## Miscellany
 
-- [@veorq](https://github.com/veorq) and
-  [@oconnor663](https://github.com/oconnor663) did [a podcast
-  interview](https://www.cryptography.fm/3) about designing BLAKE3.
+- [@veorq] and [@oconnor663] did [an interview with Cryptography FM](https://www.cryptography.fm/3).
+- [@oconnor663] did [an interview with Saito](https://www.youtube.com/watch?v=cJkmIt7yN_E).
+
+[@oconnor663]: https://github.com/oconnor663
+[@sneves]: https://github.com/sneves
+[@veorq]: https://github.com/veorq
+[@zookozcash]: https://github.com/zookozcash

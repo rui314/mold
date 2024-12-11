@@ -78,23 +78,14 @@ fn compress(
     block_len: u32,
     flags: u32,
 ) -> [u32; 16] {
+    let counter_low = counter as u32;
+    let counter_high = (counter >> 32) as u32;
+    #[rustfmt::skip]
     let mut state = [
-        chaining_value[0],
-        chaining_value[1],
-        chaining_value[2],
-        chaining_value[3],
-        chaining_value[4],
-        chaining_value[5],
-        chaining_value[6],
-        chaining_value[7],
-        IV[0],
-        IV[1],
-        IV[2],
-        IV[3],
-        counter as u32,
-        (counter >> 32) as u32,
-        block_len,
-        flags,
+        chaining_value[0], chaining_value[1], chaining_value[2], chaining_value[3],
+        chaining_value[4], chaining_value[5], chaining_value[6], chaining_value[7],
+        IV[0],             IV[1],             IV[2],             IV[3],
+        counter_low,       counter_high,      block_len,         flags,
     ];
     let mut block = *block_words;
 

@@ -235,8 +235,8 @@ fn test_newline_and_backslash_escaping_on_unix() {
 {0}  abcdef
 \\{0}  abc\\ndef
 \\{0}  abc\\\\def
-{0}  abc\rdef
-\\{0}  abc\r\\ndef
+\\{0}  abc\\rdef
+\\{0}  abc\\r\\ndef
 {0}  subdir/foo",
         empty_hash,
     );

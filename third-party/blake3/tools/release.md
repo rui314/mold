@@ -12,5 +12,4 @@
 - `git tag` the version bump commit with the new version number.
 - `git push --tags`
 - `cargo publish` in the root.
-- `cargo publish --dry-run` in b3sum/ and make sure it fetches the just-published library version.
 - `cargo publish` in b3sum/.

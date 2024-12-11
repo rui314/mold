@@ -206,6 +206,76 @@ pub fn test_hash_many_fn(
     }
 }
 
+#[allow(unused)]
+type XofManyFunction = unsafe fn(
+    cv: &CVWords,
+    block: &[u8; BLOCK_LEN],
+    block_len: u8,
+    counter: u64,
+    flags: u8,
+    out: &mut [u8],
+);
+
+// A shared helper function for platform-specific tests.
+#[allow(unused)]
+pub fn test_xof_many_fn(xof_many_function: XofManyFunction) {
+    let mut block = [0; BLOCK_LEN];
+    let block_len = 42;
+    crate::test::paint_test_input(&mut block[..block_len]);
+    let cv = [40, 41, 42, 43, 44, 45, 46, 47];
+    let flags = crate::KEYED_HASH;
+
+    // Test a few different initial counter values.
+    // - 0: The base case.
+    // - u32::MAX: The low word of the counter overflows for all inputs except the first.
+    // - i32::MAX: *No* overflow. But carry bugs in tricky SIMD code can screw this up, if you XOR
+    //   when you're supposed to ANDNOT...
+    let initial_counters = [0, u32::MAX as u64, i32::MAX as u64];
+    for counter in initial_counters {
+        #[cfg(feature = "std")]
+        dbg!(counter);
+
+        // 31 (16 + 8 + 4 + 2 + 1) outputs
+        const OUTPUT_SIZE: usize = 31 * BLOCK_LEN;
+
+        let mut portable_out = [0u8; OUTPUT_SIZE];
+        for (i, out_block) in portable_out.chunks_exact_mut(64).enumerate() {
+            out_block.copy_from_slice(&crate::portable::compress_xof(
+                &cv,
+                &block,
+                block_len as u8,
+                counter + i as u64,
+                flags,
+            ));
+        }
+
+        let mut test_out = [0u8; OUTPUT_SIZE];
+        unsafe {
+            xof_many_function(&cv, &block, block_len as u8, counter, flags, &mut test_out);
+        }
+
+        assert_eq!(portable_out, test_out);
+    }
+
+    // Test that xof_many doesn't write more blocks than requested. Note that the current assembly
+    // implementation always outputs at least one block, so we don't test the zero case.
+    for block_count in 1..=32 {
+        let mut array = [0; BLOCK_LEN * 33];
+        let output_start = 17;
+        let output_len = block_count * BLOCK_LEN;
+        let output_end = output_start + output_len;
+        let output = &mut array[output_start..output_end];
+        unsafe {
+            xof_many_function(&cv, &block, block_len as u8, 0, flags, output);
+        }
+        for i in 0..array.len() {
+            if i < output_start || output_end <= i {
+                assert_eq!(0, array[i], "index {i}");
+            }
+        }
+    }
+}
+
 #[test]
 fn test_key_bytes_equal_key_words() {
     assert_eq!(
@@ -373,6 +443,43 @@ fn test_compare_reference_impl() {
     }
 }
 
+#[test]
+fn test_compare_reference_impl_long_xof() {
+    let mut reference_output = [0u8; 32 * BLOCK_LEN - 1];
+    let mut reference_hasher = reference_impl::Hasher::new_keyed(&TEST_KEY);
+    reference_hasher.update(b"hello world");
+    reference_hasher.finalize(&mut reference_output);
+
+    let mut test_output = [0u8; 32 * BLOCK_LEN - 1];
+    let mut test_hasher = crate::Hasher::new_keyed(&TEST_KEY);
+    test_hasher.update(b"hello world");
+    test_hasher.finalize_xof().fill(&mut test_output);
+
+    assert_eq!(reference_output, test_output);
+}
+
+#[test]
+fn test_xof_partial_blocks() {
+    const OUT_LEN: usize = 6 * BLOCK_LEN;
+    let mut reference_out = [0u8; OUT_LEN];
+    reference_impl::Hasher::new().finalize(&mut reference_out);
+
+    let mut all_at_once_out = [0u8; OUT_LEN];
+    crate::Hasher::new()
+        .finalize_xof()
+        .fill(&mut all_at_once_out);
+    assert_eq!(reference_out, all_at_once_out);
+
+    let mut partial_out = [0u8; OUT_LEN];
+    let partial_start = 32;
+    let partial_end = OUT_LEN - 32;
+    let mut xof = crate::Hasher::new().finalize_xof();
+    xof.fill(&mut partial_out[..partial_start]);
+    xof.fill(&mut partial_out[partial_start..partial_end]);
+    xof.fill(&mut partial_out[partial_end..]);
+    assert_eq!(reference_out, partial_out);
+}
+
 fn reference_hash(input: &[u8]) -> crate::Hash {
     let mut hasher = reference_impl::Hasher::new();
     hasher.update(input);
@@ -446,6 +553,42 @@ fn test_fuzz_hasher() {
         }
         let expected = reference_hash(&input_buf[..total_input]);
         assert_eq!(expected, hasher.finalize());
+    }
+}
+
+#[test]
+fn test_fuzz_xof() {
+    let mut input_buf = [0u8; 3 * BLOCK_LEN];
+    paint_test_input(&mut input_buf);
+
+    // Don't do too many iterations in debug mode, to keep the tests under a
+    // second or so. CI should run tests in release mode also. Provide an
+    // environment variable for specifying a larger number of fuzz iterations.
+    let num_tests = if cfg!(debug_assertions) { 100 } else { 2500 };
+
+    // Use a fixed RNG seed for reproducibility.
+    let mut rng = rand_chacha::ChaCha8Rng::from_seed([1; 32]);
+    for _num_test in 0..num_tests {
+        #[cfg(feature = "std")]
+        dbg!(_num_test);
+        // 31 (16 + 8 + 4 + 2 + 1) outputs
+        let mut output_buf = [0; 31 * CHUNK_LEN];
+        let input_len = rng.gen_range(0..input_buf.len());
+        let mut xof = crate::Hasher::new()
+            .update(&input_buf[..input_len])
+            .finalize_xof();
+        let partial_start = rng.gen_range(0..output_buf.len());
+        let partial_end = rng.gen_range(partial_start..output_buf.len());
+        xof.fill(&mut output_buf[..partial_start]);
+        xof.fill(&mut output_buf[partial_start..partial_end]);
+        xof.fill(&mut output_buf[partial_end..]);
+
+        let mut reference_buf = [0; 31 * CHUNK_LEN];
+        let mut reference_hasher = reference_impl::Hasher::new();
+        reference_hasher.update(&input_buf[..input_len]);
+        reference_hasher.finalize(&mut reference_buf);
+
+        assert_eq!(reference_buf, output_buf);
     }
 }
 
@@ -809,14 +952,45 @@ fn test_mmap_rayon() -> Result<(), std::io::Error> {
 #[cfg(feature = "std")]
 #[cfg(feature = "serde")]
 fn test_serde() {
-    let hash: crate::Hash = [7; 32].into();
+    // Henrik suggested that we use 0xfe / 254 for byte test data instead of 0xff / 255, due to the
+    // fact that 0xfe is not a well formed CBOR item.
+    let hash: crate::Hash = [0xfe; 32].into();
+
     let json = serde_json::to_string(&hash).unwrap();
     assert_eq!(
         json,
-        "[7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7]",
+        "[254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254,254]",
     );
     let hash2: crate::Hash = serde_json::from_str(&json).unwrap();
     assert_eq!(hash, hash2);
+
+    let mut cbor = Vec::<u8>::new();
+    ciborium::into_writer(&hash, &mut cbor).unwrap();
+    assert_eq!(
+        cbor,
+        [
+            0x98, 0x20, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe,
+            0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe,
+            0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe,
+            0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe,
+            0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe, 0x18, 0xfe,
+        ]
+    );
+    let hash_from_cbor: crate::Hash = ciborium::from_reader(&cbor[..]).unwrap();
+    assert_eq!(hash_from_cbor, hash);
+
+    // Version 1.5.2 of this crate changed the default serialization format to a bytestring
+    // (instead of an array/list) to save bytes on the wire. That was a backwards compatibility
+    // mistake for non-self-describing formats, and it's been reverted. Since some small number of
+    // serialized bytestrings will probably exist forever in the wild, we shold test that we can
+    // still deserialize these from self-describing formats.
+    let bytestring_cbor: &[u8] = &[
+        0x58, 0x20, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe,
+        0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe,
+        0xfe, 0xfe, 0xfe, 0xfe,
+    ];
+    let hash_from_bytestring_cbor: crate::Hash = ciborium::from_reader(bytestring_cbor).unwrap();
+    assert_eq!(hash_from_bytestring_cbor, hash);
 }
 
 // `cargo +nightly miri test` currently works, but it takes forever, because some of our test

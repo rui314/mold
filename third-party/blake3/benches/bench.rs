@@ -515,3 +515,101 @@ fn bench_two_updates(b: &mut Bencher) {
         hasher.finalize()
     });
 }
+
+fn bench_xof(b: &mut Bencher, len: usize) {
+    b.bytes = len as u64;
+    let mut output = [0u8; 64 * BLOCK_LEN];
+    let output_slice = &mut output[..len];
+    let mut xof = blake3::Hasher::new().finalize_xof();
+    b.iter(|| xof.fill(output_slice));
+}
+
+#[bench]
+fn bench_xof_01_block(b: &mut Bencher) {
+    bench_xof(b, 1 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_02_blocks(b: &mut Bencher) {
+    bench_xof(b, 2 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_03_blocks(b: &mut Bencher) {
+    bench_xof(b, 3 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_04_blocks(b: &mut Bencher) {
+    bench_xof(b, 4 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_05_blocks(b: &mut Bencher) {
+    bench_xof(b, 5 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_06_blocks(b: &mut Bencher) {
+    bench_xof(b, 6 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_07_blocks(b: &mut Bencher) {
+    bench_xof(b, 7 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_08_blocks(b: &mut Bencher) {
+    bench_xof(b, 8 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_09_blocks(b: &mut Bencher) {
+    bench_xof(b, 9 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_10_blocks(b: &mut Bencher) {
+    bench_xof(b, 10 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_11_blocks(b: &mut Bencher) {
+    bench_xof(b, 11 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_12_blocks(b: &mut Bencher) {
+    bench_xof(b, 12 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_13_blocks(b: &mut Bencher) {
+    bench_xof(b, 13 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_14_blocks(b: &mut Bencher) {
+    bench_xof(b, 14 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_15_blocks(b: &mut Bencher) {
+    bench_xof(b, 15 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_16_blocks(b: &mut Bencher) {
+    bench_xof(b, 16 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_32_blocks(b: &mut Bencher) {
+    bench_xof(b, 32 * BLOCK_LEN);
+}
+
+#[bench]
+fn bench_xof_64_blocks(b: &mut Bencher) {
+    bench_xof(b, 64 * BLOCK_LEN);
+}

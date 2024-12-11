@@ -1,10 +1,10 @@
 [package]
 name = "b3sum"
-version = "1.5.1"
+version = "1.5.5"
 authors = ["Jack O'Connor <oconnor663@gmail.com>"]
 description = "a command line implementation of the BLAKE3 hash function"
 repository = "https://github.com/BLAKE3-team/BLAKE3"
-license = "CC0-1.0 OR Apache-2.0"
+license = "CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception"
 readme = "README.md"
 edition = "2021"
 
@@ -18,7 +18,7 @@ anyhow = "1.0.25"
 blake3 = { version = "1", path = "..", features = ["mmap", "rayon"] }
 clap = { version = "4.0.8", features = ["derive", "wrap_help"] }
 hex = "0.4.0"
-rayon = "1.2.1"
+rayon-core = "1.12.1"
 wild = "2.0.3"
 
 [dev-dependencies]

@@ -244,8 +244,11 @@ fn filepath_to_string(filepath: &Path) -> FilepathString {
         filepath_string = filepath_string.replace('\\', "/");
     }
     let mut is_escaped = false;
-    if filepath_string.contains('\\') || filepath_string.contains('\n') {
-        filepath_string = filepath_string.replace('\\', "\\\\").replace('\n', "\\n");
+    if filepath_string.contains(['\\', '\n', '\r']) {
+        filepath_string = filepath_string
+            .replace('\\', "\\\\")
+            .replace('\n', "\\n")
+            .replace('\r', "\\r");
         is_escaped = true;
     }
     FilepathString {
@@ -303,6 +306,7 @@ fn unescape(mut path: &str) -> Result<String> {
         match path[i + 1..].chars().next().unwrap() {
             // Anything other than a recognized escape sequence is an error.
             'n' => unescaped.push_str("\n"),
+            'r' => unescaped.push_str("\r"),
             '\\' => unescaped.push_str("\\"),
             _ => bail!("Invalid backslash escape"),
         }
@@ -321,13 +325,11 @@ struct ParsedCheckLine {
 }
 
 fn parse_check_line(mut line: &str) -> Result<ParsedCheckLine> {
-    // Trim off the trailing newline, if any.
-    line = line.trim_end_matches('\n');
+    // Trim off the trailing newlines, if any.
+    line = line.trim_end_matches(['\r', '\n']);
     // If there's a backslash at the front of the line, that means we need to
     // unescape the path below. This matches the behavior of e.g. md5sum.
-    let first = if let Some(c) = line.chars().next() {
-        c
-    } else {
+    let Some(first) = line.chars().next() else {
         bail!("Empty line");
     };
     let mut is_escaped = false;
@@ -475,7 +477,7 @@ fn check_one_checkfile(path: &Path, args: &Args, files_failed: &mut u64) -> Resu
 
 fn main() -> Result<()> {
     let args = Args::parse()?;
-    let mut thread_pool_builder = rayon::ThreadPoolBuilder::new();
+    let mut thread_pool_builder = rayon_core::ThreadPoolBuilder::new();
     if let Some(num_threads) = args.num_threads() {
         thread_pool_builder = thread_pool_builder.num_threads(num_threads);
     }

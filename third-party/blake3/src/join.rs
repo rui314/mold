@@ -67,7 +67,7 @@ impl Join for RayonJoin {
         RA: Send,
         RB: Send,
     {
-        rayon::join(oper_a, oper_b)
+        rayon_core::join(oper_a, oper_b)
     }
 }
 

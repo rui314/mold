@@ -4,9 +4,13 @@ cmake_minimum_required(VERSION 3.9 FATAL_ERROR)
 if (POLICY CMP0128)
   cmake_policy(SET CMP0128 NEW)
 endif()
+# mark_as_advanced does not implicitly create UNINITIALIZED cache entries
+if (POLICY CMP0102)
+  cmake_policy(SET CMP0102 NEW)
+endif()
 
 project(libblake3
-  VERSION 1.5.1
+  VERSION 1.5.5
   DESCRIPTION "BLAKE3 C implementation"
   LANGUAGES C ASM
 )
@@ -26,6 +30,13 @@ if(MSVC)
   set(BLAKE3_CFLAGS_AVX2 "/arch:AVX2" CACHE STRING "the compiler flags to enable AVX2")
   set(BLAKE3_CFLAGS_AVX512 "/arch:AVX512" CACHE STRING "the compiler flags to enable AVX512")
 
+  set(BLAKE3_AMD64_ASM_SOURCES
+    blake3_avx2_x86-64_windows_msvc.asm
+    blake3_avx512_x86-64_windows_msvc.asm
+    blake3_sse2_x86-64_windows_msvc.asm
+    blake3_sse41_x86-64_windows_msvc.asm
+  )
+
 elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU"
        OR CMAKE_C_COMPILER_ID STREQUAL "Clang"
        OR CMAKE_C_COMPILER_ID STREQUAL "AppleClang")
@@ -34,12 +45,70 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU"
   set(BLAKE3_CFLAGS_AVX2 "-mavx2" CACHE STRING "the compiler flags to enable AVX2")
   set(BLAKE3_CFLAGS_AVX512 "-mavx512f -mavx512vl" CACHE STRING "the compiler flags to enable AVX512")
 
+  if (WIN32)
+    set(BLAKE3_AMD64_ASM_SOURCES
+      blake3_avx2_x86-64_windows_gnu.S
+      blake3_avx512_x86-64_windows_gnu.S
+      blake3_sse2_x86-64_windows_gnu.S
+      blake3_sse41_x86-64_windows_gnu.S
+    )
+
+  elseif(UNIX)
+    set(BLAKE3_AMD64_ASM_SOURCES
+      blake3_avx2_x86-64_unix.S
+      blake3_avx512_x86-64_unix.S
+      blake3_sse2_x86-64_unix.S
+      blake3_sse41_x86-64_unix.S
+    )
+  endif()
+
   if (CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_ARMv8_NAMES
       AND NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     # 32-bit ARMv8 needs NEON to be enabled explicitly
     set(BLAKE3_CFLAGS_NEON "-mfpu=neon" CACHE STRING "the compiler flags to enable NEON")
   endif()
 endif()
+
+mark_as_advanced(BLAKE3_CFLAGS_SSE2 BLAKE3_CFLAGS_SSE4.1 BLAKE3_CFLAGS_AVX2 BLAKE3_CFLAGS_AVX512 BLAKE3_CFLAGS_NEON)
+mark_as_advanced(BLAKE3_AMD64_ASM_SOURCES)
+
+message(STATUS "BLAKE3 SIMD configuration: ${CMAKE_C_COMPILER_ARCHITECTURE_ID}")
+if(MSVC AND DEFINED CMAKE_C_COMPILER_ARCHITECTURE_ID)
+  if(CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "[Xx]86")
+    set(BLAKE3_SIMD_TYPE "x86-intrinsics" CACHE STRING "the SIMD acceleration type to use")
+
+  elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "[Xx]64")
+    set(BLAKE3_SIMD_TYPE "amd64-asm" CACHE STRING "the SIMD acceleration type to use")
+
+  elseif(CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "[Aa][Rr][Mm]64")
+    set(BLAKE3_SIMD_TYPE "neon-intrinsics" CACHE STRING "the SIMD acceleration type to use")
+
+  else()
+    set(BLAKE3_SIMD_TYPE "none" CACHE STRING "the SIMD acceleration type to use")
+  endif()
+
+elseif(CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_AMD64_NAMES)
+  set(BLAKE3_SIMD_TYPE "amd64-asm" CACHE STRING "the SIMD acceleration type to use")
+
+elseif(CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_X86_NAMES
+       AND DEFINED BLAKE3_CFLAGS_SSE2
+       AND DEFINED BLAKE3_CFLAGS_SSE4.1
+       AND DEFINED BLAKE3_CFLAGS_AVX2
+       AND DEFINED BLAKE3_CFLAGS_AVX512)
+  set(BLAKE3_SIMD_TYPE "x86-intrinsics" CACHE STRING "the SIMD acceleration type to use")
+
+elseif((CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_ARMv8_NAMES
+          OR ANDROID_ABI STREQUAL "armeabi-v7a"
+          OR BLAKE3_USE_NEON_INTRINSICS)
+        AND (DEFINED BLAKE3_CFLAGS_NEON
+          OR CMAKE_SIZEOF_VOID_P EQUAL 8))
+  set(BLAKE3_SIMD_TYPE "neon-intrinsics" CACHE STRING "the SIMD acceleration type to use")
+
+else()
+  set(BLAKE3_SIMD_TYPE "none" CACHE STRING "the SIMD acceleration type to use")
+endif()
+
+mark_as_advanced(BLAKE3_SIMD_TYPE)
 
 # library target
 add_library(blake3
@@ -76,63 +145,25 @@ if (NOT POLICY CMP0128 AND NOT DEFINED CMAKE_C_STANDARD)
 endif()
 
 # optional SIMD sources
-macro(BLAKE3_DISABLE_SIMD)
-  set(BLAKE3_SIMD_AMD64_ASM OFF)
-  set(BLAKE3_SIMD_X86_INTRINSICS OFF)
-  set(BLAKE3_SIMD_NEON_INTRINSICS OFF)
-  target_compile_definitions(blake3 PRIVATE
-    BLAKE3_USE_NEON=0
-    BLAKE3_NO_SSE2
-    BLAKE3_NO_SSE41
-    BLAKE3_NO_AVX2
-    BLAKE3_NO_AVX512
-  )
-endmacro()
-
-if(CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_AMD64_NAMES OR BLAKE3_USE_AMD64_ASM)
+if(BLAKE3_SIMD_TYPE STREQUAL "amd64-asm")
+  if (NOT DEFINED BLAKE3_AMD64_ASM_SOURCES)
+    message(FATAL_ERROR "BLAKE3_SIMD_TYPE is set to 'amd64-asm' but no assembly sources are available for the target architecture.")
+  endif()
   set(BLAKE3_SIMD_AMD64_ASM ON)
 
   if(MSVC)
     enable_language(ASM_MASM)
-    target_sources(blake3 PRIVATE
-      blake3_avx2_x86-64_windows_msvc.asm
-      blake3_avx512_x86-64_windows_msvc.asm
-      blake3_sse2_x86-64_windows_msvc.asm
-      blake3_sse41_x86-64_windows_msvc.asm
-    )
-
-  elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU"
-         OR CMAKE_C_COMPILER_ID STREQUAL "Clang"
-         OR CMAKE_C_COMPILER_ID STREQUAL "AppleClang")
-    if (WIN32)
-      target_sources(blake3 PRIVATE
-        blake3_avx2_x86-64_windows_gnu.S
-        blake3_avx512_x86-64_windows_gnu.S
-        blake3_sse2_x86-64_windows_gnu.S
-        blake3_sse41_x86-64_windows_gnu.S
-      )
-
-    elseif(UNIX)
-      target_sources(blake3 PRIVATE
-        blake3_avx2_x86-64_unix.S
-        blake3_avx512_x86-64_unix.S
-        blake3_sse2_x86-64_unix.S
-        blake3_sse41_x86-64_unix.S
-      )
-
-    else()
-      BLAKE3_DISABLE_SIMD()
-    endif()
-
-  else()
-    BLAKE3_DISABLE_SIMD()
   endif()
 
-elseif((CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_X86_NAMES OR BLAKE3_USE_X86_INTRINSICS)
-       AND DEFINED BLAKE3_CFLAGS_SSE2
-       AND DEFINED BLAKE3_CFLAGS_SSE4.1
-       AND DEFINED BLAKE3_CFLAGS_AVX2
-       AND DEFINED BLAKE3_CFLAGS_AVX512)
+  target_sources(blake3 PRIVATE ${BLAKE3_AMD64_ASM_SOURCES})
+
+elseif(BLAKE3_SIMD_TYPE STREQUAL "x86-intrinsics")
+  if (NOT DEFINED BLAKE3_CFLAGS_SSE2
+      OR NOT DEFINED BLAKE3_CFLAGS_SSE4.1
+      OR NOT DEFINED BLAKE3_CFLAGS_AVX2
+      OR NOT DEFINED BLAKE3_CFLAGS_AVX512)
+    message(FATAL_ERROR "BLAKE3_SIMD_TYPE is set to 'x86-intrinsics' but no compiler flags are available for the target architecture.")
+  endif()
   set(BLAKE3_SIMD_X86_INTRINSICS ON)
 
   target_sources(blake3 PRIVATE
@@ -146,11 +177,7 @@ elseif((CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_X86_NAMES OR BLAKE3_USE_X86_INTRIN
   set_source_files_properties(blake3_sse2.c PROPERTIES COMPILE_FLAGS "${BLAKE3_CFLAGS_SSE2}")
   set_source_files_properties(blake3_sse41.c PROPERTIES COMPILE_FLAGS "${BLAKE3_CFLAGS_SSE4.1}")
 
-elseif((CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_ARMv8_NAMES
-          OR ANDROID_ABI STREQUAL "armeabi-v7a"
-          OR BLAKE3_USE_NEON_INTRINSICS)
-        AND (DEFINED BLAKE3_CFLAGS_NEON
-          OR CMAKE_SIZEOF_VOID_P EQUAL 8))
+elseif(BLAKE3_SIMD_TYPE STREQUAL "neon-intrinsics")
   set(BLAKE3_SIMD_NEON_INTRINSICS ON)
 
   target_sources(blake3 PRIVATE
@@ -164,8 +191,17 @@ elseif((CMAKE_SYSTEM_PROCESSOR IN_LIST BLAKE3_ARMv8_NAMES
     set_source_files_properties(blake3_neon.c PROPERTIES COMPILE_FLAGS "${BLAKE3_CFLAGS_NEON}")
   endif()
 
+elseif(BLAKE3_SIMD_TYPE STREQUAL "none")
+  target_compile_definitions(blake3 PRIVATE
+    BLAKE3_USE_NEON=0
+    BLAKE3_NO_SSE2
+    BLAKE3_NO_SSE41
+    BLAKE3_NO_AVX2
+    BLAKE3_NO_AVX512
+  )
+
 else()
-  BLAKE3_DISABLE_SIMD()
+  message(FATAL_ERROR "BLAKE3_SIMD_TYPE is set to an unknown value: '${BLAKE3_SIMD_TYPE}'")
 endif()
 
 # cmake install support
@@ -193,11 +229,37 @@ install(FILES
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/blake3"
 )
 
+# Function for joining paths known from most languages
+#
+# SPDX-License-Identifier: (MIT OR CC0-1.0)
+# Copyright 2020 Jan Tojnar
+# https://github.com/jtojnar/cmake-snips
+#
+# Modelled after Python’s os.path.join
+# https://docs.python.org/3.7/library/os.path.html#os.path.join
+# Windows not supported
+function(join_paths joined_path first_path_segment)
+    set(temp_path "${first_path_segment}")
+    foreach(current_segment IN LISTS ARGN)
+        if(NOT ("${current_segment}" STREQUAL ""))
+            if(IS_ABSOLUTE "${current_segment}")
+                set(temp_path "${current_segment}")
+            else()
+                set(temp_path "${temp_path}/${current_segment}")
+            endif()
+        endif()
+    endforeach()
+    set(${joined_path} "${temp_path}" PARENT_SCOPE)
+endfunction()
+
+join_paths(PKG_CONFIG_INSTALL_LIBDIR "\${prefix}" "${CMAKE_INSTALL_LIBDIR}")
+join_paths(PKG_CONFIG_INSTALL_INCLUDEDIR "\${prefix}" "${CMAKE_INSTALL_INCLUDEDIR}")
 configure_file(libblake3.pc.in libblake3.pc @ONLY)
 install(FILES "${CMAKE_BINARY_DIR}/libblake3.pc"
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/pkgconfig")
 
 # print feature summary
+# add_feature_info cannot directly use the BLAKE3_SIMD_TYPE :(
 add_feature_info("AMD64 assembly" BLAKE3_SIMD_AMD64_ASM "The library uses hand written amd64 SIMD assembly.")
 add_feature_info("x86 SIMD intrinsics" BLAKE3_SIMD_X86_INTRINSICS "The library uses x86 SIMD intrinsics.")
 add_feature_info("NEON SIMD intrinsics" BLAKE3_SIMD_NEON_INTRINSICS "The library uses NEON SIMD intrinsics.")

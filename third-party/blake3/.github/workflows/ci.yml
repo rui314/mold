@@ -34,7 +34,7 @@ jobs:
           # https://github.com/rust-lang/libs-team/issues/72.
           # This test target is here so that we notice if we accidentally bump
           # the MSRV, but it's not a promise that we won't bump it.
-          "1.66.1",
+          "1.70.0",
         ]
 
     steps:
@@ -126,21 +126,30 @@ jobs:
     - name: cargo test C bindings intrinsics
       run: cargo test --features=prefer_intrinsics
       working-directory: ./c/blake3_c_rust_bindings
+    - name: cargo test C bindings no AVX-512
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+      env:
+        CFLAGS: -DBLAKE3_NO_AVX512
+    - name: cargo test C bindings no AVX2
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+      env:
+        CFLAGS: -DBLAKE3_NO_AVX512 -DBLAKE3_NO_AVX2
+    - name: cargo test C bindings no SSE41
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+      env:
+        CFLAGS: -DBLAKE3_NO_AVX512 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_SSE41
+    - name: cargo test C bindings no SSE2
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+      env:
+        CFLAGS: -DBLAKE3_NO_AVX512 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_SSE2
     # Reference impl doc test.
     - name: reference impl doc test
       run: cargo test
       working-directory: ./reference_impl
-
-    # the new guts crate
-    - name: guts test
-      run: cargo test --all-features
-      working-directory: ./rust/guts
-    - name: guts no_std build
-      run: cargo build --no-default-features
-      working-directory: ./rust/guts
-    - name: guts no_std test  # note that rust/guts/src/test.rs still uses libstd
-      run: cargo test --no-default-features
-      working-directory: ./rust/guts
 
   b3sum_tests:
     name: b3sum ${{ matrix.target.name }} ${{ matrix.channel }}

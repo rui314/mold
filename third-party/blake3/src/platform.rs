@@ -277,6 +277,41 @@ impl Platform {
         }
     }
 
+    pub fn xof_many(
+        &self,
+        cv: &CVWords,
+        block: &[u8; BLOCK_LEN],
+        block_len: u8,
+        mut counter: u64,
+        flags: u8,
+        out: &mut [u8],
+    ) {
+        debug_assert_eq!(0, out.len() % BLOCK_LEN, "whole blocks only");
+        if out.is_empty() {
+            // The current assembly implementation always outputs at least 1 block.
+            return;
+        }
+        match self {
+            // Safe because detect() checked for platform support.
+            #[cfg(blake3_avx512_ffi)]
+            #[cfg(unix)]
+            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+            Platform::AVX512 => unsafe {
+                crate::avx512::xof_many(cv, block, block_len, counter, flags, out)
+            },
+            _ => {
+                // For platforms without an optimized xof_many, fall back to a loop over
+                // compress_xof. This is still faster than portable code.
+                for out_block in out.chunks_exact_mut(BLOCK_LEN) {
+                    // TODO: Use array_chunks_mut here once that's stable.
+                    let out_array: &mut [u8; BLOCK_LEN] = out_block.try_into().unwrap();
+                    *out_array = self.compress_xof(cv, block, block_len, counter, flags);
+                    counter += 1;
+                }
+            }
+        }
+    }
+
     // Explicit platform constructors, for benchmarks.
 
     pub fn portable() -> Self {

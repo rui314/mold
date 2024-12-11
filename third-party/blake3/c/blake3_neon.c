@@ -34,7 +34,7 @@ INLINE uint32x4_t set4(uint32_t a, uint32_t b, uint32_t c, uint32_t d) {
 }
 
 INLINE uint32x4_t rot16_128(uint32x4_t x) {
-  // The straightfoward implementation would be two shifts and an or, but that's
+  // The straightforward implementation would be two shifts and an or, but that's
   // slower on microarchitectures we've tested. See
   // https://github.com/BLAKE3-team/BLAKE3/pull/319.
   // return vorrq_u32(vshrq_n_u32(x, 16), vshlq_n_u32(x, 32 - 16));
