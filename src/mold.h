@@ -324,7 +324,7 @@ private:
   void apply_toc_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
                      u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> **dynrel);
 
-  u64 get_thunk_addr(i64 idx);
+  u64 get_thunk_addr(i64 idx) requires needs_thunk<E>;
 
   std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
 };
@@ -2569,13 +2569,10 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 }
 
 template <typename E>
-u64 InputSection<E>::get_thunk_addr(i64 idx) {
-  if constexpr (needs_thunk<E>) {
-    ThunkRef ref = extra.thunk_refs[idx];
-    assert(ref.thunk_idx != -1);
-    return output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx);
-  }
-  unreachable();
+u64 InputSection<E>::get_thunk_addr(i64 idx) requires needs_thunk<E> {
+  ThunkRef ref = extra.thunk_refs[idx];
+  assert(ref.thunk_idx != -1);
+  return output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx);
 }
 
 // Input object files may contain duplicate code for inline functions
