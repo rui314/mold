@@ -4,28 +4,28 @@
 cat <<EOF | $CC -o $t/a.o -c -xc - -ffunction-sections
 #include <stdio.h>
 
-void f0();
-void f1();
-void f2();
-void f3();
-void f4();
-void f5();
-void f6();
-void f7();
-void f8();
-void f9();
-void f10();
-void f11();
-void f12();
-void f13();
-void f14();
-void f15();
-void f16();
-void f17();
-void f18();
-void f19();
+void f0(int);
+void f1(int);
+void f2(int);
+void f3(int);
+void f4(int);
+void f5(int);
+void f6(int);
+void f7(int);
+void f8(int);
+void f9(int);
+void f10(int);
+void f11(int);
+void f12(int);
+void f13(int);
+void f14(int);
+void f15(int);
+void f16(int);
+void f17(int);
+void f18(int);
+void f19(int);
 
-void f0(int x) { printf("0 "); if (!x) f9(); }
+void f0(int x) { printf("0 "); if (!x) f9(x); }
 void space0() { __asm__(".space 1024*1024"); }
 
 void f1(int x) { printf("1 "); f8(x); }
