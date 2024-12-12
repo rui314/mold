@@ -1895,18 +1895,15 @@ void DynsymSection<E>::update_shdr(Context<E> &ctx) {
 
 template <typename E>
 void DynsymSection<E>::copy_buf(Context<E> &ctx) {
-  u8 *base = ctx.buf + this->shdr.sh_offset;
-  memset(base, 0, sizeof(ElfSym<E>));
+  ElfSym<E> *buf = (ElfSym<E> *)(ctx.buf + this->shdr.sh_offset);
   i64 name_offset = ctx.dynstr->dynsym_offset;
+
+  buf[0] = {};
 
   for (i64 i = 1; i < symbols.size(); i++) {
     Symbol<E> &sym = *symbols[i];
-    ElfSym<E> &esym =
-      *(ElfSym<E> *)(base + sym.get_dynsym_idx(ctx) * sizeof(ElfSym<E>));
-
-    esym = to_output_esym(ctx, sym, name_offset, nullptr);
+    buf[sym.get_dynsym_idx(ctx)] = to_output_esym(ctx, sym, name_offset, nullptr);
     name_offset += sym.name().size() + 1;
-    assert(esym.st_bind != STB_LOCAL || i < this->shdr.sh_info);
   }
 }
 
