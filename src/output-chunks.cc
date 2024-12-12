@@ -1931,17 +1931,14 @@ void HashSection<E>::copy_buf(Context<E> &ctx) {
   Entry *buckets = hdr + 2;
   Entry *chains = buckets + syms.size();
 
-  hdr[0] = hdr[1] = syms.size();
+  hdr[0] = syms.size();
+  hdr[1] = syms.size();
 
-  std::vector<u32> hashes(syms.size());
-  tbb::parallel_for((i64)1, (i64)syms.size(), [&](i64 i) {
-    hashes[i] = elf_hash(syms[i]->name()) % syms.size();
-  });
-
-  for (i64 i = 1; i < syms.size(); i++) {
-    i64 h = hashes[i];
-    chains[syms[i]->get_dynsym_idx(ctx)] = buckets[h];
-    buckets[h] = syms[i]->get_dynsym_idx(ctx);
+  for (Symbol<E> *sym : syms.subspan(1)) {
+    i64 i = sym->get_dynsym_idx(ctx);
+    i64 h = elf_hash(sym->name()) % syms.size();
+    chains[i] = buckets[h];
+    buckets[h] = i;
   }
 }
 
