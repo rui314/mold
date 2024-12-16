@@ -1898,7 +1898,7 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
   ElfSym<E> *buf = (ElfSym<E> *)(ctx.buf + this->shdr.sh_offset);
   i64 name_offset = ctx.dynstr->dynsym_offset;
 
-  buf[0] = {};
+  memset(buf, 0, sizeof(ElfSym<E>));
 
   for (i64 i = 1; i < symbols.size(); i++) {
     Symbol<E> &sym = *symbols[i];
