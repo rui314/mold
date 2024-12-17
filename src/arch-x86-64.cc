@@ -23,8 +23,7 @@
 // TLS block as TP (with some addend). As a result, offsets from TP to
 // thread-local variables (TLVs) in the main executable are all negative.
 //
-// https://github.com/rui314/psabi/blob/main/x86-64.pdf
-// https://github.com/rui314/psabi/blob/main/i386.pdf
+// https://gitlab.com/x86-psABIs/x86-64-ABI
 
 #include "mold.h"
 

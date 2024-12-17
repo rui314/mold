@@ -33,7 +33,7 @@
 // we need to add TP to a return value before use. I don't know why it is
 // different, but that is the way it is.
 //
-// https://github.com/rui314/psabi/blob/main/s390x.pdf
+// https://github.com/IBM/s390x-abi/releases/download/v1.6.1/lzsabi_s390x.pdf
 
 #include "mold.h"
 

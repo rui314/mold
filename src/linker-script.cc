@@ -268,8 +268,8 @@ static bool read_label(std::span<std::string_view> &tok, std::string label) {
 template <typename E>
 std::span<std::string_view>
 Script<E>::read_version_script_commands(std::span<std::string_view> tok,
-                                     std::string_view ver_str, u16 ver_idx,
-                                     bool is_global, bool is_cpp) {
+                                        std::string_view ver_str, u16 ver_idx,
+                                        bool is_global, bool is_cpp) {
   while (!tok.empty() && tok[0] != "}") {
     if (read_label(tok, "global")) {
       is_global = true;
@@ -359,8 +359,8 @@ void Script<E>::parse_version_script() {
 template <typename E>
 std::span<std::string_view>
 Script<E>::read_dynamic_list_commands(std::span<std::string_view> tok,
-                                   std::vector<DynamicPattern> &result,
-                                   bool is_cpp) {
+                                      std::vector<DynamicPattern> &result,
+                                      bool is_cpp) {
   while (!tok.empty() && tok[0] != "}") {
     if (tok[0] == "extern") {
       tok = tok.subspan(1);

@@ -95,7 +95,7 @@ InputFile<E>::InputFile(Context<E> &ctx, MappedFile *mf)
 
 template <typename E>
 std::span<ElfPhdr<E>> InputFile<E>::get_phdrs() {
-  ElfEhdr<E> &ehdr = get_ehdr();
+  ElfEhdr<E> &ehdr = *(ElfEhdr<E> *)mf->data;
   return {(ElfPhdr<E> *)(mf->data + ehdr.e_phoff), ehdr.e_phnum};
 }
 
@@ -168,7 +168,7 @@ ObjectFile<E>::parse_note_gnu_property(Context<E> &ctx, const ElfShdr<E> &shdr) 
 
 // <format-version>
 // [ <section-length> "vendor-name" <file-tag> <size> <attribute>*]+ ]*
-template <typename E>
+template <is_riscv E>
 static void read_riscv_attributes(Context<E> &ctx, ObjectFile<E> &file,
                                   std::string_view data) {
   if (data.empty())

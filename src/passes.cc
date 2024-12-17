@@ -57,7 +57,7 @@ int redo_main(Context<E> &ctx, int argc, char **argv) {
     return mold_main<LOONGARCH32>(argc, argv);
   if (target == LOONGARCH64::name)
     return mold_main<LOONGARCH64>(argc, argv);
-  unreachable();
+  abort();
 }
 
 template <typename E>
@@ -67,16 +67,9 @@ void apply_exclude_libs(Context<E> &ctx) {
   std::unordered_set<std::string_view> set(ctx.arg.exclude_libs.begin(),
                                            ctx.arg.exclude_libs.end());
 
-  if (set.contains("ALL")) {
-    for (ObjectFile<E> *file : ctx.objs)
-      if (!file->archive_name.empty())
-        file->exclude_libs = true;
-    return;
-  }
-
   for (ObjectFile<E> *file : ctx.objs)
     if (!file->archive_name.empty())
-      if (set.contains(path_filename(file->archive_name)))
+      if (set.contains(path_filename(file->archive_name)) || set.contains("ALL"))
         file->exclude_libs = true;
 }
 
@@ -1078,7 +1071,7 @@ void check_shlib_undefined(Context<E> &ctx) {
     // Skip the file if it depends on a file that we know nothing about.
     // This is because missing symbols may be provided by that unknown file.
     for (std::string_view needed : file->get_dt_needed(ctx))
-      if (sonames.count(needed) == 0)
+      if (!sonames.contains(needed))
         return;
 
     // Check if all undefined symbols have been resolved.
