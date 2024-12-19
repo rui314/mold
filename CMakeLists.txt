@@ -180,7 +180,7 @@ endif()
 # be stable on 32-bit targets.
 cmake_dependent_option(
   MOLD_USE_MIMALLOC "Use mimalloc" ON
-  "CMAKE_SIZEOF_VOID_P EQUAL 8; NOT APPLE; NOT ANDROID; NOT OPENBSD" OFF)
+  "CMAKE_SIZEOF_VOID_P EQUAL 8; NOT APPLE; NOT ANDROID; NOT OPENBSD; NOT MOLD_USE_ASAN; NOT MOLD_USE_TSAN" OFF)
 
 cmake_dependent_option(
   MOLD_USE_SYSTEM_MIMALLOC "Use system or vendored mimalloc" OFF
