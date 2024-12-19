@@ -1,3 +1,5 @@
+#include "common.h"
+
 // Including mimalloc-new-delete.h overrides new/delete operators.
 // We need it only when we are using mimalloc as a dynamic library.
 #if MOLD_USE_SYSTEM_MIMALLOC
