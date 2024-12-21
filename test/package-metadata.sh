@@ -22,9 +22,3 @@ readelf -p .note.package $t/exe4 | grep -Fq '{"name":"mold","ver":"x %"}'
 
 $CC -B. -o $t/exe5 $t/a.o -Wl,-package-metadata="{%[quot]name%[quot]:%[quot]mold%[quot]%[comma]%[quot]ver%[quot]:%[quot]x%[space]%%[quot]}"
 readelf -p .note.package $t/exe5 | grep -Fq '{"name":"mold","ver":"x %"}'
-
-$CC -B. -o $t/exe6 $t/a.o -Wl,--encoded-package-metadata=%7B%22foo%22%3A%22bar%22%7D
-readelf -x .note.package $t/exe6 | grep -Fq '{"foo":"bar"}'
-
-! $CC -B. -o $t/exe7 $t/a.o -Wl,--encoded-package-metadata=foo%x >& $t/log
-grep -q 'invalid string: foo%x' $t/log

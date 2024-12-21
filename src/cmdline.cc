@@ -411,28 +411,6 @@ static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg)
   return vec;
 }
 
-template <typename E>
-static std::string
-parse_encoded_package_metadata(Context<E> &ctx, std::string_view arg) {
-  auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
-  static std::regex re(R"(([^%]|%[0-9a-fA-F][0-9a-fA-F])*)", flags);
-
-  if (!std::regex_match(arg.begin(), arg.end(), re))
-    Fatal(ctx) << "--encoded-package-metadata: invalid string: " << arg;
-
-  std::ostringstream out;
-  while (!arg.empty()) {
-    if (arg[0] == '%') {
-      out << (char)((from_hex(arg[1]) << 4) | from_hex(arg[2]));
-      arg = arg.substr(3);
-    } else {
-      out << arg[0];
-      arg = arg.substr(1);
-    }
-  }
-  return out.str();
-}
-
 // Decode a percent and/or %[string] encoded string.
 // Following %[string] encodings are supported:
 //
@@ -989,8 +967,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("pack-dyn-relocs=none") ||
                read_z_flag("nopack-relative-relocs")) {
       ctx.arg.pack_dyn_relocs_relr = false;
-    } else if (read_arg("encoded-package-metadata")) {
-      ctx.arg.package_metadata = parse_encoded_package_metadata(ctx, arg);
     } else if (read_arg("package-metadata")) {
       ctx.arg.package_metadata = parse_package_metadata(arg);
     } else if (read_flag("stats")) {
