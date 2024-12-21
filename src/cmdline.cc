@@ -386,6 +386,17 @@ static char from_hex(char c) {
   return c - 'A' + 10;
 }
 
+// Decode a hexadecimal character. Return -1 on error.
+static int hexdecode(char c) {
+  if ('0' <= c && c <= '9')
+    return c - '0';
+  if ('a' <= c && c <= 'f')
+    return c - 'a' + 10;
+  if ('A' <= c && c <= 'F')
+    return c - 'A' + 10;
+  return -1;
+}
+
 template <typename E>
 static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg) {
   auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
@@ -418,6 +429,54 @@ parse_encoded_package_metadata(Context<E> &ctx, std::string_view arg) {
       out << arg[0];
       arg = arg.substr(1);
     }
+  }
+  return out.str();
+}
+
+// Decode a percent and/or %[string] encoded string.
+// Following %[string] encodings are supported:
+//
+// %[comma] for ,
+// %[lbrace] for {
+// %[quot] for "
+// %[rbrace] for }
+// %[space] for ' '
+//
+// The percent decoding behaves the same as Python's urllib.parse.unquote.
+static std::string parse_package_metadata(std::string_view arg) {
+  std::ostringstream out;
+  while (!arg.empty()) {
+    char c = arg[0];
+    size_t input_chars = 1;
+    if (c == '%') {
+      int hex1 = hexdecode(arg[1]);
+      if (hex1 != -1) {
+        int hex2 = hexdecode(arg[2]);
+        if (hex2 != -1) {
+          c = (char)((hex1 << 4) | hex2);
+          input_chars += 2;
+        }
+      } else if (arg[1] == '[') {
+        if (arg.compare(2, 6, "comma]") == 0) {
+          c = ',';
+          input_chars += 7;
+        } else if (arg.compare(2, 7, "lbrace]") == 0) {
+          c = '{';
+          input_chars += 8;
+        } else if (arg.compare(2, 5, "quot]") == 0) {
+          c = '"';
+          input_chars += 6;
+        } else if (arg.compare(2, 7, "rbrace]") == 0) {
+          c = '}';
+          input_chars += 8;
+        } else if (arg.compare(2, 6, "space]") == 0) {
+          c = ' ';
+          input_chars += 7;
+        }
+      }
+    }
+    out << c;
+    arg = arg.substr(input_chars);
   }
   return out.str();
 }
@@ -933,7 +992,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("encoded-package-metadata")) {
       ctx.arg.package_metadata = parse_encoded_package_metadata(ctx, arg);
     } else if (read_arg("package-metadata")) {
-      ctx.arg.package_metadata = arg;
+      ctx.arg.package_metadata = parse_package_metadata(arg);
     } else if (read_flag("stats")) {
       ctx.arg.stats = true;
       Counter::enabled = true;
