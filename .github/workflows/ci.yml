@@ -24,7 +24,7 @@ jobs:
         cd build
         cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 ${{ matrix.target }} ..
         cmake --build . -j$(nproc)
-    - run: cd build; ctest -j$(nproc)
+    - run: cd build; ctest --output-on-failure -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
@@ -52,7 +52,7 @@ jobs:
         cd build
         cmake ..
         cmake --build . -j$(nproc)
-    - run: cd build; ctest -j$(nproc)
+    - run: cd build; ctest --output-on-failure -j$(nproc)
     - name: archive test results
       uses: actions/upload-artifact@v3
       if: failure()
@@ -83,7 +83,7 @@ jobs:
         cd build
         cmake ..
         cmake --build . -j$(nproc)
-    - run: cd build; ctest -j$(nproc)
+    - run: cd build; ctest --output-on-failure -j$(nproc)
 
   build-macos:
     runs-on: macos-latest
@@ -139,4 +139,4 @@ jobs:
           cd build
           cmake ..
           cmake --build . -j$(nproc)
-          ctest -j$(nproc)
+          ctest --output-on-failure -j$(nproc)
