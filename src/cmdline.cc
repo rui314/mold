@@ -127,7 +127,8 @@ Options:
   --oformat=binary            Omit ELF, section, and program headers
   --pack-dyn-relocs=[relr,none]
                               Pack dynamic relocations
-  --package-metadata=STRING   Set a given string to .note.package
+  --package-metadata=PERCENT_ENCODED_STRING
+                              Set a given string to .note.package
   --perf                      Print performance statistics
   --pie, --pic-executable     Create a position-independent executable
     --no-pie, --no-pic-executable
@@ -407,7 +408,7 @@ parse_encoded_package_metadata(Context<E> &ctx, std::string_view arg) {
   static std::regex re(R"(([^%]|%[0-9a-fA-F][0-9a-fA-F])*)", flags);
 
   if (!std::regex_match(arg.begin(), arg.end(), re))
-    Fatal(ctx) << "--encoded-package-metadata: invalid string: " << arg;
+    Fatal(ctx) << "--package-metadata: invalid string: " << arg;
 
   std::ostringstream out;
   while (!arg.empty()) {
@@ -930,10 +931,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("pack-dyn-relocs=none") ||
                read_z_flag("nopack-relative-relocs")) {
       ctx.arg.pack_dyn_relocs_relr = false;
-    } else if (read_arg("encoded-package-metadata")) {
-      ctx.arg.package_metadata = parse_encoded_package_metadata(ctx, arg);
     } else if (read_arg("package-metadata")) {
-      ctx.arg.package_metadata = arg;
+      ctx.arg.package_metadata = parse_encoded_package_metadata(ctx, arg);
     } else if (read_flag("stats")) {
       ctx.arg.stats = true;
       Counter::enabled = true;
