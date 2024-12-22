@@ -2170,7 +2170,7 @@ struct LOONGARCH64 {
   static constexpr bool is_64 = true;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 16384;
+  static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_LOONGARCH;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
@@ -2195,7 +2195,7 @@ struct LOONGARCH32 {
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = true;
-  static constexpr u32 page_size = 16384;
+  static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_LOONGARCH;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
