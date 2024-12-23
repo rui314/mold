@@ -2299,7 +2299,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   HdrEntry *eh_hdr = nullptr;
   if (ctx.eh_frame_hdr)
     eh_hdr = (HdrEntry *)(ctx.buf + ctx.eh_frame_hdr->shdr.sh_offset +
-                   EhFrameHdrSection<E>::HEADER_SIZE);
+                          EhFrameHdrSection<E>::HEADER_SIZE);
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Copy CIEs.
@@ -2384,7 +2384,7 @@ template <typename E>
 void EhFrameHdrSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
 
-  // Write a header. The actual table is written by EhFrameHdr<E>::copy_buf.
+  // Write a header. The actual table is written by EhFrameSection::copy_buf.
   base[0] = 1;
   base[1] = DW_EH_PE_pcrel | DW_EH_PE_sdata4;
   base[2] = DW_EH_PE_udata4;
