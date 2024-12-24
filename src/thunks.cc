@@ -25,9 +25,6 @@
 
 #include "mold.h"
 
-#include <tbb/parallel_for.h>
-#include <tbb/parallel_for_each.h>
-
 namespace mold {
 
 using E = MOLD_TARGET;

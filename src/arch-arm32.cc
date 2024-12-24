@@ -34,8 +34,6 @@
 #include "mold.h"
 
 #include <tbb/parallel_for.h>
-#include <tbb/parallel_for_each.h>
-#include <tbb/parallel_sort.h>
 
 namespace mold {
 

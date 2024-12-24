@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <ios>
 #include <sstream>
+#include <tbb/concurrent_hash_map.h>
 #include <tbb/parallel_for_each.h>
 
 namespace mold {

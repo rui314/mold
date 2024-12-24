@@ -3,6 +3,7 @@
 #include <functional>
 #include <iomanip>
 #include <ios>
+#include <tbb/concurrent_vector.h>
 
 #ifndef _WIN32
 #include <sys/resource.h>
