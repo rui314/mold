@@ -1,6 +1,6 @@
 #include "common.h"
 
-#include <signal.h>
+#include <csignal>
 #include <tbb/version.h>
 
 #ifdef __FreeBSD__
