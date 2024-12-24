@@ -101,8 +101,8 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   std::string dso_path = find_dso(ctx, self);
 
   // Set environment variables
-  putenv(strdup(("LD_PRELOAD=" + dso_path).c_str()));
-  putenv(strdup(("MOLD_PATH=" + self).c_str()));
+  setenv("LD_PRELOAD", dso_path.c_str(), 1);
+  setenv("MOLD_PATH", self.c_str(), 1);
 
   // If ld, ld.lld or ld.gold is specified, run mold itself
   if (std::string cmd = path_filename(argv[2]);
