@@ -763,7 +763,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }
     } else if (read_flag("end-lib")) {
-      remaining.push_back("--end-lib");
+      remaining.emplace_back("--end-lib");
     } else if (read_flag("export-dynamic") || read_flag("E")) {
       ctx.arg.export_dynamic = true;
     } else if (read_flag("no-export-dynamic")) {
@@ -794,10 +794,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.print_map = true;
     } else if (read_flag("Bstatic") || read_flag("dn") || read_flag("static")) {
       ctx.arg.static_ = true;
-      remaining.push_back("--Bstatic");
+      remaining.emplace_back("--Bstatic");
     } else if (read_flag("Bdynamic") || read_flag("dy")) {
       ctx.arg.static_ = false;
-      remaining.push_back("--Bdynamic");
+      remaining.emplace_back("--Bdynamic");
     } else if (read_flag("shared") || read_flag("Bshareable")) {
       ctx.arg.shared = true;
     } else if (read_arg("spare-dynamic-tags")) {
@@ -806,7 +806,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.spare_program_headers
         = parse_number(ctx, "spare-program-headers", arg);
     } else if (read_flag("start-lib")) {
-      remaining.push_back("--start-lib");
+      remaining.emplace_back("--start-lib");
     } else if (read_flag("start-stop")) {
       ctx.arg.start_stop = true;
     } else if (read_arg("dependency-file")) {
@@ -849,7 +849,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("filler")) {
       ctx.arg.filler = parse_hex(ctx, "filler", arg);
     } else if (read_arg("L") || read_arg("library-path")) {
-      ctx.arg.library_paths.push_back(std::string(arg));
+      ctx.arg.library_paths.emplace_back(arg);
     } else if (read_arg("sysroot")) {
       ctx.arg.sysroot = arg;
     } else if (read_arg("unique")) {
@@ -1162,23 +1162,23 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("plugin")) {
       ctx.arg.plugin = arg;
     } else if (read_arg("plugin-opt")) {
-      ctx.arg.plugin_opt.push_back(std::string(arg));
+      ctx.arg.plugin_opt.emplace_back(arg);
     } else if (read_flag("lto-cs-profile-generate")) {
-      ctx.arg.plugin_opt.push_back("cs-profile-generate");
+      ctx.arg.plugin_opt.emplace_back("cs-profile-generate");
     } else if (read_arg("lto-cs-profile-file")) {
       ctx.arg.plugin_opt.push_back("cs-profile-path=" + std::string(arg));
     } else if (read_flag("lto-debug-pass-manager")) {
-      ctx.arg.plugin_opt.push_back("debug-pass-manager");
+      ctx.arg.plugin_opt.emplace_back("debug-pass-manager");
     } else if (read_flag("disable-verify")) {
-      ctx.arg.plugin_opt.push_back("disable-verify");
+      ctx.arg.plugin_opt.emplace_back("disable-verify");
     } else if (read_flag("lto-emit-asm")) {
-      ctx.arg.plugin_opt.push_back("emit-asm");
+      ctx.arg.plugin_opt.emplace_back("emit-asm");
     } else if (read_flag("no-legacy-pass-manager")) {
-      ctx.arg.plugin_opt.push_back("legacy-pass-manager");
+      ctx.arg.plugin_opt.emplace_back("legacy-pass-manager");
     } else if (read_arg("lto-partitions")) {
       ctx.arg.plugin_opt.push_back("lto-partitions=" + std::string(arg));
     } else if (read_flag("no-lto-legacy-pass-manager")) {
-      ctx.arg.plugin_opt.push_back("new-pass-manager");
+      ctx.arg.plugin_opt.emplace_back("new-pass-manager");
     } else if (read_arg("lto-obj-path")) {
       ctx.arg.plugin_opt.push_back("obj-path=" + std::string(arg));
     } else if (read_arg("opt-remarks-filename")) {
@@ -1191,7 +1191,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("opt-remarks-passes")) {
       ctx.arg.plugin_opt.push_back("opt-remarks-passes=" + std::string(arg));
     } else if (read_flag("opt-remarks-with_hotness")) {
-      ctx.arg.plugin_opt.push_back("opt-remarks-with-hotness");
+      ctx.arg.plugin_opt.emplace_back("opt-remarks-with-hotness");
     } else if (args[0].starts_with("-lto-O")) {
       ctx.arg.plugin_opt.push_back("O" + std::string(args[0].substr(6)));
       args = args.subspan(1);
@@ -1204,13 +1204,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("lto-sample-profile")) {
       ctx.arg.plugin_opt.push_back("sample-profile=" + std::string(arg));
     } else if (read_flag("save-temps")) {
-      ctx.arg.plugin_opt.push_back("save-temps");
+      ctx.arg.plugin_opt.emplace_back("save-temps");
     } else if (read_flag("thinlto-emit-imports-files")) {
-      ctx.arg.plugin_opt.push_back("thinlto-emit-imports-files");
+      ctx.arg.plugin_opt.emplace_back("thinlto-emit-imports-files");
     } else if (read_arg("thinlto-index-only")) {
       ctx.arg.plugin_opt.push_back("thinlto-index-only=" + std::string(arg));
     } else if (read_flag("thinlto-index-only")) {
-      ctx.arg.plugin_opt.push_back("thinlto-index-only");
+      ctx.arg.plugin_opt.emplace_back("thinlto-index-only");
     } else if (read_arg("thinlto-object-suffix-replace")) {
       ctx.arg.plugin_opt.push_back("thinlto-object-suffix-replace=" +
                                    std::string(arg));
@@ -1345,21 +1345,21 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("export-dynamic-symbol-list")) {
       append(ctx.dynamic_list_patterns, parse_dynamic_list(ctx, arg));
     } else if (read_flag("as-needed")) {
-      remaining.push_back("--as-needed");
+      remaining.emplace_back("--as-needed");
     } else if (read_flag("no-as-needed")) {
-      remaining.push_back("--no-as-needed");
+      remaining.emplace_back("--no-as-needed");
     } else if (read_flag("whole-archive")) {
-      remaining.push_back("--whole-archive");
+      remaining.emplace_back("--whole-archive");
     } else if (read_flag("no-whole-archive")) {
-      remaining.push_back("--no-whole-archive");
+      remaining.emplace_back("--no-whole-archive");
     } else if (read_arg("l") || read_arg("library")) {
       remaining.push_back("-l" + std::string(arg));
     } else if (read_arg("script") || read_arg("T")) {
-      remaining.push_back(std::string(arg));
+      remaining.emplace_back(arg);
     } else if (read_flag("push-state")) {
-      remaining.push_back("--push-state");
+      remaining.emplace_back("--push-state");
     } else if (read_flag("pop-state")) {
-      remaining.push_back("--pop-state");
+      remaining.emplace_back("--pop-state");
     } else if (args[0].starts_with("-z") && args[0].size() > 2) {
       Warn(ctx) << "unknown command line option: " << args[0];
       args = args.subspan(1);
@@ -1372,7 +1372,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else {
       if (args[0].starts_with('-'))
         Fatal(ctx) << "unknown command line option: " << args[0];
-      remaining.push_back(std::string(args[0]));
+      remaining.emplace_back(args[0]);
       args = args.subspan(1);
     }
   }

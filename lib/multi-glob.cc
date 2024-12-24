@@ -96,12 +96,12 @@ bool MultiGlob::add(std::string_view pat, i64 val) {
   assert(!is_compiled);
   assert(!pat.empty());
 
-  strings.push_back(std::string(pat));
+  strings.emplace_back(pat);
 
   // Complex glob pattern
   if (!is_simple_pattern(pat)) {
     if (std::optional<Glob> glob = Glob::compile(pat)) {
-      globs.push_back({std::move(*glob), val});
+      globs.emplace_back(std::move(*glob), val);
       return true;
     }
     return false;

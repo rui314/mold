@@ -332,7 +332,7 @@ Script<E>::read_version_script(std::span<std::string_view> tok) {
     } else {
       ver_str = tok[0];
       ver_idx = next_ver++;
-      ctx.arg.version_definitions.push_back(std::string(tok[0]));
+      ctx.arg.version_definitions.emplace_back(tok[0]);
       tok = tok.subspan(1);
     }
 

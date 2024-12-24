@@ -19,7 +19,7 @@ std::optional<Glob> Glob::compile(std::string_view pat) {
       // [$\]!]: $, ] or !
       // [a-czg-i]: a, b, c, z, g, h, or i
       // [^a-z]: Any character except lowercase letters
-      vec.push_back({BRACKET});
+      vec.emplace_back(BRACKET);
       std::bitset<256> &bitset = vec.back().bitset;
 
       bool negate = false;
@@ -74,22 +74,22 @@ std::optional<Glob> Glob::compile(std::string_view pat) {
       break;
     }
     case '?':
-      vec.push_back({QUESTION});
+      vec.emplace_back(QUESTION);
       break;
     case '*':
-      vec.push_back({STAR});
+      vec.emplace_back(STAR);
       break;
     case '\\':
       if (pat.empty())
         return {};
       if (vec.empty() || vec.back().kind != STRING)
-        vec.push_back({STRING});
+        vec.emplace_back(STRING);
       vec.back().str += pat[0];
       pat = pat.substr(1);
       break;
     default:
       if (vec.empty() || vec.back().kind != STRING)
-        vec.push_back({STRING});
+        vec.emplace_back(STRING);
       vec.back().str += c;
       break;
     }
