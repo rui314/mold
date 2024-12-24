@@ -1,6 +1,5 @@
 #include "mold.h"
 
-#include <limits>
 #include <zlib.h>
 #include <zstd.h>
 

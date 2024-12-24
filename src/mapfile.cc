@@ -5,7 +5,6 @@
 #include <ios>
 #include <sstream>
 #include <tbb/parallel_for_each.h>
-#include <unordered_map>
 
 namespace mold {
 

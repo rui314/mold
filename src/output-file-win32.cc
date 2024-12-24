@@ -1,7 +1,6 @@
 #include "mold.h"
 
 #include <fcntl.h>
-#include <filesystem>
 #include <windows.h>
 
 namespace mold {
