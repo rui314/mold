@@ -1173,8 +1173,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.plugin_opt.push_back("disable-verify");
     } else if (read_flag("lto-emit-asm")) {
       ctx.arg.plugin_opt.push_back("emit-asm");
-    } else if (read_arg("thinlto-jobs")) {
-      ctx.arg.plugin_opt.push_back("jobs=" + std::string(arg));
     } else if (read_flag("no-legacy-pass-manager")) {
       ctx.arg.plugin_opt.push_back("legacy-pass-manager");
     } else if (read_arg("lto-partitions")) {
