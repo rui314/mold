@@ -1,10 +1,10 @@
 #include "mold.h"
 
+#include <filesystem>
 #include <random>
 #include <regex>
 #include <sstream>
-#include <sys/stat.h>
-#include <sys/types.h>
+#include <system_error>
 #include <tbb/global_control.h>
 #include <unordered_set>
 
@@ -465,10 +465,9 @@ static void read_retain_symbols_file(Context<E> &ctx, std::string_view path) {
   ctx.arg.retain_symbols_file = std::move(vec);
 }
 
-static bool is_file(std::string_view path) {
-  struct stat st;
-  return stat(std::string(path).c_str(), &st) == 0 &&
-         (st.st_mode & S_IFMT) != S_IFDIR;
+static bool is_file(const std::filesystem::path& path) {
+  std::error_code error;
+  return !std::filesystem::is_directory(path, error) && !error;
 }
 
 template <typename E>
