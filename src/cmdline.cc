@@ -563,14 +563,11 @@ static bool returns_etxtbsy() {
 #if HAVE_UNAME
   struct utsname buf;
   if (uname(&buf) == 0 && strcmp(buf.sysname, "Linux") == 0) {
-    std::tuple<int, int, int> kernel_ver = parse_kernel_version(buf.release);
-    return kernel_ver < std::tuple{6, 11, 0} ||
-           kernel_ver >= std::tuple{6, 13, 0};
+    std::tuple<int, int, int> ver = parse_kernel_version(buf.release);
+    return ver < std::tuple{6, 11, 0} || std::tuple{6, 13, 0} <= ver;
   }
-  return false;
-#else
-  return false;
 #endif
+  return false;
 }
 
 template <typename E>

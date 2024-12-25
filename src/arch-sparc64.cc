@@ -159,8 +159,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
-    u64 P = (get_addr() + rel.r_offset);
-    u64 G = (sym.get_got_idx(ctx) * sizeof(Word<E>));
+    u64 P = get_addr() + rel.r_offset;
+    u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
@@ -489,12 +489,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
         *(ub64 *)loc = S + A;
       break;
     case R_SPARC_32:
-    case R_SPARC_UA32: {
-      i64 val = S + A;
-      check(val, 0, 1LL << 32);
-      *(ub32 *)loc = val;
+    case R_SPARC_UA32:
+      check(S + A, 0, 1LL << 32);
+      *(ub32 *)loc = S + A;
       break;
-    }
     case R_SPARC_TLS_DTPOFF32:
       *(ub32 *)loc = S + A - ctx.dtp_addr;
       break;
