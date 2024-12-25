@@ -556,15 +556,19 @@ parse_kernel_version(std::string str) {
   return {std::stoi(m[1]), std::stoi(m[2]), std::stoi(m[3])};
 }
 
-// Since 6.11.0, the Linux kernel no longer returns ETXTBSY for open(2)
-// on an executable file that is currently running. This function
-// returns true if we are running on a Linux kernel older than 6.11.0.
+// Version 6.11 and 6.12 of the Linux kernel does not return ETXTBSY for
+// open(2) on an executable file that is currently running. This function
+// returns true if we are running on a Linux kernel older than 6.11 or newer
+// than 6.12.
 static bool returns_etxtbsy() {
 #if HAVE_UNAME
   struct utsname buf;
-  return uname(&buf) == 0 &&
-         strcmp(buf.sysname, "Linux") == 0 &&
-         parse_kernel_version(buf.release) < std::tuple{6, 11, 0};
+  if (uname(&buf) == 0 && strcmp(buf.sysname, "Linux") == 0) {
+    std::tuple<int, int, int> kernel_ver = parse_kernel_version(buf.release);
+    return kernel_ver < std::tuple{6, 11, 0} ||
+           kernel_ver >= std::tuple{6, 13, 0};
+  }
+  return false;
 #else
   return false;
 #endif
