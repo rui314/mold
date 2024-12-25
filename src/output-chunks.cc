@@ -2238,7 +2238,7 @@ void EhFrameSection<E>::construct(Context<E> &ctx) {
 
   // Remove dead FDEs and assign them offsets within their corresponding
   // CIE group.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     std::erase_if(file->fdes, [](FdeRecord<E> &fde) { return !fde.is_alive; });
 
     i64 offset = 0;

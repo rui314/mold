@@ -1180,7 +1180,7 @@ void sort_init_fini(Context<E> &ctx) {
             vec.push_back({isec, get_init_fini_priority(isec)});
         }
 
-        sort(vec, [&](const Entry &a, const Entry &b) { return a.prio < b.prio; });
+        sort(vec, [](const Entry &a, const Entry &b) { return a.prio < b.prio; });
 
         for (i64 i = 0; i < vec.size(); i++)
           osec->members[i] = vec[i].sect;
@@ -1208,7 +1208,7 @@ void sort_ctor_dtor(Context<E> &ctx) {
         for (InputSection<E> *isec : osec->members)
           vec.push_back({isec, get_ctor_dtor_priority(isec)});
 
-        sort(vec, [&](const Entry &a, const Entry &b) { return a.prio < b.prio; });
+        sort(vec, [](const Entry &a, const Entry &b) { return a.prio < b.prio; });
 
         for (i64 i = 0; i < vec.size(); i++)
           osec->members[i] = vec[i].sect;
@@ -1542,7 +1542,7 @@ template <typename E>
 void compute_imported_symbol_weakness(Context<E> &ctx) {
   Timer t(ctx, "compute_imported_symbol_weakness");
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
@@ -1697,7 +1697,7 @@ void sort_dynsyms(Context<E> &ctx) {
   // .dynsym.
   if (ctx.gnu_hash) {
     auto first_exported = std::stable_partition(first_global, syms.end(),
-                                                [&](Symbol<E> *sym) {
+                                                [](Symbol<E> *sym) {
       return !sym->is_exported;
     });
 
@@ -1939,7 +1939,7 @@ void compute_import_export(Context<E> &ctx) {
   // If we are creating an executable, we want to export symbols referenced
   // by DSOs unless they are explicitly marked as local by a version script.
   if (!ctx.arg.shared) {
-    tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+    tbb::parallel_for_each(ctx.dsos, [](SharedFile<E> *file) {
       for (Symbol<E> *sym : file->symbols) {
         if (sym->file && !sym->file->is_dso && sym->visibility != STV_HIDDEN &&
             sym->ver_idx != VER_NDX_LOCAL) {
@@ -2299,7 +2299,7 @@ void sort_output_sections_by_order(Context<E> &ctx) {
     chunk->sect_order = get_rank(chunk);
 
   // Sort output sections by --section-order
-  sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
+  sort(ctx.chunks, [](Chunk<E> *a, Chunk<E> *b) {
     return a->sect_order < b->sect_order;
   });
 }

@@ -109,7 +109,7 @@ void shrink_sections<E>(Context<E> &ctx) {
 
       std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
       auto it = std::lower_bound(rels.begin(), rels.end(), sym->value,
-                                 [&](const ElfRel<E> &r, u64 val) {
+                                 [](const ElfRel<E> &r, u64 val) {
         return r.r_offset < val;
       });
 

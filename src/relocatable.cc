@@ -111,7 +111,7 @@ template <typename E>
 static void r_claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "r_claim_unresolved_symbols");
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     if (!file->is_alive)
       return;
 

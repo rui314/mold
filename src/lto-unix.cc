@@ -685,7 +685,7 @@ std::vector<ObjectFile<E> *> run_lto_plugin(Context<E> &ctx) {
   phase = 2;
 
   // Set `referenced_by_regular_obj` bit.
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     if (!file->is_lto_obj) {
       for (Symbol<E> *sym : file->get_global_syms()) {
         if (sym->file && !sym->file->is_dso &&

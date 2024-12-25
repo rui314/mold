@@ -656,7 +656,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 template <typename E>
 void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   if constexpr (is_riscv<E> || is_loongarch<E>) {
-    auto less = [&](const ElfRel<E> &a, const ElfRel<E> &b) {
+    auto less = [](const ElfRel<E> &a, const ElfRel<E> &b) {
       return a.r_offset < b.r_offset;
     };
 
@@ -1106,7 +1106,7 @@ template <typename E>
 void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
   this->output_sym_indices.resize(this->elf_syms.size(), -1);
 
-  auto is_alive = [&](Symbol<E> &sym) -> bool {
+  auto is_alive = [](Symbol<E> &sym) -> bool {
     if (SectionFragment<E> *frag = sym.get_frag())
       return frag->is_alive;
     if (InputSection<E> *isec = sym.get_input_section())
@@ -1399,7 +1399,7 @@ std::span<Symbol<E> *> SharedFile<E>::get_symbols_at(Symbol<E> *sym) {
   });
 
   auto [begin, end] = std::equal_range(sorted_syms.begin(), sorted_syms.end(),
-                                       sym, [&](Symbol<E> *a, Symbol<E> *b) {
+                                       sym, [](Symbol<E> *a, Symbol<E> *b) {
     return a->esym().st_value < b->esym().st_value;
   });
 
