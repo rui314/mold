@@ -1,7 +1,7 @@
 #include "mold.h"
 
+#include <csignal>
 #include <filesystem>
-#include <signal.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>

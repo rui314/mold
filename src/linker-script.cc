@@ -6,7 +6,6 @@
 #include "mold.h"
 
 #include <cctype>
-#include <iomanip>
 
 namespace mold {
 

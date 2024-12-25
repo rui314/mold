@@ -3,11 +3,8 @@
 #include "../lib/common.h"
 #include "elf.h"
 
-#include <atomic>
-#include <bitset>
 #include <cassert>
 #include <cstdint>
-#include <fstream>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -15,13 +12,10 @@
 #include <mutex>
 #include <optional>
 #include <span>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <tbb/concurrent_hash_map.h>
-#include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
-#include <tbb/enumerable_thread_specific.h>
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
 #include <type_traits>

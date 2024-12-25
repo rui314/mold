@@ -22,8 +22,6 @@
 #include "mold.h"
 
 #include <regex>
-#include <tbb/parallel_for.h>
-#include <tbb/parallel_for_each.h>
 
 namespace mold {
 

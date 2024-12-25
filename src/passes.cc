@@ -3,13 +3,12 @@
 
 #include <fstream>
 #include <functional>
-#include <map>
 #include <optional>
 #include <regex>
 #include <shared_mutex>
+#include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
-#include <tbb/partitioner.h>
 #include <unordered_set>
 
 namespace mold {
