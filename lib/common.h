@@ -318,7 +318,7 @@ class Timer {
 public:
   Timer(Context &ctx, std::string name, Timer *parent = nullptr) {
     record = new TimerRecord(name, parent ? parent->record : nullptr);
-    ctx.timer_records.push_back(std::unique_ptr<TimerRecord>(record));
+    ctx.timer_records.emplace_back(record);
   }
 
   Timer(const Timer &) = delete;
@@ -906,7 +906,7 @@ public:
     mf->size = size;
     mf->parent = this;
 
-    ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
+    ctx.mf_pool.emplace_back(mf);
     return mf;
   }
 
@@ -965,7 +965,7 @@ MappedFile *open_file(Context &ctx, std::string path) {
     Fatal(ctx) << error;
 
   if (mf)
-    ctx.mf_pool.push_back(std::unique_ptr<MappedFile>(mf));
+    ctx.mf_pool.emplace_back(mf);
   return mf;
 }
 
