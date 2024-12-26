@@ -40,7 +40,7 @@ set -e -x
 cd "$(dirname $0)"
 
 usage() {
-  echo "Usage: $0 [ x86_64 | aarch64 | arm | riscv64 | ppc64le | s390x ]"
+  echo "Usage: $0 [ x86_64 | aarch64 | arm | riscv64 | ppc64le | s390x | loongarch64 ]"
   exit 1
 }
 
@@ -168,6 +168,18 @@ RUN sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debi
   apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-18 cmake && \
   ln -sf /usr/bin/clang-18 /usr/bin/clang && \
   ln -sf /usr/bin/clang++-18 /usr/bin/clang++ && \
+  rm -rf /var/lib/apt/lists
+EOF
+  ;;
+loongarch64)
+  # LoongArch build is not reproducible yet
+  cat <<EOF | $image_build
+FROM docker.io/loongarch64/debian:sid
+ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-17 cmake && \
+  ln -sf /usr/bin/clang-17 /usr/bin/clang && \
+  ln -sf /usr/bin/clang++-17 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
 EOF
   ;;
