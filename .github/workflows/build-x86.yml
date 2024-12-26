@@ -33,4 +33,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: tarball
-        path: mold-*.tar.gz
+        path: dist/mold-*.tar.gz

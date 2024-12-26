@@ -200,7 +200,10 @@ dest=mold-$version-$arch-linux
 timestamp="$(git log -1 --format=%ci)"
 
 # Build mold in a container.
-$cmd --platform linux/$arch -i --rm -v "$(pwd):/mold" $image bash -c "
+mkdir -p dist
+
+$cmd --platform linux/$arch -i --rm -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" \
+  $image bash -c "
 set -e
 mkdir /build
 cd /build
@@ -212,10 +215,10 @@ cmake --build . -j\$(nproc)
 ctest --output-on-failure -j4
 cmake --install . --prefix $dest --strip
 find $dest -print | xargs touch --no-dereference --date='$timestamp'
-find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /mold/$dest.tar.gz
-cp mold /mold
+find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /dist/$dest.tar.gz
+cp mold /dist
 if [ \"\$container\" != podman ]; then
-  chown $(id -u):$(id -g) /mold/$dest.tar.gz /mold/mold
+  chown $(id -u):$(id -g) /dist/$dest.tar.gz /dist/mold
 fi
-sha256sum /mold/$dest.tar.gz
+sha256sum /dist/$dest.tar.gz
 "
