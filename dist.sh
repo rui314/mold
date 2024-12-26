@@ -61,10 +61,22 @@ case $# in
 esac
 
 # Create a Docker image.
+if [ "$GITHUB_REPOSITORY" = '' ]; then
+  cmd="podman run --userns=host"
+  image=mold-builder-$arch
+  image_build="podman build --arch $arch -t $image -"
+else
+  # If this script is running on GitHub Actions, we want to cache
+  # the created container image in GitHub's container repostiory.
+  cmd="docker run"
+  image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
+  image_build="docker buildx build --platform linux/$arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=$image -"
+fi
+
 case $arch in
 x86_64)
   # Debian 8 (Jessie) released in April 2015
-  script=$(cat <<EOF
+  cat <<EOF | $image_build
 FROM debian:jessie-20210326@sha256:32ad5050caffb2c7e969dac873bce2c370015c2256ff984b70c1c08b3a2816a0
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.list && \
@@ -127,7 +139,6 @@ RUN mkdir /build && \
   cmake --install . --strip && \
   rm -rf /build
 EOF
-)
   ;;
 aarch64 | arm | ppc64le | s390x)
   # Debian 10 (Bullseye) released in July 2019
@@ -135,7 +146,7 @@ aarch64 | arm | ppc64le | s390x)
   # We don't want to build Clang for these targets with Qemu becuase
   # that'd take extremely long time. Also I believe old build machines
   # are usually x86-64.
-  script=$(cat <<EOF
+  cat <<EOF | $image_build
 FROM debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.list && \
@@ -146,10 +157,9 @@ RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.lis
   ln -sf /usr/bin/clang++-16 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
 EOF
-)
   ;;
 riscv64)
-  script=$(cat <<EOF
+  cat <<EOF | $image_build
 FROM docker.io/riscv64/debian:unstable-20240926@sha256:25654919c2926f38952cdd14b3300d83d13f2d820715f78c9f4b7a1d9399bf48
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debian.sources && \
@@ -160,24 +170,11 @@ RUN sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debi
   ln -sf /usr/bin/clang++-18 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
 EOF
-)
   ;;
 *)
   usage
   ;;
 esac
-
-if [ "$GITHUB_REPOSITORY" = '' ]; then
-  cmd="podman run --userns=host"
-  image=mold-builder-$arch
-  echo "$script" | podman build --arch $arch -t $image -
-else
-  # If this script is running on GitHub Actions, we want to cache
-  # the created container image in GitHub's container repostiory.
-  cmd="docker run"
-  image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
-  echo "$script" | docker buildx build --platform linux/$arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=$image -
-fi
 
 version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' CMakeLists.txt)
 dest=mold-$version-$arch-linux
