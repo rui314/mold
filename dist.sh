@@ -72,7 +72,7 @@ else
   # If this script is running on GitHub Actions, we want to cache
   # the created Docker image in GitHub's Docker repostiory.
   image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
-  image_build="podman build --arch $arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch -"
+  image_build="podman build --arch $arch -t $image --output=type=registry --cache-to type=inline --cache-from type=registry,ref=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch -"
 fi
 
 # Create a Docker image.
