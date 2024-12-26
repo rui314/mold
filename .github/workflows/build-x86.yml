@@ -2,7 +2,6 @@ name: Build x86 tarball
 
 on:
   push:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
