@@ -1090,7 +1090,7 @@ static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
   // merged, so their origins shouldn't matter, but I don't really
   // know the rationale. Anyway, this is the behavior of the
   // traditional linkers.
-  if (sym.name().starts_with(".L")) {
+  if (sym.name().starts_with(".L") || sym.name() == "L0\001") {
     if (ctx.arg.discard_locals)
       return false;
 
