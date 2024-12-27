@@ -619,7 +619,7 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
 
   // Uniquify elements because GCC 11 seems to emit one record for each
   // comdat group which results in having a lot of duplicate records.
-  tbb::parallel_for_each(cus, [&](Compunit &cu) {
+  tbb::parallel_for_each(cus, [](Compunit &cu) {
     sort(cu.nametypes);
     remove_duplicates(cu.nametypes);
   });

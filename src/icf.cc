@@ -468,7 +468,7 @@ static void print_icf_sections(Context<E> &ctx) {
   });
 
   tbb::parallel_sort(leaders.begin(), leaders.end(),
-                     [&](InputSection<E> *a, InputSection<E> *b) {
+                     [](InputSection<E> *a, InputSection<E> *b) {
                        return a->get_priority() < b->get_priority();
                      });
 
