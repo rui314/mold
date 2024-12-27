@@ -31,7 +31,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up QEMU
-      run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+      uses: docker/setup-qemu-action@v3
 
     - name: Build a tarball
       run: ./dist.sh ${{ matrix.target }}
