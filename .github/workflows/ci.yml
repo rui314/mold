@@ -68,6 +68,7 @@ jobs:
         distro:
         - alpine
         - archlinux
+        - debian:11 # GCC 10 and CMake 3.18 - the minimum supported by mold
         - fedora
         - gentoo/stage3
         - opensuse/tumbleweed
