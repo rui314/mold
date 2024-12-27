@@ -41,3 +41,4 @@ jobs:
       with:
         name: ${{ matrix.target }}
         path: dist/mold-*.tar.gz
+        compression-level: 0

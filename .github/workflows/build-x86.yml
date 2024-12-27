@@ -31,3 +31,4 @@ jobs:
       with:
         name: tarball
         path: dist/mold-*.tar.gz
+        compression-level: 0
