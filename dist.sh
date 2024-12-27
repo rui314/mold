@@ -18,7 +18,7 @@
 # commit with release tags by rebuilding the binaries yourself.
 #
 # Debian provides snapshot.debian.org to host all historical binary
-# packages. We use it to construct Docker images pinned to a
+# packages. We use it to construct Podman images pinned to a
 # particular timestamp.
 #
 # We aim to use a reasonably old Debian version because we'll dynamically
@@ -60,7 +60,7 @@ case $# in
   usage
 esac
 
-# Create a Docker image.
+# Create a Podman image.
 if [ "$GITHUB_REPOSITORY" = '' ]; then
   cmd="podman run --userns=host"
   image=mold-builder-$arch
@@ -68,9 +68,9 @@ if [ "$GITHUB_REPOSITORY" = '' ]; then
 else
   # If this script is running on GitHub Actions, we want to cache
   # the created container image in GitHub's container repostiory.
-  cmd="docker run"
+  cmd="podman run"
   image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
-  image_build="docker buildx build --platform linux/$arch -t $image --push --cache-to type=inline --cache-from type=registry,ref=$image -"
+  image_build="podman build --platform linux/$arch -t $image --output=type=registry --layers --cache-to $image  --cache-from $image -"
 fi
 
 case $arch in
