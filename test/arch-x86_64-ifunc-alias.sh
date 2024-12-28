@@ -4,7 +4,7 @@
 supports_ifunc || skip
 test_cflags -static || skip
 
-cat <<EOF | $CXX -o $t/a.o -c -xc++ - -fno-PIE
+cat <<EOF | $CXX -march=x86-64 -o $t/a.o -c -xc++ - -fno-PIE
 #include <assert.h>
 #include <stdio.h>
 
