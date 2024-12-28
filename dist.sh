@@ -68,7 +68,7 @@ else
   # If this script is running on GitHub Actions, we want to cache
   # the created container image in GitHub's container repostiory.
   image=ghcr.io/$GITHUB_REPOSITORY/mold-builder-$arch
-  image_build="podman build --platform linux/$arch -t $image --output=type=registry --layers --cache-to $image --cache-from $image -"
+  image_build="podman build --arch $arch -t $image --output=type=registry --layers --cache-to $image --cache-from $image -"
 fi
 
 case $arch in
@@ -200,8 +200,8 @@ timestamp="$(git log -1 --format=%ci)"
 # Build mold in a container.
 mkdir -p dist
 
-podman run --platform linux/$arch -it --rm --userns=host \
-  -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" $image bash -c "
+podman run --arch $arch -it --rm --userns=host -v "$(pwd):/mold:ro" \
+  -v "$(pwd)/dist:/dist" $image bash -c "
 set -e
 mkdir /build
 cd /build
