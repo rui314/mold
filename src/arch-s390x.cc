@@ -250,6 +250,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc = (GOT + A - P) >> 1;
       break;
     case R_390_GOTENT:
+      // If we can relax a got-loading LGRL to an address-materializing
+      // LARL, do that. The format of LGRL is 0xc 0x4 <reg> 0x8 followed
+      // by a 32-bit offset. LARL is 0xc 0x0 <reg> 0x0.
+      if (ctx.arg.relax && sym.is_pcrel_linktime_const(ctx)) {
+        u64 op = *(ub16 *)(loc - 2);
+        u64 val = S + A - P;
+        if ((op & 0xff0f) == 0xc408 && A == 2 && (val & 1) == 0 &&
+            sign_extend(val, 32) == val) {
+          *(ub16 *)(loc - 2) = 0xc000 | (op & 0x00f0);
+          *(ub32 *)loc = val >> 1;
+          continue;
+        }
+      }
       check_dbl(GOT + G + A - P, -(1LL << 32), 1LL << 32);
       *(ub32 *)loc = (GOT + G + A - P) >> 1;
       break;

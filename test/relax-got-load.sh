@@ -13,5 +13,17 @@ void hello();
 int main() { hello(); }
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q 'Hello world'
+$CC -B. -o $t/exe1 $t/a.o $t/b.o
+$QEMU $t/exe1 | grep -q 'Hello world'
+
+$CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,--no-relax
+$QEMU $t/exe2 | grep -q 'Hello world'
+
+# On x86, GOTPCRELX is relaxed even with --no-relax
+case $MACHINE in
+aarch64 | riscv64 | s390x | loongarch64)
+  $OBJDUMP -d $t/exe1 | grep -v exe1 > $t/log1
+  $OBJDUMP -d $t/exe2 | grep -v exe2 > $t/log2
+  ! diff $t/log1 $t/log2 > /dev/null || false
+  ;;
+esac
