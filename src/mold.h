@@ -542,9 +542,9 @@ public:
     this->shdr.sh_addralign = sizeof(Word<E>);
 
     // We always create a .got so that _GLOBAL_OFFSET_TABLE_ has
-    // something to point to. s390x psABI define GOT[1] as a
-    // reserved slot, so we allocate one more for them.
-    this->shdr.sh_size = (is_s390x<E> ? 2 : 1) * sizeof(Word<E>);
+    // something to point to. s390x psABI define GOT[1] and GOT[2]
+    // as reserved slots, so we allocate two more for them.
+    this->shdr.sh_size = (is_s390x<E> ? 3 : 1) * sizeof(Word<E>);
   }
 
   void add_got_symbol(Context<E> &ctx, Symbol<E> *sym);
