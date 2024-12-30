@@ -2016,14 +2016,22 @@ get_merged_output_name(Context<E> &ctx, std::string_view name, u64 flags,
   if (ctx.arg.unique && ctx.arg.unique->match(name))
     return name;
 
-  // GCC seems to create sections named ".rodata.strN.<mangled-symbol-name>.M".
-  // We want to eliminate the symbol name part from the section name.
-  if ((flags & SHF_STRINGS) && name.starts_with(".rodata.")) {
-    std::string name2 = ".rodata.str"s + std::to_string(entsize) +
-                        "." + std::to_string(addralign);
-    if (name == name2)
-      return name;
-    return save_string(ctx, name2);
+  // GCC seems to create sections named ".rodata.strN.<mangled-symbol-name>.M"
+  // or ".rodata.cst.<mangled-symbol-name.cstN". We want to eliminate the
+  // symbol name part from the section name.
+  if (name.starts_with(".rodata.")) {
+    if (flags & SHF_STRINGS) {
+      std::string name2 = ".rodata.str"s + std::to_string(entsize) +
+                          "." + std::to_string(addralign);
+      if (name == name2)
+        return name;
+      return save_string(ctx, name2);
+    } else {
+      std::string name2 = ".rodata.cst"s + std::to_string(entsize);
+      if (name == name2)
+        return name;
+      return save_string(ctx, name2);
+    }
   }
 
   return name;
@@ -2209,7 +2217,8 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) {
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
     // There might be gaps between strings to satisfy alignment requirements.
     // If that's the case, we need to zero-clear them.
-    if (this->shdr.sh_addralign > 1)
+    if (this->shdr.sh_addralign > 1 &&
+        this->shdr.sh_addralign != this->shdr.sh_entsize)
       memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
 
     // Copy strings
