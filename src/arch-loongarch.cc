@@ -513,8 +513,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_LARCH_CALL36:
       if (removed_bytes == 0) {
-        write_j20(loc, (S + A - P + 0x20000) >> 18);
-        write_k16(loc + 4, (S + A - P) >> 2);
+        i64 val = S + A - P;
+        check_branch(val, -(1LL << 37) - 0x20000, (1LL << 37) - 0x20000);
+        write_j20(loc, (val + 0x20000) >> 18);
+        write_k16(loc + 4, val >> 2);
       } else {
         // Rewrite PCADDU18I + JIRL to B or BL
         assert(removed_bytes == 4);
