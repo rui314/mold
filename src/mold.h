@@ -1301,7 +1301,7 @@ public:
   std::string filename;
   bool is_dso = false;
   i64 priority;
-  Atomic<bool> is_alive = false;
+  Atomic<bool> is_reachable = false;
   std::string_view shstrtab;
   std::string_view symbol_strtab;
 
@@ -1344,8 +1344,8 @@ class ObjectFile : public InputFile<E> {
 public:
   ObjectFile() = default;
 
-  ObjectFile(Context<E> &ctx, MappedFile *mf,
-             std::string archive_name, bool is_in_lib);
+  ObjectFile(Context<E> &ctx, MappedFile *mf, std::string archive_name)
+    : InputFile<E>(ctx, mf), archive_name(archive_name) {}
 
   void parse(Context<E> &ctx);
   void initialize_symbols(Context<E> &ctx);
@@ -1367,7 +1367,6 @@ public:
   std::string archive_name;
   std::vector<std::unique_ptr<InputSection<E>>> sections;
   std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
-  bool is_in_lib = false;
   std::vector<ElfShdr<E>> elf_sections2;
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;

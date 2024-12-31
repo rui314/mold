@@ -193,18 +193,18 @@ template <typename E>
 static void mark_live_objects(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.arg.undefined)
     if (sym->file)
-      sym->file->is_alive = true;
+      sym->file->is_reachable = true;
 
   for (Symbol<E> *sym : ctx.arg.require_defined)
     if (sym->file)
-      sym->file->is_alive = true;
+      sym->file->is_reachable = true;
 
   if (!ctx.arg.undefined_glob.empty()) {
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      if (!file->is_alive) {
+      if (!file->is_reachable) {
         for (Symbol<E> *sym : file->get_global_syms()) {
           if (sym->file == file && ctx.arg.undefined_glob.find(sym->name())) {
-            file->is_alive = true;
+            file->is_reachable = true;
             sym->gc_root = true;
             break;
           }
@@ -216,11 +216,11 @@ static void mark_live_objects(Context<E> &ctx) {
   std::vector<InputFile<E> *> roots;
 
   for (InputFile<E> *file : ctx.objs)
-    if (file->is_alive)
+    if (file->is_reachable)
       roots.push_back(file);
 
   for (InputFile<E> *file : ctx.dsos)
-    if (file->is_alive)
+    if (file->is_reachable)
       roots.push_back(file);
 
   tbb::parallel_for_each(roots, [&](InputFile<E> *file,
@@ -287,13 +287,13 @@ void resolve_symbols(Context<E> &ctx) {
     // we could eliminate a symbol that is already resolved to and cause
     // dangling references.
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      if (file->is_alive)
+      if (file->is_reachable)
         for (ComdatGroupRef<E> &ref : file->comdat_groups)
           update_minimum(ref.group->owner, file->priority);
     });
 
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      if (file->is_alive)
+      if (file->is_reachable)
         for (ComdatGroupRef<E> &ref : file->comdat_groups)
           if (ref.group->owner != file->priority)
             for (u32 i : ref.members)
@@ -303,7 +303,7 @@ void resolve_symbols(Context<E> &ctx) {
 
     // Redo symbol resolution
     tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-      if (file->is_alive)
+      if (file->is_reachable)
         file->resolve_symbols(ctx);
     });
 
@@ -314,7 +314,7 @@ void resolve_symbols(Context<E> &ctx) {
     std::atomic_bool flag = false;
 
     tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-      if (file->is_alive) {
+      if (file->is_reachable) {
         for (Symbol<E> *sym : file->symbols) {
           if (sym->file == file && sym->visibility == STV_HIDDEN) {
             sym->skip_dso = true;
@@ -356,7 +356,7 @@ void do_lto(Context<E> &ctx) {
   // Remove IR object files.
   for (ObjectFile<E> *file : ctx.objs)
     if (file->is_lto_obj)
-      file->is_alive = false;
+      file->is_reachable = false;
 
   std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
 
@@ -664,7 +664,7 @@ void create_internal_file(Context<E> &ctx) {
 
   obj->symbols.push_back(new Symbol<E>);
   obj->first_global = 1;
-  obj->is_alive = true;
+  obj->is_reachable = true;
   obj->priority = 1;
 
   auto add = [&](Symbol<E> *sym) {
@@ -1356,9 +1356,6 @@ void claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "claim_unresolved_symbols");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (!file->is_alive)
-      return;
-
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];

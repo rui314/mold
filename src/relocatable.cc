@@ -112,9 +112,6 @@ static void r_claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "r_claim_unresolved_symbols");
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    if (!file->is_alive)
-      return;
-
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];

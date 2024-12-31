@@ -178,12 +178,12 @@ static PluginStatus add_input_file(const char *path) {
 
   MappedFile *mf = must_open_file(ctx, path);
 
-  ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, "", false);
+  ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, "");
   ctx.obj_pool.emplace_back(file);
   lto_objects<E>.push_back(file);
 
   file->priority = file_priority++;
-  file->is_alive = true;
+  file->is_reachable = true;
   file->parse(ctx);
   file->resolve_symbols(ctx);
   return LDPS_OK;
@@ -284,7 +284,7 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
   // If file is an archive member which was not chose to be included in
   // to the final result, we need to make the plugin to ignore all
   // symbols.
-  if (!file.is_alive) {
+  if (!file.is_reachable) {
     assert(!is_v2);
     for (int i = 0; i < nsyms; i++)
       psyms[i].resolution = LDPR_PREEMPTED_REG;
@@ -342,7 +342,7 @@ static void restart_process(Context<E> &ctx) {
     args.push_back(strdup(std::string(arg).c_str()));
 
   for (std::unique_ptr<ObjectFile<E>> &file : ctx.obj_pool)
-    if (file->is_lto_obj && !file->is_alive)
+    if (file->is_lto_obj && !file->is_reachable)
       args.push_back(strdup(("--:ignore-ir-file=" +
                              file->mf->get_identifier()).c_str()));
 
@@ -717,7 +717,7 @@ std::vector<ObjectFile<E> *> run_lto_plugin(Context<E> &ctx) {
   // given to the LTO backend. Such sections contains code and data for
   // peripherails (typically GPUs).
   for (ObjectFile<E> *file : ctx.objs) {
-    if (file->is_alive && !file->is_lto_obj && file->is_gcc_offload_obj) {
+    if (file->is_reachable && !file->is_lto_obj && file->is_gcc_offload_obj) {
       PluginInputFile pfile = create_plugin_input_file(ctx, file->mf);
       int claimed = false;
       claim_file_hook(&pfile, &claimed);

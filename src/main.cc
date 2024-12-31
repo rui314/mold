@@ -41,11 +41,11 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, ReaderContext &rctx,
 
   check_file_compatibility(ctx, rctx, mf);
 
-  bool in_lib = rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
-
-  ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, archive_name, in_lib);
+  ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, archive_name);
   ctx.obj_pool.emplace_back(file);
   file->priority = ctx.file_priority++;
+  file->is_reachable =
+    !rctx.in_lib && (archive_name.empty() || rctx.whole_archive);
 
   rctx.tg->run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
@@ -65,8 +65,9 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, ReaderContext &rctx,
   ObjectFile<E> *file = read_lto_object(ctx, mf);
   file->priority = ctx.file_priority++;
   file->archive_name = archive_name;
-  file->is_in_lib = rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
-  file->is_alive = !file->is_in_lib;
+  file->is_reachable =
+    !rctx.in_lib && (archive_name.empty() || rctx.whole_archive);
+
   if (ctx.arg.trace)
     Out(ctx) << "trace: " << *file;
   return file;
@@ -80,7 +81,7 @@ new_shared_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
   SharedFile<E> *file = new SharedFile<E>(ctx, mf);
   ctx.dso_pool.emplace_back(file);
   file->priority = ctx.file_priority++;
-  file->is_alive = !rctx.as_needed;
+  file->is_reachable = !rctx.as_needed;
 
   rctx.tg->run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
@@ -264,7 +265,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 template <typename E>
 static bool has_lto_obj(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
-    if (file->is_alive && (file->is_lto_obj || file->is_gcc_offload_obj))
+    if (file->is_reachable && (file->is_lto_obj || file->is_gcc_offload_obj))
       return true;
   return false;
 }
@@ -352,8 +353,8 @@ int mold_main(int argc, char **argv) {
 
   // Now that we know which object files are to be included to the
   // final output, we can remove unnecessary files.
-  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_alive; });
-  std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_alive; });
+  std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_reachable; });
+  std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_reachable; });
 
   // Parse .eh_frame section contents.
   parse_eh_frame_sections(ctx);

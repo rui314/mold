@@ -117,13 +117,6 @@ std::string_view InputFile<E>::get_source_name() const {
 }
 
 template <typename E>
-ObjectFile<E>::ObjectFile(Context<E> &ctx, MappedFile *mf,
-                          std::string archive_name, bool is_in_lib)
-  : InputFile<E>(ctx, mf), archive_name(archive_name), is_in_lib(is_in_lib) {
-  this->is_alive = !is_in_lib;
-}
-
-template <typename E>
 static bool is_debug_section(const ElfShdr<E> &shdr, std::string_view name) {
   return !(shdr.sh_flags & SHF_ALLOC) && name.starts_with(".debug");
 }
@@ -891,7 +884,7 @@ template <typename E>
 static u64 get_rank(const Symbol<E> &sym) {
   if (!sym.file)
     return 7 << 24;
-  return get_rank(sym.file, sym.esym(), !sym.file->is_alive);
+  return get_rank(sym.file, sym.esym(), !sym.file->is_reachable);
 }
 
 // Symbol's visibility is set to the most restrictive one. For example,
@@ -951,7 +944,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     }
 
     std::scoped_lock lock(sym.mu);
-    if (get_rank(this, esym, !this->is_alive) < get_rank(sym)) {
+    if (get_rank(this, esym, !this->is_reachable) < get_rank(sym)) {
       sym.file = this;
       sym.set_input_section(isec);
       sym.value = esym.st_value;
@@ -966,7 +959,7 @@ template <typename E>
 void
 ObjectFile<E>::mark_live_objects(Context<E> &ctx,
                                  std::function<void(InputFile<E> *)> feeder) {
-  assert(this->is_alive);
+  assert(this->is_reachable);
 
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
@@ -984,7 +977,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
       bool undef_ref = esym.is_undef() && (!esym.is_weak() || sym.file->is_dso);
       bool common_ref = esym.is_common() && !sym.esym().is_common();
 
-      if ((undef_ref || common_ref) && !sym.file->is_alive.test_and_set()) {
+      if ((undef_ref || common_ref) && !sym.file->is_reachable.test_and_set()) {
         feeder(sym.file);
         if (sym.is_traced)
           Out(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
@@ -1371,7 +1364,7 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
       print_trace_symbol(ctx, *this, esym, sym);
 
     if (esym.is_undef() && !esym.is_weak() && sym.file &&
-        !sym.file->is_alive.test_and_set()) {
+        !sym.file->is_reachable.test_and_set()) {
       feeder(sym.file);
 
       if (sym.is_traced)
