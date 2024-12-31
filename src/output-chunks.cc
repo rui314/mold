@@ -1989,7 +1989,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   // Write hash bucket indices
   U32<E> *buckets = (U32<E> *)(bloom + num_bloom);
 
-  for (i64 i = syms.size() - 1; i >= 0; i--)
+  for (i64 i = (i64)syms.size() - 1; i >= 0; i--)
     buckets[indices[i]] = first_exported + i;
 
   // Write a hash table
