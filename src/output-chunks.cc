@@ -534,11 +534,10 @@ void ShstrtabSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 i64 DynstrSection<E>::add_string(std::string_view str) {
-  if (this->shdr.sh_size == 0)
+  if (this->shdr.sh_size == 0) {
+    strings.insert({"", 0});
     this->shdr.sh_size = 1;
-
-  if (str.empty())
-    return 0;
+  }
 
   auto [it, inserted] = strings.insert({str, this->shdr.sh_size});
   if (inserted)
@@ -548,9 +547,6 @@ i64 DynstrSection<E>::add_string(std::string_view str) {
 
 template <typename E>
 i64 DynstrSection<E>::find_string(std::string_view str) {
-  if (str.empty())
-    return 0;
-
   auto it = strings.find(str);
   assert(it != strings.end());
   return it->second;
@@ -559,7 +555,6 @@ i64 DynstrSection<E>::find_string(std::string_view str) {
 template <typename E>
 void DynstrSection<E>::copy_buf(Context<E> &ctx) {
   u8 *base = ctx.buf + this->shdr.sh_offset;
-  base[0] = '\0';
 
   for (std::pair<std::string_view, i64> p : strings)
     write_string(base + p.second, p.first);
@@ -672,7 +667,7 @@ static bool contains_variant_pcs(Context<E> &ctx) {
   return false;
 }
 
-// RISC-V has the same feature but with different names.
+// RISC-V has the same feature but with a different name.
 template <is_riscv E>
 static bool contains_variant_cc(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.plt->symbols)
