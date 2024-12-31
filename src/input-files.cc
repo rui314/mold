@@ -1363,7 +1363,10 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
     if (sym.is_traced)
       print_trace_symbol(ctx, *this, esym, sym);
 
+    // We follow undefined symbols in a DSO only to handle
+    // --no-allow-shlib-undefined.
     if (esym.is_undef() && !esym.is_weak() && sym.file &&
+        (!sym.file->is_dso || !ctx.arg.allow_shlib_undefined) &&
         !sym.file->is_reachable.test_and_set()) {
       feeder(sym.file);
 

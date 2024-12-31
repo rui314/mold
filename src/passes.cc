@@ -1083,6 +1083,22 @@ void check_shlib_undefined(Context<E> &ctx) {
                    << sym;
     }
   });
+
+  // Beyond this point, DSOs that are not referenced directly by any
+  // object file are not needed. They were kept by
+  // SharedFile<E>::mark_live_objects just for this pass. Therefore,
+  // remove unneeded DSOs from the list now.
+  for (SharedFile<E> *file : ctx.dsos)
+    file->is_reachable = false;
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->get_global_syms())
+      if (InputFile<E> *file = sym->file)
+        if (file->is_dso)
+          file->is_reachable.test_and_set();
+  });
+
+  std::erase_if(ctx.dsos, [](SharedFile<E> *file) { return !file->is_reachable; });
 }
 
 template <typename E>
