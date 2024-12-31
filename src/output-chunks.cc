@@ -1957,18 +1957,20 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
 
   i64 first_exported = ctx.dynsym->symbols.size() - num_exported;
 
-  std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
-  syms = syms.subspan(first_exported);
-
-  std::vector<u32> indices(num_exported);
-
   *(U32<E> *)base = num_buckets;
   *(U32<E> *)(base + 4) = first_exported;
   *(U32<E> *)(base + 8) = num_bloom;
   *(U32<E> *)(base + 12) = BLOOM_SHIFT;
 
+  std::span<Symbol<E> *> syms = ctx.dynsym->symbols;
+  syms = syms.subspan(first_exported);
+
+  if (syms.empty())
+    return;
+
   // Write a bloom filter
   Word<E> *bloom = (Word<E> *)(base + HEADER_SIZE);
+  std::vector<u32> indices(num_exported);
 
   for (i64 i = 0; i < syms.size(); i++) {
     constexpr i64 word_bits = sizeof(Word<E>) * 8;
@@ -1984,7 +1986,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   // Write hash bucket indices
   U32<E> *buckets = (U32<E> *)(bloom + num_bloom);
 
-  for (i64 i = (i64)syms.size() - 1; i >= 0; i--)
+  for (i64 i = syms.size() - 1; i >= 0; i--)
     buckets[indices[i]] = first_exported + i;
 
   // Write a hash table
