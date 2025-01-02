@@ -1025,7 +1025,7 @@ struct Extn {
 // This function returns true if the first extension name should precede
 // the second one as per the rule.
 static bool extn_name_less(std::string_view x, std::string_view y) {
-  auto get_single_letter_rank = [](char c) -> i64 {
+  auto get_single_letter_rank = [](const char& c) -> i64 {
     std::string_view exts = "iemafdqlcbkjtpvnh";
     size_t pos = exts.find_first_of(c);
     if (pos != exts.npos)

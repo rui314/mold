@@ -4,7 +4,7 @@
 namespace mold {
 
 static bool is_text_file(MappedFile *mf) {
-  auto istext = [](char c) {
+  auto istext = [](const char& c) {
     return isprint(c) || c == '\n' || c == '\t';
   };
 

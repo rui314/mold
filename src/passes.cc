@@ -706,7 +706,7 @@ get_start_stop_name(Context<E> &ctx, Chunk<E> &chunk) {
       return std::string(chunk.name);
 
     if (ctx.arg.start_stop) {
-      auto isalnum = [](char c) {
+      auto isalnum = [](const char& c) {
         return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') ||
                ('0' <= c && c <= '9');
       };
