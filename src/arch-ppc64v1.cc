@@ -507,12 +507,13 @@ get_relocation_at(Context<E> &ctx, InputSection<E> &isec, i64 offset) {
   return &*it;
 }
 
+namespace {
 struct OpdSymbol {
   bool operator<(const OpdSymbol &x) const { return r_offset < x.r_offset; }
-
   u64 r_offset = 0;
   Symbol<E> *sym = nullptr;
 };
+}
 
 static Symbol<E> *
 get_opd_sym_at(std::span<OpdSymbol> syms, u64 offset) {
@@ -589,7 +590,7 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
 
       Symbol<E> *sym2 = file->symbols[rel->r_sym];
       if (sym2->get_type() != STT_SECTION)
-        Fatal(ctx) << *file << ": bad relocation in .opd referring " << *sym2;
+        Fatal(ctx) << *file << ": bad relocation in .opd referring to " << *sym2;
 
       opd_syms.push_back({sym->value, sym});
 
