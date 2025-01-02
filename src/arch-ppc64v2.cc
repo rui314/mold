@@ -201,8 +201,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 GOT = ctx.got->shdr.sh_addr;
     u64 TOC = ctx.extra.TOC->value;
 
-    auto r2save_thunk_addr = [&] { return get_thunk_addr(i); };
-    auto no_r2save_thunk_addr = [&] { return get_thunk_addr(i) + 8; };
+    auto r2save_thunk_addr = [&] { return sym.get_thunk_addr(ctx, P); };
+    auto no_r2save_thunk_addr = [&] { return sym.get_thunk_addr(ctx, P) + 8; };
 
     switch (rel.r_type) {
     case R_PPC64_TOC16_HA:

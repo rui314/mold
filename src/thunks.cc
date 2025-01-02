@@ -24,44 +24,21 @@
     MOLD_PPC64V1 || MOLD_PPC64V2
 
 #include "mold.h"
+#include <tbb/parallel_for.h>
 
 namespace mold {
 
 using E = MOLD_TARGET;
 
-// Returns a branch reach in bytes for a given target.
-static consteval i64 max_distance() {
-  // ARM64's branch has 26 bits immediate. The immediate is padded with
-  // implicit two-bit zeros because all instructions are 4 bytes aligned
-  // and therefore the least two bits are always zero. So the branch
-  // operand is effectively 28 bits long. That means the branch range is
-  // [-2^27, 2^27) or PC ± 128 MiB.
-  if (is_arm64<E>)
-    return 1 << 27;
-
-  // ARM32's Thumb branch has 24 bits immediate, and the instructions are
-  // aligned to 2, so it's effectively 25 bits. It's [-2^24, 2^24) or PC ±
-  // 16 MiB.
-  //
-  // ARM32's non-Thumb branches have twice longer range than its Thumb
-  // counterparts, but we conservatively use the Thumb's limitation.
-  if (is_arm32<E>)
-    return 1 << 24;
-
-  // PPC's branch has 24 bits immediate, and the instructions are aligned
-  // to 4, therefore the reach is [-2^25, 2^25) or PC ± 32 MiB.
-  assert(is_ppc<E>);
-  return 1 << 25;
-}
-
 // We create thunks for each 12.8/1.6/3.2 MiB code block for
 // ARM64/ARM32/PPC, respectively.
-static constexpr i64 batch_size = max_distance() / 10;
+static constexpr i64 batch_size = branch_distance<E> / 10;
 
-// We assume that a single thunk group is smaller than 900 KiB.
-static constexpr i64 max_thunk_size = 900 * 1024;
+// We assume that a single thunk group is smaller than 1 MiB.
+static constexpr i64 max_thunk_size = 1024 * 1024;
 
-static_assert(max_thunk_size / E::thunk_size < ThunkRef::MAX_SYM_IDX);
+// Thunks are aligned to 16 byte boundaries.
+static constexpr i64 thunk_align = 16;
 
 template <typename E>
 static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
@@ -111,56 +88,12 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   i64 A = get_addend(isec, rel);
   i64 P = isec.get_addr() + rel.r_offset;
   i64 val = S + A - P;
-  return -max_distance() <= val && val < max_distance();
+  return -branch_distance<E> <= val && val < branch_distance<E>;
 }
 
-static void reset_thunk(Thunk<E> &thunk) {
-  for (Symbol<E> *sym : thunk.symbols) {
-    sym->extra.thunk_idx = -1;
-    sym->extra.thunk_sym_idx = -1;
+static void reset(Thunk<E> &thunk) {
+  for (Symbol<E> *sym : thunk.symbols)
     sym->flags = 0;
-  }
-}
-
-// Scan relocations to collect symbols that need thunks.
-static void scan_rels(Context<E> &ctx, InputSection<E> &isec,
-                      Thunk<E> &thunk, i64 thunk_idx) {
-  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
-  std::vector<ThunkRef> &thunk_refs = isec.extra.thunk_refs;
-  thunk_refs.resize(rels.size());
-
-  for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &rel = rels[i];
-    if (!is_func_call_rel(rel))
-      continue;
-
-    // Skip if the symbol is undefined. apply_reloc() will report an error.
-    Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-    if (!sym.file)
-      continue;
-
-    // Skip if the destination is within reach.
-    if (is_reachable(ctx, isec, sym, rel))
-      continue;
-
-    // This relocation needs a thunk. If the symbol is already in a
-    // previous thunk, reuse it.
-    if (sym.extra.thunk_idx != -1) {
-      thunk_refs[i].thunk_idx = sym.extra.thunk_idx;
-      thunk_refs[i].sym_idx = sym.extra.thunk_sym_idx;
-      continue;
-    }
-
-    // Otherwise, add the symbol to the current thunk if it's not
-    // added already.
-    thunk_refs[i].thunk_idx = thunk_idx;
-    thunk_refs[i].sym_idx = -1;
-
-    if (sym.flags.exchange(-1) == 0) {
-      std::scoped_lock lock(thunk.mu);
-      thunk.symbols.push_back(&sym);
-    }
-  }
 }
 
 template <>
@@ -192,8 +125,8 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   //     A    B    C    D
   //                    ^ We insert a thunk for the current batch just before D
   //          <--->       The current batch, which is smaller than BATCH_SIZE
-  //     <-------->       Smaller than MAX_DISTANCE
-  //          <-------->  Smaller than MAX_DISTANCE
+  //     <-------->       Smaller than BRANCH_DISTANCE
+  //          <-------->  Smaller than BRANCH_DISTANCE
   //     <------------->  Reachable from the current batch
   i64 a = 0;
   i64 b = 0;
@@ -208,11 +141,11 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     // Move D foward as far as we can jump from B to a thunk at D.
     auto d_thunk_end = [&] {
       u64 d_end = align_to(offset, 1 << m[d]->p2align) + m[d]->sh_size;
-      return align_to(d_end, Thunk<E>::alignment) + max_thunk_size;
+      return align_to(d_end, thunk_align) + max_thunk_size;
     };
 
     while (d < m.size() &&
-           (b == d || d_thunk_end() <= m[b]->offset + max_distance())) {
+           (b == d || d_thunk_end() <= m[b]->offset + branch_distance<E>)) {
       offset = align_to(offset, 1 << m[d]->p2align);
       m[d]->offset = offset;
       offset += m[d]->sh_size;
@@ -228,28 +161,45 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
 
     // Move A forward so that A is reachable from C.
     i64 c_offset = (c == m.size()) ? offset : m[c]->offset;
-    while (a < b && m[a]->offset + max_distance() < c_offset)
+    while (a < b && m[a]->offset + branch_distance<E> < c_offset)
       a++;
 
     // Erase references to out-of-range thunks.
     while (t < thunks.size() && thunks[t]->offset < m[a]->offset)
-      reset_thunk(*thunks[t++]);
+      reset(*thunks[t++]);
 
     // Create a new thunk and place it at D.
-    offset = align_to(offset, Thunk<E>::alignment);
-    i64 thunk_idx = thunks.size();
+    offset = align_to(offset, thunk_align);
     Thunk<E> *thunk = new Thunk<E>(*this, offset);
     thunks.emplace_back(thunk);
 
     // Scan relocations between B and C to collect symbols that need
     // entries in the new thunk.
-    for (i64 i = b; i < c; i++)
-      scan_rels(ctx, *m[i], *thunk, thunk_idx);
+    std::mutex mu;
 
-    // Now that we know the number of symbols in the thunk, we can compute
-    // the thunk's size.
-    assert(thunk->size() < max_thunk_size);
-    offset += thunk->size();
+    tbb::parallel_for(b, c, [&](i64 i) {
+      InputSection<E> &isec = *m[i];
+
+      for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
+        if (!is_func_call_rel(rel))
+          continue;
+
+        // Skip if the symbol is undefined. apply_reloc() will report an error.
+        Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+        if (!sym.file)
+          continue;
+
+        // Skip if the destination is within reach.
+        if (is_reachable(ctx, isec, sym, rel))
+          continue;
+
+        // Add the symbol to the current thunk if it's not added already.
+        if (sym.flags.exchange(-1) == 0) {
+          std::scoped_lock lock(mu);
+          thunk->symbols.push_back(&sym);
+        }
+      }
+    });
 
     // Sort symbols added to the thunk to make the output deterministic.
     sort(thunk->symbols, [](Symbol<E> *a, Symbol<E> *b) {
@@ -257,35 +207,41 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
              std::tuple{b->file->priority, b->sym_idx};
     });
 
-    // Assign offsets within the thunk to the symbols.
-    for (i64 i = 0; Symbol<E> *sym : thunk->symbols) {
-      sym->extra.thunk_idx = thunk_idx;
-      sym->extra.thunk_sym_idx = i++;
-    }
-
-    // Scan relocations again to fix symbol offsets in the last thunk.
-    for (i64 i = b; i < c; i++) {
-      std::span<Symbol<E> *> syms = m[i]->file.symbols;
-      std::span<const ElfRel<E>> rels = m[i]->get_rels(ctx);
-      std::span<ThunkRef> thunk_refs = m[i]->extra.thunk_refs;
-
-      for (i64 j = 0; j < rels.size(); j++)
-        if (thunk_refs[j].thunk_idx == thunk_idx)
-          thunk_refs[j].sym_idx = syms[rels[j].r_sym]->extra.thunk_sym_idx;
-    }
+    // Now that we know the number of symbols in the thunk, we can compute
+    // the thunk's size.
+    assert(thunk->size() < max_thunk_size);
+    offset += thunk->size();
 
     // Move B forward to point to the begining of the next batch.
     b = c;
   }
 
   while (t < thunks.size())
-    reset_thunk(*thunks[t++]);
+    reset(*thunks[t++]);
 
   this->shdr.sh_size = offset;
 
   for (InputSection<E> *isec : members)
     this->shdr.sh_addralign =
       std::max<u32>(this->shdr.sh_addralign, 1 << isec->p2align);
+}
+
+// When applying relocations, we want to know the address in a reachable
+// range extension thunk for a given symbol. Doing it by scanning all
+// reachable range extension thunks is too expensive.
+//
+// In this function, we create a list of all addresses in range extension
+// thunks for each symbol, so that it is easy to find one.
+template <>
+void gather_thunk_addresses(Context<E> &ctx) {
+  Timer t(ctx, "gather_thunk_addresses");
+
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec();
+        osec && (osec->shdr.sh_flags & SHF_EXECINSTR))
+      for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks)
+        for (i64 i = 0; i < thunk->symbols.size(); i++)
+          thunk->symbols[i]->add_thunk_addr(ctx, thunk->get_addr(i));
 }
 
 } // namespace mold

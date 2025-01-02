@@ -83,12 +83,11 @@ struct SymbolAux {
   i32 plt_idx = -1;
   i32 pltgot_idx = -1;
   i32 dynsym_idx = -1;
-  u32 djb_hash = 0;
-};
-
-template <>
-struct SymbolAux<PPC64V1> : SymbolAux<X86_64> {
   i32 opd_idx = -1;
+  u32 djb_hash = 0;
+
+  // For range extension thunks
+  std::vector<u64> thunk_addrs;
 };
 
 //
@@ -112,20 +111,41 @@ public:
            idx * E::thunk_size;
   }
 
-  static constexpr i64 alignment = 16;
-
   OutputSection<E> &output_section;
   i64 offset;
-  std::mutex mu;
   std::vector<Symbol<E> *> symbols;
 };
 
-struct ThunkRef {
-  static constexpr i64 MAX_SYM_IDX = (1 << 17) - 1;
+template <needs_thunk E> void gather_thunk_addresses(Context<E> &);
 
-  i32 thunk_idx : 14 = -1;
-  i32 sym_idx : 18 = -1;
-};
+// Returns the maximum branch reach in bytes for a given target.
+template <needs_thunk E>
+static consteval i64 get_branch_distance() {
+  // ARM64's branch has 26 bits immediate. The immediate is padded with
+  // implicit two-bit zeros because all instructions are 4 bytes aligned
+  // and therefore the least two bits are always zero. So the branch
+  // operand is effectively 28 bits long. That means the branch range is
+  // [-2^27, 2^27) or PC ± 128 MiB.
+  if (is_arm64<E>)
+    return 1 << 27;
+
+  // ARM32's Thumb branch has 24 bits immediate, and the instructions are
+  // aligned to 2, so it's effectively 25 bits. It's [-2^24, 2^24) or PC ±
+  // 16 MiB.
+  //
+  // ARM32's non-Thumb branches have twice longer range than its Thumb
+  // counterparts, but we conservatively use the Thumb's limitation.
+  if (is_arm32<E>)
+    return 1 << 24;
+
+  // PPC's branch has 24 bits immediate, and the instructions are aligned
+  // to 4, therefore the reach is [-2^25, 2^25) or PC ± 32 MiB.
+  assert(is_ppc<E>);
+  return 1 << 25;
+}
+
+template <needs_thunk E>
+static constexpr i64 branch_distance = get_branch_distance<E>();
 
 //
 // input-sections.cc
@@ -228,11 +248,6 @@ struct FdeRecord {
 template <typename E>
 struct InputSectionExtras {};
 
-template <needs_thunk E>
-struct InputSectionExtras<E> {
-  std::vector<ThunkRef> thunk_refs;
-};
-
 template <typename E> requires is_riscv<E> || is_loongarch<E>
 struct InputSectionExtras<E> {
   std::vector<i32> r_deltas;
@@ -317,8 +332,6 @@ private:
 
   void apply_toc_rel(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel,
                      u8 *loc, u64 S, i64 A, u64 P, ElfRel<E> **dynrel);
-
-  u64 get_thunk_addr(i64 idx) requires needs_thunk<E>;
 
   std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
 };
@@ -2177,17 +2190,6 @@ enum {
   NEEDS_PPC_OPD   = 1 << 7, // for PPCv1
 };
 
-// A struct to hold target-dependent symbol members.
-template <typename E>
-struct SymbolExtras {};
-
-template <needs_thunk E>
-struct SymbolExtras<E> {
-  // For range extension thunks
-  i16 thunk_idx = -1;
-  i16 thunk_sym_idx = -1;
-};
-
 // Flags for Symbol<E>::get_addr()
 enum {
   NO_PLT = 1 << 0, // Request an address other than .plt
@@ -2246,6 +2248,9 @@ public:
 
   u32 get_djb_hash(Context<E> &ctx) const;
   void set_djb_hash(Context<E> &ctx, u32 hash);
+
+  void add_thunk_addr(Context<E> &ctx, u64 addr) requires needs_thunk<E>;
+  u64 get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E>;
 
   bool is_absolute() const;
   bool is_relative() const { return !is_absolute(); }
@@ -2445,9 +2450,6 @@ public:
 
   // If true, we try to dmenagle the sybmol when printing.
   bool demangle : 1 = false;
-
-  // Target-dependent extra members.
-  [[no_unique_address]] SymbolExtras<E> extra;
 };
 
 template <typename E>
@@ -2558,13 +2560,6 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 
   std::pair<SectionFragment<E> *, i64> p = m->get_fragment(esym.st_value);
   return {p.first, p.second + get_addend(*this, rel)};
-}
-
-template <typename E>
-u64 InputSection<E>::get_thunk_addr(i64 idx) requires needs_thunk<E> {
-  ThunkRef ref = extra.thunk_refs[idx];
-  assert(ref.thunk_idx != -1);
-  return output_section->thunks[ref.thunk_idx]->get_addr(ref.sym_idx);
 }
 
 // Input object files may contain duplicate code for inline functions
@@ -2943,6 +2938,24 @@ template <typename E>
 inline void Symbol<E>::set_djb_hash(Context<E> &ctx, u32 hash) {
   assert(aux_idx != -1);
   ctx.symbol_aux[aux_idx].djb_hash = hash;
+}
+
+template <typename E>
+void Symbol<E>::add_thunk_addr(Context<E> &ctx, u64 addr) requires needs_thunk<E> {
+  add_aux(ctx);
+  ctx.symbol_aux[aux_idx].thunk_addrs.push_back(addr);
+}
+
+template <typename E>
+u64
+Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> {
+  assert(aux_idx != -1);
+  for (u64 addr : ctx.symbol_aux[aux_idx].thunk_addrs) {
+    i64 disp = addr - P;
+    if (-branch_distance<E> <= disp && disp < branch_distance<E>)
+      return addr;
+  }
+  abort();
 }
 
 template <typename E>

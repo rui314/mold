@@ -252,14 +252,14 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  auto get_tls_trampoline_addr = [&, i = 0](u64 addr) mutable {
-    for (; i < output_section->thunks.size(); i++) {
+  auto get_tls_trampoline_addr = [&](u64 addr) {
+    for (i64 i = 0; i < output_section->thunks.size(); i++) {
       i64 disp = output_section->shdr.sh_addr + output_section->thunks[i]->offset -
                  addr;
-      if (is_jump_reachable(disp))
+      if (-branch_distance<E> <= disp && disp < branch_distance<E>)
         return disp;
     }
-    unreachable();
+    abort();
   };
 
   for (i64 i = 0; i < rels.size(); i++) {
@@ -284,8 +284,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
 
-    auto get_thumb_thunk_addr = [&] { return get_thunk_addr(i); };
-    auto get_arm_thunk_addr   = [&] { return get_thunk_addr(i) + 4; };
+    auto get_thumb_thunk_addr = [&] { return sym.get_thunk_addr(ctx, P); };
+    auto get_arm_thunk_addr   = [&] { return sym.get_thunk_addr(ctx, P) + 4; };
 
     switch (rel.r_type) {
     case R_ARM_ABS32:

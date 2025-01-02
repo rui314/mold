@@ -587,6 +587,10 @@ int mold_main(int argc, char **argv) {
 
   // At this point, both memory and file layouts are fixed.
 
+  // Gather thunk symbols and attach them to themselves.
+  if constexpr (needs_thunk<E>)
+    gather_thunk_addresses(ctx);
+
   t_before_copy.stop();
 
   // Create an output file

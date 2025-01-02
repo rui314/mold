@@ -214,14 +214,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC_LOCAL24PC: {
       i64 val = S + A - P;
       if (sign_extend(val, 25) != val)
-        val = get_thunk_addr(i) - P;
+        val = sym.get_thunk_addr(ctx, P) - P;
       *(ub32 *)loc |= bits(val, 25, 2) << 2;
       break;
     }
     case R_PPC_PLTREL24: {
       i64 val = S - P;
       if (sym.has_plt(ctx) || sign_extend(val, 25) != val)
-        val = get_thunk_addr(i) - P;
+        val = sym.get_thunk_addr(ctx, P) - P;
       *(ub32 *)loc |= bits(val, 25, 2) << 2;
       break;
     }

@@ -195,7 +195,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_REL24: {
       i64 val = sym.get_addr(ctx, NO_OPD) + A - P;
       if (sym.has_plt(ctx) || sign_extend(val, 25) != val)
-        val = get_thunk_addr(i) + A - P;
+        val = sym.get_thunk_addr(ctx, P) + A - P;
 
       check(val, -(1 << 25), 1 << 25);
       *(ub32 *)loc |= bits(val, 25, 2) << 2;
