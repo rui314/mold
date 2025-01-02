@@ -118,7 +118,6 @@ public:
 
 template <needs_thunk E> void gather_thunk_addresses(Context<E> &);
 
-// Returns the maximum branch reach in bytes for a given target.
 template <needs_thunk E>
 static consteval i64 get_branch_distance() {
   // ARM64's branch has 26 bits immediate. The immediate is padded with
@@ -144,8 +143,15 @@ static consteval i64 get_branch_distance() {
   return 1 << 25;
 }
 
+// The maximum distance of branch instructions used for function calls.
+//
+// The exact origin for computing a destination varies slightly depending
+// on the target architecture. For example, ARM32's B instruction jumps to
+// the branch's address + immediate + 4 (i.e., B with offset 0 jumps to
+// the next instruction), while RISC-V has no such implicit bias. Here, we
+// subtract 16 as a safety margin.
 template <needs_thunk E>
-static constexpr i64 branch_distance = get_branch_distance<E>();
+static constexpr i64 branch_distance = get_branch_distance<E>() - 16;
 
 //
 // input-sections.cc
