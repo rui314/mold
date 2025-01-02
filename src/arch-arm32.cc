@@ -243,24 +243,20 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
-// ARM and Thumb branch instructions can jump within ±16 MiB.
-static bool is_jump_reachable(i64 val) {
-  return sign_extend(val, 24) == val;
+static bool is_reachable(i64 disp) {
+  return -branch_distance<E> <= disp && disp < branch_distance<E>;
+}
+
+static Thunk<E> &get_reachable_thunk(OutputSection<E> &osec, u64 addr) {
+  for (std::unique_ptr<Thunk<E>> &thunk : osec.thunks)
+    if (is_reachable(thunk->get_addr() - addr))
+      return *thunk;
+  abort();
 }
 
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
-
-  auto get_tls_trampoline_addr = [&](u64 addr) {
-    for (i64 i = 0; i < output_section->thunks.size(); i++) {
-      i64 disp = output_section->shdr.sh_addr + output_section->thunks[i]->offset -
-                 addr;
-      if (-branch_distance<E> <= disp && disp < branch_distance<E>)
-        return disp;
-    }
-    abort();
-  };
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -287,6 +283,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     auto get_thumb_thunk_addr = [&] { return sym.get_thunk_addr(ctx, P); };
     auto get_arm_thunk_addr   = [&] { return sym.get_thunk_addr(ctx, P) + 4; };
 
+    auto get_tlsdesc_trampoline_addr = [&] {
+      return get_reachable_thunk(*output_section, P).get_addr();
+    };
+
     switch (rel.r_type) {
     case R_ARM_ABS32:
       break;
@@ -305,7 +305,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // They are different in only one bit. We need to use BL if
       // the jump target is Thumb. Otherwise, use BLX.
       i64 val = S + A - P;
-      if (is_jump_reachable(val)) {
+      if (is_reachable(val)) {
         if (T) {
           write_thm_b_imm(loc, val);
           *(ul16 *)(loc + 2) |= 0x1000;  // rewrite to BL
@@ -345,8 +345,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (!is_bl && !is_blx)
         Fatal(ctx) << *this << ": R_ARM_CALL refers to neither BL nor BLX";
 
-      u64 val = S + A - P;
-      if (is_jump_reachable(val)) {
+      i64 val = S + A - P;
+      if (is_reachable(val)) {
         if (T) {
           *(ul32 *)loc = 0xfa00'0000; // BLX
           *(ul32 *)loc |= (bit(val, 1) << 24) | bits(val, 25, 2);
@@ -372,8 +372,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // immediate; it takes only a register. So if mode switch is
       // required, we jump to a linker-synthesized thunk which does the
       // job with a longer code sequence.
-      u64 val = S + A - P;
-      if (!is_jump_reachable(val) || T)
+      i64 val = S + A - P;
+      if (!is_reachable(val) || T)
         val = get_arm_thunk_addr() + A - P;
       *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
       break;
@@ -418,8 +418,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
       // switch processor mode.
-      u64 val = S + A - P;
-      if (!is_jump_reachable(val) || !T)
+      i64 val = S + A - P;
+      if (!is_reachable(val) || !T)
         val = get_thumb_thunk_addr() + A - P;
       write_thm_b_imm(loc, val);
       break;
@@ -504,8 +504,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_ARM_TLS_CALL:
       if (sym.has_tlsdesc(ctx)) {
-        // BL <tls_trampoline>
-        *(ul32 *)loc = 0xeb00'0000 | bits(get_tls_trampoline_addr(P + 8), 25, 2);
+        *(ul32 *)loc = 0xeb00'0000; // bl 0
+        *(ul32 *)loc |= bits(get_tlsdesc_trampoline_addr() - P - 8, 25, 2);
       } else if (sym.has_gottp(ctx)) {
         *(ul32 *)loc = 0xe79f'0000; // ldr r0, [pc, r0]
       } else {
@@ -514,7 +514,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_ARM_THM_TLS_CALL:
       if (sym.has_tlsdesc(ctx)) {
-        u64 val = align_to(get_tls_trampoline_addr(P + 4), 4);
+        u64 val = align_to(get_tlsdesc_trampoline_addr() - P - 4, 4);
         write_thm_b_imm(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       } else if (sym.has_gottp(ctx)) {

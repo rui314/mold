@@ -32,14 +32,16 @@ namespace mold {
 
 using E = MOLD_TARGET;
 
-// We create thunks for each 12.8/1.6/3.2 MiB code block for
+// We create thunks for each 25.6/3.2/6.4 MiB code block for
 // ARM64/ARM32/PPC, respectively.
-static constexpr i64 batch_size = branch_distance<E> / 10;
+static constexpr i64 batch_size = branch_distance<E> / 5;
 
 // We assume that a single thunk group is smaller than 1 MiB.
 static constexpr i64 max_thunk_size = 1024 * 1024;
 
-// Thunks are aligned to 16 byte boundaries.
+// We align thunks to 16 byte boundaries because many processor vendors
+// recommend we align branch targets to 16 byte boundaries for performance
+// reasons.
 static constexpr i64 thunk_align = 16;
 
 template <typename E>
@@ -221,11 +223,12 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   while (t < thunks.size())
     reset(*thunks[t++]);
 
-  this->shdr.sh_size = offset;
-
+  u32 p2align = 0;
   for (InputSection<E> *isec : members)
-    this->shdr.sh_addralign =
-      std::max<u32>(this->shdr.sh_addralign, 1 << isec->p2align);
+    p2align = std::max<u32>(p2align, isec->p2align);
+
+  this->shdr.sh_size = offset;
+  this->shdr.sh_addralign = 1 << p2align;
 }
 
 // When applying relocations, we want to know the address in a reachable
@@ -241,24 +244,23 @@ void gather_thunk_addresses(Context<E> &ctx) {
   std::vector<Symbol<E> *> syms;
 
   for (Chunk<E> *chunk : ctx.chunks) {
-    OutputSection<E> *osec = chunk->to_osec();
-    if (!osec || !(osec->shdr.sh_flags & SHF_EXECINSTR))
-      continue;
+    if (OutputSection<E> *osec = chunk->to_osec()) {
+      for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks) {
+        for (i64 i = 0; i < thunk->symbols.size(); i++) {
+          Symbol<E> &sym = *thunk->symbols[i];
+          sym.add_aux(ctx);
 
-    for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks) {
-      for (i64 i = 0; i < thunk->symbols.size(); i++) {
-        Symbol<E> &sym = *thunk->symbols[i];
-        sym.add_aux(ctx);
-        ctx.symbol_aux[sym.aux_idx].thunk_addrs.push_back(thunk->get_addr(i));
-        if (!sym.flags.test_and_set())
-          syms.push_back(&sym);
+          std::vector<u64> &vec = ctx.symbol_aux[sym.aux_idx].thunk_addrs;
+          if (vec.empty())
+            syms.push_back(&sym);
+          vec.push_back(thunk->get_addr(i));
+        }
       }
     }
   }
 
   tbb::parallel_for_each(syms, [&](Symbol<E> *sym) {
     sort(ctx.symbol_aux[sym->aux_idx].thunk_addrs);
-    sym->flags = 0;
   });
 }
 

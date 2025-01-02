@@ -106,17 +106,18 @@ public:
   i64 size() const { return E::thunk_hdr_size + symbols.size() * E::thunk_size; }
   void copy_buf(Context<E> &ctx);
 
-  u64 get_addr(i64 idx) const {
-    return output_section.shdr.sh_addr + offset + E::thunk_hdr_size +
-           idx * E::thunk_size;
+  u64 get_addr() const {
+    return output_section.shdr.sh_addr + offset;
+  }
+
+  u64 get_addr(i64 i) const {
+    return get_addr() + E::thunk_hdr_size + E::thunk_size * i;
   }
 
   OutputSection<E> &output_section;
   i64 offset;
   std::vector<Symbol<E> *> symbols;
 };
-
-template <needs_thunk E> void gather_thunk_addresses(Context<E> &);
 
 template <needs_thunk E>
 static consteval i64 get_branch_distance() {
@@ -149,9 +150,12 @@ static consteval i64 get_branch_distance() {
 // on the target architecture. For example, ARM32's B instruction jumps to
 // the branch's address + immediate + 4 (i.e., B with offset 0 jumps to
 // the next instruction), while RISC-V has no such implicit bias. Here, we
-// subtract 16 as a safety margin.
+// subtract 16 as a safety margin that is large enough for all targets.
 template <needs_thunk E>
 static constexpr i64 branch_distance = get_branch_distance<E>() - 16;
+
+template <needs_thunk E>
+void gather_thunk_addresses(Context<E> &ctx);
 
 //
 // input-sections.cc
@@ -2946,16 +2950,14 @@ inline void Symbol<E>::set_djb_hash(Context<E> &ctx, u32 hash) {
 }
 
 template <typename E>
-u64
+inline u64
 Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> {
-  assert(aux_idx != -1);
-
   std::span<u64> vec = ctx.symbol_aux[aux_idx].thunk_addrs;
-  u64 min = (P < branch_distance<E>) ? 0 : P - branch_distance<E>;
-  auto it = std::lower_bound(vec.begin(), vec.end(), min);
-  assert(it != vec.end());
-  assert(*it < (P + branch_distance<E> < P) ? UINT64_MAX : P + branch_distance<E>);
-  return *it;
+  u64 lo = (P < branch_distance<E>) ? 0 : P - branch_distance<E>;
+  u64 val = *std::lower_bound(vec.begin(), vec.end(), lo);
+  assert(-branch_distance<E> <= (i64)(val - P) &&
+         (i64)(val - P) < branch_distance<E>);
+  return val;
 }
 
 template <typename E>
