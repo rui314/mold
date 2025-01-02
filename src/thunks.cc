@@ -24,7 +24,9 @@
     MOLD_PPC64V1 || MOLD_PPC64V2
 
 #include "mold.h"
+
 #include <tbb/parallel_for.h>
+#include <tbb/parallel_for_each.h>
 
 namespace mold {
 
@@ -194,7 +196,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
           continue;
 
         // Add the symbol to the current thunk if it's not added already.
-        if (sym.flags.exchange(-1) == 0) {
+        if (!sym.flags.test_and_set()) {
           std::scoped_lock lock(mu);
           thunk->symbols.push_back(&sym);
         }
@@ -236,12 +238,28 @@ template <>
 void gather_thunk_addresses(Context<E> &ctx) {
   Timer t(ctx, "gather_thunk_addresses");
 
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (OutputSection<E> *osec = chunk->to_osec();
-        osec && (osec->shdr.sh_flags & SHF_EXECINSTR))
-      for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks)
-        for (i64 i = 0; i < thunk->symbols.size(); i++)
-          thunk->symbols[i]->add_thunk_addr(ctx, thunk->get_addr(i));
+  std::vector<Symbol<E> *> syms;
+
+  for (Chunk<E> *chunk : ctx.chunks) {
+    OutputSection<E> *osec = chunk->to_osec();
+    if (!osec || !(osec->shdr.sh_flags & SHF_EXECINSTR))
+      continue;
+
+    for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks) {
+      for (i64 i = 0; i < thunk->symbols.size(); i++) {
+        Symbol<E> &sym = *thunk->symbols[i];
+        sym.add_aux(ctx);
+        ctx.symbol_aux[sym.aux_idx].thunk_addrs.push_back(thunk->get_addr(i));
+        if (!sym.flags.test_and_set())
+          syms.push_back(&sym);
+      }
+    }
+  }
+
+  tbb::parallel_for_each(syms, [&](Symbol<E> *sym) {
+    sort(ctx.symbol_aux[sym->aux_idx].thunk_addrs);
+    sym->flags = 0;
+  });
 }
 
 } // namespace mold

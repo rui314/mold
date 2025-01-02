@@ -2249,7 +2249,6 @@ public:
   u32 get_djb_hash(Context<E> &ctx) const;
   void set_djb_hash(Context<E> &ctx, u32 hash);
 
-  void add_thunk_addr(Context<E> &ctx, u64 addr) requires needs_thunk<E>;
   u64 get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E>;
 
   bool is_absolute() const;
@@ -2941,21 +2940,16 @@ inline void Symbol<E>::set_djb_hash(Context<E> &ctx, u32 hash) {
 }
 
 template <typename E>
-void Symbol<E>::add_thunk_addr(Context<E> &ctx, u64 addr) requires needs_thunk<E> {
-  add_aux(ctx);
-  ctx.symbol_aux[aux_idx].thunk_addrs.push_back(addr);
-}
-
-template <typename E>
 u64
 Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> {
   assert(aux_idx != -1);
-  for (u64 addr : ctx.symbol_aux[aux_idx].thunk_addrs) {
-    i64 disp = addr - P;
-    if (-branch_distance<E> <= disp && disp < branch_distance<E>)
-      return addr;
-  }
-  abort();
+
+  std::span<u64> vec = ctx.symbol_aux[aux_idx].thunk_addrs;
+  u64 min = (P < branch_distance<E>) ? 0 : P - branch_distance<E>;
+  auto it = std::lower_bound(vec.begin(), vec.end(), min);
+  assert(it != vec.end());
+  assert(*it < (P + branch_distance<E> < P) ? UINT64_MAX : P + branch_distance<E>);
+  return *it;
 }
 
 template <typename E>
