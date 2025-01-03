@@ -2,6 +2,7 @@
 . $(dirname $0)/common.inc
 
 supports_ifunc || skip
+[ "$(uname)" = FreeBSD ] && skip
 
 cat <<EOF | $GXX -o $t/a.o -c -xc++ - -fPIC
 #include <iostream>
