@@ -164,7 +164,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
       c++;
 
     // Move A forward so that A is reachable from C.
-    i64 c_offset = (c == m.size()) ? offset : m[c]->offset;
+    i64 c_offset = (c == d) ? offset : m[c]->offset;
     while (a < b && m[a]->offset + branch_distance<E> < c_offset)
       a++;
 
