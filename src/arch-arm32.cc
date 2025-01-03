@@ -746,7 +746,7 @@ std::vector<u8> Arm32ExidxSection::get_contents(Context<E> &ctx) {
   std::vector<u8> buf(output_section.shdr.sh_size);
 
   output_section.shdr.sh_addr = this->shdr.sh_addr;
-  output_section.write_to(ctx, buf.data(), nullptr);
+  output_section.write_to(ctx, buf.data());
 
   // .ARM.exidx records consists of a signed 31-bit relative address
   // and a 32-bit value. The relative address indicates the start

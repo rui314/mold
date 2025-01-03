@@ -414,7 +414,7 @@ public:
   virtual i64 get_reldyn_size(Context<E> &ctx) const { return 0; }
   virtual void construct_relr(Context<E> &ctx) {}
   virtual void copy_buf(Context<E> &ctx) {}
-  virtual void write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) { unreachable(); }
+  virtual void write_to(Context<E> &ctx, u8 *buf) { unreachable(); }
   virtual void update_shdr(Context<E> &ctx) {}
 
   std::string_view name;
@@ -539,7 +539,7 @@ public:
   i64 get_reldyn_size(Context<E> &ctx) const override;
   void construct_relr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
-  void write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) override;
+  void write_to(Context<E> &ctx, u8 *buf) override;
 
   void compute_symtab_size(Context<E> &ctx) override;
   void populate_symtab(Context<E> &ctx) override;
@@ -873,7 +873,7 @@ public:
   void resolve(Context<E> &ctx);
   void compute_section_size(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
-  void write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) override;
+  void write_to(Context<E> &ctx, u8 *buf) override;
   void print_stats(Context<E> &ctx);
 
   std::vector<MergeableSection<E> *> members;
@@ -2955,8 +2955,9 @@ Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> 
   std::span<u64> vec = ctx.symbol_aux[aux_idx].thunk_addrs;
   u64 lo = (P < branch_distance<E>) ? 0 : P - branch_distance<E>;
   u64 val = *std::lower_bound(vec.begin(), vec.end(), lo);
-  assert(-branch_distance<E> <= (i64)(val - P) &&
-         (i64)(val - P) < branch_distance<E>);
+  i64 disp = val - P;
+  if (disp < -branch_distance<E> || branch_distance<E> <= disp)
+    Fatal(ctx) << "range extension thunk out of range: " << *this;
   return val;
 }
 

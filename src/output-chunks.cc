@@ -946,52 +946,20 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
 
 template <typename E>
 void OutputSection<E>::copy_buf(Context<E> &ctx) {
-  if (this->shdr.sh_type != SHT_NOBITS) {
-    ElfRel<E> *rel = nullptr;
-    if (ctx.reldyn)
-      rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                          this->reldyn_offset);
+  if (this->shdr.sh_type == SHT_NOBITS)
+    return;
 
-    write_to(ctx, ctx.buf + this->shdr.sh_offset, rel);
-  }
-}
+  // Copy section contents
+  u8 *buf = ctx.buf + this->shdr.sh_offset;
+  write_to(ctx, buf);
 
-template <typename E>
-void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) {
-  // Copy section contents to an output file.
-  tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
-    InputSection<E> &isec = *members[i];
-    isec.write_to(ctx, buf + isec.offset);
+  // Emit dynamic relocations
+  if (!ctx.reldyn)
+    return;
 
-    // Clear trailing padding. We write trap or nop instructions for
-    // an executable segment so that a disassembler wouldn't try to
-    // disassemble garbage as instructions.
-    u64 this_end = isec.offset + isec.sh_size;
-    u64 next_start;
-    if (i + 1 < members.size())
-      next_start = members[i + 1]->offset;
-    else
-      next_start = this->shdr.sh_size;
+  ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
+                                 this->reldyn_offset);
 
-    u8 *loc = buf + this_end;
-    i64 size = next_start - this_end;
-
-    if (this->shdr.sh_flags & SHF_EXECINSTR) {
-      for (i64 i = 0; i + sizeof(E::filler) <= size; i += sizeof(E::filler))
-        memcpy(loc + i, E::filler, sizeof(E::filler));
-    } else {
-      memset(loc, 0, size);
-    }
-  });
-
-  // Emit range extension thunks.
-  if constexpr (needs_thunk<E>) {
-    tbb::parallel_for_each(thunks, [&](std::unique_ptr<Thunk<E>> &thunk) {
-      thunk->copy_buf(ctx);
-    });
-  }
-
-  // Emit dynamic relocations.
   for (AbsRel<E> &r : abs_rels) {
     Word<E> *loc = (Word<E> *)(buf + r.isec->offset + r.offset);
     u64 addr = this->shdr.sh_addr + r.isec->offset + r.offset;
@@ -1023,6 +991,42 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) {
         *loc = r.addend;
       break;
     }
+  }
+}
+
+template <typename E>
+void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
+  // Copy section contents to an output file.
+  tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
+    InputSection<E> &isec = *members[i];
+    isec.write_to(ctx, buf + isec.offset);
+
+    // Clear trailing padding. We write trap or nop instructions for
+    // an executable segment so that a disassembler wouldn't try to
+    // disassemble garbage as instructions.
+    u64 this_end = isec.offset + isec.sh_size;
+    u64 next_start;
+    if (i + 1 < members.size())
+      next_start = members[i + 1]->offset;
+    else
+      next_start = this->shdr.sh_size;
+
+    u8 *loc = buf + this_end;
+    i64 size = next_start - this_end;
+
+    if (this->shdr.sh_flags & SHF_EXECINSTR) {
+      for (i64 i = 0; i + sizeof(E::filler) <= size; i += sizeof(E::filler))
+        memcpy(loc + i, E::filler, sizeof(E::filler));
+    } else {
+      memset(loc, 0, size);
+    }
+  });
+
+  // Emit range extension thunks.
+  if constexpr (needs_thunk<E>) {
+    tbb::parallel_for_each(thunks, [&](std::unique_ptr<Thunk<E>> &thunk) {
+      thunk->copy_buf(ctx);
+    });
   }
 }
 
@@ -2197,11 +2201,11 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
 
 template <typename E>
 void MergedSection<E>::copy_buf(Context<E> &ctx) {
-  write_to(ctx, ctx.buf + this->shdr.sh_offset, nullptr);
+  write_to(ctx, ctx.buf + this->shdr.sh_offset);
 }
 
 template <typename E>
-void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf, ElfRel<E> *rel) {
+void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   i64 shard_size = map.nbuckets / map.NUM_SHARDS;
 
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
@@ -2838,7 +2842,7 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   this->uncompressed_data.resize(chunk.shdr.sh_size);
   u8 *buf = this->uncompressed_data.data();
 
-  chunk.write_to(ctx, buf, nullptr);
+  chunk.write_to(ctx, buf);
 
   switch (ctx.arg.compress_debug_sections) {
   case COMPRESS_ZLIB:
