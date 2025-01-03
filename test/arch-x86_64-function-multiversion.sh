@@ -1,7 +1,9 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $GCC -o $t/a.o -c -xc++ - -fPIC
+supports_ifunc || skip
+
+cat <<EOF | $GXX -o $t/a.o -c -xc++ - -fPIC
 #include <iostream>
 
 class Hello {
@@ -17,7 +19,7 @@ EOF
 
 $CXX -B. -shared -o $t/b.so $t/a.o
 
-cat <<EOF | $CC -o $t/c.o -c -xc++ - -fPIC
+cat <<EOF | $CXX -o $t/c.o -c -xc++ - -fPIC
 void hello();
 int main() { hello(); }
 EOF
