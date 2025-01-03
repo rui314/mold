@@ -18,7 +18,7 @@ EOF
 $CC -B. -o $t/exe $t/a.o \
   -Wl,--section-start=.low=0x10000000,--section-start=.high=0x20000000
 
-$OBJDUMP -dr $t/exe | grep -F -A7 '<fn1$thunk>:' > $t/log
+$OBJDUMP -dr $t/exe | grep -E -A7 '<fn1\$thunk[0-9]+>:' > $t/log
 
 grep -Eq 'bx\s+pc' $t/log
 grep -Eq 'add\s+pc, ip, pc' $t/log

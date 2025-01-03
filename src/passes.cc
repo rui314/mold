@@ -1754,6 +1754,14 @@ template <typename E>
 void create_output_symtab(Context<E> &ctx) {
   Timer t(ctx, "compute_symtab_size");
 
+  if constexpr (needs_thunk<E>) {
+    i64 n = 0;
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (OutputSection<E> *osec = chunk->to_osec())
+        for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks)
+          thunk->name = "thunk" + std::to_string(n++);
+  }
+
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
     chunk->compute_symtab_size(ctx);
   });

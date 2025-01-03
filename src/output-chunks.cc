@@ -1185,7 +1185,7 @@ void OutputSection<E>::compute_symtab_size(Context<E> &ctx) {
         this->num_local_symtab += thunk->symbols.size();
 
       for (Symbol<E> *sym : thunk->symbols)
-        this->strtab_size += sym->name().size() + sizeof("$thunk");
+        this->strtab_size += sym->name().size() + thunk->name.size() + 2;
     }
   }
 }
@@ -1219,7 +1219,8 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
         write_esym(addr, strtab - strtab_base);
 
         strtab += write_string(strtab, sym.name()) - 1;
-        strtab += write_string(strtab, "$thunk");
+        *strtab++ = '$';
+        strtab += write_string(strtab, thunk->name);
 
         // Emit "$t", "$a" and "$d" if ARM32.
         if constexpr (is_arm32<E>) {

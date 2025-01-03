@@ -117,6 +117,7 @@ public:
   OutputSection<E> &output_section;
   i64 offset;
   std::vector<Symbol<E> *> symbols;
+  std::string name;
 };
 
 template <needs_thunk E>
