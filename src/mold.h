@@ -150,9 +150,9 @@ static consteval i64 get_branch_distance() {
 // on the target architecture. For example, ARM32's B instruction jumps to
 // the branch's address + immediate + 4 (i.e., B with offset 0 jumps to
 // the next instruction), while RISC-V has no such implicit bias. Here, we
-// subtract 16 as a safety margin that is large enough for all targets.
+// subtract 32 as a safety margin that is large enough for all targets.
 template <needs_thunk E>
-static constexpr i64 branch_distance = get_branch_distance<E>() - 16;
+static constexpr i64 branch_distance = get_branch_distance<E>() - 32;
 
 template <needs_thunk E>
 void gather_thunk_addresses(Context<E> &ctx);
@@ -2950,7 +2950,7 @@ inline void Symbol<E>::set_djb_hash(Context<E> &ctx, u32 hash) {
 }
 
 template <typename E>
-inline u64
+u64
 Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> {
   std::span<u64> vec = ctx.symbol_aux[aux_idx].thunk_addrs;
   u64 lo = (P < branch_distance<E>) ? 0 : P - branch_distance<E>;

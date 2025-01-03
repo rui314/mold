@@ -1343,15 +1343,18 @@ void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
   if constexpr (needs_thunk<E>) {
-    // We cannot use parallel-for for compute_section_size() which may
-    // call create_range_extension_thunks() because that function is
-    // not thread-safe.
+    auto is_text = [&](Chunk<E> *chunk) {
+      return chunk->to_osec() && (chunk->shdr.sh_flags & SHF_EXECINSTR) &&
+             !ctx.arg.relocatable;
+    };
+
+    // create_range_extension_thunks is not thread-safe
     for (Chunk<E> *chunk : ctx.chunks)
-      if (chunk->shdr.sh_flags & SHF_EXECINSTR)
-        chunk->compute_section_size(ctx);
+      if (is_text(chunk))
+        chunk->to_osec()->create_range_extension_thunks(ctx);
 
     tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-      if (!(chunk->shdr.sh_flags & SHF_EXECINSTR))
+      if (!is_text(chunk))
         chunk->compute_section_size(ctx);
     });
   } else {

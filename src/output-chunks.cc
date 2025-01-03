@@ -892,16 +892,10 @@ template <typename E>
 void OutputSection<E>::compute_section_size(Context<E> &ctx) {
   ElfShdr<E> &shdr = this->shdr;
 
-  // On most RISC systems, we need to create so-called "range extension
-  // thunks" to extend branch instructions reach, as their jump
-  // instructions' reach is limited. create_range_extension_thunks()
-  // computes the size of the section while inserting thunks.
-  if constexpr (needs_thunk<E>) {
-    if ((shdr.sh_flags & SHF_EXECINSTR) && !ctx.arg.relocatable) {
-      create_range_extension_thunks(ctx);
-      return;
-    }
-  }
+  // Text sections must to be handled by create_range_extension_thunks()
+  // if they may need range extension thunks.
+  assert(!needs_thunk<E> || !(shdr.sh_flags & SHF_EXECINSTR) ||
+         ctx.arg.relocatable);
 
   // Since one output section may contain millions of input sections,
   // we first split input sections into groups and assign offsets to

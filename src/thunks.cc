@@ -197,7 +197,8 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
         if (is_reachable(ctx, isec, sym, rel))
           continue;
 
-        // Add the symbol to the current thunk if it's not added already.
+        // Add the symbol to the current thunk if it's not added already
+        // by other thread.
         if (!sym.flags.test_and_set()) {
           std::scoped_lock lock(mu);
           thunk->symbols.push_back(&sym);
@@ -237,31 +238,30 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
 //
 // In this function, we create a list of all addresses in range extension
 // thunks for each symbol, so that it is easy to find one.
+//
+// Note that thunk_addrs must be sorted for binary search.
 template <>
 void gather_thunk_addresses(Context<E> &ctx) {
   Timer t(ctx, "gather_thunk_addresses");
 
-  std::vector<Symbol<E> *> syms;
+  std::vector<OutputSection<E> *> sections;
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      sections.push_back(osec);
 
-  for (Chunk<E> *chunk : ctx.chunks) {
-    if (OutputSection<E> *osec = chunk->to_osec()) {
-      for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks) {
-        for (i64 i = 0; i < thunk->symbols.size(); i++) {
-          Symbol<E> &sym = *thunk->symbols[i];
-          sym.add_aux(ctx);
+  sort(sections, [](OutputSection<E> *a, OutputSection<E> *b) {
+    return a->shdr.sh_addr < b->shdr.sh_addr;
+  });
 
-          std::vector<u64> &vec = ctx.symbol_aux[sym.aux_idx].thunk_addrs;
-          if (vec.empty())
-            syms.push_back(&sym);
-          vec.push_back(thunk->get_addr(i));
-        }
+  for (OutputSection<E> *osec : sections) {
+    for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks) {
+      for (i64 i = 0; i < thunk->symbols.size(); i++) {
+        Symbol<E> &sym = *thunk->symbols[i];
+        sym.add_aux(ctx);
+        ctx.symbol_aux[sym.aux_idx].thunk_addrs.push_back(thunk->get_addr(i));
       }
     }
   }
-
-  tbb::parallel_for_each(syms, [&](Symbol<E> *sym) {
-    sort(ctx.symbol_aux[sym->aux_idx].thunk_addrs);
-  });
 }
 
 } // namespace mold
