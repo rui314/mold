@@ -1323,12 +1323,6 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.got->got_syms) {
     i64 idx = sym->get_got_idx(ctx);
 
-    // If a symbol is imported, let the dynamic linker to resolve it.
-    if (sym->is_imported) {
-      add({idx, 0, E::R_GLOB_DAT, sym});
-      continue;
-    }
-
     // IFUNC always needs to be fixed up by the dynamic linker.
     if constexpr (supports_ifunc<E>) {
       if (sym->is_ifunc()) {
@@ -1340,6 +1334,12 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
         }
         continue;
       }
+    }
+
+    // If a symbol is imported, let the dynamic linker to resolve it.
+    if (sym->is_imported) {
+      add({idx, 0, E::R_GLOB_DAT, sym});
+      continue;
     }
 
     // If we know an address at link-time, fill that GOT entry now.
