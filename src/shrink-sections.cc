@@ -72,7 +72,23 @@ static bool is_resizable(InputSection<E> *isec) {
 }
 
 template <>
-void shrink_sections<E>(Context<E> &ctx) {
+i64 get_r_delta(InputSection<E> &isec, u64 offset) {
+  std::span<RelocDelta> deltas = isec.extra.r_deltas;
+  if (deltas.empty())
+    return 0;
+
+  auto it = std::upper_bound(deltas.begin(), deltas.end(), offset,
+                             [](u64 val, const RelocDelta &x) {
+    return val <= x.offset;
+  });
+
+  if (it == deltas.begin())
+    return 0;
+  return (it - 1)->delta;
+}
+
+template <>
+void shrink_sections(Context<E> &ctx) {
   Timer t(ctx, "shrink_sections");
 
   // True if we can use the 2-byte instructions. This is usually true on
@@ -92,29 +108,22 @@ void shrink_sections<E>(Context<E> &ctx) {
   // only ~0.04% larger than that of GNU ld), so we don't bother to handle
   // them. We scan relocations only once here.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (is_resizable(isec.get()))
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (is_resizable(isec.get())) {
+        if (isec->sh_size > UINT32_MAX)
+          Fatal(ctx) << *isec << ": input section too large";
         shrink_section(ctx, *isec, use_rvc);
+      }
+    }
   });
 
   // Fix symbol values.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->symbols) {
-      if (sym->file != file)
-        continue;
-
-      InputSection<E> *isec = sym->get_input_section();
-      if (!isec || isec->extra.r_deltas.empty())
-        continue;
-
-      std::span<const ElfRel<E>> rels = isec->get_rels(ctx);
-      auto it = std::lower_bound(rels.begin(), rels.end(), sym->value,
-                                 [](const ElfRel<E> &r, u64 val) {
-        return r.r_offset < val;
-      });
-
-      sym->value -= isec->extra.r_deltas[it - rels.begin()];
-    }
+    for (Symbol<E> *sym : file->symbols)
+      if (sym->file == file)
+        if (InputSection<E> *isec = sym->get_input_section())
+          if (!isec->extra.r_deltas.empty())
+            sym->value -= get_r_delta(*isec, sym->value);
   });
 
   // Recompute sizes of executable sections
@@ -126,8 +135,8 @@ void shrink_sections<E>(Context<E> &ctx) {
 
 // Returns the distance between a relocated place and a symbol.
 template <>
-i64 compute_distance<E>(Context<E> &ctx, Symbol<E> &sym,
-                        InputSection<E> &isec, const ElfRel<E> &rel) {
+i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
+                     InputSection<E> &isec, const ElfRel<E> &rel) {
   // We handle absolute symbols as if they were infinitely far away
   // because `shrink_section` may increase a distance between a branch
   // instruction and an absolute symbol. Branching to an absolute

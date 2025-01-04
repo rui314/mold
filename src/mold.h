@@ -259,10 +259,21 @@ struct FdeRecord {
 template <typename E>
 struct InputSectionExtras {};
 
+struct RelocDelta {
+  u32 offset;
+  u32 delta;
+};
+
 template <typename E> requires is_riscv<E> || is_loongarch<E>
 struct InputSectionExtras<E> {
-  std::vector<i32> r_deltas;
+  std::vector<RelocDelta> r_deltas;
 };
+
+static i64 get_removed_bytes(std::span<RelocDelta> deltas, i64 i) {
+  if (i == 0)
+    return deltas[i].delta;
+  return deltas[i].delta - deltas[i - 1].delta;
+}
 
 // InputSection represents a section in an input object file.
 template <typename E>
@@ -1561,6 +1572,9 @@ void shrink_sections(Context<E> &ctx);
 
 template <typename E>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc);
+
+template <typename E>
+i64 get_r_delta(InputSection<E> &isec, u64 offset);
 
 template <typename E>
 i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,

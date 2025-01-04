@@ -265,10 +265,8 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
-
-  auto get_r_delta = [&](i64 idx) {
-    return extra.r_deltas.empty() ? 0 : extra.r_deltas[idx];
-  };
+  std::span<RelocDelta> deltas = extra.r_deltas;
+  i64 k = 0;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -278,9 +276,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         rel.r_type == R_LARCH_ALIGN)
       continue;
 
+    i64 removed_bytes = 0;
+    i64 r_delta = 0;
+
+    if (!deltas.empty()) {
+      while (k < deltas.size() && deltas[k].offset < rel.r_offset)
+        k++;
+      if (k < deltas.size() && deltas[k].offset == rel.r_offset)
+        removed_bytes = get_removed_bytes(deltas, k);
+      if (k > 0)
+        r_delta = deltas[k - 1].delta;
+    }
+
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    i64 r_offset = rel.r_offset - get_r_delta(i);
-    i64 removed_bytes = get_r_delta(i + 1) - get_r_delta(i);
+    i64 r_offset = rel.r_offset - r_delta;
     u8 *loc = base + r_offset;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
@@ -861,13 +870,16 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 template <>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
-  isec.extra.r_deltas.resize(rels.size() + 1);
-  i64 delta = 0;
+  std::vector<RelocDelta> &deltas = isec.extra.r_deltas;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-    isec.extra.r_deltas[i] = delta;
+
+    auto remove = [&](u32 d) {
+      u32 sum = deltas.empty() ? 0 : deltas.back().delta;
+      deltas.emplace_back((u32)r.r_offset, sum + d);
+    };
 
     // A R_LARCH_ALIGN relocation refers to the beginning of a nop
     // sequence. We need to remove some or all of them so that the
@@ -892,9 +904,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
         alignment = r.r_addend + 4;
       }
 
+      u64 delta = deltas.empty() ? 0 : deltas.back().delta;
       u64 loc = isec.get_addr() + r.r_offset - delta;
       u64 next_loc = loc + alignment - 4;
-      delta += next_loc - align_to(loc, alignment);
+      remove(next_loc - align_to(loc, alignment));
       continue;
     }
 
@@ -924,7 +937,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       //  addi.d  $t0, $tp, <tp-offset>
       if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
           sign_extend(val, 11) == val)
-        delta += 4;
+        remove(4);
       break;
     case R_LARCH_PCALA_HI20:
       // The following two instructions are used to materialize a
@@ -949,7 +962,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
         if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21) &&
             is_addi_d && get_rd(insn1) == get_rd(insn2) &&
             get_rd(insn2) == get_rj(insn2))
-          delta += 4;
+          remove(4);
       }
       break;
     case R_LARCH_CALL36:
@@ -965,7 +978,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
           -(1 << 27) <= dist && dist < (1 << 27))
         if (u32 jirl = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
             get_rd(jirl) == 0 || get_rd(jirl) == 1)
-          delta += 4;
+          remove(4);
       break;
     case R_LARCH_GOT_PC_HI20:
       // The following two instructions are used to load a symbol address
@@ -981,7 +994,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       if (is_relaxable_got_load(ctx, isec, i)) {
         i64 dist = compute_distance(ctx, sym, isec, r);
         if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21))
-          delta += 4;
+          remove(4);
       }
       break;
     case R_LARCH_TLS_DESC_PC_HI20:
@@ -989,25 +1002,25 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
         u64 P = isec.get_addr() + r.r_offset;
         i64 dist = sym.get_tlsdesc_addr(ctx) + r.r_addend - P;
         if (-(1 << 21) <= dist && dist < (1 << 21))
-          delta += 4;
+          remove(4);
       } else {
-        delta += 4;
+        remove(4);
       }
       break;
     case R_LARCH_TLS_DESC_PC_LO12:
       if (!sym.has_tlsdesc(ctx))
-        delta += 4;
+        remove(4);
       break;
     case R_LARCH_TLS_DESC_LD:
       if (!sym.has_tlsdesc(ctx) && !sym.has_gottp(ctx) &&
           sym.get_addr(ctx) + r.r_addend - ctx.tp_addr < 0x1000)
-        delta += 4;
+        remove(4);
       break;
     }
   }
 
-  isec.extra.r_deltas[rels.size()] = delta;
-  isec.sh_size -= delta;
+  if (!deltas.empty())
+    isec.sh_size -= deltas.back().delta;
 }
 
 } // namespace mold

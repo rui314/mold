@@ -225,27 +225,23 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
   // relocations are allowed to remove bytes from the middle of a
   // section and shrink the overall size of it.
   if constexpr (is_riscv<E> || is_loongarch<E>) {
-    if (extra.r_deltas.empty()) {
+    std::span<RelocDelta> deltas = extra.r_deltas;
+
+    if (deltas.empty()) {
       // If a section is not relaxed, we can copy it as a one big chunk.
       copy_contents(ctx, buf);
     } else {
       // A relaxed section is copied piece-wise.
-      std::span<const ElfRel<E>> rels = get_rels(ctx);
-      u8 *buf2 = buf;
-      i64 pos = 0;
+      memcpy(buf, contents.data(), deltas[0].offset);
 
-      for (i64 i = 0; i < rels.size(); i++) {
-        i64 delta = extra.r_deltas[i + 1] - extra.r_deltas[i];
-        if (delta == 0)
-          continue;
-        assert(delta > 0);
-
-        const ElfRel<E> &r = rels[i];
-        memcpy(buf2, contents.data() + pos, r.r_offset - pos);
-        buf2 += r.r_offset - pos;
-        pos = r.r_offset + delta;
+      for (i64 i = 0; i < deltas.size(); i++) {
+        RelocDelta x = deltas[i];
+        i64 end = (i + 1 == deltas.size()) ? contents.size() : deltas[i + 1].offset;
+        i64 removed_bytes = get_removed_bytes(deltas, i);
+        memcpy(buf + x.offset - x.delta + removed_bytes,
+               contents.data() + x.offset + removed_bytes,
+               end - x.offset - removed_bytes);
       }
-      memcpy(buf2, contents.data() + pos, contents.size() - pos);
     }
   } else {
     copy_contents(ctx, buf);

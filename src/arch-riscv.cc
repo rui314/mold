@@ -206,9 +206,12 @@ static inline bool is_hi20(const ElfRel<E> &rel) {
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  std::span<RelocDelta> deltas = extra.r_deltas;
+  i64 k = 0;
 
-  auto get_r_delta = [&](i64 idx) {
-    return extra.r_deltas.empty() ? 0 : extra.r_deltas[idx];
+  // Returns the rd register of an R/I/U/J-type instruction.
+  auto get_rd = [&](i64 offset) {
+    return bits(*(ul32 *)(contents.data() + offset), 11, 7);
   };
 
   for (i64 i = 0; i < rels.size(); i++) {
@@ -216,9 +219,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     if (rel.r_type == R_NONE || rel.r_type == R_RISCV_RELAX)
       continue;
 
+    i64 removed_bytes = 0;
+    i64 r_delta = 0;
+
+    if (!deltas.empty()) {
+      while (k < deltas.size() && deltas[k].offset < rel.r_offset)
+        k++;
+      if (k < deltas.size() && deltas[k].offset == rel.r_offset)
+        removed_bytes = get_removed_bytes(deltas, k);
+      if (k > 0)
+        r_delta = deltas[k - 1].delta;
+    }
+
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    i64 r_offset = rel.r_offset - get_r_delta(i);
-    i64 removed_bytes = get_r_delta(i + 1) - get_r_delta(i);
+    i64 r_offset = rel.r_offset - r_delta;
     u8 *loc = base + r_offset;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
@@ -229,22 +243,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     };
 
     auto find_paired_reloc = [&] {
-      if (sym.value <= rels[i].r_offset - get_r_delta(i)) {
+      u64 value = sym.esym().st_value;
+      if (value <= rels[i].r_offset) {
         for (i64 j = i - 1; j >= 0; j--)
-          if (is_hi20(rels[j]) && sym.value == rels[j].r_offset - get_r_delta(j))
+          if (is_hi20(rels[j]) && value == rels[j].r_offset)
             return j;
       } else {
         for (i64 j = i + 1; j < rels.size(); j++)
-          if (is_hi20(rels[j]) && sym.value == rels[j].r_offset - get_r_delta(j))
+          if (is_hi20(rels[j]) && value == rels[j].r_offset)
             return j;
       }
-
       Fatal(ctx) << *this << ": paired relocation is missing: " << i;
-    };
-
-    auto get_rd = [&](i64 offset) {
-      // Returns the rd register of an R/I/U/J-type instruction.
-      return bits(*(ul32 *)(contents.data() + offset), 11, 7);
     };
 
     u64 S = sym.get_addr(ctx);
@@ -369,7 +378,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       u64 S = sym2.get_addr(ctx);
       u64 A = rel2.r_addend;
-      u64 P = get_addr() + rel2.r_offset - get_r_delta(idx2);
+      u64 P = get_addr() + rel2.r_offset - get_r_delta(*this, rel2.r_offset);
       u64 G = sym2.get_got_idx(ctx) * sizeof(Word<E>);
 
       switch (rel2.r_type) {
@@ -487,7 +496,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       u64 S = sym2.get_addr(ctx);
       u64 A = rel2.r_addend;
-      u64 P = get_addr() + rel2.r_offset - get_r_delta(idx2);
+      u64 P = get_addr() + rel2.r_offset - get_r_delta(*this, rel2.r_offset);
 
       switch (rel.r_type) {
       case R_RISCV_TLSDESC_LOAD_LO12:
@@ -803,18 +812,20 @@ u64 get_eflags(Context<E> &ctx) {
 template <>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
-  isec.extra.r_deltas.resize(rels.size() + 1);
+  std::vector<RelocDelta> &deltas = isec.extra.r_deltas;
 
   auto get_rd = [&](i64 offset) {
     return bits(*(ul32 *)(isec.contents.data() + offset), 11, 7);
   };
 
-  i64 delta = 0;
-
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-    isec.extra.r_deltas[i] = delta;
+
+    auto remove = [&](u32 d) {
+      u32 sum = deltas.empty() ? 0 : deltas.back().delta;
+      deltas.emplace_back((u32)r.r_offset, sum + d);
+    };
 
     // Handling R_RISCV_ALIGN is mandatory.
     //
@@ -824,11 +835,12 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
     if (r.r_type == R_RISCV_ALIGN) {
       // The total bytes of NOPs is stored to r_addend, so the next
       // instruction is r_addend away.
+      u64 delta = deltas.empty() ? 0 : deltas.back().delta;
       u64 loc = isec.get_addr() + r.r_offset - delta;
       u64 next_loc = loc + r.r_addend;
       u64 alignment = bit_ceil(r.r_addend + 1);
       assert(alignment <= (1 << isec.p2align));
-      delta += next_loc - align_to(loc, alignment);
+      remove(next_loc - align_to(loc, alignment));
       continue;
     }
 
@@ -874,14 +886,14 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       if (use_rvc && rd == 0 && sign_extend(dist, 11) == dist) {
         // If rd is x0 and the jump target is within ±2 KiB, we can use
         // C.J, saving 6 bytes.
-        delta += 6;
+        remove(6);
       } else if (use_rvc && !E::is_64 && rd == 1 && sign_extend(dist, 11) == dist) {
         // If rd is x1 and the jump target is within ±2 KiB, we can use
         // C.JAL. This is RV32 only because C.JAL is RV32-only instruction.
-        delta += 6;
+        remove(6);
       } else if (sign_extend(dist, 20) == dist) {
         // If the jump target is within ±1 MiB, we can use JAL.
-        delta += 4;
+        remove(4);
       }
       break;
     }
@@ -904,10 +916,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
 
           if (use_rvc && rd != 0 && sign_extend(val, 5) == val) {
             // Replace AUIPC + LD with C.LI.
-            delta += 6;
+            remove(6);
           } else if (sign_extend(val, 11) == val) {
             // Replace AUIPC + LD with ADDI.
-            delta += 4;
+            remove(4);
           }
         }
       }
@@ -921,11 +933,11 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
         // We can replace `lui t0, %hi(foo)` and `add t0, t0, %lo(foo)`
         // instruction pair with `add t0, x0, %lo(foo)` if foo's bits
         // [32:11] are all one or all zero.
-        delta += 4;
+        remove(4);
       } else if (use_rvc && rd != 0 && rd != 2 && sign_extend(val, 17) == val) {
         // If the upper 20 bits can actually be represented in 6 bits,
         // we can use C.LUI instead of LUI.
-        delta += 2;
+        remove(2);
       }
       break;
     }
@@ -952,11 +964,11 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
       if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
           sign_extend(val, 11) == val)
-        delta += 4;
+        remove(4);
       break;
     case R_RISCV_TLSDESC_HI20:
       if (!sym.has_tlsdesc(ctx))
-        delta += 4;
+        remove(4);
       break;
     case R_RISCV_TLSDESC_LOAD_LO12:
     case R_RISCV_TLSDESC_ADD_LO12: {
@@ -965,21 +977,21 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
 
       if (r.r_type == R_RISCV_TLSDESC_LOAD_LO12) {
         if (!sym2.has_tlsdesc(ctx))
-          delta += 4;
+          remove(4);
       } else {
         assert(r.r_type == R_RISCV_TLSDESC_ADD_LO12);
         if (!sym2.has_tlsdesc(ctx) && !sym2.has_gottp(ctx))
           if (i64 val = sym2.get_addr(ctx) + rel2.r_addend - ctx.tp_addr;
               sign_extend(val, 11) == val)
-            delta += 4;
+            remove(4);
       }
       break;
     }
     }
   }
 
-  isec.extra.r_deltas[rels.size()] = delta;
-  isec.sh_size -= delta;
+  if (!deltas.empty())
+    isec.sh_size -= deltas.back().delta;
 }
 
 // ISA name handlers
