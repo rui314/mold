@@ -876,9 +876,9 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
 
-    auto remove = [&](u32 d) {
-      u32 sum = deltas.empty() ? 0 : deltas.back().delta;
-      deltas.emplace_back((u32)r.r_offset, sum + d);
+    auto remove = [&](i64 d) {
+      i64 sum = deltas.empty() ? 0 : deltas.back().delta;
+      deltas.push_back(RelocDelta{r.r_offset, sum + d});
     };
 
     // A R_LARCH_ALIGN relocation refers to the beginning of a nop

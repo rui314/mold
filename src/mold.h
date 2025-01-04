@@ -260,8 +260,8 @@ template <typename E>
 struct InputSectionExtras {};
 
 struct RelocDelta {
-  u32 offset;
-  u32 delta;
+  u64 offset : 38;
+  i64 delta : 26;
 };
 
 template <typename E> requires is_riscv<E> || is_loongarch<E>

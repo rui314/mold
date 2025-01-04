@@ -108,13 +108,9 @@ void shrink_sections(Context<E> &ctx) {
   // only ~0.04% larger than that of GNU ld), so we don't bother to handle
   // them. We scan relocations only once here.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
-      if (is_resizable(isec.get())) {
-        if (isec->sh_size > UINT32_MAX)
-          Fatal(ctx) << *isec << ": input section too large";
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (is_resizable(isec.get()))
         shrink_section(ctx, *isec, use_rvc);
-      }
-    }
   });
 
   // Fix symbol values.
