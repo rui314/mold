@@ -269,7 +269,7 @@ struct InputSectionExtras<E> {
   std::vector<RelocDelta> r_deltas;
 };
 
-static i64 get_removed_bytes(std::span<RelocDelta> deltas, i64 i) {
+inline i64 get_removed_bytes(std::span<RelocDelta> deltas, i64 i) {
   if (i == 0)
     return deltas[i].delta;
   return deltas[i].delta - deltas[i - 1].delta;

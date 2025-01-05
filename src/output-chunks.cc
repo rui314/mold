@@ -1751,6 +1751,19 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+// RISC-V and LoongArch have code-shrinking linker relaxation. If we
+// have removed instructions from a function, we need to update its
+// size as well.
+template <typename E>
+static u64 get_symbol_size(Symbol<E> &sym) {
+  const ElfSym<E> &esym = sym.esym();
+  if constexpr (is_riscv<E> || is_loongarch<E>)
+    if (InputSection<E> *isec = sym.get_input_section())
+      if (!isec->extra.r_deltas.empty())
+        return esym.st_size - get_r_delta(*isec, esym.st_value + esym.st_size);
+  return esym.st_size;
+}
+
 template <typename E>
 ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
                          U32<E> *shn_xindex) {
@@ -1759,7 +1772,7 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
 
   esym.st_name = st_name;
   esym.st_type = sym.get_type();
-  esym.st_size = sym.esym().st_size;
+  esym.st_size = get_symbol_size(sym);
 
   if (sym.is_local(ctx))
     esym.st_bind = STB_LOCAL;
