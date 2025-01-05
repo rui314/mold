@@ -123,7 +123,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   // from the current batch.
   //
   // D is the input section with the largest address such that the thunk
-  // is reachable from the current batch if it's inserted right before D.
+  // is reachable from the current batch if it's inserted at D.
   //
   //  ................................ <input sections> ............
   //     A    B    C    D
@@ -174,8 +174,8 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
 
     // Create a new thunk and place it at D.
     offset = align_to(offset, thunk_align);
-    Thunk<E> *thunk = new Thunk<E>(*this, offset);
-    thunks.emplace_back(thunk);
+    thunks.emplace_back(std::make_unique<Thunk<E>>(*this, offset));
+    Thunk<E> &thunk = *thunks.back();
 
     // Scan relocations between B and C to collect symbols that need
     // entries in the new thunk.
@@ -201,21 +201,21 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
         // by other thread.
         if (!sym.flags.test_and_set()) {
           std::scoped_lock lock(mu);
-          thunk->symbols.push_back(&sym);
+          thunk.symbols.push_back(&sym);
         }
       }
     });
 
     // Sort symbols added to the thunk to make the output deterministic.
-    sort(thunk->symbols, [](Symbol<E> *a, Symbol<E> *b) {
+    sort(thunk.symbols, [](Symbol<E> *a, Symbol<E> *b) {
       return std::tuple{a->file->priority, a->sym_idx} <
              std::tuple{b->file->priority, b->sym_idx};
     });
 
     // Now that we know the number of symbols in the thunk, we can compute
     // the thunk's size.
-    assert(thunk->size() < max_thunk_size);
-    offset += thunk->size();
+    assert(thunk.size() < max_thunk_size);
+    offset += thunk.size();
 
     // Move B forward to point to the begining of the next batch.
     b = c;
