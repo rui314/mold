@@ -854,10 +854,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       // instruction is r_addend away.
       u64 delta = deltas.empty() ? 0 : deltas.back().delta;
       u64 loc = isec.get_addr() + r.r_offset - delta;
-      u64 next_loc = loc + r.r_addend;
-      u64 alignment = bit_ceil(r.r_addend + 1);
-      assert(alignment <= (1 << isec.p2align));
-      remove(next_loc - align_to(loc, alignment));
+      u64 desired = align_to(loc, bit_ceil(r.r_addend));
+      u64 actual = loc + r.r_addend;
+      if (desired != actual)
+        remove(actual - desired);
       continue;
     }
 
