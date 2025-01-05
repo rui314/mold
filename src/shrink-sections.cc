@@ -86,12 +86,6 @@ template <>
 void shrink_sections(Context<E> &ctx) {
   Timer t(ctx, "shrink_sections");
 
-  // True if we can use the 2-byte instructions. This is usually true on
-  // Unix because RV64GC is generally considered the baseline hardware.
-  bool use_rvc = false;
-  if constexpr (is_riscv<E>)
-    use_rvc = get_eflags(ctx) & EF_RISCV_RVC;
-
   // Find all relaxable relocations and record how many bytes we can save
   // into r_deltas.
   //
@@ -105,7 +99,7 @@ void shrink_sections(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_EXECINSTR))
-        shrink_section(ctx, *isec, use_rvc);
+        shrink_section(ctx, *isec);
   });
 
   // Fix symbol values.

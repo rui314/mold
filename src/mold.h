@@ -266,14 +266,14 @@ struct RelocDelta {
 
 // RISC-V and LoongArch support code-shrinking linker relaxation.
 //
-// r_deltas is used to manage the locations where instructions are
-// removed from a section. r_deltas is sorted by offset. Each
-// RelocDelta indicates that the contents at and after `offset` and up
-// to the next RelocDelta location need to be shifted towards the
-// beginning of the section by `delta` bytes.
+// r_deltas is used to manage the locations where instructions are removed
+// from a section. r_deltas is sorted by offset. Each RelocDelta indicates
+// that the contents at and after `offset` and up to the next RelocDelta
+// offset need to be shifted towards the beginning of the section by
+// `delta` bytes when copying section contents to the output buffer.
 //
-// Since code-shrinking relaxation never bloats section contents,
-// `delta` increases monotonically within the vector.
+// Since code-shrinking relaxation never bloats section contents, `delta`
+// increases monotonically within the vector as well.
 template <typename E> requires is_riscv<E> || is_loongarch<E>
 struct InputSectionExtras<E> {
   std::vector<RelocDelta> r_deltas;
@@ -1581,7 +1581,7 @@ template <typename E>
 void shrink_sections(Context<E> &ctx);
 
 template <typename E>
-void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc);
+void shrink_section(Context<E> &ctx, InputSection<E> &isec);
 
 template <typename E>
 i64 get_r_delta(InputSection<E> &isec, u64 offset);

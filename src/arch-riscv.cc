@@ -830,10 +830,14 @@ u64 get_eflags(Context<E> &ctx) {
 
 // Scan relocations to shrink a given section.
 template <>
-void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
+void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   std::vector<RelocDelta> &deltas = isec.extra.r_deltas;
   u8 *buf = (u8 *)isec.contents.data();
+
+  // True if we can use 2-byte instructions. This is usually true on
+  // Unix because RV64GC is generally considered the baseline hardware.
+  bool use_rvc = isec.file.get_eflags() & EF_RISCV_RVC;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
