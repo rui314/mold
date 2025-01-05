@@ -200,6 +200,25 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
+// RISC-V generally uses the AUIPC + ADDI/LW/SW/etc instruction pair
+// to access the AUIPC's address ± 2 GiB. AUIPC materializes the most
+// significant 52 bits in a PC-relative manner, and the following
+// instruction specifies the remaining least significant 12 bits.
+// There are several HI20 and LO12 relocation types for them.
+//
+// LO12 relocations need to materialize an address relative to AUIPC's
+// address, not relative to the instruction that the relocation
+// directly refers to.
+//
+// The problem here is that the instruction pair may not always be
+// adjacent. We need a mechanism to find a paired AUIPC for a given
+// LO12 relocation. For this purpose, the compiler creates a local
+// symbol for each location to which HI20 refers, and the LO12
+// relocation refers to that symbol.
+//
+// This function returns a paired HI20 relocation for a given LO12.
+// Since the instructions are typically adjacent, we do a linear
+// search.
 static const ElfRel<E> &
 find_paired_reloc(Context<E> &ctx, InputSection<E> &isec,
                   std::span<const ElfRel<E>> rels,
