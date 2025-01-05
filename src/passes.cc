@@ -161,7 +161,7 @@ void create_synthetic_sections(Context<E> &ctx) {
 
     // If .dynamic exists, .dynsym and .dynstr must exist as well
     // since .dynamic refers to them.
-    ctx.dynstr->shdr.sh_size = 1;
+    ctx.dynstr->add_string("");
     ctx.dynsym->symbols.resize(1);
   }
 
