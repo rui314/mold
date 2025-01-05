@@ -66,11 +66,6 @@ namespace mold {
 
 using E = MOLD_TARGET;
 
-static bool is_resizable(InputSection<E> *isec) {
-  return isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
-         (isec->shdr().sh_flags & SHF_EXECINSTR);
-}
-
 template <>
 i64 get_r_delta(InputSection<E> &isec, u64 offset) {
   std::span<RelocDelta> deltas = isec.extra.r_deltas;
@@ -109,7 +104,7 @@ void shrink_sections(Context<E> &ctx) {
   // them. We scan relocations only once here.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (is_resizable(isec.get()))
+      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_EXECINSTR))
         shrink_section(ctx, *isec, use_rvc);
   });
 

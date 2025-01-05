@@ -130,6 +130,7 @@ static void set_rj(u8 *loc, u32 rj) {
 static bool is_relaxable_got_load(Context<E> &ctx, InputSection<E> &isec, i64 i) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   Symbol<E> &sym = *isec.file.symbols[rels[i].r_sym];
+  u8 *buf = (u8 *)isec.contents.data();
 
   if (ctx.arg.relax &&
       sym.is_pcrel_linktime_const(ctx) &&
@@ -137,8 +138,8 @@ static bool is_relaxable_got_load(Context<E> &ctx, InputSection<E> &isec, i64 i)
       rels[i + 2].r_type == R_LARCH_GOT_PC_LO12 &&
       rels[i + 2].r_offset == rels[i].r_offset + 4 &&
       rels[i + 3].r_type == R_LARCH_RELAX) {
-    u32 insn1 = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
-    u32 insn2 = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
+    u32 insn1 = *(ul32 *)(buf + rels[i].r_offset);
+    u32 insn2 = *(ul32 *)(buf + rels[i].r_offset + 4);
     bool is_ld_d = (insn2 & 0xffc0'0000) == 0x28c0'0000;
     return get_rd(insn1) == get_rd(insn2) && get_rd(insn2) == get_rj(insn2) &&
            is_ld_d;
@@ -267,6 +268,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
   std::span<RelocDelta> deltas = extra.r_deltas;
   i64 k = 0;
+  u8 *buf = (u8 *)contents.data();
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -529,7 +531,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else {
         // Rewrite PCADDU18I + JIRL to B or BL
         assert(removed_bytes == 4);
-        if (get_rd(*(ul32 *)(contents.data() + rel.r_offset + 4)) == 0)
+        if (get_rd(*(ul32 *)(buf + rel.r_offset + 4)) == 0)
           *(ul32 *)loc = 0x5000'0000; // B
         else
           *(ul32 *)loc = 0x5400'0000; // BL
@@ -871,6 +873,7 @@ template <>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   std::vector<RelocDelta> &deltas = isec.extra.r_deltas;
+  u8 *buf = (u8 *)isec.contents.data();
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
@@ -955,8 +958,8 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
           rels[i + 2].r_offset == rels[i].r_offset + 4 &&
           rels[i + 3].r_type == R_LARCH_RELAX) {
         i64 dist = compute_distance(ctx, sym, isec, r);
-        u32 insn1 = *(ul32 *)(isec.contents.data() + rels[i].r_offset);
-        u32 insn2 = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
+        u32 insn1 = *(ul32 *)(buf + rels[i].r_offset);
+        u32 insn2 = *(ul32 *)(buf + rels[i].r_offset + 4);
         bool is_addi_d = (insn2 & 0xffc0'0000) == 0x02c0'0000;
 
         if (dist % 4 == 0 && -(1 << 21) <= dist && dist < (1 << 21) &&
@@ -976,7 +979,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec, bool use_rvc) {
       // Note that $zero is $r0 and $ra is $r1.
       if (i64 dist = compute_distance(ctx, sym, isec, r);
           -(1 << 27) <= dist && dist < (1 << 27))
-        if (u32 jirl = *(ul32 *)(isec.contents.data() + rels[i].r_offset + 4);
+        if (u32 jirl = *(ul32 *)(buf + rels[i].r_offset + 4);
             get_rd(jirl) == 0 || get_rd(jirl) == 1)
           remove(4);
       break;
