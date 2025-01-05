@@ -3233,6 +3233,15 @@ void show_stats(Context<E> &ctx) {
           thunk_bytes += thunk->size();
   }
 
+  if constexpr (is_riscv<E> || is_loongarch<E>) {
+    static Counter num_rels("shrunk_relocs");
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (OutputSection<E> *osec = chunk->to_osec())
+        if (osec->shdr.sh_flags & SHF_EXECINSTR)
+          for (InputSection<E> *isec : osec->members)
+            num_rels += isec->extra.r_deltas.size();
+  }
+
   Counter::print();
 
   for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
