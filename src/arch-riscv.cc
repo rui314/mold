@@ -856,10 +856,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
     if (r.r_type == R_RISCV_ALIGN) {
       // The total bytes of NOPs is stored to r_addend, so the next
       // instruction is r_addend away.
-      u64 delta = deltas.empty() ? 0 : deltas.back().delta;
-      u64 loc = isec.get_addr() + r.r_offset - delta;
-      u64 desired = align_to(loc, bit_ceil(r.r_addend));
-      u64 actual = loc + r.r_addend;
+      u64 r_delta = deltas.empty() ? 0 : deltas.back().delta;
+      u64 P = isec.get_addr() + r.r_offset - r_delta;
+      u64 desired = align_to(P, bit_ceil(r.r_addend));
+      u64 actual = P + r.r_addend;
       if (desired != actual)
         remove(actual - desired);
       continue;

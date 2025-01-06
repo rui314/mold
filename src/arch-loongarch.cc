@@ -907,10 +907,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         alignment = r.r_addend + 4;
       }
 
-      u64 delta = deltas.empty() ? 0 : deltas.back().delta;
-      u64 loc = isec.get_addr() + r.r_offset - delta;
-      u64 desired = align_to(loc, alignment);
-      u64 actual = loc + alignment - 4;
+      u64 r_delta = deltas.empty() ? 0 : deltas.back().delta;
+      u64 P = isec.get_addr() + r.r_offset - r_delta;
+      u64 desired = align_to(P, alignment);
+      u64 actual = P + alignment - 4;
       if (desired != actual)
         remove(actual - desired);
       continue;
