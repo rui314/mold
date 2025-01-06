@@ -1719,9 +1719,8 @@ static u64 get_symbol_size(Symbol<E> &sym) {
   if constexpr (is_riscv<E> || is_loongarch<E>)
     if (esym.st_size > 0)
       if (InputSection<E> *isec = sym.get_input_section())
-        if (!isec->extra.r_deltas.empty())
-          return esym.st_size + esym.st_value - sym.value -
-                 get_r_delta(*isec, esym.st_value + esym.st_size);
+        if (i64 delta = get_r_delta(*isec, esym.st_value + esym.st_size))
+          return esym.st_size + esym.st_value - sym.value - delta;
   return esym.st_size;
 }
 

@@ -69,17 +69,11 @@ using E = MOLD_TARGET;
 template <>
 i64 get_r_delta(InputSection<E> &isec, u64 offset) {
   std::span<RelocDelta> deltas = isec.extra.r_deltas;
-  if (deltas.empty())
-    return 0;
-
   auto it = std::upper_bound(deltas.begin(), deltas.end(), offset,
                              [](u64 val, const RelocDelta &x) {
     return val <= x.offset;
   });
-
-  if (it == deltas.begin())
-    return 0;
-  return (it - 1)->delta;
+  return (it == deltas.begin()) ? 0 : (it - 1)->delta;
 }
 
 template <>
@@ -107,8 +101,8 @@ void shrink_sections(Context<E> &ctx) {
     for (Symbol<E> *sym : file->symbols)
       if (sym->file == file)
         if (InputSection<E> *isec = sym->get_input_section())
-          if (!isec->extra.r_deltas.empty())
-            sym->value -= get_r_delta(*isec, sym->value);
+          if (i64 delta = get_r_delta(*isec, sym->value))
+            sym->value -= delta;
   });
 
   // Recompute sizes of executable sections
