@@ -1758,9 +1758,10 @@ template <typename E>
 static u64 get_symbol_size(Symbol<E> &sym) {
   const ElfSym<E> &esym = sym.esym();
   if constexpr (is_riscv<E> || is_loongarch<E>)
-    if (InputSection<E> *isec = sym.get_input_section())
-      if (!isec->extra.r_deltas.empty())
-        return esym.st_size - get_r_delta(*isec, esym.st_value + esym.st_size);
+    if (esym.st_size > 0)
+      if (InputSection<E> *isec = sym.get_input_section())
+        if (!isec->extra.r_deltas.empty())
+          return esym.st_size - get_r_delta(*isec, esym.st_value + esym.st_size);
   return esym.st_size;
 }
 
