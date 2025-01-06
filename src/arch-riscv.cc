@@ -439,7 +439,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
       // accessible relative to the zero register because if that's the
       // case, corresponding LUI might have been removed by relaxation.
-      if (sign_extend(S + A, 11) == S + A)
+      if (int_cast(S + A, 12) == S + A)
         set_rs1(loc, 0);
       break;
     case R_RISCV_TPREL_HI20:
@@ -463,7 +463,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       // Rewrite `lw t1, 0(t0)` with `lw t1, 0(tp)` if the address is
       // directly accessible using tp. tp is x4.
-      if (sign_extend(val, 11) == val)
+      if (int_cast(val, 12) == val)
         set_rs1(loc, 4);
       break;
     }
@@ -542,7 +542,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           write_itype(loc, sym2.get_gottp_addr(ctx) + A - P);
         } else {
           i64 val = S + A - ctx.tp_addr;
-          if (sign_extend(val, 11) == val)
+          if (int_cast(val, 12) == val)
             *(ul32 *)loc = 0x513;   // addi a0,zero,<lo12>
           else
             *(ul32 *)loc = 0x50513; // addi a0,a0,<lo12>
@@ -890,15 +890,15 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
 
       i64 rd = get_rd(buf + r.r_offset + 4);
 
-      if (use_rvc && rd == 0 && sign_extend(dist, 11) == dist) {
+      if (use_rvc && rd == 0 && int_cast(dist, 12) == dist) {
         // If rd is x0 and the jump target is within ±2 KiB, we can use
         // C.J, saving 6 bytes.
         remove(6);
-      } else if (use_rvc && !E::is_64 && rd == 1 && sign_extend(dist, 11) == dist) {
+      } else if (use_rvc && !E::is_64 && rd == 1 && int_cast(dist, 12) == dist) {
         // If rd is x1 and the jump target is within ±2 KiB, we can use
         // C.JAL. This is RV32 only because C.JAL is RV32-only instruction.
         remove(6);
-      } else if (sign_extend(dist, 20) == dist) {
+      } else if (int_cast(dist, 21) == dist) {
         // If the jump target is within ±1 MiB, we can use JAL.
         remove(4);
       }
@@ -921,10 +921,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         if (rd == get_rd(buf + r.r_offset + 4)) {
           u64 val = sym.get_addr(ctx) + r.r_addend;
 
-          if (use_rvc && rd != 0 && sign_extend(val, 5) == val) {
+          if (use_rvc && rd != 0 && int_cast(val, 6) == val) {
             // Replace AUIPC + LD with C.LI.
             remove(6);
-          } else if (sign_extend(val, 11) == val) {
+          } else if (int_cast(val, 12) == val) {
             // Replace AUIPC + LD with ADDI.
             remove(4);
           }
@@ -936,12 +936,12 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       u64 val = sym.get_addr(ctx) + r.r_addend;
       i64 rd = get_rd(buf + r.r_offset);
 
-      if (sign_extend(val, 11) == val) {
+      if (int_cast(val, 12) == val) {
         // We can replace `lui t0, %hi(foo)` and `add t0, t0, %lo(foo)`
         // instruction pair with `add t0, x0, %lo(foo)` if foo's bits
         // [32:11] are all one or all zero.
         remove(4);
-      } else if (use_rvc && rd != 0 && rd != 2 && sign_extend(val, 17) == val) {
+      } else if (use_rvc && rd != 0 && rd != 2 && int_cast(val, 18) == val) {
         // If the upper 20 bits can actually be represented in 6 bits,
         // we can use C.LUI instead of LUI.
         remove(2);
@@ -970,7 +970,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       //
       // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
       if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
-          sign_extend(val, 11) == val)
+          int_cast(val, 12) == val)
         remove(4);
       break;
     case R_RISCV_TLSDESC_HI20:
@@ -989,7 +989,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         assert(r.r_type == R_RISCV_TLSDESC_ADD_LO12);
         if (!sym2.has_tlsdesc(ctx) && !sym2.has_gottp(ctx))
           if (i64 val = sym2.get_addr(ctx) + rel2.r_addend - ctx.tp_addr;
-              sign_extend(val, 11) == val)
+              int_cast(val, 12) == val)
             remove(4);
       }
       break;

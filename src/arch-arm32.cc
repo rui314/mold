@@ -57,7 +57,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_TARGET2:
     return *(il32 *)loc;
   case R_ARM_THM_JUMP11:
-    return sign_extend(*(ul16 *)loc, 10) << 1;
+    return int_cast(*(ul16 *)loc, 11) << 1;
   case R_ARM_THM_CALL:
   case R_ARM_THM_JUMP24:
   case R_ARM_THM_TLS_CALL: {
@@ -69,23 +69,23 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
     u32 imm10 = bits(*(ul16 *)loc, 9, 0);
     u32 imm11 = bits(*(ul16 *)(loc + 2), 10, 0);
     u32 val = (S << 24) | (I1 << 23) | (I2 << 22) | (imm10 << 12) | (imm11 << 1);
-    return sign_extend(val, 24);
+    return int_cast(val, 25);
   }
   case R_ARM_CALL:
   case R_ARM_JUMP24:
   case R_ARM_PLT32:
   case R_ARM_TLS_CALL:
-    return sign_extend(*(ul32 *)loc, 23) << 2;
+    return int_cast(*(ul32 *)loc, 24) << 2;
   case R_ARM_MOVW_PREL_NC:
   case R_ARM_MOVW_ABS_NC:
   case R_ARM_MOVT_PREL:
   case R_ARM_MOVT_ABS: {
     u32 imm12 = bits(*(ul32 *)loc, 11, 0);
     u32 imm4 = bits(*(ul32 *)loc, 19, 16);
-    return sign_extend((imm4 << 12) | imm12, 15);
+    return int_cast((imm4 << 12) | imm12, 16);
   }
   case R_ARM_PREL31:
-    return sign_extend(*(ul32 *)loc, 30);
+    return int_cast(*(ul32 *)loc, 31);
   case R_ARM_THM_MOVW_PREL_NC:
   case R_ARM_THM_MOVW_ABS_NC:
   case R_ARM_THM_MOVT_PREL:
@@ -95,7 +95,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
     u32 imm3 = bits(*(ul16 *)(loc + 2), 14, 12);
     u32 imm8 = bits(*(ul16 *)(loc + 2), 7, 0);
     u32 val = (imm4 << 12) | (i << 11) | (imm3 << 8) | imm8;
-    return sign_extend(val, 15);
+    return int_cast(val, 16);
   }
   default:
     return 0;
@@ -782,7 +782,7 @@ std::vector<u8> Arm32ExidxSection::get_contents(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, num_entries, [&](i64 i) {
     i64 offset = sizeof(Entry) * i;
-    ent[i].addr = sign_extend(ent[i].addr, 30) + offset;
+    ent[i].addr = int_cast(ent[i].addr, 31) + offset;
     if (is_relative(ent[i].val))
       ent[i].val = 0x7fff'ffff & (ent[i].val + offset);
   });

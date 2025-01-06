@@ -366,7 +366,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // It is contrary to the psABI document, but GNU ld has special
       // code to handle it, so we accept it too.
       if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000)
-        write_k16(loc, sign_extend(S + A, 11) >> 2);
+        write_k16(loc, int_cast(S + A, 12) >> 2);
       else
         write_k12(loc, S + A);
       break;
@@ -659,7 +659,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       // Rewrite `addi.d $t0, $t0, <offset>` with `addi.d $t0, $tp, <offset>`
       // if the offset is directly accessible using tp. tp is r2.
-      if (sign_extend(val, 11) == val)
+      if (int_cast(val, 12) == val)
         set_rj(loc, 2);
       break;
     }
@@ -941,7 +941,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       //
       //  addi.d  $t0, $tp, <tp-offset>
       if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
-          sign_extend(val, 11) == val)
+          int_cast(val, 12) == val)
         remove(4);
       break;
     case R_LARCH_PCALA_HI20:
