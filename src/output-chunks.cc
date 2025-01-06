@@ -518,7 +518,7 @@ void DynstrSection<E>::copy_buf(Context<E> &ctx) {
   for (std::pair<std::string_view, i64> p : strings)
     write_string(base + p.second, p.first);
 
-  i64 off = dynsym_offset;
+  i64 off = ctx.dynsym->dynstr_offset;
   for (Symbol<E> *sym : ctx.dynsym->symbols)
     if (sym)
       off += write_string(base + off, sym->name());
@@ -811,7 +811,6 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
 
   for (i64 i = 0; i < ctx.arg.spare_dynamic_tags; i++)
     define(DT_NULL, 0);
-
   return vec;
 }
 
@@ -1719,8 +1718,8 @@ static u64 get_symbol_size(Symbol<E> &sym) {
   if constexpr (is_riscv<E> || is_loongarch<E>)
     if (esym.st_size > 0)
       if (InputSection<E> *isec = sym.get_input_section())
-        if (i64 delta = get_r_delta(*isec, esym.st_value + esym.st_size))
-          return esym.st_size + esym.st_value - sym.value - delta;
+        return esym.st_size + esym.st_value - sym.value -
+               get_r_delta(*isec, esym.st_value + esym.st_size);
   return esym.st_size;
 }
 
@@ -1863,14 +1862,14 @@ void DynsymSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 void DynsymSection<E>::copy_buf(Context<E> &ctx) {
   ElfSym<E> *buf = (ElfSym<E> *)(ctx.buf + this->shdr.sh_offset);
-  i64 name_offset = ctx.dynstr->dynsym_offset;
+  i64 offset = dynstr_offset;
 
   memset(buf, 0, sizeof(ElfSym<E>));
 
   for (i64 i = 1; i < symbols.size(); i++) {
     Symbol<E> &sym = *symbols[i];
-    buf[sym.get_dynsym_idx(ctx)] = to_output_esym(ctx, sym, name_offset, nullptr);
-    name_offset += sym.name().size() + 1;
+    buf[sym.get_dynsym_idx(ctx)] = to_output_esym(ctx, sym, offset, nullptr);
+    offset += sym.name().size() + 1;
   }
 }
 

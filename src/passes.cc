@@ -1736,7 +1736,7 @@ void sort_dynsyms(Context<E> &ctx) {
   }
 
   // Compute .dynstr size
-  ctx.dynstr->dynsym_offset = ctx.dynstr->shdr.sh_size;
+  ctx.dynsym->dynstr_offset = ctx.dynstr->shdr.sh_size;
 
   tbb::enumerable_thread_specific<i64> size;
   tbb::parallel_for((i64)1, (i64)syms.size(), [&](i64 i) {
