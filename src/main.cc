@@ -608,7 +608,7 @@ int mold_main(int argc, char **argv) {
 
   // Dynamic linker works better with sorted .rela.dyn section,
   // so we sort them.
-  ctx.reldyn->sort(ctx);
+  sort_reldyn(ctx);
 
   // .gdb_index's contents cannot be constructed before applying
   // relocations to other debug sections. We have relocated debug

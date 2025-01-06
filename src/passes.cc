@@ -2993,6 +2993,46 @@ std::vector<std::span<u8>> get_shards(Context<E> &ctx) {
   return vec;
 }
 
+// Sort dynamic relocations. This is the reason why we do it.
+// Quote from https://www.airs.com/blog/archives/186
+//
+//   The dynamic linker in glibc uses a one element cache when processing
+//   relocs: if a relocation refers to the same symbol as the previous
+//   relocation, then the dynamic linker reuses the value rather than
+//   looking up the symbol again. Thus the dynamic linker gets the best
+//   results if the dynamic relocations are sorted so that all dynamic
+//   relocations for a given dynamic symbol are adjacent.
+//
+//   Other than that, the linker sorts together all relative relocations,
+//   which don't have symbols. Two relative relocations, or two relocations
+//   against the same symbol, are sorted by the address in the output
+//   file. This tends to optimize paging and caching when there are two
+//   references from the same page.
+template <typename E>
+void sort_reldyn(Context<E> &ctx) {
+  Timer t(ctx, "sort_reldyn");
+
+  ElfRel<E> *begin = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
+  ElfRel<E> *end = begin + ctx.reldyn->shdr.sh_size / sizeof(ElfRel<E>);
+
+  // We group IFUNC relocations at the end of .rel.dyn because we want to
+  // apply all the other relocations before running user-supplied IFUNC
+  // resolvers.
+  auto get_rank = [](u32 r_type) {
+    if (r_type == E::R_RELATIVE)
+      return 0;
+    if constexpr (supports_ifunc<E>)
+      if (r_type == E::R_IRELATIVE)
+        return 2;
+    return 1;
+  };
+
+  tbb::parallel_sort(begin, end, [&](const ElfRel<E> &a, const ElfRel<E> &b) {
+    return std::tuple(get_rank(a.r_type), a.r_sym, a.r_offset) <
+           std::tuple(get_rank(b.r_type), b.r_sym, b.r_offset);
+  });
+}
+
 template <typename E>
 void write_build_id(Context<E> &ctx) {
   Timer t(ctx, "write_build_id");
@@ -3292,6 +3332,7 @@ template void compute_section_headers(Context<E> &);
 template i64 set_osec_offsets(Context<E> &);
 template void fix_synthetic_symbols(Context<E> &);
 template void compress_debug_sections(Context<E> &);
+template void sort_reldyn(Context<E> &);
 template void write_build_id(Context<E> &);
 template void write_gnu_debuglink(Context<E> &);
 template void write_separate_debug_file(Context<E> &);
