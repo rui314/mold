@@ -941,7 +941,8 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         // instruction pair with `add t0, x0, %lo(foo)` if foo's bits
         // [32:11] are all one or all zero.
         remove(4);
-      } else if (use_rvc && rd != 0 && rd != 2 && int_cast(val, 18) == val) {
+      } else if (use_rvc && rd != 0 && rd != 2 &&
+                 int_cast(val + 0x800, 18) == val + 0x800) {
         // If the upper 20 bits can actually be represented in 6 bits,
         // we can use C.LUI instead of LUI.
         remove(2);
