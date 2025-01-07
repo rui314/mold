@@ -200,8 +200,8 @@ timestamp="$(git log -1 --format=%ci)"
 # Build mold in a container.
 mkdir -p dist
 
-podman run --arch $arch -it --rm --userns=host -v "$(pwd):/mold:ro" \
-  -v "$(pwd)/dist:/dist" $image bash -c "
+podman run --arch $arch -it --rm --userns=host --pids-limit=-1 \
+  -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" $image bash -c "
 set -e
 mkdir /build
 cd /build
@@ -210,7 +210,7 @@ cmake --build . -j\$(nproc)
 cmake --install .
 cmake -DMOLD_USE_MOLD=1 .
 cmake --build . -j\$(nproc)
-ctest --output-on-failure -j4
+ctest --output-on-failure -j\$(nproc)
 cmake --install . --prefix $dest --strip
 find $dest -print | xargs touch --no-dereference --date='$timestamp'
 find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /dist/$dest.tar.gz

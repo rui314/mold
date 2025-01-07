@@ -49,7 +49,7 @@ cmd1='(cd /usr/bin; ln -sf /mold/dist/mold $(realpath ld))'
 cmd2="MAKEOPTS=-'j$(nproc) --load-average=100' emerge --onlydeps $package"
 cmd3="MAKEOPTS='-j$(nproc) --load-average=100' FEATURES=test emerge $package"
 filename=`echo "$package" | sed 's!/!_!g'`
-podman="podman run --rm --cap-add=SYS_PTRACE -v `pwd`:/mold:ro -v /var/cache/ccache-gentoo:/ccache mold-gentoo timeout -v -k 15s 3h"
+podman="podman run --rm --pids-limit=-1 --cap-add=SYS_PTRACE -v `pwd`:/mold:ro -v /var/cache/ccache-gentoo:/ccache mold-gentoo timeout -v -k 15s 3h"
 dir=gentoo/$git_hash
 
 mkdir -p "$dir"/success "$dir"/failure
