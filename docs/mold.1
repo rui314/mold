@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "October 2024" ""
+.TH "MOLD" "1" "January 2025" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -352,6 +352,11 @@ Report undefined symbols (even with \fB\-\-shared\fR)\.
 .TP
 \fB\-\-noinhibit\-exec\fR
 Create an output file even if errors occur\.
+.TP
+\fB\-\-package\-metadata\fR==\fIpercent\-encoded\-string\fR
+Embed a specified string into the \fB\.note\.package\fR section\. This option is designed for build scripts that generate binary packages, such as \fB\.rpm\fR or \fB\.deb\fR, to include package metadata in each executable\. It simplifies the process of identifying the corresponding package for a given executable or core file\.
+.IP
+An argument to this option is treated as percent\-encoded and decoded before being inserted into the section, allowing you to avoid the use of the comma (\fB,\fR) character in the argument\. This is useful because the compiler replaces all occurrences of commas in \fB\-Wl,\fR with spaces before forwarding them to the linker\. Note that \fBmold\fR always interprets the argument as percent\-encoded, so you also need to escape all occurrences of \fB%\fR as \fB%25\fR\.
 .TP
 \fB\-\-pack\-dyn\-relocs\fR=[ \fBrelr\fR | \fBnone\fR ]
 If \fBrelr\fR is specified, all \fBR_*_RELATIVE\fR relocations are put into \fB\.relr\.dyn\fR section instead of \fB\.rel\.dyn\fR or \fB\.rela\.dyn\fR section\. Since \fB\.relr\.dyn\fR section uses a space\-efficient encoding scheme, specifying this flag can reduce the size of the output\. This is typically most effective for position\-independent executable\.
