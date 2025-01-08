@@ -617,6 +617,21 @@ but as `-o magic`.
 * `--noinhibit-exec`:
   Create an output file even if errors occur.
 
+* `--package-metadata`==_percent-encoded-string_:
+  Embed a specified string into the `.note.package` section. This option
+  is designed for build scripts that generate binary packages, such as
+  `.rpm` or `.deb`, to include package metadata in each executable. It
+  simplifies the process of identifying the corresponding package for a
+  given executable or core file.
+
+  An argument to this option is treated as percent-encoded and decoded
+  before being inserted into the section, allowing you to avoid the use of
+  the comma (`,`) character in the argument. This is useful because the
+  compiler replaces all occurrences of commas in `-Wl,` with spaces before
+  forwarding them to the linker. Note that `mold` always interprets the
+  argument as percent-encoded, so you also need to escape all occurrences
+  of `%` as `%25`.
+
 * `--pack-dyn-relocs`=[ `relr` | `none` ]:
   If `relr` is specified, all `R_*_RELATIVE` relocations are put into
   `.relr.dyn` section instead of `.rel.dyn` or `.rela.dyn` section. Since
