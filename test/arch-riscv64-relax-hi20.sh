@@ -7,22 +7,27 @@ get_foo:
   lui a0, %hi(foo)
   add a0, a0, %lo(foo)
   ret
+.size get_foo, .-get_foo
 get_foo2:
   lui a0, %hi(foo+0x10000000)
   add a0, a0, %lo(foo)
   ret
+.size get_foo2, .-get_foo2
 get_bar:
   lui a0, %hi(bar)
   add a0, a0, %lo(bar)
   ret
+.size get_bar, .-get_bar
 get_bar2:
   lui a0, %hi(bar+0x1ffff)
   add a0, a0, %lo(bar+0x1ffff)
   ret
+.size get_bar2, .-get_bar2
 get_baz:
   lui a0, %hi(baz)
   add a0, a0, %lo(baz)
   ret
+.size get_baz, .-get_baz
 EOF
 
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
@@ -53,4 +58,16 @@ $QEMU $t/exe1 | grep -q 'f00 10000f00 0 1ffff 11beef'
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o
 $QEMU $t/exe2 | grep -q 'f00 10000f00 0 1ffff 11beef'
 
-[ $(stat --format='%s' $t/exe1) -gt $(stat --format='%s' $t/exe2) ]
+readelf --syms $t/exe1 > $t/log1
+grep -Eq ' 10 NOTYPE .* get_foo$' $t/log1
+grep -Eq ' 10 NOTYPE .* get_foo2$' $t/log1
+grep -Eq ' 10 NOTYPE .* get_bar$' $t/log1
+grep -Eq ' 10 NOTYPE .* get_bar2$' $t/log1
+grep -Eq ' 10 NOTYPE .* get_baz$' $t/log1
+
+readelf --syms $t/exe2 > $t/log2
+grep -Eq ' 8 NOTYPE .* get_foo$' $t/log2
+grep -Eq ' 10 NOTYPE .* get_foo2$' $t/log2
+grep -Eq ' 6 NOTYPE .* get_bar$' $t/log2
+grep -Eq ' 10 NOTYPE .* get_bar2$' $t/log2
+grep -Eq ' 10 NOTYPE .* get_baz$' $t/log2
