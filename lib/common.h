@@ -336,23 +336,6 @@ private:
 };
 
 //
-// Bit vector
-//
-
-class BitVector {
-public:
-  BitVector() = default;
-  BitVector(u32 size) : vec((size + 7) / 8) {}
-
-  void resize(u32 size) { vec.resize((size + 7) / 8); }
-  bool get(u32 idx) const { return vec[idx / 8] & (1 << (idx % 8)); }
-  void set(u32 idx) { vec[idx / 8] |= 1 << (idx % 8); }
-
-private:
-  std::vector<u8> vec;
-};
-
-//
 // Utility functions
 //
 

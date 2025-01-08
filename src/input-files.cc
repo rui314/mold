@@ -621,7 +621,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
       if (ver != "@" && ver != "@@") {
         if (ver.starts_with("@@"))
           key = name;
-        has_symver.set(i - this->first_global);
+        has_symver[i - this->first_global] = true;
       }
     }
 

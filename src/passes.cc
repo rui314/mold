@@ -695,7 +695,6 @@ void create_internal_file(Context<E> &ctx) {
       add(get_symbol(ctx, ord.name));
 
   obj->elf_syms = ctx.internal_esyms;
-  obj->has_symver.resize(ctx.internal_esyms.size() - 1);
 }
 
 template <typename E>
@@ -821,8 +820,6 @@ void add_synthetic_symbols(Context<E> &ctx) {
         add(label);
 
   obj.elf_syms = ctx.internal_esyms;
-  obj.has_symver.resize(ctx.internal_esyms.size() - 1);
-
   obj.resolve_symbols(ctx);
 
   // Make all synthetic symbols relative ones by associating them to
@@ -1375,6 +1372,9 @@ void claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "claim_unresolved_symbols");
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (file == ctx.internal_obj)
+      return;
+
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
@@ -1389,7 +1389,7 @@ void claim_unresolved_symbols(Context<E> &ctx) {
 
       // If a symbol name is in the form of "foo@version", search for
       // symbol "foo" and check if the symbol has version "version".
-      if (file->has_symver.get(i - file->first_global)) {
+      if (file->has_symver[i - file->first_global]) {
         std::string_view str = file->symbol_strtab.data() + esym.st_name;
         i64 pos = str.find('@');
         assert(pos != str.npos);
@@ -1874,7 +1874,7 @@ void parse_symbol_version(Context<E> &ctx) {
 
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
       // Match VERSION part of symbol foo@VERSION with version definitions.
-      if (!file->has_symver.get(i - file->first_global))
+      if (!file->has_symver[i - file->first_global])
         continue;
 
       Symbol<E> *sym = file->symbols[i];
@@ -1907,7 +1907,7 @@ void parse_symbol_version(Context<E> &ctx) {
       // defined, the default one takes precedence.
       Symbol<E> *sym2 = get_symbol(ctx, sym->name());
       if (sym2->file == file &&
-          !file->has_symver.get(sym2->sym_idx - file->first_global))
+          !file->has_symver[sym2->sym_idx - file->first_global])
         if (sym2->ver_idx == ctx.default_version ||
             (sym2->ver_idx & ~VERSYM_HIDDEN) == (sym->ver_idx & ~VERSYM_HIDDEN))
           sym2->ver_idx = VER_NDX_LOCAL;

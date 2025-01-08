@@ -1407,7 +1407,7 @@ public:
   std::vector<ElfShdr<E>> elf_sections2;
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
-  BitVector has_symver;
+  std::vector<bool> has_symver;
   std::vector<ComdatGroupRef<E>> comdat_groups;
   std::vector<InputSection<E> *> eh_frame_sections;
   bool exclude_libs = false;
