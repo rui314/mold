@@ -51,7 +51,7 @@ static u64 hi20(u64 val, u64 pc) {
   return bits(page(val + 0x800) - page(pc), 31, 12);
 }
 
-static u64 higher20(u64 val, u64 pc) {
+static u64 highest32(u64 val, u64 pc) {
   // A PC-relative 64-bit address is materialized with the following
   // instructions for the large code model:
   //
@@ -68,12 +68,15 @@ static u64 higher20(u64 val, u64 pc) {
   // Compensating all the sign-extensions is a bit complicated. The
   // psABI gave the following formula.
   val = val + 0x8000'0000 + ((val & 0x800) ? (0x1000 - 0x1'0000'0000) : 0);
-  return bits(page(val) - page(pc - 8), 51, 32);
+  return page(val) - page(pc - 8);
+}
+
+static u64 higher20(u64 val, u64 pc) {
+  return bits(highest32(val, pc), 51, 32);
 }
 
 static u64 highest12(u64 val, u64 pc) {
-  val = val + 0x8000'0000 + ((val & 0x800) ? (0x1000 - 0x1'0000'0000) : 0);
-  return bits(page(val) - page(pc - 12), 63, 52);
+  return bits(highest32(val, pc), 63, 52);
 }
 
 static void write_k12(u8 *loc, u32 val) {
