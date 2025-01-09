@@ -1010,7 +1010,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       if (!sym.has_tlsdesc(ctx) && !sym.has_gottp(ctx))
         if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
             0 <= val && val < 0x1000)
-        remove(4);
+          remove(4);
       break;
     }
   }
