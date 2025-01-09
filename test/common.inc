@@ -59,10 +59,14 @@ else
   esac
 fi
 
+testname=$(basename "$0" .sh)
+t=$TESTDIR/$testname
+mkdir -p $t
+
 case $MACHINE in
 x86_64 | i686 | arm)
   tlsdesc_opt=-mtls-dialect=gnu2 ;;
-aarch64 | loongarch*)
+aarch64 | riscv* | loongarch*)
   tlsdesc_opt=-mtls-dialect=desc ;;
 esac
 
@@ -98,7 +102,16 @@ supports_tlsdesc() {
   # FreeBSD's loader doesn't seem to support TLSDESC relocs in an executable
   [ "$(uname)" = FreeBSD ] && return 1
 
-  [ "$tlsdesc_opt" != '' ]
+  [ "$tlsdesc_opt" = '' ] && return 1
+
+  # TLSDESC may not be supported on old systems. Compile a DSO with
+  # it to see if it is actually supported.
+  echo '_Thread_local int x; int y() { return x; }' |
+    $CC -shared -fPIC -xc -o $t/tlsdesc.so $tlsdesc_opt - 2> /dev/null || \
+    return 1
+  echo 'int y(); int main() { y(); }' | $CC -xc -c -o $t/tlsdesc.o -
+  $CC -o $t/tlsdesc $t/tlsdesc.o $t/tlsdesc.so
+  $QEMU $t/tlsdesc 2> /dev/null
 }
 
 on_qemu() {
@@ -127,8 +140,5 @@ trap 'on_error $LINENO' ERR
 trap on_exit EXIT
 
 # Print out the startup message
-testname=$(basename "$0" .sh)
 echo -n "Testing $testname ... "
-t=$TESTDIR/$testname
-mkdir -p $t
 set -x
