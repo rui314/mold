@@ -139,7 +139,7 @@ RUN mkdir /build && \
 EOF
   ;;
 aarch64 | arm | ppc64le | s390x)
-  # Debian 10 (Bullseye) released in July 2019
+  # Debian 11 (Bullseye) released in August 2021
   #
   # We don't want to build Clang for these targets with Qemu becuase
   # that'd take extremely long time. Also I believe old build machines
