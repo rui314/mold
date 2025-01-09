@@ -338,20 +338,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // directly into a register to eliminate a memory load.
       i64 rd = get_rd(buf + rel.r_offset);
 
-      switch (removed_bytes) {
-      case 6:
+      if (removed_bytes == 6) {
         // c.li <rd>, val
         *(ul16 *)loc = 0b010'0'00000'00000'01 | (rd << 7);
         write_citype(loc, sym.get_addr(ctx));
         i += 3;
-        break;
-      case 4:
+      } else if (removed_bytes == 4) {
         // addi <rd>, zero, val
         *(ul32 *)loc = 0b0010011 | (rd << 7);
         write_itype(loc, sym.get_addr(ctx));
         i += 3;
-        break;
-      case 0:
+      } else {
+        assert(removed_bytes == 0);
         if (ctx.arg.relax &&
             sym.is_pcrel_linktime_const(ctx) &&
             i + 3 < rels.size() &&
@@ -372,11 +370,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
             break;
           }
         }
-
         write_utype(loc, G + GOT + A - P);
-        break;
-      default:
-        unreachable();
       }
       break;
     }
@@ -502,7 +496,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   <deleted>
       //   lui    a0, %tpoff_hi(a0)
       //   addi   a0, a0, %tpoff_lo(a0)
-      if (removed_bytes == 0)
+      //
+      // If the code-shrinking relaxation is disabled, we may leave
+      // original useless instructions instead of deleting them, but we
+      // accept that because relaxations are enabled by default.
+      if (sym.has_tlsdesc(ctx) && removed_bytes == 0)
         write_utype(loc, sym.get_tlsdesc_addr(ctx) + A - P);
       break;
     case R_RISCV_TLSDESC_LOAD_LO12:

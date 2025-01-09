@@ -563,63 +563,50 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // We may relax the instructions to the following if its TP-relative
       // address is known at link-time
       //
-      //   <nop>
-      //   <nop>
+      //   <deleted>
+      //   <deleted>
       //   lu12i.w   $a0, foo@TPOFF
       //   addi.w    $a0, $a0, foo@TPOFF
       //
       // or to the following if the TP offset is small enough.
       //
-      //   <nop>
-      //   <nop>
-      //   <nop>
+      //   <deleted>
+      //   <deleted>
+      //   <deleted>
       //   ori       $a0, $zero, foo@TPOFF
       //
       // If the TP-relative address is known at process startup time, we
       // may relax the instructions to the following.
       //
-      //   <nop>
-      //   <nop>
+      //   <deleted>
+      //   <deleted>
       //   pcalau12i $a0, foo@GOTTP
       //   ld.[dw]   $a0, $a0, foo@GOTTP
       //
       // If we don't know anything about the symbol, we can still relax
       // the first two instructions to a single pcaddi as shown below.
       //
-      //   <nop>
+      //   <deleted>
       //   pcaddi    $a0, foo@GOTDESC
       //   ld.d      $ra, $a0, 0
       //   jirl      $ra, $ra, 0
       //
-      // Note that if section-shrinking relaxation is enabled, nop may be
-      // completely deleted.
-      if (removed_bytes == 0) {
-        if (sym.has_tlsdesc(ctx)) {
-          i64 dist = sym.get_tlsdesc_addr(ctx) + A - P;
-          if (ctx.arg.relax && int_cast(dist, 22) == dist) {
-            *(ul32 *)loc = 0x0340'0000; // nop
-          } else {
-            write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
-          }
-        } else {
-          *(ul32 *)loc = 0x0340'0000; // nop
-        }
-      }
+      // If the code-shrinking relaxation is disabled, we may leave
+      // original useless instructions instead of deleting them, but we
+      // accept that because relaxations are enabled by default.
+      if (sym.has_tlsdesc(ctx) && removed_bytes == 0)
+        write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
       break;
     case R_LARCH_TLS_DESC_PC_LO12:
-      if (removed_bytes == 0) {
-        if (sym.has_tlsdesc(ctx)) {
-          i64 dist = sym.get_tlsdesc_addr(ctx) + A - P;
-          if (ctx.arg.relax && int_cast(dist, 22) == dist) {
-            // If we can directly materialize the PC-relative address
-            // with pcaddi, do that.
-            *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
-            write_j20(loc, dist >> 2);
-          } else {
-            write_k12(loc, sym.get_tlsdesc_addr(ctx) + A);
-          }
+      if (sym.has_tlsdesc(ctx) && removed_bytes == 0) {
+        i64 dist = sym.get_tlsdesc_addr(ctx) + A - P;
+        if (int_cast(dist, 22) == dist) {
+          // If we can directly materialize the PC-relative address
+          // with pcaddi, do that.
+          *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
+          write_j20(loc, dist >> 2);
         } else {
-          *(ul32 *)loc = 0x0340'0000; // nop
+          write_k12(loc, sym.get_tlsdesc_addr(ctx) + A);
         }
       }
       break;
