@@ -264,3 +264,4 @@ the following people and organizations who have sponsored $128/month or more:
 - [Bryant Biggs](https://github.com/bryantbiggs)
 - [kraptor23](https://github.com/kraptor23)
 - [Jinkyu Yi](https://github.com/jincreator)
+- [Pedro Navarro](https://github.com/pedronavf)
