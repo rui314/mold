@@ -175,9 +175,9 @@ loongarch64)
 FROM docker.io/loongarch64/debian:sid
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-17 cmake && \
-  ln -sf /usr/bin/clang-17 /usr/bin/clang && \
-  ln -sf /usr/bin/clang++-17 /usr/bin/clang++ && \
+  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-19 cmake && \
+  ln -sf /usr/bin/clang-19 /usr/bin/clang && \
+  ln -sf /usr/bin/clang++-19 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
 EOF
   ;;
