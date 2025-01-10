@@ -126,10 +126,10 @@ RUN mkdir /build && \
   ln -sf /usr/local/bin/python3 /usr/local/bin/python && \
   rm -rf /build
 
-# Build LLVM 18.1.8
+# Build LLVM 19
 RUN mkdir /build && \
   cd /build && \
-  wget -O- --no-check-certificate https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-18.1.8.tar.gz | tar xzf - --strip-components=1 && \
+  wget -O- --no-check-certificate https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-19.1.6.tar.gz | tar xzf - --strip-components=1 && \
   mkdir b && \
   cd b && \
   cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=clang ../llvm && \
