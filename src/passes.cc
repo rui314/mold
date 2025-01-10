@@ -2665,9 +2665,9 @@ void compute_section_headers(Context<E> &ctx) {
 
   // Set section indices.
   i64 shndx = 1;
-  for (i64 i = 0; i < ctx.chunks.size(); i++)
-    if (!ctx.chunks[i]->is_header())
-      ctx.chunks[i]->shndx = shndx++;
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (!chunk->is_header())
+      chunk->shndx = shndx++;
 
   if (ctx.symtab && SHN_LORESERVE <= shndx) {
     SymtabShndxSection<E> *sec = new SymtabShndxSection<E>;
@@ -2681,8 +2681,8 @@ void compute_section_headers(Context<E> &ctx) {
   if (ctx.shdr)
     ctx.shdr->shdr.sh_size = shndx * sizeof(ElfShdr<E>);
 
-  // Some types of section header refer other section by index.
-  // Recompute the section header to fill such fields with correct values.
+  // Some types of section header refer to other section by index.
+  // Recompute all section headers to fill such fields with correct values.
   for (Chunk<E> *chunk : ctx.chunks)
     chunk->update_shdr(ctx);
 
