@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        target: [ x86_64, aarch64, arm, riscv64, ppc64le, s390x, loongarch64 ]
+        target: [ x86_64, aarch64, arm, riscv64, ppc64le, s390x ]
 
     permissions:
       contents: read
@@ -31,7 +31,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up QEMU
-      run: sudo apt-get update && sudo apt-get install -y qemu-user-static
+      uses: docker/setup-qemu-action@v3
 
     - name: Build a tarball
       run: ./dist.sh ${{ matrix.target }}
