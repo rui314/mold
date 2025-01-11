@@ -2660,10 +2660,12 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
     aux->vda_name = ctx.dynstr->add_string(verstr);
   };
 
-  if (!ctx.arg.soname.empty())
-    write(ctx.arg.soname, 1, VER_FLG_BASE);
-  else
-    write(ctx.arg.output, 1, VER_FLG_BASE);
+  std::string_view soname = ctx.arg.soname;
+  if (soname.empty()) {
+    std::filesystem::path path(ctx.arg.output);
+    soname = save_string(ctx, path.filename().string());
+  }
+  write(soname, 1, VER_FLG_BASE);
 
   i64 idx = VER_NDX_LAST_RESERVED + 1;
   for (std::string_view verstr : ctx.arg.version_definitions)
