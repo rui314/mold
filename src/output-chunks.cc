@@ -2661,10 +2661,8 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   };
 
   std::string_view soname = ctx.arg.soname;
-  if (soname.empty()) {
-    std::filesystem::path path(ctx.arg.output);
-    soname = save_string(ctx, path.filename().string());
-  }
+  if (soname.empty())
+    soname = save_string(ctx, path_filename(ctx.arg.output));
   write(soname, 1, VER_FLG_BASE);
 
   i64 idx = VER_NDX_LAST_RESERVED + 1;
@@ -2965,7 +2963,7 @@ void ComdatGroupSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void GnuDebuglinkSection<E>::update_shdr(Context<E> &ctx) {
-  filename = std::filesystem::path(ctx.arg.separate_debug_file).filename().string();
+  filename = path_filename(ctx.arg.separate_debug_file);
   this->shdr.sh_size = align_to(filename.size() + 1, 4) + 4;
 }
 

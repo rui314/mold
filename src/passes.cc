@@ -66,10 +66,11 @@ void apply_exclude_libs(Context<E> &ctx) {
   std::unordered_set<std::string_view> set(ctx.arg.exclude_libs.begin(),
                                            ctx.arg.exclude_libs.end());
 
-  for (ObjectFile<E> *file : ctx.objs)
-    if (!file->archive_name.empty())
-      if (set.contains(path_filename(file->archive_name)) || set.contains("ALL"))
-        file->exclude_libs = true;
+  if (!set.empty())
+    for (ObjectFile<E> *file : ctx.objs)
+      if (!file->archive_name.empty())
+        if (set.contains(path_filename(file->archive_name)) || set.contains("ALL"))
+          file->exclude_libs = true;
 }
 
 template <typename E>
@@ -863,11 +864,12 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
 template <typename E>
 void apply_section_align(Context<E> &ctx) {
-  for (Chunk<E> *chunk : ctx.chunks)
-    if (OutputSection<E> *osec = chunk->to_osec())
-      if (auto it = ctx.arg.section_align.find(osec->name);
-          it != ctx.arg.section_align.end())
-        osec->shdr.sh_addralign = it->second;
+  std::unordered_map<std::string_view, u64> &map = ctx.arg.section_align;
+  if (!map.empty())
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (OutputSection<E> *osec = chunk->to_osec())
+        if (auto it = map.find(osec->name); it != map.end())
+          osec->shdr.sh_addralign = it->second;
 }
 
 template <typename E>
