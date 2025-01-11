@@ -887,8 +887,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       } else {
         Fatal(ctx) << "invalid --hash-style argument: " << arg;
       }
-    } else if (read_arg("soname") ||
-               read_arg("h")) {
+    } else if (read_arg("soname") || read_arg("h")) {
       ctx.arg.soname = arg;
     } else if (read_flag("allow-multiple-definition")) {
       ctx.arg.allow_multiple_definition = true;

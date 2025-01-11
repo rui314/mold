@@ -2517,13 +2517,12 @@ void VersymSection<E>::copy_buf(Context<E> &ctx) {
 // `GLIBC_ABI_DT_RELR' not found" error message. glibc 2.38 or later knows
 // about this dummy version name and simply ignores it.
 template <typename E>
-static InputFile<E> *find_glibc2(Context<E> &ctx) {
-  for (Symbol<E> *sym : ctx.dynsym->symbols)
-    if (sym && sym->file->is_dso &&
-        ((SharedFile<E> *)sym->file)->soname.starts_with("libc.so.") &&
-        sym->get_version().starts_with("GLIBC_2."))
-      return sym->file;
-  return nullptr;
+static bool is_glibc2(SharedFile<E> &file) {
+  if (file.soname.starts_with("libc.so."))
+    for (std::string_view str : file.version_strings)
+      if (str.starts_with("GLIBC_2."))
+        return true;
+  return false;
 }
 
 template <typename E>
@@ -2563,19 +2562,6 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
 
   i64 veridx = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size();
 
-  auto start_group = [&](InputFile<E> *file) {
-    this->shdr.sh_info++;
-    if (verneed)
-      verneed->vn_next = ptr - (u8 *)verneed;
-
-    verneed = (ElfVerneed<E> *)ptr;
-    ptr += sizeof(ElfVerneed<E>);
-    verneed->vn_version = 1;
-    verneed->vn_file = ctx.dynstr->find_string(((SharedFile<E> *)file)->soname);
-    verneed->vn_aux = sizeof(ElfVerneed<E>);
-    aux = nullptr;
-  };
-
   auto add_entry = [&](std::string_view verstr) {
     verneed->vn_cnt++;
 
@@ -2589,23 +2575,31 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
     aux->vna_name = ctx.dynstr->add_string(verstr);
   };
 
+  auto start_group = [&](SharedFile<E> &file) {
+    this->shdr.sh_info++;
+    if (verneed)
+      verneed->vn_next = ptr - (u8 *)verneed;
+
+    verneed = (ElfVerneed<E> *)ptr;
+    ptr += sizeof(ElfVerneed<E>);
+    verneed->vn_version = 1;
+    verneed->vn_file = ctx.dynstr->find_string(file.soname);
+    verneed->vn_aux = sizeof(ElfVerneed<E>);
+    aux = nullptr;
+
+    if (ctx.arg.pack_dyn_relocs_relr && is_glibc2(file))
+      add_entry("GLIBC_ABI_DT_RELR");
+  };
+
   // Create version entries.
   for (i64 i = 0; i < syms.size(); i++) {
     if (i == 0 || syms[i - 1]->file != syms[i]->file) {
-      start_group(syms[i]->file);
+      start_group(*(SharedFile<E> *)syms[i]->file);
       add_entry(syms[i]->get_version());
     } else if (syms[i - 1]->ver_idx != syms[i]->ver_idx) {
       add_entry(syms[i]->get_version());
     }
-
     ctx.versym->contents[syms[i]->get_dynsym_idx(ctx)] = veridx;
-  }
-
-  if (ctx.arg.pack_dyn_relocs_relr) {
-    if (InputFile<E> *file = find_glibc2(ctx)) {
-      start_group(file);
-      add_entry("GLIBC_ABI_DT_RELR");
-    }
   }
 
   // Resize .gnu.version_r to fit to its contents.
