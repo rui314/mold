@@ -421,7 +421,8 @@ void MergeableSection<E>::resolve_contents(Context<E> &ctx) {
     fragments.push_back(parent.insert(ctx, get_contents(i), hashes[i], p2align));
 
   // Reclaim memory as we'll never use this vector again
-  hashes = {};
+  hashes.clear();
+  hashes.shrink_to_fit();
 }
 
 using E = MOLD_TARGET;

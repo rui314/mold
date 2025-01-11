@@ -633,7 +633,8 @@ void create_output_sections(Context<E> &ctx) {
     osec->shdr.sh_flags = osec->sh_flags;
     osec->is_relro = is_relro(*osec);
     osec->members = flatten(osec->members_vec);
-    osec->members_vec = {};
+    osec->members_vec.clear();
+    osec->members_vec.shrink_to_fit();
   }
 
   // Add output sections and mergeable sections to ctx.chunks
