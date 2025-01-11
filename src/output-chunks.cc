@@ -2314,24 +2314,22 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       if (ctx.arg.relocatable)
         continue;
 
-      for (const ElfRel<E> &rel : rels) {
+      for (i64 j = 0; j < rels.size(); j++) {
+        const ElfRel<E> &rel = rels[j];
         assert(rel.r_offset - fde.input_offset < contents.size());
 
         Symbol<E> &sym = *file->symbols[rel.r_sym];
         u64 loc = offset + rel.r_offset - fde.input_offset;
         u64 val = sym.get_addr(ctx) + get_addend(cie.input_section, rel);
         apply_eh_reloc(ctx, rel, loc, val);
-      }
 
-      if (eh_hdr) {
-        // Write to .eh_frame_hdr
-        Symbol<E> &sym = *file->symbols[rels[0].r_sym];
-        u64 val = sym.get_addr(ctx) + get_addend(cie.input_section, rels[0]);
-        u64 sh_addr = ctx.eh_frame_hdr->shdr.sh_addr;
-
-        HdrEntry &ent = eh_hdr[file->fde_idx + i];
-        ent.init_addr = val - sh_addr;
-        ent.fde_addr = this->shdr.sh_addr + offset - sh_addr;
+        if (j == 0 && eh_hdr) {
+          // Write to .eh_frame_hdr
+          HdrEntry &ent = eh_hdr[file->fde_idx + i];
+          u64 origin = ctx.eh_frame_hdr->shdr.sh_addr;
+          ent.init_addr = val - origin;
+          ent.fde_addr = this->shdr.sh_addr + offset - origin;
+        }
       }
     }
   });
