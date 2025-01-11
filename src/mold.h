@@ -568,6 +568,9 @@ public:
   std::unique_ptr<RelocSection<E>> reloc_sec;
   std::vector<AbsRel<E>> abs_rels;
   Atomic<u32> sh_flags;
+
+  // Used only by create_output_sections()
+  std::vector<std::vector<InputSection<E> *>> members_vec;
 };
 
 template <typename E>

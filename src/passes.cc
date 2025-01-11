@@ -548,6 +548,9 @@ static bool is_relro(OutputSection<E> &osec) {
 }
 
 // Create output sections for input sections.
+//
+// Since one output section could contain millions of input sections,
+// we need to do it efficiently.
 template <typename E>
 void create_output_sections(Context<E> &ctx) {
   Timer t(ctx, "create_output_sections");
@@ -556,18 +559,14 @@ void create_output_sections(Context<E> &ctx) {
                                      OutputSectionKey::Hash>;
   MapType map;
   std::shared_mutex mu;
-  i64 size = ctx.osec_pool.size();
   bool ctors_in_init_array = has_ctors_and_init_array(ctx);
+  tbb::enumerable_thread_specific<MapType> caches;
 
   // Instantiate output sections
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Make a per-thread cache of the main map to avoid lock contention.
     // It makes a noticeable difference if we have millions of input sections.
-    MapType cache;
-    {
-      std::shared_lock lock(mu);
-      cache = map;
-    }
+    MapType &cache = caches.local();
 
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
       if (!isec || !isec->is_alive)
@@ -620,22 +619,27 @@ void create_output_sections(Context<E> &ctx) {
     }
   });
 
+  // Add input sections to output sections
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
+    osec->members_vec.resize(ctx.objs.size());
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
+      if (isec && isec->output_section)
+        isec->output_section->members_vec[i].push_back(isec.get());
+  });
+
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool) {
     osec->shdr.sh_flags = osec->sh_flags;
     osec->is_relro = is_relro(*osec);
+    osec->members = flatten(osec->members_vec);
+    osec->members_vec = {};
   }
 
-  // Add input sections to output sections
-  std::vector<Chunk<E> *> chunks;
-  for (i64 i = size; i < ctx.osec_pool.size(); i++)
-    chunks.push_back(ctx.osec_pool[i].get());
-
-  for (ObjectFile<E> *file : ctx.objs)
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
-      if (isec && isec->is_alive)
-        isec->output_section->members.push_back(isec.get());
-
   // Add output sections and mergeable sections to ctx.chunks
+  std::vector<Chunk<E> *> chunks;
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
+    chunks.push_back(osec.get());
   for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
     chunks.push_back(osec.get());
 
