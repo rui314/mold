@@ -923,6 +923,12 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
     u64 addr = this->shdr.sh_addr + r.isec->offset + r.offset;
     Symbol<E> &sym = *r.sym;
 
+    if constexpr (is_riscv<E> || is_loongarch<E>) {
+      i64 delta = get_r_delta(*r.isec, r.offset);
+      loc = (Word<E> *)(buf + r.isec->offset + r.offset - delta);
+      addr -= delta;
+    }
+
     switch (r.kind) {
     case ABS_REL_NONE:
     case ABS_REL_RELR:
@@ -1103,6 +1109,7 @@ void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
   if (ctx.arg.pack_dyn_relocs_relr)
     for (AbsRel<E> &r : abs_rels)
       if (r.kind == ABS_REL_BASEREL &&
+          !(r.isec->shdr().sh_flags & SHF_EXECINSTR) &&
           r.isec->shdr().sh_addralign % sizeof(Word<E>) == 0 &&
           r.offset % sizeof(Word<E>) == 0)
         r.kind = ABS_REL_RELR;
