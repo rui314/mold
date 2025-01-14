@@ -1106,10 +1106,9 @@ void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
 
   // If --pack-dyn-relocs=relr is enabled, base relocations are put into
   // .relr.dyn.
-  if (ctx.arg.pack_dyn_relocs_relr)
+  if (ctx.arg.pack_dyn_relocs_relr && !(this->shdr.sh_flags & SHF_EXECINSTR))
     for (AbsRel<E> &r : abs_rels)
       if (r.kind == ABS_REL_BASEREL &&
-          !(r.isec->shdr().sh_flags & SHF_EXECINSTR) &&
           r.isec->shdr().sh_addralign % sizeof(Word<E>) == 0 &&
           r.offset % sizeof(Word<E>) == 0)
         r.kind = ABS_REL_RELR;
