@@ -1013,10 +1013,9 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 // the .rel.dyn section). A bitmap has LSB 1.
 template <typename E>
 static std::vector<u64> encode_relr(std::span<u64> pos) {
-  for (i64 i = 0; i < pos.size(); i++) {
-    assert(pos[i] % sizeof(Word<E>) == 0);
-    assert(i == 0 || pos[i - 1] < pos[i]);
-  }
+  assert(std::all_of(pos.begin(), pos.end(),
+                     [](u64 x) { return x % sizeof(Word<E>) == 0; }));
+  assert(std::is_sorted(pos.begin(), pos.end()));
 
   std::vector<u64> vec;
   i64 num_bits = E::is_64 ? 63 : 31;
