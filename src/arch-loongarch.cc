@@ -369,7 +369,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // It is contrary to the psABI document, but GNU ld has special
       // code to handle it, so we accept it too.
       if ((*(ul32 *)loc & 0xfc00'0000) == 0x4c00'0000)
-        write_k16(loc, int_cast(S + A, 12) >> 2);
+        write_k16(loc, sign_extend(S + A, 12) >> 2);
       else
         write_k12(loc, S + A);
       break;
@@ -600,7 +600,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_TLS_DESC_PC_LO12:
       if (sym.has_tlsdesc(ctx) && removed_bytes == 0) {
         i64 dist = sym.get_tlsdesc_addr(ctx) + A - P;
-        if (int_cast(dist, 22) == dist) {
+        if (sign_extend(dist, 22) == dist) {
           // If we can directly materialize the PC-relative address
           // with pcaddi, do that.
           *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
@@ -649,7 +649,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       // Rewrite `addi.d $t0, $t0, <offset>` with `addi.d $t0, $tp, <offset>`
       // if the offset is directly accessible using tp. tp is r2.
-      if (int_cast(val, 12) == val)
+      if (sign_extend(val, 12) == val)
         set_rj(loc, 2);
       break;
     }
@@ -931,7 +931,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       //
       //  addi.d  $t0, $tp, <tp-offset>
       if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
-          int_cast(val, 12) == val)
+          sign_extend(val, 12) == val)
         remove(4);
       break;
     case R_LARCH_PCALA_HI20:
@@ -954,7 +954,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         u32 insn2 = *(ul32 *)(buf + rels[i].r_offset + 4);
         bool is_addi_d = (insn2 & 0xffc0'0000) == 0x02c0'0000;
 
-        if ((dist & 0b11) == 0 && int_cast(dist, 22) == dist &&
+        if ((dist & 0b11) == 0 && sign_extend(dist, 22) == dist &&
             is_addi_d && get_rd(insn1) == get_rd(insn2) &&
             get_rd(insn2) == get_rj(insn2))
           remove(4);
@@ -970,7 +970,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       // If the displacement is PC ± 128 MiB, we can use B or BL instead.
       // Note that $zero is $r0 and $ra is $r1.
       if (i64 dist = compute_distance(ctx, sym, isec, r);
-          int_cast(dist, 28) == dist)
+          sign_extend(dist, 28) == dist)
         if (u32 jirl = *(ul32 *)(buf + rels[i].r_offset + 4);
             get_rd(jirl) == 0 || get_rd(jirl) == 1)
           remove(4);
@@ -988,7 +988,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       //   pcaddi    $t0, <offset>
       if (is_relaxable_got_load(ctx, isec, i)) {
         i64 dist = compute_distance(ctx, sym, isec, r);
-        if ((dist & 0b11) == 0 && int_cast(dist, 22) == dist)
+        if ((dist & 0b11) == 0 && sign_extend(dist, 22) == dist)
           remove(4);
       }
       break;
@@ -996,7 +996,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       if (sym.has_tlsdesc(ctx)) {
         u64 P = isec.get_addr() + r.r_offset;
         i64 dist = sym.get_tlsdesc_addr(ctx) + r.r_addend - P;
-        if (int_cast(dist, 22) == dist)
+        if (sign_extend(dist, 22) == dist)
           remove(4);
       } else {
         remove(4);

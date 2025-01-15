@@ -372,9 +372,9 @@ inline u64 bits(u64 val, u64 hi, u64 lo) {
   return (val >> lo) & ((1LL << (hi - lo + 1)) - 1);
 }
 
-// Cast val to a signed N bit integer. I.e., int_cast(x, 32) == (i32)x
-// for any integer x.
-inline i64 int_cast(u64 val, i64 n) {
+// Cast val to a signed N bit integer.
+// For example, sign_extend(x, 32) == (i32)x for any integer x.
+inline i64 sign_extend(u64 val, i64 n) {
   return (i64)(val << (64 - n)) >> (64 - n);
 }
 

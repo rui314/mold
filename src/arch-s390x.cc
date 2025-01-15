@@ -257,7 +257,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         u64 op = *(ub16 *)(loc - 2);
         u64 val = S + A - P;
         if ((op & 0xff0f) == 0xc408 && A == 2 && (val & 1) == 0 &&
-            int_cast(val, 33) == val) {
+            sign_extend(val, 33) == val) {
           *(ub16 *)(loc - 2) = 0xc000 | (op & 0x00f0);
           *(ub32 *)loc = val >> 1;
           break;
