@@ -8,7 +8,7 @@ EOF
 cat <<EOF | $CC -o $t/b.o -c -xc - -O2 -march=rv64g
 void g();
 void f() { g(); }
-int main() { f(0); }
+int main() { f(); }
 EOF
 
 $CC -B. -march=rv64g -o $t/exe1 $t/a.o $t/b.o
@@ -23,7 +23,7 @@ EOF
 cat <<EOF | $CC -o $t/d.o -c -xc - -O2 -march=rv64gc
 void g();
 void f() { g(); }
-int main() { f(0); }
+int main() { f(); }
 EOF
 
 $CC -B. -march=rv64g -o $t/exe2 $t/c.o $t/d.o
