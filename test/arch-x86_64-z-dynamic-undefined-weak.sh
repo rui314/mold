@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-5:[ "$(uname)" = FreeBSD ] && skip
+[ "$(uname)" = FreeBSD ] && skip
 
 cat <<EOF | $CC -o $t/b.o -c -xc - -fno-PIE
 #include <stdio.h>
