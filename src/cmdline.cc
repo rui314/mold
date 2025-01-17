@@ -586,6 +586,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::optional<SeparateCodeKind> z_separate_code;
   std::optional<bool> report_undefined;
   std::optional<bool> z_relro;
+  std::optional<bool> z_dynamic_undefined_weak;
   std::optional<std::string> separate_debug_file;
   std::optional<u64> shuffle_sections_seed;
   std::unordered_set<std::string_view> rpaths;
@@ -1086,9 +1087,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_z_arg("stack-size")) {
       ctx.arg.z_stack_size = parse_number(ctx, "-z stack-size", arg);
     } else if (read_z_flag("dynamic-undefined-weak")) {
-      ctx.arg.z_dynamic_undefined_weak = true;
+      z_dynamic_undefined_weak = true;
     } else if (read_z_flag("nodynamic-undefined-weak")) {
-      ctx.arg.z_dynamic_undefined_weak = false;
+      z_dynamic_undefined_weak = false;
     } else if (read_z_flag("sectionheader")) {
       ctx.arg.z_sectionheader = true;
     } else if (read_z_flag("nosectionheader")) {
@@ -1425,6 +1426,12 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     ctx.arg.z_separate_code = *z_separate_code;
   else if (!ctx.arg.section_order.empty())
     ctx.arg.z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
+
+  // `-z dynamic-undefined-weak` is enabled by default for DSOs.
+  if (z_dynamic_undefined_weak)
+    ctx.arg.z_dynamic_undefined_weak = *z_dynamic_undefined_weak;
+  else
+    ctx.arg.z_dynamic_undefined_weak = ctx.arg.shared;
 
   // --section-order implies `-z norelro`
   if (z_relro)

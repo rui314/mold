@@ -1429,10 +1429,19 @@ void claim_unresolved_symbols(Context<E> &ctx) {
       };
 
       if (esym.is_undef_weak()) {
-        if (ctx.arg.shared && sym.visibility != STV_HIDDEN &&
-            ctx.arg.z_dynamic_undefined_weak) {
+        if (ctx.arg.z_dynamic_undefined_weak && sym.visibility != STV_HIDDEN) {
           // Global weak undefined symbols are promoted to dynamic symbols
-          // when linking a DSO unless `-z nodynamic_undefined_weak` was given.
+          // by default only when linking a DSO. We generally cannot do that
+          // for executables because we may need to create a copy relocation
+          // for a data symbol, but the symbol size is not available for an
+          // unclaimed weak symbol.
+          //
+          // In contrast, GNU ld promotes weak symbols to dynamic ones even
+          // for an executable as long as they don't need copy relocations
+          // (i.e. they need only PLT entries.) That may result in an
+          // inconsistent behavior of a linked program depending on whether
+          // whether its object files were compiled with -fPIC or not. I think
+          // that's bad semantics, so we don't do that.
           claim(true);
         } else {
           // Otherwise, weak undefs are converted to absolute symbols with value 0.

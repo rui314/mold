@@ -115,6 +115,11 @@ static void do_action(Context<E> &ctx, Action action, InputSection<E> &isec,
     break;
   case COPYREL:
     // Create a copy relocation
+    if (!sym.file->is_dso) {
+      assert(sym.esym().is_undef_weak());
+      Error(ctx) << isec << ": cannot create a copy relocation for "
+                 << sym <<"; recompile with -fPIE or -fPIC";
+    }
     sym.flags |= NEEDS_COPYREL;
     break;
   case PLT:
