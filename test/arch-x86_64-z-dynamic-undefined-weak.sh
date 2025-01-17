@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+5:[ "$(uname)" = FreeBSD ] && skip
+
 cat <<EOF | $CC -o $t/b.o -c -xc - -fno-PIE
 #include <stdio.h>
 __attribute__((weak)) extern int foo;
