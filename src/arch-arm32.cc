@@ -41,6 +41,9 @@ using E = ARM32;
 
 template <>
 i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
+  ul32 *arm = (ul32 *)loc;
+  ul16 *thm = (ul16 *)loc;
+
   switch (rel.r_type) {
   case R_ARM_ABS32:
   case R_ARM_REL32:
@@ -57,26 +60,26 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_TARGET2:
     return *(il32 *)loc;
   case R_ARM_THM_JUMP11:
-    return sign_extend(*(ul16 *)loc, 11) << 1;
+    return sign_extend(thm[0], 11) << 1;
   case R_ARM_THM_JUMP19: {
-    u32 S = bit(*(ul16 *)loc, 10);
-    u32 J2 = bit(*(ul16 *)(loc + 2), 13);
-    u32 J1 = bit(*(ul16 *)(loc + 2), 11);
-    u32 imm6 = bits(*(ul16 *)loc, 5, 0);
-    u32 imm11 = bits(*(ul16 *)(loc + 2), 10, 0);
+    u32 S = bit(thm[0], 10);
+    u32 J2 = bit(thm[1], 13);
+    u32 J1 = bit(thm[1], 11);
+    u32 imm6 = bits(thm[0], 5, 0);
+    u32 imm11 = bits(thm[1], 10, 0);
     u32 val = (S << 20) | (J2 << 19) | (J1 << 18) | (imm6 << 12) | (imm11 << 1);
     return sign_extend(val, 21);
   }
   case R_ARM_THM_CALL:
   case R_ARM_THM_JUMP24:
   case R_ARM_THM_TLS_CALL: {
-    u32 S = bit(*(ul16 *)loc, 10);
-    u32 J1 = bit(*(ul16 *)(loc + 2), 13);
-    u32 J2 = bit(*(ul16 *)(loc + 2), 11);
+    u32 S = bit(thm[0], 10);
+    u32 J1 = bit(thm[1], 13);
+    u32 J2 = bit(thm[1], 11);
     u32 I1 = !(J1 ^ S);
     u32 I2 = !(J2 ^ S);
-    u32 imm10 = bits(*(ul16 *)loc, 9, 0);
-    u32 imm11 = bits(*(ul16 *)(loc + 2), 10, 0);
+    u32 imm10 = bits(thm[0], 9, 0);
+    u32 imm11 = bits(thm[1], 10, 0);
     u32 val = (S << 24) | (I1 << 23) | (I2 << 22) | (imm10 << 12) | (imm11 << 1);
     return sign_extend(val, 25);
   }
@@ -84,25 +87,25 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_JUMP24:
   case R_ARM_PLT32:
   case R_ARM_TLS_CALL:
-    return sign_extend(*(ul32 *)loc, 24) << 2;
+    return sign_extend(*arm, 24) << 2;
   case R_ARM_MOVW_PREL_NC:
   case R_ARM_MOVW_ABS_NC:
   case R_ARM_MOVT_PREL:
   case R_ARM_MOVT_ABS: {
-    u32 imm12 = bits(*(ul32 *)loc, 11, 0);
-    u32 imm4 = bits(*(ul32 *)loc, 19, 16);
+    u32 imm12 = bits(*arm, 11, 0);
+    u32 imm4 = bits(*arm, 19, 16);
     return sign_extend((imm4 << 12) | imm12, 16);
   }
   case R_ARM_PREL31:
-    return sign_extend(*(ul32 *)loc, 31);
+    return sign_extend(*arm, 31);
   case R_ARM_THM_MOVW_PREL_NC:
   case R_ARM_THM_MOVW_ABS_NC:
   case R_ARM_THM_MOVT_PREL:
   case R_ARM_THM_MOVT_ABS: {
-    u32 imm4 = bits(*(ul16 *)loc, 3, 0);
-    u32 i = bit(*(ul16 *)loc, 10);
-    u32 imm3 = bits(*(ul16 *)(loc + 2), 14, 12);
-    u32 imm8 = bits(*(ul16 *)(loc + 2), 7, 0);
+    u32 imm4 = bits(thm[0], 3, 0);
+    u32 i = bit(thm[0], 10);
+    u32 imm3 = bits(thm[1], 14, 12);
+    u32 imm8 = bits(thm[1], 7, 0);
     u32 val = (imm4 << 12) | (i << 11) | (imm3 << 8) | imm8;
     return sign_extend(val, 16);
   }
