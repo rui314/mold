@@ -238,7 +238,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           i + 1 < rels.size()) {
         i64 val = S + A - P - 4;
         const ElfRel<E> &rel2 = rels[i + 1];
-        if (sign_extend(val, 21) == val &&
+        if (is_int(val, 21) &&
             rel2.r_type == R_AARCH64_ADD_ABS_LO12_NC &&
             rel2.r_sym == rel.r_sym &&
             rel2.r_offset == rel.r_offset + 4 &&

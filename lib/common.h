@@ -378,6 +378,10 @@ inline i64 sign_extend(u64 val, i64 n) {
   return (i64)(val << (64 - n)) >> (64 - n);
 }
 
+inline bool is_int(u64 val, i64 n) {
+  return sign_extend(val, n) == val;
+}
+
 template <typename T, typename Compare = std::less<T>>
 void update_minimum(std::atomic<T> &atomic, u64 new_val, Compare cmp = {}) {
   T old_val = atomic.load(std::memory_order_relaxed);

@@ -304,10 +304,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val1 = S + A - P;
       i64 val2 = align_to(S + A - P, 4);
 
-      if (T && sign_extend(val1, 25) == val1) {
+      if (T && is_int(val1, 25)) {
         *(ul16 *)(loc + 2) |= 0x1000;  // BL
         write_thm_b_imm(loc, val1);
-      } else if (!T && sign_extend(val2, 25) == val2) {
+      } else if (!T && is_int(val2, 25)) {
         *(ul16 *)(loc + 2) &= ~0x1000; // BLX
         write_thm_b_imm(loc, val2);
       } else {
@@ -343,7 +343,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         Fatal(ctx) << *this << ": R_ARM_CALL refers to neither BL nor BLX";
 
       i64 val = S + A - P;
-      if (sign_extend(val, 26) == val) {
+      if (is_int(val, 26)) {
         if (T) {
           *(ul32 *)loc = 0xfa00'0000; // BLX
           *(ul32 *)loc |= (bit(val, 1) << 24) | bits(val, 25, 2);
@@ -370,7 +370,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // required, we jump to a linker-synthesized thunk which does the
       // job with a longer code sequence.
       i64 val = S + A - P;
-      if (sign_extend(val, 26) != val || T)
+      if (T || !is_int(val, 26) )
         val = get_arm_thunk_addr() + A - P;
       *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
       break;
@@ -416,7 +416,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
       // switch processor mode.
       i64 val = S + A - P;
-      if (sign_extend(val, 25) != val || !T)
+      if (!T || !is_int(val, 25))
         val = get_thumb_thunk_addr() + A - P;
       write_thm_b_imm(loc, val);
       break;

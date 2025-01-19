@@ -227,7 +227,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           *(ul32 *)(loc + 4) = 0xe841'0018; // ld r2, 24(r1)
       } else {
         i64 val = S + get_local_entry_offset(ctx, sym) + A - P;
-        if (sign_extend(val, 26) != val)
+        if (!is_int(val, 26))
           val = no_r2save_thunk_addr() + A - P;
         *(ul32 *)loc |= bits(val, 25, 2) << 2;
       }
@@ -238,7 +238,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul32 *)loc |= bits(val, 25, 2) << 2;
       } else {
         i64 val = S + A - P;
-        if (sign_extend(val, 26) != val)
+        if (!is_int(val, 26))
           val = no_r2save_thunk_addr() + A - P;
         *(ul32 *)loc |= bits(val, 25, 2) << 2;
       }
