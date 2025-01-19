@@ -598,6 +598,12 @@ create_plugin_input_file(Context<E> &ctx, MappedFile *mf) {
 
 template <typename E>
 ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
+  if (ctx.arg.plugin.empty())
+    Fatal(ctx) << mf->name << ": don't know how to handle this LTO object file "
+               << "because no -plugin option was given. Please make sure you "
+               << "added -flto not only for creating object files but also for "
+               << "creating the final executable.";
+
   load_lto_plugin(ctx);
 
   // V0 API's claim_file is not thread-safe.
@@ -605,12 +611,6 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
   std::unique_lock lock(mu, std::defer_lock);
   if (!is_gcc_linker_api_v1)
     lock.lock();
-
-  if (ctx.arg.plugin.empty())
-    Fatal(ctx) << mf->name << ": don't know how to handle this LTO object file "
-               << "because no -plugin option was given. Please make sure you "
-               << "added -flto not only for creating object files but also for "
-               << "creating the final executable.";
 
   // Create mold's object instance
   ObjectFile<E> *obj = new ObjectFile<E>;
