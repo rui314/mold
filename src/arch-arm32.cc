@@ -58,6 +58,15 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
     return *(il32 *)loc;
   case R_ARM_THM_JUMP11:
     return sign_extend(*(ul16 *)loc, 11) << 1;
+  case R_ARM_THM_JUMP19: {
+    u32 S = bit(*(ul16 *)loc, 10);
+    u32 J2 = bit(*(ul16 *)(loc + 2), 13);
+    u32 J1 = bit(*(ul16 *)(loc + 2), 11);
+    u32 imm6 = bits(*(ul16 *)loc, 5, 0);
+    u32 imm11 = bits(*(ul16 *)(loc + 2), 10, 0);
+    u32 val = (S << 20) | (J2 << 19) | (J1 << 18) | (imm6 << 12) | (imm11 << 1);
+    return sign_extend(val, 21);
+  }
   case R_ARM_THM_CALL:
   case R_ARM_THM_JUMP24:
   case R_ARM_THM_TLS_CALL: {
@@ -108,8 +117,19 @@ static void write_mov_imm(u8 *loc, u32 val) {
   *(ul32 *)loc = (*(ul32 *)loc & 0xfff0f000) | (imm4 << 16) | imm12;
 }
 
-static void write_thm_b_imm(u8 *loc, u32 val) {
-  // https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/Instruction-Details/Alphabetical-list-of-instructions/BL--BLX--immediate-
+static void write_thm_b_imm21(u8 *loc, u32 val) {
+  u32 sign = bit(val, 20);
+  u32 J2 = bit(val, 19);
+  u32 J1 = bit(val, 18);
+  u32 imm6 = bits(val, 17, 12);
+  u32 imm11 = bits(val, 11, 1);
+
+  ul16 *buf = (ul16 *)loc;
+  buf[0] = (buf[0] & 0b1111'1011'1100'0000) | (sign << 10) | imm6;
+  buf[1] = (buf[1] & 0b1101'0000'0000'0000) | (J2 << 13) | (J1 << 11) | imm11;
+}
+
+static void write_thm_b_imm25(u8 *loc, u32 val) {
   u32 sign = bit(val, 24);
   u32 I1 = bit(val, 23);
   u32 I2 = bit(val, 22);
@@ -124,7 +144,6 @@ static void write_thm_b_imm(u8 *loc, u32 val) {
 }
 
 static void write_thm_mov_imm(u8 *loc, u32 val) {
-  // https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/Instruction-Details/Alphabetical-list-of-instructions/MOVT
   u32 imm4 = bits(val, 15, 12);
   u32 i = bit(val, 11);
   u32 imm3 = bits(val, 10, 8);
@@ -161,7 +180,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
   case R_ARM_THM_CALL:
   case R_ARM_THM_JUMP24:
   case R_ARM_THM_TLS_CALL:
-    write_thm_b_imm(loc, val);
+    write_thm_b_imm25(loc, val);
     break;
   case R_ARM_CALL:
   case R_ARM_JUMP24:
@@ -306,13 +325,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       if (T && is_int(val1, 25)) {
         *(ul16 *)(loc + 2) |= 0x1000;  // BL
-        write_thm_b_imm(loc, val1);
+        write_thm_b_imm25(loc, val1);
       } else if (!T && is_int(val2, 25)) {
         *(ul16 *)(loc + 2) &= ~0x1000; // BLX
-        write_thm_b_imm(loc, val2);
+        write_thm_b_imm25(loc, val2);
       } else {
         *(ul16 *)(loc + 2) |= 0x1000;  // BL
-        write_thm_b_imm(loc, get_thumb_thunk_addr() + A - P);
+        write_thm_b_imm25(loc, get_thumb_thunk_addr() + A - P);
       }
       break;
     }
@@ -370,7 +389,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // required, we jump to a linker-synthesized thunk which does the
       // job with a longer code sequence.
       i64 val = S + A - P;
-      if (T || !is_int(val, 26) )
+      if (T || !is_int(val, 26))
         val = get_arm_thunk_addr() + A - P;
       *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
       break;
@@ -384,29 +403,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
       break;
     case R_ARM_THM_JUMP11:
-      assert(T);
       check(S + A - P, -(1 << 11), 1 << 11);
       *(ul16 *)loc &= 0xf800;
       *(ul16 *)loc |= bits(S + A - P, 11, 1);
       break;
-    case R_ARM_THM_JUMP19: {
-      i64 val = S + A - P;
-      check(val, -(1 << 19), 1 << 19);
-
-      // sign:J2:J1:imm6:imm11:'0'
-      u32 sign = bit(val, 20);
-      u32 J2 = bit(val, 19);
-      u32 J1 = bit(val, 18);
-      u32 imm6 = bits(val, 17, 12);
-      u32 imm11 = bits(val, 11, 1);
-
-      *(ul16 *)loc &= 0b1111'1011'1100'0000;
-      *(ul16 *)loc |= (sign << 10) | imm6;
-
-      *(ul16 *)(loc + 2) &= 0b1101'0000'0000'0000;
-      *(ul16 *)(loc + 2) |= (J2 << 13) | (J1 << 11) | imm11;
+    case R_ARM_THM_JUMP19:
+      check(S + A - P, -(1 << 20), 1 << 20);
+      write_thm_b_imm21(loc, S + A - P);
       break;
-    }
     case R_ARM_THM_JUMP24: {
       if (sym.is_remaining_undef_weak()) {
         *(ul32 *)loc = 0x8000'f3af; // NOP
@@ -418,7 +422,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A - P;
       if (!T || !is_int(val, 25))
         val = get_thumb_thunk_addr() + A - P;
-      write_thm_b_imm(loc, val);
+      write_thm_b_imm25(loc, val);
       break;
     }
     case R_ARM_MOVW_PREL_NC:
@@ -512,7 +516,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_THM_TLS_CALL:
       if (sym.has_tlsdesc(ctx)) {
         u64 val = align_to(get_tlsdesc_trampoline_addr() - P - 4, 4);
-        write_thm_b_imm(loc, val);
+        write_thm_b_imm25(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       } else if (sym.has_gottp(ctx)) {
         // Since `ldr r0, [pc, r0]` is not representable in Thumb,
