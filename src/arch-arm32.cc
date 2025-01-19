@@ -243,15 +243,12 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
-static bool is_reachable(i64 disp) {
-  return -branch_distance<E> <= disp && disp < branch_distance<E>;
-}
-
 static Thunk<E> &get_reachable_thunk(OutputSection<E> &osec, u64 addr) {
-  for (std::unique_ptr<Thunk<E>> &thunk : osec.thunks)
-    if (is_reachable(thunk->get_addr() - addr))
-      return *thunk;
-  abort();
+  auto it = std::upper_bound(osec.thunks.begin(), osec.thunks.end(), addr,
+                             [](u64 addr, std::unique_ptr<Thunk<E>> &thunk) {
+    return addr < thunk->get_addr();
+  });
+  return **it;
 }
 
 template <>
@@ -301,21 +298,21 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         break;
       }
 
-      // THM_CALL relocation refers either BL or BLX instruction.
+      // THM_CALL relocation refers to either BL or BLX instruction.
       // They are different in only one bit. We need to use BL if
       // the jump target is Thumb. Otherwise, use BLX.
-      i64 val = S + A - P;
-      if (is_reachable(val)) {
-        if (T) {
-          write_thm_b_imm(loc, val);
-          *(ul16 *)(loc + 2) |= 0x1000;  // rewrite to BL
-        } else {
-          write_thm_b_imm(loc, align_to(val, 4));
-          *(ul16 *)(loc + 2) &= ~0x1000; // rewrite to BLX
-        }
+      i64 val1 = S + A - P;
+      i64 val2 = align_to(S + A - P, 4);
+
+      if (T && sign_extend(val1, 25) == val1) {
+        *(ul16 *)(loc + 2) |= 0x1000;  // BL
+        write_thm_b_imm(loc, val1);
+      } else if (!T && sign_extend(val2, 25) == val2) {
+        *(ul16 *)(loc + 2) &= ~0x1000; // BLX
+        write_thm_b_imm(loc, val2);
       } else {
-        write_thm_b_imm(loc, align_to(get_arm_thunk_addr() + A - P, 4));
-        *(ul16 *)(loc + 2) &= ~0x1000;  // rewrite to BLX
+        *(ul16 *)(loc + 2) |= 0x1000;  // BL
+        write_thm_b_imm(loc, get_thumb_thunk_addr() + A - P);
       }
       break;
     }
@@ -346,7 +343,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         Fatal(ctx) << *this << ": R_ARM_CALL refers to neither BL nor BLX";
 
       i64 val = S + A - P;
-      if (is_reachable(val)) {
+      if (sign_extend(val, 26) == val) {
         if (T) {
           *(ul32 *)loc = 0xfa00'0000; // BLX
           *(ul32 *)loc |= (bit(val, 1) << 24) | bits(val, 25, 2);
@@ -373,7 +370,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // required, we jump to a linker-synthesized thunk which does the
       // job with a longer code sequence.
       i64 val = S + A - P;
-      if (!is_reachable(val) || T)
+      if (sign_extend(val, 26) != val || T)
         val = get_arm_thunk_addr() + A - P;
       *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
       break;
@@ -419,7 +416,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
       // switch processor mode.
       i64 val = S + A - P;
-      if (!is_reachable(val) || !T)
+      if (sign_extend(val, 25) != val || !T)
         val = get_thumb_thunk_addr() + A - P;
       write_thm_b_imm(loc, val);
       break;
