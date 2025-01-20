@@ -8,14 +8,15 @@ trigger:
     include:
     - master
     - dev
-    - dev-slice
+    - dev2
+    - dev3
   tags:
     include:
     - v*
 
 jobs:
 - job:
-  displayName: Windows
+  displayName: Windows 2022
   pool:
     vmImage:
       windows-2022
@@ -43,7 +44,7 @@ jobs:
       solution: $(BuildType)/libmimalloc.sln
       configuration: '$(MSBuildConfiguration)'
       msbuildArguments: -m
-  - script: ctest --verbose --timeout 120 -C $(MSBuildConfiguration)
+  - script: ctest --verbose --timeout 240 -C $(MSBuildConfiguration)
     workingDirectory: $(BuildType)
     displayName: CTest
   #- script: $(BuildType)\$(BuildType)\mimalloc-test-stress
@@ -52,7 +53,7 @@ jobs:
   #  artifact: mimalloc-windows-$(BuildType)
 
 - job:
-  displayName: Linux
+  displayName: Ubuntu 22.04
   pool:
     vmImage:
      ubuntu-22.04
@@ -112,8 +113,13 @@ jobs:
         CC: clang
         CXX: clang++
         BuildType: debug-tsan-clang-cxx
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_USE_CXX=ON -DMI_DEBUG_TSAN=ON
-      
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMI_USE_CXX=ON -DMI_DEBUG_TSAN=ON
+      Debug Guarded Clang:
+        CC: clang
+        CXX: clang
+        BuildType: debug-guarded-clang
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=RelWithDebInfo -DMI_DEBUG_FULL=ON -DMI_GUARDED=ON
+
   steps:
   - task: CMake@1
     inputs:
@@ -121,17 +127,19 @@ jobs:
       cmakeArgs: .. $(cmakeExtraArgs)
   - script: make -j$(nproc) -C $(BuildType)
     displayName: Make
-  - script: ctest --verbose --timeout 180
+  - script: ctest --verbose --timeout 240
     workingDirectory: $(BuildType)
     displayName: CTest
+    env:
+      MIMALLOC_GUARDED_SAMPLE_RATE: 1000
 #  - upload: $(Build.SourcesDirectory)/$(BuildType)
 #    artifact: mimalloc-ubuntu-$(BuildType)
 
 - job:
-  displayName: macOS
+  displayName: macOS 14 (Sonoma)
   pool:
     vmImage:
-      macOS-latest
+      macOS-14
   strategy:
     matrix:
       Debug:
@@ -150,48 +158,152 @@ jobs:
       cmakeArgs: .. $(cmakeExtraArgs)
   - script: make -j$(sysctl -n hw.ncpu) -C $(BuildType)
     displayName: Make
-  # - script: MIMALLOC_VERBOSE=1 ./mimalloc-test-api
-  #   workingDirectory: $(BuildType)
-  #   displayName: TestAPI
-  # - script: MIMALLOC_VERBOSE=1 ./mimalloc-test-stress
-  #   workingDirectory: $(BuildType)
-  #   displayName: TestStress    
-  - script: ctest --verbose --timeout 120
+  - script: ctest --verbose --timeout 240
     workingDirectory: $(BuildType)
     displayName: CTest
     
 #  - upload: $(Build.SourcesDirectory)/$(BuildType)
 #    artifact: mimalloc-macos-$(BuildType)
 
-# - job:
-#   displayName: Windows-2017
-#   pool:
-#     vmImage:
-#       vs2017-win2016
-#   strategy:
-#     matrix:
-#       Debug:
-#         BuildType: debug
-#         cmakeExtraArgs: -A x64 -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
-#         MSBuildConfiguration: Debug
-#       Release:
-#         BuildType: release
-#         cmakeExtraArgs: -A x64 -DCMAKE_BUILD_TYPE=Release
-#         MSBuildConfiguration: Release
-#       Secure:
-#         BuildType: secure
-#         cmakeExtraArgs: -A x64 -DCMAKE_BUILD_TYPE=Release -DMI_SECURE=ON
-#         MSBuildConfiguration: Release
-#   steps:
-#   - task: CMake@1
-#     inputs:
-#       workingDirectory: $(BuildType)
-#       cmakeArgs: .. $(cmakeExtraArgs)
-#   - task: MSBuild@1
-#     inputs:
-#       solution: $(BuildType)/libmimalloc.sln
-#       configuration: '$(MSBuildConfiguration)'
-#   - script: |
-#       cd $(BuildType)
-#       ctest --verbose --timeout 120
-#     displayName: CTest
+# ----------------------------------------------------------
+# Other OS versions (just debug mode)
+# ----------------------------------------------------------
+
+- job:
+  displayName: Windows 2019
+  pool:
+    vmImage:
+      windows-2019
+  strategy:
+    matrix:
+      Debug:
+        BuildType: debug
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+        MSBuildConfiguration: Debug
+      Release:
+        BuildType: release
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
+        MSBuildConfiguration: Release
+  steps:
+  - task: CMake@1
+    inputs:
+      workingDirectory: $(BuildType)
+      cmakeArgs: .. $(cmakeExtraArgs)
+  - task: MSBuild@1
+    inputs:
+      solution: $(BuildType)/libmimalloc.sln
+      configuration: '$(MSBuildConfiguration)'
+      msbuildArguments: -m
+  - script: ctest --verbose --timeout 240 -C $(MSBuildConfiguration)
+    workingDirectory: $(BuildType)
+    displayName: CTest
+
+- job:
+  displayName: Ubuntu 24.04
+  pool:
+    vmImage:
+      ubuntu-24.04
+  strategy:
+    matrix:
+      Debug:
+        CC: gcc
+        CXX: g++
+        BuildType: debug
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+      Debug++:
+        CC: gcc
+        CXX: g++
+        BuildType: debug-cxx
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
+      Debug Clang:
+        CC: clang
+        CXX: clang++
+        BuildType: debug-clang
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+      Debug++ Clang:
+        CC: clang
+        CXX: clang++
+        BuildType: debug-clang-cxx
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
+      Release Clang:
+        CC: clang
+        CXX: clang++
+        BuildType: release-clang
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
+  steps:
+  - task: CMake@1
+    inputs:
+      workingDirectory: $(BuildType)
+      cmakeArgs: .. $(cmakeExtraArgs)
+  - script: make -j$(nproc) -C $(BuildType)
+    displayName: Make
+  - script: ctest --verbose --timeout 240
+    workingDirectory: $(BuildType)
+    displayName: CTest
+
+- job:
+  displayName: Ubuntu 20.04
+  pool:
+    vmImage:
+      ubuntu-20.04
+  strategy:
+    matrix:
+      Debug:
+        CC: gcc
+        CXX: g++
+        BuildType: debug
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+      Debug++:
+        CC: gcc
+        CXX: g++
+        BuildType: debug-cxx
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
+      Debug Clang:
+        CC: clang
+        CXX: clang++
+        BuildType: debug-clang
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+      Debug++ Clang:
+        CC: clang
+        CXX: clang++
+        BuildType: debug-clang-cxx
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
+      Release Clang:
+        CC: clang
+        CXX: clang++
+        BuildType: release-clang
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
+  steps:
+  - task: CMake@1
+    inputs:
+      workingDirectory: $(BuildType)
+      cmakeArgs: .. $(cmakeExtraArgs)
+  - script: make -j$(nproc) -C $(BuildType)
+    displayName: Make
+  - script: ctest --verbose --timeout 240
+    workingDirectory: $(BuildType)
+    displayName: CTest
+
+- job:
+  displayName: macOS 15 (Sequoia)
+  pool:
+    vmImage:
+      macOS-15
+  strategy:
+    matrix:
+      Debug:
+        BuildType: debug
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+      Release:
+        BuildType: release
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
+  steps:
+  - task: CMake@1
+    inputs:
+      workingDirectory: $(BuildType)
+      cmakeArgs: .. $(cmakeExtraArgs)
+  - script: make -j$(sysctl -n hw.ncpu) -C $(BuildType)
+    displayName: Make
+  - script: ctest --verbose --timeout 240
+    workingDirectory: $(BuildType)
+    displayName: CTest

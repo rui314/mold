@@ -200,7 +200,7 @@ bool _mi_bitmap_is_any_claimed(mi_bitmap_t bitmap, size_t bitmap_fields, size_t 
 // Try to atomically claim a sequence of `count` bits starting from the field
 // at `idx` in `bitmap` and crossing into subsequent fields. Returns `true` on success.
 // Only needs to consider crossing into the next fields (see `mi_bitmap_try_find_from_claim_across`)
-static bool mi_bitmap_try_find_claim_field_across(mi_bitmap_t bitmap, size_t bitmap_fields, size_t idx, const size_t count, const size_t retries, mi_bitmap_index_t* bitmap_idx, mi_stats_t* stats)
+static bool mi_bitmap_try_find_claim_field_across(mi_bitmap_t bitmap, size_t bitmap_fields, size_t idx, const size_t count, const size_t retries, mi_bitmap_index_t* bitmap_idx)
 {
   mi_assert_internal(bitmap_idx != NULL);
 
@@ -260,7 +260,7 @@ static bool mi_bitmap_try_find_claim_field_across(mi_bitmap_t bitmap, size_t bit
   } while (!mi_atomic_cas_strong_acq_rel(field, &map, newmap));
 
   // claimed!
-  mi_stat_counter_increase(stats->arena_crossover_count,1);
+  mi_stat_counter_increase(_mi_stats_main.arena_crossover_count,1);
   *bitmap_idx = mi_bitmap_index_create(idx, initial_idx);
   return true;
 
@@ -280,10 +280,10 @@ rollback:
       newmap = (map & ~initial_mask);
     } while (!mi_atomic_cas_strong_acq_rel(field, &map, newmap));
   }
-  mi_stat_counter_increase(stats->arena_rollback_count,1);
+  mi_stat_counter_increase(_mi_stats_main.arena_rollback_count,1);
   // retry? (we make a recursive call instead of goto to be able to use const declarations)
   if (retries <= 2) {
-    return mi_bitmap_try_find_claim_field_across(bitmap, bitmap_fields, idx, count, retries+1, bitmap_idx, stats);
+    return mi_bitmap_try_find_claim_field_across(bitmap, bitmap_fields, idx, count, retries+1, bitmap_idx);
   }
   else {
     return false;
@@ -293,7 +293,7 @@ rollback:
 
 // Find `count` bits of zeros and set them to 1 atomically; returns `true` on success.
 // Starts at idx, and wraps around to search in all `bitmap_fields` fields.
-bool _mi_bitmap_try_find_from_claim_across(mi_bitmap_t bitmap, const size_t bitmap_fields, const size_t start_field_idx, const size_t count, mi_bitmap_index_t* bitmap_idx, mi_stats_t* stats) {
+bool _mi_bitmap_try_find_from_claim_across(mi_bitmap_t bitmap, const size_t bitmap_fields, const size_t start_field_idx, const size_t count, mi_bitmap_index_t* bitmap_idx) {
   mi_assert_internal(count > 0);
   if (count <= 2) {
     // we don't bother with crossover fields for small counts
@@ -313,7 +313,7 @@ bool _mi_bitmap_try_find_from_claim_across(mi_bitmap_t bitmap, const size_t bitm
     }
     */
     // if that fails, then try to claim across fields
-    if (mi_bitmap_try_find_claim_field_across(bitmap, bitmap_fields, idx, count, 0, bitmap_idx, stats)) {
+    if (mi_bitmap_try_find_claim_field_across(bitmap, bitmap_fields, idx, count, 0, bitmap_idx)) {
       return true;
     }
   }

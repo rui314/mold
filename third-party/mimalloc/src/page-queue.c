@@ -264,8 +264,16 @@ static void mi_page_queue_push(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_
   heap->page_count++;
 }
 
+static void mi_page_queue_move_to_front(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_t* page) {
+  mi_assert_internal(mi_page_heap(page) == heap);
+  mi_assert_internal(mi_page_queue_contains(queue, page));
+  if (queue->first == page) return;
+  mi_page_queue_remove(queue, page);
+  mi_page_queue_push(heap, queue, page);
+  mi_assert_internal(queue->first == page);
+}
 
-static void mi_page_queue_enqueue_from(mi_page_queue_t* to, mi_page_queue_t* from, mi_page_t* page) {
+static void mi_page_queue_enqueue_from_ex(mi_page_queue_t* to, mi_page_queue_t* from, bool enqueue_at_end, mi_page_t* page) {
   mi_assert_internal(page != NULL);
   mi_assert_expensive(mi_page_queue_contains(from, page));
   mi_assert_expensive(!mi_page_queue_contains(to, page));
@@ -278,6 +286,8 @@ static void mi_page_queue_enqueue_from(mi_page_queue_t* to, mi_page_queue_t* fro
                      (mi_page_is_large_or_huge(page) && mi_page_queue_is_full(to)));
 
   mi_heap_t* heap = mi_page_heap(page);
+
+  // delete from `from`
   if (page->prev != NULL) page->prev->next = page->next;
   if (page->next != NULL) page->next->prev = page->prev;
   if (page == from->last)  from->last = page->prev;
@@ -288,20 +298,57 @@ static void mi_page_queue_enqueue_from(mi_page_queue_t* to, mi_page_queue_t* fro
     mi_heap_queue_first_update(heap, from);
   }
 
-  page->prev = to->last;
-  page->next = NULL;
-  if (to->last != NULL) {
-    mi_assert_internal(heap == mi_page_heap(to->last));
-    to->last->next = page;
-    to->last = page;
+  // insert into `to`
+  if (enqueue_at_end) {
+    // enqueue at the end
+    page->prev = to->last;
+    page->next = NULL;
+    if (to->last != NULL) {
+      mi_assert_internal(heap == mi_page_heap(to->last));
+      to->last->next = page;
+      to->last = page;
+    }
+    else {
+      to->first = page;
+      to->last = page;
+      mi_heap_queue_first_update(heap, to);
+    }
   }
   else {
-    to->first = page;
-    to->last = page;
-    mi_heap_queue_first_update(heap, to);
+    if (to->first != NULL) {
+      // enqueue at 2nd place
+      mi_assert_internal(heap == mi_page_heap(to->first));
+      mi_page_t* next = to->first->next;
+      page->prev = to->first;
+      page->next = next;
+      to->first->next = page;
+      if (next != NULL) { 
+        next->prev = page; 
+      }
+      else {
+        to->last = page;
+      }
+    }
+    else {
+      // enqueue at the head (singleton list)
+      page->prev = NULL;
+      page->next = NULL;
+      to->first = page;
+      to->last = page;
+      mi_heap_queue_first_update(heap, to);
+    }
   }
 
   mi_page_set_in_full(page, mi_page_queue_is_full(to));
+}
+
+static void mi_page_queue_enqueue_from(mi_page_queue_t* to, mi_page_queue_t* from, mi_page_t* page) {
+  mi_page_queue_enqueue_from_ex(to, from, true /* enqueue at the end */, page);
+}
+
+static void mi_page_queue_enqueue_from_full(mi_page_queue_t* to, mi_page_queue_t* from, mi_page_t* page) {
+  // note: we could insert at the front to increase reuse, but it slows down certain benchmarks (like `alloc-test`)
+  mi_page_queue_enqueue_from_ex(to, from, true /* enqueue at the end of the `to` queue? */, page);
 }
 
 // Only called from `mi_heap_absorb`.

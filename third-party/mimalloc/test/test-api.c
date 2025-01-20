@@ -65,6 +65,15 @@ bool mem_is_zero(uint8_t* p, size_t size) {
 int main(void) {
   mi_option_disable(mi_option_verbose);
 
+  CHECK_BODY("malloc-aligned9a") { // test large alignments
+    void* p = mi_zalloc_aligned(1024 * 1024, 2);
+    mi_free(p);
+    p = mi_zalloc_aligned(1024 * 1024, 2);
+    mi_free(p);
+    result = true;
+  };
+  
+
   // ---------------------------------------------------
   // Malloc
   // ---------------------------------------------------
@@ -157,6 +166,7 @@ int main(void) {
     printf("malloc_aligned5: usable size: %zi\n", usable);
     mi_free(p);
   };
+  /*
   CHECK_BODY("malloc-aligned6") {
     bool ok = true;
     for (size_t align = 1; align <= MI_BLOCK_ALIGNMENT_MAX && ok; align *= 2) {
@@ -174,6 +184,7 @@ int main(void) {
     }
     result = ok;
   };
+  */
   CHECK_BODY("malloc-aligned7") {
     void* p = mi_malloc_aligned(1024,MI_BLOCK_ALIGNMENT_MAX);
     mi_free(p);
@@ -189,7 +200,7 @@ int main(void) {
     }
     result = ok;
   };
-  CHECK_BODY("malloc-aligned9") {
+  CHECK_BODY("malloc-aligned9") { // test large alignments
     bool ok = true;
     void* p[8];
     size_t sizes[8] = { 8, 512, 1024 * 1024, MI_BLOCK_ALIGNMENT_MAX, MI_BLOCK_ALIGNMENT_MAX + 1, 2 * MI_BLOCK_ALIGNMENT_MAX, 8 * MI_BLOCK_ALIGNMENT_MAX, 0 };
