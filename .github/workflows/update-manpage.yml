@@ -14,7 +14,7 @@ jobs:
 
     steps:
     - name: Check out repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Install ronn
       run: sudo apt-get update && sudo apt-get install -y ronn
