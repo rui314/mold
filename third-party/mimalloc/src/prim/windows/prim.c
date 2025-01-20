@@ -173,7 +173,7 @@ int _mi_prim_free(void* addr, size_t size ) {
     // In mi_os_mem_alloc_aligned the fallback path may have returned a pointer inside
     // the memory region returned by VirtualAlloc; in that case we need to free using
     // the start of the region.
-    MEMORY_BASIC_INFORMATION info = { 0 };
+    MEMORY_BASIC_INFORMATION info; _mi_memzero_var(info);
     VirtualQuery(addr, &info, sizeof(info));
     if (info.AllocationBase < addr && ((uint8_t*)addr - (uint8_t*)info.AllocationBase) < (ptrdiff_t)MI_SEGMENT_SIZE) {
       errcode = 0;

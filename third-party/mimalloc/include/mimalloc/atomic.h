@@ -31,33 +31,33 @@ terms of the MIT license. A copy of the license can be found in the file
 #if defined(__cplusplus)
 // Use C++ atomics
 #include <atomic>
-#define  _Atomic(tp)            std::atomic<tp>
-#define  mi_atomic(name)        std::atomic_##name
-#define  mi_memory_order(name)  std::memory_order_##name
-#if (__cplusplus >= 202002L)    // c++20, see issue #571
- #define MI_ATOMIC_VAR_INIT(x)  x
+#define  _Atomic(tp)              std::atomic<tp>
+#define  mi_atomic(name)          std::atomic_##name
+#define  mi_memory_order(name)    std::memory_order_##name
+#if (__cplusplus >= 202002L)      // c++20, see issue #571
+ #define MI_ATOMIC_VAR_INIT(x)    x
 #elif !defined(ATOMIC_VAR_INIT)
- #define MI_ATOMIC_VAR_INIT(x)  x
+ #define MI_ATOMIC_VAR_INIT(x)    x
 #else
- #define MI_ATOMIC_VAR_INIT(x)  ATOMIC_VAR_INIT(x)
+ #define MI_ATOMIC_VAR_INIT(x)    ATOMIC_VAR_INIT(x)
 #endif
 #elif defined(_MSC_VER)
 // Use MSVC C wrapper for C11 atomics
-#define  _Atomic(tp)            tp
-#define  MI_ATOMIC_VAR_INIT(x)  x
-#define  mi_atomic(name)        mi_atomic_##name
-#define  mi_memory_order(name)  mi_memory_order_##name
+#define  _Atomic(tp)              tp
+#define  MI_ATOMIC_VAR_INIT(x)    x
+#define  mi_atomic(name)          mi_atomic_##name
+#define  mi_memory_order(name)    mi_memory_order_##name
 #else
 // Use C11 atomics
 #include <stdatomic.h>
-#define  mi_atomic(name)        atomic_##name
-#define  mi_memory_order(name)  memory_order_##name
+#define  mi_atomic(name)          atomic_##name
+#define  mi_memory_order(name)    memory_order_##name
 #if (__STDC_VERSION__ >= 201710L) // c17, see issue #735
- #define MI_ATOMIC_VAR_INIT(x) x
+ #define MI_ATOMIC_VAR_INIT(x)    x
 #elif !defined(ATOMIC_VAR_INIT)
- #define MI_ATOMIC_VAR_INIT(x) x
+ #define MI_ATOMIC_VAR_INIT(x)    x
 #else
- #define MI_ATOMIC_VAR_INIT(x) ATOMIC_VAR_INIT(x)
+ #define MI_ATOMIC_VAR_INIT(x)    ATOMIC_VAR_INIT(x)
 #endif
 #endif
 
@@ -290,6 +290,7 @@ static inline bool mi_atomic_casi64_strong_acq_rel(volatile _Atomic(int64_t*)p, 
 #define mi_atomic_cas_ptr_weak_release(tp,p,exp,des)    mi_atomic_cas_weak_release((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
 #define mi_atomic_cas_ptr_weak_acq_rel(tp,p,exp,des)    mi_atomic_cas_weak_acq_rel((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
 #define mi_atomic_cas_ptr_strong_release(tp,p,exp,des)  mi_atomic_cas_strong_release((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
+#define mi_atomic_exchange_ptr_relaxed(tp,p,x)          (tp*)mi_atomic_exchange_relaxed((_Atomic(uintptr_t)*)(p),(uintptr_t)x)
 #define mi_atomic_exchange_ptr_release(tp,p,x)          (tp*)mi_atomic_exchange_release((_Atomic(uintptr_t)*)(p),(uintptr_t)x)
 #define mi_atomic_exchange_ptr_acq_rel(tp,p,x)          (tp*)mi_atomic_exchange_acq_rel((_Atomic(uintptr_t)*)(p),(uintptr_t)x)
 

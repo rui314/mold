@@ -607,7 +607,7 @@ static void mi_arenas_try_purge( bool force, bool visit_all )
 
   // check if any arena needs purging?
   const mi_msecs_t now = _mi_clock_now();
-  mi_msecs_t arenas_expire = mi_atomic_load_acquire(&mi_arenas_purge_expire);
+  mi_msecs_t arenas_expire = mi_atomic_loadi64_acquire(&mi_arenas_purge_expire);
   if (!force && (arenas_expire == 0 || arenas_expire < now)) return;
 
   const size_t max_arena = mi_atomic_load_acquire(&mi_arena_count);
@@ -618,7 +618,7 @@ static void mi_arenas_try_purge( bool force, bool visit_all )
   mi_atomic_guard(&purge_guard)
   {
     // increase global expire: at most one purge per delay cycle
-    mi_atomic_store_release(&mi_arenas_purge_expire, now + mi_arena_purge_delay());  
+    mi_atomic_storei64_release(&mi_arenas_purge_expire, now + mi_arena_purge_delay());  
     size_t max_purge_count = (visit_all ? max_arena : 2);
     bool all_visited = true;
     for (size_t i = 0; i < max_arena; i++) {
@@ -635,7 +635,7 @@ static void mi_arenas_try_purge( bool force, bool visit_all )
     }
     if (all_visited) {
       // all arena's were visited and purged: reset global expire
-      mi_atomic_store_release(&mi_arenas_purge_expire, 0);
+      mi_atomic_storei64_release(&mi_arenas_purge_expire, 0);
     }
   }
 }
