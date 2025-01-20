@@ -14,7 +14,7 @@ jobs:
         - '-DMOLD_USE_TSAN=On'
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: rui314/setup-mold@staging
     - run: sudo ./install-build-deps.sh
     - name: build
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     container: gcc:11.1.0
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: install-build-deps
       shell: bash
       run: |
@@ -89,7 +89,7 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: build
       run: |
         mkdir build
@@ -100,7 +100,7 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: build
       run: |
         mkdir build
@@ -111,7 +111,7 @@ jobs:
   build-msys:
     runs-on: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
@@ -129,7 +129,7 @@ jobs:
   build-freebsd:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Build and test
       uses: vmactions/freebsd-vm@v1
       with:
