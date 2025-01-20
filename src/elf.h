@@ -1921,7 +1921,7 @@ struct ARM32 {
   static constexpr bool is_64 = false;
   static constexpr bool is_le = true;
   static constexpr bool is_rela = false;
-  static constexpr u32 page_size = 4096;
+  static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_ARM;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
