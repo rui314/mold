@@ -88,7 +88,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   loc[5] |= lo(ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr + 4);
 }
 
-constexpr ub32 plt_entry[] = {
+static constexpr ub32 plt_entry[] = {
   // Get the address of this PLT entry
   0x7c08'02a6, // mflr    r0
   0x429f'0005, // bcl     20, 31, 4

@@ -232,7 +232,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   *(ul32 *)(buf + 16) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 16;
 }
 
-constexpr ul32 plt_entry[] = {
+static constexpr ul32 plt_entry[] = {
   0xe59f'c004, // 1: ldr ip, 2f
   0xe08c'c00f, //    add ip, ip, pc
   0xe59c'f000, //    ldr pc, [ip]
@@ -670,7 +670,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 
   // This is a range extension and mode switch thunk.
   // It has two entry points: +0 for Thumb and +4 for ARM.
-  static const u8 entry[] = {
+  constexpr u8 entry[] = {
     // .thumb
     0x78, 0x47,             //    bx   pc  # jumps to 1f
     0xc0, 0x46,             //    nop

@@ -183,14 +183,14 @@ void write_plt_header<E>(Context<E> &ctx, u8 *buf) {
   write_k12(buf + 16, gotplt);
 }
 
-constexpr ul32 plt_entry_64[] = {
+static constexpr ul32 plt_entry_64[] = {
   0x1a00'000f, // pcalau12i $t3, %pc_hi20(func@.got.plt)
   0x28c0'01ef, // ld.d      $t3, $t3, %lo12(func@.got.plt)
   0x4c00'01ed, // jirl      $t1, $t3, 0
   0x002a'0000, // break
 };
 
-constexpr ul32 plt_entry_32[] = {
+static constexpr ul32 plt_entry_32[] = {
   0x1a00'000f, // pcalau12i $t3, %pc_hi20(func@.got.plt)
   0x2880'01ef, // ld.w      $t3, $t3, %lo12(func@.got.plt)
   0x4c00'01ed, // jirl      $t1, $t3, 0
