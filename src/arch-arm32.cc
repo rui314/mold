@@ -58,13 +58,14 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_TLS_LE32:
   case R_ARM_TLS_GOTDESC:
   case R_ARM_TARGET2:
-    return *(il32 *)loc;
+    return (il32)*arm;
   case R_ARM_THM_JUMP11:
     return sign_extend(thm[0], 11) << 1;
   case R_ARM_THM_JUMP19: {
+    // https://developer.arm.com/documentation/ddi0597/2024-12/Base-Instructions/B--Branch-
     u32 S = bit(thm[0], 10);
-    u32 J2 = bit(thm[1], 13);
-    u32 J1 = bit(thm[1], 11);
+    u32 J2 = bit(thm[1], 11);
+    u32 J1 = bit(thm[1], 13);
     u32 imm6 = bits(thm[0], 5, 0);
     u32 imm11 = bits(thm[1], 10, 0);
     u32 val = (S << 20) | (J2 << 19) | (J1 << 18) | (imm6 << 12) | (imm11 << 1);
@@ -73,6 +74,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_THM_CALL:
   case R_ARM_THM_JUMP24:
   case R_ARM_THM_TLS_CALL: {
+    // https://developer.arm.com/documentation/ddi0597/2024-12/Base-Instructions/BL--BLX--immediate---Branch-with-Link-and-optional-Exchange--immediate--
     u32 S = bit(thm[0], 10);
     u32 J1 = bit(thm[1], 13);
     u32 J2 = bit(thm[1], 11);
@@ -92,9 +94,11 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_MOVW_ABS_NC:
   case R_ARM_MOVT_PREL:
   case R_ARM_MOVT_ABS: {
-    u32 imm12 = bits(*arm, 11, 0);
+    // https://developer.arm.com/documentation/ddi0597/2024-12/Base-Instructions/MOV--MOVS--immediate---Move--immediate--
     u32 imm4 = bits(*arm, 19, 16);
-    return sign_extend((imm4 << 12) | imm12, 16);
+    u32 imm12 = bits(*arm, 11, 0);
+    u32 val = (imm4 << 12) | imm12;
+    return sign_extend(val, 16);
   }
   case R_ARM_PREL31:
     return sign_extend(*arm, 31);
@@ -102,6 +106,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_THM_MOVW_ABS_NC:
   case R_ARM_THM_MOVT_PREL:
   case R_ARM_THM_MOVT_ABS: {
+    // https://developer.arm.com/documentation/ddi0597/2024-12/Base-Instructions/MOVT--Move-Top-
     u32 imm4 = bits(thm[0], 3, 0);
     u32 i = bit(thm[0], 10);
     u32 imm3 = bits(thm[1], 14, 12);
@@ -114,39 +119,39 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   }
 }
 
-static void write_mov_imm(u8 *loc, u32 val) {
+static void write_arm_mov(u8 *loc, u32 val) {
   u32 imm12 = bits(val, 11, 0);
   u32 imm4 = bits(val, 15, 12);
-  *(ul32 *)loc = (*(ul32 *)loc & 0xfff0f000) | (imm4 << 16) | imm12;
+  *(ul32 *)loc = (*(ul32 *)loc & 0xfff0'f000) | (imm4 << 16) | imm12;
 }
 
-static void write_thm_b_imm21(u8 *loc, u32 val) {
-  u32 sign = bit(val, 20);
+static void write_thm_b21(u8 *loc, u32 val) {
+  u32 S = bit(val, 20);
   u32 J2 = bit(val, 19);
   u32 J1 = bit(val, 18);
   u32 imm6 = bits(val, 17, 12);
   u32 imm11 = bits(val, 11, 1);
 
   ul16 *buf = (ul16 *)loc;
-  buf[0] = (buf[0] & 0b1111'1011'1100'0000) | (sign << 10) | imm6;
-  buf[1] = (buf[1] & 0b1101'0000'0000'0000) | (J2 << 13) | (J1 << 11) | imm11;
+  buf[0] = (buf[0] & 0b1111'1011'1100'0000) | (S << 10) | imm6;
+  buf[1] = (buf[1] & 0b1101'0000'0000'0000) | (J1 << 13) | (J2 << 11) | imm11;
 }
 
-static void write_thm_b_imm25(u8 *loc, u32 val) {
-  u32 sign = bit(val, 24);
+static void write_thm_b25(u8 *loc, u32 val) {
+  u32 S = bit(val, 24);
   u32 I1 = bit(val, 23);
   u32 I2 = bit(val, 22);
-  u32 J1 = !I1 ^ sign;
-  u32 J2 = !I2 ^ sign;
+  u32 J1 = !I1 ^ S;
+  u32 J2 = !I2 ^ S;
   u32 imm10 = bits(val, 21, 12);
   u32 imm11 = bits(val, 11, 1);
 
   ul16 *buf = (ul16 *)loc;
-  buf[0] = (buf[0] & 0b1111'1000'0000'0000) | (sign << 10) | imm10;
+  buf[0] = (buf[0] & 0b1111'1000'0000'0000) | (S << 10) | imm10;
   buf[1] = (buf[1] & 0b1101'0000'0000'0000) | (J1 << 13) | (J2 << 11) | imm11;
 }
 
-static void write_thm_mov_imm(u8 *loc, u32 val) {
+static void write_thm_mov(u8 *loc, u32 val) {
   u32 imm4 = bits(val, 15, 12);
   u32 i = bit(val, 11);
   u32 imm3 = bits(val, 10, 8);
@@ -183,7 +188,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
   case R_ARM_THM_CALL:
   case R_ARM_THM_JUMP24:
   case R_ARM_THM_TLS_CALL:
-    write_thm_b_imm25(loc, val);
+    write_thm_b25(loc, val);
     break;
   case R_ARM_CALL:
   case R_ARM_JUMP24:
@@ -194,7 +199,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
   case R_ARM_MOVW_ABS_NC:
   case R_ARM_MOVT_PREL:
   case R_ARM_MOVT_ABS:
-    write_mov_imm(loc, val);
+    write_arm_mov(loc, val);
     break;
   case R_ARM_PREL31:
     *(ul32 *)loc = (*(ul32 *)loc & 0x8000'0000) | (val & 0x7fff'ffff);
@@ -203,7 +208,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
   case R_ARM_THM_MOVW_ABS_NC:
   case R_ARM_THM_MOVT_PREL:
   case R_ARM_THM_MOVT_ABS:
-    write_thm_mov_imm(loc, val);
+    write_thm_mov(loc, val);
     break;
   default:
     unreachable();
@@ -328,13 +333,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       if (T && is_int(val1, 25)) {
         *(ul16 *)(loc + 2) |= 0x1000;  // BL
-        write_thm_b_imm25(loc, val1);
+        write_thm_b25(loc, val1);
       } else if (!T && is_int(val2, 25)) {
         *(ul16 *)(loc + 2) &= ~0x1000; // BLX
-        write_thm_b_imm25(loc, val2);
+        write_thm_b25(loc, val2);
       } else {
         *(ul16 *)(loc + 2) |= 0x1000;  // BL
-        write_thm_b_imm25(loc, get_thumb_thunk_addr() + A - P);
+        write_thm_b25(loc, get_thumb_thunk_addr() + A - P);
       }
       break;
     }
@@ -412,7 +417,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_ARM_THM_JUMP19:
       check(S + A - P, -(1 << 20), 1 << 20);
-      write_thm_b_imm21(loc, S + A - P);
+      write_thm_b21(loc, S + A - P);
       break;
     case R_ARM_THM_JUMP24: {
       if (sym.is_remaining_undef_weak()) {
@@ -425,17 +430,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A - P;
       if (!T || !is_int(val, 25))
         val = get_thumb_thunk_addr() + A - P;
-      write_thm_b_imm25(loc, val);
+      write_thm_b25(loc, val);
       break;
     }
     case R_ARM_MOVW_PREL_NC:
-      write_mov_imm(loc, ((S + A) | T) - P);
+      write_arm_mov(loc, ((S + A) | T) - P);
       break;
     case R_ARM_MOVW_ABS_NC:
-      write_mov_imm(loc, (S + A) | T);
+      write_arm_mov(loc, (S + A) | T);
       break;
     case R_ARM_THM_MOVW_PREL_NC:
-      write_thm_mov_imm(loc, ((S + A) | T) - P);
+      write_thm_mov(loc, ((S + A) | T) - P);
       break;
     case R_ARM_PREL31:
       check(S + A - P, -(1LL << 30), 1LL << 30);
@@ -443,19 +448,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc |= (S + A - P) & 0x7fff'ffff;
       break;
     case R_ARM_THM_MOVW_ABS_NC:
-      write_thm_mov_imm(loc, (S + A) | T);
+      write_thm_mov(loc, (S + A) | T);
       break;
     case R_ARM_MOVT_PREL:
-      write_mov_imm(loc, (S + A - P) >> 16);
+      write_arm_mov(loc, (S + A - P) >> 16);
       break;
     case R_ARM_THM_MOVT_PREL:
-      write_thm_mov_imm(loc, (S + A - P) >> 16);
+      write_thm_mov(loc, (S + A - P) >> 16);
       break;
     case R_ARM_MOVT_ABS:
-      write_mov_imm(loc, (S + A) >> 16);
+      write_arm_mov(loc, (S + A) >> 16);
       break;
     case R_ARM_THM_MOVT_ABS:
-      write_thm_mov_imm(loc, (S + A) >> 16);
+      write_thm_mov(loc, (S + A) >> 16);
       break;
     case R_ARM_TLS_GD32:
       *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - P;
@@ -519,7 +524,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_THM_TLS_CALL:
       if (sym.has_tlsdesc(ctx)) {
         u64 val = align_to(get_tlsdesc_trampoline_addr() - P - 4, 4);
-        write_thm_b_imm25(loc, val);
+        write_thm_b25(loc, val);
         *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       } else if (sym.has_gottp(ctx)) {
         // Since `ldr r0, [pc, r0]` is not representable in Thumb,
