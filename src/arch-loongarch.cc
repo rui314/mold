@@ -863,15 +863,16 @@ template <>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   std::vector<RelocDelta> &deltas = isec.extra.r_deltas;
+  i64 r_delta = 0;
   u8 *buf = (u8 *)isec.contents.data();
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
 
-    auto remove = [&](i64 d) {
-      i64 sum = deltas.empty() ? 0 : deltas.back().delta;
-      deltas.push_back(RelocDelta{r.r_offset, sum + d});
+    auto remove = [&](i64 i) {
+      r_delta += i;
+      deltas.push_back(RelocDelta{r.r_offset, r_delta});
     };
 
     // A R_LARCH_ALIGN relocation refers to the beginning of a nop
@@ -897,7 +898,6 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         alignment = r.r_addend + 4;
       }
 
-      u64 r_delta = deltas.empty() ? 0 : deltas.back().delta;
       u64 P = isec.get_addr() + r.r_offset - r_delta;
       u64 desired = align_to(P, alignment);
       u64 actual = P + alignment - 4;
@@ -1015,8 +1015,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
     }
   }
 
-  if (!deltas.empty())
-    isec.sh_size -= deltas.back().delta;
+  isec.sh_size -= r_delta;
 }
 
 } // namespace mold
