@@ -277,7 +277,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
 
       i64 val = S + A - P;
-      if (val < -(1 << 27) || (1 << 27) <= val)
+      if (!is_int(val, 28))
         val = sym.get_thunk_addr(ctx, P) + A - P;
       *(ul32 *)loc |= bits(val, 27, 2);
       break;

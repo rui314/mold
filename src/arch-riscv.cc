@@ -518,7 +518,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
       switch (rel.r_type) {
       case R_RISCV_TLSDESC_LOAD_LO12:
-        write_itype(loc, sym2.get_tlsdesc_addr(ctx) + A - P);
+        if (sym2.has_tlsdesc(ctx))
+          write_itype(loc, sym2.get_tlsdesc_addr(ctx) + A - P);
+        else
+          *(ul32 *)loc = 0x13; // nop
         break;
       case R_RISCV_TLSDESC_ADD_LO12:
         if (sym2.has_tlsdesc(ctx)) {
