@@ -9,11 +9,17 @@ on:
 
 jobs:
   build-tarballs:
-    runs-on: ubuntu-24.04
-
     strategy:
       matrix:
-        target: [ x86_64, aarch64, arm, riscv64, ppc64le, s390x ]
+        include:
+          - { target: x86_64,  os: ubuntu-24.04 }
+          - { target: aarch64, os: ubuntu-24.04-arm }
+          - { target: arm,     os: ubuntu-24.04 }
+          - { target: riscv64, os: ubuntu-24.04 }
+          - { target: ppc64le, os: ubuntu-24.04 }
+          - { target: s390x,   os: ubuntu-24.04 }
+
+    runs-on: ${{ matrix.os }}
 
     permissions:
       contents: read
@@ -22,6 +28,9 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Install Podman
+      run: sudo apt-get update && sudo apt-get install -y podman
 
     - name: Login to GitHub Container Registry
       uses: redhat-actions/podman-login@v1
