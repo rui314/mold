@@ -1,12 +1,18 @@
-name: Build x86 tarball
+name: Build some tarballs
 
 on:
   push:
   workflow_dispatch:
 
 jobs:
-  build-tarball:
-    runs-on: ubuntu-24.04
+  build-tarballs:
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64,  os: ubuntu-24.04 }
+          - { target: aarch64, os: ubuntu-24.04-arm }
+
+    runs-on: ${{ matrix.os }}
 
     permissions:
       contents: read
@@ -16,6 +22,9 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
+    - name: Install Podman
+      run: sudo apt-get update && sudo apt-get install -y podman
+
     - name: Login to GitHub Container Registry
       uses: redhat-actions/podman-login@v1
       with:
@@ -23,12 +32,15 @@ jobs:
         username: ${{ github.repository_owner }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
     - name: Build a tarball
-      run: ./dist.sh
+      run: ./dist.sh ${{ matrix.target }}
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
-        name: tarball
+        name: ${{ matrix.target }}
         path: dist/mold-*.tar.gz
         compression-level: 0
