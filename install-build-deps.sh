@@ -14,7 +14,10 @@ ubuntu | pop | linuxmint | debian | raspbian | neon)
   if [ "$ID-$VERSION_ID" = ubuntu-20.04 ]; then apt-get install -y g++-10; fi
   ;;
 fedora | amzn | rhel)
-  dnf install -y gcc-g++ cmake glibc-static libstdc++-static diffutils util-linux
+  dnf install -y gcc-g++ cmake glibc-static libstdc++-static diffutils util-linux tar
+  ;;
+rocky)
+  dnf install -y gcc-g++ cmake diffutils util-linux
   ;;
 opensuse-*)
   zypper install -y make cmake gcc-c++ glibc-devel-static tar diffutils util-linux
