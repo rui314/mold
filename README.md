@@ -76,12 +76,12 @@ installation location by passing `-DCMAKE_INSTALL_PREFIX=<directory>`.
 For other cmake options, see the comments in `CMakeLists.txt`.
 
 If you are not using a recent enough Linux distribution, or if `cmake` does
-not work for you for any reason, you can use Docker to build mold in a Docker
-environment. To do so, run `./dist.sh` in this directory instead of using
-`cmake`. The shell script will pull a Docker image, build mold and auxiliary
+not work for you for any reason, you can use Podman to build mold in a
+container. To do so, run `./dist.sh` in this directory instead of using
+`cmake`. The shell script will pull a container image, build mold and auxiliary
 files inside it, and package them into a single tar file named
-`mold-$version-$arch-linux.tar.gz`. You can extract the tar file anywhere and
-use the mold executable within it.
+`dist/mold-$version-$arch-linux.tar.gz`. You can extract the tar file anywhere
+and use the mold executable in it.
 
 ## How to use
 

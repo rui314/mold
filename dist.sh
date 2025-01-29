@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # This script creates a mold binary distribution. The output is written in
-# this directory as `mold-$version-$arch-linux.tar.gz` (e.g.,
+# `dist` directory as `mold-$version-$arch-linux.tar.gz` (e.g.,
 # `mold-1.0.3-x86_64-linux.tar.gz`).
 #
 # The mold executable created by this script is statically linked to
