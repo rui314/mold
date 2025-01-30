@@ -5,9 +5,9 @@
 # Concretely speaking, ARM as uses "@" as a start of a comment.
 [ $MACHINE = arm ] && skip
 
-# GCC produces buggy code for this test case on s390x.
-# https://sourceware.org/bugzilla/show_bug.cgi?id=29655
-[ $MACHINE = s390x ] && $CC -v 2>&1 | grep -E '^gcc version 1[45]\.' && skip
+# All data symbols need to be aligned to 2 byte boundaries on s390x,
+# so rodata.str1.1 in this file is invalid on s390x.
+[ $MACHINE = s390x ] && skip
 
 cat <<'EOF' | $CC -c -o $t/a.o -x assembler -
 .globl val1, val2, val3, val4, val5
