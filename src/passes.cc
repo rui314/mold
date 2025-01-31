@@ -2964,10 +2964,8 @@ template <typename E>
 void compress_debug_sections(Context<E> &ctx) {
   Timer t(ctx, "compress_debug_sections");
 
-  std::vector<Chunk<E> *> &chunks = ctx.debug_chunks.empty() ? ctx.chunks : ctx.debug_chunks;
-
-  tbb::parallel_for((i64)0, (i64)chunks.size(), [&](i64 i) {
-    Chunk<E> &chunk = *chunks[i];
+  tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
+    Chunk<E> &chunk = *ctx.chunks[i];
 
     if ((chunk.shdr.sh_flags & SHF_ALLOC) || chunk.shdr.sh_size == 0 ||
         !chunk.name.starts_with(".debug"))
@@ -2975,7 +2973,7 @@ void compress_debug_sections(Context<E> &ctx) {
 
     Chunk<E> *comp = new CompressedSection<E>(ctx, chunk);
     ctx.chunk_pool.emplace_back(comp);
-    chunks[i] = comp;
+    ctx.chunks[i] = comp;
   });
 
   if (ctx.shstrtab)
@@ -3173,6 +3171,10 @@ void write_separate_debug_file(Context<E> &ctx) {
   });
 
   append(ctx.chunks, ctx.debug_chunks);
+
+  // Handle --compress-debug-info
+  if (ctx.arg.compress_debug_sections != COMPRESS_NONE)
+    compress_debug_sections(ctx);
 
   // Write to the debug info file as if it were a regular output file.
   compute_section_headers(ctx);

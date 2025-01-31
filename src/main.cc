@@ -504,6 +504,9 @@ int mold_main(int argc, char **argv) {
   // create as few segments as possible.
   sort_output_sections(ctx);
 
+  if (!ctx.arg.separate_debug_file.empty())
+    separate_debug_sections(ctx);
+
   // Compute sizes of output sections while assigning offsets
   // within an output section to input sections.
   compute_section_sizes(ctx);
@@ -547,9 +550,6 @@ int mold_main(int argc, char **argv) {
 
   // Compute the section header values for all sections.
   compute_section_headers(ctx);
-
-  if (!ctx.arg.separate_debug_file.empty())
-    separate_debug_sections(ctx);
 
   // Assign offsets to output sections
   i64 filesize = set_osec_offsets(ctx);

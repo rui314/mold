@@ -20,9 +20,19 @@ readelf -SW $t/exe1 | grep -Fq .gnu_debuglink
 flock $t/exe1 true
 gdb $t/exe1 -ex 'list main' -ex 'quit' | grep -Fq printf
 
+
 $CC -c -o $t/a.o $t/a.c -g
-$CC -B. -o $t/exe2 $t/a.o -Wl,--separate-debug-file -Wl,--no-build-id
+$CC -B. -o $t/exe2 $t/a.o -Wl,--separate-debug-file,--no-build-id
 readelf -SW $t/exe2 | grep -Fq .gnu_debuglink
 
 flock $t/exe2 true
 gdb $t/exe2 -ex 'list main' -ex 'quit' | grep -Fq printf
+
+
+$CC -c -o $t/a.o $t/a.c -g
+$CC -B. -o $t/exe3 $t/a.o -Wl,--separate-debug-file,--compress-debug-sections=zlib
+readelf -SW $t/exe3 | grep -Fq .gnu_debuglink
+
+flock $t/exe3 true
+readelf -W --sections $t/exe3.dbg | grep -q '\.debug_info .*C'
+gdb $t/exe3 -ex 'list main' -ex 'quit' | grep -Fq printf
