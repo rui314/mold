@@ -334,6 +334,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_TLS:
     case R_PPC64_TLSGD:
     case R_PPC64_TLSLD:
+    case R_PPC64_ENTRY:
       break;
     default:
       unreachable();
@@ -467,6 +468,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_DTPREL16_LO:
     case R_PPC64_DTPREL16_LO_DS:
     case R_PPC64_DTPREL34:
+    case R_PPC64_ENTRY:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;

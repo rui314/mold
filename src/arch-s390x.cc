@@ -170,9 +170,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check(S + A, 0, 1LL << 32);
       *(ub32 *)loc = S + A;
       break;
-    case R_390_PLT64:
-      *(ub64 *)loc = S + A;
-      break;
     case R_390_PC12DBL:
     case R_390_PLT12DBL:
       check_dbl(S + A - P, -(1 << 12), 1 << 12);
@@ -187,6 +184,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc = S + A - P;
       break;
     case R_390_PC64:
+    case R_390_PLT64:
       *(ub64 *)loc = S + A - P;
       break;
     case R_390_PC16DBL:
@@ -411,8 +409,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_390_32:
       scan_absrel(ctx, sym, rel);
       break;
+    case R_390_PC12DBL:
     case R_390_PC16:
     case R_390_PC16DBL:
+    case R_390_PC24DBL:
     case R_390_PC32:
     case R_390_PC32DBL:
     case R_390_PC64:
