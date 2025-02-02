@@ -630,6 +630,18 @@ void create_output_sections(Context<E> &ctx) {
         isec->output_section->members_vec[i].push_back(isec.get());
   });
 
+  // Compute section alignment
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool) {
+    Atomic<u32> p2align;
+    tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+      u32 x = 0;
+      for (InputSection<E> *isec : osec->members_vec[i])
+        x = std::max<u32>(x, isec->p2align);
+      update_maximum(p2align, x);
+    });
+    osec->shdr.sh_addralign = 1 << p2align;
+  }
+
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool) {
     osec->shdr.sh_flags = osec->sh_flags;
     osec->is_relro = is_relro(*osec);

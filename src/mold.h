@@ -1293,12 +1293,12 @@ public:
 
   MergedSection<E> &parent;
   std::vector<SectionFragment<E> *> fragments;
+  u8 p2align = 0;
 
 private:
   std::unique_ptr<InputSection<E>> section;
   std::vector<u32> frag_offsets;
   std::vector<u32> hashes;
-  u8 p2align = 0;
 };
 
 // InputFile is the base class of ObjectFile and SharedFile.

@@ -223,13 +223,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
 
   while (t < thunks.size())
     reset(*thunks[t++]);
-
-  u32 p2align = 0;
-  for (InputSection<E> *isec : members)
-    p2align = std::max<u32>(p2align, isec->p2align);
-
   this->shdr.sh_size = offset;
-  this->shdr.sh_addralign = 1 << p2align;
 }
 
 // When applying relocations, we want to know the address in a reachable

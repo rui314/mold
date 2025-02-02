@@ -845,8 +845,8 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
 
-    auto remove = [&](i64 i) {
-      r_delta += i;
+    auto remove = [&](i64 d) {
+      r_delta += d;
       deltas.push_back(RelocDelta{r.r_offset, r_delta});
     };
 
@@ -942,8 +942,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         // instruction pair with `add t0, x0, %lo(foo)` if foo's bits
         // [32:11] are all one or all zero.
         remove(4);
-      } else if (use_rvc && rd != 0 && rd != 2 &&
-                 is_int(val + 0x800, 18)) {
+      } else if (use_rvc && rd != 0 && rd != 2 && is_int(val + 0x800, 18)) {
         // If the upper 20 bits can actually be represented in 6 bits,
         // we can use C.LUI instead of LUI.
         remove(2);

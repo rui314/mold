@@ -861,7 +861,6 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
   struct Group {
     std::span<InputSection<E> *> members;
     i64 size = 0;
-    i64 p2align = 0;
     i64 offset = 0;
   };
 
@@ -876,19 +875,16 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
   }
 
   tbb::parallel_for_each(groups, [](Group &group) {
-    for (InputSection<E> *isec : group.members) {
+    for (InputSection<E> *isec : group.members)
       group.size = align_to(group.size, 1 << isec->p2align) + isec->sh_size;
-      group.p2align = std::max<i64>(group.p2align, isec->p2align);
-    }
   });
 
   shdr.sh_size = 0;
 
   for (i64 i = 0; i < groups.size(); i++) {
-    shdr.sh_size = align_to(shdr.sh_size, 1 << groups[i].p2align);
+    shdr.sh_size = align_to(shdr.sh_size, shdr.sh_addralign);
     groups[i].offset = shdr.sh_size;
     shdr.sh_size += groups[i].size;
-    shdr.sh_addralign = std::max<u32>(shdr.sh_addralign, 1 << groups[i].p2align);
   }
 
   // Assign offsets to input sections.
@@ -2120,6 +2116,13 @@ void MergedSection<E>::resolve(Context<E> &ctx) {
 
   if (this == ctx.comment)
     add_comment_strings(ctx);
+
+  // Compute section alignment
+  u32 p2align = 0;
+  for (MergeableSection<E> *sec : members)
+    p2align = std::max<u32>(p2align, sec->p2align);
+  this->shdr.sh_addralign = 1 << p2align;
+
   resolved = true;
 }
 
@@ -2129,14 +2132,11 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
     resolve(ctx);
 
   std::vector<i64> sizes(map.NUM_SHARDS);
-  Atomic<i64> alignment = 1;
 
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
     using Entry = typename decltype(map)::Entry;
     std::vector<Entry *> entries = map.get_sorted_entries(i);
-
     i64 offset = 0;
-    i64 p2align = 0;
 
     for (Entry *ent : entries) {
       SectionFragment<E> &frag = ent->value;
@@ -2144,12 +2144,10 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
         offset = align_to(offset, 1 << frag.p2align);
         frag.offset = offset;
         offset += ent->keylen;
-        p2align = std::max<i64>(p2align, frag.p2align);
       }
     }
 
     sizes[i] = offset;
-    update_maximum(alignment, 1 << p2align);
 
     static Counter merged_strings("merged_strings");
     merged_strings += entries.size();
@@ -2160,7 +2158,7 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
 
   for (i64 i = 1; i < map.NUM_SHARDS + 1; i++)
     shard_offsets[i] =
-      align_to(shard_offsets[i - 1] + sizes[i - 1], alignment);
+      align_to(shard_offsets[i - 1] + sizes[i - 1], this->shdr.sh_addralign);
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
@@ -2171,7 +2169,6 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
   });
 
   this->shdr.sh_size = shard_offsets[map.NUM_SHARDS];
-  this->shdr.sh_addralign = alignment;
 
   if (this->shdr.sh_size > UINT32_MAX)
     Fatal(ctx) << this->name << ": output section too large";
