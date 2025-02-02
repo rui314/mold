@@ -2800,18 +2800,16 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // defined in a statically-linked non-relocatable executable because
   // such executable lacks the .dynamic section and thus there's no way
   // to find ifunc relocations other than these symbols.
-  //
-  // We don't want to set values to these symbols if we are creating a
-  // static PIE due to a glibc bug. Static PIE has a dynamic section.
-  // If we set values to these symbols in a static PIE, glibc attempts
-  // to run ifunc initializers twice, with the second attempt with wrong
-  // function addresses, causing a segmentation fault.
   if (ctx.reldyn && ctx.arg.static_ && !ctx.arg.pie) {
     stop(ctx.__rel_iplt_start, ctx.reldyn);
     stop(ctx.__rel_iplt_end, ctx.reldyn);
-
     ctx.__rel_iplt_start->value -=
       get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
+  } else {
+    // If the symbols are not ncessary, we turn them to absolute
+    // symbols at address 0.
+    ctx.__rel_iplt_start->origin = 0;
+    ctx.__rel_iplt_end->origin = 0;
   }
 
   // __{init,fini}_array_{start,end}
