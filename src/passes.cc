@@ -2736,9 +2736,11 @@ i64 set_osec_offsets(Context<E> &ctx) {
 
 template <typename E>
 static i64 get_num_irelative_relocs(Context<E> &ctx) {
-  i64 n = std::count_if(ctx.got->got_syms.begin(), ctx.got->got_syms.end(),
-                        [](Symbol<E> *sym) { return sym->is_ifunc(); });
-  return n + ctx.num_ifunc_dynrels;
+  i64 n = ctx.num_ifunc_dynrels;
+  for (Symbol<E> *sym : ctx.got->got_syms)
+    if (sym->is_ifunc())
+      n++;
+  return n;
 }
 
 template <typename E>
