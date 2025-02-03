@@ -3296,6 +3296,14 @@ void show_stats(Context<E> &ctx) {
   static Counter num_objs("num_objs", ctx.objs.size());
   static Counter num_dsos("num_dsos", ctx.dsos.size());
 
+  using Entry = typename ConcurrentMap<SectionFragment<E>>::Entry;
+
+  static Counter merged_strings("merged_strings");
+  for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
+    for (Entry &ent : std::span(sec->map.entries, sec->map.nbuckets))
+      if (ent.key)
+        merged_strings++;
+
   if constexpr (needs_thunk<E>) {
     static Counter thunk_bytes("thunk_bytes");
     for (Chunk<E> *chunk : ctx.chunks)

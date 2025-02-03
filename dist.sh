@@ -198,7 +198,7 @@ timestamp="$(git log -1 --format=%ci)"
 # Build mold in a container.
 mkdir -p dist
 
-podman run --arch $arch -it --rm --userns=host --pids-limit=-1 \
+podman run --arch $arch -it --rm --userns=host --pids-limit=-1 --network=none \
   -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" $image bash -c "
 set -e
 mkdir /build

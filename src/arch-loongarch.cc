@@ -51,7 +51,7 @@ static u64 hi20(u64 val, u64 pc) {
   return bits(page(val + 0x800) - page(pc), 31, 12);
 }
 
-static u64 highest32(u64 val, u64 pc) {
+static u64 hi32(u64 val, u64 pc) {
   // A PC-relative 64-bit address is materialized with the following
   // instructions for the large code model:
   //
@@ -72,11 +72,11 @@ static u64 highest32(u64 val, u64 pc) {
 }
 
 static u64 higher20(u64 val, u64 pc) {
-  return bits(highest32(val, pc), 51, 32);
+  return bits(hi32(val, pc), 51, 32);
 }
 
 static u64 highest12(u64 val, u64 pc) {
-  return bits(highest32(val, pc), 63, 52);
+  return bits(hi32(val, pc), 63, 52);
 }
 
 static void write_k12(u8 *loc, u32 val) {
@@ -128,8 +128,8 @@ static void set_rj(u8 *loc, u32 rj) {
 // Returns true if isec's i'th relocation refers to the following
 // relaxable instructioon pair.
 //
-//   pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20
-//   ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12
+//   pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20, R_LARCH_RELAX
+//   ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12, R_LARCH_RELAX
 static bool is_relaxable_got_load(Context<E> &ctx, InputSection<E> &isec, i64 i) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   Symbol<E> &sym = *isec.file.symbols[rels[i].r_sym];
@@ -870,8 +870,8 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
 
-    auto remove = [&](i64 i) {
-      r_delta += i;
+    auto remove = [&](i64 d) {
+      r_delta += d;
       deltas.push_back(RelocDelta{r.r_offset, r_delta});
     };
 
@@ -986,11 +986,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       // relax them to the following instruction.
       //
       //   pcaddi    $t0, <offset>
-      if (is_relaxable_got_load(ctx, isec, i)) {
-        i64 dist = compute_distance(ctx, sym, isec, r);
-        if ((dist & 0b11) == 0 && is_int(dist, 22))
+      if (is_relaxable_got_load(ctx, isec, i))
+        if (i64 dist = compute_distance(ctx, sym, isec, r);
+            is_int(dist, 22))
           remove(4);
-      }
       break;
     case R_LARCH_TLS_DESC_PC_HI20:
       if (sym.has_tlsdesc(ctx)) {

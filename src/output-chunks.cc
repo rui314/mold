@@ -863,14 +863,13 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
     i64 offset = 0;
   };
 
-  std::span<InputSection<E> *> mem = members;
   std::vector<Group> groups;
   constexpr i64 group_size = 10000;
 
-  while (!mem.empty()) {
-    i64 sz = std::min<i64>(group_size, mem.size());
-    groups.push_back({mem.subspan(0, sz)});
-    mem = mem.subspan(sz);
+  for (std::span<InputSection<E> *> m = members; !m.empty();) {
+    i64 sz = std::min<i64>(group_size, m.size());
+    groups.push_back({m.subspan(0, sz)});
+    m = m.subspan(sz);
   }
 
   tbb::parallel_for_each(groups, [](Group &group) {
@@ -915,40 +914,38 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
                                  this->reldyn_offset);
 
   for (AbsRel<E> &r : abs_rels) {
-    Word<E> *loc = (Word<E> *)(buf + r.isec->offset + r.offset);
-    u64 addr = this->shdr.sh_addr + r.isec->offset + r.offset;
     Symbol<E> &sym = *r.sym;
+    u8 *loc = buf + r.isec->offset + r.offset;
+    u64 S = sym.get_addr(ctx);
+    u64 A = r.addend;
+    u64 P = this->shdr.sh_addr + r.isec->offset + r.offset;
 
     if constexpr (is_riscv<E> || is_loongarch<E>) {
       i64 delta = get_r_delta(*r.isec, r.offset);
-      loc = (Word<E> *)(buf + r.isec->offset + r.offset - delta);
-      addr -= delta;
+      loc -= delta;
+      P -= delta;
     }
+
+    auto dynrel = [&](i64 ty, i64 idx, u64 val) {
+      *rel++ = ElfRel<E>(P, ty, idx, val);
+      if (ctx.arg.apply_dynamic_relocs)
+        *(Word<E> *)loc = val;
+    };
 
     switch (r.kind) {
     case ABS_REL_NONE:
     case ABS_REL_RELR:
-      *loc = sym.get_addr(ctx) + r.addend;
+      *(Word<E> *)loc = S + A;
       break;
-    case ABS_REL_BASEREL: {
-      u64 val = sym.get_addr(ctx) + r.addend;
-      *rel++ = ElfRel<E>(addr, E::R_RELATIVE, 0, val);
-      if (ctx.arg.apply_dynamic_relocs)
-        *loc = val;
+    case ABS_REL_BASEREL:
+      dynrel(E::R_RELATIVE, 0, S + A);
       break;
-    }
     case ABS_REL_IFUNC:
-      if constexpr (supports_ifunc<E>) {
-        u64 val = sym.get_addr(ctx, NO_PLT) + r.addend;
-        *rel++ = ElfRel<E>(addr, E::R_IRELATIVE, 0, val);
-        if (ctx.arg.apply_dynamic_relocs)
-          *loc = val;
-      }
+      if constexpr (supports_ifunc<E>)
+        dynrel(E::R_IRELATIVE, 0, sym.get_addr(ctx, NO_PLT) + A);
       break;
     case ABS_REL_DYNREL:
-      *rel++ = ElfRel<E>(addr, E::R_ABS, sym.get_dynsym_idx(ctx), r.addend);
-      if (ctx.arg.apply_dynamic_relocs)
-        *loc = r.addend;
+      dynrel(E::R_ABS, sym.get_dynsym_idx(ctx), A);
       break;
     }
   }
@@ -2146,11 +2143,7 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
         offset += ent->keylen;
       }
     }
-
     sizes[i] = offset;
-
-    static Counter merged_strings("merged_strings");
-    merged_strings += entries.size();
   });
 
   i64 shard_size = map.nbuckets / map.NUM_SHARDS;
