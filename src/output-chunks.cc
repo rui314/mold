@@ -844,7 +844,6 @@ static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
   return vec;
 }
 
-
 // Assign offsets to OutputSection members
 template <typename E>
 void OutputSection<E>::compute_section_size(Context<E> &ctx) {
@@ -879,21 +878,22 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
       group.size = align_to(group.size, 1 << isec->p2align) + isec->sh_size;
   });
 
-  shdr.sh_size = 0;
-
+  i64 off = 0;
   for (i64 i = 0; i < groups.size(); i++) {
-    shdr.sh_size = align_to(shdr.sh_size, shdr.sh_addralign);
-    groups[i].offset = shdr.sh_size;
-    shdr.sh_size += groups[i].size;
+    off = align_to(off, shdr.sh_addralign);
+    groups[i].offset = off;
+    off += groups[i].size;
   }
+
+  shdr.sh_size = off;
 
   // Assign offsets to input sections.
   tbb::parallel_for_each(groups, [](Group &group) {
-    i64 offset = group.offset;
+    i64 off = group.offset;
     for (InputSection<E> *isec : group.members) {
-      offset = align_to(offset, 1 << isec->p2align);
-      isec->offset = offset;
-      offset += isec->sh_size;
+      off = align_to(off, 1 << isec->p2align);
+      isec->offset = off;
+      off += isec->sh_size;
     }
   });
 }
