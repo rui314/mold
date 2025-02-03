@@ -617,7 +617,7 @@ but as `-o magic`.
 * `--noinhibit-exec`:
   Create an output file even if errors occur.
 
-* `--package-metadata`==_percent-encoded-string_:
+* `--package-metadata`=_percent-encoded-string_:
   Embed a specified string into the `.note.package` section. This option
   is designed for build scripts that generate binary packages, such as
   `.rpm` or `.deb`, to include package metadata in each executable. It
