@@ -7,7 +7,11 @@
 
 # All data symbols need to be aligned to 2 byte boundaries on s390x,
 # so rodata.str1.1 in this file is invalid on s390x.
-[ $MACHINE = s390x ] && skip
+# GCC >=14 and Clang >=19 can relax this requirement with -munaligned-symbols.
+CFLAGS=
+if [ $MACHINE = s390x ]; then
+  test_cflags -munaligned-symbols && CFLAGS=-munaligned-symbols || skip
+fi
 
 cat <<'EOF' | $CC -c -o $t/a.o -x assembler -
 .globl val1, val2, val3, val4, val5
@@ -35,7 +39,7 @@ val5:
 .ascii "baz\0"
 EOF
 
-cat <<'EOF' | $CC -c -o $t/b.o -xc -
+cat <<'EOF' | $CC $CFLAGS -c -o $t/b.o -xc -
 #include <stdio.h>
 
 extern char val1, val2, val3, val4, val5;
