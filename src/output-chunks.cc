@@ -1396,7 +1396,7 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     if (ctx.dynamic)
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
-  // arm64 psABI doesn't say anything about GOT[0], but glibc/arm64's code
+  // ARM64 psABI doesn't say anything about GOT[0], but glibc/arm64's code
   // path for -static-pie wrongly assumed that GOT[0] refers to _DYNAMIC.
   //
   // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be5
@@ -1418,24 +1418,23 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
                        ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
                        ent.val);
 
-    bool is_tlsdesc = false;
-    if constexpr (supports_tlsdesc<E>)
-      is_tlsdesc = (ent.r_type == E::R_TLSDESC);
+    // A single TLSDESC relocation fixes two consecutive GOT slots
+    // where one slot holds a function pointer and the other an
+    // argument to the function. An addend should be applied not to
+    // the function pointer but to the function argument, which is
+    // usually stored to the second slot.
+    //
+    // ARM32 employs the inverted layout for some reason, so an
+    // addend is applied to the first slot.
+    bool inverted = false;
+    if constexpr (supports_tlsdesc<E> && !is_arm32<E>)
+      inverted = (ent.r_type == E::R_TLSDESC);
 
     if (ctx.arg.apply_dynamic_relocs) {
-      if (is_tlsdesc && !is_arm32<E>) {
-        // A single TLSDESC relocation fixes two consecutive GOT slots
-        // where one slot holds a function pointer and the other an
-        // argument to the function. An addend should be applied not to
-        // the function pointer but to the function argument, which is
-        // usually stored to the second slot.
-        //
-        // ARM32 employs the inverted layout for some reason, so an
-        // addend is applied to the first slot.
+      if (inverted)
         buf[ent.idx + 1] = ent.val;
-      } else {
+      else
         buf[ent.idx] = ent.val;
-      }
     }
   }
 }
