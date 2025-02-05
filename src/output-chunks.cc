@@ -1426,12 +1426,12 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     //
     // ARM32 employs the inverted layout for some reason, so an
     // addend is applied to the first slot.
-    bool inverted = false;
+    bool is_tlsdesc = false;
     if constexpr (supports_tlsdesc<E> && !is_arm32<E>)
-      inverted = (ent.r_type == E::R_TLSDESC);
+      is_tlsdesc = (ent.r_type == E::R_TLSDESC);
 
     if (ctx.arg.apply_dynamic_relocs) {
-      if (inverted)
+      if (is_tlsdesc)
         buf[ent.idx + 1] = ent.val;
       else
         buf[ent.idx] = ent.val;
