@@ -1598,6 +1598,7 @@ void PltSection<E>::populate_symtab(Context<E> &ctx) {
     memset(esym, 0, sizeof(*esym));
     esym->st_name = st_name;
     esym->st_type = STT_FUNC;
+    esym->st_bind = STB_LOCAL;
     esym->st_shndx = this->shndx;
     esym->st_value = addr;
     esym++;
