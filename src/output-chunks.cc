@@ -796,7 +796,7 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_PPC_GOT, ctx.gotplt->shdr.sh_addr);
 
   if constexpr (is_ppc64<E>) {
-    // PPC64_GLINK is defined by the psABI to refer 32 bytes before
+    // PPC64_GLINK is defined by the psABI to refer to 32 bytes before
     // the first PLT entry. I don't know why it's 32 bytes off, but
     // it's what it is.
     define(DT_PPC64_GLINK, ctx.plt->shdr.sh_addr + to_plt_offset<E>(0) - 32);
