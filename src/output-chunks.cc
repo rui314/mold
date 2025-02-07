@@ -873,8 +873,10 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
   }
 
   tbb::parallel_for_each(groups, [](Group &group) {
+    i64 off = 0;
     for (InputSection<E> *isec : group.members)
-      group.size = align_to(group.size, 1 << isec->p2align) + isec->sh_size;
+      off = align_to(off, 1 << isec->p2align) + isec->sh_size;
+    group.size = off;
   });
 
   i64 off = 0;
