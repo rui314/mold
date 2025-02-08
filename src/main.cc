@@ -382,6 +382,10 @@ int mold_main(int argc, char **argv) {
   // Set is_imported and is_exported bits for each symbol.
   compute_import_export(ctx);
 
+  // Make sure that there's no duplicate symbol
+  if (!ctx.arg.allow_multiple_definition)
+    check_duplicate_symbols(ctx);
+
   // Set "address-taken" bits for input sections.
   if (ctx.arg.icf)
     compute_address_significance(ctx);
@@ -396,10 +400,6 @@ int mold_main(int argc, char **argv) {
 
   // Create linker-synthesized sections such as .got or .plt.
   create_synthetic_sections(ctx);
-
-  // Make sure that there's no duplicate symbol
-  if (!ctx.arg.allow_multiple_definition)
-    check_duplicate_symbols(ctx);
 
   // Handle --no-allow-shlib-undefined
   if (!ctx.arg.allow_shlib_undefined)
