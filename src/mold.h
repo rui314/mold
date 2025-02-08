@@ -2233,7 +2233,8 @@ enum {
   NO_OPD = 1 << 1, // Request an address other than .opd (PPC64V1 only)
 };
 
-// Symbol class represents a defined symbol.
+// Symbol class represents a symbol. For each unique symbol name, we
+// create one instance of Symbol.
 //
 // A symbol has not only one but several different addresses if it
 // has PLT or GOT entries. This class provides various functions to

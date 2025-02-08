@@ -1359,19 +1359,19 @@ void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
   if constexpr (needs_thunk<E>) {
-    auto is_text = [&](Chunk<E> *chunk) {
+    std::vector<Chunk<E> *> vec = ctx.chunks;
+
+    auto mid = std::partition(vec.begin(), vec.end(), [&](Chunk<E> *chunk) {
       return chunk->to_osec() && (chunk->shdr.sh_flags & SHF_EXECINSTR) &&
              !ctx.arg.relocatable;
-    };
+    });
 
     // create_range_extension_thunks is not thread-safe
-    for (Chunk<E> *chunk : ctx.chunks)
-      if (is_text(chunk))
-        chunk->to_osec()->create_range_extension_thunks(ctx);
+    for (Chunk<E> *chunk : std::span(vec.begin(), mid))
+      chunk->to_osec()->create_range_extension_thunks(ctx);
 
-    tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-      if (!is_text(chunk))
-        chunk->compute_section_size(ctx);
+    tbb::parallel_for_each(mid, vec.end(), [&](Chunk<E> *chunk) {
+      chunk->compute_section_size(ctx);
     });
   } else {
     tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
