@@ -34,7 +34,7 @@ chmod 755 $t/ld $t/ld.lld $t/ld.gold $t/foo.ld
 ./mold -run $t/ld --version | grep -q mold
 ./mold -run $t/ld.lld --version | grep -q mold
 ./mold -run $t/ld.gold --version | grep -q mold
-./mold -run $t/foo.ld --version | grep -q mold && false
+./mold -run $t/foo.ld --version | not grep -q mold
 
 cat <<'EOF' > $t/sh
 #!/bin/sh
@@ -49,4 +49,4 @@ chmod 755 $t/sh
 ./mold -run $t/sh $t/ld --version | grep -q mold
 ./mold -run $t/sh $t/ld.lld --version | grep -q mold
 ./mold -run $t/sh $t/ld.gold --version | grep -q mold
-./mold -run $t/sh $t/foo.ld --version | grep -q mold && false
+./mold -run $t/sh $t/foo.ld --version | not grep -q mold

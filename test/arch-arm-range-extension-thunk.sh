@@ -1,8 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-echo 'int main() {}' | $CC -c -o /dev/null -xc - -O0 -mthumb >& /dev/null \
-  || skip
+echo 'int main() {}' | $CC -c -o /dev/null -xc - -O0 -mthumb >& /dev/null || skip
 
 cat <<EOF > $t/a.c
 #include <stdio.h>

@@ -1,8 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-echo 'int main() {}' | $CC -m32 -o $t/exe -xc - >& /dev/null \
-  || skip
+echo 'int main() {}' | $CC -m32 -o $t/exe -xc - >& /dev/null || skip
 
 cat <<EOF | $CC -m32 -c -o $t/a.o -xc -
 char hello[] = "Hello world";

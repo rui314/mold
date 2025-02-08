@@ -10,7 +10,7 @@ EOF
 
 not $CC -B. -o $t/exe $t/a.o |& grep -q 'undefined symbol:.*foo'
 
-$CC -B. -o $t/exe $t/a.o -Wl,-warn-unresolved-symbols |& \
+$CC -B. -o $t/exe $t/a.o -Wl,-warn-unresolved-symbols |&
   grep -q 'undefined symbol:.*foo'
 
 not $CC -B. -o $t/exe $t/a.o -Wl,-warn-unresolved-symbols \

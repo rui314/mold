@@ -3,8 +3,7 @@
 
 is_musl && skip
 
-echo 'int main() {}' | $GCC -c -o /dev/null -xc - -O0 -mthumb >& /dev/null \
-  || skip
+echo 'int main() {}' | $GCC -c -o /dev/null -xc - -O0 -mthumb >& /dev/null || skip
 
 cat <<EOF > $t/a.c
 extern _Thread_local int foo;

@@ -3,8 +3,7 @@
 
 [ $MACHINE = $(uname -m) ] || skip
 
-echo 'int main() {}' | clang -B. -flto -o /dev/null -xc - >& /dev/null \
-  || skip
+echo 'int main() {}' | clang -B. -flto -o /dev/null -xc - >& /dev/null || skip
 
 cat <<EOF | clang -flto -c -o $t/a.o -xc -
 #include <stdio.h>

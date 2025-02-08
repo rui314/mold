@@ -111,7 +111,7 @@ supports_tlsdesc() {
   # TLSDESC may not be supported on old systems. Compile a DSO with
   # it to see if it is actually supported.
   echo '_Thread_local int x; int y() { return x; }' |
-    $CC -shared -fPIC -xc -o $t/tlsdesc.so $tlsdesc_opt - 2> /dev/null || \
+    $CC -shared -fPIC -xc -o $t/tlsdesc.so $tlsdesc_opt - 2> /dev/null ||
     return 1
   echo 'int y(); int main() { y(); }' | $CC -xc -c -o $t/tlsdesc.o -
   $CC -o $t/tlsdesc $t/tlsdesc.o $t/tlsdesc.so

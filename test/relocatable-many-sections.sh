@@ -4,7 +4,7 @@
 # OneTBB isn't tsan-clean
 nm mold | grep -q '__tsan_init' && skip
 
-seq 1 80000 | sed 's/.*/.section .data.\0,"aw"\n.word 0\n/g' | \
+seq 1 80000 | sed 's/.*/.section .data.\0,"aw"\n.word 0\n/g' |
   $CC -c -xassembler -o $t/a.o -
 
 cat <<'EOF' | $CC -c -xc -o $t/b.o -
