@@ -17,5 +17,5 @@ $CC -B. -o $t/exe $t/c.o -Wl,-as-needed \
   -Wl,-push-state -Wl,-no-as-needed $t/a.so -Wl,-pop-state $t/b.so
 
 readelf --dynamic $t/exe > $t/log
-grep -Fq a.so $t/log
-not grep -Fq b.so $t/log
+grep -F a.so $t/log
+not grep -F b.so $t/log

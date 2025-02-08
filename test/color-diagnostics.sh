@@ -6,7 +6,7 @@ int foo();
 int main() { foo(); }
 EOF
 
-not ./mold -o $t/exe $t/a.o --color-diagnostics |& not grep -q $'\033'
-not ./mold -o $t/exe $t/a.o --color-diagnostics=always |& grep -q $'\033'
-not ./mold -o $t/exe $t/a.o --color-diagnostics=never |& not grep -q $'\033'
-not ./mold -o $t/exe $t/a.o --color-diagnostics=auto |& not grep -q $'\033'
+not ./mold -o $t/exe $t/a.o --color-diagnostics |& not grep $'\033'
+not ./mold -o $t/exe $t/a.o --color-diagnostics=always |& grep $'\033'
+not ./mold -o $t/exe $t/a.o --color-diagnostics=never |& not grep $'\033'
+not ./mold -o $t/exe $t/a.o --color-diagnostics=auto |& not grep $'\033'

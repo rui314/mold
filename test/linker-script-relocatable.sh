@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # OneTBB isn't tsan-clean
-nm mold | grep -q '__tsan_init' && skip
+nm mold | grep '__tsan_init' && skip
 
 cat <<EOF | $CC -c -o $t/a.o -xc -
 #include <stdio.h>
@@ -19,4 +19,4 @@ echo "INPUT($t/a.o $t/b.o)" > $t/c.script
 ./mold --relocatable -o $t/d.o $t/c.script
 
 $CC -B. -o $t/exe $t/d.o
-$QEMU $t/exe | grep -q Hello
+$QEMU $t/exe | grep Hello

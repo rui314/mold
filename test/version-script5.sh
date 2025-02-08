@@ -16,5 +16,5 @@ EOF
 $CC -B. -shared -o $t/c.so -Wl,-version-script,$t/a.ver $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
-grep -Fq foo $t/log
-not grep -Fq ' main' $t/log
+grep -F foo $t/log
+not grep -F ' main' $t/log

@@ -15,7 +15,7 @@ int main() { printf("bar=%d\n", bar()); }
 EOF
 
 $CC -B. -o $t/exe1 $t/c.o $t/b.so
-$QEMU $t/exe1 | grep -q 'bar=-1'
+$QEMU $t/exe1 | grep 'bar=-1'
 
 cat <<EOF | $CC -xc -c -o $t/d.o -
 #include <stdio.h>
@@ -25,4 +25,4 @@ int main() { printf("bar=%d\n", bar()); }
 EOF
 
 $CC -B. -o $t/exe2 $t/d.o $t/b.so
-$QEMU $t/exe2 | grep -q 'bar=5'
+$QEMU $t/exe2 | grep 'bar=5'

@@ -6,4 +6,4 @@ int main() {}
 EOF
 
 not $CC -B. -o $t/exe $t/a.o -Wl,-defsym=foo=bar 2> $t/log
-grep -q 'undefined symbol: bar' $t/log
+grep 'undefined symbol: bar' $t/log

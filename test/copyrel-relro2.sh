@@ -37,4 +37,4 @@ char readwrite[100] = "abc";
 EOF
 
 $CC -B. $t/a.o $t/b.so -o $t/exe -no-pie
-$QEMU $t/exe | grep -q '^sigsegv 0 1$'
+$QEMU $t/exe | grep '^sigsegv 0 1$'

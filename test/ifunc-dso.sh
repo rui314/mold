@@ -29,7 +29,7 @@ static Func *resolve_foobar(void) {
 EOF
 
 $CC -B. -o $t/c.so $t/b.o -shared
-readelf -W --dyn-syms $t/c.so | grep -Eq '(IFUNC|<OS specific>: 10).*foobar'
+readelf -W --dyn-syms $t/c.so | grep -E '(IFUNC|<OS specific>: 10).*foobar'
 
 $CC -B. -o $t/exe $t/a.o $t/c.so
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

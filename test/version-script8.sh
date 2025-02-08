@@ -33,6 +33,6 @@ $CC -B. -o $t/exe $t/c.o $t/b.so
 $QEMU $t/exe
 
 readelf --dyn-syms $t/b.so > $t/log
-grep -Fq 'foo@@ver1' $t/log
-grep -Fq 'bar@@ver2' $t/log
-not grep -Fq 'baz' $t/log
+grep -F 'foo@@ver1' $t/log
+grep -F 'bar@@ver2' $t/log
+not grep -F 'baz' $t/log

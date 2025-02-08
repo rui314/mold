@@ -23,4 +23,4 @@ __attribute__((tls_model("global-dynamic"))) _Thread_local int foo = 3;
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q '3 5 3 5'
+$QEMU $t/exe | grep '3 5 3 5'

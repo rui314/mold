@@ -38,7 +38,7 @@ int main() { print(); }
 EOF
 
 $CC -B. -o $t/exe1 $t/e.o -Wl,-push-state,-no-as-needed $t/b.so -Wl,-pop-state
-$QEMU $t/exe1 | grep -q 'foo1 bar1 baz1'
+$QEMU $t/exe1 | grep 'foo1 bar1 baz1'
 
 $CC -B. -o $t/exe2 $t/e.o -Wl,-push-state,-no-as-needed $t/d.so $t/b.so -Wl,-pop-state
-$QEMU $t/exe2 | grep -q 'foo2 bar2 baz1'
+$QEMU $t/exe2 | grep 'foo2 bar2 baz1'

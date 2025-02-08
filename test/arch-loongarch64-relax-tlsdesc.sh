@@ -29,15 +29,15 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o $t/d.o -Wl,--no-relax
-$QEMU $t/exe1 | grep -q 'foo bar'
+$QEMU $t/exe1 | grep 'foo bar'
 
 $OBJDUMP -d $t/exe1 > $t/exe1.objdump
-grep -A6 '<get_foo>:' $t/exe1.objdump | grep -Fq pcalau12i
-grep -A6 '<get_bar>:' $t/exe1.objdump | grep -Fq pcalau12i
+grep -A6 '<get_foo>:' $t/exe1.objdump | grep -F pcalau12i
+grep -A6 '<get_bar>:' $t/exe1.objdump | grep -F pcalau12i
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o $t/d.o -Wl,--relax
-$QEMU $t/exe2 | grep -q 'foo bar'
+$QEMU $t/exe2 | grep 'foo bar'
 
 $OBJDUMP -d $t/exe2 > $t/exe2.objdump
-grep -A6 '<get_foo>:' $t/exe2.objdump | grep -Fq li.w
-grep -A6 '<get_bar>:' $t/exe2.objdump | grep -Fq lu12i.w
+grep -A6 '<get_foo>:' $t/exe2.objdump | grep -F li.w
+grep -A6 '<get_bar>:' $t/exe2.objdump | grep -F lu12i.w

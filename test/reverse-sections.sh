@@ -37,7 +37,7 @@ int main() { printf("\n"); }
 EOF
 
 $CXX -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o
-$QEMU $t/exe1 | grep -q 'foo1 foo2 foo3 foo4 foo5 foo6'
+$QEMU $t/exe1 | grep 'foo1 foo2 foo3 foo4 foo5 foo6'
 
 $CXX -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o -Wl,--reverse-sections
-$QEMU $t/exe2 | grep -q 'foo5 foo6 foo3 foo4 foo1 foo2'
+$QEMU $t/exe2 | grep 'foo5 foo6 foo3 foo4 foo1 foo2'

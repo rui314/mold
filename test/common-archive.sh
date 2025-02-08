@@ -31,7 +31,7 @@ rm -f $t/e.a
 ar rcs $t/e.a $t/b.o $t/c.o $t/d.o
 
 $CC -B. -o $t/exe $t/a.o $t/e.a
-$QEMU $t/exe | grep -q '5 0 0 -1'
+$QEMU $t/exe | grep '5 0 0 -1'
 
 cat <<EOF | $CC -fcommon -xc -c -o $t/f.o -
 int bar = 0;
@@ -43,4 +43,4 @@ rm -f $t/f.a
 ar rcs $t/f.a $t/b.o $t/f.o
 
 $CC -B. -o $t/exe $t/a.o $t/f.a
-$QEMU $t/exe | grep -q '5 0 7 2'
+$QEMU $t/exe | grep '5 0 7 2'

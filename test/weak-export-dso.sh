@@ -14,5 +14,5 @@ EOF
 $CC -B. -o $t/b.so $t/a.o -shared
 $CC -B. -o $t/c.so $t/a.o -shared -Wl,-z,defs
 
-readelf --dyn-syms $t/b.so | grep -q 'WEAK   DEFAULT  UND foo'
-readelf --dyn-syms $t/c.so | grep -q 'WEAK   DEFAULT  UND foo'
+readelf --dyn-syms $t/b.so | grep 'WEAK   DEFAULT  UND foo'
+readelf --dyn-syms $t/c.so | grep 'WEAK   DEFAULT  UND foo'

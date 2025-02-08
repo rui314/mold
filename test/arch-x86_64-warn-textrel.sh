@@ -17,5 +17,5 @@ int main() { fn(); }
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o -pie -Wl,-warn-textrel >& $t/log
-grep -q 'relocation against symbol `main'\'' in read-only section' $t/log
-grep -q 'creating a DT_TEXTREL in an output file' $t/log
+grep 'relocation against symbol `main'\'' in read-only section' $t/log
+grep 'creating a DT_TEXTREL in an output file' $t/log

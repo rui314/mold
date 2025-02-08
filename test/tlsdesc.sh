@@ -35,15 +35,15 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o
-$QEMU $t/exe1 | grep -q '42 3 5'
+$QEMU $t/exe1 | grep '42 3 5'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,-no-relax
-$QEMU $t/exe2 | grep -q '42 3 5'
+$QEMU $t/exe2 | grep '42 3 5'
 
 $CC -B. -shared -o $t/c.so $t/a.o
 $CC -B. -o $t/exe3 $t/b.o $t/c.so
-$QEMU $t/exe3 | grep -q '42 3 5'
+$QEMU $t/exe3 | grep '42 3 5'
 
 $CC -B. -shared -o $t/c.so $t/a.o -Wl,-no-relax
 $CC -B. -o $t/exe4 $t/b.o $t/c.so -Wl,-no-relax
-$QEMU $t/exe4 | grep -q '42 3 5'
+$QEMU $t/exe4 | grep '42 3 5'

@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # Test if grep supports backreferences
-echo abab | grep -Eq '(ab)\1' || skip
+echo abab | grep -E '(ab)\1' || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 __thread char foo;
@@ -16,4 +16,4 @@ EOF
 $CC -B. -o $t/exe $t/a.o
 $QEMU $t/exe
 
-readelf -W --segments $t/exe | grep -Eq 'TLS +0x000([^ ][^ ][^ ]) 0x[^ ]+\1 '
+readelf -W --segments $t/exe | grep -E 'TLS +0x000([^ ][^ ][^ ]) 0x[^ ]+\1 '

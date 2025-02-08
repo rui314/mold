@@ -12,10 +12,10 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o -Wl,-z,separate-loadable-segments
-$QEMU $t/exe1 | grep -q 'Hello world'
+$QEMU $t/exe1 | grep 'Hello world'
 
 $CC -B. -o $t/exe2 $t/a.o -Wl,-z,separate-code -Wl,-z,norelro
-$QEMU $t/exe2 | grep -q 'Hello world'
+$QEMU $t/exe2 | grep 'Hello world'
 
 $CC -B. -o $t/exe3 $t/a.o -Wl,-z,noseparate-code -Wl,-z,norelro
-$QEMU $t/exe3 | grep -q 'Hello world'
+$QEMU $t/exe3 | grep 'Hello world'

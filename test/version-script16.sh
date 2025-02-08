@@ -10,4 +10,4 @@ void foobar() {}
 EOF
 
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
-readelf --dyn-syms $t/c.so | grep -q foobar
+readelf --dyn-syms $t/c.so | grep foobar

@@ -39,4 +39,4 @@ EOF
 
 $CC -B. -o $t/c.so $t/b.o -shared
 $CC -B. -o $t/exe $t/a.o $t/c.so -no-pie -ldl
-$QEMU $t/exe | grep -q 'foo foo'
+$QEMU $t/exe | grep 'foo foo'

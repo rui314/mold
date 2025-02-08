@@ -30,4 +30,4 @@ $CC -B. -o $t/exe $t/c.o -L$t -Wl,--as-needed -lfoo -lbar
 
 readelf --dynamic $t/exe > $t/log
 not grep libfoo.so $t/log
-grep -q libbar.so $t/log
+grep libbar.so $t/log

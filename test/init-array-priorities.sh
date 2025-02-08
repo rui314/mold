@@ -49,4 +49,4 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o $t/e.o $t/f.o $t/g.o $t/h.o $t/i.o
-$QEMU $t/exe | grep -q '21348756'
+$QEMU $t/exe | grep '21348756'

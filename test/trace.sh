@@ -11,4 +11,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-trace > $t/log
-grep -q '/a\.o$' $t/log
+grep '/a\.o$' $t/log

@@ -33,8 +33,8 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
 
-readelf --syms $t/a.o | grep -Eq ' 10 FUNC .* get_foo$'
-readelf --syms $t/a.o | grep -Eq ' 10 FUNC .* get_bar$'
+readelf --syms $t/a.o | grep -E ' 10 FUNC .* get_foo$'
+readelf --syms $t/a.o | grep -E ' 10 FUNC .* get_bar$'
 
-readelf --syms $t/exe | grep -Eq ' 8 FUNC .* get_foo$'
-readelf --syms $t/exe | grep -Eq ' 8 FUNC .* get_bar$'
+readelf --syms $t/exe | grep -E ' 8 FUNC .* get_foo$'
+readelf --syms $t/exe | grep -E ' 8 FUNC .* get_bar$'

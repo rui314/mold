@@ -36,7 +36,7 @@ EOF
 # linker first to verify that it does work on this system.
 $CC -o $t/exe1 $t/a.o $t/b.o -no-pie
 
-if $QEMU $t/exe1 | grep -Eq '^(\S+) \1 (\S+) \2 (\S+) \3 (\S+) \4$'; then
+if $QEMU $t/exe1 | grep -E '^(\S+) \1 (\S+) \2 (\S+) \3 (\S+) \4$'; then
   $CC -B. -o $t/exe2 $t/a.o $t/b.o -no-pie
-  $QEMU $t/exe2 | grep -Eq '^(\S+) \1 (\S+) \2 (\S+) \3 (\S+) \4$'
+  $QEMU $t/exe2 | grep -E '^(\S+) \1 (\S+) \2 (\S+) \3 (\S+) \4$'
 fi

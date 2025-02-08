@@ -15,6 +15,6 @@ EOF
 
 $CC -B. -shared -o $t/c.so -Wl,-version-script,$t/a.ver $t/b.s
 readelf --dyn-syms $t/c.so > $t/log
-grep -q ' foo1@@VER1$' $t/log
-grep -q ' foo2@@VER1$' $t/log
-not grep -q ' foo3@@VER1$' $t/log
+grep ' foo1@@VER1$' $t/log
+grep ' foo2@@VER1$' $t/log
+not grep ' foo3@@VER1$' $t/log

@@ -13,10 +13,10 @@ GROUP("$t/a.o")
 EOF
 
 $CC -B. -o $t/exe $t/script
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'
 
 $CC -B. -o $t/exe -Wl,-T,$t/script
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'
 
 $CC -B. -o $t/exe -Wl,--script,$t/script
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

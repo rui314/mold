@@ -145,4 +145,5 @@ trap on_exit EXIT
 
 # Print out the startup message
 echo -n "Testing $testname ... "
+set -o pipefail
 set -x

@@ -21,7 +21,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/c.o $t/b.a
-$QEMU $t/exe | grep -q 'section foo section foo'
+$QEMU $t/exe | grep 'section foo section foo'
 
 $CC -B. -o $t/exe $t/c.o $t/b.a -Wl,-gc-sections
-$QEMU $t/exe | grep -q 'section foo section foo'
+$QEMU $t/exe | grep 'section foo section foo'

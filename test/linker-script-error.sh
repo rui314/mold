@@ -7,4 +7,4 @@ EOF
 
 echo 'VERSION { ver_x /*' > $t/b.script
 
-not $CC -B. -o $t/exe $t/a.o $t/b.script |& grep -q 'unclosed comment'
+not $CC -B. -o $t/exe $t/a.o $t/b.script |& grep 'unclosed comment'

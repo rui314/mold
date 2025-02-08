@@ -26,6 +26,6 @@ int main() { printf("%s\n", msg); }
 EOF
 
 $CXX -o $t/exe $t/a.o $t/b.o $t/c.o -g
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'
 
 dwarfdump $t/exe > /dev/null

@@ -38,15 +38,15 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o -Wl,--no-relax
-$QEMU $t/exe1 | grep -q foofoo
+$QEMU $t/exe1 | grep foofoo
 
 $OBJDUMP -d $t/exe1 > $t/exe1.objdump
-grep -A2 '<foo>:' $t/exe1.objdump | grep -wq pcaddu18i
-grep -A2 '<bar>:' $t/exe1.objdump | grep -wq pcaddu18i
+grep -A2 '<foo>:' $t/exe1.objdump | grep -w pcaddu18i
+grep -A2 '<bar>:' $t/exe1.objdump | grep -w pcaddu18i
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,--relax
-$QEMU $t/exe2 | grep -q foofoo
+$QEMU $t/exe2 | grep foofoo
 
 $OBJDUMP -d $t/exe2 > $t/exe2.objdump
-grep -A2 '<foo>:' $t/exe2.objdump | grep -wq bl
-grep -A2 '<bar>:' $t/exe2.objdump | grep -wq b
+grep -A2 '<foo>:' $t/exe2.objdump | grep -w bl
+grep -A2 '<bar>:' $t/exe2.objdump | grep -w b

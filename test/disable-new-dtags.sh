@@ -6,10 +6,10 @@ void foo() {}
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,-rpath=/foo
-readelf --dynamic $t/b.so | grep -q 'RUNPATH.*/foo'
+readelf --dynamic $t/b.so | grep 'RUNPATH.*/foo'
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,-rpath=/foo -Wl,-enable-new-dtags
-readelf --dynamic $t/b.so | grep -q 'RUNPATH.*/foo'
+readelf --dynamic $t/b.so | grep 'RUNPATH.*/foo'
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,-rpath=/foo -Wl,-disable-new-dtags
-readelf --dynamic $t/b.so | grep -q 'RPATH.*/foo'
+readelf --dynamic $t/b.so | grep 'RPATH.*/foo'

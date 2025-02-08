@@ -21,4 +21,4 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o
-readelf -W --sections $t/exe | grep -q 'foobar.*WAX'
+readelf -W --sections $t/exe | grep 'foobar.*WAX'

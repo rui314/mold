@@ -13,5 +13,5 @@ EOF
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
-grep -q 'foo$' $t/log
-grep -q 'bar@@VER_X1' $t/log
+grep 'foo$' $t/log
+grep 'bar@@VER_X1' $t/log

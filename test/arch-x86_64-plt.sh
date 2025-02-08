@@ -20,7 +20,7 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o
 
-readelf --sections $t/exe | grep -Fq '.got'
-readelf --sections $t/exe | grep -Fq '.got.plt'
+readelf --sections $t/exe | grep -F '.got'
+readelf --sections $t/exe | grep -F '.got.plt'
 
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

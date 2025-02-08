@@ -39,4 +39,4 @@ rm -f $t/x.a
 ar rcs $t/x.a $t/a.o $t/b.o $t/c.o
 
 $CC -B. -o $t/exe $t/d.o $t/x.a
-$QEMU $t/exe | grep -q '^0 0 0 5$'
+$QEMU $t/exe | grep '^0 0 0 5$'

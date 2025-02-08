@@ -39,8 +39,8 @@ $CC -B. -o $t/exe2 $t/a.o $t/d.so
 $QEMU $t/exe1 > $t/log1
 $QEMU $t/exe2 > $t/log2
 
-not grep -q init $t/log1
-not grep -q fini $t/log1
+not grep init $t/log1
+not grep fini $t/log1
 
-grep -q init $t/log2
-grep -q fini $t/log2
+grep init $t/log2
+grep fini $t/log2

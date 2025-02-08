@@ -10,5 +10,5 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-dependency-file=$t/dep
 
-grep -q  "dependency-file/exe:.*/a.o " $t/dep
-grep -q  ".*/a.o:$" $t/dep
+grep  "dependency-file/exe:.*/a.o " $t/dep
+grep  ".*/a.o:$" $t/dep

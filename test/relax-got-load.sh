@@ -14,10 +14,10 @@ int main() { hello(); }
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o
-$QEMU $t/exe1 | grep -q 'Hello world'
+$QEMU $t/exe1 | grep 'Hello world'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,--no-relax
-$QEMU $t/exe2 | grep -q 'Hello world'
+$QEMU $t/exe2 | grep 'Hello world'
 
 # On x86, GOTPCRELX is relaxed even with --no-relax
 case $MACHINE in

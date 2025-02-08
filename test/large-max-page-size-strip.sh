@@ -16,4 +16,4 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o -pie -Wl,-zmax-page-size=0x200000
 $strip $t/exe
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

@@ -27,6 +27,6 @@ foo:
 EOF
 
 $CC -B. -static -o $t/exe $t/a.o
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'
 
-readelf -sW $t/exe | grep -Eq '[0-9] foo$'
+readelf -sW $t/exe | grep -E '[0-9] foo$'

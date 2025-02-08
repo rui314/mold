@@ -10,5 +10,5 @@ int main() {
 EOF
 
 not ./mold -o $t/exe $t/a.o 2> $t/log
-grep -q 'undefined symbol: foo' $t/log
-grep -q '>>> .*a\.o' $t/log
+grep 'undefined symbol: foo' $t/log
+grep '>>> .*a\.o' $t/log

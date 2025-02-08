@@ -20,4 +20,4 @@ int main() {
 EOF
 
 $CC -B. -no-pie -o $t/exe $t/c.o $t/b.so
-$QEMU $t/exe | grep -q '3 4'
+$QEMU $t/exe | grep '3 4'

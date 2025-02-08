@@ -49,11 +49,11 @@ $CC -c -o $t/d.o $t/b.c -O0
 
 $CC -B. -o $t/exe1 $t/c.o $t/d.o \
   -Wl,--section-start=.low=0x10000000,--section-start=.high=0x20000000
-$QEMU $t/exe1 | grep -q 'main fn1 fn3 fn2 fn4'
+$QEMU $t/exe1 | grep 'main fn1 fn3 fn2 fn4'
 
 $CC -c -o $t/e.o $t/a.c -O2
 $CC -c -o $t/f.o $t/b.c -O2
 
 $CC -B. -o $t/exe2 $t/e.o $t/f.o \
   -Wl,--section-start=.low=0x10000000,--section-start=.high=0x20000000
-$QEMU $t/exe2 | grep -q 'main fn1 fn3 fn2 fn4'
+$QEMU $t/exe2 | grep 'main fn1 fn3 fn2 fn4'

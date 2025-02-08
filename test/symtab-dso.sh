@@ -9,4 +9,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o
-nm $t/exe | grep -q 'U puts$'
+nm $t/exe | grep 'U puts$'

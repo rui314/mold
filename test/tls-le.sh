@@ -23,7 +23,7 @@ __attribute__((tls_model("local-exec"))) _Thread_local int foo = 3;
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o
-$QEMU $t/exe1 | grep -q '3 5 3 5'
+$QEMU $t/exe1 | grep '3 5 3 5'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,-no-relax
-$QEMU $t/exe2 | grep -q '3 5 3 5'
+$QEMU $t/exe2 | grep '3 5 3 5'

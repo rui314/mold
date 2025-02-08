@@ -32,30 +32,30 @@ EOF
 
 $CC -B. -shared -o $t/f.so $t/e.o $t/c.a $t/d.a
 readelf --dyn-syms $t/f.so > $t/log
-grep -Fq foo $t/log
-grep -Fq bar $t/log
-grep -Fq baz $t/log
+grep -F foo $t/log
+grep -F bar $t/log
+grep -F baz $t/log
 
 $CC -B. -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a
 readelf --dyn-syms $t/f.so > $t/log
-not grep -Fq foo $t/log
-grep -Fq bar $t/log
-grep -Fq baz $t/log
+not grep -F foo $t/log
+grep -F bar $t/log
+grep -F baz $t/log
 
 $CC -B. -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a -Wl,-exclude-libs=d.a
 readelf --dyn-syms $t/f.so > $t/log
-not grep -Fq foo $t/log
-not grep -Fq bar $t/log
-grep -Fq baz $t/log
+not grep -F foo $t/log
+not grep -F bar $t/log
+grep -F baz $t/log
 
 $CC -B. -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=c.a:d.a
 readelf --dyn-syms $t/f.so > $t/log
-not grep -Fq foo $t/log
-not grep -Fq bar $t/log
-grep -Fq baz $t/log
+not grep -F foo $t/log
+not grep -F bar $t/log
+grep -F baz $t/log
 
 $CC -B. -shared -o $t/f.so $t/e.o $t/c.a $t/d.a -Wl,-exclude-libs=ALL
 readelf --dyn-syms $t/f.so > $t/log
-not grep -Fq foo $t/log
-not grep -Fq bar $t/log
-grep -Fq baz $t/log
+not grep -F foo $t/log
+not grep -F bar $t/log
+grep -F baz $t/log

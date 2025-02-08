@@ -20,7 +20,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q '0 5 42'
+$QEMU $t/exe | grep '0 5 42'
 
 readelf --sections $t/exe > $t/log
-grep -q '.common .*NOBITS' $t/log
+grep '.common .*NOBITS' $t/log

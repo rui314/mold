@@ -23,16 +23,16 @@ EOF
 
 $CC -B. -shared -o $t/c.so $t/a.o
 $CC -B. -o $t/exe1 $t/b.o $t/c.so
-$QEMU $t/exe1 | grep -q '1 2 3'
+$QEMU $t/exe1 | grep '1 2 3'
 
 $CC -B. -shared -o $t/d.so $t/a.o -Wl,-no-relax
 $CC -B. -o $t/exe2 $t/b.o $t/d.so
-$QEMU $t/exe2 | grep -q '1 2 3'
+$QEMU $t/exe2 | grep '1 2 3'
 
 $CC -B. -shared -o $t/e.so $t/a.o -Wl,-z,nodlopen
 $CC -B. -o $t/exe3 $t/b.o $t/e.so
-$QEMU $t/exe3 | grep -q '1 2 3'
+$QEMU $t/exe3 | grep '1 2 3'
 
 $CC -B. -shared -o $t/f.so $t/a.o -Wl,-z,nodlopen -Wl,-no-relax
 $CC -B. -o $t/exe4 $t/b.o $t/f.so
-$QEMU $t/exe4 | grep -q '1 2 3'
+$QEMU $t/exe4 | grep '1 2 3'

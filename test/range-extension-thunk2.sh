@@ -92,4 +92,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o
-$QEMU $t/exe | grep -Eq '^0 9 1 8 2 7 3 6 4 5 10 19 11 18 12 17 13 16 14 15 0 $'
+$QEMU $t/exe | grep -E '^0 9 1 8 2 7 3 6 4 5 10 19 11 18 12 17 13 16 14 15 0 $'

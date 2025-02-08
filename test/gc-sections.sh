@@ -33,17 +33,17 @@ grep -qv live_var1 $t/log.1
 grep -qv live_var2 $t/log.1
 grep -qv dead_var1 $t/log.1
 grep -qv dead_var2 $t/log.1
-$QEMU $t/exe1 | grep -q '1 2'
+$QEMU $t/exe1 | grep '1 2'
 
 $CXX -B. -o $t/exe2 $t/a.cc -ffunction-sections -fdata-sections -Wl,-gc-sections
 
 readelf --symbols $t/exe2 > $t/log.2
-grep -q  live_fn1 $t/log.2
-grep -q  live_fn2 $t/log.2
+grep  live_fn1 $t/log.2
+grep  live_fn2 $t/log.2
 grep -qv dead_fn1 $t/log.2
 grep -qv dead_fn2 $t/log.2
-grep -q  live_var1 $t/log.2
-grep -q  live_var2 $t/log.2
+grep  live_var1 $t/log.2
+grep  live_var2 $t/log.2
 grep -qv dead_var1 $t/log.2
 grep -qv dead_var2 $t/log.2
-$QEMU $t/exe2 | grep -q '1 2'
+$QEMU $t/exe2 | grep '1 2'

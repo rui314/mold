@@ -8,10 +8,10 @@ int main() {
 }
 EOF
 
-not $CC -B. -o $t/exe $t/a.o |& grep -q 'undefined symbol:.*foo'
+not $CC -B. -o $t/exe $t/a.o |& grep 'undefined symbol:.*foo'
 
 $CC -B. -o $t/exe $t/a.o -Wl,-warn-unresolved-symbols |&
-  grep -q 'undefined symbol:.*foo'
+  grep 'undefined symbol:.*foo'
 
 not $CC -B. -o $t/exe $t/a.o -Wl,-warn-unresolved-symbols \
-  -Wl,--error-unresolved-symbols |& grep -q 'undefined symbol:.*foo'
+  -Wl,--error-unresolved-symbols |& grep 'undefined symbol:.*foo'

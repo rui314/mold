@@ -19,5 +19,5 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
 
-readelf -x .foo $t/exe | grep -Fq '03000000 00000000 ffffffff ffffffff'
-readelf -x .bar $t/exe | grep -Fq 'xyz.abc.'
+readelf -x .foo $t/exe | grep -F '03000000 00000000 ffffffff ffffffff'
+readelf -x .bar $t/exe | grep -F 'xyz.abc.'

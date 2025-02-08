@@ -23,5 +23,5 @@ void foo() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.so
-readelf --dyn-syms $t/exe | grep -q expfn2
-readelf --dyn-syms $t/exe | grep -q expfn1
+readelf --dyn-syms $t/exe | grep expfn2
+readelf --dyn-syms $t/exe | grep expfn1

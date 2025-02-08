@@ -12,5 +12,5 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o
-readelf --dyn-syms $t/exe | not grep -q 'WEAK   DEFAULT  UND foo'
-$QEMU $t/exe | grep -q '^3$'
+readelf --dyn-syms $t/exe | not grep 'WEAK   DEFAULT  UND foo'
+$QEMU $t/exe | grep '^3$'

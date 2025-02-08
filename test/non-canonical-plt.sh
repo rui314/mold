@@ -32,7 +32,7 @@ int main() {
 EOF
 
 $CC -B. -no-pie -o $t/exe $t/a.so $t/b.o $t/c.o
-$QEMU $t/exe | grep -q '^1 1 1$'
+$QEMU $t/exe | grep '^1 1 1$'
 
-readelf --dyn-syms $t/exe | grep -q '00000000 .* foo'
-readelf --dyn-syms $t/exe | grep -q '00000000 .* bar'
+readelf --dyn-syms $t/exe | grep '00000000 .* foo'
+readelf --dyn-syms $t/exe | grep '00000000 .* bar'

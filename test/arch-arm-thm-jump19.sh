@@ -25,4 +25,4 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
 $OBJDUMP -d $t/exe > $t/log
-grep -Eq 'beq\.w.*<baz>' $t/log
+grep -E 'beq\.w.*<baz>' $t/log

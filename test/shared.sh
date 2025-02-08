@@ -11,8 +11,8 @@ $CC -B. -shared -o $t/b.so $t/a.o
 
 readelf --dyn-syms $t/b.so > $t/log
 
-grep -q '00000000     0 NOTYPE  GLOBAL DEFAULT  UND fn2' $t/log
-grep -Eq 'FUNC    GLOBAL DEFAULT .* fn1' $t/log
+grep '00000000     0 NOTYPE  GLOBAL DEFAULT  UND fn2' $t/log
+grep -E 'FUNC    GLOBAL DEFAULT .* fn1' $t/log
 
 cat <<EOF | $CC -fPIC -c -o $t/c.o -xc -
 #include <stdio.h>
@@ -30,5 +30,5 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/c.o $t/b.so
-$QEMU $t/exe | grep -q hello
-readelf --symbols $t/exe | not grep -q fn3
+$QEMU $t/exe | grep hello
+readelf --symbols $t/exe | not grep fn3

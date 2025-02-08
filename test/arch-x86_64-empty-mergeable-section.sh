@@ -20,5 +20,5 @@ $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
 $t/exe
 
 readelf -SW $t/exe > $t/log
-grep -q '.rodata.str1.1 .* AMS ' $t/log
-not grep -q '.rodata.str1.1 .* AM ' $t/log
+grep '.rodata.str1.1 .* AMS ' $t/log
+not grep '.rodata.str1.1 .* AM ' $t/log

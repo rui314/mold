@@ -40,4 +40,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/d.o $t/c.so
-$QEMU $t/exe | grep -q '^1 2 3 3 4$'
+$QEMU $t/exe | grep '^1 2 3 3 4$'

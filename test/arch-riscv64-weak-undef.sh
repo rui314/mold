@@ -18,4 +18,4 @@ int main() { printf("%ld\n", foo()); }
 EOF
 
 $CC -B. -static -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q '^0$'
+$QEMU $t/exe | grep '^0$'

@@ -17,5 +17,5 @@ EOF
 $CC -B. -o $t/libfoobar.so $t/b.o -shared
 $CC -B. -o $t/exe $t/a.o -Wl,--as-needed -L$t -lfoobar -Wl,-rpath,$t
 
-readelf --dynamic $t/exe | grep -q 'NEEDED.*libfoobar'
-$QEMU $t/exe | grep -q '^2$'
+readelf --dynamic $t/exe | grep 'NEEDED.*libfoobar'
+$QEMU $t/exe | grep '^2$'

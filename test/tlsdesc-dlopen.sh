@@ -32,4 +32,4 @@ int main(int argc, char **argv) {
 EOF
 
 $CC -B. -o $t/exe $t/c.o -ldl
-$QEMU $t/exe $t/b.so | grep -q '3 0 5'
+$QEMU $t/exe $t/b.so | grep '3 0 5'

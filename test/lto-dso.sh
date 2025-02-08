@@ -11,7 +11,7 @@ $CC -B. -shared -o $t/b.so -flto $t/a.o
 
 if [ $MACHINE = ppc64 ]; then
   # On PPC64V1, function symbol refers a function descriptor in .opd
-  nm -D $t/b.so | grep -q 'D foo'
+  nm -D $t/b.so | grep 'D foo'
 else
-  nm -D $t/b.so | grep -q 'T foo'
+  nm -D $t/b.so | grep 'T foo'
 fi

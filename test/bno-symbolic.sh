@@ -33,4 +33,4 @@ int main() {
 EOF
 
 $CC -B. -no-pie -o $t/exe $t/c.o $t/b.so
-$QEMU $t/exe | grep -q '3 3 1'
+$QEMU $t/exe | grep '3 3 1'

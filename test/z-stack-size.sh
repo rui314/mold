@@ -6,4 +6,4 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,stack-size=0x900000
-readelf -W --segments $t/exe | grep -q 'GNU_STACK .* 0x900000 RW'
+readelf -W --segments $t/exe | grep 'GNU_STACK .* 0x900000 RW'

@@ -15,4 +15,4 @@ char arr2[0xc0000000];
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -Eq '^1 c0000000$'
+$QEMU $t/exe | grep -E '^1 c0000000$'

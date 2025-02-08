@@ -22,4 +22,4 @@ EOF
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
 $OBJDUMP -d $t/exe >& /dev/null || skip
 $OBJDUMP -d $t/exe | grep -A1 '<__x86.get_pc_thunk.bx>:' |
-  grep -Fq 'puts$plt'
+  grep -F 'puts$plt'

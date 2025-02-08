@@ -23,9 +23,9 @@ EOF
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
-grep -q ' xyz' $t/log
-not grep -q ' foobarzx' $t/log
-grep -q ' foobarcx' $t/log
-grep -q ' foo123bar456bx' $t/log
-not grep -q ' foo123bar456c' $t/log
-not grep -q ' foo123bar456x' $t/log
+grep ' xyz' $t/log
+not grep ' foobarzx' $t/log
+grep ' foobarcx' $t/log
+grep ' foo123bar456bx' $t/log
+not grep ' foo123bar456c' $t/log
+not grep ' foo123bar456x' $t/log

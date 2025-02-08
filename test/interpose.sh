@@ -10,4 +10,4 @@ void foo() {
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,-z,interpose
-readelf --dynamic $t/b.so | grep -q 'Flags:.*INTERPOSE'
+readelf --dynamic $t/b.so | grep 'Flags:.*INTERPOSE'

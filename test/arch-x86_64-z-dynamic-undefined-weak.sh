@@ -10,4 +10,4 @@ int main() { printf("%p\n", &foo); }
 EOF
 
 not $CC -B. -o $t/exe3 $t/b.o -no-pie -Wl,-z,dynamic-undefined-weak 2> $t/log
-grep -q 'cannot create a copy relocation for foo' $t/log
+grep 'cannot create a copy relocation for foo' $t/log

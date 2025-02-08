@@ -26,4 +26,4 @@ int main() {
 EOF
 
 $CXX -B. -o $t/exe $t/a.o
-$QEMU $t/exe | grep -q 'error: exception'
+$QEMU $t/exe | grep 'error: exception'

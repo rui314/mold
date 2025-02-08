@@ -64,9 +64,9 @@ $CC -c -o $t/c.o $t/c.c -fPIC -g -ggnu-pubnames -gdwarf-5
 $CC -c -o $t/d.o $t/d.c -fPIC -g -ggnu-pubnames -gdwarf-5 -ffunction-sections
 
 $CC -B. -shared -o $t/e.so $t/a.o $t/b.o $t/c.o $t/d.o -Wl,--gdb-index
-readelf -WS $t/e.so 2> /dev/null | grep -Fq .gdb_index
-readelf --debug=gdb_index $t/e.so 2> /dev/null | grep -q 'fn1: .* \[global, function\]'
-readelf --debug=gdb_index $t/e.so 2> /dev/null | grep -q 'char: .* \[static, type\]'
+readelf -WS $t/e.so 2> /dev/null | grep -F .gdb_index
+readelf --debug=gdb_index $t/e.so 2> /dev/null | grep 'fn1: .* \[global, function\]'
+readelf --debug=gdb_index $t/e.so 2> /dev/null | grep 'char: .* \[static, type\]'
 
 cat <<EOF | $CC -c -o $t/f.o -fPIC -g -ggnu-pubnames -gdwarf-5 -xc - -gz
 void fn1();
@@ -77,19 +77,19 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/e.so $t/f.o -Wl,--gdb-index
-readelf -WS $t/exe 2> /dev/null | grep -Fq .gdb_index
-readelf --debug=gdb_index $t/exe 2> /dev/null | grep -q 'main: .* \[global, function\]'
+readelf -WS $t/exe 2> /dev/null | grep -F .gdb_index
+readelf --debug=gdb_index $t/exe 2> /dev/null | grep 'main: .* \[global, function\]'
 
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'
 
 DEBUGINFOD_URLS= gdb $t/exe -nx -batch -ex 'b main' -ex r -ex 'b trap' \
   -ex c -ex bt -ex quit >& $t/log
 
-grep -q 'fn8 () at .*/d.c:6' $t/log
-grep -q 'fn7 () at .*/d.c:10' $t/log
-grep -q 'fn6 () at .*/c.c:4' $t/log
-grep -q 'fn5 () at .*/c.c:8' $t/log
-grep -q 'fn4 () at .*/b.c:4' $t/log
-grep -q 'fn3 () at .*/b.c:8' $t/log
-grep -q 'fn2 () at .*/a.c:4' $t/log
-grep -q 'fn1 () at .*/a.c:8' $t/log
+grep 'fn8 () at .*/d.c:6' $t/log
+grep 'fn7 () at .*/d.c:10' $t/log
+grep 'fn6 () at .*/c.c:4' $t/log
+grep 'fn5 () at .*/c.c:8' $t/log
+grep 'fn4 () at .*/b.c:4' $t/log
+grep 'fn3 () at .*/b.c:8' $t/log
+grep 'fn2 () at .*/a.c:4' $t/log
+grep 'fn1 () at .*/a.c:8' $t/log

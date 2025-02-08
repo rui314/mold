@@ -10,4 +10,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,now
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

@@ -9,6 +9,6 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-emit-relocs
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'
 
-readelf -S $t/exe | grep -Eq 'rela?\.text'
+readelf -S $t/exe | grep -E 'rela?\.text'

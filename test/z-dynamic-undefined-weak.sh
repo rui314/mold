@@ -18,10 +18,10 @@ int main() { printf("%d\n", bar()); }
 EOF
 
 $CC -B. -o $t/exe1 $t/e.o $t/b.so
-$QEMU $t/exe1 | grep -q 1
+$QEMU $t/exe1 | grep 1
 
 $CC -B. -o $t/exe2 $t/e.o $t/c.so
-$QEMU $t/exe2 | grep -q 1
+$QEMU $t/exe2 | grep 1
 
 $CC -B. -o $t/exe3 $t/e.o $t/d.so
-$QEMU $t/exe3 | grep -q 0
+$QEMU $t/exe3 | grep 0

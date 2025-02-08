@@ -22,7 +22,7 @@ foo:
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o -Wl,-gc-sections
-nm $t/exe1 | grep -q foo
+nm $t/exe1 | grep foo
 
 $CC -B. -o $t/exe1 $t/a.o $t/c.o -Wl,-gc-sections
-nm $t/exe1 | not grep -q foo
+nm $t/exe1 | not grep foo

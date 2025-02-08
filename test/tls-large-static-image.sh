@@ -15,4 +15,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q '^1 2 3 0 5$'
+$QEMU $t/exe | grep '^1 2 3 0 5$'

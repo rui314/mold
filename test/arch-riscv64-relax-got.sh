@@ -71,9 +71,9 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o -Wl,--no-relax
-$QEMU $t/exe1 | grep -Eq '^0 ba beef 11beef deadbeef$'
+$QEMU $t/exe1 | grep -E '^0 ba beef 11beef deadbeef$'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o
-$QEMU $t/exe2 | grep -Eq '^0 ba beef 11beef deadbeef$'
+$QEMU $t/exe2 | grep -E '^0 ba beef 11beef deadbeef$'
 
-$OBJDUMP -d $t/exe2 | grep -A2 '<get_sym2>:' | grep -Eq $'li[ \t]+a0,186$'
+$OBJDUMP -d $t/exe2 | grep -A2 '<get_sym2>:' | grep -E $'li[ \t]+a0,186$'

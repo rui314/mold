@@ -19,4 +19,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o -no-pie
-$QEMU $t/exe | grep -q 'foo=5'
+$QEMU $t/exe | grep 'foo=5'

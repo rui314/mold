@@ -19,7 +19,7 @@ __attribute__((section (".data.rel.ro"))) char msg[100] = "Hello world";
 EOF
 
 $CC -B. $t/a.o $t/b.so -o $t/exe1 -no-pie -Wl,-z,relro
-readelf -W --sections $t/exe1 | grep -Fq .copyrel.rel.ro
+readelf -W --sections $t/exe1 | grep -F .copyrel.rel.ro
 
 $CC -B. $t/a.o $t/b.so -o $t/exe2 -no-pie -Wl,-z,norelro
-readelf -W --sections $t/exe2 | not grep -Fq .copyrel.rel.ro
+readelf -W --sections $t/exe2 | not grep -F .copyrel.rel.ro

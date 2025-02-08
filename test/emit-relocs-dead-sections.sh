@@ -24,4 +24,4 @@ int main() {}
 EOF
 
 $CXX -B. -o $t/exe $t/a.o $t/b.o -Wl,-emit-relocs
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

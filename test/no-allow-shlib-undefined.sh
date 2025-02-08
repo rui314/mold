@@ -18,4 +18,4 @@ EOF
 $CC -B. -o $t/exe1 $t/a.o -Wl,--no-allow-shlib-undefined -L$t -lfoo -lbar
 
 not $CC -B. -o $t/exe2 $t/a.o -Wl,--no-allow-shlib-undefined -L$t -lbar >& $t/log
-grep -Fq 'undefined symbol: foo' $t/log
+grep -F 'undefined symbol: foo' $t/log

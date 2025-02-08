@@ -9,4 +9,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,nodefaultlib
-readelf --dynamic $t/exe | grep -q 'Flags:.*NODEFLIB'
+readelf --dynamic $t/exe | grep 'Flags:.*NODEFLIB'

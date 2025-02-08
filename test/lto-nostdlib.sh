@@ -8,4 +8,4 @@ void _start() {}
 EOF
 
 $CC -B. -o $t/exe -flto $t/a.o -nostdlib
-readelf -Ws $t/exe | grep -Eq ' _start'
+readelf -Ws $t/exe | grep -E ' _start'

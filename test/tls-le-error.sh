@@ -7,4 +7,4 @@ int bar() { return foo; }
 EOF
 
 not $CC -B. -shared -o $t/b.so $t/a.o |&
-  grep -q 'relocation .* against `foo` can not be used when making a shared object; recompile with -fPIC'
+  grep 'relocation .* against `foo` can not be used when making a shared object; recompile with -fPIC'

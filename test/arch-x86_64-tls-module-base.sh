@@ -33,11 +33,11 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o
-$QEMU $t/exe1 | grep -q '^20 3$'
+$QEMU $t/exe1 | grep '^20 3$'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o -Wl,-no-relax
-$QEMU $t/exe2 | grep -q '^20 3$'
+$QEMU $t/exe2 | grep '^20 3$'
 
 $CC -B. -o $t/d.so $t/a.o -shared
 $CC -B. -o $t/exe3 $t/b.o $t/c.o $t/d.so
-$QEMU $t/exe3 | grep -q '^20 3$'
+$QEMU $t/exe3 | grep '^20 3$'

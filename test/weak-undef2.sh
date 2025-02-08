@@ -16,4 +16,4 @@ int foo();
 int bar() { return foo(); }
 EOF
 
-not $CC -B. -o $t/exe $t/a.o $t/b.o |& grep -q 'undefined symbol: foo'
+not $CC -B. -o $t/exe $t/a.o $t/b.o |& grep 'undefined symbol: foo'

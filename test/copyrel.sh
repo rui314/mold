@@ -26,4 +26,4 @@ EOF
 
 $CC -B. -shared -o $t/c.so $t/c.o
 $CC -B. -no-pie -o $t/exe $t/a.o $t/b.o $t/c.so
-$QEMU $t/exe | grep -q '42 42 1'
+$QEMU $t/exe | grep '42 42 1'

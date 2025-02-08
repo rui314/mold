@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # OneTBB isn't tsan-clean
-nm mold | grep -q '__tsan_init' && skip
+nm mold | grep '__tsan_init' && skip
 
 cat <<EOF | $CC -c -o $t/a.o -xc -
 void bar();
@@ -30,6 +30,6 @@ ar crs $t/e.a $t/a.o $t/b.o $t/c.o
 ./mold -r -o $t/f.o $t/d.o $t/e.a
 
 readelf --symbols $t/f.o > $t/log
-grep -q 'foo\b' $t/log
-grep -q 'bar\b' $t/log
-not grep -q 'baz\b' $t/log
+grep 'foo\b' $t/log
+grep 'bar\b' $t/log
+not grep 'baz\b' $t/log

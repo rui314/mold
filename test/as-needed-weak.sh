@@ -21,11 +21,11 @@ EOF
 $CC -B. -o $t/exe1 $t/a.o -Wl,-no-as-needed -L$t -lbar -lfoo
 
 readelf --dynamic $t/exe1 > $t/log1
-grep -Fq 'Shared library: [libfoo.so]' $t/log1
-grep -Fq 'Shared library: [libbar.so]' $t/log1
+grep -F 'Shared library: [libfoo.so]' $t/log1
+grep -F 'Shared library: [libbar.so]' $t/log1
 
 $CC -B. -o $t/exe2 $t/a.o -Wl,-as-needed -L$t -lbar -lfoo
 
 readelf --dynamic $t/exe2 > $t/log2
-grep -Fq 'Shared library: [libfoo.so]' $t/log2
-not grep -Fq 'Shared library: [libbar.so]' $t/log2
+grep -F 'Shared library: [libfoo.so]' $t/log2
+not grep -F 'Shared library: [libbar.so]' $t/log2

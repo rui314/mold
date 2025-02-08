@@ -9,4 +9,4 @@ cat <<EOF | $CC -o $t/b.o -c -xc -
 int main() {}
 EOF
 
-$GCC -B. -o $t/exe $t/a.o $t/b.o |& grep -Eq 'may cause a segmentation fault|requires executable stack'
+$GCC -B. -o $t/exe $t/a.o $t/b.o |& grep -E 'may cause a segmentation fault|requires executable stack'

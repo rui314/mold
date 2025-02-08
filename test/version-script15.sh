@@ -20,7 +20,7 @@ EOF
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
-grep -q ' azZ' $t/log
-grep -q ' czZ' $t/log
-not grep -q ' azC' $t/log
-not grep -q ' aaZ' $t/log
+grep ' azZ' $t/log
+grep ' czZ' $t/log
+not grep ' azC' $t/log
+not grep ' aaZ' $t/log

@@ -26,7 +26,7 @@ EOF
 
 $CC -B. -o $t/exe1 $t/a.o -no-pie \
   -Wl,--section-start=.fn1=0x10000000,--section-start=.fn2=0x20000000
-$QEMU $t/exe1 | grep -q 'main fn1 fn2 0x10000000 0x20000000'
+$QEMU $t/exe1 | grep 'main fn1 fn2 0x10000000 0x20000000'
 
 # PT_LOAD must be sorted on p_vaddr
 readelf -W --segments $t/exe1 | grep ' LOAD ' | sed 's/0x[0-9a-f]*//' > $t/log1
@@ -34,7 +34,7 @@ diff $t/log1 <(sort $t/log1)
 
 $CC -B. -o $t/exe2 $t/a.o -no-pie \
   -Wl,--section-start=.fn1=0x20000000,--section-start=.fn2=0x10000000
-$QEMU $t/exe2 | grep -q 'main fn1 fn2 0x20000000 0x10000000'
+$QEMU $t/exe2 | grep 'main fn1 fn2 0x20000000 0x10000000'
 
 readelf -W --segments $t/exe2 | grep ' LOAD ' | sed 's/0x[0-9a-f]*//' > $t/log2
 diff $t/log2 <(sort $t/log2)

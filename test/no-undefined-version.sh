@@ -8,4 +8,4 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe -Wl,--version-script,$t/a.ver $t/b.o 2> $t/log
-grep -Fq 'a.ver: cannot assign version `ver_x` to symbol `foo`: symbol not found' $t/log
+grep -F 'a.ver: cannot assign version `ver_x` to symbol `foo`: symbol not found' $t/log

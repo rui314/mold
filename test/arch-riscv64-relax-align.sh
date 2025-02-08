@@ -30,4 +30,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
-$QEMU $t/exe | grep -q '0 0 32'
+$QEMU $t/exe | grep '0 0 32'

@@ -39,6 +39,6 @@ $CC -B. -o $t/exe $t/c.o $t/b.so
 $QEMU $t/exe
 
 readelf --dyn-syms $t/exe > $t/log
-grep -Fq 'foo@ver1' $t/log
-grep -Fq 'bar@ver2' $t/log
-grep -Fq 'baz@ver3' $t/log
+grep -F 'foo@ver1' $t/log
+grep -F 'bar@ver2' $t/log
+grep -F 'baz@ver3' $t/log

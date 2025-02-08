@@ -52,4 +52,4 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q 'ctor1 init1 ctor2 ctor3 ctor4 init2 fini2 dtor1 dtor2 dtor3 fini1 dtor4'
+$QEMU $t/exe | grep 'ctor1 init1 ctor2 ctor3 ctor4 init2 fini2 dtor1 dtor2 dtor3 fini1 dtor4'

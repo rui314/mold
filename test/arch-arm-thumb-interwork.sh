@@ -27,4 +27,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q 'main foo bar'
+$QEMU $t/exe | grep 'main foo bar'

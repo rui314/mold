@@ -38,20 +38,20 @@ EOF
 $CC -B. -o $t/exe $t/a.o $t/b.o
 $OBJDUMP -d $t/exe | grep -A20 '<bar>:' > $t/log
 
-grep -Eq 'lea \s*0x.+\(%rip\),%rax .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%rcx .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%rdx .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%rbx .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%rbp .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%rsi .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%rdi .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%r8  .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%r9  .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%r10 .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%r11 .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%r12 .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%r13 .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%r14 .*<foo>' $t/log
-grep -Eq 'lea \s*0x.+\(%rip\),%r15 .*<foo>' $t/log
-grep -Eq 'call.*<foo>' $t/log
-grep -Eq 'jmp.*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%rax .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%rcx .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%rdx .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%rbx .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%rbp .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%rsi .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%rdi .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%r8  .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%r9  .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%r10 .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%r11 .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%r12 .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%r13 .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%r14 .*<foo>' $t/log
+grep -E 'lea \s*0x.+\(%rip\),%r15 .*<foo>' $t/log
+grep -E 'call.*<foo>' $t/log
+grep -E 'jmp.*<foo>' $t/log

@@ -6,5 +6,5 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe $t/a.o
-readelf -p .comment $t/exe | grep -q mold
-readelf -SW $t/exe | grep -Eq '\.comment.*\bMS\b'
+readelf -p .comment $t/exe | grep mold
+readelf -SW $t/exe | grep -E '\.comment.*\bMS\b'

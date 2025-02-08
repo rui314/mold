@@ -14,4 +14,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q Hello
+$QEMU $t/exe | grep Hello

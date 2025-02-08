@@ -13,4 +13,4 @@ int main() {
 EOF
 
 clang -B. -o $t/exe -flto $t/a.o
-$t/exe | grep -q 'Hello world'
+$t/exe | grep 'Hello world'

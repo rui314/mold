@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # OneTBB isn't tsan-clean
-nm mold | grep -q '__tsan_init' && skip
+nm mold | grep '__tsan_init' && skip
 
 cat <<EOF | $CC -c -o $t/a.o -xc - -g
 #include <stdio.h>
@@ -16,11 +16,11 @@ EOF
 
 # It looks like objdump prints out a warning message for
 # object files compiled with Clang.
-$OBJDUMP --dwarf=info $t/a.o $t/b.o |& grep -q 'Warning: DIE at offset' && skip
+$OBJDUMP --dwarf=info $t/a.o $t/b.o |& grep 'Warning: DIE at offset' && skip
 
 ./mold --relocatable -o $t/c.o $t/a.o $t/b.o
 
 $CC -B. -o $t/exe $t/c.o
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'
 
-$OBJDUMP --dwarf=info $t/c.o > /dev/null |& not grep -q Warning
+$OBJDUMP --dwarf=info $t/c.o > /dev/null |& not grep Warning

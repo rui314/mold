@@ -21,7 +21,7 @@ GOT_ADDR=$($QEMU $t/exe)
 # _GLOBAL_OFFSET_TABLE_ refers the end of .got only on x86.
 # We assume .got is followed by .gotplt.
 if [ $MACHINE = x86_64 -o $MACHINE = i686 ]; then
-  readelf -WS $t/exe | grep -q "\.got\.plt .*$GOT_ADDR "
+  readelf -WS $t/exe | grep "\.got\.plt .*$GOT_ADDR "
 else
-  readelf -WS $t/exe | grep -q "\.got .*$GOT_ADDR "
+  readelf -WS $t/exe | grep "\.got .*$GOT_ADDR "
 fi

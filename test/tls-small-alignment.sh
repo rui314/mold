@@ -23,7 +23,7 @@ EOF
 $CC -B. -shared -o $t/d.so $t/a.o $t/b.o
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o
-$QEMU $t/exe1 | grep -q '^42$'
+$QEMU $t/exe1 | grep '^42$'
 
 $CC -B. -o $t/exe2 $t/c.o $t/d.so
-$QEMU $t/exe2 | grep -q '^42$'
+$QEMU $t/exe2 | grep '^42$'

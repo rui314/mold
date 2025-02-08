@@ -29,6 +29,6 @@ EOF
 $CC -B. -shared -Wl,-version-script,$t/d.ver -o $t/f.so $t/e.o $t/c.so -Wl,--undefined-version
 
 readelf --dyn-syms $t/f.so > $t/log
-grep -q 'foo@VER_X1' $t/log
-grep -q 'bar@VER_X2' $t/log
-grep -q 'baz@@VER_Y2' $t/log
+grep 'foo@VER_X1' $t/log
+grep 'bar@VER_X2' $t/log
+grep 'baz@@VER_Y2' $t/log

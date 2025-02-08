@@ -28,4 +28,4 @@ EOF
 
 ./mold -o $t/exe $t/a.o $t/b.o $t/c.o $t/d.o
 
-readelf --segments $t/exe | grep -Fq '01     .note.a .note.c .note.b'
+readelf --segments $t/exe | grep -F '01     .note.a .note.c .note.b'

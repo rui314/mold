@@ -12,4 +12,4 @@ rm -f $t/b.script
 touch $t/b.script
 
 $CC -B. -o $t/exe $t/a.o -Wl,--version-script,$t/b.script
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

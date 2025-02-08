@@ -21,4 +21,4 @@ _Thread_local int bar;
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.so
-$QEMU $t/exe | grep -q '5 7'
+$QEMU $t/exe | grep '5 7'

@@ -31,4 +31,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
-$QEMU $t/exe | grep -q 'init1 init2'
+$QEMU $t/exe | grep 'init1 init2'

@@ -20,6 +20,6 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o -nostdlib -Wl,-unique='*foo*'
 
-readelf -x .data.foo.1 $t/exe | grep -q ab
-readelf -x .data.foo.2 $t/exe | grep -q c
-readelf -x .data $t/exe | grep -q de
+readelf -x .data.foo.1 $t/exe | grep ab
+readelf -x .data.foo.2 $t/exe | grep c
+readelf -x .data $t/exe | grep de

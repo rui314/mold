@@ -55,4 +55,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/g.o $t/f.so $t/c.so
-$QEMU $t/exe | grep -q 'foo bar'
+$QEMU $t/exe | grep 'foo bar'

@@ -16,5 +16,5 @@ EOF
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
-grep -q ' foobar' $t/log
-not grep -q ' foo$' $t/log
+grep ' foobar' $t/log
+not grep ' foo$' $t/log

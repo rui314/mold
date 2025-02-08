@@ -19,5 +19,5 @@ namespace libalpha {
 EOF
 
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
-readelf --wide --dyn-syms $t/c.so | grep libalpha | grep -q Bar
+readelf --wide --dyn-syms $t/c.so | grep libalpha | grep Bar
 

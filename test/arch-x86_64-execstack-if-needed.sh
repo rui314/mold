@@ -9,7 +9,7 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/a.o >& /dev/null
-readelf --segments -W $t/exe | grep -q 'GNU_STACK.* RW '
+readelf --segments -W $t/exe | grep 'GNU_STACK.* RW '
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,execstack-if-needed
-readelf --segments -W $t/exe | grep -q 'GNU_STACK.* RWE '
+readelf --segments -W $t/exe | grep 'GNU_STACK.* RWE '

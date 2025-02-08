@@ -24,4 +24,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/b.so $t/d.a $t/e.o
-readelf --dyn-syms $t/exe | grep -q ' foo$'
+readelf --dyn-syms $t/exe | grep ' foo$'

@@ -19,4 +19,4 @@ EOF
 $CC -B. -o $t/exe $t/a.o -pie -Wl,-defsym=foo=16 \
   -Wl,-defsym=bar=0x2000 -Wl,-defsym=baz=print
 
-$QEMU $t/exe | grep -q '^Hello 0x10 0x2000$'
+$QEMU $t/exe | grep '^Hello 0x10 0x2000$'

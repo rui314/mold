@@ -10,4 +10,4 @@ int main() {
 EOF
 
 $CC -B. -shared -o $t/a.so $t/a.o |&
-  grep -q 'warning: symbol type mismatch: times'
+  grep 'warning: symbol type mismatch: times'

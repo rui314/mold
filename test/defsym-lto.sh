@@ -18,4 +18,4 @@ EOF
 
 $CC -B. -flto -o $t/exe $t/a.o -Wl,-defsym,live_func=dead_func
 
-$QEMU $t/exe | grep -q "^OK$"
+$QEMU $t/exe | grep "^OK$"

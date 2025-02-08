@@ -22,7 +22,7 @@ void greet() {
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,--gdb-index -Wl,--compress-debug-sections=zlib-gabi
-readelf -WS $t/b.so 2> /dev/null | grep -Fq .gdb_index
+readelf -WS $t/b.so 2> /dev/null | grep -F .gdb_index
 
 cat <<EOF | $CC -c -o $t/c.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -gz
 void greet();
@@ -33,13 +33,13 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/b.so $t/c.o -Wl,--gdb-index -Wl,--compress-debug-sections=zlib
-readelf -WS $t/exe 2> /dev/null | grep -Fq .gdb_index
+readelf -WS $t/exe 2> /dev/null | grep -F .gdb_index
 
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'
 
 DEBUGINFOD_URLS= gdb $t/exe -nx -batch -ex 'b main' -ex r -ex 'b trap' \
   -ex c -ex bt -ex quit >& $t/log
 
-grep -q 'hello () at .*<stdin>:7' $t/log
-grep -q 'greet () at .*<stdin>:11' $t/log
-grep -q 'main () at .*<stdin>:4' $t/log
+grep 'hello () at .*<stdin>:7' $t/log
+grep 'greet () at .*<stdin>:11' $t/log
+grep 'main () at .*<stdin>:4' $t/log

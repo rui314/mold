@@ -9,9 +9,9 @@ EOF
 $CC -B. -o $t/exe $t/a.o
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,cet-report=warning >& $t/log
-grep -q 'a.o: -cet-report=warning: missing GNU_PROPERTY_X86_FEATURE_1_IBT' $t/log
-grep -q 'a.o: -cet-report=warning: missing GNU_PROPERTY_X86_FEATURE_1_SHSTK' $t/log
+grep 'a.o: -cet-report=warning: missing GNU_PROPERTY_X86_FEATURE_1_IBT' $t/log
+grep 'a.o: -cet-report=warning: missing GNU_PROPERTY_X86_FEATURE_1_SHSTK' $t/log
 
 not $CC -B. -o $t/exe $t/a.o -Wl,-z,cet-report=error >& $t/log
-grep -q 'a.o: -cet-report=error: missing GNU_PROPERTY_X86_FEATURE_1_IBT' $t/log
-grep -q 'a.o: -cet-report=error: missing GNU_PROPERTY_X86_FEATURE_1_SHSTK' $t/log
+grep 'a.o: -cet-report=error: missing GNU_PROPERTY_X86_FEATURE_1_IBT' $t/log
+grep 'a.o: -cet-report=error: missing GNU_PROPERTY_X86_FEATURE_1_SHSTK' $t/log

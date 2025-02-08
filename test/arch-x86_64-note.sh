@@ -32,10 +32,10 @@ EOF
 ./mold -static -o $t/exe $t/a.o
 readelf -W --sections $t/exe > $t/log1
 
-grep -Eq '.note.bar\s+NOTE.+000008 00   A  0   0  4' $t/log1
-grep -Eq '.note.baz\s+NOTE.+000008 00   A  0   0  8' $t/log1
-grep -Eq '.note.nonalloc\s+NOTE.+000008 00      0   0  1' $t/log1
+grep -E '.note.bar\s+NOTE.+000008 00   A  0   0  4' $t/log1
+grep -E '.note.baz\s+NOTE.+000008 00   A  0   0  8' $t/log1
+grep -E '.note.nonalloc\s+NOTE.+000008 00      0   0  1' $t/log1
 
 readelf --segments $t/exe > $t/log2
-grep -Fq '01     .note.baz .note.foo .note.bar' $t/log2
-not grep -q 'NOTE.*0x0000000000000000 0x0000000000000000' $t/log2
+grep -F '01     .note.baz .note.foo .note.bar' $t/log2
+not grep 'NOTE.*0x0000000000000000 0x0000000000000000' $t/log2

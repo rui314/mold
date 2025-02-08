@@ -9,4 +9,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o
-$OBJDUMP -d $t/exe | grep -q '<_savegpr0_14>'
+$OBJDUMP -d $t/exe | grep '<_savegpr0_14>'

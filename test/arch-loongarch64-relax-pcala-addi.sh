@@ -42,17 +42,17 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o -Wl,--no-relax
-$QEMU $t/exe1 | grep -q '^1 2 3$'
+$QEMU $t/exe1 | grep '^1 2 3$'
 
 $OBJDUMP -d $t/exe1 > $t/exe1.objdump
-grep -A1 '<get_sym1>:' $t/exe1.objdump | grep -q pcalau12i
-grep -A1 '<get_sym2>:' $t/exe1.objdump | grep -q pcalau12i
-grep -A1 '<get_sym3>:' $t/exe1.objdump | grep -q pcalau12i
+grep -A1 '<get_sym1>:' $t/exe1.objdump | grep pcalau12i
+grep -A1 '<get_sym2>:' $t/exe1.objdump | grep pcalau12i
+grep -A1 '<get_sym3>:' $t/exe1.objdump | grep pcalau12i
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o -Wl,--relax
-$QEMU $t/exe2 | grep -q '^1 2 3$'
+$QEMU $t/exe2 | grep '^1 2 3$'
 
 $OBJDUMP -d $t/exe2 > $t/exe2.objdump
-grep -A1 '<get_sym1>:' $t/exe2.objdump | grep -q pcaddi
-grep -A1 '<get_sym2>:' $t/exe2.objdump | grep -q pcaddi
-grep -A1 '<get_sym3>:' $t/exe2.objdump | grep -q pcalau12i
+grep -A1 '<get_sym1>:' $t/exe2.objdump | grep pcaddi
+grep -A1 '<get_sym2>:' $t/exe2.objdump | grep pcaddi
+grep -A1 '<get_sym3>:' $t/exe2.objdump | grep pcalau12i

@@ -31,7 +31,7 @@ int main() {
 EOF
 
 $CC -B. -pie -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q 3
+$QEMU $t/exe | grep 3
 
-readelf --dynamic $t/exe | grep -Fq '(TEXTREL)'
-readelf --dynamic $t/exe | grep -q '\(FLAGS\).*TEXTREL'
+readelf --dynamic $t/exe | grep -F '(TEXTREL)'
+readelf --dynamic $t/exe | grep '\(FLAGS\).*TEXTREL'

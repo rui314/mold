@@ -24,9 +24,9 @@ echo '{ local: module_local; global: *; };' > $t/c.map
 
 readelf --symbols $t/exe > $t/log
 
-grep -Eq '0 NOTYPE  LOCAL  DEFAULT .* local1' $t/log
-grep -Eq '0 NOTYPE  LOCAL  DEFAULT .* local2' $t/log
-grep -Eq '0 NOTYPE  LOCAL  DEFAULT .* module_local' $t/log
-grep -Eq '0 NOTYPE  GLOBAL DEFAULT .* foo' $t/log
-grep -Eq '0 NOTYPE  GLOBAL DEFAULT .* bar' $t/log
-grep -Eq '0 NOTYPE  GLOBAL DEFAULT .* this_is_global' $t/log
+grep -E '0 NOTYPE  LOCAL  DEFAULT .* local1' $t/log
+grep -E '0 NOTYPE  LOCAL  DEFAULT .* local2' $t/log
+grep -E '0 NOTYPE  LOCAL  DEFAULT .* module_local' $t/log
+grep -E '0 NOTYPE  GLOBAL DEFAULT .* foo' $t/log
+grep -E '0 NOTYPE  GLOBAL DEFAULT .* bar' $t/log
+grep -E '0 NOTYPE  GLOBAL DEFAULT .* this_is_global' $t/log

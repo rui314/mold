@@ -3,7 +3,7 @@
 
 echo 'int main() {}' | $CC -m32 -o $t/exe -xc - >& /dev/null || skip
 
-nm mold | grep -q '__tsan_init' && skip
+nm mold | grep '__tsan_init' && skip
 
 cat <<EOF | $CC -m32 -c -o $t/a.o -xc -
 char hello[] = "Hello world";
@@ -33,6 +33,6 @@ mkdir -p $t/script
 echo 'GROUP(libfoo.so)' > $t/script/libfoo.so
 
 $CC -B. -o $t/exe -L$t/lib32 -L$t/lib64 -lfoo $t/e.o -Wl,-rpath $t/lib64 |&
-  grep -q 'lib32/libfoo.so: skipping incompatible file'
+  grep 'lib32/libfoo.so: skipping incompatible file'
 
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

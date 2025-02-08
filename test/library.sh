@@ -16,7 +16,7 @@ int main() { hello(); }
 EOF
 
 $CC -B. -o $t/exe1 $t/c.o -L$t -Wl,--library,foobar -Wl,-rpath,$t
-$QEMU $t/exe1 | grep -q 'Hello world'
+$QEMU $t/exe1 | grep 'Hello world'
 
 $CC -B. -o $t/exe2 $t/c.o -L$t -Wl,--library=foobar -Wl,-rpath,$t
-$QEMU $t/exe2 | grep -q 'Hello world'
+$QEMU $t/exe2 | grep 'Hello world'

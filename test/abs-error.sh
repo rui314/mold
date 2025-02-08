@@ -19,4 +19,4 @@ int main() { printf("foo=%p\n", &foo); }
 EOF
 
 not $CC -B. -o $t/exe -pie $t/a.o $t/b.o -Wl,-z,text |&
-  grep -q 'recompile with -fPIC'
+  grep 'recompile with -fPIC'

@@ -10,4 +10,4 @@ __attribute__((visibility("hidden"))) void foo();
 int main() { foo(); }
 EOF
 
-not $CC -B. -o $t/exe $t/a.so $t/b.o |& grep -q 'undefined symbol: foo'
+not $CC -B. -o $t/exe $t/a.so $t/b.o |& grep 'undefined symbol: foo'

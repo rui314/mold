@@ -14,7 +14,7 @@ void _start() {}
 EOF
 
 ./mold -o $t/exe $t/a.o
-readelf -n $t/exe | grep -q 'x86 feature: IBT'
+readelf -n $t/exe | grep 'x86 feature: IBT'
 
 ./mold -o $t/exe $t/b.o
-readelf -n $t/exe | not grep -q 'x86 feature: IBT'
+readelf -n $t/exe | not grep 'x86 feature: IBT'

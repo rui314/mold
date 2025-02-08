@@ -38,4 +38,4 @@ int main() {
 EOF
 
 $CC -B. -no-pie -o $t/exe $t/c.o $t/b.so
-$QEMU $t/exe 2> /dev/null | grep -q '3 4 0'
+$QEMU $t/exe 2> /dev/null | grep '3 4 0'

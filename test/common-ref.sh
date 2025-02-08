@@ -28,4 +28,4 @@ rm -f $t/e.a
 ar rcs $t/e.a $t/d.o
 
 $CC -B. -o $t/exe $t/a.o $t/c.a $t/e.a
-$QEMU $t/exe | grep -q 5
+$QEMU $t/exe | grep 5

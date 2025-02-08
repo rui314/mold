@@ -11,5 +11,5 @@ EOF
 ./mold -o $t/b.so $t/a.o --filter foo -F bar -shared
 
 readelf --dynamic $t/b.so > $t/log
-grep -Fq 'Filter library: [foo]' $t/log
-grep -Fq 'Filter library: [bar]' $t/log
+grep -F 'Filter library: [foo]' $t/log
+grep -F 'Filter library: [bar]' $t/log

@@ -36,4 +36,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe -no-pie $t/a.o $t/b.o
-$QEMU $t/exe | grep -q '^ip=0xa0000.$'
+$QEMU $t/exe | grep '^ip=0xa0000.$'

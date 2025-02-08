@@ -14,9 +14,9 @@ for i in `seq 1 1000`; do echo "void fn$i() {}"; done |
   $CC -o $t/b.o -ffunction-sections -c -xc -
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o
-$QEMU $t/exe1 | grep -q 'Hello world'
+$QEMU $t/exe1 | grep 'Hello world'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,-shuffle-sections
-$QEMU $t/exe2 | grep -q 'Hello world'
+$QEMU $t/exe2 | grep 'Hello world'
 
 not diff $t/exe1 $t/exe2 >& /dev/null

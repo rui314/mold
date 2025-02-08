@@ -53,21 +53,21 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o -Wl,--no-relax
-$QEMU $t/exe1 | grep -q 'f00 10000f00 0 1ffff 11beef'
+$QEMU $t/exe1 | grep 'f00 10000f00 0 1ffff 11beef'
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o
-$QEMU $t/exe2 | grep -q 'f00 10000f00 0 1ffff 11beef'
+$QEMU $t/exe2 | grep 'f00 10000f00 0 1ffff 11beef'
 
 readelf --syms $t/exe1 > $t/log1
-grep -Eq ' 10 NOTYPE .* get_foo$' $t/log1
-grep -Eq ' 10 NOTYPE .* get_foo2$' $t/log1
-grep -Eq ' 10 NOTYPE .* get_bar$' $t/log1
-grep -Eq ' 10 NOTYPE .* get_bar2$' $t/log1
-grep -Eq ' 10 NOTYPE .* get_baz$' $t/log1
+grep -E ' 10 NOTYPE .* get_foo$' $t/log1
+grep -E ' 10 NOTYPE .* get_foo2$' $t/log1
+grep -E ' 10 NOTYPE .* get_bar$' $t/log1
+grep -E ' 10 NOTYPE .* get_bar2$' $t/log1
+grep -E ' 10 NOTYPE .* get_baz$' $t/log1
 
 readelf --syms $t/exe2 > $t/log2
-grep -Eq ' 8 NOTYPE .* get_foo$' $t/log2
-grep -Eq ' 10 NOTYPE .* get_foo2$' $t/log2
-grep -Eq ' 6 NOTYPE .* get_bar$' $t/log2
-grep -Eq ' 10 NOTYPE .* get_bar2$' $t/log2
-grep -Eq ' 10 NOTYPE .* get_baz$' $t/log2
+grep -E ' 8 NOTYPE .* get_foo$' $t/log2
+grep -E ' 10 NOTYPE .* get_foo2$' $t/log2
+grep -E ' 6 NOTYPE .* get_bar$' $t/log2
+grep -E ' 10 NOTYPE .* get_bar2$' $t/log2
+grep -E ' 10 NOTYPE .* get_baz$' $t/log2

@@ -10,9 +10,9 @@ int main() {}
 EOF
 
 # Older versions of GCC does not support __attribute__((retain))
-readelf -WS $t/a.o | grep -q '\.text\.foo.*AXR' || skip
+readelf -WS $t/a.o | grep '\.text\.foo.*AXR' || skip
 
 $CC -B. -o $t/exe $t/a.o -Wl,-gc-sections
 nm $t/exe > $t/log
-grep -q foo $t/log
-not grep -q bar $t/log
+grep foo $t/log
+not grep bar $t/log

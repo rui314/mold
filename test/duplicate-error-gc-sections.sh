@@ -10,7 +10,7 @@ int main() {}
 EOF
 
 not $CC -B. -o $t/exe1 $t/a.o $t/a.o $t/b.o |&
-  grep -q 'duplicate symbol.*: foo$'
+  grep 'duplicate symbol.*: foo$'
 
 not $CC -B. -o $t/exe2 $t/a.o $t/a.o $t/b.o -Wl,-gc-sections |&
-  grep -q 'duplicate symbol.*: foo$'
+  grep 'duplicate symbol.*: foo$'

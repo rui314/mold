@@ -11,7 +11,7 @@ int main() {
 EOF
 
 $GCC -B. -o $t/exe1 -flto $t/a.o
-$QEMU $t/exe1 | grep -q 'Hello world'
+$QEMU $t/exe1 | grep 'Hello world'
 
 # Test that LTO is used for FAT LTO objects
 cat <<EOF | $GCC -flto -ffat-lto-objects -c -o $t/b.o -xc -
@@ -21,7 +21,7 @@ int main() {
 }
 EOF
 
-$GCC -B. -o $t/exe2 $t/b.o --verbose |& grep -q -- -fwpa
+$GCC -B. -o $t/exe2 $t/b.o --verbose |& grep -- -fwpa
 
 # Test FAT objects if -fno-use-linker-plugin is used
 
@@ -33,4 +33,4 @@ int main() {
 EOF
 
 $GCC -B. -o $t/exe3 -flto -fno-use-linker-plugin $t/c.o
-$QEMU $t/exe3 | grep -q 'Hello world'
+$QEMU $t/exe3 | grep 'Hello world'

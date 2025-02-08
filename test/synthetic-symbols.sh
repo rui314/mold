@@ -42,10 +42,10 @@ EOF
 $CC -B. -no-pie -Wl,--image-base=0x40000 -o $t/exe $t/a.o $t/b.o
 $QEMU $t/exe > $t/log
 
-grep -q '^__ehdr_start=0x40000$' $t/log
-grep -q '^__executable_start=0x40000$' $t/log
-grep -q '^__dso_handle=' $t/log
-grep -q '^section foo$' $t/log
+grep '^__ehdr_start=0x40000$' $t/log
+grep '^__executable_start=0x40000$' $t/log
+grep '^__dso_handle=' $t/log
+grep '^section foo$' $t/log
 
 # Make sure that synthetic symbols overwrite existing ones
 
@@ -86,9 +86,9 @@ EOF
 $CC -B. -no-pie -Wl,--image-base=0x40000 -o $t/exe $t/a.o $t/c.o
 $QEMU $t/exe > $t/log
 
-grep -q '^end=foo$' $t/log
-grep -q '^etext=foo$' $t/log
-grep -q '^edata=foo$' $t/log
-grep -q '^__ehdr_start=0x40000$' $t/log
-grep -q '^__executable_start=0x40000$' $t/log
-grep -q '^section foo$' $t/log
+grep '^end=foo$' $t/log
+grep '^etext=foo$' $t/log
+grep '^edata=foo$' $t/log
+grep '^__ehdr_start=0x40000$' $t/log
+grep '^__executable_start=0x40000$' $t/log
+grep '^section foo$' $t/log

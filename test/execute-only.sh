@@ -16,5 +16,5 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,--execute-only
-$QEMU $t/exe | grep -q 'Hello world'
-readelf -W --segments $t/exe | grep -Eq 'LOAD\s.*[0-9a-f]   E 0x'
+$QEMU $t/exe | grep 'Hello world'
+readelf -W --segments $t/exe | grep -E 'LOAD\s.*[0-9a-f]   E 0x'

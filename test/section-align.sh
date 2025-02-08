@@ -7,10 +7,10 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o -Wl,--section-align=.foo=0x2000
-readelf -WS $t/exe1 | grep -q '\.foo.* 8192$'
+readelf -WS $t/exe1 | grep '\.foo.* 8192$'
 
 $CC -B. -o $t/exe2 $t/a.o -Wl,--section-align=.foo=256
-readelf -WS $t/exe2 | grep -q '\.foo.* 256$'
+readelf -WS $t/exe2 | grep '\.foo.* 256$'
 
 not $CC -B. -o $t/exe3 $t/a.o -Wl,--section-align=.foo=3 |&
-  grep -q 'must be a power of 2'
+  grep 'must be a power of 2'

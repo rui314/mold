@@ -41,9 +41,9 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$QEMU $t/exe | grep -q '^42$'
+$QEMU $t/exe | grep '^42$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$QEMU $t/exe | grep -q '^42$'
+$QEMU $t/exe | grep '^42$'
 
 # GOT
 cat <<'EOF' > $t/d.s
@@ -58,9 +58,9 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$QEMU $t/exe | grep -q '^56$'
+$QEMU $t/exe | grep '^56$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$QEMU $t/exe | grep -q '^56$'
+$QEMU $t/exe | grep '^56$'
 
 # Copyrel
 cat <<'EOF' > $t/d.s
@@ -75,9 +75,9 @@ EOF
 
 $CC -c -o $t/d.o $t/d.s
 $CC -B. -o $t/exe $t/c.so $t/d.o -no-pie
-$QEMU $t/exe | grep -q '^56$'
+$QEMU $t/exe | grep '^56$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$QEMU $t/exe | grep -q '^56$'
+$QEMU $t/exe | grep '^56$'
 
 # Copyrel
 cat <<'EOF' > $t/d.s
@@ -96,9 +96,9 @@ foo:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$QEMU $t/exe | grep -q '^56$'
+$QEMU $t/exe | grep '^56$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$QEMU $t/exe | grep -q '^56$'
+$QEMU $t/exe | grep '^56$'
 
 # PLT
 cat <<'EOF' > $t/d.s
@@ -112,9 +112,9 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$QEMU $t/exe | grep -q '^76$'
+$QEMU $t/exe | grep '^76$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$QEMU $t/exe | grep -q '^76$'
+$QEMU $t/exe | grep '^76$'
 
 # PLT
 cat <<'EOF' > $t/d.s
@@ -129,9 +129,9 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s -no-pie
-$QEMU $t/exe | grep -q '^76$'
+$QEMU $t/exe | grep '^76$'
 $CC -B. -o $t/exe $t/c.so $t/d.s -pie
-$QEMU $t/exe | grep -q '^76$'
+$QEMU $t/exe | grep '^76$'
 
 # SIZE32
 cat <<'EOF' > $t/d.s
@@ -151,7 +151,7 @@ foo:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s
-$QEMU $t/exe | grep -q '^26$'
+$QEMU $t/exe | grep '^26$'
 
 # SIZE64
 cat <<'EOF' > $t/d.s
@@ -171,7 +171,7 @@ foo:
 EOF
 
 $CC -B. -o $t/exe $t/c.so $t/d.s
-$QEMU $t/exe | grep -q '^61$'
+$QEMU $t/exe | grep '^61$'
 
 # GOTPCREL64
 cat <<'EOF' > $t/e.c
@@ -186,7 +186,7 @@ EOF
 
 $CC -c -o $t/e.o $t/e.c -mcmodel=large -fPIC
 $CC -B. -o $t/exe $t/c.so $t/e.o
-$QEMU $t/exe | grep -q '^56000003$'
+$QEMU $t/exe | grep '^56000003$'
 
 # R_X86_64_32 against non-alloc section
 cat <<'EOF' > $t/f.s
@@ -211,5 +211,5 @@ $CC -c -o $t/f.o $t/f.s
 $CC -B. -o $t/exe $t/f.o
 readelf -x .foo -x .bar $t/exe > $t/log
 
-grep -Fq '0x00000010 00000000 00000000 10000000 00000000' $t/log
-grep -Fq '0x00000010 18000000 00000000' $t/log
+grep -F '0x00000010 00000000 00000000 10000000 00000000' $t/log
+grep -F '0x00000010 18000000 00000000' $t/log

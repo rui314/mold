@@ -46,8 +46,8 @@ EOF
 
 $CC -B. -static -o $t/exe $t/a.o
 
-$QEMU $t/exe | grep -q '^abcdef$'
-$QEMU $t/exe | grep -q '^bcdef$'
-$QEMU $t/exe | grep -q '^ijkl$'
-$QEMU $t/exe | grep -q '^pqr$'
-$QEMU $t/exe | grep -q '^mnopqr$'
+$QEMU $t/exe | grep '^abcdef$'
+$QEMU $t/exe | grep '^bcdef$'
+$QEMU $t/exe | grep '^ijkl$'
+$QEMU $t/exe | grep '^pqr$'
+$QEMU $t/exe | grep '^mnopqr$'

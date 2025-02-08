@@ -9,5 +9,5 @@ EOF
 $CC -B. -o $t/exe $t/a.o -Wl,--compress-debug-sections=zlib
 
 readelf -WS $t/exe > $t/log
-grep -q '\.debug_info .* [Cx] ' $t/log
-grep -q '\.debug_str .* MS[Cx] ' $t/log
+grep '\.debug_info .* [Cx] ' $t/log
+grep '\.debug_str .* MS[Cx] ' $t/log

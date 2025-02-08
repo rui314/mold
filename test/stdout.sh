@@ -12,4 +12,4 @@ EOF
 
 $CC -B. -Wl,-build-id=sha1 $t/a.o -o - > $t/exe
 chmod 755 $t/exe
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

@@ -35,4 +35,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-icf=all
-$QEMU $t/exe | grep -q '1 0'
+$QEMU $t/exe | grep '1 0'

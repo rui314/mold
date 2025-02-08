@@ -26,7 +26,7 @@ $CC -B. -o $t/exe2 $t/b.o -no-pie
 $CC -B. -o $t/exe3 $t/a.o $t/c.o -pie
 $CC -B. -o $t/exe4 $t/b.o $t/c.o -no-pie
 
-$QEMU $t/exe1 | grep -q '^-1$'
-$QEMU $t/exe2 | grep -q '^-1$'
-$QEMU $t/exe3 | grep -q '^2$'
-$QEMU $t/exe4 | grep -q '^2$'
+$QEMU $t/exe1 | grep '^-1$'
+$QEMU $t/exe2 | grep '^-1$'
+$QEMU $t/exe3 | grep '^2$'
+$QEMU $t/exe4 | grep '^2$'

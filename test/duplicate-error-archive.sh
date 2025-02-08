@@ -18,4 +18,4 @@ $CC -B. -o $t/exe $t/c.o $t/b.a $t/b.a
 not $CC -B. -o $t/exe $t/c.o -Wl,--push-state,--whole-archive \
   $t/b.a $t/b.a -Wl,--pop-state 2> $t/log
 
-grep -q 'duplicate symbol:.* foo' $t/log
+grep 'duplicate symbol:.* foo' $t/log

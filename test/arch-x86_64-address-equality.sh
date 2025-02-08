@@ -22,7 +22,7 @@ EOF
 $CC -B. -shared -o $t/d.so $t/c.o
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/d.so -pie
-$QEMU $t/exe1 | grep -q '^1 '
+$QEMU $t/exe1 | grep '^1 '
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/d.so -pie -Wl,-no-relax
-$QEMU $t/exe2 | grep -q '^1 '
+$QEMU $t/exe2 | grep '^1 '

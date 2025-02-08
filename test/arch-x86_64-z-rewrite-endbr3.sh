@@ -15,4 +15,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,rewrite-endbr
-sde64 -cet 1 -- $t/exe | grep -q 'Hello world'
+sde64 -cet 1 -- $t/exe | grep 'Hello world'

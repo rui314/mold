@@ -9,4 +9,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o
-readelf -s $t/exe | grep -q 'SECTION LOCAL  DEFAULT'
+readelf -s $t/exe | grep 'SECTION LOCAL  DEFAULT'

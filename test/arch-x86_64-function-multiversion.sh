@@ -26,4 +26,4 @@ int main() { hello(); }
 EOF
 
 $CXX -B. -o $t/exe $t/b.so $t/c.o
-$QEMU $t/exe | grep -q '^H'
+$QEMU $t/exe | grep '^H'

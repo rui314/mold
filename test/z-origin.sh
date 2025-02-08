@@ -11,5 +11,5 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,origin
 
-readelf --dynamic $t/exe | grep -Eq '\(FLAGS\)\s+ORIGIN'
-readelf --dynamic $t/exe | grep -Eq 'Flags:.*ORIGIN'
+readelf --dynamic $t/exe | grep -E '\(FLAGS\)\s+ORIGIN'
+readelf --dynamic $t/exe | grep -E 'Flags:.*ORIGIN'

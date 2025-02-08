@@ -16,4 +16,4 @@ int main() { printf("%s\n", foo); }
 EOF
 
 $CC -B. -o $t/exe -pie $t/a.o $t/b.o
-$QEMU $t/exe | grep -q 'Hello world'
+$QEMU $t/exe | grep 'Hello world'

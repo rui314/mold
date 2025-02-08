@@ -35,7 +35,7 @@ $CC -B. -shared -o $t/d.so $t/b.o -mcmodel=large
 $CC -B. -shared -o $t/e.so $t/c.o -Wl,--no-relax -mcmodel=large
 
 $CC -B. -o $t/exe $t/a.o $t/d.so $t/e.so -mcmodel=large
-$QEMU $t/exe | grep -q '1 2 3 4 5 6'
+$QEMU $t/exe | grep '1 2 3 4 5 6'
 
 $CC -B. -o $t/exe $t/a.o $t/d.so $t/e.so -Wl,-no-relax -mcmodel=large
-$QEMU $t/exe | grep -q '1 2 3 4 5 6'
+$QEMU $t/exe | grep '1 2 3 4 5 6'

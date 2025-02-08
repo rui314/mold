@@ -37,7 +37,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/b.so $t/c.o
-$QEMU $t/exe | grep -q '^0 0 3 5 7$'
+$QEMU $t/exe | grep '^0 0 3 5 7$'
 
 $CC -B. -o $t/exe $t/b.so $t/c.o -Wl,-no-relax
-$QEMU $t/exe | grep -q '^0 0 3 5 7$'
+$QEMU $t/exe | grep '^0 0 3 5 7$'

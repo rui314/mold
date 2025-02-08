@@ -17,8 +17,8 @@ EOF
 
 $CC -B. -o $t/exe1 -Wl,-e,foo $t/a.o $t/b.o
 readelf -e $t/exe1 > $t/log
-grep -q "Entry point address:.*0x1000$" $t/log
+grep "Entry point address:.*0x1000$" $t/log
 
 $CC -B. -o $t/exe2 -Wl,-e,bar $t/a.o $t/b.o
 readelf -e $t/exe2 > $t/log
-grep -q "Entry point address:.*0x2000$" $t/log
+grep "Entry point address:.*0x2000$" $t/log

@@ -13,18 +13,18 @@ void bar() {}
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.so
-nm -g $t/exe1 | grep -q foo
+nm -g $t/exe1 | grep foo
 
 cat <<'EOF' > $t/c.ver
 { local: *; global: xyz; };
 EOF
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.so -Wl,--version-script=$t/c.ver -Wl,--undefined-version
-nm -g $t/exe2 | not grep -q foo
+nm -g $t/exe2 | not grep foo
 
 cat <<'EOF' > $t/d.ver
 { local: *; };
 EOF
 
 $CC -B. -o $t/exe3 $t/a.o $t/b.so -Wl,--version-script=$t/d.ver
-nm -g $t/exe3 | not grep -q foo
+nm -g $t/exe3 | not grep foo

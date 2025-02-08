@@ -21,19 +21,19 @@ EOF
 $CC -B. -Wl,--dynamic-list=$t/dyn -o $t/exe1 $t/b.o
 
 readelf --dyn-syms $t/exe1 > $t/log1
-grep -q ' xyz' $t/log1
-not grep -q ' foobarzx' $t/log1
-grep -q ' foobarcx' $t/log1
-grep -q ' foo123bar456bx' $t/log1
-not grep -q ' foo123bar456c' $t/log1
-not grep -q ' foo123bar456x' $t/log1
+grep ' xyz' $t/log1
+not grep ' foobarzx' $t/log1
+grep ' foobarcx' $t/log1
+grep ' foo123bar456bx' $t/log1
+not grep ' foo123bar456c' $t/log1
+not grep ' foo123bar456x' $t/log1
 
 $CC -B. -Wl,--export-dynamic-symbol-list=$t/dyn -o $t/exe2 $t/b.o
 
 readelf --dyn-syms $t/exe2 > $t/log2
-grep -q ' xyz' $t/log2
-not grep -q ' foobarzx' $t/log2
-grep -q ' foobarcx' $t/log2
-grep -q ' foo123bar456bx' $t/log2
-not grep -q ' foo123bar456c' $t/log2
-not grep -q ' foo123bar456x' $t/log2
+grep ' xyz' $t/log2
+not grep ' foobarzx' $t/log2
+grep ' foobarcx' $t/log2
+grep ' foo123bar456bx' $t/log2
+not grep ' foo123bar456c' $t/log2
+not grep ' foo123bar456x' $t/log2

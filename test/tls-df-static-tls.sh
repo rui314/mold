@@ -8,7 +8,7 @@ int bar() { return foo; }
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o -Wl,--relax
-readelf --dynamic $t/b.so | grep -q STATIC_TLS
+readelf --dynamic $t/b.so | grep STATIC_TLS
 
 $CC -B. -shared -o $t/c.so $t/a.o -Wl,--no-relax
-readelf --dynamic $t/c.so | grep -q STATIC_TLS
+readelf --dynamic $t/c.so | grep STATIC_TLS

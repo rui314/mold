@@ -30,4 +30,4 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o
-$QEMU $t/exe | grep -q 'preinit init fini'
+$QEMU $t/exe | grep 'preinit init fini'

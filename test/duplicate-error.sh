@@ -9,4 +9,4 @@ main:
 EOF
 
 not ./mold -o $t/exe $t/a.o $t/a.o 2> $t/log
-grep -q 'duplicate symbol: .*\.o: .*\.o: main' $t/log
+grep 'duplicate symbol: .*\.o: .*\.o: main' $t/log

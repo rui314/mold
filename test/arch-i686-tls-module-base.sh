@@ -37,11 +37,11 @@ int main() {
 EOF
 
 $CC -o $t/exe1 $t/a.o $t/b.o $t/c.o -pie
-$QEMU $t/exe1 | grep -q '^20 3$'
+$QEMU $t/exe1 | grep '^20 3$'
 
 $CC -o $t/exe2 $t/a.o $t/b.o $t/c.o -Wl,-no-relax -pie
-$QEMU $t/exe2 | grep -q '^20 3$'
+$QEMU $t/exe2 | grep '^20 3$'
 
 $CC -o $t/d.so $t/a.o -shared
 $CC -o $t/exe3 $t/b.o $t/c.o $t/d.so -pie
-$QEMU $t/exe3 | grep -q '^20 3$'
+$QEMU $t/exe3 | grep '^20 3$'

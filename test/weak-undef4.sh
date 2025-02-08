@@ -33,5 +33,5 @@ ar rcs $t/d.a $t/c.o
 $CC -B. -o $t/exe1 $t/a.o $t/d.a
 $CC -B. -o $t/exe2 $t/b.o $t/d.a
 
-$QEMU $t/exe1 | grep -q '^2$'
-$QEMU $t/exe2 | grep -q '^-1$'
+$QEMU $t/exe1 | grep '^2$'
+$QEMU $t/exe2 | grep '^-1$'

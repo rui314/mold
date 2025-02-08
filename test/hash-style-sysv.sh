@@ -18,4 +18,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/c.o $t/b.so -Wl,--hash-style=sysv
-$QEMU $t/exe | grep -q Hello
+$QEMU $t/exe | grep Hello

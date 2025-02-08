@@ -35,4 +35,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe -Wl,-rpath=$t $t/c.o $t/b.so
-$QEMU $t/exe | grep -q 'Hello WORLD'
+$QEMU $t/exe | grep 'Hello WORLD'

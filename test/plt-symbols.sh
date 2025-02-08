@@ -7,4 +7,4 @@ void foo() { bar(); }
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
-readelf -Ws $t/b.so | grep -q 'LOCAL.*bar\$plt$'
+readelf -Ws $t/b.so | grep 'LOCAL.*bar\$plt$'

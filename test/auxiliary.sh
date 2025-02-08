@@ -11,5 +11,5 @@ EOF
 ./mold -o $t/b.so $t/a.o -auxiliary foo -f bar -shared
 
 readelf --dynamic $t/b.so > $t/log
-grep -Fq 'Auxiliary library: [foo]' $t/log
-grep -Fq 'Auxiliary library: [bar]' $t/log
+grep -F 'Auxiliary library: [foo]' $t/log
+grep -F 'Auxiliary library: [bar]' $t/log

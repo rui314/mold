@@ -2,13 +2,13 @@
 . $(dirname $0)/common.inc
 
 # OneTBB isn't tsan-clean
-nm mold | grep -q '__tsan_init' && skip
+nm mold | grep '__tsan_init' && skip
 
 # Binutils 2.32 injects their own .note.gnu.property section interfering with the tests
 test_cflags -Xassembler -mx86-used-note=no && CFLAGS="-Xassembler -mx86-used-note=no" || CFLAGS=""
 
 # This test requires the new ISA constants defined in Binutils 2.36
-readelf -v | grep -q -E "GNU readelf .+ (2\.3[6-9]|2\.[4-9]|[3-9])" || skip
+readelf -v | grep -E "GNU readelf .+ (2\.3[6-9]|2\.[4-9]|[3-9])" || skip
 
 cat <<EOF | $CC $CFLAGS -c -o $t/a.o -xassembler-with-cpp  -
 #define NT_GNU_PROPERTY_TYPE_0 5
@@ -68,16 +68,16 @@ cat <<EOF | $CC $CFLAGS -c -o $t/c.o -xassembler-with-cpp -
 EOF
 
 ./mold -nostdlib -o $t/exe1 $t/a.o $t/b.o
-readelf -n $t/exe1 | grep -q 'x86 feature: SHSTK'
-readelf -n $t/exe1 | grep -q 'x86 ISA needed: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
-readelf -n $t/exe1 | grep -q 'x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
+readelf -n $t/exe1 | grep 'x86 feature: SHSTK'
+readelf -n $t/exe1 | grep 'x86 ISA needed: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
+readelf -n $t/exe1 | grep 'x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
 
 ./mold -nostdlib -o $t/exe2 $t/a.o $t/b.o $t/c.o
-readelf -n $t/exe2 | not grep -q 'x86 feature: SHSTK'
-readelf -n $t/exe2 | grep -q 'x86 ISA needed: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
-readelf -n $t/exe2 | not grep -q 'x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
+readelf -n $t/exe2 | not grep 'x86 feature: SHSTK'
+readelf -n $t/exe2 | grep 'x86 ISA needed: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
+readelf -n $t/exe2 | not grep 'x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
 
 ./mold --relocatable -o $t/d.o $t/a.o $t/b.o
-readelf -n $t/d.o | grep -q 'x86 feature: SHSTK'
-readelf -n $t/d.o | grep -q 'x86 ISA needed: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
-readelf -n $t/d.o | grep -q 'x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
+readelf -n $t/d.o | grep 'x86 feature: SHSTK'
+readelf -n $t/d.o | grep 'x86 ISA needed: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
+readelf -n $t/d.o | grep 'x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'

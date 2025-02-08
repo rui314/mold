@@ -15,4 +15,4 @@ EOF
 
 $CC -B. -shared -o $t/c.so -Wl,-version-script,$t/a.ver $t/b.s
 readelf --dyn-syms $t/c.so > $t/log
-grep -q ' foo@@VER1$' $t/log
+grep ' foo@@VER1$' $t/log

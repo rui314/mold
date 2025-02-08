@@ -12,4 +12,4 @@ EOF
 
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 readelf -W --dyn-syms $t/c.so > $t/log
-grep -Fq 'foo?@@VER1' $t/log
+grep -F 'foo?@@VER1' $t/log

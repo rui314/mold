@@ -16,4 +16,4 @@ int foo() {
 EOF
 
 $CC -B. -shared -o $t/d.so $t/c.o $t/b.a -Wl,-exclude-libs=b.a
-readelf --dyn-syms $t/d.so | grep -Fq foo
+readelf --dyn-syms $t/d.so | grep -F foo

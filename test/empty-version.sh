@@ -11,5 +11,5 @@ EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
 
-readelf --dyn-syms $t/b.so | grep -q ' bar1'
-readelf --dyn-syms $t/b.so | grep -q ' bar2'
+readelf --dyn-syms $t/b.so | grep ' bar1'
+readelf --dyn-syms $t/b.so | grep ' bar2'

@@ -15,4 +15,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,-defsym=got=_GLOBAL_OFFSET_TABLE_ -no-pie
-$QEMU $t/exe | grep -Eq '^1'
+$QEMU $t/exe | grep -E '^1'

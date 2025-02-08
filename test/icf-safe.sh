@@ -5,7 +5,7 @@
 # instead of R_390_PC32DBL
 if [ $MACHINE = s390x ]; then
   echo 'void *foo() { return foo; }' | $CC -c -o $t/a.o -xc -
-  readelf -r $t/a.o | grep -q R_390_PLT32DBL && skip
+  readelf -r $t/a.o | grep R_390_PLT32DBL && skip
 fi
 
 cat <<EOF | $CC -c -o $t/a.o -ffunction-sections -fdata-sections -xc -
@@ -39,7 +39,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 -Wl,-icf=safe $t/a.o $t/b.o
-$QEMU $t/exe1 | grep -q '^0 0$'
+$QEMU $t/exe1 | grep '^0 0$'
 
 cat <<EOF | $CC -c -o $t/c.o -ffunction-sections -fdata-sections -xc -
 int foo1();
