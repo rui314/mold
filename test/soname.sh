@@ -6,8 +6,7 @@ void foo() {}
 EOF
 
 $CC -o $t/b.so -shared $t/a.o
-readelf --dynamic $t/b.so > $t/log
-! grep -Fq 'Library soname' $t/log || false
+readelf --dynamic $t/b.so | not grep -Fq 'Library soname'
 
 $CC -B. -o $t/b.so -shared $t/a.o -Wl,-soname,foo
 readelf --dynamic $t/b.so | grep -Fq 'Library soname: [foo]'

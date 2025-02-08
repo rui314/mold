@@ -1,5 +1,4 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-! ./mold -m elf_x86_64 '' >& $t/log
-grep -q 'cannot open :' $t/log
+not ./mold -m elf_x86_64 '' 2>&1 | grep -q 'cannot open :'

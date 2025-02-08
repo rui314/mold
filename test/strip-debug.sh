@@ -9,7 +9,5 @@ EOF
 
 $CC -B. -o $t/exe $t/a.o -Wl,--strip-debug
 
-readelf -W --sections $t/exe > $t/log
-! grep -Fq .debug_info $t/log || false
-
+readelf -W --sections $t/exe | not grep -Fq .debug_info
 readelf -W --symbols $t/exe | grep -q ' bar'

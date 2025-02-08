@@ -14,5 +14,5 @@ EOF
 
 $CC -o $t/exe -pie $t/a.o $t/b.o >& /dev/null && skip
 
-! $CC -B. -o $t/exe -pie $t/a.o $t/b.o >& $t/log
+not $CC -B. -o $t/exe -pie $t/a.o $t/b.o >& $t/log
 grep -q 'recompile with -fPIC' $t/log

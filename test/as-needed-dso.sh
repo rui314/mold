@@ -18,4 +18,4 @@ EOF
 $CC -B. -o $t/exe $t/a.o -L$t -Wl,--as-needed -lbar -lfoo
 readelf -W --dynamic $t/exe > $t/log2
 grep -q libbar $t/log2
-! grep -q libfoo $t/log2 || false
+not grep -q libfoo $t/log2

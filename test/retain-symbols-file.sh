@@ -16,8 +16,8 @@ EOF
 $CC -B. -o $t/exe $t/a.o -Wl,--retain-symbols-file=$t/symbols
 readelf -W --symbols $t/exe > $t/log
 
-! grep -q ' foo$' $t/log || false
-! grep -q ' bar$' $t/log || false
-! grep -q ' main$' $t/log || false
+not grep -q ' foo$' $t/log
+not grep -q ' bar$' $t/log
+not grep -q ' main$' $t/log
 
 grep -q ' baz$' $t/log

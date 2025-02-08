@@ -20,13 +20,11 @@ cat <<'EOF' > $t/c.ver
 EOF
 
 $CC -B. -o $t/exe2 $t/a.o $t/b.so -Wl,--version-script=$t/c.ver -Wl,--undefined-version
-nm -g $t/exe2 > $t/log2
-! grep -q foo $t/log2 || false
+nm -g $t/exe2 | not grep -q foo
 
 cat <<'EOF' > $t/d.ver
 { local: *; };
 EOF
 
 $CC -B. -o $t/exe3 $t/a.o $t/b.so -Wl,--version-script=$t/d.ver
-nm -g $t/exe3 > $t/log3
-! grep -q foo $t/log3 || false
+nm -g $t/exe3 | not grep -q foo

@@ -10,5 +10,5 @@ $STRIP --remove-section=.riscv.attributes $t/a.o
 $CC -B. -nostdlib -o $t/exe $t/a.o
 
 readelf -W --segments --sections $t/exe > $t/log
-! grep -F .riscv.attributes $t/log || false
-! grep -F RISCV_ATTR $t/log || false
+not grep -F .riscv.attributes $t/log
+not grep -F RISCV_ATTR $t/log

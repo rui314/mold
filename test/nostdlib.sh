@@ -8,5 +8,5 @@ EOF
 ./mold -o $t/exe $t/a.o
 
 readelf -W --sections $t/exe > $t/log
-! grep -Fq ' .dynsym ' $t/log || false
-! grep -Fq ' .dynstr ' $t/log || false
+not grep -Fq ' .dynsym ' $t/log
+not grep -Fq ' .dynstr ' $t/log

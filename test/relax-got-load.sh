@@ -24,6 +24,6 @@ case $MACHINE in
 aarch64 | riscv64 | s390x | loongarch64)
   $OBJDUMP -d $t/exe1 | grep -v exe1 > $t/log1
   $OBJDUMP -d $t/exe2 | grep -v exe2 > $t/log2
-  ! diff $t/log1 $t/log2 > /dev/null || false
+  not diff $t/log1 $t/log2 > /dev/null
   ;;
 esac

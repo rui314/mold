@@ -7,8 +7,7 @@ void _start() {}
 EOF
 
 ./mold -o $t/exe1 $t/a.o
-readelf -W --dynamic $t/exe1 > $t/log1
-! grep -q PREINIT_ARRAY $t/log1 || false
+readelf -W --dynamic $t/exe1 | not grep -q PREINIT_ARRAY
 
 cat <<EOF | $CC -o $t/b.o -c -xc -
 void preinit_fn() {}

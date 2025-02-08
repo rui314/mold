@@ -66,7 +66,7 @@ readelf -p .data $t/exe | grep -Fq '.data .data.foo'
 readelf -p .rodata $t/exe | grep -Fq '.rodata .rodata.foo'
 
 ./mold -o $t/exe $t/a.o
-! readelf --sections $t/exe | grep -Fq .text.hot || false
+readelf --sections $t/exe | not grep -Fq .text.hot
 
 ./mold -o $t/exe $t/a.o -z nokeep-text-section-prefix
-! readelf --sections $t/exe | grep -Fq .text.hot || false
+readelf --sections $t/exe | not grep -Fq .text.hot

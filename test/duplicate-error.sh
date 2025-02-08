@@ -8,5 +8,5 @@ main:
   nop
 EOF
 
-! ./mold -o $t/exe $t/a.o $t/a.o 2> $t/log || false
+not ./mold -o $t/exe $t/a.o $t/a.o 2> $t/log
 grep -q 'duplicate symbol: .*\.o: .*\.o: main' $t/log

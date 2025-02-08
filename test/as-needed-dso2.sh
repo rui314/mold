@@ -29,5 +29,5 @@ $CC -B. -shared -o $t/libbar.so $t/b.o
 $CC -B. -o $t/exe $t/c.o -L$t -Wl,--as-needed -lfoo -lbar
 
 readelf --dynamic $t/exe > $t/log
-! grep libfoo.so $t/log || false
+not grep libfoo.so $t/log
 grep -q libbar.so $t/log

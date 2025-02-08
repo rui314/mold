@@ -17,5 +17,5 @@ cat <<EOF | $CC -shared -o $t/b.so -xc -
 __attribute__((visibility("protected"))) int foo;
 EOF
 
-! $CC -B. $t/a.o $t/b.so -o $t/exe >& $t/log -no-pie || false
+not $CC -B. $t/a.o $t/b.so -o $t/exe >& $t/log -no-pie
 grep -Fq 'cannot create a copy relocation for protected symbol' $t/log

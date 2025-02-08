@@ -13,8 +13,6 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o \
-  -Wl,-warn-common 2> /dev/null
+$CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-warn-common 2> /dev/null
 
-! $CC -B. -o $t/exe $t/a.o $t/b.o \
-  -Wl,-warn-common -Wl,-fatal-warnings 2> /dev/null || false
+not $CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-warn-common -Wl,-fatal-warnings 2> /dev/null

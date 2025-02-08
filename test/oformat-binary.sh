@@ -8,7 +8,7 @@ EOF
 ./mold -o $t/exe $t/a.o --oformat=binary -Ttext=0x4000 -Map=$t/map
 grep -Eq '^\s+0x4000\s+[0-9]+\s+[0-9]+\s+\.text$' $t/map
 
-! grep -Fq .strtab $t/map || false
-! grep -Fq .shstrtab $t/map || false
-! grep -Fq .symtab $t/map || false
-! grep -Fq .comment $t/map || false
+not grep -Fq .strtab $t/map
+not grep -Fq .shstrtab $t/map
+not grep -Fq .symtab $t/map
+not grep -Fq .comment $t/map

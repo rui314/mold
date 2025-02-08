@@ -22,5 +22,4 @@ int hello() {
 EOF
 
 $CC -B. -o $t/c.so $t/b.o -shared
-readelf -W --dyn-syms $t/c.so > $t/log1
-! grep -Fq '__global_pointer$' $t/log1 || false
+readelf -W --dyn-syms $t/c.so | not grep -Fq '__global_pointer$'

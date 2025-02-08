@@ -73,9 +73,9 @@ readelf -n $t/exe1 | grep -q 'x86 ISA needed: x86-64-baseline, x86-64-v2, x86-64
 readelf -n $t/exe1 | grep -q 'x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
 
 ./mold -nostdlib -o $t/exe2 $t/a.o $t/b.o $t/c.o
-! readelf -n $t/exe2 | grep -q 'x86 feature: SHSTK' || false
+readelf -n $t/exe2 | not grep -q 'x86 feature: SHSTK'
 readelf -n $t/exe2 | grep -q 'x86 ISA needed: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4' || false
-! readelf -n $t/exe2 | grep -q 'x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
+readelf -n $t/exe2 | not grep -q 'x86 ISA used: x86-64-baseline, x86-64-v2, x86-64-v3, x86-64-v4'
 
 ./mold --relocatable -o $t/d.o $t/a.o $t/b.o
 readelf -n $t/d.o | grep -q 'x86 feature: SHSTK'

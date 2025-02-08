@@ -6,7 +6,7 @@ void _ZN2ns7versionEv();
 int main() { _ZN2ns7versionEv(); }
 EOF
 
-! $CC -B. -o $t/exe1 $t/a.o 2> $t/log || false
+not $CC -B. -o $t/exe1 $t/a.o 2> $t/log
 grep -Fq 'ns::version()' $t/log
 
 cat <<'EOF' | $CC -c -o $t/b.o -xc -
@@ -15,5 +15,5 @@ int main() { _ZN2ns7versionEv(); }
 __attribute__((section(".comment"))) char str[] = "rustc version x.y.z\n";
 EOF
 
-! $CC -B. -o $t/exe2 $t/b.o 2> $t/log || false
+not $CC -B. -o $t/exe2 $t/b.o 2> $t/log
 grep -Fq 'ns::versionv' $t/log

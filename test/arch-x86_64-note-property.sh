@@ -17,4 +17,4 @@ EOF
 readelf -n $t/exe | grep -q 'x86 feature: IBT'
 
 ./mold -o $t/exe $t/b.o
-! readelf -n $t/exe | grep -q 'x86 feature: IBT' || false
+readelf -n $t/exe | not grep -q 'x86 feature: IBT'

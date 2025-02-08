@@ -54,6 +54,4 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe2 -Wl,-icf=safe $t/a.o $t/c.o
-$QEMU $t/exe2 > $t/log2
-! grep foo2 $t/log2 || false
-
+$QEMU $t/exe2 | not grep foo2

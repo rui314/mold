@@ -15,8 +15,8 @@ ar cr $t/d.a $t/b.o $t/c.o
 $CC -B. -nostdlib -o $t/exe $t/a.o $t/d.a
 
 readelf --symbols $t/exe > $t/log
-! grep -q fn1 $t/log || false
-! grep -q fn2 $t/log || false
+not grep -q fn1 $t/log
+not grep -q fn2 $t/log
 
 $CC -B. -nostdlib -o $t/exe $t/a.o -Wl,--whole-archive $t/d.a
 
@@ -28,5 +28,5 @@ $CC -B. -nostdlib -o $t/exe $t/a.o -Wl,--whole-archive \
   -Wl,--no-whole-archive $t/d.a
 
 readelf --symbols $t/exe > $t/log
-! grep -q fn1 $t/log || false
-! grep -q fn2 $t/log || false
+not grep -q fn1 $t/log
+not grep -q fn2 $t/log

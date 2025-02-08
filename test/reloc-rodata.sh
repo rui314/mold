@@ -15,5 +15,5 @@ int main() {
 }
 EOF
 
-! $CC -B. -o $t/exe $t/a.o -pie >& $t/log
+not $CC -B. -o $t/exe $t/a.o -pie >& $t/log
 grep -Eq 'relocation against symbol .+ can not be used; recompile with -fPIC' $t/log

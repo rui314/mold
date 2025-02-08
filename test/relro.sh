@@ -21,4 +21,4 @@ grep -q 'GNU_RELRO ' $t/log2
 $CC -B. -o $t/exe3 $t/a.o -Wl,-z,norelro
 $QEMU $t/exe3 | grep -q 'Hello world'
 readelf --segments -W $t/exe3 > $t/log3
-! grep -q 'GNU_RELRO ' $t/log3 || false
+not grep -q 'GNU_RELRO ' $t/log3

@@ -31,4 +31,4 @@ EOF
 
 $CC -B. -o $t/exe $t/c.o $t/b.so
 $QEMU $t/exe | grep -q hello
-! readelf --symbols $t/exe | grep -q fn3 || false
+readelf --symbols $t/exe | not grep -q fn3

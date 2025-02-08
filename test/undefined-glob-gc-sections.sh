@@ -26,4 +26,4 @@ $CC -B. -o $t/exe2 $t/d.a $t/e.o -Wl,--undefined-glob='foo*' -Wl,--gc-sections
 readelf -W --symbols $t/exe2 > $t/log2
 grep -q foo $t/log2
 grep -q foobar $t/log2
-! grep -q baz $t/log2 || false
+not grep -q baz $t/log2

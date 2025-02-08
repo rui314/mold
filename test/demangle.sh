@@ -8,13 +8,13 @@ int main() {
 }
 EOF
 
-! $CC -B. -o $t/exe $t/a.o -Wl,-no-demangle 2> $t/log || false
+not $CC -B. -o $t/exe $t/a.o -Wl,-no-demangle 2> $t/log
 grep -q 'undefined symbol: _Z3fooii$' $t/log
 
-! $CC -B. -o $t/exe $t/a.o -Wl,-demangle 2> $t/log || false
+not $CC -B. -o $t/exe $t/a.o -Wl,-demangle 2> $t/log
 grep -Eq 'undefined symbol: foo\(int, int\)$' $t/log
 
-! $CC -B. -o $t/exe $t/a.o 2> $t/log || false
+not $CC -B. -o $t/exe $t/a.o 2> $t/log
 grep -Eq 'undefined symbol: foo\(int, int\)$' $t/log
 
 cat <<EOF | $CC -c -o $t/b.o -xc -
@@ -24,5 +24,5 @@ int main() {
 }
 EOF
 
-! $CC -B. -o $t/exe $t/b.o -Wl,-demangle 2> $t/log || false
+not $CC -B. -o $t/exe $t/b.o -Wl,-demangle 2> $t/log
 grep -q 'undefined symbol: Pi$' $t/log

@@ -7,7 +7,7 @@ int main() { fn(); }
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o -pie
-! readelf -W --dyn-syms $t/exe1 | grep -q ' fn$' || false
+readelf -W --dyn-syms $t/exe1 | not grep -q ' fn$'
 
 $CC -B. -o $t/exe2 $t/a.o -pie -Wl,-z,dynamic-undefined-weak
 readelf -W --dyn-syms $t/exe2 | grep -q ' fn$'

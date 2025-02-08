@@ -13,8 +13,5 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o $t/b.o > $t/log
-! grep -Fq 'multiple common symbols' $t/log || false
-
-$CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-warn-common 2> $t/log
-grep -Fq 'multiple common symbols' $t/log
+$CC -B. -o $t/exe $t/a.o $t/b.o | not grep -Fq 'multiple common symbols'
+$CC -B. -o $t/exe $t/a.o $t/b.o -Wl,-warn-common | grep -Fq 'multiple common symbols' $t/log

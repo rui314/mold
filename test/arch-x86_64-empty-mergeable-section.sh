@@ -21,4 +21,4 @@ $t/exe
 
 readelf -SW $t/exe > $t/log
 grep -q '.rodata.str1.1 .* AMS ' $t/log
-! grep -q '.rodata.str1.1 .* AM ' $t/log || false
+not grep -q '.rodata.str1.1 .* AM ' $t/log

@@ -28,4 +28,4 @@ $CC -B. -o $t/exe2 $t/a.o -Wl,-as-needed -L$t -lbar -lfoo
 
 readelf --dynamic $t/exe2 > $t/log2
 grep -Fq 'Shared library: [libfoo.so]' $t/log2
-! grep -Fq 'Shared library: [libbar.so]' $t/log2 || false
+not grep -Fq 'Shared library: [libbar.so]' $t/log2

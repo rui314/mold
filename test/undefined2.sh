@@ -24,4 +24,4 @@ ar cr $t/d.a $t/b.o $t/c.o
 ./mold -static -o $t/exe $t/a.o $t/d.a -undefined foo
 readelf --symbols $t/exe > $t/log
 grep -q foo $t/log
-! grep -q ndefined $t/log || false
+not grep -q ndefined $t/log

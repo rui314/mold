@@ -10,5 +10,4 @@ $CC -B. -o $t/exe $t/a.o -Wl,-init,foo
 readelf --dynamic $t/exe | grep -Fq '(INIT)'
 
 $CC -B. -o $t/exe $t/a.o -Wl,-init,no-such-symbol
-readelf --dynamic $t/exe > $t/log
-! grep -Fq '(INIT)' $t/log || false
+readelf --dynamic $t/exe | not grep -Fq '(INIT)'

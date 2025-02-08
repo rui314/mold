@@ -12,5 +12,5 @@ EOF
 
 $CC -B. -shared -Wl,--version-script=$t/a.ver -o $t/c.so $t/b.o
 readelf -W --dyn-syms $t/c.so > $t/log
-! grep -Eq foobar $t/log || false
+not grep -Eq foobar $t/log
 grep -Eq 'GLOBAL.*baz' $t/log

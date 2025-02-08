@@ -14,4 +14,4 @@ $CC -B. -o $t/exe @$t/rsp
 
 grep -q '/exe:.*/a.o ' $t/dep
 grep -q '/a.o:$' $t/dep
-! grep -q '^/tmp' $t/dep || false
+not grep -q '^/tmp' $t/dep

@@ -77,6 +77,10 @@ if [ "$(uname)" = FreeBSD ]; then
 fi
 
 # Common functions
+not() {
+  if "$@"; then return 1; else return 0; fi
+}
+
 test_cflags() {
   echo 'int main() {}' | $CC -B. "$@" -o /dev/null -xc - >& /dev/null
 }

@@ -18,4 +18,4 @@ $CC -B. -o $t/exe $t/c.o -Wl,-as-needed \
 
 readelf --dynamic $t/exe > $t/log
 grep -Fq a.so $t/log
-! grep -Fq b.so $t/log || false
+not grep -Fq b.so $t/log

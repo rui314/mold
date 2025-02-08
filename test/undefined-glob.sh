@@ -24,12 +24,12 @@ EOF
 
 $CC -B. -o $t/exe1 $t/d.a $t/e.o
 readelf -W --symbols $t/exe1 > $t/log1
-! grep -q foo $t/log1 || false
-! grep -q foobar $t/log1 || false
-! grep -q baz $t/log1 || false
+not grep -q foo $t/log1
+not grep -q foobar $t/log1
+not grep -q baz $t/log1
 
 $CC -B. -o $t/exe2 $t/d.a $t/e.o -Wl,--undefined-glob='foo*'
 readelf -W --symbols $t/exe2 > $t/log2
 grep -q foo $t/log2
 grep -q foobar $t/log2
-! grep -q baz $t/log2 || false
+not grep -q baz $t/log2

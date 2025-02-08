@@ -10,4 +10,4 @@ EOF
 $CC -B. -o $t/exe $t/a.o -Wl,-dynamic-list-data
 readelf -W --dyn-syms $t/exe > $t/log
 grep -wq foo $t/log
-! grep -wq bar $t/log || false
+not grep -wq bar $t/log

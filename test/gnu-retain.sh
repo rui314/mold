@@ -15,4 +15,4 @@ readelf -WS $t/a.o | grep -q '\.text\.foo.*AXR' || skip
 $CC -B. -o $t/exe $t/a.o -Wl,-gc-sections
 nm $t/exe > $t/log
 grep -q foo $t/log
-! grep -q bar $t/log || false
+not grep -q bar $t/log

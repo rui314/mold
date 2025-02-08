@@ -19,4 +19,4 @@ readelf -W --dyn-syms $t/c.so > $t/log
 grep -q ' foo@TEST' $t/log
 grep -q ' bar@TEST' $t/log
 grep -q ' bar1' $t/log
-! grep -q ' foo@@TEST' $t/log || false
+not grep -q ' foo@@TEST' $t/log

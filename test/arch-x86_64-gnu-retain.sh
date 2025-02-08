@@ -25,5 +25,4 @@ $CC -B. -o $t/exe1 $t/a.o $t/b.o -Wl,-gc-sections
 nm $t/exe1 | grep -q foo
 
 $CC -B. -o $t/exe1 $t/a.o $t/c.o -Wl,-gc-sections
-nm $t/exe1 > $t/log
-! grep -q foo $t/log || false
+nm $t/exe1 | not grep -q foo

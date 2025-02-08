@@ -13,7 +13,7 @@ EOF
 rm -rf $t/exe.repro $t/exe.repro.tar
 
 $CC -B. -o $t/exe $t/a.o
-! [ -f $t/exe.repro.tar ] || false
+not [ -f $t/exe.repro.tar ]
 
 $CC -B. -o $t/exe $t/a.o -Wl,-repro
 

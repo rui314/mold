@@ -32,4 +32,4 @@ ar crs $t/e.a $t/a.o $t/b.o $t/c.o
 readelf --symbols $t/f.o > $t/log
 grep -q 'foo\b' $t/log
 grep -q 'bar\b' $t/log
-! grep -q 'baz\b' $t/log || false
+not grep -q 'baz\b' $t/log

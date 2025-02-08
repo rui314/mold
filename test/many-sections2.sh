@@ -16,4 +16,4 @@ grep -Fq .data.100000 $t/log1
 readelf -Ws $t/b.o > $t/log2
 grep -Fq 'GLOBAL DEFAULT 100000' $t/log2
 grep -Fq 'ABS foo' $t/log2
-! grep -Fq 'ABS x68966' $t/log2 || false
+not grep -Fq 'ABS x68966' $t/log2

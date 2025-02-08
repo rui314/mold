@@ -21,10 +21,10 @@ fi
 
 ./mold -o $t/exe $t/a.o -strip-all
 readelf --symbols $t/exe > $t/log
-! grep -Fq _start $t/log || false
-! grep -Fq foo $t/log || false
-! grep -Fq bar $t/log || false
+not grep -Fq _start $t/log
+not grep -Fq foo $t/log
+not grep -Fq bar $t/log
 
 if [[ $MACHINE != riscv* ]] && [[ $MACHINE != loongarch* ]]; then
-  ! grep -Fq .L.baz $t/log || false
+  not grep -Fq .L.baz $t/log
 fi

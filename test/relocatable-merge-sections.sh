@@ -16,5 +16,5 @@ grep -Fq .text.bar $t/log1
 
 ./mold --relocatable -o $t/c.o $t/a.o --relocatable-merge-sections
 readelf -WS $t/c.o > $t/log2
-! grep -Fq .text.foo $t/log2 || false
-! grep -Fq .text.bar $t/log2 || false
+not grep -Fq .text.foo $t/log2
+not grep -Fq .text.bar $t/log2

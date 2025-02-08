@@ -19,5 +19,4 @@ int main() { return bar; }
 EOF
 
 $CC -B. -shared -o $t/e.so $t/c.a $t/d.o
-readelf --dyn-syms $t/e.so > $t/log
-! grep -Fq foo $t/log || false
+readelf --dyn-syms $t/e.so | not grep -Fq foo

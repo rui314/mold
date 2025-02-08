@@ -7,13 +7,7 @@ _start:
 EOF
 
 ./mold -o $t/exe $t/a.o
-
-readelf --sections $t/exe > $t/log
-! grep -Fq .interp $t/log || false
-
-readelf --dynamic $t/exe > $t/log
+readelf --sections $t/exe | not grep -Fq .interp
 
 ./mold -o $t/exe $t/a.o --dynamic-linker=/foo/bar
-
-readelf --sections $t/exe > $t/log
-grep -Fq .interp $t/log
+readelf --sections $t/exe | grep -Fq .interp

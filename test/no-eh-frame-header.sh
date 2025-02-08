@@ -8,8 +8,5 @@ int main() {
 EOF
 
 $CC -B. -Wl,--no-eh-frame-hdr -Wl,--thread-count=1 -O0 -o $t/exe $t/a.o
-
-readelf -WS $t/exe > $t/log
-! grep -F .eh_frame_hdr $t/log || false
-
+readelf -WS $t/exe | not grep -F .eh_frame_hdr
 $QEMU $t/exe

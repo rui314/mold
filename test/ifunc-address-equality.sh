@@ -48,5 +48,4 @@ EOF
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o -no-pie
 $QEMU $t/exe1 | grep -Eq '^(\S+) \1 (\S+) \2'
 
-readelf --dynamic $t/exe1 > $t/log1
-! grep -q TEXTREL $t/log1 || false
+readelf --dynamic $t/exe1 | not grep -q TEXTREL

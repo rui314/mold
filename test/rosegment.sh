@@ -7,13 +7,10 @@ int main() { printf("Hello world\n"); }
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o
-readelf -W --segments $t/exe1 > $t/log1
-! grep -q '\.interp .* \.text' $t/log1 || false
+readelf -W --segments $t/exe1 | not grep -q '\.interp .* \.text'
 
 $CC -B. -o $t/exe2 $t/a.o -Wl,--rosegment
-readelf -W --segments $t/exe2 > $t/log2
-! grep -q '\.interp .* \.text' $t/log2 || false
+readelf -W --segments $t/exe2 | not grep -q '\.interp .* \.text'
 
 $CC -B. -o $t/exe3 $t/a.o -Wl,--no-rosegment
-readelf -W --segments $t/exe3 > $t/log3
-grep -q '\.interp .* \.text' $t/log3
+readelf -W --segments $t/exe3 | grep -q '\.interp .* \.text'

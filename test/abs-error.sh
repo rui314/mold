@@ -18,5 +18,5 @@ extern char foo;
 int main() { printf("foo=%p\n", &foo); }
 EOF
 
-! $CC -B. -o $t/exe -pie $t/a.o $t/b.o -Wl,-z,text >& $t/log
+not $CC -B. -o $t/exe -pie $t/a.o $t/b.o -Wl,-z,text >& $t/log
 grep -q 'recompile with -fPIC' $t/log

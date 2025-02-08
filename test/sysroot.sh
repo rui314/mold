@@ -22,19 +22,14 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
-  -Wl,-L=foo/bar -lfoo
+$CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t/ -Wl,-L=foo/bar -lfoo
 
-$CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
-  -Wl,-L=/foo/bar -lfoo
+$CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t/ -Wl,-L=/foo/bar -lfoo
 
-$CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
-  '-Wl,-L$SYSROOTfoo/bar' -lfoo
+$CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t/ '-Wl,-L$SYSROOTfoo/bar' -lfoo
 
-$CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t/ \
-  '-Wl,-L$SYSROOT/foo/bar' -lfoo
+$CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t/ '-Wl,-L$SYSROOT/foo/bar' -lfoo
 
-! $CC -B. -o $t/exe $t/c.o -lfoo >& /dev/null
+not $CC -B. -o $t/exe $t/c.o -lfoo >& /dev/null
 
-! $CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t \
-  -Wl,-Lfoo/bar -lfoo >& /dev/null
+not $CC -B. -o $t/exe $t/c.o -Wl,--sysroot=$t -Wl,-Lfoo/bar -lfoo >& /dev/null

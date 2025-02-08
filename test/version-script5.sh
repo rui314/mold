@@ -17,4 +17,4 @@ $CC -B. -shared -o $t/c.so -Wl,-version-script,$t/a.ver $t/b.o
 
 readelf --dyn-syms $t/c.so > $t/log
 grep -Fq foo $t/log
-! grep -Fq ' main' $t/log || false
+not grep -Fq ' main' $t/log

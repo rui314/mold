@@ -35,4 +35,4 @@ $QEMU $t/exe
 readelf --dyn-syms $t/b.so > $t/log
 grep -Fq 'foo@@ver1' $t/log
 grep -Fq 'bar@@ver2' $t/log
-! grep -Fq 'baz' $t/log || false
+not grep -Fq 'baz' $t/log

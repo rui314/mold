@@ -11,5 +11,4 @@ int main() {}
 EOF
 
 $CC -B. -o $t/exe $t/a.so $t/b.o -Wl,-init,foo
-readelf --dynamic $t/exe > $t/log
-! grep -Fq '(INIT)' $t/log || false
+readelf --dynamic $t/exe | not grep -Fq '(INIT)'

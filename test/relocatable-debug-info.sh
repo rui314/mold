@@ -23,5 +23,4 @@ $OBJDUMP --dwarf=info $t/a.o $t/b.o 2>&1 | grep -q 'Warning: DIE at offset' && s
 $CC -B. -o $t/exe $t/c.o
 $QEMU $t/exe | grep -q 'Hello world'
 
-$OBJDUMP --dwarf=info $t/c.o > /dev/null 2> $t/log
-! grep -q Warning $t/log || false
+$OBJDUMP --dwarf=info $t/c.o > /dev/null 2>&1 | not grep -q Warning

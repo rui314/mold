@@ -33,4 +33,4 @@ $QEMU $t/exe | grep -q 'Hello world'
 
 nm $t/exe > $t/log
 grep -q hello $t/log
-! grep -q howdy $t/log || false
+not grep -q howdy $t/log

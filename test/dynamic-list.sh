@@ -10,8 +10,8 @@ EOF
 $CC -B. -o $t/exe $t/a.o
 
 readelf --dyn-syms $t/exe > $t/log
-! grep -q ' foo' $t/log || false
-! grep -q ' bar' $t/log || false
+not grep -q ' foo' $t/log
+not grep -q ' bar' $t/log
 
 cat <<EOF > $t/dyn
 { foo; bar; };
