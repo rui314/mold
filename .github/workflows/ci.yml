@@ -85,6 +85,14 @@ jobs:
         cmake ..
         cmake --build . -j$(nproc)
     - run: cd build; ctest --output-on-failure -j$(nproc)
+    - name: archive test results
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: test-results-${{ matrix.distro }}
+        path: |
+          build
+          !build/CMakeFiles
 
   build-macos:
     runs-on: macos-latest
