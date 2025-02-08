@@ -79,8 +79,9 @@ EOF
 # Older versions of gdb are buggy that they complain DWARF64 debug sections
 # even without .gdb_index. Skip if such version.
 $CC -B. -o $t/exe1 $t/e.so $t/g.o
-DEBUGINFOD_URLS= gdb $t/exe1 -nx -batch -ex 'b main' -ex r -ex quit >& $t/log1
-grep -q 'DW_FORM_line_strp pointing outside of .debug_line_str' $t/log1 && skip
+
+DEBUGINFOD_URLS= gdb $t/exe1 -nx -batch -ex 'b main' -ex r -ex quit |&
+  grep -q 'DW_FORM_line_strp pointing outside of .debug_line_str' && skip
 
 # We are using a recent version of gdb.
 $CC -B. -o $t/exe2 $t/f.so $t/g.o -Wl,--gdb-index

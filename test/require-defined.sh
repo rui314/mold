@@ -18,5 +18,5 @@ readelf --symbols $t/exe | not grep -q foobar
 $CC -B. -o $t/exe $t/c.o $t/b.a -Wl,-require-defined,foobar
 readelf --symbols $t/exe | grep -q foobar
 
-not $CC -B. -o $t/exe $t/c.o $t/b.a -Wl,-require-defined,xyz >& $t/log
-grep -q 'undefined symbol: xyz' $t/log
+not $CC -B. -o $t/exe $t/c.o $t/b.a -Wl,-require-defined,xyz |&
+  grep -q 'undefined symbol: xyz'
