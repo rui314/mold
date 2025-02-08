@@ -5,16 +5,7 @@ echo '.globl main; main:' | $CC -o $t/a.o -c -x assembler -
 
 $CC -B. -o $t/exe $t/a.o
 
-readelf --dynamic $t/exe > $t/log
-grep -Eq 'Shared library:.*\blibc\b' $t/log
+readelf --dynamic $t/exe | grep -Eq 'Shared library:.*\blibc\b'
 
-readelf -W --dyn-syms --use-dynamic $t/exe > $t/log2
-grep -Eq 'FUNC\s+GLOBAL\s+DEFAULT.*UND\s+__libc_start' $t/log2
-
-cat <<EOF | $CC -c -fPIC -o $t/b.o -xc -
-#include <stdio.h>
-
-int main() {
-  printf("Hello world\n");
-}
-EOF
+readelf -W --dyn-syms --use-dynamic $t/exe | \
+  grep -Eq 'FUNC\s+GLOBAL\s+DEFAULT.*UND\s+__libc_start'

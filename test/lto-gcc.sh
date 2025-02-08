@@ -22,7 +22,7 @@ int main() {
 }
 EOF
 
-$GCC -B. -o $t/exe2 $t/b.o --verbose 2>&1 | grep -q -- -fwpa
+$GCC -B. -o $t/exe2 $t/b.o --verbose |& grep -q -- -fwpa
 
 # Test FAT objects if -fno-use-linker-plugin is used
 

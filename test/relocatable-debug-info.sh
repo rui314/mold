@@ -16,11 +16,11 @@ EOF
 
 # It looks like objdump prints out a warning message for
 # object files compiled with Clang.
-$OBJDUMP --dwarf=info $t/a.o $t/b.o 2>&1 | grep -q 'Warning: DIE at offset' && skip
+$OBJDUMP --dwarf=info $t/a.o $t/b.o |& grep -q 'Warning: DIE at offset' && skip
 
 ./mold --relocatable -o $t/c.o $t/a.o $t/b.o
 
 $CC -B. -o $t/exe $t/c.o
 $QEMU $t/exe | grep -q 'Hello world'
 
-$OBJDUMP --dwarf=info $t/c.o > /dev/null 2>&1 | not grep -q Warning
+$OBJDUMP --dwarf=info $t/c.o > /dev/null |& not grep -q Warning

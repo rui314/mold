@@ -12,4 +12,4 @@ EOF
 $CC -B. -o $t/exe $t/a.o -Wl,-z,nosectionheader
 $QEMU $t/exe | grep -q 'Hello world'
 
-readelf -h $t/exe 2>&1 | grep -Eq 'Size of section headers:\s+0 '
+readelf -h $t/exe |& grep -Eq 'Size of section headers:\s+0 '

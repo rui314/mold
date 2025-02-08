@@ -19,5 +19,5 @@ EOF
 
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=`pwd`/mold \
   clang -no-pie -o $t/exe $t/a.o -fuse-ld=/usr/bin/ld
-readelf -p .comment $t/exe > $t/log
-grep -q mold $t/log
+
+readelf -p .comment $t/exe | grep -q mold

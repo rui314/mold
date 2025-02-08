@@ -20,10 +20,10 @@ int main() {
 EOF
 
 rm -f $t/exe
-$CC -B. -Wl,--version -o $t/exe1 $t/a.o 2>&1 | grep -q mold
+$CC -B. -Wl,--version -o $t/exe1 $t/a.o |& grep -q mold
 not [ -f $t/exe1 ]
 
-$CC -B. -Wl,-v -o $t/exe2 $t/a.o 2>&1 | grep -q mold
+$CC -B. -Wl,-v -o $t/exe2 $t/a.o |& grep -q mold
 $QEMU $t/exe2 | grep -q 'Hello world'
 
-not ./mold --v 2>&1 | grep -q 'unknown command line option:'
+not ./mold --v |& grep -q 'unknown command line option:'

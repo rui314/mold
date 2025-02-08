@@ -17,8 +17,8 @@ EOF
 
 LD_PRELOAD=`pwd`/mold-wrapper.so MOLD_PATH=`pwd`/mold \
   $CC -o $t/exe $t/a.o -B/usr/bin
-readelf -p .comment $t/exe > $t/log
-grep -q mold $t/log
+
+readelf -p .comment $t/exe | grep -q mold
 
 ./mold -run env | grep -q '^MOLD_PATH=.*/mold$'
 
@@ -44,7 +44,7 @@ EOF
 chmod 755 $t/sh
 
 ./mold -run $t/sh ld --version | grep -q mold
-./mold -run $t/sh foo.ld --version >& /dev/null | grep -q mold && false
+./mold -run $t/sh foo.ld --version |& not grep -q mold
 
 ./mold -run $t/sh $t/ld --version | grep -q mold
 ./mold -run $t/sh $t/ld.lld --version | grep -q mold
