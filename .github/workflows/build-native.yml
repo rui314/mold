@@ -1,4 +1,4 @@
-name: Build some tarballs
+name: Build native tarballs
 
 on:
   push:
