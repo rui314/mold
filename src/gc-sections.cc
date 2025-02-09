@@ -24,7 +24,6 @@ static bool should_keep(const InputSection<E> &isec) {
          type == SHT_INIT_ARRAY ||
          type == SHT_FINI_ARRAY ||
          type == SHT_PREINIT_ARRAY ||
-         (is_arm32<E> && type == SHT_ARM_EXIDX) ||
          name.starts_with(".ctors") ||
          name.starts_with(".dtors") ||
          name.starts_with(".init") ||
@@ -100,34 +99,36 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
                   tbb::feeder<InputSection<E> *> &feeder, i64 depth) {
   assert(isec->is_visited);
 
+  // Mark a section alive. For better performacne, we don't call
+  // `feeder.add` too often.
+  auto mark = [&](InputSection<E> *sec) {
+    if (mark_section(sec)) {
+      if (depth < 3)
+        visit(ctx, sec, feeder, depth + 1);
+      else
+        feeder.add(sec);
+    }
+  };
+
   // If this is a text section, .eh_frame may contain records
   // describing how to handle exceptions for that function.
   // We want to keep associated .eh_frame records.
   for (FdeRecord<E> &fde : isec->get_fdes())
     for (const ElfRel<E> &rel : fde.get_rels(isec->file).subspan(1))
       if (Symbol<E> *sym = isec->file.symbols[rel.r_sym])
-        if (mark_section(sym->get_input_section()))
-          feeder.add(sym->get_input_section());
+        mark(sym->get_input_section());
 
   for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
-    Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
-
     // Symbol can refer to either a section fragment or an input section.
-    // Mark a fragment as alive.
-    if (SectionFragment<E> *frag = sym.get_frag()) {
+    Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
+    if (SectionFragment<E> *frag = sym.get_frag())
       frag->is_alive = true;
-      continue;
-    }
-
-    // Mark a section alive. For better performacne, we don't call
-    // `feeder.add` too often.
-    if (mark_section(sym.get_input_section())) {
-      if (depth < 3)
-        visit(ctx, sym.get_input_section(), feeder, depth + 1);
-      else
-        feeder.add(sym.get_input_section());
-    }
+    else
+      mark(sym.get_input_section());
   }
+
+  if constexpr (is_arm32<E>)
+    mark(isec->extra.exidx);
 }
 
 // Mark all reachable sections

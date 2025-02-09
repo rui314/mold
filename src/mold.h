@@ -259,6 +259,11 @@ struct FdeRecord {
 template <typename E>
 struct InputSectionExtras {};
 
+template <typename E> requires is_arm32<E>
+struct InputSectionExtras<E> {
+  InputSection<E> *exidx = nullptr;
+};
+
 struct RelocDelta {
   u64 offset : 38;
   i64 delta : 26;

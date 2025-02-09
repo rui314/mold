@@ -444,6 +444,13 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       target->relsec_idx = i;
     }
   }
+
+  // Attach .arm.exidx sections to their corresponding sections
+  if constexpr (is_arm32<E>)
+    for (std::unique_ptr<InputSection<E>> &isec : this->sections)
+      if (isec && isec->shdr().sh_type == SHT_ARM_EXIDX)
+        if (InputSection<E> *target = sections[isec->shdr().sh_link].get())
+          target->extra.exidx = isec.get();
 }
 
 // .eh_frame contains data records explaining how to handle exceptions.
