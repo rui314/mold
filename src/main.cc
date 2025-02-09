@@ -390,6 +390,10 @@ int mold_main(int argc, char **argv) {
   if (ctx.arg.icf)
     compute_address_significance(ctx);
 
+  // Handle PPC64-specific .opd sections.
+  if constexpr (is_ppc64v1<E>)
+    ppc64v1_rewrite_opd(ctx);
+
   // Garbage-collect unreachable sections.
   if (ctx.arg.gc_sections)
     gc_sections(ctx);
@@ -407,9 +411,6 @@ int mold_main(int argc, char **argv) {
 
   // Warn if symbols with different types are defined under the same name.
   check_symbol_types(ctx);
-
-  if constexpr (is_ppc64v1<E>)
-    ppc64v1_rewrite_opd(ctx);
 
   // Bin input sections into output sections.
   create_output_sections(ctx);
