@@ -94,8 +94,8 @@ is_musl() {
 }
 
 supports_ifunc() {
-  ! is_musl && \
-    echo 'void x() __attribute__((ifunc("y"))); void *y() { return 0; }' | \
+  ! is_musl &&
+    echo 'void x() __attribute__((ifunc("y"))); void *y() { return 0; }' |
     $CC -c -o /dev/null -xc - >& /dev/null
 }
 

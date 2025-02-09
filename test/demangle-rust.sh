@@ -9,6 +9,5 @@ int main() {
 }
 EOF
 
-not $CC -B. -o $t/exe $t/a.o 2> $t/log
-
-grep -F '<core::slice::Iter<u8> as core::iter::iterator::Iterator>::rposition::<core::slice::memchr::memrchr::{closure#1}>::{closure#0}' $t/log
+not $CC -B. -o $t/exe $t/a.o |&
+  grep -F '<core::slice::Iter<u8> as core::iter::iterator::Iterator>::rposition::<core::slice::memchr::memrchr::{closure#1}>::{closure#0}'
