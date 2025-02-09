@@ -3,7 +3,6 @@
 
 on_qemu && skip
 [ $MACHINE = riscv64 -o $MACHINE = riscv32 -o $MACHINE = sparc64 ] && skip
-
 command -v gdb >& /dev/null || skip
 
 test_cflags -gdwarf-5 -g -gdwarf64 || skip

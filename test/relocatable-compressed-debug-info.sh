@@ -4,7 +4,7 @@
 # OneTBB isn't tsan-clean
 nm mold | grep '__tsan_init' && skip
 
-echo 'int main() {}' | $GCC -o /dev/null -xc -g3 -gz - >& /dev/null || skip
+test_cflags -g3 -gz || skip
 
 cat <<EOF | $GCC -c -o $t/a.o -xc - -g3 -gz
 #include <stdio.h>

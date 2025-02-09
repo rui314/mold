@@ -3,10 +3,8 @@
 
 on_qemu && skip
 [ $MACHINE = riscv64 -o $MACHINE = riscv32 -o $MACHINE = sparc64 ] && skip
-
 command -v gdb >& /dev/null || skip
-
-echo 'int main() {}' | $CC -o /dev/null -xc -gdwarf-2 -g - >& /dev/null || skip
+test_cflags -gdwarf-2 -g || skip
 
 cat <<EOF | $CC -c -o $t/a.o -fPIC -g -ggnu-pubnames -gdwarf-2 -xc - -ffunction-sections
 void hello2();

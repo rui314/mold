@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-echo 'int foo() { return 0; }' | $CC -o /dev/null -c -xc - -mthumb 2> /dev/null || skip
+test_cflags -mthumb || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -mthumb
 #include <stdio.h>

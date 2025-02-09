@@ -2,8 +2,7 @@
 . $(dirname $0)/common.inc
 
 is_musl && skip
-
-echo 'int main() {}' | $GCC -c -o /dev/null -xc - -O0 -mthumb >& /dev/null || skip
+test_cflags -mthumb || skip
 
 cat <<EOF > $t/a.c
 extern _Thread_local int foo;

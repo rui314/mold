@@ -2,8 +2,7 @@
 . $(dirname $0)/common.inc
 
 echo endbr64 | $CC -o /dev/null -c -xassembler - 2> /dev/null || skip
-
-$CC -fcf-protection=branch -c /dev/null -o /dev/null -xc 2> /dev/null || skip
+test_cflags -fcf-protection=branch || skip
 
 cat <<EOF | $CC -fcf-protection=branch -c -o $t/a.o -xc -
 void _start() {}

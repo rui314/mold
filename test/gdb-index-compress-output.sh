@@ -3,7 +3,6 @@
 
 on_qemu && skip
 [ $MACHINE = riscv64 -o $MACHINE = riscv32 -o $MACHINE = sparc64 ] && skip
-
 command -v gdb >& /dev/null || skip
 
 cat <<EOF | $CC -c -o $t/a.o -fPIC -g -ggnu-pubnames -gdwarf-4 -xc - -ffunction-sections

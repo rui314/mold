@@ -1,8 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-echo 'int main() {}' | $CC -m32 -o $t/exe -xc - >& /dev/null || skip
-
+test_cflags -m32 || skip
 nm mold | grep '__tsan_init' && skip
 
 cat <<EOF | $CC -m32 -c -o $t/a.o -xc -
