@@ -722,7 +722,7 @@ void create_arm_exidx_section(Context<E> &ctx) {
 
 void Arm32ExidxSection::compute_section_size(Context<E> &ctx) {
   output_section.compute_section_size(ctx);
-  this->shdr.sh_size = output_section.shdr.sh_size;
+  this->shdr.sh_size = output_section.shdr.sh_size + 8; // +8 for sentinel
 }
 
 void Arm32ExidxSection::update_shdr(Context<E> &ctx) {
