@@ -6,4 +6,4 @@ void _start() {}
 EOF
 
 ./mold -o $t/exe $t/a.o
-readelf --file-header $t/exe | grep -qi x86-64
+readelf --file-header $t/exe | grep -i x86-64

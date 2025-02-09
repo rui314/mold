@@ -90,7 +90,7 @@ test_cxxflags() {
 }
 
 is_musl() {
-  ldd --version |& grep -q musl
+  ldd --version |& grep musl > /dev/null
 }
 
 supports_ifunc() {
@@ -119,7 +119,7 @@ supports_tlsdesc() {
 }
 
 on_qemu() {
-  [ "$QEMU" != '' ] || grep -qw qemu /proc/cpuinfo 2> /dev/null
+  [ "$QEMU" != '' ] || grep -w qemu /proc/cpuinfo >& /dev/null
 }
 
 skip() {

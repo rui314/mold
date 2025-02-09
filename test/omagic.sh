@@ -13,4 +13,4 @@ int main() {
 EOF
 
 $CC -B. $t/a.o -o $t/exe -static -Wl,--omagic
-readelf -W --segments $t/exe | grep -qw RWE
+readelf -W --segments $t/exe | grep -w RWE

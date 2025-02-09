@@ -10,7 +10,7 @@ main:
 EOF
 
 $CC -B. -o $t/exe $t/a.o
-readelf --notes $t/exe | not grep -qw SHSTK
+readelf --notes $t/exe | not grep -w SHSTK
 
 $CC -B. -o $t/exe $t/a.o -Wl,-z,ibt
-readelf --notes $t/exe | grep -qw IBT
+readelf --notes $t/exe | grep -w IBT

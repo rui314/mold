@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF > $t/a.cc
+cat <<EOF | $CXX -c -o $t/a.o -xc++ - -ffunction-sections -fdata-sections
 #include <stdio.h>
 
 int two() { return 2; }
@@ -22,28 +22,28 @@ int main() {
 }
 EOF
 
-$CXX -B. -o $t/exe1 $t/a.cc -ffunction-sections -fdata-sections
-
-readelf --symbols $t/exe1 > $t/log.1
-grep -qv live_fn1 $t/log.1
-grep -qv live_fn2 $t/log.1
-grep -qv dead_fn1 $t/log.1
-grep -qv dead_fn2 $t/log.1
-grep -qv live_var1 $t/log.1
-grep -qv live_var2 $t/log.1
-grep -qv dead_var1 $t/log.1
-grep -qv dead_var2 $t/log.1
+$CXX -B. -o $t/exe1 $t/a.o
+readelf --symbols $t/exe1 > $t/log1
 $QEMU $t/exe1 | grep '1 2'
 
-$CXX -B. -o $t/exe2 $t/a.cc -ffunction-sections -fdata-sections -Wl,-gc-sections
+grep live_fn1 $t/log1
+grep live_fn2 $t/log1
+grep dead_fn1 $t/log1
+grep dead_fn2 $t/log1
+grep live_var1 $t/log1
+grep live_var2 $t/log1
+grep dead_var1 $t/log1
+grep dead_var2 $t/log1
 
-readelf --symbols $t/exe2 > $t/log.2
-grep  live_fn1 $t/log.2
-grep  live_fn2 $t/log.2
-grep -qv dead_fn1 $t/log.2
-grep -qv dead_fn2 $t/log.2
-grep  live_var1 $t/log.2
-grep  live_var2 $t/log.2
-grep -qv dead_var1 $t/log.2
-grep -qv dead_var2 $t/log.2
+$CXX -B. -o $t/exe2 $t/a.o -Wl,-gc-sections
+readelf --symbols $t/exe2 > $t/log2
 $QEMU $t/exe2 | grep '1 2'
+
+grep live_fn1 $t/log2
+grep live_fn2 $t/log2
+not grep dead_fn1 $t/log2
+not grep dead_fn2 $t/log2
+grep live_var1 $t/log2
+grep live_var2 $t/log2
+not grep dead_var1 $t/log2
+not grep dead_var2 $t/log2

@@ -4,7 +4,7 @@
 echo 'int main() { return 0; }' > $t/a.c
 
 $CC -B. -o $t/exe1 $t/a.c -Wl,-build-id
-readelf -n $t/exe1 | grep -qv 'GNU.*0x00000010.*NT_GNU_BUILD_ID'
+readelf -n $t/exe1 | grep 'GNU.*0x00000014.*NT_GNU_BUILD_ID'
 
 $CC -B. -o $t/exe2 $t/a.c -Wl,-build-id=uuid
 readelf -nW $t/exe2 | grep -E 'Build ID: ............4...[89abcdef]'
