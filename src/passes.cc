@@ -327,9 +327,7 @@ void resolve_symbols(Context<E> &ctx) {
 
     if (!flag)
       return;
-
     clear_symbols(ctx);
-    resolve_symbols(ctx);
   }
 }
 
@@ -345,6 +343,12 @@ void do_lto(Context<E> &ctx) {
   apply_version_script(ctx);
   parse_symbol_version(ctx);
   compute_import_export(ctx);
+
+  // If multiple IR object files define the same symbol, the LTO backend
+  // would choose one of them randomly instead of reporting an error.
+  // So we need to check for symbol duplication error before doing an LTO.
+  if (!ctx.arg.allow_multiple_definition)
+    check_duplicate_symbols(ctx);
 
   // Invoke the LTO plugin. This step compiles IR object files into a few
   // big ELF files.
@@ -1037,7 +1041,7 @@ void check_duplicate_symbols(Context<E> &ctx) {
       Symbol<E> &sym = *file->symbols[i];
 
       // Skip if our symbol is undef or weak
-      if (sym.file == file || sym.file == ctx.internal_obj ||
+      if (!sym.file || sym.file == file || sym.file == ctx.internal_obj ||
           esym.is_undef() || esym.is_common() || (esym.st_bind == STB_WEAK))
         continue;
 
