@@ -742,6 +742,15 @@ void Arm32ExidxSection::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
+// Returns the end of the text segment
+static u64 get_text_end(Context<E> &ctx) {
+  u64 ret = 0;
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (chunk->shdr.sh_flags & SHF_EXECINSTR)
+      ret = std::max<u64>(ret, chunk->shdr.sh_addr + chunk->shdr.sh_size);
+  return ret;
+}
+
 // ARM executables use an .ARM.exidx section to look up an exception
 // handling record for the current instruction pointer. The table needs
 // to be sorted by their addresses.
@@ -752,11 +761,6 @@ void Arm32ExidxSection::copy_buf(Context<E> &ctx) {
 //
 // This function returns contents of .ARM.exidx.
 std::vector<u8> Arm32ExidxSection::get_contents(Context<E> &ctx) {
-  std::vector<u8> buf(output_section.shdr.sh_size);
-
-  output_section.shdr.sh_addr = this->shdr.sh_addr;
-  output_section.write_to(ctx, buf.data());
-
   // .ARM.exidx records consists of a signed 31-bit relative address
   // and a 32-bit value. The relative address indicates the start
   // address of a function that the record covers. The value is one of
@@ -776,11 +780,19 @@ std::vector<u8> Arm32ExidxSection::get_contents(Context<E> &ctx) {
     ul32 val;
   };
 
-  if (buf.size() % sizeof(Entry))
-    Fatal(ctx) << "invalid .ARM.exidx section size";
-
+  // We reserve one extra slot for the sentinel
+  i64 num_entries = output_section.shdr.sh_size / sizeof(Entry) + 1;
+  std::vector<u8> buf(num_entries * sizeof(Entry));
   Entry *ent = (Entry *)buf.data();
-  i64 num_entries = buf.size() / sizeof(Entry);
+
+  // Write section contents to the buffer
+  output_section.shdr.sh_addr = this->shdr.sh_addr;
+  output_section.write_to(ctx, buf.data());
+
+  // Fill in sentinel fields
+  u64 sentinel_addr = this->shdr.sh_addr + sizeof(Entry) * (num_entries - 1);
+  ent[num_entries - 1].addr = get_text_end(ctx) - sentinel_addr;
+  ent[num_entries - 1].val = CANTUNWIND;
 
   // Entry's addresses are relative to themselves. In order to sort
   // records by address, we first translate them so that the addresses
