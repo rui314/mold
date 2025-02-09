@@ -3,8 +3,8 @@
 
 [ $MACHINE = ppc64 ] && skip
 
-# BusyBox's grep can't handle capture groups (e.g. \1, \2 ...)
-grep --version |& grep BusyBox && skip
+# Test if grep supports backreferences
+echo abab | grep -E '(ab)\1' || skip
 
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>

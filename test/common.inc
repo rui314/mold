@@ -90,7 +90,7 @@ test_cxxflags() {
 }
 
 is_musl() {
-  ldd --version |& grep musl > /dev/null
+  { ldd --version; true; } |& grep musl > /dev/null
 }
 
 supports_ifunc() {
