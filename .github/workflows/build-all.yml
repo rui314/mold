@@ -15,10 +15,10 @@ jobs:
           - { target: x86_64,      os: ubuntu-24.04 }
           - { target: aarch64,     os: ubuntu-24.04-arm }
           - { target: arm,         os: ubuntu-24.04-arm }
-          - { target: riscv64,     os: ubuntu-24.04-arm }
-          - { target: ppc64le,     os: ubuntu-24.04-arm }
-          - { target: s390x,       os: ubuntu-24.04-arm }
-          - { target: loongarch64, os: ubuntu-24.04-arm }
+          - { target: riscv64,     os: ubuntu-24.04 }
+          - { target: ppc64le,     os: ubuntu-24.04 }
+          - { target: s390x,       os: ubuntu-24.04 }
+          - { target: loongarch64, os: ubuntu-24.04 }
 
     runs-on: ${{ matrix.os }}
 
