@@ -191,19 +191,7 @@ GNU linker, especially when linking large programs.
 
 You can configure [Conan](https://github.com/conan-io) to download the latest
 version of `mold` and use it as the linker when building your dependencies and
-projects from source.
-
-Add the following section to your _host_ profile targetting Linux:
-
-```
-[tool_requires]
-*:mold/[*]
-
-[conf]
-# The following config will only work with clang or gcc >= 12
-tools.build:exelinkflags=['-fuse-ld=mold']
-tools.build:sharedlinkflags=['-fuse-ld=mold']
-```
+projects from source. Please see the instructions [here](https://conan.io/center/recipes/mold).
 
 </details>
 
