@@ -186,6 +186,14 @@ GNU linker, especially when linking large programs.
 
 </details>
 
+<details><summary>If you are using Conan package manager</summary>
+
+You can configure [Conan](https://github.com/conan-io) to download the latest
+version of `mold` and use it as the linker when building your dependencies and
+projects from source. Please see the instructions [here](https://conan.io/center/recipes/mold).
+
+</details>
+
 <details><summary>Verify that you are using mold</summary>
 
 mold leaves its identification string in the `.comment` section of an output
