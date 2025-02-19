@@ -403,7 +403,7 @@ static std::vector<u8> parse_hex_build_id(Context<E> &ctx, std::string_view arg)
 
 template <typename E>
 static std::string
-parse_encoded_package_metadata(Context<E> &ctx, std::string_view arg) {
+parse_package_metadata(Context<E> &ctx, std::string_view arg) {
   auto flags = std::regex_constants::optimize | std::regex_constants::ECMAScript;
   static std::regex re(R"(([^%]|%[0-9a-fA-F][0-9a-fA-F])*)", flags);
 
@@ -932,7 +932,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                read_z_flag("nopack-relative-relocs")) {
       ctx.arg.pack_dyn_relocs_relr = false;
     } else if (read_arg("package-metadata")) {
-      ctx.arg.package_metadata = parse_encoded_package_metadata(ctx, arg);
+      ctx.arg.package_metadata = parse_package_metadata(ctx, arg);
     } else if (read_flag("stats")) {
       ctx.arg.stats = true;
       Counter::enabled = true;

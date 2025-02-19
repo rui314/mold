@@ -407,7 +407,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         //   addi.d    $t0, $t0, 0
         if (is_relaxable_got_load(ctx, *this, i)) {
           i64 dist = compute_distance(ctx, sym, *this, rel);
-          if ((i32)dist == dist) {
+          if (is_int(dist, 32)) {
             u32 rd = get_rd(*(ul32 *)loc);
             *(ul32 *)(loc + 4) = 0x02c0'0000 | (rd << 5) | rd; // addi.d
 
@@ -872,7 +872,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
 
     auto remove = [&](i64 d) {
       r_delta += d;
-      deltas.push_back(RelocDelta{r.r_offset, r_delta});
+      deltas.push_back(RelocDelta(r.r_offset, r_delta));
     };
 
     // A R_LARCH_ALIGN relocation refers to the beginning of a nop

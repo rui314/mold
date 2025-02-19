@@ -240,12 +240,13 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
       memcpy(buf, contents.data(), deltas[0].offset);
 
       for (i64 i = 0; i < deltas.size(); i++) {
-        RelocDelta x = deltas[i];
+        i64 offset = deltas[i].offset;
+        i64 delta = deltas[i].delta;
         i64 end = (i + 1 == deltas.size()) ? contents.size() : deltas[i + 1].offset;
         i64 removed_bytes = get_removed_bytes(deltas, i);
-        memcpy(buf + x.offset - x.delta + removed_bytes,
-               contents.data() + x.offset + removed_bytes,
-               end - x.offset - removed_bytes);
+        memcpy(buf + offset + removed_bytes - delta,
+               contents.data() + offset + removed_bytes,
+               end - offset - removed_bytes);
       }
     }
   } else {

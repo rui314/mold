@@ -265,8 +265,8 @@ struct InputSectionExtras<E> {
 };
 
 struct RelocDelta {
-  u64 offset : 38;
-  i64 delta : 26;
+  i64 offset;
+  i64 delta;
 };
 
 // RISC-V and LoongArch support code-shrinking linker relaxation.

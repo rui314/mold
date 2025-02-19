@@ -158,6 +158,14 @@ If you want to use mold for all projects, add the above snippet to
 
 </details>
 
+<details><summary>If you are using Conan package manager</summary>
+
+You can configure [Conan](https://github.com/conan-io) to download the latest
+version of `mold` and use it as the linker when building your dependencies and
+projects from source. Please see the instructions [here](https://conan.io/center/recipes/mold).
+
+</details>
+
 <details><summary>mold -run</summary>
 
 It is sometimes very hard to pass an appropriate command line option to `cc`
@@ -183,14 +191,6 @@ You can use our [setup-mold](https://github.com/rui314/setup-mold) GitHub
 Action to speed up GitHub-hosted continuous builds. Although GitHub Actions
 run on a 4 core machine, mold is still significantly faster than the default
 GNU linker, especially when linking large programs.
-
-</details>
-
-<details><summary>If you are using Conan package manager</summary>
-
-You can configure [Conan](https://github.com/conan-io) to download the latest
-version of `mold` and use it as the linker when building your dependencies and
-projects from source. Please see the instructions [here](https://conan.io/center/recipes/mold).
 
 </details>
 
