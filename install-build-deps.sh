@@ -13,7 +13,7 @@ ubuntu | pop | linuxmint | debian | raspbian | neon)
   apt-get install -y cmake gcc g++
   if [ "$ID-$VERSION_ID" = ubuntu-20.04 ]; then apt-get install -y g++-10; fi
   ;;
-fedora | amzn | rhel)
+fedora | amzn | rhel | centos)
   dnf install -y gcc-g++ cmake glibc-static libstdc++-static diffutils util-linux tar
   ;;
 rocky)
