@@ -353,6 +353,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           is_debug_section(shdr, name))
         continue;
 
+      // Ignore section is specified by --discard-section.
+      if (ctx.arg.discard_section.contains(name))
+        continue;
+
       if (name == ".comment" &&
           this->get_string(ctx, shdr).starts_with("rustc "))
         this->is_rust_obj = true;
