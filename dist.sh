@@ -73,9 +73,11 @@ fi
 
 case $arch in
 x86_64)
-  # Debian 9 (Stretch) released in June 2017
+  # Debian 9 (Stretch) released in June 2017.
+  # We use a Google-provided mirror (gcr.io) of the official Docker hub
+  # (docker.io) because docker.io has a strict rate limit policy.
   cat <<EOF | $image_build
-FROM docker.io/library/debian:stretch@sha256:c5c5200ff1e9c73ffbf188b4a67eb1c91531b644856b4aefe86a58d2f0cb05be
+FROM mirror.gcr.io/library/debian:stretch@sha256:c5c5200ff1e9c73ffbf188b4a67eb1c91531b644856b4aefe86a58d2f0cb05be
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
@@ -143,7 +145,7 @@ aarch64 | arm | ppc64le | s390x)
   # that'd take extremely long time. Also I believe old build machines
   # are usually x86-64.
   cat <<EOF | $image_build
-FROM docker.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
+FROM mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb [trusted=yes] /g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
@@ -156,7 +158,7 @@ EOF
   ;;
 riscv64)
   cat <<EOF | $image_build
-FROM docker.io/riscv64/debian:unstable-20240926@sha256:25654919c2926f38952cdd14b3300d83d13f2d820715f78c9f4b7a1d9399bf48
+FROM mirror.gcr.io/riscv64/debian:unstable-20240926@sha256:25654919c2926f38952cdd14b3300d83d13f2d820715f78c9f4b7a1d9399bf48
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debian.sources && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
@@ -170,7 +172,7 @@ EOF
 loongarch64)
   # LoongArch build is not reproducible yet
   cat <<EOF | $image_build
-FROM docker.io/loongarch64/debian:sid
+FROM mirror.gcr.io/loongarch64/debian:sid
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN apt-get update && \
   apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-19 cmake && \
