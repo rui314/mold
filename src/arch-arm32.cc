@@ -59,6 +59,8 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_TLS_GOTDESC:
   case R_ARM_TARGET2:
     return (il32)*arm;
+  case R_ARM_THM_JUMP8:
+    return sign_extend(thm[0], 8) << 1;
   case R_ARM_THM_JUMP11:
     return sign_extend(thm[0], 11) << 1;
   case R_ARM_THM_JUMP19: {
@@ -181,6 +183,9 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
   case R_ARM_TLS_GOTDESC:
   case R_ARM_TARGET2:
     *(ul32 *)loc = val;
+    break;
+  case R_ARM_THM_JUMP8:
+    *(ul16 *)loc = (*(ul16 *)loc & 0xff00) | bits(val, 8, 1);
     break;
   case R_ARM_THM_JUMP11:
     *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(val, 11, 1);
@@ -409,6 +414,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         u64 val = (T ? get_arm_thunk_addr() : S) + A - P;
         *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
       }
+      break;
+    case R_ARM_THM_JUMP8:
+      check(S + A - P, -(1 << 8), 1 << 8);
+      *(ul16 *)loc &= 0xff00;
+      *(ul16 *)loc |= bits(S + A - P, 8, 1);
       break;
     case R_ARM_THM_JUMP11:
       check(S + A - P, -(1 << 11), 1 << 11);
@@ -642,6 +652,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_ARM_REL32:
     case R_ARM_BASE_PREL:
     case R_ARM_GOTOFF32:
+    case R_ARM_THM_JUMP8:
     case R_ARM_THM_JUMP11:
     case R_ARM_THM_JUMP19:
     case R_ARM_MOVW_PREL_NC:

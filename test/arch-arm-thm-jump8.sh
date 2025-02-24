@@ -9,7 +9,7 @@ bar:
  beq foo-2
 EOF
 
-$OBJDUMP -d $t/a.o | grep -E 'beq\.w' || skip
+$OBJDUMP -d $t/a.o | grep -E 'beq\.n' || skip
 
 cat <<EOF | $CC -o $t/b.o -c -xassembler -
 .globl foo, baz
@@ -26,4 +26,4 @@ int main() { bar(); }
 EOF
 
 $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o
-$OBJDUMP -d $t/exe | grep -E 'beq\.w.*<baz>'
+$OBJDUMP -d $t/exe | grep -E 'beq\.n.*<baz>'
