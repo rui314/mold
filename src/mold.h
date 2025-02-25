@@ -265,7 +265,7 @@ struct InputSectionExtras<E> {
 };
 
 struct RelocDelta {
-  i64 offset;
+  u64 offset;
   i64 delta;
 };
 
