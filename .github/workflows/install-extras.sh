@@ -18,7 +18,7 @@ done
 
 # Install a LoongArch toolchain
 mkdir /larch
-wget -O- -q https://github.com/loongson/build-tools/releases/download/2024.11.01/x86_64-cross-tools-loongarch64-binutils_2.43.1-gcc_14.2.0-glibc_2.40.tar.xz | tar -C /larch --strip-components=1 --xz -xf -
+wget -O- -q https://github.com/loongson/build-tools/releases/download/2025.02.21/x86_64-cross-tools-loongarch64-binutils_2.44-gcc_14.2.0-glibc_2.41.tar.xz | tar -C /larch --strip-components=1 --xz -xf -
 
 cp -r /larch/loongarch64-unknown-linux-gnu/lib/* /larch/target/lib64
 ln -sf /larch/target /usr/loongarch64-linux-gnu
