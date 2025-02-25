@@ -872,7 +872,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
 
     auto remove = [&](i64 d) {
       r_delta += d;
-      deltas.push_back(RelocDelta(r.r_offset, r_delta));
+      deltas.push_back(RelocDelta{r.r_offset, r_delta});
     };
 
     // A R_LARCH_ALIGN relocation refers to the beginning of a nop

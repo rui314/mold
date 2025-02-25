@@ -847,7 +847,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
 
     auto remove = [&](i64 d) {
       r_delta += d;
-      deltas.push_back(RelocDelta(r.r_offset, r_delta));
+      deltas.push_back(RelocDelta{r.r_offset, r_delta});
     };
 
     // Handling R_RISCV_ALIGN is mandatory.
