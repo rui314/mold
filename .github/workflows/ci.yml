@@ -35,17 +35,14 @@ jobs:
           !build/CMakeFiles
 
   build-multi-archs:
-    runs-on: ubuntu-latest
-    container: gcc:11.1.0
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v4
     - name: install-build-deps
-      shell: bash
       run: |
-        # Install cross toolchains
-        ./install-build-deps.sh
-        ./install-cross-tools.sh
-        .github/workflows/install-extras.sh
+        sudo ./install-build-deps.sh
+        sudo ./install-cross-tools.sh
+        sudo .github/workflows/install-extras.sh
     - name: build
       run: |
         mkdir build
@@ -57,7 +54,7 @@ jobs:
       uses: actions/upload-artifact@v4
       if: failure()
       with:
-        name: test-results-gcc
+        name: test-results-multi-archs
         path: |
           build
           !build/CMakeFiles
