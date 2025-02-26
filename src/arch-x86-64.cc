@@ -588,6 +588,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write32s(S - ctx.tp_addr);
       }
       break;
+    case R_X86_64_CODE_6_GOTTPOFF:
+      write32s(sym.get_gottp_addr(ctx) + A - P);
+      break;
     case R_X86_64_GOTPC32_TLSDESC:
     case R_X86_64_CODE_4_GOTPC32_TLSDESC:
       // x86-64 TLSDESC uses the following code sequence to materialize
@@ -858,6 +861,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (!ctx.arg.relax || !sym.is_tprel_linktime_const(ctx) ||
           !relax_rex2_gottpoff(loc - 3))
         sym.flags |= NEEDS_GOTTP;
+      break;
+    case R_X86_64_CODE_6_GOTTPOFF:
+      // Relaxation of this relocation type is not suported yet
+      sym.flags |= NEEDS_GOTTP;
       break;
     case R_X86_64_TLSDESC_CALL:
       scan_tlsdesc(ctx, sym);
