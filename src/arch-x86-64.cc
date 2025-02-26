@@ -179,6 +179,28 @@ static u32 relax_gottpoff(u8 *loc) {
   return 0;
 }
 
+static u32 relax_rex2_gottpoff(u8 *loc) {
+  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+  case 0x488b05: return 0x18c7c0; // mov 0x0(%rip), %r16 -> mov $0, %r16
+  case 0x488b0d: return 0x18c7c1; // mov 0x0(%rip), %r17 -> mov $0, %r17
+  case 0x488b15: return 0x18c7c2; // mov 0x0(%rip), %r18 -> mov $0, %r18
+  case 0x488b1d: return 0x18c7c3; // mov 0x0(%rip), %r19 -> mov $0, %r19
+  case 0x488b25: return 0x18c7c4; // mov 0x0(%rip), %r20 -> mov $0, %r20
+  case 0x488b2d: return 0x18c7c5; // mov 0x0(%rip), %r21 -> mov $0, %r21
+  case 0x488b35: return 0x18c7c6; // mov 0x0(%rip), %r22 -> mov $0, %r22
+  case 0x488b3d: return 0x18c7c7; // mov 0x0(%rip), %r23 -> mov $0, %r23
+  case 0x4c8b05: return 0x19c7c0; // mov 0x0(%rip), %r24 -> mov $0, %r24
+  case 0x4c8b0d: return 0x19c7c1; // mov 0x0(%rip), %r25 -> mov $0, %r25
+  case 0x4c8b15: return 0x19c7c2; // mov 0x0(%rip), %r26 -> mov $0, %r26
+  case 0x4c8b1d: return 0x19c7c3; // mov 0x0(%rip), %r27 -> mov $0, %r27
+  case 0x4c8b25: return 0x19c7c4; // mov 0x0(%rip), %r28 -> mov $0, %r28
+  case 0x4c8b2d: return 0x19c7c5; // mov 0x0(%rip), %r29 -> mov $0, %r29
+  case 0x4c8b35: return 0x19c7c6; // mov 0x0(%rip), %r30 -> mov $0, %r30
+  case 0x4c8b3d: return 0x19c7c7; // mov 0x0(%rip), %r31 -> mov $0, %r31
+  }
+  return 0;
+}
+
 static u32 relax_tlsdesc_to_ie(u8 *loc) {
   switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
   case 0x488d05: return 0x488b05; // lea 0(%rip), %rax -> mov 0(%rip), %rax
@@ -201,6 +223,28 @@ static u32 relax_tlsdesc_to_ie(u8 *loc) {
   return 0;
 }
 
+static u32 relax_rex2_tlsdesc_to_ie(u8 *loc) {
+  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+  case 0x488d05: return 0x488b05; // lea 0(%rip), %r16 -> mov 0(%rip), %r16
+  case 0x488d0d: return 0x488b0d; // lea 0(%rip), %r17 -> mov 0(%rip), %r17
+  case 0x488d15: return 0x488b15; // lea 0(%rip), %r18 -> mov 0(%rip), %r18
+  case 0x488d1d: return 0x488b1d; // lea 0(%rip), %r19 -> mov 0(%rip), %r19
+  case 0x488d25: return 0x488b25; // lea 0(%rip), %r20 -> mov 0(%rip), %r20
+  case 0x488d2d: return 0x488b2d; // lea 0(%rip), %r21 -> mov 0(%rip), %r21
+  case 0x488d35: return 0x488b35; // lea 0(%rip), %r22 -> mov 0(%rip), %r22
+  case 0x488d3d: return 0x488b3d; // lea 0(%rip), %r23 -> mov 0(%rip), %r23
+  case 0x4c8d05: return 0x4c8b05; // lea 0(%rip), %r24 -> mov 0(%rip), %r24
+  case 0x4c8d0d: return 0x4c8b0d; // lea 0(%rip), %r25 -> mov 0(%rip), %r25
+  case 0x4c8d15: return 0x4c8b15; // lea 0(%rip), %r26 -> mov 0(%rip), %r26
+  case 0x4c8d1d: return 0x4c8b1d; // lea 0(%rip), %r27 -> mov 0(%rip), %r27
+  case 0x4c8d25: return 0x4c8b25; // lea 0(%rip), %r28 -> mov 0(%rip), %r28
+  case 0x4c8d2d: return 0x4c8b2d; // lea 0(%rip), %r29 -> mov 0(%rip), %r29
+  case 0x4c8d35: return 0x4c8b35; // lea 0(%rip), %r30 -> mov 0(%rip), %r30
+  case 0x4c8d3d: return 0x4c8b3d; // lea 0(%rip), %r31 -> mov 0(%rip), %r31
+  }
+  return 0;
+}
+
 static u32 relax_tlsdesc_to_le(u8 *loc) {
   switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
   case 0x488d05: return 0x48c7c0; // lea 0(%rip), %rax -> mov $0, %rax
@@ -219,6 +263,28 @@ static u32 relax_tlsdesc_to_le(u8 *loc) {
   case 0x4c8d2d: return 0x49c7c5; // lea 0(%rip), %r13 -> mov $0, %r13
   case 0x4c8d35: return 0x49c7c6; // lea 0(%rip), %r14 -> mov $0, %r14
   case 0x4c8d3d: return 0x49c7c7; // lea 0(%rip), %r15 -> mov $0, %r15
+  }
+  return 0;
+}
+
+static u32 relax_rex2_tlsdesc_to_le(u8 *loc) {
+  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+  case 0x488d05: return 0x18c7c0; // lea 0(%rip), %r16 -> mov $0, %r16
+  case 0x488d0d: return 0x18c7c1; // lea 0(%rip), %r17 -> mov $0, %r17
+  case 0x488d15: return 0x18c7c2; // lea 0(%rip), %r18 -> mov $0, %r18
+  case 0x488d1d: return 0x18c7c3; // lea 0(%rip), %r19 -> mov $0, %r19
+  case 0x488d25: return 0x18c7c4; // lea 0(%rip), %r20 -> mov $0, %r20
+  case 0x488d2d: return 0x18c7c5; // lea 0(%rip), %r21 -> mov $0, %r21
+  case 0x488d35: return 0x18c7c6; // lea 0(%rip), %r22 -> mov $0, %r22
+  case 0x488d3d: return 0x18c7c7; // lea 0(%rip), %r23 -> mov $0, %r23
+  case 0x4c8d05: return 0x19c7c0; // lea 0(%rip), %r24 -> mov $0, %r24
+  case 0x4c8d0d: return 0x19c7c1; // lea 0(%rip), %r25 -> mov $0, %r25
+  case 0x4c8d15: return 0x19c7c2; // lea 0(%rip), %r26 -> mov $0, %r26
+  case 0x4c8d1d: return 0x19c7c3; // lea 0(%rip), %r27 -> mov $0, %r27
+  case 0x4c8d25: return 0x19c7c4; // lea 0(%rip), %r28 -> mov $0, %r28
+  case 0x4c8d2d: return 0x19c7c5; // lea 0(%rip), %r29 -> mov $0, %r29
+  case 0x4c8d35: return 0x19c7c6; // lea 0(%rip), %r30 -> mov $0, %r30
+  case 0x4c8d3d: return 0x19c7c7; // lea 0(%rip), %r31 -> mov $0, %r31
   }
   return 0;
 }
@@ -459,7 +525,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.is_pcrel_linktime_const(ctx)) {
         u32 insn = relax_gotpcrelx(loc - 2);
         i64 val = S + A - P;
-        if (insn && (i32)val == val) {
+        if (insn && is_int(val, 32)) {
           loc[-2] = insn >> 8;
           loc[-1] = insn;
           *(ul32 *)loc = val;
@@ -469,10 +535,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write32s(G + GOT + A - P);
       break;
     case R_X86_64_REX_GOTPCRELX:
+    case R_X86_64_CODE_4_GOTPCRELX:
       if (sym.is_pcrel_linktime_const(ctx)) {
         u32 insn = relax_rex_gotpcrelx(loc - 3);
         i64 val = S + A - P;
-        if (insn && (i32)val == val) {
+        if (insn && is_int(val, 32)) {
           loc[-3] = insn >> 16;
           loc[-2] = insn >> 8;
           loc[-1] = insn;
@@ -509,18 +576,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc = S + A - ctx.tp_addr;
       break;
     case R_X86_64_GOTTPOFF:
+    case R_X86_64_CODE_4_GOTTPOFF:
       if (sym.has_gottp(ctx)) {
         write32s(sym.get_gottp_addr(ctx) + A - P);
       } else {
-        u32 insn = relax_gottpoff(loc - 3);
+        u32 insn = (rel.r_type == R_X86_64_GOTTPOFF) ?
+          relax_gottpoff(loc - 3) : relax_rex2_gottpoff(loc - 3);
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
         write32s(S - ctx.tp_addr);
-        assert(A == -4);
       }
       break;
     case R_X86_64_GOTPC32_TLSDESC:
+    case R_X86_64_CODE_4_GOTPC32_TLSDESC:
       // x86-64 TLSDESC uses the following code sequence to materialize
       // a TP-relative address in %rax.
       //
@@ -552,7 +621,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsdesc(ctx)) {
         write32s(sym.get_tlsdesc_addr(ctx) + A - P);
       } else if (sym.has_gottp(ctx)) {
-        u32 insn = relax_tlsdesc_to_ie(loc - 3);
+        u32 insn = (rel.r_type == R_X86_64_GOTPC32_TLSDESC) ?
+          relax_tlsdesc_to_ie(loc - 3) : relax_rex2_tlsdesc_to_ie(loc - 3);
         if (!insn)
           Fatal(ctx) << *this << ": illegal instruction sequence for TLSDESC";
         loc[-3] = insn >> 16;
@@ -560,7 +630,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         loc[-1] = insn;
         write32s(sym.get_gottp_addr(ctx) + A - P);
       } else {
-        u32 insn = relax_tlsdesc_to_le(loc - 3);
+        u32 insn = (rel.r_type == R_X86_64_GOTPC32_TLSDESC) ?
+          relax_tlsdesc_to_le(loc - 3) : relax_rex2_tlsdesc_to_le(loc - 3);
         if (!insn)
           Fatal(ctx) << *this << ": illegal instruction sequence for TLSDESC";
         loc[-3] = insn >> 16;
@@ -750,6 +821,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_X86_64_GOTPCREL64:
     case R_X86_64_GOTPCRELX:
     case R_X86_64_REX_GOTPCRELX:
+    case R_X86_64_CODE_4_GOTPCRELX:
       sym.flags |= NEEDS_GOT;
       break;
     case R_X86_64_PLT32:
@@ -778,12 +850,14 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         ctx.needs_tlsld = true;
       break;
     case R_X86_64_GOTTPOFF:
-      if (ctx.arg.relax && relax_gottpoff(loc - 3) &&
-          sym.is_tprel_linktime_const(ctx)) {
-        // do nothing
-      } else {
+      if (!ctx.arg.relax || !sym.is_tprel_linktime_const(ctx) ||
+          !relax_gottpoff(loc - 3))
         sym.flags |= NEEDS_GOTTP;
-      }
+      break;
+    case R_X86_64_CODE_4_GOTTPOFF:
+      if (!ctx.arg.relax || !sym.is_tprel_linktime_const(ctx) ||
+          !relax_rex2_gottpoff(loc - 3))
+        sym.flags |= NEEDS_GOTTP;
       break;
     case R_X86_64_TLSDESC_CALL:
       scan_tlsdesc(ctx, sym);
@@ -799,6 +873,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_X86_64_SIZE32:
     case R_X86_64_SIZE64:
     case R_X86_64_GOTPC32_TLSDESC:
+    case R_X86_64_CODE_4_GOTPC32_TLSDESC:
       break;
     default:
       Error(ctx) << *this << ": unknown relocation: " << rel;

@@ -57,5 +57,5 @@ done
 
 # Install Intel SDE CPU emulator for CET-related tests
 mkdir /sde
-wget -O- -q https://downloadmirror.intel.com/831748/sde-external-9.44.0-2024-08-22-lin.tar.xz | tar -C /sde --strip-components=1 --xz -xf -
+wget -O- -q https://downloadmirror.intel.com/843185/sde-external-9.48.0-2024-11-25-lin.tar.xz | tar -C /sde --strip-components=1 --xz -xf -
 ln -s /sde/sde64 /usr/bin
