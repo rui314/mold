@@ -23,6 +23,8 @@ get_foo:
   ret
 EOF
 
+$OBJDUMP -r $t/a.o | grep -w R_X86_64_CODE_4_GOTPC32_TLSDESC
+
 cat <<EOF | $GCC -fPIC -c -o $t/b.o -xc - $tlsdesc_opt
 #include <stdio.h>
 

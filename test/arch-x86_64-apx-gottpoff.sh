@@ -13,6 +13,8 @@ get_foo:
   ret
 EOF
 
+$OBJDUMP -r $t/a.o | grep -w R_X86_64_CODE_4_GOTTPOFF
+
 cat <<EOF | $CC -o $t/b.o -c -xc -
 #include <stdio.h>
 
