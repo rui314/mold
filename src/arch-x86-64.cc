@@ -157,134 +157,134 @@ static u32 relax_rex_gotpcrelx(u8 *loc) {
   return 0;
 }
 
-static u32 relax_gottpoff(u8 *loc) {
-  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
-  case 0x488b05: return 0x48c7c0; // mov 0(%rip), %rax -> mov $0, %rax
-  case 0x488b0d: return 0x48c7c1; // mov 0(%rip), %rcx -> mov $0, %rcx
-  case 0x488b15: return 0x48c7c2; // mov 0(%rip), %rdx -> mov $0, %rdx
-  case 0x488b1d: return 0x48c7c3; // mov 0(%rip), %rbx -> mov $0, %rbx
-  case 0x488b25: return 0x48c7c4; // mov 0(%rip), %rsp -> mov $0, %rsp
-  case 0x488b2d: return 0x48c7c5; // mov 0(%rip), %rbp -> mov $0, %rbp
-  case 0x488b35: return 0x48c7c6; // mov 0(%rip), %rsi -> mov $0, %rsi
-  case 0x488b3d: return 0x48c7c7; // mov 0(%rip), %rdi -> mov $0, %rdi
-  case 0x4c8b05: return 0x49c7c0; // mov 0(%rip), %r8  -> mov $0, %r8
-  case 0x4c8b0d: return 0x49c7c1; // mov 0(%rip), %r9  -> mov $0, %r9
-  case 0x4c8b15: return 0x49c7c2; // mov 0(%rip), %r10 -> mov $0, %r10
-  case 0x4c8b1d: return 0x49c7c3; // mov 0(%rip), %r11 -> mov $0, %r11
-  case 0x4c8b25: return 0x49c7c4; // mov 0(%rip), %r12 -> mov $0, %r12
-  case 0x4c8b2d: return 0x49c7c5; // mov 0(%rip), %r13 -> mov $0, %r13
-  case 0x4c8b35: return 0x49c7c6; // mov 0(%rip), %r14 -> mov $0, %r14
-  case 0x4c8b3d: return 0x49c7c7; // mov 0(%rip), %r15 -> mov $0, %r15
+static u32 relax_gottpoff(u8 *loc, u32 r_type) {
+  if (r_type == R_X86_64_GOTTPOFF) {
+    switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+    case 0x488b05: return 0x48c7c0; // mov 0(%rip), %rax -> mov $0, %rax
+    case 0x488b0d: return 0x48c7c1; // mov 0(%rip), %rcx -> mov $0, %rcx
+    case 0x488b15: return 0x48c7c2; // mov 0(%rip), %rdx -> mov $0, %rdx
+    case 0x488b1d: return 0x48c7c3; // mov 0(%rip), %rbx -> mov $0, %rbx
+    case 0x488b25: return 0x48c7c4; // mov 0(%rip), %rsp -> mov $0, %rsp
+    case 0x488b2d: return 0x48c7c5; // mov 0(%rip), %rbp -> mov $0, %rbp
+    case 0x488b35: return 0x48c7c6; // mov 0(%rip), %rsi -> mov $0, %rsi
+    case 0x488b3d: return 0x48c7c7; // mov 0(%rip), %rdi -> mov $0, %rdi
+    case 0x4c8b05: return 0x49c7c0; // mov 0(%rip), %r8  -> mov $0, %r8
+    case 0x4c8b0d: return 0x49c7c1; // mov 0(%rip), %r9  -> mov $0, %r9
+    case 0x4c8b15: return 0x49c7c2; // mov 0(%rip), %r10 -> mov $0, %r10
+    case 0x4c8b1d: return 0x49c7c3; // mov 0(%rip), %r11 -> mov $0, %r11
+    case 0x4c8b25: return 0x49c7c4; // mov 0(%rip), %r12 -> mov $0, %r12
+    case 0x4c8b2d: return 0x49c7c5; // mov 0(%rip), %r13 -> mov $0, %r13
+    case 0x4c8b35: return 0x49c7c6; // mov 0(%rip), %r14 -> mov $0, %r14
+    case 0x4c8b3d: return 0x49c7c7; // mov 0(%rip), %r15 -> mov $0, %r15
+    }
+  } else {
+    assert(r_type == R_X86_64_CODE_4_GOTTPOFF);
+    switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+    case 0x488b05: return 0x18c7c0; // mov 0(%rip), %r16 -> mov $0, %r16
+    case 0x488b0d: return 0x18c7c1; // mov 0(%rip), %r17 -> mov $0, %r17
+    case 0x488b15: return 0x18c7c2; // mov 0(%rip), %r18 -> mov $0, %r18
+    case 0x488b1d: return 0x18c7c3; // mov 0(%rip), %r19 -> mov $0, %r19
+    case 0x488b25: return 0x18c7c4; // mov 0(%rip), %r20 -> mov $0, %r20
+    case 0x488b2d: return 0x18c7c5; // mov 0(%rip), %r21 -> mov $0, %r21
+    case 0x488b35: return 0x18c7c6; // mov 0(%rip), %r22 -> mov $0, %r22
+    case 0x488b3d: return 0x18c7c7; // mov 0(%rip), %r23 -> mov $0, %r23
+    case 0x4c8b05: return 0x19c7c0; // mov 0(%rip), %r24 -> mov $0, %r24
+    case 0x4c8b0d: return 0x19c7c1; // mov 0(%rip), %r25 -> mov $0, %r25
+    case 0x4c8b15: return 0x19c7c2; // mov 0(%rip), %r26 -> mov $0, %r26
+    case 0x4c8b1d: return 0x19c7c3; // mov 0(%rip), %r27 -> mov $0, %r27
+    case 0x4c8b25: return 0x19c7c4; // mov 0(%rip), %r28 -> mov $0, %r28
+    case 0x4c8b2d: return 0x19c7c5; // mov 0(%rip), %r29 -> mov $0, %r29
+    case 0x4c8b35: return 0x19c7c6; // mov 0(%rip), %r30 -> mov $0, %r30
+    case 0x4c8b3d: return 0x19c7c7; // mov 0(%rip), %r31 -> mov $0, %r31
+    }
   }
   return 0;
 }
 
-static u32 relax_rex2_gottpoff(u8 *loc) {
-  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
-  case 0x488b05: return 0x18c7c0; // mov 0x0(%rip), %r16 -> mov $0, %r16
-  case 0x488b0d: return 0x18c7c1; // mov 0x0(%rip), %r17 -> mov $0, %r17
-  case 0x488b15: return 0x18c7c2; // mov 0x0(%rip), %r18 -> mov $0, %r18
-  case 0x488b1d: return 0x18c7c3; // mov 0x0(%rip), %r19 -> mov $0, %r19
-  case 0x488b25: return 0x18c7c4; // mov 0x0(%rip), %r20 -> mov $0, %r20
-  case 0x488b2d: return 0x18c7c5; // mov 0x0(%rip), %r21 -> mov $0, %r21
-  case 0x488b35: return 0x18c7c6; // mov 0x0(%rip), %r22 -> mov $0, %r22
-  case 0x488b3d: return 0x18c7c7; // mov 0x0(%rip), %r23 -> mov $0, %r23
-  case 0x4c8b05: return 0x19c7c0; // mov 0x0(%rip), %r24 -> mov $0, %r24
-  case 0x4c8b0d: return 0x19c7c1; // mov 0x0(%rip), %r25 -> mov $0, %r25
-  case 0x4c8b15: return 0x19c7c2; // mov 0x0(%rip), %r26 -> mov $0, %r26
-  case 0x4c8b1d: return 0x19c7c3; // mov 0x0(%rip), %r27 -> mov $0, %r27
-  case 0x4c8b25: return 0x19c7c4; // mov 0x0(%rip), %r28 -> mov $0, %r28
-  case 0x4c8b2d: return 0x19c7c5; // mov 0x0(%rip), %r29 -> mov $0, %r29
-  case 0x4c8b35: return 0x19c7c6; // mov 0x0(%rip), %r30 -> mov $0, %r30
-  case 0x4c8b3d: return 0x19c7c7; // mov 0x0(%rip), %r31 -> mov $0, %r31
+static u32 relax_tlsdesc_to_ie(u8 *loc, u32 r_type) {
+  if (r_type == R_X86_64_GOTPC32_TLSDESC) {
+    switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+    case 0x488d05: return 0x488b05; // lea 0(%rip), %rax -> mov 0(%rip), %rax
+    case 0x488d0d: return 0x488b0d; // lea 0(%rip), %rcx -> mov 0(%rip), %rcx
+    case 0x488d15: return 0x488b15; // lea 0(%rip), %rdx -> mov 0(%rip), %rdx
+    case 0x488d1d: return 0x488b1d; // lea 0(%rip), %rbx -> mov 0(%rip), %rbx
+    case 0x488d25: return 0x488b25; // lea 0(%rip), %rsp -> mov 0(%rip), %rsp
+    case 0x488d2d: return 0x488b2d; // lea 0(%rip), %rbp -> mov 0(%rip), %rbp
+    case 0x488d35: return 0x488b35; // lea 0(%rip), %rsi -> mov 0(%rip), %rsi
+    case 0x488d3d: return 0x488b3d; // lea 0(%rip), %rdi -> mov 0(%rip), %rdi
+    case 0x4c8d05: return 0x4c8b05; // lea 0(%rip), %r8  -> mov 0(%rip), %r8
+    case 0x4c8d0d: return 0x4c8b0d; // lea 0(%rip), %r9  -> mov 0(%rip), %r9
+    case 0x4c8d15: return 0x4c8b15; // lea 0(%rip), %r10 -> mov 0(%rip), %r10
+    case 0x4c8d1d: return 0x4c8b1d; // lea 0(%rip), %r11 -> mov 0(%rip), %r11
+    case 0x4c8d25: return 0x4c8b25; // lea 0(%rip), %r12 -> mov 0(%rip), %r12
+    case 0x4c8d2d: return 0x4c8b2d; // lea 0(%rip), %r13 -> mov 0(%rip), %r13
+    case 0x4c8d35: return 0x4c8b35; // lea 0(%rip), %r14 -> mov 0(%rip), %r14
+    case 0x4c8d3d: return 0x4c8b3d; // lea 0(%rip), %r15 -> mov 0(%rip), %r15
+    }
+  } else {
+    assert(r_type == R_X86_64_CODE_4_GOTPC32_TLSDESC);
+    switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+    case 0x488d05: return 0x488b05; // lea 0(%rip), %r16 -> mov 0(%rip), %r16
+    case 0x488d0d: return 0x488b0d; // lea 0(%rip), %r17 -> mov 0(%rip), %r17
+    case 0x488d15: return 0x488b15; // lea 0(%rip), %r18 -> mov 0(%rip), %r18
+    case 0x488d1d: return 0x488b1d; // lea 0(%rip), %r19 -> mov 0(%rip), %r19
+    case 0x488d25: return 0x488b25; // lea 0(%rip), %r20 -> mov 0(%rip), %r20
+    case 0x488d2d: return 0x488b2d; // lea 0(%rip), %r21 -> mov 0(%rip), %r21
+    case 0x488d35: return 0x488b35; // lea 0(%rip), %r22 -> mov 0(%rip), %r22
+    case 0x488d3d: return 0x488b3d; // lea 0(%rip), %r23 -> mov 0(%rip), %r23
+    case 0x4c8d05: return 0x4c8b05; // lea 0(%rip), %r24 -> mov 0(%rip), %r24
+    case 0x4c8d0d: return 0x4c8b0d; // lea 0(%rip), %r25 -> mov 0(%rip), %r25
+    case 0x4c8d15: return 0x4c8b15; // lea 0(%rip), %r26 -> mov 0(%rip), %r26
+    case 0x4c8d1d: return 0x4c8b1d; // lea 0(%rip), %r27 -> mov 0(%rip), %r27
+    case 0x4c8d25: return 0x4c8b25; // lea 0(%rip), %r28 -> mov 0(%rip), %r28
+    case 0x4c8d2d: return 0x4c8b2d; // lea 0(%rip), %r29 -> mov 0(%rip), %r29
+    case 0x4c8d35: return 0x4c8b35; // lea 0(%rip), %r30 -> mov 0(%rip), %r30
+    case 0x4c8d3d: return 0x4c8b3d; // lea 0(%rip), %r31 -> mov 0(%rip), %r31
+    }
   }
   return 0;
 }
 
-static u32 relax_tlsdesc_to_ie(u8 *loc) {
-  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
-  case 0x488d05: return 0x488b05; // lea 0(%rip), %rax -> mov 0(%rip), %rax
-  case 0x488d0d: return 0x488b0d; // lea 0(%rip), %rcx -> mov 0(%rip), %rcx
-  case 0x488d15: return 0x488b15; // lea 0(%rip), %rdx -> mov 0(%rip), %rdx
-  case 0x488d1d: return 0x488b1d; // lea 0(%rip), %rbx -> mov 0(%rip), %rbx
-  case 0x488d25: return 0x488b25; // lea 0(%rip), %rsp -> mov 0(%rip), %rsp
-  case 0x488d2d: return 0x488b2d; // lea 0(%rip), %rbp -> mov 0(%rip), %rbp
-  case 0x488d35: return 0x488b35; // lea 0(%rip), %rsi -> mov 0(%rip), %rsi
-  case 0x488d3d: return 0x488b3d; // lea 0(%rip), %rdi -> mov 0(%rip), %rdi
-  case 0x4c8d05: return 0x4c8b05; // lea 0(%rip), %r8  -> mov 0(%rip), %r8
-  case 0x4c8d0d: return 0x4c8b0d; // lea 0(%rip), %r9  -> mov 0(%rip), %r9
-  case 0x4c8d15: return 0x4c8b15; // lea 0(%rip), %r10 -> mov 0(%rip), %r10
-  case 0x4c8d1d: return 0x4c8b1d; // lea 0(%rip), %r11 -> mov 0(%rip), %r11
-  case 0x4c8d25: return 0x4c8b25; // lea 0(%rip), %r12 -> mov 0(%rip), %r12
-  case 0x4c8d2d: return 0x4c8b2d; // lea 0(%rip), %r13 -> mov 0(%rip), %r13
-  case 0x4c8d35: return 0x4c8b35; // lea 0(%rip), %r14 -> mov 0(%rip), %r14
-  case 0x4c8d3d: return 0x4c8b3d; // lea 0(%rip), %r15 -> mov 0(%rip), %r15
-  }
-  return 0;
-}
-
-static u32 relax_rex2_tlsdesc_to_ie(u8 *loc) {
-  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
-  case 0x488d05: return 0x488b05; // lea 0(%rip), %r16 -> mov 0(%rip), %r16
-  case 0x488d0d: return 0x488b0d; // lea 0(%rip), %r17 -> mov 0(%rip), %r17
-  case 0x488d15: return 0x488b15; // lea 0(%rip), %r18 -> mov 0(%rip), %r18
-  case 0x488d1d: return 0x488b1d; // lea 0(%rip), %r19 -> mov 0(%rip), %r19
-  case 0x488d25: return 0x488b25; // lea 0(%rip), %r20 -> mov 0(%rip), %r20
-  case 0x488d2d: return 0x488b2d; // lea 0(%rip), %r21 -> mov 0(%rip), %r21
-  case 0x488d35: return 0x488b35; // lea 0(%rip), %r22 -> mov 0(%rip), %r22
-  case 0x488d3d: return 0x488b3d; // lea 0(%rip), %r23 -> mov 0(%rip), %r23
-  case 0x4c8d05: return 0x4c8b05; // lea 0(%rip), %r24 -> mov 0(%rip), %r24
-  case 0x4c8d0d: return 0x4c8b0d; // lea 0(%rip), %r25 -> mov 0(%rip), %r25
-  case 0x4c8d15: return 0x4c8b15; // lea 0(%rip), %r26 -> mov 0(%rip), %r26
-  case 0x4c8d1d: return 0x4c8b1d; // lea 0(%rip), %r27 -> mov 0(%rip), %r27
-  case 0x4c8d25: return 0x4c8b25; // lea 0(%rip), %r28 -> mov 0(%rip), %r28
-  case 0x4c8d2d: return 0x4c8b2d; // lea 0(%rip), %r29 -> mov 0(%rip), %r29
-  case 0x4c8d35: return 0x4c8b35; // lea 0(%rip), %r30 -> mov 0(%rip), %r30
-  case 0x4c8d3d: return 0x4c8b3d; // lea 0(%rip), %r31 -> mov 0(%rip), %r31
-  }
-  return 0;
-}
-
-static u32 relax_tlsdesc_to_le(u8 *loc) {
-  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
-  case 0x488d05: return 0x48c7c0; // lea 0(%rip), %rax -> mov $0, %rax
-  case 0x488d0d: return 0x48c7c1; // lea 0(%rip), %rcx -> mov $0, %rcx
-  case 0x488d15: return 0x48c7c2; // lea 0(%rip), %rdx -> mov $0, %rdx
-  case 0x488d1d: return 0x48c7c3; // lea 0(%rip), %rbx -> mov $0, %rbx
-  case 0x488d25: return 0x48c7c4; // lea 0(%rip), %rsp -> mov $0, %rsp
-  case 0x488d2d: return 0x48c7c5; // lea 0(%rip), %rbp -> mov $0, %rbp
-  case 0x488d35: return 0x48c7c6; // lea 0(%rip), %rsi -> mov $0, %rsi
-  case 0x488d3d: return 0x48c7c7; // lea 0(%rip), %rdi -> mov $0, %rdi
-  case 0x4c8d05: return 0x49c7c0; // lea 0(%rip), %r8  -> mov $0, %r8
-  case 0x4c8d0d: return 0x49c7c1; // lea 0(%rip), %r9  -> mov $0, %r9
-  case 0x4c8d15: return 0x49c7c2; // lea 0(%rip), %r10 -> mov $0, %r10
-  case 0x4c8d1d: return 0x49c7c3; // lea 0(%rip), %r11 -> mov $0, %r11
-  case 0x4c8d25: return 0x49c7c4; // lea 0(%rip), %r12 -> mov $0, %r12
-  case 0x4c8d2d: return 0x49c7c5; // lea 0(%rip), %r13 -> mov $0, %r13
-  case 0x4c8d35: return 0x49c7c6; // lea 0(%rip), %r14 -> mov $0, %r14
-  case 0x4c8d3d: return 0x49c7c7; // lea 0(%rip), %r15 -> mov $0, %r15
-  }
-  return 0;
-}
-
-static u32 relax_rex2_tlsdesc_to_le(u8 *loc) {
-  switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
-  case 0x488d05: return 0x18c7c0; // lea 0(%rip), %r16 -> mov $0, %r16
-  case 0x488d0d: return 0x18c7c1; // lea 0(%rip), %r17 -> mov $0, %r17
-  case 0x488d15: return 0x18c7c2; // lea 0(%rip), %r18 -> mov $0, %r18
-  case 0x488d1d: return 0x18c7c3; // lea 0(%rip), %r19 -> mov $0, %r19
-  case 0x488d25: return 0x18c7c4; // lea 0(%rip), %r20 -> mov $0, %r20
-  case 0x488d2d: return 0x18c7c5; // lea 0(%rip), %r21 -> mov $0, %r21
-  case 0x488d35: return 0x18c7c6; // lea 0(%rip), %r22 -> mov $0, %r22
-  case 0x488d3d: return 0x18c7c7; // lea 0(%rip), %r23 -> mov $0, %r23
-  case 0x4c8d05: return 0x19c7c0; // lea 0(%rip), %r24 -> mov $0, %r24
-  case 0x4c8d0d: return 0x19c7c1; // lea 0(%rip), %r25 -> mov $0, %r25
-  case 0x4c8d15: return 0x19c7c2; // lea 0(%rip), %r26 -> mov $0, %r26
-  case 0x4c8d1d: return 0x19c7c3; // lea 0(%rip), %r27 -> mov $0, %r27
-  case 0x4c8d25: return 0x19c7c4; // lea 0(%rip), %r28 -> mov $0, %r28
-  case 0x4c8d2d: return 0x19c7c5; // lea 0(%rip), %r29 -> mov $0, %r29
-  case 0x4c8d35: return 0x19c7c6; // lea 0(%rip), %r30 -> mov $0, %r30
-  case 0x4c8d3d: return 0x19c7c7; // lea 0(%rip), %r31 -> mov $0, %r31
+static u32 relax_tlsdesc_to_le(u8 *loc, u32 r_type) {
+  if (r_type == R_X86_64_GOTPC32_TLSDESC) {
+    switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+    case 0x488d05: return 0x48c7c0; // lea 0(%rip), %rax -> mov $0, %rax
+    case 0x488d0d: return 0x48c7c1; // lea 0(%rip), %rcx -> mov $0, %rcx
+    case 0x488d15: return 0x48c7c2; // lea 0(%rip), %rdx -> mov $0, %rdx
+    case 0x488d1d: return 0x48c7c3; // lea 0(%rip), %rbx -> mov $0, %rbx
+    case 0x488d25: return 0x48c7c4; // lea 0(%rip), %rsp -> mov $0, %rsp
+    case 0x488d2d: return 0x48c7c5; // lea 0(%rip), %rbp -> mov $0, %rbp
+    case 0x488d35: return 0x48c7c6; // lea 0(%rip), %rsi -> mov $0, %rsi
+    case 0x488d3d: return 0x48c7c7; // lea 0(%rip), %rdi -> mov $0, %rdi
+    case 0x4c8d05: return 0x49c7c0; // lea 0(%rip), %r8  -> mov $0, %r8
+    case 0x4c8d0d: return 0x49c7c1; // lea 0(%rip), %r9  -> mov $0, %r9
+    case 0x4c8d15: return 0x49c7c2; // lea 0(%rip), %r10 -> mov $0, %r10
+    case 0x4c8d1d: return 0x49c7c3; // lea 0(%rip), %r11 -> mov $0, %r11
+    case 0x4c8d25: return 0x49c7c4; // lea 0(%rip), %r12 -> mov $0, %r12
+    case 0x4c8d2d: return 0x49c7c5; // lea 0(%rip), %r13 -> mov $0, %r13
+    case 0x4c8d35: return 0x49c7c6; // lea 0(%rip), %r14 -> mov $0, %r14
+    case 0x4c8d3d: return 0x49c7c7; // lea 0(%rip), %r15 -> mov $0, %r15
+    }
+  } else {
+    assert(r_type == R_X86_64_CODE_4_GOTPC32_TLSDESC);
+    switch ((loc[0] << 16) | (loc[1] << 8) | loc[2]) {
+    case 0x488d05: return 0x18c7c0; // lea 0(%rip), %r16 -> mov $0, %r16
+    case 0x488d0d: return 0x18c7c1; // lea 0(%rip), %r17 -> mov $0, %r17
+    case 0x488d15: return 0x18c7c2; // lea 0(%rip), %r18 -> mov $0, %r18
+    case 0x488d1d: return 0x18c7c3; // lea 0(%rip), %r19 -> mov $0, %r19
+    case 0x488d25: return 0x18c7c4; // lea 0(%rip), %r20 -> mov $0, %r20
+    case 0x488d2d: return 0x18c7c5; // lea 0(%rip), %r21 -> mov $0, %r21
+    case 0x488d35: return 0x18c7c6; // lea 0(%rip), %r22 -> mov $0, %r22
+    case 0x488d3d: return 0x18c7c7; // lea 0(%rip), %r23 -> mov $0, %r23
+    case 0x4c8d05: return 0x19c7c0; // lea 0(%rip), %r24 -> mov $0, %r24
+    case 0x4c8d0d: return 0x19c7c1; // lea 0(%rip), %r25 -> mov $0, %r25
+    case 0x4c8d15: return 0x19c7c2; // lea 0(%rip), %r26 -> mov $0, %r26
+    case 0x4c8d1d: return 0x19c7c3; // lea 0(%rip), %r27 -> mov $0, %r27
+    case 0x4c8d25: return 0x19c7c4; // lea 0(%rip), %r28 -> mov $0, %r28
+    case 0x4c8d2d: return 0x19c7c5; // lea 0(%rip), %r29 -> mov $0, %r29
+    case 0x4c8d35: return 0x19c7c6; // lea 0(%rip), %r30 -> mov $0, %r30
+    case 0x4c8d3d: return 0x19c7c7; // lea 0(%rip), %r31 -> mov $0, %r31
+    }
   }
   return 0;
 }
@@ -580,8 +580,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_gottp(ctx)) {
         write32s(sym.get_gottp_addr(ctx) + A - P);
       } else {
-        u32 insn = (rel.r_type == R_X86_64_GOTTPOFF) ?
-          relax_gottpoff(loc - 3) : relax_rex2_gottpoff(loc - 3);
+        u32 insn = relax_gottpoff(loc - 3, rel.r_type);
         loc[-3] = insn >> 16;
         loc[-2] = insn >> 8;
         loc[-1] = insn;
@@ -624,8 +623,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsdesc(ctx)) {
         write32s(sym.get_tlsdesc_addr(ctx) + A - P);
       } else if (sym.has_gottp(ctx)) {
-        u32 insn = (rel.r_type == R_X86_64_GOTPC32_TLSDESC) ?
-          relax_tlsdesc_to_ie(loc - 3) : relax_rex2_tlsdesc_to_ie(loc - 3);
+        u32 insn = relax_tlsdesc_to_ie(loc - 3, rel.r_type);
         if (!insn)
           Fatal(ctx) << *this << ": illegal instruction sequence for TLSDESC";
         loc[-3] = insn >> 16;
@@ -633,8 +631,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         loc[-1] = insn;
         write32s(sym.get_gottp_addr(ctx) + A - P);
       } else {
-        u32 insn = (rel.r_type == R_X86_64_GOTPC32_TLSDESC) ?
-          relax_tlsdesc_to_le(loc - 3) : relax_rex2_tlsdesc_to_le(loc - 3);
+        u32 insn = relax_tlsdesc_to_le(loc - 3, rel.r_type);
         if (!insn)
           Fatal(ctx) << *this << ": illegal instruction sequence for TLSDESC";
         loc[-3] = insn >> 16;
@@ -853,17 +850,12 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         ctx.needs_tlsld = true;
       break;
     case R_X86_64_GOTTPOFF:
-      if (!ctx.arg.relax || !sym.is_tprel_linktime_const(ctx) ||
-          !relax_gottpoff(loc - 3))
-        sym.flags |= NEEDS_GOTTP;
-      break;
     case R_X86_64_CODE_4_GOTTPOFF:
       if (!ctx.arg.relax || !sym.is_tprel_linktime_const(ctx) ||
-          !relax_rex2_gottpoff(loc - 3))
+          !relax_gottpoff(loc - 3, rel.r_type))
         sym.flags |= NEEDS_GOTTP;
       break;
     case R_X86_64_CODE_6_GOTTPOFF:
-      // Relaxation of this relocation type is not suported yet
       sym.flags |= NEEDS_GOTTP;
       break;
     case R_X86_64_TLSDESC_CALL:
