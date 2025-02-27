@@ -72,21 +72,43 @@
 //     TLV is sometimes compiled to a function call! The module ID and the
 //     offset are usually stored to GOT as two consecutive words.
 //
-// The last access method is the most generic, so the compiler emits such
-// code by default. But that's the most expensive one, so the linker
-// rewrites instructions if possible so that 3) is relaxed to 2) or even
-// to 1).
-//
 // 1) is called the Local Exec access model. 2) is Initial Exec, and 3) is
 // General Dynamic.
 //
 // There's another little trick that the compiler can use if it knows two
 // TLVs are in the same ELF file (usually in the same file as the code is).
-// In this case, we can call __tls_get_addr() only once with a module ID and
-// the offset 0 to obtain the base address of the ELF file's TLS block. The
-// base address obtained this way is sometimes called Dynamic Thread Pointer
-// or DTP. We can then compute TLVs' addresses by adding their DTP-relative
-// addresses to DTP. This access model is called the Local Dynamic.
+// In this case, we can call __tls_get_addr() only once with the module ID
+// and the offset 0 to obtain the base address of the ELF file's TLS block.
+// The base address obtained this way is sometimes called Dynamic Thread
+// Pointer or DTP. We can then compute TLVs' addresses by adding their
+// DTP-relative addresses to DTP. This access model is called the Local
+// Dynamic.
+//
+// The compiler tries to emit the most efficient code for a TLV access based
+// on compiler command line options and TLV properties as follows:
+//
+//  1. If -fno-PIC or -fPIE is given, and a TLV is defined as a file-local
+//     variable, the compiler knows that it is compiling code for an
+//     executable (i.e. not for a shared library) and the TLV is defined
+//     within the executable. In this case, Local Exec is used to access the
+//     variable.
+//
+//  2. If -fno-PIC or -fPIE is given (i.e. the compiler is compiling code
+//     for a main executable), but a TLV is defined in another translation
+//     unit, then the variable may be defined not in the main executable by
+//     a shared library. In this case, Initial Exec is used to access the
+//     variable.
+//
+//  3. If -fPIC is given, it may be compiling code for dlopen'able shared
+//     library. In this case, Local Dynamic or General Dynamic is used to
+//     access TLVs.
+//
+// You can also manually control how the compiler emits TLV access code
+// globally with `-ftls-model=<access-model-name>` or per-variable basis
+// with `__attribute__((tls_model(<access-model-name>)))`.
+//
+// The linker may rewrite instructions with a code sequence for a cheaper
+// access model at link-time.
 //
 // === TLS Descriptor access model ===
 //
