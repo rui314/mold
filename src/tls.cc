@@ -93,10 +93,10 @@
 //     within the executable. In this case, Local Exec is used to access the
 //     variable.
 //
-//  2. If -fno-PIC or -fPIE is given (i.e. the compiler is compiling code
-//     for a main executable), but a TLV is defined in another translation
-//     unit, then the variable may be defined not in the main executable by
-//     a shared library. In this case, Initial Exec is used to access the
+//  2. If -fno-PIC or -fPIE is given (i.e. the compiler is compiling code for
+//     a main executable), but a TLV is defined in another translation unit,
+//     then the variable may be defined not in the main executable but in a
+//     shared library. In this case, Initial Exec is used to access the
 //     variable.
 //
 //  3. If -fPIC is given, it may be compiling code for dlopen'able shared
@@ -104,8 +104,11 @@
 //     access TLVs.
 //
 // You can also manually control how the compiler emits TLV access code
-// globally with `-ftls-model=<access-model-name>` or per-variable basis
-// with `__attribute__((tls_model(<access-model-name>)))`.
+// globally with `-ftls-model=<model-name>` or per-variable basis with
+// `__attribute__((tls_model(<model-name>)))`. For example, if you are
+// building a shared library that you have no plan to use with dlopen(), you
+// may want to compile the source files with `-ftls-model=initial-exec` to
+// avoid the cost associated with the General Dynamic access model.
 //
 // The linker may rewrite instructions with a code sequence for a cheaper
 // access model at link-time.
