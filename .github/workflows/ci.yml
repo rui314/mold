@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     container: ${{ matrix.distro }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
     - run: ./install-build-deps.sh
     - name: build
       run: |
