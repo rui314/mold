@@ -177,6 +177,7 @@ static PluginStatus add_input_file(const char *path) {
   static i64 file_priority = 100;
 
   MappedFile *mf = must_open_file(ctx, path);
+  mf->is_dependency = false;
 
   ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, "");
   ctx.obj_pool.emplace_back(file);
