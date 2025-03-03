@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-test_cflags -flto || skip
+test_cflags -flto -fno-fat-lto-objects || skip
 
 cat <<EOF | $CC -flto -o $t/a.o -c -xc -
 #include <stdio.h>
