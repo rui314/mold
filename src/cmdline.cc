@@ -378,7 +378,7 @@ static i64 parse_number(Context<E> &ctx, std::string opt,
   return ret;
 }
 
-static char from_hex(char c) {
+static char from_hex(const char& c) {
   if ('0' <= c && c <= '9')
     return c - '0';
   if ('a' <= c && c <= 'f')
