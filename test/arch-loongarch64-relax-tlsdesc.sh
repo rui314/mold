@@ -29,6 +29,7 @@ int main() {
 EOF
 
 $CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o $t/d.o -Wl,--no-relax
+{ $QEMU $t/exe1; true; } |& grep 'unexpected reloc type' && skip
 $QEMU $t/exe1 | grep 'foo bar'
 
 $OBJDUMP -d $t/exe1 > $t/exe1.objdump
