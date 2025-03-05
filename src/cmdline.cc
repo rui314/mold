@@ -92,8 +92,6 @@ Options:
     --no-demangle
   --detach                    Create separate debug info file in the background (default)
     --no-detach
-  --discard-section SECTION   Discard an input section
-    --no-discard-section SECTION
   --enable-new-dtags          Emit DT_RUNPATH for --rpath (default)
     --disable-new-dtags       Emit DT_RPATH for --rpath
   --execute-only              Make executable segments unreadable
