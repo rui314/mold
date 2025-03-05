@@ -92,6 +92,8 @@ Options:
     --no-demangle
   --detach                    Create separate debug info file in the background (default)
     --no-detach
+  --discard-section SECTION   Discard an input section
+    --no-discard-section SECTION
   --enable-new-dtags          Emit DT_RUNPATH for --rpath (default)
     --disable-new-dtags       Emit DT_RPATH for --rpath
   --execute-only              Make executable segments unreadable
@@ -1128,6 +1130,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.print_gc_sections = true;
     } else if (read_flag("no-print-gc-sections")) {
       ctx.arg.print_gc_sections = false;
+    } else if (read_arg("discard-section")) {
+      ctx.arg.discard_section.insert(arg);
+    } else if (read_arg("no-discard-section")) {
+      ctx.arg.discard_section.erase(arg);
     } else if (read_arg("icf")) {
       if (arg == "all") {
         ctx.arg.icf = true;

@@ -2049,6 +2049,7 @@ struct Context {
     std::optional<std::vector<Symbol<E> *>> retain_symbols_file;
     std::unordered_map<std::string_view, u64> section_align;
     std::unordered_map<std::string_view, u64> section_start;
+    std::unordered_set<std::string_view> discard_section;
     std::unordered_set<std::string_view> ignore_ir_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<SectionOrder> section_order;
