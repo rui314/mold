@@ -1,25 +1,20 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<'EOF' | $CC -x assembler -c -o $t/a.o -x assembler -
-
-.section .foo,"a"
-.ascii "foo\0"
-.section .bar,"a"
-.ascii "bar\0"
-.section .text
-.globl _start
-_start:
+cat <<EOF | $CC -o $t/a.o -c -xc -
+__attribute__((section(".foo"))) int foo;
+__attribute__((section(".bar"))) int bar;
+int main() {}
 EOF
 
-./mold -o $t/exe0 $t/a.o
-readelf -S $t/exe0 | grep '.foo'
-readelf -S $t/exe0 | grep '.bar'
+$CC -B. -o $t/exe0 $t/a.o
+readelf -SW $t/exe0 | grep -F .foo
+readelf -SW $t/exe0 | grep -F .bar
 
-./mold -o $t/exe1 $t/a.o --discard-section='.foo'
-readelf -S $t/exe1 | grep -v '.foo'
-readelf -S $t/exe1 | grep '.bar'
+$CC -B. -o $t/exe1 $t/a.o -Wl,--discard-section=.foo
+readelf -SW $t/exe1 | not grep -F .foo
+readelf -SW $t/exe1 | grep -F .bar
 
-./mold -o $t/exe2 $t/a.o --discard-section='foo' --discard-section='boo' --no-discard-section='foo'
-readelf -S $t/exe2 | grep '.foo'
-readelf -S $t/exe2 | grep -v '.bar'
+$CC -B. -o $t/exe2 $t/a.o -Wl,--discard-section=.foo,--discard-section=.bar,--no-discard-section=.foo
+readelf -SW $t/exe2 | grep -F .foo
+readelf -SW $t/exe2 | not grep -F .bar
