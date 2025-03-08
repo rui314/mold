@@ -51,7 +51,7 @@ static u64 hi20(u64 val, u64 pc) {
   return bits(page(val + 0x800) - page(pc), 31, 12);
 }
 
-static u64 hi32(u64 val, u64 pc) {
+static u64 higher(u64 val, u64 pc) {
   // A PC-relative 64-bit address is materialized with the following
   // instructions for the large code model:
   //
@@ -72,11 +72,11 @@ static u64 hi32(u64 val, u64 pc) {
 }
 
 static u64 higher20(u64 val, u64 pc) {
-  return bits(hi32(val, pc), 51, 32);
+  return bits(higher(val, pc), 51, 32);
 }
 
 static u64 highest12(u64 val, u64 pc) {
-  return bits(hi32(val, pc), 63, 52);
+  return bits(higher(val, pc), 63, 52);
 }
 
 static void write_k12(u8 *loc, u32 val) {
@@ -138,6 +138,7 @@ static bool is_relaxable_got_load(Context<E> &ctx, InputSection<E> &isec, i64 i)
   if (ctx.arg.relax &&
       sym.is_pcrel_linktime_const(ctx) &&
       i + 3 < rels.size() &&
+      rels[i + 1].r_type == R_LARCH_RELAX &&
       rels[i + 2].r_type == R_LARCH_GOT_PC_LO12 &&
       rels[i + 2].r_offset == rels[i].r_offset + 4 &&
       rels[i + 3].r_type == R_LARCH_RELAX) {
@@ -336,8 +337,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_LARCH_32:
-      if constexpr (E::is_64)
-        *(ul32 *)loc = S + A;
+      assert(E::is_64);
+      *(ul32 *)loc = S + A;
       break;
     case R_LARCH_B16:
       check_branch(S + A - P, -(1 << 17), 1 << 17);
@@ -590,10 +591,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   pcaddi    $a0, foo@GOTDESC
       //   ld.d      $ra, $a0, 0
       //   jirl      $ra, $ra, 0
-      //
-      // If the code-shrinking relaxation is disabled, we may leave
-      // original useless instructions instead of deleting them, but we
-      // accept that because relaxations are enabled by default.
       if (sym.has_tlsdesc(ctx) && removed_bytes == 0)
         write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
       break;
@@ -616,6 +613,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else if (sym.has_gottp(ctx)) {
         *(ul32 *)loc = 0x1a00'0004; // pcalau12i $a0, 0
         write_j20(loc, hi20(sym.get_gottp_addr(ctx) + A, P));
+      } else if (i64 val = S + A - ctx.tp_addr; 0 <= val && val < 0x1000) {
+        *(ul32 *)loc = 0x0340'0000; // nop
       } else {
         *(ul32 *)loc = 0x1400'0004; // lu12i.w   $a0, 0
         write_j20(loc, (S + A + 0x800 - ctx.tp_addr) >> 12);

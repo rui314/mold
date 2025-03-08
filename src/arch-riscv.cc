@@ -286,8 +286,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_RISCV_32:
-      if constexpr (E::is_64)
-        *(U32<E> *)loc = S + A;
+      assert(E::is_64);
+      *(U32<E> *)loc = S + A;
       break;
     case R_RISCV_64:
       break;
