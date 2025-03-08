@@ -17,7 +17,7 @@ int main() {
 EOF
 
 $CC -o $t/exe1 $t/a.o -pie
-$QEMU $t/exe1 | grep 'Hello world' || skip
+$QEMU $t/exe1 || skip
 
 $CC -B. -o $t/exe2 $t/a.o -pie
 $QEMU $t/exe2 | grep 'Hello world'

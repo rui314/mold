@@ -17,5 +17,8 @@ void hello() {
 }
 EOF
 
+$CC -o $t/exe $t/a.o $t/b.o -no-pie
+$QEMU $t/exe || skip
+
 $CC -B. -o $t/exe $t/a.o $t/b.o -no-pie
 $QEMU $t/exe | grep 'Hello world'
