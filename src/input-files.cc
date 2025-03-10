@@ -1258,27 +1258,17 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
 template <typename E>
 std::vector<std::string_view> SharedFile<E>::get_dt_needed(Context<E> &ctx) {
-  // Get the contents of the dynamic segment
-  std::span<ElfDyn<E>> dynamic;
-  for (ElfPhdr<E> &phdr : this->get_phdrs())
-    if (phdr.p_type == PT_DYNAMIC)
-      dynamic = {(ElfDyn<E> *)(this->mf->data + phdr.p_offset),
-                 (size_t)phdr.p_memsz / sizeof(ElfDyn<E>)};
-
-  // Find a string table
-  char *strtab = nullptr;
-  for (ElfDyn<E> &dyn : dynamic)
-    if (dyn.d_tag == DT_STRTAB)
-      strtab = (char *)this->mf->data + dyn.d_val;
-
-  if (!strtab)
+  ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC);
+  if (!sec)
     return {};
 
-  // Find all DT_NEEDED entries
+  std::span<ElfDyn<E>> dynamic = this->template get_data<ElfDyn<E>>(ctx, *sec);
+  std::string_view strtab = this->get_string(ctx, sec->sh_link);
+
   std::vector<std::string_view> vec;
   for (ElfDyn<E> &dyn : dynamic)
     if (dyn.d_tag == DT_NEEDED)
-      vec.push_back(strtab + dyn.d_val);
+      vec.push_back(strtab.data() + dyn.d_val);
   return vec;
 }
 

@@ -1086,7 +1086,7 @@ void check_shlib_undefined(Context<E> &ctx) {
 
   // Obtain a list of known shared library names.
   std::unordered_set<std::string_view> sonames;
-  for (SharedFile<E> *file : ctx.dsos)
+  for (std::unique_ptr<SharedFile<E>> &file : ctx.dso_pool)
     sonames.insert(file->soname);
 
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
