@@ -5,11 +5,13 @@ VisualStudioVersion = 17.12.35527.113
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-lib", "mimalloc-lib.vcxproj", "{ABB5EAE7-B3E6-432E-B636-333449892EA6}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-test", "mimalloc-test.vcxproj", "{FEF7858F-750E-4C21-A04D-22707CC66878}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-test-static", "mimalloc-test.vcxproj", "{FEF7858F-750E-4C21-A04D-22707CC66878}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-override-dll", "mimalloc-override-dll.vcxproj", "{ABB5EAE7-B3E6-432E-B636-333449892EA7}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-override-test", "mimalloc-override-test.vcxproj", "{FEF7868F-750E-4C21-A04D-22707CC66879}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-test-override-dep", "mimalloc-override-test-dep.vcxproj", "{FEF7869F-750E-4C21-A04D-22707CC66879}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-test-override", "mimalloc-override-test.vcxproj", "{FEF7868F-750E-4C21-A04D-22707CC66879}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "mimalloc-test-stress", "mimalloc-test-stress.vcxproj", "{FEF7958F-750E-4C21-A04D-22707CC66878}"
 EndProject
@@ -75,6 +77,22 @@ Global
 		{ABB5EAE7-B3E6-432E-B636-333449892EA7}.Release|x64.Build.0 = Release|x64
 		{ABB5EAE7-B3E6-432E-B636-333449892EA7}.Release|x86.ActiveCfg = Release|Win32
 		{ABB5EAE7-B3E6-432E-B636-333449892EA7}.Release|x86.Build.0 = Release|Win32
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Debug|ARM64.ActiveCfg = Debug|ARM64
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Debug|ARM64.Build.0 = Debug|ARM64
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Debug|ARM64EC.ActiveCfg = Debug|ARM64EC
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Debug|ARM64EC.Build.0 = Debug|ARM64EC
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Debug|x64.ActiveCfg = Debug|x64
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Debug|x64.Build.0 = Debug|x64
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Debug|x86.ActiveCfg = Debug|Win32
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Debug|x86.Build.0 = Debug|Win32
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Release|ARM64.ActiveCfg = Release|ARM64
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Release|ARM64.Build.0 = Release|ARM64
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Release|ARM64EC.ActiveCfg = Release|ARM64EC
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Release|ARM64EC.Build.0 = Release|ARM64EC
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Release|x64.ActiveCfg = Release|x64
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Release|x64.Build.0 = Release|x64
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Release|x86.ActiveCfg = Release|Win32
+		{FEF7869F-750E-4C21-A04D-22707CC66879}.Release|x86.Build.0 = Release|Win32
 		{FEF7868F-750E-4C21-A04D-22707CC66879}.Debug|ARM64.ActiveCfg = Debug|ARM64
 		{FEF7868F-750E-4C21-A04D-22707CC66879}.Debug|ARM64.Build.0 = Debug|ARM64
 		{FEF7868F-750E-4C21-A04D-22707CC66879}.Debug|ARM64EC.ActiveCfg = Debug|ARM64EC

@@ -1,3 +1,4 @@
+build
 ide/vs20??/*.db
 ide/vs20??/*.opendb
 ide/vs20??/*.user
@@ -8,3 +9,5 @@ docs/
 *.zip
 *.tar
 *.gz
+.vscode
+.DS_STore

@@ -161,6 +161,7 @@ jobs:
   - script: ctest --verbose --timeout 240
     workingDirectory: $(BuildType)
     displayName: CTest
+    
 #  - upload: $(Build.SourcesDirectory)/$(BuildType)
 #    artifact: mimalloc-macos-$(BuildType)
 
@@ -241,49 +242,6 @@ jobs:
     displayName: CTest
 
 - job:
-  displayName: Ubuntu 20.04
-  pool:
-    vmImage:
-      ubuntu-20.04
-  strategy:
-    matrix:
-      Debug:
-        CC: gcc
-        CXX: g++
-        BuildType: debug
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
-      Debug++:
-        CC: gcc
-        CXX: g++
-        BuildType: debug-cxx
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
-      Debug Clang:
-        CC: clang
-        CXX: clang++
-        BuildType: debug-clang
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
-      Debug++ Clang:
-        CC: clang
-        CXX: clang++
-        BuildType: debug-clang-cxx
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
-      Release Clang:
-        CC: clang
-        CXX: clang++
-        BuildType: release-clang
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
-  steps:
-  - task: CMake@1
-    inputs:
-      workingDirectory: $(BuildType)
-      cmakeArgs: .. $(cmakeExtraArgs)
-  - script: make -j$(nproc) -C $(BuildType)
-    displayName: Make
-  - script: ctest --verbose --timeout 240
-    workingDirectory: $(BuildType)
-    displayName: CTest
-
-- job:
   displayName: macOS 15 (Sequoia)
   pool:
     vmImage:
@@ -306,28 +264,3 @@ jobs:
   - script: ctest --verbose --timeout 240
     workingDirectory: $(BuildType)
     displayName: CTest
-
-- job:
-  displayName: macOS 13 (Ventura)
-  pool:
-    vmImage:
-      macOS-13
-  strategy:
-    matrix:
-      Debug:
-        BuildType: debug
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
-      Release:
-        BuildType: release
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
-  steps:
-  - task: CMake@1
-    inputs:
-      workingDirectory: $(BuildType)
-      cmakeArgs: .. $(cmakeExtraArgs)
-  - script: make -j$(sysctl -n hw.ncpu) -C $(BuildType)
-    displayName: Make
-  - script: ctest --verbose --timeout 180
-    workingDirectory: $(BuildType)
-    displayName: CTest
-

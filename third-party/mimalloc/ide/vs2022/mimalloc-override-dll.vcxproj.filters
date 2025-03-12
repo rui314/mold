@@ -49,16 +49,16 @@
     <ClCompile Include="..\..\src\random.c">
       <Filter>Sources</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\src\segment.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\segment-map.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\src\stats.c">
       <Filter>Sources</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\page-map.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\free.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\arena-meta.c">
+    <ClCompile Include="..\..\src\arena-abandon.c">
       <Filter>Sources</Filter>
     </ClCompile>
   </ItemGroup>
@@ -73,6 +73,12 @@
       <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="$(ProjectDir)..\..\include\mimalloc.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\mimalloc-etw.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\mimalloc-etw-gen.h">
       <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\mimalloc-new-delete.h">
@@ -90,7 +96,7 @@
     <ClInclude Include="..\..\include\mimalloc\prim.h">
       <Filter>Headers</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\include\mimalloc\bits.h">
+    <ClInclude Include="..\..\include\mimalloc-stats.h">
       <Filter>Headers</Filter>
     </ClInclude>
   </ItemGroup>

@@ -102,23 +102,15 @@ typedef struct mi_option_desc_s {
 #endif
 #endif
 
-#ifndef MI_DEFAULT_PAGEMAP_COMMIT
-#if defined(__APPLE__)  // when overloading malloc, we still get mixed pointers sometimes on macOS; this avoids a bad access
-#define MI_DEFAULT_PAGEMAP_COMMIT 1
-#else
-#define MI_DEFAULT_PAGEMAP_COMMIT 0
-#endif
-#endif
-
 
 static mi_option_desc_t options[_mi_option_last] =
 {
   // stable options
-#if MI_DEBUG || defined(MI_SHOW_ERRORS)
+  #if MI_DEBUG || defined(MI_SHOW_ERRORS)
   { 1, UNINIT, MI_OPTION(show_errors) },
-#else
+  #else
   { 0, UNINIT, MI_OPTION(show_errors) },
-#endif
+  #endif
   { 0, UNINIT, MI_OPTION(show_stats) },
   { MI_DEFAULT_VERBOSE, UNINIT, MI_OPTION(verbose) },
 
@@ -137,14 +129,14 @@ static mi_option_desc_t options[_mi_option_last] =
        UNINIT, MI_OPTION(reserve_os_memory)     },      // reserve N KiB OS memory in advance (use `option_get_size`)
   { 0, UNINIT, MI_OPTION(deprecated_segment_cache) },   // cache N segments per thread
   { 0, UNINIT, MI_OPTION(deprecated_page_reset) },      // reset page memory on free
-  { 0, UNINIT, MI_OPTION(abandoned_page_purge) },       // purge free page memory when a thread terminates
+  { 0, UNINIT, MI_OPTION_LEGACY(abandoned_page_purge,abandoned_page_reset) },       // reset free page memory when a thread terminates
   { 0, UNINIT, MI_OPTION(deprecated_segment_reset) },   // reset segment memory on free (needs eager commit)
 #if defined(__NetBSD__)
   { 0, UNINIT, MI_OPTION(eager_commit_delay) },         // the first N segments per thread are not eagerly committed
 #else
   { 1, UNINIT, MI_OPTION(eager_commit_delay) },         // the first N segments per thread are not eagerly committed (but per page in the segment on demand)
 #endif
-  { 2500,UNINIT, MI_OPTION_LEGACY(purge_delay,reset_delay) },  // purge delay in milli-seconds
+  { 10,  UNINIT, MI_OPTION_LEGACY(purge_delay,reset_delay) },  // purge delay in milli-seconds
   { 0,   UNINIT, MI_OPTION(use_numa_nodes) },           // 0 = use available numa nodes, otherwise use at most N nodes.
   { 0,   UNINIT, MI_OPTION_LEGACY(disallow_os_alloc,limit_os_alloc) },           // 1 = do not use OS memory for allocation (but only reserved arenas)
   { 100, UNINIT, MI_OPTION(os_tag) },                   // only apple specific for now but might serve more or less related purpose
@@ -153,8 +145,9 @@ static mi_option_desc_t options[_mi_option_last] =
   { 10,  UNINIT, MI_OPTION(max_segment_reclaim)},       // max. percentage of the abandoned segments to be reclaimed per try.
   { 0,   UNINIT, MI_OPTION(destroy_on_exit)},           // release all OS memory on process exit; careful with dangling pointer or after-exit frees!
   { MI_DEFAULT_ARENA_RESERVE, UNINIT, MI_OPTION(arena_reserve) }, // reserve memory N KiB at a time (=1GiB) (use `option_get_size`)
-  { 1,   UNINIT, MI_OPTION(arena_purge_mult) },         // purge delay multiplier for arena's
+  { 10,  UNINIT, MI_OPTION(arena_purge_mult) },         // purge delay multiplier for arena's
   { 1,   UNINIT, MI_OPTION_LEGACY(purge_extend_delay, decommit_extend_delay) },
+  { 0,   UNINIT, MI_OPTION(abandoned_reclaim_on_free) },// reclaim an abandoned segment on a free
   { MI_DEFAULT_DISALLOW_ARENA_ALLOC,   UNINIT, MI_OPTION(disallow_arena_alloc) }, // 1 = do not use arena's for allocation (except if using specific arena id's)
   { 400, UNINIT, MI_OPTION(retry_on_oom) },             // windows only: retry on out-of-memory for N milli seconds (=400), set to 0 to disable retries.
 #if defined(MI_VISIT_ABANDONED)
@@ -169,13 +162,7 @@ static mi_option_desc_t options[_mi_option_last] =
          UNINIT, MI_OPTION(guarded_sample_rate)},       // 1 out of N allocations in the min/max range will be guarded (=4000)
   { 0,   UNINIT, MI_OPTION(guarded_sample_seed)},
   { 0,   UNINIT, MI_OPTION(target_segments_per_thread) }, // abandon segments beyond this point, or 0 to disable.
-  { 1,   UNINIT, MI_OPTION_LEGACY(reclaim_on_free, abandoned_reclaim_on_free) },// reclaim an abandoned segment on a free
-  { 2,   UNINIT, MI_OPTION(page_full_retain) },
-  { 4,   UNINIT, MI_OPTION(page_max_candidates) },
-  { 0,   UNINIT, MI_OPTION(max_vabits) },
-  { MI_DEFAULT_PAGEMAP_COMMIT, 
-         UNINIT, MI_OPTION(pagemap_commit) },           // commit the full pagemap upfront?
-  { 2,   UNINIT, MI_OPTION(page_commit_on_demand) },
+  { 10000, UNINIT, MI_OPTION(generic_collect) },          // collect heaps every N (=10000) generic allocation calls
 };
 
 static void mi_option_init(mi_option_desc_t* desc);
@@ -190,11 +177,6 @@ void _mi_options_init(void) {
   for(int i = 0; i < _mi_option_last; i++ ) {
     mi_option_t option = (mi_option_t)i;
     long l = mi_option_get(option); MI_UNUSED(l); // initialize
-    // if (option != mi_option_verbose)
-    {
-      mi_option_desc_t* desc = &options[option];
-      _mi_verbose_message("option '%s': %ld %s\n", desc->name, desc->value, (mi_option_has_size_in_kib(option) ? "KiB" : ""));
-    }
   }
   mi_max_error_count = mi_option_get(mi_option_max_errors);
   mi_max_warning_count = mi_option_get(mi_option_max_warnings);
@@ -205,7 +187,50 @@ void _mi_options_init(void) {
       _mi_warning_message("option 'allow_large_os_pages' is disabled to allow for guarded objects\n");
     }
   }
-  _mi_verbose_message("guarded build: %s\n", mi_option_get(mi_option_guarded_sample_rate) != 0 ? "enabled" : "disabled");
+  #endif
+  if (mi_option_is_enabled(mi_option_verbose)) { mi_options_print(); }
+}
+
+#define mi_stringifyx(str)  #str                // and stringify
+#define mi_stringify(str)   mi_stringifyx(str)  // expand
+
+void mi_options_print(void) mi_attr_noexcept
+{
+  // show version
+  const int vermajor = MI_MALLOC_VERSION/100;
+  const int verminor = (MI_MALLOC_VERSION%100)/10;
+  const int verpatch = (MI_MALLOC_VERSION%10);
+  _mi_message("v%i.%i.%i%s%s (built on %s, %s)\n", vermajor, verminor, verpatch,
+      #if defined(MI_CMAKE_BUILD_TYPE)
+      ", " mi_stringify(MI_CMAKE_BUILD_TYPE)
+      #else
+      ""
+      #endif
+      ,
+      #if defined(MI_GIT_DESCRIBE)
+      ", git " mi_stringify(MI_GIT_DESCRIBE)
+      #else
+      ""
+      #endif
+      , __DATE__, __TIME__);
+
+  // show options
+  for (int i = 0; i < _mi_option_last; i++) {
+    mi_option_t option = (mi_option_t)i;
+    long l = mi_option_get(option); MI_UNUSED(l); // possibly initialize
+    mi_option_desc_t* desc = &options[option];
+    _mi_message("option '%s': %ld %s\n", desc->name, desc->value, (mi_option_has_size_in_kib(option) ? "KiB" : ""));
+  }
+
+  // show build configuration
+  _mi_message("debug level : %d\n", MI_DEBUG );
+  _mi_message("secure level: %d\n", MI_SECURE );
+  _mi_message("mem tracking: %s\n", MI_TRACK_TOOL);
+  #if MI_GUARDED
+  _mi_message("guarded build: %s\n", mi_option_get(mi_option_guarded_sample_rate) != 0 ? "enabled" : "disabled");
+  #endif
+  #if MI_TSAN
+  _mi_message("thread santizer enabled\n");
   #endif
 }
 
@@ -430,7 +455,7 @@ void _mi_fputs(mi_output_fun* out, void* arg, const char* prefix, const char* me
 // Define our own limited `fprintf` that avoids memory allocation.
 // We do this using `_mi_vsnprintf` with a limited buffer.
 static void mi_vfprintf( mi_output_fun* out, void* arg, const char* prefix, const char* fmt, va_list args ) {
-  char buf[992];
+  char buf[512];
   if (fmt==NULL) return;
   if (!mi_recurse_enter()) return;
   _mi_vsnprintf(buf, sizeof(buf)-1, fmt, args);
@@ -456,10 +481,10 @@ static void mi_vfprintf_thread(mi_output_fun* out, void* arg, const char* prefix
   }
 }
 
-void _mi_output_message(const char* fmt, ...) {
+void _mi_message(const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  mi_vfprintf(NULL, NULL, NULL, fmt, args);
+  mi_vfprintf_thread(NULL, NULL, "mimalloc: ", fmt, args);
   va_end(args);
 }
 

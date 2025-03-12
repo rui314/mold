@@ -5,8 +5,8 @@ terms of the MIT license. A copy of the license can be found in the file
 "LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #pragma once
-#ifndef MI_PRIM_H
-#define MI_PRIM_H
+#ifndef MIMALLOC_PRIM_H
+#define MIMALLOC_PRIM_H
 
 
 // --------------------------------------------------------------------------
@@ -22,14 +22,14 @@ terms of the MIT license. A copy of the license can be found in the file
 
 // OS memory configuration
 typedef struct mi_os_mem_config_s {
-  size_t  page_size;            // default to 4KiB
-  size_t  large_page_size;      // 0 if not supported, usually 2MiB (4MiB on Windows)
-  size_t  alloc_granularity;    // smallest allocation size (usually 4KiB, on Windows 64KiB)
-  size_t  physical_memory;      // physical memory size
-  size_t  virtual_address_bits; // usually 48 or 56 bits on 64-bit systems. (used to determine secure randomization)
-  bool    has_overcommit;       // can we reserve more memory than can be actually committed?
-  bool    has_partial_free;     // can allocated blocks be freed partially? (true for mmap, false for VirtualAlloc)
-  bool    has_virtual_reserve;  // supports virtual address space reservation? (if true we can reserve virtual address space without using commit or physical memory)
+  size_t  page_size;              // default to 4KiB
+  size_t  large_page_size;        // 0 if not supported, usually 2MiB (4MiB on Windows)
+  size_t  alloc_granularity;      // smallest allocation size (usually 4KiB, on Windows 64KiB)
+  size_t  physical_memory_in_kib; // physical memory size in KiB
+  size_t  virtual_address_bits;   // usually 48 or 56 bits on 64-bit systems. (used to determine secure randomization)
+  bool    has_overcommit;         // can we reserve more memory than can be actually committed?
+  bool    has_partial_free;       // can allocated blocks be freed partially? (true for mmap, false for VirtualAlloc)
+  bool    has_virtual_reserve;    // supports virtual address space reservation? (if true we can reserve virtual address space without using commit or physical memory)
 } mi_os_mem_config_t;
 
 // Initialize
@@ -117,15 +117,14 @@ void _mi_prim_thread_done_auto_done(void);
 // Called when the default heap for a thread changes
 void _mi_prim_thread_associate_default_heap(mi_heap_t* heap);
 
-// Is this thread part of a thread pool?
-bool _mi_prim_thread_is_in_threadpool(void);
+
 
 
 
 //-------------------------------------------------------------------
 // Access to TLS (thread local storage) slots.
 // We need fast access to both a unique thread id (in `free.c:mi_free`) and
-// to a thread-local heap pointer (in `alloc.c:mi_malloc`). 
+// to a thread-local heap pointer (in `alloc.c:mi_malloc`).
 // To achieve this we use specialized code for various platforms.
 //-------------------------------------------------------------------
 
@@ -270,42 +269,35 @@ static inline void mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexce
 
 
 // defined in `init.c`; do not use these directly
-extern mi_decl_hidden mi_decl_thread mi_heap_t* _mi_heap_default;  // default heap to allocate from
-extern mi_decl_hidden bool _mi_process_is_initialized;             // has mi_process_init been called?
+extern mi_decl_thread mi_heap_t* _mi_heap_default;  // default heap to allocate from
+extern bool _mi_process_is_initialized;             // has mi_process_init been called?
 
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept;
-
-static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
-  const mi_threadid_t tid = __mi_prim_thread_id();
-  mi_assert_internal(tid > 1);
-  mi_assert_internal((tid & MI_PAGE_FLAG_MASK) == 0);  // bottom 2 bits are clear?
-  return tid;
-}
+static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept;
 
 // Get a unique id for the current thread.
 #if defined(MI_PRIM_THREAD_ID)
 
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
+static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
   return MI_PRIM_THREAD_ID();  // used for example by CPython for a free threaded build (see python/cpython#115488)
 }
 
 #elif defined(_WIN32)
 
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
+static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
   // Windows: works on Intel and ARM in both 32- and 64-bit
   return (uintptr_t)NtCurrentTeb();
 }
 
 #elif MI_USE_BUILTIN_THREAD_POINTER
 
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
+static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
   // Works on most Unix based platforms with recent compilers
   return (uintptr_t)__builtin_thread_pointer();
 }
 
 #elif MI_HAS_TLS_SLOT
 
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
+static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
   #if defined(__BIONIC__)
     // issue #384, #495: on the Bionic libc (Android), slot 1 is the thread id
     // see: https://github.com/aosp-mirror/platform_bionic/blob/c44b1d0676ded732df4b3b21c5f798eacae93228/libc/platform/bionic/tls_defines.h#L86
@@ -321,7 +313,7 @@ static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
 #else
 
 // otherwise use portable C, taking the address of a thread local variable (this is still very fast on most platforms).
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
+static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
   return (uintptr_t)&_mi_heap_default;
 }
 
@@ -424,4 +416,4 @@ static inline mi_heap_t* mi_prim_get_default_heap(void) {
 #endif  // mi_prim_get_default_heap()
 
 
-#endif  // MI_PRIM_H
+#endif  // MIMALLOC_PRIM_H

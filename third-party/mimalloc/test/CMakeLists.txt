@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.18)
 project(mimalloc-test C CXX)
 
 set(CMAKE_C_STANDARD 11)
@@ -16,10 +16,12 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Import mimalloc (if installed)
-find_package(mimalloc 1.7 REQUIRED NO_SYSTEM_ENVIRONMENT_PATH)
+find_package(mimalloc 2.2 CONFIG REQUIRED)
 message(STATUS "Found mimalloc installed at: ${MIMALLOC_LIBRARY_DIR} (${MIMALLOC_VERSION_DIR})")
 
-# overriding with a dynamic library
+
+# link with a dynamic shared library
+# use `LD_PRELOAD` to actually override malloc/free at runtime with mimalloc
 add_executable(dynamic-override  main-override.c)
 target_link_libraries(dynamic-override PUBLIC mimalloc)
 
@@ -29,9 +31,9 @@ target_link_libraries(dynamic-override-cxx PUBLIC mimalloc)
 
 # overriding with a static object file works reliable as the symbols in the
 # object file have priority over those in library files
-add_executable(static-override-obj main-override.c ${MIMALLOC_OBJECT_DIR}/mimalloc.o)
+add_executable(static-override-obj main-override.c ${MIMALLOC_OBJECT_DIR}/mimalloc${CMAKE_C_OUTPUT_EXTENSION})
 target_include_directories(static-override-obj PUBLIC ${MIMALLOC_INCLUDE_DIR})
-target_link_libraries(static-override-obj PUBLIC pthread)
+target_link_libraries(static-override-obj PUBLIC mimalloc-static)
 
 
 # overriding with a static library works too if using the `mimalloc-override.h`

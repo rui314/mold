@@ -38,15 +38,15 @@ terms of the MIT license. A copy of the license can be found in the file
 
 
 static inline bool mi_page_queue_is_huge(const mi_page_queue_t* pq) {
-  return (pq->block_size == (MI_LARGE_MAX_OBJ_SIZE+sizeof(uintptr_t)));
+  return (pq->block_size == (MI_MEDIUM_OBJ_SIZE_MAX+sizeof(uintptr_t)));
 }
 
 static inline bool mi_page_queue_is_full(const mi_page_queue_t* pq) {
-  return (pq->block_size == (MI_LARGE_MAX_OBJ_SIZE+(2*sizeof(uintptr_t))));
+  return (pq->block_size == (MI_MEDIUM_OBJ_SIZE_MAX+(2*sizeof(uintptr_t))));
 }
 
 static inline bool mi_page_queue_is_special(const mi_page_queue_t* pq) {
-  return (pq->block_size > MI_LARGE_MAX_OBJ_SIZE);
+  return (pq->block_size > MI_MEDIUM_OBJ_SIZE_MAX);
 }
 
 /* -----------------------------------------------------------
@@ -57,44 +57,38 @@ static inline bool mi_page_queue_is_special(const mi_page_queue_t* pq) {
 // Returns MI_BIN_HUGE if the size is too large.
 // We use `wsize` for the size in "machine word sizes",
 // i.e. byte size == `wsize*sizeof(void*)`.
-static inline uint8_t mi_bin(size_t size) {
+static inline size_t mi_bin(size_t size) {
   size_t wsize = _mi_wsize_from_size(size);
-  uint8_t bin;
-  if (wsize <= 1) {
-    bin = 1;
+#if defined(MI_ALIGN4W)
+  if mi_likely(wsize <= 4) {
+    return (wsize <= 1 ? 1 : (wsize+1)&~1); // round to double word sizes
   }
-  #if defined(MI_ALIGN4W)
-  else if (wsize <= 4) {
-    bin = (uint8_t)((wsize+1)&~1); // round to double word sizes
+#elif defined(MI_ALIGN2W)
+  if mi_likely(wsize <= 8) {
+    return (wsize <= 1 ? 1 : (wsize+1)&~1); // round to double word sizes
   }
-  #elif defined(MI_ALIGN2W)
-  else if (wsize <= 8) {
-    bin = (uint8_t)((wsize+1)&~1); // round to double word sizes
+#else
+  if mi_likely(wsize <= 8) {
+    return (wsize == 0 ? 1 : wsize);
   }
-  #else
-  else if (wsize <= 8) {
-    bin = (uint8_t)wsize;
-  }
-  #endif
-  else if (wsize > MI_LARGE_MAX_OBJ_WSIZE) {
-    bin = MI_BIN_HUGE;
+#endif
+  else if mi_unlikely(wsize > MI_MEDIUM_OBJ_WSIZE_MAX) {
+    return MI_BIN_HUGE;
   }
   else {
     #if defined(MI_ALIGN4W)
     if (wsize <= 16) { wsize = (wsize+3)&~3; } // round to 4x word sizes
     #endif
     wsize--;
-    mi_assert_internal(wsize!=0);
-    // find the highest bit position
-    uint8_t b = (uint8_t)(MI_SIZE_BITS - 1 - mi_clz(wsize));
+    // find the highest bit
+    const size_t b = (MI_SIZE_BITS - 1 - mi_clz(wsize));  // note: wsize != 0
     // and use the top 3 bits to determine the bin (~12.5% worst internal fragmentation).
     // - adjust with 3 because we use do not round the first 8 sizes
     //   which each get an exact bin
-    bin = ((b << 2) + (uint8_t)((wsize >> (b - 2)) & 0x03)) - 3;
-    mi_assert_internal(bin < MI_BIN_HUGE);
+    const size_t bin = ((b << 2) + ((wsize >> (b - 2)) & 0x03)) - 3;
+    mi_assert_internal(bin > 0 && bin < MI_BIN_HUGE);
+    return bin;
   }
-  mi_assert_internal(bin > 0 && bin <= MI_BIN_HUGE);
-  return bin;
 }
 
 
@@ -103,17 +97,17 @@ static inline uint8_t mi_bin(size_t size) {
   Queue of pages with free blocks
 ----------------------------------------------------------- */
 
-uint8_t _mi_bin(size_t size) {
+size_t _mi_bin(size_t size) {
   return mi_bin(size);
 }
 
-size_t _mi_bin_size(uint8_t bin) {
+size_t _mi_bin_size(size_t bin) {
   return _mi_heap_empty.pages[bin].block_size;
 }
 
 // Good size for allocation
-mi_decl_nodiscard mi_decl_export size_t mi_good_size(size_t size) mi_attr_noexcept {
-  if (size <= MI_LARGE_MAX_OBJ_SIZE) {
+size_t mi_good_size(size_t size) mi_attr_noexcept {
+  if (size <= MI_MEDIUM_OBJ_SIZE_MAX) {
     return _mi_bin_size(mi_bin(size + MI_PADDING_SIZE));
   }
   else {
@@ -142,13 +136,22 @@ static bool mi_heap_contains_queue(const mi_heap_t* heap, const mi_page_queue_t*
 }
 #endif
 
+static inline bool mi_page_is_large_or_huge(const mi_page_t* page) {
+  return (mi_page_block_size(page) > MI_MEDIUM_OBJ_SIZE_MAX || mi_page_is_huge(page));
+}
+
+static size_t mi_page_bin(const mi_page_t* page) {
+  const size_t bin = (mi_page_is_in_full(page) ? MI_BIN_FULL : (mi_page_is_huge(page) ? MI_BIN_HUGE : mi_bin(mi_page_block_size(page))));
+  mi_assert_internal(bin <= MI_BIN_FULL);
+  return bin;
+}
+
 static mi_page_queue_t* mi_heap_page_queue_of(mi_heap_t* heap, const mi_page_t* page) {
   mi_assert_internal(heap!=NULL);
-  uint8_t bin = (mi_page_is_in_full(page) ? MI_BIN_FULL : (mi_page_is_huge(page) ? MI_BIN_HUGE : mi_bin(mi_page_block_size(page))));
-  mi_assert_internal(bin <= MI_BIN_FULL);
+  const size_t bin = mi_page_bin(page);
   mi_page_queue_t* pq = &heap->pages[bin];
   mi_assert_internal((mi_page_block_size(page) == pq->block_size) ||
-                       (mi_page_is_huge(page) && mi_page_queue_is_huge(pq)) ||
+                       (mi_page_is_large_or_huge(page) && mi_page_queue_is_huge(pq)) ||
                          (mi_page_is_in_full(page) && mi_page_queue_is_full(pq)));
   return pq;
 }
@@ -186,7 +189,7 @@ static inline void mi_heap_queue_first_update(mi_heap_t* heap, const mi_page_que
   }
   else {
     // find previous size; due to minimal alignment upto 3 previous bins may need to be skipped
-    uint8_t bin = mi_bin(size);
+    size_t bin = mi_bin(size);
     const mi_page_queue_t* prev = pq - 1;
     while( bin == mi_bin(prev->block_size) && prev > &heap->pages[0]) {
       prev--;
@@ -212,9 +215,10 @@ static void mi_page_queue_remove(mi_page_queue_t* queue, mi_page_t* page) {
   mi_assert_internal(page != NULL);
   mi_assert_expensive(mi_page_queue_contains(queue, page));
   mi_assert_internal(mi_page_block_size(page) == queue->block_size ||
-                      (mi_page_is_huge(page) && mi_page_queue_is_huge(queue)) ||
+                      (mi_page_is_large_or_huge(page) && mi_page_queue_is_huge(queue)) ||
                         (mi_page_is_in_full(page) && mi_page_queue_is_full(queue)));
   mi_heap_t* heap = mi_page_heap(page);
+
   if (page->prev != NULL) page->prev->next = page->next;
   if (page->next != NULL) page->next->prev = page->prev;
   if (page == queue->last)  queue->last = page->prev;
@@ -227,6 +231,7 @@ static void mi_page_queue_remove(mi_page_queue_t* queue, mi_page_t* page) {
   heap->page_count--;
   page->next = NULL;
   page->prev = NULL;
+  // mi_atomic_store_ptr_release(mi_atomic_cast(void*, &page->heap), NULL);
   mi_page_set_in_full(page,false);
 }
 
@@ -235,14 +240,14 @@ static void mi_page_queue_push(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_
   mi_assert_internal(mi_page_heap(page) == heap);
   mi_assert_internal(!mi_page_queue_contains(queue, page));
   #if MI_HUGE_PAGE_ABANDON
-  mi_assert_internal(_mi_page_segment(page)->page_kind != MI_PAGE_HUGE);
+  mi_assert_internal(_mi_page_segment(page)->kind != MI_SEGMENT_HUGE);
   #endif
   mi_assert_internal(mi_page_block_size(page) == queue->block_size ||
-                      (mi_page_is_huge(page) && mi_page_queue_is_huge(queue)) ||
+                      (mi_page_is_large_or_huge(page) && mi_page_queue_is_huge(queue)) ||
                         (mi_page_is_in_full(page) && mi_page_queue_is_full(queue)));
 
   mi_page_set_in_full(page, mi_page_queue_is_full(queue));
-
+  // mi_atomic_store_ptr_release(mi_atomic_cast(void*, &page->heap), heap);
   page->next = queue->first;
   page->prev = NULL;
   if (queue->first != NULL) {
@@ -256,34 +261,6 @@ static void mi_page_queue_push(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_
 
   // update direct
   mi_heap_queue_first_update(heap, queue);
-  heap->page_count++;
-}
-
-static void mi_page_queue_push_at_end(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_t* page) {
-  mi_assert_internal(mi_page_heap(page) == heap);
-  mi_assert_internal(!mi_page_queue_contains(queue, page));
-
-  mi_assert_internal(mi_page_block_size(page) == queue->block_size ||
-                      (mi_page_is_huge(page) && mi_page_queue_is_huge(queue)) ||
-                       (mi_page_is_in_full(page) && mi_page_queue_is_full(queue)));
-
-  mi_page_set_in_full(page, mi_page_queue_is_full(queue));
-
-  page->prev = queue->last;
-  page->next = NULL;
-  if (queue->last != NULL) {
-    mi_assert_internal(queue->last->next == NULL);
-    queue->last->next = page;
-    queue->last = page;
-  }
-  else {
-    queue->first = queue->last = page;
-  }
-
-  // update direct
-  if (queue->first == page) {
-    mi_heap_queue_first_update(heap, queue);
-  }
   heap->page_count++;
 }
 
@@ -305,8 +282,8 @@ static void mi_page_queue_enqueue_from_ex(mi_page_queue_t* to, mi_page_queue_t* 
   mi_assert_internal((bsize == to->block_size && bsize == from->block_size) ||
                      (bsize == to->block_size && mi_page_queue_is_full(from)) ||
                      (bsize == from->block_size && mi_page_queue_is_full(to)) ||
-                     (mi_page_is_huge(page) && mi_page_queue_is_huge(to)) ||
-                     (mi_page_is_huge(page) && mi_page_queue_is_full(to)));
+                     (mi_page_is_large_or_huge(page) && mi_page_queue_is_huge(to)) ||
+                     (mi_page_is_large_or_huge(page) && mi_page_queue_is_full(to)));
 
   mi_heap_t* heap = mi_page_heap(page);
 
@@ -384,7 +361,13 @@ size_t _mi_page_queue_append(mi_heap_t* heap, mi_page_queue_t* pq, mi_page_queue
   // set append pages to new heap and count
   size_t count = 0;
   for (mi_page_t* page = append->first; page != NULL; page = page->next) {
-    mi_page_set_heap(page, heap);
+    // inline `mi_page_set_heap` to avoid wrong assertion during absorption;
+    // in this case it is ok to be delayed freeing since both "to" and "from" heap are still alive.
+    mi_atomic_store_release(&page->xheap, (uintptr_t)heap);
+    // set the flag to delayed free (not overriding NEVER_DELAYED_FREE) which has as a
+    // side effect that it spins until any DELAYED_FREEING is finished. This ensures
+    // that after appending only the new heap will be used for delayed free operations.
+    _mi_page_use_delayed_free(page, MI_USE_DELAYED_FREE, false);
     count++;
   }
 
