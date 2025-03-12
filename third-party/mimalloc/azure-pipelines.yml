@@ -161,7 +161,6 @@ jobs:
   - script: ctest --verbose --timeout 240
     workingDirectory: $(BuildType)
     displayName: CTest
-    
 #  - upload: $(Build.SourcesDirectory)/$(BuildType)
 #    artifact: mimalloc-macos-$(BuildType)
 
@@ -307,3 +306,28 @@ jobs:
   - script: ctest --verbose --timeout 240
     workingDirectory: $(BuildType)
     displayName: CTest
+
+- job:
+  displayName: macOS 13 (Ventura)
+  pool:
+    vmImage:
+      macOS-13
+  strategy:
+    matrix:
+      Debug:
+        BuildType: debug
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+      Release:
+        BuildType: release
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
+  steps:
+  - task: CMake@1
+    inputs:
+      workingDirectory: $(BuildType)
+      cmakeArgs: .. $(cmakeExtraArgs)
+  - script: make -j$(sysctl -n hw.ncpu) -C $(BuildType)
+    displayName: Make
+  - script: ctest --verbose --timeout 180
+    workingDirectory: $(BuildType)
+    displayName: CTest
+

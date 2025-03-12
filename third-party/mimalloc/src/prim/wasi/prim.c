@@ -277,3 +277,7 @@ void _mi_prim_thread_done_auto_done(void) {
 void _mi_prim_thread_associate_default_heap(mi_heap_t* heap) {
   MI_UNUSED(heap);
 }
+
+bool _mi_prim_thread_is_in_threadpool(void) {
+  return false;
+}

@@ -404,11 +404,10 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="$(ProjectDir)..\..\include\mimalloc.h" />
-    <ClInclude Include="..\..\include\mimalloc-etw-gen.h" />
-    <ClInclude Include="..\..\include\mimalloc-etw.h" />
     <ClInclude Include="..\..\include\mimalloc-new-delete.h" />
     <ClInclude Include="..\..\include\mimalloc-override.h" />
     <ClInclude Include="..\..\include\mimalloc\atomic.h" />
+    <ClInclude Include="..\..\include\mimalloc\bits.h" />
     <ClInclude Include="..\..\include\mimalloc\internal.h" />
     <ClInclude Include="..\..\include\mimalloc\prim.h" />
     <ClInclude Include="..\..\include\mimalloc\track.h" />
@@ -438,7 +437,10 @@
     </ClCompile>
     <ClCompile Include="..\..\src\alloc-posix.c" />
     <ClCompile Include="..\..\src\alloc.c" />
-    <ClCompile Include="..\..\src\arena-abandoned.c">
+    <ClCompile Include="..\..\src\arena-meta.c" />
+    <ClCompile Include="..\..\src\arena.c" />
+    <ClCompile Include="..\..\src\bitmap.c" />
+    <ClCompile Include="..\..\src\free.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
@@ -448,11 +450,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|ARM64EC'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\..\src\arena.c" />
-    <ClCompile Include="..\..\src\bitmap.c" />
     <ClCompile Include="..\..\src\heap.c" />
     <ClCompile Include="..\..\src\init.c" />
     <ClCompile Include="..\..\src\libc.c" />
+    <ClCompile Include="..\..\src\page-map.c" />
     <ClCompile Include="..\..\src\prim\prim.c" />
     <ClCompile Include="..\..\src\prim\windows\prim.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">true</ExcludedFromBuild>
@@ -478,12 +479,7 @@
     </ClCompile>
     <ClCompile Include="..\..\src\page.c" />
     <ClCompile Include="..\..\src\random.c" />
-    <ClCompile Include="..\..\src\segment-map.c" />
-    <ClCompile Include="..\..\src\segment.c" />
     <ClCompile Include="..\..\src\stats.c" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="..\..\include\mimalloc-etw-gen.man" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
