@@ -544,7 +544,7 @@ fn test_fuzz_hasher() {
         let mut total_input = 0;
         // For each test, write 3 inputs of random length.
         for _ in 0..3 {
-            let input_len = rng.gen_range(0..(INPUT_MAX + 1));
+            let input_len = rng.random_range(0..(INPUT_MAX + 1));
             #[cfg(feature = "std")]
             dbg!(input_len);
             let input = &input_buf[total_input..][..input_len];
@@ -573,12 +573,12 @@ fn test_fuzz_xof() {
         dbg!(_num_test);
         // 31 (16 + 8 + 4 + 2 + 1) outputs
         let mut output_buf = [0; 31 * CHUNK_LEN];
-        let input_len = rng.gen_range(0..input_buf.len());
+        let input_len = rng.random_range(0..input_buf.len());
         let mut xof = crate::Hasher::new()
             .update(&input_buf[..input_len])
             .finalize_xof();
-        let partial_start = rng.gen_range(0..output_buf.len());
-        let partial_end = rng.gen_range(partial_start..output_buf.len());
+        let partial_start = rng.random_range(0..output_buf.len());
+        let partial_end = rng.random_range(partial_start..output_buf.len());
         xof.fill(&mut output_buf[..partial_start]);
         xof.fill(&mut output_buf[partial_start..partial_end]);
         xof.fill(&mut output_buf[partial_end..]);
@@ -763,6 +763,16 @@ fn test_hash_conversions() {
     let hex = hash1.to_hex();
     let hash3 = crate::Hash::from_hex(hex.as_bytes()).unwrap();
     assert_eq!(hash1, hash3);
+
+    let slice1: &[u8] = bytes1.as_slice();
+    let hash4 = crate::Hash::from_slice(slice1).expect("correct length");
+    assert_eq!(hash1, hash4);
+
+    assert!(crate::Hash::from_slice(&[]).is_err());
+    assert!(crate::Hash::from_slice(&[42]).is_err());
+    assert!(crate::Hash::from_slice([42; 31].as_slice()).is_err());
+    assert!(crate::Hash::from_slice([42; 33].as_slice()).is_err());
+    assert!(crate::Hash::from_slice([42; 100].as_slice()).is_err());
 }
 
 #[test]

@@ -584,7 +584,7 @@ fn test_fuzz_hasher() {
         let mut total_input = 0;
         // For each test, write 3 inputs of random length.
         for _ in 0..3 {
-            let input_len = rng.gen_range(0..INPUT_MAX + 1);
+            let input_len = rng.random_range(0..INPUT_MAX + 1);
             dbg!(input_len);
             let input = &input_buf[total_input..][..input_len];
             hasher.update(input);

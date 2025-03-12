@@ -14,22 +14,24 @@ pub unsafe fn hash_many<const N: usize>(
     flags_end: u8,
     out: &mut [u8],
 ) {
-    // The Rust hash_many implementations do bounds checking on the `out`
-    // array, but the C implementations don't. Even though this is an unsafe
-    // function, assert the bounds here.
-    assert!(out.len() >= inputs.len() * OUT_LEN);
-    ffi::blake3_hash_many_avx2(
-        inputs.as_ptr() as *const *const u8,
-        inputs.len(),
-        N / BLOCK_LEN,
-        key.as_ptr(),
-        counter,
-        increment_counter.yes(),
-        flags,
-        flags_start,
-        flags_end,
-        out.as_mut_ptr(),
-    )
+    unsafe {
+        // The Rust hash_many implementations do bounds checking on the `out`
+        // array, but the C implementations don't. Even though this is an unsafe
+        // function, assert the bounds here.
+        assert!(out.len() >= inputs.len() * OUT_LEN);
+        ffi::blake3_hash_many_avx2(
+            inputs.as_ptr() as *const *const u8,
+            inputs.len(),
+            N / BLOCK_LEN,
+            key.as_ptr(),
+            counter,
+            increment_counter.yes(),
+            flags,
+            flags_start,
+            flags_end,
+            out.as_mut_ptr(),
+        )
+    }
 }
 
 pub mod ffi {

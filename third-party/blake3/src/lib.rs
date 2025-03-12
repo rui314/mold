@@ -236,6 +236,13 @@ impl Hash {
         Self(bytes)
     }
 
+    /// Create a `Hash` from its raw bytes representation as a slice.
+    ///
+    /// Returns an error if the slice is not exactly 32 bytes long.
+    pub fn from_slice(bytes: &[u8]) -> Result<Self, core::array::TryFromSliceError> {
+        Ok(Self::from_bytes(bytes.try_into()?))
+    }
+
     /// Encode a `Hash` in lowercase hexadecimal.
     ///
     /// The returned [`ArrayString`] is a fixed size and doesn't allocate memory

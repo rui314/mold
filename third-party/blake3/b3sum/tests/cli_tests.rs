@@ -419,6 +419,24 @@ fn test_check() {
     assert_eq!(expected_check_output, stdout);
     assert_eq!("", stderr);
 
+    // Check the same file, but with Windows-style newlines.
+    let windows_style = expected_checkfile.replace("\n", "\r\n");
+    let output = cmd!(b3sum_exe(), "--check")
+        .stdin_bytes(windows_style.as_bytes())
+        .dir(dir.path())
+        .stdout_capture()
+        .stderr_capture()
+        .run()
+        .unwrap();
+    let stdout = std::str::from_utf8(&output.stdout).unwrap();
+    let stderr = std::str::from_utf8(&output.stderr).unwrap();
+    let expected_check_output = "\
+         a: OK\n\
+         b: OK\n\
+         c/d: OK\n";
+    assert_eq!(expected_check_output, stdout);
+    assert_eq!("", stderr);
+
     // Now pass the same checkfile twice on the command line just for fun.
     let checkfile_path = dir.path().join("checkfile");
     fs::write(&checkfile_path, &expected_checkfile).unwrap();

@@ -50,30 +50,15 @@ pub(crate) fn copy_wide(
 pub(crate) fn maybe_mmap_file(file: &std::fs::File) -> std::io::Result<Option<memmap2::Mmap>> {
     let metadata = file.metadata()?;
     let file_size = metadata.len();
-    #[allow(clippy::if_same_then_else)]
     if !metadata.is_file() {
         // Not a real file.
         Ok(None)
-    } else if file_size > isize::max_value() as u64 {
-        // Too long to safely map.
-        // https://github.com/danburkert/memmap-rs/issues/69
-        Ok(None)
-    } else if file_size == 0 {
-        // Mapping an empty file currently fails.
-        // https://github.com/danburkert/memmap-rs/issues/72
-        // See test_mmap_virtual_file.
-        Ok(None)
     } else if file_size < 16 * 1024 {
-        // Mapping small files is not worth it.
+        // Mapping small files is not worth it, and some special files that can't be mapped report
+        // a size of zero.
         Ok(None)
     } else {
-        // Explicitly set the length of the memory map, so that filesystem
-        // changes can't race to violate the invariants we just checked.
-        let map = unsafe {
-            memmap2::MmapOptions::new()
-                .len(file_size as usize)
-                .map(file)?
-        };
+        let map = unsafe { memmap2::Mmap::map(file)? };
         Ok(Some(map))
     }
 }

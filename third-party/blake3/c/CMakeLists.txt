@@ -10,7 +10,7 @@ if (POLICY CMP0102)
 endif()
 
 project(libblake3
-  VERSION 1.5.5
+  VERSION 1.6.1
   DESCRIPTION "BLAKE3 C implementation"
   LANGUAGES C ASM
 )

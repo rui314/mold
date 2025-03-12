@@ -29,7 +29,7 @@ impl RandomInput {
         b.bytes += len as u64;
         let page_size: usize = page_size::get();
         let mut buf = vec![0u8; len + page_size];
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         rng.fill_bytes(&mut buf);
         let mut offsets: Vec<usize> = (0..page_size).collect();
         offsets.shuffle(&mut rng);
