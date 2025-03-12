@@ -40,9 +40,9 @@
  *
  * Optional add-on.
  *
- * **Compile this file with the default flags for your target.** Do not compile
- * with flags like `-mavx*`, `-march=native`, or `/arch:AVX*`, there will be
- * an error. See @ref XXH_X86DISPATCH_ALLOW_AVX for details.
+ * **Compile this file with the default flags for your target.**
+ * Note that compiling with flags like `-mavx*`, `-march=native`, or `/arch:AVX*`
+ * will make the resulting binary incompatible with cpus not supporting the requested instruction set.
  *
  * @defgroup dispatch x86 Dispatcher
  * @{
@@ -59,40 +59,16 @@ extern "C" {
 /*! @cond Doxygen ignores this part */
 #ifndef XXH_HAS_INCLUDE
 #  ifdef __has_include
-#    define XXH_HAS_INCLUDE(x) __has_include(x)
+/*
+ * Not defined as XXH_HAS_INCLUDE(x) (function-like) because
+ * this causes segfaults in Apple Clang 4.2 (on Mac OS X 10.7 Lion)
+ */
+#    define XXH_HAS_INCLUDE __has_include
 #  else
 #    define XXH_HAS_INCLUDE(x) 0
 #  endif
 #endif
 /*! @endcond */
-
-/*!
- * @def XXH_X86DISPATCH_ALLOW_AVX
- * @brief Disables the AVX sanity check.
- *
- * xxh_x86dispatch.c is intended to be compiled for the minimum target, and
- * it selectively enables SSE2, AVX2, and AVX512 when it is needed.
- *
- * Compiling with options like `-mavx*`, `-march=native`, or `/arch:AVX*`
- * _globally_ will always enable this feature, and therefore makes it
- * undefined behavior to execute on any CPU without said feature.
- *
- * Even if the source code isn't directly using AVX intrinsics in a function,
- * the compiler can still generate AVX code from autovectorization and by
- * "upgrading" SSE2 intrinsics to use the VEX prefixes (a.k.a. AVX128).
- *
- * Define XXH_X86DISPATCH_ALLOW_AVX to ignore this check,
- * thus accepting that the produced binary will not work correctly
- * on any CPU with less features than the ones stated at compilation time.
- */
-#ifdef XXH_DOXYGEN
-#  define XXH_X86DISPATCH_ALLOW_AVX
-#endif
-
-#if defined(__AVX__) && !defined(XXH_X86DISPATCH_ALLOW_AVX)
-#  error "Error: if xxh_x86dispatch.c is compiled with AVX enabled, the resulting binary will crash on sse2-only cpus !! " \
-         "If you nonetheless want to do that, please enable the XXH_X86DISPATCH_ALLOW_AVX build variable"
-#endif
 
 /*!
  * @def XXH_DISPATCH_SCALAR
@@ -364,7 +340,7 @@ static xxh_u64 XXH_xgetbv(void)
  * @return The best @ref XXH_VECTOR implementation.
  * @see XXH_VECTOR_TYPES
  */
-static int XXH_featureTest(void)
+int XXH_featureTest(void)
 {
     xxh_u32 abcd[4];
     xxh_u32 max_leaves;
@@ -725,8 +701,8 @@ static XXH_CONSTRUCTOR void XXH_setDispatch(void)
 /*! @cond Doxygen ignores this part */
 
 static XXH64_hash_t
-XXH3_hashLong_64b_defaultSecret_selection(const void* input, size_t len,
-                                          XXH64_hash_t seed64, const xxh_u8* secret, size_t secretLen)
+XXH3_hashLong_64b_defaultSecret_selection(const void* XXH_RESTRICT input, size_t len,
+                                          XXH64_hash_t seed64, const xxh_u8* XXH_RESTRICT secret, size_t secretLen)
 {
     (void)seed64; (void)secret; (void)secretLen;
     if (XXH_DISPATCH_MAYBE_NULL && XXH_g_dispatch.hashLong64_default == NULL)
@@ -740,8 +716,8 @@ XXH64_hash_t XXH3_64bits_dispatch(XXH_NOESCAPE const void* input, size_t len)
 }
 
 static XXH64_hash_t
-XXH3_hashLong_64b_withSeed_selection(const void* input, size_t len,
-                                     XXH64_hash_t seed64, const xxh_u8* secret, size_t secretLen)
+XXH3_hashLong_64b_withSeed_selection(const void* XXH_RESTRICT input, size_t len,
+                                     XXH64_hash_t seed64, const xxh_u8* XXH_RESTRICT secret, size_t secretLen)
 {
     (void)secret; (void)secretLen;
     if (XXH_DISPATCH_MAYBE_NULL && XXH_g_dispatch.hashLong64_seed == NULL)
@@ -755,8 +731,8 @@ XXH64_hash_t XXH3_64bits_withSeed_dispatch(XXH_NOESCAPE const void* input, size_
 }
 
 static XXH64_hash_t
-XXH3_hashLong_64b_withSecret_selection(const void* input, size_t len,
-                                       XXH64_hash_t seed64, const xxh_u8* secret, size_t secretLen)
+XXH3_hashLong_64b_withSecret_selection(const void* XXH_RESTRICT input, size_t len,
+                                       XXH64_hash_t seed64, const xxh_u8* XXH_RESTRICT secret, size_t secretLen)
 {
     (void)seed64;
     if (XXH_DISPATCH_MAYBE_NULL && XXH_g_dispatch.hashLong64_secret == NULL)

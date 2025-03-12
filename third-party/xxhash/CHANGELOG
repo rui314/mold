@@ -1,3 +1,12 @@
+v0.8.3
+- fix  : variant `XXH3_128bits_withSecretandSeed()` could produce an invalid result in some specific set of conditions, #894 by @hltj
+- cli  : vector extension detected at runtime on x86/x64, enabled by default
+- cli  : new commands `--filelist` and `--files-from`, by @Ian-Clowes
+- cli  : XXH3 64-bits GNU format can now be generated and checked (command `-H3`)
+- portability: LoongArch SX SIMD extension, by @lrzlin
+- portability: can build on AIX, suggested by @likema
+- portability: validated for SPARC cpus
+
 v0.8.2
 - fix  : XXH3 S390x vector implementation (@hzhuang1)
 - fix  : PowerPC vector compilation with IBM XL compiler (@MaxiBoether)

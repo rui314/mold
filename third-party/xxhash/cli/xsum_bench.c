@@ -340,9 +340,13 @@ static char* XSUM_strcatDup(const char* s1, const char* s2)
 
 /*!
  * XSUM_benchMem():
- * buffer: Must be 16-byte aligned.
- * The real allocated size of buffer is supposed to be >= (bufferSize+3).
- * returns: 0 on success, 1 if error (invalid mode selected)
+ * Benchmark provided content up to twice per function:
+ * - once at provided aligned memory address (%16)
+ * - second time at unaligned memory address (+3)
+ * Enabled functions and modes are provided via @g_hashesToBench global variable.
+ * @buffer: Must be 16-byte aligned.
+ * The allocated size of underlying @buffer must be >= (@bufferSize+3).
+ * This function also fills @g_benchSecretBuf, to bench XXH3's _withSecret() variants.
  */
 static void XSUM_benchMem(const void* buffer, size_t bufferSize)
 {

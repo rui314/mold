@@ -93,15 +93,17 @@ A more detailed analysis is documented [in the wiki](https://github.com/Cyan4973
 
 ### Build modifiers
 
-The following macros can be set at compilation time to modify libxxhash's behavior. They are generally disabled by default.
+The following macros can be set at compilation time to modify `libxxhash`'s behavior. They are generally disabled by default.
 
-- `XXH_INLINE_ALL`: Make all functions `inline`, with implementations being directly included within `xxhash.h`.
-                    Inlining functions is beneficial for speed on small keys.
-                    It's _extremely effective_ when key length is expressed as _a compile time constant_,
+- `XXH_INLINE_ALL`: Make all functions `inline`, implementation is directly included within `xxhash.h`.
+                    Inlining functions is beneficial for speed, notably for small keys.
+                    It's _extremely effective_ when key's length is expressed as _a compile time constant_,
                     with performance improvements observed in the +200% range .
                     See [this article](https://fastcompression.blogspot.com/2018/03/xxhash-for-small-keys-impressive-power.html) for details.
 - `XXH_PRIVATE_API`: same outcome as `XXH_INLINE_ALL`. Still available for legacy support.
                      The name underlines that `XXH_*` symbol names will not be exported.
+- `XXH_STATIC_LINKING_ONLY`: gives access to internal state declaration, required for static allocation.
+                             Incompatible with dynamic linking, due to risks of ABI changes.
 - `XXH_NAMESPACE`: Prefixes all symbols with the value of `XXH_NAMESPACE`.
                    This macro can only use compilable character set.
                    Useful to evade symbol naming collisions,
@@ -109,50 +111,66 @@ The following macros can be set at compilation time to modify libxxhash's behavi
                    Client applications still use the regular function names,
                    as symbols are automatically translated through `xxhash.h`.
 - `XXH_FORCE_ALIGN_CHECK`: Use a faster direct read path when input is aligned.
-                           This option can result in dramatic performance improvement when input to hash is aligned on 32 or 64-bit boundaries,
-                           when running on architectures unable to load memory from unaligned addresses, or suffering a performance penalty from it.
+                           This option can result in dramatic performance improvement on architectures unable to load memory from unaligned addresses
+                           when input to hash happens to be aligned on 32 or 64-bit boundaries.
                            It is (slightly) detrimental on platform with good unaligned memory access performance (same instruction for both aligned and unaligned accesses).
                            This option is automatically disabled on `x86`, `x64` and `aarch64`, and enabled on all other platforms.
 - `XXH_FORCE_MEMORY_ACCESS`: The default method `0` uses a portable `memcpy()` notation.
                              Method `1` uses a gcc-specific `packed` attribute, which can provide better performance for some targets.
                              Method `2` forces unaligned reads, which is not standard compliant, but might sometimes be the only way to extract better read performance.
                              Method `3` uses a byteshift operation, which is best for old compilers which don't inline `memcpy()` or big-endian systems without a byteswap instruction.
-- `XXH_VECTOR` : manually select a vector instruction set (default: auto-selected at compilation time). Available instruction sets are `XXH_SCALAR`, `XXH_SSE2`, `XXH_AVX2`, `XXH_AVX512`, `XXH_NEON` and `XXH_VSX`. Compiler may require additional flags to ensure proper support (for example, `gcc` on linux will require `-mavx2` for `AVX2`, and `-mavx512f` for `AVX512`).
-- `XXH_NO_PREFETCH` : disable prefetching. Some platforms or situations may perform better without prefetching. XXH3 only.
-- `XXH_PREFETCH_DIST` : select prefetching distance. For close-to-metal adaptation to specific hardware platforms. XXH3 only.
-- `XXH_NO_STREAM`: Disables the streaming API, limiting it to single shot variants only.
-- `XXH_SIZE_OPT`: `0`: default, optimize for speed
-                  `1`: default for `-Os` and `-Oz`: disables some speed hacks for size optimization
-                  `2`: makes code as small as possible, performance may cry
-- `XXH_NO_INLINE_HINTS`: By default, xxHash uses `__attribute__((always_inline))` and `__forceinline` to improve performance at the cost of code size.
-                         Defining this macro to 1 will mark all internal functions as `static`, allowing the compiler to decide whether to inline a function or not.
-                         This is very useful when optimizing for smallest binary size,
-                         and is automatically defined when compiling with `-O0`, `-Os`, `-Oz`, or `-fno-inline` on GCC and Clang.
-                         This may also increase performance depending on compiler and architecture.
+- `XXH_CPU_LITTLE_ENDIAN`: By default, endianness is determined by a runtime test resolved at compile time.
+                           If, for some reason, the compiler cannot simplify the runtime test, it can cost performance.
+                           It's possible to skip auto-detection and simply state that the architecture is little-endian by setting this macro to 1.
+                           Setting it to 0 states big-endian.
+- `XXH_ENABLE_AUTOVECTORIZE`: Auto-vectorization may be triggered for XXH32 and XXH64, depending on cpu vector capabilities and compiler version.
+                              Note: auto-vectorization tends to be triggered more easily with recent versions of `clang`.
+                              For XXH32, SSE4.1 or equivalent (NEON) is enough, while XXH64 requires AVX512.
+                              Unfortunately, auto-vectorization is generally detrimental to XXH performance.
+                              For this reason, the xxhash source code tries to prevent auto-vectorization by default.
+                              That being said, systems evolve, and this conclusion is not forthcoming.
+                              For example, it has been reported that recent Zen4 cpus are more likely to improve performance with vectorization.
+                              Therefore, should you prefer or want to test vectorized code, you can enable this flag:
+                              it will remove the no-vectorization protection code, thus making it more likely for XXH32 and XXH64 to be auto-vectorized.
 - `XXH32_ENDJMP`: Switch multi-branch finalization stage of XXH32 by a single jump.
                   This is generally undesirable for performance, especially when hashing inputs of random sizes.
                   But depending on exact architecture and compiler, a jump might provide slightly better performance on small inputs. Disabled by default.
+- `XXH_IMPORT`: MSVC specific: should only be defined for dynamic linking, as it prevents linkage errors.
 - `XXH_NO_STDLIB`: Disable invocation of `<stdlib.h>` functions, notably `malloc()` and `free()`.
                    `libxxhash`'s `XXH*_createState()` will always fail and return `NULL`.
                    But one-shot hashing (like `XXH32()`) or streaming using statically allocated states
                    still work as expected.
                    This build flag is useful for embedded environments without dynamic allocation.
-- `XXH_STATIC_LINKING_ONLY`: gives access to internal state declaration, required for static allocation.
-                             Incompatible with dynamic linking, due to risks of ABI changes.
-- `XXH_NO_XXH3` : removes symbols related to `XXH3` (both 64 & 128 bits) from generated binary.
-                  Useful to reduce binary size, notably for applications which do not employ `XXH3`.
-- `XXH_NO_LONG_LONG`: removes compilation of algorithms relying on 64-bit types (`XXH3` and `XXH64`). Only `XXH32` will be compiled.
-                      Useful for targets (architectures and compilers) without 64-bit support.
-- `XXH_IMPORT`: MSVC specific: should only be defined for dynamic linking, as it prevents linkage errors.
-- `XXH_CPU_LITTLE_ENDIAN`: By default, endianness is determined by a runtime test resolved at compile time.
-                           If, for some reason, the compiler cannot simplify the runtime test, it can cost performance.
-                           It's possible to skip auto-detection and simply state that the architecture is little-endian by setting this macro to 1.
-                           Setting it to 0 states big-endian.
 - `XXH_DEBUGLEVEL` : When set to any value >= 1, enables `assert()` statements.
                      This (slightly) slows down execution, but may help finding bugs during debugging sessions.
 
+#### Binary size control
+- `XXH_NO_XXH3` : removes symbols related to `XXH3` (both 64 & 128 bits) from generated binary.
+                  `XXH3` is by far the largest contributor to `libxxhash` size,
+                  so it's useful to reduce binary size for applications which do not employ `XXH3`.
+- `XXH_NO_LONG_LONG`: removes compilation of algorithms relying on 64-bit `long long` types
+                      which include `XXH3` and `XXH64`.
+                      Only `XXH32` will be compiled.
+                      Useful for targets (architectures and compilers) without 64-bit support.
+- `XXH_NO_STREAM`: Disables the streaming API, limiting the library to single shot variants only.
+- `XXH_NO_INLINE_HINTS`: By default, xxHash uses `__attribute__((always_inline))` and `__forceinline` to improve performance at the cost of code size.
+                         Defining this macro to 1 will mark all internal functions as `static`, allowing the compiler to decide whether to inline a function or not.
+                         This is very useful when optimizing for smallest binary size,
+                         and is automatically defined when compiling with `-O0`, `-Os`, `-Oz`, or `-fno-inline` on GCC and Clang.
+                         It may also be required to successfully compile using `-Og`, depending on compiler version.
+- `XXH_SIZE_OPT`: `0`: default, optimize for speed
+                  `1`: default for `-Os` and `-Oz`: disables some speed hacks for size optimization
+                  `2`: makes code as small as possible, performance may cry
+
+#### Build modifiers specific for XXH3
+- `XXH_VECTOR` : manually select a vector instruction set (default: auto-selected at compilation time). Available instruction sets are `XXH_SCALAR`, `XXH_SSE2`, `XXH_AVX2`, `XXH_AVX512`, `XXH_NEON` and `XXH_VSX`. Compiler may require additional flags to ensure proper support (for example, `gcc` on x86_64 requires `-mavx2` for `AVX2`, or `-mavx512f` for `AVX512`).
+- `XXH_PREFETCH_DIST` : select prefetching distance. For close-to-metal adaptation to specific hardware platforms. XXH3 only.
+- `XXH_NO_PREFETCH` : disable prefetching. Some platforms or situations may perform better without prefetching. XXH3 only.
+
+#### Makefile variables
 When compiling the Command Line Interface `xxhsum` using `make`, the following environment variables can also be set :
-- `DISPATCH=1` : use `xxh_x86dispatch.c`, to automatically select between `scalar`, `sse2`, `avx2` or `avx512` instruction set at runtime, depending on local host. This option is only valid for `x86`/`x64` systems.
+- `DISPATCH=1` : use `xxh_x86dispatch.c`, select at runtime between `scalar`, `sse2`, `avx2` or `avx512` instruction set. This option is only valid for `x86`/`x64` systems. It is enabled by default when target `x86`/`x64` is detected. It can be forcefully turned off using `DISPATCH=0`.
+- `LIBXXH_DISPATCH=1` : same idea, implemented a runtime vector extension detector, but within `libxxhash`. This parameter is disabled by default. When enabled (only valid for `x86`/`x64` systems), new symbols published in `xxh_x86dispatch.h` become accessible. At the time of this writing, it's required to include `xxh_x86dispatch.h` in order to access the symbols with runtime vector extension detection.
 - `XXH_1ST_SPEED_TARGET` : select an initial speed target, expressed in MB/s, for the first speed test in benchmark mode. Benchmark will adjust the target at subsequent iterations, but the first test is made "blindly" by targeting this speed. Currently conservatively set to 10 MB/s, to support very slow (emulated) platforms.
 - `NODE_JS=1` : When compiling `xxhsum` for Node.js with Emscripten, this links the `NODERAWFS` library for unrestricted filesystem access and patches `isatty` to make the command line utility correctly detect the terminal. This does make the binary specific to Node.js.
 

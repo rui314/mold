@@ -27,11 +27,11 @@ SRC_DIRS = ./ ../../ allcodecs/
 VPATH = $(SRC_DIRS)
 CPPFLAGS += $(addprefix -I ,$(SRC_DIRS))
 CFLAGS   += -Wall -Wextra -Wconversion \
-            -std=c99
+            -std=c11
 CXXFLAGS += -Wall -Wextra -Wconversion \
             -std=c++11
 LDFLAGS  += -pthread
-TESTHASHES = 110000000
+TESTHASHES = 3200000
 
 HASH_SRC := $(sort $(wildcard allcodecs/*.c allcodecs/*.cc))
 HASH_OBJ := $(patsubst %.c,%.o,$(HASH_SRC))
@@ -62,11 +62,14 @@ check: test
 .PHONY: test
 test: debug
 	@echo ""
-	@echo "## $(TESTHASHES) hashes with original and 0 threads"
+	@echo "## $(TESTHASHES) hashes"
 	@time ./collisionsTest --nbh=$(TESTHASHES)
 	@echo ""
-	@echo "## $(TESTHASHES) hashes with original and 4 threads"
-	@time ./collisionsTest --nbh=$(TESTHASHES) --threadlog=2
+	@echo "## $(TESTHASHES) hashes with filter"
+	@time ./collisionsTest --nbh=$(TESTHASHES) --filter
+	@echo ""
+	@echo "## $(TESTHASHES) hashes with 2 threads"
+	@time ./collisionsTest --nbh=$(TESTHASHES) --threadlog=1
 	@echo ""
 
 .PHONY: clean
