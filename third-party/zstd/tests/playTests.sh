@@ -109,10 +109,7 @@ isTerminal=${isTerminal:-$detectedTerminal}
 
 isWindows=false
 INTOVOID="/dev/null"
-case "$UNAME" in
-  GNU) DEVDEVICE="/dev/random" ;;
-  *) DEVDEVICE="/dev/zero" ;;
-esac
+DEVDEVICE="/dev/zero"
 case "$OS" in
   Windows*)
     isWindows=true
@@ -123,7 +120,6 @@ esac
 
 case "$UNAME" in
   Darwin) MD5SUM="md5 -r" ;;
-  FreeBSD) MD5SUM="gmd5sum" ;;
   NetBSD) MD5SUM="md5 -n" ;;
   OpenBSD) MD5SUM="md5" ;;
   *) MD5SUM="md5sum" ;;
@@ -1558,7 +1554,6 @@ then
     roundTripTest -g4M "1 -T0 --auto-threads=physical"
     roundTripTest -g4M "1 -T0 --auto-threads=logical"
     roundTripTest -g8M "3 -T2"
-    roundTripTest -g8M "19 --long"
     roundTripTest -g8000K "2 --threads=2"
     fileRoundTripTest -g4M "19 -T2 -B1M"
 
@@ -1853,6 +1848,8 @@ roundTripTest -g18000016 -P84 16
 roundTripTest -g18000017 -P88 17
 roundTripTest -g18000018 -P94 18
 roundTripTest -g18000019 -P96 19
+
+roundTripTest -g8M "19 --long"
 
 roundTripTest -g5000000000 -P99 "1 --zstd=wlog=25"
 roundTripTest -g3700000000 -P0 "1 --zstd=strategy=6,wlog=25"   # ensure btlazy2 can survive an overflow rescale

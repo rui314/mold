@@ -37,18 +37,6 @@ jobs:
         APT_PACKAGES="gcc-multilib" make apt-install
         CFLAGS="-m32 -O1 -fstack-protector" make check V=1
 
-  check-x32:
-    runs-on: ubuntu-20.04  # ubuntu-latest == ubuntu-22.04 have issues currently with x32
-    steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-    - name: make check on x32 ABI # https://en.wikipedia.org/wiki/X32_ABI
-      env:
-        CHECK_CONSTRAINED_MEM: true
-      run: |
-        sudo apt update
-        APT_PACKAGES="gcc-multilib" make apt-install
-        CFLAGS="-mx32 -O1 -fstack-protector" make check V=1
-
   build-c89:
     runs-on: ubuntu-latest
     steps:
@@ -89,7 +77,33 @@ jobs:
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
     - name: cmake build and test
       run: |
+        sudo apt install liblzma-dev
         FUZZERTEST=-T1mn ZSTREAM_TESTTIME=-T1mn make cmakebuild V=1
+
+  cmake-source-directory-with-spaces:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            generator: "Unix Makefiles"
+          - os: windows-latest
+            generator: "NMake Makefiles"
+          - os: macos-latest
+            generator: "Unix Makefiles"
+    env:
+      SRC_DIR: "source directory with spaces"
+    steps:
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
+      with:
+        path: "${{ env.SRC_DIR }}"
+    - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      if: ${{ matrix.generator == 'NMake Makefiles' }}
+    - name: cmake build on a source directory with spaces
+      run: |
+        cmake -S "${{ env.SRC_DIR }}/build/cmake" -B build -DBUILD_TESTING=ON -G "${{ matrix.generator }}" -DCMAKE_BUILD_TYPE=Release --install-prefix "${{ runner.temp }}/install"
+        cmake --build build --config Release
+        cmake --install build --config Release
 
   cpp-gnu90-c99-compatibility:
     runs-on: ubuntu-latest
@@ -140,12 +154,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-    - name: zlib wrapper test
+    - name: install valgrind
       run: |
         sudo apt-get -qqq update
-        make valgrindinstall
-        make -C zlibWrapper test
-        make -C zlibWrapper test-valgrind
+        make valgrindinstall V=1
+    - name: zlib wrapper test
+      run: make -C zlibWrapper test V=1
+    - name: zlib wrapper test under valgrind
+      run: make -C zlibWrapper test-valgrind V=1
 
   lz4-threadpool-libs:
     runs-on: ubuntu-latest
@@ -161,7 +177,17 @@ jobs:
         make clean
         bash tests/libzstd_builds.sh
 
-  gcc-make-tests-32bit:
+  gcc-make-all-avx2:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
+    - name: Make all, with AVX2
+      run: |
+        sudo apt-get -qqq update
+        make libc6install
+        CFLAGS="-Werror -mavx2" make -j all
+
+  gcc-make-all-32bit:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
@@ -170,6 +196,17 @@ jobs:
         sudo apt-get -qqq update
         make libc6install
         CFLAGS="-Werror -m32" make -j all32
+
+  gcc-make-all-32bit-avx2:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
+    - name: Make all, 32bit + AVX2 mode
+      run: |
+        sudo apt-get -qqq update
+        make libc6install
+        CPPFLAGS="-DSTATIC_BMI2=1" CFLAGS="-Werror -m32 -mavx2 -mbmi2" make -j all32
+
 
   gcc-8-make:
     runs-on: ubuntu-latest
@@ -199,7 +236,9 @@ jobs:
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
       - name: Build with ${{matrix.name}}
-        run: ${{matrix.flags}} make zstd
+        run: |
+          sudo apt install liblzma-dev
+          ${{matrix.flags}} make zstd
 
 
   implicit-fall-through:
@@ -220,7 +259,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt-get update
-          sudo apt-get -y install build-essential python3-pip ninja-build liblz4-dev
+          sudo apt-get -y install build-essential python3-pip ninja-build liblz4-dev liblzma-dev
           pip install --pre meson
       - name: Build with Meson
         run: |
@@ -232,10 +271,54 @@ jobs:
             -Dbin_tests=true \
             -Dbin_contrib=true \
             -Ddefault_library=both \
+            build/meson mesonBuild
+          ninja -C mesonBuild/
+          meson test -C mesonBuild/ --print-errorlogs
+          meson install -C mesonBuild --destdir staging/
+
+  meson-mingw-cross-compilation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
+      - name: Install packages
+        run: |
+          sudo apt-get -qqq update
+          sudo apt-get -y install build-essential python3-pip ninja-build {gcc,g++}-mingw-w64-x86-64
+          pip install --pre meson
+      - name: Build with Meson
+        run: |
+          cat > cross.ini <<EOF
+          [binaries]
+          ar = 'x86_64-w64-mingw32-ar'
+          c = 'x86_64-w64-mingw32-gcc'
+          cpp = 'x86_64-w64-mingw32-g++'
+          ld = 'x86_64-w64-mingw32-ld'
+          objcopy = 'x86_64-w64-mingw32-objcopy'
+          objdump = 'x86_64-w64-mingw32-objdump'
+          strip = 'x86_64-w64-mingw32-strip'
+          windres = 'x86_64-w64-mingw32-windres'
+
+          [host_machine]
+          system = 'windows'
+          endian = 'little'
+          cpu_family = 'x86_64'
+          cpu = 'x86_64'
+          EOF
+
+          # pzstd doesn't build; skip -Dbin_contrib=true
+          meson setup \
+            --buildtype=debugoptimized \
+            --cross-file=cross.ini \
+            -Db_lundef=false \
+            -Dbin_programs=true \
+            -Dbin_tests=true \
+            -Ddefault_library=both \
             build/meson builddir
           ninja -C builddir/
-          meson test -C builddir/ --print-errorlogs
-          meson install -C builddir --destdir staging/
+          if grep -- -pthread builddir/meson-private/libzstd.pc; then
+            echo "Error: found stray pthread dependency"
+            exit 1
+          fi
 
   meson-windows:
     runs-on: windows-latest
@@ -267,6 +350,8 @@ jobs:
           - generator: "MinGW Makefiles"
           - generator: "Visual Studio 17 2022"
             flags: "-T ClangCL"
+          - generator: "Visual Studio 17 2022"
+            flags: "-T ClangCL -A x64 -DCMAKE_C_FLAGS=/arch:AVX2"
     runs-on: windows-2022
     steps:
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
@@ -278,7 +363,7 @@ jobs:
         cd build\cmake
         mkdir build
         cd build
-        cmake.exe -G "${{matrix.generator}}" ${{matrix.flags}} -DCMAKE_BUILD_TYPE=Debug -DZSTD_BUILD_TESTS:BOOL=ON -DZSTD_ZSTREAM_FLAGS=-T30s -DZSTD_FUZZER_FLAGS=-T30s -DZSTD_FULLBENCH_FLAGS=-i0 ..
+        cmake.exe -G "${{matrix.generator}}" ${{matrix.flags}} -DCMAKE_BUILD_TYPE=Debug -DCMAKE_COMPILE_WARNING_AS_ERROR=ON -DZSTD_BUILD_TESTS:BOOL=ON -DZSTD_ZSTREAM_FLAGS=-T30s -DZSTD_FUZZER_FLAGS=-T30s -DZSTD_FULLBENCH_FLAGS=-i0 ..
         cmake.exe --build .
         ctest.exe -V -C Debug
 
@@ -370,13 +455,13 @@ jobs:
 
   qemu-consistency:
     name: QEMU ${{ matrix.name }}
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false  # 'false' means Don't stop matrix workflows even if some matrix failed.
       matrix:
         include: [
           { name: ARM,      xcc_pkg: gcc-arm-linux-gnueabi,     xcc: arm-linux-gnueabi-gcc,     xemu_pkg: qemu-system-arm,    xemu: qemu-arm-static     },
-          { name: ARM64,    xcc_pkg: gcc-aarch64-linux-gnu,     xcc: aarch64-linux-gnu-gcc,     xemu_pkg: qemu-system-arm,    xemu: qemu-aarch64-static },
+          { name: ARM64,    xcc_pkg: gcc-aarch64-linux-gnu,     xcc: aarch64-linux-gnu-gcc,     xemu_pkg: qemu-system-aarch64,xemu: qemu-aarch64-static },
           { name: PPC,      xcc_pkg: gcc-powerpc-linux-gnu,     xcc: powerpc-linux-gnu-gcc,     xemu_pkg: qemu-system-ppc,    xemu: qemu-ppc-static     },
           { name: PPC64LE,  xcc_pkg: gcc-powerpc64le-linux-gnu, xcc: powerpc64le-linux-gnu-gcc, xemu_pkg: qemu-system-ppc,    xemu: qemu-ppc64le-static },
           { name: S390X,    xcc_pkg: gcc-s390x-linux-gnu,       xcc: s390x-linux-gnu-gcc,       xemu_pkg: qemu-system-s390x,  xemu: qemu-s390x-static   },
@@ -409,8 +494,12 @@ jobs:
     - name: ARM64
       if: ${{ matrix.name == 'ARM64' }}
       run: |
-        LDFLAGS="-static -z force-bti" MOREFLAGS="-mbranch-protection=standard" CC=$XCC QEMU_SYS=$XEMU make clean check
-        LDFLAGS="-static" CC=$XCC QEMU_SYS=$XEMU make clean check
+        make clean
+        LDFLAGS="-static" CC=$XCC QEMU_SYS=$XEMU make -j check
+# This test is only compatible with standard libraries that support BTI (Branch Target Identification).
+# Unfortunately, the standard library provided on Ubuntu 24.04 does not have this feature enabled.
+#        make clean
+#        LDFLAGS="-static -z force-bti" MOREFLAGS="-mbranch-protection=standard" CC=$XCC QEMU_SYS=$XEMU make check V=1
     - name: PPC
       if: ${{ matrix.name == 'PPC' }}
       run: |
@@ -455,7 +544,7 @@ jobs:
         shell: msys2 {0}
     steps:
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-    - uses: msys2/setup-msys2@cc11e9188b693c2b100158c3322424c4cc1dadea # tag=v2.22.0
+    - uses: msys2/setup-msys2@d44ca8e88d8b43d56cf5670f91747359d5537f97 # tag=v2.26.0
       with:
         msystem: ${{ matrix.msystem }}
         install: make diffutils
@@ -512,7 +601,7 @@ jobs:
     steps:
     - run: git config --global core.autocrlf input
     - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-    - uses: cygwin/cygwin-install-action@006ad0b0946ca6d0a3ea2d4437677fa767392401 # tag=master
+    - uses: cygwin/cygwin-install-action@f61179d72284ceddc397ed07ddb444d82bf9e559 # tag=v5
       with:
         platform: x86_64
         packages: >-
@@ -532,6 +621,11 @@ jobs:
         make -j allzstd &&
         make -C tests fuzzer &&
         ./tests/fuzzer.exe -v -T1m
+    - name: cygwin install test
+      shell: C:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail '{0}'
+      run: >-
+        make -j &&
+        make install
 
   pkg-config:
     runs-on: ubuntu-latest
@@ -566,18 +660,6 @@ jobs:
       run: |
         make clangbuild
 
-  clang-pgo:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-    - name: Build PGO Zstd with Clang
-      env:
-        CC: clang-14
-        LLVM_PROFDATA: llvm-profdata-14
-      run: |
-        make -C programs zstd-pgo
-        ./programs/zstd -b
-
   gcc-pgo:
     runs-on: ubuntu-latest
     steps:
@@ -586,6 +668,19 @@ jobs:
       env:
         CC: gcc
       run: |
+        make -C programs zstd-pgo
+        ./programs/zstd -b
+
+  clang-pgo:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
+    - name: Build PGO Zstd with Clang
+      env:
+        CC: clang
+      run: |
+        sudo apt install -y llvm
+        llvm-profdata --version
         make -C programs zstd-pgo
         ./programs/zstd -b
 
@@ -608,26 +703,23 @@ jobs:
       run: |
         sde-external-9.33.0-2024-01-07-lin/sde -cet -cet-raise 0 -cet-endbr-exe -cet-stderr -cet-abort -- ./zstd -b3
 
+  icx:
+    # install instructions: https://www.intel.com/content/www/us/en/docs/oneapi/installation-guide-linux/2025-0/apt-005.html
+    name: icx-check
+    runs-on: ubuntu-latest
+    steps:
+    - name: install icx
+      run: |
+        # download the key to system keyring
+        wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+        | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
 
-# Failing tests, for reference
-
-# icc tests are currently failing on Github Actions, likely to issues during installation stage
-#
-#  icc:
-#    name: icc-check
-#    runs-on: ubuntu-latest
-#    steps:
-#    - name: install icc
-#      run: |
-#        export DEBIAN_FRONTEND=noninteractive
-#        sudo apt-get -qqq update
-#        sudo apt-get install -y wget build-essential pkg-config cmake ca-certificates gnupg
-#        sudo wget https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
-#        sudo apt-key add GPG-PUB-KEY-INTEL-SW-PRODUCTS-2023.PUB
-#        sudo add-apt-repository "deb https://apt.repos.intel.com/oneapi all main"
-#        sudo apt-get update
-#        sudo apt-get install -y intel-basekit intel-hpckit
-#    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-#    - name: make check
-#      run: |
-#        make CC=/opt/intel/oneapi/compiler/latest/linux/bin/intel64/icc check
+        # add signed entry to apt sources and configure the APT client to use Intel repository:
+        echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+        sudo apt-get update
+        sudo apt-get install -y intel-basekit intel-hpckit
+    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
+    - name: make check
+      run: |
+        source /opt/intel/oneapi/setvars.sh
+        make CC=icx check

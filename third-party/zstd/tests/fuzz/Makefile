@@ -17,7 +17,7 @@ LDFLAGS ?=
 ARFLAGS ?=
 LIB_FUZZING_ENGINE ?= libregression.a
 PYTHON ?= python
-ifeq ($(shell uname), Darwin)
+ifeq ($(shell sh -c 'MSYSTEM="MSYS" uname') , Darwin)
 	DOWNLOAD?=curl -L -o
 else
 	DOWNLOAD?=wget -O
@@ -27,6 +27,9 @@ CORPORA_URL_PREFIX:=https://github.com/facebook/zstd/releases/download/fuzz-corp
 LIBZSTD_MK_DIR = ../../lib
 DEBUGLEVEL ?= 2
 ZSTD_LEGACY_SUPPORT ?= 1
+
+.PHONY: default
+default: all
 
 include $(LIBZSTD_MK_DIR)/libzstd.mk
 
@@ -101,10 +104,6 @@ FUZZ_RT_OBJ9 := $(FUZZ_RT_OBJ8:.c=.o)
 FUZZ_RT_OBJ10 := $(THIRD_PARTY_SEQ_PROD_OBJ) $(FUZZ_RT_OBJ9)
 FUZZ_ROUND_TRIP_OBJ := $(FUZZ_RT_OBJ10:.S=.o)
 
-.PHONY: default all clean cleanall
-
-default: all
-
 FUZZ_TARGETS :=       \
 	simple_round_trip \
 	stream_round_trip \
@@ -128,6 +127,7 @@ FUZZ_TARGETS :=       \
 	decompress_cross_format \
 	generate_sequences
 
+.PHONY: all clean cleanall
 all: libregression.a $(FUZZ_TARGETS)
 
 rt_lib_common_%.o: $(LIB_SRCDIR)/common/%.c
@@ -263,9 +263,10 @@ corpora: $(patsubst %,corpora/%,$(FUZZ_TARGETS))
 .PHONY: seedcorpora
 seedcorpora: $(patsubst %,corpora/%_seed_corpus.zip,$(FUZZ_TARGETS))
 
+REGRESSION_TARGET ?= all
 regressiontest: corpora
-	CC="$(CC)" CXX="$(CXX)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" $(PYTHON) ./fuzz.py build all --debug=$(DEBUGLEVEL)
-	$(PYTHON) ./fuzz.py regression all
+	CC="$(CC)" CXX="$(CXX)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" $(PYTHON) ./fuzz.py build $(REGRESSION_TARGET) --debug=$(DEBUGLEVEL)
+	$(PYTHON) ./fuzz.py regression $(REGRESSION_TARGET)
 
 clean:
 	@$(RM) *.a *.o $(FUZZ_TARGETS)

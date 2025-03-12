@@ -5,14 +5,27 @@ set -v
 
 datagen > file
 
+# Retrieve the program's version information
+# Note: command echoing differs between macos and linux, so it's disabled below
+set +v
+version_info=$(zstd -V)
+set -v
+
 # Compress with various levels and ensure that their sizes are ordered
 zstd --fast=10 file -o file-f10.zst -q
 zstd --fast=1 file -o file-f1.zst -q
 zstd -1 file -o file-1.zst -q
 zstd -19 file -o file-19.zst -q
+if echo "$version_info" | grep -q '32-bit'; then
+    # skip --max test: not enough address space
+    cp file-19.zst file-max.zst
+else
+    zstd --max file -o file-max.zst -q
+fi
 
-zstd -t file-f10.zst file-f1.zst file-1.zst file-19.zst
+zstd -t file-f10.zst file-f1.zst file-1.zst file-19.zst file-max.zst
 
+cmp_size -le file-max.zst file-19.zst
 cmp_size -lt file-19.zst file-1.zst
 cmp_size -lt file-1.zst file-f1.zst
 cmp_size -lt file-f1.zst file-f10.zst

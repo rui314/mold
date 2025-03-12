@@ -161,6 +161,10 @@ the last one takes effect.
 
     Note: If `windowLog` is set to larger than 27, `--long=windowLog` or
     `--memory=windowSize` needs to be passed to the decompressor.
+* `--max`:
+    set advanced parameters to maximum compression.
+    warning: this setting is very slow and uses a lot of resources.
+    It's inappropriate for 32-bit mode and therefore disabled in this mode.
 * `-D DICT`:
     use `DICT` as Dictionary to compress or decompress FILE(s)
 * `--patch-from FILE`:
@@ -174,8 +178,10 @@ the last one takes effect.
         (_fileLog_ being the _windowLog_ required to cover the whole file). You
         can also manually force it.
 
-    Note: for all levels, you can use `--patch-from` in `--single-thread` mode
-        to improve compression ratio at the cost of speed.
+    Note: up to level 15, you can use `--patch-from` in `--single-thread` mode
+        to improve compression ratio marginally at the cost of speed. Using
+        '--single-thread' above level 15  will lead to lower compression
+        ratios.
 
     Note: for level 19, you can get increased compression ratio at the cost
         of speed by specifying `--zstd=targetLength=` to be something large
@@ -341,7 +347,7 @@ If the value of `ZSTD_CLEVEL` is not a valid integer, it will be ignored with a 
 
 `ZSTD_NBTHREADS` can be used to set the number of threads `zstd` will attempt to use during compression.
 If the value of `ZSTD_NBTHREADS` is not a valid unsigned integer, it will be ignored with a warning message.
-`ZSTD_NBTHREADS` has a default value of (`1`), and is capped at ZSTDMT_NBWORKERS_MAX==200.
+`ZSTD_NBTHREADS` has a default value of `max(1, min(4, nbCores/4))`, and is capped at ZSTDMT_NBWORKERS_MAX==200.
 `zstd` must be compiled with multithread support for this variable to have any effect.
 
 They can both be overridden by corresponding command line arguments:
@@ -449,6 +455,17 @@ The list of available _options_:
     Value 0 is special and means "default": _ovlog_ is automatically determined by `zstd`.
     In which case, _ovlog_ will range from 6 to 9, depending on selected _strat_.
 
+- `ldmHashRateLog`=_lhrlog_, `lhrlog`=_lhrlog_:
+    Specify the frequency of inserting entries into the long distance matching
+    hash table.
+
+    This option is ignored unless long distance matching is enabled.
+
+    Larger values will improve compression speed. Deviating far from the
+    default value will likely result in a decrease in compression ratio.
+
+    The default value varies between 4 and 7, depending on `strategy`.
+
 - `ldmHashLog`=_lhlog_, `lhlog`=_lhlog_:
     Specify the maximum size for a hash table used for long distance matching.
 
@@ -457,7 +474,7 @@ The list of available _options_:
     Bigger hash tables usually improve compression ratio at the expense of more
     memory during compression and a decrease in compression speed.
 
-    The minimum _lhlog_ is 6 and the maximum is 30 (default: 20).
+    The minimum _lhlog_ is 6 and the maximum is 30 (default: `windowLog - ldmHashRateLog`).
 
 - `ldmMinMatch`=_lmml_, `lmml`=_lmml_:
     Specify the minimum searched length of a match for long distance matching.
@@ -466,7 +483,7 @@ The list of available _options_:
 
     Larger/very small values usually decrease compression ratio.
 
-    The minimum _lmml_ is 4 and the maximum is 4096 (default: 64).
+    The minimum _lmml_ is 4 and the maximum is 4096 (default: 32 to 64, depending on `strategy`).
 
 - `ldmBucketSizeLog`=_lblog_, `lblog`=_lblog_:
     Specify the size of each bucket for the hash table used for long distance
@@ -477,18 +494,8 @@ The list of available _options_:
     Larger bucket sizes improve collision resolution but decrease compression
     speed.
 
-    The minimum _lblog_ is 1 and the maximum is 8 (default: 3).
+    The minimum _lblog_ is 1 and the maximum is 8 (default: 4 to 8, depending on `strategy`).
 
-- `ldmHashRateLog`=_lhrlog_, `lhrlog`=_lhrlog_:
-    Specify the frequency of inserting entries into the long distance matching
-    hash table.
-
-    This option is ignored unless long distance matching is enabled.
-
-    Larger values will improve compression speed. Deviating far from the
-    default value will likely result in a decrease in compression ratio.
-
-    The default value is `wlog - lhlog`.
 
 ### Example
 The following parameters sets advanced compression options to something
@@ -660,24 +667,36 @@ Compression of small files similar to the sample set will be greatly improved.
 BENCHMARK
 ---------
 The `zstd` CLI provides a benchmarking mode that can be used to easily find suitable compression parameters, or alternatively to benchmark a computer's performance.
-Note that the results are highly dependent on the content being compressed.
+`zstd -b [FILE(s)]` will benchmark `zstd` for both compression and decompression using default compression level.
+Note that results are very dependent on the content being compressed.
+
+It's possible to pass multiple files to the benchmark, and even a directory with `-r DIRECTORY`.
+When no `FILE` is provided, the benchmark will use a procedurally generated `lorem ipsum` text.
+
+Benchmarking will employ `max(1, min(4, nbCores/4))` worker threads by default in order to match the behavior of the normal CLI I/O.
 
 * `-b#`:
     benchmark file(s) using compression level #
 * `-e#`:
     benchmark file(s) using multiple compression levels, from `-b#` to `-e#` (inclusive)
 * `-d`:
-    benchmark decompression speed only (requires providing an already zstd-compressed content)
+    benchmark decompression speed only (requires providing a zstd-compressed content)
 * `-i#`:
     minimum evaluation time, in seconds (default: 3s), benchmark mode only
 * `-B#`, `--block-size=#`:
     cut file(s) into independent chunks of size # (default: no chunking)
+* `-S`:
+    output one benchmark result per input file (default: consolidated result)
+* `-D dictionary`
+    benchmark using dictionary
 * `--priority=rt`:
     set process priority to real-time (Windows)
 
+Beyond compression levels, benchmarking is also compatible with other parameters, such as number of threads (`-T#`), advanced compression parameters (`--zstd=###`), dictionary compression (`-D dictionary`), or even disabling checksum verification for example.
+
 **Output Format:** CompressionLevel#Filename: InputSize -> OutputSize (CompressionRatio), CompressionSpeed, DecompressionSpeed
 
-**Methodology:** For both compression and decompression speed, the entire input is compressed/decompressed in-memory to measure speed. A run lasts at least 1 sec, so when files are small, they are compressed/decompressed several times per run, in order to improve measurement accuracy.
+**Methodology:** For speed measurement, the entire input is compressed/decompressed in-memory to measure speed. A run lasts at least 1 sec, so when files are small, they are compressed/decompressed several times per run, in order to improve measurement accuracy.
 
 
 SEE ALSO

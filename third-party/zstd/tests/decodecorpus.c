@@ -182,7 +182,7 @@ BYTE CONTENT_BUFFER[MAX_DECOMPRESSED_SIZE];
 BYTE FRAME_BUFFER[MAX_DECOMPRESSED_SIZE * 2];
 BYTE LITERAL_BUFFER[ZSTD_BLOCKSIZE_MAX];
 
-seqDef SEQUENCE_BUFFER[MAX_NB_SEQ];
+SeqDef SEQUENCE_BUFFER[MAX_NB_SEQ];
 BYTE SEQUENCE_LITERAL_BUFFER[ZSTD_BLOCKSIZE_MAX]; /* storeSeq expects a place to copy literals to */
 BYTE SEQUENCE_LLCODE[ZSTD_BLOCKSIZE_MAX];
 BYTE SEQUENCE_MLCODE[ZSTD_BLOCKSIZE_MAX];
@@ -247,6 +247,12 @@ typedef enum {
     #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
+typedef enum {
+  lt_raw,
+  lt_rle,
+  lt_compressed,
+} literalType_e;
+
 /*-*******************************************************
 *  Global variables (set from command line)
 *********************************************************/
@@ -259,7 +265,11 @@ U32 g_maxBlockSize = ZSTD_BLOCKSIZE_MAX;                       /* <= 128 KB */
 
 struct {
     int contentSize; /* force the content size to be present */
-} opts; /* advanced options on generation */
+    blockType_e *blockType; /* force specific block type */
+    literalType_e *literalType; /* force specific literals type */
+    int frame_header_only; /* generate only frame header */
+    int no_magic; /* do not generate magic number */
+} opts;
 
 /* Generate and write a random frame header */
 static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
@@ -288,10 +298,19 @@ static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
 
     {
         /* Generate random content size */
+        int force_block_type = opts.blockType != NULL;
         size_t highBit;
         if (RAND(seed) & 7 && g_maxDecompressedSizeLog > 7) {
             /* do content of at least 128 bytes */
             highBit = 1ULL << RAND_range(seed, 7, g_maxDecompressedSizeLog);
+        } else if (force_block_type) {
+            if ((RAND(seed) & 3) || (*(opts.blockType) == bt_rle)) {
+                /* do small content */
+                highBit = 1ULL << RAND_range(seed, 0, MIN(7, 1U << g_maxDecompressedSizeLog));
+            } else {
+                /* 0 size frame */
+                highBit = 0;
+            }
         } else if (RAND(seed) & 3) {
             /* do small content */
             highBit = 1ULL << RAND_range(seed, 0, MIN(7, 1U << g_maxDecompressedSizeLog));
@@ -324,8 +343,10 @@ static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
     }
 
     /* write out the header */
-    MEM_writeLE32(op + pos, ZSTD_MAGICNUMBER);
-    pos += 4;
+    if (!opts.no_magic) {
+        MEM_writeLE32(op + pos, ZSTD_MAGICNUMBER);
+        pos += 4;
+    }
 
     {
         /*
@@ -370,8 +391,10 @@ static void writeFrameHeader(U32* seed, frame_t* frame, dictInfo info)
 /* Write a literal block in either raw or RLE form, return the literals size */
 static size_t writeLiteralsBlockSimple(U32* seed, frame_t* frame, size_t contentSize)
 {
+    int force_literal_type = opts.literalType != NULL;
+    int const type = (force_literal_type) ? *(opts.literalType) : RAND(seed) % 2;
+
     BYTE* op = (BYTE*)frame->data;
-    int const type = RAND(seed) % 2;
     int const sizeFormatDesc = RAND(seed) % 8;
     size_t litSize;
     size_t maxLitSize = MIN(contentSize, g_maxBlockSize);
@@ -482,7 +505,7 @@ static size_t writeLiteralsBlockCompressed(U32* seed, frame_t* frame, size_t con
     size_t compressedSize = 0;
     size_t maxLitSize = MIN(contentSize-3, g_maxBlockSize);
 
-    symbolEncodingType_e hType;
+    SymbolEncodingType_e hType;
 
     if (contentSize < 64) {
         /* make sure we get reasonably-sized literals for compression */
@@ -619,15 +642,22 @@ static size_t writeLiteralsBlockCompressed(U32* seed, frame_t* frame, size_t con
 
 static size_t writeLiteralsBlock(U32* seed, frame_t* frame, size_t contentSize)
 {
-    /* only do compressed for larger segments to avoid compressibility issues */
-    if (RAND(seed) & 7 && contentSize >= 64) {
+    int select_compressed = 0;
+    if (opts.literalType) {
+        select_compressed = *(opts.literalType) == lt_compressed;
+    } else {
+        /* only do compressed for larger segments to avoid compressibility issues */
+        select_compressed = RAND(seed) & 7 && contentSize >= 64;
+    }
+
+    if (select_compressed) {
         return writeLiteralsBlockCompressed(seed, frame, contentSize);
     } else {
         return writeLiteralsBlockSimple(seed, frame, contentSize);
     }
 }
 
-static inline void initSeqStore(seqStore_t *seqStore) {
+static inline void initSeqStore(SeqStore_t *seqStore) {
     seqStore->maxNbSeq = MAX_NB_SEQ;
     seqStore->maxNbLit = ZSTD_BLOCKSIZE_MAX;
     seqStore->sequencesStart = SEQUENCE_BUFFER;
@@ -641,7 +671,7 @@ static inline void initSeqStore(seqStore_t *seqStore) {
 
 /* Randomly generate sequence commands */
 static U32
-generateSequences(U32* seed, frame_t* frame, seqStore_t* seqStore,
+generateSequences(U32* seed, frame_t* frame, SeqStore_t* seqStore,
                   size_t contentSize, size_t literalsSize, dictInfo info)
 {
     /* The total length of all the matches */
@@ -802,7 +832,7 @@ static int isSymbolSubset(const BYTE* symbols, size_t len, const BYTE* set, BYTE
     return 1;
 }
 
-static size_t writeSequences(U32* seed, frame_t* frame, seqStore_t* seqStorePtr,
+static size_t writeSequences(U32* seed, frame_t* frame, SeqStore_t* seqStorePtr,
                              size_t nbSeq)
 {
     /* This code is mostly copied from ZSTD_compressSequences in zstd_compress.c */
@@ -812,7 +842,7 @@ static size_t writeSequences(U32* seed, frame_t* frame, seqStore_t* seqStorePtr,
     FSE_CTable* CTable_OffsetBits = frame->stats.offcodeCTable;
     FSE_CTable* CTable_MatchLength = frame->stats.matchlengthCTable;
     U32 LLtype, Offtype, MLtype;   /* compressed, raw or rle */
-    const seqDef* const sequences = seqStorePtr->sequencesStart;
+    const SeqDef* const sequences = seqStorePtr->sequencesStart;
     const BYTE* const ofCodeTable = seqStorePtr->ofCode;
     const BYTE* const llCodeTable = seqStorePtr->llCode;
     const BYTE* const mlCodeTable = seqStorePtr->mlCode;
@@ -998,7 +1028,7 @@ static size_t writeSequences(U32* seed, frame_t* frame, seqStore_t* seqStorePtr,
 static size_t writeSequencesBlock(U32* seed, frame_t* frame, size_t contentSize,
                                   size_t literalsSize, dictInfo info)
 {
-    seqStore_t seqStore;
+    SeqStore_t seqStore;
     size_t numSequences;
 
 
@@ -1034,7 +1064,8 @@ static size_t writeCompressedBlock(U32* seed, frame_t* frame, size_t contentSize
 static void writeBlock(U32* seed, frame_t* frame, size_t contentSize,
                        int lastBlock, dictInfo info)
 {
-    int const blockTypeDesc = RAND(seed) % 8;
+    int force_block_type = opts.blockType != NULL;
+    int const blockTypeDesc = (force_block_type) ? *(opts.blockType) : RAND(seed) % 8;
     size_t blockSize;
     int blockType;
 
@@ -1073,7 +1104,7 @@ static void writeBlock(U32* seed, frame_t* frame, size_t contentSize,
 
         frame->data = op;
         compressedSize = writeCompressedBlock(seed, frame, contentSize, info);
-        if (compressedSize >= contentSize) {   /* compressed block must be strictly smaller than uncompressed one */
+        if (compressedSize >= contentSize && !force_block_type) {   /* compressed block must be strictly smaller than uncompressed one */
             blockType = 0;
             memcpy(op, frame->src, contentSize);
 
@@ -1244,7 +1275,11 @@ static U32 generateFrame(U32 seed, frame_t* fr, dictInfo info)
     DISPLAYLEVEL(3, "frame seed: %u\n", (unsigned)seed);
     initFrame(fr);
 
+
     writeFrameHeader(&seed, fr, info);
+    if (opts.frame_header_only)
+        return seed;
+
     writeBlocks(&seed, fr, info);
     writeChecksum(fr);
 
@@ -1772,6 +1807,9 @@ static void advancedUsage(const char* programName)
     DISPLAY( " --max-block-size-log=#   : max block size log, must be in range [2, 17]\n");
     DISPLAY( " --max-content-size-log=# : max content size log, must be <= 20\n");
     DISPLAY( "                            (this is ignored with gen-blocks)\n");
+    DISPLAY( " --block-type=#           : force certain block type (raw=0, rle=1, compressed=2)\n");
+    DISPLAY( " --frame-header-only      : dump only frame header\n");
+    DISPLAY( " --no-magic               : do not add magic number\n");
 }
 
 /*! readU32FromChar() :
@@ -1893,6 +1931,18 @@ int main(int argc, char** argv)
                         U32 value = readU32FromChar(&argument);
                         g_maxDecompressedSizeLog =
                                 MIN(MAX_DECOMPRESSED_SIZE_LOG, value);
+                    } else if (longCommandWArg(&argument, "block-type=")) {
+                        U32 value = readU32FromChar(&argument);
+                        opts.blockType = malloc(sizeof(blockType_e));
+                        *(opts.blockType) = value;
+                    } else if (longCommandWArg(&argument, "literal-type=")) {
+                        U32 value = readU32FromChar(&argument);
+                        opts.literalType = malloc(sizeof(literalType_e));
+                        *(opts.literalType) = value;
+                    } else if (strcmp(argument, "frame-header-only") == 0) {
+                        opts.frame_header_only = 1;
+                    } else if (strcmp(argument, "no-magic") == 0) {
+                        opts.no_magic = 1;
                     } else {
                         advancedUsage(argv[0]);
                         return 1;
@@ -1903,6 +1953,18 @@ int main(int argc, char** argv)
                     usage(argv[0]);
                     return 1;
     }   }   }   }   /* for (argNb=1; argNb<argc; argNb++) */
+
+    if (opts.blockType) {
+        if ((opts.contentSize == 0) && (*(opts.blockType) == bt_rle)) {
+            DISPLAY("Error: content-size has to be used together with blockType=1 (rle block)\n");
+            return 1;
+        }
+
+        if (opts.literalType && (*(opts.blockType) != bt_compressed)) {
+            DISPLAY("Error: literal-type can be used only with blockType=2 (compressed block)\n");
+            return 1;
+        }
+    }
 
     if (!seedset) {
         seed = makeSeed();

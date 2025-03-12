@@ -1,9 +1,35 @@
+V1.5.7 (Feb 2025)
+fix: compression bug in 32-bit mode associated with long-lasting sessions
+api: new method `ZSTD_compressSequencesAndLiterals()` (#4217, #4232)
+api: `ZSTD_getFrameHeader()` works on skippable frames (#4228)
+perf: substantial compression speed improvements (up to +30%) on small data, by @TocarIP (#4144) and @cyan4973 (#4165)
+perf: improved compression speed (~+5%) for dictionary compression at low levels (#4170)
+perf: much faster speed for `--patch-from` at high compression levels (#4276)
+perf: higher `--patch-from` compression ratios, notably at high levels (#4288)
+perf: better speed for binaries on Windows (@pps83) and when compiled with Visual Studio (@MessyHack)
+perf: slight compression ratio improvement thanks to better block boundaries (#4136, #4176, #4178)
+perf: slight compression ratio improvement for `dfast`, aka levels 3 and 4 (#4171)
+perf: runtime bmi2 detection enabled on x86 32-bit mode (#4251)
+cli: multi-threading as default CLI setting, by @daniellerozenblit
+cli: new `--max` command (#4290)
+build: improve `msbuild` version autodetection, support VS2022, by @ManuelBlanc
+build: fix `meson` build by @artem and @Victor-C-Zhang, and on Windows by @bgilbert
+build: compatibility with Apple Framework, by @Treata11
+build: improve icc/icx compatibility, by @josepho0918 and @luau-project
+build: improve compatibility with Android NDK, by Adenilson Cavalcanti
+portability: linux kernel branch, with improved support for Sequence producers (@embg, @gcabiddu, @cyan4973)
+portability: improved qnx compatibility, suggested by @rainbowball
+portability: improved install script for FreeBSD, by @sunpoet
+portability: fixed test suite compatibility with gnu hurd, by @diegonc
+doc: clarify specification, by @elasota
+misc: improved tests/decodecorpus validation tool (#4102), by antmicro
+
 V1.5.6 (Mar 2024)
 api: Promote `ZSTD_c_targetCBlockSize` to Stable API by @felixhandte
 api: new `ZSTD_d_maxBlockSize` experimental parameter, to reduce streaming decompression memory, by @terrelln
 perf: improve performance of param `ZSTD_c_targetCBlockSize`, by @Cyan4973
 perf: improved compression of arrays of integers at high compression, by @Cyan4973
-lib: reduce binary size with selective built-time exclusion, by @felixhandte
+lib: reduce binary size with selective build-time exclusion, by @felixhandte
 lib: improved huffman speed on small data and linux kernel, by @terrelln
 lib: accept dictionaries with partial literal tables, by @terrelln
 lib: fix CCtx size estimation with external sequence producer, by @embg
@@ -489,7 +515,7 @@ misc: added /contrib/docker script by @gyscos
 
 v1.3.3  (Dec 21, 2017)
 perf: faster zstd_opt strategy (levels 16-19)
-fix : bug #944 : multithreading with shared ditionary and large data, reported by @gsliepen
+fix : bug #944 : multithreading with shared dictionary and large data, reported by @gsliepen
 cli : fix : content size written in header by default
 cli : fix : improved LZ4 format support, by @felixhandte
 cli : new : hidden command `-S`, to benchmark multiple files while generating one result per file

@@ -139,52 +139,61 @@ static const size_t maxMemory = (sizeof(size_t) == 4)
         return r;                                      \
     }
 
-/* replacement for snprintf(), which is not supported by C89
- * sprintf() would be the supported one, but it's labelled unsafe,
- * so some modern static analyzer will flag it as such, making it unusable.
- * formatString_u() replaces snprintf() for the specific case where there are only %u arguments */
+static size_t uintSize(unsigned value)
+{
+    size_t size = 1;
+    while (value >= 10) {
+        size++;
+        value /= 10;
+    }
+    return size;
+}
+
+/* Note: presume @buffer is large enough */
+static void writeUint_varLen(char* buffer, size_t capacity, unsigned value)
+{
+    int endPos = (int)uintSize(value) - 1;
+    assert(uintSize(value) >= 1);
+    assert(uintSize(value) < capacity); (void)capacity;
+    while (endPos >= 0) {
+        char c = '0' + (char)(value % 10);
+        buffer[endPos--] = c;
+        value /= 10;
+    }
+}
+
+/* replacement for snprintf(), which is not supported by C89.
+ * sprintf() would be the supported one, but it's labelled unsafe:
+ * modern static analyzer will flag sprintf() as dangerous, making it unusable.
+ * formatString_u() replaces snprintf() for the specific case where there is only one %u argument */
 static int formatString_u(char* buffer, size_t buffer_size, const char* formatString, unsigned int value)
 {
+    size_t const valueSize = uintSize(value);
     size_t written = 0;
     int i;
-    assert(value <= 100);
 
-    for (i = 0; formatString[i] != '\0' && written < buffer_size - 1; ++i) {
+    for (i = 0; formatString[i] != '\0' && written < buffer_size - 1; i++) {
         if (formatString[i] != '%') {
             buffer[written++] = formatString[i];
             continue;
         }
 
-        if (formatString[++i] == 'u') {
-            /* Handle single digit */
-            if (value < 10) {
-                buffer[written++] = '0' + (char)value;
-            } else if (value < 100) {
-                /* Handle two digits */
-                if (written >= buffer_size - 2) {
-                    return -1; /* buffer overflow */
-                }
-                buffer[written++] = '0' + (char)(value / 10);
-                buffer[written++] = '0' + (char)(value % 10);
-            } else { /* 100 */
-                if (written >= buffer_size - 3) {
-                    return -1; /* buffer overflow */
-                }
-                buffer[written++] = '1';
-                buffer[written++] = '0';
-                buffer[written++] = '0';
-            }
+        i++;
+        if (formatString[i] == 'u') {
+            if (written + valueSize >= buffer_size) abort(); /* buffer not large enough */
+            writeUint_varLen(buffer + written, buffer_size - written, value);
+            written += valueSize;
         } else if (formatString[i] == '%') { /* Check for escaped percent sign */
             buffer[written++] = '%';
         } else {
-            return -1; /* unsupported format */
+            abort(); /* unsupported format */
         }
     }
 
     if (written < buffer_size) {
         buffer[written] = '\0';
     } else {
-        buffer[0] = '\0'; /* Handle truncation */
+        abort(); /* buffer not large enough */
     }
 
     return (int)written;
@@ -624,7 +633,7 @@ static BMK_benchOutcome_t BMK_benchMemAdvancedNoAlloc(
                 }
 
                 {
-                    int const ratioAccuracy = (ratio < 10.) ? 3 : 2;
+                    int const ratioDigits = 1 + (ratio < 100.) + (ratio < 10.);
                     assert(cSize < UINT_MAX);
                     OUTPUTLEVEL(
                             2,
@@ -633,7 +642,7 @@ static BMK_benchOutcome_t BMK_benchMemAdvancedNoAlloc(
                             displayName,
                             (unsigned)srcSize,
                             (unsigned)cSize,
-                            ratioAccuracy,
+                            ratioDigits,
                             ratio,
                             benchResult.cSpeed < (10 * MB_UNIT) ? 2 : 1,
                             (double)benchResult.cSpeed / MB_UNIT);
@@ -660,7 +669,7 @@ static BMK_benchOutcome_t BMK_benchMemAdvancedNoAlloc(
                 }
 
                 {
-                    int const ratioAccuracy = (ratio < 10.) ? 3 : 2;
+                    int const ratioDigits = 1 + (ratio < 100.) + (ratio < 10.);
                     OUTPUTLEVEL(
                             2,
                             "%2s-%-17.17s :%10u ->%10u (x%5.*f), %6.*f MB/s, %6.1f MB/s\r",
@@ -668,7 +677,7 @@ static BMK_benchOutcome_t BMK_benchMemAdvancedNoAlloc(
                             displayName,
                             (unsigned)srcSize,
                             (unsigned)cSize,
-                            ratioAccuracy,
+                            ratioDigits,
                             ratio,
                             benchResult.cSpeed < (10 * MB_UNIT) ? 2 : 1,
                             (double)benchResult.cSpeed / MB_UNIT,
@@ -919,12 +928,13 @@ BMK_benchOutcome_t BMK_benchMem(
             &adv);
 }
 
-static BMK_benchOutcome_t BMK_benchCLevel(
+/* @return: 0 on success, !0 if error */
+static int BMK_benchCLevels(
         const void* srcBuffer,
         size_t benchedSize,
         const size_t* fileSizes,
         unsigned nbFiles,
-        int cLevel,
+        int startCLevel, int endCLevel,
         const ZSTD_compressionParameters* comprParams,
         const void* dictBuffer,
         size_t dictBufferSize,
@@ -932,11 +942,21 @@ static BMK_benchOutcome_t BMK_benchCLevel(
         const char* displayName,
         BMK_advancedParams_t const* const adv)
 {
+    int level;
     const char* pch = strrchr(displayName, '\\'); /* Windows */
     if (!pch)
         pch = strrchr(displayName, '/'); /* Linux */
     if (pch)
         displayName = pch + 1;
+
+    if (endCLevel > ZSTD_maxCLevel()) {
+        DISPLAYLEVEL(1, "Invalid Compression Level \n");
+        return 15;
+    }
+    if (endCLevel < startCLevel) {
+        DISPLAYLEVEL(1, "Invalid Compression Level Range \n");
+        return 15;
+    }
 
     if (adv->realTime) {
         DISPLAYLEVEL(2, "Note : switching to real-time priority \n");
@@ -951,25 +971,29 @@ static BMK_benchOutcome_t BMK_benchCLevel(
                adv->nbSeconds,
                (unsigned)(adv->blockSize >> 10));
 
-    return BMK_benchMemAdvanced(
+    for (level = startCLevel; level <= endCLevel; level++) {
+        BMK_benchOutcome_t res = BMK_benchMemAdvanced(
             srcBuffer,
             benchedSize,
             NULL,
             0,
             fileSizes,
             nbFiles,
-            cLevel,
+            level,
             comprParams,
             dictBuffer,
             dictBufferSize,
             displayLevel,
             displayName,
             adv);
+        if (!BMK_isSuccessful_benchOutcome(res)) return 1;
+    }
+    return 0;
 }
 
 int BMK_syntheticTest(
-        int cLevel,
         double compressibility,
+        int startingCLevel, int endCLevel,
         const ZSTD_compressionParameters* compressionParams,
         int displayLevel,
         const BMK_advancedParams_t* adv)
@@ -977,18 +1001,11 @@ int BMK_syntheticTest(
     char nameBuff[20]        = { 0 };
     const char* name         = nameBuff;
     size_t const benchedSize = adv->blockSize ? adv->blockSize : 10000000;
-    void* srcBuffer;
-    BMK_benchOutcome_t res;
-
-    if (cLevel > ZSTD_maxCLevel()) {
-        DISPLAYLEVEL(1, "Invalid Compression Level");
-        return 15;
-    }
 
     /* Memory allocation */
-    srcBuffer = malloc(benchedSize);
+    void* const srcBuffer = malloc(benchedSize);
     if (!srcBuffer) {
-        DISPLAYLEVEL(1, "allocation error : not enough memory");
+        DISPLAYLEVEL(1, "allocation error : not enough memory \n");
         return 16;
     }
 
@@ -1006,23 +1023,21 @@ int BMK_syntheticTest(
     }
 
     /* Bench */
-    res = BMK_benchCLevel(
-            srcBuffer,
-            benchedSize,
-            &benchedSize /* ? */,
-            1 /* ? */,
-            cLevel,
-            compressionParams,
-            NULL,
-            0, /* dictionary */
-            displayLevel,
-            name,
-            adv);
-
-    /* clean up */
-    free(srcBuffer);
-
-    return !BMK_isSuccessful_benchOutcome(res);
+    {   int res = BMK_benchCLevels(
+                srcBuffer,
+                benchedSize,
+                &benchedSize,
+                1,
+                startingCLevel, endCLevel,
+                compressionParams,
+                NULL,
+                0, /* dictionary */
+                displayLevel,
+                name,
+                adv);
+        free(srcBuffer);
+        return res;
+    }
 }
 
 static size_t BMK_findMaxMem(U64 requiredMem)
@@ -1058,11 +1073,12 @@ static int BMK_loadFiles(
     size_t pos = 0, totalSize = 0;
     unsigned n;
     for (n = 0; n < nbFiles; n++) {
+        const char* const filename = fileNamesTable[n];
         U64 fileSize = UTIL_getFileSize(
-                fileNamesTable[n]); /* last file may be shortened */
-        if (UTIL_isDirectory(fileNamesTable[n])) {
+                filename); /* last file may be shortened */
+        if (UTIL_isDirectory(filename)) {
             DISPLAYLEVEL(
-                    2, "Ignoring %s directory...       \n", fileNamesTable[n]);
+                    2, "Ignoring %s directory...       \n", filename);
             fileSizes[n] = 0;
             continue;
         }
@@ -1070,25 +1086,29 @@ static int BMK_loadFiles(
             DISPLAYLEVEL(
                     2,
                     "Cannot evaluate size of %s, ignoring ... \n",
-                    fileNamesTable[n]);
+                    filename);
             fileSizes[n] = 0;
             continue;
         }
-        {
-            FILE* const f = fopen(fileNamesTable[n], "rb");
-            if (f == NULL)
+        if (fileSize > bufferSize - pos) {
+            /* buffer too small - limit quantity loaded */
+            fileSize = bufferSize - pos;
+            nbFiles  = n; /* stop after this file */
+        }
+
+        {   FILE* const f = fopen(filename, "rb");
+            if (f == NULL) {
                 RETURN_ERROR_INT(
-                        10, "impossible to open file %s", fileNamesTable[n]);
-            OUTPUTLEVEL(2, "Loading %s...       \r", fileNamesTable[n]);
-            if (fileSize > bufferSize - pos)
-                fileSize = bufferSize - pos,
-                nbFiles  = n; /* buffer too small - stop after this file */
-            {
-                size_t const readSize =
+                        10, "cannot open file %s", filename);
+            }
+            OUTPUTLEVEL(2, "Loading %s...       \r", filename);
+            {   size_t const readSize =
                         fread(((char*)buffer) + pos, 1, (size_t)fileSize, f);
-                if (readSize != (size_t)fileSize)
+                if (readSize != (size_t)fileSize) {
+                    fclose(f);
                     RETURN_ERROR_INT(
-                            11, "could not read %s", fileNamesTable[n]);
+                            11, "invalid read %s", filename);
+                }
                 pos += readSize;
             }
             fileSizes[n] = (size_t)fileSize;
@@ -1106,7 +1126,7 @@ int BMK_benchFilesAdvanced(
         const char* const* fileNamesTable,
         unsigned nbFiles,
         const char* dictFileName,
-        int cLevel,
+        int startCLevel, int endCLevel,
         const ZSTD_compressionParameters* compressionParams,
         int displayLevel,
         const BMK_advancedParams_t* adv)
@@ -1116,7 +1136,7 @@ int BMK_benchFilesAdvanced(
     void* dictBuffer      = NULL;
     size_t dictBufferSize = 0;
     size_t* fileSizes     = NULL;
-    BMK_benchOutcome_t res;
+    int res = 1;
     U64 const totalSizeToLoad = UTIL_getTotalFileSize(fileNamesTable, nbFiles);
 
     if (!nbFiles) {
@@ -1124,7 +1144,7 @@ int BMK_benchFilesAdvanced(
         return 13;
     }
 
-    if (cLevel > ZSTD_maxCLevel()) {
+    if (endCLevel > ZSTD_maxCLevel()) {
         DISPLAYLEVEL(1, "Invalid Compression Level");
         return 14;
     }
@@ -1178,7 +1198,6 @@ int BMK_benchFilesAdvanced(
                     1 /*?*/,
                     displayLevel);
             if (errorCode) {
-                res = BMK_benchOutcome_error();
                 goto _cleanUp;
             }
         }
@@ -1210,7 +1229,6 @@ int BMK_benchFilesAdvanced(
                 nbFiles,
                 displayLevel);
         if (errorCode) {
-            res = BMK_benchOutcome_error();
             goto _cleanUp;
         }
     }
@@ -1219,15 +1237,14 @@ int BMK_benchFilesAdvanced(
     {
         char mfName[20] = { 0 };
         formatString_u(mfName, sizeof(mfName), " %u files", nbFiles);
-        {
-            const char* const displayName =
+        {   const char* const displayName =
                     (nbFiles > 1) ? mfName : fileNamesTable[0];
-            res = BMK_benchCLevel(
+            res = BMK_benchCLevels(
                     srcBuffer,
                     benchedSize,
                     fileSizes,
                     nbFiles,
-                    cLevel,
+                    startCLevel, endCLevel,
                     compressionParams,
                     dictBuffer,
                     dictBufferSize,
@@ -1241,7 +1258,7 @@ _cleanUp:
     free(srcBuffer);
     free(dictBuffer);
     free(fileSizes);
-    return !BMK_isSuccessful_benchOutcome(res);
+    return res;
 }
 
 int BMK_benchFiles(
@@ -1257,7 +1274,7 @@ int BMK_benchFiles(
             fileNamesTable,
             nbFiles,
             dictFileName,
-            cLevel,
+            cLevel, cLevel,
             compressionParams,
             displayLevel,
             &adv);

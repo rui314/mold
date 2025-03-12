@@ -70,14 +70,12 @@ int main(int argc, const char** argv)
     char* buffer = (char*)malloc(bufferSize);
     void* out = malloc(outSize);
     void* roundtrip = malloc(dataSize);
-    int _exit_code = 0;
     (void)argc;
     (void)argv;
 
     if (!buffer || !out || !roundtrip || !cctx || !dctx) {
         fprintf(stderr, "Allocation failure\n");
-        _exit_code = 1;
-        goto cleanup;
+        return 1;
     }
 
     if (ZSTD_isError(ZSTD_CCtx_setParameter(cctx, ZSTD_c_windowLog, 31)))
@@ -121,13 +119,10 @@ int main(int argc, const char** argv)
 
     fprintf(stderr, "Success!\n");
 
-    goto cleanup;
-
-cleanup:
     free(roundtrip);
     free(out);
     free(buffer);
-    ZSTD_freeCCtx(cctx);
     ZSTD_freeDCtx(dctx);
-    return _exit_code;
+    ZSTD_freeCCtx(cctx);
+    return 0;
 }
