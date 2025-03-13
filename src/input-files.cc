@@ -236,6 +236,42 @@ static bool is_known_section_type(const ElfShdr<E> &shdr) {
   return false;
 }
 
+// SHT_CREL is an experimental alternative relocation table format
+// designed to reduce the size of the table. Only LLVM supports it
+// at the moment.
+//
+// This function converts a CREL relocation table to a regular one.
+template <typename E>
+std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, std::string_view contents) {
+  u8 *p = (u8 *)contents.data();
+  u64 hdr = read_uleb(&p);
+  i64 nrels = hdr >> 3;
+  bool is_rela = hdr & 0b100;
+  i64 scale = hdr & 0b11;
+
+  i64 offset = 0;
+  i64 addend = 0;
+  i64 symidx = 0;
+  i64 type = 0;
+
+  std::vector<ElfRel<E>> vec;
+  vec.reserve(nrels);
+
+  while (vec.size() < nrels) {
+    u64 val = read_uleb(&p);
+    offset += (val >> (is_rela ? 3 : 2)) << scale;
+
+    if (val & 1)
+      symidx += read_sleb(&p);
+    if (val & 2)
+      type += read_sleb(&p);
+    if (is_rela && (val & 4))
+      addend += read_sleb(&p);
+    vec.emplace_back(offset, type, symidx, addend);
+  }
+  return vec;
+}
+
 template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
@@ -300,6 +336,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       comdat_groups.push_back({group, (i32)i, entries.subspan(1)});
       break;
     }
+    case SHT_CREL:
+      decoded_crel.resize(i + 1);
+      decoded_crel[i] = decode_crel(ctx, this->get_string(ctx, shdr));
+      break;
     case SHT_REL:
     case SHT_RELA:
     case SHT_SYMTAB:
@@ -436,16 +476,12 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Attach relocation sections to their target sections.
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
     const ElfShdr<E> &shdr = this->elf_sections[i];
-    if (shdr.sh_type != (E::is_rela ? SHT_RELA : SHT_REL))
-      continue;
-
-    if (shdr.sh_info >= sections.size())
-      Fatal(ctx) << *this << ": invalid relocated section index: "
-                 << (u32)shdr.sh_info;
-
-    if (std::unique_ptr<InputSection<E>> &target = sections[shdr.sh_info]) {
-      assert(target->relsec_idx == -1);
-      target->relsec_idx = i;
+    if (shdr.sh_type == (E::is_rela ? SHT_RELA : SHT_REL) ||
+        shdr.sh_type == SHT_CREL) {
+      if (std::unique_ptr<InputSection<E>> &target = sections[shdr.sh_info]) {
+        assert(target->relsec_idx == -1);
+        target->relsec_idx = i;
+      }
     }
   }
 

@@ -10,8 +10,7 @@ set -x
 case "$ID" in
 ubuntu | pop | linuxmint | debian | raspbian | neon)
   apt-get update
-  apt-get install -y cmake gcc g++
-  if [ "$ID-$VERSION_ID" = ubuntu-20.04 ]; then apt-get install -y g++-10; fi
+  apt-get install -y cmake gcc g++ clang gdb
   ;;
 fedora | amzn | rhel | centos)
   dnf install -y gcc-g++ cmake glibc-static libstdc++-static diffutils util-linux tar

@@ -1418,6 +1418,7 @@ public:
   std::vector<bool> has_symver;
   std::vector<ComdatGroupRef<E>> comdat_groups;
   std::vector<InputSection<E> *> eh_frame_sections;
+  std::vector<std::vector<ElfRel<E>>> decoded_crel;
   bool exclude_libs = false;
   std::map<u32, u32> gnu_properties;
   bool needs_executable_stack = false;
@@ -2573,7 +2574,11 @@ template <typename E>
 inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
     return {};
-  return file.template get_data<ElfRel<E>>(ctx, file.elf_sections[relsec_idx]);
+
+  ElfShdr<E> &shdr = file.elf_sections[relsec_idx];
+  if (shdr.sh_type == SHT_CREL)
+    return file.decoded_crel[relsec_idx];
+  return file.template get_data<ElfRel<E>>(ctx, shdr);
 }
 
 template <typename E>

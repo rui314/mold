@@ -70,6 +70,7 @@ jobs:
         - gentoo/stage3
         - opensuse/tumbleweed
         - ubuntu:22.04
+        - ubuntu:25.04
     runs-on: ubuntu-latest
     container: ${{ matrix.distro }}
     steps:

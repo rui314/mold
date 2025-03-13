@@ -490,6 +490,23 @@ inline u64 read_uleb(u8 *buf) {
   return read_uleb(&tmp);
 }
 
+inline i64 read_sleb(u8 **buf) {
+  u64 val = 0;
+  u8 shift = 0;
+  u8 byte;
+  do {
+    byte = *(*buf)++;
+    val |= (byte & 0x7f) << shift;
+    shift += 7;
+  } while (byte & 0x80);
+  return sign_extend(val, shift);
+}
+
+inline i64 read_sleb(u8 *buf) {
+  u8 *tmp = buf;
+  return read_sleb(&tmp);
+}
+
 inline u64 read_uleb(std::string_view *str) {
   u8 *start = (u8 *)str->data();
   u8 *ptr = start;
