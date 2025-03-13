@@ -259,9 +259,9 @@ struct FdeRecord {
 template <typename E>
 struct InputSectionExtras {};
 
-template <typename E> requires is_arm32<E>
-struct InputSectionExtras<E> {
-  InputSection<E> *exidx = nullptr;
+template <>
+struct InputSectionExtras<ARM32> {
+  InputSection<ARM32> *exidx = nullptr;
 };
 
 struct RelocDelta {
@@ -1369,7 +1369,8 @@ protected:
   std::vector<Symbol<E>> frag_syms;
 };
 
-template <typename E> struct ObjectFileExtras {};
+template <typename E>
+struct ObjectFileExtras {};
 
 template <is_riscv E>
 struct ObjectFileExtras<E> {
