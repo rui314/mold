@@ -249,23 +249,35 @@ std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, std::string_view contents) {
   bool is_rela = hdr & 0b100;
   i64 scale = hdr & 0b11;
 
-  i64 offset = 0;
-  i64 addend = 0;
-  i64 symidx = 0;
+  u64 offset = 0;
   i64 type = 0;
+  i64 symidx = 0;
+  i64 addend = 0;
 
   std::vector<ElfRel<E>> vec;
   vec.reserve(nrels);
 
   while (vec.size() < nrels) {
-    u64 val = read_uleb(&p);
-    offset += (val >> (is_rela ? 3 : 2)) << scale;
+    u8 flags = *p++;
+    i64 nflags = is_rela ? 3 : 2;
 
-    if (val & 1)
+    // The first ULEB-128 encoded value is a concatenation of bit flags and
+    // an offset delta. The delta may be a very large to decrease the
+    // current offset value by wrapping around. Combined, the encoded value
+    // can be up to 67 bit long. Thus we can't simply use read_uleb() which
+    // returns a u64.
+    u64 delta;
+    if (flags & 0x80)
+      delta = (read_uleb(&p) << (7 - nflags)) | ((flags & 0x7f) >> nflags);
+    else
+      delta = flags >> nflags;
+    offset += delta << scale;
+
+    if (flags & 1)
       symidx += read_sleb(&p);
-    if (val & 2)
+    if (flags & 2)
       type += read_sleb(&p);
-    if (is_rela && (val & 4))
+    if (is_rela && (flags & 4))
       addend += read_sleb(&p);
     vec.emplace_back(offset, type, symidx, addend);
   }
