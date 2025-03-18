@@ -242,12 +242,16 @@ static bool is_known_section_type(const ElfShdr<E> &shdr) {
 //
 // This function converts a CREL relocation table to a regular one.
 template <typename E>
-std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, std::string_view contents) {
-  u8 *p = (u8 *)contents.data();
+std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
+                                   const ElfShdr<E> &shdr) {
+  u8 *p = (u8 *)file.get_string(ctx, shdr).data();
   u64 hdr = read_uleb(&p);
   i64 nrels = hdr >> 3;
   bool is_rela = hdr & 0b100;
   i64 scale = hdr & 0b11;
+
+  if (is_rela && !E::is_rela)
+    Fatal(ctx) << file << ": CREL with addends is not supported for " << E::name;
 
   u64 offset = 0;
   i64 type = 0;
@@ -350,7 +354,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     }
     case SHT_CREL:
       decoded_crel.resize(i + 1);
-      decoded_crel[i] = decode_crel(ctx, this->get_string(ctx, shdr));
+      decoded_crel[i] = decode_crel(ctx, *this, shdr);
       break;
     case SHT_REL:
     case SHT_RELA:

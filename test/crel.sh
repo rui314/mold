@@ -1,6 +1,10 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+# Currently, CREL is not supported on REL-type targets
+[ $MACHINE = arm ] && skip
+[ $MACHINE = i686 ] && skip
+
 [ "$CC" = cc ] || skip
 clang -c -xc -o /dev/null /dev/null -Wa,--crel,--allow-experimental-crel || skip
 
