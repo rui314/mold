@@ -1117,15 +1117,12 @@ static std::vector<Extn> merge_extensions(std::span<Extn> x, std::span<Extn> y) 
   return vec;
 }
 
-static std::string to_string(const Extn &e) {
-  return e.name + std::to_string(e.major) + "p" + std::to_string(e.minor);
-}
-
 static std::string to_string(std::span<Extn> v) {
-  std::string str = to_string(v[0]);
-  for (i64 i = 1; i < v.size(); i++)
-    str += "_" + to_string(v[i]);
-  return str;
+  std::ostringstream os;
+  os << v[0].name << v[0].major << 'p' << v[0].minor;
+  for (Extn &e : v.subspan(1))
+    os << '_' << e.name << e.major << 'p' << e.minor;
+  return os.str();
 }
 
 //

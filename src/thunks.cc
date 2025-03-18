@@ -95,11 +95,6 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   return -branch_distance<E> <= val && val < branch_distance<E>;
 }
 
-static void reset(Thunk<E> &thunk) {
-  for (Symbol<E> *sym : thunk.symbols)
-    sym->flags = 0;
-}
-
 template <>
 void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   std::span<InputSection<E> *> m = members;
@@ -169,8 +164,9 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
       a++;
 
     // Erase references to out-of-range thunks.
-    while (t < thunks.size() && thunks[t]->offset < m[a]->offset)
-      reset(*thunks[t++]);
+    for (; t < thunks.size() && thunks[t]->offset < m[a]->offset; t++)
+      for (Symbol<E> *sym : thunks[t]->symbols)
+        sym->flags = 0;
 
     // Create a new thunk and place it at D.
     offset = align_to(offset, thunk_align);
@@ -197,8 +193,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
         if (is_reachable(ctx, isec, sym, rel))
           continue;
 
-        // Add the symbol to the current thunk if it's not added already
-        // by other thread.
+        // Add the symbol to the current thunk if it's not added already.
         if (!sym.flags.test_and_set()) {
           std::scoped_lock lock(mu);
           thunk.symbols.push_back(&sym);
@@ -221,8 +216,10 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     b = c;
   }
 
-  while (t < thunks.size())
-    reset(*thunks[t++]);
+  for (; t < thunks.size(); t++)
+    for (Symbol<E> *sym : thunks[t]->symbols)
+      sym->flags = 0;
+
   this->shdr.sh_size = offset;
 }
 

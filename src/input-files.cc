@@ -266,7 +266,7 @@ std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
     i64 nflags = is_rela ? 3 : 2;
 
     // The first ULEB-128 encoded value is a concatenation of bit flags and
-    // an offset delta. The delta may be a very large to decrease the
+    // an offset delta. The delta may be very large to decrease the
     // current offset value by wrapping around. Combined, the encoded value
     // can be up to 67 bit long. Thus we can't simply use read_uleb() which
     // returns a u64.
