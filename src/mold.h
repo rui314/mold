@@ -156,6 +156,9 @@ template <needs_thunk E>
 static constexpr i64 branch_distance = get_branch_distance<E>() - 32;
 
 template <needs_thunk E>
+void remove_redundant_thunks(Context<E> &ctx);
+
+template <needs_thunk E>
 void gather_thunk_addresses(Context<E> &ctx);
 
 //
@@ -566,7 +569,7 @@ public:
   void populate_symtab(Context<E> &ctx) override;
 
   void scan_abs_relocations(Context<E> &ctx);
-  void create_range_extension_thunks(Context<E> &ctx);
+  void create_range_extension_thunks(Context<E> &ctx, bool first_pass);
 
   std::vector<InputSection<E> *> members;
   std::vector<std::unique_ptr<Thunk<E>>> thunks;

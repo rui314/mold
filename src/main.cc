@@ -534,10 +534,6 @@ int mold_main(int argc, char **argv) {
   // Fill .gnu.version_r section contents.
   ctx.verneed->construct(ctx);
 
-  // Compute .symtab and .strtab sizes for each file.
-  if (!ctx.arg.strip_all)
-    create_output_symtab(ctx);
-
   // .eh_frame is a special section from the linker's point of view,
   // as its contents are parsed and reconstructed by the linker,
   // unlike other sections that are regarded as opaque bytes.
@@ -548,6 +544,17 @@ int mold_main(int argc, char **argv) {
   // files to an output file.
   if (ctx.arg.emit_relocs)
     create_reloc_sections(ctx);
+
+  // We've created range extension thunks with a pessimistive assumption
+  // that all out-of-section references are out of range. Now that we are
+  // able to assign addresses to all SHF_ALLOC output sections, we can
+  // eliminate excessive thunks.
+  if constexpr (needs_thunk<E>)
+    remove_redundant_thunks(ctx);
+
+  // Compute .symtab and .strtab sizes for each file.
+  if (!ctx.arg.strip_all)
+    create_output_symtab(ctx);
 
   // Compute the section header values for all sections.
   compute_section_headers(ctx);
