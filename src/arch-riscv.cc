@@ -244,10 +244,12 @@ find_paired_reloc(Context<E> &ctx, InputSection<E> &isec,
 }
 
 // Returns true if isec's i'th relocation refers to the following
-// GOT-load instructioon pair.
+// GOT-load instructioon pair, which is an expeanded form of
+// `la t0, foo` pseudo assembly instruction.
 //
-//   auipc t0, %got_pcrel_hi(foo)
-//   ld t0, %got_pcrel_lo(foo)(t0)
+// .L0
+//   auipc t0, 0      # R_RISCV_GOT_HI20(foo),     R_RISCV_RELAX
+//   ld    t0, 0(t0)  # R_RISCV_PCREL_LO12_I(.L0), R_RISCV_RELAX
 static bool is_got_load_pair(Context<E> &ctx, InputSection<E> &isec,
                              std::span<const ElfRel<E>> rels, i64 i) {
   u8 *buf = (u8 *)isec.contents.data();
