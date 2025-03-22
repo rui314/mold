@@ -243,6 +243,24 @@ find_paired_reloc(Context<E> &ctx, InputSection<E> &isec,
   Fatal(ctx) << isec << ": paired relocation is missing: " << i;
 }
 
+// Returns true if isec's i'th relocation refers to the following
+// GOT-load instructioon pair.
+//
+//   auipc t0, %got_pcrel_hi(foo)
+//   ld t0, %got_pcrel_lo(foo)(t0)
+static bool is_got_load_pair(Context<E> &ctx, InputSection<E> &isec,
+                             std::span<const ElfRel<E>> rels, i64 i) {
+  u8 *buf = (u8 *)isec.contents.data();
+  return i + 3 < rels.size() &&
+         rels[i].r_type == R_RISCV_GOT_HI20 &&
+         rels[i + 1].r_type == R_RISCV_RELAX &&
+         rels[i + 2].r_type == R_RISCV_PCREL_LO12_I &&
+         rels[i + 3].r_type == R_RISCV_RELAX &&
+         rels[i].r_offset == rels[i + 2].r_offset - 4 &&
+         rels[i].r_offset == isec.file.symbols[rels[i + 2].r_sym]->value &&
+         get_rd(buf + rels[i].r_offset) == get_rd(buf + rels[i + 2].r_offset);
+}
+
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
@@ -350,27 +368,20 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         i += 3;
       } else {
         assert(removed_bytes == 0);
-        if (ctx.arg.relax &&
-            sym.is_pcrel_linktime_const(ctx) &&
-            i + 3 < rels.size() &&
-            rels[i + 1].r_type == R_RISCV_RELAX &&
-            rels[i + 2].r_type == R_RISCV_PCREL_LO12_I &&
-            rels[i + 2].r_offset == rels[i].r_offset + 4 &&
-            file.symbols[rels[i + 2].r_sym]->value == r_offset &&
-            rels[i + 3].r_type == R_RISCV_RELAX) {
-          i64 val = S + A - P;
-          if (rd == get_rd(buf + rel.r_offset + 4) && (i32)val == val) {
-            // auipc <rd>, %hi20(val)
-            write_utype(loc, val);
 
-            // addi <rd>, <rd>, %lo12(val)
-            *(ul32 *)(loc + 4) = 0b0010011 | (rd << 15) | (rd << 7);
-            write_itype(loc + 4, val);
-            i += 3;
-            break;
-          }
+        i64 val = S + A - P;
+        if (ctx.arg.relax && sym.is_pcrel_linktime_const(ctx) &&
+            is_got_load_pair(ctx, *this, rels, i) && is_int(val, 32)) {
+          // auipc <rd>, %hi20(val)
+          write_utype(loc, val);
+
+          // addi <rd>, <rd>, %lo12(val)
+          *(ul32 *)(loc + 4) = 0b0010011 | (rd << 15) | (rd << 7);
+          write_itype(loc + 4, val);
+          i += 3;
+        } else {
+          write_utype(loc, G + GOT + A - P);
         }
-        write_utype(loc, G + GOT + A - P);
       }
       break;
     }
@@ -905,34 +916,22 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       }
       break;
     }
-    case R_RISCV_GOT_HI20: {
+    case R_RISCV_GOT_HI20:
       // A GOT_HI20 followed by a PCREL_LO12_I is used to load a value from
       // GOT. If the loaded value is a link-time constant, we can rewrite
       // the instructions to directly materialize the value, eliminating a
       // memory load.
-      if (sym.is_absolute() &&
-          i + 3 < rels.size() &&
-          rels[i + 1].r_type == R_RISCV_RELAX &&
-          rels[i + 2].r_type == R_RISCV_PCREL_LO12_I &&
-          rels[i + 2].r_offset == rels[i].r_offset + 4 &&
-          isec.file.symbols[rels[i + 2].r_sym]->value == rels[i].r_offset &&
-          rels[i + 3].r_type == R_RISCV_RELAX) {
-        i64 rd = get_rd(buf + r.r_offset);
-
-        if (rd == get_rd(buf + r.r_offset + 4)) {
-          u64 val = sym.get_addr(ctx) + r.r_addend;
-
-          if (use_rvc && rd != 0 && is_int(val, 6)) {
-            // Replace AUIPC + LD with C.LI.
-            remove(6);
-          } else if (is_int(val, 12)) {
-            // Replace AUIPC + LD with ADDI.
-            remove(4);
-          }
+      if (sym.is_absolute() && is_got_load_pair(ctx, isec, rels, i)) {
+        u64 val = sym.get_addr(ctx) + r.r_addend;
+        if (use_rvc && is_int(val, 6) && get_rd(buf + r.r_offset) != 0) {
+          // Replace AUIPC + LD with C.LI.
+          remove(6);
+        } else if (is_int(val, 12)) {
+          // Replace AUIPC + LD with ADDI.
+          remove(4);
         }
       }
       break;
-    }
     case R_RISCV_HI20: {
       u64 val = sym.get_addr(ctx) + r.r_addend;
       i64 rd = get_rd(buf + r.r_offset);

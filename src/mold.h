@@ -1327,7 +1327,6 @@ public:
   std::string_view get_string(Context<E> &ctx, const ElfShdr<E> &shdr);
   std::string_view get_string(Context<E> &ctx, i64 idx);
   u32 get_eflags() { return ((ElfEhdr<E> *)mf->data)->e_flags; }
-  std::span<ElfPhdr<E>> get_phdrs();
 
   ElfShdr<E> *find_section(i64 type);
 
