@@ -1870,7 +1870,7 @@ struct I386 {
   static constexpr u32 e_machine = EM_386;
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
-  static constexpr u32 pltgot_size = 16;
+  static constexpr u32 pltgot_size = 8;
   static constexpr u8 filler[] = { 0xcc }; // int3
 
   static constexpr u32 R_COPY = R_386_COPY;

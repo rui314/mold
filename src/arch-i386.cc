@@ -108,25 +108,24 @@ template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {
-      0xf3, 0x0f, 0x1e, 0xfb, // endbr32
       0x51,                   // push   %ecx
       0x8d, 0x8b, 0, 0, 0, 0, // lea    GOTPLT+4(%ebx), %ecx
       0xff, 0x31,             // push   (%ecx)
       0xff, 0x61, 0x04,       // jmp    *0x4(%ecx)
+      0xcc, 0xcc, 0xcc, 0xcc, // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 7) = ctx.gotplt->shdr.sh_addr - ctx.got->shdr.sh_addr + 4;
+    *(ul32 *)(buf + 3) = ctx.gotplt->shdr.sh_addr - ctx.got->shdr.sh_addr + 4;
   } else {
     static const u8 insn[] = {
-      0xf3, 0x0f, 0x1e, 0xfb, // endbr32
-      0x51,                   // push   %ecx
-      0xb9, 0, 0, 0, 0,       // mov    GOTPLT+4, %ecx
-      0xff, 0x31,             // push   (%ecx)
-      0xff, 0x61, 0x04,       // jmp    *0x4(%ecx)
-      0xcc,                   // (padding)
+      0x51,                         // push   %ecx
+      0xb9, 0, 0, 0, 0,             // mov    GOTPLT+4, %ecx
+      0xff, 0x31,                   // push   (%ecx)
+      0xff, 0x61, 0x04,             // jmp    *0x4(%ecx)
+      0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 6) = ctx.gotplt->shdr.sh_addr + 4;
+    *(ul32 *)(buf + 2) = ctx.gotplt->shdr.sh_addr + 4;
   }
 }
 
@@ -134,24 +133,22 @@ template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {
-      0xf3, 0x0f, 0x1e, 0xfb, // endbr32
-      0xb9, 0, 0, 0, 0,       // mov $reloc_offset, %ecx
-      0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
-      0xcc,                   // (padding)
+      0xb9, 0, 0, 0, 0,             // mov $reloc_offset, %ecx
+      0xff, 0xa3, 0, 0, 0, 0,       // jmp *foo@GOT(%ebx)
+      0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 5) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
-    *(ul32 *)(buf + 11) = sym.get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
+    *(ul32 *)(buf + 1) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
+    *(ul32 *)(buf + 7) = sym.get_gotplt_addr(ctx) - ctx.got->shdr.sh_addr;
   } else {
     static const u8 insn[] = {
-      0xf3, 0x0f, 0x1e, 0xfb, // endbr32
-      0xb9, 0, 0, 0, 0,       // mov $reloc_offset, %ecx
-      0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-      0xcc,                   // (padding)
+      0xb9, 0, 0, 0, 0,             // mov $reloc_offset, %ecx
+      0xff, 0x25, 0, 0, 0, 0,       // jmp *foo@GOT
+      0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 5) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
-    *(ul32 *)(buf + 11) = sym.get_gotplt_addr(ctx);
+    *(ul32 *)(buf + 1) = sym.get_plt_idx(ctx) * sizeof(ElfRel<E>);
+    *(ul32 *)(buf + 7) = sym.get_gotplt_addr(ctx);
   }
 }
 
@@ -159,20 +156,18 @@ template <>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   if (ctx.arg.pic) {
     static const u8 insn[] = {
-      0xf3, 0x0f, 0x1e, 0xfb,             // endbr32
-      0xff, 0xa3, 0, 0, 0, 0,             // jmp *foo@GOT(%ebx)
-      0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+      0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
+      0xcc, 0xcc,             // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 6) = sym.get_got_pltgot_addr(ctx) - ctx.got->shdr.sh_addr;
+    *(ul32 *)(buf + 2) = sym.get_got_pltgot_addr(ctx) - ctx.got->shdr.sh_addr;
   } else {
     static const u8 insn[] = {
-      0xf3, 0x0f, 0x1e, 0xfb,             // endbr32
-      0xff, 0x25, 0, 0, 0, 0,             // jmp *foo@GOT
-      0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+      0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
+      0xcc, 0xcc,             // (padding)
     };
     memcpy(buf, insn, sizeof(insn));
-    *(ul32 *)(buf + 6) = sym.get_got_pltgot_addr(ctx);
+    *(ul32 *)(buf + 2) = sym.get_got_pltgot_addr(ctx);
   }
 }
 
@@ -242,11 +237,10 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
   case R_386_GOT32X: {
     static const u8 insn[] = {
       0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
-      0x2d, 0, 0, 0, 0,       // sub $tls_size, %eax
-      0x90,                   // nop
+      0x2e, 0x2d, 0, 0, 0, 0, // sub $tls_size, %eax
     };
     memcpy(loc - 2, insn, sizeof(insn));
-    *(ul32 *)(loc + 5) = tls_size;
+    *(ul32 *)(loc + 6) = tls_size;
     break;
   }
   default:
@@ -406,6 +400,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   mov    %reg, %eax
       //   call   *(%eax)
       //       R_386_TLS_DESC_CALL foo
+      //
+      // Note that the compiler always uses the local-exec TLS model
+      // for -fno-pic, so TLSDESC code is always PIC (i.e. uses %ebx to
+      // store the address of GOT.)
       if (sym.has_tlsdesc(ctx)) {
         *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) + A - GOT;
       } else if (sym.has_gottp(ctx)) {
