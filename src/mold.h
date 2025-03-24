@@ -311,6 +311,7 @@ public:
   bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) const;
   bool icf_removed() const;
   bool record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
+  void check_range(Context<E> &ctx, i64 i, i64 val, i64 lo, i64 hi);
 
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
@@ -2654,6 +2655,18 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
 template <typename E>
 inline bool InputSection<E>::icf_removed() const {
   return this->leader && this->leader != this;
+}
+
+template <typename E>
+inline void
+InputSection<E>::check_range(Context<E> &ctx, i64 i, i64 val, i64 lo, i64 hi) {
+  if (val < lo || hi <= val) {
+    const ElfRel<E> &rel = get_rels(ctx)[i];
+    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    Error(ctx) << *this << ": relocation " << rel << " against "
+               << sym << " out of range: " << val << " is not in ["
+               << lo << ", " << hi << ")";
+  }
 }
 
 template <typename E>

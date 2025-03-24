@@ -51,9 +51,6 @@
 // address. That also means each function needs to execute the above piece
 // of code to become position-independent.
 //
-// This scheme is very similar to i386. That may not be a coincidence
-// because the i386 ELF psABI is created by Sun Microsystems too.
-//
 // https://github.com/rui314/psabi/blob/main/sparc.pdf
 
 #include "mold.h"
@@ -150,18 +147,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
-    };
-
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
     u64 P = get_addr() + rel.r_offset;
     u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
+
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      check_range(ctx, i, val, lo, hi);
+    };
 
     switch (rel.r_type) {
     case R_SPARC_5:
@@ -466,19 +460,16 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
-    };
-
     SectionFragment<E> *frag;
     i64 frag_addend;
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
 
     u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
     u64 A = frag ? frag_addend : (i64)rel.r_addend;
+
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      check_range(ctx, val, i, lo, hi);
+    };
 
     switch (rel.r_type) {
     case R_SPARC_64:

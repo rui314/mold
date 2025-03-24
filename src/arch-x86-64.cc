@@ -442,11 +442,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
+    u64 S = sym.get_addr(ctx);
+    u64 A = rel.r_addend;
+    u64 P = get_addr() + rel.r_offset;
+    u64 G = sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr;
+    u64 GOT = ctx.gotplt->shdr.sh_addr;
+
     auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
+      check_range(ctx, i, val, lo, hi);
     };
 
     auto write32 = [&](u64 val) {
@@ -458,12 +461,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check(val, -(1LL << 31), 1LL << 31);
       *(ul32 *)loc = val;
     };
-
-    u64 S = sym.get_addr(ctx);
-    u64 A = rel.r_addend;
-    u64 P = get_addr() + rel.r_offset;
-    u64 G = sym.get_got_addr(ctx) - ctx.gotplt->shdr.sh_addr;
-    u64 GOT = ctx.gotplt->shdr.sh_addr;
 
     switch (rel.r_type) {
     case R_X86_64_8:
@@ -669,11 +666,15 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
+    SectionFragment<E> *frag;
+    i64 frag_addend;
+    std::tie(frag, frag_addend) = get_fragment(ctx, rel);
+
+    u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
+    u64 A = frag ? frag_addend : (i64)rel.r_addend;
+
     auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
+      check_range(ctx, i, val, lo, hi);
     };
 
     auto write32 = [&](u64 val) {
@@ -685,13 +686,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       check(val, -(1LL << 31), 1LL << 31);
       *(ul32 *)loc = val;
     };
-
-    SectionFragment<E> *frag;
-    i64 frag_addend;
-    std::tie(frag, frag_addend) = get_fragment(ctx, rel);
-
-    u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
-    u64 A = frag ? frag_addend : (i64)rel.r_addend;
 
     switch (rel.r_type) {
     case R_X86_64_8:

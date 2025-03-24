@@ -86,11 +86,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
+    u64 S = sym.get_addr(ctx);
+    u64 A = rel.r_addend;
+    u64 P = get_addr() + rel.r_offset;
+    u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
+    u64 GOT = ctx.got->shdr.sh_addr;
+
     auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
+      check_range(ctx, i, val, lo, hi);
     };
 
     auto write16 = [&](u64 val) {
@@ -112,12 +115,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check(val, -(1 << 7), 1 << 7);
       *loc = val;
     };
-
-    u64 S = sym.get_addr(ctx);
-    u64 A = rel.r_addend;
-    u64 P = get_addr() + rel.r_offset;
-    u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
-    u64 GOT = ctx.got->shdr.sh_addr;
 
     switch (rel.r_type) {
     case R_68K_32:

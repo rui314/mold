@@ -298,20 +298,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     i64 r_offset = rel.r_offset - r_delta;
     u8 *loc = base + r_offset;
 
-    auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
-    };
-
-    auto check_branch = [&](i64 val, i64 lo, i64 hi) {
-      if (val & 0b11)
-        Error(ctx) << *this << ": misaligned symbol " << sym
-                   << " for relocation " << rel;
-      check(val, lo, hi);
-    };
-
     // Unlike other psABIs, the LoongArch ABI uses the same relocation
     // types to refer to GOT entries for thread-local symbols and regular
     // ones. Therefore, G may refer to a TLSGD or a regular GOT slot
@@ -334,6 +320,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 P = get_addr() + r_offset;
     u64 G = got_idx * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
+
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      check_range(ctx, i, val, lo, hi);
+    };
+
+    auto check_branch = [&](i64 val, i64 lo, i64 hi) {
+      check(val, lo, hi);
+      if (val & 0b11)
+        Error(ctx) << *this << ": misaligned symbol " << sym
+                   << " for relocation " << rel;
+    };
 
     switch (rel.r_type) {
     case R_LARCH_32:

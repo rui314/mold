@@ -291,18 +291,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     i64 r_offset = rel.r_offset - r_delta;
     u8 *loc = base + r_offset;
 
-    auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
-    };
-
     u64 S = sym.get_addr(ctx);
     u64 A = rel.r_addend;
     u64 P = get_addr() + r_offset;
     u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
+
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      check_range(ctx, i, val, lo, hi);
+    };
 
     switch (rel.r_type) {
     case R_RISCV_32:

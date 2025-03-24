@@ -237,7 +237,7 @@ static void relax_ld_to_le(u8 *loc, ElfRel<E> rel, u64 tls_size) {
   case R_386_GOT32X: {
     static const u8 insn[] = {
       0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
-      0x2e, 0x2d, 0, 0, 0, 0, // sub $tls_size, %eax
+      0x81, 0xe8, 0, 0, 0, 0, // sub $tls_size, %eax
     };
     memcpy(loc - 2, insn, sizeof(insn));
     *(ul32 *)(loc + 6) = tls_size;
@@ -288,18 +288,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
-    };
-
     u64 S = sym.get_addr(ctx);
     u64 A = get_addend(*this, rel);
     u64 P = get_addr() + rel.r_offset;
     u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
+
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      check_range(ctx, i, val, lo, hi);
+    };
 
     switch (rel.r_type) {
     case R_386_8:
@@ -447,13 +444,6 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
-    };
-
     SectionFragment<E> *frag;
     i64 frag_addend;
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
@@ -461,6 +451,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
     u64 A = frag ? frag_addend : get_addend(*this, rel);
     u64 GOT = ctx.got->shdr.sh_addr;
+
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      check_range(ctx, val, i, lo, hi);
+    };
 
     switch (rel.r_type) {
     case R_386_8:

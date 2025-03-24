@@ -354,19 +354,16 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    auto check = [&](i64 val, i64 lo, i64 hi) {
-      if (val < lo || hi <= val)
-        Error(ctx) << *this << ": relocation " << rel << " against "
-                   << sym << " out of range: " << val << " is not in ["
-                   << lo << ", " << hi << ")";
-    };
-
     SectionFragment<E> *frag;
     i64 frag_addend;
     std::tie(frag, frag_addend) = get_fragment(ctx, rel);
 
     u64 S = frag ? frag->get_addr(ctx) : sym.get_addr(ctx);
     u64 A = frag ? frag_addend : (i64)rel.r_addend;
+
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      check_range(ctx, i, val, lo, hi);
+    };
 
     switch (rel.r_type) {
     case R_PPC64_ADDR64:
@@ -375,12 +372,10 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       else
         *(ul64 *)loc = S + A;
       break;
-    case R_PPC64_ADDR32: {
-      i64 val = S + A;
-      check(val, 0, 1LL << 32);
-      *(ul32 *)loc = val;
+    case R_PPC64_ADDR32:
+      check(S + A, 0, 1LL << 32);
+      *(ul32 *)loc = S + A;
       break;
-    }
     case R_PPC64_DTPREL64:
       *(ul64 *)loc = S + A - ctx.dtp_addr;
       break;
