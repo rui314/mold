@@ -289,7 +289,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul32 *)loc |= bits(S + A - P, 20, 2) << 5;
       break;
     case R_AARCH64_PREL16:
-      check(S + A - P, -(1LL << 15), 1LL << 15);
+      check(S + A - P, -(1LL << 15), 1LL << 16);
       *(U16<E> *)loc = S + A - P;
       break;
     case R_AARCH64_PREL32:
