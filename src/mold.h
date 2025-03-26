@@ -2672,10 +2672,9 @@ InputSection<E>::check_range(Context<E> &ctx, i64 i, i64 val, i64 lo, i64 hi) {
 template <typename E>
 std::pair<SectionFragment<E> *, i64>
 MergeableSection<E>::get_fragment(i64 offset) {
-  std::span<u32> vec = frag_offsets;
-  auto it = std::upper_bound(vec.begin(), vec.end(), offset);
-  i64 idx = it - 1 - vec.begin();
-  return {fragments[idx], offset - vec[idx]};
+  auto it = ranges::upper_bound(frag_offsets, offset);
+  i64 idx = it - 1 - frag_offsets.begin();
+  return {fragments[idx], offset - frag_offsets[idx]};
 }
 
 template <typename E>
@@ -3009,7 +3008,7 @@ u64
 Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> {
   std::span<u64> vec = ctx.symbol_aux[aux_idx].thunk_addrs;
   u64 lo = (P < branch_distance<E>) ? 0 : P - branch_distance<E>;
-  u64 val = *std::lower_bound(vec.begin(), vec.end(), lo);
+  u64 val = *ranges::lower_bound(vec, lo);
   i64 disp = val - P;
   if (disp < -branch_distance<E> || branch_distance<E> <= disp)
     Fatal(ctx) << "range extension thunk out of range: " << *this;

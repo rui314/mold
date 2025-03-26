@@ -501,7 +501,6 @@ get_relocation_at(Context<E> &ctx, InputSection<E> &isec, i64 offset) {
 
 namespace {
 struct OpdSymbol {
-  bool operator<(const OpdSymbol &x) const { return r_offset < x.r_offset; }
   u64 r_offset = 0;
   Symbol<E> *sym = nullptr;
 };
@@ -509,7 +508,7 @@ struct OpdSymbol {
 
 static Symbol<E> *
 get_opd_sym_at(std::span<OpdSymbol> syms, u64 offset) {
-  auto it = std::lower_bound(syms.begin(), syms.end(), OpdSymbol{offset});
+  auto it = ranges::lower_bound(syms, offset, {}, &OpdSymbol::r_offset);
   if (it == syms.end())
     return nullptr;
   if (it->r_offset != offset)
@@ -591,7 +590,7 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
     }
 
     // Sort symbols so that get_opd_sym_at() can do binary search.
-    sort(opd_syms);
+    ranges::stable_sort(opd_syms, {}, &OpdSymbol::r_offset);
 
     // Rewrite relocations so that they directly refer to .opd.
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {

@@ -60,6 +60,7 @@ public:
 
 namespace mold {
 
+namespace ranges = std::ranges;
 using namespace std::literals::string_literals;
 using namespace std::literals::string_view_literals;
 
@@ -414,14 +415,6 @@ inline std::vector<T> flatten(std::vector<std::vector<T>> &vec) {
   for (std::vector<T> &v : vec)
     append(ret, v);
   return ret;
-}
-
-inline void sort(auto &vec) {
-  std::stable_sort(vec.begin(), vec.end());
-}
-
-inline void sort(auto &vec, auto less) {
-  std::stable_sort(vec.begin(), vec.end(), less);
 }
 
 template <typename T>

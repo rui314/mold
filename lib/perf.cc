@@ -17,9 +17,7 @@ i64 Counter::get_value() {
 }
 
 void Counter::print() {
-  sort(instances, [](Counter *a, Counter *b) {
-    return a->get_value() > b->get_value();
-  });
+  ranges::stable_sort(instances, {}, [](Counter *x) { return x->get_value(); });
 
   for (Counter *c : instances)
     std::cout << std::setw(20) << std::right << c->name
@@ -80,9 +78,7 @@ static void print_rec(TimerRecord &rec, i64 indent) {
          std::string(indent * 2, ' ').c_str(),
          rec.name.c_str());
 
-  sort(rec.children, [](TimerRecord *a, TimerRecord *b) {
-    return a->start < b->start;
-  });
+  ranges::stable_sort(rec.children, {}, &TimerRecord::start);
 
   for (TimerRecord *child : rec.children)
     print_rec(*child, indent + 1);

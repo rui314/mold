@@ -597,8 +597,8 @@ void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
 
   // We assume that FDEs for the same input sections are contiguous
   // in `fdes` vector.
-  sort(fdes, [&](const FdeRecord<E> &a, const FdeRecord<E> &b) {
-    return get_isec(a)->get_priority() < get_isec(b)->get_priority();
+  ranges::stable_sort(fdes, {}, [&](const FdeRecord<E> &x) {
+    return get_isec(x)->get_priority();
   });
 
   // Associate FDEs to input sections.
@@ -706,18 +706,14 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
 template <typename E>
 void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   if constexpr (is_riscv<E> || is_loongarch<E>) {
-    auto less = [](const ElfRel<E> &a, const ElfRel<E> &b) {
-      return a.r_offset < b.r_offset;
-    };
-
     for (i64 i = 1; i < sections.size(); i++) {
       std::unique_ptr<InputSection<E>> &isec = sections[i];
       if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
         continue;
 
       std::span<ElfRel<E>> rels = isec->get_rels(ctx);
-      if (!std::is_sorted(rels.begin(), rels.end(), less))
-        sort(rels, less);
+      if (!ranges::is_sorted(rels, {}, &ElfRel<E>::r_offset))
+        ranges::stable_sort(rels, {}, &ElfRel<E>::r_offset);
     }
   }
 }
@@ -1441,11 +1437,10 @@ std::span<Symbol<E> *> SharedFile<E>::get_symbols_at(Symbol<E> *sym) {
     });
   });
 
-  auto [begin, end] = std::equal_range(sorted_syms.begin(), sorted_syms.end(),
-                                       sym, [](Symbol<E> *a, Symbol<E> *b) {
-    return a->esym().st_value < b->esym().st_value;
+  auto [begin, end] = ranges::equal_range(sorted_syms, sym->esym().st_value, {},
+                                          [](Symbol<E> *x) {
+    return x->esym().st_value;
   });
-
   return {&*begin, (size_t)(end - begin)};
 }
 

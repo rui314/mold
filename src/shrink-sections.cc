@@ -69,10 +69,8 @@ using E = MOLD_TARGET;
 template <>
 i64 get_r_delta(InputSection<E> &isec, u64 offset) {
   std::span<RelocDelta> deltas = isec.extra.r_deltas;
-  auto it = std::upper_bound(deltas.begin(), deltas.end(), offset,
-                             [](u64 val, const RelocDelta &x) {
-    return val <= x.offset;
-  });
+  auto it = ranges::upper_bound(deltas, offset, std::less_equal<>{},
+                                &RelocDelta::offset);
   return (it == deltas.begin()) ? 0 : (it - 1)->delta;
 }
 

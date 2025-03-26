@@ -203,9 +203,7 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   // The ELF spec says that "loadable segment entries in the program
   // header table appear in ascending order, sorted on the p_vaddr
   // member".
-  sort(chunks, [](Chunk<E> *a, Chunk<E> *b) {
-    return a->shdr.sh_addr < b->shdr.sh_addr;
-  });
+  ranges::stable_sort(chunks, {}, [](Chunk<E> *x) { return x->shdr.sh_addr; });
 
   // Create a PT_PHDR for the program header itself.
   if (ctx.phdr && (ctx.phdr->shdr.sh_flags & SHF_ALLOC))
@@ -1008,9 +1006,8 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 // the .rel.dyn section). A bitmap has LSB 1.
 template <typename E>
 static std::vector<u64> encode_relr(std::span<u64> pos) {
-  assert(std::all_of(pos.begin(), pos.end(),
-                     [](u64 x) { return x % sizeof(Word<E>) == 0; }));
-  assert(std::is_sorted(pos.begin(), pos.end()));
+  assert(ranges::all_of(pos, [](u64 x) { return x % sizeof(Word<E>) == 0; }));
+  assert(ranges::is_sorted(pos));
 
   std::vector<u64> vec;
   i64 num_bits = E::is_64 ? 63 : 31;
@@ -2538,9 +2535,8 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
   if (syms.empty())
     return;
 
-  sort(syms, [](Symbol<E> *a, Symbol<E> *b) {
-    return std::tuple(((SharedFile<E> *)a->file)->soname, a->ver_idx) <
-           std::tuple(((SharedFile<E> *)b->file)->soname, b->ver_idx);
+  ranges::stable_sort(syms, {}, [](Symbol<E> *x) {
+    return std::tuple{((SharedFile<E> *)x->file)->soname, x->ver_idx};
   });
 
   // Resize .gnu.version
@@ -2738,10 +2734,6 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
   std::map<u32, u32> map;
 
   for (u32 key : keys) {
-    auto has_key = [&](ObjectFile<E> *file) {
-      return file->gnu_properties.contains(key);
-    };
-
     if (GNU_PROPERTY_X86_UINT32_AND_LO <= key &&
         key <= GNU_PROPERTY_X86_UINT32_AND_HI) {
       // An AND feature is set if all input objects have the property and
@@ -2758,7 +2750,11 @@ void NotePropertySection<E>::update_shdr(Context<E> &ctx) {
                key <= GNU_PROPERTY_X86_UINT32_OR_AND_HI) {
       // An OR-AND feature is set if all input object files have the property
       // and some of them has the feature.
-      if (std::all_of(files.begin(), files.end(), has_key))
+      auto has_key = [&](ObjectFile<E> *file) {
+        return file->gnu_properties.contains(key);
+      };
+
+      if (ranges::all_of(files, has_key))
         for (ObjectFile<E> *file : files)
           map[key] |= get_value(file, key);
     }

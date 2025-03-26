@@ -37,7 +37,7 @@ static Map<E> get_map(Context<E> &ctx) {
   tbb::parallel_for(map.range(), [](const typename Map<E>::range_type &range) {
     for (auto it = range.begin(); it != range.end(); it++) {
       std::vector<Symbol<E> *> &vec = it->second;
-      sort(vec, [](Symbol<E> *a, Symbol<E> *b) { return a->value < b->value; });
+      ranges::stable_sort(vec, {}, &Symbol<E>::value);
     }
   });
   return map;

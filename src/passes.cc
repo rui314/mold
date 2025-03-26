@@ -894,8 +894,7 @@ void check_cet_errors(Context<E> &ctx) {
   assert(warning || ctx.arg.z_cet_report == CET_REPORT_ERROR);
 
   auto has_feature = [](ObjectFile<E> *file, u32 feature) {
-    return std::any_of(file->gnu_properties.begin(), file->gnu_properties.end(),
-                       [&](std::pair<u32, u32> kv) {
+    return ranges::any_of(file->gnu_properties, [&](std::pair<u32, u32> kv) {
       return kv.first == GNU_PROPERTY_X86_FEATURE_1_AND &&
              (kv.second & feature);
     });
@@ -991,7 +990,7 @@ static std::string create_response_file(Context<E> &ctx) {
 
   if (cwd != "/") {
     out << "--chroot ..";
-    i64 depth = std::count(cwd.begin(), cwd.end(), '/');
+    i64 depth = ranges::count(cwd, '/');
     for (i64 i = 1; i < depth; i++)
       out << "/..";
     out << "\n";
@@ -1207,7 +1206,7 @@ void sort_init_fini(Context<E> &ctx) {
       if (osec->name == ".init_array" || osec->name == ".preinit_array" ||
           osec->name == ".fini_array") {
         if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_REVERSE)
-          std::reverse(osec->members.begin(), osec->members.end());
+          ranges::reverse(osec->members);
 
         std::vector<Entry> vec;
 
@@ -1218,8 +1217,7 @@ void sort_init_fini(Context<E> &ctx) {
           else
             vec.push_back({isec, get_init_fini_priority(isec)});
         }
-
-        sort(vec, [](const Entry &a, const Entry &b) { return a.prio < b.prio; });
+        ranges::stable_sort(vec, {}, &Entry::prio);
 
         for (i64 i = 0; i < vec.size(); i++)
           osec->members[i] = vec[i].sect;
@@ -1241,13 +1239,12 @@ void sort_ctor_dtor(Context<E> &ctx) {
     if (OutputSection<E> *osec = chunk->to_osec()) {
       if (osec->name == ".ctors" || osec->name == ".dtors") {
         if (ctx.arg.shuffle_sections != SHUFFLE_SECTIONS_REVERSE)
-          std::reverse(osec->members.begin(), osec->members.end());
+          ranges::reverse(osec->members);
 
         std::vector<Entry> vec;
         for (InputSection<E> *isec : osec->members)
           vec.push_back({isec, get_ctor_dtor_priority(isec)});
-
-        sort(vec, [](const Entry &a, const Entry &b) { return a.prio < b.prio; });
+        ranges::stable_sort(vec, {}, &Entry::prio);
 
         for (i64 i = 0; i < vec.size(); i++)
           osec->members[i] = vec[i].sect;
@@ -1281,9 +1278,7 @@ void fixup_ctors_in_init_array(Context<E> &ctx) {
     for (ElfRel<E> &r : rels)
       r.r_offset = isec.sh_size - r.r_offset - sizeof(Word<E>);
 
-    sort(rels, [](const ElfRel<E> &a, const ElfRel<E> &b) {
-      return a.r_offset < b.r_offset;
-    });
+    ranges::stable_sort(rels, {}, &ElfRel<E>::r_offset);
   };
 
   if (Chunk<E> *chunk = find_chunk(ctx, ".init_array"))
@@ -1353,7 +1348,7 @@ void shuffle_sections(Context<E> &ctx) {
   case SHUFFLE_SECTIONS_REVERSE:
     tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
       if (OutputSection<E> *osec = chunk->to_osec(); is_eligible(osec))
-        std::reverse(osec->members.begin(), osec->members.end());
+        ranges::reverse(osec->members);
     });
     break;
   default:
@@ -1828,8 +1823,7 @@ void apply_version_script(Context<E> &ctx) {
   // last one takes precedence.
   std::vector<VersionPattern> patterns = ctx.version_patterns;
 
-  std::stable_partition(patterns.begin(), patterns.end(),
-                        [](const VersionPattern &pat) {
+  ranges::stable_partition(patterns, [](const VersionPattern &pat) {
     return pat.ver_idx == VER_NDX_LOCAL;
   });
 
@@ -2300,9 +2294,8 @@ void sort_output_sections_regular(Context<E> &ctx) {
     return 0;
   };
 
-  sort(ctx.chunks, [&](Chunk<E> *a, Chunk<E> *b) {
-    return std::tuple{get_rank1(a), get_rank2(a), a->name} <
-           std::tuple{get_rank1(b), get_rank2(b), b->name};
+  ranges::stable_sort(ctx.chunks, {}, [&](Chunk<E> *x) {
+    return std::tuple{get_rank1(x), get_rank2(x), x->name};
   });
 }
 
@@ -2358,9 +2351,7 @@ void sort_output_sections_by_order(Context<E> &ctx) {
     chunk->sect_order = get_rank(chunk);
 
   // Sort output sections by --section-order
-  sort(ctx.chunks, [](Chunk<E> *a, Chunk<E> *b) {
-    return a->sect_order < b->sect_order;
-  });
+  ranges::stable_sort(ctx.chunks, {}, &Chunk<E>::sect_order);
 }
 
 template <typename E>

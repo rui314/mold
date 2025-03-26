@@ -213,9 +213,8 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx,
     });
 
     // Sort symbols added to the thunk to make the output deterministic.
-    sort(thunk.symbols, [](Symbol<E> *a, Symbol<E> *b) {
-      return std::tuple{a->file->priority, a->sym_idx} <
-             std::tuple{b->file->priority, b->sym_idx};
+    ranges::sort(thunk.symbols, {}, [](Symbol<E> *x) {
+      return std::tuple{x->file->priority, x->sym_idx};
     });
 
     // Now that we know the number of symbols in the thunk, we can compute
@@ -262,8 +261,8 @@ void gather_thunk_addresses(Context<E> &ctx) {
     if (OutputSection<E> *osec = chunk->to_osec())
       sections.push_back(osec);
 
-  sort(sections, [](OutputSection<E> *a, OutputSection<E> *b) {
-    return a->shdr.sh_addr < b->shdr.sh_addr;
+  ranges::stable_sort(sections, {}, [](OutputSection<E> *x) {
+    return x->shdr.sh_addr;
   });
 
   for (OutputSection<E> *osec : sections) {
