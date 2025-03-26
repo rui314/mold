@@ -355,7 +355,7 @@ static i64 parse_hex(Context<E> &ctx, std::string opt, std::string_view value) {
   static std::regex re(R"((?:0x|0X)?([0-9a-fA-F]+))", flags);
 
   std::cmatch m;
-  if (!std::regex_match(value.data(), value.end(), m, re))
+  if (!std::regex_match(value.data(), value.data() + value.size(), m, re))
     Fatal(ctx) << "option -" << opt << ": not a hexadecimal number";
   return std::stoul(m[1], nullptr, 16);
 }
