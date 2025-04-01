@@ -1598,8 +1598,7 @@ template <typename E>
 i64 get_r_delta(InputSection<E> &isec, u64 offset);
 
 template <typename E>
-i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
-                     InputSection<E> &isec, const ElfRel<E> &rel);
+i64 compute_distance(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel, u64 P);
 
 //
 // gc-sections.cc

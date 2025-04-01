@@ -854,6 +854,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+    u64 P = isec.get_addr() + r.r_offset - r_delta;
 
     auto remove = [&](i64 d) {
       r_delta += d;
@@ -868,7 +869,6 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
     if (r.r_type == R_RISCV_ALIGN) {
       // The total bytes of NOPs is stored to r_addend, so the next
       // instruction is r_addend away.
-      u64 P = isec.get_addr() + r.r_offset - r_delta;
       u64 desired = align_to(P, bit_ceil(r.r_addend));
       u64 actual = P + r.r_addend;
       if (desired != actual)
@@ -895,7 +895,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       // These relocations refer to an AUIPC + JALR instruction pair to
       // allow to jump to anywhere in PC ± 2 GiB. If the jump target is
       // close enough to PC, we can use C.J, C.JAL or JAL instead.
-      i64 dist = compute_distance(ctx, sym, isec, r);
+      i64 dist = compute_distance(ctx, sym, r, P);
       if (dist & 1)
         break;
 
