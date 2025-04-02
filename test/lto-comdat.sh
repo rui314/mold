@@ -2,6 +2,7 @@
 . $(dirname $0)/common.inc
 
 [ $MACHINE = $(uname -m) ] || skip
+echo 'int main() {}' | clang -B. -flto -o /dev/null -xc - || skip
 
 echo '' | clang -S -emit-llvm -flto -o $t/a.ll -xc - || skip
 
