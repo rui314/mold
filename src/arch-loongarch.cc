@@ -404,7 +404,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         //   pcalau12i $t0, 0
         //   addi.d    $t0, $t0, 0
         if (is_relaxable_got_load(ctx, *this, i)) {
-          i64 dist = compute_distance(ctx, sym, rel, P);
+          i64 dist = compute_distance(ctx, sym, *this, rel);
           if (is_int(dist, 32)) {
             u32 rd = get_rd(*(ul32 *)loc);
             *(ul32 *)(loc + 4) = 0x02c0'0000 | (rd << 5) | rd; // addi.d
@@ -861,7 +861,6 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
     Symbol<E> &sym = *isec.file.symbols[r.r_sym];
-    u64 P = isec.get_addr() + r.r_offset - r_delta;
 
     auto remove = [&](i64 d) {
       r_delta += d;
@@ -891,6 +890,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
         alignment = r.r_addend + 4;
       }
 
+      u64 P = isec.get_addr() + r.r_offset - r_delta;
       u64 desired = align_to(P, alignment);
       u64 actual = P + alignment - 4;
       if (desired != actual)
@@ -941,7 +941,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
           rels[i + 2].r_type == R_LARCH_PCALA_LO12 &&
           rels[i + 2].r_offset == rels[i].r_offset + 4 &&
           rels[i + 3].r_type == R_LARCH_RELAX) {
-        i64 dist = compute_distance(ctx, sym, r, P);
+        i64 dist = compute_distance(ctx, sym, isec, r);
         u32 insn1 = *(ul32 *)(buf + rels[i].r_offset);
         u32 insn2 = *(ul32 *)(buf + rels[i].r_offset + 4);
         bool is_addi_d = (insn2 & 0xffc0'0000) == 0x02c0'0000;
@@ -961,7 +961,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       //
       // If the displacement is PC ± 128 MiB, we can use B or BL instead.
       // Note that $zero is $r0 and $ra is $r1.
-      if (i64 dist = compute_distance(ctx, sym, r, P);
+      if (i64 dist = compute_distance(ctx, sym, isec, r);
           is_int(dist, 28))
         if (u32 jirl = *(ul32 *)(buf + rels[i].r_offset + 4);
             get_rd(jirl) == 0 || get_rd(jirl) == 1)
@@ -979,12 +979,13 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       //
       //   pcaddi    $t0, <offset>
       if (is_relaxable_got_load(ctx, isec, i))
-        if (i64 dist = compute_distance(ctx, sym, r, P);
+        if (i64 dist = compute_distance(ctx, sym, isec, r);
             is_int(dist, 22))
           remove(4);
       break;
     case R_LARCH_TLS_DESC_PC_HI20:
       if (sym.has_tlsdesc(ctx)) {
+        u64 P = isec.get_addr() + r.r_offset;
         i64 dist = sym.get_tlsdesc_addr(ctx) + r.r_addend - P;
         if (is_int(dist, 22))
           remove(4);

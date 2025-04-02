@@ -112,7 +112,8 @@ void shrink_sections(Context<E> &ctx) {
 
 // Returns the distance between a relocated place and a symbol.
 template <>
-i64 compute_distance(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel, u64 P) {
+i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
+                     InputSection<E> &isec, const ElfRel<E> &rel) {
   // We handle absolute symbols as if they were infinitely far away
   // because `shrink_section` may increase a distance between a branch
   // instruction and an absolute symbol. Branching to an absolute
@@ -127,6 +128,7 @@ i64 compute_distance(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel, u64 
   // Compute a distance between the relocated place and the symbol.
   i64 S = sym.get_addr(ctx);
   i64 A = rel.r_addend;
+  i64 P = isec.get_addr() + rel.r_offset;
   return S + A - P;
 }
 
