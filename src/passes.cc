@@ -1059,7 +1059,8 @@ void check_duplicate_symbols(Context<E> &ctx) {
           continue;
       }
 
-      // Skip if the symbol is a comdat symbol that is in an IR file.
+      // Skip if the symbol is a deduplicated comdat symbol that is in
+      // an IR file.
       if (file->is_lto_obj)
         if (ComdatGroup *g = file->lto_comdat_groups[i])
           if (g->owner != file->priority)
