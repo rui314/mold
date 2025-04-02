@@ -1444,6 +1444,7 @@ public:
 
   // For LTO
   std::vector<ElfSym<E>> lto_elf_syms;
+  std::vector<ComdatGroup *> lto_comdat_groups;
 
 private:
   void initialize_sections(Context<E> &ctx);
@@ -2506,6 +2507,9 @@ Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
 
 template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view name);
+
+template <typename E>
+ComdatGroup *insert_comdat_group(Context<E> &ctx, std::string_view name);
 
 template <typename E>
 std::string_view demangle(const Symbol<E> &sym);

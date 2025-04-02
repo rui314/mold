@@ -288,9 +288,13 @@ void resolve_symbols(Context<E> &ctx) {
     // we could eliminate a symbol that is already resolved to and cause
     // dangling references.
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      if (file->is_reachable)
+      if (file->is_reachable) {
         for (ComdatGroupRef<E> &ref : file->comdat_groups)
           update_minimum(ref.group->owner, file->priority);
+        for (ComdatGroup *g : file->lto_comdat_groups)
+          if (g)
+            update_minimum(g->owner, file->priority);
+      }
     });
 
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
@@ -1054,6 +1058,12 @@ void check_duplicate_symbols(Context<E> &ctx) {
         if (!isec || !isec->is_alive)
           continue;
       }
+
+      // Skip if the symbol is a comdat symbol that is in an IR file.
+      if (file->is_lto_obj)
+        if (ComdatGroup *g = file->lto_comdat_groups[i])
+          if (g->owner != file->priority)
+            continue;
 
       Error(ctx) << "duplicate symbol: " << *file << ": " << *sym.file
                  << ": " << sym;

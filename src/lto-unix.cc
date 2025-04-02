@@ -654,6 +654,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
 
   // Initialize esyms
   obj->lto_elf_syms.resize(plugin_symbols.size() + 1);
+  obj->lto_comdat_groups.resize(plugin_symbols.size() + 1);
   i64 strtab_offset = 1;
 
   for (i64 i = 0; i < plugin_symbols.size(); i++) {
@@ -664,6 +665,13 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
     i64 len = strlen(psym.name);
     memcpy(strtab.data() + strtab_offset, psym.name, len);
     strtab_offset += len + 1;
+
+    // comdat_key is non-null if the symbol is defined in a comdat member
+    // section. We handle such symbols differently than comdat symbols in
+    // a regular file because, unlike regular object files, IR files don't
+    // have input sections.
+    if (psym.comdat_key)
+      obj->lto_comdat_groups[i + 1] = insert_comdat_group(ctx, psym.comdat_key);
   }
 
   obj->symbol_strtab = save_string(ctx, strtab);
