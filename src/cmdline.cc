@@ -717,6 +717,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n"
                << "   shelf_linux\n   elf64loongarch\n   elf32loongarch";
       version_shown = true;
+    } else if (read_arg("mllvm")) {
+      ctx.arg.plugin_opt.emplace_back(arg);
     } else if (read_arg("m")) {
       if (arg == "elf_x86_64") {
         ctx.arg.emulation = X86_64::name;
