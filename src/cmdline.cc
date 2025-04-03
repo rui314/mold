@@ -1348,6 +1348,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_z_arg("common-page-size")) {
     } else if (read_flag("no-keep-memory")) {
     } else if (read_arg("max-cache-size")) {
+    } else if (read_flag("mmap-output-file")) {
     } else if (read_flag("no-mmap-output-file")) {
     } else if (read_arg("version-script")) {
       version_scripts.push_back(arg);
