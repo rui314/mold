@@ -655,6 +655,12 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   for (std::string_view str : ctx.arg.auxiliary)
     define(DT_AUXILIARY, ctx.dynstr->find_string(str));
 
+  if (!ctx.arg.audit.empty())
+    define(DT_AUDIT, ctx.dynstr->find_string(ctx.arg.audit));
+
+  if (!ctx.arg.depaudit.empty())
+    define(DT_DEPAUDIT, ctx.dynstr->find_string(ctx.arg.depaudit));
+
   for (std::string_view str : ctx.arg.filter)
     define(DT_FILTER, ctx.dynstr->find_string(str));
 

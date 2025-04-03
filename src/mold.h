@@ -1476,6 +1476,7 @@ public:
   std::span<Symbol<E> *> get_symbols_at(Symbol<E> *sym);
   i64 get_alignment(Symbol<E> *sym);
   std::vector<std::string_view> get_dt_needed(Context<E> &ctx);
+  std::string_view get_dt_audit(Context<E> &ctx);
   bool is_readonly(Symbol<E> *sym);
 
   void mark_live_objects(Context<E> &ctx,
@@ -1678,6 +1679,7 @@ template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> void sort_ctor_dtor(Context<E> &);
 template <typename E> void fixup_ctors_in_init_array(Context<E> &);
 template <typename E> void shuffle_sections(Context<E> &);
+template <typename E> void add_dynamic_strings(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
 template <typename E> void sort_output_sections(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
@@ -2039,8 +2041,11 @@ struct Context {
     i64 z_stack_size = 0;
     std::optional<Glob> unique;
     std::optional<u64> physical_image_base;
+    std::optional<std::vector<Symbol<E> *>> retain_symbols_file;
     std::string Map;
+    std::string audit;
     std::string chroot;
+    std::string depaudit;
     std::string dependency_file;
     std::string directory;
     std::string dynamic_linker;
@@ -2052,7 +2057,6 @@ struct Context {
     std::string soname;
     std::string sysroot;
     std::string_view emulation;
-    std::optional<std::vector<Symbol<E> *>> retain_symbols_file;
     std::unordered_map<std::string_view, u64> section_align;
     std::unordered_map<std::string_view, u64> section_start;
     std::unordered_set<std::string_view> discard_section;

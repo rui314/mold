@@ -1319,6 +1319,21 @@ std::vector<std::string_view> SharedFile<E>::get_dt_needed(Context<E> &ctx) {
   return vec;
 }
 
+template <typename E>
+std::string_view SharedFile<E>::get_dt_audit(Context<E> &ctx) {
+  ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC);
+  if (!sec)
+    return "";
+
+  std::span<ElfDyn<E>> dynamic = this->template get_data<ElfDyn<E>>(ctx, *sec);
+  std::string_view strtab = this->get_string(ctx, sec->sh_link);
+
+  for (ElfDyn<E> &dyn : dynamic)
+    if (dyn.d_tag == DT_AUDIT)
+      return strtab.data() + dyn.d_val;
+  return "";
+}
+
 // Symbol versioning is a GNU extension to the ELF file format. I don't
 // particularly like the feature as it complicates the semantics of
 // dynamic linking, but we need to support it anyway because it is

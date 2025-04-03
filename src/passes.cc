@@ -1368,6 +1368,36 @@ void shuffle_sections(Context<E> &ctx) {
 }
 
 template <typename E>
+void add_dynamic_strings(Context<E> &ctx) {
+  for (SharedFile<E> *file : ctx.dsos) {
+    std::string s = std::string(file->get_dt_audit(ctx));
+    if (!s.empty()) {
+      if (ctx.arg.depaudit.empty())
+        ctx.arg.depaudit = s;
+      else
+        ctx.arg.depaudit += ":" + s;
+    }
+  }
+
+  auto add = [&](std::string_view s) {
+    if (!s.empty())
+      ctx.dynstr->add_string(s);
+  };
+
+  for (SharedFile<E> *file : ctx.dsos)
+    add(file->soname);
+  for (std::string_view str : ctx.arg.auxiliary)
+    add(str);
+  for (std::string_view str : ctx.arg.filter)
+    add(str);
+
+  add(ctx.arg.audit);
+  add(ctx.arg.depaudit);
+  add(ctx.arg.rpaths);
+  add(ctx.arg.soname);
+}
+
+template <typename E>
 void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
@@ -3360,6 +3390,7 @@ template void sort_init_fini(Context<E> &);
 template void sort_ctor_dtor(Context<E> &);
 template void fixup_ctors_in_init_array(Context<E> &);
 template void shuffle_sections(Context<E> &);
+template void add_dynamic_strings(Context<E> &);
 template void compute_section_sizes(Context<E> &);
 template void sort_output_sections(Context<E> &);
 template void claim_unresolved_symbols(Context<E> &);

@@ -480,16 +480,7 @@ int mold_main(int argc, char **argv) {
     shuffle_sections(ctx);
 
   // Copy string referred by .dynamic to .dynstr.
-  for (SharedFile<E> *file : ctx.dsos)
-    ctx.dynstr->add_string(file->soname);
-  for (std::string_view str : ctx.arg.auxiliary)
-    ctx.dynstr->add_string(str);
-  for (std::string_view str : ctx.arg.filter)
-    ctx.dynstr->add_string(str);
-  if (!ctx.arg.rpaths.empty())
-    ctx.dynstr->add_string(ctx.arg.rpaths);
-  if (!ctx.arg.soname.empty())
-    ctx.dynstr->add_string(ctx.arg.soname);
+  add_dynamic_strings(ctx);
 
   if constexpr (is_ppc64v1<E>)
     ppc64v1_scan_symbols(ctx);

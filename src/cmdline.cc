@@ -41,6 +41,8 @@ Options:
   -N, --omagic                Do not page align data; do not make text readonly
     --no-omagic
   -O NUMBER                   Ignored
+  -P AUDITLIB, --depaudit AUDITLIB
+                              Set DT_DEPAUDIT to the specified value
   -S, --strip-debug           Strip .debug_* sections
   -T FILE, --script FILE      Read linker script
   -X, --discard-locals        Discard temporary local symbols
@@ -76,6 +78,7 @@ Options:
     --no-apply-dynamic-relocs
   --as-needed                 Only set DT_NEEDED if used
     --no-as-needed
+  --audit LIBNAME             Set DT_AUDIT to the specified value
   --build-id [none,md5,sha1,sha256,fast,uuid,HEXSTRING]
                               Generate build ID
     --no-build-id
@@ -892,6 +895,16 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       }
     } else if (read_arg("soname") || read_arg("h")) {
       ctx.arg.soname = arg;
+    } else if (read_arg("audit")) {
+      if (ctx.arg.audit.empty())
+        ctx.arg.audit = arg;
+      else
+        ctx.arg.audit += ":" + std::string(arg);
+    } else if (read_arg("depaudit") || read_arg("P")) {
+      if (ctx.arg.depaudit.empty())
+        ctx.arg.depaudit = arg;
+      else
+        ctx.arg.depaudit += ":" + std::string(arg);
     } else if (read_flag("allow-multiple-definition")) {
       ctx.arg.allow_multiple_definition = true;
     } else if (read_flag("apply-dynamic-relocs")) {

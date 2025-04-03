@@ -285,6 +285,8 @@ enum : u32 {
   DT_RELR = 36,
   DT_RELRENT = 37,
   DT_GNU_HASH = 0x6ffffef5,
+  DT_DEPAUDIT = 0x6ffffefb,
+  DT_AUDIT = 0x6ffffefc,
   DT_VERSYM = 0x6ffffff0,
   DT_RELACOUNT = 0x6ffffff9,
   DT_RELCOUNT = 0x6ffffffa,
