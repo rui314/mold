@@ -653,6 +653,11 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     return false;
   };
 
+  auto read_next = [&]() {
+    args = args.subspan(1);
+    return true;
+  };
+
   auto read_flag = [&](std::string name) {
     for (const std::string &opt : add_dashes(name)) {
       if (args[0] == opt) {
@@ -761,6 +766,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.emulation = LOONGARCH64::name;
       } else if (arg == "elf32loongarch") {
         ctx.arg.emulation = LOONGARCH32::name;
+      } else if (arg == "llvm") {
+        // ignored for compatibility
+        read_next();
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }
