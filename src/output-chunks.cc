@@ -865,6 +865,7 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
     std::span<InputSection<E> *> members;
     i64 size = 0;
     i64 offset = 0;
+    i64 align = 1;
   };
 
   std::vector<Group> groups;
@@ -876,26 +877,28 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
     m = m.subspan(sz);
   }
 
-  tbb::parallel_for_each(groups, [](Group &group) {
+  tbb::parallel_for_each(groups, [](Group &g) {
     i64 off = 0;
-    for (InputSection<E> *isec : group.members)
+    for (InputSection<E> *isec : g.members) {
       off = align_to(off, 1 << isec->p2align) + isec->sh_size;
-    group.size = off;
+      g.align = std::max<i64>(g.align, 1 << isec->p2align);
+    }
+    g.size = off;
   });
 
   i64 off = 0;
-  for (i64 i = 0; i < groups.size(); i++) {
-    off = align_to(off, shdr.sh_addralign);
-    groups[i].offset = off;
-    off += groups[i].size;
+  for (Group &g : groups) {
+    off = align_to(off, g.align);
+    g.offset = off;
+    off += g.size;
   }
 
   shdr.sh_size = off;
 
   // Assign offsets to input sections.
-  tbb::parallel_for_each(groups, [](Group &group) {
-    i64 off = group.offset;
-    for (InputSection<E> *isec : group.members) {
+  tbb::parallel_for_each(groups, [](Group &g) {
+    i64 off = g.offset;
+    for (InputSection<E> *isec : g.members) {
       off = align_to(off, 1 << isec->p2align);
       isec->offset = off;
       off += isec->sh_size;
@@ -932,7 +935,7 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
       P -= delta;
     }
 
-    auto dynrel = [&](i64 ty, i64 idx, u64 val) {
+    auto write = [&](i64 ty, i64 idx, u64 val) {
       *rel++ = ElfRel<E>(P, ty, idx, val);
       if (ctx.arg.apply_dynamic_relocs)
         *(Word<E> *)loc = val;
@@ -944,14 +947,14 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
       *(Word<E> *)loc = S + A;
       break;
     case ABS_REL_BASEREL:
-      dynrel(E::R_RELATIVE, 0, S + A);
+      write(E::R_RELATIVE, 0, S + A);
       break;
     case ABS_REL_IFUNC:
       if constexpr (supports_ifunc<E>)
-        dynrel(E::R_IRELATIVE, 0, sym.get_addr(ctx, NO_PLT) + A);
+        write(E::R_IRELATIVE, 0, sym.get_addr(ctx, NO_PLT) + A);
       break;
     case ABS_REL_DYNREL:
-      dynrel(E::R_ABS, sym.get_dynsym_idx(ctx), A);
+      write(E::R_ABS, sym.get_dynsym_idx(ctx), A);
       break;
     }
   }
@@ -1423,23 +1426,20 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
                        ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
                        ent.val);
 
-    // A single TLSDESC relocation fixes two consecutive GOT slots
-    // where one slot holds a function pointer and the other an
-    // argument to the function. An addend should be applied not to
-    // the function pointer but to the function argument, which is
-    // usually stored to the second slot.
-    //
-    // ARM32 employs the inverted layout for some reason, so an
-    // addend is applied to the first slot.
-    bool is_tlsdesc = false;
-    if constexpr (supports_tlsdesc<E> && !is_arm32<E>)
-      is_tlsdesc = (ent.r_type == E::R_TLSDESC);
-
     if (ctx.arg.apply_dynamic_relocs) {
-      if (is_tlsdesc)
-        buf[ent.idx + 1] = ent.val;
-      else
-        buf[ent.idx] = ent.val;
+      // A single TLSDESC relocation fixes two consecutive GOT slots
+      // where one slot holds a function pointer and the other an
+      // argument to the function. An addend should be applied not to
+      // the function pointer but to the function argument, which is
+      // usually stored to the second slot.
+      //
+      // ARM32 employs the inverted layout for some reason, so an
+      // addend is applied to the first slot.
+      i64 i = ent.idx;
+      if constexpr (supports_tlsdesc<E> && !is_arm32<E>)
+        if (ent.r_type == E::R_TLSDESC)
+          i = ent.idx + 1;
+      buf[i] = ent.val;
     }
   }
 }
@@ -1721,8 +1721,9 @@ static u64 get_symbol_size(Symbol<E> &sym) {
   if constexpr (is_riscv<E> || is_loongarch<E>)
     if (esym.st_size)
       if (InputSection<E> *isec = sym.get_input_section())
-        return esym.st_size + esym.st_value - sym.value -
-               get_r_delta(*isec, esym.st_value + esym.st_size);
+        if (isec->shdr().sh_flags & SHF_EXECINSTR)
+          return esym.st_size + esym.st_value - sym.value -
+                 get_r_delta(*isec, esym.st_value + esym.st_size);
   return esym.st_size;
 }
 

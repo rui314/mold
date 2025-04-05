@@ -896,15 +896,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("soname") || read_arg("h")) {
       ctx.arg.soname = arg;
     } else if (read_arg("audit")) {
-      if (ctx.arg.audit.empty())
-        ctx.arg.audit = arg;
-      else
-        ctx.arg.audit += ":" + std::string(arg);
+      if (!ctx.arg.audit.empty())
+        ctx.arg.audit += ':';
+      ctx.arg.audit += std::string(arg);
     } else if (read_arg("depaudit") || read_arg("P")) {
-      if (ctx.arg.depaudit.empty())
-        ctx.arg.depaudit = arg;
-      else
-        ctx.arg.depaudit += ":" + std::string(arg);
+      if (!ctx.arg.depaudit.empty())
+        ctx.arg.depaudit += ':';
+      ctx.arg.depaudit += std::string(arg);
     } else if (read_flag("allow-multiple-definition")) {
       ctx.arg.allow_multiple_definition = true;
     } else if (read_flag("apply-dynamic-relocs")) {

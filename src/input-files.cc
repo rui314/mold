@@ -409,7 +409,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
 
       // Ignore section is specified by --discard-section.
-      if (ctx.arg.discard_section.contains(name))
+      if (!ctx.arg.discard_section.empty() &&
+          ctx.arg.discard_section.contains(name))
         continue;
 
       if (name == ".comment" &&
@@ -594,6 +595,8 @@ void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
       i64 cie_offset = *(I32<E> *)(contents.data() + fdes[i].input_offset + 4);
       fdes[i].cie_idx = find_cie(fdes[i].input_offset + 4 - cie_offset);
     }
+
+    isec->is_alive = false;
   }
 
   auto get_isec = [&](const FdeRecord<E> &fde) {

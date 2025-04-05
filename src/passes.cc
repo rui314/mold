@@ -378,9 +378,6 @@ void parse_eh_frame_sections(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->parse_ehframe(ctx);
-
-    for (InputSection<E> *isec : file->eh_frame_sections)
-      isec->is_alive = false;
   });
 }
 
@@ -415,13 +412,9 @@ void convert_common_symbols(Context<E> &ctx) {
 
 template <typename E>
 static bool has_ctors_and_init_array(Context<E> &ctx) {
-  bool x = false;
-  bool y = false;
-  for (ObjectFile<E> *file : ctx.objs) {
-    x |= file->has_ctors;
-    y |= file->has_init_array;
-  }
-  return x && y;
+  return
+    ranges::any_of(ctx.objs, [](ObjectFile<E> *x) { return x->has_ctors; }) &&
+    ranges::any_of(ctx.objs, [](ObjectFile<E> *x) { return x->has_init_array; });
 }
 
 template <typename E>
@@ -444,7 +437,6 @@ static u64 canonicalize_type(std::string_view name, u64 type) {
   if constexpr (is_x86_64<E>)
     if (type == SHT_X86_64_UNWIND)
       return SHT_PROGBITS;
-
   return type;
 }
 
@@ -1370,12 +1362,11 @@ void shuffle_sections(Context<E> &ctx) {
 template <typename E>
 void add_dynamic_strings(Context<E> &ctx) {
   for (SharedFile<E> *file : ctx.dsos) {
-    std::string s = std::string(file->get_dt_audit(ctx));
+    std::string_view s = file->get_dt_audit(ctx);
     if (!s.empty()) {
-      if (ctx.arg.depaudit.empty())
-        ctx.arg.depaudit = s;
-      else
-        ctx.arg.depaudit += ":" + s;
+      if (!ctx.arg.depaudit.empty())
+        ctx.arg.depaudit += ':';
+      ctx.arg.depaudit += std::string(s);
     }
   }
 
@@ -1402,7 +1393,9 @@ void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
   if constexpr (needs_thunk<E>) {
-    auto tail = ranges::partition(ctx.chunks, [&](Chunk<E> *chunk) {
+    std::vector<Chunk<E> *> vec = ctx.chunks;
+
+    auto tail = ranges::partition(vec, [&](Chunk<E> *chunk) {
       return chunk->to_osec() && (chunk->shdr.sh_flags & SHF_EXECINSTR) &&
              !ctx.arg.relocatable;
     });
@@ -1411,7 +1404,7 @@ void compute_section_sizes(Context<E> &ctx) {
     for (Chunk<E> *chunk : std::span(vec.begin(), tail.begin()))
       chunk->to_osec()->create_range_extension_thunks(ctx, true);
 
-    tbb::parallel_for_each(tail.begin(), tail.end(), [&](Chunk<E> *chunk) {
+    tbb::parallel_for_each(tail, [&](Chunk<E> *chunk) {
       chunk->compute_section_size(ctx);
     });
   } else {
@@ -1773,29 +1766,26 @@ void sort_dynsyms(Context<E> &ctx) {
     return;
 
   // In any symtab, local symbols must precede global symbols.
-  auto first_global = std::stable_partition(syms.begin() + 1, syms.end(),
-                                            [&](Symbol<E> *sym) {
+  auto globals = ranges::stable_partition(syms.subspan(1), [&](Symbol<E> *sym) {
     return sym->is_local(ctx);
   });
 
   // .gnu.hash imposes more restrictions on the order of the symbols in
   // .dynsym.
   if (ctx.gnu_hash) {
-    auto first_exported = std::stable_partition(first_global, syms.end(),
-                                                [](Symbol<E> *sym) {
+    auto exported_syms = ranges::stable_partition(globals, [](Symbol<E> *sym) {
       return !sym->is_exported;
     });
 
     // Count the number of exported symbols to compute the size of .gnu.hash.
-    i64 num_exported = syms.end() - first_exported;
+    i64 num_exported = exported_syms.size();
     u32 num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
 
-    tbb::parallel_for_each(first_exported, syms.end(), [&](Symbol<E> *sym) {
+    tbb::parallel_for_each(exported_syms, [&](Symbol<E> *sym) {
       sym->set_djb_hash(ctx, djb_hash(sym->name()));
     });
 
-    tbb::parallel_sort(first_exported, syms.end(),
-                       [&](Symbol<E> *a, Symbol<E> *b) {
+    tbb::parallel_sort(exported_syms, [&](Symbol<E> *a, Symbol<E> *b) {
       return std::tuple(a->get_djb_hash(ctx) % num_buckets, a->name()) <
              std::tuple(b->get_djb_hash(ctx) % num_buckets, b->name());
     });
@@ -1816,7 +1806,7 @@ void sort_dynsyms(Context<E> &ctx) {
   ctx.dynstr->shdr.sh_size += size.combine(std::plus());
 
   // ELF's symbol table sh_info holds the offset of the first global symbol.
-  ctx.dynsym->shdr.sh_info = first_global - syms.begin();
+  ctx.dynsym->shdr.sh_info = globals.begin() - syms.begin();
 }
 
 template <typename E>
@@ -2709,11 +2699,10 @@ void separate_debug_sections(Context<E> &ctx) {
            chunk->name.starts_with(".debug_");
   };
 
-  auto mid = std::stable_partition(ctx.chunks.begin(), ctx.chunks.end(),
-                                   is_debug_section);
+  auto tail = ranges::stable_partition(ctx.chunks, std::not_fn(is_debug_section));
 
-  ctx.debug_chunks = {ctx.chunks.begin(), mid};
-  ctx.chunks.erase(ctx.chunks.begin(), mid);
+  ctx.debug_chunks = {tail.begin(), tail.end()};
+  ctx.chunks.erase(tail.begin(), tail.end());
 }
 
 template <typename E>

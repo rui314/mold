@@ -99,8 +99,9 @@ void shrink_sections(Context<E> &ctx) {
     for (Symbol<E> *sym : file->symbols)
       if (sym->file == file)
         if (InputSection<E> *isec = sym->get_input_section())
-          if (i64 delta = get_r_delta(*isec, sym->value))
-            sym->value -= delta;
+          if (isec->shdr().sh_flags & SHF_EXECINSTR)
+            if (i64 delta = get_r_delta(*isec, sym->value))
+              sym->value -= delta;
   });
 
   // Recompute sizes of executable sections
