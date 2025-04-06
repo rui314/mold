@@ -1305,8 +1305,8 @@ void fixup_ctors_in_init_array(Context<E> &ctx) {
           reverse_contents(*isec);
 }
 
-template <typename T>
-static void shuffle(std::vector<T> &vec, u64 seed) {
+template <typename E>
+static void shuffle(std::vector<InputSection<E> *> &vec, u64 seed) {
   if (vec.empty())
     return;
 
@@ -1402,18 +1402,16 @@ void compute_section_sizes(Context<E> &ctx) {
   Timer t(ctx, "compute_section_sizes");
 
   if constexpr (needs_thunk<E>) {
-    std::vector<Chunk<E> *> vec = ctx.chunks;
-
-    auto mid = std::partition(vec.begin(), vec.end(), [&](Chunk<E> *chunk) {
+    auto tail = ranges::partition(ctx.chunks, [&](Chunk<E> *chunk) {
       return chunk->to_osec() && (chunk->shdr.sh_flags & SHF_EXECINSTR) &&
              !ctx.arg.relocatable;
     });
 
     // create_range_extension_thunks is not thread-safe
-    for (Chunk<E> *chunk : std::span(vec.begin(), mid))
+    for (Chunk<E> *chunk : std::span(vec.begin(), tail.begin()))
       chunk->to_osec()->create_range_extension_thunks(ctx, true);
 
-    tbb::parallel_for_each(mid, vec.end(), [&](Chunk<E> *chunk) {
+    tbb::parallel_for_each(tail.begin(), tail.end(), [&](Chunk<E> *chunk) {
       chunk->compute_section_size(ctx);
     });
   } else {

@@ -332,6 +332,10 @@ int mold_main(int argc, char **argv) {
     });
   }
 
+  // Handle -repro
+  if (ctx.arg.repro)
+    write_repro_file(ctx);
+
   Timer t_before_copy(ctx, "before_copy");
 
   // Apply -exclude-libs
@@ -453,10 +457,6 @@ int mold_main(int argc, char **argv) {
   // Handle --print-dependencies
   if (ctx.arg.print_dependencies)
     print_dependencies(ctx);
-
-  // Handle -repro
-  if (ctx.arg.repro)
-    write_repro_file(ctx);
 
   // Handle --require-defined
   for (Symbol<E> *sym : ctx.arg.require_defined)
