@@ -57,6 +57,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_TLS_IE32:
   case R_ARM_TLS_LE32:
   case R_ARM_TLS_GOTDESC:
+  case R_ARM_TARGET1:
   case R_ARM_TARGET2:
     return (il32)*arm;
   case R_ARM_THM_JUMP8:
@@ -181,6 +182,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
   case R_ARM_TLS_IE32:
   case R_ARM_TLS_LE32:
   case R_ARM_TLS_GOTDESC:
+  case R_ARM_TARGET1:
   case R_ARM_TARGET2:
     *(ul32 *)loc = val;
     break;
@@ -315,6 +317,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
 
     switch (rel.r_type) {
     case R_ARM_ABS32:
+    case R_ARM_TARGET1:
       break;
     case R_ARM_REL32:
       *(ul32 *)loc = S + A - P;
@@ -644,6 +647,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       check_tlsle(ctx, sym, rel);
       break;
     case R_ARM_ABS32:
+    case R_ARM_TARGET1:
     case R_ARM_MOVT_ABS:
     case R_ARM_THM_MOVT_ABS:
     case R_ARM_REL32:

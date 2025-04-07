@@ -898,16 +898,6 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
   initialize_sections(ctx);
   initialize_symbols(ctx);
   sort_relocations(ctx);
-
-  // R_ARM_TARGET1 is typically used for entries in .init_array and may
-  // be interpreted as REL32 or ABS32 depending on the target.
-  // All targets we support handle it as if it were a ABS32.
-  if constexpr (is_arm32<E>)
-    for (std::unique_ptr<InputSection<E>> &isec : sections)
-      if (isec && isec->is_alive)
-        for (ElfRel<E> &r : isec->get_rels(ctx))
-          if (r.r_type == R_ARM_TARGET1)
-            r.r_type = R_ARM_ABS32;
 }
 
 // Symbols with higher priorities overwrites symbols with lower priorities.

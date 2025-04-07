@@ -1057,6 +1057,16 @@ static AbsRelKind get_abs_rel_kind(Context<E> &ctx, Symbol<E> &sym) {
   return ABS_REL_DYNREL;
 }
 
+template <typename E>
+static bool is_absrel(const ElfRel<E> &r) {
+  // On ARM32, R_ARM_TARGET1 is typically used for entries in .init_array
+  // and is interpreted as either ABS32 or REL32 depending on the target.
+  // All targets we support handle it as if it were a ABS32.
+  if constexpr (is_arm32<E>)
+    return r.r_type == E::R_ABS || r.r_type == R_ARM_TARGET1;
+  return r.r_type == E::R_ABS;
+}
+
 // Scan word-size absolute relocations (e.g. R_X86_64_64). This is
 // separated from scan_relocations() because only such relocations can
 // be promoted to dynamic relocations.
@@ -1068,7 +1078,7 @@ void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
     InputSection<E> *isec = members[i];
     for (const ElfRel<E> &r : isec->get_rels(ctx))
-      if (r.r_type == E::R_ABS)
+      if (is_absrel(r))
         shards[i].push_back(AbsRel<E>{isec, r.r_offset, isec->file.symbols[r.r_sym],
                                       get_addend(*isec, r)});
   });
