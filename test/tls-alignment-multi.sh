@@ -17,7 +17,7 @@ _Thread_local int x = 42;
 // .tbss
 __attribute__((aligned(64))) _Thread_local int y;
 
-void *test(void *) {
+void *test(void *unused) {
   printf("%p %lu", &y, (unsigned long)&y % 64);
   return NULL;
 }
