@@ -9,42 +9,39 @@
 # order to be triggered.
 
 cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
-#include <assert.h>
-#include <stdlib.h>
+#include <stdio.h>
 
 // .tdata
 _Thread_local int x = 42;
-// .tbss
-__attribute__ ((aligned(64)))
-_Thread_local int y = 0;
 
-void *verify(void *unused) {
-  assert((unsigned long)(&y) % 64 == 0);
+// .tbss
+__attribute__((aligned(64))) _Thread_local int y;
+
+void *test(void *) {
+  printf("%p %lu", &y, (unsigned long)&y % 64);
   return NULL;
 }
 EOF
 
 cat <<EOF | $CC -fPIC -c -o $t/b.o -xc -
+#include <stdio.h>
 #include <pthread.h>
 #include <dlfcn.h>
-#include <assert.h>
-void *(*verify)(void *);
 
 int main() {
-  void *handle = dlopen("a.so", RTLD_NOW);
-  assert(handle);
-  *(void**)(&verify) = dlsym(handle, "verify");
-  assert(verify);
+  void *handle = dlopen("c.so", RTLD_NOW);
+  void *(*test)(void *) = dlsym(handle, "test");
+  pthread_t th;
 
-  pthread_t thread;
+  test(NULL);
+  printf(" ");
 
-  verify(NULL);
-
-  pthread_create(&thread, NULL, verify, NULL);
-  pthread_join(thread, NULL);
+  pthread_create(&th, NULL, test, NULL);
+  pthread_join(th, NULL);
+  printf("\n");
 }
 EOF
 
-$CC -B. -shared -o $t/a.so $t/a.o
+$CC -B. -shared -o $t/c.so $t/a.o
 $CC -B. -ldl -pthread -o $t/exe $t/b.o -Wl,-rpath,$t
-$QEMU $t/exe
+$QEMU $t/exe | grep -E '^0x[0-9a-f]+ 0 0x[0-9a-f]+ 0$'
