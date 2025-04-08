@@ -912,6 +912,10 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
 //  7. Unclaimed (nonexistent) symbol
 //
 // Ties are broken by file priority.
+//
+// Note that the above priorities are based on heuristics and not on exact
+// science. We tried several different orders and settled on the current
+// one just because it avoids link errors in all programs we've tested.
 template <typename E>
 static u64 get_rank(InputFile<E> *file, const ElfSym<E> &esym, bool is_in_archive) {
   auto get_sym_rank = [&] {
@@ -1239,7 +1243,7 @@ std::string SharedFile<E>::get_soname(Context<E> &ctx) {
   if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC))
     for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
       if (dyn.d_tag == DT_SONAME)
-        return this->symbol_strtab.data() + dyn.d_val;
+        return this->get_string(ctx, sec->sh_link).data() + dyn.d_val;
 
   if (this->mf->given_fullpath)
     return this->filename;
@@ -1298,32 +1302,20 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
 template <typename E>
 std::vector<std::string_view> SharedFile<E>::get_dt_needed(Context<E> &ctx) {
-  ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC);
-  if (!sec)
-    return {};
-
-  std::span<ElfDyn<E>> dynamic = this->template get_data<ElfDyn<E>>(ctx, *sec);
-  std::string_view strtab = this->get_string(ctx, sec->sh_link);
-
   std::vector<std::string_view> vec;
-  for (ElfDyn<E> &dyn : dynamic)
-    if (dyn.d_tag == DT_NEEDED)
-      vec.push_back(strtab.data() + dyn.d_val);
+  if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC))
+    for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
+      if (dyn.d_tag == DT_NEEDED)
+        vec.push_back(this->get_string(ctx, sec->sh_link).data() + dyn.d_val);
   return vec;
 }
 
 template <typename E>
 std::string_view SharedFile<E>::get_dt_audit(Context<E> &ctx) {
-  ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC);
-  if (!sec)
-    return "";
-
-  std::span<ElfDyn<E>> dynamic = this->template get_data<ElfDyn<E>>(ctx, *sec);
-  std::string_view strtab = this->get_string(ctx, sec->sh_link);
-
-  for (ElfDyn<E> &dyn : dynamic)
-    if (dyn.d_tag == DT_AUDIT)
-      return strtab.data() + dyn.d_val;
+  if (ElfShdr<E> *sec = this->find_section(SHT_DYNAMIC))
+    for (ElfDyn<E> &dyn : this->template get_data<ElfDyn<E>>(ctx, *sec))
+      if (dyn.d_tag == DT_AUDIT)
+        return this->get_string(ctx, sec->sh_link).data() + dyn.d_val;
   return "";
 }
 

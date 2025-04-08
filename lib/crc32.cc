@@ -48,7 +48,7 @@ u32 compute_crc32(u32 crc, u8 *buf, i64 len) {
     len -= sz;
   }
 
-  tbb::parallel_for_each(shards.begin(), shards.end(), [](Shard &shard) {
+  tbb::parallel_for_each(shards, [](Shard &shard) {
     shard.crc = crc32(0, shard.buf, shard.len);
   });
 
