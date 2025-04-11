@@ -718,7 +718,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                << "   elf64briscv\n   elf32lriscv\n   elf32briscv\n"
                << "   elf32ppc\n   elf64ppc\n   elf64lppc\n   elf64_s390\n"
                << "   elf64_sparc\n   m68kelf\n   shlelf_linux\n"
-               << "   shelf_linux\n   elf64loongarch\n   elf32loongarch";
+               << "   shelf_linux\n   elf64loongarch\n   elf32loongarch\n"
+               << "   arclinux";
       version_shown = true;
     } else if (read_arg("mllvm")) {
       ctx.arg.plugin_opt.emplace_back(arg);
@@ -761,6 +762,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ctx.arg.emulation = LOONGARCH64::name;
       } else if (arg == "elf32loongarch") {
         ctx.arg.emulation = LOONGARCH32::name;
+      } else if (arg == "arclinux") {
+        ctx.arg.emulation = ARC::name;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }

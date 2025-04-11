@@ -28,6 +28,7 @@ struct SH4LE;
 struct SH4BE;
 struct LOONGARCH64;
 struct LOONGARCH32;
+struct ARC;
 
 template <typename E> struct ElfSym;
 template <typename E> struct ElfShdr;
@@ -88,6 +89,7 @@ enum : u32 {
   SHT_HIOS = 0x6fffffff,
   SHT_X86_64_UNWIND = 0x70000001,
   SHT_ARM_EXIDX = 0x70000001,
+  SHT_ARC_ATTRIBUTES = 0x70000001,
   SHT_ARM_ATTRIBUTES = 0x70000003,
   SHT_RISCV_ATTRIBUTES = 0x70000003,
   SHT_LOUSER = 0x80000000,
@@ -235,6 +237,7 @@ enum : u32 {
   EM_SPARC64 = 43,
   EM_X86_64 = 62,
   EM_AARCH64 = 183,
+  EM_ARC_COMPACT2 = 195,
   EM_RISCV = 243,
   EM_LOONGARCH = 258,
 };
@@ -1362,6 +1365,71 @@ enum : u32 {
   R_LARCH_TLS_DESC_PCREL20_S2 = 126,
 };
 
+enum : u32 {
+  R_ARC_8 = 1,
+  R_ARC_16 = 2,
+  R_ARC_24 = 3,
+  R_ARC_32 = 4,
+  R_ARC_N8 = 8,
+  R_ARC_N16 = 9,
+  R_ARC_N24 = 10,
+  R_ARC_N32 = 11,
+  R_ARC_SDA = 12,
+  R_ARC_SECTOFF = 13,
+  R_ARC_S21H_PCREL = 14,
+  R_ARC_S21W_PCREL = 15,
+  R_ARC_S25H_PCREL = 16,
+  R_ARC_S25W_PCREL = 17,
+  R_ARC_SDA32 = 18,
+  R_ARC_SDA_LDST = 19,
+  R_ARC_SDA_LDST1 = 20,
+  R_ARC_SDA_LDST2 = 21,
+  R_ARC_SDA16_LD = 22,
+  R_ARC_SDA16_LD1 = 23,
+  R_ARC_SDA16_LD2 = 24,
+  R_ARC_S13_PCREL = 25,
+  R_ARC_W = 26,
+  R_ARC_32_ME = 27,
+  R_ARC_32_ME_S = 105,
+  R_ARC_N32_ME = 28,
+  R_ARC_SECTOFF_ME = 29,
+  R_ARC_SDA32_ME = 30,
+  R_ARC_W_ME = 31,
+  R_ARC_SECTOFF_ME_1 = 41,
+  R_ARC_SECTOFF_ME_2 = 42,
+  R_ARC_SECTOFF_1 = 43,
+  R_ARC_SECTOFF_2 = 44,
+  R_ARC_SDA_12 = 45,
+  R_ARC_SDA16_ST2 = 48,
+  R_ARC_32_PCREL = 49,
+  R_ARC_PC32 = 50,
+  R_ARC_GOT32 = 59,
+  R_ARC_GOTPC32 = 51,
+  R_ARC_PLT32 = 52,
+  R_ARC_COPY = 53,
+  R_ARC_GLOB_DAT = 54,
+  R_ARC_JMP_SLOT = 55,
+  R_ARC_RELATIVE = 56,
+  R_ARC_GOTOFF = 57,
+  R_ARC_GOTPC = 58,
+  R_ARC_S21W_PCREL_PLT = 60,
+  R_ARC_S25H_PCREL_PLT = 61,
+  R_ARC_JLI_SECTOFF = 63,
+  R_ARC_TLS_DTPMOD = 66,
+  R_ARC_TLS_TPOFF = 68,
+  R_ARC_TLS_GD_GOT = 69,
+  R_ARC_TLS_GD_LD = 70,
+  R_ARC_TLS_GD_CALL = 71,
+  R_ARC_TLS_IE_GOT = 72,
+  R_ARC_TLS_DTPOFF = 67,
+  R_ARC_TLS_DTPOFF_S9 = 73,
+  R_ARC_TLS_LE_S9 = 74,
+  R_ARC_TLS_LE_32 = 75,
+  R_ARC_S25W_PCREL_PLT = 76,
+  R_ARC_S21H_PCREL_PLT = 77,
+  R_ARC_NPS_CMEM16 = 78,
+};
+
 // Returns true if a given relocation is of type used for direct
 // function call.
 template <typename E>
@@ -1825,6 +1893,7 @@ template <typename E> concept is_sh4le = std::same_as<E, SH4LE>;
 template <typename E> concept is_sh4be = std::same_as<E, SH4BE>;
 template <typename E> concept is_loongarch64 = std::same_as<E, LOONGARCH64>;
 template <typename E> concept is_loongarch32 = std::same_as<E, LOONGARCH32>;
+template <typename E> concept is_arc = std::same_as<E, ARC>;
 
 template <typename E> concept is_x86 = is_x86_64<E> || is_i386<E>;
 template <typename E> concept is_arm64 = is_arm64le<E> || is_arm64be<E>;
@@ -2226,6 +2295,29 @@ struct LOONGARCH32 {
   static constexpr u32 R_DTPMOD = R_LARCH_TLS_DTPMOD32;
   static constexpr u32 R_TLSDESC = R_LARCH_TLS_DESC32;
   static constexpr u32 R_FUNCALL[] = { R_LARCH_B26, R_LARCH_CALL36 };
+};
+
+struct ARC {
+  static constexpr std::string_view name = "arc";
+  static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
+  static constexpr bool is_rela = true;
+  static constexpr u32 page_size = 8192;
+  static constexpr u32 e_machine = EM_ARC_COMPACT2;
+  static constexpr u32 plt_hdr_size = 24;
+  static constexpr u32 plt_size = 16;
+  static constexpr u32 pltgot_size = 16;
+  static constexpr u8 filler[] = { 0, 0, 0, 0 };
+
+  static constexpr u32 R_COPY = R_ARC_COPY;
+  static constexpr u32 R_GLOB_DAT = R_ARC_GLOB_DAT;
+  static constexpr u32 R_JUMP_SLOT = R_ARC_JMP_SLOT;
+  static constexpr u32 R_ABS = R_ARC_32;
+  static constexpr u32 R_RELATIVE = R_ARC_RELATIVE;
+  static constexpr u32 R_DTPOFF = R_ARC_TLS_DTPOFF;
+  static constexpr u32 R_TPOFF = R_ARC_TLS_TPOFF;
+  static constexpr u32 R_DTPMOD = R_ARC_TLS_DTPMOD;
+  static constexpr u32 R_FUNCALL[] = { R_ARC_S25W_PCREL_PLT };
 };
 
 } // namespace mold

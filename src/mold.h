@@ -1809,6 +1809,12 @@ public:
 template <> u64 get_eflags(Context<PPC64V2> &ctx);
 
 //
+// arch-arc.cc
+//
+
+template <> u64 get_eflags(Context<ARC> &ctx);
+
+//
 // main.cc
 //
 
@@ -1928,7 +1934,7 @@ struct ContextExtras<SPARC64> {
 template <typename E>
 struct Context {
   Context() {
-    arg.entry = get_symbol(*this, "_start");
+    arg.entry = get_symbol(*this, is_arc<E> ? "__start" : "_start");
     arg.fini = get_symbol(*this, "_fini");
     arg.init = get_symbol(*this, "_init");
 

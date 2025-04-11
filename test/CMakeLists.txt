@@ -31,7 +31,7 @@ endif()
 if(MOLD_ENABLE_QEMU_TESTS)
   list(APPEND QEMU_ARCHS
     x86_64 i386 arm aarch64 aarch64_be ppc ppc64 ppc64le sparc64 sh4 sh4eb
-    s390x riscv64 riscv32 m68k loongarch64)
+    s390x riscv64 riscv32 m68k loongarch64 arc)
 
   LIST(APPEND TRIPLES
     x86_64-linux-gnu
@@ -49,7 +49,8 @@ if(MOLD_ENABLE_QEMU_TESTS)
     sh4aeb-linux-gnu
     riscv32-linux-gnu
     m68k-linux-gnu
-    loongarch64-linux-gnu)
+    loongarch64-linux-gnu
+    arc-linux-gnu)
 
   foreach(ARCH IN LISTS QEMU_ARCHS)
     find_program(HAS_qemu-${ARCH} qemu-${ARCH})
@@ -183,4 +184,8 @@ endif()
 
 if(${MACHINE} STREQUAL "loongarch64" OR (HAS_qemu-loongarch64 AND HAS_loongarch64-linux-gnu-gcc))
   add_target(loongarch64 loongarch64-linux-gnu)
+endif()
+
+if(${MACHINE} STREQUAL "arc" OR (HAS_qemu-loongarch64 AND HAS_arc-linux-gnu-gcc))
+  add_target(arc arc-linux-gnu)
 endif()

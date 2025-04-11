@@ -162,7 +162,7 @@ u64 get_tp_addr(const ElfPhdr<E> &phdr) {
     // and %a0/%a1 on s390x) refers to past the end of the TLS block for
     // historical reasons. TLVs are accessed with negative offsets from TP.
     return align_to(phdr.p_vaddr + phdr.p_memsz, phdr.p_align);
-  } else if constexpr (is_arm<E> || is_sh4<E>) {
+  } else if constexpr (is_arm<E> || is_sh4<E> || is_arc<E>) {
     // On ARM and SH4, the runtime appends two words at the beginning
     // of TLV template image when copying TLVs to the TLS block, so we need
     // to offset it.

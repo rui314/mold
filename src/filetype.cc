@@ -160,6 +160,8 @@ static std::string_view get_elf_type(u8 *buf) {
     return is_le ? SH4LE::name : SH4BE::name;
   case EM_LOONGARCH:
     return is_64 ? LOONGARCH64::name : LOONGARCH32::name;
+  case EM_ARC_COMPACT2:
+    return ARC::name;
   default:
     return "";
   }

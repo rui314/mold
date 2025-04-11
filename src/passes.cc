@@ -56,6 +56,8 @@ int redo_main(Context<E> &ctx, int argc, char **argv) {
     return mold_main<LOONGARCH32>(argc, argv);
   if (target == LOONGARCH64::name)
     return mold_main<LOONGARCH64>(argc, argv);
+  if (target == ARC::name)
+    return mold_main<ARC>(argc, argv);
   abort();
 }
 

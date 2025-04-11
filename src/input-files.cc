@@ -317,6 +317,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       }
     }
 
+    if constexpr (is_arc<E>)
+      if (shdr.sh_type == SHT_ARC_ATTRIBUTES)
+        continue;
+
     switch (shdr.sh_type) {
     case SHT_GROUP: {
       // Get the signature of this section group.
