@@ -230,6 +230,45 @@ static void mark_live_objects(Context<E> &ctx) {
   });
 }
 
+// Symbol resolution involving a default symbol version is tricky because
+// a symbol that provides the default version has two names by which it
+// can be referred. Specifically, a symbol `foo` with the default version
+// `VER1` can be referred to either as `foo` or `foo@VER1`. No other
+// symbols have two names like that.
+//
+// By default, we insert symbols with a default version without an at-sign
+// (i.e. `foo` instead of `foo@VER1`) into our internal symbol table.
+// Therefore, if the symbol is referenced with an at-sign (i.e.
+// `foo@VER1`), the reference fails to resolve. This function corrects
+// that error.
+//
+// In this function, we check all unresolved versioned symbols of the form
+// `foo@VER1` by removing the version part and see if `foo` has version
+// `VER1`. If it does, that's the symbol we are looking for.
+template <typename E>
+static void resolve_default_symver(Context<E> &ctx) {
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
+      const ElfSym<E> &esym = file->elf_syms[i];
+      Symbol<E> &sym = *file->symbols[i];
+
+      if (!sym.file && esym.is_undef() &&
+          file->has_symver[i - file->first_global]) {
+        std::string_view str = file->symbol_strtab.data() + esym.st_name;
+        i64 pos = str.find('@');
+        assert(pos != str.npos);
+
+        std::string_view name = str.substr(0, pos);
+        std::string_view ver = str.substr(pos + 1);
+
+        Symbol<E> *sym2 = get_symbol(ctx, name);
+        if (sym2->file && sym2->file->is_dso && sym2->get_version() == ver)
+          file->symbols[i] = sym2;
+      }
+    }
+  });
+}
+
 template <typename E>
 static void clear_symbols(Context<E> &ctx) {
   std::vector<InputFile<E> *> files;
@@ -268,6 +307,7 @@ void resolve_symbols(Context<E> &ctx) {
       file->resolve_symbols(ctx);
     });
 
+    resolve_default_symver(ctx);
     mark_live_objects(ctx);
 
     // Now that we know the exact set of input files that are to be
@@ -343,7 +383,6 @@ void do_lto(Context<E> &ctx) {
 
   // The compiler backend needs to know how symbols are resolved, so
   // compute symbol visibility, import/export bits, etc early.
-  mark_live_objects(ctx);
   apply_version_script(ctx);
   parse_symbol_version(ctx);
   compute_import_export(ctx);
@@ -1439,24 +1478,6 @@ void claim_unresolved_symbols(Context<E> &ctx) {
       if (sym.file)
         if (!sym.esym().is_undef() || sym.file->priority <= file->priority)
           continue;
-
-      // If a symbol name is in the form of "foo@version", search for
-      // symbol "foo" and check if the symbol has version "version".
-      if (file->has_symver[i - file->first_global]) {
-        std::string_view str = file->symbol_strtab.data() + esym.st_name;
-        i64 pos = str.find('@');
-        assert(pos != str.npos);
-
-        std::string_view name = str.substr(0, pos);
-        std::string_view ver = str.substr(pos + 1);
-
-        Symbol<E> *sym2 = get_symbol(ctx, name);
-        if (sym2->file && sym2->file->is_dso && sym2->get_version() == ver) {
-          file->symbols[i] = sym2;
-          sym2->is_imported = true;
-          continue;
-        }
-      }
 
       auto claim = [&](bool is_imported) {
         if (sym.is_traced)
