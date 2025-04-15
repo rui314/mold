@@ -2638,10 +2638,9 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   ctx.versym->contents.resize(ctx.dynsym->symbols.size(), VER_NDX_GLOBAL);
   ctx.versym->contents[0] = VER_NDX_LOCAL;
 
-  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++)
-    if (Symbol<E> &sym = *ctx.dynsym->symbols[i];
-        !sym.file->is_dso && sym.ver_idx != VER_NDX_UNSPECIFIED)
-      ctx.versym->contents[sym.get_dynsym_idx(ctx)] = sym.ver_idx;
+  for (Symbol<E> *sym : ctx.dynsym->symbols)
+    if (sym && !sym->file->is_dso && sym->ver_idx != VER_NDX_UNSPECIFIED)
+      ctx.versym->contents[sym->get_dynsym_idx(ctx)] = sym->ver_idx;
 
   // Allocate a buffer for .gnu.version_d and write to it
   contents.resize((sizeof(ElfVerdef<E>) + sizeof(ElfVerdaux<E>)) *
