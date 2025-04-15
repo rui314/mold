@@ -1985,7 +1985,7 @@ void parse_symbol_version(Context<E> &ctx) {
       // versioned symbol. Likewise, if `foo@VERSION` and `foo@@VERSION` are
       // defined, the default one takes precedence.
       Symbol<E> *sym2 = get_symbol(ctx, sym->name());
-      if (sym2->file == file &&
+      if (sym2 != sym && sym2->file == file &&
           !file->has_symver[sym2->sym_idx - file->first_global])
         if (sym2->ver_idx == ctx.default_version ||
             (sym2->ver_idx & ~VERSYM_HIDDEN) == (sym->ver_idx & ~VERSYM_HIDDEN))
