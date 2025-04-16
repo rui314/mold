@@ -195,7 +195,7 @@ dest=mold-$version-$arch-linux
 
 # We use the timestamp of the last Git commit as the file timestamp
 # for build artifacts.
-timestamp="$(git log -1 --format=%ci)"
+timestamp=$(git log -1 --format=%ct)
 
 # Build mold in a container.
 mkdir -p dist
@@ -203,6 +203,7 @@ mkdir -p dist
 podman run --arch $arch -it --rm --userns=host --pids-limit=-1 --network=none \
   -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" $image bash -c "
 set -e
+export SOURCE_DATE_EPOCH=$timestamp
 mkdir /build
 cd /build
 cmake -DCMAKE_BUILD_TYPE=Release -DMOLD_MOSTLY_STATIC=1 -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ /mold
@@ -212,7 +213,7 @@ cmake -DMOLD_USE_MOLD=1 .
 cmake --build . -j\$(nproc)
 ctest --output-on-failure -j\$(nproc)
 cmake --install . --prefix $dest --strip
-find $dest -print | xargs touch --no-dereference --date='$timestamp'
+find $dest -print | xargs touch --no-dereference --date='@$timestamp'
 find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /dist/$dest.tar.gz
 cp mold /dist
 sha256sum /dist/$dest.tar.gz
