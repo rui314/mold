@@ -247,25 +247,14 @@ static void mark_live_objects(Context<E> &ctx) {
 // `VER1`. If it does, that's the symbol we are looking for.
 template <typename E>
 static void resolve_default_symver(Context<E> &ctx) {
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
-      const ElfSym<E> &esym = file->elf_syms[i];
-      Symbol<E> &sym = *file->symbols[i];
+  std::vector<InputFile<E> *> files;
+  append(files, ctx.objs);
+  append(files, ctx.dsos);
 
-      if (!sym.file && esym.is_undef() &&
-          file->has_symver[i - file->first_global]) {
-        std::string_view str = file->symbol_strtab.data() + esym.st_name;
-        i64 pos = str.find('@');
-        assert(pos != str.npos);
-
-        std::string_view name = str.substr(0, pos);
-        std::string_view ver = str.substr(pos + 1);
-
-        Symbol<E> *sym2 = get_symbol(ctx, name);
-        if (sym2->file && sym2->file->is_dso && sym2->get_version() == ver)
-          file->symbols[i] = sym2;
-      }
-    }
+  tbb::parallel_for_each(files, [](InputFile<E> *file) {
+    for (Symbol<E> *&sym : file->get_global_syms())
+      if (sym->is_versioned_default)
+        sym = (Symbol<E> *)sym->origin;
   });
 }
 
@@ -1168,10 +1157,6 @@ template <typename E>
 void check_symbol_types(Context<E> &ctx) {
   Timer t(ctx, "check_symbol_types");
 
-  std::vector<InputFile<E> *> files;
-  append(files, ctx.objs);
-  append(files, ctx.dsos);
-
   auto canonicalize = [](u32 ty) -> u32 {
     if (ty == STT_GNU_IFUNC)
       return STT_FUNC;
@@ -1180,23 +1165,35 @@ void check_symbol_types(Context<E> &ctx) {
     return ty;
   };
 
-  tbb::parallel_for_each(files.begin(), files.end(), [&](InputFile<E> *file) {
+  auto check = [&](InputFile<E> &file, Symbol<E> &sym,
+                   const ElfSym<E> &esym1, const ElfSym<E> &esym2) {
+    if (sym.file && sym.file != &file &&
+        esym1.st_type != STT_NOTYPE && esym2.st_type != STT_NOTYPE &&
+        canonicalize(esym1.st_type) != canonicalize(esym2.st_type)) {
+      Warn(ctx) << "symbol type mismatch: " << sym << '\n'
+                << ">>> defined in " << *sym.file << " as "
+                << stt_to_string<E>(esym1.st_type) << '\n'
+                << ">>> defined in " << file << " as "
+                << stt_to_string<E>(esym2.st_type);
+    }
+  };
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++)
+      if (Symbol<E> *sym = file->symbols[i];
+          sym->file && sym->file != file)
+        check(*file, *sym, sym->esym(), file->elf_syms[i]);
+  });
+
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
     for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
-      Symbol<E> &sym = *file->symbols[i];
-      if (!sym.file || sym.file == file)
-        continue;
+      if (Symbol<E> *sym = file->symbols[i];
+          sym->file && sym->file != file)
+        check(*file, *sym, sym->esym(), file->elf_syms[i]);
 
-      const ElfSym<E> &esym1 = sym.esym();
-      const ElfSym<E> &esym2 = file->elf_syms[i];
-
-      if (esym1.st_type != STT_NOTYPE && esym2.st_type != STT_NOTYPE &&
-          canonicalize(esym1.st_type) != canonicalize(esym2.st_type)) {
-        Warn(ctx) << "symbol type mismatch: " << sym << '\n'
-                  << ">>> defined in " << *sym.file << " as "
-                  << stt_to_string<E>(esym1.st_type) << '\n'
-                  << ">>> defined in " << *file << " as "
-                  << stt_to_string<E>(esym2.st_type);
-      }
+      if (Symbol<E> *sym = file->symbols2[i])
+        if (sym->file && sym->file != file)
+          check(*file, *sym, sym->esym(), file->elf_syms[i]);
     }
   });
 }

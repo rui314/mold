@@ -999,6 +999,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     }
 
     std::scoped_lock lock(sym.mu);
+
     if (get_rank(this, esym, !this->is_reachable) < get_rank(sym)) {
       sym.file = this;
       sym.set_input_section(isec);
@@ -1006,6 +1007,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
       sym.sym_idx = i;
       sym.ver_idx = ctx.default_version;
       sym.is_weak = esym.is_weak();
+      sym.is_versioned_default = false;
     }
   }
 }
@@ -1273,23 +1275,48 @@ void SharedFile<E>::parse(Context<E> &ctx) {
     if (vers.empty() || esyms[i].is_undef())
       ver = VER_NDX_GLOBAL;
     else
-      ver = (vers[i] & ~VERSYM_HIDDEN);
+      ver = vers[i] & ~VERSYM_HIDDEN;
 
     if (ver == VER_NDX_LOCAL)
       continue;
 
-    std::string_view name = this->symbol_strtab.data() + esyms[i].st_name;
-    bool is_default = vers.empty() || !(vers[i] & VERSYM_HIDDEN);
-
     this->elf_syms2.push_back(esyms[i]);
     this->versyms.push_back(ver);
 
-    if (is_default) {
-      this->symbols.push_back(get_symbol(ctx, name));
-    } else {
-      std::string_view mangled_name = save_string(
+    std::string_view name = this->symbol_strtab.data() + esyms[i].st_name;
+
+    auto get_versioned_sym = [&] {
+      std::string_view key = save_string(
         ctx, std::string(name) + "@" + std::string(version_strings[ver]));
-      this->symbols.push_back(get_symbol(ctx, mangled_name, name));
+      return get_symbol(ctx, key, name);
+    };
+
+    // Symbol resolution involving symbol versioning is tricky because one
+    // symbol can be resolved with two different identifiers. Among
+    // symbols with the same name but different versions, one of them is
+    // always marked as the "default" one. This symbol is often denoted
+    // with two atsigns as `foo@@VERSION` and can be referred to either
+    // as `foo` or `foo@VERSION`. No other symbols have two names like that.
+    //
+    // On contrary, a versioned non-default symbol can be referred only
+    // with an explicit version suffix, e.g., `foo@VERSION`.
+    //
+    // Here is how we resolve versioned default symbols. We resolve `foo`
+    // and `foo@VERSION` as usual, but with information to forward
+    // references to `foo@VERSION` to `foo`. After name resolution, we
+    // visit all symbol references to redirect `foo@VERSION` to `foo`.
+    if (vers.empty() || ver == VER_NDX_GLOBAL) {
+      // Unversioned symbol
+      this->symbols.push_back(get_symbol(ctx, name));
+      this->symbols2.push_back(nullptr);
+    } else if (vers[i] & VERSYM_HIDDEN) {
+      // Versioned non-default symbol
+      this->symbols.push_back(get_versioned_sym());
+      this->symbols2.push_back(nullptr);
+    } else {
+      // Versioned default symbol
+      this->symbols.push_back(get_symbol(ctx, name));
+      this->symbols2.push_back(get_versioned_sym());
     }
   }
 
@@ -1396,6 +1423,22 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];
       sym.is_weak = true;
+      sym.is_versioned_default = false;
+    }
+
+    // A symbol with the default version is a special case because, unlike
+    // other symbols, the symbol can be referred by two names, `foo` and
+    // `foo@VERSION`. Here, we resolve `foo@VERSOIN` as a proxy of `foo`.
+    Symbol<E> *sym2 = this->symbols2[i];
+    if (sym2 && sym2 != &sym) {
+      std::scoped_lock lock2(sym2->mu);
+
+      if (get_rank(this, esym, false) < get_rank(*sym2)) {
+        sym2->file = this;
+        sym2->origin = (uintptr_t)&sym;
+        sym2->sym_idx = i;
+        sym2->is_versioned_default = true;
+      }
     }
   }
 }
