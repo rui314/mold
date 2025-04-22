@@ -22,8 +22,8 @@ void bar();
 int main() { bar(); }
 EOF
 
-$CC -B. -o $t/exe1 $t/c.o $t/b.so
+$CC -B. -o $t/exe1 $t/c.o $t/b.so -Wl,--allow-shlib-undefined
 readelf --dynamic $t/exe1 | grep 'Dependency audit library:..*/a.so'
 
-$CC -B. -o $t/exe2 $t/c.o $t/b.so -Wl,--depaudit=foo
+$CC -B. -o $t/exe2 $t/c.o $t/b.so -Wl,--depaudit=foo -Wl,--allow-shlib-undefined
 readelf --dynamic $t/exe2 | grep 'Dependency audit library:..*foo:.*/a.so'

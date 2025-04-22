@@ -215,14 +215,14 @@ static void mark_live_objects(Context<E> &ctx) {
   }
 
   std::vector<InputFile<E> *> roots;
+  append(roots, ctx.objs);
+  append(roots, ctx.dsos);
 
-  for (InputFile<E> *file : ctx.objs)
-    if (file->is_reachable)
-      roots.push_back(file);
+  for (InputFile<E> *file : roots)
+    if (!file->as_needed)
+      file->is_reachable = true;
 
-  for (InputFile<E> *file : ctx.dsos)
-    if (file->is_reachable)
-      roots.push_back(file);
+  std::erase_if(roots, [](InputFile<E> *file) { return !file->is_reachable; });
 
   tbb::parallel_for_each(roots, [&](InputFile<E> *file,
                                     tbb::feeder<InputFile<E> *> &feeder) {
@@ -1141,7 +1141,7 @@ void check_shlib_undefined(Context<E> &ctx) {
   // SharedFile<E>::mark_live_objects just for this pass. Therefore,
   // remove unneeded DSOs from the list now.
   for (SharedFile<E> *file : ctx.dsos)
-    file->is_reachable = false;
+    file->is_reachable = !file->as_needed;
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (Symbol<E> *sym : file->get_global_syms())

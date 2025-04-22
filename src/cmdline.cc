@@ -587,6 +587,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   bool warn_shared_textrel = false;
   bool error_unresolved_symbols = true;
   std::optional<SeparateCodeKind> z_separate_code;
+  std::optional<bool> allow_shlib_undefined;
   std::optional<bool> report_undefined;
   std::optional<bool> z_relro;
   std::optional<bool> z_dynamic_undefined_weak;
@@ -1303,9 +1304,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("filter") || read_arg("F")) {
       ctx.arg.filter.push_back(arg);
     } else if (read_flag("allow-shlib-undefined")) {
-      ctx.arg.allow_shlib_undefined = true;
+      allow_shlib_undefined = true;
     } else if (read_flag("no-allow-shlib-undefined")) {
-      ctx.arg.allow_shlib_undefined = false;
+      allow_shlib_undefined = false;
     } else if (read_arg("O")) {
     } else if (read_flag("EB")) {
     } else if (read_flag("EL")) {
@@ -1411,6 +1412,11 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (ctx.arg.pic)
     ctx.arg.image_base = 0;
+
+  if (allow_shlib_undefined)
+    ctx.arg.allow_shlib_undefined = *allow_shlib_undefined;
+  else
+    ctx.arg.allow_shlib_undefined = ctx.arg.shared;
 
   if (!report_undefined)
     report_undefined = !ctx.arg.shared;

@@ -44,8 +44,8 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, ReaderContext &rctx,
   ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, archive_name);
   ctx.obj_pool.emplace_back(file);
   file->priority = ctx.file_priority++;
-  file->is_reachable =
-    !rctx.in_lib && (archive_name.empty() || rctx.whole_archive);
+  file->as_needed =
+    rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
 
   rctx.tg->run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
@@ -65,8 +65,8 @@ static ObjectFile<E> *new_lto_obj(Context<E> &ctx, ReaderContext &rctx,
   ObjectFile<E> *file = read_lto_object(ctx, mf);
   file->priority = ctx.file_priority++;
   file->archive_name = archive_name;
-  file->is_reachable =
-    !rctx.in_lib && (archive_name.empty() || rctx.whole_archive);
+  file->as_needed =
+    rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
 
   if (ctx.arg.trace)
     Out(ctx) << "trace: " << *file;
@@ -81,7 +81,7 @@ new_shared_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
   SharedFile<E> *file = new SharedFile<E>(ctx, mf);
   ctx.dso_pool.emplace_back(file);
   file->priority = ctx.file_priority++;
-  file->is_reachable = !rctx.as_needed;
+  file->as_needed = rctx.as_needed;
 
   rctx.tg->run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)

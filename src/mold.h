@@ -1353,6 +1353,7 @@ public:
   std::string_view shstrtab;
   std::string_view symbol_strtab;
 
+  bool as_needed = false;
   bool has_init_array = false;
   bool has_ctors = false;
 
