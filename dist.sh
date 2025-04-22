@@ -126,10 +126,10 @@ RUN mkdir /build && \
   make install && \
   rm -rf /build
 
-# Build LLVM 19
+# Build LLVM 20
 RUN mkdir /build && \
   cd /build && \
-  wget -O- --no-check-certificate --progress=dot:mega https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-19.1.7.tar.gz | tar xzf - --strip-components=1 && \
+  wget -O- --no-check-certificate --progress=dot:mega https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-20.1.3.tar.gz | tar xzf - --strip-components=1 && \
   mkdir b && \
   cd b && \
   cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=clang ../llvm && \
