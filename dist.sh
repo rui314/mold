@@ -201,7 +201,7 @@ timestamp=$(git log -1 --format=%ct)
 mkdir -p dist
 
 podman run --arch $arch -it --rm --userns=host --pids-limit=-1 --network=none \
-  -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" $image bash -c "
+  --pull=never -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" $image bash -c "
 set -e
 export SOURCE_DATE_EPOCH=$timestamp
 mkdir /build
