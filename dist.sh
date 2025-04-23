@@ -213,7 +213,7 @@ cmake -DMOLD_USE_MOLD=1 .
 cmake --build . -j\$(nproc)
 ctest --output-on-failure -j\$(nproc)
 cmake --install . --prefix $dest --strip
-find $dest -print | xargs touch --no-dereference --date='@$timestamp'
+find $dest -print | xargs touch --no-dereference --date=@$timestamp
 find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /dist/$dest.tar.gz
 cp mold /dist
 sha256sum /dist/$dest.tar.gz
