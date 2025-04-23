@@ -200,8 +200,15 @@ timestamp=$(git log -1 --format=%ct)
 # Build mold in a container.
 mkdir -p dist
 
+# If the host is ARM64, `uname -m` in an ARM32 container running on it
+# reports it not as ARM32 but as ARM64, which confuses BLAKE3's cmake script
+# and erroneously enables NEON SIMD instructions. `setarch` can be used
+# to change the output of `uname -m`.
+[ $arch = arm ] && setarch='setarch linux32'
+
 podman run --arch $arch -it --rm --userns=host --pids-limit=-1 --network=none \
-  --pull=never -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" $image bash -c "
+  --pull=never -v "$(pwd):/mold:ro" -v "$(pwd)/dist:/dist" $image \
+   $setarch bash -c "
 set -e
 export SOURCE_DATE_EPOCH=$timestamp
 mkdir /build
