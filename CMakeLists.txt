@@ -62,7 +62,11 @@ endif()
 # Build mold itself using mold if -DMOLD_USE_MOLD=ON
 option(MOLD_USE_MOLD "Use mold to build mold" OFF)
 if(MOLD_USE_MOLD)
-  target_link_options(mold PRIVATE -fuse-ld=mold -Wl,--gdb-index)
+  target_link_options(mold PRIVATE -fuse-ld=mold)
+
+  if(CMAKE_BUILD_TYPE MATCHES "Deb")
+    target_link_options(mold PRIVATE -Wl,--gdb-index)
+  endif()
 
   if(CMAKE_BUILD_TYPE MATCHES "^Rel")
     target_link_options(mold PRIVATE -Wl,--gc-sections,--icf=safe)
