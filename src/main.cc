@@ -496,7 +496,7 @@ int mold_main(int argc, char **argv) {
   // create as few segments as possible.
   sort_output_sections(ctx);
 
-  if (!ctx.arg.separate_debug_file.empty())
+  if (ctx.gnu_debuglink)
     separate_debug_sections(ctx);
 
   // Compute sizes of output sections while assigning offsets
@@ -612,7 +612,7 @@ int mold_main(int argc, char **argv) {
   // .gdb_index's contents cannot be constructed before applying
   // relocations to other debug sections. We have relocated debug
   // sections now, so write the .gdb_index section.
-  if (ctx.gdb_index && ctx.arg.separate_debug_file.empty())
+  if (ctx.gdb_index && !ctx.gnu_debuglink)
     write_gdb_index(ctx);
 
   // .note.gnu.build-id section contains a cryptographic hash of the
@@ -621,7 +621,7 @@ int mold_main(int argc, char **argv) {
   if (ctx.buildid)
     write_build_id(ctx);
 
-  if (!ctx.arg.separate_debug_file.empty())
+  if (ctx.gnu_debuglink)
     write_gnu_debuglink(ctx);
 
   t_copy.stop();
@@ -642,7 +642,7 @@ int mold_main(int argc, char **argv) {
   if (ctx.arg.print_map)
     print_map(ctx);
 
-  if (!ctx.arg.separate_debug_file.empty())
+  if (ctx.gnu_debuglink)
     write_separate_debug_file(ctx);
 
   // Show stats numbers
