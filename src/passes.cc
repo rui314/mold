@@ -1113,17 +1113,34 @@ void check_shlib_undefined(Context<E> &ctx) {
     return false;
   };
 
-  // Obtain a list of known shared library names.
-  std::unordered_set<std::string_view> sonames;
+  // We want to skip a file that (either directly or indirectly) depends
+  // on another .so file we know nothing about. This is because missing
+  // symbols might be provided by that unknown file.
+  //
+  // We need recursion for indirect dependencies.
+  std::unordered_map<std::string_view, std::vector<std::string_view>> deps;
   for (std::unique_ptr<SharedFile<E>> &file : ctx.dso_pool)
-    sonames.insert(file->soname);
+    deps[file->soname] = file->get_dt_needed(ctx);
+
+  std::function<bool(std::string_view, i64)> can_check;
+  can_check = [&](std::string_view soname, i64 depth) -> bool {
+    if (depth == deps.size())
+      Fatal(ctx) << "--no-allow-shlib-defined: mutually-recursive .so detected: "
+                 << soname;
+
+    auto it = deps.find(soname);
+    if (it == deps.end())
+      return false;
+    for (std::string_view needed : it->second)
+      if (!can_check(needed, depth + 1))
+        return false;
+    return true;
+  };
 
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
     // Skip the file if it depends on a file that we know nothing about.
-    // This is because missing symbols may be provided by that unknown file.
-    for (std::string_view needed : file->get_dt_needed(ctx))
-      if (!sonames.contains(needed))
-        return;
+    if (!can_check(file->soname, 0))
+      return;
 
     // Check if all undefined symbols have been resolved.
     for (i64 i = 0; i < file->elf_syms.size(); i++) {
