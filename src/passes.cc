@@ -1124,7 +1124,7 @@ void check_shlib_undefined(Context<E> &ctx) {
 
   std::function<bool(std::string_view, i64)> can_check;
   can_check = [&](std::string_view soname, i64 depth) -> bool {
-    if (depth == deps.size())
+    if (depth == deps.size() + 1)
       Fatal(ctx) << "--no-allow-shlib-defined: mutually-recursive .so detected: "
                  << soname;
 
