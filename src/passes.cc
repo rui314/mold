@@ -1122,12 +1122,13 @@ void check_shlib_undefined(Context<E> &ctx) {
   for (std::unique_ptr<SharedFile<E>> &file : ctx.dso_pool)
     deps[file->soname] = file->get_dt_needed(ctx);
 
-  std::function<bool(std::string_view, i64)> can_check;
-  can_check = [&](std::string_view soname, i64 depth) -> bool {
-    if (depth == deps.size() + 1)
-      Fatal(ctx) << "--no-allow-shlib-defined: mutually-recursive .so detected: "
-                 << soname;
-
+  std::function<bool(std::string_view, i64)> can_check =
+    [&](std::string_view soname, i64 depth) -> bool {
+    if (depth == deps.size() + 1) {
+      // A library with a circular dependency is rare but does exist and
+      // can be loaded without issue, so we need to handle such a case.
+      return true;
+    }
     auto it = deps.find(soname);
     if (it == deps.end())
       return false;
