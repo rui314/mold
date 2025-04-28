@@ -484,17 +484,12 @@ static InputSection<E> *get_opd_section(ObjectFile<E> &file) {
 }
 
 static ElfRel<E> *
-get_relocation_at(Context<E> &ctx, InputSection<E> &isec, i64 offset) {
+get_relocation_at(Context<E> &ctx, InputSection<E> &isec, u64 offset) {
   std::span<ElfRel<E>> rels = isec.get_rels(ctx);
-
-  auto it = std::lower_bound(rels.begin(), rels.end(), offset,
-                             [](const ElfRel<E> &r, i64 offset) {
-    return r.r_offset < offset;
+  auto it = ranges::lower_bound(rels, offset, {}, [](const ElfRel<E> &r) {
+    return (u64)r.r_offset;
   });
-
-  if (it == rels.end())
-    return nullptr;
-  if (it->r_offset != offset)
+  if (it == rels.end() || it->r_offset != offset)
     return nullptr;
   return &*it;
 }
@@ -509,9 +504,7 @@ struct OpdSymbol {
 static Symbol<E> *
 get_opd_sym_at(std::span<OpdSymbol> syms, u64 offset) {
   auto it = ranges::lower_bound(syms, offset, {}, &OpdSymbol::r_offset);
-  if (it == syms.end())
-    return nullptr;
-  if (it->r_offset != offset)
+  if (it == syms.end() || it->r_offset != offset)
     return nullptr;
   return it->sym;
 }
