@@ -1924,8 +1924,10 @@ struct ARM64BE : ARM64LE {
   static constexpr bool is_le = false;
 };
 
-struct ARM32 {
+struct ARM32LE {
+  static constexpr std::string_view name = "arm32";
   static constexpr bool is_64 = false;
+  static constexpr bool is_le = true;
   static constexpr bool is_rela = false;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_ARM;
@@ -1952,12 +1954,7 @@ struct ARM32 {
   };
 };
 
-struct ARM32LE : ARM32  {
-  static constexpr std::string_view name = "arm32";
-  static constexpr bool is_le = true;
-};
-
-struct ARM32BE : ARM32 {
+struct ARM32BE : ARM32LE {
   static constexpr std::string_view name = "arm32be";
   static constexpr bool is_le = false;
 };

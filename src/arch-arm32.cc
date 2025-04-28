@@ -881,13 +881,10 @@ void arm32be_swap_bytes(Context<E> &ctx) {
   // Represents a location of a mapping symbol
   struct MappingSymbol {
     bool operator==(const MappingSymbol &) const = default;
+    u32 get_addr() const { return isec->get_addr() + offset; }
 
-    u32 get_addr() const {
-      return isec->output_section->shdr.sh_addr + isec->offset + offset;
-    }
-
-    InputSection<E> *isec = nullptr;
-    u64 offset = 0;
+    InputSection<E> *isec;
+    u64 offset;
     u8 mode;
   };
 
@@ -896,27 +893,23 @@ void arm32be_swap_bytes(Context<E> &ctx) {
   vec.resize(ctx.objs.size());
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    ObjectFile<E> *file = ctx.objs[i];
-
-    for (Symbol<E> *sym : file->symbols) {
-      if (sym->file == file) {
-        InputSection<E> *isec = sym->get_input_section();
-        if (isec && isec->is_alive && isec->sh_size &&
-            (isec->shdr().sh_flags & SHF_EXECINSTR)) {
-          std::string_view x = sym->name();
-          if (x == "$a" || x.starts_with("$a."))
-            vec[i].push_back({isec, sym->value, ARM});
-          else if (x == "$t" || x.starts_with("$t."))
-            vec[i].push_back({isec, sym->value, THUMB});
-          else if (x == "$d" || x.starts_with("$d."))
-            vec[i].push_back({isec, sym->value, DATA});
-        }
+    for (Symbol<E> *sym : ctx.objs[i]->get_local_syms()) {
+      InputSection<E> *isec = sym->get_input_section();
+      if (isec && isec->is_alive && isec->sh_size &&
+          (isec->shdr().sh_flags & SHF_EXECINSTR)) {
+        std::string_view x = sym->name();
+        if (x == "$a" || x.starts_with("$a."))
+          vec[i].push_back({isec, sym->value, ARM});
+        else if (x == "$t" || x.starts_with("$t."))
+          vec[i].push_back({isec, sym->value, THUMB});
+        else if (x == "$d" || x.starts_with("$d."))
+          vec[i].push_back({isec, sym->value, DATA});
       }
     }
 
     // Add a sentinel at the end of each executable section so that
     // we do not run over the end of it when swapping bytes.
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
       if (isec && isec->is_alive && isec->sh_size &&
           (isec->shdr().sh_flags & SHF_EXECINSTR))
         vec[i].push_back({isec.get(), (u64)isec->sh_size, DATA});
@@ -931,29 +924,21 @@ void arm32be_swap_bytes(Context<E> &ctx) {
   });
 
   // Swap bytes
-  auto bswap2 = [](u8 *buf) {
-    std::swap(buf[0], buf[1]);
-  };
-
-  auto bswap4 = [](u8 *buf) {
-    std::swap(buf[0], buf[3]);
-    std::swap(buf[1], buf[2]);
-  };
-
   tbb::parallel_for((i64)0, (i64)(labels.size() - 1), [&](i64 i) {
     MappingSymbol x = labels[i];
-    MappingSymbol y = labels[i + 1];
-    i64 dist = y.get_addr() - x.get_addr();
+    if (x.mode == DATA)
+      return;
 
     u8 *buf = ctx.buf + x.isec->output_section->shdr.sh_offset +
               x.isec->offset + x.offset;
+    i64 dist = labels[i + 1].get_addr() - x.get_addr();
 
     if (x.mode == ARM)
       for (i64 j = 0; j < dist; j += 4)
-        bswap4(buf + j);
+        *(ul32 *)(buf + j) = *(ub32 *)(buf + j);
     if (x.mode == THUMB)
       for (i64 j = 0; j < dist; j += 2)
-        bswap2(buf + j);
+        *(ul16 *)(buf + j) = *(ub16 *)(buf + j);
   });
 }
 #endif

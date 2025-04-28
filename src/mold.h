@@ -262,7 +262,7 @@ struct FdeRecord {
 template <typename E>
 struct InputSectionExtras {};
 
-template <typename E> requires is_arm32<E>
+template <is_arm32 E>
 struct InputSectionExtras<E> {
   InputSection<E> *exidx = nullptr;
 };
@@ -1337,6 +1337,7 @@ public:
   mark_live_objects(Context<E> &ctx,
                     std::function<void(InputFile<E> *)> feeder) = 0;
 
+  std::span<Symbol<E> *> get_local_syms();
   std::span<Symbol<E> *> get_global_syms();
   std::string_view get_source_name() const;
 
@@ -2737,6 +2738,11 @@ inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
   if (elf_sections.size() <= idx)
     Fatal(ctx) << *this << ": invalid section index: " << idx;
   return this->get_string(ctx, elf_sections[idx]);
+}
+
+template <typename E>
+inline std::span<Symbol<E> *> InputFile<E>::get_local_syms() {
+  return std::span<Symbol<E> *>(this->symbols).subspan(0, this->first_global);
 }
 
 template <typename E>
