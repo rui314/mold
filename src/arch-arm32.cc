@@ -905,11 +905,11 @@ void arm32be_swap_bytes(Context<E> &ctx) {
             (isec->shdr().sh_flags & SHF_EXECINSTR)) {
           std::string_view x = sym->name();
           if (x == "$a" || x.starts_with("$a."))
-            vec[i].emplace_back(isec, sym->value, ARM);
+            vec[i].push_back({isec, sym->value, ARM});
           else if (x == "$t" || x.starts_with("$t."))
-            vec[i].emplace_back(isec, sym->value, THUMB);
+            vec[i].push_back({isec, sym->value, THUMB});
           else if (x == "$d" || x.starts_with("$d."))
-            vec[i].emplace_back(isec, sym->value, DATA);
+            vec[i].push_back({isec, sym->value, DATA});
         }
       }
     }
@@ -919,7 +919,7 @@ void arm32be_swap_bytes(Context<E> &ctx) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (isec && isec->is_alive && isec->sh_size &&
           (isec->shdr().sh_flags & SHF_EXECINSTR))
-        vec[i].emplace_back(isec.get(), (u64)isec->sh_size, DATA);
+        vec[i].push_back({isec.get(), (u64)isec->sh_size, DATA});
   });
 
   std::vector<MappingSymbol> labels = flatten(vec);
