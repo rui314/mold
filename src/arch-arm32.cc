@@ -31,18 +31,20 @@
 //
 // https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst
 
+#if MOLD_ARM32LE || MOLD_ARM32BE
+
 #include "mold.h"
 
 #include <tbb/parallel_for.h>
 
 namespace mold {
 
-using E = ARM32;
+using E = MOLD_TARGET;
 
 template <>
 i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
-  ul32 *arm = (ul32 *)loc;
-  ul16 *thm = (ul16 *)loc;
+  U32<E> *arm = (U32<E> *)loc;
+  U16<E> *thm = (U16<E> *)loc;
 
   switch (rel.r_type) {
   case R_ARM_ABS32:
@@ -59,7 +61,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_ARM_TLS_GOTDESC:
   case R_ARM_TARGET1:
   case R_ARM_TARGET2:
-    return (il32)*arm;
+    return (I32<E>)*arm;
   case R_ARM_THM_JUMP8:
     return sign_extend(thm[0], 8) << 1;
   case R_ARM_THM_JUMP11:
@@ -125,7 +127,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
 static void write_arm_mov(u8 *loc, u32 val) {
   u32 imm12 = bits(val, 11, 0);
   u32 imm4 = bits(val, 15, 12);
-  *(ul32 *)loc = (*(ul32 *)loc & 0xfff0'f000) | (imm4 << 16) | imm12;
+  *(U32<E> *)loc = (*(U32<E> *)loc & 0xfff0'f000) | (imm4 << 16) | imm12;
 }
 
 static void write_thm_b21(u8 *loc, u32 val) {
@@ -135,7 +137,7 @@ static void write_thm_b21(u8 *loc, u32 val) {
   u32 imm6 = bits(val, 17, 12);
   u32 imm11 = bits(val, 11, 1);
 
-  ul16 *buf = (ul16 *)loc;
+  U16<E> *buf = (U16<E> *)loc;
   buf[0] = (buf[0] & 0b1111'1011'1100'0000) | (S << 10) | imm6;
   buf[1] = (buf[1] & 0b1101'0000'0000'0000) | (J1 << 13) | (J2 << 11) | imm11;
 }
@@ -149,7 +151,7 @@ static void write_thm_b25(u8 *loc, u32 val) {
   u32 imm10 = bits(val, 21, 12);
   u32 imm11 = bits(val, 11, 1);
 
-  ul16 *buf = (ul16 *)loc;
+  U16<E> *buf = (U16<E> *)loc;
   buf[0] = (buf[0] & 0b1111'1000'0000'0000) | (S << 10) | imm10;
   buf[1] = (buf[1] & 0b1101'0000'0000'0000) | (J1 << 13) | (J2 << 11) | imm11;
 }
@@ -160,7 +162,7 @@ static void write_thm_mov(u8 *loc, u32 val) {
   u32 imm3 = bits(val, 10, 8);
   u32 imm8 = bits(val, 7, 0);
 
-  ul16 *buf = (ul16 *)loc;
+  U16<E> *buf = (U16<E> *)loc;
   buf[0] = (buf[0] & 0b1111'1011'1111'0000) | (i << 10) | imm4;
   buf[1] = (buf[1] & 0b1000'1111'0000'0000) | (imm3 << 12) | imm8;
 }
@@ -184,13 +186,13 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
   case R_ARM_TLS_GOTDESC:
   case R_ARM_TARGET1:
   case R_ARM_TARGET2:
-    *(ul32 *)loc = val;
+    *(U32<E> *)loc = val;
     break;
   case R_ARM_THM_JUMP8:
-    *(ul16 *)loc = (*(ul16 *)loc & 0xff00) | bits(val, 8, 1);
+    *(U16<E> *)loc = (*(U16<E> *)loc & 0xff00) | bits(val, 8, 1);
     break;
   case R_ARM_THM_JUMP11:
-    *(ul16 *)loc = (*(ul16 *)loc & 0xf800) | bits(val, 11, 1);
+    *(U16<E> *)loc = (*(U16<E> *)loc & 0xf800) | bits(val, 11, 1);
     break;
   case R_ARM_THM_CALL:
   case R_ARM_THM_JUMP24:
@@ -200,7 +202,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
   case R_ARM_CALL:
   case R_ARM_JUMP24:
   case R_ARM_PLT32:
-    *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
+    *(U32<E> *)loc = (*(U32<E> *)loc & 0xff00'0000) | bits(val, 25, 2);
     break;
   case R_ARM_MOVW_PREL_NC:
   case R_ARM_MOVW_ABS_NC:
@@ -209,7 +211,7 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {
     write_arm_mov(loc, val);
     break;
   case R_ARM_PREL31:
-    *(ul32 *)loc = (*(ul32 *)loc & 0x8000'0000) | (val & 0x7fff'ffff);
+    *(U32<E> *)loc = (*(U32<E> *)loc & 0x8000'0000) | (val & 0x7fff'ffff);
     break;
   case R_ARM_THM_MOVW_PREL_NC:
   case R_ARM_THM_MOVW_ABS_NC:
@@ -236,7 +238,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   };
 
   memcpy(buf, insn, sizeof(insn));
-  *(ul32 *)(buf + 16) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 16;
+  *(U32<E> *)(buf + 16) = ctx.gotplt->shdr.sh_addr - ctx.plt->shdr.sh_addr - 16;
 }
 
 static constexpr ul32 plt_entry[] = {
@@ -249,13 +251,13 @@ static constexpr ul32 plt_entry[] = {
 template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   memcpy(buf, plt_entry, sizeof(plt_entry));
-  *(ul32 *)(buf + 12) = sym.get_gotplt_addr(ctx) - sym.get_plt_addr(ctx) - 12;
+  *(U32<E> *)(buf + 12) = sym.get_gotplt_addr(ctx) - sym.get_plt_addr(ctx) - 12;
 }
 
 template <>
 void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
   memcpy(buf, plt_entry, sizeof(plt_entry));
-  *(ul32 *)(buf + 12) = sym.get_got_pltgot_addr(ctx) - sym.get_plt_addr(ctx) - 12;
+  *(U32<E> *)(buf + 12) = sym.get_got_pltgot_addr(ctx) - sym.get_plt_addr(ctx) - 12;
 }
 
 template <>
@@ -267,10 +269,10 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   case R_NONE:
     break;
   case R_ARM_ABS32:
-    *(ul32 *)loc = val;
+    *(U32<E> *)loc = val;
     break;
   case R_ARM_REL32:
-    *(ul32 *)loc = val - this->shdr.sh_addr - offset;
+    *(U32<E> *)loc = val - this->shdr.sh_addr - offset;
     break;
   default:
     Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;
@@ -320,13 +322,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_ARM_TARGET1:
       break;
     case R_ARM_REL32:
-      *(ul32 *)loc = S + A - P;
+      *(U32<E> *)loc = S + A - P;
       break;
     case R_ARM_THM_CALL: {
       if (sym.is_remaining_undef_weak()) {
         // On ARM, calling an weak undefined symbol jumps to the
         // next instruction.
-        *(ul32 *)loc = 0x8000'f3af; // NOP.W
+        *(U32<E> *)loc = 0x8000'f3af; // NOP.W
         break;
       }
 
@@ -337,61 +339,61 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val2 = align_to(S + A - P, 4);
 
       if (T && is_int(val1, 25)) {
-        *(ul16 *)(loc + 2) |= 0x1000;  // BL
+        *(U16<E> *)(loc + 2) |= 0x1000;  // BL
         write_thm_b25(loc, val1);
       } else if (!T && is_int(val2, 25)) {
-        *(ul16 *)(loc + 2) &= ~0x1000; // BLX
+        *(U16<E> *)(loc + 2) &= ~0x1000; // BLX
         write_thm_b25(loc, val2);
       } else {
-        *(ul16 *)(loc + 2) |= 0x1000;  // BL
+        *(U16<E> *)(loc + 2) |= 0x1000;  // BL
         write_thm_b25(loc, get_thumb_thunk_addr() + A - P);
       }
       break;
     }
     case R_ARM_BASE_PREL:
-      *(ul32 *)loc = GOT + A - P;
+      *(U32<E> *)loc = GOT + A - P;
       break;
     case R_ARM_GOTOFF32:
-      *(ul32 *)loc = ((S + A) | T) - GOT;
+      *(U32<E> *)loc = ((S + A) | T) - GOT;
       break;
     case R_ARM_GOT_PREL:
     case R_ARM_TARGET2:
-      *(ul32 *)loc = GOT + G + A - P;
+      *(U32<E> *)loc = GOT + G + A - P;
       break;
     case R_ARM_GOT_BREL:
-      *(ul32 *)loc = G + A;
+      *(U32<E> *)loc = G + A;
       break;
     case R_ARM_CALL: {
       if (sym.is_remaining_undef_weak()) {
-        *(ul32 *)loc = 0xe320'f000; // NOP
+        *(U32<E> *)loc = 0xe320'f000; // NOP
         break;
       }
 
       // Just like THM_CALL, ARM_CALL relocation refers to either BL or
       // BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
-      bool is_bl = ((*(ul32 *)loc & 0xff00'0000) == 0xeb00'0000);
-      bool is_blx = ((*(ul32 *)loc & 0xfe00'0000) == 0xfa00'0000);
+      bool is_bl = ((*(U32<E> *)loc & 0xff00'0000) == 0xeb00'0000);
+      bool is_blx = ((*(U32<E> *)loc & 0xfe00'0000) == 0xfa00'0000);
       if (!is_bl && !is_blx)
         Fatal(ctx) << *this << ": R_ARM_CALL refers to neither BL nor BLX";
 
       i64 val = S + A - P;
       if (is_int(val, 26)) {
         if (T) {
-          *(ul32 *)loc = 0xfa00'0000; // BLX
-          *(ul32 *)loc |= (bit(val, 1) << 24) | bits(val, 25, 2);
+          *(U32<E> *)loc = 0xfa00'0000; // BLX
+          *(U32<E> *)loc |= (bit(val, 1) << 24) | bits(val, 25, 2);
         } else {
-          *(ul32 *)loc = 0xeb00'0000; // BL
-          *(ul32 *)loc |= bits(val, 25, 2);
+          *(U32<E> *)loc = 0xeb00'0000; // BL
+          *(U32<E> *)loc |= bits(val, 25, 2);
         }
       } else {
-        *(ul32 *)loc = 0xeb00'0000; // BL
-        *(ul32 *)loc |= bits(get_arm_thunk_addr() + A - P, 25, 2);
+        *(U32<E> *)loc = 0xeb00'0000; // BL
+        *(U32<E> *)loc |= bits(get_arm_thunk_addr() + A - P, 25, 2);
       }
       break;
     }
     case R_ARM_JUMP24: {
       if (sym.is_remaining_undef_weak()) {
-        *(ul32 *)loc = 0xe320'f000; // NOP
+        *(U32<E> *)loc = 0xe320'f000; // NOP
         break;
       }
 
@@ -404,26 +406,26 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A - P;
       if (T || !is_int(val, 26))
         val = get_arm_thunk_addr() + A - P;
-      *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
+      *(U32<E> *)loc = (*(U32<E> *)loc & 0xff00'0000) | bits(val, 25, 2);
       break;
     }
     case R_ARM_PLT32:
       if (sym.is_remaining_undef_weak()) {
-        *(ul32 *)loc = 0xe320'f000; // NOP
+        *(U32<E> *)loc = 0xe320'f000; // NOP
       } else {
         u64 val = (T ? get_arm_thunk_addr() : S) + A - P;
-        *(ul32 *)loc = (*(ul32 *)loc & 0xff00'0000) | bits(val, 25, 2);
+        *(U32<E> *)loc = (*(U32<E> *)loc & 0xff00'0000) | bits(val, 25, 2);
       }
       break;
     case R_ARM_THM_JUMP8:
       check(S + A - P, -(1 << 8), 1 << 8);
-      *(ul16 *)loc &= 0xff00;
-      *(ul16 *)loc |= bits(S + A - P, 8, 1);
+      *(U16<E> *)loc &= 0xff00;
+      *(U16<E> *)loc |= bits(S + A - P, 8, 1);
       break;
     case R_ARM_THM_JUMP11:
       check(S + A - P, -(1 << 11), 1 << 11);
-      *(ul16 *)loc &= 0xf800;
-      *(ul16 *)loc |= bits(S + A - P, 11, 1);
+      *(U16<E> *)loc &= 0xf800;
+      *(U16<E> *)loc |= bits(S + A - P, 11, 1);
       break;
     case R_ARM_THM_JUMP19:
       check(S + A - P, -(1 << 20), 1 << 20);
@@ -431,7 +433,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_ARM_THM_JUMP24: {
       if (sym.is_remaining_undef_weak()) {
-        *(ul32 *)loc = 0x8000'f3af; // NOP
+        *(U32<E> *)loc = 0x8000'f3af; // NOP
         break;
       }
 
@@ -454,8 +456,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_ARM_PREL31:
       check(S + A - P, -(1LL << 30), 1LL << 30);
-      *(ul32 *)loc &= 0x8000'0000;
-      *(ul32 *)loc |= (S + A - P) & 0x7fff'ffff;
+      *(U32<E> *)loc &= 0x8000'0000;
+      *(U32<E> *)loc |= (S + A - P) & 0x7fff'ffff;
       break;
     case R_ARM_THM_MOVW_ABS_NC:
       write_thm_mov(loc, (S + A) | T);
@@ -473,19 +475,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_thm_mov(loc, (S + A) >> 16);
       break;
     case R_ARM_TLS_GD32:
-      *(ul32 *)loc = sym.get_tlsgd_addr(ctx) + A - P;
+      *(U32<E> *)loc = sym.get_tlsgd_addr(ctx) + A - P;
       break;
     case R_ARM_TLS_LDM32:
-      *(ul32 *)loc = ctx.got->get_tlsld_addr(ctx) + A - P;
+      *(U32<E> *)loc = ctx.got->get_tlsld_addr(ctx) + A - P;
       break;
     case R_ARM_TLS_LDO32:
-      *(ul32 *)loc = S + A - ctx.dtp_addr;
+      *(U32<E> *)loc = S + A - ctx.dtp_addr;
       break;
     case R_ARM_TLS_IE32:
-      *(ul32 *)loc = sym.get_gottp_addr(ctx) + A - P;
+      *(U32<E> *)loc = sym.get_gottp_addr(ctx) + A - P;
       break;
     case R_ARM_TLS_LE32:
-      *(ul32 *)loc = S + A - ctx.tp_addr;
+      *(U32<E> *)loc = S + A - ctx.tp_addr;
       break;
     case R_ARM_TLS_GOTDESC:
       // ARM32 TLSDESC uses the following code sequence to materialize
@@ -514,35 +516,35 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //  .L2: .word   foo(gottpoff) + . - .L1
       if (sym.has_tlsdesc(ctx)) {
         // A is odd if the corresponding TLS_CALL is Thumb.
-        *(ul32 *)loc = sym.get_tlsdesc_addr(ctx) - P + A - ((A & 1) ? 6 : 4);
+        *(U32<E> *)loc = sym.get_tlsdesc_addr(ctx) - P + A - ((A & 1) ? 6 : 4);
       } else if (sym.has_gottp(ctx)) {
-        *(ul32 *)loc = sym.get_gottp_addr(ctx) - P + A - ((A & 1) ? 5 : 8);
+        *(U32<E> *)loc = sym.get_gottp_addr(ctx) - P + A - ((A & 1) ? 5 : 8);
       } else {
-        *(ul32 *)loc = S - ctx.tp_addr;
+        *(U32<E> *)loc = S - ctx.tp_addr;
       }
       break;
     case R_ARM_TLS_CALL:
       if (sym.has_tlsdesc(ctx)) {
-        *(ul32 *)loc = 0xeb00'0000; // bl 0
-        *(ul32 *)loc |= bits(get_tlsdesc_trampoline_addr() - P - 8, 25, 2);
+        *(U32<E> *)loc = 0xeb00'0000; // bl 0
+        *(U32<E> *)loc |= bits(get_tlsdesc_trampoline_addr() - P - 8, 25, 2);
       } else if (sym.has_gottp(ctx)) {
-        *(ul32 *)loc = 0xe79f'0000; // ldr r0, [pc, r0]
+        *(U32<E> *)loc = 0xe79f'0000; // ldr r0, [pc, r0]
       } else {
-        *(ul32 *)loc = 0xe320'f000; // nop
+        *(U32<E> *)loc = 0xe320'f000; // nop
       }
       break;
     case R_ARM_THM_TLS_CALL:
       if (sym.has_tlsdesc(ctx)) {
         u64 val = align_to(get_tlsdesc_trampoline_addr() - P - 4, 4);
         write_thm_b25(loc, val);
-        *(ul16 *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
+        *(U16<E> *)(loc + 2) &= ~0x1000; // rewrite BL with BLX
       } else if (sym.has_gottp(ctx)) {
         // Since `ldr r0, [pc, r0]` is not representable in Thumb,
         // we use two instructions instead.
-        *(ul16 *)loc = 0x4478;         // add r0, pc
-        *(ul16 *)(loc + 2) = 0x6800;   // ldr r0, [r0]
+        *(U16<E> *)loc = 0x4478;         // add r0, pc
+        *(U16<E> *)(loc + 2) = 0x6800;   // ldr r0, [r0]
       } else {
-        *(ul32 *)loc = 0x8000'f3af;    // nop.w
+        *(U32<E> *)loc = 0x8000'f3af;    // nop.w
       }
       break;
     default:
@@ -573,15 +575,15 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     switch (rel.r_type) {
     case R_ARM_ABS32:
       if (std::optional<u64> val = get_tombstone(sym, frag))
-        *(ul32 *)loc = *val;
+        *(U32<E> *)loc = *val;
       else
-        *(ul32 *)loc = S + A;
+        *(U32<E> *)loc = S + A;
       break;
     case R_ARM_TLS_LDO32:
       if (std::optional<u64> val = get_tombstone(sym, frag))
-        *(ul32 *)loc = *val;
+        *(U32<E> *)loc = *val;
       else
-        *(ul32 *)loc = S + A - ctx.dtp_addr;
+        *(U32<E> *)loc = S + A - ctx.dtp_addr;
       break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
@@ -703,7 +705,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 
   for (Symbol<E> *sym : symbols) {
     memcpy(buf, entry, sizeof(entry));
-    *(ul32 *)(buf + 12) = sym->get_addr(ctx) - P - 16;
+    *(U32<E> *)(buf + 12) = sym->get_addr(ctx) - P - 16;
 
     buf += sizeof(entry);
     P += sizeof(entry);
@@ -712,10 +714,14 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 
 template <>
 u64 get_eflags(Context<E> &ctx) {
-  return EF_ARM_EABI_VER5;
+  if constexpr (E::is_le)
+    return EF_ARM_EABI_VER5;
+  else
+    return EF_ARM_EABI_VER5 | EF_ARM_BE8;
 }
 
-void create_arm_exidx_section(Context<E> &ctx) {
+template <>
+void create_arm_exidx_section<E>(Context<E> &ctx) {
   for (i64 i = 0; i < ctx.chunks.size(); i++) {
     OutputSection<E> *osec = ctx.chunks[i]->to_osec();
 
@@ -732,26 +738,18 @@ void create_arm_exidx_section(Context<E> &ctx) {
   }
 }
 
-void Arm32ExidxSection::compute_section_size(Context<E> &ctx) {
+template <>
+void Arm32ExidxSection<E>::compute_section_size(Context<E> &ctx) {
   output_section.compute_section_size(ctx);
   this->shdr.sh_size = output_section.shdr.sh_size + 8; // +8 for sentinel
 }
 
-void Arm32ExidxSection::update_shdr(Context<E> &ctx) {
+template <>
+void Arm32ExidxSection<E>::update_shdr(Context<E> &ctx) {
   // .ARM.exidx's sh_link should be set to the .text section index.
   // Runtime doesn't care about it, but the binutils's strip command does.
   if (Chunk<E> *chunk = find_chunk(ctx, ".text"))
     this->shdr.sh_link = chunk->shndx;
-}
-
-void Arm32ExidxSection::remove_duplicate_entries(Context<E> &ctx) {
-  this->shdr.sh_size = get_contents(ctx).size();
-}
-
-void Arm32ExidxSection::copy_buf(Context<E> &ctx) {
-  std::vector<u8> contents = get_contents(ctx);
-  assert(this->shdr.sh_size == contents.size());
-  write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
 // Returns the end of the text segment
@@ -772,7 +770,8 @@ static u64 get_text_end(Context<E> &ctx) {
 // likely that it's due to some historical reason.
 //
 // This function returns contents of .ARM.exidx.
-std::vector<u8> Arm32ExidxSection::get_contents(Context<E> &ctx) {
+template <>
+std::vector<u8> Arm32ExidxSection<E>::get_contents(Context<E> &ctx) {
   // .ARM.exidx records consists of a signed 31-bit relative address
   // and a 32-bit value. The relative address indicates the start
   // address of a function that the record covers. The value is one of
@@ -788,8 +787,8 @@ std::vector<u8> Arm32ExidxSection::get_contents(Context<E> &ctx) {
   const u32 CANTUNWIND = 1;
 
   struct Entry {
-    ul32 addr;
-    ul32 val;
+    U32<E> addr;
+    U32<E> val;
   };
 
   // We reserve one extra slot for the sentinel
@@ -846,4 +845,119 @@ std::vector<u8> Arm32ExidxSection::get_contents(Context<E> &ctx) {
   return buf;
 }
 
+template <>
+void Arm32ExidxSection<E>::remove_duplicate_entries(Context<E> &ctx) {
+  this->shdr.sh_size = get_contents(ctx).size();
+}
+
+template <>
+void Arm32ExidxSection<E>::copy_buf(Context<E> &ctx) {
+  std::vector<u8> contents = get_contents(ctx);
+  assert(this->shdr.sh_size == contents.size());
+  write_vector(ctx.buf + this->shdr.sh_offset, contents);
+}
+
+#ifdef MOLD_ARM32BE
+// Even though using ARM32 in big-endian mode is very rare, the processor
+// technically supports both little- and big-endian modes. There are two
+// variants of big-endian mode: BE32 and BE8. In BE32, instructions and
+// data are encoded in big-endian. In BE8, instructions are encoded in
+// little-endian, and only data is in big-endian. We only support BE8.
+//
+// A tricky thing is that instructions in an object file are always
+// big-endian if the file is compiled for big-endian mode. It is the
+// linker's responsibility to rewrite instructions from big-endian to
+// little-endian for an BE8 output. This function does that.
+//
+// The text section may contain a mix of 32-bit ARM instructions, 16-bit
+// Thumb instructions, and data. We need to distinguish them to swap 4
+// bytes, 2 bytes, or not swap bytes, respectively. Each segment of ARM,
+// Thumb, and data is labeled with a mapping symbol of $a, $t, and $d,
+// respectively. We use mapping symbols to know what to do with text
+// section.
+void arm32be_swap_bytes(Context<E> &ctx) {
+  enum : u8 { ARM, THUMB, DATA };
+
+  // Represents a location of a mapping symbol
+  struct MappingSymbol {
+    bool operator==(const MappingSymbol &) const = default;
+
+    u32 get_addr() const {
+      return isec->output_section->shdr.sh_addr + isec->offset + offset;
+    }
+
+    InputSection<E> *isec = nullptr;
+    u64 offset = 0;
+    u8 mode;
+  };
+
+  // Collect all locations of mapping symbols in text sections
+  std::vector<std::vector<MappingSymbol>> vec;
+  vec.resize(ctx.objs.size());
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> *file = ctx.objs[i];
+
+    for (Symbol<E> *sym : file->symbols) {
+      if (sym->file == file) {
+        InputSection<E> *isec = sym->get_input_section();
+        if (isec && isec->is_alive && isec->sh_size &&
+            (isec->shdr().sh_flags & SHF_EXECINSTR)) {
+          std::string_view x = sym->name();
+          if (x == "$a" || x.starts_with("$a."))
+            vec[i].emplace_back(isec, sym->value, ARM);
+          else if (x == "$t" || x.starts_with("$t."))
+            vec[i].emplace_back(isec, sym->value, THUMB);
+          else if (x == "$d" || x.starts_with("$d."))
+            vec[i].emplace_back(isec, sym->value, DATA);
+        }
+      }
+    }
+
+    // Add a sentinel at the end of each executable section so that
+    // we do not run over the end of it when swapping bytes.
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (isec && isec->is_alive && isec->sh_size &&
+          (isec->shdr().sh_flags & SHF_EXECINSTR))
+        vec[i].emplace_back(isec.get(), (u64)isec->sh_size, DATA);
+  });
+
+  std::vector<MappingSymbol> labels = flatten(vec);
+
+  // Sort mapping symbols by address
+  ranges::stable_sort(labels, {}, [](const MappingSymbol &x) {
+    return std::tuple{x.isec->output_section->shdr.sh_offset,
+                      x.isec->offset, x.offset};
+  });
+
+  // Swap bytes
+  auto bswap2 = [](u8 *buf) {
+    std::swap(buf[0], buf[1]);
+  };
+
+  auto bswap4 = [](u8 *buf) {
+    std::swap(buf[0], buf[3]);
+    std::swap(buf[1], buf[2]);
+  };
+
+  tbb::parallel_for((i64)0, (i64)(labels.size() - 1), [&](i64 i) {
+    MappingSymbol x = labels[i];
+    MappingSymbol y = labels[i + 1];
+    i64 dist = y.get_addr() - x.get_addr();
+
+    u8 *buf = ctx.buf + x.isec->output_section->shdr.sh_offset +
+              x.isec->offset + x.offset;
+
+    if (x.mode == ARM)
+      for (i64 j = 0; j < dist; j += 4)
+        bswap4(buf + j);
+    if (x.mode == THUMB)
+      for (i64 j = 0; j < dist; j += 2)
+        bswap2(buf + j);
+  });
+}
+#endif
+
 } // namespace mold
+
+#endif

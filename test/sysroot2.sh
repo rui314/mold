@@ -1,6 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ $MACHINE = armeb ] && skip
 [[ $MACHINE = loongarch* ]] && skip
 
 mkdir -p $t/bin $t/sysroot/foo

@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # Currently, CREL is not supported on REL-type targets
-[ $MACHINE = arm ] && skip
+[[ $MACHINE = arm* ]] && skip
 [ $MACHINE = i686 ] && skip
 
 [ "$CC" = cc ] || skip

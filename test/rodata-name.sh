@@ -3,7 +3,7 @@
 
 # ARM assembler has a differnet grammar than the others.
 # Concretely speaking, ARM as uses "@" as a start of a comment.
-[ $MACHINE = arm ] && skip
+[[ $MACHINE = arm* ]] && skip
 
 # All data symbols need to be aligned to 2 byte boundaries on s390x,
 # so rodata.str1.1 in this file is invalid on s390x.

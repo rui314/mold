@@ -26,8 +26,10 @@ int redo_main(Context<E> &ctx, int argc, char **argv) {
     return mold_main<ARM64LE>(argc, argv);
   if (target == ARM64BE::name)
     return mold_main<ARM64BE>(argc, argv);
-  if (target == ARM32::name)
-    return mold_main<ARM32>(argc, argv);
+  if (target == ARM32LE::name)
+    return mold_main<ARM32LE>(argc, argv);
+  if (target == ARM32BE::name)
+    return mold_main<ARM32BE>(argc, argv);
   if (target == RV64LE::name)
     return mold_main<RV64LE>(argc, argv);
   if (target == RV64BE::name)

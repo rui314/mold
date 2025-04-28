@@ -232,7 +232,7 @@ std::string rel_to_string<ARM64BE>(u32 r_type) {
 }
 
 template <>
-std::string rel_to_string<ARM32>(u32 r_type) {
+std::string rel_to_string<ARM32LE>(u32 r_type) {
   switch (r_type) {
   CASE(R_ARM_NONE);
   CASE(R_ARM_PC24);
@@ -371,6 +371,11 @@ std::string rel_to_string<ARM32>(u32 r_type) {
   CASE(R_ARM_IRELATIVE);
   }
   return unknown_type(r_type);
+}
+
+template <>
+std::string rel_to_string<ARM32BE>(u32 r_type) {
+  return rel_to_string<ARM32LE>(r_type);
 }
 
 template <>

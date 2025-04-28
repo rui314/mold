@@ -6,7 +6,7 @@
 
 # musl libc does not support init/fini on ARM
 # https://github.com/rui314/mold/issues/951
-[ $MACHINE = arm -o $MACHINE = aarch64 ] && is_musl && skip
+[[ $MACHINE = arm* -o $MACHINE = aarch64 ]] && is_musl && skip
 
 cat <<EOF | $CC -c -fPIC -o $t/a.o -xc -
 void keep();

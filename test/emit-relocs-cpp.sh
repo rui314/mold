@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-[ $MACHINE = arm ] && skip
+[[ $MACHINE = arm* ]] && skip
 
 cat <<EOF | $CXX -o $t/a.o -c -fPIC -xc++ -
 #include <cstdio>

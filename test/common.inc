@@ -7,6 +7,7 @@ canonical_name() {
   case $1 in
   i?86) echo i686 ;;
   amd64) echo x86_64 ;;
+  armeb*) echo armeb ;;
   arm*) echo arm ;;
   powerpc) echo ppc ;;
   powerpc64) echo ppc64 ;;
@@ -64,7 +65,7 @@ t=$TESTDIR/$testname
 mkdir -p $t
 
 case $MACHINE in
-x86_64 | i686 | arm)
+x86_64 | i686 | arm | armeb)
   tlsdesc_opt=-mtls-dialect=gnu2 ;;
 aarch64 | riscv* | loongarch*)
   tlsdesc_opt=-mtls-dialect=desc ;;
@@ -101,7 +102,7 @@ supports_ifunc() {
 
 supports_tlsdesc() {
   # musl's tlsdesc on arm32 seems to be broken
-  [ $MACHINE = arm ] && is_musl && return 1
+  [[ $MACHINE = arm* ]] && is_musl && return 1
 
   # FreeBSD's loader doesn't seem to support TLSDESC relocs in an executable
   [ "$(uname)" = FreeBSD ] && return 1

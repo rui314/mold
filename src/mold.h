@@ -262,9 +262,9 @@ struct FdeRecord {
 template <typename E>
 struct InputSectionExtras {};
 
-template <>
-struct InputSectionExtras<ARM32> {
-  InputSection<ARM32> *exidx = nullptr;
+template <typename E> requires is_arm32<E>
+struct InputSectionExtras<E> {
+  InputSection<E> *exidx = nullptr;
 };
 
 struct RelocDelta {
@@ -1719,28 +1719,34 @@ void rewrite_endbr(Context<X86_64> &ctx);
 // arch-arm32.cc
 //
 
-class Arm32ExidxSection : public Chunk<ARM32> {
+template <is_arm32 E>
+class Arm32ExidxSection : public Chunk<E> {
 public:
-  Arm32ExidxSection(OutputSection<ARM32> &osec) : output_section(osec) {
+  Arm32ExidxSection(OutputSection<E> &osec) : output_section(osec) {
     this->name = ".ARM.exidx";
     this->shdr.sh_type = SHT_ARM_EXIDX;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_addralign = 4;
   }
 
-  void compute_section_size(Context<ARM32> &ctx) override;
-  void update_shdr(Context<ARM32> &ctx) override;
-  void remove_duplicate_entries(Context<ARM32> &ctx);
-  void copy_buf(Context<ARM32> &ctx) override;
+  void compute_section_size(Context<E> &ctx) override;
+  void update_shdr(Context<E> &ctx) override;
+  void remove_duplicate_entries(Context<E> &ctx);
+  void copy_buf(Context<E> &ctx) override;
 
 private:
-  std::vector<u8> get_contents(Context<ARM32> &ctx);
+  std::vector<u8> get_contents(Context<E> &ctx);
 
-  OutputSection<ARM32> &output_section;
+  OutputSection<E> &output_section;
 };
 
-template <> u64 get_eflags(Context<ARM32> &ctx);
-void create_arm_exidx_section(Context<ARM32> &ctx);
+template <is_arm32 E>
+u64 get_eflags(Context<E> &ctx);
+
+template <is_arm32 E>
+void create_arm_exidx_section(Context<E> &ctx);
+
+void arm32be_swap_bytes(Context<ARM32BE> &ctx);
 
 //
 // arch-riscv.cc
@@ -1890,9 +1896,9 @@ struct ContextExtras<E> {
   NotePropertySection<E> *note_property = nullptr;
 };
 
-template <>
-struct ContextExtras<ARM32> {
-  Arm32ExidxSection *exidx = nullptr;
+template <is_arm32 E>
+struct ContextExtras<E> {
+  Arm32ExidxSection<E> *exidx = nullptr;
 };
 
 template <is_riscv E>

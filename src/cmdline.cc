@@ -733,7 +733,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       } else if (arg == "aarch64elfb" || arg == "aarch64linuxb") {
         ctx.arg.emulation = ARM64BE::name;
       } else if (arg == "armelf_linux_eabi") {
-        ctx.arg.emulation = ARM32::name;
+        ctx.arg.emulation = ARM32LE::name;
+      } else if (arg == "armelfb_linux_eabi") {
+        ctx.arg.emulation = ARM32BE::name;
       } else if (arg == "elf64lriscv") {
         ctx.arg.emulation = RV64LE::name;
       } else if (arg == "elf64briscv") {
@@ -1349,6 +1351,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("max-cache-size")) {
     } else if (read_flag("mmap-output-file")) {
     } else if (read_flag("no-mmap-output-file")) {
+    } else if (read_flag("be8")) {
     } else if (read_arg("version-script")) {
       version_scripts.push_back(arg);
     } else if (read_arg("dynamic-list")) {

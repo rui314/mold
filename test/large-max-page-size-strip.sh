@@ -2,7 +2,7 @@
 . $(dirname $0)/common.inc
 
 # ARM32's strip command crashes on the output of this test for some reason.
-[ $MACHINE = arm ] && skip
+[[ $MACHINE = arm* ]] && skip
 
 strip=$STRIP
 command -v $strip >& /dev/null || skip

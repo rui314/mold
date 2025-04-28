@@ -13,7 +13,8 @@ struct X86_64;
 struct I386;
 struct ARM64LE;
 struct ARM64BE;
-struct ARM32;
+struct ARM32LE;
+struct ARM32BE;
 struct RV64LE;
 struct RV64BE;
 struct RV32LE;
@@ -357,9 +358,10 @@ enum : u32 {
 };
 
 enum : u32 {
-  EF_ARM_ABI_FLOAT_SOFT = 0x00000200,
-  EF_ARM_ABI_FLOAT_HARD = 0x00000400,
-  EF_ARM_EABI_VER5 = 0x05000000,
+  EF_ARM_ABI_FLOAT_SOFT = 0x200,
+  EF_ARM_ABI_FLOAT_HARD = 0x400,
+  EF_ARM_BE8 = 0x800000,
+  EF_ARM_EABI_VER5 = 0x5000000,
 };
 
 enum : u32 {
@@ -1810,7 +1812,8 @@ template <typename E> concept is_x86_64 = std::same_as<E, X86_64>;
 template <typename E> concept is_i386 = std::same_as<E, I386>;
 template <typename E> concept is_arm64le = std::same_as<E, ARM64LE>;
 template <typename E> concept is_arm64be = std::same_as<E, ARM64BE>;
-template <typename E> concept is_arm32 = std::same_as<E, ARM32>;
+template <typename E> concept is_arm32le = std::same_as<E, ARM32LE>;
+template <typename E> concept is_arm32be = std::same_as<E, ARM32BE>;
 template <typename E> concept is_rv64le = std::same_as<E, RV64LE>;
 template <typename E> concept is_rv64be = std::same_as<E, RV64BE>;
 template <typename E> concept is_rv32le = std::same_as<E, RV32LE>;
@@ -1827,6 +1830,7 @@ template <typename E> concept is_loongarch64 = std::same_as<E, LOONGARCH64>;
 template <typename E> concept is_loongarch32 = std::same_as<E, LOONGARCH32>;
 
 template <typename E> concept is_x86 = is_x86_64<E> || is_i386<E>;
+template <typename E> concept is_arm32 = is_arm32le<E> || is_arm32be<E>;
 template <typename E> concept is_arm64 = is_arm64le<E> || is_arm64be<E>;
 template <typename E> concept is_arm = is_arm64<E> || is_arm32<E>;
 template <typename E> concept is_rv64 = is_rv64le<E> || is_rv64be<E>;
@@ -1921,9 +1925,7 @@ struct ARM64BE : ARM64LE {
 };
 
 struct ARM32 {
-  static constexpr std::string_view name = "arm32";
   static constexpr bool is_64 = false;
-  static constexpr bool is_le = true;
   static constexpr bool is_rela = false;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_ARM;
@@ -1948,6 +1950,16 @@ struct ARM32 {
   static constexpr u32 R_FUNCALL[] = {
     R_ARM_JUMP24, R_ARM_THM_JUMP24, R_ARM_CALL, R_ARM_THM_CALL, R_ARM_PLT32,
   };
+};
+
+struct ARM32LE : ARM32  {
+  static constexpr std::string_view name = "arm32";
+  static constexpr bool is_le = true;
+};
+
+struct ARM32BE : ARM32 {
+  static constexpr std::string_view name = "arm32be";
+  static constexpr bool is_le = false;
 };
 
 struct RV64LE {
