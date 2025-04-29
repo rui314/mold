@@ -1294,6 +1294,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       }
     } else if (read_flag("no-build-id")) {
       ctx.arg.build_id.kind = BuildId::NONE;
+    } else if (read_flag("be8")) {
+      ctx.arg.be8 = true;
+    } else if (read_flag("be32")) {
+      ctx.arg.be8 = false;
     } else if (read_arg("format") || read_arg("b")) {
       if (arg == "binary")
         Fatal(ctx)
@@ -1351,7 +1355,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("max-cache-size")) {
     } else if (read_flag("mmap-output-file")) {
     } else if (read_flag("no-mmap-output-file")) {
-    } else if (read_flag("be8")) {
     } else if (read_arg("version-script")) {
       version_scripts.push_back(arg);
     } else if (read_arg("dynamic-list")) {
@@ -1493,6 +1496,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (ctx.arg.image_base % ctx.page_size)
     Fatal(ctx) << "-image-base must be a multiple of -max-page-size";
+
+  if (ctx.arg.emulation == ARM32BE::name && !ctx.arg.be8)
+    Fatal(ctx) << "--be32 is not supported";
 
   if (ctx.arg.thread_count == 0)
     ctx.arg.thread_count = get_default_thread_count();
