@@ -820,19 +820,13 @@ std::vector<u8> Arm32ExidxSection<E>::get_contents(Context<E> &ctx) {
       ent[i].val = 0x7fff'ffff & (ent[i].val + offset);
   });
 
-  std::sort(ent, ent + num_entries, [](const Entry &a, const Entry &b) {
-    return a.addr < b.addr;
-  });
+  ranges::sort(ent, ent + num_entries, {}, &Entry::addr);
 
   // Remove duplicate adjacent entries. That is, if two adjacent functions
   // have the same compact unwind info or are both CANTUNWIND, we can
   // merge them into a single address range.
-  auto it = std::unique(ent, ent + num_entries,
-                        [](const Entry &a, const Entry &b) {
-    return a.val == b.val;
-  });
-
-  num_entries = it - ent;
+  auto tail = ranges::unique(ent, ent + num_entries, {}, &Entry::val);
+  num_entries -= tail.size();
   buf.resize(num_entries * sizeof(Entry));
 
   // Make addresses relative to themselves.
@@ -858,7 +852,7 @@ void Arm32ExidxSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
-#ifdef MOLD_ARM32BE
+#if MOLD_ARM32BE
 // Even though using ARM32 in big-endian mode is very rare, the processor
 // technically supports both little- and big-endian modes. There are two
 // variants of big-endian mode: BE32 and BE8. In BE32, instructions and
@@ -873,10 +867,10 @@ void Arm32ExidxSection<E>::copy_buf(Context<E> &ctx) {
 //
 // The text section may contain a mix of 32-bit ARM instructions, 16-bit
 // Thumb instructions, and data. We need to distinguish them to swap 4
-// bytes, 2 bytes, or not swap bytes, respectively. Each segment of ARM,
-// Thumb, and data is labeled with a mapping symbol of $a, $t, and $d,
-// respectively. We use mapping symbols to know what to do with text
-// section.
+// bytes, 2 bytes, or not swap bytes, respectively. The beginning of ARM
+// code, Thumb code, and data is labeled with a mapping symbol of $a, $t,
+// and $d, respectively. We use mapping symbols to determine what to do
+// with the text section.
 void arm32be_swap_bytes(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Collect mapping symbols
@@ -904,21 +898,16 @@ void arm32be_swap_bytes(Context<E> &ctx) {
 
       InputSection<E> &isec = *sym.get_input_section();
       u8 *buf = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
-      u8 *p = buf + sym.value;
-      u8 *end;
 
+      u8 *end;
       if (i + 1 < syms.size() && syms[i + 1]->get_input_section() == &isec)
         end = buf + syms[i + 1]->value;
       else
         end = buf + isec.sh_size;
 
-      if (sym.name().starts_with("$a")) {
-        for (; p < end; p += 4)
-          *(ul32 *)p = *(ub32 *)p;
-      } else {
-        for (; p < end; p += 2)
-          *(ul16 *)p = *(ub16 *)p;
-      }
+      i64 sz = sym.name().starts_with("$a") ? 4 : 2;
+      for (u8 *p = buf + sym.value; p < end; p += sz)
+        ranges::reverse(p, p + sz);
     }
   });
 }
