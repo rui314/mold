@@ -36,6 +36,7 @@
 #include "mold.h"
 
 #include <tbb/parallel_for.h>
+#include <tbb/parallel_for_each.h>
 
 namespace mold {
 
@@ -862,7 +863,8 @@ void Arm32ExidxSection<E>::copy_buf(Context<E> &ctx) {
 // technically supports both little- and big-endian modes. There are two
 // variants of big-endian mode: BE32 and BE8. In BE32, instructions and
 // data are encoded in big-endian. In BE8, instructions are encoded in
-// little-endian, and only data is in big-endian. We only support BE8.
+// little-endian, and only data is in big-endian. BE8 is the de facto
+// standard for ARMv6 or later. We support only BE8.
 //
 // A tricky thing is that instructions in an object file are always
 // big-endian if the file is compiled for big-endian mode. It is the
@@ -876,69 +878,48 @@ void Arm32ExidxSection<E>::copy_buf(Context<E> &ctx) {
 // respectively. We use mapping symbols to know what to do with text
 // section.
 void arm32be_swap_bytes(Context<E> &ctx) {
-  enum : u8 { ARM, THUMB, DATA };
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    // Collect mapping symbols
+    std::vector<Symbol<E> *> syms;
 
-  // Represents a location of a mapping symbol
-  struct MappingSymbol {
-    bool operator==(const MappingSymbol &) const = default;
-    u32 get_addr() const { return isec->get_addr() + offset; }
+    for (Symbol<E> *sym : file->get_local_syms())
+      if (InputSection<E> *isec = sym->get_input_section())
+        if (isec->is_alive && (isec->shdr().sh_flags & SHF_EXECINSTR))
+          if (std::string_view x = sym->name();
+              x == "$a" || x.starts_with("$a.") ||
+              x == "$t" || x.starts_with("$t.") ||
+              x == "$d" || x.starts_with("$d."))
+            syms.push_back(sym);
 
-    InputSection<E> *isec;
-    u64 offset;
-    u8 mode;
-  };
+    // Group mapping symbols by input section and sort by address
+    ranges::stable_sort(syms, {}, [](const Symbol<E> *sym) {
+      return std::tuple{(uintptr_t)sym->get_input_section(), sym->value};
+    });
 
-  // Collect all locations of mapping symbols in text sections
-  std::vector<std::vector<MappingSymbol>> vec;
-  vec.resize(ctx.objs.size());
+    // Swap bytes
+    for (i64 i = 0; i < syms.size(); i++) {
+      Symbol<E> &sym = *syms[i];
+      if (sym.name().starts_with("$d"))
+        continue;
 
-  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (Symbol<E> *sym : ctx.objs[i]->get_local_syms()) {
-      InputSection<E> *isec = sym->get_input_section();
-      if (isec && isec->is_alive && isec->sh_size &&
-          (isec->shdr().sh_flags & SHF_EXECINSTR)) {
-        std::string_view x = sym->name();
-        if (x == "$a" || x.starts_with("$a."))
-          vec[i].push_back({isec, sym->value, ARM});
-        else if (x == "$t" || x.starts_with("$t."))
-          vec[i].push_back({isec, sym->value, THUMB});
-        else if (x == "$d" || x.starts_with("$d."))
-          vec[i].push_back({isec, sym->value, DATA});
+      InputSection<E> &isec = *sym.get_input_section();
+      u8 *buf = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
+      u8 *p = buf + sym.value;
+      u8 *end;
+
+      if (i + 1 < syms.size() && syms[i + 1]->get_input_section() == &isec)
+        end = buf + syms[i + 1]->value;
+      else
+        end = buf + isec.sh_size;
+
+      if (sym.name().starts_with("$a")) {
+        for (; p < end; p += 4)
+          *(ul32 *)p = *(ub32 *)p;
+      } else {
+        for (; p < end; p += 2)
+          *(ul16 *)p = *(ub16 *)p;
       }
     }
-
-    // Add a sentinel at the end of each executable section so that
-    // we do not run over the end of it when swapping bytes.
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
-      if (isec && isec->is_alive && isec->sh_size &&
-          (isec->shdr().sh_flags & SHF_EXECINSTR))
-        vec[i].push_back({isec.get(), (u64)isec->sh_size, DATA});
-  });
-
-  std::vector<MappingSymbol> labels = flatten(vec);
-
-  // Sort mapping symbols by address
-  ranges::stable_sort(labels, {}, [](const MappingSymbol &x) {
-    return std::tuple{x.isec->output_section->shdr.sh_offset,
-                      x.isec->offset, x.offset};
-  });
-
-  // Swap bytes
-  tbb::parallel_for((i64)0, (i64)(labels.size() - 1), [&](i64 i) {
-    MappingSymbol x = labels[i];
-    if (x.mode == DATA)
-      return;
-
-    u8 *buf = ctx.buf + x.isec->output_section->shdr.sh_offset +
-              x.isec->offset + x.offset;
-    i64 dist = labels[i + 1].get_addr() - x.get_addr();
-
-    if (x.mode == ARM)
-      for (i64 j = 0; j < dist; j += 4)
-        *(ul32 *)(buf + j) = *(ub32 *)(buf + j);
-    if (x.mode == THUMB)
-      for (i64 j = 0; j < dist; j += 2)
-        *(ul16 *)(buf + j) = *(ub16 *)(buf + j);
   });
 }
 #endif
