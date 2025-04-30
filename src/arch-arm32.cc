@@ -897,16 +897,16 @@ void arm32be_swap_bytes(Context<E> &ctx) {
         continue;
 
       InputSection<E> &isec = *sym.get_input_section();
-      u8 *buf = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
+      u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
 
       u8 *end;
       if (i + 1 < syms.size() && syms[i + 1]->get_input_section() == &isec)
-        end = buf + syms[i + 1]->value;
+        end = base + syms[i + 1]->value;
       else
-        end = buf + isec.sh_size;
+        end = base + isec.sh_size;
 
       i64 sz = sym.name().starts_with("$a") ? 4 : 2;
-      for (u8 *p = buf + sym.value; p < end; p += sz)
+      for (u8 *p = base + sym.value; p < end; p += sz)
         ranges::reverse(p, p + sz);
     }
   });

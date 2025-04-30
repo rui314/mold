@@ -1315,18 +1315,16 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
       }
     }
 
-    // If a symbol is imported, let the dynamic linker to resolve it.
     if (sym->is_imported) {
+      // If a symbol is imported, let the dynamic linker to resolve it.
       add({idx, 0, E::R_GLOB_DAT, sym});
-      continue;
-    }
-
-    // If we know an address at link-time, fill that GOT entry now.
-    // It may need a base relocation, though.
-    if (ctx.arg.pic && sym->is_relative())
+    } else if (ctx.arg.pic && sym->is_relative()) {
+      // We know the symbol's address, but it needs a base relocation.
       add({idx, sym->get_addr(ctx, NO_PLT), E::R_RELATIVE});
-    else
+    } else {
+      // We know the symbol's exact run-time address at link-time.
       add({idx, sym->get_addr(ctx, NO_PLT)});
+    }
   }
 
   // Create GOT entries for TLVs.
