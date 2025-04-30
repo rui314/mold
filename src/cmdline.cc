@@ -1510,9 +1510,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     std::string ver = ctx.arg.soname;
     if (ver.empty())
       ver = path_filename(ctx.arg.output);
-
     ctx.arg.version_definitions.push_back(ver);
-    ctx.default_version = VER_NDX_LAST_RESERVED + 1;
   }
 
   for (std::string_view path : version_scripts) {

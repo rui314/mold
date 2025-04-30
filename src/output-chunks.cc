@@ -2632,6 +2632,14 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   if (ctx.arg.version_definitions.empty())
     return;
 
+  // Handle --default-symver
+  if (ctx.arg.default_symver)
+    for (Symbol<E> *sym : ctx.dynsym->symbols)
+      if (sym && !sym->file->is_dso)
+        if (u16 ver = sym->ver_idx;
+            ver == VER_NDX_GLOBAL || ver == VER_NDX_UNSPECIFIED)
+          sym->ver_idx = VER_NDX_LAST_RESERVED + 1;
+
   // Resize .gnu.version and write to it
   ctx.versym->contents.resize(ctx.dynsym->symbols.size(), VER_NDX_GLOBAL);
   ctx.versym->contents[0] = VER_NDX_LOCAL;
