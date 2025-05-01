@@ -1115,36 +1115,19 @@ void check_shlib_undefined(Context<E> &ctx) {
     return false;
   };
 
-  // We want to skip a file that (either directly or indirectly) depends
-  // on another .so file we know nothing about. This is because missing
-  // symbols might be provided by that unknown file.
-  //
-  // We need recursion for indirect dependencies.
-  std::unordered_map<std::string_view, std::vector<std::string_view>> deps;
+  // Skip test if we don't have a complete set of shared object files
+  // for the program, because if there's a missing .so, an undefined
+  // symbol might be defined by that library.
+  std::unordered_set<std::string_view> sonames;
   for (std::unique_ptr<SharedFile<E>> &file : ctx.dso_pool)
-    deps[file->soname] = file->get_dt_needed(ctx);
+    sonames.insert(file->soname);
 
-  std::function<bool(std::string_view, i64)> can_check =
-    [&](std::string_view soname, i64 depth) -> bool {
-    if (depth == deps.size() + 1) {
-      // A library with a circular dependency is rare but does exist and
-      // can be loaded without issue, so we need to handle such a case.
-      return true;
-    }
-    auto it = deps.find(soname);
-    if (it == deps.end())
-      return false;
-    for (std::string_view needed : it->second)
-      if (!can_check(needed, depth + 1))
-        return false;
-    return true;
-  };
+  for (SharedFile<E> *file : ctx.dsos)
+    for (std::string_view soname : file->get_dt_needed(ctx))
+      if (!sonames.contains(soname))
+        return;
 
   tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-    // Skip the file if it depends on a file that we know nothing about.
-    if (!can_check(file->soname, 0))
-      return;
-
     // Check if all undefined symbols have been resolved.
     for (i64 i = 0; i < file->elf_syms.size(); i++) {
       const ElfSym<E> &esym = file->elf_syms[i];
