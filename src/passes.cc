@@ -2780,7 +2780,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
     if (ctx.phdr) {
       i64 sz = ctx.phdr->shdr.sh_size;
       ctx.phdr->update_shdr(ctx);
-      if (sz != ctx.phdr->shdr.sh_size)
+      if (sz < ctx.phdr->shdr.sh_size)
         continue;
     }
 
