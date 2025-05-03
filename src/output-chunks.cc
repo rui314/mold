@@ -834,20 +834,6 @@ void DynamicSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
-template <typename T>
-static std::vector<std::span<T>> split(std::vector<T> &input, i64 unit) {
-  std::span<T> span(input);
-  std::vector<std::span<T>> vec;
-
-  while (span.size() >= unit) {
-    vec.push_back(span.subspan(0, unit));
-    span = span.subspan(unit);
-  }
-  if (!span.empty())
-    vec.push_back(span);
-  return vec;
-}
-
 // Assign offsets to OutputSection members
 template <typename E>
 void OutputSection<E>::compute_section_size(Context<E> &ctx) {
