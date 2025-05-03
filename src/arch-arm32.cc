@@ -280,14 +280,6 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
   }
 }
 
-static Thunk<E> &get_reachable_thunk(OutputSection<E> &osec, u64 addr) {
-  auto it = std::upper_bound(osec.thunks.begin(), osec.thunks.end(), addr,
-                             [](u64 addr, std::unique_ptr<Thunk<E>> &thunk) {
-    return addr < thunk->get_addr();
-  });
-  return **it;
-}
-
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
@@ -315,7 +307,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     auto get_arm_thunk_addr   = [&] { return sym.get_thunk_addr(ctx, P) + 4; };
 
     auto get_tlsdesc_trampoline_addr = [&] {
-      return get_reachable_thunk(*output_section, P).get_addr();
+      auto it = ranges::upper_bound(output_section->thunks, P, {},
+                                    [](std::unique_ptr<Thunk<E>> &thunk) {
+        return thunk->get_addr();
+      });
+      return (*it)->get_addr();
     };
 
     switch (rel.r_type) {
@@ -907,7 +903,7 @@ void arm32be_swap_bytes(Context<E> &ctx) {
 
       i64 sz = sym.name().starts_with("$a") ? 4 : 2;
       for (u8 *p = base + sym.value; p < end; p += sz)
-        ranges::reverse(p, p + sz);
+        std::reverse(p, p + sz);
     }
   });
 }
