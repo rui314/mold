@@ -120,7 +120,7 @@ accept an absolute path as an argument for `-fuse-ld`.
 Create `.cargo/config.toml` in your project directory with the following:
 
 ```toml
-[target.x86_64-unknown-linux-gnu]
+[target.'cfg(target_os = "linux")']
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
 ```
@@ -131,7 +131,7 @@ example above, we use `clang` as a linker driver since it always accepts the
 may be able to remove the `linker = "clang"` line.
 
 ```toml
-[target.x86_64-unknown-linux-gnu]
+[target.'cfg(target_os = "linux")']
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 ```
 
