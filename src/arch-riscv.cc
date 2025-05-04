@@ -321,10 +321,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A - P;
       i64 rd = get_rd(buf + rel.r_offset + 4);
 
-      // Calling an undefined weak symbol does not make sense.
-      // We make such call into an infinite loop. This should
+      // Calling an undefined weak symbol without PLT entries does not make
+      // sense. We make such call into an infinite loop. This should
       // help debugging of a faulty program.
-      if (sym.esym().is_undef_weak())
+      if (sym.esym().is_undef_weak() && rel.r_type != R_RISCV_CALL_PLT)
         val = 0;
 
       if (removed_bytes == 4) {
