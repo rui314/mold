@@ -47,23 +47,30 @@ static constexpr i64 thunk_align = 16;
 template <typename E>
 static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
                          Symbol<E> &sym, const ElfRel<E> &rel) {
-  // We assume pessimistically that all out-of-section relocations are
-  // out-of-range. Excessive thunks will be removed later by
-  // remove_redundant_thunks().
-  InputSection<E> *isec2 = sym.get_input_section();
-  if (!isec2 || isec.output_section != isec2->output_section)
-    return false;
+  // Thumb and ARM B instructions cannot be converted to BX, so we
+  // always have to make them jump to a thunk to switch processor mode
+  // even if their destinations are within their ranges.
+  if constexpr (is_arm32<E>)
+    if (bool is_thumb = sym.get_addr(ctx) & 1;
+        (rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
+        (rel.r_type == R_ARM_JUMP24 && is_thumb) ||
+        (rel.r_type == R_ARM_PLT32 && is_thumb))
+      return false;
 
-  // If the target section is in the same output section but
-  // hasn't got any address yet, that's unreacahble.
-  if (isec2->offset == -1)
-    return false;
+  // On PowerPC, all PLT calls go through range extension thunks.
+  if constexpr (is_ppc32<E> || is_ppc64v1<E>)
+    if (sym.has_plt(ctx))
+      return false;
 
-  // Even if the target is the same section, we branch to its PLT
-  // if it has one. So a symbol with a PLT is also considered an
-  // out-of-section reference.
-  if (sym.has_plt(ctx))
-    return false;
+  // PowerPC before Power9 lacks PC-relative load/store instructions.
+  // Functions compiled for Power9 or earlier assume that r2 points to
+  // GOT+0x8000, while those for Power10 uses r2 as a scratch register.
+  // We need to a thunk to recompute r2 for interworking.
+  if constexpr (is_ppc64v2<E>)
+    if (sym.has_plt(ctx) ||
+        (rel.r_type == R_PPC64_REL24 && !sym.esym().ppc64_preserves_r2()) ||
+        (rel.r_type == R_PPC64_REL24_NOTOC && sym.esym().ppc64_uses_toc()))
+      return false;
 
   // Compute a distance between the relocated place and the symbol
   // and check if they are within reach.
@@ -72,33 +79,6 @@ static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
   i64 P = isec.get_addr() + rel.r_offset;
   i64 val = S + A - P;
   return -branch_distance<E> <= val && val < branch_distance<E>;
-}
-
-template <typename E>
-static bool needs_shim(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel) {
-  // Thumb and ARM B instructions cannot be converted to BX, so we
-  // always have to make them jump to a thunk to switch processor mode
-  // even if their destinations are within their ranges.
-  if constexpr (is_arm32<E>) {
-    bool is_thumb = sym.get_addr(ctx) & 1;
-    return (rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
-           (rel.r_type == R_ARM_JUMP24 && is_thumb) ||
-           (rel.r_type == R_ARM_PLT32 && is_thumb);
-  }
-
-  // On PowerPC, all PLT calls go through range extension thunks.
-  if constexpr (is_ppc32<E> || is_ppc64v1<E>)
-    return sym.has_plt(ctx);
-
-  // PowerPC before Power9 lacks PC-relative load/store instructions.
-  // Functions compiled for Power9 or earlier assume that r2 points to
-  // GOT+0x8000, while those for Power10 uses r2 as a scratch register.
-  // We need to a thunk to recompute r2 for interworking.
-  if constexpr (is_ppc64v2<E>)
-    return sym.has_plt(ctx) ||
-           (rel.r_type == R_PPC64_REL24 && !sym.esym().ppc64_preserves_r2()) ||
-           (rel.r_type == R_PPC64_REL24_NOTOC && sym.esym().ppc64_uses_toc());
-  return false;
 }
 
 template <>
@@ -187,20 +167,35 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
       InputSection<E> &isec = *m[i];
 
       for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
-        if (!is_func_call_rel(rel))
-          continue;
-
-        // Skip if the symbol is undefined. apply_reloc() will report an error.
         Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-        if (!sym.file)
-          continue;
 
-        // Skip if we can directly branch to the destination.
-        if (is_reachable(ctx, isec, sym, rel) && !needs_shim(ctx, sym, rel))
-          continue;
+        auto reachable = [&] {
+          // Skip if the symbol is undefined. apply_reloc() will report an error.
+          if (!sym.file)
+            return false;
 
-        // Add the symbol to the current thunk if it's not added already.
-        if (!sym.flags.test_and_set()) {
+          // We assume pessimistically that all out-of-section relocations are
+          // out-of-range.
+          InputSection<E> *isec2 = sym.get_input_section();
+          if (!isec2 || isec.output_section != isec2->output_section)
+            return false;
+
+          // If the target section is in the same output section but
+          // hasn't got any address yet, that's unreacahble.
+          if (isec2->offset == -1)
+            return false;
+
+          // Even if the target is the same section, we branch to its PLT
+          // if it has one. So a symbol with a PLT is also considered an
+          // out-of-section reference.
+          if (sym.has_plt(ctx))
+            return false;
+
+          // Test if we can directly branch to the destination.
+          return is_reachable(ctx, isec, sym, rel);
+        };
+
+        if (is_func_call_rel(rel) && !reachable() && !sym.flags.test_and_set()) {
           std::scoped_lock lock(mu);
           thunk.symbols.push_back(&sym);
         }
@@ -228,7 +223,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   this->shdr.sh_size = offset;
 }
 
-// create_range_extension_thunks creates thunks with a pessimistic
+// create_range_extension_thunks() creates thunks with a pessimistic
 // assumption that all out-of-section references are out of range.
 // After computing output section addresses, we revisit all thunks to
 // remove unneeded symbols from them.
@@ -255,24 +250,11 @@ void remove_redundant_thunks(Context<E> &ctx) {
   // Mark all symbols that actually need range extension thunks
   for (OutputSection<E> *osec : sections) {
     tbb::parallel_for_each(osec->members, [&](InputSection<E> *isec) {
-      for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
-        if (!is_func_call_rel(rel))
-          continue;
-
-        Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
-        if (!sym.file)
-          continue;
-
-        if (!needs_shim(ctx, sym, rel)) {
-          i64 S = sym.get_addr(ctx, NO_OPD);
-          i64 A = get_addend(*isec, rel);
-          i64 P = isec->get_addr() + rel.r_offset;
-          i64 val = S + A - P;
-          if (-branch_distance<E> <= val && val < branch_distance<E>)
-            continue;
-        }
-        sym.flags.test_and_set();
-      }
+      for (const ElfRel<E> &rel : isec->get_rels(ctx))
+        if (is_func_call_rel(rel))
+          if (Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
+              sym.file && !is_reachable(ctx, *isec, sym, rel))
+            sym.flags.test_and_set();
     });
   }
 
