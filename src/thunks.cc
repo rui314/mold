@@ -45,28 +45,25 @@ static constexpr i64 max_thunk_size = 1024 * 1024;
 static constexpr i64 thunk_align = 16;
 
 template <typename E>
-static bool is_reachable(Context<E> &ctx, bool first_pass, InputSection<E> &isec,
+static bool is_reachable(Context<E> &ctx, InputSection<E> &isec,
                          Symbol<E> &sym, const ElfRel<E> &rel) {
-  // If the target section is in the same output section but
-  // hasn't got any address yet, that's unreacahble.
+  // We assume pessimistically that all out-of-section relocations are
+  // out-of-range. Excessive thunks will be removed later by
+  // remove_redundant_thunks().
   InputSection<E> *isec2 = sym.get_input_section();
-  if (isec2 && isec.output_section == isec2->output_section &&
-      isec2->offset == -1)
+  if (!isec2 || isec.output_section != isec2->output_section)
     return false;
 
-  // We don't know about the final file layout on the first pass, so
-  // we assume pessimistically that all out-of-section relocations are
-  // out-of-range. Excessive thunks will be removed on the second pass.
-  if (first_pass) {
-    if (!isec2 || isec.output_section != isec2->output_section)
-      return false;
+  // If the target section is in the same output section but
+  // hasn't got any address yet, that's unreacahble.
+  if (isec2->offset == -1)
+    return false;
 
-    // Even if the target is the same section, we branch to its PLT
-    // if it has one. So a symbol with a PLT is also considered an
-    // out-of-section reference.
-    if (sym.has_plt(ctx))
-      return false;
-  }
+  // Even if the target is the same section, we branch to its PLT
+  // if it has one. So a symbol with a PLT is also considered an
+  // out-of-section reference.
+  if (sym.has_plt(ctx))
+    return false;
 
   // Compute a distance between the relocated place and the symbol
   // and check if they are within reach.
@@ -105,8 +102,7 @@ static bool needs_shim(Context<E> &ctx, Symbol<E> &sym, const ElfRel<E> &rel) {
 }
 
 template <>
-void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx,
-                                                     bool first_pass) {
+void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   std::span<InputSection<E> *> m = members;
   if (m.empty())
     return;
@@ -200,8 +196,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx,
           continue;
 
         // Skip if we can directly branch to the destination.
-        if (is_reachable(ctx, first_pass, isec, sym, rel) &&
-            !needs_shim(ctx, sym, rel))
+        if (is_reachable(ctx, isec, sym, rel) && !needs_shim(ctx, sym, rel))
           continue;
 
         // Add the symbol to the current thunk if it's not added already.
@@ -233,15 +228,90 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx,
   this->shdr.sh_size = offset;
 }
 
+// create_range_extension_thunks creates thunks with a pessimistic
+// assumption that all out-of-section references are out of range.
+// After computing output section addresses, we revisit all thunks to
+// remove unneeded symbols from them.
+//
+// We create more thunks than necessary and then eliminate some of
+// them later, instead of just creating thunks at this stage. This is
+// because we can safely shrink sections after assigning addresses to
+// them without worrying about making existing references to thunks go
+// out of range. On the other hand, if we insert thunks after
+// assigning addresses to sections, references to thunks could become
+// out of range due to the new extra gaps for thunks. Thus, the
+// creation of thunks is a two-pass process.
 template <>
 void remove_redundant_thunks(Context<E> &ctx) {
   Timer t(ctx, "remove_redundant_thunks");
-  set_osec_offsets(ctx);
 
+  // Gather output executable sections
+  std::vector<OutputSection<E> *> sections;
   for (Chunk<E> *chunk : ctx.chunks)
     if (OutputSection<E> *osec = chunk->to_osec())
       if (osec->shdr.sh_flags & SHF_EXECINSTR)
-        osec->create_range_extension_thunks(ctx, false);
+        sections.push_back(osec);
+
+  // Mark all symbols that actually need range extension thunks
+  for (OutputSection<E> *osec : sections) {
+    tbb::parallel_for_each(osec->members, [&](InputSection<E> *isec) {
+      for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
+        if (!is_func_call_rel(rel))
+          continue;
+
+        Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
+        if (!sym.file)
+          continue;
+
+        if (!needs_shim(ctx, sym, rel)) {
+          i64 S = sym.get_addr(ctx, NO_OPD);
+          i64 A = get_addend(*isec, rel);
+          i64 P = isec->get_addr() + rel.r_offset;
+          i64 val = S + A - P;
+          if (-branch_distance<E> <= val && val < branch_distance<E>)
+            continue;
+        }
+        sym.flags.test_and_set();
+      }
+    });
+  }
+
+  // Remove symbols from thunks if they don't actually need range
+  // extension thunks
+  std::vector<Symbol<E> *> syms;
+
+  for (OutputSection<E> *osec : sections) {
+    for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks) {
+      append(syms, thunk->symbols);
+      std::erase_if(thunk->symbols, [&](Symbol<E> *sym) { return !sym->flags; });
+    }
+  }
+
+  // Reset flags for future use
+  for (Symbol<E> *sym : syms)
+    sym->flags = 0;
+
+  // Recompute section sizes
+  tbb::parallel_for_each(sections, [&](OutputSection<E> *osec) {
+    std::span<InputSection<E> *> m = osec->members;
+    std::span<std::unique_ptr<Thunk<E>>> t = osec->thunks;
+    i64 offset = 0;
+
+    while (!m.empty() || !t.empty()) {
+      if (!m.empty() && (t.empty() || m[0]->offset < t[0]->offset)) {
+        offset = align_to(offset, 1 << m[0]->p2align);
+        m[0]->offset = offset;
+        offset += m[0]->sh_size;
+        m = m.subspan(1);
+      } else {
+        offset = align_to(offset, thunk_align);
+        t[0]->offset = offset;
+        offset += t[0]->size();
+        t = t.subspan(1);
+      }
+    }
+    osec->shdr.sh_size = offset;
+  });
 }
 
 // When applying relocations, we want to know the address in a reachable

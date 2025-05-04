@@ -536,13 +536,6 @@ int mold_main(int argc, char **argv) {
   if (ctx.arg.emit_relocs)
     create_reloc_sections(ctx);
 
-  // We've created range extension thunks with a pessimistive assumption
-  // that all out-of-section references are out of range. Now that we are
-  // able to assign addresses to all SHF_ALLOC output sections, we can
-  // eliminate excessive thunks.
-  if constexpr (needs_thunk<E>)
-    remove_redundant_thunks(ctx);
-
   // Compute .symtab and .strtab sizes for each file.
   if (!ctx.arg.strip_all)
     create_output_symtab(ctx);
@@ -559,6 +552,14 @@ int mold_main(int argc, char **argv) {
   // are close enough. Do this optimization.
   if constexpr (is_riscv<E> || is_loongarch<E>) {
     shrink_sections(ctx);
+    filesize = set_osec_offsets(ctx);
+  }
+
+  // We've created range extension thunks with a pessimistive assumption
+  // that all out-of-section references are out of range. Now that we know
+  // the addresses of all sections,, we can eliminate excessive thunks.
+  if constexpr (needs_thunk<E>) {
+    remove_redundant_thunks(ctx);
     filesize = set_osec_offsets(ctx);
   }
 

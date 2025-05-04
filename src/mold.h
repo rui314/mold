@@ -570,7 +570,7 @@ public:
   void populate_symtab(Context<E> &ctx) override;
 
   void scan_abs_relocations(Context<E> &ctx);
-  void create_range_extension_thunks(Context<E> &ctx, bool first_pass);
+  void create_range_extension_thunks(Context<E> &ctx);
 
   std::vector<InputSection<E> *> members;
   std::vector<std::unique_ptr<Thunk<E>>> thunks;

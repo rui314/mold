@@ -1440,7 +1440,7 @@ void compute_section_sizes(Context<E> &ctx) {
 
     // create_range_extension_thunks is not thread-safe
     for (Chunk<E> *chunk : std::span(vec.begin(), tail.begin()))
-      chunk->to_osec()->create_range_extension_thunks(ctx, true);
+      chunk->to_osec()->create_range_extension_thunks(ctx);
 
     tbb::parallel_for_each(tail, [&](Chunk<E> *chunk) {
       chunk->compute_section_size(ctx);

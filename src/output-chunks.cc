@@ -1162,6 +1162,9 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
     u8 *strtab_base = ctx.buf + ctx.strtab->shdr.sh_offset;
     u8 *strtab = strtab_base + this->strtab_offset;
 
+    memset(esym, 0, this->num_local_symtab * sizeof(ElfSym<E>));
+    memset(strtab, 0, this->strtab_size);
+
     auto write_esym = [&](u64 addr, i64 st_name) {
       memset(esym, 0, sizeof(*esym));
       esym->st_name = st_name;
