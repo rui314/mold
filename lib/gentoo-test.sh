@@ -54,14 +54,14 @@ dir=gentoo/$git_hash
 
 mkdir -p "$dir"/success "$dir"/failure
 
-$podman chrt --idle 0 bash -c "$cmd1 && $cmd2 && $cmd3" >& "$dir"/"$filename".mold
+$podman chrt --idle 0 nice -n 19 bash -c "$cmd1 && $cmd2 && $cmd3" >& "$dir"/"$filename".mold
 if [ $? = 0 ]; then
   mv "$dir"/"$filename".mold "$dir"/success
 else
   mv "$dir"/"$filename".mold "$dir"/failure
 fi
 
-$podman nice -n 19 bash -c "$cmd2 && $cmd3" >& "$dir"/"$filename".ld
+$podman chrt --idle 0 nice -n 19 bash -c "$cmd2 && $cmd3" >& "$dir"/"$filename".ld
 if [ $? = 0 ]; then
   mv "$dir"/"$filename".ld "$dir"/success
 else
