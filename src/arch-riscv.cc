@@ -324,7 +324,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // Calling an undefined weak symbol does not make sense.
       // We make such call into an infinite loop. This should
       // help debugging of a faulty program.
-      if (sym.esym().is_undef_weak())
+      if (sym.is_remaining_undef_weak())
         val = 0;
 
       if (removed_bytes == 4) {
