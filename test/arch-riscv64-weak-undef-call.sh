@@ -1,8 +1,6 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-test_cflags -static || skip
-
 cat <<EOF | $CC -c -o $t/a.o -xassembler -
 .globl foo
 .weak bar
