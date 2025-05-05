@@ -3033,12 +3033,16 @@ template <typename E>
 u64
 Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> {
   std::span<u64> vec = ctx.symbol_aux[aux_idx].thunk_addrs;
+
   u64 lo = (P < branch_distance<E>) ? 0 : P - branch_distance<E>;
-  u64 val = *ranges::lower_bound(vec, lo);
-  i64 disp = val - P;
+  auto it = ranges::lower_bound(vec, lo);
+  if (it == vec.end())
+    Fatal(ctx) << "range extension thunk out of range: " << *this;
+
+  i64 disp = *it - P;
   if (disp < -branch_distance<E> || branch_distance<E> <= disp)
     Fatal(ctx) << "range extension thunk out of range: " << *this;
-  return val;
+  return *it;
 }
 
 template <typename E>
@@ -3048,6 +3052,11 @@ inline bool Symbol<E>::has_plt(Context<E> &ctx) const {
 
 template <typename E>
 inline bool Symbol<E>::is_absolute() const {
+  // An unresolved weak symbol acts as if it were an absolute address
+  // at address 0
+  if (is_remaining_undef_weak())
+    return true;
+
   return !is_imported && !get_frag() && !get_input_section() &&
          !get_output_section();
 }

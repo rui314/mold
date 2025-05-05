@@ -45,7 +45,7 @@ static constexpr i64 max_thunk_size = 1024 * 1024;
 static constexpr i64 thunk_align = 16;
 
 template <typename E>
-static inline bool
+static bool
 requires_thunk(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel,
                bool first_pass) {
   if (!is_func_call_rel(rel))
@@ -180,12 +180,12 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     // Create a new thunk and place it at D.
     offset = align_to(offset, thunk_align);
     thunks.emplace_back(std::make_unique<Thunk<E>>(*this, offset));
+
     Thunk<E> &thunk = *thunks.back();
+    std::mutex mu;
 
     // Scan relocations between B and C to collect symbols that need
     // entries in the new thunk.
-    std::mutex mu;
-
     tbb::parallel_for(b, c, [&](i64 i) {
       InputSection<E> &isec = *m[i];
       for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
@@ -213,6 +213,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     b = c;
   }
 
+  // Reset flags for future use
   for (; t < thunks.size(); t++)
     for (Symbol<E> *sym : thunks[t]->symbols)
       sym->flags = 0;
@@ -306,7 +307,8 @@ void gather_thunk_addresses(Context<E> &ctx) {
   std::vector<OutputSection<E> *> sections;
   for (Chunk<E> *chunk : ctx.chunks)
     if (OutputSection<E> *osec = chunk->to_osec())
-      sections.push_back(osec);
+      if (osec->shdr.sh_flags & SHF_EXECINSTR)
+        sections.push_back(osec);
 
   ranges::stable_sort(sections, {}, [](OutputSection<E> *x) {
     return x->shdr.sh_addr;
