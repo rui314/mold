@@ -122,8 +122,9 @@ i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
   if (sym.is_absolute())
     return INT64_MAX;
 
-  // Likewise, relocations against weak undefined symbols won't be relaxed.
-  if (sym.esym().is_undef_weak())
+  // Likewise, relocations against weak undefined symbols won't be relaxed if
+  // it cannot be promoted to a dynamic symbol.
+  if (sym.is_remaining_undef_weak())
     return INT64_MAX;
 
   // Compute a distance between the relocated place and the symbol.

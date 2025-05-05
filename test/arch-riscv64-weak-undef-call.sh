@@ -10,4 +10,4 @@ foo:
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
-$OBJDUMP -d $t/b.so | grep -E '\bjalr\b.*<bar\$plt>'
+$OBJDUMP -d $t/b.so | grep -E '\bjal\b.*<bar\$plt>'
