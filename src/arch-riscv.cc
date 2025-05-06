@@ -467,7 +467,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
     case R_RISCV_TLSDESC_HI20:
       // RISC-V TLSDESC uses the following code sequence to materialize
-      // a TP-relative address in x0.
+      // a TP-relative address in a0.
       //
       //   .L0:
       //   auipc  tX, 0
