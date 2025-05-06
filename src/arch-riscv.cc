@@ -321,12 +321,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       i64 val = S + A - P;
       i64 rd = get_rd(buf + rel.r_offset + 4);
 
-      // Calling an undefined weak symbol does not make sense.
-      // We make such call into an infinite loop. This should
-      // help debugging of a faulty program.
-      if (sym.is_remaining_undef_weak())
-        val = 0;
-
       if (removed_bytes == 4) {
         // auipc + jalr -> jal
         *(ul32 *)loc = (rd << 7) | 0b1101111;
