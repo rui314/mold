@@ -277,7 +277,11 @@ int main() {
 }" HAVE_FULL_ATOMIC_SUPPORT)
 
 if(NOT HAVE_FULL_ATOMIC_SUPPORT)
-  target_link_libraries(mold PRIVATE atomic)
+  if (MOLD_MOSTLY_STATIC)
+    target_link_options(mold PRIVATE "-Wl,--push-state,-Bstatic" "-latomic" "-Wl,--pop-state")
+  else()
+    target_link_libraries(mold PRIVATE atomic)
+  endif()
 endif()
 
 # Add -pthread
