@@ -283,9 +283,9 @@ std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
 }
 
 template <typename E>
-ComdatGroup *insert_comdat_group(Context<E> &ctx, std::string_view name) {
+ComdatGroup *insert_comdat_group(Context<E> &ctx, std::string name) {
   typename decltype(ctx.comdat_groups)::const_accessor acc;
-  ctx.comdat_groups.insert(acc, {name, ComdatGroup()});
+  ctx.comdat_groups.insert(acc, {std::move(name), ComdatGroup()});
   return const_cast<ComdatGroup *>(&acc->second);
 }
 
@@ -347,7 +347,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (entries[0] != GRP_COMDAT)
         Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
 
-      ComdatGroup *group = insert_comdat_group(ctx, signature);
+      ComdatGroup *group = insert_comdat_group(ctx, std::string(signature));
       comdat_groups.push_back({group, (i32)i, entries.subspan(1)});
       break;
     }
@@ -1571,7 +1571,7 @@ template class SharedFile<E>;
 template Symbol<E> *get_symbol(Context<E> &, std::string_view, std::string_view);
 template Symbol<E> *get_symbol(Context<E> &, std::string_view);
 template std::string_view demangle(const Symbol<E> &);
-template ComdatGroup *insert_comdat_group(Context<E> &, std::string_view);
+template ComdatGroup *insert_comdat_group(Context<E> &, std::string);
 template std::ostream &operator<<(std::ostream &, const Symbol<E> &);
 template std::ostream &operator<<(std::ostream &, const InputFile<E> &);
 

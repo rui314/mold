@@ -2099,7 +2099,7 @@ struct Context {
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
-  tbb::concurrent_hash_map<std::string_view, ComdatGroup, HashCmp> comdat_groups;
+  tbb::concurrent_hash_map<std::string, ComdatGroup, HashCmp> comdat_groups;
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
@@ -2526,7 +2526,7 @@ template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view name);
 
 template <typename E>
-ComdatGroup *insert_comdat_group(Context<E> &ctx, std::string_view name);
+ComdatGroup *insert_comdat_group(Context<E> &ctx, std::string name);
 
 template <typename E>
 std::string_view demangle(const Symbol<E> &sym);
