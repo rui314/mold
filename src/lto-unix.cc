@@ -670,8 +670,10 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
     // section. We handle such symbols differently than comdat symbols in
     // a regular file because, unlike regular object files, IR files don't
     // have input sections.
-    if (psym.comdat_key)
-      obj->lto_comdat_groups[i + 1] = insert_comdat_group(ctx, psym.comdat_key);
+    if (psym.comdat_key) {
+      std::string_view key = save_string(ctx, psym.comdat_key);
+      obj->lto_comdat_groups[i + 1] = insert_comdat_group(ctx, key);
+    }
   }
 
   obj->symbol_strtab = save_string(ctx, strtab);
