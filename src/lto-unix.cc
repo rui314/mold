@@ -600,10 +600,10 @@ create_plugin_input_file(Context<E> &ctx, MappedFile *mf) {
 template <typename E>
 ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
   if (ctx.arg.plugin.empty())
-    Fatal(ctx) << mf->name << ": don't know how to handle this LTO object file "
-               << "because no -plugin option was given. Please make sure you "
-               << "added -flto not only for creating object files but also for "
-               << "creating the final executable.";
+    Fatal(ctx) << mf->name << ": unable to handle this LTO object file because "
+               << "the -plugin option was not provided. Please make sure you "
+               << "added -flto not only when creating object files but also "
+               << "when linking the final executable.";
 
   load_lto_plugin(ctx);
 
