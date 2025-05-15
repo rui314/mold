@@ -2798,10 +2798,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
   };
 
-  auto stop = [](Symbol<E> *sym, auto &chunk) {
+  auto stop = [](Symbol<E> *sym, auto &chunk, i64 bias = 0) {
     if (sym && chunk) {
       sym->set_output_section(chunk);
-      sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size;
+      sym->value = chunk->shdr.sh_addr + chunk->shdr.sh_size + bias;
     }
   };
 
@@ -2838,10 +2838,9 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   // such executable lacks the .dynamic section and thus there's no way
   // to find ifunc relocations other than these symbols.
   if (ctx.reldyn && ctx.arg.static_ && !ctx.arg.pie) {
-    stop(ctx.__rel_iplt_start, ctx.reldyn);
+    stop(ctx.__rel_iplt_start, ctx.reldyn,
+         -get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>));
     stop(ctx.__rel_iplt_end, ctx.reldyn);
-    ctx.__rel_iplt_start->value -=
-      get_num_irelative_relocs(ctx) * sizeof(ElfRel<E>);
   } else {
     // If the symbols are not ncessary, we turn them to absolute
     // symbols at address 0.
@@ -2943,17 +2942,13 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   }
 
   // PPC64's _{save,rest}gpr{0,1}_{14,15,16,...,31} symbols
-  if constexpr (is_ppc64v2<E>) {
-    i64 offset = 0;
-    for (std::pair<std::string_view, u32> p : ppc64_save_restore_insns) {
-      std::string_view label = p.first;
-      if (!label.empty())
+  if constexpr (is_ppc64v2<E>)
+    for (i64 i = 0; i < ppc64_save_restore_insns.size(); i++)
+      if (std::string_view label = ppc64_save_restore_insns[i].first;
+          !label.empty())
         if (Symbol<E> *sym = get_symbol(ctx, label);
             sym->file == ctx.internal_obj)
-          start(sym, ctx.extra.save_restore, offset);
-      offset += 4;
-    }
-  }
+          start(sym, ctx.extra.save_restore, i * 4);
 
   // __start_ and __stop_ symbols
   for (Chunk<E> *chunk : sections) {
