@@ -2411,6 +2411,15 @@ void sort_output_sections(Context<E> &ctx) {
     sort_output_sections_by_order(ctx);
 }
 
+template <typename E>
+static i64 get_tls_segment_alignment(Context<E> &ctx) {
+  i64 val = 1;
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (chunk->shdr.sh_flags & SHF_TLS)
+      val = std::max<i64>(val, chunk->shdr.sh_addralign);
+  return val;
+}
+
 // This function assigns virtual addresses to output sections. Assigning
 // addresses is a bit tricky because we want to pack sections as tightly
 // as possible while not violating the constraints imposed by the hardware
@@ -2455,8 +2464,12 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
   std::vector<Chunk<E> *> &chunks = ctx.chunks;
   u64 addr = ctx.arg.image_base;
 
+  auto is_tls = [](Chunk<E> *chunk) {
+    return chunk->shdr.sh_flags & SHF_TLS;
+  };
+
   auto is_tbss = [](Chunk<E> *chunk) {
-    return (chunk->shdr.sh_type == SHT_NOBITS) && (chunk->shdr.sh_flags & SHF_TLS);
+    return (chunk->shdr.sh_flags & SHF_TLS) && (chunk->shdr.sh_type == SHT_NOBITS);
   };
 
   for (i64 i = 0; i < chunks.size(); i++) {
@@ -2512,6 +2525,12 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
         }
       }
     }
+
+    // TLS sections are included only in PT_LOAD but also in PT_TLS.
+    // We align the first TLS section so that the PT_TLS segment starts
+    // at an address that meets the segment's alignment requirement.
+    if (is_tls(chunks[i]) && (i == 0 || !is_tls(chunks[i - 1])))
+      addr = align_to(addr, get_tls_segment_alignment(ctx));
 
     // TLS BSS sections are laid out so that they overlap with the
     // subsequent non-tbss sections. Overlapping is fine because a STT_TLS
