@@ -1118,26 +1118,31 @@ void check_shlib_undefined(Context<E> &ctx) {
   // Skip test if we don't have a complete set of shared object files
   // for the program, because if there's a missing .so, an undefined
   // symbol might be defined by that library.
-  std::unordered_set<std::string_view> sonames;
-  for (std::unique_ptr<SharedFile<E>> &file : ctx.dso_pool)
-    sonames.insert(file->soname);
+  auto do_test = [&] {
+    std::unordered_set<std::string_view> sonames;
+    for (std::unique_ptr<SharedFile<E>> &file : ctx.dso_pool)
+      sonames.insert(file->soname);
 
-  for (SharedFile<E> *file : ctx.dsos)
-    for (std::string_view soname : file->get_dt_needed(ctx))
-      if (!sonames.contains(soname))
-        return;
+    for (SharedFile<E> *file : ctx.dsos)
+      for (std::string_view soname : file->get_dt_needed(ctx))
+        if (!sonames.contains(soname))
+          return false;
+    return true;
+  };
 
-  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-    // Check if all undefined symbols have been resolved.
-    for (i64 i = 0; i < file->elf_syms.size(); i++) {
-      const ElfSym<E> &esym = file->elf_syms[i];
-      Symbol<E> &sym = *file->symbols[i];
-      if (esym.is_undef() && !esym.is_weak() && !sym.file &&
-          !is_sparc_register(esym))
-        Error(ctx) << *file << ": --no-allow-shlib-undefined: undefined symbol: "
-                   << sym;
-    }
-  });
+  if (do_test()) {
+    tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+      // Check if all undefined symbols have been resolved.
+      for (i64 i = 0; i < file->elf_syms.size(); i++) {
+        const ElfSym<E> &esym = file->elf_syms[i];
+        Symbol<E> &sym = *file->symbols[i];
+        if (esym.is_undef() && !esym.is_weak() && !sym.file &&
+            !is_sparc_register(esym))
+          Error(ctx) << *file << ": --no-allow-shlib-undefined: undefined symbol: "
+                     << sym;
+      }
+    });
+  }
 
   // Beyond this point, DSOs that are not referenced directly by any
   // object file are not needed. They were kept by
