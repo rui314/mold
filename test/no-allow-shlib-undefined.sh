@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ "$(uname)" = FreeBSD ] && skip
+
 cat <<EOF | $CC -B. -shared -fPIC -o $t/libfoo.so -xc -
 void foo() {}
 EOF

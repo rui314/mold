@@ -3,18 +3,18 @@
 
 supports_tlsdesc || skip
 
-cat <<EOF | $GCC -fPIC -fPIC -c -o $t/a.o -xc - $tlsdesc_opt
+cat <<EOF | $CC -fPIC -fPIC -c -o $t/a.o -xc - $tlsdesc_opt
 _Thread_local int foo = 5;
 EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
 
-cat <<EOF | $GCC -fPIC -fPIC -c -o $t/c.o -xc - $tlsdesc_opt
+cat <<EOF | $CC -fPIC -fPIC -c -o $t/c.o -xc - $tlsdesc_opt
 extern _Thread_local int foo;
 int get_foo1() { return foo; }
 EOF
 
-cat <<EOF | $GCC -fPIC -fPIE -c -o $t/d.o -xc - $tlsdesc_opt
+cat <<EOF | $CC -fPIC -fPIE -c -o $t/d.o -xc - $tlsdesc_opt
 #include <stdio.h>
 
 extern _Thread_local int foo;

@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 __attribute__((tls_model("global-dynamic"))) static _Thread_local int x1 = 1;

@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 __attribute__((tls_model("global-dynamic"))) static _Thread_local int x1 = 1;
@@ -20,13 +20,13 @@ int main() {
 }
 EOF
 
-cat <<EOF | $GCC -fPIC -c -o $t/b.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/b.o -xc -
 __attribute__((tls_model("global-dynamic"))) _Thread_local int x3 = 3;
 __attribute__((tls_model("global-dynamic"))) static _Thread_local int x5 = 5;
 int get_x5() { return x5; }
 EOF
 
-cat <<EOF | $GCC -fPIC -c -o $t/c.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/c.o -xc -
 __attribute__((tls_model("global-dynamic"))) _Thread_local int x4 = 4;
 __attribute__((tls_model("global-dynamic"))) static _Thread_local int x6 = 6;
 int get_x6() { return x6; }

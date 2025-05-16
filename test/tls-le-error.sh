@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 __attribute__((tls_model("local-exec"))) static _Thread_local int foo = 5;
 int bar() { return foo; }
 EOF

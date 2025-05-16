@@ -4,7 +4,7 @@
 supports_tlsdesc || skip
 test_cflags -static || skip
 
-cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc - $tlsdesc_opt
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc - $tlsdesc_opt
 #include <stdio.h>
 
 extern _Thread_local int foo;
@@ -15,7 +15,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $GCC -fPIC -c -o $t/b.o -xc - $tlsdesc_opt
+cat <<EOF | $CC -fPIC -c -o $t/b.o -xc - $tlsdesc_opt
 _Thread_local int foo;
 EOF
 

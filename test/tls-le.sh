@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 __attribute__((tls_model("local-exec"))) extern _Thread_local int foo;
@@ -18,7 +18,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $GCC -fPIC -c -o $t/b.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/b.o -xc -
 __attribute__((tls_model("local-exec"))) _Thread_local int foo = 3;
 EOF
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $GCC -c -o $t/a.o -xc -
+cat <<EOF | $CC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 __attribute__((tls_model("global-dynamic"))) extern _Thread_local int foo;

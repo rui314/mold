@@ -6,12 +6,12 @@ nm mold | grep '__tsan_init' && skip
 
 test_cflags -g3 -gz || skip
 
-cat <<EOF | $GCC -c -o $t/a.o -xc - -g3 -gz
+cat <<EOF | $CC -c -o $t/a.o -xc - -g3 -gz
 #include <stdio.h>
 void hello() { printf("Hello world\n"); }
 EOF
 
-cat <<EOF | $GCC -c -o $t/b.o -xc - -g3 -gz
+cat <<EOF | $CC -c -o $t/b.o -xc - -g3 -gz
 void hello();
 int main() { hello(); }
 EOF

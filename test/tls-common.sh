@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $GCC -o $t/a.o -c -xassembler -
+cat <<EOF | $CC -o $t/a.o -c -xassembler - || skip
 .globl foo
 .tls_common foo,4,4
 EOF

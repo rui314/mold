@@ -18,7 +18,7 @@ int main() {
 }
 EOF
 
-cat <<EOF | $GCC -fPIC -ftls-model=local-dynamic -c -o $t/b.o -xc -
+cat <<EOF | $CC -fPIC -ftls-model=local-dynamic -c -o $t/b.o -xc -
 _Thread_local int foo = 3;
 EOF
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc -
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc -
 #include <stdio.h>
 
 __attribute__((tls_model("initial-exec"))) static _Thread_local int foo;
@@ -19,7 +19,7 @@ EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
 
-cat <<EOF | $GCC -c -o $t/c.o -xc - -fPIC
+cat <<EOF | $CC -c -o $t/c.o -xc - -fPIC
 #include <stdio.h>
 
 _Thread_local int baz;

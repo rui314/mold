@@ -6,16 +6,16 @@ cat <<EOF > $t/a.h
 #define B 99
 EOF
 
-cat <<EOF | $GCC -o $t/b.o -c -xc - -I$t -g3
+cat <<EOF | $CC -o $t/b.o -c -xc - -I$t -g3
 #include "a.h"
 extern int z();
 int main () { return z() - 122; }
 EOF
 
-cat <<EOF | $GCC -o $t/c.o -c -xc - -I$t -g3
+cat <<EOF | $CC -o $t/c.o -c -xc - -I$t -g3
 #include "a.h"
 int z()  { return A + B; }
 EOF
 
-$GCC -B. -o $t/exe $t/b.o $t/c.o
+$CC -B. -o $t/exe $t/b.o $t/c.o
 $OBJDUMP --dwarf=macro $t/exe | not grep 'DW_MACRO_import -.* 0x0$'

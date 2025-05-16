@@ -3,7 +3,7 @@
 
 supports_tlsdesc || skip
 
-cat <<EOF | $GCC -fPIC -c -o $t/a.o -xc - $tlsdesc_opt
+cat <<EOF | $CC -fPIC -c -o $t/a.o -xc - $tlsdesc_opt
 static _Thread_local int foo[10000] = { 3, [9999] = 5 };
 
 int get_foo(int idx) { return foo[idx]; }
@@ -11,7 +11,7 @@ EOF
 
 $CC -B. -shared -o $t/b.so $t/a.o
 
-cat <<EOF | $GCC -fPIC -c -o $t/c.o -xc - $tlsdesc_opt
+cat <<EOF | $CC -fPIC -c -o $t/c.o -xc - $tlsdesc_opt
 #include <assert.h>
 #include <dlfcn.h>
 #include <stdio.h>
