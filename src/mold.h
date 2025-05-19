@@ -294,7 +294,7 @@ public:
   InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx);
 
   void uncompress(Context<E> &ctx);
-  void copy_contents(Context<E> &ctx, u8 *buf);
+  void copy_contents(Context<E> &ctx, u8 *buf, i64 sz);
   void scan_relocations(Context<E> &ctx);
   void write_to(Context<E> &ctx, u8 *buf);
   void apply_reloc_alloc(Context<E> &ctx, u8 *base);
@@ -1680,6 +1680,7 @@ template <typename E> void check_shlib_undefined(Context<E> &);
 template <typename E> void check_symbol_types(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
 template <typename E> void sort_ctor_dtor(Context<E> &);
+template <typename E> void sort_debug_info_sections(Context<E> &);
 template <typename E> void fixup_ctors_in_init_array(Context<E> &);
 template <typename E> void shuffle_sections(Context<E> &);
 template <typename E> void add_dynamic_strings(Context<E> &);
@@ -1690,6 +1691,7 @@ template <typename E> void scan_relocations(Context<E> &);
 template <typename E> void compute_imported_symbol_weakness(Context<E> &);
 template <typename E> void construct_relr(Context<E> &);
 template <typename E> void sort_dynsyms(Context<E> &);
+template <typename E> void sort_debug_info_sections(Context<E> &);
 template <typename E> void create_output_symtab(Context<E> &);
 template <typename E> void report_undef_errors(Context<E> &);
 template <typename E> void create_reloc_sections(Context<E> &);

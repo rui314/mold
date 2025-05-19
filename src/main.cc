@@ -514,6 +514,10 @@ int mold_main(int argc, char **argv) {
   // be added to .dynsym.
   sort_dynsyms(ctx);
 
+  // Sort .debug_info contents so that DWARF32 debug info precedes that of
+  // DWARF64. This is to mitigate the possibility of a relocation overflow.
+  sort_debug_info_sections(ctx);
+
   // Print reports about undefined symbols, if needed.
   if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR)
     report_undef_errors(ctx);

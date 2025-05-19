@@ -63,16 +63,16 @@ void InputSection<E>::uncompress(Context<E> &ctx) {
     return;
 
   u8 *buf = new u8[sh_size];
-  copy_contents(ctx, buf);
+  copy_contents(ctx, buf, sh_size);
   contents = std::string_view((char *)buf, sh_size);
   ctx.string_pool.emplace_back(buf);
   uncompressed = true;
 }
 
 template <typename E>
-void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
+void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf, i64 sz) {
   if (!(shdr().sh_flags & SHF_COMPRESSED) || uncompressed) {
-    memcpy(buf, contents.data(), contents.size());
+    memcpy(buf, contents.data(), sz);
     return;
   }
 
@@ -84,16 +84,35 @@ void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf) {
 
   switch (hdr.ch_type) {
   case ELFCOMPRESS_ZLIB: {
-    unsigned long size = sh_size;
-    if (::uncompress(buf, &size, (u8 *)data.data(), data.size()) != Z_OK)
-      Fatal(ctx) << *this << ": uncompress failed";
-    assert(size == sh_size);
+    z_stream s = {};
+    inflateInit(&s);
+    s.next_in = (u8 *)data.data();
+    s.avail_in = data.size();
+    s.next_out = buf;
+    s.avail_out = sz;
+
+    int r;
+    while (s.total_out < sz && (r = inflate(&s, Z_NO_FLUSH)) == Z_OK);
+    if (s.total_out < sz && r != Z_STREAM_END)
+      Fatal(ctx) << *this << ": uncompress failed: " << s.msg;
+    inflateEnd(&s);
     break;
   }
-  case ELFCOMPRESS_ZSTD:
-    if (ZSTD_decompress(buf, sh_size, (u8 *)data.data(), data.size()) != sh_size)
-      Fatal(ctx) << *this << ": ZSTD_decompress failed";
+  case ELFCOMPRESS_ZSTD: {
+    ZSTD_DCtx *dctx = ZSTD_createDCtx();
+    ZSTD_inBuffer in = { data.data(), data.size(), 0 };
+    ZSTD_outBuffer out = { buf, (size_t)sz, 0 };
+
+    while (out.pos < out.size) {
+      size_t r = ZSTD_decompressStream(dctx, &out, &in);
+      if (ZSTD_isError(r))
+        Fatal(ctx) << *this << ": uncompress failed: " << ZSTD_getErrorName(r);
+      if (r == 0 && out.pos < out.size)
+        Fatal(ctx) << *this << ": uncompress failed: premature end of input";
+    }
+    ZSTD_freeDCtx(dctx);
     break;
+  }
   default:
     Fatal(ctx) << *this << ": unsupported compression type: 0x"
                << std::hex << hdr.ch_type;
@@ -234,7 +253,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 
     if (deltas.empty()) {
       // If a section is not relaxed, we can copy it as a one big chunk.
-      copy_contents(ctx, buf);
+      copy_contents(ctx, buf, sh_size);
     } else {
       // A relaxed section is copied piece-wise.
       memcpy(buf, contents.data(), deltas[0].offset);
@@ -250,7 +269,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
       }
     }
   } else {
-    copy_contents(ctx, buf);
+    copy_contents(ctx, buf, sh_size);
   }
 
   // Apply relocations

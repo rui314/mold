@@ -1299,6 +1299,54 @@ void sort_ctor_dtor(Context<E> &ctx) {
   }
 }
 
+// Sort .debug_info contents so that DWARF32 debug info input sections
+// precedes those of DWARF64. This is to mitigate the possibility of a
+// relocation overflow.
+template <typename E>
+void sort_debug_info_sections(Context<E> &ctx) {
+  Timer t(ctx, "sort_debug_info_sections");
+
+  auto get_debug_info = [&]() -> OutputSection<E> * {
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (OutputSection<E> *osec = chunk->to_osec())
+        if (!(osec->shdr.sh_flags & SHF_ALLOC) && osec->name == ".debug_info")
+          return osec;
+    return nullptr;
+  };
+
+  OutputSection<E> *osec = get_debug_info();
+  if (!osec)
+    return;
+
+  auto is_in_test = [&] {
+    char *env = getenv("MOLD_DEBUG");
+    return env && env[0];
+  };
+
+  if (osec->shdr.sh_size < UINT32_MAX && !is_in_test())
+    return;
+
+  struct Member {
+    InputSection<E> *isec;
+    bool is_dwarf32;
+  };
+
+  std::vector<Member> vec(osec->members.size());
+
+  tbb::parallel_for((i64)0, (i64)osec->members.size(), [&](i64 i) {
+    InputSection<E> *isec = osec->members[i];
+    u8 buf[4] = {};
+    isec->copy_contents(ctx, buf, 4);
+    vec[i] = {isec, *(U32<E> *)buf != 0xffff'ffff};
+  });
+
+  ranges::stable_partition(vec, &Member::is_dwarf32);
+
+  for (i64 i = 0; i < vec.size(); i++)
+    osec->members[i] = vec[i].isec;
+  osec->compute_section_size(ctx);
+}
+
 // .ctors/.dtors serves the same purpose as .init_array/.fini_array,
 // albeit with very subtly differences. Both contain pointers to
 // initializer/finalizer functions. The runtime executes them one by one
@@ -1373,7 +1421,8 @@ void shuffle_sections(Context<E> &ctx) {
   auto is_eligible = [](OutputSection<E> *osec) {
     if (osec) {
       std::string_view name = osec->name;
-      return name != ".init" && name != ".fini" &&
+      return (osec->shdr.sh_flags & SHF_ALLOC) &&
+             name != ".init" && name != ".fini" &&
              name != ".ctors" && name != ".dtors" &&
              name != ".init_array" && name != ".preinit_array" &&
              name != ".fini_array";
@@ -3406,6 +3455,7 @@ template void create_reloc_sections(Context<E> &);
 template void copy_chunks(Context<E> &);
 template void construct_relr(Context<E> &);
 template void sort_dynsyms(Context<E> &);
+template void sort_debug_info_sections(Context<E> &);
 template void create_output_symtab(Context<E> &);
 template void apply_version_script(Context<E> &);
 template void parse_symbol_version(Context<E> &);
