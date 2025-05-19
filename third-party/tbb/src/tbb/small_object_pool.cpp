@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -45,6 +45,8 @@ void* __TBB_EXPORTED_FUNC allocate(d1::small_object_pool*& allocator, std::size_
 
 void* small_object_pool_impl::allocate_impl(d1::small_object_pool*& allocator, std::size_t number_of_bytes)
 {
+    __TBB_ASSERT(allocator == nullptr || allocator == this,
+                 "An attempt was made to allocate using another thread's small memory pool");
     small_object* obj{nullptr};
 
     if (number_of_bytes <= small_object_size) {

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -23,24 +23,28 @@
 const char *globalCallMsg = "A TBB allocator function call is resolved into wrong implementation.";
 
 #if _WIN32||_WIN64
+    #define TEST_EXPORT __declspec(dllexport)
+#else
+    #define TEST_EXPORT __TBB_EXPORT
+#endif
+
 // must be defined in DLL for linker to not drop the dependency on the DLL.
 extern "C" {
-    extern __declspec(dllexport) void *scalable_malloc(size_t);
-    extern __declspec(dllexport) void scalable_free (void *);
-    extern __declspec(dllexport) void safer_scalable_free (void *, void (*)(void*));
-    extern __declspec(dllexport) void *scalable_realloc(void *, size_t);
-    extern __declspec(dllexport) void *safer_scalable_realloc(void *, size_t, void *);
-    extern __declspec(dllexport) void *scalable_calloc(size_t, size_t);
-    extern __declspec(dllexport) int scalable_posix_memalign(void **, size_t, size_t);
-    extern __declspec(dllexport) void *scalable_aligned_malloc(size_t, size_t);
-    extern __declspec(dllexport) void *scalable_aligned_realloc(void *, size_t, size_t);
-    extern __declspec(dllexport) void *safer_scalable_aligned_realloc(void *, size_t, size_t, void *);
-    extern __declspec(dllexport) void scalable_aligned_free(void *);
-    extern __declspec(dllexport) size_t scalable_msize(void *);
-    extern __declspec(dllexport) size_t safer_scalable_msize (void *, size_t (*)(void*));
-    extern __declspec(dllexport) int anchor();
+    extern TEST_EXPORT void *scalable_malloc(size_t);
+    extern TEST_EXPORT void scalable_free (void *);
+    extern TEST_EXPORT void safer_scalable_free (void *, void (*)(void*));
+    extern TEST_EXPORT void *scalable_realloc(void *, size_t);
+    extern TEST_EXPORT void *safer_scalable_realloc(void *, size_t, void *);
+    extern TEST_EXPORT void *scalable_calloc(size_t, size_t);
+    extern TEST_EXPORT int scalable_posix_memalign(void **, size_t, size_t);
+    extern TEST_EXPORT void *scalable_aligned_malloc(size_t, size_t);
+    extern TEST_EXPORT void *scalable_aligned_realloc(void *, size_t, size_t);
+    extern TEST_EXPORT void *safer_scalable_aligned_realloc(void *, size_t, size_t, void *);
+    extern TEST_EXPORT void scalable_aligned_free(void *);
+    extern TEST_EXPORT size_t scalable_msize(void *);
+    extern TEST_EXPORT size_t safer_scalable_msize (void *, size_t (*)(void*));
+    extern TEST_EXPORT int anchor();
 }
-#endif
 
 extern "C" int anchor() {
     return 42;

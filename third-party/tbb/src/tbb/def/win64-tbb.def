@@ -1,4 +1,4 @@
-; Copyright (c) 2005-2024 Intel Corporation
+; Copyright (c) 2005-2025 Intel Corporation
 ;
 ; Licensed under the Apache License, Version 2.0 (the "License");
 ; you may not use this file except in compliance with the License.
@@ -101,6 +101,8 @@ EXPORTS
 ?enqueue@r1@detail@tbb@@YAXAEAVtask@d1@23@PEAVtask_arena_base@523@@Z
 ?enqueue@r1@detail@tbb@@YAXAEAVtask@d1@23@AEAVtask_group_context@523@PEAVtask_arena_base@523@@Z
 ?execution_slot@r1@detail@tbb@@YAGAEBVtask_arena_base@d1@23@@Z
+?enter_parallel_phase@r1@detail@tbb@@YAXPEAVtask_arena_base@d1@23@_K@Z
+?exit_parallel_phase@r1@detail@tbb@@YAXPEAVtask_arena_base@d1@23@_K@Z
 
 ; System topology parsing and threads pinning (governor.cpp)
 ?numa_node_count@r1@detail@tbb@@YAIXZ

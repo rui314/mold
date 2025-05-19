@@ -75,7 +75,7 @@ jobs:
           export BUILD_TYPE=${BUILD_TYPE} && sphinx-build doc html
           tar -czvf html.tar.gz html/
       - name: Save docs
-        uses: actions/upload-artifact@v2.2.1
+        uses: actions/upload-artifact@v4
         with:
           name: oneTBB-html-docs-${{ env.GITHUB_SHA_SHORT }}
           path: html.tar.gz
@@ -97,7 +97,7 @@ jobs:
       - name: Set env
         run: echo GITHUB_SHA_SHORT=${GITHUB_SHA::8} >> $GITHUB_ENV
       - name: Download documetation
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: oneTBB-html-docs-${{ env.GITHUB_SHA_SHORT }}
       - name: Publish to github pages
@@ -198,7 +198,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-12
+          - os: macos-14
             c_compiler: clang
             cxx_compiler: clang++
             std: 14
@@ -314,7 +314,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-12
+          - os: macos-15
             c_compiler: clang
             cxx_compiler: clang++
             std: 14

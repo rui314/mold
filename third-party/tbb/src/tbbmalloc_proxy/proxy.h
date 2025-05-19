@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -37,7 +37,7 @@ extern "C" {
     TBBMALLOC_EXPORT size_t __TBB_malloc_safer_aligned_msize( void *ptr, size_t, size_t, size_t (*orig_msize_crt80d)(void*,size_t,size_t));
 
 #if MALLOC_ZONE_OVERLOAD_ENABLED
-    void   __TBB_malloc_free_definite_size(void *object, size_t size);
+    TBBMALLOC_EXPORT void   __TBB_malloc_free_definite_size(void *object, size_t size);
 #endif
 } // extern "C"
 

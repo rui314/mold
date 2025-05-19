@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -347,7 +347,7 @@ public:
         caught_exception = false;
         try_call([this] {
             my_task_arena->execute([this] {
-                wait(my_wait_context_vertex.get_context(), *my_context);
+                d1::wait(my_wait_context_vertex.get_context(), *my_context);
             });
             cancelled = my_context->is_group_execution_cancelled();
         }).on_exception([this] {
@@ -526,7 +526,10 @@ inline graph_task* prioritize_task(graph& g, graph_task& gt) {
     //! priority queue, and a new critical task is created to take and execute a work item with
     //! the highest known priority. The reference counting responsibility is transferred to
     //! the new task.
-    d1::task* critical_task = gt.my_allocator.new_object<priority_task_selector>(g.my_priority_queue, gt.my_allocator);
+    // A newly created small_object_allocator should be used to allocate the priority_task_selector
+    // instead of the allocator, associated with gt since gt can be allocated by another thread
+    d1::small_object_allocator allocator;
+    d1::task* critical_task = allocator.new_object<priority_task_selector>(g.my_priority_queue, allocator);
     __TBB_ASSERT( critical_task, "bad_alloc?" );
     g.my_priority_queue.push(&gt);
     using tbb::detail::d1::submit;

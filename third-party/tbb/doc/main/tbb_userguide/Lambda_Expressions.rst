@@ -4,7 +4,7 @@ Lambda Expressions
 ==================
 
 
-C++11 lambda expressions make the |full_name| 
+C++11 lambda expressions make the |full_name|
 ``parallel_for`` much easier to use. A lambda expression lets
 the compiler do the tedious work of creating a function object.
 
@@ -14,24 +14,10 @@ expression. The lambda expression, replaces both the declaration and constructio
 example of the previous section.
 
 
-::
-
-
-   #include "oneapi/tbb.h"
-    
-
-   using namespace oneapi::tbb;
-    
-
-   void ParallelApplyFoo( float* a, size_t n ) {
-      parallel_for( blocked_range<size_t>(0,n), 
-         [=](const blocked_range<size_t>& r) {
-                         for(size_t i=r.begin(); i!=r.end(); ++i) 
-                             Foo(a[i]); 
-                     }
-       );
-   }
-
+.. literalinclude:: ./examples/parallel_for_lambda_example_1.cpp
+    :language: c++
+    :start-after: /*begin_parallel_for_lambda_1*/
+    :end-before: /*end_parallel_for_lambda_1*/
 
 The [=] introduces the lambda expression. The expression creates a
 function object very similar to ``ApplyFoo``. When local variables like
@@ -54,18 +40,18 @@ shows the option for turning it on.
 .. container:: tablenoborder
 
 
-   .. list-table:: 
+   .. list-table::
       :header-rows: 1
 
-      * -     Environment     
-        -     Intel® C++ Compiler Classic    
-        -     Intel® oneAPI DPC++/C++ Compiler    
-      * -     Windows\* OS systems     
-        -     \ ``icl /Qstd=c++11 foo.cpp``     
-        -     \ ``icx /Qstd=c++11 foo.cpp``     
-      * -     Linux\* OS systems     
-        -     \ ``icc -std=c++11 foo.cpp``     
-        -     \ ``icx -std=c++11 foo.cpp``     
+      * -     Environment
+        -     Intel® C++ Compiler Classic
+        -     Intel® oneAPI DPC++/C++ Compiler
+      * -     Windows\* OS systems
+        -     \ ``icl /Qstd=c++11 foo.cpp``
+        -     \ ``icx /Qstd=c++11 foo.cpp``
+      * -     Linux\* OS systems
+        -     \ ``icc -std=c++11 foo.cpp``
+        -     \ ``icx -std=c++11 foo.cpp``
 
 
 
@@ -73,30 +59,16 @@ shows the option for turning it on.
 For further compactness, oneTBB has a form of ``parallel_for`` expressly
 for parallel looping over a consecutive range of integers. The
 expression ``parallel_for(first,last,step,f)`` is like writing
-``for(auto i=first;         i<last;       i+=step)f(i)`` except that
+``for(auto i=first; i<last; i+=step)f(i)`` except that
 each f(i) can be evaluated in parallel if resources permit. The ``step``
 parameter is optional. Here is the previous example rewritten in the
 compact form:
 
-
-::
-
-
-   #include "oneapi/tbb.h"
-    
-
-   using namespace oneapi::tbb;
-    
-
-   #pragma warning(disable: 588)
-    
-
-   void ParallelApplyFoo(float a[], size_t n) {
-       parallel_for(size_t(0), n, [=](size_t i) {Foo(a[i]);});
-   }
-
+.. literalinclude:: ./examples/parallel_for_lambda_example_2.cpp
+    :language: c++
+    :start-after: /*begin_parallel_for_lambda_2*/
+    :end-before: /*end_parallel_for_lambda_2*/
 
 The compact form supports only unidimensional iteration spaces of
 integers and the automatic chunking feature detailed on the following
 section.
-

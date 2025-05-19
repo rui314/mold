@@ -151,17 +151,16 @@ bool governor::does_client_join_workers(const rml::tbb_client &client) {
     3) If the user app strives to conserve the memory by cutting stack size, it
     should do this for TBB workers too (as in the #1).
 */
-static std::uintptr_t get_stack_base(std::size_t stack_size) {
+static void get_stack_attributes(std::uintptr_t& stack_base, std::size_t& stack_size, std::size_t fallback_stack_size) {
     // Stacks are growing top-down. Highest address is called "stack base",
     // and the lowest is "stack limit".
+    stack_size = fallback_stack_size;
 #if __TBB_USE_WINAPI
-    suppress_unused_warning(stack_size);
     NT_TIB* pteb = (NT_TIB*)NtCurrentTeb();
     __TBB_ASSERT(&pteb < pteb->StackBase && &pteb > pteb->StackLimit, "invalid stack info in TEB");
-    return reinterpret_cast<std::uintptr_t>(pteb->StackBase);
+    stack_base = reinterpret_cast<std::uintptr_t>(pteb->StackBase);
 #elif defined(EMSCRIPTEN)
-    suppress_unused_warning(stack_size);
-    return reinterpret_cast<std::uintptr_t>(emscripten_stack_get_base());
+    stack_base = reinterpret_cast<std::uintptr_t>(emscripten_stack_get_base());
 #else
     // There is no portable way to get stack base address in Posix, so we use
     // non-portable method (on all modern Linux) or the simplified approach
@@ -176,11 +175,12 @@ static std::uintptr_t get_stack_base(std::size_t stack_size) {
     if (0 == pthread_getattr_np(pthread_self(), &np_attr_stack)) {
         if (0 == pthread_attr_getstack(&np_attr_stack, &stack_limit, &np_stack_size)) {
             __TBB_ASSERT( &stack_limit > stack_limit, "stack size must be positive" );
+            if (np_stack_size > 0)
+                stack_size = np_stack_size;
         }
         pthread_attr_destroy(&np_attr_stack);
     }
 #endif /* __linux__ */
-    std::uintptr_t stack_base{};
     if (stack_limit) {
         stack_base = reinterpret_cast<std::uintptr_t>(stack_limit) + stack_size;
     } else {
@@ -188,7 +188,6 @@ static std::uintptr_t get_stack_base(std::size_t stack_size) {
         int anchor{};
         stack_base = reinterpret_cast<std::uintptr_t>(&anchor);
     }
-    return stack_base;
 #endif /* __TBB_USE_WINAPI */
 }
 
@@ -219,8 +218,8 @@ void governor::init_external_thread() {
     td.attach_arena(a, /*slot index*/ 0);
     __TBB_ASSERT(td.my_inbox.is_idle_state(false), nullptr);
 
-    stack_size = a.my_threading_control->worker_stack_size();
-    std::uintptr_t stack_base = get_stack_base(stack_size);
+    std::uintptr_t stack_base{};
+    get_stack_attributes(stack_base, stack_size, a.my_threading_control->worker_stack_size());
     task_dispatcher& task_disp = td.my_arena_slot->default_task_dispatcher();
     td.enter_task_dispatcher(task_disp, calculate_stealing_threshold(stack_base, stack_size));
 

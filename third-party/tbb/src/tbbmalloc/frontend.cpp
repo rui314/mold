@@ -2951,7 +2951,7 @@ extern "C" void scalable_free(void *object)
 }
 
 #if MALLOC_ZONE_OVERLOAD_ENABLED
-extern "C" void __TBB_malloc_free_definite_size(void *object, size_t size)
+extern "C" TBBMALLOC_EXPORT void __TBB_malloc_free_definite_size(void *object, size_t size)
 {
     internalPoolFree(defaultMemPool, object, size);
 }

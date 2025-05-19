@@ -56,17 +56,7 @@ Example
 
 This interface may be used for sorting rvalue or constant views:
 
-.. code:: cpp
-
-    #include <array>
-    #include <span> // requires C++20
-    #include <oneapi/tbb/parallel_sort.h>
-
-    std::span<int> get_span() {
-        static std::array<int, 3> arr = {3, 2, 1};
-        return std::span<int>(arr);
-    }
-
-    int main() {
-        tbb::parallel_sort(get_span());
-    }
+.. literalinclude:: ./examples/parallel_sort_ranges_extension_example.cpp
+    :language: c++
+    :start-after: /*begin_parallel_sort_ranges_extension_example*/
+    :end-before: /*end_parallel_sort_ranges_extension_example*/

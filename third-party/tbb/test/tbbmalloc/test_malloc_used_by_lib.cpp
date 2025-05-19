@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -23,11 +23,13 @@
 #include "common/utils_assert.h"
 #include "tbb/scalable_allocator.h"
 
-#if _WIN32||_WIN64
 extern "C" {
+#if _WIN32||_WIN64
     extern __declspec(dllexport) void callDll();
-}
+#else
+    extern __TBB_EXPORT void callDll();
 #endif
+}
 
 extern "C" void callDll()
 {

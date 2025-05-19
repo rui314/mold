@@ -204,14 +204,14 @@ Find More
 
 The following APIs supports Callable object as Bodies: 
 
-* `parallel_for <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_for_func.html>`_
-* `parallel_reduce <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_reduce_func.html>`_
-* `parallel_deterministic_reduce <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_deterministic_reduce_func.html>`_
-* `parallel_for_each <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_for_each_func.html>`_
-* `parallel_scan <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_scan_func.html>`_ 
-* `parallel_pipeline <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_pipeline_func.html>`_ 
-* `function_node <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/func_node_cls.html>`_ 
-* `multifunction_node <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/multifunc_node_cls.html>`_ 
-* `async_node <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/async_node_cls.html>`_ 
-* `sequencer_node <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/sequencer_node_cls.html>`_ 
-* `join_node with key_matching policy <https://oneapi-src.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/join_node_cls.html>`_ 
+* `parallel_for <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_for_func.html>`_
+* `parallel_reduce <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_reduce_func.html>`_
+* `parallel_deterministic_reduce <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_deterministic_reduce_func.html>`_
+* `parallel_for_each <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_for_each_func.html>`_
+* `parallel_scan <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_scan_func.html>`_ 
+* `parallel_pipeline <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/algorithms/functions/parallel_pipeline_func.html>`_ 
+* `function_node <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/func_node_cls.html>`_ 
+* `multifunction_node <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/multifunc_node_cls.html>`_ 
+* `async_node <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/async_node_cls.html>`_ 
+* `sequencer_node <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/sequencer_node_cls.html>`_ 
+* `join_node with key_matching policy <https://uxlfoundation.github.io/oneAPI-spec/spec/elements/oneTBB/source/flow_graph/join_node_cls.html>`_ 

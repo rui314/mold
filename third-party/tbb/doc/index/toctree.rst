@@ -2,6 +2,7 @@
 
 .. toctree::
    :caption: About
+   :hidden:
    :maxdepth: 1
 
    /main/intro/help_support
@@ -14,7 +15,8 @@
 
 .. toctree::
    :caption: Get Started
-   :maxdepth: 2
+   :hidden:
+   :maxdepth: 1
 
    /GSG/get_started
    /GSG/system_requirements
@@ -26,6 +28,7 @@
 
 .. toctree::
    :maxdepth: 3
+   :hidden:
    :caption: Developer Guide
 
    /main/tbb_userguide/title
@@ -33,6 +36,7 @@
 
 .. toctree::
    :maxdepth: 3
+   :hidden:
    :caption: Developer Reference
 
    /main/reference/reference

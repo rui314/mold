@@ -2,7 +2,6 @@
 
 /oneTBB/src/tbb/ @pavelkumbrasev
 /oneTBB/src/tbb/ @dnmokhov
-/oneTBB/src/tbb/ @JhaShweta1
 /oneTBB/src/tbb/ @sarathnandu
 /oneTBB/include/oneapi/tbb/parallel_* @pavelkumbrasev
 /oneTBB/include/oneapi/tbb/concurrent_* @kboyarinov

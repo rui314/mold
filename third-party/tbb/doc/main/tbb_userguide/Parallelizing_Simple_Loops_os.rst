@@ -19,7 +19,7 @@ following sections demonstrate how to parallelize simple loops.
 When compiling oneTBB programs, be sure to link in the oneTBB shared
 library, otherwise undefined references will occur. The following table
 shows compilation commands that use the debug version of the library.
-Remove the "``_debug``" portion to link against the production version
+Remove the ``_debug`` portion to link against the production version
 of the library.
 
 

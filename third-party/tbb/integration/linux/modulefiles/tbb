@@ -1,6 +1,6 @@
 #%Module1.0###################################################################
 #
-# Copyright (c) 2020-2023 Intel Corporation
+# Copyright (c) 2020-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -50,7 +50,7 @@ module-whatis "Dependencies: none"
 proc ModulesHelp { } {
     global modulefilename
     global modulefilever
-    module whatis "${modulefilename}/${modulefilever}"
+    puts "module whatis ${modulefilename}/${modulefilever}"
 }
 
 ##############################################################################

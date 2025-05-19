@@ -281,7 +281,7 @@ crossing into the next slice, it copies the partial numeral to the next
 slice. Furthermore, it has to indicate when the end of input is reached.
 It does this by invoking method ``stop()`` on a special argument of type
 ``flow_control``. This idiom is required for any functor used for the
-first filter of a pipline.
+first filter of a pipeline.
 
 ::
 

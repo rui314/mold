@@ -6,10 +6,10 @@ Destroying Graphs That Run Outside the Main Thread
 Make sure to enqueue a task to wait for and destroy graphs that run outside the main thread.
 
 You may not always want to block the main application thread by calling
-wait_for_all(). However, it is safest to call wait_for_all on a graph
+``wait_for_all()``. However, it is safest to call ``wait_for_all`` on a graph
 before destroying it. A common solution is to enqueue a task to build
 and wait for the graph to complete. For example, assume you really do
-not want to call a wait_for_all in the example from :ref:`always_use_wait_for_all`,
+not want to call a ``wait_for_all`` in the example from :ref:`always_use_wait_for_all`,
 Instead you can enqueue a task that creates the graph and waits for it:
 
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ struct sum_node;
 
 #if __TBB_CPP20_CONCEPTS_PRESENT
 } // namespace d1
-namespace d0 {
+inline namespace d0 {
 
 template <typename Body, typename Range>
 concept parallel_scan_body = splittable<Body> &&

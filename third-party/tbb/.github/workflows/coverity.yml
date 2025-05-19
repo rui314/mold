@@ -1,0 +1,62 @@
+# Copyright (c) 2024-2025 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Coverity Scan
+
+on:
+
+# Only run on push to master branch
+  push:
+    branches: [master]
+
+permissions: read-all
+
+env:
+  BUILD_CONCURRENCY: 4
+  COVERITY_PROJECT: oneapi-src%2FoneTBB
+
+jobs:
+  coverity_linux:
+    name: Coverity Linux
+    if: github.repository == 'uxlfoundation/oneTBB'
+    runs-on: [ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Linux 64 Coverity Tool
+        run: |
+          curl https://scan.coverity.com/download/cxx/linux64 --output ${GITHUB_WORKSPACE}/cov-linux64-tool.tar.gz \
+            --data "token=${{secrets.COVERITY_TOKEN}}&project=${{env.COVERITY_PROJECT}}"
+          mkdir cov-linux64-tool
+          tar -xzf cov-linux64-tool.tar.gz --strip 1 -C cov-linux64-tool
+      - name: Build with cov-build
+        run: |
+          export PATH="${PWD}/cov-linux64-tool/bin:${PATH}"
+          mkdir build && cd build
+          cmake -DCMAKE_CXX_STANDARD=20 -DCMAKE_BUILD_TYPE=relwithdebinfo \
+            -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc -DTBB_CPF=ON ..
+          cov-build --dir cov-int make VERBOSE=1 -j${{env.BUILD_CONCURRENCY}}
+      - name: Archive Coverity build results
+        run: |
+          cd build
+          tar -czvf cov-int.tgz cov-int
+      - name: Submit Coverity results for analysis
+        run: |
+          cd build
+          curl \
+            --form token="${{ secrets.COVERITY_TOKEN }}" \
+            --form email="${{ secrets.COVERITY_EMAIL }}" \
+            --form file=@cov-int.tgz \
+            --form version="${GITHUB_SHA}" \
+            --form description="" \
+              "https://scan.coverity.com/builds?project=${{env.COVERITY_PROJECT}}"

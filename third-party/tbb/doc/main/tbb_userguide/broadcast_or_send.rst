@@ -9,10 +9,10 @@ their output to a single successor or broadcast to all successors. The
 following predefined nodes push messages to a single successor:
 
 
--  buffer_node
--  queue_node
--  priority_queue_node
--  sequencer_node
+-  ``buffer_node``
+-  ``queue_node``
+-  ``priority_queue_node``
+-  ``sequencer_node``
 
 
 Other nodes push messages to all successors that will accept them.
@@ -57,39 +57,39 @@ downstream. Consider the example below:
 
 
 First, function_nodes by default queue up the messages they receive at
-their input. To make a priority_queue_node work properly with a
-function_node, the example above constructs its function_nodes with its
-buffer policy set to rejecting. So, f1 and f2 do not internally buffer
+their input. To make a ``priority_queue_node`` work properly with a
+``function_node``, the example above constructs its ``function_nodes`` with its
+buffer policy set to rejecting. So, ``f1`` and ``f2`` do not internally buffer
 incoming messages, but instead rely on upstream buffering in the
-priority_queue_node.
+``priority_queue_node``.
 
 
-In the above example, each message buffered by the priority_queue_node
-is sent to either f1 or f2, but not both.
+In the above example, each message buffered by the ``priority_queue_node``
+is sent to either ``f1`` or ``f2``, but not both.
 
 
 Let's consider the alternative behavior; that is; what if the
-priority_queue_node broadcasts to all successors. What if some, but not
+``priority_queue_node`` broadcasts to all successors. What if some, but not
 all, nodes accept a message? Should the message be buffered until all
 nodes accept it, or be only delivered to the accepting subset? If the
 node continues to buffer the message, should it eventually deliver the
 messages in the same order to all nodes or in the current priority order
 at the time the node accepts the next message? For example, assume a
-priority_queue_node only contains "9" when a successor node, f1, accepts
-"9" but another successor node, f2, rejects it. Later a value "100"
-arrives and f2 is available to accept messages. Should f2 receive "9"
+``priority_queue_node`` only contains "9" when a successor node, ``f1``, accepts
+"9" but another successor node, ``f2``, rejects it. Later a value "100"
+arrives and ``f2`` is available to accept messages. Should ``f2`` receive "9"
 next or "100", which has a higher priority? In any case, trying to
 ensure that all successors receive each message creates a garbage
 collection problem and complicates reasoning. Therefore, these buffering
 nodes push each message to only one successor. And, you can use this
 characteristic to create useful graph structures such as the one shown
 in the graph above, where each message will be processed in priority
-order, by either f1 or f2.
+order, by either ``f1`` or ``f2``.
 
 
-But what if you really do want both f1 and f2 to receive all of the
+But what if you really do want both ``f1`` and ``f2`` to receive all of the
 values, and in priority order? You can easily create this behavior by
-creating one priority_queue_node for each function_node, and pushing
+creating one ``priority_queue_node`` for each ``function_node``, and pushing
 each value to both queues through a broadcast_node, as shown below:
 
 

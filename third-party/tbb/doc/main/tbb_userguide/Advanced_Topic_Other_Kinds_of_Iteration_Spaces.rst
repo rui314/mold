@@ -72,4 +72,42 @@ along its longest axis. When used with ``parallel_for``, it causes the
 loop to be "recursively blocked" in a way that improves cache usage.
 This nice cache behavior means that using ``parallel_for`` over a
 ``blocked_range2d<T>`` can make a loop run faster than the sequential
-equivalent, even on a single processor.
+equivalent, even on a single processor. 
+
+The ``blocked_range2d`` allows you to use different value types for
+its first dimension, *rows*, and the second one, *columns*.
+That means you can combine indexes, pointers, and iterators into a joint
+iteration space. Use the methods ``rows()`` and ``cols()`` to obtain
+``blocked_range`` objects that represent the respective dimensions.
+
+The ``blocked_range3d`` class template extends this approach to 3D by adding
+``pages()`` as the first dimension, followed by ``rows()`` and ``cols()``.
+
+The ``blocked_nd_range<T,N>`` class template represents a blocked iteration
+space of any dimensionality. Unlike the previously described 2D and 3D ranges,
+``blocked_nd_range`` uses the same value type for all its axes, and its
+constructor requires you to pass N instances of ``blocked_range<T>`` instead of
+individual boundary values. The change in the naming pattern reflects these
+differences.
+
+
+Example of a Multidimensional Iteration Space
+------------------------------------------------
+
+The example demonstrates calculation of a 3-dimensional filter over the pack
+of feature maps.
+
+The ``convolution3d`` function iterates over the output cells, assigning to
+each cell the result of the ``kernel3d`` function that combines the values
+from a range in the feature maps.
+
+To run the computation in parallel, ``tbb::parallel_for`` is called with
+``tbb::blocked_nd_range<int,3>`` as an argument. The body function processes
+the received 3D subrange in nested loops, using the method ``dim`` to get
+the loop boundaries for each dimension.
+
+
+.. literalinclude:: ./examples/blocked_nd_range_example.cpp
+   :language: c++
+   :start-after: /*begin_blocked_nd_range_example*/
+   :end-before: /*end_blocked_nd_range_example*/

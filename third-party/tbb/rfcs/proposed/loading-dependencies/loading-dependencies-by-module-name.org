@@ -1,0 +1,104 @@
+#+title: Loading Dependencies By Module Name
+
+* Introduction
+There is a well-known attack that involves loading of a malicious dependency
+instead of the original one without notice to the party that does this loading.
+In the industry it is usually called /DLL injection/ or /DLL preloading attack/
+and it is mostly associated with the Windows platform as it is known to be
+particularly vulnerable to this kind of attack [1]. One of the recommendations
+that safeguards against this type of attack is to specify fully qualified path
+to a dependency [2].
+
+Historically, oneTBB loads its optional dependencies during its initialization
+process when these dependencies are used for the first time. The way oneTBB does
+this is by building full paths to their dependencies using the path where the
+oneTBB library itself resides. It is the only sensible path which can be
+obtained by oneTBB, whose usage conditions are not known at the time of
+development. The purpose is to minimize the risk of a DLL injection attack issue
+so that only certain paths are probed by the system loader. However,
+dependencies of a dependency are still searched by their module names only [3].
+So, the risk is minimized only for a dependency itself and not for the libraries
+it depends on, not to mention that the file of a dependency can be replaced in
+the file system by an attacker, which breaks even that protection. Besides that,
+loading of a dependency by specifying full path represents an inconvenience to
+the developers who want to make use of their own variant of a dependency. Not
+only they need to place their variant of a dependency to all of the places from
+which it is going to be found and loaded by every client component that depends
+on it, but also this makes problematic the implementation (if not impossible) of
+some scenarios where the dependency being loaded maintains single state shared
+among all its clients. Such scenarios are hard to implement because copies of
+the same DLL loaded from different paths are considered to be different DLLs and
+in certain cases there is no support for filesystem linking mechanism to point
+to a single file [4, 5].
+
+So, what is the main problem due to which loading by a module name makes Windows
+much more vulnerable to DLL injection than Linux?
+
+Besides difference in the order of accessing paths specified in the environment,
+Windows also prioritizes searching in the directory from which the application
+is loaded and current working directory [2]. Assuming that application is loaded
+from a directory that requires administrative permission on write, which is
+usually the case, it is the current working directory that forms the main DLL
+preloading attack scenario [1].
+
+There are approaches to exclude the current working directory from the search
+order. However, for a library to avoid process-wide changes to the search order
+the only viable solution for run-time loading is to pass
+~LOAD_LIBRARY_SAFE_CURRENT_DIRS~ flag to the ~LoadLibraryEx~ Windows API [6].
+
+With the removal of the current working directory from loader's consideration,
+the search order on Windows starts having little difference with the search
+order on Linux. The difference includes the order in which directories specified
+in the environment and system directories are considered, and the presence of
+the first step of looking into an application directory on Windows [2, 7].
+
+Since the system environment variables and the environment of other processes
+cannot be changed, the only vulnerable place is an application directory [8, 9].
+Because the application can be installed in a directory that does not require
+administrative permissions on write, it still can be started by an account
+having them. Unlike Linux systems, for the process started with administrative
+permissions, the paths specified in the environment and the application
+directory are still considered by the Windows system loader [2, 7]. Therefore,
+an attacker can update permissive installation directory with a malicious
+version of a binary, hence making it loaded in a process with elevated
+permissions. Note that specifying fully qualified path to the dependency does
+not help in this case.
+
+Fortunately, there is a signature verification process that helps validating the
+authenticity of a binary before loading it into process address space and
+starting its execution. This allows making use of the established search order
+while checking that genuine version of the dependency is used. However, not
+loading the binary because of the failed signature verification might not be
+always desired. Especially, during the development phase or for a software
+distributor who does not have the signature with which to sign the binary.
+Therefore, to preserve backward compatibility of such usage models, it is
+essential to have the possibility to disable signature verification.
+
+* Proposal
+Based on the analysis in the "Introduction" section and to support versatile
+distribution models of oneTBB this RFC proposes to:
+
+On Windows only:
+1. Introduce signature verification step to the run-time dependency loading
+   process.
+2. Introduce the ~TBB_VERIFY_DEPENDENCY_SIGNATURE~ compilation option that would
+   enable signature verification, and set it ~ON~ by default.
+3. Update documentation to include information about new
+   ~TBB_VERIFY_DEPENDENCY_SIGNATURE~ flag.
+4. Pass ~LOAD_LIBRARY_SAFE_CURRENT_DIRS~ flag to the ~LoadLibraryEx~ calls so
+   that current working directory is excluded from the list of directories in
+   which the system loader looks when trying to find and resolve dependency.
+
+On all OSes:
+- Change dependency loading approach to load by module names only.
+
+* References
+1. [[https://support.microsoft.com/en-us/topic/secure-loading-of-libraries-to-prevent-dll-preloading-attacks-d41303ec-0748-9211-f317-2edc819682e1][Microsoft, "Secure loading of libraries to prevent DLL preloading attacks".]]
+2. [[https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-security][Microsoft, "Dynamic-Link Library Security", 7 January 2021]]
+3. [[https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order#factors-that-affect-searching][Microsoft, "Dynamic-link library search order", 9 February 2023]].
+4. [[https://learn.microsoft.com/en-us/windows/win32/dlls/run-time-dynamic-linking][Microsoft, "Run-Time Dynamic Linking", 7 January 2021]]
+5. [[https://github.com/NuGet/Home/issues/10734][NuGet project issue on GitHub, "NuGet packaging should support symlinks within packages", 7 April 2021]]
+6. [[https://learn.microsoft.com/en-us/windows/win32/api/LibLoaderAPI/nf-libloaderapi-loadlibraryexa][Microsoft, "LoadLibraryExA function (libloaderapi.h)", 9 February 2023]]
+7. [[https://www.man7.org/linux/man-pages/man8/ld.so.8.html][Linux man-pages 6.9.1, "ld.so(8) — Linux manual page", 8 May 2024]]
+8. [[https://learn.microsoft.com/en-us/windows/win32/procthread/environment-variables][Microsoft, "Environment Variables", 7 January 2021]]
+9. [[https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setenvironmentvariable][Microsoft, "SetEnvironmentVariable function (winbase.h)", 23 September 2022]]

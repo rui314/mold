@@ -57,7 +57,7 @@ extensions = [
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
     'sphinx.ext.githubpages', 
-    'sphinx_tabs.tabs'
+    'sphinx_design'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -126,13 +126,13 @@ html_theme = 'sphinx_book_theme'
 
 if BUILD_TYPE == 'dita':
     html_theme_options = {
-        'repository_url': 'https://github.com/oneapi-src/oneTBB',
+        'repository_url': 'https://github.com/uxlfoundation/oneTBB',
         'path_to_docs': 'doc',
         'repository_branch': 'master'
     }
 else:
     html_theme_options = {
-        'repository_url': 'https://github.com/oneapi-src/oneTBB',
+        'repository_url': 'https://github.com/uxlfoundation/oneTBB',
         'path_to_docs': 'doc',
         'use_issues_button': True,
         'use_edit_page_button': True,
@@ -140,7 +140,7 @@ else:
     }
 
 if BUILD_TYPE != 'oneapi' and BUILD_TYPE != 'dita':
-   html_theme_options["extra_footer"]="<div><a href='https://www.intel.com/content/www/us/en/privacy/intel-cookie-notice.html' data-cookie-notice='true'>Cookies</a> <a href='https://www.intel.com/content/www/us/en/privacy/intel-privacy-notice.html'>| Privacy</a> <a data-wap_ref='dns' id='wap_dns' href='https://www.intel.com/content/www/us/en/privacy/intel-cookie- notice.html'>| Do Not Share My Personal Information</a> </div><div>&copy; Intel Corporation. Intel, the Intel logo, and other Intel marks are trademarks of Intel Corporation or its subsidiaries. Other names and brands may be claimed as the property of others. No license (express or implied, by estoppel or otherwise) to any intellectual property rights is granted by this document, with the sole exception that code included in this document is licensed subject to the Zero-Clause BSD open source license (OBSD), <a href='http://opensource.org/licenses/0BSD'>http://opensource.org/licenses/0BSD</a>. </div><br><div>oneTBB is licensed under Apache License Version 2.0. Refer to the <a href='https://github.com/oneapi-src/oneTBB/blob/master/LICENSE.txt'>LICENSE </a> file for the full license text and copyright notice.</div>"
+   html_theme_options["extra_footer"]="<div><a href='https://www.intel.com/content/www/us/en/privacy/intel-cookie-notice.html' data-cookie-notice='true'>Cookies</a> <a href='https://www.intel.com/content/www/us/en/privacy/intel-privacy-notice.html'>| Privacy</a> <a data-wap_ref='dns' id='wap_dns' href='https://www.intel.com/content/www/us/en/privacy/intel-cookie- notice.html'>| Do Not Share My Personal Information</a> </div><div>&copy; Intel Corporation. Intel, the Intel logo, and other Intel marks are trademarks of Intel Corporation or its subsidiaries. Other names and brands may be claimed as the property of others. No license (express or implied, by estoppel or otherwise) to any intellectual property rights is granted by this document, with the sole exception that code included in this document is licensed subject to the Zero-Clause BSD open source license (OBSD), <a href='http://opensource.org/licenses/0BSD'>http://opensource.org/licenses/0BSD</a>. </div><br><div>oneTBB is licensed under Apache License Version 2.0. Refer to the <a href='https://github.com/uxlfoundation/oneTBB/blob/master/LICENSE.txt'>LICENSE </a> file for the full license text and copyright notice.</div>"
 
     
 # Add any paths that contain custom static files (such as style sheets) here,

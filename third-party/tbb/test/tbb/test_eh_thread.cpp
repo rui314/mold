@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2023 Intel Corporation
+    Copyright (c) 2020-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -94,7 +94,7 @@ TEST_CASE("Too many threads") {
         return;
     }
 
-    // Some systems set really big limit (e.g. >45К) for the number of processes/threads
+    // Some systems set really big limit (e.g. >45K) for the number of processes/threads
     limitThreads(1);
     if (getThreadLimit() == 1) {
         for (int attempt = 0; attempt < 5; ++attempt) {

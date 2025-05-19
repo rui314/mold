@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2024 Intel Corporation
+# Copyright (c) 2020-2025 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -66,6 +66,7 @@ function(tbb_add_test)
     endif()
 
     set_property(TEST ${_tbb_test_TARGET_NAME} PROPERTY ENVIRONMENT ${TBB_TESTS_ENVIRONMENT} APPEND)
+    set_property(TEST ${_tbb_test_TARGET_NAME} PROPERTY RUN_SERIAL TRUE)
 
     # Prefer using target_link_options instead of target_link_libraries to specify link options because
     # target_link_libraries may incorrectly handle some options (on Windows, for example).
@@ -111,6 +112,7 @@ function(tbb_add_c_test)
     endif()
 
     set_property(TEST ${_tbb_test_NAME} PROPERTY ENVIRONMENT ${TBB_TESTS_ENVIRONMENT} APPEND)
+    set_property(TEST ${_tbb_test_NAME} PROPERTY RUN_SERIAL TRUE)
 
     target_compile_definitions(${_tbb_test_NAME} PRIVATE
         $<$<CONFIG:DEBUG>:TBB_USE_DEBUG>
@@ -280,10 +282,34 @@ function(tbb_add_tbbbind_test)
     endif()
     ProcessorCount(SYSTEM_CONCURRENCY)
 
+    # Make sure fake HWLOC is found before system one
+    if (UNIX AND NOT TARGET HWLOC::hwloc_stub AND NOT TBB_TCM_TESTING)
+        # The idea is to produce fake HWLOC library and link it with the test
+        # to ensure that TBBBind won't be loaded in order to simulate the case
+        # when real HWLOC is not present in the system.
+        file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/stubhwloc.cpp "void hwloc_stub(){}")
+        add_library(hwloc_stub SHARED ${CMAKE_CURRENT_BINARY_DIR}/stubhwloc.cpp)
+        add_library(HWLOC::hwloc_stub ALIAS hwloc_stub)
+
+        set_target_properties(hwloc_stub PROPERTIES
+            OUTPUT_NAME "hwloc" SOVERSION 15
+        )
+    endif()
+
     set_tests_properties(${_tbbbind_test_NAME} PROPERTIES
         PASS_REGULAR_EXPRESSION "oneTBB: TBBBIND.*UNAVAILABLE"
         FAIL_REGULAR_EXPRESSION "Status:.*FAILURE"
     )
+
+    if (TARGET HWLOC::hwloc_stub)
+        _tbb_get_hwloc_runtime_vars(
+            ENV_EXTENSION_VARIABLE HWLOC_RUNTIME_VARS
+            HWLOC_VERSION_LIST "hwloc_stub"
+        )
+        target_link_libraries(${_tbbbind_test_NAME} PRIVATE HWLOC::hwloc_stub)
+
+        set_property(TEST ${_tbbbind_test_NAME} PROPERTY ENVIRONMENT "${HWLOC_RUNTIME_VARS}" APPEND)
+    endif()
 
     if (TARGET HWLOC::hwloc_2_5 AND NOT HWLOC_2_5_TESTS_STATUS_SHOWN)
         message(STATUS "HWLOC 2.5 dependent tests were enabled.")
@@ -416,6 +442,7 @@ if (TARGET TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_task_group DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_concurrent_hash_map DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_task_arena DEPENDENCIES TBB::tbb)
+    tbb_add_test(SUBDIR tbb NAME test_parallel_phase DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_enumerable_thread_specific DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_concurrent_queue DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR tbb NAME test_resumable_tasks DEPENDENCIES TBB::tbb)
@@ -537,7 +564,7 @@ if (TARGET TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_blocked_range DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_blocked_range2d DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_blocked_range3d DEPENDENCIES TBB::tbb)
-    tbb_add_test(SUBDIR conformance NAME conformance_blocked_rangeNd DEPENDENCIES TBB::tbb)
+    tbb_add_test(SUBDIR conformance NAME conformance_blocked_nd_range DEPENDENCIES TBB::tbb)
     tbb_add_test(SUBDIR conformance NAME conformance_concurrent_vector DEPENDENCIES TBB::tbb)
     if (NOT TBB_TCM_TESTING)
         tbb_add_test(SUBDIR conformance NAME conformance_global_control DEPENDENCIES TBB::tbb)

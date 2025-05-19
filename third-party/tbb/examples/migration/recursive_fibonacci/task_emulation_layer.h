@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2023 Intel Corporation
+    Copyright (c) 2023-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@
 namespace task_emulation {
 
 struct task_group_pool {
-    task_group_pool() : pool_size(std::thread::hardware_concurrency()), task_submitters(new tbb::task_group[pool_size]) {}
+    task_group_pool() : pool_size(tbb::this_task_arena::max_concurrency()), task_submitters(new tbb::task_group[pool_size]) {}
 
     ~task_group_pool() {
         for (std::size_t i = 0; i < pool_size; ++i) {

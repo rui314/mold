@@ -37,6 +37,10 @@
 
 #define __TBBBIND_HWLOC_HYBRID_CPUS_INTERFACES_PRESENT (HWLOC_API_VERSION >= 0x20400)
 #define __TBBBIND_HWLOC_TOPOLOGY_FLAG_RESTRICT_TO_CPUBINDING_PRESENT (HWLOC_API_VERSION >= 0x20500)
+#define __TBBBIND_HWLOC_WINDOWS_API_AVAILABLE (_WIN32 && HWLOC_API_VERSION >= 0x20500)
+#if __TBBBIND_HWLOC_WINDOWS_API_AVAILABLE
+    #include <hwloc/windows.h>
+#endif
 
 // Most of hwloc calls returns negative exit code on error.
 // This macro tracks error codes that are returned from the hwloc interfaces.
@@ -58,6 +62,7 @@ class system_topology {
     hwloc_cpuset_t   process_cpu_affinity_mask{nullptr};
     hwloc_nodeset_t  process_node_affinity_mask{nullptr};
     std::size_t number_of_processors_groups{1};
+    std::vector<hwloc_cpuset_t> processor_groups_affinity_masks_list{};
 
     // NUMA API related topology members
     std::vector<hwloc_cpuset_t> numa_affinity_masks_list{};
@@ -76,7 +81,7 @@ class system_topology {
 
     // Binding threads that locate in another Windows Processor groups
     // is allowed only if machine topology contains several Windows Processors groups
-    // and process affinity mask wasn't limited manually (affinity mask cannot violates
+    // and process affinity mask wasn't limited manually (affinity mask cannot violate
     // processors group boundaries).
     bool intergroup_binding_allowed(std::size_t groups_num) { return groups_num > 1; }
 
@@ -232,6 +237,27 @@ private:
         }
     }
 
+#if __TBBBIND_HWLOC_WINDOWS_API_AVAILABLE
+    void processor_groups_topology_parsing() {
+        __TBB_ASSERT(number_of_processors_groups > 1, nullptr);
+        processor_groups_affinity_masks_list.resize(number_of_processors_groups);
+        for (unsigned group = 0; group < number_of_processors_groups; ++group) {
+            processor_groups_affinity_masks_list[group] = hwloc_bitmap_alloc();
+            assertion_hwloc_wrapper(hwloc_windows_get_processor_group_cpuset, topology, group,
+                                    processor_groups_affinity_masks_list[group], /*flags*/0);
+        }
+
+#if TBB_USE_ASSERT
+        affinity_mask tmp = hwloc_bitmap_alloc();
+        for (auto proc_group_mask : processor_groups_affinity_masks_list) {
+            __TBB_ASSERT(!hwloc_bitmap_intersects(tmp, proc_group_mask), "Masks of processor groups intersect.");
+            hwloc_bitmap_or(tmp, tmp, proc_group_mask);
+        }
+        hwloc_bitmap_free(tmp);
+#endif
+    }
+#endif
+
     void enforce_hwloc_2_5_runtime_linkage() {
         // Without the call of this function HWLOC 2.4 can be successfully loaded during the tbbbind_2_5 loading.
         // It is possible since tbbbind_2_5 don't use any new entry points that were introduced in HWLOC 2.5
@@ -244,7 +270,7 @@ private:
 #endif
     }
 
-  
+
     void initialize( std::size_t groups_num ) {
         if ( initialization_state != uninitialized )
             return;
@@ -252,6 +278,11 @@ private:
         topology_initialization(groups_num);
         numa_topology_parsing();
         core_types_topology_parsing();
+#if __TBBBIND_HWLOC_WINDOWS_API_AVAILABLE
+        if (intergroup_binding_allowed(groups_num)) {
+           processor_groups_topology_parsing();
+        }
+#endif
 
         enforce_hwloc_2_5_runtime_linkage();
 
@@ -291,6 +322,10 @@ public:
 
             for (auto& core_type_mask : core_types_affinity_masks_list) {
                 hwloc_bitmap_free(core_type_mask);
+            }
+
+            for (auto& processor_group : processor_groups_affinity_masks_list) {
+                hwloc_bitmap_free(processor_group);
             }
 
             hwloc_bitmap_free(process_node_affinity_mask);
@@ -369,6 +404,32 @@ public:
         hwloc_bitmap_and(result_mask, result_mask, constraints_mask);
     }
 
+    /**
+     * Finds processor group for the passed slot number, which are from 0 to max concurrency - 1, by
+     * traversing masks of processor groups one by one, intersecting them with the constrained mask.
+     * Once total weight of processor groups united mask is greater than the slot number, the mask
+     * of the last traversed processor group is returned, denoting the mask to apply to the thread
+     * occupying given slot number.
+     */
+    void fit_to_processor_group(affinity_mask result_mask, affinity_mask constraints_mask, std::size_t slot_num) {
+        __TBB_ASSERT(number_of_processors_groups > 1, nullptr);
+        hwloc_bitmap_zero(result_mask);
+        int constraints_mask_weight = hwloc_bitmap_weight(constraints_mask);
+        // Map slot number to a number within constraints mask if
+        // max concurrency is greater than weight of the mask.
+        slot_num %= constraints_mask_weight;
+        std::size_t total_weight = 0;
+        for (auto& processor_group : processor_groups_affinity_masks_list) {
+            if (hwloc_bitmap_intersects(constraints_mask, processor_group)) {
+                hwloc_bitmap_and(result_mask, processor_group, constraints_mask);
+                total_weight += hwloc_bitmap_weight(result_mask);
+                if (slot_num < total_weight) {
+                    return;     // Corresponding processor group where to bind the thread is found
+                }
+            }
+        }
+    }
+
     int get_default_concurrency(int numa_node_index, int core_type_index, int max_threads_per_core) {
         __TBB_ASSERT(is_topology_parsed(), "Trying to get access to uninitialized system_topology");
 
@@ -407,7 +468,7 @@ public:
 system_topology* system_topology::instance_ptr{nullptr};
 
 class binding_handler {
-    // Following vector saves thread affinity mask on scheduler entry to return it to this thread 
+    // Following vector saves thread affinity mask on scheduler entry to return it to this thread
     // on scheduler exit.
     typedef std::vector<system_topology::affinity_mask> affinity_masks_container;
     affinity_masks_container affinity_backup;
@@ -459,26 +520,28 @@ public:
             "Trying to get access to uninitialized system_topology");
 
         topology.store_current_affinity_mask(affinity_backup[slot_num]);
-
+        system_topology::affinity_mask thread_affinity = handler_affinity_mask;
 #ifdef _WIN32
-        // TBBBind supports only systems where NUMA nodes and core types do not cross the border
-        // between several processor groups. So if a certain NUMA node or core type constraint
-        // specified, then the constraints affinity mask will not cross the processor groups' border.
-
-        // But if we have constraint based only on the max_threads_per_core setting, then the
-        // constraints affinity mask does may cross the border between several processor groups
-        // on machines with more then 64 hardware threads. That is why we need to use the special
+        // If we have a constraint based only on the max_threads_per_core setting, then the
+        // constraints affinity mask may cross the border between several processor groups
+        // on systems with more then 64 logical processors. That is why we need to use the special
         // function, which regulates the number of threads in the current threads mask.
+        bool is_default_numa = my_numa_node_id == -1 || topology.numa_indexes_list.size() == 1;
+        bool is_default_core_type = my_core_type_id == -1 || topology.core_types_indexes_list.size() == 1;
         if (topology.number_of_processors_groups > 1 && my_max_threads_per_core != -1 &&
-            (my_numa_node_id == -1 || topology.numa_indexes_list.size() == 1) &&
-            (my_core_type_id == -1 || topology.core_types_indexes_list.size() == 1)
+            is_default_numa && is_default_core_type
         ) {
             topology.fit_num_threads_per_core(affinity_buffer[slot_num], affinity_backup[slot_num], handler_affinity_mask);
-            topology.set_affinity_mask(affinity_buffer[slot_num]);
-            return;
+            thread_affinity = affinity_buffer[slot_num];
         }
+    #if __TBBBIND_HWLOC_WINDOWS_API_AVAILABLE
+        else if (topology.number_of_processors_groups > 1) {
+            topology.fit_to_processor_group(affinity_buffer[slot_num], handler_affinity_mask, slot_num);
+            thread_affinity = affinity_buffer[slot_num];
+        }
+    #endif
 #endif
-        topology.set_affinity_mask(handler_affinity_mask);
+        topology.set_affinity_mask(thread_affinity);
     }
 
     void restore_previous_affinity_mask( unsigned slot_num ) {
@@ -528,7 +591,7 @@ TBBBIND_EXPORT int __TBB_internal_get_default_concurrency(int numa_id, int core_
     return system_topology::instance().get_default_concurrency(numa_id, core_type_id, max_threads_per_core);
 }
 
-void __TBB_internal_destroy_system_topology() {
+TBBBIND_EXPORT void __TBB_internal_destroy_system_topology() {
     return system_topology::destroy();
 }
 

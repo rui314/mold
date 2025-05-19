@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -28,9 +28,7 @@
 #include "oneapi/tbb/blocked_range.h"
 #include "oneapi/tbb/blocked_range2d.h"
 #include "oneapi/tbb/blocked_range3d.h"
-#if TBB_PREVIEW_BLOCKED_RANGE_ND
-#include "tbb/blocked_rangeNd.h"
-#endif
+#include "oneapi/tbb/blocked_nd_range.h"
 #include "oneapi/tbb/cache_aligned_allocator.h"
 #include "oneapi/tbb/combinable.h"
 #include "oneapi/tbb/concurrent_hash_map.h"

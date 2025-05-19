@@ -33,7 +33,7 @@ To build the system, run:
 
 ```
 mkdir build && cd build
-emcmake cmake .. -DCMAKE_CXX_COMPILER=em++ -DCMAKE_C_COMPILER=emcc -DTBB_STRICT=OFF -DCMAKE_CXX_FLAGS=-Wno-unused-command-line-argument -DTBB_DISABLE_HWLOC_AUTOMATIC_SEARCH=ON -DBUILD_SHARED_LIBS=ON -DTBB_EXAMPLES=ON -DTBB_TEST=ON
+emcmake cmake .. -DCMAKE_CXX_COMPILER=em++ -DCMAKE_C_COMPILER=emcc -DTBB_STRICT=OFF -DCMAKE_CXX_FLAGS=-Wno-unused-command-line-argument -DTBB_DISABLE_HWLOC_AUTOMATIC_SEARCH=ON -DBUILD_SHARED_LIBS=OFF -DTBB_EXAMPLES=ON -DTBB_TEST=ON
 ```
 To compile oneTBB without ``pthreads``, set the flag ``-DEMSCRIPTEN_WITHOUT_PTHREAD=true`` in the command above. By default, oneTBB uses the ``pthreads``.
 ```
@@ -47,7 +47,7 @@ Where:
 * ``-DCMAKE_C_COMPILER=emcc`` - specifies the C compiler as Emscripten* C compiler.
 
 
-> **_NOTE:_** See [CMake documentation](https://github.com/oneapi-src/oneTBB/blob/master/cmake/README.md) to learn about other options. 
+> **_NOTE:_** See [CMake documentation](https://github.com/uxlfoundation/oneTBB/blob/master/cmake/README.md) to learn about other options. 
 
 
 ## Run Test

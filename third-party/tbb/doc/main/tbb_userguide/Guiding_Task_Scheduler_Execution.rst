@@ -6,12 +6,13 @@ Guiding Task Scheduler Execution
 By default, the task scheduler tries to use all available computing resources. In some cases,
 you may want to configure the task scheduler to use only some of them.
 
-.. caution::
+.. caution:: Guiding the execution of the task scheduler may cause composability issues.
 
-    Guiding the execution of the task scheduler may cause composability issues.
 
 |full_name| provides the ``task_arena`` interface to guide tasks execution within the arena by:
+  
     - setting the preferred computation units;
+  
     - restricting part of computation units.
 
 Such customizations are encapsulated within the ``task_arena::constraints`` structure.
@@ -32,9 +33,10 @@ not returned by ``tbb::info::numa_nodes()`` interface.
 
 The following examples show how to use these interfaces:
 
-.. rubric:: Setting the preferred NUMA node
+Set NUMA Node
+*************
 
-The execution on systems with non-uniform memory access (`NUMA <https://en.wikipedia.org/wiki/Non-uniform_memory_access>`_ systems)
+The execution on systems with non-uniform memory access (NUMA https://en.wikipedia.org/wiki/Non-uniform_memory_access systems)
 may cause a performance penalty if threads from one NUMA node access the memory allocated on
 a different NUMA node. To reduce this overhead, the work may be divided among several ``task_arena``
 instances, whose execution preference is set to different NUMA nodes. To set execution preference,
@@ -57,7 +59,8 @@ assign a NUMA node identifier to the ``task_arena::constraints::numa_id`` field.
         arenas[j].execute([&task_groups, &j](){ task_groups[j].wait(); });
     }
 
-.. rubric:: Setting the preferred core type
+Set Core Type
+*************
 
 The processors with `Intel® Hybrid Technology <https://www.intel.com/content/www/us/en/products/docs/processors/core/core-processors-with-hybrid-technology-brief.html>`_
 contain several core types, each is suited for different purposes.
@@ -78,7 +81,8 @@ The example shows how to set the most performant core type as preferable for wor
         /*the most performant core type is defined as preferred.*/
     });
 
-.. rubric:: Limiting the maximum number of threads simultaneously scheduled to one core
+Limit The Maximum Number of Threads Simultaneously Scheduled To One Core
+****************************************************************************
 
 The processors with `Intel® Hyper-Threading Technology <https://www.intel.com/content/www/us/en/architecture-and-technology/hyper-threading/hyper-threading-technology.html>`_
 allow more than one thread to run on each core simultaneously. However, there might be situations

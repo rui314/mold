@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -281,4 +281,46 @@ void test_tracking_dtors_on_clear() {
 TEST_CASE("Test clear and dtor with TrackableItem") {
     test_tracking_dtors_on_clear<oneapi::tbb::concurrent_queue<TrackableItem>>();
     test_tracking_dtors_on_clear<oneapi::tbb::concurrent_bounded_queue<TrackableItem>>();
+}
+
+//! \brief \ref regression 
+TEST_CASE("test capacity on modifying operations") {
+    // Test that concurrent_bounded_queue capacity is preserved on copying, moving and swapping
+    using queue_type = oneapi::tbb::concurrent_bounded_queue<int>;
+    using capacity_type = typename queue_type::size_type;
+
+    queue_type q;
+    capacity_type desired_capacity = 64;
+
+    q.set_capacity(desired_capacity);
+    REQUIRE_MESSAGE(q.capacity() == desired_capacity, "Capacity is not set correctly");
+
+    queue_type q_copy(q);
+    REQUIRE_MESSAGE(q_copy.capacity() == desired_capacity, "Capacity is not preserved on copying");
+
+    queue_type q_move(std::move(q));
+    REQUIRE_MESSAGE(q_move.capacity() == desired_capacity, "Capacity is not preserved on moving");
+
+    queue_type different_capacity_q1;
+    different_capacity_q1.set_capacity(desired_capacity * 2);
+
+    different_capacity_q1 = q_move;
+    REQUIRE_MESSAGE(different_capacity_q1.capacity() == desired_capacity,
+                    "Capacity is not preserved on copy assignment");
+
+    queue_type different_capacity_q2;
+    different_capacity_q2.set_capacity(desired_capacity * 2);
+
+    different_capacity_q2 = std::move(q_move);
+    REQUIRE_MESSAGE(different_capacity_q2.capacity() == desired_capacity,
+                    "Capacity is not preserved on move assignment");
+
+    queue_type different_capacity_q3;
+    different_capacity_q3.set_capacity(desired_capacity * 2);
+
+    different_capacity_q3.swap(different_capacity_q2);
+    REQUIRE_MESSAGE(different_capacity_q3.capacity() == desired_capacity,
+                    "Capacity is not preserved on swap");
+    REQUIRE_MESSAGE(different_capacity_q2.capacity() == desired_capacity * 2,
+                    "Capacity is not preserved on swap");
 }

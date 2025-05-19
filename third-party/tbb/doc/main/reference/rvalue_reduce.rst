@@ -33,8 +33,8 @@ or
 
 .. cpp:function:: Value Func::operator()(const Range& range, const Value& x) const
 
-    Accumulates the result for a subrange, starting with initial value ``x``. The ``Range`` type must meet the 
-    `Range requirements <https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/named_requirements/algorithms/range>`_. 
+    Accumulates the result for a subrange, starting with initial value ``x``. The ``Range`` type must meet the
+    `Range requirements <https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/named_requirements/algorithms/range>`_.
     The ``Value`` type must be the same as a corresponding template parameter for the `parallel_reduce algorithm <https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/algorithms/functions/parallel_reduce_func>`_.
 
     If both ``rvalue`` and ``lvalue`` forms are provided, the ``rvalue`` is preferred.
@@ -55,33 +55,10 @@ or
 Example
 *******
 
-.. code:: cpp
-    
-    // C++17
-    #include <oneapi/tbb/parallel_reduce.h>
-    #include <oneapi/tbb/blocked_range.h>
-    #include <vector>
-    #include <set>
-
-    int main() {
-        std::vector<std::set<int>> sets = ...;
-
-        oneapi::tbb::parallel_reduce(oneapi::tbb::blocked_range<size_t>(0, sets.size()),
-                                     std::set<int>{}, // identity element - empty set
-                                     [&](const oneapi::tbb::blocked_range<size_t>& range, std::set<int>&& value) {
-                                         for (size_t i = range.begin(); i < range.end(); ++i) {
-                                             // Having value as a non-const rvalue reference allows to efficiently
-                                             // transfer nodes from sets[i] without copying/moving the data
-                                             value.merge(std::move(sets[i]));
-                                         }
-                                         return value;
-                                     },
-                                     [&](std::set<int>&& x, std::set<int>&& y) {
-                                         x.merge(std::move(y));
-                                         return x;
-                                     }
-                                     );
-    }
+.. literalinclude:: ./examples/rvalue_reduce.cpp
+    :language: c++
+    :start-after: /*begin_rvalue_reduce_example*/
+    :end-before: /*end_rvalue_reduce_example*/
 
 .. rubric:: See also
 

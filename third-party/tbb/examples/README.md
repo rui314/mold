@@ -3,7 +3,7 @@ This directory contains example usages of oneAPI Threading Building Blocks.
 
 | Code sample name | Description
 |:--- |:---
-| getting_started/sub_string_finder | Example referenced by the [oneAPI Threading Building Blocks Get Started Guide](https://oneapi-src.github.io/oneTBB/GSG/get_started.html#get-started-guide). Finds the largest matching substrings.
+| getting_started/sub_string_finder | Example referenced by the [oneAPI Threading Building Blocks Get Started Guide](https://uxlfoundation.github.io/oneTBB/GSG/get_started.html#get-started-guide). Finds the largest matching substrings.
 | concurrent_hash_map/count_strings | Concurrently inserts strings into a `concurrent_hash_map` container.
 | concurrent_priority_queue/shortpath | Solves the single source shortest path problem using a  `concurrent_priority_queue` container.
 | graph/binpack | A solution to the binpacking problem using a `queue_node`, a `buffer_node`, and `function_node`s.
@@ -26,7 +26,7 @@ This directory contains example usages of oneAPI Threading Building Blocks.
 | test_all/fibonacci | Compute Fibonacci numbers in different ways.
 
 ## System Requirements
-Refer to the [System Requirements](https://github.com/oneapi-src/oneTBB/blob/master/SYSTEM_REQUIREMENTS.md) for the list of supported hardware and software.
+Refer to the [System Requirements](https://github.com/uxlfoundation/oneTBB/blob/master/SYSTEM_REQUIREMENTS.md) for the list of supported hardware and software.
 
 ### Graphical User Interface (GUI)
 Some examples (e.g., fractal, seismic, tachyon, polygon_overlay) support different GUI modes, which may be defined via the `EXAMPLES_UI_MODE` CMake variable. 

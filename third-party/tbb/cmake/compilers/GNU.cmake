@@ -83,8 +83,8 @@ if (NOT ${CMAKE_CXX_COMPILER_ID} STREQUAL Intel)
     set(TBB_DSE_FLAG $<$<NOT:$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},6.0>>:-flifetime-dse=1>)
     set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} $<$<NOT:$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},8.0>>:-fstack-clash-protection>)
 
-    # Suppress GCC 12.x-13.x warning here that to_wait_node(n)->my_is_in_list might have size 0
-    set(TBB_COMMON_LINK_FLAGS ${TBB_COMMON_LINK_FLAGS} $<$<AND:$<NOT:$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},12.0>>,$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},14.0>>:-Wno-stringop-overflow>)
+    # Suppress GCC 12.x-14.x warning here that to_wait_node(n)->my_is_in_list might have size 0
+    set(TBB_COMMON_LINK_FLAGS ${TBB_COMMON_LINK_FLAGS} $<$<AND:$<NOT:$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},12.0>>,$<VERSION_LESS:${CMAKE_CXX_COMPILER_VERSION},15.0>>:-Wno-stringop-overflow>)
 endif()
 
 # Workaround for heavy tests and too many symbols in debug (rellocation truncated to fit: R_MIPS_CALL16)
@@ -111,6 +111,10 @@ if (NOT APPLE AND NOT MINGW)
 endif()
 if (NOT CMAKE_CXX_FLAGS MATCHES "_FORTIFY_SOURCE")
   set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} $<$<NOT:$<CONFIG:Debug>>:-D_FORTIFY_SOURCE=2> )
+endif ()
+
+if (TBB_FILE_TRIM AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 8)
+    set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} -ffile-prefix-map=${NATIVE_TBB_PROJECT_ROOT_DIR}/= -ffile-prefix-map=${NATIVE_TBB_RELATIVE_BIN_PATH}/=)
 endif ()
 
 # TBB malloc settings

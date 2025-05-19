@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -806,3 +806,25 @@ TEST_CASE("test function_node try_put_and_wait") {
     test_try_put_and_wait();
 }
 #endif
+
+// It was an issue when the critical task wrapper was allocated using the small object pool
+// of the task being wrapped. Since the original task creates under the aggregator, there is no
+// guarantee that the thread that requested the task creating is the same as actually created the task
+// Mismatch between memory pool caused internal assertion failure while deallocating the task
+//! \brief \ref regression
+TEST_CASE("test critical tasks memory pool correctness") {
+    using node_type = tbb::flow::function_node<int, tbb::flow::continue_msg>;
+    constexpr int num_iterations = 10000;
+    int num_calls = 0;
+    auto node_body = [&](int) { ++num_calls; };
+
+    tbb::flow::graph g;
+    node_type node(g, tbb::flow::serial, node_body, tbb::flow::node_priority_t{1});
+
+    for (int i = 0; i < num_iterations; ++i) {
+        node.try_put(i);
+    }
+
+    g.wait_for_all();
+    REQUIRE_MESSAGE(num_calls == num_iterations, "Incorrect number of body executions");
+}

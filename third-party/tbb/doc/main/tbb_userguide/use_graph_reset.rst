@@ -1,11 +1,11 @@
 .. _use_graph_reset:
 
-Use graph::reset() to Reset a Canceled Graph
-============================================
+Use ``graph::reset()`` to Reset a Canceled Graph
+================================================
 
 
 When a graph execution is canceled either because of an unhandled
-exception or because its task_group_context is canceled explicitly, the
+exception or because its ``task_group_context`` is canceled explicitly, the
 graph and its nodes may be left in an indeterminate state. For example,
 in the code samples shown in :ref:`cancel_a_graph` the input 2 may be
 left in a buffer. But even beyond remnants in the buffers, there are

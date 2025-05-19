@@ -16,7 +16,7 @@ This example shows how to set the most performant core type as the preferred one
 for a graph execution:
 
 
-.. literalinclude:: ./snippets/flow_graph_examples.cpp
+.. literalinclude:: ./examples/flow_graph_examples.cpp
    :language: c++
    :start-after: /*begin_attach_to_arena_1*/
    :end-before: /*end_attach_to_arena_1*/
@@ -32,7 +32,7 @@ of the graph, it is spawned in the arena of a graph it is attached to, disregard
 the arena of the thread that the task is spawned from:
 
 
-.. literalinclude:: ./snippets/flow_graph_examples.cpp
+.. literalinclude:: ./examples/flow_graph_examples.cpp
    :language: c++
    :start-after: /*begin_attach_to_arena_2*/
    :end-before: /*end_attach_to_arena_2*/
@@ -44,4 +44,3 @@ See the following topics to learn more:
 
    ../tbb_userguide/Guiding_Task_Scheduler_Execution
    ../tbb_userguide/work_isolation
-

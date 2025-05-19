@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -445,7 +445,7 @@ TEST_CASE("Various range implementations") {
 
 //! Testing parallel_for with explicit task_group_context
 //! \brief \ref interface \ref error_guessing
-TEST_CASE("Сancellation test for tbb::parallel_for") {
+TEST_CASE("Cancellation test for tbb::parallel_for") {
     test_cancellation::ParallelForTestRunner</*FirstMode = */0>::run();
 }
 

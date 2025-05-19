@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -165,13 +165,13 @@ static void TestExceptionClassesExports () {
     TestExceptionClassExports( std::out_of_range("test"), tbb::detail::exception_id::invalid_key );
     TestExceptionClassExports( tbb::user_abort(), tbb::detail::exception_id::user_abort );
     TestExceptionClassExports( std::runtime_error("test"), tbb::detail::exception_id::bad_tagged_msg_cast );
+    TestExceptionClassExports( tbb::unsafe_wait("test"), tbb::detail::exception_id::unsafe_wait );
 }
 
 #if __TBB_CPF_BUILD
 // These names are only tested in "preview" configuration
 // When a feature becomes fully supported, its names should be moved to the main test
 static void TestPreviewNames() {
-    TestTypeDefinitionPresence2( blocked_rangeNd<int,4> );
     TestTypeDefinitionPresence2( concurrent_lru_cache<int, int> );
     TestTypeDefinitionPresence( isolated_task_group );
 }
@@ -237,6 +237,7 @@ static void DefinitionPresence() {
     TestTypeDefinitionPresence( blocked_range<int> );
     TestTypeDefinitionPresence( blocked_range2d<int> );
     TestTypeDefinitionPresence( blocked_range3d<int> );
+    TestTypeDefinitionPresence2( blocked_nd_range<int,4> );
     TestTypeDefinitionPresence( collaborative_once_flag );
     TestFuncDefinitionPresence( collaborative_call_once, (tbb::collaborative_once_flag&, const Body&), void );
     TestFuncDefinitionPresence( parallel_invoke, (const Body&, const Body&, const Body&), void );

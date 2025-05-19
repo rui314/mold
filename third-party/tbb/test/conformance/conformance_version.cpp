@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2023 Intel Corporation
+    Copyright (c) 2020-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -25,8 +25,8 @@
 //! Testing the match of compile-time oneTBB specification version
 //! \brief \ref requirement \ref interface
 TEST_CASE("Test specification version") {
-    const char* expected = "1.0";
-    REQUIRE_MESSAGE(std::strcmp(expected, ONETBB_SPEC_VERSION) == 0,
+    int expected = 104;
+    REQUIRE_MESSAGE(ONETBB_SPEC_VERSION == expected,
         "Expected and actual specification versions do not match.");
 }
 

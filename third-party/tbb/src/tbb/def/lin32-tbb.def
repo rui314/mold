@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -107,6 +107,8 @@ _ZN3tbb6detail2r17enqueueERNS0_2d14taskEPNS2_15task_arena_baseE;
 _ZN3tbb6detail2r17enqueueERNS0_2d14taskERNS2_18task_group_contextEPNS2_15task_arena_baseE;
 _ZN3tbb6detail2r14waitERNS0_2d115task_arena_baseE;
 _ZN3tbb6detail2r114execution_slotERKNS0_2d115task_arena_baseE;
+_ZN3tbb6detail2r119exit_parallel_phaseEPNS0_2d115task_arena_baseEj;
+_ZN3tbb6detail2r120enter_parallel_phaseEPNS0_2d115task_arena_baseEj;
 
 /* System topology parsing and threads pinning (governor.cpp) */
 _ZN3tbb6detail2r115numa_node_countEv;

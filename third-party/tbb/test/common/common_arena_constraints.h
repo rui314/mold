@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2019-2023 Intel Corporation
+    Copyright (c) 2019-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -560,16 +560,19 @@ constraints_container generate_constraints_variety() {
 #endif /*__HYBRID_CPUS_TESTING*/
         }
 
+        int max_threads_per_core = system_info::get_available_max_threads_values().back();
         // Some constraints may cause unexpected behavior, which would be fixed later.
         if (get_processors_group_count() > 1) {
-            for(auto it = results.begin(); it != results.end(); ++it) {
-                if (it->max_threads_per_core != tbb::task_arena::automatic
+            for(auto it = results.begin(); it != results.end();) {
+                if (it->max_threads_per_core != max_threads_per_core
                    && (it->numa_id == tbb::task_arena::automatic || tbb::info::numa_nodes().size() == 1)
 #if __HYBRID_CPUS_TESTING
                    && (it->core_type == tbb::task_arena::automatic || tbb::info::core_types().size() == 1)
 #endif /*__HYBRID_CPUS_TESTING*/
                 ) {
                     it = results.erase(it);
+                } else {
+                    ++it;
                 }
             }
         }

@@ -167,4 +167,3 @@ quite well.
 .. |image2| image:: Images/image006.jpg
    :width: 462px
    :height: 193px
-

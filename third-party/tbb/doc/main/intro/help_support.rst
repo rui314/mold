@@ -12,4 +12,4 @@ Getting Help and Support
 
    For general information about oneTBB technical support, product
    updates, user forums, FAQs, tips and tricks and other support
-   questions, go to `GitHub issues <https://github.com/oneapi-src/oneTBB/issues>`_.
+   questions, go to `GitHub issues <https://github.com/uxlfoundation/oneTBB/issues>`_.

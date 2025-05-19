@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -24,11 +24,10 @@
 #include "tbb/blocked_range.h"
 #include "tbb/blocked_range2d.h"
 #include "tbb/blocked_range3d.h"
-#define TBB_PREVIEW_BLOCKED_RANGE_ND 1
-#include "tbb/blocked_rangeNd.h"
+#include "tbb/blocked_nd_range.h"
 
 //! \file test_blocked_range.cpp
-//! \brief Test for [algorithms.blocked_range] specification
+//! \brief Test for [algorithms.blocked_range algorithms.blocked_range2d algorithms.blocked_range3d algorithms.blocked_nd_range] specification
 
 #include <utility> //for std::pair
 #include <functional>
@@ -120,12 +119,12 @@ template <typename... Types>
 void test_blocked_range3d_col_invalid_constraint() {}
 
 template <typename T>
-concept well_formed_blocked_range_Nd_instantiation_basic = requires {
-    typename tbb::blocked_rangeNd<T, 1>;
+concept well_formed_blocked_nd_range_instantiation_basic = requires {
+    typename tbb::blocked_nd_range<T, 1>;
 };
 
 template <typename... Types>
-concept well_formed_blocked_range_Nd_instantiation = ( ... && well_formed_blocked_range_Nd_instantiation_basic<Types> );
+concept well_formed_blocked_nd_range_instantiation = ( ... && well_formed_blocked_nd_range_instantiation_basic<Types> );
 
 //! \brief \ref error_guessing
 TEST_CASE("constraints for blocked_range value") {
@@ -180,16 +179,161 @@ TEST_CASE("constraints for blocked_range3d value") {
 }
 
 //! \brief \ref error_guessing
-TEST_CASE("constraints for blocked_rangeNd value") {
+TEST_CASE("constraints for blocked_nd_range value") {
     using namespace test_concepts::blocked_range_value;
     using const_iterator = typename std::vector<int>::const_iterator;
 
-    static_assert(well_formed_blocked_range_Nd_instantiation<Correct, char, int, std::size_t, const_iterator>);
+    static_assert(well_formed_blocked_nd_range_instantiation<Correct, char, int, std::size_t, const_iterator>);
 
-    static_assert(!well_formed_blocked_range_Nd_instantiation<NonCopyable, NonCopyAssignable, NonDestructible,
+    static_assert(!well_formed_blocked_nd_range_instantiation<NonCopyable, NonCopyAssignable, NonDestructible,
                                                               NoOperatorLess, OperatorLessNonConst, WrongReturnOperatorLess,
                                                               NoOperatorMinus, OperatorMinusNonConst, WrongReturnOperatorMinus,
                                                               NoOperatorPlus, OperatorPlusNonConst, WrongReturnOperatorPlus>);
 }
 
 #endif // __TBB_CPP20_CONCEPTS_PRESENT
+
+#if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT && __TBB_PREVIEW_BLOCKED_ND_RANGE_DEDUCTION_GUIDES
+template <typename T>
+void test_deduction_guides() {
+    using oneapi::tbb::blocked_nd_range;
+    static_assert(std::is_constructible<T, int>::value, "Incorrect test setup");
+    // T as a grainsize in braced-init-list constructions should be used since only
+    // the same type is allowed by the braced-init-list
+    static_assert(std::is_convertible<T, typename blocked_nd_range<T, 1>::size_type>::value,
+                  "Incorrect test setup");
+
+    std::vector<T> v;
+    using iterator = typename decltype(v)::iterator;
+
+    oneapi::tbb::blocked_range<T> dim_range(0, 100);
+
+    blocked_nd_range<T, 2> source_range(dim_range, dim_range);
+
+    {
+        blocked_nd_range range(dim_range, dim_range, dim_range);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 3>>);
+    }
+    {
+        blocked_nd_range range({v.begin(), v.end()}, {v.begin(), v.end()});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<iterator, 2>>);
+    }
+    {
+        blocked_nd_range range({T{0}, T{100}}, {T{0}, T{100}, T{5}}, {T{0}, T{100}}, {T{0}, T{100}, T{5}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+    }
+    {
+        blocked_nd_range range({T{100}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 1>>);
+    }
+    {
+        T array[1] = {100};
+        blocked_nd_range range(array);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 1>>);
+    }
+    {
+        blocked_nd_range range({T{100}}, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 1>>);
+    }
+    {
+        T array[1] = {100};
+        blocked_nd_range range(array, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 1>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}}, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 2>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 2>>);
+    }
+    {
+        T array[2] = {100, 200};
+        blocked_nd_range range(array, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 2>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}, T{300}}, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 3>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}, T{300}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 3>>);
+    }
+    {
+        T array[3] = {100, 200, 300};
+        blocked_nd_range range(array, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 3>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}, T{300}, T{400}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+    }
+    {
+        T array[4] = {100, 200, 300, 400};
+        blocked_nd_range range(array);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}, T{300}, T{400}}, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+    }
+    {
+        T array[4] = {100, 200, 300, 400};
+        blocked_nd_range range(array, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+    }
+    {
+        blocked_nd_range range(source_range, oneapi::tbb::split{});
+        static_assert(std::is_same_v<decltype(range), decltype(source_range)>);
+    }
+    {
+        blocked_nd_range range(source_range, oneapi::tbb::proportional_split{1, 3});
+        static_assert(std::is_same_v<decltype(range), decltype(source_range)>);
+    }
+    {
+        blocked_nd_range range(source_range);
+        static_assert(std::is_same_v<decltype(range), decltype(source_range)>);
+    }
+    {
+        blocked_nd_range range(std::move(source_range));
+        static_assert(std::is_same_v<decltype(range), decltype(source_range)>);
+    }
+}
+
+class fancy_value {
+public:
+    fancy_value(std::size_t real_value) : my_real_value(real_value) {}
+    fancy_value(const fancy_value&) = default;
+    ~fancy_value() = default;
+    fancy_value& operator=(const fancy_value&) = default;
+
+    friend bool operator<(const fancy_value& lhs, const fancy_value& rhs) {
+        return lhs.my_real_value < rhs.my_real_value;
+    }
+    friend std::size_t operator-(const fancy_value& lhs, const fancy_value& rhs) {
+        return lhs.my_real_value - rhs.my_real_value;
+    }
+    friend std::size_t operator-(const fancy_value& lhs, std::size_t offset) {
+        return lhs.my_real_value - offset;
+    }
+    friend fancy_value operator+(const fancy_value& lhs, std::size_t offset) {
+        return fancy_value(lhs.my_real_value + offset);
+    }
+
+    operator std::size_t() const {
+        return my_real_value;
+    }
+private:
+    std::size_t my_real_value;
+};
+
+//! Testing blocked_nd_range deduction guides
+//! \brief \ref interface \ref requirement
+TEST_CASE("blocked_nd_range deduction guides") {
+    test_deduction_guides<int>();
+    test_deduction_guides<fancy_value>();
+}
+#endif // __TBB_CPP17_DEDUCTION_GUIDES_PRESENT && __TBB_PREVIEW_BLOCKED_ND_RANGE_DEDUCTION_GUIDES

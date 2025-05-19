@@ -29,9 +29,8 @@ jobs:
       issues: write
       contents: read
     steps:
-    - uses: github/issue-labeler@v3.2 #May not be the latest version
+    - uses: github/issue-labeler@v3.4 #May not be the latest version
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
         configuration-path: .github/issue_labeler.yml
         enable-versioned-regex: 0
-        sync-labels: 1

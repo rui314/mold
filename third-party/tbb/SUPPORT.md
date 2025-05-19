@@ -21,14 +21,14 @@ Use the following methods if you face any challenges.
 
 ## Issues
 
-If you have a problem, check out the [GitHub Issues](https://github.com/oneapi-src/oneTBB/issues) to see if the issue you want to address is already reported. 
+If you have a problem, check out the [GitHub Issues](https://github.com/uxlfoundation/oneTBB/issues) to see if the issue you want to address is already reported. 
 You may find users that have encountered the same bug or have similar ideas for changes or updates.
 
 You can use issues to report a problem, make a feature request, or add comments on an existing issue.
 
 ## Discussions 
 
-Visit the [GitHub Discussions](https://github.com/oneapi-src/oneTBB/discussions) to engage with the community, ask questions, or help others. 
+Visit the [GitHub Discussions](https://github.com/uxlfoundation/oneTBB/discussions) to engage with the community, ask questions, or help others. 
 
 ## Email
 

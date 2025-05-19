@@ -8,7 +8,7 @@ Most applications contain multiple nodes with edges connecting them to
 each other. In the flow graph interface, edges are directed channels
 over which messages are passed. They are created by calling the function
 ``make_edge( p, s )`` with two arguments: ``p``, the predecessor, and ``s``, the
-successor. You can modify the example used in the **Nodes** topic to
+successor. You can modify the example used in the :ref:`Nodes` topic to
 include a second node that squares the value it receives before printing
 it and then connect that to the first node with an edge.
 

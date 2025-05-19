@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -35,14 +35,17 @@ struct RunOptions {
     //!                  threads.second - initialization value for scheduler
     utility::thread_number_range threads;
     int numberOfFrames;
+    int numberOfIterations;
     bool silent;
     bool parallel;
     RunOptions(utility::thread_number_range threads_,
                int number_of_frames_,
+               int number_of_iterations_,
                bool silent_,
                bool parallel_)
             : threads(threads_),
               numberOfFrames(number_of_frames_),
+              numberOfIterations(number_of_iterations_),
               silent(silent_),
               parallel(parallel_) {}
 };
@@ -53,6 +56,7 @@ RunOptions ParseCommandLine(int argc, char *argv[]) {
         utility::get_default_num_threads, 0, utility::get_default_num_threads());
 
     int numberOfFrames = 0;
+    int numberOfIterations = 0;
     bool silent = false;
     bool serial = false;
 
@@ -65,15 +69,19 @@ RunOptions ParseCommandLine(int argc, char *argv[]) {
             .positional_arg(numberOfFrames,
                             "n-of-frames",
                             "number of frames the example processes internally (0 means unlimited)")
+            .positional_arg(numberOfIterations,
+                            "n-of-iterations",
+                            "number of iterations the example runs internally")
             .arg(silent, "silent", "no output except elapsed time")
             .arg(serial, "serial", "in GUI mode start with serial version of algorithm"));
-    return RunOptions(threads, numberOfFrames, silent, !serial);
+    return RunOptions(threads, numberOfFrames, numberOfIterations, silent, !serial);
 }
 
 int main(int argc, char *argv[]) {
     oneapi::tbb::tick_count mainStartTime = oneapi::tbb::tick_count::now();
     RunOptions options = ParseCommandLine(argc, argv);
     SeismicVideo video(u, options.numberOfFrames, options.threads.last, options.parallel);
+    double rel_error;
 
     // video layer init
     if (video.init_window(u.UniverseWidth, u.UniverseHeight)) {
@@ -91,11 +99,19 @@ int main(int argc, char *argv[]) {
             std::cout << "Substituting 1000 for unlimited frames because not running interactively"
                       << "\n";
         }
+        // TODO : Extend utility::cli_argument_pack() to allow specifying the default value.
+        if (options.numberOfIterations <= 0) {
+            options.numberOfIterations = 10;
+            std::cout << "Setting the number of iterations = 10 default"
+                      << "\n";
+        }
         for (int p = options.threads.first; p <= options.threads.last;
              p = options.threads.step(p)) {
             oneapi::tbb::tick_count xwayParallelismStartTime = oneapi::tbb::tick_count::now();
             u.InitializeUniverse(video);
             int numberOfFrames = options.numberOfFrames;
+            assert(options.numberOfIterations > 0 && "Number of iterations cannot be <= 0");
+            unsigned numberOfIterations = unsigned(options.numberOfIterations);
 
             if (p == 0) {
                 //run a serial version
@@ -106,9 +122,15 @@ int main(int argc, char *argv[]) {
             else {
                 oneapi::tbb::global_control c(oneapi::tbb::global_control::max_allowed_parallelism,
                                               p);
-                for (int i = 0; i < numberOfFrames; ++i) {
-                    u.ParallelUpdateUniverse();
+                utility::measurements mu(numberOfIterations);
+                for (int iter = 0; iter < numberOfIterations; ++iter) {
+                    mu.start();
+                    for (int i = 0; i < numberOfFrames; ++i) {
+                        u.ParallelUpdateUniverse();
+                    }
+                    mu.stop();
                 }
+                rel_error = mu.computeRelError();
             }
 
             if (!options.silent) {
@@ -129,5 +151,6 @@ int main(int argc, char *argv[]) {
     }
     video.terminate();
     utility::report_elapsed_time((oneapi::tbb::tick_count::now() - mainStartTime).seconds());
+    utility::report_relative_error(rel_error);
     return 0;
 }

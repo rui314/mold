@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Intel Corporation
+# Copyright (c) 2024-2025 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ jobs:
     
     steps:
       - name: Harden Runner
-        uses: step-security/harden-runner@v2.6.1
+        uses: step-security/harden-runner@v2.10.4
         with:
           egress-policy: audit
           

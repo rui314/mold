@@ -40,7 +40,7 @@ load("@platforms//tools/build_defs/repo:git.bzl", "git_repository")
 git_repository(
     name = "oneTBB",
     branch = "master",
-    remote = "https://github.com/oneapi-src/oneTBB/",
+    remote = "https://github.com/uxlfoundation/oneTBB/",
 )
 ```
 

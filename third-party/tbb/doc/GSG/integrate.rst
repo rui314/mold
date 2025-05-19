@@ -26,10 +26,10 @@ Integrating oneTBB into your project using CMake*:
 
 To add oneTBB to another project using CMake*, add the following commands to your ``CMakeLists.txt`` file:
 
-.. code-block::
+.. code-block:: cmake
 
-       `find_package(TBB REQUIRED)`
-       `target_link_libraries(my_executable TBB::tbb)`
+       find_package(TBB REQUIRED)
+       target_link_libraries(my_executable TBB::tbb)
 
 After that, configure your project with CMake* as usual.
 
