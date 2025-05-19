@@ -1299,6 +1299,53 @@ void sort_ctor_dtor(Context<E> &ctx) {
   }
 }
 
+// Returns true if a given section contains a DWARF32 debug record.
+// `isec` must be a .debug_info section.
+template <typename E>
+static bool is_dwarf32(Context<E> &ctx, InputSection<E> &isec) {
+  if (isec.sh_size < 12) {
+    // The section is too short. This is a user error, but instead of
+    // being nitpicky about it, we simply handle it on a garbage-in,
+    // garbage-out basis.
+    return true;
+  }
+
+  // A .debug_info section contains compilation units (CUs). A 32-bit CU
+  // starts with a 32-bit size field, while a 64-bit CU starts with a
+  // magic number 0xffff'ffff followed by a 64-bit size field.
+  //
+  // Note that size doesn't take the size field itself into account, so
+  // the actual size of a 64-bit CU including the size field is 12 bytes
+  // larger than the value in the size field.
+  u8 buf[12];
+  isec.copy_contents_to(ctx, buf, 12);
+  if (*(U32<E> *)buf != 0xffff'ffff)
+    return true;
+  if (*(U64<E> *)(buf + 4) + 12 == isec.sh_size)
+    return false;
+
+  // An input .debug_info section usually contains a single CU. However,
+  // if the linker combines multiple object files using `-r`, the
+  // resulting object file may have a .debug_info section with as many CUs
+  // as there are in the input files. Therefore, if the first CU doesn't
+  // cover the entire .debug_info section, we need to keep reading until
+  // the end of the section.
+  //
+  // An input .debug_info section may be compressed using zlib or zstd, so
+  // we need to uncompress it before accessing `isec.contents`.
+  isec.uncompress(ctx);
+
+  u8 *p = (u8 *)isec.contents.data() + *(U64<E> *)(buf + 4) + 12;
+  u8 *end = (u8 *)isec.contents.data() + isec.sh_size;
+
+  while (end - p >= 12) {
+    if (*(U32<E> *)p != 0xffff'ffff)
+      return true;
+    p += *(U64<E> *)(p + 4) + 12;
+  }
+  return false;
+}
+
 // Sort .debug_info contents so that DWARF32 debug info input sections
 // precedes those of DWARF64. This is to mitigate the possibility of a
 // relocation overflow.
@@ -1324,14 +1371,6 @@ void sort_debug_info_sections(Context<E> &ctx) {
   if (osec->shdr.sh_size < UINT32_MAX && !is_in_test())
     return;
 
-  auto is_dwarf32 = [&](InputSection<E> &isec) {
-    if (isec.sh_size < 4)
-      return false;
-    u8 buf[4];
-    isec.copy_contents_to(ctx, buf, 4);
-    return *(U32<E> *)buf != 0xffff'ffff;
-  };
-
   struct Member {
     InputSection<E> *isec;
     bool is_dwarf32;
@@ -1341,7 +1380,7 @@ void sort_debug_info_sections(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, (i64)osec->members.size(), [&](i64 i) {
     InputSection<E> *isec = osec->members[i];
-    vec[i] = {isec, is_dwarf32(*isec)};
+    vec[i] = {isec, is_dwarf32(ctx, *isec)};
   });
 
   ranges::stable_partition(vec, &Member::is_dwarf32);
