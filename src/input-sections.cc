@@ -63,14 +63,14 @@ void InputSection<E>::uncompress(Context<E> &ctx) {
     return;
 
   u8 *buf = new u8[sh_size];
-  copy_contents(ctx, buf, sh_size);
+  copy_contents_to(ctx, buf, sh_size);
   contents = std::string_view((char *)buf, sh_size);
   ctx.string_pool.emplace_back(buf);
   uncompressed = true;
 }
 
 template <typename E>
-void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf, i64 sz) {
+void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
   if (!(shdr().sh_flags & SHF_COMPRESSED) || uncompressed) {
     memcpy(buf, contents.data(), sz);
     return;
@@ -100,8 +100,8 @@ void InputSection<E>::copy_contents(Context<E> &ctx, u8 *buf, i64 sz) {
   }
   case ELFCOMPRESS_ZSTD: {
     ZSTD_DCtx *dctx = ZSTD_createDCtx();
-    ZSTD_inBuffer in = { data.data(), data.size(), 0 };
-    ZSTD_outBuffer out = { buf, (size_t)sz, 0 };
+    ZSTD_inBuffer in = { data.data(), data.size() };
+    ZSTD_outBuffer out = { buf, (size_t)sz };
 
     while (out.pos < out.size) {
       size_t r = ZSTD_decompressStream(dctx, &out, &in);
@@ -253,7 +253,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 
     if (deltas.empty()) {
       // If a section is not relaxed, we can copy it as a one big chunk.
-      copy_contents(ctx, buf, sh_size);
+      copy_contents_to(ctx, buf, sh_size);
     } else {
       // A relaxed section is copied piece-wise.
       memcpy(buf, contents.data(), deltas[0].offset);
@@ -269,7 +269,7 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
       }
     }
   } else {
-    copy_contents(ctx, buf, sh_size);
+    copy_contents_to(ctx, buf, sh_size);
   }
 
   // Apply relocations

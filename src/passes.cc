@@ -1307,10 +1307,8 @@ void sort_debug_info_sections(Context<E> &ctx) {
   Timer t(ctx, "sort_debug_info_sections");
 
   auto get_debug_info = [&]() -> OutputSection<E> * {
-    for (Chunk<E> *chunk : ctx.chunks)
-      if (OutputSection<E> *osec = chunk->to_osec())
-        if (!(osec->shdr.sh_flags & SHF_ALLOC) && osec->name == ".debug_info")
-          return osec;
+    if (Chunk<E> *chunk = find_chunk(ctx, ".debug_info"))
+      return chunk->to_osec();
     return nullptr;
   };
 
@@ -1326,6 +1324,14 @@ void sort_debug_info_sections(Context<E> &ctx) {
   if (osec->shdr.sh_size < UINT32_MAX && !is_in_test())
     return;
 
+  auto is_dwarf32 = [&](InputSection<E> &isec) {
+    if (isec.sh_size < 4)
+      return false;
+    u8 buf[4];
+    isec.copy_contents_to(ctx, buf, 4);
+    return *(U32<E> *)buf != 0xffff'ffff;
+  };
+
   struct Member {
     InputSection<E> *isec;
     bool is_dwarf32;
@@ -1335,9 +1341,7 @@ void sort_debug_info_sections(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, (i64)osec->members.size(), [&](i64 i) {
     InputSection<E> *isec = osec->members[i];
-    u8 buf[4] = {};
-    isec->copy_contents(ctx, buf, 4);
-    vec[i] = {isec, *(U32<E> *)buf != 0xffff'ffff};
+    vec[i] = {isec, is_dwarf32(*isec)};
   });
 
   ranges::stable_partition(vec, &Member::is_dwarf32);
