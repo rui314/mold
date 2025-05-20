@@ -2131,43 +2131,54 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
   if (!resolved)
     resolve(ctx);
 
-  std::vector<i64> sizes(map.NUM_SHARDS);
+  std::vector<i64> sizes(map.NUM_SHARDS * 2);
 
   tbb::parallel_for((i64)0, map.NUM_SHARDS, [&](i64 i) {
     using Entry = typename decltype(map)::Entry;
     std::vector<Entry *> entries = map.get_sorted_entries(i);
-    i64 offset = 0;
+
+    i64 off1 = 0;
+    i64 off2 = 0;
 
     for (Entry *ent : entries) {
       SectionFragment<E> &frag = ent->value;
       if (frag.is_alive) {
-        offset = align_to(offset, 1 << frag.p2align);
-        frag.offset = offset;
-        offset += ent->keylen;
+        if (frag.is_32bit) {
+          off1 = align_to(off1, 1 << frag.p2align);
+          frag.offset = off1;
+          off1 += ent->keylen;
+        } else {
+          off2 = align_to(off2, 1 << frag.p2align);
+          frag.offset = off2;
+          off2 += ent->keylen;
+        }
       }
     }
-    sizes[i] = offset;
+
+    sizes[i] = off1;
+    sizes[i + map.NUM_SHARDS] = off2;
   });
 
   i64 shard_size = map.nbuckets / map.NUM_SHARDS;
-  shard_offsets.resize(map.NUM_SHARDS + 1);
+  shard_offsets.resize(sizes.size() + 1);
 
-  for (i64 i = 1; i < map.NUM_SHARDS + 1; i++)
+  for (i64 i = 1; i < sizes.size() + 1; i++)
     shard_offsets[i] =
       align_to(shard_offsets[i - 1] + sizes[i - 1], this->shdr.sh_addralign);
+
+  this->shdr.sh_size = shard_offsets.back();
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
       SectionFragment<E> &frag = map.entries[j].value;
-      if (frag.is_alive)
-        frag.offset += shard_offsets[i];
+      if (frag.is_alive) {
+        if (frag.is_32bit)
+          frag.offset += shard_offsets[i];
+        else
+          frag.offset += shard_offsets[i + map.NUM_SHARDS];
+      }
     }
   });
-
-  this->shdr.sh_size = shard_offsets[map.NUM_SHARDS];
-
-  if (this->shdr.sh_size > UINT32_MAX)
-    Fatal(ctx) << this->name << ": output section too large";
 }
 
 template <typename E>
@@ -2183,8 +2194,11 @@ void MergedSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     // There might be gaps between strings to satisfy alignment requirements.
     // If that's the case, we need to zero-clear them.
     if (this->shdr.sh_addralign > 1 &&
-        this->shdr.sh_addralign != this->shdr.sh_entsize)
+        this->shdr.sh_addralign != this->shdr.sh_entsize) {
       memset(buf + shard_offsets[i], 0, shard_offsets[i + 1] - shard_offsets[i]);
+      i64 j = map.NUM_SHARDS + i;
+      memset(buf + shard_offsets[j], 0, shard_offsets[j + 1] - shard_offsets[j]);
+    }
 
     // Copy strings
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++)

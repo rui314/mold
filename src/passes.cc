@@ -1361,16 +1361,22 @@ void sort_debug_info_sections(Context<E> &ctx) {
   if (char *env = getenv("MOLD_DEBUG"); env && env[0])
     is_in_test = true;
 
-  // Get a list of output debug sections that need sorting
-  std::vector<OutputSection<E> *> sections;
+  // Get lists of output debug sections that need sorting
+  std::vector<OutputSection<E> *> vec1;
+  std::vector<MergedSection<E> *> vec2;
 
   for (Chunk<E> *chunk : ctx.chunks)
     if (OutputSection<E> *osec = chunk->to_osec())
       if (osec->name.starts_with(".debug_") && !(osec->shdr.sh_flags & SHF_ALLOC))
         if (osec->shdr.sh_size >= UINT32_MAX || is_in_test)
-          sections.push_back(osec);
+          vec1.push_back(osec);
 
-  if (sections.empty())
+  for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
+    if (osec->name.starts_with(".debug_") && !(osec->shdr.sh_flags & SHF_ALLOC))
+      if (osec->shdr.sh_size >= UINT32_MAX || is_in_test)
+        vec2.push_back(osec.get());
+
+  if (vec1.empty() && vec2.empty())
     return;
 
   // Read each input file's .debug_info to record if the file contains
@@ -1381,10 +1387,23 @@ void sort_debug_info_sections(Context<E> &ctx) {
 
   // Reorder input sections in the output section so that DWARF32
   // precededs DWARF64
-  tbb::parallel_for_each(sections, [&](OutputSection<E> *osec) {
+  tbb::parallel_for_each(vec1, [&](OutputSection<E> *osec) {
     ranges::stable_partition(osec->members, [](InputSection<E> *isec) {
       return isec->file.is_dwarf32;
     });
+    osec->compute_section_size(ctx);
+  });
+
+  // Reorder strings in .debug_str and the like
+  tbb::parallel_for_each(vec2, [&](MergedSection<E> *osec) {
+    tbb::parallel_for_each(osec->members, [&](MergeableSection<E> *m) {
+      if (m->section->file.is_dwarf32)
+        for (SectionFragment<E> *frag : m->fragments)
+          frag->is_32bit = true;
+    });
+  });
+
+  tbb::parallel_for_each(vec2, [&](MergedSection<E> *osec) {
     osec->compute_section_size(ctx);
   });
 }

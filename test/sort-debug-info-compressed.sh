@@ -11,7 +11,7 @@ EOF
 
 # Test if DWARF32 precedes DWARF64 in the output .debug_info
 MOLD_DEBUG=1 $CC -B. -o $t/exe1 $t/a.o $t/b.o -g -Wl,-Map=$t/map1
-sed -n '/\/a\.o:(.debug_info)/,$p' $t/map1 | grep -F '/b.o:(.debug_info)'
+grep -A10 -F '/a.o:(.debug_info)' $t/map1 | grep -F '/b.o:(.debug_info)'
 
 MOLD_DEBUG=1 $CC -B. -o $t/exe2 $t/b.o $t/a.o -g -Wl,-Map=$t/map2
-sed -n '/\/a\.o:(.debug_info)/,$p' $t/map2 | grep -F '/b.o:(.debug_info)'
+grep -A10 -F '/a.o:(.debug_info)' $t/map2 | grep -F '/b.o:(.debug_info)'

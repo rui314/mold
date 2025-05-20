@@ -65,9 +65,13 @@ struct __attribute__((aligned(4))) SectionFragment {
   }
 
   MergedSection<E> &output_section;
-  u32 offset = -1;
+  i64 offset = -1;
   Atomic<u8> p2align = 0;
   Atomic<bool> is_alive = false;
+
+  // True if this fragment must be placed within 2^32 bytes from the
+  // start of the output section.
+  Atomic<bool> is_32bit = false;
 };
 
 // Additional class members for dynamic symbols. Because most symbols
@@ -1301,11 +1305,11 @@ public:
   std::string_view get_contents(i64 idx);
 
   MergedSection<E> &parent;
+  std::unique_ptr<InputSection<E>> section;
   std::vector<SectionFragment<E> *> fragments;
   u8 p2align = 0;
 
 private:
-  std::unique_ptr<InputSection<E>> section;
   std::vector<u32> frag_offsets;
   std::vector<u32> hashes;
 };

@@ -18,7 +18,7 @@ int main() {}
 EOF
 
 MOLD_DEBUG=1 $CC -B. -o $t/exe1 $t/c.o $t/d.o -g -Wl,-Map=$t/map1
-sed -n '/\/c\.o:(.debug_info)/,$p' $t/map1 | grep -F '/d.o:(.debug_info)'
+grep -A10 -F '/c.o:(.debug_info)' $t/map1 | grep -F '/d.o:(.debug_info)'
 
 MOLD_DEBUG=1 $CC -B. -o $t/exe2 $t/d.o $t/c.o -g -Wl,-Map=$t/map2
-sed -n '/\/c\.o:(.debug_info)/,$p' $t/map2 | grep -F '/d.o:(.debug_info)'
+grep -A10 -F '/c.o:(.debug_info)' $t/map2 | grep -F '/d.o:(.debug_info)'
