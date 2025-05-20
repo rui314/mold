@@ -425,6 +425,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         continue;
 
       this->sections[i] = std::make_unique<InputSection<E>>(ctx, *this, i);
+      InputSection<E> *isec = this->sections[i].get();
 
       // Save .llvm_addrsig for --icf=safe.
       if (shdr.sh_type == SHT_LLVM_ADDRSIG && !ctx.arg.relocatable) {
@@ -446,19 +447,17 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         this->has_ctors = true;
 
       if (name == ".eh_frame")
-        eh_frame_sections.push_back(this->sections[i].get());
+        eh_frame_sections.push_back(isec);
+
+      if (name == ".debug_info" && !(shdr.sh_flags & SHF_ALLOC))
+        debug_info = isec;
 
       if constexpr (is_ppc32<E>)
         if (name == ".got2")
-          extra.got2 = this->sections[i].get();
+          extra.got2 = isec;
 
       // Save debug sections for --gdb-index.
       if (ctx.arg.gdb_index) {
-        InputSection<E> *isec = this->sections[i].get();
-
-        if (name == ".debug_info")
-          debug_info = isec;
-
         // If --gdb-index is given, contents of .debug_gnu_pubnames and
         // .debug_gnu_pubtypes are copied to .gdb_index, so keeping them
         // in an output file is just a waste of space.

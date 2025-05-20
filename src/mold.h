@@ -1431,6 +1431,7 @@ public:
   bool is_lto_obj = false;
   bool is_gcc_offload_obj = false;
   bool is_rust_obj = false;
+  bool is_dwarf32 = false;
 
   i64 fde_idx = 0;
   i64 fde_offset = 0;

@@ -1302,8 +1302,11 @@ void sort_ctor_dtor(Context<E> &ctx) {
 // Returns true if a given section contains a DWARF32 debug record.
 // `isec` must be a .debug_info section.
 template <typename E>
-static bool is_dwarf32(Context<E> &ctx, InputSection<E> &isec) {
-  if (isec.sh_size < 12) {
+static bool is_dwarf32(Context<E> &ctx, InputSection<E> *isec) {
+  if (!isec)
+    return true;
+
+  if (isec->sh_size < 12) {
     // The section is too short. This is a user error, but instead of
     // being nitpicky about it, we simply handle it on a garbage-in,
     // garbage-out basis.
@@ -1318,10 +1321,10 @@ static bool is_dwarf32(Context<E> &ctx, InputSection<E> &isec) {
   // the actual size of a 64-bit CU including the size field is 12 bytes
   // larger than the value in the size field.
   u8 buf[12];
-  isec.copy_contents_to(ctx, buf, 12);
+  isec->copy_contents_to(ctx, buf, 12);
   if (*(U32<E> *)buf != 0xffff'ffff)
     return true;
-  if (*(U64<E> *)(buf + 4) + 12 == isec.sh_size)
+  if (*(U64<E> *)(buf + 4) + 12 == isec->sh_size)
     return false;
 
   // An input .debug_info section usually contains a single CU. However,
@@ -1332,11 +1335,11 @@ static bool is_dwarf32(Context<E> &ctx, InputSection<E> &isec) {
   // the end of the section.
   //
   // An input .debug_info section may be compressed using zlib or zstd, so
-  // we need to uncompress it before accessing `isec.contents`.
-  isec.uncompress(ctx);
+  // we need to uncompress it before accessing `isec->contents`.
+  isec->uncompress(ctx);
 
-  u8 *p = (u8 *)isec.contents.data() + *(U64<E> *)(buf + 4) + 12;
-  u8 *end = (u8 *)isec.contents.data() + isec.sh_size;
+  u8 *p = (u8 *)isec->contents.data() + *(U64<E> *)(buf + 4) + 12;
+  u8 *end = (u8 *)isec->contents.data() + isec->sh_size;
 
   while (end - p >= 12) {
     if (*(U32<E> *)p != 0xffff'ffff)
@@ -1346,48 +1349,44 @@ static bool is_dwarf32(Context<E> &ctx, InputSection<E> &isec) {
   return false;
 }
 
-// Sort .debug_info contents so that DWARF32 debug info input sections
-// precedes those of DWARF64. This is to mitigate the possibility of a
-// relocation overflow.
+// Sort output debug section contents so that DWARF32 debug info input
+// sections precedes those of DWARF64. This is to mitigate the
+// possibility of a relocation overflow.
 template <typename E>
 void sort_debug_info_sections(Context<E> &ctx) {
   Timer t(ctx, "sort_debug_info_sections");
 
-  auto get_debug_info = [&]() -> OutputSection<E> * {
-    if (Chunk<E> *chunk = find_chunk(ctx, ".debug_info"))
-      return chunk->to_osec();
-    return nullptr;
-  };
+  // True if mold is running under ctest
+  bool is_in_test = false;
+  if (char *env = getenv("MOLD_DEBUG"); env && env[0])
+    is_in_test = true;
 
-  OutputSection<E> *osec = get_debug_info();
-  if (!osec)
+  // Get a list of output debug sections that need sorting
+  std::vector<OutputSection<E> *> sections;
+
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (OutputSection<E> *osec = chunk->to_osec())
+      if (osec->name.starts_with(".debug_") && !(osec->shdr.sh_flags & SHF_ALLOC))
+        if (osec->shdr.sh_size >= UINT32_MAX || is_in_test)
+          sections.push_back(osec);
+
+  if (sections.empty())
     return;
 
-  auto is_in_test = [&] {
-    char *env = getenv("MOLD_DEBUG");
-    return env && env[0];
-  };
-
-  if (osec->shdr.sh_size < UINT32_MAX && !is_in_test())
-    return;
-
-  struct Member {
-    InputSection<E> *isec;
-    bool is_dwarf32;
-  };
-
-  std::vector<Member> vec(osec->members.size());
-
-  tbb::parallel_for((i64)0, (i64)osec->members.size(), [&](i64 i) {
-    InputSection<E> *isec = osec->members[i];
-    vec[i] = {isec, is_dwarf32(ctx, *isec)};
+  // Read each input file's .debug_info to record if the file contains
+  // DWARF32 or DWARF64
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->is_dwarf32 = is_dwarf32(ctx, file->debug_info);
   });
 
-  ranges::stable_partition(vec, &Member::is_dwarf32);
-
-  for (i64 i = 0; i < vec.size(); i++)
-    osec->members[i] = vec[i].isec;
-  osec->compute_section_size(ctx);
+  // Reorder input sections in the output section so that DWARF32
+  // precededs DWARF64
+  tbb::parallel_for_each(sections, [&](OutputSection<E> *osec) {
+    ranges::stable_partition(osec->members, [](InputSection<E> *isec) {
+      return isec->file.is_dwarf32;
+    });
+    osec->compute_section_size(ctx);
+  });
 }
 
 // .ctors/.dtors serves the same purpose as .init_array/.fini_array,
