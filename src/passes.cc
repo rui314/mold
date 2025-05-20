@@ -1349,9 +1349,29 @@ static bool is_dwarf32(Context<E> &ctx, InputSection<E> *isec) {
   return false;
 }
 
-// Sort output debug section contents so that DWARF32 debug info input
-// sections precedes those of DWARF64. This is to mitigate the
-// possibility of a relocation overflow.
+// Debug sections in an input object file refer to other debug sections in
+// the same file using section offsets. The offsets are 64 bits in DWARF64
+// and 32 bits in DWARF32.
+//
+// GCC and Clang emit DWARF32 debug info by default even for 64-bit code.
+// That is, 64-bit values are used for addresses, and 32-bit values for
+// references between debug sections. This makes sense for ordinary programs
+// because it reduces the size of the debug info sections.
+//
+// You can change the format to DWARF64 by passing `-gdwarf64`. Therefore,
+// the "right" approach to build an extremely large program in debug mode is
+// to recompile everything with `-gdwarf64`. However, that’s often not
+// feasiable for various practical reasons.
+//
+// If we don't do anything about it, a relocation overflow would occur if
+// any debug info section exceeds 4 GiB, making it impossible for users to
+// link an object file compiled without `-gdwarf64` to a very large program.
+//
+// This function works around the issue by sorting output debug section
+// contents so that DWARF32 input debug sections are at the start of the
+// output section, followed by DWARF64 input debug sections. By doing this,
+// we can avoid relocation overflow until the total size of DWARF32 debug
+// info alone exceeds 4 GiB.
 template <typename E>
 void sort_debug_info_sections(Context<E> &ctx) {
   Timer t(ctx, "sort_debug_info_sections");
