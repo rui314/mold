@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+nm mold | grep '__tsan_init' && skip
+
 cat <<EOF | $CC -o $t/a.o -c -xc - -g -gdwarf64 || skip
 void foo() {}
 EOF

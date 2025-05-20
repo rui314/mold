@@ -667,7 +667,7 @@ public:
 
     // Since the shard is circular, we need to handle the last entries
     // as if they were next to the first entries.
-    while (entries[end - 1].key)
+    while (begin < end && entries[end - 1].key)
       vec.push_back(entries + --end);
 
     // Find entries contiguous in the buckets and sort them.
