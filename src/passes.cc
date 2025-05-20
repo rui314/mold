@@ -1361,17 +1361,18 @@ static bool is_dwarf32(Context<E> &ctx, InputSection<E> *isec) {
 // You can change the format to DWARF64 by passing `-gdwarf64`. Therefore,
 // the "right" approach to build an extremely large program in debug mode is
 // to recompile everything with `-gdwarf64`. However, that’s often not
-// feasiable for various practical reasons.
+// feasiable for various reasons.
 //
-// If we don't do anything about it, a relocation overflow would occur if
-// any debug info section exceeds 4 GiB, making it impossible for users to
-// link an object file compiled without `-gdwarf64` to a very large program.
+// If we don't do anything about it, a relocation overflow could occur if
+// any output debug section exceeds 4 GiB in size, making it almost
+// impossible for users to link an object file compiled without `-gdwarf64`
+// to an extremely large program.
 //
 // This function works around the issue by sorting output debug section
-// contents so that DWARF32 input debug sections are at the start of the
-// output section, followed by DWARF64 input debug sections. By doing this,
-// we can avoid relocation overflow until the total size of DWARF32 debug
-// info alone exceeds 4 GiB.
+// contents so that DWARF32 input sections are at the start of the output
+// section followed by DWARF64 input sections. By doing this, we can avoid
+// relocation overflow until the total size of DWARF32 input sections alone
+// exceeds 4 GiB.
 template <typename E>
 void sort_debug_info_sections(Context<E> &ctx) {
   Timer t(ctx, "sort_debug_info_sections");
@@ -1387,19 +1388,19 @@ void sort_debug_info_sections(Context<E> &ctx) {
 
   for (Chunk<E> *chunk : ctx.chunks)
     if (OutputSection<E> *osec = chunk->to_osec())
-      if (osec->name.starts_with(".debug_") && !(osec->shdr.sh_flags & SHF_ALLOC))
+      if (!(osec->shdr.sh_flags & SHF_ALLOC) && osec->name.starts_with(".debug_"))
         if (osec->shdr.sh_size >= UINT32_MAX || is_in_test)
           vec1.push_back(osec);
 
   for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
-    if (osec->name.starts_with(".debug_") && !(osec->shdr.sh_flags & SHF_ALLOC))
+    if (!(osec->shdr.sh_flags & SHF_ALLOC) && osec->name.starts_with(".debug_"))
       if (osec->shdr.sh_size >= UINT32_MAX || is_in_test)
         vec2.push_back(osec.get());
 
   if (vec1.empty() && vec2.empty())
     return;
 
-  // Read each input file's .debug_info to record if the file contains
+  // Read each input file's .debug_info to record whether the file contains
   // DWARF32 or DWARF64
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->is_dwarf32 = is_dwarf32(ctx, file->debug_info);
