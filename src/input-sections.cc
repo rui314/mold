@@ -362,8 +362,8 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
 template <typename E>
 MergeableSection<E>::MergeableSection(Context<E> &ctx, MergedSection<E> &parent,
                                       std::unique_ptr<InputSection<E>> &isec)
-  : parent(parent), section(std::move(isec)), p2align(section->p2align) {
-  section->uncompress(ctx);
+  : parent(parent), p2align(isec->p2align), input_section(std::move(isec)) {
+  input_section->uncompress(ctx);
 
   std::scoped_lock lock(parent.mu);
   parent.members.push_back(this);
@@ -399,9 +399,9 @@ static size_t find_null(std::string_view data, i64 pos, i64 entsize) {
 // We do not support mergeable sections that have relocations.
 template <typename E>
 void MergeableSection<E>::split_contents(Context<E> &ctx) {
-  std::string_view data = section->contents;
+  std::string_view data = input_section->contents;
   if (data.size() > UINT32_MAX)
-    Fatal(ctx) << *section << ": mergeable section too large";
+    Fatal(ctx) << *input_section << ": mergeable section too large";
 
   i64 entsize = parent.shdr.sh_entsize;
 
@@ -411,12 +411,13 @@ void MergeableSection<E>::split_contents(Context<E> &ctx) {
       frag_offsets.push_back(pos);
       size_t end = find_null(data, pos, entsize);
       if (end == data.npos)
-        Fatal(ctx) << *section << ": string is not null terminated";
+        Fatal(ctx) << *input_section << ": string is not null terminated";
       pos = end + entsize;
     }
   } else {
     if (data.size() % entsize)
-      Fatal(ctx) << *section << ": section size is not multiple of sh_entsize";
+      Fatal(ctx) << *input_section
+                 << ": section size is not multiple of sh_entsize";
     frag_offsets.reserve(data.size() / entsize);
 
     for (i64 pos = 0; pos < data.size(); pos += entsize)

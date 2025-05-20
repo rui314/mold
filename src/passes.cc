@@ -1397,7 +1397,7 @@ void sort_debug_info_sections(Context<E> &ctx) {
   // Reorder strings in .debug_str and the like
   tbb::parallel_for_each(vec2, [&](MergedSection<E> *osec) {
     tbb::parallel_for_each(osec->members, [&](MergeableSection<E> *m) {
-      if (m->section->file.is_dwarf32)
+      if (m->input_section->file.is_dwarf32)
         for (SectionFragment<E> *frag : m->fragments)
           frag->is_32bit = true;
     });

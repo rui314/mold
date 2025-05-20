@@ -1305,9 +1305,9 @@ public:
   std::string_view get_contents(i64 idx);
 
   MergedSection<E> &parent;
-  std::unique_ptr<InputSection<E>> section;
-  std::vector<SectionFragment<E> *> fragments;
   u8 p2align = 0;
+  std::unique_ptr<InputSection<E>> input_section;
+  std::vector<SectionFragment<E> *> fragments;
 
 private:
   std::vector<u32> frag_offsets;
@@ -2708,8 +2708,8 @@ template <typename E>
 std::string_view MergeableSection<E>::get_contents(i64 i) {
   i64 cur = frag_offsets[i];
   if (i == frag_offsets.size() - 1)
-    return section->contents.substr(cur);
-  return section->contents.substr(cur, frag_offsets[i + 1] - cur);
+    return input_section->contents.substr(cur);
+  return input_section->contents.substr(cur, frag_offsets[i + 1] - cur);
 }
 
 template <typename E>
