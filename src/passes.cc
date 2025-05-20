@@ -3357,6 +3357,7 @@ void write_separate_debug_file(Context<E> &ctx) {
   });
 
   append(ctx.chunks, ctx.debug_chunks);
+  sort_debug_info_sections(ctx);
 
   // Handle --compress-debug-info
   if (ctx.arg.compress_debug_sections != COMPRESS_NONE)

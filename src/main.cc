@@ -496,6 +496,7 @@ int mold_main(int argc, char **argv) {
   // create as few segments as possible.
   sort_output_sections(ctx);
 
+  // Handle --separate-debug-file.
   if (ctx.gnu_debuglink)
     separate_debug_sections(ctx);
 
