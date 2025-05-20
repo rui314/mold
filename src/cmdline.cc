@@ -1444,6 +1444,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.relocatable)
     ctx.arg.static_ = true;
 
+  if (ctx.arg.static_)
+    ctx.arg.dynamic_linker = "";
+
   if (ctx.arg.shuffle_sections == SHUFFLE_SECTIONS_SHUFFLE) {
     if (shuffle_sections_seed)
       ctx.arg.shuffle_sections_seed = *shuffle_sections_seed;
