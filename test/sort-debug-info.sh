@@ -6,7 +6,7 @@ int x = 1;
 void foo() {}
 EOF
 
-$CC -o $t/a.o -c -g -gdwarf32 $t/a.c
+$CC -o $t/a.o -c -g -gdwarf32 $t/a.c || skip
 
 cat <<EOF > $t/b.c
 int y = 1;
