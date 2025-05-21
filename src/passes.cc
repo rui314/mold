@@ -1406,6 +1406,12 @@ void sort_debug_info_sections(Context<E> &ctx) {
     file->is_dwarf32 = is_dwarf32(ctx, file->debug_info);
   });
 
+  // Unless we have a mix of DWARF32 and DWARF64, it doesn't make sense to
+  // sort sections.
+  if (ranges::all_of(ctx.objs, &ObjectFile<E>::is_dwarf32) ||
+      ranges::none_of(ctx.objs, &ObjectFile<E>::is_dwarf32))
+    return;
+
   // Reorder input sections in the output section so that DWARF32
   // precededs DWARF64
   tbb::parallel_for_each(vec1, [&](OutputSection<E> *osec) {
