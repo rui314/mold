@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+command -v flock >& /dev/null || skip
+
 cat <<EOF > $t/a.c
 int x = 1;
 void foo() {}
@@ -16,6 +18,7 @@ EOF
 $CC -o $t/b.o -c -g -gdwarf64 $t/b.c
 
 MOLD_DEBUG=1 $CC -B. -o $t/exe $t/a.o $t/b.o -g -Wl,--separate-debug-file
+flock $t/exe true
 
 if readelf -S $t/exe.dbg | grep -F .debug_line_str; then
   readelf -p .debug_line_str $t/exe.dbg | grep -A10 -Fw a.c | grep -Fw b.c
