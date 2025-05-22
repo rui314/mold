@@ -1,6 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+nm mold | grep '__tsan_init' && skip
 command -v flock >& /dev/null || skip
 
 cat <<EOF > $t/a.c
