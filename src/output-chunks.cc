@@ -2448,21 +2448,30 @@ void EhFrameRelocSection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
+  assert(!ctx.arg.shared);
   if (sym->has_copyrel)
     return;
 
-  assert(!ctx.arg.shared);
-  assert(sym->file->is_dso);
+  if (!sym->file->is_dso) {
+    assert(sym->esym().is_undef_weak());
+    Error(ctx) << *sym->file << ": cannot create a copy relocation for "
+               << *sym <<"; recompile with -fPIE or -fPIC";
+    return;
+  }
 
-  if (sym->esym().st_visibility == STV_PROTECTED)
+  if (sym->esym().st_visibility == STV_PROTECTED) {
     Error(ctx) << *sym->file
                << ": cannot create a copy relocation for protected symbol '"
                << *sym << "'; recompile with -fPIC";
+    return;
+  }
 
-  if (!ctx.arg.z_copyreloc)
+  if (!ctx.arg.z_copyreloc) {
     Error(ctx) << "-z nocopyreloc: " << *sym->file
                << ": cannot create a copy relocation for symbol '" << *sym
                << "'; recompile with -fPIC";
+    return;
+  }
 
   symbols.push_back(sym);
 
