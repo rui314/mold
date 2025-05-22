@@ -19,7 +19,8 @@ $CC -o $t/b.o -c -g -gdwarf64 $t/b.c
 
 MOLD_DEBUG=1 $CC -B. -o $t/exe $t/a.o $t/b.o -g -Wl,--separate-debug-file
 flock $t/exe true
+readelf -p .debug_line_str $t/exe.dbg > $t/str
 
-if readelf -S $t/exe.dbg | grep -F .debug_line_str; then
-  readelf -p .debug_line_str $t/exe.dbg | grep -A10 -Fw a.c | grep -Fw b.c
+if grep -Fw a.c $t/str; then
+  grep -A10 -Fw a.c $t/str | grep -Fw b.c
 fi

@@ -19,17 +19,19 @@ $CC -o $t/b.o -c -g -gdwarf64 $t/b.c
 
 MOLD_DEBUG=1 $CC -B. -o $t/exe1 $t/a.o $t/b.o -g -Wl,-Map=$t/map1
 grep -A10 -F '/a.o:(.debug_info)' $t/map1 | grep -F '/b.o:(.debug_info)'
+readelf -p .debug_line_str $t/exe1 > $t/str1
 
-if readelf -S $t/exe2 | grep -F .debug_line_str; then
-  readelf -p .debug_line_str $t/exe1 | grep -A10 -Fw a.c | grep -Fw b.c
+if grep -Fw a.c $t/str1; then
+  grep -A10 -Fw a.c $t/str1 | grep -Fw b.c
 fi
 
 
 MOLD_DEBUG=1 $CC -B. -o $t/exe2 $t/b.o $t/a.o -g -Wl,-Map=$t/map2
 grep -A10 -F '/a.o:(.debug_info)' $t/map2 | grep -F '/b.o:(.debug_info)'
+readelf -p .debug_line_str $t/exe2 > $t/str2
 
-if readelf -S $t/exe2 | grep -F .debug_line_str; then
-  readelf -p .debug_line_str $t/exe2 | grep -A10 -Fw a.c | grep -Fw b.c
+if grep -Fw a.c $t/str2; then
+  grep -A10 -Fw a.c $t/str2 | grep -Fw b.c
 fi
 
 
