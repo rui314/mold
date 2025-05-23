@@ -293,10 +293,10 @@ check_symbol_exists(uname sys/utsname.h HAVE_UNAME)
 add_custom_target(git_hash
   COMMAND ${CMAKE_COMMAND}
     -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
-    -DOUTPUT_FILE=${CMAKE_BINARY_DIR}/git-hash.cc
+    -DOUTPUT_FILE=${CMAKE_BINARY_DIR}/mold-git-hash.h
     -P ${CMAKE_SOURCE_DIR}/lib/update-git-hash.cmake
   DEPENDS lib/update-git-hash.cmake
-  BYPRODUCTS git-hash.cc
+  BYPRODUCTS mold-git-hash.h
   VERBATIM)
 
 add_dependencies(mold git_hash)
@@ -379,7 +379,6 @@ endforeach()
 
 # Add other non-template source files.
 target_sources(mold PRIVATE
-  git-hash.cc
   lib/compress.cc
   lib/crc32.cc
   lib/demangle.cc
@@ -399,8 +398,8 @@ target_sources(mold PRIVATE
   src/arch-s390x.cc
   src/arch-sparc64.cc
   src/arch-x86-64.cc
-  src/config.cc
   src/elf.cc
+  src/entry.cc
   third-party/rust-demangle/rust-demangle.c
   )
 

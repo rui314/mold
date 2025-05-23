@@ -857,9 +857,10 @@ void Arm32ExidxSection<E>::copy_buf(Context<E> &ctx) {
 // standard for ARMv6 or later. We support only BE8.
 //
 // A tricky thing is that instructions in an object file are always
-// big-endian if the file is compiled for big-endian mode. It is the
-// linker's responsibility to rewrite instructions from big-endian to
-// little-endian for an BE8 output. This function does that.
+// big-endian if the file is compiled for big-endian mode. In other words,
+// the compiler always emit code in BE32 if -mbig-endian is specified. It
+// is the linker's responsibility to rewrite instructions from big-endian
+// to little-endian for an BE8 output. This function does that.
 //
 // The text section may contain a mix of 32-bit ARM instructions, 16-bit
 // Thumb instructions, and data. We need to distinguish them to swap 4
@@ -867,6 +868,9 @@ void Arm32ExidxSection<E>::copy_buf(Context<E> &ctx) {
 // code, Thumb code, and data is labeled with a mapping symbol of $a, $t,
 // and $d, respectively. We use mapping symbols to determine what to do
 // with the text section.
+//
+// This function is called after we copy the input section contents to the
+// output file. We rewrite instructions in the output buffer in place.
 void arm32be_swap_bytes(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Collect mapping symbols
@@ -894,6 +898,7 @@ void arm32be_swap_bytes(Context<E> &ctx) {
 
       InputSection<E> &isec = *sym.get_input_section();
       u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
+      u8 *start = base + sym.value;
 
       u8 *end;
       if (i + 1 < syms.size() && syms[i + 1]->get_input_section() == &isec)
@@ -902,7 +907,7 @@ void arm32be_swap_bytes(Context<E> &ctx) {
         end = base + isec.sh_size;
 
       i64 sz = sym.name().starts_with("$a") ? 4 : 2;
-      for (u8 *p = base + sym.value; p < end; p += sz)
+      for (u8 *p = start; p < end; p += sz)
         std::reverse(p, p + sz);
     }
   });

@@ -73,12 +73,12 @@ requires_thunk(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel,
 
   // Thumb and ARM B instructions cannot be converted to BX, so we
   // always have to make them jump to a thunk to switch processor mode
-  // even if their destinations are within their ranges.
+  // even if their destinations are reachable.
   if constexpr (is_arm32<E>)
     if (bool is_thumb = sym.get_addr(ctx) & 1;
-        (rel.r_type == R_ARM_THM_JUMP24 && !is_thumb) ||
         (rel.r_type == R_ARM_JUMP24 && is_thumb) ||
-        (rel.r_type == R_ARM_PLT32 && is_thumb))
+        (rel.r_type == R_ARM_PLT32 && is_thumb) ||
+        (rel.r_type == R_ARM_THM_JUMP24 && !is_thumb))
       return true;
 
   // On PowerPC, all PLT calls go through range extension thunks.
@@ -121,7 +121,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   // We manage progress using four offsets which increase monotonically.
   // The locations they point to are always A <= B <= C <= D.
   //
-  // Input sections between B and C are in the current batch.
+  // Input sections between B and C are the current batch.
   //
   // A is the input section with the smallest address than can reach
   // from the current batch.
@@ -224,7 +224,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
 // create_range_extension_thunks() creates thunks with a pessimistic
 // assumption that all out-of-section references are out of range.
 // After computing output section addresses, we revisit all thunks to
-// remove unneeded symbols from them.
+// remove unneeded entries from them.
 //
 // We create more thunks than necessary and then eliminate some of
 // them later, instead of just creating thunks at this stage. This is

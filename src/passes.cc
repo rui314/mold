@@ -254,9 +254,10 @@ static void resolve_default_symver(Context<E> &ctx) {
   append(files, ctx.dsos);
 
   tbb::parallel_for_each(files, [](InputFile<E> *file) {
-    for (Symbol<E> *&sym : file->get_global_syms())
-      if (sym->is_versioned_default)
-        sym = (Symbol<E> *)sym->origin;
+    std::span<Symbol<E> *> syms = file->get_global_syms();
+    for (i64 i = 0; i < syms.size(); i++)
+      if (syms[i]->is_versioned_default)
+        syms[i] = (Symbol<E> *)syms[i]->origin;
   });
 }
 
@@ -1039,7 +1040,7 @@ void write_repro_file(Context<E> &ctx) {
     Fatal(ctx) << "cannot open " << path << ": " << errno_string();
 
   tar->append("response.txt", create_response_file(ctx));
-  tar->append("version.txt", get_mold_version() + "\n");
+  tar->append("version.txt", mold_version + "\n");
 
   std::unordered_set<std::string_view> seen;
 

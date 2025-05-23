@@ -69,8 +69,6 @@ inline char *output_tmpfile;
 inline u8 *output_buffer_start = nullptr;
 inline u8 *output_buffer_end = nullptr;
 
-extern std::string mold_git_hash;
-
 std::string errno_string();
 void cleanup();
 void install_signal_handler();

@@ -104,7 +104,7 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
   setenv("LD_PRELOAD", dso_path.c_str(), 1);
   setenv("MOLD_PATH", self.c_str(), 1);
 
-  // If ld, ld.lld or ld.gold is specified, run mold itself
+  // If ld, ld.lld or ld.gold is specified, run mold instead
   if (std::string cmd = path_filename(argv[2]);
       cmd == "ld" || cmd == "ld.lld" || cmd == "ld.gold") {
     std::vector<char *> args;

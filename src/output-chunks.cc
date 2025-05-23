@@ -2093,7 +2093,7 @@ static void add_comment_strings(Context<E> &ctx) {
   };
 
   // Add an identification string to .comment.
-  add(get_mold_version());
+  add(mold_version);
 
   // Embed command line arguments for debugging.
   char *env = getenv("MOLD_DEBUG");

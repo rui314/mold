@@ -66,7 +66,7 @@ static u64 higher(u64 val, u64 pc) {
   // LU52I.D simply set bits to [51:31] and to [63:53], respectively.
   //
   // Compensating all the sign-extensions is a bit complicated. The
-  // psABI gave the following formula.
+  // psABI gives the following formula.
   val = val + 0x8000'0000 + ((val & 0x800) ? (0x1000 - 0x1'0000'0000) : 0);
   return page(val) - page(pc - 8);
 }

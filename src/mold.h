@@ -2,6 +2,7 @@
 
 #include "../lib/common.h"
 #include "elf.h"
+#include "mold-git-hash.h"
 
 #include <cassert>
 #include <cstdint>
@@ -49,7 +50,7 @@ struct ReaderContext;
 template <typename E>
 std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 
-std::string get_mold_version();
+extern std::string mold_version;
 
 //
 // Mergeable section fragments

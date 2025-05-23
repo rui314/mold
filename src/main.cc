@@ -15,13 +15,6 @@
 # include <unistd.h>
 #endif
 
-#ifdef MOLD_X86_64
-int main(int argc, char **argv) {
-  mold::set_mimalloc_options();
-  return mold::mold_main<mold::X86_64>(argc, argv);
-}
-#endif
-
 namespace mold {
 
 template <typename E>

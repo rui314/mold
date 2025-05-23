@@ -29,8 +29,8 @@
 //
 //  4. Continue the rest of the linking process as usual.
 //
-// When gcc or clang inovkes ld, they pass `-plugin linker-plugin.so` to
-// the linker. The given .so file provides a way to call the compiler
+// When gcc or clang inovkes ld, they pass `-plugin /path/to/linker-plugin.so`
+// to the linker. The given .so file provides a way to call the compiler
 // backend.
 //
 // The linker plugin API is documented at
@@ -425,7 +425,7 @@ get_api_version(const char *plugin_identifier,
   if (LAPI_V1 < minimal_api_supported)
     Fatal(*gctx<E>) << "LTO plugin does not support V0 or V1 API";
 
-  std::string version = get_mold_version() + "\0"s;
+  std::string version = mold_version + "\0"s;
 
   *linker_identifier = "mold";
   *linker_version = version.data();

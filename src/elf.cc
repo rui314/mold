@@ -1,11 +1,12 @@
 #include "elf.h"
+#include <sstream>
 
 namespace mold {
 
 static std::string unknown_type(u32 r_type) {
-  char buf[50];
-  snprintf(buf, sizeof(buf), "unknown (0x%x)", r_type);
-  return buf;
+  std::stringstream ss;
+  ss << "unknown (0x" << std::hex << r_type << ")";
+  return ss.str();
 }
 
 #define CASE(x) case x: return #x

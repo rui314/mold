@@ -706,13 +706,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("no-dynamic-linker")) {
       ctx.arg.dynamic_linker = "";
     } else if (read_flag("v")) {
-      Out(ctx) << get_mold_version();
+      Out(ctx) << mold_version;
       version_shown = true;
     } else if (read_flag("version")) {
-      Out(ctx) << get_mold_version();
+      Out(ctx) << mold_version;
       exit(0);
     } else if (read_flag("V")) {
-      Out(ctx) << get_mold_version()
+      Out(ctx) << mold_version
                << "\n  Supported emulations:\n   elf_x86_64\n   elf_i386\n"
                << "   aarch64elf\n   aarch64linux\n   aarch64elfb\n"
                << "   aarch64linuxb\n   armelf_linux_eabi\n   elf64lriscv\n"
