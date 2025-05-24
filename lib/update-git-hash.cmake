@@ -17,7 +17,11 @@ if(EXISTS "${SOURCE_DIR}/.git/HEAD")
 endif()
 
 # Create new file contents and update a given file if necessary.
-set(NEW_CONTENTS "#define MOLD_GIT_HASH \"${HASH}\"\n")
+if("${HASH}" STREQUAL "")
+  set(NEW_CONTENTS "")
+else()
+  set(NEW_CONTENTS "#define MOLD_GIT_HASH \"${HASH}\"\n")
+endif()
 
 if(EXISTS "${OUTPUT_FILE}")
   file(READ "${OUTPUT_FILE}" OLD_CONTENTS)

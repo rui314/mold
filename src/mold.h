@@ -460,8 +460,8 @@ public:
   // For example, range extension thunks adds function_name@thunk
   // symbol for each thunk entry. The following members are used
   // for such synthesizing symbols.
-  virtual void compute_symtab_size(Context<E> &ctx) {};
-  virtual void populate_symtab(Context<E> &ctx) {};
+  virtual void compute_symtab_size(Context<E> &ctx) {}
+  virtual void populate_symtab(Context<E> &ctx) {}
 
   i64 local_symtab_idx = 0;
   i64 num_local_symtab = 0;

@@ -1,9 +1,12 @@
 #include "mold.h"
 #include "mold-git-hash.h"
 
-std::string mold::mold_version = std::string(MOLD_GIT_HASH).empty() ?
-  "mold " MOLD_VERSION " (compatible with GNU ld)" :
+std::string mold::mold_version =
+#ifdef MOLD_GIT_HASH
   "mold " MOLD_VERSION " (" MOLD_GIT_HASH "; compatible with GNU ld)";
+#else
+  "mold " MOLD_VERSION " (compatible with GNU ld)" :
+#endif
 
 int main(int argc, char **argv) {
   mold::set_mimalloc_options();
