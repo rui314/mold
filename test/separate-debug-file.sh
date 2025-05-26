@@ -17,7 +17,7 @@ $CC -c -o $t/a.o $t/a.c -g
 $CC -B. -o $t/exe1 $t/a.o -Wl,--separate-debug-file
 readelf -SW $t/exe1 | grep -F .gnu_debuglink
 
-flock $t/exe1 true
+flock $t/exe1.dbg true
 gdb $t/exe1 -ex 'list main' -ex 'quit' | grep -F printf
 
 
@@ -25,7 +25,7 @@ $CC -c -o $t/a.o $t/a.c -g
 $CC -B. -o $t/exe2 $t/a.o -Wl,--separate-debug-file,--no-build-id
 readelf -SW $t/exe2 | grep -F .gnu_debuglink
 
-flock $t/exe2 true
+flock $t/exe2.dbg true
 gdb $t/exe2 -ex 'list main' -ex 'quit' | grep -F printf
 
 
@@ -33,6 +33,6 @@ $CC -c -o $t/a.o $t/a.c -g
 $CC -B. -o $t/exe3 $t/a.o -Wl,--separate-debug-file,--compress-debug-sections=zlib
 readelf -SW $t/exe3 | grep -F .gnu_debuglink
 
-flock $t/exe3 true
+flock $t/exe3.dbg true
 readelf -W --sections $t/exe3.dbg | grep '\.debug_info .*C'
 gdb $t/exe3 -ex 'list main' -ex 'quit' | grep -F printf
