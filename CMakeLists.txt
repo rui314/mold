@@ -164,13 +164,13 @@ check_include_file(zstd.h HAVE_ZSTD_H)
 if(HAVE_ZSTD_H AND NOT MOLD_MOSTLY_STATIC)
   target_link_libraries(mold PRIVATE zstd)
 else()
+  set(ZSTD_BUILD_PROGRAMS OFF)
+  set(ZSTD_BUILD_CONTRIB OFF)
+  set(ZSTD_BUILD_TESTS OFF)
+  set(ZSTD_MULTITHREAD_SUPPORT OFF)
+  set(ZSTD_BUILD_SHARED OFF)
+  set(ZSTD_BUILD_STATIC ON)
   add_subdirectory(third-party/zstd/build/cmake EXCLUDE_FROM_ALL)
-  target_compile_definitions(libzstd_static PRIVATE
-    ZSTD_BUILD_STATIC=1
-    ZSTD_BUILD_SHARED=0
-    ZSTD_BUILD_PROGRAMS=0
-    ZSTD_MULTITHREAD_SUPPORT=0
-    ZSTD_BUILD_TESTS=0)
   target_include_directories(mold PUBLIC third-party/zstd/lib)
   target_link_libraries(mold PRIVATE libzstd_static)
 endif()
