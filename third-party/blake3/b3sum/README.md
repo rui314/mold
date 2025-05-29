@@ -19,6 +19,7 @@ Options:
       --no-mmap               Disable memory mapping
       --no-names              Omit filenames in the output
       --raw                   Write raw output bytes to stdout, rather than hex
+      --tag                   Output BSD-style checksums: BLAKE3 ([FILE]) = [HASH]
   -c, --check                 Read BLAKE3 sums from the [FILE]s and check them
       --quiet                 Skip printing OK for each checked file
   -h, --help                  Print help (see more with '--help')

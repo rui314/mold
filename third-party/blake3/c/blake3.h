@@ -30,7 +30,7 @@
 extern "C" {
 #endif
 
-#define BLAKE3_VERSION_STRING "1.6.1"
+#define BLAKE3_VERSION_STRING "1.8.2"
 #define BLAKE3_KEY_LEN 32
 #define BLAKE3_OUT_LEN 32
 #define BLAKE3_BLOCK_LEN 64
@@ -69,6 +69,10 @@ BLAKE3_API void blake3_hasher_init_derive_key_raw(blake3_hasher *self, const voi
                                                   size_t context_len);
 BLAKE3_API void blake3_hasher_update(blake3_hasher *self, const void *input,
                                      size_t input_len);
+#if defined(BLAKE3_USE_TBB)
+BLAKE3_API void blake3_hasher_update_tbb(blake3_hasher *self, const void *input,
+                                         size_t input_len);
+#endif // BLAKE3_USE_TBB
 BLAKE3_API void blake3_hasher_finalize(const blake3_hasher *self, uint8_t *out,
                                        size_t out_len);
 BLAKE3_API void blake3_hasher_finalize_seek(const blake3_hasher *self, uint64_t seek,

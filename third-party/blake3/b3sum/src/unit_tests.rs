@@ -119,6 +119,36 @@ fn test_parse_check_line() {
     assert_eq!(file_string, "否认");
     assert_eq!(file_path, Path::new("否认"));
 
+    // untagged separator "  " in the file name
+    let crate::ParsedCheckLine {
+        file_string,
+        is_escaped,
+        file_path,
+        expected_hash,
+    } = crate::parse_check_line(
+        "4747474747474747474747474747474747474747474747474747474747474747  foo  bar",
+    )
+    .unwrap();
+    assert_eq!(expected_hash, blake3::Hash::from([0x47; 32]));
+    assert!(!is_escaped);
+    assert_eq!(file_string, "foo  bar");
+    assert_eq!(file_path, Path::new("foo  bar"));
+
+    // tagged separator ") = " in the file name
+    let crate::ParsedCheckLine {
+        file_string,
+        is_escaped,
+        file_path,
+        expected_hash,
+    } = crate::parse_check_line(
+        "BLAKE3 (foo) = bar) = 4848484848484848484848484848484848484848484848484848484848484848",
+    )
+    .unwrap();
+    assert_eq!(expected_hash, blake3::Hash::from([0x48; 32]));
+    assert!(!is_escaped);
+    assert_eq!(file_string, "foo) = bar");
+    assert_eq!(file_path, Path::new("foo) = bar"));
+
     // =========================
     // ===== Failure Cases =====
     // =========================

@@ -371,6 +371,90 @@ fn bench_incremental_1024_kib(b: &mut Bencher) {
     bench_incremental(b, 1024 * KIB);
 }
 
+#[cfg(feature = "tbb")]
+fn bench_tbb(b: &mut Bencher, len: usize) {
+    let mut input = RandomInput::new(b, len);
+    b.iter(|| {
+        let mut hasher = blake3_c_rust_bindings::Hasher::new();
+        hasher.update_tbb(input.get());
+        let mut out = [0; 32];
+        hasher.finalize(&mut out);
+        out
+    });
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0001_block(b: &mut Bencher) {
+    bench_tbb(b, BLOCK_LEN);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0001_kib(b: &mut Bencher) {
+    bench_tbb(b, 1 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0002_kib(b: &mut Bencher) {
+    bench_tbb(b, 2 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0004_kib(b: &mut Bencher) {
+    bench_tbb(b, 4 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0008_kib(b: &mut Bencher) {
+    bench_tbb(b, 8 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0016_kib(b: &mut Bencher) {
+    bench_tbb(b, 16 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0032_kib(b: &mut Bencher) {
+    bench_tbb(b, 32 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0064_kib(b: &mut Bencher) {
+    bench_tbb(b, 64 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0128_kib(b: &mut Bencher) {
+    bench_tbb(b, 128 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0256_kib(b: &mut Bencher) {
+    bench_tbb(b, 256 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_0512_kib(b: &mut Bencher) {
+    bench_tbb(b, 512 * KIB);
+}
+
+#[bench]
+#[cfg(feature = "tbb")]
+fn bench_tbb_1024_kib(b: &mut Bencher) {
+    bench_tbb(b, 1024 * KIB);
+}
+
 // This checks that update() splits up its input in increasing powers of 2, so
 // that it can recover a high degree of parallelism when the number of bytes
 // hashed so far is uneven. The performance of this benchmark should be

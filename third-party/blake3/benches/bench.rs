@@ -4,9 +4,9 @@ extern crate test;
 
 use arrayref::array_ref;
 use arrayvec::ArrayVec;
-use blake3::guts::{BLOCK_LEN, CHUNK_LEN};
 use blake3::platform::{Platform, MAX_SIMD_DEGREE};
 use blake3::OUT_LEN;
+use blake3::{BLOCK_LEN, CHUNK_LEN};
 use rand::prelude::*;
 use test::Bencher;
 
@@ -144,11 +144,15 @@ fn bench_many_chunks_avx512(b: &mut Bencher) {
 }
 
 #[bench]
-#[cfg(feature = "neon")]
+#[cfg(blake3_neon)]
 fn bench_many_chunks_neon(b: &mut Bencher) {
-    if let Some(platform) = Platform::neon() {
-        bench_many_chunks_fn(b, platform);
-    }
+    bench_many_chunks_fn(b, Platform::neon().unwrap());
+}
+
+#[bench]
+#[cfg(blake3_wasm32_simd)]
+fn bench_many_chunks_wasm(b: &mut Bencher) {
+    bench_many_chunks_fn(b, Platform::wasm32_simd().unwrap());
 }
 
 // TODO: When we get const generics we can unify this with the chunks code.
@@ -211,11 +215,15 @@ fn bench_many_parents_avx512(b: &mut Bencher) {
 }
 
 #[bench]
-#[cfg(feature = "neon")]
+#[cfg(blake3_neon)]
 fn bench_many_parents_neon(b: &mut Bencher) {
-    if let Some(platform) = Platform::neon() {
-        bench_many_parents_fn(b, platform);
-    }
+    bench_many_parents_fn(b, Platform::neon().unwrap());
+}
+
+#[bench]
+#[cfg(blake3_wasm32_simd)]
+fn bench_many_parents_wasm(b: &mut Bencher) {
+    bench_many_parents_fn(b, Platform::wasm32_simd().unwrap());
 }
 
 fn bench_atonce(b: &mut Bencher, len: usize) {

@@ -21,6 +21,10 @@ fn is_no_neon() -> bool {
     defined("CARGO_FEATURE_NO_NEON")
 }
 
+fn is_wasm32_simd() -> bool {
+    defined("CARGO_FEATURE_WASM32_SIMD")
+}
+
 fn is_ci() -> bool {
     defined("BLAKE3_CI")
 }
@@ -43,6 +47,37 @@ fn is_x86_64() -> bool {
     target_components()[0] == "x86_64"
 }
 
+fn is_windows_target() -> bool {
+    env::var("CARGO_CFG_TARGET_OS").unwrap() == "windows"
+}
+
+fn use_msvc_asm() -> bool {
+    const MSVC_NAMES: &[&str] = &["", "cl", "cl.exe"];
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    let target_windows_msvc = target_os == "windows" && target_env == "msvc";
+    let host_triple = env::var("HOST").unwrap_or_default();
+    let target_triple = env::var("TARGET").unwrap_or_default();
+    let cross_compiling = host_triple != target_triple;
+    let cc = env::var("CC").unwrap_or_default().to_ascii_lowercase();
+    if !target_windows_msvc {
+        // We are not building for Windows with the MSVC toolchain.
+        false
+    } else if !cross_compiling && MSVC_NAMES.contains(&&*cc) {
+        // We are building on Windows with the MSVC toolchain (and not cross-compiling for another architecture or target).
+        true
+    } else {
+        // We are cross-compiling to Windows with the MSVC toolchain.
+        let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+        let target_vendor = env::var("CARGO_CFG_TARGET_VENDOR").unwrap_or_default();
+        let cc = env::var(format!("CC_{target_arch}_{target_vendor}_windows_msvc"))
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        // Check if we are using the MSVC compiler.
+        MSVC_NAMES.contains(&&*cc)
+    }
+}
+
 fn is_x86_32() -> bool {
     let arch = &target_components()[0];
     arch == "i386" || arch == "i586" || arch == "i686"
@@ -58,6 +93,10 @@ fn is_aarch64() -> bool {
 
 fn is_armv7() -> bool {
     target_components()[0] == "armv7"
+}
+
+fn is_wasm32() -> bool {
+    target_components()[0] == "wasm32"
 }
 
 fn endianness() -> String {
@@ -172,14 +211,16 @@ fn build_sse2_sse41_avx2_assembly() {
     println!("cargo:rustc-cfg=blake3_sse41_ffi");
     println!("cargo:rustc-cfg=blake3_avx2_ffi");
     let mut build = new_build();
-    if is_windows_msvc() {
-        build.file("c/blake3_sse2_x86-64_windows_msvc.asm");
-        build.file("c/blake3_sse41_x86-64_windows_msvc.asm");
-        build.file("c/blake3_avx2_x86-64_windows_msvc.asm");
-    } else if is_windows_gnu() {
-        build.file("c/blake3_sse2_x86-64_windows_gnu.S");
-        build.file("c/blake3_sse41_x86-64_windows_gnu.S");
-        build.file("c/blake3_avx2_x86-64_windows_gnu.S");
+    if is_windows_target() {
+        if use_msvc_asm() {
+            build.file("c/blake3_sse2_x86-64_windows_msvc.asm");
+            build.file("c/blake3_sse41_x86-64_windows_msvc.asm");
+            build.file("c/blake3_avx2_x86-64_windows_msvc.asm");
+        } else {
+            build.file("c/blake3_sse2_x86-64_windows_gnu.S");
+            build.file("c/blake3_sse41_x86-64_windows_gnu.S");
+            build.file("c/blake3_avx2_x86-64_windows_gnu.S");
+        }
     } else {
         // All non-Windows implementations are assumed to support
         // Linux-style assembly. These files do contain a small
@@ -216,19 +257,21 @@ fn build_avx512_assembly() {
     assert!(is_x86_64());
     println!("cargo:rustc-cfg=blake3_avx512_ffi");
     let mut build = new_build();
-    if is_windows_msvc() {
-        build.file("c/blake3_avx512_x86-64_windows_msvc.asm");
-    } else {
-        if is_windows_gnu() {
-            build.file("c/blake3_avx512_x86-64_windows_gnu.S");
+    let mut is_msvc = false;
+    if is_windows_target() {
+        if use_msvc_asm() {
+            build.file("c/blake3_avx512_x86-64_windows_msvc.asm");
+            is_msvc = true;
         } else {
-            // All non-Windows implementations are assumed to support Linux-style
-            // assembly. These files do contain a small explicit workaround for
-            // macOS also.
-            build.file("c/blake3_avx512_x86-64_unix.S");
+            build.file("c/blake3_avx512_x86-64_windows_gnu.S");
         }
-        // Older versions of Clang require these flags, even for assembly. See
-        // https://github.com/BLAKE3-team/BLAKE3/issues/79.
+    } else {
+        build.file("c/blake3_avx512_x86-64_unix.S");
+    }
+
+    // Older versions of Clang require these flags, even for assembly. See
+    // https://github.com/BLAKE3-team/BLAKE3/issues/79.
+    if !is_msvc {
         build.flag("-mavx512f");
         build.flag("-mavx512vl");
     }
@@ -250,6 +293,13 @@ fn build_neon_c_intrinsics() {
     build.compile("blake3_neon");
 }
 
+fn build_wasm32_simd() {
+    assert!(is_wasm32());
+    // No C code to compile here. Set the cfg flags that enable the Wasm SIMD.
+    // The regular Cargo build will compile it.
+    println!("cargo:rustc-cfg=blake3_wasm32_simd");
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // As of Rust 1.80, unrecognized config names are warnings. Give Cargo all of our config names.
     let all_cfgs = [
@@ -261,6 +311,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "blake3_avx2_rust",
         "blake3_avx512_ffi",
         "blake3_neon",
+        "blake3_wasm32_simd",
     ];
     for cfg_name in all_cfgs {
         // TODO: Switch this whole file to the new :: syntax when our MSRV reaches 1.77.
@@ -306,6 +357,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         build_neon_c_intrinsics();
     }
 
+    if is_wasm32() && is_wasm32_simd() {
+        build_wasm32_simd();
+    }
+
     // The `cc` crate doesn't automatically emit rerun-if directives for the
     // environment variables it supports, in particular for $CC. We expect to
     // do a lot of benchmarking across different compilers, so we explicitly
@@ -319,6 +374,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "cargo:rerun-if-changed={}",
             file?.path().to_str().expect("utf-8")
         );
+    }
+
+    // When compiling with clang-cl for windows, it adds .asm files to the root
+    // which we need to delete so cargo doesn't get angry
+    if is_windows_target() && !use_msvc_asm() {
+        let _ = std::fs::remove_file("blake3_avx2_x86-64_windows_gnu.asm");
+        let _ = std::fs::remove_file("blake3_avx512_x86-64_windows_gnu.asm");
+        let _ = std::fs::remove_file("blake3_sse2_x86-64_windows_gnu.asm");
+        let _ = std::fs::remove_file("blake3_sse41_x86-64_windows_gnu.asm");
     }
 
     Ok(())

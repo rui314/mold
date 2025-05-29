@@ -10,13 +10,21 @@ if (POLICY CMP0102)
 endif()
 
 project(libblake3
-  VERSION 1.6.1
+  VERSION 1.8.2
   DESCRIPTION "BLAKE3 C implementation"
-  LANGUAGES C ASM
+  LANGUAGES C CXX ASM
 )
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+option(BLAKE3_USE_TBB "Enable oneTBB parallelism" OFF)
+option(BLAKE3_FETCH_TBB "Allow fetching oneTBB from GitHub if not found on system" OFF)
+
+include(CTest)
 include(FeatureSummary)
 include(GNUInstallDirs)
+
+add_subdirectory(dependencies)
 
 # architecture lists for which to enable assembly / SIMD sources
 set(BLAKE3_AMD64_NAMES amd64 AMD64 x86_64)
@@ -45,7 +53,7 @@ elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU"
   set(BLAKE3_CFLAGS_AVX2 "-mavx2" CACHE STRING "the compiler flags to enable AVX2")
   set(BLAKE3_CFLAGS_AVX512 "-mavx512f -mavx512vl" CACHE STRING "the compiler flags to enable AVX512")
 
-  if (WIN32)
+  if (WIN32 OR CYGWIN)
     set(BLAKE3_AMD64_ASM_SOURCES
       blake3_avx2_x86-64_windows_gnu.S
       blake3_avx512_x86-64_windows_gnu.S
@@ -119,13 +127,13 @@ add_library(blake3
 add_library(BLAKE3::blake3 ALIAS blake3)
 
 # library configuration
-set(BLAKE3_PKGCONFIG_CFLAGS)
+set(PKG_CONFIG_CFLAGS)
 if (BUILD_SHARED_LIBS)
   target_compile_definitions(blake3
     PUBLIC BLAKE3_DLL
     PRIVATE BLAKE3_DLL_EXPORTS
   )
-  list(APPEND BLAKE3_PKGCONFIG_CFLAGS -DBLAKE3_DLL)
+  list(APPEND PKG_CONFIG_CFLAGS -DBLAKE3_DLL)
 endif()
 target_include_directories(blake3 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
@@ -138,6 +146,11 @@ set_target_properties(blake3 PROPERTIES
   C_EXTENSIONS OFF
 )
 target_compile_features(blake3 PUBLIC c_std_99)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.12)
+  target_compile_features(blake3 PUBLIC cxx_std_20)
+  # else: add it further below through `BLAKE3_CMAKE_CXXFLAGS_*`
+endif()
+
 # ensure C_EXTENSIONS OFF is respected without overriding CMAKE_C_STANDARD
 # which may be set by the user or toolchain file
 if (NOT POLICY CMP0128 AND NOT DEFINED CMAKE_C_STANDARD)
@@ -204,9 +217,84 @@ else()
   message(FATAL_ERROR "BLAKE3_SIMD_TYPE is set to an unknown value: '${BLAKE3_SIMD_TYPE}'")
 endif()
 
+if(BLAKE3_USE_TBB)
+  find_package(TBB 2021.11.0 QUIET)
+  if(NOT TBB_FOUND AND NOT TARGET TBB::tbb)
+    message(WARNING
+      "oneTBB not found; disabling BLAKE3_USE_TBB\n"
+      "Enable BLAKE3_FETCH_TBB to automatically fetch and build oneTBB"
+    )
+    set(BLAKE3_USE_TBB OFF)
+  else()
+    target_sources(blake3
+      PRIVATE
+        blake3_tbb.cpp)
+    target_link_libraries(blake3
+      PUBLIC
+        # Make shared TBB a transitive dependency. The consuming program is technically not required
+        # to link TBB in order for libblake3 to function but we do this in order to prevent the
+        # possibility of multiple separate TBB runtimes being linked into a final program in case
+        # the consuming program also happens to already use TBB.
+        TBB::tbb)
+    target_compile_definitions(blake3
+      PUBLIC
+        BLAKE3_USE_TBB)
+  endif()
+  list(APPEND PKG_CONFIG_REQUIRES "tbb >= ${TBB_VERSION}")
+  list(APPEND PKG_CONFIG_CFLAGS -DBLAKE3_USE_TBB)
+  include(CheckCXXSymbolExists)
+  check_cxx_symbol_exists(_LIBCPP_VERSION "version" BLAKE3_HAVE_LIBCPP)
+  check_cxx_symbol_exists(__GLIBCXX__ "version" BLAKE3_HAVE_GLIBCXX)
+  if(BLAKE3_HAVE_GLIBCXX)
+    list(APPEND PKG_CONFIG_LIBS -lstdc++)
+  elseif(BLAKE3_HAVE_LIBCPP)
+    list(APPEND PKG_CONFIG_LIBS -lc++)
+  endif()
+endif()
+
+if(BLAKE3_USE_TBB)
+  # Define some scratch variables for building appropriate flags per compiler
+  if(CMAKE_VERSION VERSION_LESS 3.12)
+    set(APPEND BLAKE3_CXX_STANDARD_FLAGS_GNU -std=c++20)
+    set(APPEND BLAKE3_CXX_STANDARD_FLAGS_MSVC /std:c++20)
+  endif()
+  set(BLAKE3_CXXFLAGS_GNU "-fno-exceptions;-fno-rtti;${BLAKE3_CXX_STANDARD_FLAGS_GNU}" CACHE STRING "C++ flags used for compiling private BLAKE3 library components with GNU-like compiler frontends.")
+  set(BLAKE3_CXXFLAGS_MSVC "/EHs-c-;/GR-;${BLAKE3_CXX_STANDARD_FLAGS_MSVC}" CACHE STRING "C++ flags used for compiling private BLAKE3 library components with MSVC-like compiler frontends.")
+  # Get the C++ compiler name without extension
+  get_filename_component(BLAKE3_CMAKE_CXX_COMPILER_NAME "${CMAKE_CXX_COMPILER}" NAME_WE)
+  # Strip any trailing versioning from the C++ compiler name
+  string(REGEX MATCH "^(clang\\+\\+|clang-cl)" BLAKE3_CMAKE_CXX_COMPILER_NAME "${BLAKE3_CMAKE_CXX_COMPILER_NAME}")
+
+  # TODO: Simplify with CMAKE_CXX_COMPILER_FRONTEND_VARIANT once min CMake version is 3.14.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    target_compile_options(blake3 PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${BLAKE3_CXXFLAGS_GNU}>)
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    if(BLAKE3_CMAKE_CXX_COMPILER_NAME STREQUAL "clang++")
+      target_compile_options(blake3 PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${BLAKE3_CXXFLAGS_GNU}>)
+    elseif(BLAKE3_CMAKE_CXX_COMPILER_NAME STREQUAL "clang-cl")
+      target_compile_options(blake3 PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${BLAKE3_CXXFLAGS_MSVC}>)
+    endif()
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_compile_options(blake3 PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${BLAKE3_CXXFLAGS_GNU}>)
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    target_compile_options(blake3 PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${BLAKE3_CXXFLAGS_MSVC}>)
+  endif()
+
+  # Undefine scratch variables
+  unset(BLAKE3_CXX_STANDARD_FLAGS_GNU)
+  unset(BLAKE3_CXX_STANDARD_FLAGS_MSVC)
+  unset(BLAKE3_CMAKE_CXX_COMPILER_NAME)
+  unset(BLAKE3_CXXFLAGS_GNU)
+  unset(BLAKE3_CXXFLAGS_MSVC)
+endif()
+
 # cmake install support
 install(FILES blake3.h DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-install(TARGETS blake3 EXPORT blake3-targets)
+install(TARGETS blake3 EXPORT blake3-targets
+  ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+  RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
+)
 install(EXPORT blake3-targets
   NAMESPACE BLAKE3::
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/blake3"
@@ -252,6 +340,27 @@ function(join_paths joined_path first_path_segment)
     set(${joined_path} "${temp_path}" PARENT_SCOPE)
 endfunction()
 
+# In-place rewrite a string and and join by `sep`.
+#
+# TODO: Replace function with list(JOIN) when updating to CMake 3.12
+function(join_pkg_config_field sep requires)
+  set(_requires "${${requires}}") # avoid shadowing issues, e.g. "${requires}"=len
+  list(LENGTH "${requires}" len)
+  set(idx 1)
+  foreach(req IN LISTS _requires)
+    string(APPEND acc "${req}")
+    if(idx LESS len)
+      string(APPEND acc "${sep}")
+    endif()
+    math(EXPR idx "${idx} + 1")
+  endforeach()
+  set("${requires}" "${acc}" PARENT_SCOPE)
+endfunction()
+
+# pkg-config support
+join_pkg_config_field(", " PKG_CONFIG_REQUIRES)
+join_pkg_config_field(" " PKG_CONFIG_LIBS)
+join_pkg_config_field(" " PKG_CONFIG_CFLAGS)
 join_paths(PKG_CONFIG_INSTALL_LIBDIR "\${prefix}" "${CMAKE_INSTALL_LIBDIR}")
 join_paths(PKG_CONFIG_INSTALL_INCLUDEDIR "\${prefix}" "${CMAKE_INSTALL_INCLUDEDIR}")
 configure_file(libblake3.pc.in libblake3.pc @ONLY)
@@ -263,4 +372,12 @@ install(FILES "${CMAKE_BINARY_DIR}/libblake3.pc"
 add_feature_info("AMD64 assembly" BLAKE3_SIMD_AMD64_ASM "The library uses hand written amd64 SIMD assembly.")
 add_feature_info("x86 SIMD intrinsics" BLAKE3_SIMD_X86_INTRINSICS "The library uses x86 SIMD intrinsics.")
 add_feature_info("NEON SIMD intrinsics" BLAKE3_SIMD_NEON_INTRINSICS "The library uses NEON SIMD intrinsics.")
+add_feature_info("oneTBB parallelism" BLAKE3_USE_TBB "The library uses oneTBB parallelism.")
 feature_summary(WHAT ENABLED_FEATURES)
+
+if(BLAKE3_EXAMPLES)
+  include(BLAKE3/Examples)
+endif()
+if(BLAKE3_TESTING)
+  include(BLAKE3/Testing)
+endif()

@@ -38,8 +38,12 @@ pub const TEST_CASES: &[usize] = &[
     7 * CHUNK_LEN + 1,
     8 * CHUNK_LEN,
     8 * CHUNK_LEN + 1,
-    16 * CHUNK_LEN,  // AVX512's bandwidth
-    31 * CHUNK_LEN,  // 16 + 8 + 4 + 2 + 1
+    16 * CHUNK_LEN - 1,
+    16 * CHUNK_LEN, // AVX512's bandwidth
+    16 * CHUNK_LEN + 1,
+    31 * CHUNK_LEN - 1,
+    31 * CHUNK_LEN, // 16 + 8 + 4 + 2 + 1
+    31 * CHUNK_LEN + 1,
     100 * CHUNK_LEN, // subtrees larger than MAX_SIMD_DEGREE chunks
 ];
 
@@ -324,22 +328,6 @@ fn test_largest_power_of_two_leq() {
             "wrong output for n={}",
             input
         );
-    }
-}
-
-#[test]
-fn test_left_len() {
-    let input_output = &[
-        (CHUNK_LEN + 1, CHUNK_LEN),
-        (2 * CHUNK_LEN - 1, CHUNK_LEN),
-        (2 * CHUNK_LEN, CHUNK_LEN),
-        (2 * CHUNK_LEN + 1, 2 * CHUNK_LEN),
-        (4 * CHUNK_LEN - 1, 2 * CHUNK_LEN),
-        (4 * CHUNK_LEN, 2 * CHUNK_LEN),
-        (4 * CHUNK_LEN + 1, 4 * CHUNK_LEN),
-    ];
-    for &(input, output) in input_output {
-        assert_eq!(crate::left_len(input), output);
     }
 }
 
@@ -801,6 +789,7 @@ fn test_zeroize() {
             flags: 42,
             platform: crate::Platform::Portable,
         },
+        initial_chunk_counter: 42,
         key: [42; 8],
         cv_stack: [[42; 32]; { crate::MAX_DEPTH + 1 }].into(),
     };
@@ -815,6 +804,7 @@ fn test_zeroize() {
         hasher.chunk_state.platform,
         crate::Platform::Portable
     ));
+    assert_eq!(hasher.initial_chunk_counter, 0);
     assert_eq!(hasher.key, [0; 8]);
     assert_eq!(&*hasher.cv_stack, &[[0u8; 32]; 0]);
 
@@ -1019,4 +1009,41 @@ fn test_miri_smoketest() {
     let mut reader = hasher.finalize_xof();
     reader.set_position(999999);
     reader.fill(&mut [0]);
+}
+
+// I had to move these tests out of the deprecated guts module, because leaving them there causes
+// an un-silenceable warning: https://github.com/rust-lang/rust/issues/47238
+#[cfg(test)]
+#[allow(deprecated)]
+mod guts_tests {
+    use crate::guts::*;
+
+    #[test]
+    fn test_chunk() {
+        assert_eq!(
+            crate::hash(b"foo"),
+            ChunkState::new(0).update(b"foo").finalize(true)
+        );
+    }
+
+    #[test]
+    fn test_parents() {
+        let mut hasher = crate::Hasher::new();
+        let mut buf = [0; crate::CHUNK_LEN];
+
+        buf[0] = 'a' as u8;
+        hasher.update(&buf);
+        let chunk0_cv = ChunkState::new(0).update(&buf).finalize(false);
+
+        buf[0] = 'b' as u8;
+        hasher.update(&buf);
+        let chunk1_cv = ChunkState::new(1).update(&buf).finalize(false);
+
+        hasher.update(b"c");
+        let chunk2_cv = ChunkState::new(2).update(b"c").finalize(false);
+
+        let parent = parent_cv(&chunk0_cv, &chunk1_cv, false);
+        let root = parent_cv(&parent, &chunk2_cv, true);
+        assert_eq!(hasher.finalize(), root);
+    }
 }

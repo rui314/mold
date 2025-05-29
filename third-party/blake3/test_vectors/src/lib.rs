@@ -1,5 +1,9 @@
-use blake3::guts::{BLOCK_LEN, CHUNK_LEN};
+use blake3::{BLOCK_LEN, CHUNK_LEN};
 use serde::{Deserialize, Serialize};
+
+// Reading files at runtime requires special configuration under WASM/WASI, so including this at
+// compile time is simpler.
+const TEST_VECTORS_JSON: &str = include_str!("../test_vectors.json");
 
 // A non-multiple of 4 is important, since one possible bug is to fail to emit
 // partial words.
@@ -129,14 +133,8 @@ pub fn generate_json() -> String {
     json
 }
 
-pub fn read_test_vectors_file() -> String {
-    let test_vectors_file_path = "./test_vectors.json";
-    std::fs::read_to_string(test_vectors_file_path).expect("failed to read test_vectors.json")
-}
-
 pub fn parse_test_cases() -> Cases {
-    let json = read_test_vectors_file();
-    serde_json::from_str(&json).expect("failed to parse test_vectors.json")
+    serde_json::from_str(TEST_VECTORS_JSON).expect("failed to parse test_vectors.json")
 }
 
 #[cfg(test)]
@@ -344,7 +342,7 @@ mod tests {
     fn test_checked_in_vectors_up_to_date() {
         // Replace Windows newlines, in case Git is configured to alter
         // newlines when files are checked out.
-        let json = read_test_vectors_file().replace("\r\n", "\n");
+        let json = TEST_VECTORS_JSON.replace("\r\n", "\n");
         if generate_json() != json {
             panic!("Checked-in test_vectors.json is not up to date. Regenerate with `cargo run --bin generate > ./test_vectors.json`.");
         }

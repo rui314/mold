@@ -7,6 +7,6 @@ Name: @PROJECT_NAME@
 Description: @PROJECT_DESCRIPTION@
 Version: @PROJECT_VERSION@
 
-Requires:
-Libs: -L"${libdir}" -lblake3
-Cflags: -I"${includedir}" @BLAKE3_PKGCONFIG_CFLAGS@
+Requires: @PKG_CONFIG_REQUIRES@
+Libs: -L"${libdir}" -lblake3 @PKG_CONFIG_LIBS@
+Cflags: -I"${includedir}" @PKG_CONFIG_CFLAGS@

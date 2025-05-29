@@ -7,6 +7,7 @@ edition = "2021"
 neon = ["blake3/neon"]
 prefer_intrinsics = ["blake3/prefer_intrinsics"]
 pure = ["blake3/pure"]
+wasm32_simd = ["blake3/wasm32_simd"]
 
 [dependencies]
 # If you ever change these path dependencies, you'll probably need to update

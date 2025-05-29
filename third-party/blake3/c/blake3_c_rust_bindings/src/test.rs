@@ -479,6 +479,15 @@ fn test_compare_reference_impl() {
             let mut test_out = [0; OUT];
             test_hasher.finalize(&mut test_out);
             assert_eq!(test_out[..], expected_out[..]);
+
+            #[cfg(feature = "tbb")]
+            {
+                let mut tbb_hasher = crate::Hasher::new();
+                tbb_hasher.update_tbb(input);
+                let mut tbb_out = [0; OUT];
+                tbb_hasher.finalize(&mut tbb_out);
+                assert_eq!(tbb_out[..], expected_out[..]);
+            }
         }
 
         // keyed
@@ -493,6 +502,15 @@ fn test_compare_reference_impl() {
             let mut test_out = [0; OUT];
             test_hasher.finalize(&mut test_out);
             assert_eq!(test_out[..], expected_out[..]);
+
+            #[cfg(feature = "tbb")]
+            {
+                let mut tbb_hasher = crate::Hasher::new_keyed(&TEST_KEY);
+                tbb_hasher.update_tbb(input);
+                let mut tbb_out = [0; OUT];
+                tbb_hasher.finalize(&mut tbb_out);
+                assert_eq!(tbb_out[..], expected_out[..]);
+            }
         }
 
         // derive_key
@@ -516,6 +534,15 @@ fn test_compare_reference_impl() {
             let mut test_out_raw = [0; OUT];
             test_hasher_raw.finalize(&mut test_out_raw);
             assert_eq!(test_out_raw[..], expected_out[..]);
+
+            #[cfg(feature = "tbb")]
+            {
+                let mut tbb_hasher = crate::Hasher::new_derive_key(context);
+                tbb_hasher.update_tbb(input);
+                let mut tbb_out = [0; OUT];
+                tbb_hasher.finalize(&mut tbb_out);
+                assert_eq!(tbb_out[..], expected_out[..]);
+            }
         }
     }
 }

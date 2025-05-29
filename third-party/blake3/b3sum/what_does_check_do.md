@@ -74,9 +74,11 @@ Notice two things. First, `b3sum` puts a single `\` character at the front of
 the line. This indicates that the filepath contains escape sequences that
 `b3sum --check` will need to unescape. Then, `b3sum` replaces the newline
 character in the filepath with the two-character escape sequence `\n`.
-Similarly, if the filepath contained a backslash, `b3sum` would escape it as
-`\\` in the output. So far, all of this behavior is still identical to
-`md5sum`.
+Similarly, if the filepath contained carriage returns or backslashes, `b3sum`
+would escape those as `\r` and `\\` in the output. So far, all of this behavior
+is still identical to `md5sum`. (Note: Coreutils [introduced `\r`
+escaping](https://github.com/coreutils/coreutils/commit/ed1c58427d574fb4ff0cb8f915eb0d554000ceeb)
+in v9.0, September 2021.)
 
 ## Invalid Unicode
 

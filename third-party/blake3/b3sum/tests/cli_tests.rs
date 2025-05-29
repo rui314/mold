@@ -16,6 +16,16 @@ fn test_hash_one() {
 }
 
 #[test]
+fn test_hash_one_tag() {
+    let expected = format!("BLAKE3 (-) = {}", blake3::hash(b"foo").to_hex());
+    let output = cmd!(b3sum_exe(), "--tag")
+        .stdin_bytes("foo")
+        .read()
+        .unwrap();
+    assert_eq!(&*expected, output);
+}
+
+#[test]
 fn test_hash_one_raw() {
     let expected = blake3::hash(b"foo").as_bytes().to_owned();
     let output = cmd!(b3sum_exe(), "--raw")
@@ -53,6 +63,28 @@ fn test_hash_many() {
         .unwrap();
     let expected_no_names = format!("{}\n{}", foo_hash.to_hex(), bar_hash.to_hex(),);
     assert_eq!(expected_no_names, output_no_names);
+}
+
+#[test]
+fn test_hash_many_tag() {
+    let dir = tempfile::tempdir().unwrap();
+    let file1 = dir.path().join("file1");
+    fs::write(&file1, b"foo").unwrap();
+    let file2 = dir.path().join("file2");
+    fs::write(&file2, b"bar").unwrap();
+
+    let output = cmd!(b3sum_exe(), "--tag", &file1, &file2).read().unwrap();
+    let foo_hash = blake3::hash(b"foo");
+    let bar_hash = blake3::hash(b"bar");
+    let expected = format!(
+        "BLAKE3 ({}) = {}\nBLAKE3 ({}) = {}",
+        // account for slash normalization on Windows
+        file1.to_string_lossy().replace("\\", "/"),
+        foo_hash.to_hex(),
+        file2.to_string_lossy().replace("\\", "/"),
+        bar_hash.to_hex(),
+    );
+    assert_eq!(expected, output);
 }
 
 #[test]
@@ -380,144 +412,161 @@ fn test_check() {
     let a_hash = blake3::hash(b"a").to_hex();
     let b_hash = blake3::hash(b"b").to_hex();
     let cd_hash = blake3::hash(b"cd").to_hex();
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join("a"), b"a").unwrap();
-    fs::write(dir.path().join("b"), b"b").unwrap();
-    fs::create_dir(dir.path().join("c")).unwrap();
-    fs::write(dir.path().join("c/d"), b"cd").unwrap();
-    let output = cmd!(b3sum_exe(), "a", "b", "c/d")
-        .dir(dir.path())
-        .stdout_capture()
-        .stderr_capture()
-        .run()
-        .unwrap();
-    let stdout = std::str::from_utf8(&output.stdout).unwrap();
-    let stderr = std::str::from_utf8(&output.stderr).unwrap();
-    let expected_checkfile = format!(
-        "{}  a\n\
-         {}  b\n\
-         {}  c/d\n",
-        a_hash, b_hash, cd_hash,
-    );
-    assert_eq!(expected_checkfile, stdout);
-    assert_eq!("", stderr);
+    for tagged in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a"), b"a").unwrap();
+        fs::write(dir.path().join("b"), b"b").unwrap();
+        fs::create_dir(dir.path().join("c")).unwrap();
+        fs::write(dir.path().join("c/d"), b"cd").unwrap();
+        dbg!(tagged);
+        let mut args = vec!["a", "b", "c/d"];
+        if tagged {
+            args.push("--tag");
+        }
+        let output = cmd(b3sum_exe(), args)
+            .dir(dir.path())
+            .stdout_capture()
+            .stderr_capture()
+            .run()
+            .unwrap();
+        let stdout = std::str::from_utf8(&output.stdout).unwrap();
+        let stderr = std::str::from_utf8(&output.stderr).unwrap();
+        let expected_checkfile = if tagged {
+            format!(
+                "BLAKE3 (a) = {}\n\
+                 BLAKE3 (b) = {}\n\
+                 BLAKE3 (c/d) = {}\n",
+                a_hash, b_hash, cd_hash,
+            )
+        } else {
+            format!(
+                "{}  a\n\
+                 {}  b\n\
+                 {}  c/d\n",
+                a_hash, b_hash, cd_hash,
+            )
+        };
+        dbg!(&expected_checkfile);
+        assert_eq!(expected_checkfile, stdout);
+        assert_eq!("", stderr);
 
-    // Now use the output we just validated as a checkfile, passed to stdin.
-    let output = cmd!(b3sum_exe(), "--check")
-        .stdin_bytes(expected_checkfile.as_bytes())
-        .dir(dir.path())
-        .stdout_capture()
-        .stderr_capture()
-        .run()
-        .unwrap();
-    let stdout = std::str::from_utf8(&output.stdout).unwrap();
-    let stderr = std::str::from_utf8(&output.stderr).unwrap();
-    let expected_check_output = "\
+        // Now use the output we just validated as a checkfile, passed to stdin.
+        let output = cmd!(b3sum_exe(), "--check")
+            .stdin_bytes(expected_checkfile.as_bytes())
+            .dir(dir.path())
+            .stdout_capture()
+            .stderr_capture()
+            .run()
+            .unwrap();
+        let stdout = std::str::from_utf8(&output.stdout).unwrap();
+        let stderr = std::str::from_utf8(&output.stderr).unwrap();
+        let expected_check_output = "\
          a: OK\n\
          b: OK\n\
          c/d: OK\n";
-    assert_eq!(expected_check_output, stdout);
-    assert_eq!("", stderr);
+        assert_eq!(expected_check_output, stdout);
+        assert_eq!("", stderr);
 
-    // Check the same file, but with Windows-style newlines.
-    let windows_style = expected_checkfile.replace("\n", "\r\n");
-    let output = cmd!(b3sum_exe(), "--check")
-        .stdin_bytes(windows_style.as_bytes())
-        .dir(dir.path())
-        .stdout_capture()
-        .stderr_capture()
-        .run()
-        .unwrap();
-    let stdout = std::str::from_utf8(&output.stdout).unwrap();
-    let stderr = std::str::from_utf8(&output.stderr).unwrap();
-    let expected_check_output = "\
+        // Check the same file, but with Windows-style newlines.
+        let windows_style = expected_checkfile.replace("\n", "\r\n");
+        let output = cmd!(b3sum_exe(), "--check")
+            .stdin_bytes(windows_style.as_bytes())
+            .dir(dir.path())
+            .stdout_capture()
+            .stderr_capture()
+            .run()
+            .unwrap();
+        let stdout = std::str::from_utf8(&output.stdout).unwrap();
+        let stderr = std::str::from_utf8(&output.stderr).unwrap();
+        let expected_check_output = "\
          a: OK\n\
          b: OK\n\
          c/d: OK\n";
-    assert_eq!(expected_check_output, stdout);
-    assert_eq!("", stderr);
+        assert_eq!(expected_check_output, stdout);
+        assert_eq!("", stderr);
 
-    // Now pass the same checkfile twice on the command line just for fun.
-    let checkfile_path = dir.path().join("checkfile");
-    fs::write(&checkfile_path, &expected_checkfile).unwrap();
-    let output = cmd!(b3sum_exe(), "--check", &checkfile_path, &checkfile_path)
-        .dir(dir.path())
-        .stdout_capture()
-        .stderr_capture()
-        .run()
-        .unwrap();
-    let stdout = std::str::from_utf8(&output.stdout).unwrap();
-    let stderr = std::str::from_utf8(&output.stderr).unwrap();
-    let mut double_check_output = String::new();
-    double_check_output.push_str(&expected_check_output);
-    double_check_output.push_str(&expected_check_output);
-    assert_eq!(double_check_output, stdout);
-    assert_eq!("", stderr);
+        // Now pass the same checkfile twice on the command line just for fun.
+        let checkfile_path = dir.path().join("checkfile");
+        fs::write(&checkfile_path, &expected_checkfile).unwrap();
+        let output = cmd!(b3sum_exe(), "--check", &checkfile_path, &checkfile_path)
+            .dir(dir.path())
+            .stdout_capture()
+            .stderr_capture()
+            .run()
+            .unwrap();
+        let stdout = std::str::from_utf8(&output.stdout).unwrap();
+        let stderr = std::str::from_utf8(&output.stderr).unwrap();
+        let mut double_check_output = String::new();
+        double_check_output.push_str(&expected_check_output);
+        double_check_output.push_str(&expected_check_output);
+        assert_eq!(double_check_output, stdout);
+        assert_eq!("", stderr);
 
-    // Corrupt one of the files and check again.
-    fs::write(dir.path().join("b"), b"CORRUPTION").unwrap();
-    let output = cmd!(b3sum_exe(), "--check", &checkfile_path)
-        .dir(dir.path())
-        .stdout_capture()
-        .stderr_capture()
-        .unchecked()
-        .run()
-        .unwrap();
-    let stdout = std::str::from_utf8(&output.stdout).unwrap();
-    let stderr = std::str::from_utf8(&output.stderr).unwrap();
-    let expected_check_failure = "\
+        // Corrupt one of the files and check again.
+        fs::write(dir.path().join("b"), b"CORRUPTION").unwrap();
+        let output = cmd!(b3sum_exe(), "--check", &checkfile_path)
+            .dir(dir.path())
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked()
+            .run()
+            .unwrap();
+        let stdout = std::str::from_utf8(&output.stdout).unwrap();
+        let stderr = std::str::from_utf8(&output.stderr).unwrap();
+        let expected_check_failure = "\
         a: OK\n\
         b: FAILED\n\
         c/d: OK\n";
-    assert!(!output.status.success());
-    assert_eq!(expected_check_failure, stdout);
-    assert_eq!(
-        "b3sum: WARNING: 1 computed checksum did NOT match\n",
-        stderr,
-    );
+        assert!(!output.status.success());
+        assert_eq!(expected_check_failure, stdout);
+        assert_eq!(
+            "b3sum: WARNING: 1 computed checksum did NOT match\n",
+            stderr,
+        );
 
-    // Delete one of the files and check again.
-    fs::remove_file(dir.path().join("b")).unwrap();
-    let open_file_error = fs::File::open(dir.path().join("b")).unwrap_err();
-    let output = cmd!(b3sum_exe(), "--check", &checkfile_path)
-        .dir(dir.path())
-        .stdout_capture()
-        .stderr_capture()
-        .unchecked()
-        .run()
-        .unwrap();
-    let stdout = std::str::from_utf8(&output.stdout).unwrap();
-    let stderr = std::str::from_utf8(&output.stderr).unwrap();
-    let expected_check_failure = format!(
-        "a: OK\n\
+        // Delete one of the files and check again.
+        fs::remove_file(dir.path().join("b")).unwrap();
+        let open_file_error = fs::File::open(dir.path().join("b")).unwrap_err();
+        let output = cmd!(b3sum_exe(), "--check", &checkfile_path)
+            .dir(dir.path())
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked()
+            .run()
+            .unwrap();
+        let stdout = std::str::from_utf8(&output.stdout).unwrap();
+        let stderr = std::str::from_utf8(&output.stderr).unwrap();
+        let expected_check_failure = format!(
+            "a: OK\n\
          b: FAILED ({})\n\
          c/d: OK\n",
-        open_file_error,
-    );
-    assert!(!output.status.success());
-    assert_eq!(expected_check_failure, stdout);
-    assert_eq!(
-        "b3sum: WARNING: 1 computed checksum did NOT match\n",
-        stderr,
-    );
+            open_file_error,
+        );
+        assert!(!output.status.success());
+        assert_eq!(expected_check_failure, stdout);
+        assert_eq!(
+            "b3sum: WARNING: 1 computed checksum did NOT match\n",
+            stderr,
+        );
 
-    // Confirm that --quiet suppresses the OKs but not the FAILEDs.
-    let output = cmd!(b3sum_exe(), "--check", "--quiet", &checkfile_path)
-        .dir(dir.path())
-        .stdout_capture()
-        .stderr_capture()
-        .unchecked()
-        .run()
-        .unwrap();
-    let stdout = std::str::from_utf8(&output.stdout).unwrap();
-    let stderr = std::str::from_utf8(&output.stderr).unwrap();
-    let expected_check_failure = format!("b: FAILED ({})\n", open_file_error);
-    assert!(!output.status.success());
-    assert_eq!(expected_check_failure, stdout);
-    assert_eq!(
-        "b3sum: WARNING: 1 computed checksum did NOT match\n",
-        stderr,
-    );
+        // Confirm that --quiet suppresses the OKs but not the FAILEDs.
+        let output = cmd!(b3sum_exe(), "--check", "--quiet", &checkfile_path)
+            .dir(dir.path())
+            .stdout_capture()
+            .stderr_capture()
+            .unchecked()
+            .run()
+            .unwrap();
+        let stdout = std::str::from_utf8(&output.stdout).unwrap();
+        let stderr = std::str::from_utf8(&output.stderr).unwrap();
+        let expected_check_failure = format!("b: FAILED ({})\n", open_file_error);
+        assert!(!output.status.success());
+        assert_eq!(expected_check_failure, stdout);
+        assert_eq!(
+            "b3sum: WARNING: 1 computed checksum did NOT match\n",
+            stderr,
+        );
+    }
 }
 
 #[test]

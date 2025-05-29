@@ -9,7 +9,6 @@ result:
 #include "blake3.h"
 #include <errno.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -28,7 +27,7 @@ int main(void) {
       break; // end of file
     } else {
       fprintf(stderr, "read failed: %s\n", strerror(errno));
-      exit(1);
+      return 1;
     }
   }
 
@@ -91,7 +90,10 @@ void blake3_hasher_update(
   size_t input_len);
 ```
 
-Add input to the hasher. This can be called any number of times.
+Add input to the hasher. This can be called any number of times. This function
+is always single-threaded; for multithreading see `blake3_hasher_update_tbb`
+below.
+
 
 ---
 
@@ -163,6 +165,42 @@ violating the requirement that context strings should be hardcoded.
 ---
 
 ```c
+void blake3_hasher_update_tbb(
+  blake3_hasher *self,
+  const void *input,
+  size_t input_len);
+```
+
+Add input to the hasher, using [oneTBB] to process large inputs using multiple
+threads. This can be called any number of times. This gives the same result as
+`blake3_hasher_update` above.
+
+[oneTBB]: https://uxlfoundation.github.io/oneTBB/
+
+NOTE: This function is only enabled when the library is compiled with CMake option `BLAKE3_USE_TBB`
+and when the oneTBB library is detected on the host system. See the building instructions for
+further details.
+
+To get any performance benefit from multithreading, the input buffer needs to
+be large. As a rule of thumb on x86_64, `blake3_hasher_update_tbb` is _slower_
+than `blake3_hasher_update` for inputs under 128 KiB. That threshold varies
+quite a lot across different processors, and it's important to benchmark your
+specific use case.
+
+Hashing large files with this function usually requires
+[memory-mapping](https://en.wikipedia.org/wiki/Memory-mapped_file), since
+reading a file into memory in a single-threaded loop takes longer than hashing
+the resulting buffer. Note that hashing a memory-mapped file with this function
+produces a "random" pattern of disk reads, which can be slow on spinning disks.
+Again it's important to benchmark your specific use case.
+
+This implementation doesn't require configuration of thread resources and will
+use as many cores as possible by default. More fine-grained control of
+resources is possible using the [oneTBB] API.
+
+---
+
+```c
 void blake3_hasher_finalize_seek(
   const blake3_hasher *self,
   uint64_t seek,
@@ -184,10 +222,7 @@ void blake3_hasher_reset(
 
 Reset the hasher to its initial state, prior to any calls to
 `blake3_hasher_update`. Currently this is no different from calling
-`blake3_hasher_init` or similar again. However, if this implementation gains
-multithreading support in the future, and if `blake3_hasher` holds (optional)
-threading resources, this function will reuse those resources. Until then, this
-is mainly for feature compatibility with the Rust implementation.
+`blake3_hasher_init` or similar again.
 
 # Security Notes
 
@@ -207,14 +242,52 @@ smell](https://en.wikipedia.org/wiki/Design_smell) in any case.
 
 # Building
 
-This implementation is just C and assembly files. It doesn't include a
-public-facing build system. (The `Makefile` in this directory is only
-for testing.) Instead, the intention is that you can include these files
-in whatever build system you're already using. This section describes
-the commands your build system should execute, or which you can execute
-by hand. Note that these steps may change in future versions.
+The easiest and most complete method of compiling this library is with CMake.
+This is the method described in the next section. Toward the end of the
+building section there are more in depth notes about compiling manually and
+things that are useful to understand if you need to integrate this library with
+another build system.
 
-## x86
+## CMake
+
+The minimum version of CMake is 3.9. The following invocations will compile and
+install `libblake3`. With recent CMake:
+
+```bash
+cmake -S c -B c/build "-DCMAKE_INSTALL_PREFIX=/usr/local"
+cmake --build c/build --target install
+```
+
+With an older CMake:
+
+```bash
+cd c
+mkdir build
+cd build
+cmake .. "-DCMAKE_INSTALL_PREFIX=/usr/local"
+cmake --build . --target install
+```
+
+The following options are available when compiling with CMake:
+
+- `BLAKE3_USE_TBB`: Enable oneTBB parallelism (Requires a C++20 capable compiler)
+- `BLAKE3_FETCH_TBB`: Allow fetching oneTBB from GitHub (only if not found on system)
+- `BLAKE3_EXAMPLES`: Compile and install example programs
+
+Options can be enabled like this:
+
+```bash
+cmake -S c -B c/build "-DCMAKE_INSTALL_PREFIX=/usr/local" -DBLAKE3_USE_TBB=1 -DBLAKE3_FETCH_TBB=1
+```
+
+## Building manually
+
+We try to keep the build simple enough that you can compile this library "by
+hand", and it's expected that many callers will integrate it with their
+pre-existing build systems. See the `gcc` one-liner in the "Example" section
+above.
+
+### x86
 
 Dynamic dispatch is enabled by default on x86. The implementation will
 query the CPU at runtime to detect SIMD support, and it will use the
@@ -268,7 +341,7 @@ gcc -shared -O3 -o libblake3.so -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_A
     -DBLAKE3_NO_AVX512 blake3.c blake3_dispatch.c blake3_portable.c
 ```
 
-## ARM NEON
+### ARM NEON
 
 The NEON implementation is enabled by default on AArch64, but not on
 other ARM targets, since not all of them support it. To enable it, set
@@ -300,7 +373,7 @@ in call to always_inline ‘vaddq_u32’: target specific option mismatch
 ...then you may need to add something like `-mfpu=neon-vfpv4
 -mfloat-abi=hard`.
 
-## Other Platforms
+### Other Platforms
 
 The portable implementation should work on most other architectures. For
 example:
@@ -309,13 +382,22 @@ example:
 gcc -shared -O3 -o libblake3.so blake3.c blake3_dispatch.c blake3_portable.c
 ```
 
-# Multithreading
+### Multithreading
 
-Unlike the Rust implementation, the C implementation doesn't currently support
-multithreading. A future version of this library could add support by taking an
-optional dependency on OpenMP or similar. Alternatively, we could expose a
-lower-level API to allow callers to implement concurrency themselves. The
-former would be more convenient and less error-prone, but the latter would give
-callers the maximum possible amount of control. The best choice here depends on
-the specific use case, so if you have a use case for multithreaded hashing in
-C, please file a GitHub issue and let us know.
+Multithreading is available using [oneTBB], by compiling the optional C++
+support file [`blake3_tbb.cpp`](./blake3_tbb.cpp). For an example of using
+`mmap` (non-Windows) and `blake3_hasher_update_tbb` to get large-file
+performance on par with [`b3sum`](../b3sum), see
+[`example_tbb.c`](./example_tbb.c). You can build it like this:
+
+```bash
+g++ -c -O3 -fno-exceptions -fno-rtti -DBLAKE3_USE_TBB -o blake3_tbb.o blake3_tbb.cpp
+gcc -O3 -o example_tbb -lstdc++ -ltbb -DBLAKE3_USE_TBB blake3_tbb.o example_tbb.c blake3.c \
+    blake3_dispatch.c blake3_portable.c blake3_sse2_x86-64_unix.S blake3_sse41_x86-64_unix.S \
+    blake3_avx2_x86-64_unix.S blake3_avx512_x86-64_unix.S
+```
+
+NOTE: `-fno-exceptions` or equivalent is required to compile `blake3_tbb.cpp`,
+and public API methods with external C linkage are marked `noexcept`. Compiling
+that file with exceptions enabled will fail. Compiling with RTTI disabled isn't
+required but is recommended for code size.
