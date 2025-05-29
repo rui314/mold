@@ -217,7 +217,7 @@ endif()
 # to mold. If you want to link to the system's libtbb2.so, pass
 # -DMOLD_USE_SYSTEM_TBB=ON.
 option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" OFF)
-if(MOLD_USE_SYSTEM_TBB)
+if(MOLD_USE_SYSTEM_TBB OR BLAKE3_USE_TBB)
   find_package(TBB REQUIRED)
   target_link_libraries(mold PRIVATE TBB::tbb)
 else()
