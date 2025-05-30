@@ -1725,8 +1725,8 @@ static u64 get_symbol_size(Symbol<E> &sym) {
 }
 
 template <typename E>
-ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
-                         U32<E> *shn_xindex) {
+std::optional<ElfSym<E>>
+to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex) {
   ElfSym<E> esym;
   memset(&esym, 0, sizeof(esym));
 
@@ -1835,7 +1835,8 @@ ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
   if (0 <= shndx && shndx < SHN_LORESERVE) {
     esym.st_shndx = shndx;
   } else if (SHN_LORESERVE <= shndx) {
-    assert(shn_xindex);
+    if (!shn_xindex)
+      return {};
     esym.st_shndx = SHN_XINDEX;
     *shn_xindex = shndx;
   }
@@ -1869,7 +1870,17 @@ void DynsymSection<E>::copy_buf(Context<E> &ctx) {
 
   for (i64 i = 1; i < symbols.size(); i++) {
     Symbol<E> &sym = *symbols[i];
-    buf[sym.get_dynsym_idx(ctx)] = to_output_esym(ctx, sym, offset, nullptr);
+
+    std::optional<ElfSym<E>> esym = to_output_esym(ctx, sym, offset, nullptr);
+    if (!esym) {
+      Error(ctx) << ctx.arg.output
+                 << ": .dynsym: too many output sections: "
+                 << (ctx.shdr->shdr.sh_size / sizeof(ElfShdr<E>))
+                 << " requested, but ELF allows at most 65279";
+      return;
+    }
+
+    buf[sym.get_dynsym_idx(ctx)] = *esym;
     offset += sym.name().size() + 1;
   }
 }
@@ -3045,6 +3056,8 @@ template class GnuDebuglinkSection<E>;
 template Chunk<E> *find_chunk(Context<E> &, u32);
 template Chunk<E> *find_chunk(Context<E> &, std::string_view);
 template i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk);
-template ElfSym<E> to_output_esym(Context<E> &, Symbol<E> &, u32, U32<E> *);
+
+template std::optional<ElfSym<E>>
+to_output_esym(Context<E> &, Symbol<E> &, u32, U32<E> *);
 
 } // namespace mold

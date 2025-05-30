@@ -802,8 +802,8 @@ public:
 };
 
 template <typename E>
-ElfSym<E> to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name,
-                         U32<E> *shndx);
+std::optional<ElfSym<E>>
+to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shndx);
 
 template <typename E>
 class SymtabSection : public Chunk<E> {
