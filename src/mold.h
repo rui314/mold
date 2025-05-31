@@ -2,7 +2,6 @@
 
 #include "../lib/common.h"
 #include "elf.h"
-#include "mold-git-hash.h"
 
 #include <cassert>
 #include <cstdint>
