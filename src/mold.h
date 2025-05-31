@@ -2664,7 +2664,7 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
     return {};
 
   std::string_view str = name();
-  if (!str.starts_with(".debug"))
+  if (!str.starts_with(".debug_"))
     return {};
 
   // If the section was dead due to ICF, we don't want to emit debug

@@ -112,7 +112,7 @@ std::string_view InputFile<E>::get_source_name() const {
 
 template <typename E>
 static bool is_debug_section(const ElfShdr<E> &shdr, std::string_view name) {
-  return !(shdr.sh_flags & SHF_ALLOC) && name.starts_with(".debug");
+  return !(shdr.sh_flags & SHF_ALLOC) && name.starts_with(".debug_");
 }
 
 template <typename E>

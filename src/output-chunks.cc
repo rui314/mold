@@ -2838,7 +2838,7 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
-  assert(chunk.name.starts_with(".debug"));
+  assert(chunk.name.starts_with(".debug_"));
   this->name = chunk.name;
   this->is_compressed = true;
 

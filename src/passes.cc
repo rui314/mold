@@ -3163,7 +3163,7 @@ void compress_debug_sections(Context<E> &ctx) {
     Chunk<E> &chunk = *ctx.chunks[i];
 
     if ((chunk.shdr.sh_flags & SHF_ALLOC) || chunk.shdr.sh_size == 0 ||
-        !chunk.name.starts_with(".debug"))
+        !chunk.name.starts_with(".debug_"))
       return;
 
     Chunk<E> *comp = new CompressedSection<E>(ctx, chunk);
