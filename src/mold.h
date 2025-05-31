@@ -16,6 +16,7 @@
 #include <string_view>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_vector.h>
+#include <tbb/global_control.h>
 #include <tbb/spin_mutex.h>
 #include <tbb/task_group.h>
 #include <type_traits>
@@ -2094,6 +2095,7 @@ struct Context {
     u64 shuffle_sections_seed = 0;
   } arg;
 
+  std::optional<tbb::global_control> global_limit;
   std::vector<VersionPattern> version_patterns;
   std::vector<DynamicPattern> dynamic_list_patterns;
   i64 default_version = VER_NDX_UNSPECIFIED;

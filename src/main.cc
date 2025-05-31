@@ -5,7 +5,6 @@
 #include <functional>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <tbb/global_control.h>
 #include <unordered_set>
 
 #ifdef _WIN32
@@ -299,8 +298,8 @@ int mold_main(int argc, char **argv) {
 
   acquire_global_lock();
 
-  tbb::global_control tbb_cont(tbb::global_control::max_allowed_parallelism,
-                               ctx.arg.thread_count);
+  ctx.global_limit.emplace(tbb::global_control::max_allowed_parallelism,
+                           ctx.arg.thread_count);
 
   // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)
@@ -577,7 +576,7 @@ int mold_main(int argc, char **argv) {
   // GOT or PLT addresses have a correct final value.
 
   // If --compress-debug-sections is given, compress .debug_* sections
-  // using zlib.
+  // using zlib or zstd.
   if (ctx.arg.compress_debug_sections != COMPRESS_NONE) {
     compress_debug_sections(ctx);
     filesize = set_osec_offsets(ctx);

@@ -3159,6 +3159,10 @@ template <typename E>
 void compress_debug_sections(Context<E> &ctx) {
   Timer t(ctx, "compress_debug_sections");
 
+  // Since this pass is embarassingly parallel, we want to use all
+  // available cores.
+  ctx.global_limit.reset();
+
   tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
     Chunk<E> &chunk = *ctx.chunks[i];
 
@@ -3170,6 +3174,9 @@ void compress_debug_sections(Context<E> &ctx) {
     ctx.chunk_pool.emplace_back(comp);
     ctx.chunks[i] = comp;
   });
+
+  ctx.global_limit.emplace(tbb::global_control::max_allowed_parallelism,
+                           ctx.arg.thread_count);
 
   if (ctx.shstrtab)
     ctx.shstrtab->update_shdr(ctx);
