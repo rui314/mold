@@ -454,7 +454,6 @@ public:
 
   // For --gdb-index
   bool is_compressed = false;
-  std::unique_ptr<u8[]> uncompressed_data;
 
   // Some synethetic sections add local symbols to the output.
   // For example, range extension thunks adds function_name@thunk
@@ -1132,8 +1131,10 @@ public:
   CompressedSection(Context<E> &ctx, Chunk<E> &chunk);
   void copy_buf(Context<E> &ctx) override;
 
-private:
+  std::unique_ptr<u8[]> uncompressed_data;
   ElfChdr<E> chdr = {};
+
+private:
   std::unique_ptr<Compressor> compressor;
 };
 
