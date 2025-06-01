@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-seq 1 100000 | sed 's/.*/.section .data.\0,"aw"\n.word 0\n/g' |
+seq 1 100000 | sed 's/.*/.section .data.&,"aw"\n.word 0\n/g' |
   $CC -c -xassembler -o $t/a.o -
 
 cat <<'EOF' | $CC -c -xc -o $t/b.o -
