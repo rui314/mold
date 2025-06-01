@@ -25,7 +25,7 @@ gentoo)
   emerge-webrsync
   FEATURES='getbinpkg binpkg-request-signature' emerge dev-build/cmake
   ;;
-arch | archarm | artix | endeavouros | manjaro)
+arch | archarm | artix | endeavouros | manjaro | cachyos)
   pacman -Sy --needed --noconfirm base-devel cmake util-linux
   ;;
 void)
