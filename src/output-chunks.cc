@@ -2842,19 +2842,19 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   this->name = chunk.name;
   this->is_compressed = true;
 
-  this->uncompressed_data.resize(chunk.shdr.sh_size);
-  u8 *buf = this->uncompressed_data.data();
-
-  chunk.write_to(ctx, buf);
+  // sh_size can be very large. We use u8[] instead of std::vector<u8>
+  // to avoid the cost of zero-initialization.
+  std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
+  chunk.write_to(ctx, buf.get());
 
   switch (ctx.arg.compress_debug_sections) {
   case COMPRESS_ZLIB:
     chdr.ch_type = ELFCOMPRESS_ZLIB;
-    compressor.reset(new ZlibCompressor(buf, chunk.shdr.sh_size));
+    compressor.reset(new ZlibCompressor(buf.get(), chunk.shdr.sh_size));
     break;
   case COMPRESS_ZSTD:
     chdr.ch_type = ELFCOMPRESS_ZSTD;
-    compressor.reset(new ZstdCompressor(buf, chunk.shdr.sh_size));
+    compressor.reset(new ZstdCompressor(buf.get(), chunk.shdr.sh_size));
     break;
   default:
     unreachable();
@@ -2869,11 +2869,9 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   this->shdr.sh_size = sizeof(chdr) + compressor->compressed_size;
   this->shndx = chunk.shndx;
 
-  // We don't need to keep the original data unless --gdb-index is given.
-  if (!ctx.arg.gdb_index) {
-    this->uncompressed_data.clear();
-    this->uncompressed_data.shrink_to_fit();
-  }
+  // We need to keep the original data if --gdb-index is given.
+  if (ctx.arg.gdb_index)
+    this->uncompressed_data = std::move(buf);
 }
 
 template <typename E>

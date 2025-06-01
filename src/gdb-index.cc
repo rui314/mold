@@ -629,9 +629,12 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
 
 template <typename E>
 std::span<u8> get_buffer(Context<E> &ctx, Chunk<E> *chunk) {
+  u8 *p;
   if (chunk->is_compressed)
-    return chunk->uncompressed_data;
-  return {ctx.buf + chunk->shdr.sh_offset, (size_t)chunk->shdr.sh_size};
+    p = chunk->uncompressed_data.get();
+  else
+    p = ctx.buf + chunk->shdr.sh_offset;
+  return {p, (size_t)chunk->shdr.sh_size};
 }
 
 template <typename E>

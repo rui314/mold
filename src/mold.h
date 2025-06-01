@@ -453,7 +453,7 @@ public:
 
   // For --gdb-index
   bool is_compressed = false;
-  std::vector<u8> uncompressed_data;
+  std::unique_ptr<u8[]> uncompressed_data;
 
   // Some synethetic sections add local symbols to the output.
   // For example, range extension thunks adds function_name@thunk
