@@ -835,8 +835,11 @@ std::vector<u8> crc32_solve(u32 current, u32 desired);
 class Compressor {
 public:
   virtual void write_to(u8 *buf) = 0;
-  virtual ~Compressor() {}
+  virtual ~Compressor();
   i64 compressed_size = 0;
+
+protected:
+  std::vector<std::span<u8>> shards;
 };
 
 class ZlibCompressor : public Compressor {
@@ -845,17 +848,13 @@ public:
   void write_to(u8 *buf) override;
 
 private:
-  std::vector<std::vector<u8>> shards;
-  u64 checksum = 0;
+  u32 checksum = 0;
 };
 
 class ZstdCompressor : public Compressor {
 public:
   ZstdCompressor(u8 *buf, i64 size);
   void write_to(u8 *buf) override;
-
-private:
-  std::vector<std::vector<u8>> shards;
 };
 
 //

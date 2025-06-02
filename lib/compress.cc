@@ -30,27 +30,26 @@ namespace mold {
 
 static constexpr i64 SHARD_SIZE = 1024 * 1024;
 
-static std::vector<std::string_view> split(std::string_view input) {
-  std::vector<std::string_view> shards;
-
-  while (input.size() >= SHARD_SIZE) {
-    shards.push_back(input.substr(0, SHARD_SIZE));
-    input = input.substr(SHARD_SIZE);
-  }
-  if (!input.empty())
-    shards.push_back(input);
-  return shards;
+Compressor::~Compressor() {
+  for (std::span<u8> shard : shards)
+    delete[] shard.data();
 }
 
-static std::vector<u8> zlib_compress(std::string_view input) {
+static std::vector<std::string_view> split(std::string_view input) {
+  std::vector<std::string_view> vec;
+  while (!input.empty()) {
+    i64 sz = std::min<i64>(SHARD_SIZE, input.size());
+    vec.push_back(input.substr(0, sz));
+    input = input.substr(sz);
+  }
+  return vec;
+}
+
+static std::span<u8> zlib_compress(std::string_view input) {
   // Initialize zlib stream. Since debug info is generally compressed
   // pretty well with lower compression levels, we chose compression
   // level 1.
-  z_stream strm;
-  strm.zalloc = Z_NULL;
-  strm.zfree = Z_NULL;
-  strm.opaque = Z_NULL;
-
+  z_stream strm = {};
   CHECK(deflateInit2(&strm, 1, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY));
 
   // Set an input buffer
@@ -59,13 +58,14 @@ static std::vector<u8> zlib_compress(std::string_view input) {
 
   // Set an output buffer. deflateBound() returns an upper bound
   // on the compression size. +16 for Z_SYNC_FLUSH.
-  std::vector<u8> buf(deflateBound(&strm, strm.avail_in) + 16);
+  i64 bufsize = deflateBound(&strm, strm.avail_in) + 16;
+  u8 *buf = new u8[bufsize];
 
   // Compress data. It writes all compressed bytes except the last
   // partial byte, so up to 7 bits can be held to be written to the
   // buffer.
-  strm.avail_out = buf.size();
-  strm.next_out = buf.data();
+  strm.avail_out = bufsize;
+  strm.next_out = buf;
   CHECK(deflate(&strm, Z_BLOCK));
 
   // This is a workaround for libbacktrace before 2022-04-06.
@@ -90,11 +90,8 @@ static std::vector<u8> zlib_compress(std::string_view input) {
     CHECK(deflatePrime(&strm, 10, 2));
   CHECK(deflate(&strm, Z_SYNC_FLUSH));
 
-  assert(strm.avail_out > 0);
-  buf.resize(buf.size() - strm.avail_out);
-  buf.shrink_to_fit();
   deflateEnd(&strm);
-  return buf;
+  return {buf, (size_t)(bufsize - strm.avail_out)};
 }
 
 ZlibCompressor::ZlibCompressor(u8 *buf, i64 size) {
@@ -116,7 +113,7 @@ ZlibCompressor::ZlibCompressor(u8 *buf, i64 size) {
 
   // Comput the total size
   compressed_size = 8; // the header and the trailer
-  for (std::vector<u8> &shard : shards)
+  for (std::span<u8> &shard : shards)
     compressed_size += shard.size();
 }
 
@@ -144,16 +141,14 @@ void ZlibCompressor::write_to(u8 *buf) {
   *(ub32 *)(end - 4) = checksum;
 }
 
-static std::vector<u8> zstd_compress(std::string_view input) {
-  std::vector<u8> buf(ZSTD_COMPRESSBOUND(input.size()));
+static std::span<u8> zstd_compress(std::string_view input) {
+  i64 bufsize = ZSTD_COMPRESSBOUND(input.size());
+  u8 *buf = new u8[bufsize];
   constexpr int LEVEL = 3; // compression level; must be between 1 to 22
 
-  size_t sz = ZSTD_compress(buf.data(), buf.size(), input.data(), input.size(),
-                            LEVEL);
+  size_t sz = ZSTD_compress(buf, bufsize, input.data(), input.size(), LEVEL);
   assert(!ZSTD_isError(sz));
-  buf.resize(sz);
-  buf.shrink_to_fit();
-  return buf;
+  return {buf, sz};
 }
 
 ZstdCompressor::ZstdCompressor(u8 *buf, i64 size) {
@@ -167,7 +162,7 @@ ZstdCompressor::ZstdCompressor(u8 *buf, i64 size) {
   });
 
   compressed_size = 0;
-  for (std::vector<u8> &shard : shards)
+  for (std::span<u8> &shard : shards)
     compressed_size += shard.size();
 }
 
