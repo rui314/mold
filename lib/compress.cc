@@ -35,17 +35,17 @@ Compressor::~Compressor() {
     delete[] shard.data();
 }
 
-static std::vector<std::string_view> split(std::string_view input) {
-  std::vector<std::string_view> vec;
+static std::vector<std::span<u8>> split(std::span<u8> input) {
+  std::vector<std::span<u8>> vec;
   while (!input.empty()) {
     i64 sz = std::min<i64>(SHARD_SIZE, input.size());
-    vec.push_back(input.substr(0, sz));
-    input = input.substr(sz);
+    vec.push_back(input.subspan(0, sz));
+    input = input.subspan(sz);
   }
   return vec;
 }
 
-static std::span<u8> zlib_compress(std::string_view input) {
+static std::span<u8> zlib_compress(std::span<u8> input) {
   // Initialize zlib stream. Since debug info is generally compressed
   // pretty well with lower compression levels, we chose compression
   // level 1.
@@ -54,7 +54,7 @@ static std::span<u8> zlib_compress(std::string_view input) {
 
   // Set an input buffer
   strm.avail_in = input.size();
-  strm.next_in = (u8 *)input.data();
+  strm.next_in = input.data();
 
   // Set an output buffer. deflateBound() returns an upper bound
   // on the compression size. +16 for Z_SYNC_FLUSH.
@@ -95,15 +95,15 @@ static std::span<u8> zlib_compress(std::string_view input) {
 }
 
 ZlibCompressor::ZlibCompressor(u8 *buf, i64 size) {
-  std::string_view input{(char *)buf, (size_t)size};
-  std::vector<std::string_view> inputs = split(input);
-  std::vector<u64> adlers(inputs.size());
+  std::vector<std::span<u8>> inputs = split(std::span(buf, size));
+  std::vector<u32> adlers(inputs.size());
   shards.resize(inputs.size());
 
   // Compress each shard
   tbb::parallel_for((i64)0, (i64)inputs.size(), [&](i64 i) {
-    adlers[i] = adler32(1, (u8 *)inputs[i].data(), inputs[i].size());
-    shards[i] = zlib_compress(inputs[i]);
+    std::span<u8> in = inputs[i];
+    adlers[i] = adler32(1, in.data(), in.size());
+    shards[i] = zlib_compress(in);
   });
 
   // Combine checksums
@@ -136,26 +136,25 @@ void ZlibCompressor::write_to(u8 *buf) {
   u8 *end = buf + compressed_size;
   end[-6] = 3;
   end[-5] = 0;
-
-  // Write a checksum
   *(ub32 *)(end - 4) = checksum;
 }
 
+static std::span<u8> zstd_compress(std::span<u8> input) {
+  i64 bufsize = ZSTD_COMPRESSBOUND(input.size());
+  u8 *buf = new u8[bufsize];
+  int level = 3; // compression level; must be between 1 to 22
+  size_t sz = ZSTD_compress(buf, bufsize, input.data(), input.size(), level);
+  assert(!ZSTD_isError(sz));
+  return {buf, sz};
+}
+
 ZstdCompressor::ZstdCompressor(u8 *buf, i64 size) {
-  std::string_view input{(char *)buf, (size_t)size};
-  std::vector<std::string_view> inputs = split(input);
+  std::vector<std::span<u8>> inputs = split(std::span(buf, size));
   shards.resize(inputs.size());
 
   // Compress each shard
   tbb::parallel_for((i64)0, (i64)inputs.size(), [&](i64 i) {
-    std::string_view in = inputs[i];
-    i64 bufsize = ZSTD_COMPRESSBOUND(in.size());
-    u8 *buf = new u8[bufsize];
-    int level = 3; // compression level; must be between 1 to 22
-
-    size_t sz = ZSTD_compress(buf, bufsize, in.data(), in.size(), level);
-    assert(!ZSTD_isError(sz));
-    shards[i] = std::span(buf, sz);
+    shards[i] = zstd_compress(inputs[i]);
   });
 
   compressed_size = 0;
