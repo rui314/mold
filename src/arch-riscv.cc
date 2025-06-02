@@ -767,9 +767,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       scan_pcrel(ctx, sym, rel);
       break;
     case R_RISCV_TPREL_HI20:
-    case R_RISCV_TPREL_LO12_I:
-    case R_RISCV_TPREL_LO12_S:
-    case R_RISCV_TPREL_ADD:
       check_tlsle(ctx, sym, rel);
       break;
     case R_RISCV_64:
@@ -779,6 +776,9 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_RISCV_PCREL_LO12_S:
     case R_RISCV_LO12_I:
     case R_RISCV_LO12_S:
+    case R_RISCV_TPREL_LO12_I:
+    case R_RISCV_TPREL_LO12_S:
+    case R_RISCV_TPREL_ADD:
     case R_RISCV_TLSDESC_LOAD_LO12:
     case R_RISCV_TLSDESC_ADD_LO12:
     case R_RISCV_TLSDESC_CALL:

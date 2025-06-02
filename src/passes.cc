@@ -3176,8 +3176,6 @@ void compress_debug_sections(Context<E> &ctx) {
   ctx.global_limit.emplace(tbb::global_control::max_allowed_parallelism,
                            ctx.arg.thread_count);
 
-  if (ctx.ehdr)
-    ctx.ehdr->update_shdr(ctx);
   if (ctx.shdr)
     ctx.shdr->update_shdr(ctx);
 }
