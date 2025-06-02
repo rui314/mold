@@ -1,9 +1,21 @@
 #include "common.h"
 
+// for getrlimit, setrlimit
+#include <sys/resource.h>
+
 namespace mold {
 
 MappedFile *open_file_impl(const std::string &path, std::string &error) {
   i64 fd = ::open(path.c_str(), O_RDONLY);
+  // increase rlimit when EMFILE. This is required for llvm lto, since llvm
+  // plugin requires keeping input files open
+  if (fd == -1 && errno == EMFILE) {
+    if (struct rlimit rlim{}; getrlimit(RLIMIT_NOFILE, &rlim) == 0) {
+      rlim.rlim_cur = rlim.rlim_max;
+      setrlimit(RLIMIT_NOFILE, &rlim);
+      fd = ::open(path.c_str(), O_RDONLY);
+    }
+  }
   if (fd == -1) {
     if (errno != ENOENT)
       error = "opening " + path + " failed: " + errno_string();
