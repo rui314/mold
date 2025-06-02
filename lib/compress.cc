@@ -124,7 +124,7 @@ void ZlibCompressor::write_to(u8 *buf) {
 
   // Copy compressed data
   std::vector<i64> offsets(shards.size());
-  offsets[0] = 2; // +2 for header
+  offsets[0] = 2; // +2 for the header
   for (i64 i = 1; i < shards.size(); i++)
     offsets[i] = offsets[i - 1] + shards[i - 1].size();
 
@@ -141,16 +141,6 @@ void ZlibCompressor::write_to(u8 *buf) {
   *(ub32 *)(end - 4) = checksum;
 }
 
-static std::span<u8> zstd_compress(std::string_view input) {
-  i64 bufsize = ZSTD_COMPRESSBOUND(input.size());
-  u8 *buf = new u8[bufsize];
-  constexpr int LEVEL = 3; // compression level; must be between 1 to 22
-
-  size_t sz = ZSTD_compress(buf, bufsize, input.data(), input.size(), LEVEL);
-  assert(!ZSTD_isError(sz));
-  return {buf, sz};
-}
-
 ZstdCompressor::ZstdCompressor(u8 *buf, i64 size) {
   std::string_view input{(char *)buf, (size_t)size};
   std::vector<std::string_view> inputs = split(input);
@@ -158,7 +148,14 @@ ZstdCompressor::ZstdCompressor(u8 *buf, i64 size) {
 
   // Compress each shard
   tbb::parallel_for((i64)0, (i64)inputs.size(), [&](i64 i) {
-    shards[i] = zstd_compress(inputs[i]);
+    std::string_view in = inputs[i];
+    i64 bufsize = ZSTD_COMPRESSBOUND(in.size());
+    u8 *buf = new u8[bufsize];
+    int level = 3; // compression level; must be between 1 to 22
+
+    size_t sz = ZSTD_compress(buf, bufsize, in.data(), in.size(), level);
+    assert(!ZSTD_isError(sz));
+    shards[i] = std::span(buf, sz);
   });
 
   compressed_size = 0;

@@ -3165,21 +3165,16 @@ void compress_debug_sections(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
     Chunk<E> &chunk = *ctx.chunks[i];
-
-    if ((chunk.shdr.sh_flags & SHF_ALLOC) || chunk.shdr.sh_size == 0 ||
-        !chunk.name.starts_with(".debug_"))
-      return;
-
-    Chunk<E> *comp = new CompressedSection<E>(ctx, chunk);
-    ctx.chunk_pool.emplace_back(comp);
-    ctx.chunks[i] = comp;
+    if (!(chunk.shdr.sh_flags & SHF_ALLOC) && chunk.shdr.sh_size &&
+        chunk.name.starts_with(".debug_")) {
+      Chunk<E> *comp = new CompressedSection<E>(ctx, chunk);
+      ctx.chunk_pool.emplace_back(comp);
+      ctx.chunks[i] = comp;
+    }
   });
 
   ctx.global_limit.emplace(tbb::global_control::max_allowed_parallelism,
                            ctx.arg.thread_count);
-
-  if (ctx.shstrtab)
-    ctx.shstrtab->update_shdr(ctx);
 
   if (ctx.ehdr)
     ctx.ehdr->update_shdr(ctx);
