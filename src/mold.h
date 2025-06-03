@@ -407,6 +407,22 @@ std::string_view
 get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf);
 
 //
+// compress.cc
+//
+
+class Compressor {
+public:
+  Compressor(i64 format, u8 *buf, i64 size);
+  void write_to(u8 *buf);
+  ~Compressor();
+
+  i64 compressed_size = 0;
+
+protected:
+  std::vector<std::span<u8>> shards;
+};
+
+//
 // output-chunks.cc
 //
 
@@ -1135,7 +1151,7 @@ public:
   ElfChdr<E> chdr = {};
 
 private:
-  std::unique_ptr<Compressor> compressor;
+  std::optional<Compressor> compressor;
 };
 
 template <typename E>
@@ -1848,8 +1864,6 @@ struct BuildId {
   i64 hash_size = 0;
 };
 
-typedef enum { COMPRESS_NONE, COMPRESS_ZLIB, COMPRESS_ZSTD } CompressKind;
-
 typedef enum {
   UNRESOLVED_ERROR,
   UNRESOLVED_WARN,
@@ -1967,7 +1981,6 @@ struct Context {
     BsymbolicKind Bsymbolic = BSYMBOLIC_NONE;
     BuildId build_id;
     CetReportKind z_cet_report = CET_REPORT_NONE;
-    CompressKind compress_debug_sections = COMPRESS_NONE;
     MultiGlob undefined_glob;
     SeparateCodeKind z_separate_code = NOSEPARATE_CODE;
     ShuffleSectionsKind shuffle_sections = SHUFFLE_SECTIONS_NONE;
@@ -2052,6 +2065,7 @@ struct Context {
     bool z_shstk = false;
     bool z_start_stop_visibility_protected = false;
     bool z_text = false;
+    i64 compress_debug_sections = ELFCOMPRESS_NONE;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
     i64 spare_program_headers = 0;

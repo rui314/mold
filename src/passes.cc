@@ -3369,7 +3369,7 @@ void write_separate_debug_file(Context<E> &ctx) {
   sort_debug_info_sections(ctx);
 
   // Handle --compress-debug-info
-  if (ctx.arg.compress_debug_sections != COMPRESS_NONE)
+  if (ctx.arg.compress_debug_sections != ELFCOMPRESS_NONE)
     compress_debug_sections(ctx);
 
   // Write to the debug info file as if it were a regular output file.

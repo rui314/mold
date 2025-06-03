@@ -577,7 +577,7 @@ int mold_main(int argc, char **argv) {
 
   // If --compress-debug-sections is given, compress .debug_* sections
   // using zlib or zstd.
-  if (ctx.arg.compress_debug_sections != COMPRESS_NONE) {
+  if (ctx.arg.compress_debug_sections != ELFCOMPRESS_NONE) {
     compress_debug_sections(ctx);
     filesize = set_osec_offsets(ctx);
   }

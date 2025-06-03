@@ -2845,21 +2845,15 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   // sh_size can be very large. We use u8[] instead of std::vector<u8>
   // to avoid the cost of zero-initialization.
   std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
+
+  // Write uncompressed contents to a temporary buffer and then
+  // compress them
   chunk.write_to(ctx, buf.get());
+  compressor.emplace(ctx.arg.compress_debug_sections, buf.get(),
+                     chunk.shdr.sh_size);
 
-  switch (ctx.arg.compress_debug_sections) {
-  case COMPRESS_ZLIB:
-    chdr.ch_type = ELFCOMPRESS_ZLIB;
-    compressor.reset(new ZlibCompressor(buf.get(), chunk.shdr.sh_size));
-    break;
-  case COMPRESS_ZSTD:
-    chdr.ch_type = ELFCOMPRESS_ZSTD;
-    compressor.reset(new ZstdCompressor(buf.get(), chunk.shdr.sh_size));
-    break;
-  default:
-    unreachable();
-  }
-
+  // Create a header
+  chdr.ch_type = ctx.arg.compress_debug_sections;
   chdr.ch_size = chunk.shdr.sh_size;
   chdr.ch_addralign = chunk.shdr.sh_addralign;
 

@@ -981,11 +981,11 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.execute_only = true;
     } else if (read_arg("compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
-        ctx.arg.compress_debug_sections = COMPRESS_ZLIB;
+        ctx.arg.compress_debug_sections = ELFCOMPRESS_ZLIB;
       else if (arg == "zstd")
-        ctx.arg.compress_debug_sections = COMPRESS_ZSTD;
+        ctx.arg.compress_debug_sections = ELFCOMPRESS_ZSTD;
       else if (arg == "none")
-        ctx.arg.compress_debug_sections = COMPRESS_NONE;
+        ctx.arg.compress_debug_sections = ELFCOMPRESS_NONE;
       else
         Fatal(ctx) << "invalid --compress-debug-sections argument: " << arg;
     } else if (read_arg("wrap")) {

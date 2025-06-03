@@ -829,35 +829,6 @@ u32 compute_crc32(u32 crc, u8 *buf, i64 len);
 std::vector<u8> crc32_solve(u32 current, u32 desired);
 
 //
-// compress.cc
-//
-
-class Compressor {
-public:
-  virtual void write_to(u8 *buf) = 0;
-  virtual ~Compressor();
-  i64 compressed_size = 0;
-
-protected:
-  std::vector<std::span<u8>> shards;
-};
-
-class ZlibCompressor : public Compressor {
-public:
-  ZlibCompressor(u8 *buf, i64 size);
-  void write_to(u8 *buf) override;
-
-private:
-  u32 checksum = 0;
-};
-
-class ZstdCompressor : public Compressor {
-public:
-  ZstdCompressor(u8 *buf, i64 size);
-  void write_to(u8 *buf) override;
-};
-
-//
 // tar.cc
 //
 

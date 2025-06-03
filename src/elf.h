@@ -353,6 +353,7 @@ enum : u32 {
 };
 
 enum : u32 {
+  ELFCOMPRESS_NONE = 0,
   ELFCOMPRESS_ZLIB = 1,
   ELFCOMPRESS_ZSTD = 2,
 };
