@@ -23,12 +23,11 @@
 // see the contents of libc.a by running `ar t
 // /usr/lib/x86_64-linux-gnu/libc.a`.
 
-#pragma once
-
-#include "common.h"
+#include "mold.h"
 
 namespace mold {
 
+namespace {
 struct ArHdr {
   char ar_name[16];
   char ar_date[12];
@@ -74,10 +73,11 @@ struct ArHdr {
     return {ar_name, sizeof(ar_name)};
   }
 };
+}
 
-template <typename Context>
+template <typename E>
 std::vector<MappedFile *>
-read_thin_archive_members(Context &ctx, MappedFile *mf) {
+read_thin_archive_members(Context<E> &ctx, MappedFile *mf) {
   u8 *begin = mf->data;
   u8 *data = begin + 8;
   std::vector<MappedFile *> vec;
@@ -123,8 +123,9 @@ read_thin_archive_members(Context &ctx, MappedFile *mf) {
   return vec;
 }
 
-template <typename Context>
-std::vector<MappedFile *> read_fat_archive_members(Context &ctx, MappedFile *mf) {
+template <typename E>
+std::vector<MappedFile *>
+read_fat_archive_members(Context<E> &ctx, MappedFile *mf) {
   u8 *begin = mf->data;
   u8 *data = begin + 8;
   std::vector<MappedFile *> vec;
@@ -161,13 +162,27 @@ std::vector<MappedFile *> read_fat_archive_members(Context &ctx, MappedFile *mf)
   return vec;
 }
 
-template <typename Context>
-std::vector<MappedFile *> read_archive_members(Context &ctx, MappedFile *mf) {
+template <typename E>
+std::vector<MappedFile *>
+read_archive_members(Context<E> &ctx, MappedFile *mf) {
   std::string_view str = mf->get_contents();
+
   if (str.starts_with("!<arch>\n"))
     return read_fat_archive_members(ctx, mf);
+
   assert(str.starts_with("!<thin>\n"));
   return read_thin_archive_members(ctx, mf);
 }
+
+using E = MOLD_TARGET;
+
+template std::vector<MappedFile *>
+read_thin_archive_members(Context<E> &, MappedFile *);
+
+template std::vector<MappedFile *>
+read_fat_archive_members(Context<E> &, MappedFile *);
+
+template std::vector<MappedFile *>
+read_archive_members(Context<E> &, MappedFile *);
 
 } // namespace mold

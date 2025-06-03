@@ -324,6 +324,7 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   src/arch-loongarch.cc
   src/arch-riscv.cc
   src/arch-sh4.cc
+  src/archive-file.cc
   src/cmdline.cc
   src/filetype.cc
   src/gc-sections.cc

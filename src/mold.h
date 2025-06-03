@@ -1594,6 +1594,22 @@ std::vector<DynamicPattern>
 parse_dynamic_list(Context<E> &ctx, std::string_view path);
 
 //
+// archive-file.cc
+//
+
+template <typename E>
+std::vector<MappedFile *>
+read_thin_archive_members(Context<E> &ctx, MappedFile *mf);
+
+template <typename E>
+std::vector<MappedFile *>
+read_fat_archive_members(Context<E> &ctx, MappedFile *mf);
+
+template <typename E>
+std::vector<MappedFile *>
+read_archive_members(Context<E> &ctx, MappedFile *mf);
+
+//
 // lto.cc
 //
 
