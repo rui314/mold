@@ -2838,32 +2838,31 @@ void NotePropertySection<E>::copy_buf(Context<E> &ctx) {
 
 template <typename E>
 CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
-  assert(chunk.name.starts_with(".debug_"));
-  this->name = chunk.name;
-  this->is_compressed = true;
-
-  // sh_size can be very large. We use u8[] instead of std::vector<u8>
-  // to avoid the cost of zero-initialization.
+  // Allocate a temporary buffer to write uncompressed contents. Note
+  // that we use u8[] instead of std::vector<u8> to avoid the cost of
+  // zero-initialization, as sh_size can be very large.
   std::unique_ptr<u8[]> buf(new u8[chunk.shdr.sh_size]);
 
-  // Write uncompressed contents to a temporary buffer and then
-  // compress them
+  // Write uncompressed contents and then compress them
   chunk.write_to(ctx, buf.get());
   compressor.emplace(ctx.arg.compress_debug_sections, buf.get(),
                      chunk.shdr.sh_size);
 
-  // Create a header
+  // Compute header field values
   chdr.ch_type = ctx.arg.compress_debug_sections;
   chdr.ch_size = chunk.shdr.sh_size;
   chdr.ch_addralign = chunk.shdr.sh_addralign;
+
+  this->name = chunk.name;
+  this->shndx = chunk.shndx;
+  this->is_compressed = true;
 
   this->shdr = chunk.shdr;
   this->shdr.sh_flags |= SHF_COMPRESSED;
   this->shdr.sh_addralign = 1;
   this->shdr.sh_size = sizeof(chdr) + compressor->compressed_size;
-  this->shndx = chunk.shndx;
 
-  // We need to keep the original data if --gdb-index is given.
+  // We can discard the uncompressed contents unless --gdb-index is given
   if (ctx.arg.gdb_index)
     this->uncompressed_data = std::move(buf);
 }

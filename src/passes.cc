@@ -3175,9 +3175,6 @@ void compress_debug_sections(Context<E> &ctx) {
 
   ctx.global_limit.emplace(tbb::global_control::max_allowed_parallelism,
                            ctx.arg.thread_count);
-
-  if (ctx.shdr)
-    ctx.shdr->update_shdr(ctx);
 }
 
 // BLAKE3 is a cryptographic hash function just like SHA256.
