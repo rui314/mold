@@ -9,7 +9,7 @@
 // mold processes to just 1 for each user. It is intended to be used as
 // `MOLD_JOBS=1 ninja` or `MOLD_JOBS=1 make -j$(nproc)`.
 
-#include "common.h"
+#include "mold.h"
 
 #include <cstdlib>
 #include <fcntl.h>

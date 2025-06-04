@@ -407,13 +407,13 @@ target_sources(mold PRIVATE
 
 if(WIN32)
   target_sources(mold PRIVATE
-    lib/jobs-win32.cc
+    src/jobs-win32.cc
     src/mapped-file-win32.cc
     src/signal-win32.cc
     )
 else()
   target_sources(mold PRIVATE
-    lib/jobs-unix.cc
+    src/jobs-unix.cc
     src/mapped-file-unix.cc
     src/signal-unix.cc
     )

@@ -246,6 +246,13 @@ MappedFile *must_open_file(Context<E> &ctx, std::string path) {
 }
 
 //
+// jobs-unix.cc
+//
+
+void acquire_global_lock();
+void release_global_lock();
+
+//
 // Mergeable section fragments
 //
 
