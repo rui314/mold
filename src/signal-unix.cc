@@ -73,7 +73,7 @@ void install_signal_handler() {
   sigaction(SIGBUS, &action, NULL);
 
   // OneTBB 2021.9.0 has the interface version 12090.
-  if (TBB_runtime_interface_version() < 12090) {
+  if (TBB_runtime_interface_version() <= 12090) {
     sigabrt_msg = "mold: aborted\n"
       "mold: mold with libtbb version 2021.9.0 or older is known to be unstable "
       "under heavy load. Your libtbb version is " +

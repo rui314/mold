@@ -386,7 +386,6 @@ target_sources(mold PRIVATE
   lib/filepath.cc
   lib/glob.cc
   lib/hyperloglog.cc
-  lib/mimalloc.cc
   lib/multi-glob.cc
   lib/perf.cc
   lib/random.cc

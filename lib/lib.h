@@ -69,12 +69,6 @@ inline u64 combine_hash(u64 a, u64 b) {
 }
 
 //
-// mimalloc.cc
-//
-
-void set_mimalloc_options();
-
-//
 // perf.cc
 //
 
