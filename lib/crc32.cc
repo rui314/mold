@@ -1,4 +1,4 @@
-#include "common.h"
+#include "lib.h"
 
 #include <tbb/parallel_for_each.h>
 #include <zlib.h>

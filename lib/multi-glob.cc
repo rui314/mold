@@ -17,7 +17,7 @@
 // slow, but complex patterns are rare in practice, so it should be
 // OK.
 
-#include "common.h"
+#include "lib.h"
 
 #include <queue>
 #include <regex>

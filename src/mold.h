@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../lib/common.h"
+#include "../lib/lib.h"
 #include "elf.h"
 
 #include <cassert>

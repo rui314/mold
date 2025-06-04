@@ -1,3 +1,4 @@
+#include "config.h"
 #include "mold.h"
 #include "mold-git-hash.h"
 

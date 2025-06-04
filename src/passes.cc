@@ -1,6 +1,7 @@
+#include "config.h"
 #include "mold.h"
-#include "blake3.h"
 
+#include <blake3.h>
 #include <fstream>
 #include <functional>
 #include <optional>

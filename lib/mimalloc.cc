@@ -1,4 +1,4 @@
-#include "common.h"
+#include "lib.h"
 
 // Including mimalloc-new-delete.h overrides new/delete operators.
 // We need it only when we are using mimalloc as a dynamic library.

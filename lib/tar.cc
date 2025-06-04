@@ -1,6 +1,6 @@
 // This file contains functions to create a tar file.
 
-#include "common.h"
+#include "lib.h"
 
 #ifdef _WIN32
 # define ftruncate _chsize_s
