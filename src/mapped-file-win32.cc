@@ -1,4 +1,4 @@
-#include "common.h"
+#include "mold.h"
 
 namespace mold {
 

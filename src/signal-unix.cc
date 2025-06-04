@@ -1,4 +1,4 @@
-#include "common.h"
+#include "mold.h"
 
 #include <csignal>
 #include <tbb/version.h>
@@ -28,8 +28,7 @@ void cleanup() {
 // for the first time.
 //
 // If a disk becomes full as a result of a write to an mmap'ed memory
-// region, the failure of the write is reported as a SIGBUS or structured
-// exeption with code EXCEPTION_IN_PAGE_ERROR on Windows. This
+// region, the failure of the write is reported as a SIGBUS. This
 // signal handler catches that signal and prints out a user-friendly
 // error message. Without this, it is very hard to realize that the
 // disk might be full.

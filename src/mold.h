@@ -53,6 +53,199 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 extern std::string mold_version;
 
 //
+// error.cc
+//
+
+// Some C++ stdlibs don't support std::osyncstream even though
+// it's is in the C++20 standard. So we implement it ourselves.
+class SyncStream {
+public:
+  SyncStream(std::ostream &out) : out(out) {}
+  ~SyncStream() { emit(); }
+
+  void emit() {
+    if (!emitted) {
+      std::scoped_lock lock(mu);
+      out << ss.str() << '\n';
+      emitted = true;
+    }
+  }
+
+  template <typename T> SyncStream &operator<<(T &&val) {
+    ss << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  std::ostream &out;
+  std::stringstream ss;
+  bool emitted = false;
+  static inline std::mutex mu;
+};
+
+template <typename E>
+class Out {
+public:
+  Out(Context<E> &ctx) {}
+
+  template <typename T> Out &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncStream out{std::cout};
+};
+
+template <typename E>
+class Fatal {
+public:
+  Fatal(Context<E> &ctx);
+  [[noreturn]] ~Fatal();
+
+  template <typename T> Fatal &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncStream out{std::cerr};
+};
+
+template <typename E>
+class Error {
+public:
+  Error(Context<E> &ctx);
+
+  template <typename T> Error &operator<<(T &&val) {
+    out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  SyncStream out{std::cerr};
+};
+
+template <typename E>
+class Warn {
+public:
+  Warn(Context<E> &ctx);
+
+  template <typename T> Warn &operator<<(T &&val) {
+    if (out)
+      *out << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  std::optional<SyncStream> out;
+};
+
+//
+// signal-unix.cc
+//
+
+inline char *output_tmpfile = nullptr;
+inline u8 *output_buffer_start = nullptr;
+inline u8 *output_buffer_end = nullptr;
+
+std::string errno_string();
+void cleanup();
+void install_signal_handler();
+
+//
+// mapped-file-unix.cc
+//
+
+// MappedFile represents an mmap'ed input file.
+// mold uses mmap-IO only.
+class MappedFile {
+public:
+  ~MappedFile() { unmap(); }
+  void unmap();
+  void close_fd();
+  void reopen_fd(const std::string &path);
+
+  template <typename E>
+  MappedFile *slice(Context<E> &ctx, std::string name, u64 start, u64 size) {
+    MappedFile *mf = new MappedFile;
+    mf->name = name;
+    mf->data = data + start;
+    mf->size = size;
+    mf->parent = this;
+
+    ctx.mf_pool.emplace_back(mf);
+    return mf;
+  }
+
+  std::string_view get_contents() {
+    return std::string_view((char *)data, size);
+  }
+
+  i64 get_offset() const {
+    return parent ? (data - parent->data + parent->get_offset()) : 0;
+  }
+
+  // Returns a string that uniquely identify a file that is possibly
+  // in an archive.
+  std::string get_identifier() const {
+    if (parent) {
+      // We use the file offset within an archive as an identifier
+      // because archive members may have the same name.
+      return parent->name + ":" + std::to_string(get_offset());
+    }
+
+    if (thin_parent) {
+      // If this is a thin archive member, the filename part is
+      // guaranteed to be unique.
+      return thin_parent->name + ":" + name;
+    }
+    return name;
+  }
+
+  std::string name;
+  u8 *data = nullptr;
+  i64 size = 0;
+  bool given_fullpath = true;
+  MappedFile *parent = nullptr;
+  MappedFile *thin_parent = nullptr;
+
+  // For --dependency-file
+  bool is_dependency = true;
+
+#ifdef _WIN32
+  HANDLE fd = INVALID_HANDLE_VALUE;
+#else
+  int fd = -1;
+#endif
+};
+
+MappedFile *open_file_impl(const std::string &path, std::string &error);
+
+template <typename E>
+MappedFile *open_file(Context<E> &ctx, std::string path) {
+  if (path.starts_with('/') && !ctx.arg.chroot.empty())
+    path = ctx.arg.chroot + "/" + path_clean(path);
+
+  std::string error;
+  MappedFile *mf = open_file_impl(path, error);
+  if (!error.empty())
+    Fatal(ctx) << error;
+
+  if (mf)
+    ctx.mf_pool.emplace_back(mf);
+  return mf;
+}
+
+template <typename E>
+MappedFile *must_open_file(Context<E> &ctx, std::string path) {
+  MappedFile *mf = open_file(ctx, path);
+  if (!mf)
+    Fatal(ctx) << "cannot open " << path << ": " << errno_string();
+  return mf;
+}
+
+//
 // Mergeable section fragments
 //
 

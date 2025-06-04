@@ -326,6 +326,7 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   src/arch-sh4.cc
   src/archive-file.cc
   src/cmdline.cc
+  src/error.cc
   src/filetype.cc
   src/gc-sections.cc
   src/gdb-index.cc
@@ -407,14 +408,14 @@ target_sources(mold PRIVATE
 if(WIN32)
   target_sources(mold PRIVATE
     lib/jobs-win32.cc
-    lib/mapped-file-win32.cc
-    lib/signal-win32.cc
+    src/mapped-file-win32.cc
+    src/signal-win32.cc
     )
 else()
   target_sources(mold PRIVATE
     lib/jobs-unix.cc
-    lib/mapped-file-unix.cc
-    lib/signal-unix.cc
+    src/mapped-file-unix.cc
+    src/signal-unix.cc
     )
 endif()
 
