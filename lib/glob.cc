@@ -102,55 +102,58 @@ bool Glob::match(std::string_view str) {
   return do_match(str, elements);
 }
 
-bool Glob::do_match(std::string_view str, std::span<Element> elements) {
-  while (!elements.empty()) {
-    Element &e = elements[0];
-    elements = elements.subspan(1);
+// This glob match runs in nearly linear time. See
+// https://research.swtch.com/glob if you are interested.
+bool Glob::do_match(std::string_view str, std::span<Element> elem) {
+  i64 x = 0;
+  i64 y = 0;
+  i64 nx = 0;
+  i64 ny = 0;
 
-    switch (e.kind) {
-    case STRING:
-      if (!str.starts_with(e.str))
-        return false;
-      str = str.substr(e.str.size());
-      break;
-    case STAR:
-      if (elements.empty())
-        return true;
+  while (x < str.size() || y < elem.size()) {
+    if (y < elem.size()) {
+      Element &e = elem[y];
 
-      // Patterns like "*foo*bar*" should be much more common than more
-      // complex ones like "*foo*[abc]*" or "*foo**?bar*", so we optimize
-      // the former case here.
-      if (elements[0].kind == STRING) {
-        for (;;) {
-          size_t pos = str.find(elements[0].str);
-          if (pos == str.npos)
-            return false;
-          if (do_match(str.substr(pos + elements[0].str.size()),
-                       elements.subspan(1)))
-            return true;
-          str = str.substr(pos + 1);
+      switch (e.kind) {
+      case STRING:
+        if (x < str.size() && str.substr(x).starts_with(e.str)) {
+          x += e.str.size();
+          y++;
+          continue;
         }
+        break;
+      case STAR:
+        // Try to match at x. If that doesn't work out, restart at x+1 next.
+        nx = x + 1;
+        ny = y;
+        y++;
+        continue;
+      case QUESTION:
+        if (x < str.size()) {
+          x++;
+          y++;
+          continue;
+        }
+        break;
+      case BRACKET:
+        if (x < str.size() && e.bitset[str[x]]) {
+          x++;
+          y++;
+          continue;
+        }
+        break;
       }
-
-      // Other cases are handled here.
-      for (i64 j = 0; j < str.size(); j++)
-        if (do_match(str.substr(j), elements))
-          return true;
-      return false;
-    case QUESTION:
-      if (str.empty())
-        return false;
-      str = str.substr(1);
-      break;
-    case BRACKET:
-      if (str.empty() || !e.bitset[str[0]])
-        return false;
-      str = str.substr(1);
-      break;
     }
-  }
 
-  return str.empty();
+    // Mismatch. Maybe restart.
+    if (0 < nx && nx <= str.size()) {
+      x = nx;
+      y = ny;
+      continue;
+    }
+    return false;
+  }
+  return true;
 }
 
 } // namespace mold
