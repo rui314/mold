@@ -16,7 +16,6 @@ Fatal<E>::Fatal(Context<E> &ctx) {
 
 template <typename E>
 [[noreturn]] Fatal<E>::~Fatal() {
-  out << '\n';
   out.emit();
   cleanup();
   _exit(1);
@@ -45,12 +44,6 @@ Warn<E>::Warn(Context<E> &ctx) {
   } else {
     *out << (ctx.arg.color_diagnostics ? warning_color : warning_mono);
   }
-}
-
-template <typename E>
-Warn<E>::~Warn() {
-  if (out)
-    *out << '\n';
 }
 
 using E = MOLD_TARGET;

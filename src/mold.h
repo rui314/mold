@@ -14,7 +14,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <syncstream>
 #include <tbb/concurrent_hash_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/global_control.h>
@@ -57,11 +56,37 @@ extern std::string mold_version;
 // error.cc
 //
 
+// Some C++ stdlibs don't support std::osyncstream even though
+// it's is in the C++20 standard. So we implement it ourselves.
+class SyncStream {
+public:
+  SyncStream(std::ostream &out) : out(out) {}
+  ~SyncStream() { emit(); }
+
+  void emit() {
+    if (!emitted) {
+      std::scoped_lock lock(mu);
+      out << ss.str() << '\n';
+      emitted = true;
+    }
+  }
+
+  template <typename T> SyncStream &operator<<(T &&val) {
+    ss << std::forward<T>(val);
+    return *this;
+  }
+
+private:
+  std::ostream &out;
+  std::stringstream ss;
+  bool emitted = false;
+  static inline std::mutex mu;
+};
+
 template <typename E>
 class Out {
 public:
   Out(Context<E> &ctx) {}
-  ~Out() { out << '\n'; }
 
   template <typename T> Out &operator<<(T &&val) {
     out << std::forward<T>(val);
@@ -69,7 +94,7 @@ public:
   }
 
 private:
-  std::osyncstream out{std::cout};
+  SyncStream out{std::cout};
 };
 
 template <typename E>
@@ -84,14 +109,13 @@ public:
   }
 
 private:
-  std::osyncstream out{std::cerr};
+  SyncStream out{std::cerr};
 };
 
 template <typename E>
 class Error {
 public:
   Error(Context<E> &ctx);
-  ~Error() { out << '\n'; }
 
   template <typename T> Error &operator<<(T &&val) {
     out << std::forward<T>(val);
@@ -99,14 +123,13 @@ public:
   }
 
 private:
-  std::osyncstream out{std::cerr};
+  SyncStream out{std::cerr};
 };
 
 template <typename E>
 class Warn {
 public:
   Warn(Context<E> &ctx);
-  ~Warn();
 
   template <typename T> Warn &operator<<(T &&val) {
     if (out)
@@ -115,7 +138,7 @@ public:
   }
 
 private:
-  std::optional<std::osyncstream> out;
+  std::optional<SyncStream> out;
 };
 
 //
