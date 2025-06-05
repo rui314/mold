@@ -381,12 +381,12 @@ endforeach()
 
 # Add other non-template source files.
 target_sources(mold PRIVATE
+  lib/aho-corasick.cc
   lib/crc32.cc
   lib/demangle.cc
   lib/filepath.cc
   lib/glob.cc
   lib/hyperloglog.cc
-  lib/multi-glob.cc
   lib/perf.cc
   lib/random.cc
   lib/tar.cc

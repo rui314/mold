@@ -1992,7 +1992,7 @@ get_merged_output_name(Context<E> &ctx, std::string_view name, u64 flags,
                        i64 entsize, i64 addralign) {
   if (ctx.arg.relocatable && !ctx.arg.relocatable_merge_sections)
     return name;
-  if (ctx.arg.unique && ctx.arg.unique->match(name))
+  if (!ctx.arg.unique.empty() && ctx.arg.unique.find(name) != -1)
     return name;
 
   // GCC seems to create sections named ".rodata.strN.<mangled-symbol-name>.M"

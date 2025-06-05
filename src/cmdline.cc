@@ -859,10 +859,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("sysroot")) {
       ctx.arg.sysroot = arg;
     } else if (read_arg("unique")) {
-      std::optional<Glob> pat = Glob::compile(arg);
-      if (!pat)
+      if (!ctx.arg.unique.add(arg, 1))
         Fatal(ctx) << "-unique: invalid glob pattern: " << arg;
-      ctx.arg.unique = std::move(*pat);
     } else if (read_arg("unresolved-symbols")) {
       if (arg == "report-all" || arg == "ignore-in-shared-libs")
         report_undefined = true;

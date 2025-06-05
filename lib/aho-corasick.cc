@@ -13,36 +13,18 @@
 // of symbol strings.
 //
 // Aho-Corasick cannot handle complex patterns such as `*foo*bar*`.
-// We handle such patterns with the Glob class. Glob is relatively
-// slow, but complex patterns are rare in practice, so it should be
-// OK.
+// We handle such patterns with the Glob class.
 
 #include "lib.h"
 
 #include <queue>
-#include <regex>
 
 namespace mold {
 
-std::optional<i64> MultiGlob::find(std::string_view str) {
-  std::call_once(once, [&] { compile(); });
-  i64 val = -1;
+i64 AhoCorasick::find(std::string_view str) {
+  if (!root)
+    return -1;
 
-  // Match against simple glob patterns
-  if (root)
-    val = find_aho_corasick(str);
-
-  // Match against complex glob patterns
-  for (std::pair<Glob, i64> &glob : globs)
-    if (glob.first.match(str))
-      val = std::max(val, glob.second);
-
-  if (val == -1)
-    return {};
-  return val;
-}
-
-i64 MultiGlob::find_aho_corasick(std::string_view str) {
   TrieNode *node = root.get();
   i64 val = -1;
 
@@ -72,11 +54,6 @@ i64 MultiGlob::find_aho_corasick(std::string_view str) {
   return val;
 }
 
-static bool is_simple_pattern(std::string_view pat) {
-  static std::regex re(R"(\*?[^*[?]+\*?)", std::regex_constants::optimize);
-  return std::regex_match(pat.begin(), pat.end(), re);
-}
-
 static std::string handle_stars(std::string_view pat) {
   std::string str(pat);
 
@@ -92,22 +69,9 @@ static std::string handle_stars(std::string_view pat) {
   return "\0"s + str + "\0"s;
 }
 
-bool MultiGlob::add(std::string_view pat, i64 val) {
-  assert(!is_compiled);
-  assert(!pat.empty());
-
+bool AhoCorasick::add(std::string_view pat, i64 val) {
   strings.emplace_back(pat);
 
-  // Complex glob pattern
-  if (!is_simple_pattern(pat)) {
-    if (std::optional<Glob> glob = Glob::compile(pat)) {
-      globs.emplace_back(std::move(*glob), val);
-      return true;
-    }
-    return false;
-  }
-
-  // Simple glob pattern
   if (!root)
     root.reset(new TrieNode);
   TrieNode *node = root.get();
@@ -122,25 +86,25 @@ bool MultiGlob::add(std::string_view pat, i64 val) {
   return true;
 }
 
-void MultiGlob::compile() {
-  is_compiled = true;
-  if (root) {
-    fix_suffix_links(*root);
-    fix_values();
+void AhoCorasick::compile() {
+  if (!root)
+    return;
 
-    // If no pattern starts with '*', set prefix_match to true.
-    // We'll use this flag for optimization.
-    prefix_match = true;
-    for (i64 i = 1; i < 256; i++) {
-      if (root->children[i]) {
-        prefix_match = false;
-        break;
-      }
+  fix_suffix_links(*root);
+  fix_values();
+
+  // If no pattern starts with '*', set prefix_match to true.
+  // We'll use this flag for optimization.
+  prefix_match = true;
+  for (i64 i = 1; i < 256; i++) {
+    if (root->children[i]) {
+      prefix_match = false;
+      break;
     }
   }
 }
 
-void MultiGlob::fix_suffix_links(TrieNode &node) {
+void AhoCorasick::fix_suffix_links(TrieNode &node) {
   for (i64 i = 0; i < 256; i++) {
     if (!node.children[i])
       continue;
@@ -166,7 +130,7 @@ void MultiGlob::fix_suffix_links(TrieNode &node) {
   }
 }
 
-void MultiGlob::fix_values() {
+void AhoCorasick::fix_values() {
   std::queue<TrieNode *> queue;
   queue.push(root.get());
 

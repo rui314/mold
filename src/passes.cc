@@ -207,7 +207,8 @@ static void mark_live_objects(Context<E> &ctx) {
     tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
       if (!file->is_reachable) {
         for (Symbol<E> *sym : file->get_global_syms()) {
-          if (sym->file == file && ctx.arg.undefined_glob.find(sym->name())) {
+          if (sym->file == file &&
+              ctx.arg.undefined_glob.find(sym->name()) != -1) {
             file->is_reachable = true;
             sym->gc_root = true;
             break;
@@ -488,7 +489,7 @@ static std::string_view
 get_output_name(Context<E> &ctx, std::string_view name, u64 flags) {
   if (ctx.arg.relocatable && !ctx.arg.relocatable_merge_sections)
     return name;
-  if (ctx.arg.unique && ctx.arg.unique->match(name))
+  if (!ctx.arg.unique.empty() && ctx.arg.unique.find(name) != -1)
     return name;
   if (flags & SHF_MERGE)
     return name;
@@ -2005,8 +2006,8 @@ void apply_version_script(Context<E> &ctx) {
 
   // Assign versions to symbols specified with `extern "C++"` or
   // wildcard patterns first.
-  MultiGlob matcher;
-  MultiGlob cpp_matcher;
+  Glob matcher;
+  Glob cpp_matcher;
 
   // The "local:" label has a special meaning in the version script.
   // It can appear in any VERSION clause, and it hides matched symbols
@@ -2043,18 +2044,14 @@ void apply_version_script(Context<E> &ctx) {
           continue;
 
         std::string_view name = sym->name();
-        i64 match = -1;
-
-        if (std::optional<i64> idx = matcher.find(name))
-          match = std::max(match, *idx);
+        i64 match = matcher.find(name);
 
         // Match non-mangled symbols against the C++ pattern as well.
         // Weird, but required to match other linkers' behavior.
         if (!cpp_matcher.empty()) {
           if (std::optional<std::string_view> s = demangle_cpp(name))
             name = *s;
-          if (std::optional<i64> idx = cpp_matcher.find(name))
-            match = std::max(match, *idx);
+          match = std::max(match, cpp_matcher.find(name));
         }
 
         if (match != -1)
@@ -2232,8 +2229,8 @@ void compute_import_export(Context<E> &ctx) {
   // exported so that they are interposable. In other words, symbols
   // that did not match will be bound locally within the output file,
   // effectively turning them into protected symbols.
-  MultiGlob matcher;
-  MultiGlob cpp_matcher;
+  Glob matcher;
+  Glob cpp_matcher;
 
   auto handle_match = [&](Symbol<E> *sym) {
     if (ctx.arg.shared) {
@@ -2273,12 +2270,12 @@ void compute_import_export(Context<E> &ctx) {
 
         std::string_view name = sym->name();
 
-        if (matcher.find(name)) {
+        if (matcher.find(name) != -1) {
           handle_match(sym);
         } else if (!cpp_matcher.empty()) {
           if (std::optional<std::string_view> s = demangle_cpp(name))
             name = *s;
-          if (cpp_matcher.find(name))
+          if (cpp_matcher.find(name) != -1)
             handle_match(sym);
         }
       }

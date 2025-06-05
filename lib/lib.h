@@ -2,6 +2,7 @@
 
 #include "atomics.h"
 #include "integers.h"
+#include "bitset.h"
 
 #include <array>
 #include <atomic>
@@ -548,39 +549,15 @@ private:
 };
 
 //
-// glob.cc
+// aho-corasick.cc
 //
 
-class Glob {
-  typedef enum { STRING, STAR, QUESTION, BRACKET } Kind;
-
-  struct Element {
-    Element(Kind k) : kind(k) {}
-    Kind kind;
-    std::string str;
-    std::bitset<256> bitset;
-  };
-
-public:
-  static std::optional<Glob> compile(std::string_view pat);
-  bool match(std::string_view str);
-
-private:
-  Glob(std::vector<Element> &&vec) : elements(vec) {}
-  static bool do_match(std::string_view str, std::span<Element> elements);
-
-  std::vector<Element> elements;
-};
-
-//
-// multi-glob.cc
-//
-
-class MultiGlob {
+class AhoCorasick {
 public:
   bool add(std::string_view pat, i64 val);
   bool empty() const { return strings.empty(); }
-  std::optional<i64> find(std::string_view str);
+  void compile();
+  i64 find(std::string_view str);
 
 private:
   struct TrieNode {
@@ -589,17 +566,55 @@ private:
     std::unique_ptr<TrieNode> children[256];
   };
 
-  void compile();
   void fix_suffix_links(TrieNode &node);
   void fix_values();
-  i64 find_aho_corasick(std::string_view str);
 
   std::vector<std::string> strings;
   std::unique_ptr<TrieNode> root;
-  std::vector<std::pair<Glob, i64>> globs;
+  bool prefix_match = false;
+};
+
+//
+// glob.cc
+//
+
+class MultiGlob {
+public:
+  bool add(std::string_view pat, i64 val);
+  bool empty() const { return states.empty(); }
+  void compile();
+  i64 find(std::string_view str);
+
+private:
+  struct State {
+    std::bitset<256> bitset;
+    bool is_star = false;
+  };
+
+  static std::vector<State> parse_glob(std::string_view pat);
+
+  std::vector<State> states;
+  std::vector<i64> start_pos;
+  std::vector<i64> accept_pos;
+  std::vector<i64> values;
+
+  Bitset start_mask;
+  Bitset star_mask;
+  std::array<Bitset, 256> char_mask;
+};
+
+class Glob {
+public:
+  bool add(std::string_view pat, i64 val);
+  bool empty() const { return glob.empty() && aho_corasick.empty(); }
+  i64 find(std::string_view str);
+
+private:
   std::once_flag once;
   bool is_compiled = false;
-  bool prefix_match = false;
+
+  MultiGlob glob;
+  AhoCorasick aho_corasick;
 };
 
 //

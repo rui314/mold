@@ -2197,7 +2197,8 @@ struct Context {
     BsymbolicKind Bsymbolic = BSYMBOLIC_NONE;
     BuildId build_id;
     CetReportKind z_cet_report = CET_REPORT_NONE;
-    MultiGlob undefined_glob;
+    Glob undefined_glob;
+    Glob unique;
     SeparateCodeKind z_separate_code = NOSEPARATE_CODE;
     ShuffleSectionsKind shuffle_sections = SHUFFLE_SECTIONS_NONE;
     Symbol<E> *entry = nullptr;
@@ -2287,7 +2288,6 @@ struct Context {
     i64 spare_program_headers = 0;
     i64 thread_count = 0;
     i64 z_stack_size = 0;
-    std::optional<Glob> unique;
     std::optional<u64> physical_image_base;
     std::optional<std::vector<Symbol<E> *>> retain_symbols_file;
     std::string Map;
