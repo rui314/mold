@@ -559,6 +559,8 @@ public:
   void compile();
   i64 find(std::string_view str);
 
+  static bool can_handle(std::string_view str);
+
 private:
   struct TrieNode {
     i64 value = -1;
@@ -585,14 +587,12 @@ public:
   void compile();
   i64 find(std::string_view str);
 
-private:
   struct State {
     std::bitset<256> bitset;
     bool is_star = false;
   };
 
-  static std::vector<State> parse_glob(std::string_view pat);
-
+private:
   std::vector<State> states;
   std::vector<i64> start_pos;
   std::vector<i64> accept_pos;

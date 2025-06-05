@@ -41,8 +41,8 @@
 //
 // Each state of an NFA can be represented by a single bit. If a bit is 1,
 // the state machine is in that state. Otherwise, it's not. Observe that a
-// state whose "is_star" flag becomes 1 will stay 1 forever, as the state
-// machine can loop over that state for any input character.
+// state with the "is_star" flag will continued to be 1 once it becomes 1,
+// since the state machine can loop over the state on any input character.
 //
 // With that observation, we can represent an NFA with a bit vector of N
 // bits, where N is the number of NFA states. For each input character, bit
@@ -67,8 +67,8 @@
 
 namespace mold {
 
-std::vector<MultiGlob::State> MultiGlob::parse_glob(std::string_view pat) {
-  std::vector<State> vec(1);
+static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
+  std::vector<MultiGlob::State> vec(1);
 
   while (!pat.empty()) {
     u8 c = pat[0];
@@ -212,16 +212,11 @@ i64 MultiGlob::find(std::string_view str) {
   return -1;
 }
 
-static bool is_simple_pattern(std::string_view pat) {
-  static std::regex re(R"(\*?[^*[?]+\*?)", std::regex_constants::optimize);
-  return std::regex_match(pat.begin(), pat.end(), re);
-}
-
 bool Glob::add(std::string_view pat, i64 val) {
   assert(val >= 0);
   assert(!is_compiled);
 
-  if (is_simple_pattern(pat))
+  if (AhoCorasick::can_handle(pat))
     return aho_corasick.add(pat, val);
   return glob.add(pat, val);
 }
