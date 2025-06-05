@@ -110,6 +110,10 @@ bool Glob::do_match(std::string_view str, std::span<Element> elem) {
   i64 nx = 0;
   i64 ny = 0;
 
+  if (Element &e = elem.back();
+      e.kind == STRING && !str.ends_with(e.str))
+    return false;
+
   while (x < str.size() || y < elem.size()) {
     if (y < elem.size()) {
       Element &e = elem[y];
@@ -127,6 +131,18 @@ bool Glob::do_match(std::string_view str, std::span<Element> elem) {
         nx = x + 1;
         ny = y;
         y++;
+
+        // Patterns like "*foo*bar*" are much more common than more
+        // complex ones like "*foo*[abc]*" or "*foo**?bar*", so we
+        // optimize the former case here.
+        if (x < str.size() && y + 1 < elem.size() &&
+            elem[y].kind == STRING && elem[y + 1].kind == STAR) {
+          size_t pos = str.find(elem[y].str, x);
+          if (pos != str.npos) {
+            x = pos + elem[y].str.size();
+            y++;
+          }
+        }
         continue;
       case QUESTION:
         if (x < str.size()) {
