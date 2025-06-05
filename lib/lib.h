@@ -599,20 +599,20 @@ private:
   std::vector<i64> values;
 
   Bitvector star_mask;
-  std::array<Bitvector, 256> char_mask;
+  Bitvector char_mask[256];
 };
 
 class Glob {
 public:
   bool add(std::string_view pat, i64 val);
-  bool empty() const { return glob.empty() && aho_corasick.empty(); }
+  bool empty() const { return multi_glob.empty() && aho_corasick.empty(); }
   i64 find(std::string_view str);
 
 private:
   std::once_flag once;
   bool is_compiled = false;
 
-  MultiGlob glob;
+  MultiGlob multi_glob;
   AhoCorasick aho_corasick;
 };
 

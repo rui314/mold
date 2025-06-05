@@ -35,9 +35,9 @@
 //
 // An NFA constructed this way doesn't have any complicated loops,
 // ε-transitions, or anything like that. The only loops in the state
-// transition are the self-loops on states following a "*". Aside from that,
-// the state machine progresses linearly from the start state to the accept
-// state.
+// transition are the self-loops on states followed by a "*". Aside from
+// that, the state machine progresses linearly from the start state to the
+// accept state.
 //
 // Each state of an NFA can be represented by a single bit. If a bit is 1,
 // the non-deterministic state machine is in that state. Otherwise, it's
@@ -60,6 +60,9 @@
 //
 // This propagation can be implemented with bitwise OR, bitwise AND, and a
 // one-bit bit shift on the bit vector. All these operations are very cheap.
+//
+// We can combine multiple glob matchers into a single matcher by simply
+// concatenating the bit vectors of their state machines.
 
 #include "lib.h"
 
@@ -215,19 +218,21 @@ bool Glob::add(std::string_view pat, i64 val) {
   assert(val >= 0);
   assert(!is_compiled);
 
+  // If the pattern requires only a single substring search, the
+  // Aho-Corasick algorithm is even faster than our glob matcher.
   if (AhoCorasick::can_handle(pat))
     return aho_corasick.add(pat, val);
-  return glob.add(pat, val);
+  return multi_glob.add(pat, val);
 }
 
 i64 Glob::find(std::string_view str) {
   std::call_once(once, [&] {
-    glob.compile();
+    multi_glob.compile();
     aho_corasick.compile();
     is_compiled = true;
   });
 
-  return std::max(glob.find(str), aho_corasick.find(str));
+  return std::max(multi_glob.find(str), aho_corasick.find(str));
 }
 
 } // namespace mold
