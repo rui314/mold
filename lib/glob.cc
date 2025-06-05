@@ -27,22 +27,23 @@
 //
 // We can construct such an NFA in a straightforward manner. We maintain NFA
 // states as a list, with the initial contents being the start state. Each
-// character except for "*" creates a new NFA state, add a transition from
-// the last state in the list to the new one, and append the new state at
+// character except for "*" creates a new NFA state, adds a transition from
+// the last state in the list to the new one, and appends the new state at
 // the end of the list. "*" sets the "is_star" flag on the last NFA state.
 // The flag indicates that the state machine can remain in the state for any
 // input character.
 //
 // An NFA constructed this way doesn't have any complicated loops,
 // ε-transitions, or anything like that. The only loops in the state
-// transition graph are the self-loops on states following a "*". Aside from
-// that, the state machine progresses linearly from the start state to the
-// accept state.
+// transition are the self-loops on states following a "*". Aside from that,
+// the state machine progresses linearly from the start state to the accept
+// state.
 //
 // Each state of an NFA can be represented by a single bit. If a bit is 1,
-// the state machine is in that state. Otherwise, it's not. Observe that a
-// state with the "is_star" flag will continued to be 1 once it becomes 1,
-// since the state machine can loop over the state on any input character.
+// the non-deterministic state machine is in that state. Otherwise, it's
+// not. Observe that a state with the "is_star" flag will continued to be 1
+// once it becomes 1, since the state machine can loop over the state on any
+// input character.
 //
 // With that observation, we can represent an NFA with a bit vector of N
 // bits, where N is the number of NFA states. For each input character, bit
@@ -53,12 +54,12 @@
 //   - bit M is 1 and state_M's "is_star" flag is 1.
 //
 // Initially, the 0th bit is 1 for the start state. At each step, the bits
-// propagate from least-significant to most significant positions, at most
+// propagate from least significant to most significant positions, at most
 // one bit at a time. If the most significant bit is 1 after the entire
 // input has been processed, the string matches.
 //
 // This propagation can be implemented with bitwise OR, bitwise AND, and a
-// one-bit bitshift on the bit vector. All these operations are very cheap.
+// one-bit bit shift on the bit vector. All these operations are very cheap.
 
 #include "lib.h"
 
@@ -171,23 +172,18 @@ bool MultiGlob::add(std::string_view pat, i64 val) {
 void MultiGlob::compile() {
   if (states.empty())
     return;
-
   i64 sz = states.size();
-  start_mask.resize(sz);
+
   star_mask.resize(sz);
-
-  for (i64 i = 0; i < 256; i++)
-    char_mask[i].resize(sz);
-
-  for (i64 pos : start_pos)
-    start_mask[pos] = true;
-
-  for (i64 i = 0; i < sz; i++) {
+  for (i64 i = 0; i < sz; i++)
     if (states[i].is_star)
       star_mask[i] = true;
-    for (i64 j = 0; j < 256; j++)
-      if (states[i].bitset[j])
-        char_mask[j][i - 1] = true;
+
+  for (i64 i = 0; i < 256; i++) {
+    char_mask[i].resize(sz);
+    for (i64 j = 1; j < sz; j++)
+      if (states[j].bitset[i])
+        char_mask[i][j - 1] = true;
   }
 }
 
@@ -195,8 +191,11 @@ i64 MultiGlob::find(std::string_view str) {
   if (states.empty())
     return -1;
 
-  Bitset bits = start_mask;
-  Bitset tmp(start_mask.size);
+  Bitvector bits(states.size());
+  Bitvector tmp(states.size());
+
+  for (i64 pos : start_pos)
+    bits[pos] = true;
 
   for (u8 c : str) {
     tmp = bits;

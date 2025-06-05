@@ -7,12 +7,12 @@
 
 namespace mold {
 
-class BitsetProxy {
+class BitvectorProxy {
 public:
-  BitsetProxy(u64 &word, size_t pos)
+  BitvectorProxy(u64 &word, size_t pos)
     : word(word), mask(1ULL << pos) {}
 
-  BitsetProxy &operator=(bool val) {
+  BitvectorProxy &operator=(bool val) {
     if (val)
       word |= mask;
     else
@@ -20,7 +20,7 @@ public:
     return *this;
   }
 
-  BitsetProxy &operator=(const BitsetProxy &other) {
+  BitvectorProxy &operator=(const BitvectorProxy &other) {
     return *this = (bool)other;
   }
 
@@ -33,10 +33,10 @@ private:
   u64 mask;
 };
 
-class Bitset {
+class Bitvector {
 public:
-  Bitset() = default;
-  Bitset(i64 size) { resize(size); }
+  Bitvector() = default;
+  Bitvector(i64 size) { resize(size); }
 
   void resize(i64 n) {
     words.clear();
@@ -44,21 +44,21 @@ public:
     size = n;
   }
 
-  Bitset &operator|=(const Bitset &x) {
+  Bitvector &operator|=(const Bitvector &x) {
     assert(size == x.size);
     for (i64 i = 0; i < words.size(); i++)
       words[i] |= x.words[i];
     return *this;
   }
 
-  Bitset &operator&=(const Bitset &x) {
+  Bitvector &operator&=(const Bitvector &x) {
     assert(size == x.size);
     for (i64 i = 0; i < words.size(); i++)
       words[i] &= x.words[i];
     return *this;
   }
 
-  Bitset &operator<<=(size_t n) {
+  Bitvector &operator<<=(size_t n) {
     assert(n == 1);
     for (i64 i = words.size() - 1; i > 0; i--)
       words[i] = (words[i] << 1) | (words[i - 1] >> 63);
@@ -66,7 +66,7 @@ public:
     return *this;
   }
 
-  BitsetProxy operator[](size_t pos) {
+  BitvectorProxy operator[](size_t pos) {
     assert(pos < size);
     return {words[pos / 64], pos % 64};
   }

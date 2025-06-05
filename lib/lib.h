@@ -2,7 +2,7 @@
 
 #include "atomics.h"
 #include "integers.h"
-#include "bitset.h"
+#include "bitvector.h"
 
 #include <array>
 #include <atomic>
@@ -598,9 +598,8 @@ private:
   std::vector<i64> accept_pos;
   std::vector<i64> values;
 
-  Bitset start_mask;
-  Bitset star_mask;
-  std::array<Bitset, 256> char_mask;
+  Bitvector star_mask;
+  std::array<Bitvector, 256> char_mask;
 };
 
 class Glob {
