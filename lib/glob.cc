@@ -53,10 +53,12 @@
 //   - bit M is 1 and state_M's "is_star" flag is 1.
 //
 // Initially, the 0th bit is 1 for the start state. At each step, the bits
-// propagate from least-significant to most significant positions, one bit
-// at a time. If the most significant bit is 1 after the entire input has
-// been processed, the string matches. This propagation can be implemented
-// with bitwise OR, bitwise AND, and a one-bit shift on the bit vector.
+// propagate from least-significant to most significant positions, at most
+// one bit at a time. If the most significant bit is 1 after the entire
+// input has been processed, the string matches.
+//
+// This propagation can be implemented with bitwise OR, bitwise AND, and a
+// one-bit bitshift on the bit vector. All these operations are very cheap.
 
 #include "lib.h"
 
@@ -149,7 +151,7 @@ std::vector<MultiGlob::State> MultiGlob::parse_glob(std::string_view pat) {
       break;
     }
 
-    vec.emplace_back(bitset, false);
+    vec.push_back({bitset, false});
   }
   return vec;
 }
