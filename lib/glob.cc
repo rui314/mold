@@ -157,6 +157,10 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
   return vec;
 }
 
+// Instead of returning just a match/no match boolean value, our glob
+// matcher returns an integer value associated with each given pattern.
+// If multiple patterns match at the same time, the largest associated
+// value will be returned by find().
 bool MultiGlob::add(std::string_view pat, i64 val) {
   std::vector<State> vec = parse_glob(pat);
   if (vec.empty())
