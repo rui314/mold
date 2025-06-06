@@ -588,7 +588,7 @@ public:
   i64 find(std::string_view str);
 
   struct State {
-    std::bitset<256> bitset;
+    std::bitset<256> incoming_edge;
     bool is_star = false;
   };
 

@@ -34,10 +34,10 @@
 // input character.
 //
 // An NFA constructed this way doesn't have any complicated loops,
-// ε-transitions, or anything like that. The only loops in the state
-// transition are the self-loops on states followed by a "*". Aside from
-// that, the state machine progresses linearly from the start state to the
-// accept state.
+// ε-transitions, or anything like that. Each state has only one incoming
+// edge. The only loops in the state transition are the self-loops on states
+// followed by a "*". Aside from that, the state machine progresses linearly
+// from the start state to the accept state.
 //
 // Each state of an NFA can be represented by a single bit. If a bit is 1,
 // the non-deterministic state machine is in that state. Otherwise, it's
@@ -67,7 +67,6 @@
 #include "lib.h"
 
 #include <cstring>
-#include <regex>
 
 namespace mold {
 
@@ -77,12 +76,21 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
   while (!pat.empty()) {
     u8 c = pat[0];
     pat = pat.substr(1);
-    std::bitset<256> bitset;
+    std::bitset<256> chars;
 
     switch (c) {
     case '*':
       vec.back().is_star = true;
       continue;
+    case '?':
+      chars.set();
+      break;
+    case '\\':
+      if (pat.empty())
+        return {};
+      chars[pat[0]] = true;
+      pat = pat.substr(1);
+      break;
     case '[': {
       // Here are a few bracket pattern examples:
       //
@@ -91,12 +99,12 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
       // [a-czg-i]: a, b, c, z, g, h, or i
       // [^a-z]: Any character except lowercase letters
       bool negate = false;
+      bool closed = false;
+
       if (!pat.empty() && pat[0] == '^') {
         negate = true;
         pat = pat.substr(1);
       }
-
-      bool closed = false;
 
       while (!pat.empty()) {
         if (pat[0] == ']') {
@@ -127,9 +135,9 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
             return {};
 
           for (i64 i = start; i <= end; i++)
-            bitset[i] = true;
+            chars[i] = true;
         } else {
-          bitset[pat[0]] = true;
+          chars[pat[0]] = true;
           pat = pat.substr(1);
         }
       }
@@ -138,24 +146,15 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
         return {};
 
       if (negate)
-        bitset.flip();
+        chars.flip();
       break;
     }
-    case '?':
-      bitset.flip();
-      break;
-    case '\\':
-      if (pat.empty())
-        return {};
-      bitset[pat[0]] = true;
-      pat = pat.substr(1);
-      break;
     default:
-      bitset[c] = true;
+      chars[c] = true;
       break;
     }
 
-    vec.push_back({bitset, false});
+    vec.push_back({chars, false});
   }
   return vec;
 }
@@ -185,8 +184,8 @@ void MultiGlob::compile() {
   for (i64 i = 0; i < 256; i++) {
     char_mask[i].resize(sz);
     for (i64 j = 1; j < sz; j++)
-      if (states[j].bitset[i])
-        char_mask[i][j - 1] = true;
+      if (states[j].incoming_edge[i])
+        char_mask[i][j] = true;
   }
 }
 
@@ -201,10 +200,16 @@ i64 MultiGlob::find(std::string_view str) {
     bits[pos] = true;
 
   for (u8 c : str) {
+    // This is equivalent to
+    //
+    //   bits = (bits & star_mask) | ((bits << 1) & char_mask[c])
+    //
+    // but we update the existing objects in place to avoid allocating
+    // temporary objects.
     tmp = bits;
     tmp &= star_mask;
-    bits &= char_mask[c];
     bits <<= 1;
+    bits &= char_mask[c];
     bits |= tmp;
   }
 
@@ -220,7 +225,7 @@ bool Glob::add(std::string_view pat, i64 val) {
 
   // If the pattern requires only a single substring search, the
   // Aho-Corasick algorithm is even faster than our glob matcher.
-  if (AhoCorasick::can_handle(pat))
+  if (aho_corasick.can_handle(pat))
     return aho_corasick.add(pat, val);
   return multi_glob.add(pat, val);
 }
