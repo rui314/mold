@@ -583,7 +583,7 @@ private:
 class MultiGlob {
 public:
   bool add(std::string_view pat, i64 val);
-  bool empty() const { return states.empty(); }
+  bool empty() const { return patterns.empty(); }
   void compile();
   i64 find(std::string_view str);
 
@@ -592,12 +592,14 @@ public:
     bool is_star = false;
   };
 
-private:
-  std::vector<State> states;
-  std::vector<i64> start_pos;
-  std::vector<i64> accept_pos;
-  std::vector<i64> values;
+  struct GlobPattern {
+    std::vector<State> states;
+    i64 value = -1;
+  };
 
+private:
+  std::vector<GlobPattern> patterns;
+  Bitvector start_states;
   Bitvector star_mask;
   Bitvector char_mask[256];
 };

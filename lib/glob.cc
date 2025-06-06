@@ -19,11 +19,9 @@
 // and q_accept, with the following transition functions:
 //
 //   δ(q_start, "a") = q1
-//   δ(q1, σ) = q1
+//   δ(q1, <any character>) = q1
 //   δ(q1, "b") = q_accept
-//   δ(q_accept, σ) = q_accept
-//
-// where σ is any single input character.
+//   δ(q_accept, <any character>) = q_accept
 //
 // We can construct such an NFA in a straightforward manner. We maintain NFA
 // states as a list, with the initial contents being the start state. Each
@@ -163,18 +161,26 @@ bool MultiGlob::add(std::string_view pat, i64 val) {
   std::vector<State> vec = parse_glob(pat);
   if (vec.empty())
     return false;
-
-  start_pos.push_back(states.size());
-  append(states, vec);
-  accept_pos.push_back(states.size() - 1);
-  values.push_back(val);
+  patterns.push_back({std::move(vec), val});
   return true;
 }
 
 void MultiGlob::compile() {
-  if (states.empty())
+  if (patterns.empty())
     return;
+
+  ranges::stable_sort(patterns, ranges::greater(), &GlobPattern::value);
+
+  std::vector<State> states;
+  for (GlobPattern &p : patterns)
+    append(states, p.states);
   i64 sz = states.size();
+
+  start_states.resize(sz);
+  for (i64 pos = 0; GlobPattern &p : patterns) {
+    start_states[pos] = true;
+    pos += p.states.size();
+  }
 
   star_mask.resize(sz);
   for (i64 i = 0; i < sz; i++)
@@ -183,21 +189,18 @@ void MultiGlob::compile() {
 
   for (i64 i = 0; i < 256; i++) {
     char_mask[i].resize(sz);
-    for (i64 j = 1; j < sz; j++)
+    for (i64 j = 0; j < sz; j++)
       if (states[j].incoming_edge[i])
         char_mask[i][j] = true;
   }
 }
 
 i64 MultiGlob::find(std::string_view str) {
-  if (states.empty())
+  if (patterns.empty())
     return -1;
 
-  Bitvector bits(states.size());
-  Bitvector tmp(states.size());
-
-  for (i64 pos : start_pos)
-    bits[pos] = true;
+  Bitvector bits = start_states;
+  Bitvector tmp;
 
   for (u8 c : str) {
     // This is equivalent to
@@ -213,9 +216,11 @@ i64 MultiGlob::find(std::string_view str) {
     bits |= tmp;
   }
 
-  for (i64 i = 0; i < accept_pos.size(); i++)
-    if (bits[accept_pos[i]])
-      return values[i];
+  for (i64 pos = 0; GlobPattern &p : patterns) {
+    pos += p.states.size();
+    if (bits[pos - 1])
+      return p.value;
+  }
   return -1;
 }
 

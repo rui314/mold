@@ -36,7 +36,7 @@ private:
 class Bitvector {
 public:
   Bitvector() = default;
-  Bitvector(i64 size) { resize(size); }
+  Bitvector(i64 n) : size(n), words((n + 63) / 64) {}
 
   void resize(i64 n) {
     words.clear();
