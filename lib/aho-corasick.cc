@@ -1,19 +1,19 @@
-// This file implements the Aho-Corasick algorithm to match multiple
-// glob patterns to symbol strings as quickly as possible.
+// This file implements the Aho-Corasick algorithm to search multiple
+// strings within an input string simultaneously. It is essentially a
+// trie with additional links. For details, see
+// https://en.wikipedia.org/wiki/Aho-Corasick_algorithm.
 //
-// Here are some examples of glob patterns:
+// We use it for simple glob patterns in version scripts or dynamic
+// list files. Here are some examples of glob patterns:
 //
 //    qt_private_api_tag*
 //    *16QAccessibleCache*
 //    *32QAbstractFileIconProviderPrivate*
 //    *17QPixmapIconEngine*
 //
-// `*` is a wildcard that matches any substring. We sometimes have
-// hundreds of glob patterns and have to match them against millions
-// of symbol strings.
-//
-// Aho-Corasick cannot handle complex patterns such as `*foo*bar*`.
-// We handle such patterns with the Glob class.
+// Aho-Corasick can do only substring search, so it cannot handle
+// complex glob patterns such as `*foo*bar*`. We handle such patterns
+// with the Glob class.
 
 #include "lib.h"
 
@@ -30,127 +30,103 @@ bool AhoCorasick::can_handle(std::string_view str) {
 }
 
 i64 AhoCorasick::find(std::string_view str) {
-  if (!root)
+  if (nodes.empty())
     return -1;
 
-  TrieNode *node = root.get();
+  i64 idx = 0;
   i64 val = -1;
 
   auto walk = [&](u8 c) {
-    for (;;) {
-      if (node->children[c]) {
-        node = node->children[c].get();
-        val = std::max(val, node->value);
+    for (i64 j = idx; j != -1; j = nodes[j].suffix_link) {
+      i64 child = nodes[j].children[c];
+      if (child != -1) {
+        idx = child;
+        val = std::max(val, nodes[child].value);
         return;
       }
-
-      if (!node->suffix_link)
-        return;
-      node = node->suffix_link;
     }
+    idx = 0;
   };
 
   walk('\0');
-
-  for (u8 c : str) {
-    if (prefix_match && node == root.get())
-      return val;
+  for (u8 c : str)
     walk(c);
-  }
-
   walk('\0');
   return val;
 }
 
-static std::string handle_stars(std::string_view pat) {
-  std::string str(pat);
-
-  // Convert "foo" -> "\0foo\0", "*foo" -> "foo\0", "foo*" -> "\0foo"
-  // and "*foo*" -> "foo". Aho-Corasick can do only substring matching,
-  // so we use \0 as beginning/end-of-string markers.
-  if (str.starts_with('*') && str.ends_with('*'))
-    return str.substr(1, str.size() - 2);
-  if (str.starts_with('*'))
-    return str.substr(1) + "\0"s;
-  if (str.ends_with('*'))
-    return "\0"s + str.substr(0, str.size() - 1);
-  return "\0"s + str + "\0"s;
-}
-
 bool AhoCorasick::add(std::string_view pat, i64 val) {
+  assert(can_handle(pat));
+
   strings.emplace_back(pat);
+  if (nodes.empty())
+    nodes.resize(1);
+  i64 idx = 0;
 
-  if (!root)
-    root.reset(new TrieNode);
-  TrieNode *node = root.get();
+  auto walk = [&](u8 c) {
+    if (nodes[idx].children[c] == -1) {
+      nodes[idx].children[c] = nodes.size();
+      nodes.resize(nodes.size() + 1);
+    }
+    idx = nodes[idx].children[c];
+  };
 
-  for (u8 c : handle_stars(pat)) {
-    if (!node->children[c])
-      node->children[c].reset(new TrieNode);
-    node = node->children[c].get();
-  }
+  // We handle "foo" as if "\0foo\0", "*foo" as if "foo\0", "foo*" as
+  // if "\0foo", and "*foo*" as if "foo". Aho-Corasick can do only
+  // substring matching, so we use \0 as a beginning/end-of-string
+  // markers.
+  if (!pat.starts_with('*'))
+    walk('\0');
+  for (u8 c : pat)
+    if (c != '*')
+      walk(c);
+  if (!pat.ends_with('*'))
+    walk('\0');
 
-  node->value = std::max(node->value, val);
+  nodes[idx].value = std::max(nodes[idx].value, val);
   return true;
 }
 
 void AhoCorasick::compile() {
-  if (!root)
+  if (nodes.empty())
     return;
-
-  fix_suffix_links(*root);
+  fix_suffix_links(0);
   fix_values();
-
-  // If no pattern starts with '*', set prefix_match to true.
-  // We'll use this flag for optimization.
-  prefix_match = true;
-  for (i64 i = 1; i < 256; i++) {
-    if (root->children[i]) {
-      prefix_match = false;
-      break;
-    }
-  }
 }
 
-void AhoCorasick::fix_suffix_links(TrieNode &node) {
+void AhoCorasick::fix_suffix_links(i64 idx) {
   for (i64 i = 0; i < 256; i++) {
-    if (!node.children[i])
+    i64 child = nodes[idx].children[i];
+    if (child == -1)
       continue;
 
-    TrieNode &child = *node.children[i];
-
-    TrieNode *cur = node.suffix_link;
-    for (;;) {
-      if (!cur) {
-        child.suffix_link = root.get();
+    i64 j = nodes[idx].suffix_link;
+    for (; j != -1; j = nodes[j].suffix_link) {
+      if (nodes[j].children[i] != -1) {
+        nodes[child].suffix_link = j;
         break;
       }
-
-      if (cur->children[i]) {
-        child.suffix_link = cur->children[i].get();
-        break;
-      }
-
-      cur = cur->suffix_link;
     }
-
+    if (j == -1)
+      nodes[child].suffix_link = 0;
     fix_suffix_links(child);
   }
 }
 
 void AhoCorasick::fix_values() {
-  std::queue<TrieNode *> queue;
-  queue.push(root.get());
+  std::queue<i64> queue;
+  queue.push(0);
 
   do {
-    TrieNode *node = queue.front();
+    i64 idx = queue.front();
     queue.pop();
 
-    for (std::unique_ptr<TrieNode> &child : node->children) {
-      if (!child)
-        continue;
-      child->value = std::max(child->value, child->suffix_link->value);
-      queue.push(child.get());
+    for (i64 child : nodes[idx].children) {
+      if (child != -1) {
+        i64 suffix = nodes[child].suffix_link;
+        nodes[child].value = std::max(nodes[child].value, nodes[suffix].value);
+        queue.push(child);
+      }
     }
   } while (!queue.empty());
 }

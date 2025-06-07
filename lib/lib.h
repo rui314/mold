@@ -563,17 +563,17 @@ public:
 
 private:
   struct TrieNode {
+    TrieNode() { children.fill(-1); }
     i64 value = -1;
-    TrieNode *suffix_link = nullptr;
-    std::unique_ptr<TrieNode> children[256];
+    i32 suffix_link = -1;
+    std::array<i32, 256> children;
   };
 
-  void fix_suffix_links(TrieNode &node);
+  void fix_suffix_links(i64 idx);
   void fix_values();
 
   std::vector<std::string> strings;
-  std::unique_ptr<TrieNode> root;
-  bool prefix_match = false;
+  std::vector<TrieNode> nodes;
 };
 
 //
