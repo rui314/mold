@@ -21,12 +21,12 @@
 
 namespace mold {
 
-bool AhoCorasick::can_handle(std::string_view str) {
-  if (str.starts_with('*'))
-    str.remove_prefix(1);
-  if (str.ends_with('*'))
-    str.remove_suffix(1);
-  return str.find_first_of("*?[") == str.npos;
+bool AhoCorasick::can_handle(std::string_view pat) {
+  if (pat.starts_with('*'))
+    pat.remove_prefix(1);
+  if (pat.ends_with('*'))
+    pat.remove_suffix(1);
+  return pat.find_first_of("*?[") == pat.npos;
 }
 
 i64 AhoCorasick::find(std::string_view str) {
@@ -57,8 +57,6 @@ i64 AhoCorasick::find(std::string_view str) {
 
 bool AhoCorasick::add(std::string_view pat, i64 val) {
   assert(can_handle(pat));
-
-  strings.emplace_back(pat);
   if (nodes.empty())
     nodes.resize(1);
   i64 idx = 0;

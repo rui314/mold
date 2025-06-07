@@ -555,7 +555,7 @@ private:
 class AhoCorasick {
 public:
   bool add(std::string_view pat, i64 val);
-  bool empty() const { return strings.empty(); }
+  bool empty() const { return nodes.empty(); }
   void compile();
   i64 find(std::string_view str);
 
@@ -572,7 +572,6 @@ private:
   void fix_suffix_links(i64 idx);
   void fix_values();
 
-  std::vector<std::string> strings;
   std::vector<TrieNode> nodes;
 };
 
