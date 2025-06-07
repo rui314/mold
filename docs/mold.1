@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "February 2025" ""
+.TH "MOLD" "1" "June 2025" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -70,6 +70,8 @@ Permit or do not permit mold to create a debug info file in the background\.
 .TP
 \fB\-\-fork\fR, \fB\-\-no\-fork\fR
 Spawn a child process and let it do the actual linking\. When linking a large program, the OS kernel can take a few hundred milliseconds to terminate a \fBmold\fR process\. \fB\-\-fork\fR hides that latency\. By default, it does fork\.
+.IP
+Note that \fB\-\-fork\fR also hides the resource usage statistics reported by time(2), since it doesn't call waitpid(2) on the child process\. If you need those statistics, pass \fB\-\-no\-fork\fR\.
 .TP
 \fB\-\-perf\fR
 Print performance statistics\.
