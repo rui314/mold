@@ -159,6 +159,10 @@ but as `-o magic`.
   program, the OS kernel can take a few hundred milliseconds to terminate a
   `mold` process. `--fork` hides that latency. By default, it does fork.
 
+  Note that `--fork` also hides the resource usage statistics reported by
+  time(2), since it doesn't call waitpid(2) on the child process. If you
+  need those statistics, pass `--no-fork`.
+
 * `--perf`:
   Print performance statistics.
 
