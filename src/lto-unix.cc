@@ -638,13 +638,10 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
                << " please make sure you are using the same compiler of the"
                << " same version for all object files";
 
-  // It looks like GCC doesn't need fd after claim_file_hook() while
-  // LLVM needs it and takes the ownership of fd. To prevent "too many
-  // open files" issue, we close fd only for GCC. This is ugly, though.
-  if (!is_llvm(ctx)) {
-    MappedFile *mf2 = mf->parent ? mf->parent : mf;
-    mf2->close_fd();
-  }
+  if (mf->parent)
+    mf->parent->close_fd();
+  else
+    mf->close_fd();
 
   // Create a symbol strtab
   i64 strtab_size = 1;
