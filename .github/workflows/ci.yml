@@ -13,7 +13,7 @@ jobs:
         - '-DMOLD_USE_ASAN=On'
         - '-DMOLD_USE_TSAN=On'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
     - uses: rui314/setup-mold@staging
@@ -37,7 +37,7 @@ jobs:
 
   build-multi-archs:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
     - name: install-build-deps
@@ -74,7 +74,7 @@ jobs:
         - ubuntu:22.04
         - ubuntu:25.04
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     container: ${{ matrix.distro }}
     steps:
     - uses: actions/checkout@v4
@@ -97,7 +97,7 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
     - name: build
@@ -109,7 +109,7 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
     - name: build
@@ -121,7 +121,7 @@ jobs:
 
   build-msys:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
     - name: Setup MSYS2
@@ -140,7 +140,7 @@ jobs:
 
   build-freebsd:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
     - name: Build and test
