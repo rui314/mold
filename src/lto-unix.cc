@@ -536,8 +536,6 @@ static ElfSym<E> to_elf_sym(PluginSymbol &psym) {
   }
 
   switch (psym.symbol_type) {
-  case LDST_UNKNOWN:
-    break;
   case LDST_FUNCTION:
     esym.st_type = STT_FUNC;
     break;
@@ -547,8 +545,6 @@ static ElfSym<E> to_elf_sym(PluginSymbol &psym) {
   };
 
   switch (psym.visibility) {
-  case LDPV_DEFAULT:
-    break;
   case LDPV_PROTECTED:
     esym.st_visibility = STV_PROTECTED;
     break;
