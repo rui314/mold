@@ -589,23 +589,51 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 
 template <>
 void Thunk<E>::copy_buf(Context<E> &ctx) {
-  constexpr ul32 insn[] = {
-    0x9000'0010, // adrp x16, 0   # R_AARCH64_ADR_PREL_PG_HI21
-    0x9100'0210, // add  x16, x16 # R_AARCH64_ADD_ABS_LO12_NC
+  // Short thunk with a 33 bit displacement
+  constexpr ul32 insn1[] = {
+    0x9000'0010, // adrp x16, 0
+    0x9100'0210, // add  x16, x16
     0xd61f'0200, // br   x16
+    0xd420'7d00, // brk
+    0xd420'7d00, // brk
+    0xd420'7d00, // brk
+    0xd420'7d00, // brk
     0xd420'7d00, // brk
   };
 
-  static_assert(E::thunk_size == sizeof(insn));
+  // Long thunk with a 64 bit displacement
+  constexpr ul32 insn2[] = {
+    0x1000'0010, // adr  x16, 0
+    0xd2a0'0011, // movz x17, 0, lsl #16
+    0xf2c0'0011, // movk x17, 0, lsl #32
+    0xf2e0'0011, // movk x17, 0, lsl #48
+    0x8b11'0210, // add  x16, x16, x17
+    0xd61f'0200, // br   x16
+    0xd420'7d00, // brk
+    0xd420'7d00, // brk
+  };
+
+  static_assert(E::thunk_size == sizeof(insn1));
+  static_assert(E::thunk_size == sizeof(insn2));
 
   u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
   u64 P = output_section.shdr.sh_addr + offset;
 
   for (Symbol<E> *sym : symbols) {
     u64 S = sym->get_addr(ctx);
-    memcpy(buf, insn, E::thunk_size);
-    write_adrp(buf, page(S) - page(P));
-    *(ul32 *)(buf + 4) |= bits(S, 11, 0) << 10;
+    i64 prel = page(S) - page(P);
+
+    if (is_int(prel, 33)) {
+      memcpy(buf, insn1, sizeof(insn1));
+      write_adrp(buf, prel);
+      *(ul32 *)(buf + 4) |= bits(S, 11, 0) << 10;
+    } else {
+      memcpy(buf, insn2, sizeof(insn2));
+      write_adr(buf, bits(S - P, 15, 0));
+      *(ul32 *)(buf + 4) |= bits(S - P, 31, 16) << 5;
+      *(ul32 *)(buf + 8) |= bits(S - P, 47, 32) << 5;
+      *(ul32 *)(buf + 12) |= bits(S - P, 63, 48) << 5;
+    }
 
     buf += E::thunk_size;
     P += E::thunk_size;
