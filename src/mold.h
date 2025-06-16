@@ -311,7 +311,8 @@ public:
   u64 get_addr() const { return output_section.shdr.sh_addr + offset; }
   u64 get_addr(i64 i) const { return get_addr() + offsets[i]; }
   i64 size() { return offsets.back(); }
-  void shrink_size(Context<E> &ctx) {}
+  void compute_size();
+  void shrink_size(Context<E> &ctx) { compute_size(); }
   void copy_buf(Context<E> &ctx);
 
   OutputSection<E> &output_section;

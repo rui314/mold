@@ -105,6 +105,13 @@ requires_thunk(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel,
 }
 
 template <>
+void Thunk<E>::compute_size() {
+  offsets.clear();
+  for (i64 i = 0; i <= symbols.size(); i++)
+    offsets.push_back(E::thunk_hdr_size + i * E::thunk_size);
+}
+
+template <>
 void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   std::span<InputSection<E> *> m = members;
   if (m.empty())
@@ -206,8 +213,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
 
     // Now that we know the number of symbols in the thunk, we can compute
     // the thunk's size.
-    for (i64 i = 0; i <= thunk.symbols.size(); i++)
-      thunk.offsets.push_back(E::thunk_hdr_size + i * E::thunk_size);
+    thunk.compute_size();
     assert(thunk.size() < max_thunk_size);
     offset += thunk.size();
 
