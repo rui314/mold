@@ -206,6 +206,8 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
 
     // Now that we know the number of symbols in the thunk, we can compute
     // the thunk's size.
+    for (i64 i = 0; i <= thunk.symbols.size(); i++)
+      thunk.offsets.push_back(E::thunk_hdr_size + i * E::thunk_size);
     assert(thunk.size() < max_thunk_size);
     offset += thunk.size();
 
@@ -256,18 +258,12 @@ void remove_redundant_thunks(Context<E> &ctx) {
 
   // Remove symbols from thunks if they don't actually need range
   // extension thunks
-  std::vector<Symbol<E> *> syms;
-
   for (OutputSection<E> *osec : sections) {
     for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks) {
-      append(syms, thunk->symbols);
       std::erase_if(thunk->symbols, [&](Symbol<E> *sym) { return !sym->flags; });
+      thunk->shrink_size(ctx);
     }
   }
-
-  // Reset flags for future use
-  for (Symbol<E> *sym : syms)
-    sym->flags = 0;
 
   // Recompute section sizes
   tbb::parallel_for_each(sections, [&](OutputSection<E> *osec) {
@@ -290,6 +286,12 @@ void remove_redundant_thunks(Context<E> &ctx) {
     }
     osec->shdr.sh_size = offset;
   });
+
+  // Reset flags for future use
+  for (OutputSection<E> *osec : sections)
+    for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks)
+      for (Symbol<E> *sym : thunk->symbols)
+        sym->flags = 0;
 }
 
 // When applying relocations, we want to know the address in a reachable

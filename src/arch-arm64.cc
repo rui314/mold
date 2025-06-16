@@ -587,6 +587,23 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
   }
 }
 
+// The size of a thunk entry varies on ARM64 depending on the distance to
+// the branch target. This function computes the size of each thunk entry.
+template <>
+void Thunk<E>::shrink_size(Context<E> &ctx) {
+  offsets.clear();
+  offsets.push_back(0);
+  i64 off = 0;
+
+  for (Symbol<E> *sym : symbols) {
+    u64 S = sym->get_addr(ctx);
+    u64 P = get_addr() + off;
+    i64 prel = page(S) - page(P);
+    off += is_int(prel, 33) ? 16 : 32;
+    offsets.push_back(off);
+  }
+}
+
 template <>
 void Thunk<E>::copy_buf(Context<E> &ctx) {
   // Short thunk with a 33 bit displacement
@@ -594,10 +611,6 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
     0x9000'0010, // adrp x16, 0
     0x9100'0210, // add  x16, x16
     0xd61f'0200, // br   x16
-    0xd420'7d00, // brk
-    0xd420'7d00, // brk
-    0xd420'7d00, // brk
-    0xd420'7d00, // brk
     0xd420'7d00, // brk
   };
 
@@ -613,19 +626,14 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
     0xd420'7d00, // brk
   };
 
-  static_assert(E::thunk_size == sizeof(insn1));
-  static_assert(E::thunk_size == sizeof(insn2));
+  for (i64 i = 0; i < symbols.size(); i++) {
+    u64 S = symbols[i]->get_addr(ctx);
+    u64 P = get_addr() + offsets[i];
+    u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset + offsets[i];
 
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-  u64 P = output_section.shdr.sh_addr + offset;
-
-  for (Symbol<E> *sym : symbols) {
-    u64 S = sym->get_addr(ctx);
-    i64 prel = page(S) - page(P);
-
-    if (is_int(prel, 33)) {
+    if (offsets[i + 1] - offsets[i] == 16) {
       memcpy(buf, insn1, sizeof(insn1));
-      write_adrp(buf, prel);
+      write_adrp(buf, page(S) - page(P));
       *(ul32 *)(buf + 4) |= bits(S, 11, 0) << 10;
     } else {
       memcpy(buf, insn2, sizeof(insn2));
@@ -634,11 +642,10 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
       *(ul32 *)(buf + 8) |= bits(S - P, 47, 32) << 5;
       *(ul32 *)(buf + 12) |= bits(S - P, 63, 48) << 5;
     }
-
-    buf += E::thunk_size;
-    P += E::thunk_size;
   }
 }
+
+template class Thunk<E>;
 
 } // namespace mold
 

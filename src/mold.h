@@ -308,22 +308,21 @@ public:
   Thunk(OutputSection<E> &osec, i64 offset)
     : output_section(osec), offset(offset) {}
 
-  i64 size() const { return E::thunk_hdr_size + symbols.size() * E::thunk_size; }
+  u64 get_addr() const { return output_section.shdr.sh_addr + offset; }
+  u64 get_addr(i64 i) const { return get_addr() + offsets[i]; }
+  i64 size() { return offsets.back(); }
+  void shrink_size(Context<E> &ctx) {}
   void copy_buf(Context<E> &ctx);
-
-  u64 get_addr() const {
-    return output_section.shdr.sh_addr + offset;
-  }
-
-  u64 get_addr(i64 i) const {
-    return get_addr() + E::thunk_hdr_size + E::thunk_size * i;
-  }
 
   OutputSection<E> &output_section;
   i64 offset;
   std::vector<Symbol<E> *> symbols;
+  std::vector<i64> offsets;
   std::string name;
 };
+
+template <> void Thunk<ARM64LE>::shrink_size(Context<ARM64LE> &);
+template <> void Thunk<ARM64BE>::shrink_size(Context<ARM64BE> &);
 
 template <needs_thunk E>
 static consteval i64 get_branch_distance() {
