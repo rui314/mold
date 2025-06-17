@@ -326,9 +326,8 @@ void gather_thunk_addresses(Context<E> &ctx) {
     for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks) {
       for (i64 i = 0; i < thunk->symbols.size(); i++) {
         Symbol<E> &sym = *thunk->symbols[i];
-        sym.add_aux(ctx);
         u64 addr = thunk->get_addr() + thunk->offsets[i];
-        ctx.symbol_aux[sym.aux_idx].thunk_addrs.push_back(addr);
+        sym.add_thunk_addr(ctx, addr);
       }
     }
   }

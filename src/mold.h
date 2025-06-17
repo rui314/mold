@@ -2551,6 +2551,7 @@ public:
   u32 get_djb_hash(Context<E> &ctx) const;
   void set_djb_hash(Context<E> &ctx, u32 hash);
 
+  void add_thunk_addr(Context<E> &ctx, u64 addr) requires needs_thunk<E>;
   u64 get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E>;
 
   bool is_absolute() const;
@@ -3265,6 +3266,14 @@ template <typename E>
 inline void Symbol<E>::set_djb_hash(Context<E> &ctx, u32 hash) {
   assert(aux_idx != -1);
   ctx.symbol_aux[aux_idx].djb_hash = hash;
+}
+
+template <typename E>
+void Symbol<E>::add_thunk_addr(Context<E> &ctx, u64 addr) requires needs_thunk<E> {
+  add_aux(ctx);
+  std::vector<u64> &vec = ctx.symbol_aux[aux_idx].thunk_addrs;
+  assert(vec.empty() || vec.back() < addr);
+  vec.push_back(addr);
 }
 
 template <typename E>
