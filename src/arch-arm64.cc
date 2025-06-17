@@ -626,10 +626,12 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
     0xd420'7d00, // brk
   };
 
+  u8 *base = ctx.buf + output_section.shdr.sh_offset + offset;
+
   for (i64 i = 0; i < symbols.size(); i++) {
     u64 S = symbols[i]->get_addr(ctx);
     u64 P = get_addr() + offsets[i];
-    u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset + offsets[i];
+    u8 *buf = base + offsets[i];
 
     if (offsets[i + 1] - offsets[i] == 16) {
       memcpy(buf, insn1, sizeof(insn1));

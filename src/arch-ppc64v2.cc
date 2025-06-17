@@ -518,15 +518,16 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
   static_assert(E::thunk_size == sizeof(local_thunk));
   static_assert(E::thunk_size == sizeof(local_thunk_power10));
 
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-  u64 P = output_section.shdr.sh_addr + offset;
+  u8 *base = ctx.buf + output_section.shdr.sh_offset + offset;
   u64 TOC = ctx.extra.TOC->value;
 
-  for (Symbol<E> *sym : symbols) {
-    if (sym->has_plt(ctx)) {
-      u64 got =
-        sym->has_got(ctx) ? sym->get_got_addr(ctx) : sym->get_gotplt_addr(ctx);
+  for (i64 i = 0; i < symbols.size(); i++) {
+    Symbol<E> &sym = *symbols[i];
+    u64 P = get_addr() + offsets[i];
+    u8 *buf = base + offsets[i];
 
+    if (sym.has_plt(ctx)) {
+      u64 got = sym.has_got(ctx) ? sym.get_got_addr(ctx) : sym.get_gotplt_addr(ctx);
       if (ctx.extra.is_power10) {
         memcpy(buf, plt_thunk_power10, E::thunk_size);
         write34(buf + 8, got - P - 8);
@@ -536,7 +537,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
         *(ul32 *)(buf + 12) |= lo(got - TOC);
       }
     } else {
-      u64 S = sym->get_addr(ctx);
+      u64 S = sym.get_addr(ctx);
       if (ctx.extra.is_power10) {
         memcpy(buf, local_thunk_power10, E::thunk_size);
         write34(buf + 8, S - P - 8);
@@ -546,9 +547,6 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
         *(ul32 *)(buf + 12) |= lo(S - TOC);
       }
     }
-
-    buf += E::thunk_size;
-    P += E::thunk_size;
   }
 }
 

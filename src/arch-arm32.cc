@@ -694,18 +694,15 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
   static_assert(E::thunk_hdr_size == sizeof(hdr));
   static_assert(E::thunk_size == sizeof(entry));
 
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-  memcpy(buf, hdr, sizeof(hdr));
-  buf += sizeof(hdr);
+  u8 *base = ctx.buf + output_section.shdr.sh_offset + offset;
+  memcpy(base, hdr, sizeof(hdr));
 
-  u64 P = output_section.shdr.sh_addr + offset + sizeof(hdr);
-
-  for (Symbol<E> *sym : symbols) {
+  for (i64 i = 0; i < symbols.size(); i++) {
+    u64 S = symbols[i]->get_addr(ctx);
+    u64 P = get_addr() + offsets[i];
+    u8 *buf = base + offsets[i];
     memcpy(buf, entry, sizeof(entry));
-    *(U32<E> *)(buf + 12) = sym->get_addr(ctx) - P - 16;
-
-    buf += sizeof(entry);
-    P += sizeof(entry);
+    *(U32<E> *)(buf + 12) = S - P - 16;
   }
 }
 

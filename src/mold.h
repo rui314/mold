@@ -309,7 +309,6 @@ public:
     : output_section(osec), offset(offset) {}
 
   u64 get_addr() const { return output_section.shdr.sh_addr + offset; }
-  u64 get_addr(i64 i) const { return get_addr() + offsets[i]; }
   i64 size() { return offsets.back(); }
   void compute_size();
   void shrink_size(Context<E> &ctx) { compute_size(); }

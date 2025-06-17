@@ -327,7 +327,8 @@ void gather_thunk_addresses(Context<E> &ctx) {
       for (i64 i = 0; i < thunk->symbols.size(); i++) {
         Symbol<E> &sym = *thunk->symbols[i];
         sym.add_aux(ctx);
-        ctx.symbol_aux[sym.aux_idx].thunk_addrs.push_back(thunk->get_addr(i));
+        u64 addr = thunk->get_addr() + thunk->offsets[i];
+        ctx.symbol_aux[sym.aux_idx].thunk_addrs.push_back(addr);
       }
     }
   }

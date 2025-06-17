@@ -1177,7 +1177,7 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
     for (std::unique_ptr<Thunk<E>> &thunk : thunks) {
       for (i64 i = 0; i < thunk->symbols.size(); i++) {
         Symbol<E> &sym = *thunk->symbols[i];
-        u64 addr = thunk->get_addr(i);
+        u64 addr = thunk->get_addr() + thunk->offsets[i];
 
         write_esym(addr, strtab - strtab_base);
 

@@ -416,26 +416,25 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
   static_assert(E::thunk_size == sizeof(plt_entry));
   static_assert(E::thunk_size == sizeof(local_thunk));
 
-  u8 *buf = ctx.buf + output_section.shdr.sh_offset + offset;
-  u64 P = output_section.shdr.sh_addr + offset;
+  u8 *base = ctx.buf + output_section.shdr.sh_offset + offset;
 
-  for (Symbol<E> *sym : symbols) {
-    if (sym->has_plt(ctx)) {
-      u64 got =
-        sym->has_got(ctx) ? sym->get_got_addr(ctx) : sym->get_gotplt_addr(ctx);
+  for (i64 i = 0; i < symbols.size(); i++) {
+    Symbol<E> &sym = *symbols[i];
+    u64 P = get_addr() + offsets[i];
+    u8 *buf = base + offsets[i];
+
+    if (sym.has_plt(ctx)) {
+      u64 got = sym.has_got(ctx) ? sym.get_got_addr(ctx) : sym.get_gotplt_addr(ctx);
       i64 val = got - P - 8;
       memcpy(buf, plt_entry, sizeof(plt_entry));
       *(ub32 *)(buf + 16) |= higha(val);
       *(ub32 *)(buf + 20) |= lo(val);
     } else {
-      i64 val = sym->get_addr(ctx) - P - 8;
+      i64 val = sym.get_addr(ctx) - P - 8;
       memcpy(buf, local_thunk, sizeof(local_thunk));
       *(ub32 *)(buf + 16) |= higha(val);
       *(ub32 *)(buf + 20) |= lo(val);
     }
-
-    buf += E::thunk_size;
-    P += E::thunk_size;
   }
 }
 
