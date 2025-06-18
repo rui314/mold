@@ -336,7 +336,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_cjtype(loc, val);
       } else {
         assert(removed_bytes == 0);
-        check(val, -(1LL << 31), 1LL << 31);
+        check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
         write_utype(loc, val);
         write_itype(loc + 4, val);
       }
@@ -374,7 +374,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           i += 3;
         } else {
           i64 val = G + GOT + A - P;
-          check(val, -(1LL << 31), 1LL << 31);
+          check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
           write_utype(loc, val);
         }
       }
@@ -382,18 +382,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
     case R_RISCV_TLS_GOT_HI20: {
       i64 val = sym.get_gottp_addr(ctx) + A - P;
-      check(val, -(1LL << 31), 1LL << 31);
+      check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
       write_utype(loc, val);
       break;
     }
     case R_RISCV_TLS_GD_HI20: {
       i64 val = sym.get_tlsgd_addr(ctx) + A - P;
-      check(val, -(1LL << 31), 1LL << 31);
+      check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
       write_utype(loc, val);
       break;
     }
     case R_RISCV_PCREL_HI20:
-      check(S + A - P, -(1LL << 31), 1LL << 31);
+      check(S + A - P, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
       write_utype(loc, S + A - P);
       break;
     case R_RISCV_PCREL_LO12_I:
