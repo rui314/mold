@@ -595,11 +595,22 @@ void Thunk<E>::shrink_size(Context<E> &ctx) {
   offsets.push_back(0);
   i64 off = 0;
 
+  // The distance between S and P is only reduced by shrink_size(), but
+  // page(S) – page(P) may still increase by one page due to address
+  // changes, so we add a safety margin.
+  //
+  // For example, page(0x1200) – page(0x1000) is 0, whereas
+  // page(0x1100) – page(0xfff) is 0x1000, even though the latter
+  // distance is shorter than the former.
+  auto is_small = [](i64 prel) {
+    return is_int(prel + 0x1000, 33) && is_int(prel - 0x1000, 33);
+  };
+
   for (Symbol<E> *sym : symbols) {
     u64 S = sym->get_addr(ctx);
     u64 P = get_addr() + off;
     i64 prel = page(S) - page(P);
-    off += is_int(prel, 33) ? 16 : 32;
+    off += is_small(prel) ? 16 : 32;
     offsets.push_back(off);
   }
 }
@@ -634,8 +645,10 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
     u8 *buf = base + offsets[i];
 
     if (offsets[i + 1] - offsets[i] == 16) {
+      i64 prel = page(S) - page(P);
+      assert(is_int(prel, 33));
       memcpy(buf, insn1, sizeof(insn1));
-      write_adrp(buf, page(S) - page(P));
+      write_adrp(buf, prel);
       *(ul32 *)(buf + 4) |= bits(S, 11, 0) << 10;
     } else {
       memcpy(buf, insn2, sizeof(insn2));

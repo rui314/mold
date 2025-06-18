@@ -431,8 +431,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       ctx.needs_tlsld = true;
       break;
     case R_PPC64_TPREL16_HA:
-    case R_PPC64_TPREL16_LO:
-    case R_PPC64_TPREL16_LO_DS:
     case R_PPC64_TPREL34:
       check_tlsle(ctx, sym, rel);
       break;
@@ -456,6 +454,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_PPC64_GOT_TPREL16_LO_DS:
     case R_PPC64_GOT_TLSGD16_LO:
     case R_PPC64_GOT_TLSLD16_LO:
+    case R_PPC64_TPREL16_LO:
+    case R_PPC64_TPREL16_LO_DS:
     case R_PPC64_TLS:
     case R_PPC64_TLSGD:
     case R_PPC64_TLSLD:
