@@ -301,6 +301,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check_range(ctx, i, val, lo, hi);
     };
 
+    auto utype = [&](i64 val) {
+      check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
+      write_utype(loc, val);
+    };
+
     switch (rel.r_type) {
     case R_RISCV_32:
       if (E::is_64)
@@ -336,8 +341,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         write_cjtype(loc, val);
       } else {
         assert(removed_bytes == 0);
-        check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
-        write_utype(loc, val);
+        utype(val);
         write_itype(loc + 4, val);
       }
       break;
@@ -366,35 +370,26 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         if (ctx.arg.relax && sym.is_pcrel_linktime_const(ctx) &&
             is_got_load_pair(ctx, *this, rels, i) && is_int(val, 32)) {
           // auipc <rd>, %hi20(val)
-          write_utype(loc, val);
+          utype(val);
 
           // addi <rd>, <rd>, %lo12(val)
           *(ul32 *)(loc + 4) = 0b0010011 | (rd << 15) | (rd << 7);
           write_itype(loc + 4, val);
           i += 3;
         } else {
-          i64 val = G + GOT + A - P;
-          check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
-          write_utype(loc, val);
+          utype(G + GOT + A - P);
         }
       }
       break;
     }
-    case R_RISCV_TLS_GOT_HI20: {
-      i64 val = sym.get_gottp_addr(ctx) + A - P;
-      check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
-      write_utype(loc, val);
+    case R_RISCV_TLS_GOT_HI20:
+      utype(sym.get_gottp_addr(ctx) + A - P);
       break;
-    }
-    case R_RISCV_TLS_GD_HI20: {
-      i64 val = sym.get_tlsgd_addr(ctx) + A - P;
-      check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
-      write_utype(loc, val);
+    case R_RISCV_TLS_GD_HI20:
+      utype(sym.get_tlsgd_addr(ctx) + A - P);
       break;
-    }
     case R_RISCV_PCREL_HI20:
-      check(S + A - P, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
-      write_utype(loc, S + A - P);
+      utype(S + A - P);
       break;
     case R_RISCV_PCREL_LO12_I:
     case R_RISCV_PCREL_LO12_S: {
@@ -432,8 +427,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ul16 *)loc = 0b011'0'00000'00000'01 | (rd << 7);
         write_citype(loc, (S + A + 0x800) >> 12);
       } else if (removed_bytes == 0) {
-        check(S + A, -(1LL << 31), 1LL << 31);
-        write_utype(loc, S + A);
+        utype(S + A);
       }
       break;
     case R_RISCV_LO12_I:
@@ -452,7 +446,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_TPREL_HI20:
       assert(removed_bytes == 0 || removed_bytes == 4);
       if (removed_bytes == 0)
-        write_utype(loc, S + A - ctx.tp_addr);
+        utype(S + A - ctx.tp_addr);
       break;
     case R_RISCV_TPREL_ADD:
       // This relocation just annotates an ADD instruction that can be
@@ -514,7 +508,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // original useless instructions instead of deleting them, but we
       // accept that because relaxations are enabled by default.
       if (sym.has_tlsdesc(ctx) && removed_bytes == 0)
-        write_utype(loc, sym.get_tlsdesc_addr(ctx) + A - P);
+        utype(sym.get_tlsdesc_addr(ctx) + A - P);
       break;
     case R_RISCV_TLSDESC_LOAD_LO12:
     case R_RISCV_TLSDESC_ADD_LO12:
@@ -541,10 +535,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           write_itype(loc, sym2.get_tlsdesc_addr(ctx) + A - P);
         } else if (sym2.has_gottp(ctx)) {
           *(ul32 *)loc = 0x517; // auipc a0,<hi20>
-          write_utype(loc, sym2.get_gottp_addr(ctx) + A - P);
+          utype(sym2.get_gottp_addr(ctx) + A - P);
         } else {
           *(ul32 *)loc = 0x537; // lui a0,<hi20>
-          write_utype(loc, S + A - ctx.tp_addr);
+          utype(S + A - ctx.tp_addr);
         }
         break;
       case R_RISCV_TLSDESC_CALL:
