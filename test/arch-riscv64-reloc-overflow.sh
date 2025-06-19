@@ -18,6 +18,9 @@ cat <<EOF | $CC -o $t/c.o -c -xc -
 int main() {}
 EOF
 
-not $CC -B. -o $t/exe $t/a.o $t/b.o $t/c.o -Wl,--section-start=.foo=0x10000 \
-  -Wl,--section-start=.bar=0x8000f800 &|
+$CC -B. -o $t/exe1 $t/a.o $t/b.o $t/c.o -Wl,--section-start=.foo=0x10000 \
+  -Wl,--section-start=.bar=0x8000f000
+
+not $CC -B. -o $t/exe2 $t/a.o $t/b.o $t/c.o -Wl,--section-start=.foo=0x10000 \
+  -Wl,--section-start=.bar=0x8000f800 |&
   grep -F 'relocation R_RISCV_CALL_PLT against bar out of range'
