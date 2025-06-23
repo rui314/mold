@@ -1,28 +1,29 @@
 // This file defines integral types for file input/output. We need to use
 // these types instead of the plain integers (such as uint32_t or int32_t)
-// when loading from/writing to an mmap'ed file area for the following
+// when reading from/writing to an mmap'ed file area for the following
 // reasons:
 //
 // 1. mold is always a cross linker and should not depend on what host it
 //    is running on. For example, users should be able to run mold on a
-//    big-endian SPARC machine to create a little-endian RV64 binary.
+//    little-endian x86 machine to create a big-endian s390x binary.
 //
 // 2. Even though data members in all ELF data strucutres are naturally
 //    aligned, they are not guaranteed to be aligned on memory because of
-//    archive files. Archive files (.a files) align each member only to a
+//    archive files. Archive files (.a files) align each file only to a
 //    2 byte boundary, so anything larger than 2 bytes may be misaligned
 //    in an mmap'ed memory. Misaligned access is an undefined behavior in
 //    C/C++, so we shouldn't cast an arbitrary pointer to a uint32_t, for
-//    example, to load a 32 bit value.
+//    example, to read a 32 bit value.
 //
-// The data types defined in this file don't depend on host byte order and
-// don't do unaligned access. Note that modern compilers are smart enough
-// to recognize shift and bitwise OR patterns and compile them into a
-// single load instruction.
+// The data types defined in this file are independent of the host byte
+// order and are designed to avoid unaligned access.
 
 #pragma once
 
+#include <bit>
 #include <cstdint>
+#include <cstring>
+#include <type_traits>
 
 #if !defined(__LITTLE_ENDIAN__) && !defined(__BIG_ENDIAN__)
 # if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -36,57 +37,89 @@
 
 namespace mold {
 
-using u8 = uint8_t;
-using u16 = uint16_t;
-using u32 = uint32_t;
-using u64 = uint64_t;
-
-using i8 = int8_t;
-using i16 = int16_t;
-using i32 = int32_t;
-using i64 = int64_t;
-
 template <typename T, bool is_le, int size = sizeof(T)>
 class Integer {
 public:
   constexpr Integer() = default;
-  constexpr Integer(T v) { store(v); }
-  constexpr operator T() const { return load(); }
 
+  constexpr Integer(T v) {
+    if (std::is_constant_evaluated()) {
+      for (int i = 0; i < size; i++) {
+        int j = is_le ? i : (size - i - 1);
+        buf[j] = v >> (i * 8);
+      }
+    } else {
+      store(v);
+    }
+  }
+
+  operator T() const { return load(); }
   Integer &operator=(T v)  { store(v); return *this; }
   Integer &operator++()    { return *this = *this + 1; }
-  Integer operator++(int)  { Integer x = *this; ++*this; return x; }
+  Integer operator++(int)  { auto x = *this; ++*this; return x; }
   Integer &operator--()    { return *this = *this - 1; }
-  Integer operator--(int)  { Integer x = *this; --*this; return x; }
+  Integer operator--(int)  { auto x = *this; --*this; return x; }
   Integer &operator+=(T v) { return *this = *this + v; }
   Integer &operator-=(T v) { return *this = *this - v; }
   Integer &operator&=(T v) { return *this = *this & v; }
   Integer &operator|=(T v) { return *this = *this | v; }
 
 private:
-  constexpr T load() const {
-    T v = 0;
+  static constexpr bool is_native =
+    (std::endian::native == (is_le ? std::endian::little : std::endian::big));
 
-    // Without this pragma, GCC 14 fails to optimize the following loop
-    // into a single load instruction. Clang recognize this pragma as
-    // well, though Clang can optimize this without the pragma.
-#pragma GCC unroll 8
-    for (int i = 0; i < size; i++) {
-      int j = is_le ? i : (size - i - 1);
-      v |= (T)buf[j] << (i * 8);
-    }
-    return v;
-  }
-
-  constexpr void store(T v) {
-    for (int i = 0; i < size; i++) {
-      int j = is_le ? i : (size - i - 1);
-      buf[j] = v >> (i * 8);
+  static T bswap(T v) {
+    switch (size) {
+    case 2: return __builtin_bswap16(v);
+    case 3: __builtin_unreachable();
+    case 4: return __builtin_bswap32(v);
+    case 8: return __builtin_bswap64(v);
     }
   }
 
-  u8 buf[size];
+  T load() const {
+    if (size == 3) {
+      if (is_le)
+        return buf[2] << 16 | buf[1] << 8 | buf[0];
+      return buf[0] << 16 | buf[1] << 8 | buf[2];
+    }
+
+    T v;
+    memcpy(&v, buf, size);
+    return is_native ? v : bswap(v);
+  }
+
+  void store(T v) {
+    if (size == 3) {
+      if (is_le) {
+        buf[0] = v;
+        buf[1] = v >> 8;
+        buf[2] = v >> 16;
+      } else {
+        buf[0] = v >> 16;
+        buf[1] = v >> 8;
+        buf[2] = v;
+      }
+      return;
+    }
+
+    if (!is_native)
+      v = bswap(v);
+    memcpy(buf, &v, size);
+  }
+
+  uint8_t buf[size];
 };
+
+using i8 = int8_t;
+using i16 = int16_t;
+using i32 = int32_t;
+using i64 = int64_t;
+
+using u8 = uint8_t;
+using u16 = uint16_t;
+using u32 = uint32_t;
+using u64 = uint64_t;
 
 using il16 = Integer<i16, true>;
 using il32 = Integer<i32, true>;
