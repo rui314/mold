@@ -1,6 +1,6 @@
 // This file defines integral types for file input/output. We need to use
 // these types instead of the plain integers (such as uint32_t or int32_t)
-// when reading from/writing to an mmap'ed file area for the following
+// when loading from/writing to an mmap'ed file area for the following
 // reasons:
 //
 // 1. mold is always a cross linker and should not depend on what host it
@@ -13,7 +13,7 @@
 //    2 byte boundary, so anything larger than 2 bytes may be misaligned
 //    in an mmap'ed memory. Misaligned access is an undefined behavior in
 //    C/C++, so we shouldn't cast an arbitrary pointer to a uint32_t, for
-//    example, to read a 32 bit value.
+//    example, to load a 32 bit value.
 //
 // The data types defined in this file don't depend on host byte order and
 // don't do unaligned access. Note that modern compilers are smart enough
@@ -36,90 +36,55 @@
 
 namespace mold {
 
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
+using u8 = uint8_t;
+using u16 = uint16_t;
+using u32 = uint32_t;
+using u64 = uint64_t;
 
-typedef int8_t i8;
-typedef int16_t i16;
-typedef int32_t i32;
-typedef int64_t i64;
+using i8 = int8_t;
+using i16 = int16_t;
+using i32 = int32_t;
+using i64 = int64_t;
 
 template <typename T, bool is_le, int size = sizeof(T)>
 class Integer {
 public:
   constexpr Integer() = default;
+  constexpr Integer(T v) { store(v); }
+  constexpr operator T() const { return load(); }
 
-  constexpr Integer(T x) requires (is_le && size == 2)
-    : buf{(u8)x, (u8)(x >> 8)} {}
+  Integer &operator=(T v)  { store(v); return *this; }
+  Integer &operator++()    { return *this = *this + 1; }
+  Integer operator++(int)  { Integer x = *this; ++*this; return x; }
+  Integer &operator--()    { return *this = *this - 1; }
+  Integer operator--(int)  { Integer x = *this; --*this; return x; }
+  Integer &operator+=(T v) { return *this = *this + v; }
+  Integer &operator-=(T v) { return *this = *this - v; }
+  Integer &operator&=(T v) { return *this = *this & v; }
+  Integer &operator|=(T v) { return *this = *this | v; }
 
-  constexpr Integer(T x) requires (is_le && size == 3)
-    : buf{(u8)x, (u8)(x >> 8), (u8)(x >> 16)} {}
+private:
+  constexpr T load() const {
+    T v = 0;
 
-  constexpr Integer(T x) requires (is_le && size == 4)
-    : buf{(u8)x, (u8)(x >> 8), (u8)(x >> 16), (u8)(x >> 24)} {}
+    // Without this pragma, GCC 14 fails to optimize the following loop
+    // into a single load instruction. Clang recognize this pragma as
+    // well, though Clang can optimize this without the pragma.
+#pragma GCC unroll 8
+    for (int i = 0; i < size; i++) {
+      int j = is_le ? i : (size - i - 1);
+      v |= (T)buf[j] << (i * 8);
+    }
+    return v;
+  }
 
-  constexpr Integer(T x) requires (is_le && size == 8)
-    : buf{(u8)x,         (u8)(x >> 8),  (u8)(x >> 16), (u8)(x >> 24),
-          (u8)(x >> 32), (u8)(x >> 40), (u8)(x >> 48), (u8)(x >> 56)} {}
-
-  constexpr Integer(T x) requires (!is_le && size == 2)
-    : buf{(u8)(x >> 8), (u8)x} {}
-
-  constexpr Integer(T x) requires (!is_le && size == 3)
-    : buf{(u8)(x >> 16), (u8)(x >> 8), (u8)x} {}
-
-  constexpr Integer(T x) requires (!is_le && size == 4)
-    : buf{(u8)(x >> 24), (u8)(x >> 16), (u8)(x >> 8), (u8)x} {}
-
-  constexpr Integer(T x) requires (!is_le && size == 8)
-    : buf{(u8)(x >> 56), (u8)(x >> 48), (u8)(x >> 40), (u8)(x >> 32),
-          (u8)(x >> 24), (u8)(x >> 16), (u8)(x >> 8),  (u8)x} {}
-
-  operator T() const {
-    if constexpr (is_le) {
-      if constexpr (size == 2)
-        return buf[1] << 8 | buf[0];
-      else if constexpr (size == 3)
-        return buf[2] << 16 | buf[1] << 8 | buf[0];
-      else if constexpr (size == 4)
-        return buf[3] << 24 | buf[2] << 16 | buf[1] << 8 | buf[0];
-      else
-        return (u64)buf[7] << 56 | (u64)buf[6] << 48 |
-               (u64)buf[5] << 40 | (u64)buf[4] << 32 |
-               (u64)buf[3] << 24 | (u64)buf[2] << 16 |
-               (u64)buf[1] << 8  | (u64)buf[0];
-    } else {
-      if constexpr (size == 2)
-        return buf[0] << 8 | buf[1];
-      else if constexpr (size == 3)
-        return buf[0] << 16 | buf[1] << 8 | buf[2];
-      else if constexpr (size == 4)
-        return buf[0] << 24 | buf[1] << 16 | buf[2] << 8 | buf[3];
-      else
-        return (u64)buf[0] << 56 | (u64)buf[1] << 48 |
-               (u64)buf[2] << 40 | (u64)buf[3] << 32 |
-               (u64)buf[4] << 24 | (u64)buf[5] << 16 |
-               (u64)buf[6] << 8  | (u64)buf[7];
+  constexpr void store(T v) {
+    for (int i = 0; i < size; i++) {
+      int j = is_le ? i : (size - i - 1);
+      buf[j] = v >> (i * 8);
     }
   }
 
-  Integer &operator=(T x) {
-    new (this) Integer(x);
-    return *this;
-  }
-
-  Integer &operator++()    { return *this = *this + 1; }
-  Integer operator++(int)  { return ++*this - 1; }
-  Integer &operator--()    { return *this = *this - 1; }
-  Integer operator--(int)  { return --*this + 1; }
-  Integer &operator+=(T x) { return *this = *this + x; }
-  Integer &operator-=(T x) { return *this = *this - x; }
-  Integer &operator&=(T x) { return *this = *this & x; }
-  Integer &operator|=(T x) { return *this = *this | x; }
-
-private:
   u8 buf[size];
 };
 
