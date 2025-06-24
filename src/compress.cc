@@ -7,6 +7,12 @@
 // is not shared between compressed streams, the compression ratio is
 // slightly sacrificed. However, if the stream size is large enough,
 // that loss is negligible in practice.
+//
+// Here, we use a u8[] buffer instead of std::vector<u8> to store
+// compressed data. This avoids the overhead of zero-initialization that
+// comes with std::vector<u8>. In large programs, compressed debug
+// sections can reach gigabyte scale, and zero-initialization alone could
+// take several hundred milliseconds.
 
 #include "mold.h"
 

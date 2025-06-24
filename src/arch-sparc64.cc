@@ -599,8 +599,8 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_SPARC_TLS_GD_CALL:
     case R_SPARC_TLS_LDM_CALL:
-      if (Symbol<E> *sym = ctx.extra.tls_get_addr; sym->is_imported)
-        sym->flags |= NEEDS_PLT;
+      if (ctx.extra.tls_get_addr->is_imported)
+        ctx.extra.tls_get_addr->flags |= NEEDS_PLT;
       break;
     case R_SPARC_TLS_LE_HIX22:
     case R_SPARC_TLS_LE_LOX10:
