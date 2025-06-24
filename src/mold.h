@@ -3280,16 +3280,13 @@ template <typename E>
 u64
 Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> {
   std::span<u64> vec = ctx.symbol_aux[aux_idx].thunk_addrs;
-
   u64 lo = (P < branch_distance<E>) ? 0 : P - branch_distance<E>;
-  auto it = ranges::lower_bound(vec, lo);
-  if (it == vec.end())
-    Fatal(ctx) << "range extension thunk out of range: " << *this;
-
-  i64 disp = *it - P;
-  if (disp < -branch_distance<E> || branch_distance<E> <= disp)
-    Fatal(ctx) << "range extension thunk out of range: " << *this;
-  return *it;
+  if (auto it = ranges::lower_bound(vec, lo);
+      it != vec.end())
+    if (i64 disp = *it - P;
+        -branch_distance<E> <= disp && disp < branch_distance<E>)
+      return *it;
+  Fatal(ctx) << "range extension thunk out of range: " << *this;
 }
 
 template <typename E>
