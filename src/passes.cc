@@ -1034,8 +1034,9 @@ static std::string create_response_file(Context<E> &ctx) {
 
 template <typename E>
 void write_repro_file(Context<E> &ctx) {
-  std::string path = ctx.arg.output + ".repro.tar";
+  Timer t(ctx, "write_repro_file");
 
+  std::string path = ctx.arg.output + ".repro.tar";
   std::unique_ptr<TarWriter> tar =
     TarWriter::open(path, path_filename(ctx.arg.output) + ".repro");
   if (!tar)
