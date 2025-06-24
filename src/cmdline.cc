@@ -1304,6 +1304,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
           << " binary file into an object file, use `objcopy -I binary -O"
           << " default <input-file> <output-file.o>` instead.";
       Fatal(ctx) << "unknown command line option: -b " << arg;
+    } else if (read_arg("fuse-ld")) {
     } else if (read_arg("auxiliary") || read_arg("f")) {
       ctx.arg.auxiliary.push_back(arg);
     } else if (read_arg("filter") || read_arg("F")) {

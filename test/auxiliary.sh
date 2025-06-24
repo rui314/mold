@@ -13,3 +13,8 @@ EOF
 readelf --dynamic $t/b.so > $t/log
 grep -F 'Auxiliary library: [foo]' $t/log
 grep -F 'Auxiliary library: [bar]' $t/log
+
+not ./mold -o exe $t/a.o -f bar |& grep 'auxiliary may not be used without -shared'
+
+# -fuse-ld is ignored
+./mold -o exe $t/a.o -fuse-ld=mold
