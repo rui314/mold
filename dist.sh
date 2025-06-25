@@ -4,28 +4,29 @@
 # the `dist` directory as `mold-$version-$arch-linux.tar.gz` (e.g.
 # `mold-2.40.0-x86_64-linux.tar.gz`).
 #
-# This script aims to produce reproducible outputs. That means if you run
-# the script twice on the same git commit, it should produce bit-for-bit
-# identical binary files. This property is crucial as a countermeasure
-# against supply chain attacks. With it, you can verify that the binary
-# files distributed on the GitHub release pages were created from the
-# commit with release tags by rebuilding the binaries yourself.
+# This script aims to produce reproducible outputs. That means each time
+# it's run on the same git commit, it generates a bit-for-bit identical
+# binary file regardless of when or where it's executed. This property
+# serves as a strong safeguard against supply chain attacks. With a
+# reproducible build, anyone can independently verify that the binary
+# files published on our GitHub release page were built from the git
+# commit tagged for release by rebuilding the binaries themselves.
 #
 # Debian provides snapshot.debian.org to host all historical binary
-# packages. We use it to construct Podman images pinned to a
+# packages. We use it to construct a container image pinned to a
 # particular timestamp. snapshot.debian.org is known to be very slow,
 # but that shouldn't be a big problem for us because we only need that
 # site the first time.
 #
 # The mold executable created by this script is statically linked to
-# libstdc++, but dynamically linked to libc, libm and a few other
-# libraries, as these libraries are almost always available on any
-# Linux system. We can't statically link libc because doing so would
-# disable dlopen(), which is required to load the LTO linker plugin.
+# libstdc++, but dynamically linked to glibc, libm and a few other
+# libraries, as these libraries are almost always available on any Linux
+# system. We can't statically link glibc because doing so would disable
+# dlopen(), which is required to load the LTO linker plugin.
 #
-# We aim to use a reasonably old Debian version because we'll dynamically
-# link glibc to mold, and a binary linked against a newer version of glibc
-# won't work on a system with an older version of glibc.
+# We use a reasonably old Debian version for the build environment because
+# a binary dynamically linked against a newer version of glibc won't work
+# on a system with an older version of glibc.
 #
 # We prefer to build mold with Clang rather than GCC because mold's
 # Identical Code Folding works best with the LLVM address significance
@@ -79,14 +80,15 @@ case $arch in
 x86_64)
   # Debian 9 (Stretch) released in June 2017.
   #
-  # We use a Google-provided mirror (gcr.io) of the official Docker hub
-  # (docker.io) because docker.io has a strict rate limit policy.
+  # We use a Google-provided mirror (gcr.io) instead of the official Docker
+  # Hub (docker.io) because docker.io has a strict rate limit policy.
   #
   # The toolchain in Debian 9 is too old to build mold, so we rebuild it
   # from source. We download source archives from official sites and build
-  # them locally, rather than using pre-built binaries, to avoid relying
-  # on unverifiable third-party binary blobs. Podman caches the result of
-  # each RUN command, so rebuilding is done only once per host.
+  # them locally, rather than downloading pre-built binaries from somewhere
+  # else, to avoid relying on unverifiable third-party binary blobs. Podman
+  # caches the result of each RUN command, so rebuilding is done only once
+  # per host.
   cat <<EOF | $image_build
 FROM mirror.gcr.io/library/debian:stretch@sha256:c5c5200ff1e9c73ffbf188b4a67eb1c91531b644856b4aefe86a58d2f0cb05be
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
