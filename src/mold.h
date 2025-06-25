@@ -692,7 +692,7 @@ public:
   std::vector<u64> relr;
 };
 
-// ELF header
+// ELF header which is at the beginning of each ELF file.
 template <typename E>
 class OutputEhdr : public Chunk<E> {
 public:
@@ -707,7 +707,11 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
-// Section header
+// OutputShdr represents the section header. The section header is usually
+// located at the end of an ELF file and is optional for executables.
+// Executables work without it because the runtime only reads the program
+// header. Section header is significant only in object files and not
+// needed at runtime
 template <typename E>
 class OutputShdr : public Chunk<E> {
 public:
@@ -721,7 +725,10 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
-// Program header
+// Program header, a.k.a. segment header. Each entry in the program header
+// represents a contiguous region of memory and has attributes such as
+// page protection bits. On program startup, the kernel mmap's the file
+// contents to memory based on the program header.
 template <typename E>
 class OutputPhdr : public Chunk<E> {
 public:
@@ -738,6 +745,10 @@ public:
   std::vector<ElfPhdr<E>> phdrs;
 };
 
+// .interp contains the pathname of a dynamic linker. Dynamically-linked
+// executables have the section. If exists, the kernel runs the program at
+// the specified path with the executable pathname as an argument,
+// allowing the dynamic linker to run the program.
 template <typename E>
 class InterpSection : public Chunk<E> {
 public:
@@ -769,7 +780,8 @@ struct AbsRel {
   AbsRelKind kind = ABS_REL_NONE;
 };
 
-// Sections
+// OutputSection represents the usual output section that contains input
+// sections read from object files.
 template <typename E>
 class OutputSection : public Chunk<E> {
 public:
@@ -801,6 +813,9 @@ public:
   std::vector<std::vector<InputSection<E> *>> members_vec;
 };
 
+// .got is a linker-synthesized constant pool whose entry size is the same
+// as the pointer size. It is used to store runtime addresses of global
+// variables and TP-relative offsets of thread-local variables.
 template <typename E>
 class GotSection : public Chunk<E> {
 public:
@@ -839,6 +854,8 @@ public:
   i64 tlsld_idx = -1;
 };
 
+// .got.plt is similar to .got in the sense that it is a table containing
+// pointers. The contents in .got.plt are function pointers used by .plt.
 template <typename E>
 class GotPltSection : public Chunk<E> {
 public:
@@ -858,6 +875,9 @@ public:
   static constexpr i64 ENTRY_SIZE = (is_ppc64v1<E> ? 3 : 1) * sizeof(Word<E>);
 };
 
+// .plt contains linker-synthesized stub code that acts as if they are
+// functions. They are in fact immediately branches to real function entry
+// points. .plt is used as a stub for runtime lazy symbol resolution.
 template <typename E>
 class PltSection : public Chunk<E> {
 public:
@@ -884,6 +904,10 @@ public:
   std::vector<Symbol<E> *> symbols;
 };
 
+// .plt.got is similar to .plt but doesn't support lazy symbol resolution.
+// If we have the same symbol already in .got, resolving the same symbol
+// lazily for .plt is just waste of time. Therefore, in such case, we use
+// .plt.got for that symbol instead.
 template <typename E>
 class PltGotSection : public Chunk<E> {
 public:
@@ -903,6 +927,7 @@ public:
   std::vector<Symbol<E> *> symbols;
 };
 
+// .rel.plt contains relocation information for .plt.
 template <typename E>
 class RelPltSection : public Chunk<E> {
 public:
@@ -918,6 +943,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+// .rel.dyn contains relocation infromation for other sections.
 template <typename E>
 class RelDynSection : public Chunk<E> {
 public:
@@ -932,6 +958,39 @@ public:
   void update_shdr(Context<E> &ctx) override;
 };
 
+// .relr.dyn is a relatively new section to contain base relocation
+// information.
+//
+// A relocatable executable/DSO contains a lot of certain type of
+// relocation entries, called "base relocations", to specify the locations
+// of pointers in the FILE that need to be adjusted according to the
+// desired load address and the actual load address. As an example,
+// consider the following C code.
+//
+//   extern int foo;
+//   int *bar = &foo;
+//
+// If an executable containing the above code is built as relocatable
+// executable, meaning that the executable can be loaded not to a specific
+// address in memory but anywhere in the virtual address space, then the
+// pointer `bar`'s address is not known at link-time.
+//
+// The linker temporarily links the executable to a base address, record
+// that information to the ELF header, and emits dynamic relocations to
+// refer to the location of `bar`. At runtime, the loader adds the
+// difference of the expected load address and the actual one to the
+// pointer value to fix the pointer value.
+//
+// Relocatable executables/DSOs usually contain a fairly large number of
+// base relocations. In particular, C++ virtual function table is an array
+// of statically-initialized pointers which need base relocations.
+//
+// Notice that base relocations don't contain symbol information. They
+// need only pointer locations in the ELF file that need fixing at
+// load-time. Therefore, storing that information to the usual ELF
+// relocation table is waste of space.
+//
+// .relr.dyn is designed to store base relocations in a space-efficient way.
 template <typename E>
 class RelrDynSection : public Chunk<E> {
 public:
@@ -947,6 +1006,10 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+// .strtab is referenced by .strtab and contains symbol names. Note that
+// .strtab is not needed at runtime; one can remove the section from an
+// ELF file without breaking it. Strings that runtime accesses are stored
+// in .dynstr.
 template <typename E>
 class StrtabSection : public Chunk<E> {
 public:
@@ -964,6 +1027,9 @@ public:
   static constexpr i64 DATA = 7;
 };
 
+// .shstrtab contains section names, such as ".text" or ".data". Just like
+// .strtab, .shstrtab is not needed at runtime. One can remove .shstrtab
+// and section table from an executable without breaking it.
 template <typename E>
 class ShstrtabSection : public Chunk<E> {
 public:
@@ -976,6 +1042,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+// .dynstr contains strings that the runtime uses.
 template <typename E>
 class DynstrSection : public Chunk<E> {
 public:
@@ -993,6 +1060,9 @@ private:
   std::unordered_map<std::string_view, i64> strings;
 };
 
+// .dynamic contains various information for dynamically-linked ELF files.
+// At runtime, the dynamic linker reads the information to work
+// appropriately.
 template <typename E>
 class DynamicSection : public Chunk<E> {
 public:
@@ -1019,6 +1089,9 @@ template <typename E>
 std::optional<ElfSym<E>>
 to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shndx);
 
+// .symtab contains non-dynamic symbols. The section is not needed at
+// runtime and can be stripped from an ELF file without affecting the
+// behavior of the program. Symbols in .symtab are mainly for debugging.
 template <typename E>
 class SymtabSection : public Chunk<E> {
 public:
@@ -1033,6 +1106,15 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+// .symtab_shndx is a parallel table for .symtab to contain section
+// indices for symbols.
+//
+// Symbol table entry contains a field for section index, but that's only
+// 16 bit in size, so it cannot refer to a section whose section index is
+// greater than 65535. We use .symtab_shndx for ELF files containing a lot
+// of sections.
+//
+// Use of this section is exceptional. Most ELF files don't contain one.
 template <typename E>
 class SymtabShndxSection : public Chunk<E> {
 public:
@@ -1044,6 +1126,8 @@ public:
   }
 };
 
+// .dynsym contains symbols for dynamic linking. This is similar to
+// .symtab, but .dynsym contains data that the runtime uses.
 template <typename E>
 class DynsymSection : public Chunk<E> {
 public:
@@ -1063,6 +1147,15 @@ public:
   i64 dynstr_offset = -1;
 };
 
+// .hash contains an on-disk hash table for .dynsym so that the runtime
+// can look up a symbol name quickly without scannin all entries in
+// .dynsym.
+//
+// Quickly identifying whether or not a .dynsym contains a given symbol is
+// especially important for ELF because of the dynamic symbol lookup rule
+// for ELF. In ELF, each dynamic symbol is not searched from a specific
+// library but from all the ELF files loaded to memory. Therefore,
+// minimizing the cost of each dynamic symbol lookup is important.
 template <typename E>
 class HashSection : public Chunk<E> {
 public:
@@ -1078,12 +1171,15 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
 private:
-  // Even though u32 should suffice for all targets, s390x uses u64.
-  // It looks like a spec bug, but we need to follow suit for the
-  // sake of binary compatibility.
+  // Even though u32 should suffice as an etnry size for all targets,
+  // s390x uses u64. It looks like a spec bug, but we need to follow
+  // suit for the sake of binary compatibility.
   using Entry = std::conditional_t<is_s390x<E>, U64<E>, U32<E>>;
 };
 
+// .gnu.hash is an alternative format for .hash. It contains not only an
+// on-disk hash table but also contains a bloom filter to quickly identify
+// whether or not a given symbol name exists in .dynsym.
 template <typename E>
 class GnuHashSection : public Chunk<E> {
 public:
@@ -1106,6 +1202,9 @@ public:
   i64 num_exported = -1;
 };
 
+// MergedSection represents a section containing a constant pool such as
+// string literals or floating-point constants. It is created from
+// MergeableSection.
 template <typename E>
 class MergedSection : public Chunk<E> {
 public:
@@ -1134,6 +1233,10 @@ private:
   std::vector<i64> shard_offsets;
 };
 
+// .eh_frame contains runtime information as to how to handle exceptions
+// for each function. Each input object file contains one .eh_frame section.
+// We parse input .eh_frame sections, merge their contents and emit the
+// merged information to .eh_frame.
 template <typename E>
 class EhFrameSection : public Chunk<E> {
 public:
@@ -1149,6 +1252,11 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+// .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
+// are sorted by their dcorresponding function addresses, so tha the
+// runtime can quickly find an exception-handling record for the current
+// function by binary search. Without .eh_frame_hdr, the runtime would
+// have had to do linear search in .eh_frame.
 template <typename E>
 class EhFrameHdrSection : public Chunk<E> {
 public:
@@ -1168,6 +1276,9 @@ public:
   i64 num_fdes = 0;
 };
 
+// EhFrameRelocSection contains relcoation records for .eh_frame. We use
+// this class only for relocatable outputs (i.e. the output is an .o file
+// as opposed to an executable or a .so file.)
 template <typename E>
 class EhFrameRelocSection : public Chunk<E> {
 public:
@@ -1183,6 +1294,8 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+// .copyrel and .copyrel.rel.ro represent memory regions to which the
+// runtime copies symbols from other ELF files for copy relocations.
 template <typename E>
 class CopyrelSection : public Chunk<E> {
 public:
@@ -1200,6 +1313,10 @@ public:
   std::vector<Symbol<E> *> symbols;
 };
 
+// .gnu.version contains a parallel table for .dynsym to specify symbol
+// versions of undefined symbols. A symbol having an entry in .gnu.version
+// must be resolved to a symbol with the exact same version string at
+// runtime.
 template <typename E>
 class VersymSection : public Chunk<E> {
 public:
@@ -1217,6 +1334,8 @@ public:
   std::vector<U16<E>> contents;
 };
 
+// .gnu.version_r contains information to refer to shared libraries and
+// their symbol versions.
 template <typename E>
 class VerneedSection : public Chunk<E> {
 public:
@@ -1234,6 +1353,9 @@ public:
   std::vector<u8> contents;
 };
 
+// .gnu.version contains a parallel table for .dynsym to specify symbol
+// versions of defined symbols. This section appears only in .so files,
+// and it specifies the symbol version for each defined dynamic symbol.
 template <typename E>
 class VerdefSection : public Chunk<E> {
 public:
@@ -1251,6 +1373,9 @@ public:
   std::vector<u8> contents;
 };
 
+// .note.gnu.build-id contains an identifier for an output ELF file. The
+// contents of the section is usually a cryptogrpahic hash of the output
+// file itself to guarantee uniqueness of build-id.
 template <typename E>
 class BuildIdSection : public Chunk<E> {
 public:
@@ -1268,6 +1393,10 @@ public:
   std::vector<u8> contents;
 };
 
+// .note.package is an optional hint section that can contain arbitrary
+// string. Package managers, such as dpkg or rpm, uses the section to
+// embed package metadata into each ELF file so that it is easy to find
+// the origin of an ELF file without any additional information.
 template <typename E>
 class NotePackageSection : public Chunk<E> {
 public:
@@ -1282,6 +1411,8 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+// .note.gnu.property section contains an additional runtime information
+// about ISA variant.
 template <typename E>
 class NotePropertySection : public Chunk<E> {
 public:
@@ -1314,6 +1445,9 @@ private:
   std::vector<Entry> contents;
 };
 
+// .gnu_debuglink section contains a pathname and its CRC32 checksum for a
+// separate debug info file. gdb can read the section to read debug info
+// from an external file.
 template <typename E>
 class GnuDebuglinkSection : public Chunk<E> {
 public:
@@ -1330,6 +1464,7 @@ public:
   u32 crc32 = 0;
 };
 
+// .gdb_index contains several tables to speed up gdb start-up.
 template <typename E>
 class GdbIndexSection : public Chunk<E> {
 public:
@@ -1340,6 +1475,9 @@ public:
   }
 };
 
+// Debug sections can be compressed with zlib or zstd to reduce the
+// overall size of an ELF file. CompressedSection represents a compressed
+// section.
 template <typename E>
 class CompressedSection : public Chunk<E> {
 public:
@@ -1353,6 +1491,8 @@ private:
   std::optional<Compressor> compressor;
 };
 
+// RelocSection represents a relocation table for an output file.
+// This is used only for the reproducible output (i.e. the `-r` output).
 template <typename E>
 class RelocSection : public Chunk<E> {
 public:
@@ -1381,6 +1521,8 @@ public:
   }
 };
 
+// ComdatGroupSection represents a comdat group for an output file.
+// This is used only for the reproducible output (i.e. the `-r` output).
 template <typename E>
 class ComdatGroupSection : public Chunk<E> {
 public:

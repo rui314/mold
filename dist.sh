@@ -4,12 +4,6 @@
 # the `dist` directory as `mold-$version-$arch-linux.tar.gz` (e.g.
 # `mold-2.40.0-x86_64-linux.tar.gz`).
 #
-# The mold executable created by this script is statically linked to
-# libstdc++, but dynamically linked to libc, libm, libpthread and some
-# other libraries, as these libraries are almost always available on any
-# Linux system. We can't statically link libc because doing so would
-# disable dlopen(), which is required to load the LTO linker plugin.
-#
 # This script aims to produce reproducible outputs. That means if you run
 # the script twice on the same git commit, it should produce bit-for-bit
 # identical binary files. This property is crucial as a countermeasure
@@ -22,6 +16,12 @@
 # particular timestamp. snapshot.debian.org is known to be very slow,
 # but that shouldn't be a big problem for us because we only need that
 # site the first time.
+#
+# The mold executable created by this script is statically linked to
+# libstdc++, but dynamically linked to libc, libm and a few other
+# libraries, as these libraries are almost always available on any
+# Linux system. We can't statically link libc because doing so would
+# disable dlopen(), which is required to load the LTO linker plugin.
 #
 # We aim to use a reasonably old Debian version because we'll dynamically
 # link glibc to mold, and a binary linked against a newer version of glibc
@@ -201,7 +201,7 @@ esac
 version=$(sed -n 's/^project(mold VERSION \(.*\))/\1/p' CMakeLists.txt)
 dest=mold-$version-$arch-linux
 
-# Source tarballs available on GitHub don't contain .git history.
+# Source tarballs available on GitHub don't contain .git directory.
 # Clone the repo if missing.
 [ -d .git ] || git clone --branch v$version --depth 1 --bare https://github.com/rui314/mold .git
 
