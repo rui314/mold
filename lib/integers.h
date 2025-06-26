@@ -17,6 +17,11 @@
 //
 // The data types defined in this file are independent of the host byte
 // order and are designed to avoid unaligned access.
+//
+// Note that in C/C++, memcpy is a portable and efficient way to access
+// unaligned data, as it is typically treated as an intrinsic. Compilers
+// can easily optimize memcpy calls in this file into a single load or
+// store instruction.
 
 #pragma once
 
@@ -89,6 +94,8 @@ private:
     return is_native ? v : bswap(v);
   }
 
+  // We cannot merge this with the constructor because memcpy is not
+  // allowed to use in a compile-time constant expression.
   void store(T v) {
     if (size == 3) {
       if (is_le) {
