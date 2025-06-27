@@ -518,6 +518,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul64 *)loc -= S + A;
       break;
     case R_LARCH_32_PCREL:
+      check(S + A - P, -(1LL << 31), 1LL << 31);
       *(ul32 *)loc = S + A - P;
       break;
     case R_LARCH_64_PCREL:
