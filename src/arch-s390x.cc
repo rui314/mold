@@ -48,15 +48,21 @@ static void write_mid20(u8 *loc, u64 val) {
 template <>
 void write_plt_header(Context<E> &ctx, u8 *buf) {
   static u8 insn[] = {
-    // Compute PLT_INDEX
+    // Compute the offset into .rela.plt. This is equivalent to
+    // (%r0 - %r1 - 48 - 14) * 3/2 where %r0 is the PLT entry address
+    // plus 14, %r1 is the start address of .plt, and 48 is the size
+    // of this PLT header. We multiply by 3/2 because each PLT entry
+    // is 16 bytes, whereas each .rela.plt entry is 24 bytes.
     0xb9, 0x09, 0x00, 0x01,             // sgr   %r0, %r1
     0xa7, 0x0b, 0xff, 0xc2,             // aghi  %r0, -62
     0xeb, 0x10, 0x00, 0x01, 0x00, 0x0c, // srlg  %r1, %r0, 1
     0xb9, 0x08, 0x00, 0x01,             // agr   %r0, %r1
+    // Store the computed value to 56(%r15) and .got.plt[1] to 48(%15)
+    // where %r15 is the stack pointer.
     0xe3, 0x00, 0xf0, 0x38, 0x00, 0x24, // stg   %r0, 56(%r15)
-    // Branch to _dl_runtime_resolve
     0xc0, 0x10, 0, 0, 0, 0,             // larl  %r1, GOTPLT_OFFSET
     0xd2, 0x07, 0xf0, 0x30, 0x10, 0x08, // mvc   48(8, %r15), 8(%r1)
+    // Branch to _dl_runtime_resolve
     0xe3, 0x10, 0x10, 0x10, 0x00, 0x04, // lg    %r1, 16(%r1)
     0x07, 0xf1,                         // br    %r1
     0x07, 0x00, 0x07, 0x00,             // nopr; nopr
