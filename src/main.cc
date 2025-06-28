@@ -247,7 +247,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
     }
   }
 
-  if (ctx.objs.empty())
+  if (ctx.objs.empty() && ctx.dsos.empty())
     Fatal(ctx) << "no input files";
 
   tg.wait();
