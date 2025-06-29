@@ -269,6 +269,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<RelocDelta> deltas = extra.r_deltas;
   i64 k = 0;
   u8 *buf = (u8 *)contents.data();
+  RelocationsStats rels_stats;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -298,6 +299,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 GOT = ctx.got->shdr.sh_addr;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (ctx.arg.stats)
+        update_relocation_stats(rels_stats, i, val, lo, hi);
       check_range(ctx, i, val, lo, hi);
     };
 
@@ -639,6 +642,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       unreachable();
     }
   }
+  if (ctx.arg.stats)
+    save_relocation_stats<E>(ctx, *this, rels_stats);
 }
 
 template <>
