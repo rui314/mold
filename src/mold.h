@@ -2449,6 +2449,7 @@ struct Context {
     std::unordered_map<std::string_view, u64> section_align;
     std::unordered_map<std::string_view, u64> section_start;
     std::unordered_set<std::string_view> discard_section;
+    std::unordered_set<std::string_view> exclude_libs;
     std::unordered_set<std::string_view> ignore_ir_file;
     std::unordered_set<std::string_view> wrap;
     std::vector<SectionOrder> section_order;
@@ -2459,7 +2460,6 @@ struct Context {
     std::vector<std::string> plugin_opt;
     std::vector<std::string> version_definitions;
     std::vector<std::string_view> auxiliary;
-    std::vector<std::string_view> exclude_libs;
     std::vector<std::string_view> filter;
     std::vector<std::string_view> trace_symbol;
     u32 z_x86_64_isa_level = 0;

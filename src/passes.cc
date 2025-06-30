@@ -66,9 +66,7 @@ template <typename E>
 void apply_exclude_libs(Context<E> &ctx) {
   Timer t(ctx, "apply_exclude_libs");
 
-  std::unordered_set<std::string_view> set(ctx.arg.exclude_libs.begin(),
-                                           ctx.arg.exclude_libs.end());
-
+  std::unordered_set<std::string_view> &set = ctx.arg.exclude_libs;
   if (!set.empty())
     for (ObjectFile<E> *file : ctx.objs)
       if (!file->archive_name.empty())

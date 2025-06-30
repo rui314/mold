@@ -785,7 +785,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("Bno-symbolic")) {
       ctx.arg.Bsymbolic = BSYMBOLIC_NONE;
     } else if (read_arg("exclude-libs")) {
-      append(ctx.arg.exclude_libs, split_by_comma_or_colon(arg));
+      for (std::string_view lib : split_by_comma_or_colon(arg))
+        ctx.arg.exclude_libs.insert(lib);
     } else if (read_flag("q") || read_flag("emit-relocs")) {
       ctx.arg.emit_relocs = true;
       ctx.arg.discard_locals = false;
