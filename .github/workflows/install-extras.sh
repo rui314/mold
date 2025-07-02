@@ -5,7 +5,7 @@ apt-get install -y wget xz-utils
 
 # Install a 32-bit RISC-V toolchain
 mkdir /rv32
-wget -O- --progress=dot:mega https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.01.20/riscv32-glibc-ubuntu-22.04-gcc-nightly-2025.01.20-nightly.tar.xz | tar -C /rv32 --strip-components=1 --xz -xf -
+wget -O- --progress=dot:mega https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.06.13/riscv32-glibc-ubuntu-24.04-gcc-nightly-2025.06.13-nightly.tar.xz | tar -C /rv32 --strip-components=1 --xz -xf -
 
 ln -sf /rv32/sysroot /usr/riscv32-linux-gnu
 echo '/rv32/bin/riscv32-unknown-linux-gnu-gcc -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-gcc
@@ -18,7 +18,7 @@ done
 
 # Install a LoongArch toolchain
 mkdir /larch
-wget -O- --progress=dot:mega https://github.com/loongson/build-tools/releases/download/2025.02.21/x86_64-cross-tools-loongarch64-binutils_2.44-gcc_14.2.0-glibc_2.41.tar.xz | tar -C /larch --strip-components=1 --xz -xf -
+wget -O- --progress=dot:mega https://github.com/loongson/build-tools/releases/download/2025.06.06/x86_64-cross-tools-loongarch64-binutils_2.44-gcc_15.1.0-glibc_2.41.tar.xz | tar -C /larch --strip-components=1 --xz -xf -
 
 cp -r /larch/loongarch64-unknown-linux-gnu/lib/* /larch/target/lib64
 ln -sf /larch/target /usr/loongarch64-linux-gnu
@@ -27,7 +27,7 @@ for i in gcc g++ objdump objcopy strip; do
   ln -sf /larch/bin/loongarch64-unknown-linux-gnu-$i /usr/bin/loongarch64-linux-gnu-$i
 done
 
-wget -O /usr/local/bin/qemu-loongarch64 --progress=dot:mega https://github.com/loongson/build-tools/releases/download/2024.11.01/qemu-loongarch64
+wget -O /usr/local/bin/qemu-loongarch64 --progress=dot:mega https://github.com/loongson/build-tools/releases/download/2025.06.06/qemu-loongarch64
 chmod 755 /usr/local/bin/qemu-loongarch64
 
 # Install ARM32 big-endian toolchain
@@ -71,5 +71,5 @@ done
 
 # Install Intel SDE CPU emulator for CET-related tests
 mkdir /sde
-wget -O- --progress=dot:mega https://downloadmirror.intel.com/843185/sde-external-9.48.0-2024-11-25-lin.tar.xz | tar -C /sde --strip-components=1 --xz -xf -
+wget -O- --progress=dot:mega https://downloadmirror.intel.com/850782/sde-external-9.53.0-2025-03-16-lin.tar.xz | tar -C /sde --strip-components=1 --xz -xf -
 ln -s /sde/sde64 /usr/bin
