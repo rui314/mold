@@ -279,17 +279,12 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 template <typename E>
 std::string_view
 InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) const {
-  for (Symbol<E> *sym : file.symbols) {
-    if (sym->file == &file) {
-      const ElfSym<E> &esym = sym->esym();
-      if (esym.st_shndx == shndx && esym.st_type == STT_FUNC &&
-          esym.st_value <= offset && offset < esym.st_value + esym.st_size) {
-        if (ctx.arg.demangle)
-          return demangle(*sym);
-        return sym->name();
-      }
-    }
-  }
+  for (Symbol<E> *sym : file.symbols)
+    if (sym->file == &file)
+      if (const ElfSym<E> &esym = sym->esym();
+          esym.st_shndx == shndx && esym.st_type == STT_FUNC &&
+          esym.st_value <= offset && offset < esym.st_value + esym.st_size)
+        return ctx.arg.demangle ? demangle(*sym) : sym->name();
   return "";
 }
 
