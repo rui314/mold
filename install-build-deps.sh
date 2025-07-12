@@ -8,7 +8,7 @@ set -e
 set -x
 
 case "$ID" in
-ubuntu | pop | linuxmint | debian | raspbian | neon)
+ubuntu | pop | linuxmint | debian | raspbian | neon | zorin)
   apt-get update
   apt-get install -y cmake gcc g++ clang gdb
   ;;
