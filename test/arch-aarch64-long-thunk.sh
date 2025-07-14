@@ -42,10 +42,10 @@ $QEMU $t/exe2 | grep 'main fn1 fn3 fn2 fn4'
 $CC -c -o $t/e.o $t/a.c -fno-PIC -mcmodel=large
 $CC -c -o $t/f.o $t/b.c -fno-PIC -mcmodel=large
 
-$CC -B. -o $t/exe3 $t/e.o $t/f.o \
+$CC -B. -o $t/exe3 $t/e.o $t/f.o -pie \
   -Wl,--section-start=.low=0x10000000,--section-start=.high=0x400000000
 $QEMU $t/exe3 | grep 'main fn1 fn3 fn2 fn4'
 
-$CC -B. -o $t/exe4 $t/e.o $t/f.o \
+$CC -B. -o $t/exe4 $t/e.o $t/f.o -pie \
   -Wl,--section-start=.high=0x10000000,--section-start=.low=0x400000000
 $QEMU $t/exe4 | grep 'main fn1 fn3 fn2 fn4'
