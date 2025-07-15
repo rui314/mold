@@ -12,5 +12,4 @@ EOF
 
 echo "'$t/b.o'" > $t/rsp1
 echo "@$t/rsp1" > $t/rsp2
-
-$CC -B. -o $t/exe $t/a.o -Wl,@$t/rsp2
+./mold -o $t/c.so -shared $t/a.o @$t/rsp2

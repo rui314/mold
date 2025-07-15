@@ -240,69 +240,99 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
   if (depth > 10)
     Fatal(ctx) << path << ": response file nesting too deep";
 
-  std::vector<std::string_view> vec;
   MappedFile *mf = must_open_file(ctx, std::string(path));
   std::string_view data((char *)mf->data, mf->size);
-
   mf->is_dependency = false;
 
-  while (!data.empty()) {
-    if (isspace(data[0])) {
-      data = data.substr(1);
-      continue;
-    }
+  std::vector<std::string> vec;
+  std::ostringstream os;
+  char quote = 0;
 
-    auto read_quoted = [&]() {
-      char quote = data[0];
-      data = data.substr(1);
+  // Each state represents the type of characters currently being read.
+  // SPACE indicates blank characters between tokens, BARE indicates an
+  // unquoted token, and QUOTED indicates a quoted token.
+  enum { SPACE, BARE, QUOTED } state = SPACE;
 
-      std::string buf;
-      while (!data.empty() && data[0] != quote) {
-        if (data[0] == '\\' && data.size() >= 1) {
-          buf.append(1, data[1]);
-          data = data.substr(2);
-        } else {
-          buf.append(1, data[0]);
-          data = data.substr(1);
-        }
-      }
-      if (data.empty())
-        Fatal(ctx) << path << ": premature end of input";
-      data = data.substr(1);
-      return save_string(ctx, buf);
-    };
+  for (i64 i = 0; i <= data.size(); i++) {
+    char c = (i == data.size()) ? 0 : data[i];
 
-    auto read_unquoted = [&] {
-      std::string buf;
-      while (!data.empty()) {
-        if (data[0] == '\\' && data.size() >= 1) {
-          buf.append(1, data[1]);
-          data = data.substr(2);
-          continue;
-        }
+    switch (state) {
+    case SPACE:
+      if (c == 0 || isspace(c))
+        break;
 
-        if (!isspace(data[0])) {
-          buf.append(1, data[0]);
-          data = data.substr(1);
-          continue;
-        }
+      if (c == '\\') {
+        if (i + 1 == data.size())
+          Fatal(ctx) << path << ": premature end of input";
+        os << data[++i];
+        state = BARE;
         break;
       }
-      return save_string(ctx, buf);
-    };
 
-    std::string_view tok;
-    if (data[0] == '\'' || data[0] == '\"')
-      tok = read_quoted();
-    else
-      tok = read_unquoted();
+      if (c == '\'' || c == '"') {
+        quote = c;
+        state = QUOTED;
+        break;
+      }
 
-    if (tok.starts_with('@'))
-      append(vec, read_response_file(ctx, tok.substr(1), depth + 1));
-    else
-      vec.push_back(tok);
+      os << c;
+      state = BARE;
+      break;
+    case BARE:
+      if (c == 0 || isspace(c)) {
+        vec.push_back(os.str());
+        os = {};
+        state = SPACE;
+        break;
+      }
+
+      if (c == '\\') {
+        if (i + 1 == data.size())
+          Fatal(ctx) << path << ": premature end of input";
+        os << data[++i];
+        break;
+      }
+
+      if (c == '\'' || c == '"') {
+        quote = c;
+        state = QUOTED;
+        break;
+      }
+
+      os << c;
+      break;
+    case QUOTED:
+      if (c == 0)
+        Fatal(ctx) << path << ": premature end of input";
+
+      if (c == '\\') {
+        if (i + 1 == data.size())
+          Fatal(ctx) << path << ": premature end of input";
+        os << data[++i];
+        break;
+      }
+
+      if (quote == c) {
+        state = BARE;
+        break;
+      }
+
+      os << c;
+      break;
+    }
   }
-  return vec;
+
+  if (state != SPACE)
+    Fatal(ctx) << path << ": premature end of input";
+
+  std::vector<std::string_view> vec2;
+  for (std::string &tok : vec) {
+    if (tok.starts_with('@'))
+      append(vec2, read_response_file(ctx, tok.substr(1), depth + 1));
+    else
+      vec2.push_back(save_string(ctx, tok));
+  }
+  return vec2;
 }
 
 // Replace "@path/to/some/text/file" with its file contents.

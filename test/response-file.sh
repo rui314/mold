@@ -16,5 +16,4 @@ void bar() {}
 EOF
 
 echo "'$t/b.o' '$t/c.o'" > $t/rsp
-
-$CC -B. -o $t/exe $t/a.o -Wl,@$t/rsp
+./mold -o $t/d.so -shared $t/a.o @$t/rsp
