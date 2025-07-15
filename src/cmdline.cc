@@ -234,6 +234,16 @@ Options:
 mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf64-bigaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf32-powerpc elf64-powerpc elf64-powerpc elf64-powerpcle elf64-s390 elf64-sparc elf32-m68k elf32-sh-linux elf64-loongarch elf32-loongarch
 mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64elf aarch64linux aarch64elfb aarch64linuxb elf32lriscv elf32briscv elf64lriscv elf64briscv elf32ppc elf32ppclinux elf64ppc elf64lppc elf64_s390 elf64_sparc m68kelf shlelf_linux shelf_linux elf64loongarch elf32loongarch)";
 
+// If a command line argument is in the form of `@path/to/some/file` (i.e.
+// it starts with an atsign), the linker reads the given file and
+// interprets its contents as a list of command line arguments. A file
+// containing command line arguments is called a "response file".
+//
+// A response file is often used to pass a very large number of arguments
+// to the linker without exceeding the kernel's command line length limit.
+//
+// This function opens a given file, tokenizes its contents, and returns a
+// list of tokens.
 template <typename E>
 static std::vector<std::string_view>
 read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
