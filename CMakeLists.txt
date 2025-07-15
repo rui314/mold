@@ -454,10 +454,12 @@ if(NOT CMAKE_SKIP_INSTALL_RULES)
       file(CREATE_LINK \${OLD_REL} \$ENV{DESTDIR}\${NEW_ABS} SYMBOLIC)")
   endfunction()
 
-  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold${CMAKE_EXECUTABLE_SUFFIX}
-    ${CMAKE_INSTALL_LIBEXECDIR}/mold/ld${CMAKE_EXECUTABLE_SUFFIX})
-  mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold${CMAKE_EXECUTABLE_SUFFIX}
-    ${CMAKE_INSTALL_BINDIR}/ld.mold${CMAKE_EXECUTABLE_SUFFIX})
-  mold_install_relative_symlink(${CMAKE_INSTALL_MANDIR}/man1/mold.1
-    ${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)
+  if(NOT WIN32)
+    mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold${CMAKE_EXECUTABLE_SUFFIX}
+      ${CMAKE_INSTALL_LIBEXECDIR}/mold/ld${CMAKE_EXECUTABLE_SUFFIX})
+    mold_install_relative_symlink(${CMAKE_INSTALL_BINDIR}/mold${CMAKE_EXECUTABLE_SUFFIX}
+      ${CMAKE_INSTALL_BINDIR}/ld.mold${CMAKE_EXECUTABLE_SUFFIX})
+    mold_install_relative_symlink(${CMAKE_INSTALL_MANDIR}/man1/mold.1
+      ${CMAKE_INSTALL_MANDIR}/man1/ld.mold.1)
+  endif()
 endif()

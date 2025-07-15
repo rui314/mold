@@ -6,75 +6,99 @@ on:
 
 permissions:
   contents: write
+  packages: write
   id-token: write
 
 env:
   TAG: ${{ github.ref_name }}
 
 jobs:
-  build:
+  build-linux:
     strategy:
       matrix:
         include:
-          - { target: x86_64,      os: ubuntu-24.04 }
-          - { target: aarch64,     os: ubuntu-24.04-arm }
-          - { target: arm,         os: ubuntu-24.04-arm }
-          - { target: riscv64,     os: ubuntu-24.04 }
-          - { target: ppc64le,     os: ubuntu-24.04 }
-          - { target: s390x,       os: ubuntu-24.04 }
-          - { target: loongarch64, os: ubuntu-24.04 }
+        - { target: x86_64,      os: ubuntu-24.04 }
+        - { target: aarch64,     os: ubuntu-24.04-arm }
+        - { target: arm,         os: ubuntu-24.04-arm }
+        - { target: riscv64,     os: ubuntu-24.04 }
+        - { target: ppc64le,     os: ubuntu-24.04 }
+        - { target: s390x,       os: ubuntu-24.04 }
+        - { target: loongarch64, os: ubuntu-24.04 }
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - name: Install Podman
-        run: sudo apt-get update && sudo apt-get install -y podman qemu-user-static
+    - name: Install Podman
+      run: sudo apt-get update && sudo apt-get install -y podman qemu-user-static
 
-      - name: Login to GitHub Container Registry
-        uses: redhat-actions/podman-login@v1
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Login to GitHub Container Registry
+      uses: redhat-actions/podman-login@v1
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
-      - run: ./dist.sh ${{ matrix.target }}
+    - run: ./dist.sh ${{ matrix.target }}
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.target }}
-          path: dist/mold-*.tar.gz
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.target }}
+        path: dist/mold-*.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build and Archive
+      shell: pwsh
+      run: |
+        mkdir build
+        cd build
+        cmake -T clangcl ..
+        cmake --build . --config Release -j $Env:NUMBER_OF_PROCESSORS
+        cmake --install . --config Release --prefix ../mold-install
+        cd ..
+        New-Item -ItemType Directory -Force dist | Out-Null
+        $version = $Env:TAG -replace '^v', ''
+        Compress-Archive -Path mold-install\* -DestinationPath dist\mold-$version-windows-x86_64.zip
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: win-x86_64
+        path: dist/mold-*.*
 
   publish:
-    needs: build
+    needs: [build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          pattern: '*'
-          merge-multiple: true
+    - uses: actions/download-artifact@v4
+      with:
+        path: dist
+        pattern: '*'
+        merge-multiple: true
 
-      - name: Ensure release exists (create if missing)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          if gh release view "$TAG" >& /dev/null; then
-            echo "Existing release found for $TAG"
-          else
-            echo "Creating draft release for $TAG"
-            gh release create "$TAG" --draft \
-              --title "$TAG" \
-              --notes "Automated draft – fill the changelog later."
-          fi
+    - name: Ensure release exists (create if missing)
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        set -e
+        if gh release view "$TAG" >& /dev/null; then
+          echo "Existing release found for $TAG"
+        else
+          echo "Creating draft release for $TAG"
+          gh release create "$TAG" --draft \
+            --title "$TAG" \
+            --notes "Automated draft – fill the changelog later."
+        fi
 
-      - name: Upload tarballs
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "$TAG" dist/* --clobber
-          gh release view "$TAG" --json assets --jq '.assets[].name'
+    - name: Upload tarballs
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release upload "$TAG" dist/* --clobber
+        gh release view "$TAG" --json assets --jq '.assets[].name'
