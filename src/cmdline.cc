@@ -266,14 +266,15 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
     char c = (i < mf->size) ? mf->data[i] : 0;
     char c2 = (i + 1 < mf->size) ? mf->data[i + 1] : 0;
 
+    if (c == '\\' && c2 == 0)
+      Fatal(ctx) << path << ": premature end of input";
+
     switch (state) {
     case SPACE:
       if (c == 0 || isspace(c))
         break;
 
       if (c == '\\') {
-        if (c2 == 0)
-          Fatal(ctx) << path << ": premature end of input";
         os << c2;
         state = BARE;
         i++;
@@ -298,8 +299,6 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
       }
 
       if (c == '\\') {
-        if (c2 == 0)
-          Fatal(ctx) << path << ": premature end of input";
         os << c2;
         i++;
         break;
@@ -318,8 +317,6 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
         Fatal(ctx) << path << ": premature end of input";
 
       if (c == '\\') {
-        if (c2 == 0)
-          Fatal(ctx) << path << ": premature end of input";
         os << c2;
         i++;
         break;
