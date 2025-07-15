@@ -241,7 +241,6 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
     Fatal(ctx) << path << ": response file nesting too deep";
 
   MappedFile *mf = must_open_file(ctx, std::string(path));
-  std::string_view data((char *)mf->data, mf->size);
   mf->is_dependency = false;
 
   std::vector<std::string> vec;
@@ -253,8 +252,9 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
   // unquoted token, and QUOTED indicates a quoted token.
   enum { SPACE, BARE, QUOTED } state = SPACE;
 
-  for (i64 i = 0; i <= data.size(); i++) {
-    char c = (i == data.size()) ? 0 : data[i];
+  for (i64 i = 0; i <= mf->size; i++) {
+    char c = (i < mf->size) ? mf->data[i] : 0;
+    char c2 = (i + 1 < mf->size) ? mf->data[i + 1] : 0;
 
     switch (state) {
     case SPACE:
@@ -262,10 +262,11 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
         break;
 
       if (c == '\\') {
-        if (i + 1 == data.size())
+        if (c2 == 0)
           Fatal(ctx) << path << ": premature end of input";
-        os << data[++i];
+        os << c2;
         state = BARE;
+        i++;
         break;
       }
 
@@ -287,9 +288,10 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
       }
 
       if (c == '\\') {
-        if (i + 1 == data.size())
+        if (c2 == 0)
           Fatal(ctx) << path << ": premature end of input";
-        os << data[++i];
+        os << c2;
+        i++;
         break;
       }
 
@@ -306,13 +308,14 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
         Fatal(ctx) << path << ": premature end of input";
 
       if (c == '\\') {
-        if (i + 1 == data.size())
+        if (c2 == 0)
           Fatal(ctx) << path << ": premature end of input";
-        os << data[++i];
+        os << c2;
+        i++;
         break;
       }
 
-      if (quote == c) {
+      if (c == quote) {
         state = BARE;
         break;
       }
@@ -321,9 +324,6 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
       break;
     }
   }
-
-  if (state != SPACE)
-    Fatal(ctx) << path << ": premature end of input";
 
   std::vector<std::string_view> vec2;
   for (std::string &tok : vec) {
