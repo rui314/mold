@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-tarballs:
+  build-linux:
     strategy:
       matrix:
         include:
@@ -47,3 +47,28 @@ jobs:
         name: ${{ matrix.target }}
         path: dist/mold-*.tar.gz
         compression-level: 0
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Build and Archive
+      shell: pwsh
+      run: |
+        mkdir build
+        cd build
+        cmake -T clangcl ..
+        cmake --build . --config Release -j $Env:NUMBER_OF_PROCESSORS
+        cmake --install . --config Release --prefix ../mold-install
+        cd ..
+        New-Item -ItemType Directory -Force dist | Out-Null
+        $version = $Env:TAG -replace '^v', ''
+        Compress-Archive -Path mold-install\* -DestinationPath dist\mold-$version-windows-x86_64.zip
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: win-x86_64
+        path: dist/mold-*.*
