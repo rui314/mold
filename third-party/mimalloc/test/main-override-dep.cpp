@@ -13,3 +13,13 @@ std::string TestAllocInDll::GetString()
 	delete[] test;
 	return r;
 }
+
+#include <windows.h>
+
+void TestAllocInDll::TestHeapAlloc()
+{
+	HANDLE heap = GetProcessHeap();
+	int* p = (int*)HeapAlloc(heap, 0, sizeof(int));
+	*p = 42;
+	HeapFree(heap, 0, p);
+}

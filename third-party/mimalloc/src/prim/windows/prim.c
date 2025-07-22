@@ -17,6 +17,14 @@ terms of the MIT license. A copy of the license can be found in the file
 // Dynamically bind Windows API points for portability
 //---------------------------------------------
 
+#if defined(_MSC_VER)
+#pragma warning(disable:28159)  // don't use GetVersion
+#pragma warning(disable:4996)   // don't use GetVersion
+#endif
+
+static DWORD win_major_version = 6;
+static DWORD win_minor_version = 0;
+
 // We use VirtualAlloc2 for aligned allocation, but it is only supported on Windows 10 and Windows Server 2016.
 // So, we need to look it up dynamically to run on older systems. (use __stdcall for 32-bit compatibility)
 // NtAllocateVirtualAllocEx is used for huge OS page allocation (1GiB)
@@ -111,16 +119,27 @@ static bool win_enable_large_os_pages(size_t* large_page_size)
 // Initialize
 //---------------------------------------------
 
+static DWORD win_allocation_granularity = 64*MI_KiB;
+
 void _mi_prim_mem_init( mi_os_mem_config_t* config )
 {
   config->has_overcommit = false;
   config->has_partial_free = false;
   config->has_virtual_reserve = true;
+  // windows version
+  OSVERSIONINFOW version; _mi_memzero_var(version);
+  if (GetVersionExW(&version)) {
+    win_major_version = version.dwMajorVersion;
+    win_minor_version = version.dwMinorVersion;
+  }
   // get the page size
   SYSTEM_INFO si;
   GetSystemInfo(&si);
   if (si.dwPageSize > 0) { config->page_size = si.dwPageSize; }
-  if (si.dwAllocationGranularity > 0) { config->alloc_granularity = si.dwAllocationGranularity; }
+  if (si.dwAllocationGranularity > 0) {
+    config->alloc_granularity = si.dwAllocationGranularity;
+    win_allocation_granularity = si.dwAllocationGranularity;
+  }
   // get virtual address bits
   if ((uintptr_t)si.lpMaximumApplicationAddress > 0) {
     const size_t vbits = MI_SIZE_BITS - mi_clz((uintptr_t)si.lpMaximumApplicationAddress);
@@ -183,7 +202,7 @@ int _mi_prim_free(void* addr, size_t size ) {
     // the start of the region.
     MEMORY_BASIC_INFORMATION info; _mi_memzero_var(info);
     VirtualQuery(addr, &info, sizeof(info));
-    if (info.AllocationBase < addr && ((uint8_t*)addr - (uint8_t*)info.AllocationBase) < (ptrdiff_t)MI_SEGMENT_SIZE) {
+    if (info.AllocationBase < addr && ((uint8_t*)addr - (uint8_t*)info.AllocationBase) < (ptrdiff_t)(4*MI_MiB)) {
       errcode = 0;
       err = (VirtualFree(info.AllocationBase, 0, MEM_RELEASE) == 0);
       if (err) { errcode = GetLastError(); }
@@ -211,7 +230,7 @@ static void* win_virtual_alloc_prim_once(void* addr, size_t size, size_t try_ali
   }
   #endif
   // on modern Windows try use VirtualAlloc2 for aligned allocation
-  if (addr == NULL && try_alignment > 1 && (try_alignment % _mi_os_page_size()) == 0 && pVirtualAlloc2 != NULL) {
+  if (addr == NULL && try_alignment > win_allocation_granularity && (try_alignment % _mi_os_page_size()) == 0 && pVirtualAlloc2 != NULL) {
     MI_MEM_ADDRESS_REQUIREMENTS reqs = { 0, 0, 0 };
     reqs.Alignment = try_alignment;
     MI_MEM_EXTENDED_PARAMETER param = { {0, 0}, {0} };
@@ -247,7 +266,7 @@ static void* win_virtual_alloc_prim(void* addr, size_t size, size_t try_alignmen
       // success, return the address
       return p;
     }
-    else if (max_retry_msecs > 0 && (try_alignment <= 2*MI_SEGMENT_ALIGN) &&
+    else if (max_retry_msecs > 0 && (try_alignment <= 8*MI_MiB) &&
               (flags&MEM_COMMIT) != 0 && (flags&MEM_LARGE_PAGES) == 0 &&
               win_is_out_of_memory_error(GetLastError())) {
       // if committing regular memory and being out-of-memory,
@@ -823,3 +842,16 @@ static void NTAPI mi_win_main(PVOID module, DWORD reason, LPVOID reserved) {
     mi_allocator_done();
   }
 #endif
+
+bool _mi_prim_thread_is_in_threadpool(void) {
+  #if (MI_ARCH_X64 || MI_ARCH_X86 || MI_ARCH_ARM64)
+  if (win_major_version >= 6) {
+    // check if this thread belongs to a windows threadpool
+    // see: <https://www.geoffchappell.com/studies/windows/km/ntoskrnl/inc/api/pebteb/teb/index.htm>
+    _TEB* const teb = NtCurrentTeb();
+    void* const pool_data = *((void**)((uint8_t*)teb + (MI_SIZE_BITS == 32 ? 0x0F90 : 0x1778)));
+    return (pool_data != NULL);
+  }
+  #endif
+  return false;
+}

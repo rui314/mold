@@ -10,25 +10,29 @@ option(MI_PADDING           "Enable padding to detect heap block overflow (alway
 option(MI_OVERRIDE          "Override the standard malloc interface (i.e. define entry points for 'malloc', 'free', etc)" ON)
 option(MI_XMALLOC           "Enable abort() call on memory allocation failure by default" OFF)
 option(MI_SHOW_ERRORS       "Show error and warning messages by default (only enabled by default in DEBUG mode)" OFF)
-option(MI_TRACK_VALGRIND    "Compile with Valgrind support (adds a small overhead)" OFF)
-option(MI_TRACK_ASAN        "Compile with address sanitizer support (adds a small overhead)" OFF)
-option(MI_TRACK_ETW         "Compile with Windows event tracing (ETW) support (adds a small overhead)" OFF)
+option(MI_GUARDED           "Build with guard pages behind certain object allocations (implies MI_NO_PADDING=ON)" OFF)
 option(MI_USE_CXX           "Use the C++ compiler to compile the library (instead of the C compiler)" OFF)
-option(MI_OPT_ARCH          "Only for optimized builds: turn on architecture specific optimizations (for arm64: '-march=armv8.1-a' (2016))" OFF)
+option(MI_OPT_ARCH          "Only for optimized builds: turn on architecture specific optimizations (for x64: '-march=haswell;-mavx2' (2013), for arm64: '-march=armv8.1-a' (2016))" OFF)
+option(MI_OPT_SIMD          "Use SIMD instructions (requires MI_OPT_ARCH to be enabled)" OFF)
 option(MI_SEE_ASM           "Generate assembly files" OFF)
 option(MI_OSX_INTERPOSE     "Use interpose to override standard malloc on macOS" ON)
 option(MI_OSX_ZONE          "Use malloc zone to override standard malloc on macOS" ON)
 option(MI_WIN_REDIRECT      "Use redirection module ('mimalloc-redirect') on Windows if compiling mimalloc as a DLL" ON)
 option(MI_WIN_USE_FIXED_TLS "Use a fixed TLS slot on Windows to avoid extra tests in the malloc fast path" OFF)
 option(MI_LOCAL_DYNAMIC_TLS "Use local-dynamic-tls, a slightly slower but dlopen-compatible thread local storage mechanism (Unix)" OFF)
-option(MI_LIBC_MUSL         "Set this when linking with musl libc" OFF)
+option(MI_LIBC_MUSL         "Enable this when linking with musl libc" OFF)
+
+option(MI_DEBUG_TSAN        "Build with thread sanitizer (needs clang)" OFF)
+option(MI_DEBUG_UBSAN       "Build with undefined-behavior sanitizer (needs clang++)" OFF)
+option(MI_TRACK_VALGRIND    "Compile with Valgrind support (adds a small overhead)" OFF)
+option(MI_TRACK_ASAN        "Compile with address sanitizer support (adds a small overhead)" OFF)
+option(MI_TRACK_ETW         "Compile with Windows event tracing (ETW) support (adds a small overhead)" OFF)
+
 option(MI_BUILD_SHARED      "Build shared library" ON)
 option(MI_BUILD_STATIC      "Build static library" ON)
 option(MI_BUILD_OBJECT      "Build object library" ON)
 option(MI_BUILD_TESTS       "Build test executables" ON)
-option(MI_DEBUG_TSAN        "Build with thread sanitizer (needs clang)" OFF)
-option(MI_DEBUG_UBSAN       "Build with undefined-behavior sanitizer (needs clang++)" OFF)
-option(MI_GUARDED           "Build with guard pages behind certain object allocations (implies MI_NO_PADDING=ON)" OFF)
+
 option(MI_SKIP_COLLECT_ON_EXIT "Skip collecting memory on program exit" OFF)
 option(MI_NO_PADDING        "Force no use of padding even in DEBUG mode etc." OFF)
 option(MI_INSTALL_TOPLEVEL  "Install directly into $CMAKE_INSTALL_PREFIX instead of PREFIX/lib/mimalloc-version" OFF)
@@ -54,6 +58,7 @@ set(mi_sources
     src/alloc-aligned.c
     src/alloc-posix.c
     src/arena.c
+    src/arena-meta.c
     src/bitmap.c
     src/heap.c
     src/init.c
@@ -61,9 +66,8 @@ set(mi_sources
     src/options.c
     src/os.c
     src/page.c
+    src/page-map.c
     src/random.c
-    src/segment.c
-    src/segment-map.c
     src/stats.c
     src/prim/prim.c)
 
@@ -126,7 +130,7 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|x64|amd64|AMD64)$" OR CMAKE_GENE
   set(MI_ARCH "x64")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|armv[89].?|ARM64)$" OR CMAKE_GENERATOR_PLATFORM STREQUAL "ARM64" OR "arm64" IN_LIST CMAKE_OSX_ARCHITECTURES)
   set(MI_ARCH "arm64")
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|armv[34567]|ARM)$")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|armv[34567].?|ARM)$")
   set(MI_ARCH "arm32")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(riscv|riscv32|riscv64)$")
   if(CMAKE_SIZEOF_VOID_P==4)
@@ -173,7 +177,8 @@ if(CMAKE_C_COMPILER_ID MATCHES "Intel")
     list(APPEND mi_cflags -Wall)
 endif()
 
-if(CMAKE_C_COMPILER_ID MATCHES "MSVC|Intel")
+# force C++ compilation with msvc or clang-cl to use modern C++ atomics
+if(CMAKE_C_COMPILER_ID MATCHES "MSVC|Intel" OR MI_CLANG_CL)
   set(MI_USE_CXX "ON")
 endif()
 
@@ -278,7 +283,7 @@ endif()
 if(MI_SEE_ASM)
   message(STATUS "Generate assembly listings (MI_SEE_ASM=ON)")
   list(APPEND mi_cflags -save-temps)
-  if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang")
+  if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER 14)
     message(STATUS "No GNU Line marker")
     list(APPEND mi_cflags -Wno-gnu-line-marker)
   endif()
@@ -427,28 +432,39 @@ if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU|Intel" AND NOT CMAKE_SYSTEM
       list(APPEND mi_cflags -ftls-model=initial-exec)
     endif()
   endif()
+endif()
+
+if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU|Intel")
   if(MI_OVERRIDE)
     list(APPEND mi_cflags -fno-builtin-malloc)
   endif()
 endif()
 
+# Compiler and architecture specific flags
 if(CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang|GNU|Intel" AND NOT CMAKE_SYSTEM_NAME MATCHES "Haiku")
   if(MI_OPT_ARCH)
-    if(APPLE AND CMAKE_C_COMPILER_ID STREQUAL "AppleClang" AND CMAKE_OSX_ARCHITECTURES)   # to support multi-arch binaries (#999)
+    if(APPLE AND CMAKE_C_COMPILER_ID MATCHES "AppleClang|Clang" AND CMAKE_OSX_ARCHITECTURES)   # to support multi-arch binaries (#999)
       if("arm64" IN_LIST CMAKE_OSX_ARCHITECTURES)
         list(APPEND MI_OPT_ARCH_FLAGS "-Xarch_arm64;-march=armv8.1-a")
       endif()
+      if("x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
+        list(APPEND MI_OPT_ARCH_FLAGS "-Xarch_x86_64;-march=haswell;-Xarch_x86_64;-mavx2")
+      endif()
+    elseif(MI_ARCH STREQUAL "x64")
+      set(MI_OPT_ARCH_FLAGS "-march=haswell;-mavx2")    # fast bit scan (since 2013)
     elseif(MI_ARCH STREQUAL "arm64")
-      set(MI_OPT_ARCH_FLAGS "-march=armv8.1-a")  # fast atomics
+      set(MI_OPT_ARCH_FLAGS "-march=armv8.1-a")         # fast atomics (since 2016)
     endif()
   endif()
 endif()
 
-if (MSVC AND MSVC_VERSION GREATER_EQUAL 1914)
+if (MSVC AND MSVC_VERSION GREATER_EQUAL 1914) # vs2017+
   list(APPEND mi_cflags /Zc:__cplusplus)
   if(MI_OPT_ARCH AND NOT MI_CLANG_CL)
-    if(MI_ARCH STREQUAL "arm64")
-      set(MI_OPT_ARCH_FLAGS "/arch:armv8.1")           # fast atomics
+    if(MI_ARCH STREQUAL "x64")
+      set(MI_OPT_ARCH_FLAGS "/arch:AVX2")
+    elseif(MI_ARCH STREQUAL "arm64")
+      set(MI_OPT_ARCH_FLAGS "/arch:armv8.1")
     endif()
   endif()
 endif()
@@ -460,6 +476,12 @@ endif()
 if(MI_OPT_ARCH_FLAGS)
   list(APPEND mi_cflags ${MI_OPT_ARCH_FLAGS})
   message(STATUS "Architecture specific optimization is enabled (with ${MI_OPT_ARCH_FLAGS}) (MI_OPT_ARCH=ON)")
+  if (MI_OPT_SIMD)
+    list(APPEND mi_defines "MI_OPT_SIMD=1")
+    message(STATUS "SIMD instructions are enabled (MI_OPT_SIMD=ON)")
+  endif()
+elseif(MI_OPT_SIMD)
+  message(STATUS "SIMD instructions are not enabled (either MI_OPT_ARCH=OFF or this architecture has no SIMD support)")
 endif()
 
 # extra needed libraries
@@ -532,7 +554,9 @@ if(MI_TRACK_ASAN)
 endif()
 string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LC)
 list(APPEND mi_defines "MI_CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE_LC}")  #todo: multi-config project needs $<CONFIG> ?
-if(NOT(CMAKE_BUILD_TYPE_LC MATCHES "^(release|relwithdebinfo|minsizerel|none)$"))
+if(CMAKE_BUILD_TYPE_LC MATCHES "^(release|relwithdebinfo|minsizerel|none)$")
+  list(APPEND mi_defines MI_BUILD_RELEASE)
+else()
   set(mi_libname "${mi_libname}-${CMAKE_BUILD_TYPE_LC}") #append build type (e.g. -debug) if not a release version
 endif()
 
@@ -582,7 +606,7 @@ if(MI_BUILD_SHARED)
   install(TARGETS mimalloc EXPORT mimalloc ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
   install(EXPORT mimalloc DESTINATION ${mi_install_cmakedir})
 
-  if(WIN32)
+  if(WIN32 AND NOT MINGW)
     # On windows, the import library name for the dll would clash with the static mimalloc.lib library
     # so we postfix the dll import library with `.dll.lib` (and also the .pdb debug file)
     set_property(TARGET mimalloc PROPERTY ARCHIVE_OUTPUT_NAME "${mi_libname}.dll" )
@@ -592,6 +616,9 @@ if(MI_BUILD_SHARED)
     # install(FILES "$<TARGET_FILE_DIR:mimalloc>/${mi_libname}.dll.pdb" DESTINATION ${CMAKE_INSTALL_LIBDIR})
   endif()
   if(WIN32 AND MI_WIN_REDIRECT)
+    if(MINGW)
+      set_property(TARGET mimalloc PROPERTY PREFIX "")
+    endif()
     # On windows, link and copy the mimalloc redirection dll too.
     if(CMAKE_GENERATOR_PLATFORM STREQUAL "arm64ec")
       set(MIMALLOC_REDIRECT_SUFFIX "-arm64ec")
@@ -707,10 +734,12 @@ if (MI_BUILD_TESTS)
     target_compile_definitions(mimalloc-test-${TEST_NAME} PRIVATE ${mi_defines})
     target_compile_options(mimalloc-test-${TEST_NAME} PRIVATE ${mi_cflags})
     target_include_directories(mimalloc-test-${TEST_NAME} PRIVATE include)
-    if(MI_BUILD_SHARED AND (MI_TRACK_ASAN OR MI_DEBUG_TSAN OR MI_DEBUG_UBSAN))
+    if(MI_BUILD_STATIC AND NOT MI_DEBUG_TSAN)
+      target_link_libraries(mimalloc-test-${TEST_NAME} PRIVATE mimalloc-static ${mi_libraries})
+    elseif(MI_BUILD_SHARED)
       target_link_libraries(mimalloc-test-${TEST_NAME} PRIVATE mimalloc ${mi_libraries})
     else()
-      target_link_libraries(mimalloc-test-${TEST_NAME} PRIVATE mimalloc-static ${mi_libraries})
+      message(STATUS "cannot build TSAN tests without MI_BUILD_SHARED being enabled")
     endif()
     add_test(NAME test-${TEST_NAME} COMMAND mimalloc-test-${TEST_NAME})
   endforeach()
@@ -719,21 +748,19 @@ if (MI_BUILD_TESTS)
   if(MI_BUILD_SHARED AND NOT (MI_TRACK_ASAN OR MI_DEBUG_TSAN OR MI_DEBUG_UBSAN))
     add_executable(mimalloc-test-stress-dynamic test/test-stress.c)
     target_compile_definitions(mimalloc-test-stress-dynamic PRIVATE ${mi_defines} "USE_STD_MALLOC=1")
-    if(WIN32)
-      target_compile_definitions(mimalloc-test-stress-dynamic PRIVATE "MI_LINK_VERSION=1")
-    endif()
     target_compile_options(mimalloc-test-stress-dynamic PRIVATE ${mi_cflags})
     target_include_directories(mimalloc-test-stress-dynamic PRIVATE include)
-    target_link_libraries(mimalloc-test-stress-dynamic PRIVATE mimalloc ${mi_libraries})  # mi_version
     if(WIN32)
-      add_test(NAME test-stress-dynamic COMMAND ${CMAKE_COMMAND} -E env MIMALLOC_SHOW_STATS=1 $<TARGET_FILE:mimalloc-test-stress-dynamic>)
+      target_compile_definitions(mimalloc-test-stress-dynamic PRIVATE "MI_LINK_VERSION=1")  # link mi_version
+      target_link_libraries(mimalloc-test-stress-dynamic PRIVATE mimalloc ${mi_libraries})  # link mi_version
+      add_test(NAME test-stress-dynamic COMMAND ${CMAKE_COMMAND} -E env MIMALLOC_VERBOSE=1 $<TARGET_FILE:mimalloc-test-stress-dynamic>)
     else()
       if(APPLE)
         set(LD_PRELOAD "DYLD_INSERT_LIBRARIES")
       else()
         set(LD_PRELOAD "LD_PRELOAD")
       endif()
-      add_test(NAME test-stress-dynamic COMMAND ${CMAKE_COMMAND} -E env MIMALLOC_SHOW_STATS=1 ${LD_PRELOAD}=$<TARGET_FILE:mimalloc> $<TARGET_FILE:mimalloc-test-stress-dynamic>)
+      add_test(NAME test-stress-dynamic COMMAND ${CMAKE_COMMAND} -E env MIMALLOC_VERBOSE=1 ${LD_PRELOAD}=$<TARGET_FILE:mimalloc> $<TARGET_FILE:mimalloc-test-stress-dynamic>)
     endif()
   endif()
 endif()

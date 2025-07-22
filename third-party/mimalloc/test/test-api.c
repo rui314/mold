@@ -34,7 +34,7 @@ we therefore test the API over various inputs. Please add more tests :-)
 
 #include "mimalloc.h"
 // #include "mimalloc/internal.h"
-#include "mimalloc/types.h" // for MI_DEBUG and MI_BLOCK_ALIGNMENT_MAX
+#include "mimalloc/types.h" // for MI_DEBUG and MI_PAGE_MAX_OVERALLOC_ALIGN
 
 #include "testhelper.h"
 
@@ -169,7 +169,7 @@ int main(void) {
   /*
   CHECK_BODY("malloc-aligned6") {
     bool ok = true;
-    for (size_t align = 1; align <= MI_BLOCK_ALIGNMENT_MAX && ok; align *= 2) {
+    for (size_t align = 1; align <= MI_PAGE_MAX_OVERALLOC_ALIGN && ok; align *= 2) {
       void* ps[8];
       for (int i = 0; i < 8 && ok; i++) {
         ps[i] = mi_malloc_aligned(align*13  // size
@@ -186,16 +186,16 @@ int main(void) {
   };
   */
   CHECK_BODY("malloc-aligned7") {
-    void* p = mi_malloc_aligned(1024,MI_BLOCK_ALIGNMENT_MAX);
+    void* p = mi_malloc_aligned(1024,MI_PAGE_MAX_OVERALLOC_ALIGN);
     mi_free(p);
-    result = ((uintptr_t)p % MI_BLOCK_ALIGNMENT_MAX) == 0;
+    result = ((uintptr_t)p % MI_PAGE_MAX_OVERALLOC_ALIGN) == 0;
   };
   CHECK_BODY("malloc-aligned8") {
     bool ok = true;
     for (int i = 0; i < 5 && ok; i++) {
       int n = (1 << i);
-      void* p = mi_malloc_aligned(1024, n * MI_BLOCK_ALIGNMENT_MAX);
-      ok = ((uintptr_t)p % (n*MI_BLOCK_ALIGNMENT_MAX)) == 0;
+      void* p = mi_malloc_aligned(1024, n * MI_PAGE_MAX_OVERALLOC_ALIGN);
+      ok = ((uintptr_t)p % (n*MI_PAGE_MAX_OVERALLOC_ALIGN)) == 0;
       mi_free(p);
     }
     result = ok;
@@ -203,7 +203,7 @@ int main(void) {
   CHECK_BODY("malloc-aligned9") { // test large alignments
     bool ok = true;
     void* p[8];
-    size_t sizes[8] = { 8, 512, 1024 * 1024, MI_BLOCK_ALIGNMENT_MAX, MI_BLOCK_ALIGNMENT_MAX + 1, 2 * MI_BLOCK_ALIGNMENT_MAX, 8 * MI_BLOCK_ALIGNMENT_MAX, 0 };
+    size_t sizes[8] = { 8, 512, 1024 * 1024, MI_PAGE_MAX_OVERALLOC_ALIGN, MI_PAGE_MAX_OVERALLOC_ALIGN + 1, 2 * MI_PAGE_MAX_OVERALLOC_ALIGN, 8 * MI_PAGE_MAX_OVERALLOC_ALIGN, 0 };
     for (int i = 0; i < 28 && ok; i++) {
       int align = (1 << i);
       for (int j = 0; j < 8 && ok; j++) {
