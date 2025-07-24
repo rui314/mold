@@ -124,7 +124,11 @@ Script<E>::read_output_format(std::span<std::string_view> tok) {
 
 template <typename E>
 static bool is_in_sysroot(Context<E> &ctx, std::string path) {
-  std::string rel = std::filesystem::relative(path, ctx.arg.sysroot).string();
+  std::string sysroot = ctx.arg.sysroot;
+  if (sysroot.starts_with('/') && !ctx.arg.chroot.empty())
+    sysroot = ctx.arg.chroot + "/" + path_clean(sysroot);
+
+  std::string rel = std::filesystem::relative(path, sysroot).string();
   return rel != "." && !rel.starts_with("../");
 }
 
