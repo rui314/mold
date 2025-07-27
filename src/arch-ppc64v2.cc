@@ -255,6 +255,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_REL16_LO:
       *(ul16 *)loc = lo(S + A - P);
       break;
+    case R_PPC64_GOT16:
+      *(ul16 *)loc = G - TOC;
+      break;
+    case R_PPC64_GOT16_LO:
+      *(ul16 *)loc = lo(G - TOC);
+      break;
+    case R_PPC64_GOT16_HI:
+      *(ul16 *)loc = hi(G - TOC);
+      break;
+    case R_PPC64_GOT16_HA:
+      *(ul16 *)loc = ha(G - TOC);
+      break;
     case R_PPC64_PLT16_HA:
       *(ul16 *)loc = ha(G + GOT - TOC);
       break;
@@ -416,6 +428,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_PLT;
       ctx.extra.is_power10 = true;
       break;
+    case R_PPC64_GOT16:
+    case R_PPC64_GOT16_LO:
+    case R_PPC64_GOT16_HI:
+    case R_PPC64_GOT16_HA:
     case R_PPC64_PLT16_HA:
     case R_PPC64_PLT_PCREL34:
     case R_PPC64_PLT_PCREL34_NOTOC:
