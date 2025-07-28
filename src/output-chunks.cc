@@ -977,7 +977,7 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
       if (is_s390x<E> && (this->name == ".init" || this->name == ".fini"))
         fill({ 0x07, 0x00 }); // nopr
       else
-        fill(E::filler);
+        fill(E::trap);
     } else {
       memset(loc, 0, size);
     }
