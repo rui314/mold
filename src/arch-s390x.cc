@@ -65,7 +65,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
     // Branch to _dl_runtime_resolve
     0xe3, 0x10, 0x10, 0x10, 0x00, 0x04, // lg    %r1, 16(%r1)
     0x07, 0xf1,                         // br    %r1
-    0x07, 0x00, 0x07, 0x00,             // nopr; nopr
+    0x00, 0x00, 0x00, 0x00,             // (filler)
   };
 
   memcpy(buf, insn, sizeof(insn));
@@ -79,7 +79,7 @@ void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
     0xc0, 0x10, 0, 0, 0, 0,             // larl  %r1, GOTPLT_ENTRY_OFFSET
     0xe3, 0x10, 0x10, 0x00, 0x00, 0x04, // lg    %r1, (%r1)
     0x0d, 0x01,                         // basr  %r0, %r1
-    0x07, 0x00,                         // nopr
+    0x00, 0x00,                         // (filler)
   };
 
   memcpy(buf, insn, sizeof(insn));
@@ -92,7 +92,7 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
     0xc0, 0x10, 0, 0, 0, 0,             // larl  %r1, GOT_ENTRY_OFFSET
     0xe3, 0x10, 0x10, 0x00, 0x00, 0x04, // lg    %r1, (%r1)
     0x07, 0xf1,                         // br    %r1
-    0x07, 0x00,                         // nopr
+    0x00, 0x00,                         // (filler)
   };
 
   memcpy(buf, insn, sizeof(insn));

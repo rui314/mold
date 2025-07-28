@@ -2098,7 +2098,7 @@ struct S390X {
   static constexpr u32 plt_hdr_size = 48;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
-  static constexpr u8 filler[] = { 0x07, 0x00 }; // nop
+  static constexpr u8 filler[] = { 0x00, 0x00 }; // invalid
 
   static constexpr u32 R_COPY = R_390_COPY;
   static constexpr u32 R_GLOB_DAT = R_390_GLOB_DAT;

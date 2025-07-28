@@ -953,8 +953,8 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     InputSection<E> &isec = *members[i];
     isec.write_to(ctx, buf + isec.offset);
 
-    // Clear trailing padding. We write trap or nop instructions for
-    // an executable segment so that a disassembler wouldn't try to
+    // Clear trailing padding. We write trap instructions for an
+    // executable segment so that a disassembler wouldn't try to
     // disassemble garbage as instructions.
     u64 this_end = isec.offset + isec.sh_size;
     u64 next_start;
@@ -966,9 +966,18 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     u8 *loc = buf + this_end;
     i64 size = next_start - this_end;
 
+    auto fill = [&]<size_t N>(const u8 (&filler)[N]) {
+      for (i64 i = 0; i + N <= size; i += N)
+        memcpy(loc + i, filler, N);
+    };
+
     if (this->shdr.sh_flags & SHF_EXECINSTR) {
-      for (i64 i = 0; i + sizeof(E::filler) <= size; i += sizeof(E::filler))
-        memcpy(loc + i, E::filler, sizeof(E::filler));
+      // s390x's old CRT files use NOP slides in .init and .fini.
+      // https://sourceware.org/bugzilla/show_bug.cgi?id=31042
+      if (is_s390x<E> && (this->name == ".init" || this->name == ".fini"))
+        fill({ 0x07, 0x00 }); // nopr
+      else
+        fill(E::filler);
     } else {
       memset(loc, 0, size);
     }
