@@ -2169,7 +2169,7 @@ struct SH4LE {
   static constexpr u32 plt_hdr_size = 16;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 12;
-  static constexpr u8 trap[] = { 0x00, 0x90 }; // nop
+  static constexpr u8 trap[] = { 0xfd, 0xff }; // illegal
 
   static constexpr u32 R_COPY = R_SH_COPY;
   static constexpr u32 R_GLOB_DAT = R_SH_GLOB_DAT;
@@ -2185,7 +2185,7 @@ struct SH4LE {
 struct SH4BE : SH4LE {
   static constexpr std::string_view name = "sh4be";
   static constexpr bool is_le = false;
-  static constexpr u8 trap[] = { 0x90, 0x00 }; // nop
+  static constexpr u8 trap[] = { 0xff, 0xfd }; // illegal
 };
 
 struct LOONGARCH64 {

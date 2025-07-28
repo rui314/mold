@@ -137,7 +137,7 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
       0x5221, //    mov.l   @(4, r2), r2
       0x402b, //    jmp     @r0
       0xe000, //    mov     #0, r0
-      0x0009, //    nop
+      0xfffd, //    (illegal)
       0, 0,   // 1: .long GOTPLT
     };
 
