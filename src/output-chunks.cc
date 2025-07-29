@@ -2854,8 +2854,11 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
 
   // Write uncompressed contents and then compress them
   chunk.write_to(ctx, buf.get());
-  compressor.emplace(ctx.arg.compress_debug_sections, buf.get(),
-                     chunk.shdr.sh_size);
+
+  if (ctx.arg.compress_debug_sections == ELFCOMPRESS_ZLIB)
+    compressor.reset(new ZlibCompressor(buf.get(), chunk.shdr.sh_size));
+  else
+    compressor.reset(new ZstdCompressor(buf.get(), chunk.shdr.sh_size));
 
   // Compute header field values
   chdr.ch_type = ctx.arg.compress_debug_sections;

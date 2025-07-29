@@ -383,6 +383,7 @@ endforeach()
 # Add other non-template source files.
 target_sources(mold PRIVATE
   lib/aho-corasick.cc
+  lib/compress.cc
   lib/crc32.cc
   lib/demangle.cc
   lib/filepath.cc
@@ -399,7 +400,6 @@ target_sources(mold PRIVATE
   src/arch-s390x.cc
   src/arch-sparc64.cc
   src/arch-x86-64.cc
-  src/compress.cc
   src/elf.cc
   src/entry.cc
   third-party/rust-demangle/rust-demangle.c

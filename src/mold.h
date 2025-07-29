@@ -606,22 +606,6 @@ std::string_view
 get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf);
 
 //
-// compress.cc
-//
-
-class Compressor {
-public:
-  Compressor(i64 format, u8 *buf, i64 size);
-  void write_to(u8 *buf);
-  ~Compressor();
-
-  i64 compressed_size = 0;
-
-protected:
-  std::vector<std::span<u8>> shards;
-};
-
-//
 // output-chunks.cc
 //
 
@@ -1488,7 +1472,7 @@ public:
   ElfChdr<E> chdr = {};
 
 private:
-  std::optional<Compressor> compressor;
+  std::unique_ptr<Compressor> compressor;
 };
 
 // RelocSection represents a relocation table for an output file.
