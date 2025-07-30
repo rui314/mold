@@ -63,7 +63,7 @@ jobs:
         cd ..
         New-Item -ItemType Directory -Force dist | Out-Null
         $version = $Env:TAG -replace '^v', ''
-        Compress-Archive -Path mold-install\* -DestinationPath dist\mold-$version-windows-x86_64.zip
+        Compress-Archive -Path mold-install\* -DestinationPath dist\mold-$version-x86_64-windows.zip
 
     - uses: actions/upload-artifact@v4
       with:
