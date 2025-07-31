@@ -570,10 +570,12 @@ static bool is_relro(OutputSection<E> &osec) {
   // Some sections, such as .init, .fini, .got, .dynamic, contain
   // dynamic relocations but doesn't have to be writable at runtime,
   // so they are put into a RELRO segment.
+  std::string_view name = osec.name;
   u32 type = osec.shdr.sh_type;
   u32 flags = osec.shdr.sh_flags;
 
-  return osec.name == ".toc" || osec.name.ends_with(".rel.ro") ||
+  return name == ".toc" || name.ends_with(".rel.ro") ||
+         name.ends_with(".rel.ro.hot") || name.ends_with(".rel.ro.unlikely") ||
          type == SHT_INIT_ARRAY || type == SHT_FINI_ARRAY ||
          type == SHT_PREINIT_ARRAY || (flags & SHF_TLS);
 }
