@@ -201,7 +201,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 
   ReaderContext rctx;
   std::vector<ReaderContext> stack;
-  std::unordered_set<std::string_view> visited;
 
   tbb::task_group tg;
   rctx.tg = &tg;
@@ -234,12 +233,7 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       rctx = stack.back();
       stack.pop_back();
     } else if (arg.starts_with("-l")) {
-      arg = arg.substr(2);
-      if (visited.contains(arg))
-        continue;
-      visited.insert(arg);
-
-      MappedFile *mf = find_library(ctx, rctx, std::string(arg));
+      MappedFile *mf = find_library(ctx, rctx, std::string(arg.substr(2)));
       mf->given_fullpath = false;
       read_file(ctx, rctx, mf);
     } else {
@@ -315,12 +309,15 @@ int mold_main(int argc, char **argv) {
   // Parse input files
   read_input_files(ctx, file_args);
 
-  // Uniquify shared object files by soname
+  // Uniquify shared object files by soname. We choose the last
+  // occurrence for each soname so that the last occurrence of
+  // --{no-,}as-needed takes priority.
   {
     std::unordered_set<std::string_view> seen;
-    std::erase_if(ctx.dsos, [&](SharedFile<E> *file) {
-      return !seen.insert(file->soname).second;
-    });
+    for (i64 i = (i64)ctx.dsos.size() - 1; i >= 0; i--)
+      if (!seen.insert(ctx.dsos[i]->soname).second)
+        ctx.dsos[i] = nullptr;
+    std::erase(ctx.dsos, nullptr);
   }
 
   // Handle -repro
