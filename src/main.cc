@@ -201,7 +201,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
 
   ReaderContext rctx;
   std::vector<ReaderContext> stack;
-  std::unordered_set<std::string_view> visited;
 
   tbb::task_group tg;
   rctx.tg = &tg;
@@ -235,9 +234,6 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
       stack.pop_back();
     } else if (arg.starts_with("-l")) {
       arg = arg.substr(2);
-      if (visited.contains(arg))
-        continue;
-      visited.insert(arg);
 
       MappedFile *mf = find_library(ctx, rctx, std::string(arg));
       mf->given_fullpath = false;
@@ -318,9 +314,11 @@ int mold_main(int argc, char **argv) {
   // Uniquify shared object files by soname
   {
     std::unordered_set<std::string_view> seen;
+    std::reverse(ctx.dsos.begin(), ctx.dsos.end());
     std::erase_if(ctx.dsos, [&](SharedFile<E> *file) {
       return !seen.insert(file->soname).second;
     });
+    std::reverse(ctx.dsos.begin(), ctx.dsos.end());
   }
 
   // Handle -repro
