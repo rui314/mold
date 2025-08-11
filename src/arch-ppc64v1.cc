@@ -217,6 +217,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_PPC64_REL16_LO:
       *(ub16 *)loc = lo(S + A - P);
       break;
+    case R_PPC64_GOT16:
+      *(ub16 *)loc = G - TOC;
+      break;
     case R_PPC64_PLT16_HA:
       *(ub16 *)loc = ha(G + GOT - TOC);
       break;
@@ -351,6 +354,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       if (sym.is_imported)
         sym.flags |= NEEDS_PLT;
       break;
+    case R_PPC64_GOT16:
     case R_PPC64_PLT16_HA:
       sym.flags |= NEEDS_GOT;
       break;
