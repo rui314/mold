@@ -15,7 +15,7 @@ ubuntu | pop | linuxmint | debian | raspbian | neon | zorin)
 fedora | amzn | rhel | centos)
   dnf install -y gcc-g++ cmake glibc-static libstdc++-static diffutils util-linux tar
   ;;
-rocky)
+rocky | ol)
   dnf install -y gcc-g++ cmake diffutils util-linux
   ;;
 opensuse-*)
