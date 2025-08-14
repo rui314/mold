@@ -42,6 +42,10 @@ clear-linux-os)
 almalinux)
   dnf install -y gcc-toolset-13-gcc-c++ gcc-toolset-13-libstdc++-devel cmake diffutils
   ;;
+altlinux)
+  apt-get update
+  apt-get install -y gcc-c++ make cmake ctest diffutils util-linux
+  ;;
 freebsd)
   pkg update
   pkg install -y cmake bash binutils gcc
