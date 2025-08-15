@@ -65,17 +65,6 @@ typedef struct mi_stat_counter_s {
   MI_STAT_COUNTER(pages_unabandon_busy_wait) \
 
 
-// Size bins for chunks
-typedef enum mi_chunkbin_e {
-  MI_CBIN_NONE,     // no bin assigned yet (the chunk is completely free)
-  MI_CBIN_SMALL,    // slice_count == 1
-  MI_CBIN_OTHER,    // slice_count: any other from the other bins, and 1 <= slice_count <= MI_BCHUNK_BITS
-  MI_CBIN_MEDIUM,   // slice_count == 8
-  MI_CBIN_LARGE,    // slice_count == MI_SIZE_BITS  (only used if MI_ENABLE_LARGE_PAGES is 1)
-  MI_CBIN_COUNT
-} mi_chunkbin_t;
-
-
 // Define the statistics structure
 #define MI_BIN_HUGE             (73U)   // see types.h
 #define MI_STAT_COUNT(stat)     mi_stat_count_t stat;
@@ -94,21 +83,18 @@ typedef struct mi_stats_s
   // size segregated statistics
   mi_stat_count_t   malloc_bins[MI_BIN_HUGE+1];   // allocation per size bin
   mi_stat_count_t   page_bins[MI_BIN_HUGE+1];     // pages allocated per size bin
-  mi_stat_count_t   chunk_bins[MI_CBIN_COUNT];    // chunks per page sizes
 } mi_stats_t;
 
 #undef MI_STAT_COUNT
 #undef MI_STAT_COUNTER
-
 
 // Exported definitions
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-mi_decl_export void    mi_stats_get( size_t stats_size, mi_stats_t* stats ) mi_attr_noexcept;
-mi_decl_export char*   mi_stats_get_json( size_t buf_size, char* buf ) mi_attr_noexcept;    // use mi_free to free the result if the input buf == NULL
-mi_decl_export size_t  mi_stats_get_bin_size(size_t bin) mi_attr_noexcept;
+mi_decl_export void  mi_stats_get( size_t stats_size, mi_stats_t* stats ) mi_attr_noexcept;
+mi_decl_export char* mi_stats_get_json( size_t buf_size, char* buf ) mi_attr_noexcept;    // use mi_free to free the result if the input buf == NULL
 
 #ifdef __cplusplus
 }

@@ -16,22 +16,21 @@ terms of the MIT license. A copy of the license can be found in the file
 // ------------------------------------------------------
 
 static bool mi_malloc_is_naturally_aligned( size_t size, size_t alignment ) {
-  // objects up to `MI_PAGE_MIN_BLOCK_ALIGN` are always allocated aligned to their size
+  // objects up to `MI_MAX_ALIGN_GUARANTEE` are allocated aligned to their size (see `segment.c:_mi_segment_page_start`).
   mi_assert_internal(_mi_is_power_of_two(alignment) && (alignment > 0));
   if (alignment > size) return false;
+  if (alignment <= MI_MAX_ALIGN_SIZE) return true;
   const size_t bsize = mi_good_size(size);
-  const bool ok = (bsize <= MI_PAGE_MAX_START_BLOCK_ALIGN2 && _mi_is_power_of_two(bsize));
-  if (ok) { mi_assert_internal((bsize & (alignment-1)) == 0); } // since both power of 2 and alignment <= size
-  return ok;
+  return (bsize <= MI_MAX_ALIGN_GUARANTEE && (bsize & (alignment-1)) == 0);
 }
 
 #if MI_GUARDED
 static mi_decl_restrict void* mi_heap_malloc_guarded_aligned(mi_heap_t* heap, size_t size, size_t alignment, bool zero) mi_attr_noexcept {
   // use over allocation for guarded blocksl
-  mi_assert_internal(alignment > 0 && alignment < MI_PAGE_MAX_OVERALLOC_ALIGN);
+  mi_assert_internal(alignment > 0 && alignment < MI_BLOCK_ALIGNMENT_MAX);
   const size_t oversize = size + alignment - 1;
   void* base = _mi_heap_malloc_guarded(heap, oversize, zero);
-  void* p = _mi_align_up_ptr(base, alignment);
+  void* p = mi_align_up_ptr(base, alignment);
   mi_track_align(base, p, (uint8_t*)p - (uint8_t*)base, size);
   mi_assert_internal(mi_usable_size(p) >= size);
   mi_assert_internal(_mi_is_aligned(p, alignment));
@@ -60,20 +59,21 @@ static mi_decl_noinline void* mi_heap_malloc_zero_aligned_at_overalloc(mi_heap_t
 
   void* p;
   size_t oversize;
-  if mi_unlikely(alignment > MI_PAGE_MAX_OVERALLOC_ALIGN) {
-    // use OS allocation for large alignments and allocate inside a singleton page (not in an arena)
-    // This can support alignments >= MI_PAGE_ALIGN by ensuring the object can be aligned
-    // in the first (and single) page such that the page info is `MI_PAGE_ALIGN` bytes before it (and can be found in the _mi_page_map).
+  if mi_unlikely(alignment > MI_BLOCK_ALIGNMENT_MAX) {
+    // use OS allocation for very large alignment and allocate inside a huge page (dedicated segment with 1 page)
+    // This can support alignments >= MI_SEGMENT_SIZE by ensuring the object can be aligned at a point in the
+    // first (and single) page such that the segment info is `MI_SEGMENT_SIZE` bytes before it (so it can be found by aligning the pointer down)
     if mi_unlikely(offset != 0) {
       // todo: cannot support offset alignment for very large alignments yet
-      #if MI_DEBUG > 0
-      _mi_error_message(EOVERFLOW, "aligned allocation with a large alignment cannot be used with an alignment offset (size %zu, alignment %zu, offset %zu)\n", size, alignment, offset);
-      #endif
+#if MI_DEBUG > 0
+      _mi_error_message(EOVERFLOW, "aligned allocation with a very large alignment cannot be used with an alignment offset (size %zu, alignment %zu, offset %zu)\n", size, alignment, offset);
+#endif
       return NULL;
     }
     oversize = (size <= MI_SMALL_SIZE_MAX ? MI_SMALL_SIZE_MAX + 1 /* ensure we use generic malloc path */ : size);
     // note: no guarded as alignment > 0
-    p = _mi_heap_malloc_zero_ex(heap, oversize, zero, alignment); // the page block size should be large enough to align in the single huge page block
+    p = _mi_heap_malloc_zero_ex(heap, oversize, false, alignment); // the page block size should be large enough to align in the single huge page block
+    // zero afterwards as only the area from the aligned_p may be committed!
     if (p == NULL) return NULL;
   }
   else {
@@ -114,13 +114,13 @@ static mi_decl_noinline void* mi_heap_malloc_zero_aligned_at_overalloc(mi_heap_t
   #endif
 
   // now zero the block if needed
-  //if (alignment > MI_PAGE_MAX_OVERALLOC_ALIGN) {
-  //  // for the tracker, on huge aligned allocations only from the start of the large block is defined
-  //  mi_track_mem_undefined(aligned_p, size);
-  //  if (zero) {
-  //    _mi_memzero_aligned(aligned_p, mi_usable_size(aligned_p));
-  //  }
-  //}
+  if (alignment > MI_BLOCK_ALIGNMENT_MAX) {
+    // for the tracker, on huge aligned allocations only the memory from the start of the large block is defined
+    mi_track_mem_undefined(aligned_p, size);
+    if (zero) {
+      _mi_memzero_aligned(aligned_p, mi_usable_size(aligned_p));
+    }
+  }
 
   if (p != aligned_p) {
     mi_track_align(p,aligned_p,adjust,mi_usable_size(aligned_p));
@@ -177,14 +177,12 @@ static void* mi_heap_malloc_zero_aligned_at(mi_heap_t* const heap, const size_t 
   }
 
   #if MI_GUARDED
-  if (offset==0 && alignment < MI_PAGE_MAX_OVERALLOC_ALIGN && mi_heap_malloc_use_guarded(heap,size)) {
+  if (offset==0 && alignment < MI_BLOCK_ALIGNMENT_MAX && mi_heap_malloc_use_guarded(heap,size)) {
     return mi_heap_malloc_guarded_aligned(heap, size, alignment, zero);
   }
   #endif
 
   // try first if there happens to be a small block available with just the right alignment
-  // since most small power-of-2 blocks (under MI_PAGE_MAX_BLOCK_START_ALIGN2) are already
-  // naturally aligned this can be often the case.
   if mi_likely(size <= MI_SMALL_SIZE_MAX && alignment <= size) {
     const uintptr_t align_mask = alignment-1;       // for any x, `(x & align_mask) == (x % alignment)`
     const size_t padsize = size + MI_PADDING_SIZE;
@@ -193,6 +191,9 @@ static void* mi_heap_malloc_zero_aligned_at(mi_heap_t* const heap, const size_t 
       const bool is_aligned = (((uintptr_t)page->free + offset) & align_mask)==0;
       if mi_likely(is_aligned)
       {
+        #if MI_STAT>1
+        mi_heap_stat_increase(heap, malloc_requested, size);
+        #endif
         void* p = (zero ? _mi_page_malloc_zeroed(heap,page,padsize) : _mi_page_malloc(heap,page,padsize)); // call specific page malloc for better codegen
         mi_assert_internal(p != NULL);
         mi_assert_internal(((uintptr_t)p + offset) % alignment == 0);
@@ -218,6 +219,11 @@ mi_decl_nodiscard mi_decl_restrict void* mi_heap_malloc_aligned_at(mi_heap_t* he
 mi_decl_nodiscard mi_decl_restrict void* mi_heap_malloc_aligned(mi_heap_t* heap, size_t size, size_t alignment) mi_attr_noexcept {
   return mi_heap_malloc_aligned_at(heap, size, alignment, 0);
 }
+
+// ensure a definition is emitted
+#if defined(__cplusplus)
+void* _mi_extern_heap_malloc_aligned = (void*)&mi_heap_malloc_aligned;
+#endif
 
 // ------------------------------------------------------
 // Aligned Allocation

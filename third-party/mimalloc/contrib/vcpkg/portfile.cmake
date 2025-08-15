@@ -5,11 +5,11 @@ vcpkg_from_github(
 
   # The "REF" can be a commit hash, branch name (dev2), or a version (v2.2.1).
   # REF "v${VERSION}"
-  REF 6a89f8554eaab8d8d00e17b5b09f79e1d8dbf61b
+  REF e2db21e9ba9fb9172b7b0aa0fe9b8742525e8774
 
   # The sha512 is the hash of the tar.gz bundle.
   # (To get the sha512, run `vcpkg install mimalloc[override] --overlay-ports=<dir of this file>` and copy the sha from the error message.)
-  SHA512 32b87a3195efcc558b83a546348a8fb544fed335cdd6c9f8e7e9d0e8e64540fdcf1f4aa57fd0e783b78731518f4810292b832227d7e7665bf8426f1e6ce96f9d
+  SHA512 8cbb601fdf8b46dd6a9c0d314d6da9d4960699853829e96d2470753867f90689fb4caeaf30d628943fd388670dc11902dbecc9cc7c329b99a510524a09bdb612
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
@@ -18,6 +18,8 @@ vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     guarded     MI_GUARDED
     secure      MI_SECURE
     override    MI_OVERRIDE
+    optarch     MI_OPT_ARCH
+    optsimd     MI_OPT_SIMD
     xmalloc     MI_XMALLOC
     asm         MI_SEE_ASM
 )
@@ -26,16 +28,14 @@ string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "dynamic" MI_BUILD_SHARED)
 
 vcpkg_cmake_configure(
   SOURCE_PATH "${SOURCE_PATH}"
-  OPTIONS_RELEASE
-    -DMI_OPT_ARCH=ON
   OPTIONS
     -DMI_USE_CXX=ON
     -DMI_BUILD_TESTS=OFF
     -DMI_BUILD_OBJECT=ON
-    ${FEATURE_OPTIONS}
     -DMI_BUILD_STATIC=${MI_BUILD_STATIC}
     -DMI_BUILD_SHARED=${MI_BUILD_SHARED}
     -DMI_INSTALL_TOPLEVEL=ON
+    ${FEATURE_OPTIONS}
 )
 
 vcpkg_cmake_install()

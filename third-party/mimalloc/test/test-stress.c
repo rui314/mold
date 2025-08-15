@@ -40,19 +40,6 @@ static int ITER    = 20;
 static int THREADS = 8;
 static int SCALE   = 10;
 static int ITER    = 10;
-#elif 0
-static int THREADS = 4;
-static int SCALE   = 10;
-static int ITER    = 20;
-#elif 0
-static int THREADS = 32;
-static int SCALE   = 50;
-static int ITER    = 50;
-#elif 0
-static int THREADS = 32;
-static int SCALE   = 25;
-static int ITER    = 50;
-#define ALLOW_LARGE true
 #else
 static int THREADS = 32;      // more repeatable if THREADS <= #processors
 static int SCALE   = 50;      // scaling factor
@@ -63,12 +50,7 @@ static int ITER    = 50;      // N full iterations destructing and re-creating a
 
 #define STRESS                // undefine for leak test
 
-#ifndef ALLOW_LARGE
-#define ALLOW_LARGE  false
-#endif
-
-static bool   allow_large_objects = ALLOW_LARGE;    // allow very large objects? (set to `true` if SCALE>100)
-
+static bool   allow_large_objects = false;     // allow very large objects? (set to `true` if SCALE>100)
 static size_t use_one_size = 0;               // use single object size of `N * sizeof(uintptr_t)`?
 
 static bool   main_participates = false;       // main thread participates as a worker too
@@ -85,7 +67,7 @@ static bool   main_participates = false;       // main thread participates as a 
 #define custom_free(p)        mi_free(p)
 
 #ifndef NDEBUG
-#define xHEAP_WALK             // walk the heap objects?
+#define HEAP_WALK             // walk the heap objects?
 #endif
 #endif
 
@@ -135,7 +117,7 @@ static void* alloc_items(size_t items, random_t r) {
     else if (chance(10, r) && allow_large_objects) items *= 1000;  // 0.1% huge
     else items *= 100;                                             // 1% large objects;
   }
-  if (items == 40) items++;              // pthreads uses that size for stack increases
+  if (items>=32 && items<=40) items*=2;              // pthreads uses 320b allocations (this shows that more clearly in the stats)
   if (use_one_size > 0) items = (use_one_size / sizeof(uintptr_t));
   if (items==0) items = 1;
   uintptr_t* p = (uintptr_t*)custom_calloc(items,sizeof(uintptr_t));
@@ -260,22 +242,8 @@ static void test_stress(void) {
     //mi_debug_show_arenas(true);
     #endif
     #if !defined(NDEBUG) || defined(MI_TSAN)
-    if ((n + 1) % 10 == 0) {
-      printf("- iterations left: %3d\n", ITER - (n + 1));
-      #ifndef USE_STD_MALLOC
-      mi_debug_show_arenas();
-      #endif
-      //mi_collect(true);
-      //mi_debug_show_arenas();
-    }
+    if ((n + 1) % 10 == 0) { printf("- iterations left: %3d\n", ITER - (n + 1)); }
     #endif
-  }
-  // clean up
-  for (int i = 0; i < TRANSFERS; i++) {
-    void* p = atomic_exchange_ptr(&transfer[i], NULL);
-    if (p != NULL) {
-      free_items(p);
-    }
   }
 }
 
@@ -316,15 +284,7 @@ int main(int argc, char** argv) {
     mi_option_enable(mi_option_visit_abandoned);
   #endif
   #if !defined(NDEBUG) && !defined(USE_STD_MALLOC)
-    // mi_option_set(mi_option_arena_reserve, 32 * 1024 /* in kib = 32MiB */);
-    // mi_option_set(mi_option_purge_delay,1);
-  #endif
-  #if defined(NDEBUG) && !defined(USE_STD_MALLOC)
-    // mi_option_set(mi_option_purge_delay,-1);
-    mi_option_set(mi_option_page_reclaim_on_free, 0);
-  #endif
-  #ifndef USE_STD_MALLOC
-    mi_stats_reset();
+    mi_option_set(mi_option_arena_reserve, 32 * 1024 /* in kib = 32MiB */);
   #endif
 
   // > mimalloc-test-stress [THREADS] [SCALE] [ITER]
@@ -347,6 +307,11 @@ int main(int argc, char** argv) {
     allow_large_objects = true;
   }
   printf("Using %d threads with a %d%% load-per-thread and %d iterations %s\n", THREADS, SCALE, ITER, (allow_large_objects ? "(allow large objects)" : ""));
+
+  #if !defined(NDEBUG) && !defined(USE_STD_MALLOC)
+  mi_stats_reset();
+  #endif
+
   //mi_reserve_os_memory(1024*1024*1024ULL, false, true);
   //int res = mi_reserve_huge_os_pages(4,1);
   //printf("(reserve huge: %i\n)", res);
@@ -355,11 +320,17 @@ int main(int argc, char** argv) {
 
   // Run ITER full iterations where half the objects in the transfer buffer survive to the next round.
   srand(0x7feb352d);
-  // mi_stats_reset();
+  
+  //mi_reserve_os_memory(512ULL << 20, true, true);
+
+  #if !defined(NDEBUG) && !defined(USE_STD_MALLOC)
+  mi_stats_reset();
+  #endif
+
 #ifdef STRESS
-    test_stress();
+  test_stress();
 #else
-    test_leak();
+  test_leak();
 #endif
 
 #ifndef USE_STD_MALLOC
@@ -372,8 +343,7 @@ int main(int argc, char** argv) {
     mi_free(json);
   }
   #endif
-  mi_collect(true);
-  mi_stats_print(NULL);
+  mi_stats_print(NULL);  
 #endif
   //bench_end_program();
   return 0;
@@ -395,10 +365,9 @@ static void run_os_threads(size_t nthreads, void (*fun)(intptr_t)) {
   thread_entry_fun = fun;
   DWORD* tids = (DWORD*)custom_calloc(nthreads,sizeof(DWORD));
   HANDLE* thandles = (HANDLE*)custom_calloc(nthreads,sizeof(HANDLE));
-  thandles[0] = GetCurrentThread(); // avoid lint warning
   const size_t start = (main_participates ? 1 : 0);
   for (size_t i = start; i < nthreads; i++) {
-    thandles[i] = CreateThread(0, 8*1024L, &thread_entry, (void*)(i), 0, &tids[i]);
+    thandles[i] = CreateThread(0, 8*1024, &thread_entry, (void*)(i), 0, &tids[i]);
   }
   if (main_participates) fun(0); // run the main thread as well
   for (size_t i = start; i < nthreads; i++) {

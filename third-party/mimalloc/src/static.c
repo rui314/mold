@@ -20,11 +20,10 @@ terms of the MIT license. A copy of the license can be found in the file
 // containing the whole library. If it is linked first
 // it will override all the standard library allocation
 // functions (on Unix's).
-#include "alloc.c"          // includes alloc-override.c and free.c
+#include "alloc.c"          // includes alloc-override.c
 #include "alloc-aligned.c"
 #include "alloc-posix.c"
 #include "arena.c"
-#include "arena-meta.c"
 #include "bitmap.c"
 #include "heap.c"
 #include "init.c"
@@ -32,8 +31,9 @@ terms of the MIT license. A copy of the license can be found in the file
 #include "options.c"
 #include "os.c"
 #include "page.c"           // includes page-queue.c
-#include "page-map.c"
 #include "random.c"
+#include "segment.c"
+#include "segment-map.c"
 #include "stats.c"
 #include "prim/prim.c"
 #if MI_OSX_ZONE

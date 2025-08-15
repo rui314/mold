@@ -3,7 +3,7 @@
 <span id="override_on_windows">We use a separate redirection DLL to override mimalloc on Windows</span> 
 such that we redirect all malloc/free calls that go through the (dynamic) C runtime allocator, 
 including those from other DLL's or libraries. As it intercepts all allocation calls on a low level, 
-it can be used reliably on large programs that include other 3rd party components.
+it can be used on large programs that include other 3rd party components.
 There are four requirements to make the overriding work well:
 
 1. Use the C-runtime library as a DLL (using the `/MD` or `/MDd` switch).
@@ -63,7 +63,7 @@ need a specific redirection DLL:
   mode on Windows arm64. Unfortunately we cannot run x64 code emulated on Windows arm64 with
   the x64 mimalloc override directly (since the C runtime always uses `arm64ec`). Instead:
   1. Build the program as normal for x64 and link as normal with the x64 
-     `mimalloc.dll.lib` export library.
+     `mimalloc.lib` export library.
   2. Now separately build `mimalloc.dll` in `arm64ec` mode and _overwrite_ your
      previous (x64) `mimalloc.dll` -- the loader can handle the mix of arm64ec
      and x64 code. Now use `mimalloc-redirect-arm64ec.dll` to match your new

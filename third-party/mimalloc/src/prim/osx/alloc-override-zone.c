@@ -64,8 +64,7 @@ static void* zone_valloc(malloc_zone_t* zone, size_t size) {
 
 static void zone_free(malloc_zone_t* zone, void* p) {
   MI_UNUSED(zone);
-  // mi_cfree(p);  // checked free as `zone_free` may be called with invalid pointers
-  mi_free(p); // with the page_map and pagemap_commit=1 we can use the regular free
+  mi_cfree(p);
 }
 
 static void* zone_realloc(malloc_zone_t* zone, void* p, size_t newsize) {

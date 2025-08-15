@@ -8,5 +8,4 @@ class TestAllocInDll
 {
 public:
 	__declspec(dllexport) std::string GetString();
-	__declspec(dllexport) void TestHeapAlloc();
 };
