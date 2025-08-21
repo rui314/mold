@@ -48,7 +48,7 @@ Binary packages for the following systems are currently available:
 
 mold is written in C++20, so if you build mold yourself, you will need a
 recent version of a C++ compiler and a C++ standard library. We recommend GCC
-10.2 or Clang 12.0.0 (or later) and libstdc++ 10 or libc++ 7 (or later).
+10.2 or Clang 16.0.0 (or later) and libstdc++ 10 or libc++ 7 (or later).
 
 ### Install Dependencies
 
