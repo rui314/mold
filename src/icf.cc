@@ -69,6 +69,7 @@
 
 #include <array>
 #include <cstdio>
+#include <fstream>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
@@ -472,24 +473,39 @@ static void print_icf_sections(Context<E> &ctx) {
                        return a->get_priority() < b->get_priority();
                      });
 
+  std::ostream *out = &std::cout;
+  std::ofstream file;
+
+  if (ctx.arg.print_icf_sections && !ctx.arg.print_icf_sections_file.empty()) {
+    file.open(ctx.arg.print_icf_sections_file);
+    if (!file.is_open())
+      Fatal(ctx) << "cannot open " << ctx.arg.print_icf_sections_file << ": " << errno_string();
+    out = &file;
+  }
+
   i64 saved_bytes = 0;
+  i64 saved_sections = 0;
 
   for (InputSection<E> *leader : leaders) {
     auto [begin, end] = map.equal_range(leader);
     if (begin == end)
       continue;
 
-    Out(ctx) << "selected section " << *leader;
+    i64 section_bytes = leader->contents.size();
+    *out << "selected section " << *leader << " [" << section_bytes << " bytes]\n";
 
     i64 n = 0;
     for (auto it = begin; it != end; it++) {
-      Out(ctx) << "  removing identical section " << *it->second;
+      *out << "  removing identical section " << *it->second << "\n";
       n++;
     }
-    saved_bytes += leader->contents.size() * n;
+    i64 section_saved_bytes = section_bytes * n;
+    *out << "  removed: " << n << " section" << (n == 1 ? "" : "s") << " of " << section_bytes << " byte" << (section_bytes == 1 ? "": "s") << (n == 1 ? "" : " each") << ", bytes saved: " << section_saved_bytes << "\n";
+    saved_bytes += section_saved_bytes;
+    saved_sections += n;
   }
 
-  Out(ctx) << "ICF saved " << saved_bytes << " bytes";
+  *out << "ICF saved " << saved_bytes << " bytes, " << saved_sections << " sections\n";
 }
 
 template <typename E>

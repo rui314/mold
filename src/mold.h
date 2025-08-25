@@ -2424,6 +2424,8 @@ struct Context {
     std::string dynamic_linker;
     std::string output = "a.out";
     std::string package_metadata;
+    std::string print_gc_sections_file;
+    std::string print_icf_sections_file;
     std::string plugin;
     std::string rpaths;
     std::string separate_debug_file;
