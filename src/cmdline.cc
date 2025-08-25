@@ -633,6 +633,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   std::optional<u64> shuffle_sections_seed;
   std::unordered_set<std::string_view> rpaths;
   std::vector<std::string_view> version_scripts;
+  int state_stack_depth = 0;
 
   auto add_rpath = [&](std::string_view arg) {
     if (rpaths.insert(arg).second) {
@@ -837,10 +838,14 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("print-map") || read_flag("M")) {
       ctx.arg.print_map = true;
     } else if (read_flag("Bstatic") || read_flag("dn") || read_flag("static")) {
-      ctx.arg.static_ = true;
+      if (state_stack_depth == 0)
+        ctx.arg.static_ = true;
+
       remaining.emplace_back("--Bstatic");
     } else if (read_flag("Bdynamic") || read_flag("dy")) {
-      ctx.arg.static_ = false;
+      if (state_stack_depth == 0)
+        ctx.arg.static_ = false;
+
       remaining.emplace_back("--Bdynamic");
     } else if (read_flag("shared") || read_flag("Bshareable")) {
       ctx.arg.shared = true;
@@ -1417,8 +1422,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("script") || read_arg("T")) {
       remaining.emplace_back(arg);
     } else if (read_flag("push-state")) {
+      state_stack_depth++;
       remaining.emplace_back("--push-state");
     } else if (read_flag("pop-state")) {
+      state_stack_depth--;
       remaining.emplace_back("--pop-state");
     } else if (args[0].starts_with("-z") && args[0].size() > 2) {
       Warn(ctx) << "unknown command line option: " << args[0];
