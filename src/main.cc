@@ -250,6 +250,11 @@ static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
   if (ctx.objs.empty() && ctx.dsos.empty())
     Fatal(ctx) << "no input files";
 
+  if (rctx.static_ || ctx.arg.relocatable) {
+    ctx.arg.static_ = true;
+    ctx.arg.dynamic_linker = "";
+  }
+
   tg.wait();
 }
 
