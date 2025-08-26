@@ -13,10 +13,10 @@ ubuntu | pop | linuxmint | debian | raspbian | neon | zorin)
   apt-get install -y cmake gcc g++ clang gdb
   ;;
 fedora | amzn | rhel | centos)
-  dnf install -y gcc-g++ cmake glibc-static libstdc++-static diffutils util-linux tar
+  dnf install -y gcc-c++ cmake glibc-static libstdc++-static diffutils util-linux tar
   ;;
 rocky | ol)
-  dnf install -y gcc-g++ cmake diffutils util-linux
+  dnf install -y gcc-c++ cmake diffutils util-linux
   ;;
 opensuse-*)
   zypper install -y make cmake gcc-c++ glibc-devel-static tar diffutils util-linux
