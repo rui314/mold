@@ -4,6 +4,7 @@
 
 #include "mold.h"
 
+#include <fstream>
 #include <tbb/concurrent_vector.h>
 #include <tbb/parallel_for_each.h>
 
@@ -149,16 +150,36 @@ static void sweep(Context<E> &ctx) {
   Timer t(ctx, "sweep");
   static Counter counter("garbage_sections");
 
+  std::ostream *out = &std::cout;
+  std::ofstream out_file;
+
+  if (ctx.arg.print_gc_sections && !ctx.arg.print_gc_sections_file.empty()) {
+    out_file.open(ctx.arg.print_gc_sections_file);
+    if (!out_file.is_open())
+      Fatal(ctx) << "cannot open " << ctx.arg.print_gc_sections_file << ": " << errno_string();
+    out = &out_file;
+  }
+
+  i64 saved_bytes = 0;
+  std::mutex gc_sections;
+
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
       if (isec && isec->is_alive && !isec->is_visited) {
-        if (ctx.arg.print_gc_sections)
-          Out(ctx) << "removing unused section " << *isec;
+        if (ctx.arg.print_gc_sections) {
+          std::scoped_lock lock(gc_sections);
+          i64 section_size = isec->contents.size();
+          *out << "removing unused section " << *isec << " [" << section_size << " bytes]\n";
+          saved_bytes += section_size;
+        }
         isec->kill();
         counter++;
       }
     }
   });
+
+  if (ctx.arg.print_gc_sections)
+    *out << "GC saved " << saved_bytes << " bytes\n";
 }
 
 template <typename E>
