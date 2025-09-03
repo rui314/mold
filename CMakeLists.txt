@@ -117,6 +117,21 @@ if(MOLD_USE_TSAN)
   target_link_options(mold PRIVATE -fsanitize=thread)
 endif()
 
+# Enable MemorySanitizer if -DMOLD_USE_MSAN=ON
+option(MOLD_USE_MSAN "Build mold with MemorySanitizer" OFF)
+if(MOLD_USE_MSAN)
+  set(MOLD_STDLIB_PREFIX /usr CACHE FILEPATH "prefix of instrumented stdlib")
+  target_compile_options(mold PRIVATE
+    -g -Og -fsanitize=memory -fsanitize-memory-track-origins
+    -nostdinc++ -isystem ${MOLD_STDLIB_PREFIX}/include/c++/v1
+  )
+  target_link_options(mold PRIVATE
+    -fsanitize=memory
+    -nostdlib++ -L ${MOLD_STDLIB_PREFIX}/lib -lc++
+    -Wl,-rpath,${MOLD_STDLIB_PREFIX}/lib
+  )
+endif()
+
 # Statically-link libstdc++ if -DMOLD_MOSTLY_STATIC=ON.
 #
 # This option is intended to be used by `./dist.sh` script to create a
