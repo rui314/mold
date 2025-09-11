@@ -518,6 +518,7 @@ parse_section_order(Context<E> &ctx, std::string_view arg) {
                std::regex_constants::optimize;
   static std::regex re1(R"(^\s*(TEXT|DATA|RODATA|BSS)(?:\s|$))", flags);
   static std::regex re2(R"(^\s*([a-zA-Z0-9_.][^\s]*|EHDR|PHDR)(?:\s|$))", flags);
+  static std::regex re2_noinit(R"(^\s*noinit:([a-zA-Z0-9_.][^\s]*)(?:\s|$))", flags);
   static std::regex re3(R"(^\s*=(0x[0-9a-f]+|\d+)(?:\s|$))", flags);
   static std::regex re4(R"(^\s*%(0x[0-9a-f]+|\d*)(?:\s|$))", flags);
   static std::regex re5(R"(^\s*!(\S+)(?:\s|$))", flags);
@@ -531,6 +532,10 @@ parse_section_order(Context<E> &ctx, std::string_view arg) {
 
     if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re1)) {
       ord.type = SectionOrder::GROUP;
+      ord.name = m[1].str();
+    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re2_noinit)) {
+      ord.type = SectionOrder::SECTION;
+      ord.noinit = true;
       ord.name = m[1].str();
     } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re2)) {
       ord.type = SectionOrder::SECTION;

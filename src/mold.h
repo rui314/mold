@@ -2249,6 +2249,7 @@ struct SectionOrder {
   enum { NONE, SECTION, GROUP, ADDR, ALIGN, SYMBOL } type = NONE;
   std::string name;
   u64 value = 0;
+  bool noinit = false;
 };
 
 // Target-specific context members

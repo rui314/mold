@@ -7,6 +7,8 @@ cat <<EOF | $CC -o $t/a.o -c -xc -fno-PIC $flags -
 __attribute__((section(".fn1"))) void fn1() { printf(" fn1"); }
 __attribute__((section(".fn2"))) void fn2() { printf(" fn2"); }
 
+__attribute__((section(".lazy_vendor"))) char dma_buffer[256];
+
 int main() {
   printf("Hello world\n");
 }
@@ -37,3 +39,9 @@ grep -E '\b0+200040 .* rodata_start$' $t/log3
 grep -E '\b0+300000 .* phdr_start$' $t/log3
 grep -E '\b0+301000 .* phdr_end$' $t/log3
 grep -E '\b0+400000 .* text_start$' $t/log3
+
+
+$CC -B. -o $t/exe4 $t/a.o -no-pie \
+  -Wl,--section-order='=0x200000 EHDR RODATA =0x300000 PHDR =0x400000 .fn2 TEXT DATA BSS =0x708000 noinit:.lazy_vendor'
+
+readelf -S $t/exe4 | grep -E '.lazy_vendor\s*NOBITS.*708000'

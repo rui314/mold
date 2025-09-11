@@ -448,6 +448,28 @@ static bool has_ctors_and_init_array(Context<E> &ctx) {
 }
 
 template <typename E>
+static u64 remove_progbits_if_requested(Context<E>& ctx, std::string_view name, u64 type) {
+  // Compilers do not bother to check if custom sections are only made up
+  // out of uninitialized variables, so we give the user the ability to
+  // override the type - this is rather common in micro controller projects:
+  // to make data structures, that would otherwise be grouped to BSS,
+  // magically appear in a special location, the structure is placed inside 
+  // a custom section which then gets defaulted to SHT_PROGBITS.
+  // This then creates an output section that would be all zeros in your final
+  // binary. In gnu linker scripts this could be avoided with a NOLOAD attribute
+  // to the section.
+  //
+  // On the other hand this could be easily implemented in a driver in your
+  // micro controller, simply by setting a pointer or writing a custom allocator.
+  // Still every CPU vendor will give you overly complicated linker scripts examples.
+  // This feature only makes sense for supporting older frameworks, and cpu vendor code.
+  for(auto const& ord : ctx.arg.section_order)
+    if(ord.type == SectionOrder::SECTION && ord.noinit && name == ord.name) 
+      return SHT_NOBITS;
+  return type;
+}
+
+template <typename E>
 static u64 canonicalize_type(std::string_view name, u64 type) {
   // Some old assemblers don't recognize these section names and
   // create them as SHT_PROGBITS.
@@ -551,6 +573,8 @@ get_output_section_key(Context<E> &ctx, InputSection<E> &isec,
   const ElfShdr<E> &shdr = isec.shdr();
   std::string_view name = get_output_name(ctx, isec.name(), shdr.sh_flags);
   u64 type = canonicalize_type<E>(name, shdr.sh_type);
+  if (!ctx.arg.section_order.empty() && type == SHT_PROGBITS)
+    type = remove_progbits_if_requested(ctx, isec.name(), type);
   return {name, type};
 }
 
