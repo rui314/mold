@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ "$(uname)" = FreeBSD ] && skip
+
 cat <<EOF | $CC -o $t/a.o -c -xc -
 #include <stdio.h>
 
