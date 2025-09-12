@@ -1099,6 +1099,38 @@ void check_duplicate_symbols(Context<E> &ctx) {
   ctx.checkpoint();
 }
 
+// GCC and Clang set the SHT_NOBITS flag for an output section only if the
+// section name is .bss or similar. Sections with nonstandard names, such
+// as those defined with __attribute__((section(".sectname"))), are always
+// emitted as non-BSS sections even if they contain only uninitialized
+// variables.
+//
+// This function finds such allocated but all-zero sections and converts
+// them into BSS, reducing the output file size.
+template <typename E>
+void convert_zero_to_bss(Context<E> &ctx) {
+  Timer t(ctx, "convert_zero_to_bss");
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (!file->is_reachable)
+      return;
+
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (isec && isec->is_alive &&
+          isec->shdr().sh_type == SHT_PROGBITS &&
+          (isec->shdr().sh_flags & SHF_ALLOC) &&
+          !(isec->shdr().sh_flags & SHF_EXECINSTR) &&
+          !(isec->shdr().sh_flags & SHF_TLS) &&
+          isec->get_rels(ctx).empty() &&
+          !isec->contents.empty() &&
+          isec->contents.find_first_not_of('\0') == isec->contents.npos) {
+        isec->shdr().sh_type = SHT_NOBITS;
+        isec->contents = {};
+      }
+    }
+  });
+}
+
 // If --no-allow-shlib-undefined is specified, we report errors on
 // unresolved symbols in shared libraries. This is useful when you are
 // creating a final executable and want to make sure that all symbols
@@ -3525,6 +3557,7 @@ template void apply_section_align(Context<E> &);
 template void print_dependencies(Context<E> &);
 template void write_repro_file(Context<E> &);
 template void check_duplicate_symbols(Context<E> &);
+template void convert_zero_to_bss(Context<E> &);
 template void check_shlib_undefined(Context<E> &);
 template void check_symbol_types(Context<E> &);
 template void sort_init_fini(Context<E> &);

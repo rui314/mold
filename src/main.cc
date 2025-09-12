@@ -386,6 +386,11 @@ int mold_main(int argc, char **argv) {
   if (!ctx.arg.allow_multiple_definition)
     check_duplicate_symbols(ctx);
 
+  // Handle --zero-to-bss, which converts data sections containing only
+  // zeros into BSS.
+  if (ctx.arg.zero_to_bss)
+    convert_zero_to_bss(ctx);
+
   // Set "address-taken" bits for input sections.
   if (ctx.arg.icf)
     compute_address_significance(ctx);

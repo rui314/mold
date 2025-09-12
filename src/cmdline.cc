@@ -1014,6 +1014,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.enable_new_dtags = false;
     } else if (read_flag("execute-only")) {
       ctx.arg.execute_only = true;
+    } else if (read_flag("zero-to-bss")) {
+      ctx.arg.zero_to_bss = true;
     } else if (read_arg("compress-debug-sections")) {
       if (arg == "zlib" || arg == "zlib-gabi")
         ctx.arg.compress_debug_sections = ELFCOMPRESS_ZLIB;

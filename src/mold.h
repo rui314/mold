@@ -508,7 +508,7 @@ public:
   std::string_view name() const;
   i64 get_priority() const;
   u64 get_addr() const;
-  const ElfShdr<E> &shdr() const;
+  ElfShdr<E> &shdr() const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
   std::string_view get_func_name(Context<E> &ctx, i64 offset) const;
@@ -2040,6 +2040,7 @@ template <typename E> void check_cet_errors(Context<E> &);
 template <typename E> void print_dependencies(Context<E> &);
 template <typename E> void write_repro_file(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
+template <typename E> void convert_zero_to_bss(Context<E> &);
 template <typename E> void check_shlib_undefined(Context<E> &);
 template <typename E> void check_symbol_types(Context<E> &);
 template <typename E> void sort_init_fini(Context<E> &);
@@ -2407,6 +2408,7 @@ struct Context {
     bool z_shstk = false;
     bool z_start_stop_visibility_protected = false;
     bool z_text = false;
+    bool zero_to_bss = false;
     i64 compress_debug_sections = ELFCOMPRESS_NONE;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
@@ -2954,7 +2956,7 @@ template <typename E> requires (E::is_rela && !is_sh4<E>)
 void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {}
 
 template <typename E>
-inline const ElfShdr<E> &InputSection<E>::shdr() const {
+inline ElfShdr<E> &InputSection<E>::shdr() const {
   if (shndx < file.elf_sections.size())
     return file.elf_sections[shndx];
   return file.elf_sections2[shndx - file.elf_sections.size()];
