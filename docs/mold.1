@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "June 2025" ""
+.TH "MOLD" "1" "September 2025" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -131,6 +131,17 @@ Use multiple threads\. By default, \fBmold\fR uses as many threads as the number
 .TP
 \fB\-\-quick\-exit\fR, \fB\-\-no\-quick\-exit\fR
 Use or do not use \fBquick_exit\fR to exit\.
+.TP
+\fB\-\-zero\-to\-bss\fR
+Convert all\-zero data sections into BSS\.
+.IP
+When this option is enabled, \fBmold\fR scans input data sections that are not of type \fBSHT_NOBITS\fR and checks whether their contents consist solely of zero bytes\. Such sections are then converted into BSS (\fBSHT_NOBITS\fR) sections\. This reduces the size of the output file, since BSS sections occupy no space in the file image\.
+.IP
+This behavior is especially useful for user\-defined sections created with \fB__attribute__((section("\.sectname")))\fR that contain uninitialized global variables\. GCC and Clang do not automatically mark such sections as BSS even if their contents are entirely zero, and instead emit them as regular data sections\.
+.IP
+For example, consider \fB__attribute__((section("\.sectname"))) int vec[256];\fR\.
+.IP
+By default, this results in a \fB\.sectname\fR section of type \fBSHT_PROGBITS\fR filled with zeros\. With \fB\-\-zero\-to\-bss\fR, the linker will recognize it as empty data and convert it to a \fBSHT_NOBITS\fR section, reducing the output file size without changing runtime semantics\.
 .TP
 \fB\-z rewrite\-endbr\fR, \fB\-z norewrite\-endbr\fR
 As a security measure, some CPU instruction sets have recently gained a feature to protect control flow integrity by disallowing indirect branches by default\. If the feature is enabled, the instruction that is executed immediately after an indirect branch must be an branch target marker instruction, or a CPU\-level fault will raise\. The marker instruction is also known as "landing pad" instruction, to which indirect branches can land\. This feature makes ROP attacks harder to conduct\.
