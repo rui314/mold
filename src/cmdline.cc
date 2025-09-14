@@ -192,6 +192,7 @@ Options:
   --whole-archive             Include all objects from static archives
     --no-whole-archive
   --wrap SYMBOL               Use a wrapper function for a given symbol
+  --zero-to-bss               Convert all-zero data sections into BSS
   -z defs                     Report undefined symbols (even with --shared)
     -z nodefs
   -z common-page-size=VALUE   Ignored
