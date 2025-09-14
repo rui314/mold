@@ -137,9 +137,9 @@ Options:
   --pie, --pic-executable     Create a position-independent executable
     --no-pie, --no-pic-executable
   --pop-state                 Restore the state of flags governing input file handling
-  --print-gc-sections         Print removed unreferenced sections
+  --print-gc-sections[=FILE]  Print, or save in FILE, removed unreferenced sections
     --no-print-gc-sections
-  --print-icf-sections        Print folded identical sections
+  --print-icf-sections[=FILE] Print, or save in FILE, folded identical sections
     --no-print-icf-sections
   --push-state                Save the state of flags governing input file handling
   --quick-exit                Use quick_exit to exit (default)
@@ -1178,8 +1178,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.gc_sections = false;
     } else if (read_flag("print-gc-sections")) {
       ctx.arg.print_gc_sections = true;
+      ctx.arg.print_gc_sections_file = "";
+    } else if (read_eq("print-gc-sections")) {
+      ctx.arg.print_gc_sections = true;
+      ctx.arg.print_gc_sections_file = arg;
     } else if (read_flag("no-print-gc-sections")) {
       ctx.arg.print_gc_sections = false;
+      ctx.arg.print_gc_sections_file = "";
     } else if (read_arg("discard-section")) {
       ctx.arg.discard_section.insert(arg);
     } else if (read_arg("no-discard-section")) {
@@ -1205,8 +1210,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.physical_image_base = parse_number(ctx, "physical-image-base", arg);
     } else if (read_flag("print-icf-sections")) {
       ctx.arg.print_icf_sections = true;
+      ctx.arg.print_icf_sections_file = "";
+    } else if (read_eq("print-icf-sections")) {
+      ctx.arg.print_icf_sections = true;
+      ctx.arg.print_icf_sections_file = arg;
     } else if (read_flag("no-print-icf-sections")) {
       ctx.arg.print_icf_sections = false;
+      ctx.arg.print_icf_sections_file = "";
     } else if (read_flag("quick-exit")) {
       ctx.arg.quick_exit = true;
     } else if (read_flag("no-quick-exit")) {
