@@ -271,6 +271,28 @@ but as `-o magic`.
 * `--quick-exit`, `--no-quick-exit`:
   Use or do not use `quick_exit` to exit.
 
+* `--zero-to-bss`:
+  Convert all-zero data sections into BSS.
+
+  When this option is enabled, `mold` scans input data sections that are not
+  of type `SHT_NOBITS` and checks whether their contents consist solely of
+  zero bytes. Such sections are then converted into BSS (`SHT_NOBITS`)
+  sections. This reduces the size of the output file, since BSS sections
+  occupy no space in the file image.
+
+  This behavior is especially useful for user-defined sections created with
+  `__attribute__((section(".sectname")))` that contain uninitialized global
+  variables. GCC and Clang do not automatically mark such sections as BSS
+  even if their contents are entirely zero, and instead emit them as regular
+  data sections.
+
+  For example, consider `__attribute__((section(".sectname"))) int vec[256];`.
+
+  By default, this results in a `.sectname` section of type `SHT_PROGBITS`
+  filled with zeros. With `--zero-to-bss`, the linker will recognize it as
+  empty data and convert it to a `SHT_NOBITS` section, reducing the output
+  file size without changing runtime semantics.
+
 * `-z rewrite-endbr`, `-z norewrite-endbr`:
   As a security measure, some CPU instruction sets have recently gained a
   feature to protect control flow integrity by disallowing indirect branches
