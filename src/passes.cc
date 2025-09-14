@@ -1119,8 +1119,8 @@ void convert_zero_to_bss(Context<E> &ctx) {
       if (isec && isec->is_alive &&
           isec->shdr().sh_type == SHT_PROGBITS &&
           (isec->shdr().sh_flags & SHF_ALLOC) &&
+          (isec->shdr().sh_flags & SHF_WRITE) &&
           !(isec->shdr().sh_flags & SHF_EXECINSTR) &&
-          !(isec->shdr().sh_flags & SHF_TLS) &&
           isec->get_rels(ctx).empty() &&
           !isec->contents.empty() &&
           isec->contents.find_first_not_of('\0') == isec->contents.npos) {
