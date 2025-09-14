@@ -3441,11 +3441,12 @@ void write_dependency_file(Context<E> &ctx) {
   std::ostream *out = &std::cout;
   std::ofstream file;
 
-  if (ctx.arg.dependency_file != "-") {
-    file.open(ctx.arg.dependency_file);
+  std::string &path = ctx.arg.dependency_file;
+  if (path != "-") {
+    file.open(path);
     if (file.fail())
-      Fatal(ctx) << "--dependency-file: cannot open " << ctx.arg.dependency_file
-                 << ": " << errno_string();
+      Fatal(ctx) << "--dependency-file: cannot open " << path << ": "
+                 << errno_string();
     out = &file;
   }
 

@@ -2366,8 +2366,6 @@ struct Context {
     bool pic = false;
     bool pie = false;
     bool print_dependencies = false;
-    bool print_gc_sections = false;
-    bool print_icf_sections = false;
     bool print_map = false;
     bool quick_exit = true;
     bool relax = true;
@@ -2415,8 +2413,8 @@ struct Context {
     i64 spare_program_headers = 0;
     i64 thread_count = 0;
     i64 z_stack_size = 0;
-    std::optional<u64> physical_image_base;
     std::optional<std::vector<Symbol<E> *>> retain_symbols_file;
+    std::optional<u64> physical_image_base;
     std::string Map;
     std::string audit;
     std::string chroot;
@@ -2426,9 +2424,11 @@ struct Context {
     std::string dynamic_linker;
     std::string output = "a.out";
     std::string package_metadata;
-    std::string print_gc_sections_file;
-    std::string print_icf_sections_file;
     std::string plugin;
+    std::string print_gc_sections;
+    std::string print_gc_sections_file;
+    std::string print_icf_sections;
+    std::string print_icf_sections_file;
     std::string rpaths;
     std::string separate_debug_file;
     std::string soname;

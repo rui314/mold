@@ -1177,14 +1177,11 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("no-gc-sections")) {
       ctx.arg.gc_sections = false;
     } else if (read_flag("print-gc-sections")) {
-      ctx.arg.print_gc_sections = true;
-      ctx.arg.print_gc_sections_file = "";
+      ctx.arg.print_gc_sections = "-";
     } else if (read_eq("print-gc-sections")) {
-      ctx.arg.print_gc_sections = true;
-      ctx.arg.print_gc_sections_file = arg;
+      ctx.arg.print_gc_sections = arg;
     } else if (read_flag("no-print-gc-sections")) {
-      ctx.arg.print_gc_sections = false;
-      ctx.arg.print_gc_sections_file = "";
+      ctx.arg.print_gc_sections = "";
     } else if (read_arg("discard-section")) {
       ctx.arg.discard_section.insert(arg);
     } else if (read_arg("no-discard-section")) {
@@ -1209,14 +1206,11 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("physical-image-base")) {
       ctx.arg.physical_image_base = parse_number(ctx, "physical-image-base", arg);
     } else if (read_flag("print-icf-sections")) {
-      ctx.arg.print_icf_sections = true;
-      ctx.arg.print_icf_sections_file = "";
+      ctx.arg.print_icf_sections = "-";
     } else if (read_eq("print-icf-sections")) {
-      ctx.arg.print_icf_sections = true;
-      ctx.arg.print_icf_sections_file = arg;
+      ctx.arg.print_icf_sections = arg;
     } else if (read_flag("no-print-icf-sections")) {
-      ctx.arg.print_icf_sections = false;
-      ctx.arg.print_icf_sections_file = "";
+      ctx.arg.print_icf_sections = "";
     } else if (read_flag("quick-exit")) {
       ctx.arg.quick_exit = true;
     } else if (read_flag("no-quick-exit")) {

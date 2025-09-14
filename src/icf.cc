@@ -476,36 +476,29 @@ static void print_icf_sections(Context<E> &ctx) {
   std::ostream *out = &std::cout;
   std::ofstream file;
 
-  if (ctx.arg.print_icf_sections && !ctx.arg.print_icf_sections_file.empty()) {
-    file.open(ctx.arg.print_icf_sections_file);
-    if (!file.is_open())
-      Fatal(ctx) << "cannot open " << ctx.arg.print_icf_sections_file << ": " << errno_string();
+  std::string &path = ctx.arg.print_icf_sections;
+  if (path != "-") {
+    file.open(path);
+    if (file.fail())
+      Fatal(ctx) << "--print-icf-sections: cannot open " << path << ": "
+                 << errno_string();
     out = &file;
   }
 
   i64 saved_bytes = 0;
-  i64 saved_sections = 0;
 
   for (InputSection<E> *leader : leaders) {
     auto [begin, end] = map.equal_range(leader);
-    if (begin == end)
-      continue;
-
-    i64 section_bytes = leader->contents.size();
-    *out << "selected section " << *leader << " [" << section_bytes << " bytes]\n";
-
-    i64 n = 0;
-    for (auto it = begin; it != end; it++) {
-      *out << "  removing identical section " << *it->second << "\n";
-      n++;
+    if (begin != end) {
+      *out << "selected section " << *leader;
+      for (auto it = begin; it != end; it++) {
+        *out << "  removing identical section " << *it->second;
+        saved_bytes += leader->contents.size();
+      }
     }
-    i64 section_saved_bytes = section_bytes * n;
-    *out << "  removed: " << n << " section" << (n == 1 ? "" : "s") << " of " << section_bytes << " byte" << (section_bytes == 1 ? "": "s") << (n == 1 ? "" : " each") << ", bytes saved: " << section_saved_bytes << "\n";
-    saved_bytes += section_saved_bytes;
-    saved_sections += n;
   }
 
-  *out << "ICF saved " << saved_bytes << " bytes, " << saved_sections << " sections\n";
+  *out << "ICF saved " << saved_bytes << " bytes";
 }
 
 template <typename E>
@@ -612,7 +605,7 @@ void icf_sections(Context<E> &ctx) {
     ctx.on_exit.push_back([=] { delete map; });
   }
 
-  if (ctx.arg.print_icf_sections)
+  if (!ctx.arg.print_icf_sections.empty())
     print_icf_sections(ctx);
 
   // Eliminate duplicate sections.

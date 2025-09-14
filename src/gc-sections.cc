@@ -149,38 +149,41 @@ static void mark(Context<E> &ctx,
 template <typename E>
 static void sweep(Context<E> &ctx) {
   Timer t(ctx, "sweep");
-  static Counter counter("garbage_sections");
 
-  std::ostream *out = &std::cout;
-  std::ofstream out_file;
+  std::vector<std::vector<InputSection<E> *>> sections(ctx.objs.size());
 
-  if (ctx.arg.print_gc_sections && !ctx.arg.print_gc_sections_file.empty()) {
-    out_file.open(ctx.arg.print_gc_sections_file);
-    if (!out_file.is_open())
-      Fatal(ctx) << "cannot open " << ctx.arg.print_gc_sections_file << ": " << errno_string();
-    out = &out_file;
-  }
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    ObjectFile<E> &file = *ctx.objs[i];
 
-  i64 saved_bytes = 0;
-  std::mutex gc_sections;
-
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+    for (std::unique_ptr<InputSection<E>> &isec : file.sections) {
       if (isec && isec->is_alive && !isec->is_visited) {
-        if (ctx.arg.print_gc_sections) {
-          std::scoped_lock lock(gc_sections);
-          i64 section_size = isec->contents.size();
-          *out << "removing unused section " << *isec << " [" << section_size << " bytes]\n";
-          saved_bytes += section_size;
-        }
         isec->kill();
-        counter++;
+        sections[i].push_back(isec.get());
       }
     }
   });
 
-  if (ctx.arg.print_gc_sections)
+  std::string &path = ctx.arg.print_gc_sections;
+
+  if (!path.empty()) {
+    std::ostream *out = &std::cout;
+    std::ofstream file;
+
+    if (path != "-") {
+      file.open(path);
+      if (file.fail())
+        Fatal(ctx) << "--print-gc-sections: cannot open " << path << ": "
+                   << errno_string();
+      out = &file;
+    }
+
+    i64 saved_bytes = 0;
+    for (std::span<InputSection<E> *> vec : sections)
+      for (InputSection<E> *isec : vec)
+        *out << "removing unused section " << *isec;
+
     *out << "GC saved " << saved_bytes << " bytes\n";
+  }
 }
 
 template <typename E>
