@@ -3438,20 +3438,24 @@ void write_dependency_file(Context<E> &ctx) {
       if (std::string path = path_clean(mf->name); seen.insert(path).second)
         deps.push_back(path);
 
-  std::ofstream out;
-  out.open(ctx.arg.dependency_file);
-  if (out.fail())
-    Fatal(ctx) << "--dependency-file: cannot open " << ctx.arg.dependency_file
-               << ": " << errno_string();
+  std::ostream *out = &std::cout;
+  std::ofstream file;
 
-  out << ctx.arg.output << ":";
+  if (ctx.arg.dependency_file != "-") {
+    file.open(ctx.arg.dependency_file);
+    if (file.fail())
+      Fatal(ctx) << "--dependency-file: cannot open " << ctx.arg.dependency_file
+                 << ": " << errno_string();
+    out = &file;
+  }
+
+  *out << ctx.arg.output << ":";
   for (std::string &s : deps)
-    out << " " << s;
-  out << "\n";
+    *out << " " << s;
+  *out << "\n";
 
   for (std::string &s : deps)
-    out << "\n" << s << ":\n";
-  out.close();
+    *out << "\n" << s << ":\n";
 }
 
 template <typename E>

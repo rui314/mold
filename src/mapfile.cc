@@ -46,10 +46,11 @@ void print_map(Context<E> &ctx) {
   std::ostream *out = &std::cout;
   std::ofstream file;
 
-  if (!ctx.arg.Map.empty()) {
+  if (!ctx.arg.Map.empty() && ctx.arg.Map != "-") {
     file.open(ctx.arg.Map);
-    if (!file.is_open())
-      Fatal(ctx) << "cannot open " << ctx.arg.Map << ": " << errno_string();
+    if (file.fail())
+      Fatal(ctx) << "--print-map: cannot open " << ctx.arg.Map << ": "
+                 << errno_string();
     out = &file;
   }
 
