@@ -168,7 +168,7 @@ tool.
   (i.e. `_start`) or a few other root sections. In mold, we are using
   multiple threads to mark sections concurrently.
 
-- Similarly, BFD, gold an lld support Identical Comdat Folding (ICF)
+- Similarly, BFD, gold and lld support Identical Comdat Folding (ICF)
   as yet another size optimization. ICF merges two or more read-only
   sections that happen to have the same contents and relocations.
   To do that, we have to find isomorphic subgraphs from larger graphs.
