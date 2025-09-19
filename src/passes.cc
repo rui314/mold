@@ -3296,8 +3296,8 @@ void write_build_id(Context<E> &ctx) {
     });
 
     u8 buf[BLAKE3_OUT_LEN];
-    memset(buf, 0, BLAKE3_OUT_LEN);
     blake3_hash(hashes.data(), hashes.size(), buf);
+    msan_unpoison(buf, BLAKE3_OUT_LEN);
 
     assert(ctx.arg.build_id.size() <= BLAKE3_OUT_LEN);
     ctx.buildid->contents = {buf, buf + ctx.arg.build_id.size()};

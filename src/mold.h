@@ -29,6 +29,13 @@
 # include <unistd.h>
 #endif
 
+#if ENABLE_MSAN_UNPOISON
+extern "C" void __msan_unpoison(void *addr, size_t sz);
+# define msan_unpoison(addr, sz) __msan_unpoison(buf, sz)
+#else
+# define msan_unpoison(addr, sz)
+#endif
+
 namespace mold {
 
 template <typename E> class InputFile;

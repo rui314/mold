@@ -75,7 +75,6 @@ void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
     memcpy(buf, contents.data(), sz);
     return;
   }
-  memset(buf, 0, sz);
 
   if (contents.size() < sizeof(ElfChdr<E>))
     Fatal(ctx) << *this << ": corrupted compressed section";
@@ -118,6 +117,8 @@ void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
     Fatal(ctx) << *this << ": unsupported compression type: 0x"
                << std::hex << hdr.ch_type;
   }
+
+  msan_unpoison(buf, sz);
 }
 
 typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT } Action;

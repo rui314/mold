@@ -124,6 +124,7 @@ if(MOLD_USE_MSAN)
   target_compile_options(mold PRIVATE
     -g -Og -fsanitize=memory -fsanitize-memory-track-origins
     -nostdinc++ -isystem ${MOLD_STDLIB_PREFIX}/include/c++/v1
+    -DENABLE_MSAN_UNPOISON
   )
   target_link_options(mold PRIVATE
     -fsanitize=memory
