@@ -5,7 +5,7 @@ on:
 env:
   UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 jobs:
-  build-sanitizers:
+  build-asan-tsan:
     strategy:
       matrix:
         target:
@@ -34,6 +34,18 @@ jobs:
         path: |
           build
           !build/CMakeFiles
+
+  build-msan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - uses: redhat-actions/podman-login@v1
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - run: .github/workflows/run-msan.sh
 
   build-multi-archs:
     runs-on: ubuntu-24.04
