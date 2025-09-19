@@ -84,7 +84,7 @@ static std::span<u8> zlib_compress(std::span<u8> input) {
   // that the bit position is 7 in the next byte.
   //
   // https://github.com/ianlancetaylor/libbacktrace/pull/87
-  int nbits;
+  int nbits = 0;
   deflatePending(&strm, Z_NULL, &nbits);
   if (nbits == 5)
     CHECK(deflatePrime(&strm, 10, 2));

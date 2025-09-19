@@ -75,6 +75,7 @@ void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
     memcpy(buf, contents.data(), sz);
     return;
   }
+  memset(buf, 0, sz);
 
   if (contents.size() < sizeof(ElfChdr<E>))
     Fatal(ctx) << *this << ": corrupted compressed section";
