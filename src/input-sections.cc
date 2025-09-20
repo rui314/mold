@@ -96,6 +96,7 @@ void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
     if (s.total_out < sz && r != Z_STREAM_END)
       Fatal(ctx) << *this << ": uncompress failed: " << s.msg;
     inflateEnd(&s);
+    msan_unpoison(buf, sz);
     break;
   }
   case ELFCOMPRESS_ZSTD: {
@@ -111,14 +112,13 @@ void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
         Fatal(ctx) << *this << ": uncompress failed: premature end of input";
     }
     ZSTD_freeDCtx(dctx);
+    msan_unpoison(buf, sz);
     break;
   }
   default:
     Fatal(ctx) << *this << ": unsupported compression type: 0x"
                << std::hex << hdr.ch_type;
   }
-
-  msan_unpoison(buf, sz);
 }
 
 typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT } Action;

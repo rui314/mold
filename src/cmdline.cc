@@ -518,9 +518,9 @@ parse_section_order(Context<E> &ctx, std::string_view arg) {
   auto flags = std::regex_constants::ECMAScript | std::regex_constants::icase |
                std::regex_constants::optimize;
   static std::regex re1(R"(TEXT|DATA|RODATA|BSS)", flags);
-  static std::regex re2(R"([a-zA-Z0-9_.][^\s]*|EHDR|PHDR)", flags);
+  static std::regex re2(R"([a-zA-Z0-9_.]\S*|EHDR|PHDR)", flags);
   static std::regex re3(R"(=(0x[0-9a-f]+|\d+))", flags);
-  static std::regex re4(R"(%(0x[0-9a-f]+|\d*))", flags);
+  static std::regex re4(R"(%(0x[0-9a-f]+|\d+))", flags);
   static std::regex re5(R"(!(\S+))", flags);
 
   std::vector<SectionOrder> vec;
@@ -529,7 +529,7 @@ parse_section_order(Context<E> &ctx, std::string_view arg) {
     if (tok.empty())
       continue;
 
-    vec.push_back({ .token = tok });
+    vec.push_back(SectionOrder{ .token = tok });
     SectionOrder &ord = vec.back();
     std::cmatch m;
 
@@ -560,12 +560,12 @@ parse_section_order(Context<E> &ctx, std::string_view arg) {
     if (ord.type == SectionOrder::SECTION) {
       if (is_first) {
         is_first = false;
-      } else if (ord.name == "EHDR")
+      } else if (ord.name == "EHDR") {
         Fatal(ctx) << "--section-order: EHDR must be the first "
                    << "section specifier: " << arg;
+      }
     }
   }
-
   return vec;
 }
 
