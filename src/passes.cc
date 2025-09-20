@@ -2415,16 +2415,16 @@ void compute_address_significance(Context<E> &ctx) {
 //   .rela.dyn
 //   .rela.plt
 //   <readonly data>
-//   <readonly code>
-//   <writable tdata>
-//   <writable tbss>
-//   <writable RELRO data>
+//   <code>
+//   <tdata>
+//   <tbss>
+//   <writable relro data>
 //   .got
 //   .toc
-//   <writable RELRO bss>
+//   <writable relro bss>
 //   .relro_padding
-//   <writable non-RELRO data>
-//   <writable non-RELRO bss>
+//   <writable non-relro data>
+//   <writable non-relro bss>
 //   <non-memory-allocated sections>
 //   <section header>
 //   .gdb_index
@@ -2443,7 +2443,7 @@ void compute_address_significance(Context<E> &ctx) {
 // other debug sections, so we create it after completing other part
 // of the output file and append it to the very end of the file.
 //
-// A PT_NOTE segment will contain multiple .note sections if exists,
+// A PT_NOTE segment will contain multiple .note sections if exist,
 // but there's no way to represent a gap between .note sections.
 // Therefore, we sort .note sections by decreasing alignment
 // requirement. I believe each .note section size is a multiple of its
@@ -2550,19 +2550,17 @@ void sort_output_sections_by_order(Context<E> &ctx) {
     if (!(flags & SHF_ALLOC))
       return INT32_MAX - 1;
 
-    for (i64 i = 0; const SectionOrder &arg : ctx.arg.section_order) {
-      if (arg.type == SectionOrder::SECTION && arg.name == chunk->name)
+    for (i64 i = 0; i < ctx.arg.section_order.size(); i++)
+      if (SectionOrder &arg = ctx.arg.section_order[i];
+          arg.type == SectionOrder::SECTION && arg.name == chunk->name)
         return i;
-      i++;
-    }
 
     std::string_view group = get_section_order_group(*chunk);
 
-    for (i64 i = 0; i < ctx.arg.section_order.size(); i++) {
-      SectionOrder arg = ctx.arg.section_order[i];
-      if (arg.type == SectionOrder::GROUP && arg.name == group)
+    for (i64 i = 0; i < ctx.arg.section_order.size(); i++)
+      if (SectionOrder &arg = ctx.arg.section_order[i];
+          arg.type == SectionOrder::GROUP && arg.name == group)
         return i;
-    }
 
     Error(ctx) << "--section-order: missing section specification for "
                << chunk->name;
@@ -2738,55 +2736,46 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
 
 template <typename E>
 static void set_virtual_addresses_by_order(Context<E> &ctx) {
-  std::vector<Chunk<E> *> &c = ctx.chunks;
+  std::vector<Chunk<E> *> vec;
+  for (Chunk<E> *c : ctx.chunks)
+    if (c->shdr.sh_flags & SHF_ALLOC)
+      vec.push_back(c);
+
   u64 addr = ctx.arg.image_base;
   i64 i = 0;
 
-  while (i < c.size() && !(c[i]->shdr.sh_flags & SHF_ALLOC))
-    i++;
-
-  auto assign_addr = [&] {
-    if (i != 0) {
-      i64 flags1 = to_phdr_flags(ctx, c[i - 1]);
-      i64 flags2 = to_phdr_flags(ctx, c[i]);
-
-      // Memory protection works at page size granularity. We need to
-      // put sections with different memory attributes into different
-      // pages. We do it by inserting paddings here.
-      if (flags1 != flags2) {
-        switch (ctx.arg.z_separate_code) {
-        case SEPARATE_LOADABLE_SEGMENTS:
-          addr = align_to(addr, ctx.page_size);
-          break;
-        case SEPARATE_CODE:
-          if ((flags1 & PF_X) != (flags2 & PF_X))
-            addr = align_to(addr, ctx.page_size);
-          break;
-        default:
-          break;
-        }
-      }
-    }
-
-    addr = align_to(addr, c[i]->shdr.sh_addralign);
-    c[i]->shdr.sh_addr = addr;
-    addr += c[i]->shdr.sh_size;
-
-    do {
-      i++;
-    } while (i < c.size() && !(c[i]->shdr.sh_flags & SHF_ALLOC));
-  };
-
   for (i64 j = 0; j < ctx.arg.section_order.size(); j++) {
     SectionOrder &ord = ctx.arg.section_order[j];
+
     switch (ord.type) {
     case SectionOrder::SECTION:
-      if (i < c.size() && j == c[i]->sect_order)
-        assign_addr();
-      break;
     case SectionOrder::GROUP:
-      while (i < c.size() && j == c[i]->sect_order)
-        assign_addr();
+      for (; i < vec.size() && vec[i]->sect_order == j; i++) {
+        // Memory protection works on page size granularity. We need to
+        // put sections with different memory attributes into different
+        // pages. We do it by inserting a padding.
+        if (i != 0) {
+          i64 flags1 = to_phdr_flags(ctx, vec[i - 1]);
+          i64 flags2 = to_phdr_flags(ctx, vec[i]);
+          if (flags1 != flags2) {
+            switch (ctx.arg.z_separate_code) {
+            case SEPARATE_LOADABLE_SEGMENTS:
+              addr = align_to(addr, ctx.page_size);
+              break;
+            case SEPARATE_CODE:
+              if ((flags1 & PF_X) != (flags2 & PF_X))
+                addr = align_to(addr, ctx.page_size);
+              break;
+            default:
+              break;
+            }
+          }
+        }
+
+        addr = align_to(addr, vec[i]->shdr.sh_addralign);
+        vec[i]->shdr.sh_addr = addr;
+        addr += vec[i]->shdr.sh_size;
+      }
       break;
     case SectionOrder::ADDR:
       addr = ord.value;
