@@ -2778,6 +2778,11 @@ static void set_virtual_addresses_by_order(Context<E> &ctx) {
       }
       break;
     case SectionOrder::ADDR:
+      if (addr != ctx.arg.image_base && ord.value < addr)
+        Error(ctx) << "--section-order: address goes backward: requested "
+                   << std::hex << std::showbase
+                   << ord.value << " < current " << addr
+                   << " (at token '" << ord.token << "')";
       addr = ord.value;
       break;
     case SectionOrder::ALIGN:
@@ -2938,6 +2943,7 @@ i64 set_osec_offsets(Context<E> &ctx) {
       set_virtual_addresses_regular(ctx);
     else
       set_virtual_addresses_by_order(ctx);
+    ctx.checkpoint();
 
     // Assigning new offsets may change the contents and the length
     // of the program header, so repeat it until converge.

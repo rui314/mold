@@ -466,11 +466,11 @@ parse_package_metadata(Context<E> &ctx, std::string_view arg) {
 }
 
 static std::vector<std::string_view>
-split_by_comma_or_colon(std::string_view str) {
+split_string(std::string_view str, std::string_view sep) {
   std::vector<std::string_view> vec;
 
   for (;;) {
-    i64 pos = str.find_first_of(",:");
+    i64 pos = str.find_first_of(sep);
     if (pos == str.npos) {
       vec.push_back(str);
       break;
@@ -517,42 +517,42 @@ static std::vector<SectionOrder>
 parse_section_order(Context<E> &ctx, std::string_view arg) {
   auto flags = std::regex_constants::ECMAScript | std::regex_constants::icase |
                std::regex_constants::optimize;
-  static std::regex re1(R"(^\s*(TEXT|DATA|RODATA|BSS)(?:\s|$))", flags);
-  static std::regex re2(R"(^\s*([a-zA-Z0-9_.][^\s]*|EHDR|PHDR)(?:\s|$))", flags);
-  static std::regex re3(R"(^\s*=(0x[0-9a-f]+|\d+)(?:\s|$))", flags);
-  static std::regex re4(R"(^\s*%(0x[0-9a-f]+|\d*)(?:\s|$))", flags);
-  static std::regex re5(R"(^\s*!(\S+)(?:\s|$))", flags);
+  static std::regex re1(R"(TEXT|DATA|RODATA|BSS)", flags);
+  static std::regex re2(R"([a-zA-Z0-9_.][^\s]*|EHDR|PHDR)", flags);
+  static std::regex re3(R"(=(0x[0-9a-f]+|\d+))", flags);
+  static std::regex re4(R"(%(0x[0-9a-f]+|\d*))", flags);
+  static std::regex re5(R"(!(\S+))", flags);
 
   std::vector<SectionOrder> vec;
-  arg = string_trim(arg);
 
-  while (!arg.empty()) {
-    SectionOrder ord;
+  for (std::string_view tok : split_string(arg, " \t")) {
+    if (tok.empty())
+      continue;
+
+    vec.push_back({ .token = tok });
+    SectionOrder &ord = vec.back();
     std::cmatch m;
 
-    if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re1)) {
+    if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re1)) {
       ord.type = SectionOrder::GROUP;
-      ord.name = m[1].str();
-    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re2)) {
+      ord.name = m[0].str();
+    } else if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re2)) {
       ord.type = SectionOrder::SECTION;
-      ord.name = m[1].str();
-    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re3)) {
+      ord.name = m[0].str();
+    } else if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re3)) {
       ord.type = SectionOrder::ADDR;
       std::string s = m[1];
       ord.value = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
-    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re4)) {
+    } else if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re4)) {
       ord.type = SectionOrder::ALIGN;
       std::string s = m[1];
       ord.value = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
-    } else if (std::regex_search(arg.data(), arg.data() + arg.size(), m, re5)) {
+    } else if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re5)) {
       ord.type = SectionOrder::SYMBOL;
       ord.name = m[1].str();
     } else {
       Fatal(ctx) << "--section-order: parse error: " << arg;
     }
-
-    vec.push_back(ord);
-    arg = arg.substr(m[0].length());
   }
 
   bool is_first = true;
@@ -823,7 +823,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("Bno-symbolic")) {
       ctx.arg.Bsymbolic = BSYMBOLIC_NONE;
     } else if (read_arg("exclude-libs")) {
-      for (std::string_view lib : split_by_comma_or_colon(arg))
+      for (std::string_view lib : split_string(arg, ",:"))
         ctx.arg.exclude_libs.insert(lib);
     } else if (read_flag("q") || read_flag("emit-relocs")) {
       ctx.arg.emit_relocs = true;

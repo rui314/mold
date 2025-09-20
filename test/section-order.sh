@@ -37,3 +37,7 @@ grep -E '\b0+200040 .* rodata_start$' $t/log3
 grep -E '\b0+300000 .* phdr_start$' $t/log3
 grep -E '\b0+301000 .* phdr_end$' $t/log3
 grep -E '\b0+400000 .* text_start$' $t/log3
+
+not $CC -B. -o $t/exe4 $t/a.o -no-pie \
+  -Wl,--section-order='=0x800000 EHDR PHDR =0x200000 .fn2 TEXT =0x300000 .fn1 DATA BSS RODATA' |&
+  grep 'address goes backward'
