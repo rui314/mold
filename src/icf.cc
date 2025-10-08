@@ -124,6 +124,9 @@ template <typename E>
 static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
   const ElfShdr<E> &shdr = isec.shdr();
   std::string_view name = isec.name();
+  
+  if (name.starts_with(".gcc_except_table"))
+    return true;
 
   if (shdr.sh_size == 0 || !(shdr.sh_flags & SHF_ALLOC) ||
       shdr.sh_type == SHT_NOBITS || is_c_identifier(name))
