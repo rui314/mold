@@ -2,6 +2,7 @@
 . $(dirname $0)/common.inc
 
 [ $MACHINE = arm ] && skip
+[ $MACHINE = armeb ] && skip
 [[ $MACHINE = riscv* ]] && skip
 [[ $MACHINE = loongarch* ]] && skip
 
