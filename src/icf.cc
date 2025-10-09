@@ -490,15 +490,15 @@ static void print_icf_sections(Context<E> &ctx) {
   for (InputSection<E> *leader : leaders) {
     auto [begin, end] = map.equal_range(leader);
     if (begin != end) {
-      *out << "selected section " << *leader;
+      *out << "selected section " << *leader << '\n';
       for (auto it = begin; it != end; it++) {
-        *out << "  removing identical section " << *it->second;
+        *out << "  removing identical section " << *it->second << '\n';
         saved_bytes += leader->contents.size();
       }
     }
   }
 
-  *out << "ICF saved " << saved_bytes << " bytes";
+  *out << "ICF saved " << saved_bytes << " bytes\n";
 }
 
 template <typename E>

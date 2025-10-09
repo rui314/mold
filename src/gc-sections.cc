@@ -180,7 +180,7 @@ static void sweep(Context<E> &ctx) {
     i64 saved_bytes = 0;
     for (std::span<InputSection<E> *> vec : sections)
       for (InputSection<E> *isec : vec)
-        *out << "removing unused section " << *isec;
+        *out << "removing unused section " << *isec << '\n';
 
     *out << "GC saved " << saved_bytes << " bytes\n";
   }
