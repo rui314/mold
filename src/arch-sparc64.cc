@@ -526,7 +526,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_REGISTER:
     case R_SPARC_UA16:
     case R_SPARC_UA32:
-    case R_SPARC_UA64:
     case R_SPARC_PC_HM10:
     case R_SPARC_OLO10:
     case R_SPARC_LOX10:
@@ -607,6 +606,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       check_tlsle(ctx, sym, rel);
       break;
     case R_SPARC_64:
+    case R_SPARC_UA64:
     case R_SPARC_GOTDATA_OP_LOX10:
     case R_SPARC_GOTDATA_OP:
     case R_SPARC_GOTDATA_LOX10:

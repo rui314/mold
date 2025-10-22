@@ -1058,7 +1058,11 @@ static bool is_absrel(const ElfRel<E> &r) {
   // and is interpreted as either ABS32 or REL32 depending on the target.
   // All targets we support handle it as if it were a ABS32.
   if constexpr (is_arm32<E>)
-    return r.r_type == E::R_ABS || r.r_type == R_ARM_TARGET1;
+    return r.r_type == R_ARM_ABS32 || r.r_type == R_ARM_TARGET1;
+
+  // SPARC64 defines two separate relocations for aligned and unaligned words.
+  if constexpr (is_sparc<E>)
+    return r.r_type == R_SPARC_64 || r.r_type == R_SPARC_UA64;
   return r.r_type == E::R_ABS;
 }
 
