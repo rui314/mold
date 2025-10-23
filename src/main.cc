@@ -267,6 +267,17 @@ static bool has_lto_obj(Context<E> &ctx) {
 }
 
 template <typename E>
+static i64 get_thread_count(Context<E> &ctx) {
+  if (ctx.arg.thread_count.has_value())
+    return *ctx.arg.thread_count;
+
+  // mold doesn't scale well with too many threads, so limit it to 32.
+  int n = tbb::global_control::active_value(
+    tbb::global_control::max_allowed_parallelism);
+  return std::min(n, 32);
+}
+
+template <typename E>
 int mold_main(int argc, char **argv) {
   Context<E> ctx;
 
@@ -303,7 +314,7 @@ int mold_main(int argc, char **argv) {
   acquire_global_lock();
 
   ctx.global_limit.emplace(tbb::global_control::max_allowed_parallelism,
-                           ctx.arg.thread_count);
+                           get_thread_count(ctx));
 
   // Handle --wrap options if any.
   for (std::string_view name : ctx.arg.wrap)

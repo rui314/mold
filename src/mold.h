@@ -2419,8 +2419,8 @@ struct Context {
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
     i64 spare_program_headers = 0;
-    i64 thread_count = 0;
     i64 z_stack_size = 0;
+    std::optional<i64> thread_count;
     std::optional<std::vector<Symbol<E> *>> retain_symbols_file;
     std::optional<u64> physical_image_base;
     std::string Map;

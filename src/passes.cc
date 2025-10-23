@@ -3186,8 +3186,13 @@ void compress_debug_sections(Context<E> &ctx) {
   Timer t(ctx, "compress_debug_sections");
 
   // Since this pass is embarassingly parallel, we want to use all
-  // available cores.
-  ctx.global_limit.reset();
+  // available cores by default.
+  i64 thread_count;
+  if (!ctx.arg.thread_count.has_value()) {
+    thread_count =
+      ctx.global_limit->active_value(tbb::global_control::max_allowed_parallelism);
+    ctx.global_limit.reset();
+  }
 
   tbb::parallel_for((i64)0, (i64)ctx.chunks.size(), [&](i64 i) {
     Chunk<E> &chunk = *ctx.chunks[i];
@@ -3199,8 +3204,9 @@ void compress_debug_sections(Context<E> &ctx) {
     }
   });
 
-  ctx.global_limit.emplace(tbb::global_control::max_allowed_parallelism,
-                           ctx.arg.thread_count);
+  if (!ctx.arg.thread_count.has_value())
+    ctx.global_limit.emplace(tbb::global_control::max_allowed_parallelism,
+                             thread_count);
 }
 
 // BLAKE3 is a cryptographic hash function just like SHA256.

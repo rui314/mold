@@ -357,13 +357,6 @@ expand_response_files(Context<E> &ctx, char **argv) {
   return vec;
 }
 
-static i64 get_default_thread_count() {
-  // mold doesn't scale well above 32 threads.
-  int n = tbb::global_control::active_value(
-    tbb::global_control::max_allowed_parallelism);
-  return std::min(n, 32);
-}
-
 static std::string_view string_trim(std::string_view str) {
   size_t pos = str.find_first_not_of(" \t");
   if (pos == str.npos)
@@ -1282,7 +1275,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("thread-count")) {
       ctx.arg.thread_count = parse_number(ctx, "thread-count", arg);
     } else if (read_flag("threads")) {
-      ctx.arg.thread_count = 0;
+      ctx.arg.thread_count.reset();
     } else if (read_flag("no-threads")) {
       ctx.arg.thread_count = 1;
     } else if (read_eq("threads")) {
@@ -1538,9 +1531,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   if (ctx.arg.emulation == ARM32BE::name && !ctx.arg.be8)
     Fatal(ctx) << "--be32 is not supported";
-
-  if (ctx.arg.thread_count == 0)
-    ctx.arg.thread_count = get_default_thread_count();
 
   if (char *env = getenv("MOLD_REPRO"); env && env[0])
     ctx.arg.repro = true;
