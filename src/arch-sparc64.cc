@@ -206,7 +206,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc = S + A;
       break;
     case R_SPARC_PLT64:
-    case R_SPARC_UA64:
     case R_SPARC_REGISTER:
       *(ub64 *)loc = S + A;
       break;
@@ -437,6 +436,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc = sym.esym().st_size + A;
       break;
     case R_SPARC_64:
+    case R_SPARC_UA64:
     case R_SPARC_TLS_LDO_ADD:
     case R_SPARC_TLS_IE_LD:
     case R_SPARC_TLS_IE_LDX:
