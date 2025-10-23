@@ -172,7 +172,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_8:
       check(S + A, 0, 1 << 8);
-      *(u8 *)loc = S + A;
+      *loc = S + A;
       break;
     case R_SPARC_10:
       check(S + A, 0, 1 << 10);
@@ -211,7 +211,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_DISP8:
       check(S + A - P, -(1 << 7), 1 << 7);
-      *(u8 *)loc = S + A - P;
+      *loc = S + A - P;
       break;
     case R_SPARC_DISP16:
       check(S + A - P, -(1 << 15), 1 << 15);
