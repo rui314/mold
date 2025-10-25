@@ -381,7 +381,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         if (i > 0) {
           const ElfRel<E> &rel2 = rels[i - 1];
           if (rel2.r_type == R_SPARC_TLS_GD_CALL &&
-              &sym == file.symbols[rel2.r_sym] &&
+              rel.r_sym == rel2.r_sym &&
               rel.r_offset - 4 == rel2.r_offset) {
             std::swap(*(ub32 *)loc, *(ub32 *)(loc - 4));
           }
