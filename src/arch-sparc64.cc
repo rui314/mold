@@ -369,9 +369,23 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsgd(ctx)) {
         // do nothing
       } else if (sym.has_gottp(ctx)) {
+        // ldx [ %base + %reg ], %o0
         u32 rs1 = bits(*(ub32 *)loc, 18, 14);
         u32 rs2 = bits(*(ub32 *)loc, 4, 0);
-        *(ub32 *)loc = 0xd058'0000 | (rs1 << 14) | rs2; // ldx [ %base + %reg ], %o0
+        *(ub32 *)loc = 0xd058'0000 | (rs1 << 14) | rs2;
+
+        // TLS_GD_ADD may be in the branch delay slot of its corresponding
+        // TLS_GD_CALL. If that's the case, and if we have rewrote the call
+        // instruction with an ordinaly one (i.e. add), we need to swap the
+        // two instructions so that the original execution order is preserved.
+        if (i > 0) {
+          const ElfRel<E> &rel2 = rels[i - 1];
+          if (rel2.r_type == R_SPARC_TLS_GD_CALL &&
+              &sym == file.symbols[rel2.r_sym] &&
+              rel.r_offset - 4 == rel2.r_offset) {
+            std::swap(*(ub32 *)loc, *(ub32 *)(loc - 4));
+          }
+        }
       } else {
         u32 rs2 = bits(*(ub32 *)loc, 4, 0);
         *(ub32 *)loc = 0x9001'c000 | rs2; // add %g7, %reg, %o0

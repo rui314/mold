@@ -1,7 +1,7 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
-cat <<EOF | $CC -fPIC -ftls-model=local-dynamic -c -o $t/a.o -xc -
+cat <<EOF > $t/a.c
 #include <stdio.h>
 
 extern _Thread_local int foo;
@@ -18,12 +18,21 @@ int main() {
 }
 EOF
 
-cat <<EOF | $CC -fPIC -ftls-model=local-dynamic -c -o $t/b.o -xc -
+$CC -fPIC -ftls-model=local-dynamic -c -o $t/b.o $t/a.c
+$CC -fPIC -ftls-model=local-dynamic -c -o $t/c.o $t/a.c -O2
+
+cat <<EOF | $CC -fPIC -ftls-model=local-dynamic -c -o $t/d.o -xc -
 _Thread_local int foo = 3;
 EOF
 
-$CC -B. -o $t/exe1 $t/a.o $t/b.o -Wl,-relax
+$CC -B. -o $t/exe1 $t/b.o $t/d.o -Wl,-relax
 $QEMU $t/exe1 | grep '3 5 3 5'
 
-$CC -B. -o $t/exe2 $t/a.o $t/b.o -Wl,-no-relax
+$CC -B. -o $t/exe2 $t/c.o $t/d.o -Wl,-relax
 $QEMU $t/exe2 | grep '3 5 3 5'
+
+$CC -B. -o $t/exe3 $t/b.o $t/d.o -Wl,-no-relax
+$QEMU $t/exe3 | grep '3 5 3 5'
+
+$CC -B. -o $t/exe4 $t/c.o $t/d.o -Wl,-no-relax
+$QEMU $t/exe4 | grep '3 5 3 5'
