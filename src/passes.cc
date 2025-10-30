@@ -3187,7 +3187,7 @@ void compress_debug_sections(Context<E> &ctx) {
 
   // Since this pass is embarassingly parallel, we want to use all
   // available cores by default.
-  i64 thread_count;
+  i64 thread_count = 0;
   if (!ctx.arg.thread_count.has_value()) {
     thread_count =
       ctx.global_limit->active_value(tbb::global_control::max_allowed_parallelism);
@@ -3204,7 +3204,7 @@ void compress_debug_sections(Context<E> &ctx) {
     }
   });
 
-  if (!ctx.arg.thread_count.has_value())
+  if (thread_count > 0)
     ctx.global_limit.emplace(tbb::global_control::max_allowed_parallelism,
                              thread_count);
 }
