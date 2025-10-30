@@ -1,4 +1,5 @@
 #include "mold.h"
+#include "config.h"
 
 #include <cstring>
 #include <functional>
@@ -293,10 +294,9 @@ int mold_main(int argc, char **argv) {
   if (ctx.arg.emulation.empty())
     ctx.arg.emulation = detect_machine_type(ctx, file_args);
 
-  // Redo if -m is not x86-64.
-  if constexpr (is_x86_64<E>)
-    if (ctx.arg.emulation != X86_64::name)
-      return redo_main(ctx, argc, argv);
+  // Redo if -m does not match with our speculation.
+  if (ctx.arg.emulation != E::name)
+    return redo_main<E>(ctx.arg.emulation, argc, argv);
 
   Timer t_all(ctx, "all");
 
@@ -309,7 +309,7 @@ int mold_main(int argc, char **argv) {
 
   // Fork a subprocess unless --no-fork is given.
   if (ctx.arg.fork)
-    fork_child();
+    fork_child<E>();
 
   acquire_global_lock();
 
@@ -676,7 +676,7 @@ int mold_main(int argc, char **argv) {
   std::cout << std::flush;
   std::cerr << std::flush;
 
-  notify_parent();
+  notify_parent<E>();
   release_global_lock();
 
   if (ctx.arg.quick_exit)

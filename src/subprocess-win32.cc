@@ -2,10 +2,11 @@
 
 namespace mold {
 
-#ifdef MOLD_X86_64
+template <typename E>
 void fork_child() {}
+
+template <typename E>
 void notify_parent() {}
-#endif
 
 template <typename E>
 [[noreturn]]
@@ -15,6 +16,8 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
 
 using E = MOLD_TARGET;
 
+template void fork_child<E>();
+template void notify_parent<E>();
 template void process_run_subcommand(Context<E> &, int, char **);
 
 } // namespace mold

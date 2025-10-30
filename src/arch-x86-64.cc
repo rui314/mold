@@ -25,8 +25,9 @@
 //
 // https://gitlab.com/x86-psABIs/x86-64-ABI
 
-#include "mold.h"
+#if MOLD_X86_64
 
+#include "mold.h"
 #include <tbb/parallel_for_each.h>
 
 namespace mold {
@@ -950,3 +951,5 @@ void rewrite_endbr(Context<E> &ctx) {
 }
 
 } // namespace mold
+
+#endif

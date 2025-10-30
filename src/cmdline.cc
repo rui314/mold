@@ -756,45 +756,71 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("mllvm")) {
       ctx.arg.plugin_opt.emplace_back(arg);
     } else if (read_arg("m")) {
+      auto check = [&](bool supported, std::string_view name) {
+        if (!supported)
+          Fatal(ctx) << "'-m " << arg << "' is not supported; you may want to"
+                     << " rebuild mold with " << name << " support";
+      };
+
       if (arg == "elf_x86_64") {
+        check(HAVE_TARGET_X86_64, X86_64::name);
         ctx.arg.emulation = X86_64::name;
       } else if (arg == "elf_i386") {
+        check(HAVE_TARGET_I386, I386::name);
         ctx.arg.emulation = I386::name;
       } else if (arg == "aarch64elf" || arg == "aarch64linux") {
+        check(HAVE_TARGET_ARM64LE, ARM64LE::name);
         ctx.arg.emulation = ARM64LE::name;
       } else if (arg == "aarch64elfb" || arg == "aarch64linuxb") {
+        check(HAVE_TARGET_ARM64BE, ARM64BE::name);
         ctx.arg.emulation = ARM64BE::name;
       } else if (arg == "armelf_linux_eabi") {
+        check(HAVE_TARGET_ARM32LE, ARM32LE::name);
         ctx.arg.emulation = ARM32LE::name;
       } else if (arg == "armelfb_linux_eabi") {
+        check(HAVE_TARGET_ARM32BE, ARM32BE::name);
         ctx.arg.emulation = ARM32BE::name;
       } else if (arg == "elf64lriscv") {
+        check(HAVE_TARGET_RV64LE, RV64LE::name);
         ctx.arg.emulation = RV64LE::name;
       } else if (arg == "elf64briscv") {
+        check(HAVE_TARGET_RV64BE, RV64BE::name);
         ctx.arg.emulation = RV64BE::name;
       } else if (arg == "elf32lriscv") {
+        check(HAVE_TARGET_RV32LE, RV32LE::name);
         ctx.arg.emulation = RV32LE::name;
       } else if (arg == "elf32briscv") {
+        check(HAVE_TARGET_RV32BE, RV32BE::name);
         ctx.arg.emulation = RV32BE::name;
       } else if (arg == "elf32ppc" || arg == "elf32ppclinux") {
+        check(HAVE_TARGET_PPC32, PPC32::name);
         ctx.arg.emulation = PPC32::name;
       } else if (arg == "elf64ppc") {
+        check(HAVE_TARGET_PPC64V1, PPC64V1::name);
         ctx.arg.emulation = PPC64V1::name;
       } else if (arg == "elf64lppc") {
+        check(HAVE_TARGET_PPC64V2, PPC64V2::name);
         ctx.arg.emulation = PPC64V2::name;
       } else if (arg == "elf64_s390") {
+        check(HAVE_TARGET_S390X, S390X::name);
         ctx.arg.emulation = S390X::name;
       } else if (arg == "elf64_sparc") {
+        check(HAVE_TARGET_SPARC64, SPARC64::name);
         ctx.arg.emulation = SPARC64::name;
       } else if (arg == "m68kelf") {
+        check(HAVE_TARGET_M68K, M68K::name);
         ctx.arg.emulation = M68K::name;
       } else if (arg == "shlelf" || arg == "shlelf_linux") {
+        check(HAVE_TARGET_SH4LE, SH4LE::name);
         ctx.arg.emulation = SH4LE::name;
       } else if (arg == "shelf" || arg == "shelf_linux") {
+        check(HAVE_TARGET_SH4BE, SH4BE::name);
         ctx.arg.emulation = SH4BE::name;
       } else if (arg == "elf64loongarch") {
+        check(HAVE_TARGET_LOONGARCH64, LOONGARCH64::name);
         ctx.arg.emulation = LOONGARCH64::name;
       } else if (arg == "elf32loongarch") {
+        check(HAVE_TARGET_LOONGARCH32, LOONGARCH32::name);
         ctx.arg.emulation = LOONGARCH32::name;
       } else {
         Fatal(ctx) << "unknown -m argument: " << arg;

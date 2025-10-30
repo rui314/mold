@@ -53,6 +53,8 @@
 //
 // https://github.com/rui314/psabi/blob/main/sparc.pdf
 
+#if MOLD_SPARC64
+
 #include "mold.h"
 
 namespace mold {
@@ -645,3 +647,5 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 }
 
 } // namespace mold
+
+#endif

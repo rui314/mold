@@ -11,12 +11,12 @@
 
 namespace mold {
 
-#ifdef MOLD_X86_64
 static int pipe_write_fd = -1;
 
 // Exiting from a program with large memory usage is slow --
 // it may take a few hundred milliseconds. To hide the latency,
 // we fork a child and let it do the actual linking work.
+template <typename E>
 void fork_child() {
   int pipefd[2];
   if (pipe(pipefd) == -1) {
@@ -53,6 +53,7 @@ void fork_child() {
   pipe_write_fd = pipefd[1];
 }
 
+template <typename E>
 void notify_parent() {
   if (pipe_write_fd == -1)
     return;
@@ -62,7 +63,6 @@ void notify_parent() {
   assert(n == 1);
   pipe_write_fd = -1;
 }
-#endif
 
 template <typename E>
 static std::string find_dso(Context<E> &ctx, std::filesystem::path self) {
@@ -124,6 +124,8 @@ void process_run_subcommand(Context<E> &ctx, int argc, char **argv) {
 
 using E = MOLD_TARGET;
 
+template void fork_child<E>();
+template void notify_parent<E>();
 template void process_run_subcommand(Context<E> &, int, char **);
 
 } // namespace mold

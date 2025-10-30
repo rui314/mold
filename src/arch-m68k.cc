@@ -14,6 +14,8 @@
 //
 // https://github.com/rui314/psabi/blob/main/m68k.pdf
 
+#if MOLD_M68K
+
 #include "mold.h"
 
 namespace mold {
@@ -310,3 +312,5 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 }
 
 } // namespace mold
+
+#endif

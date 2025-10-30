@@ -18,47 +18,67 @@ namespace mold {
 // We speculatively run mold_main with X86_64, and if the speculation was
 // wrong, re-run it with an actual machine type.
 template <typename E>
-int redo_main(Context<E> &ctx, int argc, char **argv) {
-  std::string_view target = ctx.arg.emulation;
-
-  if (target == I386::name)
-    return mold_main<I386>(argc, argv);
-  if (target == ARM64LE::name)
-    return mold_main<ARM64LE>(argc, argv);
-  if (target == ARM64BE::name)
-    return mold_main<ARM64BE>(argc, argv);
-  if (target == ARM32LE::name)
-    return mold_main<ARM32LE>(argc, argv);
-  if (target == ARM32BE::name)
-    return mold_main<ARM32BE>(argc, argv);
-  if (target == RV64LE::name)
-    return mold_main<RV64LE>(argc, argv);
-  if (target == RV64BE::name)
-    return mold_main<RV64BE>(argc, argv);
-  if (target == RV32LE::name)
-    return mold_main<RV32LE>(argc, argv);
-  if (target == RV32BE::name)
-    return mold_main<RV32BE>(argc, argv);
-  if (target == PPC32::name)
-    return mold_main<PPC32>(argc, argv);
-  if (target == PPC64V1::name)
-    return mold_main<PPC64V1>(argc, argv);
-  if (target == PPC64V2::name)
-    return mold_main<PPC64V2>(argc, argv);
-  if (target == S390X::name)
-    return mold_main<S390X>(argc, argv);
-  if (target == SPARC64::name)
-    return mold_main<SPARC64>(argc, argv);
-  if (target == M68K::name)
-    return mold_main<M68K>(argc, argv);
-  if (target == SH4LE::name)
-    return mold_main<SH4LE>(argc, argv);
-  if (target == SH4BE::name)
-    return mold_main<SH4BE>(argc, argv);
-  if (target == LOONGARCH32::name)
-    return mold_main<LOONGARCH32>(argc, argv);
-  if (target == LOONGARCH64::name)
-    return mold_main<LOONGARCH64>(argc, argv);
+int redo_main(std::string_view target, int argc, char **argv) {
+  if constexpr (HAVE_TARGET_X86_64)
+    if (target == X86_64::name)
+      return mold_main<X86_64>(argc, argv);
+  if constexpr (HAVE_TARGET_I386)
+    if (target == I386::name)
+      return mold_main<I386>(argc, argv);
+  if constexpr (HAVE_TARGET_ARM64LE)
+    if (target == ARM64LE::name)
+      return mold_main<ARM64LE>(argc, argv);
+  if constexpr (HAVE_TARGET_ARM64BE)
+    if (target == ARM64BE::name)
+      return mold_main<ARM64BE>(argc, argv);
+  if constexpr (HAVE_TARGET_ARM32LE)
+    if (target == ARM32LE::name)
+      return mold_main<ARM32LE>(argc, argv);
+  if constexpr (HAVE_TARGET_ARM32BE)
+    if (target == ARM32BE::name)
+      return mold_main<ARM32BE>(argc, argv);
+  if constexpr (HAVE_TARGET_RV64LE)
+    if (target == RV64LE::name)
+      return mold_main<RV64LE>(argc, argv);
+  if constexpr (HAVE_TARGET_RV64BE)
+    if (target == RV64BE::name)
+      return mold_main<RV64BE>(argc, argv);
+  if constexpr (HAVE_TARGET_RV32LE)
+    if (target == RV32LE::name)
+      return mold_main<RV32LE>(argc, argv);
+  if constexpr (HAVE_TARGET_RV32BE)
+    if (target == RV32BE::name)
+      return mold_main<RV32BE>(argc, argv);
+  if constexpr (HAVE_TARGET_PPC32)
+    if (target == PPC32::name)
+      return mold_main<PPC32>(argc, argv);
+  if constexpr (HAVE_TARGET_PPC64V1)
+    if (target == PPC64V1::name)
+      return mold_main<PPC64V1>(argc, argv);
+  if constexpr (HAVE_TARGET_PPC64V2)
+    if (target == PPC64V2::name)
+      return mold_main<PPC64V2>(argc, argv);
+  if constexpr (HAVE_TARGET_S390X)
+    if (target == S390X::name)
+      return mold_main<S390X>(argc, argv);
+  if constexpr (HAVE_TARGET_SPARC64)
+    if (target == SPARC64::name)
+      return mold_main<SPARC64>(argc, argv);
+  if constexpr (HAVE_TARGET_M68K)
+    if (target == M68K::name)
+      return mold_main<M68K>(argc, argv);
+  if constexpr (HAVE_TARGET_SH4LE)
+    if (target == SH4LE::name)
+      return mold_main<SH4LE>(argc, argv);
+  if constexpr (HAVE_TARGET_SH4BE)
+    if (target == SH4BE::name)
+      return mold_main<SH4BE>(argc, argv);
+  if constexpr (HAVE_TARGET_LOONGARCH32)
+    if (target == LOONGARCH32::name)
+      return mold_main<LOONGARCH32>(argc, argv);
+  if constexpr (HAVE_TARGET_LOONGARCH64)
+    if (target == LOONGARCH64::name)
+      return mold_main<LOONGARCH64>(argc, argv);
   abort();
 }
 
@@ -3288,7 +3308,7 @@ void write_build_id(Context<E> &ctx) {
       blake3_hash(shards[i].data(), shards[i].size(),
                   hashes.data() + i * BLAKE3_OUT_LEN);
 
-#ifdef HAVE_MADVISE
+#if HAVE_MADVISE
       // Make the kernel page out the file contents we've just written
       // so that subsequent close(2) call will become quicker.
       if (i > 0 && ctx.output_file->is_mmapped)
@@ -3371,7 +3391,7 @@ void write_separate_debug_file(Context<E> &ctx) {
   // We want to write to the debug info file in background so that the
   // user doesn't have to wait for it to complete.
   if (ctx.arg.detach)
-    notify_parent();
+    notify_parent<E>();
 
   // A debug info file contains all sections as the original file, though
   // most of them can be empty as if they were bss sections. We convert
@@ -3548,7 +3568,7 @@ void show_stats(Context<E> &ctx) {
 
 using E = MOLD_TARGET;
 
-template int redo_main(Context<E> &, int, char **);
+template int redo_main<E>(std::string_view, int, char **);
 template void create_internal_file(Context<E> &);
 template void apply_exclude_libs(Context<E> &);
 template void create_synthetic_sections(Context<E> &);

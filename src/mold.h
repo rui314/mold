@@ -2009,7 +2009,10 @@ void print_map(Context<E> &ctx);
 // subprocess.cc
 //
 
+template <typename E>
 void fork_child();
+
+template <typename E>
 void notify_parent();
 
 template <typename E>
@@ -2030,7 +2033,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
 // passes.cc
 //
 
-template <typename E> int redo_main(Context<E> &, int argc, char **argv);
+template <typename E> int redo_main(std::string_view, int argc, char **argv);
 template <typename E> void create_internal_file(Context<E> &);
 template <typename E> void apply_exclude_libs(Context<E> &);
 template <typename E> void create_synthetic_sections(Context<E> &);

@@ -35,6 +35,8 @@
 //
 // https://github.com/IBM/s390x-abi/releases/download/v1.6.1/lzsabi_s390x.pdf
 
+#if MOLD_S390X
+
 #include "mold.h"
 
 namespace mold {
@@ -489,3 +491,5 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
 }
 
 } // namespace mold
+
+#endif

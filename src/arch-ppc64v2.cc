@@ -80,6 +80,8 @@
 //
 // https://github.com/rui314/psabi/blob/main/ppc64v2.pdf
 
+#if MOLD_PPC64V2
+
 #include "mold.h"
 
 namespace mold {
@@ -676,3 +678,5 @@ u64 get_eflags(Context<E> &ctx) {
 }
 
 } // namespace mold
+
+#endif

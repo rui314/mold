@@ -45,6 +45,8 @@
 //
 // https://github.com/rui314/psabi/blob/main/ppc64v1.pdf
 
+#if MOLD_PPC64V1
+
 #include "mold.h"
 
 #include <algorithm>
@@ -669,3 +671,5 @@ void PPC64OpdSection::copy_buf(Context<E> &ctx) {
 }
 
 } // namespace mold
+
+#endif

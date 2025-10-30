@@ -28,5 +28,5 @@ int main(int argc, char **argv) {
   mi_option_disable(mi_option_show_errors);
 #endif
 
-  return mold::mold_main<mold::X86_64>(argc, argv);
+  return mold::mold_main<mold::MOLD_FIRST_TARGET>(argc, argv);
 }

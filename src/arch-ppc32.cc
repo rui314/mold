@@ -40,6 +40,8 @@
 //
 // https://github.com/rui314/psabi/blob/main/ppc32.pdf
 
+#if MOLD_PPC32
+
 #include "mold.h"
 
 namespace mold {
@@ -445,3 +447,5 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 }
 
 } // namespace mold
+
+#endif

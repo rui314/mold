@@ -318,10 +318,6 @@ add_custom_target(git_hash
 
 add_dependencies(mold git_hash)
 
-# Create config.h file
-configure_file(lib/config.h.in config.h)
-include_directories(${CMAKE_CURRENT_BINARY_DIR})
-
 # Almost all functions are template in mold which take a target type
 # (e.g. X86_64) as its type parameter. Since we suport more than 10
 # targets, compiling a single source file for all the targets is very
@@ -330,17 +326,35 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 # As a workaround, we create a .cc file for each target and spawn many
 # compiler instances. This is hacky but greatly reduces compile time
 # on a multicore machine.
-list(APPEND MOLD_ELF_TARGETS
+#
+# You can build mold for a specific set of targets by passing, e.g.,
+# -DMOLD_TARGETS='X86_64;ARM64LE', though this is strongly discouraged
+# for build reproducibility. Use this option only if you build mold
+# frequently for your personal use; otherwise, always build mold with all
+# targets enabled. We provide this flag in the trust that you will not
+# abuse it, so please don’t betray that trust.
+set(MOLD_TARGETS
   X86_64 I386 ARM64LE ARM64BE ARM32LE ARM32BE RV32LE RV32BE RV64LE
   RV64BE PPC32 PPC64V1 PPC64V2 S390X SPARC64 M68K SH4LE SH4BE
-  LOONGARCH32 LOONGARCH64)
+  LOONGARCH32 LOONGARCH64
+  CACHE STRING "List of supported targets")
 
-list(APPEND MOLD_ELF_TEMPLATE_FILES
+list(GET MOLD_TARGETS 0 MOLD_FIRST_TARGET)
+
+list(APPEND MOLD_TEMPLATE_FILES
   src/arch-arm32.cc
   src/arch-arm64.cc
+  src/arch-i386.cc
   src/arch-loongarch.cc
+  src/arch-m68k.cc
+  src/arch-ppc32.cc
+  src/arch-ppc64v1.cc
+  src/arch-ppc64v2.cc
   src/arch-riscv.cc
+  src/arch-s390x.cc
   src/arch-sh4.cc
+  src/arch-sparc64.cc
+  src/arch-x86-64.cc
   src/archive-file.cc
   src/cmdline.cc
   src/error.cc
@@ -362,18 +376,18 @@ list(APPEND MOLD_ELF_TEMPLATE_FILES
   )
 
 if(WIN32 AND NOT MINGW)
-  list(APPEND MOLD_ELF_TEMPLATE_FILES src/lto-win32.cc)
+  list(APPEND MOLD_TEMPLATE_FILES src/lto-win32.cc)
 else()
-  list(APPEND MOLD_ELF_TEMPLATE_FILES src/lto-unix.cc)
+  list(APPEND MOLD_TEMPLATE_FILES src/lto-unix.cc)
 endif()
 
 if(WIN32)
-  list(APPEND MOLD_ELF_TEMPLATE_FILES
+  list(APPEND MOLD_TEMPLATE_FILES
     src/output-file-win32.cc
     src/subprocess-win32.cc
     )
 else()
-  list(APPEND MOLD_ELF_TEMPLATE_FILES
+  list(APPEND MOLD_TEMPLATE_FILES
     src/output-file-unix.cc
     src/subprocess-unix.cc
   )
@@ -390,9 +404,10 @@ function(mold_instantiate_templates SOURCE TARGET)
   target_sources(mold PRIVATE ${PATH})
 endfunction()
 
-foreach (SOURCE IN LISTS MOLD_ELF_TEMPLATE_FILES)
-  foreach(TARGET IN LISTS MOLD_ELF_TARGETS)
+foreach (SOURCE IN LISTS MOLD_TEMPLATE_FILES)
+  foreach(TARGET IN LISTS MOLD_TARGETS)
     mold_instantiate_templates(${SOURCE} ${TARGET})
+    set(HAVE_TARGET_${TARGET} 1)
   endforeach()
 endforeach()
 
@@ -408,14 +423,6 @@ target_sources(mold PRIVATE
   lib/perf.cc
   lib/random.cc
   lib/tar.cc
-  src/arch-i386.cc
-  src/arch-m68k.cc
-  src/arch-ppc32.cc
-  src/arch-ppc64v1.cc
-  src/arch-ppc64v2.cc
-  src/arch-s390x.cc
-  src/arch-sparc64.cc
-  src/arch-x86-64.cc
   src/elf.cc
   src/entry.cc
   third-party/rust-demangle/rust-demangle.c
@@ -435,6 +442,11 @@ else()
     )
 endif()
 
+# Create config.h file
+configure_file(lib/config.h.in config.h)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
+# Test configs
 include(CTest)
 
 if(BUILD_TESTING)
