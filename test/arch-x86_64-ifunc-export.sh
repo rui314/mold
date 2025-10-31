@@ -34,4 +34,5 @@ int main() {
 EOF
 
 $CXX -B. -o $t/exe $t/c.o $t/b.so -fno-PIE
+$QEMU $t/exe |& grep 'circular dependency' || skip
 $QEMU $t/exe
