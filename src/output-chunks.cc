@@ -1813,7 +1813,7 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
     // TLS symbol
     shndx = get_st_shndx(sym);
     esym.st_value = sym.get_addr(ctx) - ctx.tls_begin;
-  } else if (sym.is_pde_ifunc(ctx)) {
+  } else if (sym.is_pde_ifunc(ctx) && sym.has_plt(ctx)) {
     // IFUNC symbol in PDE that uses two GOT slots
     shndx = get_st_shndx(sym);
     esym.st_type = STT_FUNC;
