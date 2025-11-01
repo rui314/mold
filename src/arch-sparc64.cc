@@ -390,7 +390,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         }
       } else {
         u32 rs2 = bits(*(ub32 *)loc, 4, 0);
-        *(ub32 *)loc = 0x9001'c000 | rs2; // add %g7, %reg, %o0
+        u32 rd = bits(*(ub32 *)loc, 29, 25);
+        *(ub32 *)loc = 0x8001'c000 | (rd << 25) | rs2; // add %g7, %reg, %rd
       }
       break;
     case R_SPARC_TLS_GD_CALL:
@@ -420,7 +421,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // do nothing
       } else {
         u32 rs2 = bits(*(ub32 *)loc, 4, 0);
-        *(ub32 *)loc = 0x9021'c000 | rs2; // sub %g7, %reg, %o0
+        u32 rd = bits(*(ub32 *)loc, 29, 25);
+        *(ub32 *)loc = 0x8021'c000 | (rd << 25) | rs2; // sub %g7, %reg, %rd
       }
       break;
     case R_SPARC_TLS_LDM_CALL:
