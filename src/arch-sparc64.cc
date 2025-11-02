@@ -159,6 +159,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check_range(ctx, i, val, lo, hi);
     };
 
+    auto rs1 = [&] { return *(ub32 *)loc & (0b11111 << 14); };
+    auto rs2 = [&] { return *(ub32 *)loc & 0b11111; };
+    auto rd  = [&] { return *(ub32 *)loc & (0b11111 << 25); };
+
     switch (rel.r_type) {
     case R_SPARC_5:
       check(S + A, 0, 1 << 5);
@@ -358,14 +362,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsgd(ctx)) {
         *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 9, 0);
       } else if (sym.has_gottp(ctx)) {
-        u32 rs1 = bits(*(ub32 *)loc, 18, 14);
-        u32 rd = bits(*(ub32 *)loc, 29, 25);
-        *(ub32 *)loc = 0x8010'2000 | (rd << 25) | (rs1 << 14); // or  %rs1, $0, %rd
+        *(ub32 *)loc = 0x8010'2000 | rs1() | rd(); // or  %rs1, $0, %rd
         *(ub32 *)loc |= bits(sym.get_gottp_addr(ctx) + A - GOT, 9, 0);
       } else {
-        u32 rs1 = bits(*(ub32 *)loc, 18, 14);
-        u32 rd = bits(*(ub32 *)loc, 29, 25);
-        *(ub32 *)loc = 0x8018'2000 | (rd << 25) | (rs1 << 14); // xor %rs1, $0, %rd
+        *(ub32 *)loc = 0x8018'2000 | rs1() | rd(); // xor %rs1, $0, %rd
         *(ub32 *)loc |= bits(S + A - ctx.tp_addr, 9, 0) | 0b1'1100'0000'0000;
       }
       break;
@@ -373,10 +373,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsgd(ctx)) {
         // do nothing
       } else if (sym.has_gottp(ctx)) {
-        // ldx [ %base + %reg ], %o0
-        u32 rs1 = bits(*(ub32 *)loc, 18, 14);
-        u32 rs2 = bits(*(ub32 *)loc, 4, 0);
-        *(ub32 *)loc = 0xd058'0000 | (rs1 << 14) | rs2;
+        *(ub32 *)loc = 0xd058'0000 | rs1() | rs2(); // ldx [ %rs1 + %rs2 ], %o0
 
         // TLS_GD_ADD may be in the branch delay slot of its corresponding
         // TLS_GD_CALL. If that's the case, and if we have rewrote the call
@@ -391,9 +388,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
           }
         }
       } else {
-        u32 rs2 = bits(*(ub32 *)loc, 4, 0);
-        u32 rd = bits(*(ub32 *)loc, 29, 25);
-        *(ub32 *)loc = 0x8001'c000 | (rd << 25) | rs2; // add %g7, %reg, %rd
+        *(ub32 *)loc = 0x8001'c000 | rs2() | rd(); // add %g7, %rs2, %rd
       }
       break;
     case R_SPARC_TLS_GD_CALL:
@@ -419,13 +414,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         *(ub32 *)loc |= bits(ctx.tp_addr - ctx.tls_begin, 9, 0);
       break;
     case R_SPARC_TLS_LDM_ADD:
-      if (ctx.got->has_tlsld(ctx)) {
-        // do nothing
-      } else {
-        u32 rs2 = bits(*(ub32 *)loc, 4, 0);
-        u32 rd = bits(*(ub32 *)loc, 29, 25);
-        *(ub32 *)loc = 0x8021'c000 | (rd << 25) | rs2; // sub %g7, %reg, %rd
-      }
+      if (!ctx.got->has_tlsld(ctx))
+        *(ub32 *)loc = 0x8021'c000 | rs2() | rd(); // sub %g7, %rs2, %rd
       break;
     case R_SPARC_TLS_LDM_CALL:
       if (ctx.got->has_tlsld(ctx)) {
