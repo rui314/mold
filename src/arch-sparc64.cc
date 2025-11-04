@@ -141,8 +141,8 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  // We iterate over the relocations in the reverse order so that
-  // it is easy to swap instructions for R_SPARC_TLS_GD_CALL.
+  // We iterate over relocations in reverse order so that it is easy
+  // to swap instructions for R_SPARC_TLS_GD_CALL.
   for (i64 i = (i64)rels.size() - 1; i >= 0; i--) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE)
@@ -388,12 +388,15 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         u64 addr = ctx.extra.tls_get_addr->get_addr(ctx);
         *(ub32 *)loc |= bits(addr + A - P, 31, 2);
       } else if (sym.has_gottp(ctx)) {
-        // When we rewrite a branch instruction with a non-branch one, we
-        // need to swap the two instructions so that the original exeuction
-        // order, which is non-linear due to the branch delay slot, is
-        // preserved.
+        // When we rewrite a branch instruction with a non-branch one,
+        // we need to swap the instruction and the following one so that
+        // the original execution order, which is inverted due to the
+        // branch delay slot, is preserved.
+        //
+        // Since we apply relocations from the end to the beginning,
+        // the instruction at loc + 4 is already complete.
         memcpy(loc, loc + 4, 4);
-        *(ub32 *)(loc + 4) = 0x9001'c008; // call → add %g7, %o0, %o0
+        *(ub32 *)(loc + 4) = 0x9001'c008; // add %g7, %o0, %o0
       } else {
         *(ub32 *)loc = 0x0100'0000; // call → nop
       }
