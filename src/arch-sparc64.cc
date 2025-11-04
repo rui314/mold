@@ -304,12 +304,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_GOTDATA_OP:
       if (sym.is_absolute()) {
-        // ldx [ %l7 + %rs2 ], %rd  →  mov %rs2, %rd
+        // ldx [ %rs1 + %rs2 ], %rd  →  mov %rs2, %rd
         *(ub32 *)loc = 0x8010'0000 | rs2() | rd();
       } else if (sym.is_pcrel_linktime_const(ctx)) {
-        // ldx [ %l7 + %rs2 ], %rd  →  add %l7, %rs2, %rd
-        *(ub32 *)loc &= 0b00'11111'000000'11111'1'11111111'11111;
-        *(ub32 *)loc |= 0b10'00000'000000'00000'0'00000000'00000;
+        // ldx [ %rs1 + %rs2 ], %rd  →  add %rs1, %rs2, %rd
+        *(ub32 *)loc = 0x8000'0000 | rs1() | rs2() | rd();
       }
       break;
     case R_SPARC_PC10:
@@ -378,7 +377,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // ldx [ %rs1 + %rs2 ], %rd
         *(ub32 *)loc = 0xc058'0000 | rs1() | rs2() | rd();
       } else {
-        *(ub32 *)loc = 0x8001'c000 | rs2() | rd(); // add %g7, %rs2, %rd
+        // add %g7, %rs2, %rd
+        *(ub32 *)loc = 0x8001'c000 | rs2() | rd();
       }
       break;
     case R_SPARC_TLS_GD_CALL:
