@@ -375,7 +375,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsgd(ctx)) {
         // do nothing
       } else if (sym.has_gottp(ctx)) {
-        *(ub32 *)loc = 0xd058'0000 | rs1() | rs2(); // ldx [ %rs1 + %rs2 ], %o0
+        // ldx [ %rs1 + %rs2 ], %rd
+        *(ub32 *)loc = 0xc058'0000 | rs1() | rs2() | rd();
       } else {
         *(ub32 *)loc = 0x8001'c000 | rs2() | rd(); // add %g7, %rs2, %rd
       }
