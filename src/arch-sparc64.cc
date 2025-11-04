@@ -141,7 +141,9 @@ template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
 
-  for (i64 i = 0; i < rels.size(); i++) {
+  // We iterate over the relocations in the reverse order so that
+  // it is easy to swap instructions for R_SPARC_TLS_GD_CALL.
+  for (i64 i = (i64)rels.size() - 1; i >= 0; i--) {
     const ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE)
       continue;
@@ -374,19 +376,6 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // do nothing
       } else if (sym.has_gottp(ctx)) {
         *(ub32 *)loc = 0xd058'0000 | rs1() | rs2(); // ldx [ %rs1 + %rs2 ], %o0
-
-        // TLS_GD_ADD may be in the branch delay slot of its corresponding
-        // TLS_GD_CALL. If that's the case, and if we have rewrote the call
-        // instruction with an ordinaly one (i.e. add), we need to swap the
-        // two instructions so that the original execution order is preserved.
-        if (i > 0) {
-          const ElfRel<E> &rel2 = rels[i - 1];
-          if (rel2.r_type == R_SPARC_TLS_GD_CALL &&
-              rel.r_sym == rel2.r_sym &&
-              rel.r_offset - 4 == rel2.r_offset) {
-            std::swap(*(ub32 *)loc, *(ub32 *)(loc - 4));
-          }
-        }
       } else {
         *(ub32 *)loc = 0x8001'c000 | rs2() | rd(); // add %g7, %rs2, %rd
       }
@@ -396,7 +385,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         u64 addr = ctx.extra.tls_get_addr->get_addr(ctx);
         *(ub32 *)loc |= bits(addr + A - P, 31, 2);
       } else if (sym.has_gottp(ctx)) {
-        *(ub32 *)loc = 0x9001'c008; // add %g7, %o0, %o0
+        // When we rewrite a branch instruction with a non-branch one, we
+        // need to swap the two instructions so that the original exeuction
+        // order, which is non-linear due to the branch delay slot, is
+        // preserved.
+        memcpy(loc, loc + 4, 4);
+        *(ub32 *)(loc + 4) = 0x9001'c008; // add %g7, %o0, %o0
       } else {
         *(ub32 *)loc = 0x0100'0000; // nop
       }
