@@ -363,10 +363,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsgd(ctx)) {
         *(ub32 *)loc |= bits(sym.get_tlsgd_addr(ctx) + A - GOT, 9, 0);
       } else if (sym.has_gottp(ctx)) {
-        *(ub32 *)loc = 0x8010'2000 | rs1() | rd(); // or  %rs1, $0, %rd
+        // add %rs1, %rs2, %rd → or  %rs1, $imm, %rd
+        *(ub32 *)loc = 0x8010'2000 | rs1() | rd();
         *(ub32 *)loc |= bits(sym.get_gottp_addr(ctx) + A - GOT, 9, 0);
       } else {
-        *(ub32 *)loc = 0x8018'2000 | rs1() | rd(); // xor %rs1, $0, %rd
+        // add %rs1, %rs2, %rd → xor %rs1, $imm, %rd
+        *(ub32 *)loc = 0x8018'2000 | rs1() | rd();
         *(ub32 *)loc |= bits(S + A - ctx.tp_addr, 9, 0) | 0b1'1100'0000'0000;
       }
       break;
@@ -374,10 +376,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (sym.has_tlsgd(ctx)) {
         // do nothing
       } else if (sym.has_gottp(ctx)) {
-        // ldx [ %rs1 + %rs2 ], %rd
+        // add %rs1, %rs2, %rd → ldx [ %rs1 + %rs2 ], %rd
         *(ub32 *)loc = 0xc058'0000 | rs1() | rs2() | rd();
       } else {
-        // add %g7, %rs2, %rd
+        // add %rs1, %rs2, %rd → add %g7, %rs2, %rd
         *(ub32 *)loc = 0x8001'c000 | rs2() | rd();
       }
       break;
@@ -391,9 +393,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // order, which is non-linear due to the branch delay slot, is
         // preserved.
         memcpy(loc, loc + 4, 4);
-        *(ub32 *)(loc + 4) = 0x9001'c008; // add %g7, %o0, %o0
+        *(ub32 *)(loc + 4) = 0x9001'c008; // call → add %g7, %o0, %o0
       } else {
-        *(ub32 *)loc = 0x0100'0000; // nop
+        *(ub32 *)loc = 0x0100'0000; // call → nop
       }
       break;
     case R_SPARC_TLS_LDM_HI22:
