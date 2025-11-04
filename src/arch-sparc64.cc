@@ -304,10 +304,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_GOTDATA_OP:
       if (sym.is_absolute()) {
-        // ldx [ %g2 + %g1 ], %g1  →  nop
-        *(ub32 *)loc = 0x0100'0000;
+        // ldx [ %l7 + %rs2 ], %rd  →  mov %rs2, %rd
+        *(ub32 *)loc = 0x8010'0000 | rs2() | rd();
       } else if (sym.is_pcrel_linktime_const(ctx)) {
-        // ldx [ %g2 + %g1 ], %g1  →  add %g2, %g1, %g1
+        // ldx [ %l7 + %rs2 ], %rd  →  add %l7, %rs2, %rd
         *(ub32 *)loc &= 0b00'11111'000000'11111'1'11111111'11111;
         *(ub32 *)loc |= 0b10'00000'000000'00000'0'00000000'00000;
       }
