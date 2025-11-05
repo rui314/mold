@@ -48,18 +48,29 @@ public:
   constexpr Integer() = default;
 
   constexpr Integer(T v) {
-    if (std::is_constant_evaluated()) {
-      for (int i = 0; i < size; i++) {
-        int j = is_le ? i : (size - i - 1);
-        buf[j] = v >> (i * 8);
-      }
+    if (std::is_constant_evaluated() || size == 3) {
+      for (int i = 0; i < size; i++)
+        buf[is_le ? i : (size - i - 1)] = v >> (i * 8);
     } else {
-      store(v);
+      if (!is_native)
+        v = bswap(v);
+      memcpy(buf, &v, size);
     }
   }
 
-  operator T() const { return load(); }
-  Integer &operator=(T v)  { store(v); return *this; }
+  operator T() const {
+    if (size == 3) {
+      if (is_le)
+        return buf[2] << 16 | buf[1] << 8 | buf[0];
+      return buf[0] << 16 | buf[1] << 8 | buf[2];
+    }
+
+    T v;
+    memcpy(&v, buf, size);
+    return is_native ? v : bswap(v);
+  }
+
+  Integer &operator=(T v)  { new (this) Integer(v); return *this; }
   Integer &operator++()    { return *this = *this + 1; }
   Integer operator++(int)  { auto x = *this; ++*this; return x; }
   Integer &operator--()    { return *this = *this - 1; }
@@ -76,43 +87,10 @@ private:
   static T bswap(T v) {
     switch (size) {
     case 2: return __builtin_bswap16(v);
-    case 3: __builtin_unreachable();
     case 4: return __builtin_bswap32(v);
     case 8: return __builtin_bswap64(v);
     }
-  }
-
-  T load() const {
-    if (size == 3) {
-      if (is_le)
-        return buf[2] << 16 | buf[1] << 8 | buf[0];
-      return buf[0] << 16 | buf[1] << 8 | buf[2];
-    }
-
-    T v;
-    memcpy(&v, buf, size);
-    return is_native ? v : bswap(v);
-  }
-
-  // We cannot merge this with the constructor because memcpy is not
-  // allowed to use in a compile-time constant expression.
-  void store(T v) {
-    if (size == 3) {
-      if (is_le) {
-        buf[0] = v;
-        buf[1] = v >> 8;
-        buf[2] = v >> 16;
-      } else {
-        buf[0] = v >> 16;
-        buf[1] = v >> 8;
-        buf[2] = v;
-      }
-      return;
-    }
-
-    if (!is_native)
-      v = bswap(v);
-    memcpy(buf, &v, size);
+    __builtin_unreachable();
   }
 
   uint8_t buf[size];
