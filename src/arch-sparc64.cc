@@ -511,6 +511,7 @@ template <>
 void InputSection<E>::scan_relocations(Context<E> &ctx) {
   assert(shdr().sh_flags & SHF_ALLOC);
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  bool needs_tlsgd = false;
 
   // Scan relocations
   for (i64 i = 0; i < rels.size(); i++) {
@@ -594,6 +595,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_GOTTP;
       } else {
         sym.flags |= NEEDS_TLSGD;
+        needs_tlsgd = true;
       }
       break;
     case R_SPARC_TLS_LDM_HI22:
@@ -607,11 +609,6 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_TLS_IE_HI22:
       sym.flags |= NEEDS_GOTTP;
       break;
-    case R_SPARC_TLS_GD_CALL:
-    case R_SPARC_TLS_LDM_CALL:
-      if (ctx.extra.tls_get_addr->is_imported)
-        ctx.extra.tls_get_addr->flags |= NEEDS_PLT;
-      break;
     case R_SPARC_TLS_LE_HIX22:
     case R_SPARC_TLS_LE_LOX10:
       check_tlsle(ctx, sym, rel);
@@ -623,8 +620,10 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_SPARC_GOTDATA_LOX10:
     case R_SPARC_TLS_GD_LO10:
     case R_SPARC_TLS_GD_ADD:
+    case R_SPARC_TLS_GD_CALL:
     case R_SPARC_TLS_LDM_LO10:
     case R_SPARC_TLS_LDM_ADD:
+    case R_SPARC_TLS_LDM_CALL:
     case R_SPARC_TLS_LDO_HIX22:
     case R_SPARC_TLS_LDO_LOX10:
     case R_SPARC_TLS_LDO_ADD:
@@ -638,6 +637,12 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       Error(ctx) << *this << ": unknown relocation: " << rel;
     }
   }
+
+  // TLS_GD_CALL and TLS_LDM_CALL relocations implicitly refer to
+  // __tls_get_addr, which may be dynamically linked from libc.so.
+  Symbol<E> &sym = *ctx.extra.tls_get_addr;
+  if (sym.is_imported && (needs_tlsgd || ctx.needs_tlsld))
+    sym.flags |= NEEDS_PLT;
 }
 
 } // namespace mold
