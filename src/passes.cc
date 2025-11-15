@@ -3398,7 +3398,7 @@ void write_separate_debug_file(Context<E> &ctx) {
   // real sections into dummy sections here.
   for (i64 i = 0; i < ctx.chunks.size(); i++) {
     Chunk<E> *chunk = ctx.chunks[i];
-    if (chunk != ctx.ehdr && chunk != ctx.shdr && chunk != ctx.shstrtab &&
+    if (!chunk->is_header() && chunk != ctx.shstrtab &&
         chunk->shdr.sh_type != SHT_NOTE) {
       Chunk<E> *sec = new OutputSection<E>(chunk->name, SHT_NULL);
       sec->shdr = chunk->shdr;

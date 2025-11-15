@@ -20,6 +20,8 @@ readelf -SW $t/exe1 | grep -F .gnu_debuglink
 flock $t/exe1.dbg true
 gdb $t/exe1 -ex 'list main' -ex 'quit' | grep -F printf
 
+readelf -W --sections $t/exe1.dbg | not grep -E '[EPS]HDR'
+
 
 $CC -c -o $t/a.o $t/a.c -g
 $CC -B. -o $t/exe2 $t/a.o -Wl,--separate-debug-file,--no-build-id
