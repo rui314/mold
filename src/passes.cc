@@ -3393,39 +3393,68 @@ void write_separate_debug_file(Context<E> &ctx) {
   if (ctx.arg.detach)
     notify_parent<E>();
 
-  // A debug info file contains all sections as the original file, though
-  // most of them can be empty as if they were bss sections. We convert
-  // real sections into dummy sections here.
-  for (i64 i = 0; i < ctx.chunks.size(); i++) {
-    Chunk<E> *chunk = ctx.chunks[i];
-    if (!chunk->is_header() && chunk != ctx.shstrtab &&
-        chunk->shdr.sh_type != SHT_NOTE) {
-      Chunk<E> *sec = new OutputSection<E>(chunk->name, SHT_NULL);
-      sec->shdr = chunk->shdr;
-      sec->shdr.sh_type = SHT_NOBITS;
-
-      ctx.chunks[i] = sec;
-      ctx.chunk_pool.emplace_back(sec);
-    }
-  }
-
   // Restore debug info sections that had been set aside while we were
   // creating the main file.
-  tbb::parallel_for_each(ctx.debug_chunks, [&](Chunk<E> *chunk) {
-    chunk->compute_section_size(ctx);
+  i64 num_chunks = ctx.chunks.size();
+  append(ctx.chunks, ctx.debug_chunks);
+
+  tbb::parallel_for(num_chunks, (i64)ctx.chunks.size(), [&](i64 i) {
+    ctx.chunks[i]->compute_section_size(ctx);
   });
 
-  append(ctx.chunks, ctx.debug_chunks);
   sort_debug_info_sections(ctx);
 
   // Handle --compress-debug-info
   if (ctx.arg.compress_debug_sections != ELFCOMPRESS_NONE)
     compress_debug_sections(ctx);
 
-  // Write to the debug info file as if it were a regular output file.
+  // Recompute section header contents since we have added debug sections
   compute_section_headers(ctx);
-  file->resize(ctx, set_osec_offsets(ctx));
 
+  // A debug info file contains all sections as the original file, though
+  // most of them can be empty as if they were bss sections. We convert
+  // real sections into dummy sections here.
+  for (i64 i = 0; i < num_chunks; i++) {
+    Chunk<E> *chunk = ctx.chunks[i];
+    if (!chunk->is_header() && chunk != ctx.shstrtab &&
+        chunk->shdr.sh_type != SHT_NOTE) {
+      Chunk<E> *sec = new OutputSection<E>(chunk->name, SHT_NULL);
+      sec->shdr = chunk->shdr;
+      sec->shdr.sh_type = SHT_NOBITS;
+      sec->shndx = chunk->shndx;
+
+      ctx.chunks[i] = sec;
+      ctx.chunk_pool.emplace_back(sec);
+    }
+  }
+
+  // Assign file offsets to sections
+  i64 fileoff = 0;
+  for (Chunk<E> *chunk : ctx.chunks) {
+    ElfShdr<E> &shdr = chunk->shdr;
+
+    if (shdr.sh_type == SHT_NOBITS) {
+      shdr.sh_offset = fileoff;
+    } else if (shdr.sh_flags & SHF_ALLOC) {
+      fileoff = align_with_skew(fileoff, ctx.page_size, shdr.sh_addr);
+      shdr.sh_offset = fileoff;
+      fileoff += shdr.sh_size;
+    } else {
+      fileoff = align_to(fileoff, shdr.sh_addralign);
+      shdr.sh_offset = fileoff;
+      fileoff += shdr.sh_size;
+    }
+  }
+
+  if (ctx.phdr) {
+    i64 sz = ctx.phdr->phdrs.size();
+    ctx.phdr->update_shdr(ctx);
+    assert(ctx.phdr->phdrs.size() <= sz);
+    ctx.phdr->phdrs.resize(sz);
+  }
+
+  // Write to a separate debug file
+  file->resize(ctx, fileoff);
   ctx.output_file.reset(file);
   ctx.buf = ctx.output_file->buf;
 
