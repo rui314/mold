@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "September 2025" ""
+.TH "MOLD" "1" "December 2025" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -496,9 +496,9 @@ By default, \fBmold\fR generates a relro segment\. \fB\-z norelro\fR disables th
 \fB\-z separate\-loadable\-segments\fR, \fB\-z separate\-code\fR, \fB\-z noseparate\-code\fR
 If one memory page contains multiple segments, the page protection bits are set in such a way that the needed attributes (writable or executable) are satisfied for all segments\. This usually happens at a boundary of two segments with two different attributes\.
 .IP
-\fBseparate\-loadable\-segments\fR adds paddings between segments with different attributes so that they do not share the same page\. This is the default\.
+\fBseparate\-loadable\-segments\fR adds paddings between segments with different attributes so that they do not share the same page\.
 .IP
-\fBseparate\-code\fR adds paddings only between executable and non\-executable segments\.
+\fBseparate\-code\fR adds paddings only between executable and non\-executable segments\. This is the default\.
 .IP
 \fBnoseparate\-code\fR does not add any paddings between segments\.
 .TP
