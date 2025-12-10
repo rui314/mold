@@ -164,8 +164,7 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.eh_frame_hdr = push(new EhFrameHdrSection<E>);
   if (ctx.arg.gdb_index && has_debug_info_section(ctx))
     ctx.gdb_index = push(new GdbIndexSection<E>);
-  if (ctx.arg.z_relro && ctx.arg.section_order.empty() &&
-      ctx.arg.z_separate_code != SEPARATE_LOADABLE_SEGMENTS)
+  if (ctx.arg.z_relro && ctx.arg.section_order.empty())
     ctx.relro_padding = push(new RelroPaddingSection<E>);
   if (ctx.arg.hash_style_sysv)
     ctx.hash = push(new HashSection<E>);
