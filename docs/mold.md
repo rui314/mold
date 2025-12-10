@@ -854,10 +854,10 @@ but as `-o magic`.
   segments with two different attributes.
 
   `separate-loadable-segments` adds paddings between segments with different
-  attributes so that they do not share the same page. This is the default.
+  attributes so that they do not share the same page.
 
   `separate-code` adds paddings only between executable and non-executable
-  segments.
+  segments. This is the default.
 
   `noseparate-code` does not add any paddings between segments.
 
