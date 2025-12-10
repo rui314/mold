@@ -26,7 +26,7 @@ foo:
   .string "foo world\n"
 EOF
 
-$CC -B. -static -o $t/exe $t/a.o
+$CC -B. -static -no-pie -o $t/exe $t/a.o
 $QEMU $t/exe | grep 'Hello world'
 
 readelf -sW $t/exe | grep -E '[0-9] foo$'

@@ -10,5 +10,5 @@ int main() {
 }
 EOF
 
-$CC -B. -o $t/exe $t/a.o -static
+$CC -B. -o $t/exe $t/a.o -static -no-pie
 $QEMU $t/exe | grep 'Hello world'

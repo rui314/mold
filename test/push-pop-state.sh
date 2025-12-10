@@ -21,9 +21,9 @@ grep -F a.so $t/log1
 not grep -F b.so $t/log1
 
 if test_cflags -static; then
-  $CC -B. -o $t/exe2 $t/c.o -static
+  $CC -B. -o $t/exe2 $t/c.o -no-pie -static
   readelf --dynamic $t/exe2 | grep -F 'no dynamic section'
 
-  $CC -B. -o $t/exe3 $t/c.o -Wl,-push-state,-static,-pop-state
+  $CC -B. -o $t/exe3 $t/c.o -no-pie -Wl,-push-state,-static,-pop-state
   readelf --dynamic $t/exe3 | grep -F libc
 fi

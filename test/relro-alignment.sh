@@ -3,8 +3,10 @@
 
 [ $MACHINE = i686 ] && skip
 [ $MACHINE = arm ] && skip
+[ $MACHINE = armeb ] && skip
 [ $MACHINE = ppc ] && skip
 [ $MACHINE = sh4 ] && skip
+[ $MACHINE = sh4aeb ] && skip
 [ $MACHINE = m68k ] && skip
 
 cat <<EOF | $CC -c -xc -o $t/a.o -

@@ -12,5 +12,5 @@ int main() {
 }
 EOF
 
-$CC -B. $t/a.o -o $t/exe -static -Wl,--omagic
+$CC -B. $t/a.o -o $t/exe -static -no-pie -Wl,--omagic
 readelf -W --segments $t/exe | grep -w RWE

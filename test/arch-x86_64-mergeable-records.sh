@@ -44,7 +44,7 @@ str2:
   .ascii "mnopqr\n\0"
 EOF
 
-$CC -B. -static -o $t/exe $t/a.o
+$CC -B. -static -no-pie -o $t/exe $t/a.o
 
 $QEMU $t/exe | grep '^abcdef$'
 $QEMU $t/exe | grep '^bcdef$'
