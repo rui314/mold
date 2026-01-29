@@ -845,7 +845,6 @@ void Arm32ExidxSection<E>::copy_buf(Context<E> &ctx) {
   write_vector(ctx.buf + this->shdr.sh_offset, contents);
 }
 
-#if MOLD_ARM32BE
 // Even though using ARM32 in big-endian mode is very rare, the processor
 // technically supports both little- and big-endian modes. There are two
 // variants of big-endian mode: BE32 and BE8. In BE32, instructions and
@@ -868,6 +867,7 @@ void Arm32ExidxSection<E>::copy_buf(Context<E> &ctx) {
 //
 // This function is called after we copy the input section contents to the
 // output file. We rewrite instructions in the output buffer in place.
+#if MOLD_ARM32BE
 void arm32be_swap_bytes(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // Collect mapping symbols
@@ -896,8 +896,8 @@ void arm32be_swap_bytes(Context<E> &ctx) {
       InputSection<E> &isec = *sym.get_input_section();
       u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
       u8 *start = base + sym.value;
-
       u8 *end;
+
       if (i + 1 < syms.size() && syms[i + 1]->get_input_section() == &isec)
         end = base + syms[i + 1]->value;
       else
