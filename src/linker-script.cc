@@ -249,9 +249,18 @@ std::string_view Script<E>::get_script_output_type() {
   }
 
   if (tok.size() >= 3 && (tok[0] == "INPUT" || tok[0] == "GROUP") &&
-      tok[1] == "(")
-    if (MappedFile *mf = resolve_path(tok[2], false))
+      tok[1] == "(") {
+    MappedFile *mf;
+
+    if (tok.size() >= 5 && tok[2] == "AS_NEEDED" && tok[3] == "(")
+      mf = resolve_path(tok[4], false);
+    else
+      mf = resolve_path(tok[2], false);
+
+    if (mf)
       return get_machine_type(ctx, rctx, mf);
+  }
+
   return "";
 }
 
