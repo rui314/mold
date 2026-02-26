@@ -1460,6 +1460,19 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     }
   }
 
+  if (!ctx.arg.chroot.empty()) {
+    if (!ctx.arg.Map.empty())
+      ctx.arg.Map = ctx.arg.chroot + "/" + ctx.arg.Map;
+
+    if (!ctx.arg.dependency_file.empty())
+      ctx.arg.dependency_file = ctx.arg.chroot + "/" + ctx.arg.dependency_file;
+  }
+
+  if (!ctx.arg.directory.empty())
+    if (chdir(ctx.arg.directory.c_str()) == -1)
+      Fatal(ctx) << "chdir failed: " << ctx.arg.directory
+                 << ": " << errno_string();
+
   if (!ctx.arg.sysroot.empty()) {
     for (std::string &path : ctx.arg.library_paths) {
       if (std::string_view(path).starts_with('='))
@@ -1622,14 +1635,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   // want to disable this optimization if we are creating a shared
   // object file.
   ctx.overwrite_output_file = (!ctx.arg.shared && returns_etxtbsy());
-
-  if (!ctx.arg.chroot.empty()) {
-    if (!ctx.arg.Map.empty())
-      ctx.arg.Map = ctx.arg.chroot + "/" + ctx.arg.Map;
-
-    if (!ctx.arg.dependency_file.empty())
-      ctx.arg.dependency_file = ctx.arg.chroot + "/" + ctx.arg.dependency_file;
-  }
 
   // Mark GC root symbols
   for (Symbol<E> *sym : ctx.arg.undefined)

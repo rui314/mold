@@ -302,11 +302,6 @@ int mold_main(int argc, char **argv) {
 
   install_signal_handler();
 
-  if (!ctx.arg.directory.empty())
-    if (chdir(ctx.arg.directory.c_str()) == -1)
-      Fatal(ctx) << "chdir failed: " << ctx.arg.directory
-                 << ": " << errno_string();
-
   // Fork a subprocess unless --no-fork is given.
   if (ctx.arg.fork)
     fork_child<E>();
