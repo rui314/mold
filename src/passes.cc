@@ -3467,12 +3467,15 @@ void write_separate_debug_file(Context<E> &ctx) {
   // debug info file's CRC32 checksum.
   u32 crc = compute_crc32(0, ctx.buf, ctx.output_file->filesize);
 
-  std::vector<u8> &buf2 = ctx.output_file->buf2;
-  if (!buf2.empty())
-    crc = compute_crc32(crc, buf2.data(), buf2.size());
+  u8 *&buf2 = ctx.output_file->buf2;
+  i64 &buf2_size = ctx.output_file->buf2_size;
+  if (buf2)
+    crc = compute_crc32(crc, buf2, buf2_size);
 
   std::vector<u8> trailer = crc32_solve(crc, ctx.gnu_debuglink->crc32);
-  append(ctx.output_file->buf2, trailer);
+  buf2 = (u8 *)realloc(buf2, buf2_size + trailer.size());
+  memcpy(buf2 + buf2_size, trailer.data(), trailer.size());
+  buf2_size += trailer.size();
   ctx.output_file->close(ctx);
 }
 

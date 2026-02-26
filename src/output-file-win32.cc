@@ -44,13 +44,13 @@ public:
 
     UnmapViewOfFile(this->buf);
 
-    if (!this->buf2.empty()) {
+    if (this->buf2) {
       if (SetFilePointer(handle, 0, nullptr, FILE_END) == INVALID_SET_FILE_POINTER)
         Fatal(ctx) << this->path << ": SetFilePointer failed: "
                    << GetLastError();
 
       DWORD written;
-      if (!WriteFile(handle, this->buf2.data(), this->buf2.size(), &written,
+      if (!WriteFile(handle, this->buf2, this->buf2_size, &written,
                      nullptr))
         Fatal(ctx) << this->path << ": WriteFile failed: " << GetLastError();
     }

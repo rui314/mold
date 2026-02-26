@@ -77,12 +77,12 @@ public:
     if (!this->is_unmapped)
       munmap(this->buf, this->filesize);
 
-    if (this->buf2.empty()) {
+    if (!this->buf2) {
       ::close(this->fd);
     } else {
       FILE *out = fdopen(this->fd, "w");
       fseek(out, 0, SEEK_END);
-      fwrite(&this->buf2[0], this->buf2.size(), 1, out);
+      fwrite(this->buf2, this->buf2_size, 1, out);
       fclose(out);
     }
 
@@ -176,10 +176,10 @@ void LockingOutputFile<E>::close(Context<E> &ctx) {
   if (!this->is_unmapped)
     munmap(this->buf, this->filesize);
 
-  if (!this->buf2.empty()) {
+  if (this->buf2) {
     FILE *out = fdopen(this->fd, "w");
     fseek(out, 0, SEEK_END);
-    fwrite(&this->buf2[0], this->buf2.size(), 1, out);
+    fwrite(this->buf2, this->buf2_size, 1, out);
     fclose(out);
   }
 

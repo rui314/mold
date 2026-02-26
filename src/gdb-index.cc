@@ -715,9 +715,11 @@ void write_gdb_index(Context<E> &ctx) {
 
   i64 bufsize = hdr.const_pool_offset + offset;
 
-  // Allocate an output buffer
-  ctx.output_file->buf2.resize(bufsize);
-  u8 *buf = ctx.output_file->buf2.data();
+  // Allocate an output buffer. We use malloc instead of vector to
+  // avoid zero-initializing the entire buffer.
+  ctx.output_file->buf2 = (u8 *)malloc(bufsize);
+  ctx.output_file->buf2_size = bufsize;
+  u8 *buf = ctx.output_file->buf2;
 
   // Write a section header
   memcpy(buf, &hdr, sizeof(hdr));
@@ -732,18 +734,25 @@ void write_gdb_index(Context<E> &ctx) {
   }
 
   // Write address areas
-  for (i64 i = 0; i < cus.size(); i++) {
-    for (std::pair<u64, u64> range : cus[i].ranges) {
+  std::vector<i64> range_offsets(cus.size());
+  for (i64 i = 1; i < cus.size(); i++)
+    range_offsets[i] = range_offsets[i - 1] + cus[i - 1].ranges.size() * 20;
+
+  tbb::parallel_for_each(cus, [&](Compunit &cu) {
+    i64 i = &cu - cus.data();
+    u8 *p = buf + hdr.ranges_offset + range_offsets[i];
+    for (std::pair<u64, u64> range : cu.ranges) {
       *(ul64 *)p = range.first;
       *(ul64 *)(p + 8) = range.second;
       *(ul32 *)(p + 16) = i;
       p += 20;
     }
-  }
+  });
 
   // Write a symbol table
   u32 mask = ht_size - 1;
   ul32 *ht = (ul32 *)(buf + hdr.symtab_offset);
+  memset(ht, 0, ht_size * 8);
 
   for (Entry *ent : entries) {
     u32 hash = ent->value.gdb_hash;
@@ -757,22 +766,31 @@ void write_gdb_index(Context<E> &ctx) {
     ht[j * 2 + 1] = ent->value.type_offset;
   }
 
-  // Write types
-  for (i64 i = 0; i < cus.size(); i++) {
-    Compunit &cu = cus[i];
-    u8 *base = buf + hdr.const_pool_offset;
+  // Write types. Use MapValue::count as an atomic slot counter.
+  u8 *base = buf + hdr.const_pool_offset;
 
+  for (Entry *ent : entries)
+    ent->value.count = 0;
+
+  tbb::parallel_for_each(cus, [&](Compunit &cu) {
+    i64 i = &cu - cus.data();
     for (i64 j = 0; j < cu.nametypes.size(); j++) {
-      ul32 *p = (ul32 *)(base + cu.entries[j]->type_offset);
-      i64 idx = ++p[0];
+      MapValue *ent = cu.entries[j];
+      ul32 *p = (ul32 *)(base + ent->type_offset);
+      i64 idx = ++ent->count;
       p[idx] = (cu.nametypes[j].type << 24) | i;
     }
-  }
+  });
+
+  // Write the final counts into the buffer.
+  for (Entry *ent : entries)
+    *(ul32 *)(base + ent->value.type_offset) = ent->value.count;
 
   // Write names
   tbb::parallel_for_each(entries, [&](Entry *ent) {
-    memcpy(buf + hdr.const_pool_offset + ent->value.name_offset,
-           ent->key, ent->keylen);
+    u8 *dst = buf + hdr.const_pool_offset + ent->value.name_offset;
+    memcpy(dst, ent->key, ent->keylen);
+    dst[ent->keylen] = '\0';
   });
 
   // Update the section size and rewrite the section header

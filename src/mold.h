@@ -1545,10 +1545,11 @@ public:
   open(Context<E> &ctx, std::string path, i64 filesize, int perm);
 
   virtual void close(Context<E> &ctx) = 0;
-  virtual ~OutputFile() = default;
+  virtual ~OutputFile() { free(buf2); }
 
   u8 *buf = nullptr;
-  std::vector<u8> buf2;
+  u8 *buf2 = nullptr;
+  i64 buf2_size = 0;
   std::string path;
   int fd = -1;
   i64 filesize = 0;
@@ -1592,8 +1593,8 @@ public:
     }
 
     fwrite(this->buf, this->filesize, 1, fp);
-    if (!this->buf2.empty())
-      fwrite(this->buf2.data(), this->buf2.size(), 1, fp);
+    if (this->buf2)
+      fwrite(this->buf2, this->buf2_size, 1, fp);
     fclose(fp);
   }
 
