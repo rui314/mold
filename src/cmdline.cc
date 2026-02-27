@@ -16,7 +16,9 @@
 #if __has_include(<unistd.h>)
 # include <unistd.h>
 #else
+# include <direct.h>
 # define isatty _isatty
+# define chdir _chdir
 # define STDERR_FILENO (_fileno(stderr))
 #endif
 

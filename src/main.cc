@@ -7,13 +7,6 @@
 #include <sys/types.h>
 #include <unordered_set>
 
-#ifdef _WIN32
-# include <direct.h>
-# define chdir _chdir
-#else
-# include <unistd.h>
-#endif
-
 namespace mold {
 
 template <typename E>
