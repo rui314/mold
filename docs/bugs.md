@@ -88,9 +88,9 @@ Problem: A statically-linked "hello world" program crashes after
 reading a thread-local variable.
 
 Investigation: Thread-local variables are very different from other
-types of varaibles because there may be more than one instance of the
+types of variables because there may be more than one instance of the
 same variable in memory. Each thread has its copy of thread-local
-varaibles. `%fs` segment register points the end of the variable area
+variables. `%fs` segment register points the end of the variable area
 for the current thread, and the variables are accessed as an offset
 from `%fs`.
 
