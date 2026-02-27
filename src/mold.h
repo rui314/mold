@@ -565,6 +565,12 @@ public:
   bool icf_eligible = false;
   bool icf_leaf = false;
 
+  // For stats recovering
+  struct {
+    Atomic<i64> relative_relocations_offset_supremum = -1;
+    Atomic<i64> relative_relocations_offset_infimum = -1;
+  } stats;
+
   [[no_unique_address]] InputSectionExtras<E> extra;
 
 private:
@@ -581,6 +587,39 @@ private:
 
   std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
 };
+
+struct RelocationsStats {
+  i64 min_offset_lower_bound {std::numeric_limits<i64>::max()};
+  i64 min_offset_upper_bound {std::numeric_limits<i64>::max()};
+  i64 min_offset_lower_bound_rel_idx {-1};
+  i64 min_offset_upper_bound_rel_idx {-1};
+};
+
+inline void update_relocation_stats(RelocationsStats &stats, const i64 i, const i64 val, const i64 lo, const i64 hi) {
+  const auto to_lo = std::abs(lo - val);
+  const auto to_hi = std::abs(hi - val);
+  if (to_lo < stats.min_offset_lower_bound) {
+    stats.min_offset_lower_bound = to_lo;
+    stats.min_offset_lower_bound_rel_idx = i;
+  }
+  if (to_hi < stats.min_offset_upper_bound) {
+    stats.min_offset_upper_bound = to_hi;
+    stats.min_offset_upper_bound_rel_idx = i;
+  }
+}
+
+template<typename E>
+inline void save_relocation_stats(Context<E> &ctx, InputSection<E> &isec, const RelocationsStats &stats) {
+  if (stats.min_offset_lower_bound < ctx.stats.relative_relocations_offset_infimum) {
+    ctx.stats.relative_relocations_offset_infimum = stats.min_offset_lower_bound;
+    isec.stats.relative_relocations_offset_infimum = stats.min_offset_lower_bound;
+  }
+  if (stats.min_offset_upper_bound < ctx.stats.relative_relocations_offset_supremum) {
+    ctx.stats.relative_relocations_offset_supremum = stats.min_offset_upper_bound;
+    isec.stats.relative_relocations_offset_supremum = stats.min_offset_upper_bound;
+  }
+}
+
 
 //
 // tls.cc
@@ -2595,6 +2634,12 @@ struct Context {
   Symbol<E> *edata = nullptr;
   Symbol<E> *end = nullptr;
   Symbol<E> *etext = nullptr;
+
+  struct {
+    // Extra statistic for "free space" observation in output binary
+    Atomic<i64> relative_relocations_offset_infimum = std::numeric_limits<i64>::max();
+    Atomic<i64> relative_relocations_offset_supremum = std::numeric_limits<i64>::max();
+  } stats;
 
   [[no_unique_address]] ContextExtras<E> extra;
 };

@@ -123,6 +123,7 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  RelocationsStats rels_stats;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -139,6 +140,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 GOT = ctx.got->shdr.sh_addr;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (ctx.arg.stats)
+        update_relocation_stats(rels_stats, i, val, lo, hi);
       check_range(ctx, i, val, lo, hi);
     };
 
@@ -338,11 +341,14 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       unreachable();
     }
   }
+  if (ctx.arg.stats)
+    save_relocation_stats<E>(ctx, *this, rels_stats);
 }
 
 template <>
 void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
   std::span<const ElfRel<E>> rels = get_rels(ctx);
+  RelocationsStats rels_stats;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &rel = rels[i];
@@ -360,6 +366,8 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     u64 A = frag ? frag_addend : (i64)rel.r_addend;
 
     auto check = [&](i64 val, i64 lo, i64 hi) {
+      if (ctx.arg.stats)
+        update_relocation_stats(rels_stats, i, val, lo, hi);
       check_range(ctx, val, i, lo, hi);
     };
 
@@ -384,6 +392,8 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       Fatal(ctx) << *this << ": apply_reloc_nonalloc: " << rel;
     }
   }
+  if (ctx.arg.stats)
+    save_relocation_stats<E>(ctx, *this, rels_stats);
 }
 
 template <>
