@@ -12,7 +12,7 @@ ubuntu | pop | linuxmint | debian | raspbian | neon | zorin)
   apt-get update
   apt-get install -y cmake gcc g++ clang gdb
   ;;
-fedora | amzn | rhel | centos)
+fedora | fedora-* | amzn | rhel | centos)
   dnf install -y gcc-c++ cmake glibc-static libstdc++-static diffutils util-linux tar
   ;;
 rocky | ol)
