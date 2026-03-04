@@ -6,6 +6,11 @@
 #include <sys/mman.h>
 #include <system_error>
 
+#ifdef __linux__
+# include <sys/vfs.h>
+# include <linux/magic.h>
+#endif
+
 namespace mold {
 
 static u32 get_umask() {
@@ -54,7 +59,11 @@ public:
     output_tmpfile = (char *)save_string(ctx, tmpfile).data();
 
 #ifdef __linux__
-    fallocate(this->fd, 0, 0, filesize);
+    // Calling falllocate speeds up later linking passes on ext4,
+    // while it just takes time with not benefits on tmpfs.
+    if (struct statfs fs;
+        fstatfs(this->fd, &fs) || fs.f_type != TMPFS_MAGIC)
+      fallocate(this->fd, 0, 0, filesize);
 #endif
 
     this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
