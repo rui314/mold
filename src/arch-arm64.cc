@@ -283,6 +283,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       check(S + A - P, -(1LL << 31), 1LL << 31);
       *(U32<E> *)loc = S + A - P;
       break;
+    case R_AARCH64_GOTPCREL32:
+      check(G + GOT + A - P, -(1LL << 31), 1LL << 31);
+      *(U32<E> *)loc = G + GOT + A - P;
+      break;
     case R_AARCH64_CONDBR19:
     case R_AARCH64_LD_PREL_LO19:
       check(S + A - P, -(1LL << 20), 1LL << 20);
@@ -525,6 +529,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       break;
     case R_AARCH64_LD64_GOT_LO12_NC:
     case R_AARCH64_LD64_GOTPAGE_LO15:
+    case R_AARCH64_GOTPCREL32:
       sym.flags |= NEEDS_GOT;
       break;
     case R_AARCH64_CALL26:
