@@ -1,6 +1,8 @@
 #!/bin/bash
 . $(dirname $0)/common.inc
 
+[ "$(uname)" = FreeBSD ] && skip
+
 # Test that --no-allow-shlib-undefined rejects hidden-visibility symbols
 # as valid definitions for shared library undefined references. A hidden
 # symbol in a static object cannot satisfy a DSO's undefined reference
