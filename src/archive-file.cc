@@ -88,7 +88,6 @@ read_thin_archive_members(Context<E> &ctx, MappedFile *mf) {
     if ((begin - data) % 2)
       data++;
 
-    u8 *hdr_begin = data;
     ArHdr &hdr = *(ArHdr *)data;
     u8 *body = data + sizeof(hdr);
     u64 size = atol(hdr.ar_size);
@@ -119,7 +118,6 @@ read_thin_archive_members(Context<E> &ctx, MappedFile *mf) {
       name : (path_dirname(mf->name) / name).string();
     vec.push_back(must_open_file(ctx, path));
     vec.back()->thin_parent = mf;
-    vec.back()->archive_offset = hdr_begin - begin;
     data = body;
   }
   return vec;
@@ -137,7 +135,6 @@ read_fat_archive_members(Context<E> &ctx, MappedFile *mf) {
     if ((begin - data) % 2)
       data++;
 
-    u8 *hdr_begin = data;
     ArHdr &hdr = *(ArHdr *)data;
     u8 *body = data + sizeof(hdr);
     u64 size = atol(hdr.ar_size);
@@ -161,7 +158,6 @@ read_fat_archive_members(Context<E> &ctx, MappedFile *mf) {
       continue;
 
     vec.push_back(mf->slice(ctx, name, body - begin, data - body));
-    vec.back()->archive_offset = hdr_begin - begin;
   }
   return vec;
 }

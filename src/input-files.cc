@@ -1017,11 +1017,6 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
                                  std::function<void(InputFile<E> *)> feeder) {
   assert(this->is_reachable);
 
-  if (this->is_incompatible_ir_stub)
-    Fatal(ctx) << this->filename << ": not claimed by the LTO plugin;"
-               << " please make sure you are using the same compiler of the"
-               << " same version for all object files";
-
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
     Symbol<E> &sym = *this->symbols[i];

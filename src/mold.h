@@ -216,7 +216,6 @@ public:
   bool given_fullpath = true;
   MappedFile *parent = nullptr;
   MappedFile *thin_parent = nullptr;
-  u64 archive_offset = 0;
 
   // For --dependency-file
   bool is_dependency = true;
@@ -1781,13 +1780,10 @@ public:
   std::vector<ComdatGroupRef<E>> comdat_groups;
   std::vector<InputSection<E> *> eh_frame_sections;
   std::vector<std::vector<ElfRel<E>>> decoded_crel;
-  std::vector<std::unique_ptr<Symbol<E>>> owned_symbols;
-  std::vector<ElfSym<E>> stub_elf_syms;
   bool exclude_libs = false;
   std::map<u32, u32> gnu_properties;
   bool needs_executable_stack = false;
   bool is_lto_obj = false;
-  bool is_incompatible_ir_stub = false;
   bool is_gcc_offload_obj = false;
   bool is_rust_obj = false;
   bool is_dwarf32 = false;

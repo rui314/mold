@@ -106,122 +106,6 @@ template <typename E> static std::vector<ObjectFile<E> *> lto_objects;
 
 static int phase = 0;
 static std::vector<PluginSymbol> plugin_symbols;
-
-static u32 read_be32(const u8 *buf) {
-  return (u32)buf[0] << 24 | (u32)buf[1] << 16 | (u32)buf[2] << 8 | (u32)buf[3];
-}
-
-static u64 read_be64(const u8 *buf) {
-  return (u64)buf[0] << 56 | (u64)buf[1] << 48 | (u64)buf[2] << 40 |
-         (u64)buf[3] << 32 | (u64)buf[4] << 24 | (u64)buf[5] << 16 |
-         (u64)buf[6] << 8 | (u64)buf[7];
-}
-
-template <typename E>
-static std::vector<std::string_view>
-get_archive_member_symbols(Context<E> &ctx, MappedFile *mf) {
-  struct ArHdr {
-    char ar_name[16];
-    char ar_date[12];
-    char ar_uid[6];
-    char ar_gid[6];
-    char ar_mode[8];
-    char ar_size[10];
-    char ar_fmag[2];
-
-    bool starts_with(std::string_view s) const {
-      return std::string_view(ar_name, s.size()) == s;
-    }
-
-    bool is_symtab() const {
-      return starts_with("/ ") || starts_with("/SYM64/ ");
-    }
-  };
-
-  MappedFile *archive = mf->parent ? mf->parent : mf->thin_parent;
-  if (!archive)
-    return {};
-
-  u8 *begin = archive->data;
-  u8 *data = begin + 8;
-  std::vector<std::string_view> symbols;
-
-  while (begin + archive->size - data >= 2) {
-    if ((begin - data) % 2)
-      data++;
-
-    ArHdr &hdr = *(ArHdr *)data;
-    u8 *body = data + sizeof(hdr);
-    u64 size = atol(hdr.ar_size);
-    data = body + size;
-
-    if (!hdr.is_symtab())
-      continue;
-
-    bool is_64 = hdr.starts_with("/SYM64/ ");
-    u64 count_size = is_64 ? 8 : 4;
-    if (size < count_size)
-      Fatal(ctx) << archive->name << ": archive symbol table corrupted";
-
-    u64 num_symbols = is_64 ? read_be64(body) : read_be32(body);
-    u64 table_size = count_size + num_symbols * count_size;
-    if (table_size > size)
-      Fatal(ctx) << archive->name << ": archive symbol table corrupted";
-
-    const u8 *offsets = body + count_size;
-    const char *strtab = (char *)(body + table_size);
-    const char *strtab_end = (char *)(body + size);
-
-    for (u64 i = 0; i < num_symbols; i++) {
-      u64 off = is_64 ? read_be64(offsets + i * 8) : read_be32(offsets + i * 4);
-      const char *name = strtab;
-      while (strtab < strtab_end && *strtab)
-        strtab++;
-      if (strtab == strtab_end)
-        Fatal(ctx) << archive->name << ": archive symbol table corrupted";
-      if (off == mf->archive_offset)
-        symbols.emplace_back(name, strtab - name);
-      strtab++;
-    }
-    return symbols;
-  }
-
-  return {};
-}
-
-template <typename E>
-static ObjectFile<E> *
-new_incompatible_ir_stub(Context<E> &ctx, MappedFile *mf) {
-  std::vector<std::string_view> names = get_archive_member_symbols(ctx, mf);
-  if (names.empty())
-    Fatal(ctx) << mf->name << ": incompatible IR archive member has no archive index";
-
-  ObjectFile<E> *obj = new ObjectFile<E>;
-  ctx.obj_pool.emplace_back(obj);
-
-  obj->filename = mf->name;
-  obj->mf = mf;
-  obj->archive_name = mf->parent ? mf->parent->name : mf->thin_parent->name;
-  obj->first_global = 1;
-  obj->is_incompatible_ir_stub = true;
-  obj->stub_elf_syms.resize(names.size() + 1);
-  obj->elf_syms = obj->stub_elf_syms;
-  obj->symbols.resize(names.size() + 1);
-  obj->owned_symbols.emplace_back(std::make_unique<Symbol<E>>());
-  obj->symbols[0] = obj->owned_symbols.back().get();
-  obj->symbols[0]->file = obj;
-  obj->symbols[0]->sym_idx = 0;
-
-  for (i64 i = 0; i < names.size(); i++) {
-    Symbol<E> *sym = get_symbol(ctx, names[i]);
-    obj->symbols[i + 1] = sym;
-    obj->stub_elf_syms[i + 1].st_bind = STB_GLOBAL;
-    obj->stub_elf_syms[i + 1].st_type = STT_NOTYPE;
-    obj->stub_elf_syms[i + 1].st_shndx = SHN_ABS;
-    obj->stub_elf_syms[i + 1].st_visibility = STV_DEFAULT;
-  }
-  return obj;
-}
 static ClaimFileHandler *claim_file_hook;
 static AllSymbolsReadHandler *all_symbols_read_hook;
 static CleanupHandler *cleanup_hook;
@@ -739,27 +623,21 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
   // Create plugin's object instance
   PluginInputFile file = create_plugin_input_file(ctx, mf);
   file.handle = (void *)obj;
-  MappedFile *owner = mf->parent ? mf->parent : mf;
 
   LOG << "read_lto_symbols: "<< mf->name << "\n";
 
   // claim_file_hook() calls add_symbols() which initializes `plugin_symbols`
   int claimed = false;
   claim_file_hook(&file, &claimed);
-  if (!claimed) {
-    // Archive members are loaded eagerly before symbol reachability is known.
-    // Keep incompatible archive IR members as lazy placeholders so they only
-    // become errors if archive resolution actually selects them.
-    if (mf->parent || mf->thin_parent) {
-      owner->close_fd();
-      return new_incompatible_ir_stub(ctx, mf);
-    }
+  if (!claimed)
     Fatal(ctx) << mf->name << ": not claimed by the LTO plugin;"
                << " please make sure you are using the same compiler of the"
                << " same version for all object files";
-  }
 
-  owner->close_fd();
+  if (mf->parent)
+    mf->parent->close_fd();
+  else
+    mf->close_fd();
 
   // Create a symbol strtab
   i64 strtab_size = 1;
