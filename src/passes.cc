@@ -3420,18 +3420,6 @@ void write_separate_debug_file(Context<E> &ctx) {
   i64 num_chunks = ctx.chunks.size();
   append(ctx.chunks, ctx.debug_chunks);
 
-  tbb::parallel_for(num_chunks, (i64)ctx.chunks.size(), [&](i64 i) {
-    ctx.chunks[i]->compute_section_size(ctx);
-  });
-
-  sort_debug_info_sections(ctx);
-
-  // Handle --compress-debug-info
-  if (ctx.arg.compress_debug_sections != ELFCOMPRESS_NONE)
-    compress_debug_sections(ctx);
-
-  // Recompute section header contents since we have added debug sections
-  compute_section_headers(ctx);
 
   // A debug info file contains all sections as the original file, though
   // most of them can be empty as if they were bss sections. We convert
@@ -3449,6 +3437,19 @@ void write_separate_debug_file(Context<E> &ctx) {
       ctx.chunk_pool.emplace_back(sec);
     }
   }
+
+  tbb::parallel_for(num_chunks, (i64)ctx.chunks.size(), [&](i64 i) {
+    ctx.chunks[i]->compute_section_size(ctx);
+  });
+
+  sort_debug_info_sections(ctx);
+
+  // Handle --compress-debug-info
+  if (ctx.arg.compress_debug_sections != ELFCOMPRESS_NONE)
+    compress_debug_sections(ctx);
+
+  // Recompute section header contents since we have added debug sections
+  compute_section_headers(ctx);
 
   // Assign file offsets to sections
   i64 fileoff = 0;
