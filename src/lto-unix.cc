@@ -629,15 +629,19 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
   // claim_file_hook() calls add_symbols() which initializes `plugin_symbols`
   int claimed = false;
   claim_file_hook(&file, &claimed);
-  if (!claimed)
-    Fatal(ctx) << mf->name << ": not claimed by the LTO plugin;"
-               << " please make sure you are using the same compiler of the"
-               << " same version for all object files";
 
   if (mf->parent)
     mf->parent->close_fd();
   else
     mf->close_fd();
+
+  if (!claimed) {
+    if (!mf->parent && !mf->thin_parent)
+      Fatal(ctx) << mf->name << ": not claimed by the LTO plugin;"
+                 << " please make sure you are using the same compiler of the"
+                 << " same version for all object files";
+    return nullptr;
+  }
 
   // Create a symbol strtab
   i64 strtab_size = 1;

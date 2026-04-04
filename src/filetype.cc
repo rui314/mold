@@ -68,14 +68,14 @@ static bool is_gcc_lto_obj(MappedFile *mf, bool has_gcc_plugin) {
 template <typename E>
 FileType get_file_type(Context<E> &ctx, MappedFile *mf) {
   std::string_view data = mf->get_contents();
+  if (data.empty())
+    return FileType::EMPTY;
+
   // GCC FAT LTO objects can be linked as regular ELF objects. If the active
   // plugin is LLVM's, treat them as regular objects so that we can fall back
   // to native code instead of routing them through GCC LTO handling.
   bool has_gcc_plugin = !ctx.arg.plugin.empty() &&
-    ctx.arg.plugin.find("LLVMgold.") == std::string_view::npos;
-
-  if (data.empty())
-    return FileType::EMPTY;
+                        ctx.arg.plugin.find("LLVMgold.") == std::string_view::npos;
 
   if (data.starts_with("\177ELF")) {
     u8 byte_order = ((ElfEhdr<I386> *)data.data())->e_ident[EI_DATA];
