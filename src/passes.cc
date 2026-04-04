@@ -1163,6 +1163,24 @@ void convert_zero_to_bss(Context<E> &ctx) {
   });
 }
 
+template <typename E>
+bool has_public_dso_fallback(Context<E> &ctx, Symbol<E> &target_sym) {
+  for (SharedFile<E> *dso : ctx.dsos) {
+    for (i64 i = 0; i < dso->symbols.size(); i++) {
+      if (dso->symbols[i] == &target_sym) {
+        const ElfSym<E> &esym = dso->elf_syms[i];
+        if (!esym.is_undef() && esym.st_visibility == STV_DEFAULT)
+          return true;
+
+        // We found the target symbol in this DSO, but it wasn't a valid provider.
+        // No need to check the rest of this DSO's symbols. Jump to the next DSO.
+        break;
+      }
+    }
+  }
+  return false;
+}
+
 // If --no-allow-shlib-undefined is specified, we report errors on
 // unresolved symbols in shared libraries. This is useful when you are
 // creating a final executable and want to make sure that all symbols
@@ -1198,19 +1216,43 @@ void check_shlib_undefined(Context<E> &ctx) {
     return true;
   };
 
-  if (do_test()) {
-    tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-      // Check if all undefined symbols have been resolved.
-      for (i64 i = 0; i < file->elf_syms.size(); i++) {
-        const ElfSym<E> &esym = file->elf_syms[i];
-        Symbol<E> &sym = *file->symbols[i];
-        if (esym.is_undef() && !esym.is_weak() && !sym.file &&
-            !is_sparc_register(esym))
-          Error(ctx) << *file << ": --no-allow-shlib-undefined: undefined symbol: "
-                     << sym;
+  bool is_complete_dso_set = do_test();
+
+  tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
+    // Check if all undefined symbols have been resolved.
+    for (i64 i = 0; i < file->elf_syms.size(); i++) {
+      const ElfSym<E> &esym = file->elf_syms[i];
+      if (!esym.is_undef() || esym.is_weak() || is_sparc_register(esym))
+        continue;
+
+      Symbol<E> &sym = *file->symbols[i];
+      InputFile<E> *provider = sym.file;
+      bool is_invalid_provider = false;
+
+      // Check the RAW object file visibility
+      if (provider && !provider->is_dso) {
+        ObjectFile<E> *obj = (ObjectFile<E> *)provider;
+        for (i64 j = 0; j < obj->symbols.size(); j++) {
+          if (obj->symbols[j] == &sym) {
+            u8 orig_vis = obj->elf_syms[j].st_visibility;
+            if (orig_vis == STV_HIDDEN || orig_vis == STV_INTERNAL)
+              is_invalid_provider = true;
+            break;
+          }
+        }
       }
-    });
-  }
+
+      // If it's an illegal hidden static provider, it's a hard error regardless.
+      // If it's completely missing, only error if we have a complete set of
+      // shared object files.
+      if (is_invalid_provider || (!provider && is_complete_dso_set)) {
+         if (has_public_dso_fallback(ctx, sym))
+             continue;
+         Error(ctx) << *file << ": --no-allow-shlib-undefined: undefined symbol: "
+                    << sym;
+      }
+    }
+  });
 
   // Beyond this point, DSOs that are not referenced directly by any
   // object file are not needed. They were kept by
