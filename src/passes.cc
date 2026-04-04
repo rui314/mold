@@ -363,10 +363,23 @@ void resolve_symbols(Context<E> &ctx) {
     if (file->is_reachable) {
       for (ComdatGroupRef<E> &ref : file->comdat_groups)
         update_minimum(ref.group->owner, file->priority);
-      for (ComdatGroup *g : file->lto_comdat_groups)
-        if (g)
-          update_minimum(g->owner, file->priority);
     }
+  });
+
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+    if (!file->is_reachable)
+      return;
+
+    // LTO plugin symbol tables may not enumerate all section-level helper
+    // symbols (e.g. some thunks). If an LTO file wins COMDAT ownership for
+    // a key shared with regular object files, section elimination may discard
+    // needed regular COMDAT members and create dangling relocations.
+    //
+    // Therefore, only let IR files claim ownership for COMDAT keys that have
+    // no reachable regular-object owner.
+    for (ComdatGroup *g : file->lto_comdat_groups)
+      if (g && g->owner == (u32)-1)
+        update_minimum(g->owner, file->priority);
   });
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
