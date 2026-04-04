@@ -79,7 +79,9 @@ int redo_main(std::string_view target, int argc, char **argv) {
   if constexpr (HAVE_TARGET_LOONGARCH64)
     if (target == LOONGARCH64::name)
       return mold_main<LOONGARCH64>(argc, argv);
-  abort();
+  std::cerr << "mold: unsupported target: " << target
+            << "; rebuild mold with the appropriate target support\n";
+  exit(1);
 }
 
 template <typename E>
