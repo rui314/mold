@@ -121,6 +121,9 @@ void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
   }
 }
 
+// wingdi.h defines ERROR as a macro, so undefine it before use
+#undef ERROR
+
 typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT } Action;
 
 template <typename E>
