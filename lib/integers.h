@@ -89,8 +89,8 @@ private:
     case 2: return __builtin_bswap16(v);
     case 4: return __builtin_bswap32(v);
     case 8: return __builtin_bswap64(v);
+    default: __builtin_unreachable();
     }
-    __builtin_unreachable();
   }
 
   uint8_t buf[size];
