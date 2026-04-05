@@ -629,6 +629,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_32_PCREL:
       *(U32<E> *)loc = S + A - P;
       break;
+    case R_RISCV_GOT32_PCREL:
+      *(U32<E> *)loc = G + GOT + A - P;
+      break;
     case R_RISCV_SET_ULEB128:
       overwrite_uleb(loc, S + A);
       break;
@@ -754,6 +757,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
         sym.flags |= NEEDS_PLT;
       break;
     case R_RISCV_GOT_HI20:
+    case R_RISCV_GOT32_PCREL:
       sym.flags |= NEEDS_GOT;
       break;
     case R_RISCV_TLS_GOT_HI20:
