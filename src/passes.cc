@@ -423,9 +423,13 @@ void do_lto(Context<E> &ctx) {
   // Redo name resolution.
   clear_symbols(ctx);
 
-  // Remove IR object files.
+  // Remove IR object files and reset reachability for archive members.
+  // Archive members that were extracted pre-LTO to satisfy references from
+  // IR objects may no longer be needed now that LTO output provides those
+  // symbols. Reset their reachability so that resolve_symbols() below can
+  // re-derive which archive members are actually needed.
   for (ObjectFile<E> *file : ctx.objs)
-    if (file->is_lto_obj)
+    if (file->is_lto_obj || file->as_needed)
       file->is_reachable = false;
 
   std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
@@ -1121,6 +1125,13 @@ void check_duplicate_symbols(Context<E> &ctx) {
         if (ComdatGroup *g = file->lto_comdat_groups[i])
           if (g->owner != file->priority)
             continue;
+
+      // Skip if one side is an LTO IR object and the other is not.
+      // The LTO backend resolves conflicts between IR and regular objects
+      // on its own; only IR-vs-IR duplicates need to be caught here.
+      if (!sym.file->is_dso &&
+          file->is_lto_obj != ((ObjectFile<E> *)sym.file)->is_lto_obj)
+        continue;
 
       Error(ctx) << "duplicate symbol: " << *file << ": " << *sym.file
                  << ": " << sym;
