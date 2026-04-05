@@ -6,7 +6,24 @@ on:
   workflow_dispatch:
 
 jobs:
+  check-changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      has_changes: ${{ github.event_name == 'workflow_dispatch' || steps.check.outputs.has_changes }}
+    steps:
+    - name: Check for new commits since last successful run
+      id: check
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        last=$(gh run list -R ${{ github.repository }} -w build-all.yml -b main -s success -L1 --json createdAt -q '.[0].createdAt')
+        if [ -z "$last" ] || [ "$last" = "null" ] || [ "$(gh api repos/${{ github.repository }}/commits?sha=main\&since=$last\&per_page=1 | jq length)" -gt 0 ]; then
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+        fi
+
   build-linux:
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
     strategy:
       matrix:
         include:
@@ -49,6 +66,8 @@ jobs:
         compression-level: 0
 
   build-windows:
+    needs: check-changes
+    if: needs.check-changes.outputs.has_changes == 'true'
     runs-on: windows-latest
     steps:
     - name: Checkout Repository
