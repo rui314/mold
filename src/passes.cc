@@ -2681,7 +2681,7 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
 
   auto get_flags = [&](Chunk<E> *chunk) {
     i64 flags = to_phdr_flags(ctx, chunk);
-    if (chunk->is_relro)
+    if (ctx.arg.z_relro && chunk->is_relro)
       return flags | RELRO;
     return flags;
   };

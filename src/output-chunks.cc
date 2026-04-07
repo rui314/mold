@@ -232,7 +232,8 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     Chunk<E> *first = chunks[i++];
     i64 flags = to_phdr_flags(ctx, first);
     define(PT_LOAD, flags, first);
-    vec.back().p_align = std::max<u64>(ctx.page_size, vec.back().p_align);
+    if (!ctx.arg.nmagic && !ctx.arg.omagic)
+      vec.back().p_align = std::max<u64>(ctx.page_size, vec.back().p_align);
 
     // Add contiguous ALLOC sections as long as they have the same
     // section flags and there's no on-disk gap in between.

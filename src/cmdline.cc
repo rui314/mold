@@ -1051,6 +1051,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.wrap.insert(arg);
     } else if (read_flag("omagic") || read_flag("N")) {
       ctx.arg.omagic = true;
+      remaining.emplace_back("--Bstatic");
     } else if (read_flag("no-omagic")) {
       ctx.arg.omagic = false;
     } else if (read_arg("oformat")) {
@@ -1543,7 +1544,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   else if (!ctx.arg.section_order.empty())
     ctx.arg.z_relro = false;
 
-  if (ctx.arg.nmagic)
+  if (ctx.arg.nmagic || ctx.arg.omagic)
     ctx.arg.z_relro = false;
 
   if (!ctx.arg.shared) {

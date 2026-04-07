@@ -14,3 +14,6 @@ EOF
 
 $CC -B. $t/a.o -o $t/exe -static -no-pie -Wl,--omagic
 readelf -W --segments $t/exe | grep -w RWE
+
+# With --omagic, text and data are packed into a single PT_LOAD segment.
+[ "$(readelf -lW $t/exe | grep -c LOAD)" = 1 ]
