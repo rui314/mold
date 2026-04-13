@@ -44,7 +44,7 @@
 # features and behave exactly the same.
 
 cmake_minimum_required(VERSION 3.14)
-project(mold VERSION 2.40.4)
+project(mold VERSION 2.41.0)
 
 include(CMakeDependentOption)
 include(CheckSymbolExists)
