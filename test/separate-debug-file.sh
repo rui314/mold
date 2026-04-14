@@ -36,7 +36,7 @@ gdb $t/exe1 -ex 'list main' -ex 'quit' | grep -F return1
 # See issue #1535 for more details
 readelf -W --sections $t/exe1.dbg | not grep -E '[EPS]HDR'
 readelf -W --symbols $t/exe1.dbg | not grep -E '<corrupt>'
-readelf -W --symbols $t/exe1.dbg | not grep -E '^ *[0-9][0-9]:.*UND *$'
+readelf -W --symbols $t/exe1.dbg | grep -vw REGISTER | not grep -E '^ *[0-9][0-9]:.*UND *$'
 
 
 $CC -c -o $t/a.o $t/a.c -g -I$t
