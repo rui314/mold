@@ -783,8 +783,12 @@ void write_gdb_index(Context<E> &ctx) {
   });
 
   // Write the final counts into the buffer.
-  for (Entry *ent : entries)
-    *(ul32 *)(base + ent->value.type_offset) = ent->value.count;
+  tbb::parallel_for_each(entries, [&](Entry *ent) {
+    ul32 *p = (ul32 *)(base + ent->value.type_offset);
+    p[0] = ent->value.count;
+    // Sort entries for deterministic output
+    std::sort(p + 1, p + 1 + ent->value.count);
+  });
 
   // Write names
   tbb::parallel_for_each(entries, [&](Entry *ent) {
