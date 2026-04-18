@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: rui314/setup-mold@staging
     - run: sudo ./install-build-deps.sh
     - name: build
@@ -27,7 +27,7 @@ jobs:
         cmake --build . -j$(nproc)
     - run: cd build; ctest --output-on-failure -j$(nproc)
     - name: archive test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: failure()
       with:
         name: test-results-clang
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: redhat-actions/podman-login@v1
       with:
         registry: ghcr.io
@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: install-build-deps
       run: |
         sudo ./install-build-deps.sh
@@ -65,7 +65,7 @@ jobs:
         cmake --build . -j$(nproc)
     - run: cd build; ctest --output-on-failure -j$(nproc)
     - name: archive test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: failure()
       with:
         name: test-results-multi-archs
@@ -89,7 +89,7 @@ jobs:
     timeout-minutes: 60
     container: ${{ matrix.distro }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - run: ./install-build-deps.sh
     - name: build
       run: |
@@ -99,7 +99,7 @@ jobs:
         cmake --build . -j$(nproc)
     - run: cd build; ctest --output-on-failure -j$(nproc)
     - name: archive test results
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       if: failure()
       with:
         name: test-results-${{ matrix.distro }}
@@ -111,7 +111,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: build
       run: |
         mkdir build
@@ -123,7 +123,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: build
       run: |
         mkdir build
@@ -135,7 +135,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Setup MSYS2
       uses: msys2/setup-msys2@v2
       with:
@@ -154,7 +154,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Build and test
       uses: vmactions/freebsd-vm@v1
       with:
