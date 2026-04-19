@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -34,6 +34,10 @@
 #  define ITT_OS_FREEBSD   4
 #endif /* ITT_OS_FREEBSD */
 
+#ifndef ITT_OS_OPENBSD
+#  define ITT_OS_OPENBSD   5
+#endif /* ITT_OS_OPENBSD */
+
 #ifndef ITT_OS
 #  if defined WIN32 || defined _WIN32
 #    define ITT_OS ITT_OS_WIN
@@ -41,6 +45,8 @@
 #    define ITT_OS ITT_OS_MAC
 #  elif defined( __FreeBSD__ )
 #    define ITT_OS ITT_OS_FREEBSD
+#  elif defined( __OpenBSD__ )
+#    define ITT_OS ITT_OS_OPENBSD
 #  else
 #    define ITT_OS ITT_OS_LINUX
 #  endif
@@ -62,6 +68,10 @@
 #  define ITT_PLATFORM_FREEBSD 4
 #endif /* ITT_PLATFORM_FREEBSD */
 
+#ifndef ITT_PLATFORM_OPENBSD
+#  define ITT_PLATFORM_OPENBSD 5
+#endif /* ITT_PLATFORM_OPENBSD */
+
 #ifndef ITT_PLATFORM
 #  if ITT_OS==ITT_OS_WIN
 #    define ITT_PLATFORM ITT_PLATFORM_WIN
@@ -69,6 +79,8 @@
 #    define ITT_PLATFORM ITT_PLATFORM_MAC
 #  elif ITT_OS==ITT_OS_FREEBSD
 #    define ITT_PLATFORM ITT_PLATFORM_FREEBSD
+#  elif ITT_OS==ITT_OS_OPENBSD
+#    define ITT_PLATFORM ITT_PLATFORM_OPENBSD
 #  else
 #    define ITT_PLATFORM ITT_PLATFORM_POSIX
 #  endif
@@ -232,10 +244,10 @@
 #define ITT_MAGIC { 0xED, 0xAB, 0xAB, 0xEC, 0x0D, 0xEE, 0xDA, 0x30 }
 
 /* Replace with snapshot date YYYYMMDD for promotion build. */
-#define API_VERSION_BUILD    20180723
+#define API_VERSION_BUILD    20230630
 
 #ifndef API_VERSION_NUM
-#define API_VERSION_NUM 3.23.0
+#define API_VERSION_NUM 3.24.4
 #endif /* API_VERSION_NUM */
 
 #define API_VERSION "ITT-API-Version " ITT_TO_STR(API_VERSION_NUM) \
@@ -494,6 +506,7 @@ typedef struct __itt_counter_info
 struct ___itt_domain;
 struct ___itt_string_handle;
 struct ___itt_histogram;
+struct ___itt_counter_metadata;
 
 #include "ittnotify.h"
 
@@ -520,6 +533,7 @@ typedef struct ___itt_global
     __itt_counter_info_t*  counter_list;
     unsigned int           ipt_collect_events;
     struct ___itt_histogram* histogram_list;
+    struct ___itt_counter_metadata* counter_metadata_list;
 } __itt_global;
 
 #pragma pack(pop)
@@ -632,7 +646,7 @@ typedef struct ___itt_global
         h->nameA   = NULL; \
         h->nameW   = name ? _wcsdup(name) : NULL; \
         h->domainA   = NULL; \
-        h->domainW   = name ? _wcsdup(domain) : NULL; \
+        h->domainW   = domain ? _wcsdup(domain) : NULL; \
         h->type = type; \
         h->index = 0; \
         h->next   = NULL; \
@@ -674,6 +688,7 @@ typedef struct ___itt_global
         h->y_type = y_type; \
         h->extra1 = 0; \
         h->extra2 = NULL; \
+	h->next = NULL; \
         if (h_tail == NULL) \
             (gptr)->histogram_list = h; \
         else \
@@ -693,8 +708,65 @@ typedef struct ___itt_global
         h->y_type = y_type; \
         h->extra1 = 0; \
         h->extra2 = NULL; \
+	h->next = NULL; \
         if (h_tail == NULL) \
             (gptr)->histogram_list = h; \
+        else \
+            h_tail->next = h; \
+    } \
+}
+
+#define NEW_COUNTER_METADATA_NUM(gptr,h,h_tail,counter,type,value) { \
+    h = (__itt_counter_metadata*)malloc(sizeof(__itt_counter_metadata)); \
+    if (h != NULL) { \
+        h->counter = counter; \
+        h->type = type; \
+        h->str_valueA = NULL; \
+        h->str_valueW = NULL; \
+        h->value = value; \
+        h->extra1 = 0; \
+        h->extra2 = NULL; \
+        h->next   = NULL; \
+        if (h_tail == NULL) \
+            (gptr)->counter_metadata_list = h; \
+        else \
+            h_tail->next = h; \
+    } \
+}
+
+#define NEW_COUNTER_METADATA_STR_A(gptr,h,h_tail,counter,type,str_valueA) { \
+    h = (__itt_counter_metadata*)malloc(sizeof(__itt_counter_metadata)); \
+    if (h != NULL) { \
+        h->counter = counter; \
+        h->type = type; \
+        char *str_value_copy = NULL; \
+        __itt_fstrdup(str_valueA, str_value_copy); \
+        h->str_valueA = str_value_copy; \
+        h->str_valueW = NULL; \
+        h->value = 0; \
+        h->extra1 = 0; \
+        h->extra2 = NULL; \
+        h->next   = NULL; \
+        if (h_tail == NULL) \
+            (gptr)->counter_metadata_list = h; \
+        else \
+            h_tail->next = h; \
+    } \
+}
+
+#define NEW_COUNTER_METADATA_STR_W(gptr,h,h_tail,counter,type,str_valueW) { \
+    h = (__itt_counter_metadata*)malloc(sizeof(__itt_counter_metadata)); \
+    if (h != NULL) { \
+        h->counter = counter; \
+        h->type = type; \
+        h->str_valueA = NULL; \
+        h->str_valueW = str_valueW ? _wcsdup(str_valueW) : NULL; \
+        h->value = 0; \
+        h->extra1 = 0; \
+        h->extra2 = NULL; \
+        h->next   = NULL; \
+        if (h_tail == NULL) \
+            (gptr)->counter_metadata_list = h; \
         else \
             h_tail->next = h; \
     } \

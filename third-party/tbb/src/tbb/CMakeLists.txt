@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022 Intel Corporation
+# Copyright (c) 2020-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ add_library(tbb
     itt_notify.cpp
     main.cpp
     market.cpp
+    tcm_adaptor.cpp
     misc.cpp
     misc_ex.cpp
     observer_proxy.cpp
@@ -39,6 +40,9 @@ add_library(tbb
     task.cpp
     task_dispatcher.cpp
     task_group_context.cpp
+    thread_dispatcher.cpp
+    thread_request_serializer.cpp
+    threading_control.cpp
     version.cpp
     queuing_rw_mutex.cpp)
 
@@ -56,10 +60,11 @@ target_compile_definitions(tbb
                            $<$<CONFIG:DEBUG>:TBB_USE_DEBUG>
                            PRIVATE
                            __TBB_BUILD
+                           ${TBB_RESUMABLE_TASKS_USE_THREADS}
                            $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_DYNAMIC_LOAD_ENABLED=0>
                            $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_SOURCE_DIRECTLY_INCLUDED=1>)
 
-if (NOT ("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "(armv7-a|aarch64|mips|arm64)" OR
+if (NOT ("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "(armv7-a|aarch64|mips|arm64|riscv)" OR
          "${CMAKE_OSX_ARCHITECTURES}" MATCHES "arm64" OR
          WINDOWS_STORE OR
          TBB_WINDOWS_DRIVER))
@@ -121,58 +126,95 @@ target_link_libraries(tbb
     ${TBB_COMMON_LINK_LIBS}
 )
 
+# Strip debug symbols into a separate .dbg file
+if(TBB_LINUX_SEPARATE_DBG)
+    if(NOT CMAKE_BUILD_TYPE STREQUAL "release")
+        find_program(OBJCOPY_COMMAND objcopy)
+        if(NOT OBJCOPY_COMMAND)
+            message(WARNING "objcopy command not found in the system")
+        else()
+            add_custom_command(TARGET tbb POST_BUILD
+                COMMAND objcopy --only-keep-debug $<TARGET_FILE:tbb> $<TARGET_FILE:tbb>.dbg
+                COMMAND objcopy --strip-debug $<TARGET_FILE:tbb>
+                COMMAND objcopy --add-gnu-debuglink=$<TARGET_FILE:tbb>.dbg $<TARGET_FILE:tbb>
+                COMMENT "Creating and associating .dbg file with tbb"
+            )
+        endif()
+    else()
+        message(WARNING " TBB_LINUX_SEPARATE_DBG flag is not used on release config")
+    endif()
+endif()
+
+if(TBB_BUILD_APPLE_FRAMEWORKS)
+    set_target_properties(tbb PROPERTIES
+        FRAMEWORK TRUE
+        FRAMEWORK_VERSION ${TBB_BINARY_VERSION}.${TBB_BINARY_MINOR_VERSION}
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.intel.tbb
+        MACOSX_FRAMEWORK_IDENTIFIER com.intel.tbb
+        MACOSX_FRAMEWORK_BUNDLE_VERSION ${TBB_BINARY_VERSION}.${TBB_BINARY_MINOR_VERSION}
+        MACOSX_FRAMEWORK_SHORT_VERSION_STRING ${TBB_BINARY_VERSION})
+endif()
+
 tbb_install_target(tbb)
 
-if (MSVC)
-    # Create a copy of target linker file (tbb<ver>[_debug].lib) with legacy name (tbb[_debug].lib)
-    # to support previous user experience for linkage.
-    install(FILES
-            $<TARGET_LINKER_FILE:tbb>
-            DESTINATION lib
-            CONFIGURATIONS RelWithDebInfo Release MinSizeRel
-            RENAME tbb.lib
-            COMPONENT devel
-    )
+if (TBB_INSTALL)
+    if (MSVC)
+        # Create a copy of target linker file (tbb<ver>[_debug].lib) with legacy name (tbb[_debug].lib)
+        # to support previous user experience for linkage.
+        install(FILES
+                $<TARGET_LINKER_FILE:tbb>
+                DESTINATION lib
+                CONFIGURATIONS RelWithDebInfo Release MinSizeRel
+                RENAME tbb.lib
+                COMPONENT devel
+        )
 
-    install(FILES
-            $<TARGET_LINKER_FILE:tbb>
-            DESTINATION lib
-            CONFIGURATIONS Debug
-            RENAME tbb_debug.lib
-            COMPONENT devel
-    )
+        install(FILES
+                $<TARGET_LINKER_FILE:tbb>
+                DESTINATION lib
+                CONFIGURATIONS Debug
+                RENAME tbb_debug.lib
+                COMPONENT devel
+        )
+    endif()
+    if(TBB_LINUX_SEPARATE_DBG)
+        install(FILES
+                $<TARGET_FILE:tbb>.dbg
+                DESTINATION lib
+                COMPONENT devel
+        )
+    endif()
+    set(_tbb_pc_lib_name tbb)
+
+    if (WIN32)
+        set(_tbb_pc_lib_name ${_tbb_pc_lib_name}${TBB_BINARY_VERSION})
+    endif()
+
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(TBB_PC_NAME tbb)
+    else()
+        set(TBB_PC_NAME tbb32)
+    endif()
+
+    set(_prefix_for_pc_file "${CMAKE_INSTALL_PREFIX}")
+
+    if (IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
+        set(_libdir_for_pc_file "${CMAKE_INSTALL_LIBDIR}")
+    else()
+        set(_libdir_for_pc_file "\${prefix}/${CMAKE_INSTALL_LIBDIR}")
+    endif()
+
+    if (IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
+        set(_includedir_for_pc_file "${CMAKE_INSTALL_INCLUDEDIR}")
+    else()
+        set(_includedir_for_pc_file "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
+    endif()
+
+    configure_file(${PROJECT_SOURCE_DIR}/integration/pkg-config/tbb.pc.in ${CMAKE_CURRENT_BINARY_DIR}/${TBB_PC_NAME}.pc @ONLY)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${TBB_PC_NAME}.pc
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig/
+            COMPONENT devel)
 endif()
-
-set(_tbb_pc_lib_name tbb)
-
-if (WIN32)
-    set(_tbb_pc_lib_name ${_tbb_pc_lib_name}${TBB_BINARY_VERSION})
-endif()
-
-if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-    set(TBB_PC_NAME tbb)
-else()
-    set(TBB_PC_NAME tbb32)
-endif()
-
-set(_prefix_for_pc_file "${CMAKE_INSTALL_PREFIX}")
-
-if (IS_ABSOLUTE "${CMAKE_INSTALL_LIBDIR}")
-    set(_libdir_for_pc_file "${CMAKE_INSTALL_LIBDIR}")
-else()
-    set(_libdir_for_pc_file "\${prefix}/${CMAKE_INSTALL_LIBDIR}")
-endif()
-
-if (IS_ABSOLUTE "${CMAKE_INSTALL_INCLUDEDIR}")
-    set(_includedir_for_pc_file "${CMAKE_INSTALL_INCLUDEDIR}")
-else()
-    set(_includedir_for_pc_file "\${prefix}/${CMAKE_INSTALL_INCLUDEDIR}")
-endif()
-
-configure_file(${PROJECT_SOURCE_DIR}/integration/pkg-config/tbb.pc.in ${CMAKE_CURRENT_BINARY_DIR}/${TBB_PC_NAME}.pc @ONLY)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${TBB_PC_NAME}.pc
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig/
-        COMPONENT devel)
 
 if (COMMAND tbb_gen_vars)
     tbb_gen_vars(tbb)

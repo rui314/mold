@@ -5,23 +5,20 @@ targeting real-time compression scenarios at zlib-level and better compression r
 It's backed by a very fast entropy stage, provided by [Huff0 and FSE library](https://github.com/Cyan4973/FiniteStateEntropy).
 
 Zstandard's format is stable and documented in [RFC8878](https://datatracker.ietf.org/doc/html/rfc8878). Multiple independent implementations are already available.
-This repository represents the reference implementation, provided as an open-source dual [BSD](LICENSE) and [GPLv2](COPYING) licensed **C** library,
+This repository represents the reference implementation, provided as an open-source dual [BSD](LICENSE) OR [GPLv2](COPYING) licensed **C** library,
 and a command line utility producing and decoding `.zst`, `.gz`, `.xz` and `.lz4` files.
 Should your project require another programming language,
-a list of known ports and bindings is provided on [Zstandard homepage](http://www.zstd.net/#other-languages).
+a list of known ports and bindings is provided on [Zstandard homepage](https://facebook.github.io/zstd/#other-languages).
 
 **Development branch status:**
 
 [![Build Status][travisDevBadge]][travisLink]
-[![Build status][AppveyorDevBadge]][AppveyorLink]
 [![Build status][CircleDevBadge]][CircleLink]
 [![Build status][CirrusDevBadge]][CirrusLink]
 [![Fuzzing Status][OSSFuzzBadge]][OSSFuzzLink]
 
 [travisDevBadge]: https://api.travis-ci.com/facebook/zstd.svg?branch=dev "Continuous Integration test suite"
 [travisLink]: https://travis-ci.com/facebook/zstd
-[AppveyorDevBadge]: https://ci.appveyor.com/api/projects/status/xt38wbdxjk5mrbem/branch/dev?svg=true "Windows test suite"
-[AppveyorLink]: https://ci.appveyor.com/project/YannCollet/zstd-p0yf0
 [CircleDevBadge]: https://circleci.com/gh/facebook/zstd/tree/dev.svg?style=shield "Short test suite"
 [CircleLink]: https://circleci.com/gh/facebook/zstd
 [CirrusDevBadge]: https://api.cirrus-ci.com/github/facebook/zstd.svg?branch=dev
@@ -32,36 +29,35 @@ a list of known ports and bindings is provided on [Zstandard homepage](http://ww
 ## Benchmarks
 
 For reference, several fast compression algorithms were tested and compared
-on a desktop running Ubuntu 20.04 (`Linux 5.11.0-41-generic`),
-with a Core i7-9700K CPU @ 4.9GHz,
+on a desktop featuring a Core i7-9700K CPU @ 4.9GHz
+and running Ubuntu 20.04 (`Linux ubu20 5.15.0-101-generic`),
 using [lzbench], an open-source in-memory benchmark by @inikep
-compiled with [gcc] 9.3.0,
+compiled with [gcc] 9.4.0,
 on the [Silesia compression corpus].
 
 [lzbench]: https://github.com/inikep/lzbench
-[Silesia compression corpus]: http://sun.aei.polsl.pl/~sdeor/index.php?page=silesia
+[Silesia compression corpus]: https://sun.aei.polsl.pl//~sdeor/index.php?page=silesia
 [gcc]: https://gcc.gnu.org/
 
 | Compressor name         | Ratio | Compression| Decompress.|
 | ---------------         | ------| -----------| ---------- |
-| **zstd 1.5.1 -1**       | 2.887 |   530 MB/s |  1700 MB/s |
+| **zstd 1.5.6 -1**       | 2.887 |   510 MB/s |  1580 MB/s |
 | [zlib] 1.2.11 -1        | 2.743 |    95 MB/s |   400 MB/s |
-| brotli 1.0.9 -0         | 2.702 |   395 MB/s |   450 MB/s |
-| **zstd 1.5.1 --fast=1** | 2.437 |   600 MB/s |  2150 MB/s |
-| **zstd 1.5.1 --fast=3** | 2.239 |   670 MB/s |  2250 MB/s |
-| quicklz 1.5.0 -1        | 2.238 |   540 MB/s |   760 MB/s |
-| **zstd 1.5.1 --fast=4** | 2.148 |   710 MB/s |  2300 MB/s |
-| lzo1x 2.10 -1           | 2.106 |   660 MB/s |   845 MB/s |
-| [lz4] 1.9.3             | 2.101 |   740 MB/s |  4500 MB/s |
-| lzf 3.6 -1              | 2.077 |   410 MB/s |   830 MB/s |
-| snappy 1.1.9            | 2.073 |   550 MB/s |  1750 MB/s |
+| brotli 1.0.9 -0         | 2.702 |   395 MB/s |   430 MB/s |
+| **zstd 1.5.6 --fast=1** | 2.437 |   545 MB/s |  1890 MB/s |
+| **zstd 1.5.6 --fast=3** | 2.239 |   650 MB/s |  2000 MB/s |
+| quicklz 1.5.0 -1        | 2.238 |   525 MB/s |   750 MB/s |
+| lzo1x 2.10 -1           | 2.106 |   650 MB/s |   825 MB/s |
+| [lz4] 1.9.4             | 2.101 |   700 MB/s |  4000 MB/s |
+| lzf 3.6 -1              | 2.077 |   420 MB/s |   830 MB/s |
+| snappy 1.1.9            | 2.073 |   530 MB/s |  1660 MB/s |
 
-[zlib]: http://www.zlib.net/
-[lz4]: http://www.lz4.org/
+[zlib]: https://www.zlib.net/
+[lz4]: https://lz4.github.io/lz4/
 
 The negative compression levels, specified with `--fast=#`,
 offer faster compression and decompression speed
-at the cost of compression ratio (compared to level 1).
+at the cost of compression ratio.
 
 Zstd can also offer stronger compression ratios at the cost of compression speed.
 Speed vs Compression trade-off is configurable by small increments.
@@ -124,14 +120,27 @@ Dictionary gains are mostly effective in the first few KB. Then, the compression
 
 ## Build instructions
 
+`make` is the officially maintained build system of this project.
+All other build systems are "compatible" and 3rd-party maintained,
+they may feature small differences in advanced options.
+When your system allows it, prefer using `make` to build `zstd` and `libzstd`.
+
 ### Makefile
 
 If your system is compatible with standard `make` (or `gmake`),
 invoking `make` in root directory will generate `zstd` cli in root directory.
+It will also create `libzstd` into `lib/`.
 
 Other available options include:
 - `make install` : create and install zstd cli, library and man pages
-- `make check` : create and run `zstd`, tests its behavior on local platform
+- `make check` : create and run `zstd`, test its behavior on local platform
+
+The `Makefile` follows the [GNU Standard Makefile conventions](https://www.gnu.org/prep/standards/html_node/Makefile-Conventions.html),
+allowing staged install, standard flags, directory variables and command variables.
+
+For advanced use cases, specialized compilation flags which control binary generation
+are documented in [`lib/README.md`](lib/README.md#modular-build) for the `libzstd` library
+and in [`programs/README.md`](programs/README.md#compilation-variables) for the `zstd` CLI.
 
 ### cmake
 
@@ -140,6 +149,18 @@ It can generate Makefiles or other build scripts
 to create `zstd` binary, and `libzstd` dynamic and static libraries.
 
 By default, `CMAKE_BUILD_TYPE` is set to `Release`.
+
+#### Support for Fat (Universal2) Output
+
+`zstd` can be built and installed with support for both Apple Silicon (M1/M2) as well as Intel by using CMake's Universal2 support.
+To perform a Fat/Universal2 build and install use the following commands:
+
+```bash
+cmake -B build-cmake-debug -S build/cmake -G Ninja -DCMAKE_OSX_ARCHITECTURES="x86_64;x86_64h;arm64"
+cd build-cmake-debug
+ninja
+sudo ninja install
+```
 
 ### Meson
 
@@ -163,6 +184,17 @@ You can build and install zstd [vcpkg](https://github.com/Microsoft/vcpkg/) depe
 The zstd port in vcpkg is kept up to date by Microsoft team members and community contributors.
 If the version is out of date, please [create an issue or pull request](https://github.com/Microsoft/vcpkg) on the vcpkg repository.
 
+### Conan
+
+You can install pre-built binaries for zstd or build it from source using [Conan](https://conan.io/). Use the following command:
+
+```bash
+conan install --requires="zstd/[*]" --build=missing
+```
+
+The zstd Conan recipe is kept up to date by Conan maintainers and community contributors.
+If the version is out of date, please [create an issue or pull request](https://github.com/conan-io/conan-center-index) on the ConanCenterIndex repository.
+
 ### Visual Studio (Windows)
 
 Going into `build` directory, you will find additional possibilities:
@@ -176,20 +208,26 @@ Going into `build` directory, you will find additional possibilities:
 You can build the zstd binary via buck by executing: `buck build programs:zstd` from the root of the repo.
 The output binary will be in `buck-out/gen/programs/`.
 
+### Bazel
+
+You easily can integrate zstd into your Bazel project by using the module hosted on the [Bazel Central Repository](https://registry.bazel.build/modules/zstd).
+
 ## Testing
 
-You can run quick local smoke tests by executing the `playTest.sh` script from the `src/tests` directory.
-Two env variables `$ZSTD_BIN` and `$DATAGEN_BIN` are needed for the test script to locate the zstd and datagen binary.
-For information on CI testing, please refer to TESTING.md
+You can run quick local smoke tests by running `make check`.
+If you can't use `make`, execute the `playTest.sh` script from the `src/tests` directory.
+Two env variables `$ZSTD_BIN` and `$DATAGEN_BIN` are needed for the test script to locate the `zstd` and `datagen` binary.
+For information on CI testing, please refer to `TESTING.md`.
 
 ## Status
 
-Zstandard is currently deployed within Facebook. It is used continuously to compress large amounts of data in multiple formats and use cases.
+Zstandard is currently deployed within Facebook and many other large cloud infrastructures.
+It is run continuously to compress large amounts of data in multiple formats and use cases.
 Zstandard is considered safe for production environments.
 
 ## License
 
-Zstandard is dual-licensed under [BSD](LICENSE) and [GPLv2](COPYING).
+Zstandard is dual-licensed under [BSD](LICENSE) OR [GPLv2](COPYING).
 
 ## Contributing
 

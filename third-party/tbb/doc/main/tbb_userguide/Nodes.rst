@@ -4,8 +4,8 @@ Flow Graph Basics: Nodes
 ========================
 
 
-A node is a class that inherits from oneapi::tbb::flow::graph_node and also
-typically inherits from oneapi::tbb::flow::sender<T> , oneapi::tbb::flow::receiver<T> or
+A node is a class that inherits from ``oneapi::tbb::flow::graph_node`` and also
+typically inherits from ``oneapi::tbb::flow::sender<T>``, ``oneapi::tbb::flow::receiver<T>``, or
 both. A node performs some operation, usually on an incoming message and
 may generate zero or more output messages. Some nodes require more than
 one input message or generate more than one output message.
@@ -83,7 +83,7 @@ section.
 
 
 You can then wait for the messages to be processed by calling
-wait_for_all on the graph object:
+``wait_for_all`` on the graph object:
 
 
 ::

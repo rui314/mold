@@ -1,5 +1,5 @@
 # ################################################################
-# Copyright (c) Yann Collet, Facebook, Inc.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
 # This source code is licensed under both the BSD-style license (found in the
@@ -8,27 +8,56 @@
 # You may select, at your option, one of the above-listed licenses.
 # ################################################################
 
+# This included Makefile provides the following variables :
+# LIB_SRCDIR, LIB_BINDIR
+
+# Ensure the file is not included twice
+# Note : must be included after setting the default target
+ifndef LIBZSTD_MK_INCLUDED
+LIBZSTD_MK_INCLUDED := 1
+
 ##################################################################
 # Input Variables
 ##################################################################
 
-# Zstd lib directory
-LIBZSTD ?= ./
+# By default, library's directory is same as this included makefile
+LIB_SRCDIR ?= $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+LIB_BINDIR ?= $(LIB_SRCDIR)
+
+# ZSTD_LIB_MINIFY is a helper variable that
+# configures a bunch of other variables to space-optimized defaults.
+ZSTD_LIB_MINIFY ?= 0
 
 # Legacy support
-ZSTD_LEGACY_SUPPORT ?= 5
+ifneq ($(ZSTD_LIB_MINIFY), 0)
+  ZSTD_LEGACY_SUPPORT ?= 0
+else
+  ZSTD_LEGACY_SUPPORT ?= 5
+endif
 ZSTD_LEGACY_MULTITHREADED_API ?= 0
 
 # Build size optimizations
-HUF_FORCE_DECOMPRESS_X1 ?= 0
-HUF_FORCE_DECOMPRESS_X2 ?= 0
-ZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT ?= 0
-ZSTD_FORCE_DECOMPRESS_SEQUENCES_LONG ?= 0
-ZSTD_NO_INLINE ?= 0
-ZSTD_STRIP_ERROR_STRINGS ?= 0
+ifneq ($(ZSTD_LIB_MINIFY), 0)
+  HUF_FORCE_DECOMPRESS_X1 ?= 1
+  HUF_FORCE_DECOMPRESS_X2 ?= 0
+  ZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT ?= 1
+  ZSTD_FORCE_DECOMPRESS_SEQUENCES_LONG ?= 0
+  ZSTD_NO_INLINE ?= 1
+  ZSTD_STRIP_ERROR_STRINGS ?= 1
+else
+  HUF_FORCE_DECOMPRESS_X1 ?= 0
+  HUF_FORCE_DECOMPRESS_X2 ?= 0
+  ZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT ?= 0
+  ZSTD_FORCE_DECOMPRESS_SEQUENCES_LONG ?= 0
+  ZSTD_NO_INLINE ?= 0
+  ZSTD_STRIP_ERROR_STRINGS ?= 0
+endif
 
 # Assembly support
 ZSTD_NO_ASM ?= 0
+
+ZSTD_LIB_EXCLUDE_COMPRESSORS_DFAST_AND_UP ?= 0
+ZSTD_LIB_EXCLUDE_COMPRESSORS_GREEDY_AND_UP ?= 0
 
 ##################################################################
 # libzstd helpers
@@ -40,6 +69,7 @@ VOID ?= /dev/null
 NUM_SYMBOL := \#
 
 # define silent mode as default (verbose mode with V=1 or VERBOSE=1)
+# Note : must be defined _after_ the default target
 $(V)$(VERBOSE).SILENT:
 
 # When cross-compiling from linux to windows,
@@ -49,7 +79,7 @@ $(V)$(VERBOSE).SILENT:
 TARGET_SYSTEM ?= $(OS)
 
 # Version numbers
-LIBVER_SRC := $(LIBZSTD)/zstd.h
+LIBVER_SRC := $(LIB_SRCDIR)/zstd.h
 LIBVER_MAJOR_SCRIPT:=`sed -n '/define ZSTD_VERSION_MAJOR/s/.*[[:blank:]]\([0-9][0-9]*\).*/\1/p' < $(LIBVER_SRC)`
 LIBVER_MINOR_SCRIPT:=`sed -n '/define ZSTD_VERSION_MINOR/s/.*[[:blank:]]\([0-9][0-9]*\).*/\1/p' < $(LIBVER_SRC)`
 LIBVER_PATCH_SCRIPT:=`sed -n '/define ZSTD_VERSION_RELEASE/s/.*[[:blank:]]\([0-9][0-9]*\).*/\1/p' < $(LIBVER_SRC)`
@@ -61,17 +91,8 @@ LIBVER := $(shell echo $(LIBVER_SCRIPT))
 CCVER := $(shell $(CC) --version)
 ZSTD_VERSION?= $(LIBVER)
 
-# ZSTD_LIB_MINIFY is a helper variable that
-# configures a bunch of other variables to space-optimized defaults.
-ZSTD_LIB_MINIFY ?= 0
 ifneq ($(ZSTD_LIB_MINIFY), 0)
   HAVE_CC_OZ ?= $(shell echo "" | $(CC) -Oz -x c -c - -o /dev/null 2> /dev/null && echo 1 || echo 0)
-  ZSTD_LEGACY_SUPPORT ?= 0
-  ZSTD_LIB_DEPRECATED ?= 0
-  HUF_FORCE_DECOMPRESS_X1 ?= 1
-  ZSTD_FORCE_DECOMPRESS_SEQUENCES_SHORT ?= 1
-  ZSTD_NO_INLINE ?= 1
-  ZSTD_STRIP_ERROR_STRINGS ?= 1
 ifneq ($(HAVE_CC_OZ), 0)
     # Some compilers (clang) support an even more space-optimized setting.
     CFLAGS += -Oz
@@ -114,22 +135,25 @@ CFLAGS  += -Qunused-arguments -Wa,--noexecstack
 endif
 endif
 
+ifeq ($(shell echo "int main(int argc, char* argv[]) { (void)argc; (void)argv; return 0; }" | $(CC) $(FLAGS) -z cet-report=error -x c -Werror - -o $(VOID) 2>$(VOID) && echo 1 || echo 0),1)
+LDFLAGS += -z cet-report=error
+endif
+
 HAVE_COLORNEVER = $(shell echo a | grep --color=never a > /dev/null 2> /dev/null && echo 1 || echo 0)
 GREP_OPTIONS ?=
-ifeq ($HAVE_COLORNEVER, 1)
+ifeq ($(HAVE_COLORNEVER), 1)
   GREP_OPTIONS += --color=never
 endif
 GREP = grep $(GREP_OPTIONS)
-SED_ERE_OPT ?= -E
 
-ZSTD_COMMON_FILES := $(sort $(wildcard $(LIBZSTD)/common/*.c))
-ZSTD_COMPRESS_FILES := $(sort $(wildcard $(LIBZSTD)/compress/*.c))
-ZSTD_DECOMPRESS_FILES := $(sort $(wildcard $(LIBZSTD)/decompress/*.c))
-ZSTD_DICTBUILDER_FILES := $(sort $(wildcard $(LIBZSTD)/dictBuilder/*.c))
-ZSTD_DEPRECATED_FILES := $(sort $(wildcard $(LIBZSTD)/deprecated/*.c))
+ZSTD_COMMON_FILES := $(sort $(wildcard $(LIB_SRCDIR)/common/*.c))
+ZSTD_COMPRESS_FILES := $(sort $(wildcard $(LIB_SRCDIR)/compress/*.c))
+ZSTD_DECOMPRESS_FILES := $(sort $(wildcard $(LIB_SRCDIR)/decompress/*.c))
+ZSTD_DICTBUILDER_FILES := $(sort $(wildcard $(LIB_SRCDIR)/dictBuilder/*.c))
+ZSTD_DEPRECATED_FILES := $(sort $(wildcard $(LIB_SRCDIR)/deprecated/*.c))
 ZSTD_LEGACY_FILES :=
 
-ZSTD_DECOMPRESS_AMD64_ASM_FILES := $(sort $(wildcard $(LIBZSTD)/decompress/*_amd64.S))
+ZSTD_DECOMPRESS_AMD64_ASM_FILES := $(sort $(wildcard $(LIB_SRCDIR)/decompress/*_amd64.S))
 
 ifneq ($(ZSTD_NO_ASM), 0)
   CPPFLAGS += -DZSTD_DISABLE_ASM
@@ -167,22 +191,28 @@ ifneq ($(ZSTD_LEGACY_MULTITHREADED_API), 0)
   CFLAGS += -DZSTD_LEGACY_MULTITHREADED_API
 endif
 
+ifneq ($(ZSTD_LIB_EXCLUDE_COMPRESSORS_DFAST_AND_UP), 0)
+  CFLAGS += -DZSTD_EXCLUDE_DFAST_BLOCK_COMPRESSOR -DZSTD_EXCLUDE_GREEDY_BLOCK_COMPRESSOR -DZSTD_EXCLUDE_LAZY2_BLOCK_COMPRESSOR -DZSTD_EXCLUDE_BTLAZY2_BLOCK_COMPRESSOR -DZSTD_EXCLUDE_BTOPT_BLOCK_COMPRESSOR -DZSTD_EXCLUDE_BTULTRA_BLOCK_COMPRESSOR
+else
+ifneq ($(ZSTD_LIB_EXCLUDE_COMPRESSORS_GREEDY_AND_UP), 0)
+  CFLAGS += -DZSTD_EXCLUDE_GREEDY_BLOCK_COMPRESSOR -DZSTD_EXCLUDE_LAZY2_BLOCK_COMPRESSOR -DZSTD_EXCLUDE_BTLAZY2_BLOCK_COMPRESSOR -DZSTD_EXCLUDE_BTOPT_BLOCK_COMPRESSOR -DZSTD_EXCLUDE_BTULTRA_BLOCK_COMPRESSOR
+endif
+endif
+
 ifneq ($(ZSTD_LEGACY_SUPPORT), 0)
 ifeq ($(shell test $(ZSTD_LEGACY_SUPPORT) -lt 8; echo $$?), 0)
-  ZSTD_LEGACY_FILES += $(shell ls $(LIBZSTD)/legacy/*.c | $(GREP) 'v0[$(ZSTD_LEGACY_SUPPORT)-7]')
+  ZSTD_LEGACY_FILES += $(shell ls $(LIB_SRCDIR)/legacy/*.c | $(GREP) 'v0[$(ZSTD_LEGACY_SUPPORT)-7]')
 endif
 endif
 CPPFLAGS  += -DZSTD_LEGACY_SUPPORT=$(ZSTD_LEGACY_SUPPORT)
 
-UNAME := $(shell uname)
+UNAME := $(shell sh -c 'MSYSTEM="MSYS" uname')
 
 ifndef BUILD_DIR
 ifeq ($(UNAME), Darwin)
   ifeq ($(shell md5 < /dev/null > /dev/null; echo $$?), 0)
     HASH ?= md5
   endif
-else ifeq ($(UNAME), FreeBSD)
-  HASH ?= gmd5sum
 else ifeq ($(UNAME), NetBSD)
   HASH ?= md5 -n
 else ifeq ($(UNAME), OpenBSD)
@@ -198,6 +228,8 @@ ifeq ($(HAVE_HASH),0)
 endif
 endif # BUILD_DIR
 
-ZSTD_SUBDIR := $(LIBZSTD)/common $(LIBZSTD)/compress $(LIBZSTD)/decompress $(LIBZSTD)/dictBuilder $(LIBZSTD)/legacy $(LIBZSTD)/deprecated
+ZSTD_SUBDIR := $(LIB_SRCDIR)/common $(LIB_SRCDIR)/compress $(LIB_SRCDIR)/decompress $(LIB_SRCDIR)/dictBuilder $(LIB_SRCDIR)/legacy $(LIB_SRCDIR)/deprecated
 vpath %.c $(ZSTD_SUBDIR)
 vpath %.S $(ZSTD_SUBDIR)
+
+endif # LIBZSTD_MK_INCLUDED

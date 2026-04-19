@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ inline double GetCPUUserTime() {
 #elif _WIN32
     FILETIME my_times[4];
     bool status = GetProcessTimes(GetCurrentProcess(), my_times, my_times+1, my_times+2, my_times+3)!=0;
-    CHECK( status );
+    CHECK_FAST(status);
     LARGE_INTEGER usrtime;
     usrtime.LowPart = my_times[3].dwLowDateTime;
     usrtime.HighPart = my_times[3].dwHighDateTime;

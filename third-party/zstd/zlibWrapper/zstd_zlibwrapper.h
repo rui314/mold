@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021, Przemyslaw Skibinski, Yann Collet, Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -11,11 +11,6 @@
 #ifndef ZSTD_ZLIBWRAPPER_H
 #define ZSTD_ZLIBWRAPPER_H
 
-#if defined (__cplusplus)
-extern "C" {
-#endif
-
-
 #define ZLIB_CONST
 #define Z_PREFIX
 #define ZLIB_INTERNAL   /* disables gz*64 functions but fixes zlib 1.2.4 with Z_PREFIX */
@@ -25,6 +20,14 @@ extern "C" {
     #define z_const
 #endif
 
+#if !defined(_Z_OF)
+    #define _Z_OF OF
+#endif
+
+
+#if defined (__cplusplus)
+extern "C" {
+#endif
 
 /* returns a string with version of zstd library */
 const char * zstdVersion(void);

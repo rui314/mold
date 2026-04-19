@@ -15,7 +15,7 @@ canceled.
 
 
 As with all of the library's nested parallelism, you can control
-cancellation relationships by use of explicit task_group_context
-objects. If you do not provide an explicit task_group_context to a flow
+cancellation relationships by use of explicit ``task_group_context``
+objects. If you do not provide an explicit ``task_group_context`` to a flow
 graph, it is created with an isolated context by default.
 

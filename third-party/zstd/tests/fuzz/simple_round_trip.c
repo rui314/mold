@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -22,9 +22,32 @@
 #include "fuzz_helpers.h"
 #include "zstd_helpers.h"
 #include "fuzz_data_producer.h"
+#include "fuzz_third_party_seq_prod.h"
 
 static ZSTD_CCtx *cctx = NULL;
 static ZSTD_DCtx *dctx = NULL;
+
+static size_t getDecompressionMargin(void const* compressed, size_t cSize, size_t srcSize, int hasSmallBlocks, int maxBlockSize)
+{
+    size_t margin = ZSTD_decompressionMargin(compressed, cSize);
+    if (!hasSmallBlocks) {
+        /* The macro should be correct in this case, but it may be smaller
+         * because of e.g. block splitting, so take the smaller of the two.
+         */
+        ZSTD_FrameHeader zfh;
+        size_t marginM;
+        FUZZ_ZASSERT(ZSTD_getFrameHeader(&zfh, compressed, cSize));
+        if (maxBlockSize == 0) {
+            maxBlockSize = zfh.blockSizeMax;
+        } else {
+            maxBlockSize = MIN(maxBlockSize, (int)zfh.blockSizeMax);
+        }
+        marginM = ZSTD_DECOMPRESSION_MARGIN(srcSize, maxBlockSize);
+        if (marginM < margin)
+            margin = marginM;
+    }
+    return margin;
+}
 
 static size_t roundTripTest(void *result, size_t resultCapacity,
                             void *compressed, size_t compressedCapacity,
@@ -34,12 +57,14 @@ static size_t roundTripTest(void *result, size_t resultCapacity,
     size_t cSize;
     size_t dSize;
     int targetCBlockSize = 0;
+    int maxBlockSize = 0;
     if (FUZZ_dataProducer_uint32Range(producer, 0, 1)) {
         size_t const remainingBytes = FUZZ_dataProducer_remainingBytes(producer);
         FUZZ_setRandomParameters(cctx, srcSize, producer);
         cSize = ZSTD_compress2(cctx, compressed, compressedCapacity, src, srcSize);
         FUZZ_ZASSERT(cSize);
         FUZZ_ZASSERT(ZSTD_CCtx_getParameter(cctx, ZSTD_c_targetCBlockSize, &targetCBlockSize));
+        FUZZ_ZASSERT(ZSTD_CCtx_getParameter(cctx, ZSTD_c_maxBlockSize, &maxBlockSize));
         // Compress a second time and check for determinism
         {
             size_t const cSize0 = cSize;
@@ -65,8 +90,30 @@ static size_t roundTripTest(void *result, size_t resultCapacity,
             FUZZ_ASSERT(XXH64(compressed, cSize, 0) == hash0);
         }
     }
+    if (FUZZ_dataProducer_uint32Range(producer, 0, 1)) {
+        FUZZ_ZASSERT(ZSTD_DCtx_setParameter(dctx, ZSTD_d_maxBlockSize, maxBlockSize));
+    }
     dSize = ZSTD_decompressDCtx(dctx, result, resultCapacity, compressed, cSize);
     FUZZ_ZASSERT(dSize);
+    FUZZ_ASSERT_MSG(dSize == srcSize, "Incorrect regenerated size");
+    FUZZ_ASSERT_MSG(!FUZZ_memcmp(src, result, dSize), "Corruption!");
+
+    {
+        size_t margin = getDecompressionMargin(compressed, cSize, srcSize, targetCBlockSize, maxBlockSize);
+        size_t const outputSize = srcSize + margin;
+        char* const output = (char*)FUZZ_malloc(outputSize);
+        char* const input = output + outputSize - cSize;
+        FUZZ_ASSERT(outputSize >= cSize);
+        memcpy(input, compressed, cSize);
+
+        dSize = ZSTD_decompressDCtx(dctx, output, outputSize, input, cSize);
+        FUZZ_ZASSERT(dSize);
+        FUZZ_ASSERT_MSG(dSize == srcSize, "Incorrect regenerated size");
+        FUZZ_ASSERT_MSG(!FUZZ_memcmp(src, output, srcSize), "Corruption!");
+
+        free(output);
+    }
+
     /* When superblock is enabled make sure we don't expand the block more than expected.
      * NOTE: This test is currently disabled because superblock mode can arbitrarily
      * expand the block in the worst case. Once superblock mode has been improved we can
@@ -93,6 +140,8 @@ static size_t roundTripTest(void *result, size_t resultCapacity,
 
 int LLVMFuzzerTestOneInput(const uint8_t *src, size_t size)
 {
+    FUZZ_SEQ_PROD_SETUP();
+
     size_t const rBufSize = size;
     void* rBuf = FUZZ_malloc(rBufSize);
     size_t cBufSize = ZSTD_compressBound(size);
@@ -120,13 +169,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *src, size_t size)
         FUZZ_ASSERT(dctx);
     }
 
-    {
-        size_t const result =
-            roundTripTest(rBuf, rBufSize, cBuf, cBufSize, src, size, producer);
-        FUZZ_ZASSERT(result);
-        FUZZ_ASSERT_MSG(result == size, "Incorrect regenerated size");
-        FUZZ_ASSERT_MSG(!FUZZ_memcmp(src, rBuf, size), "Corruption!");
-    }
+    roundTripTest(rBuf, rBufSize, cBuf, cBufSize, src, size, producer);
     free(rBuf);
     free(cBuf);
     FUZZ_dataProducer_free(producer);
@@ -134,5 +177,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *src, size_t size)
     ZSTD_freeCCtx(cctx); cctx = NULL;
     ZSTD_freeDCtx(dctx); dctx = NULL;
 #endif
+    FUZZ_SEQ_PROD_TEARDOWN();
     return 0;
 }

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -27,6 +27,8 @@
 //! \file test_parallel_invoke.cpp
 //! \brief Test for [algorithms.parallel_invoke]
 
+#if !EMSCRIPTEN
+//! Emscripten requires preloading of the file used to determine memory usage, hence disabled.
 //! Testing parallel_invoke memory usage
 //! \brief \ref resource_usage \ref stress
 TEST_CASE("Test memory leaks") {
@@ -56,6 +58,7 @@ TEST_CASE("Test memory leaks") {
     }
     REQUIRE_MESSAGE(false, "Seems like we get memory leak here.");
 }
+#endif
 
 template<typename Body>
 void test_from_2_to_10_arguments(const Body& body, const std::atomic<std::size_t>& counter) {

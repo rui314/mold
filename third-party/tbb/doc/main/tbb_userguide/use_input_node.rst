@@ -58,10 +58,10 @@ However, this approach serializes graph construction and graph
 execution.
 
 
-Some graphs can be constructed safely with ``input_node``s active, allowing
+Some graphs can be constructed safely with ``input_node`` active, allowing
 the overlap of construction and execution. If your graph is a directed
 acyclic graph (DAG), and each ``input_node`` has only one successor, you
-can activate your ``input_node``s just after their construction if you construct the
+can activate your ``input_node`` just after their construction if you construct the
 edges in reverse topological order; that is, make the edges at the
 largest depth in the tree first, and work back to the shallowest edges.
 For example, if src is an ``input_node`` and ``func1`` and ``func2`` are both

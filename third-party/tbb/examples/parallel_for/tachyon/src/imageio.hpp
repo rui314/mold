@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -49,7 +49,7 @@
  *  $Id: imageio.h,v 1.2 2007-02-22 17:54:15 Exp $
  */
 
-/* For our puposes, we're interested only in the 3 byte per pixel 24 bit
+/* For our purposes, we're interested only in the 3 byte per pixel 24 bit
    truecolor sort of file.. */
 
 #define IMAGENOERR    0 /* no error */

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -30,6 +30,7 @@
 
 #include <cstdio>
 
+#include "test_buffering_try_put_and_wait.h"
 
 //! \file test_priority_queue_node.cpp
 //! \brief Test for [flow_graph.priority_queue_node] specification
@@ -378,6 +379,166 @@ void test_deduction_guides() {
 }
 #endif
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+void test_pqueue_node_try_put_and_wait() {
+    using namespace test_try_put_and_wait;
+
+    std::vector<int> start_work_items;
+    std::vector<int> new_work_items;
+    int wait_message = -10;
+
+    for (int i = 0; i < 10; ++i) {
+        start_work_items.emplace_back(i);
+        new_work_items.emplace_back(i + 1 + wait_message);
+    }
+
+    // Test push
+    // test_buffer_push tests the graph
+    // buffer1 -> function -> buffer2 -> writer
+    //     function is a queueing serial function_node that submits new_work_items once wait_message arrives
+    //     writer is an unlimited function_node that writes an item into the processed_items vector
+    // Test steps
+    //     1. push start_work_items into the buffer1
+    //     2. buffer1.try_put_and_wait(wait_message);
+    //     3. g.wait_for_all()
+    // test_buffer_push returns the index from which the items processed during wait_for_all() starts
+    {
+        std::vector<int> processed_items;
+
+        std::size_t after_start = test_buffer_push<tbb::flow::priority_queue_node<int>>(start_work_items, wait_message,
+                                                                                        new_work_items, processed_items);
+
+        // Expected effect:
+        // During buffer1.try_put_and_wait()
+        //     1. start_work_items would be pushed to buffer1
+        //     2. wait_message would be pushed to buffer1
+        //     3. forward_task on buffer1 would transfer start_work_items into the function_node in LIFO order
+        //     4. wait_message would be transferred last because of lowest priority
+        //     5. the first item would occupy concurrency of function, other items would be pushed to the queue
+        //     6. function would process start_work_items and push them to the buffer2
+        //     7. wait_message would be processed last and add new_work_items to buffer1
+        //     8. forward_task on buffer2 would transfer start_work_items in FIFO order and the wait_message to the writer
+        //     9.  try_put_and_wait exits since wait_message is completed
+        // During g.wait_for_all()
+        //     10. forward_task for new_work_items in buffer1 would be spawned and put items in function in LIFO order
+        // Expected items processing - { start_work_items LIFO, wait_message, new_work_items LIFO }
+
+        std::size_t check_index = 0;
+        CHECK_MESSAGE(after_start == start_work_items.size() + 1,
+                      "try_put_and_wait should process start_work_items and the wait_message");
+        for (std::size_t i = start_work_items.size(); i != 0; --i) {
+            CHECK_MESSAGE(processed_items[check_index++] == start_work_items[i - 1],
+                          "try_put_and_wait should process start_work_items in LIFO order");
+        }
+        CHECK_MESSAGE(processed_items[check_index++] == wait_message,
+                      "try_put_and_wait should process wait_message after start_work_items");
+
+        for (std::size_t i = new_work_items.size(); i != 0; --i) {
+            CHECK_MESSAGE(processed_items[check_index++] == new_work_items[i - 1],
+                          "wait_for_all should process new_work_items in LIFO order");
+        }
+        CHECK(check_index == processed_items.size());
+    } // Test push
+
+    // Test pull
+    // test_buffer_pull tests the graph
+    // buffer -> function
+    //     function is a rejecting serial function_node that submits new_work_items once wait_message arrives
+    //     and writes the processed item into the processed_items
+    // Test steps
+    //     1. push the occupier message to the function
+    //     2. push start_work_items into the buffer
+    //     3. buffer.try_put_and_wait(wait_message)
+    //     4. g.wait_for_all()
+    // test_buffer_pull returns the index from which the items processed during wait_for_all() starts
+
+    {
+        std::vector<int> processed_items;
+        int occupier = 42;
+
+        std::size_t after_start = test_buffer_pull<tbb::flow::priority_queue_node<int>>(start_work_items, wait_message, occupier,
+                                                                                        new_work_items, processed_items);
+
+        // Expected effect
+        // 0. task for occupier processing would be spawned by the function
+        // During buffer.try_put_and_wait()
+        //     1. start_work_items would be pushed to the buffer
+        //     2. wait_message would be pushed to the buffer
+        //     3. forward_task would try to push items to the function, but would fail
+        //        and set the edge to the pull state
+        //     4. occupier would be processed
+        //     5. items would be taken from the buffer by function in the priority (LIFO)  order
+        //     6. wait_message would be taken last due to lowest priority
+        //     7. new_work_items would be pushed to the buffer while processing wait_message
+        // During wait_for_all()
+        //     8. new_work_items would be taken from the buffer in the priority (LIFO) order
+        // Expected items processing { occupier, start_work_items LIFO, wait_message, new_work_items LIFO }
+
+        std::size_t check_index = 0;
+        CHECK_MESSAGE(after_start == start_work_items.size() + 2,
+                      "try_put_and_wait should process start_work_items, occupier and the wait_message");
+        CHECK_MESSAGE(processed_items[check_index++] == occupier, "try_put_and_wait should process the occupier");
+        for (std::size_t i = start_work_items.size(); i != 0; --i) {
+            CHECK_MESSAGE(processed_items[check_index++] == start_work_items[i - 1],
+                          "try_put_and_wait should process start_work_items in LIFO order");
+        }
+        CHECK_MESSAGE(processed_items[check_index++] == wait_message,
+                      "try_put_and_wait should process wait_message after start_work_items");
+
+        for (std::size_t i = new_work_items.size(); i != 0; --i) {
+            CHECK_MESSAGE(processed_items[check_index++] == new_work_items[i - 1],
+                          "wait_for_all should process new_work_items in LIFO order");
+        }
+        CHECK(check_index == processed_items.size());
+    }
+
+    // Test reserve
+    {
+        int thresholds[] = { 1, 2 };
+
+        for (int threshold : thresholds) {
+            std::vector<int> processed_items;
+
+            // test_buffer_reserve tests the following graph
+            // buffer -> limiter -> function
+            //  function is a rejecting serial function_node that puts an item to the decrementer port
+            //  of the limiter inside of the body
+
+            std::size_t after_start = test_buffer_reserve<tbb::flow::priority_queue_node<int>>(threshold,
+                start_work_items, wait_message, new_work_items, processed_items);
+
+            // Expected effect:
+            // 1. start_work_items would be pushed to the buffer
+            // 2. wait_message_would be pushed to the buffer
+            // 3. forward task of the buffer would push the first message to the limiter node.
+            //    Since the limiter threshold is not reached, it would be directly passed to the function
+            // 4. function would spawn the task for the first message processing
+            // 5. the first would be processed
+            // 6. decrementer.try_put() would be called and the limiter node would
+            //    process all of the items from the buffer using the try_reserve/try_consume/try_release semantics
+            //    in the priority (greatest first) order
+            // 7. When the wait_message would be taken from the queue, the try_put_and_wait would exit
+
+            std::size_t check_index = 0;
+
+            CHECK_MESSAGE(after_start == start_work_items.size() + 1,
+                          "try_put_and_wait should start_work_items and wait_message");
+            for (std::size_t index = start_work_items.size(); index != 0; --index) {
+                CHECK_MESSAGE(processed_items[check_index++] == start_work_items[index - 1],
+                              "Unexpected start_work_items processing");
+            }
+
+            CHECK_MESSAGE(processed_items[check_index++] == wait_message, "Unexpected wait_message processing");
+
+            for (std::size_t index = new_work_items.size(); index != 0; --index) {
+                CHECK_MESSAGE(processed_items[check_index++] == new_work_items[index - 1],
+                              "Unexpected new_work_items processing");
+            }
+        }
+    }
+}
+#endif // __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+
 //! Test serial, parallel behavior and reservation under parallelism
 //! \brief \ref requirement \ref error_guessing
 TEST_CASE("Serial, parallel and reservation tests"){
@@ -419,3 +580,9 @@ TEST_CASE("Test deduction guides"){
 }
 #endif
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+//! \brief \ref error_guessing
+TEST_CASE("test priority_queue_node try_put_and_wait") {
+    test_pqueue_node_try_put_and_wait();
+}
+#endif

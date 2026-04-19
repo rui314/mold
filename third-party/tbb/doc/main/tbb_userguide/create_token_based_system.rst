@@ -14,7 +14,7 @@ a new message that will then be allowed to enter.
 
 The ``oneapi::tbb::parallel_pipeline`` algorithm relies on a token-based system. In
 the flow graph interface, there is no explicit support for tokens, but
-``join_node``s can be used to create an analogous system. A ``join_node`` has
+``join_node`` can be used to create an analogous system. A ``join_node`` has
 two template arguments, the tuple that describes the types of its inputs
 and a buffer policy:
 

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -158,6 +158,8 @@ void test_join_node_rf_reset_protocol(){
     CHECK_MESSAGE((!testing_node.try_get(tmp)), "All buffers must be emptied");
 }
 
+// global_control::max_allowed_parallelism functionality is not covered by TCM
+#if !__TBB_TCM_TESTING_ENABLED
 //! Graph reset
 //! \brief \ref requirement
 TEST_CASE("graph reset with rf_reset_protocol") {
@@ -179,6 +181,7 @@ TEST_CASE("graph reset with rf_reset_protocol") {
     test_limiter_node_rf_reset_protocol();
     test_join_node_rf_reset_protocol();
 }
+#endif
 
 //! Graph reset rf_clear_edges
 //! \brief \ref requirement

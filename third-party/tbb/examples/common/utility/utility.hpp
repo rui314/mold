@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include <cassert>
 #include <cstring>
 #include <cstdlib>
+#include <cmath>
 
 #include <utility>
 #include <string>
@@ -32,6 +33,7 @@
 #include <stdexcept>
 #include <memory>
 #include <iostream>
+#include <chrono>
 // TBB headers should not be used, as some examples may need to be built without TBB.
 
 namespace utility {
@@ -356,6 +358,59 @@ public:
     }
 }; // class cli_argument_pack
 
+// utility class to aid relative error measurement of samples
+class measurements {
+public:
+    measurements() = default;
+
+    measurements(unsigned iterations) {
+        _time_intervals.reserve(iterations);
+    }
+
+    inline void start() {
+        _startTime = std::chrono::steady_clock::now();
+    }
+    inline void stop() {
+        auto _endTime = std::chrono::steady_clock::now();
+        // store the end time and start time
+        _time_intervals.push_back(std::make_pair(_startTime, _endTime));
+    }
+    double computeRelError() {
+        // Accumulate the total duration in microseconds using std::accumulate with a lambda function
+        assert(0 != _time_intervals.size());
+        auto total_duration = std::accumulate(
+            _time_intervals.begin(),
+            _time_intervals.end(),
+            0, // Start with 0 count
+            [](long long total, const std::pair<time_point, time_point>& interval) {
+                // Compute the difference and add it to the total
+                return total + std::chrono::duration_cast<std::chrono::microseconds>(
+                                   interval.second - interval.first)
+                                   .count();
+            });
+        unsigned long long averageTimePerFrame = total_duration / _time_intervals.size();
+        unsigned long long sumOfSquareDiff = 0;
+        std::for_each(_time_intervals.begin(),
+                      _time_intervals.end(),
+                      [&](const std::pair<time_point, time_point>& interval) {
+                          unsigned long long duration =
+                              std::chrono::duration_cast<std::chrono::microseconds>(
+                                  interval.second - interval.first)
+                                  .count();
+                          long long diff = duration - averageTimePerFrame;
+                          sumOfSquareDiff += diff * diff;
+                      });
+        double stdDev = std::sqrt(sumOfSquareDiff / _time_intervals.size());
+        double relError = 100 * (stdDev / averageTimePerFrame);
+        return relError;
+    }
+
+private:
+    using time_point = std::chrono::steady_clock::time_point;
+    time_point _startTime;
+    std::vector<std::pair<time_point, time_point>> _time_intervals;
+};
+
 namespace internal {
 template <typename T>
 bool is_power_of_2(T val) {
@@ -544,6 +599,11 @@ inline void report_elapsed_time(double seconds) {
 
 inline void report_skipped() {
     std::cout << "skip"
+              << "\n";
+}
+
+inline void report_relative_error(double err) {
+    std::cout << "Relative_Err : " << err << " %"
               << "\n";
 }
 

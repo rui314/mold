@@ -1,0 +1,491 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - "*"
+    # not on tags
+  pull_request:
+
+env:
+  BLAKE3_CI: "1"
+  RUSTFLAGS: "-D warnings"
+  RUST_BACKTRACE: "1"
+
+jobs:
+  library_tests:
+    name: ${{ matrix.target.name }} ${{ matrix.channel }}
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [
+          { "os": "ubuntu-latest",  "toolchain": "x86_64-unknown-linux-gnu", "name": "Linux GNU" },
+          { "os": "macOS-latest",   "toolchain": "aarch64-apple-darwin",     "name": "macOS" },
+          { "os": "windows-latest", "toolchain": "x86_64-pc-windows-msvc",   "name": "Windows MSVC" },
+          { "os": "windows-latest", "toolchain": "x86_64-pc-windows-gnu",    "name": "Windows GNU" }
+        ]
+        channel: ["stable", "beta", "nightly"]
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ format('{0}-{1}', matrix.channel, matrix.target.toolchain) }}
+    # Print the compiler version, for debugging.
+    - name: print compiler version
+      run: cargo run --quiet
+      working-directory: ./tools/compiler_version
+    # Print out instruction set support, for debugging.
+    - name: print instruction set support
+      run: cargo run --quiet
+      working-directory: ./tools/instruction_set_support
+    # Default tests plus Rayon and trait implementations.
+    - run: cargo test --features=rayon,traits-preview,serde,zeroize
+    # Same but with only one thread in the Rayon pool. This can find deadlocks.
+    - name: "again with RAYON_NUM_THREADS=1"
+      run: cargo test --features=rayon,traits-preview,serde,zeroize
+      env:
+        RAYON_NUM_THREADS: 1
+    # The mmap feature by itself (update_mmap_rayon is omitted).
+    - run: cargo test --features=mmap
+    # All public features put together.
+    - run: cargo test --features=mmap,rayon,traits-preview,serde,zeroize
+    # no_std tests.
+    - run: cargo test --no-default-features
+
+    # A matrix of different test settings:
+    # - debug vs release
+    # - assembly vs Rust+C intrinsics vs pure Rust intrinsics
+    # - different levels of SIMD support
+    #
+    # Full SIMD support.
+    - run: cargo test --features=
+    - run: cargo test --features=prefer_intrinsics
+    - run: cargo test --features=pure
+    - run: cargo test --features= --release
+    - run: cargo test --features=prefer_intrinsics --release
+    - run: cargo test --features=pure --release
+    # No AVX-512.
+    - run: cargo test --features=no_avx512
+    - run: cargo test --features=no_avx512,prefer_intrinsics
+    - run: cargo test --features=no_avx512,pure
+    - run: cargo test --features=no_avx512 --release
+    - run: cargo test --features=no_avx512,prefer_intrinsics --release
+    - run: cargo test --features=no_avx512,pure --release
+    # No AVX2.
+    - run: cargo test --features=no_avx512,no_avx2
+    - run: cargo test --features=no_avx512,no_avx2,prefer_intrinsics
+    - run: cargo test --features=no_avx512,no_avx2,pure
+    - run: cargo test --features=no_avx512,no_avx2 --release
+    - run: cargo test --features=no_avx512,no_avx2,prefer_intrinsics --release
+    - run: cargo test --features=no_avx512,no_avx2,pure --release
+    # No SSE4.1
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,prefer_intrinsics
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,pure
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41 --release
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,prefer_intrinsics --release
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,pure --release
+    # No SSE2
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2,prefer_intrinsics
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2,pure
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2 --release
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2,prefer_intrinsics --release
+    - run: cargo test --features=no_avx512,no_avx2,no_sse41,no_sse2,pure --release
+
+    # Test benchmarks. RUSTC_BOOTSTRAP=1 lets this run on non-nightly toolchains.
+    - run: cargo test --benches --features=rayon
+      env:
+        RUSTC_BOOTSTRAP: 1
+    # Test vectors.
+    - name: test vectors
+      run: cargo test
+      working-directory: ./test_vectors
+    - name: test vectors intrinsics
+      run: cargo test --features=prefer_intrinsics
+      working-directory: ./test_vectors
+    - name: test vectors pure
+      run: cargo test --features=pure
+      working-directory: ./test_vectors
+    # Test C code.
+    - name: cargo test C bindings assembly
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+    - name: cargo test C bindings intrinsics
+      run: cargo test --features=prefer_intrinsics
+      working-directory: ./c/blake3_c_rust_bindings
+    - name: cargo test C bindings no AVX-512
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+      env:
+        CFLAGS: -DBLAKE3_NO_AVX512
+    - name: cargo test C bindings no AVX2
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+      env:
+        CFLAGS: -DBLAKE3_NO_AVX512 -DBLAKE3_NO_AVX2
+    - name: cargo test C bindings no SSE41
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+      env:
+        CFLAGS: -DBLAKE3_NO_AVX512 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_SSE41
+    - name: cargo test C bindings no SSE2
+      run: cargo test
+      working-directory: ./c/blake3_c_rust_bindings
+      env:
+        CFLAGS: -DBLAKE3_NO_AVX512 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_SSE2
+    # Reference impl doc test.
+    - name: reference impl doc test
+      run: cargo test
+      working-directory: ./reference_impl
+
+  msrv_build:
+    name: MSRV build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macOS-latest", "windows-latest"]
+    steps:
+    - uses: actions/checkout@v4
+    # The current MSRV. This crate doesn't have an official MSRV policy,
+    # but in practice we'll probably do what libc does:
+    # https://github.com/rust-lang/libs-team/issues/72.
+    # This test target is here so that we notice if we accidentally bump
+    # the MSRV, but it's not a promise that we won't bump it.
+    - uses: dtolnay/rust-toolchain@1.66.1
+    - run: cargo build --features=mmap,rayon,traits-preview,serde,zeroize
+
+  b3sum_tests:
+    name: b3sum ${{ matrix.target.name }} ${{ matrix.channel }}
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [
+          { "os": "ubuntu-latest",  "toolchain": "x86_64-unknown-linux-gnu", "name": "Linux GNU" },
+          { "os": "macOS-latest",   "toolchain": "aarch64-apple-darwin",      "name": "macOS" },
+          { "os": "windows-latest", "toolchain": "x86_64-pc-windows-msvc",   "name": "Windows MSVC" },
+          { "os": "windows-latest", "toolchain": "x86_64-pc-windows-gnu",    "name": "Windows GNU" }
+        ]
+        channel: ["stable", "beta", "nightly"]
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ format('{0}-{1}', matrix.channel, matrix.target.toolchain) }}
+    # Test b3sum.
+    - name: test b3sum
+      run: cargo test
+      working-directory: ./b3sum
+    - name: test b3sum --no-default-features
+      run: cargo test --no-default-features
+      working-directory: ./b3sum
+
+  cross_tests:
+    name: cross ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - i586-unknown-linux-musl
+          - i686-unknown-linux-musl
+          - armv7-unknown-linux-gnueabihf
+          - aarch64-unknown-linux-gnu
+          # Big-endian targets. See https://twitter.com/burntsushi5/status/1695483429997945092.
+          - powerpc64-unknown-linux-gnu
+          - s390x-unknown-linux-gnu
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - run: cargo install cross
+    # Test the portable implementation on everything.
+    - run: cross test --target ${{ matrix.arch }}
+    # Test building for ancient i386 processors without guaranteed SSE2 support.
+    - run: cross rustc --target ${{ matrix.arch }} -- -C target-cpu=i386
+      if: startsWith(matrix.arch, 'i586-') || startsWith(matrix.arch, 'i686-')
+    # Test the NEON implementation on ARM targets.
+    - run: cross test --target ${{ matrix.arch }} --features=neon
+      if: startsWith(matrix.arch, 'armv7-') || startsWith(matrix.arch, 'aarch64-')
+    # NEON is enabled by default on aarch64, disabling it through the no_neon feature.
+    - run: cross test --target ${{ matrix.arch }} --features=no_neon
+      if: startsWith(matrix.arch, 'aarch64-')
+    # Test vectors. Note that this uses a hacky script due to path dependency limitations.
+    - run: ./test_vectors/cross_test.sh --target ${{ matrix.arch }}
+    # C code. Same issue with the hacky script.
+    - run: ./c/blake3_c_rust_bindings/cross_test.sh --target ${{ matrix.arch }}
+    - run: ./c/blake3_c_rust_bindings/cross_test.sh --target ${{ matrix.arch }} --features=neon
+      if: startsWith(matrix.arch, 'armv7-') || startsWith(matrix.arch, 'aarch64-')
+
+  wasm_tests:
+    name: WASM tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-wasip1
+    - name: install Wasmtime
+      run: |
+        curl https://wasmtime.dev/install.sh -sSf | bash
+        echo PATH: $PATH
+        mkdir -p ~/.local/bin
+        ln -s ~/.wasmtime/bin/wasmtime ~/.local/bin/wasmtime
+    - run: cargo test --target wasm32-wasip1
+    - run: cargo test --target wasm32-wasip1 --no-default-features
+    - run: cargo test --target wasm32-wasip1 --features wasm32_simd
+    - run: cargo test --target wasm32-wasip1 --no-default-features --features wasm32_simd
+    - run: cargo test --target wasm32-wasip1 --benches --features=wasm32_simd
+      env:
+        RUSTC_BOOTSTRAP: 1
+    - name: test vectors w/o SIMD
+      run: cargo test --target wasm32-wasip1
+      working-directory: ./test_vectors
+    - name: test vectors w/ SIMD
+      run: cargo test --target wasm32-wasip1 --features wasm32_simd
+      working-directory: ./test_vectors
+
+  cargo_xwin_test:
+    name: cargo xwin test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: docker run -v $(pwd):/io -w /io messense/cargo-xwin cargo xwin test --target x86_64-pc-windows-msvc --features=mmap,rayon,traits-preview,serde,zeroize
+
+  # Currently only on x86.
+  cmake_c_tests:
+    name: CMake C tests SIMD=${{ matrix.simd }} TBB=${{ matrix.use_tbb }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        use_tbb: ["OFF", "ON"]
+        simd: ["x86-intrinsics", "amd64-asm"]
+    steps:
+    - uses: actions/checkout@v4
+    - run: |
+        sudo apt-get update
+        sudo apt-get install ninja-build libtbb-dev libtbb12
+    # Test the intrinsics-based and assembly-based implementations.
+    - run: |
+        cmake --fresh -S c -B c/build -G Ninja -DBLAKE3_TESTING=ON -DBLAKE3_TESTING_CI=ON "-DBLAKE3_SIMD_TYPE=${{ matrix.simd }}"
+        cmake --build c/build --target test
+        cat c/build/Testing/Temporary/LastTest.log
+    - run: |
+        cmake --fresh -S c -B c/build -G Ninja -DBLAKE3_TESTING=ON -DBLAKE3_TESTING_CI=ON "-DBLAKE3_SIMD_TYPE=${{ matrix.simd }}" -DBLAKE3_NO_SSE2=1
+        cmake --build c/build --target test
+        cat c/build/Testing/Temporary/LastTest.log
+    - run: |
+        cmake --fresh -S c -B c/build -G Ninja -DBLAKE3_TESTING=ON -DBLAKE3_TESTING_CI=ON "-DBLAKE3_SIMD_TYPE=${{ matrix.simd }}" -DBLAKE3_NO_SSE2=1 -DBLAKE3_NO_SSE41=1
+        cmake --build c/build --target test
+        cat c/build/Testing/Temporary/LastTest.log
+    - run: |
+        cmake --fresh -S c -B c/build -G Ninja -DBLAKE3_TESTING=ON -DBLAKE3_TESTING_CI=ON "-DBLAKE3_SIMD_TYPE=${{ matrix.simd }}" "-DBLAKE3_NO_SSE2=1" "-DBLAKE3_NO_SSE41=1" "-DBLAKE3_NO_AVX2=1"
+        cmake --build c/build --target test
+        cat c/build/Testing/Temporary/LastTest.log
+    - run: |
+        cmake --fresh -S c -B c/build -G Ninja -DBLAKE3_TESTING=ON -DBLAKE3_TESTING_CI=ON "-DBLAKE3_SIMD_TYPE=${{ matrix.simd }}" "-DBLAKE3_NO_SSE2=1" "-DBLAKE3_NO_SSE41=1" "-DBLAKE3_NO_AVX2=1" "-DBLAKE3_NO_AVX512=1"
+        cmake --build c/build --target test
+        cat c/build/Testing/Temporary/LastTest.log
+    # Test with TBB disabled/enabled.
+    - run: |
+        cmake --fresh -S c -B c/build -G Ninja -DBLAKE3_TESTING=ON -DBLAKE3_TESTING_CI=ON "-DBLAKE3_USE_TBB=${{ matrix.use_tbb }}"
+        cmake --build c/build --target test
+        cat c/build/Testing/Temporary/LastTest.log
+    # Build the example with TBB disabled/enabled.
+    - run: |
+        cmake --fresh -S c -B c/build -G Ninja -DBLAKE3_TESTING=ON -DBLAKE3_TESTING_CI=ON -DBLAKE3_EXAMPLES=ON "-DBLAKE3_USE_TBB=${{ matrix.use_tbb }}"
+        cmake --build c/build --target blake3-example
+
+  # Currently only on x86.
+  pkg_config_c_tests:
+    name: pkg-config C tests TBB=${{ matrix.use_tbb }} BUILD_SHARED_LIBS=${{ matrix.shared_libs }} STDLIB=${{ matrix.stdlib }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        use_tbb: ["OFF", "ON"]
+        shared_libs: ["OFF", "ON"]
+        stdlib: ["libc++", "libstdc++"]
+    steps:
+    - uses: actions/checkout@v4
+    - name: update packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install ninja-build libtbb-dev libtbb12
+        ${{ matrix.stdlib != 'libc++' || 'sudo apt-get install libc++-dev libc++abi-dev' }}
+    - name: configure cmake
+      run: |
+        export CXXFLAGS=${{ matrix.stdlib == 'libc++' && '-stdlib=libc++' || '' }}
+        export CC=${{ matrix.stdlib == 'libc++' && 'clang' || 'gcc' }}
+        export CXX=${{ matrix.stdlib == 'libc++' && 'clang++' || 'g++' }}
+        cmake --fresh -S c -B c/build -G Ninja -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/target "-DBLAKE3_USE_TBB=${{ matrix.use_tbb }}" "-DBUILD_SHARED_LIBS=${{ matrix.shared_libs }}" -DCMAKE_VERBOSE_MAKEFILE=1
+    - run: cmake --build c/build --target install
+    - run: mkdir -p ${{ github.workspace }}/target/bin
+    - run: echo "PKG_CONFIG_PATH=${{ github.workspace }}/target/lib/pkgconfig" >> $GITHUB_ENV
+    - run: gcc -O3 -o ${{ github.workspace }}/target/bin/blake3-example c/example.c $(pkg-config --cflags --libs libblake3)
+    - if: matrix.use_tbb == 'ON'
+      run: gcc -O3 -o ${{ github.workspace }}/target/bin/blake3-example-tbb c/example_tbb.c $(pkg-config --cflags --libs libblake3)
+
+  # Note that this jobs builds AArch64 binaries from an x86_64 host.
+  build_apple_silicon:
+    name: build for Apple Silicon
+    runs-on: macOS-latest
+    strategy:
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: aarch64-apple-darwin
+    - name: build blake3
+      run: cargo build --target aarch64-apple-darwin
+    - name: build b3sum
+      run: cargo build --target aarch64-apple-darwin
+      working-directory: ./b3sum
+
+  build_tinycc:
+    name: build with the Tiny C Compiler
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: install TCC
+      run: sudo apt-get install -y tcc
+    - name: compile
+      run: >
+        tcc -shared -O3 -o libblake3.so \
+          -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41 -DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 \
+          blake3.c blake3_dispatch.c blake3_portable.c
+      working-directory: ./c
+
+  # See https://github.com/BLAKE3-team/BLAKE3/issues/271 for why we test this.
+  # Note that this isn't guaranteed to execute on an AVX-512-supporting server,
+  # but hopefully at least some of the time it will.
+  gcc54:
+    name: "compile and test with GCC 5.4"
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: addnab/docker-run-action@v3
+      with:
+        image: gcc:5.4
+        options: -v ${{ github.workspace }}:/work
+        run: |
+          cat /proc/cpuinfo
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          cd /work
+          ~/.cargo/bin/cargo test --features prefer_intrinsics
+
+  # CMake build test (Library only).
+  cmake_current_build:
+    name: CMake ${{ matrix.os }} CC=${{ matrix.toolchain.cc }} CXX=${{ matrix.toolchain.cxx }} TBB=${{ matrix.use_tbb }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cmakeVersion: [latest]
+        ninjaVersion: [latest]
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+        toolchain: [
+          { cc: cl, cxx: cl },
+          { cc: clang, cxx: clang++ },
+          { cc: clang-cl, cxx: clang-cl },
+          { cc: gcc, cxx: g++ },
+        ]
+        use_tbb: [OFF, ON]
+        exclude:
+          - os: macOS-latest
+            toolchain: { cc: cl, cxx: cl }
+          - os: macOS-latest
+            toolchain: { cc: clang-cl, cxx: clang-cl }
+          - os: ubuntu-latest
+            toolchain: { cc: cl, cxx: cl }
+          - os: ubuntu-latest
+            toolchain: { cc: clang-cl, cxx: clang-cl }
+          - os: windows-latest
+            toolchain: { cc: clang, cxx: clang++ }
+            use_tbb: ON
+          - os: windows-latest
+            toolchain: { cc: gcc, cxx: g++ }
+            use_tbb: ON
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@5f6e04f5267c8133f1273bf2103583fc72c46b17
+        with:
+          cmakeVersion: ${{ matrix.cmakeVersion }}
+          ninjaVersion: ${{ matrix.ninjaVersion }}
+      - if: matrix.os == 'macOS-latest'
+        name: Install dependencies on macOS
+        run: |
+          brew update
+          brew install tbb
+      - if: matrix.os == 'ubuntu-latest'
+        name: Install dependencies on Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install libtbb-dev libtbb12
+      - name: CMake generation, build, install
+        run: |
+          ${{ matrix.os != 'windows-latest' || '& "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/Tools/Launch-VsDevShell.ps1" -Arch amd64 -SkipAutomaticLocation' }}
+          cmake -S c -B c/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/target -DCMAKE_C_COMPILER=${{ matrix.toolchain.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.toolchain.cxx }} -DBLAKE3_USE_TBB=${{ matrix.use_tbb }} -DBLAKE3_FETCH_TBB=${{ matrix.os == 'windows-latest' && 'YES' || 'NO' }} -DBLAKE3_EXAMPLES=ON
+          cmake --build c/build --target install
+
+  cmake_3-9_build:
+    name: CMake 3.9.6 ubuntu-latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lukka/get-cmake@5f6e04f5267c8133f1273bf2103583fc72c46b17
+        with:
+          cmakeVersion: 3.9.6
+      - name: Create build directory
+        run: mkdir c/build
+      - name: CMake generation
+        run: cmake .. -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/target
+        working-directory: c/build
+      - name: CMake build / install
+        run: make install
+        working-directory: c/build
+
+  miri_smoketest:
+    name: Miri smoketest
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: miri
+    # Currently the test search "miri" only matches "test_miri_smoketest", but
+    # we might add more. If this accidentally picks up anything incompatible or
+    # slow, we can narrow it.
+    - run: cargo miri test miri
+
+  tbb_rust_bindings_tests:
+    name: TBB test bindings ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macOS-latest"]
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - name: install TBB
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install libtbb-dev libtbb12
+    - name: install TBB
+      if: matrix.os == 'macOS-latest'
+      run: |
+        brew install tbb
+        echo "CXXFLAGS=-I$(brew --prefix)/include $CPPFLAGS" >> $GITHUB_ENV
+        echo "RUSTFLAGS=-L$(brew --prefix)/lib $RUSTFLAGS" >> $GITHUB_ENV
+    - name: cargo test C bindings with TBB
+      run: cargo test --features=tbb
+      working-directory: ./c/blake3_c_rust_bindings

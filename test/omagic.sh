@@ -1,0 +1,19 @@
+#!/bin/bash
+. $(dirname $0)/common.inc
+
+test_cflags -static || skip
+
+cat <<EOF | $CC -c -o $t/a.o -xc - -fno-PIC
+#include <stdio.h>
+
+int main() {
+  printf("Hello world\n");
+  return 0;
+}
+EOF
+
+$CC -B. $t/a.o -o $t/exe -static -no-pie -Wl,--omagic
+readelf -W --segments $t/exe | grep -w RWE
+
+# With --omagic, text and data are packed into a single PT_LOAD segment.
+[ "$(readelf -lW $t/exe | grep -c LOAD)" = 1 ]

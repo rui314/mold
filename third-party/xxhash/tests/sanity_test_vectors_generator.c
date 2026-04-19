@@ -138,11 +138,11 @@ static void fprintf_XSUM_testdata32_t(FILE* fp, XSUM_testdata32_t const v) {
 }
 
 static void fprintf_XSUM_testdata64_t(FILE* fp, XSUM_testdata64_t const v) {
-    fprintf(fp, "{ %4d, 0x%016zXULL, 0x%016zXULL },", v.len, v.seed, v.Nresult);
+    fprintf(fp, "{ %4d, 0x%016llXULL, 0x%016llXULL },", v.len, v.seed, v.Nresult);
 }
 
 static void fprintf_XSUM_testdata128_t(FILE* fp, XSUM_testdata128_t const v) {
-    fprintf(fp, "{ %4d, 0x%016zXULL, { 0x%016zXULL, 0x%016zXULL } },",
+    fprintf(fp, "{ %4d, 0x%016llXULL, { 0x%016llXULL, 0x%016llXULL } },",
             v.len, v.seed, v.Nresult.low64, v.Nresult.high64);
 }
 
@@ -208,7 +208,7 @@ static void generate_sanity_test_vectors_xxh32(FILE* fp, size_t maxLen) {
 
     size_t index = 0;
     for(size_t len = 0; len < maxLen; ++len) {
-        static const size_t seeds[] = { 0, PRIME32 };
+        static const uint64_t seeds[] = { 0, PRIME32 };
         for(size_t iSeed = 0; iSeed < sizeof(seeds)/sizeof(seeds[0]); ++iSeed) {
             size_t const seed = seeds[iSeed];
             XSUM_testdata32_t const v = tvgen_XXH32(sanityBuffer, len, seed);
@@ -234,7 +234,7 @@ static void generate_sanity_test_vectors_xxh64(FILE* fp, size_t maxLen) {
 
     size_t index = 0;
     for(size_t len = 0; len < maxLen; ++len) {
-        static const size_t seeds[] = { 0, PRIME32 };
+        static const uint64_t seeds[] = { 0, PRIME32 };
         for(size_t iSeed = 0; iSeed < sizeof(seeds)/sizeof(seeds[0]); ++iSeed) {
             size_t const seed = seeds[iSeed];
             XSUM_testdata64_t const v = tvgen_XXH64(sanityBuffer, len, seed);
@@ -260,7 +260,7 @@ static void generate_sanity_test_vectors_xxh3(FILE* fp, size_t maxLen) {
 
     size_t index = 0;
     for(size_t len = 0; len < maxLen; ++len) {
-        static const size_t seeds[] = { 0, PRIME64 };
+        static const uint64_t seeds[] = { 0, PRIME64 };
         for(size_t iSeed = 0; iSeed < sizeof(seeds)/sizeof(seeds[0]); ++iSeed) {
             size_t const seed = seeds[iSeed];
             XSUM_testdata64_t const v = tvgen_XXH3_64bits_withSeed(sanityBuffer, len, seed);
@@ -312,7 +312,7 @@ static void generate_sanity_test_vectors_xxh128(FILE* fp, size_t maxLen) {
 
     size_t index = 0;
     for(size_t len = 0; len < maxLen; ++len) {
-        static const size_t seeds[] = { 0, PRIME32, PRIME64 };
+        static const uint64_t seeds[] = { 0, PRIME32, PRIME64 };
         for(size_t iSeed = 0; iSeed < sizeof(seeds)/sizeof(seeds[0]); ++iSeed) {
             XSUM_U64 const seed = seeds[iSeed];
             XSUM_testdata128_t const v = tvgen_XXH3_128bits_withSeed(sanityBuffer, len, seed);

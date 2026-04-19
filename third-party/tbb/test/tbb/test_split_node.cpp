@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -397,6 +397,83 @@ void test_deduction_guides() {
 
 #endif
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+void test_try_put_and_wait() {
+    tbb::task_arena arena(1);
+
+    arena.execute([] {
+        tbb::flow::graph g;
+
+        std::vector<int> start_work_items;
+        std::vector<int> processed_items1;
+        std::vector<int> processed_items2;
+        std::vector<int> new_work_items;
+        int wait_message = 10;
+
+        for (int i = 0; i < wait_message; ++i) {
+            start_work_items.emplace_back(i);
+            new_work_items.emplace_back(i + 1 + wait_message);
+        }
+
+        using tuple_type = std::tuple<int, int>;
+        tbb::flow::split_node<tuple_type> split(g);
+
+        tbb::flow::function_node<int, int> function1(g, tbb::flow::unlimited,
+            [&](int input) noexcept {
+                if (input == wait_message) {
+                    for (int item : new_work_items) {
+                        split.try_put(tuple_type{item, item});
+                    }
+                }
+                processed_items1.emplace_back(input);
+                return 0;
+            });
+
+        tbb::flow::function_node<int, int> function2(g, tbb::flow::unlimited,
+            [&](int input) noexcept {
+                processed_items2.emplace_back(input);
+                return 0;
+            });
+
+        tbb::flow::make_edge(tbb::flow::output_port<0>(split), function1);
+        tbb::flow::make_edge(tbb::flow::output_port<1>(split), function2);
+
+        for (int i = 0; i < wait_message; ++i) {
+            split.try_put(tuple_type{i, i});
+        }
+
+        split.try_put_and_wait(tuple_type{wait_message, wait_message});
+
+        std::size_t check_index1 = 0;
+        std::size_t check_index2 = 0;
+
+        // Since split node broadcasts items to successors from last to first, start_work_items tasks and wait_message would be spawned
+        // in the following order {f2 - 1} - {f1 - 1} {f2 - 2} {f1 - 2} ... {f2 - 10}{f1 - 10}
+        // and processed in reversed order
+        // Hence {f1 - wait_message} task would be processed first and it would spawn tasks for new_work_items in the same order
+        // Since new_work_items tasks would processed first and {f2 - 10} would be still in queue
+        // it is expected that during the try_put_and_wait {f1 - 10} would be processed first, then new_work_items would be processed
+        // and only when {f2 - 10} would be taken and executed, try_put_and_wait would be exitted
+        // All of the other tasks for start_work_items would be processed during wait_for_all()
+        CHECK_MESSAGE(processed_items1[check_index1++] == wait_message, "Unexpected items processing");
+
+        for (std::size_t i = new_work_items.size(); i != 0; --i) {
+            CHECK_MESSAGE(processed_items1[check_index1++] == new_work_items[i - 1], "Unexpected items processing");
+            CHECK_MESSAGE(processed_items2[check_index2++] == new_work_items[i - 1], "Unexpected items processing");
+        }
+
+        CHECK_MESSAGE(processed_items2[check_index2++] == wait_message, "Unexpected items processing");
+
+        g.wait_for_all();
+
+        for (std::size_t i = start_work_items.size(); i != 0; --i) {
+            CHECK_MESSAGE(processed_items1[check_index1++] == start_work_items[i - 1], "Unexpected items processing");
+            CHECK_MESSAGE(processed_items2[check_index2++] == start_work_items[i - 1], "Unexpected items processing");
+        }
+    });
+}
+#endif // __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+
 //! Test output ports and message passing with different input tuples
 //! \brief \ref requirement \ref error_guessing
 TEST_CASE("Tuple tests"){
@@ -446,3 +523,9 @@ TEST_CASE("Deduction guides"){
 }
 #endif
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+//! \brief \ref error_guessing
+TEST_CASE("test split_node try_put_and_wait") {
+    test_try_put_and_wait();
+}
+#endif

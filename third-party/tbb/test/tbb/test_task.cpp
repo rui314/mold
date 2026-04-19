@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@
 
 #include <atomic>
 #include <thread>
-#include <thread>
+#include <deque>
 
 //! \file test_task.cpp
 //! \brief Test for [internal] functionality
@@ -771,7 +771,8 @@ TEST_CASE("Test with priority inversion") {
 
     auto high_priority_thread_func = [&] {
         // Increase external threads priority
-        utils::increase_thread_priority();
+        utils::increased_priority_guard guard{};
+        utils::suppress_unused_warning(guard);
         // pin external threads
         test_arena.execute([]{});
         while (task_counter++ < critical_task_counter) {
@@ -785,7 +786,7 @@ TEST_CASE("Test with priority inversion") {
     // take first core on execute
     utils::SpinBarrier barrier(thread_number + 1);
     test_arena.execute([&] {
-        tbb::parallel_for(std::uint32_t(0), thread_number + 1, [&] (std::uint32_t&) {
+        tbb::parallel_for(std::uint32_t(0), thread_number + 1, [&] (std::uint32_t) {
             barrier.wait();
             submit(worker_task, test_arena, test_context, true);
         });
@@ -796,7 +797,8 @@ TEST_CASE("Test with priority inversion") {
         high_priority_threads.emplace_back(high_priority_thread_func);
     }
 
-    utils::increase_thread_priority();
+    utils::increased_priority_guard guard{};
+    utils::suppress_unused_warning(guard);
     while (task_counter++ < critical_task_counter) {
         submit(critical_task, test_arena, test_context, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -821,4 +823,82 @@ TEST_CASE("raii_guard move ctor") {
 
     tbb::detail::d0::raii_guard<decltype(func)> guard1(func);
     tbb::detail::d0::raii_guard<decltype(func)> guard2(std::move(guard1));
+}
+
+//! \brief \ref error_guessing
+TEST_CASE("Check correct arena destruction with enqueue") {
+    for (int i = 0; i < 100; ++i) {
+        tbb::task_scheduler_handle handle{ tbb::attach{} };
+        {
+            tbb::task_arena a(2, 0);
+
+            a.enqueue([] {
+                tbb::parallel_for(0, 100, [] (int) { std::this_thread::sleep_for(std::chrono::nanoseconds(10)); });
+            });
+            std::this_thread::sleep_for(std::chrono::microseconds(1));
+        }
+        tbb::finalize(handle, std::nothrow_t{});
+    }
+}
+
+//! \brief \ref regression
+TEST_CASE("Try to force Leaked proxy observers warning") {
+    int num_threads = std::thread::hardware_concurrency() * 2;
+    tbb::global_control gc(tbb::global_control::max_allowed_parallelism, num_threads);
+    tbb::task_arena arena(num_threads, 0);
+    std::deque<tbb::task_scheduler_observer> observers;
+    for (int i = 0; i < 1000; ++i) {
+        observers.emplace_back(arena);
+    }
+
+    for (auto& observer : observers) {
+        observer.observe(true);
+    }
+
+    arena.enqueue([] {
+        tbb::parallel_for(0, 100000, [] (int) {
+            utils::doDummyWork(1000);
+        });
+    });
+}
+
+//! \brief \ref error_guessing
+TEST_CASE("Force thread limit on per-thread reference_vertex") {
+    int num_threads = std::thread::hardware_concurrency();
+    int num_groups = 1000;
+
+    // Force thread limit on per-thread reference_vertex
+    std::vector<tbb::task_group> groups(num_groups);
+    tbb::parallel_for(0, num_threads, [&] (int) {
+        std::vector<tbb::task_group> local_groups(num_groups);
+        for (int i = 0; i < num_groups; ++i) {
+            groups[i].run([] {});
+            local_groups[i].run([] {});
+            local_groups[i].wait();
+        }
+    }, tbb::static_partitioner{});
+
+    // Enforce extra reference on each task_group
+    std::deque<tbb::task_handle> handles{};
+    for (int i = 0; i < num_groups; ++i) {
+        handles.emplace_back(groups[i].defer([] {}));
+    }
+
+    // Check correctness of the execution
+    tbb::task_group group;
+
+    std::atomic<int> final_sum{};
+    for (int i = 0; i < num_groups; ++i) {
+        group.run([&] { ++final_sum; });
+    }
+    group.wait();
+    REQUIRE_MESSAGE(final_sum == num_groups, "Some tasks were not executed");
+
+    for (int i = 0; i < num_groups; ++i) {
+        groups[i].run(std::move(handles[i]));
+    }
+
+    for (int i = 0; i < num_groups; ++i) {
+        groups[i].wait();
+    }
 }

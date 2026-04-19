@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ enum FOO_TYPE {
 #if _WIN32 || _WIN64
 #define TEST_EXPORT
 #else
-#define TEST_EXPORT extern "C"
+#define TEST_EXPORT extern "C" __TBB_EXPORT
 #endif /* _WIN32 || _WIN64 */
 
 // foo "implementations".

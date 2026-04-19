@@ -7,7 +7,7 @@ terms of the MIT license. A copy of the license can be found in the file
 
 /* ----------------------------------------------------------------------------
 Concurrent bitmap that can set/reset sequences of bits atomically,
-represeted as an array of fields where each field is a machine word (`size_t`)
+represented as an array of fields where each field is a machine word (`size_t`)
 
 There are two api's; the standard one cannot have sequences that cross
 between the bitmap fields (and a sequence must be <= MI_BITMAP_FIELD_BITS).
@@ -35,9 +35,13 @@ typedef mi_bitmap_field_t*  mi_bitmap_t;
 typedef size_t mi_bitmap_index_t;
 
 // Create a bit index.
+static inline mi_bitmap_index_t mi_bitmap_index_create_ex(size_t idx, size_t bitidx) {
+  mi_assert_internal(bitidx <= MI_BITMAP_FIELD_BITS);
+  return (idx*MI_BITMAP_FIELD_BITS) + bitidx;
+}
 static inline mi_bitmap_index_t mi_bitmap_index_create(size_t idx, size_t bitidx) {
   mi_assert_internal(bitidx < MI_BITMAP_FIELD_BITS);
-  return (idx*MI_BITMAP_FIELD_BITS) + bitidx;
+  return mi_bitmap_index_create_ex(idx,bitidx);
 }
 
 // Create a bit index.

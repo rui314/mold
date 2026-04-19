@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -47,7 +47,8 @@ typedef std::size_t stack_size_type;
 class governor {
 private:
     friend class __TBB_InitOnce;
-    friend class market;
+    friend class thread_dispatcher;
+    friend class threading_control_impl;
 
     // TODO: consider using thread_local (measure performance and side effects)
     //! TLS for scheduler instances associated with individual threads
@@ -136,6 +137,8 @@ public:
 #if __TBB_WAITPKG_INTRINSICS_PRESENT
     static bool wait_package_enabled() { return cpu_features.waitpkg_enabled; }
 #endif
+
+    static bool hybrid_cpu() { return cpu_features.hybrid; }
 
     static bool rethrow_exception_broken() { return is_rethrow_broken; }
 

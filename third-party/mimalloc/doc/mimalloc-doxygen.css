@@ -47,3 +47,14 @@ div.fragment {
 #nav-sync img {
 	display: none;
 }
+h1,h2,h3,h4,h5,h6 {
+	transition:none;
+}
+.memtitle {
+	background-image: none;
+	background-color: #EEE;
+}
+table.memproto, .memproto {
+	text-shadow: none;
+	font-size: 110%;
+}

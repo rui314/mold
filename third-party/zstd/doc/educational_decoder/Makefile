@@ -1,5 +1,5 @@
 # ################################################################
-# Copyright (c) Yann Collet, Facebook, Inc.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
 # This source code is licensed under both the BSD-style license (found in the
@@ -10,7 +10,7 @@
 
 ZSTD ?= zstd   # note: requires zstd installation on local system
 
-UNAME?= $(shell uname)
+UNAME?= $(shell sh -c 'MSYSTEM="MSYS" uname') 
 ifeq ($(UNAME), SunOS)
 DIFF ?= gdiff
 else

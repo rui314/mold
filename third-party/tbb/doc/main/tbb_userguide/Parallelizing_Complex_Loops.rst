@@ -5,7 +5,7 @@ Parallelizing Complex Loops
 
 
 You can successfully parallelize many applications using only the
-constructs in the **Parallelizing Simple Loops** section. However, some
+constructs in the :ref:`Parallelizing_Simple_Loops` section. However, some
 situations call for other parallel patterns. This section describes the
 support for some of these alternate patterns.
 

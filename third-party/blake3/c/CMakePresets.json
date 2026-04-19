@@ -1,0 +1,73 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 22,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}"
+        },
+        {
+            "name": "msvc",
+            "hidden": true,
+            "generator": "Visual Studio 17 2022",
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": [
+                        "Windows"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "x64-windows-msvc",
+            "inherits": [
+                "msvc",
+                "base"
+            ],
+            "architecture": "x64"
+        },
+        {
+            "name": "x86-windows-msvc",
+            "inherits": [
+                "msvc",
+                "base"
+            ],
+            "architecture": "Win32"
+        },
+        {
+            "name": "arm64-windows-msvc",
+            "inherits": [
+                "msvc",
+                "base"
+            ],
+            "architecture": "ARM64"
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "x64-windows-msvc-debug",
+            "configurePreset": "x64-windows-msvc",
+            "configuration": "Debug"
+        },
+        {
+            "name": "x64-windows-msvc-release",
+            "configurePreset": "x64-windows-msvc",
+            "configuration": "RelWithDebInfo"
+        },
+        {
+            "name": "x86-windows-msvc-debug",
+            "configurePreset": "x86-windows-msvc",
+            "configuration": "Debug"
+        },
+        {
+            "name": "x86-windows-msvc-release",
+            "configurePreset": "x86-windows-msvc",
+            "configuration": "RelWithDebInfo"
+        }
+    ]
+}

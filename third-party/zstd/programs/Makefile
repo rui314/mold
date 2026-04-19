@@ -1,5 +1,5 @@
 # ################################################################
-# Copyright (c) Yann Collet, Facebook, Inc.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
 # This source code is licensed under both the BSD-style license (found in the
@@ -15,12 +15,11 @@
 # zstd-decompress : decompressor-only version of zstd
 # ##########################################################################
 
-.PHONY: default
-default: zstd-release
+# default target (when running `make` with no argument)
+zstd-release:
 
-LIBZSTD := ../lib
-
-include $(LIBZSTD)/libzstd.mk
+LIBZSTD_MK_DIR = ../lib
+include $(LIBZSTD_MK_DIR)/libzstd.mk
 
 ifeq ($(shell $(CC) -v 2>&1 | $(GREP) -c "gcc version "), 1)
   ALIGN_LOOP = -falign-loops=32
@@ -129,10 +128,10 @@ SET_CACHE_DIRECTORY = \
 
 
 .PHONY: all
-all: zstd
+all: zstd zstd-compress zstd-decompress zstd-small
 
 .PHONY: allVariants
-allVariants: zstd zstd-compress zstd-decompress zstd-small zstd-frugal zstd-nolegacy zstd-dictBuilder
+allVariants: all zstd-frugal zstd-nolegacy zstd-dictBuilder
 
 .PHONY: zstd  # must always be run
 zstd : CPPFLAGS += $(THREAD_CPP) $(ZLIBCPP) $(LZMACPP) $(LZ4CPP)
@@ -180,11 +179,13 @@ zstd : $(BUILD_DIR)/zstd
 endif  # BUILD_DIR
 
 
+CLEAN += zstd
 .PHONY: zstd-release
 zstd-release: DEBUGFLAGS := -DBACKTRACE_ENABLE=0
 zstd-release: DEBUGFLAGS_LD :=
 zstd-release: zstd
 
+CLEAN += zstd32
 zstd32 : CPPFLAGS += $(THREAD_CPP)
 zstd32 : LDFLAGS  += $(THREAD_LD)
 zstd32 : CPPFLAGS += -DZSTD_LEGACY_SUPPORT=$(ZSTD_LEGACY_SUPPORT)
@@ -194,7 +195,8 @@ endif
 zstd32 : $(ZSTDLIB_FULL_SRC) $(ZSTD_CLI_SRC)
 	$(CC) -m32 $(FLAGS) $^ -o $@$(EXT)
 
-## zstd-nolegacy: same scope as zstd, with just support of legacy formats removed
+## zstd-nolegacy: same scope as zstd, with removed support of legacy formats
+CLEAN += zstd-nolegacy
 zstd-nolegacy : LDFLAGS += $(THREAD_LD) $(ZLIBLD) $(LZMALD) $(LZ4LD) $(DEBUGFLAGS_LD)
 zstd-nolegacy : CPPFLAGS += -UZSTD_LEGACY_SUPPORT -DZSTD_LEGACY_SUPPORT=0
 zstd-nolegacy : $(ZSTDLIB_CORE_SRC) $(ZDICT_SRC) $(ZSTD_CLI_OBJ)
@@ -220,42 +222,54 @@ zstd-noxz : zstd
 
 ## zstd-dll: zstd executable linked to dynamic library libzstd (must have same version)
 .PHONY: zstd-dll
-zstd-dll : LDFLAGS+= -L$(LIBZSTD)
+zstd-dll : LDFLAGS+= -L$(LIB_BINDIR)
 zstd-dll : LDLIBS += -lzstd
-zstd-dll : ZSTDLIB_LOCAL_SRC = xxhash.c
+zstd-dll : ZSTDLIB_LOCAL_SRC = xxhash.c pool.c threading.c
 zstd-dll : zstd
 
 
 ## zstd-pgo: zstd executable optimized with PGO.
 .PHONY: zstd-pgo
+zstd-pgo : LLVM_PROFDATA?=llvm-profdata
+zstd-pgo : PROF_GENERATE_FLAGS=-fprofile-generate $(if $(findstring gcc,$(CC)),-fprofile-dir=.)
+zstd-pgo : PROF_USE_FLAGS=-fprofile-use $(if $(findstring gcc,$(CC)),-fprofile-dir=. -Wno-error=missing-profile -Wno-error=coverage-mismatch)
 zstd-pgo :
-	$(MAKE) clean
-	$(MAKE) zstd MOREFLAGS=-fprofile-generate
+	$(MAKE) clean HASH_DIR=$(HASH_DIR)
+	$(MAKE) zstd HASH_DIR=$(HASH_DIR) MOREFLAGS="$(PROF_GENERATE_FLAGS)"
 	./zstd -b19i1 $(PROFILE_WITH)
 	./zstd -b16i1 $(PROFILE_WITH)
 	./zstd -b9i2 $(PROFILE_WITH)
 	./zstd -b $(PROFILE_WITH)
 	./zstd -b7i2 $(PROFILE_WITH)
 	./zstd -b5 $(PROFILE_WITH)
-	$(RM) zstd *.o
-	case $(CC) in *clang*) if ! [ -e default.profdata ]; then llvm-profdata merge -output=default.profdata default*.profraw; fi ;; esac
-	$(MAKE) zstd MOREFLAGS=-fprofile-use
+ifndef BUILD_DIR
+	$(RM) zstd obj/$(HASH_DIR)/zstd obj/$(HASH_DIR)/*.o
+else
+	$(RM) zstd $(BUILD_DIR)/zstd $(BUILD_DIR)/*.o
+endif
+	case $(CC) in *clang*) if ! [ -e default.profdata ]; then $(LLVM_PROFDATA) merge -output=default.profdata default*.profraw; fi ;; esac
+	$(MAKE) zstd HASH_DIR=$(HASH_DIR) MOREFLAGS="$(PROF_USE_FLAGS)"
 
 ## zstd-small: minimal target, supporting only zstd compression and decompression. no bench. no legacy. no other format.
-zstd-small: CFLAGS = -Os -s
-zstd-frugal zstd-small: $(ZSTDLIB_CORE_SRC) zstdcli.c util.c timefn.c fileio.c
+CLEAN += zstd-small zstd-frugal
+zstd-small: CFLAGS = -Os -Wl,-s
+zstd-frugal zstd-small: $(ZSTDLIB_CORE_SRC) zstdcli.c util.c timefn.c fileio.c fileio_asyncio.c
 	$(CC) $(FLAGS) -DZSTD_NOBENCH -DZSTD_NODICT -DZSTD_NOTRACE -UZSTD_LEGACY_SUPPORT -DZSTD_LEGACY_SUPPORT=0 $^ -o $@$(EXT)
 
-zstd-decompress: $(ZSTDLIB_COMMON_SRC) $(ZSTDLIB_DECOMPRESS_SRC) zstdcli.c util.c timefn.c fileio.c
+CLEAN += zstd-decompress
+zstd-decompress: $(ZSTDLIB_COMMON_SRC) $(ZSTDLIB_DECOMPRESS_SRC) zstdcli.c util.c timefn.c fileio.c fileio_asyncio.c
 	$(CC) $(FLAGS) -DZSTD_NOBENCH -DZSTD_NODICT -DZSTD_NOCOMPRESS -DZSTD_NOTRACE -UZSTD_LEGACY_SUPPORT -DZSTD_LEGACY_SUPPORT=0 $^ -o $@$(EXT)
 
-zstd-compress: $(ZSTDLIB_COMMON_SRC) $(ZSTDLIB_COMPRESS_SRC) zstdcli.c util.c timefn.c fileio.c
+CLEAN += zstd-compress
+zstd-compress: $(ZSTDLIB_COMMON_SRC) $(ZSTDLIB_COMPRESS_SRC) zstdcli.c util.c timefn.c fileio.c fileio_asyncio.c
 	$(CC) $(FLAGS) -DZSTD_NOBENCH -DZSTD_NODICT -DZSTD_NODECOMPRESS -DZSTD_NOTRACE -UZSTD_LEGACY_SUPPORT -DZSTD_LEGACY_SUPPORT=0 $^ -o $@$(EXT)
 
 ## zstd-dictBuilder: executable supporting dictionary creation and compression (only)
-zstd-dictBuilder: $(ZSTDLIB_COMMON_SRC) $(ZSTDLIB_COMPRESS_SRC) $(ZDICT_SRC) zstdcli.c util.c timefn.c fileio.c dibio.c
+CLEAN += zstd-dictBuilder
+zstd-dictBuilder: $(ZSTDLIB_COMMON_SRC) $(ZSTDLIB_COMPRESS_SRC) $(ZDICT_SRC) zstdcli.c util.c timefn.c fileio.c fileio_asyncio.c dibio.c
 	$(CC) $(FLAGS) -DZSTD_NOBENCH -DZSTD_NODECOMPRESS -DZSTD_NOTRACE $^ -o $@$(EXT)
 
+CLEAN += zstdmt
 zstdmt: zstd
 	ln -sf zstd zstdmt
 
@@ -264,7 +278,7 @@ generate_res: $(RES64_FILE) $(RES32_FILE)
 
 ifneq (,$(filter Windows%,$(OS)))
 RC ?= windres
-# http://stackoverflow.com/questions/708238/how-do-i-add-an-icon-to-a-mingw-gcc-compiled-executable
+# https://stackoverflow.com/questions/708238/how-do-i-add-an-icon-to-a-mingw-gcc-compiled-executable
 $(RES64_FILE): windres/zstd.rc
 	$(RC) -o $@ -I ../lib -I windres -i $< -O coff -F pe-x86-64
 $(RES32_FILE): windres/zstd.rc
@@ -273,12 +287,8 @@ endif
 
 .PHONY: clean
 clean:
-	$(RM) core *.o tmp* result* *.gcda dictionary *.zst \
-        zstd$(EXT) zstd32$(EXT) zstd-dll$(EXT) \
-        zstd-compress$(EXT) zstd-decompress$(EXT) \
-        zstd-small$(EXT) zstd-frugal$(EXT) zstd-nolegacy$(EXT) zstd4$(EXT) \
-        zstd-dictBuilder$(EXT) \
-        *.gcda default*.profraw default.profdata have_zlib$(EXT)
+	$(RM) $(CLEAN) core *.o tmp* result* dictionary *.zst \
+        *.gcda default*.profraw default.profdata have_zlib
 	$(RM) -r obj/*
 	@echo Cleaning completed
 
@@ -335,11 +345,11 @@ include $(wildcard $(DEPFILES))
 #-----------------------------------------------------------------------------
 # make install is validated only for Linux, macOS, BSD, Hurd and Solaris targets
 #-----------------------------------------------------------------------------
-ifneq (,$(filter $(UNAME),Linux Darwin GNU/kFreeBSD GNU OpenBSD FreeBSD NetBSD DragonFly SunOS Haiku AIX))
+ifneq (,$(filter Linux Darwin GNU/kFreeBSD GNU OpenBSD FreeBSD NetBSD DragonFly SunOS Haiku AIX MSYS_NT% CYGWIN_NT%,$(UNAME)))
 
 HAVE_COLORNEVER = $(shell echo a | egrep --color=never a > /dev/null 2> /dev/null && echo 1 || echo 0)
 EGREP_OPTIONS ?=
-ifeq ($HAVE_COLORNEVER, 1)
+ifeq ($(HAVE_COLORNEVER), 1)
   EGREP_OPTIONS += --color=never
 endif
 EGREP = egrep $(EGREP_OPTIONS)
@@ -378,14 +388,14 @@ datarootdir ?= $(PREFIX)/share
 mandir      ?= $(datarootdir)/man
 man1dir     ?= $(mandir)/man1
 
-ifneq (,$(filter $(UNAME),OpenBSD FreeBSD NetBSD DragonFly SunOS))
+ifneq (,$(filter OpenBSD NetBSD DragonFly SunOS,$(UNAME)))
   MANDIR  ?= $(PREFIX)/man
   MAN1DIR ?= $(MANDIR)/man1
 else
   MAN1DIR ?= $(man1dir)
 endif
 
-ifneq (,$(filter $(UNAME),SunOS))
+ifneq (,$(filter SunOS,$(UNAME)))
   INSTALL ?= ginstall
 else
   INSTALL ?= install

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -52,7 +52,7 @@ struct sum_node;
 
 #if __TBB_CPP20_CONCEPTS_PRESENT
 } // namespace d1
-namespace d0 {
+inline namespace d0 {
 
 template <typename Body, typename Range>
 concept parallel_scan_body = splittable<Body> &&
@@ -64,16 +64,18 @@ concept parallel_scan_body = splittable<Body> &&
                              };
 
 template <typename Function, typename Range, typename Value>
-concept parallel_scan_function = requires( const std::remove_reference_t<Function>& func,
-                                           const Range& range, const Value& value ) {
-    { func(range, value, true) } -> std::convertible_to<Value>;
-};
+concept parallel_scan_function = std::invocable<const std::remove_reference_t<Function>&,
+                                                const Range&, const Value&, bool> &&
+                                 std::convertible_to<std::invoke_result_t<const std::remove_reference_t<Function>&,
+                                                                          const Range&, const Value&, bool>,
+                                                     Value>;
 
 template <typename Combine, typename Value>
-concept parallel_scan_combine = requires( const std::remove_reference_t<Combine>& combine,
-                                          const Value& lhs, const Value& rhs ) {
-    { combine(lhs, rhs) } -> std::convertible_to<Value>;
-};
+concept parallel_scan_combine = std::invocable<const std::remove_reference_t<Combine>&,
+                                               const Value&, const Value&> &&
+                                std::convertible_to<std::invoke_result_t<const std::remove_reference_t<Combine>&,
+                                                                         const Value&, const Value&>,
+                                                    Value>;
 
 } // namespace d0
 namespace d1 {
@@ -519,11 +521,11 @@ public:
 
     template<typename Tag>
     void operator()( const Range& r, Tag tag ) {
-        m_sum_slot = m_scan(r, m_sum_slot, tag);
+        m_sum_slot = tbb::detail::invoke(m_scan, r, m_sum_slot, tag);
     }
 
     void reverse_join( lambda_scan_body& a ) {
-        m_sum_slot = m_reverse_join(a.m_sum_slot, m_sum_slot);
+        m_sum_slot = tbb::detail::invoke(m_reverse_join, a.m_sum_slot, m_sum_slot);
     }
 
     void assign( lambda_scan_body& b ) {
@@ -560,7 +562,7 @@ public:
 template<typename Range, typename Body>
     __TBB_requires(tbb_range<Range> && parallel_scan_body<Body, Range>)
 void parallel_scan( const Range& range, Body& body ) {
-    start_scan<Range, Body, auto_partitioner>::run(range,body,__TBB_DEFAULT_PARTITIONER());
+    start_scan<Range, Body, __TBB_DEFAULT_PARTITIONER>::run(range,body,__TBB_DEFAULT_PARTITIONER());
 }
 
 //! Parallel prefix with simple_partitioner
@@ -626,4 +628,3 @@ inline namespace v1 {
 } // namespace tbb
 
 #endif /* __TBB_parallel_scan_H */
-

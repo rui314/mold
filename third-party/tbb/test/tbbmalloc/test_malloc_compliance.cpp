@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -29,6 +29,10 @@
 #include "common/memory_usage.h"
 
 #include "oneapi/tbb/detail/_config.h"
+
+// There is no RLIMIT_AS on OpenBSD.
+// Therefore, the tests for memory limit is unreasonable.
+#if !__OpenBSD__
 
 #define __TBB_NO_IMPLICIT_LINKAGE 1
 #include "tbb/scalable_allocator.h"
@@ -1091,3 +1095,4 @@ TEST_CASE("MAIN TEST") {
 }
 
 #endif /* __TBB_WIN8UI_SUPPORT	 */
+#endif /* Enable test */

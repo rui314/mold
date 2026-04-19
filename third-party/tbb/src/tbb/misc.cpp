@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -92,6 +92,8 @@ void PrintExtraVersionInfo( const char* category, const char* format, ... ) {
 //! check for transaction support.
 #if _MSC_VER
 #include <intrin.h> // for __cpuid
+#elif __APPLE__
+#include <sys/sysctl.h>
 #endif
 
 #if __TBB_x86_32 || __TBB_x86_64
@@ -131,13 +133,22 @@ void detect_cpu_features(cpu_features_type& cpu_features) {
 #if __TBB_x86_32 || __TBB_x86_64
     const int rtm_ebx_mask = 1 << 11;
     const int waitpkg_ecx_mask = 1 << 5;
+    const int hybrid_edx_mask = 1 << 15;
     int registers[4] = {0};
 
-    // Check RTM and WAITPKG
+    // Check RTM, WAITPKG, HYBRID
     check_cpuid(7, 0, registers);
     cpu_features.rtm_enabled = (registers[1] & rtm_ebx_mask) != 0;
     cpu_features.waitpkg_enabled = (registers[2] & waitpkg_ecx_mask) != 0;
-#endif /* (__TBB_x86_32 || __TBB_x86_64) */
+    cpu_features.hybrid = (registers[3] & hybrid_edx_mask) != 0;
+#elif __APPLE__
+    // Check HYBRID (hw.nperflevels > 1)
+    uint64_t nperflevels = 0;
+    size_t nperflevels_size = sizeof(nperflevels);
+    if (!sysctlbyname("hw.nperflevels", &nperflevels, &nperflevels_size, nullptr, 0)) {
+        cpu_features.hybrid = (nperflevels > 1);
+    }
+#endif
 }
 
 } // namespace r1

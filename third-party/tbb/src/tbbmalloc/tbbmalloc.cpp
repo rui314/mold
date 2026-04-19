@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ namespace internal {
 #if _WIN32||_WIN64
 #define MALLOCLIB_NAME "tbbmalloc" DEBUG_SUFFIX ".dll"
 #elif __APPLE__
-#define MALLOCLIB_NAME "libtbbmalloc" DEBUG_SUFFIX ".dylib"
+#define MALLOCLIB_NAME "libtbbmalloc" DEBUG_SUFFIX ".2.dylib"
 #elif __FreeBSD__ || __NetBSD__ || __OpenBSD__ || __sun || _AIX || __ANDROID__
 #define MALLOCLIB_NAME "libtbbmalloc" DEBUG_SUFFIX ".so"
 #elif __unix__
@@ -67,6 +67,7 @@ void init_tbbmalloc() {
                                  |GET_MODULE_HANDLE_EX_FLAG_PIN,
                                  (LPCTSTR)&scalable_malloc, &lib);
     MALLOC_ASSERT(lib && ret, "Allocator can't find itself.");
+    tbb::detail::suppress_unused_warning(ret);
     SetErrorMode (prev_mode);
 #endif /* USE_PTHREAD && !__TBB_SOURCE_DIRECTLY_INCLUDED */
 }
@@ -97,6 +98,10 @@ struct RegisterProcessShutdownNotification {
         // MALLOC_ASSERT(ret, "Allocator can't load itself.");
         dlopen(MALLOCLIB_NAME, RTLD_NOW);
     }
+
+    RegisterProcessShutdownNotification(RegisterProcessShutdownNotification&) = delete;
+    RegisterProcessShutdownNotification& operator=(const RegisterProcessShutdownNotification&) = delete;
+
     ~RegisterProcessShutdownNotification() {
         __TBB_mallocProcessShutdownNotification(false);
     }

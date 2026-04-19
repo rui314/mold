@@ -1,3 +1,8 @@
+[This document was written in 2020, and the contents are outdated.
+Specifically, we no longer believe that object preloading is a good
+idea. That being said, most of the points in this document still hold
+even today. Therefore, I'll keep this document as-is.]
+
 ## Design and implementation of mold
 
 For the rest of this documentation, I'll explain the design and the

@@ -1,5 +1,5 @@
 # ################################################################
-# Copyright (c) Yann Collet, Facebook, Inc.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
 # This source code is licensed under both the BSD-style license (found in the
@@ -7,6 +7,9 @@
 # in the COPYING file in the root directory of this source tree).
 # You may select, at your option, one of the above-listed licenses.
 # ################################################################
+
+# default target (when running `make` with no argument)
+lib-release:
 
 # Modules
 ZSTD_LIB_COMPRESSION ?= 1
@@ -54,13 +57,14 @@ VERSION := $(ZSTD_VERSION)
 # Note: by default, the static library is built single-threaded and dynamic library is built
 # multi-threaded. It is possible to force multi or single threaded builds by appending
 # -mt or -nomt to the build target (like lib-mt for multi-threaded, lib-nomt for single-threaded).
-.PHONY: default
-default: lib-release
+
 
 CPPFLAGS_DYNLIB  += -DZSTD_MULTITHREAD # dynamic library build defaults to multi-threaded
 LDFLAGS_DYNLIB   += -pthread
-CPPFLAGS_STATLIB +=                    # static library build defaults to single-threaded
+CPPFLAGS_STATICLIB +=                  # static library build defaults to single-threaded
 
+# pkg-config Libs.private points to LDFLAGS_DYNLIB
+PCLIB := $(LDFLAGS_DYNLIB)
 
 ifeq ($(findstring GCC,$(CCVER)),GCC)
 decompress/zstd_decompress_block.o : CFLAGS+=-fno-tree-vectorize
@@ -69,13 +73,15 @@ endif
 
 # macOS linker doesn't support -soname, and use different extension
 # see : https://developer.apple.com/library/mac/documentation/DeveloperTools/Conceptual/DynamicLibraries/100-Articles/DynamicLibraryDesignGuidelines.html
-ifeq ($(UNAME), Darwin)
+UNAME_TARGET_SYSTEM ?= $(UNAME)
+
+ifeq ($(UNAME_TARGET_SYSTEM), Darwin)
   SHARED_EXT = dylib
   SHARED_EXT_MAJOR = $(LIBVER_MAJOR).$(SHARED_EXT)
   SHARED_EXT_VER = $(LIBVER).$(SHARED_EXT)
   SONAME_FLAGS = -install_name $(LIBDIR)/libzstd.$(SHARED_EXT_MAJOR) -compatibility_version $(LIBVER_MAJOR) -current_version $(LIBVER)
 else
-  ifeq ($(UNAME), AIX)
+  ifeq ($(UNAME_TARGET_SYSTEM), AIX)
     SONAME_FLAGS =
   else
     SONAME_FLAGS = -Wl,-soname=libzstd.$(SHARED_EXT).$(LIBVER_MAJOR)
@@ -91,7 +97,7 @@ all: lib
 
 
 .PHONY: libzstd.a  # must be run every time
-libzstd.a: CPPFLAGS += $(CPPFLAGS_STATLIB)
+libzstd.a: CPPFLAGS += $(CPPFLAGS_STATICLIB)
 
 SET_CACHE_DIRECTORY = \
    +$(MAKE) --no-print-directory $@ \
@@ -109,19 +115,19 @@ libzstd.a:
 else
 # BUILD_DIR is defined
 
-ZSTD_STATLIB_DIR := $(BUILD_DIR)/static
-ZSTD_STATLIB := $(ZSTD_STATLIB_DIR)/libzstd.a
-ZSTD_STATLIB_OBJ := $(addprefix $(ZSTD_STATLIB_DIR)/,$(ZSTD_LOCAL_OBJ))
-$(ZSTD_STATLIB): ARFLAGS = rcs
-$(ZSTD_STATLIB): | $(ZSTD_STATLIB_DIR)
-$(ZSTD_STATLIB): $(ZSTD_STATLIB_OBJ)
+ZSTD_STATICLIB_DIR := $(BUILD_DIR)/static
+ZSTD_STATICLIB := $(ZSTD_STATICLIB_DIR)/libzstd.a
+ZSTD_STATICLIB_OBJ := $(addprefix $(ZSTD_STATICLIB_DIR)/,$(ZSTD_LOCAL_OBJ))
+$(ZSTD_STATICLIB): ARFLAGS = rcs
+$(ZSTD_STATICLIB): | $(ZSTD_STATICLIB_DIR)
+$(ZSTD_STATICLIB): $(ZSTD_STATICLIB_OBJ)
   # Check for multithread flag at target execution time
 	$(if $(filter -DZSTD_MULTITHREAD,$(CPPFLAGS)),\
     @echo compiling multi-threaded static library $(LIBVER),\
     @echo compiling single-threaded static library $(LIBVER))
 	$(AR) $(ARFLAGS) $@ $^
 
-libzstd.a: $(ZSTD_STATLIB)
+libzstd.a: $(ZSTD_STATICLIB)
 	cp -f $< $@
 
 endif
@@ -182,14 +188,17 @@ lib : libzstd.a libzstd
 # make does not consider implicit pattern rule for .PHONY target
 
 %-mt : CPPFLAGS_DYNLIB  := -DZSTD_MULTITHREAD
-%-mt : CPPFLAGS_STATLIB := -DZSTD_MULTITHREAD
+%-mt : CPPFLAGS_STATICLIB := -DZSTD_MULTITHREAD
 %-mt : LDFLAGS_DYNLIB   := -pthread
+%-mt : PCLIB :=
+%-mt : PCMTLIB := $(LDFLAGS_DYNLIB)
 %-mt : %
 	@echo multi-threaded build completed
 
 %-nomt : CPPFLAGS_DYNLIB  :=
 %-nomt : LDFLAGS_DYNLIB   :=
-%-nomt : CPPFLAGS_STATLIB :=
+%-nomt : CPPFLAGS_STATICLIB :=
+%-nomt : PCLIB :=
 %-nomt : %
 	@echo single-threaded build completed
 
@@ -200,42 +209,52 @@ lib : libzstd.a libzstd
 
 # Generate .h dependencies automatically
 
-DEPFLAGS = -MT $@ -MMD -MP -MF
+# -MMD: compiler generates dependency information as a side-effect of compilation, without system headers
+# -MP: adds phony target for each dependency other than main file.
+DEPFLAGS = -MMD -MP
 
-$(ZSTD_DYNLIB_DIR)/%.o : %.c $(ZSTD_DYNLIB_DIR)/%.d | $(ZSTD_DYNLIB_DIR)
+# ensure that ZSTD_DYNLIB_DIR exists prior to generating %.o
+$(ZSTD_DYNLIB_DIR)/%.o : %.c | $(ZSTD_DYNLIB_DIR)
 	@echo CC $@
-	$(COMPILE.c) $(DEPFLAGS) $(ZSTD_DYNLIB_DIR)/$*.d $(OUTPUT_OPTION) $<
+	$(COMPILE.c) $(DEPFLAGS) $(OUTPUT_OPTION) $<
 
-$(ZSTD_STATLIB_DIR)/%.o : %.c $(ZSTD_STATLIB_DIR)/%.d | $(ZSTD_STATLIB_DIR)
+$(ZSTD_STATICLIB_DIR)/%.o : %.c | $(ZSTD_STATICLIB_DIR)
 	@echo CC $@
-	$(COMPILE.c) $(DEPFLAGS) $(ZSTD_STATLIB_DIR)/$*.d $(OUTPUT_OPTION) $<
+	$(COMPILE.c) $(DEPFLAGS) $(OUTPUT_OPTION) $<
 
 $(ZSTD_DYNLIB_DIR)/%.o : %.S | $(ZSTD_DYNLIB_DIR)
 	@echo AS $@
 	$(COMPILE.S) $(OUTPUT_OPTION) $<
 
-$(ZSTD_STATLIB_DIR)/%.o : %.S | $(ZSTD_STATLIB_DIR)
+$(ZSTD_STATICLIB_DIR)/%.o : %.S | $(ZSTD_STATICLIB_DIR)
 	@echo AS $@
 	$(COMPILE.S) $(OUTPUT_OPTION) $<
 
-MKDIR ?= mkdir
-$(BUILD_DIR) $(ZSTD_DYNLIB_DIR) $(ZSTD_STATLIB_DIR):
-	$(MKDIR) -p $@
+MKDIR ?= mkdir -p
+$(BUILD_DIR) $(ZSTD_DYNLIB_DIR) $(ZSTD_STATICLIB_DIR):
+	$(MKDIR) $@
 
-DEPFILES := $(ZSTD_DYNLIB_OBJ:.o=.d) $(ZSTD_STATLIB_OBJ:.o=.d)
+DEPFILES := $(ZSTD_DYNLIB_OBJ:.o=.d) $(ZSTD_STATICLIB_OBJ:.o=.d)
 $(DEPFILES):
 
-include $(wildcard $(DEPFILES))
+# The leading '-' means: do not fail is include fails (ex: directory does not exist yet)
+-include $(wildcard $(DEPFILES))
 
 
-# Special case : building library in single-thread mode _and_ without zstdmt_compress.c
-ZSTDMT_FILES = compress/zstdmt_compress.c
-ZSTD_NOMT_FILES = $(filter-out $(ZSTDMT_FILES),$(ZSTD_FILES))
+# Special case : build library in single-thread mode _and_ without zstdmt_compress.c
+# Note : we still need threading.c and pool.c for the dictionary builder,
+# but they will correctly behave single-threaded.
+ZSTDMT_FILES = zstdmt_compress.c
+ZSTD_NOMT_FILES = $(filter-out $(ZSTDMT_FILES),$(notdir $(ZSTD_FILES)))
 libzstd-nomt: CFLAGS += -fPIC -fvisibility=hidden
 libzstd-nomt: LDFLAGS += -shared
 libzstd-nomt: $(ZSTD_NOMT_FILES)
 	@echo compiling single-thread dynamic library $(LIBVER)
 	@echo files : $(ZSTD_NOMT_FILES)
+	@if echo "$(ZSTD_NOMT_FILES)" | tr ' ' '\n' | $(GREP) -q zstdmt; then \
+        echo "Error: Found zstdmt in list."; \
+        exit 1; \
+    fi
 	$(CC) $(FLAGS) $^ $(LDFLAGS) $(SONAME_FLAGS) -o $@
 
 .PHONY: clean
@@ -249,7 +268,7 @@ clean:
 #-----------------------------------------------------------------------------
 # make install is validated only for below listed environments
 #-----------------------------------------------------------------------------
-ifneq (,$(filter $(UNAME),Linux Darwin GNU/kFreeBSD GNU OpenBSD FreeBSD NetBSD DragonFly SunOS Haiku AIX))
+ifneq (,$(filter Linux Darwin GNU/kFreeBSD GNU OpenBSD FreeBSD NetBSD DragonFly SunOS Haiku AIX MSYS_NT% CYGWIN_NT%,$(UNAME)))
 
 lib: libzstd.pc
 
@@ -280,13 +299,21 @@ PCLIBPREFIX := $(if $(findstring $(LIBDIR),$(PCLIBDIR)),,$${exec_prefix})
 # to PREFIX, rather than as a resolved value.
 PCEXEC_PREFIX := $(if $(HAS_EXPLICIT_EXEC_PREFIX),$(EXEC_PREFIX),$${prefix})
 
-ifneq (,$(filter $(UNAME),FreeBSD NetBSD DragonFly))
+
+ifneq ($(MT),)
+  PCLIB :=
+  PCMTLIB := $(LDFLAGS_DYNLIB)
+else
+  PCLIB := $(LDFLAGS_DYNLIB)
+endif
+
+ifneq (,$(filter FreeBSD NetBSD DragonFly,$(UNAME)))
   PKGCONFIGDIR ?= $(PREFIX)/libdata/pkgconfig
 else
   PKGCONFIGDIR ?= $(LIBDIR)/pkgconfig
 endif
 
-ifneq (,$(filter $(UNAME),SunOS))
+ifneq (,$(filter SunOS,$(UNAME)))
   INSTALL ?= ginstall
 else
   INSTALL ?= install
@@ -296,15 +323,20 @@ INSTALL_PROGRAM ?= $(INSTALL)
 INSTALL_DATA    ?= $(INSTALL) -m 644
 
 
+# pkg-config library define.
+# For static single-threaded library declare -pthread in Libs.private
+# For static multi-threaded library declare -pthread in Libs and Cflags
+.PHONY: libzstd.pc
 libzstd.pc: libzstd.pc.in
 	@echo creating pkgconfig
-	@sed $(SED_ERE_OPT) \
+	@sed \
 	        -e 's|@PREFIX@|$(PREFIX)|' \
 	        -e 's|@EXEC_PREFIX@|$(PCEXEC_PREFIX)|' \
 	        -e 's|@INCLUDEDIR@|$(PCINCPREFIX)$(PCINCDIR)|' \
 	        -e 's|@LIBDIR@|$(PCLIBPREFIX)$(PCLIBDIR)|' \
 	        -e 's|@VERSION@|$(VERSION)|' \
-	        -e 's|@LIBS_PRIVATE@|$(LDFLAGS_DYNLIB)|' \
+	        -e 's|@LIBS_MT@|$(PCMTLIB)|' \
+	        -e 's|@LIBS_PRIVATE@|$(PCLIB)|' \
 	        $< >$@
 
 .PHONY: install

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -24,14 +24,14 @@
 
 namespace tbb {
 namespace detail {
-namespace d1 {
+namespace d2 {
 
 template <typename Key, typename T, typename Hash, typename KeyEqual, typename Allocator, bool AllowMultimapping>
 struct concurrent_unordered_map_traits {
     using value_type = std::pair<const Key, T>;
     using key_type = Key;
     using allocator_type = Allocator;
-    using hash_compare_type = hash_compare<Key, Hash, KeyEqual>;
+    using hash_compare_type = d1::hash_compare<Key, Hash, KeyEqual>;
     static constexpr bool allow_multimapping = AllowMultimapping;
 
     static constexpr const key_type& get_key( const value_type& value ) {
@@ -399,13 +399,13 @@ void swap( concurrent_unordered_multimap<Key, T, Hash, KeyEqual, Allocator>& lhs
     lhs.swap(rhs);
 }
 
-} // namespace d1
+} // namespace d2
 } // namespace detail
 
 inline namespace v1 {
 
-using detail::d1::concurrent_unordered_map;
-using detail::d1::concurrent_unordered_multimap;
+using detail::d2::concurrent_unordered_map;
+using detail::d2::concurrent_unordered_multimap;
 using detail::split;
 
 } // inline namespace v1

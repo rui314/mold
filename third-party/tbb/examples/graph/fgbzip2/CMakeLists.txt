@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2025 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cmake_minimum_required(VERSION 3.1)
+cmake_minimum_required(VERSION 3.5.0...3.31.3)
 
 project(fgbzip2 CXX)
 
@@ -38,7 +38,7 @@ if (MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL IntelLLVM)
     target_compile_options(fgbzip2 PRIVATE -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE)
 endif()
 
-if (MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL Intel)
+if (MSVC AND (CMAKE_CXX_COMPILER_ID STREQUAL Intel OR CMAKE_CXX_COMPILER_ID STREQUAL IntelLLVM))
     if (COMMAND target_link_options)
         target_link_options(fgbzip2 PRIVATE /FORCE:MULTIPLE /INCREMENTAL:NO)
     else()

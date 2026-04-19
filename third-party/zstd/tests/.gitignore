@@ -12,6 +12,7 @@ zstreamtest
 zstreamtest32
 zstreamtest_asan
 zstreamtest_tsan
+zstreamtest_ubsan
 zstreamtest-dll
 datagen
 paramgrill
@@ -66,3 +67,6 @@ speedTest.pid
 *.exe
 *.out
 *.app
+
+# Specific exclusions
+!golden-decompression/*.zst

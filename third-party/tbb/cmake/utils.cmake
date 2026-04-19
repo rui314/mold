@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2022 Intel Corporation
+# Copyright (c) 2020-2024 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,31 +23,46 @@ macro(tbb_remove_compile_flag flag)
 endmacro()
 
 macro(tbb_install_target target)
-    install(TARGETS ${target}
-        EXPORT TBBTargets
-        LIBRARY
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            NAMELINK_SKIP
-            COMPONENT runtime
-        RUNTIME
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-            COMPONENT runtime
-        ARCHIVE
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            COMPONENT devel)
-
-    if (BUILD_SHARED_LIBS)
+    if (TBB_INSTALL)
         install(TARGETS ${target}
+            EXPORT TBBTargets
             LIBRARY
                 DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                NAMELINK_ONLY
-                COMPONENT devel)
+                NAMELINK_SKIP
+                COMPONENT runtime
+            RUNTIME
+                DESTINATION ${CMAKE_INSTALL_BINDIR}
+                COMPONENT runtime
+            ARCHIVE
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT devel
+            FRAMEWORK
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                COMPONENT runtime
+                OPTIONAL)
+
+        if (BUILD_SHARED_LIBS)
+            install(TARGETS ${target}
+                LIBRARY
+                    DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                    NAMELINK_ONLY
+                    COMPONENT devel)
+        endif()
+        if (MSVC AND BUILD_SHARED_LIBS)
+            install(FILES $<TARGET_PDB_FILE:${target}>
+                DESTINATION ${CMAKE_INSTALL_BINDIR}
+                COMPONENT devel
+                OPTIONAL)
+        endif()
     endif()
 endmacro()
 
 macro(tbb_handle_ipo target)
     if (TBB_IPO_PROPERTY)
-        set_target_properties(${target} PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
+        set_target_properties(${target} PROPERTIES 
+            INTERPROCEDURAL_OPTIMIZATION TRUE
+            INTERPROCEDURAL_OPTIMIZATION_DEBUG FALSE
+        )
     elseif (TBB_IPO_FLAGS)
         target_compile_options(${target} PRIVATE ${TBB_IPO_COMPILE_FLAGS})
         if (COMMAND target_link_options)

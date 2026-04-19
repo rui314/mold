@@ -26,25 +26,10 @@ that operates on a chunk. The form is an STL-style function object,
 called the *body* object, in which ``operator()`` processes a chunk. The
 following code declares the body object.
 
-::
-
-   #include "oneapi/tbb.h"
-
-   using namespace oneapi::tbb;
-
-   class ApplyFoo {
-       float *const my_a;
-   public:
-       void operator()( const blocked_range<size_t>& r ) const {
-           float *a = my_a;
-           for( size_t i=r.begin(); i!=r.end(); ++i ) 
-              Foo(a[i]);
-       }
-       ApplyFoo( float a[] ) :
-           my_a(a)
-       {}
-   };
-
+.. literalinclude:: ./examples/parallel_for_os_example.cpp
+    :language: c++
+    :start-after: /*begin_parallel_for_os_1*/
+    :end-before: /*end_parallel_for_os_1*/
 
 The ``using`` directive in the example enables you to use the library
 identifiers without having to write out the namespace prefix ``oneapi::tbb``
@@ -55,8 +40,9 @@ before each identifier. The rest of the examples assume that such a
 Note the argument to ``operator()``. A ``blocked_range<T>`` is a
 template class provided by the library. It describes a one-dimensional
 iteration space over type ``T``. Class ``parallel_for`` works with other
-kinds of iteration spaces too. The library provides ``blocked_range2d``
-for two-dimensional spaces. You can define your own spaces as explained
+kinds of iteration spaces too. The library provides ``blocked_range2d``,
+``blocked_range3d``, and ``blocked_nd_range`` for multidimensional spaces.
+You can define your own spaces as explained
 in :ref:`Advanced_Topic_Other_Kinds_of_Iteration_Spaces`.
 
 
@@ -97,17 +83,10 @@ example:
 Once you have the loop body written as a body object, invoke the
 template function ``parallel_for``, as follows:
 
-
-::
-
-
-   #include "oneapi/tbb.h"
-    
-
-   void ParallelApplyFoo( float a[], size_t n ) {
-       parallel_for(blocked_range<size_t>(0,n), ApplyFoo(a));
-   }
-
+.. literalinclude:: ./examples/parallel_for_os_example.cpp
+    :language: c++
+    :start-after: /*begin_parallel_for_os_2*/
+    :end-before: /*end_parallel_for_os_2*/
 
 The ``blocked_range`` constructed here represents the entire iteration
 space from 0 to n-1, which ``parallel_for`` divides into subspaces for
@@ -121,4 +100,3 @@ example uses the default grainsize of 1 because by default
 grainsize.
 
 .. include:: parallel_for_toctree.rst
-   

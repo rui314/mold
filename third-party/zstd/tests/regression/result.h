@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -94,7 +94,7 @@ static result_error_t result_get_error(result_t result) {
     return result.internal_error;
 }
 
-char const* result_get_error_string(result_t result);
+const char* result_get_error_string(result_t result);
 
 static result_data_t result_get_data(result_t result) {
     return result.internal_data;

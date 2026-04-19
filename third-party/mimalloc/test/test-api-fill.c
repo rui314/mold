@@ -271,7 +271,7 @@ int main(void) {
     mi_free(p);
   };
 
-  #if !(MI_TRACK_VALGRIND || MI_TRACK_ASAN)
+  #if !(MI_TRACK_VALGRIND || MI_TRACK_ASAN || MI_GUARDED)
   CHECK_BODY("fill-freed-small") {
     size_t malloc_size = MI_SMALL_SIZE_MAX / 2;
     uint8_t* p = (uint8_t*)mi_malloc(malloc_size);

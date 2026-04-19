@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -22,6 +22,7 @@
 #include "fuzz_helpers.h"
 #include "zstd_helpers.h"
 #include "fuzz_data_producer.h"
+#include "fuzz_third_party_seq_prod.h"
 
 ZSTD_CCtx *cctx = NULL;
 static ZSTD_DCtx *dctx = NULL;
@@ -62,6 +63,8 @@ static size_t compress(uint8_t *dst, size_t capacity,
     size_t dstSize = 0;
     ZSTD_CCtx_reset(cctx, ZSTD_reset_session_only);
     FUZZ_setRandomParameters(cctx, srcSize, producer);
+    int maxBlockSize;
+    FUZZ_ZASSERT(ZSTD_CCtx_getParameter(cctx, ZSTD_c_maxBlockSize, &maxBlockSize));
 
     while (srcSize > 0) {
         ZSTD_inBuffer in = makeInBuffer(&src, &srcSize, producer);
@@ -92,6 +95,8 @@ static size_t compress(uint8_t *dst, size_t capacity,
                         if (FUZZ_dataProducer_uint32Range(producer, 0, 7) == 0) {
                             size_t const remaining = in.size - in.pos;
                             FUZZ_setRandomParameters(cctx, remaining, producer);
+                            /* Always use the same maxBlockSize */
+                            FUZZ_ZASSERT(ZSTD_CCtx_setParameter(cctx, ZSTD_c_maxBlockSize, maxBlockSize));
                         }
                         mode = -1;
                     }
@@ -131,8 +136,26 @@ static size_t compress(uint8_t *dst, size_t capacity,
     return dstSize;
 }
 
+static size_t decompress(void* dst, size_t dstCapacity, void const* src, size_t srcSize, FUZZ_dataProducer_t* producer)
+{
+    ZSTD_inBuffer in = {src, srcSize, 0};
+    ZSTD_outBuffer out = {dst, dstCapacity, 0};
+    int maxBlockSize;
+    FUZZ_ZASSERT(ZSTD_CCtx_getParameter(cctx, ZSTD_c_maxBlockSize, &maxBlockSize));
+    if (FUZZ_dataProducer_uint32Range(producer, 0, 1)) {
+        FUZZ_ZASSERT(ZSTD_DCtx_setParameter(dctx, ZSTD_d_maxBlockSize, maxBlockSize));
+    }
+    while (in.pos < in.size) {
+        size_t const ret = ZSTD_decompressStream(dctx, &out, &in);
+        FUZZ_ZASSERT(ret);
+        FUZZ_ASSERT(ret == 0);
+    }
+    return out.pos;
+}
+
 int LLVMFuzzerTestOneInput(const uint8_t *src, size_t size)
 {
+    FUZZ_SEQ_PROD_SETUP();
     size_t neededBufSize;
 
     /* Give a random portion of src data to the producer, to use for
@@ -161,11 +184,28 @@ int LLVMFuzzerTestOneInput(const uint8_t *src, size_t size)
 
     {
         size_t const cSize = compress(cBuf, neededBufSize, src, size, producer);
-        size_t const rSize =
-            ZSTD_decompressDCtx(dctx, rBuf, neededBufSize, cBuf, cSize);
+        size_t const rSize = decompress(rBuf, neededBufSize, cBuf, cSize, producer);
         FUZZ_ZASSERT(rSize);
         FUZZ_ASSERT_MSG(rSize == size, "Incorrect regenerated size");
         FUZZ_ASSERT_MSG(!FUZZ_memcmp(src, rBuf, size), "Corruption!");
+
+        /* Test in-place decompression (note the macro doesn't work in this case) */
+        {
+            size_t const margin = ZSTD_decompressionMargin(cBuf, cSize);
+            size_t const outputSize = size + margin;
+            char* const output = (char*)FUZZ_malloc(outputSize);
+            char* const input = output + outputSize - cSize;
+            size_t dSize;
+            FUZZ_ASSERT(outputSize >= cSize);
+            memcpy(input, cBuf, cSize);
+
+            dSize = ZSTD_decompressDCtx(dctx, output, outputSize, input, cSize);
+            FUZZ_ZASSERT(dSize);
+            FUZZ_ASSERT_MSG(dSize == size, "Incorrect regenerated size");
+            FUZZ_ASSERT_MSG(!FUZZ_memcmp(src, output, size), "Corruption!");
+
+            free(output);
+        }
     }
 
     FUZZ_dataProducer_free(producer);
@@ -173,5 +213,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *src, size_t size)
     ZSTD_freeCCtx(cctx); cctx = NULL;
     ZSTD_freeDCtx(dctx); dctx = NULL;
 #endif
+    FUZZ_SEQ_PROD_TEARDOWN();
     return 0;
 }

@@ -1,123 +1,168 @@
 name: CI
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
 env:
   UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
 jobs:
-  build-clang:
+  build-asan-tsan:
     strategy:
       matrix:
         target:
-        # Disable PCH for the default configuration. This prevents relying on implicit includes.
-        - '-DCMAKE_DISABLE_PRECOMPILE_HEADERS=On'
+        - ''
         - '-DMOLD_USE_ASAN=On'
         - '-DMOLD_USE_TSAN=On'
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - uses: rui314/setup-mold@staging
-    - name: install-build-deps
-      run: sudo ./install-build-deps.sh update
-    - name: ccache
-      uses: hendrikmuhs/ccache-action@v1
-    - name: build and test
+    - run: sudo ./install-build-deps.sh
+    - name: build
       run: |
-        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
-        sudo apt-get install -y clang++-12
+        sudo apt-get install -y clang-18 clang gcc-multilib gdb dwarfdump zstd
         mkdir build
         cd build
-        cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++-12 ${{ matrix.target }} ..
+        cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18 ${{ matrix.target }} ..
         cmake --build . -j$(nproc)
-        ctest . -j$(nproc)
+    - run: cd build; ctest --output-on-failure -j$(nproc)
     - name: archive test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: test-results-clang
         path: |
-          build/out
-          build/Testing
+          build
+          !build/CMakeFiles
 
-  build-gcc:
-    runs-on: ubuntu-20.04
-    container: gcc:11.1.0
+  build-msan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+    - uses: redhat-actions/podman-login@v1
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - run: .github/workflows/run-msan.sh
+
+  build-multi-archs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
     - name: install-build-deps
       run: |
-        # Install cross toolchains
-        dpkg --add-architecture i386
-        ./install-build-deps.sh update
-        apt-get install -y sudo qemu-user gdb zstd dwarfdump {gcc,g++}-10-{i686,aarch64,riscv64,powerpc,powerpc64,powerpc64le,s390x,sparc64,m68k,sh4,alpha,mips,mipsel}-linux-gnu {gcc,g++}-10-arm-linux-gnueabihf {gcc,g++}-10-{mips64,mips64el}-linux-gnuabi64
-
-        for i in i686 aarch64 riscv64 powerpc powerpc64 powerpc64le s390x sparc64 m68k sh4 alpha; do
-          ln -sf /usr/bin/$i-linux-gnu-gcc-10 /usr/bin/$i-linux-gnu-gcc
-          ln -sf /usr/bin/$i-linux-gnu-g++-10 /usr/bin/$i-linux-gnu-g++
-        done
-
-        ln -sf /usr/bin/arm-linux-gnueabihf-gcc-10 /usr/bin/arm-linux-gnueabihf-gcc
-        ln -sf /usr/bin/arm-linux-gnueabihf-g++-10 /usr/bin/arm-linux-gnueabihf-g++
-
-        # Install a RV32 toolchain from third party since it's not available
-        # as an Ubuntu package.
-        mkdir /usr/local/rv32
-        wget -O- -q https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2022.08.26/riscv32-glibc-ubuntu-20.04-nightly-2022.08.26-nightly.tar.gz | tar -C /usr/local/rv32 --strip-components=1 -xzf -
-
-        ln -sf /usr/local/rv32/sysroot /usr/riscv32-linux-gnu
-        ln -sf /usr/local/rv32/bin/riscv32-unknown-linux-gnu-objdump /usr/bin/riscv32-linux-gnu-objdump
-        echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-gcc -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-gcc
-        echo '/usr/local/rv32/bin/riscv32-unknown-linux-gnu-g++ -L/usr/riscv32-linux-gnu "$@"' > /usr/bin/riscv32-linux-gnu-g++
-        chmod 755 /usr/bin/riscv32-linux-gnu-gcc /usr/bin/riscv32-linux-gnu-g++
-      shell: bash
-    - name: ccache
-      uses: hendrikmuhs/ccache-action@v1
-    - name: build and test
+        sudo ./install-build-deps.sh
+        sudo ./install-cross-tools.sh
+        sudo .github/workflows/install-extras.sh
+    - name: build
       run: |
-        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
-        cmake -DMOLD_ENABLE_QEMU_TESTS=On -DMOLD_ENABLE_QEMU_TESTS_RV32=On ..
+        cmake ..
         cmake --build . -j$(nproc)
-        ctest . -j$(nproc)
+    - run: cd build; ctest --output-on-failure -j$(nproc)
     - name: archive test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: failure()
       with:
-        name: test-results-gcc
+        name: test-results-multi-archs
         path: |
-          build/out
-          build/Testing
+          build
+          !build/CMakeFiles
 
-  build-macos:
-    runs-on: macos-11
+  build-distros:
     strategy:
       matrix:
-        target:
-        # Disable PCH for the default configuration. This prevents relying on implicit includes.
-        - '-DCMAKE_DISABLE_PRECOMPILE_HEADERS=On'
-        - '-DMOLD_USE_ASAN=On'
+        distro:
+        - alpine
+        - archlinux
+        - debian:11 # GCC 10 and CMake 3.18 - the minimum supported by mold
+        - fedora
+        - gentoo/stage3
+        - opensuse/tumbleweed
+        - ubuntu:22.04
+        - ubuntu:25.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container: ${{ matrix.distro }}
     steps:
-    - uses: actions/checkout@v3
-    - name: ccache
-      uses: hendrikmuhs/ccache-action@v1
-    - name: build and test
+    - uses: actions/checkout@v4
+    - run: ./install-build-deps.sh
+    - name: build
       run: |
-        echo "/usr/lib/ccache:/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
         mkdir build
         cd build
-        cmake ${{ matrix.target }} ..
+        cmake ..
+        cmake --build . -j$(nproc)
+    - run: cd build; ctest --output-on-failure -j$(nproc)
+    - name: archive test results
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: test-results-${{ matrix.distro }}
+        path: |
+          build
+          !build/CMakeFiles
+
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - name: build
+      run: |
+        mkdir build
+        cd build
+        cmake ..
         cmake --build . -j$(sysctl -n hw.physicalcpu)
 
   build-windows:
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: build
       run: |
         mkdir build
         cd build
         cmake -T clangcl ..
         cmake --build . -j $Env:NUMBER_OF_PROCESSORS
+
+  build-msys:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: UCRT64
+        update: true
+        pacboy: gcc-libs:p libwinpthread-git:p tbb:p zlib:p zstd:p dlfcn:p cc:p cmake:p ninja:p
+    - name: build
+      shell: msys2 {0}
+      run: |
+        mkdir build
+        cd build
+        cmake -GNinja -DMOLD_USE_MIMALLOC=OFF -DMOLD_USE_SYSTEM_TBB=ON ..
+        cmake --build . -j $(nproc)
+
+  build-freebsd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build and test
+      uses: vmactions/freebsd-vm@v1
+      with:
+        usesh: true
+        run: |
+          ./install-build-deps.sh
+          mkdir build
+          cd build
+          cmake ..
+          cmake --build . -j$(nproc)
+          ctest --output-on-failure -j$(nproc)

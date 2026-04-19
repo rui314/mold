@@ -1,6 +1,4 @@
-#!/usr/bin/env python3
-#
-# Copyright (c) 2016-2021 Intel Corporation
+# Copyright (c) 2016-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -87,7 +85,7 @@ setup(  name        ="TBB",
         description ="Python API for oneTBB",
         long_description="Python API to Intel(R) oneAPI Threading Building Blocks library (oneTBB) "
                          "extended with standard Pool implementation and monkey-patching",
-        url         ="https://software.intel.com/en-us/intel-tbb",
+        url         ="https://www.intel.com/content/www/us/en/developer/tools/oneapi/onetbb.html",
         author      ="Intel Corporation",
         author_email="inteltbbdevelopers@intel.com",
         license     ="Dual license: Apache or Proprietary",

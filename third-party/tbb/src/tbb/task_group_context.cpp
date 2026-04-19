@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -197,8 +197,7 @@ void task_group_context_impl::bind_to(d1::task_group_context& ctx, thread_data* 
     __TBB_ASSERT(ctx.my_state.load(std::memory_order_relaxed) != d1::task_group_context::state::locked, nullptr);
 }
 
-template <typename T>
-void task_group_context_impl::propagate_task_group_state(d1::task_group_context& ctx, std::atomic<T> d1::task_group_context::* mptr_state, d1::task_group_context& src, T new_state) {
+void task_group_context_impl::propagate_task_group_state(d1::task_group_context& ctx, std::atomic<std::uint32_t> d1::task_group_context::* mptr_state, d1::task_group_context& src, std::uint32_t new_state) {
     __TBB_ASSERT(!is_poisoned(ctx.my_context_list), nullptr);
     /*  1. if ((ctx.*mptr_state).load(std::memory_order_relaxed) == new_state):
             Nothing to do, whether descending from "src" or not, so no need to scan.
@@ -224,50 +223,6 @@ void task_group_context_impl::propagate_task_group_state(d1::task_group_context&
     }
 }
 
-template <typename T>
-void thread_data::propagate_task_group_state(std::atomic<T> d1::task_group_context::* mptr_state, d1::task_group_context& src, T new_state) {
-    mutex::scoped_lock lock(my_context_list->m_mutex);
-    // Acquire fence is necessary to ensure that the subsequent node->my_next load
-    // returned the correct value in case it was just inserted in another thread.
-    // The fence also ensures visibility of the correct ctx.my_parent value.
-    for (context_list::iterator it = my_context_list->begin(); it != my_context_list->end(); ++it) {
-        d1::task_group_context& ctx = __TBB_get_object_ref(d1::task_group_context, my_node, &(*it));
-        if ((ctx.*mptr_state).load(std::memory_order_relaxed) != new_state)
-            task_group_context_impl::propagate_task_group_state(ctx, mptr_state, src, new_state);
-    }
-    // Sync up local propagation epoch with the global one. Release fence prevents
-    // reordering of possible store to *mptr_state after the sync point.
-    my_context_list->epoch.store(the_context_state_propagation_epoch.load(std::memory_order_relaxed), std::memory_order_release);
-}
-
-template <typename T>
-bool market::propagate_task_group_state(std::atomic<T> d1::task_group_context::* mptr_state, d1::task_group_context& src, T new_state) {
-    if (src.my_may_have_children.load(std::memory_order_relaxed) != d1::task_group_context::may_have_children)
-        return true;
-    // The whole propagation algorithm is under the lock in order to ensure correctness
-    // in case of concurrent state changes at the different levels of the context tree.
-    // See comment at the bottom of scheduler.cpp
-    context_state_propagation_mutex_type::scoped_lock lock(the_context_state_propagation_mutex);
-    if ((src.*mptr_state).load(std::memory_order_relaxed) != new_state)
-        // Another thread has concurrently changed the state. Back down.
-        return false;
-    // Advance global state propagation epoch
-    ++the_context_state_propagation_epoch;
-    // Propagate to all workers and external threads and sync up their local epochs with the global one
-    unsigned num_workers = my_first_unused_worker_idx;
-    for (unsigned i = 0; i < num_workers; ++i) {
-        thread_data* td = my_workers[i].load(std::memory_order_acquire);
-        // If the worker is only about to be registered, skip it.
-        if (td)
-            td->propagate_task_group_state(mptr_state, src, new_state);
-    }
-    // Propagate to all external threads
-    // The whole propagation sequence is locked, thus no contention is expected
-    for (thread_data_list_type::iterator it = my_masters.begin(); it != my_masters.end(); it++)
-        it->propagate_task_group_state(mptr_state, src, new_state);
-    return true;
-}
-
 bool task_group_context_impl::cancel_group_execution(d1::task_group_context& ctx) {
     __TBB_ASSERT(!is_poisoned(ctx.my_context_list), nullptr);
     __TBB_ASSERT(ctx.my_cancellation_requested.load(std::memory_order_relaxed) <= 1, "The cancellation state can be either 0 or 1");
@@ -277,7 +232,7 @@ bool task_group_context_impl::cancel_group_execution(d1::task_group_context& ctx
         // not missing out on any cancellation still being propagated, and a context cannot be uncanceled.)
         return false;
     }
-    governor::get_thread_data()->my_arena->my_market->propagate_task_group_state(&d1::task_group_context::my_cancellation_requested, ctx, uint32_t(1));
+    governor::get_thread_data()->my_arena->my_threading_control->propagate_task_group_state(&d1::task_group_context::my_cancellation_requested, ctx, uint32_t(1));
     return true;
 }
 

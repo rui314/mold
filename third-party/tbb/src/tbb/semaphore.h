@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -98,7 +98,11 @@ namespace r1 {
 #if __TBB_USE_FUTEX
 
 static inline int futex_wait( void *futex, int comparand ) {
+#ifdef __OpenBSD__
+    int r = ::futex((volatile uint32_t *)futex, __TBB_FUTEX_WAIT, comparand, nullptr, nullptr);
+#else
     int r = ::syscall(SYS_futex, futex, __TBB_FUTEX_WAIT, comparand, nullptr, nullptr, 0);
+#endif
 #if TBB_USE_ASSERT
     int e = errno;
     __TBB_ASSERT(r == 0 || r == EWOULDBLOCK || (r == -1 && (e == EAGAIN || e == EINTR)), "futex_wait failed.");
@@ -107,7 +111,11 @@ static inline int futex_wait( void *futex, int comparand ) {
 }
 
 static inline int futex_wakeup_one( void *futex ) {
+#ifdef __OpenBSD__
+    int r = ::futex((volatile uint32_t *)futex, __TBB_FUTEX_WAKE, 1 , nullptr, nullptr);
+#else
     int r = ::syscall(SYS_futex, futex, __TBB_FUTEX_WAKE, 1, nullptr, nullptr, 0);
+#endif
     __TBB_ASSERT(r == 0 || r == 1, "futex_wakeup_one: more than one thread woken up?");
     return r;
 }

@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Remember TBB option state
+set(BLAKE3_USE_TBB @BLAKE3_USE_TBB@)
+
+if(BLAKE3_USE_TBB)
+    find_dependency(TBB @TBB_VERSION@)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/blake3-targets.cmake")
+
+check_required_components(blake3)

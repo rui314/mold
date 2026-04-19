@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 #error Do not #include this internal file directly; use public TBB headers instead.
 #endif
 
-// included in namespace tbb::detail::d1
+// included in namespace tbb::detail::d2
 
 #include "_flow_graph_types_impl.h"
 
@@ -31,9 +31,9 @@
     // successor.
 
     template<typename IndexerNodeBaseType, typename T, size_t K>
-    graph_task* do_try_put(const T &v, void *p) {
+    graph_task* do_try_put(const T &v, void *p __TBB_FLOW_GRAPH_METAINFO_ARG(const message_metainfo& metainfo)) {
         typename IndexerNodeBaseType::output_type o(K, v);
-        return reinterpret_cast<IndexerNodeBaseType *>(p)->try_put_task(&o);
+        return reinterpret_cast<IndexerNodeBaseType *>(p)->try_put_task(&o __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo));
     }
 
     template<typename TupleTypes,int N>
@@ -41,7 +41,7 @@
         template<typename IndexerNodeBaseType, typename PortTuple>
         static inline void set_indexer_node_pointer(PortTuple &my_input, IndexerNodeBaseType *p, graph& g) {
             typedef typename std::tuple_element<N-1, TupleTypes>::type T;
-            graph_task* (*indexer_node_put_task)(const T&, void *) = do_try_put<IndexerNodeBaseType, T, N-1>;
+            auto indexer_node_put_task = do_try_put<IndexerNodeBaseType, T, N-1>;
             std::get<N-1>(my_input).set_up(p, indexer_node_put_task, g);
             indexer_helper<TupleTypes,N-1>::template set_indexer_node_pointer<IndexerNodeBaseType,PortTuple>(my_input, p, g);
         }
@@ -52,7 +52,7 @@
         template<typename IndexerNodeBaseType, typename PortTuple>
         static inline void set_indexer_node_pointer(PortTuple &my_input, IndexerNodeBaseType *p, graph& g) {
             typedef typename std::tuple_element<0, TupleTypes>::type T;
-            graph_task* (*indexer_node_put_task)(const T&, void *) = do_try_put<IndexerNodeBaseType, T, 0>;
+            auto indexer_node_put_task = do_try_put<IndexerNodeBaseType, T, 0>;
             std::get<0>(my_input).set_up(p, indexer_node_put_task, g);
         }
     };
@@ -61,7 +61,8 @@
     class indexer_input_port : public receiver<T> {
     private:
         void* my_indexer_ptr;
-        typedef graph_task* (* forward_function_ptr)(T const &, void* );
+        typedef graph_task* (* forward_function_ptr)(T const &, void*
+                                                     __TBB_FLOW_GRAPH_METAINFO_ARG(const message_metainfo&));
         forward_function_ptr my_try_put_task;
         graph* my_graph;
     public:
@@ -76,8 +77,14 @@
         template<typename X, typename Y> friend class broadcast_cache;
         template<typename X, typename Y> friend class round_robin_cache;
         graph_task* try_put_task(const T &v) override {
-            return my_try_put_task(v, my_indexer_ptr);
+            return my_try_put_task(v, my_indexer_ptr __TBB_FLOW_GRAPH_METAINFO_ARG(message_metainfo{}));
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        graph_task* try_put_task(const T& v, const message_metainfo& metainfo) override {
+            return my_try_put_task(v, my_indexer_ptr, metainfo);
+        }
+#endif
 
         graph& graph_reference() const override {
             return *my_graph;
@@ -118,7 +125,7 @@
         };
         typedef indexer_node_base<InputTuple,output_type,StructTypes> class_type;
 
-        class indexer_node_base_operation : public aggregated_operation<indexer_node_base_operation> {
+        class indexer_node_base_operation : public d1::aggregated_operation<indexer_node_base_operation> {
         public:
             char type;
             union {
@@ -126,15 +133,23 @@
                 successor_type *my_succ;
                 graph_task* bypass_t;
             };
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            message_metainfo const* metainfo;
+#endif
             indexer_node_base_operation(const output_type* e, op_type t) :
-                type(char(t)), my_arg(e) {}
+                type(char(t)), my_arg(e) __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo(nullptr))
+            {}
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            indexer_node_base_operation(const output_type* e, op_type t, const message_metainfo& info)
+                : type(char(t)), my_arg(e), metainfo(&info) {}
+#endif
             indexer_node_base_operation(const successor_type &s, op_type t) : type(char(t)),
                 my_succ(const_cast<successor_type *>(&s)) {}
         };
 
-        typedef aggregating_functor<class_type, indexer_node_base_operation> handler_type;
-        friend class aggregating_functor<class_type, indexer_node_base_operation>;
-        aggregator<handler_type, indexer_node_base_operation> my_aggregator;
+        typedef d1::aggregating_functor<class_type, indexer_node_base_operation> handler_type;
+        friend class d1::aggregating_functor<class_type, indexer_node_base_operation>;
+        d1::aggregator<handler_type, indexer_node_base_operation> my_aggregator;
 
         void handle_operations(indexer_node_base_operation* op_list) {
             indexer_node_base_operation *current;
@@ -153,7 +168,8 @@
                     current->status.store( SUCCEEDED, std::memory_order_release);
                     break;
                 case try__put_task: {
-                        current->bypass_t = my_successors.try_put_task(*(current->my_arg));
+                        current->bypass_t = my_successors.try_put_task(*(current->my_arg)
+                                                                       __TBB_FLOW_GRAPH_METAINFO_ARG(*(current->metainfo)));
                         current->status.store( SUCCEEDED, std::memory_order_release);  // return of try_put_task actual return value
                     }
                     break;
@@ -186,8 +202,11 @@
             return op_data.status == SUCCEEDED;
         }
 
-        graph_task* try_put_task(output_type const *v) { // not a virtual method in this class
-            indexer_node_base_operation op_data(v, try__put_task);
+        // not a virtual method in this class
+        graph_task* try_put_task(output_type const *v
+                                 __TBB_FLOW_GRAPH_METAINFO_ARG(const message_metainfo& metainfo))
+        {
+            indexer_node_base_operation op_data(v, try__put_task __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo));
             my_aggregator.execute(&op_data);
             return op_data.bypass_t;
         }

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -459,7 +459,7 @@ template <>
 struct DecrementerHelper<tbb::flow::continue_msg> {
     template <typename Decrementer>
     static void check(Decrementer& decrementer) {
-        auto& d = static_cast<tbb::detail::d1::continue_receiver&>(decrementer);
+        auto& d = static_cast<tbb::detail::d2::continue_receiver&>(decrementer);
         CHECK_MESSAGE(d.my_predecessor_count == 0, "error in pred count");
         CHECK_MESSAGE(d.my_initial_predecessor_count == 0, "error in initial pred count");
         CHECK_MESSAGE(d.my_current_count == 0, "error in current count");

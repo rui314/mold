@@ -1,3 +1,4 @@
 # TSAN suppression for known issues.
 # Possible data race during ittnotify initialization. Low impact.
 race:__itt_nullify_all_pointers
+race:__itt_init_ittlib

@@ -1,5 +1,5 @@
 # ################################################################
-# Copyright (c) 2016-present, Facebook, Inc.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
 # This source code is licensed under both the BSD-style license (found in the
@@ -40,7 +40,7 @@ gen_html: gen_html.cpp
 
 $(ZSTDMANUAL): gen_html $(ZSTDAPI)
 	echo "Update zstd manual in /doc"
-	./gen_html $(LIBVER) $(ZSTDAPI) $(ZSTDMANUAL)
+	./gen_html$(EXT) $(LIBVER) $(ZSTDAPI) $(ZSTDMANUAL)
 
 .PHONY: manual
 manual: gen_html $(ZSTDMANUAL)

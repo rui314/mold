@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -48,7 +48,6 @@ std::pair<bool, ticket_type> internal_try_pop_impl(void* dst, QueueRep& queue, A
 
 // A high-performance thread-safe non-blocking concurrent queue.
 // Multiple threads may each push and pop concurrently.
-// Assignment construction is not allowed.
 template <typename T, typename Allocator = tbb::cache_aligned_allocator<T>>
 class concurrent_queue {
     using allocator_traits_type = tbb::detail::allocator_traits<Allocator>;
@@ -91,6 +90,10 @@ public:
             push(*begin);
     }
 
+    concurrent_queue( std::initializer_list<value_type> init, const allocator_type& alloc = allocator_type() ) :
+        concurrent_queue(init.begin(), init.end(), alloc)
+    {}
+
     concurrent_queue(const concurrent_queue& src, const allocator_type& a) :
         concurrent_queue(a)
     {
@@ -130,6 +133,53 @@ public:
         my_queue_representation->clear(my_allocator);
         queue_allocator_traits::destroy(my_allocator, my_queue_representation);
         r1::cache_aligned_deallocate(my_queue_representation);
+    }
+
+    concurrent_queue& operator=( const concurrent_queue& other ) {
+        //TODO: implement support for std::allocator_traits::propagate_on_container_copy_assignment
+        if (my_queue_representation != other.my_queue_representation) {
+            clear();
+            my_allocator = other.my_allocator;
+            my_queue_representation->assign(*other.my_queue_representation, my_allocator, copy_construct_item);
+        }
+        return *this;
+    }
+
+    concurrent_queue& operator=( concurrent_queue&& other ) {
+        //TODO: implement support for std::allocator_traits::propagate_on_container_move_assignment
+        if (my_queue_representation != other.my_queue_representation) {
+            clear();
+            if (my_allocator == other.my_allocator) {
+                internal_swap(other);
+            } else {
+                my_queue_representation->assign(*other.my_queue_representation, other.my_allocator, move_construct_item);
+                other.clear();
+                my_allocator = std::move(other.my_allocator);
+            }
+        }
+        return *this;
+    }
+
+    concurrent_queue& operator=( std::initializer_list<value_type> init ) {
+        assign(init);
+        return *this;
+    }
+
+    template <typename InputIterator>
+    void assign( InputIterator first, InputIterator last ) {
+        concurrent_queue src(first, last);
+        clear();
+        my_queue_representation->assign(*src.my_queue_representation, my_allocator, move_construct_item);
+    }
+
+    void assign( std::initializer_list<value_type> init ) {
+        assign(init.begin(), init.end());
+    }
+
+    void swap ( concurrent_queue& other ) {
+        //TODO: implement support for std::allocator_traits::propagate_on_container_swap
+        __TBB_ASSERT(my_allocator == other.my_allocator, "unequal allocators");
+        internal_swap(other);
     }
 
     // Enqueue an item at tail of queue.
@@ -215,6 +265,20 @@ private:
 
     queue_allocator_type my_allocator;
     queue_representation_type* my_queue_representation;
+
+    friend void swap( concurrent_queue& lhs, concurrent_queue& rhs ) {
+        lhs.swap(rhs);
+    }
+
+    friend bool operator==( const concurrent_queue& lhs, const concurrent_queue& rhs ) {
+        return lhs.unsafe_size() == rhs.unsafe_size() && std::equal(lhs.unsafe_begin(), lhs.unsafe_end(), rhs.unsafe_begin());
+    }
+
+#if !__TBB_CPP20_COMPARISONS_PRESENT
+    friend bool operator!=( const concurrent_queue& lhs,  const concurrent_queue& rhs ) {
+        return !(lhs == rhs);
+    }
+#endif // __TBB_CPP20_COMPARISONS_PRESENT
 }; // class concurrent_queue
 
 #if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
@@ -252,7 +316,6 @@ namespace d2 {
 // A high-performance thread-safe blocking concurrent bounded queue.
 // Supports boundedness and blocking semantics.
 // Multiple threads may each push and pop concurrently.
-// Assignment construction is not allowed.
 template <typename T, typename Allocator = tbb::cache_aligned_allocator<T>>
 class concurrent_bounded_queue {
     using allocator_traits_type = tbb::detail::allocator_traits<Allocator>;
@@ -304,15 +367,21 @@ public:
             push(*begin);
     }
 
+    concurrent_bounded_queue( std::initializer_list<value_type> init, const allocator_type& alloc = allocator_type() ):
+        concurrent_bounded_queue(init.begin(), init.end(), alloc)
+    {}
+
     concurrent_bounded_queue( const concurrent_bounded_queue& src, const allocator_type& a ) :
         concurrent_bounded_queue(a)
     {
+        my_capacity = src.my_capacity;
         my_queue_representation->assign(*src.my_queue_representation, my_allocator, copy_construct_item);
     }
 
     concurrent_bounded_queue( const concurrent_bounded_queue& src ) :
         concurrent_bounded_queue(queue_allocator_traits::select_on_container_copy_construction(src.get_allocator()))
     {
+        my_capacity = src.my_capacity;
         my_queue_representation->assign(*src.my_queue_representation, my_allocator, copy_construct_item);
     }
 
@@ -344,6 +413,55 @@ public:
         queue_allocator_traits::destroy(my_allocator, my_queue_representation);
         r1::deallocate_bounded_queue_rep(reinterpret_cast<std::uint8_t*>(my_queue_representation),
                                          sizeof(queue_representation_type));
+    }
+
+    concurrent_bounded_queue& operator=( const concurrent_bounded_queue& other ) {
+        //TODO: implement support for std::allocator_traits::propagate_on_container_copy_assignment
+        if (my_queue_representation != other.my_queue_representation) {
+            clear();
+            my_allocator = other.my_allocator;
+            my_capacity = other.my_capacity;
+            my_queue_representation->assign(*other.my_queue_representation, my_allocator, copy_construct_item);
+        }
+        return *this;
+    }
+
+    concurrent_bounded_queue& operator=( concurrent_bounded_queue&& other ) {
+        //TODO: implement support for std::allocator_traits::propagate_on_container_move_assignment
+        if (my_queue_representation != other.my_queue_representation) {
+            clear();
+            if (my_allocator == other.my_allocator) {
+                internal_swap(other);
+            } else {
+                my_queue_representation->assign(*other.my_queue_representation, other.my_allocator, move_construct_item);
+                other.clear();
+                my_allocator = std::move(other.my_allocator);
+                my_capacity = other.my_capacity;
+            }
+        }
+        return *this;
+    }
+
+    concurrent_bounded_queue& operator=( std::initializer_list<value_type> init ) {
+        assign(init);
+        return *this;
+    }
+
+    template <typename InputIterator>
+    void assign( InputIterator first, InputIterator last ) {
+        concurrent_bounded_queue src(first, last);
+        clear();
+        my_queue_representation->assign(*src.my_queue_representation, my_allocator, move_construct_item);
+    }
+
+    void assign( std::initializer_list<value_type> init ) {
+        assign(init.begin(), init.end());
+    }
+
+    void swap ( concurrent_bounded_queue& other ) {
+        //TODO: implement support for std::allocator_traits::propagate_on_container_swap
+        __TBB_ASSERT(my_allocator == other.my_allocator, "unequal allocators");
+        internal_swap(other);
     }
 
     // Enqueue an item at tail of queue.
@@ -431,8 +549,10 @@ public:
 
 private:
     void internal_swap( concurrent_bounded_queue& src ) {
-        std::swap(my_queue_representation, src.my_queue_representation);
-        std::swap(my_monitors, src.my_monitors);
+        using std::swap;
+        swap(my_queue_representation, src.my_queue_representation);
+        swap(my_capacity, src.my_capacity);
+        swap(my_monitors, src.my_monitors);
     }
 
     static constexpr std::ptrdiff_t infinite_capacity = std::ptrdiff_t(~size_type(0) / 2);
@@ -544,6 +664,20 @@ private:
     queue_representation_type* my_queue_representation;
 
     r1::concurrent_monitor* my_monitors;
+
+    friend void swap( concurrent_bounded_queue& lhs, concurrent_bounded_queue& rhs ) {
+        lhs.swap(rhs);
+    }
+
+    friend bool operator==( const concurrent_bounded_queue& lhs, const concurrent_bounded_queue& rhs ) {
+        return lhs.size() == rhs.size() && std::equal(lhs.unsafe_begin(), lhs.unsafe_end(), rhs.unsafe_begin());
+    }
+
+#if !__TBB_CPP20_COMPARISONS_PRESENT
+    friend bool operator!=( const concurrent_bounded_queue& lhs, const concurrent_bounded_queue& rhs ) {
+        return !(lhs == rhs);
+    }
+#endif // __TBB_CPP20_COMPARISONS_PRESENT
 }; // class concurrent_bounded_queue
 
 #if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
@@ -555,7 +689,7 @@ concurrent_bounded_queue( It, It, Alloc = Alloc() )
 #endif /* __TBB_CPP17_DEDUCTION_GUIDES_PRESENT */
 
 } //namespace d2
-} // namesapce detail
+} // namespace detail
 
 inline namespace v1 {
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -20,6 +20,7 @@
 #include "fuzz_helpers.h"
 #include "zstd_helpers.h"
 #include "fuzz_data_producer.h"
+#include "fuzz_third_party_seq_prod.h"
 
 /**
  * Compresses the data and returns the compressed size or an error.
@@ -35,7 +36,7 @@ static size_t compress(void* compressed, size_t compressedCapacity,
     if (refPrefix)
         FUZZ_ZASSERT(ZSTD_CCtx_refPrefix_advanced(
             cctx, dict, dictSize, dictContentType));
-    else 
+    else
         FUZZ_ZASSERT(ZSTD_CCtx_loadDictionary_advanced(
             cctx, dict, dictSize, dictLoadMethod, dictContentType));
     size_t const compressedSize = ZSTD_compress2(
@@ -67,6 +68,7 @@ static size_t decompress(void* result, size_t resultCapacity,
 
 int LLVMFuzzerTestOneInput(const uint8_t *src, size_t size)
 {
+    FUZZ_SEQ_PROD_SETUP();
     FUZZ_dataProducer_t *producer = FUZZ_dataProducer_create(src, size);
     int const refPrefix = FUZZ_dataProducer_uint32Range(producer, 0, 1) != 0;
     ZSTD_dictLoadMethod_e const dlm =
@@ -75,9 +77,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *src, size_t size)
             FUZZ_dataProducer_uint32Range(producer, 0, 2);
     size = FUZZ_dataProducer_remainingBytes(producer);
 
-    DEBUGLOG(2, "Dict load method %d", dlm);
-    DEBUGLOG(2, "Dict content type %d", dct);
-    DEBUGLOG(2, "Dict size %u", (unsigned)size);
+    DEBUGLOG(4, "Dict load method %d", dlm);
+    DEBUGLOG(4, "Dict content type %d", dct);
+    DEBUGLOG(4, "Dict size %u", (unsigned)size);
 
     void* const rBuf = FUZZ_malloc(size);
     size_t const cBufSize = ZSTD_compressBound(size);
@@ -99,5 +101,6 @@ out:
     free(cBuf);
     free(rBuf);
     FUZZ_dataProducer_free(producer);
+    FUZZ_SEQ_PROD_TEARDOWN();
     return 0;
 }

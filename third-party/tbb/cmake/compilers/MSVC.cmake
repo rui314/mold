@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2025 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,7 +33,13 @@ if (MSVC_VERSION LESS_EQUAL 1900)
     set(TBB_TEST_COMPILE_FLAGS ${TBB_TEST_COMPILE_FLAGS} /wd4503)
 endif()
 set(TBB_LIB_COMPILE_FLAGS -D_CRT_SECURE_NO_WARNINGS /GS)
-set(TBB_COMMON_COMPILE_FLAGS /volatile:iso /FS /EHsc)
+set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} /volatile:iso /FS /EHsc)
+
+set(TBB_LIB_LINK_FLAGS ${TBB_LIB_LINK_FLAGS} /DEPENDENTLOADFLAG:0x2000 /DYNAMICBASE /NXCOMPAT)
+
+if (TBB_ARCH EQUAL 32)
+    set(TBB_LIB_LINK_FLAGS ${TBB_LIB_LINK_FLAGS} /SAFESEH )
+endif()
 
 # Ignore /WX set through add_compile_options() or added to CMAKE_CXX_FLAGS if TBB_STRICT is disabled.
 if (NOT TBB_STRICT AND COMMAND tbb_remove_compile_flag)
@@ -69,6 +75,17 @@ if (TBB_WINDOWS_DRIVER)
     set(CMAKE_CXX_STANDARD_LIBRARIES "")
 
     set(TBB_COMMON_COMPILE_FLAGS ${TBB_COMMON_COMPILE_FLAGS} /D _UNICODE /DUNICODE /DWINAPI_FAMILY=WINAPI_FAMILY_APP /D__WRL_NO_DEFAULT_LIB__)
+endif()
+
+if (TBB_FILE_TRIM AND NOT CMAKE_CXX_COMPILER_ID MATCHES "(Intel|IntelLLVM|Clang)")
+    add_compile_options(
+        "$<$<COMPILE_LANGUAGE:CXX>:/d1trimfile:${NATIVE_TBB_PROJECT_ROOT_DIR}\\>"
+        "$<$<COMPILE_LANGUAGE:CXX>:/d1trimfile:${CMAKE_SOURCE_DIR}/>")
+endif()
+
+if (TBB_CONTROL_FLOW_GUARD)
+    set(TBB_LIB_COMPILE_FLAGS ${TBB_LIB_COMPILE_FLAGS} /guard:cf)
+    set(TBB_LIB_LINK_FLAGS ${TBB_LIB_LINK_FLAGS} /guard:cf)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "(Clang|IntelLLVM)")

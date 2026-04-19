@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -47,7 +47,7 @@
  *  imageio.cpp - This file deals with reading/writing image files
  */
 
-/* For our puposes, we're interested only in the 3 byte per pixel 24 bit
+/* For our purposes, we're interested only in the 3 byte per pixel 24 bit
  * truecolor sort of file..
  */
 
@@ -59,7 +59,6 @@
 #include "imageio.hpp"
 #include "ppm.hpp" /* PPM files */
 #include "tgafile.hpp" /* Truevision Targa files */
-#include "jpeg.hpp" /* JPEG files */
 
 static int fakeimage(char *name, int *xres, int *yres, unsigned char **imgdata) {
     int i, imgsize;
@@ -90,7 +89,7 @@ int readimage(rawimage *img) {
         rc = readtga(name, &xres, &yres, &imgdata);
     }
     else if (strstr(name, ".jpg")) {
-        rc = readjpeg(name, &xres, &yres, &imgdata);
+        rc = IMAGEUNSUP;
     }
     else if (strstr(name, ".gif")) {
         rc = IMAGEUNSUP;

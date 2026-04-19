@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2021 Intel Corporation
+    Copyright (c) 2021-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -69,22 +69,6 @@ public:
         }
     }
 
-    void wait_until(T expected, std::uintptr_t context, std::memory_order order) {
-        auto wakeup_condition = [&] { return my_atomic.load(order) == expected; };
-        if (!timed_spin_wait_until(wakeup_condition)) {
-            // We need to use while here, because notify_all() will wake up all threads
-            // But predicate for them might be false
-            d1::delegated_function<decltype(wakeup_condition)> pred(wakeup_condition);
-            do {
-                r1::wait_on_address(this, pred, context);
-            } while (!wakeup_condition());
-        }
-    }
-
-    void notify_relaxed(std::uintptr_t context) {
-        r1::notify_by_address(this, context);
-    }
-
     void notify_one_relaxed() {
         r1::notify_by_address_one(this);
     }
@@ -92,6 +76,8 @@ public:
     // TODO: consider adding following interfaces:
     // store(desired, memory_order)
     // notify_all_relaxed()
+    // wait_until(T, std::uintptr_t, std::memory_order)
+    // notify_relaxed(std::uintptr_t context)
 
 private:
     std::atomic<T> my_atomic{};

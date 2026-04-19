@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2023 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,6 @@ set(TBB_ROOT_REL_PATH "../../..")
 # Paths relative to TBB root directory
 set(INC_REL_PATH "include")
 set(LIB_REL_PATH "lib")
-set(DLL_REL_PATH "redist")
 
 # Parse version info
 file(READ ${CMAKE_CURRENT_LIST_DIR}/../../include/oneapi/tbb/version.h _tbb_version_info)
@@ -45,6 +44,6 @@ set(COMMON_ARGS
 )
 
 tbb_generate_config(INSTALL_DIR ${INSTALL_DIR}/linux   SYSTEM_NAME Linux   HANDLE_SUBDIRS ${COMMON_ARGS})
-tbb_generate_config(INSTALL_DIR ${INSTALL_DIR}/windows SYSTEM_NAME Windows HANDLE_SUBDIRS DLL_REL_PATH ${DLL_REL_PATH} ${COMMON_ARGS})
-tbb_generate_config(INSTALL_DIR ${INSTALL_DIR}/darwin  SYSTEM_NAME Darwin  ${COMMON_ARGS})
+tbb_generate_config(INSTALL_DIR ${INSTALL_DIR}/windows SYSTEM_NAME Windows HANDLE_SUBDIRS ${COMMON_ARGS})
+tbb_generate_config(INSTALL_DIR ${INSTALL_DIR}/darwin  SYSTEM_NAME Darwin                 ${COMMON_ARGS})
 message(STATUS "TBBConfig files were created in ${INSTALL_DIR}")

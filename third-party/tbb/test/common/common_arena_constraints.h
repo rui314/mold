@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2019-2022 Intel Corporation
+    Copyright (c) 2019-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -89,6 +89,7 @@ int get_processors_group_count() { return 1; }
 #define __HWLOC_HYBRID_CPUS_INTERFACES_VALID (!_WIN32 || _WIN64)
 
 #define __HYBRID_CPUS_TESTING __HWLOC_HYBRID_CPUS_INTERFACES_PRESENT && __HWLOC_HYBRID_CPUS_INTERFACES_VALID
+#define __HWLOC_CPUBIND_PRESENT (!__APPLE__)
 
 // Macro to check hwloc interfaces return codes
 #define hwloc_require_ex(command, ...)                                          \
@@ -179,12 +180,16 @@ private:
 #endif
         hwloc_require_ex(hwloc_topology_load, topology);
 
+#if __HWLOC_CPUBIND_PRESENT
         if ( get_processors_group_count() > 1 ) {
             process_cpuset = hwloc_bitmap_dup(hwloc_topology_get_complete_cpuset(topology));
         } else {
             process_cpuset = hwloc_bitmap_alloc();
             hwloc_require_ex(hwloc_get_cpubind, topology, process_cpuset, 0);
         }
+#else
+        process_cpuset = hwloc_bitmap_dup(hwloc_topology_get_complete_cpuset(topology));
+#endif
 
         hwloc_obj_t current_numa_node = nullptr;
         index_info current_node_info{};
@@ -349,7 +354,11 @@ public:
     static affinity_mask allocate_current_affinity_mask() {
         affinity_mask result = hwloc_bitmap_alloc();
         instance().memory_handler.insert(result);
+#if __HWLOC_CPUBIND_PRESENT
         hwloc_require_ex(hwloc_get_cpubind, instance().topology, result, HWLOC_CPUBIND_THREAD);
+#else
+        hwloc_bitmap_copy(result, hwloc_topology_get_complete_cpuset(instance().topology));
+#endif
         REQUIRE_MESSAGE(!hwloc_bitmap_iszero(result), "Empty current affinity mask.");
         return result;
     }
@@ -551,16 +560,19 @@ constraints_container generate_constraints_variety() {
 #endif /*__HYBRID_CPUS_TESTING*/
         }
 
+        int max_threads_per_core = system_info::get_available_max_threads_values().back();
         // Some constraints may cause unexpected behavior, which would be fixed later.
         if (get_processors_group_count() > 1) {
-            for(auto it = results.begin(); it != results.end(); ++it) {
-                if (it->max_threads_per_core != tbb::task_arena::automatic
+            for(auto it = results.begin(); it != results.end();) {
+                if (it->max_threads_per_core != max_threads_per_core
                    && (it->numa_id == tbb::task_arena::automatic || tbb::info::numa_nodes().size() == 1)
 #if __HYBRID_CPUS_TESTING
                    && (it->core_type == tbb::task_arena::automatic || tbb::info::core_types().size() == 1)
 #endif /*__HYBRID_CPUS_TESTING*/
                 ) {
                     it = results.erase(it);
+                } else {
+                    ++it;
                 }
             }
         }

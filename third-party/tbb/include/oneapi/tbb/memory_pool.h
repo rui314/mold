@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -97,10 +97,10 @@ public:
         typedef memory_pool_allocator<U, P> other;
     };
 
-    explicit memory_pool_allocator(pool_type &pool) throw() : my_pool(&pool) {}
-    memory_pool_allocator(const memory_pool_allocator& src) throw() : my_pool(src.my_pool) {}
+    explicit memory_pool_allocator(pool_type &pool) noexcept : my_pool(&pool) {}
+    memory_pool_allocator(const memory_pool_allocator& src) noexcept : my_pool(src.my_pool) {}
     template<typename U>
-    memory_pool_allocator(const memory_pool_allocator<U,P>& src) throw() : my_pool(src.my_pool) {}
+    memory_pool_allocator(const memory_pool_allocator<U,P>& src) noexcept : my_pool(src.my_pool) {}
 
     pointer address(reference x) const { return &x; }
     const_pointer address(const_reference x) const { return &x; }
@@ -117,7 +117,7 @@ public:
         my_pool->free(p);
     }
     //! Largest value for which method allocate might succeed.
-    size_type max_size() const throw() {
+    size_type max_size() const noexcept {
         size_type max = static_cast<size_type>(-1) / sizeof (value_type);
         return (max > 0 ? max : 1);
     }
@@ -149,10 +149,10 @@ public:
         typedef memory_pool_allocator<U, P> other;
     };
 
-    explicit memory_pool_allocator( pool_type &pool) throw() : my_pool(&pool) {}
-    memory_pool_allocator( const memory_pool_allocator& src) throw() : my_pool(src.my_pool) {}
+    explicit memory_pool_allocator( pool_type &pool) noexcept : my_pool(&pool) {}
+    memory_pool_allocator( const memory_pool_allocator& src) noexcept : my_pool(src.my_pool) {}
     template<typename U>
-    memory_pool_allocator(const memory_pool_allocator<U,P>& src) throw() : my_pool(src.my_pool) {}
+    memory_pool_allocator(const memory_pool_allocator<U,P>& src) noexcept : my_pool(src.my_pool) {}
 
 protected:
     pool_type *my_pool;

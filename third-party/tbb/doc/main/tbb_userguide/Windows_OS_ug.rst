@@ -30,12 +30,13 @@ structure for Windows\*, relative to <*tbb_install_dir*>.
         - Same as corresponding ``.dll`` file.
         - \
 
-where
+Where
 
 * ``<arch>`` - ``ia32`` or ``intel64``
 
-* ``<lib>`` - ``tbb``, ``tbbmalloc``, ``tbbmalloc_proxy`` or ``tbbbind``
+  .. note:: Starting with oneTBB 2022.0, 32-bit binaries are supported only by the open-source version of the library.
 
+* ``<lib>`` - ``tbb``, ``tbbmalloc``, ``tbbmalloc_proxy`` or ``tbbbind``
 * ``<vcversion>`` 
 
   - ``14`` - use for dynamic linkage  with the CRT
@@ -47,11 +48,10 @@ where
   - ``_mt`` - use for static linkage with the CRT
 
 * ``<variant>`` - ``_debug`` or empty
-
 * ``<version>`` - binary version
  
-The last column shows which environment variables are used by the
-Microsoft\* Visual C++\* or Intel® C++ Compiler Classic or Intel® oneAPI DPC++/C++ Compiler to find these
+The last column shows, which environment variables are used by the
+Microsoft\* Visual C++\* or Intel® C++ Compiler Classic or Intel® oneAPI DPC++/C++ Compiler, to find these
 subdirectories.
 
 .. CAUTION:: 

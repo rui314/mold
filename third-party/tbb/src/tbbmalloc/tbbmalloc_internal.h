@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -102,9 +102,13 @@ void suppress_unused_warning( const T& ) {}
 /*
  * Default huge page size
  */
+#if defined __loongarch64
+static const size_t HUGE_PAGE_SIZE = 32 * 1024 * 1024;
+#else
 static const size_t HUGE_PAGE_SIZE = 2 * 1024 * 1024;
+#endif
 
-/********** End of global default constatns *********/
+/********** End of global default constants *********/
 
 /********** Various numeric parameters controlling allocations ********/
 
@@ -228,9 +232,13 @@ template<unsigned NUM>
 class BitMaskMax : public BitMaskBasic<NUM> {
 public:
     void set(size_t idx, bool val) {
+        MALLOC_ASSERT(NUM >= idx + 1, ASSERT_TEXT);
+
         BitMaskBasic<NUM>::set(NUM - 1 - idx, val);
     }
     int getMaxTrue(unsigned startIdx) const {
+        MALLOC_ASSERT(NUM >= startIdx + 1, ASSERT_TEXT);
+
         int p = BitMaskBasic<NUM>::getMinTrue(NUM-startIdx-1);
         return -1==p? -1 : (int)NUM - 1 - p;
     }
@@ -339,12 +347,12 @@ public:
 // Block header is used during block coalescing
 // and must be preserved in used blocks.
 class BlockI {
-#if __clang__
+#if __clang__ && !__INTEL_COMPILER
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wunused-private-field"
 #endif
     intptr_t     blockState[2];
-#if __clang__
+#if __clang__ && !__INTEL_COMPILER
     #pragma clang diagnostic pop // "-Wunused-private-field"
 #endif
 };
@@ -492,7 +500,11 @@ private:
         MALLOC_ASSERT(!pageSize, "Huge page size can't be set twice. Double initialization.");
 
         // Initialize object variables
-        pageSize       = hugePageSize * 1024; // was read in KB from meminfo
+        if (hugePageSize > -1) {
+            pageSize = hugePageSize * 1024; // was read in KB from meminfo
+        } else {
+            pageSize = 0;
+        }
         isHPAvailable  = hpAvailable;
         isTHPAvailable = thpAvailable;
     }
@@ -576,6 +588,9 @@ struct ExtMemoryPool {
                       fixedPool;
     TLSKey            tlsPointerKey;  // per-pool TLS key
 
+    std::atomic<int> softCachesCleanupInProgress;
+    std::atomic<int> hardCachesCleanupInProgress;
+
     bool init(intptr_t poolId, rawAllocType rawAlloc, rawFreeType rawFree,
               size_t granularity, bool keepAllMemory, bool fixedPool);
     bool initTLS();
@@ -586,7 +601,7 @@ struct ExtMemoryPool {
      // true if something has been released
     bool softCachesCleanup();
     bool releaseAllLocalCaches();
-    bool hardCachesCleanup();
+    bool hardCachesCleanup(bool wait);
     void *remap(void *ptr, size_t oldSize, size_t newSize, size_t alignment);
     bool reset() {
         loc.reset();
@@ -669,13 +684,16 @@ class RecursiveMallocCallProtector {
     char scoped_lock_space[sizeof(MallocMutex::scoped_lock)+1];
     
 public:
-
     RecursiveMallocCallProtector() : lock_acquired(nullptr) {
         lock_acquired = new (scoped_lock_space) MallocMutex::scoped_lock( rmc_mutex );
         if (canUsePthread)
             owner_thread.store(pthread_self(), std::memory_order_relaxed);
         autoObjPtr.store(&scoped_lock_space, std::memory_order_relaxed);
     }
+
+    RecursiveMallocCallProtector(RecursiveMallocCallProtector&) = delete;
+    RecursiveMallocCallProtector& operator=(RecursiveMallocCallProtector) = delete;
+
     ~RecursiveMallocCallProtector() {
         if (lock_acquired) {
             autoObjPtr.store(nullptr, std::memory_order_relaxed);

@@ -1,5 +1,5 @@
 # ################################################################
-# Copyright (c) 2016-present, Facebook, Inc.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
 # This source code is licensed under both the BSD-style license (found in the
@@ -10,7 +10,7 @@
 # Standard variables for installation
 DESTDIR ?=
 PREFIX  ?= /usr/local
-BINDIR  := $(DESTDIR)$(PREFIX)/bin
+BINDIR  := $(PREFIX)/bin
 
 ZSTDDIR = ../../lib
 PROGDIR = ../../programs
@@ -37,10 +37,13 @@ CFLAGS   += -Wno-deprecated-declarations
 PZSTD_INC  = -I$(ZSTDDIR) -I$(ZSTDDIR)/common -I$(PROGDIR) -I.
 GTEST_INC  = -isystem googletest/googletest/include
 
+# Set the minimum required by gtest
+PZSTD_CXX_STD := -std=c++14
+
 PZSTD_CPPFLAGS  = $(PZSTD_INC)
 PZSTD_CCXXFLAGS =
 PZSTD_CFLAGS    = $(PZSTD_CCXXFLAGS)
-PZSTD_CXXFLAGS  = $(PZSTD_CCXXFLAGS) -std=c++11
+PZSTD_CXXFLAGS  = $(PZSTD_CCXXFLAGS) $(PZSTD_CXX_STD)
 PZSTD_LDFLAGS   =
 EXTRA_FLAGS     =
 ALL_CFLAGS      = $(EXTRA_FLAGS) $(CPPFLAGS) $(PZSTD_CPPFLAGS) $(CFLAGS)   $(PZSTD_CFLAGS)
@@ -106,12 +109,12 @@ check:
 .PHONY: install
 install: PZSTD_CPPFLAGS += -DNDEBUG
 install: pzstd$(EXT)
-	install -d -m 755 $(BINDIR)/
-	install -m 755 pzstd$(EXT) $(BINDIR)/pzstd$(EXT)
+	install -d -m 755 $(DESTDIR)$(BINDIR)/
+	install -m 755 pzstd$(EXT) $(DESTDIR)$(BINDIR)/pzstd$(EXT)
 
 .PHONY: uninstall
 uninstall:
-	$(RM) $(BINDIR)/pzstd$(EXT)
+	$(RM) $(DESTDIR)$(BINDIR)/pzstd$(EXT)
 
 # Targets for many different builds
 .PHONY: all

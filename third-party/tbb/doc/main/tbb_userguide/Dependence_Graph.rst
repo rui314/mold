@@ -26,7 +26,7 @@ application that could be expressed using a dependence graph.
 
 
 Dependence graphs are a special case of data flow graphs, where the data
-passed between nodes are of type oneapi::tbb::flow::continue_msg. Unlike a
+passed between nodes are of type ``oneapi::tbb::flow::continue_msg``. Unlike a
 general data flow graph, nodes in a dependence graph do not spawn a task
 for each message they receive. Instead, they are aware of the number of
 predecessors they have, count the messages they receive and only spawn a
@@ -58,7 +58,7 @@ B and E or C and F.
 
 
 To implement this as a flow graph, continue_node objects are used for
-the nodes and continue_msg objects as the messages. A continue_node
+the nodes and ``continue_msg`` objects as the messages. A continue_node
 constructor takes two arguments:
 
 
@@ -69,8 +69,8 @@ constructor takes two arguments:
 
 
 The first argument is the graph it belongs to and the second is a
-function object or lambda expression. Unlike a function_node, a
-continue_node is always assumed to have unlimited concurrency and will
+function object or lambda expression. Unlike a ``function_node``, a
+``continue_node`` is always assumed to have unlimited concurrency and will
 immediately spawn a task whenever its dependencies are met.
 
 
@@ -107,7 +107,7 @@ figure.
 
 One possible execution of this graph is shown below. The execution of D
 does not start until both B and E are finished. While a task is waiting
-in the wait_for_all, its thread can participate in executing other tasks
+in the ``wait_for_all``, its thread can participate in executing other tasks
 from the oneTBB work pool.
 
 
@@ -124,11 +124,11 @@ from the oneTBB work pool.
 
 
 Again, it is important to note that all execution in the flow graph
-happens asynchronously. The call to A.try_put returns control to the
+happens asynchronously. The call to ``A.try_put`` returns control to the
 calling thread quickly, after incrementing the counter and spawning a
 task to execute the body of A. Likewise, the body tasks execute the
 lambda expressions and then put a continue_msg to all successor nodes,
-if any. Only the call to wait_for_all blocks, as it should, and even in
+if any. Only the call to ``wait_for_all`` blocks, as it should, and even in
 this case the calling thread may be used to execute tasks from the
 oneTBB work pool while it is waiting.
 

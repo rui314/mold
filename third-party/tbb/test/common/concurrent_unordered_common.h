@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -370,6 +370,24 @@ void test_set_comparisons() {
     test_comparisons_basic<integral_container>();
     test_comparisons_basic<two_way_comparable_container>();
     test_two_way_comparable_container<two_way_comparable_container>();
+}
+
+template <typename Container>
+void test_reserve_regression() {
+    Container container;
+
+    float lf = container.max_load_factor();
+    std::size_t buckets = container.unsafe_bucket_count();
+    std::size_t capacity = std::size_t(buckets * lf);
+
+    for (std::size_t elements = 0; elements < capacity; ++elements) {
+        container.reserve(elements);
+        REQUIRE_MESSAGE(container.unsafe_bucket_count() == buckets,
+                        "reserve() should not increase bucket count if the capacity is not reached");
+    }
+
+    container.reserve(capacity * 2);
+    REQUIRE_MESSAGE(container.unsafe_bucket_count() > buckets, "reserve() should increase bucket count if the capacity is reached");
 }
 
 #endif // __TBB_test_common_concurrent_unordered_common

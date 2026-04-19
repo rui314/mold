@@ -13,12 +13,12 @@ See <https://github.com/rui314/mold#how-to-use>.
 
 ### Compatibility
 
-**Mold** is designed to be a drop-in replacement for the GNU linkers for
+`mold` is designed to be a drop-in replacement for the GNU linkers for
 linking user-land programs. If your user-land program cannot be built due to
 missing command-line options, please file a bug at
 <https://github.com/rui314/mold/issues>.
 
-Mold supports a very limited set of linker script features, which is just
+`mold` supports a very limited set of linker script features, which is just
 sufficient to read `/usr/lib/x86_64-linux-gnu/libc.so` on Linux systems (on
 Linux, that file is contrary to its name not a shared library but an ASCII
 linker script that loads a real `libc.so` file.)
@@ -104,11 +104,10 @@ assume that you accidentally define `atoi` as a global function in your
 executable that behaves completely differently from the one in the C standard.
 Then, all `atoi` function calls from any modules (even function calls within
 libc) are redirected to your function instead of the one in libc, which will
-very likely cause a problem.
-
-That is a somewhat surprising consequence for an accidental name conflict. On
-the other hand, this semantic is sometimes useful because it allows users to
-override library functions without rebuilding modules containing them.
+very likely cause a problem. That is a somewhat surprising consequence for an
+accidental name conflict. On the other hand, this semantic is sometimes useful
+because it allows users to override library functions without rebuilding
+modules containing them.
 
 Whether good or bad, you should keep these semantics in mind to understand
 Unix linkers' behaviors.
@@ -117,7 +116,7 @@ Unix linkers' behaviors.
 
 `mold`'s output is deterministic. That is, if you pass the same object files
 and the same command-line options to the same version of `mold`, it is
-guaranteed that `mold` produces the bit-by-bit identical output. The linker's
+guaranteed that `mold` produces the bit-for-bit identical output. The linker's
 internal randomness, such as the timing of thread scheduling or iteration
 orders of hash tables, doesn't affect the output.
 
@@ -125,6 +124,16 @@ orders of hash tables, doesn't affect the output.
 GNU linkers, for which some configurable values, such as system-dependent
 library search paths, are hard-coded. `mold` depends only on its command-line
 arguments.
+
+## OPTION NOTATIONS
+
+Multi-letter long options may precede either a single dash or double dashes,
+except for those starting with the letter "o". For historical reasons, long
+options beginning with "o" must precede double dashes.
+
+For example, you can spell `--as-needed` as `-as-needed`, but `--omagic` must
+not be spelled as `-omagic`. `-omagic` will be interpreted not as `--omagic`
+but as `-o magic`.
 
 ## MOLD-SPECIFIC OPTIONS
 
@@ -142,10 +151,17 @@ arguments.
 * `--no-color-diagnostics`:
   Synonym for `--color-diagnostics=never`.
 
+* `--detach`, `--no-detach`:
+  Permit or do not permit mold to create a debug info file in the background.
+
 * `--fork`, `--no-fork`:
   Spawn a child process and let it do the actual linking. When linking a large
   program, the OS kernel can take a few hundred milliseconds to terminate a
   `mold` process. `--fork` hides that latency. By default, it does fork.
+
+  Note that `--fork` also hides the resource usage statistics reported by
+  time(2), since it doesn't call waitpid(2) on the child process. If you
+  need those statistics, pass `--no-fork`.
 
 * `--perf`:
   Print performance statistics.
@@ -157,6 +173,15 @@ arguments.
   file to use a specific symbol. This option is useful for debugging why some
   object file in a static archive got linked or why some shared library is
   kept in an output file's dependency list even with `--as-needed`.
+
+* `--relocatable-merge-sections`:
+  By default, `mold` doesn't merge input sections by name when merging input
+  object files into a single output object file for `-r`. For example,
+  `.text.foo` and `.text.bar` aren't merged for `-r` even though they are
+  merged into `.text` based on the default section merging rules.
+
+  This option changes the behavior so that `mold` merges input sections by
+  name by the default section merging rules.
 
 * `--repro`:
   Archive input files, as well as a text file containing command line options,
@@ -179,10 +204,29 @@ arguments.
   easily test that your program works in the reversed initialization order.
 
 * `--run` _command_ _arg_...:
-  Run _command_ with `mold` `/usr/bin/ld`. Specifically, `mold` runs a given
-  command with the `LD_PRELOAD` environment set to intercept exec(3) family
-  functions and replaces `argv[0]` with itself if it is `ld`, `ld.gold`, or
-  `ld.lld`.
+  Run _command_ with `mold` as `/usr/bin/ld`. Specifically, `mold` runs a
+  given command with the `LD_PRELOAD` environment set to intercept exec(3)
+  family functions and replaces `argv[0]` with itself if it is `ld`,
+  `ld.gold`, or `ld.lld`.
+
+* `--separate-debug-file`, `--separate-debug-file`=_file_:
+  Bundle debug info sections into a separate file instead of embedding them in
+  an output executable or a shared library. mold creates a debug info file in
+  the background by default, so that you can start running your executable as
+  soon as possible.
+
+  By default, the debug info file is created in the same directory as is the
+  output file, with the `.dbg` file extension. That filename is embedded into
+  the output file so that `gdb` can automatically find the debug info file for
+  the output file. For more info about gdb features related to separate debug
+  files, see
+  <https://sourceware.org/gdb/current/onlinedocs/gdb.html/Separate-Debug-Files.html>.
+
+  mold holds a file lock with flock(2) while creating a debug info file in the
+  background.
+
+  If you don't want to create a debug info file in the background, pass the
+  `--no-detach` option.
 
 * `--shuffle-sections`, `--shuffle-sections`=_number_:
   Randomize the output by shuffling the order of input sections before
@@ -203,6 +247,15 @@ arguments.
   `--shuffle-sections`, you can isolate your program's real performance number
   from the randomness caused by memory layout changes.
 
+* `--spare-program-headers`=_number_:
+  Append the given number of `PT_NULL` entries to the end of the program
+  header, so that post-link processing tools can easily add new segments by
+  overwriting the null entries.
+
+  Note that ELF requires all `PT_LOAD` segments to be sorted by `p_vaddr`.
+  Therefore, if you add a new LOAD segment, you may need to sort the entire
+  program header.
+
 * `--stats`:
   Print input statistics.
 
@@ -217,6 +270,55 @@ arguments.
 
 * `--quick-exit`, `--no-quick-exit`:
   Use or do not use `quick_exit` to exit.
+
+* `--zero-to-bss`:
+  Convert all-zero data sections into BSS.
+
+  When this option is enabled, `mold` scans input data sections that are not
+  of type `SHT_NOBITS` and checks whether their contents consist solely of
+  zero bytes. Such sections are then converted into BSS (`SHT_NOBITS`)
+  sections. This reduces the size of the output file, since BSS sections
+  occupy no space in the file image.
+
+  This behavior is especially useful for user-defined sections created with
+  `__attribute__((section(".sectname")))` that contain uninitialized global
+  variables. GCC and Clang do not automatically mark such sections as BSS
+  even if their contents are entirely zero, and instead emit them as regular
+  data sections.
+
+  For example, consider `__attribute__((section(".sectname"))) int vec[256];`.
+
+  By default, this results in a `.sectname` section of type `SHT_PROGBITS`
+  filled with zeros. With `--zero-to-bss`, the linker will recognize it as
+  empty data and convert it to a `SHT_NOBITS` section, reducing the output
+  file size without changing runtime semantics.
+
+* `-z rewrite-endbr`, `-z norewrite-endbr`:
+  As a security measure, some CPU instruction sets have recently gained a
+  feature to protect control flow integrity by disallowing indirect branches
+  by default. If the feature is enabled, the instruction that is executed
+  immediately after an indirect branch must be an branch target marker
+  instruction, or a CPU-level fault will raise. The marker instruction is also
+  known as "landing pad" instruction, to which indirect branches can land.
+  This feature makes ROP attacks harder to conduct.
+
+  To use the feature, a function whose pointer is taken needs to begin with a
+  landing pad because a function call via a function pointer is compiled to an
+  indirect branch. On the other hand, if a function is called only directly
+  (i.e. referred to only by _direct_ branch instructions), it doesn't have to
+  begin with it.
+
+  By default, the compiler always emits a landing pad at the beginning of each
+  global function because it doesn't know whether or not the function's
+  pointer is taken in another translation unit. As a result, the resulting
+  binary has more attack surface than necessary.
+
+  If `--rewrite-endbr` is given, mold conducts a whole program analysis
+  to identify functions whose addresses are actually taken and rewrites
+  landing pads with no-ops for non-address-taken functions, reducing the
+  attack surface.
+
+  This feature is currently available only on x86-64.
 
 ## GNU-COMPATIBLE OPTIONS
 
@@ -303,15 +405,6 @@ arguments.
   object files to generate another object file that can be used as an input to
   a linker.
 
-* `--relocatable-merge-sections`:
-  By default, `mold` doesn't merge input sections by name when merging input
-  object files into a single output object file for `-r`. For example,
-  `.text.foo` and `.text.bar` aren't merged for `-r` even though they are
-  merged into `.text` according to the default section merging rules.
-
-  This option changes the behavior so that `mold` merges input sections by
-  name by the default section merging rules.
-
 * `-s`, `--strip-all`:
   Omit `.symtab` section from the output file.
 
@@ -320,6 +413,9 @@ arguments.
   and if there is a static archive that contains an object file defining
   _symbol_, pull out the object file and link it so that the output file
   contains a definition of _symbol_.
+
+* `-y` _symbol_, `--trace-symbol`=_symbol_:
+  Trace references to _symbol_.
 
 * `--Bdynamic`:
   Link against shared libraries.
@@ -337,8 +433,18 @@ arguments.
   This option has the same effect as `--Bsymbolic` but works only for function
   symbols. Data symbols remain being both imported and exported.
 
+* `--Bsymbolic-non-weak`:
+  This option has the same effect as `--Bsymbolic` but works only for non-weak
+  symbols. Weak symbols remain being both imported and exported.
+
+* `--Bsymbolic-non-weak-functions`:
+  This option has the same effect as `--Bsymbolic` but works only for non-weak
+  function symbols. Data symbols and weak function symbols remain being both
+  imported and exported.
+
 * `--Bno-symbolic`:
-  Cancel `--Bsymbolic` and `--Bsymbolic-functions`.
+  Cancel `--Bsymbolic`, `--Bsymbolic-functions`, `--Bsymbolic-non-weak` and
+  `--Bsymbolic-non-weak-functions`.
 
 * `--Map`=_file_:
   Write map file to _file_.
@@ -358,6 +464,23 @@ arguments.
   report an error for duplicate definitions and instead use the first
   definition.
 
+* `--allow-shlib-undefined`, `--no-allow-shlib-undefined`:
+  Even if mold succeeds in linking a main executable without undefined symbol
+  errors, you may still encounter symbol lookup errors at runtime because the
+  dynamic linker cannot find some symbols in shared libraries in any ELF
+  module. This occurs because mold ignores undefined symbols in shared
+  libraries by default.
+
+  If you pass `--no-allow-shlib-undefined`, mold verifies that undefined
+  symbols in shared libraries given to the linker can be resolved at
+  link-time. In other words, this converts the runtime error to a link-time
+  error.
+
+  Note that you need to pass all shared libraries, including indirectly
+  dependent ones, to the linker as arguments for `-l`. If a shared library
+  depends on a library that's not passed to the linker, the verification will
+  be skipped for that file.
+
 * `--as-needed`, `--no-as-needed`:
   By default, shared libraries given to the linker are unconditionally added
   to the list of required libraries in an output file. However, shared
@@ -369,13 +492,13 @@ arguments.
   The `--no-as-needed` option restores the default behavior for subsequent
   files.
 
-* `--build-id`=[ `md5` | `sha1` | `sha256` | `uuid` | `0x`_hexstring_ | `none` ]:
+* `--build-id`=[ `md5` | `sha1` | `sha256` | `fast` | `uuid` | `0x`_hexstring_ | `none` ]:
   Create a `.note.gnu.build-id` section containing a byte string to uniquely
   identify an output file. `sha256` compute a 256-bit cryptographic hash of an
   output file and set it to build-id. `md5` and `sha1` compute the same hash
   but truncate it to 128 and 160 bits, respectively, before setting it to
   build-id. `uuid` sets a random 128-bit UUID. `0x`_hexstring_ sets
-  _hexstring_.
+  _hexstring_. `fast` is a synonym for `sha256`.
 
 * `--build-id`:
   Synonym for `--build-id=sha256`.
@@ -431,17 +554,22 @@ arguments.
   `--disable-new-dtags`, `mold` emits `DT_RPATH` for `--rpath` instead.
 
 * `--execute-only`:
-  Traditionally, most processors require both executable and readable bits to
-  1 to make the page executable, which allows machine code to be read as data
-  at runtime. This is actually what an attacker often does after gaining a
-  limited control of a process to find pieces of machine code they can use to
-  gain the full control of the process. As a mitigation, some recent
-  processors allows "execute-only" pages. If a page is execute-only, you can
-  call a function there as long as you know its address but can't read it as
-  data.
 
-  This option marks text segments execute-only. This option currently works
-  only on some ARM64 processors.
+  Traditionally, setting the executable bit to 1 for a memory page implies
+  that the page also become readable, which allows machine code to be read
+  as data at runtime. That is actually what an attacker often does after
+  gaining a limited control of a process to find pieces of machine code
+  they can use to gain the full control of the process. As a mitigation,
+  recent processors including some ARM64 ones allows "execute-only" pages.
+  If a page is execute-only, you can call a function there as long as you
+  know its address but can't read it as data.
+
+  This option marks text segments as execute-only by setting just the "X"
+  bit instead of "RX". Note that on most systems, the absence of the "R"
+  bit in the text segment serves just as a hint. If you run a program
+  linked with `--execute-only` on a processor that doesn't support
+  execute-only pages, your executable will likely still function normally,
+  but the text segment will remain readable.
 
 * `--exclude-libs`=_libraries_ ...:
   Mark all symbols in the given _libraries_ hidden.
@@ -515,6 +643,21 @@ arguments.
 * `--noinhibit-exec`:
   Create an output file even if errors occur.
 
+* `--package-metadata`=_percent-encoded-string_:
+  Embed a specified string into the `.note.package` section. This option
+  is designed for build scripts that generate binary packages, such as
+  `.rpm` or `.deb`, to include package metadata in each executable. It
+  simplifies the process of identifying the corresponding package for a
+  given executable or core file.
+
+  An argument to this option is treated as percent-encoded and decoded
+  before being inserted into the section, allowing you to avoid the use of
+  the comma (`,`) character in the argument. This is useful because the
+  compiler replaces all occurrences of commas in `-Wl,` with spaces before
+  forwarding them to the linker. Note that `mold` always interprets the
+  argument as percent-encoded, so you also need to escape all occurrences
+  of `%` as `%25`.
+
 * `--pack-dyn-relocs`=[ `relr` | `none` ]:
   If `relr` is specified, all `R_*_RELATIVE` relocations are put into
   `.relr.dyn` section instead of `.rel.dyn` or `.rela.dyn` section. Since
@@ -525,11 +668,6 @@ arguments.
   Note that a runtime loader has to support `.relr.dyn` to run executables or
   shared libraries linked with `--pack-dyn-relocs=relr`. As of 2022, only
   ChromeOS, Android and Fuchsia support it.
-
-* `--package-metadata`=_string_:
-  Embed _string_ to a `.note.package` section. This option is intended to be
-  used by a package management command such as rpm(8) to embed metadata
-  regarding a package to each executable file.
 
 * `--pie`, `--pic-executable`, `--no-pie`, `--no-pic-executable`:
   Create a position-independent executable.
@@ -579,7 +717,9 @@ arguments.
   Create a share library.
 
 * `--spare-dynamic-tags`=_number_:
-  Reserve the given _number_ of tags in `.dynamic` section.
+  Append the given number of `DT_NULL` entries to the end of the `.dynamic`
+  section, so that post-link processing tools can easily add new dynamic tags
+  by overwriting the null entries.
 
 * `--start-lib`, `--end-lib`:
   Handle object files between `--start-lib` and `--end-lib` as if they were in
@@ -596,6 +736,10 @@ arguments.
 
 * `--trace`:
   Print name of each input file.
+
+* `--undefined-glob`=_pattern_:
+  Synonym for `--undefined`, except that `--undefined-glob` takes a glob
+  pattern instead of just a single symbol name.
 
 * `--undefined-version`, `--no-undefined-version`:
   By default, `mold` warns on a symbol specified by a version script or by
@@ -684,18 +828,24 @@ arguments.
   `.text.exit` as separate sections in the final binary instead of merging
   them as `.text`.
 
+* `-z rodynamic`:
+  Make the `.dynamic` section read-only.
+
 * `-z relro`, `-z norelro`:
-  Some sections such as `.dynamic` have to be writable only during an
-  executable or a shared library file is being loaded to memory. Once the
-  dynamic linker finishes its job, such sections won't be mutated by anyone.
-  As a security mitigation, it is preferred to make such segments read-only
-  during program execution.
+  Some sections such as `.dynamic` have to be writable only during a module is
+  being loaded to memory. Once the dynamic linker finishes its job, such
+  sections won't be mutated by anyone. As a security mitigation, it is
+  preferred to make such segments read-only during program execution.
 
   `-z relro` puts such sections into a special segment called `relro`. The
   dynamic linker makes a relro segment read-only after it finishes its job.
 
   By default, `mold` generates a relro segment. `-z norelro` disables the
   feature.
+
+* `-z sectionheader`, `-z nosectionheader`:
+  `-z nosectionheader` tell the linker to omit the section header.
+  By default, the linker does not omit the section header.
 
 * `-z separate-loadable-segments`, `-z separate-code`, `-z noseparate-code`:
   If one memory page contains multiple segments, the page protection bits are
@@ -704,10 +854,10 @@ arguments.
   segments with two different attributes.
 
   `separate-loadable-segments` adds paddings between segments with different
-  attributes so that they do not share the same page. This is the default.
+  attributes so that they do not share the same page.
 
   `separate-code` adds paddings only between executable and non-executable
-  segments.
+  segments. This is the default.
 
   `noseparate-code` does not add any paddings between segments.
 
@@ -720,6 +870,15 @@ arguments.
   Control-flow Enforcement Technology (CET), which is available since Tiger
   Lake (2020).
 
+* `-z start_stop_visibility`=[ `hidden` | `protected` ]:
+  If a section name is valid as a C identifier (i.e., it matches
+  `/^[_a-zA-Z][_a-zA-Z0-9]*$/`), mold creates `__start_SECNAME` and
+  `__stop_SECNAME` symbols to mark the beginning and end of the section,
+  where `SECNAME` is the section name.
+
+  You can make these marker symbols visible from other ELF modules by passing
+  `-z start_stop_visibility=protected`. Default is `hidden`.
+
 * `-z text`, `-z notext`, `-z textoff`:
   `mold` by default reports an error if dynamic relocations are created in
   read-only sections. If `-z notext` or `-z textoff` are given, `mold` creates
@@ -727,9 +886,11 @@ arguments.
   default behavior.
 
 * `-z max-page-size`=_number_:
-  Some CPU ISAs support multiple different memory page sizes. This option
-  specifies the maximum page size that an output binary can run on. The
-  default value is 4 KiB for i386, x86-64, and RISC-V, and 64 KiB for ARM64.
+  Some CPU ISAs support multiple memory page sizes. This option specifies the
+  maximum page size that an output binary can run on. In general, binaries
+  built for a larger page size can run on a system with a smaller page size,
+  but not vice versa. The default value is 4 KiB for i386, x86-64, and RISC-V,
+  and 64 KiB for ARM64.
 
 * `-z nodefaultlib`:
   Make the dynamic loader ignore default search paths.
@@ -754,28 +915,30 @@ arguments.
 * `-z interpose`:
   Mark object to interpose all DSOs but executable.
 
-* `-(`, `-)`, `-EL`, `-O`_number_, `--allow-shlib-undefined`, `--dc`, `--dp`, `--end-group`, `--no-add-needed`, `--no-allow-shlib-undefined`, `--no-copy-dt-needed-entries`, `--no-fatal-warnings`, `--nostdlib`, `--rpath-link=Ar dir`, `--sort-common`, `--sort-section`, `--start-group`, `--warn-constructors`, `--warn-once`, `--fix-cortex-a53-835769`, `--fix-cortex-a53-843419`, `-z combreloc`, `-z common-page-size`, `-z nocombreloc`:
+* `-(`, `-)`, `-EL`, `-O`_number_, `--dc`, `--dp`, `--end-group`, `--no-add-needed`, `--no-copy-dt-needed-entries`, `--nostdlib`, `--rpath-link=Ar dir`, `--sort-common`, `--sort-section`, `--start-group`, `--warn-constructors`, `--warn-once`, `--fix-cortex-a53-835769`, `--fix-cortex-a53-843419`, `-z combreloc`, `-z common-page-size`, `-z nocombreloc`:
   Ignored
 
 ## ENVIRONMENT VARIABLES
 
 * `MOLD_JOBS`:
-  If this variable is set to `1`, only one process of `mold` runs actively. A
-  mold process invoked while another active mold process is running will wait
-  before doing anything until the active process exits.
+  If this variable is set to `1`, only one `mold` process will run at a time.
+  If a new mold process is initiated while another is already active, the new
+  process will wait until the active one completes before starting.
 
-  The purpose of this environment variable is to reduce peak memory usage.
-  Since mold is highly parallelized, there's no point in running it
-  simultaneously. If you run N instances of mold in parallel, it would take N
-  times more time and N times more memory. If you run them serially, it would
-  still take N times more to finish, but their peak memory usage is reduced to
-  normal.
+  The primary reason for this environment variable is to minimize peak memory
+  usage. Since mold is designed to operate with high parallelism, running
+  multiple mold instances simultaneously may not be beneficial. If you execute
+  N instances of mold concurrently, it could require N times the time and N
+  times the memory. On the other hand, running them one after the other might
+  still take N times longer, but the peak memory usage would be the same as
+  running just a single instance.
 
-  If your build system tends to invoke multiple linker processes
-  simultaneously, you may want to try to set this environment variable to
-  `1` to see if it could improve overall performance.
+  If your build system invokes multiple linker processes simultaneously and
+  some of them often get killed due to out-of-memory errors, you might
+  consider setting this environment variable to `1` to see if it addresses the
+  OOM issue.
 
-  Currently, any value other than 1 is silently ignored.
+  Currently, any value other than `1` is silently ignored.
 
 * `MOLD_DEBUG`:
   If this variable is set to a non-empty string, `mold` embeds its

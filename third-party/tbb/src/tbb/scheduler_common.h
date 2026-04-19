@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 #include "oneapi/tbb/detail/_machine.h"
 #include "oneapi/tbb/task_group.h"
 #include "oneapi/tbb/cache_aligned_allocator.h"
+#include "oneapi/tbb/tbb_allocator.h"
 #include "itt_notify.h"
 #include "co_context.h"
 #include "misc.h"
@@ -41,6 +42,8 @@
 
 #include <cstdint>
 #include <exception>
+#include <memory> // unique_ptr
+#include <unordered_map>
 
 //! Mutex type for global locks in the scheduler
 using scheduler_mutex_type = __TBB_SCHEDULER_MUTEX_TYPE;
@@ -67,6 +70,22 @@ template<task_stream_accessor_type> class task_stream;
 
 using isolation_type = std::intptr_t;
 constexpr isolation_type no_isolation = 0;
+
+struct cache_aligned_deleter {
+    template <typename T>
+    void operator() (T* ptr) const {
+        ptr->~T();
+        cache_aligned_deallocate(ptr);
+    }
+};
+
+template <typename T>
+using cache_aligned_unique_ptr = std::unique_ptr<T, cache_aligned_deleter>;
+
+template <typename T, typename ...Args>
+cache_aligned_unique_ptr<T> make_cache_aligned_unique(Args&& ...args) {
+    return cache_aligned_unique_ptr<T>(new (cache_aligned_allocate(sizeof(T))) T(std::forward<Args>(args)...));
+}
 
 //------------------------------------------------------------------------
 // Extended execute data
@@ -225,9 +244,10 @@ inline void prolonged_pause() {
         std::uint64_t time_stamp = machine_time_stamp();
         // _tpause function directs the processor to enter an implementation-dependent optimized state
         // until the Time Stamp Counter reaches or exceeds the value specified in second parameter.
-        // Constant "700" is ticks to wait for.
+        // Constant "1000" is ticks to wait for.
+        // TODO : Modify this parameter based on empirical study of benchmarks.
         // First parameter 0 selects between a lower power (cleared) or faster wakeup (set) optimized state.
-        _tpause(0, time_stamp + 700);
+        _tpause(0, time_stamp + 1000);
     }
     else
 #endif
@@ -245,17 +265,12 @@ class stealing_loop_backoff {
     int my_yield_count;
 public:
     // my_yield_threshold = 100 is an experimental value. Ideally, once we start calling __TBB_Yield(),
-    // the time spent spinning before calling is_out_of_work() should be approximately
+    // the time spent spinning before calling out_of_work() should be approximately
     // the time it takes for a thread to be woken up. Doing so would guarantee that we do
     // no worse than 2x the optimal spin time. Or perhaps a time-slice quantum is the right amount.
     stealing_loop_backoff(int num_workers, int yields_multiplier)
         : my_pause_threshold{ 2 * (num_workers + 1) }
-#if __APPLE__
-        // threshold value tuned separately for macOS due to high cost of sched_yield there
-        , my_yield_threshold{10 * yields_multiplier}
-#else
         , my_yield_threshold{100 * yields_multiplier}
-#endif
         , my_pause_count{}
         , my_yield_count{}
     {}
@@ -382,7 +397,7 @@ struct suspend_point_type {
 
     void finilize_resume() {
         m_stack_state.store(stack_state::active, std::memory_order_relaxed);
-        // Set the suspended state for the stack that we left. If the state is already notified, it means that 
+        // Set the suspended state for the stack that we left. If the state is already notified, it means that
         // someone already tried to resume our previous stack but failed. So, we need to resume it.
         // m_prev_suspend_point might be nullptr when destroying co_context based on threads
         if (m_prev_suspend_point && m_prev_suspend_point->m_stack_state.exchange(stack_state::suspended) == stack_state::notified) {
@@ -461,6 +476,13 @@ public:
     //! Suspend point (null if this task dispatcher has been never suspended)
     suspend_point_type* m_suspend_point{ nullptr };
 
+    //! Used to improve scalability of d1::wait_context by using per thread reference_counter
+    std::unordered_map<d1::wait_tree_vertex_interface*, d1::reference_vertex*,
+                       std::hash<d1::wait_tree_vertex_interface*>, std::equal_to<d1::wait_tree_vertex_interface*>,
+                       tbb_allocator<std::pair<d1::wait_tree_vertex_interface* const, d1::reference_vertex*>>
+                      >
+        m_reference_vertex_map;
+
     //! Attempt to get a task from the mailbox.
     /** Gets a task only if it has not been executed by its sender or a thief
         that has stolen it from the sender's task pool. Otherwise returns nullptr.
@@ -489,6 +511,14 @@ public:
             m_suspend_point->~suspend_point_type();
             cache_aligned_deallocate(m_suspend_point);
         }
+
+        for (auto& elem : m_reference_vertex_map) {
+            d1::reference_vertex*& node = elem.second;
+            node->~reference_vertex();
+            cache_aligned_deallocate(node);
+            poison_pointer(node);
+        }
+
         poison_pointer(m_thread_data);
         poison_pointer(m_suspend_point);
     }
@@ -548,6 +578,7 @@ public:
 #endif
 
 inline std::uintptr_t calculate_stealing_threshold(std::uintptr_t base, std::size_t stack_size) {
+    __TBB_ASSERT(stack_size != 0, "Stack size cannot be zero");
     __TBB_ASSERT(base > stack_size / 2, "Stack anchor calculation overflow");
     return base - stack_size / 2;
 }
@@ -558,8 +589,7 @@ struct task_group_context_impl {
     static void register_with(d1::task_group_context&, thread_data*);
     static void bind_to_impl(d1::task_group_context&, thread_data*);
     static void bind_to(d1::task_group_context&, thread_data*);
-    template <typename T>
-    static void propagate_task_group_state(d1::task_group_context&, std::atomic<T> d1::task_group_context::*, d1::task_group_context&, T);
+    static void propagate_task_group_state(d1::task_group_context&, std::atomic<uint32_t> d1::task_group_context::*, d1::task_group_context&, uint32_t);
     static bool cancel_group_execution(d1::task_group_context&);
     static bool is_group_execution_cancelled(const d1::task_group_context&);
     static void reset(d1::task_group_context&);

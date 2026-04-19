@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -661,6 +661,81 @@ void test_deduction_guides() {
 
 #endif
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+void test_try_put_and_wait() {
+    tbb::task_arena arena(1);
+
+    arena.execute([] {
+        tbb::flow::graph g;
+
+        std::vector<int> start_work_items;
+        std::vector<int> processed_items1;
+        std::vector<float> processed_items2;
+        std::vector<int> new_work_items;
+        int wait_message = 10;
+
+        for (int i = 0; i < wait_message; ++i) {
+            start_work_items.emplace_back(i);
+            new_work_items.emplace_back(i + 1 + wait_message);
+        }
+
+        tbb::flow::indexer_node<int, float> indexer(g);
+        using output_type = decltype(indexer)::output_type;
+
+        tbb::flow::function_node<output_type, int> function(g, tbb::flow::serial,
+            [&](output_type tag_msg) noexcept {
+                if (tag_msg.tag() == 0) {
+                    int input = tag_msg.cast_to<int>();
+                    if (input == wait_message) {
+                        for (auto item : new_work_items) {
+                            tbb::flow::input_port<0>(indexer).try_put(item);
+                            tbb::flow::input_port<1>(indexer).try_put(float(item));
+                        }
+                    }
+                    processed_items1.emplace_back(input);
+                } else {
+                    processed_items2.emplace_back(tag_msg.cast_to<float>());
+                }
+                return 0;
+            });
+
+        tbb::flow::make_edge(indexer, function);
+
+        for (auto item : start_work_items) {
+            tbb::flow::input_port<0>(indexer).try_put(item);
+            tbb::flow::input_port<1>(indexer).try_put(float(item));
+        }
+
+        tbb::flow::input_port<0>(indexer).try_put_and_wait(wait_message);
+
+        // Since function is a serial queueing function node, all start_work_items would be stored in a queue
+        // wait_message would be stored at the end of the queue
+        // During the try_put_and_wait call, start_work_items would be processed from the queue in FIFO order
+        // wait_message would be processed last and adds new_work_items into the same queue
+        // It is expected then new_work_items would be processed during wait_for_all() call
+
+        std::size_t check_index1 = 0;
+        std::size_t check_index2 = 0;
+
+        for (auto item : start_work_items) {
+            CHECK_MESSAGE(processed_items1[check_index1++] == item, "Unexpected items processing");
+            CHECK_MESSAGE(processed_items2[check_index2++] == float(item), "Unexpected items processing");
+        }
+
+        // wait_message was submitted only to the first port of indexer_node
+        CHECK_MESSAGE(processed_items1[check_index1++] == wait_message, "Unexpected wait_message processing");
+
+        g.wait_for_all();
+
+        for (auto item : new_work_items) {
+            CHECK_MESSAGE(processed_items1[check_index1++] == item, "Unexpected new_work_items processing");
+            CHECK_MESSAGE(processed_items2[check_index2++] == float(item), "Unexpected new_work_items processing");
+        }
+        CHECK((check_index1 == processed_items1.size() && check_index2 == processed_items2.size()));
+    });
+}
+#endif // __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+
 //! Serial and parallel test on various tuple sizes
 //! \brief \ref error_guessing
 TEST_CASE("Serial and parallel test") {
@@ -712,3 +787,9 @@ TEST_CASE("Deduction guides") {
 }
 #endif
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+//! \brief \ref error_guessing
+TEST_CASE("test indexer_node try_put_and_wait") {
+    test_try_put_and_wait();
+}
+#endif

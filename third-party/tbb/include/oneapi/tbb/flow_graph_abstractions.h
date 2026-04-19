@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,7 +19,7 @@
 
 namespace tbb {
 namespace detail {
-namespace d1 {
+namespace d2 {
 
 //! Pure virtual template classes that define interfaces for async communication
 class graph_proxy {
@@ -43,7 +43,7 @@ public:
     virtual bool try_put(const input_type&) = 0;
 };
 
-} // d1
+} // d2
 
 
 } // detail

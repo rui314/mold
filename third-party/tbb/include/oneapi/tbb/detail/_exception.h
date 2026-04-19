@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -66,10 +66,16 @@ public:
 };
 
 //! Exception for impossible finalization of task_sheduler_handle
+#if __APPLE__
+    #pragma GCC visibility push(default)
+#endif
 class TBB_EXPORT unsafe_wait : public std::runtime_error {
 public:
     unsafe_wait(const char* msg) : std::runtime_error(msg) {}
 };
+#if __APPLE__
+    #pragma GCC visibility pop
+#endif
 
 //! Gathers all throw operators in one place.
 /** Its purpose is to minimize code bloat that can be caused by throw operators

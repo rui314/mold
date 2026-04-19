@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -221,7 +221,7 @@ void print_my_value(MyKeySecond<K, V> const &i) {
 
 template<>
 void print_my_value(std::string const &i) {
-    INFO("\"" << i.c_str() << "\"" );
+    INFO("\"" << i << "\"" );
 }
 
 //
@@ -245,10 +245,10 @@ struct my_struct_key<K&, V> {
     }
 };
 
-using tbb::detail::d1::type_to_key_function_body;
-using tbb::detail::d1::hash_buffer;
+using tbb::detail::d2::type_to_key_function_body;
+using tbb::detail::d2::type_to_key_function_body_leaf;
+using tbb::detail::d2::hash_buffer;
 using tbb::detail::d1::tbb_hash_compare;
-using tbb::detail::d1::type_to_key_function_body_leaf;
 
 template<class K, class V> struct VtoKFB {
     typedef type_to_key_function_body<V, K> type;

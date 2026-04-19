@@ -1,4 +1,4 @@
-# Fractal sample
+# Sudoku sample
 This directory contains an example that finds all solutions to a Sudoku board.
 
 It uses a straightforward state-space search algorithm that exhibits OR-parallelism. It can be optionally run until it obtains just the first solution. The point of the example is to teach how to use the `task_group` interface.
@@ -11,9 +11,8 @@ cmake --build .
 
 ## Running the sample
 ### Predefined make targets
-* `make run_fractal` - executes the example with predefined parameters.
-* `make perf_run_fractal` - executes the example with suggested parameters to measure the oneTBB performance.
-* `make light_test_fractal` - executes the example with suggested parameters to reduce execution time.
+* `make run_sudoku` - executes the example with predefined parameters.
+* `make perf_run_sudoku` - executes the example with suggested parameters to measure the oneTBB performance.
 
 ### Application parameters
 Usage:

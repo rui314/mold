@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -102,20 +102,23 @@ concept tbb_range = std::copy_constructible<Range> &&
                         { range.is_divisible() } -> relaxed_convertible_to<bool>;
                     };
 
+template <typename Iterator, typename IteratorTag>
+struct iterator_concept_helper;
+
+// New specializations should be added in case of using container_based_sequence with
+// the new iterator tag types
 template <typename Iterator>
-constexpr bool iterator_concept_helper( std::input_iterator_tag ) {
-    return std::input_iterator<Iterator>;
-}
+struct iterator_concept_helper<Iterator, std::input_iterator_tag> {
+    static constexpr bool value = std::input_iterator<Iterator>;
+};
 
 template <typename Iterator>
-constexpr bool iterator_concept_helper( std::random_access_iterator_tag ) {
-    return std::random_access_iterator<Iterator>;
-}
+struct iterator_concept_helper<Iterator, std::random_access_iterator_tag> {
+    static constexpr bool value = std::random_access_iterator<Iterator>;
+};
 
 template <typename Iterator, typename IteratorTag>
-concept iterator_satisfies = requires (IteratorTag tag) {
-    requires iterator_concept_helper<Iterator>(tag);
-};
+concept iterator_satisfies = iterator_concept_helper<Iterator, IteratorTag>::value;
 
 template <typename Sequence, typename IteratorTag>
 concept container_based_sequence = requires( Sequence& seq ) {

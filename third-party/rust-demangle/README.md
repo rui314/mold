@@ -18,21 +18,22 @@ As this C port was originally (see the [History](#history) section) *only* for t
 it may lag behind `rustc-demangle` in functionality, for now.
 
 The current port status by category is:
-* **(UNPORTED)** `legacy` (pre-RFC2603 Rust symbols) demangling
+* **ported** `legacy` (pre-RFC2603 Rust symbols) demangling
 * `v0` ([RFC2603](https://rust-lang.github.io/rfcs/2603-rust-symbol-name-mangling-v0.html) Rust symbols) demangling
   * **ported** PRs:
     * [[#23] Support demangling the new Rust mangling scheme (v0).](https://github.com/rust-lang/rustc-demangle/pull/23)
     * [[#26] v0: allow identifiers to start with a digit.](https://github.com/rust-lang/rustc-demangle/pull/26)
     * [[#53] v0: replace `skip_*` methods with `print_*` methods in a "skip printing" mode.](https://github.com/rust-lang/rustc-demangle/pull/53)
       * arguably backported to Rust, as the C port always took this approach
-  * **(UNPORTED)** symbol prefix flexibility (`__R` and `R`, instead of `_R`)
-  * **(UNPORTED)** `min_const_generics` constants (`bool`, `char`, negative signed integers)
-    * this arguably also includes `p` as an *untyped* placeholder constant
-  * **(UNPORTED)** [`str` and structural constants](https://github.com/rust-lang/rfcs/pull/3161)
-    (only usable in `const` generics on unstable Rust)
+    * symbol prefix flexibility (`__R` and `R`, instead of `_R`)
+    * [[#39] Add support for `min_const_generics` constants](https://github.com/rust-lang/rustc-demangle/pull/39)
+      * [[#40] Elide the type when the const value is a placeholder `p`](https://github.com/rust-lang/rustc-demangle/pull/40)
+    * [[#55] v0: demangle structural constants and &str.](https://github.com/rust-lang/rustc-demangle/pull/55)
+      (only usable in `const` generics on unstable Rust)
   * **(UNPORTED)** recursion limits
 * miscellaneous
-  * **(UNPORTED)** extraneous symbol suffix (e.g. `.llvm.*`) removal
+  * **ported** PRs:
+    * [[#30] v0: also support preserving extra suffixes found after mangled symbol.](https://github.com/rust-lang/rustc-demangle/pull/30)
   * **(UNPORTED)** output size limits
 
 Notable differences (intentionally) introduced by porting:

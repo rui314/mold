@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -42,7 +42,7 @@ private:
         (sizeof(std::size_t) == sizeof(unsigned)) ? 2654435769U : 11400714819323198485ULL);
 
     std::hash<CharT> char_hash;
-}; // strunt hash<std::basic_string>
+}; // struct hash<std::basic_string>
 
 } // namespace std
 

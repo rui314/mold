@@ -10,7 +10,7 @@ parallel_sort ranges interface extension
 Description
 ***********
 
-|full_name| implementation extends the `oneapi::tbb::parallel_sort specification <https://spec.oneapi.io/versions/latest/elements/oneTBB/source/algorithms/functions/parallel_sort_func.html>`_
+|full_name| implementation extends the `oneapi::tbb::parallel_sort specification <https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/algorithms/functions/parallel_sort_func>`_
 with overloads that takes the container by forwarding reference.
 
 
@@ -56,17 +56,7 @@ Example
 
 This interface may be used for sorting rvalue or constant views:
 
-.. code:: cpp
-
-    #include <array>
-    #include <span> // requires C++20
-    #include <oneapi/tbb/parallel_sort.h>
-
-    std::span<int> get_span() {
-        static std::array<int, 3> arr = {3, 2, 1};
-        return std::span<int>(arr);
-    }
-
-    int main() {
-        tbb::parallel_sort(get_span());
-    }
+.. literalinclude:: ./examples/parallel_sort_ranges_extension_example.cpp
+    :language: c++
+    :start-after: /*begin_parallel_sort_ranges_extension_example*/
+    :end-before: /*end_parallel_sort_ranges_extension_example*/

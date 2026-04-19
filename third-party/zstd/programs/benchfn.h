@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Yann Collet, Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -15,16 +15,11 @@
  * or detecting and returning an error
  */
 
-#if defined (__cplusplus)
-extern "C" {
-#endif
-
 #ifndef BENCH_FN_H_23876
 #define BENCH_FN_H_23876
 
 /* ===  Dependencies  === */
 #include <stddef.h>   /* size_t */
-
 
 /* ====  Benchmark any function, iterated on a set of blocks  ==== */
 
@@ -123,7 +118,7 @@ BMK_runTime_t BMK_extract_runTime(BMK_runOutcome_t outcome);
 /* when benchmark failed, it means one invocation of `benchFn` failed.
  * The failure was detected by `errorFn`, operating on return values of `benchFn`.
  * Returns the faulty return value.
- * note : this function will abort() program execution if benchmark did not failed.
+ * note : this function will abort() program execution if benchmark did not fail.
  *        always check if benchmark failed first !
  */
 size_t BMK_extract_errorResult(BMK_runOutcome_t outcome);
@@ -175,9 +170,4 @@ typedef union {
 } BMK_timedFnState_shell;
 BMK_timedFnState_t* BMK_initStatic_timedFnState(void* buffer, size_t size, unsigned total_ms, unsigned run_ms);
 
-
 #endif   /* BENCH_FN_H_23876 */
-
-#if defined (__cplusplus)
-}
-#endif

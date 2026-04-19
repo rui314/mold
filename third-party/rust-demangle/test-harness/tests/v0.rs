@@ -92,8 +92,6 @@ fn demangle_const_generics_preview() {
     t_const_suffixed!("j7b_", "123", "usize");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_min_const_generics() {
     t_const!("p", "_");
@@ -109,8 +107,6 @@ fn demangle_min_const_generics() {
     t_const!("c2202_", "'∂'");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_const_str() {
     t_const!("e616263_", "{*\"abc\"}");
@@ -129,8 +125,6 @@ fn demangle_const_str() {
     );
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 // NOTE(eddyb) this uses the same strings as `demangle_const_str` and should
 // be kept in sync with it - while a macro could be used to generate both
 // `str` and `&str` tests, from a single list of strings, this seems clearer.
@@ -152,8 +146,6 @@ fn demangle_const_ref_str() {
     );
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_const_ref() {
     t_const!("Rp", "{&_}");
@@ -165,8 +157,6 @@ fn demangle_const_ref() {
     t_const!("QAE", "{&mut []}");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_const_array() {
     t_const!("AE", "{[]}");
@@ -176,8 +166,6 @@ fn demangle_const_array() {
     t_const!("AAh1_h2_EAh3_h4_EE", "{[[1, 2], [3, 4]]}");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_const_tuple() {
     t_const!("TE", "{()}");
@@ -189,8 +177,6 @@ fn demangle_const_tuple() {
     );
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_const_adt() {
     t_const!(
@@ -223,8 +209,6 @@ fn demangle_exponential_explosion() {
     );
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_thinlto() {
     t_nohash!("_RC3foo.llvm.9D1C9369", "foo");
@@ -232,8 +216,6 @@ fn demangle_thinlto() {
     t_nohash!("_RNvC9backtrace3foo.llvm.A5310EB9", "backtrace::foo");
 }
 
-// FIXME(eddyb) port the relevant functionality to C.
-#[should_panic]
 #[test]
 fn demangle_extra_suffix() {
     // From alexcrichton/rustc-demangle#27:

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -29,9 +29,9 @@
 #include "tbb/parallel_pipeline.h"
 #include "tbb/blocked_range.h"
 #include "tbb/task_group.h"
-#include "tbb/global_control.h"
 #include "tbb/concurrent_unordered_map.h"
 #include "tbb/task.h"
+#include "tbb/global_control.h"
 
 //! \file test_eh_algorithms.cpp
 //! \brief Test for [algorithms.parallel_for algorithms.parallel_reduce algorithms.parallel_deterministic_reduce algorithms.parallel_for_each algorithms.parallel_pipeline algorithms.parallel_pipeline.flow_control] specifications
@@ -388,18 +388,20 @@ TEST_CASE("parallel_for and parallel_reduce exception handling test #0") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                Test0();
-            }
+                    Test0();
+                }
+            });
         }
     }
 }
-
+#if !EMSCRIPTEN
 //! Testing parallel_for and parallel_reduce exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for and parallel_reduce exception handling test #1") {
@@ -407,14 +409,16 @@ TEST_CASE("parallel_for and parallel_reduce exception handling test #1") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                Test1();
-            }
+                    Test1();
+                }
+            });
         }
     }
 }
@@ -426,14 +430,16 @@ TEST_CASE("parallel_for and parallel_reduce exception handling test #2") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                Test2();
-            }
+                    Test2();
+                }
+            });
         }
     }
 }
@@ -445,14 +451,16 @@ TEST_CASE("parallel_for and parallel_reduce exception handling test #3") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                Test3();
-            }
+                    Test3();
+                }
+            });
         }
     }
 }
@@ -464,20 +472,22 @@ TEST_CASE("parallel_for and parallel_reduce exception handling test #4") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                Test4();
-            }
+                    Test4();
+                }
+            });
         }
     }
 }
 
+#endif
 #endif /* TBB_USE_EXCEPTIONS */
-
 class ParForBodyToCancel {
 public:
     void operator()( const range_type& ) const {
@@ -674,18 +684,21 @@ TEST_CASE("parallel_for and parallel_reduce cancellation test #1") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                TestCancelation1();
-            }
+                    TestCancelation1();
+                }
+            });
         }
     }
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_for and parallel_reduce cancellation
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for and parallel_reduce cancellation test #2") {
@@ -693,17 +706,20 @@ TEST_CASE("parallel_for and parallel_reduce cancellation test #2") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                TestCancelation2();
-            }
+                    TestCancelation2();
+                }
+            });
         }
     }
 }
+#endif
 
 //! Testing parallel_for and parallel_reduce cancellation
 //! \brief \ref error_guessing
@@ -712,14 +728,16 @@ TEST_CASE("parallel_for and parallel_reduce cancellation test #3") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                TestCancelation3();
-            }
+                    TestCancelation3();
+                }
+            });
         }
     }
 }
@@ -731,14 +749,16 @@ TEST_CASE("parallel_for and parallel_reduce cancellation test #4") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                TestCancelation4();
-            }
+                    TestCancelation4();
+                }
+            });
         }
     }
 }
@@ -1015,6 +1035,7 @@ void Test5_parallel_for_each () {
     }
 } // void Test5_parallel_for_each ()
 
+#if !EMSCRIPTEN
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for_each exception handling test #1") {
@@ -1022,17 +1043,20 @@ TEST_CASE("parallel_for_each exception handling test #1") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                RunWithSimpleBody(Test1_parallel_for_each, SimpleParForEachBody);
-            }
+                    RunWithSimpleBody(Test1_parallel_for_each, SimpleParForEachBody);
+                }
+            });
         }
     }
 }
+#endif
 
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
@@ -1041,18 +1065,21 @@ TEST_CASE("parallel_for_each exception handling test #2") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                RunWithTemplatedBody(Test2_parallel_for_each, OuterParForEachBody);
-            }
+                    RunWithTemplatedBody(Test2_parallel_for_each, OuterParForEachBody);
+                }
+            });
         }
     }
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for_each exception handling test #3") {
@@ -1060,17 +1087,20 @@ TEST_CASE("parallel_for_each exception handling test #3") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                RunWithTemplatedBody(Test3_parallel_for_each, OuterParForEachBodyWithIsolatedCtx);
-            }
+                    RunWithTemplatedBody(Test3_parallel_for_each, OuterParForEachBodyWithIsolatedCtx);
+                }
+            });
         }
     }
 }
+#endif
 
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
@@ -1079,18 +1109,21 @@ TEST_CASE("parallel_for_each exception handling test #4") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                RunWithTemplatedBody(Test4_parallel_for_each, OuterParForEachWithEhBody);
-            }
+                    RunWithTemplatedBody(Test4_parallel_for_each, OuterParForEachWithEhBody);
+                }
+            });
         }
     }
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_for_each exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for_each exception handling test #5") {
@@ -1098,20 +1131,22 @@ TEST_CASE("parallel_for_each exception handling test #5") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                Test5_parallel_for_each<utils::InputIterator<size_t> >();
-                Test5_parallel_for_each<utils::ForwardIterator<size_t> >();
-                Test5_parallel_for_each<utils::RandomIterator<size_t> >();
-            }
+                    Test5_parallel_for_each<utils::InputIterator<size_t> >();
+                    Test5_parallel_for_each<utils::ForwardIterator<size_t> >();
+                    Test5_parallel_for_each<utils::RandomIterator<size_t> >();
+                }
+            });
         }
     }
 }
-
+#endif
 #endif /* TBB_USE_EXCEPTIONS */
 
 class ParForEachBodyToCancel {
@@ -1189,6 +1224,7 @@ void TestCancelation2_parallel_for_each () {
     RunCancellationTest<ParForEachWorker<body_to_cancel, Iterator>, Cancellator2>();
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_for_each cancellation test
 //! \brief \ref error_guessing
 TEST_CASE("parallel_for_each cancellation test #1") {
@@ -1196,13 +1232,15 @@ TEST_CASE("parallel_for_each cancellation test #1") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
-                RunWithSimpleBody(TestCancelation1_parallel_for_each, ParForEachBodyToCancel);
-            }
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
+                    RunWithSimpleBody(TestCancelation1_parallel_for_each, ParForEachBodyToCancel);
+                }
+            });
         }
     }
 }
@@ -1214,17 +1252,20 @@ TEST_CASE("parallel_for_each cancellation test #2") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
 
-                RunWithSimpleBody(TestCancelation2_parallel_for_each, ParForEachBodyToCancel2);
-            }
+                    RunWithSimpleBody(TestCancelation2_parallel_for_each, ParForEachBodyToCancel2);
+                }
+            });
         }
     }
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests for tbb::parallel_pipeline
@@ -1555,17 +1596,19 @@ void TestWithDifferentFiltersAndConcurrency() {
 
             // Execute in all the possible modes
             for ( size_t j = 0; j < 4; ++j ) {
-                tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
-                g_NumTokens = 2 * g_NumThreads;
+                tbb::task_arena a(g_NumThreads);
+                a.execute([&] {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
+                    g_NumTokens = 2 * g_NumThreads;
 
-                for ( int i = 0; i < NumFilterTypes; ++i ) {
-                    for ( int n = 0; n < NumFilterTypes; ++n ) {
-                        for ( int k = 0; k < 2; ++k )
-                            testFunc( FilterSet(modes[i], modes[n], k == 0, k != 0) );
+                    for (int i = 0; i < NumFilterTypes; ++i) {
+                        for (int n = 0; n < NumFilterTypes; ++n) {
+                            for (int k = 0; k < 2; ++k)
+                                testFunc(FilterSet(modes[i], modes[n], k == 0, k != 0));
+                        }
                     }
-                }
+                });
             }
         }
     }
@@ -1574,6 +1617,7 @@ void TestWithDifferentFiltersAndConcurrency() {
 #endif
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_pipeline exception handling
 //! \brief \ref error_guessing
 TEST_CASE("parallel_pipeline exception handling test #1") {
@@ -1597,7 +1641,7 @@ TEST_CASE("parallel_pipeline exception handling test #3") {
 TEST_CASE("parallel_pipeline exception handling test #4") {
     TestWithDifferentFiltersAndConcurrency<Test4_pipeline>();
 }
-
+#endif
 #endif /* TBB_USE_EXCEPTIONS */
 
 class FilterToCancel  {
@@ -1678,19 +1722,22 @@ TEST_CASE("parallel_pipeline cancellation test #1") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
-                g_NumTokens = 2 * g_NumThreads;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
+                    g_NumTokens = 2 * g_NumThreads;
 
-                TestCancelation1_pipeline();
-            }
+                    TestCancelation1_pipeline();
+                }
+            });
         }
     }
 }
 
+#if !EMSCRIPTEN
 //! Testing parallel_pipeline cancellation
 //! \brief \ref error_guessing
 TEST_CASE("parallel_pipeline cancellation test #2") {
@@ -1698,15 +1745,18 @@ TEST_CASE("parallel_pipeline cancellation test #2") {
         g_NumThreads = static_cast<int>(concurrency_level);
         g_Master = std::this_thread::get_id();
         if (g_NumThreads > 1) {
-            tbb::global_control control(tbb::global_control::max_allowed_parallelism, g_NumThreads);
-            // Execute in all the possible modes
-            for ( size_t j = 0; j < 4; ++j ) {
-                g_ExceptionInMaster = (j & 1) != 0;
-                g_SolitaryException = (j & 2) != 0;
-                g_NumTokens = 2 * g_NumThreads;
+            tbb::task_arena a(g_NumThreads);
+            a.execute([] {
+                // Execute in all the possible modes
+                for (size_t j = 0; j < 4; ++j) {
+                    g_ExceptionInMaster = (j & 1) != 0;
+                    g_SolitaryException = (j & 2) != 0;
+                    g_NumTokens = 2 * g_NumThreads;
 
-                TestCancelation2_pipeline();
-            }
+                    TestCancelation2_pipeline();
+                }
+            });
         }
     }
 }
+#endif

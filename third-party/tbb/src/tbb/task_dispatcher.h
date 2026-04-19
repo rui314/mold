@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2022 Intel Corporation
+    Copyright (c) 2020-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -29,6 +29,7 @@
 #include "mailbox.h"
 #include "itt_notify.h"
 #include "concurrent_monitor.h"
+#include "threading_control.h"
 
 #include <atomic>
 
@@ -65,13 +66,13 @@ inline d1::task* suspend_point_type::resume_task::execute(d1::execution_data& ed
     execution_data_ext& ed_ext = static_cast<execution_data_ext&>(ed);
 
     if (ed_ext.wait_ctx) {
-        market_concurrent_monitor::resume_context monitor_node{{std::uintptr_t(ed_ext.wait_ctx), nullptr}, ed_ext, m_target};
+        thread_control_monitor::resume_context monitor_node{{std::uintptr_t(ed_ext.wait_ctx), nullptr}, ed_ext, m_target};
         // The wait_ctx is present only in external_waiter. In that case we leave the current stack
         // in the abandoned state to resume when waiting completes.
         thread_data* td = ed_ext.task_disp->m_thread_data;
         td->set_post_resume_action(task_dispatcher::post_resume_action::register_waiter, &monitor_node);
 
-        market_concurrent_monitor& wait_list = td->my_arena->my_market->get_wait_list();
+        thread_control_monitor& wait_list = td->my_arena->get_waiting_threads_monitor();
 
         if (wait_list.wait([&] { return !ed_ext.wait_ctx->continue_execution(); }, monitor_node)) {
             return nullptr;
@@ -248,15 +249,21 @@ d1::task* task_dispatcher::local_wait_for_all(d1::task* t, Waiter& waiter ) {
         task_dispatcher& task_disp;
         execution_data_ext old_execute_data_ext;
         properties old_properties;
+        bool is_initially_registered;
 
         ~dispatch_loop_guard() {
             task_disp.m_execute_data_ext = old_execute_data_ext;
             task_disp.m_properties = old_properties;
 
+            if (!is_initially_registered) {
+                task_disp.m_thread_data->my_arena->my_tc_client.get_pm_client()->unregister_thread();
+                task_disp.m_thread_data->my_is_registered = false;
+            }
+
             __TBB_ASSERT(task_disp.m_thread_data && governor::is_thread_data_set(task_disp.m_thread_data), nullptr);
             __TBB_ASSERT(task_disp.m_thread_data->my_task_dispatcher == &task_disp, nullptr);
         }
-    } dl_guard{ *this, m_execute_data_ext, m_properties };
+    } dl_guard{ *this, m_execute_data_ext, m_properties, m_thread_data->my_is_registered };
 
     // The context guard to track fp setting and itt tasks.
     context_guard_helper</*report_tasks=*/ITTPossible> context_guard;
@@ -280,6 +287,11 @@ d1::task* task_dispatcher::local_wait_for_all(d1::task* t, Waiter& waiter ) {
 
     m_properties.outermost = false;
     m_properties.fifo_tasks_allowed = false;
+
+    if (!dl_guard.is_initially_registered) {
+        m_thread_data->my_arena->my_tc_client.get_pm_client()->register_thread();
+        m_thread_data->my_is_registered = true;
+    }
 
     t = get_critical_task(t, ed, isolation, critical_allowed);
     if (t && m_thread_data->my_inbox.is_idle_state(true)) {

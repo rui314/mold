@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -297,11 +297,13 @@ inline bool BackendSync::waitTillBlockReleased(intptr_t startModifiedCnt)
     };
     ITT_Guard ittGuard(&inFlyBlocks);
 #endif
-    for (intptr_t myBinsInFlyBlocks = inFlyBlocks.load(std::memory_order_acquire),
-             myCoalescQInFlyBlocks = backend->blocksInCoalescing(); ; backoff.pause()) {
+    intptr_t myBinsInFlyBlocks = inFlyBlocks.load(std::memory_order_acquire);
+    intptr_t myCoalescQInFlyBlocks = backend->blocksInCoalescing();
+    while (true) {
         MALLOC_ASSERT(myBinsInFlyBlocks>=0 && myCoalescQInFlyBlocks>=0, nullptr);
-        intptr_t currBinsInFlyBlocks = inFlyBlocks.load(std::memory_order_acquire),
-            currCoalescQInFlyBlocks = backend->blocksInCoalescing();
+
+        intptr_t currBinsInFlyBlocks = inFlyBlocks.load(std::memory_order_acquire);
+        intptr_t currCoalescQInFlyBlocks = backend->blocksInCoalescing();
         WhiteboxTestingYield();
         // Stop waiting iff:
 
@@ -317,11 +319,20 @@ inline bool BackendSync::waitTillBlockReleased(intptr_t startModifiedCnt)
         if (currCoalescQInFlyBlocks > 0 && backend->scanCoalescQ(/*forceCoalescQDrop=*/false))
             break;
         // 4) when there are no blocks
-        if (!currBinsInFlyBlocks && !currCoalescQInFlyBlocks)
+        if (!currBinsInFlyBlocks && !currCoalescQInFlyBlocks) {
             // re-scan make sense only if bins were modified since scanned
+            auto pool = backend->extMemPool;
+            if (pool->hardCachesCleanupInProgress.load(std::memory_order_acquire) ||
+                pool->softCachesCleanupInProgress.load(std::memory_order_acquire)) {
+                backoff.pause();
+                continue;
+            }
+
             return startModifiedCnt != getNumOfMods();
+        }
         myBinsInFlyBlocks = currBinsInFlyBlocks;
         myCoalescQInFlyBlocks = currCoalescQInFlyBlocks;
+        backoff.pause();
     }
     return true;
 }
@@ -363,6 +374,7 @@ inline void CoalRequestQ::blockWasProcessed()
 {
     bkndSync->binsModified();
     int prev = inFlyBlocks.fetch_sub(1);
+    tbb::detail::suppress_unused_warning(prev);
     MALLOC_ASSERT(prev > 0, ASSERT_TEXT);
 }
 
@@ -378,7 +390,7 @@ FreeBlock *Backend::IndexedBins::getFromBin(int binIdx, BackendSync *sync, size_
 try_next:
     FreeBlock *fBlock = nullptr;
     if (!b->empty()) {
-        bool locked;
+        bool locked = false;
         MallocMutex::scoped_lock scopedLock(b->tLock, wait, &locked);
 
         if (!locked) {
@@ -504,7 +516,7 @@ void Backend::IndexedBins::addBlock(int binIdx, FreeBlock *fBlock, size_t /* blo
 
 bool Backend::IndexedBins::tryAddBlock(int binIdx, FreeBlock *fBlock, bool addToTail)
 {
-    bool locked;
+    bool locked = false;
     Bin *b = &freeBins[binIdx];
     fBlock->myBin = binIdx;
     if (addToTail) {
@@ -596,7 +608,7 @@ FreeBlock *Backend::splitBlock(FreeBlock *fBlock, int num, size_t size, bool blo
             fBlock = (FreeBlock*)((uintptr_t)splitBlock + splitSize);
             fBlock->initHeader();
         } else {
-            // For large object blocks cut original block and put free righ part to backend
+            // For large object blocks cut original block and put free right part to backend
             splitBlock = (FreeBlock*)((uintptr_t)fBlock + totalSize);
             splitBlock->initHeader();
         }
@@ -626,10 +638,12 @@ FreeBlock *Backend::releaseMemInCaches(intptr_t startModifiedCnt,
                                     int *lockedBinsThreshold, int numOfLockedBins)
 {
     // something released from caches
-    if (extMemPool->hardCachesCleanup()
-        // ..or can use blocks that are in processing now
-        || bkndSync.waitTillBlockReleased(startModifiedCnt))
+    if (extMemPool->hardCachesCleanup(false))
         return (FreeBlock*)VALID_BLOCK_IN_BIN;
+
+    if (bkndSync.waitTillBlockReleased(startModifiedCnt))
+        return (FreeBlock*)VALID_BLOCK_IN_BIN;
+
     // OS can't give us more memory, but we have some in locked bins
     if (*lockedBinsThreshold && numOfLockedBins) {
         *lockedBinsThreshold = 0;
@@ -736,7 +750,7 @@ void Backend::releaseCachesToLimit()
                 (locMemSoftLimit = memSoftLimit.load(std::memory_order_acquire)))
                 return;
     // last chance to match memSoftLimit
-    extMemPool->hardCachesCleanup();
+    extMemPool->hardCachesCleanup(true);
 }
 
 int Backend::IndexedBins::getMinNonemptyBin(unsigned startBin) const
@@ -748,7 +762,7 @@ int Backend::IndexedBins::getMinNonemptyBin(unsigned startBin) const
 FreeBlock *Backend::IndexedBins::findBlock(int nativeBin, BackendSync *sync, size_t size,
         bool needAlignedBlock, bool alignedBin, int *numOfLockedBins)
 {
-    for (int i=getMinNonemptyBin(nativeBin); i<freeBinsNum; i=getMinNonemptyBin(i+1))
+    for (int i=getMinNonemptyBin(nativeBin); i<(int)freeBinsNum; i=getMinNonemptyBin(i+1))
         if (FreeBlock *block = getFromBin(i, sync, size, needAlignedBlock, alignedBin, /*wait=*/false, numOfLockedBins))
             return block;
 
@@ -793,8 +807,9 @@ FreeBlock *Backend::genericGetBlock(int num, size_t size, bool needAlignedBlock)
     for (;;) {
         const intptr_t startModifiedCnt = bkndSync.getNumOfMods();
         int numOfLockedBins;
-
+        intptr_t cleanCnt;
         do {
+            cleanCnt = backendCleanCnt.load(std::memory_order_acquire);
             numOfLockedBins = 0;
             if (needAlignedBlock) {
                 block = freeSlabAlignedBins.findBlock(nativeBin, &bkndSync, num*size, needAlignedBlock,
@@ -809,12 +824,15 @@ FreeBlock *Backend::genericGetBlock(int num, size_t size, bool needAlignedBlock)
                     block = freeSlabAlignedBins.findBlock(nativeBin, &bkndSync, num*size, needAlignedBlock,
                                                         /*alignedBin=*/true, &numOfLockedBins);
             }
-        } while (!block && numOfLockedBins>lockedBinsThreshold);
+        } while (!block && (numOfLockedBins>lockedBinsThreshold || cleanCnt % 2 == 1 ||
+                            cleanCnt != backendCleanCnt.load(std::memory_order_acquire)));
 
         if (block)
             break;
 
-        if (!(scanCoalescQ(/*forceCoalescQDrop=*/true) | extMemPool->softCachesCleanup())) {
+        bool retScanCoalescQ = scanCoalescQ(/*forceCoalescQDrop=*/true);
+        bool retSoftCachesCleanup = extMemPool->softCachesCleanup();
+        if (!(retScanCoalescQ || retSoftCachesCleanup)) {
             // bins are not updated,
             // only remaining possibility is to ask for more memory
             block = askMemFromOS(totalReqSize, startModifiedCnt, &lockedBinsThreshold,
@@ -1392,7 +1410,10 @@ bool Backend::destroy()
 bool Backend::clean()
 {
     scanCoalescQ(/*forceCoalescQDrop=*/false);
-
+    // Backend::clean is always called under synchronization so only one thread can
+    // enter to this method at once.
+    // backendCleanCnt%2== 1 means that clean operation is in progress
+    backendCleanCnt.fetch_add(1, std::memory_order_acq_rel);
     bool res = false;
     // We can have several blocks occupying a whole region,
     // because such regions are added in advance (see askMemFromOS() and reset()),
@@ -1403,14 +1424,14 @@ bool Backend::clean()
         if (i == freeLargeBlockBins.getMinNonemptyBin(i))
             res |= freeLargeBlockBins.tryReleaseRegions(i, this);
     }
-
+    backendCleanCnt.fetch_add(1, std::memory_order_acq_rel);
     return res;
 }
 
 void Backend::IndexedBins::verify()
 {
 #if MALLOC_DEBUG
-    for (int i=0; i<freeBinsNum; i++) {
+    for (int i=0; i<(int)freeBinsNum; i++) {
         for (FreeBlock *fb = freeBins[i].head.load(std::memory_order_relaxed); fb; fb=fb->next) {
             uintptr_t mySz = fb->myL.value;
             MALLOC_ASSERT(mySz>GuardedSize::MAX_SPEC_VAL, ASSERT_TEXT);
@@ -1455,6 +1476,7 @@ size_t Backend::Bin::reportFreeBlocks(FILE *f)
     for (FreeBlock *fb = head; fb; fb = fb->next) {
         size_t sz = fb->tryLockBlock();
         fb->setMeFree(sz);
+        fb->rightNeig(sz)->setLeftFree(sz);
         fprintf(f, " [%p;%p]", fb, (void*)((uintptr_t)fb+sz));
         totalSz += sz;
     }

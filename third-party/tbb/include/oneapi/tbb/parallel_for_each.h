@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 #include "detail/_task.h"
 #include "detail/_aligned_space.h"
 #include "detail/_small_object_pool.h"
+#include "detail/_utils.h"
 
 #include "parallel_for.h"
 #include "task_group.h" // task_group_context
@@ -41,13 +42,8 @@ class feeder;
 inline namespace d0 {
 
 template <typename Body, typename ItemType, typename FeederItemType>
-concept parallel_for_each_body = requires( const std::remove_reference_t<Body>& body, ItemType&& item ) {
-                                    body(std::forward<ItemType>(item));
-                                 } ||
-                                 requires( const std::remove_reference_t<Body>& body, ItemType&& item,
-                                           tbb::detail::d1::feeder<FeederItemType>& feeder ) {
-                                    body(std::forward<ItemType>(item), feeder);
-};
+concept parallel_for_each_body = std::invocable<const std::remove_reference_t<Body>&, ItemType&&> ||
+                                 std::invocable<const std::remove_reference_t<Body>&, ItemType&&, tbb::detail::d1::feeder<FeederItemType>&>;
 
 } // namespace d0
 #endif // __TBB_CPP20_CONCEPTS_PRESENT
@@ -85,14 +81,14 @@ struct parallel_for_each_operator_selector {
 public:
     template<typename ItemArg, typename FeederArg>
     static auto call(const Body& body, ItemArg&& item, FeederArg*)
-    -> decltype(body(std::forward<ItemArg>(item)), void()) {
+    -> decltype(tbb::detail::invoke(body, std::forward<ItemArg>(item)), void()) {
         #if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
         // Suppression of Microsoft non-standard extension warnings
         #pragma warning (push)
         #pragma warning (disable: 4239)
         #endif
 
-        body(std::forward<ItemArg>(item));
+        tbb::detail::invoke(body, std::forward<ItemArg>(item));
 
         #if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
         #pragma warning (pop)
@@ -101,7 +97,7 @@ public:
 
     template<typename ItemArg, typename FeederArg>
     static auto call(const Body& body, ItemArg&& item, FeederArg* feeder)
-    -> decltype(body(std::forward<ItemArg>(item), *feeder), void()) {
+    -> decltype(tbb::detail::invoke(body, std::forward<ItemArg>(item), *feeder), void()) {
         #if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
         // Suppression of Microsoft non-standard extension warnings
         #pragma warning (push)
@@ -109,7 +105,7 @@ public:
         #endif
         __TBB_ASSERT(feeder, "Feeder was not created but should be");
 
-        body(std::forward<ItemArg>(item), *feeder);
+        tbb::detail::invoke(body, std::forward<ItemArg>(item), *feeder);
 
         #if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
         #pragma warning (pop)
@@ -122,14 +118,17 @@ struct feeder_item_task: public task {
     using feeder_type = feeder_impl<Body, Item>;
 
     template <typename ItemType>
-    feeder_item_task(ItemType&& input_item, feeder_type& feeder, small_object_allocator& alloc) :
+    feeder_item_task(ItemType&& input_item, feeder_type& feeder, small_object_allocator& alloc, wait_tree_vertex_interface& wait_vertex) :
         item(std::forward<ItemType>(input_item)),
         my_feeder(feeder),
-        my_allocator(alloc)
-    {}
+        my_allocator(alloc),
+        m_wait_tree_vertex(r1::get_thread_reference_vertex(&wait_vertex))
+    {
+        m_wait_tree_vertex->reserve();
+    }
 
     void finalize(const execution_data& ed) {
-        my_feeder.my_wait_context.release();
+        m_wait_tree_vertex->release();
         my_allocator.delete_object(this, ed);
     }
 
@@ -164,6 +163,7 @@ struct feeder_item_task: public task {
     Item item;
     feeder_type& my_feeder;
     small_object_allocator my_allocator;
+    wait_tree_vertex_interface* m_wait_tree_vertex;
 }; // class feeder_item_task
 
 /** Implements new task adding procedure.
@@ -174,9 +174,8 @@ class feeder_impl : public feeder<Item> {
     void internal_add_copy_impl(std::true_type, const Item& item) {
         using feeder_task = feeder_item_task<Body, Item>;
         small_object_allocator alloc;
-        auto task = alloc.new_object<feeder_task>(item, *this, alloc);
+        auto task = alloc.new_object<feeder_task>(item, *this, alloc, my_wait_context);
 
-        my_wait_context.reserve();
         spawn(*task, my_execution_context);
     }
 
@@ -191,20 +190,19 @@ class feeder_impl : public feeder<Item> {
     void internal_add_move(Item&& item) override {
         using feeder_task = feeder_item_task<Body, Item>;
         small_object_allocator alloc{};
-        auto task = alloc.new_object<feeder_task>(std::move(item), *this, alloc);
+        auto task = alloc.new_object<feeder_task>(std::move(item), *this, alloc, my_wait_context);
 
-        my_wait_context.reserve();
         spawn(*task, my_execution_context);
     }
 public:
-    feeder_impl(const Body& body, wait_context& w_context, task_group_context &context)
+    feeder_impl(const Body& body, wait_context_vertex& w_context, task_group_context &context)
       : my_body(body),
         my_wait_context(w_context)
       , my_execution_context(context)
     {}
 
     const Body& my_body;
-    wait_context& my_wait_context;
+    wait_context_vertex& my_wait_context;
     task_group_context& my_execution_context;
 }; // class feeder_impl
 
@@ -267,7 +265,7 @@ struct input_block_handling_task : public task {
     using iteration_task_iterator_type = typename input_iteration_task_iterator_helper<Body, Item>::type;
     using iteration_task = for_each_iteration_task<iteration_task_iterator_type, Body, Item>;
 
-    input_block_handling_task(wait_context& root_wait_context, task_group_context& e_context,
+    input_block_handling_task(wait_context_vertex& root_wait_context, task_group_context& e_context,
                               const Body& body, feeder_impl<Body, Item>* feeder_ptr, small_object_allocator& alloc)
         :my_size(0), my_wait_context(0), my_root_wait_context(root_wait_context),
          my_execution_context(e_context), my_allocator(alloc)
@@ -316,7 +314,7 @@ struct input_block_handling_task : public task {
     aligned_space<iteration_task, max_block_size> task_pool;
     std::size_t my_size;
     wait_context my_wait_context;
-    wait_context& my_root_wait_context;
+    wait_context_vertex& my_root_wait_context;
     task_group_context& my_execution_context;
     small_object_allocator my_allocator;
 }; // class input_block_handling_task
@@ -330,7 +328,7 @@ struct forward_block_handling_task : public task {
     using iteration_task = for_each_iteration_task<Iterator, Body, Item>;
 
     forward_block_handling_task(Iterator first, std::size_t size,
-                                wait_context& w_context, task_group_context& e_context,
+                                wait_context_vertex& w_context, task_group_context& e_context,
                                 const Body& body, feeder_impl<Body, Item>* feeder_ptr,
                                 small_object_allocator& alloc)
         : my_size(size), my_wait_context(0), my_root_wait_context(w_context),
@@ -377,7 +375,7 @@ struct forward_block_handling_task : public task {
     aligned_space<iteration_task, max_block_size> task_pool;
     std::size_t my_size;
     wait_context my_wait_context;
-    wait_context& my_root_wait_context;
+    wait_context_vertex& my_root_wait_context;
     task_group_context& my_execution_context;
     small_object_allocator my_allocator;
 }; // class forward_block_handling_task
@@ -411,6 +409,34 @@ public:
 template<typename It>
 using tag = typename std::iterator_traits<It>::iterator_category;
 
+#if __TBB_CPP20_CONCEPTS_PRESENT
+template <typename It>
+struct move_iterator_dispatch_helper {
+    using type = It;
+};
+
+// Until C++23, std::move_iterator::iterator_concept always defines
+// to std::input_iterator_tag and hence std::forward_iterator concept
+// always evaluates to false, so std::move_iterator dispatch should be
+// made according to the base iterator type.
+template <typename It>
+struct move_iterator_dispatch_helper<std::move_iterator<It>> {
+    using type = It;
+};
+
+template <typename It>
+using iterator_tag_dispatch_impl =
+    std::conditional_t<std::random_access_iterator<It>,
+                       std::random_access_iterator_tag,
+                       std::conditional_t<std::forward_iterator<It>,
+                                          std::forward_iterator_tag,
+                                          std::input_iterator_tag>>;
+
+template <typename It>
+using iterator_tag_dispatch =
+    iterator_tag_dispatch_impl<typename move_iterator_dispatch_helper<It>::type>;
+
+#else
 template<typename It>
 using iterator_tag_dispatch = typename
     std::conditional<
@@ -422,15 +448,17 @@ using iterator_tag_dispatch = typename
             std::input_iterator_tag
         >::type
     >::type;
+#endif // __TBB_CPP20_CONCEPTS_PRESENT
 
 template <typename Body, typename Iterator, typename Item>
-using feeder_is_required = tbb::detail::void_t<decltype(std::declval<const Body>()(std::declval<typename std::iterator_traits<Iterator>::reference>(),
-                                                                                   std::declval<feeder<Item>&>()))>;
+using feeder_is_required = tbb::detail::void_t<decltype(tbb::detail::invoke(std::declval<const Body>(),
+                                                                            std::declval<typename std::iterator_traits<Iterator>::reference>(),
+                                                                            std::declval<feeder<Item>&>()))>;
 
 // Creates feeder object only if the body can accept it
 template <typename Iterator, typename Body, typename Item, typename = void>
 struct feeder_holder {
-    feeder_holder( wait_context&, task_group_context&, const Body& ) {}
+    feeder_holder( wait_context_vertex&, task_group_context&, const Body& ) {}
 
     feeder_impl<Body, Item>* feeder_ptr() { return nullptr; }
 }; // class feeder_holder
@@ -438,7 +466,7 @@ struct feeder_holder {
 template <typename Iterator, typename Body, typename Item>
 class feeder_holder<Iterator, Body, Item, feeder_is_required<Body, Iterator, Item>> {
 public:
-    feeder_holder( wait_context& w_context, task_group_context& context, const Body& body )
+    feeder_holder( wait_context_vertex& w_context, task_group_context& context, const Body& body )
         : my_feeder(body, w_context, context) {}
 
     feeder_impl<Body, Item>* feeder_ptr() { return &my_feeder; }
@@ -449,7 +477,7 @@ private:
 template <typename Iterator, typename Body, typename Item>
 class for_each_root_task_base : public task {
 public:
-    for_each_root_task_base(Iterator first, Iterator last, const Body& body, wait_context& w_context, task_group_context& e_context)
+    for_each_root_task_base(Iterator first, Iterator last, const Body& body, wait_context_vertex& w_context, task_group_context& e_context)
         : my_first(first), my_last(last), my_wait_context(w_context), my_execution_context(e_context),
           my_body(body), my_feeder_holder(my_wait_context, my_execution_context, my_body)
     {
@@ -463,7 +491,7 @@ private:
 protected:
     Iterator my_first;
     Iterator my_last;
-    wait_context& my_wait_context;
+    wait_context_vertex& my_wait_context;
     task_group_context& my_execution_context;
     const Body& my_body;
     feeder_holder<Iterator, Body, Item> my_feeder_holder;
@@ -598,11 +626,11 @@ void run_parallel_for_each( Iterator first, Iterator last, const Body& body, tas
 {
     if (!(first == last)) {
         using ItemType = get_item_type<Body, typename std::iterator_traits<Iterator>::value_type>;
-        wait_context w_context(0);
+        wait_context_vertex w_context(0);
 
         for_each_root_task<Iterator, Body, ItemType> root_task(first, last, body, w_context, context);
 
-        execute_and_wait(root_task, context, w_context, context);
+        execute_and_wait(root_task, context, w_context.get_context(), context);
     }
 }
 

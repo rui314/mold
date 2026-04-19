@@ -1,5 +1,5 @@
 # ################################################################
-# Copyright (c) Facebook, Inc.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
 # This source code is licensed under both the BSD-style license (found in the
@@ -17,26 +17,33 @@ LDFLAGS ?=
 ARFLAGS ?=
 LIB_FUZZING_ENGINE ?= libregression.a
 PYTHON ?= python
-ifeq ($(shell uname), Darwin)
+ifeq ($(shell sh -c 'MSYSTEM="MSYS" uname') , Darwin)
 	DOWNLOAD?=curl -L -o
 else
 	DOWNLOAD?=wget -O
 endif
 CORPORA_URL_PREFIX:=https://github.com/facebook/zstd/releases/download/fuzz-corpora/
 
-LIBZSTD = ../../lib
+LIBZSTD_MK_DIR = ../../lib
 DEBUGLEVEL ?= 2
 ZSTD_LEGACY_SUPPORT ?= 1
 
-include $(LIBZSTD)/libzstd.mk
+.PHONY: default
+default: all
 
-ZSTDDIR = ../../lib
+include $(LIBZSTD_MK_DIR)/libzstd.mk
+
 PRGDIR = ../../programs
 CONTRIBDIR = ../../contrib
 
-FUZZ_CPPFLAGS := -I$(ZSTDDIR) -I$(ZSTDDIR)/common -I$(ZSTDDIR)/compress \
-	-I$(ZSTDDIR)/dictBuilder -I$(ZSTDDIR)/deprecated -I$(ZSTDDIR)/legacy \
-	-I$(CONTRIBDIR)/seekable_format -I$(PRGDIR) -DZSTD_MULTITHREAD -DZSTD_LEGACY_SUPPORT=1 $(CPPFLAGS)
+DEFAULT_SEQ_PROD_DIR = $(CONTRIBDIR)/externalSequenceProducer
+DEFAULT_SEQ_PROD_SRC = $(DEFAULT_SEQ_PROD_DIR)/sequence_producer.c
+THIRD_PARTY_SEQ_PROD_OBJ ?=
+
+FUZZ_CPPFLAGS := -I$(LIB_SRCDIR) -I$(LIB_SRCDIR)/common -I$(LIB_SRCDIR)/compress \
+	-I$(LIB_SRCDIR)/dictBuilder -I$(LIB_SRCDIR)/deprecated -I$(LIB_SRCDIR)/legacy \
+	-I$(CONTRIBDIR)/seekable_format -I$(PRGDIR) -I$(DEFAULT_SEQ_PROD_DIR) \
+	-DZSTD_MULTITHREAD -DZSTD_LEGACY_SUPPORT=1 $(CPPFLAGS)
 FUZZ_EXTRA_FLAGS := -Wall -Wextra -Wcast-qual -Wcast-align -Wshadow \
 	-Wstrict-aliasing=1 -Wswitch-enum -Wdeclaration-after-statement \
 	-Wstrict-prototypes -Wundef \
@@ -69,32 +76,33 @@ FUZZ_SRC       := \
 	$(ZSTDCOMMON_SRC) \
 	$(ZSTDCOMP_SRC) \
 	$(ZSTDDICT_SRC) \
-	$(ZSTDLEGACY_SRC)
+	$(ZSTDLEGACY_SRC) \
+	$(DEFAULT_SEQ_PROD_SRC)
 FUZZ_SRC := $(sort $(wildcard $(FUZZ_SRC)))
 
-FUZZ_D_OBJ1 := $(subst $(ZSTDDIR)/common/,d_lib_common_,$(FUZZ_SRC))
-FUZZ_D_OBJ2 := $(subst $(ZSTDDIR)/compress/,d_lib_compress_,$(FUZZ_D_OBJ1))
-FUZZ_D_OBJ3 := $(subst $(ZSTDDIR)/decompress/,d_lib_decompress_,$(FUZZ_D_OBJ2))
-FUZZ_D_OBJ4 := $(subst $(ZSTDDIR)/dictBuilder/,d_lib_dictBuilder_,$(FUZZ_D_OBJ3))
-FUZZ_D_OBJ5 := $(subst $(ZSTDDIR)/legacy/,d_lib_legacy_,$(FUZZ_D_OBJ4))
+FUZZ_D_OBJ1 := $(subst $(LIB_SRCDIR)/common/,d_lib_common_,$(FUZZ_SRC))
+FUZZ_D_OBJ2 := $(subst $(LIB_SRCDIR)/compress/,d_lib_compress_,$(FUZZ_D_OBJ1))
+FUZZ_D_OBJ3 := $(subst $(LIB_SRCDIR)/decompress/,d_lib_decompress_,$(FUZZ_D_OBJ2))
+FUZZ_D_OBJ4 := $(subst $(LIB_SRCDIR)/dictBuilder/,d_lib_dictBuilder_,$(FUZZ_D_OBJ3))
+FUZZ_D_OBJ5 := $(subst $(LIB_SRCDIR)/legacy/,d_lib_legacy_,$(FUZZ_D_OBJ4))
 FUZZ_D_OBJ6 := $(subst $(PRGDIR)/,d_prg_,$(FUZZ_D_OBJ5))
-FUZZ_D_OBJ7 := $(subst $\./,d_fuzz_,$(FUZZ_D_OBJ6))
-FUZZ_D_OBJ8 := $(FUZZ_D_OBJ7:.c=.o)
-FUZZ_DECOMPRESS_OBJ := $(FUZZ_D_OBJ8:.S=.o)
+FUZZ_D_OBJ7 := $(subst $(DEFAULT_SEQ_PROD_DIR)/,d_default_seq_prod_,$(FUZZ_D_OBJ6))
+FUZZ_D_OBJ8 := $(subst $\./,d_fuzz_,$(FUZZ_D_OBJ7))
+FUZZ_D_OBJ9 := $(FUZZ_D_OBJ8:.c=.o)
+FUZZ_D_OBJ10 := $(THIRD_PARTY_SEQ_PROD_OBJ) $(FUZZ_D_OBJ9)
+FUZZ_DECOMPRESS_OBJ := $(FUZZ_D_OBJ10:.S=.o)
 
-FUZZ_RT_OBJ1 := $(subst $(ZSTDDIR)/common/,rt_lib_common_,$(FUZZ_SRC))
-FUZZ_RT_OBJ2 := $(subst $(ZSTDDIR)/compress/,rt_lib_compress_,$(FUZZ_RT_OBJ1))
-FUZZ_RT_OBJ3 := $(subst $(ZSTDDIR)/decompress/,rt_lib_decompress_,$(FUZZ_RT_OBJ2))
-FUZZ_RT_OBJ4 := $(subst $(ZSTDDIR)/dictBuilder/,rt_lib_dictBuilder_,$(FUZZ_RT_OBJ3))
-FUZZ_RT_OBJ5 := $(subst $(ZSTDDIR)/legacy/,rt_lib_legacy_,$(FUZZ_RT_OBJ4))
+FUZZ_RT_OBJ1 := $(subst $(LIB_SRCDIR)/common/,rt_lib_common_,$(FUZZ_SRC))
+FUZZ_RT_OBJ2 := $(subst $(LIB_SRCDIR)/compress/,rt_lib_compress_,$(FUZZ_RT_OBJ1))
+FUZZ_RT_OBJ3 := $(subst $(LIB_SRCDIR)/decompress/,rt_lib_decompress_,$(FUZZ_RT_OBJ2))
+FUZZ_RT_OBJ4 := $(subst $(LIB_SRCDIR)/dictBuilder/,rt_lib_dictBuilder_,$(FUZZ_RT_OBJ3))
+FUZZ_RT_OBJ5 := $(subst $(LIB_SRCDIR)/legacy/,rt_lib_legacy_,$(FUZZ_RT_OBJ4))
 FUZZ_RT_OBJ6 := $(subst $(PRGDIR)/,rt_prg_,$(FUZZ_RT_OBJ5))
-FUZZ_RT_OBJ7 := $(subst $\./,rt_fuzz_,$(FUZZ_RT_OBJ6))
-FUZZ_RT_OBJ8 := $(FUZZ_RT_OBJ7:.c=.o)
-FUZZ_ROUND_TRIP_OBJ := $(FUZZ_RT_OBJ8:.S=.o)
-
-.PHONY: default all clean cleanall
-
-default: all
+FUZZ_RT_OBJ7 := $(subst $(DEFAULT_SEQ_PROD_DIR)/,rt_default_seq_prod_,$(FUZZ_RT_OBJ6))
+FUZZ_RT_OBJ8 := $(subst $\./,rt_fuzz_,$(FUZZ_RT_OBJ7))
+FUZZ_RT_OBJ9 := $(FUZZ_RT_OBJ8:.c=.o)
+FUZZ_RT_OBJ10 := $(THIRD_PARTY_SEQ_PROD_OBJ) $(FUZZ_RT_OBJ9)
+FUZZ_ROUND_TRIP_OBJ := $(FUZZ_RT_OBJ10:.S=.o)
 
 FUZZ_TARGETS :=       \
 	simple_round_trip \
@@ -115,26 +123,29 @@ FUZZ_TARGETS :=       \
 	sequence_compression_api \
 	seekable_roundtrip \
 	huf_round_trip \
-	huf_decompress
+	huf_decompress \
+	decompress_cross_format \
+	generate_sequences
 
+.PHONY: all clean cleanall
 all: libregression.a $(FUZZ_TARGETS)
 
-rt_lib_common_%.o: $(ZSTDDIR)/common/%.c
+rt_lib_common_%.o: $(LIB_SRCDIR)/common/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $(FUZZ_ROUND_TRIP_FLAGS) $< -c -o $@
 
-rt_lib_compress_%.o: $(ZSTDDIR)/compress/%.c
+rt_lib_compress_%.o: $(LIB_SRCDIR)/compress/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $(FUZZ_ROUND_TRIP_FLAGS) $< -c -o $@
 
-rt_lib_decompress_%.o: $(ZSTDDIR)/decompress/%.c
+rt_lib_decompress_%.o: $(LIB_SRCDIR)/decompress/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $(FUZZ_ROUND_TRIP_FLAGS) $< -c -o $@
 
-rt_lib_decompress_%.o: $(ZSTDDIR)/decompress/%.S
+rt_lib_decompress_%.o: $(LIB_SRCDIR)/decompress/%.S
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_ASFLAGS) $(FUZZ_ROUND_TRIP_FLAGS) $< -c -o $@
 
-rt_lib_dictBuilder_%.o: $(ZSTDDIR)/dictBuilder/%.c
+rt_lib_dictBuilder_%.o: $(LIB_SRCDIR)/dictBuilder/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $(FUZZ_ROUND_TRIP_FLAGS) $< -c -o $@
 
-rt_lib_legacy_%.o: $(ZSTDDIR)/legacy/%.c
+rt_lib_legacy_%.o: $(LIB_SRCDIR)/legacy/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $(FUZZ_ROUND_TRIP_FLAGS) $< -c -o $@
 
 rt_prg_%.o: $(PRGDIR)/%.c
@@ -143,28 +154,34 @@ rt_prg_%.o: $(PRGDIR)/%.c
 rt_fuzz_%.o: %.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $(FUZZ_ROUND_TRIP_FLAGS) $< -c -o $@
 
-d_lib_common_%.o: $(ZSTDDIR)/common/%.c
+rt_default_seq_prod_%.o: $(DEFAULT_SEQ_PROD_DIR)/%.c
+	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $(FUZZ_ROUND_TRIP_FLAGS) $< -c -o $@
+
+d_lib_common_%.o: $(LIB_SRCDIR)/common/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $< -c -o $@
 
-d_lib_compress_%.o: $(ZSTDDIR)/compress/%.c
+d_lib_compress_%.o: $(LIB_SRCDIR)/compress/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $< -c -o $@
 
-d_lib_decompress_%.o: $(ZSTDDIR)/decompress/%.c
+d_lib_decompress_%.o: $(LIB_SRCDIR)/decompress/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $< -c -o $@
 
-d_lib_decompress_%.o: $(ZSTDDIR)/decompress/%.S
+d_lib_decompress_%.o: $(LIB_SRCDIR)/decompress/%.S
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_ASFLAGS) $< -c -o $@
 
-d_lib_dictBuilder_%.o: $(ZSTDDIR)/dictBuilder/%.c
+d_lib_dictBuilder_%.o: $(LIB_SRCDIR)/dictBuilder/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $< -c -o $@
 
-d_lib_legacy_%.o: $(ZSTDDIR)/legacy/%.c
+d_lib_legacy_%.o: $(LIB_SRCDIR)/legacy/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $< -c -o $@
 
 d_prg_%.o: $(PRGDIR)/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $< -c -o $@
 
 d_fuzz_%.o: %.c
+	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $< -c -o $@
+
+d_default_seq_prod_%.o: $(DEFAULT_SEQ_PROD_DIR)/%.c
 	$(CC) $(FUZZ_CPPFLAGS) $(FUZZ_CFLAGS) $< -c -o $@
 
 simple_round_trip: $(FUZZ_HEADERS) $(FUZZ_ROUND_TRIP_OBJ) rt_fuzz_simple_round_trip.o
@@ -224,6 +241,12 @@ huf_round_trip: $(FUZZ_HEADERS) $(FUZZ_ROUND_TRIP_OBJ) rt_fuzz_huf_round_trip.o
 huf_decompress: $(FUZZ_HEADERS) $(FUZZ_DECOMPRESS_OBJ) d_fuzz_huf_decompress.o
 	$(CXX) $(FUZZ_TARGET_FLAGS) $(FUZZ_DECOMPRESS_OBJ) d_fuzz_huf_decompress.o $(LIB_FUZZING_ENGINE) -o $@
 
+decompress_cross_format: $(FUZZ_HEADERS) $(FUZZ_DECOMPRESS_OBJ) d_fuzz_decompress_cross_format.o
+	$(CXX) $(FUZZ_TARGET_FLAGS) $(FUZZ_DECOMPRESS_OBJ) d_fuzz_decompress_cross_format.o $(LIB_FUZZING_ENGINE) -o $@
+
+generate_sequences: $(FUZZ_HEADERS) $(FUZZ_ROUND_TRIP_OBJ) rt_fuzz_generate_sequences.o
+	$(CXX) $(FUZZ_TARGET_FLAGS) $(FUZZ_ROUND_TRIP_OBJ) rt_fuzz_generate_sequences.o $(LIB_FUZZING_ENGINE) -o $@
+
 libregression.a: $(FUZZ_HEADERS) $(PRGDIR)/util.h $(PRGDIR)/util.c d_fuzz_regression_driver.o
 	$(AR) $(FUZZ_ARFLAGS) $@ d_fuzz_regression_driver.o
 
@@ -240,9 +263,10 @@ corpora: $(patsubst %,corpora/%,$(FUZZ_TARGETS))
 .PHONY: seedcorpora
 seedcorpora: $(patsubst %,corpora/%_seed_corpus.zip,$(FUZZ_TARGETS))
 
+REGRESSION_TARGET ?= all
 regressiontest: corpora
-	CC="$(CC)" CXX="$(CXX)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" $(PYTHON) ./fuzz.py build all
-	$(PYTHON) ./fuzz.py regression all
+	CC="$(CC)" CXX="$(CXX)" CFLAGS="$(CFLAGS)" CXXFLAGS="$(CXXFLAGS)" LDFLAGS="$(LDFLAGS)" $(PYTHON) ./fuzz.py build $(REGRESSION_TARGET) --debug=$(DEBUGLEVEL)
+	$(PYTHON) ./fuzz.py regression $(REGRESSION_TARGET)
 
 clean:
 	@$(RM) *.a *.o $(FUZZ_TARGETS)

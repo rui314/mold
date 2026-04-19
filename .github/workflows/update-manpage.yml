@@ -1,0 +1,33 @@
+name: Update manpage
+
+on:
+  push:
+    paths:
+      - 'docs/mold.md'
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  update-manpage:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Install ronn
+      run: sudo apt-get update && sudo apt-get install -y ronn
+
+    - name: Generate mold.1 from mold.md
+      run: ronn --roff docs/mold.md
+
+    - name: Configure Git
+      run: |
+        git config --global user.name 'Rui Ueyama'
+        git config --global user.email 'rui314@gmail.com'
+
+    - name: Commit and push if mold.1 is updated
+      run: |
+        git add docs/mold.1
+        git diff --staged --quiet || (git commit -m "Update mold.1 (automated commit)" && git push)

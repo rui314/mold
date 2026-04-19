@@ -30,7 +30,7 @@
 #   | Item                      | Section in the right pane             |
 #   | ------------------------- | ------------------------------------- |
 #   | OS, VM                    | Set up job                            |
-#   | git repo, commit hash     | Run actions/checkout@v3               |
+#   | git repo, commit hash     | Run actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683               |
 #   | gcc, tools                | Environment info                      |
 #
 # - To fail earlier, order of tests in the same job are roughly sorted by
@@ -72,34 +72,33 @@ jobs:
           #   pkgs    : apt-get package names.  It can include multiple package names which are delimited by space.
           #   cc      : C compiler executable.
           #   cxx     : C++ compiler executable for `make ctocpptest`.
-          #   avx512  : Set 'true' if compiler supports avx512.  Otherwise, set 'false'.
           #   os      : GitHub Actions YAML workflow label.  See https://github.com/actions/virtual-environments#available-environments
 
           # cc
-          { pkgs: '',                                  cc: cc,        cxx: c++,         avx512: 'true',  os: ubuntu-latest, },
+          { pkgs: '',                                  cc: cc,        cxx: c++,         os: ubuntu-latest, },
 
           # gcc
-          { pkgs: '',                                  cc: gcc,       cxx: g++,         avx512: 'true',  os: ubuntu-latest, },
-          { pkgs: 'gcc-13  g++-13  lib32gcc-13-dev',   cc: gcc-13,    cxx: g++-13,      avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'gcc-12  g++-12  lib32gcc-12-dev',   cc: gcc-12,    cxx: g++-12,      avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'gcc-11  g++-11  lib32gcc-11-dev',   cc: gcc-11,    cxx: g++-11,      avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'gcc-10  g++-10  lib32gcc-10-dev',   cc: gcc-10,    cxx: g++-10,      avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'gcc-9   g++-9   lib32gcc-9-dev',    cc: gcc-9,     cxx: g++-9,       avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'gcc-8   g++-8   lib32gcc-8-dev',    cc: gcc-8,     cxx: g++-8,       avx512: 'true',  os: ubuntu-20.04,  },
-          { pkgs: 'gcc-7   g++-7   lib32gcc-7-dev',    cc: gcc-7,     cxx: g++-7,       avx512: 'true',  os: ubuntu-20.04,  },
+          { pkgs: '',                                  cc: gcc,       cxx: g++,         os: ubuntu-latest, },
+          # { pkgs: 'gcc-13  g++-13  lib32gcc-13-dev',   cc: gcc-13,    cxx: g++-13,      os: ubuntu-22.04,  }, # currently failing
+          { pkgs: 'gcc-12  g++-12  lib32gcc-12-dev',   cc: gcc-12,    cxx: g++-12,      os: ubuntu-22.04,  },
+          { pkgs: 'gcc-11  g++-11  lib32gcc-11-dev',   cc: gcc-11,    cxx: g++-11,      os: ubuntu-22.04,  },
+          { pkgs: 'gcc-10  g++-10  lib32gcc-10-dev',   cc: gcc-10,    cxx: g++-10,      os: ubuntu-22.04,  },
+          { pkgs: 'gcc-9   g++-9   lib32gcc-9-dev',    cc: gcc-9,     cxx: g++-9,       os: ubuntu-22.04,  },
+          { pkgs: 'gcc-8   g++-8   lib32gcc-8-dev',    cc: gcc-8,     cxx: g++-8,       os: ubuntu-20.04,  },
+          { pkgs: 'gcc-7   g++-7   lib32gcc-7-dev',    cc: gcc-7,     cxx: g++-7,       os: ubuntu-20.04,  },
 
           # clang
-          { pkgs: '',                                  cc: clang,     cxx: clang++,     avx512: 'true',  os: ubuntu-latest, },
-          { pkgs: 'clang-15',                          cc: clang-15,  cxx: clang++-15,  avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'clang-14',                          cc: clang-14,  cxx: clang++-14,  avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'clang-13',                          cc: clang-13,  cxx: clang++-13,  avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'clang-12',                          cc: clang-12,  cxx: clang++-12,  avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'clang-11',                          cc: clang-11,  cxx: clang++-11,  avx512: 'true',  os: ubuntu-22.04,  },
-          { pkgs: 'clang-10',                          cc: clang-10,  cxx: clang++-10,  avx512: 'true',  os: ubuntu-20.04,  },
-          { pkgs: 'clang-9',                           cc: clang-9,   cxx: clang++-9,   avx512: 'true',  os: ubuntu-20.04,  },
-          { pkgs: 'clang-8',                           cc: clang-8,   cxx: clang++-8,   avx512: 'true',  os: ubuntu-20.04,  },
-          { pkgs: 'clang-7',                           cc: clang-7,   cxx: clang++-7,   avx512: 'true',  os: ubuntu-20.04,  },
-          { pkgs: 'clang-6.0',                         cc: clang-6.0, cxx: clang++-6.0, avx512: 'true',  os: ubuntu-20.04,  },
+          { pkgs: '',                                  cc: clang,     cxx: clang++,     os: ubuntu-latest, },
+          { pkgs: 'clang-15',                          cc: clang-15,  cxx: clang++-15,  os: ubuntu-22.04,  },
+          { pkgs: 'clang-14',                          cc: clang-14,  cxx: clang++-14,  os: ubuntu-22.04,  },
+          { pkgs: 'clang-13',                          cc: clang-13,  cxx: clang++-13,  os: ubuntu-22.04,  },
+          { pkgs: 'clang-12',                          cc: clang-12,  cxx: clang++-12,  os: ubuntu-22.04,  },
+          { pkgs: 'clang-11',                          cc: clang-11,  cxx: clang++-11,  os: ubuntu-22.04,  },
+          { pkgs: 'clang-10',                          cc: clang-10,  cxx: clang++-10,  os: ubuntu-20.04,  },
+          { pkgs: 'clang-9',                           cc: clang-9,   cxx: clang++-9,   os: ubuntu-20.04,  },
+          { pkgs: 'clang-8',                           cc: clang-8,   cxx: clang++-8,   os: ubuntu-20.04,  },
+          { pkgs: 'clang-7',                           cc: clang-7,   cxx: clang++-7,   os: ubuntu-20.04,  },
+          { pkgs: 'clang-6.0',                         cc: clang-6.0, cxx: clang++-6.0, os: ubuntu-20.04,  },
         ]
 
     runs-on: ${{ matrix.os }}
@@ -108,7 +107,7 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
-    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: apt-get install
       run: |
@@ -163,7 +162,6 @@ jobs:
         make clean noxxh3test
 
     - name: make avx512f
-      if: ${{ matrix.avx512 == 'true' }}
       run: |
         CFLAGS="-O1 -mavx512f -Werror" make clean default
 
@@ -177,7 +175,7 @@ jobs:
     name: Linux x64 check results consistency
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Environment info
       run: |
@@ -225,23 +223,23 @@ jobs:
       CC: emcc
 
     steps:
-    - uses: actions/checkout@v3 # https://github.com/actions/checkout
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Setup cache
       id: cache-system-libraries
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ${{env.EM_CACHE_FOLDER}}
         key: em${{env.EM_VERSION}}-node${{ matrix.node-version }}-${{ runner.os }}
 
     - name: Setup emsdk
-      uses: mymindstorm/setup-emsdk@v12
+      uses: mymindstorm/setup-emsdk@v14
       with:
         version: ${{env.EM_VERSION}}
         actions-cache-folder: ${{env.EM_CACHE_FOLDER}}
 
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
 
@@ -269,7 +267,7 @@ jobs:
     name: Linux x64 misc tests
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: apt-get install
       run: |
@@ -316,7 +314,7 @@ jobs:
     name: Linux x64 cmake unofficial build test
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Environment info
       run: |
@@ -345,26 +343,26 @@ jobs:
         cat build/libxxhash.pc | grep "libdir=/usr/lib"
         cat build/libxxhash.pc | grep "includedir=/usr/include"
 
-    - name: cmake minimum version v2.8.12 test
+    - name: cmake minimum version v3.10 test
       run: |
         mkdir -p cmake_bins
         cd cmake_bins
-        wget https://cmake.org/files/v2.8/cmake-2.8.12.2-Linux-i386.tar.gz
-        tar xzf cmake-2.8.12.2-Linux-i386.tar.gz
+        wget https://cmake.org/files/v3.10/cmake-3.10.0-Linux-x86_64.tar.gz
+        tar xzf cmake-3.10.0-Linux-x86_64.tar.gz
         cd ../cmake_unofficial
         rm -rf build
         pwd
         ls
         mkdir -p build
         cd build
-        ../../cmake_bins/cmake-2.8.12.2-Linux-i386/bin/cmake --version
-        ../../cmake_bins/cmake-2.8.12.2-Linux-i386/bin/cmake ..
-        ../../cmake_bins/cmake-2.8.12.2-Linux-i386/bin/cmake --build .
+        ../../cmake_bins/cmake-3.10.0-Linux-x86_64/bin/cmake --version
+        ../../cmake_bins/cmake-3.10.0-Linux-x86_64/bin/cmake ..
+        ../../cmake_bins/cmake-3.10.0-Linux-x86_64/bin/cmake --build .
         mkdir -p test_install_dir
-        DESTDIR=test_install_dir ../../cmake_bins/cmake-2.8.12.2-Linux-i386/bin/cmake --install .
+        DESTDIR=test_install_dir ../../cmake_bins/cmake-3.10.0-Linux-x86_64/bin/cmake --install .
         rm -rf *
-        ../../cmake_bins/cmake-2.8.12.2-Linux-i386/bin/cmake -DCMAKE_BUILD_TYPE=Debug ..
-        ../../cmake_bins/cmake-2.8.12.2-Linux-i386/bin/cmake --build .
+        ../../cmake_bins/cmake-3.10.0-Linux-x86_64/bin/cmake -DCMAKE_BUILD_TYPE=Debug ..
+        ../../cmake_bins/cmake-3.10.0-Linux-x86_64/bin/cmake --build .
 
 
 
@@ -386,6 +384,9 @@ jobs:
           { name: 'MIPS',            xcc_pkg: gcc-mips-linux-gnu,           xcc: mips-linux-gnu-gcc,           xemu_pkg: qemu-system-mips,   xemu: qemu-mips-static,    os: ubuntu-latest, },
           { name: 'M68K',            xcc_pkg: gcc-m68k-linux-gnu,           xcc: m68k-linux-gnu-gcc,           xemu_pkg: qemu-system-m68k,   xemu: qemu-m68k-static,    os: ubuntu-latest, },
           { name: 'RISC-V',          xcc_pkg: gcc-riscv64-linux-gnu,        xcc: riscv64-linux-gnu-gcc,        xemu_pkg: qemu-system-riscv64,xemu: qemu-riscv64-static, os: ubuntu-latest, },
+          # SPARC64 qemu emulation seems broken on Ubuntu-22
+          { name: 'SPARC',           xcc_pkg: gcc-sparc64-linux-gnu,        xcc: sparc64-linux-gnu-gcc,        xemu_pkg: qemu-system-sparc,  xemu: qemu-sparc64-static, os: ubuntu-20.04, },
+          { name: 'LoongArch',       xcc_pkg: gcc-14-loongarch64-linux-gnu,    xcc: loongarch64-linux-gnu-gcc-14, xemu_pkg: qemu-system-loongarch64, xemu: qemu-loongarch64-static, os: ubuntu-24.04, },
 
           { name: 'ARM, gcc-10',     xcc_pkg: gcc-10-arm-linux-gnueabi,     xcc: arm-linux-gnueabi-gcc-10,     xemu_pkg: qemu-system-arm,   xemu: qemu-arm-static,     os: ubuntu-20.04, },
           { name: 'AARCH64, gcc-10', xcc_pkg: gcc-10-aarch64-linux-gnu,     xcc: aarch64-linux-gnu-gcc-10,     xemu_pkg: qemu-system-arm,   xemu: qemu-aarch64-static, os: ubuntu-20.04, },
@@ -416,7 +417,7 @@ jobs:
       XEMU: ${{ matrix.xemu }}
       MOREFLAGS: -Werror
     steps:
-    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
     - name: apt update & install (1)
       run: |
         sudo apt-get update
@@ -443,6 +444,8 @@ jobs:
       run: |
         CPPFLAGS="-DXXH_VECTOR=XXH_SCALAR" LDFLAGS="-static" CC=$XCC RUN_ENV=$XEMU make clean check
         CPPFLAGS="-DXXH_VECTOR=XXH_NEON" CFLAGS="-O3 -march=armv7-a -fPIC -mfloat-abi=softfp -mfpu=neon-vfpv4" LDFLAGS="-static" CC=$XCC RUN_ENV=$XEMU make clean check
+        make -C tests clean
+        CPPFLAGS="-DXXH_VECTOR=XXH_SCALAR" LDFLAGS="-static" CC=$XCC RUN_ENV=$XEMU make -C tests sanity_test_vectors.h test_sanity
 
     - name: AARCH64 (XXH_VECTOR=[ scalar, NEON, SVE ])
       if: ${{ startsWith(matrix.name, 'AARCH64') }}
@@ -467,13 +470,18 @@ jobs:
         CPPFLAGS="-DXXH_VECTOR=XXH_SCALAR" LDFLAGS="-static" CC=$XCC RUN_ENV=$XEMU make clean check
         CPPFLAGS=-DXXH_VECTOR=XXH_VSX CFLAGS="-O3 -march=arch11 -mzvector" LDFLAGS="-static" CC=$XCC RUN_ENV=$XEMU make clean check
 
-    - name: MIPS-M68K-RISCV (XXH_VECTOR=[ scalar ])
-      if: ${{ startsWith(matrix.name, 'MIPS') || startsWith(matrix.name, 'M68K') || startsWith(matrix.name, 'RISC-V') }}
+    - name: MIPS-M68K-RISCV-SPARC (XXH_VECTOR=[ scalar ])
+      if: ${{ startsWith(matrix.name, 'MIPS') || startsWith(matrix.name, 'M68K') || startsWith(matrix.name, 'RISC-V') || startsWith(matrix.name, 'SPARC') }}
       run: |
-        LDFLAGS="-static" CC=$XCC RUN_ENV=$XEMU make clean check
+        make clean; LDFLAGS="-static" CC=$XCC RUN_ENV=$XEMU make check
 
+    - name: LoongArch (XXH_VECTOR=[ scalar, LSX ])
+      if: ${{ startsWith(matrix.name, 'LoongArch') }}
+      run: |
+        CPPFLAGS="-DXXH_VECTOR=XXH_SCALAR" LDFLAGS="-static" CC=$XCC RUN_ENV=$XEMU make clean check
+        CPPFLAGS=-DXXH_VECTOR=XXH_LSX CFLAGS="-O3 -march=la464 -mlsx" LDFLAGS="-static" CC=$XCC RUN_ENV=$XEMU make clean check
 
-  # macOS, { 11 }
+  # macOS
 
   macos-general:
     name: ${{ matrix.system.os }}
@@ -482,11 +490,13 @@ jobs:
       fail-fast: false  # 'false' means Don't stop matrix workflows even if some matrix failed.
       matrix:
         system: [
-          { os: macos-11    },
-          { os: macos-12    },
+          { os: macos-13     },
+          { os: macos-14     },
+          { os: macos-15     },
+          { os: macos-latest },
         ]
     steps:
-    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Environment info
       run: |
@@ -503,7 +513,7 @@ jobs:
         make clean test MOREFLAGS='-Werror' | tee
 
 
-  # Windows, { VC++2022, VC++2019, VC++2017 } x { x64, Win32, ARM, ARM64 }
+  # Windows, { VC++2022, VC++2019 } x { x64, Win32, ARM, ARM64 }
   #
   # - Default shell for Windows environment is PowerShell Core.
   #   https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions#using-a-specific-shell
@@ -524,17 +534,17 @@ jobs:
           { os: windows-2022, vc: "VC++ 2022", clangcl: 'true', },
           { os: windows-2019, vc: "VC++ 2019", clangcl: 'true', },
         ]
-        arch: [ x64, Win32, ARM, ARM64 ]
+        arch: [ x64, Win32, ARM64 ]
 
     steps:
-    - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
     - name: Build ${{ matrix.system.os }}, ${{ matrix.arch }}
       run: |
         cd cmake_unofficial
         mkdir build
         cd build
-        cmake .. -DCMAKE_BUILD_TYPE=Release -A ${{ matrix.arch }} -DXXHASH_C_FLAGS="/WX"
+        cmake .. -DCMAKE_BUILD_TYPE=Release -A ${{ matrix.arch }} -DCMAKE_C_FLAGS="/W4 /WX"
         cmake --build . --config Release
 
     - name: Test
@@ -542,6 +552,24 @@ jobs:
       if: ${{ matrix.arch == 'x64' || matrix.arch == 'Win32' }}
       run: |
         .\cmake_unofficial\build\Release\xxhsum.exe -bi1
+
+    - name: Build ${{ matrix.system.os }}, ${{ matrix.arch }}, with DISPATCH
+      # DISPATCH only if target arch is x64 or Win32.
+      if: ${{ ( matrix.arch == 'x64' || matrix.arch == 'Win32' ) }}
+      run: |
+        cd cmake_unofficial
+        mkdir build-visual-dispatch
+        cd build-visual-dispatch
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DDISPATCH=ON -A x64 -DCMAKE_C_FLAGS="/W4 /WX"
+        cmake --build . --config Release
+
+    - name: Runtime Test (DISPATCH)
+      # Run benchmark for testing only if target arch is x64 or Win32.
+      if: ${{ ( matrix.arch == 'x64' || matrix.arch == 'Win32' ) }}
+      run: |
+        .\cmake_unofficial\build-visual-dispatch\Release\xxhsum.exe -V | grep autoVec
+        .\cmake_unofficial\build-visual-dispatch\Release\xxhsum.exe -bi1
+
 
     - name: Build ${{ matrix.system.os }}, clang-cl, ${{ matrix.arch }}
       if: ${{ matrix.system.clangcl == 'true' }}
@@ -558,22 +586,6 @@ jobs:
       run: |
         .\cmake_unofficial\build-clang-cl\Release\xxhsum.exe -bi1
 
-    - name: Build ${{ matrix.system.os }}, clang-cl, ${{ matrix.arch }}, with DISPATCH
-      # DISPATCH only if target arch is x64 or Win32.
-      if: ${{ matrix.system.clangcl == 'true' && ( matrix.arch == 'x64' || matrix.arch == 'Win32' ) }}
-      run: |
-        cd cmake_unofficial
-        mkdir build-clang-cl-dispatch
-        cd build-clang-cl-dispatch
-        cmake .. -DCMAKE_BUILD_TYPE=Release -DDISPATCH=ON -A x64 -DCMAKE_GENERATOR_TOOLSET=ClangCL
-        cmake --build . --config Release
-
-    - name: Runtime Test (clang-cl + DISPATCH)
-      # Run benchmark for testing only if target arch is x64 or Win32.
-      if: ${{ matrix.system.clangcl == 'true' && ( matrix.arch == 'x64' || matrix.arch == 'Win32' ) }}
-      run: |
-        .\cmake_unofficial\build-clang-cl-dispatch\Release\xxhsum.exe -V | grep autoVec
-        .\cmake_unofficial\build-clang-cl-dispatch\Release\xxhsum.exe -bi1
 
 
   # Windows, { mingw64, mingw32 }
@@ -597,7 +609,7 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
-      - uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: msys2/setup-msys2@7efe20baefed56359985e327d329042cde2434ff # v2
         with:
           msystem: MSYS
@@ -612,10 +624,11 @@ jobs:
       - name: mingw64
         if: ${{ matrix.msystem == 'mingw64' }}
         run: |
-          PATH=/mingw64/bin:$PATH /mingw32/bin/mingw32-make clean test MOREFLAGS=-Werror
+          PATH=/mingw64/bin:$PATH /mingw32/bin/mingw32-make clean test gcc-og-test MOREFLAGS=-Werror
           PATH=/mingw64/bin:$PATH /mingw32/bin/mingw32-make -C tests/bench
           # Abort if result of "file ./xxhsum.exe" doesn't contain 'x86-64'.
           # Expected output is "./xxhsum.exe: PE32+ executable (console) x86-64, for MS Windows"
+          file ./xxhsum.exe
           file ./xxhsum.exe | grep -q 'x86-64' || $(exit 1)
           ./xxhsum.exe --version
 
@@ -625,6 +638,7 @@ jobs:
           PATH=/mingw32/bin:$PATH /mingw32/bin/mingw32-make.exe clean test MOREFLAGS=-Werror
           PATH=/mingw32/bin:$PATH /mingw32/bin/mingw32-make.exe -C tests/bench
           # Abort if result of "file ./xxhsum.exe" doesn't contain '80386'.
-          # Expected output is "./xxhsum.exe: PE32 executable (console) Intel 80386, for MS Windows"
-          file ./xxhsum.exe | grep -q '80386' || $(exit 1)
+          # Expected output is "./xxhsum.exe: PE32 executable (console) Intel i386, for MS Windows"
+          file ./xxhsum.exe
+          file ./xxhsum.exe | grep -q '386' || $(exit 1)
           ./xxhsum.exe --version

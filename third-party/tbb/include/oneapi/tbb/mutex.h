@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2021 Intel Corporation
+    Copyright (c) 2021-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -36,9 +36,7 @@ public:
     };
 
     //! Destructor
-    ~mutex() {
-        __TBB_ASSERT(!my_flag.load(std::memory_order_relaxed), "destruction of an acquired mutex");
-    }
+    ~mutex() = default;
 
     //! No Copy
     mutex(const mutex&) = delete;

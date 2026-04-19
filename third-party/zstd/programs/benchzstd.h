@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Yann Collet, Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -14,10 +14,6 @@
   * and display progress result and final summary
   */
 
-#if defined (__cplusplus)
-extern "C" {
-#endif
-
 #ifndef BENCH_ZSTD_H_3242387
 #define BENCH_ZSTD_H_3242387
 
@@ -25,7 +21,6 @@ extern "C" {
 #include <stddef.h>   /* size_t */
 #define ZSTD_STATIC_LINKING_ONLY   /* ZSTD_compressionParameters */
 #include "../lib/zstd.h"     /* ZSTD_compressionParameters */
-
 
 /* ===  Constants  === */
 
@@ -81,21 +76,13 @@ BMK_benchResult_t BMK_extract_benchResult(BMK_benchOutcome_t outcome);
  *      2 : + result + interaction + warnings;
  *      3 : + information;
  *      4 : + debug
- * @return:
- *      a variant, which expresses either an error, or a valid result.
- *      Use BMK_isSuccessful_benchOutcome() to check if function was successful.
- *      If yes, extract the valid result with BMK_extract_benchResult(),
- *      it will contain :
- *          .cSpeed: compression speed in bytes per second,
- *          .dSpeed: decompression speed in bytes per second,
- *          .cSize : compressed size, in bytes
- *          .cMem  : memory budget required for the compression context
+ * @return: 0 on success, !0 on error
  */
-BMK_benchOutcome_t BMK_benchFiles(
-                   const char* const * fileNamesTable, unsigned nbFiles,
-                   const char* dictFileName,
-                   int cLevel, const ZSTD_compressionParameters* compressionParams,
-                   int displayLevel);
+int BMK_benchFiles(
+            const char* const * fileNamesTable, unsigned nbFiles,
+            const char* dictFileName,
+            int cLevel, const ZSTD_compressionParameters* compressionParams,
+            int displayLevel);
 
 
 typedef enum {
@@ -108,6 +95,7 @@ typedef struct {
     BMK_mode_t mode;        /* 0: all, 1: compress only 2: decode only */
     unsigned nbSeconds;     /* default timing is in nbSeconds */
     size_t blockSize;       /* Maximum size of each block*/
+    size_t targetCBlockSize;/* Approximative size of compressed blocks */
     int nbWorkers;          /* multithreading */
     unsigned realTime;      /* real time priority */
     int additionalParam;    /* used by python speed benchmark */
@@ -116,7 +104,7 @@ typedef struct {
     int ldmHashLog;
     int ldmBucketSizeLog;
     int ldmHashRateLog;
-    ZSTD_paramSwitch_e literalCompressionMode;
+    ZSTD_ParamSwitch_e literalCompressionMode;
     int useRowMatchFinder;  /* use row-based matchfinder if possible */
 } BMK_advancedParams_t;
 
@@ -126,33 +114,27 @@ BMK_advancedParams_t BMK_initAdvancedParams(void);
 /*! BMK_benchFilesAdvanced():
  *  Same as BMK_benchFiles(),
  *  with more controls, provided through advancedParams_t structure */
-BMK_benchOutcome_t BMK_benchFilesAdvanced(
-                   const char* const * fileNamesTable, unsigned nbFiles,
-                   const char* dictFileName,
-                   int cLevel, const ZSTD_compressionParameters* compressionParams,
-                   int displayLevel, const BMK_advancedParams_t* adv);
+int BMK_benchFilesAdvanced(
+               const char* const * fileNamesTable, unsigned nbFiles,
+               const char* dictFileName,
+               int startCLevel, int endCLevel,
+               const ZSTD_compressionParameters* compressionParams,
+               int displayLevel, const BMK_advancedParams_t* adv);
 
 /*! BMK_syntheticTest() -- called from zstdcli */
-/*  Generates a sample with datagen, using compressibility argument */
-/*  cLevel - compression level to benchmark, errors if invalid
- *  compressibility - determines compressibility of sample
- *  compressionParams - basic compression Parameters
- *  displayLevel - see benchFiles
- *  adv - see advanced_Params_t
- * @return:
- *      a variant, which expresses either an error, or a valid result.
- *      Use BMK_isSuccessful_benchOutcome() to check if function was successful.
- *      If yes, extract the valid result with BMK_extract_benchResult(),
- *      it will contain :
- *          .cSpeed: compression speed in bytes per second,
- *          .dSpeed: decompression speed in bytes per second,
- *          .cSize : compressed size, in bytes
- *          .cMem  : memory budget required for the compression context
+/*  Generates a sample with datagen, using @compressibility argument
+ * @cLevel - compression level to benchmark, errors if invalid
+ * @compressibility - determines compressibility of sample, range [0.0 - 1.0]
+ *        if @compressibility < 0.0, uses the lorem ipsum generator
+ * @compressionParams - basic compression Parameters
+ * @displayLevel - see benchFiles
+ * @adv - see advanced_Params_t
+ * @return: 0 on success, !0 on error
  */
-BMK_benchOutcome_t BMK_syntheticTest(
-                          int cLevel, double compressibility,
-                          const ZSTD_compressionParameters* compressionParams,
-                          int displayLevel, const BMK_advancedParams_t* adv);
+int BMK_syntheticTest(double compressibility,
+                      int startingCLevel, int endCLevel,
+                      const ZSTD_compressionParameters* compressionParams,
+                      int displayLevel, const BMK_advancedParams_t* adv);
 
 
 
@@ -190,8 +172,8 @@ BMK_benchOutcome_t BMK_benchMem(const void* srcBuffer, size_t srcSize,
                         int displayLevel, const char* displayName);
 
 
-/* BMK_benchMemAdvanced() : same as BMK_benchMem()
- * with following additional options :
+/* BMK_benchMemAdvanced() : used by Paramgrill
+ * same as BMK_benchMem() with following additional options :
  * dstBuffer - destination buffer to write compressed output in, NULL if none provided.
  * dstCapacity - capacity of destination buffer, give 0 if dstBuffer = NULL
  * adv = see advancedParams_t
@@ -207,7 +189,3 @@ BMK_benchOutcome_t BMK_benchMemAdvanced(const void* srcBuffer, size_t srcSize,
 
 
 #endif   /* BENCH_ZSTD_H_3242387 */
-
-#if defined (__cplusplus)
-}
-#endif

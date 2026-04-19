@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 #error Do not #include this internal file directly; use public TBB headers instead.
 #endif
 
-// included into namespace tbb::detail::d1
+// included into namespace tbb::detail::d2
 
     struct forwarding_base : no_assign {
         forwarding_base(graph &g) : graph_ref(g) {}
@@ -89,16 +89,48 @@
             return true;
         }
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        template <typename InputTuple, typename OutputTuple>
+        static inline bool reserve(InputTuple& my_input, OutputTuple& out, message_metainfo& metainfo) {
+            message_metainfo element_metainfo;
+            if (!std::get<N - 1>(my_input).reserve(std::get<N - 1>(out), element_metainfo)) return false;
+            if (!join_helper<N - 1>::reserve(my_input, out, metainfo)) {
+                release_my_reservation(my_input);
+                return false;
+            }
+            metainfo.merge(element_metainfo);
+            return true;
+
+        }
+#endif
+
         template<typename InputTuple, typename OutputTuple>
         static inline bool get_my_item( InputTuple &my_input, OutputTuple &out) {
             bool res = std::get<N-1>(my_input).get_item(std::get<N-1>(out) ); // may fail
             return join_helper<N-1>::get_my_item(my_input, out) && res;       // do get on other inputs before returning
         }
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        template <typename InputTuple, typename OutputTuple>
+        static inline bool get_my_item(InputTuple& my_input, OutputTuple& out, message_metainfo& metainfo) {
+            message_metainfo element_metainfo;
+            bool res = std::get<N-1>(my_input).get_item(std::get<N-1>(out), element_metainfo);
+            metainfo.merge(element_metainfo);
+            return join_helper<N-1>::get_my_item(my_input, out, metainfo) && res;
+        }
+#endif
+
         template<typename InputTuple, typename OutputTuple>
         static inline bool get_items(InputTuple &my_input, OutputTuple &out) {
             return get_my_item(my_input, out);
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        template <typename InputTuple, typename OutputTuple>
+        static inline bool get_items(InputTuple& my_input, OutputTuple& out, message_metainfo& metainfo) {
+            return get_my_item(my_input, out, metainfo);
+        }
+#endif
 
         template<typename InputTuple>
         static inline void reset_my_port(InputTuple &my_input) {
@@ -163,15 +195,42 @@
             return std::get<0>( my_input ).reserve( std::get<0>( out ) );
         }
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        template <typename InputTuple, typename OutputTuple>
+        static inline bool reserve(InputTuple& my_input, OutputTuple& out, message_metainfo& metainfo) {
+            message_metainfo element_metainfo;
+            bool result = std::get<0>(my_input).reserve(std::get<0>(out), element_metainfo);
+            metainfo.merge(element_metainfo);
+            return result;
+        }
+#endif
+
         template<typename InputTuple, typename OutputTuple>
         static inline bool get_my_item( InputTuple &my_input, OutputTuple &out) {
             return std::get<0>(my_input).get_item(std::get<0>(out));
         }
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        template <typename InputTuple, typename OutputTuple>
+        static inline bool get_my_item(InputTuple& my_input, OutputTuple& out, message_metainfo& metainfo) {
+            message_metainfo element_metainfo;
+            bool res = std::get<0>(my_input).get_item(std::get<0>(out), element_metainfo);
+            metainfo.merge(element_metainfo);
+            return res;
+        }
+#endif
+
         template<typename InputTuple, typename OutputTuple>
         static inline bool get_items(InputTuple &my_input, OutputTuple &out) {
             return get_my_item(my_input, out);
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        template <typename InputTuple, typename OutputTuple>
+        static inline bool get_items(InputTuple& my_input, OutputTuple& out, message_metainfo& metainfo) {
+            return get_my_item(my_input, out, metainfo);
+        }
+#endif
 
         template<typename InputTuple>
         static inline void reset_my_port(InputTuple &my_input) {
@@ -216,23 +275,31 @@
         };
         typedef reserving_port<T> class_type;
 
-        class reserving_port_operation : public aggregated_operation<reserving_port_operation> {
+        class reserving_port_operation : public d1::aggregated_operation<reserving_port_operation> {
         public:
             char type;
             union {
                 T *my_arg;
                 predecessor_type *my_pred;
             };
-            reserving_port_operation(const T& e, op_type t) :
-                type(char(t)), my_arg(const_cast<T*>(&e)) {}
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            message_metainfo* metainfo;
+#endif
+            reserving_port_operation(const T& e, op_type t __TBB_FLOW_GRAPH_METAINFO_ARG(message_metainfo& info)) :
+                type(char(t)), my_arg(const_cast<T*>(&e))
+                __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo(&info)) {}
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            reserving_port_operation(const T& e, op_type t)
+                : type(char(t)), my_arg(const_cast<T*>(&e)), metainfo(nullptr) {}
+#endif
             reserving_port_operation(const predecessor_type &s, op_type t) : type(char(t)),
                 my_pred(const_cast<predecessor_type *>(&s)) {}
             reserving_port_operation(op_type t) : type(char(t)) {}
         };
 
-        typedef aggregating_functor<class_type, reserving_port_operation> handler_type;
-        friend class aggregating_functor<class_type, reserving_port_operation>;
-        aggregator<handler_type, reserving_port_operation> my_aggregator;
+        typedef d1::aggregating_functor<class_type, reserving_port_operation> handler_type;
+        friend class d1::aggregating_functor<class_type, reserving_port_operation>;
+        d1::aggregator<handler_type, reserving_port_operation> my_aggregator;
 
         void handle_operations(reserving_port_operation* op_list) {
             reserving_port_operation *current;
@@ -262,14 +329,26 @@
                     if ( reserved ) {
                         current->status.store( FAILED, std::memory_order_release);
                     }
-                    else if ( my_predecessors.try_reserve( *(current->my_arg) ) ) {
-                        reserved = true;
-                        current->status.store( SUCCEEDED, std::memory_order_release);
-                    } else {
-                        if ( my_predecessors.empty() ) {
-                            my_join->increment_port_count();
+                    else {
+                        bool reserve_result = false;
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+                        if (current->metainfo) {
+                            reserve_result = my_predecessors.try_reserve(*(current->my_arg),
+                                                                         *(current->metainfo));
+                        } else
+#endif
+                        {
+                            reserve_result = my_predecessors.try_reserve(*(current->my_arg));
                         }
-                        current->status.store( FAILED, std::memory_order_release);
+                        if (reserve_result) {
+                            reserved = true;
+                            current->status.store( SUCCEEDED, std::memory_order_release);
+                        } else {
+                            if ( my_predecessors.empty() ) {
+                                my_join->increment_port_count();
+                            }
+                            current->status.store( FAILED, std::memory_order_release);
+                        }
                     }
                     break;
                 case rel_res:
@@ -293,6 +372,10 @@
         graph_task* try_put_task( const T & ) override {
             return nullptr;
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+    graph_task* try_put_task(const T&, const message_metainfo&) override { return nullptr; }
+#endif
 
         graph& graph_reference() const override {
             return my_join->graph_ref;
@@ -332,6 +415,14 @@
             my_aggregator.execute(&op_data);
             return op_data.status == SUCCEEDED;
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        bool reserve( T& v, message_metainfo& metainfo ) {
+            reserving_port_operation op_data(v, res_item, metainfo);
+            my_aggregator.execute(&op_data);
+            return op_data.status == SUCCEEDED;
+        }
+#endif
 
         //! Release the port
         void release( ) {
@@ -376,31 +467,42 @@
         enum op_type { get__item, res_port, try__put_task
         };
 
-        class queueing_port_operation : public aggregated_operation<queueing_port_operation> {
+        class queueing_port_operation : public d1::aggregated_operation<queueing_port_operation> {
         public:
             char type;
             T my_val;
             T* my_arg;
             graph_task* bypass_t;
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            message_metainfo* metainfo;
+#endif
             // constructor for value parameter
-            queueing_port_operation(const T& e, op_type t) :
-                type(char(t)), my_val(e), my_arg(nullptr)
+            queueing_port_operation(const T& e, op_type t __TBB_FLOW_GRAPH_METAINFO_ARG(const message_metainfo& info))
+                : type(char(t)), my_val(e), my_arg(nullptr)
                 , bypass_t(nullptr)
+                __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo(const_cast<message_metainfo*>(&info)))
             {}
             // constructor for pointer parameter
-            queueing_port_operation(const T* p, op_type t) :
+            queueing_port_operation(const T* p, op_type t __TBB_FLOW_GRAPH_METAINFO_ARG(message_metainfo& info)) :
                 type(char(t)), my_arg(const_cast<T*>(p))
                 , bypass_t(nullptr)
+                __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo(&info))
             {}
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            queueing_port_operation(const T* p, op_type t)
+                : type(char(t)), my_arg(const_cast<T*>(p)), bypass_t(nullptr), metainfo(nullptr)
+            {}
+#endif
             // constructor with no parameter
             queueing_port_operation(op_type t) : type(char(t)), my_arg(nullptr)
                 , bypass_t(nullptr)
+                __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo(nullptr))
             {}
         };
 
-        typedef aggregating_functor<class_type, queueing_port_operation> handler_type;
-        friend class aggregating_functor<class_type, queueing_port_operation>;
-        aggregator<handler_type, queueing_port_operation> my_aggregator;
+        typedef d1::aggregating_functor<class_type, queueing_port_operation> handler_type;
+        friend class d1::aggregating_functor<class_type, queueing_port_operation>;
+        d1::aggregator<handler_type, queueing_port_operation> my_aggregator;
 
         void handle_operations(queueing_port_operation* op_list) {
             queueing_port_operation *current;
@@ -412,7 +514,12 @@
                 case try__put_task: {
                         graph_task* rtask = nullptr;
                         was_empty = this->buffer_empty();
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+                        __TBB_ASSERT(current->metainfo, nullptr);
+                        this->push_back(current->my_val, *(current->metainfo));
+#else
                         this->push_back(current->my_val);
+#endif
                         if (was_empty) rtask = my_join->decrement_port_count(false);
                         else
                             rtask = SUCCESSFULLY_ENQUEUED;
@@ -424,6 +531,11 @@
                     if(!this->buffer_empty()) {
                         __TBB_ASSERT(current->my_arg, nullptr);
                         *(current->my_arg) = this->front();
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+                        if (current->metainfo) {
+                            *(current->metainfo) = this->front_metainfo();
+                        }
+#endif
                         current->status.store( SUCCEEDED, std::memory_order_release);
                     }
                     else {
@@ -447,13 +559,26 @@
         template< typename R, typename B > friend class run_and_put_task;
         template<typename X, typename Y> friend class broadcast_cache;
         template<typename X, typename Y> friend class round_robin_cache;
-        graph_task* try_put_task(const T &v) override {
-            queueing_port_operation op_data(v, try__put_task);
+
+    private:
+        graph_task* try_put_task_impl(const T& v __TBB_FLOW_GRAPH_METAINFO_ARG(const message_metainfo& metainfo)) {
+            queueing_port_operation op_data(v, try__put_task __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo));
             my_aggregator.execute(&op_data);
             __TBB_ASSERT(op_data.status == SUCCEEDED || !op_data.bypass_t, "inconsistent return from aggregator");
             if(!op_data.bypass_t) return SUCCESSFULLY_ENQUEUED;
             return op_data.bypass_t;
         }
+
+    protected:
+        graph_task* try_put_task(const T &v) override {
+            return try_put_task_impl(v __TBB_FLOW_GRAPH_METAINFO_ARG(message_metainfo{}));
+        }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        graph_task* try_put_task(const T& v, const message_metainfo& metainfo) override {
+            return try_put_task_impl(v, metainfo);
+        }
+#endif
 
         graph& graph_reference() const override {
             return my_join->graph_ref;
@@ -480,6 +605,14 @@
             my_aggregator.execute(&op_data);
             return op_data.status == SUCCEEDED;
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        bool get_item( T& v, message_metainfo& metainfo ) {
+            queueing_port_operation op_data(&v, get__item, metainfo);
+            my_aggregator.execute(&op_data);
+            return op_data.status == SUCCEEDED;
+        }
+#endif
 
         // reset_port is called when item is accepted by successor, but
         // is initiated by join_node.
@@ -517,13 +650,23 @@
         const K& operator()(const table_item_type& v) { return v.my_key; }
     };
 
+    template <typename K, typename T, typename TtoK, typename KHash>
+    struct key_matching_port_base {
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        using type = metainfo_hash_buffer<K, T, TtoK, KHash>;
+#else
+        using type = hash_buffer<K, T, TtoK, KHash>;
+#endif
+    };
+
     // the ports can have only one template parameter.  We wrap the types needed in
     // a traits type
     template< class TraitsType >
     class key_matching_port :
         public receiver<typename TraitsType::T>,
-        public hash_buffer< typename TraitsType::K, typename TraitsType::T, typename TraitsType::TtoK,
-                typename TraitsType::KHash > {
+        public key_matching_port_base< typename TraitsType::K, typename TraitsType::T, typename TraitsType::TtoK,
+                                       typename TraitsType::KHash >::type
+    {
     public:
         typedef TraitsType traits;
         typedef key_matching_port<traits> class_type;
@@ -533,7 +676,7 @@
         typedef typename receiver<input_type>::predecessor_type predecessor_type;
         typedef typename TraitsType::TtoK type_to_key_func_type;
         typedef typename TraitsType::KHash hash_compare_type;
-        typedef hash_buffer< key_type, input_type, type_to_key_func_type, hash_compare_type > buffer_type;
+        typedef typename key_matching_port_base<key_type, input_type, type_to_key_func_type, hash_compare_type>::type buffer_type;
 
     private:
 // ----------- Aggregator ------------
@@ -541,24 +684,33 @@
         enum op_type { try__put, get__item, res_port
         };
 
-        class key_matching_port_operation : public aggregated_operation<key_matching_port_operation> {
+        class key_matching_port_operation : public d1::aggregated_operation<key_matching_port_operation> {
         public:
             char type;
             input_type my_val;
             input_type *my_arg;
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            message_metainfo* metainfo = nullptr;
+#endif
             // constructor for value parameter
-            key_matching_port_operation(const input_type& e, op_type t) :
-                type(char(t)), my_val(e), my_arg(nullptr) {}
+            key_matching_port_operation(const input_type& e, op_type t
+                                        __TBB_FLOW_GRAPH_METAINFO_ARG(const message_metainfo& info))
+                : type(char(t)), my_val(e), my_arg(nullptr)
+                  __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo(const_cast<message_metainfo*>(&info))) {}
+
             // constructor for pointer parameter
-            key_matching_port_operation(const input_type* p, op_type t) :
-                type(char(t)), my_arg(const_cast<input_type*>(p)) {}
+            key_matching_port_operation(const input_type* p, op_type t
+                                        __TBB_FLOW_GRAPH_METAINFO_ARG(message_metainfo& info))
+                : type(char(t)), my_arg(const_cast<input_type*>(p))
+                  __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo(&info)) {}
+
             // constructor with no parameter
             key_matching_port_operation(op_type t) : type(char(t)), my_arg(nullptr) {}
         };
 
-        typedef aggregating_functor<class_type, key_matching_port_operation> handler_type;
-        friend class aggregating_functor<class_type, key_matching_port_operation>;
-        aggregator<handler_type, key_matching_port_operation> my_aggregator;
+        typedef d1::aggregating_functor<class_type, key_matching_port_operation> handler_type;
+        friend class d1::aggregating_functor<class_type, key_matching_port_operation>;
+        d1::aggregator<handler_type, key_matching_port_operation> my_aggregator;
 
         void handle_operations(key_matching_port_operation* op_list) {
             key_matching_port_operation *current;
@@ -567,18 +719,35 @@
                 op_list = op_list->next;
                 switch(current->type) {
                 case try__put: {
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+                        __TBB_ASSERT(current->metainfo, nullptr);
+                        bool was_inserted = this->insert_with_key(current->my_val, *(current->metainfo));
+#else
                         bool was_inserted = this->insert_with_key(current->my_val);
+#endif
                         // return failure if a duplicate insertion occurs
                         current->status.store( was_inserted ? SUCCEEDED : FAILED, std::memory_order_release);
                     }
                     break;
-                case get__item:
+                case get__item: {
                     // use current_key from FE for item
                     __TBB_ASSERT(current->my_arg, nullptr);
-                    if(!this->find_with_key(my_join->current_key, *(current->my_arg))) {
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+                    __TBB_ASSERT(current->metainfo, nullptr);
+                    bool find_result = this->find_with_key(my_join->current_key, *(current->my_arg),
+                                                           *(current->metainfo));
+#else
+                    bool find_result = this->find_with_key(my_join->current_key, *(current->my_arg));
+#endif
+#if TBB_USE_DEBUG
+                    if (!find_result) {
                         __TBB_ASSERT(false, "Failed to find item corresponding to current_key.");
                     }
+#else
+                    tbb::detail::suppress_unused_warning(find_result);
+#endif
                     current->status.store( SUCCEEDED, std::memory_order_release);
+                    }
                     break;
                 case res_port:
                     // use current_key from FE for item
@@ -593,17 +762,28 @@
         template< typename R, typename B > friend class run_and_put_task;
         template<typename X, typename Y> friend class broadcast_cache;
         template<typename X, typename Y> friend class round_robin_cache;
-        graph_task* try_put_task(const input_type& v) override {
-            key_matching_port_operation op_data(v, try__put);
+    private:
+        graph_task* try_put_task_impl(const input_type& v __TBB_FLOW_GRAPH_METAINFO_ARG(const message_metainfo& metainfo)) {
+            key_matching_port_operation op_data(v, try__put __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo));
             graph_task* rtask = nullptr;
             my_aggregator.execute(&op_data);
             if(op_data.status == SUCCEEDED) {
-                rtask = my_join->increment_key_count((*(this->get_key_func()))(v));  // may spawn
+                rtask = my_join->increment_key_count((*(this->get_key_func()))(v)); // may spawn
                 // rtask has to reflect the return status of the try_put
                 if(!rtask) rtask = SUCCESSFULLY_ENQUEUED;
             }
             return rtask;
         }
+    protected:
+        graph_task* try_put_task(const input_type& v) override {
+            return try_put_task_impl(v __TBB_FLOW_GRAPH_METAINFO_ARG(message_metainfo{}));
+        }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        graph_task* try_put_task(const input_type& v, const message_metainfo& metainfo) override {
+            return try_put_task_impl(v, metainfo);
+        }
+#endif
 
         graph& graph_reference() const override {
             return my_join->graph_ref;
@@ -639,6 +819,15 @@
             my_aggregator.execute(&op_data);
             return op_data.status == SUCCEEDED;
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        bool get_item( input_type& v, message_metainfo& metainfo ) {
+            // aggregator uses current_key from FE for Key
+            key_matching_port_operation op_data(&v, get__item, metainfo);
+            my_aggregator.execute(&op_data);
+            return op_data.status == SUCCEEDED;
+        }
+#endif
 
         // reset_port is called when item is accepted by successor, but
         // is initiated by join_node.
@@ -695,10 +884,9 @@
         graph_task* decrement_port_count() override {
             if(ports_with_no_inputs.fetch_sub(1) == 1) {
                 if(is_graph_active(this->graph_ref)) {
-                    small_object_allocator allocator{};
+                    d1::small_object_allocator allocator{};
                     typedef forward_task_bypass<base_node_type> task_type;
                     graph_task* t = allocator.new_object<task_type>(graph_ref, allocator, *my_node);
-                    graph_ref.reserve_wait();
                     spawn_in_graph_arena(this->graph_ref, *t);
                 }
             }
@@ -725,6 +913,13 @@
             if(ports_with_no_inputs) return false;
             return join_helper<N>::reserve(my_inputs, out);
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        bool try_to_make_tuple(output_type &out, message_metainfo& metainfo) {
+            if (ports_with_no_inputs) return false;
+            return join_helper<N>::reserve(my_inputs, out, metainfo);
+        }
+#endif
 
         void tuple_accepted() {
             join_helper<N>::consume_reservations(my_inputs);
@@ -768,10 +963,9 @@
         {
             if(ports_with_no_items.fetch_sub(1) == 1) {
                 if(is_graph_active(this->graph_ref)) {
-                    small_object_allocator allocator{};
+                    d1::small_object_allocator allocator{};
                     typedef forward_task_bypass<base_node_type> task_type;
                     graph_task* t = allocator.new_object<task_type>(graph_ref, allocator, *my_node);
-                    graph_ref.reserve_wait();
                     if( !handle_task )
                         return t;
                     spawn_in_graph_arena(this->graph_ref, *t);
@@ -799,6 +993,13 @@
             if(ports_with_no_items) return false;
             return join_helper<N>::get_items(my_inputs, out);
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        bool try_to_make_tuple(output_type &out, message_metainfo& metainfo) {
+            if(ports_with_no_items) return false;
+            return join_helper<N>::get_items(my_inputs, out, metainfo);
+        }
+#endif
 
         void tuple_accepted() {
             reset_port_count();
@@ -854,23 +1055,30 @@
         enum op_type { res_count, inc_count, may_succeed, try_make };
         typedef join_node_FE<key_matching<key_type,key_hash_compare>, InputTuple, OutputTuple> class_type;
 
-        class key_matching_FE_operation : public aggregated_operation<key_matching_FE_operation> {
+        class key_matching_FE_operation : public d1::aggregated_operation<key_matching_FE_operation> {
         public:
             char type;
             unref_key_type my_val;
             output_type* my_output;
             graph_task* bypass_t;
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            message_metainfo* metainfo = nullptr;
+#endif
             // constructor for value parameter
             key_matching_FE_operation(const unref_key_type& e , op_type t) : type(char(t)), my_val(e),
                  my_output(nullptr), bypass_t(nullptr) {}
             key_matching_FE_operation(output_type *p, op_type t) : type(char(t)), my_output(p), bypass_t(nullptr) {}
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            key_matching_FE_operation(output_type *p, op_type t, message_metainfo& info)
+                : type(char(t)), my_output(p), bypass_t(nullptr), metainfo(&info) {}
+#endif
             // constructor with no parameter
             key_matching_FE_operation(op_type t) : type(char(t)), my_output(nullptr), bypass_t(nullptr) {}
         };
 
-        typedef aggregating_functor<class_type, key_matching_FE_operation> handler_type;
-        friend class aggregating_functor<class_type, key_matching_FE_operation>;
-        aggregator<handler_type, key_matching_FE_operation> my_aggregator;
+        typedef d1::aggregating_functor<class_type, key_matching_FE_operation> handler_type;
+        friend class d1::aggregating_functor<class_type, key_matching_FE_operation>;
+        d1::aggregator<handler_type, key_matching_FE_operation> my_aggregator;
 
         // called from aggregator, so serialized
         // returns a task pointer if the a task would have been enqueued but we asked that
@@ -881,13 +1089,15 @@
             bool do_fwd = this->buffer_empty() && is_graph_active(this->graph_ref);
             this->current_key = t;
             this->delete_with_key(this->current_key);   // remove the key
-            if(join_helper<N>::get_items(my_inputs, l_out)) {  //  <== call back
-                this->push_back(l_out);
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            message_metainfo metainfo;
+#endif
+            if(join_helper<N>::get_items(my_inputs, l_out __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo))) {  //  <== call back
+                this->push_back(l_out __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo));
                 if(do_fwd) {  // we enqueue if receiving an item from predecessor, not if successor asks for item
-                    small_object_allocator allocator{};
+                    d1::small_object_allocator allocator{};
                     typedef forward_task_bypass<base_node_type> task_type;
                     rtask = allocator.new_object<task_type>(this->graph_ref, allocator, *my_node);
-                    this->graph_ref.reserve_wait();
                     do_fwd = false;
                 }
                 // retire the input values
@@ -937,6 +1147,11 @@
                     }
                     else {
                         *(current->my_output) = this->front();
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+                        if (current->metainfo) {
+                            *(current->metainfo) = this->front_metainfo();
+                        }
+#endif
                         current->status.store( SUCCEEDED, std::memory_order_release);
                     }
                     break;
@@ -1010,6 +1225,14 @@
             return op_data.status == SUCCEEDED;
         }
 
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        bool try_to_make_tuple(output_type &out, message_metainfo& metainfo) {
+            key_matching_FE_operation op_data(&out, try_make, metainfo);
+            my_aggregator.execute(&op_data);
+            return op_data.status == SUCCEEDED;
+        }
+#endif
+
         void tuple_accepted() {
             reset_port_count();  // reset current_key after ports reset.
         }
@@ -1044,7 +1267,7 @@
         };
         typedef join_node_base<JP,InputTuple,OutputTuple> class_type;
 
-        class join_node_base_operation : public aggregated_operation<join_node_base_operation> {
+        class join_node_base_operation : public d1::aggregated_operation<join_node_base_operation> {
         public:
             char type;
             union {
@@ -1052,17 +1275,25 @@
                 successor_type *my_succ;
             };
             graph_task* bypass_t;
-            join_node_base_operation(const output_type& e, op_type t) : type(char(t)),
-                my_arg(const_cast<output_type*>(&e)), bypass_t(nullptr) {}
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            message_metainfo* metainfo;
+#endif
+            join_node_base_operation(const output_type& e, op_type t __TBB_FLOW_GRAPH_METAINFO_ARG(message_metainfo& info))
+                : type(char(t)), my_arg(const_cast<output_type*>(&e)), bypass_t(nullptr)
+                  __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo(&info)) {}
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+            join_node_base_operation(const output_type& e, op_type t)
+                : type(char(t)), my_arg(const_cast<output_type*>(&e)), bypass_t(nullptr), metainfo(nullptr) {}
+#endif
             join_node_base_operation(const successor_type &s, op_type t) : type(char(t)),
                 my_succ(const_cast<successor_type *>(&s)), bypass_t(nullptr) {}
             join_node_base_operation(op_type t) : type(char(t)), bypass_t(nullptr) {}
         };
 
-        typedef aggregating_functor<class_type, join_node_base_operation> handler_type;
-        friend class aggregating_functor<class_type, join_node_base_operation>;
+        typedef d1::aggregating_functor<class_type, join_node_base_operation> handler_type;
+        friend class d1::aggregating_functor<class_type, join_node_base_operation>;
         bool forwarder_busy;
-        aggregator<handler_type, join_node_base_operation> my_aggregator;
+        d1::aggregator<handler_type, join_node_base_operation> my_aggregator;
 
         void handle_operations(join_node_base_operation* op_list) {
             join_node_base_operation *current;
@@ -1073,10 +1304,9 @@
                 case reg_succ: {
                         my_successors.register_successor(*(current->my_succ));
                         if(tuple_build_may_succeed() && !forwarder_busy && is_graph_active(my_graph)) {
-                            small_object_allocator allocator{};
+                            d1::small_object_allocator allocator{};
                             typedef forward_task_bypass< join_node_base<JP, InputTuple, OutputTuple> > task_type;
                             graph_task* t = allocator.new_object<task_type>(my_graph, allocator, *this);
-                            my_graph.reserve_wait();
                             spawn_in_graph_arena(my_graph, *t);
                             forwarder_busy = true;
                         }
@@ -1089,7 +1319,26 @@
                     break;
                 case try__get:
                     if(tuple_build_may_succeed()) {
-                        if(try_to_make_tuple(*(current->my_arg))) {
+                        bool make_tuple_result = false;
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+                        if (current->metainfo) {
+                            make_tuple_result = try_to_make_tuple(*(current->my_arg), *(current->metainfo));
+                        } else
+#endif
+                        {
+                            make_tuple_result = try_to_make_tuple(*(current->my_arg));
+                        }
+                        if(make_tuple_result) {
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+                            if (current->metainfo) {
+                                // Since elements would be removed from queues while calling to tuple_accepted
+                                // together with corresponding message_metainfo objects
+                                // we need to prolong the wait until the successor would create a task for removed elements
+                                for (auto waiter : current->metainfo->waiters()) {
+                                    waiter->reserve(1);
+                                }
+                            }
+#endif
                             tuple_accepted();
                             current->status.store( SUCCEEDED, std::memory_order_release);
                         }
@@ -1110,9 +1359,14 @@
                         // them from the input ports after forwarding is complete?
                         if(tuple_build_may_succeed()) {  // checks output queue of FE
                             do {
-                                build_succeeded = try_to_make_tuple(out);  // fetch front_end of queue
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+                                message_metainfo metainfo;
+#endif
+                                // fetch front_end of queue
+                                build_succeeded = try_to_make_tuple(out __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo));
                                 if(build_succeeded) {
-                                    graph_task *new_task = my_successors.try_put_task(out);
+                                    graph_task *new_task =
+                                        my_successors.try_put_task(out __TBB_FLOW_GRAPH_METAINFO_ARG(metainfo));
                                     last_task = combine_tasks(my_graph, last_task, new_task);
                                     if(new_task) {
                                         tuple_accepted();
@@ -1174,6 +1428,14 @@
             my_aggregator.execute(&op_data);
             return op_data.status == SUCCEEDED;
         }
+
+#if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
+        bool try_get( output_type &v, message_metainfo& metainfo) override {
+            join_node_base_operation op_data(v, try__get, metainfo);
+            my_aggregator.execute(&op_data);
+            return op_data.status == SUCCEEDED;
+        }
+#endif
 
     protected:
         void reset_node(reset_flags f) override {

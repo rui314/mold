@@ -15,7 +15,7 @@ Do the following to generate HTML output of the documentation:
 1. Clone oneTBB repository:
 
 ```
-git clone https://github.com/oneapi-src/oneTBB.git
+git clone https://github.com/uxlfoundation/oneTBB.git
 ```
 
 2. Go to the `doc` folder:

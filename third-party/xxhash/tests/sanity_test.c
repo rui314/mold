@@ -318,6 +318,8 @@ static void SANITY_TEST_XXH3_randomUpdate(
 /**/
 static void testXXH3(
     const void* data,
+    const void* secret,
+    size_t secretSize,
     const XSUM_testdata64_t* testData,
     XSUM_U64* pRandSeed,
     const char* testName,
@@ -346,11 +348,18 @@ static void testXXH3(
      * XXH3_generateSecret_fromSeed() and XXH3_64bits_withSecretandSeed()
      * results in exactly the same hash generation as XXH3_64bits_withSeed() */
     {   char secretBuffer[XXH3_SECRET_DEFAULT_SIZE+1];
-        char* const secret = secretBuffer + 1;  /* intentional unalignment */
-        XXH3_generateSecret_fromSeed(secret, seed);
-        {   XSUM_U64 const Dresult = XXH3_64bits_withSecretandSeed(data, len, secret, XXH3_SECRET_DEFAULT_SIZE, seed);
+        char* const secretFromSeed = secretBuffer + 1;  /* intentional unalignment */
+        XXH3_generateSecret_fromSeed(secretFromSeed, seed);
+        {   XSUM_U64 const Dresult = XXH3_64bits_withSecretandSeed(data, len, secretFromSeed, XXH3_SECRET_DEFAULT_SIZE, seed);
             checkResult64(Dresult, Nresult, testName, testNb, __LINE__);
     }   }
+
+    /* check that XXH3_64bits_withSecretandSeed()
+     * results in exactly the same return value as XXH3_64bits_withSeed() */
+    if (len <= XXH3_MIDSIZE_MAX) {
+        XSUM_U64 const Dresult = XXH3_64bits_withSecretandSeed(data, len, secret, secretSize, seed);
+        checkResult64(Dresult, Nresult, testName, testNb, __LINE__);
+    }
 
     /* streaming API test */
     {   XXH3_state_t* const state = XXH3_createState();
@@ -377,10 +386,19 @@ static void testXXH3(
          * XXH3_generateSecret_fromSeed() and XXH3_64bits_reset_withSecretandSeed()
          * results in exactly the same hash generation as XXH3_64bits_reset_withSeed() */
         {   char secretBuffer[XXH3_SECRET_DEFAULT_SIZE+1];
-            char* const secret = secretBuffer + 1;  /* intentional unalignment */
-            XXH3_generateSecret_fromSeed(secret, seed);
+            char* const secretFromSeed = secretBuffer + 1;  /* intentional unalignment */
+            XXH3_generateSecret_fromSeed(secretFromSeed, seed);
             /* single ingestion */
-            (void)XXH3_64bits_reset_withSecretandSeed(state, secret, XXH3_SECRET_DEFAULT_SIZE, seed);
+            (void)XXH3_64bits_reset_withSecretandSeed(state, secretFromSeed, XXH3_SECRET_DEFAULT_SIZE, seed);
+            (void)XXH3_64bits_update(state, data, len);
+            checkResult64(XXH3_64bits_digest(state), Nresult, testName, testNb, __LINE__);
+        }
+
+        /* check that XXH3_64bits_withSecretandSeed()
+         * results in exactly the same return value as XXH3_64bits_withSeed() */
+        if (len <= XXH3_MIDSIZE_MAX) {
+            /* single ingestion */
+            (void)XXH3_64bits_reset_withSecretandSeed(state, secret, secretSize, seed);
             (void)XXH3_64bits_update(state, data, len);
             checkResult64(XXH3_64bits_digest(state), Nresult, testName, testNb, __LINE__);
         }
@@ -459,6 +477,8 @@ static void testXXH3_withSecret(
 /**/
 static void testXXH128(
     const void* data,
+    const void* secret,
+    size_t secretSize,
     const XSUM_testdata128_t* testData,
     XSUM_U64* pRandSeed,
     const char* testName,
@@ -493,11 +513,18 @@ static void testXXH128(
      * XXH3_generateSecret_fromSeed() and XXH3_128bits_withSecretandSeed()
      * results in exactly the same hash generation as XXH3_64bits_withSeed() */
     {   char secretBuffer[XXH3_SECRET_DEFAULT_SIZE+1];
-        char* const secret = secretBuffer + 1;  /* intentional unalignment */
-        XXH3_generateSecret_fromSeed(secret, seed);
-        {   XXH128_hash_t const Dresult = XXH3_128bits_withSecretandSeed(data, len, secret, XXH3_SECRET_DEFAULT_SIZE, seed);
+        char* const secretFromSeed = secretBuffer + 1;  /* intentional unalignment */
+        XXH3_generateSecret_fromSeed(secretFromSeed, seed);
+        {   XXH128_hash_t const Dresult = XXH3_128bits_withSecretandSeed(data, len, secretFromSeed, XXH3_SECRET_DEFAULT_SIZE, seed);
             checkResult128(Dresult, Nresult, testName, testNb, __LINE__);
     }   }
+
+    /* check that XXH3_128bits_withSecretandSeed()
+     * results in exactly the same return value as XXH3_128bits_withSeed() */
+    if (len <= XXH3_MIDSIZE_MAX) {
+        XXH128_hash_t const Dresult = XXH3_128bits_withSecretandSeed(data, len, secret, secretSize, seed);
+        checkResult128(Dresult, Nresult, testName, testNb, __LINE__);
+    }
 
     /* streaming API test */
     {   XXH3_state_t * const state = XXH3_createState();
@@ -525,10 +552,19 @@ static void testXXH128(
          * XXH3_generateSecret_fromSeed() and XXH3_128bits_reset_withSecretandSeed()
          * results in exactly the same hash generation as XXH3_128bits_reset_withSeed() */
         {   char secretBuffer[XXH3_SECRET_DEFAULT_SIZE+1];
-            char* const secret = secretBuffer + 1;  /* intentional unalignment */
-            XXH3_generateSecret_fromSeed(secret, seed);
+            char* const secretFromSeed = secretBuffer + 1;  /* intentional unalignment */
+            XXH3_generateSecret_fromSeed(secretFromSeed, seed);
             /* single ingestion */
-            (void)XXH3_128bits_reset_withSecretandSeed(state, secret, XXH3_SECRET_DEFAULT_SIZE, seed);
+            (void)XXH3_128bits_reset_withSecretandSeed(state, secretFromSeed, XXH3_SECRET_DEFAULT_SIZE, seed);
+            (void)XXH3_128bits_update(state, data, len);
+            checkResult128(XXH3_128bits_digest(state), Nresult, testName, testNb, __LINE__);
+        }
+
+        /* check that XXH3_128bits_reset_withSecretandSeed()
+         * results in exactly the same return value as XXH3_128bits_reset_withSeed() */
+        if (len <= XXH3_MIDSIZE_MAX) {
+            /* single ingestion */
+            (void)XXH3_128bits_reset_withSecretandSeed(state, secret, secretSize, seed);
             (void)XXH3_128bits_update(state, data, len);
             checkResult128(XXH3_128bits_digest(state), Nresult, testName, testNb, __LINE__);
         }
@@ -676,6 +712,8 @@ int main(int argc, const char* argv[])
         for (i = 0; i < n; ++i, ++testCount) {
             testXXH3(
                 sanityBuffer,
+                secret,
+                secretSize,
                 &XSUM_XXH3_testdata[i],
                 &randSeed,
                 "XSUM_XXH3_testdata",
@@ -713,6 +751,8 @@ int main(int argc, const char* argv[])
         for (i = 0; i < n; ++i, ++testCount) {
             testXXH128(
                 sanityBuffer,
+                secret,
+                secretSize,
                 &XSUM_XXH128_testdata[i],
                 &randSeed,
                 "XSUM_XXH128_testdata",

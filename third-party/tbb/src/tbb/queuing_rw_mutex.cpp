@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -608,7 +608,7 @@ bool __TBB_EXPORTED_FUNC downgrade_to_reader(d1::queuing_rw_mutex::scoped_lock& 
     return queuing_rw_mutex_impl::downgrade_to_reader(s);
 }
 
-void __TBB_EXPORTED_FUNC construct(d1::queuing_rw_mutex& m) {
+TBB_EXPORT void __TBB_EXPORTED_FUNC construct(d1::queuing_rw_mutex& m) {
     queuing_rw_mutex_impl::construct(m);
 }
 

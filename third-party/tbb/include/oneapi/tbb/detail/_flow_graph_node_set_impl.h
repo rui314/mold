@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@
 #error Do not #include this internal file directly; use public TBB headers instead.
 #endif
 
-// Included in namespace tbb::detail::d1 (in flow_graph.h)
+// Included in namespace tbb::detail::d2 (in flow_graph.h)
 
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
 // Visual Studio 2019 reports an error while calling predecessor_selector::get and successor_selector::get

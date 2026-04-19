@@ -25,7 +25,7 @@ pipeline.
 
 .. CAUTION:: 
    Since the body object provided to the filters of the
-   ``parallel_pipline`` might be copied, its ``operator()`` should not
+   ``parallel_pipeline`` might be copied, its ``operator()`` should not
    modify the body. Otherwise the modification might or might not become
    visible to the thread that invoked ``parallel_pipeline``, depending
    upon whether ``operator()`` is acting on the original or a copy. As a
@@ -281,7 +281,7 @@ crossing into the next slice, it copies the partial numeral to the next
 slice. Furthermore, it has to indicate when the end of input is reached.
 It does this by invoking method ``stop()`` on a special argument of type
 ``flow_control``. This idiom is required for any functor used for the
-first filter of a pipline.
+first filter of a pipeline.
 
 ::
 

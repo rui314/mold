@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Yann Collet, Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -14,6 +14,10 @@
 
 #include <stddef.h>   /* size_t */
 
+#if defined (__cplusplus)
+extern "C" {
+#endif
+
 void RDG_genStdout(unsigned long long size, double matchProba, double litProba, unsigned seed);
 void RDG_genBuffer(void* buffer, size_t size, double matchProba, double litProba, unsigned seed);
 /*!RDG_genBuffer
@@ -26,5 +30,9 @@ void RDG_genBuffer(void* buffer, size_t size, double matchProba, double litProba
    RDG_genStdout
    Same as RDG_genBuffer, but generates data into stdout
 */
+
+#if defined (__cplusplus)
+} /* extern "C" */
+#endif
 
 #endif

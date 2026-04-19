@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -122,14 +122,14 @@ namespace d1 {
 // Distinguish notifications on task for reducing overheads
 #if TBB_USE_PROFILING_TOOLS == 2
     inline void call_itt_task_notify(d1::notify_type t, void *ptr) {
-        r1::call_itt_notify((int)t, ptr);
+        r1::call_itt_notify(static_cast<int>(t), ptr);
     }
 #else
     inline void call_itt_task_notify(d1::notify_type, void *) {}
 #endif // TBB_USE_PROFILING_TOOLS
 
     inline void call_itt_notify(d1::notify_type t, void *ptr) {
-        r1::call_itt_notify((int)t, ptr);
+        r1::call_itt_notify(static_cast<int>(t), ptr);
     }
 
 #if (_WIN32||_WIN64) && !__MINGW32__

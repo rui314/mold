@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -112,7 +112,7 @@ private:
 public:
     void operator()(size_t) const {
         size_t v = ++myActiveBodyCnt;
-        CHECK_MESSAGE(v <= myConcLevel, "Number of active bodies is too high.");
+        REQUIRE_MESSAGE(v <= myConcLevel, "Number of active bodies is too high.");
         if (v == myConcLevel) // record that the max expected concurrency was observed
             myReachedMax = true;
         // try to get barrier when 1st time in the thread

@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 #include "oneapi/tbb/detail/_task.h"
 #include "scheduler_common.h"
 #include "arena.h"
+#include "threading_control.h"
 
 namespace tbb {
 namespace detail {
@@ -33,7 +34,7 @@ public:
 
     bool pause() {
         if (my_backoff.pause()) {
-            my_arena.is_out_of_work();
+            my_arena.out_of_work();
             return true;
         }
 
@@ -53,10 +54,31 @@ class outermost_worker_waiter : public waiter_base {
 public:
     using waiter_base::waiter_base;
 
-    bool continue_execution(arena_slot& slot, d1::task*& t) const {
+    bool continue_execution(arena_slot& slot, d1::task*& t) {
         __TBB_ASSERT(t == nullptr, nullptr);
 
         if (is_worker_should_leave(slot)) {
+            if (is_delayed_leave_enabled()) {
+                static constexpr std::chrono::microseconds worker_wait_leave_duration(1000);
+                static_assert(worker_wait_leave_duration > std::chrono::steady_clock::duration(1),
+                              "Clock resolution is not enough for measured interval.");
+
+                for (auto t1 = std::chrono::steady_clock::now(), t2 = t1;
+                    std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1) < worker_wait_leave_duration;
+                    t2 = std::chrono::steady_clock::now())
+                {
+                    if (!my_arena.is_empty() && !my_arena.is_recall_requested()) {
+                        return true;
+                    }
+
+                    if (!my_arena.my_thread_leave.is_retention_allowed() ||
+                        my_arena.my_threading_control->is_any_other_client_active())
+                    {
+                        break;
+                    }
+                    d0::yield();
+                }
+            }
             // Leave dispatch loop
             return false;
         }
@@ -81,8 +103,16 @@ public:
 private:
     using base_type = waiter_base;
 
+    bool is_delayed_leave_enabled() {
+#if __TBB_PREVIEW_PARALLEL_PHASE
+       return my_arena.my_thread_leave.is_retention_allowed();
+#else
+       return !governor::hybrid_cpu();
+#endif   
+    }
+
     bool is_worker_should_leave(arena_slot& slot) const {
-        bool is_top_priority_arena = my_arena.my_is_top_priority.load(std::memory_order_relaxed);
+        bool is_top_priority_arena = my_arena.is_top_priority();
         bool is_task_pool_empty = slot.task_pool.load(std::memory_order_relaxed) == EmptyTaskPool;
 
         if (is_top_priority_arena) {
@@ -109,14 +139,11 @@ class sleep_waiter : public waiter_base {
 protected:
     using waiter_base::waiter_base;
 
-    bool is_arena_empty() {
-        return my_arena.my_pool_state.load(std::memory_order_relaxed) == arena::SNAPSHOT_EMPTY;
-    }
-
     template <typename Pred>
     void sleep(std::uintptr_t uniq_tag, Pred wakeup_condition) {
-        my_arena.my_market->get_wait_list().wait<market_concurrent_monitor::thread_context>(wakeup_condition,
+        my_arena.get_waiting_threads_monitor().wait<thread_control_monitor::thread_context>(wakeup_condition,
             market_context{uniq_tag, &my_arena});
+        reset_wait();
     }
 };
 
@@ -139,10 +166,9 @@ public:
             return;
         }
 
-        auto wakeup_condition = [&] { return !is_arena_empty() || !my_wait_ctx.continue_execution(); };
+        auto wakeup_condition = [&] { return !my_arena.is_empty() || !my_wait_ctx.continue_execution(); };
 
         sleep(std::uintptr_t(&my_wait_ctx), wakeup_condition);
-        my_backoff.reset_wait();
     }
 
     d1::wait_context* wait_ctx() {
@@ -176,14 +202,9 @@ public:
 
         suspend_point_type* sp = slot.default_task_dispatcher().m_suspend_point;
 
-        auto wakeup_condition = [&] { return !is_arena_empty() || sp->m_is_owner_recalled.load(std::memory_order_relaxed); };
+        auto wakeup_condition = [&] { return !my_arena.is_empty() || sp->m_is_owner_recalled.load(std::memory_order_relaxed); };
 
         sleep(std::uintptr_t(sp), wakeup_condition);
-        my_backoff.reset_wait();
-    }
-
-    void reset_wait() {
-        my_backoff.reset_wait();
     }
 
     d1::wait_context* wait_ctx() {

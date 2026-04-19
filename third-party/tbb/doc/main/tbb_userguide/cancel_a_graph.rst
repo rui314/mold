@@ -6,7 +6,7 @@ Cancel a Graph Explicitly
 
 To cancel a graph execution without an exception, you can create the
 graph using an explicit task_group_context, and then call
-cancel_group_execution() on that object. This is done in the example
+``cancel_group_execution()`` on that object. This is done in the example
 below:
 
 
@@ -81,6 +81,6 @@ belongs to:
      g.wait_for_all();
 
 
-You can get the task_group_context from a node's body even if the graph
+You can get the ``task_group_context`` from a node's body even if the graph
 was not explicitly passed one at construction time.
 

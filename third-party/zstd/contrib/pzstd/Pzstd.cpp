@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-present, Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -10,11 +10,13 @@
 #include "Pzstd.h"
 #include "SkippableFrame.h"
 #include "utils/FileSystem.h"
+#include "utils/Portability.h"
 #include "utils/Range.h"
 #include "utils/ScopeGuard.h"
 #include "utils/ThreadPool.h"
 #include "utils/WorkQueue.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cinttypes>
 #include <cstddef>
@@ -267,7 +269,10 @@ static void compress(
     std::shared_ptr<BufferWorkQueue> out,
     size_t maxInputSize) {
   auto& errorHolder = state.errorHolder;
-  auto guard = makeScopeGuard([&] { out->finish(); });
+  auto guard = makeScopeGuard([&] {
+    in->finish();
+    out->finish();
+  });
   // Initialize the CCtx
   auto ctx = state.cStreamPool->get();
   if (!errorHolder.check(ctx != nullptr, "Failed to allocate ZSTD_CStream")) {
@@ -336,6 +341,10 @@ static size_t calculateStep(
     const ZSTD_parameters &params) {
   (void)size;
   (void)numThreads;
+  // Not validated to work correctly for window logs > 23.
+  // It will definitely fail if windowLog + 2 is >= 4GB because
+  // the skippable frame can only store sizes up to 4GB.
+  assert(params.cParams.windowLog <= 23);
   return size_t{1} << (params.cParams.windowLog + 2);
 }
 
@@ -425,7 +434,10 @@ static void decompress(
     std::shared_ptr<BufferWorkQueue> in,
     std::shared_ptr<BufferWorkQueue> out) {
   auto& errorHolder = state.errorHolder;
-  auto guard = makeScopeGuard([&] { out->finish(); });
+  auto guard = makeScopeGuard([&] {
+    in->finish();
+    out->finish();
+  });
   // Initialize the DCtx
   auto ctx = state.dStreamPool->get();
   if (!errorHolder.check(ctx != nullptr, "Failed to allocate ZSTD_DStream")) {
@@ -572,6 +584,7 @@ std::uint64_t writeFile(
     FILE* outputFd,
     bool decompress) {
   auto& errorHolder = state.errorHolder;
+  auto outsFinishGuard = makeScopeGuard([&outs] { outs.finish(); });
   auto lineClearGuard = makeScopeGuard([&state] {
     state.log.clear(kLogInfo);
   });
@@ -579,6 +592,7 @@ std::uint64_t writeFile(
   std::shared_ptr<BufferWorkQueue> out;
   // Grab the output queue for each decompression job (in order).
   while (outs.pop(out)) {
+    auto outFinishGuard = makeScopeGuard([&out] { out->finish(); });
     if (errorHolder.hasError()) {
       continue;
     }
@@ -587,7 +601,8 @@ std::uint64_t writeFile(
       // start writing before compression is done because we need to know the
       // compressed size.
       // Wait for the compressed size to be available and write skippable frame
-      SkippableFrame frame(out->size());
+      assert(uint64_t(out->size()) < uint64_t(1) << 32);
+      SkippableFrame frame(uint32_t(out->size()));
       if (!writeData(frame.data(), outputFd)) {
         errorHolder.setError("Failed to write output");
         return bytesWritten;

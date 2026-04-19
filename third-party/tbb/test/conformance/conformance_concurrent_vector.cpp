@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2023 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -1224,7 +1224,7 @@ void TestDeductionGuides() {
     TVector v1(v.begin(), v.end());
     static_assert(std::is_same<decltype(v1), TVector<ComplexType>>::value);
 
-    // check TVector(InputIterator, InputIterator, Alocator)
+    // check TVector(InputIterator, InputIterator, Allocator)
     TVector v2(v.begin(), v.end(), std::allocator<ComplexType>());
     static_assert(std::is_same<decltype(v2),
        TVector<ComplexType, std::allocator<ComplexType>>>::value);
@@ -1234,7 +1234,7 @@ void TestDeductionGuides() {
     static_assert(std::is_same<decltype(v3),
         TVector<ComplexType>>::value);
 
-    // check TVector(std::initializer_list, Alocator)
+    // check TVector(std::initializer_list, Allocator)
     TVector v4(l, std::allocator<ComplexType>());
     static_assert(std::is_same<decltype(v4), TVector<ComplexType, std::allocator<ComplexType>>>::value);
 

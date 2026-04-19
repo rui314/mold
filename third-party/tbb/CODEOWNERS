@@ -1,0 +1,26 @@
+# Where component owners are known, add them here.
+
+/oneTBB/src/tbb/ @pavelkumbrasev
+/oneTBB/src/tbb/ @dnmokhov
+/oneTBB/src/tbb/ @sarathnandu
+/oneTBB/include/oneapi/tbb/parallel_* @pavelkumbrasev
+/oneTBB/include/oneapi/tbb/concurrent_* @kboyarinov
+/oneTBB/include/oneapi/tbb/flow_graph* @kboyarinov
+/oneTBB/include/oneapi/tbb/flow_graph* @aleksei-fedotov
+/oneTBB/include/oneapi/tbb/detail/_flow_graph* @kboyarinov
+/oneTBB/include/oneapi/tbb/detail/_flow_graph* @aleksei-fedotov
+/oneTBB/include/oneapi/tbb/detail/_concurrent* @kboyarinov
+/oneTBB/src/doc @aepanchi
+/oneTBB/src/tbbbind/ @isaevil
+/oneTBB/src/tbbmalloc/ @lplewa
+/oneTBB/src/tbbmalloc_proxy/ @lplewa
+/oneTBB/cmake/ @isaevil
+/oneTBB/*CMakeLists.txt @isaevil
+/oneTBB/python/ @sarathnandu
+/oneTBB/python/ @isaevil
+
+# Bazel build related files.
+/oneTBB/.bazelversion @Vertexwahn
+/oneTBB/Bazel.md @Vertexwahn
+/oneTBB/BUILD.bazel @Vertexwahn
+/oneTBB/MODULE.bazel @Vertexwahn

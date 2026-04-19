@@ -8,7 +8,7 @@ Most applications contain multiple nodes with edges connecting them to
 each other. In the flow graph interface, edges are directed channels
 over which messages are passed. They are created by calling the function
 ``make_edge( p, s )`` with two arguments: ``p``, the predecessor, and ``s``, the
-successor. You can modify the example used in the **Nodes** topic to
+successor. You can modify the example used in the :ref:`Nodes` topic to
 include a second node that squares the value it receives before printing
 it and then connect that to the first node with an edge.
 
@@ -37,8 +37,8 @@ it and then connect that to the first node with an edge.
        g.wait_for_all();
 
 
-Now there are two ``function_node``s, ``n`` and ``m``. The call to ``make_edge`` creates
-an edge from ``n`` to ``m``. The node n is created with unlimited concurrency,
+Now there are two ``function_node`` ``s``, ``n`` and ``m``. The call to ``make_edge`` creates
+an edge from ``n`` to ``m``. The node ``n`` is created with unlimited concurrency,
 while ``m`` has a concurrency limit of 1. The invocations of ``n`` can all
 proceed in parallel, while the invocations of ``m`` will be serialized.
 Because there is an edge from ``n`` to ``m``, each value ``v``, returned by ``n``, will

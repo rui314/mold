@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Facebook, Inc.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -8,6 +8,7 @@
  * You may select, at your option, one of the above-listed licenses.
  */
 
+#include "fuzz_helpers.h"
 #include "fuzz_data_producer.h"
 
 struct FUZZ_dataProducer_s{
@@ -27,11 +28,11 @@ void FUZZ_dataProducer_free(FUZZ_dataProducer_t *producer) { free(producer); }
 
 uint32_t FUZZ_dataProducer_uint32Range(FUZZ_dataProducer_t *producer, uint32_t min,
                                   uint32_t max) {
-    FUZZ_ASSERT(min <= max);
-
     uint32_t range = max - min;
     uint32_t rolling = range;
     uint32_t result = 0;
+
+    FUZZ_ASSERT(min <= max);
 
     while (rolling > 0 && producer->size > 0) {
       uint8_t next = *(producer->data + producer->size - 1);
@@ -78,11 +79,11 @@ int FUZZ_dataProducer_empty(FUZZ_dataProducer_t *producer) {
 
 size_t FUZZ_dataProducer_contract(FUZZ_dataProducer_t *producer, size_t newSize)
 {
-    newSize = newSize > producer->size ? producer->size : newSize;
+    const size_t effectiveNewSize = newSize > producer->size ? producer->size : newSize;
 
-    size_t remaining = producer->size - newSize;
+    size_t remaining = producer->size - effectiveNewSize;
     producer->data = producer->data + remaining;
-    producer->size = newSize;
+    producer->size = effectiveNewSize;
     return remaining;
 }
 

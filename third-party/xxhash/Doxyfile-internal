@@ -38,6 +38,7 @@ EXPAND_ONLY_PREDEF     = YES
 # Predefine some macros to clean up the output.
 PREDEFINED             = "XXH_DOXYGEN=" \
                          "XXH_PUBLIC_API=" \
+                         "XXH_NOESCAPE=" \
                          "XXH_FORCE_INLINE=static inline" \
                          "XXH_NO_INLINE=static" \
                          "XXH_RESTRICT=restrict" \

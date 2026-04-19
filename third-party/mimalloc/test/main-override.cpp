@@ -9,17 +9,12 @@
 #include <vector>
 #include <future>
 #include <iostream>
-
 #include <thread>
-#include <mimalloc.h>
 #include <assert.h>
 
 #ifdef _WIN32
 #include <mimalloc-new-delete.h>
-#endif
-
-#ifdef _WIN32
-#include <Windows.h>
+#include <windows.h>
 static void msleep(unsigned long msecs) { Sleep(msecs); }
 #else
 #include <unistd.h>
@@ -35,19 +30,32 @@ static void test_mt_shutdown();
 static void large_alloc(void);        // issue #363
 static void fail_aslr();              // issue #372
 static void tsan_numa_test();         // issue #414
-static void strdup_test();            // issue #445 
+static void strdup_test();            // issue #445
 static void bench_alloc_large(void);  // issue #xxx
 //static void test_large_migrate(void); // issue #691
 static void heap_thread_free_huge();
 static void test_std_string();        // issue #697
-
+static void test_thread_local();      // issue #944
+// static void test_mixed0();             // issue #942
+static void test_mixed1();             // issue #942
 static void test_stl_allocators();
 
+#if x_WIN32
+#include "main-override-dep.h"
+static void test_dep();               // issue #981: test overriding in another DLL
+#else
+static void test_dep() { };
+#endif
 
 int main() {
-  // mi_stats_reset();  // ignore earlier allocations
-  
-  // test_std_string();
+  mi_stats_reset();  // ignore earlier allocations
+  various_tests();
+  test_mixed1();
+
+  test_dep();
+
+  //test_std_string();
+  //test_thread_local();
   // heap_thread_free_huge();
   /*
    heap_thread_free_huge();
@@ -63,10 +71,9 @@ int main() {
   // test_stl_allocators();
   // test_mt_shutdown();
   // test_large_migrate();
-  
+
   //fail_aslr();
-  // bench_alloc_large();
-  // mi_stats_print(NULL);
+  mi_stats_print(NULL);
   return 0;
 }
 
@@ -108,7 +115,12 @@ static void various_tests() {
   auto tbuf = new unsigned char[sizeof(Test)];
   t = new (tbuf) Test(42);
   t->~Test();
-  delete tbuf;
+  delete[] tbuf;
+
+  #if _WIN32
+  const char* ptr = ::_Getdays();  // test _base overrid
+  free((void*)ptr);
+  #endif
 }
 
 class Static {
@@ -136,6 +148,16 @@ static bool test_stl_allocator1() {
 }
 
 struct some_struct { int i; int j; double z; };
+
+
+#if x_WIN32
+static void test_dep()
+{
+  TestAllocInDll t;
+  std::string s = t.GetString();
+}
+#endif
+
 
 static bool test_stl_allocator2() {
   std::vector<some_struct, mi_stl_allocator<some_struct> > vec;
@@ -183,6 +205,53 @@ static void test_stl_allocators() {
   test_stl_allocator5();
   test_stl_allocator6();
 #endif
+}
+
+#if 0
+#include <algorithm>
+#include <chrono>
+#include <functional>
+#include <iostream>
+#include <thread>
+#include <vector>
+
+static void test_mixed0() {
+    std::vector<std::unique_ptr<std::size_t>> numbers(1024 * 1024 * 100);
+    std::vector<std::thread> threads(1);
+
+    std::atomic<std::size_t> index{};
+
+    auto start = std::chrono::system_clock::now();
+
+    for (auto& thread : threads) {
+        thread = std::thread{[&index, &numbers]() {
+            while (true) {
+                auto i = index.fetch_add(1, std::memory_order_relaxed);
+                if (i >= numbers.size()) return;
+
+                numbers[i] = std::make_unique<std::size_t>(i);
+            }
+        }};
+    }
+
+    for (auto& thread : threads) thread.join();
+
+    auto end = std::chrono::system_clock::now();
+
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << "Running on " << threads.size() << " threads took " << duration
+              << std::endl;
+}
+#endif
+
+void asd() {
+  void* p = malloc(128);
+  free(p);
+}
+static void test_mixed1() {
+    std::thread thread(asd);
+    thread.join();
 }
 
 #if 0
@@ -350,7 +419,7 @@ void large_alloc(void)
 
 // issue #372
 static void fail_aslr() {
-  size_t sz = (4ULL << 40); // 4TiB
+  size_t sz = (size_t)(4ULL << 40); // 4TiB
   void* p = malloc(sz);
   printf("pointer p: %p: area up to %p\n", p, (uint8_t*)p + sz);
   *(int*)0x5FFFFFFF000 = 0;  // should segfault
@@ -379,7 +448,7 @@ static void bench_alloc_large(void) {
   static constexpr size_t kMaxBufferSize = 25 * 1024 * 1024;
   std::unique_ptr<char[]> buffers[kNumBuffers];
 
-  std::random_device rd;
+  std::random_device rd;  (void)rd;
   std::mt19937 gen(42); //rd());
   std::uniform_int_distribution<> size_distribution(kMinBufferSize, kMaxBufferSize);
   std::uniform_int_distribution<> buf_number_distribution(0, kNumBuffers - 1);
@@ -398,3 +467,30 @@ static void bench_alloc_large(void) {
   std::cout << "Avg " << us_per_allocation << " us per allocation" << std::endl;
 }
 
+
+class MTest
+{
+    char *data;
+public:
+    MTest() { data = (char*)malloc(1024); }
+    ~MTest() { free(data); };
+};
+
+thread_local MTest tlVariable;
+
+void threadFun( int i )
+{
+    printf( "Thread %d\n", i );
+    std::this_thread::sleep_for( std::chrono::milliseconds(100) );
+}
+
+void test_thread_local()
+{
+    for( int i=1; i < 100; ++i )
+    {
+        std::thread t( threadFun, i );
+        t.join();
+        mi_stats_print(NULL);
+    }
+    return;
+}

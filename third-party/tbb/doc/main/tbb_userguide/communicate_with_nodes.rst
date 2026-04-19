@@ -9,7 +9,7 @@ arguments to their constructor. It is only safe to construct edges
 between nodes that are part of the same graph. An edge expresses the
 topology of your graph to the runtime library. Connecting two nodes in
 different graphs can make it difficult to reason about whole graph
-operations, such as calls to graph::wait_for_all and exception handling.
+operations, such as calls to ``graph::wait_for_all`` and exception handling.
 To optimize performance, the library may make calls to a node's
 predecessor or successor at times that are unexpected by the user.
 
@@ -67,26 +67,26 @@ whole graph operations. For example, consider the graphs below:
        // even though wait_for_all was called on both graphs
 
 
-In the example above, m1.try_put(1) sends a message to node m1, which
-runs its body and then sends a message to node m2. Next, node m2 runs
-its body and sends a message to n1 using an explicit try_put. In turn,
-n1 runs its body and sends a message to n2. The runtime library does not
-consider m2 to be a predecessor of n1 since no edge exists.
+In the example above, ``m1.try_put(1)`` sends a message to node m1, which
+runs its body and then sends a message to node ``m2``. Next, node ``m2`` runs
+its body and sends a message to ``n1`` using an explicit ``try_put``. In turn,
+``n1`` runs its body and sends a message to n2. The runtime library does not
+consider ``m2`` to be a predecessor of ``n1`` since no edge exists.
 
 
 If you want to wait until all of the tasks spawned by these graphs are
-done, you need to call the function wait_for_all on both graphs.
+done, you need to call the function ``wait_for_all`` on both graphs.
 However, because there is cross-graph communication, the order of the
 calls is important. In the (incorrect) code segment above, the first
-call to g.wait_for_all() returns immediately because there are no tasks
-yet active in g; the only tasks that have been spawned by then belong to
-g2. The call to g2.wait_for_all returns after both m1 and m2 are done,
-since they belong to g2; the call does not however wait for n1 and n2,
-since they belong to g. The end of this code segment is therefore
-reached before n1 and n2 are done.
+call to ``g.wait_for_all()`` returns immediately because there are no tasks
+yet active in ``g``; the only tasks that have been spawned by then belong to
+``g2``. The call to ``g2.wait_for_all`` returns after both ``m1`` and ``m2`` are done,
+since they belong to ``g2``; the call does not however wait for ``n1`` and ``n2``,
+since they belong to ``g``. The end of this code segment is therefore
+reached before ``n1`` and ``n2`` are done.
 
 
-If the calls to wait_for_all are swapped, the code works as expected:
+If the calls to ``wait_for_all`` are swapped, the code works as expected:
 
 
 ::

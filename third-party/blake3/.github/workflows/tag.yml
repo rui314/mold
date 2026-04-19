@@ -1,0 +1,43 @@
+name: publish_b3sum_binaries
+
+on:
+  push:
+    tags:
+      - "*"
+
+env:
+  BLAKE3_CI: "1"
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  cargo_tests:
+    name: ${{ matrix.target.name }}
+    runs-on: ${{ matrix.target.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [
+          { "os": "ubuntu-latest",  "rust-target": "x86_64-unknown-linux-musl", "name": "Linux" },
+          { "os": "macOS-latest",   "rust-target": "x86_64-apple-darwin",       "name": "macOS" },
+          { "os": "windows-latest", "rust-target": "x86_64-pc-windows-msvc",    "name": "Windows" },
+        ]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+      - run: pip install PyGithub
+      - run: sudo apt-get install musl-tools
+        if: matrix.target.os == 'ubuntu-latest'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target.rust-target }}
+      - name: build b3sum
+        id: build_b3sum
+        run: python -u .github/workflows/build_b3sum.py ${{ matrix.target.rust-target }}
+      - name: upload release asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TAG: ${{ github.ref }}
+        run: python -u .github/workflows/upload_github_release_asset.py ${{ steps.build_b3sum.outputs.bin_path }}

@@ -225,7 +225,9 @@ static malloc_zone_t mi_malloc_zone = {
   // switch to version 9+ on OSX 10.6 to support memalign.
   .memalign = &zone_memalign,
   .free_definite_size = &zone_free_definite_size,
+  #if defined(MAC_OS_X_VERSION_10_7) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7)
   .pressure_relief = &zone_pressure_relief,
+  #endif
   #if defined(MAC_OS_X_VERSION_10_14) && (MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_14)
   .claimed_address = &zone_claimed_address,
   #endif
@@ -416,10 +418,11 @@ static inline malloc_zone_t* mi_get_default_zone(void)
 }
 
 #if defined(__clang__)
-__attribute__((constructor(0)))
+__attribute__((constructor(101))) // highest priority
 #else
-__attribute__((constructor))      // seems not supported by g++-11 on the M1
+__attribute__((constructor))      // priority level is not supported by gcc
 #endif
+__attribute__((used))
 static void _mi_macos_override_malloc(void) {
   malloc_zone_t* purgeable_zone = NULL;
 

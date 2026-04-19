@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # ################################################################
-# Copyright (c) Facebook, Inc.
+# Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
 # This source code is licensed under both the BSD-style license (found in the
@@ -65,6 +65,8 @@ TARGET_INFO = {
     'seekable_roundtrip': TargetInfo(InputType.RAW_DATA),
     'huf_round_trip': TargetInfo(InputType.RAW_DATA),
     'huf_decompress': TargetInfo(InputType.RAW_DATA),
+    'decompress_cross_format': TargetInfo(InputType.RAW_DATA),
+    'generate_sequences': TargetInfo(InputType.RAW_DATA),
 }
 TARGETS = list(TARGET_INFO.keys())
 ALL_TARGETS = TARGETS + ['all']
@@ -78,6 +80,7 @@ CFLAGS = os.environ.get('CFLAGS', '-O3')
 CXXFLAGS = os.environ.get('CXXFLAGS', CFLAGS)
 LDFLAGS = os.environ.get('LDFLAGS', '')
 MFLAGS = os.environ.get('MFLAGS', '-j')
+THIRD_PARTY_SEQ_PROD_OBJ = os.environ.get('THIRD_PARTY_SEQ_PROD_OBJ', '')
 
 # Fuzzing environment variables
 LIB_FUZZING_ENGINE = os.environ.get('LIB_FUZZING_ENGINE', 'libregression.a')
@@ -249,10 +252,10 @@ def build_parser(args):
         action='store_true',
         help='Enable UBSAN')
     parser.add_argument(
-        '--enable-ubsan-pointer-overflow',
+        '--disable-ubsan-pointer-overflow',
         dest='ubsan_pointer_overflow',
-        action='store_true',
-        help='Enable UBSAN pointer overflow check (known failure)')
+        action='store_false',
+        help='Disable UBSAN pointer overflow check (known failure)')
     parser.add_argument(
         '--enable-msan', dest='msan', action='store_true', help='Enable MSAN')
     parser.add_argument(
@@ -320,6 +323,12 @@ def build_parser(args):
         action='store_true',
         help='Reuse contexts between runs (makes reproduction impossible)')
     parser.add_argument(
+        '--custom-seq-prod',
+        dest='third_party_seq_prod_obj',
+        type=str,
+        default=THIRD_PARTY_SEQ_PROD_OBJ,
+        help='Path to an object file with symbols for fuzzing your sequence producer plugin.')
+    parser.add_argument(
         '--cc',
         dest='cc',
         type=str,
@@ -376,8 +385,6 @@ def build_parser(args):
         raise RuntimeError('MSAN may not be used with any other sanitizers')
     if args.msan_track_origins and not args.msan:
         raise RuntimeError('--enable-msan-track-origins requires MSAN')
-    if args.ubsan_pointer_overflow and not args.ubsan:
-        raise RuntimeError('--enable-ubsan-pointer-overflow requires UBSAN')
     if args.sanitize_recover and not args.sanitize:
         raise RuntimeError('--enable-sanitize-recover but no sanitizers used')
 
@@ -400,7 +407,11 @@ def build(args):
     cxxflags = shlex.split(args.cxxflags)
     mflags = shlex.split(args.mflags)
     # Flags to be added to both cflags and cxxflags
-    common_flags = []
+    common_flags = [
+        '-Wno-error=declaration-after-statement',
+        '-Wno-error=c++-compat',
+        '-Wno-error=deprecated' # C files are sometimes compiled with CXX
+    ]
 
     cppflags += [
         '-DDEBUGLEVEL={}'.format(args.debug),
@@ -450,6 +461,10 @@ def build(args):
     if args.stateful_fuzzing:
         cppflags += ['-DSTATEFUL_FUZZING']
 
+    if args.third_party_seq_prod_obj:
+        cppflags += ['-DFUZZ_THIRD_PARTY_SEQ_PROD']
+        mflags += ['THIRD_PARTY_SEQ_PROD_OBJ={}'.format(args.third_party_seq_prod_obj)]
+
     if args.fuzzing_mode:
         cppflags += ['-DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION']
 
@@ -483,6 +498,7 @@ def build(args):
     subprocess.check_call(clean_cmd)
     build_cmd = [
         'make',
+        '-j',
         cc_str,
         cxx_str,
         cppflags_str,
@@ -636,7 +652,7 @@ def regression(args):
     try:
         description = """
         Runs one or more regression tests.
-        The fuzzer should have been built with with
+        The fuzzer should have been built with
         LIB_FUZZING_ENGINE='libregression.a'.
         Takes input from CORPORA.
         """

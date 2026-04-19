@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2024 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -459,7 +459,7 @@ void TestPools() {
    passBackendSz Byte objects are cached in LOC, but bypassed the backend, so
    memory requested directly from allocation callback.
    nextPassBackendSz Byte objects must fit to another LOC bin,
-   so that their allocation/realeasing leads to cache cleanup.
+   so that their allocation/releasing leads to cache cleanup.
    All this is expecting to lead to releasing of passBackendSz Byte object
    from LOC during LOC cleanup, and putMallocMem checks that returned size
    is correct.
@@ -1257,7 +1257,11 @@ void TestTHP() {
     scalable_allocation_mode(USE_HUGE_PAGES, 1);
     REQUIRE_MESSAGE(hugePages.isEnabled, "Huge pages should be enabled via scalable_allocation_mode");
 
+#if defined __loongarch64
+    const int HUGE_PAGE_SIZE = 32 * 1024 * 1024;
+#else
     const int HUGE_PAGE_SIZE = 2 * 1024 * 1024;
+#endif
 
     // allocCount transparent huge pages should be allocated
     const int allocCount = 10;
@@ -1362,7 +1366,7 @@ void TestReallocDecreasing() {
 
         reallocPtr = reallocAndRetrieve(origPtr, reallocSize, origBlockSize, reallocBlockSize);
 
-        REQUIRE_MESSAGE(origBlockSize > reallocBlockSize, "Reallocated block size should descrease.");
+        REQUIRE_MESSAGE(origBlockSize > reallocBlockSize, "Reallocated block size should decrease.");
 
         size_t sysMemUsageAfter = getStabilizedMemUsage();
         size_t totalMemSizeAfter = defaultMemPool->extMemPool.backend.getTotalMemSize();

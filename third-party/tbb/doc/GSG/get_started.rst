@@ -1,17 +1,20 @@
 .. _Get_Started_Guide:
 
-Get Started with |short_name|
-==============================
+Get Started with |full_name|
+=============================
 
-.. include:: intro_gsg.rst
+.. include:: /GSG/intro_gsg.rst
 
-.. include:: system_requirements.rst
+To start using oneTBB, follow the next steps:
+*********************************************
 
-.. include:: before_beginning_and_example.rst
+#. See the :ref:`System Requirements<system_requirements>`. 
+#. :ref:`Install oneTBB<installation>`.
+#. Run your program using oneTBB following the :ref:`Next Steps <next_steps>`. 
+#. Learn how to :ref:`Integrate oneTBB into your project <integrate>` using CMake* and pkg-config tool. 
+#. See :ref:`oneTBB Samples <samples>`. 
 
-.. include:: hybrid_cpu_support.rst
 
-Find more
-*********
+   
+   
 
-See our `documentation <https://oneapi-src.github.io/oneTBB/>`_ to learn more about |short_name|.

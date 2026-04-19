@@ -30,14 +30,14 @@ string occurs in the array ``Data``.
 
    // Structure that defines hashing and comparison operations for user's type.
    struct MyHashCompare {
-       static size_t hash( const string& x ) {
+       size_t hash( const string& x ) const {
            size_t h = 0;
            for( const char* s = x.c_str(); *s; ++s )
                h = (h*17)^*s;
            return h;
        }
        //! True if strings are equal
-       static bool equal( const string& x, const string& y ) {
+       bool equal( const string& x, const string& y ) const {
            return x==y;
        }
    };
