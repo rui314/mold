@@ -8,10 +8,10 @@ updates:
   - package-ecosystem: "github-actions" # See documentation for possible values
     directory: "/" # Location of package manifests
     schedule:
-      interval: "daily"
+      interval: "monthly"
 
   - package-ecosystem: "github-actions" # See documentation for possible values
     directory: "/common" # Location of package manifests
     schedule:
-      interval: "daily"
+      interval: "monthly"
     
