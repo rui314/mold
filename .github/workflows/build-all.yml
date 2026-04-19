@@ -43,7 +43,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Podman
       run: sudo apt-get update && sudo apt-get install -y podman qemu-user-static
@@ -59,7 +59,7 @@ jobs:
       run: ./dist.sh ${{ matrix.target }}
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ matrix.target }}
         path: dist/mold-*.tar.gz
@@ -71,7 +71,7 @@ jobs:
     runs-on: windows-latest
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Build and Archive
       shell: pwsh
@@ -87,7 +87,7 @@ jobs:
         Compress-Archive -Path mold-install\* -DestinationPath dist\mold-$version-windows-x86_64.zip
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: win-x86_64
         path: dist/mold-*.*
