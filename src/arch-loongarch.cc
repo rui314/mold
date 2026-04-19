@@ -981,7 +981,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       //   pcaddi    $t0, <offset>
       if (is_relaxable_got_load(ctx, isec, i))
         if (i64 dist = compute_distance(ctx, sym, isec, r);
-            is_int(dist, 22))
+            is_int(dist, 22) && (dist & 3) == 0)
           remove(4);
       break;
     case R_LARCH_TLS_DESC_PC_HI20:
