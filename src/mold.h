@@ -2420,6 +2420,7 @@ struct Context {
     bool z_text = false;
     bool zero_to_bss = false;
     i64 compress_debug_sections = ELFCOMPRESS_NONE;
+    i64 compress_debug_sections_level = 3;
     i64 filler = -1;
     i64 spare_dynamic_tags = 5;
     i64 spare_program_headers = 0;

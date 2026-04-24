@@ -674,7 +674,7 @@ private:
 
 class ZstdCompressor : public Compressor {
 public:
-  ZstdCompressor(u8 *buf, i64 size);
+  ZstdCompressor(u8 *buf, i64 size, i64 level = 3);
   void write_to(u8 *buf) override;
 };
 

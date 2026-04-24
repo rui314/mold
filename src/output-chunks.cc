@@ -2863,7 +2863,8 @@ CompressedSection<E>::CompressedSection(Context<E> &ctx, Chunk<E> &chunk) {
   if (ctx.arg.compress_debug_sections == ELFCOMPRESS_ZLIB)
     compressor.reset(new ZlibCompressor(buf.get(), chunk.shdr.sh_size));
   else
-    compressor.reset(new ZstdCompressor(buf.get(), chunk.shdr.sh_size));
+    compressor.reset(new ZstdCompressor(buf.get(), chunk.shdr.sh_size,
+                                        ctx.arg.compress_debug_sections_level));
 
   // Compute header field values
   chdr.ch_type = ctx.arg.compress_debug_sections;
