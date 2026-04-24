@@ -506,9 +506,12 @@ but as `-o magic`.
 * `--no-build-id`:
   Synonym for `--build-id=none`.
 
-* `--compress-debug-sections`=[ `zlib` | `zlib-gabi` | `zstd` | `none` ]:
+* `--compress-debug-sections`=[ `zlib` | `zlib-gabi` | `zstd` | `zstd-`_N_ | `none` ]:
   Compress DWARF debug info (`.debug_*` sections) using the zlib or zstd
-  compression algorithm. `zlib-gabi` is an alias for `zlib`.
+  compression algorithm. `zlib-gabi` is an alias for `zlib`. `zstd-`_N_
+  selects the zstd compression level, where _N_ is between 1 and 22.
+  Higher levels achieve better compression ratios but are slower.
+  `zstd` is equivalent to `zstd-3`.
 
 * `--defsym`=_symbol_=_value_:
   Define _symbol_ as an alias for _value_.
