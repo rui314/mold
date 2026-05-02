@@ -10,6 +10,9 @@
 
 namespace mold {
 
+template <typename E>
+static std::vector<u64> encode_relr(std::span<ElfRel<E>> rels);
+
 // The hash function for .hash.
 static u32 elf_hash(std::string_view name) {
   u32 h = 0;
@@ -394,33 +397,39 @@ void InterpSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-void RelDynSection<E>::update_shdr(Context<E> &ctx) {
-  i64 offset = 0;
+static bool is_relr(const ElfRel<E> &rel) {
+  return rel.r_type == E::R_RELATIVE &&
+         (u64)rel.r_offset % sizeof(Word<E>) == 0;
+}
 
-  for (Chunk<E> *chunk : ctx.chunks) {
-    chunk->reldyn_offset = offset;
-    offset += chunk->get_reldyn_size(ctx) * sizeof(ElfRel<E>);
+template <typename E>
+void RelDynSection<E>::update_shdr(Context<E> &ctx) {
+  relocs.clear();
+  for (Chunk<E> *chunk : ctx.chunks)
+    append(relocs, chunk->collect_dynrels(ctx));
+
+  if (ctx.relrdyn) {
+    auto relrs = ranges::partition(relocs, std::not_fn(is_relr<E>));
+    ranges::sort(relrs, {}, &ElfRel<E>::r_offset);
+    ctx.relrdyn->relocs = encode_relr<E>(relrs);
+    ctx.relrdyn->shdr.sh_size = ctx.relrdyn->relocs.size() * sizeof(Word<E>);
+    relocs.erase(relrs.begin(), relrs.end());
   }
 
-  this->shdr.sh_size = offset;
+  this->shdr.sh_size = relocs.size() * sizeof(ElfRel<E>);
   this->shdr.sh_link = ctx.dynsym->shndx;
 }
 
 template <typename E>
-void RelrDynSection<E>::update_shdr(Context<E> &ctx) {
-  i64 n = 0;
-  for (Chunk<E> *chunk : ctx.chunks)
-    n += chunk->relr.size();
-  this->shdr.sh_size = n * sizeof(Word<E>);
+void RelDynSection<E>::copy_buf(Context<E> &ctx) {
+  write_vector(ctx.buf + this->shdr.sh_offset, relocs);
 }
 
 template <typename E>
 void RelrDynSection<E>::copy_buf(Context<E> &ctx) {
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
-
-  for (Chunk<E> *chunk : ctx.chunks)
-    for (u64 val : chunk->relr)
-      *buf++ = (val & 1) ? val : (chunk->shdr.sh_addr + val);
+  for (u64 val : relocs)
+    *buf++ = val;
 }
 
 template <typename E>
@@ -902,13 +911,6 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
   write_to(ctx, buf);
 
-  // Emit dynamic relocations
-  if (!ctx.reldyn)
-    return;
-
-  ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                                 this->reldyn_offset);
-
   for (AbsRel<E> &r : abs_rels) {
     Symbol<E> &sym = *r.sym;
     u8 *loc = buf + r.isec->offset + r.offset;
@@ -922,29 +924,66 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
       P -= delta;
     }
 
-    auto write = [&](i64 ty, i64 idx, u64 val) {
-      *rel++ = ElfRel<E>(P, ty, idx, val);
-      if (ctx.arg.apply_dynamic_relocs)
-        *(Word<E> *)loc = val;
+    auto can_relr = [&] {
+      return ctx.arg.pack_dyn_relocs_relr &&
+             r.kind == ABS_REL_BASEREL &&
+             P % sizeof(Word<E>) == 0;
     };
 
     switch (r.kind) {
     case ABS_REL_NONE:
-    case ABS_REL_RELR:
       *(Word<E> *)loc = S + A;
       break;
     case ABS_REL_BASEREL:
-      write(E::R_RELATIVE, 0, S + A);
+      if (can_relr() || ctx.arg.apply_dynamic_relocs)
+        *(Word<E> *)loc = S + A;
       break;
     case ABS_REL_IFUNC:
       if constexpr (supports_ifunc<E>)
-        write(E::R_IRELATIVE, 0, sym.get_addr(ctx, NO_PLT) + A);
+        if (ctx.arg.apply_dynamic_relocs)
+          *(Word<E> *)loc = sym.get_addr(ctx, NO_PLT) + A;
       break;
     case ABS_REL_DYNREL:
-      write(E::R_ABS, sym.get_dynsym_idx(ctx), A);
+      if (ctx.arg.apply_dynamic_relocs)
+        *(Word<E> *)loc = A;
       break;
     }
   }
+}
+
+template <typename E>
+std::vector<ElfRel<E>>
+OutputSection<E>::collect_dynrels(Context<E> &ctx) const {
+  std::vector<ElfRel<E>> rels;
+
+  for (const AbsRel<E> &r : abs_rels) {
+    Symbol<E> &sym = *r.sym;
+    u64 S = sym.get_addr(ctx);
+    u64 A = r.addend;
+    u64 P = this->shdr.sh_addr + r.isec->offset + r.offset;
+
+    if constexpr (is_riscv<E> || is_loongarch<E>) {
+      i64 delta = get_r_delta(*r.isec, r.offset);
+      P -= delta;
+    }
+
+    switch (r.kind) {
+    case ABS_REL_NONE:
+      break;
+    case ABS_REL_BASEREL:
+      rels.emplace_back(P, E::R_RELATIVE, 0, S + A);
+      break;
+    case ABS_REL_IFUNC:
+      if constexpr (supports_ifunc<E>)
+        rels.emplace_back(P, E::R_IRELATIVE, 0, sym.get_addr(ctx, NO_PLT) + A);
+      break;
+    case ABS_REL_DYNREL:
+      rels.emplace_back(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
+      break;
+    }
+  }
+
+  return rels;
 }
 
 template <typename E>
@@ -1010,23 +1049,21 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 // representable in this encoding and such relocation must be stored to
 // the .rel.dyn section). A bitmap has LSB 1.
 template <typename E>
-static std::vector<u64> encode_relr(std::span<u64> pos) {
-  assert(ranges::all_of(pos, [](u64 x) { return x % sizeof(Word<E>) == 0; }));
-  assert(ranges::is_sorted(pos));
-
+static std::vector<u64> encode_relr(std::span<ElfRel<E>> rels) {
   std::vector<u64> vec;
   i64 num_bits = E::is_64 ? 63 : 31;
   i64 max_delta = sizeof(Word<E>) * num_bits;
 
-  for (i64 i = 0; i < pos.size();) {
-    vec.push_back(pos[i]);
-    u64 base = pos[i] + sizeof(Word<E>);
+  for (i64 i = 0; i < rels.size();) {
+    u64 first = rels[i].r_offset;
+    vec.push_back(first);
+    u64 base = first + sizeof(Word<E>);
     i++;
 
     for (;;) {
       u64 bits = 0;
-      for (; i < pos.size() && pos[i] - base < max_delta; i++)
-        bits |= (u64)1 << ((pos[i] - base) / sizeof(Word<E>));
+      for (; i < rels.size() && (u64)rels[i].r_offset - base < max_delta; i++)
+        bits |= (u64)1 << (((u64)rels[i].r_offset - base) / sizeof(Word<E>));
 
       if (!bits)
         break;
@@ -1113,33 +1150,6 @@ void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
       ctx.has_textrel = true;
     }
   }
-
-  // If --pack-dyn-relocs=relr is enabled, base relocations are put into
-  // .relr.dyn.
-  if (ctx.arg.pack_dyn_relocs_relr && !(this->shdr.sh_flags & SHF_EXECINSTR))
-    for (AbsRel<E> &r : abs_rels)
-      if (r.kind == ABS_REL_BASEREL &&
-          r.isec->shdr().sh_addralign % sizeof(Word<E>) == 0 &&
-          r.offset % sizeof(Word<E>) == 0)
-        r.kind = ABS_REL_RELR;
-}
-
-template <typename E>
-i64 OutputSection<E>::get_reldyn_size(Context<E> &ctx) const {
-  i64 n = 0;
-  for (const AbsRel<E> &r : abs_rels)
-    if (r.kind != ABS_REL_NONE && r.kind != ABS_REL_RELR)
-      n++;
-  return n;
-}
-
-template <typename E>
-void OutputSection<E>::construct_relr(Context<E> &ctx) {
-  std::vector<u64> pos;
-  for (const AbsRel<E> &r : abs_rels)
-    if (r.kind == ABS_REL_RELR)
-      pos.push_back(r.isec->offset + r.offset);
-  this->relr = encode_relr<E>(pos);
 }
 
 // Compute spaces needed for thunk symbols
@@ -1396,15 +1406,20 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
 }
 
 template <typename E>
-i64 GotSection<E>::get_reldyn_size(Context<E> &ctx) const {
-  i64 n = 0;
-  for (GotEntry<E> &ent : get_got_entries(ctx))
-    if (!ent.is_relr(ctx) && ent.r_type != R_NONE)
-      n++;
-  return n;
+std::vector<ElfRel<E>> GotSection<E>::collect_dynrels(Context<E> &ctx) const {
+  std::vector<GotEntry<E>> entries = get_got_entries(ctx);
+  std::vector<ElfRel<E>> rels;
+
+  for (GotEntry<E> &ent : entries)
+    if (ent.r_type != R_NONE)
+      rels.emplace_back(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
+                        ent.r_type,
+                        ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
+                        ent.val);
+  return rels;
 }
 
-// Fill .got and .rel.dyn.
+// Fill .got.
 template <typename E>
 void GotSection<E>::copy_buf(Context<E> &ctx) {
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
@@ -1423,19 +1438,11 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
     if (ctx.dynamic && ctx.arg.static_ && ctx.arg.pie)
       buf[0] = ctx.dynamic->shdr.sh_addr;
 
-  ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                                 this->reldyn_offset);
-
   for (GotEntry<E> &ent : get_got_entries(ctx)) {
     if (ent.is_relr(ctx) || ent.r_type == R_NONE) {
       buf[ent.idx] = ent.val;
       continue;
     }
-
-    *rel++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
-                       ent.r_type,
-                       ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
-                       ent.val);
 
     if (ctx.arg.apply_dynamic_relocs) {
       // A single TLSDESC relocation fixes two consecutive GOT slots
@@ -1453,15 +1460,6 @@ void GotSection<E>::copy_buf(Context<E> &ctx) {
       buf[i] = ent.val;
     }
   }
-}
-
-template <typename E>
-void GotSection<E>::construct_relr(Context<E> &ctx) {
-  std::vector<u64> pos;
-  for (GotEntry<E> &ent : get_got_entries(ctx))
-    if (ent.is_relr(ctx))
-      pos.push_back(ent.idx * sizeof(Word<E>));
-  this->relr = encode_relr<E>(pos);
 }
 
 template <typename E>
@@ -2525,13 +2523,15 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-void CopyrelSection<E>::copy_buf(Context<E> &ctx) {
-  ElfRel<E> *rel = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset +
-                                 this->reldyn_offset);
+std::vector<ElfRel<E>>
+CopyrelSection<E>::collect_dynrels(Context<E> &ctx) const {
+  std::vector<ElfRel<E>> rels;
 
   for (Symbol<E> *sym : symbols)
-    *rel++ = ElfRel<E>(sym->get_addr(ctx), E::R_COPY,
-                       sym->get_dynsym_idx(ctx), 0);
+    rels.emplace_back(sym->get_addr(ctx), E::R_COPY,
+                      sym->get_dynsym_idx(ctx), 0);
+
+  return rels;
 }
 
 // .gnu.version section contains version indices as a parallel array for

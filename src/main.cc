@@ -507,12 +507,6 @@ int mold_main(int argc, char **argv) {
   // within an output section to input sections.
   compute_section_sizes(ctx);
 
-  // If --packed_dyn_relocs=relr was given, base relocations are stored
-  // to a .relr.dyn section in a compressed form. Construct a compressed
-  // relocations now so that we can fix section sizes and file layout.
-  if (ctx.arg.pack_dyn_relocs_relr)
-    construct_relr(ctx);
-
   // Reserve a space for dynamic symbol strings in .dynstr and sort
   // .dynsym contents if necessary. Beyond this point, no symbol will
   // be added to .dynsym.
@@ -598,6 +592,8 @@ int mold_main(int argc, char **argv) {
   // Gather thunk symbols and attach them to themselves.
   if constexpr (needs_thunk<E>)
     gather_thunk_addresses(ctx);
+
+  ctx.reldyn->update_shdr(ctx);
 
   t_before_copy.stop();
 

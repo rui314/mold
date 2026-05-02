@@ -1992,15 +1992,6 @@ void copy_chunks(Context<E> &ctx) {
   zero(chunks.back(), ctx.output_file->filesize);
 }
 
-template <typename E>
-void construct_relr(Context<E> &ctx) {
-  Timer t(ctx, "construct_relr");
-
-  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    chunk->construct_relr(ctx);
-  });
-}
-
 // The hash function for .gnu.hash.
 static u32 djb_hash(std::string_view name) {
   u32 h = 5381;
@@ -2996,6 +2987,17 @@ i64 set_osec_offsets(Context<E> &ctx) {
       set_virtual_addresses_regular(ctx);
     else
       set_virtual_addresses_by_order(ctx);
+
+    if (ctx.arg.pack_dyn_relocs_relr) {
+      i64 x = ctx.reldyn->shdr.sh_size;
+      i64 y = ctx.relrdyn->shdr.sh_size;
+      ctx.reldyn->update_shdr(ctx);
+
+      if (x != ctx.reldyn->shdr.sh_size ||
+          y != ctx.relrdyn->shdr.sh_size)
+        continue;
+    }
+
     ctx.checkpoint();
 
     // Assigning new offsets may change the contents and the length
@@ -3666,7 +3668,6 @@ template void scan_relocations(Context<E> &);
 template void report_undef_errors(Context<E> &);
 template void create_reloc_sections(Context<E> &);
 template void copy_chunks(Context<E> &);
-template void construct_relr(Context<E> &);
 template void sort_dynsyms(Context<E> &);
 template void sort_debug_info_sections(Context<E> &);
 template void create_output_symtab(Context<E> &);
