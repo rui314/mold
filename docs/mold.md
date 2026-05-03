@@ -663,16 +663,32 @@ but as `-o magic`.
   argument as percent-encoded, so you also need to escape all occurrences
   of `%` as `%25`.
 
-* `--pack-dyn-relocs`=[ `relr` | `none` ]:
+* `--pack-dyn-relocs`=[ `relr` | `android` | `android+relr` | `none` ]:
+  Compress dynamic relocations in the output file.
+
   If `relr` is specified, all `R_*_RELATIVE` relocations are put into
   `.relr.dyn` section instead of `.rel.dyn` or `.rela.dyn` section. Since
   `.relr.dyn` section uses a space-efficient encoding scheme, specifying this
   flag can reduce the size of the output. This is typically most effective for
   position-independent executable.
 
+  If `android` is specified, all dynamic relocations are encoded in Android's
+  packed relocation format (APS2) and stored in the `.rel.dyn` or `.rela.dyn`
+  section, whose section type is changed to `SHT_ANDROID_REL` or
+  `SHT_ANDROID_RELA`. The dynamic table is updated to use `DT_ANDROID_REL`
+  / `DT_ANDROID_RELA` and their `SZ` variants in place of the standard tags.
+
+  `android+relr` combines both: `R_*_RELATIVE` relocations go to `.relr.dyn`
+  and the rest are APS2-encoded. This is the configuration used by most
+  Android system binaries.
+
   Note that a runtime loader has to support `.relr.dyn` to run executables or
-  shared libraries linked with `--pack-dyn-relocs=relr`. As of 2022, only
-  ChromeOS, Android and Fuchsia support it.
+  shared libraries linked with `--pack-dyn-relocs=relr`. As of 2026, glibc
+  (since 2.36), musl (since 1.2.4), Android, ChromeOS, and Fuchsia all
+  support it. The APS2 format, on the other hand, is only handled by
+  Android's bionic loader; the encoder itself is target-agnostic, but the
+  produced binary can only be loaded on platforms where bionic (or a
+  compatible loader) handles `DT_ANDROID_REL(A)`.
 
 * `--pie`, `--pic-executable`, `--no-pie`, `--no-pic-executable`:
   Create a position-independent executable.

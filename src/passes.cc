@@ -139,7 +139,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   if constexpr (!is_sparc<E>)
     ctx.gotplt = push(new GotPltSection<E>(ctx));
 
-  ctx.reldyn = push(new RelDynSection<E>);
+  ctx.reldyn = push(new RelDynSection<E>(ctx));
   ctx.relplt = push(new RelPltSection<E>);
 
   if (ctx.arg.pack_dyn_relocs_relr)
@@ -2988,13 +2988,13 @@ i64 set_osec_offsets(Context<E> &ctx) {
     else
       set_virtual_addresses_by_order(ctx);
 
-    if (ctx.arg.pack_dyn_relocs_relr) {
+    if (ctx.arg.pack_dyn_relocs_relr || ctx.arg.pack_dyn_relocs_android) {
       i64 x = ctx.reldyn->shdr.sh_size;
-      i64 y = ctx.relrdyn->shdr.sh_size;
+      i64 y = ctx.relrdyn ? (i64)ctx.relrdyn->shdr.sh_size : 0;
       ctx.reldyn->update_shdr(ctx);
 
-      if (x != ctx.reldyn->shdr.sh_size ||
-          y != ctx.relrdyn->shdr.sh_size)
+      if (x != (i64)ctx.reldyn->shdr.sh_size ||
+          y != (ctx.relrdyn ? (i64)ctx.relrdyn->shdr.sh_size : 0))
         continue;
     }
 
@@ -3305,6 +3305,10 @@ std::vector<std::span<u8>> get_shards(Context<E> &ctx) {
 template <typename E>
 void sort_reldyn(Context<E> &ctx) {
   Timer t(ctx, "sort_reldyn");
+
+  // .rela.dyn contains APS2-encoded bytes, not ElfRel entries.
+  if (ctx.arg.pack_dyn_relocs_android)
+    return;
 
   ElfRel<E> *begin = (ElfRel<E> *)(ctx.buf + ctx.reldyn->shdr.sh_offset);
   ElfRel<E> *end = begin + ctx.reldyn->shdr.sh_size / sizeof(ElfRel<E>);

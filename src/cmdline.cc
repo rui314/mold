@@ -131,7 +131,7 @@ Options:
   --no-undefined              Report undefined symbols (even with --shared)
   --noinhibit-exec            Create an output file even if errors occur
   --oformat=binary            Omit ELF, section, and program headers
-  --pack-dyn-relocs=[relr,none]
+  --pack-dyn-relocs=[relr,android,android+relr,none]
                               Pack dynamic relocations
   --package-metadata=PERCENT_ENCODED_STRING
                               Set a given string to .note.package
@@ -1001,9 +1001,17 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("pack-dyn-relocs=relr") ||
                read_z_flag("pack-relative-relocs")) {
       ctx.arg.pack_dyn_relocs_relr = true;
+      ctx.arg.pack_dyn_relocs_android = false;
+    } else if (read_flag("pack-dyn-relocs=android")) {
+      ctx.arg.pack_dyn_relocs_android = true;
+      ctx.arg.pack_dyn_relocs_relr = false;
+    } else if (read_flag("pack-dyn-relocs=android+relr")) {
+      ctx.arg.pack_dyn_relocs_android = true;
+      ctx.arg.pack_dyn_relocs_relr = true;
     } else if (read_flag("pack-dyn-relocs=none") ||
                read_z_flag("nopack-relative-relocs")) {
       ctx.arg.pack_dyn_relocs_relr = false;
+      ctx.arg.pack_dyn_relocs_android = false;
     } else if (read_arg("package-metadata")) {
       ctx.arg.package_metadata = parse_package_metadata(ctx, arg);
     } else if (read_flag("stats")) {

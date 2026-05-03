@@ -587,11 +587,17 @@ int mold_main(int argc, char **argv) {
     filesize = set_osec_offsets(ctx);
   }
 
-  // At this point, both memory and file layouts are fixed.
-
   // Gather thunk symbols and attach them to themselves.
   if constexpr (needs_thunk<E>)
     gather_thunk_addresses(ctx);
+
+  // Re-finalize layout. fix_synthetic_symbols above may have changed
+  // addends for dynamic relocations referencing synthetic symbols, which
+  // can shift the encoded size of .rela.dyn under --pack-dyn-relocs=android.
+  // For other modes this is a cheap no-op convergence.
+  filesize = set_osec_offsets(ctx);
+
+  // At this point, both memory and file layouts are fixed.
 
   ctx.reldyn->update_shdr(ctx);
 

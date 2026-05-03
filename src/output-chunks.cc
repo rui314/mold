@@ -13,6 +13,9 @@ namespace mold {
 template <typename E>
 static std::vector<u64> encode_relr(std::span<ElfRel<E>> rels);
 
+template <typename E>
+static std::vector<u8> encode_android(std::span<ElfRel<E>> rels);
+
 // The hash function for .hash.
 static u32 elf_hash(std::string_view name) {
   u32 h = 0;
@@ -405,6 +408,7 @@ static bool is_relr(const ElfRel<E> &rel) {
 template <typename E>
 void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   relocs.clear();
+  android_encoded.clear();
   for (Chunk<E> *chunk : ctx.chunks)
     append(relocs, chunk->collect_dynrels(ctx));
 
@@ -416,13 +420,21 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
     relocs.erase(relrs.begin(), relrs.end());
   }
 
-  this->shdr.sh_size = relocs.size() * sizeof(ElfRel<E>);
+  if (ctx.arg.pack_dyn_relocs_android) {
+    android_encoded = encode_android<E>(relocs);
+    this->shdr.sh_size = android_encoded.size();
+  } else {
+    this->shdr.sh_size = relocs.size() * sizeof(ElfRel<E>);
+  }
   this->shdr.sh_link = ctx.dynsym->shndx;
 }
 
 template <typename E>
 void RelDynSection<E>::copy_buf(Context<E> &ctx) {
-  write_vector(ctx.buf + this->shdr.sh_offset, relocs);
+  if (ctx.arg.pack_dyn_relocs_android)
+    write_vector(ctx.buf + this->shdr.sh_offset, android_encoded);
+  else
+    write_vector(ctx.buf + this->shdr.sh_offset, relocs);
 }
 
 template <typename E>
@@ -675,9 +687,14 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
     define(DT_FILTER, ctx.dynstr->find_string(str));
 
   if (ctx.reldyn->shdr.sh_size) {
-    define(E::is_rela ? DT_RELA : DT_REL, ctx.reldyn->shdr.sh_addr);
-    define(E::is_rela ? DT_RELASZ : DT_RELSZ, ctx.reldyn->shdr.sh_size);
-    define(E::is_rela ? DT_RELAENT : DT_RELENT, sizeof(ElfRel<E>));
+    if (ctx.arg.pack_dyn_relocs_android) {
+      define(E::is_rela ? DT_ANDROID_RELA : DT_ANDROID_REL, ctx.reldyn->shdr.sh_addr);
+      define(E::is_rela ? DT_ANDROID_RELASZ : DT_ANDROID_RELSZ, ctx.reldyn->shdr.sh_size);
+    } else {
+      define(E::is_rela ? DT_RELA : DT_REL, ctx.reldyn->shdr.sh_addr);
+      define(E::is_rela ? DT_RELASZ : DT_RELSZ, ctx.reldyn->shdr.sh_size);
+      define(E::is_rela ? DT_RELAENT : DT_RELENT, sizeof(ElfRel<E>));
+    }
   }
 
   if (ctx.relrdyn) {
@@ -1073,6 +1090,92 @@ static std::vector<u64> encode_relr(std::span<ElfRel<E>> rels) {
     }
   }
   return vec;
+}
+
+static void write_sleb128(std::vector<u8> &buf, i64 val) {
+  for (;;) {
+    buf.push_back((val & 0x7f) | 0x80);
+    if ((val >> 6) == 0 || (val >> 6) == -1)
+      break;
+    val >>= 7;
+  }
+  buf.back() &= 0x7f;
+}
+
+// Encode dynamic relocations using the Android Packed Relocation format
+// (APS2). The encoded stream begins with the magic bytes "APS2" followed
+// by SLEB128-encoded fields. Relocations are emitted in groups; within a
+// group, common offset deltas, info values, and addend deltas are
+// factored out so each per-relocation entry is just the differing fields.
+//
+// See bionic's linker/linker_relocs.cpp for the decoder.
+template <typename E>
+static std::vector<u8> encode_android(std::span<ElfRel<E>> rels) {
+  constexpr i64 GROUPED_BY_INFO = 1;
+  constexpr i64 GROUPED_BY_OFFSET_DELTA = 2;
+  constexpr i64 GROUP_HAS_ADDEND = 8;
+
+  auto r_info = [](const ElfRel<E> &r) -> Word<E> {
+    return ((Word<E> *)&r)[1];
+  };
+
+  std::vector<u8> buf = {'A', 'P', 'S', '2'};
+  write_sleb128(buf, rels.size());
+  write_sleb128(buf, 0);  // initial offset state
+
+  if (rels.empty())
+    return buf;
+
+  // APS2 offset deltas are signed, so the format doesn't require
+  // relocations to be in increasing-offset order. Sort by (r_type,
+  // r_sym, r_offset) so all relocs of the dominant type (typically
+  // R_RELATIVE, ~90% of dynrels in a real Android binary) land in one
+  // contiguous block. That collapses dozens of type-broken groups into
+  // a few large info-grouped runs.
+  ranges::sort(rels, {}, [&](const ElfRel<E> &r) {
+    return std::tuple{r.r_type, r.r_sym, r.r_offset};
+  });
+
+  i64 prev_offset = 0;
+  i64 prev_addend = 0;
+  i64 i = 0;
+
+  while (i < (i64)rels.size()) {
+    i64 offset_delta = (i64)rels[i].r_offset - prev_offset;
+    i64 cur_info = r_info(rels[i]);
+
+    // Greedily extend the group while consecutive relocations share the
+    // same offset_delta and r_info.
+    i64 j = i + 1;
+    while (j < (i64)rels.size() &&
+           r_info(rels[j]) == cur_info &&
+           (i64)rels[j].r_offset - (i64)rels[j - 1].r_offset == offset_delta)
+      j++;
+
+    i64 size = j - i;
+    i64 flags = 0;
+    if (size > 1)
+      flags = GROUPED_BY_INFO | GROUPED_BY_OFFSET_DELTA;
+    if constexpr (E::is_rela)
+      flags |= GROUP_HAS_ADDEND;
+
+    write_sleb128(buf, size);
+    write_sleb128(buf, flags);
+    write_sleb128(buf, offset_delta);
+    write_sleb128(buf, cur_info);
+
+    if constexpr (E::is_rela) {
+      for (i64 k = i; k < j; k++) {
+        i64 cur = rels[k].r_addend;
+        write_sleb128(buf, cur - prev_addend);
+        prev_addend = cur;
+      }
+    }
+
+    prev_offset = rels[j - 1].r_offset;
+    i = j;
+  }
+  return buf;
 }
 
 template <typename E>

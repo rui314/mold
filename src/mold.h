@@ -929,9 +929,12 @@ public:
 template <typename E>
 class RelDynSection : public Chunk<E> {
 public:
-  RelDynSection() {
+  RelDynSection(Context<E> &ctx) {
     this->name = E::is_rela ? ".rela.dyn" : ".rel.dyn";
-    this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
+    if (ctx.arg.pack_dyn_relocs_android)
+      this->shdr.sh_type = E::is_rela ? SHT_ANDROID_RELA : SHT_ANDROID_REL;
+    else
+      this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(ElfRel<E>);
     this->shdr.sh_addralign = sizeof(Word<E>);
@@ -941,6 +944,7 @@ public:
   void copy_buf(Context<E> &ctx) override;
 
   std::vector<ElfRel<E>> relocs;
+  std::vector<u8> android_encoded;
 };
 
 // .relr.dyn is a relatively new section to contain base relocation
@@ -2366,6 +2370,7 @@ struct Context {
     bool noinhibit_exec = false;
     bool oformat_binary = false;
     bool omagic = false;
+    bool pack_dyn_relocs_android = false;
     bool pack_dyn_relocs_relr = false;
     bool perf = false;
     bool pic = false;
