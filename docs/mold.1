@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "April 2026" ""
+.TH "MOLD" "1" "May 2026" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -371,10 +371,16 @@ Embed a specified string into the \fB\.note\.package\fR section\. This option is
 .IP
 An argument to this option is treated as percent\-encoded and decoded before being inserted into the section, allowing you to avoid the use of the comma (\fB,\fR) character in the argument\. This is useful because the compiler replaces all occurrences of commas in \fB\-Wl,\fR with spaces before forwarding them to the linker\. Note that \fBmold\fR always interprets the argument as percent\-encoded, so you also need to escape all occurrences of \fB%\fR as \fB%25\fR\.
 .TP
-\fB\-\-pack\-dyn\-relocs\fR=[ \fBrelr\fR | \fBnone\fR ]
+\fB\-\-pack\-dyn\-relocs\fR=[ \fBrelr\fR | \fBandroid\fR | \fBandroid+relr\fR | \fBnone\fR ]
+Compress dynamic relocations in the output file\.
+.IP
 If \fBrelr\fR is specified, all \fBR_*_RELATIVE\fR relocations are put into \fB\.relr\.dyn\fR section instead of \fB\.rel\.dyn\fR or \fB\.rela\.dyn\fR section\. Since \fB\.relr\.dyn\fR section uses a space\-efficient encoding scheme, specifying this flag can reduce the size of the output\. This is typically most effective for position\-independent executable\.
 .IP
-Note that a runtime loader has to support \fB\.relr\.dyn\fR to run executables or shared libraries linked with \fB\-\-pack\-dyn\-relocs=relr\fR\. As of 2022, only ChromeOS, Android and Fuchsia support it\.
+If \fBandroid\fR is specified, all dynamic relocations are encoded in Android's packed relocation format (APS2) and stored in the \fB\.rel\.dyn\fR or \fB\.rela\.dyn\fR section, whose section type is changed to \fBSHT_ANDROID_REL\fR or \fBSHT_ANDROID_RELA\fR\. The dynamic table is updated to use \fBDT_ANDROID_REL\fR / \fBDT_ANDROID_RELA\fR and their \fBSZ\fR variants in place of the standard tags\.
+.IP
+\fBandroid+relr\fR combines both: \fBR_*_RELATIVE\fR relocations go to \fB\.relr\.dyn\fR and the rest are APS2\-encoded\. This is the configuration used by most Android system binaries\.
+.IP
+Note that a runtime loader has to support \fB\.relr\.dyn\fR to run executables or shared libraries linked with \fB\-\-pack\-dyn\-relocs=relr\fR\. As of 2026, glibc (since 2\.36), musl (since 1\.2\.4), Android, ChromeOS, and Fuchsia all support it\. The APS2 format, on the other hand, is only handled by Android's bionic loader; the encoder itself is target\-agnostic, but the produced binary can only be loaded on platforms where bionic (or a compatible loader) handles \fBDT_ANDROID_REL(A)\fR\.
 .TP
 \fB\-\-pie\fR, \fB\-\-pic\-executable\fR, \fB\-\-no\-pie\fR, \fB\-\-no\-pic\-executable\fR
 Create a position\-independent executable\.
