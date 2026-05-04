@@ -983,9 +983,9 @@ public:
 template <typename E>
 class RelrDynSection : public Chunk<E> {
 public:
-  RelrDynSection() {
+  RelrDynSection(Context<E> &ctx) {
     this->name = ".relr.dyn";
-    this->shdr.sh_type = SHT_RELR;
+    this->shdr.sh_type = ctx.arg.use_android_relr_tags ? SHT_ANDROID_RELR : SHT_RELR;
     this->shdr.sh_flags = SHF_ALLOC;
     this->shdr.sh_entsize = sizeof(Word<E>);
     this->shdr.sh_addralign = sizeof(Word<E>);
@@ -2392,6 +2392,7 @@ struct Context {
     bool suppress_warnings = false;
     bool trace = false;
     bool undefined_version = false;
+    bool use_android_relr_tags = false;
     bool warn_common = false;
     bool warn_once = false;
     bool warn_textrel = false;

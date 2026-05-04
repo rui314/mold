@@ -143,7 +143,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.relplt = push(new RelPltSection<E>);
 
   if (ctx.arg.pack_dyn_relocs_relr)
-    ctx.relrdyn = push(new RelrDynSection<E>);
+    ctx.relrdyn = push(new RelrDynSection<E>(ctx));
 
   ctx.strtab = push(new StrtabSection<E>);
   ctx.plt = push(new PltSection<E>);

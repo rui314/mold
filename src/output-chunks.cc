@@ -698,9 +698,15 @@ static std::vector<Word<E>> create_dynamic_section(Context<E> &ctx) {
   }
 
   if (ctx.relrdyn) {
-    define(DT_RELR, ctx.relrdyn->shdr.sh_addr);
-    define(DT_RELRSZ, ctx.relrdyn->shdr.sh_size);
-    define(DT_RELRENT, ctx.relrdyn->shdr.sh_entsize);
+    if (ctx.arg.use_android_relr_tags) {
+      define(DT_ANDROID_RELR, ctx.relrdyn->shdr.sh_addr);
+      define(DT_ANDROID_RELRSZ, ctx.relrdyn->shdr.sh_size);
+      define(DT_ANDROID_RELRENT, ctx.relrdyn->shdr.sh_entsize);
+    } else {
+      define(DT_RELR, ctx.relrdyn->shdr.sh_addr);
+      define(DT_RELRSZ, ctx.relrdyn->shdr.sh_size);
+      define(DT_RELRENT, ctx.relrdyn->shdr.sh_entsize);
+    }
   }
 
   if (ctx.relplt->shdr.sh_size) {

@@ -1012,6 +1012,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
                read_z_flag("nopack-relative-relocs")) {
       ctx.arg.pack_dyn_relocs_relr = false;
       ctx.arg.pack_dyn_relocs_android = false;
+    } else if (read_flag("use-android-relr-tags")) {
+      ctx.arg.use_android_relr_tags = true;
+    } else if (read_flag("no-use-android-relr-tags")) {
+      ctx.arg.use_android_relr_tags = false;
     } else if (read_arg("package-metadata")) {
       ctx.arg.package_metadata = parse_package_metadata(ctx, arg);
     } else if (read_flag("stats")) {
