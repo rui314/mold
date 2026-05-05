@@ -5,6 +5,7 @@
 #include "mold.h"
 
 #include <fstream>
+#include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/parallel_for_each.h>
 
@@ -28,8 +29,28 @@ static bool should_keep(const InputSection<E> &isec) {
          name.starts_with(".ctors") ||
          name.starts_with(".dtors") ||
          name.starts_with(".init") ||
-         name.starts_with(".fini") ||
-         is_c_identifier(name);
+         name.starts_with(".fini");
+}
+
+// Sections whose names are valid C identifiers can be referenced via
+// __start_<name>/__stop_<name> symbols, which the linker synthesizes.
+// Such sections must be kept alive only if such a marker symbol is
+// referenced from a live section. This map lets us find all sections
+// of a given name when we encounter such a reference during marking.
+template <typename E>
+using StartStopMap =
+  tbb::concurrent_unordered_multimap<std::string_view, InputSection<E> *>;
+
+template <typename E>
+static StartStopMap<E> build_start_stop_map(Context<E> &ctx) {
+  StartStopMap<E> map;
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
+          is_c_identifier(isec->name()))
+        map.insert({isec->name(), isec.get()});
+  });
+  return map;
 }
 
 template <typename E>
@@ -96,9 +117,18 @@ collect_root_set(Context<E> &ctx) {
   return rootset;
 }
 
+static std::string_view start_stop_name(std::string_view sym) {
+  if (sym.starts_with("__start_"))
+    return sym.substr(8);
+  if (sym.starts_with("__stop_"))
+    return sym.substr(7);
+  return "";
+}
+
 template <typename E>
 static void visit(Context<E> &ctx, InputSection<E> *isec,
-                  tbb::feeder<InputSection<E> *> &feeder, i64 depth) {
+                  tbb::feeder<InputSection<E> *> &feeder, i64 depth,
+                  const StartStopMap<E> &start_stop_map) {
   assert(isec->is_visited);
 
   // Mark a section alive. For better performacne, we don't call
@@ -106,7 +136,7 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   auto mark = [&](InputSection<E> *sec) {
     if (mark_section(sec)) {
       if (depth < 3)
-        visit(ctx, sec, feeder, depth + 1);
+        visit(ctx, sec, feeder, depth + 1, start_stop_map);
       else
         feeder.add(sec);
     }
@@ -123,10 +153,21 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
     // Symbol can refer to either a section fragment or an input section.
     Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
-    if (SectionFragment<E> *frag = sym.get_frag())
+    if (SectionFragment<E> *frag = sym.get_frag()) {
       frag->is_alive = true;
-    else
-      mark(sym.get_input_section());
+      continue;
+    }
+
+    mark(sym.get_input_section());
+
+    // A reference to __start_<name> or __stop_<name> keeps every section
+    // named <name> alive, mirroring how those symbols are defined.
+    if (std::string_view sec = start_stop_name(sym.name());
+        !sec.empty()) {
+      auto [i, end] = start_stop_map.equal_range(sec);
+      for (; i != end; ++i)
+        mark(i->second);
+    }
   }
 
   if constexpr (is_arm32<E>)
@@ -136,12 +177,13 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
 // Mark all reachable sections
 template <typename E>
 static void mark(Context<E> &ctx,
-                 tbb::concurrent_vector<InputSection<E> *> &rootset) {
+                 tbb::concurrent_vector<InputSection<E> *> &rootset,
+                 const StartStopMap<E> &start_stop_map) {
   Timer t(ctx, "mark");
 
   tbb::parallel_for_each(rootset, [&](InputSection<E> *isec,
                                       tbb::feeder<InputSection<E> *> &feeder) {
-    visit(ctx, isec, feeder, 0);
+    visit(ctx, isec, feeder, 0, start_stop_map);
   });
 }
 
@@ -190,7 +232,8 @@ template <typename E>
 void gc_sections(Context<E> &ctx) {
   Timer t(ctx, "gc");
   tbb::concurrent_vector<InputSection<E> *> rootset = collect_root_set(ctx);
-  mark(ctx, rootset);
+  StartStopMap<E> start_stop_map = build_start_stop_map(ctx);
+  mark(ctx, rootset, start_stop_map);
   sweep(ctx);
 }
 
