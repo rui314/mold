@@ -8,11 +8,11 @@ EOF
 
 # Test zstd:1 (lowest level)
 $CC -B. -o $t/exe1 $t/a.o -Wl,--compress-debug-sections=zstd:1
-readelf -WS $t/exe1 | grep -q '\.debug_info .* [Cx] '
+readelf -WS $t/exe1 | grep '\.debug_info .* [Cx] '
 
 # Test zstd:22 (highest level)
 $CC -B. -o $t/exe22 $t/a.o -Wl,--compress-debug-sections=zstd:22
-readelf -WS $t/exe22 | grep -q '\.debug_info .* [Cx] '
+readelf -WS $t/exe22 | grep '\.debug_info .* [Cx] '
 
 # Out-of-range level should fail with a descriptive error
 not $CC -B. -o $t/exe0 $t/a.o -Wl,--compress-debug-sections=zstd:0 |&

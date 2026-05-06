@@ -12,8 +12,8 @@ EOF
 # The level-0 executable must be larger than the level-9 one.
 $CC -B. -o $t/exe0 $t/a.o -Wl,--compress-debug-sections=zlib:0
 $CC -B. -o $t/exe9 $t/a.o -Wl,--compress-debug-sections=zlib:9
-readelf -WS $t/exe0 | grep -q '\.debug_info .* [Cx] '
-readelf -WS $t/exe9 | grep -q '\.debug_info .* [Cx] '
+readelf -WS $t/exe0 | grep '\.debug_info .* [Cx] '
+readelf -WS $t/exe9 | grep '\.debug_info .* [Cx] '
 [ $(wc -c < $t/exe0) -gt $(wc -c < $t/exe9) ]
 
 # Out-of-range level should fail with a descriptive error
