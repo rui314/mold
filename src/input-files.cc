@@ -1261,6 +1261,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   this->symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
   soname = get_soname(ctx);
   version_strings = read_verdef(ctx);
+  append(version_strings, read_verneed(ctx));
 
   // Read a symbol table.
   std::span<ElfSym<E>> esyms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
@@ -1271,7 +1272,7 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
   for (i64 i = symtab_sec->sh_info; i < esyms.size(); i++) {
     u16 ver;
-    if (vers.empty() || esyms[i].is_undef())
+    if (vers.empty())
       ver = VER_NDX_GLOBAL;
     else
       ver = vers[i] & ~VERSYM_HIDDEN;
@@ -1280,9 +1281,16 @@ void SharedFile<E>::parse(Context<E> &ctx) {
       continue;
 
     this->elf_syms2.push_back(esyms[i]);
-    this->versyms.push_back(ver);
+    // Defined symbols index into verdef; undefined symbols index into
+    // verneed. We record VER_NDX_GLOBAL for undefined symbols here
+    // because resolve_symbols only consults versyms[] for defined
+    // symbols (see SharedFile::resolve_symbols).
+    this->versyms.push_back(esyms[i].is_undef() ? (u16)VER_NDX_GLOBAL : ver);
 
     std::string_view name = this->symbol_strtab.data() + esyms[i].st_name;
+
+    bool has_version = ver != VER_NDX_GLOBAL && ver < version_strings.size() &&
+                       !version_strings[ver].empty();
 
     auto get_versioned_sym = [&] {
       std::string_view key = save_string(
@@ -1304,12 +1312,13 @@ void SharedFile<E>::parse(Context<E> &ctx) {
     // and `foo@VERSION` as usual, but with information to forward
     // references to `foo@VERSION` to `foo`. After name resolution, we
     // visit all symbol references to redirect `foo@VERSION` to `foo`.
-    if (vers.empty() || ver == VER_NDX_GLOBAL) {
+    if (!has_version) {
       // Unversioned symbol
       this->symbols.push_back(get_symbol(ctx, name));
       this->symbols2.push_back(nullptr);
-    } else if (vers[i] & VERSYM_HIDDEN) {
-      // Versioned non-default symbol
+    } else if (esyms[i].is_undef() || (vers[i] & VERSYM_HIDDEN)) {
+      // Versioned non-default symbol, or undefined reference whose
+      // version comes from .gnu.version_r.
       this->symbols.push_back(get_versioned_sym());
       this->symbols2.push_back(nullptr);
     } else {
@@ -1400,6 +1409,41 @@ std::vector<std::string_view> SharedFile<E>::read_verdef(Context<E> &ctx) {
     if (!ver->vd_next)
       break;
     ptr += ver->vd_next;
+  }
+  return vec;
+}
+
+// Reads .gnu.version_r and returns a vector of version names indexed
+// by vna_other. .gnu.version_r records the versions a shared object
+// needs from the libraries it depends on; the versym of an undefined
+// dynamic symbol indexes into these entries.
+template <typename E>
+std::vector<std::string_view> SharedFile<E>::read_verneed(Context<E> &ctx) {
+  ElfShdr<E> *verneed_sec = this->find_section(SHT_GNU_VERNEED);
+  if (!verneed_sec)
+    return {};
+
+  std::vector<std::string_view> vec;
+  std::string_view verneed = this->get_string(ctx, *verneed_sec);
+  std::string_view strtab = this->get_string(ctx, verneed_sec->sh_link);
+
+  u8 *ptr = (u8 *)verneed.data();
+  for (;;) {
+    ElfVerneed<E> *vn = (ElfVerneed<E> *)ptr;
+    u8 *aux_ptr = ptr + vn->vn_aux;
+    for (i64 i = 0; i < vn->vn_cnt; i++) {
+      ElfVernaux<E> *aux = (ElfVernaux<E> *)aux_ptr;
+      u16 idx = aux->vna_other & ~VERSYM_HIDDEN;
+      if (vec.size() <= idx)
+        vec.resize(idx + 1);
+      vec[idx] = strtab.data() + aux->vna_name;
+      if (!aux->vna_next)
+        break;
+      aux_ptr += aux->vna_next;
+    }
+    if (!vn->vn_next)
+      break;
+    ptr += vn->vn_next;
   }
   return vec;
 }
