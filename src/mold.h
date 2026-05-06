@@ -1850,8 +1850,7 @@ private:
   std::string get_soname(Context<E> &ctx);
   void maybe_override_symbol(Symbol<E> &sym, const ElfSym<E> &esym);
   std::vector<std::string_view> read_dt_needed(Context<E> &ctx);
-  std::vector<std::string_view> read_verdef(Context<E> &ctx);
-  std::vector<std::string_view> read_verneed(Context<E> &ctx);
+  std::vector<std::string_view> read_version_strings(Context<E> &ctx);
 
   std::vector<u16> versyms;
   const ElfShdr<E> *symtab_sec;
