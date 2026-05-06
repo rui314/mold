@@ -126,9 +126,9 @@ static std::string_view start_stop_name(std::string_view sym) {
 }
 
 template <typename E>
-static void visit(Context<E> &ctx, InputSection<E> *isec,
-                  tbb::feeder<InputSection<E> *> &feeder, i64 depth,
-                  const StartStopMap<E> &start_stop_map) {
+static void visit_section(Context<E> &ctx, InputSection<E> *isec,
+                          tbb::feeder<InputSection<E> *> &feeder, i64 depth,
+                          const StartStopMap<E> &start_stop_map) {
   assert(isec->is_visited);
 
   // Mark a section alive. For better performacne, we don't call
@@ -136,7 +136,7 @@ static void visit(Context<E> &ctx, InputSection<E> *isec,
   auto mark = [&](InputSection<E> *sec) {
     if (mark_section(sec)) {
       if (depth < 3)
-        visit(ctx, sec, feeder, depth + 1, start_stop_map);
+        visit_section(ctx, sec, feeder, depth + 1, start_stop_map);
       else
         feeder.add(sec);
     }
@@ -183,7 +183,7 @@ static void mark(Context<E> &ctx,
 
   tbb::parallel_for_each(rootset, [&](InputSection<E> *isec,
                                       tbb::feeder<InputSection<E> *> &feeder) {
-    visit(ctx, isec, feeder, 0, start_stop_map);
+    visit_section(ctx, isec, feeder, 0, start_stop_map);
   });
 }
 
