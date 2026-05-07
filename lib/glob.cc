@@ -95,11 +95,15 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
       // [abc]: a, b or c
       // [$\]!]: $, ] or !
       // [a-czg-i]: a, b, c, z, g, h, or i
-      // [^a-z]: Any character except lowercase letters
+      // [!a-z]: Any character except lowercase letters
+      //
+      // Both `!` and `^` are accepted as negation markers. `!` is the
+      // POSIX/shell convention used by other linkers. `^` was mold's
+      // original syntax and is kept for backward compatibility.
       bool negate = false;
       bool closed = false;
 
-      if (!pat.empty() && pat[0] == '^') {
+      if (!pat.empty() && (pat[0] == '!' || pat[0] == '^')) {
         negate = true;
         pat = pat.substr(1);
       }
