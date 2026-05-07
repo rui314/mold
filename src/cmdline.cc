@@ -62,6 +62,7 @@ Options:
   -s, --strip-all             Strip .symtab section
   -u SYMBOL, --undefined SYMBOL
                               Force to resolve SYMBOL
+  -w, --no-warnings           Suppress warnings
   -y SYMBOL, --trace-symbol SYMBOL
                               Trace references to SYMBOL
   --Bdynamic, --dy            Link against shared libraries (default)
@@ -1220,6 +1221,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.fatal_warnings = true;
     } else if (read_flag("no-fatal-warnings")) {
       ctx.arg.fatal_warnings = false;
+    } else if (read_flag("w") || read_flag("no-warnings")) {
+      ctx.arg.suppress_warnings = true;
     } else if (read_flag("fork")) {
       ctx.arg.fork = true;
     } else if (read_flag("no-fork")) {
