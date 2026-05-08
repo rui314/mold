@@ -2,6 +2,7 @@
 #include "config.h"
 
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -282,6 +283,12 @@ int mold_main(int argc, char **argv) {
   if (argc >= 2 && (argv[1] == "-run"sv || argv[1] == "--run"sv))
     process_run_subcommand(ctx, argc, argv);
 
+  // parse_nonpositional_args() may chdir(2) for -C. If we end up
+  // restarting in redo_main(), we need to re-enter from the original
+  // directory so relative paths (e.g. response files) still resolve.
+  std::error_code ec;
+  std::filesystem::path orig_cwd = std::filesystem::current_path(ec);
+
   // Parse non-positional command line options
   ctx.cmdline_args = expand_response_files(ctx, argv);
   std::vector<std::string> file_args = parse_nonpositional_args(ctx);
@@ -291,8 +298,11 @@ int mold_main(int argc, char **argv) {
     ctx.arg.emulation = detect_machine_type(ctx, file_args);
 
   // Redo if -m does not match with our speculation.
-  if (ctx.arg.emulation != E::name)
+  if (ctx.arg.emulation != E::name) {
+    if (!ec)
+      std::filesystem::current_path(orig_cwd, ec);
     return redo_main<E>(ctx.arg.emulation, argc, argv);
+  }
 
   Timer t_all(ctx, "all");
 

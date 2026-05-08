@@ -18,7 +18,6 @@
 #else
 # include <direct.h>
 # define isatty _isatty
-# define chdir _chdir
 # define STDERR_FILENO (_fileno(stderr))
 #endif
 
@@ -1503,10 +1502,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.dependency_file = ctx.arg.chroot + "/" + ctx.arg.dependency_file;
   }
 
-  if (!ctx.arg.directory.empty())
-    if (chdir(ctx.arg.directory.c_str()) == -1)
+  if (!ctx.arg.directory.empty()) {
+    std::error_code ec;
+    std::filesystem::current_path(ctx.arg.directory, ec);
+    if (ec)
       Fatal(ctx) << "chdir failed: " << ctx.arg.directory
-                 << ": " << errno_string();
+                 << ": " << ec.message();
+  }
 
   if (!ctx.arg.sysroot.empty()) {
     for (std::string &path : ctx.arg.library_paths) {
