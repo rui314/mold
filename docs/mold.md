@@ -778,6 +778,9 @@ but as `-o magic`.
   directory, it is searched from library search paths for the sake of
   compatibility with GNU ld.
 
+* `-w`, `--no-warnings`:
+  Suppress warnings and cancel `--fatal-warnings`.
+
 * `--warn-common`, `--no-warn-common`:
   Warn about common symbols.
 
