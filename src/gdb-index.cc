@@ -456,11 +456,9 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
         Fatal(ctx) << "--gdb-index: missing DW_AT_rnglists_base";
 
       u8 *base = buf + rnglists_base;
-      i64 num_offsets = *(U32<E> *)(base - 4);
       Offset *offsets = (Offset *)base;
-
-      for (i64 i = 0; i < num_offsets; i++)
-        read_rnglist_range<E>(vec, base + offsets[i], addrx, low_pc.value);
+      read_rnglist_range<E>(vec, base + offsets[ranges.value], addrx,
+                            low_pc.value);
     }
     return vec;
   }
