@@ -36,8 +36,8 @@ using E = MOLD_TARGET;
 // ARM64/ARM32/PPC, respectively.
 static constexpr i64 batch_size = branch_distance<E> / 5;
 
-// We assume that a single thunk group is smaller than 1 MiB.
-static constexpr i64 max_thunk_size = 1024 * 1024;
+// We assume that a single thunk group is smaller than 8 MiB.
+static constexpr i64 max_thunk_size = 8 * 1024 * 1024;
 
 // We align thunks to 16 byte boundaries because many processor vendors
 // recommend we align branch targets to 16 byte boundaries for performance
