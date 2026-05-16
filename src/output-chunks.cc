@@ -3075,13 +3075,22 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
     return {0, 0};
   };
 
-  auto write = [&](ElfRel<E> &out, InputSection<E> &isec, const ElfRel<E> &rel) {
+  auto write = [&](ElfRel<E> &out, InputSection<E> &isec, i64 idx,
+                   const ElfRel<E> &rel) {
     i64 symidx;
     i64 addend;
     std::tie(symidx, addend) = get_symidx_addend(isec, rel);
 
     i64 r_offset = isec.output_section->shdr.sh_addr + isec.offset + rel.r_offset;
-    out = ElfRel<E>(r_offset, rel.r_type, symidx, addend);
+    u32 r_type = rel.r_type;
+
+    if constexpr (is_riscv<E> || is_loongarch<E>) {
+      r_offset -= get_r_delta(isec, rel.r_offset);
+      if (isec.extra.r_type_overrides.contains(idx))
+        r_type = isec.extra.r_type_overrides[idx];
+    }
+
+    out = ElfRel<E>(r_offset, r_type, symidx, addend);
 
     if (ctx.arg.relocatable) {
       u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
@@ -3095,7 +3104,7 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
     std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
 
     for (i64 j = 0; j < rels.size(); j++)
-      write(buf[j], isec, rels[j]);
+      write(buf[j], isec, j, rels[j]);
   });
 }
 

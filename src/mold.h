@@ -493,11 +493,16 @@ struct RelocDelta {
 // offset need to be shifted towards the beginning of the section by
 // `delta` bytes when copying section contents to the output buffer.
 //
+// r_type_overrides holds the modified, new relocation types after relaxation.
+// Members in this map overrides the original rel.r_type in
+// RelocSection<E>::copy_buf.
+//
 // Since code-shrinking relaxation never bloats section contents, `delta`
 // increases monotonically within the vector as well.
 template <typename E> requires is_riscv<E> || is_loongarch<E>
 struct InputSectionExtras<E> {
   std::vector<RelocDelta> r_deltas;
+  std::unordered_map<i64, u32> r_type_overrides;
 };
 
 // InputSection represents a section in an input object file.
