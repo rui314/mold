@@ -856,6 +856,7 @@ template <>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   std::vector<RelocDelta> &deltas = isec.extra.r_deltas;
+  std::unordered_map<i64, u32> &type_overrides = isec.extra.r_type_overrides;
   i64 r_delta = 0;
   u8 *buf = (u8 *)isec.contents.data();
 
@@ -924,8 +925,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       //
       //  addi.d  $t0, $tp, <tp-offset>
       if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
-          is_int(val, 12))
+          is_int(val, 12)) {
+        type_overrides[i] = R_LARCH_NONE;
         remove(4);
+      }
       break;
     case R_LARCH_PCALA_HI20:
       // The following two instructions are used to materialize a
@@ -949,8 +952,11 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
 
         if ((dist & 0b11) == 0 && is_int(dist, 22) &&
             is_addi_d && get_rd(insn1) == get_rd(insn2) &&
-            get_rd(insn2) == get_rj(insn2))
+            get_rd(insn2) == get_rj(insn2)) {
+          type_overrides[i] = R_LARCH_NONE;
+          type_overrides[i + 2] = R_LARCH_PCREL20_S2;
           remove(4);
+        }
       }
       break;
     case R_LARCH_CALL36:
@@ -965,8 +971,10 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       if (i64 dist = compute_distance(ctx, sym, isec, r);
           is_int(dist, 28))
         if (u32 jirl = *(ul32 *)(buf + rels[i].r_offset + 4);
-            get_rd(jirl) == 0 || get_rd(jirl) == 1)
+            get_rd(jirl) == 0 || get_rd(jirl) == 1) {
+          type_overrides[i] = R_LARCH_B26;
           remove(4);
+        }
       break;
     case R_LARCH_GOT_PC_HI20:
       // The following two instructions are used to load a symbol address
@@ -981,28 +989,54 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
       //   pcaddi    $t0, <offset>
       if (is_relaxable_got_load(ctx, isec, i))
         if (i64 dist = compute_distance(ctx, sym, isec, r);
-            is_int(dist, 22) && (dist & 3) == 0)
+            is_int(dist, 22) && (dist & 3) == 0) {
+          type_overrides[i] = R_LARCH_NONE;
+          type_overrides[i + 2] = R_LARCH_PCREL20_S2;
           remove(4);
+        }
       break;
     case R_LARCH_TLS_DESC_PC_HI20:
       if (sym.has_tlsdesc(ctx)) {
         u64 P = isec.get_addr() + r.r_offset;
         i64 dist = sym.get_tlsdesc_addr(ctx) + r.r_addend - P;
-        if (is_int(dist, 22))
+        if (is_int(dist, 22) && i + 2 < rels.size() &&
+            rels[i + 2].r_type == R_LARCH_TLS_DESC_PC_LO12) {
+          type_overrides[i] = R_LARCH_NONE;
+          type_overrides[i + 2] = R_LARCH_TLS_DESC_PCREL20_S2;
           remove(4);
+        }
       } else {
+        type_overrides[i] = R_LARCH_NONE;
         remove(4);
       }
       break;
     case R_LARCH_TLS_DESC_PC_LO12:
-      if (!sym.has_tlsdesc(ctx))
+      if (!sym.has_tlsdesc(ctx)) {
+        type_overrides[i] = R_LARCH_NONE;
         remove(4);
+      }
       break;
     case R_LARCH_TLS_DESC_LD:
-      if (!sym.has_tlsdesc(ctx) && !sym.has_gottp(ctx))
-        if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
-            0 <= val && val < 0x1000)
-          remove(4);
+      if (sym.has_tlsdesc(ctx)) {
+        // Do nothing
+      } else if (sym.has_gottp(ctx)) {
+        type_overrides[i] = R_LARCH_TLS_IE_PC_HI20;
+      } else if (i64 val = sym.get_addr(ctx) + r.r_addend - ctx.tp_addr;
+                 0 <= val && val < 0x1000) {
+        type_overrides[i] = R_LARCH_NONE;
+        remove(4);
+      } else {
+        type_overrides[i] = R_LARCH_TLS_LE_HI20;
+      }
+      break;
+    case R_LARCH_TLS_DESC_CALL:
+      if (sym.has_tlsdesc(ctx)) {
+        // Do nothing
+      } else if (sym.has_gottp(ctx)) {
+        type_overrides[i] = R_LARCH_TLS_IE_PC_LO12;
+      } else {
+        type_overrides[i] = R_LARCH_TLS_LE_LO12;
+      }
       break;
     }
   }
