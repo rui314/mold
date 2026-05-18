@@ -457,8 +457,7 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
 
       u8 *base = buf + rnglists_base;
       Offset *offsets = (Offset *)base;
-      read_rnglist_range<E>(vec, base + offsets[ranges.value], addrx,
-                            low_pc.value);
+      read_rnglist_range<E>(vec, base + offsets[ranges.value], addrx, low_pc.value);
     }
     return vec;
   }
