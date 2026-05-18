@@ -5,7 +5,9 @@
 #include <ios>
 #include <tbb/concurrent_vector.h>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/resource.h>
 #include <sys/time.h>
 #endif
