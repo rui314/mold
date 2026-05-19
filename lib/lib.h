@@ -395,14 +395,19 @@ public:
     this->nbuckets = std::max<i64>(MIN_NBUCKETS, bit_ceil(nbuckets));
     i64 bufsize = sizeof(Entry) * this->nbuckets;
 
-    // Allocate a zero-initialized buffer. We use mmap() if available
-    // because it's faster than malloc() and memset().
+    // Allocate a zero-initialized buffer. mmap() is faster than
+    // malloc()+memset(), and MAP_POPULATE pre-faults pages here to
+    // avoid CoW faults and TLB shootdowns under concurrent inserts.
 #ifdef _WIN32
     entries = (Entry *)_aligned_malloc(bufsize, alignof(Entry));
     memset((void *)entries, 0, bufsize);
 #else
+    int flags = MAP_ANONYMOUS | MAP_PRIVATE;
+#ifdef MAP_POPULATE
+    flags |= MAP_POPULATE;
+#endif
     entries = (Entry *)mmap(nullptr, bufsize, PROT_READ | PROT_WRITE,
-                            MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+                            flags, -1, 0);
 #endif
   }
 
