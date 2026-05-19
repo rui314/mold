@@ -2178,8 +2178,8 @@ void parse_symbol_version(Context<E> &ctx) {
       if (sym->file != file)
         continue;
 
-      const char *name = file->symbol_strtab.data() + file->elf_syms[i].st_name;
-      std::string_view ver = strchr(name, '@') + 1;
+      std::string_view name = file->symbol_names[i];
+      std::string_view ver = name.substr(name.find('@') + 1);
 
       bool is_default = false;
       if (ver.starts_with('@')) {
