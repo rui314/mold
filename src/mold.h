@@ -1712,6 +1712,11 @@ public:
   std::string_view shstrtab;
   std::string_view symbol_strtab;
 
+  // Parallel to elf_syms; cached to avoid per-call strlen.
+  std::vector<std::string_view> symbol_names;
+
+  void populate_symbol_names();
+
   bool as_needed = false;
   bool has_init_array = false;
   bool has_ctors = false;
