@@ -535,9 +535,6 @@ public:
 
   std::string_view contents;
 
-  // Cached to avoid per-call strlen on the shstrtab entry.
-  std::string_view cached_name;
-
   i32 fde_begin = -1;
   i32 fde_end = -1;
 
@@ -2950,7 +2947,9 @@ inline u64 InputSection<E>::get_addr() const {
 
 template <typename E>
 inline std::string_view InputSection<E>::name() const {
-  return cached_name;
+  if (file.elf_sections.size() <= shndx)
+    return (shdr().sh_flags & SHF_TLS) ? ".tls_common" : ".common";
+  return file.shstrtab.data() + file.elf_sections[shndx].sh_name;
 }
 
 template <typename E>

@@ -33,15 +33,8 @@ bool cie_equals(const CieRecord<E> &a, const CieRecord<E> &b) {
 template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx)
   : file(file), shndx(shndx) {
-  if (shndx < file.elf_sections.size()) {
+  if (shndx < file.elf_sections.size())
     contents = {(char *)file.mf->data + shdr().sh_offset, (size_t)shdr().sh_size};
-    const char *p = file.shstrtab.data() + file.elf_sections[shndx].sh_name;
-    cached_name = std::string_view(p, strlen(p));
-  } else {
-    cached_name = (shdr().sh_flags & SHF_TLS)
-      ? std::string_view(".tls_common", 11)
-      : std::string_view(".common", 7);
-  }
 
   if (shdr().sh_flags & SHF_COMPRESSED) {
     ElfChdr<E> &chdr = *(ElfChdr<E> *)&contents[0];
