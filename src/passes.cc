@@ -1682,6 +1682,153 @@ void compute_section_sizes(Context<E> &ctx) {
   }
 }
 
+// Analyzes the expression structure to determine which output section it is
+// relative to. Returns the name of the section (e.g., ".text"), or an empty
+// string if the expression evaluates to an absolute address.
+//
+// Examples:
+//   - ADDR(.text)                  -> ".text"
+//   - SIZEOF(.text)                -> "" (absolute size)
+//   - ADDR(.text) + SIZEOF(.text)  -> ".text" (relative to .text)
+//   - ADDR(.data) - ADDR(.text)    -> "" (difference is absolute)
+//   - ADDR(.text) - 0x1000         -> ".text"
+//   - 0x1000                       -> "" (absolute constant)
+template <typename E>
+static std::string get_expression_section(Context<E>& ctx, Expr<E>& expr) {
+  switch (expr.kind) {
+  case EXPR_NUM:
+  case EXPR_SIZEOF:
+    return "";
+  case EXPR_ADDR:
+    return expr.section_name;
+  case EXPR_ADD: {
+    std::string l = get_expression_section(ctx, *expr.lhs);
+    std::string r = get_expression_section(ctx, *expr.rhs);
+    if (!l.empty() && !r.empty()) {
+      Error(ctx) << "linker script: invalid addition of two section-relative "
+                    "values: "
+                 << l << " and " << r;
+    }
+    return !l.empty() ? l : r;
+  }
+  case EXPR_SUB: {
+    std::string l = get_expression_section(ctx, *expr.lhs);
+    std::string r = get_expression_section(ctx, *expr.rhs);
+    if (!l.empty() && !r.empty()) return "";
+    return l;
+  }
+  }
+  return "";
+}
+
+template <typename E>
+static u64 evaluate_expr(Context<E>& ctx, Expr<E>& expr,
+                         const std::vector<Chunk<E>*>& sections) {
+  auto find = [&](const std::string& name) -> Chunk<E>* {
+    for (Chunk<E>* chunk : sections)
+      if (chunk->name == name) return chunk;
+    return nullptr;
+  };
+
+  switch (expr.kind) {
+  case EXPR_NUM:
+    return expr.val;
+  case EXPR_ADDR: {
+    Chunk<E>* chunk = find(expr.section_name);
+    // If the section was not found, evaluate_expr returns 0. However, this
+    // shouldn't happen in practice because resolve_provides() would have
+    // already flagged it as an error.
+    return chunk ? (u64)chunk->shdr.sh_addr : (u64)0;
+  }
+  case EXPR_SIZEOF: {
+    Chunk<E>* chunk = find(expr.section_name);
+    return chunk ? (u64)chunk->shdr.sh_size : (u64)0;
+  }
+  case EXPR_ADD:
+    return evaluate_expr(ctx, *expr.lhs, sections) +
+           evaluate_expr(ctx, *expr.rhs, sections);
+  case EXPR_SUB:
+    return evaluate_expr(ctx, *expr.lhs, sections) -
+           evaluate_expr(ctx, *expr.rhs, sections);
+  }
+  return 0;
+}
+
+// Scans all undefined references across input objects and resolves those that
+// match a parsed PROVIDE or PROVIDE_HIDDEN directive in the linker script.
+// Defined symbols are dynamically appended to the synthetic internal object
+// (ctx.internal_obj) and set to their target output sections early so that
+// standard PC-relative relocations are correctly permitted on PIE links.
+//
+// Semantic differences between symbol types:
+//   - PROVIDE: Defines the symbol only if it is referenced by an input object
+//         and not defined by any input object. Exported dynamically by default.
+//   - PROVIDE_HIDDEN: Same as PROVIDE, but defined with hidden visibility
+//         (STV_HIDDEN).
+//   - _etext (and other implicit symbols): Always defined unconditionally in
+//         the output symbol table, regardless of whether the application
+//         references them (unlike PROVIDE).
+template <typename E>
+void resolve_provides(Context<E> &ctx) {
+  if (ctx.provides.empty()) return;
+
+  Timer t(ctx, "resolve_provides");
+  std::unordered_set<Symbol<E>*> referenced_undefs;
+  for (ObjectFile<E>* file : ctx.objs) {
+    if (file == ctx.internal_obj) continue;
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
+      if (file->elf_syms[i].is_undef()) {
+        referenced_undefs.insert(file->symbols[i]);
+      }
+    }
+  }
+
+  auto find_chunk = [&](std::string name) -> Chunk<E>* {
+    for (Chunk<E>* chunk : ctx.chunks)
+      if (chunk->name == name) return chunk;
+    return nullptr;
+  };
+
+  bool added = false;
+  for (auto& prov : ctx.provides) {
+    if (referenced_undefs.contains(prov.sym) && !prov.sym->file) {
+      ElfSym<E> esym;
+      memset(&esym, 0, sizeof(esym));
+      esym.st_type = STT_NOTYPE;
+      esym.st_shndx = SHN_ABS;
+      esym.st_bind = STB_GLOBAL;
+      esym.st_visibility = prov.hidden ? STV_HIDDEN : STV_DEFAULT;
+
+      ctx.internal_esyms.push_back(esym);
+      ctx.internal_obj->symbols.push_back(prov.sym);
+
+      prov.sym->file = ctx.internal_obj;
+      prov.sym->sym_idx = ctx.internal_obj->symbols.size() - 1;
+      prov.sym->value = 0xdeadbeef;
+
+      std::string sec_name = get_expression_section(ctx, *prov.expr);
+      Chunk<E>* chunk = sec_name.empty() ? nullptr : find_chunk(sec_name);
+      if (!sec_name.empty() && !chunk) {
+        Error(ctx) << "linker script: ADDR() referenced non-existent section: "
+                   << sec_name;
+      }
+      if (chunk) {
+        prov.sym->set_output_section(chunk);
+      } else {
+        prov.sym->origin = 0;
+      }
+      prov.sym->visibility = prov.hidden ? STV_HIDDEN : STV_DEFAULT;
+
+      prov.defined = true;
+      added = true;
+    }
+  }
+
+  if (added) {
+    ctx.internal_obj->elf_syms = ctx.internal_esyms;
+  }
+}
+
 // Find all unresolved symbols and attach them to the most appropriate files.
 //
 // Note that even a symbol that will be reported as an undefined symbol
@@ -3229,6 +3376,20 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     }
   }
 
+  // Evaluate PROVIDE symbols
+  for (auto& prov : ctx.provides) {
+    if (prov.defined) {
+      std::string sec_name = get_expression_section(ctx, *prov.expr);
+      Chunk<E>* chunk = sec_name.empty() ? nullptr : find(sec_name);
+      if (chunk) {
+        prov.sym->set_output_section(chunk);
+      } else {
+        prov.sym->origin = 0;
+      }
+      prov.sym->value = evaluate_expr(ctx, *prov.expr, sections);
+    }
+  }
+
   // --section-order symbols
   for (SectionOrder &ord : ctx.arg.section_order)
     if (ord.type == SectionOrder::SYMBOL)
@@ -3665,6 +3826,7 @@ template void shuffle_sections(Context<E> &);
 template void add_dynamic_strings(Context<E> &);
 template void compute_section_sizes(Context<E> &);
 template void sort_output_sections(Context<E> &);
+template void resolve_provides(Context<E> &);
 template void claim_unresolved_symbols(Context<E> &);
 template void compute_imported_symbol_weakness(Context<E> &);
 template void scan_relocations(Context<E> &);
