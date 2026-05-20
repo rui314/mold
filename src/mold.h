@@ -514,7 +514,6 @@ public:
   void apply_reloc_nonalloc(Context<E> &ctx, u8 *base);
   void kill();
 
-  std::string_view name() const;
   i64 get_priority() const;
   u64 get_addr() const;
   ElfShdr<E> &shdr() const;
@@ -533,10 +532,8 @@ public:
   OutputSection<E> *output_section = nullptr;
   i64 sh_size = -1;
 
+  std::string_view name;
   std::string_view contents;
-
-  // Cached to avoid per-call strlen on the shstrtab entry.
-  std::string_view cached_name;
 
   i32 fde_begin = -1;
   i32 fde_end = -1;
@@ -2932,7 +2929,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 template <typename E>
 inline std::ostream &
 operator<<(std::ostream &out, const InputSection<E> &isec) {
-  out << isec.file << ":(" << isec.name() << ")";
+  out << isec.file << ":(" << isec.name << ")";
   return out;
 }
 
@@ -2946,11 +2943,6 @@ inline void InputSection<E>::kill() {
 template <typename E>
 inline u64 InputSection<E>::get_addr() const {
   return output_section->shdr.sh_addr + offset;
-}
-
-template <typename E>
-inline std::string_view InputSection<E>::name() const {
-  return cached_name;
 }
 
 template <typename E>
@@ -3046,20 +3038,19 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   if (!isec || isec->is_alive)
     return {};
 
-  std::string_view str = name();
-  if (!str.starts_with(".debug_"))
+  if (!name.starts_with(".debug_"))
     return {};
 
   // If the section was dead due to ICF, we don't want to emit debug
   // info for that section but want to set real values to .debug_line so
   // that users can set a breakpoint inside a merged section.
-  if (isec->icf_removed() && str == ".debug_line")
+  if (isec->icf_removed() && name == ".debug_line")
     return {};
 
   // 0 is an invalid value in most debug info sections, so we use it
   // as a tombstone value. .debug_loc and .debug_ranges reserve 0 as
-  // the terminator marker, so we use 1 if that'str the case.
-  return (str == ".debug_loc" || str == ".debug_ranges") ? 1 : 0;
+  // the terminator marker, so we use 1 if that's the case.
+  return (name == ".debug_loc" || name == ".debug_ranges") ? 1 : 0;
 }
 
 template <typename E>
@@ -3194,7 +3185,7 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
     if (isec->icf_removed())
       return isec->leader->get_addr() + value;
 
-    if (isec->name() == ".eh_frame") {
+    if (isec->name == ".eh_frame") {
       // .eh_frame contents are parsed and reconstructed by the linker,
       // so pointing to a specific location in a source .eh_frame
       // section doesn't make much sense. However, CRT files contain

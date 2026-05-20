@@ -15,10 +15,8 @@ template <typename E>
 static bool should_keep(const InputSection<E> &isec) {
   u32 type = isec.shdr().sh_type;
   u32 flags = isec.shdr().sh_flags;
-  std::string_view name = isec.name();
-
   if constexpr (is_ppc32<E>)
-    if (name == ".got2")
+    if (isec.name == ".got2")
       return true;
 
   return (flags & SHF_GNU_RETAIN) ||
@@ -26,10 +24,10 @@ static bool should_keep(const InputSection<E> &isec) {
          type == SHT_INIT_ARRAY ||
          type == SHT_FINI_ARRAY ||
          type == SHT_PREINIT_ARRAY ||
-         name.starts_with(".ctors") ||
-         name.starts_with(".dtors") ||
-         name.starts_with(".init") ||
-         name.starts_with(".fini");
+         isec.name.starts_with(".ctors") ||
+         isec.name.starts_with(".dtors") ||
+         isec.name.starts_with(".init") ||
+         isec.name.starts_with(".fini");
 }
 
 // Sections whose names are valid C identifiers can be referenced via
@@ -47,8 +45,8 @@ static StartStopMap<E> build_start_stop_map(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
-          is_c_identifier(isec->name()))
-        map.insert({isec->name(), isec.get()});
+          is_c_identifier(isec->name))
+        map.insert({isec->name, isec.get()});
   });
   return map;
 }

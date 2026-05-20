@@ -747,7 +747,7 @@ void ObjectFile<E>::convert_mergeable_sections(Context<E> &ctx) {
       continue;
 
     MergedSection<E> *parent =
-      MergedSection<E>::get_instance(ctx, isec->name(), shdr);
+      MergedSection<E>::get_instance(ctx, isec->name, shdr);
 
     if (parent) {
       this->mergeable_sections[i] =
