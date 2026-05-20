@@ -401,13 +401,12 @@ public:
 #ifdef _WIN32
     entries = (Entry *)_aligned_malloc(bufsize, alignof(Entry));
     memset((void *)entries, 0, bufsize);
-#else
-    int flags = MAP_ANONYMOUS | MAP_PRIVATE;
-#ifdef MAP_POPULATE
-    flags |= MAP_POPULATE;
-#endif
+#elif MAP_POPULATE
     entries = (Entry *)mmap(nullptr, bufsize, PROT_READ | PROT_WRITE,
-                            flags, -1, 0);
+                            MAP_ANONYMOUS | MAP_PRIVATE | MAP_POPULATE, -1, 0);
+#else
+    entries = (Entry *)mmap(nullptr, bufsize, PROT_READ | PROT_WRITE,
+                            MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 #endif
   }
 
