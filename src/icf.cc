@@ -161,6 +161,7 @@ template <typename E>
 struct LeafHasher {
   size_t operator()(InputSection<E> *isec) const {
     u64 h = hash_string(isec->contents);
+    h = combine_hash(h, isec->p2align);
     for (FdeRecord<E> &fde : isec->get_fdes()) {
       u64 h2 = hash_string(fde.get_contents(isec->file).substr(8));
       h = combine_hash(h, h2);
@@ -173,6 +174,8 @@ template <typename E>
 struct LeafEq {
   bool operator()(InputSection<E> *a, InputSection<E> *b) const {
     if (a->contents != b->contents)
+      return false;
+    if (a->p2align != b->p2align)
       return false;
 
     std::span<FdeRecord<E>> x = a->get_fdes();
@@ -277,6 +280,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
 
   hash_string(isec.contents);
   hash(isec.shdr().sh_flags);
+  hash(isec.p2align);
   hash(isec.get_fdes().size());
   hash(isec.get_rels(ctx).size());
 
