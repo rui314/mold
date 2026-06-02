@@ -2895,6 +2895,12 @@ static i64 set_file_offsets(Context<E> &ctx) {
       if (chunks[i]->shdr.sh_addr < first.shdr.sh_addr)
         break;
 
+      // This section requires larger alignment, we need to adjust the
+      // offset to ensure offset % align == vaddr % align.
+      if (chunks[i]->shdr.sh_addralign > ctx.page_size &&
+          chunks[i]->shdr.sh_addralign > chunks[i - 1]->shdr.sh_addralign)
+        break;
+
       i64 gap_size = chunks[i]->shdr.sh_addr - chunks[i - 1]->shdr.sh_addr -
                      chunks[i - 1]->shdr.sh_size;
 
