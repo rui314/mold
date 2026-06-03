@@ -614,6 +614,18 @@ void icf_sections(Context<E> &ctx) {
   if (!ctx.arg.print_icf_sections.empty())
     print_icf_sections(ctx);
 
+  // Update alignment of leaders.
+  {
+    Timer t(ctx, "update_alignment");
+    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+      for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+        if (isec && isec->is_alive && isec->leader && isec->leader != isec.get()) {
+          update_maximum(isec->leader->p2align, isec->p2align);
+        }
+      }
+    });
+  }
+
   // Eliminate duplicate sections.
   // Symbols pointing to eliminated sections will be redirected on the fly when
   // exporting to the symtab.
