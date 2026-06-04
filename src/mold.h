@@ -546,7 +546,7 @@ public:
 
   // For COMDAT de-duplication and garbage collection
   Atomic<bool> is_alive = true;
-  u8 p2align = 0;
+  Atomic<u8> p2align = 0;
 
   // For ICF
   Atomic<bool> address_taken = false;
