@@ -255,7 +255,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   auto hash_symbol = [&](Symbol<E> &sym) {
     InputSection<E> *isec = sym.get_input_section();
 
-    if (!sym.file) {
+    if (!sym.file || sym.is_imported) {
       hash('1');
       hash((u64)&sym);
     } else if (SectionFragment<E> *frag = sym.get_frag()) {
