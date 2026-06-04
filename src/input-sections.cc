@@ -183,8 +183,8 @@ void InputSection<E>::scan_pcrel(Context<E> &ctx, Symbol<E> &sym,
   // linker generally does not support PC-relative relocations.
   static Action table[][4] = {
     // Absolute  Local    Imported data  Imported code
-    {  ERROR,    NONE,    ERROR,         PLT    },  // Shared object
-    {  ERROR,    NONE,    COPYREL,       CPLT   },  // Position-independent exec
+    {  NONE,     NONE,    ERROR,         PLT    },  // Shared object
+    {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-independent exec
     {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
   };
 

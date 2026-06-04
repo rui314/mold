@@ -3442,8 +3442,8 @@ inline bool Symbol<E>::is_absolute() const {
   if (is_remaining_undef_weak())
     return true;
 
-  return !is_imported && !get_frag() && !get_input_section() &&
-         !get_output_section();
+  return file && !file->is_dso && !esym().is_undef() &&
+         !get_frag() && !get_input_section() && !get_output_section();
 }
 
 template <typename E>
