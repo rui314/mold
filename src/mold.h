@@ -2481,6 +2481,12 @@ struct Context {
   i64 page_size = E::page_size;
   bool has_error = false;
 
+  // Set to true after set_osec_offsets() applies a forced 1-byte pad to
+  // .rela.dyn to break an oscillation under --pack-dyn-relocs=android
+  // (issue #1595). Prevents subsequent callsites in the linker driver
+  // from accumulating additional padding on top of the same oscillation.
+  bool pack_dyn_relocs_forced_pad = false;
+
   // Reader context
   i64 file_priority = 10000;
 

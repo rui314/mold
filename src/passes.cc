@@ -2981,7 +2981,49 @@ template <typename E>
 i64 set_osec_offsets(Context<E> &ctx) {
   Timer t(ctx, "set_osec_offsets");
 
+  // Pack-dyn-relocs convergence guard (issue #1595).
+  // When --pack-dyn-relocs=android is active together with flags that
+  // change the regular section layout (e.g. -z noseparate-code), the
+  // inner reldyn-size check can oscillate between two sizes: encoding
+  // a pcrel relocation depends on .rela.dyn's size, which depends on
+  // the virtual address layout, which depends on the encoded pcrel
+  // offsets. Bound the iterations; if no convergence is observed,
+  // snap .rela.dyn to the maximum size seen so far (plus 1 byte) so
+  // the next encode pass commits to a strictly larger size and the
+  // oscillation cannot continue.
+  constexpr i64 MAX_OSEC_ITERATIONS = 32;
+  i64 iter = 0;
+  i64 max_reldyn_size = 0;
+  i64 max_relrdyn_size = 0;
+  bool reldyn_grew = false;
+  bool relrdyn_grew = false;
+
   for (;;) {
+    if (++iter > MAX_OSEC_ITERATIONS) {
+      // Stop iterating; layout did not converge. Apply a 1-byte pad to
+      // the section that was oscillating so the next call to
+      // update_shdr() commits to a larger size. Only do this once per
+      // Context: the layout driver calls set_osec_offsets() several
+      // times (initial pass, post-thunk removal, re-finalize), and we
+      // don't want to accumulate pads.
+      if (!ctx.pack_dyn_relocs_forced_pad) {
+        if (ctx.reldyn && (reldyn_grew || max_reldyn_size > 0)) {
+          Warn(ctx) << "--pack-dyn-relocs=android layout did not converge after "
+                    << MAX_OSEC_ITERATIONS
+                    << " iterations; applying 1-byte pad to .rela.dyn to break oscillation";
+          ctx.reldyn->shdr.sh_size = max_reldyn_size + 1;
+          ctx.pack_dyn_relocs_forced_pad = true;
+        } else if (ctx.relrdyn && relrdyn_grew) {
+          Warn(ctx) << "--pack-dyn-relocs=android layout did not converge after "
+                    << MAX_OSEC_ITERATIONS
+                    << " iterations; applying 1-byte pad to .relr.dyn to break oscillation";
+          ctx.relrdyn->shdr.sh_size = max_relrdyn_size + 1;
+          ctx.pack_dyn_relocs_forced_pad = true;
+        }
+      }
+      return set_file_offsets(ctx);
+    }
+
     if (ctx.arg.section_order.empty())
       set_virtual_addresses_regular(ctx);
     else
@@ -2992,8 +3034,18 @@ i64 set_osec_offsets(Context<E> &ctx) {
       i64 y = ctx.relrdyn ? (i64)ctx.relrdyn->shdr.sh_size : 0;
       ctx.reldyn->update_shdr(ctx);
 
-      if (x != (i64)ctx.reldyn->shdr.sh_size ||
-          y != (ctx.relrdyn ? (i64)ctx.relrdyn->shdr.sh_size : 0))
+      i64 post_x = (i64)ctx.reldyn->shdr.sh_size;
+      i64 post_y = ctx.relrdyn ? (i64)ctx.relrdyn->shdr.sh_size : 0;
+      if (post_x > max_reldyn_size)
+        max_reldyn_size = post_x;
+      if (post_y > max_relrdyn_size)
+        max_relrdyn_size = post_y;
+      if (post_x > x)
+        reldyn_grew = true;
+      if (post_y > y)
+        relrdyn_grew = true;
+
+      if (x != post_x || y != post_y)
         continue;
     }
 
