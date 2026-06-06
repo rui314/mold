@@ -947,6 +947,7 @@ public:
 
   std::vector<ElfRel<E>> relocs;
   std::vector<u8> android_encoded;
+  bool keep_android_size = false;
 };
 
 // .relr.dyn is a relatively new section to contain base relocation

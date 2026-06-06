@@ -421,7 +421,15 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   }
 
   if (ctx.arg.pack_dyn_relocs_android) {
+    // APS2 uses SLEB128-encoded deltas, so .rela.dyn size may oscillate
+    // as addresses move. If a shrink is followed by a growth, stop
+    // shrinking and pad the encoded stream to converge.
     android_encoded = encode_android<E>(relocs);
+    i64 old_size = this->shdr.sh_size;
+    if (old_size != 0 && old_size < (i64)android_encoded.size())
+      keep_android_size = true;
+    if (keep_android_size && android_encoded.size() < old_size)
+      android_encoded.resize(old_size);
     this->shdr.sh_size = android_encoded.size();
   } else {
     this->shdr.sh_size = relocs.size() * sizeof(ElfRel<E>);
