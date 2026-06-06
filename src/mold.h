@@ -933,13 +933,17 @@ class RelDynSection : public Chunk<E> {
 public:
   RelDynSection(Context<E> &ctx) {
     this->name = E::is_rela ? ".rela.dyn" : ".rel.dyn";
-    if (ctx.arg.pack_dyn_relocs_android)
-      this->shdr.sh_type = E::is_rela ? SHT_ANDROID_RELA : SHT_ANDROID_REL;
-    else
-      this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
     this->shdr.sh_flags = SHF_ALLOC;
-    this->shdr.sh_entsize = sizeof(ElfRel<E>);
-    this->shdr.sh_addralign = sizeof(Word<E>);
+
+    if (ctx.arg.pack_dyn_relocs_android) {
+      this->shdr.sh_type = E::is_rela ? SHT_ANDROID_RELA : SHT_ANDROID_REL;
+      this->shdr.sh_entsize = 0;
+      this->shdr.sh_addralign = 1;
+    } else {
+      this->shdr.sh_type = E::is_rela ? SHT_RELA : SHT_REL;
+      this->shdr.sh_entsize = sizeof(ElfRel<E>);
+      this->shdr.sh_addralign = sizeof(Word<E>);
+    }
   }
 
   void update_shdr(Context<E> &ctx) override;
