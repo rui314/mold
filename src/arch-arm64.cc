@@ -208,6 +208,30 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_AARCH64_MOVW_UABS_G3:
       *(ul32 *)loc |= bits(S + A, 63, 48) << 5;
       break;
+    case R_AARCH64_MOVW_PREL_G0:
+      check(S + A - P, -(1 << 15), 1 << 15);
+      write_movn_movz(loc, S + A - P);
+      break;
+    case R_AARCH64_MOVW_PREL_G0_NC:
+      *(ul32 *)loc |= bits(S + A - P, 15, 0) << 5;
+      break;
+    case R_AARCH64_MOVW_PREL_G1:
+      check(S + A - P, -(1LL << 31), 1LL << 31);
+      write_movn_movz(loc, (i64)(S + A - P) >> 16);
+      break;
+    case R_AARCH64_MOVW_PREL_G1_NC:
+      *(ul32 *)loc |= bits(S + A - P, 31, 16) << 5;
+      break;
+    case R_AARCH64_MOVW_PREL_G2:
+      check(S + A - P, -(1LL << 47), 1LL << 47);
+      write_movn_movz(loc, (i64)(S + A - P) >> 32);
+      break;
+    case R_AARCH64_MOVW_PREL_G2_NC:
+      *(ul32 *)loc |= bits(S + A - P, 47, 32) << 5;
+      break;
+    case R_AARCH64_MOVW_PREL_G3:
+      *(ul32 *)loc |= bits(S + A - P, 63, 48) << 5;
+      break;
     case R_AARCH64_ADR_GOT_PAGE:
       if (sym.has_got(ctx)) {
         i64 val = page(G + GOT + A) - page(P);
@@ -573,6 +597,13 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     case R_AARCH64_MOVW_UABS_G1_NC:
     case R_AARCH64_MOVW_UABS_G2:
     case R_AARCH64_MOVW_UABS_G2_NC:
+    case R_AARCH64_MOVW_PREL_G0:
+    case R_AARCH64_MOVW_PREL_G0_NC:
+    case R_AARCH64_MOVW_PREL_G1:
+    case R_AARCH64_MOVW_PREL_G1_NC:
+    case R_AARCH64_MOVW_PREL_G2:
+    case R_AARCH64_MOVW_PREL_G2_NC:
+    case R_AARCH64_MOVW_PREL_G3:
     case R_AARCH64_PREL16:
     case R_AARCH64_PREL32:
     case R_AARCH64_PREL64:
