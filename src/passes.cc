@@ -374,12 +374,11 @@ void resolve_symbols(Context<E> &ctx) {
   //
   // Therefore, only let IR files claim ownership for COMDAT keys that have
   // no reachable regular-object owner.
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+  for (ObjectFile<E> *file : ctx.objs)
     if (file->is_reachable)
       for (ComdatGroup *g : file->lto_comdat_groups)
         if (g && g->owner == (u32)-1)
-          update_minimum(g->owner, file->priority);
-  });
+          g->owner = file->priority;
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     if (file->is_reachable)
