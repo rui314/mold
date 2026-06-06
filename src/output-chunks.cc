@@ -3050,60 +3050,61 @@ void RelocSection<E>::update_shdr(Context<E> &ctx) {
   this->shdr.sh_info = output_section.shndx;
 }
 
+// Translates an input relocation's symbol reference into the {r_sym, addend}
+// pair that is valid in the output file. The returned r_sym is either an output
+// section index (for section-relative relocs) or an output symbol table index.
+template <typename E>
+static std::pair<i64, i64>
+get_symidx_addend(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel) {
+  Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+
+  if (!(isec.shdr().sh_flags & SHF_ALLOC)) {
+    SectionFragment<E> *frag;
+    i64 frag_addend;
+    std::tie(frag, frag_addend) = isec.get_fragment(ctx, rel);
+    if (frag)
+      return {frag->output_section.shndx, frag->offset + frag_addend};
+  }
+
+  if (sym.esym().st_type == STT_SECTION) {
+    if (SectionFragment<E> *frag = sym.get_frag())
+      return {frag->output_section.shndx,
+              frag->offset + sym.value + get_addend(isec, rel)};
+
+    InputSection<E> *isec2 = sym.get_input_section();
+    if (OutputSection<E> *osec = isec2->output_section)
+      return {osec->shndx, get_addend(isec, rel) + isec2->offset};
+
+    // This is usually a dead debug section referring to a
+    // COMDAT-eliminated section.
+    return {0, 0};
+  }
+
+  if (sym.write_to_symtab)
+    return {sym.get_output_sym_idx(ctx), get_addend(isec, rel)};
+  return {0, 0};
+}
+
 template <typename E>
 void RelocSection<E>::copy_buf(Context<E> &ctx) {
-  auto get_symidx_addend = [&](InputSection<E> &isec, const ElfRel<E> &rel)
-      -> std::pair<i64, i64> {
-    Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-
-    if (!(isec.shdr().sh_flags & SHF_ALLOC)) {
-      SectionFragment<E> *frag;
-      i64 frag_addend;
-      std::tie(frag, frag_addend) = isec.get_fragment(ctx, rel);
-      if (frag)
-        return {frag->output_section.shndx, frag->offset + frag_addend};
-    }
-
-    if (sym.esym().st_type == STT_SECTION) {
-      if (SectionFragment<E> *frag = sym.get_frag())
-        return {frag->output_section.shndx,
-                frag->offset + sym.value + get_addend(isec, rel)};
-
-      InputSection<E> *isec2 = sym.get_input_section();
-      if (OutputSection<E> *osec = isec2->output_section)
-        return {osec->shndx, get_addend(isec, rel) + isec2->offset};
-
-      // This is usually a dead debug section referring to a
-      // COMDAT-eliminated section.
-      return {0, 0};
-    }
-
-    if (sym.write_to_symtab)
-      return {sym.get_output_sym_idx(ctx), get_addend(isec, rel)};
-    return {0, 0};
-  };
-
-  auto write = [&](ElfRel<E> &out, InputSection<E> &isec, const ElfRel<E> &rel) {
-    i64 symidx;
-    i64 addend;
-    std::tie(symidx, addend) = get_symidx_addend(isec, rel);
-
-    i64 r_offset = isec.output_section->shdr.sh_addr + isec.offset + rel.r_offset;
-    out = ElfRel<E>(r_offset, rel.r_type, symidx, addend);
-
-    if (ctx.arg.relocatable) {
-      u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
-      write_addend(base + rel.r_offset, addend, rel);
-    }
-  };
-
   tbb::parallel_for((i64)0, (i64)output_section.members.size(), [&](i64 i) {
     ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset) + offsets[i];
     InputSection<E> &isec = *output_section.members[i];
-    std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
 
-    for (i64 j = 0; j < rels.size(); j++)
-      write(buf[j], isec, rels[j]);
+    i64 j = 0;
+    for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
+      i64 symidx;
+      i64 addend;
+      std::tie(symidx, addend) = get_symidx_addend(ctx, isec, rel);
+
+      i64 r_offset = isec.output_section->shdr.sh_addr + isec.offset + rel.r_offset;
+      buf[j++] = ElfRel<E>(r_offset, rel.r_type, symidx, addend);
+
+      if (ctx.arg.relocatable) {
+        u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
+        write_addend(base + rel.r_offset, addend, rel);
+      }
+    }
   });
 }
 
