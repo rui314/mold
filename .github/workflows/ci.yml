@@ -98,11 +98,15 @@ jobs:
         cmake ..
         cmake --build . -j$(nproc)
     - run: cd build; ctest --output-on-failure -j$(nproc)
+    - name: sanitize distro name
+      if: failure()
+      id: sanitize
+      run: echo "name=$(echo '${{ matrix.distro }}' | tr '/:' '--')" >> "$GITHUB_OUTPUT"
     - name: archive test results
       uses: actions/upload-artifact@v7
       if: failure()
       with:
-        name: test-results-${{ matrix.distro }}
+        name: test-results-${{ steps.sanitize.outputs.name }}
         path: |
           build
           !build/CMakeFiles
