@@ -3098,6 +3098,12 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       std::tie(symidx, addend) = get_symidx_addend(ctx, isec, rel);
 
       i64 r_offset = isec.output_section->shdr.sh_addr + isec.offset + rel.r_offset;
+
+      // On RISC-V and LoongArch, relaxation may have deleted instructions,
+      // shifting this relocation's offset.
+      if constexpr (is_riscv<E> || is_loongarch<E>)
+        r_offset -= get_r_delta(isec, rel.r_offset);
+
       buf[j++] = ElfRel<E>(r_offset, rel.r_type, symidx, addend);
 
       if (ctx.arg.relocatable) {
@@ -3105,6 +3111,12 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
         write_addend(base + rel.r_offset, addend, rel);
       }
     }
+
+    // Relaxation can also change a relocation's type to match the rewritten
+    // instruction. No relaxation happens in -r mode, so types are left as-is.
+    if constexpr (is_riscv<E> || is_loongarch<E>)
+      if (!ctx.arg.relocatable)
+        rewrite_reloc_types(ctx, isec, buf);
   });
 }
 

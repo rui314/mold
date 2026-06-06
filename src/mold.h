@@ -1988,6 +1988,13 @@ template <typename E>
 i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
                      InputSection<E> &isec, const ElfRel<E> &rel);
 
+// With --emit-relocs, rewrites the relocation types in `buf` (the output
+// relocations for isec, one per input relocation) to match the instructions
+// that instruction relaxation produced. Defined only for targets that support
+// relaxation.
+template <typename E> requires is_riscv<E> || is_loongarch<E>
+void rewrite_reloc_types(Context<E> &ctx, InputSection<E> &isec, ElfRel<E> *buf);
+
 //
 // gc-sections.cc
 //

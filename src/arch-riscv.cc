@@ -1000,6 +1000,72 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   isec.sh_size -= r_delta;
 }
 
+// With --emit-relocs, rewrite the emitted relocations to match the
+// instructions that relaxation produced. The logic parallels apply_reloc_alloc.
+template <>
+void rewrite_reloc_types(Context<E> &ctx, InputSection<E> &isec, ElfRel<E> *buf) {
+  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
+  std::span<RelocDelta> deltas = isec.extra.r_deltas;
+  i64 k = 0;
+
+  for (i64 i = 0; i < rels.size(); i++) {
+    const ElfRel<E> &rel = rels[i];
+    Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+
+    i64 removed_bytes = 0;
+    if (!deltas.empty()) {
+      while (k < deltas.size() && deltas[k].offset < rel.r_offset)
+        k++;
+      if (k < deltas.size() && deltas[k].offset == rel.r_offset)
+        removed_bytes = get_removed_bytes(deltas, k);
+    }
+
+    switch (rel.r_type) {
+    case R_RISCV_CALL:
+    case R_RISCV_CALL_PLT:
+      // auipc + jalr => jal, or c.j/c.jal
+      if (removed_bytes == 4)
+        buf[i].r_type = R_RISCV_JAL;
+      else if (removed_bytes == 6)
+        buf[i].r_type = R_RISCV_RVC_JUMP;
+      break;
+    case R_RISCV_GOT_HI20:
+      // auipc + l[dw] GOT load => the value is materialized directly, so both
+      // this and the paired PCREL_LO12 (the load) no longer need a relocation.
+      if (removed_bytes) {
+        buf[i].r_type = R_RISCV_NONE;
+        buf[i + 2].r_type = R_RISCV_NONE;
+        i += 3;
+      }
+      break;
+    case R_RISCV_HI20:
+      // lui (+ addi) => an instruction holding a link-time constant.
+      if (removed_bytes)
+        buf[i].r_type = R_RISCV_NONE;
+      break;
+    case R_RISCV_TPREL_HI20:
+    case R_RISCV_TPREL_ADD:
+      // lui + add => deleted; the variable is accessed relative to tp directly.
+      if (removed_bytes)
+        buf[i].r_type = R_RISCV_NONE;
+      break;
+    case R_RISCV_TLSDESC_HI20:
+      if (!sym.has_tlsdesc(ctx))
+        buf[i].r_type = R_RISCV_NONE;
+      break;
+    case R_RISCV_TLSDESC_LOAD_LO12:
+    case R_RISCV_TLSDESC_ADD_LO12:
+    case R_RISCV_TLSDESC_CALL: {
+      Symbol<E> &sym2 =
+        *isec.file.symbols[find_paired_reloc(ctx, isec, rels, sym, i).r_sym];
+      if (!sym2.has_tlsdesc(ctx))
+        buf[i].r_type = R_RISCV_NONE;
+      break;
+    }
+    }
+  }
+}
+
 // ISA name handlers
 //
 // An example of ISA name is "rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0".
