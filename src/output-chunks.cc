@@ -1687,6 +1687,8 @@ template <typename E>
 void PltSection<E>::update_shdr(Context<E> &ctx) {
   if (symbols.empty())
     this->shdr.sh_size = 0;
+  else if constexpr (is_sparc<E>)
+    this->shdr.sh_size = E::plt_hdr_size + symbols.size() * E::plt_size;
   else
     this->shdr.sh_size = to_plt_offset<E>(symbols.size());
 }
@@ -1833,8 +1835,25 @@ void RelPltSection<E>::copy_buf(Context<E> &ctx) {
     // Therefore, it doesn't need a separate section to store the symbol
     // resolution results. That is of course horrible from the security
     // point of view, though.
-    u64 addr = is_sparc<E> ? sym->get_plt_addr(ctx) : sym->get_gotplt_addr(ctx);
-    *buf++ = ElfRel<E>(addr, E::R_JUMP_SLOT, sym->get_dynsym_idx(ctx), 0);
+    if constexpr (is_sparc<E>) {
+      i64 idx = sym->get_plt_idx(ctx);
+      if (idx < sparc_num_small_plt) {
+        *buf++ = ElfRel<E>(sym->get_plt_addr(ctx), E::R_JUMP_SLOT,
+                           sym->get_dynsym_idx(ctx), 0);
+      } else {
+        // A large PLT entry resolves through a data pointer rather than
+        // self-modifying code, so its relocation targets that pointer and
+        // carries -(call address) as the addend, making the loader store
+        // (target - call) there (see arch-sparc64.cc).
+        u64 call = sym->get_plt_addr(ctx) + 4;
+        u64 ptr = ctx.plt->shdr.sh_addr + sparc_plt_ptr_offset(ctx, idx);
+        *buf++ = ElfRel<E>(ptr, E::R_JUMP_SLOT, sym->get_dynsym_idx(ctx),
+                           -call);
+      }
+    } else {
+      *buf++ = ElfRel<E>(sym->get_gotplt_addr(ctx), E::R_JUMP_SLOT,
+                         sym->get_dynsym_idx(ctx), 0);
+    }
   }
 }
 

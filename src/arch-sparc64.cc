@@ -78,26 +78,77 @@ void write_plt_header(Context<E> &ctx, u8 *buf) {
   memset(buf, 0, E::plt_hdr_size);
 }
 
+// Returns the byte offset within .plt of the data pointer for a large SPARC
+// PLT entry. See write_plt_entry below for the block layout this assumes.
+i64 sparc_plt_ptr_offset(Context<E> &ctx, i64 pltidx) {
+  i64 i = pltidx - sparc_num_small_plt;
+  i64 block = i / 160;
+  i64 nlarge = (i64)ctx.plt->symbols.size() - sparc_num_small_plt;
+  i64 nstub = std::min<i64>(160, nlarge - block * 160);
+  return 0x100000 + block * 5120 + nstub * 24 + (i % 160) * 8;
+}
+
 template <>
 void write_plt_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
-  static ub32 insn[] = {
-    0x0300'0000, // sethi (. - .PLT0), %g1
-    0x3068'0000, // ba,a  %xcc, .PLT1
-    0x0100'0000, // nop
-    0x0100'0000, // nop
-    0x0100'0000, // nop
-    0x0100'0000, // nop
-    0x0100'0000, // nop
-    0x0100'0000, // nop
-  };
+  // SPARC uses two PLT entry formats. A "small" entry branches directly to
+  // the resolver stub (.PLT1) with a BPcc instruction whose reach is only
+  // ±1 MiB. Once the PLT grows past that (0x100000 bytes), we switch to a
+  // "large" format: rather than branching to the resolver, a large entry
+  // loads a 64-bit value from a nearby data pointer and jumps to (that value
+  // + its own address).
+  //
+  // Large entries are grouped into blocks of 160: each block is 160 code
+  // stubs followed by 160 8-byte data pointers, one per stub. The stubs must
+  // sit on a fixed grid, 24 bytes apart, because that is how the loader finds
+  // them: on a lazy bind the stub jumps to the resolver (.PLT0) with only its
+  // own address, and the loader derives which symbol to resolve from that
+  // address. Nothing may sit between two stubs, so each stub's pointer lives
+  // in the block's pointer region, which it reaches with a signed 13-bit ldx
+  // offset (see to_plt_offset). This layout is dictated by the loader; we
+  // cannot rearrange or simplify it.
+  i64 idx = sym.get_plt_idx(ctx);
 
-  u64 plt0 = ctx.plt->shdr.sh_addr;
-  u64 plt1 = ctx.plt->shdr.sh_addr + E::plt_size;
-  u64 entry = sym.get_plt_addr(ctx);
+  if (idx < sparc_num_small_plt) {
+    static ub32 insn[] = {
+      0x0300'0000, // sethi (. - .PLT0), %g1
+      0x3068'0000, // ba,a  %xcc, .PLT1
+      0x0100'0000, // nop
+      0x0100'0000, // nop
+      0x0100'0000, // nop
+      0x0100'0000, // nop
+      0x0100'0000, // nop
+      0x0100'0000, // nop
+    };
 
-  memcpy(buf, insn, sizeof(insn));
-  *(ub32 *)buf |= bits(entry - plt0, 21, 0);
-  *(ub32 *)(buf + 4) |= bits(plt1 - entry - 4, 20, 2);
+    u64 plt0 = ctx.plt->shdr.sh_addr;
+    u64 plt1 = ctx.plt->shdr.sh_addr + E::plt_size;
+    u64 entry = sym.get_plt_addr(ctx);
+
+    memcpy(buf, insn, sizeof(insn));
+    *(ub32 *)buf |= bits(entry - plt0, 21, 0);
+    *(ub32 *)(buf + 4) |= bits(plt1 - entry - 4, 20, 2);
+  } else {
+    static ub32 insn[] = {
+      0x8a10'000f, // mov  %o7, %g5
+      0x4000'0002, // call . + 8
+      0x0100'0000, // nop
+      0xc25b'e000, // ldx  [ %o7 + .ptr ], %g1
+      0x83c3'c001, // jmpl %o7 + %g1, %g1
+      0x9e10'0005, // mov  %g5, %o7
+    };
+
+    u64 plt = ctx.plt->shdr.sh_addr;
+    u64 call = sym.get_plt_addr(ctx) + 4;
+    i64 ptroff = sparc_plt_ptr_offset(ctx, idx);
+
+    memcpy(buf, insn, sizeof(insn));
+    *(ub32 *)(buf + 12) |= bits(plt + ptroff - call, 12, 0);
+
+    // The data pointer initially holds (.PLT0 - call) so that the first call
+    // jumps to .PLT0, where the loader's lazy resolver lives. The resolver
+    // later overwrites it with (target - call).
+    *(ub64 *)(ctx.buf + ctx.plt->shdr.sh_offset + ptroff) = plt - call;
+  }
 }
 
 template <>

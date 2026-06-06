@@ -2210,6 +2210,13 @@ public:
 
 template <> u64 get_eflags(Context<PPC64V2> &ctx);
 
+
+//
+// arch-sparc64.cc
+//
+
+i64 sparc_plt_ptr_offset(Context<SPARC64> &ctx, i64 pltidx);
+
 //
 // main.cc
 //
@@ -3266,6 +3273,12 @@ inline u64 Symbol<E>::get_tlsdesc_addr(Context<E> &ctx) const {
   return ctx.got->shdr.sh_addr + get_tlsdesc_idx(ctx) * sizeof(Word<E>);
 }
 
+// On SPARC, .plt uses 32-byte "small" entries until it grows past 0x100000
+// bytes (the reach of a small entry's branch to the resolver), after which
+// it switches to a "large" entry format. This is how many small entries fit.
+constexpr i64 sparc_num_small_plt =
+  (0x100000 - SPARC64::plt_hdr_size) / SPARC64::plt_size;
+
 template <typename E>
 inline u64 to_plt_offset(i32 pltidx) {
   if constexpr (is_ppc64v1<E>) {
@@ -3276,6 +3289,15 @@ inline u64 to_plt_offset(i32 pltidx) {
     if (pltidx < 0x8000)
       return E::plt_hdr_size + pltidx * 8;
     return E::plt_hdr_size + 0x8000 * 8 + (pltidx - 0x8000) * 12;
+  } else if constexpr (is_sparc<E>) {
+    // SPARC large PLT entries are grouped into blocks of 160, each holding
+    // 160 24-byte code stubs followed by 160 8-byte data pointers (so a
+    // stub's `ldx` reaches its pointer within a signed 13-bit offset). This
+    // returns the offset of pltidx's code stub.
+    if (pltidx < sparc_num_small_plt)
+      return E::plt_hdr_size + pltidx * E::plt_size;
+    i64 i = pltidx - sparc_num_small_plt;
+    return 0x100000 + (i / 160) * 5120 + (i % 160) * 24;
   } else {
     return E::plt_hdr_size + pltidx * E::plt_size;
   }
