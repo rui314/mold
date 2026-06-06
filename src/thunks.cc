@@ -32,12 +32,14 @@ namespace mold {
 
 using E = MOLD_TARGET;
 
-// We create thunks for each 25.6/3.2/6.4 MiB code block for
+// We create thunks for each 32/8/16 MiB code block for
 // ARM64/ARM32/PPC, respectively.
-static constexpr i64 batch_size = branch_distance<E> / 5;
+static constexpr i64 batch_size =
+  (is_arm64<E> ? 32 : is_arm32<E> ? 8 : 16) * 1024 * 1024;
 
-// We assume that a single thunk group is smaller than 1 MiB.
-static constexpr i64 max_thunk_size = 1024 * 1024;
+// We assume that a single thunk group is smaller than 16/4/8 MiB
+// for ARM64/ARM32/PPC, respectively.
+static constexpr i64 max_thunk_size = batch_size / 2;
 
 // We align thunks to 16 byte boundaries because many processor vendors
 // recommend we align branch targets to 16 byte boundaries for performance
