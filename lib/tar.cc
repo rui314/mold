@@ -86,6 +86,9 @@ void TarWriter::append(std::string path, std::string_view data) {
   UstarHeader pax = {};
 
   std::string attr = encode_path(basedir, path);
+
+  if (attr.size() >= 0100'000'000'000)
+    unreachable();
   snprintf(pax.size, sizeof(pax.size), "%011zo", attr.size());
   pax.name[0] = '/';
   pax.typeflag[0] = 'x';
@@ -99,6 +102,8 @@ void TarWriter::append(std::string path, std::string_view data) {
   // Write Ustar header
   UstarHeader ustar = {};
   memcpy(ustar.mode, "0000664", 8);
+  if (data.size() >= 0100'000'000'000)
+    unreachable();
   snprintf(ustar.size, sizeof(ustar.size), "%011zo", data.size());
   finalize(ustar);
   fwrite(&ustar, sizeof(ustar), 1, out);
