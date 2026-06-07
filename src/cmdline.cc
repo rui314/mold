@@ -1530,6 +1530,11 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.pic)
     ctx.arg.image_base = 0;
 
+  // A shared library is loaded by the dynamic linker, so it doesn't need
+  // PT_INTERP. (-pie makes the output an executable even with -shared.)
+  if (ctx.arg.shared && !ctx.arg.pie)
+    ctx.arg.dynamic_linker = "";
+
   if (allow_shlib_undefined)
     ctx.arg.allow_shlib_undefined = *allow_shlib_undefined;
   else

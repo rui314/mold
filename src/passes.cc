@@ -158,7 +158,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   if (ctx.shdr)
     ctx.shstrtab = push(new ShstrtabSection<E>);
 
-  if (!ctx.arg.dynamic_linker.empty() && (!ctx.arg.shared || ctx.arg.pie))
+  if (!ctx.arg.dynamic_linker.empty())
     ctx.interp = push(new InterpSection<E>);
   if (ctx.arg.build_id.kind != BuildId::NONE)
     ctx.buildid = push(new BuildIdSection<E>);
