@@ -19,7 +19,7 @@ rocky | ol)
   dnf install -y gcc-c++ cmake diffutils util-linux
   ;;
 opensuse-*)
-  zypper install -y make cmake gcc-c++ glibc-devel-static tar diffutils util-linux
+  zypper install -y make cmake gcc-c++ glibc-devel-static tar diffutils util-linux gawk
   ;;
 gentoo)
   emerge-webrsync
