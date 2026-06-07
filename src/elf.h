@@ -85,6 +85,7 @@ enum : u32 {
   SHT_ANDROID_RELA = 0x60000002,
   SHT_LLVM_ADDRSIG = 0x6fff4c03,
   SHT_ANDROID_RELR = 0x6fffff00,
+  SHT_GNU_SFRAME = 0x6ffffff4,
   SHT_GNU_HASH = 0x6ffffff6,
   SHT_GNU_VERDEF = 0x6ffffffd,
   SHT_GNU_VERNEED = 0x6ffffffe,
@@ -194,6 +195,7 @@ enum : u32 {
   PT_GNU_STACK = 0x6474e551,
   PT_GNU_RELRO = 0x6474e552,
   PT_GNU_PROPERTY = 0x6474e553,
+  PT_GNU_SFRAME = 0x6474e554,
   PT_OPENBSD_RANDOMIZE = 0x65a3dbe6,
   PT_ARM_EXIDX = 0x70000001,
   PT_RISCV_ATTRIBUTES = 0x70000003,
@@ -1503,6 +1505,52 @@ template <typename E> using U64 = std::conditional_t<E::is_le, ul64, ub64>;
 template <typename E> using Word = std::conditional_t<E::is_64, U64<E>, U32<E>>;
 template <typename E> using SWord = std::conditional_t<E::is_64, I64<E>, I32<E>>;
 
+//
+// SFrame is a simple unwind information format used as a lightweight
+// alternative to .eh_frame. A .sframe section consists of a header, an
+// array of Function Descriptor Entries (FDEs) sorted by PC, and a blob
+// of Frame Row Entries (FREs). mold understands SFrame Version 3.
+//
+// https://sourceware.org/binutils/docs/sframe-spec.html
+//
+
+static constexpr u16 SFRAME_MAGIC = 0xdee2;
+
+static constexpr u8 SFRAME_F_FDE_SORTED = 0x1;
+static constexpr u8 SFRAME_F_FRAME_POINTER = 0x2;
+static constexpr u8 SFRAME_F_FDE_FUNC_START_PCREL = 0x4;
+
+static constexpr u8 SFRAME_ABI_AARCH64_ENDIAN_BIG = 1;
+static constexpr u8 SFRAME_ABI_AARCH64_ENDIAN_LITTLE = 2;
+static constexpr u8 SFRAME_ABI_AMD64_ENDIAN_LITTLE = 3;
+static constexpr u8 SFRAME_ABI_S390X_ENDIAN_BIG = 4;
+
+template <typename E>
+struct SFrameHeader {
+  U16<E> magic;
+  u8 version;
+  u8 flags;
+  u8 abi_arch;
+  i8 cfa_fixed_fp_offset;
+  i8 cfa_fixed_ra_offset;
+  u8 auxhdr_len;
+  U32<E> num_fdes;
+  U32<E> num_fres;
+  U32<E> fre_len;
+  U32<E> fdeoff;
+  U32<E> freoff;
+};
+
+// The index part of an SFrame Version 3 FDE. The func_start_offset field
+// is PC-relative (relative to its own address) when the section flag
+// SFRAME_F_FDE_FUNC_START_PCREL is set, which is how mold always emits it.
+template <typename E>
+struct SFrameFdeIdx {
+  I64<E> func_start_offset;
+  U32<E> func_size;
+  U32<E> func_start_fre_off;
+};
+
 template <typename E> requires E::is_64
 struct ElfSym<E> {
   bool is_undef() const { return st_shndx == SHN_UNDEF; }
@@ -1819,6 +1867,7 @@ struct ElfRel<SH4BE> {
 
 template <typename E> concept supports_ifunc = requires { E::R_IRELATIVE; };
 template <typename E> concept supports_tlsdesc = requires { E::R_TLSDESC; };
+template <typename E> concept supports_sframe = requires { E::sframe_abi; };
 template <typename E> concept needs_thunk = requires { E::thunk_size; };
 
 template <typename E> concept is_x86_64 = std::same_as<E, X86_64>;
@@ -1862,6 +1911,7 @@ struct X86_64 {
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_X86_64;
+  static constexpr u8 sframe_abi = SFRAME_ABI_AMD64_ENDIAN_LITTLE;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 8;
@@ -1877,6 +1927,7 @@ struct X86_64 {
   static constexpr u32 R_TPOFF = R_X86_64_TPOFF64;
   static constexpr u32 R_DTPMOD = R_X86_64_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_X86_64_TLSDESC;
+  static constexpr u32 R_SFRAME = R_X86_64_PC64;
   static constexpr u32 R_FUNCALL[] = { R_X86_64_PLT32, R_X86_64_PLTOFF64 };
 };
 
@@ -1912,6 +1963,7 @@ struct ARM64LE {
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 65536;
   static constexpr u32 e_machine = EM_AARCH64;
+  static constexpr u8 sframe_abi = SFRAME_ABI_AARCH64_ENDIAN_LITTLE;
   static constexpr u32 plt_hdr_size = 32;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
@@ -1929,12 +1981,14 @@ struct ARM64LE {
   static constexpr u32 R_TPOFF = R_AARCH64_TLS_TPREL64;
   static constexpr u32 R_DTPMOD = R_AARCH64_TLS_DTPMOD64;
   static constexpr u32 R_TLSDESC = R_AARCH64_TLSDESC;
+  static constexpr u32 R_SFRAME = R_AARCH64_PREL64;
   static constexpr u32 R_FUNCALL[] = { R_AARCH64_JUMP26, R_AARCH64_CALL26 };
 };
 
 struct ARM64BE : ARM64LE {
   static constexpr std::string_view name = "arm64be";
   static constexpr bool is_le = false;
+  static constexpr u8 sframe_abi = SFRAME_ABI_AARCH64_ENDIAN_BIG;
 };
 
 struct ARM32LE {
@@ -2107,6 +2161,7 @@ struct S390X {
   static constexpr bool is_rela = true;
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_S390X;
+  static constexpr u8 sframe_abi = SFRAME_ABI_S390X_ENDIAN_BIG;
   static constexpr u32 plt_hdr_size = 48;
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
@@ -2121,6 +2176,7 @@ struct S390X {
   static constexpr u32 R_DTPOFF = R_390_TLS_DTPOFF;
   static constexpr u32 R_TPOFF = R_390_TLS_TPOFF;
   static constexpr u32 R_DTPMOD = R_390_TLS_DTPMOD;
+  static constexpr u32 R_SFRAME = R_390_PC64;
   static constexpr u32 R_FUNCALL[] = { R_390_PLT32DBL };
 };
 

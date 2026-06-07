@@ -50,6 +50,8 @@ static void r_create_synthetic_sections(Context<E> &ctx) {
   ctx.shdr = push(new OutputShdr<E>);
   ctx.eh_frame = push(new EhFrameSection<E>);
   ctx.eh_frame_reloc = push(new EhFrameRelocSection<E>);
+  ctx.sframe = push(new SFrameSection<E>);
+  ctx.sframe_reloc = push(new SFrameRelocSection<E>);
   ctx.strtab = push(new StrtabSection<E>);
   ctx.symtab = push(new SymtabSection<E>);
   ctx.shstrtab = push(new ShstrtabSection<E>);
@@ -160,6 +162,9 @@ void combine_objects(Context<E> &ctx) {
   create_output_symtab(ctx);
 
   ctx.eh_frame->construct(ctx);
+
+  if constexpr (supports_sframe<E>)
+    ctx.sframe->construct(ctx);
 
   create_reloc_sections(ctx);
 

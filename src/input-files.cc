@@ -458,6 +458,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (name == ".eh_frame")
         eh_frame_sections.push_back(isec);
 
+      if constexpr (supports_sframe<E>)
+        if (name == ".sframe")
+          sframe_sections.push_back(isec);
+
       if (name == ".debug_info" && !(shdr.sh_flags & SHF_ALLOC))
         debug_info = isec;
 
@@ -629,6 +633,96 @@ void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
       isec->fde_end = i;
     } else {
       fdes[i++].is_alive = false;
+    }
+  }
+}
+
+// Returns the byte length of the SFrame FRE block at offset `offset`:
+// a 5-byte attribute header followed by a series of frame row
+// entries, each of which is a start address (whose width is given by
+// the attribute header), a one-byte info field and a number of
+// variable-width data words encoded in that info field.
+template <typename E>
+static i64 sframe_fre_block_size(std::string_view data, i64 offset) {
+  const u8 *attr = (const u8 *)data.data() + offset;
+  i64 num_fres = *(U16<E> *)attr;
+  i64 addr_size = 1 << bits(attr[2], 3, 0);
+
+  i64 p = offset + 5;
+  for (i64 i = 0; i < num_fres; i++) {
+    u8 info = data[p + addr_size];
+    i64 num_words = bits(info, 4, 1);
+    i64 word_size = 1 << bits(info, 6, 5);
+    p += addr_size + 1 + num_words * word_size;
+  }
+  return p - offset;
+}
+
+// .sframe is a compact stack-unwinding format. Just like .eh_frame, the
+// linker has to understand its contents: an output .sframe section is a
+// single header followed by a PC-sorted index of function descriptor
+// entries (FDEs) and a blob of frame row entries (FREs). This function
+// parses an input .sframe section into individual FDEs so that we can
+// later drop the dead ones, sort the survivors and rewrite the header.
+//
+// Unlike .eh_frame, the variable-length FRE data carries no relocations,
+// so we copy it to the output verbatim. The only relocated field is each
+// FDE's func_start, which points to the function the FDE describes; we
+// use it both to find the function (for garbage collection and to obtain
+// its output address) and to re-emit a PC-relative offset.
+template <typename E>
+void ObjectFile<E>::parse_sframe(Context<E> &ctx) requires supports_sframe<E> {
+  for (InputSection<E> *isec : sframe_sections) {
+    // The input section is consumed by the linker; it's not copied to the
+    // output as-is but reconstructed into ctx.sframe.
+    isec->is_alive = false;
+
+    std::string_view data = this->get_string(ctx, isec->shdr());
+    const SFrameHeader<E> &hdr = *(const SFrameHeader<E> *)data.data();
+
+    if (hdr.magic != SFRAME_MAGIC)
+      Fatal(ctx) << *isec << ": corrupted .sframe section";
+    if (hdr.abi_arch != E::sframe_abi)
+      Fatal(ctx) << *isec << ": .sframe is incompatible with " << E::name;
+
+    // We support only SFrame Version 3. A section written in an older
+    // version (e.g. by an old assembler) isn't an error; we just ignore
+    // it, so the functions it covers won't have SFrame info in the output.
+    if (hdr.version != 3)
+      continue;
+
+    i64 hdr_len = sizeof(SFrameHeader<E>) + hdr.auxhdr_len;
+    i64 num_fdes = hdr.num_fdes;
+    i64 fde_off = hdr_len + hdr.fdeoff;
+    i64 fre_off = hdr_len + hdr.freoff;
+
+    std::span<ElfRel<E>> rels = isec->get_rels(ctx);
+    i64 rel_idx = 0;
+
+    for (i64 i = 0; i < num_fdes; i++) {
+      i64 idx_off = fde_off + i * sizeof(SFrameFdeIdx<E>);
+      const SFrameFdeIdx<E> &ent =
+        *(const SFrameFdeIdx<E> *)(data.data() + idx_off);
+
+      // Find the relocation for this FDE's func_start field. An FDE without
+      // one isn't tied to any function (`ld -r` can emit such dead FDEs),
+      // so we drop it.
+      while (rel_idx < rels.size() && rels[rel_idx].r_offset < idx_off)
+        rel_idx++;
+      if (rel_idx == rels.size() || rels[rel_idx].r_offset != idx_off)
+        continue;
+
+      const ElfRel<E> &rel = rels[rel_idx];
+      i64 off = fre_off + ent.func_start_fre_off;
+
+      SFrameFde<E> fde;
+      fde.isec = get_section(this->elf_syms[rel.r_sym]);
+      fde.sym = this->symbols[rel.r_sym];
+      fde.addend = rel.r_addend;
+      fde.fre = data.substr(off, sframe_fre_block_size<E>(data, off));
+      fde.func_size = ent.func_size;
+      fde.num_fres = *(U16<E> *)(data.data() + off);
+      sframe_fdes.push_back(fde);
     }
   }
 }

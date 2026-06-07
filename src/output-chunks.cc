@@ -276,6 +276,10 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
   if (ctx.eh_frame_hdr)
     define(PT_GNU_EH_FRAME, PF_R, ctx.eh_frame_hdr);
 
+  // Add PT_GNU_SFRAME
+  if (ctx.sframe && ctx.sframe->shdr.sh_size)
+    define(PT_GNU_SFRAME, PF_R, ctx.sframe);
+
   // Add PT_GNU_PROPERTY
   if (Chunk<E> *chunk = find_chunk(ctx, ".note.gnu.property"))
     define(PT_GNU_PROPERTY, PF_R, chunk);
@@ -2517,6 +2521,136 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
   }
 }
 
+// Lay out the output .sframe section. Like .eh_frame, .sframe is parsed
+// and reconstructed by the linker, so here we pick the FDEs for live
+// functions and arrange the FRE subsection. The header and the PC-sorted
+// FDE index are written later by copy_buf, once addresses are known.
+template <typename E>
+void SFrameSection<E>::construct(Context<E> &ctx) requires supports_sframe<E> {
+  Timer t(ctx, "sframe");
+
+  // Gather the FDEs that describe live functions and total the size of the
+  // FRE subsection. FREs carry no relocations, so their contents are
+  // position-independent and are simply concatenated by copy_buf.
+  for (ObjectFile<E> *file : ctx.objs)
+    for (SFrameFde<E> &fde : file->sframe_fdes)
+      if (fde.isec->is_alive)
+        fdes.push_back(&fde);
+
+  // If no live function has unwind info, leave the section empty so that
+  // it is removed from the output.
+  if (fdes.empty())
+    return;
+
+  // We always emit PC-relative function pointers; we can additionally
+  // mark the index as sorted unless this is a relocatable output,
+  // where the final addresses (and hence the order) aren't known.
+  hdr.magic = SFRAME_MAGIC;
+  hdr.version = 3;
+  hdr.flags = SFRAME_F_FDE_FUNC_START_PCREL |
+              (ctx.arg.relocatable ? 0 : SFRAME_F_FDE_SORTED);
+  hdr.abi_arch = E::sframe_abi;
+  hdr.cfa_fixed_ra_offset = is_x86_64<E> ? -8 : 0;
+  hdr.num_fdes = fdes.size();
+  hdr.freoff = fdes.size() * sizeof(SFrameFdeIdx<E>);
+
+  for (SFrameFde<E> *fde : fdes) {
+    hdr.fre_len += fde->fre.size();
+    hdr.num_fres += fde->num_fres;
+  }
+
+  this->shdr.sh_size =
+    sizeof(hdr) + fdes.size() * sizeof(SFrameFdeIdx<E>) + hdr.fre_len;
+}
+
+// Write the output .sframe section: the header, the FDE index and the
+// concatenated FRE blocks. For an executable or a shared library the index
+// is sorted by function address and func_start is resolved in place. For a
+// relocatable output, addresses aren't known yet, so the index is left
+// unsorted and func_start is emitted as a relocation by SFrameRelocSection.
+template <typename E>
+void SFrameSection<E>::copy_buf(Context<E> &ctx) {
+  // Write the header.
+  u8 *base = ctx.buf + this->shdr.sh_offset;
+  memcpy(base, &hdr, sizeof(hdr));
+
+  SFrameFdeIdx<E> *fde_base = (SFrameFdeIdx<E> *)(base + sizeof(hdr));
+  u8 *fre_base = base + sizeof(hdr) + hdr.freoff;
+
+  // The FDE index must be sorted by function address so that the runtime
+  // can locate an entry by binary search. A relocatable output is the
+  // exception: the addresses aren't known yet, so the index is left in its
+  // current order and SFrameRelocSection emits a func_start relocation for
+  // each entry in that same order.
+  if (!ctx.arg.relocatable) {
+    ranges::sort(fdes, {}, [&](SFrameFde<E> *fde) {
+      return fde->sym->get_addr(ctx) + fde->addend;
+    });
+  }
+
+  // Write the FDE index and concatenate the FRE blocks. Because
+  // SFRAME_F_FDE_FUNC_START_PCREL is set, func_start_offset is the distance
+  // from the field itself to the function the FDE describes.
+  i64 fre_off = 0;
+  for (i64 i = 0; i < fdes.size(); i++) {
+    SFrameFde<E> &fde = *fdes[i];
+    memcpy(fre_base + fre_off, fde.fre.data(), fde.fre.size());
+
+    SFrameFdeIdx<E> &ent = fde_base[i];
+    if (ctx.arg.relocatable) {
+      ent.func_start_offset = 0;
+    } else {
+      u64 func_addr = fde.sym->get_addr(ctx) + fde.addend;
+      u64 field_addr = this->shdr.sh_addr + sizeof(hdr) +
+                       i * sizeof(SFrameFdeIdx<E>);
+      ent.func_start_offset = func_addr - field_addr;
+    }
+    ent.func_size = fde.func_size;
+    ent.func_start_fre_off = fre_off;
+    fre_off += fde.fre.size();
+  }
+}
+
+template <typename E>
+void SFrameRelocSection<E>::update_shdr(Context<E> &ctx) {
+  this->shdr.sh_size = ctx.sframe->fdes.size() * sizeof(ElfRel<E>);
+  this->shdr.sh_link = ctx.symtab->shndx;
+  this->shdr.sh_info = ctx.sframe->shndx;
+}
+
+// Emit one relocation per FDE for its func_start field. The entries are
+// written in the same order as SFrameSection::copy_buf lays out the index.
+template <typename E>
+void SFrameRelocSection<E>::copy_buf(Context<E> &ctx) {
+  if constexpr (supports_sframe<E>) {
+    ElfRel<E> *buf = (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset);
+    std::span<SFrameFde<E> *> fdes = ctx.sframe->fdes;
+
+    for (i64 i = 0; i < fdes.size(); i++) {
+      SFrameFde<E> &fde = *fdes[i];
+      Symbol<E> &sym = *fde.sym;
+
+      ElfRel<E> &r = buf[i];
+      memset(&r, 0, sizeof(r));
+      r.r_offset = ctx.sframe->shdr.sh_addr + sizeof(SFrameHeader<E>) +
+                   i * sizeof(SFrameFdeIdx<E>);
+      r.r_type = E::R_SFRAME;
+
+      if (sym.esym().st_type == STT_SECTION) {
+        // We discard input section symbols and create a fresh one per output
+        // section, so a reference to a section symbol needs its addend
+        // adjusted by the input section's offset in its output section.
+        InputSection<E> *target = sym.get_input_section();
+        r.r_sym = target->output_section->shndx;
+        r.r_addend = fde.addend + target->offset;
+      } else {
+        r.r_sym = sym.get_output_sym_idx(ctx);
+        r.r_addend = fde.addend;
+      }
+    }
+  }
+}
+
 template <typename E>
 void EhFrameHdrSection<E>::update_shdr(Context<E> &ctx) {
   num_fdes = 0;
@@ -3199,6 +3333,8 @@ template class MergedSection<E>;
 template class EhFrameSection<E>;
 template class EhFrameHdrSection<E>;
 template class EhFrameRelocSection<E>;
+template class SFrameSection<E>;
+template class SFrameRelocSection<E>;
 template class CopyrelSection<E>;
 template class VersymSection<E>;
 template class VerneedSection<E>;

@@ -152,6 +152,7 @@ void create_synthetic_sections(Context<E> &ctx) {
   ctx.dynsym = push(new DynsymSection<E>);
   ctx.dynstr = push(new DynstrSection<E>);
   ctx.eh_frame = push(new EhFrameSection<E>);
+  ctx.sframe = push(new SFrameSection<E>);
   ctx.copyrel = push(new CopyrelSection<E>(false));
   ctx.copyrel_relro = push(new CopyrelSection<E>(true));
 
@@ -443,6 +444,16 @@ void parse_eh_frame_sections(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->parse_ehframe(ctx);
   });
+}
+
+template <typename E>
+void parse_sframe_sections(Context<E> &ctx) {
+  if constexpr (supports_sframe<E>) {
+    Timer t(ctx, "parse_sframe_sections");
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      file->parse_sframe(ctx);
+    });
+  }
 }
 
 template <typename E>
@@ -3651,6 +3662,7 @@ template void create_synthetic_sections(Context<E> &);
 template void resolve_symbols(Context<E> &);
 template void do_lto(Context<E> &);
 template void parse_eh_frame_sections(Context<E> &);
+template void parse_sframe_sections(Context<E> &);
 template void create_merged_sections(Context<E> &);
 template void convert_common_symbols(Context<E> &);
 template void create_output_sections(Context<E> &);

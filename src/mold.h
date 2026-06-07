@@ -471,6 +471,21 @@ struct FdeRecord {
   Atomic<bool> is_alive = true;
 };
 
+// Represents a single function descriptor entry (FDE) read from an input
+// .sframe section. Unlike .eh_frame, the variable-length Frame Row Entry
+// (FRE) data carries no relocations, so it can be copied to the output
+// verbatim. Only the FDE's func_start field is relocated, which we
+// resolve here and re-emit as a PC-relative offset.
+template <typename E>
+struct SFrameFde {
+  InputSection<E> *isec = nullptr; // the function's input section (liveness)
+  Symbol<E> *sym = nullptr;        // symbol the func_start reloc points to
+  i64 addend = 0;                  // addend of the func_start reloc
+  std::string_view fre;            // the FRE block (attr + FREs), copied as-is
+  u32 func_size = 0;
+  u32 num_fres = 0;
+};
+
 // A struct to hold target-dependent input section members.
 template <typename E>
 struct InputSectionExtras {};
@@ -1291,6 +1306,48 @@ public:
   void copy_buf(Context<E> &ctx) override;
 };
 
+// .sframe is a compact stack-unwinding format. Like .eh_frame, the linker
+// has to parse and reconstruct it: the output section is a single sorted
+// index of FDEs (one per live function) followed by their FREs, so we
+// gather the live FDEs from all input files, drop dead ones, concatenate
+// their FREs, sort the index by PC and rewrite the header. mold reads and
+// writes SFrame Version 3.
+template <typename E>
+class SFrameSection : public Chunk<E> {
+public:
+  SFrameSection() {
+    this->name = ".sframe";
+    this->shdr.sh_type = SHT_GNU_SFRAME;
+    this->shdr.sh_flags = SHF_ALLOC;
+    this->shdr.sh_addralign = 8;
+  }
+
+  void construct(Context<E> &ctx) requires supports_sframe<E>;
+  void copy_buf(Context<E> &ctx) override;
+
+  SFrameHeader<E> hdr = {};
+  std::vector<SFrameFde<E> *> fdes;
+};
+
+// SFrameRelocSection holds the relocations for .sframe. We use it only for
+// relocatable outputs, where function addresses aren't known yet and each
+// FDE's func_start has to remain a relocation for the final link to
+// resolve. It is the .sframe counterpart of EhFrameRelocSection.
+template <typename E>
+class SFrameRelocSection : public Chunk<E> {
+public:
+  SFrameRelocSection() {
+    this->name = ".rela.sframe";
+    this->shdr.sh_type = SHT_RELA;
+    this->shdr.sh_flags = SHF_INFO_LINK;
+    this->shdr.sh_addralign = sizeof(Word<E>);
+    this->shdr.sh_entsize = sizeof(ElfRel<E>);
+  }
+
+  void update_shdr(Context<E> &ctx) override;
+  void copy_buf(Context<E> &ctx) override;
+};
+
 // .copyrel and .copyrel.rel.ro represent memory regions to which the
 // runtime copies symbols from other ELF files for copy relocations.
 template <typename E>
@@ -1766,6 +1823,7 @@ public:
   void parse(Context<E> &ctx);
   void initialize_symbols(Context<E> &ctx);
   void parse_ehframe(Context<E> &ctx);
+  void parse_sframe(Context<E> &ctx) requires supports_sframe<E>;
   void convert_mergeable_sections(Context<E> &ctx);
   void reattach_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
@@ -1789,6 +1847,8 @@ public:
   std::vector<bool> has_symver;
   std::vector<ComdatGroupRef<E>> comdat_groups;
   std::vector<InputSection<E> *> eh_frame_sections;
+  std::vector<InputSection<E> *> sframe_sections;
+  std::vector<SFrameFde<E>> sframe_fdes;
   std::vector<std::vector<ElfRel<E>>> decoded_crel;
   bool exclude_libs = false;
   std::map<u32, u32> gnu_properties;
@@ -2059,6 +2119,7 @@ template <typename E> void set_file_priority(Context<E> &);
 template <typename E> void resolve_symbols(Context<E> &);
 template <typename E> void do_lto(Context<E> &);
 template <typename E> void parse_eh_frame_sections(Context<E> &);
+template <typename E> void parse_sframe_sections(Context<E> &);
 template <typename E> void create_merged_sections(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void create_output_sections(Context<E> &);
@@ -2571,6 +2632,8 @@ struct Context {
   EhFrameSection<E> *eh_frame = nullptr;
   EhFrameHdrSection<E> *eh_frame_hdr = nullptr;
   EhFrameRelocSection<E> *eh_frame_reloc = nullptr;
+  SFrameSection<E> *sframe = nullptr;
+  SFrameRelocSection<E> *sframe_reloc = nullptr;
   CopyrelSection<E> *copyrel = nullptr;
   CopyrelSection<E> *copyrel_relro = nullptr;
   VersymSection<E> *versym = nullptr;

@@ -371,6 +371,9 @@ int mold_main(int argc, char **argv) {
   // Parse .eh_frame section contents.
   parse_eh_frame_sections(ctx);
 
+  // Parse .sframe section contents.
+  parse_sframe_sections(ctx);
+
   // Split mergeable section contents into section pieces.
   create_merged_sections(ctx);
 
@@ -542,6 +545,11 @@ int mold_main(int argc, char **argv) {
   // unlike other sections that are regarded as opaque bytes.
   // Here, we construct output .eh_frame contents.
   ctx.eh_frame->construct(ctx);
+
+  // .sframe is likewise parsed and reconstructed by the linker. Build
+  // the merged, PC-sorted output .sframe.
+  if constexpr (supports_sframe<E>)
+    ctx.sframe->construct(ctx);
 
   // If --emit-relocs is given, we'll copy relocation sections from input
   // files to an output file.
