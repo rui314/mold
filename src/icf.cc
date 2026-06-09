@@ -69,6 +69,7 @@
 
 #include <array>
 #include <cstdio>
+#include <unordered_map>
 #include <fstream>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
@@ -99,23 +100,26 @@ static u8 hmac_key[16];
 template <typename E>
 static void uniquify_cies(Context<E> &ctx) {
   Timer t(ctx, "uniquify_cies");
-  std::vector<CieRecord<E> *> cies;
-
-  auto find = [&](CieRecord<E> &cie) -> i64 {
-    for (i64 i = 0; i < cies.size(); i++)
-      if (cie_equals(cie, *cies[i]))
-        return i;
-    return -1;
-  };
+  std::vector<CieRecord<E> *> uniq;
+  std::unordered_map<std::string_view, std::vector<i64>> map;
 
   for (ObjectFile<E> *file : ctx.objs) {
     for (CieRecord<E> &cie : file->cies) {
-      if (i64 idx = find(cie); idx != -1) {
-        cie.icf_idx = idx;
-      } else {
-        cie.icf_idx = cies.size();
-        cies.push_back(&cie);
+      std::string_view key = cie.get_contents();
+      if (auto it = map.find(key); it != map.end()) {
+        bool found = false;
+        for (i64 i : it->second)
+          if (cie_equals(cie, *uniq[i])) {
+            cie.icf_idx = uniq[i]->icf_idx;
+            found = true;
+            break;
+          }
+        if (found)
+          continue;
       }
+      cie.icf_idx = uniq.size();
+      map[key].push_back(uniq.size());
+      uniq.push_back(&cie);
     }
   }
 }
