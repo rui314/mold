@@ -59,6 +59,10 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx)
   // special (and buggy) case.
   if constexpr (!E::is_rela || is_sh4<E>)
     uncompress(ctx);
+
+  is_debug_section = name.starts_with(".debug_");
+  is_debug_line = (name == ".debug_line");
+  is_debug_loc_ranges = (name == ".debug_loc" || name == ".debug_ranges");
 }
 
 template <typename E>
