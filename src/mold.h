@@ -1950,6 +1950,119 @@ struct DynamicPattern {
   bool is_cpp = false;
 };
 
+// ScriptExpr represents an expression in the linker script language.
+// For simplicity, we use a single type for all kinds of expressions
+// instead of a class hierarchy.
+struct ScriptExpr {
+  enum Kind : u8 { INT, NAME, DOT, UNARY, BINARY, TERNARY, FUNC };
+
+  Kind kind = INT;
+  u64 value = 0;                 // integer literal value
+  std::string_view str;          // name, operator or function name
+  std::vector<ScriptExpr> args;  // operands
+};
+
+// A sort specifier for input section patterns. REVERSE composes with
+// the others, so a pattern holds a list of these, outermost first.
+enum class ScriptSort : u8 { NONE, NAME, ALIGNMENT, INIT_PRIORITY, REVERSE };
+
+// A pattern group in an input section description. For example,
+// `*(SORT_BY_NAME(.ctors.*))` contains one group whose `sorts` is
+// {NAME} and whose `pats` is {".ctors.*"}.
+struct ScriptPattern {
+  std::vector<ScriptSort> sorts;
+  std::vector<std::string_view> exclude_files;  // EXCLUDE_FILE(...)
+  std::vector<std::string_view> pats;
+};
+
+// A memory region defined in a MEMORY { ... } command
+struct ScriptRegion {
+  std::string_view loc;    // command's first token for error reporting
+  std::string_view name;
+  std::string_view attrs;  // e.g. "rwx" in `ram (rwx) : ...`
+  ScriptExpr origin;
+  ScriptExpr length;
+};
+
+// A program header defined in a PHDRS { ... } command
+struct ScriptPhdr {
+  std::string_view loc;
+  std::string_view name;
+  std::string_view type;   // e.g. "PT_LOAD"
+  bool filehdr = false;
+  bool phdrs = false;
+  std::optional<ScriptExpr> at;
+  std::optional<ScriptExpr> flags;
+};
+
+// ScriptCmd represents a single linker script command. Commands form
+// a tree; SECTIONS, OVERLAY and output section descriptions contain
+// subcommands in `cmds`. As with ScriptExpr, we use a single type for
+// all kinds of commands. Each kind uses only a subset of the fields.
+struct ScriptCmd {
+  enum Kind : u8 {
+    SECTIONS,        // SECTIONS { <cmds> }
+    OUTPUT_SECTION,  // <name> <addr> (<type>) : { <cmds> } <region> ...
+    OVERLAY,         // OVERLAY <addr> : { <cmds> } <region> ...
+    INPUT_SECTION,   // KEEP(<file_pat>(<pats>))
+    ASSIGNMENT,      // <name> <op> <value>;
+    DATA,            // BYTE(<value>), SHORT, LONG, QUAD or SQUAD
+    FILL,            // FILL(<value>)
+    ASCIZ,           // ASCIZ "<msg>"
+    CONSTRUCTORS,    // CONSTRUCTORS
+    ASSERT,          // ASSERT(<value>, "<msg>")
+    ENTRY,           // ENTRY(<name>)
+    MEMORY,          // MEMORY { <memory> }
+    PHDRS,           // PHDRS { <phdrs> }
+    INSERT,          // INSERT BEFORE|AFTER <name>
+    REGION_ALIAS,    // REGION_ALIAS(<name2>, <name>)
+    OTHER,           // an unsupported command such as NOCROSSREFS
+  };
+
+  Kind kind;
+  std::string_view loc;  // command's first token for error reporting
+  std::string_view name;
+  std::vector<ScriptCmd> cmds;
+
+  // For ASSIGNMENT
+  std::string_view op;   // "=", "+=", etc.
+  bool provide = false;
+  bool hidden = false;
+
+  std::optional<ScriptExpr> value;  // assignment RHS, data value or condition
+  std::string_view msg;             // ASSERT or ASCIZ string
+  i64 data_size = 0;                // 1, 2, 4 or 8 for DATA
+
+  // For INPUT_SECTION
+  bool keep = false;                            // KEEP(...)
+  std::string_view file_pat;
+  std::vector<ScriptSort> file_sorts;
+  std::vector<ScriptPattern> pats;
+  std::vector<std::string_view> exclude_files;  // EXCLUDE_FILE outside parens
+  std::vector<std::string_view> names;          // INPUT_SECTION_FLAGS or OTHER args
+
+  // For OUTPUT_SECTION and OVERLAY
+  std::optional<ScriptExpr> addr;
+  std::string_view type;                    // e.g. "NOLOAD"
+  std::optional<ScriptExpr> at;             // AT(...)
+  std::optional<ScriptExpr> align;          // ALIGN(...)
+  bool align_with_input = false;
+  std::optional<ScriptExpr> subalign;       // SUBALIGN(...)
+  std::string_view constraint;              // ONLY_IF_RO or ONLY_IF_RW
+  std::string_view region;                  // >region
+  std::string_view lma_region;              // AT>region
+  std::vector<std::string_view> phdr_refs;  // :phdr
+  std::optional<ScriptExpr> fill;           // =<fill>
+
+  // For INSERT and REGION_ALIAS
+  bool insert_before = false;
+  std::string_view name2;
+
+  // For MEMORY and PHDRS
+  std::vector<ScriptRegion> memory;
+  std::vector<ScriptPhdr> phdrs;
+};
+
 template <typename E>
 class Script {
 public:
@@ -1962,18 +2075,47 @@ public:
   std::vector<DynamicPattern> parse_dynamic_list();
 
 private:
+  // The language is context-dependent; e.g. `*` is a wildcard in a
+  // glob pattern but a multiplication operator in an expression, so
+  // the parser switches the lexer's behavior with these modes.
+  enum LexMode : u8 { LEX_PATH, LEX_GLOB, LEX_EXPR };
+
   [[noreturn]] void error(std::string_view pos, std::string msg);
 
   std::string_view lex_one();
+  void set_lex_mode(LexMode mode);
+
   std::string_view peek(i64 n = 0);
   std::string_view next();
   bool at_eof();
   bool consume(std::string_view str);
   void skip(std::string_view str);
   bool consume_label(std::string label);
+  bool consume_colon();
 
+  void read_command();
   void read_output_format();
   void read_group();
+  void read_include();
+
+  ScriptExpr read_expr();
+  ScriptExpr read_expr1(ScriptExpr lhs, i64 min_prec);
+  ScriptExpr read_primary();
+
+  ScriptCmd read_assignment();
+  ScriptCmd read_assert();
+  ScriptCmd read_sections();
+  ScriptCmd read_output_section();
+  void read_output_section_body(ScriptCmd &cmd);
+  void read_output_section_tail(ScriptCmd &cmd);
+  ScriptCmd read_input_section();
+  ScriptPattern read_pattern();
+  ScriptCmd read_overlay();
+  ScriptCmd read_memory();
+  ScriptCmd read_phdrs();
+
+  void evaluate();
+  void dump();
 
   void read_version_script();
   void read_version_script_commands(std::string_view ver_str, u16 ver_idx,
@@ -1995,6 +2137,16 @@ private:
   // Tokens lexed so far. tokens[pos] is the next token to be read.
   std::vector<std::string_view> tokens;
   i64 pos = 0;
+  LexMode lex_mode = LEX_PATH;
+
+  // Parsed commands
+  std::vector<ScriptCmd> cmds;
+
+  // Files suspended by INCLUDE and all files read so far. The latter
+  // is kept so that an error message for a token can be attributed to
+  // the file the token came from.
+  std::vector<std::pair<MappedFile *, std::string_view>> include_stack;
+  std::vector<MappedFile *> files = {mf};
 };
 
 template <typename E>
@@ -2442,6 +2594,7 @@ struct Context {
     bool detach = true;
     bool discard_all = false;
     bool discard_locals = false;
+    bool dump_script = false;
     bool dynamic_list_data = false;
     bool eh_frame_hdr = true;
     bool emit_relocs = false;
