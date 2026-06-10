@@ -1911,8 +1911,11 @@ void match_script_sections(Context<E> &ctx) {
         has_file_constraint |=
           c.file.has_value() || c.exclude_files.has_value();
 
+        // MultiGlob::find returns the match with the largest value,
+        // so store ranks negated relative to INT32_MAX to get the
+        // first-match-wins rule.
         for (std::string_view p : pat.pats)
-          if (!prefilter.add(p, rank))
+          if (!prefilter.add(p, INT32_MAX - rank))
             Fatal(ctx) << "linker script: invalid glob pattern: " << p;
 
         ctx.script_ranks.push_back({(i32)i, spec.keep, pat.sorts});
@@ -1935,6 +1938,7 @@ void match_script_sections(Context<E> &ctx) {
       i64 rank = prefilter.find(isec->name);
       if (rank == -1)
         continue;
+      rank = INT32_MAX - rank;
 
       if (has_file_constraint) {
         auto matches = [&](Candidate &c) {
@@ -2132,7 +2136,7 @@ void match_synthetic_sections(Context<E> &ctx) {
       if (spec.kind == ScriptCmd::INPUT_SECTION)
         for (ScriptPattern &pat : spec.pats)
           for (std::string_view p : pat.pats)
-            matcher.add(p, i);
+            matcher.add(p, INT32_MAX - i);  // see match_script_sections
   }
   if (matcher.empty())
     return;
@@ -2155,7 +2159,10 @@ void match_synthetic_sections(Context<E> &ctx) {
       continue;
 
     i64 cmd = matcher.find(chunk->name);
-    if (cmd != -1 && !taken[cmd]) {
+    if (cmd == -1)
+      continue;
+    cmd = INT32_MAX - cmd;
+    if (!taken[cmd]) {
       chunk->script_cmd = cmd;
       taken[cmd] = true;
     }
