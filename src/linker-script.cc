@@ -44,11 +44,17 @@ void Script<E>::error(std::string_view pos, std::string msg) {
              << std::string(indent + column, ' ') << "^ " << msg;
 }
 
+// Extracts a token from the beginning of `input` and returns it.
+// Returns an empty string if there's no more token. The lexer never
+// produces an empty token, so an empty return value unambiguously
+// means "end of input".
 template <typename E>
-void Script<E>::tokenize() {
-  std::string_view input = mf->get_contents();
+std::string_view Script<E>::lex_one() {
+  // Skip whitespace and comments
+  for (;;) {
+    if (input.empty())
+      return "";
 
-  while (!input.empty()) {
     if (isspace(input[0])) {
       input = input.substr(1);
       continue;
@@ -64,57 +70,63 @@ void Script<E>::tokenize() {
 
     if (input[0] == '#') {
       i64 pos = input.find("\n", 1);
-      if (pos == std::string_view::npos)
-        break;
+      if (pos == std::string_view::npos) {
+        input = "";
+        return "";
+      }
       input = input.substr(pos + 1);
       continue;
     }
-
-    if (input[0] == '"') {
-      i64 pos = input.find('"', 1);
-      if (pos == std::string_view::npos)
-        error(input, "unclosed string literal");
-      tokens.push_back(input.substr(0, pos + 1));
-      input = input.substr(pos + 1);
-      continue;
-    }
-
-    i64 pos = input.find_first_not_of(
-      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-      "0123456789_.$/\\~=+[]*?-!^:");
-
-    if (pos == 0)
-      pos = 1;
-    else if (pos == input.npos)
-      pos = input.size();
-
-    tokens.push_back(input.substr(0, pos));
-    input = input.substr(pos);
+    break;
   }
+
+  if (input[0] == '"') {
+    i64 pos = input.find('"', 1);
+    if (pos == std::string_view::npos)
+      error(input, "unclosed string literal");
+    std::string_view tok = input.substr(0, pos + 1);
+    input = input.substr(pos + 1);
+    return tok;
+  }
+
+  i64 pos = input.find_first_not_of(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    "0123456789_.$/\\~=+[]*?-!^:");
+
+  if (pos == 0)
+    pos = 1;
+  else if (pos == input.npos)
+    pos = input.size();
+
+  std::string_view tok = input.substr(0, pos);
+  input = input.substr(pos);
+  return tok;
 }
 
 // The following functions form a cursor into the token stream.
-//
-// peek() returns the token `n` tokens ahead without consuming it, or an
-// empty string if there's no such token. The tokenizer never produces an
-// empty token, so an empty return value unambiguously means "no token".
+// peek() returns the token `n` tokens ahead without consuming it,
+// or an empty string if there's no such token.
 template <typename E>
 std::string_view Script<E>::peek(i64 n) {
-  if (pos + n < tokens.size())
-    return tokens[pos + n];
-  return "";
+  while (tokens.size() <= pos + n) {
+    std::string_view tok = lex_one();
+    if (tok.empty())
+      return "";
+    tokens.push_back(tok);
+  }
+  return tokens[pos + n];
 }
 
 template <typename E>
 std::string_view Script<E>::next() {
-  if (pos == tokens.size())
+  if (peek().empty())
     Fatal(ctx) << mf->name << ": unexpected EOF";
   return tokens[pos++];
 }
 
 template <typename E>
 bool Script<E>::at_eof() {
-  return pos == tokens.size();
+  return peek().empty();
 }
 
 template <typename E>
@@ -245,8 +257,6 @@ void Script<E>::read_group() {
 
 template <typename E>
 void Script<E>::parse_linker_script() {
-  std::call_once(once, [&] { tokenize(); });
-
   while (!at_eof()) {
     if (consume("OUTPUT_FORMAT")) {
       read_output_format();
@@ -269,8 +279,6 @@ void Script<E>::parse_linker_script() {
 
 template <typename E>
 std::string_view Script<E>::get_script_output_type() {
-  std::call_once(once, [&] { tokenize(); });
-
   if (peek() == "OUTPUT_FORMAT" && peek(1) == "(") {
     if (peek(2) == "elf64-x86-64")
       return X86_64::name;
@@ -366,7 +374,6 @@ void Script<E>::read_version_script() {
 
 template <typename E>
 void Script<E>::parse_version_script() {
-  std::call_once(once, [&] { tokenize(); });
   read_version_script();
   if (!at_eof())
     error(peek(), "trailing garbage token");
@@ -399,7 +406,6 @@ void Script<E>::read_dynamic_list_commands(std::vector<DynamicPattern> &result,
 
 template <typename E>
 std::vector<DynamicPattern> Script<E>::parse_dynamic_list() {
-  std::call_once(once, [&] { tokenize(); });
   std::vector<DynamicPattern> result;
 
   skip("{");

@@ -1954,7 +1954,7 @@ template <typename E>
 class Script {
 public:
   Script(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf)
-    : ctx(ctx), rctx(rctx), mf(mf) {}
+    : ctx(ctx), rctx(rctx), mf(mf), input(mf->get_contents()) {}
 
   std::string_view get_script_output_type();
   void parse_linker_script();
@@ -1964,8 +1964,7 @@ public:
 private:
   [[noreturn]] void error(std::string_view pos, std::string msg);
 
-  void tokenize();
-
+  std::string_view lex_one();
   std::string_view peek(i64 n = 0);
   std::string_view next();
   bool at_eof();
@@ -1988,7 +1987,12 @@ private:
   Context<E> &ctx;
   ReaderContext &rctx;
   MappedFile *mf;
-  std::once_flag once;
+
+  // The unprocessed part of the script being parsed. Tokens are lexed
+  // on demand because how text should be tokenized depends on context.
+  std::string_view input;
+
+  // Tokens lexed so far. tokens[pos] is the next token to be read.
   std::vector<std::string_view> tokens;
   i64 pos = 0;
 };
