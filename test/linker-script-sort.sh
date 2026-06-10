@@ -37,3 +37,17 @@ a1=$(grep -E " c1$" $t/log2 | awk '{print strtonum("0x" $2)}')
 a2=$(grep -E " c2$" $t/log2 | awk '{print strtonum("0x" $2)}')
 a10=$(grep -E " c10$" $t/log2 | awk '{print strtonum("0x" $2)}')
 test $a1 -lt $a2 && test $a2 -lt $a10
+
+# SORT_NONE keeps the input order
+cat <<'EOF2' > $t/script3
+SECTIONS {
+  .text : { *(.text .text.*) }
+  .x : { *(SORT_NONE(.x.*)) }
+}
+EOF2
+
+./mold -o $t/exe3 $t/a.o -T $t/script3
+readelf -sW $t/exe3 > $t/log3
+a2=$(grep -E " c2$" $t/log3 | awk '{print strtonum("0x" $2)}')
+a10=$(grep -E " c10$" $t/log3 | awk '{print strtonum("0x" $2)}')
+test $a10 -lt $a2

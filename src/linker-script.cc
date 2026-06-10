@@ -1378,8 +1378,7 @@ void Script<E>::evaluate_sections(ScriptCmd &cmd) {
           error(b.loc, "this input section description is not supported yet");
         for (ScriptPattern &pat : b.pats)
           for (ScriptSort sort : pat.sorts)
-            if (sort != ScriptSort::NAME && sort != ScriptSort::ALIGNMENT &&
-                sort != ScriptSort::INIT_PRIORITY)
+            if (sort == ScriptSort::REVERSE)
               error(b.loc, "this sort specifier is not supported yet");
         break;
       case ScriptCmd::ASSIGNMENT:
