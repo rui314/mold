@@ -2188,7 +2188,6 @@ private:
   void evaluate_command(ScriptCmd &cmd);
   void evaluate_sections(ScriptCmd &cmd);
   void register_assignment(ScriptCmd &cmd);
-  void dump();
 
   MappedFile *file_of(std::string_view pos);
 
@@ -2691,7 +2690,6 @@ struct Context {
     bool detach = true;
     bool discard_all = false;
     bool discard_locals = false;
-    bool dump_script = false;
     std::string_view orphan_handling = "place";
     bool dynamic_list_data = false;
     bool eh_frame_hdr = true;

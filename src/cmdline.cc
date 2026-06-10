@@ -894,10 +894,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.detach = true;
     } else if (read_flag("no-detach")) {
       ctx.arg.detach = false;
-    } else if (read_flag("dump-script")) {
-      // An undocumented flag to print how mold parsed linker scripts.
-      // If this flag is given, mold exits after printing.
-      ctx.arg.dump_script = true;
     } else if (read_arg("orphan-handling")) {
       if (arg != "place" && arg != "warn" && arg != "error")
         Fatal(ctx) << "--orphan-handling: unsupported mode: " << arg;
