@@ -1087,16 +1087,26 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
     }
   });
 
-  // Clear the leading padding and, if the section has no members at
-  // all (e.g. a linker script section containing only data commands),
-  // its entire contents
-  i64 lead = members.empty() ? (i64)this->shdr.sh_size : members[0]->offset;
-  if (lead > 0) {
+  // Fill the leading padding and the gaps around data commands. As
+  // with the gaps between members, a fill pattern starts anew at each
+  // gap.
+  auto fill_gap = [&](u64 start, u64 end) {
     if (this->fill)
-      for (i64 i = 0; i < lead; i++)
-        buf[i] = *this->fill >> (24 - (i % 4) * 8);
+      for (u64 i = start; i < end; i++)
+        buf[i] = *this->fill >> (24 - ((i - start) % 4) * 8);
     else
-      memset(buf, 0, lead);
+      memset(buf + start, 0, end - start);
+  };
+
+  if (members.empty()) {
+    u64 pos = 0;
+    for (ScriptData &d : script_data) {
+      fill_gap(pos, d.offset);
+      pos = d.offset + d.size;
+    }
+    fill_gap(pos, this->shdr.sh_size);
+  } else if (members[0]->offset > 0) {
+    fill_gap(0, members[0]->offset);
   }
 
   // Write data inserted by linker script BYTE/SHORT/LONG/QUAD commands

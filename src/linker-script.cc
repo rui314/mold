@@ -2295,11 +2295,21 @@ void set_virtual_addresses_by_script(Context<E> &ctx) {
       changed |= (chunk->lma != lma);
       chunk->lma = lma;
 
-      dot_sec = chunk;
+      // A TLS NOBITS section doesn't consume address space; it
+      // overlaps with whatever comes next. See the comment in
+      // set_virtual_addresses_regular().
+      if (chunk->shdr.sh_type == SHT_NOBITS &&
+          (chunk->shdr.sh_flags & SHF_TLS))
+        dot = addr;
+      else
+        dot_sec = chunk;
     };
 
+    u64 first_addr = 0;
+    bool seen_first = false;
+
     for (Chunk<E> *chunk : ctx.chunks) {
-      if (!(chunk->shdr.sh_flags & SHF_ALLOC))
+      if (!(chunk->shdr.sh_flags & SHF_ALLOC) || chunk->is_header())
         continue;
 
       if (chunk->script_cmd != -1) {
@@ -2308,12 +2318,39 @@ void set_virtual_addresses_by_script(Context<E> &ctx) {
         layout(chunk, &ctx.script_sections[chunk->script_cmd]);
       } else {
         // An orphan section is laid out where the section ordering
-        // pass placed it
+        // pass placed it. Its rank encodes the script command it
+        // follows; commands up to that point run first.
+        run_until(std::min<i64>((chunk->sect_order + 1) / 2,
+                                ctx.script_sections.size()));
         layout(chunk, nullptr);
+      }
+
+      if (!seen_first) {
+        first_addr = chunk->shdr.sh_addr;
+        seen_first = true;
       }
     }
 
     run_until(ctx.script_sections.size());
+
+    // The ELF and program headers are mapped if they fit in front of
+    // the first section, as the dynamic loader and libc need them at
+    // runtime (AT_PHDR)
+    if (ctx.ehdr && (ctx.ehdr->shdr.sh_flags & SHF_ALLOC)) {
+      u64 size = ctx.ehdr->shdr.sh_size + ctx.phdr->shdr.sh_size;
+      u64 addr = first_addr - first_addr % ctx.page_size;
+      if (seen_first && first_addr - addr >= size) {
+        changed |= (ctx.ehdr->shdr.sh_addr != addr);
+        ctx.ehdr->shdr.sh_addr = addr;
+        ctx.ehdr->lma = addr;
+        ctx.phdr->shdr.sh_addr = addr + ctx.ehdr->shdr.sh_size;
+        ctx.phdr->lma = ctx.phdr->shdr.sh_addr;
+      } else {
+        ctx.ehdr->shdr.sh_flags &= ~(u64)SHF_ALLOC;
+        ctx.phdr->shdr.sh_flags &= ~(u64)SHF_ALLOC;
+        changed = true;
+      }
+    }
 
     if (!changed)
       break;

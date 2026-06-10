@@ -120,18 +120,20 @@ void create_synthetic_sections(Context<E> &ctx) {
       return false;
     };
 
-    // With an explicit layout, the ELF and program headers are not
-    // mapped to memory unless asked for. (Within a linker script
-    // they would be requested by FILEHDR/PHDRS in a PHDRS command,
-    // which we don't support yet.)
-    bool script = !ctx.script_sections.empty();
+    // With an explicit PHDRS command, the ELF and program headers are
+    // mapped to memory only if a segment asks for them with FILEHDR or
+    // PHDRS. Without one, the layout pass maps them if they fit in
+    // front of the first section, so leave them allocated for now.
+    bool hdrs = ctx.script_phdrs.empty();
+    for (ScriptPhdr &p : ctx.script_phdrs)
+      hdrs |= (p.filehdr || p.phdrs);
 
-    if ((ctx.arg.section_order.empty() && !script) || find("EHDR"))
+    if ((ctx.arg.section_order.empty() && hdrs) || find("EHDR"))
       ctx.ehdr = push(new OutputEhdr<E>(SHF_ALLOC));
     else
       ctx.ehdr = push(new OutputEhdr<E>(0));
 
-    if ((ctx.arg.section_order.empty() && !script) || find("PHDR"))
+    if ((ctx.arg.section_order.empty() && hdrs) || find("PHDR"))
       ctx.phdr = push(new OutputPhdr<E>(SHF_ALLOC));
     else
       ctx.phdr = push(new OutputPhdr<E>(0));
@@ -2681,68 +2683,71 @@ void compute_address_significance(Context<E> &ctx) {
 // Other file layouts are possible, but this layout is chosen to keep
 // the number of segments as few as possible.
 template <typename E>
-void sort_output_sections_regular(Context<E> &ctx) {
-  auto get_rank1 = [&](Chunk<E> *chunk) {
-    u64 type = chunk->shdr.sh_type;
-    u64 flags = chunk->shdr.sh_flags;
+static i64 get_regular_rank1(Context<E> &ctx, Chunk<E> *chunk) {
+  u64 type = chunk->shdr.sh_type;
+  u64 flags = chunk->shdr.sh_flags;
 
-    if (chunk == ctx.ehdr)
-      return 0;
-    if (chunk == ctx.phdr)
-      return 1;
-    if (chunk == ctx.interp)
-      return 2;
-    if (type == SHT_NOTE && (flags & SHF_ALLOC))
-      return 3;
-    if (chunk == ctx.hash)
-      return 4;
-    if (chunk == ctx.gnu_hash)
-      return 5;
-    if (chunk == ctx.dynsym)
-      return 6;
-    if (chunk == ctx.dynstr)
-      return 7;
-    if (chunk == ctx.versym)
-      return 8;
-    if (chunk == ctx.verneed)
-      return 9;
-    if (chunk == ctx.reldyn)
-      return 10;
-    if (chunk == ctx.relplt)
-      return 11;
-    if (chunk == ctx.shdr)
-      return INT32_MAX - 1;
-    if (chunk == ctx.gdb_index)
-      return INT32_MAX;
-
-    bool alloc = (flags & SHF_ALLOC);
-    bool writable = (flags & SHF_WRITE);
-    bool exec = (flags & SHF_EXECINSTR);
-    bool tls = (flags & SHF_TLS);
-    bool relro = chunk->is_relro;
-    bool is_bss = (type == SHT_NOBITS);
-
-    return (1 << 10) | (!alloc << 9) | (writable << 8) | (exec << 7) |
-           (!tls << 6) | (!relro << 5) | (is_bss << 4);
-  };
-
-  // Ties are broken by additional rules
-  auto get_rank2 = [&](Chunk<E> *chunk) -> i64 {
-    ElfShdr<E> &shdr = chunk->shdr;
-    if (shdr.sh_type == SHT_NOTE)
-      return -shdr.sh_addralign;
-
-    if (chunk == ctx.got)
-      return 2;
-    if (chunk->name == ".toc")
-      return 3;
-    if (chunk == ctx.relro_padding)
-      return INT64_MAX;
+  if (chunk == ctx.ehdr)
     return 0;
-  };
+  if (chunk == ctx.phdr)
+    return 1;
+  if (chunk == ctx.interp)
+    return 2;
+  if (type == SHT_NOTE && (flags & SHF_ALLOC))
+    return 3;
+  if (chunk == ctx.hash)
+    return 4;
+  if (chunk == ctx.gnu_hash)
+    return 5;
+  if (chunk == ctx.dynsym)
+    return 6;
+  if (chunk == ctx.dynstr)
+    return 7;
+  if (chunk == ctx.versym)
+    return 8;
+  if (chunk == ctx.verneed)
+    return 9;
+  if (chunk == ctx.reldyn)
+    return 10;
+  if (chunk == ctx.relplt)
+    return 11;
+  if (chunk == ctx.shdr)
+    return INT32_MAX - 1;
+  if (chunk == ctx.gdb_index)
+    return INT32_MAX;
 
+  bool alloc = (flags & SHF_ALLOC);
+  bool writable = (flags & SHF_WRITE);
+  bool exec = (flags & SHF_EXECINSTR);
+  bool tls = (flags & SHF_TLS);
+  bool relro = chunk->is_relro;
+  bool is_bss = (type == SHT_NOBITS);
+
+  return (1 << 10) | (!alloc << 9) | (writable << 8) | (exec << 7) |
+       (!tls << 6) | (!relro << 5) | (is_bss << 4);
+}
+
+// Ties are broken by additional rules
+template <typename E>
+static i64 get_regular_rank2(Context<E> &ctx, Chunk<E> *chunk) {
+  ElfShdr<E> &shdr = chunk->shdr;
+  if (shdr.sh_type == SHT_NOTE)
+    return -shdr.sh_addralign;
+
+  if (chunk == ctx.got)
+    return 2;
+  if (chunk->name == ".toc")
+    return 3;
+  if (chunk == ctx.relro_padding)
+    return INT64_MAX;
+  return 0;
+}
+
+template <typename E>
+void sort_output_sections_regular(Context<E> &ctx) {
   ranges::stable_sort(ctx.chunks, {}, [&](Chunk<E> *x) {
-    return std::tuple{get_rank1(x), get_rank2(x), x->name};
+    return std::tuple{get_regular_rank1(ctx, x), get_regular_rank2(ctx, x),
+                      x->name};
   });
 }
 
@@ -2806,27 +2811,42 @@ template <typename E>
 static void sort_output_sections_by_script(Context<E> &ctx) {
   match_synthetic_sections(ctx);
 
-  // Find the insertion point for an orphan: the last script section
-  // with the same section type and memory attributes, or failing
-  // that, the last one with the same attributes.
+  // Find the insertion point for an orphan: the position the default
+  // section order would give it, i.e. after the last script section
+  // that the default order ranks no higher. This keeps related
+  // orphans, such as .tdata and .tbss, together.
+  i64 first_osec = 0;
+  for (i64 i = 0; i < ctx.script_sections.size(); i++) {
+    if (ctx.script_sections[i].kind == ScriptCmd::OUTPUT_SECTION) {
+      first_osec = i;
+      break;
+    }
+  }
+
   auto get_anchor = [&](Chunk<E> *chunk) -> i64 {
-    u64 attrs = chunk->shdr.sh_flags & (SHF_WRITE | SHF_EXECINSTR);
-    i64 anchor = -1;
-    i64 best = 0;
+    i64 rank = get_regular_rank1(ctx, chunk);
+
+    // An orphan that orders before everything the script describes
+    // is placed right after the first section; placing it in front
+    // would displace the address the script gives the section.
+    i64 anchor = first_osec;
+    i64 equal = -1;
 
     for (Chunk<E> *sc : ctx.chunks) {
       if (sc->script_cmd == -1 || !(sc->shdr.sh_flags & SHF_ALLOC))
         continue;
-      u64 attrs2 = sc->shdr.sh_flags & (SHF_WRITE | SHF_EXECINSTR);
-      i64 score = 1 + (attrs == attrs2) +
-                  (chunk->shdr.sh_type == sc->shdr.sh_type);
-      if (score > best ||
-          (score == best && sc->script_cmd > anchor)) {
-        best = score;
-        anchor = sc->script_cmd;
-      }
+      i64 r = get_regular_rank1(ctx, sc);
+      if (r <= rank)
+        anchor = std::max<i64>(anchor, sc->script_cmd);
+      if (r == rank)
+        equal = std::max<i64>(equal, sc->script_cmd);
     }
-    return anchor;
+
+    // Prefer a section of exactly the same class; e.g. exec orphans
+    // such as .plt go with .text rather than after some read-only
+    // data, which would create an executable island in a page shared
+    // with data.
+    return (equal != -1) ? equal : anchor;
   };
 
   auto get_rank = [&](Chunk<E> *chunk) -> i64 {
@@ -2850,7 +2870,14 @@ static void sort_output_sections_by_script(Context<E> &ctx) {
 
   for (Chunk<E> *chunk : ctx.chunks)
     chunk->sect_order = get_rank(chunk);
-  ranges::stable_sort(ctx.chunks, {}, &Chunk<E>::sect_order);
+
+  // Orphans that share an insertion point are ordered as the default
+  // layout would order them, which keeps pairs like .tdata/.tbss in
+  // the order other passes depend on.
+  ranges::stable_sort(ctx.chunks, {}, [&](Chunk<E> *x) {
+    return std::tuple{x->sect_order, get_regular_rank1(ctx, x),
+                      get_regular_rank2(ctx, x), x->name};
+  });
 }
 
 template <typename E>

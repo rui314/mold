@@ -19,7 +19,7 @@ SECTIONS {
     QUAD(0x1122334455667788)
     . = ALIGN(16);
     blob_end = .;
-  } =0xaa
+  } =0xaaaaaaaa
   ASSERT(blob_end - blob_start == 16, "bad blob size")
 }
 EOF
@@ -28,5 +28,6 @@ EOF
 
 off=$(readelf -SW $t/exe | grep -F .blob | awk '{print strtonum("0x" $6)}')
 test "$(dd if=$t/exe bs=1 skip=$off count=1 2>/dev/null | od -An -tx1 | tr -d ' ')" = 12
-# The padding byte at offset 15 comes from the fill pattern
+# The padding byte at offset 15 comes from the fill pattern, which
+# starts anew at each gap
 test "$(dd if=$t/exe bs=1 skip=$((off + 15)) count=1 2>/dev/null | od -An -tx1 | tr -d ' ')" = aa
