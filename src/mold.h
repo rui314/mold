@@ -1966,30 +1966,31 @@ private:
 
   void tokenize();
 
-  std::span<std::string_view>
-  skip(std::span<std::string_view> tok, std::string_view str);
+  std::string_view peek(i64 n = 0);
+  std::string_view next();
+  bool at_eof();
+  bool consume(std::string_view str);
+  void skip(std::string_view str);
+  bool consume_label(std::string label);
 
-  std::span<std::string_view> read_output_format(std::span<std::string_view> tok);
-  std::span<std::string_view> read_group(std::span<std::string_view> tok);
+  void read_output_format();
+  void read_group();
 
-  std::span<std::string_view>
-  read_version_script_commands(std::span<std::string_view> tok,
-                               std::string_view ver_str, u16 ver_idx,
-                               bool is_global, bool is_cpp);
-
-  std::span<std::string_view> read_version_script(std::span<std::string_view> tok);
+  void read_version_script();
+  void read_version_script_commands(std::string_view ver_str, u16 ver_idx,
+                                    bool is_global, bool is_cpp);
 
   MappedFile *resolve_path(std::string_view tok, bool check_target);
 
-  std::span<std::string_view>
-  read_dynamic_list_commands(std::span<std::string_view> tok,
-                             std::vector<DynamicPattern> &result, bool is_cpp);
+  void read_dynamic_list_commands(std::vector<DynamicPattern> &result,
+                                  bool is_cpp);
 
   Context<E> &ctx;
   ReaderContext &rctx;
-  MappedFile *mf = mf;
+  MappedFile *mf;
   std::once_flag once;
   std::vector<std::string_view> tokens;
+  i64 pos = 0;
 };
 
 template <typename E>

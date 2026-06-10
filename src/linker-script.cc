@@ -93,14 +93,60 @@ void Script<E>::tokenize() {
   }
 }
 
+// The following functions form a cursor into the token stream.
+//
+// peek() returns the token `n` tokens ahead without consuming it, or an
+// empty string if there's no such token. The tokenizer never produces an
+// empty token, so an empty return value unambiguously means "no token".
 template <typename E>
-std::span<std::string_view>
-Script<E>::skip(std::span<std::string_view> tok, std::string_view str) {
-  if (tok.empty())
+std::string_view Script<E>::peek(i64 n) {
+  if (pos + n < tokens.size())
+    return tokens[pos + n];
+  return "";
+}
+
+template <typename E>
+std::string_view Script<E>::next() {
+  if (pos == tokens.size())
+    Fatal(ctx) << mf->name << ": unexpected EOF";
+  return tokens[pos++];
+}
+
+template <typename E>
+bool Script<E>::at_eof() {
+  return pos == tokens.size();
+}
+
+template <typename E>
+bool Script<E>::consume(std::string_view str) {
+  if (peek() == str) {
+    pos++;
+    return true;
+  }
+  return false;
+}
+
+template <typename E>
+void Script<E>::skip(std::string_view str) {
+  if (at_eof())
     Fatal(ctx) << mf->name << ": expected '" << str << "', but got EOF";
-  if (tok[0] != str)
-    error(tok[0], "expected '" + std::string(str) + "'");
-  return tok.subspan(1);
+  if (!consume(str))
+    error(peek(), "expected '" + std::string(str) + "'");
+}
+
+// Reads a token like "global:", which may have been tokenized as a
+// single token or as two tokens depending on whether the label was
+// followed by a space.
+template <typename E>
+bool Script<E>::consume_label(std::string label) {
+  if (consume(label + ":"))
+    return true;
+
+  if (peek() == label && peek(1) == ":") {
+    pos += 2;
+    return true;
+  }
+  return false;
 }
 
 static std::string_view unquote(std::string_view s) {
@@ -112,14 +158,10 @@ static std::string_view unquote(std::string_view s) {
 }
 
 template <typename E>
-std::span<std::string_view>
-Script<E>::read_output_format(std::span<std::string_view> tok) {
-  tok = skip(tok, "(");
-  while (!tok.empty() && tok[0] != ")")
-    tok = tok.subspan(1);
-  if (tok.empty())
-    Fatal(ctx) << mf->name << ": expected ')', but got EOF";
-  return tok.subspan(1);
+void Script<E>::read_output_format() {
+  skip("(");
+  while (!consume(")"))
+    next();
 }
 
 template <typename E>
@@ -186,52 +228,41 @@ MappedFile *Script<E>::resolve_path(std::string_view tok, bool check_target) {
 }
 
 template <typename E>
-std::span<std::string_view>
-Script<E>::read_group(std::span<std::string_view> tok) {
-  tok = skip(tok, "(");
+void Script<E>::read_group() {
+  skip("(");
 
-  while (!tok.empty() && tok[0] != ")") {
-    if (tok[0] == "AS_NEEDED") {
+  while (!consume(")")) {
+    if (consume("AS_NEEDED")) {
       bool orig = rctx.as_needed;
       rctx.as_needed = true;
-      tok = read_group(tok.subspan(1));
+      read_group();
       rctx.as_needed = orig;
-      continue;
+    } else {
+      read_file(ctx, rctx, resolve_path(next(), true));
     }
-
-    MappedFile *mf = resolve_path(tok[0], true);
-    read_file(ctx, rctx, mf);
-    tok = tok.subspan(1);
   }
-
-  if (tok.empty())
-    Fatal(ctx) << mf->name << ": expected ')', but got EOF";
-  return tok.subspan(1);
 }
 
 template <typename E>
 void Script<E>::parse_linker_script() {
   std::call_once(once, [&] { tokenize(); });
-  std::span<std::string_view> tok = tokens;
 
-  while (!tok.empty()) {
-    if (tok[0] == "OUTPUT_FORMAT") {
-      tok = read_output_format(tok.subspan(1));
-    } else if (tok[0] == "INPUT" || tok[0] == "GROUP") {
-      tok = read_group(tok.subspan(1));
-    } else if (tok[0] == "VERSION") {
-      tok = tok.subspan(1);
-      tok = skip(tok, "{");
-      tok = read_version_script(tok);
-      tok = skip(tok, "}");
-    } else if (tok.size() > 3 && tok[1] == "=" && tok[3] == ";") {
-      ctx.arg.defsyms.emplace_back(get_symbol(ctx, unquote(tok[0])),
-                                   get_symbol(ctx, unquote(tok[2])));
-      tok = tok.subspan(4);
-    } else if (tok[0] == ";") {
-      tok = tok.subspan(1);
+  while (!at_eof()) {
+    if (consume("OUTPUT_FORMAT")) {
+      read_output_format();
+    } else if (consume("INPUT") || consume("GROUP")) {
+      read_group();
+    } else if (consume("VERSION")) {
+      skip("{");
+      read_version_script();
+      skip("}");
+    } else if (peek(1) == "=" && peek(3) == ";") {
+      ctx.arg.defsyms.emplace_back(get_symbol(ctx, unquote(peek())),
+                                   get_symbol(ctx, unquote(peek(2))));
+      pos += 4;
+    } else if (consume(";")) {
     } else {
-      error(tok[0], "unknown linker script token");
+      error(peek(), "unknown linker script token");
     }
   }
 }
@@ -239,172 +270,145 @@ void Script<E>::parse_linker_script() {
 template <typename E>
 std::string_view Script<E>::get_script_output_type() {
   std::call_once(once, [&] { tokenize(); });
-  std::span<std::string_view> tok = tokens;
 
-  if (tok.size() >= 3 && tok[0] == "OUTPUT_FORMAT" && tok[1] == "(") {
-    if (tok[2] == "elf64-x86-64")
+  if (peek() == "OUTPUT_FORMAT" && peek(1) == "(") {
+    if (peek(2) == "elf64-x86-64")
       return X86_64::name;
-    if (tok[2] == "elf32-i386")
+    if (peek(2) == "elf32-i386")
       return I386::name;
   }
 
-  if (tok.size() >= 3 && (tok[0] == "INPUT" || tok[0] == "GROUP") &&
-      tok[1] == "(") {
-    if (tok.size() >= 5 && tok[2] == "AS_NEEDED" && tok[3] == "(")
-      tok = tok.subspan(2);
-    if (MappedFile *mf = resolve_path(tok[2], false))
-      return get_machine_type(ctx, rctx, mf);
+  if ((peek() == "INPUT" || peek() == "GROUP") && peek(1) == "(") {
+    i64 i = (peek(2) == "AS_NEEDED" && peek(3) == "(") ? 4 : 2;
+    if (!peek(i).empty())
+      if (MappedFile *mf2 = resolve_path(peek(i), false))
+        return get_machine_type(ctx, rctx, mf2);
   }
   return "";
 }
 
-static bool read_label(std::span<std::string_view> &tok, std::string label) {
-  if (tok.size() >= 1 && tok[0] == label + ":") {
-    tok = tok.subspan(1);
-    return true;
-  }
-
-  if (tok.size() >= 2 && tok[0] == label && tok[1] == ":") {
-    tok = tok.subspan(2);
-    return true;
-  }
-  return false;
-}
-
 template <typename E>
-std::span<std::string_view>
-Script<E>::read_version_script_commands(std::span<std::string_view> tok,
-                                        std::string_view ver_str, u16 ver_idx,
-                                        bool is_global, bool is_cpp) {
-  while (!tok.empty() && tok[0] != "}") {
-    if (read_label(tok, "global")) {
+void Script<E>::read_version_script_commands(std::string_view ver_str,
+                                             u16 ver_idx, bool is_global,
+                                             bool is_cpp) {
+  while (!at_eof() && peek() != "}") {
+    if (consume_label("global")) {
       is_global = true;
       continue;
     }
 
-    if (read_label(tok, "local")) {
+    if (consume_label("local")) {
       is_global = false;
       continue;
     }
 
-    if (tok[0] == "extern") {
-      tok = tok.subspan(1);
-
-      if (!tok.empty() && tok[0] == "\"C\"") {
-        tok = tok.subspan(1);
-        tok = skip(tok, "{");
-        tok = read_version_script_commands(tok, ver_str, ver_idx, is_global, false);
+    if (consume("extern")) {
+      bool is_cpp2;
+      if (consume("\"C\"")) {
+        is_cpp2 = false;
       } else {
-        tok = skip(tok, "\"C++\"");
-        tok = skip(tok, "{");
-        tok = read_version_script_commands(tok, ver_str, ver_idx, is_global, true);
+        skip("\"C++\"");
+        is_cpp2 = true;
       }
 
-      tok = skip(tok, "}");
-      tok = skip(tok, ";");
+      skip("{");
+      read_version_script_commands(ver_str, ver_idx, is_global, is_cpp2);
+      skip("}");
+      skip(";");
       continue;
     }
 
-    if (tok[0] == "*") {
+    if (peek() == "*") {
       ctx.default_version = (is_global ? ver_idx : (u32)VER_NDX_LOCAL);
     } else if (is_global) {
-      ctx.version_patterns.push_back({unquote(tok[0]), mf->name, ver_str,
+      ctx.version_patterns.push_back({unquote(peek()), mf->name, ver_str,
                                       ver_idx, is_cpp});
     } else {
-      ctx.version_patterns.push_back({unquote(tok[0]), mf->name, ver_str,
+      ctx.version_patterns.push_back({unquote(peek()), mf->name, ver_str,
                                       VER_NDX_LOCAL, is_cpp});
     }
 
-    tok = tok.subspan(1);
-
-    if (!tok.empty() && tok[0] == "}")
+    next();
+    if (peek() == "}")
       break;
-    tok = skip(tok, ";");
+    skip(";");
   }
-  return tok;
 }
 
 template <typename E>
-std::span<std::string_view>
-Script<E>::read_version_script(std::span<std::string_view> tok) {
+void Script<E>::read_version_script() {
   u16 next_ver = VER_NDX_LAST_RESERVED + ctx.arg.version_definitions.size() + 1;
 
-  while (!tok.empty() && tok[0] != "}") {
+  while (!at_eof() && peek() != "}") {
     std::string_view ver_str;
     u16 ver_idx;
 
-    if (tok[0] == "{") {
+    if (peek() == "{") {
       ver_str = "global";
       ver_idx = VER_NDX_GLOBAL;
     } else {
-      ver_str = tok[0];
+      ver_str = next();
       ver_idx = next_ver++;
-      ctx.arg.version_definitions.emplace_back(tok[0]);
-      tok = tok.subspan(1);
+      ctx.arg.version_definitions.emplace_back(ver_str);
     }
 
-    tok = skip(tok, "{");
-    tok = read_version_script_commands(tok, ver_str, ver_idx, true, false);
-    tok = skip(tok, "}");
-    if (!tok.empty() && tok[0] != ";")
-      tok = tok.subspan(1);
-    tok = skip(tok, ";");
+    skip("{");
+    read_version_script_commands(ver_str, ver_idx, true, false);
+    skip("}");
+
+    // A version definition may be followed by a predecessor version
+    // name (e.g. `VER_1.1 { ... } VER_1.0;`), which we just ignore.
+    if (!at_eof() && peek() != ";")
+      next();
+    skip(";");
   }
-  return tok;
 }
 
 template <typename E>
 void Script<E>::parse_version_script() {
   std::call_once(once, [&] { tokenize(); });
-  std::span<std::string_view> tok = tokens;
-  tok = read_version_script(tok);
-  if (!tok.empty())
-    error(tok[0], "trailing garbage token");
+  read_version_script();
+  if (!at_eof())
+    error(peek(), "trailing garbage token");
 }
 
 template <typename E>
-std::span<std::string_view>
-Script<E>::read_dynamic_list_commands(std::span<std::string_view> tok,
-                                      std::vector<DynamicPattern> &result,
-                                      bool is_cpp) {
-  while (!tok.empty() && tok[0] != "}") {
-    if (tok[0] == "extern") {
-      tok = tok.subspan(1);
-
-      if (!tok.empty() && tok[0] == "\"C\"") {
-        tok = tok.subspan(1);
-        tok = skip(tok, "{");
-        tok = read_dynamic_list_commands(tok, result, false);
+void Script<E>::read_dynamic_list_commands(std::vector<DynamicPattern> &result,
+                                           bool is_cpp) {
+  while (!at_eof() && peek() != "}") {
+    if (consume("extern")) {
+      bool is_cpp2;
+      if (consume("\"C\"")) {
+        is_cpp2 = false;
       } else {
-        tok = skip(tok, "\"C++\"");
-        tok = skip(tok, "{");
-        tok = read_dynamic_list_commands(tok, result, true);
+        skip("\"C++\"");
+        is_cpp2 = true;
       }
 
-      tok = skip(tok, "}");
-      tok = skip(tok, ";");
+      skip("{");
+      read_dynamic_list_commands(result, is_cpp2);
+      skip("}");
+      skip(";");
       continue;
     }
 
-    result.push_back({unquote(tok[0]), "", is_cpp});
-    tok = skip(tok.subspan(1), ";");
+    result.push_back({unquote(next()), "", is_cpp});
+    skip(";");
   }
-  return tok;
 }
 
 template <typename E>
 std::vector<DynamicPattern> Script<E>::parse_dynamic_list() {
   std::call_once(once, [&] { tokenize(); });
-  std::span<std::string_view> tok = tokens;
   std::vector<DynamicPattern> result;
 
-  tok = skip(tok, "{");
-  tok = read_dynamic_list_commands(tok, result, false);
-  tok = skip(tok, "}");
-  tok = skip(tok, ";");
+  skip("{");
+  read_dynamic_list_commands(result, false);
+  skip("}");
+  skip(";");
 
-  if (!tok.empty())
-    error(tok[0], "trailing garbage token");
+  if (!at_eof())
+    error(peek(), "trailing garbage token");
 
   for (DynamicPattern &p : result)
     p.source = mf->name;
