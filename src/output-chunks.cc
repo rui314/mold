@@ -175,7 +175,13 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     }
 
     phdr.p_vaddr = chunk->shdr.sh_addr;
-    phdr.p_paddr = chunk->shdr.sh_addr;
+
+    // A linker script's AT() can give a section a load address that
+    // differs from its virtual address
+    if (!ctx.script_sections.empty())
+      phdr.p_paddr = chunk->lma;
+    else
+      phdr.p_paddr = chunk->shdr.sh_addr;
 
     if (chunk->shdr.sh_flags & SHF_ALLOC)
       phdr.p_memsz = chunk->shdr.sh_size;
@@ -245,19 +251,28 @@ static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
     if (!ctx.arg.nmagic && !ctx.arg.omagic)
       vec.back().p_align = std::max<u64>(ctx.page_size, vec.back().p_align);
 
+    // Sections whose load address differs from the virtual address
+    // by a different amount cannot share a segment
+    auto same_lma_delta = [&](Chunk<E> *chunk) {
+      return ctx.script_sections.empty() ||
+             chunk->lma - chunk->shdr.sh_addr == first->lma - first->shdr.sh_addr;
+    };
+
     // Add contiguous ALLOC sections as long as they have the same
     // section flags and there's no on-disk gap in between.
     if (!is_bss(first))
       while (i < chunks.size() &&
              !is_bss(chunks[i]) &&
              to_phdr_flags(ctx, chunks[i]) == flags &&
+             same_lma_delta(chunks[i]) &&
              chunks[i]->shdr.sh_offset - first->shdr.sh_offset ==
              chunks[i]->shdr.sh_addr - first->shdr.sh_addr)
         append(chunks[i++]);
 
     while (i < chunks.size() &&
            is_bss(chunks[i]) &&
-           to_phdr_flags(ctx, chunks[i]) == flags)
+           to_phdr_flags(ctx, chunks[i]) == flags &&
+           same_lma_delta(chunks[i]))
       append(chunks[i++]);
   }
 

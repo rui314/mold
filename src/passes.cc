@@ -779,6 +779,7 @@ void create_output_sections(Context<E> &ctx) {
       osec->sh_flags = SHF_ALLOC;
       osec->shdr.sh_flags = SHF_ALLOC;
       osec->shdr.sh_addralign = 1;
+      script_finalize_section(ctx, *osec);
       ctx.osec_pool.emplace_back(osec);
     }
   }
@@ -1838,9 +1839,13 @@ void compute_section_sizes(Context<E> &ctx) {
   if constexpr (needs_thunk<E>) {
     std::vector<Chunk<E> *> vec = ctx.chunks;
 
+    // A section described by a linker script is laid out by the
+    // script engine, which doesn't support range extension thunks
+    // yet; a branch that cannot reach its target is reported as an
+    // out-of-range relocation.
     auto tail = ranges::partition(vec, [&](Chunk<E> *chunk) {
       return chunk->to_osec() && (chunk->shdr.sh_flags & SHF_EXECINSTR) &&
-             !ctx.arg.relocatable;
+             !ctx.arg.relocatable && chunk->script_cmd == -1;
     });
 
     // create_range_extension_thunks is not thread-safe
