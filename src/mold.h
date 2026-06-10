@@ -2063,6 +2063,28 @@ struct ScriptCmd {
   std::vector<ScriptPhdr> phdrs;
 };
 
+// A linker script symbol assignment such as `end = ALIGN(16);` whose
+// value can be computed only after the output file layout is fixed.
+// Until then, it is kept in Context<E>::script_assignments.
+template <typename E>
+struct ScriptAssignment {
+  Symbol<E> *sym = nullptr;
+  ScriptExpr value;
+  bool provide = false;
+  bool hidden = false;
+  bool defined = false;       // true if we are the symbol's definer
+  MappedFile *mf = nullptr;   // for error reporting
+  std::string_view loc;
+};
+
+// A linker script ASSERT command, evaluated after layout
+struct ScriptAssert {
+  ScriptExpr cond;
+  std::string_view msg;
+  MappedFile *mf = nullptr;
+  std::string_view loc;
+};
+
 template <typename E>
 class Script {
 public:
@@ -2117,6 +2139,8 @@ private:
   void evaluate();
   void dump();
 
+  MappedFile *file_of(std::string_view pos);
+
   void read_version_script();
   void read_version_script_commands(std::string_view ver_str, u16 ver_idx,
                                     bool is_global, bool is_cpp);
@@ -2152,6 +2176,9 @@ private:
 template <typename E>
 std::vector<DynamicPattern>
 parse_dynamic_list(Context<E> &ctx, std::string_view path);
+
+template <typename E>
+void eval_script_commands(Context<E> &ctx);
 
 //
 // archive-file.cc
@@ -2280,6 +2307,7 @@ template <typename E> void parse_sframe_sections(Context<E> &);
 template <typename E> void create_merged_sections(Context<E> &);
 template <typename E> void convert_common_symbols(Context<E> &);
 template <typename E> void create_output_sections(Context<E> &);
+template <typename E> void add_provided_symbols(Context<E> &);
 template <typename E> void add_synthetic_symbols(Context<E> &);
 template <typename E> void apply_section_align(Context<E> &);
 template <typename E> void check_cet_errors(Context<E> &);
@@ -2599,6 +2627,7 @@ struct Context {
     bool eh_frame_hdr = true;
     bool emit_relocs = false;
     bool enable_new_dtags = true;
+    bool entry_given = false;
     bool execute_only = false;
     bool export_dynamic = false;
     bool fatal_warnings = false;
@@ -2715,6 +2744,8 @@ struct Context {
   std::optional<tbb::global_control> global_limit;
   std::vector<VersionPattern> version_patterns;
   std::vector<DynamicPattern> dynamic_list_patterns;
+  std::vector<ScriptAssignment<E>> script_assignments;
+  std::vector<ScriptAssert> script_asserts;
   i64 default_version = VER_NDX_UNSPECIFIED;
   i64 page_size = E::page_size;
   bool has_error = false;

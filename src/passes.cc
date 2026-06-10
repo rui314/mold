@@ -783,12 +783,60 @@ void create_internal_file(Context<E> &ctx) {
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++)
     add(ctx.arg.defsyms[i].first);
 
+  // Add symbols defined by linker scripts. PROVIDE'd symbols are not
+  // added here because they must yield to definitions in input files;
+  // they are handled in add_synthetic_symbols() instead.
+  for (ScriptAssignment<E> &a : ctx.script_assignments) {
+    if (!a.provide) {
+      add(a.sym);
+      a.defined = true;
+    }
+  }
+
   // Add --section-order symbols
   for (SectionOrder &ord : ctx.arg.section_order)
     if (ord.type == SectionOrder::SYMBOL)
       add(get_symbol(ctx, ord.name));
 
   obj->elf_syms = ctx.internal_esyms;
+}
+
+// Define symbols PROVIDE'd by linker scripts. A PROVIDE'd symbol is
+// defined only if no input file defines it, so this pass must run
+// after symbol resolution. It must also run before
+// compute_import_export() so that PROVIDE'd symbols are exported just
+// like any other defined symbol.
+template <typename E>
+void add_provided_symbols(Context<E> &ctx) {
+  if (!ctx.internal_obj)
+    return;
+
+  ObjectFile<E> &obj = *ctx.internal_obj;
+  bool changed = false;
+
+  for (ScriptAssignment<E> &a : ctx.script_assignments) {
+    if (a.provide && !a.sym->file) {
+      ElfSym<E> esym;
+      memset(&esym, 0, sizeof(esym));
+      esym.st_type = STT_NOTYPE;
+      esym.st_shndx = SHN_ABS;
+      esym.st_bind = STB_GLOBAL;
+      esym.st_visibility = a.hidden ? STV_HIDDEN : STV_DEFAULT;
+      ctx.internal_esyms.push_back(esym);
+
+      a.sym->value = 0xdeadbeef; // unique dummy value
+      if (a.hidden)
+        a.sym->visibility = STV_HIDDEN;
+      obj.symbols.push_back(a.sym);
+      a.defined = true;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    obj.elf_syms = ctx.internal_esyms;
+    obj.resolve_symbols(ctx);
+  }
 }
 
 template <typename E>
@@ -3249,6 +3297,9 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   for (SectionOrder &ord : ctx.arg.section_order)
     if (ord.type == SectionOrder::SYMBOL)
       get_symbol(ctx, ord.name)->set_output_section(sections[0]);
+
+  // Linker script symbol assignments and ASSERT commands
+  eval_script_commands(ctx);
 }
 
 template <typename E>
@@ -3666,6 +3717,7 @@ template void parse_sframe_sections(Context<E> &);
 template void create_merged_sections(Context<E> &);
 template void convert_common_symbols(Context<E> &);
 template void create_output_sections(Context<E> &);
+template void add_provided_symbols(Context<E> &);
 template void add_synthetic_symbols(Context<E> &);
 template void check_cet_errors(Context<E> &);
 template void apply_section_align(Context<E> &);

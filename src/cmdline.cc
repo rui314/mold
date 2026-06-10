@@ -851,6 +851,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.discard_locals = false;
     } else if (read_arg("e") || read_arg("entry")) {
       ctx.arg.entry = get_symbol(ctx, arg);
+      ctx.arg.entry_given = true;
     } else if (read_arg("Map")) {
       ctx.arg.Map = arg;
       ctx.arg.print_map = true;

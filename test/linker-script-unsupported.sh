@@ -18,5 +18,5 @@ not ./mold $t/a.o -T $t/script -o $t/exe |& grep 'not supported yet'
 echo 'OUTPUT(foo.exe)' > $t/script2
 not ./mold $t/a.o -T $t/script2 -o $t/exe |& grep 'not supported yet'
 
-echo 'PROVIDE(foo = 3);' > $t/script3
+echo '. = 0x1000;' > $t/script3
 not ./mold $t/a.o -T $t/script3 -o $t/exe |& grep 'not supported yet'

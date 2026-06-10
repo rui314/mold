@@ -21,6 +21,7 @@
 
 #include "mold.h"
 
+#include <bit>
 #include <cctype>
 #include <charconv>
 #include <iostream>
@@ -45,16 +46,10 @@ static std::string_view get_line(std::string_view input, const char *pos) {
 }
 
 template <typename E>
-void Script<E>::error(std::string_view pos, std::string msg) {
-  // The token may have come from a file that the current file INCLUDE'd
-  MappedFile *file = mf;
-  for (MappedFile *m : files) {
-    std::string_view buf = m->get_contents();
-    if (buf.data() <= pos.data() && pos.data() < buf.data() + buf.size())
-      file = m;
-  }
-
-  std::string_view input = file->get_contents();
+[[noreturn]]
+static void script_error(Context<E> &ctx, MappedFile *mf,
+                         std::string_view pos, std::string msg) {
+  std::string_view input = mf->get_contents();
   std::string_view line = get_line(input, pos.data());
 
   i64 lineno = 1;
@@ -62,12 +57,29 @@ void Script<E>::error(std::string_view pos, std::string msg) {
     if (input[i] == '\n')
       lineno++;
 
-  std::string label = file->name + ":" + std::to_string(lineno) + ": ";
+  std::string label = mf->name + ":" + std::to_string(lineno) + ": ";
   i64 indent = strlen("mold: fatal: ") + label.size();
   i64 column = pos.data() - line.data();
 
   Fatal(ctx) << label << line << "\n"
              << std::string(indent + column, ' ') << "^ " << msg;
+}
+
+// Returns the file a given token came from. It is usually `mf` but may
+// be a file that the current file INCLUDE'd.
+template <typename E>
+MappedFile *Script<E>::file_of(std::string_view pos) {
+  for (MappedFile *m : files) {
+    std::string_view buf = m->get_contents();
+    if (buf.data() <= pos.data() && pos.data() < buf.data() + buf.size())
+      return m;
+  }
+  return mf;
+}
+
+template <typename E>
+void Script<E>::error(std::string_view pos, std::string msg) {
+  script_error(ctx, file_of(pos), pos, std::move(msg));
 }
 
 // Extracts a token from the beginning of `input` and returns it.
@@ -1199,26 +1211,56 @@ void Script<E>::read_command() {
   error(tok, "unknown linker script token");
 }
 
-// mold cannot evaluate most linker script commands yet. We reject
+// mold cannot evaluate all linker script commands yet. We reject
 // anything we cannot faithfully execute so that we never silently
 // create an output file that is different from what a script demands.
 template <typename E>
 void Script<E>::evaluate() {
   for (ScriptCmd &cmd : cmds) {
-    // `foo = bar;` and `foo = 0x1000;` are equivalent to --defsym
-    if (cmd.kind == ScriptCmd::ASSIGNMENT && !cmd.provide && !cmd.hidden &&
-        cmd.op == "=" && cmd.name != ".") {
-      if (cmd.value->kind == ScriptExpr::NAME) {
-        ctx.arg.defsyms.emplace_back(get_symbol(ctx, cmd.name),
-                                     get_symbol(ctx, cmd.value->str));
-        continue;
+    if (cmd.kind == ScriptCmd::ENTRY) {
+      // The -e option takes precedence over ENTRY()
+      if (!ctx.arg.entry_given) {
+        ctx.arg.entry = get_symbol(ctx, cmd.name);
+        ctx.arg.entry->gc_root = true;
+        ctx.arg.undefined.push_back(ctx.arg.entry);
       }
-      if (cmd.value->kind == ScriptExpr::INT) {
-        ctx.arg.defsyms.emplace_back(get_symbol(ctx, cmd.name),
-                                     cmd.value->value);
-        continue;
-      }
+      continue;
     }
+
+    if (cmd.kind == ScriptCmd::ASSERT) {
+      ctx.script_asserts.push_back({std::move(*cmd.value), cmd.msg,
+                                    file_of(cmd.loc), cmd.loc});
+      continue;
+    }
+
+    if (cmd.kind == ScriptCmd::ASSIGNMENT && cmd.name != "." &&
+        cmd.op == "=") {
+      // `foo = bar;` and `foo = 0x1000;` are equivalent to --defsym
+      if (!cmd.provide && !cmd.hidden) {
+        if (cmd.value->kind == ScriptExpr::NAME) {
+          ctx.arg.defsyms.emplace_back(get_symbol(ctx, cmd.name),
+                                       get_symbol(ctx, cmd.value->str));
+          continue;
+        }
+        if (cmd.value->kind == ScriptExpr::INT) {
+          ctx.arg.defsyms.emplace_back(get_symbol(ctx, cmd.name),
+                                       cmd.value->value);
+          continue;
+        }
+      }
+
+      // Other assignments are evaluated after the layout is fixed
+      ScriptAssignment<E> a;
+      a.sym = get_symbol(ctx, cmd.name);
+      a.value = std::move(*cmd.value);
+      a.provide = cmd.provide;
+      a.hidden = cmd.hidden;
+      a.mf = file_of(cmd.loc);
+      a.loc = cmd.loc;
+      ctx.script_assignments.push_back(std::move(a));
+      continue;
+    }
+
     error(cmd.loc, "this linker script command is not supported yet");
   }
 }
@@ -1235,6 +1277,266 @@ void Script<E>::parse_linker_script() {
     exit(0);
   }
   evaluate();
+}
+
+//
+// Expression evaluation
+//
+
+// A linker script expression evaluates to an absolute value that may
+// be associated with an output section. We track the association so
+// that a symbol defined as e.g. `foo = ADDR(.text) + 16;` is emitted
+// as a section-relative symbol, which stays correct even if the
+// output is loaded at an address other than the link-time one.
+template <typename E>
+struct ScriptValue {
+  u64 val = 0;
+  Chunk<E> *sec = nullptr;
+};
+
+template <typename E>
+struct ScriptEvaluator {
+  Context<E> &ctx;
+  MappedFile *mf;
+  std::string_view loc;
+
+  [[noreturn]] void error(std::string msg) {
+    script_error(ctx, mf, loc, std::move(msg));
+  }
+
+  // Returns the output section a given expression names
+  Chunk<E> *get_section(const ScriptExpr &e) {
+    if (e.kind != ScriptExpr::NAME)
+      error("expected a section name");
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (chunk->name == e.str)
+        return chunk;
+    error("section not found: " + std::string(e.str));
+  }
+
+  // Returns the output section that contains a given address
+  Chunk<E> *section_of(u64 addr) {
+    for (Chunk<E> *chunk : ctx.chunks)
+      if ((chunk->shdr.sh_flags & SHF_ALLOC) && chunk->shdr.sh_addr <= addr &&
+          addr < chunk->shdr.sh_addr + chunk->shdr.sh_size)
+        return chunk;
+    return nullptr;
+  }
+
+  u64 eval_int(const ScriptExpr &e) {
+    return eval(e).val;
+  }
+
+  ScriptValue<E> eval(const ScriptExpr &e);
+};
+
+template <typename E>
+ScriptValue<E> ScriptEvaluator<E>::eval(const ScriptExpr &e) {
+  switch (e.kind) {
+  case ScriptExpr::INT:
+    return {e.value};
+  case ScriptExpr::NAME: {
+    if (e.str == "SIZEOF_HEADERS")
+      return {ctx.ehdr->shdr.sh_size + ctx.phdr->shdr.sh_size};
+
+    Symbol<E> *sym = get_symbol(ctx, e.str);
+    if (!sym->file)
+      error("undefined symbol: " + std::string(e.str));
+
+    u64 addr = sym->get_addr(ctx);
+    if (sym->is_absolute())
+      return {addr};
+    return {addr, section_of(addr)};
+  }
+  case ScriptExpr::DOT:
+    error("'.' is not allowed in this context");
+  case ScriptExpr::UNARY: {
+    u64 x = eval_int(e.args[0]);
+    if (e.str == "-")
+      return {-x};
+    if (e.str == "~")
+      return {~x};
+    if (e.str == "!")
+      return {!x};
+    return {x}; // unary +
+  }
+  case ScriptExpr::BINARY: {
+    // && and || must not evaluate the right-hand side eagerly to
+    // support an idiom like `DEFINED(foo) && foo`.
+    if (e.str == "&&")
+      return {eval_int(e.args[0]) && eval_int(e.args[1])};
+    if (e.str == "||")
+      return {eval_int(e.args[0]) || eval_int(e.args[1])};
+
+    ScriptValue<E> a = eval(e.args[0]);
+    ScriptValue<E> b = eval(e.args[1]);
+    u64 x = a.val;
+    u64 y = b.val;
+
+    if (e.str == "+") {
+      // The sum of a section-relative value and an absolute value is
+      // section-relative
+      if (a.sec && b.sec)
+        return {x + y};
+      return {x + y, a.sec ? a.sec : b.sec};
+    }
+    if (e.str == "-") {
+      // The difference between two section-relative values is absolute
+      if (a.sec && !b.sec)
+        return {x - y, a.sec};
+      return {x - y};
+    }
+
+    if (e.str == "*")
+      return {x * y};
+    if (e.str == "/") {
+      if (y == 0)
+        error("division by zero");
+      return {x / y};
+    }
+    if (e.str == "%") {
+      if (y == 0)
+        error("modulo by zero");
+      return {x % y};
+    }
+    if (e.str == "<<")
+      return {x << y};
+    if (e.str == ">>")
+      return {x >> y};
+    if (e.str == "<")
+      return {x < y};
+    if (e.str == ">")
+      return {x > y};
+    if (e.str == "<=")
+      return {x <= y};
+    if (e.str == ">=")
+      return {x >= y};
+    if (e.str == "==")
+      return {x == y};
+    if (e.str == "!=")
+      return {x != y};
+    if (e.str == "&")
+      return {x & y};
+    if (e.str == "^")
+      return {x ^ y};
+    assert(e.str == "|");
+    return {x | y};
+  }
+  case ScriptExpr::TERNARY:
+    // The unselected branch must not be evaluated
+    return eval(e.args[eval_int(e.args[0]) ? 1 : 2]);
+  case ScriptExpr::FUNC: {
+    std::string_view fn = e.str;
+
+    auto want = [&](i64 n) {
+      if (e.args.size() != n)
+        error(std::string(fn) + ": wrong number of arguments");
+    };
+
+    if (fn == "ABSOLUTE") {
+      want(1);
+      return {eval_int(e.args[0])};
+    }
+    if (fn == "ADDR") {
+      want(1);
+      Chunk<E> *sec = get_section(e.args[0]);
+      return {sec->shdr.sh_addr, sec};
+    }
+    if (fn == "SIZEOF") {
+      want(1);
+      return {get_section(e.args[0])->shdr.sh_size};
+    }
+    if (fn == "ALIGNOF") {
+      want(1);
+      return {get_section(e.args[0])->shdr.sh_addralign};
+    }
+    if (fn == "DEFINED") {
+      want(1);
+      if (e.args[0].kind != ScriptExpr::NAME)
+        error("DEFINED: expected a symbol name");
+      return {get_symbol(ctx, e.args[0].str)->file != nullptr};
+    }
+    if (fn == "ALIGN" || fn == "BLOCK") {
+      // The single-argument form aligns the location counter, which
+      // exists only within SECTIONS.
+      if (e.args.size() != 2)
+        error(std::string(fn) + ": '.' is not allowed in this context");
+      return {align_to(eval_int(e.args[0]), eval_int(e.args[1]))};
+    }
+    if (fn == "MAX") {
+      want(2);
+      return {std::max(eval_int(e.args[0]), eval_int(e.args[1]))};
+    }
+    if (fn == "MIN") {
+      want(2);
+      return {std::min(eval_int(e.args[0]), eval_int(e.args[1]))};
+    }
+    if (fn == "LOG2CEIL") {
+      want(1);
+      return {(u64)std::bit_width(std::max<u64>(eval_int(e.args[0]), 1) - 1)};
+    }
+    if (fn == "CONSTANT") {
+      want(1);
+      if (e.args[0].kind == ScriptExpr::NAME && e.args[0].str == "MAXPAGESIZE")
+        return {(u64)ctx.page_size};
+      error("CONSTANT: unsupported constant");
+    }
+    if (fn == "SEGMENT_START") {
+      // The second operand gives the default value, which is used
+      // unless overridden with an option such as -Ttext
+      want(2);
+      if (e.args[0].kind == ScriptExpr::NAME) {
+        std::string_view seg = e.args[0].str;
+        std::string_view sec = seg == "text-segment" ? ".text"
+                             : seg == "data-segment" ? ".data"
+                             : seg == "bss-segment"  ? ".bss" : "";
+
+        auto it = ctx.arg.section_start.find(sec);
+        if (!sec.empty() && it != ctx.arg.section_start.end())
+          return {it->second};
+      }
+      return {eval_int(e.args[1])};
+    }
+    if (fn == "ASSERT") {
+      want(2);
+      ScriptValue<E> v = eval(e.args[0]);
+      if (!v.val)
+        error(std::string(e.args[1].str));
+      return v;
+    }
+    error(std::string(fn) + " is not supported in this context");
+  }
+  }
+  unreachable();
+}
+
+// Computes the values of symbols defined by linker scripts and checks
+// ASSERT commands. This is called at the end of fix_synthetic_symbols
+// when the addresses of all sections and other symbols are final.
+template <typename E>
+void eval_script_commands(Context<E> &ctx) {
+  for (ScriptAssignment<E> &a : ctx.script_assignments) {
+    if (a.provide && !a.defined)
+      continue;
+
+    ScriptEvaluator<E> ev{ctx, a.mf, a.loc};
+    ScriptValue<E> v = ev.eval(a.value);
+
+    if (v.sec)
+      a.sym->set_output_section(v.sec);
+    else
+      a.sym->origin = 0;
+    a.sym->value = v.val;
+
+    if (a.hidden)
+      a.sym->visibility = STV_HIDDEN;
+  }
+
+  for (ScriptAssert &a : ctx.script_asserts) {
+    ScriptEvaluator<E> ev{ctx, a.mf, a.loc};
+    if (!ev.eval(a.cond).val)
+      script_error(ctx, a.mf, a.loc, std::string(a.msg));
+  }
 }
 
 //
@@ -1618,5 +1920,7 @@ template class Script<E>;
 
 template
 std::vector<DynamicPattern> parse_dynamic_list(Context<E> &, std::string_view);
+
+template void eval_script_commands(Context<E> &);
 
 } // namespace mold

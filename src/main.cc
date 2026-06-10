@@ -388,6 +388,9 @@ int mold_main(int argc, char **argv) {
   // Create .bss sections for common symbols.
   convert_common_symbols(ctx);
 
+  // Define symbols PROVIDE'd by linker scripts.
+  add_provided_symbols(ctx);
+
   // Apply version scripts.
   apply_version_script(ctx);
 
