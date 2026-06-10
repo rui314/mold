@@ -2108,14 +2108,10 @@ struct ScriptAssignment {
   MappedFile *mf = nullptr;   // for error reporting
   std::string_view loc;
 
-  // If the assignment appeared within SECTIONS, the location counter
-  // is bound when the value is evaluated: to (the address of dot_sec)
-  // + dot_offset if the assignment was in an output section body, or
-  // to the absolute value dot_offset otherwise. The bindings are
-  // established by the layout pass.
-  bool has_dot = false;
-  Chunk<E> *dot_sec = nullptr;
-  u64 dot_offset = 0;
+  // True if the assignment appeared within SECTIONS. Such assignments
+  // are executed by the layout pass, where the location counter is
+  // live; the others are evaluated after the layout is fixed.
+  bool in_sections = false;
 };
 
 // The result of matching an input section against the section
@@ -2246,10 +2242,6 @@ void match_synthetic_sections(Context<E> &ctx);
 
 template <typename E>
 void script_finalize_section(Context<E> &ctx, OutputSection<E> &osec);
-
-template <typename E>
-void script_compute_section_size(Context<E> &ctx, OutputSection<E> &osec,
-                                 u64 base = 0);
 
 template <typename E>
 void set_virtual_addresses_by_script(Context<E> &ctx);

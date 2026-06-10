@@ -903,12 +903,10 @@ template <typename E>
 void OutputSection<E>::compute_section_size(Context<E> &ctx) {
   ElfShdr<E> &shdr = this->shdr;
 
-  // A section described by a linker script may contain location
-  // counter arithmetic, so it is laid out by the script engine.
-  if (this->script_cmd != -1) {
-    script_compute_section_size(ctx, *this);
+  // A section described by a linker script is laid out by the script
+  // engine in set_virtual_addresses_by_script()
+  if (this->script_cmd != -1)
     return;
-  }
 
   // Text sections must to be handled by create_range_extension_thunks()
   // if they may need range extension thunks.
