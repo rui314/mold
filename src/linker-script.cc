@@ -1255,8 +1255,20 @@ void Script<E>::evaluate_command(ScriptCmd &cmd) {
     return;
   }
 
-  if (cmd.kind == ScriptCmd::ASSIGNMENT && cmd.name != "." &&
-      cmd.op == "=") {
+  if (cmd.kind == ScriptCmd::ASSIGNMENT && cmd.op == "=") {
+    // `. = ASSERT(expr, "msg");` after a SECTIONS command is a common
+    // idiom for a standalone assertion
+    if (cmd.name == ".") {
+      if (cmd.value->kind == ScriptExpr::FUNC && cmd.value->str == "ASSERT" &&
+          cmd.value->args.size() == 2) {
+        ctx.script_asserts.push_back({std::move(cmd.value->args[0]),
+                                      cmd.value->args[1].str,
+                                      file_of(cmd.loc), cmd.loc});
+        return;
+      }
+      error(cmd.loc, "this linker script command is not supported yet");
+    }
+
     // `foo = bar;` and `foo = 0x1000;` are equivalent to --defsym
     if (!cmd.provide && !cmd.hidden) {
       if (cmd.value->kind == ScriptExpr::NAME) {
@@ -1272,28 +1284,125 @@ void Script<E>::evaluate_command(ScriptCmd &cmd) {
     }
 
     // Other assignments are evaluated after the layout is fixed
-    ScriptAssignment<E> a;
-    a.sym = get_symbol(ctx, cmd.name);
-    a.value = std::move(*cmd.value);
-    a.provide = cmd.provide;
-    a.hidden = cmd.hidden;
-    a.mf = file_of(cmd.loc);
-    a.loc = cmd.loc;
-    ctx.script_assignments.push_back(std::move(a));
+    register_assignment(cmd);
     return;
   }
 
   if (cmd.kind == ScriptCmd::SECTIONS) {
-    for (ScriptCmd &c : cmd.cmds) {
-      if (c.kind == ScriptCmd::OUTPUT_SECTION && is_plain_discard(c))
-        append(ctx.script_discards, std::move(c.cmds));
-      else
-        evaluate_command(c);
+    evaluate_sections(cmd);
+    return;
+  }
+
+  if (cmd.kind == ScriptCmd::PHDRS) {
+    for (ScriptPhdr &p : cmd.phdrs) {
+      if (p.at)
+        error(p.loc, "AT is not supported yet");
+      if (p.flags && p.flags->kind != ScriptExpr::INT)
+        error(p.loc, "FLAGS must be an integer literal");
+      ctx.script_phdrs.push_back(std::move(p));
     }
     return;
   }
 
   error(cmd.loc, "this linker script command is not supported yet");
+}
+
+// Creates a ScriptAssignment record for an assignment command and
+// links the command to it. The symbol is defined by
+// create_internal_file() or add_provided_symbols(); its value is
+// computed by eval_script_commands() after the layout is fixed.
+template <typename E>
+void Script<E>::register_assignment(ScriptCmd &cmd) {
+  cmd.aux = ctx.script_assignments.size();
+
+  ScriptAssignment<E> a;
+  a.sym = get_symbol(ctx, cmd.name);
+  a.value = *cmd.value;
+  a.provide = cmd.provide;
+  a.hidden = cmd.hidden;
+  a.mf = file_of(cmd.loc);
+  a.loc = cmd.loc;
+  ctx.script_assignments.push_back(std::move(a));
+}
+
+// Reads the contents of a SECTIONS command into ctx.script_sections,
+// rejecting anything the layout engine cannot faithfully execute.
+template <typename E>
+void Script<E>::evaluate_sections(ScriptCmd &cmd) {
+  for (ScriptCmd &c : cmd.cmds) {
+    switch (c.kind) {
+    case ScriptCmd::ENTRY:
+    case ScriptCmd::ASSERT:
+      evaluate_command(c);
+      continue;
+    case ScriptCmd::ASSIGNMENT:
+      // The location counter is handled by the layout pass; other
+      // symbols are registered so they are defined before symbol
+      // resolution.
+      if (c.name != ".") {
+        if (c.op != "=")
+          error(c.loc, "this linker script command is not supported yet");
+        register_assignment(c);
+      }
+      ctx.script_sections.push_back(std::move(c));
+      continue;
+    case ScriptCmd::OUTPUT_SECTION:
+      break;
+    default:
+      error(c.loc, "this linker script command is not supported yet");
+    }
+
+    if (c.name == "/DISCARD/") {
+      if (!is_plain_discard(c))
+        error(c.loc, "/DISCARD/ cannot have output section attributes");
+      append(ctx.script_discards, std::move(c.cmds));
+      continue;
+    }
+
+    if (c.subalign || c.align_with_input || !c.constraint.empty() ||
+        !c.region.empty() || !c.lma_region.empty() ||
+        (!c.type.empty() && c.type != "NOLOAD" && c.type != "INFO"))
+      error(c.loc, "this output section attribute is not supported yet");
+    if (c.fill && c.fill->kind != ScriptExpr::INT)
+      error(c.loc, "a fill value must be an integer literal");
+
+    for (ScriptCmd &b : c.cmds) {
+      switch (b.kind) {
+      case ScriptCmd::INPUT_SECTION:
+        if (!b.file_sorts.empty() || !b.names.empty())
+          error(b.loc, "this input section description is not supported yet");
+        for (ScriptPattern &pat : b.pats)
+          for (ScriptSort sort : pat.sorts)
+            if (sort != ScriptSort::NAME && sort != ScriptSort::ALIGNMENT &&
+                sort != ScriptSort::INIT_PRIORITY)
+              error(b.loc, "this sort specifier is not supported yet");
+        break;
+      case ScriptCmd::ASSIGNMENT:
+        if (b.name == ".")
+          break;
+        if (b.op != "=")
+          error(b.loc, "this linker script command is not supported yet");
+        register_assignment(b);
+        break;
+      case ScriptCmd::ASSERT:
+        evaluate_command(b);
+        break;
+      case ScriptCmd::DATA:
+        if (b.value->kind != ScriptExpr::INT)
+          error(b.loc, "only integer literals are supported here yet");
+        break;
+      case ScriptCmd::CONSTRUCTORS:
+        // CONSTRUCTORS is for the a.out object file format; it has
+        // no effect on ELF, whose constructors are in .ctors or
+        // .init_array sections.
+        break;
+      default:
+        error(b.loc, "this linker script command is not supported yet");
+      }
+    }
+
+    ctx.script_sections.push_back(std::move(c));
+  }
 }
 
 template <typename E>
@@ -1331,27 +1440,75 @@ struct ScriptEvaluator {
   MappedFile *mf;
   std::string_view loc;
 
+  // The value of the location counter, if it is meaningful in the
+  // context this expression appears in
+  std::optional<u64> dot;
+
   [[noreturn]] void error(std::string msg) {
-    script_error(ctx, mf, loc, std::move(msg));
+    if (mf)
+      script_error(ctx, mf, loc, std::move(msg));
+    Fatal(ctx) << "linker script: " << msg;
   }
 
-  // Returns the output section a given expression names
-  Chunk<E> *get_section(const ScriptExpr &e) {
+  // Returns the output section a given expression names. Returns a
+  // null pointer for a section that is defined by a linker script but
+  // didn't materialize (e.g. because nothing matched its patterns);
+  // its address, size and alignment read as zero.
+  Chunk<E> *get_section(const ScriptExpr &e, bool *is_live = nullptr) {
     if (e.kind != ScriptExpr::NAME)
       error("expected a section name");
-    for (Chunk<E> *chunk : ctx.chunks)
-      if (chunk->name == e.str)
+
+    // A name the script defines means the script's section, even if a
+    // linker-synthesized section happens to have the same name
+    for (Chunk<E> *chunk : ctx.chunks) {
+      if (chunk->script_cmd != -1 && chunk->name == e.str) {
+        if (is_live)
+          *is_live = true;
         return chunk;
+      }
+    }
+
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
+      if (osec->script_cmd != -1 && osec->name == e.str)
+        return osec.get();
+
+    for (ScriptCmd &cmd : ctx.script_sections)
+      if (cmd.kind == ScriptCmd::OUTPUT_SECTION && cmd.name == e.str)
+        return nullptr;
+
+    for (Chunk<E> *chunk : ctx.chunks) {
+      if (chunk->name == e.str) {
+        if (is_live)
+          *is_live = true;
+        return chunk;
+      }
+    }
+
     error("section not found: " + std::string(e.str));
   }
 
-  // Returns the output section that contains a given address
+  // Returns the output section a given address is associated with.
+  // An address on the boundary of two sections counts as part of the
+  // preceding one, as in GNU ld: a symbol like `_end = .;` after the
+  // last section must belong to that section, not to whatever happens
+  // to start at the same address.
   Chunk<E> *section_of(u64 addr) {
-    for (Chunk<E> *chunk : ctx.chunks)
-      if ((chunk->shdr.sh_flags & SHF_ALLOC) && chunk->shdr.sh_addr <= addr &&
-          addr < chunk->shdr.sh_addr + chunk->shdr.sh_size)
+    Chunk<E> *at_end = nullptr;
+    Chunk<E> *at_start = nullptr;
+
+    for (Chunk<E> *chunk : ctx.chunks) {
+      if (!(chunk->shdr.sh_flags & SHF_ALLOC))
+        continue;
+      u64 start = chunk->shdr.sh_addr;
+      u64 end = start + chunk->shdr.sh_size;
+      if (start < addr && addr < end)
         return chunk;
-    return nullptr;
+      if (addr == end)
+        at_end = chunk;
+      if (addr == start && !at_start)
+        at_start = chunk;
+    }
+    return at_end ? at_end : at_start;
   }
 
   u64 eval_int(const ScriptExpr &e) {
@@ -1380,7 +1537,9 @@ ScriptValue<E> ScriptEvaluator<E>::eval(const ScriptExpr &e) {
     return {addr, section_of(addr)};
   }
   case ScriptExpr::DOT:
-    error("'.' is not allowed in this context");
+    if (!dot)
+      error("'.' is not allowed in this context");
+    return {*dot, section_of(*dot)};
   case ScriptExpr::UNARY: {
     u64 x = eval_int(e.args[0]);
     if (e.str == "-")
@@ -1470,16 +1629,26 @@ ScriptValue<E> ScriptEvaluator<E>::eval(const ScriptExpr &e) {
     }
     if (fn == "ADDR") {
       want(1);
-      Chunk<E> *sec = get_section(e.args[0]);
-      return {sec->shdr.sh_addr, sec};
+      bool is_live = false;
+      Chunk<E> *sec = get_section(e.args[0], &is_live);
+      if (!sec)
+        return {0};
+      return {sec->shdr.sh_addr, is_live ? sec : nullptr};
     }
     if (fn == "SIZEOF") {
       want(1);
-      return {get_section(e.args[0])->shdr.sh_size};
+      Chunk<E> *sec = get_section(e.args[0]);
+      return {sec ? (u64)sec->shdr.sh_size : 0};
     }
     if (fn == "ALIGNOF") {
       want(1);
-      return {get_section(e.args[0])->shdr.sh_addralign};
+      Chunk<E> *sec = get_section(e.args[0]);
+      return {sec ? (u64)sec->shdr.sh_addralign : 0};
+    }
+    if (fn == "LOADADDR") {
+      want(1);
+      Chunk<E> *sec = get_section(e.args[0]);
+      return {sec ? sec->lma : (u64)0};
     }
     if (fn == "DEFINED") {
       want(1);
@@ -1488,10 +1657,13 @@ ScriptValue<E> ScriptEvaluator<E>::eval(const ScriptExpr &e) {
       return {get_symbol(ctx, e.args[0].str)->file != nullptr};
     }
     if (fn == "ALIGN" || fn == "BLOCK") {
-      // The single-argument form aligns the location counter, which
-      // exists only within SECTIONS.
-      if (e.args.size() != 2)
-        error(std::string(fn) + ": '.' is not allowed in this context");
+      // The single-argument form aligns the location counter
+      if (e.args.size() == 1) {
+        if (!dot)
+          error(std::string(fn) + ": '.' is not allowed in this context");
+        return {align_to(*dot, eval_int(e.args[0]))};
+      }
+      want(2);
       return {align_to(eval_int(e.args[0]), eval_int(e.args[1]))};
     }
     if (fn == "MAX") {
@@ -1551,6 +1723,9 @@ void eval_script_commands(Context<E> &ctx) {
       continue;
 
     ScriptEvaluator<E> ev{ctx, a.mf, a.loc};
+    if (a.has_dot)
+      ev.dot = a.dot_sec ? a.dot_sec->shdr.sh_addr + a.dot_offset
+                         : a.dot_offset;
     ScriptValue<E> v = ev.eval(a.value);
 
     if (v.sec)
@@ -1668,6 +1843,634 @@ void apply_script_discards(Context<E> &ctx) {
       }
     }
   });
+}
+
+// Matches all input sections against the section patterns in SECTIONS
+// commands. The result is stored in each file's `script_match` vector
+// and drives output section formation, member ordering, KEEP and
+// garbage collection.
+template <typename E>
+void match_script_sections(Context<E> &ctx) {
+  if (ctx.script_sections.empty())
+    return;
+
+  Timer t(ctx, "match_script_sections");
+
+  struct Candidate {
+    MultiGlob sections;
+    std::optional<MultiGlob> file;
+    std::optional<MultiGlob> exclude_files;
+  };
+
+  std::vector<Candidate> candidates;
+  MultiGlob prefilter;
+  bool has_file_constraint = false;
+
+  auto compile = [&](MultiGlob &glob, std::span<const std::string_view> pats,
+                     i64 val) {
+    for (std::string_view pat : pats)
+      if (!glob.add(pat, val))
+        Fatal(ctx) << "linker script: invalid glob pattern: " << pat;
+    glob.compile();
+  };
+
+  // Flatten all patterns into candidates. A pattern's rank is simply
+  // its position in the script, which gives us both the first-match-
+  // wins rule and the member ordering for free.
+  for (i64 i = 0; i < ctx.script_sections.size(); i++) {
+    ScriptCmd &osec = ctx.script_sections[i];
+    if (osec.kind != ScriptCmd::OUTPUT_SECTION)
+      continue;
+
+    for (ScriptCmd &spec : osec.cmds) {
+      if (spec.kind != ScriptCmd::INPUT_SECTION)
+        continue;
+
+      if (spec.pats.empty())
+        spec.pats.push_back({.pats = {"*"}});
+      spec.aux = candidates.size();
+
+      for (ScriptPattern &pat : spec.pats) {
+        i64 rank = candidates.size();
+        Candidate &c = candidates.emplace_back();
+        compile(c.sections, pat.pats, 0);
+
+        if (spec.file_pat != "*") {
+          c.file.emplace();
+          compile(*c.file, std::array{spec.file_pat}, 0);
+        }
+
+        std::vector<std::string_view> excludes;
+        append(excludes, spec.exclude_files);
+        append(excludes, pat.exclude_files);
+        if (!excludes.empty()) {
+          c.exclude_files.emplace();
+          compile(*c.exclude_files, excludes, 0);
+        }
+
+        has_file_constraint |=
+          c.file.has_value() || c.exclude_files.has_value();
+
+        for (std::string_view p : pat.pats)
+          if (!prefilter.add(p, rank))
+            Fatal(ctx) << "linker script: invalid glob pattern: " << p;
+
+        ctx.script_ranks.push_back({(i32)i, spec.keep, pat.sorts});
+      }
+    }
+  }
+  prefilter.compile();
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    file->script_match.resize(file->sections.size(), -1);
+
+    for (i64 j = 0; j < file->sections.size(); j++) {
+      InputSection<E> *isec = file->sections[j].get();
+      if (!isec || !isec->is_alive)
+        continue;
+
+      // The prefilter returns the first candidate whose section
+      // pattern matches. That's the answer unless file constraints
+      // are in play.
+      i64 rank = prefilter.find(isec->name);
+      if (rank == -1)
+        continue;
+
+      if (has_file_constraint) {
+        auto matches = [&](Candidate &c) {
+          return c.sections.find(isec->name) != -1 &&
+                 (!c.file || c.file->find(file->filename) != -1) &&
+                 (!c.exclude_files ||
+                  c.exclude_files->find(file->filename) == -1);
+        };
+
+        while (rank < candidates.size() && !matches(candidates[rank]))
+          rank++;
+        if (rank == candidates.size())
+          continue;
+      }
+
+      file->script_match[j] = rank;
+    }
+  });
+}
+
+// Parses the priority number of a section name such as
+// `.init_array.10000`. Sections without a number sort last, as GNU ld
+// does.
+static i64 get_init_priority(std::string_view name) {
+  size_t pos = name.find_last_not_of("0123456789");
+  if (pos == name.npos || pos + 1 == name.size())
+    return 1 << 30;
+
+  i64 val = 0;
+  std::from_chars(name.data() + pos + 1, name.data() + name.size(), val);
+  return val;
+}
+
+// Applies an output section description to the section that was
+// created for it: orders the members by match rank and SORT
+// specifiers and sets the attributes the script requests.
+template <typename E>
+void script_finalize_section(Context<E> &ctx, OutputSection<E> &osec) {
+  ScriptCmd &cmd = ctx.script_sections[osec.script_cmd];
+
+  auto get_rank = [&](InputSection<E> *isec) -> i32 {
+    return isec->file.script_match[isec->shndx];
+  };
+
+  ranges::stable_sort(osec.members,
+                      [&](InputSection<E> *a, InputSection<E> *b) {
+    i32 ra = get_rank(a);
+    i32 rb = get_rank(b);
+    if (ra != rb)
+      return ra < rb;
+
+    for (ScriptSort sort : ctx.script_ranks[ra].sorts) {
+      switch (sort) {
+      case ScriptSort::NAME:
+        if (a->name != b->name)
+          return a->name < b->name;
+        break;
+      case ScriptSort::ALIGNMENT:
+        if (a->p2align != b->p2align)
+          return a->p2align > b->p2align;
+        break;
+      case ScriptSort::INIT_PRIORITY: {
+        i64 pa = get_init_priority(a->name);
+        i64 pb = get_init_priority(b->name);
+        if (pa != pb)
+          return pa < pb;
+        break;
+      }
+      default:
+        break;
+      }
+    }
+    return false;
+  });
+
+  // The section type is that of the members if they agree, otherwise
+  // PROGBITS. A NOLOAD section is NOBITS regardless.
+  u32 type = SHT_PROGBITS;
+  if (!osec.members.empty()) {
+    type = osec.members[0]->shdr().sh_type;
+    for (InputSection<E> *isec : osec.members)
+      if (isec->shdr().sh_type != type)
+        type = SHT_PROGBITS;
+  }
+  if (cmd.type == "NOLOAD")
+    type = SHT_NOBITS;
+  osec.shdr.sh_type = type;
+
+  if (cmd.type == "INFO")
+    osec.shdr.sh_flags &= ~(u64)SHF_ALLOC;
+
+  if (cmd.fill)
+    osec.fill = cmd.fill->value;
+}
+
+// Evaluates a location counter expression in an output section body.
+// `dot` is the current absolute location. Returns nullopt for
+// expressions that need more than the location counter, constants and
+// previously defined body symbols.
+static std::optional<u64>
+eval_dot_expr(const ScriptExpr &e, u64 dot,
+              std::unordered_map<std::string_view, u64> &local) {
+  auto eval = [&](const ScriptExpr &e) {
+    return eval_dot_expr(e, dot, local);
+  };
+
+  switch (e.kind) {
+  case ScriptExpr::INT:
+    return {e.value};
+  case ScriptExpr::DOT:
+    return {dot};
+  case ScriptExpr::NAME:
+    if (auto it = local.find(e.str); it != local.end())
+      return {it->second};
+    return {};
+  case ScriptExpr::UNARY: {
+    std::optional<u64> x = eval(e.args[0]);
+    if (!x)
+      return {};
+    if (e.str == "-")
+      return {-*x};
+    if (e.str == "~")
+      return {~*x};
+    if (e.str == "!")
+      return {(u64)!*x};
+    return x;
+  }
+  case ScriptExpr::BINARY: {
+    std::optional<u64> a = eval(e.args[0]);
+    std::optional<u64> b = eval(e.args[1]);
+    if (!a || !b)
+      return {};
+    if (e.str == "+")
+      return {*a + *b};
+    if (e.str == "-")
+      return {*a - *b};
+    if (e.str == "*")
+      return {*a * *b};
+    if (e.str == "/" && *b)
+      return {*a / *b};
+    if (e.str == "<<")
+      return {*a << *b};
+    if (e.str == ">>")
+      return {*a >> *b};
+    if (e.str == "&")
+      return {*a & *b};
+    if (e.str == "|")
+      return {*a | *b};
+    return {};
+  }
+  case ScriptExpr::FUNC: {
+    if (e.str == "ALIGN" && e.args.size() == 1) {
+      if (std::optional<u64> v = eval(e.args[0]))
+        return {align_to(dot, *v)};
+      return {};
+    }
+
+    if (e.args.size() != 2)
+      return {};
+    std::optional<u64> a = eval(e.args[0]);
+    std::optional<u64> b = eval(e.args[1]);
+    if (!a || !b)
+      return {};
+    if (e.str == "ALIGN")
+      return {align_to(*a, *b)};
+    if (e.str == "MAX")
+      return {std::max(*a, *b)};
+    if (e.str == "MIN")
+      return {std::min(*a, *b)};
+    return {};
+  }
+  default:
+    return {};
+  }
+}
+
+// Lets a linker script place linker-synthesized sections such as
+// .dynamic, .hash or .eh_frame: a synthesized chunk is assigned to
+// the output section description whose patterns match its name, as if
+// it were an input section. A description that already got a section
+// from input section matching is not eligible.
+template <typename E>
+void match_synthetic_sections(Context<E> &ctx) {
+  std::vector<bool> taken(ctx.script_sections.size());
+  for (Chunk<E> *chunk : ctx.chunks)
+    if (chunk->script_cmd != -1)
+      taken[chunk->script_cmd] = true;
+
+  MultiGlob matcher;
+  for (i64 i = 0; i < ctx.script_sections.size(); i++) {
+    ScriptCmd &osec = ctx.script_sections[i];
+    if (osec.kind != ScriptCmd::OUTPUT_SECTION)
+      continue;
+    for (ScriptCmd &spec : osec.cmds)
+      if (spec.kind == ScriptCmd::INPUT_SECTION)
+        for (ScriptPattern &pat : spec.pats)
+          for (std::string_view p : pat.pats)
+            matcher.add(p, i);
+  }
+  if (matcher.empty())
+    return;
+  matcher.compile();
+
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (chunk->script_cmd != -1 || chunk->to_osec() || chunk->is_header())
+      continue;
+
+    // We create .got and .got.plt unconditionally for conventions
+    // such as _GLOBAL_OFFSET_TABLE_ even if no GOT entry is needed.
+    // GNU ld creates them on demand, so a placeholder-only table must
+    // not be placed (and thereby sized) by a description like the
+    // Linux kernel's `.got : { *(.got) }`, whose
+    // ASSERT(SIZEOF(.got) == 0) verifies that no GOT is needed.
+    i64 got_min = (is_s390x<E> ? 3 : 1) * sizeof(Word<E>);
+    if ((chunk == ctx.got && chunk->shdr.sh_size <= got_min) ||
+        (chunk == ctx.gotplt &&
+         chunk->shdr.sh_size <= GotPltSection<E>::HDR_SIZE))
+      continue;
+
+    i64 cmd = matcher.find(chunk->name);
+    if (cmd != -1 && !taken[cmd]) {
+      chunk->script_cmd = cmd;
+      taken[cmd] = true;
+    }
+  }
+}
+
+// Computes member offsets and the size of an output section described
+// by a linker script, executing the location counter arithmetic in
+// its body. `base` is the section's address; the location counter is
+// absolute, so the result depends on it. This function is first run
+// with a provisional base of zero to get an estimated size, then re-
+// run by the layout pass with the real address.
+template <typename E>
+void script_compute_section_size(Context<E> &ctx, OutputSection<E> &osec,
+                                 u64 base) {
+  ScriptCmd &cmd = ctx.script_sections[osec.script_cmd];
+
+  // Values of symbols defined earlier in this body, for expressions
+  // like `. = __start_init_stack + 0x4000;`
+  std::unordered_map<std::string_view, u64> local;
+
+  u64 dot = base;
+  u64 align = 1;
+  i64 m = 0;
+
+  osec.script_data.clear();
+
+  for (ScriptCmd &b : cmd.cmds) {
+    switch (b.kind) {
+    case ScriptCmd::DATA:
+      osec.script_data.push_back({dot - base, b.data_size, b.value->value});
+      dot += b.data_size;
+      break;
+    case ScriptCmd::INPUT_SECTION: {
+      // Place the members this description matched. Members are
+      // sorted by rank, so they are consecutive.
+      i64 hi = b.aux + b.pats.size();
+      for (; m < osec.members.size(); m++) {
+        InputSection<E> *isec = osec.members[m];
+        if (isec->file.script_match[isec->shndx] >= hi)
+          break;
+        dot = align_to(dot, (u64)1 << isec->p2align);
+        align = std::max<u64>(align, (u64)1 << isec->p2align);
+        isec->offset = dot - base;
+        dot += isec->sh_size;
+      }
+      break;
+    }
+    case ScriptCmd::ASSIGNMENT: {
+      if (b.name == ".") {
+        std::optional<u64> v = eval_dot_expr(*b.value, dot, local);
+        if (!v)
+          Fatal(ctx) << "linker script: unsupported expression for `.` in "
+                     << "section " << osec.name;
+        u64 val = (b.op == "+=") ? dot + *v : *v;
+        if (val < dot)
+          Fatal(ctx) << "linker script: `.` cannot move backward in section "
+                     << osec.name;
+        dot = val;
+        break;
+      }
+
+      // Bind the location counter for post-layout evaluation
+      ScriptAssignment<E> &a = ctx.script_assignments[b.aux];
+      a.has_dot = true;
+      a.dot_sec = &osec;
+      a.dot_offset = dot - base;
+
+      if (std::optional<u64> v = eval_dot_expr(*b.value, dot, local))
+        local[b.name] = *v;
+      break;
+    }
+    default:
+      break;
+    }
+  }
+
+  osec.shdr.sh_size = dot - base;
+  osec.shdr.sh_addralign = align;
+}
+
+// Assigns virtual and load addresses to output sections as described
+// by SECTIONS. This is one of the three layout modes and, like the
+// others, may be executed multiple times until the layout converges.
+template <typename E>
+void set_virtual_addresses_by_script(Context<E> &ctx) {
+  // Map each output section command to its chunk. A chunk that was
+  // dropped for being empty is mapped too but marked dead; symbols
+  // bound to it still need an address.
+  std::vector<Chunk<E> *> chunk_of(ctx.script_sections.size());
+  std::vector<bool> is_dead(ctx.script_sections.size(), true);
+
+  for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
+    if (osec->script_cmd != -1)
+      chunk_of[osec->script_cmd] = osec.get();
+
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (chunk->script_cmd != -1) {
+      chunk_of[chunk->script_cmd] = chunk;
+      is_dead[chunk->script_cmd] = false;
+    }
+  }
+
+  u64 dot = 0;
+  i64 lma_delta = 0;
+  i64 cursor = 0;
+
+  // Executes script commands up to (but not including) index `end`.
+  // Commands between section descriptions are location counter
+  // manipulations and symbol assignments.
+  auto run_until = [&](i64 end) {
+    for (; cursor < end; cursor++) {
+      ScriptCmd &cmd = ctx.script_sections[cursor];
+
+      if (cmd.kind == ScriptCmd::ASSIGNMENT) {
+        if (cmd.name == ".") {
+          ScriptEvaluator<E> ev{ctx, nullptr, cmd.loc, dot};
+          u64 val = ev.eval(*cmd.value).val;
+          if (cmd.op == "+=")
+            val += dot;
+          dot = val;
+        } else {
+          ScriptAssignment<E> &a = ctx.script_assignments[cmd.aux];
+          a.has_dot = true;
+          a.dot_sec = nullptr;
+          a.dot_offset = dot;
+        }
+        continue;
+      }
+
+      if (cmd.kind != ScriptCmd::OUTPUT_SECTION)
+        continue;
+
+      // An empty section that was dropped from the output still gets
+      // an address so that symbols defined in its body are meaningful.
+      // (A live section here is a non-allocated one, e.g. .comment;
+      // it keeps its null address.)
+      if (Chunk<E> *chunk = chunk_of[cursor]) {
+        if (is_dead[cursor])
+          chunk->shdr.sh_addr = dot;
+        continue;
+      }
+
+      // If nothing matched the description, no output section was
+      // even created. Its body may still define symbols and move the
+      // location counter, so execute it here.
+      std::unordered_map<std::string_view, u64> local;
+
+      for (ScriptCmd &b : cmd.cmds) {
+        if (b.kind != ScriptCmd::ASSIGNMENT)
+          continue;
+
+        if (b.name == ".") {
+          if (std::optional<u64> v = eval_dot_expr(*b.value, dot, local))
+            dot = (b.op == "+=") ? dot + *v : *v;
+          continue;
+        }
+
+        ScriptAssignment<E> &a = ctx.script_assignments[b.aux];
+        a.has_dot = true;
+        a.dot_sec = nullptr;
+        a.dot_offset = dot;
+
+        if (std::optional<u64> v = eval_dot_expr(*b.value, dot, local))
+          local[b.name] = *v;
+      }
+    }
+  };
+
+  auto layout = [&](Chunk<E> *chunk, ScriptCmd *cmd) {
+    u64 align = chunk->shdr.sh_addralign;
+    u64 addr;
+
+    if (cmd && cmd->addr) {
+      ScriptEvaluator<E> ev{ctx, nullptr, cmd->loc, dot};
+      addr = ev.eval(*cmd->addr).val;
+    } else {
+      addr = align_to(dot, align);
+    }
+
+    if (cmd && cmd->align) {
+      ScriptEvaluator<E> ev{ctx, nullptr, cmd->loc, dot};
+      addr = align_to(addr, ev.eval(*cmd->align).val);
+    }
+
+    chunk->shdr.sh_addr = addr;
+
+    // The body of a script-described section contains location counter
+    // arithmetic whose result depends on the section's address, so its
+    // size must be recomputed now that the address is known.
+    if (cmd && chunk->to_osec())
+      script_compute_section_size(ctx, *chunk->to_osec(), addr);
+
+    if (cmd && cmd->at) {
+      ScriptEvaluator<E> ev{ctx, nullptr, cmd->loc, addr};
+      chunk->lma = ev.eval(*cmd->at).val;
+      lma_delta = chunk->lma - addr;
+    } else {
+      chunk->lma = addr + lma_delta;
+    }
+
+    dot = addr + chunk->shdr.sh_size;
+  };
+
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (!(chunk->shdr.sh_flags & SHF_ALLOC))
+      continue;
+
+    if (chunk->script_cmd != -1) {
+      run_until(chunk->script_cmd);
+      cursor = chunk->script_cmd + 1;
+      layout(chunk, &ctx.script_sections[chunk->script_cmd]);
+    } else {
+      // An orphan section is laid out where the section ordering pass
+      // placed it
+      layout(chunk, nullptr);
+    }
+  }
+
+  run_until(ctx.script_sections.size());
+}
+
+// Creates program headers as described by a PHDRS command. A section
+// is assigned to the segments its `:phdr` references name; a section
+// without references inherits the assignment of the previous one.
+template <typename E>
+std::vector<ElfPhdr<E>> create_script_phdrs(Context<E> &ctx) {
+  auto get_type = [&](ScriptPhdr &p) -> u32 {
+    static constexpr std::pair<std::string_view, u32> types[] = {
+      {"PT_NULL", PT_NULL},
+      {"PT_LOAD", PT_LOAD},
+      {"PT_DYNAMIC", PT_DYNAMIC},
+      {"PT_INTERP", PT_INTERP},
+      {"PT_NOTE", PT_NOTE},
+      {"PT_PHDR", PT_PHDR},
+      {"PT_TLS", PT_TLS},
+      {"PT_GNU_EH_FRAME", PT_GNU_EH_FRAME},
+      {"PT_GNU_STACK", PT_GNU_STACK},
+      {"PT_GNU_RELRO", PT_GNU_RELRO},
+      {"PT_GNU_PROPERTY", PT_GNU_PROPERTY},
+    };
+    for (auto [name, val] : types)
+      if (p.type == name)
+        return val;
+    if (std::optional<u64> val = parse_number(p.type))
+      return *val;
+    Fatal(ctx) << "PHDRS: unsupported segment type: " << p.type;
+  };
+
+  std::vector<ElfPhdr<E>> vec(ctx.script_phdrs.size());
+  std::vector<bool> is_empty(ctx.script_phdrs.size(), true);
+
+  for (i64 i = 0; i < ctx.script_phdrs.size(); i++) {
+    ScriptPhdr &p = ctx.script_phdrs[i];
+    memset(&vec[i], 0, sizeof(vec[i]));
+    vec[i].p_type = get_type(p);
+    vec[i].p_align = (vec[i].p_type == PT_LOAD) ? ctx.page_size : 1;
+    if (p.flags)
+      vec[i].p_flags = p.flags->value;
+  }
+
+  // Resolve segment references. A section without an explicit
+  // reference inherits the previous section's segments.
+  std::vector<i64> refs;
+
+  auto find_phdr = [&](std::string_view name) -> i64 {
+    for (i64 i = 0; i < ctx.script_phdrs.size(); i++)
+      if (ctx.script_phdrs[i].name == name)
+        return i;
+    Fatal(ctx) << "PHDRS: no such segment: " << name;
+  };
+
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (!(chunk->shdr.sh_flags & SHF_ALLOC))
+      continue;
+
+    if (chunk->script_cmd != -1) {
+      ScriptCmd &cmd = ctx.script_sections[chunk->script_cmd];
+      if (!cmd.phdr_refs.empty()) {
+        refs.clear();
+        for (std::string_view name : cmd.phdr_refs)
+          refs.push_back(find_phdr(name));
+      }
+    }
+
+    for (i64 i : refs) {
+      ElfPhdr<E> &phdr = vec[i];
+      u64 end = chunk->shdr.sh_addr + chunk->shdr.sh_size;
+
+      if (is_empty[i]) {
+        is_empty[i] = false;
+        phdr.p_offset = chunk->shdr.sh_offset;
+        phdr.p_vaddr = chunk->shdr.sh_addr;
+        phdr.p_paddr = chunk->lma;
+
+        // FILEHDR/PHDRS extend the segment backward to also cover the
+        // ELF header and the program header table
+        if (ctx.script_phdrs[i].filehdr || ctx.script_phdrs[i].phdrs) {
+          u64 delta = chunk->shdr.sh_offset;
+          phdr.p_offset = 0;
+          phdr.p_vaddr -= delta;
+          phdr.p_paddr -= delta;
+        }
+      }
+
+      if (chunk->shdr.sh_type != SHT_NOBITS)
+        phdr.p_filesz =
+          chunk->shdr.sh_offset + chunk->shdr.sh_size - phdr.p_offset;
+      phdr.p_memsz = end - phdr.p_vaddr;
+      phdr.p_align = std::max<u64>(phdr.p_align, chunk->shdr.sh_addralign);
+      if (!ctx.script_phdrs[i].flags)
+        phdr.p_flags |= to_phdr_flags(ctx, chunk);
+    }
+  }
+  return vec;
 }
 
 //
@@ -2054,5 +2857,11 @@ std::vector<DynamicPattern> parse_dynamic_list(Context<E> &, std::string_view);
 
 template void eval_script_commands(Context<E> &);
 template void apply_script_discards(Context<E> &);
+template void match_script_sections(Context<E> &);
+template void match_synthetic_sections(Context<E> &);
+template void script_finalize_section(Context<E> &, OutputSection<E> &);
+template void script_compute_section_size(Context<E> &, OutputSection<E> &, u64);
+template void set_virtual_addresses_by_script(Context<E> &);
+template std::vector<ElfPhdr<E>> create_script_phdrs(Context<E> &);
 
 } // namespace mold

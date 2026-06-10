@@ -12,12 +12,19 @@
 namespace mold {
 
 template <typename E>
-static bool should_keep(const InputSection<E> &isec) {
+static bool should_keep(Context<E> &ctx, const InputSection<E> &isec) {
   u32 type = isec.shdr().sh_type;
   u32 flags = isec.shdr().sh_flags;
   if constexpr (is_ppc32<E>)
     if (isec.name == ".got2")
       return true;
+
+  // KEEP'ed by a linker script
+  if (!isec.file.script_match.empty()) {
+    i32 rank = isec.file.script_match[isec.shndx];
+    if (rank != -1 && ctx.script_ranks[rank].keep)
+      return true;
+  }
 
   return (flags & SHF_GNU_RETAIN) ||
          type == SHT_NOTE ||
@@ -91,7 +98,7 @@ collect_root_set(Context<E> &ctx) {
         continue;
       }
 
-      if (should_keep(*isec))
+      if (should_keep(ctx, *isec))
         enqueue_section(isec.get());
     }
   });

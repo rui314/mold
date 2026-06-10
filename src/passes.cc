@@ -120,12 +120,18 @@ void create_synthetic_sections(Context<E> &ctx) {
       return false;
     };
 
-    if (ctx.arg.section_order.empty() || find("EHDR"))
+    // With an explicit layout, the ELF and program headers are not
+    // mapped to memory unless asked for. (Within a linker script
+    // they would be requested by FILEHDR/PHDRS in a PHDRS command,
+    // which we don't support yet.)
+    bool script = !ctx.script_sections.empty();
+
+    if ((ctx.arg.section_order.empty() && !script) || find("EHDR"))
       ctx.ehdr = push(new OutputEhdr<E>(SHF_ALLOC));
     else
       ctx.ehdr = push(new OutputEhdr<E>(0));
 
-    if (ctx.arg.section_order.empty() || find("PHDR"))
+    if ((ctx.arg.section_order.empty() && !script) || find("PHDR"))
       ctx.phdr = push(new OutputPhdr<E>(SHF_ALLOC));
     else
       ctx.phdr = push(new OutputPhdr<E>(0));
@@ -167,7 +173,8 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.eh_frame_hdr = push(new EhFrameHdrSection<E>);
   if (ctx.arg.gdb_index && has_debug_info_section(ctx))
     ctx.gdb_index = push(new GdbIndexSection<E>);
-  if (ctx.arg.z_relro && ctx.arg.section_order.empty())
+  if (ctx.arg.z_relro && ctx.arg.section_order.empty() &&
+      ctx.script_sections.empty())
     ctx.relro_padding = push(new RelroPaddingSection<E>);
   if (ctx.arg.hash_style_sysv)
     ctx.hash = push(new HashSection<E>);
@@ -460,6 +467,12 @@ template <typename E>
 void create_merged_sections(Context<E> &ctx) {
   Timer t(ctx, "create_merged_sections");
 
+  // If a linker script describes the layout, mergeable sections stay
+  // regular input sections so that the script's patterns place them.
+  // We give up deduplication for layout fidelity.
+  if (!ctx.script_sections.empty())
+    return;
+
   // Convert InputSections to MergeableSections.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->convert_mergeable_sections(ctx);
@@ -519,6 +532,7 @@ struct OutputSectionKey {
   bool operator==(const OutputSectionKey &) const = default;
   std::string_view name;
   u64 type;
+  i32 script_cmd = -1;
 
   struct Hash {
     size_t operator()(const OutputSectionKey &k) const {
@@ -577,6 +591,16 @@ template <typename E>
 static OutputSectionKey
 get_output_section_key(Context<E> &ctx, InputSection<E> &isec,
                        bool ctors_in_init_array) {
+  // A section matched by a linker script goes to the output section
+  // the script says, period.
+  if (!ctx.script_sections.empty()) {
+    i32 rank = isec.file.script_match[isec.shndx];
+    if (rank != -1) {
+      i32 cmd = ctx.script_ranks[rank].cmd;
+      return {ctx.script_sections[cmd].name, SHT_PROGBITS, cmd};
+    }
+  }
+
   // If .init_array/.fini_array exist, .ctors/.dtors must be merged
   // with them.
   //
@@ -678,6 +702,7 @@ void create_output_sections(Context<E> &ctx) {
 
         std::unique_ptr<OutputSection<E>> osec =
           std::make_unique<OutputSection<E>>(key.name, key.type);
+        osec->script_cmd = key.script_cmd;
 
         std::unique_lock lock(mu);
         auto [it, inserted] = map.insert({key, osec.get()});
@@ -724,6 +749,38 @@ void create_output_sections(Context<E> &ctx) {
     osec->members = flatten(osec->members_vec);
     osec->members_vec.clear();
     osec->members_vec.shrink_to_fit();
+
+    if (osec->script_cmd != -1)
+      script_finalize_section(ctx, *osec);
+  }
+
+  // An output section description that inserts data with a command
+  // like BYTE must materialize even if no input section is placed in
+  // it, e.g. the .signature section of the Linux kernel's setup.ld.
+  if (!ctx.script_sections.empty()) {
+    std::vector<bool> taken(ctx.script_sections.size());
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
+      if (osec->script_cmd != -1)
+        taken[osec->script_cmd] = true;
+
+    for (i64 i = 0; i < ctx.script_sections.size(); i++) {
+      ScriptCmd &cmd = ctx.script_sections[i];
+      if (cmd.kind != ScriptCmd::OUTPUT_SECTION || taken[i])
+        continue;
+
+      bool has_data = false;
+      for (ScriptCmd &b : cmd.cmds)
+        has_data |= (b.kind == ScriptCmd::DATA);
+      if (!has_data)
+        continue;
+
+      OutputSection<E> *osec = new OutputSection<E>(cmd.name, SHT_PROGBITS);
+      osec->script_cmd = i;
+      osec->sh_flags = SHF_ALLOC;
+      osec->shdr.sh_flags = SHF_ALLOC;
+      osec->shdr.sh_addralign = 1;
+      ctx.osec_pool.emplace_back(osec);
+    }
   }
 
   // Add output sections and mergeable sections to ctx.chunks
@@ -814,8 +871,63 @@ void add_provided_symbols(Context<E> &ctx) {
   ObjectFile<E> &obj = *ctx.internal_obj;
   bool changed = false;
 
+  // A PROVIDE'd symbol is defined only if it is actually referenced,
+  // either by an input file or by another linker script expression
+  // that is evaluated. Note that if it is not, its value expression
+  // is not even evaluated; an expression referring to a nonexistent
+  // symbol or section is not an error in that case.
+  std::unordered_set<Symbol<E> *> candidates;
+  for (ScriptAssignment<E> &a : ctx.script_assignments)
+    if (a.provide && !a.sym->file)
+      candidates.insert(a.sym);
+
+  std::mutex mu;
+  std::unordered_set<Symbol<E> *> referenced;
+
+  if (!candidates.empty()) {
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      if (file == ctx.internal_obj)
+        return;
+      for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
+        if (file->elf_syms[i].is_undef()) {
+          Symbol<E> *sym = file->symbols[i];
+          if (candidates.contains(sym)) {
+            std::scoped_lock lock(mu);
+            referenced.insert(sym);
+          }
+        }
+      }
+    });
+
+    // References from expressions we will evaluate, propagated
+    // transitively through PROVIDEs that become defined
+    std::function<void(const ScriptExpr &)> mark = [&](const ScriptExpr &e) {
+      if (e.kind == ScriptExpr::NAME)
+        referenced.insert(get_symbol(ctx, e.str));
+      for (const ScriptExpr &arg : e.args)
+        mark(arg);
+    };
+
+    for (ScriptAssignment<E> &a : ctx.script_assignments)
+      if (!a.provide)
+        mark(a.value);
+    for (ScriptAssert &a : ctx.script_asserts)
+      mark(a.cond);
+
+    for (bool changed = true; changed;) {
+      changed = false;
+      for (ScriptAssignment<E> &a : ctx.script_assignments) {
+        if (a.provide && referenced.contains(a.sym)) {
+          i64 size = referenced.size();
+          mark(a.value);
+          changed |= (referenced.size() != size);
+        }
+      }
+    }
+  }
+
   for (ScriptAssignment<E> &a : ctx.script_assignments) {
-    if (a.provide && !a.sym->file) {
+    if (a.provide && !a.sym->file && referenced.contains(a.sym)) {
       ElfSym<E> esym;
       memset(&esym, 0, sizeof(esym));
       esym.st_type = STT_NOTYPE;
@@ -895,10 +1007,15 @@ void add_synthetic_symbols(Context<E> &ctx) {
   ctx._DYNAMIC = add("_DYNAMIC");
   ctx._GLOBAL_OFFSET_TABLE_ = add("_GLOBAL_OFFSET_TABLE_");
   ctx._PROCEDURE_LINKAGE_TABLE_ = add("_PROCEDURE_LINKAGE_TABLE_");
-  ctx.__bss_start = add("__bss_start");
-  ctx._end = add("_end");
-  ctx._etext = add("_etext");
-  ctx._edata = add("_edata");
+  // A linker script may define these; in that case the script wins
+  if (!get_symbol(ctx, "__bss_start")->file)
+    ctx.__bss_start = add("__bss_start");
+  if (!get_symbol(ctx, "_end")->file)
+    ctx._end = add("_end");
+  if (!get_symbol(ctx, "_etext")->file)
+    ctx._etext = add("_etext");
+  if (!get_symbol(ctx, "_edata")->file)
+    ctx._edata = add("_edata");
   ctx.__executable_start = add("__executable_start");
 
   ctx.__rel_iplt_start =
@@ -2677,9 +2794,65 @@ void sort_output_sections_by_order(Context<E> &ctx) {
   ranges::stable_sort(ctx.chunks, {}, &Chunk<E>::sect_order);
 }
 
+// Sort output sections according to a linker script. Sections the
+// script describes appear in script order; orphans are inserted after
+// the most similar script section.
+template <typename E>
+static void sort_output_sections_by_script(Context<E> &ctx) {
+  match_synthetic_sections(ctx);
+
+  // Find the insertion point for an orphan: the last script section
+  // with the same section type and memory attributes, or failing
+  // that, the last one with the same attributes.
+  auto get_anchor = [&](Chunk<E> *chunk) -> i64 {
+    u64 attrs = chunk->shdr.sh_flags & (SHF_WRITE | SHF_EXECINSTR);
+    i64 anchor = -1;
+    i64 best = 0;
+
+    for (Chunk<E> *sc : ctx.chunks) {
+      if (sc->script_cmd == -1 || !(sc->shdr.sh_flags & SHF_ALLOC))
+        continue;
+      u64 attrs2 = sc->shdr.sh_flags & (SHF_WRITE | SHF_EXECINSTR);
+      i64 score = 1 + (attrs == attrs2) +
+                  (chunk->shdr.sh_type == sc->shdr.sh_type);
+      if (score > best ||
+          (score == best && sc->script_cmd > anchor)) {
+        best = score;
+        anchor = sc->script_cmd;
+      }
+    }
+    return anchor;
+  };
+
+  auto get_rank = [&](Chunk<E> *chunk) -> i64 {
+    if (chunk == ctx.ehdr)
+      return -2;
+    if (chunk == ctx.phdr)
+      return -1;
+    if (chunk == ctx.shdr)
+      return INT64_MAX;
+    if (chunk->script_cmd != -1)
+      return 2 * (i64)chunk->script_cmd;
+    if (!(chunk->shdr.sh_flags & SHF_ALLOC))
+      return INT64_MAX - 1;
+
+    if (ctx.arg.orphan_handling == "warn")
+      Warn(ctx) << "placing orphan section " << chunk->name;
+    else if (ctx.arg.orphan_handling == "error")
+      Error(ctx) << "orphan section " << chunk->name;
+    return 2 * get_anchor(chunk) + 1;
+  };
+
+  for (Chunk<E> *chunk : ctx.chunks)
+    chunk->sect_order = get_rank(chunk);
+  ranges::stable_sort(ctx.chunks, {}, &Chunk<E>::sect_order);
+}
+
 template <typename E>
 void sort_output_sections(Context<E> &ctx) {
-  if (ctx.arg.section_order.empty())
+  if (!ctx.script_sections.empty())
+    sort_output_sections_by_script(ctx);
+  else if (ctx.arg.section_order.empty())
     sort_output_sections_regular(ctx);
   else
     sort_output_sections_by_order(ctx);
@@ -3046,7 +3219,9 @@ i64 set_osec_offsets(Context<E> &ctx) {
   Timer t(ctx, "set_osec_offsets");
 
   for (;;) {
-    if (ctx.arg.section_order.empty())
+    if (!ctx.script_sections.empty())
+      set_virtual_addresses_by_script(ctx);
+    else if (ctx.arg.section_order.empty())
       set_virtual_addresses_regular(ctx);
     else
       set_virtual_addresses_by_order(ctx);

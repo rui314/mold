@@ -9,7 +9,7 @@ EOF
 # rather than silently ignored.
 cat <<'EOF' > $t/script
 SECTIONS {
-  .text : { *(.text .text.*) }
+  OVERLAY 0x1000 : { .o1 { *(.o1) } }
 }
 EOF
 
@@ -18,5 +18,10 @@ not ./mold $t/a.o -T $t/script -o $t/exe |& grep 'not supported yet'
 echo 'OUTPUT(foo.exe)' > $t/script2
 not ./mold $t/a.o -T $t/script2 -o $t/exe |& grep 'not supported yet'
 
-echo '. = 0x1000;' > $t/script3
+cat <<'EOF' > $t/script3
+SECTIONS {
+  .text : { *(.text*) } >ram
+}
+EOF
+
 not ./mold $t/a.o -T $t/script3 -o $t/exe |& grep 'not supported yet'

@@ -421,6 +421,9 @@ int mold_main(int argc, char **argv) {
   // script.
   apply_script_discards(ctx);
 
+  // Match input sections against SECTIONS commands in a linker script.
+  match_script_sections(ctx);
+
   // Garbage-collect unreachable sections.
   if (ctx.arg.gc_sections)
     gc_sections(ctx);

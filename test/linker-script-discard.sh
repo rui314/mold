@@ -40,4 +40,4 @@ SECTIONS {
 }
 EOF
 
-not $CC -B. -o $t/exe3 $t/a.o -Wl,-T,$t/script3 |& grep 'not supported yet'
+not $CC -B. -o $t/exe3 $t/a.o -Wl,-T,$t/script3 |& grep 'cannot have output section attributes'

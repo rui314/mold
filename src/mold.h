@@ -692,6 +692,12 @@ public:
 
   // For --section-order
   i64 sect_order = 0;
+
+  // For linker scripts: the index of the output section description
+  // in Context<E>::script_sections this chunk was created for, and
+  // the load address (LMA) assigned by the script.
+  i32 script_cmd = -1;
+  u64 lma = 0;
 };
 
 // ELF header which is at the beginning of each ELF file.
@@ -783,6 +789,14 @@ struct AbsRel {
 
 // OutputSection represents the usual output section that contains input
 // sections read from object files.
+// A linker script data command's (e.g. `LONG(0xdeadbeef)`)
+// contribution to an output section
+struct ScriptData {
+  u64 offset = 0;
+  i64 size = 0;
+  u64 value = 0;
+};
+
 template <typename E>
 class OutputSection : public Chunk<E> {
 public:
@@ -808,6 +822,14 @@ public:
   std::unique_ptr<RelocSection<E>> reloc_sec;
   std::vector<AbsRel<E>> abs_rels;
   Atomic<u32> sh_flags;
+
+  // The fill pattern for gaps between members, e.g. `=0xcccccccc` in
+  // a linker script. If absent, executable sections are filled with
+  // trap instructions and other sections with zeros.
+  std::optional<u32> fill;
+
+  // Data inserted by linker script BYTE/SHORT/LONG/QUAD commands
+  std::vector<ScriptData> script_data;
 
   // Used only by create_output_sections()
   std::vector<std::vector<InputSection<E> *>> members_vec;
@@ -1840,6 +1862,12 @@ public:
 
   std::string archive_name;
   std::vector<std::unique_ptr<InputSection<E>>> sections;
+
+  // Per-section linker script match ranks, indexed by section index.
+  // -1 means the section is not matched by any SECTIONS pattern.
+  // Empty unless a linker script has a SECTIONS command.
+  std::vector<i32> script_match;
+
   std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
   std::vector<ElfShdr<E>> elf_sections2;
   std::vector<CieRecord<E>> cies;
@@ -2024,6 +2052,10 @@ struct ScriptCmd {
   std::string_view name;
   std::vector<ScriptCmd> cmds;
 
+  // For ASSIGNMENT, an index into Context<E>::script_assignments.
+  // For INPUT_SECTION, the first match rank (see ScriptMatchRank).
+  i32 aux = -1;
+
   // For ASSIGNMENT
   std::string_view op;   // "=", "+=", etc.
   bool provide = false;
@@ -2075,7 +2107,27 @@ struct ScriptAssignment {
   bool defined = false;       // true if we are the symbol's definer
   MappedFile *mf = nullptr;   // for error reporting
   std::string_view loc;
+
+  // If the assignment appeared within SECTIONS, the location counter
+  // is bound when the value is evaluated: to (the address of dot_sec)
+  // + dot_offset if the assignment was in an output section body, or
+  // to the absolute value dot_offset otherwise. The bindings are
+  // established by the layout pass.
+  bool has_dot = false;
+  Chunk<E> *dot_sec = nullptr;
+  u64 dot_offset = 0;
 };
+
+// The result of matching an input section against the section
+// patterns in SECTIONS. Each pattern group has a rank; an output
+// section's members are ordered by the rank of the pattern that
+// matched them, which mirrors the order patterns appear in the script.
+struct ScriptMatchRank {
+  i32 cmd = -1;    // index into Context<E>::script_sections
+  bool keep = false;
+  std::vector<ScriptSort> sorts;
+};
+
 
 // A linker script ASSERT command, evaluated after layout
 struct ScriptAssert {
@@ -2138,6 +2190,8 @@ private:
 
   void evaluate();
   void evaluate_command(ScriptCmd &cmd);
+  void evaluate_sections(ScriptCmd &cmd);
+  void register_assignment(ScriptCmd &cmd);
   void dump();
 
   MappedFile *file_of(std::string_view pos);
@@ -2183,6 +2237,25 @@ void eval_script_commands(Context<E> &ctx);
 
 template <typename E>
 void apply_script_discards(Context<E> &ctx);
+
+template <typename E>
+void match_script_sections(Context<E> &ctx);
+
+template <typename E>
+void match_synthetic_sections(Context<E> &ctx);
+
+template <typename E>
+void script_finalize_section(Context<E> &ctx, OutputSection<E> &osec);
+
+template <typename E>
+void script_compute_section_size(Context<E> &ctx, OutputSection<E> &osec,
+                                 u64 base = 0);
+
+template <typename E>
+void set_virtual_addresses_by_script(Context<E> &ctx);
+
+template <typename E>
+std::vector<ElfPhdr<E>> create_script_phdrs(Context<E> &ctx);
 
 //
 // archive-file.cc
@@ -2627,6 +2700,7 @@ struct Context {
     bool discard_all = false;
     bool discard_locals = false;
     bool dump_script = false;
+    std::string_view orphan_handling = "place";
     bool dynamic_list_data = false;
     bool eh_frame_hdr = true;
     bool emit_relocs = false;
@@ -2751,6 +2825,9 @@ struct Context {
   std::vector<ScriptAssignment<E>> script_assignments;
   std::vector<ScriptAssert> script_asserts;
   std::vector<ScriptCmd> script_discards;
+  std::vector<ScriptCmd> script_sections;
+  std::vector<ScriptPhdr> script_phdrs;
+  std::vector<ScriptMatchRank> script_ranks;
   i64 default_version = VER_NDX_UNSPECIFIED;
   i64 page_size = E::page_size;
   bool has_error = false;
@@ -3741,7 +3818,15 @@ template <typename E>
 inline bool Symbol<E>::is_local(Context<E> &ctx) const {
   if (ctx.arg.relocatable)
     return esym().st_bind == STB_LOCAL;
-  return !is_imported && !is_exported;
+
+  // A global symbol keeps its binding in the output symbol table as
+  // in GNU ld and LLD, except that hidden visibility or a version
+  // script's `local:` directive reduces it to local. Tools do depend on the binding; for example, the Linux
+  // kernel's build extracts addresses of global symbols from the nm
+  // output of a previous link.
+  return esym().st_bind == STB_LOCAL || visibility == STV_HIDDEN ||
+         visibility == STV_INTERNAL ||
+         (!is_imported && ver_idx == VER_NDX_LOCAL);
 }
 
 template <typename E>

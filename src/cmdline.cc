@@ -898,6 +898,13 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       // An undocumented flag to print how mold parsed linker scripts.
       // If this flag is given, mold exits after printing.
       ctx.arg.dump_script = true;
+    } else if (read_arg("orphan-handling")) {
+      if (arg != "place" && arg != "warn" && arg != "error")
+        Fatal(ctx) << "--orphan-handling: unsupported mode: " << arg;
+      ctx.arg.orphan_handling = arg;
+    } else if (read_flag("warn-rwx-segments") ||
+               read_flag("no-warn-rwx-segments")) {
+      // mold doesn't warn about RWX segments
     } else if (read_flag("default-symver")) {
       ctx.arg.default_symver = true;
     } else if (read_flag("noinhibit-exec")) {

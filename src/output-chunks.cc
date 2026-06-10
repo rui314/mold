@@ -151,6 +151,10 @@ i64 to_phdr_flags(Context<E> &ctx, Chunk<E> *chunk) {
 
 template <typename E>
 static std::vector<ElfPhdr<E>> create_phdr(Context<E> &ctx) {
+  // A PHDRS linker script command describes program headers explicitly
+  if (!ctx.script_phdrs.empty())
+    return create_script_phdrs(ctx);
+
   std::vector<ElfPhdr<E>> vec;
 
   auto define = [&](u64 type, u64 flags, Chunk<E> *chunk) {
@@ -884,6 +888,13 @@ template <typename E>
 void OutputSection<E>::compute_section_size(Context<E> &ctx) {
   ElfShdr<E> &shdr = this->shdr;
 
+  // A section described by a linker script may contain location
+  // counter arithmetic, so it is laid out by the script engine.
+  if (this->script_cmd != -1) {
+    script_compute_section_size(ctx, *this);
+    return;
+  }
+
   // Text sections must to be handled by create_range_extension_thunks()
   // if they may need range extension thunks.
   assert(!needs_thunk<E> || !(shdr.sh_flags & SHF_EXECINSTR) ||
@@ -1046,7 +1057,12 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
         memcpy(loc + i, filler, N);
     };
 
-    if (this->shdr.sh_flags & SHF_EXECINSTR) {
+    // A fill pattern given by a linker script (e.g. `=0xcccccccc`) is
+    // written big-endian, repeating
+    if (this->fill) {
+      for (i64 i = 0; i < size; i++)
+        loc[i] = *this->fill >> (24 - (i % 4) * 8);
+    } else if (this->shdr.sh_flags & SHF_EXECINSTR) {
       // s390x's old CRT files use NOP slides in .init and .fini.
       // https://sourceware.org/bugzilla/show_bug.cgi?id=31042
       if (is_s390x<E> && (this->name == ".init" || this->name == ".fini"))
@@ -1057,6 +1073,29 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
       memset(loc, 0, size);
     }
   });
+
+  // Clear the leading padding and, if the section has no members at
+  // all (e.g. a linker script section containing only data commands),
+  // its entire contents
+  i64 lead = members.empty() ? (i64)this->shdr.sh_size : members[0]->offset;
+  if (lead > 0) {
+    if (this->fill)
+      for (i64 i = 0; i < lead; i++)
+        buf[i] = *this->fill >> (24 - (i % 4) * 8);
+    else
+      memset(buf, 0, lead);
+  }
+
+  // Write data inserted by linker script BYTE/SHORT/LONG/QUAD commands
+  for (ScriptData &d : script_data) {
+    u8 *loc = buf + d.offset;
+    switch (d.size) {
+    case 1: *loc = d.value; break;
+    case 2: *(U16<E> *)loc = d.value; break;
+    case 4: *(U32<E> *)loc = d.value; break;
+    default: *(U64<E> *)loc = d.value; break;
+    }
+  }
 
   // Emit range extension thunks.
   if constexpr (needs_thunk<E>) {
@@ -2330,6 +2369,19 @@ void MergedSection<E>::compute_section_size(Context<E> &ctx) {
       align_to(shard_offsets[i - 1] + sizes[i - 1], this->shdr.sh_addralign);
 
   this->shdr.sh_size = shard_offsets.back();
+
+  // The padding to the section alignment must not make the size of a
+  // mergeable section with fixed-size elements indivisible by the
+  // element size. Some tools reject such sections; for example,
+  // libelf-based programs such as objtool fail to process them.
+  if (i64 entsize = this->shdr.sh_entsize;
+      entsize > 0 && this->shdr.sh_size % entsize) {
+    i64 end = 0;
+    for (i64 i = 0; i < sizes.size(); i++)
+      if (sizes[i])
+        end = shard_offsets[i] + sizes[i];
+    this->shdr.sh_size = end;
+  }
 
   tbb::parallel_for((i64)1, map.NUM_SHARDS, [&](i64 i) {
     for (i64 j = shard_size * i; j < shard_size * (i + 1); j++) {
