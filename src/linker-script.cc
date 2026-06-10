@@ -25,6 +25,7 @@
 #include <cctype>
 #include <charconv>
 #include <iostream>
+#include <tbb/parallel_for_each.h>
 
 namespace mold {
 
@@ -63,6 +64,7 @@ static void script_error(Context<E> &ctx, MappedFile *mf,
 
   Fatal(ctx) << label << line << "\n"
              << std::string(indent + column, ' ') << "^ " << msg;
+  unreachable();
 }
 
 // Returns the file a given token came from. It is usually `mf` but may
@@ -1211,58 +1213,87 @@ void Script<E>::read_command() {
   error(tok, "unknown linker script token");
 }
 
+// Returns true if an output section description is a plain /DISCARD/
+// with input section patterns and nothing else
+static bool is_plain_discard(const ScriptCmd &cmd) {
+  if (cmd.name != "/DISCARD/" || cmd.addr || cmd.at || cmd.align ||
+      cmd.subalign || cmd.fill || cmd.align_with_input || !cmd.type.empty() ||
+      !cmd.constraint.empty() || !cmd.region.empty() ||
+      !cmd.lma_region.empty() || !cmd.phdr_refs.empty())
+    return false;
+
+  for (const ScriptCmd &c : cmd.cmds)
+    if (c.kind != ScriptCmd::INPUT_SECTION)
+      return false;
+  return true;
+}
+
 // mold cannot evaluate all linker script commands yet. We reject
 // anything we cannot faithfully execute so that we never silently
 // create an output file that is different from what a script demands.
 template <typename E>
 void Script<E>::evaluate() {
-  for (ScriptCmd &cmd : cmds) {
-    if (cmd.kind == ScriptCmd::ENTRY) {
-      // The -e option takes precedence over ENTRY()
-      if (!ctx.arg.entry_given) {
-        ctx.arg.entry = get_symbol(ctx, cmd.name);
-        ctx.arg.entry->gc_root = true;
-        ctx.arg.undefined.push_back(ctx.arg.entry);
-      }
-      continue;
+  for (ScriptCmd &cmd : cmds)
+    evaluate_command(cmd);
+}
+
+template <typename E>
+void Script<E>::evaluate_command(ScriptCmd &cmd) {
+  if (cmd.kind == ScriptCmd::ENTRY) {
+    // The -e option takes precedence over ENTRY()
+    if (!ctx.arg.entry_given) {
+      ctx.arg.entry = get_symbol(ctx, cmd.name);
+      ctx.arg.entry->gc_root = true;
+      ctx.arg.undefined.push_back(ctx.arg.entry);
     }
-
-    if (cmd.kind == ScriptCmd::ASSERT) {
-      ctx.script_asserts.push_back({std::move(*cmd.value), cmd.msg,
-                                    file_of(cmd.loc), cmd.loc});
-      continue;
-    }
-
-    if (cmd.kind == ScriptCmd::ASSIGNMENT && cmd.name != "." &&
-        cmd.op == "=") {
-      // `foo = bar;` and `foo = 0x1000;` are equivalent to --defsym
-      if (!cmd.provide && !cmd.hidden) {
-        if (cmd.value->kind == ScriptExpr::NAME) {
-          ctx.arg.defsyms.emplace_back(get_symbol(ctx, cmd.name),
-                                       get_symbol(ctx, cmd.value->str));
-          continue;
-        }
-        if (cmd.value->kind == ScriptExpr::INT) {
-          ctx.arg.defsyms.emplace_back(get_symbol(ctx, cmd.name),
-                                       cmd.value->value);
-          continue;
-        }
-      }
-
-      // Other assignments are evaluated after the layout is fixed
-      ScriptAssignment<E> a;
-      a.sym = get_symbol(ctx, cmd.name);
-      a.value = std::move(*cmd.value);
-      a.provide = cmd.provide;
-      a.hidden = cmd.hidden;
-      a.mf = file_of(cmd.loc);
-      a.loc = cmd.loc;
-      ctx.script_assignments.push_back(std::move(a));
-      continue;
-    }
-
-    error(cmd.loc, "this linker script command is not supported yet");
+    return;
   }
+
+  if (cmd.kind == ScriptCmd::ASSERT) {
+    ctx.script_asserts.push_back({std::move(*cmd.value), cmd.msg,
+                                  file_of(cmd.loc), cmd.loc});
+    return;
+  }
+
+  if (cmd.kind == ScriptCmd::ASSIGNMENT && cmd.name != "." &&
+      cmd.op == "=") {
+    // `foo = bar;` and `foo = 0x1000;` are equivalent to --defsym
+    if (!cmd.provide && !cmd.hidden) {
+      if (cmd.value->kind == ScriptExpr::NAME) {
+        ctx.arg.defsyms.emplace_back(get_symbol(ctx, cmd.name),
+                                     get_symbol(ctx, cmd.value->str));
+        return;
+      }
+      if (cmd.value->kind == ScriptExpr::INT) {
+        ctx.arg.defsyms.emplace_back(get_symbol(ctx, cmd.name),
+                                     cmd.value->value);
+        return;
+      }
+    }
+
+    // Other assignments are evaluated after the layout is fixed
+    ScriptAssignment<E> a;
+    a.sym = get_symbol(ctx, cmd.name);
+    a.value = std::move(*cmd.value);
+    a.provide = cmd.provide;
+    a.hidden = cmd.hidden;
+    a.mf = file_of(cmd.loc);
+    a.loc = cmd.loc;
+    ctx.script_assignments.push_back(std::move(a));
+    return;
+  }
+
+  if (cmd.kind == ScriptCmd::SECTIONS) {
+    for (ScriptCmd &c : cmd.cmds) {
+      if (c.kind == ScriptCmd::OUTPUT_SECTION && is_plain_discard(c))
+        append(ctx.script_discards, std::move(c.cmds));
+      else
+        evaluate_command(c);
+    }
+    return;
+  }
+
+  error(cmd.loc, "this linker script command is not supported yet");
 }
 
 template <typename E>
@@ -1537,6 +1568,106 @@ void eval_script_commands(Context<E> &ctx) {
     if (!ev.eval(a.cond).val)
       script_error(ctx, a.mf, a.loc, std::string(a.msg));
   }
+}
+
+//
+// Section matching
+//
+
+// Removes input sections that match a /DISCARD/ pattern in a SECTIONS
+// command from the output. This pass runs before garbage collection so
+// that discarded sections don't keep other sections alive.
+template <typename E>
+void apply_script_discards(Context<E> &ctx) {
+  if (ctx.script_discards.empty())
+    return;
+
+  Timer t(ctx, "apply_script_discards");
+
+  // A discard pattern group with its file constraints. Most groups
+  // have no file constraints, in which case matching section names
+  // against `sections` suffices.
+  struct Candidate {
+    MultiGlob sections;
+    std::optional<MultiGlob> file;
+    std::optional<MultiGlob> exclude_files;
+  };
+
+  std::vector<Candidate> candidates;
+  MultiGlob matcher;
+  bool has_file_constraint = false;
+
+  auto compile = [&](MultiGlob &glob, std::span<const std::string_view> pats) {
+    for (std::string_view pat : pats)
+      if (!glob.add(pat, 1))
+        Fatal(ctx) << "/DISCARD/: invalid glob pattern: " << pat;
+    glob.compile();
+  };
+
+  for (ScriptCmd &spec : ctx.script_discards) {
+    // A bare file pattern (e.g. `foo.o` without a section list)
+    // discards all sections of matching files
+    if (spec.pats.empty())
+      spec.pats.push_back({.pats = {"*"}});
+
+    for (const ScriptPattern &pat : spec.pats) {
+      Candidate &c = candidates.emplace_back();
+      compile(c.sections, pat.pats);
+
+      if (spec.file_pat != "*") {
+        c.file.emplace();
+        compile(*c.file, std::array{spec.file_pat});
+      }
+
+      std::vector<std::string_view> excludes;
+      append(excludes, spec.exclude_files);
+      append(excludes, pat.exclude_files);
+      if (!excludes.empty()) {
+        c.exclude_files.emplace();
+        compile(*c.exclude_files, excludes);
+      }
+
+      has_file_constraint |= c.file.has_value() || c.exclude_files.has_value();
+
+      for (std::string_view p : pat.pats)
+        if (!matcher.add(p, 1))
+          Fatal(ctx) << "/DISCARD/: invalid glob pattern: " << p;
+    }
+  }
+  matcher.compile();
+
+  // We can't discard merged sections yet because their contents have
+  // already been split into section pieces.
+  for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
+    if (matcher.find(sec->name) != -1)
+      Fatal(ctx) << "/DISCARD/: discarding a mergeable section is not "
+                 << "supported yet: " << sec->name;
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      if (!isec || !isec->is_alive || matcher.find(isec->name) == -1)
+        continue;
+
+      if (!has_file_constraint) {
+        isec->kill();
+        continue;
+      }
+
+      auto matches = [&](Candidate &c) {
+        return c.sections.find(isec->name) != -1 &&
+               (!c.file || c.file->find(file->filename) != -1) &&
+               (!c.exclude_files ||
+                c.exclude_files->find(file->filename) == -1);
+      };
+
+      for (Candidate &c : candidates) {
+        if (matches(c)) {
+          isec->kill();
+          break;
+        }
+      }
+    }
+  });
 }
 
 //
@@ -1922,5 +2053,6 @@ template
 std::vector<DynamicPattern> parse_dynamic_list(Context<E> &, std::string_view);
 
 template void eval_script_commands(Context<E> &);
+template void apply_script_discards(Context<E> &);
 
 } // namespace mold

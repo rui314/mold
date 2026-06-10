@@ -2137,6 +2137,7 @@ private:
   ScriptCmd read_phdrs();
 
   void evaluate();
+  void evaluate_command(ScriptCmd &cmd);
   void dump();
 
   MappedFile *file_of(std::string_view pos);
@@ -2179,6 +2180,9 @@ parse_dynamic_list(Context<E> &ctx, std::string_view path);
 
 template <typename E>
 void eval_script_commands(Context<E> &ctx);
+
+template <typename E>
+void apply_script_discards(Context<E> &ctx);
 
 //
 // archive-file.cc
@@ -2746,6 +2750,7 @@ struct Context {
   std::vector<DynamicPattern> dynamic_list_patterns;
   std::vector<ScriptAssignment<E>> script_assignments;
   std::vector<ScriptAssert> script_asserts;
+  std::vector<ScriptCmd> script_discards;
   i64 default_version = VER_NDX_UNSPECIFIED;
   i64 page_size = E::page_size;
   bool has_error = false;
