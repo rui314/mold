@@ -35,8 +35,5 @@ EOF
 
 not ./mold $t/a.o -T $t/script5 -o $t/exe |& grep 'no such memory region'
 
-# Layout-owning features cannot be combined
 echo 'SECTIONS { .text : { *(.text*) } }' > $t/script4
 not ./mold $t/a.o -T $t/script4 -r -o $t/r.o |& grep 'not supported in relocatable'
-not ./mold $t/a.o -T $t/script4 --section-order='TEXT DATA BSS' -o $t/exe4 |& \
-  grep 'may not be combined'

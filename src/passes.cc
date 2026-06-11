@@ -113,13 +113,6 @@ void create_synthetic_sections(Context<E> &ctx) {
   };
 
   if (!ctx.arg.oformat_binary) {
-    auto find = [&](std::string_view name) {
-      for (SectionOrder &ord : ctx.arg.section_order)
-        if (ord.type == SectionOrder::SECTION && ord.name == name)
-          return true;
-      return false;
-    };
-
     // With an explicit PHDRS command, the ELF and program headers are
     // mapped to memory only if a segment asks for them with FILEHDR or
     // PHDRS. Without one, the layout pass maps them if they fit in
@@ -128,15 +121,8 @@ void create_synthetic_sections(Context<E> &ctx) {
     for (ScriptPhdr &p : ctx.script_phdrs)
       hdrs |= (p.filehdr || p.phdrs);
 
-    if ((ctx.arg.section_order.empty() && hdrs) || find("EHDR"))
-      ctx.ehdr = push(new OutputEhdr<E>(SHF_ALLOC));
-    else
-      ctx.ehdr = push(new OutputEhdr<E>(0));
-
-    if ((ctx.arg.section_order.empty() && hdrs) || find("PHDR"))
-      ctx.phdr = push(new OutputPhdr<E>(SHF_ALLOC));
-    else
-      ctx.phdr = push(new OutputPhdr<E>(0));
+    ctx.ehdr = push(new OutputEhdr<E>(hdrs ? (u64)SHF_ALLOC : 0));
+    ctx.phdr = push(new OutputPhdr<E>(hdrs ? (u64)SHF_ALLOC : 0));
 
     if (ctx.arg.z_sectionheader)
       ctx.shdr = push(new OutputShdr<E>);
@@ -175,8 +161,7 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.eh_frame_hdr = push(new EhFrameHdrSection<E>);
   if (ctx.arg.gdb_index && has_debug_info_section(ctx))
     ctx.gdb_index = push(new GdbIndexSection<E>);
-  if (ctx.arg.z_relro && ctx.arg.section_order.empty() &&
-      ctx.script_sections.empty())
+  if (ctx.arg.z_relro && ctx.script_sections.empty())
     ctx.relro_padding = push(new RelroPaddingSection<E>);
   if (ctx.arg.hash_style_sysv)
     ctx.hash = push(new HashSection<E>);
@@ -853,11 +838,6 @@ void create_internal_file(Context<E> &ctx) {
     }
   }
 
-  // Add --section-order symbols
-  for (SectionOrder &ord : ctx.arg.section_order)
-    if (ord.type == SectionOrder::SYMBOL)
-      add(get_symbol(ctx, ord.name));
-
   obj->elf_syms = ctx.internal_esyms;
 }
 
@@ -1068,11 +1048,6 @@ void add_synthetic_symbols(Context<E> &ctx) {
     if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
       add_start_stop("__start_" + *name);
       add_start_stop("__stop_" + *name);
-
-      if (ctx.arg.physical_image_base) {
-        add_start_stop("__phys_start_" + *name);
-        add_start_stop("__phys_stop_" + *name);
-      }
     }
   }
 
@@ -2751,59 +2726,6 @@ void sort_output_sections_regular(Context<E> &ctx) {
   });
 }
 
-template <typename E>
-static std::string_view get_section_order_group(Chunk<E> &chunk) {
-  if (chunk.shdr.sh_type == SHT_NOBITS)
-    return "BSS";
-  if (chunk.shdr.sh_flags & SHF_EXECINSTR)
-    return "TEXT";
-  if (chunk.shdr.sh_flags & SHF_WRITE)
-    return "DATA";
-  return "RODATA";
-};
-
-// Sort sections according to a --section-order argument.
-template <typename E>
-void sort_output_sections_by_order(Context<E> &ctx) {
-  auto get_rank = [&](Chunk<E> *chunk) -> i64 {
-    u64 flags = chunk->shdr.sh_flags;
-
-    if (chunk == ctx.ehdr && !(chunk->shdr.sh_flags & SHF_ALLOC))
-      return -2;
-    if (chunk == ctx.phdr && !(chunk->shdr.sh_flags & SHF_ALLOC))
-      return -1;
-
-    if (chunk == ctx.shdr)
-      return INT32_MAX;
-    if (!(flags & SHF_ALLOC))
-      return INT32_MAX - 1;
-
-    for (i64 i = 0; i < ctx.arg.section_order.size(); i++)
-      if (SectionOrder &arg = ctx.arg.section_order[i];
-          arg.type == SectionOrder::SECTION && arg.name == chunk->name)
-        return i;
-
-    std::string_view group = get_section_order_group(*chunk);
-
-    for (i64 i = 0; i < ctx.arg.section_order.size(); i++)
-      if (SectionOrder &arg = ctx.arg.section_order[i];
-          arg.type == SectionOrder::GROUP && arg.name == group)
-        return i;
-
-    Error(ctx) << "--section-order: missing section specification for "
-               << chunk->name;
-    return 0;
-  };
-
-  // It is an error if a section order cannot be determined by a given
-  // section order list.
-  for (Chunk<E> *chunk : ctx.chunks)
-    chunk->sect_order = get_rank(chunk);
-
-  // Sort output sections by --section-order
-  ranges::stable_sort(ctx.chunks, {}, &Chunk<E>::sect_order);
-}
-
 // Sort output sections according to a linker script. Sections the
 // script describes appear in script order; orphans are inserted after
 // the most similar script section.
@@ -2882,12 +2804,10 @@ static void sort_output_sections_by_script(Context<E> &ctx) {
 
 template <typename E>
 void sort_output_sections(Context<E> &ctx) {
-  if (!ctx.script_sections.empty())
-    sort_output_sections_by_script(ctx);
-  else if (ctx.arg.section_order.empty())
+  if (ctx.script_sections.empty())
     sort_output_sections_regular(ctx);
   else
-    sort_output_sections_by_order(ctx);
+    sort_output_sections_by_script(ctx);
 }
 
 template <typename E>
@@ -3037,69 +2957,6 @@ static void set_virtual_addresses_regular(Context<E> &ctx) {
     addr = align_to(addr, chunks[i]->shdr.sh_addralign);
     chunks[i]->shdr.sh_addr = addr;
     addr += chunks[i]->shdr.sh_size;
-  }
-}
-
-template <typename E>
-static void set_virtual_addresses_by_order(Context<E> &ctx) {
-  std::vector<Chunk<E> *> vec;
-  for (Chunk<E> *c : ctx.chunks)
-    if (c->shdr.sh_flags & SHF_ALLOC)
-      vec.push_back(c);
-
-  u64 addr = ctx.arg.image_base;
-  i64 i = 0;
-
-  for (i64 j = 0; j < ctx.arg.section_order.size(); j++) {
-    SectionOrder &ord = ctx.arg.section_order[j];
-
-    switch (ord.type) {
-    case SectionOrder::SECTION:
-    case SectionOrder::GROUP:
-      for (; i < vec.size() && vec[i]->sect_order == j; i++) {
-        // Memory protection works on page size granularity. We need to
-        // put sections with different memory attributes into different
-        // pages. We do it by inserting a padding.
-        if (i != 0) {
-          i64 flags1 = to_phdr_flags(ctx, vec[i - 1]);
-          i64 flags2 = to_phdr_flags(ctx, vec[i]);
-          if (flags1 != flags2) {
-            switch (ctx.arg.z_separate_code) {
-            case SEPARATE_LOADABLE_SEGMENTS:
-              addr = align_to(addr, ctx.page_size);
-              break;
-            case SEPARATE_CODE:
-              if ((flags1 & PF_X) != (flags2 & PF_X))
-                addr = align_to(addr, ctx.page_size);
-              break;
-            default:
-              break;
-            }
-          }
-        }
-
-        addr = align_to(addr, vec[i]->shdr.sh_addralign);
-        vec[i]->shdr.sh_addr = addr;
-        addr += vec[i]->shdr.sh_size;
-      }
-      break;
-    case SectionOrder::ADDR:
-      if (addr != ctx.arg.image_base && ord.value < addr)
-        Error(ctx) << "--section-order: address goes backward: requested "
-                   << std::hex << std::showbase
-                   << ord.value << " < current " << addr
-                   << " (at token '" << ord.token << "')";
-      addr = ord.value;
-      break;
-    case SectionOrder::ALIGN:
-      addr = align_to(addr, ord.value);
-      break;
-    case SectionOrder::SYMBOL:
-      get_symbol(ctx, ord.name)->value = addr;
-      break;
-    default:
-      unreachable();
-    }
   }
 }
 
@@ -3253,10 +3110,8 @@ i64 set_osec_offsets(Context<E> &ctx) {
   for (;;) {
     if (!ctx.script_sections.empty())
       set_virtual_addresses_by_script(ctx);
-    else if (ctx.arg.section_order.empty())
-      set_virtual_addresses_regular(ctx);
     else
-      set_virtual_addresses_by_order(ctx);
+      set_virtual_addresses_regular(ctx);
 
     if (ctx.arg.pack_dyn_relocs_relr || ctx.arg.pack_dyn_relocs_android) {
       i64 x = ctx.reldyn->shdr.sh_size;
@@ -3292,15 +3147,6 @@ static i64 get_num_irelative_relocs(Context<E> &ctx) {
     if (sym->is_ifunc())
       n++;
   return n;
-}
-
-template <typename E>
-static u64 to_paddr(Context<E> &ctx, u64 vaddr) {
-  for (ElfPhdr<E> &phdr : ctx.phdr->phdrs)
-    if (phdr.p_type == PT_LOAD)
-      if (phdr.p_vaddr <= vaddr && vaddr < phdr.p_vaddr + phdr.p_memsz)
-        return phdr.p_paddr + (vaddr - phdr.p_vaddr);
-  return 0;
 }
 
 template <typename E>
@@ -3469,18 +3315,6 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     if (std::optional<std::string> name = get_start_stop_name(ctx, *chunk)) {
       start(get_symbol(ctx, save_string(ctx, "__start_" + *name)), chunk);
       stop(get_symbol(ctx, save_string(ctx, "__stop_" + *name)), chunk);
-
-      if (ctx.arg.physical_image_base) {
-        u64 paddr = to_paddr(ctx, chunk->shdr.sh_addr);
-
-        Symbol<E> *x = get_symbol(ctx, save_string(ctx, "__phys_start_" + *name));
-        x->set_output_section(chunk);
-        x->value = paddr;
-
-        Symbol<E> *y = get_symbol(ctx, save_string(ctx, "__phys_stop_" + *name));
-        y->set_output_section(chunk);
-        y->value = paddr + chunk->shdr.sh_size;
-      }
     }
   }
 
@@ -3499,11 +3333,6 @@ void fix_synthetic_symbols(Context<E> &ctx) {
       sym->visibility = sym2->visibility.load();
     }
   }
-
-  // --section-order symbols
-  for (SectionOrder &ord : ctx.arg.section_order)
-    if (ord.type == SectionOrder::SYMBOL)
-      get_symbol(ctx, ord.name)->set_output_section(sections[0]);
 
   // Linker script symbol assignments and ASSERT commands
   eval_script_commands(ctx);

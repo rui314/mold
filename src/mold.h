@@ -690,7 +690,9 @@ public:
   i64 strtab_size = 0;
   i64 strtab_offset = 0;
 
-  // For --section-order
+  // The chunk's position in a SECTIONS-driven layout: 2n for the
+  // chunk described by the n'th script command, 2n+1 for an orphan
+  // placed after it
   i64 sect_order = 0;
 
   // For linker scripts: the index of the output section description
@@ -2595,13 +2597,6 @@ struct VersionPattern {
   bool is_cpp = false;
 };
 
-struct SectionOrder {
-  enum { NONE, SECTION, GROUP, ADDR, ALIGN, SYMBOL } type = NONE;
-  std::string name;
-  u64 value = 0;
-  std::string_view token; // for error reporting
-};
-
 // Target-specific context members
 template <typename E>
 struct ContextExtras {};
@@ -2767,7 +2762,6 @@ struct Context {
     i64 z_stack_size = 0;
     std::optional<i64> thread_count;
     std::optional<std::vector<Symbol<E> *>> retain_symbols_file;
-    std::optional<u64> physical_image_base;
     std::string Map;
     std::string audit;
     std::string chroot;
@@ -2793,7 +2787,6 @@ struct Context {
     std::unordered_set<std::string_view> exclude_libs;
     std::unordered_set<std::string_view> ignore_ir_file;
     std::unordered_set<std::string_view> wrap;
-    std::vector<SectionOrder> section_order;
     std::vector<Symbol<E> *> require_defined;
     std::vector<Symbol<E> *> undefined;
     std::vector<std::pair<Symbol<E> *, std::variant<Symbol<E> *, u64>>> defsyms;

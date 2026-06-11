@@ -508,63 +508,6 @@ static bool is_file(const std::filesystem::path& path) {
 }
 
 template <typename E>
-static std::vector<SectionOrder>
-parse_section_order(Context<E> &ctx, std::string_view arg) {
-  auto flags = std::regex_constants::ECMAScript | std::regex_constants::icase |
-               std::regex_constants::optimize;
-  static std::regex re1(R"(TEXT|DATA|RODATA|BSS)", flags);
-  static std::regex re2(R"([a-zA-Z0-9_.]\S*|EHDR|PHDR)", flags);
-  static std::regex re3(R"(=(0x[0-9a-f]+|\d+))", flags);
-  static std::regex re4(R"(%(0x[0-9a-f]+|\d+))", flags);
-  static std::regex re5(R"(!(\S+))", flags);
-
-  std::vector<SectionOrder> vec;
-
-  for (std::string_view tok : split_string(arg, " \t")) {
-    if (tok.empty())
-      continue;
-
-    vec.push_back(SectionOrder{ .token = tok });
-    SectionOrder &ord = vec.back();
-    std::cmatch m;
-
-    if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re1)) {
-      ord.type = SectionOrder::GROUP;
-      ord.name = m[0].str();
-    } else if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re2)) {
-      ord.type = SectionOrder::SECTION;
-      ord.name = m[0].str();
-    } else if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re3)) {
-      ord.type = SectionOrder::ADDR;
-      std::string s = m[1];
-      ord.value = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
-    } else if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re4)) {
-      ord.type = SectionOrder::ALIGN;
-      std::string s = m[1];
-      ord.value = std::stoull(s, nullptr, s.starts_with("0x") ? 16 : 10);
-    } else if (std::regex_match(tok.data(), tok.data() + tok.size(), m, re5)) {
-      ord.type = SectionOrder::SYMBOL;
-      ord.name = m[1].str();
-    } else {
-      Fatal(ctx) << "--section-order: parse error: " << arg;
-    }
-  }
-
-  bool is_first = true;
-  for (SectionOrder &ord : vec) {
-    if (ord.type == SectionOrder::SECTION) {
-      if (is_first) {
-        is_first = false;
-      } else if (ord.name == "EHDR") {
-        Fatal(ctx) << "--section-order: EHDR must be the first "
-                   << "section specifier: " << arg;
-      }
-    }
-  }
-  return vec;
-}
-
-template <typename E>
 static std::variant<Symbol<E> *, u64>
 parse_defsym_value(Context<E> &ctx, std::string_view s) {
   if (s.starts_with("0x") || s.starts_with("0X")) {
@@ -1110,8 +1053,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         Fatal(ctx) << "--section-start: syntax error: " << arg;
       ctx.arg.section_start[arg.substr(0, pos)] =
         parse_hex(ctx, "section-start", arg.substr(pos + 1));
-    } else if (read_arg("section-order")) {
-      ctx.arg.section_order = parse_section_order(ctx, arg);
     } else if (read_arg("Tbss")) {
       ctx.arg.section_start[".bss"] = parse_hex(ctx, "Tbss", arg);
     } else if (read_arg("Tdata")) {
@@ -1264,8 +1205,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.ignore_data_address_equality = true;
     } else if (read_arg("image-base")) {
       ctx.arg.image_base = parse_number(ctx, "image-base", arg);
-    } else if (read_arg("physical-image-base")) {
-      ctx.arg.physical_image_base = parse_number(ctx, "physical-image-base", arg);
     } else if (read_flag("print-icf-sections")) {
       ctx.arg.print_icf_sections = "-";
     } else if (read_eq("print-icf-sections")) {
@@ -1572,11 +1511,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         ((u64)std::random_device()() << 32) | std::random_device()();
   }
 
-  // --section-order implies `-z separate-loadable-segments`
   if (z_separate_code)
     ctx.arg.z_separate_code = *z_separate_code;
-  else if (!ctx.arg.section_order.empty())
-    ctx.arg.z_separate_code = SEPARATE_LOADABLE_SEGMENTS;
 
   // `-z dynamic-undefined-weak` is enabled by default for DSOs.
   if (z_dynamic_undefined_weak)
@@ -1584,11 +1520,8 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   else
     ctx.arg.z_dynamic_undefined_weak = ctx.arg.shared;
 
-  // --section-order implies `-z norelro`
   if (z_relro)
     ctx.arg.z_relro = *z_relro;
-  else if (!ctx.arg.section_order.empty())
-    ctx.arg.z_relro = false;
 
   if (ctx.arg.nmagic || ctx.arg.omagic)
     ctx.arg.z_relro = false;
@@ -1610,9 +1543,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if constexpr (is_sparc<E>)
     if (ctx.arg.apply_dynamic_relocs)
       Fatal(ctx) << "--apply-dynamic-relocs may not be used on SPARC64";
-
-  if (!ctx.arg.section_start.empty() && !ctx.arg.section_order.empty())
-    Fatal(ctx) << "--section-start may not be used with --section-order";
 
   if (ctx.arg.image_base % ctx.page_size)
     Fatal(ctx) << "-image-base must be a multiple of -max-page-size";

@@ -1313,8 +1313,6 @@ void Script<E>::evaluate_command(ScriptCmd &cmd) {
   if (cmd.kind == ScriptCmd::SECTIONS) {
     if (ctx.arg.relocatable)
       error(cmd.loc, "SECTIONS is not supported in relocatable links");
-    if (!ctx.arg.section_order.empty())
-      error(cmd.loc, "SECTIONS may not be combined with --section-order");
     evaluate_sections(cmd);
     return;
   }
