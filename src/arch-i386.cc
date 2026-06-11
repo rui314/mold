@@ -46,10 +46,10 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   switch (rel.r_type) {
   case R_386_8:
   case R_386_PC8:
-    return *loc;
+    return *(i8 *)loc;
   case R_386_16:
   case R_386_PC16:
-    return *(ul16 *)loc;
+    return *(il16 *)loc;
   case R_386_32:
   case R_386_PC32:
   case R_386_GOT32:
@@ -65,7 +65,7 @@ i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   case R_386_TLS_LDO_32:
   case R_386_SIZE32:
   case R_386_TLS_GOTDESC:
-    return *(ul32 *)loc;
+    return *(il32 *)loc;
   default:
     return 0;
   }
