@@ -1288,6 +1288,31 @@ void Script<E>::evaluate_command(ScriptCmd &cmd) {
     return;
   }
 
+  if (cmd.kind == ScriptCmd::MEMORY) {
+    for (ScriptRegion &r : cmd.memory) {
+      for (ScriptRegion &r2 : ctx.script_regions)
+        if (r2.name == r.name)
+          error(r.loc, "memory region is defined twice");
+      ctx.script_regions.push_back(std::move(r));
+    }
+    return;
+  }
+
+  if (cmd.kind == ScriptCmd::REGION_ALIAS) {
+    for (i64 i = 0; i < ctx.script_regions.size(); i++) {
+      if (ctx.script_regions[i].name == cmd.name) {
+        ScriptRegion alias;
+        alias.loc = cmd.loc;
+        alias.name = cmd.name2;
+        alias.alias_of = i;
+        ctx.script_regions.push_back(alias);
+        return;
+      }
+    }
+    error(cmd.loc, "REGION_ALIAS: no such memory region: " +
+          std::string(cmd.name));
+  }
+
   if (cmd.kind == ScriptCmd::SECTIONS) {
     if (ctx.arg.relocatable)
       error(cmd.loc, "SECTIONS is not supported in relocatable links");
@@ -1365,7 +1390,6 @@ void Script<E>::evaluate_sections(ScriptCmd &cmd) {
     }
 
     if (c.subalign || c.align_with_input || !c.constraint.empty() ||
-        !c.region.empty() || !c.lma_region.empty() ||
         (!c.type.empty() && c.type != "NOLOAD" && c.type != "INFO"))
       error(c.loc, "this output section attribute is not supported yet");
     if (c.fill && c.fill->kind != ScriptExpr::INT)
@@ -1417,6 +1441,20 @@ void Script<E>::parse_linker_script() {
   while (!at_eof())
     read_command();
   evaluate();
+}
+
+// Returns the index of the memory region with the given name, with
+// REGION_ALIAS names resolved, or -1 if there is no such region.
+template <typename E>
+static i64 find_region(Context<E> &ctx, std::string_view name) {
+  for (i64 i = 0; i < ctx.script_regions.size(); i++) {
+    if (ctx.script_regions[i].name == name) {
+      while (ctx.script_regions[i].alias_of != -1)
+        i = ctx.script_regions[i].alias_of;
+      return i;
+    }
+  }
+  return -1;
 }
 
 //
@@ -1663,6 +1701,17 @@ ScriptValue<E> ScriptEvaluator<E>::eval(const ScriptExpr &e) {
     if (fn == "LOG2CEIL") {
       want(1);
       return {(u64)std::bit_width(std::max<u64>(eval_int(e.args[0]), 1) - 1)};
+    }
+    if (fn == "ORIGIN" || fn == "LENGTH") {
+      want(1);
+      if (e.args[0].kind != ScriptExpr::NAME)
+        error(std::string(fn) + ": expected a memory region name");
+      i64 idx = find_region(ctx, e.args[0].str);
+      if (idx == -1)
+        error(std::string(fn) + ": no such memory region: " +
+              std::string(e.args[0].str));
+      ScriptRegion &r = ctx.script_regions[idx];
+      return {eval_int(fn == "ORIGIN" ? r.origin : r.length)};
     }
     if (fn == "CONSTANT") {
       want(1);
@@ -2188,6 +2237,49 @@ static u64 run_section_body(Context<E> &ctx, ScriptCmd &cmd,
   return dot;
 }
 
+// Returns the index of the first memory region whose attribute string
+// (e.g. the "rwx" in `ram (rwx) : ...`) is compatible with the given
+// section. `!` inverts the sense of the attributes that follow it.
+template <typename E>
+static i64 match_region_by_attrs(Context<E> &ctx, Chunk<E> *chunk) {
+  // r = accepts read-only sections, w = read/write, x = executable,
+  // a = allocated, i/l = initialized
+  enum { R = 1, W = 2, X = 4, A = 8, I = 16 };
+
+  u64 flags = chunk->shdr.sh_flags;
+  u64 sec = ((flags & SHF_WRITE) ? W : R) |
+            ((flags & SHF_EXECINSTR) ? X : 0) |
+            ((flags & SHF_ALLOC) ? A : 0) |
+            ((chunk->shdr.sh_type != SHT_NOBITS) ? I : 0);
+
+  for (i64 i = 0; i < ctx.script_regions.size(); i++) {
+    ScriptRegion &r = ctx.script_regions[i];
+    if (r.alias_of != -1)
+      continue;
+
+    u64 pos = 0;
+    u64 neg = 0;
+    bool invert = false;
+
+    for (char c : r.attrs) {
+      u64 bit = 0;
+      switch (tolower(c)) {
+      case 'r': bit = R; break;
+      case 'w': bit = W; break;
+      case 'x': bit = X; break;
+      case 'a': bit = A; break;
+      case 'i': case 'l': bit = I; break;
+      case '!': invert = !invert; continue;
+      }
+      (invert ? neg : pos) |= bit;
+    }
+
+    if ((sec & pos) && !(sec & neg))
+      return i;
+  }
+  return -1;
+}
+
 // Assigns virtual and load addresses to output sections as described
 // by SECTIONS, executing the script's symbol assignments along the
 // way. Since an expression may refer to an address or a symbol that
@@ -2220,7 +2312,45 @@ void set_virtual_addresses_by_script(Context<E> &ctx) {
     u64 dot = 0;
     i64 lma_delta = 0;
     i64 cursor = 0;
+    i64 prev_region = -1;
     Chunk<E> *dot_sec = nullptr;
+    std::string overflow;
+
+    // Each memory region has a single cursor, used both for sections
+    // placed in it (>region) and for load images directed to it
+    // (AT>region); that is how a RAM section's initialization image
+    // is stacked after the code in flash.
+    i64 nregions = ctx.script_regions.size();
+    std::vector<u64> region_org(nregions);
+    std::vector<u64> region_len(nregions);
+    std::vector<u64> region_pos(nregions);
+
+    for (i64 i = 0; i < nregions; i++) {
+      if (ctx.script_regions[i].alias_of != -1)
+        continue;
+      ScriptEvaluator<E> ev{ctx, nullptr, ctx.script_regions[i].loc};
+      region_org[i] = ev.eval(ctx.script_regions[i].origin).val;
+      region_len[i] = ev.eval(ctx.script_regions[i].length).val;
+      region_pos[i] = region_org[i];
+    }
+
+    auto get_region = [&](std::string_view name, Chunk<E> *chunk) {
+      i64 idx = find_region(ctx, name);
+      if (idx == -1)
+        Fatal(ctx) << "linker script: section " << chunk->name
+                   << ": no such memory region: " << name;
+      return idx;
+    };
+
+    // A region may transiently overflow while the layout is still
+    // converging, so remember the message and report it only if it
+    // persists in the final round.
+    auto check_overflow = [&](i64 r, u64 end, Chunk<E> *chunk) {
+      if (end > region_org[r] + region_len[r])
+        overflow = "linker script: section " + std::string(chunk->name) +
+                   " overflows memory region " +
+                   std::string(ctx.script_regions[r].name);
+    };
 
     // Executes script commands up to (but not including) index `end`:
     // symbol assignments between section descriptions and the bodies
@@ -2257,10 +2387,32 @@ void set_virtual_addresses_by_script(Context<E> &ctx) {
     };
 
     auto layout = [&](Chunk<E> *chunk, ScriptCmd *cmd) {
+      // Resolve the section's memory regions. If MEMORY is in use and
+      // a section names neither a region nor an address, it goes to
+      // the first region whose attributes accept it.
+      i64 vr = -1;
+      i64 lr = -1;
+
+      if (cmd && !cmd->region.empty()) {
+        vr = get_region(cmd->region, chunk);
+      } else if (nregions && !(cmd && cmd->addr)) {
+        // This also covers orphan sections, which must consume region
+        // space like any other section
+        vr = match_region_by_attrs(ctx, chunk);
+        if (vr == -1)
+          Fatal(ctx) << "linker script: section " << chunk->name
+                     << ": no memory region accepts this section";
+      }
+
+      if (cmd && !cmd->lma_region.empty())
+        lr = get_region(cmd->lma_region, chunk);
+
       u64 addr;
       if (cmd && cmd->addr) {
         ScriptEvaluator<E> ev{ctx, nullptr, cmd->loc, dot, dot_sec};
         addr = ev.eval(*cmd->addr).val;
+      } else if (vr != -1) {
+        addr = align_to(region_pos[vr], chunk->shdr.sh_addralign);
       } else {
         addr = align_to(dot, chunk->shdr.sh_addralign);
       }
@@ -2278,16 +2430,40 @@ void set_virtual_addresses_by_script(Context<E> &ctx) {
       else
         dot = addr + chunk->shdr.sh_size;
 
+      bool is_tbss = (chunk->shdr.sh_type == SHT_NOBITS) &&
+                     (chunk->shdr.sh_flags & SHF_TLS);
+
+      if (vr != -1) {
+        region_pos[vr] = is_tbss ? addr : dot;
+        check_overflow(vr, dot, chunk);
+      }
+
       u64 lma;
       if (cmd && cmd->at) {
         ScriptEvaluator<E> ev{ctx, nullptr, cmd->loc, addr, chunk};
         lma = ev.eval(*cmd->at).val;
         lma_delta = lma - addr;
+      } else if (lr != -1) {
+        // The load image consumes the region only if the section has
+        // file contents
+        lma = align_to(region_pos[lr], chunk->shdr.sh_addralign);
+        if (chunk->shdr.sh_type != SHT_NOBITS) {
+          region_pos[lr] = lma + (dot - addr);
+          check_overflow(lr, region_pos[lr], chunk);
+        }
+        lma_delta = lma - addr;
       } else {
+        // The default load address is the virtual address. The
+        // distance between the two persists from the previous section
+        // so that sections following an AT() stay contiguous in load
+        // order, but not across a change of memory region.
+        if (vr != prev_region)
+          lma_delta = 0;
         lma = addr + lma_delta;
       }
       changed |= (chunk->lma != lma);
       chunk->lma = lma;
+      prev_region = vr;
 
       // A TLS NOBITS section doesn't consume address space; it
       // overlaps with whatever comes next. See the comment in
@@ -2299,8 +2475,7 @@ void set_virtual_addresses_by_script(Context<E> &ctx) {
         dot_sec = chunk;
     };
 
-    u64 first_addr = 0;
-    bool seen_first = false;
+    u64 min_addr = -1;
 
     for (Chunk<E> *chunk : ctx.chunks) {
       if (!(chunk->shdr.sh_flags & SHF_ALLOC) || chunk->is_header())
@@ -2319,21 +2494,19 @@ void set_virtual_addresses_by_script(Context<E> &ctx) {
         layout(chunk, nullptr);
       }
 
-      if (!seen_first) {
-        first_addr = chunk->shdr.sh_addr;
-        seen_first = true;
-      }
+      // Addresses are not necessarily monotonic, so track the lowest
+      min_addr = std::min<u64>(min_addr, chunk->shdr.sh_addr);
     }
 
     run_until(ctx.script_sections.size());
 
     // The ELF and program headers are mapped if they fit in front of
-    // the first section, as the dynamic loader and libc need them at
+    // the lowest section, as the dynamic loader and libc need them at
     // runtime (AT_PHDR)
     if (ctx.ehdr && (ctx.ehdr->shdr.sh_flags & SHF_ALLOC)) {
       u64 size = ctx.ehdr->shdr.sh_size + ctx.phdr->shdr.sh_size;
-      u64 addr = first_addr - first_addr % ctx.page_size;
-      if (seen_first && first_addr - addr >= size) {
+      u64 addr = min_addr - min_addr % ctx.page_size;
+      if (min_addr != (u64)-1 && min_addr - addr >= size) {
         changed |= (ctx.ehdr->shdr.sh_addr != addr);
         ctx.ehdr->shdr.sh_addr = addr;
         ctx.ehdr->lma = addr;
@@ -2346,9 +2519,41 @@ void set_virtual_addresses_by_script(Context<E> &ctx) {
       }
     }
 
-    if (!changed)
+    if (!changed) {
+      if (!overflow.empty())
+        Fatal(ctx) << overflow;
       break;
+    }
   }
+
+  // A script can place sections at arbitrary addresses, so check that
+  // no two sections ended up overlapping. TLS NOBITS sections overlap
+  // their neighbors by design.
+  auto check_overlap = [&](auto addr_of, std::string_view kind,
+                           bool skip_bss) {
+    std::vector<Chunk<E> *> vec;
+    for (Chunk<E> *chunk : ctx.chunks) {
+      bool bss = (chunk->shdr.sh_type == SHT_NOBITS);
+      if ((chunk->shdr.sh_flags & SHF_ALLOC) && chunk->shdr.sh_size &&
+          !(bss && (skip_bss || (chunk->shdr.sh_flags & SHF_TLS))))
+        vec.push_back(chunk);
+    }
+
+    ranges::stable_sort(vec, {}, addr_of);
+
+    for (i64 i = 1; i < vec.size(); i++)
+      if (addr_of(vec[i]) < addr_of(vec[i - 1]) + vec[i - 1]->shdr.sh_size)
+        Fatal(ctx) << "section " << vec[i]->name << " " << kind << " 0x"
+                   << std::hex << addr_of(vec[i]) << " overlaps with "
+                   << vec[i - 1]->name;
+  };
+
+  // Nothing is loaded for a NOBITS section, so its load address is
+  // immaterial
+  check_overlap([](Chunk<E> *chunk) { return chunk->shdr.sh_addr; },
+                "virtual address", false);
+  check_overlap([](Chunk<E> *chunk) { return chunk->lma; },
+                "load address", true);
 }
 
 // Creates program headers as described by a PHDRS command. A section

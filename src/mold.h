@@ -2010,6 +2010,7 @@ struct ScriptRegion {
   std::string_view attrs;  // e.g. "rwx" in `ram (rwx) : ...`
   ScriptExpr origin;
   ScriptExpr length;
+  i64 alias_of = -1;       // for REGION_ALIAS
 };
 
 // A program header defined in a PHDRS { ... } command
@@ -2817,6 +2818,7 @@ struct Context {
   std::vector<ScriptCmd> script_discards;
   std::vector<ScriptCmd> script_sections;
   std::vector<ScriptPhdr> script_phdrs;
+  std::vector<ScriptRegion> script_regions;
   std::vector<ScriptMatchRank> script_ranks;
   i64 default_version = VER_NDX_UNSPECIFIED;
   i64 page_size = E::page_size;

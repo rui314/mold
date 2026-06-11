@@ -20,11 +20,20 @@ not ./mold $t/a.o -T $t/script2 -o $t/exe |& grep 'not supported yet'
 
 cat <<'EOF' > $t/script3
 SECTIONS {
-  .text : { *(.text*) } >ram
+  .text : SUBALIGN(8) { *(.text*) }
 }
 EOF
 
 not ./mold $t/a.o -T $t/script3 -o $t/exe |& grep 'not supported yet'
+
+# A memory region must be declared before use
+cat <<'EOF' > $t/script5
+SECTIONS {
+  .text : { *(.text*) } >ram
+}
+EOF
+
+not ./mold $t/a.o -T $t/script5 -o $t/exe |& grep 'no such memory region'
 
 # Layout-owning features cannot be combined
 echo 'SECTIONS { .text : { *(.text*) } }' > $t/script4
