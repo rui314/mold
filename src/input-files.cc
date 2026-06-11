@@ -837,11 +837,21 @@ void ObjectFile<E>::convert_mergeable_sections(Context<E> &ctx) {
       continue;
 
     const ElfShdr<E> &shdr = isec->shdr();
-    if (!(shdr.sh_flags & SHF_MERGE))
+    if (!(shdr.sh_flags & SHF_MERGE) || !isec->is_alive)
       continue;
 
+    // Under a SECTIONS-driven layout, sections matched by different
+    // output section descriptions merge separately
+    i64 cmd = -1;
+    i32 rank = INT32_MAX;
+    if (!this->script_match.empty())
+      if (i32 r = this->script_match[i]; r != -1) {
+        cmd = ctx.script_ranks[r].cmd;
+        rank = r;
+      }
+
     MergedSection<E> *parent =
-      MergedSection<E>::get_instance(ctx, isec->name, shdr);
+      MergedSection<E>::get_instance(ctx, isec->name, shdr, cmd, rank);
 
     if (parent) {
       this->mergeable_sections[i] =

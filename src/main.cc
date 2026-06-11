@@ -375,6 +375,13 @@ int mold_main(int argc, char **argv) {
   std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_reachable; });
   std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_reachable; });
 
+  // Remove input sections that match a /DISCARD/ pattern and
+  // compute, for each input section, the output section description
+  // it matches. This runs before mergeable sections are split
+  // because the patterns match the original input sections.
+  apply_script_discards(ctx);
+  match_script_sections(ctx);
+
   // Parse .eh_frame section contents.
   parse_eh_frame_sections(ctx);
 
@@ -426,10 +433,8 @@ int mold_main(int argc, char **argv) {
 
   // Remove input sections that match a /DISCARD/ pattern in a linker
   // script.
-  apply_script_discards(ctx);
 
   // Match input sections against SECTIONS commands in a linker script.
-  match_script_sections(ctx);
 
   // Garbage-collect unreachable sections.
   if (ctx.arg.gc_sections)

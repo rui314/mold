@@ -2196,7 +2196,8 @@ MergedSection<E>::MergedSection(std::string_view name, i64 flags, i64 type,
 template <typename E>
 MergedSection<E> *
 MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
-                               const ElfShdr<E> &shdr) {
+                               const ElfShdr<E> &shdr, i64 script_cmd,
+                               i32 script_rank) {
   if (!(shdr.sh_flags & SHF_MERGE))
     return nullptr;
 
@@ -2215,9 +2216,19 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
     for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
       if (name == osec->name && flags == osec->shdr.sh_flags &&
           shdr.sh_type == osec->shdr.sh_type &&
-          entsize == osec->shdr.sh_entsize)
+          entsize == osec->shdr.sh_entsize &&
+          script_cmd == osec->script_cmd)
         return osec.get();
     return nullptr;
+  };
+
+  // The section is placed at the position of the earliest input
+  // section description that matched any of its inputs
+  auto update_rank = [&](MergedSection *osec) {
+    i32 old = osec->script_rank.load();
+    while (script_rank < old &&
+           !osec->script_rank.compare_exchange_weak(old, script_rank));
+    return osec;
   };
 
   // Search for an exiting output section.
@@ -2225,17 +2236,18 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
   {
     std::shared_lock lock(mu);
     if (MergedSection *osec = find())
-      return osec;
+      return update_rank(osec);
   }
 
   // Create a new output section.
   std::unique_lock lock(mu);
   if (MergedSection *osec = find())
-    return osec;
+    return update_rank(osec);
 
   MergedSection *osec = new MergedSection(name, flags, shdr.sh_type, entsize);
+  osec->script_cmd = script_cmd;
   ctx.merged_sections.emplace_back(osec);
-  return osec;
+  return update_rank(osec);
 }
 
 template <typename E>

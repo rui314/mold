@@ -820,6 +820,7 @@ public:
   void create_range_extension_thunks(Context<E> &ctx);
 
   std::vector<InputSection<E> *> members;
+  std::vector<MergedSection<E> *> merged_members;
   std::vector<std::unique_ptr<Thunk<E>>> thunks;
   std::unique_ptr<RelocSection<E>> reloc_sec;
   std::vector<AbsRel<E>> abs_rels;
@@ -1245,7 +1246,8 @@ template <typename E>
 class MergedSection : public Chunk<E> {
 public:
   static MergedSection<E> *
-  get_instance(Context<E> &ctx, std::string_view name, const ElfShdr<E> &shdr);
+  get_instance(Context<E> &ctx, std::string_view name, const ElfShdr<E> &shdr,
+               i64 script_cmd = -1, i32 script_rank = INT32_MAX);
 
   SectionFragment<E> *insert(Context<E> &ctx, std::string_view data,
                              u64 hash, i64 p2align);
@@ -1258,6 +1260,12 @@ public:
 
   std::vector<MergeableSection<E> *> members;
   std::mutex mu;
+
+  // Under a SECTIONS-driven layout, a merged section may belong to an
+  // output section described by the script; it is then laid out and
+  // written as part of it.
+  OutputSection<E> *script_owner = nullptr;
+  std::atomic_int32_t script_rank = INT32_MAX;
 
   ConcurrentMap<SectionFragment<E>> map;
   HyperLogLog estimator;

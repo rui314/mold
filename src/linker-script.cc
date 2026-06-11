@@ -2178,6 +2178,7 @@ static u64 run_section_body(Context<E> &ctx, ScriptCmd &cmd,
   u64 dot = base;
   u64 align = 1;
   i64 m = 0;
+  i64 mm = 0;
 
   if (osec)
     osec->script_data.clear();
@@ -2199,6 +2200,19 @@ static u64 run_section_body(Context<E> &ctx, ScriptCmd &cmd,
         align = std::max<u64>(align, (u64)1 << isec->p2align);
         isec->offset = dot - base;
         dot += isec->sh_size;
+      }
+
+      // Merged sections this description matched follow the plain
+      // members
+      for (; mm < osec->merged_members.size(); mm++) {
+        MergedSection<E> *ms = osec->merged_members[mm];
+        if (ms->script_rank.load() >= hi)
+          break;
+        dot = align_to(dot, ms->shdr.sh_addralign);
+        align = std::max<u64>(align, ms->shdr.sh_addralign);
+        changed |= (ms->shdr.sh_addr != dot);
+        ms->shdr.sh_addr = dot;
+        dot += ms->shdr.sh_size;
       }
       break;
     }

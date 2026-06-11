@@ -454,12 +454,6 @@ template <typename E>
 void create_merged_sections(Context<E> &ctx) {
   Timer t(ctx, "create_merged_sections");
 
-  // If a linker script describes the layout, mergeable sections stay
-  // regular input sections so that the script's patterns place them.
-  // We give up deduplication for layout fidelity.
-  if (!ctx.script_sections.empty())
-    return;
-
   // Convert InputSections to MergeableSections.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     file->convert_mergeable_sections(ctx);
@@ -755,20 +749,53 @@ void create_output_sections(Context<E> &ctx) {
       if (cmd.kind != ScriptCmd::OUTPUT_SECTION || taken[i])
         continue;
 
+      bool need = false;
+      for (ScriptCmd &b : cmd.cmds)
+        need |= (b.kind == ScriptCmd::DATA);
+      for (std::unique_ptr<MergedSection<E>> &ms : ctx.merged_sections)
+        need |= (ms->script_cmd == i);
+      if (!need)
+        continue;
+
+      // Data commands are loadable content; a section created only
+      // to hold merged sections takes its flags from them when they
+      // are attached below
       bool has_data = false;
       for (ScriptCmd &b : cmd.cmds)
         has_data |= (b.kind == ScriptCmd::DATA);
-      if (!has_data)
-        continue;
 
       OutputSection<E> *osec = new OutputSection<E>(cmd.name, SHT_PROGBITS);
       osec->script_cmd = i;
-      osec->sh_flags = SHF_ALLOC;
-      osec->shdr.sh_flags = SHF_ALLOC;
+      osec->sh_flags = has_data ? SHF_ALLOC : 0;
+      osec->shdr.sh_flags = osec->sh_flags;
       osec->shdr.sh_addralign = 1;
       script_finalize_section(ctx, *osec);
       ctx.osec_pool.emplace_back(osec);
     }
+
+    // A merged section matched by an output section description is
+    // laid out and written as part of the section created for it
+    std::unordered_map<i64, OutputSection<E> *> osec_of;
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
+      if (osec->script_cmd != -1)
+        osec_of[osec->script_cmd] = osec.get();
+
+    for (std::unique_ptr<MergedSection<E>> &ms : ctx.merged_sections) {
+      if (ms->script_cmd != -1) {
+        OutputSection<E> *osec = osec_of[ms->script_cmd];
+        ms->script_owner = osec;
+        osec->merged_members.push_back(ms.get());
+        osec->sh_flags |= ms->shdr.sh_flags & ~(u64)SHF_MERGE &
+                          ~(u64)SHF_STRINGS;
+        osec->shdr.sh_flags = osec->sh_flags;
+      }
+    }
+
+    for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
+      ranges::stable_sort(osec->merged_members, {},
+                          [](MergedSection<E> *ms) {
+        return ms->script_rank.load();
+      });
   }
 
   // Add output sections and mergeable sections to ctx.chunks
@@ -776,7 +803,8 @@ void create_output_sections(Context<E> &ctx) {
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
     chunks.push_back(osec.get());
   for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
-    chunks.push_back(osec.get());
+    if (!osec->script_owner)
+      chunks.push_back(osec.get());
 
   // Sections are added to the section lists in an arbitrary order
   // because they are created in parallel. Sort them to to make the
@@ -1837,6 +1865,13 @@ void compute_section_sizes(Context<E> &ctx) {
       chunk->compute_section_size(ctx);
     });
   }
+  // Merged sections owned by a script-described output section are
+  // not in ctx.chunks; their content layout happens here, their
+  // placement in the address walk.
+  for (std::unique_ptr<MergedSection<E>> &ms : ctx.merged_sections)
+    if (ms->script_owner)
+      ms->compute_section_size(ctx);
+
 }
 
 // Find all unresolved symbols and attach them to the most appropriate files.
@@ -2118,6 +2153,12 @@ void copy_chunks(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
     if (!is_rel(*chunk))
       copy(*chunk);
+  });
+
+  tbb::parallel_for_each(ctx.merged_sections,
+                         [&](std::unique_ptr<MergedSection<E>> &ms) {
+    if (ms->script_owner)
+      copy(*ms);
   });
 
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
@@ -3079,6 +3120,12 @@ void compute_section_headers(Context<E> &ctx) {
     if (!chunk->is_header())
       chunk->shndx = shndx++;
 
+  // Symbols in a merged section within a script-described output
+  // section belong to that section
+  for (std::unique_ptr<MergedSection<E>> &ms : ctx.merged_sections)
+    if (ms->script_owner)
+      ms->shndx = ms->script_owner->shndx;
+
   if (ctx.symtab && SHN_LORESERVE <= shndx) {
     SymtabShndxSection<E> *sec = new SymtabShndxSection<E>;
     sec->shndx = shndx++;
@@ -3128,6 +3175,11 @@ i64 set_osec_offsets(Context<E> &ctx) {
     // Assigning new offsets may change the contents and the length
     // of the program header, so repeat it until converge.
     i64 fileoff = set_file_offsets(ctx);
+
+    for (std::unique_ptr<MergedSection<E>> &ms : ctx.merged_sections)
+      if (Chunk<E> *p = ms->script_owner)
+        ms->shdr.sh_offset =
+          p->shdr.sh_offset + ms->shdr.sh_addr - p->shdr.sh_addr;
 
     if (ctx.phdr) {
       i64 sz = ctx.phdr->shdr.sh_size;
