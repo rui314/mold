@@ -2651,7 +2651,6 @@ struct ContextExtras<SPARC64> {
 template <typename E>
 struct Context {
   Context() {
-    arg.entry = get_symbol(*this, "_start");
     arg.fini = get_symbol(*this, "_fini");
     arg.init = get_symbol(*this, "_init");
 
@@ -2696,7 +2695,6 @@ struct Context {
     bool eh_frame_hdr = true;
     bool emit_relocs = false;
     bool enable_new_dtags = true;
-    bool entry_given = false;
     bool execute_only = false;
     bool export_dynamic = false;
     bool fatal_warnings = false;

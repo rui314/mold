@@ -851,7 +851,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.discard_locals = false;
     } else if (read_arg("e") || read_arg("entry")) {
       ctx.arg.entry = get_symbol(ctx, arg);
-      ctx.arg.entry_given = true;
     } else if (read_arg("Map")) {
       ctx.arg.Map = arg;
       ctx.arg.print_map = true;
@@ -1660,8 +1659,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   if (ctx.arg.stats || ctx.arg.perf)
     ctx.arg.detach = false;
 
-  ctx.arg.undefined.push_back(ctx.arg.entry);
-
   for (i64 i = 0; i < ctx.arg.defsyms.size(); i++) {
     std::variant<Symbol<E> *, u64> &val = ctx.arg.defsyms[i].second;
     if (Symbol<E> **sym = std::get_if<Symbol<E> *>(&val))
@@ -1691,7 +1688,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     sym->gc_root = true;
   for (Symbol<E> *sym : ctx.arg.require_defined)
     sym->gc_root = true;
-  ctx.arg.entry->gc_root = true;
 
   if (version_shown && remaining.empty())
     exit(0);

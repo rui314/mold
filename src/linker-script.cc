@@ -1240,12 +1240,9 @@ void Script<E>::evaluate() {
 template <typename E>
 void Script<E>::evaluate_command(ScriptCmd &cmd) {
   if (cmd.kind == ScriptCmd::ENTRY) {
-    // The -e option takes precedence over ENTRY()
-    if (!ctx.arg.entry_given) {
+    // The -e option and earlier ENTRY commands take precedence
+    if (!ctx.arg.entry)
       ctx.arg.entry = get_symbol(ctx, cmd.name);
-      ctx.arg.entry->gc_root = true;
-      ctx.arg.undefined.push_back(ctx.arg.entry);
-    }
     return;
   }
 

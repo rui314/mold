@@ -332,6 +332,13 @@ int mold_main(int argc, char **argv) {
   // Parse input files
   read_input_files(ctx, file_args);
 
+  // The entry point is given by -e, by an ENTRY command in a linker
+  // script, or defaults to _start
+  if (!ctx.arg.entry)
+    ctx.arg.entry = get_symbol(ctx, "_start");
+  ctx.arg.entry->gc_root = true;
+  ctx.arg.undefined.push_back(ctx.arg.entry);
+
   // Uniquify shared object files by soname
   {
     std::unordered_set<std::string_view> seen;
