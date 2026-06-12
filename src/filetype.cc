@@ -191,7 +191,7 @@ get_machine_type(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
         return get_elf_type(child->data);
     return "";
   case FileType::TEXT:
-    return Script(ctx, rctx, mf).get_script_output_type();
+    return Script(ctx, mf, &rctx).get_script_output_type();
   default:
     return "";
   }

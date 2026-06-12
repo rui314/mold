@@ -1571,8 +1571,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       Fatal(ctx) << "--version-script: file not found: " << path;
     };
 
-    ReaderContext rctx;
-    Script(ctx, rctx, open()).parse_version_script();
+    Script(ctx, open()).parse_version_script();
   }
 
   if (separate_debug_file) {

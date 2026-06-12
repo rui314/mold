@@ -2147,7 +2147,10 @@ struct ScriptAssert {
 template <typename E>
 class Script {
 public:
-  Script(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf)
+  // rctx is the command line reader's state, which is needed only to
+  // execute commands that read other input files, such as GROUP.
+  // Version scripts and dynamic lists are parsed without one.
+  Script(Context<E> &ctx, MappedFile *mf, ReaderContext *rctx = nullptr)
     : ctx(ctx), rctx(rctx), mf(mf), input(mf->get_contents()) {}
 
   std::string_view get_script_output_type();
@@ -2211,8 +2214,10 @@ private:
   void read_dynamic_list_commands(std::vector<DynamicPattern> &result,
                                   bool is_cpp);
 
+  ReaderContext &reader();
+
   Context<E> &ctx;
-  ReaderContext &rctx;
+  ReaderContext *rctx;
   MappedFile *mf;
 
   // The unprocessed part of the script being parsed. Tokens are lexed

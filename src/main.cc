@@ -33,6 +33,7 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, ReaderContext &rctx,
   file->as_needed =
     rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
 
+  assert(rctx.tg);
   rctx.tg->run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
     Out(ctx) << "trace: " << *file;
@@ -72,6 +73,7 @@ new_shared_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
   file->priority = ctx.file_priority++;
   file->as_needed = rctx.as_needed;
 
+  assert(rctx.tg);
   rctx.tg->run([file, &ctx] { file->parse(ctx); });
   if (ctx.arg.trace)
     Out(ctx) << "trace: " << *file;
@@ -109,7 +111,7 @@ void read_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
     }
     return;
   case FileType::TEXT:
-    Script(ctx, rctx, mf).parse_linker_script();
+    Script(ctx, mf, &rctx).parse_linker_script();
     return;
   case FileType::GCC_LTO_OBJ:
   case FileType::LLVM_BITCODE:
@@ -147,7 +149,7 @@ detect_machine_type(Context<E> &ctx, std::vector<std::string> args) {
       if (MappedFile *mf = open_file(ctx, arg))
         if (get_file_type(ctx, mf) == FileType::TEXT)
           if (std::string_view target =
-              Script(ctx, rctx, mf).get_script_output_type();
+              Script(ctx, mf, &rctx).get_script_output_type();
               !target.empty())
             return target;
     }

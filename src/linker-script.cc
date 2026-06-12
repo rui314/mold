@@ -307,6 +307,15 @@ static bool is_in_sysroot(Context<E> &ctx, std::string path) {
   return rel != "." && !rel.starts_with("../");
 }
 
+// Returns the command line reader's state for commands that read
+// other input files
+template <typename E>
+ReaderContext &Script<E>::reader() {
+  if (!rctx)
+    Fatal(ctx) << mf->name << ": this command is not allowed in this context";
+  return *rctx;
+}
+
 template <typename E>
 MappedFile *Script<E>::resolve_path(std::string_view tok, bool check_target) {
   std::string str(unquote(tok));
@@ -317,7 +326,7 @@ MappedFile *Script<E>::resolve_path(std::string_view tok, bool check_target) {
       return nullptr;
 
     if (check_target) {
-      std::string_view target = get_machine_type(ctx, rctx, mf);
+      std::string_view target = get_machine_type(ctx, reader(), mf);
       if (!target.empty() && target != E::name) {
         Warn(ctx) << path << ": skipping incompatible file: " << target
                   << " (e_machine " << (int)E::e_machine << ")";
@@ -342,7 +351,7 @@ MappedFile *Script<E>::resolve_path(std::string_view tok, bool check_target) {
   }
 
   if (str.starts_with("-l"))
-    return find_library(ctx, rctx, str.substr(2));
+    return find_library(ctx, reader(), str.substr(2));
 
   if (!str.starts_with('/'))
     if (MappedFile *mf2 = open(path_clean(mf->name + "/../" + str)))
@@ -367,12 +376,12 @@ void Script<E>::read_group() {
 
   while (!consume(")")) {
     if (consume("AS_NEEDED")) {
-      bool orig = rctx.as_needed;
-      rctx.as_needed = true;
+      bool orig = reader().as_needed;
+      reader().as_needed = true;
       read_group();
-      rctx.as_needed = orig;
+      reader().as_needed = orig;
     } else {
-      read_file(ctx, rctx, resolve_path(next(), true));
+      read_file(ctx, reader(), resolve_path(next(), true));
     }
   }
 }
@@ -2679,7 +2688,7 @@ std::string_view Script<E>::get_script_output_type() {
     i64 i = (peek(2) == "AS_NEEDED" && peek(3) == "(") ? 4 : 2;
     if (!peek(i).empty())
       if (MappedFile *mf2 = resolve_path(peek(i), false))
-        return get_machine_type(ctx, rctx, mf2);
+        return get_machine_type(ctx, reader(), mf2);
   }
   return "";
 }
@@ -2813,9 +2822,8 @@ std::vector<DynamicPattern> Script<E>::parse_dynamic_list() {
 template <typename E>
 std::vector<DynamicPattern>
 parse_dynamic_list(Context<E> &ctx, std::string_view path) {
-  ReaderContext rctx;
   MappedFile *mf = must_open_file(ctx, std::string(path));
-  return Script(ctx, rctx, mf).parse_dynamic_list();
+  return Script(ctx, mf).parse_dynamic_list();
 }
 
 using E = MOLD_TARGET;
