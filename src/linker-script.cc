@@ -6,9 +6,11 @@
 // its lexical rule is context-dependent, so you cannot even tokenize
 // a script without parsing it.
 //
-// We parse the entire language into ScriptCmd objects but currently
-// evaluate only a subset of it. A command we cannot faithfully
-// execute is reported as an error instead of being ignored, so that
+// We parse the entire language into ScriptCmd objects and evaluate
+// nearly all of it: SECTIONS-driven layout, PHDRS, MEMORY, symbol
+// assignments and the expression language. A few rarely-used
+// constructs (e.g. OVERLAY or INSERT) remain unimplemented; such a
+// command is reported as an error instead of being ignored, so that
 // we never silently create an output file whose layout differs from
 // what a script demands.
 //
@@ -1228,9 +1230,9 @@ static bool is_plain_discard(const ScriptCmd &cmd) {
   return true;
 }
 
-// mold cannot evaluate all linker script commands yet. We reject
-// anything we cannot faithfully execute so that we never silently
-// create an output file that is different from what a script demands.
+// Executes the parsed script. The few commands we cannot faithfully
+// execute are rejected so that we never silently create an output
+// file that is different from what a script demands.
 template <typename E>
 void Script<E>::evaluate() {
   for (ScriptCmd &cmd : cmds)
