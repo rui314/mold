@@ -433,11 +433,6 @@ int mold_main(int argc, char **argv) {
   if constexpr (is_ppc64v1<E>)
     ppc64v1_rewrite_opd(ctx);
 
-  // Remove input sections that match a /DISCARD/ pattern in a linker
-  // script.
-
-  // Match input sections against SECTIONS commands in a linker script.
-
   // Garbage-collect unreachable sections.
   if (ctx.arg.gc_sections)
     gc_sections(ctx);

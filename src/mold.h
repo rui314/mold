@@ -1992,8 +1992,7 @@ struct DynamicPattern {
 // For simplicity, we use a single type for all kinds of expressions
 // instead of a class hierarchy.
 struct ScriptExpr {
-  enum Kind : u8 { INT, NAME, DOT, UNARY, BINARY, TERNARY, FUNC };
-
+  enum Kind { INT, NAME, DOT, UNARY, BINARY, TERNARY, FUNC };
   Kind kind = INT;
   u64 value = 0;                 // integer literal value
   std::string_view str;          // name, operator or function name
@@ -2039,7 +2038,7 @@ struct ScriptPhdr {
 // subcommands in `cmds`. As with ScriptExpr, we use a single type for
 // all kinds of commands. Each kind uses only a subset of the fields.
 struct ScriptCmd {
-  enum Kind : u8 {
+  enum Kind {
     SECTIONS,        // SECTIONS { <cmds> }
     OUTPUT_SECTION,  // <name> <addr> (<type>) : { <cmds> } <region> ...
     OVERLAY,         // OVERLAY <addr> : { <cmds> } <region> ...
