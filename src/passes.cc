@@ -2196,6 +2196,13 @@ void parse_symbol_version(Context<E> &ctx) {
         ver = ver.substr(1);
       }
 
+      // Empty version (`foo@@`) is the unversioned default; export it
+      // globally, overriding any `local: *` from apply_version_script().
+      if (ver.empty()) {
+        sym->ver_idx = VER_NDX_GLOBAL;
+        continue;
+      }
+
       auto it = verdefs.find(ver);
       if (it == verdefs.end()) {
         Error(ctx) << *file << ": symbol " << *sym <<  " has undefined version "
