@@ -785,14 +785,9 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
       std::string_view ver = name.substr(pos);
       name = name.substr(0, pos);
 
-      if (ver != "@" && ver != "@@") {
+      if (ver != "@") {
         if (ver.starts_with("@@"))
           key = name;
-        has_symver[i - this->first_global] = true;
-      } else if (ver == "@@") {
-        // `foo@@` (default version, empty name): export as an unversioned
-        // global that overrides a `local: *` wildcard, as GNU ld does.
-        key = name;
         has_symver[i - this->first_global] = true;
       }
     }
