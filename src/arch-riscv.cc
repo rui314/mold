@@ -265,13 +265,13 @@ static bool is_got_load_pair(Context<E> &ctx, InputSection<E> &isec,
 
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
-  std::span<const ElfRel<E>> rels = get_rels(ctx);
+  std::span<ElfRel<E>> rels = get_rels(ctx);
   std::span<RelocDelta> deltas = extra.r_deltas;
   i64 k = 0;
   u8 *buf = (u8 *)contents.data();
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &rel = rels[i];
+    ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE || rel.r_type == R_RISCV_RELAX)
       continue;
 
@@ -306,6 +306,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_utype(loc, val);
     };
 
+    auto rewrite = [&](i64 idx, u32 ty) {
+      if (ctx.arg.emit_relocs)
+        rels[idx].r_type = ty;
+    };
+
     switch (rel.r_type) {
     case R_RISCV_32:
       if (E::is_64)
@@ -330,15 +335,18 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // auipc + jalr -> jal
         *(ul32 *)loc = (rd << 7) | 0b1101111;
         write_jtype(loc, val);
+        rewrite(i, R_RISCV_JAL);
       } else if (removed_bytes == 6 && rd == 0) {
         // auipc + jalr -> c.j
         *(ul16 *)loc = 0b101'00000000000'01;
         write_cjtype(loc, val);
+        rewrite(i, R_RISCV_RVC_JUMP);
       } else if (removed_bytes == 6 && rd == 1) {
         // auipc + jalr -> c.jal
         assert(!E::is_64);
         *(ul16 *)loc = 0b001'00000000000'01;
         write_cjtype(loc, val);
+        rewrite(i, R_RISCV_RVC_JUMP);
       } else {
         assert(removed_bytes == 0);
         utype(val);
@@ -357,11 +365,17 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         // c.li <rd>, val
         *(ul16 *)loc = 0b010'0'00000'00000'01 | (rd << 7);
         write_citype(loc, sym.get_addr(ctx));
+        // The value is materialized directly, so neither this nor the paired
+        // PCREL_LO12 (the load) needs a relocation anymore.
+        rewrite(i, R_NONE);
+        rewrite(i + 2, R_NONE);
         i += 3;
       } else if (removed_bytes == 4) {
         // addi <rd>, zero, val
         *(ul32 *)loc = 0b0010011 | (rd << 7);
         write_itype(loc, sym.get_addr(ctx));
+        rewrite(i, R_NONE);
+        rewrite(i + 2, R_NONE);
         i += 3;
       } else {
         assert(removed_bytes == 0);
@@ -421,6 +435,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     }
     case R_RISCV_HI20:
+      // lui (+ addi) => an instruction holding a link-time constant. The lui
+      // may be compressed to c.lui (removed 2 bytes) or deleted outright
+      // (removed 4 bytes); either way it no longer needs a relocation.
       if (removed_bytes == 2) {
         // Rewrite LUI with C.LUI
         i64 rd = get_rd(buf + rel.r_offset);
@@ -429,6 +446,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       } else if (removed_bytes == 0) {
         utype(S + A);
       }
+      if (removed_bytes)
+        rewrite(i, R_NONE);
       break;
     case R_RISCV_LO12_I:
     case R_RISCV_LO12_S:
@@ -445,14 +464,19 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_RISCV_TPREL_HI20:
       assert(removed_bytes == 0 || removed_bytes == 4);
+      // lui + add => deleted; the variable is accessed relative to tp directly.
       if (removed_bytes == 0)
         utype(S + A - ctx.tp_addr);
+      else
+        rewrite(i, R_NONE);
       break;
     case R_RISCV_TPREL_ADD:
       // This relocation just annotates an ADD instruction that can be
       // removed when a TPREL is relaxed. No value is needed to be
       // written.
       assert(removed_bytes == 0 || removed_bytes == 4);
+      if (removed_bytes)
+        rewrite(i, R_NONE);
       break;
     case R_RISCV_TPREL_LO12_I:
     case R_RISCV_TPREL_LO12_S: {
@@ -507,17 +531,24 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // If the code-shrinking relaxation is disabled, we may leave
       // original useless instructions instead of deleting them, but we
       // accept that because relaxations are enabled by default.
-      if (sym.has_tlsdesc(ctx) && removed_bytes == 0)
-        utype(sym.get_tlsdesc_addr(ctx) + A - P);
+      if (sym.has_tlsdesc(ctx)) {
+        if (removed_bytes == 0)
+          utype(sym.get_tlsdesc_addr(ctx) + A - P);
+      } else {
+        rewrite(i, R_NONE);
+      }
       break;
     case R_RISCV_TLSDESC_LOAD_LO12:
     case R_RISCV_TLSDESC_ADD_LO12:
     case R_RISCV_TLSDESC_CALL: {
-      if (removed_bytes == 4)
-        break;
-
       const ElfRel<E> &rel2 = find_paired_reloc(ctx, *this, rels, sym, i);
       Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
+
+      if (!sym2.has_tlsdesc(ctx))
+        rewrite(i, R_NONE);
+
+      if (removed_bytes == 4)
+        break;
 
       u64 S = sym2.get_addr(ctx);
       u64 A = rel2.r_addend;
@@ -998,72 +1029,6 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   }
 
   isec.sh_size -= r_delta;
-}
-
-// With --emit-relocs, rewrite the emitted relocations to match the
-// instructions that relaxation produced. The logic parallels apply_reloc_alloc.
-template <>
-void rewrite_reloc_types(Context<E> &ctx, InputSection<E> &isec, ElfRel<E> *buf) {
-  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
-  std::span<RelocDelta> deltas = isec.extra.r_deltas;
-  i64 k = 0;
-
-  for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &rel = rels[i];
-    Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-
-    i64 removed_bytes = 0;
-    if (!deltas.empty()) {
-      while (k < deltas.size() && deltas[k].offset < rel.r_offset)
-        k++;
-      if (k < deltas.size() && deltas[k].offset == rel.r_offset)
-        removed_bytes = get_removed_bytes(deltas, k);
-    }
-
-    switch (rel.r_type) {
-    case R_RISCV_CALL:
-    case R_RISCV_CALL_PLT:
-      // auipc + jalr => jal, or c.j/c.jal
-      if (removed_bytes == 4)
-        buf[i].r_type = R_RISCV_JAL;
-      else if (removed_bytes == 6)
-        buf[i].r_type = R_RISCV_RVC_JUMP;
-      break;
-    case R_RISCV_GOT_HI20:
-      // auipc + l[dw] GOT load => the value is materialized directly, so both
-      // this and the paired PCREL_LO12 (the load) no longer need a relocation.
-      if (removed_bytes) {
-        buf[i].r_type = R_RISCV_NONE;
-        buf[i + 2].r_type = R_RISCV_NONE;
-        i += 3;
-      }
-      break;
-    case R_RISCV_HI20:
-      // lui (+ addi) => an instruction holding a link-time constant.
-      if (removed_bytes)
-        buf[i].r_type = R_RISCV_NONE;
-      break;
-    case R_RISCV_TPREL_HI20:
-    case R_RISCV_TPREL_ADD:
-      // lui + add => deleted; the variable is accessed relative to tp directly.
-      if (removed_bytes)
-        buf[i].r_type = R_RISCV_NONE;
-      break;
-    case R_RISCV_TLSDESC_HI20:
-      if (!sym.has_tlsdesc(ctx))
-        buf[i].r_type = R_RISCV_NONE;
-      break;
-    case R_RISCV_TLSDESC_LOAD_LO12:
-    case R_RISCV_TLSDESC_ADD_LO12:
-    case R_RISCV_TLSDESC_CALL: {
-      Symbol<E> &sym2 =
-        *isec.file.symbols[find_paired_reloc(ctx, isec, rels, sym, i).r_sym];
-      if (!sym2.has_tlsdesc(ctx))
-        buf[i].r_type = R_RISCV_NONE;
-      break;
-    }
-    }
-  }
 }
 
 // ISA name handlers

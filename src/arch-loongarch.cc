@@ -269,13 +269,13 @@ void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
 
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
-  std::span<const ElfRel<E>> rels = get_rels(ctx);
+  std::span<ElfRel<E>> rels = get_rels(ctx);
   std::span<RelocDelta> deltas = extra.r_deltas;
   i64 k = 0;
   u8 *buf = (u8 *)contents.data();
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &rel = rels[i];
+    ElfRel<E> &rel = rels[i];
 
     if (rel.r_type == R_NONE || rel.r_type == R_LARCH_RELAX ||
         rel.r_type == R_LARCH_MARK_LA || rel.r_type == R_LARCH_MARK_PCREL ||
@@ -332,6 +332,11 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
                    << " for relocation " << rel;
     };
 
+    auto rewrite = [&](i64 idx, u32 ty) {
+      if (ctx.arg.emit_relocs)
+        rels[idx].r_type = ty;
+    };
+
     switch (rel.r_type) {
     case R_LARCH_32:
       assert(E::is_64);
@@ -375,10 +380,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       if (removed_bytes == 0) {
         write_j20(loc, hi20(S + A, P));
       } else {
-        // Rewrite pcalau12i + addi.d with pcaddi
+        // Rewrite pcalau12i + addi.d with pcaddi. The high part vanishes and
+        // the low part becomes the pcaddi's PC-relative relocation.
         assert(removed_bytes == 4);
         *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
         write_j20(loc, (S + A - P) >> 2);
+        rewrite(i, R_NONE);
+        rewrite(i + 2, R_LARCH_PCREL20_S2);
         i += 3;
       }
       break;
@@ -417,10 +425,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         }
         write_j20(loc, hi20(GOT + G + A, P));
       } else {
-        // Rewrite pcalau12i + ld.d with pcaddi
+        // Rewrite pcalau12i + ld.d with pcaddi. The high part vanishes and the
+        // low part becomes the pcaddi's PC-relative relocation.
         assert(removed_bytes == 4);
         *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
         write_j20(loc, (S + A - P) >> 2);
+        rewrite(i, R_NONE);
+        rewrite(i + 2, R_LARCH_PCREL20_S2);
         i += 3;
       }
       break;
@@ -538,6 +549,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         else
           *(ul32 *)loc = 0x5400'0000; // BL
         write_d10k16(loc, (S + A - P) >> 2);
+        rewrite(i, R_LARCH_B26);
       }
       break;
     case R_LARCH_ADD_ULEB128:
@@ -591,30 +603,49 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       //   jirl      $ra, $ra, 0
       if (sym.has_tlsdesc(ctx) && removed_bytes == 0)
         write_j20(loc, hi20(sym.get_tlsdesc_addr(ctx) + A, P));
+
+      // pcalau12i + addi.d => pcaddi when TLSDESC is kept; both deleted when it
+      // is relaxed to IE/LE. Either way the high part loses its relocation.
+      // The folded pcaddi's relocation is emitted from the LO12 slot below.
+      if (!sym.has_tlsdesc(ctx) || removed_bytes)
+        rewrite(i, R_NONE);
       break;
     case R_LARCH_TLS_DESC_PC_LO12:
-      if (sym.has_tlsdesc(ctx) && removed_bytes == 0) {
-        i64 dist = sym.get_tlsdesc_addr(ctx) + A - P;
-        if (is_int(dist, 22)) {
-          *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
-          write_j20(loc, dist >> 2);
-        } else {
-          write_k12(loc, sym.get_tlsdesc_addr(ctx) + A);
+      if (sym.has_tlsdesc(ctx)) {
+        if (removed_bytes == 0) {
+          i64 dist = sym.get_tlsdesc_addr(ctx) + A - P;
+          if (is_int(dist, 22)) {
+            *(ul32 *)loc = 0x1800'0000 | get_rd(*(ul32 *)loc); // pcaddi
+            write_j20(loc, dist >> 2);
+            rewrite(i, R_LARCH_TLS_DESC_PCREL20_S2);
+          } else {
+            write_k12(loc, sym.get_tlsdesc_addr(ctx) + A);
+          }
         }
+      } else {
+        rewrite(i, R_NONE);
       }
       break;
     case R_LARCH_TLS_DESC_LD:
-      if (sym.has_tlsdesc(ctx) || removed_bytes == 4) {
-        // Do nothing
+      // TLSDESC is relaxed to IE or LE. The ld.d slot holds the first
+      // instruction of the resulting sequence.
+      if (sym.has_tlsdesc(ctx)) {
+        // Do nothing (TLSDESC kept)
+      } else if (removed_bytes == 4) {
+        // Small TP offset: the instruction was deleted.
+        rewrite(i, R_NONE);
       } else if (sym.has_gottp(ctx)) {
         *(ul32 *)loc = 0x1a00'0004; // pcalau12i $a0, 0
         write_j20(loc, hi20(sym.get_gottp_addr(ctx) + A, P));
+        rewrite(i, R_LARCH_TLS_IE_PC_HI20);
       } else {
         *(ul32 *)loc = 0x1400'0004; // lu12i.w   $a0, 0
         write_j20(loc, (S + A + 0x800 - ctx.tp_addr) >> 12);
+        rewrite(i, R_LARCH_TLS_LE_HI20);
       }
       break;
     case R_LARCH_TLS_DESC_CALL:
+      // The jirl slot holds the second instruction of the IE or LE sequence.
       if (sym.has_tlsdesc(ctx)) {
         // Do nothing
       } else if (sym.has_gottp(ctx)) {
@@ -623,6 +654,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         else
           *(ul32 *)loc = 0x2880'0084; // ld.w $a0, $a0, 0
         write_k12(loc, sym.get_gottp_addr(ctx) + A);
+        rewrite(i, R_LARCH_TLS_IE_PC_LO12);
       } else {
         i64 val = S + A - ctx.tp_addr;
         if (0 <= val && val < 0x1000)
@@ -630,11 +662,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         else
           *(ul32 *)loc = 0x0280'0084; // addi.w $a0, $a0, 0
         write_k12(loc, val);
+        rewrite(i, R_LARCH_TLS_LE_LO12);
       }
       break;
     case R_LARCH_TLS_LE_HI20_R:
+      // lu12i.w + add.d + addi.d => addi.d when the variable is within 2 KiB
+      // of TP, in which case the lu12i.w loses its relocation.
       if (removed_bytes == 0)
         write_j20(loc, (S + A + 0x800 - ctx.tp_addr) >> 12);
+      else
+        rewrite(i, R_NONE);
       break;
     case R_LARCH_TLS_LE_LO12_R: {
       i64 val = S + A - ctx.tp_addr;
@@ -646,8 +683,13 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         set_rj(loc, 2);
       break;
     }
-    case R_LARCH_64:
     case R_LARCH_TLS_LE_ADD_R:
+      // add.d that materializes TP + offset; removed together with the
+      // lu12i.w when the variable is within 2 KiB of TP.
+      if (removed_bytes)
+        rewrite(i, R_NONE);
+      break;
+    case R_LARCH_64:
       break;
     default:
       unreachable();
@@ -1008,87 +1050,6 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   }
 
   isec.sh_size -= r_delta;
-}
-
-// With --emit-relocs, rewrite the emitted relocations to match the
-// instructions that relaxation produced. The logic parallels apply_reloc_alloc.
-template <>
-void rewrite_reloc_types(Context<E> &ctx, InputSection<E> &isec, ElfRel<E> *buf) {
-  std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
-  std::span<RelocDelta> deltas = isec.extra.r_deltas;
-  i64 k = 0;
-
-  for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &rel = rels[i];
-    Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-
-    i64 removed_bytes = 0;
-    if (!deltas.empty()) {
-      while (k < deltas.size() && deltas[k].offset < rel.r_offset)
-        k++;
-      if (k < deltas.size() && deltas[k].offset == rel.r_offset)
-        removed_bytes = get_removed_bytes(deltas, k);
-    }
-
-    switch (rel.r_type) {
-    case R_LARCH_TLS_LE_HI20_R:
-    case R_LARCH_TLS_LE_ADD_R:
-      // lu12i.w + add.d + addi.d => addi.d
-      if (removed_bytes)
-        buf[i].r_type = R_LARCH_NONE;
-      break;
-    case R_LARCH_PCALA_HI20:
-    case R_LARCH_GOT_PC_HI20:
-      // pcalau12i + addi.d/ld.d => pcaddi. The high part vanishes and the low
-      // part becomes the pcaddi's PC-relative relocation.
-      if (removed_bytes) {
-        buf[i].r_type = R_LARCH_NONE;
-        buf[i + 2].r_type = R_LARCH_PCREL20_S2;
-        i += 3;
-      }
-      break;
-    case R_LARCH_CALL36:
-      // pcaddu18i + jirl => b or bl
-      if (removed_bytes)
-        buf[i].r_type = R_LARCH_B26;
-      break;
-    case R_LARCH_TLS_DESC_PC_HI20:
-      // pcalau12i + addi.d => pcaddi when TLSDESC is kept; both deleted when it
-      // is relaxed to IE/LE.
-      if (!sym.has_tlsdesc(ctx)) {
-        buf[i].r_type = R_LARCH_NONE;
-      } else if (removed_bytes) {
-        buf[i].r_type = R_LARCH_NONE;
-        buf[i + 2].r_type = R_LARCH_TLS_DESC_PCREL20_S2;
-      }
-      break;
-    case R_LARCH_TLS_DESC_PC_LO12:
-      if (!sym.has_tlsdesc(ctx))
-        buf[i].r_type = R_LARCH_NONE;
-      break;
-    case R_LARCH_TLS_DESC_LD:
-      // TLSDESC is relaxed to IE or LE. The ld.d slot holds the first
-      // instruction of the resulting sequence.
-      if (sym.has_tlsdesc(ctx))
-        break;
-      if (sym.has_gottp(ctx))
-        buf[i].r_type = R_LARCH_TLS_IE_PC_HI20;   // pcalau12i
-      else if (removed_bytes)
-        buf[i].r_type = R_LARCH_NONE;             // small TP offset (deleted)
-      else
-        buf[i].r_type = R_LARCH_TLS_LE_HI20;      // large TP offset (lu12i.w)
-      break;
-    case R_LARCH_TLS_DESC_CALL:
-      // The jirl slot holds the second instruction of the IE or LE sequence.
-      if (sym.has_tlsdesc(ctx))
-        break;
-      if (sym.has_gottp(ctx))
-        buf[i].r_type = R_LARCH_TLS_IE_PC_LO12;   // ld.d
-      else
-        buf[i].r_type = R_LARCH_TLS_LE_LO12;      // ori or addi.w
-      break;
-    }
-  }
 }
 
 } // namespace mold

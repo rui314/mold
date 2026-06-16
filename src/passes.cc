@@ -1958,23 +1958,28 @@ void copy_chunks(Context<E> &ctx) {
   };
 
   // For --relocatable and --emit-relocs, we want to copy non-relocation
-  // sections first. This is because REL-type relocation sections (as
-  // opposed to RELA-type) stores relocation addends to target sections.
+  // sections first, for two reasons. First, REL-type relocation sections (as
+  // opposed to RELA-type) store relocation addends to target sections, so the
+  // targets must be written first. Second, relaxation may retype an emitted
+  // relocation in place while applying relocations (e.g. AArch64 GOT/TLS
+  // relaxations), and RelocSection has to observe the updated type, so it
+  // must run after the target sections.
   //
-  // We also does that for SH4 because despite being RELA, we always need
+  // We also do that for SH4 because despite being RELA, we always need
   // to write addends to relocated places for SH4.
-  auto is_rel = [](Chunk<E> &chunk) {
+  auto copy_last = [](Chunk<E> &chunk) {
     return chunk.shdr.sh_type == SHT_REL ||
-           (is_sh4<E> && chunk.shdr.sh_type == SHT_RELA);
+           (is_sh4<E> && chunk.shdr.sh_type == SHT_RELA) ||
+           chunk.to_reloc_sec();
   };
 
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (!is_rel(*chunk))
+    if (!copy_last(*chunk))
       copy(*chunk);
   });
 
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
-    if (is_rel(*chunk))
+    if (copy_last(*chunk))
       copy(*chunk);
   });
 

@@ -662,6 +662,7 @@ public:
   virtual ~Chunk() = default;
   virtual bool is_header() { return false; }
   virtual OutputSection<E> *to_osec() { return nullptr; }
+  virtual RelocSection<E> *to_reloc_sec() { return nullptr; }
   virtual void compute_section_size(Context<E> &ctx) {}
   virtual void copy_buf(Context<E> &ctx) {}
   virtual void write_to(Context<E> &ctx, u8 *buf) { unreachable(); }
@@ -1552,6 +1553,7 @@ public:
   RelocSection(Context<E> &ctx, OutputSection<E> &osec);
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
+  RelocSection<E> *to_reloc_sec() override { return this; }
 
 private:
   OutputSection<E> &output_section;
@@ -2047,13 +2049,6 @@ i64 get_r_delta(InputSection<E> &isec, u64 offset);
 template <typename E>
 i64 compute_distance(Context<E> &ctx, Symbol<E> &sym,
                      InputSection<E> &isec, const ElfRel<E> &rel);
-
-// With --emit-relocs, rewrites the relocation types in `buf` (the output
-// relocations for isec, one per input relocation) to match the instructions
-// that instruction relaxation produced. Defined only for targets that support
-// relaxation.
-template <typename E> requires is_riscv<E> || is_loongarch<E>
-void rewrite_reloc_types(Context<E> &ctx, InputSection<E> &isec, ElfRel<E> *buf);
 
 //
 // gc-sections.cc

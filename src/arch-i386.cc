@@ -280,10 +280,10 @@ static u32 relax_tlsdesc_to_le(u8 *loc) {
 
 template <>
 void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
-  std::span<const ElfRel<E>> rels = get_rels(ctx);
+  std::span<ElfRel<E>> rels = get_rels(ctx);
 
   for (i64 i = 0; i < rels.size(); i++) {
-    const ElfRel<E> &rel = rels[i];
+    ElfRel<E> &rel = rels[i];
     if (rel.r_type == R_NONE)
       continue;
 
@@ -335,6 +335,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         loc[-2] = insn >> 8;
         loc[-1] = insn;
         *(ul32 *)loc = S + A - GOT;
+        if (ctx.arg.emit_relocs)
+          rel.r_type = R_386_GOTOFF;
       }
       break;
     case R_386_GOTOFF:

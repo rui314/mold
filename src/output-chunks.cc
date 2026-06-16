@@ -3264,12 +3264,6 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
         write_addend(base + rel.r_offset, addend, rel);
       }
     }
-
-    // Relaxation can also change a relocation's type to match the rewritten
-    // instruction. No relaxation happens in -r mode, so types are left as-is.
-    if constexpr (is_riscv<E> || is_loongarch<E>)
-      if (!ctx.arg.relocatable)
-        rewrite_reloc_types(ctx, isec, buf);
   });
 }
 
