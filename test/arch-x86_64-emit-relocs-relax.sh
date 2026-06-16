@@ -60,7 +60,7 @@ awk '
 #   lea gd@tlsgd(%rip),%rdi; call __tls_get_addr   =>   mov %fs:0,%rax; ...
 # The whole sequence is rewritten, so R_X86_64_TLSGD is kept as a marker.
 #
-cat <<'EOF' | $CC -fPIC -o $t/b.o -c -xc -
+cat <<'EOF' | $CC -fPIC -mtls-dialect=gnu -o $t/b.o -c -xc -
 __thread int gd;
 int main(void) { return gd; }   // gd is zero-initialized, so exits 0
 EOF
