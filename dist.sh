@@ -95,13 +95,13 @@ ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends wget file make gcc g++ zlib1g-dev libssl-dev ca-certificates xz-utils && \
+  apt-get install -y --no-install-recommends wget file make gcc g++ zlib1g-dev libssl-dev ca-certificates && \
   rm -rf /var/lib/apt/lists
 
 # Build GNU binutils 2.46.1
 RUN mkdir /build && \
   cd /build && \
-  wget --prefer-family=IPv4 -O- --progress=dot:mega https://ftpmirror.gnu.org/binutils/binutils-2.46.1.tar.gz | \
+  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/binutils/binutils-2.46.1.tar.gz | \
   tar xzf - --strip-components=1 && \
   ./configure --prefix=/usr && \
   make -j\$(nproc) && \
@@ -111,7 +111,7 @@ RUN mkdir /build && \
 # Build Python 3.14.6
 RUN mkdir /build && \
   cd /build && \
-  wget --prefer-family=IPv4 -O- --progress=dot:mega https://www.python.org/ftp/python/3.14.6/Python-3.14.6.tgz | \
+  wget -O- --progress=dot:mega https://www.python.org/ftp/python/3.14.6/Python-3.14.6.tgz | \
   tar xzf - --strip-components=1 && \
   ./configure && \
   make -j\$(nproc) && \
@@ -121,34 +121,24 @@ RUN mkdir /build && \
 # Build CMake 4.3
 RUN mkdir /build && \
   cd /build && \
-  wget --prefer-family=IPv4 -O- --progress=dot:mega https://cmake.org/files/v4.3/cmake-4.3.3.tar.gz | \
+  wget -O- --progress=dot:mega https://cmake.org/files/v4.3/cmake-4.3.3.tar.gz | \
   tar xzf - --strip-components=1 && \
   ./bootstrap --parallel=\$(nproc) -- -DCMAKE_USE_OPENSSL=OFF && \
   make -j\$(nproc) && \
   make install && \
   rm -rf /build
 
-# Build Ninja 1.13
-RUN mkdir /build && \
-  cd /build && \
-  wget --prefer-family=IPv4 -O- --progress=dot:mega https://github.com/ninja-build/ninja/archive/refs/tags/v1.13.2.tar.gz | \
-  tar xzf - --strip-components=1 && \
-  python3 ./configure.py --bootstrap && \
-  mv ./ninja /usr/bin/ninja && \
-  rm -rf /build
-
 # Build LLVM 22 w/ clang and libc++
 RUN mkdir /build && \
   cd /build && \
-  wget --prefer-family=IPv4 -O- --progress=dot:mega https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-22.1.8.tar.gz | \
+  wget -O- --progress=dot:mega https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-22.1.8.tar.gz | \
   tar xzf - --strip-components=1 && \
   mkdir b && \
-  cmake -S llvm -B b -GNinja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=clang \
-  -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind;compiler-rt" \
-  -DLLVM_RUNTIME_TARGETS="x86_64-unknown-linux-gnu" \
-  -DLLVM_INCLUDE_TESTS=OFF \
-  -DLIBCXX_INCLUDE_BENCHMARKS=OFF && \
-  cmake --build b && \
+  cmake -S llvm -B b -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=clang \
+  -DLLVM_ENABLE_RUNTIMES='libcxx;libcxxabi;libunwind;compiler-rt' \
+  -DLLVM_RUNTIME_TARGETS=x86_64-unknown-linux-gnu \
+  -DLLVM_INCLUDE_TESTS=OFF && \
+  cmake --build b -j\$(nproc) && \
   cmake --install b --strip && \
   rm -rf /build
 EOF
