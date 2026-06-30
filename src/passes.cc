@@ -8,6 +8,7 @@
 #include <regex>
 #include <shared_mutex>
 #include <tbb/enumerable_thread_specific.h>
+#include <tbb/parallel_for.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
 #include <unordered_set>
@@ -718,13 +719,14 @@ void create_output_sections(Context<E> &ctx) {
     osec->shdr.sh_addralign = 1 << p2align;
   }
 
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool) {
+  tbb::parallel_for((i64)0, (i64)ctx.osec_pool.size(), [&](i64 i) {
+    std::unique_ptr<OutputSection<E>> &osec = ctx.osec_pool[i];
     osec->shdr.sh_flags = osec->sh_flags;
     osec->is_relro = is_relro(*osec);
     osec->members = flatten(osec->members_vec);
     osec->members_vec.clear();
     osec->members_vec.shrink_to_fit();
-  }
+  });
 
   // Add output sections and mergeable sections to ctx.chunks
   std::vector<Chunk<E> *> chunks;
