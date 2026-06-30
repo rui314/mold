@@ -43,14 +43,17 @@
 # of the mold linker of the same version will have the exact same set of
 # features and behave exactly the same.
 
-cmake_minimum_required(VERSION 3.14)
+cmake_minimum_required(VERSION 3.14...4.3)
 project(mold VERSION 2.41.0)
 
 include(CMakeDependentOption)
+include(CheckCXXSourceCompiles)
 include(CheckSymbolExists)
 include(GNUInstallDirs)
 
 add_executable(mold)
+# CXX_SCAN_FOR_MODULES exists in CMake 3.28+, and mold does not use C++ modules.
+set_property(TARGET mold PROPERTY CXX_SCAN_FOR_MODULES OFF)
 target_compile_features(mold PRIVATE cxx_std_20)
 
 if(MINGW)
@@ -133,20 +136,63 @@ if(MOLD_USE_MSAN)
   )
 endif()
 
-# Statically-link libstdc++ if -DMOLD_MOSTLY_STATIC=ON.
+# Statically-link some libraries if -DMOLD_MOSTLY_STATIC=ON.
 #
 # This option is intended to be used by `./dist.sh` script to create a
 # mold binary that works on various Linux distros. You probably don't
 # need nor want to set this to ON.
-option(MOLD_MOSTLY_STATIC "Statically link libstdc++ and some other libraries" OFF)
+option(MOLD_MOSTLY_STATIC "Statically link some libraries for portable Linux binaries" OFF)
+
 if(MOLD_MOSTLY_STATIC)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(MOLD_DEFAULT_USE_LIBCXX ON)
+    set(MOLD_DEFAULT_STATIC_LIBCXX ON)
+  else()
+    set(MOLD_DEFAULT_STATIC_LIBSTDCXX ON)
+  endif()
+
+  set(MOLD_DEFAULT_STATIC_ZLIB ON)
+  set(MOLD_DEFAULT_STATIC_BLAKE3 ON)
+  set(MOLD_DEFAULT_STATIC_ZSTD ON)
+endif()
+
+option(MOLD_USE_LIBCXX "Use libc++ as the C++ standard library" ${MOLD_DEFAULT_USE_LIBCXX})
+option(MOLD_STATIC_LIBSTDCXX "Statically link libstdc++" ${MOLD_DEFAULT_STATIC_LIBSTDCXX})
+option(MOLD_STATIC_LIBCXX "Statically link libc++ and libc++abi" ${MOLD_DEFAULT_STATIC_LIBCXX})
+option(MOLD_STATIC_ZLIB "Statically link zlib" ${MOLD_DEFAULT_STATIC_ZLIB})
+option(MOLD_STATIC_BLAKE3 "Statically link BLAKE3" ${MOLD_DEFAULT_STATIC_BLAKE3})
+option(MOLD_STATIC_ZSTD "Statically link zstd" ${MOLD_DEFAULT_STATIC_ZSTD})
+
+if(MOLD_STATIC_LIBCXX)
+  set(MOLD_USE_LIBCXX ON CACHE BOOL "Use libc++ as the C++ standard library" FORCE)
+endif()
+
+if(MOLD_STATIC_LIBSTDCXX AND (MOLD_USE_LIBCXX OR MOLD_STATIC_LIBCXX))
+  message(FATAL_ERROR "MOLD_STATIC_LIBSTDCXX cannot be used with MOLD_USE_LIBCXX or MOLD_STATIC_LIBCXX")
+endif()
+
+if(MOLD_STATIC_LIBSTDCXX)
   target_link_options(mold PRIVATE -static-libstdc++)
+endif()
+
+if(MOLD_USE_LIBCXX)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "MOLD_USE_LIBCXX requires Clang")
+  endif()
+
+  target_compile_options(mold PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-stdlib=libc++>)
+  target_link_options(mold PRIVATE -stdlib=libc++)
+endif()
+
+if(MOLD_STATIC_LIBCXX)
+  target_link_options(mold PRIVATE -nostdlib++)
+  set(MOLD_LIBCXXABI_LINK_LIBRARIES -Wl,-Bstatic c++ c++abi -Wl,-Bdynamic)
 endif()
 
 # Find zlib. If libz.so is not found, we compile a bundled one and
 # statically-link it to mold.
 find_package(ZLIB QUIET)
-if(ZLIB_FOUND AND NOT MOLD_MOSTLY_STATIC)
+if(ZLIB_FOUND AND NOT MOLD_STATIC_ZLIB)
   target_link_libraries(mold PRIVATE ZLIB::ZLIB)
 else()
   set(ZLIB_BUILD_EXAMPLES OFF CACHE INTERNAL "")
@@ -159,7 +205,7 @@ endif()
 # Find BLAKE3 cryptographic hash library. Just like zlib, if libblkae3.so
 # is not found, we compile a bundled one and statically-link it to mold.
 find_package(BLAKE3 QUIET)
-if(BLAKE3_FOUND AND NOT MOLD_MOSTLY_STATIC)
+if(BLAKE3_FOUND AND NOT MOLD_STATIC_BLAKE3)
   target_link_libraries(mold PRIVATE BLAKE3::blake3)
 else()
   function(mold_add_blake3)
@@ -177,7 +223,7 @@ endif()
 include(CheckIncludeFile)
 check_include_file(zstd.h HAVE_ZSTD_H)
 
-if(HAVE_ZSTD_H AND NOT MOLD_MOSTLY_STATIC)
+if(HAVE_ZSTD_H AND NOT MOLD_STATIC_ZSTD)
   target_link_libraries(mold PRIVATE zstd)
 else()
   set(ZSTD_BUILD_PROGRAMS OFF)
@@ -237,17 +283,26 @@ option(MOLD_USE_SYSTEM_TBB "Use system or vendored TBB" OFF)
 if(MOLD_USE_SYSTEM_TBB OR BLAKE3_USE_TBB)
   find_package(TBB REQUIRED)
   target_link_libraries(mold PRIVATE TBB::tbb)
-else()
-  function(mold_add_tbb)
-    set(BUILD_SHARED_LIBS OFF)
-    set(TBB_TEST OFF CACHE INTERNAL "")
-    set(TBB_STRICT OFF CACHE INTERNAL "")
-    add_subdirectory(third-party/tbb EXCLUDE_FROM_ALL)
-    target_compile_definitions(tbb PRIVATE __TBB_DYNAMIC_LOAD_ENABLED=0)
-    target_link_libraries(mold PRIVATE TBB::tbb)
-  endfunction()
+  else()
+    function(mold_add_tbb)
+      set(BUILD_SHARED_LIBS OFF)
+      set(TBB_TEST OFF CACHE INTERNAL "")
+      set(TBB_STRICT OFF CACHE INTERNAL "")
+      add_subdirectory(third-party/tbb EXCLUDE_FROM_ALL)
+      # CXX_SCAN_FOR_MODULES exists in CMake 3.28+, and bundled TBB does not use C++ modules.
+      set_property(TARGET tbb PROPERTY CXX_SCAN_FOR_MODULES OFF)
+      target_compile_definitions(tbb PRIVATE __TBB_DYNAMIC_LOAD_ENABLED=0)
+      if(MOLD_USE_LIBCXX)
+        target_compile_options(tbb PRIVATE -stdlib=libc++)
+      endif()
+      target_link_libraries(mold PRIVATE TBB::tbb)
+    endfunction()
 
   mold_add_tbb()
+endif()
+
+if(MOLD_LIBCXXABI_LINK_LIBRARIES)
+  target_link_libraries(mold PRIVATE ${MOLD_LIBCXXABI_LINK_LIBRARIES})
 endif()
 
 # We always use Clang to build mold on Windows. MSVC can't compile mold.
