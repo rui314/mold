@@ -569,6 +569,11 @@ public:
   // For garbage collection
   Atomic<bool> is_visited = false;
 
+  // Pre-computed flags from section name for fast path in get_tombstone
+  bool is_debug_section = false;
+  bool is_debug_line = false;
+  bool is_debug_loc_ranges = false;
+
   // For ICF
   //
   // `leader` is the section that this section has been merged with.
@@ -3106,7 +3111,7 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
 template <typename E>
 inline std::optional<u64>
 InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
-  if (frag)
+  if (frag || !is_debug_section)
     return {};
 
   InputSection<E> *isec = sym.get_input_section();
@@ -3115,19 +3120,16 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   if (!isec || isec->is_alive)
     return {};
 
-  if (!name.starts_with(".debug_"))
-    return {};
-
   // If the section was dead due to ICF, we don't want to emit debug
   // info for that section but want to set real values to .debug_line so
   // that users can set a breakpoint inside a merged section.
-  if (isec->icf_removed() && name == ".debug_line")
+  if (isec->icf_removed() && is_debug_line)
     return {};
 
   // 0 is an invalid value in most debug info sections, so we use it
   // as a tombstone value. .debug_loc and .debug_ranges reserve 0 as
   // the terminator marker, so we use 1 if that's the case.
-  return (name == ".debug_loc" || name == ".debug_ranges") ? 1 : 0;
+  return is_debug_loc_ranges ? 1 : 0;
 }
 
 template <typename E>
