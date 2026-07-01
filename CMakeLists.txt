@@ -43,17 +43,14 @@
 # of the mold linker of the same version will have the exact same set of
 # features and behave exactly the same.
 
-cmake_minimum_required(VERSION 3.14...4.3)
+cmake_minimum_required(VERSION 3.14)
 project(mold VERSION 2.41.0)
 
 include(CMakeDependentOption)
-include(CheckCXXSourceCompiles)
 include(CheckSymbolExists)
 include(GNUInstallDirs)
 
 add_executable(mold)
-# CXX_SCAN_FOR_MODULES exists in CMake 3.28+, and mold does not use C++ modules.
-set_property(TARGET mold PROPERTY CXX_SCAN_FOR_MODULES OFF)
 target_compile_features(mold PRIVATE cxx_std_20)
 
 if(MINGW)
@@ -136,19 +133,13 @@ if(MOLD_USE_MSAN)
   )
 endif()
 
-# Statically-link some libraries if -DMOLD_MOSTLY_STATIC=ON.
+# Statically-link libstdc++ if -DMOLD_MOSTLY_STATIC=ON.
 #
 # This option is intended to be used by `./dist.sh` script to create a
 # mold binary that works on various Linux distros. You probably don't
 # need nor want to set this to ON.
-option(MOLD_MOSTLY_STATIC "Statically link some libraries for portable Linux binaries" OFF)
-
-if(MOLD_MOSTLY_STATIC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  # Build against libc++ and link it statically.
-  target_compile_options(mold PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-stdlib=libc++>)
-  target_link_options(mold PRIVATE -stdlib=libc++ -nostdlib++)
-  target_link_libraries(mold PRIVATE -Wl,-Bstatic c++ c++abi -Wl,-Bdynamic)
-elseif(MOLD_MOSTLY_STATIC)
+option(MOLD_MOSTLY_STATIC "Statically link libstdc++ and some other libraries" OFF)
+if(MOLD_MOSTLY_STATIC)
   target_link_options(mold PRIVATE -static-libstdc++)
 endif()
 
@@ -252,12 +243,7 @@ else()
     set(TBB_TEST OFF CACHE INTERNAL "")
     set(TBB_STRICT OFF CACHE INTERNAL "")
     add_subdirectory(third-party/tbb EXCLUDE_FROM_ALL)
-    # CXX_SCAN_FOR_MODULES exists in CMake 3.28+, and bundled TBB does not use C++ modules.
-    set_property(TARGET tbb PROPERTY CXX_SCAN_FOR_MODULES OFF)
     target_compile_definitions(tbb PRIVATE __TBB_DYNAMIC_LOAD_ENABLED=0)
-    if(MOLD_MOSTLY_STATIC AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-      target_compile_options(tbb PRIVATE -stdlib=libc++)
-    endif()
     target_link_libraries(mold PRIVATE TBB::tbb)
   endfunction()
 

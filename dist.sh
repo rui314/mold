@@ -19,7 +19,7 @@
 # site the first time.
 #
 # The mold executable created by this script is statically linked to
-# libc++, but dynamically linked to glibc, libm and a few other
+# libstdc++, but dynamically linked to glibc, libm and a few other
 # libraries, as these libraries are almost always available on any Linux
 # system. We can't statically link glibc because doing so would disable
 # dlopen(), which is required to load the LTO linker plugin.
@@ -78,19 +78,19 @@ fi
 
 case $arch in
 x86_64)
-  # Debian 10 was initially released on July 6th, 2019.
+  # Debian 9 (Stretch) released in June 2017.
   #
   # We use a Google-provided mirror (gcr.io) instead of the official Docker
   # Hub (docker.io) because docker.io has a strict rate limit policy.
   #
-  # The toolchain in Debian 10 is too old to build mold, so we rebuild it
+  # The toolchain in Debian 9 is too old to build mold, so we rebuild it
   # from source. We download source archives from official sites and build
   # them locally, rather than downloading pre-built binaries from somewhere
   # else, to avoid relying on unverifiable third-party binary blobs. Podman
   # caches the result of each RUN command, so rebuilding is done only once
   # per host.
   cat <<EOF | $image_build
-FROM mirror.gcr.io/library/debian:buster@sha256:58ce6f1271ae1c8a2006ff7d3e54e9874d839f573d8009c20154ad0f2fb0a225
+FROM mirror.gcr.io/library/debian:stretch@sha256:c5c5200ff1e9c73ffbf188b4a67eb1c91531b644856b4aefe86a58d2f0cb05be
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
@@ -98,96 +98,98 @@ RUN sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list && \
   apt-get install -y --no-install-recommends wget file make gcc g++ zlib1g-dev libssl-dev ca-certificates && \
   rm -rf /var/lib/apt/lists
 
-# Build GNU binutils 2.46.1
+# Build CMake 3.27
 RUN mkdir /build && \
   cd /build && \
-  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/binutils/binutils-2.46.1.tar.gz | \
-  tar xzf - --strip-components=1 && \
+  wget -O- --progress=dot:mega https://cmake.org/files/v3.27/cmake-3.27.7.tar.gz | tar xzf - --strip-components=1 && \
+  ./bootstrap --parallel=\$(nproc) && \
+  make -j\$(nproc) && \
+  make install && \
+  rm -rf /build
+
+# Build GCC 14
+RUN mkdir /build && \
+  cd /build && \
+  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/gcc/gcc-14.2.0/gcc-14.2.0.tar.gz | tar xzf - --strip-components=1 && \
+  mkdir gmp mpc mpfr && \
+  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/gmp/gmp-6.3.0.tar.gz | tar xzf - --strip-components=1 -C gmp && \
+  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/mpc/mpc-1.3.1.tar.gz | tar xzf - --strip-components=1 -C mpc && \
+  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/mpfr/mpfr-4.2.1.tar.gz | tar xzf - --strip-components=1 -C mpfr && \
+  ./configure --prefix=/usr --enable-languages=c,c++ --disable-bootstrap --disable-multilib && \
+  make -j\$(nproc) && \
+  make install && \
+  ln -sf /usr/lib64/libstdc++.so.6 /usr/lib/x86_64-linux-gnu/libstdc++.so.6 && \
+  rm -rf /build
+
+# Build GNU binutils 2.43
+RUN mkdir /build && \
+  cd /build && \
+  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/binutils/binutils-2.43.tar.gz | tar xzf - --strip-components=1 && \
   ./configure --prefix=/usr && \
   make -j\$(nproc) && \
   make install && \
   rm -fr /build
 
-# Build Python 3.14.6
+# Build Python 3.12.7
 RUN mkdir /build && \
   cd /build && \
-  wget -O- --progress=dot:mega https://www.python.org/ftp/python/3.14.6/Python-3.14.6.tgz | \
-  tar xzf - --strip-components=1 && \
+  wget -O- --progress=dot:mega https://www.python.org/ftp/python/3.12.7/Python-3.12.7.tgz | tar xzf - --strip-components=1 && \
   ./configure && \
   make -j\$(nproc) && \
   make install && \
   rm -rf /build
 
-# Build CMake 4.3
+# Build LLVM 20
 RUN mkdir /build && \
   cd /build && \
-  wget -O- --progress=dot:mega https://cmake.org/files/v4.3/cmake-4.3.3.tar.gz | \
-  tar xzf - --strip-components=1 && \
-  ./bootstrap --parallel=\$(nproc) -- -DCMAKE_USE_OPENSSL=OFF && \
-  make -j\$(nproc) && \
-  make install && \
-  rm -rf /build
-
-# Build LLVM 22 w/ clang and libc++
-RUN mkdir /build && \
-  cd /build && \
-  wget -O- --progress=dot:mega https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-22.1.8.tar.gz | \
-  tar xzf - --strip-components=1 && \
+  wget -O- --progress=dot:mega https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-20.1.3.tar.gz | tar xzf - --strip-components=1 && \
   mkdir b && \
-  cmake -S llvm -B b -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=clang \
-  -DLLVM_ENABLE_RUNTIMES='libcxx;libcxxabi;libunwind;compiler-rt' \
-  -DLLVM_RUNTIME_TARGETS=x86_64-unknown-linux-gnu \
-  -DLLVM_INCLUDE_TESTS=OFF && \
-  cmake --build b -j\$(nproc) && \
-  cmake --install b --strip && \
+  cd b && \
+  cmake -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_PROJECTS=clang ../llvm && \
+  cmake --build . -j\$(nproc) && \
+  cmake --install . --strip && \
   rm -rf /build
 EOF
   ;;
 aarch64 | arm | ppc64le | s390x)
-  # Debian 11 (Bullseye) was initially released on August 14th, 2021
+  # Debian 11 (Bullseye) released in August 2021
   #
   # We don't want to build Clang for these targets on QEMU becuase it
   # would take an extremely long time. Also, I believe old Linux boxes
   # are typically x86-64.
   cat <<EOF | $image_build
-FROM mirror.gcr.io/library/debian:bullseye-20260610@sha256:68cf0d859b046494f3c4288171bc477580e424f981d08f2a77742b982c32a38f
+FROM mirror.gcr.io/library/debian:bullseye-20240904@sha256:8ccc486c29a3ad02ad5af7f1156e2152dff3ba5634eec9be375269ef123457d8
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-10 g++-10 clang-19 libc++-19-dev cmake && \
-  ln -sf /usr/bin/clang-19 /usr/bin/clang && \
-  ln -sf /usr/bin/clang++-19 /usr/bin/clang++ && \
+  apt-get install -y --no-install-recommends build-essential gcc-10 g++-10 clang-16 cmake && \
+  ln -sf /usr/bin/clang-16 /usr/bin/clang && \
+  ln -sf /usr/bin/clang++-16 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
 EOF
   ;;
 riscv64)
-  # Debian 13 (Trixie) was initially released on August 9th, 2025
-  #
-  # This was the first Debian stable release that included riscv64
   cat <<EOF | $image_build
-FROM mirror.gcr.io/riscv64/debian:trixie-20260610@sha256:514de625d1bf895c317bb512d021c366c7a51c1ef0e92b0ce0700cb1f3408a77
+FROM mirror.gcr.io/riscv64/debian:unstable-20240926@sha256:25654919c2926f38952cdd14b3300d83d13f2d820715f78c9f4b7a1d9399bf48
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debian.sources && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-19 libc++-19-dev cmake && \
-  ln -sf /usr/bin/clang-19 /usr/bin/clang && \
-  ln -sf /usr/bin/clang++-19 /usr/bin/clang++ && \
+  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-18 cmake && \
+  ln -sf /usr/bin/clang-18 /usr/bin/clang && \
+  ln -sf /usr/bin/clang++-18 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
 EOF
   ;;
 loongarch64)
-  # Debian sid snapshot from September 24, 2024
-  #
-  # This is the only available Debian OCI for loongarch64 as of June 2026
   cat <<EOF | $image_build
 FROM mirror.gcr.io/loongarch64/debian:sid@sha256:0356df4e494bbb86bb469377a00789a5b42bbf67d5ff649a3f9721b745cbef77
 ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e 's!http[^ ]*!http://snapshot.debian.org/archive/debian-ports/20250620T014755Z!g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-19 libc++-19-dev cmake && \
+  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-19 cmake && \
   ln -sf /usr/bin/clang-19 /usr/bin/clang && \
   ln -sf /usr/bin/clang++-19 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
@@ -239,7 +241,7 @@ cmake --build . -j\$(nproc)
 ctest --output-on-failure -j\$(nproc)
 cmake --install . --prefix $dest --strip
 find $dest -print | xargs touch --no-dereference --date=@$timestamp
-tar -cf - --sort=name $dest | gzip -9nc > /dist/$dest.tar.gz
+find $dest -print | sort | tar -cf - --no-recursion --files-from=- | gzip -9nc > /dist/$dest.tar.gz
 cp mold /dist
 sha256sum /dist/$dest.tar.gz
 "
