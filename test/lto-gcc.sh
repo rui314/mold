@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 echo 'int main() {}' | $GCC -B. -flto -o /dev/null -xc - >& /dev/null || skip

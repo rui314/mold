@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 cat <<EOF | $CC -xc -c -o $t/a.o -

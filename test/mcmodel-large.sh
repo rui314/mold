@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 test_cflags -static -mcmodel=large || skip

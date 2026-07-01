@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # Regression test: link LLVM IR and GCC FAT LTO objects in one link.

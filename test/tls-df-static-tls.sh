@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 cat <<EOF | $CC -fPIC -ftls-model=initial-exec -c -o $t/a.o -xc -

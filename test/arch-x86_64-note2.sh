@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # Binutils 2.32 injects their own .note.gnu.property section interfering with the tests

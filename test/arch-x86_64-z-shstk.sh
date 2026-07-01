@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 echo endbr64 | $CC -o /dev/null -c -xassembler - 2> /dev/null || skip

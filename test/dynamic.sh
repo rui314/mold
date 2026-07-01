@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 echo '.globl main; main:' | $CC -o $t/a.o -c -x assembler -

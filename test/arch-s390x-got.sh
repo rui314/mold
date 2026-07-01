@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # GOT[0] must be set to the link-time address of .dynamic on s390x.

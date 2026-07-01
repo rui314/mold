@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # mold relaxes a GOT-loading LGRL into an address-materializing LARL when the

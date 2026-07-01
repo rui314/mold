@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 cat <<EOF | $CC -march=rv64imafd_xtheadba1p5 -o $t/a.o -c -xc -

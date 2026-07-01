@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # This test crashes only on qemu-sparc64 running on GitHub Actions,

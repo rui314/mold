@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 echo 'VER1 { foo[12]; }; VER2 {};' > $t/a.ver

@@ -86,7 +86,7 @@ function(add_target ARCH TRIPLE)
     endif()
 
     add_test(NAME ${TESTNAME}
-      COMMAND bash -x ${CMAKE_CURRENT_LIST_DIR}/${TEST}
+      COMMAND ${CMAKE_CURRENT_LIST_DIR}/${TEST}
       WORKING_DIRECTORY ${mold_BINARY_DIR})
 
     set_property(TEST ${TESTNAME} APPEND PROPERTY ENVIRONMENT

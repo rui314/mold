@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 not ./mold -zfoo |& grep 'unknown command line option: -zfoo'

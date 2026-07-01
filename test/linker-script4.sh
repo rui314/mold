@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 echo 'VERSION { ver_x { global: *; }; };' > $t/a.script

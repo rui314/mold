@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # GCC 11 or older uses R_390_PLT32DBL to take an address of a function

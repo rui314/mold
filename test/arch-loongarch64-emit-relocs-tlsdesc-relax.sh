@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # Depending on the symbol, mold relaxes a TLSDESC sequence into a local-exec

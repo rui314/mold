@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 seq 1 100000 | sed 's/.*/.section .data.&,"aw"\n.word 0\n/g' |

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # This regression reproduces a mixed LTO + regular-object COMDAT case.

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 echo 'int main() {}' | $CC -c -o $t/a.o -xc -

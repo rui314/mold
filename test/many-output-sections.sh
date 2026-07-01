@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 seq 1 100000 | sed 's/.*/.globl foo&\n.section .foo&,"aw"\nfoo&:.word 0\n/g' |

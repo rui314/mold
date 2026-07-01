@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # pcaddi takes a 20-bit immediate that is shifted left by 2 to form

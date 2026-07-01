@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 cat <<EOF | $CC -o $t/a.o -c -xc - -g -gdwarf32 -Wl,--compress-debug-sections=zlib || skip

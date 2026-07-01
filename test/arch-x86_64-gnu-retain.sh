@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 echo '.section foo,"R"' | $CC -o /dev/null -c -xassembler - 2> /dev/null || skip
