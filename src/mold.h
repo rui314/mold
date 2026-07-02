@@ -1952,6 +1952,31 @@ struct DynamicPattern {
   bool is_cpp = false;
 };
 
+enum ExprKind {
+  EXPR_NUM,
+  EXPR_ADDR,
+  EXPR_SIZEOF,
+  EXPR_ADD,
+  EXPR_SUB,
+};
+
+template <typename E>
+struct Expr {
+  ExprKind kind;
+  u64 val = 0;
+  std::string section_name;
+  std::unique_ptr<Expr<E>> lhs;
+  std::unique_ptr<Expr<E>> rhs;
+};
+
+template <typename E>
+struct Provide {
+  Symbol<E> *sym;
+  std::unique_ptr<Expr<E>> expr;
+  bool hidden = false;
+  bool defined = false;
+};
+
 template <typename E>
 class Script {
 public:
@@ -1986,6 +2011,12 @@ private:
   std::span<std::string_view>
   read_dynamic_list_commands(std::span<std::string_view> tok,
                              std::vector<DynamicPattern> &result, bool is_cpp);
+
+  std::span<std::string_view>
+  parse_expr(std::span<std::string_view> tok, std::unique_ptr<Expr<E>> &expr);
+
+  std::span<std::string_view>
+  parse_primary(std::span<std::string_view> tok, std::unique_ptr<Expr<E>> &expr);
 
   Context<E> &ctx;
   ReaderContext &rctx;
@@ -2134,6 +2165,7 @@ template <typename E> void shuffle_sections(Context<E> &);
 template <typename E> void add_dynamic_strings(Context<E> &);
 template <typename E> void compute_section_sizes(Context<E> &);
 template <typename E> void sort_output_sections(Context<E> &);
+template <typename E> void resolve_provides(Context<E> &);
 template <typename E> void claim_unresolved_symbols(Context<E> &);
 template <typename E> void scan_relocations(Context<E> &);
 template <typename E> void compute_imported_symbol_weakness(Context<E> &);
@@ -2551,6 +2583,7 @@ struct Context {
 
   std::optional<tbb::global_control> global_limit;
   std::vector<VersionPattern> version_patterns;
+  std::vector<Provide<E>> provides;
   std::vector<DynamicPattern> dynamic_list_patterns;
   i64 default_version = VER_NDX_UNSPECIFIED;
   i64 page_size = E::page_size;

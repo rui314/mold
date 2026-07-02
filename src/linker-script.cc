@@ -224,6 +224,18 @@ void Script<E>::parse_linker_script() {
       tok = skip(tok, "{");
       tok = read_version_script(tok);
       tok = skip(tok, "}");
+    } else if (tok[0] == "PROVIDE" || tok[0] == "PROVIDE_HIDDEN") {
+      bool hidden = (tok[0] == "PROVIDE_HIDDEN");
+      tok = skip(tok.subspan(1), "(");
+      Symbol<E> *sym = get_symbol(ctx, unquote(tok[0]));
+      tok = skip(tok.subspan(1), "=");
+
+      std::unique_ptr<Expr<E>> expr;
+      tok = parse_expr(tok, expr);
+      tok = skip(tok, ")");
+      tok = skip(tok, ";");
+
+      ctx.provides.push_back({sym, std::move(expr), hidden});
     } else if (tok.size() > 3 && tok[1] == "=" && tok[3] == ";") {
       ctx.arg.defsyms.emplace_back(get_symbol(ctx, unquote(tok[0])),
                                    get_symbol(ctx, unquote(tok[2])));
@@ -417,6 +429,76 @@ parse_dynamic_list(Context<E> &ctx, std::string_view path) {
   ReaderContext rctx;
   MappedFile *mf = must_open_file(ctx, std::string(path));
   return Script(ctx, rctx, mf).parse_dynamic_list();
+}
+
+// Parses an expression, supporting binary addition and subtraction chains.
+// Evaluates to a tree structure representing the math operations.
+template <typename E>
+std::span<std::string_view> Script<E>::parse_expr(
+    std::span<std::string_view> tok, std::unique_ptr<Expr<E>>& expr) {
+  std::span<std::string_view> rest = parse_primary(tok, expr);
+  while (!rest.empty() && (rest[0] == "+" || rest[0] == "-")) {
+    std::string_view op = rest[0];
+    std::unique_ptr<Expr<E>> rhs;
+    rest = parse_primary(rest.subspan(1), rhs);
+
+    auto parent = std::make_unique<Expr<E>>();
+    parent->kind = (op == "+") ? EXPR_ADD : EXPR_SUB;
+    parent->lhs = std::move(expr);
+    parent->rhs = std::move(rhs);
+    expr = std::move(parent);
+  }
+  return rest;
+}
+
+// Parses a primary term in an expression. A term can be:
+//   - ADDR(.section)
+//   - SIZEOF(.section)
+//   - A numeric constant (hex or decimal)
+template <typename E>
+std::span<std::string_view> Script<E>::parse_primary(
+    std::span<std::string_view> tok, std::unique_ptr<Expr<E>>& expr) {
+  if (tok.empty())
+    Fatal(ctx) << mf->name << ": unexpected EOF in expression";
+
+  if (tok[0] == "ADDR") {
+    tok = skip(tok.subspan(1), "(");
+    expr = std::make_unique<Expr<E>>();
+    expr->kind = EXPR_ADDR;
+    expr->section_name = std::string(unquote(tok[0]));
+    tok = skip(tok.subspan(1), ")");
+    return tok;
+  }
+
+  if (tok[0] == "SIZEOF") {
+    tok = skip(tok.subspan(1), "(");
+    expr = std::make_unique<Expr<E>>();
+    expr->kind = EXPR_SIZEOF;
+    expr->section_name = std::string(unquote(tok[0]));
+    tok = skip(tok.subspan(1), ")");
+    return tok;
+  }
+
+  std::string_view s = tok[0];
+  u64 val = 0;
+  bool is_num = false;
+  if (s.starts_with("0x") || s.starts_with("0X")) {
+    size_t nread;
+    val = std::stoull(std::string(s), &nread, 16);
+    is_num = (s.size() == nread);
+  } else if (s.find_first_not_of("0123456789") == s.npos) {
+    val = std::stoull(std::string(s), nullptr, 10);
+    is_num = true;
+  }
+
+  if (is_num) {
+    expr = std::make_unique<Expr<E>>();
+    expr->kind = EXPR_NUM;
+    expr->val = val;
+    return tok.subspan(1);
+  }
+
+  error(tok[0], "malformed expression");
 }
 
 using E = MOLD_TARGET;
