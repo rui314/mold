@@ -151,6 +151,8 @@ static void visit_section(Context<E> &ctx, InputSection<E> *isec,
   for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
     // Symbol can refer to either a section fragment or an input section.
     Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
+    if (ctx.arg.as_needed_gc && sym.file && sym.file->is_dso)
+      sym.file->is_reachable.test_and_set();
     if (SectionFragment<E> *frag = sym.get_frag()) {
       frag->is_alive = true;
       continue;
@@ -229,10 +231,28 @@ static void sweep(Context<E> &ctx) {
 template <typename E>
 void gc_sections(Context<E> &ctx) {
   Timer t(ctx, "gc");
+
+  if (ctx.arg.as_needed_gc) {
+    for (SharedFile<E> *file : ctx.dsos)
+      if (file->as_needed)
+        file->is_reachable = false;
+
+    for (Symbol<E> *sym : ctx.arg.undefined)
+      if (sym->file && sym->file->is_dso)
+        sym->file->is_reachable = true;
+
+    for (Symbol<E> *sym : ctx.arg.require_defined)
+      if (sym->file && sym->file->is_dso)
+        sym->file->is_reachable = true;
+  }
+
   tbb::concurrent_vector<InputSection<E> *> rootset = collect_root_set(ctx);
   StartStopMap<E> start_stop_map = build_start_stop_map(ctx);
   mark(ctx, rootset, start_stop_map);
   sweep(ctx);
+
+  if (ctx.arg.as_needed_gc)
+    std::erase_if(ctx.dsos, [](SharedFile<E> *file) { return !file->is_reachable; });
 }
 
 using E = MOLD_TARGET;

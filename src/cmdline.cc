@@ -81,6 +81,8 @@ Options:
     --no-apply-dynamic-relocs
   --as-needed                 Only set DT_NEEDED if used
     --no-as-needed
+  --as-needed-gc              Remove unused DSOs if they are only referenced by GC'ed sections
+    --no-as-needed-gc
   --audit LIBNAME             Set DT_AUDIT to the specified value
   --build-id [none,md5,sha1,sha256,fast,uuid,HEXSTRING]
                               Generate build ID
@@ -1230,6 +1232,10 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.gc_sections = true;
     } else if (read_flag("no-gc-sections")) {
       ctx.arg.gc_sections = false;
+    } else if (read_flag("as-needed-gc")) {
+      ctx.arg.as_needed_gc = true;
+    } else if (read_flag("no-as-needed-gc")) {
+      ctx.arg.as_needed_gc = false;
     } else if (read_flag("print-gc-sections")) {
       ctx.arg.print_gc_sections = "-";
     } else if (read_eq("print-gc-sections")) {

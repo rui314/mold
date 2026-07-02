@@ -2425,6 +2425,7 @@ struct Context {
     bool allow_multiple_definition = false;
     bool allow_shlib_undefined = true;
     bool apply_dynamic_relocs = true;
+    bool as_needed_gc = true;
     bool be8 = false;
     bool color_diagnostics = false;
     bool default_symver = false;
