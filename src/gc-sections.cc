@@ -151,8 +151,12 @@ static void visit_section(Context<E> &ctx, InputSection<E> *isec,
   for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
     // Symbol can refer to either a section fragment or an input section.
     Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
-    if (sym.file && sym.file->is_dso)
+
+    if (sym.file && sym.file->is_dso) {
       sym.file->is_reachable.test_and_set();
+      continue;
+    }
+
     if (SectionFragment<E> *frag = sym.get_frag()) {
       frag->is_alive = true;
       continue;

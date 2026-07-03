@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
 # Create a shared library
@@ -23,5 +23,3 @@ not grep -F 'Shared library: [libfoo.so]' $t/log1
 $CC -B. -o $t/exe2 $t/prog.o -Wl,--as-needed -Wl,--no-gc-sections $t/libfoo.so
 readelf --dynamic $t/exe2 > $t/log2
 grep -F 'Shared library: [libfoo.so]' $t/log2
-
-echo "OK"
