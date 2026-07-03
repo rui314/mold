@@ -53,8 +53,11 @@ terms of the MIT license. A copy of the license can be found in the file
 #endif
 
 int main(int argc, char** argv) {
+  (void)(argc);
+  (void)(argv);
   int* p = (int*)mi(malloc)(3*sizeof(int));
-
+  p[0] = 1;
+  
   int* r = (int*)mi_malloc_aligned(8,16);
   mi_free(r);
 
@@ -64,19 +67,20 @@ int main(int argc, char** argv) {
   mi(free)(c);
 
   // undefined access
-  int* q = (int*)mi(malloc)(sizeof(int));
-  printf("undefined: %d\n", *q);
+  long* q = (long*)mi(malloc)(sizeof(long));
+  printf("undefined: %ld\n", *q);
 
   // illegal int read
-  printf("invalid: over: %d, under: %d\n", q[1], q[-1]);
+  printf("invalid: over: %ld, under: %ld\n", q[1], q[-1]);
 
   *q = 42;
 
   // buffer overflow
   q[1] = 43;
+  q[2] = 44;
 
   // buffer underflow
-  q[-1] = 44;
+  q[-1] = 41;
 
   mi(free)(q);
 
@@ -84,7 +88,7 @@ int main(int argc, char** argv) {
   mi(free)(q);
 
   // use after free
-  printf("use-after-free: %d\n", *q);
+  printf("use-after-free: %ld\n", *q);
 
   // leak p
   // mi_free(p)

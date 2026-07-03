@@ -1,7 +1,7 @@
 {
   "name": "mimalloc",
-  "version": "2.2.2",
-  "port-version": 1,
+  "version": "3.3.2",
+  "port-version": 0,
   "description": "Compact general purpose allocator with excellent performance",
   "homepage": "https://github.com/microsoft/mimalloc",
   "license": "MIT",
@@ -34,6 +34,9 @@
     },
     "optarch": {
       "description": "Use architecture specific optimizations (on x64: '-march=haswell;-mavx2', on arm64: '-march=armv8.1-a')"
+    },
+    "nooptarch": {
+      "description": "Do _not_ use architecture specific optimizations (on x64: '-march=haswell;-mavx2', on arm64: '-march=armv8.1-a')"
     },
     "optsimd": {
       "description": "Allow use of SIMD instructions (avx2 or neon) (requires 'optarch' to be enabled)"

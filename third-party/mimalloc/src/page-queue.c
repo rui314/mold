@@ -110,8 +110,11 @@ size_t mi_good_size(size_t size) mi_attr_noexcept {
   if (size <= MI_MEDIUM_OBJ_SIZE_MAX) {
     return _mi_bin_size(mi_bin(size + MI_PADDING_SIZE));
   }
-  else {
+  else if (size <= MI_MAX_ALLOC_SIZE) {
     return _mi_align_up(size + MI_PADDING_SIZE,_mi_os_page_size());
+  }
+  else {
+    return size;
   }
 }
 
@@ -146,6 +149,13 @@ static size_t mi_page_bin(const mi_page_t* page) {
   return bin;
 }
 
+// returns the page bin without using MI_BIN_FULL for statistics
+size_t _mi_page_stats_bin(const mi_page_t* page) {
+  const size_t bin = (mi_page_is_huge(page) ? MI_BIN_HUGE : mi_bin(mi_page_block_size(page)));
+  mi_assert_internal(bin <= MI_BIN_HUGE);
+  return bin;
+}
+
 static mi_page_queue_t* mi_heap_page_queue_of(mi_heap_t* heap, const mi_page_t* page) {
   mi_assert_internal(heap!=NULL);
   const size_t bin = mi_page_bin(page);
@@ -170,25 +180,25 @@ static mi_page_queue_t* mi_page_queue_of(const mi_page_t* page) {
 // range of entries in `_mi_page_small_free`.
 static inline void mi_heap_queue_first_update(mi_heap_t* heap, const mi_page_queue_t* pq) {
   mi_assert_internal(mi_heap_contains_queue(heap,pq));
-  size_t size = pq->block_size;
+  const size_t size = pq->block_size;
   if (size > MI_SMALL_SIZE_MAX) return;
 
   mi_page_t* page = pq->first;
   if (pq->first == NULL) page = (mi_page_t*)&_mi_page_empty;
 
   // find index in the right direct page array
-  size_t start;
-  size_t idx = _mi_wsize_from_size(size);
-  mi_page_t** pages_free = heap->pages_free_direct;
-
+  const size_t idx = _mi_wsize_from_size(size);
+  mi_page_t** const pages_free = heap->pages_free_direct;
   if (pages_free[idx] == page) return;  // already set
 
   // find start slot
+  size_t start;
   if (idx<=1) {
     start = 0;
   }
   else {
     // find previous size; due to minimal alignment upto 3 previous bins may need to be skipped
+    mi_assert_internal(pq > &heap->pages[0]); // since idx > 1    
     size_t bin = mi_bin(size);
     const mi_page_queue_t* prev = pq - 1;
     while( bin == mi_bin(prev->block_size) && prev > &heap->pages[0]) {
@@ -236,6 +246,10 @@ static void mi_page_queue_remove(mi_page_queue_t* queue, mi_page_t* page) {
 }
 
 
+#if MI_DEBUG >= 3
+static bool mi_page_queue_is_consistent(const mi_page_queue_t* queue);
+#endif
+
 static void mi_page_queue_push(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_t* page) {
   mi_assert_internal(mi_page_heap(page) == heap);
   mi_assert_internal(!mi_page_queue_contains(queue, page));
@@ -262,7 +276,34 @@ static void mi_page_queue_push(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_
   // update direct
   mi_heap_queue_first_update(heap, queue);
   heap->page_count++;
+
+  // [specbot Q-NEW-1] first/last must be both null or both non-null (L1, O(1))
+  mi_assert_internal((queue->first == NULL) == (queue->last == NULL));
+  // [specbot Q-NEW-2] last element must have no next (L1, O(1))
+  mi_assert_internal(queue->last == NULL || queue->last->next == NULL);
+  mi_assert_expensive(mi_page_queue_is_consistent(queue));
 }
+
+#if MI_DEBUG >= 3
+// [specbot Q-NEW-3] Verify doubly-linked list forward/backward consistency (L2, O(n))
+static bool mi_page_queue_is_consistent(const mi_page_queue_t* queue) {
+  if (queue->first == NULL) return (queue->last == NULL);
+  if (queue->last == NULL) return false;
+  // forward: first -> ... -> last
+  const mi_page_t* p = queue->first;
+  const mi_page_t* prev = NULL;
+  size_t count = 0;
+  while (p != NULL) {
+    mi_assert_internal(p->prev == prev);
+    prev = p;
+    p = p->next;
+    count++;
+    if (count > 100000) return false; // cycle guard
+  }
+  mi_assert_internal(prev == queue->last);
+  return true;
+}
+#endif
 
 static void mi_page_queue_move_to_front(mi_heap_t* heap, mi_page_queue_t* queue, mi_page_t* page) {
   mi_assert_internal(mi_page_heap(page) == heap);

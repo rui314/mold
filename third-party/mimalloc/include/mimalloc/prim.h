@@ -7,7 +7,7 @@ terms of the MIT license. A copy of the license can be found in the file
 #pragma once
 #ifndef MIMALLOC_PRIM_H
 #define MIMALLOC_PRIM_H
-
+#include "internal.h"             // mi_decl_hidden
 
 // --------------------------------------------------------------------------
 // This file specifies the primitive portability API.
@@ -59,9 +59,14 @@ int _mi_prim_commit(void* addr, size_t size, bool* is_zero);
 // pre: needs_recommit != NULL
 int _mi_prim_decommit(void* addr, size_t size, bool* needs_recommit);
 
-// Reset memory. The range keeps being accessible but the content might be reset.
+// Reset memory. The range keeps being accessible but the content might be reset to zero at any moment.
 // Returns error code or 0 on success.
 int _mi_prim_reset(void* addr, size_t size);
+
+// Reuse memory. This is called for memory that is already committed but
+// may have been reset (`_mi_prim_reset`) or decommitted (`_mi_prim_decommit`) where `needs_recommit` was false.
+// Returns error code or 0 on success. On most platforms this is a no-op.
+int _mi_prim_reuse(void* addr, size_t size);
 
 // Protect memory. Returns error code or 0 on success.
 int _mi_prim_protect(void* addr, size_t size, bool protect);
@@ -116,9 +121,6 @@ void _mi_prim_thread_done_auto_done(void);
 
 // Called when the default heap for a thread changes
 void _mi_prim_thread_associate_default_heap(mi_heap_t* heap);
-
-
-
 
 
 //-------------------------------------------------------------------
@@ -208,19 +210,19 @@ static inline void mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexce
 #elif _WIN32 && MI_WIN_USE_FIXED_TLS && !defined(MI_WIN_USE_FLS)
 
 // On windows we can store the thread-local heap at a fixed TLS slot to avoid
-// thread-local initialization checks in the fast path. This uses a fixed location
-// in the TCB though (last user-reserved slot by default) which may clash with other applications.
+// thread-local initialization checks in the fast path.
+// We allocate a user TLS slot at process initialization (see `windows/prim.c`)
+// and store the offset `_mi_win_tls_offset`.
+#define MI_HAS_TLS_SLOT  1              // 2 = we can reliably initialize the slot (saving a test on each malloc)
 
-#define MI_HAS_TLS_SLOT      2              // 2 = we can reliably initialize the slot (saving a test on each malloc)
+extern mi_decl_hidden size_t _mi_win_tls_offset;
 
 #if MI_WIN_USE_FIXED_TLS > 1
 #define MI_TLS_SLOT     (MI_WIN_USE_FIXED_TLS)
 #elif MI_SIZE_SIZE == 4
-#define MI_TLS_SLOT     (0x710)             // Last user-reserved slot <https://en.wikipedia.org/wiki/Win32_Thread_Information_Block>
-// #define MI_TLS_SLOT  (0xF0C)             // Last TlsSlot (might clash with other app reserved slot)
+#define MI_TLS_SLOT     (0x0E10 + _mi_win_tls_offset)  // User TLS slots <https://en.wikipedia.org/wiki/Win32_Thread_Information_Block>
 #else
-#define MI_TLS_SLOT     (0x888)             // Last user-reserved slot <https://en.wikipedia.org/wiki/Win32_Thread_Information_Block>
-// #define MI_TLS_SLOT  (0x1678)            // Last TlsSlot (might clash with other app reserved slot)
+#define MI_TLS_SLOT     (0x1480 + _mi_win_tls_offset)  // User TLS slots <https://en.wikipedia.org/wiki/Win32_Thread_Information_Block>
 #endif
 
 static inline void* mi_prim_tls_slot(size_t slot) mi_attr_noexcept {
@@ -255,22 +257,24 @@ static inline void mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexce
 // but unfortunately, it seems we cannot test for this reliably at this time (see issue #883)
 // Nevertheless, it seems needed on older graviton platforms (see issue #851).
 // For now, we only enable this for specific platforms.
-#if !defined(__APPLE__)  /* on apple (M1) the wrong register is read (tpidr_el0 instead of tpidrro_el0) so fall back to TLS slot assembly (<https://github.com/microsoft/mimalloc/issues/343#issuecomment-763272369>)*/ \
-    && !defined(__CYGWIN__) \
-    && !defined(MI_LIBC_MUSL) \
-    && (!defined(__clang_major__) || __clang_major__ >= 14)  /* older clang versions emit bad code; fall back to using the TLS slot (<https://lore.kernel.org/linux-arm-kernel/202110280952.352F66D8@keescook/T/>) */
-  #if    (defined(__GNUC__) && (__GNUC__ >= 7)  && defined(__aarch64__)) /* aarch64 for older gcc versions (issue #851) */ \
-      || (defined(__GNUC__) && (__GNUC__ >= 11) && defined(__x86_64__)) \
-      || (defined(__clang_major__) && (__clang_major__ >= 14) && (defined(__aarch64__) || defined(__x86_64__)))
-    #define MI_USE_BUILTIN_THREAD_POINTER  1
+#if !defined(MI_USE_BUILTIN_THREAD_POINTER)   /* allow user override */
+  #if !defined(__APPLE__)  /* on apple (M1) the wrong register is read (tpidr_el0 instead of tpidrro_el0) so fall back to TLS slot assembly (<https://github.com/microsoft/mimalloc/issues/343#issuecomment-763272369>)*/ \
+      && !defined(__CYGWIN__) \
+      && !defined(MI_LIBC_MUSL) \
+      && (!defined(__clang_major__) || __clang_major__ >= 14)  /* older clang versions emit bad code; fall back to using the TLS slot (<https://lore.kernel.org/linux-arm-kernel/202110280952.352F66D8@keescook/T/>) */
+    #if    (defined(__GNUC__) && (__GNUC__ >= 7)  && defined(__aarch64__)) /* aarch64 for older gcc versions (issue #851) */ \
+        || (defined(__GNUC__) && (__GNUC__ >= 11) && defined(__x86_64__)) \
+        || (defined(__clang_major__) && (__clang_major__ >= 14) && (defined(__aarch64__) || defined(__x86_64__)))
+      #define MI_USE_BUILTIN_THREAD_POINTER  1
+    #endif
   #endif
 #endif
 
 
 
 // defined in `init.c`; do not use these directly
-extern mi_decl_thread mi_heap_t* _mi_heap_default;  // default heap to allocate from
-extern bool _mi_process_is_initialized;             // has mi_process_init been called?
+extern mi_decl_hidden mi_decl_thread mi_heap_t* _mi_heap_default;  // default heap to allocate from
+extern mi_decl_hidden bool _mi_process_is_initialized;             // has mi_process_init been called?
 
 static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept;
 
@@ -278,7 +282,9 @@ static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept;
 #if defined(MI_PRIM_THREAD_ID)
 
 static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
-  return MI_PRIM_THREAD_ID();  // used for example by CPython for a free threaded build (see python/cpython#115488)
+  const mi_threadid_t tid = MI_PRIM_THREAD_ID();  // used for example by CPython for a free threaded build (see python/cpython#115488)
+  mi_assert_internal( (tid & 0x03) == 0 );        // mimalloc reserves the bottom 2 bits
+  return tid;
 }
 
 #elif defined(_WIN32)
@@ -398,7 +404,7 @@ static inline mi_heap_t* mi_prim_get_default_heap(void) {
 
 #elif defined(MI_TLS_PTHREAD)
 
-extern pthread_key_t _mi_heap_default_key;
+extern mi_decl_hidden pthread_key_t _mi_heap_default_key;
 static inline mi_heap_t* mi_prim_get_default_heap(void) {
   mi_heap_t* heap = (mi_unlikely(_mi_heap_default_key == (pthread_key_t)(-1)) ? _mi_heap_main_get() : (mi_heap_t*)pthread_getspecific(_mi_heap_default_key));
   return (mi_unlikely(heap == NULL) ? (mi_heap_t*)&_mi_heap_empty : heap);

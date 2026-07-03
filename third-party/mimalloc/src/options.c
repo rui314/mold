@@ -79,11 +79,7 @@ typedef struct mi_option_desc_s {
 #endif
 
 #ifndef MI_DEFAULT_ALLOW_LARGE_OS_PAGES
-#if defined(__linux__) && !defined(__ANDROID__)
-#define MI_DEFAULT_ALLOW_LARGE_OS_PAGES 2    // enabled, but only use transparent huge pages through madvise
-#else
 #define MI_DEFAULT_ALLOW_LARGE_OS_PAGES 0
-#endif
 #endif
 
 #ifndef MI_DEFAULT_RESERVE_HUGE_OS_PAGES
@@ -95,7 +91,7 @@ typedef struct mi_option_desc_s {
 #endif
 
 #ifndef MI_DEFAULT_GUARDED_SAMPLE_RATE
-#if MI_GUARDED
+#if MI_GUARDED && !MI_DEBUG
 #define MI_DEFAULT_GUARDED_SAMPLE_RATE 4000
 #else
 #define MI_DEFAULT_GUARDED_SAMPLE_RATE 0
@@ -103,6 +99,15 @@ typedef struct mi_option_desc_s {
 #endif
 
 
+#ifndef MI_DEFAULT_ALLOW_THP
+#if defined(__ANDROID__)
+#define MI_DEFAULT_ALLOW_THP  0
+#else
+#define MI_DEFAULT_ALLOW_THP  1
+#endif
+#endif
+
+// Static options
 static mi_option_desc_t options[_mi_option_last] =
 {
   // stable options
@@ -163,6 +168,8 @@ static mi_option_desc_t options[_mi_option_last] =
   { 0,   UNINIT, MI_OPTION(guarded_sample_seed)},
   { 0,   UNINIT, MI_OPTION(target_segments_per_thread) }, // abandon segments beyond this point, or 0 to disable.
   { 10000, UNINIT, MI_OPTION(generic_collect) },          // collect heaps every N (=10000) generic allocation calls
+  { MI_DEFAULT_ALLOW_THP, 
+         UNINIT, MI_OPTION(allow_thp) }                 // allow transparent huge pages?
 };
 
 static void mi_option_init(mi_option_desc_t* desc);
@@ -197,9 +204,9 @@ void _mi_options_init(void) {
 void mi_options_print(void) mi_attr_noexcept
 {
   // show version
-  const int vermajor = MI_MALLOC_VERSION/100;
-  const int verminor = (MI_MALLOC_VERSION%100)/10;
-  const int verpatch = (MI_MALLOC_VERSION%10);
+  const int vermajor = MI_MALLOC_VERSION/10000;
+  const int verminor = (MI_MALLOC_VERSION%10000)/100;
+  const int verpatch = (MI_MALLOC_VERSION%100);
   _mi_message("v%i.%i.%i%s%s (built on %s, %s)\n", vermajor, verminor, verpatch,
       #if defined(MI_CMAKE_BUILD_TYPE)
       ", " mi_stringify(MI_CMAKE_BUILD_TYPE)
@@ -263,7 +270,9 @@ mi_decl_nodiscard size_t mi_option_get_size(mi_option_t option) {
   const long x = mi_option_get(option);
   size_t size = (x < 0 ? 0 : (size_t)x);
   if (mi_option_has_size_in_kib(option)) {
-    size *= MI_KiB;
+    if (mi_mul_overflow(size, MI_KiB, &size)) {
+      size = MI_MAX_ALLOC_SIZE;
+    }
   }
   return size;
 }
@@ -329,33 +338,39 @@ static void mi_cdecl mi_out_stderr(const char* msg, void* arg) {
 #endif
 static char out_buf[MI_MAX_DELAY_OUTPUT+1];
 static _Atomic(size_t) out_len;
+static mi_lock_t out_buf_lock = MI_LOCK_INITIALIZER;
 
 static void mi_cdecl mi_out_buf(const char* msg, void* arg) {
   MI_UNUSED(arg);
   if (msg==NULL) return;
-  if (mi_atomic_load_relaxed(&out_len)>=MI_MAX_DELAY_OUTPUT) return;
+  if (mi_atomic_load_acquire(&out_len)>=MI_MAX_DELAY_OUTPUT) return;
   size_t n = _mi_strlen(msg);
-  if (n==0) return;
-  // claim space
-  size_t start = mi_atomic_add_acq_rel(&out_len, n);
-  if (start >= MI_MAX_DELAY_OUTPUT) return;
-  // check bound
-  if (start+n >= MI_MAX_DELAY_OUTPUT) {
-    n = MI_MAX_DELAY_OUTPUT-start-1;
+  if (n==0 || n >= MI_MAX_DELAY_OUTPUT) return;
+  // copy msg into the buffer
+  mi_lock(&out_buf_lock) {
+    const size_t start = mi_atomic_add_acq_rel(&out_len, n);
+    if (start < MI_MAX_DELAY_OUTPUT) {
+      // check bound
+      if (start+n >= MI_MAX_DELAY_OUTPUT) {
+        n = MI_MAX_DELAY_OUTPUT-start-1;
+      }
+      _mi_memcpy(&out_buf[start], msg, n);
+    }
   }
-  _mi_memcpy(&out_buf[start], msg, n);
 }
 
 static void mi_out_buf_flush(mi_output_fun* out, bool no_more_buf, void* arg) {
   if (out==NULL) return;
   // claim (if `no_more_buf == true`, no more output will be added after this point)
-  size_t count = mi_atomic_add_acq_rel(&out_len, (no_more_buf ? MI_MAX_DELAY_OUTPUT : 1));
-  // and output the current contents
-  if (count>MI_MAX_DELAY_OUTPUT) count = MI_MAX_DELAY_OUTPUT;
-  out_buf[count] = 0;
-  out(out_buf,arg);
-  if (!no_more_buf) {
-    out_buf[count] = '\n'; // if continue with the buffer, insert a newline
+  mi_lock(&out_buf_lock) {
+    size_t count = mi_atomic_add_acq_rel(&out_len, (no_more_buf ? MI_MAX_DELAY_OUTPUT : 1));
+    // and output the current contents
+    if (count>MI_MAX_DELAY_OUTPUT) count = MI_MAX_DELAY_OUTPUT;
+    out_buf[count] = 0;
+    out(out_buf,arg);
+    if (!no_more_buf) {
+      out_buf[count] = '\n'; // if continue with the buffer, insert a newline
+    }
   }
 }
 
@@ -373,28 +388,29 @@ static void mi_cdecl mi_out_buf_stderr(const char* msg, void* arg) {
 // Default output handler
 // --------------------------------------------------------
 
-// Should be atomic but gives errors on many platforms as generally we cannot cast a function pointer to a uintptr_t.
-// For now, don't register output from multiple threads.
-static mi_output_fun* volatile mi_out_default; // = NULL
+// The program should only install a single output handler from a single thread
+// since otherwise the argument and output function may not match.
+static _Atomic(void*) mi_out_default; // = // is `mi_output_fun*` (but some platforms don't support atomic function pointers)
 static _Atomic(void*) mi_out_arg; // = NULL
 
 static mi_output_fun* mi_out_get_default(void** parg) {
+  mi_output_fun* const out = (mi_output_fun*)mi_atomic_load_ptr_acquire(void,&mi_out_default);
   if (parg != NULL) { *parg = mi_atomic_load_ptr_acquire(void,&mi_out_arg); }
-  mi_output_fun* out = mi_out_default;
   return (out == NULL ? &mi_out_buf : out);
 }
 
 void mi_register_output(mi_output_fun* out, void* arg) mi_attr_noexcept {
-  mi_out_default = (out == NULL ? &mi_out_stderr : out); // stop using the delayed output buffer
+  mi_atomic_store_ptr_release(void,&mi_out_default, (void*)(out == NULL ? &mi_out_stderr : out)); // stop using the delayed output buffer
   mi_atomic_store_ptr_release(void,&mi_out_arg, arg);
-  if (out!=NULL) mi_out_buf_flush(out,true,arg);         // output all the delayed output now
+  if (out!=NULL) { mi_out_buf_flush(out,true,arg); }        // output all the delayed output now
 }
 
 // add stderr to the delayed output after the module is loaded
 static void mi_add_stderr_output(void) {
   mi_assert_internal(mi_out_default == NULL);
   mi_out_buf_flush(&mi_out_stderr, false, NULL); // flush current contents to stderr
-  mi_out_default = &mi_out_buf_stderr;           // and add stderr to the delayed output
+  mi_atomic_store_ptr_release(void,&mi_out_default,(void*)&mi_out_buf_stderr);  // and add stderr to the delayed output
+  mi_atomic_store_ptr_release(void,&mi_out_arg,NULL);
 }
 
 // --------------------------------------------------------
@@ -425,14 +441,14 @@ static mi_decl_noinline void mi_recurse_exit_prim(void) {
 }
 
 static bool mi_recurse_enter(void) {
-  #if defined(__APPLE__) || defined(MI_TLS_RECURSE_GUARD)
+  #if defined(__APPLE__) || defined(__ANDROID__) || defined(MI_TLS_RECURSE_GUARD)
   if (_mi_preloading()) return false;
   #endif
   return mi_recurse_enter_prim();
 }
 
 static void mi_recurse_exit(void) {
-  #if defined(__APPLE__) || defined(MI_TLS_RECURSE_GUARD)
+  #if defined(__APPLE__) || defined(__ANDROID__) || defined(MI_TLS_RECURSE_GUARD)
   if (_mi_preloading()) return;
   #endif
   mi_recurse_exit_prim();
@@ -525,7 +541,7 @@ void _mi_warning_message(const char* fmt, ...) {
 
 
 #if MI_DEBUG
-void _mi_assert_fail(const char* assertion, const char* fname, unsigned line, const char* func ) {
+mi_decl_noreturn mi_decl_cold void _mi_assert_fail(const char* assertion, const char* fname, unsigned line, const char* func ) mi_attr_noexcept {
   _mi_fprintf(NULL, NULL, "mimalloc: assertion failed: at \"%s\":%u, %s\n  assertion: \"%s\"\n", fname, line, (func==NULL?"":func), assertion);
   abort();
 }
@@ -611,11 +627,11 @@ static void mi_option_init(mi_option_desc_t* desc) {
       buf[i] = _mi_toupper(s[i]);
     }
     buf[len] = 0;
-    if (buf[0] == 0 || strstr("1;TRUE;YES;ON", buf) != NULL) {
+    if (buf[0] == 0 || _mi_streq(buf,"1") || _mi_streq(buf,"TRUE") || _mi_streq(buf,"YES") || _mi_streq(buf,"ON")) {
       desc->value = 1;
       desc->init = INITIALIZED;
     }
-    else if (strstr("0;FALSE;NO;OFF", buf) != NULL) {
+    else if (_mi_streq(buf,"0") || _mi_streq(buf,"FALSE") || _mi_streq(buf,"NO") || _mi_streq(buf,"OFF")) {      
       desc->value = 0;
       desc->init = INITIALIZED;
     }
@@ -634,7 +650,7 @@ static void mi_option_init(mi_option_desc_t* desc) {
         else { size = (size + MI_KiB - 1) / MI_KiB; }
         if (end[0] == 'I' && end[1] == 'B') { end += 2; } // KiB, MiB, GiB, TiB
         else if (*end == 'B') { end++; }                  // Kb, Mb, Gb, Tb
-        if (overflow || size > MI_MAX_ALLOC_SIZE) { size = (MI_MAX_ALLOC_SIZE / MI_KiB); }
+        if (overflow || size > (MI_MAX_ALLOC_SIZE / MI_KiB)) { size = (MI_MAX_ALLOC_SIZE / MI_KiB); }
         value = (size > LONG_MAX ? LONG_MAX : (long)size);
       }
       if (*end == 0) {

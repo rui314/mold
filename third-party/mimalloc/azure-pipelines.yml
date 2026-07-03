@@ -4,12 +4,11 @@
 # https://aka.ms/yaml
 
 trigger:
+  batch: true
   branches:
     include:
-    - master
-    - dev
-    - dev2
-    - dev3
+    - main
+    - dev*
   tags:
     include:
     - v*
@@ -33,6 +32,22 @@ jobs:
       Secure:
         BuildType: secure
         cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release -DMI_SECURE=ON
+        MSBuildConfiguration: Release
+      Debug x86:
+        BuildType: debug
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -A Win32
+        MSBuildConfiguration: Debug
+      Release x86:
+        BuildType: release
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release -A Win32
+        MSBuildConfiguration: Release
+      Debug Fixed TLS:
+        BuildType: debug
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_WIN_USE_FIXED_TLS=ON
+        MSBuildConfiguration: Debug
+      Release Fixed TLS:
+        BuildType: release
+        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release -DMI_WIN_USE_FIXED_TLS=ON
         MSBuildConfiguration: Release
   steps:
   - task: CMake@1
@@ -170,35 +185,6 @@ jobs:
 # ----------------------------------------------------------
 
 - job:
-  displayName: Windows 2019
-  pool:
-    vmImage:
-      windows-2019
-  strategy:
-    matrix:
-      Debug:
-        BuildType: debug
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
-        MSBuildConfiguration: Debug
-      Release:
-        BuildType: release
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
-        MSBuildConfiguration: Release
-  steps:
-  - task: CMake@1
-    inputs:
-      workingDirectory: $(BuildType)
-      cmakeArgs: .. $(cmakeExtraArgs)
-  - task: MSBuild@1
-    inputs:
-      solution: $(BuildType)/libmimalloc.sln
-      configuration: '$(MSBuildConfiguration)'
-      msbuildArguments: -m
-  - script: ctest --verbose --timeout 240 -C $(MSBuildConfiguration)
-    workingDirectory: $(BuildType)
-    displayName: CTest
-
-- job:
   displayName: Ubuntu 24.04
   pool:
     vmImage:
@@ -251,9 +237,9 @@ jobs:
       Debug:
         BuildType: debug
         cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
-      Release:
-        BuildType: release
-        cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
+      # Release:
+      #   BuildType: release
+      #   cmakeExtraArgs: -DCMAKE_BUILD_TYPE=Release
   steps:
   - task: CMake@1
     inputs:

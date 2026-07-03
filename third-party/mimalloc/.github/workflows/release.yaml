@@ -1,0 +1,55 @@
+on:
+  workflow_dispatch:   # run the workflow manually 
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true # Cancel any in-progress runs of this workflow when a new run is triggered on the same ref (branch or tag)
+
+permissions:
+  contents: write
+
+env:
+  RELEASE: Release v3.3.2
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  
+name: Release
+jobs:
+  build:
+    name: Bundle
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        branch: [v1.9.10,v2.3.2,v3.3.2]  # [dev,dev2,dev3]
+        # we build on the oldest ubuntu version for better binary compatibility.
+        os: [windows-latest, macOS-latest, macos-15-intel, ubuntu-22.04, ubuntu-22.04-arm]  
+
+    steps:
+      # Checkout: https://github.com/actions/checkout
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ matrix.branch }}
+          fetch-tags: true
+          fetch-depth: 0
+
+      # Build
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          ./bin/bundle.bat
+
+      - name: Build (Linux, macOS)
+        if: runner.os != 'Windows'
+        run: |
+          ./bin/bundle.sh
+                
+      # Create a release: https://github.com/softprops/action-gh-release (MIT license)
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: ${{ env.RELEASE != '' && env.RELEASE != 'no' }} 
+        with:
+          name: ${{ env.RELEASE }}
+          draft: true
+          body_path: doc/release-notes.md
+          files: |
+            out/bundle/*.tar.gz            

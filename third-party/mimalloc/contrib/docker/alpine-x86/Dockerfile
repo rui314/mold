@@ -1,10 +1,10 @@
 # install from an image
 # download first an appropriate tar.gz image into the current directory
-# from <https://github.com/alpinelinux/docker-alpine/tree/edge/armv7>
+# from <https://github.com/alpinelinux/docker-alpine/tree/edge/x86>
 FROM scratch
 
 # Substitute the image name that was downloaded
-ADD alpine-minirootfs-20240329-armv7.tar.gz /
+ADD alpine-minirootfs-20250108-x86.tar.gz /
 
 # Install tools
 RUN apk add build-base make cmake
@@ -22,7 +22,7 @@ RUN mkdir -p mimalloc/out/debug
 # Build mimalloc debug
 WORKDIR /home/dev/mimalloc/out/debug
 RUN cmake ../.. -DMI_DEBUG_FULL=ON
-RUN make -j
-RUN make test
+# RUN make -j
+# RUN make test
 
 CMD ["/bin/sh"]

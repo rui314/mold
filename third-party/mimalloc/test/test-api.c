@@ -203,7 +203,11 @@ int main(void) {
   CHECK_BODY("malloc-aligned9") { // test large alignments
     bool ok = true;
     void* p[8];
-    size_t sizes[8] = { 8, 512, 1024 * 1024, MI_BLOCK_ALIGNMENT_MAX, MI_BLOCK_ALIGNMENT_MAX + 1, 2 * MI_BLOCK_ALIGNMENT_MAX, 8 * MI_BLOCK_ALIGNMENT_MAX, 0 };
+    size_t sizes[8] = { 8, 512, 1024 * 1024, MI_BLOCK_ALIGNMENT_MAX, MI_BLOCK_ALIGNMENT_MAX + 1, 
+      #if SIZE_MAX > UINT32_MAX
+      2 * MI_BLOCK_ALIGNMENT_MAX, 8 * MI_BLOCK_ALIGNMENT_MAX, 
+      #endif
+      0 };
     for (int i = 0; i < 28 && ok; i++) {
       int align = (1 << i);
       for (int j = 0; j < 8 && ok; j++) {
@@ -321,6 +325,25 @@ int main(void) {
     result = (p != NULL && errno == 0);
     mi_free(p);
   };
+
+  // ---------------------------------------------------
+  // Returned block sizes
+  // ---------------------------------------------------
+  CHECK_BODY("umalloc1") {
+    for(size_t size = 1; size <= 32*MI_MiB; size *= 2 ) {
+      size_t bsize;
+      void* p = mi_umalloc(size,&bsize);
+      assert(bsize >= size);
+      size_t pre_size;
+      size_t post_size;
+      p = mi_urealloc(p, size + 1024, &pre_size, &post_size);
+      assert(pre_size == bsize);
+      assert(post_size >= size + 1024);
+      size_t fsize;
+      mi_ufree(p,&fsize);
+      assert(fsize == post_size);
+    }
+  }
 
   // ---------------------------------------------------
   // Heaps

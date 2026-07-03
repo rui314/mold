@@ -310,7 +310,7 @@ bool check_zero_init(uint8_t* p, size_t size) {
 
 #if MI_DEBUG >= 2
 bool check_debug_fill_uninit(uint8_t* p, size_t size) {
-#if MI_TRACK_VALGRIND || MI_TRACK_ASAN
+#if MI_TRACK_VALGRIND || MI_TRACK_ASAN || MI_GUARDED
   (void)p; (void)size;
   return true; // when compiled with valgrind we don't init on purpose
 #else
@@ -326,7 +326,7 @@ bool check_debug_fill_uninit(uint8_t* p, size_t size) {
 }
 
 bool check_debug_fill_freed(uint8_t* p, size_t size) {
-#if MI_TRACK_VALGRIND
+#if MI_TRACK_VALGRIND || MI_GUARDED
   (void)p; (void)size;
   return true; // when compiled with valgrind we don't fill on purpose
 #else

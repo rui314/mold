@@ -61,7 +61,7 @@ static mi_segmap_part_t* mi_segment_map_index_of(const mi_segment_t* segment, bo
   if mi_unlikely(part == NULL) {
     if (!create_on_demand) return NULL;
     mi_memid_t memid;
-    part = (mi_segmap_part_t*)_mi_os_alloc(sizeof(mi_segmap_part_t), &memid);
+    part = (mi_segmap_part_t*)_mi_os_zalloc(sizeof(mi_segmap_part_t), &memid);
     if (part == NULL) return NULL;
     part->memid = memid;
     mi_segmap_part_t* expected = NULL;
@@ -113,11 +113,16 @@ static mi_segment_t* _mi_segment_of(const void* p) {
   size_t bitidx;
   mi_segmap_part_t* part = mi_segment_map_index_of(segment, false /* dont alloc if not present */, &index, &bitidx);
   if (part == NULL) return NULL;  
-  const uintptr_t mask = mi_atomic_load_relaxed(&part->map[index]);
+  const uintptr_t mask = mi_atomic_load_relaxed(&part->map[index]);  
   if mi_likely((mask & ((uintptr_t)1 << bitidx)) != 0) {
-    bool cookie_ok = (_mi_ptr_cookie(segment) == segment->cookie);
-    mi_assert_internal(cookie_ok); MI_UNUSED(cookie_ok);
-    return segment; // yes, allocated by us
+    // yes, allocated by us
+    const bool cookie_ok = (_mi_ptr_cookie(segment) == segment->cookie);
+    if mi_likely(cookie_ok) {
+      return segment; // yes, allocated by us and valid
+    }
+    else {
+      _mi_error_message(EFAULT, "segment map found an invalid segment, possibly corrupted meta-data (address=%p, segment=%p)\n", p, segment);
+    }
   }
   return NULL;
 }

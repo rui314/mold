@@ -71,13 +71,14 @@ const mi_page_t _mi_page_empty = {
 
 // Empty statistics
 #define MI_STATS_NULL  \
-  MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), \
-  MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), \
+  MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), \
+  { 0 }, { 0 }, \
+  MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), \
   MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), MI_STAT_COUNT_NULL(), \
   { 0 }, { 0 }, { 0 }, { 0 }, \
   { 0 }, { 0 }, { 0 }, { 0 }, \
   \
-  { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, \
+  { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, \
   MI_INIT4(MI_STAT_COUNT_NULL), \
   { 0 }, { 0 }, { 0 }, { 0 },  \
   \
@@ -108,7 +109,7 @@ const mi_page_t _mi_page_empty = {
 // may lead to allocation itself on some platforms)
 // --------------------------------------------------------
 
-mi_decl_hidden mi_decl_cache_align const mi_heap_t _mi_heap_empty = {
+mi_decl_cache_align const mi_heap_t _mi_heap_empty = {
   NULL,
   MI_ATOMIC_VAR_INIT(NULL),
   0,                // tid
@@ -118,12 +119,13 @@ mi_decl_hidden mi_decl_cache_align const mi_heap_t _mi_heap_empty = {
   { {0}, {0}, 0, true }, // random
   0,                // page count
   MI_BIN_FULL, 0,   // page retired min/max
+  0,                // pages_full_size
   0, 0,             // generic count
   NULL,             // next
   false,            // can reclaim
   0,                // tag
   #if MI_GUARDED
-  0, 0, 0, 0, 1,    // count is 1 so we never write to it (see `internal.h:mi_heap_malloc_use_guarded`)
+  0, 0, 0, 1,       // count is 1 so we never write to it (see `internal.h:mi_heap_malloc_use_guarded`)
   #endif
   MI_SMALL_PAGES_EMPTY,
   MI_PAGE_QUEUES_EMPTY
@@ -138,11 +140,13 @@ mi_decl_cache_align static const mi_tld_t tld_empty = {
   false,
   NULL, NULL,
   { MI_SEGMENT_SPAN_QUEUES_EMPTY, 0, 0, 0, 0, 0, &mi_subproc_default, tld_empty_stats }, // segments
-  { MI_STAT_VERSION, MI_STATS_NULL }       // stats
+  { sizeof(mi_stats_t), MI_STAT_VERSION, MI_STATS_NULL }       // stats
 };
 
 mi_threadid_t _mi_thread_id(void) mi_attr_noexcept {
-  return _mi_prim_thread_id();
+  mi_threadid_t tid = _mi_prim_thread_id();
+  mi_assert_internal( (tid & 0x03) == 0 ); // mimalloc reserves the bottom 2 bits
+  return tid;
 }
 
 // the thread-local default heap for allocation
@@ -154,7 +158,7 @@ static mi_decl_cache_align mi_tld_t tld_main = {
   0, false,
   &_mi_heap_main, & _mi_heap_main,
   { MI_SEGMENT_SPAN_QUEUES_EMPTY, 0, 0, 0, 0, 0, &mi_subproc_default, &tld_main.stats }, // segments
-  { MI_STAT_VERSION, MI_STATS_NULL }       // stats
+  { sizeof(mi_stats_t), MI_STAT_VERSION, MI_STATS_NULL }       // stats
 };
 
 mi_decl_cache_align mi_heap_t _mi_heap_main = {
@@ -167,12 +171,13 @@ mi_decl_cache_align mi_heap_t _mi_heap_main = {
   { {0x846ca68b}, {0}, 0, true },  // random
   0,                // page count
   MI_BIN_FULL, 0,   // page retired min/max
+  0,                // pages_full_size
   0, 0,             // generic count
   NULL,             // next heap
   false,            // can reclaim
   0,                // tag
   #if MI_GUARDED
-  0, 0, 0, 0, 0,
+  0, 0, 0, 0,
   #endif
   MI_SMALL_PAGES_EMPTY,
   MI_PAGE_QUEUES_EMPTY
@@ -180,19 +185,18 @@ mi_decl_cache_align mi_heap_t _mi_heap_main = {
 
 bool _mi_process_is_initialized = false;  // set to `true` in `mi_process_init`.
 
-mi_stats_t _mi_stats_main = { MI_STAT_VERSION, MI_STATS_NULL };
+mi_stats_t _mi_stats_main = { sizeof(mi_stats_t), MI_STAT_VERSION, MI_STATS_NULL };
 
 #if MI_GUARDED
 mi_decl_export void mi_heap_guarded_set_sample_rate(mi_heap_t* heap, size_t sample_rate, size_t seed) {
-  heap->guarded_sample_seed = seed;
-  if (heap->guarded_sample_seed == 0) {
-    heap->guarded_sample_seed = _mi_heap_random_next(heap);
-  }
   heap->guarded_sample_rate  = sample_rate;
-  if (heap->guarded_sample_rate >= 1) {
-    heap->guarded_sample_seed = heap->guarded_sample_seed % heap->guarded_sample_rate;
+  heap->guarded_sample_count = sample_rate;  // count down samples
+  if (heap->guarded_sample_rate > 1) {
+    if (seed == 0) {
+      seed = _mi_heap_random_next(heap);
+    }
+    heap->guarded_sample_count = (seed % heap->guarded_sample_rate) + 1;  // start at random count between 1 and `sample_rate`
   }
-  heap->guarded_sample_count = heap->guarded_sample_seed;  // count down samples
 }
 
 mi_decl_export void mi_heap_guarded_set_size_bound(mi_heap_t* heap, size_t min, size_t max) {
@@ -245,7 +249,6 @@ mi_heap_t* _mi_heap_main_get(void) {
   return &_mi_heap_main;
 }
 
-
 /* -----------------------------------------------------------
   Sub process
 ----------------------------------------------------------- */
@@ -272,6 +275,7 @@ mi_subproc_t* _mi_subproc_from_id(mi_subproc_id_t subproc_id) {
 void mi_subproc_delete(mi_subproc_id_t subproc_id) {
   if (subproc_id == NULL) return;
   mi_subproc_t* subproc = _mi_subproc_from_id(subproc_id);
+  if (subproc==NULL) return;
   // check if there are no abandoned segments still..
   bool safe_to_delete = false;
   mi_lock(&subproc->abandoned_os_lock) {
@@ -319,7 +323,6 @@ static _Atomic(mi_thread_data_t*) td_cache[TD_CACHE_SIZE];
 
 static mi_thread_data_t* mi_thread_data_zalloc(void) {
   // try to find thread metadata in the cache
-  bool is_zero = false;
   mi_thread_data_t* td = NULL;
   for (int i = 0; i < TD_CACHE_SIZE; i++) {
     td = mi_atomic_load_ptr_relaxed(mi_thread_data_t, &td_cache[i]);
@@ -327,32 +330,25 @@ static mi_thread_data_t* mi_thread_data_zalloc(void) {
       // found cached allocation, try use it
       td = mi_atomic_exchange_ptr_acq_rel(mi_thread_data_t, &td_cache[i], NULL);
       if (td != NULL) {
-        break;
+        _mi_memzero(td, offsetof(mi_thread_data_t,memid));
+        return td;
       }
     }
   }
 
   // if that fails, allocate as meta data
+  mi_memid_t memid;
+  td = (mi_thread_data_t*)_mi_os_zalloc(sizeof(mi_thread_data_t), &memid);
   if (td == NULL) {
-    mi_memid_t memid;
-    td = (mi_thread_data_t*)_mi_os_alloc(sizeof(mi_thread_data_t), &memid);
+    // if this fails, try once more. (issue #257)
+    td = (mi_thread_data_t*)_mi_os_zalloc(sizeof(mi_thread_data_t), &memid);
     if (td == NULL) {
-      // if this fails, try once more. (issue #257)
-      td = (mi_thread_data_t*)_mi_os_alloc(sizeof(mi_thread_data_t), &memid);
-      if (td == NULL) {
-        // really out of memory
-        _mi_error_message(ENOMEM, "unable to allocate thread local heap metadata (%zu bytes)\n", sizeof(mi_thread_data_t));
-      }
-    }
-    if (td != NULL) {
-      td->memid = memid;
-      is_zero = memid.initially_zero;
+      // really out of memory
+      _mi_error_message(ENOMEM, "unable to allocate thread local heap metadata (%zu bytes)\n", sizeof(mi_thread_data_t));
+      return NULL;
     }
   }
-
-  if (td != NULL && !is_zero) {
-    _mi_memzero_aligned(td, offsetof(mi_thread_data_t,memid));
-  }
+  td->memid = memid;
   return td;
 }
 
@@ -452,7 +448,7 @@ static bool _mi_thread_heap_done(mi_heap_t* heap) {
   // free if not the main thread
   if (heap != &_mi_heap_main) {
     // the following assertion does not always hold for huge segments as those are always treated
-    // as abondened: one may allocate it in one thread, but deallocate in another in which case
+    // as abandoned: one may allocate it in one thread, but deallocate in another in which case
     // the count can be too large or negative. todo: perhaps not count huge segments? see issue #363
     // mi_assert_internal(heap->tld->segments.count == 0 || heap->thread_id != _mi_thread_id());
     mi_thread_data_free((mi_thread_data_t*)heap);
@@ -488,11 +484,10 @@ static bool _mi_thread_heap_done(mi_heap_t* heap) {
 
 // Set up handlers so `mi_thread_done` is called automatically
 static void mi_process_setup_auto_thread_done(void) {
-  static bool tls_initialized = false; // fine if it races
-  if (tls_initialized) return;
-  tls_initialized = true;
-  _mi_prim_thread_init_auto_done();
-  _mi_heap_set_default_direct(&_mi_heap_main);
+  mi_atomic_do_once {
+    _mi_prim_thread_init_auto_done();
+    _mi_heap_set_default_direct(&_mi_heap_main);
+  }
 }
 
 
@@ -587,7 +582,7 @@ mi_decl_nodiscard bool mi_is_redirected(void) mi_attr_noexcept {
 }
 
 // Called once by the process loader from `src/prim/prim.c`
-void _mi_process_load(void) {
+void _mi_auto_process_init(void) {
   mi_heap_main_init();
   #if defined(__APPLE__) || defined(MI_TLS_RECURSE_GUARD)
   volatile mi_heap_t* dummy = _mi_heap_default; // access TLS to allocate it before setting tls_initialized to true;
@@ -631,14 +626,8 @@ static void mi_detect_cpu_features(void) {
 #endif
 
 // Initialize the process; called by thread_init or the process loader
-void mi_process_init(void) mi_attr_noexcept {
-  // ensure we are called once
-  static mi_atomic_once_t process_init;
-	#if _MSC_VER < 1920
-	mi_heap_main_init(); // vs2017 can dynamically re-initialize _mi_heap_main
-	#endif
-  if (!mi_atomic_once(&process_init)) return;
-  _mi_process_is_initialized = true;
+static void mi_process_init_once(void) mi_attr_noexcept {
+  _mi_process_is_initialized = true;  
   _mi_verbose_message("process init: 0x%zx\n", _mi_thread_id());
   mi_process_setup_auto_thread_done();
 
@@ -659,7 +648,7 @@ void mi_process_init(void) mi_attr_noexcept {
 
   if (mi_option_is_enabled(mi_option_reserve_huge_os_pages)) {
     size_t pages = mi_option_get_clamp(mi_option_reserve_huge_os_pages, 0, 128*1024);
-    long reserve_at = mi_option_get(mi_option_reserve_huge_os_pages_at);
+    int reserve_at  = (int)mi_option_get_clamp(mi_option_reserve_huge_os_pages_at, -1, INT_MAX);
     if (reserve_at != -1) {
       mi_reserve_huge_os_pages_at(pages, reserve_at, pages*500);
     } else {
@@ -674,8 +663,18 @@ void mi_process_init(void) mi_attr_noexcept {
   }
 }
 
-// Called when the process is done (through `at_exit`)
-void mi_cdecl _mi_process_done(void) {
+// Initialize the process; called by thread_init or the process loader
+void mi_process_init(void) mi_attr_noexcept {
+  #if _MSC_VER < 1920
+	mi_heap_main_init(); // vs2017 can dynamically re-initialize _mi_heap_main
+	#endif
+  mi_atomic_do_once {
+    mi_process_init_once();
+  }
+}
+
+// Called when the process is done (cdecl as it is used with `at_exit` on some platforms)
+void mi_cdecl mi_process_done(void) mi_attr_noexcept {
   // only shutdown if we were initialized
   if (!_mi_process_is_initialized) return;
   // ensure we are called once
@@ -700,6 +699,9 @@ void mi_cdecl _mi_process_done(void) {
     #endif
   #endif
 
+  // done with tracking tools
+  mi_track_done()
+
   // Forcefully release all retained memory; this can be dangerous in general if overriding regular malloc/free
   // since after process_done there might still be other code running that calls `free` (like at_exit routines,
   // or C-runtime termination code.
@@ -718,3 +720,7 @@ void mi_cdecl _mi_process_done(void) {
   os_preloading = true; // don't call the C runtime anymore
 }
 
+void mi_cdecl _mi_auto_process_done(void) mi_attr_noexcept {
+  if (_mi_option_get_fast(mi_option_destroy_on_exit)>1) return;
+  mi_process_done();
+}

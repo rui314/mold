@@ -1,0 +1,163 @@
+on:
+  workflow_dispatch:   # allow running the workflow manually 
+  push:
+    branches:
+      - 'dev*'
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true # Cancel any in-progress runs of this workflow when a new run is triggered on the same ref (branch or tag)
+  
+name: Test
+jobs:
+  build:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        tests: [basic,extra]
+        os: [windows-latest, macos-latest, ubuntu-latest, macos-14, macos-15-intel, ubuntu-22.04-arm, windows-11-arm]
+        exclude:
+          - os: macos-14
+            tests: extra          
+        
+    steps:
+      # Checkout: https://github.com/actions/checkout
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # Basic
+      - name: Debug
+        if: matrix.tests == 'basic'
+        run: |
+          cmake . -B out/debug -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+          cmake --build out/debug --parallel 4 --config Debug
+          ctest --test-dir out/debug --verbose --timeout 240 -C Debug
+
+      - name: Release
+        if: matrix.tests == 'basic'
+        run: |
+          cmake . -B out/release -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON
+          cmake --build out/release --parallel 4 --config Release
+          ctest --test-dir out/release --verbose --timeout 240 -C Release
+
+      - name: Secure
+        if: matrix.tests == 'basic'
+        run: |
+          cmake . -B out/secure -DCMAKE_BUILD_TYPE=Release -DMI_SECURE=ON
+          cmake --build out/secure --parallel 4 --config Release
+          ctest --test-dir out/secure --verbose --timeout 240 -C Release
+
+      # Basic, C++
+      - name: Debug, C++
+        if: matrix.tests == 'basic' && runner.os != 'Windows'   # windows already uses C++ by default
+        run: |
+          cmake . -B out/debug-cxx -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
+          cmake --build out/debug-cxx --parallel 8 --config Debug
+          ctest --test-dir out/debug-cxx --verbose --timeout 240 -C Debug
+
+      - name: Release, C++
+        if: matrix.tests == 'basic' && runner.os == 'Linux'      # windows already uses C++ by default; macOS interpose does not work well with C++
+        run: |
+          cmake . -B out/release-cxx -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_USE_CXX=ON
+          cmake --build out/release-cxx --parallel 8 --config Release
+          ctest --test-dir out/release-cxx --verbose --timeout 240 -C Release
+
+      # Extra, Windows x86
+      - name: Debug, Win32
+        if: matrix.tests == 'extra' && runner.os == 'Windows' && !endsWith(matrix.os,'arm')
+        run: |
+          cmake . -B out/debug-x86 -DCMAKE_BUILD_TYPE=Debug -A Win32
+          cmake --build out/debug-x86 --parallel 4 --config Debug
+          ctest --test-dir out/debug-x86 --verbose --timeout 240 -C Debug
+
+      - name: Release, Win32
+        if: matrix.tests == 'extra' && runner.os == 'Windows' && !endsWith(matrix.os,'arm')
+        run: |
+          cmake . -B out/release-x86 -DCMAKE_BUILD_TYPE=Release -A Win32
+          cmake --build out/release-x86 --parallel 4 --config Release
+          ctest --test-dir out/release-x86 --verbose --timeout 240 -C Release
+
+      - name: Debug, clang-cl
+        if: matrix.tests == 'extra' && runner.os == 'Windows' && !endsWith(matrix.os,'arm')
+        run: |
+          cmake . -B out/debug-clang -DCMAKE_BUILD_TYPE=Debug -A Win32 -T ClangCl
+          cmake --build out/debug-clang --parallel 4 --config Debug
+          ctest --test-dir out/debug-clang --verbose --timeout 240 -C Debug
+
+      - name: Release, clang-cl
+        if: matrix.tests == 'extra' && runner.os == 'Windows' && !endsWith(matrix.os,'arm')
+        run: |
+          cmake . -B out/release-clang -DCMAKE_BUILD_TYPE=Release -A Win32 -T ClangCl
+          cmake --build out/release-clang --parallel 4 --config Release
+          ctest --test-dir out/release-clang --verbose --timeout 240 -C Release          
+
+      # Extra
+      - name: Release, SIMD
+        if: matrix.tests == 'extra'
+        run: |
+          cmake . -B out/release-simd -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_OPT_SIMD=ON
+          cmake --build out/release-simd --parallel 8 --config Release
+          ctest --test-dir out/release-simd --verbose --timeout 240 -C Release
+
+      - name: Release, C++, SIMD
+        if: matrix.tests == 'basic' && runner.os != 'Windows' && runner.os != 'macOS'
+        run: |
+          cmake . -B out/release-cxx -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_OPT_SIMD=ON -DMI_USE_CXX=ON
+          cmake --build out/release-cxx --parallel 8 --config Release
+          ctest --test-dir out/release-cxx --verbose --timeout 240 -C Release
+
+      - name: Debug, C++, clang++
+        if: matrix.tests == 'extra' && runner.os == 'Linux'
+        run: |
+          CC=clang CXX=clang++ cmake . -B out/debug-clang-cxx -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
+          cmake --build out/debug-clang-cxx --parallel 8 --config Debug
+          ctest --test-dir out/debug-clang-cxx --verbose --timeout 240 -C Debug
+
+      - name: Release, C++, clang++
+        if: matrix.tests == 'extra' && runner.os == 'Linux'
+        run: |
+          CC=clang CXX=clang++ cmake . -B out/release-clang-cxx -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_USE_CXX=ON
+          cmake --build out/release-clang-cxx --parallel 8 --config Release
+          ctest --test-dir out/release-clang-cxx --verbose --timeout 240 -C Release
+
+      - name: Debug, ASAN
+        if: matrix.tests == 'extra' && runner.os == 'Linux'
+        run: |
+          CC=clang CXX=clang++ cmake . -B out/debug-asan -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_TRACK_ASAN=ON
+          cmake --build out/debug-asan --parallel 8 --config Debug
+          ctest --test-dir out/debug-asan --verbose --timeout 240 -C Debug
+
+      - name: Debug, UBSAN
+        if: matrix.tests == 'extra' && runner.os == 'Linux'
+        run: |
+          CC=clang CXX=clang++ cmake . -B out/debug-ubsan -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_DEBUG_UBSAN=ON
+          cmake --build out/debug-ubsan --parallel 8 --config Debug
+          ctest --test-dir out/debug-ubsan --verbose --timeout 240 -C Debug
+
+      - name: Debug, TSAN
+        if: matrix.tests == 'extra' && runner.os == 'Linux'
+        run: |
+          CC=clang CXX=clang++ cmake . -B out/debug-tsan -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_DEBUG_TSAN=ON
+          cmake --build out/debug-tsan --parallel 8 --config Debug
+          ctest --test-dir out/debug-tsan --verbose --timeout 240 -C Debug
+
+      - name: Debug, Guarded
+        if: matrix.tests == 'extra' && matrix.os != 'windows-11-arm' && runner.os != 'macOS'
+        run: |
+          cmake . -B out/debug-guarded -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_GUARDED=ON
+          cmake --build out/debug-guarded --parallel 8 --config Debug
+          ctest --test-dir out/debug-guarded --verbose --timeout 240 -C Debug
+        env:
+          MIMALLOC_GUARDED_SAMPLE_RATE: 100
+
+      - name: Release, Guarded
+        if: matrix.tests == 'extra' && runner.os == 'Linux' && startsWith(github.ref_name,'dev3')
+        run: |
+          cmake . -B out/release-guarded -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_GUARDED=ON
+          cmake --build out/release-guarded --parallel 8 --config Release
+          ctest --test-dir out/release-guarded --verbose --timeout 240 -C Release
+        env:
+          MIMALLOC_GUARDED_SAMPLE_RATE: 100

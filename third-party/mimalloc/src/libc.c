@@ -22,11 +22,21 @@ char _mi_toupper(char c) {
 }
 
 int _mi_strnicmp(const char* s, const char* t, size_t n) {
+  mi_assert_internal(s!=NULL && t!=NULL);
   if (n == 0) return 0;
   for (; *s != 0 && *t != 0 && n > 0; s++, t++, n--) {
     if (_mi_toupper(*s) != _mi_toupper(*t)) break;
   }
   return (n == 0 ? 0 : *s - *t);
+}
+
+bool _mi_streq(const char* s, const char* t) {
+  if (s==NULL && t==NULL) return true;
+  if (s==NULL || t==NULL) return false;
+  for (; *s != 0 && *t != 0; s++, t++) {
+    if (*s != *t) break;
+  }
+  return (*s == *t);
 }
 
 void _mi_strlcpy(char* dest, const char* src, size_t dest_size) {
@@ -51,18 +61,15 @@ void _mi_strlcat(char* dest, const char* src, size_t dest_size) {
   _mi_strlcpy(dest, src, dest_size);
 }
 
-size_t _mi_strlen(const char* s) {
-  if (s==NULL) return 0;
-  size_t len = 0;
-  while(s[len] != 0) { len++; }
-  return len;
-}
-
 size_t _mi_strnlen(const char* s, size_t max_len) {
   if (s==NULL) return 0;
   size_t len = 0;
   while(s[len] != 0 && len < max_len) { len++; }
   return len;
+}
+
+size_t _mi_strlen(const char* s) {
+  return _mi_strnlen(s,PTRDIFF_MAX);
 }
 
 #ifdef MI_NO_GETENV
@@ -78,6 +85,43 @@ bool _mi_getenv(const char* name, char* result, size_t result_size) {
   return _mi_prim_getenv(name,result,result_size);
 }
 #endif
+
+
+// --------------------------------------------------------
+// Define our own primitives for doing an action once
+// --------------------------------------------------------
+
+// Returns `true` only on the first invocation, signifying we can execute an action once.
+// If it returns `true`, the caller should call `_mi_atomic_once_release` after performing the action.
+// Other threads (than the initial thread that entered) will block until `_mi_atomic_once_release` has been called.
+bool _mi_atomic_once_enter(mi_atomic_once_t* once) {
+  const uintptr_t once_tid = mi_atomic_load_acquire(&once->tid);
+  if mi_likely(once_tid == 1) {
+    return false; // already executed
+  }
+  const mi_threadid_t current_tid = _mi_thread_id();
+  if (once_tid == current_tid) {
+    return false; // recursive invocation; we need this for process_init for example
+  }  
+
+  mi_lock_acquire(&once->lock);
+  uintptr_t expected = 0;
+  if (mi_atomic_cas_strong_acq_rel(&once->tid, &expected, current_tid)) {  // could use atomic_load/store as well
+    return true;  // should execute and release
+  } 
+  else {
+    mi_lock_release(&once->lock);
+    return false; // already another thread entered and released
+  }
+}
+
+void _mi_atomic_once_release(mi_atomic_once_t* once) {
+  if (mi_atomic_load_acquire(&once->tid)>1) {  // paranoia
+    mi_atomic_store_release(&once->tid,1);     // done executing
+    mi_lock_release(&once->lock);
+  }  
+}
+
 
 // --------------------------------------------------------
 // Define our own limited `_mi_vsnprintf` and `_mi_snprintf`
@@ -215,7 +259,8 @@ int _mi_vsnprintf(char* buf, size_t bufsize, const char* fmt, va_list args) {
                                else x = va_arg(args, unsigned int);
         }
         else if (c == 'p') {
-          x = va_arg(args, uintptr_t);
+          void* const p = va_arg(args, void*);
+          x = (uintptr_t)p;
           mi_outs("0x", &out, end);
           start = out;
           width = (width >= 2 ? width - 2 : 0);
@@ -275,3 +320,60 @@ int _mi_snprintf(char* buf, size_t buflen, const char* fmt, ...) {
   va_end(args);
   return written;
 }
+
+
+#if MI_SIZE_SIZE == 4
+#define mi_mask_even_bits32      (0x55555555)
+#define mi_mask_even_pairs32     (0x33333333)
+#define mi_mask_even_nibbles32   (0x0F0F0F0F)
+
+// sum of all the bytes in `x` if it is guaranteed that the sum < 256!
+static size_t mi_byte_sum32(uint32_t x) {
+  // perform `x * 0x01010101`: the highest byte contains the sum of all bytes.
+  x += (x << 8);
+  x += (x << 16);
+  return (size_t)(x >> 24);
+}
+
+static size_t mi_popcount_generic32(uint32_t x) {
+  // first count each 2-bit group `a`, where: a==0b00 -> 00, a==0b01 -> 01, a==0b10 -> 01, a==0b11 -> 10
+  // in other words, `a - (a>>1)`; to do this in parallel, we need to mask to prevent spilling a bit pair
+  // into the lower bit-pair:
+  x = x - ((x >> 1) & mi_mask_even_bits32);
+  // add the 2-bit pair results
+  x = (x & mi_mask_even_pairs32) + ((x >> 2) & mi_mask_even_pairs32);
+  // add the 4-bit nibble results
+  x = (x + (x >> 4)) & mi_mask_even_nibbles32;
+  // each byte now has a count of its bits, we can sum them now:
+  return mi_byte_sum32(x);
+}
+
+mi_decl_noinline size_t _mi_popcount_generic(size_t x) {
+  return mi_popcount_generic32(x);
+}
+
+#else
+#define mi_mask_even_bits64      (0x5555555555555555)
+#define mi_mask_even_pairs64     (0x3333333333333333)
+#define mi_mask_even_nibbles64   (0x0F0F0F0F0F0F0F0F)
+
+// sum of all the bytes in `x` if it is guaranteed that the sum < 256!
+static size_t mi_byte_sum64(uint64_t x) {
+  x += (x << 8);
+  x += (x << 16);
+  x += (x << 32);
+  return (size_t)(x >> 56);
+}
+
+static size_t mi_popcount_generic64(uint64_t x) {
+  x = x - ((x >> 1) & mi_mask_even_bits64);
+  x = (x & mi_mask_even_pairs64) + ((x >> 2) & mi_mask_even_pairs64);
+  x = (x + (x >> 4)) & mi_mask_even_nibbles64;
+  return mi_byte_sum64(x);
+}
+
+mi_decl_noinline size_t _mi_popcount_generic(size_t x) {
+  return mi_popcount_generic64(x);
+}
+#endif
+
