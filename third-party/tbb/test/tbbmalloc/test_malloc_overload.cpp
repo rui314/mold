@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,7 +20,7 @@
 
 #define __TBB_NO_IMPLICIT_LINKAGE 1
 
-#if (_WIN32 || _WIN64)
+#if !defined(_CRT_SECURE_NO_WARNINGS) && (_WIN32 || _WIN64)
 #define _CRT_SECURE_NO_WARNINGS
 // As the test is intentionally build with /EHs-, suppress multiple VS2005's
 // warnings like C4530: C++ exception handler used, but unwind semantics are not enabled
@@ -32,7 +33,7 @@
 #endif
 // to use strdup w/o warnings
 #define _CRT_NONSTDC_NO_DEPRECATE 1
-#endif // _WIN32 || _WIN64
+#endif // !defined(_CRT_SECURE_NO_WARNINGS) && (_WIN32 || _WIN64)
 
 #define _ISOC11_SOURCE 1 // to get C11 declarations for GLIBC
 
@@ -414,7 +415,13 @@ TEST_CASE("Main set of tests") {
    It was found that adding a new environment variable triggers the error.
 */
     REQUIRE_MESSAGE(getenv("PATH"), "We assume that PATH is set everywhere.");
-    char *pathCopy = strdup(getenv("PATH"));
+    char *pathCopy =
+#if _WIN32 || _WIN64
+        _strdup(getenv("PATH"));
+#else
+        strdup(getenv("PATH"));
+#endif
+
 #if __ANDROID__
     REQUIRE_MESSAGE(strcmp(pathCopy,getenv("PATH")) == 0, "strdup workaround does not work as expected.");
 #endif

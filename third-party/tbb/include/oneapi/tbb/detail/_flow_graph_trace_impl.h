@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -42,14 +43,14 @@ template< typename T > class receiver;
         #define CODEPTR() nullptr
     #endif /* __TBB_FLOW_TRACE_CODEPTR */
 
-static inline void fgt_alias_port(void *node, void *p, bool visible) {
+inline void fgt_alias_port(void *node, void *p, bool visible) {
     if(visible)
         itt_relation_add( d1::ITT_DOMAIN_FLOW, node, FLOW_NODE, __itt_relation_is_parent_of, p, FLOW_NODE );
     else
         itt_relation_add( d1::ITT_DOMAIN_FLOW, p, FLOW_NODE, __itt_relation_is_child_of, node, FLOW_NODE );
 }
 
-static inline void fgt_composite ( void* codeptr, void *node, void *graph ) {
+inline void fgt_composite ( void* codeptr, void *node, void *graph ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, node, FLOW_NODE, graph, FLOW_GRAPH, FLOW_COMPOSITE_NODE );
     suppress_unused_warning( codeptr );
 #if __TBB_FLOW_TRACE_CODEPTR
@@ -59,12 +60,12 @@ static inline void fgt_composite ( void* codeptr, void *node, void *graph ) {
 #endif
 }
 
-static inline void fgt_internal_alias_input_port( void *node, void *p, string_resource_index name_index ) {
+inline void fgt_internal_alias_input_port( void *node, void *p, string_resource_index name_index ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, p, FLOW_INPUT_PORT, node, FLOW_NODE, name_index );
     itt_relation_add( d1::ITT_DOMAIN_FLOW, node, FLOW_NODE, __itt_relation_is_parent_of, p, FLOW_INPUT_PORT );
 }
 
-static inline void fgt_internal_alias_output_port( void *node, void *p, string_resource_index name_index ) {
+inline void fgt_internal_alias_output_port( void *node, void *p, string_resource_index name_index ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, p, FLOW_OUTPUT_PORT, node, FLOW_NODE, name_index );
     itt_relation_add( d1::ITT_DOMAIN_FLOW, node, FLOW_NODE, __itt_relation_is_parent_of, p, FLOW_OUTPUT_PORT );
 }
@@ -108,11 +109,11 @@ struct fgt_internal_output_alias_helper<PortsTuple, 0> {
     }
 };
 
-static inline void fgt_internal_create_input_port( void *node, void *p, string_resource_index name_index ) {
+inline void fgt_internal_create_input_port( void *node, void *p, string_resource_index name_index ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, p, FLOW_INPUT_PORT, node, FLOW_NODE, name_index );
 }
 
-static inline void fgt_internal_create_output_port( void* codeptr, void *node, void *p, string_resource_index name_index ) {
+inline void fgt_internal_create_output_port( void* codeptr, void *node, void *p, string_resource_index name_index ) {
     itt_make_task_group(d1::ITT_DOMAIN_FLOW, p, FLOW_OUTPUT_PORT, node, FLOW_NODE, name_index);
     suppress_unused_warning( codeptr );
 #if __TBB_FLOW_TRACE_CODEPTR
@@ -177,29 +178,29 @@ void fgt_multiinput_multioutput_node_desc( const NodeType *node, const char *des
 }
 
 template< typename NodeType >
-static inline void fgt_node_desc( const NodeType *node, const char *desc ) {
+inline void fgt_node_desc( const NodeType *node, const char *desc ) {
     void *addr =  (void *)( static_cast< sender< typename NodeType::output_type > * >(const_cast< NodeType *>(node)) );
     itt_metadata_str_add( d1::ITT_DOMAIN_FLOW, addr, FLOW_NODE, FLOW_OBJECT_NAME, desc );
 }
 
-static inline void fgt_graph_desc( const void *g, const char *desc ) {
+inline void fgt_graph_desc( const void *g, const char *desc ) {
     void *addr = const_cast< void *>(g);
     itt_metadata_str_add( d1::ITT_DOMAIN_FLOW, addr, FLOW_GRAPH, FLOW_OBJECT_NAME, desc );
 }
 
-static inline void fgt_body( void *node, void *body ) {
+inline void fgt_body( void *node, void *body ) {
     itt_relation_add( d1::ITT_DOMAIN_FLOW, body, FLOW_BODY, __itt_relation_is_child_of, node, FLOW_NODE );
 }
 
 template< int N, typename PortsTuple >
-static inline void fgt_multioutput_node(void* codeptr, string_resource_index t, void *g, void *input_port, PortsTuple &ports ) {
+inline void fgt_multioutput_node(void* codeptr, string_resource_index t, void *g, void *input_port, PortsTuple &ports ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, input_port, FLOW_NODE, g, FLOW_GRAPH, t );
     fgt_internal_create_input_port( input_port, input_port, FLOW_INPUT_PORT_0 );
     fgt_internal_output_helper<PortsTuple, N>::register_port(codeptr, input_port, ports );
 }
 
 template< int N, typename PortsTuple >
-static inline void fgt_multioutput_node_with_body( void* codeptr, string_resource_index t, void *g, void *input_port, PortsTuple &ports, void *body ) {
+inline void fgt_multioutput_node_with_body( void* codeptr, string_resource_index t, void *g, void *input_port, PortsTuple &ports, void *body ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, input_port, FLOW_NODE, g, FLOW_GRAPH, t );
     fgt_internal_create_input_port( input_port, input_port, FLOW_INPUT_PORT_0 );
     fgt_internal_output_helper<PortsTuple, N>::register_port( codeptr, input_port, ports );
@@ -207,13 +208,13 @@ static inline void fgt_multioutput_node_with_body( void* codeptr, string_resourc
 }
 
 template< int N, typename PortsTuple >
-static inline void fgt_multiinput_node( void* codeptr, string_resource_index t, void *g, PortsTuple &ports, void *output_port) {
+inline void fgt_multiinput_node( void* codeptr, string_resource_index t, void *g, PortsTuple &ports, void *output_port) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, output_port, FLOW_NODE, g, FLOW_GRAPH, t );
     fgt_internal_create_output_port( codeptr, output_port, output_port, FLOW_OUTPUT_PORT_0 );
     fgt_internal_input_helper<PortsTuple, N>::register_port( output_port, ports );
 }
 
-static inline void fgt_multiinput_multioutput_node( void* codeptr, string_resource_index t, void *n, void *g ) {
+inline void fgt_multiinput_multioutput_node( void* codeptr, string_resource_index t, void *n, void *g ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, n, FLOW_NODE, g, FLOW_GRAPH, t );
     suppress_unused_warning( codeptr );
 #if __TBB_FLOW_TRACE_CODEPTR
@@ -223,74 +224,74 @@ static inline void fgt_multiinput_multioutput_node( void* codeptr, string_resour
 #endif
 }
 
-static inline void fgt_node( void* codeptr, string_resource_index t, void *g, void *output_port ) {
+inline void fgt_node( void* codeptr, string_resource_index t, void *g, void *output_port ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, output_port, FLOW_NODE, g, FLOW_GRAPH, t );
     fgt_internal_create_output_port( codeptr, output_port, output_port, FLOW_OUTPUT_PORT_0 );
 }
 
-static void fgt_node_with_body( void* codeptr, string_resource_index t, void *g, void *output_port, void *body ) {
+inline void fgt_node_with_body( void* codeptr, string_resource_index t, void *g, void *output_port, void *body ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, output_port, FLOW_NODE, g, FLOW_GRAPH, t );
     fgt_internal_create_output_port(codeptr, output_port, output_port, FLOW_OUTPUT_PORT_0 );
     fgt_body( output_port, body );
 }
 
-static inline void fgt_node( void* codeptr, string_resource_index t, void *g, void *input_port, void *output_port ) {
+inline void fgt_node( void* codeptr, string_resource_index t, void *g, void *input_port, void *output_port ) {
     fgt_node( codeptr, t, g, output_port );
     fgt_internal_create_input_port( output_port, input_port, FLOW_INPUT_PORT_0 );
 }
 
-static inline void  fgt_node_with_body( void* codeptr, string_resource_index t, void *g, void *input_port, void *output_port, void *body ) {
+inline void  fgt_node_with_body( void* codeptr, string_resource_index t, void *g, void *input_port, void *output_port, void *body ) {
     fgt_node_with_body( codeptr, t, g, output_port, body );
     fgt_internal_create_input_port( output_port, input_port, FLOW_INPUT_PORT_0 );
 }
 
 
-static inline void  fgt_node( void* codeptr, string_resource_index t, void *g, void *input_port, void *decrement_port, void *output_port ) {
+inline void  fgt_node( void* codeptr, string_resource_index t, void *g, void *input_port, void *decrement_port, void *output_port ) {
     fgt_node( codeptr, t, g, input_port, output_port );
     fgt_internal_create_input_port( output_port, decrement_port, FLOW_INPUT_PORT_1 );
 }
 
-static inline void fgt_make_edge( void *output_port, void *input_port ) {
+inline void fgt_make_edge( void *output_port, void *input_port ) {
     itt_relation_add( d1::ITT_DOMAIN_FLOW, output_port, FLOW_OUTPUT_PORT, __itt_relation_is_predecessor_to, input_port, FLOW_INPUT_PORT);
 }
 
-static inline void fgt_remove_edge( void *output_port, void *input_port ) {
+inline void fgt_remove_edge( void *output_port, void *input_port ) {
     itt_relation_add( d1::ITT_DOMAIN_FLOW, output_port, FLOW_OUTPUT_PORT, __itt_relation_is_sibling_of, input_port, FLOW_INPUT_PORT);
 }
 
-static inline void fgt_graph( void *g ) {
+inline void fgt_graph( void *g ) {
     itt_make_task_group( d1::ITT_DOMAIN_FLOW, g, FLOW_GRAPH, nullptr, FLOW_NULL, FLOW_GRAPH );
 }
 
-static inline void fgt_begin_body( void *body ) {
+inline void fgt_begin_body( void *body ) {
     itt_task_begin( d1::ITT_DOMAIN_FLOW, body, FLOW_BODY, nullptr, FLOW_NULL, FLOW_BODY );
 }
 
-static inline void fgt_end_body( void * ) {
+inline void fgt_end_body( void * ) {
     itt_task_end( d1::ITT_DOMAIN_FLOW );
 }
 
-static inline void fgt_async_try_put_begin( void *node, void *port ) {
+inline void fgt_async_try_put_begin( void *node, void *port ) {
     itt_task_begin( d1::ITT_DOMAIN_FLOW, port, FLOW_OUTPUT_PORT, node, FLOW_NODE, FLOW_OUTPUT_PORT );
 }
 
-static inline void fgt_async_try_put_end( void *, void * ) {
+inline void fgt_async_try_put_end( void *, void * ) {
     itt_task_end( d1::ITT_DOMAIN_FLOW );
 }
 
-static inline void fgt_async_reserve( void *node, void *graph ) {
+inline void fgt_async_reserve( void *node, void *graph ) {
     itt_region_begin( d1::ITT_DOMAIN_FLOW, node, FLOW_NODE, graph, FLOW_GRAPH, FLOW_NULL );
 }
 
-static inline void fgt_async_commit( void *node, void * /*graph*/) {
+inline void fgt_async_commit( void *node, void * /*graph*/) {
     itt_region_end( d1::ITT_DOMAIN_FLOW, node, FLOW_NODE );
 }
 
-static inline void fgt_reserve_wait( void *graph ) {
+inline void fgt_reserve_wait( void *graph ) {
     itt_region_begin( d1::ITT_DOMAIN_FLOW, graph, FLOW_GRAPH, nullptr, FLOW_NULL, FLOW_NULL );
 }
 
-static inline void fgt_release_wait( void *graph ) {
+inline void fgt_release_wait( void *graph ) {
     itt_region_end( d1::ITT_DOMAIN_FLOW, graph, FLOW_GRAPH );
 }
 
@@ -298,49 +299,49 @@ static inline void fgt_release_wait( void *graph ) {
 
 #define CODEPTR() nullptr
 
-static inline void fgt_alias_port(void * /*node*/, void * /*p*/, bool /*visible*/ ) { }
+inline void fgt_alias_port(void * /*node*/, void * /*p*/, bool /*visible*/ ) { }
 
-static inline void fgt_composite ( void* /*codeptr*/, void * /*node*/, void * /*graph*/ ) { }
+inline void fgt_composite ( void* /*codeptr*/, void * /*node*/, void * /*graph*/ ) { }
 
-static inline void fgt_graph( void * /*g*/ ) { }
-
-template< typename NodeType >
-static inline void fgt_multioutput_node_desc( const NodeType * /*node*/, const char * /*desc*/ ) { }
+inline void fgt_graph( void * /*g*/ ) { }
 
 template< typename NodeType >
-static inline void fgt_node_desc( const NodeType * /*node*/, const char * /*desc*/ ) { }
+inline void fgt_multioutput_node_desc( const NodeType * /*node*/, const char * /*desc*/ ) { }
 
-static inline void fgt_graph_desc( const void * /*g*/, const char * /*desc*/ ) { }
+template< typename NodeType >
+inline void fgt_node_desc( const NodeType * /*node*/, const char * /*desc*/ ) { }
 
-template< int N, typename PortsTuple >
-static inline void fgt_multioutput_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, PortsTuple & /*ports*/ ) { }
-
-template< int N, typename PortsTuple >
-static inline void fgt_multioutput_node_with_body( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, PortsTuple & /*ports*/, void * /*body*/ ) { }
+inline void fgt_graph_desc( const void * /*g*/, const char * /*desc*/ ) { }
 
 template< int N, typename PortsTuple >
-static inline void fgt_multiinput_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, PortsTuple & /*ports*/, void * /*output_port*/ ) { }
+inline void fgt_multioutput_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, PortsTuple & /*ports*/ ) { }
 
-static inline void fgt_multiinput_multioutput_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*node*/, void * /*graph*/ ) { }
+template< int N, typename PortsTuple >
+inline void fgt_multioutput_node_with_body( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, PortsTuple & /*ports*/, void * /*body*/ ) { }
 
-static inline void fgt_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, void * /*output_port*/ ) { }
-static inline void  fgt_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, void * /*decrement_port*/, void * /*output_port*/ ) { }
+template< int N, typename PortsTuple >
+inline void fgt_multiinput_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, PortsTuple & /*ports*/, void * /*output_port*/ ) { }
 
-static inline void fgt_node_with_body( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*output_port*/, void * /*body*/ ) { }
-static inline void fgt_node_with_body( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, void * /*output_port*/, void * /*body*/ ) { }
+inline void fgt_multiinput_multioutput_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*node*/, void * /*graph*/ ) { }
 
-static inline void fgt_make_edge( void * /*output_port*/, void * /*input_port*/ ) { }
-static inline void fgt_remove_edge( void * /*output_port*/, void * /*input_port*/ ) { }
+inline void fgt_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, void * /*output_port*/ ) { }
+inline void  fgt_node( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, void * /*decrement_port*/, void * /*output_port*/ ) { }
 
-static inline void fgt_begin_body( void * /*body*/ ) { }
-static inline void fgt_end_body( void *  /*body*/) { }
+inline void fgt_node_with_body( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*output_port*/, void * /*body*/ ) { }
+inline void fgt_node_with_body( void* /*codeptr*/, string_resource_index /*t*/, void * /*g*/, void * /*input_port*/, void * /*output_port*/, void * /*body*/ ) { }
 
-static inline void fgt_async_try_put_begin( void * /*node*/, void * /*port*/ ) { }
-static inline void fgt_async_try_put_end( void * /*node*/ , void * /*port*/ ) { }
-static inline void fgt_async_reserve( void * /*node*/, void * /*graph*/ ) { }
-static inline void fgt_async_commit( void * /*node*/, void * /*graph*/ ) { }
-static inline void fgt_reserve_wait( void * /*graph*/ ) { }
-static inline void fgt_release_wait( void * /*graph*/ ) { }
+inline void fgt_make_edge( void * /*output_port*/, void * /*input_port*/ ) { }
+inline void fgt_remove_edge( void * /*output_port*/, void * /*input_port*/ ) { }
+
+inline void fgt_begin_body( void * /*body*/ ) { }
+inline void fgt_end_body( void *  /*body*/) { }
+
+inline void fgt_async_try_put_begin( void * /*node*/, void * /*port*/ ) { }
+inline void fgt_async_try_put_end( void * /*node*/ , void * /*port*/ ) { }
+inline void fgt_async_reserve( void * /*node*/, void * /*graph*/ ) { }
+inline void fgt_async_commit( void * /*node*/, void * /*graph*/ ) { }
+inline void fgt_reserve_wait( void * /*graph*/ ) { }
+inline void fgt_release_wait( void * /*graph*/ ) { }
 
 template< typename NodeType >
 void fgt_multiinput_multioutput_node_desc( const NodeType * /*node*/, const char * /*desc*/ ) { }

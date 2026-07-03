@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,6 +21,7 @@
 #include "oneapi/tbb/detail/_exception.h"
 #include "oneapi/tbb/detail/_machine.h"
 
+#include "oneapi/tbb/global_control.h"
 #include "oneapi/tbb/version.h"
 
 #include "misc.h"
@@ -150,6 +152,19 @@ void detect_cpu_features(cpu_features_type& cpu_features) {
     }
 #endif
 }
+
+//------------------------------------------------------------------------
+// custom assertion handler
+//------------------------------------------------------------------------
+#if __TBB_BUILD
+assertion_handler_type __TBB_EXPORTED_FUNC
+set_assertion_handler(assertion_handler_type new_handler) noexcept {
+    return assertion_handler::set(new_handler);
+}
+assertion_handler_type __TBB_EXPORTED_FUNC get_assertion_handler() noexcept {
+    return assertion_handler::get();
+}
+#endif
 
 } // namespace r1
 } // namespace detail

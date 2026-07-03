@@ -1,4 +1,5 @@
 # Copyright (c) 2020-2024 Intel Corporation
+# Copyright (c) 2025 UXL Foundation Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,12 +28,14 @@ endif()
 add_library(TBB::tbbmalloc ALIAS tbbmalloc)
 
 target_compile_definitions(tbbmalloc
-                           PUBLIC
-                           $<$<CONFIG:DEBUG>:TBB_USE_DEBUG>
-                           PRIVATE
-                           __TBBMALLOC_BUILD
-                           $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_DYNAMIC_LOAD_ENABLED=0>
-                           $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_SOURCE_DIRECTLY_INCLUDED=1>)
+    PUBLIC
+    $<$<CONFIG:DEBUG>:TBB_USE_DEBUG>
+    PRIVATE
+    # Disable implicit assertions in C++ headers to avoid dependency on libstdc++
+    $<$<CONFIG:DEBUG>:_GLIBCXX_NO_ASSERTIONS>
+    __TBBMALLOC_BUILD
+    $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_DYNAMIC_LOAD_ENABLED=0>
+    $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_SOURCE_DIRECTLY_INCLUDED=1>)
 
 if (NOT ("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "(armv7-a|aarch64|mips|arm64|riscv)" OR
          "${CMAKE_OSX_ARCHITECTURES}" MATCHES "arm64" OR

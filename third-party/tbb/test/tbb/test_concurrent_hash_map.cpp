@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -40,6 +41,7 @@
 #include <functional>
 #include <scoped_allocator>
 #include <mutex>
+#include <unordered_map>
 
 //! \file test_concurrent_hash_map.cpp
 //! \brief Test for [containers.concurrent_hash_map containers.tbb_hash_compare] specification
@@ -471,15 +473,15 @@ void TestInternalFastFind() {
 
 struct default_container_traits {
     template <typename container_type, typename iterator_type>
-    static container_type& construct_container(typename std::aligned_storage<sizeof(container_type)>::type& storage, iterator_type begin, iterator_type end){
-        container_type* ptr = reinterpret_cast<container_type*>(&storage);
+    static container_type& construct_container(utils::UninitializedStorage<container_type>& storage, iterator_type begin, iterator_type end){
+        container_type* ptr = &storage;
         new (ptr) container_type(begin, end);
         return *ptr;
     }
 
     template <typename container_type, typename iterator_type, typename allocator_type>
-    static container_type& construct_container(typename std::aligned_storage<sizeof(container_type)>::type& storage, iterator_type begin, iterator_type end, allocator_type const& a){
-        container_type* ptr = reinterpret_cast<container_type*>(&storage);
+    static container_type& construct_container(utils::UninitializedStorage<container_type>& storage, iterator_type begin, iterator_type end, allocator_type const& a){
+        container_type* ptr = &storage;
         new (ptr) container_type(begin, end, a);
         return *ptr;
     }
@@ -899,3 +901,65 @@ TEST_CASE("container_range concept for tbb::concurrent_hash_map ranges") {
 }
 
 #endif // __TBB_CPP20_CONCEPTS_PRESENT
+
+template <typename ChmapType, typename UnorderedMultimapType>
+void check_for_duplicated_keys(const ChmapType& chmap, const UnorderedMultimapType& init_multimap)
+{
+    using unordered_map_type = std::unordered_map<typename ChmapType::key_type, typename ChmapType::mapped_type>;
+    unordered_map_type unique_keys(init_multimap.begin(), init_multimap.end());
+
+    CHECK_MESSAGE(unique_keys.size() != init_multimap.size(), "Incorrect test setup");
+    CHECK_MESSAGE(chmap.size() == unique_keys.size(), "Incorrect number of keys in the hash map");
+    for (auto& pair : unique_keys) {
+        typename ChmapType::const_accessor acc;
+        bool res = chmap.find(acc, pair.first);
+        CHECK_MESSAGE(res, "Key from unique set is not found");
+        CHECK_MESSAGE(acc->first == pair.first, "Incorrect key found");
+        
+        auto possible_values_range = init_multimap.equal_range(pair.first);
+
+        auto equal_value_pred = [&acc](const typename UnorderedMultimapType::value_type& value) {
+            return acc->second == value.second;
+        };
+        CHECK_MESSAGE(1 == std::count_if(possible_values_range.first, possible_values_range.second, equal_value_pred),
+                      "Incorrect mapped value for unique key");
+    }
+}
+
+//! \brief \ref regression
+TEST_CASE("test key duplications in constructors accepting the half-open interval") {
+    using value_type = std::pair<const int, int>;
+    using hash_map_type = tbb::concurrent_hash_map<int, int>;
+
+    // init_list should contain duplicated keys
+    auto init_list = { value_type{0, 0}, value_type{1, 1}, value_type{2, 2},
+                       value_type{0, 100}, value_type{1, 100}, value_type{2, 200},
+                       value_type{3, 3},
+                       value_type{0, 200} };
+
+    std::unordered_multimap<int, int> init_container(init_list);
+
+    {
+        hash_map_type chmap(init_container.begin(), init_container.end());
+        check_for_duplicated_keys(chmap, init_container);
+    }
+    {
+        hash_map_type::hash_compare_type hash_compare;
+        hash_map_type chmap(init_container.begin(), init_container.end(), hash_compare);
+        check_for_duplicated_keys(chmap, init_container);
+    }
+    {
+        hash_map_type chmap(init_list);
+        check_for_duplicated_keys(chmap, init_container);
+    }
+    {
+        hash_map_type::allocator_type alloc;
+        hash_map_type chmap(init_list, alloc);
+        check_for_duplicated_keys(chmap, init_container);
+    }
+    {
+        hash_map_type chmap{ {0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4} };
+        chmap = init_list;
+        check_for_duplicated_keys(chmap, init_container);
+    }
+}

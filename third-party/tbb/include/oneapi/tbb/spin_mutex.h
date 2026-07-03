@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -68,14 +69,18 @@ public:
     void lock() {
         atomic_backoff backoff;
         call_itt_notify(prepare, this);
-        while (m_flag.exchange(true)) backoff.pause();
+
+        while (m_flag.load(std::memory_order_relaxed) || m_flag.exchange(true)) {
+            backoff.pause();
+        }
         call_itt_notify(acquired, this);
     }
 
     //! Try acquiring lock (non-blocking)
     /** Return true if lock acquired; false otherwise. */
     bool try_lock() {
-        bool result = !m_flag.exchange(true);
+        bool result = !m_flag.load(std::memory_order_relaxed) && !m_flag.exchange(true);
+
         if (result) {
             call_itt_notify(acquired, this);
         }
@@ -131,4 +136,3 @@ inline namespace v1 {
 }
 
 #endif /* __TBB_spin_mutex_H */
-

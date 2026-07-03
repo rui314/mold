@@ -5,7 +5,7 @@ two reasons:
 
 1. The document describes a feature or extension that has been deprecated and 
 then removed.
-2. The document describes a proposed feature or extension that have
+2. The document describes a proposed feature or extension that has
 not (ultimately) become a fully supported feature. 
 
 Design documents that appear in the `rfcs/archived` folder should describe a 

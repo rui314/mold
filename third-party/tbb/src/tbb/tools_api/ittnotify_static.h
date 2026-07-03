@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -92,7 +93,7 @@ ITT_STUB(ITTAPI, __itt_histogram*, histogram_createW, (const __itt_domain* domai
 ITT_STUB(ITTAPI, __itt_histogram*, histogram_create, (const __itt_domain* domain, const char* name, __itt_metadata_type x_type, __itt_metadata_type y_type), (ITT_FORMAT domain, name, x_type, y_type), histogram_create, __itt_group_structure, "%p, \"%s\", %d, %d")
 #endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
 
-  #if ITT_PLATFORM==ITT_PLATFORM_WIN
+#if ITT_PLATFORM==ITT_PLATFORM_WIN
 ITT_STUB(ITTAPI, __itt_counter, counter_createA_v3, (const __itt_domain* domain, const char    *name, __itt_metadata_type type), (ITT_FORMAT domain, name, type), counter_createA_v3, __itt_group_counter, "%p, \"%s\", %d")
 ITT_STUB(ITTAPI, __itt_counter, counter_createW_v3, (const __itt_domain* domain, const wchar_t *name, __itt_metadata_type type), (ITT_FORMAT domain, name, type), counter_createW_v3, __itt_group_counter, "%p, \"%s\", %d")
 #else  /* ITT_PLATFORM==ITT_PLATFORM_WIN */
@@ -100,7 +101,7 @@ ITT_STUB(ITTAPI, __itt_counter, counter_create_v3,  (const __itt_domain* domain,
 #endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
 
 ITT_STUBV(ITTAPI, void, bind_context_metadata_to_counter, (__itt_counter counter, size_t length, __itt_context_metadata* metadata), (ITT_FORMAT counter, length, metadata), bind_context_metadata_to_counter, __itt_group_structure, "%p, %lu, %p")
-  
+
 #endif /* __ITT_INTERNAL_BODY */
 
 ITT_STUBV(ITTAPI, void, enable_attach, (void), (ITT_NO_PARAMS), enable_attach, __itt_group_all, "no args")
@@ -216,6 +217,12 @@ ITT_STUBV(ITTAPI, void, counter_dec_v3,       (const __itt_domain *domain, __itt
 ITT_STUBV(ITTAPI, void, counter_dec_delta_v3, (const __itt_domain *domain, __itt_string_handle *name, unsigned long long value), (ITT_FORMAT domain, name, value), counter_dec_delta_v3, __itt_group_structure, "%p, %p, %lu")
 
 ITT_STUBV(ITTAPI, void, marker, (const __itt_domain *domain, __itt_id id, __itt_string_handle *name, __itt_scope scope), (ITT_FORMAT domain, id, name, scope), marker, __itt_group_structure, "%p, %lu, %p, %d")
+
+ITT_STUBV(ITTAPI, void, formatted_metadata_add, (const __itt_domain *domain, __itt_string_handle *format, ...), \
+  (ITT_FORMAT domain, format), formatted_metadata_add, __itt_group_structure, "%p, %p")
+
+ITT_STUBV(ITTAPI, void, formatted_metadata_add_overlapped, (const __itt_domain *domain, __itt_id id, __itt_string_handle *format, ...), \
+  (ITT_FORMAT domain, id, format), formatted_metadata_add_overlapped, __itt_group_structure, "%p, %lu, %p")
 
 ITT_STUBV(ITTAPI, void, metadata_add,      (const __itt_domain *domain, __itt_id id, __itt_string_handle *key, __itt_metadata_type type, size_t count, void *data), (ITT_FORMAT domain, id, key, type, count, data), metadata_add, __itt_group_structure, "%p, %lu, %p, %d, %lu, %p")
 #if ITT_PLATFORM==ITT_PLATFORM_WIN
@@ -371,8 +378,8 @@ ITT_STUBV(ITTAPI, void, module_load, (void *start_addr, void *end_addr, const ch
 #endif /* ITT_PLATFORM==ITT_PLATFORM_WIN */
 ITT_STUBV(ITTAPI, void, module_unload, (void *start_addr), (ITT_FORMAT start_addr), module_unload, __itt_group_module, "%p")
 
-ITT_STUBV(ITTAPI, void, histogram_submit, (__itt_histogram* histogram, size_t length, void* x_data, void* y_data), (ITT_FORMAT histogram, length, x_data, y_data), histogram_submit, __itt_group_structure, "%p, %lu, %p, %p")
+ITT_STUBV(ITTAPI, void, histogram_submit, (__itt_histogram* hist, size_t length, void* x_data, void* y_data), (ITT_FORMAT hist, length, x_data, y_data), histogram_submit, __itt_group_structure, "%p, %lu, %p, %p")
 
 ITT_STUBV(ITTAPI, void, counter_set_value_v3, (__itt_counter counter, void *value_ptr), (ITT_FORMAT counter, value_ptr), counter_set_value_v3, __itt_group_counter, "%p, %p")
-  
+
 #endif /* __ITT_INTERNAL_INIT */

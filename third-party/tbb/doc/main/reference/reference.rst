@@ -3,23 +3,26 @@
 |short_name| API Reference
 ==========================
 
-For oneTBB API Reference, refer to `oneAPI Specification <https://github.com/uxlfoundation/oneAPI-spec>`_. The current supported
-version of oneAPI Specification is 1.0.
+.. only:: oss
+
+   For oneTBB API Reference, refer to the :doc:`oneTBB Specification </main/specification/source/index>`.
+
+.. only:: not oss
+
+   For oneTBB API Reference, refer to the `oneTBB Specification <https://uxlfoundation.github.io/oneTBB/main/specification/source/index.html>`_.
 
 Specification extensions
 ************************
 
-|full_name| implements the `oneTBB specification <https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/nested-index>`_.
-This document provides additional details or restrictions where necessary.
+|full_name| implements the oneTBB specification. This document provides additional details or restrictions beyond the specification.
 It also describes features that are not included in the oneTBB specification.
 
 .. toctree::
     :titlesonly:
 
-    parallel_for_each_semantics
-    parallel_sort_ranges_extension
+    feature_test_macros
     scalable_memory_pools/malloc_replacement_log
-    rvalue_reduce
+    assertion_handler
 
 Preview features
 ****************
@@ -52,4 +55,5 @@ The key properties of a preview feature are:
     custom_mutex_chmap
     try_put_and_wait
     parallel_phase_for_task_arena
-    blocked_nd_range_ctad
+    fg_resource_limiting
+    core_type_selector

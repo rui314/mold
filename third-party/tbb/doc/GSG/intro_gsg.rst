@@ -26,4 +26,4 @@ oneTBB supports nested parallelism and load balancing. It means that you can use
 
 oneTBB is used in different areas, such as scientific simulations, gaming, data analysis, etc. 
 
-It is available as a stand-alone product and as part of the |base_tk|.
+It is available as a stand-alone product and as part of the |toolkit|.

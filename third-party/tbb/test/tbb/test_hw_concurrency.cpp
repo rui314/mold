@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -94,7 +95,14 @@ TEST_CASE("Check absence of scheduler initialization") {
 
     if (maxProcs >= 2) {
         int availableProcs = maxProcs / 2;
-        REQUIRE_MESSAGE(utils::limit_number_of_threads(availableProcs) == availableProcs, "limit_number_of_threads has not set the requested limitation");
+        REQUIRE_MESSAGE(
+            utils::limit_number_of_threads(availableProcs) == availableProcs,
+                        "limit_number_of_threads has not set the requested limitation");
+#if __TBB_USE_CGROUPS
+        int cgroup_num_cpus = 0;
+        if (utils::cgroup_info::is_cpu_constrained(cgroup_num_cpus))
+            availableProcs = std::min(availableProcs, cgroup_num_cpus);
+#endif
         REQUIRE(tbb::this_task_arena::max_concurrency() == availableProcs);
     }
 }

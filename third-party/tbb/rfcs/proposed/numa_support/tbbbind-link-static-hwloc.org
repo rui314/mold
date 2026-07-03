@@ -51,7 +51,7 @@ developer's code, this is achieved either by:
    release.
 
 However, the requirement to fulfill one of the above steps for the NUMA API to
-start paying off may be considered as an incovenience and, what is more
+start paying off may be considered as an inconvenience and, what is more
 important, it is not always obvious that one of these steps is needed.
 Especially, due to silent behavior in case HWLOC library cannot be found in the
 environment.

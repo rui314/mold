@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -53,6 +54,12 @@
 #define __TBB_CPP14_PRESENT (__TBB_LANG >= 201402L)
 #define __TBB_CPP17_PRESENT (__TBB_LANG >= 201703L)
 #define __TBB_CPP20_PRESENT (__TBB_LANG >= 202002L)
+
+#if __TBB_CPP17_PRESENT
+    #define __TBB_GLOBAL_VAR inline
+#else
+    #define __TBB_GLOBAL_VAR static
+#endif
 
 #if __INTEL_COMPILER || _MSC_VER
     #define __TBB_NOINLINE(decl) __declspec(noinline) decl
@@ -337,7 +344,7 @@
 
 #define __TBB_TSX_INTRINSICS_PRESENT (__RTM__ || __INTEL_COMPILER || (_MSC_VER>=1700 && (__TBB_x86_64 || __TBB_x86_32)))
 
-#define __TBB_WAITPKG_INTRINSICS_PRESENT ((__INTEL_COMPILER >= 1900 || (__TBB_GCC_VERSION >= 110000 && __TBB_GNU_ASM_VERSION >= 2032) || __TBB_CLANG_VERSION >= 120000) \
+#define __TBB_WAITPKG_INTRINSICS_PRESENT ((__INTEL_COMPILER >= 1900 || (__TBB_GCC_VERSION >= 110000 && (__APPLE__ || __TBB_GNU_ASM_VERSION >= 2032)) || __TBB_CLANG_VERSION >= 120000) \
                                          && (_WIN32 || _WIN64 || __unix__ || __APPLE__) && (__TBB_x86_32 || __TBB_x86_64) && !__ANDROID__)
 
 /** Internal TBB features & modes **/
@@ -378,12 +385,8 @@
     #define __TBB_ARENA_OBSERVER __TBB_SCHEDULER_OBSERVER
 #endif /* __TBB_ARENA_OBSERVER */
 
-#ifndef __TBB_ARENA_BINDING
-    #define __TBB_ARENA_BINDING 1
-#endif
-
 // Thread pinning is not available on macOS*
-#define __TBB_CPUBIND_PRESENT (__TBB_ARENA_BINDING && !__APPLE__)
+#define __TBB_CPUBIND_PRESENT (!__APPLE__)
 
 #ifndef __TBB_ENQUEUE_ENFORCED_CONCURRENCY
     #define __TBB_ENQUEUE_ENFORCED_CONCURRENCY 1
@@ -513,11 +516,12 @@
     #include <android/api-level.h>
 #endif
 
+#ifndef __TBB_CRITICAL_TASKS
+#define __TBB_CRITICAL_TASKS 1
+#endif
+
 #define __TBB_PREVIEW_MESSAGE_BASED_KEY_MATCHING (TBB_PREVIEW_FLOW_GRAPH_FEATURES)
 
-#ifndef __TBB_PREVIEW_CRITICAL_TASKS
-#define __TBB_PREVIEW_CRITICAL_TASKS            1
-#endif
 
 #ifndef __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
 #define __TBB_PREVIEW_FLOW_GRAPH_NODE_SET       (TBB_PREVIEW_FLOW_GRAPH_FEATURES)
@@ -526,6 +530,11 @@
 #ifndef __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
 #define __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT (TBB_PREVIEW_FLOW_GRAPH_FEATURES \
                                                    || TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT)
+#endif
+
+#ifndef __TBB_PREVIEW_FLOW_GRAPH_RESOURCE_LIMITING
+#define __TBB_PREVIEW_FLOW_GRAPH_RESOURCE_LIMITING (TBB_PREVIEW_FLOW_GRAPH_FEATURES \
+                                                        || TBB_PREVIEW_FLOW_GRAPH_RESOURCE_LIMITING)
 #endif
 
 #if TBB_PREVIEW_CONCURRENT_HASH_MAP_EXTENSIONS
@@ -540,8 +549,33 @@
 #define __TBB_PREVIEW_PARALLEL_PHASE 1
 #endif
 
-#if TBB_PREVIEW_BLOCKED_ND_RANGE_DEDUCTION_GUIDES
-#define __TBB_PREVIEW_BLOCKED_ND_RANGE_DEDUCTION_GUIDES 1
+#if TBB_PREVIEW_TASK_ARENA_CORE_TYPE_SELECTOR || __TBB_BUILD
+#define __TBB_PREVIEW_TASK_ARENA_CORE_TYPE_SELECTOR 1
+#endif
+
+#if !__TBB_DISABLE_SPEC_EXTENSIONS
+#define TBB_EXT_CUSTOM_ASSERTION_HANDLER 202510
+#endif
+
+// Feature-test macros
+#if __TBB_PREVIEW_FLOW_GRAPH_RESOURCE_LIMITING
+#define TBB_HAS_FLOW_GRAPH_RESOURCE_LIMITING 202603
+#endif
+
+#if __TBB_PREVIEW_PARALLEL_PHASE
+#define TBB_HAS_PARALLEL_PHASE 202603
+#endif
+
+#if __TBB_PREVIEW_TASK_ARENA_CORE_TYPE_SELECTOR
+#define TBB_HAS_TASK_ARENA_CORE_TYPE_SELECTOR 202603
+#endif
+
+#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
+#define TBB_HAS_TASK_GROUP_DEPENDENCIES 202603
+#endif
+
+#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS
+#define TBB_HAS_TASK_GROUP_WAIT_FOR_SINGLE_TASK 202603
 #endif
 
 #endif // __TBB_detail__config_H

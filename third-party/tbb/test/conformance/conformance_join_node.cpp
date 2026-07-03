@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2020-2023 Intel Corporation
+    Copyright (c) 2020-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -315,3 +316,86 @@ TEST_CASE("key_matching join_node invoke semantics") {
     test_invoke_basic</*K = */const std::size_t&>(&test_invoke::SmartID<std::size_t>::get_id_ref, &test_invoke::SmartID<std::size_t>::get_id_ref);
 }
 #endif // __TBB_CPP17_INVOKE_PRESENT
+
+template <std::size_t N, typename JoinPolicy, typename... Args>
+struct join_node_type_generator_impl {
+    using type = typename join_node_type_generator_impl<N - 1, JoinPolicy, Args..., int>::type;
+};
+
+template <typename JoinPolicy, typename... Args>
+struct join_node_type_generator_impl<0, JoinPolicy, Args...> {
+    using type = oneapi::tbb::flow::join_node<std::tuple<Args...>, JoinPolicy>;
+};
+
+template <std::size_t N, typename JoinPolicy>
+using join_node_type_generator_t = typename join_node_type_generator_impl<N, JoinPolicy>::type;
+
+template <std::size_t N, typename JoinPolicy, std::size_t Index, typename... BodyToGenerate>
+struct make_join_node_helper {
+    template <typename... Bodies>
+    static join_node_type_generator_t<N, JoinPolicy> make(oneapi::tbb::flow::graph& g, BodyToGenerate... body, Bodies... bodies) {
+        return make_join_node_helper<N, JoinPolicy, Index - 1, BodyToGenerate...>::make(g, body..., bodies..., body...);
+    }
+};
+
+template <std::size_t N, typename JoinPolicy, typename... BodyToGenerate>
+struct make_join_node_helper<N, JoinPolicy, 0, BodyToGenerate...> {
+    template <typename... Bodies>
+    static join_node_type_generator_t<N, JoinPolicy> make(oneapi::tbb::flow::graph& g, BodyToGenerate..., Bodies... bodies) {
+        return join_node_type_generator_t<N, JoinPolicy>(g, bodies...);
+    }
+};
+
+template <std::size_t N, typename JoinPolicy, typename... BodyToGenerate>
+join_node_type_generator_t<N, JoinPolicy> make_join_node(oneapi::tbb::flow::graph& g, BodyToGenerate... body) {
+    return make_join_node_helper<N, JoinPolicy, N, BodyToGenerate...>::make(g, body...);
+}
+
+template <typename JoinPolicy, std::size_t N, typename... Body>
+void test_join_node_with_n_inputs_impl(Body... body) {
+    static_assert(sizeof...(Body) <= 1, "Unexpected arguments");
+
+    using namespace oneapi::tbb::flow;
+    using join_node_type = join_node_type_generator_t<N, JoinPolicy>;
+    graph g;
+    int message = 42;
+
+    broadcast_node<int> submitter(g);
+
+    // A set of buffers between each input port for reserving policy
+    std::vector<buffer_node<int>> buffers(N, buffer_node<int>{g});
+
+    join_node_type join = make_join_node<N, JoinPolicy>(g, body...);
+    
+    using output_tuple = typename join_node_type::output_type;
+
+    std::size_t body_counter = 0;
+    function_node<output_tuple> function(g, serial, [&](const output_tuple& tuple) {
+        assert_all_items_equal_to(tuple, message);
+        ++body_counter;
+    });
+
+    for (auto& buffer : buffers) {
+        make_edge(submitter, buffer);
+    }
+    edge_maker<N>::make(buffers, join);
+    oneapi::tbb::flow::make_edge(join, function);
+    
+    submitter.try_put(message);
+    g.wait_for_all();
+
+    CHECK_MESSAGE(body_counter == 1, "Unexpected number of body calls");
+}
+
+template <std::size_t N>
+void test_join_node_with_n_inputs() {
+    test_join_node_with_n_inputs_impl<oneapi::tbb::flow::queueing, N>();
+    test_join_node_with_n_inputs_impl<oneapi::tbb::flow::reserving, N>();
+    test_join_node_with_n_inputs_impl<oneapi::tbb::flow::key_matching<int>, N>([](int) { return 0; });
+    test_join_node_with_n_inputs_impl<oneapi::tbb::flow::tag_matching, N>([](oneapi::tbb::flow::tag_value) { return 0; });
+}
+
+//! \brief \ref interface \ref requirement
+TEST_CASE("join_node with large number of input ports") {
+    test_join_node_with_n_inputs<50>();
+}

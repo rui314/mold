@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -294,8 +295,8 @@ concurrent_queue( It, It, Alloc = Alloc() )
 class concurrent_monitor;
 
 // The concurrent monitor tags for concurrent_bounded_queue.
-static constexpr std::size_t cbq_slots_avail_tag = 0;
-static constexpr std::size_t cbq_items_avail_tag = 1;
+__TBB_GLOBAL_VAR constexpr std::size_t cbq_slots_avail_tag = 0;
+__TBB_GLOBAL_VAR constexpr std::size_t cbq_items_avail_tag = 1;
 } // namespace d2
 
 

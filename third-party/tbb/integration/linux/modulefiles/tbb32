@@ -1,6 +1,6 @@
 #%Module1.0###################################################################
 #
-# Copyright (c) 2020-2024 Intel Corporation
+# Copyright (c) 2020-2025 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -62,7 +62,8 @@ set tbb_target_arch "ia32"
 
 setenv TBBROOT "$tbbroot"
 
-prepend-path CPATH "$tbbroot/include32:$tbbroot/include"
+prepend-path C_INCLUDE_PATH "$tbbroot/include32:$tbbroot/include"
+prepend-path CPLUS_INCLUDE_PATH "$tbbroot/include32:$tbbroot/include"
 prepend-path LIBRARY_PATH "$tbbroot/lib32"
 prepend-path LD_LIBRARY_PATH "$tbbroot/lib32"
 prepend-path CMAKE_PREFIX_PATH "$tbbroot"

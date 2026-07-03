@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -113,7 +114,7 @@ int xerr_handler(Display *dpy_, XErrorEvent *error) {
         fprintf(stderr, "Warning: Can't attach shared memory to display: %s (%d)\n", err, x_error);
         fprintf(
             stderr,
-            "If you are seeing a black output window, сheck if you have installed Xext library and rebuild project");
+            "If you are seeing a black output window, check if you have installed Xext library and rebuild project");
         already_advised_about_NOSHMEM_workarounds = true;
     }
 #else

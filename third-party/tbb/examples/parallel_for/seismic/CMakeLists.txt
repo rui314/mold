@@ -26,6 +26,9 @@ add_subdirectory(../../common/gui gui)
 
 target_link_libraries(seismic PUBLIC TBB::tbb Threads::Threads UI_LIB_seismic)
 target_compile_options(seismic PRIVATE ${TBB_CXX_STD_FLAG})
+if (MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL IntelLLVM)
+    target_compile_options(seismic PRIVATE /EHsc)
+endif()
 
 if (EXAMPLES_UI_MODE STREQUAL "con")
     target_compile_definitions(seismic PRIVATE _CONSOLE)

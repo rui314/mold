@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -55,6 +55,7 @@
 #include "util.hpp"
 #include "tachyon_video.hpp"
 #include "common/utility/utility.hpp"
+#include "common/utility/measurements.hpp"
 
 #if WIN8UI_EXAMPLE
 #include "oneapi/tbb.h"
@@ -74,9 +75,11 @@ bool global_usegraphics;
 
 bool silent_mode = false; /* silent mode */
 
+utility::measurements *global_measurements = nullptr;
 class tachyon_video *video = nullptr;
 
 typedef struct {
+    int repeats; /* how many times to repeat rendering for statistics */
     int foundfilename; /* was a model file name found in the args? */
     char filename[1024]; /* model file to render */
     int useoutfilename; /* command line override of output filename */
@@ -92,6 +95,7 @@ typedef struct {
 
 void initoptions(argoptions *opt) {
     memset(opt, 0, sizeof(argoptions));
+    opt->repeats = 1;
     opt->foundfilename = -1;
     opt->useoutfilename = -1;
     opt->verbosemode = -1;
@@ -289,6 +293,9 @@ argoptions ParseCommandLine(int argc, const char *argv[]) {
             .positional_arg(opt.boundthresh, "boundthresh", "bounding threshold value")
             .arg(nodisp, "no-display-updating", "disable run-time display updating")
             .arg(nobounding, "no-bounding", "disable bounding technique")
+            .arg(opt.repeats,
+                 "n-of-repeats",
+                 "number of rendering repeats to collect reliable performance statistics")
             .arg(silent_mode, "silent", "no output except elapsed time"));
 
     strcpy(opt.filename, filename.c_str());
@@ -345,9 +352,21 @@ int main(int argc, char *argv[]) {
     global_window_title = window_title_string(argc, (const char **)argv);
 
     argoptions opt = ParseCommandLine(argc, (const char **)argv);
-
-    if (CreateScene(opt) != 0)
+    if (opt.repeats > 1) {
+        fprintf(stdout, "Repeating ray tracing %d times ...\n", opt.repeats);
+    }
+    else if (opt.repeats < 1) {
+        fprintf(stderr, "Incorrect n-of-repeats=%d, exit.\n", opt.repeats);
         return -1;
+    }
+
+    utility::measurements measurements(opt.repeats);
+    global_measurements = &measurements;
+
+    if (CreateScene(opt) != 0) {
+        fprintf(stderr, "Failed to create scene!, exit.\n");
+        return -1;
+    }
 
     tachyon_video tachyon;
     tachyon.threaded = true;
@@ -356,12 +375,17 @@ int main(int argc, char *argv[]) {
     tachyon.title = global_window_title;
     // always using window even if(!global_usegraphics)
     global_usegraphics = tachyon.init_window(global_xwinsize, global_ywinsize);
-    if (!tachyon.running)
+    if (!tachyon.running) {
+        fprintf(stderr, "Failed to start tracing!, exit.\n");
         return -1;
+    }
 
     video = &tachyon;
     tachyon.main_loop();
 
+    if (opt.repeats > 1) {
+        utility::report_relative_error(measurements.computeRelError());
+    }
     utility::report_elapsed_time(timertime(mainStartTime, gettimer()));
     return 0;
 }

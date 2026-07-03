@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2017-2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -147,7 +148,7 @@ class blocked_nd_range : public blocked_nd_range_impl<Value, N> {
     using base::base;
 };
 
-#if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT && __TBB_PREVIEW_BLOCKED_ND_RANGE_DEDUCTION_GUIDES
+#if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
 // blocked_nd_range(const dim_range_type& dim0, const dim_range_type& dim1, ...)
 // while the arguments are passed as braced-init-lists
 // Works only for 2 and more arguments since the deduction from
@@ -182,7 +183,7 @@ template <typename Value, unsigned int N>
 blocked_nd_range(blocked_nd_range<Value, N>, oneapi::tbb::proportional_split)
 -> blocked_nd_range<Value, N>;
 
-#endif // __TBB_CPP17_DEDUCTION_GUIDES_PRESENT && __TBB_PREVIEW_BLOCKED_ND_RANGE_DEDUCTION_GUIDES
+#endif // __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
 
 } // namespace d1
 } // namespace detail

@@ -3,4 +3,5 @@
 System Requirements
 *******************
 
-Refer to the `oneTBB System Requirements <https://github.com/uxlfoundation/oneTBB/blob/master/SYSTEM_REQUIREMENTS.md>`_.
+|full_name| supports a broad list of hardware platforms, operating systems, and compilers. 
+For details, see `oneTBB System Requirements <https://github.com/uxlfoundation/oneTBB/blob/master/SYSTEM_REQUIREMENTS.md>`_.

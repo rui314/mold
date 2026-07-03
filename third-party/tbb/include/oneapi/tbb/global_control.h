@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -46,6 +47,14 @@ void release_impl(d1::task_scheduler_handle& handle);
 bool finalize_impl(d1::task_scheduler_handle& handle);
 TBB_EXPORT void __TBB_EXPORTED_FUNC get(d1::task_scheduler_handle&);
 TBB_EXPORT bool __TBB_EXPORTED_FUNC finalize(d1::task_scheduler_handle&, std::intptr_t mode);
+
+//! Set assertion handler and return its previous value.
+//! The handler should not return. If it eventually returns, the behavior is runtime-undefined.
+TBB_EXPORT assertion_handler_type __TBB_EXPORTED_FUNC
+set_assertion_handler(assertion_handler_type new_handler) noexcept;
+
+//! Return the current assertion handler.
+TBB_EXPORT assertion_handler_type __TBB_EXPORTED_FUNC get_assertion_handler() noexcept;
 }
 
 namespace d1 {
@@ -57,6 +66,9 @@ public:
         thread_stack_size,
         terminate_on_exception,
         scheduler_handle, // not a public parameter
+#if __TBB_PREVIEW_PARALLEL_PHASE
+        leave_policy,
+#endif
         parameter_max // insert new parameters above this point
     };
 
@@ -77,6 +89,14 @@ public:
         r1::create(*this);
     }
 
+#if __TBB_PREVIEW_PARALLEL_PHASE
+    //! Overload the constructor for enum types to avoid forcing users to cast them to size_t
+    template<typename T, typename = typename std::enable_if<std::is_enum<T>::value>::type>
+    global_control(parameter p, T value)
+        : global_control(p, static_cast<std::size_t>(value))
+    {}
+#endif
+
     ~global_control() {
         __TBB_ASSERT(my_param < parameter_max, "Invalid parameter");
 #if __TBB_WIN8UI_SUPPORT && (_WIN32_WINNT < 0x0A00)
@@ -88,7 +108,6 @@ public:
     }
 
     static std::size_t active_value(parameter p) {
-        __TBB_ASSERT(p < parameter_max, "Invalid parameter");
         return r1::global_control_active_value((int)p);
     }
 
@@ -103,9 +122,9 @@ private:
 
 //! Finalization options.
 //! Outside of the class to avoid extensive friendship.
-static constexpr std::intptr_t release_nothrowing = 0;
-static constexpr std::intptr_t finalize_nothrowing = 1;
-static constexpr std::intptr_t finalize_throwing = 2;
+__TBB_GLOBAL_VAR constexpr std::intptr_t release_nothrowing = 0;
+__TBB_GLOBAL_VAR constexpr std::intptr_t finalize_nothrowing = 1;
+__TBB_GLOBAL_VAR constexpr std::intptr_t finalize_throwing = 2;
 
 //! User side wrapper for a task scheduler lifetime control object
 class task_scheduler_handle {
@@ -194,6 +213,16 @@ using detail::d1::finalize;
 using detail::d1::task_scheduler_handle;
 using detail::r1::unsafe_wait;
 } // namespace v1
+
+namespace ext {
+inline namespace v1 {
+#if !__TBB_DISABLE_SPEC_EXTENSIONS
+using ::tbb::detail::r1::assertion_handler_type;
+using ::tbb::detail::r1::set_assertion_handler;
+using ::tbb::detail::r1::get_assertion_handler;
+#endif
+} // inline namespace v1
+} // namespace ext
 
 } // namespace tbb
 

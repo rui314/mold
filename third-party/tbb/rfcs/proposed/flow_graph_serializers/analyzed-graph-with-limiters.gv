@@ -1,0 +1,110 @@
+digraph {
+  rankdir=LR
+  ranksep=2
+
+  node [fontname="Arial"]
+  Source [label=<<b>Source</b>> style="filled" shape="cylinder" fillcolor="#666666" fontcolor="white"]
+
+  node [shape="box" peripheries=2]
+  DB [label=<<b>DB</b><br/> 2 tokens>]
+  ROOT [label=<<b>ROOT</b><br/> 1 token>]
+  GENIE [label=<<b>GENIE</b><br/> 1 token>]
+
+  {rank=same; Source; DB; ROOT; GENIE}
+
+  node [shape="box" style=filled width=2.7 peripheries=1]
+
+  propagating [
+    label=<
+      <table cellpadding="0" border="0" cellborder="0">
+         <tr><td align="LEFT" colspan="2"><b>Propagating</b></td></tr>
+         <tr><td align="LEFT">Concurrency:</td><td align="LEFT"><font color="lightblue">unlimited</font></td></tr>
+         <tr><td align="LEFT">Resources:</td><td align="LEFT"><i>(none)</i></td></tr>
+      </table>
+    >
+    fillcolor="#BF5B17"
+    fontcolor="white"
+  ]
+
+  histogramming [
+    label=<
+      <table cellpadding="0" border="0" cellborder="0">
+         <tr><td align="LEFT" colspan="2"><b>Histogramming</b></td></tr>
+         <tr><td align="LEFT">Concurrency:</td><td align="LEFT"><font color="lightblue">unlimited</font></td></tr>
+         <tr><td align="LEFT">Resources:</td><td align="LEFT">ROOT</td></tr>
+      </table>
+    >
+    fillcolor="#F02A7F"
+    fontcolor="white"
+  ]
+
+  generating [
+    label=<
+      <table cellpadding="0" border="0" cellborder="0">
+         <tr><td align="LEFT" colspan="2"><b>Generating</b></td></tr>
+         <tr><td align="LEFT">Concurrency:</td><td align="LEFT"><font color="blue">unlimited</font></td></tr>
+         <tr><td align="LEFT">Resources:</td><td align="LEFT">GENIE</td></tr>
+      </table>
+    >
+    fillcolor="#FFFD99"
+  ]
+
+  histo_generating [
+    label=<
+      <table cellpadding="0" border="0" cellborder="0">
+         <tr><td align="LEFT" colspan="2"><b>Histo-generating</b></td></tr>
+         <tr><td align="LEFT">Concurrency:</td><td align="LEFT"><font color="lightblue">unlimited</font></td></tr>
+         <tr><td align="LEFT">Resources:</td><td align="LEFT">ROOT, GENIE</td></tr>
+      </table>
+    >
+    fillcolor="#386CB0"
+    fontcolor="white"
+  ]
+
+  calA [
+    label=<
+      <table cellpadding="0" border="0" cellborder="0">
+         <tr><td align="LEFT" colspan="2"><b>Calibration[A]</b></td></tr>
+         <tr><td align="LEFT">Concurrency:</td><td align="LEFT"><font color="blue">unlimited</font></td></tr>
+         <tr><td align="LEFT">Resources:</td><td align="LEFT">DB</td></tr>
+      </table>
+    >
+    fillcolor="#7FC97F"
+  ]
+
+  calB [
+    label=<
+      <table cellpadding="0" border="0" cellborder="0">
+         <tr><td align="LEFT" colspan="2"><b>Calibration[B]</b></td></tr>
+         <tr><td align="LEFT">Concurrency:</td><td align="LEFT"><font color="blue">unlimited</font></td></tr>
+         <tr><td align="LEFT">Resources:</td><td align="LEFT">DB</td></tr>
+      </table>
+    >
+    fillcolor="#BEAED4"
+  ]
+
+  calC [
+    label=<
+      <table cellpadding="0" border="0" cellborder="0">
+         <tr><td align="LEFT" colspan="2"><b>Calibration[C]</b></td></tr>
+         <tr><td align="LEFT">Concurrency:</td><td align="LEFT"><font color="red">serial</font></td></tr>
+         <tr><td align="LEFT">Resources:</td><td align="LEFT">DB</td></tr>
+      </table>
+    >
+    fillcolor="#FDC086"
+  ]
+
+  Source -> {
+    calA
+    calB
+    calC
+    generating
+    histo_generating
+    histogramming
+    propagating
+  }
+
+  GENIE -> {generating histo_generating} -> GENIE [style="dotted" color="blue" arrowhead="empty"]
+  ROOT -> {histogramming histo_generating} -> ROOT [style="dotted" color="blue" arrowhead="empty"]
+  DB -> {calA calB calC} -> DB [style="dotted" color="blue" arrowhead="empty"]
+}

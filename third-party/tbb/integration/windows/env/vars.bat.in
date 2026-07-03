@@ -1,6 +1,6 @@
 @echo off
 REM
-REM Copyright (c) 2005-2021 Intel Corporation
+REM Copyright (c) 2005-2025 Intel Corporation
 REM
 REM Licensed under the Apache License, Version 2.0 (the "License");
 REM you may not use this file except in compliance with the License.
@@ -21,7 +21,8 @@ set "TBBROOT=@TBBROOT_REPLACEMENT@"
 set "TBB_DLL_PATH=@BINARY_PATH_REPLACEMENT@"
 
 set "INCLUDE=%TBBROOT%\include;%INCLUDE%"
-set "CPATH=%TBBROOT%\include;%CPATH%"
+set "C_INCLUDE_PATH=%TBBROOT%\include;%C_INCLUDE_PATH%"
+set "CPLUS_INCLUDE_PATH=%TBBROOT%\include;%CPLUS_INCLUDE_PATH%"
 set "LIB=@LIBRARY_PATH_REPLACEMENT@;%LIB%"
 set "PATH=@BINARY_PATH_REPLACEMENT@;%PATH%"
 set "PKG_CONFIG_PATH=@LIBRARY_PATH_REPLACEMENT@\pkgconfig;%PKG_CONFIG_PATH%"

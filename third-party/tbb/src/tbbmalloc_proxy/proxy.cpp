@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -196,7 +197,10 @@ TBBMALLOCPROXY_EXPORT void *PREFIX(calloc)(ZONE_ARG size_t num, size_t size) __T
 
 TBBMALLOCPROXY_EXPORT void PREFIX(free)(ZONE_ARG void *object) __THROW
 {
-    InitOrigPointers();
+    // InitOrigPointers() must NOT be called here,
+    // because it may cause the infinite recursion:
+    // free() -> InitOrigPointers() -> dlsym() -> free()
+    // (see issue #1907)
     __TBB_malloc_safer_free(object, (void (*)(void*))orig_free);
 }
 
@@ -293,7 +297,10 @@ TBBMALLOCPROXY_EXPORT void *__libc_valloc(size_t size) __TBB_ALIAS_ATTR_COPY(val
 // call original __libc_* to support naive replacement of free via __libc_free etc
 TBBMALLOCPROXY_EXPORT void __libc_free(void *ptr)
 {
-    InitOrigPointers();
+    // InitOrigPointers() must NOT be called here,
+    // because it may cause the infinite recursion:
+    // libc_free() -> InitOrigPointers() -> dlsym() -> libc_free()
+    // (see issue #1907)
     __TBB_malloc_safer_free(ptr, (void (*)(void*))orig_libc_free);
 }
 

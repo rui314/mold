@@ -1,0 +1,18 @@
+SAMPLE_BASE_NAME=opencl_node_example
+#TODO get the OpenCL paths from the NBTS system list
+OPENCL_ROOT_DIR=S:\soft\INDE
+
+release:
+	$(OPENCL_ROOT_DIR)\opencl_vars.bat intel64 && \
+	$(CXX) /O2 $(SAMPLE_BASE_NAME).cpp $(CXXFLAGS) /link tbb.lib OpenCL.lib $(LIBS) \
+	      /OUT:$(SAMPLE_BASE_NAME).$(OUTPUT_EXTENSION)
+
+debug:
+	$(OPENCL_ROOT_DIR)\opencl_vars.bat intel64 && \
+	$(CXX) /Od $(SAMPLE_BASE_NAME).cpp $(CXXFLAGS) /link tbb_debug.lib OpenCL.lib $(LIBS) \
+	      /OUT:$(SAMPLE_BASE_NAME).$(OUTPUT_EXTENSION)
+
+run:
+	$(OPENCL_ROOT_DIR)\opencl_vars.bat intel64 && \
+	cmd.exe /C move $(SAMPLE_BASE_NAME).$(OUTPUT_EXTENSION) $(PROG) && \
+	$(PROG)

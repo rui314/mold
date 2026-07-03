@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2020-2024 Intel Corporation
+    Copyright (c) 2020-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -36,8 +37,8 @@ namespace detail {
 
 namespace d1 {
 using slot_id = unsigned short;
-constexpr slot_id no_slot = slot_id(~0);
-constexpr slot_id any_slot = slot_id(~1);
+__TBB_GLOBAL_VAR constexpr slot_id no_slot = slot_id(~0);
+__TBB_GLOBAL_VAR constexpr slot_id any_slot = slot_id(~1);
 
 class task;
 class wait_context;
@@ -59,9 +60,9 @@ TBB_EXPORT void __TBB_EXPORTED_FUNC spawn(d1::task& t, d1::task_group_context& c
 TBB_EXPORT void __TBB_EXPORTED_FUNC execute_and_wait(d1::task& t, d1::task_group_context& t_ctx, d1::wait_context&, d1::task_group_context& w_ctx);
 TBB_EXPORT void __TBB_EXPORTED_FUNC wait(d1::wait_context&, d1::task_group_context& ctx);
 TBB_EXPORT d1::slot_id __TBB_EXPORTED_FUNC execution_slot(const d1::execution_data*);
-TBB_EXPORT d1::slot_id __TBB_EXPORTED_FUNC execution_slot(const d1::task_arena_base&);
 TBB_EXPORT d1::task_group_context* __TBB_EXPORTED_FUNC current_context();
 TBB_EXPORT d1::wait_tree_vertex_interface* get_thread_reference_vertex(d1::wait_tree_vertex_interface* wc);
+TBB_EXPORT d1::task* __TBB_EXPORTED_FUNC current_task_ptr();
 
 // Do not place under __TBB_RESUMABLE_TASKS. It is a stub for unsupported platforms.
 struct suspend_point_type;
@@ -86,7 +87,7 @@ using suspend_point = r1::suspend_point_type*;
 
 #if __TBB_RESUMABLE_TASKS
 template <typename F>
-static void suspend_callback(void* user_callback, suspend_point sp) {
+inline void suspend_callback(void* user_callback, suspend_point sp) {
     // Copy user function to a new stack after the context switch to avoid a race when the previous
     // suspend point is resumed while the user_callback is being called.
     F user_callback_copy = *static_cast<F*>(user_callback);
@@ -190,33 +191,6 @@ private:
     wait_context m_wait;
 };
 
-class reference_vertex : public wait_tree_vertex_interface {
-public:
-    reference_vertex(wait_tree_vertex_interface* parent, std::uint32_t ref_count) : my_parent{parent}, m_ref_count{ref_count}
-    {}
-
-    void reserve(std::uint32_t delta = 1) override {
-        if (m_ref_count.fetch_add(static_cast<std::uint64_t>(delta)) == 0) {
-            my_parent->reserve();
-        }
-    }
-
-    void release(std::uint32_t delta = 1) override {
-        auto parent = my_parent;
-        std::uint64_t ref = m_ref_count.fetch_sub(static_cast<std::uint64_t>(delta)) - static_cast<std::uint64_t>(delta);
-        if (ref == 0) {
-            parent->release();
-        }
-    }
-
-    std::uint32_t get_num_child() {
-        return static_cast<std::uint32_t>(m_ref_count.load(std::memory_order_acquire));
-    }
-private:
-    wait_tree_vertex_interface* my_parent;
-    std::atomic<std::uint64_t> m_ref_count;
-};
-
 struct execution_data {
     task_group_context* context{};
     slot_id original_slot{};
@@ -269,6 +243,7 @@ inline void wait(wait_context& wait_ctx, task_group_context& ctx) {
     call_itt_task_notify(destroy, &wait_ctx);
 }
 
+using r1::current_task_ptr;
 using r1::current_context;
 
 class task_traits {
@@ -277,7 +252,7 @@ class task_traits {
 };
 
 //! Alignment for a task object
-static constexpr std::size_t task_alignment = 64;
+__TBB_GLOBAL_VAR constexpr std::size_t task_alignment = 64;
 
 //! Base class for user-defined tasks.
 /** @ingroup task_scheduling */

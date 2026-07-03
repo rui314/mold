@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -309,14 +309,14 @@ static void flush_RL(EState* s) {
         }                                                             \
         else /*-- general, uncommon cases --*/                        \
             if (zchh != zs->state_in_ch || zs->state_in_len == 255) { \
-            if (zs->state_in_ch < 256)                                \
-                add_pair_to_block(zs);                                \
-            zs->state_in_ch = zchh;                                   \
-            zs->state_in_len = 1;                                     \
-        }                                                             \
-        else {                                                        \
-            zs->state_in_len++;                                       \
-        }                                                             \
+                if (zs->state_in_ch < 256)                            \
+                    add_pair_to_block(zs);                            \
+                zs->state_in_ch = zchh;                               \
+                zs->state_in_len = 1;                                 \
+            }                                                         \
+            else {                                                    \
+                zs->state_in_len++;                                   \
+            }                                                         \
     }
 
 /*---------------------------------------------------*/

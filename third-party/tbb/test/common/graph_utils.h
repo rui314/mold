@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -696,6 +697,47 @@ void test_reserving_nodes() {
     CHECK(end_receiver.my_count == 2 * N);
 }
 
+template<typename BufferNode>
+void test_nested_make_edge_single_item_buffer_to_continue_receiver() {
+    tbb::flow::graph g;
+
+    using msg_t = tbb::flow::continue_msg;
+    using cnode_t = tbb::flow::continue_node<msg_t>;
+
+    std::atomic<int> count(0);
+
+    // make a single item buffer and fill it
+    BufferNode b{g};
+    b.try_put(msg_t{});
+
+    cnode_t execute_one_time{g,
+        [&](const msg_t& m) {
+            ++count;
+            return m;
+        }};
+
+    cnode_t edge_adder{g, 
+        [&](const msg_t& m) {
+            // should increment predecessor count on execute_one_time
+            // should NOT cause execute_one_time to immediately execute
+            // since it has 2 predecessors, edge_adder and b
+            tbb::flow::make_edge(b, execute_one_time);
+            return m;
+        }};
+
+    tbb::flow::make_edge(edge_adder, execute_one_time);
+
+    // execute_one should execute
+    edge_adder.try_put(msg_t{});
+    g.wait_for_all();
+
+    // execute_one should NOT execute, it has 2 predecessors and
+    // has seen a total of 3 messages
+    execute_one_time.try_put(msg_t{});
+    g.wait_for_all();
+    CHECK_MESSAGE ((count == 1), "node should only execute once");
+}
+
 namespace lightweight_testing {
 
 typedef std::tuple<int, int> output_tuple_type;
@@ -928,5 +970,46 @@ void test(unsigned N) {
 }
 
 } // namespace lightweight_testing
+
+template <std::size_t N>
+struct edge_maker {
+    template <typename Sender, typename NodeType>
+    static void make(Sender& sender, NodeType& node) {
+        oneapi::tbb::flow::make_edge(sender, oneapi::tbb::flow::input_port<N - 1>(node));
+        edge_maker<N - 1>::make(sender, node);
+    }
+
+    template <typename Sender, typename NodeType>
+    static void make(std::vector<Sender>& senders, NodeType& node) {
+        oneapi::tbb::flow::make_edge(senders[N - 1], oneapi::tbb::flow::input_port<N - 1>(node));
+        edge_maker<N - 1>::make(senders, node);
+    }
+};
+
+template <>
+struct edge_maker<0> {
+    template <typename Sender, typename NodeType>
+    static void make(Sender&, NodeType&) {}
+};
+
+template <std::size_t N>
+struct assert_all_items_equal_impl {
+    template <typename TupleLike, typename Message>
+    static void compare(const TupleLike& tuple_like, const Message& message) {
+        CHECK_MESSAGE(std::get<N - 1>(tuple_like) == message, "Unexpected element");
+        assert_all_items_equal_impl<N - 1>::compare(tuple_like, message);
+    }
+};
+
+template <>
+struct assert_all_items_equal_impl<0> {
+    template <typename TupleLike, typename Message>
+    static void compare(const TupleLike&, const Message&) {}
+};
+
+template <typename TupleLike, typename Message>
+void assert_all_items_equal_to(const TupleLike& tuple_like, const Message& message) {
+    assert_all_items_equal_impl<std::tuple_size<TupleLike>::value>::compare(tuple_like, message);
+}
 
 #endif  // __TBB_harness_graph_H

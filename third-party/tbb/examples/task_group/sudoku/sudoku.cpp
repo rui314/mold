@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,12 +19,14 @@
 
 #include <string>
 #include <atomic>
+#include <sstream>
 
 #include "oneapi/tbb/tick_count.h"
 #include "oneapi/tbb/task_group.h"
 #include "oneapi/tbb/global_control.h"
 
 #include "common/utility/utility.hpp"
+#include "common/utility/measurements.hpp"
 #include "common/utility/get_default_num_threads.hpp"
 
 #pragma warning(disable : 4996)
@@ -260,16 +262,17 @@ void partial_solve(oneapi::tbb::task_group& g,
     }
 }
 
-unsigned solve(int p) {
+unsigned solve(int p, utility::measurements& solve_measurements) {
     oneapi::tbb::global_control c(oneapi::tbb::global_control::max_allowed_parallelism, p);
     nSols = 0;
     std::vector<board_element> start_board(BOARD_SIZE);
     init_board(start_board, init_values);
     oneapi::tbb::task_group g;
-    oneapi::tbb::tick_count t0 = oneapi::tbb::tick_count::now();
+    solve_measurements.start();
     partial_solve(g, start_board, 0);
     g.wait();
-    solve_time = (oneapi::tbb::tick_count::now() - t0).seconds();
+    solve_time = (double)solve_measurements.stop().count() /
+                 std::chrono::microseconds(std::chrono::seconds(1)).count();
     return nSols;
 }
 
@@ -279,6 +282,7 @@ int main(int argc, char* argv[]) {
     utility::thread_number_range threads(utility::get_default_num_threads);
     std::string filename = "";
     bool silent = false;
+    int repeats = 1;
 
     utility::parse_cli_arguments(
         argc,
@@ -287,10 +291,18 @@ int main(int argc, char* argv[]) {
             //"-h" option for displaying help is present implicitly
             .positional_arg(threads, "n-of-threads", utility::thread_number_range_desc)
             .positional_arg(filename, "filename", "input filename")
+            .positional_arg(repeats,
+                            "n-of-repeats",
+                            "repeat each solution this number of times, must be a positive integer")
 
             .arg(verbose, "verbose", "prints the first solution")
             .arg(silent, "silent", "no output except elapsed time")
             .arg(find_one, "find-one", "stops after finding first solution\n"));
+
+    if (repeats < 1) {
+        fprintf(stderr, "Incorrect n-of-repeats=%d, exit.\n", repeats);
+        return -1;
+    }
 
     if (silent)
         verbose = false;
@@ -298,21 +310,39 @@ int main(int argc, char* argv[]) {
     if (!filename.empty())
         read_board(filename.c_str());
     // otherwise (if file name not specified), the default statically initialized board will be used.
-    for (int p = threads.first; p <= threads.last; p = threads.step(p)) {
-        unsigned number = solve(p);
 
-        if (!silent) {
-            if (find_one) {
-                printf("Sudoku: Time to find first solution on %d threads: %6.6f seconds.\n",
-                       p,
-                       solve_time);
+    for (int p = threads.first; p <= threads.last; p = threads.step(p)) {
+        std::string res_info("Sudoku: Time to find");
+        std::ostringstream par_info;
+
+        if (find_one) {
+            res_info += " first solution";
+        }
+        par_info << " on " << p << " threads";
+
+        utility::measurements measurements(repeats);
+
+        for (unsigned int i = 0; i < repeats; i++) {
+            unsigned number = solve(p, measurements);
+            if (!silent) {
+                if (find_one) {
+                    printf("%s%s: %6.6f seconds.\n",
+                           res_info.c_str(),
+                           par_info.str().c_str(),
+                           solve_time);
+                }
+                else {
+                    printf("%s all %u solutions%s: %6.6f seconds.\n",
+                           res_info.c_str(),
+                           number,
+                           par_info.str().c_str(),
+                           solve_time);
+                }
             }
-            else {
-                printf("Sudoku: Time to find all %u solutions on %d threads: %6.6f seconds.\n",
-                       number,
-                       p,
-                       solve_time);
-            }
+        }
+        if (repeats > 1) {
+            res_info += par_info.str() + " Relative_Err : ";
+            utility::report_relative_error(measurements.computeRelError(), res_info);
         }
     }
 

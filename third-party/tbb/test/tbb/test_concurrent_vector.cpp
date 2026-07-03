@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -67,15 +68,15 @@ void TestRangeBasedFor(){
 
 struct default_container_traits {
     template <typename container_type, typename iterator_type>
-    static container_type& construct_container(typename std::aligned_storage<sizeof(container_type)>::type& storage, iterator_type begin, iterator_type end){
-        container_type* ptr = reinterpret_cast<container_type*>(&storage);
+    static container_type& construct_container(utils::UninitializedStorage<container_type>& storage, iterator_type begin, iterator_type end){
+        container_type* ptr = &storage;
         new (ptr) container_type(begin, end);
         return *ptr;
     }
 
     template <typename container_type, typename iterator_type, typename allocator_type>
-    static container_type& construct_container(typename std::aligned_storage<sizeof(container_type)>::type& storage, iterator_type begin, iterator_type end, allocator_type const& a){
-        container_type* ptr = reinterpret_cast<container_type*>(&storage);
+    static container_type& construct_container(utils::UninitializedStorage<container_type>& storage, iterator_type begin, iterator_type end, allocator_type const& a){
+        container_type* ptr = &storage;
         new (ptr) container_type(begin, end, a);
         return *ptr;
     }

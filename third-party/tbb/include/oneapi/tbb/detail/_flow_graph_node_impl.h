@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -535,14 +536,10 @@ template<int N> struct clear_element {
 #endif
 };
 
-template<> struct clear_element<1> {
-    template<typename P> static void clear_this(P &p) {
-        (void)std::get<0>(p).successors().clear();
-    }
+template <> struct clear_element<0> {
+    template <typename P> static void clear_this(P&) {}
 #if TBB_USE_ASSERT
-    template<typename P> static bool this_empty(P &p) {
-        return std::get<0>(p).successors().empty();
-    }
+    template <typename P> static bool this_empty(P&) { return true; }
 #endif
 };
 

@@ -29,7 +29,7 @@ This directory contains example usages of oneAPI Threading Building Blocks.
 Refer to the [System Requirements](https://github.com/uxlfoundation/oneTBB/blob/master/SYSTEM_REQUIREMENTS.md) for the list of supported hardware and software.
 
 ### Graphical User Interface (GUI)
-Some examples (e.g., fractal, seismic, tachyon, polygon_overlay) support different GUI modes, which may be defined via the `EXAMPLES_UI_MODE` CMake variable. 
+Some examples (e.g., fractal, seismic, tachyon, polygon_overlay) support different GUI modes, which may be defined via the `EXAMPLES_UI_MODE` CMake variable.
 Supported values are:
 - Cross-platform:
     - `con` - Console mode (Default).
@@ -40,3 +40,6 @@ Supported values are:
     - `x` - `X11` based implementation. Also `libXext` may be required to display the output correctly.
 - macOS*:
     - `mac` - `OpenGL` based implementation. Also requires the `Foundation` and `Cocoa` libraries availability.
+
+### Benchmark reports
+Some examples (e.g. tachyon, primes, sudoku) can be used for benchmarking purposes having special build targets (with `_data` suffix) to parse console output on execution and compose a .csv report file. This feature requires [gawk](https://www.gnu.org/software/gawk/) utility installed.

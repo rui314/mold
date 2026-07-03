@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -222,146 +223,23 @@
         broadcast_cache<output_type, null_rw_mutex> my_successors;
     };  //indexer_node_base
 
-
-    template<int N, typename InputTuple> struct input_types;
-
-    template<typename InputTuple>
-    struct input_types<1, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef tagged_msg<size_t, first_type > type;
-    };
-
-    template<typename InputTuple>
-    struct input_types<2, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef typename std::tuple_element<1, InputTuple>::type second_type;
-        typedef tagged_msg<size_t, first_type, second_type> type;
-    };
-
-    template<typename InputTuple>
-    struct input_types<3, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef typename std::tuple_element<1, InputTuple>::type second_type;
-        typedef typename std::tuple_element<2, InputTuple>::type third_type;
-        typedef tagged_msg<size_t, first_type, second_type, third_type> type;
-    };
-
-    template<typename InputTuple>
-    struct input_types<4, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef typename std::tuple_element<1, InputTuple>::type second_type;
-        typedef typename std::tuple_element<2, InputTuple>::type third_type;
-        typedef typename std::tuple_element<3, InputTuple>::type fourth_type;
-        typedef tagged_msg<size_t, first_type, second_type, third_type,
-                                                      fourth_type> type;
-    };
-
-    template<typename InputTuple>
-    struct input_types<5, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef typename std::tuple_element<1, InputTuple>::type second_type;
-        typedef typename std::tuple_element<2, InputTuple>::type third_type;
-        typedef typename std::tuple_element<3, InputTuple>::type fourth_type;
-        typedef typename std::tuple_element<4, InputTuple>::type fifth_type;
-        typedef tagged_msg<size_t, first_type, second_type, third_type,
-                                                      fourth_type, fifth_type> type;
-    };
-
-    template<typename InputTuple>
-    struct input_types<6, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef typename std::tuple_element<1, InputTuple>::type second_type;
-        typedef typename std::tuple_element<2, InputTuple>::type third_type;
-        typedef typename std::tuple_element<3, InputTuple>::type fourth_type;
-        typedef typename std::tuple_element<4, InputTuple>::type fifth_type;
-        typedef typename std::tuple_element<5, InputTuple>::type sixth_type;
-        typedef tagged_msg<size_t, first_type, second_type, third_type,
-                                                      fourth_type, fifth_type, sixth_type> type;
-    };
-
-    template<typename InputTuple>
-    struct input_types<7, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef typename std::tuple_element<1, InputTuple>::type second_type;
-        typedef typename std::tuple_element<2, InputTuple>::type third_type;
-        typedef typename std::tuple_element<3, InputTuple>::type fourth_type;
-        typedef typename std::tuple_element<4, InputTuple>::type fifth_type;
-        typedef typename std::tuple_element<5, InputTuple>::type sixth_type;
-        typedef typename std::tuple_element<6, InputTuple>::type seventh_type;
-        typedef tagged_msg<size_t, first_type, second_type, third_type,
-                                                      fourth_type, fifth_type, sixth_type,
-                                                      seventh_type> type;
-    };
-
-
-    template<typename InputTuple>
-    struct input_types<8, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef typename std::tuple_element<1, InputTuple>::type second_type;
-        typedef typename std::tuple_element<2, InputTuple>::type third_type;
-        typedef typename std::tuple_element<3, InputTuple>::type fourth_type;
-        typedef typename std::tuple_element<4, InputTuple>::type fifth_type;
-        typedef typename std::tuple_element<5, InputTuple>::type sixth_type;
-        typedef typename std::tuple_element<6, InputTuple>::type seventh_type;
-        typedef typename std::tuple_element<7, InputTuple>::type eighth_type;
-        typedef tagged_msg<size_t, first_type, second_type, third_type,
-                                                      fourth_type, fifth_type, sixth_type,
-                                                      seventh_type, eighth_type> type;
-    };
-
-
-    template<typename InputTuple>
-    struct input_types<9, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef typename std::tuple_element<1, InputTuple>::type second_type;
-        typedef typename std::tuple_element<2, InputTuple>::type third_type;
-        typedef typename std::tuple_element<3, InputTuple>::type fourth_type;
-        typedef typename std::tuple_element<4, InputTuple>::type fifth_type;
-        typedef typename std::tuple_element<5, InputTuple>::type sixth_type;
-        typedef typename std::tuple_element<6, InputTuple>::type seventh_type;
-        typedef typename std::tuple_element<7, InputTuple>::type eighth_type;
-        typedef typename std::tuple_element<8, InputTuple>::type nineth_type;
-        typedef tagged_msg<size_t, first_type, second_type, third_type,
-                                                      fourth_type, fifth_type, sixth_type,
-                                                      seventh_type, eighth_type, nineth_type> type;
-    };
-
-    template<typename InputTuple>
-    struct input_types<10, InputTuple> {
-        typedef typename std::tuple_element<0, InputTuple>::type first_type;
-        typedef typename std::tuple_element<1, InputTuple>::type second_type;
-        typedef typename std::tuple_element<2, InputTuple>::type third_type;
-        typedef typename std::tuple_element<3, InputTuple>::type fourth_type;
-        typedef typename std::tuple_element<4, InputTuple>::type fifth_type;
-        typedef typename std::tuple_element<5, InputTuple>::type sixth_type;
-        typedef typename std::tuple_element<6, InputTuple>::type seventh_type;
-        typedef typename std::tuple_element<7, InputTuple>::type eighth_type;
-        typedef typename std::tuple_element<8, InputTuple>::type nineth_type;
-        typedef typename std::tuple_element<9, InputTuple>::type tenth_type;
-        typedef tagged_msg<size_t, first_type, second_type, third_type,
-                                                      fourth_type, fifth_type, sixth_type,
-                                                      seventh_type, eighth_type, nineth_type,
-                                                      tenth_type> type;
-    };
-
     // type generators
-    template<typename OutputTuple>
-    struct indexer_types : public input_types<std::tuple_size<OutputTuple>::value, OutputTuple> {
-        static const int N = std::tuple_size<OutputTuple>::value;
-        typedef typename input_types<N, OutputTuple>::type output_type;
-        typedef typename wrap_tuple_elements<N,indexer_input_port,OutputTuple>::type input_ports_type;
-        typedef indexer_node_FE<input_ports_type,output_type,OutputTuple> indexer_FE_type;
-        typedef indexer_node_base<input_ports_type, output_type, OutputTuple> indexer_base_type;
+    template<typename... TN>
+    struct indexer_types {
+        using output_type = tagged_msg<std::size_t, TN...>;
+        using input_ports_type = std::tuple<indexer_input_port<TN>...>;
+        using indexer_base_type = indexer_node_base<input_ports_type, output_type, std::tuple<TN...>>;
     };
 
-    template<class OutputTuple>
-    class unfolded_indexer_node : public indexer_types<OutputTuple>::indexer_base_type {
+    template<typename... TN>
+    class unfolded_indexer_node : public indexer_types<TN...>::indexer_base_type {
     public:
-        typedef typename indexer_types<OutputTuple>::input_ports_type input_ports_type;
-        typedef OutputTuple tuple_types;
-        typedef typename indexer_types<OutputTuple>::output_type output_type;
+        using input_ports_type = typename indexer_types<TN...>::input_ports_type;
+        using output_type = typename indexer_types<TN...>::output_type;
+        using tuple_types = std::tuple<TN...>;
+
     private:
-        typedef typename indexer_types<OutputTuple>::indexer_base_type base_type;
+        using base_type = typename indexer_types<TN...>::indexer_base_type;
     public:
         unfolded_indexer_node(graph& g) : base_type(g) {}
         unfolded_indexer_node(const unfolded_indexer_node &other) : base_type(other) {}

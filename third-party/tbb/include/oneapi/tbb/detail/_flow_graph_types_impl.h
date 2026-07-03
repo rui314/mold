@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -43,24 +44,24 @@ struct KeyTrait {
 };
 
 // wrap each element of a tuple in a template, and make a tuple of the result.
-template<int N, template<class> class PT, typename TypeTuple>
+template<template<class> class PortType, typename TypeTuple>
 struct wrap_tuple_elements;
 
 // A wrapper that generates the traits needed for each port of a key-matching join,
 // and the type of the tuple of input ports.
-template<int N, template<class> class PT, typename KeyTraits, typename TypeTuple>
+template<template<class> class PortType, typename KeyTraits, typename TypeTuple>
 struct wrap_key_tuple_elements;
 
-template<int N, template<class> class PT,  typename... Args>
-struct wrap_tuple_elements<N, PT, std::tuple<Args...> >{
-    typedef typename std::tuple<PT<Args>... > type;
+template<template<class> class PortType,  typename... Args>
+struct wrap_tuple_elements<PortType, std::tuple<Args...> >{
+    using type = std::tuple<PortType<Args>...>;
 };
 
-template<int N, template<class> class PT, typename KeyTraits, typename... Args>
-struct wrap_key_tuple_elements<N, PT, KeyTraits, std::tuple<Args...> > {
-    typedef typename KeyTraits::key_type K;
-    typedef typename KeyTraits::hash_compare_type KHash;
-    typedef typename std::tuple<PT<KeyTrait<K, KHash, Args> >... > type;
+template<template<class> class PortType, typename KeyTraits, typename... Args>
+struct wrap_key_tuple_elements<PortType, KeyTraits, std::tuple<Args...> > {
+    using key_type = typename KeyTraits::key_type;
+    using hash_compare_type = typename KeyTraits::hash_compare_type;
+    using type = std::tuple<PortType<KeyTrait<key_type, hash_compare_type, Args>>...>;
 };
 
 template< int... S > class sequence {};
@@ -308,31 +309,11 @@ struct do_if<T, false> {
 // the object can only be tested for type, and a read-only reference can be fetched by cast_to<T>().
 
 using tbb::detail::punned_cast;
-struct tagged_null_type {};
-template<typename TagType, typename T0, typename T1=tagged_null_type, typename T2=tagged_null_type, typename T3=tagged_null_type,
-                           typename T4=tagged_null_type, typename T5=tagged_null_type, typename T6=tagged_null_type,
-                           typename T7=tagged_null_type, typename T8=tagged_null_type, typename T9=tagged_null_type>
-class tagged_msg {
-    typedef std::tuple<T0, T1, T2, T3, T4
-                  //TODO: Should we reject lists longer than a tuple can hold?
-                  #if __TBB_VARIADIC_MAX >= 6
-                  , T5
-                  #endif
-                  #if __TBB_VARIADIC_MAX >= 7
-                  , T6
-                  #endif
-                  #if __TBB_VARIADIC_MAX >= 8
-                  , T7
-                  #endif
-                  #if __TBB_VARIADIC_MAX >= 9
-                  , T8
-                  #endif
-                  #if __TBB_VARIADIC_MAX >= 10
-                  , T9
-                  #endif
-                  > Tuple;
 
-private:
+template<typename TagType, typename... TN>
+class tagged_msg {
+    using Tuple = std::tuple<TN...>;
+    
     class variant {
         static const size_t N = std::tuple_size<Tuple>::value;
         typedef typename pick_tuple_max<N, Tuple, alignment_of>::type AlignType;
@@ -388,7 +369,6 @@ private:
 
     TagType my_tag;
     variant my_msg;
-
 public:
     tagged_msg(): my_tag(TagType(~0)), my_msg(){}
 
@@ -408,7 +388,7 @@ public:
     bool is_a() const {return my_msg.template variant_is_a<V>();}
 
     bool is_default_constructed() const {return my_msg.variant_is_default_constructed();}
-}; //class tagged_msg
+}; // class tagged_msg
 
 // template to simplify cast and test for tagged_msg in template contexts
 template<typename V, typename T>

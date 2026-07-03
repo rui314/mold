@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2019-2021 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -163,19 +164,19 @@ struct OrderedMoveTraitsBase {
     static constexpr std::size_t expected_number_of_items_to_allocate_for_steal_move = 584; // TODO: remove allocation of dummy_node
 
     template <typename OrderedType, typename Iterator>
-    static OrderedType& construct_container( typename std::aligned_storage<sizeof(OrderedType)>::type& storage,
+    static OrderedType& construct_container( utils::UninitializedStorage<OrderedType>& storage,
                                              Iterator begin, Iterator end )
     {
-        OrderedType* ptr = reinterpret_cast<OrderedType*>(&storage);
+        OrderedType* ptr = &storage;
         new (ptr) OrderedType(begin, end);
         return *ptr;
     }
 
     template <typename OrderedType, typename Iterator, typename Allocator>
-    static OrderedType& construct_container( typename std::aligned_storage<sizeof(OrderedType)>::type& storage,
+    static OrderedType& construct_container( utils::UninitializedStorage<OrderedType>& storage,
                                              Iterator begin, Iterator end, const Allocator& alloc )
     {
-        OrderedType* ptr = reinterpret_cast<OrderedType*>(&storage);
+        OrderedType* ptr = &storage;
         new (ptr) OrderedType(begin, end, typename OrderedType::key_compare(), alloc);
         return *ptr;
     }

@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,10 +21,8 @@
 #include "oneapi/tbb/detail/_config.h"
 #include "oneapi/tbb/detail/_assert.h"
 #include "oneapi/tbb/detail/_utils.h"
-
-#if __TBB_ARENA_BINDING
 #include "oneapi/tbb/info.h"
-#endif /*__TBB_ARENA_BINDING*/
+#include "tcm.h"
 
 #if __unix__
 #include <sys/param.h>  // __FreeBSD_version
@@ -46,10 +45,8 @@ namespace r1 {
 
 void runtime_warning(const char* format, ... );
 
-#if __TBB_ARENA_BINDING
 class task_arena;
 class task_scheduler_observer;
-#endif /*__TBB_ARENA_BINDING*/
 
 const std::size_t MByte = 1024*1024;
 
@@ -216,15 +213,13 @@ struct cpu_features_type {
 
 void detect_cpu_features(cpu_features_type& cpu_features);
 
-#if __TBB_ARENA_BINDING
 class binding_handler;
 
 binding_handler* construct_binding_handler(int slot_num, int numa_id, int core_type_id, int max_threads_per_core);
 void destroy_binding_handler(binding_handler* handler_ptr);
 void apply_affinity_mask(binding_handler* handler_ptr, int slot_num);
 void restore_affinity_mask(binding_handler* handler_ptr, int slot_num);
-
-#endif /*__TBB_ARENA_BINDING*/
+tcm_cpu_mask_t get_affinity_mask(binding_handler* handler_ptr);
 
 // RTM specific section
 // abort code for mutexes that detect a conflict with another thread.

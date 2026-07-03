@@ -10,6 +10,6 @@ general support and the other with a scalable memory allocator. The
 latter is distinguished by ``malloc`` in its name. For example, the
 release versions for Windows\* OS are ``tbb<version>.dll`` and ``tbbmalloc.dll``
 respectively. Applications may choose to use only the general library,
-or only the scalable memory allocator, or both. See the links below for
+or only the scalable memory allocator, or both. See :ref:`Memory Allocation <Memory_allocation>` for
 more information on memory allocation.
 

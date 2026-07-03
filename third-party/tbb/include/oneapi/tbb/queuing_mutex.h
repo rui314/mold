@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -107,7 +108,7 @@ public:
             // The compare_exchange_strong must have release semantics, because we are
             // "sending" the fields initialized above to other processors.
             // x86 compare exchange operation always has a strong fence
-            if (!m.q_tail.compare_exchange_strong(expected, this, std::memory_order_acq_rel))
+            if (m.q_tail.load(std::memory_order_relaxed) != expected || !m.q_tail.compare_exchange_strong(expected, this, std::memory_order_acq_rel))
                 return false;
 
             m_mutex = &m;

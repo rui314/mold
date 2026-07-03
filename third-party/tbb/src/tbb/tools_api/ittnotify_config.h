@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -244,10 +245,10 @@
 #define ITT_MAGIC { 0xED, 0xAB, 0xAB, 0xEC, 0x0D, 0xEE, 0xDA, 0x30 }
 
 /* Replace with snapshot date YYYYMMDD for promotion build. */
-#define API_VERSION_BUILD    20230630
+#define API_VERSION_BUILD    20250807
 
 #ifndef API_VERSION_NUM
-#define API_VERSION_NUM 3.24.4
+#define API_VERSION_NUM 3.26.3
 #endif /* API_VERSION_NUM */
 
 #define API_VERSION "ITT-API-Version " ITT_TO_STR(API_VERSION_NUM) \
@@ -688,7 +689,7 @@ typedef struct ___itt_global
         h->y_type = y_type; \
         h->extra1 = 0; \
         h->extra2 = NULL; \
-	h->next = NULL; \
+	h->next   = NULL; \
         if (h_tail == NULL) \
             (gptr)->histogram_list = h; \
         else \
@@ -708,7 +709,7 @@ typedef struct ___itt_global
         h->y_type = y_type; \
         h->extra1 = 0; \
         h->extra2 = NULL; \
-	h->next = NULL; \
+	h->next   = NULL; \
         if (h_tail == NULL) \
             (gptr)->histogram_list = h; \
         else \

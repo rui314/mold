@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -25,6 +26,7 @@
 #include <algorithm>
 #include "custom_allocators.h"
 #include "state_trackable.h"
+#include "utils.h"
 
 namespace move_support_tests {
 
@@ -359,13 +361,13 @@ struct ArenaAllocatorFixture {
     using allocator_type = ArenaAllocator<T, POCMA>;
     using arena_data_type = typename allocator_type::arena_data_type;
 
-    std::vector<typename std::aligned_storage<sizeof(T)>::type> storage;
+    std::vector<utils::UninitializedStorage<T>> storage;
     arena_data_type arena_data;
     allocator_type allocator;
 
     ArenaAllocatorFixture( std::size_t size_to_allocate )
         : storage(size_to_allocate),
-          arena_data(reinterpret_cast<T*>(&storage.front()), storage.size()),
+          arena_data(&storage.front(), storage.size()),
           allocator(arena_data) {}
 
     ArenaAllocatorFixture( const ArenaAllocatorFixture& ) = delete;
@@ -427,7 +429,7 @@ struct MoveFixture {
     static constexpr std::size_t default_container_size = 100;
     const std::size_t container_size;
 
-    typename std::aligned_storage<sizeof(container_type)>::type source_storage;
+    utils::UninitializedStorage<container_type> source_storage;
     container_type& source;
 
     MemoryLocations locations;

@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,7 +18,7 @@
 //! \file test_malloc_whitebox.cpp
 //! \brief Test for [memory_allocation] functionality
 
-#if _WIN32 || _WIN64
+#if !defined(_CRT_SECURE_NO_WARNINGS) && (_WIN32 || _WIN64)
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
@@ -1599,7 +1600,7 @@ void TestHugeSizeThresholdImpl(LargeObjectCache* loc, size_t hugeSize, bool full
         test.clean(/*all*/false);
         test.check(HOThresholdTester::REGULAR_CLEANUP);
     }
-    // Check that all objects dropped from cache after hard cleanup (ignore huge obects threshold)
+    // Check that all objects dropped from cache after hard cleanup (ignore huge objects threshold)
     test.clean(/*all*/true);
     test.check(HOThresholdTester::HARD_CLEANUP);
     // Restore previous settings

@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2019-2024 Intel Corporation
+    Copyright (c) 2019-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,7 +18,9 @@
 #ifndef __TBB_test_common_arena_constraints_H_
 #define __TBB_test_common_arena_constraints_H_
 
-#if _WIN32 || _WIN64
+#define TBB_PREVIEW_TASK_ARENA_CORE_TYPE_SELECTOR 1
+
+#if !defined(_CRT_SECURE_NO_WARNINGS) && (_WIN32 || _WIN64)
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
@@ -30,6 +33,8 @@
 #include "oneapi/tbb/task_arena.h"
 #include "oneapi/tbb/spin_mutex.h"
 
+#include <bitset>
+#include <tuple>
 #include <vector>
 #include <unordered_set>
 
@@ -388,6 +393,28 @@ public:
 
 system_info* system_info::system_info_ptr{nullptr};
 
+struct multi_core_type_helper {
+    tbb::task_arena::constraints constraints;
+    std::vector<tbb::core_type_id> ids;
+
+    multi_core_type_helper(const tbb::task_arena::constraints& constraints_)
+        : constraints(constraints_),
+        ids(tbb::detail::multi_core_type_codec::decode(constraints.core_type))
+    {
+        if (ids.size() > 1) {
+            constraints.set_core_type(tbb::task_arena::selectable);
+        }
+    }
+
+    bool selectable() const {
+        return constraints.core_type == tbb::task_arena::selectable;
+    }
+
+    int operator()(std::tuple<int, size_t, size_t> core_type) const {
+        return int(ids.end() - std::find(ids.begin(), ids.end(), std::get<0>(core_type))); // 0 (not found) or positive
+    }
+};
+
 system_info::affinity_mask prepare_reference_affinity_mask(const tbb::task_arena::constraints& c) {
     auto reference_affinity = system_info::allocate_empty_affinity_mask();
     hwloc_bitmap_copy(reference_affinity, system_info::get_process_affinity_mask());
@@ -403,7 +430,33 @@ system_info::affinity_mask prepare_reference_affinity_mask(const tbb::task_arena
     }
 
     if (c.core_type != tbb::task_arena::automatic) {
-        const auto& core_types_info = system_info::get_cpu_kinds_info();
+        auto core_types_info = system_info::get_cpu_kinds_info();
+
+        // Add core type combinations
+        size_t num_core_types = core_types_info.size();
+        for (uint32_t mask = 0; mask < (1u << num_core_types); ++mask) {
+            std::bitset<32> bits(mask);
+            if (bits.count() < 2) {
+                // Skip empty and single-type combinations
+                continue;
+            }
+
+            index_info combination;
+            combination.index = int(tbb::detail::multi_core_type_codec::encoding_format <<
+                tbb::detail::multi_core_type_codec::bitmask_width); // multiple core type format
+            combination.index |= mask;
+            combination.concurrency = 0;
+            combination.cpuset = hwloc_bitmap_alloc();
+
+            for (size_t i = 0; i < num_core_types; ++i) {
+                if (bits[i]) {
+                    combination.concurrency += core_types_info[i].concurrency;
+                    hwloc_bitmap_or(combination.cpuset, combination.cpuset, core_types_info[i].cpuset);
+                }
+            }
+            core_types_info.push_back(combination);
+        }
+
         auto required_info = std::find_if(core_types_info.begin(), core_types_info.end(),
             [&](index_info info) { return info.index == c.core_type; }
         );
@@ -415,15 +468,24 @@ system_info::affinity_mask prepare_reference_affinity_mask(const tbb::task_arena
 }
 
 void test_constraints_affinity_and_concurrency(tbb::task_arena::constraints constraints,
+                                               multi_core_type_helper helper,
                                                system_info::affinity_mask arena_affinity) {
-    int default_concurrency = tbb::info::default_concurrency(constraints);
+    // The default concurrency returned by the library (with the same selector as for the arena, if provided)
+    int default_concurrency = tbb::info::default_concurrency(helper.constraints, helper);
     system_info::affinity_mask reference_affinity = prepare_reference_affinity_mask(constraints);
     int max_threads_per_core = static_cast<int>(system_info::get_maximal_threads_per_core());
 
+    int constrained_num_cpus = INT_MAX;
+#if __TBB_USE_CGROUPS
+    (void)utils::cgroup_info::is_cpu_constrained(constrained_num_cpus);
+#endif
+
     if (constraints.max_threads_per_core == tbb::task_arena::automatic || constraints.max_threads_per_core == max_threads_per_core) {
         REQUIRE_MESSAGE(hwloc_bitmap_isequal(reference_affinity, arena_affinity),
-            "Wrong affinity mask was applied for the constraints instance.");
-        REQUIRE_MESSAGE(hwloc_bitmap_weight(reference_affinity) == default_concurrency,
+                        "Wrong affinity mask was applied for the constraints instance.");
+        const int reference_concurrency =
+            std::min(hwloc_bitmap_weight(reference_affinity), constrained_num_cpus);
+        REQUIRE_MESSAGE(reference_concurrency == default_concurrency,
             "Wrong default_concurrency was returned for the constraints instance.");
     } else {
         REQUIRE_MESSAGE(constraints.max_threads_per_core < max_threads_per_core,
@@ -445,10 +507,11 @@ void test_constraints_affinity_and_concurrency(tbb::task_arena::constraints cons
                     "Wrong number of threads may be scheduled to some core.");
             }
         }
-        REQUIRE_MESSAGE(valid_concurrency == default_concurrency,
-            "Wrong default_concurrency was returned for the constraints instance.");
         REQUIRE_MESSAGE(valid_concurrency == hwloc_bitmap_weight(arena_affinity),
             "Wrong number of bits inside the affinity mask.");
+        valid_concurrency = std::min(valid_concurrency, constrained_num_cpus);
+        REQUIRE_MESSAGE(valid_concurrency == default_concurrency,
+            "Wrong default_concurrency was returned for the constraints instance.");
     }
 }
 
@@ -515,6 +578,20 @@ constraints_container generate_constraints_variety() {
 
 #if __HYBRID_CPUS_TESTING
         std::vector<tbb::core_type_id> core_types = tbb::info::core_types();
+
+        // Generate all possible combinations of core_types
+        std::vector<std::vector<tbb::core_type_id>> core_type_combinations;
+        size_t num_core_types = core_types.size();
+        for (uint32_t mask = 0; mask < (1u << num_core_types); ++mask) {
+            std::vector<tbb::core_type_id> combination;
+            for (size_t i = 0; i < num_core_types; ++i) {
+                if (mask & (1u << i)) {
+                    combination.push_back(core_types[i]);
+                }
+            }
+            core_type_combinations.push_back(combination);
+        }
+
         core_types.push_back((tbb::core_type_id)tbb::task_arena::automatic);
 #endif
 
@@ -554,6 +631,41 @@ constraints_container generate_constraints_variety() {
                             .set_numa_id(numa_node)
                             .set_core_type(core_type)
                             .set_max_threads_per_core(max_threads_per_core)
+                    );
+                }
+            }
+            for (const auto& combination : core_type_combinations) {
+                results.insert(constraints{}.set_core_type(tbb::detail::multi_core_type_codec::encode(combination)));
+
+                results.insert(
+                    constraints{}
+                    .set_numa_id(numa_node)
+                    .set_core_type(tbb::detail::multi_core_type_codec::encode(combination))
+                );
+
+                for (const auto& max_threads_per_core : system_info::get_available_max_threads_values()) {
+                    results.insert(
+                        constraints{}
+                        .set_max_threads_per_core(max_threads_per_core)
+                    );
+
+                    results.insert(
+                        constraints{}
+                        .set_numa_id(numa_node)
+                        .set_max_threads_per_core(max_threads_per_core)
+                    );
+
+                    results.insert(
+                        constraints{}
+                        .set_core_type(tbb::detail::multi_core_type_codec::encode(combination))
+                        .set_max_threads_per_core(max_threads_per_core)
+                    );
+
+                    results.insert(
+                        constraints{}
+                        .set_numa_id(numa_node)
+                        .set_core_type(tbb::detail::multi_core_type_codec::encode(combination))
+                        .set_max_threads_per_core(max_threads_per_core)
                     );
                 }
             }

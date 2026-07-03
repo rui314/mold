@@ -10,6 +10,6 @@ Getting Help and Support
    .. rubric:: Getting Technical Support
       :class: sectiontitle
 
-   For general information about oneTBB technical support, product
+   For general information about |short_name| technical support, product
    updates, user forums, FAQs, tips and tricks and other support
-   questions, go to `GitHub issues <https://github.com/uxlfoundation/oneTBB/issues>`_.
+   questions, see `oneTBB Support <https://github.com/uxlfoundation/oneTBB/blob/master/SUPPORT.md>`_.

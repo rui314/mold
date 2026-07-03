@@ -36,10 +36,15 @@ You can find all [open oneTBB pull requests](https://github.com/uxlfoundation/on
 * Make sure you can build the product and run all the tests with your patch. 
 * For a larger feature, provide a relevant test. 
 * Document your code. The oneTBB project uses reStructuredText for documentation.  
+  * If your documentation has code samples or examples, place them into the corresponding example folder. 
 * Update the copyright year in the first line of the changing file(s). 
-  For example, if you commit your changes in 2022:
-  * the copyright year should be `2005-2022` for existing files
-  * the copyright year should be `2022` for new files
+  For example, if you commit your changes in 2025:
+  * the copyright year should be `2005-2025` for existing files
+  * the copyright year should be `2025` for new files
 * Submit a pull request into the master branch. You can submit changes with a pull request (preferred) or by sending an email patch.  
+
+Code changes that are known or suspected to break support for any currently supported hardware are not allowed.
+Contributors should make a reasonable effort to ensure compatibility with these platforms. If a contribution
+inadvertently affects hardware support, the community will work together to address and resolve the issue.
 
 Continuous Integration (CI) testing is enabled for the repository. Your pull request must pass all checks before it can be merged. We will review your contribution and may provide feedback to guide you if any additional fixes or modifications are necessary. When reviewed and accepted, your pull request will be merged into our GitHub repository. 

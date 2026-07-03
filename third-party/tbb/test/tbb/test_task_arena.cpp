@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -46,6 +47,16 @@
 
 //! \file test_task_arena.cpp
 //! \brief Test for [scheduler.task_arena scheduler.task_scheduler_observer] specification
+
+//--------------------------------------------------//
+// Validation function to check that current_thread_index() and execution_slot() return
+// the same value for a thread running within initialized task_arena. The exported function
+// tbb::detail::r1::execution_slot is maintained for backwards compatibility only.
+void check_slot_compatibility(int expected_idx, const tbb::task_arena& arena) {
+    int execution_slot_idx = int(tbb::detail::r1::execution_slot(arena));
+    CHECK_MESSAGE(expected_idx == execution_slot_idx,
+        "current_thread_index() and execution_slot() should return the same value");
+}
 
 //--------------------------------------------------//
 // Test that task_arena::initialize and task_arena::terminate work when doing nothing else.
@@ -448,6 +459,7 @@ public:
     // Arena's functor
     void operator()() const {
         int idx = tbb::this_task_arena::current_thread_index();
+        check_slot_compatibility(idx, my_a);
         REQUIRE( idx < (my_max_concurrency > 1 ? my_max_concurrency : 2) );
         REQUIRE( my_a.max_concurrency() == tbb::this_task_arena::max_concurrency() );
         int max_arena_concurrency = tbb::this_task_arena::max_concurrency();
@@ -587,6 +599,7 @@ struct TaskArenaValidator {
     void operator()() {
         CHECK_MESSAGE( tbb::this_task_arena::current_thread_index()==my_slot_at_construction,
                 "Current thread index has changed since the validator construction" );
+        check_slot_compatibility(my_slot_at_construction, my_arena);
     }
 };
 
@@ -1982,6 +1995,11 @@ TEST_CASE("Workers oversubscription") {
 #endif
 
 #if TBB_USE_EXCEPTIONS
+#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS && __TBB_GCC_VERSION && !__clang__ && !__INTEL_COMPILER
+// GCC issues a warning in task_handle_task::has_dependencies for empty task_handle
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
 //! The test for error in scheduling empty task_handle
 //! \brief \ref requirement
 TEST_CASE("Empty task_handle cannot be scheduled"
@@ -1993,7 +2011,11 @@ TEST_CASE("Empty task_handle cannot be scheduled"
     CHECK_THROWS_WITH_AS(ta.enqueue(tbb::task_handle{}),                    "Attempt to schedule empty task_handle", std::runtime_error);
     CHECK_THROWS_WITH_AS(tbb::this_task_arena::enqueue(tbb::task_handle{}), "Attempt to schedule empty task_handle", std::runtime_error);
 }
+#if __TBB_PREVIEW_TASK_GROUP_EXTENSIONS && __TBB_GCC_VERSION && !__clang__ && !__INTEL_COMPILER
+#pragma GCC diagnostic pop
 #endif
+#endif // TBB_USE_EXCEPTIONS
+
 
 #if !EMSCRIPTEN
 //! For emscripten, FPU control state has not been set correctly
@@ -2068,3 +2090,157 @@ TEST_CASE("worker threads occupy slots in correct range") {
 
     while (counter < 42) { utils::yield(); }
 }
+
+//! \brief \ref error_guessing
+TEST_CASE("Stress test enqueue with task_group from multiple threads") {
+    constexpr std::size_t task_groups_per_thread = 1500;
+    constexpr std::size_t task_submits_per_task_group = 100;
+
+    std::size_t num_threads = utils::get_platform_max_threads();
+    std::vector<tbb::task_arena> arenas(num_threads);
+    std::vector<tbb::task_group> tg(task_groups_per_thread);
+
+    auto body = [] { utils::doDummyWork(100); };
+    for (std::size_t i = 0; i < 10; ++i) {
+        utils::NativeParallelFor(num_threads, [&] (std::size_t thread_index) {
+            for (std::size_t j = 0; j < task_groups_per_thread; ++j) {
+                for (std::size_t k = 0; k < task_submits_per_task_group; ++k) {
+                    if (k % 2) {
+                        arenas[thread_index].enqueue(tg[j].defer(body));
+                    } else {
+                        arenas[thread_index].enqueue(body, tg[j]);
+                    }
+                }
+            }
+        });
+
+        utils::NativeParallelFor(num_threads, [&] (std::size_t thread_index) {
+            for (std::size_t j = 0; j < task_groups_per_thread; ++j) {
+                arenas[thread_index].wait_for(tg[j]);
+            }
+        });
+    }
+}
+
+//! \brief \ref interface \ref requirement
+TEST_CASE("Basic test of task_arena and task_group interoperability interface") {
+    std::size_t num_threads = utils::get_platform_max_threads();
+    utils::SpinBarrier barrier{num_threads};
+
+    tbb::task_arena ta{};
+    tbb::task_group tg{};
+
+    std::vector<int> per_thread_array(num_threads, 0);
+    utils::NativeParallelFor(num_threads, [&] (std::size_t) {
+        ta.enqueue([&] {
+            utils::ConcurrencyTracker ct;
+            barrier.wait();
+            int thread_idx = tbb::this_task_arena::current_thread_index();
+            check_slot_compatibility(thread_idx, ta);
+            per_thread_array[thread_idx % num_threads]++;
+        }, tg);
+    });
+
+    ta.wait_for(tg);
+    REQUIRE(utils::ConcurrencyTracker::PeakParallelism() == num_threads);
+    REQUIRE(std::all_of(per_thread_array.begin(), per_thread_array.end(),
+        [](int count) { return count == 1; }));
+}
+
+//! \brief \ref interface \ref requirement
+TEST_CASE("Test that a thread calling wait_for completes tasks when workers are not available") {
+    std::size_t num_threads = utils::get_platform_max_threads();
+    utils::SpinBarrier barrier{num_threads};
+
+    tbb::task_group tg{};
+    tbb::task_arena ta{};
+    tbb::task_arena ta_busy{};
+
+    utils::ConcurrencyTracker::Reset();
+    std::atomic<int> task_counter{0};
+    auto body = [&task_counter] {
+        utils::ConcurrencyTracker ct;
+        task_counter++;
+    };
+
+    // Occupy all worker threads with work
+    for (std::size_t i = 0; i < num_threads-1; ++i) {
+        ta_busy.enqueue([&, i] {
+            barrier.wait();
+            if (i % 2) {
+                ta.enqueue(body, tg);
+            } else {
+                ta.execute([&] {
+                    tg.run(body);
+                });
+            }
+            barrier.wait();
+            barrier.wait();
+        });
+    }
+
+    barrier.wait();
+    ta.execute([&] {
+        tg.run(body);
+    });
+    barrier.wait();
+    ta.wait_for(tg);
+    REQUIRE(task_counter == num_threads);
+    REQUIRE(utils::ConcurrencyTracker::PeakParallelism() == 1);
+    barrier.wait();
+}
+
+//! \brief \ref error_guessing
+TEST_CASE("Test task_arena working correctly when number of reserved slots is greater then max concurrency") {
+    utils::ConcurrencyTracker::Reset();
+    auto max_num_threads = utils::get_platform_max_threads();
+    for (utils::thread_num_type num_threads = 1; num_threads <= max_num_threads; ++num_threads) {
+        tbb::task_arena ta{(int)num_threads, (unsigned)num_threads+1};
+        REQUIRE(ta.max_concurrency() == num_threads);
+        tbb::task_group tg{};
+
+        ta.execute([&tg, num_threads] {
+            for (std::uint32_t i = 0; i < 100*num_threads; ++i) {
+                tg.run([] {
+                    utils::ConcurrencyTracker ct;
+                });
+            }
+        });
+
+        ta.wait_for(tg);
+        REQUIRE_MESSAGE(utils::ConcurrencyTracker::PeakParallelism() == 1, "No worker should join the arena");
+    }
+}
+
+#if TBB_USE_EXCEPTIONS
+
+//! \brief \ref error_guessing
+TEST_CASE("Test enqueue guarantees when task_arena is combined with task_group") {
+    auto mandatory_concurrency_body = [](tbb::task_arena& ta) {
+        utils::SpinBarrier barrier{2};
+        try {
+            tbb::task_group tg{};
+            ta.enqueue([&barrier] { barrier.wait(); }, tg);
+            barrier.wait(); // Wait for worker to join
+        } catch (tbb::missing_wait&) {
+            // Nothing to do
+        } catch (...) {
+            FAIL("Expected tbb::missing_wait exception due to missing "
+                 "task_group::wait call");
+        }
+    };
+    // Mandatory concurrency tests
+    {
+        // Test with workerless arena
+        tbb::task_arena ta{1, 1};
+        mandatory_concurrency_body(ta);
+    }
+    {
+        // Test with global_control
+        tbb::global_control gc{tbb::global_control::max_allowed_parallelism, 1};
+        tbb::task_arena ta{};
+        mandatory_concurrency_body(ta);
+    }
+}
+
+#endif // TBB_USE_EXCEPTIONS

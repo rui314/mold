@@ -1,0 +1,292 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Copyright (c) 2025 Intel Corporation
+	Copyright (c) 2026 UXL Foundation Contributors
+
+    Licensed under the Apache License, Version 2.0 (the "License");
+    you may not use this file except in compliance with the License.
+    You may obtain a copy of the License at
+
+        http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing, software
+    distributed under the License is distributed on an "AS IS" BASIS,
+    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    See the License for the specific language governing permissions and
+    limitations under the License.
+-->
+
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+	<!-- in all of the places below AtomicName._Storage._Value corresponds to AtomicName.load() call -->
+	
+	<Type Name="tbb::detail::d1::concurrent_vector&lt;*,*&gt;">
+		<!-- corresponds to tbb::detail::d1::segment_table::number_of_segments function-->
+		<Intrinsic Name="number_of_segments" Expression="my_segment_table._Storage._Value == my_embedded_table ? pointers_per_embedded_table : pointers_per_long_table"/>
+		
+		<DisplayString>{{ size = {my_size} }}</DisplayString>
+		<Expand>
+			<!-- TODO: add visualization for failed to allocate segments of concurrent_vector-->
+			<!-- TODO: add visualization for capacity without pressing the evaluate button-->
+			<Item Name="[capacity]">this-&gt;capacity()</Item>
+			<Item Name="[allocator]">my_segment_table_allocator</Item>
+
+			<CustomListItems MaxItemsPerView="50">
+				<Variable Name="index" InitialValue="0"/>
+				<Variable Name="segment_index" InitialValue="-1"/>
+				<Loop>
+					<Break Condition="index == my_size._Storage._Value"/>
+					<!--
+						 corresponds to tbb::detail::d1::segment_table::segment_index_of function
+						 calculate segment index for each element in the vector
+					-->
+					<Exec>segment_index = segment_index_type(__log2(1 | index))</Exec>
+					
+					<!--
+						each element in the segment table is stored with the offset
+						hence we can access real element using the global index without calculating
+						the inner index in the segment
+					-->
+					<Item>my_segment_table._Storage._Value[segment_index]._Storage._Value[index]</Item>
+					<Exec>index += 1</Exec>
+				</Loop>
+			</CustomListItems>
+		</Expand>
+	</Type>
+
+	<Type Name="tbb::detail::d2::concurrent_unordered_map&lt;*,*,*,*,*&gt;">
+		<AlternativeType Name="tbb::detail::d2::concurrent_unordered_multimap&lt;*,*,*,*&gt;" />
+		<AlternativeType Name="tbb::detail::d2::concurrent_unordered_set&lt;*,*,*&gt;" />
+		<AlternativeType Name="tbb::detail::d2::concurrent_unordered_multiset&lt;*,*,*&gt;" />
+		
+		<DisplayString>{{ size = {my_size} }}</DisplayString>
+		<Expand>
+			<Item Name="[hash_function]">my_hash_compare.my_hasher</Item>
+			<Item Name="[key_eq]">my_hash_compare.my_equal</Item>
+			<Item Name="[allocator]">my_segments.my_segment_table_allocator</Item>
+
+			<CustomListItems MaxItemsPerView="50">
+				<Variable Name="node_ptr" InitialValue="&amp;my_head"/>
+
+				<!-- traverse the container's internal list -->
+				<Loop>
+					<Break Condition="node_ptr == nullptr"/>
+					<!--
+					    skipping the dummy nodes
+						the condition corresponds to tbb::detail::d2::list_node::is_dummy function
+						each node in the list is an object of base type tbb::detail::d2::list_node
+						if it is not dummy, downcasting the node to tbb::detail::d2::value_node
+					-->
+					<Item Condition="(node_ptr-&gt;my_order_key &amp; 0x1) != 0">((value_node_type*)(node_ptr))-&gt;my_value</Item>
+					<Exec>node_ptr = node_ptr-&gt;my_next._Storage._Value</Exec>
+				</Loop>
+			</CustomListItems>
+		</Expand>
+	</Type>
+
+	<Type Name="tbb::detail::d3::concurrent_map&lt;*,*,*,*&gt;">
+		<AlternativeType Name="tbb::detail::d3::concurrent_multimap&lt;*,*,*,*&gt;"/>
+		<AlternativeType Name="tbb::detail::d3::concurrent_set&lt;*,*,*&gt;"/>
+		<AlternativeType Name="tbb::detail::d3::concurrent_multiset&lt;*,*,*&gt;"/>
+		<Expand>
+			<CustomListItems MaxItemsPerView="1">
+        <!--
+          The size of ordered associative containers is actually located in thread local storage.
+          So, in order to display the size of the container, we have to traverse and sum all elements of TLS.
+          Custom intrinsics do not support loops, only simple expressions, so [size] can not
+          be displayed in DisplayString section.
+        -->
+				<Variable Name="size" InitialValue="0"/>
+				<Variable Name="index" InitialValue="0"/>
+				<Variable Name="segment_index" InitialValue="-1"/>
+				<Loop>
+					<Break Condition="index == my_ets.my_locals.my_size._Storage._Value"/>
+					<Exec>segment_index = __log2(1 | index)</Exec>
+					<Exec>size += (*(thread_data_type*)(&amp;my_ets.my_locals.my_segment_table._Storage._Value[segment_index]._Storage._Value[index])).my_local_size._Storage._Value</Exec>
+					<Exec>index += 1</Exec>
+				</Loop>
+				<Item Name="[size]">size</Item>
+			</CustomListItems>
+
+			<Item Name="[comparator]">my_compare</Item>
+			<Item Name="[allocator]">my_node_allocator</Item>
+			
+			<CustomListItems MaxItemsPerView="50">
+				<!--
+				    Concurrent ordered containers implement a concurrent skip list
+					where each node has multiple pointers to next nodes on each level.
+					Only the first level sub-list contains all nodes in the list.
+					Pointers to the next nodes are not stored in the node class directly
+					but are located in the memory following the node.
+					Next pointer on the first level can be obtained as (std::atomic<list_node_type*>)(node_address + 1)
+
+					The first node in the list is always a dummy node so the first real item is located in the second node.
+				-->
+				<Variable Name="node_ptr" InitialValue="(*(atomic_node_ptr*)(my_head_ptr._Storage._Value + 1))._Storage._Value"/>
+
+				<!-- traverse the skip list on the first level-->
+				<Loop>
+					<Break Condition="node_ptr == nullptr"/>
+					<Item>node_ptr-&gt;my_value</Item>
+					<Exec>node_ptr = (*(atomic_node_ptr*)(node_ptr + 1))._Storage._Value</Exec>
+				</Loop>
+			</CustomListItems>
+		</Expand>
+	</Type>
+
+	<Type Name="tbb::detail::d2::concurrent_hash_map&lt;*,*,*,*&gt;">
+		<!-- corresponds to tbb::detail::d2::hash_map_base::is_valid function -->
+		<Intrinsic Name="is_valid" Expression="(uintptr_t)(ptr) > (uintptr_t)(63)">
+			<Parameter Name="ptr" Type="void*"/>
+		</Intrinsic>
+		
+		<DisplayString>{{ size= {my_size} }}</DisplayString>
+		<Expand>
+			<Item Name="[hash_compare]">my_hash_compare</Item>
+			<Item Name="[allocator]">my_allocator</Item>
+
+			<CustomListItems MaxItemsPerView="50">
+				<Variable Name="k" InitialValue="1"/> <!-- corresponds to tbb::detail::d2::hash_map_iterator::advance_to_next_bucket variable named k -->
+				<Variable Name="segment_index" InitialValue="-1"/>
+				<Variable Name="segment_base" InitialValue="-1"/>
+				<Variable Name="bucket_ptr" InitialValue="(base_type::bucket*)my_embedded_segment"/>
+				<Variable Name="node_ptr" InitialValue="my_embedded_segment-&gt;node_list._Storage._Value"/>
+				
+				<!--
+					The logic corresponds to tbb::detail::d2::hash_map_iterator::advance_to_next_bucket function implementation
+					The container is organized as a segment table of buckets, each bucket contains the list of nodes
+				-->
+				<Loop>
+					<Break Condition="this-&gt;is_valid(node_ptr) || k == my_mask._Storage._Value"/>
+					
+					<!-- beginning of the bucket check (same as in tbb::detail::d2::hash_map_iterator::advance_to_next_bucket) -->
+					<If Condition="k &amp; (k - 2)">
+						<Exec>++bucket_ptr</Exec>
+					</If>
+					<Else>
+						<!--
+							Corresponds to tbb::detail::d2::hash_map_base::get_bucket function
+						-->
+						<Exec>segment_index = (segment_index_type)(__log2(k | 1))</Exec> <!-- tbb::detail::d2::hash_map_base::segment_index_of(k) -->
+						
+						<!-- tbb::detail::d2::hash_map_base::segment_base(segment_index) -->
+						<Exec>segment_base = (segment_index_type(1) &lt;&lt; segment_index &amp; ~segment_index_type(1))</Exec>
+						<Exec>bucket_ptr = &amp;my_table[segment_index]._Storage._Value[k - segment_base]</Exec>
+					</Else>
+					
+					<Exec>node_ptr = bucket_ptr-&gt;node_list._Storage._Value</Exec>
+					<Exec>k += 1</Exec>
+				</Loop>
+				
+				<Loop>
+					<Break Condition="!this-&gt;is_valid(node_ptr)"/>
+					<Item>((node*)(node_ptr))-&gt;my_value</Item>
+					<Exec>node_ptr = node_ptr-&gt;next</Exec>
+					
+					<!--
+						Same logic as above, corresponds to tbb::detail::d2::hash_map_iterator::advance_to_next_bucket
+					-->
+					<Loop>
+						<Break Condition="this-&gt;is_valid(node_ptr) || k == my_mask._Storage._Value"/>
+
+						<If Condition="k &amp; (k - 2)">
+							<Exec>++bucket_ptr</Exec>
+						</If>
+						<Else>
+							<Exec>segment_index = (segment_index_type)(__log2(k | 1))</Exec>
+							<Exec>segment_base = (segment_index_type(1) &lt;&lt; segment_index &amp; ~segment_index_type(1))</Exec>
+							<Exec>bucket_ptr = &amp;my_table[segment_index]._Storage._Value[k - segment_base]</Exec>
+						</Else>
+						
+						<Exec>node_ptr = bucket_ptr-&gt;node_list._Storage._Value</Exec>
+						<Exec>k += 1</Exec>
+					</Loop>
+				</Loop>
+			</CustomListItems>
+		</Expand>
+	</Type>
+
+	<Type Name="tbb::detail::d2::concurrent_queue&lt;*,*&gt;">
+		<!-- TODO: visualize capacity for concurrent_bounded_queue-->
+		<AlternativeType Name="tbb::detail::d2::concurrent_bounded_queue&lt;*,*&gt;"/>
+		
+		<!-- corresponds to std::max function -->
+		<Intrinsic Name="max" Expression="arg1 > arg2 ? arg1 : arg2">
+			<Parameter Name="arg1" Type="int"/>
+			<Parameter Name="arg2" Type="int"/>
+		</Intrinsic>
+		
+		<!-- corresponds to tbb::detail::d2::concurrent_queue_rep::index function -->
+		<Intrinsic Name="get_micro_queue_index" Expression="arg * my_queue_representation-&gt;phi % my_queue_representation-&gt;n_queue">
+			<Parameter Name="arg" Type="int"/>
+		</Intrinsic>
+		
+		<!-- corresponds to tbb::detail::modulo_power_of_two function called with arg / n_queue argument and items_per_page divisor -->
+		<Intrinsic Name="get_item_index_in_the_page" Expression="(arg / my_queue_representation-&gt;n_queue) &amp; (my_queue_representation-&gt;items_per_page - 1)">
+			<Parameter Name="arg" Type="int"/>
+		</Intrinsic>
+		
+		<!-- TODO: add visualization for invalid entries-->
+		<!-- corresponds to tbb::detail::d2::concurrent_queue_rep::size function -->
+		<DisplayString>{{ size = { this-&gt;max(0, my_queue_representation-&gt;tail_counter._Storage._Value - my_queue_representation-&gt;head_counter._Storage._Value - my_queue_representation-&gt;n_invalid_entries._Storage._Value) } }}</DisplayString>
+		<Expand>
+			<Item Name="[allocator]">my_allocator</Item>
+
+			<CustomListItems MaxItemsPerView="50">
+				<!-- starting indexes from my_queue_representation->head_counter value -->
+				<Variable Name="index" InitialValue="my_queue_representation-&gt;head_counter._Storage._Value"/>
+				<Variable Name="micro_queue_index" InitialValue="-1"/>
+				<Variable Name="local_page_index" InitialValue="0"/>
+				<Variable Name="processing_page_index" InitialValue="0"/>
+				<Variable Name="index_in_the_page" InitialValue="0"/>
+				<Variable Name="page_ptr" InitialValue="my_queue_representation-&gt;array[0].head_page._Storage._Value"/> <!-- would be restored in the loop-->
+
+				<!--
+					the elements in the queue are stored in the set of micro-queues
+					if the element is placed in the micro-queue number N, the next element would be stored
+					in the micro-queue number (N + phi) % n_queues (phi = 3, n_queues = 8 in the current implementation)
+					the first element is stored in the micro_quues[0]
+					the second element - in the micro_queues[3]
+					the third element - in the micro_queues[6]
+					the fourth element - in the micro_queues[1] etc.
+					
+					the elements in the micro-queues are stored in the pages organised as a list
+					each micro-queue contains a pointer to the head_page
+				-->
+				
+				<!-- traverse all of the elements with indices between head_counter and tail_counter -->
+				<Loop>
+					<Break Condition="index == my_queue_representation-&gt;tail_counter._Storage._Value"/>
+			
+					<!-- calculate the index of the micro-queue where the desired element is located -->
+					<Exec>micro_queue_index = this-&gt;get_micro_queue_index(index)</Exec>
+					
+					<!-- calculate the index of the desired element in on of the pages-->
+					<Exec>index_in_the_page = this-&gt;get_item_index_in_the_page(index)</Exec>
+					
+					<!--
+						finding the page that is currently traversed
+						pages number 0 are searched first
+					-->
+					<Exec>page_ptr = my_queue_representation-&gt;array[micro_queue_index].head_page._Storage._Value</Exec> 
+
+					<!-- if the last element in the seg of pages is processing, increase the global index of the page -->
+					<If Condition="index != 0 &amp;&amp; 0 == (index % (my_queue_representation-&gt;n_queue * my_queue_representation-&gt;items_per_page))">
+				        <Exec>processing_page_index += 1</Exec>
+                    </If>
+					
+					<!-- finding the page number processing_page_index in the desired micro-queue starting from the head page -->
+					<Loop>
+						<Break Condition="local_page_index == processing_page_index"/>
+						<Exec>page_ptr = page_ptr-&gt;next</Exec>
+						<Exec>local_page_index += 1</Exec>
+					</Loop>
+					<Exec>local_page_index = 0</Exec> <!-- reset for the next iteration -->
+
+					<Item>page_ptr-&gt;items[index_in_the_page]</Item>
+					
+					<Exec>index += 1</Exec>
+				</Loop>
+			</CustomListItems>
+		</Expand>
+	</Type>
+</AutoVisualizer>

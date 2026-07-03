@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2020-2021 Intel Corporation
+    Copyright (c) 2020-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,6 +20,7 @@
 #endif
 
 #include "conformance_flowgraph.h"
+#include <unordered_set>
 
 //! \file conformance_indexer_node.cpp
 //! \brief Test for [flow_graph.indexer_node] specification
@@ -160,4 +162,56 @@ TEST_CASE("indexer_node copy constructor"){
 //! \brief \ref interface \ref requirement
 TEST_CASE("indexer_node output_type") {
     CHECK_MESSAGE((conformance::check_output_type<my_output_type, oneapi::tbb::flow::tagged_msg<size_t, int, float, input_msg>>()), "indexer_node output_type should returns a tagged_msg");
+}
+
+template <std::size_t N, typename... Args>
+struct indexer_node_type_generator_impl {
+    using type = typename indexer_node_type_generator_impl<N - 1, Args..., int>::type;
+};
+
+template <typename... Args>
+struct indexer_node_type_generator_impl<0, Args...> {
+    using type = oneapi::tbb::flow::indexer_node<Args...>;
+};
+
+// Generates oneapi::tbb::flow::indexer_node<int, int, ..., int> with N integer template arguments
+template <std::size_t N>
+using indexer_node_type_generator_t = typename indexer_node_type_generator_impl<N>::type;
+
+template <std::size_t NInputs>
+void test_indexer_node_with_n_inputs() {
+    using namespace oneapi::tbb::flow;
+    using indexer_type = indexer_node_type_generator_t<NInputs>;
+    int message = 42;
+
+    graph g;
+    
+    broadcast_node<int> submitter(g);
+    indexer_type indexer(g);
+
+    using output_type = typename indexer_type::output_type;
+
+    std::unordered_set<std::size_t> tags;
+
+    function_node<output_type> receiver(g, serial, [&](const output_type& indexer_output) {
+        auto result = tags.emplace(indexer_output.tag());
+        CHECK_MESSAGE(result.second, "Duplicated tags returned from the indexer_node");
+        CHECK_MESSAGE(cast_to<int>(indexer_output) == message, "Invalid message returned from indexer node");
+    });
+
+    edge_maker<NInputs>::make(submitter, indexer);
+    make_edge(indexer, receiver);
+
+    submitter.try_put(message);
+    g.wait_for_all();
+
+    CHECK_MESSAGE(tags.size() == NInputs, "Incorrect number of tags returned from the indexer_node");
+    for (std::size_t i = 0; i < NInputs; ++i) {
+        CHECK_MESSAGE(tags.count(i) == 1, "Some tag was not returned from indexer_node");
+    }
+}
+
+//! \brief \ref interface \ref requirement
+TEST_CASE("indexer_node with large number of input ports") {
+    test_indexer_node_with_n_inputs<50>();
 }

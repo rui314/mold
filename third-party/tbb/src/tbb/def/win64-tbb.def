@@ -1,4 +1,5 @@
 ; Copyright (c) 2005-2025 Intel Corporation
+; Copyright (c) 2025 UXL Foundation Contributors
 ;
 ; Licensed under the Apache License, Version 2.0 (the "License");
 ; you may not use this file except in compliance with the License.
@@ -18,6 +19,8 @@ EXPORTS
 
 ; Assertions (assert.cpp)
 ?assertion_failure@r1@detail@tbb@@YAXPEBDH00@Z
+?set_assertion_handler@r1@detail@tbb@@YAP6AXPEBDH00@ZP6AX0H00@Z@Z
+?get_assertion_handler@r1@detail@tbb@@YAP6AXPEBDH00@ZXZ
 
 ; ITT (tbb_profiling.cpp)
 ?call_itt_notify@r1@detail@tbb@@YAXHPEAX@Z
@@ -72,6 +75,7 @@ EXPORTS
 ?current_suspend_point@r1@detail@tbb@@YAPEAUsuspend_point_type@123@XZ
 ?notify_waiters@r1@detail@tbb@@YAX_K@Z
 ?get_thread_reference_vertex@r1@detail@tbb@@YAPEAVwait_tree_vertex_interface@d1@23@PEAV4523@@Z
+?current_task_ptr@r1@detail@tbb@@YAPEAVtask@d1@23@XZ
 
 ; Task dispatcher (task_dispatcher.cpp)
 ?spawn@r1@detail@tbb@@YAXAEAVtask@d1@23@AEAVtask_group_context@523@@Z

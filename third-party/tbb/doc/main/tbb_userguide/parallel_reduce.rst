@@ -184,3 +184,4 @@ a single ``parallel_reduce``.
    :width: 512px
    :height: 438px
 
+.. include:: parallel_reduce_toctree.rst

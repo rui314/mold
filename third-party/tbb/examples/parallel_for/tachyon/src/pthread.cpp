@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -113,8 +113,10 @@ int pthread_join(pthread_t th, void **thread_return) {
 void pthread_exit(void *retval) {
     /*  specific to PTHREAD_TO_WINTHREAD  */
 
+    /* clang-format off */
     ExitThread((DWORD)(
         (std::size_t)retval)); /* thread becomes signalled so its death can be waited upon */
+    /* clang-format on */
     /*NOTREACHED*/
     assert(0);
     return; /* void fnc; can't return an error code */

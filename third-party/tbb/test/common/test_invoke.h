@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2023 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -88,8 +89,8 @@ private:
         (std::get<Is>(ports).try_put(id) , ...);
     }
 public:
-    template <typename TupleOfPorts>
-    void send_id(TupleOfPorts& ports) const {
+    template <typename TupleOfPorts, typename... Args>
+    void send_id(TupleOfPorts& ports, Args...) const {
         send_id_impl(ports, std::make_index_sequence<std::tuple_size<TupleOfPorts>::value>());
     }
 

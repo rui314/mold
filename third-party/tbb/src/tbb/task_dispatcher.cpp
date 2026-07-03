@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2020-2022 Intel Corporation
+    Copyright (c) 2020-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -89,7 +90,7 @@ void __TBB_EXPORTED_FUNC submit(d1::task& t, d1::task_group_context& ctx, arena*
 
     if ( tls.is_attached_to(a) ) {
         arena_slot* slot = tls.my_arena_slot;
-#if __TBB_PREVIEW_CRITICAL_TASKS
+#if __TBB_CRITICAL_TASKS
         if( as_critical ) {
             a->my_critical_task_stream.push( &t, subsequent_lane_selector(slot->critical_hint()) );
         } else
@@ -99,7 +100,7 @@ void __TBB_EXPORTED_FUNC submit(d1::task& t, d1::task_group_context& ctx, arena*
         }
     } else {
         random_lane_selector lane_selector{tls.my_random};
-#if !__TBB_PREVIEW_CRITICAL_TASKS
+#if !__TBB_CRITICAL_TASKS
         suppress_unused_warning(as_critical);
 #else
         if ( as_critical ) {
@@ -173,11 +174,7 @@ void task_dispatcher::execute_and_wait(d1::task* t, d1::wait_context& wait_ctx, 
         local_td.m_thread_data->my_inbox.set_is_idle(false);
     }
 
-    auto exception = w_ctx.my_exception.load(std::memory_order_acquire);
-    if (exception) {
-        __TBB_ASSERT(w_ctx.is_group_execution_cancelled(), "The task group context with an exception should be canceled.");
-        exception->throw_self();
-    }
+    handle_context_exception(w_ctx);
 }
 
 #if __TBB_RESUMABLE_TASKS

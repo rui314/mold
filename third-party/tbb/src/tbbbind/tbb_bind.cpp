@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2019-2024 Intel Corporation
+    Copyright (c) 2019-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -20,6 +21,7 @@
 #include "../tbb/assert_impl.h" // Out-of-line TBB assertion handling routines are instantiated here.
 #include "oneapi/tbb/detail/_assert.h"
 #include "oneapi/tbb/detail/_config.h"
+#include "oneapi/tbb/detail/_utils.h"
 
 #if _MSC_VER && !__INTEL_COMPILER && !__clang__
 #pragma warning( push )
@@ -354,7 +356,13 @@ public:
     void fill_constraints_affinity_mask(affinity_mask input_mask, int numa_node_index, int core_type_index, int max_threads_per_core) {
         __TBB_ASSERT(is_topology_parsed(), "Trying to get access to uninitialized system_topology");
         __TBB_ASSERT(numa_node_index < (int)numa_affinity_masks_list.size(), "Wrong NUMA node id");
-        __TBB_ASSERT(core_type_index < (int)core_types_affinity_masks_list.size(), "Wrong core type id");
+        __TBB_ASSERT(core_type_index == -1 ||
+            // In the multiple core type format, the MSb of the first bitmask_width bits represents the highest core type id
+            (multi_core_type_codec::is_single(core_type_index)
+                 ? (size_t)core_type_index
+                 : log2(core_type_index & ((1 << multi_core_type_codec::bitmask_width) - 1))) <
+                core_types_affinity_masks_list.size(),
+            "Wrong core type id");
         __TBB_ASSERT(max_threads_per_core == -1 || max_threads_per_core > 0, "Wrong max_threads_per_core");
 
         hwloc_cpuset_t constraints_mask = hwloc_bitmap_alloc();
@@ -364,8 +372,19 @@ public:
         if (numa_node_index >= 0) {
             hwloc_bitmap_and(constraints_mask, constraints_mask, numa_affinity_masks_list[numa_node_index]);
         }
-        if (core_type_index >= 0) {
-            hwloc_bitmap_and(constraints_mask, constraints_mask, core_types_affinity_masks_list[core_type_index]);
+        if (multi_core_type_codec::is_core_type(core_type_index)) {
+            auto core_types = multi_core_type_codec::decode(core_type_index);
+            __TBB_ASSERT(!core_types.empty(), "Core types list must not be empty");
+
+            hwloc_cpuset_t core_types_mask = hwloc_bitmap_alloc();
+
+            // Combine affinity masks for specified core types
+            for (int c : core_types) {
+                hwloc_bitmap_or(core_types_mask, core_types_mask, core_types_affinity_masks_list[c]);
+            }
+
+            hwloc_bitmap_and(constraints_mask, constraints_mask, core_types_mask);
+            hwloc_bitmap_free(core_types_mask);
         }
         if (max_threads_per_core > 0) {
             // clear input mask
@@ -551,6 +570,9 @@ public:
         topology.set_affinity_mask(affinity_backup[slot_num]);
     };
 
+    system_topology::affinity_mask get_affinity_mask() {
+        return handler_affinity_mask;
+    }
 };
 
 extern "C" { // exported to TBB interfaces
@@ -587,12 +609,21 @@ TBBBIND_EXPORT void __TBB_internal_restore_affinity(binding_handler* handler_ptr
     handler_ptr->restore_previous_affinity_mask(slot_num);
 }
 
+TBBBIND_EXPORT hwloc_bitmap_t __TBB_internal_get_affinity_mask(binding_handler* handler_ptr) {
+    __TBB_ASSERT(handler_ptr != nullptr, "Trying to get access to uninitialized metadata.");
+    return handler_ptr->get_affinity_mask();
+}
+
 TBBBIND_EXPORT int __TBB_internal_get_default_concurrency(int numa_id, int core_type_id, int max_threads_per_core) {
     return system_topology::instance().get_default_concurrency(numa_id, core_type_id, max_threads_per_core);
 }
 
 TBBBIND_EXPORT void __TBB_internal_destroy_system_topology() {
     return system_topology::destroy();
+}
+
+TBBBIND_EXPORT void __TBB_internal_set_tbbbind_assertion_handler(assertion_handler_type handler) {
+    assertion_handler::set(handler);
 }
 
 } // extern "C"

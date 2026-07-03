@@ -40,24 +40,14 @@ The execution on systems with non-uniform memory access (NUMA https://en.wikiped
 may cause a performance penalty if threads from one NUMA node access the memory allocated on
 a different NUMA node. To reduce this overhead, the work may be divided among several ``task_arena``
 instances, whose execution preference is set to different NUMA nodes. To set execution preference,
-assign a NUMA node identifier to the ``task_arena::constraints::numa_id`` field.
+assign a NUMA node identifier to the ``task_arena::constraints::numa_id`` field or use
+the ``tbb::create_numa_task_arenas`` function to create a set of task arenas,
+one per NUMA node on the system.
 
-::
-
-    std::vector<tbb::numa_node_id> numa_indexes = tbb::info::numa_nodes();
-    std::vector<tbb::task_arena> arenas(numa_indexes.size());
-    std::vector<tbb::task_group> task_groups(numa_indexes.size());
-
-    for(unsigned j = 0; j < numa_indexes.size(); j++) {
-        arenas[j].initialize(tbb::task_arena::constraints(numa_indexes[j]));
-        arenas[j].execute([&task_groups, &j](){ 
-            task_groups[j].run([](){/*some parallel stuff*/});
-        });
-    }
-
-    for(unsigned j = 0; j < numa_indexes.size(); j++) {
-        arenas[j].execute([&task_groups, &j](){ task_groups[j].wait(); });
-    }
+.. literalinclude:: ./examples/guiding_task_scheduler_execution.cpp
+    :language: c++
+    :start-after: /*begin_set_numa_node_example*/
+    :end-before: /*end_set_numa_node_example*/
 
 Set Core Type
 *************

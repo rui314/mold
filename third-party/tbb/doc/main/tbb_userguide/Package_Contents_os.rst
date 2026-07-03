@@ -5,7 +5,7 @@ Package Contents
 
 
 |full_name| includes dynamic library files and header files for Windows\*, Linux\*
-and macOS\* operating systems as described in this section.
+and macOS\* operating systems, as well as a number of supporting files like CMake and pkg-config files, as described in this section.
 
 .. toctree::
    :maxdepth: 4

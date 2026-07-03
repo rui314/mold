@@ -11,6 +11,7 @@
    ../tbb_userguide/Package_Contents_os
    ../tbb_userguide/Parallelizing_Simple_Loops_os
    ../tbb_userguide/Parallelizing_Complex_Loops
+   ../tbb_userguide/Parallelizing_with_Tasks
    ../tbb_userguide/Flow_Graph
    ../tbb_userguide/work_isolation
    ../tbb_userguide/Exceptions_and_Cancellation

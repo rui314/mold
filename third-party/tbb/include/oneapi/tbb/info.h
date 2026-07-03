@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2019-2022 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -19,8 +20,10 @@
 
 #include "detail/_config.h"
 #include "detail/_namespace_injection.h"
+#include "detail/_utils.h"
+#include "version.h"
 
-#if __TBB_ARENA_BINDING
+#include <tuple>
 #include <vector>
 #include <cstdint>
 
@@ -103,6 +106,59 @@ inline int default_concurrency(constraints c) {
     return r1::constraints_default_concurrency(c);
 }
 
+#if __TBB_PREVIEW_TASK_ARENA_CORE_TYPE_SELECTOR
+// Call a custom selector on the available core type(s) and encode those selected
+template <typename Selector>
+inline core_type_id apply_core_type_selector(Selector selector) {
+    constexpr core_type_id automatic = -1;
+
+    auto ids = core_types();
+    size_t total = ids.size();
+    if (total < 2) {
+        // Not enough core types to select from, so use the default
+        return automatic;
+    }
+
+    int max_score = 0, max_score_id = -1, num_zero_scores = 0;
+    std::vector<core_type_id> selected_core_types;
+    for (size_t index = 0; index < total; ++index) {
+        int score = selector(std::make_tuple(ids[index], index, total));
+        if (score > 0) {
+            selected_core_types.push_back(ids[index]);
+        }
+        else if (score == 0) {
+            ++num_zero_scores;
+        }
+
+        if (TBB_runtime_interface_version() < 12180) {
+            if (score > max_score) {
+                max_score = score;
+                max_score_id = ids[index];
+            }
+        }
+    }
+    if (TBB_runtime_interface_version() < 12180) {
+        // No runtime multi core type support, so select all or one
+        if (selected_core_types.size() + num_zero_scores == total) {
+            selected_core_types.clear(); // all
+        }
+        else if (!selected_core_types.empty()) {
+            selected_core_types = { max_score_id }; // the one with the highest score
+        }
+    }
+    return multi_core_type_codec::encode(selected_core_types);
+}
+
+template <typename Selector>
+inline int default_concurrency(constraints c, Selector selector) {
+    constexpr core_type_id selectable = -2;
+    if (c.core_type == selectable) {
+        c.core_type = apply_core_type_selector(selector);
+    }
+    return default_concurrency(c);
+}
+#endif
+
 } // namespace d1
 } // namespace detail
 
@@ -119,7 +175,5 @@ using detail::d1::default_concurrency;
 } // namespace v1
 
 } // namespace tbb
-
-#endif /*__TBB_ARENA_BINDING*/
 
 #endif /*__TBB_info_H*/

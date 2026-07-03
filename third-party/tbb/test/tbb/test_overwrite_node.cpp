@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -423,3 +423,13 @@ TEST_CASE("test overwrite_node try_put_and_wait") {
     test_overwrite_node_try_put_and_wait();
 }
 #endif
+
+//! Test for nested make_edge from predecessor of continue_node that adds edge to overwrite_node
+//! \brief \ref error_guessing
+TEST_CASE("Nested make_edge to continue_node") {
+    tbb::flow::graph g;
+
+    using msg_t = tbb::flow::continue_msg;
+    using buffer_t = tbb::flow::overwrite_node<msg_t>;
+    test_nested_make_edge_single_item_buffer_to_continue_receiver<buffer_t>();
+}

@@ -11,6 +11,7 @@
    /main/intro/Benefits
    /main/intro/testing_approach
    /main/intro/limitations.rst
+   /main/intro/api_abi_changes
 
 
 .. toctree::
@@ -40,3 +41,11 @@
    :caption: Developer Reference
 
    /main/reference/reference
+
+
+.. toctree::
+   :maxdepth: 3
+   :hidden:
+   :caption: Specification
+
+   /main/specification/source/index

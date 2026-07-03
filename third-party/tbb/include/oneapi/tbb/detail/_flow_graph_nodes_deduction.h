@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -24,82 +25,102 @@ namespace detail {
 namespace d2 {
 
 template <typename Input, typename Output>
-struct declare_body_types {
-    using input_type = Input;
-    using output_type = Output;
+struct body_types {
+    using input_type = std::decay_t<Input>;
+    using output_type = std::decay_t<Output>;
 };
 
-struct NoInputBody {};
+template <typename Input, typename Output>
+struct checked_body_types : body_types<Input, Output> {
+private:
+    using base_type = body_types<Input, Output>;
 
-template <typename Output>
-struct declare_body_types<NoInputBody, Output> {
-    using output_type = Output;
+    static_assert(std::is_same_v<Input, typename base_type::input_type> ||
+                  std::is_same_v<Input, const typename base_type::input_type&>,
+                  "The node body can only accept input by value or by const lvalue reference");
 };
 
-template <typename T> struct body_types;
+template <typename Body, typename = void>
+struct body_traits {
+    // !std::is_same_v<Body, Body> is needed to create a dependent context for static_assert(false)
+    static_assert(!std::is_same_v<Body, Body>, "Body signature does not match the named requirements");
+};
 
-template <typename T, typename Input, typename Output>
-struct body_types<Output (T::*)(const Input&) const> : declare_body_types<Input, Output> {};
+// Body is a pointer to function
+template <typename Input, typename Output>
+struct body_traits<Output (*)(Input)> : body_types<Input, Output> {};
 
-template <typename T, typename Input, typename Output>
-struct body_types<Output (T::*)(const Input&)> : declare_body_types<Input, Output> {};
+// Body is a pointer to noexcept function 
+template <typename Input, typename Output>
+struct body_traits<Output (*)(Input) noexcept> : body_types<Input, Output> {};
 
-template <typename T, typename Input, typename Output>
-struct body_types<Output (T::*)(Input&) const> : declare_body_types<Input, Output> {};
+// Body is a pointer to non-static data member
+template <typename Input, typename Output>
+struct body_traits<Output Input::*> : body_types<Input, Output> {};
 
-template <typename T, typename Input, typename Output>
-struct body_types<Output (T::*)(Input&)> : declare_body_types<Input, Output> {};
-
-template <typename T, typename Output>
-struct body_types<Output (T::*)(d1::flow_control&) const> : declare_body_types<NoInputBody, Output> {};
-
-template <typename T, typename Output>
-struct body_types<Output (T::*)(d1::flow_control&)> : declare_body_types<NoInputBody, Output> {};
+// Body is a pointer to non-static member function
+template <typename Input, typename Output>
+struct body_traits<Output (Input::*)() const> : body_types<Input, Output> {};
 
 template <typename Input, typename Output>
-struct body_types<Output (*)(Input&)> : declare_body_types<Input, Output> {};
+struct body_traits<Output (Input::*)() const noexcept> : body_types<Input, Output> {};
 
-template <typename Input, typename Output>
-struct body_types<Output (*)(const Input&)> : declare_body_types<Input, Output> {};
+// Body is a callable/lambda
+// Helper to read input/output types of operator() with single argument
+// Supports Body defining multiple operator() overloads, but should have single unary overload
+template <typename Body>
+struct unary_operator_types_extractor {
+    // Overloads for const, noexcept and & qualified operator() with all possible combinations
+    template <typename B, typename Input, typename Output>
+    static auto check_args(Output (B::*)(Input)) -> checked_body_types<Input, Output>;
 
-template <typename Output>
-struct body_types<Output (*)(d1::flow_control&)> : declare_body_types<NoInputBody, Output> {};
+    template <typename B, typename Input, typename Output>
+    static auto check_args(Output (B::*)(Input) const) -> checked_body_types<Input, Output>;
+
+    template <typename B, typename Input, typename Output>
+    static auto check_args(Output (B::*)(Input) noexcept) -> checked_body_types<Input, Output>;
+
+    template <typename B, typename Input, typename Output>
+    static auto check_args(Output (B::*)(Input) const noexcept) -> checked_body_types<Input, Output>;
+
+    template <typename B, typename Input, typename Output>
+    static auto check_args(Output (B::*)(Input) &) -> checked_body_types<Input, Output>;
+
+    template <typename B, typename Input, typename Output>
+    static auto check_args(Output (B::*)(Input) const &) -> checked_body_types<Input, Output>;
+
+    template <typename B, typename Input, typename Output>
+    static auto check_args(Output (B::*)(Input) & noexcept) -> checked_body_types<Input, Output>;
+
+    template <typename B, typename Input, typename Output>
+    static auto check_args(Output (B::*)(Input) const & noexcept) -> checked_body_types<Input, Output>;
+
+    // Checking layer to force SFINAE in case of operator() absence
+    template <typename B>
+    static auto check_call_operator_presence(int) -> decltype(check_args(&B::operator()));
+
+    template <typename B>
+    static void check_call_operator_presence(...);
+
+    using operator_types = decltype(check_call_operator_presence<Body>(0));
+};
 
 template <typename Body>
-using input_t = typename body_types<Body>::input_type;
+struct body_traits<Body, std::void_t<typename unary_operator_types_extractor<Body>::operator_types::input_type>>
+    : unary_operator_types_extractor<Body>::operator_types
+{};
 
 template <typename Body>
-using output_t = typename body_types<Body>::output_type;
-
-template <typename T, typename Input, typename Output>
-auto decide_on_operator_overload(Output (T::*name)(const Input&) const)->decltype(name);
-
-template <typename T, typename Input, typename Output>
-auto decide_on_operator_overload(Output (T::*name)(const Input&))->decltype(name);
-
-template <typename T, typename Input, typename Output>
-auto decide_on_operator_overload(Output (T::*name)(Input&) const)->decltype(name);
-
-template <typename T, typename Input, typename Output>
-auto decide_on_operator_overload(Output (T::*name)(Input&))->decltype(name);
-
-template <typename Input, typename Output>
-auto decide_on_operator_overload(Output (*name)(const Input&))->decltype(name);
-
-template <typename Input, typename Output>
-auto decide_on_operator_overload(Output (*name)(Input&))->decltype(name);
+using input_type_of = typename body_traits<Body>::input_type;
 
 template <typename Body>
-decltype(decide_on_operator_overload(&Body::operator())) decide_on_callable_type(int);
-
-template <typename Body>
-decltype(decide_on_operator_overload(std::declval<Body>())) decide_on_callable_type(...);
+using output_type_of = typename body_traits<Body>::output_type;
 
 // Deduction guides for Flow Graph nodes
 
 template <typename GraphOrSet, typename Body>
 input_node(GraphOrSet&&, Body)
-->input_node<output_t<decltype(decide_on_callable_type<Body>(0))>>;
+->input_node<std::invoke_result_t<Body, d1::flow_control&>>;
 
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
 
@@ -134,7 +155,7 @@ queue_node(const NodeSet&)
 
 template <typename GraphOrProxy, typename Sequencer>
 sequencer_node(GraphOrProxy&&, Sequencer)
-->sequencer_node<input_t<decltype(decide_on_callable_type<Sequencer>(0))>>;
+->sequencer_node<input_type_of<Sequencer>>;
 
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
 template <typename NodeSet, typename Compare>
@@ -145,6 +166,13 @@ template <typename NodeSet>
 priority_queue_node(const NodeSet&)
 ->priority_queue_node<decide_on_set_t<NodeSet>, std::less<decide_on_set_t<NodeSet>>>;
 #endif // __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
+
+template <typename T>
+using is_queueing_or_reserving_tag = std::disjunction<std::is_same<T, queueing>, std::is_same<T, reserving>>;
+
+template <typename T, typename... Args>
+using are_queueing_or_reserving_tags = std::conjunction<is_queueing_or_reserving_tag<T>,
+                                                        is_queueing_or_reserving_tag<Args>...>;
 
 template <typename Key>
 struct join_key {
@@ -160,12 +188,14 @@ template <typename Key>
 using join_key_t = typename join_key<Key>::type;
 
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-template <typename Policy, typename... Predecessors>
-join_node(const node_set<order::following, Predecessors...>&, Policy)
-->join_node<std::tuple<typename Predecessors::output_type...>,
-            Policy>;
 
-template <typename Policy, typename Successor, typename... Successors>
+template <typename... Predecessors, typename Policy,
+          std::enable_if_t<are_queueing_or_reserving_tags<Policy>::value, int> = 0>
+join_node(const node_set<order::following, Predecessors...>&, Policy)
+->join_node<std::tuple<typename Predecessors::output_type...>, Policy>;
+
+template <typename Successor, typename... Successors, typename Policy,
+          std::enable_if_t<are_queueing_or_reserving_tags<Policy>::value, int> = 0>
 join_node(const node_set<order::preceding, Successor, Successors...>&, Policy)
 ->join_node<typename Successor::input_type, Policy>;
 
@@ -179,19 +209,17 @@ join_node(const node_set<order::preceding, Successor, Successors...>)
 ->join_node<typename Successor::input_type, queueing>;
 #endif
 
-template <typename GraphOrProxy, typename Body, typename... Bodies>
+template <typename GraphOrProxy, typename Body, typename... Bodies,
+          std::enable_if_t<!are_queueing_or_reserving_tags<Body, Bodies...>::value, int> = 0> 
 join_node(GraphOrProxy&&, Body, Bodies...)
-->join_node<std::tuple<input_t<decltype(decide_on_callable_type<Body>(0))>,
-                       input_t<decltype(decide_on_callable_type<Bodies>(0))>...>,
-            key_matching<join_key_t<output_t<decltype(decide_on_callable_type<Body>(0))>>>>;
+->join_node<std::tuple<input_type_of<Body>, input_type_of<Bodies>...>,
+            key_matching<join_key_t<output_type_of<Body>>>>;
 
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
 template <typename... Predecessors>
 indexer_node(const node_set<order::following, Predecessors...>&)
 ->indexer_node<typename Predecessors::output_type...>;
-#endif
 
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
 template <typename NodeSet>
 limiter_node(const NodeSet&, size_t)
 ->limiter_node<decide_on_set_t<NodeSet>>;
@@ -203,23 +231,18 @@ split_node(const node_set<order::following, Predecessor, Predecessors...>&)
 template <typename... Successors>
 split_node(const node_set<order::preceding, Successors...>&)
 ->split_node<std::tuple<typename Successors::input_type...>>;
-
 #endif
 
 template <typename GraphOrSet, typename Body, typename Policy>
 function_node(GraphOrSet&&,
               size_t, Body,
               Policy, node_priority_t = no_priority)
-->function_node<input_t<decltype(decide_on_callable_type<Body>(0))>,
-                output_t<decltype(decide_on_callable_type<Body>(0))>,
-                Policy>;
+->function_node<input_type_of<Body>, output_type_of<Body>, Policy>;
 
 template <typename GraphOrSet, typename Body>
 function_node(GraphOrSet&&, size_t,
               Body, node_priority_t = no_priority)
-->function_node<input_t<decltype(decide_on_callable_type<Body>(0))>,
-                output_t<decltype(decide_on_callable_type<Body>(0))>,
-                queueing>;
+->function_node<input_type_of<Body>, output_type_of<Body>, queueing>;
 
 template <typename Output>
 struct continue_output {

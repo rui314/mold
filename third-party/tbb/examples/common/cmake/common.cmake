@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2025 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,4 +45,27 @@ macro(add_execution_target TARGET_NAME TARGET_DEPENDENCIES EXECUTABLE ARGS)
     endif()
 
     add_dependencies(${TARGET_NAME} ${TARGET_DEPENDENCIES})
+endmacro()
+
+macro(add_benchmark_target TARGET_NAME TARGET_DEPENDENCIES EXECUTABLE ARGS)
+    find_program(GAWK gawk NO_CACHE)
+    if(NOT GAWK)
+      message(WARNING "AWK tool is not found: no benchmark reports will be composed by ${TARGET_NAME}.")
+    else()
+      message("AWK tool to compose data reports by ${TARGET_NAME}: ${GAWK}")
+      find_file(TARGET_NAME_FILTER
+        NAMES ${TARGET_NAME}.awk
+        PATHS ${CMAKE_CURRENT_SOURCE_DIR}
+        REQUIRED NO_CACHE)
+      if (WIN32)
+        add_custom_target(${TARGET_NAME}
+          COMMAND set "PATH=$<TARGET_FILE_DIR:TBB::tbb>\\;$ENV{PATH}" & ${EXECUTABLE} ${ARGS} 2>&1 | ${GAWK} -v run_args="${ARGS}" -f ${TARGET_NAME_FILTER} > ${TARGET_NAME}.csv
+        )
+      else()
+        add_custom_target(${TARGET_NAME}
+          COMMAND  ${EXECUTABLE} ${ARGS} 2>&1 | ${GAWK} -v run_args="${ARGS}" -f ${TARGET_NAME_FILTER} > ${TARGET_NAME}.csv
+        )
+      endif()
+      add_dependencies(${TARGET_NAME} ${TARGET_DEPENDENCIES})
+    endif()
 endmacro()

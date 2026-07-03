@@ -128,8 +128,8 @@ and the `this_task_arena` namespace.
 ```cpp
 class task_arena {
     enum class leave_policy : /* unspecified type */ {
-        automatic = /* unspecifed */,
-        fast = /* unspecifed */,
+        automatic = /* unspecified */,
+        fast = /* unspecified */,
     };
 
     task_arena(int max_concurrency = automatic, unsigned reserved_for_masters = 1,

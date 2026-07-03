@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -21,6 +22,8 @@
 #include <cstdint>
 #include <atomic>
 #include <functional>
+#include <vector>
+#include <climits>
 
 #include "_config.h"
 #include "_assert.h"
@@ -37,8 +40,8 @@ template<typename... T> void suppress_unused_warning(T&&...) {}
 /** It should be used only in situations where having a compile-time upper
   bound is more useful than a run-time exact answer.
   @ingroup memory_allocation */
-constexpr size_t max_nfs_size = 128;
-constexpr std::size_t max_nfs_size_exp = 7;
+__TBB_GLOBAL_VAR constexpr size_t max_nfs_size = 128;
+__TBB_GLOBAL_VAR constexpr std::size_t max_nfs_size_exp = 7;
 static_assert(1 << max_nfs_size_exp == max_nfs_size, "max_nfs_size_exp must be a log2(max_nfs_size)");
 
 //! Class that implements exponential backoff.
@@ -155,6 +158,59 @@ T reverse_n_bits(T src, std::size_t n) {
     return reverse_bits(src) >> (number_of_bits<T>() - n);
 }
 
+//! Encodes/decodes multiple core type IDs into/from a single integer value using bitmask
+struct multi_core_type_codec {
+    using core_type_id = int;
+    static constexpr core_type_id automatic = -1;
+
+    static core_type_id encode(const std::vector<core_type_id>& ids) {
+        if (ids.empty()) {
+            return automatic;
+        }
+        if (ids.size() == 1) {
+            return ids[0];
+        }
+
+        core_type_id result = core_type_id(encoding_format << bitmask_width);
+
+        for (core_type_id id : ids) {
+            __TBB_ASSERT((0 <= id) && (id < static_cast<core_type_id>(bitmask_width)), "Wrong core type id");
+            result |= (1 << id);
+        }
+
+        return result;
+    }
+    static std::vector<core_type_id> decode(core_type_id core_type) {
+        if (!is_encoded(core_type)) {
+            return {core_type};
+        }
+
+        std::vector<core_type_id> core_type_ids;
+        for (size_t bit_pos = 0; bit_pos < bitmask_width; ++bit_pos) {
+            if (core_type & (1 << bit_pos)) {
+                core_type_ids.push_back(static_cast<core_type_id>(bit_pos));
+            }
+        }
+        return core_type_ids;
+    }
+    static bool is_single(core_type_id id) {
+        return (id >> bitmask_width) == 0;
+    }
+    static bool is_encoded(core_type_id id) {
+        return (static_cast<std::make_unsigned<core_type_id>::type>(id) >> bitmask_width) == encoding_format;
+    }
+    static bool is_core_type(core_type_id id) {
+        return is_single(id) || is_encoded(id);
+    }
+
+    // Lower bitmask_width bits encode IDs
+    static constexpr size_t bitmask_width = sizeof(core_type_id) * CHAR_BIT - 4;
+
+    // Upper 4 bits: MSb=1 (makes result negative; real core type IDs are non-negative) + 3-bit format version
+    // (current: 0, max: 6; 1111 is excluded to avoid collision with plain negatives: -1, -2, ..., -268435456)
+    static constexpr size_t encoding_format = 0x8;
+};
+
 // A function to check if passed integer is a power of two
 template <typename IntegerType>
 constexpr bool is_power_of_two( IntegerType arg ) {
@@ -188,7 +244,7 @@ constexpr bool is_aligned(T* pointer, std::uintptr_t alignment) {
 }
 
 #if TBB_USE_ASSERT
-static void* const poisoned_ptr = reinterpret_cast<void*>(-1);
+__TBB_GLOBAL_VAR void* const poisoned_ptr = reinterpret_cast<void*>(-1);
 
 //! Set p to invalid pointer value.
 template<typename T>

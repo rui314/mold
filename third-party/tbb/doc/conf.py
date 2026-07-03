@@ -13,6 +13,7 @@
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
 import os
+from docutils import nodes
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
@@ -23,14 +24,19 @@ TITLE_PAGE_FILE = os.path.join(LATEX_DIR, 'title_page.tex')
 
 BUILD_TYPE = os.getenv("BUILD_TYPE")
 
+# Set up tags for conditional content
+# Tags allow using .. only:: directives in RST files
+if BUILD_TYPE == 'oss' or BUILD_TYPE is None:
+    tags.add('oss')
+
 # -- Project information -----------------------------------------------------
 
 if BUILD_TYPE == 'oneapi' or BUILD_TYPE == 'dita':
     project = u'Intel® oneAPI Threading Building Blocks (oneTBB)'
 else:
     project = u'oneTBB'
-copyright = u'Intel Corporation'
-author = u'Intel'
+copyright = u'UXL Foundation Contributors'
+author = u''
 
 # The short X.Y version
 version = u''
@@ -56,7 +62,7 @@ extensions = [
     'sphinx.ext.imgmath',
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
-    'sphinx.ext.githubpages', 
+    'sphinx.ext.githubpages',
     'sphinx_design'
 ]
 
@@ -83,13 +89,25 @@ language = 'en'
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = []
+# Base exclude patterns - specification files that should never be built
+exclude_patterns = [
+    'main/specification/source/nested-*.rst',
+    'main/specification/source/uncategorized.rst',
+    'main/specification/source/uncategorized/**',
+    'main/specification/source/low_level_task_api.rst',
+    'main/specification/source/low_level_tasking/**',
+]
+
+# Specification is only included in OSS builds (GitHub Pages)
+# Intel builds (oneapi/dita) automatically exclude the entire specification directory
+if BUILD_TYPE == 'oneapi' or BUILD_TYPE == 'dita':
+    exclude_patterns.append('main/specification/**')
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = None
 
 # Syntax highlighting for the :: directive
-highlight_language = 'cpp' 
+highlight_language = 'cpp'
 
 if BUILD_TYPE == 'oneapi' or BUILD_TYPE == 'dita':
     rst_prolog = """
@@ -98,7 +116,7 @@ if BUILD_TYPE == 'oneapi' or BUILD_TYPE == 'dita':
 .. |product| replace:: oneTBB
 .. |reg| unicode:: U+000AE
 .. |copy| unicode:: U+000A9
-.. |base_tk| replace:: Intel\ |reg|\  oneAPI Base Toolkit
+.. |toolkit| replace:: Intel\ |reg|\  oneAPI Toolkit (oneAPI Kit)
 .. |dpcpp| replace:: Intel\ |reg|\  oneAPI DPC++/C++ Compiler
     """
 else:
@@ -108,7 +126,7 @@ else:
 .. |product| replace:: oneTBB
 .. |reg| unicode:: U+000AE
 .. |copy| unicode:: U+000A9
-.. |base_tk| replace:: Intel\ |reg|\  oneAPI Base Toolkit
+.. |toolkit| replace:: Intel\ |reg|\  oneAPI Toolkit (oneAPI Kit)
 .. |dpcpp| replace:: Intel\ |reg|\  oneAPI DPC++/C++ Compiler
     """
 
@@ -137,10 +155,8 @@ else:
         'use_issues_button': True,
         'use_edit_page_button': True,
         'repository_branch': 'master',
-    }
 
-if BUILD_TYPE != 'oneapi' and BUILD_TYPE != 'dita':
-   html_theme_options["extra_footer"]="<div><a href='https://www.intel.com/content/www/us/en/privacy/intel-cookie-notice.html' data-cookie-notice='true'>Cookies</a> <a href='https://www.intel.com/content/www/us/en/privacy/intel-privacy-notice.html'>| Privacy</a> <a data-wap_ref='dns' id='wap_dns' href='https://www.intel.com/content/www/us/en/privacy/intel-cookie- notice.html'>| Do Not Share My Personal Information</a> </div><div>&copy; Intel Corporation. Intel, the Intel logo, and other Intel marks are trademarks of Intel Corporation or its subsidiaries. Other names and brands may be claimed as the property of others. No license (express or implied, by estoppel or otherwise) to any intellectual property rights is granted by this document, with the sole exception that code included in this document is licensed subject to the Zero-Clause BSD open source license (OBSD), <a href='http://opensource.org/licenses/0BSD'>http://opensource.org/licenses/0BSD</a>. </div><br><div>oneTBB is licensed under Apache License Version 2.0. Refer to the <a href='https://github.com/uxlfoundation/oneTBB/blob/master/LICENSE.txt'>LICENSE </a> file for the full license text and copyright notice.</div>"
+    }
 
     
 # Add any paths that contain custom static files (such as style sheets) here,
@@ -304,3 +320,48 @@ intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
+
+
+# -- Custom role for oneTBB specification links ------------------------------
+
+def onetbb_spec_role(name, rawtext, text, lineno, inliner, options={}, content=[]):
+    """
+    Custom role that generates internal :doc: links for OSS builds,
+    and external links for oneAPI/DITA builds.
+
+    Usage: :onetbb-spec:`link text <path>`
+    """
+    from sphinx.util.nodes import split_explicit_title
+
+    # Parse the role syntax
+    has_explicit_title, title, target = split_explicit_title(text)
+
+    if BUILD_TYPE == 'oneapi' or BUILD_TYPE == 'dita':
+        # Generate external link for oneAPI/DITA builds
+        url = f'https://uxlfoundation.github.io/oneTBB/main/specification/source/{target}.html'
+        node = nodes.reference(rawtext, title, refuri=url, **options)
+        return [node], []
+    else:
+        # Generate internal :doc: link for OSS builds
+        doc_path = f'/main/specification/source/{target}'
+
+        # Create a pending_xref node that Sphinx will resolve
+        from sphinx.addnodes import pending_xref
+
+        refnode = pending_xref(
+            rawtext,
+            refdomain='std',
+            reftype='doc',
+            reftarget=doc_path,
+            refexplicit=has_explicit_title,
+            refwarn=True
+        )
+        refnode += nodes.inline(rawtext, title)
+
+        return [refnode], []
+
+
+def setup(app):
+    """Setup function to register the custom role"""
+    app.add_role('onetbb-spec', onetbb_spec_role)
+    return {'version': '0.1', 'parallel_read_safe': True, 'parallel_write_safe': True}

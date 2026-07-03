@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -66,13 +67,13 @@ static const char api_version[] = API_VERSION "\0\n@(#) $Revision$\n";
 #endif
 
 #ifndef ITT_ATTRIBUTE_FALLTHROUGH
-#if (HAS_CPP_ATTR(fallthrough) || HAS_C_ATTR(fallthrough)) && (__cplusplus >= 201703L || _MSVC_LANG >= 201703L)
+#if (HAS_CPP_ATTR(fallthrough) || HAS_C_ATTR(fallthrough)) && ((defined(__cplusplus) && __cplusplus >= 201703L) || (defined(_MSVC_LANG) && _MSVC_LANG >= 201703L))
 #define ITT_ATTRIBUTE_FALLTHROUGH [[fallthrough]]
 #elif HAS_CPP_ATTR(gnu::fallthrough)
 #define ITT_ATTRIBUTE_FALLTHROUGH [[gnu::fallthrough]]
 #elif HAS_CPP_ATTR(clang::fallthrough)
 #define ITT_ATTRIBUTE_FALLTHROUGH [[clang::fallthrough]]
-#elif HAS_GNU_ATTR(fallthrough) && !__INTEL_COMPILER
+#elif HAS_GNU_ATTR(fallthrough) && !defined(__INTEL_COMPILER)
 #define ITT_ATTRIBUTE_FALLTHROUGH __attribute__((fallthrough))
 #else
 #define ITT_ATTRIBUTE_FALLTHROUGH
@@ -81,7 +82,7 @@ static const char api_version[] = API_VERSION "\0\n@(#) $Revision$\n";
 
 #if ITT_OS==ITT_OS_WIN
 static const char* ittnotify_lib_name = "libittnotify.dll";
-#elif ITT_OS==ITT_OS_LINUX || ITT_OS==ITT_OS_FREEBSD|| ITT_OS==ITT_OS_OPENBSD
+#elif ITT_OS==ITT_OS_LINUX || ITT_OS==ITT_OS_FREEBSD || ITT_OS==ITT_OS_OPENBSD
 static const char* ittnotify_lib_name = "libittnotify.so";
 #elif ITT_OS==ITT_OS_MAC
 static const char* ittnotify_lib_name = "libittnotify.dylib";
@@ -962,6 +963,7 @@ static void ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(bind_context_metadata_to_counter)
         {
             if (PTHREAD_SYMBOLS) __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
             ITTNOTIFY_NAME(bind_context_metadata_to_counter)(counter, length, metadata);
+            return;
         }
         else
         {
@@ -1014,6 +1016,7 @@ static void ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(bind_context_metadata_to_counter)
     }
     if (PTHREAD_SYMBOLS) __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
 }
+
 /* -------------------------------------------------------------------------- */
 
 static void ITTAPI ITT_VERSIONIZE(ITT_JOIN(_N_(pause),_init))(void)
@@ -1267,120 +1270,6 @@ static const char* __itt_get_env_var(const char* name)
 static const char* __itt_get_lib_name(void)
 {
     const char* lib_name = __itt_get_env_var(ITT_TO_STR(LIB_VAR_NAME));
-
-#ifdef __ANDROID__
-    if (lib_name == NULL)
-    {
-
-#if ITT_ARCH==ITT_ARCH_IA32 || ITT_ARCH==ITT_ARCH_ARM
-        const char* const marker_filename = "com.intel.itt.collector_lib_32";
-#else
-        const char* const marker_filename = "com.intel.itt.collector_lib_64";
-#endif
-
-        char system_wide_marker_filename[PATH_MAX] = {0};
-        int itt_marker_file_fd = -1;
-        ssize_t res = 0;
-
-        res = snprintf(system_wide_marker_filename, PATH_MAX - 1, "%s%s", "/data/local/tmp/", marker_filename);
-        if (res < 0)
-        {
-            ITT_ANDROID_LOGE("Unable to concatenate marker file string.");
-            return lib_name;
-        }
-        itt_marker_file_fd = open(system_wide_marker_filename, O_RDONLY);
-
-        if (itt_marker_file_fd == -1)
-        {
-            const pid_t my_pid = getpid();
-            char cmdline_path[PATH_MAX] = {0};
-            char package_name[PATH_MAX] = {0};
-            char app_sandbox_file[PATH_MAX] = {0};
-            int cmdline_fd = 0;
-
-            ITT_ANDROID_LOGI("Unable to open system-wide marker file.");
-            res = snprintf(cmdline_path, PATH_MAX - 1, "/proc/%d/cmdline", my_pid);
-            if (res < 0)
-            {
-                ITT_ANDROID_LOGE("Unable to get cmdline path string.");
-                return lib_name;
-            }
-
-            ITT_ANDROID_LOGI("CMD file: %s\n", cmdline_path);
-            cmdline_fd = open(cmdline_path, O_RDONLY);
-            if (cmdline_fd == -1)
-            {
-                ITT_ANDROID_LOGE("Unable to open %s file!", cmdline_path);
-                return lib_name;
-            }
-            res = read(cmdline_fd, package_name, PATH_MAX - 1);
-            if (res == -1)
-            {
-                ITT_ANDROID_LOGE("Unable to read %s file!", cmdline_path);
-                res = close(cmdline_fd);
-                if (res == -1)
-                {
-                    ITT_ANDROID_LOGE("Unable to close %s file!", cmdline_path);
-                }
-                return lib_name;
-            }
-            res = close(cmdline_fd);
-            if (res == -1)
-            {
-                ITT_ANDROID_LOGE("Unable to close %s file!", cmdline_path);
-                return lib_name;
-            }
-            ITT_ANDROID_LOGI("Package name: %s\n", package_name);
-            res = snprintf(app_sandbox_file, PATH_MAX - 1, "/data/data/%s/%s", package_name, marker_filename);
-            if (res < 0)
-            {
-                ITT_ANDROID_LOGE("Unable to concatenate marker file string.");
-                return lib_name;
-            }
-
-            ITT_ANDROID_LOGI("Lib marker file name: %s\n", app_sandbox_file);
-            itt_marker_file_fd = open(app_sandbox_file, O_RDONLY);
-            if (itt_marker_file_fd == -1)
-            {
-                ITT_ANDROID_LOGE("Unable to open app marker file!");
-                return lib_name;
-            }
-        }
-
-        {
-            char itt_lib_name[PATH_MAX] = {0};
-
-            res = read(itt_marker_file_fd, itt_lib_name, PATH_MAX - 1);
-            if (res == -1)
-            {
-                ITT_ANDROID_LOGE("Unable to read %s file!", itt_marker_file_fd);
-                res = close(itt_marker_file_fd);
-                if (res == -1)
-                {
-                    ITT_ANDROID_LOGE("Unable to close %s file!", itt_marker_file_fd);
-                }
-                return lib_name;
-            }
-            ITT_ANDROID_LOGI("ITT Lib path: %s", itt_lib_name);
-            res = close(itt_marker_file_fd);
-            if (res == -1)
-            {
-                ITT_ANDROID_LOGE("Unable to close %s file!", itt_marker_file_fd);
-                return lib_name;
-            }
-            ITT_ANDROID_LOGI("Set env %s to %s", ITT_TO_STR(LIB_VAR_NAME), itt_lib_name);
-            res = setenv(ITT_TO_STR(LIB_VAR_NAME), itt_lib_name, 0);
-            if (res == -1)
-            {
-                ITT_ANDROID_LOGE("Unable to set env var!");
-                return lib_name;
-            }
-            lib_name = __itt_get_env_var(ITT_TO_STR(LIB_VAR_NAME));
-            ITT_ANDROID_LOGI("ITT Lib path from env: %s", lib_name);
-        }
-    }
-#endif
-
     return lib_name;
 }
 
@@ -1467,14 +1356,12 @@ static void __itt_nullify_all_pointers(void)
 
 static int __itt_is_collector_available(void)
 {
-    int is_available;
-
     ITT_MUTEX_INIT_AND_LOCK(_N_(_ittapi_global));
     if (_N_(_ittapi_global).state == __itt_collection_uninitialized)
     {
         _N_(_ittapi_global).state = (NULL == __itt_get_lib_name()) ? __itt_collection_collector_absent : __itt_collection_collector_exists;
     }
-    is_available = (_N_(_ittapi_global).state == __itt_collection_collector_exists ||
+    int is_available = (_N_(_ittapi_global).state == __itt_collection_collector_exists ||
         _N_(_ittapi_global).state == __itt_collection_init_successful);
     __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
     return is_available;
@@ -1582,7 +1469,6 @@ static void __itt_free_allocated_resources(void)
     }
     _N_(_ittapi_global).histogram_list = NULL;
 
-    
     __itt_counter_metadata* current_counter_metadata = _N_(_ittapi_global).counter_metadata_list;
     while (current_counter_metadata != NULL)
     {
@@ -1787,16 +1673,19 @@ ITT_EXTERN_C void _N_(mark_pt_region_end)(__itt_pt_region region)
 
 ITT_EXTERN_C __itt_collection_state (_N_(get_collection_state))(void)
 {
+    ITT_MUTEX_INIT_AND_LOCK(_N_(_ittapi_global));
     if (!_N_(_ittapi_global).api_initialized && _N_(_ittapi_global).thread_list == NULL)
     {
         __itt_init_ittlib_name(NULL, __itt_group_all);
     }
-    return _N_(_ittapi_global).state;
+    __itt_collection_state state = _N_(_ittapi_global).state;
+    if (PTHREAD_SYMBOLS) __itt_mutex_unlock(&_N_(_ittapi_global).mutex);
+    return state;
 }
 
 /* !!! should be called from the library destructor !!!
  * this function destroys the mutex and frees resources
- * allocated by ITT API static part
+ * allocated by static library
  */
 ITT_EXTERN_C void (_N_(release_resources))(void)
 {

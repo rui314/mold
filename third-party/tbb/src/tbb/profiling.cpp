@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -55,12 +56,10 @@ static __itt_string_handle* ITT_get_string_handle(std::uintptr_t idx) {
 }
 
 static void ITT_init_domains() {
+    // The library should not override the domain enable/disable flags, so that the tools can keep control
     tbb_domains[d1::ITT_DOMAIN_MAIN] = __itt_domain_create( _T("tbb") );
-    tbb_domains[d1::ITT_DOMAIN_MAIN]->flags = 1;
     tbb_domains[d1::ITT_DOMAIN_FLOW] = __itt_domain_create( _T("tbb.flow") );
-    tbb_domains[d1::ITT_DOMAIN_FLOW]->flags = 1;
     tbb_domains[d1::ITT_DOMAIN_ALGO] = __itt_domain_create( _T("tbb.algorithm") );
-    tbb_domains[d1::ITT_DOMAIN_ALGO]->flags = 1;
 }
 
 static void ITT_init_strings() {

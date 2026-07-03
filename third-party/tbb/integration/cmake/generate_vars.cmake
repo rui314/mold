@@ -1,4 +1,4 @@
-# Copyright (c) 2020-2021 Intel Corporation
+# Copyright (c) 2020-2025 Intel Corporation
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Reuired parameters:
+# Required parameters:
 #     SOURCE_DIR       - incoming path to oneTBB source directory.
 #     BINARY_DIR       - incoming path to oneTBB build directory.
 #     BIN_PATH         - incoming path to oneTBB binaries directory.

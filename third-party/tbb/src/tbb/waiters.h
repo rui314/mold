@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -43,6 +44,10 @@ public:
 
     void reset_wait() {
         my_backoff.reset_wait();
+    }
+
+    int pause_count() {
+        return my_backoff.limited_pause_count();
     }
 
 protected:

@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -1274,7 +1275,9 @@ void Backend::startUseBlock(MemRegion *region, FreeBlock *fBlock, bool addToBin)
     lastBl->memRegion = region;
 
     if (addToBin) {
-        unsigned targetBin = sizeToBin(blockSz);
+        int targetBin = sizeToBin(blockSz);
+        MALLOC_ASSERT(targetBin >= 0, ASSERT_TEXT);
+
         // during adding advance regions, register bin for a largest block in region
         advRegBins.registerBin(targetBin);
         if (region->type == MEMREG_SLAB_BLOCKS) {

@@ -1,6 +1,7 @@
 %pythonbegin %{
 #
-# Copyright (c) 2016-2021 Intel Corporation
+# Copyright (c) 2016-2025 Intel Corporation
+# Copyright (c) 2026 UXL Foundation Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,7 +26,14 @@ __all__ = ["task_arena",
            "runtime_interface_version"]
 %}
 %begin %{
-/* Defines Python wrappers for Intel(R) oneAPI Threading Building Blocks (oneTBB) */
+/* Defines Python wrappers for oneAPI Threading Building Blocks (oneTBB)
+ *
+ * Free-threading (NOGIL) Python 3.13+ Support:
+ * This module declares Py_MOD_GIL_NOT_USED to indicate it can run safely
+ * without the Global Interpreter Lock. All callbacks to Python code properly
+ * acquire the GIL using SWIG_PYTHON_THREAD_BEGIN_BLOCK/END_BLOCK macros.
+ */
+
 %}
 %module api
 
@@ -34,7 +42,6 @@ __all__ = ["task_arena",
 #endif
 
 %{
-#define TBB_PREVIEW_WAITING_FOR_WORKERS 1
 #include "tbb/task_arena.h"
 #include "tbb/task_group.h"
 #include "tbb/global_control.h"
@@ -46,28 +53,123 @@ __all__ = ["task_arena",
 
 using namespace tbb;
 
+/*
+ * PyCaller - Wrapper for Python callable objects
+ * 
+ * Thread-safety for free-threading Python:
+ * - Uses SWIG_PYTHON_THREAD_BEGIN_BLOCK to acquire GIL before Python API calls
+ * - Uses SWIG_PYTHON_THREAD_END_BLOCK to release GIL after Python API calls
+ * - Reference counting (Py_INCREF/DECREF) is protected by GIL acquisition
+ * 
+ * This ensures safe operation when called from TBB worker threads.
+ */
 class PyCaller : public swig::SwigPtr_PyObject {
+private:
+    // Release the held Python object reference (GIL must NOT be held on entry)
+    void release_ref() {
+        if (_obj) {
+            SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+            Py_XDECREF(_obj);
+            SWIG_PYTHON_THREAD_END_BLOCK;
+            _obj = nullptr;
+        }
+    }
+
 public:
-    // icpc 2013 does not support simple using SwigPtr_PyObject::SwigPtr_PyObject;
-    PyCaller(const PyCaller& s) : SwigPtr_PyObject(s) {}
+    // Copy constructor - must acquire GIL for Py_XINCREF
+    PyCaller(const PyCaller& s) : SwigPtr_PyObject() {
+        _obj = s._obj;
+        SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+        Py_XINCREF(_obj);
+        SWIG_PYTHON_THREAD_END_BLOCK;
+    }
+    
     PyCaller(PyObject *p, bool initial = true) : SwigPtr_PyObject(p, initial) {}
+    
+    // Destructor - release Python object reference
+    ~PyCaller() {
+        release_ref();
+    }
+    
+    // Assignment operator
+    PyCaller& operator=(const PyCaller& s) {
+        if (this != &s) {
+            release_ref();
+            _obj = s._obj;
+            SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+            Py_XINCREF(_obj);
+            SWIG_PYTHON_THREAD_END_BLOCK;
+        }
+        return *this;
+    }
 
     void operator()() const {
+        /* Acquire GIL before calling Python code - required for free-threading */
         SWIG_PYTHON_THREAD_BEGIN_BLOCK;
         PyObject* r = PyObject_CallFunctionObjArgs((PyObject*)*this, nullptr);
-        if(r) Py_DECREF(r);
+        if(r) {
+            Py_DECREF(r);
+        } else {
+            /* Log exception - cannot propagate from TBB worker thread */
+            PyErr_WriteUnraisable((PyObject*)*this);
+        }
         SWIG_PYTHON_THREAD_END_BLOCK;
     }
 };
 
+/*
+ * ArenaPyCaller - Wrapper for Python callable with task_arena binding
+ * 
+ * Thread-safety: GIL is acquired for Py_XINCREF in constructor and
+ * the actual Python call is delegated to PyCaller which handles GIL.
+ */
 struct ArenaPyCaller {
     task_arena *my_arena;
     PyObject *my_callable;
+    
+private:
+    // Release the held Python callable reference (GIL must NOT be held on entry)
+    void release_callable() {
+        if (my_callable) {
+            SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+            Py_XDECREF(my_callable);
+            SWIG_PYTHON_THREAD_END_BLOCK;
+            my_callable = nullptr;
+        }
+    }
+
+public:
     ArenaPyCaller(task_arena *a, PyObject *c) : my_arena(a), my_callable(c) {
         SWIG_PYTHON_THREAD_BEGIN_BLOCK;
         Py_XINCREF(c);
         SWIG_PYTHON_THREAD_END_BLOCK;
     }
+    
+    // Copy constructor - needed because TBB may copy task functors
+    ArenaPyCaller(const ArenaPyCaller& other) : my_arena(other.my_arena), my_callable(other.my_callable) {
+        SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+        Py_XINCREF(my_callable);
+        SWIG_PYTHON_THREAD_END_BLOCK;
+    }
+    
+    // Destructor - release Python object reference
+    ~ArenaPyCaller() {
+        release_callable();
+    }
+    
+    // Assignment operator
+    ArenaPyCaller& operator=(const ArenaPyCaller& other) {
+        if (this != &other) {
+            release_callable();
+            my_arena = other.my_arena;
+            my_callable = other.my_callable;
+            SWIG_PYTHON_THREAD_BEGIN_BLOCK;
+            Py_XINCREF(my_callable);
+            SWIG_PYTHON_THREAD_END_BLOCK;
+        }
+        return *this;
+    }
+    
     void operator()() const {
         my_arena->execute(PyCaller(my_callable, false));
     }
@@ -79,6 +181,12 @@ struct barrier_data {
     int worker_threads, full_threads;
 };
 
+/*
+ * _concurrency_barrier - Wait for all TBB worker threads to be ready
+ * 
+ * This function is thread-safe and does not require GIL as it only
+ * uses C++ synchronization primitives (mutex, condition_variable).
+ */
 void _concurrency_barrier(int threads = tbb::task_arena::automatic) {
     if(threads == tbb::task_arena::automatic)
         threads = tbb::this_task_arena::max_concurrency();
@@ -101,7 +209,7 @@ void _concurrency_barrier(int threads = tbb::task_arena::automatic) {
                 b.event.wait(lock);
         });
     std::unique_lock<std::mutex> lock(b.m);
-    b.event.wait(lock);
+    b.event.wait(lock, [&b]{ return b.worker_threads >= b.full_threads; });
     tg.wait();
 };
 

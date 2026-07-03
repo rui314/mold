@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -347,7 +348,9 @@ struct queuing_rw_mutex_impl {
                     // Failed to acquire the lock on predecessor. The predecessor either unlinks or upgrades.
                     // In the second case, it could or could not know my "in use" flag - need to check
                     // Responsibility transition, the one who reads uncorrupted my_prev will do release.
-                    tmp = tricky_pointer::compare_exchange_strong(s.my_prev, tricky_pointer(predecessor) | FLAG, predecessor, std::memory_order_acquire);
+                    // Publish the restored predecessor with release, acquire ensures synchronization
+                    // with predecessor if they cleared the flag and wait for us to release the lock.
+                    tmp = tricky_pointer::compare_exchange_strong(s.my_prev, tricky_pointer(predecessor) | FLAG, predecessor, std::memory_order_acq_rel);
                     if( !(tricky_pointer(tmp) & FLAG) ) {
                         __TBB_ASSERT(tricky_pointer::load(s.my_prev, std::memory_order_relaxed) != (tricky_pointer(predecessor) | FLAG), nullptr);
                         // Now owner of predecessor is waiting for _us_ to release its lock
@@ -373,7 +376,7 @@ struct queuing_rw_mutex_impl {
                 // my_next is acquired either with load or spin_wait.
                 if(d1::queuing_rw_mutex::scoped_lock *const l_next = tricky_pointer::load(s.my_next, std::memory_order_relaxed) ) { // I->next != nil, TODO: rename to next after clearing up and adapting the n in the comment two lines below
                     // Equivalent to I->next->prev = I->prev but protected against (prev[n]&FLAG)!=0
-                    tmp = tricky_pointer::exchange(l_next->my_prev, predecessor, std::memory_order_release);
+                    tmp = tricky_pointer::exchange(l_next->my_prev, predecessor, std::memory_order_acq_rel);
                     // I->prev->next = I->next;
                     __TBB_ASSERT(tricky_pointer::load(s.my_prev, std::memory_order_relaxed)==predecessor, nullptr);
                     predecessor->my_next.store(s.my_next.load(std::memory_order_relaxed), std::memory_order_release);
@@ -398,15 +401,17 @@ struct queuing_rw_mutex_impl {
                 }
                 next->my_going.store(2U, std::memory_order_relaxed);
                 // Responsibility transition, the one who reads uncorrupted my_prev will do release.
-                tmp = tricky_pointer::exchange(next->my_prev, nullptr, std::memory_order_release);
+                // Clear my_prev with release, acquire to synchronize successor's memory accesses to
+                // us before the release of the lock.
+                tmp = tricky_pointer::exchange(next->my_prev, nullptr, std::memory_order_acq_rel);
                 next->my_going.store(1U, std::memory_order_release);
             }
     unlock_self:
             unblock_or_wait_on_internal_lock(s, get_flag(tmp));
         }
     done:
-        // Lifetime synchronization, no need to build happens-before relation
-        spin_wait_while_eq( s.my_going, 2U, std::memory_order_relaxed );
+        // Ensure that predecessor's writes are visible before node destruction.
+        spin_wait_while_eq( s.my_going, 2U, std::memory_order_acquire );
 
         s.initialize();
     }
@@ -538,7 +543,9 @@ struct queuing_rw_mutex_impl {
             }
             if( !success ) {
                 // Responsibility transition, the one who reads uncorrupted my_prev will do release.
-                tmp = tricky_pointer::compare_exchange_strong(s.my_prev, tricky_pointer(predecessor)|FLAG, predecessor, std::memory_order_acquire);
+                // Publish the restored predecessor with release, acquire ensures synchronization
+                // with predecessor if they cleared the flag and wait for us to release the lock.
+                tmp = tricky_pointer::compare_exchange_strong(s.my_prev, tricky_pointer(predecessor)|FLAG, predecessor, std::memory_order_acq_rel);
                 if( tricky_pointer(tmp) & FLAG ) {
                     tricky_pointer::spin_wait_while_eq(s.my_prev, predecessor);
                     predecessor = tricky_pointer::load(s.my_prev, std::memory_order_relaxed);

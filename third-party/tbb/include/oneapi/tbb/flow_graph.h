@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -138,6 +139,7 @@ template< typename T > class receiver;
 class continue_receiver;
 
 template< typename T, typename U > class limiter_node;  // needed for resetting decrementer
+template< typename T > class overwrite_node; // needed for the forward friend declaration to work in GCC < 8
 
 template<typename T, typename M> class successor_cache;
 template<typename T, typename M> class broadcast_cache;
@@ -165,14 +167,14 @@ namespace tbb {
 namespace detail {
 namespace d2 {
 
-static inline std::pair<graph_task*, graph_task*> order_tasks(graph_task* first, graph_task* second) {
+inline std::pair<graph_task*, graph_task*> order_tasks(graph_task* first, graph_task* second) {
     if (second->priority > first->priority)
         return std::make_pair(second, first);
     return std::make_pair(first, second);
 }
 
 // submit task if necessary. Returns the non-enqueued task if there is one.
-static inline graph_task* combine_tasks(graph& g, graph_task* left, graph_task* right) {
+inline graph_task* combine_tasks(graph& g, graph_task* left, graph_task* right) {
     // if no RHS task, don't change left.
     if (right == nullptr) return left;
     // right != nullptr
@@ -329,6 +331,7 @@ protected:
     virtual graph& graph_reference() const = 0;
 
     template<typename TT, typename M> friend class successor_cache;
+    template< typename TTT > friend class overwrite_node;
     virtual bool is_continue_receiver() { return false; }
 
     // TODO revamp: reconsider the inheritance and move node priority out of receiver
@@ -958,7 +961,7 @@ protected:
 
 //! implements a function node that supports Input -> (set of outputs)
 // Output is a tuple of output types.
-template<typename Input, typename Output, typename Policy = queueing>
+template<typename Input, typename OutputTuple, typename Policy = queueing>
     __TBB_requires(std::default_initializable<Input> &&
                    std::copy_constructible<Input>)
 class multifunction_node :
@@ -967,9 +970,8 @@ class multifunction_node :
     <
         Input,
         typename wrap_tuple_elements<
-            std::tuple_size<Output>::value,  // #elements in tuple
             multifunction_output,  // wrap this around each element
-            Output // the tuple providing the types
+            OutputTuple // Tuple with output types
         >::type,
         Policy,
         cache_aligned_allocator<Input>
@@ -978,14 +980,14 @@ class multifunction_node :
     typedef cache_aligned_allocator<Input> internals_allocator;
 
 protected:
-    static const int N = std::tuple_size<Output>::value;
+    static const int N = std::tuple_size<OutputTuple>::value;
 public:
-    typedef Input input_type;
-    typedef null_type output_type;
-    typedef typename wrap_tuple_elements<N,multifunction_output, Output>::type output_ports_type;
-    typedef multifunction_input<
-        input_type, output_ports_type, Policy, internals_allocator> input_impl_type;
-    typedef function_input_queue<input_type, internals_allocator> input_queue_type;
+    using input_type = Input;
+    using output_type = null_type;
+    using output_ports_type = typename wrap_tuple_elements<multifunction_output, OutputTuple>::type;
+    using input_impl_type =
+        multifunction_input<input_type, output_ports_type, Policy, internals_allocator>;
+    using input_queue_type = function_input_queue<input_type, internals_allocator>;
 private:
     using input_impl_type::my_predecessors;
 public:
@@ -1043,7 +1045,6 @@ class split_node : public graph_node, public receiver<TupleType> {
 public:
     typedef TupleType input_type;
     typedef typename wrap_tuple_elements<
-            N,  // #elements in tuple
             multifunction_output,  // wrap this around each element
             TupleType // the tuple providing the types
         >::type  output_ports_type;
@@ -2411,10 +2412,10 @@ protected:
 template<typename OutputTuple, typename JP=queueing> class join_node;
 
 template<typename OutputTuple>
-class join_node<OutputTuple,reserving>: public unfolded_join_node<std::tuple_size<OutputTuple>::value, reserving_port, OutputTuple, reserving> {
+class join_node<OutputTuple, reserving>: public unfolded_join_node<reserving_port, OutputTuple, reserving> {
 private:
     static const int N = std::tuple_size<OutputTuple>::value;
-    typedef unfolded_join_node<N, reserving_port, OutputTuple, reserving> unfolded_type;
+    using unfolded_type = unfolded_join_node<reserving_port, OutputTuple, reserving>;
 public:
     typedef OutputTuple output_type;
     typedef typename unfolded_type::input_ports_type input_ports_type;
@@ -2438,10 +2439,10 @@ public:
 };
 
 template<typename OutputTuple>
-class join_node<OutputTuple,queueing>: public unfolded_join_node<std::tuple_size<OutputTuple>::value, queueing_port, OutputTuple, queueing> {
+class join_node<OutputTuple, queueing>: public unfolded_join_node<queueing_port, OutputTuple, queueing> {
 private:
     static const int N = std::tuple_size<OutputTuple>::value;
-    typedef unfolded_join_node<N, queueing_port, OutputTuple, queueing> unfolded_type;
+    using unfolded_type = unfolded_join_node<queueing_port, OutputTuple, queueing>;
 public:
     typedef OutputTuple output_type;
     typedef typename unfolded_type::input_ports_type input_ports_type;
@@ -2483,11 +2484,10 @@ concept join_node_functions = requires {
 // template for key_matching join_node
 // tag_matching join_node is a specialization of key_matching, and is source-compatible.
 template<typename OutputTuple, typename K, typename KHash>
-class join_node<OutputTuple, key_matching<K, KHash> > : public unfolded_join_node<std::tuple_size<OutputTuple>::value,
-      key_matching_port, OutputTuple, key_matching<K,KHash> > {
+class join_node<OutputTuple, key_matching<K, KHash>> : public unfolded_join_node<key_matching_port, OutputTuple, key_matching<K, KHash>> {
 private:
     static const int N = std::tuple_size<OutputTuple>::value;
-    typedef unfolded_join_node<N, key_matching_port, OutputTuple, key_matching<K,KHash> > unfolded_type;
+    using unfolded_type = unfolded_join_node<key_matching_port, OutputTuple, key_matching<K,KHash>>;
 public:
     typedef OutputTuple output_type;
     typedef typename unfolded_type::input_ports_type input_ports_type;
@@ -2496,81 +2496,12 @@ public:
     join_node(graph &g) : unfolded_type(g) {}
 #endif  /* __TBB_PREVIEW_MESSAGE_BASED_KEY_MATCHING */
 
-    template<typename __TBB_B0, typename __TBB_B1>
-        __TBB_requires(join_node_functions<OutputTuple, K, __TBB_B0, __TBB_B1>)
-     __TBB_NOINLINE_SYM join_node(graph &g, __TBB_B0 b0, __TBB_B1 b1) : unfolded_type(g, b0, b1) {
+    template <typename Body, typename... Bodies, typename = typename std::enable_if<1 + sizeof...(Bodies) == N>>
+        __TBB_requires(join_node_functions<OutputTuple, K, Body, Bodies...>)
+    __TBB_NOINLINE_SYM join_node(graph& g, Body body, Bodies... bodies) : unfolded_type(g, body, bodies...) {
         fgt_multiinput_node<N>( CODEPTR(), FLOW_JOIN_NODE_TAG_MATCHING, &this->my_graph,
                                                            this->input_ports(), static_cast< sender< output_type > *>(this) );
     }
-    template<typename __TBB_B0, typename __TBB_B1, typename __TBB_B2>
-        __TBB_requires(join_node_functions<OutputTuple, K, __TBB_B0, __TBB_B1, __TBB_B2>)
-     __TBB_NOINLINE_SYM join_node(graph &g, __TBB_B0 b0, __TBB_B1 b1, __TBB_B2 b2) : unfolded_type(g, b0, b1, b2) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_JOIN_NODE_TAG_MATCHING, &this->my_graph,
-                                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-    template<typename __TBB_B0, typename __TBB_B1, typename __TBB_B2, typename __TBB_B3>
-        __TBB_requires(join_node_functions<OutputTuple, K, __TBB_B0, __TBB_B1, __TBB_B2, __TBB_B3>)
-     __TBB_NOINLINE_SYM join_node(graph &g, __TBB_B0 b0, __TBB_B1 b1, __TBB_B2 b2, __TBB_B3 b3) : unfolded_type(g, b0, b1, b2, b3) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_JOIN_NODE_TAG_MATCHING, &this->my_graph,
-                                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-    template<typename __TBB_B0, typename __TBB_B1, typename __TBB_B2, typename __TBB_B3, typename __TBB_B4>
-        __TBB_requires(join_node_functions<OutputTuple, K, __TBB_B0, __TBB_B1, __TBB_B2, __TBB_B3, __TBB_B4>)
-     __TBB_NOINLINE_SYM join_node(graph &g, __TBB_B0 b0, __TBB_B1 b1, __TBB_B2 b2, __TBB_B3 b3, __TBB_B4 b4) :
-            unfolded_type(g, b0, b1, b2, b3, b4) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_JOIN_NODE_TAG_MATCHING, &this->my_graph,
-                                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-#if __TBB_VARIADIC_MAX >= 6
-    template<typename __TBB_B0, typename __TBB_B1, typename __TBB_B2, typename __TBB_B3, typename __TBB_B4,
-        typename __TBB_B5>
-        __TBB_requires(join_node_functions<OutputTuple, K, __TBB_B0, __TBB_B1, __TBB_B2, __TBB_B3, __TBB_B4, __TBB_B5>)
-     __TBB_NOINLINE_SYM join_node(graph &g, __TBB_B0 b0, __TBB_B1 b1, __TBB_B2 b2, __TBB_B3 b3, __TBB_B4 b4, __TBB_B5 b5) :
-            unfolded_type(g, b0, b1, b2, b3, b4, b5) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_JOIN_NODE_TAG_MATCHING, &this->my_graph,
-                                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-#endif
-#if __TBB_VARIADIC_MAX >= 7
-    template<typename __TBB_B0, typename __TBB_B1, typename __TBB_B2, typename __TBB_B3, typename __TBB_B4,
-        typename __TBB_B5, typename __TBB_B6>
-        __TBB_requires(join_node_functions<OutputTuple, K, __TBB_B0, __TBB_B1, __TBB_B2, __TBB_B3, __TBB_B4, __TBB_B5, __TBB_B6>)
-     __TBB_NOINLINE_SYM join_node(graph &g, __TBB_B0 b0, __TBB_B1 b1, __TBB_B2 b2, __TBB_B3 b3, __TBB_B4 b4, __TBB_B5 b5, __TBB_B6 b6) :
-            unfolded_type(g, b0, b1, b2, b3, b4, b5, b6) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_JOIN_NODE_TAG_MATCHING, &this->my_graph,
-                                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-#endif
-#if __TBB_VARIADIC_MAX >= 8
-    template<typename __TBB_B0, typename __TBB_B1, typename __TBB_B2, typename __TBB_B3, typename __TBB_B4,
-        typename __TBB_B5, typename __TBB_B6, typename __TBB_B7>
-        __TBB_requires(join_node_functions<OutputTuple, K, __TBB_B0, __TBB_B1, __TBB_B2, __TBB_B3, __TBB_B4, __TBB_B5, __TBB_B6, __TBB_B7>)
-     __TBB_NOINLINE_SYM join_node(graph &g, __TBB_B0 b0, __TBB_B1 b1, __TBB_B2 b2, __TBB_B3 b3, __TBB_B4 b4, __TBB_B5 b5, __TBB_B6 b6,
-            __TBB_B7 b7) : unfolded_type(g, b0, b1, b2, b3, b4, b5, b6, b7) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_JOIN_NODE_TAG_MATCHING, &this->my_graph,
-                                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-#endif
-#if __TBB_VARIADIC_MAX >= 9
-    template<typename __TBB_B0, typename __TBB_B1, typename __TBB_B2, typename __TBB_B3, typename __TBB_B4,
-        typename __TBB_B5, typename __TBB_B6, typename __TBB_B7, typename __TBB_B8>
-        __TBB_requires(join_node_functions<OutputTuple, K, __TBB_B0, __TBB_B1, __TBB_B2, __TBB_B3, __TBB_B4, __TBB_B5, __TBB_B6, __TBB_B7, __TBB_B8>)
-     __TBB_NOINLINE_SYM join_node(graph &g, __TBB_B0 b0, __TBB_B1 b1, __TBB_B2 b2, __TBB_B3 b3, __TBB_B4 b4, __TBB_B5 b5, __TBB_B6 b6,
-            __TBB_B7 b7, __TBB_B8 b8) : unfolded_type(g, b0, b1, b2, b3, b4, b5, b6, b7, b8) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_JOIN_NODE_TAG_MATCHING, &this->my_graph,
-                                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-#endif
-#if __TBB_VARIADIC_MAX >= 10
-    template<typename __TBB_B0, typename __TBB_B1, typename __TBB_B2, typename __TBB_B3, typename __TBB_B4,
-        typename __TBB_B5, typename __TBB_B6, typename __TBB_B7, typename __TBB_B8, typename __TBB_B9>
-        __TBB_requires(join_node_functions<OutputTuple, K, __TBB_B0, __TBB_B1, __TBB_B2, __TBB_B3, __TBB_B4, __TBB_B5, __TBB_B6, __TBB_B7, __TBB_B8, __TBB_B9>)
-     __TBB_NOINLINE_SYM join_node(graph &g, __TBB_B0 b0, __TBB_B1 b1, __TBB_B2 b2, __TBB_B3 b3, __TBB_B4 b4, __TBB_B5 b5, __TBB_B6 b6,
-            __TBB_B7 b7, __TBB_B8 b8, __TBB_B9 b9) : unfolded_type(g, b0, b1, b2, b3, b4, b5, b6, b7, b8, b9) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_JOIN_NODE_TAG_MATCHING, &this->my_graph,
-                                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-#endif
 
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
     template <
@@ -2597,20 +2528,16 @@ public:
 // indexer node
 #include "detail/_flow_graph_indexer_impl.h"
 
-// TODO: Implement interface with variadic template or tuple
-template<typename T0, typename T1=null_type, typename T2=null_type, typename T3=null_type,
-                      typename T4=null_type, typename T5=null_type, typename T6=null_type,
-                      typename T7=null_type, typename T8=null_type, typename T9=null_type> class indexer_node;
-
-//indexer node specializations
-template<typename T0>
-class indexer_node<T0> : public unfolded_indexer_node<std::tuple<T0> > {
+template <typename T0, typename... TN>
+__TBB_requires(std::copy_constructible<T0> &&
+               (... && std::copy_constructible<TN>))
+class indexer_node : public unfolded_indexer_node<T0, TN...> {
 private:
-    static const int N = 1;
+    static constexpr std::size_t N = sizeof...(TN) + 1;
 public:
-    typedef std::tuple<T0> InputTuple;
-    typedef tagged_msg<size_t, T0> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
+    using output_type = tagged_msg<std::size_t, T0, TN...>;
+    using unfolded_type = unfolded_indexer_node<T0, TN...>;
+
     __TBB_NOINLINE_SYM indexer_node(graph& g) : unfolded_type(g) {
         fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
                                            this->input_ports(), static_cast< sender< output_type > *>(this) );
@@ -2628,273 +2555,7 @@ public:
         fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
                                            this->input_ports(), static_cast< sender< output_type > *>(this) );
     }
-};
-
-template<typename T0, typename T1>
-class indexer_node<T0, T1> : public unfolded_indexer_node<std::tuple<T0, T1> > {
-private:
-    static const int N = 2;
-public:
-    typedef std::tuple<T0, T1> InputTuple;
-    typedef tagged_msg<size_t, T0, T1> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
-    __TBB_NOINLINE_SYM indexer_node(graph& g) : unfolded_type(g) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    template <typename... Args>
-    indexer_node(const node_set<Args...>& nodes) : indexer_node(nodes.graph_reference()) {
-        make_edges_in_order(nodes, *this);
-    }
-#endif
-
-    // Copy constructor
-    __TBB_NOINLINE_SYM indexer_node( const indexer_node& other ) : unfolded_type(other) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-};
-
-template<typename T0, typename T1, typename T2>
-class indexer_node<T0, T1, T2> : public unfolded_indexer_node<std::tuple<T0, T1, T2> > {
-private:
-    static const int N = 3;
-public:
-    typedef std::tuple<T0, T1, T2> InputTuple;
-    typedef tagged_msg<size_t, T0, T1, T2> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
-    __TBB_NOINLINE_SYM indexer_node(graph& g) : unfolded_type(g) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    template <typename... Args>
-    indexer_node(const node_set<Args...>& nodes) : indexer_node(nodes.graph_reference()) {
-        make_edges_in_order(nodes, *this);
-    }
-#endif
-
-    // Copy constructor
-    __TBB_NOINLINE_SYM indexer_node( const indexer_node& other ) : unfolded_type(other) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-};
-
-template<typename T0, typename T1, typename T2, typename T3>
-class indexer_node<T0, T1, T2, T3> : public unfolded_indexer_node<std::tuple<T0, T1, T2, T3> > {
-private:
-    static const int N = 4;
-public:
-    typedef std::tuple<T0, T1, T2, T3> InputTuple;
-    typedef tagged_msg<size_t, T0, T1, T2, T3> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
-    __TBB_NOINLINE_SYM indexer_node(graph& g) : unfolded_type(g) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    template <typename... Args>
-    indexer_node(const node_set<Args...>& nodes) : indexer_node(nodes.graph_reference()) {
-        make_edges_in_order(nodes, *this);
-    }
-#endif
-
-    // Copy constructor
-    __TBB_NOINLINE_SYM indexer_node( const indexer_node& other ) : unfolded_type(other) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-};
-
-template<typename T0, typename T1, typename T2, typename T3, typename T4>
-class indexer_node<T0, T1, T2, T3, T4> : public unfolded_indexer_node<std::tuple<T0, T1, T2, T3, T4> > {
-private:
-    static const int N = 5;
-public:
-    typedef std::tuple<T0, T1, T2, T3, T4> InputTuple;
-    typedef tagged_msg<size_t, T0, T1, T2, T3, T4> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
-    __TBB_NOINLINE_SYM indexer_node(graph& g) : unfolded_type(g) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    template <typename... Args>
-    indexer_node(const node_set<Args...>& nodes) : indexer_node(nodes.graph_reference()) {
-        make_edges_in_order(nodes, *this);
-    }
-#endif
-
-    // Copy constructor
-    __TBB_NOINLINE_SYM indexer_node( const indexer_node& other ) : unfolded_type(other) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-};
-
-#if __TBB_VARIADIC_MAX >= 6
-template<typename T0, typename T1, typename T2, typename T3, typename T4, typename T5>
-class indexer_node<T0, T1, T2, T3, T4, T5> : public unfolded_indexer_node<std::tuple<T0, T1, T2, T3, T4, T5> > {
-private:
-    static const int N = 6;
-public:
-    typedef std::tuple<T0, T1, T2, T3, T4, T5> InputTuple;
-    typedef tagged_msg<size_t, T0, T1, T2, T3, T4, T5> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
-    __TBB_NOINLINE_SYM indexer_node(graph& g) : unfolded_type(g) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    template <typename... Args>
-    indexer_node(const node_set<Args...>& nodes) : indexer_node(nodes.graph_reference()) {
-        make_edges_in_order(nodes, *this);
-    }
-#endif
-
-    // Copy constructor
-    __TBB_NOINLINE_SYM indexer_node( const indexer_node& other ) : unfolded_type(other) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-};
-#endif //variadic max 6
-
-#if __TBB_VARIADIC_MAX >= 7
-template<typename T0, typename T1, typename T2, typename T3, typename T4, typename T5,
-         typename T6>
-class indexer_node<T0, T1, T2, T3, T4, T5, T6> : public unfolded_indexer_node<std::tuple<T0, T1, T2, T3, T4, T5, T6> > {
-private:
-    static const int N = 7;
-public:
-    typedef std::tuple<T0, T1, T2, T3, T4, T5, T6> InputTuple;
-    typedef tagged_msg<size_t, T0, T1, T2, T3, T4, T5, T6> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
-    __TBB_NOINLINE_SYM indexer_node(graph& g) : unfolded_type(g) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    template <typename... Args>
-    indexer_node(const node_set<Args...>& nodes) : indexer_node(nodes.graph_reference()) {
-        make_edges_in_order(nodes, *this);
-    }
-#endif
-
-    // Copy constructor
-    __TBB_NOINLINE_SYM indexer_node( const indexer_node& other ) : unfolded_type(other) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-};
-#endif //variadic max 7
-
-#if __TBB_VARIADIC_MAX >= 8
-template<typename T0, typename T1, typename T2, typename T3, typename T4, typename T5,
-         typename T6, typename T7>
-class indexer_node<T0, T1, T2, T3, T4, T5, T6, T7> : public unfolded_indexer_node<std::tuple<T0, T1, T2, T3, T4, T5, T6, T7> > {
-private:
-    static const int N = 8;
-public:
-    typedef std::tuple<T0, T1, T2, T3, T4, T5, T6, T7> InputTuple;
-    typedef tagged_msg<size_t, T0, T1, T2, T3, T4, T5, T6, T7> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
-    indexer_node(graph& g) : unfolded_type(g) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    template <typename... Args>
-    indexer_node(const node_set<Args...>& nodes) : indexer_node(nodes.graph_reference()) {
-        make_edges_in_order(nodes, *this);
-    }
-#endif
-
-    // Copy constructor
-    indexer_node( const indexer_node& other ) : unfolded_type(other) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-};
-#endif //variadic max 8
-
-#if __TBB_VARIADIC_MAX >= 9
-template<typename T0, typename T1, typename T2, typename T3, typename T4, typename T5,
-         typename T6, typename T7, typename T8>
-class indexer_node<T0, T1, T2, T3, T4, T5, T6, T7, T8> : public unfolded_indexer_node<std::tuple<T0, T1, T2, T3, T4, T5, T6, T7, T8> > {
-private:
-    static const int N = 9;
-public:
-    typedef std::tuple<T0, T1, T2, T3, T4, T5, T6, T7, T8> InputTuple;
-    typedef tagged_msg<size_t, T0, T1, T2, T3, T4, T5, T6, T7, T8> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
-    __TBB_NOINLINE_SYM indexer_node(graph& g) : unfolded_type(g) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    template <typename... Args>
-    indexer_node(const node_set<Args...>& nodes) : indexer_node(nodes.graph_reference()) {
-        make_edges_in_order(nodes, *this);
-    }
-#endif
-
-    // Copy constructor
-    __TBB_NOINLINE_SYM indexer_node( const indexer_node& other ) : unfolded_type(other) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-};
-#endif //variadic max 9
-
-#if __TBB_VARIADIC_MAX >= 10
-template<typename T0, typename T1, typename T2, typename T3, typename T4, typename T5,
-         typename T6, typename T7, typename T8, typename T9>
-class indexer_node/*default*/ : public unfolded_indexer_node<std::tuple<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> > {
-private:
-    static const int N = 10;
-public:
-    typedef std::tuple<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> InputTuple;
-    typedef tagged_msg<size_t, T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> output_type;
-    typedef unfolded_indexer_node<InputTuple> unfolded_type;
-    __TBB_NOINLINE_SYM indexer_node(graph& g) : unfolded_type(g) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-#if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    template <typename... Args>
-    indexer_node(const node_set<Args...>& nodes) : indexer_node(nodes.graph_reference()) {
-        make_edges_in_order(nodes, *this);
-    }
-#endif
-
-    // Copy constructor
-    __TBB_NOINLINE_SYM indexer_node( const indexer_node& other ) : unfolded_type(other) {
-        fgt_multiinput_node<N>( CODEPTR(), FLOW_INDEXER_NODE, &this->my_graph,
-                                           this->input_ports(), static_cast< sender< output_type > *>(this) );
-    }
-
-};
-#endif //variadic max 10
+}; // class indexer_node
 
 template< typename T >
 inline void internal_make_edge( sender<T> &p, receiver<T> &s ) {
@@ -3318,6 +2979,12 @@ public:
         spin_mutex::scoped_lock l( my_mutex );
         if (my_buffer_is_valid && is_graph_active( my_graph )) {
             // We have a valid value that must be forwarded immediately.
+            if (s.is_continue_receiver()) {
+                // try_put can never fail, since continue_receivers always accept
+                my_successors.register_successor( s );
+                s.try_put( my_buffer );
+                return true;
+            }
             bool ret = s.try_put( my_buffer );
             if ( ret ) {
                 // We add the successor that accepted our put
@@ -3635,10 +3302,14 @@ inline void set_name(const async_node<Input, Output, Policy>& node, const char *
 {
     fgt_multioutput_node_desc(&node, name);
 }
+
 } // d2
 } // detail
 } // tbb
 
+#if __TBB_PREVIEW_FLOW_GRAPH_RESOURCE_LIMITING
+#include "detail/_flow_graph_resource_limiting.h"
+#endif
 
 // Include deduction guides for node classes
 #include "detail/_flow_graph_nodes_deduction.h"
@@ -3698,6 +3369,10 @@ inline namespace v1 {
     using detail::d2::make_edges;
 #endif
 
+#if __TBB_PREVIEW_FLOW_GRAPH_RESOURCE_LIMITING
+    using detail::d2::resource_limiter;
+    using detail::d2::resource_limited_node;
+#endif
 } // v1
 } // flow
 

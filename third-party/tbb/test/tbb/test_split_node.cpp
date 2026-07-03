@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -453,7 +453,7 @@ void test_try_put_and_wait() {
         // Hence {f1 - wait_message} task would be processed first and it would spawn tasks for new_work_items in the same order
         // Since new_work_items tasks would processed first and {f2 - 10} would be still in queue
         // it is expected that during the try_put_and_wait {f1 - 10} would be processed first, then new_work_items would be processed
-        // and only when {f2 - 10} would be taken and executed, try_put_and_wait would be exitted
+        // and only when {f2 - 10} would be taken and executed, try_put_and_wait would be exited
         // All of the other tasks for start_work_items would be processed during wait_for_all()
         CHECK_MESSAGE(processed_items1[check_index1++] == wait_message, "Unexpected items processing");
 

@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -144,6 +145,21 @@ TEST_CASE("enqueue task_handle") {
     CHECK(run == true);
 }
 
+//! \brief \ref interface \ref requirement
+TEST_CASE("enqueue bound to task_group") {
+    oneapi::tbb::task_arena arena;
+    oneapi::tbb::task_group tg;
+
+    //This flag is intentionally made non-atomic for Thread Sanitizer
+    //to raise a flag if implementation of task_group is incorrect
+    bool run{false};
+
+    arena.enqueue([&]{ run = true; }, tg);
+    tg.wait();
+
+    CHECK(run == true);
+}
+
 //! Basic test for this_task_arena::enqueue with task handle
 //! \brief \ref interface \ref requirement
 TEST_CASE("this_task_arena::enqueue task_handle") {
@@ -158,6 +174,24 @@ TEST_CASE("this_task_arena::enqueue task_handle") {
         auto task_handle = tg.defer([&]{ run = true; });
 
         oneapi::tbb::this_task_arena::enqueue(std::move(task_handle));
+    });
+
+    tg.wait();
+
+    CHECK(run == true);
+}
+
+//! \brief \ref interface \ref requirement
+TEST_CASE("this_task_arena::enqueue bound to task_group") {
+    oneapi::tbb::task_arena arena;
+    oneapi::tbb::task_group tg;
+
+    //This flag is intentionally made non-atomic for Thread Sanitizer
+    //to raise a flag if implementation of task_group is incorrect
+    bool run{false};
+
+    arena.execute([&]{
+        tbb::this_task_arena::enqueue([&]{ run = true; }, tg);
     });
 
     tg.wait();

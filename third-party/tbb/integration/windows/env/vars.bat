@@ -1,6 +1,6 @@
 @echo off
 REM
-REM Copyright (c) 2005-2023 Intel Corporation
+REM Copyright (c) 2005-2025 Intel Corporation
 REM
 REM Licensed under the Apache License, Version 2.0 (the "License");
 REM you may not use this file except in compliance with the License.
@@ -85,7 +85,8 @@ set "PATH=%TBB_DLL_PATH%;%PATH%"
 
 set "LIB=%TBBROOT%\lib%TBB_ARCH_SUFFIX%\%TBB_SUBDIR%\%TBB_TARGET_VS%;%LIB%"
 set "INCLUDE=%TBBROOT%\include;%INCLUDE%"
-set "CPATH=%TBBROOT%\include;%CPATH%"
+set "C_INCLUDE_PATH=%TBBROOT%\include;%C_INCLUDE_PATH%"
+set "CPLUS_INCLUDE_PATH=%TBBROOT%\include;%CPLUS_INCLUDE_PATH%"
 set "CMAKE_PREFIX_PATH=%TBBROOT%;%CMAKE_PREFIX_PATH%"
 set "PKG_CONFIG_PATH=%TBBROOT%\lib%TBB_ARCH_SUFFIX%\pkgconfig;%PKG_CONFIG_PATH%"
 

@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2020-2023 Intel Corporation
+    Copyright (c) 2020-2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -28,40 +29,60 @@
 
 
 #if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
-template <typename Body>
-void test_deduction_guides_common(Body body) {
-    using namespace tbb::flow;
-    graph g;
-    broadcast_node<int> br(g);
+template <typename Input, typename Output, typename Body>
+struct test_deduction_guides_common {
+    static void run(Body body) {
+        static_assert(std::is_same_v<Output, std::size_t>, "Incorrect test setup");
 
-    sequencer_node s1(g, body);
-    static_assert(std::is_same_v<decltype(s1), sequencer_node<int>>);
+        using namespace tbb::flow;
+        graph g;
+
+        sequencer_node s1(g, body);
+        static_assert(std::is_same_v<decltype(s1), sequencer_node<Input>>);
 
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    sequencer_node s2(follows(br), body);
-    static_assert(std::is_same_v<decltype(s2), sequencer_node<int>>);
+        using pure_input_type = std::decay_t<Input>;
+        function_node<int, pure_input_type> pred_f(g, unlimited, [](int) {
+            return pure_input_type{};
+        });
+
+        function_node<pure_input_type, int> succ_f(g, unlimited, [](const pure_input_type&) {
+            return 1;
+        });
+
+        sequencer_node s2(follows(pred_f), body);
+        static_assert(std::is_same_v<decltype(s2), sequencer_node<Input>>);
+
+        sequencer_node s3(precedes(succ_f), body);
+        static_assert(std::is_same_v<decltype(s3), sequencer_node<Input>>);
 #endif
 
-    sequencer_node s3(s1);
-    static_assert(std::is_same_v<decltype(s3), sequencer_node<int>>);
-}
+        sequencer_node s4(s1);
+        static_assert(std::is_same_v<decltype(s4), decltype(s1)>);
 
-std::size_t sequencer_body_f(const int&) { return 1; }
+        g.wait_for_all();
+    }
+};
+
+template <typename Input>
+void test_deduction_guides_body_types() {
+    deduction_guides_testing::test_all_body_types<Input, std::size_t, test_deduction_guides_common>();
+}
 
 void test_deduction_guides() {
-    test_deduction_guides_common([](const int&)->std::size_t { return 1; });
-    test_deduction_guides_common([](const int&) mutable ->std::size_t { return 1; });
-    test_deduction_guides_common(sequencer_body_f);
+    using input_type = deduction_guides_testing::InputType<std::size_t>;
+    test_deduction_guides_body_types<input_type>();
+    test_deduction_guides_body_types<const input_type&>();
 }
 #endif
 
+#if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
 //! Test deduction guides
 //! \brief \ref interface \ref requirement
 TEST_CASE("Deduction guides"){
-#if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
     test_deduction_guides();
-#endif
 }
+#endif
 
 //! Test sequencer_node single_push
 //! \brief \ref requirement

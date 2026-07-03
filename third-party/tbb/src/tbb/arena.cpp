@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -33,7 +34,6 @@ namespace tbb {
 namespace detail {
 namespace r1 {
 
-#if __TBB_ARENA_BINDING
 class numa_binding_observer : public tbb::task_scheduler_observer {
     binding_handler* my_binding_handler;
 public:
@@ -50,6 +50,10 @@ public:
         restore_affinity_mask(my_binding_handler, this_task_arena::current_thread_index());
     }
 
+    tcm_cpu_mask_t get_affinity_mask() const {
+        return r1::get_affinity_mask(my_binding_handler);
+    }
+
     ~numa_binding_observer() override{
         destroy_binding_handler(my_binding_handler);
     }
@@ -57,7 +61,7 @@ public:
 
 numa_binding_observer* construct_binding_observer( d1::task_arena* ta, int num_slots, int numa_id, core_type_id core_type, int max_threads_per_core ) {
     numa_binding_observer* binding_observer = nullptr;
-    if ((core_type >= 0 && core_type_count() > 1) || (numa_id >= 0 && numa_node_count() > 1) || max_threads_per_core > 0) {
+    if ((multi_core_type_codec::is_core_type(core_type) && core_type_count() > 1) || (numa_id >= 0 && numa_node_count() > 1) || max_threads_per_core > 0) {
         binding_observer = new(allocate_memory(sizeof(numa_binding_observer))) numa_binding_observer(ta, num_slots, numa_id, core_type, max_threads_per_core);
         __TBB_ASSERT(binding_observer, "Failure during NUMA binding observer allocation and construction");
     }
@@ -70,7 +74,6 @@ void destroy_binding_observer( numa_binding_observer* binding_observer ) {
     binding_observer->~numa_binding_observer();
     deallocate_memory(binding_observer);
 }
-#endif /*!__TBB_ARENA_BINDING*/
 
 void arena::on_thread_leaving(unsigned ref_param) {
     //
@@ -254,8 +257,8 @@ arena::arena(threading_control* control, unsigned num_slots, unsigned num_reserv
     my_limit = 1;
     // Two slots are mandatory: for the external thread, and for 1 worker (required to support starvation resistant tasks).
     my_num_slots = num_arena_slots(num_slots, num_reserved_slots);
-    my_num_reserved_slots = num_reserved_slots;
-    my_max_num_workers = num_slots-num_reserved_slots;
+    my_num_reserved_slots = min(num_reserved_slots, num_slots);
+    my_max_num_workers = num_slots-my_num_reserved_slots;
     my_priority_level = priority_level;
     my_references = ref_external; // accounts for the external thread
     my_observers.my_arena = this;
@@ -277,7 +280,7 @@ arena::arena(threading_control* control, unsigned num_slots, unsigned num_reserv
     }
     my_fifo_task_stream.initialize(my_num_slots);
     my_resume_task_stream.initialize(my_num_slots);
-#if __TBB_PREVIEW_CRITICAL_TASKS
+#if __TBB_CRITICAL_TASKS
     my_critical_task_stream.initialize(my_num_slots);
 #endif
     my_mandatory_requests = 0;
@@ -315,12 +318,10 @@ void arena::free_arena () {
     __TBB_ASSERT( !my_references.load(std::memory_order_relaxed), "There are threads in the dying arena" );
     __TBB_ASSERT( !my_total_num_workers_requested && !my_num_workers_allotted, "Dying arena requests workers" );
     __TBB_ASSERT( is_empty(), "Inconsistent state of a dying arena" );
-#if __TBB_ARENA_BINDING
     if (my_numa_binding_observer != nullptr) {
         destroy_binding_observer(my_numa_binding_observer);
         my_numa_binding_observer = nullptr;
     }
-#endif /*__TBB_ARENA_BINDING*/
     poison_value( my_guard );
     for ( unsigned i = 0; i < my_num_slots; ++i ) {
         // __TBB_ASSERT( !my_slots[i].my_scheduler, "arena slot is not empty" );
@@ -337,7 +338,7 @@ void arena::free_arena () {
     my_co_cache.cleanup();
     my_default_ctx->~task_group_context();
     cache_aligned_deallocate(my_default_ctx);
-#if __TBB_PREVIEW_CRITICAL_TASKS
+#if __TBB_CRITICAL_TASKS
     __TBB_ASSERT( my_critical_task_stream.empty(), "Not all critical tasks were executed");
 #endif
     // Clear enfources synchronization with observe(false)
@@ -375,7 +376,7 @@ bool arena::has_tasks() {
         tasks_are_available = !my_slots[k].is_empty();
     }
     tasks_are_available = tasks_are_available || has_enqueued_tasks() || !my_resume_task_stream.empty();
-#if __TBB_PREVIEW_CRITICAL_TASKS
+#if __TBB_CRITICAL_TASKS
     tasks_are_available = tasks_are_available || !my_critical_task_stream.empty();
 #endif
     return tasks_are_available;
@@ -448,6 +449,13 @@ std::pair<int, int> arena::update_request(int mandatory_delta, int workers_delta
     return { min_workers_request, max_workers_request };
 }
 
+tcm_cpu_mask_t arena::get_affinity_mask() const {
+    if (my_numa_binding_observer) {
+        return my_numa_binding_observer->get_affinity_mask();
+    }
+    return nullptr;
+}
+
 thread_control_monitor& arena::get_waiting_threads_monitor() {
     return my_threading_control->get_waiting_threads_monitor();
 }
@@ -462,19 +470,20 @@ void arena::enqueue_task(d1::task& t, d1::task_group_context& ctx, thread_data& 
 
 arena &arena::create(threading_control *control, unsigned num_slots,
                      unsigned num_reserved_slots, unsigned arena_priority_level,
-                     d1::constraints constraints
+                     d1::constraints constraints, numa_binding_observer* observer
 #if __TBB_PREVIEW_PARALLEL_PHASE
                      , tbb::task_arena::leave_policy lp 
 #endif
 ) {
     __TBB_ASSERT(num_slots > 0, NULL);
-    __TBB_ASSERT(num_reserved_slots <= num_slots, NULL);
     // Add public market reference for an external thread/task_arena (that adds an internal reference in exchange).
     arena& a = arena::allocate_arena(control, num_slots, num_reserved_slots, arena_priority_level
 #if __TBB_PREVIEW_PARALLEL_PHASE
                                      , lp
 #endif
     );
+    __TBB_ASSERT(a.my_num_reserved_slots <= a.my_num_slots, NULL);
+    a.my_numa_binding_observer = observer;
     a.my_tc_client = control->create_client(a);
     // We should not publish arena until all fields are initialized
     control->publish_client(a.my_tc_client, constraints);
@@ -576,23 +585,18 @@ void task_arena_impl::initialize(d1::task_arena_base& ta) {
     (void)governor::get_thread_data();
     d1::constraints arena_constraints;
 
-#if __TBB_ARENA_BINDING
     arena_constraints = d1::constraints{}
         .set_core_type(ta.core_type())
         .set_max_threads_per_core(ta.max_threads_per_core())
         .set_numa_id(ta.my_numa_id);
-#endif /*__TBB_ARENA_BINDING*/
 
     if (ta.my_max_concurrency < 1) {
-#if __TBB_ARENA_BINDING
         ta.my_max_concurrency = (int)default_concurrency(arena_constraints);
-#else /*!__TBB_ARENA_BINDING*/
-        ta.my_max_concurrency = (int)governor::default_num_threads();
-#endif /*!__TBB_ARENA_BINDING*/
     }
 
+    numa_binding_observer* observer = nullptr;
 #if __TBB_CPUBIND_PRESENT
-    numa_binding_observer* observer = construct_binding_observer(
+    observer = construct_binding_observer(
         static_cast<d1::task_arena*>(&ta), arena::num_arena_slots(ta.my_max_concurrency, ta.my_num_reserved_slots),
         ta.my_numa_id, ta.core_type(), ta.max_threads_per_core());
     if (observer) {
@@ -606,7 +610,7 @@ void task_arena_impl::initialize(d1::task_arena_base& ta) {
     unsigned priority_level = arena_priority_level(ta.my_priority);
     threading_control* thr_control = threading_control::register_public_reference();
     arena& a = arena::create(thr_control, unsigned(ta.my_max_concurrency), ta.my_num_reserved_slots,
-                             priority_level, arena_constraints
+                             priority_level, arena_constraints, observer
 #if __TBB_PREVIEW_PARALLEL_PHASE
                              , ta.get_leave_policy()
 #endif
@@ -614,7 +618,6 @@ void task_arena_impl::initialize(d1::task_arena_base& ta) {
 
     ta.my_arena.store(&a, std::memory_order_release);
 #if __TBB_CPUBIND_PRESENT
-    a.my_numa_binding_observer = observer;
     if (observer) {
         observer->on_scheduler_exit(true);
         observer->observe(true);
@@ -844,11 +847,7 @@ void task_arena_impl::execute(d1::task_arena_base& ta, d1::delegate_base& d) {
                 a->my_exit_monitors.notify_one(); // do not relax!
             }
             // process possible exception
-            auto exception = exec_context.my_exception.load(std::memory_order_acquire);
-            if (exception) {
-                __TBB_ASSERT(exec_context.is_group_execution_cancelled(), "The task group context with an exception should be canceled.");
-                exception->throw_self();
-            }
+            handle_context_exception(exec_context);
             __TBB_ASSERT(governor::is_thread_data_set(td), nullptr);
             return;
         } // if (index1 == arena::out_of_arena)
@@ -903,7 +902,6 @@ int task_arena_impl::max_concurrency(const d1::task_arena_base *ta) {
         return 1;
     }
 
-#if __TBB_ARENA_BINDING
     if (ta) {
         d1::constraints arena_constraints = d1::constraints{}
             .set_numa_id(ta->my_numa_id)
@@ -911,7 +909,6 @@ int task_arena_impl::max_concurrency(const d1::task_arena_base *ta) {
             .set_max_threads_per_core(ta->max_threads_per_core());
         return (int)default_concurrency(arena_constraints);
     }
-#endif /*!__TBB_ARENA_BINDING*/
 
     __TBB_ASSERT(!ta || ta->my_max_concurrency==d1::task_arena_base::automatic, nullptr);
     return int(governor::default_num_threads());

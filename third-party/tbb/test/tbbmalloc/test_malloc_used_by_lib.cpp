@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ extern "C" {
     extern __declspec(dllexport) void callDll();
 #else
     extern __TBB_EXPORT void callDll();
+    extern __TBB_EXPORT int main();
 #endif
 }
 
@@ -44,7 +45,9 @@ extern "C" void callDll()
         scalable_free(ptrs[i]);
 }
 
-int main() {}
+extern "C" int main() {
+    return 0;
+}
 
 
 #else // _USRDLL

@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2020-2023 Intel Corporation
+    Copyright (c) 2020-2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -192,8 +193,8 @@ struct counting_functor {
         return return_value;
     }
 
-    template<typename InputType>
-    void operator()( InputType, multifunc_ports_t<InputType, OutputType>& op ) {
+    template<typename InputType, typename... ResourceHandles> // for resource_limited_node
+    void operator()( InputType, multifunc_ports_t<InputType, OutputType>& op, ResourceHandles&&... ) {
         ++execute_count;
         std::get<0>(op).try_put(return_value);
     }
@@ -228,8 +229,9 @@ struct dummy_functor {
 #endif
     }
 
-    template<typename InputType>
-    void operator()( InputType, multifunc_ports_t<InputType, OutputType>& op ) {
+    template<typename InputType, typename... ResourceHandles> // for resource_limited_node
+    void operator()( InputType, multifunc_ports_t<InputType, OutputType>& op,
+                     ResourceHandles&&... ) {
         std::get<0>(op).try_put(OutputType(0));
     }
 
@@ -315,7 +317,8 @@ struct concurrency_peak_checker_body {
         return 1;
     }
 
-    void operator()( const int& argument, multifunc_ports_t<int>& op ) {
+    template <typename... Args> // for resource_limited_node
+    void operator()( const int& argument, multifunc_ports_t<int>& op, Args&&...) {
         utils::ConcurrencyTracker ct;
         utils::doDummyWork(1000);
         CHECK_MESSAGE((int)utils::ConcurrencyTracker::PeakParallelism() <= required_max_concurrency,
@@ -346,9 +349,10 @@ struct copy_counting_object {
         copy_count(0), copies_count(0), assign_count(0), is_copy(false) {}
 
     copy_counting_object( const copy_counting_object<OutputType, InputType>& other ):
-        copy_count(other.copy_count + 1), is_copy(true) {
-            ++other.copies_count;
-        }
+        copy_count(other.copy_count + 1), copies_count(0), assign_count(0), is_copy(true)
+    {
+        ++other.copies_count;
+    }
 
     copy_counting_object& operator=( const copy_counting_object<OutputType, InputType>& other ) {
         assign_count = other.assign_count + 1;
@@ -360,7 +364,8 @@ struct copy_counting_object {
         return OutputType(1);
     }
 
-    void operator()( InputType, multifunc_ports_t<InputType,OutputType>& op ) {
+    template <typename... Args> // for resource_limited_node
+    void operator()( InputType, multifunc_ports_t<InputType,OutputType>& op, Args&&... ) {
         std::get<0>(op).try_put(OutputType(1));
     }
 
@@ -545,16 +550,17 @@ void test_inheritance() {
     CHECK_MESSAGE((std::is_base_of<sender<OutputType>, Node>::value), "Node should be derived from sender<Output>");
 }
 
-template<typename Node>
-void test_copy_ctor() {
+template<typename Node, typename... AdditionalArgs> // for resource_limited_node
+void test_copy_ctor(AdditionalArgs&&... additional_ctor_args) {
+    tbb::global_control ctl(tbb::global_control::max_allowed_parallelism, 1);
     using namespace oneapi::tbb::flow;
     graph g;
 
     dummy_functor<int> fun1;
     conformance::copy_counting_object<int> fun2;
 
-    Node node0(g, unlimited, fun1);
-    Node node1(g, unlimited, fun2);
+    Node node0(g, unlimited, additional_ctor_args..., fun1);
+    Node node1(g, unlimited, additional_ctor_args..., fun2);
     test_push_receiver<int> suc_node1(g);
     test_push_receiver<int> suc_node2(g);
 
@@ -653,8 +659,8 @@ void test_priority(Args... node_args) {
     });
 }
 
-template<typename Node>
-void test_concurrency() {
+template<typename Node, typename... AdditionalArgs>
+void test_concurrency(AdditionalArgs&&... additional_ctor_args) {
     auto max_num_threads = oneapi::tbb::this_task_arena::max_concurrency();
 
     oneapi::tbb::global_control c(oneapi::tbb::global_control::max_allowed_parallelism,
@@ -677,7 +683,7 @@ void test_concurrency() {
         }
         oneapi::tbb::flow::graph g;
         concurrency_peak_checker_body counter(expected_threads);
-        Node fnode(g, num_threads, counter);
+        Node fnode(g, num_threads, additional_ctor_args...,  counter);
 
         test_push_receiver<int> suc_node(g);
 
@@ -810,4 +816,130 @@ void test_with_reserving_join_node_class() {
         if at least one successor accepts the tuple must consume messages");
 }
 }
+
+#if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
+namespace deduction_guides_testing {
+
+template <typename Input, typename Output>
+struct unqualified_callable_object {
+    Output operator()(Input) { return Output{}; }
+};
+
+template <typename Input, typename Output>
+struct const_callable_object {
+    Output operator()(Input) const { return Output{}; }
+};
+
+template <typename Input, typename Output>
+struct noexcept_callable_object {
+    Output operator()(Input) noexcept { return Output{}; }
+};
+
+template <typename Input, typename Output>
+struct const_noexcept_callable_object {
+    Output operator()(Input) const noexcept { return Output{}; }
+};
+
+template <typename Input, typename Output>
+struct lvalue_qualified_callable_object {
+    Output operator()(Input) & { return Output{}; }
+};
+
+template <typename Input, typename Output>
+struct const_lvalue_qualified_callable_object {
+    Output operator()(Input) const & { return Output{}; }
+};
+
+template <typename Input, typename Output>
+struct noexcept_lvalue_qualified_callable_object {
+    Output operator()(Input) & noexcept { return Output{}; }
+};
+
+template <typename Input, typename Output>
+struct const_noexcept_lvalue_qualified_callable_object {
+    Output operator()(Input) const & noexcept { return Output{}; }
+};
+
+template <typename Input, typename Output>
+struct several_overloads_callable_object {
+    Output operator()(Input) { return Output{}; } // Primary
+    void operator()(Input, Input, Input) {} // Should not prevent deduction guides from working
+};
+
+template <typename Input, typename Output>
+Output function_body(Input) { return Output{}; }
+
+template <typename Input, typename Output>
+Output noexcept_function_body(Input) noexcept { return Output{}; }
+
+template <typename OutputType>
+struct InputType {
+    InputType() {}
+    InputType(const InputType&) {}
+    InputType& operator=(const InputType&) { return *this; }
+
+    OutputType member_object = OutputType{};
+    const OutputType const_member_object = OutputType{};
+    mutable OutputType mutable_member_object = OutputType{};
+
+    OutputType const_member_function() const { return OutputType{}; }
+    OutputType const_noexcept_member_function() const noexcept { return OutputType{}; }
+};
+
+template <typename Input, typename Output,
+          template <class, class> typename Body,
+          template <class, class, class> typename Test>
+void run_test_substitute_body() {
+    using decayed_input_type = std::decay_t<Input>;
+    using decayed_output_type = std::decay_t<Output>;
+    Test<decayed_input_type, decayed_output_type, Body<Input, Output>>::run(Body<Input, Output>{});
+}
+
+template <typename Input, typename Output,
+          template <class, class, class> typename Test,
+          typename Body>
+void run_test_deduce_body(Body body) {
+    using decayed_input_type = std::decay_t<Input>;
+    using decayed_output_type = std::decay_t<Output>;
+    Test<decayed_input_type, decayed_output_type, Body>::run(body);
+}
+
+template <typename Input, typename Output,
+          template <class, class, class> typename Test>
+void test_all_body_types() {
+    static_assert(std::is_same_v<std::decay_t<Input>, InputType<std::decay_t<Output>>>,
+                  "Wrong test configuration");
+    // Test callable objects
+    run_test_substitute_body<Input, Output, unqualified_callable_object, Test>();
+    run_test_substitute_body<Input, Output, const_callable_object, Test>();
+    run_test_substitute_body<Input, Output, noexcept_callable_object, Test>();
+    run_test_substitute_body<Input, Output, const_noexcept_callable_object, Test>();
+    run_test_substitute_body<Input, Output, lvalue_qualified_callable_object, Test>();
+    run_test_substitute_body<Input, Output, const_lvalue_qualified_callable_object, Test>();
+    run_test_substitute_body<Input, Output, noexcept_lvalue_qualified_callable_object, Test>();
+    run_test_substitute_body<Input, Output, const_noexcept_lvalue_qualified_callable_object, Test>();
+    
+    // Callable object with several operator() overloads
+    run_test_substitute_body<Input, Output, several_overloads_callable_object, Test>();
+
+    // Test free function pointers
+    run_test_deduce_body<Input, Output, Test>(function_body<Input, Output>);
+    run_test_deduce_body<Input, Output, Test>(noexcept_function_body<Input, Output>);
+
+#if __TBB_CPP17_INVOKE_PRESENT
+    // Test Member function pointers
+    using decayed_input_type = std::decay_t<Input>;
+
+    run_test_deduce_body<Input, Output, Test>(&decayed_input_type::const_member_function);
+    run_test_deduce_body<Input, Output, Test>(&decayed_input_type::const_noexcept_member_function);
+
+    // Test member object pointers
+    run_test_deduce_body<Input, Output, Test>(&decayed_input_type::member_object);
+    run_test_deduce_body<Input, Output, Test>(&decayed_input_type::const_member_object);
+    run_test_deduce_body<Input, Output, Test>(&decayed_input_type::mutable_member_object);
+#endif
+}
+
+} // namespace deduction_guides_testing
+#endif
 #endif // __TBB_test_conformance_conformance_flowgraph_H

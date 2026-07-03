@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -28,9 +29,14 @@ namespace r1 {
 #endif
 //! Process an assertion failure.
 /** Normally called from __TBB_ASSERT macro.
-  If assertion handler is null, print message for assertion failure and abort.
-  Otherwise call the assertion handler. */
-TBB_EXPORT void __TBB_EXPORTED_FUNC assertion_failure(const char* location, int line, const char* expression, const char* comment);
+  If assertion handler is not set, the default one is used, which prints the message for assertion
+  failure and aborts. The setting of an assertion handler is available as part of oneTBB
+  specification extension. */
+TBB_EXPORT void __TBB_EXPORTED_FUNC assertion_failure(const char *location, int line,
+                                                      const char *expression, const char *comment);
+
+using assertion_handler_type = decltype(&assertion_failure);
+
 #if __TBBMALLOC_BUILD
 }} // namespaces rml::internal
 #else

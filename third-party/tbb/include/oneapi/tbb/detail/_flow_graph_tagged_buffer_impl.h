@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -303,7 +303,7 @@ public:
     bool find_ref_with_key(const Knoref& k, pointer_type &v) {
         element_type* element_ptr = nullptr;
         bool res = find_element_ref_with_key(k, element_ptr);
-        v = element_ptr->get_value_ptr();
+        if(res) v = element_ptr->get_value_ptr();
         return res;
     }
 

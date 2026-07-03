@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -350,7 +351,7 @@ struct proportional_mode : adaptive_mode<Partition> {
     }
 };
 
-static std::size_t get_initial_partition_head() {
+inline std::size_t get_initial_partition_head() {
     int current_index = tbb::this_task_arena::current_thread_index();
     if (current_index == tbb::task_arena::not_initialized)
         current_index = 0;
@@ -378,7 +379,7 @@ struct linear_affinity_mode : proportional_mode<Partition> {
     }
 };
 
-static bool is_stolen_task(const execution_data& ed) {
+inline bool is_stolen_task(const execution_data& ed) {
     return execution_slot(ed) != original_slot(ed);
 }
 

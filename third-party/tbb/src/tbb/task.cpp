@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -59,7 +60,7 @@ void resume(suspend_point_type* sp) {
             // The target is not in the process of executing critical task, so the resume task is not critical.
             a.my_resume_task_stream.push(&sp->m_resume_task, random_lane_selector(sp->m_random));
         } else {
-    #if __TBB_PREVIEW_CRITICAL_TASKS
+    #if __TBB_CRITICAL_TASKS
             // The target is in the process of executing critical task, so the resume task is critical.
             a.my_critical_task_stream.push(&sp->m_resume_task, random_lane_selector(sp->m_random));
     #endif
@@ -172,6 +173,7 @@ void task_dispatcher::do_post_resume_action() {
         task_dispatcher* to_cleanup = static_cast<task_dispatcher*>(td->my_post_resume_arg);
         // Release coroutine's reference to my_arena
         td->my_arena->on_thread_leaving(arena::ref_external);
+        __TBB_ASSERT(is_alive(td->my_arena->my_guard), "The arena should not have been destroyed");
         // Cache the coroutine for possible later re-usage
         td->my_arena->my_co_cache.push(to_cleanup);
         break;
@@ -225,7 +227,7 @@ d1::wait_tree_vertex_interface* get_thread_reference_vertex(d1::wait_tree_vertex
     __TBB_ASSERT(top_wait_context, nullptr);
     auto& dispatcher = *governor::get_thread_data()->my_task_dispatcher;
 
-    d1::reference_vertex* ref_counter{nullptr};
+    thread_reference_vertex* ref_counter{nullptr};
     auto& reference_map = dispatcher.m_reference_vertex_map;
     auto pos = reference_map.find(top_wait_context);
     if (pos != reference_map.end()) {
@@ -235,9 +237,11 @@ d1::wait_tree_vertex_interface* get_thread_reference_vertex(d1::wait_tree_vertex
         if (reference_map.size() > max_reference_vertex_map_size) {
             // TODO: Research the possibility of using better approach for a clean-up
             for (auto it = reference_map.begin(); it != reference_map.end();) {
-                if (it->second->get_num_child() == 0) {
-                    it->second->~reference_vertex();
-                    cache_aligned_deallocate(it->second);
+                __TBB_ASSERT(it->second, nullptr);
+                thread_reference_vertex*& node = it->second;
+                __TBB_ASSERT(!node->is_orphaned(), "the orphaned bit should not yet be set");
+                if (node->get_num_children() == 0) {
+                    node->destroy();
                     it = reference_map.erase(it);
                 } else {
                     ++it;
@@ -246,10 +250,14 @@ d1::wait_tree_vertex_interface* get_thread_reference_vertex(d1::wait_tree_vertex
         }
 
         reference_map[top_wait_context] = ref_counter =
-            new (cache_aligned_allocate(sizeof(d1::reference_vertex))) d1::reference_vertex(top_wait_context, 0);
+            new (cache_aligned_allocate(sizeof(thread_reference_vertex))) thread_reference_vertex(*top_wait_context, 0);
     }
 
     return ref_counter;
+}
+
+d1::task* __TBB_EXPORTED_FUNC current_task_ptr() {
+    return governor::get_thread_data()->get_innermost_running_task();
 }
 
 } // namespace r1

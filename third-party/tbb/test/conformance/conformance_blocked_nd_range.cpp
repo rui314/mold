@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2017-2024 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -209,48 +210,114 @@ void ParallelTest() {
 }
 template<> void ParallelTest<0>() {}
 
+template <typename T, unsigned int N, typename EqPredicate>
+void check_constructed_range(const oneapi::tbb::blocked_nd_range<T, N>& range,
+                             const T (&begins)[N], const T (&ends)[N],
+                             const std::size_t (&grainsizes)[N],
+                             EqPredicate pred)
+{
+    for (unsigned int dim_index = 0; dim_index < N; ++dim_index) {
+        using dim_type = typename oneapi::tbb::blocked_nd_range<T, N>::dim_range_type;
+        const dim_type& dim = range.dim(dim_index);
+        CHECK_MESSAGE(pred(dim.begin(), begins[dim_index]), "Incorrect begin of the constructed range");
+        CHECK_MESSAGE(pred(dim.end(), ends[dim_index]), "Incorrect end of the constructed range");
+        CHECK_MESSAGE(dim.grainsize() == grainsizes[dim_index], "Incorrect grainsize of the constructed range");
+    }
+}
+
+template <typename T, unsigned int N>
+void check_constructed_range(const oneapi::tbb::blocked_nd_range<T, N>& range,
+                             const T (&begins)[N], const T (&ends)[N],
+                             const std::size_t (&grainsizes)[N])
+{
+    check_constructed_range(range, begins, ends, grainsizes, std::equal_to<T>{});
+}
+
 //! Testing blocked_nd_range construction
 //! \brief \ref interface
 TEST_CASE("Construction") {
-    oneapi::tbb::blocked_nd_range<int, 1>{ { 0,13,3 } };
+    int begin1 = 0;
+    int end1 = 13;
+    std::size_t grainsize1 = 3;
 
-    oneapi::tbb::blocked_nd_range<int, 1>{ oneapi::tbb::blocked_range<int>{ 0,13,3 } };
+    int begin2 = -8923;
+    int end2 = 8884;
+    std::size_t grainsize2 = 13;
 
-    oneapi::tbb::blocked_nd_range<int, 2>(oneapi::tbb::blocked_range<int>(-8923, 8884, 13), oneapi::tbb::blocked_range<int>(-8923, 5, 13));
+    std::size_t default_grainsize = 1;
 
-    oneapi::tbb::blocked_nd_range<int, 2>({ -8923, 8884, 13 }, { -8923, 8884, 13 });
-
-    oneapi::tbb::blocked_range<int> r1(0, 13);
-
-    oneapi::tbb::blocked_range<int> r2(-12, 23);
-
-    oneapi::tbb::blocked_nd_range<int, 2>({ { -8923, 8884, 13 }, r1});
-
-    oneapi::tbb::blocked_nd_range<int, 2>({ r2, r1 });
-
-    oneapi::tbb::blocked_nd_range<int, 2>(r1, r2);
-
-    int sizes[] = {174, 39, 2481, 93};
-    oneapi::tbb::blocked_nd_range<int, 4> rNd_1(sizes, /*grainsize*/7);
-
-    oneapi::tbb::blocked_nd_range<int, 4> rNd_2({174, 39, 2481, 93}, /*grainsize*/11);
-
-    for (unsigned i = 0; i < rNd_1.dim_count(); ++i) {
-        oneapi::tbb::blocked_nd_range<int, 4>::dim_range_type dim1 = rNd_1.dim(i);
-        oneapi::tbb::blocked_nd_range<int, 4>::dim_range_type dim2 = rNd_2.dim(i);
-        REQUIRE(dim1.begin()==0);
-        REQUIRE(dim2.begin()==0);
-        unsigned int szi = sizes[i]; // to compare with unsigned integrals without warnings
-        REQUIRE(dim1.size()==szi);
-        REQUIRE(dim2.size()==szi);
-        REQUIRE(dim1.grainsize()==7);
-        REQUIRE(dim2.grainsize()==11);
+    {
+        oneapi::tbb::blocked_nd_range<int, 1> r{ {begin1, end1, grainsize1} };
+        check_constructed_range(r, {begin1}, {end1}, {grainsize1});   
+    }
+    {
+        oneapi::tbb::blocked_nd_range<int, 1> r{ {begin1, end1} };
+        check_constructed_range(r, {begin1}, {end1}, {default_grainsize});
+    }
+    {
+        oneapi::tbb::blocked_nd_range<int, 1> r{oneapi::tbb::blocked_range<int>{begin1, end1, grainsize1}};
+        check_constructed_range(r, {begin1}, {end1}, {grainsize1});
+    }
+    {
+        oneapi::tbb::blocked_nd_range<int, 1> r{oneapi::tbb::blocked_range<int>{begin1, end1}};
+        check_constructed_range(r, {begin1}, {end1}, {default_grainsize});
+    }
+    {
+        oneapi::tbb::blocked_nd_range<int, 2> r{{begin1, end1, grainsize1}, {begin2, end2, grainsize2}};
+        check_constructed_range(r, {begin1, begin2}, {end1, end2}, {grainsize1, grainsize2});
+    }
+    {
+        oneapi::tbb::blocked_nd_range<int, 2> r{{begin1, end1}, {begin2, end2, grainsize2}};
+        check_constructed_range(r, {begin1, begin2}, {end1, end2}, {default_grainsize, grainsize2});
+    }
+    {
+        oneapi::tbb::blocked_nd_range<int, 2> r{oneapi::tbb::blocked_range<int>{begin1, end1, grainsize1},
+                                                oneapi::tbb::blocked_range<int>{begin2, end2, grainsize2}};
+        check_constructed_range(r, {begin1, begin2}, {end1, end2}, {grainsize1, grainsize2});
+    }
+    {
+        oneapi::tbb::blocked_nd_range<int, 2> r{oneapi::tbb::blocked_range<int>{begin1, end1},
+                                                oneapi::tbb::blocked_range<int>{begin2, end2, grainsize2}};
+        check_constructed_range(r, {begin1, begin2}, {end1, end2}, {default_grainsize, grainsize2});
+    }
+    {
+        oneapi::tbb::blocked_nd_range<int, 2> r{{begin1, end1, grainsize1},
+                                                oneapi::tbb::blocked_range<int>{begin2, end2, grainsize2}};
+        check_constructed_range(r, {begin1, begin2}, {end1, end2}, {grainsize1, grainsize2});
     }
 
-    oneapi::tbb::blocked_nd_range<AbstractValueType, 4>({ MakeAbstractValue(-3), MakeAbstractValue(13), 8 },
-                                               { MakeAbstractValue(-53), MakeAbstractValue(23), 2 },
-                                               { MakeAbstractValue(-23), MakeAbstractValue(33), 1 },
-                                               { MakeAbstractValue(-13), MakeAbstractValue(43), 7 });
+    int sizes[4] = {174, 39, 2481, 93};
+
+    {
+        oneapi::tbb::blocked_nd_range<int, 4> r(sizes, grainsize1);
+        check_constructed_range(r, {0, 0, 0, 0}, sizes,
+                                {grainsize1, grainsize1, grainsize1, grainsize1});
+    }
+    {
+        oneapi::tbb::blocked_nd_range<int, 4> r({sizes[0], sizes[1], sizes[2], sizes[3]}, grainsize2);
+        check_constructed_range(r, {0, 0, 0, 0}, sizes,
+                                {grainsize2, grainsize2, grainsize2, grainsize2});
+    }
+
+    {
+        AbstractValueType abstract_begins[4] = {MakeAbstractValue(-3), MakeAbstractValue(-53),
+                                                MakeAbstractValue(-23), MakeAbstractValue(-13)};
+
+        AbstractValueType abstract_ends[4] = {MakeAbstractValue(13), MakeAbstractValue(23),
+                                              MakeAbstractValue(33), MakeAbstractValue(43)};
+
+        std::size_t grainsizes[4] = {8, 2, 1, 7};
+
+        oneapi::tbb::blocked_nd_range<AbstractValueType, 4> r{{abstract_begins[0], abstract_ends[0], grainsizes[0]},
+                                                              {abstract_begins[1], abstract_ends[1], grainsizes[1]},
+                                                              {abstract_begins[2], abstract_ends[2], grainsizes[2]},
+                                                              {abstract_begins[3], abstract_ends[3], grainsizes[3]}};
+        
+        auto abstract_eq_pred = [](const AbstractValueType& left, const AbstractValueType& right) {
+            return GetValueOf(left) == GetValueOf(right);
+        };
+        check_constructed_range(r, abstract_begins, abstract_ends, grainsizes, abstract_eq_pred);
+    }
 }
 
 static const std::size_t N = 4;
@@ -291,3 +358,148 @@ TEST_CASE("blocked_nd_range proportional splitting") {
         utils::check_range_bounds_after_splitting(original.dim(0), first.dim(0), second.dim(0), expected_first_end);
     }
 }
+
+#if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
+template <typename T>
+void test_deduction_guides() {
+    using oneapi::tbb::blocked_nd_range;
+    static_assert(std::is_constructible<T, int>::value, "Incorrect test setup");
+    // T as a grainsize in braced-init-list constructions should be used since only
+    // the same type is allowed by the braced-init-list
+    static_assert(std::is_convertible<T, typename blocked_nd_range<T, 1>::size_type>::value,
+                  "Incorrect test setup");
+
+    std::vector<T> v;
+    using iterator = typename decltype(v)::iterator;
+
+    oneapi::tbb::blocked_range<T> dim_range(0, 100);
+
+    blocked_nd_range<T, 2> source_range(dim_range, dim_range);
+
+    {
+        blocked_nd_range range(dim_range, dim_range, dim_range);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 3>>);
+    }
+    {
+        blocked_nd_range range({v.begin(), v.end()}, {v.begin(), v.end()});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<iterator, 2>>);
+    }
+    {
+        blocked_nd_range range({T{0}, T{100}}, {T{0}, T{100}, T{5}}, {T{0}, T{100}}, {T{0}, T{100}, T{5}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+    }
+    {
+        blocked_nd_range range({T{100}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 1>>);
+    }
+    {
+        T array[1] = {100};
+        blocked_nd_range range(array);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 1>>);
+    }
+    {
+        blocked_nd_range range({T{100}}, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 1>>);
+    }
+    {
+        T array[1] = {100};
+        blocked_nd_range range(array, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 1>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}}, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 2>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 2>>);
+    }
+    {
+        T array[2] = {100, 200};
+        blocked_nd_range range(array, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 2>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}, T{300}}, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 3>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}, T{300}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 3>>);
+    }
+    {
+        T array[3] = {100, 200, 300};
+        blocked_nd_range range(array, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 3>>);
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}, T{300}, T{400}});
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+    }
+    {
+        T array[4] = {100, 200, 300, 400};
+        blocked_nd_range range(array);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+
+    }
+    {
+        blocked_nd_range range({T{100}, T{200}, T{300}, T{400}}, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+    }
+    {
+        T array[4] = {100, 200, 300, 400};
+        blocked_nd_range range(array, 5);
+        static_assert(std::is_same_v<decltype(range), blocked_nd_range<T, 4>>);
+    }
+    {
+        blocked_nd_range range(source_range, oneapi::tbb::split{});
+        static_assert(std::is_same_v<decltype(range), decltype(source_range)>);
+    }
+    {
+        blocked_nd_range range(source_range, oneapi::tbb::proportional_split{1, 3});
+        static_assert(std::is_same_v<decltype(range), decltype(source_range)>);
+    }
+    {
+        blocked_nd_range range(source_range);
+        static_assert(std::is_same_v<decltype(range), decltype(source_range)>);
+    }
+    {
+        blocked_nd_range range(std::move(source_range));
+        static_assert(std::is_same_v<decltype(range), decltype(source_range)>);
+    }
+}
+
+class fancy_value {
+public:
+    fancy_value(std::size_t real_value) : my_real_value(real_value) {}
+    fancy_value(const fancy_value&) = default;
+    ~fancy_value() = default;
+    fancy_value& operator=(const fancy_value&) = default;
+
+    friend bool operator<(const fancy_value& lhs, const fancy_value& rhs) {
+        return lhs.my_real_value < rhs.my_real_value;
+    }
+    friend std::size_t operator-(const fancy_value& lhs, const fancy_value& rhs) {
+        return lhs.my_real_value - rhs.my_real_value;
+    }
+    friend std::size_t operator-(const fancy_value& lhs, std::size_t offset) {
+        return lhs.my_real_value - offset;
+    }
+    friend fancy_value operator+(const fancy_value& lhs, std::size_t offset) {
+        return fancy_value(lhs.my_real_value + offset);
+    }
+
+    operator std::size_t() const {
+        return my_real_value;
+    }
+private:
+    std::size_t my_real_value;
+};
+
+//! Testing blocked_nd_range deduction guides
+//! \brief \ref interface \ref requirement
+TEST_CASE("blocked_nd_range deduction guides") {
+    test_deduction_guides<int>();
+    test_deduction_guides<fancy_value>();
+}
+#endif // __TBB_CPP17_DEDUCTION_GUIDES_PRESENT

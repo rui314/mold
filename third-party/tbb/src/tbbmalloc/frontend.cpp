@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -2073,22 +2073,26 @@ static bool doInitialization()
     if (mallocInitialized.load(std::memory_order_relaxed)!=2) {
         MALLOC_ASSERT( mallocInitialized.load(std::memory_order_relaxed)==0, ASSERT_TEXT );
         mallocInitialized.store(1, std::memory_order_relaxed);
-        RecursiveMallocCallProtector scoped;
-        if (!initMemoryManager()) {
-            mallocInitialized.store(0, std::memory_order_relaxed); // restore and out
-            return false;
+        {
+            RecursiveMallocCallProtector scoped;
+            if (!initMemoryManager()) {
+                mallocInitialized.store(0, std::memory_order_relaxed); // restore and out
+                return false;
+            }
+
+#if MALLOC_CHECK_RECURSION
+            RecursiveMallocCallProtector::detectNaiveOverload();
+#endif
+            MALLOC_ASSERT( mallocInitialized.load(std::memory_order_relaxed)==1, ASSERT_TEXT );
+            // Store must have release fence, otherwise mallocInitialized==2
+            // might become remotely visible before side effects of
+            // initMemoryManager() become remotely visible.
+            mallocInitialized.store(2, std::memory_order_release);
         }
 #ifdef  MALLOC_EXTRA_INITIALIZATION
         MALLOC_EXTRA_INITIALIZATION;
 #endif
-#if MALLOC_CHECK_RECURSION
-        RecursiveMallocCallProtector::detectNaiveOverload();
-#endif
-        MALLOC_ASSERT( mallocInitialized.load(std::memory_order_relaxed)==1, ASSERT_TEXT );
-        // Store must have release fence, otherwise mallocInitialized==2
-        // might become remotely visible before side effects of
-        // initMemoryManager() become remotely visible.
-        mallocInitialized.store(2, std::memory_order_release);
+
         if( GetBoolEnvironmentVariable("TBB_VERSION") ) {
             fputs(VersionString+1,stderr);
             hugePages.printStatus();

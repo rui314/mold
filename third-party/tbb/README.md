@@ -4,8 +4,8 @@
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/9125/badge)](https://www.bestpractices.dev/projects/9125)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/uxlfoundation/oneTBB/badge)](https://securityscorecards.dev/viewer/?uri=github.com/uxlfoundation/oneTBB)
 [![Gurubase](https://img.shields.io/badge/Gurubase-Ask%20oneTBB%20Guru-006BFF)](https://gurubase.io/g/onetbb)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/oneapi-src/oneTBB/badge)](https://securityscorecards.dev/viewer/?uri=github.com/oneapi-src/oneTBB)
-[![Coverity Scan Build Status](https://img.shields.io/coverity/scan/30373.svg)](https://scan.coverity.com/projects/oneapi-src-onetbb)
+[![Coverity Scan Build Status](https://img.shields.io/coverity/scan/30373.svg?label=coverity-lin)](https://scan.coverity.com/projects/oneapi-src-onetbb)
+[![Coverity Scan Build Status](https://img.shields.io/coverity/scan/32544.svg?label=coverity-win)](https://scan.coverity.com/projects/uxlfoundation-onetbb)
 
 oneTBB is a flexible C++ library that simplifies the work of adding parallelism
 to complex applications, even if you are not a threading expert.  
@@ -33,10 +33,11 @@ oneTBB is a part of the [UXL Foundation](http://www.uxlfoundation.org) and is an
 See [Release Notes](RELEASE_NOTES.md) and [System Requirements](SYSTEM_REQUIREMENTS.md).
 
 ## Documentation
-* [oneTBB Specification](https://spec.oneapi.com/versions/latest/elements/oneTBB/source/nested-index.html)
+* [oneTBB Specification](https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/nested-index)
 * [oneTBB Developer Guide and Reference](https://uxlfoundation.github.io/oneTBB)
 * [Migrating from TBB to oneTBB](https://uxlfoundation.github.io/oneTBB/main/tbb_userguide/Migration_Guide.html)
 * [README for the CMake build system](cmake/README.md)
+* [oneTBB Versioning Policies](VERSIONING.md)
 * [oneTBB Testing Approach](https://uxlfoundation.github.io/oneTBB/main/intro/testing_approach.html)
 * [Basic support for the Bazel build system](Bazel.md)
 * [oneTBB Discussions](https://github.com/uxlfoundation/oneTBB/discussions)

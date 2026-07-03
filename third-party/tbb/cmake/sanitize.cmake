@@ -1,4 +1,5 @@
 # Copyright (c) 2020-2022 Intel Corporation
+# Copyright (c) 2025 UXL Foundation Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,13 +15,21 @@
 
 set(TBB_SANITIZE ${TBB_SANITIZE} CACHE STRING "Sanitizer parameter passed to compiler/linker" FORCE)
 # Possible values of sanitizer parameter for cmake-gui for convenience, user still can use any other value.
-set_property(CACHE TBB_SANITIZE PROPERTY STRINGS "thread" "memory" "leak" "address -fno-omit-frame-pointer")
+set_property(CACHE TBB_SANITIZE PROPERTY STRINGS "thread" "memory" "leak" "address")
 
 if (NOT TBB_SANITIZE)
     return()
 endif()
 
 set(TBB_SANITIZE_OPTION -fsanitize=${TBB_SANITIZE})
+
+if (TBB_SANITIZE MATCHES "thread")
+    set(TBB_SANITIZE_OPTION "${TBB_SANITIZE_OPTION} -Wno-tsan")
+endif()
+
+if (TBB_SANITIZE MATCHES "address")
+    set(TBB_SANITIZE_OPTION "${TBB_SANITIZE_OPTION} -fno-omit-frame-pointer")
+endif()
 
 # It is required to add sanitizer option to CMAKE_REQUIRED_LIBRARIES to make check_cxx_compiler_flag working properly:
 # sanitizer option should be passed during the compilation phase as well as during the compilation.

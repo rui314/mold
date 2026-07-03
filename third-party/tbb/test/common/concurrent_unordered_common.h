@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -117,19 +118,19 @@ struct UnorderedMoveTraitsBase {
     static constexpr std::size_t expected_number_of_items_to_allocate_for_steal_move = 3; // TODO: check
 
     template <typename UnorderedType, typename Iterator>
-    static UnorderedType& construct_container( typename std::aligned_storage<sizeof(UnorderedType)>::type& storage,
+    static UnorderedType& construct_container( utils::UninitializedStorage<UnorderedType>& storage,
                                                Iterator begin, Iterator end )
     {
-        UnorderedType* ptr = reinterpret_cast<UnorderedType*>(&storage);
+        UnorderedType* ptr = &storage;
         new (ptr) UnorderedType(begin, end);
         return *ptr;
     }
 
     template <typename UnorderedType, typename Iterator, typename Allocator>
-    static UnorderedType& construct_container( typename std::aligned_storage<sizeof(UnorderedType)>::type& storage,
-                                                Iterator begin, Iterator end, const Allocator& alloc )
+    static UnorderedType& construct_container( utils::UninitializedStorage<UnorderedType>& storage,
+                                               Iterator begin, Iterator end, const Allocator& alloc )
     {
-        UnorderedType* ptr = reinterpret_cast<UnorderedType*>(&storage);
+        UnorderedType* ptr = &storage;
         new (ptr) UnorderedType(begin, end, /*bucket_count = */4, alloc);
         return *ptr;
     }

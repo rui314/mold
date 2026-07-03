@@ -56,23 +56,30 @@ add_executable(
     src/ui.cpp
     src/util.cpp
     src/vector.cpp
-    src/vol.cpp 
+    src/vol.cpp
 )
 
 add_subdirectory(../../common/gui gui)
 
 target_link_libraries(tachyon TBB::tbb Threads::Threads UI_LIB_tachyon)
 target_compile_options(tachyon PRIVATE ${TBB_CXX_STD_FLAG})
-
-if (MSVC AND CMAKE_CXX_COMPILER_ID STREQUAL IntelLLVM)
+if (MSVC)
+  if (CMAKE_CXX_COMPILER_ID STREQUAL IntelLLVM)
     target_compile_options(tachyon PRIVATE -D_CRT_SECURE_NO_WARNINGS)
+  else()
+    target_compile_options(tachyon PRIVATE /EHsc)
+  endif()
 endif()
 
 set(EXECUTABLE "$<TARGET_FILE:tachyon>")
 set(ARGS ${CMAKE_CURRENT_SOURCE_DIR}/dat/balls.dat)
 set(PERF_ARGS silent ${CMAKE_CURRENT_SOURCE_DIR}/dat/balls3.dat)
 set(LIGHT_ARGS ${CMAKE_CURRENT_SOURCE_DIR}/dat/model2.dat)
+set(BENCHMARK_ARGS no-bounding n-of-repeats=10 ${CMAKE_CURRENT_SOURCE_DIR}/dat/balls3.dat)
 
 add_execution_target(run_tachyon tachyon ${EXECUTABLE} "${ARGS}")
 add_execution_target(perf_run_tachyon tachyon ${EXECUTABLE} "${PERF_ARGS}")
 add_execution_target(light_test_tachyon tachyon ${EXECUTABLE} "${LIGHT_ARGS}")
+
+add_execution_target(benchmark_tachyon tachyon ${EXECUTABLE} "${BENCHMARK_ARGS}")
+add_benchmark_target(benchmark_tachyon_data tachyon ${EXECUTABLE} "${BENCHMARK_ARGS}")

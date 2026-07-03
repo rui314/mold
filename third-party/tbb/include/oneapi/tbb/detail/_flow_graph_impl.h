@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,7 +18,7 @@
 #ifndef __TBB_flow_graph_impl_H
 #define __TBB_flow_graph_impl_H
 
-// #include "../config.h"
+#include "_config.h"
 #include "_task.h"
 #include "../task_group.h"
 #include "../task_arena.h"
@@ -33,9 +34,9 @@ namespace detail {
 namespace d2 {
 
 class graph_task;
-static graph_task* const SUCCESSFULLY_ENQUEUED = (graph_task*)-1;
+__TBB_GLOBAL_VAR graph_task* const SUCCESSFULLY_ENQUEUED = (graph_task*)-1;
 typedef unsigned int node_priority_t;
-static const node_priority_t no_priority = node_priority_t(0);
+__TBB_GLOBAL_VAR constexpr node_priority_t no_priority = node_priority_t(0);
 
 class graph;
 class graph_node;
@@ -146,8 +147,6 @@ private:
     friend graph_task* prioritize_task(graph& g, graph_task& gt);
 };
 
-inline bool is_this_thread_in_graph_arena(graph& g);
-
 #if __TBB_PREVIEW_FLOW_GRAPH_TRY_PUT_AND_WAIT
 class trackable_messages_graph_task : public graph_task {
 public:
@@ -160,12 +159,7 @@ public:
         auto last_iterator = my_msg_reference_vertices.cbefore_begin();
 
         for (auto& msg_waiter : my_msg_wait_context_vertices) {
-            // If the task is created by the thread outside the graph arena, the lifetime of the thread reference vertex
-            // may be shorter that the lifetime of the task, so thread reference vertex approach cannot be used
-            // and the task should be associated with the msg wait context itself
-            d1::wait_tree_vertex_interface* ref_vertex = is_this_thread_in_graph_arena(g) ?
-                                                         r1::get_thread_reference_vertex(msg_waiter) :
-                                                         msg_waiter;
+            d1::wait_tree_vertex_interface* ref_vertex = r1::get_thread_reference_vertex(msg_waiter);
             last_iterator = my_msg_reference_vertices.emplace_after(last_iterator,
                                                                     ref_vertex);
             ref_vertex->reserve(1);
@@ -420,7 +414,6 @@ private:
     friend void activate_graph(graph& g);
     friend void deactivate_graph(graph& g);
     friend bool is_graph_active(graph& g);
-    friend bool is_this_thread_in_graph_arena(graph& g);
     friend graph_task* prioritize_task(graph& g, graph_task& arena_task);
     friend void spawn_in_graph_arena(graph& g, graph_task& arena_task);
     friend void enqueue_in_graph_arena(graph &g, graph_task& arena_task);
@@ -453,13 +446,8 @@ inline graph_task::graph_task(graph& g, d1::small_object_allocator& allocator,
     , priority(node_priority)
     , my_allocator(allocator)
 {
-    // If the task is created by the thread outside the graph arena, the lifetime of the thread reference vertex
-    // may be shorter that the lifetime of the task, so thread reference vertex approach cannot be used
-    // and the task should be associated with the graph wait context itself
-    // TODO: consider how reference counting can be improved for such a use case. Most common example is the async_node
     d1::wait_context_vertex* graph_wait_context_vertex = &my_graph.get_wait_context_vertex();
-    my_reference_vertex = is_this_thread_in_graph_arena(g) ? r1::get_thread_reference_vertex(graph_wait_context_vertex)
-                                                           : graph_wait_context_vertex;
+    my_reference_vertex = r1::get_thread_reference_vertex(graph_wait_context_vertex);
     __TBB_ASSERT(my_reference_vertex, nullptr);
     my_reference_vertex->reserve();
 }
@@ -513,11 +501,6 @@ inline bool is_graph_active(graph& g) {
     return g.my_is_active;
 }
 
-inline bool is_this_thread_in_graph_arena(graph& g) {
-    __TBB_ASSERT(g.my_task_arena && g.my_task_arena->is_active(), nullptr);
-    return r1::execution_slot(*g.my_task_arena) != d1::slot_id(-1);
-}
-
 inline graph_task* prioritize_task(graph& g, graph_task& gt) {
     if( no_priority == gt.priority )
         return &gt;
@@ -546,7 +529,7 @@ inline void spawn_in_graph_arena(graph& g, graph_task& arena_task) {
 
         __TBB_ASSERT(g.my_task_arena && g.my_task_arena->is_active(), nullptr);
         submit( *gt, *g.my_task_arena, *g.my_context
-#if __TBB_PREVIEW_CRITICAL_TASKS
+#if __TBB_CRITICAL_TASKS
                 , /*as_critical=*/false
 #endif
         );

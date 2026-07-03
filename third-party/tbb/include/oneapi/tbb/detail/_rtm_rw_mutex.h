@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -32,7 +33,7 @@ struct rtm_rw_mutex_impl;
 
 namespace d1 {
 
-constexpr std::size_t speculation_granularity = 64;
+__TBB_GLOBAL_VAR constexpr std::size_t speculation_granularity = 64;
 #if _MSC_VER && !defined(__INTEL_COMPILER)
     // Suppress warning: structure was padded due to alignment specifier
     #pragma warning (push)

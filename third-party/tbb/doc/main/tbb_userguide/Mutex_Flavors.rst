@@ -67,14 +67,14 @@ The following is a summary of mutex behaviors:
    *reader* locks.
 
 
--  ``rw_mutex`` is similar to ``mutex``, but additionally support
+-  ``rw_mutex`` is similar to ``mutex``, but additionally supports
    *reader* locks.
 
 
 -  ``speculative_spin_mutex`` and ``speculative_spin_rw_mutex`` are
    similar to ``spin_mutex`` and ``spin_rw_mutex``, but additionally
    provide *speculative locking* on processors that support hardware
-   transaction memory. Speculative locking allows multiple threads
+   transaction memory. Speculative locking allows multiple threads to
    acquire the same lock, as long as there are no "conflicts" that may
    generate different results than non-speculative locking. These
    mutexes are *scalable* when work with low conflict rate, i.e. mostly
@@ -133,7 +133,7 @@ The following is a summary of mutex behaviors:
         -     no     
         -     yields     
         -     1 word     
-      * -     \ ``spin_rw_mutex``     
+      * -     \ ``rw_mutex``     
         -     ✓     
         -     no     
         -     no     

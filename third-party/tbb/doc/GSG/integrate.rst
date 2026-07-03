@@ -14,8 +14,8 @@ To integrate oneTBB, you need to:
 However, you can use CMake* and the pkg-config tool to simplify the process of integrating oneTBB into your project and handling its dependencies.
 See the instructions below to learn how to use the tools. 
 
-CMake*
-*******
+Integrate oneTBB with CMake*
+****************************
 
 CMake* is a cross-platform build tool that helps you manage dependencies and build systems. 
 Integrating oneTBB into your project using CMake*:
@@ -54,14 +54,14 @@ Where:
 .. code-block::
 
        $ pkg-config --cflags tbb
-       -I<path-to>/tbb/latest/lib/pkgconfig/../..//include
+       -I<path-to>/tbb/latest/lib/pkgconfig/../../include
 
 ``--libs`` provides the Intel(R) oneTBB library name and the search path to find it:
 
 .. code-block::
    
        $ pkg-config –libs tbb
-       -L<path to>tbb/latest/lib/pkgconfig/../..//lib/intel64/gcc4.8 -ltbb
+       -L<path to>tbb/latest/lib/pkgconfig/../../lib/intel64/gcc4.8 -ltbb
 
 .. note::
 

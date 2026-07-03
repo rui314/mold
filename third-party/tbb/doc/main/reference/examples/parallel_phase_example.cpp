@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,6 +18,7 @@
 /*begin_parallel_phase_example*/
 #define TBB_PREVIEW_PARALLEL_PHASE 1
 
+#include "oneapi/tbb/global_control.h"
 #include "oneapi/tbb/task_arena.h"
 #include "oneapi/tbb/parallel_for.h"
 #include "oneapi/tbb/parallel_sort.h"
@@ -24,11 +26,12 @@
 #include <vector>
 
 int main() {
-    oneapi::tbb::task_arena ta {
-        tbb::task_arena::automatic, /*reserved_for_masters=*/1,
-        tbb::task_arena::priority::normal,
-        tbb::task_arena::leave_policy::fast
-    };
+    oneapi::tbb::global_control gc(
+        oneapi::tbb::global_control::leave_policy,
+        oneapi::tbb::task_arena::leave_policy::fast
+    );
+
+    oneapi::tbb::task_arena ta;
 
     std::vector<int> data(1000);
 

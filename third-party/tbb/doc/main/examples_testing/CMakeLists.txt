@@ -39,3 +39,11 @@ file(GLOB_RECURSE DOC_EXAMPLES_LIST "${_reference_examples_path}/*.cpp" "${_user
 foreach(_doc_example_path IN LISTS DOC_EXAMPLES_LIST)
     add_doc_example(${_doc_example_path})
 endforeach()
+
+find_package(OpenMP)
+if (OpenMP_FOUND)
+    target_compile_options(tbb_mixing_other_runtimes_example PRIVATE "${OpenMP_CXX_FLAGS}")
+    target_link_options(tbb_mixing_other_runtimes_example PRIVATE "${OpenMP_CXX_FLAGS}")
+endif()
+
+

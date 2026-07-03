@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2025 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -25,6 +26,13 @@
 #include "common/test.h"
 #include "utils.h"
 #include "utils_assert.h"
+
+#if __FreeBSD__
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/user.h>
+#include <libutil.h>
+#endif
 
 #if __unix__ || __sun
 #include <sys/resource.h>
@@ -93,7 +101,18 @@ namespace utils {
         bool status = GetProcessMemoryInfo(GetCurrentProcess(), &mem, sizeof(mem)) != 0;
         ASSERT(status, nullptr);
         return stat == currentUsage ? mem.PagefileUsage : mem.PeakPagefileUsage;
-#elif __unix__
+#elif __FreeBSD__
+        /* Inspired from sys/compat/linprocfs/linprocfs.c */
+        long unsigned size = 0;
+        struct kinfo_proc *kip = kinfo_getproc(getpid());
+        ASSERT(kip != nullptr, "Failed to get process info.");
+        size = (long unsigned)kip->ki_size;
+        free (kip);
+        // VmPeak not supported
+        if (stat == peakUsage)
+            ASSERT(size, "VmPeak not supported.");
+        return size;
+#elif __unix__ && !defined(__QNX__)
         long unsigned size = 0;
         FILE* fst = fopen("/proc/self/status", "r");
         ASSERT(fst != nullptr, nullptr);

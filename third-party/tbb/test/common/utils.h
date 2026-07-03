@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -474,6 +475,17 @@ public:
     }
 };
 std::unordered_set<const LifeTrackableObject*> LifeTrackableObject::alive_objects{};
+
+template <typename T>
+class UninitializedStorage {
+    union {
+        T m_value;
+    };
+public:
+    UninitializedStorage() {}
+    ~UninitializedStorage() {}
+    T* operator&() { return &m_value; }
+};
 
 } // namespace utils
 

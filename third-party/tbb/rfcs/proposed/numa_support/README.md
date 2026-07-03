@@ -30,6 +30,7 @@ to pin threads to different arenas to each of the NUMA nodes available on a syst
 across those `task_arena` objects and into associated `task_group` objects, and then wait for work
 again using both the `task_arena` and `task_group` objects.
 
+```c++
     void constrain_for_numa_nodes() {
       std::vector<tbb::numa_node_id> numa_nodes = tbb::info::numa_nodes();
       std::vector<tbb::task_arena> arenas(numa_nodes.size());
@@ -39,7 +40,7 @@ again using both the `task_arena` and `task_group` objects.
       for (int i = 0; i < numa_nodes.size(); i++)
         arenas[i].initialize(tbb::task_arena::constraints(numa_nodes[i]), 0);
 
-      // enqueue work to all but the first arena, using the task_group to track work
+      // enqueue work to all but the first arena, using the task groups to track work
       // by using defer, the task_group reference count is incremented immediately
       for (int i = 1; i < numa_nodes.size(); i++)
         arenas[i].enqueue(
@@ -53,10 +54,11 @@ again using both the `task_arena` and `task_group` objects.
         tbb::parallel_for(0, N, [](int j) { f(w); });
       });
 
-      // join the other arenas to wait on their task_groups
+      // join the other arenas to wait on their task groups
       for (int i = 1; i < numa_nodes.size(); i++)
         arenas[i].execute([&task_groups, i] { task_groups[i].wait(); });
     }
+```
 
 ### The need for application-specific knowledge
 
@@ -108,6 +110,7 @@ Is it reasonable for a developer to expect that a series of loops, such as the o
 try to create a NUMA-friendly distribution of tasks so that accesses to the same elements of `b` and `c`
 in the two loops are from the same NUMA nodes? Or is this too much to expect without providing hints? 
 
+```c++
     tbb::parallel_for(0, N, 
       [](int i) { 
         b[i] = f(i);
@@ -118,6 +121,7 @@ in the two loops are from the same NUMA nodes? Or is this too much to expect wit
       [](int i) { 
         a[i] = b[i] + c[i]; 
       });
+```
 
 ## Possible Sub-Proposals
 
@@ -126,9 +130,9 @@ in the two loops are from the same NUMA nodes? Or is this too much to expect wit
 See [sub-RFC for increased availability of NUMA API](tbbbind-link-static-hwloc.org)
 
 
-### Add NUMA-constrained arenas
+### Create NUMA-constrained arenas
 
-See [sub-RFC for creation and use of NUMA-constrained arenas](numa-arenas-creation-and-use.org)
+This [sub-proposal is supported](../../supported/numa_support/create-numa-arenas.md).
 
 ### NUMA-aware allocation
 

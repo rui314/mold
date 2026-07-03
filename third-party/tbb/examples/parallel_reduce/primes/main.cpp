@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 #include "oneapi/tbb/tick_count.h"
 
 #include "common/utility/utility.hpp"
+#include "common/utility/measurements.hpp"
 
 #include "primes.hpp"
 
@@ -88,8 +89,16 @@ int main(int argc, char* argv[]) {
 
     // Try different numbers of threads
     for (int p = options.threads.first; p <= options.threads.last; p = options.threads.step(p)) {
+        std::ostringstream par_info;
+        if (0 != p) {
+            par_info << p << "-way parallelism";
+        }
+        else {
+            par_info << "serial code";
+        }
+        utility::measurements measurements(options.repeatNumber);
         for (NumberType i = 0; i < options.repeatNumber; ++i) {
-            oneapi::tbb::tick_count iterationBeginMark = oneapi::tbb::tick_count::now();
+            measurements.start();
             NumberType count = 0;
             NumberType n = options.n;
             if (p == 0) {
@@ -99,16 +108,17 @@ int main(int argc, char* argv[]) {
                 NumberType grainSize = options.grainSize;
                 count = ParallelCountPrimes(n, p, grainSize);
             }
-            oneapi::tbb::tick_count iterationEndMark = oneapi::tbb::tick_count::now();
+            auto duration_usec = measurements.stop().count();
             if (!options.silentFlag) {
                 std::cout << "#primes from [2.." << options.n << "] = " << count << " ("
-                          << (iterationEndMark - iterationBeginMark).seconds() << " sec with ";
-                if (0 != p)
-                    std::cout << p << "-way parallelism";
-                else
-                    std::cout << "serial code";
-                std::cout << ")\n";
+                          << (float)duration_usec /
+                                 std::chrono::microseconds(std::chrono::seconds(1)).count()
+                          << " sec with " << par_info.str() << ")\n";
             }
+        }
+        if (options.repeatNumber > 1) {
+            par_info << " Relative_Err : ";
+            utility::report_relative_error(measurements.computeRelError(), par_info.str());
         }
     }
     utility::report_elapsed_time((oneapi::tbb::tick_count::now() - mainBeginMark).seconds());

@@ -1,4 +1,5 @@
 # Copyright (c) 2020-2023 Intel Corporation
+# Copyright (c) 2026 UXL Foundation Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,18 +17,21 @@ find_package(PythonInterp 3.5 REQUIRED)
 
 set(PYTHON_BUILD_WORK_DIR python_build)
 
+configure_file( ${CMAKE_CURRENT_SOURCE_DIR}/setup.py.in  ${CMAKE_CURRENT_SOURCE_DIR}/setup.py)
+
 add_custom_target(
     python_copy
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tbb ${PYTHON_BUILD_WORK_DIR}/tbb
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/TBB.py ${PYTHON_BUILD_WORK_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/setup.py ${PYTHON_BUILD_WORK_DIR}
-)
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml ${PYTHON_BUILD_WORK_DIR}
+) 
 
 # Python build requires path to TBB headers
 get_target_property(TBB_INCLUDES tbb INTERFACE_INCLUDE_DIRECTORIES)
 foreach(dir ${TBB_INCLUDES})
     if (${dir} MATCHES "<BUILD_INTERFACE:" OR TBB_FOUND)
-        set(TBB4PY_INCLUDE_STRING "-I${dir} ${TBB4PY_INCLUDE_STRING}")
+        set(TBB4PY_INCLUDE_STRING "${dir} ${TBB4PY_INCLUDE_STRING}")
     endif()
 endforeach()
 string(STRIP "${TBB4PY_INCLUDE_STRING}" TBB4PY_INCLUDE_STRING)
@@ -37,10 +41,13 @@ add_custom_target(
     ALL
     DEPENDS tbb python_copy
     COMMAND
-    ${PYTHON_EXECUTABLE} ${PYTHON_BUILD_WORK_DIR}/setup.py
-        build -b${PYTHON_BUILD_WORK_DIR}
-        build_ext ${TBB4PY_INCLUDE_STRING} -L$<TARGET_FILE_DIR:TBB::tbb>
-        install --prefix build -f
+    ${CMAKE_COMMAND} -E env
+        TBB_INCLUDEDIRS="${TBB4PY_INCLUDE_STRING}"
+        TBB_LIBDIRS=$<TARGET_FILE_DIR:TBB::tbb>
+    ${PYTHON_EXECUTABLE} -m pip install
+        --no-build-isolation
+        --prefix build
+        ./${PYTHON_BUILD_WORK_DIR}
     COMMENT "Build and install to work directory the oneTBB Python module"
 )
 
@@ -50,7 +57,7 @@ add_test(NAME python_test
                  -DPYTHON_MODULE_BUILD_PATH=${PYTHON_BUILD_WORK_DIR}/build
                  -P ${PROJECT_SOURCE_DIR}/cmake/python/test_launcher.cmake)
 
-install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/${PYTHON_BUILD_WORK_DIR}/build/
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/build/
         DESTINATION .
         COMPONENT tbb4py)
 

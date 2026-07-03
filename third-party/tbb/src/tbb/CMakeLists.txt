@@ -1,4 +1,5 @@
-# Copyright (c) 2020-2024 Intel Corporation
+# Copyright (c) 2020-2025 Intel Corporation
+# Copyright (c) 2025 UXL Foundation Contributors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,16 +54,24 @@ if (WIN32)
     set_target_properties(tbb PROPERTIES OUTPUT_NAME "tbb${TBB_BINARY_VERSION}")
 endif()
 
+if (EMSCRIPTEN)
+    set(TBB_LIB_COMPILE_FLAGS ${TBB_LIB_COMPILE_FLAGS} -fexceptions)
+    set(TBB_LIB_LINK_FLAGS ${TBB_LIB_LINK_FLAGS} -fexceptions)
+endif()
+
 # TODO: Add statistics.cpp
 
-target_compile_definitions(tbb
-                           PUBLIC
-                           $<$<CONFIG:DEBUG>:TBB_USE_DEBUG>
-                           PRIVATE
-                           __TBB_BUILD
-                           ${TBB_RESUMABLE_TASKS_USE_THREADS}
-                           $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_DYNAMIC_LOAD_ENABLED=0>
-                           $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_SOURCE_DIRECTLY_INCLUDED=1>)
+target_compile_definitions(
+    tbb
+    PUBLIC
+    $<$<CONFIG:DEBUG>:TBB_USE_DEBUG>
+    PRIVATE
+    __TBB_BUILD
+    ${TBB_RESUMABLE_TASKS_USE_THREADS}
+    $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_DYNAMIC_LOAD_ENABLED=0>
+    $<$<NOT:$<BOOL:${BUILD_SHARED_LIBS}>>:__TBB_SOURCE_DIRECTLY_INCLUDED=1>
+    $<$<NOT:$<BOOL:${TBB_VERIFY_DEPENDENCY_SIGNATURE}>>:__TBB_SKIP_DEPENDENCY_SIGNATURE_VERIFICATION=1>
+)
 
 if (NOT ("${CMAKE_SYSTEM_PROCESSOR}" MATCHES "(armv7-a|aarch64|mips|arm64|riscv)" OR
          "${CMAKE_OSX_ARCHITECTURES}" MATCHES "arm64" OR
@@ -163,7 +172,7 @@ if (TBB_INSTALL)
         # to support previous user experience for linkage.
         install(FILES
                 $<TARGET_LINKER_FILE:tbb>
-                DESTINATION lib
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 CONFIGURATIONS RelWithDebInfo Release MinSizeRel
                 RENAME tbb.lib
                 COMPONENT devel
@@ -171,7 +180,7 @@ if (TBB_INSTALL)
 
         install(FILES
                 $<TARGET_LINKER_FILE:tbb>
-                DESTINATION lib
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 CONFIGURATIONS Debug
                 RENAME tbb_debug.lib
                 COMPONENT devel
@@ -180,7 +189,7 @@ if (TBB_INSTALL)
     if(TBB_LINUX_SEPARATE_DBG)
         install(FILES
                 $<TARGET_FILE:tbb>.dbg
-                DESTINATION lib
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}
                 COMPONENT devel
         )
     endif()

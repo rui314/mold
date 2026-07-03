@@ -20,7 +20,7 @@ For more information and examples, please refer to [forum discussion](https://co
  - **tbb** - The folder contains Python module sources.
 
 ## Files
- - **setup.py** - Standard Python setup script.
+ - **setup.py** - Standard Python setuptools script. Calling it directly is deprecated since setuptools version 58.3.0.
  - **TBB.py** - Alternative entry point for Python module.
 
 ## CMake predefined targets
@@ -33,8 +33,7 @@ For more information and examples, please refer to [forum discussion](https://co
  - `pydoc tbb` - Read built-in documentation for Python interfaces.
  - `python3 -m tbb your_script.py` - Run your_script.py in context of `with tbb.Monkey():` when oneTBB is enabled. By default only multi-threading will be covered.
  - `python3 -m tbb --ipc your_script.py` - Run your_script.py in context of `with tbb.Monkey():` when oneTBB enabled in both multi-threading and multi-processing modes.
- - `python3 setup.py build -b<output_directory_path> -f check` - Build oneTBB module for Python. (Prerequisites: built and sourced oneTBB and IRML libraries)
- - `python3 setup.py build -b<output_directory_path> build_ext -I<path_to_tbb_includes> -L<path_to_prebuilt_libraries> install -f <additional_flags> ` - Build and install oneTBB module for Python. (Prerequisites: built oneTBB and IRML libraries)
+ - `TBB_INCLUDEDIRS=<path_to_tbb_includes> TBB_LIBDIRS=<path_to_prebuilt_libraries> python3 -m pip install --no-build-isolation --prefix <output_directory_path>` - Build and install oneTBB module for Python. (Prerequisites: built oneTBB and IRML libraries)
  - `python3 -m TBB test` - run test for oneTBB module for Python.
  - `python3 -m tbb test` - run test for oneTBB module for Python.
 

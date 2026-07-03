@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2024 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -36,14 +37,18 @@
 #include "task.h" // for task::suspend_point
 
 #if _WIN32 || _WIN64
-#ifndef NOMINMAX
-#define NOMINMAX
-#define __TBB_DEFINED_NOMINMAX 1
-#endif
-#include <windows.h>
-#if __TBB_DEFINED_NOMINMAX
-#undef NOMINMAX
-#undef __TBB_DEFINED_NOMINMAX
+// declare prototypes of just the needed TLS functions, instead of
+// including whole windows.h
+#if __TBB_WIN8UI_SUPPORT
+extern "C" __declspec(dllimport) unsigned long __stdcall FlsAlloc(void(__stdcall*)(void*));
+extern "C" __declspec(dllimport) int __stdcall FlsFree(unsigned long dwFlsIndex);
+extern "C" __declspec(dllimport) int __stdcall FlsSetValue(unsigned long dwFlsIndex, void* lpFlsValue);
+extern "C" __declspec(dllimport) void* __stdcall FlsGetValue(unsigned long dwFlsIndex);
+#else
+extern "C" __declspec(dllimport) unsigned long __stdcall TlsAlloc(void);
+extern "C" __declspec(dllimport) int __stdcall TlsFree(unsigned long dwTlsIndex);
+extern "C" __declspec(dllimport) int __stdcall TlsSetValue(unsigned long dwTlsIndex, void* lpTlsValue);
+extern "C" __declspec(dllimport) void* __stdcall TlsGetValue(unsigned long dwTlsIndex);
 #endif
 #else
 #include <pthread.h>
@@ -290,16 +295,16 @@ class ets_base<ets_key_per_instance>: public ets_base<ets_no_key> {
     using super = ets_base<ets_no_key>;
 #if _WIN32||_WIN64
 #if __TBB_WIN8UI_SUPPORT
-    using tls_key_t = DWORD;
+    using tls_key_t = unsigned long;
     void create_key() { my_key = FlsAlloc(nullptr); }
     void destroy_key() { FlsFree(my_key); }
-    void set_tls(void * value) { FlsSetValue(my_key, (LPVOID)value); }
+    void set_tls(void * value) { FlsSetValue(my_key, value); }
     void* get_tls() { return (void *)FlsGetValue(my_key); }
 #else
-    using tls_key_t = DWORD;
+    using tls_key_t = unsigned long;
     void create_key() { my_key = TlsAlloc(); }
     void destroy_key() { TlsFree(my_key); }
-    void set_tls(void * value) { TlsSetValue(my_key, (LPVOID)value); }
+    void set_tls(void * value) { TlsSetValue(my_key, value); }
     void* get_tls() { return (void *)TlsGetValue(my_key); }
 #endif
 #else

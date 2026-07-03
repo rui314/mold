@@ -66,4 +66,4 @@ lookup and used in place of the default implementation.
 See Also
 ********
 
-`join_node Specification <https://oneapi-spec.uxlfoundation.org/specifications/oneapi/latest/elements/onetbb/source/flow_graph/join_node_cls>`_
+:onetbb-spec:`join_node Specification <flow_graph/join_node_cls>`

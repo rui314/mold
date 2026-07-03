@@ -17,13 +17,27 @@ structure for Linux\*, relative to *<tbb_install_dir>*
       - Location     
       - Environment Variable     
     * - Header files     
-      - | ``include/oneapi/tbb.h``
-	| ``include/oneapi/tbb/*.h``     
-      - ``CPATH``     
+      - | ``<tbb_install_dir>/include/oneapi/tbb.h``
+	| ``<tbb_install_dir>/include/oneapi/tbb/*.h``     
+      - |``C_INCLUDE_PATH``
+        |``CPLUS_INCLUDE_PATH``
     * - Shared libraries     
-      - ``lib/<arch>/<lib><variant>.so.<version>``
+      - ``<tbb_install_dir>/lib/<arch>/gcc4.8/<lib><compat_version><variant>.so.<version>``
       - | ``LIBRARY_PATH``
 	| ``LD_LIBRARY_PATH``
+    * - Symbolic links
+      - | ``<tbb_install_dir>/lib/<arch>/gcc4.8/<lib><compat_version><variant>.so`` -> ``<tbb_install_dir>lib/<lib><compat_version><variant>.so.<ver_major>``
+        | ``<tbb_install_dir>/lib/<lib><compat_version><variant>.so.<ver_major>`` -> ``<tbb_install_dir>lib/<lib><compat_version><variant>.so.<ver_major>.<ver_minor>``
+      - 
+    * - CMake files
+      - ``<tbb_install_dir>/lib/cmake/tbb/*.cmake``
+      - 
+    * - pkg-config files
+      - ``<tbb_install_dir>/lib/pkgconfig/*.pc``
+      - 
+    * - vars script
+      - ``<tbb_install_dir>/env/vars.sh``
+      - 
 
 Where:
 
@@ -33,4 +47,5 @@ Where:
 
 * ``<lib>`` - ``libtbb``, ``libtbbmalloc``, ``libtbbmalloc_proxy`` or ``libtbbbind``
 * ``<variant>`` - ``_debug`` or empty
-* ``<version>`` - binary version in a form of ``<major>.<minor>``
+* ``<version>`` - binary version in a form of ``<ver_major>.<ver_minor>``
+* ``<compat_version>`` - compatibility version for ``libtbbbind``

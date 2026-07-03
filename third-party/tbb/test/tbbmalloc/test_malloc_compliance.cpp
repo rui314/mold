@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -1007,8 +1008,8 @@ void CMemTest::RunAllTests(int total_threads)
     TestAlignedParameters();
     UniquePointer();
     AddrArifm();
-#if __APPLE__ || __TBB_USE_THREAD_SANITIZER
-    REPORT("Known issue: some tests are skipped on macOS\n");
+#if __APPLE__ || __TBB_USE_SANITIZERS
+    REPORT("Known issue: some tests are skipped on macOS or with sanitizers enabled\n");
 #else
     // TODO: enable
     NULLReturn(1*MByte,100*MByte,total_threads);
@@ -1032,7 +1033,7 @@ TEST_CASE("MAIN TEST") {
     // Check if we were called to test standard behavior
     // TODO: enable this mode
     // setSystemAllocs();
-#if __unix__
+#if __linux__
     /* According to man pthreads
        "NPTL threads do not share resource limits (fixed in kernel 2.6.10)".
        Use per-threads limits for affected systems.

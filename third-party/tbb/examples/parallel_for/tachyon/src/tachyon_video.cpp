@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2021 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@
     SUCH DAMAGE.
 */
 
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -53,27 +54,39 @@
 #include "util.hpp"
 #include "tachyon_video.hpp"
 
+#include "common/utility/measurements.hpp"
+
 extern SceneHandle global_scene;
 extern char *global_window_title;
 extern bool global_usegraphics;
+extern utility::measurements *global_measurements;
 
 void tachyon_video::on_process() {
     char buf[8192];
     flt runtime;
+    unsigned iterations = global_measurements->iterations();
     scenedef *scene = (scenedef *)global_scene;
     updating_mode = scene->displaymode == RT_DISPLAY_ENABLED;
-    recycling = false;
     pausing = false;
     do {
+        recycling = false;
         updating = updating_mode;
-        timer start_timer = gettimer();
+        global_measurements->start();
         rt_renderscene(global_scene);
-        timer end_timer = gettimer();
-        runtime = timertime(start_timer, end_timer);
-        sprintf(buf, "%s: %.3f seconds", global_window_title, runtime);
+        auto duration_usec = global_measurements->stop().count();
+        sprintf(buf,
+                "%s: %.3f seconds",
+                global_window_title,
+                (double)duration_usec / std::chrono::microseconds(std::chrono::seconds(1)).count());
         rt_ui_message(MSG_0, buf);
         title = buf;
         show_title(); // show time spent for rendering
+
+        iterations--;
+        if (iterations > 0) {
+            updating = false;
+            recycling = true;
+        }
         if (!updating) {
             updating = true;
             drawing_memory dm = get_drawing_memory();

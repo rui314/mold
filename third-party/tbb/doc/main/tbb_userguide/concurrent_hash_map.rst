@@ -121,8 +121,8 @@ destruction to end thread lifetime:
            }
 
 
-The method ``remove(key)`` can also operate concurrently. It implicitly
-requests write access. Therefore before removing the key, it waits on
+The method ``erase(key)`` can also operate concurrently. It implicitly
+requests write access. Therefore before erasing the key, it waits on
 any other extant accesses on ``key``.
 
 .. toctree::

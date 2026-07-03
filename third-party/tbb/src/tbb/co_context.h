@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -43,9 +44,9 @@
     #if __INTEL_COMPILER
         #pragma warning(push)
         #pragma warning(disable:1478)
-    #elif __clang__
-        #pragma clang diagnostic push
-        #pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    #elif __GNUC__
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     #endif
 #endif // __APPLE__
 
@@ -310,7 +311,13 @@ inline void create_coroutine(coroutine_type& c, std::size_t stack_size, void* ar
     const std::size_t protected_stack_size = page_aligned_stack_size + 2 * REG_PAGE_SIZE;
 
     // Allocate the stack with protection property
-    std::uintptr_t stack_ptr = (std::uintptr_t)mmap(nullptr, protected_stack_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
+#if __FreeBSD__
+    #define MMAP_PROT_ARG PROT_READ | PROT_WRITE
+#else
+    #define MMAP_PROT_ARG PROT_NONE
+#endif
+
+ std::uintptr_t stack_ptr = (std::uintptr_t)mmap(nullptr, protected_stack_size, MMAP_PROT_ARG, MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
     __TBB_ASSERT((void*)stack_ptr != MAP_FAILED, nullptr);
 
     // Allow read write on our stack (guarded pages are still protected)
@@ -362,8 +369,8 @@ inline void destroy_coroutine(coroutine_type& c) {
 #if __APPLE__
     #if __INTEL_COMPILER
         #pragma warning(pop) // 1478 warning
-    #elif __clang__
-        #pragma clang diagnostic pop // "-Wdeprecated-declarations"
+    #elif __GNUC__
+        #pragma GCC diagnostic pop // "-Wdeprecated-declarations"
     #endif
 #endif
 

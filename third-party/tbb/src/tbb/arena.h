@@ -1,5 +1,6 @@
 /*
     Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -22,6 +23,7 @@
 
 #include "oneapi/tbb/detail/_task.h"
 #include "oneapi/tbb/detail/_utils.h"
+#include "oneapi/tbb/global_control.h"
 #include "oneapi/tbb/spin_mutex.h"
 
 #include "scheduler_common.h"
@@ -45,9 +47,7 @@ class task_group_context;
 class threading_control;
 class allocate_root_with_context_proxy;
 
-#if __TBB_ARENA_BINDING
 class numa_binding_observer;
-#endif /*__TBB_ARENA_BINDING*/
 
 //! Bounded coroutines cache LIFO ring buffer
 class arena_co_cache {
@@ -191,14 +191,14 @@ public:
     // This method is not thread-safe!
     // Required to be called after construction to set initial state of the state machine.
     void set_initial_state(tbb::task_arena::leave_policy lp) {
+        std::uintptr_t policy = FAST_LEAVE;
         if (lp == tbb::task_arena::leave_policy::automatic) {
-            std::uintptr_t platform_policy = governor::hybrid_cpu() ? FAST_LEAVE : DELAYED_LEAVE;
-            my_state.store(platform_policy, std::memory_order_relaxed);
-        } else {
-            __TBB_ASSERT(lp == tbb::task_arena::leave_policy::fast,
-                         "Was the new value introduced for leave policy?");
-            my_state.store(FAST_LEAVE, std::memory_order_relaxed);
+            auto glp = tbb::task_arena::leave_policy(global_control::active_value(global_control::leave_policy));
+            if (glp == tbb::task_arena::leave_policy::automatic && !governor::hybrid_cpu()) {
+                policy = DELAYED_LEAVE;
+            }
         }
+        my_state.store(policy, std::memory_order_relaxed);
     }
 
     void reset_if_needed() {
@@ -274,7 +274,7 @@ struct arena_base : padded<intrusive_list_node> {
     //! Task pool for the tasks scheduled via tbb::resume() function.
     task_stream<front_accessor> my_resume_task_stream; // heavy use in stealing loop
 
-#if __TBB_PREVIEW_CRITICAL_TASKS
+#if __TBB_CRITICAL_TASKS
     //! Task pool for the tasks with critical property set.
     /** Critical tasks are scheduled for execution ahead of other sources (including local task pool
         and even bypassed tasks) unless the thread already executes a critical task in an outer
@@ -298,10 +298,8 @@ struct arena_base : padded<intrusive_list_node> {
     //! The list of local observers attached to this arena.
     observer_list my_observers;
 
-#if __TBB_ARENA_BINDING
     //! Pointer to internal observer that allows to bind threads in arena to certain NUMA node.
     numa_binding_observer* my_numa_binding_observer{nullptr};
-#endif /*__TBB_ARENA_BINDING*/
 
     // Below are rarely modified members
 
@@ -370,7 +368,8 @@ public:
 
     static arena& create(threading_control* control, unsigned num_slots, unsigned num_reserved_slots,
                          unsigned arena_priority_level,
-                         d1::constraints constraints = d1::constraints{}
+                         d1::constraints constraints = d1::constraints{},
+                         numa_binding_observer* observer = nullptr
 #if __TBB_PREVIEW_PARALLEL_PHASE
                          , tbb::task_arena::leave_policy lp = tbb::task_arena::leave_policy::automatic
 #endif
@@ -423,7 +422,7 @@ public:
     template<task_stream_accessor_type accessor>
     d1::task* get_stream_task(task_stream<accessor>& stream, unsigned& hint);
 
-#if __TBB_PREVIEW_CRITICAL_TASKS
+#if __TBB_CRITICAL_TASKS
     //! Tries to find a critical task in global critical task stream
     d1::task* get_critical_task(unsigned& hint, isolation_type isolation);
 #endif
@@ -483,6 +482,8 @@ public:
     int update_concurrency(unsigned concurrency);
 
     std::pair</*min workers = */ int, /*max workers = */ int> update_request(int mandatory_delta, int workers_delta);
+
+    tcm_cpu_mask_t get_affinity_mask() const;
 
     /** Must be the last data field */
     arena_slot my_slots[1];
@@ -576,7 +577,7 @@ inline d1::task* arena::get_stream_task(task_stream<accessor>& stream, unsigned&
     return stream.pop(subsequent_lane_selector(hint));
 }
 
-#if __TBB_PREVIEW_CRITICAL_TASKS
+#if __TBB_CRITICAL_TASKS
 // Retrieves critical task respecting isolation level, if provided. The rule is:
 // 1) If no outer critical task and no isolation => take any critical task
 // 2) If working on an outer critical task and no isolation => cannot take any critical task
@@ -593,7 +594,7 @@ inline d1::task* arena::get_critical_task(unsigned& hint, isolation_type isolati
         return my_critical_task_stream.pop(preceding_lane_selector(hint));
     }
 }
-#endif // __TBB_PREVIEW_CRITICAL_TASKS
+#endif // __TBB_CRITICAL_TASKS
 
 } // namespace r1
 } // namespace detail

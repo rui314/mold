@@ -1,5 +1,5 @@
 /*
-    Copyright (c) 2005-2022 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -70,10 +70,12 @@ struct numa {
 
 int TestNumaDistribution(std::vector<DWORD> &validateProcgrp, int additionalParallelism, bool allThreads){
     validateProcgrp.resize(GetMaximumProcessorGroupCount());
-    PROCESSOR_NUMBER proc;
     struct numa nodes;
-    GetThreadIdealProcessorEx(GetCurrentThread(), &proc);
-    int master_thread_proc_grp = proc.Group;
+    int master_thread_proc_grp = [&]{
+        PROCESSOR_NUMBER proc;
+        GetThreadIdealProcessorEx(GetCurrentThread(), &proc);
+        return proc.Group;
+    }();
     int requested_parallelism;
     if (allThreads) 
         requested_parallelism = additionalParallelism;

@@ -5,6 +5,7 @@ The project uses CMake* build configuration.
 The following controls are available during the configure stage:
 ```
 TBB_TEST:BOOL - Enable testing (ON by default)
+TBB_EXAMPLES:BOOL - Enable build of TBB examples (OFF by default)
 TBB_STRICT:BOOL - Treat compiler warnings as errors (ON by default)
 TBB_SANITIZE:STRING - Sanitizer parameter, passed to compiler/linker
 TBB_SIGNTOOL:FILEPATH - Tool for digital signing, used in post-install step for libraries if provided.
@@ -24,6 +25,8 @@ TBB_CONTROL_FLOW_GUARD:BOOL - Enable Control Flow Guard (CFG) during the compila
 TBB_BUILD_APPLE_FRAMEWORKS - Enable the Apple* frameworks instead of dylibs, only available on the Apple platform. (OFF by default)
 TBB_FILE_TRIM - Enable __FILE__ trim, replace a build-time full path with a relative path in the debug info and macro __FILE__; use it to make
            reproducible location-independent builds (ON by default)
+TBB_VERIFY_DEPENDENCY_SIGNATURE - On Windows* enable verification of signatures for dependencies linked at run-time. (ON by default)
+TBB_FUZZ_TESTING:BOOL - Enable fuzz testing (OFF by default)
 ```
 
 ## Configure, Build, and Test
@@ -52,7 +55,7 @@ Some useful options:
 > **_TIP:_** It is recommended to install the HWLOC* library. See [oneTBB documentation](https://uxlfoundation.github.io/oneTBB/GSG/next_steps.html#hybrid-cpu-and-numa-support) for details.
 
 The TBBbind library has three versions: `tbbbind`, `tbbbind_2_0`, and `tbbbind_2_5`. Each of these versions is linked with the corresponding HWLOC* library version: 
-- `tbbbind` links with `HWLOC 1.11.x`
+- `tbbbind` links with `HWLOC 2.x` which was built as an archive library on Linux* (.a file) or a static library on Windows* (.lib file) 
 - `tbbbind_2_0` links with `HWLOC 2.1–2.4`
 - `tbbbind_2_5` links with `HWLOC 2.5` and later
 
@@ -72,7 +75,7 @@ Windows* OS requires an additional variable for correct TBBBind library building
  - `CMAKE_HWLOC_<HWLOC_VER>_DLL_PATH` - path to the corresponding HWLOC version `.dll` file.
 
 The `HWLOC_VER` substring used earlier can be replaced with one of the three values:
-- `1_11` for the `tbbbind` library configuration
+- `STATIC` for the `tbbbind` library configuration
 - `2` for the `tbbbind_2_0` library configuration
 - `2_5` for the `tbbbind_2_5` library configuration
 
@@ -153,8 +156,8 @@ cmake -DTBB_WINDOWS_DRIVER=ON -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded ..
 #### Example
 
 ```bash
-cmake -DCMAKE_CXX_COMPILER=icpc -DCMAKE_C_COMPILER=icc -DTBB_TEST=off -DCMAKE_HWLOC_1_11_LIBRARY_PATH=<path_to_hwloc_library_file>/libhwloc.so.15
--DCMAKE_HWLOC_1_11_INCLUDE_PATH=<path_to_hwloc_header_directory> -DCMAKE_INSTALL_PREFIX=<path_to_install_oneTBB>/oneTBB_install ..
+cmake -DCMAKE_CXX_COMPILER=icpx -DCMAKE_C_COMPILER=icx -DTBB_TEST=off -DCMAKE_HWLOC_2_5_LIBRARY_PATH=<path_to_hwloc_library_file>/libhwloc.so.15
+-DCMAKE_HWLOC_2_5_INCLUDE_PATH=<path_to_hwloc_header_directory> -DCMAKE_INSTALL_PREFIX=<path_to_install_oneTBB>/oneTBB_install ..
 make -j8 && make install
 ```
 
@@ -188,15 +191,6 @@ ctest
 Or by using the ``test`` target:
 ```bash
 cmake --build . --target test # currently does not work on Windows* OS
-```
-
-## Installation
-See [Installation from Sources](../INSTALL.md) to learn how to install oneTBB.
-
-To install oneTBB from the release packages, use the following commands: 
-```bash
-tar -xvf oneapi-tbb-xxx.xx.x-*.tgz
-source env/vars.sh
 ```
 
 

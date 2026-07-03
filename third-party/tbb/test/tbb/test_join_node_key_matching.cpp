@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2005-2023 Intel Corporation
+    Copyright (c) 2005-2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -17,38 +18,56 @@
 #include "common/config.h"
 
 #include "test_join_node.h"
-
+#include "conformance/conformance_flowgraph.h"
 #include "common/concepts_common.h"
 
 //! \file test_join_node_key_matching.cpp
 //! \brief Test for [flow_graph.join_node] specification
 
 #if __TBB_CPP17_DEDUCTION_GUIDES_PRESENT
-void test_deduction_guides() {
-    using namespace tbb::flow;
-    using tuple_type = std::tuple<int, int, double>;
+template <typename Input, typename Key, typename Body>
+struct test_deduction_guides_common {
+    static void run(Body port_body) {
+        using namespace tbb::flow;
+        graph g;
 
-    graph g;
-    auto body_int = [](const int&)->int { return 1; };
-    auto body_double = [](const double&)->int { return 1; };
+        using pure_input_type = std::decay_t<Input>;
+        using tuple_type = std::tuple<pure_input_type, pure_input_type>;
+        using policy_type = key_matching<Key>;
 
-    join_node j1(g, body_int, body_int, body_double);
-    static_assert(std::is_same_v<decltype(j1), join_node<tuple_type, key_matching<int>>>);
+        join_node j1(g, port_body, port_body);
+        static_assert(std::is_same_v<decltype(j1), join_node<tuple_type, policy_type>>);
 
 #if __TBB_PREVIEW_FLOW_GRAPH_NODE_SET
-    broadcast_node<int> b1(g), b2(g);
-    broadcast_node<double> b3(g);
-    broadcast_node<tuple_type> b4(g);
+        broadcast_node<pure_input_type> pred1(g);
+        broadcast_node<pure_input_type> pred2(g);
 
-    join_node j2(follows(b1, b2, b3), body_int, body_int, body_double);
-    static_assert(std::is_same_v<decltype(j2), join_node<tuple_type, key_matching<int>>>);
+        broadcast_node<tuple_type> succ(g);
 
-    join_node j3(precedes(b4), body_int, body_int, body_double);
-    static_assert(std::is_same_v<decltype(j3), join_node<tuple_type, key_matching<int>>>);
+        join_node j2(follows(pred1, pred2), port_body, port_body);
+        static_assert(std::is_same_v<decltype(j2), join_node<tuple_type, policy_type>>);
+
+        join_node j3(precedes(succ), port_body, port_body);
+        static_assert(std::is_same_v<decltype(j3), join_node<tuple_type, policy_type>>);
 #endif
 
-    join_node j4(j1);
-    static_assert(std::is_same_v<decltype(j4), join_node<tuple_type, key_matching<int>>>);
+        join_node j4(j1);
+        static_assert(std::is_same_v<decltype(j4), decltype(j1)>);
+        g.wait_for_all();
+    }
+};
+
+template <typename Input, typename Key>
+void test_deduction_guides_body_types() {
+    deduction_guides_testing::test_all_body_types<Input, Key, test_deduction_guides_common>();
+}
+
+void test_deduction_guides() {
+    using key_type = int;
+    using input_type = deduction_guides_testing::InputType<key_type>;
+
+    test_deduction_guides_body_types<input_type, key_type>();
+    test_deduction_guides_body_types<const input_type&, key_type>();
 }
 #endif
 

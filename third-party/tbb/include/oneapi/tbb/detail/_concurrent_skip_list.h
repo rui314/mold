@@ -1,5 +1,6 @@
 /*
-    Copyright (c) 2019-2022 Intel Corporation
+    Copyright (c) 2019-2025 Intel Corporation
+    Copyright (c) 2026 UXL Foundation Contributors
 
     Licensed under the Apache License, Version 2.0 (the "License");
     you may not use this file except in compliance with the License.
@@ -49,7 +50,31 @@
 
 namespace tbb {
 namespace detail {
-namespace d2 {
+namespace d3 {
+
+template <typename LevelGenerator, typename SizeType>
+class skip_list_thread_data {
+public:
+    using level_generator_type = LevelGenerator;
+    using size_type = SizeType;
+
+    skip_list_thread_data() : my_local_size(0) {}
+
+    std::size_t random_level() { return my_rng(); }
+    std::size_t local_size() const { return my_local_size.load(std::memory_order_relaxed); }
+
+    void set_size(size_type size) { my_local_size.store(size, std::memory_order_relaxed); }
+    void increment_size() {
+        // Not using my_local_size.fetch_add(1) to avoid exclusive locking of the cache line
+        // Since only one thread can write to this atomic, and no synchronization needed with readers
+        my_local_size.store(local_size() + 1, std::memory_order_relaxed);
+    }
+
+private:
+    level_generator_type my_rng;
+    // Atomic to avoid formal data race between several readers and single writer
+    std::atomic<size_type> my_local_size;
+};
 
 template <typename Value, typename Allocator>
 class skip_list_node {
@@ -264,6 +289,7 @@ protected:
     using node_allocator_traits = tbb::detail::allocator_traits<node_allocator_type>;
 
     using list_node_type = skip_list_node<value_type, node_allocator_type>;
+    using atomic_node_ptr = std::atomic<list_node_type*>;
     using node_type = d1::node_handle<key_type, value_type, list_node_type, allocator_type>;
 
     using iterator = skip_list_iterator<list_node_type, value_type>;
@@ -275,6 +301,13 @@ protected:
     using const_pointer = typename allocator_traits_type::const_pointer;
 
     using random_level_generator_type = typename container_traits::random_level_generator_type;
+    using thread_data_type = skip_list_thread_data<random_level_generator_type, size_type>;
+#if __TBB_RESUMABLE_TASKS
+    using ets_type = tbb::enumerable_thread_specific<thread_data_type, cache_aligned_allocator<thread_data_type>,
+                                                     ets_suspend_aware>;
+#else
+    using ets_type = tbb::enumerable_thread_specific<thread_data_type>;
+#endif
 
     using node_ptr = list_node_type*;
 
@@ -285,10 +318,13 @@ private:
 public:
     static constexpr bool allow_multimapping = container_traits::allow_multimapping;
 
-    concurrent_skip_list() : my_head_ptr(nullptr), my_size(0), my_max_height(0) {}
+    concurrent_skip_list()
+        : my_head_ptr(nullptr)
+        , my_max_height(0) {}
 
     explicit concurrent_skip_list( const key_compare& comp, const allocator_type& alloc = allocator_type() )
-        : my_node_allocator(alloc), my_compare(comp), my_head_ptr(nullptr), my_size(0), my_max_height(0) {}
+        : my_node_allocator(alloc), my_compare(comp), my_head_ptr(nullptr)
+        , my_max_height(0) {}
 
     explicit concurrent_skip_list( const allocator_type& alloc )
         : concurrent_skip_list(key_compare(), alloc) {}
@@ -313,32 +349,36 @@ public:
         : concurrent_skip_list(init, key_compare(), alloc) {}
 
     concurrent_skip_list( const concurrent_skip_list& other )
-        : my_node_allocator(node_allocator_traits::select_on_container_copy_construction(other.get_allocator())),
-          my_compare(other.my_compare), my_rng(other.my_rng), my_head_ptr(nullptr),
-          my_size(0), my_max_height(0)
+        : my_node_allocator(node_allocator_traits::select_on_container_copy_construction(other.get_allocator()))
+        , my_compare(other.my_compare)
+        , my_head_ptr(nullptr)
+        , my_max_height(0)
     {
         internal_copy(other);
-        __TBB_ASSERT(my_size == other.my_size, "Wrong size of copy-constructed container");
+        __TBB_ASSERT(size() == other.size(), "Wrong size of copy-constructed container");
     }
 
     concurrent_skip_list( const concurrent_skip_list& other, const allocator_type& alloc )
-        : my_node_allocator(alloc), my_compare(other.my_compare), my_rng(other.my_rng), my_head_ptr(nullptr),
-          my_size(0), my_max_height(0)
+        : my_node_allocator(alloc), my_compare(other.my_compare)
+        , my_head_ptr(nullptr)
+        , my_max_height(0)
     {
         internal_copy(other);
-        __TBB_ASSERT(my_size == other.my_size, "Wrong size of copy-constructed container");
+        __TBB_ASSERT(size() == other.size(), "Wrong size of copy-constructed container");
     }
 
     concurrent_skip_list( concurrent_skip_list&& other )
-        : my_node_allocator(std::move(other.my_node_allocator)), my_compare(other.my_compare),
-          my_rng(std::move(other.my_rng)), my_head_ptr(nullptr) // my_head_ptr would be stored in internal_move
+        : my_node_allocator(std::move(other.my_node_allocator))
+        , my_compare(other.my_compare)
+        , my_head_ptr(nullptr) // my_head_ptr would be stored in internal_move
     {
         internal_move(std::move(other));
     }
 
     concurrent_skip_list( concurrent_skip_list&& other, const allocator_type& alloc )
-        : my_node_allocator(alloc), my_compare(other.my_compare),
-          my_rng(std::move(other.my_rng)), my_head_ptr(nullptr)
+        : my_node_allocator(alloc)
+        , my_compare(other.my_compare)
+        , my_head_ptr(nullptr)
     {
         using is_always_equal = typename allocator_traits_type::is_always_equal;
         internal_move_construct_with_allocator(std::move(other), is_always_equal());
@@ -354,7 +394,6 @@ public:
             clear();
             copy_assign_allocators(my_node_allocator, other.my_node_allocator);
             my_compare = other.my_compare;
-            my_rng = other.my_rng;
             internal_copy(other);
         }
         return *this;
@@ -366,8 +405,6 @@ public:
             delete_head();
 
             my_compare = std::move(other.my_compare);
-            my_rng = std::move(other.my_rng);
-
             move_assign_allocators(my_node_allocator, other.my_node_allocator);
             using pocma_type = typename node_allocator_traits::propagate_on_container_move_assignment;
             using is_always_equal = typename node_allocator_traits::is_always_equal;
@@ -416,7 +453,8 @@ public:
     std::pair<iterator, bool> insert( node_type&& nh ) {
         if (!nh.empty()) {
             auto insert_node = d1::node_handle_accessor::get_node_ptr(nh);
-            std::pair<iterator, bool> insert_result = internal_insert_node(insert_node);
+            thread_data_type& td = my_ets.local();
+            std::pair<iterator, bool> insert_result = internal_insert_node(insert_node, td);
             if (insert_result.second) {
                 d1::node_handle_accessor::deactivate(nh);
             }
@@ -588,7 +626,7 @@ public:
             head->set_next(level, nullptr);
         }
 
-        my_size.store(0, std::memory_order_relaxed);
+        my_ets.clear();
         my_max_height.store(0, std::memory_order_relaxed);
     }
 
@@ -617,7 +655,13 @@ public:
     }
 
     size_type size() const {
-        return my_size.load(std::memory_order_relaxed);
+        size_type total_size = 0;
+
+        my_ets.combine_each([&](const thread_data_type& td) {
+            total_size += td.local_size();
+        });
+
+        return total_size;
     }
 
     size_type max_size() const {
@@ -743,8 +787,11 @@ private:
         my_head_ptr.store(other.my_head_ptr.load(std::memory_order_relaxed), std::memory_order_relaxed);
         other.my_head_ptr.store(nullptr, std::memory_order_relaxed);
 
-        my_size.store(other.my_size.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        other.my_size.store(0, std::memory_order_relaxed);
+        // TODO: investigate whether the performance gain from shrinking sizes to calling thread's size is justified
+        // Logic similar to enumerable_thread_specific::internal_move can be used instead
+        my_ets.clear();
+        my_ets.local().set_size(other.size());
+        other.my_ets.clear();
 
         my_max_height.store(other.my_max_height.load(std::memory_order_relaxed), std::memory_order_relaxed);
         other.my_max_height.store(0, std::memory_order_relaxed);
@@ -760,7 +807,9 @@ private:
         if (my_node_allocator == other.get_allocator()) {
             internal_move(std::move(other));
         } else {
-            my_size.store(0, std::memory_order_relaxed);
+            my_ets.clear();
+            my_ets.local().set_size(0);
+
             my_max_height.store(other.my_max_height.load(std::memory_order_relaxed), std::memory_order_relaxed);
             internal_copy(std::make_move_iterator(other.begin()), std::make_move_iterator(other.end()));
         }
@@ -940,15 +989,17 @@ private:
 
     template<typename... Args>
     std::pair<iterator, bool> internal_insert( Args&&... args ) {
-        node_ptr new_node = create_value_node(std::forward<Args>(args)...);
-        std::pair<iterator, bool> insert_result = internal_insert_node(new_node);
+        thread_data_type& td = my_ets.local();
+        node_ptr new_node = create_value_node(td, std::forward<Args>(args)...);
+        std::pair<iterator, bool> insert_result = internal_insert_node(new_node, td);
         if (!insert_result.second) {
             delete_value_node(new_node);
         }
         return insert_result;
     }
 
-    std::pair<iterator, bool> internal_insert_node( node_ptr new_node ) {
+    std::pair<iterator, bool> internal_insert_node( node_ptr new_node, thread_data_type& td )
+    {
         array_type prev_nodes;
         array_type curr_nodes;
         size_type new_height = new_node->height();
@@ -1005,7 +1056,7 @@ private:
                     }
                 }
             }
-            ++my_size;
+            td.increment_size();
             return std::pair<iterator, bool>(iterator(new_node), true);
         }
     }
@@ -1046,7 +1097,12 @@ private:
                 prev_nodes[level]->set_next(level, erase_node->next(level));
                 erase_node->set_next(level, nullptr);
             }
-            my_size.fetch_sub(1, std::memory_order_relaxed);
+
+            // Shrink all thread-local sizes into the calling thread's size and decrement
+            // TODO: investigate if performance gain of this optimization is justified
+            size_type total_size = size();
+            my_ets.clear();
+            my_ets.local().set_size(total_size - 1);
 
             result.first = erase_node;
             result.second = next_node;
@@ -1099,8 +1155,9 @@ private:
     }
 
     template <typename... Args>
-    node_ptr create_value_node( Args&&... args ) {
-        node_ptr node = create_node(my_rng());
+    node_ptr create_value_node( thread_data_type& td, Args&&... args )
+    {
+        node_ptr node = create_node(td.random_level());
 
         // try_call API is not convenient here due to broken
         // variadic capture on GCC 4.8.5
@@ -1178,11 +1235,16 @@ private:
         using std::swap;
         swap_allocators(my_node_allocator, other.my_node_allocator);
         swap(my_compare, other.my_compare);
-        swap(my_rng, other.my_rng);
-
         swap_atomics_relaxed(my_head_ptr, other.my_head_ptr);
-        swap_atomics_relaxed(my_size, other.my_size);
         swap_atomics_relaxed(my_max_height, other.my_max_height);
+
+        // TODO: investigate whether the performance gain from shrinking sizes to calling thread's size is justified
+        // Logic similar to enumerable_thread_specific::internal_swap can be used instead
+        size_type total_size = size();
+        my_ets.clear();
+        my_ets.local().set_size(other.size());
+        other.my_ets.clear();
+        other.my_ets.local().set_size(total_size);
     }
 
     void internal_swap( concurrent_skip_list& other, /*POCMA || is_always_equal =*/std::true_type ) {
@@ -1196,10 +1258,9 @@ private:
 
     node_allocator_type my_node_allocator;
     key_compare my_compare;
-    random_level_generator_type my_rng;
-    std::atomic<list_node_type*> my_head_ptr;
-    std::atomic<size_type> my_size;
+    atomic_node_ptr my_head_ptr;
     std::atomic<size_type> my_max_height;
+    mutable ets_type my_ets; // mutable is needed since ets::combine_each is non-const
 
     template<typename OtherTraits>
     friend class concurrent_skip_list;
@@ -1258,27 +1319,28 @@ bool operator>=( const concurrent_skip_list<Traits>& lhs, const concurrent_skip_
 
 // Generates a number from the interval [0, MaxLevel).
 template <std::size_t MaxLevel>
-class concurrent_geometric_level_generator {
+class geometric_level_generator {
 public:
     static constexpr std::size_t max_level = MaxLevel;
     // TODO: modify the algorithm to accept other values of max_level
     static_assert(max_level == 32, "Incompatible max_level for rng");
 
-    concurrent_geometric_level_generator() : engines(std::minstd_rand::result_type(time(nullptr))) {}
+    geometric_level_generator() : my_engine(std::minstd_rand::result_type(time(nullptr))) {}
 
     std::size_t operator()() {
         // +1 is required to pass at least 1 into log2 (log2(0) is undefined)
         // -1 is required to have an ability to return 0 from the generator (max_level - log2(2^31) - 1)
-        std::size_t result = max_level - std::size_t(tbb::detail::log2(engines.local()() + 1)) - 1;
+        auto random_number = my_engine();
+
+        std::size_t result = max_level - std::size_t(tbb::detail::log2(random_number + 1)) - 1;
         __TBB_ASSERT(result <= max_level, nullptr);
         return result;
     }
-
 private:
-    tbb::enumerable_thread_specific<std::minstd_rand> engines;
+    std::minstd_rand my_engine;
 };
 
-} // namespace d2
+} // namespace d3
 
 } // namespace detail
 } // namespace tbb
