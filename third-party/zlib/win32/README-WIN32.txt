@@ -1,10 +1,10 @@
 ZLIB DATA COMPRESSION LIBRARY
 
-zlib 1.3.1 is a general purpose data compression library.  All the code is
+zlib 1.3.2 is a general purpose data compression library.  All the code is
 thread safe.  The data format used by the zlib library is described by RFCs
 (Request for Comments) 1950 to 1952 in the files
-http://www.ietf.org/rfc/rfc1950.txt (zlib format), rfc1951.txt (deflate format)
-and rfc1952.txt (gzip format).
+https://datatracker.ietf.org/doc/html/rfc1951 (zlib format), rfc1951.txt
+(deflate format), and rfc1952.txt (gzip format).
 
 All functions of the compression library are documented in the file zlib.h
 (volunteer to write man pages welcome, contact zlib@gzip.org).  Two compiled
@@ -12,17 +12,17 @@ examples are distributed in this package, example and minigzip.  The example_d
 and minigzip_d flavors validate that the zlib1.dll file is working correctly.
 
 Questions about zlib should be sent to <zlib@gzip.org>.  The zlib home page
-is http://zlib.net/ .  Before reporting a problem, please check this site to
+is https://zlib.net/ .  Before reporting a problem, please check this site to
 verify that you have the latest version of zlib; otherwise get the latest
 version and check whether the problem still exists or not.
 
-PLEASE read DLL_FAQ.txt, and the zlib FAQ http://zlib.net/zlib_faq.html before
+PLEASE read DLL_FAQ.txt, and the zlib FAQ https://zlib.net/zlib_faq.html before
 asking for help.
 
 
 Manifest:
 
-The package zlib-1.3.1-win32-x86.zip will contain the following files:
+The package zlib-1.3.2-win32-x86.zip will contain the following files:
 
   README-WIN32.txt This document
   ChangeLog        Changes since previous zlib packages
@@ -59,7 +59,7 @@ The package zlib-1.3.1-win32-x86.zip will contain the following files:
 All .pdb files above are entirely optional, but are very useful to a developer
 attempting to diagnose program misbehavior or a crash.  Many additional
 important files for developers can be found in the zlib127.zip source package
-available from http://zlib.net/ - review that package's README file for details.
+available from https://zlib.net/ - review that package's README file for details.
 
 
 Acknowledgments:
@@ -72,7 +72,7 @@ are too numerous to cite here.
 
 Copyright notice:
 
-  (C) 1995-2017 Jean-loup Gailly and Mark Adler
+  (C) 1995-2026 Jean-loup Gailly and Mark Adler
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages

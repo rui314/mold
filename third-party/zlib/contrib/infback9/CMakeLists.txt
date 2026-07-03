@@ -1,0 +1,19 @@
+if(ZLIB_BUILD_SHARED)
+    target_sources(zlib
+        PRIVATE
+            infback9.c
+            inftree9.c
+            infback9.h
+            inffix9.h
+            inftree9.h)
+endif(ZLIB_BUILD_SHARED)
+
+if(ZLIB_BUILD_STATIC)
+    target_sources(zlibstatic
+        PRIVATE
+            infback9.c
+            inftree9.c
+            infback9.h
+            inffix9.h
+            inftree9.h)
+endif(ZLIB_BUILD_STATIC)

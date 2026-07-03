@@ -2,7 +2,7 @@
 // © Copyright Henrik Ravn 2004
 //
 // Use, modification and distribution are subject to the Boost Software License, Version 1.0.
-// (See accompanying file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+// (See accompanying file LICENSE_1_0.txt or copy at https://www.boost.org/LICENSE_1_0.txt)
 //
 
 using System;
@@ -17,7 +17,7 @@ using NUnit.Framework;
 // Unit tests for the DotZLib class library
 // ----------------------------------------
 //
-// Use this with NUnit 2 from http://www.nunit.org
+// Use this with NUnit 2 from https://www.nunit.org
 //
 
 namespace DotZLibTests
@@ -156,7 +156,7 @@ namespace DotZLibTests
         public void Info_Version()
         {
             Info info = new Info();
-            Assert.AreEqual("1.3.1", Info.Version);
+            Assert.AreEqual("1.3.2", Info.Version);
             Assert.AreEqual(32, info.SizeOfUInt);
             Assert.AreEqual(32, info.SizeOfULong);
             Assert.AreEqual(32, info.SizeOfPointer);

@@ -124,4 +124,21 @@ STRPGMEXP PGMLVL(*CURRENT) SIGNATURE('ZLIB')
   EXPORT SYMBOL("crc32_combine_gen")
   EXPORT SYMBOL("crc32_combine_op")
 
+/*@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*/
+/*   Version 1.3.1.2 additional entry points.                       */
+/*@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*/
+
+  EXPORT SYMBOL("deflateUsed")
+
+/*@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*/
+/*   Version 1.3.2 additional entry points.                         */
+/*@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@*/
+
+  EXPORT SYMBOL("compressBound_z")
+  EXPORT SYMBOL("deflateBound_z")
+  EXPORT SYMBOL("compress_z")
+  EXPORT SYMBOL("compress2_z")
+  EXPORT SYMBOL("uncompress_z")
+  EXPORT SYMBOL("uncompress2_z")
+
 ENDPGMEXP

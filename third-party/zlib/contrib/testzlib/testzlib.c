@@ -18,7 +18,7 @@ void MyDoMinus64(LARGE_INTEGER *R,LARGE_INTEGER A,LARGE_INTEGER B)
 }
 
 #ifdef _M_X64
-// see http://msdn2.microsoft.com/library/twchhe95(en-us,vs.80).aspx for __rdtsc
+// see https://learn.microsoft.com/en-us/cpp/intrinsics/rdtsc?view=msvc-170 for __rdtsc
 unsigned __int64 __rdtsc(void);
 void BeginCountRdtsc(LARGE_INTEGER * pbeginTime64)
 {

@@ -1,0 +1,18 @@
+@PACKAGE_INIT@
+
+set(_blast_supported_components "shared" "static")
+
+if(blast_FIND_COMPONENTS)
+    foreach(_comp ${blast_FIND_COMPONENTS})
+        if(NOT _comp IN_LIST _blast_supported_components)
+            set(blast_FOUND False)
+            set(blast_NOT_FOUND_MESSAGE "Unsupported component: ${_comp}")
+        endif(NOT _comp IN_LIST _blast_supported_components)
+
+        include("${CMAKE_CURRENT_LIST_DIR}/blast-${_comp}.cmake")
+    endforeach(_comp ${blast_FIND_COMPONENTS})
+else(blast_FIND_COMPONENTS)
+    foreach(_component_config IN LISTS _blast_supported_components)
+        include("${CMAKE_CURRENT_LIST_DIR}/blast-${_component_config}.cmake")
+    endforeach(_component_config IN LISTS _blast_supported_components)
+endif(blast_FIND_COMPONENTS)

@@ -1,0 +1,9 @@
+IBM Z mainframes starting from version z13 provide vector instructions, which 
+allows vectorization of crc32. This extension is build by default when targeting
+ibm s390x. However this extension can disabled if desired:
+
+    # for configure build
+    $ ./configure --disable-crcvx
+
+    # for cmake build
+    $ cmake .. -DZLIB_CRC32VX=off

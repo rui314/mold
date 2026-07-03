@@ -6,7 +6,7 @@ for help about these, not the zlib authors. Thanks.
 
 ada/        by Dmitriy Anisimkov <anisimkov@yahoo.com>
         Support for Ada
-        See http://zlib-ada.sourceforge.net/
+        See https://zlib-ada.sourceforge.net/
 
 blast/      by Mark Adler <madler@alumni.caltech.edu>
         Decompressor for output of PKWare Data Compression Library (DCL)
@@ -37,7 +37,7 @@ iostream3/  by Ludwig Schwardt <schwardt@sun.ac.za>
 minizip/    by Gilles Vollant <info@winimage.com>
         Mini zip and unzip based on zlib
         Includes Zip64 support by Mathias Svensson <mathias@result42.com>
-        See http://www.winimage.com/zLibDll/minizip.html
+        See https://www.winimage.com/zLibDll/minizip.html
 
 pascal/     by Bob Dellaca <bobdl@xtra.co.nz> et al.
         Support for Pascal
@@ -46,12 +46,12 @@ puff/       by Mark Adler <madler@alumni.caltech.edu>
         Small, low memory usage inflate.  Also serves to provide an
         unambiguous description of the deflate format.
 
+crc32vx/      by Ilya Leoshkevich <iii@linux.ibm.com>
+        Hardware-accelerated CRC32 on IBM Z with Z13 VX extension.
+
 testzlib/   by Gilles Vollant <info@winimage.com>
         Example of the use of zlib
 
-untgz/      by Pedro A. Aranda Gutierrez <paag@tid.es>
-        A very simple tar.gz file extractor using zlib
-
-vstudio/    by Gilles Vollant <info@winimage.com>
-        Building a minizip-enhanced zlib with Microsoft Visual Studio
-        Includes vc11 from kreuzerkrieg and vc12 from davispuh
+zlib1-dll/
+            by @Vollstrecker on github.com
+        Build the legacy zlib1.dll with zlib and minizip.

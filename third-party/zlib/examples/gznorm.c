@@ -10,6 +10,10 @@
 // the data, so it is fast, but no advantage is gained from the history that
 // could be available across member boundaries.
 
+#if defined(_WIN32) && !defined(_CRT_NONSTDC_NO_DEPRECATE)
+#  define _CRT_NONSTDC_NO_DEPRECATE
+#endif
+
 #include <stdio.h>      // fread, fwrite, putc, fflush, ferror, fprintf,
                         // vsnprintf, stdout, stderr, NULL, FILE
 #include <stdlib.h>     // malloc, free

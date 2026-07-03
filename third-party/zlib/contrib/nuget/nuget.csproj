@@ -6,9 +6,10 @@
     <PackageId Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(PackageId).win</PackageId>
     <PackageId Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(PackageId).linux</PackageId>
     <PackageId Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(PackageId).osx</PackageId>
-    <Copyright>(C) 1995-2024 Jean-loup Gailly and Mark Adler</Copyright>
-    <version>1.3.1</version>
+    <Copyright>(C) 1995-2026 Jean-loup Gailly and Mark Adler</Copyright>
+    <version>1.3.2</version>
     <PackageDescription>NuGet Package for consuming native builds of zlib into .NET without complexity.</PackageDescription>
+    <PackageReadmeFile>README</PackageReadmeFile>
     <!--
         Warns about not having any lib or ref assemblies (.NET Assemblies) in those directories.
         Native only packages that is to be consumed in .NET should not require these.
@@ -20,6 +21,7 @@
 
   <ItemGroup>
     <None Include="../../LICENSE" Pack="true" PackagePath="" />
+    <None Include="../../README" Pack="true" PackagePath="" />
     <!-- Package up Windows builds. -->
     <None Condition="$([MSBuild]::IsOSPlatform('Windows'))" Include="../vstudio/vc17/x86/ZlibDll$(Configuration)/zlibwapi.dll" Pack="true" PackagePath="runtimes/win-x86/native" />
     <None Condition="$([MSBuild]::IsOSPlatform('Windows'))" Include="../vstudio/vc17/x64/ZlibDll$(Configuration)/zlibwapi.dll" Pack="true" PackagePath="runtimes/win-x64/native" />

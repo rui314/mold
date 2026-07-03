@@ -1,8 +1,14 @@
-blast: blast.c blast.h
-	cc -DTEST -o blast blast.c
+all: test
 
-test: blast
-	blast < test.pk | cmp - test.txt
+libblast.so: blast.c blast.h
+	cc -o libblast.so -shared blast.c
+
+blast-test: libblast.so
+	cc -o blast-test.o -c blast-test.c
+	cc -o blast-test blast-test.o libblast.so
+
+test: blast-test
+	LD_LIBRARY_PATH=./ ./blast-test < test.pk | cmp - test.txt
 
 clean:
-	rm -f blast blast.o
+	rm -f libblast.so blast-test blast-test.o

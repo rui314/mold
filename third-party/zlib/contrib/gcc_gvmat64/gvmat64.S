@@ -30,9 +30,8 @@
 ;     misrepresented as being the original software
 ;  3. This notice may not be removed or altered from any source distribution.
 ;
-;         http://www.zlib.net
-;         http://www.winimage.com/zLibDll
-;         http://www.muppetlabs.com/~breadbox/software/assembly.html
+;         https://www.zlib.net
+;         https://www.muppetlabs.com/~breadbox/software/assembly.html
 ;
 ; to compile this file for zLib, I use option:
 ;   gcc -c -arch x86_64 gvmat64.S
@@ -169,15 +168,12 @@ printf("#define dsNiceMatch     %u\n",(int)(((char*)&(s->nice_match))-((char*)s)
 ; windows:
 ; parameter 1 in rcx(deflate state s), param 2 in rdx (cur match)
 
-; see http://weblogs.asp.net/oldnewthing/archive/2004/01/14/58579.aspx and
-; http://msdn.microsoft.com/library/en-us/kmarch/hh/kmarch/64bitAMD_8e951dd2-ee77-4728-8702-55ce4b5dd24a.xml.asp
-;
 ; All registers must be preserved across the call, except for
 ;   rax, rcx, rdx, r8, r9, r10, and r11, which are scratch.
 
 ;
 ; gcc on macosx-linux:
-; see http://www.x86-64.org/documentation/abi-0.99.pdf
+; see https://refspecs.linuxbase.org/elf/x86_64-abi-0.99.pdf
 ; param 1 in rdi, param 2 in rsi
 ; rbx, rsp, rbp, r12 to r15 must be preserved
 

@@ -1,0 +1,23 @@
+@PACKAGE_INIT@
+
+set(_iostreamv3_supported_components "shared" "static")
+include(CMakeFindDependencyMacro)
+
+if(iostreamv3_FIND_COMPONENTS)
+    find_dependency(ZLIB CONFIG COMPONENTS ${iostreamv3_FIND_COMPONENTS})
+
+    foreach(_comp ${iostreamv3_FIND_COMPONENTS})
+        if(NOT _comp IN_LIST _iostreamv3_supported_components)
+            set(iostreamv3_FOUND False)
+            set(iostreamv3_NOT_FOUND_MESSAGE "Unsupported component: ${_comp}")
+        endif(NOT _comp IN_LIST _iostreamv3_supported_components)
+
+        include("${CMAKE_CURRENT_LIST_DIR}/iostreamv3-${_comp}.cmake")
+    endforeach(_comp ${iostreamv3_FIND_COMPONENTS})
+else(iostream3_FIND_COMPONENTS)
+    find_dependency(ZLIB CONFIG)
+
+    foreach(_component_config IN LISTS _iostreamv3_supported_components)
+        include("${CMAKE_CURRENT_LIST_DIR}/iostreamv3-${_component_config}.cmake")
+    endforeach(_component_config IN LISTS _iostreamv3_supported_components)
+endif(iostreamv3_FIND_COMPONENTS)

@@ -4,7 +4,7 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-1">
 <title>zlib Usage Example</title>
-<!--  Copyright (c) 2004-2023 Mark Adler.  -->
+<!--  Copyright (c) 2004-2026 Mark Adler.  -->
 </head>
 <body bgcolor="#FFFFFF" text="#000000" link="#0000FF" vlink="#00A000">
 <h2 align="center"> zlib Usage Example </h2>
@@ -21,7 +21,7 @@ Without further ado, here is the program <a href="zpipe.c"><tt>zpipe.c</tt></a>:
 <pre><b>
 /* zpipe.c: example of proper use of zlib's inflate() and deflate()
    Not copyrighted -- provided to the public domain
-   Version 1.4  11 December 2005  Mark Adler */
+   Version 1.5  11 February 2026  Mark Adler */
 
 /* Version history:
    1.0  30 Oct 2004  First version
@@ -31,6 +31,7 @@ Without further ado, here is the program <a href="zpipe.c"><tt>zpipe.c</tt></a>:
    1.3   6 Apr 2005  Remove incorrect assertion in inf()
    1.4  11 Dec 2005  Add hack to avoid MSDOS end-of-line conversions
                      Avoid some compiler warnings for input and output buffers
+   1.5  11 Feb 2026  Use underscores for Windows POSIX names
  */
 </b></pre><!-- -->
 We now include the header files for the required definitions.  From
@@ -60,7 +61,7 @@ This sets the input and output to binary which suppresses the end-of-line conver
 #if defined(MSDOS) || defined(OS2) || defined(WIN32) || defined(__CYGWIN__)
 #  include &lt;fcntl.h&gt;
 #  include &lt;io.h&gt;
-#  define SET_BINARY_MODE(file) setmode(fileno(file), O_BINARY)
+#  define SET_BINARY_MODE(file) _setmode(_fileno(file), _O_BINARY)
 #else
 #  define SET_BINARY_MODE(file)
 #endif
@@ -538,12 +539,12 @@ int main(int argc, char **argv)
 }
 </b></pre>
 <hr>
-<i>Last modified 24 January 2023<br>
-Copyright &#169; 2004-2023 Mark Adler</i><br>
-<a rel="license" href="http://creativecommons.org/licenses/by-nd/4.0/">
+<i>Last modified 12 February 2026<br>
+Copyright &#169; 2004-2026 Mark Adler</i><br>
+<a rel="license" href="https://creativecommons.org/licenses/by-nd/4.0/">
 <img alt="Creative Commons License" style="border-width:0"
 src="https://i.creativecommons.org/l/by-nd/4.0/88x31.png"></a>
-<a rel="license" href="http://creativecommons.org/licenses/by-nd/4.0/">
+<a rel="license" href="https://creativecommons.org/licenses/by-nd/4.0/">
 Creative Commons Attribution-NoDerivatives 4.0 International License</a>.
 </body>
 </html>

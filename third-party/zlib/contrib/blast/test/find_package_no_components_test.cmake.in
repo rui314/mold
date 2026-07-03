@@ -1,0 +1,24 @@
+cmake_minimum_required(VERSION 3.12...3.31)
+
+project(
+    blast_find_package
+    LANGUAGES C
+    VERSION @blast_VERSION@)
+
+option(ZLIB_BLAST_BUILD_SHARED "" @ZLIB_BLAST_BUILD_SHARED@)
+option(ZLIB_BLAST_BUILD_STATIC "" @ZLIB_BLAST_BUILD_STATIC@)
+
+find_package(blast REQUIRED CONFIG)
+
+set(BLAST_SRCS
+    @blast_SOURCE_DIR@/blast-test.c)
+
+if(ZLIB_BLAST_BUILD_SHARED)
+    add_executable(test_example ${BLAST_SRCS})
+    target_link_libraries(test_example BLAST::BLAST)
+endif(ZLIB_BLAST_BUILD_SHARED)
+
+if(ZLIB_BLAST_BUILD_STATIC)
+    add_executable(test_example_static ${BLAST_SRCS})
+    target_link_libraries(test_example_static BLAST::BLASTSTATIC)
+endif(ZLIB_BLAST_BUILD_STATIC)

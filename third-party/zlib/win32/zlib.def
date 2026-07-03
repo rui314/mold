@@ -14,7 +14,9 @@ EXPORTS
     deflateParams
     deflateTune
     deflateBound
+    deflateBound_z
     deflatePending
+    deflateUsed
     deflatePrime
     deflateSetHeader
     inflateSetDictionary
@@ -32,9 +34,14 @@ EXPORTS
 ; utility functions
     compress
     compress2
+    compress_z
+    compress2_z
     compressBound
+    compressBound_z
     uncompress
     uncompress2
+    uncompress_z
+    uncompress2_z
     gzopen
     gzdopen
     gzbuffer

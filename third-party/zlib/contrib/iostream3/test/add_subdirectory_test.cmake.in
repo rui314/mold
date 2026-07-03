@@ -1,0 +1,25 @@
+cmake_minimum_required(VERSION 3.12...3.31)
+
+project(
+    iostream_add_subdirectory
+    LANGUAGES CXX
+    VERSION @iostreamV3_VERSION@)
+
+option(ZLIB_IOSTREAM3_BUILD_SHARED "" @ZLIB_IOSTREAM3_BUILD_SHARED@)
+option(ZLIB_IOSTREAM3_BUILD_STATIC "" @ZLIB_IOSTREAM3_BUILD_STATIC@)
+option(ZLIB_IOSTREAM3_BUILD_TESTING "" OFF)
+
+add_subdirectory(@iostreamV3_SOURCE_DIR@ ${CMAKE_CURRENT_BINARY_DIR}/iostream3)
+
+set(IOSTREAM_SRCS
+    @iostreamV3_SOURCE_DIR@/test.cc)
+
+if(ZLIB_IOSTREAM3_BUILD_SHARED)
+    add_executable(test_example ${IOSTREAM_SRCS})
+    target_link_libraries(test_example IOSTREAMV3::IOSTREAMV3)
+endif(ZLIB_IOSTREAM3_BUILD_SHARED)
+
+if(ZLIB_IOSTREAM3_BUILD_STATIC)
+    add_executable(test_example_static ${IOSTREAM_SRCS})
+    target_link_libraries(test_example_static IOSTREAMV3::IOSTREAMV3STATIC)
+endif(ZLIB_IOSTREAM3_BUILD_STATIC)

@@ -1,0 +1,24 @@
+cmake_minimum_required(VERSION 3.12...3.31)
+
+project(
+    puff_find_package
+    LANGUAGES C
+    VERSION @puff_VERSION@)
+
+option(ZLIB_PUFF_BUILD_SHARED "" @ZLIB_PUFF_BUILD_SHARED@)
+option(ZLIB_PUFF_BUILD_STATIC "" @ZLIB_PUFF_BUILD_STATIC@)
+
+find_package(puff REQUIRED CONFIG)
+
+set(PUFF_SRCS
+    @puff_SOURCE_DIR@/pufftest.c)
+
+if(ZLIB_PUFF_BUILD_SHARED)
+    add_executable(test_example ${PUFF_SRCS})
+    target_link_libraries(test_example PUFF::PUFF)
+endif(ZLIB_PUFF_BUILD_SHARED)
+
+if(ZLIB_PUFF_BUILD_STATIC)
+    add_executable(test_example_static ${PUFF_SRCS})
+    target_link_libraries(test_example_static PUFF::PUFFSTATIC)
+endif(ZLIB_PUFF_BUILD_STATIC)

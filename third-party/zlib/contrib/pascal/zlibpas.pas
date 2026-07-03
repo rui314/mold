@@ -10,7 +10,7 @@ unit zlibpas;
 interface
 
 const
-  ZLIB_VERSION = '1.3.1';
+  ZLIB_VERSION = '1.3.2';
   ZLIB_VERNUM  = $12a0;
 
 type

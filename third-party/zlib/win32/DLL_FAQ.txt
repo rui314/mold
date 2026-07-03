@@ -6,7 +6,7 @@ This document describes the design, the rationale, and the usage
 of the common DLL build of zlib, named ZLIB1.DLL.  If you have
 general questions about zlib, you should see the file "FAQ" found
 in the zlib distribution, or at the following location:
-  http://www.gzip.org/zlib/zlib_faq.html
+  https://www.zlib.net/zlib_faq.html
 
 
  1. What is ZLIB1.DLL, and how can I get it?

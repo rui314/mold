@@ -206,4 +206,4 @@ Compression,'' IEEE Transactions on Information Theory, Vol. 23, No. 3,
 pp. 337-343.
 
 ``DEFLATE Compressed Data Format Specification'' available in
-http://tools.ietf.org/html/rfc1951
+https://datatracker.ietf.org/doc/html/rfc1951

@@ -2,7 +2,7 @@
                         Release 1.3
 
 ZLib.Ada is a thick binding interface to the popular ZLib data
-compression library, available at http://www.gzip.org/zlib/.
+compression library, available at https://zlib.net/.
 It provides Ada-style access to the ZLib C library.
 
 
@@ -59,7 +59,7 @@ the main functionality of ZLib.Ada.
 The routines from the package specifications are commented.
 
 
-Homepage: http://zlib-ada.sourceforge.net/
+Homepage: https://zlib-ada.sourceforge.net/
 Author: Dmitriy Anisimkov <anisimkov@yahoo.com>
 
 Contributors: Pascal Obry <pascal@obry.org>, Steve Sangwine <sjs@essex.ac.uk>
