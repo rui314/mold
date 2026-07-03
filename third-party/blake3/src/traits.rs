@@ -4,8 +4,8 @@
 pub use digest;
 
 use crate::{Hasher, OutputReader};
-use digest::crypto_common;
-use digest::generic_array::{typenum::U32, typenum::U64, GenericArray};
+use digest::array::{Array, typenum::U32, typenum::U64};
+use digest::common;
 
 impl digest::HashMarker for Hasher {}
 
@@ -29,14 +29,14 @@ impl digest::OutputSizeUser for Hasher {
 
 impl digest::FixedOutput for Hasher {
     #[inline]
-    fn finalize_into(self, out: &mut GenericArray<u8, Self::OutputSize>) {
+    fn finalize_into(self, out: &mut Array<u8, Self::OutputSize>) {
         out.copy_from_slice(self.finalize().as_bytes());
     }
 }
 
 impl digest::FixedOutputReset for Hasher {
     #[inline]
-    fn finalize_into_reset(&mut self, out: &mut GenericArray<u8, Self::OutputSize>) {
+    fn finalize_into_reset(&mut self, out: &mut Array<u8, Self::OutputSize>) {
         out.copy_from_slice(self.finalize().as_bytes());
         self.reset();
     }
@@ -67,11 +67,11 @@ impl digest::XofReader for OutputReader {
     }
 }
 
-impl crypto_common::KeySizeUser for Hasher {
+impl common::KeySizeUser for Hasher {
     type KeySize = U32;
 }
 
-impl crypto_common::BlockSizeUser for Hasher {
+impl common::BlockSizeUser for Hasher {
     type BlockSize = U64;
 }
 
@@ -87,6 +87,8 @@ impl digest::KeyInit for Hasher {
 
 #[cfg(test)]
 mod test {
+    use digest::array::AsArrayMut;
+
     use super::*;
 
     #[test]
@@ -121,16 +123,10 @@ mod test {
         let mut hasher3: crate::Hasher = digest::Digest::new();
         digest::Digest::update(&mut hasher3, b"foobarbaz");
         let mut out3 = [0; 32];
-        digest::FixedOutputReset::finalize_into_reset(
-            &mut hasher3,
-            GenericArray::from_mut_slice(&mut out3),
-        );
+        digest::FixedOutputReset::finalize_into_reset(&mut hasher3, out3.as_array_mut());
         digest::Digest::update(&mut hasher3, b"foobarbaz");
         let mut out4 = [0; 32];
-        digest::FixedOutputReset::finalize_into_reset(
-            &mut hasher3,
-            GenericArray::from_mut_slice(&mut out4),
-        );
+        digest::FixedOutputReset::finalize_into_reset(&mut hasher3, out4.as_array_mut());
         digest::Digest::update(&mut hasher3, b"foobarbaz");
         let mut xof3 = [0; 301];
         digest::XofReader::read(
@@ -161,7 +157,7 @@ mod test {
 
         // Trait implementation.
         let generic_key = (*key).into();
-        let mut hasher2: crate::Hasher = digest::Mac::new(&generic_key);
+        let mut hasher2: crate::Hasher = digest::KeyInit::new(&generic_key);
         digest::Mac::update(&mut hasher2, b"xxx");
         digest::Mac::reset(&mut hasher2);
         digest::Mac::update(&mut hasher2, b"foo");
@@ -197,7 +193,7 @@ mod test {
 
     #[test]
     fn test_hmac_compatibility() {
-        use hmac::{Mac, SimpleHmac};
+        use hmac::{KeyInit, Mac, SimpleHmac};
 
         // Test a short key.
         let mut x = SimpleHmac::<Hasher>::new_from_slice(b"key").unwrap();

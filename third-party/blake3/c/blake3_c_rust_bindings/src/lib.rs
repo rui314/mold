@@ -3,7 +3,7 @@
 //! repo, these bindings are not expected to be used in production. They're
 //! intended for testing and benchmarking.
 
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 use std::mem::MaybeUninit;
 
 #[cfg(test)]
@@ -130,10 +130,10 @@ pub mod ffi {
         pub key: [u32; 8usize],
         pub chunk: blake3_chunk_state,
         pub cv_stack_len: u8,
-        pub cv_stack: [u8; 1728usize],
+        pub cv_stack: [u8; 1760usize],
     }
 
-    extern "C" {
+    unsafe extern "C" {
         // public interface
         pub fn blake3_hasher_init(self_: *mut blake3_hasher);
         pub fn blake3_hasher_init_keyed(self_: *mut blake3_hasher, key: *const u8);
@@ -198,7 +198,7 @@ pub mod ffi {
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     pub mod x86 {
-        extern "C" {
+        unsafe extern "C" {
             // SSE2 low level functions
             pub fn blake3_compress_in_place_sse2(
                 cv: *mut u32,
@@ -314,7 +314,7 @@ pub mod ffi {
 
     #[cfg(feature = "neon")]
     pub mod neon {
-        extern "C" {
+        unsafe extern "C" {
             // NEON low level functions
             pub fn blake3_hash_many_neon(
                 inputs: *const *const u8,

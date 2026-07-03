@@ -8,6 +8,17 @@ complicated than it might seem, is that representing filepaths as text means we
 need to consider many possible edge cases of unrepresentable filepaths. This
 document describes all of these edge cases in detail.
 
+> [!CAUTION]
+> `b3sum --check` (like all the Coreutils `--check` features) tells you whether
+> some _filepaths_ have changed, but it can't tell you whether a _directory_
+> has changed in general. If you create a checkfile with something like `b3sum
+> my_dir/* > CHECKFILE`, then `b3sum --check CHECKFILE` will succeed even after
+> _new files_ are added to `my_dir`. Adding new files without changing anything
+> else is often enough to execute arbitrary code, for example by shadowing an
+> `import` in Python, or by installing something in `.git/hooks`. This is
+> confusing enough that I don't recommend using `--check` as a security tool in
+> new code.
+
 ## The simple case
 
 Here's the result of running `b3sum a b c/d` in a directory that contains

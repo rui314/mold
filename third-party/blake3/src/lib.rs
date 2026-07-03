@@ -32,17 +32,14 @@
 //!
 //! # Cargo Features
 //!
-//! The `std` feature (the only feature enabled by default) is required for
-//! implementations of the [`Write`] and [`Seek`] traits, the
-//! [`update_reader`](Hasher::update_reader) helper method, and runtime CPU
-//! feature detection on x86. If this feature is disabled, the only way to use
-//! the x86 SIMD implementations is to enable the corresponding instruction sets
-//! globally, with e.g. `RUSTFLAGS="-C target-cpu=native"`. The resulting binary
-//! will not be portable to other machines.
+//! The `std` feature (the only feature enabled by default) enables the
+//! [`Write`] implementation and the [`update_reader`](Hasher::update_reader)
+//! method for [`Hasher`], and also the [`Read`] and [`Seek`] implementations
+//! for [`OutputReader`].
 //!
 //! The `rayon` feature (disabled by default, but enabled for [docs.rs]) adds
 //! the [`update_rayon`](Hasher::update_rayon) and (in combination with `mmap`
-//! below) [`update_mmap_rayon`](Hasher::update_mmap_rayon) methods, for
+//! below) [`update_mmap_rayon`](Hasher::update_mmap_rayon) methods for
 //! multithreaded hashing. However, even if this feature is enabled, all other
 //! APIs remain single-threaded.
 //!
@@ -82,6 +79,7 @@
 //! [BLAKE3]: https://blake3.io
 //! [Rayon]: https://github.com/rayon-rs/rayon
 //! [docs.rs]: https://docs.rs/
+//! [`Read`]: https://doc.rust-lang.org/std/io/trait.Read.html
 //! [`Write`]: https://doc.rust-lang.org/std/io/trait.Write.html
 //! [`Seek`]: https://doc.rust-lang.org/std/io/trait.Seek.html
 //! [`digest`]: https://crates.io/crates/digest
@@ -144,7 +142,7 @@ use arrayref::{array_mut_ref, array_ref};
 use arrayvec::{ArrayString, ArrayVec};
 use core::cmp;
 use core::fmt;
-use platform::{Platform, MAX_SIMD_DEGREE, MAX_SIMD_DEGREE_OR_2};
+use platform::{MAX_SIMD_DEGREE, MAX_SIMD_DEGREE_OR_2, Platform};
 #[cfg(feature = "zeroize")]
 use zeroize::Zeroize;
 
@@ -253,6 +251,14 @@ impl Hash {
     /// Create a `Hash` from its raw bytes representation.
     pub const fn from_bytes(bytes: [u8; OUT_LEN]) -> Self {
         Self(bytes)
+    }
+
+    /// The raw bytes of the `Hash`, as a slice. Useful for serialization. Note that byte arrays
+    /// don't provide constant-time equality checking, so if you need to compare hashes, prefer
+    /// the `Hash` type.
+    #[inline]
+    pub const fn as_slice(&self) -> &[u8] {
+        self.0.as_slice()
     }
 
     /// Create a `Hash` from its raw bytes representation as a slice.

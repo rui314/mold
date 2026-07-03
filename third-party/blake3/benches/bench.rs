@@ -4,8 +4,8 @@ extern crate test;
 
 use arrayref::array_ref;
 use arrayvec::ArrayVec;
-use blake3::platform::{Platform, MAX_SIMD_DEGREE};
 use blake3::OUT_LEN;
+use blake3::platform::{MAX_SIMD_DEGREE, Platform};
 use blake3::{BLOCK_LEN, CHUNK_LEN};
 use rand::prelude::*;
 use test::Bencher;

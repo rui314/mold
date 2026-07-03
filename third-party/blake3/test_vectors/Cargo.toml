@@ -1,7 +1,7 @@
 [package]
 name = "test_vectors"
 version = "0.0.0"
-edition = "2021"
+edition = "2024"
 
 [features]
 neon = ["blake3/neon"]

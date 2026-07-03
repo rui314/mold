@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdint.h>
 
 #include "blake3.h"
 #include "blake3_impl.h"
@@ -303,8 +304,8 @@ size_t blake3_compress_subtree_wide(const uint8_t *input, size_t input_len,
   uint8_t *right_cvs = &cv_array[degree * BLAKE3_OUT_LEN];
 
   // Recurse!
-  size_t left_n = -1;
-  size_t right_n = -1;
+  size_t left_n = SIZE_MAX;
+  size_t right_n = SIZE_MAX;
 
 #if defined(BLAKE3_USE_TBB)
   blake3_compress_subtree_wide_join_tbb(

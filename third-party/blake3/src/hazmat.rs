@@ -150,14 +150,21 @@
 //! of the same input.
 
 use crate::platform::Platform;
-use crate::{CVWords, Hasher, CHUNK_LEN, IV, KEY_LEN, OUT_LEN};
+use crate::{CHUNK_LEN, CVWords, Hasher, IV, KEY_LEN, OUT_LEN};
 
 /// Extension methods for [`Hasher`]. This is the main entrypoint to the `hazmat` module.
 pub trait HasherExt {
     /// Similar to [`Hasher::new_derive_key`] but using a pre-hashed [`ContextKey`] from
     /// [`hash_derive_key_context`].
     ///
-    /// The [`hash_derive_key_context`] function is _only_ valid source of the [`ContextKey`]
+    /// The [`hash_derive_key_context`] function is the _only_ valid source of the [`ContextKey`].
+    /// Any other source ([`hash`](crate::hash), [`keyed_hash`](crate::keyed_hash), arbitrary bytes
+    /// from the caller) violates the security requirements.
+    ///
+    /// Calling [`derive_key`](crate::derive_key) or [`Hasher::new_derive_key`] in a loop will
+    /// re-hash the context string every time. This constructor function is a performance
+    /// optimization to avoid that repeated work. If you hardcode the [`ContextKey`], the
+    /// derive-key mode becomes zero-overhead, like the keyed mode.
     ///
     /// # Example
     ///
@@ -328,9 +335,9 @@ fn test_max_subtree_len() {
 /// than `input_len`. This leads to a tree where all left subtrees are "complete" and at least as
 /// large as their sibling right subtrees, as specified in section 2.1 of [the BLAKE3
 /// paper](https://github.com/BLAKE3-team/BLAKE3-specs/blob/master/blake3.pdf). For example, if an
-/// input is exactly two chunks, its left and right subtrees both get one chunk. But if an input is
-/// two chunks plus one more byte, then its left subtree gets two chunks, and its right subtree
-/// only gets one byte.
+/// input is exactly two chunks, the left subtree gets the first chunk and the right subtree gets
+/// the second chunk. But if an input is two chunks plus one more byte, then its left subtree gets
+/// two chunks, and its right subtree only gets one byte.
 ///
 /// This function isn't meaningful for one chunk of input, because chunks don't have children. It
 /// currently panics in debug mode if `input_len <= CHUNK_LEN`.
@@ -529,8 +536,12 @@ pub type ContextKey = [u8; KEY_LEN];
 
 /// Hash a [`derive_key`](crate::derive_key) context string and return a [`ContextKey`].
 ///
-/// The _only_ valid uses for the returned [`ContextKey`] are [`Hasher::new_from_context_key`] and
-/// [`Mode::DeriveKeyMaterial`] (together with the merge subtree functions).
+/// This has the same security requirement as [`derive_key`](crate::derive_key). **The context
+/// string should be hardcoded, globally unique, and application-specific.**
+///
+/// The _only_ valid uses for the returned [`ContextKey`] are
+/// [`new_from_context_key`](HasherExt::new_from_context_key) and [`Mode::DeriveKeyMaterial`]
+/// (together with the merge subtree functions).
 ///
 /// # Example
 ///

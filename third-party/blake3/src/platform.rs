@@ -1,4 +1,4 @@
-use crate::{portable, CVWords, IncrementCounter, BLOCK_LEN};
+use crate::{BLOCK_LEN, CVWords, IncrementCounter, portable};
 use arrayref::{array_mut_ref, array_ref};
 
 cfg_if::cfg_if! {
@@ -408,7 +408,6 @@ impl Platform {
 #[cfg(blake3_avx512_ffi)]
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline(always)]
-#[allow(unreachable_code)]
 pub fn avx512_detected() -> bool {
     if cfg!(miri) {
         return false;
@@ -418,24 +417,13 @@ pub fn avx512_detected() -> bool {
     if cfg!(feature = "no_avx512") {
         return false;
     }
-    // Static check, e.g. for building with target-cpu=native.
-    #[cfg(all(target_feature = "avx512f", target_feature = "avx512vl"))]
-    {
-        return true;
-    }
-    // Dynamic check, if std is enabled.
-    #[cfg(feature = "std")]
-    {
-        if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512vl") {
-            return true;
-        }
-    }
-    false
+
+    cpufeatures::new!(has_avx512, "avx512f", "avx512vl");
+    has_avx512::get()
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline(always)]
-#[allow(unreachable_code)]
 pub fn avx2_detected() -> bool {
     if cfg!(miri) {
         return false;
@@ -445,24 +433,13 @@ pub fn avx2_detected() -> bool {
     if cfg!(feature = "no_avx2") {
         return false;
     }
-    // Static check, e.g. for building with target-cpu=native.
-    #[cfg(target_feature = "avx2")]
-    {
-        return true;
-    }
-    // Dynamic check, if std is enabled.
-    #[cfg(feature = "std")]
-    {
-        if is_x86_feature_detected!("avx2") {
-            return true;
-        }
-    }
-    false
+
+    cpufeatures::new!(has_avx2, "avx2");
+    has_avx2::get()
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline(always)]
-#[allow(unreachable_code)]
 pub fn sse41_detected() -> bool {
     if cfg!(miri) {
         return false;
@@ -472,24 +449,13 @@ pub fn sse41_detected() -> bool {
     if cfg!(feature = "no_sse41") {
         return false;
     }
-    // Static check, e.g. for building with target-cpu=native.
-    #[cfg(target_feature = "sse4.1")]
-    {
-        return true;
-    }
-    // Dynamic check, if std is enabled.
-    #[cfg(feature = "std")]
-    {
-        if is_x86_feature_detected!("sse4.1") {
-            return true;
-        }
-    }
-    false
+
+    cpufeatures::new!(has_sse41, "sse4.1");
+    has_sse41::get()
 }
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 #[inline(always)]
-#[allow(unreachable_code)]
 pub fn sse2_detected() -> bool {
     if cfg!(miri) {
         return false;
@@ -499,19 +465,9 @@ pub fn sse2_detected() -> bool {
     if cfg!(feature = "no_sse2") {
         return false;
     }
-    // Static check, e.g. for building with target-cpu=native.
-    #[cfg(target_feature = "sse2")]
-    {
-        return true;
-    }
-    // Dynamic check, if std is enabled.
-    #[cfg(feature = "std")]
-    {
-        if is_x86_feature_detected!("sse2") {
-            return true;
-        }
-    }
-    false
+
+    cpufeatures::new!(has_sse2, "sse2");
+    has_sse2::get()
 }
 
 #[inline(always)]

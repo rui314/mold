@@ -176,14 +176,13 @@ See [`c/README.md`](c/README.md).
 
 ### Other implementations
 
-We post links to third-party bindings and implementations on the
-[@BLAKE3team Twitter account](https://twitter.com/BLAKE3team) whenever
-we hear about them. Some highlights include [an optimized Go
+There are too many implementations out there for us to keep track of,
+but some highlights include [an optimized Go
 implementation](https://github.com/zeebo/blake3), [Wasm bindings for
 Node.js and browsers](https://github.com/connor4312/blake3), [binary
 wheels for Python](https://github.com/oconnor663/blake3-py), [.NET
-bindings](https://github.com/xoofx/Blake3.NET), and [JNI
-bindings](https://github.com/sken77/BLAKE3jni).
+bindings](https://github.com/xoofx/Blake3.NET), and [a pure Java
+implementation](https://commons.apache.org/proper/commons-codec/apidocs/org/apache/commons/codec/digest/Blake3.html).
 
 ## Contributing
 
@@ -202,7 +201,7 @@ Alternatively, it is licensed under any of the following:
 
 * [Bazel](https://github.com/bazelbuild/bazel/releases/tag/6.4.0)
 * [Cargo](https://github.com/rust-lang/cargo/pull/14137)
-* [Ccache](https://github.com/ccache/ccache/pull/519)
+* [Ccache](https://ccache.dev/releasenotes.html#_ccache_4_0)
 * [Chia](https://github.com/Chia-Network/chia-blockchain/blob/main/CHANGELOG.md#10beta8-aka-beta-18---2020-07-16)
 * [Clickhouse](https://github.com/ClickHouse/ClickHouse/blob/master/rust/chcache/Cargo.toml#L7)
 * [Farcaster](https://www.farcaster.xyz/)
@@ -220,7 +219,7 @@ Alternatively, it is licensed under any of the following:
 
 ## Miscellany
 
-- [@veorq] and [@oconnor663] did [an interview with Cryptography FM](https://www.cryptography.fm/3).
+- [@veorq] and [@oconnor663] did [an interview with Cryptography FM](https://cryptography.fireside.fm/3).
 - [@oconnor663] did [an interview with Saito](https://www.youtube.com/watch?v=cJkmIt7yN_E).
 
 [@oconnor663]: https://github.com/oconnor663

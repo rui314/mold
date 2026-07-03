@@ -17,8 +17,8 @@
 use core::arch::wasm32::*;
 
 use crate::{
-    counter_high, counter_low, CVBytes, CVWords, IncrementCounter, BLOCK_LEN, IV, MSG_SCHEDULE,
-    OUT_LEN,
+    BLOCK_LEN, CVBytes, CVWords, IV, IncrementCounter, MSG_SCHEDULE, OUT_LEN, counter_high,
+    counter_low,
 };
 use arrayref::{array_mut_ref, array_ref, mut_array_refs};
 
@@ -27,13 +27,13 @@ pub const DEGREE: usize = 4;
 #[inline(always)]
 unsafe fn loadu(src: *const u8) -> v128 {
     // This is an unaligned load, so the pointer cast is allowed.
-    v128_load(src as *const v128)
+    unsafe { v128_load(src as *const v128) }
 }
 
 #[inline(always)]
 unsafe fn storeu(src: v128, dest: *mut u8) {
     // This is an unaligned store, so the pointer cast is allowed.
-    v128_store(dest as *mut v128, src)
+    unsafe { v128_store(dest as *mut v128, src) }
 }
 
 #[inline(always)]
@@ -56,16 +56,16 @@ fn set4(a: u32, b: u32, c: u32, d: u32) -> v128 {
     i32x4(a as i32, b as i32, c as i32, d as i32)
 }
 
-// These rotations are the "simple/shifts version". For the
-// "complicated/shuffles version", see
-// https://github.com/sneves/blake2-avx2/blob/b3723921f668df09ece52dcd225a36d4a4eea1d9/blake2s-common.h#L63-L66.
-// For a discussion of the tradeoffs, see
-// https://github.com/sneves/blake2-avx2/pull/5. Due to an LLVM bug
-// (https://bugs.llvm.org/show_bug.cgi?id=44379), this version performs better
-// on recent x86 chips.
+// rot16 and rot8 use i8x16_shuffle (1 WASM instruction) instead of
+// shift+OR (3 instructions) since they are byte-aligned rotations.
+// rot12 and rot7 are not byte-aligned, so they still use shift+OR.
+// For the x86 "shuffles vs shifts" discussion, see
+// https://github.com/sneves/blake2-avx2/pull/5. On x86, shifts can be
+// faster due to an LLVM bug (https://bugs.llvm.org/show_bug.cgi?id=44379),
+// but on WASM SIMD targets, i8x16_shuffle is ~20% faster for rot8/rot16.
 #[inline(always)]
 fn rot16(a: v128) -> v128 {
-    v128_or(u32x4_shr(a, 16), u32x4_shl(a, 32 - 16))
+    i8x16_shuffle::<2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13>(a, a)
 }
 
 #[inline(always)]
@@ -75,7 +75,7 @@ fn rot12(a: v128) -> v128 {
 
 #[inline(always)]
 fn rot8(a: v128) -> v128 {
-    v128_or(u32x4_shr(a, 8), u32x4_shl(a, 32 - 8))
+    i8x16_shuffle::<1, 2, 3, 0, 5, 6, 7, 4, 9, 10, 11, 8, 13, 14, 15, 12>(a, a)
 }
 
 #[inline(always)]
@@ -134,7 +134,7 @@ fn unpackhi_epi32(a: v128, b: v128) -> v128 {
 fn shuffle_epi32<const I3: usize, const I2: usize, const I1: usize, const I0: usize>(
     a: v128,
 ) -> v128 {
-    // Please note that generic arguments in delcaration and imlementation are in
+    // Please note that generic arguments in declaration and implementation are in
     // different order.
     // second arg is actually ignored.
     i32x4_shuffle::<I0, I1, I2, I3>(a, a)
@@ -535,24 +535,26 @@ fn transpose_vecs(vecs: &mut [v128; DEGREE]) {
 
 #[inline(always)]
 unsafe fn transpose_msg_vecs(inputs: &[*const u8; DEGREE], block_offset: usize) -> [v128; 16] {
-    let mut vecs = [
-        loadu(inputs[0].add(block_offset + 0 * 4 * DEGREE)),
-        loadu(inputs[1].add(block_offset + 0 * 4 * DEGREE)),
-        loadu(inputs[2].add(block_offset + 0 * 4 * DEGREE)),
-        loadu(inputs[3].add(block_offset + 0 * 4 * DEGREE)),
-        loadu(inputs[0].add(block_offset + 1 * 4 * DEGREE)),
-        loadu(inputs[1].add(block_offset + 1 * 4 * DEGREE)),
-        loadu(inputs[2].add(block_offset + 1 * 4 * DEGREE)),
-        loadu(inputs[3].add(block_offset + 1 * 4 * DEGREE)),
-        loadu(inputs[0].add(block_offset + 2 * 4 * DEGREE)),
-        loadu(inputs[1].add(block_offset + 2 * 4 * DEGREE)),
-        loadu(inputs[2].add(block_offset + 2 * 4 * DEGREE)),
-        loadu(inputs[3].add(block_offset + 2 * 4 * DEGREE)),
-        loadu(inputs[0].add(block_offset + 3 * 4 * DEGREE)),
-        loadu(inputs[1].add(block_offset + 3 * 4 * DEGREE)),
-        loadu(inputs[2].add(block_offset + 3 * 4 * DEGREE)),
-        loadu(inputs[3].add(block_offset + 3 * 4 * DEGREE)),
-    ];
+    let mut vecs = unsafe {
+        [
+            loadu(inputs[0].add(block_offset + 0 * 4 * DEGREE)),
+            loadu(inputs[1].add(block_offset + 0 * 4 * DEGREE)),
+            loadu(inputs[2].add(block_offset + 0 * 4 * DEGREE)),
+            loadu(inputs[3].add(block_offset + 0 * 4 * DEGREE)),
+            loadu(inputs[0].add(block_offset + 1 * 4 * DEGREE)),
+            loadu(inputs[1].add(block_offset + 1 * 4 * DEGREE)),
+            loadu(inputs[2].add(block_offset + 1 * 4 * DEGREE)),
+            loadu(inputs[3].add(block_offset + 1 * 4 * DEGREE)),
+            loadu(inputs[0].add(block_offset + 2 * 4 * DEGREE)),
+            loadu(inputs[1].add(block_offset + 2 * 4 * DEGREE)),
+            loadu(inputs[2].add(block_offset + 2 * 4 * DEGREE)),
+            loadu(inputs[3].add(block_offset + 2 * 4 * DEGREE)),
+            loadu(inputs[0].add(block_offset + 3 * 4 * DEGREE)),
+            loadu(inputs[1].add(block_offset + 3 * 4 * DEGREE)),
+            loadu(inputs[2].add(block_offset + 3 * 4 * DEGREE)),
+            loadu(inputs[3].add(block_offset + 3 * 4 * DEGREE)),
+        ]
+    };
     let squares = mut_array_refs!(&mut vecs, DEGREE, DEGREE, DEGREE, DEGREE);
     transpose_vecs(squares.0);
     transpose_vecs(squares.1);
@@ -611,7 +613,7 @@ pub unsafe fn hash4(
         }
         let block_len_vec = set1(BLOCK_LEN as u32); // full blocks only
         let block_flags_vec = set1(block_flags as u32);
-        let msg_vecs = transpose_msg_vecs(inputs, block * BLOCK_LEN);
+        let msg_vecs = unsafe { transpose_msg_vecs(inputs, block * BLOCK_LEN) };
 
         // The transposed compression function. Note that inlining this
         // manually here improves compile times by a lot, compared to factoring
@@ -659,14 +661,16 @@ pub unsafe fn hash4(
     transpose_vecs(squares.1);
     // The first four vecs now contain the first half of each output, and the
     // second four vecs contain the second half of each output.
-    storeu(h_vecs[0], out.as_mut_ptr().add(0 * 4 * DEGREE));
-    storeu(h_vecs[4], out.as_mut_ptr().add(1 * 4 * DEGREE));
-    storeu(h_vecs[1], out.as_mut_ptr().add(2 * 4 * DEGREE));
-    storeu(h_vecs[5], out.as_mut_ptr().add(3 * 4 * DEGREE));
-    storeu(h_vecs[2], out.as_mut_ptr().add(4 * 4 * DEGREE));
-    storeu(h_vecs[6], out.as_mut_ptr().add(5 * 4 * DEGREE));
-    storeu(h_vecs[3], out.as_mut_ptr().add(6 * 4 * DEGREE));
-    storeu(h_vecs[7], out.as_mut_ptr().add(7 * 4 * DEGREE));
+    unsafe {
+        storeu(h_vecs[0], out.as_mut_ptr().add(0 * 4 * DEGREE));
+        storeu(h_vecs[4], out.as_mut_ptr().add(1 * 4 * DEGREE));
+        storeu(h_vecs[1], out.as_mut_ptr().add(2 * 4 * DEGREE));
+        storeu(h_vecs[5], out.as_mut_ptr().add(3 * 4 * DEGREE));
+        storeu(h_vecs[2], out.as_mut_ptr().add(4 * 4 * DEGREE));
+        storeu(h_vecs[6], out.as_mut_ptr().add(5 * 4 * DEGREE));
+        storeu(h_vecs[3], out.as_mut_ptr().add(6 * 4 * DEGREE));
+        storeu(h_vecs[7], out.as_mut_ptr().add(7 * 4 * DEGREE));
+    }
 }
 
 #[target_feature(enable = "simd128")]
@@ -697,7 +701,7 @@ unsafe fn hash1<const N: usize>(
         block_flags = flags;
         slice = &slice[BLOCK_LEN..];
     }
-    *out = core::mem::transmute(cv);
+    *out = unsafe { core::mem::transmute(cv) };
 }
 
 #[target_feature(enable = "simd128")]
@@ -715,19 +719,22 @@ pub unsafe fn hash_many<const N: usize>(
     while inputs.len() >= DEGREE && out.len() >= DEGREE * OUT_LEN {
         // Safe because the layout of arrays is guaranteed, and because the
         // `blocks` count is determined statically from the argument type.
-        let input_ptrs: &[*const u8; DEGREE] = &*(inputs.as_ptr() as *const [*const u8; DEGREE]);
+        let input_ptrs: &[*const u8; DEGREE] =
+            unsafe { &*(inputs.as_ptr() as *const [*const u8; DEGREE]) };
         let blocks = N / BLOCK_LEN;
-        hash4(
-            input_ptrs,
-            blocks,
-            key,
-            counter,
-            increment_counter,
-            flags,
-            flags_start,
-            flags_end,
-            array_mut_ref!(out, 0, DEGREE * OUT_LEN),
-        );
+        unsafe {
+            hash4(
+                input_ptrs,
+                blocks,
+                key,
+                counter,
+                increment_counter,
+                flags,
+                flags_start,
+                flags_end,
+                array_mut_ref!(out, 0, DEGREE * OUT_LEN),
+            );
+        }
         if increment_counter.yes() {
             counter += DEGREE as u64;
         }
@@ -735,15 +742,17 @@ pub unsafe fn hash_many<const N: usize>(
         out = &mut out[DEGREE * OUT_LEN..];
     }
     for (&input, output) in inputs.iter().zip(out.chunks_exact_mut(OUT_LEN)) {
-        hash1(
-            input,
-            key,
-            counter,
-            flags,
-            flags_start,
-            flags_end,
-            array_mut_ref!(output, 0, OUT_LEN),
-        );
+        unsafe {
+            hash1(
+                input,
+                key,
+                counter,
+                flags,
+                flags_start,
+                flags_end,
+                array_mut_ref!(output, 0, OUT_LEN),
+            );
+        }
         if increment_counter.yes() {
             counter += 1;
         }

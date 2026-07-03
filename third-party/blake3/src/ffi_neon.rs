@@ -1,4 +1,4 @@
-use crate::{CVWords, IncrementCounter, BLOCK_LEN, OUT_LEN};
+use crate::{BLOCK_LEN, CVWords, IncrementCounter, OUT_LEN};
 
 // Unsafe because this may only be called on platforms supporting NEON.
 pub unsafe fn hash_many<const N: usize>(
@@ -15,25 +15,27 @@ pub unsafe fn hash_many<const N: usize>(
     // array, but the C implementations don't. Even though this is an unsafe
     // function, assert the bounds here.
     assert!(out.len() >= inputs.len() * OUT_LEN);
-    ffi::blake3_hash_many_neon(
-        inputs.as_ptr() as *const *const u8,
-        inputs.len(),
-        N / BLOCK_LEN,
-        key.as_ptr(),
-        counter,
-        increment_counter.yes(),
-        flags,
-        flags_start,
-        flags_end,
-        out.as_mut_ptr(),
-    )
+    unsafe {
+        ffi::blake3_hash_many_neon(
+            inputs.as_ptr() as *const *const u8,
+            inputs.len(),
+            N / BLOCK_LEN,
+            key.as_ptr(),
+            counter,
+            increment_counter.yes(),
+            flags,
+            flags_start,
+            flags_end,
+            out.as_mut_ptr(),
+        )
+    }
 }
 
 // blake3_neon.c normally depends on blake3_portable.c, because the NEON
 // implementation only provides 4x compression, and it relies on the portable
 // implementation for 1x compression. However, we expose the portable Rust
 // implementation here instead, to avoid linking in unnecessary code.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn blake3_compress_in_place_portable(
     cv: *mut u32,
     block: *const u8,
@@ -53,7 +55,7 @@ pub extern "C" fn blake3_compress_in_place_portable(
 }
 
 pub mod ffi {
-    extern "C" {
+    unsafe extern "C" {
         pub fn blake3_hash_many_neon(
             inputs: *const *const u8,
             num_inputs: usize,

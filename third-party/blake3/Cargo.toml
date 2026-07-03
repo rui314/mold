@@ -1,13 +1,13 @@
 [package]
 name = "blake3"
-version = "1.8.2"
+version = "1.8.5"
 authors = ["Jack O'Connor <oconnor663@gmail.com>", "Samuel Neves"]
 description = "the BLAKE3 hash function"
 repository = "https://github.com/BLAKE3-team/BLAKE3"
 license = "CC0-1.0 OR Apache-2.0 OR Apache-2.0 WITH LLVM-exception"
 documentation = "https://docs.rs/blake3"
 readme = "README.md"
-edition = "2021"
+edition = "2024"
 
 [features]
 default = ["std"]
@@ -24,12 +24,14 @@ neon = []
 # This may become the default in the future.
 wasm32_simd = []
 
-# This crate uses libstd for std::io trait implementations, and also for
-# runtime CPU feature detection. This feature is enabled by default. If you use
-# --no-default-features, the only way to use the SIMD implementations in this
-# crate is to enable the corresponding instruction sets statically for the
-# entire build, with e.g. RUSTFLAGS="-C target-cpu=native".
-std = []
+# Enables std::io traits, including impl Write for Hasher, impl Read and Seek
+# for OutputReader, and the Hasher::update_reader method. This feature is
+# enabled by default. (Previously this also controlled runtime CPU feature
+# detection on x86, but now we use the no-std-compatible `cpufeatures` crate
+# for that.)
+# Also enables the `std` feature of the `constant_time_eq` dependency, which
+# toggles a runtime feature check on 64-bit ARM targets.
+std = ["constant_time_eq/std"]
 
 # The `rayon` feature (disabled by default, but enabled for docs.rs) adds the
 # `update_rayon` and (in combination with `mmap` below) `update_mmap_rayon`
@@ -112,20 +114,23 @@ features = ["mmap", "rayon", "serde", "zeroize"]
 [dependencies]
 arrayref = "0.3.5"
 arrayvec = { version = "0.7.4", default-features = false }
-constant_time_eq = { version = "0.3.1", default-features = false }
+constant_time_eq = { version = "0.4.2", default-features = false }
 cfg-if = "1.0.0"
-digest = { version = "0.10.1", features = ["mac"], optional = true }
+digest = { version = "0.11.2", features = ["mac"], optional = true }
 memmap2 = { version = "0.9", optional = true }
 rayon-core = { version = "1.12.1", optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
 zeroize = { version = "1", default-features = false, optional = true }
 
+[target.'cfg(any(target_arch = "x86", target_arch = "x86_64"))'.dependencies]
+cpufeatures = "0.3.0"
+
 [dev-dependencies]
-hmac = "0.12.0"
+hmac = "0.13.0"
 hex = "0.4.2"
 page_size = "0.6.0"
-rand = "0.9.0"
-rand_chacha = "0.9.0"
+rand = "0.10.0"
+chacha20 = "0.10.0"
 reference_impl = { path = "./reference_impl" }
 tempfile = "3.8.0"
 serde_json = "1.0.107"

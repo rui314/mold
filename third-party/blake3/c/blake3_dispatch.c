@@ -89,7 +89,6 @@ static void cpuidex(uint32_t out[4], uint32_t id, uint32_t sid) {
 #endif
 }
 
-#endif
 
 enum cpu_feature {
   SSE2 = 1 << 0,
@@ -164,6 +163,7 @@ static
 #endif
   }
 }
+#endif
 
 void blake3_compress_in_place(uint32_t cv[8],
                               const uint8_t block[BLAKE3_BLOCK_LEN],
@@ -235,7 +235,7 @@ void blake3_xof_many(const uint32_t cv[8],
 #if defined(IS_X86)
   const enum cpu_feature features = get_cpu_features();
   MAYBE_UNUSED(features);
-#if !defined(_WIN32) && !defined(BLAKE3_NO_AVX512)
+#if !defined(_WIN32) && !defined(__CYGWIN__) && !defined(BLAKE3_NO_AVX512)
   if (features & AVX512VL) {
     blake3_xof_many_avx512(cv, block, block_len, counter, flags, out, outblocks);
     return;

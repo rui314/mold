@@ -1,4 +1,4 @@
-use crate::{CVBytes, CVWords, IncrementCounter, BLOCK_LEN, CHUNK_LEN, OUT_LEN};
+use crate::{BLOCK_LEN, CHUNK_LEN, CVBytes, CVWords, IncrementCounter, OUT_LEN};
 use arrayref::array_ref;
 use arrayvec::ArrayVec;
 use core::usize;
@@ -524,7 +524,7 @@ fn test_fuzz_hasher() {
     let num_tests = if cfg!(debug_assertions) { 100 } else { 10_000 };
 
     // Use a fixed RNG seed for reproducibility.
-    let mut rng = rand_chacha::ChaCha8Rng::from_seed([1; 32]);
+    let mut rng = chacha20::ChaCha8Rng::from_seed([1; 32]);
     for _num_test in 0..num_tests {
         #[cfg(feature = "std")]
         dbg!(_num_test);
@@ -555,7 +555,7 @@ fn test_fuzz_xof() {
     let num_tests = if cfg!(debug_assertions) { 100 } else { 2500 };
 
     // Use a fixed RNG seed for reproducibility.
-    let mut rng = rand_chacha::ChaCha8Rng::from_seed([1; 32]);
+    let mut rng = chacha20::ChaCha8Rng::from_seed([1; 32]);
     for _num_test in 0..num_tests {
         #[cfg(feature = "std")]
         dbg!(_num_test);
@@ -755,6 +755,9 @@ fn test_hash_conversions() {
     let slice1: &[u8] = bytes1.as_slice();
     let hash4 = crate::Hash::from_slice(slice1).expect("correct length");
     assert_eq!(hash1, hash4);
+
+    let slice2 = hash1.as_slice();
+    assert_eq!(slice1, slice2);
 
     assert!(crate::Hash::from_slice(&[]).is_err());
     assert!(crate::Hash::from_slice(&[42]).is_err());
@@ -982,7 +985,7 @@ fn test_serde() {
     // Version 1.5.2 of this crate changed the default serialization format to a bytestring
     // (instead of an array/list) to save bytes on the wire. That was a backwards compatibility
     // mistake for non-self-describing formats, and it's been reverted. Since some small number of
-    // serialized bytestrings will probably exist forever in the wild, we shold test that we can
+    // serialized bytestrings will probably exist forever in the wild, we should test that we can
     // still deserialize these from self-describing formats.
     let bytestring_cbor: &[u8] = &[
         0x58, 0x20, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe, 0xfe,
