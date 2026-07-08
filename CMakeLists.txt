@@ -149,10 +149,9 @@ find_package(ZLIB QUIET)
 if(ZLIB_FOUND AND NOT MOLD_MOSTLY_STATIC)
   target_link_libraries(mold PRIVATE ZLIB::ZLIB)
 else()
-  set(ZLIB_BUILD_EXAMPLES OFF CACHE INTERNAL "")
+  set(ZLIB_BUILD_SHARED OFF CACHE INTERNAL "")
+  set(ZLIB_BUILD_TESTING OFF CACHE INTERNAL "")
   add_subdirectory(third-party/zlib EXCLUDE_FROM_ALL)
-  target_include_directories(zlibstatic INTERFACE third-party/zlib
-    $<TARGET_PROPERTY:zlibstatic,BINARY_DIR>)
   target_link_libraries(mold PRIVATE zlibstatic)
 endif()
 
