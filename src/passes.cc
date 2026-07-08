@@ -3610,6 +3610,11 @@ void show_stats(Context<E> &ctx) {
       if (ref.group->owner != obj->priority)
         removed_comdats += ref.members.size();
 
+    static Counter unique_comdats("unique_comdats");
+    for (ComdatGroupRef<E> &ref : obj->comdat_groups)
+      if (ref.group->owner == obj->priority)
+        unique_comdats++;
+
     static Counter num_cies("num_cies");
     num_cies += obj->cies.size();
 
