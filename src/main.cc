@@ -6,6 +6,7 @@
 #include <functional>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <tbb/parallel_for_each.h>
 #include <unordered_set>
 
 namespace mold {
@@ -689,6 +690,14 @@ int mold_main(int argc, char **argv) {
 
   notify_parent<E>();
   release_global_lock();
+
+  // Dropping page table entries here in parallel makes process exit
+  // faster, as the kernel otherwise reclaims them in a single thread
+  // on exit. File contents stay in the page cache.
+  tbb::parallel_for_each(ctx.mf_pool, [](std::unique_ptr<MappedFile> &mf) {
+    if (!mf->parent && mf->data && mf->size)
+      madvise(mf->data, mf->size, MADV_DONTNEED);
+  });
 
   if (ctx.arg.quick_exit)
     _exit(0);
