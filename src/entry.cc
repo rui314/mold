@@ -14,6 +14,10 @@
 # include <mimalloc-new-delete.h>
 #endif
 
+#ifdef __linux__
+# include <sys/prctl.h>
+#endif
+
 std::string mold::mold_version =
 #ifdef MOLD_GIT_HASH
   "mold " MOLD_VERSION " (" MOLD_GIT_HASH "; compatible with GNU ld)";
@@ -26,6 +30,13 @@ int main(int argc, char **argv) {
   // Silence mimalloc warnings that users can ignore
   mi_option_disable(mi_option_verbose);
   mi_option_disable(mi_option_show_errors);
+#endif
+
+#if defined(__linux__) && defined(PR_SET_THP_DISABLE)
+  // A parent process may have disabled transparent huge pages, and the
+  // flag is inherited. Huge pages make mold considerably faster on
+  // large links, so re-enable them for this process.
+  prctl(PR_SET_THP_DISABLE, 0, 0, 0, 0);
 #endif
 
   return mold::mold_main<mold::MOLD_FIRST_TARGET>(argc, argv);
