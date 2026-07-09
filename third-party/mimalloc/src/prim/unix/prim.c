@@ -389,7 +389,7 @@ static void* unix_mmap(void* addr, size_t size, size_t try_alignment, int protec
     *is_large = false;
     p = unix_mmap_prim_aligned(addr, size, try_alignment, protect_flags, flags, fd);
     #if !defined(MI_NO_THP)
-    if (p != NULL && allow_large && mi_option_is_enabled(mi_option_allow_thp) && _mi_os_canuse_large_page(size, try_alignment)) {
+    if (p != NULL && mi_option_is_enabled(mi_option_allow_thp) && _mi_os_canuse_large_page(size, try_alignment)) {
       #if defined(MADV_HUGEPAGE)
       // Many Linux systems don't allow MAP_HUGETLB but they support instead
       // transparent huge pages (THP). Generally, it is not required to call `madvise` with MADV_HUGE
