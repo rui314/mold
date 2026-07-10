@@ -691,6 +691,7 @@ int mold_main(int argc, char **argv) {
   notify_parent<E>();
   release_global_lock();
 
+#if HAVE_MADVISE
   // Dropping page table entries here in parallel makes process exit
   // faster, as the kernel otherwise reclaims them in a single thread
   // on exit. File contents stay in the page cache.
@@ -698,6 +699,7 @@ int mold_main(int argc, char **argv) {
     if (!mf->parent && mf->data && mf->size)
       madvise(mf->data, mf->size, MADV_DONTNEED);
   });
+#endif
 
   if (ctx.arg.quick_exit)
     _exit(0);
