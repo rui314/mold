@@ -131,14 +131,7 @@ OutputFile<E>::open(Context<E> &ctx, std::string path, i64 filesize, int perm) {
 
 #ifdef MADV_HUGEPAGE
   // Enable transparent huge page for an output memory-mapped file.
-  // On Linux, it has an effect only on tmpfs mounted with `huge=advise`,
-  // but it can make the linker ~10% faster. You can try it by creating
-  // a tmpfs with the following commands
-  //
-  //  $ mkdir tmp
-  //  $ sudo mount -t tmpfs -o size=2G,huge=advise none tmp
-  //
-  // and then specifying a path under the directory as an output file.
+  // Linking a Chromium debug build is ~20% faster with this madvise call.
   madvise(file->buf, filesize, MADV_HUGEPAGE);
 #endif
 
