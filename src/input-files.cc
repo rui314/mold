@@ -1386,10 +1386,9 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
     this->elf_syms2.push_back(esyms[i]);
 
-    // resolve_symbols only consults versyms[] for defined symbols
-    // (see SharedFile::resolve_symbols), so VER_NDX_GLOBAL is fine
-    // for undefined entries.
-    this->versyms.push_back(esyms[i].is_undef() ? (u16)VER_NDX_GLOBAL : ver);
+    // Keep the version index for undefined symbols as well; mark_live_objects
+    // needs it to avoid pulling archive members for versioned DSO undefineds.
+    this->versyms.push_back(ver);
 
     std::string_view name = this->symbol_strtab.data() + esyms[i].st_name;
 
@@ -1596,11 +1595,16 @@ SharedFile<E>::mark_live_objects(Context<E> &ctx,
       print_trace_symbol(ctx, *this, esym, sym);
 
     // We follow undefined symbols in a DSO only to handle
-    // --no-allow-shlib-undefined.
+    // --no-allow-shlib-undefined. A versioned DSO undefined will be resolved
+    // by the dynamic linker at runtime, so don't pull an archive member for it.
     if (esym.is_undef() && !esym.is_weak() && sym.file &&
-        (!sym.file->is_dso || !ctx.arg.allow_shlib_undefined) &&
-        !sym.file->is_reachable.test_and_set()) {
-      feeder(sym.file);
+        (!sym.file->is_dso || !ctx.arg.allow_shlib_undefined)) {
+      if (!sym.file->is_dso && versyms[i] != VER_NDX_GLOBAL &&
+          versyms[i] != VER_NDX_LOCAL)
+        continue;
+
+      if (!sym.file->is_reachable.test_and_set())
+        feeder(sym.file);
 
       if (sym.is_traced)
         Out(ctx) << "trace-symbol: " << *this << " keeps " << *sym.file
