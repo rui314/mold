@@ -15,7 +15,7 @@ RUN mkdir -p  /home/dev
 WORKDIR /home/dev
 
 # Get mimalloc
-RUN git clone https://github.com/microsoft/mimalloc -b dev2
+RUN git clone https://github.com/microsoft/mimalloc -b dev3
 RUN mkdir -p mimalloc/out/release
 RUN mkdir -p mimalloc/out/debug
 

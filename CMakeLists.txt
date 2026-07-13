@@ -208,9 +208,13 @@ cmake_dependent_option(
 # By default, we build a bundled mimalloc and statically-link it to
 # mold. If you want to dynamically link to the system's
 # libmimalloc.so, pass -DMOLD_USE_SYSTEM_MIMALLOC=ON.
+#
+# We require mimalloc v3 or newer. mimalloc v2 doesn't use transparent
+# huge pages for the allocation path that serves mold's largest data
+# structures, which makes linking large programs significantly slower.
 if(MOLD_USE_MIMALLOC)
   if(MOLD_USE_SYSTEM_MIMALLOC)
-    find_package(mimalloc REQUIRED)
+    find_package(mimalloc 3 REQUIRED)
     target_link_libraries(mold PRIVATE mimalloc)
   else()
     function(mold_add_mimalloc)

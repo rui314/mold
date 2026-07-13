@@ -1012,7 +1012,7 @@ void* mi_zalloc_small(size_t size);
 /// This function is meant for use in run-time systems for best
 /// performance and does not check if the pointer was _indeed_ allocated
 /// with #mi_malloc_small (et al) -- use with care!
-/// This function has a small perf benefit but only if mimalloc was built with `MI_FAST_FREE_SMALL=1`
+/// This function has a small perf benefit but only if mimalloc was built with `MI_PAGE_META_ALIGNED_FREE_SMALL=1`
 /// @see mi_malloc_small()
 /// @see mi_zalloc_small()
 /// @see mi_heap_malloc_small()

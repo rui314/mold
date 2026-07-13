@@ -8,7 +8,7 @@ void test_heap(void* p_out) {
   void* p2 = mi_heap_malloc(heap,48);
   mi_free(p_out);
   mi_heap_destroy(heap);
-  //mi_heap_delete(heap); mi_free(p1); mi_free(p2);
+  //mi_theap_delete(theap); mi_free(p1); mi_free(p2);
 }
 
 void test_large() {

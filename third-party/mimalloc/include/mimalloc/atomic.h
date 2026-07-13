@@ -5,8 +5,8 @@ terms of the MIT license. A copy of the license can be found in the file
 "LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 #pragma once
-#ifndef MIMALLOC_ATOMIC_H
-#define MIMALLOC_ATOMIC_H
+#ifndef MI_ATOMIC_H
+#define MI_ATOMIC_H
 
 // include windows.h or pthreads.h
 #if defined(_WIN32)
@@ -75,16 +75,21 @@ terms of the MIT license. A copy of the license can be found in the file
 #define mi_atomic_exchange_relaxed(p,x)          mi_atomic(exchange_explicit)(p,x,mi_memory_order(relaxed))
 #define mi_atomic_exchange_release(p,x)          mi_atomic(exchange_explicit)(p,x,mi_memory_order(release))
 #define mi_atomic_exchange_acq_rel(p,x)          mi_atomic(exchange_explicit)(p,x,mi_memory_order(acq_rel))
+
+#define mi_atomic_cas_weak_relaxed(p,exp,des)    mi_atomic_cas_weak(p,exp,des,mi_memory_order(relaxed),mi_memory_order(relaxed))
 #define mi_atomic_cas_weak_release(p,exp,des)    mi_atomic_cas_weak(p,exp,des,mi_memory_order(release),mi_memory_order(relaxed))
 #define mi_atomic_cas_weak_acq_rel(p,exp,des)    mi_atomic_cas_weak(p,exp,des,mi_memory_order(acq_rel),mi_memory_order(acquire))
+#define mi_atomic_cas_strong_relaxed(p,exp,des)  mi_atomic_cas_strong(p,exp,des,mi_memory_order(relaxed),mi_memory_order(relaxed))
 #define mi_atomic_cas_strong_release(p,exp,des)  mi_atomic_cas_strong(p,exp,des,mi_memory_order(release),mi_memory_order(relaxed))
 #define mi_atomic_cas_strong_acq_rel(p,exp,des)  mi_atomic_cas_strong(p,exp,des,mi_memory_order(acq_rel),mi_memory_order(acquire))
 
 #define mi_atomic_add_relaxed(p,x)               mi_atomic(fetch_add_explicit)(p,x,mi_memory_order(relaxed))
-#define mi_atomic_sub_relaxed(p,x)               mi_atomic(fetch_sub_explicit)(p,x,mi_memory_order(relaxed))
 #define mi_atomic_add_acq_rel(p,x)               mi_atomic(fetch_add_explicit)(p,x,mi_memory_order(acq_rel))
+#define mi_atomic_sub_relaxed(p,x)               mi_atomic(fetch_sub_explicit)(p,x,mi_memory_order(relaxed))
 #define mi_atomic_sub_acq_rel(p,x)               mi_atomic(fetch_sub_explicit)(p,x,mi_memory_order(acq_rel))
+#define mi_atomic_and_relaxed(p,x)               mi_atomic(fetch_and_explicit)(p,x,mi_memory_order(relaxed))
 #define mi_atomic_and_acq_rel(p,x)               mi_atomic(fetch_and_explicit)(p,x,mi_memory_order(acq_rel))
+#define mi_atomic_or_relaxed(p,x)                mi_atomic(fetch_or_explicit)(p,x,mi_memory_order(relaxed))
 #define mi_atomic_or_acq_rel(p,x)                mi_atomic(fetch_or_explicit)(p,x,mi_memory_order(acq_rel))
 
 #define mi_atomic_increment_relaxed(p)           mi_atomic_add_relaxed(p,(uintptr_t)1)
@@ -92,7 +97,6 @@ terms of the MIT license. A copy of the license can be found in the file
 #define mi_atomic_increment_acq_rel(p)           mi_atomic_add_acq_rel(p,(uintptr_t)1)
 #define mi_atomic_decrement_acq_rel(p)           mi_atomic_sub_acq_rel(p,(uintptr_t)1)
 
-static inline void mi_atomic_yield(void);
 static inline intptr_t mi_atomic_addi(_Atomic(intptr_t)*p, intptr_t add);
 static inline intptr_t mi_atomic_subi(_Atomic(intptr_t)*p, intptr_t sub);
 
@@ -323,6 +327,7 @@ static inline int64_t mi_atomic_addi64_relaxed(volatile _Atomic(int64_t)*p, int6
     return current;
   #endif
 }
+
 static inline void mi_atomic_void_addi64_relaxed(volatile int64_t* p, const volatile int64_t* padd) {
   const int64_t add = *padd;
   if (add != 0) {
@@ -386,7 +391,7 @@ static inline intptr_t mi_atomic_subi(_Atomic(intptr_t)*p, intptr_t sub) {
 
 
 // ----------------------------------------------------------------------
-// Once and Guard
+// Guard
 // ----------------------------------------------------------------------
 
 typedef _Atomic(uintptr_t) mi_atomic_guard_t;
@@ -397,77 +402,6 @@ typedef _Atomic(uintptr_t) mi_atomic_guard_t;
   for(bool _mi_guard_once = true; \
       _mi_guard_once && mi_atomic_cas_strong_acq_rel(guard,&_mi_guard_expected,(uintptr_t)1); \
       (mi_atomic_store_release(guard,(uintptr_t)0), _mi_guard_once = false) )
-
-
-
-// ----------------------------------------------------------------------
-// Yield
-// ----------------------------------------------------------------------
-
-#if defined(_WIN32)
-static inline void mi_atomic_yield(void) {
-  YieldProcessor();  // see issue #1215 and #1225 why this is preferred over __yield or SwitchToThread
-}
-#elif defined(__SSE2__)
-#include <emmintrin.h>
-static inline void mi_atomic_yield(void) {
-  _mm_pause();
-}
-#elif (defined(__GNUC__) || defined(__clang__)) && \
-      (defined(__x86_64__) || defined(__i386__) || \
-       defined(__aarch64__) || defined(__arm__) || \
-       defined(__powerpc__) || defined(__ppc__) || defined(__PPC__) || defined(__POWERPC__))
-#if defined(__x86_64__) || defined(__i386__)
-static inline void mi_atomic_yield(void) {
-  __asm__ volatile ("pause" ::: "memory");
-}
-#elif defined(__aarch64__)
-static inline void mi_atomic_yield(void) {
-  __asm__ volatile("isb");
-}
-#elif defined(__arm__)
-#if __ARM_ARCH >= 7
-static inline void mi_atomic_yield(void) {
-  __asm__ volatile("yield" ::: "memory");
-}
-#else
-static inline void mi_atomic_yield(void) {
-  __asm__ volatile ("nop" ::: "memory");
-}
-#endif
-#elif defined(__powerpc__) || defined(__ppc__) || defined(__PPC__) || defined(__POWERPC__)
-#ifdef __APPLE__
-static inline void mi_atomic_yield(void) {
-  __asm__ volatile ("or r27,r27,r27" ::: "memory");
-}
-#else
-static inline void mi_atomic_yield(void) {
-  __asm__ __volatile__ ("or 27,27,27" ::: "memory");
-}
-#endif
-#endif
-#elif defined(__sun)
-#include <synch.h>
-static inline void mi_atomic_yield(void) {
-  smt_pause();
-}
-#elif defined(__wasi__)
-#include <sched.h>
-static inline void mi_atomic_yield(void) {
-  sched_yield();
-}
-// Fallback for other archs
-#elif defined(__cplusplus)
-#include <thread>
-static inline void mi_atomic_yield(void) {
-  std::this_thread::yield();
-}
-#else
-#include <unistd.h>
-static inline void mi_atomic_yield(void) {
-  sleep(0);
-}
-#endif
 
 
 // ----------------------------------------------------------------------
@@ -577,6 +511,7 @@ static inline void mi_lock_done(mi_lock_t* lock) {
 #define EFAULT (14)
 #endif
 void _mi_error_message(int err, const char* fmt, ...);
+void _mi_prim_thread_yield(void);
 
 typedef struct mi_lock_s {
   _Atomic(uintptr_t) mutex;
@@ -591,7 +526,7 @@ static inline bool mi_lock_try_acquire(mi_lock_t* lock) {
 static inline void mi_lock_acquire(mi_lock_t* lock) {
   for (int i = 0; i < 10000; i++) {  // for at most 10000 tries?
     if (mi_lock_try_acquire(lock)) return;
-    mi_atomic_yield();
+    _mi_prim_thread_yield();
   }
   _mi_error_message(EFAULT, "internal error: lock cannot be acquired (due to lack of native lock primitives)\n");
 }

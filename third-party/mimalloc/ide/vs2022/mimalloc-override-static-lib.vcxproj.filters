@@ -52,16 +52,22 @@
     <ClCompile Include="..\..\src\random.c">
       <Filter>Sources</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\segment.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\src\segment-map.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\stats.c">
       <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\arena-abandon.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\theap.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\threadlocal.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\arena-meta.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\page-map.c">
       <Filter>Sources</Filter>
     </ClCompile>
   </ItemGroup>
@@ -94,6 +100,9 @@
       <Filter>Headers</Filter>
     </ClInclude>
     <ClInclude Include="..\..\include\mimalloc-stats.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\include\mimalloc\bits.h">
       <Filter>Headers</Filter>
     </ClInclude>
   </ItemGroup>

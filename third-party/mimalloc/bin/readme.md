@@ -63,7 +63,7 @@ need a specific redirection DLL:
   mode on Windows arm64. Unfortunately we cannot run x64 code emulated on Windows arm64 with
   the x64 mimalloc override directly (since the C runtime always uses `arm64ec`). Instead:
   1. Build the program as normal for x64 and link as normal with the x64 
-     `mimalloc.lib` export library.
+     `mimalloc.dll.lib` export library.
   2. Now separately build `mimalloc.dll` in `arm64ec` mode and _overwrite_ your
      previous (x64) `mimalloc.dll` -- the loader can handle the mix of arm64ec
      and x64 code. Now use `mimalloc-redirect-arm64ec.dll` to match your new

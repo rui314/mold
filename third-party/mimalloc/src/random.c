@@ -7,7 +7,6 @@ terms of the MIT license. A copy of the license can be found in the file
 #include "mimalloc.h"
 #include "mimalloc/internal.h"
 #include "mimalloc/prim.h"    // _mi_prim_random_buf
-#include <string.h>       // memset
 
 /* ----------------------------------------------------------------------------
 We use our own PRNG to keep predictable performance of random number generation
@@ -33,15 +32,11 @@ The implementation uses regular C code which compiles very well on modern compil
 (gcc x64 has no register spills, and clang 6+ uses SSE instructions)
 -----------------------------------------------------------------------------*/
 
-static inline uint32_t rotl(uint32_t x, uint32_t shift) {
-  return (x << shift) | (x >> (32 - shift));
-}
-
 static inline void qround(uint32_t x[16], size_t a, size_t b, size_t c, size_t d) {
-  x[a] += x[b]; x[d] = rotl(x[d] ^ x[a], 16);
-  x[c] += x[d]; x[b] = rotl(x[b] ^ x[c], 12);
-  x[a] += x[b]; x[d] = rotl(x[d] ^ x[a], 8);
-  x[c] += x[d]; x[b] = rotl(x[b] ^ x[c], 7);
+  x[a] += x[b]; x[d] = mi_rotl32(x[d] ^ x[a], 16);
+  x[c] += x[d]; x[b] = mi_rotl32(x[b] ^ x[c], 12);
+  x[a] += x[b]; x[d] = mi_rotl32(x[d] ^ x[a], 8);
+  x[c] += x[d]; x[b] = mi_rotl32(x[b] ^ x[c], 7);
 }
 
 static void chacha_block(mi_random_ctx_t* ctx)
@@ -166,7 +161,7 @@ If we cannot get good randomness, we fall back to weak randomness based on a tim
 
 uintptr_t _mi_os_random_weak(uintptr_t extra_seed) {
   uintptr_t x = (uintptr_t)&_mi_os_random_weak ^ extra_seed; // ASLR makes the address random
-  x ^= _mi_prim_clock_now();  
+  x ^= _mi_prim_clock_now();
   // and do a few randomization steps
   uintptr_t max = ((x ^ (x >> 17)) & 0x0F) + 1;
   for (uintptr_t i = 0; i < max || x==0; i++, x++) {
