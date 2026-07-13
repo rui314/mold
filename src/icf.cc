@@ -444,15 +444,95 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
   return changed.combine(std::plus());
 }
 
+// A concurrent hash set to count the number of distinct digests.
+//
+// The number of distinct digests cannot exceed the number of digests,
+// so we can allocate a large enough table upfront and never need to
+// grow it.
+//
+// The set is reused across propagation rounds. Instead of clearing the
+// table at the start of each round, we stamp each slot with the round
+// number in which it was written; a slot stamped with an earlier round
+// is treated as vacant.
+//
+// Each slot is a pair of 64-bit words. The first word packs the round
+// number, a busy bit, and 48 bits of the digest; the second word holds
+// another 64 bits. An inserter claims a vacant slot by installing the
+// first word with compare-and-swap with the busy bit set, writes the
+// second word, and then rewrites the first word with the busy bit
+// cleared to publish the slot. Since the slot index is derived from
+// digest bits that the first word doesn't contain, a successful match
+// effectively compares an entire 128-bit digest, and counting is exact
+// under the same hash-collision assumption the surrounding algorithm
+// is built on.
+class DigestSet {
+public:
+  DigestSet(i64 n) : mask(bit_ceil(n * 2) - 1), words(2 * (mask + 1)) {}
+
+  void next_round() {
+    if (++round == 1 << 15) {
+      // The round number wrapped around, making stale slot stamps
+      // ambiguous, so reset the table. In practice, ICF converges long
+      // before this point.
+      std::fill(words.begin(), words.end(), 0);
+      round = 1;
+    }
+  }
+
+  bool insert(const Digest &digest) {
+    u64 hi, lo;
+    memcpy(&hi, digest.data(), 8);
+    memcpy(&lo, digest.data() + 8, 8);
+
+    constexpr u64 busy_bit = 1LL << 48;
+    u64 tag = hi >> 16;
+    u64 busy = (round << 49) | busy_bit | tag;
+    u64 done = (round << 49) | tag;
+
+    for (i64 idx = hi & mask;; idx = (idx + 1) & mask) {
+      Atomic<u64> &w1 = words[idx * 2];
+      Atomic<u64> &w2 = words[idx * 2 + 1];
+      u64 x = w1.load(std::memory_order_acquire);
+
+      // If the slot was last written in an earlier round, it's vacant;
+      // try to claim it.
+      while ((x >> 49) != round) {
+        if (w1.compare_exchange_weak(x, busy, std::memory_order_acquire)) {
+          w2.store(lo, std::memory_order_relaxed);
+          w1.store(done, std::memory_order_release);
+          return true;
+        }
+      }
+
+      // The slot is occupied. If it holds a different digest, try the
+      // next slot.
+      if ((x & (busy_bit - 1)) != tag)
+        continue;
+
+      // The tags match; compare the digest bits in the second word,
+      // waiting for the writer to publish them if the slot is still
+      // being claimed.
+      while (x & busy_bit)
+        x = w1.load(std::memory_order_acquire);
+      if (w2.load() == lo)
+        return false;
+    }
+  }
+
+private:
+  u64 round = 0;
+  u64 mask;
+  std::vector<Atomic<u64>> words;
+};
+
 template <typename E>
-static i64 count_num_classes(std::span<Digest> digests,
+static i64 count_num_classes(std::span<Digest> digests, DigestSet &set,
                              tbb::affinity_partitioner &ap) {
-  std::vector<Digest> vec(digests.begin(), digests.end());
-  tbb::parallel_sort(vec);
+  set.next_round();
 
   tbb::enumerable_thread_specific<i64> num_classes;
-  tbb::parallel_for((i64)0, (i64)vec.size() - 1, [&](i64 i) {
-    if (vec[i] != vec[i + 1])
+  tbb::parallel_for((i64)0, (i64)digests.size(), [&](i64 i) {
+    if (set.insert(digests[i]))
       num_classes.local()++;
   }, ap);
   return num_classes.combine(std::plus());
@@ -543,42 +623,39 @@ void icf_sections(Context<E> &ctx) {
   bool slot = 0;
 
   // Execute the propagation rounds until convergence is obtained.
+  //
+  // We have converged when the unique number of hashes stops increasing,
+  // as it will remain unchanged for further iterations (proof omitted
+  // for brevity). Counting the hashes is cheap but not free, so we skip
+  // it while an even cheaper necessary condition tells us that we cannot
+  // have converged yet:
+  //
+  // Nodes that have a cycle in downstream (i.e. recursive functions and
+  // functions that call recursive functions) will change their hashes on
+  // every iteration. Nodes that don't (i.e. non-recursive functions)
+  // will stop changing as soon as the propagation depth reaches the call
+  // tree depth. Until the number of changing hashes per round stabilizes,
+  // we have not reached sufficient depth for the latter, so the graph
+  // cannot have converged.
   {
     Timer t(ctx, "propagate");
     tbb::affinity_partitioner ap;
+    DigestSet set(digests[0].size());
 
-    // A cheap test that the graph hasn't converged yet.
-    // The loop after this one uses a strict condition, but it's expensive
-    // as it requires sorting the entire hash collection.
-    //
-    // For nodes that have a cycle in downstream (i.e. recursive
-    // functions and functions that calls recursive functions) will always
-    // change with the iterations. Nodes that doesn't (i.e. non-recursive
-    // functions) will stop changing as soon as the propagation depth reaches
-    // the call tree depth.
-    // Here, we test whether we have reached sufficient depth for the latter,
-    // which is a necessary (but not sufficient) condition for convergence.
     i64 num_changed = -1;
+    i64 num_classes = -1;
+
     for (;;) {
       i64 n = propagate<E>(digests, edges, edge_indices, slot, converged, ap);
-      if (n == num_changed)
-        break;
+      bool maybe_converged = (n == num_changed);
       num_changed = n;
-    }
+      if (!maybe_converged)
+        continue;
 
-    // Run the pass until the unique number of hashes stop increasing, at which
-    // point we have achieved convergence (proof omitted for brevity).
-    i64 num_classes = -1;
-    for (;;) {
-      // count_num_classes requires sorting which is O(n log n), so do a little
-      // more work beforehand to amortize that log factor.
-      for (i64 i = 0; i < 10; i++)
-        propagate<E>(digests, edges, edge_indices, slot, converged, ap);
-
-      i64 n = count_num_classes<E>(digests[slot], ap);
-      if (n == num_classes)
+      i64 m = count_num_classes<E>(digests[slot], set, ap);
+      if (m == num_classes)
         break;
-      num_classes = n;
+      num_classes = m;
     }
   }
 
