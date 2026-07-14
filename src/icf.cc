@@ -443,8 +443,7 @@ static void gather_edges(Context<E> &ctx,
 // unfolding into a tree of depth n.
 template <typename E>
 static void propagate(std::span<Digest> cur, std::span<Digest> next,
-                      std::span<u32> edges, std::span<u32> edge_indices,
-                      tbb::affinity_partitioner &ap) {
+                      std::span<u32> edges, std::span<u32> edge_indices) {
   tbb::parallel_for((i64)0, (i64)cur.size(), [&](i64 i) {
     SipHash13_128 hasher(hmac_key);
     hasher.update(&cur[i], sizeof(Digest));
@@ -455,7 +454,7 @@ static void propagate(std::span<Digest> cur, std::span<Digest> next,
       hasher.update(&cur[j], sizeof(Digest));
 
     hasher.finish(&next[i]);
-  }, ap);
+  });
 
   static Counter counter("icf_round");
   counter++;
@@ -464,14 +463,14 @@ static void propagate(std::span<Digest> cur, std::span<Digest> next,
 template <typename E>
 static i64 count_num_classes(std::span<Digest> digests,
                              std::span<InputSection<E> *> sections,
-                             DigestMap<E> &map, tbb::affinity_partitioner &ap) {
+                             DigestMap<E> &map) {
   map.next_round();
 
   tbb::enumerable_thread_specific<i64> num_classes;
   tbb::parallel_for((i64)0, (i64)digests.size(), [&](i64 i) {
     if (map.insert(digests[i], sections[i]))
       num_classes.local()++;
-  }, ap);
+  });
   return num_classes.combine(std::plus());
 }
 
@@ -567,13 +566,12 @@ void icf_sections(Context<E> &ctx) {
   // lockstep, keeping the partition intact.
   {
     Timer t(ctx, "propagate");
-    tbb::affinity_partitioner ap;
     i64 num_classes = -1;
 
     for (;;) {
-      propagate<E>(digests, scratch, edges, edge_indices, ap);
+      propagate<E>(digests, scratch, edges, edge_indices);
       std::swap(digests, scratch);
-      i64 m = count_num_classes<E>(digests, sections, map, ap);
+      i64 m = count_num_classes<E>(digests, sections, map);
       if (m == num_classes)
         break;
       num_classes = m;
