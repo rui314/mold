@@ -374,6 +374,13 @@ compute_digests(Context<E> &ctx, std::span<InputSection<E> *> sections) {
 // Build a graph, treating every function as a vertex and every function call
 // as an edge. See the description at the top for a more detailed formulation.
 // We use u32 indices here to improve cache locality.
+//
+// Relocations in a section's FDEs are edges too, because compute_digest
+// hashes eligible relocation targets without identity, and every such
+// target must be represented as an edge to remain distinguishable. In
+// particular, an FDE's reference to an LSDA is an edge; without it, two
+// identical functions whose exception tables catch different types would
+// be folded into one.
 template <typename E>
 static void gather_edges(Context<E> &ctx,
                          std::span<InputSection<E> *> sections,
@@ -391,12 +398,18 @@ static void gather_edges(Context<E> &ctx,
     InputSection<E> &isec = *sections[i];
     assert(isec.icf_eligible);
 
-    for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
-      Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-      if (InputSection<E> *isec = sym.get_input_section())
+    for (FdeRecord<E> &fde : isec.get_fdes())
+      for (const ElfRel<E> &rel : fde.get_rels(isec.file).subspan(1))
+        if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+            InputSection<E> *isec = sym.get_input_section())
+          if (isec->icf_eligible)
+            edge_indices[i + 1]++;
+
+    for (const ElfRel<E> &rel : isec.get_rels(ctx))
+      if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+          InputSection<E> *isec = sym.get_input_section())
         if (isec->icf_eligible)
           edge_indices[i + 1]++;
-    }
   });
 
   for (i64 i = 1; i < edge_indices.size(); i++)
@@ -407,6 +420,13 @@ static void gather_edges(Context<E> &ctx,
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
     i64 idx = edge_indices[i];
+
+    for (FdeRecord<E> &fde : isec.get_fdes())
+      for (const ElfRel<E> &rel : fde.get_rels(isec.file).subspan(1))
+        if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+            InputSection<E> *isec = sym.get_input_section())
+          if (isec->icf_eligible)
+            edges[idx++] = isec->icf_idx;
 
     for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
       Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
@@ -431,7 +451,6 @@ static void propagate(std::span<Digest> cur, std::span<Digest> next,
 
     i64 begin = edge_indices[i];
     i64 end = edge_indices[i + 1];
-
     for (i64 j : edges.subspan(begin, end - begin))
       hasher.update(&cur[j], sizeof(Digest));
 
