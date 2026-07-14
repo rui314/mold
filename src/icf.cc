@@ -78,7 +78,6 @@
 namespace mold {
 
 struct Digest {
-  bool operator==(const Digest &) const = default;
   u64 hi;
   u64 lo;
 };
@@ -422,14 +421,10 @@ static void gather_edges(Context<E> &ctx,
 template <typename E>
 static void propagate(std::span<std::vector<Digest>> digests,
                       std::span<u32> edges, std::span<u32> edge_indices,
-                      bool slot, std::span<u8> converged,
-                      tbb::affinity_partitioner &ap) {
+                      bool slot, tbb::affinity_partitioner &ap) {
   i64 num_digests = digests[0].size();
 
   tbb::parallel_for((i64)0, num_digests, [&](i64 i) {
-    if (converged[i])
-      return;
-
     SipHash13_128 hasher(hmac_key);
     hasher.update(&digests[2][i], sizeof(Digest));
 
@@ -440,11 +435,6 @@ static void propagate(std::span<std::vector<Digest>> digests,
       hasher.update(&digests[slot][j], sizeof(Digest));
 
     hasher.finish(&digests[!slot][i]);
-
-    // If this node has converged, skip further iterations as it will
-    // yield the same hash.
-    if (digests[slot][i] == digests[!slot][i])
-      converged[i] = true;
   }, ap);
 
   static Counter counter("icf_round");
@@ -545,7 +535,6 @@ void icf_sections(Context<E> &ctx) {
   std::vector<u32> edge_indices;
   gather_edges<E>(ctx, sections, edges, edge_indices);
 
-  std::vector<u8> converged(digests[0].size());
   bool slot = 0;
 
   // The digest map is used to count the number of distinct digests in
@@ -572,7 +561,7 @@ void icf_sections(Context<E> &ctx) {
     i64 num_classes = -1;
 
     for (;;) {
-      propagate<E>(digests, edges, edge_indices, slot, converged, ap);
+      propagate<E>(digests, edges, edge_indices, slot, ap);
       slot = !slot;
       i64 m = count_num_classes<E>(digests[slot], sections, map, ap);
       if (m == num_classes)
