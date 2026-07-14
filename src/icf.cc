@@ -320,8 +320,9 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
   static Counter eligible("icf_eligibles");
   static Counter non_eligible("icf_non_eligibles");
 
-  // Count the number of eligible input sections for each input file.
-  std::vector<i64> num_sections(ctx.objs.size());
+  // Count the number of eligible input sections for each input file
+  // and turn the counts into starting indices with a prefix sum.
+  std::vector<i64> indices(ctx.objs.size() + 1);
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
@@ -331,23 +332,21 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
       if (is_eligible(ctx, *isec)) {
         eligible++;
         isec->icf_eligible = true;
-        num_sections[i]++;
+        indices[i + 1]++;
       } else {
         non_eligible++;
       }
     }
   });
 
-  std::vector<i64> section_indices(ctx.objs.size());
-  for (i64 i = 0; i < ctx.objs.size() - 1; i++)
-    section_indices[i + 1] = section_indices[i] + num_sections[i];
+  for (i64 i = 1; i < indices.size(); i++)
+    indices[i] += indices[i - 1];
 
-  std::vector<InputSection<E> *> sections(
-    section_indices.back() + num_sections.back());
+  std::vector<InputSection<E> *> sections(indices.back());
 
   // Fill `sections` contents.
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    i64 idx = section_indices[i];
+    i64 idx = indices[i];
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
       if (isec && isec->is_alive && isec->icf_eligible)
         sections[idx++] = isec.get();
@@ -382,11 +381,11 @@ static void gather_edges(Context<E> &ctx,
                          std::vector<u32> &edge_indices) {
   Timer t(ctx, "gather_edges");
 
-  if (sections.empty())
-    return;
-
-  std::vector<i64> num_edges(sections.size());
-  edge_indices.resize(sections.size());
+  // Count the number of outgoing edges for each vertex and turn the
+  // counts into starting indices with a prefix sum. The extra entry at
+  // the end makes edge_indices[i + 1] valid for every vertex, so that
+  // vertex i's edges are edge_indices[i] to edge_indices[i + 1].
+  edge_indices.resize(sections.size() + 1);
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
@@ -396,16 +395,16 @@ static void gather_edges(Context<E> &ctx,
       Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
       if (InputSection<E> *isec = sym.get_input_section())
         if (isec->icf_eligible)
-          num_edges[i]++;
+          edge_indices[i + 1]++;
     }
   });
 
-  for (i64 i = 0; i < num_edges.size() - 1; i++)
-    edge_indices[i + 1] = edge_indices[i] + num_edges[i];
+  for (i64 i = 1; i < edge_indices.size(); i++)
+    edge_indices[i] += edge_indices[i - 1];
 
-  edges.resize(edge_indices.back() + num_edges.back());
+  edges.resize(edge_indices.back());
 
-  tbb::parallel_for((i64)0, (i64)num_edges.size(), [&](i64 i) {
+  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
     i64 idx = edge_indices[i];
 
@@ -426,14 +425,12 @@ template <typename E>
 static void propagate(std::span<Digest> cur, std::span<Digest> next,
                       std::span<u32> edges, std::span<u32> edge_indices,
                       tbb::affinity_partitioner &ap) {
-  i64 num_digests = cur.size();
-
-  tbb::parallel_for((i64)0, num_digests, [&](i64 i) {
+  tbb::parallel_for((i64)0, (i64)cur.size(), [&](i64 i) {
     SipHash13_128 hasher(hmac_key);
     hasher.update(&cur[i], sizeof(Digest));
 
     i64 begin = edge_indices[i];
-    i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
+    i64 end = edge_indices[i + 1];
 
     for (i64 j : edges.subspan(begin, end - begin))
       hasher.update(&cur[j], sizeof(Digest));
