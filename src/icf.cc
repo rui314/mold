@@ -418,23 +418,27 @@ static void gather_edges(Context<E> &ctx,
   });
 }
 
+// Compute the next-round digest of each vertex by hashing its current
+// digest and the current digests of the vertices it refers to. A
+// vertex's digest after the nth round is therefore a hash of its
+// unfolding into a tree of depth n.
 template <typename E>
-static void propagate(std::span<std::vector<Digest>> digests,
+static void propagate(std::span<Digest> cur, std::span<Digest> next,
                       std::span<u32> edges, std::span<u32> edge_indices,
-                      bool slot, tbb::affinity_partitioner &ap) {
-  i64 num_digests = digests[0].size();
+                      tbb::affinity_partitioner &ap) {
+  i64 num_digests = cur.size();
 
   tbb::parallel_for((i64)0, num_digests, [&](i64 i) {
     SipHash13_128 hasher(hmac_key);
-    hasher.update(&digests[2][i], sizeof(Digest));
+    hasher.update(&cur[i], sizeof(Digest));
 
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
     for (i64 j : edges.subspan(begin, end - begin))
-      hasher.update(&digests[slot][j], sizeof(Digest));
+      hasher.update(&cur[j], sizeof(Digest));
 
-    hasher.finish(&digests[!slot][i]);
+    hasher.finish(&next[i]);
   }, ap);
 
   static Counter counter("icf_round");
@@ -517,31 +521,21 @@ void icf_sections(Context<E> &ctx) {
   // Prepare for the propagation rounds.
   std::vector<InputSection<E> *> sections = gather_sections(ctx);
 
-  // We allocate 3 arrays to store hashes for each vertex.
-  //
-  // Index 0 and 1 are used for tree hashes from the previous
-  // iteration and the current iteration. They switch roles every
-  // iteration. See `slot` below.
-  //
-  // Index 2 stores the initial, single-vertex hash. This is combined
-  // with hashes from the connected vertices to form the tree hash
-  // described above.
-  std::vector<std::vector<Digest>> digests(3);
-  digests[0] = compute_digests<E>(ctx, sections);
-  digests[1].resize(digests[0].size());
-  digests[2] = digests[0];
+  // `digests` holds the current digest of each vertex; `scratch` is
+  // where a propagation round writes the next digests before the two
+  // vectors swap roles.
+  std::vector<Digest> digests = compute_digests<E>(ctx, sections);
+  std::vector<Digest> scratch(digests.size());
 
   std::vector<u32> edges;
   std::vector<u32> edge_indices;
   gather_edges<E>(ctx, sections, edges, edge_indices);
 
-  bool slot = 0;
-
   // The digest map is used to count the number of distinct digests in
   // the loop below. As a side effect, it records the lowest-priority
   // section for each digest, which the grouping step after the loop
   // uses as the leader of each equivalence class.
-  DigestMap<E> map(digests[0].size());
+  DigestMap<E> map(digests.size());
 
   // Execute the propagation rounds until convergence is obtained.
   //
@@ -561,9 +555,9 @@ void icf_sections(Context<E> &ctx) {
     i64 num_classes = -1;
 
     for (;;) {
-      propagate<E>(digests, edges, edge_indices, slot, ap);
-      slot = !slot;
-      i64 m = count_num_classes<E>(digests[slot], sections, map, ap);
+      propagate<E>(digests, scratch, edges, edge_indices, ap);
+      std::swap(digests, scratch);
+      i64 m = count_num_classes<E>(digests, sections, map, ap);
       if (m == num_classes)
         break;
       num_classes = m;
@@ -574,10 +568,8 @@ void icf_sections(Context<E> &ctx) {
   // elected a leader for each digest; look it up.
   {
     Timer t(ctx, "group");
-    std::span<Digest> digest = digests[slot];
-
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-      sections[i]->leader = map.find(digest[i]);
+      sections[i]->leader = map.find(digests[i]);
     });
   }
 
