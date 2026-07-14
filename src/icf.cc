@@ -406,15 +406,11 @@ static void gather_edges(Context<E> &ctx,
 }
 
 template <typename E>
-static i64 propagate(std::span<std::vector<Digest>> digests,
-                     std::span<u32> edges, std::span<u32> edge_indices,
-                     bool &slot, std::span<u8> converged,
-                     tbb::affinity_partitioner &ap) {
-  static Counter round("icf_round");
-  round++;
-
+static void propagate(std::span<std::vector<Digest>> digests,
+                      std::span<u32> edges, std::span<u32> edge_indices,
+                      bool slot, std::span<u8> converged,
+                      tbb::affinity_partitioner &ap) {
   i64 num_digests = digests[0].size();
-  tbb::enumerable_thread_specific<i64> changed;
 
   tbb::parallel_for((i64)0, num_digests, [&](i64 i) {
     if (converged[i])
@@ -431,17 +427,14 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
 
     hasher.finish(digests[!slot][i].data());
 
-    if (digests[slot][i] == digests[!slot][i]) {
-      // This node has converged. Skip further iterations as it will
-      // yield the same hash.
+    // If this node has converged, skip further iterations as it will
+    // yield the same hash.
+    if (digests[slot][i] == digests[!slot][i])
       converged[i] = true;
-    } else {
-      changed.local()++;
-    }
   }, ap);
 
-  slot = !slot;
-  return changed.combine(std::plus());
+  static Counter counter("icf_round");
+  counter++;
 }
 
 // A concurrent hash set to count the number of distinct digests.
@@ -627,34 +620,25 @@ void icf_sections(Context<E> &ctx) {
 
   // Execute the propagation rounds until convergence is obtained.
   //
-  // We have converged when the unique number of hashes stops increasing,
-  // as it will remain unchanged for further iterations (proof omitted
-  // for brevity). Counting the hashes is cheap but not free, so we skip
-  // it while an even cheaper necessary condition tells us that we cannot
-  // have converged yet:
-  //
-  // Nodes that have a cycle in downstream (i.e. recursive functions and
-  // functions that call recursive functions) will change their hashes on
-  // every iteration. Nodes that don't (i.e. non-recursive functions)
-  // will stop changing as soon as the propagation depth reaches the call
-  // tree depth. Until the number of changing hashes per round stabilizes,
-  // we have not reached sufficient depth for the latter, so the graph
-  // cannot have converged.
+  // The number of distinct digests can only monotonically increase as
+  // the rounds hash ever-deeper trees, so once two consecutive rounds
+  // yield the same count, the partition of sections into equivalence
+  // classes has stopped changing and will remain unchanged for further
+  // iterations (proof omitted for brevity). Note that individual
+  // digests may well still be changing at that point; sections that
+  // have a cycle in downstream (i.e. recursive functions and functions
+  // that call them) never settle on a digest. That doesn't matter
+  // because sections in the same class change their digests in
+  // lockstep, keeping the partition intact.
   {
     Timer t(ctx, "propagate");
     tbb::affinity_partitioner ap;
     DigestSet set(digests[0].size());
-
-    i64 num_changed = -1;
     i64 num_classes = -1;
 
     for (;;) {
-      i64 n = propagate<E>(digests, edges, edge_indices, slot, converged, ap);
-      bool maybe_converged = (n == num_changed);
-      num_changed = n;
-      if (!maybe_converged)
-        continue;
-
+      propagate<E>(digests, edges, edge_indices, slot, converged, ap);
+      slot = !slot;
       i64 m = count_num_classes<E>(digests[slot], set, ap);
       if (m == num_classes)
         break;
