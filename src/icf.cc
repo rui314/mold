@@ -67,7 +67,6 @@
 #include "mold.h"
 #include "../lib/siphash.h"
 
-#include <cstdio>
 #include <fstream>
 #include <tbb/concurrent_unordered_map.h>
 #include <tbb/concurrent_vector.h>
@@ -136,18 +135,6 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
 }
 
 template <typename E>
-static bool is_leaf(Context<E> &ctx, InputSection<E> &isec) {
-  if (!isec.get_rels(ctx).empty())
-    return false;
-
-  for (FdeRecord<E> &fde : isec.get_fdes())
-    if (fde.get_rels(isec.file).size() > 1)
-      return false;
-
-  return true;
-}
-
-template <typename E>
 static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   SipHash13_128 hasher(hmac_key);
 
@@ -171,13 +158,10 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
       hash((u64)frag);
     } else if (!isec) {
       hash('3');
-    } else if (isec->leader) {
-      hash('4');
-      hash((u64)isec->leader);
     } else if (isec->icf_eligible) {
-      hash('5');
+      hash('4');
     } else {
-      hash('6');
+      hash('5');
       hash((u64)isec);
     }
     hash(sym.value);
@@ -205,8 +189,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     }
   }
 
-  for (i64 i = 0; i < isec.get_rels(ctx).size(); i++) {
-    const ElfRel<E> &rel = isec.get_rels(ctx)[i];
+  for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
     hash(rel.r_offset);
     hash(rel.r_type);
     hash(get_addend(isec, rel));
@@ -218,9 +201,9 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   return digest;
 }
 
-// A concurrent hash map from digest to section. We use it to merge
-// leaf sections, to count the number of distinct digests, and to elect
-// the leader section of each digest's equivalence class.
+// A concurrent hash map from digest to section. We use it to count the
+// number of distinct digests and to elect the leader section of each
+// digest's equivalence class.
 //
 // The number of distinct digests cannot exceed the number of digests,
 // so we can allocate a large enough table upfront and never need to
@@ -331,69 +314,29 @@ private:
   std::vector<Slot> slots;
 };
 
-// Early merge of leaf nodes, which can be processed without constructing the
-// entire graph. This reduces the vertex count and improves memory efficiency.
-//
-// A leaf's digest doesn't depend on any other section's digest, so unlike
-// the sections that participate in the propagation rounds, its final digest
-// is known upfront, and sections that agree on it can be merged right away.
 template <typename E>
-static void merge_leaf_nodes(Context<E> &ctx) {
-  Timer t(ctx, "merge_leaf_nodes");
+static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
+  Timer t(ctx, "gather_sections");
 
   static Counter eligible("icf_eligibles");
   static Counter non_eligible("icf_non_eligibles");
-  static Counter leaf("icf_leaf_nodes");
 
-  tbb::enumerable_thread_specific<i64> num_leaves;
+  // Count the number of eligible input sections for each input file.
+  std::vector<i64> num_sections(ctx.objs.size());
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
       if (!isec || !isec->is_alive)
         continue;
 
-      if (!is_eligible(ctx, *isec)) {
-        non_eligible++;
-        continue;
-      }
-
-      if (is_leaf(ctx, *isec)) {
-        leaf++;
-        isec->icf_leaf = true;
-        num_leaves.local()++;
-      } else {
+      if (is_eligible(ctx, *isec)) {
         eligible++;
         isec->icf_eligible = true;
+        num_sections[i]++;
+      } else {
+        non_eligible++;
       }
     }
-  });
-
-  DigestMap<E> map(num_leaves.combine(std::plus()));
-
-  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
-      if (isec && isec->is_alive && isec->icf_leaf)
-        map.insert(compute_digest(ctx, *isec), isec.get());
-  });
-
-  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
-      if (isec && isec->is_alive && isec->icf_leaf)
-        isec->leader = map.find(compute_digest(ctx, *isec));
-  });
-}
-
-template <typename E>
-static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
-  Timer t(ctx, "gather_sections");
-
-  // Count the number of input sections for each input file.
-  std::vector<i64> num_sections(ctx.objs.size());
-
-  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
-      if (isec && isec->is_alive && isec->icf_eligible)
-        num_sections[i]++;
   });
 
   std::vector<i64> section_indices(ctx.objs.size());
@@ -450,13 +393,11 @@ static void gather_edges(Context<E> &ctx,
     InputSection<E> &isec = *sections[i];
     assert(isec.icf_eligible);
 
-    for (i64 j = 0; j < isec.get_rels(ctx).size(); j++) {
-      const ElfRel<E> &rel = isec.get_rels(ctx)[j];
+    for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
       Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-      if (!sym.get_frag())
-        if (InputSection<E> *isec = sym.get_input_section())
-          if (isec->icf_eligible)
-            num_edges[i]++;
+      if (InputSection<E> *isec = sym.get_input_section())
+        if (isec->icf_eligible)
+          num_edges[i]++;
     }
   });
 
@@ -469,12 +410,12 @@ static void gather_edges(Context<E> &ctx,
     InputSection<E> &isec = *sections[i];
     i64 idx = edge_indices[i];
 
-    for (ElfRel<E> &rel : isec.get_rels(ctx)) {
+    for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
       Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
       if (InputSection<E> *isec = sym.get_input_section())
         if (isec->icf_eligible)
           edges[idx++] = isec->icf_idx;
-  }
+    }
   });
 }
 
@@ -582,7 +523,6 @@ void icf_sections(Context<E> &ctx) {
   get_random_bytes(hmac_key, sizeof(hmac_key));
 
   uniquify_cies(ctx);
-  merge_leaf_nodes(ctx);
 
   // Prepare for the propagation rounds.
   std::vector<InputSection<E> *> sections = gather_sections(ctx);

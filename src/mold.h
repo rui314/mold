@@ -579,7 +579,6 @@ public:
   InputSection<E> *leader = nullptr;
   i32 icf_idx = -1;
   bool icf_eligible = false;
-  bool icf_leaf = false;
 
   [[no_unique_address]] InputSectionExtras<E> extra;
 
