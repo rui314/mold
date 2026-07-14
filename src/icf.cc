@@ -147,88 +147,6 @@ static bool is_leaf(Context<E> &ctx, InputSection<E> &isec) {
 }
 
 template <typename E>
-struct LeafHasher {
-  size_t operator()(InputSection<E> *isec) const {
-    u64 h = hash_string(isec->contents);
-    for (FdeRecord<E> &fde : isec->get_fdes()) {
-      u64 h2 = hash_string(fde.get_contents(isec->file).substr(8));
-      h = combine_hash(h, h2);
-    }
-    return h;
-  }
-};
-
-template <typename E>
-struct LeafEq {
-  bool operator()(InputSection<E> *a, InputSection<E> *b) const {
-    if (a->contents != b->contents)
-      return false;
-
-    std::span<FdeRecord<E>> x = a->get_fdes();
-    std::span<FdeRecord<E>> y = b->get_fdes();
-
-    if (x.size() != y.size())
-      return false;
-
-    for (i64 i = 0; i < x.size(); i++)
-      if (x[i].get_contents(a->file).substr(8) !=
-          y[i].get_contents(b->file).substr(8))
-        return false;
-    return true;
-  }
-};
-
-// Early merge of leaf nodes, which can be processed without constructing the
-// entire graph. This reduces the vertex count and improves memory efficiency.
-template <typename E>
-static void merge_leaf_nodes(Context<E> &ctx) {
-  Timer t(ctx, "merge_leaf_nodes");
-
-  static Counter eligible("icf_eligibles");
-  static Counter non_eligible("icf_non_eligibles");
-  static Counter leaf("icf_leaf_nodes");
-
-  tbb::concurrent_unordered_map<InputSection<E> *, Atomic<InputSection<E> *>,
-                                LeafHasher<E>, LeafEq<E>> map;
-
-  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
-      if (!isec || !isec->is_alive)
-        continue;
-
-      if (!is_eligible(ctx, *isec)) {
-        non_eligible++;
-        continue;
-      }
-
-      if (is_leaf(ctx, *isec)) {
-        leaf++;
-        isec->icf_leaf = true;
-        auto [it, inserted] = map.insert({isec.get(), isec.get()});
-        if (!inserted) {
-          InputSection<E> *isec2 = it->second.load();
-          while (isec->get_priority() < isec2->get_priority() &&
-                 !it->second.compare_exchange_strong(isec2, isec.get()));
-        }
-      } else {
-        eligible++;
-        isec->icf_eligible = true;
-      }
-    }
-  });
-
-  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
-      if (isec && isec->is_alive && isec->icf_leaf) {
-        auto it = map.find(isec.get());
-        assert(it != map.end());
-        isec->leader = it->second;
-      }
-    }
-  });
-}
-
-template <typename E>
 static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   SipHash13_128 hasher(hmac_key);
 
@@ -297,6 +215,181 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   Digest digest;
   hasher.finish(digest.data());
   return digest;
+}
+
+// A concurrent hash map from digest to section. We use it to merge
+// leaf sections, to count the number of distinct digests, and to elect
+// the leader section of each digest's equivalence class.
+//
+// The number of distinct digests cannot exceed the number of digests,
+// so we can allocate a large enough table upfront and never need to
+// grow it.
+//
+// The map is reused across propagation rounds. Instead of clearing the
+// table at the start of each round, we stamp each slot with the round
+// number in which it was written; a slot stamped with an earlier round
+// is treated as vacant.
+//
+// Each slot consists of two 64-bit words and a section pointer. The
+// first word packs the round number, a busy bit, and 48 bits of the
+// digest; the second word holds another 64 bits. An inserter claims a
+// vacant slot by installing the first word with compare-and-swap with
+// the busy bit set, writes the second word and the pointer, and then
+// rewrites the first word with the busy bit cleared to publish the
+// slot. Since the slot index is derived from digest bits that the
+// first word doesn't contain, a successful match effectively compares
+// an entire 128-bit digest, so the map is exact under the same
+// hash-collision assumption the surrounding algorithm is built on.
+//
+// Of all sections inserted with the same digest in the same round, the
+// slot ends up pointing to the one with the lowest priority, which ICF
+// uses as the leader of the digest's equivalence class.
+template <typename E>
+class DigestMap {
+public:
+  DigestMap(i64 n) :
+    mask(bit_ceil(n * 2) - 1),
+    slots(mask + 1) {}
+
+  void next_round() {
+    if (++round == 1 << 15) {
+      // The round number wrapped around, making stale slot stamps
+      // ambiguous, so reset the table. In practice, ICF converges long
+      // before this point.
+      for (Slot &slot : slots)
+        slot.hi = 0;
+      round = 1;
+    }
+  }
+
+  // Returns true if the digest was not in the table.
+  bool insert(const Digest &digest, InputSection<E> *isec) {
+    u64 hi;
+    u64 lo;
+    memcpy(&hi, digest.data(), 8);
+    memcpy(&lo, digest.data() + 8, 8);
+
+    constexpr u64 busy_bit = 1LL << 48;
+    u64 tag = hi >> 16;
+    u64 value = (round << 49) | tag;
+
+    for (i64 i = hi & mask;; i = (i + 1) & mask) {
+      Slot &slot = slots[i];
+      u64 x = slot.hi.load(std::memory_order_acquire);
+
+      // If the slot was last written in an earlier round, it's vacant;
+      // try to claim it.
+      while ((x >> 49) != round) {
+        if (slot.hi.compare_exchange_weak(x, value | busy_bit,
+                                          std::memory_order_acquire)) {
+          slot.lo = lo;
+          slot.leader = isec;
+          slot.hi.store(value, std::memory_order_release);
+          return true;
+        }
+      }
+
+      // The slot is occupied. If it holds a different digest, try the
+      // next slot.
+      if ((x & 0xffff'ffff'ffff) != tag)
+        continue;
+
+      // The tags match; compare the digest bits in the second word,
+      // waiting for the writer to publish them if the slot is still
+      // being claimed.
+      while (x & busy_bit)
+        x = slot.hi.load(std::memory_order_acquire);
+      if (slot.lo != lo)
+        continue;
+
+      // The digest is already in the table; keep the slot pointing to
+      // the lowest-priority section.
+      InputSection<E> *cur = slot.leader;
+      while (isec->get_priority() < cur->get_priority() &&
+             !slot.leader.compare_exchange_strong(cur, isec));
+      return false;
+    }
+  }
+
+  // Returns the section associated with a digest. The digest must have
+  // been inserted in the current round, and no insertion may be running
+  // concurrently.
+  InputSection<E> *find(const Digest &digest) {
+    u64 hi;
+    u64 lo;
+    memcpy(&hi, digest.data(), 8);
+    memcpy(&lo, digest.data() + 8, 8);
+    u64 done = (round << 49) | (hi >> 16);
+
+    for (i64 i = hi & mask;; i = (i + 1) & mask)
+      if (slots[i].hi == done && slots[i].lo == lo)
+        return slots[i].leader;
+  }
+
+private:
+  struct Slot {
+    Atomic<u64> hi;
+    Atomic<u64> lo;
+    Atomic<InputSection<E> *> leader;
+  };
+
+  // Time begins in round 1 so that all-zero slots, the initial state
+  // of the table, read as vacant.
+  u64 round = 1;
+  u64 mask;
+  std::vector<Slot> slots;
+};
+
+// Early merge of leaf nodes, which can be processed without constructing the
+// entire graph. This reduces the vertex count and improves memory efficiency.
+//
+// A leaf's digest doesn't depend on any other section's digest, so unlike
+// the sections that participate in the propagation rounds, its final digest
+// is known upfront, and sections that agree on it can be merged right away.
+template <typename E>
+static void merge_leaf_nodes(Context<E> &ctx) {
+  Timer t(ctx, "merge_leaf_nodes");
+
+  static Counter eligible("icf_eligibles");
+  static Counter non_eligible("icf_non_eligibles");
+  static Counter leaf("icf_leaf_nodes");
+
+  tbb::enumerable_thread_specific<i64> num_leaves;
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
+      if (!isec || !isec->is_alive)
+        continue;
+
+      if (!is_eligible(ctx, *isec)) {
+        non_eligible++;
+        continue;
+      }
+
+      if (is_leaf(ctx, *isec)) {
+        leaf++;
+        isec->icf_leaf = true;
+        num_leaves.local()++;
+      } else {
+        eligible++;
+        isec->icf_eligible = true;
+      }
+    }
+  });
+
+  DigestMap<E> map(num_leaves.combine(std::plus()));
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
+      if (isec && isec->is_alive && isec->icf_leaf)
+        map.insert(compute_digest(ctx, *isec), isec.get());
+  });
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
+      if (isec && isec->is_alive && isec->icf_leaf)
+        isec->leader = map.find(compute_digest(ctx, *isec));
+  });
 }
 
 template <typename E>
@@ -425,130 +518,6 @@ static void propagate(std::span<std::vector<Digest>> digests,
   static Counter counter("icf_round");
   counter++;
 }
-
-// A concurrent hash map from digest to section. We use it to count the
-// number of distinct digests and to elect the leader section of each
-// digest's equivalence class.
-//
-// The number of distinct digests cannot exceed the number of digests,
-// so we can allocate a large enough table upfront and never need to
-// grow it.
-//
-// The map is reused across propagation rounds. Instead of clearing the
-// table at the start of each round, we stamp each slot with the round
-// number in which it was written; a slot stamped with an earlier round
-// is treated as vacant.
-//
-// Each slot consists of two 64-bit words and a section pointer. The
-// first word packs the round number, a busy bit, and 48 bits of the
-// digest; the second word holds another 64 bits. An inserter claims a
-// vacant slot by installing the first word with compare-and-swap with
-// the busy bit set, writes the second word and the pointer, and then
-// rewrites the first word with the busy bit cleared to publish the
-// slot. Since the slot index is derived from digest bits that the
-// first word doesn't contain, a successful match effectively compares
-// an entire 128-bit digest, so the map is exact under the same
-// hash-collision assumption the surrounding algorithm is built on.
-//
-// Of all sections inserted with the same digest in the same round, the
-// slot ends up pointing to the one with the lowest priority, which ICF
-// uses as the leader of the digest's equivalence class.
-template <typename E>
-class DigestMap {
-public:
-  DigestMap(i64 n) :
-    mask(bit_ceil(n * 2) - 1),
-    slots(mask + 1) {}
-
-  void next_round() {
-    if (++round == 1 << 15) {
-      // The round number wrapped around, making stale slot stamps
-      // ambiguous, so reset the table. In practice, ICF converges long
-      // before this point.
-      for (Slot &slot : slots)
-        slot.head = 0;
-      round = 1;
-    }
-  }
-
-  // Returns true if the digest was not in the table.
-  bool insert(const Digest &digest, InputSection<E> *isec) {
-    u64 hi;
-    u64 lo;
-    memcpy(&hi, digest.data(), 8);
-    memcpy(&lo, digest.data() + 8, 8);
-
-    u64 busy_bit = 1LL << 48;
-    u64 tag = hi >> 16;
-    u64 busy = (round << 49) | tag | busy_bit;
-    u64 done = (round << 49) | tag;
-
-    for (i64 idx = hi & mask;; idx = (idx + 1) & mask) {
-      Slot &slot = slots[idx];
-      u64 x = slot.head.load(std::memory_order_acquire);
-
-      // If the slot was last written in an earlier round, it's vacant;
-      // try to claim it.
-      while ((x >> 49) != round) {
-        if (slot.head.compare_exchange_weak(x, busy,
-                                            std::memory_order_acquire)) {
-          slot.rest.store(lo, std::memory_order_relaxed);
-          slot.leader.store(isec, std::memory_order_relaxed);
-          slot.head.store(done, std::memory_order_release);
-          return true;
-        }
-      }
-
-      // The slot is occupied. If it holds a different digest, try the
-      // next slot.
-      if ((x & 0xffff'ffff'ffff) != tag)
-        continue;
-
-      // The tags match; compare the digest bits in the second word,
-      // waiting for the writer to publish them if the slot is still
-      // being claimed.
-      while (x & busy_bit)
-        x = slot.head.load(std::memory_order_acquire);
-      if (slot.rest.load() != lo)
-        continue;
-
-      // The digest is already in the table; keep the slot pointing to
-      // the lowest-priority section.
-      InputSection<E> *cur = slot.leader.load();
-      while (isec->get_priority() < cur->get_priority() &&
-             !slot.leader.compare_exchange_strong(cur, isec));
-      return false;
-    }
-  }
-
-  // Returns the section associated with a digest. The digest must have
-  // been inserted in the current round, and no insertion may be running
-  // concurrently.
-  InputSection<E> *find(const Digest &digest) {
-    u64 hi;
-    u64 lo;
-    memcpy(&hi, digest.data(), 8);
-    memcpy(&lo, digest.data() + 8, 8);
-    u64 done = (round << 49) | (hi >> 16);
-
-    for (i64 idx = hi & mask;; idx = (idx + 1) & mask)
-      if (slots[idx].head == done && slots[idx].rest == lo)
-        return slots[idx].leader;
-  }
-
-private:
-  struct Slot {
-    Atomic<u64> head;
-    Atomic<u64> rest;
-    Atomic<InputSection<E> *> leader;
-  };
-
-  // Time begins in round 1 so that all-zero slots, the initial state
-  // of the table, read as vacant.
-  u64 round = 1;
-  u64 mask;
-  std::vector<Slot> slots;
-};
 
 template <typename E>
 static i64 count_num_classes(std::span<Digest> digests,
