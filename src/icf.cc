@@ -67,7 +67,6 @@
 #include "mold.h"
 #include "../lib/siphash.h"
 
-#include <array>
 #include <cstdio>
 #include <fstream>
 #include <tbb/concurrent_unordered_map.h>
@@ -77,11 +76,13 @@
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
 
-static constexpr int64_t HASH_SIZE = 16;
-
-using Digest = std::array<uint8_t, HASH_SIZE>;
-
 namespace mold {
+
+struct Digest {
+  bool operator==(const Digest &) const = default;
+  u64 hi;
+  u64 lo;
+};
 
 static u8 hmac_key[16];
 
@@ -213,7 +214,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   }
 
   Digest digest;
-  hasher.finish(digest.data());
+  hasher.finish(&digest);
   return digest;
 }
 
@@ -264,16 +265,11 @@ public:
 
   // Returns true if the digest was not in the table.
   bool insert(const Digest &digest, InputSection<E> *isec) {
-    u64 hi;
-    u64 lo;
-    memcpy(&hi, digest.data(), 8);
-    memcpy(&lo, digest.data() + 8, 8);
-
     constexpr u64 busy_bit = 1LL << 48;
-    u64 tag = hi >> 16;
+    u64 tag = digest.hi >> 16;
     u64 value = (round << 49) | tag;
 
-    for (i64 i = hi & mask;; i = (i + 1) & mask) {
+    for (i64 i = digest.hi & mask;; i = (i + 1) & mask) {
       Slot &slot = slots[i];
       u64 x = slot.hi.load(std::memory_order_acquire);
 
@@ -282,7 +278,7 @@ public:
       while ((x >> 49) != round) {
         if (slot.hi.compare_exchange_weak(x, value | busy_bit,
                                           std::memory_order_acquire)) {
-          slot.lo = lo;
+          slot.lo = digest.lo;
           slot.leader = isec;
           slot.hi.store(value, std::memory_order_release);
           return true;
@@ -299,7 +295,7 @@ public:
       // being claimed.
       while (x & busy_bit)
         x = slot.hi.load(std::memory_order_acquire);
-      if (slot.lo != lo)
+      if (slot.lo != digest.lo)
         continue;
 
       // The digest is already in the table; keep the slot pointing to
@@ -315,14 +311,9 @@ public:
   // been inserted in the current round, and no insertion may be running
   // concurrently.
   InputSection<E> *find(const Digest &digest) {
-    u64 hi;
-    u64 lo;
-    memcpy(&hi, digest.data(), 8);
-    memcpy(&lo, digest.data() + 8, 8);
-    u64 done = (round << 49) | (hi >> 16);
-
-    for (i64 i = hi & mask;; i = (i + 1) & mask)
-      if (slots[i].hi == done && slots[i].lo == lo)
+    u64 done = (round << 49) | (digest.hi >> 16);
+    for (i64 i = digest.hi & mask;; i = (i + 1) & mask)
+      if (slots[i].hi == done && slots[i].lo == digest.lo)
         return slots[i].leader;
   }
 
@@ -499,15 +490,15 @@ static void propagate(std::span<std::vector<Digest>> digests,
       return;
 
     SipHash13_128 hasher(hmac_key);
-    hasher.update(digests[2][i].data(), HASH_SIZE);
+    hasher.update(&digests[2][i], sizeof(Digest));
 
     i64 begin = edge_indices[i];
     i64 end = (i + 1 == num_digests) ? edges.size() : edge_indices[i + 1];
 
     for (i64 j : edges.subspan(begin, end - begin))
-      hasher.update(digests[slot][j].data(), HASH_SIZE);
+      hasher.update(&digests[slot][j], sizeof(Digest));
 
-    hasher.finish(digests[!slot][i].data());
+    hasher.finish(&digests[!slot][i]);
 
     // If this node has converged, skip further iterations as it will
     // yield the same hash.
