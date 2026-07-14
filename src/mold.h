@@ -577,7 +577,7 @@ public:
   // - `leader == this`: This section was retained.
   // - `leader != this`: This section was merged with another identical section.
   InputSection<E> *leader = nullptr;
-  i32 icf_idx = -1;
+  u32 icf_idx = -1;
   bool icf_eligible = false;
 
   [[no_unique_address]] InputSectionExtras<E> extra;
@@ -2519,9 +2519,7 @@ struct Context {
     std::string package_metadata;
     std::string plugin;
     std::string print_gc_sections;
-    std::string print_gc_sections_file;
     std::string print_icf_sections;
-    std::string print_icf_sections_file;
     std::string rpaths;
     std::string separate_debug_file;
     std::string soname;

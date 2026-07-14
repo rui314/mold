@@ -82,7 +82,7 @@ struct Digest {
   u64 lo;
 };
 
-static u8 hmac_key[16];
+static u8 siphash_key[16];
 
 template <typename E>
 static void uniquify_cies(Context<E> &ctx) {
@@ -135,7 +135,7 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
 
 template <typename E>
 static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
-  SipHash13_128 hasher(hmac_key);
+  SipHash13_128 hasher(siphash_key);
 
   auto hash = [&](auto val) {
     hasher.update((u8 *)&val, sizeof(val));
@@ -293,9 +293,9 @@ public:
   // been inserted in the current round, and no insertion may be running
   // concurrently.
   InputSection<E> *find(const Digest &digest) {
-    u64 done = (round << 49) | (digest.hi >> 16);
+    u64 value = (round << 49) | (digest.hi >> 16);
     for (i64 i = digest.hi & mask;; i = (i + 1) & mask)
-      if (slots[i].hi == done && slots[i].lo == digest.lo)
+      if (slots[i].hi == value && slots[i].lo == digest.lo)
         return slots[i].leader;
   }
 
@@ -347,13 +347,12 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
   // Fill `sections` contents.
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     i64 idx = indices[i];
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
-      if (isec && isec->is_alive && isec->icf_eligible)
+    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
+      if (isec && isec->is_alive && isec->icf_eligible) {
+        isec->icf_idx = idx;
         sections[idx++] = isec.get();
-  });
-
-  tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-    sections[i]->icf_idx = i;
+      }
+    }
   });
 
   return sections;
@@ -428,12 +427,11 @@ static void gather_edges(Context<E> &ctx,
           if (isec->icf_eligible)
             edges[idx++] = isec->icf_idx;
 
-    for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
-      Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-      if (InputSection<E> *isec = sym.get_input_section())
+    for (const ElfRel<E> &rel : isec.get_rels(ctx))
+      if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+          InputSection<E> *isec = sym.get_input_section())
         if (isec->icf_eligible)
           edges[idx++] = isec->icf_idx;
-    }
   });
 }
 
@@ -441,11 +439,10 @@ static void gather_edges(Context<E> &ctx,
 // digest and the current digests of the vertices it refers to. A
 // vertex's digest after the nth round is therefore a hash of its
 // unfolding into a tree of depth n.
-template <typename E>
 static void propagate(std::span<Digest> cur, std::span<Digest> next,
                       std::span<u32> edges, std::span<u32> edge_indices) {
   tbb::parallel_for((i64)0, (i64)cur.size(), [&](i64 i) {
-    SipHash13_128 hasher(hmac_key);
+    SipHash13_128 hasher(siphash_key);
     hasher.update(&cur[i], sizeof(Digest));
 
     i64 begin = edge_indices[i];
@@ -529,7 +526,7 @@ void icf_sections(Context<E> &ctx) {
   if (ctx.objs.empty())
     return;
 
-  get_random_bytes(hmac_key, sizeof(hmac_key));
+  get_random_bytes(siphash_key, sizeof(siphash_key));
 
   uniquify_cies(ctx);
 
@@ -569,7 +566,7 @@ void icf_sections(Context<E> &ctx) {
     i64 num_classes = -1;
 
     for (;;) {
-      propagate<E>(digests, scratch, edges, edge_indices);
+      propagate(digests, scratch, edges, edge_indices);
       std::swap(digests, scratch);
       i64 m = count_num_classes<E>(digests, sections, map);
       if (m == num_classes)
@@ -594,11 +591,9 @@ void icf_sections(Context<E> &ctx) {
   {
     Timer t(ctx, "update_alignment");
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
-        if (isec && isec->is_alive && isec->leader && isec->leader != isec.get()) {
+      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+        if (isec && isec->is_alive && isec->icf_removed())
           update_maximum(isec->leader->p2align, isec->p2align);
-        }
-      }
     });
   }
 
