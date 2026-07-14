@@ -467,7 +467,9 @@ static i64 propagate(std::span<std::vector<Digest>> digests,
 // is built on.
 class DigestSet {
 public:
-  DigestSet(i64 n) : mask(bit_ceil(n * 2) - 1), words(2 * (mask + 1)) {}
+  DigestSet(i64 n) :
+    mask(bit_ceil(n * 2) - 1),
+    words(2 * (mask + 1)) {}
 
   void next_round() {
     if (++round == 1 << 15) {
@@ -480,13 +482,14 @@ public:
   }
 
   bool insert(const Digest &digest) {
-    u64 hi, lo;
+    u64 hi;
+    u64 lo;
     memcpy(&hi, digest.data(), 8);
     memcpy(&lo, digest.data() + 8, 8);
 
-    constexpr u64 busy_bit = 1LL << 48;
+    u64 busy_bit = 1LL << 48;
     u64 tag = hi >> 16;
-    u64 busy = (round << 49) | busy_bit | tag;
+    u64 busy = (round << 49) | tag | busy_bit;
     u64 done = (round << 49) | tag;
 
     for (i64 idx = hi & mask;; idx = (idx + 1) & mask) {
@@ -506,7 +509,7 @@ public:
 
       // The slot is occupied. If it holds a different digest, try the
       // next slot.
-      if ((x & (busy_bit - 1)) != tag)
+      if ((x & 0xffff'ffff'ffff) != tag)
         continue;
 
       // The tags match; compare the digest bits in the second word,
