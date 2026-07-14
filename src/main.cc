@@ -704,8 +704,6 @@ int mold_main(int argc, char **argv) {
   if (ctx.arg.quick_exit)
     _exit(0);
 
-  for (std::function<void()> &fn : ctx.on_exit)
-    fn();
   ctx.checkpoint();
   return 0;
 }
