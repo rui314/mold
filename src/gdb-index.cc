@@ -509,11 +509,12 @@ static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
                             std::vector<Compunit> &cus, ObjectFile<E> &file) {
   using Offset = decltype(hdr.size);
 
+  // Compunits are sorted by offset, so we can use binary search.
   auto get_cu = [&](i64 offset) {
-    for (i64 i = 0; i < cus.size(); i++)
-      if (cus[i].offset == offset)
-        return &cus[i];
-    Fatal(ctx) << file << ": corrupted debug_info_offset";
+    auto it = ranges::lower_bound(cus, offset, {}, &Compunit::offset);
+    if (it == cus.end() || it->offset != offset)
+      Fatal(ctx) << file << ": corrupted debug_info_offset";
+    return &*it;
   };
 
   Compunit *cu = get_cu(file.debug_info->offset + hdr.debug_info_offset);
@@ -617,7 +618,7 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
   // Uniquify elements because GCC 11 seems to emit one record for each
   // comdat group which results in having a lot of duplicate records.
   tbb::parallel_for_each(cus, [](Compunit &cu) {
-    ranges::stable_sort(cu.nametypes);
+    ranges::sort(cu.nametypes);
     remove_duplicates(cu.nametypes);
   });
 
@@ -675,8 +676,10 @@ void write_gdb_index(Context<E> &ctx) {
     for (NameType &nt : cu.nametypes) {
       MapValue *ent;
       bool inserted;
-      std::tie(ent, inserted) = map.insert(nt.name, nt.hash,
-                                           MapValue{gdb_hash(nt.name)});
+      std::tie(ent, inserted) = map.insert(nt.name, nt.hash, {});
+
+      if (inserted)
+        ent->gdb_hash = gdb_hash(nt.name);
       ent->count++;
       cu.entries.push_back(ent);
     }
