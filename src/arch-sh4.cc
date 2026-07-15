@@ -47,9 +47,10 @@
 //    with a piece of code to store the address of .got to %r12.
 //    We can use the register in our PLT for position-independent output.
 //
-//  - Even though it uses the RELA-type relocations, relocation addends
-//    are stored not to the r_addend field but to the relocated section
-//    contents for some reason. Therefore, it's effectively REL.
+//  - Even though it uses RELA-type relocations, object files store
+//    addends not in the r_addend field but in the relocated section
+//    contents. Dynamic relocations, however, follow the usual RELA
+//    convention.
 //
 //  - It looks like the ecosystem has bit-rotted. Some tests, especially
 //    one using C++ exceptions, don't pass even with GNU ld.
@@ -66,8 +67,8 @@ namespace mold {
 
 using E = MOLD_TARGET;
 
-// Even though SH-4 uses RELA-type relocations, addends are stored to
-// relocated places for some reason.
+// Even though SH-4 uses RELA-type relocations, addends are stored in
+// the relocated places for some reason.
 template <>
 i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
   switch (rel.r_type) {

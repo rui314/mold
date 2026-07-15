@@ -1833,34 +1833,6 @@ struct ElfRel<SPARC64> {
   ib64 r_addend;
 };
 
-template <>
-struct ElfRel<SH4LE> {
-  ElfRel() = default;
-
-  // Addend is ignored except for base relocations because even though
-  // SH4 is RELA, r_addend is ignored in most cases and works as if it
-  // were REL.
-  ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
-    : r_offset(offset), r_type(type), r_sym(sym), r_addend(sym ? 0 : addend) {}
-
-  ul32 r_offset;
-  u8 r_type;
-  ul24 r_sym;
-  il32 r_addend;
-};
-
-template <>
-struct ElfRel<SH4BE> {
-  ElfRel() = default;
-  ElfRel(u64 offset, u32 type, u32 sym, i64 addend)
-    : r_offset(offset), r_sym(sym), r_type(type), r_addend(sym ? 0 : addend) {}
-
-  ub32 r_offset;
-  ub24 r_sym;
-  u8 r_type;
-  ib32 r_addend;
-};
-
 //
 // Machine descriptions
 //

@@ -3257,7 +3257,12 @@ void RelocSection<E>::copy_buf(Context<E> &ctx) {
       if constexpr (is_riscv<E> || is_loongarch<E>)
         r_offset -= get_r_delta(isec, rel.r_offset);
 
-      buf[j++] = ElfRel<E>(r_offset, rel.r_type, symidx, addend);
+      // SH4 object files store addends in the relocated places rather
+      // than in r_addend, and the relocation records we emit here are
+      // meant to be consumed as if they were in an object file, so we
+      // follow that convention.
+      buf[j++] = ElfRel<E>(r_offset, rel.r_type, symidx,
+                           is_sh4<E> ? 0 : addend);
 
       if (ctx.arg.relocatable) {
         u8 *base = ctx.buf + isec.output_section->shdr.sh_offset + isec.offset;
