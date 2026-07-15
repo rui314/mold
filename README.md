@@ -54,14 +54,14 @@ recent version of a C++ compiler and a C++ standard library. We recommend GCC
 
 To install build dependencies, run `./install-build-deps.sh` in this
 directory. It will detect your Linux distribution and attempt to install the
-necessary packages. You may need to run it as root.
+necessary packages.
 
 ### Compile mold
 
 ```shell
 git clone --branch stable https://github.com/rui314/mold.git
 cd mold
-./install-build-deps.sh
+sudo ./install-build-deps.sh
 cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=c++ -B build
 cmake --build build -j$(nproc)
 sudo cmake --build build --target install
