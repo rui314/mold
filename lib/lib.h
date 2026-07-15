@@ -610,12 +610,28 @@ private:
 class Glob {
 public:
   bool add(std::string_view pat, i64 val);
-  bool empty() const { return multi_glob.empty() && aho_corasick.empty(); }
+  bool empty() const { return is_empty; }
   i64 find(std::string_view str);
 
 private:
   std::once_flag once;
+  bool is_empty = true;
   bool is_compiled = false;
+
+  // Patterns that need only a literal string comparison are kept out
+  // of the automaton-based matchers below, which scan the entire input
+  // string per query. Real version scripts consist almost entirely of
+  // such patterns (e.g. `local: *;` or `v8dbg_*;`), and we match them
+  // against every defined symbol name.
+  struct LiteralPattern {
+    std::string pat;
+    i64 value;
+  };
+
+  i64 match_all = -1;                    // "*"
+  std::vector<LiteralPattern> exacts;    // "foo"
+  std::vector<LiteralPattern> prefixes;  // "foo*"
+  std::vector<LiteralPattern> suffixes;  // "*foo"
 
   MultiGlob multi_glob;
   AhoCorasick aho_corasick;

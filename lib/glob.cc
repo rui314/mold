@@ -232,9 +232,37 @@ i64 MultiGlob::find(std::string_view str) {
   return -1;
 }
 
+static bool is_literal(std::string_view pat) {
+  return pat.find_first_of("*?[\\") == pat.npos;
+}
+
 bool Glob::add(std::string_view pat, i64 val) {
   assert(val >= 0);
   assert(!is_compiled);
+  is_empty = false;
+
+  // Match-all, exact, prefix and suffix patterns are handled with
+  // plain string comparisons instead of the matchers below, which
+  // have to scan the entire input string on every query.
+  if (pat == "*") {
+    match_all = std::max(match_all, val);
+    return true;
+  }
+
+  if (is_literal(pat)) {
+    exacts.push_back({std::string(pat), val});
+    return true;
+  }
+
+  if (pat.ends_with('*') && is_literal(pat.substr(0, pat.size() - 1))) {
+    prefixes.push_back({std::string(pat.substr(0, pat.size() - 1)), val});
+    return true;
+  }
+
+  if (pat.starts_with('*') && is_literal(pat.substr(1))) {
+    suffixes.push_back({std::string(pat.substr(1)), val});
+    return true;
+  }
 
   // If the pattern requires only a single substring search, the
   // Aho-Corasick algorithm is even faster than our glob matcher.
@@ -245,12 +273,38 @@ bool Glob::add(std::string_view pat, i64 val) {
 
 i64 Glob::find(std::string_view str) {
   std::call_once(once, [&] {
+    // If the same name was added more than once, keep only the entry
+    // with the largest value, as find() returns the largest match.
+    // Sorting by (name, negated value) places that entry first in
+    // each run of duplicates, which is the one unique() keeps.
+    ranges::sort(exacts, {}, [](const LiteralPattern &p) {
+      return std::pair<std::string_view, i64>(p.pat, -p.value);
+    });
+
+    auto dup = ranges::unique(exacts, {}, &LiteralPattern::pat);
+    exacts.erase(dup.begin(), dup.end());
+
     multi_glob.compile();
     aho_corasick.compile();
     is_compiled = true;
   });
 
-  return std::max(multi_glob.find(str), aho_corasick.find(str));
+  i64 val = match_all;
+
+  auto it = ranges::lower_bound(exacts, str, {}, &LiteralPattern::pat);
+  if (it != exacts.end() && it->pat == str)
+    val = std::max(val, it->value);
+
+  for (const LiteralPattern &p : prefixes)
+    if (val < p.value && str.starts_with(p.pat))
+      val = p.value;
+
+  for (const LiteralPattern &p : suffixes)
+    if (val < p.value && str.ends_with(p.pat))
+      val = p.value;
+
+  val = std::max(val, multi_glob.find(str));
+  return std::max(val, aho_corasick.find(str));
 }
 
 } // namespace mold
