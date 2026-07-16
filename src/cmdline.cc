@@ -371,19 +371,40 @@ static std::string_view string_trim(std::string_view str) {
   return str.substr(0, pos + 1);
 }
 
-static std::vector<std::string> add_dashes(std::string name) {
-  // Single-letter option
-  if (name.size() == 1)
-    return {"-" + name};
+// This function matches a command line argument against an option
+// name and, on success, returns the remainder of the argument. For
+// example, matching "--foo=bar" against "foo" yields "=bar", and
+// matching "--foo" against "foo" yields an empty string. On
+// mismatch, it returns std::nullopt.
+//
+// Multi-letter option names can be preceded by either a single dash
+// or double dashes except ones starting with "o", which must be
+// preceded by double dashes. For example, "-omagic" is interpreted
+// as "-o magic". If you really want to specify the "omagic" option,
+// you have to pass "--omagic". Single-letter option names take a
+// single dash.
+static std::optional<std::string_view>
+match_option(std::string_view arg, std::string_view name) {
+  assert(arg.starts_with('-'));
+  arg.remove_prefix(1);
 
-  // Multi-letter linker options can be preceded by either a single
-  // dash or double dashes except ones starting with "o", which must
-  // be preceded by double dashes. For example, "-omagic" is
-  // interpreted as "-o magic". If you really want to specify the
-  // "omagic" option, you have to pass "--omagic".
-  if (name[0] == 'o')
-    return {"--" + name};
-  return {"-" + name, "--" + name};
+  // Single-letter option
+  if (name.size() == 1) {
+    if (arg.starts_with(name))
+      return arg.substr(1);
+    return {};
+  }
+
+  // Options beginning with "o" require double dashes
+  if (name[0] == 'o' && !arg.starts_with('-'))
+    return {};
+
+  if (arg.starts_with('-'))
+    arg.remove_prefix(1);
+
+  if (arg.starts_with(name))
+    return arg.substr(name.size());
+  return {};
 }
 
 template <typename E>
@@ -657,71 +678,82 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
   //   we write addends to relocated places.
   ctx.arg.apply_dynamic_relocs = !is_sparc<E> && !is_riscv<E>;
 
-  auto read_arg = [&](std::string name) {
-    for (const std::string &opt : add_dashes(name)) {
-      if (args[0] == opt) {
-        if (args.size() == 1)
-          Fatal(ctx) << "option -" << name << ": argument missing";
-        arg = args[1];
-        args = args.subspan(2);
-        return true;
-      }
+  auto read_arg = [&](std::string_view name) {
+    std::optional<std::string_view> rest = match_option(args[0], name);
+    if (!rest)
+      return false;
 
-      std::string prefix = (name.size() == 1) ? opt : opt + "=";
-      if (args[0].starts_with(prefix)) {
-        arg = args[0].substr(prefix.size());
-        args = args.subspan(1);
-        return true;
-      }
+    // An option and its argument are either separate command line
+    // arguments or a single one, as in "-o foo" vs. "-ofoo" or
+    // "--output foo" vs. "--output=foo".
+    if (rest->empty()) {
+      if (args.size() == 1)
+        Fatal(ctx) << "option -" << name << ": argument missing";
+      arg = args[1];
+      args = args.subspan(2);
+      return true;
+    }
+
+    if (name.size() == 1) {
+      arg = *rest;
+      args = args.subspan(1);
+      return true;
+    }
+
+    if (rest->starts_with('=')) {
+      arg = rest->substr(1);
+      args = args.subspan(1);
+      return true;
     }
     return false;
   };
 
-  auto read_eq = [&](std::string name) {
-    for (const std::string &opt : add_dashes(name)) {
-      if (args[0].starts_with(opt + "=")) {
-        arg = args[0].substr(opt.size() + 1);
-        args = args.subspan(1);
-        return true;
-      }
+  auto read_eq = [&](std::string_view name) {
+    std::optional<std::string_view> rest = match_option(args[0], name);
+    if (rest && rest->starts_with('=')) {
+      arg = rest->substr(1);
+      args = args.subspan(1);
+      return true;
     }
     return false;
   };
 
-  auto read_flag = [&](std::string name) {
-    for (const std::string &opt : add_dashes(name)) {
-      if (args[0] == opt) {
-        args = args.subspan(1);
-        return true;
-      }
+  auto read_flag = [&](std::string_view name) {
+    if (match_option(args[0], name) == "") {
+      args = args.subspan(1);
+      return true;
     }
     return false;
   };
 
-  auto read_z_flag = [&](std::string name) {
+  auto read_z_flag = [&](std::string_view name) {
     if (args.size() >= 2 && args[0] == "-z" && args[1] == name) {
       args = args.subspan(2);
       return true;
     }
 
-    if (!args.empty() && args[0] == "-z" + name) {
+    if (args[0].starts_with("-z") && args[0].substr(2) == name) {
       args = args.subspan(1);
       return true;
     }
     return false;
   };
 
-  auto read_z_arg = [&](std::string name) {
-    if (args.size() >= 2 && args[0] == "-z" && args[1].starts_with(name + "=")) {
+  auto read_z_arg = [&](std::string_view name) {
+    if (args.size() >= 2 && args[0] == "-z" && args[1].starts_with(name) &&
+        args[1].substr(name.size()).starts_with('=')) {
       arg = args[1].substr(name.size() + 1);
       args = args.subspan(2);
       return true;
     }
 
-    if (!args.empty() && args[0].starts_with("-z" + name + "=")) {
-      arg = args[0].substr(name.size() + 3);
-      args = args.subspan(1);
-      return true;
+    if (args[0].starts_with("-z")) {
+      std::string_view s = args[0].substr(2);
+      if (s.starts_with(name) && s.substr(name.size()).starts_with('=')) {
+        arg = s.substr(name.size() + 1);
+        args = args.subspan(1);
+        return true;
+      }
     }
     return false;
   };
