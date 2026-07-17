@@ -1608,11 +1608,20 @@ public:
   open(Context<E> &ctx, std::string path, i64 filesize, int perm);
 
   virtual void close(Context<E> &ctx) = 0;
-  virtual ~OutputFile() { free(buf2); }
+  virtual ~OutputFile() { free(trailer); }
+
+  // Returns a buffer for `size` bytes of additional data to be
+  // appended to the end of the output file. We use it to append
+  // .gdb_index, whose size is not known until all other sections
+  // have been written. By default, appended data is buffered on
+  // the heap and written out on close().
+  virtual u8 *extend(Context<E> &ctx, i64 size) {
+    trailer = (u8 *)realloc(trailer, trailer_size + size);
+    trailer_size += size;
+    return trailer + trailer_size - size;
+  }
 
   u8 *buf = nullptr;
-  u8 *buf2 = nullptr;
-  i64 buf2_size = 0;
   std::string path;
   int fd = -1;
   i64 filesize = 0;
@@ -1622,6 +1631,9 @@ public:
 protected:
   OutputFile(std::string path, i64 filesize, bool is_mmapped)
     : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
+
+  u8 *trailer = nullptr;
+  i64 trailer_size = 0;
 };
 
 template <typename E>
@@ -1656,8 +1668,8 @@ public:
     }
 
     fwrite(this->buf, this->filesize, 1, fp);
-    if (this->buf2)
-      fwrite(this->buf2, this->buf2_size, 1, fp);
+    if (this->trailer)
+      fwrite(this->trailer, this->trailer_size, 1, fp);
     fclose(fp);
   }
 
@@ -1678,7 +1690,7 @@ public:
 // gdb-index.cc
 //
 
-template <typename E> void write_gdb_index(Context<E> &ctx);
+template <typename E> std::span<u8> write_gdb_index(Context<E> &ctx);
 
 //
 // input-files.cc

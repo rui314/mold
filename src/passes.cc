@@ -3527,23 +3527,20 @@ void write_separate_debug_file(Context<E> &ctx) {
 
   copy_chunks(ctx);
 
+  std::span<u8> gdb_index;
   if (ctx.gdb_index)
-    write_gdb_index(ctx);
+    gdb_index = write_gdb_index(ctx);
 
   // Reverse-compute a CRC32 value so that the CRC32 checksum embedded to
   // the .gnu_debuglink section in the main executable matches with the
   // debug info file's CRC32 checksum.
   u32 crc = compute_crc32(0, ctx.buf, ctx.output_file->filesize);
-
-  u8 *&buf2 = ctx.output_file->buf2;
-  i64 &buf2_size = ctx.output_file->buf2_size;
-  if (buf2)
-    crc = compute_crc32(crc, buf2, buf2_size);
+  if (!gdb_index.empty())
+    crc = compute_crc32(crc, gdb_index.data(), gdb_index.size());
 
   std::vector<u8> trailer = crc32_solve(crc, ctx.gnu_debuglink->crc32);
-  buf2 = (u8 *)realloc(buf2, buf2_size + trailer.size());
-  memcpy(buf2 + buf2_size, trailer.data(), trailer.size());
-  buf2_size += trailer.size();
+  memcpy(ctx.output_file->extend(ctx, trailer.size()),
+         trailer.data(), trailer.size());
   ctx.output_file->close(ctx);
 }
 

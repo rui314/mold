@@ -635,7 +635,7 @@ std::span<u8> get_buffer(Context<E> &ctx, Chunk<E> *chunk) {
 }
 
 template <typename E>
-void write_gdb_index(Context<E> &ctx) {
+std::span<u8> write_gdb_index(Context<E> &ctx) {
   Timer t(ctx, "write_gdb_index");
 
   // Find debug info sections
@@ -654,7 +654,7 @@ void write_gdb_index(Context<E> &ctx) {
   }
 
   if (ctx.debug_info.empty())
-    return;
+    return {};
 
   // Read debug info
   std::vector<Compunit> cus = read_compunits(ctx);
@@ -714,12 +714,7 @@ void write_gdb_index(Context<E> &ctx) {
   }
 
   i64 bufsize = hdr.const_pool_offset + offset;
-
-  // Allocate an output buffer. We use malloc instead of vector to
-  // avoid zero-initializing the entire buffer.
-  ctx.output_file->buf2 = (u8 *)malloc(bufsize);
-  ctx.output_file->buf2_size = bufsize;
-  u8 *buf = ctx.output_file->buf2;
+  u8 *buf = ctx.output_file->extend(ctx, bufsize);
 
   // Write a section header
   memcpy(buf, &hdr, sizeof(hdr));
@@ -802,10 +797,12 @@ void write_gdb_index(Context<E> &ctx) {
     ctx.gdb_index->shdr.sh_size = bufsize;
     ctx.shdr->copy_buf(ctx);
   }
+
+  return {buf, (size_t)bufsize};
 }
 
 using E = MOLD_TARGET;
 
-template void write_gdb_index(Context<E> &);
+template std::span<u8> write_gdb_index(Context<E> &);
 
 } // namespace mold

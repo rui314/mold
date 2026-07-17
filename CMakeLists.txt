@@ -309,6 +309,13 @@ endif()
 check_symbol_exists(madvise sys/mman.h HAVE_MADVISE)
 check_symbol_exists(uname sys/utsname.h HAVE_UNAME)
 
+# glibc declares fallocate only under _GNU_SOURCE. C++ compilers
+# predefine it on Linux, but this check runs the C compiler, which
+# does not.
+set(CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
+check_symbol_exists(fallocate fcntl.h HAVE_FALLOCATE)
+unset(CMAKE_REQUIRED_DEFINITIONS)
+
 # Create a .cc file containing the current git hash for `mold --version`.
 add_custom_target(git_hash
   COMMAND ${CMAKE_COMMAND}
