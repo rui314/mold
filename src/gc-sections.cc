@@ -37,7 +37,8 @@ static bool should_keep(const InputSection<E> &isec) {
 // of a given name when we encounter such a reference during marking.
 template <typename E>
 using StartStopMap =
-  tbb::concurrent_unordered_multimap<std::string_view, InputSection<E> *>;
+  tbb::concurrent_unordered_map<std::string_view,
+                                tbb::concurrent_vector<InputSection<E> *>>;
 
 template <typename E>
 static StartStopMap<E> build_start_stop_map(Context<E> &ctx) {
@@ -46,7 +47,7 @@ static StartStopMap<E> build_start_stop_map(Context<E> &ctx) {
     for (std::unique_ptr<InputSection<E>> &isec : file->sections)
       if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
           is_c_identifier(isec->name))
-        map.insert({isec->name, isec.get()});
+        map[isec->name].push_back(isec.get());
   });
   return map;
 }
@@ -164,13 +165,24 @@ static void visit_section(Context<E> &ctx, InputSection<E> *isec,
 
     mark(sym.get_input_section());
 
-    // A reference to __start_<name> or __stop_<name> keeps every section
-    // named <name> alive, mirroring how those symbols are defined.
-    if (std::string_view sec = start_stop_name(sym.name());
-        !sec.empty()) {
-      auto [i, end] = start_stop_map.equal_range(sec);
-      for (; i != end; ++i)
-        mark(i->second);
+    // A reference to __start_<name> or __stop_<name> keeps every
+    // section named <name> alive, mirroring how those symbols are
+    // defined. A single such reference can keep an enormous number of
+    // sections alive, so we spread the fanout over threads instead
+    // of marking the sections one by one.
+    if (std::string_view name = start_stop_name(sym.name());
+        !name.empty()) {
+      if (auto it = start_stop_map.find(name);
+          it != start_stop_map.end()) {
+        // Mark and visit the sections with a nested parallel loop.
+        // As in mark() below, a section added to a feeder has
+        // already been marked, so a feeder's loop body must visit
+        // it unconditionally.
+        tbb::parallel_for_each(it->second, [&](InputSection<E> *isec) {
+          if (mark_section(isec))
+            visit_section(ctx, isec, feeder, 0, start_stop_map);
+        });
+      }
     }
   }
 
