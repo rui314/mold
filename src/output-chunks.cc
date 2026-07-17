@@ -989,36 +989,47 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 std::vector<ElfRel<E>>
 OutputSection<E>::collect_dynrels(Context<E> &ctx) const {
-  std::vector<ElfRel<E>> rels;
+  // A single output section such as .data.rel.ro can account for
+  // most of an output's dynamic relocations, so we process its
+  // absolute relocations in parallel shards.
+  constexpr i64 shard_size = 65536;
+  i64 nshards = abs_rels.size() / shard_size + 1;
+  std::vector<std::vector<ElfRel<E>>> shards(nshards);
 
-  for (const AbsRel<E> &r : abs_rels) {
-    Symbol<E> &sym = *r.sym;
-    u64 S = sym.get_addr(ctx);
-    u64 A = r.addend;
-    u64 P = this->shdr.sh_addr + r.isec->offset + r.offset;
+  tbb::parallel_for((i64)0, nshards, [&](i64 idx) {
+    i64 begin = idx * shard_size;
+    i64 end = std::min<i64>(begin + shard_size, abs_rels.size());
 
-    if constexpr (is_riscv<E> || is_loongarch<E>) {
-      i64 delta = get_r_delta(*r.isec, r.offset);
-      P -= delta;
+    for (const AbsRel<E> &r : std::span(abs_rels).subspan(begin, end - begin)) {
+      Symbol<E> &sym = *r.sym;
+      u64 S = sym.get_addr(ctx);
+      u64 A = r.addend;
+      u64 P = this->shdr.sh_addr + r.isec->offset + r.offset;
+
+      if constexpr (is_riscv<E> || is_loongarch<E>) {
+        i64 delta = get_r_delta(*r.isec, r.offset);
+        P -= delta;
+      }
+
+      switch (r.kind) {
+      case ABS_REL_NONE:
+        break;
+      case ABS_REL_BASEREL:
+        shards[idx].emplace_back(P, E::R_RELATIVE, 0, S + A);
+        break;
+      case ABS_REL_IFUNC:
+        if constexpr (supports_ifunc<E>)
+          shards[idx].emplace_back(P, E::R_IRELATIVE, 0,
+                                   sym.get_addr(ctx, NO_PLT) + A);
+        break;
+      case ABS_REL_DYNREL:
+        shards[idx].emplace_back(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
+        break;
+      }
     }
+  });
 
-    switch (r.kind) {
-    case ABS_REL_NONE:
-      break;
-    case ABS_REL_BASEREL:
-      rels.emplace_back(P, E::R_RELATIVE, 0, S + A);
-      break;
-    case ABS_REL_IFUNC:
-      if constexpr (supports_ifunc<E>)
-        rels.emplace_back(P, E::R_IRELATIVE, 0, sym.get_addr(ctx, NO_PLT) + A);
-      break;
-    case ABS_REL_DYNREL:
-      rels.emplace_back(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
-      break;
-    }
-  }
-
-  return rels;
+  return flatten(shards);
 }
 
 template <typename E>
