@@ -84,32 +84,38 @@ public:
       ::close(fd2);
   }
 
-  // Extend the file and memory-map the new range so that the caller
-  // can fill the appended data in place. The new range gets its own
-  // mapping because growing the first one with mremap could move it,
-  // invalidating pointers into it that our caller holds.
+  // Extend the file and grow its memory mapping so that the caller
+  // can fill the appended data in place. mremap may move the
+  // mapping; we update ctx.buf, and the output buffer is normally
+  // accessed as ctx.buf plus an offset, but a caller that holds raw
+  // pointers into the buffer across this call must rebase them.
   u8 *extend(Context<E> &ctx, i64 size) override {
-    i64 offset = align_down(this->filesize, sysconf(_SC_PAGESIZE));
+    i64 mapsize = this->filesize;
 
-    if (ftruncate(this->fd, this->filesize + size) == -1)
+    if (ftruncate(this->fd, mapsize + size) == -1)
       Fatal(ctx) << "ftruncate failed: " << errno_string();
 
 #if HAVE_FALLOCATE
     if (struct statfs fs;
         fstatfs(this->fd, &fs) || fs.f_type != TMPFS_MAGIC)
-      fallocate(this->fd, 0, this->filesize, size);
+      fallocate(this->fd, 0, mapsize, size);
 #endif
 
-    extension_size = this->filesize + size - offset;
-    extension = (u8 *)mmap(nullptr, extension_size, PROT_READ | PROT_WRITE,
-                           MAP_SHARED, this->fd, offset);
-    if (extension == MAP_FAILED)
-      Fatal(ctx) << this->path << ": mmap failed: " << errno_string();
+    u8 *buf =
+      (u8 *)mremap(this->buf, mapsize, mapsize + size, MREMAP_MAYMOVE);
+    if (buf == MAP_FAILED)
+      Fatal(ctx) << this->path << ": mremap failed: " << errno_string();
+
+    this->filesize += size;
+    this->buf = buf;
+    ctx.buf = buf;
+    mold::output_buffer_start = buf;
+    mold::output_buffer_end = buf + mapsize + size;
 
 #ifdef MADV_HUGEPAGE
-    madvise(extension, extension_size, MADV_HUGEPAGE);
+    madvise(buf + mapsize, size, MADV_HUGEPAGE);
 #endif
-    return extension + (this->filesize - offset);
+    return buf + mapsize;
   }
 
   void close(Context<E> &ctx) override {
@@ -117,8 +123,6 @@ public:
 
     if (!this->is_unmapped)
       munmap(this->buf, this->filesize);
-    if (extension)
-      munmap(extension, extension_size);
     ::close(this->fd);
 
     // If an output file already exists, open a file and then remove it.
@@ -135,8 +139,6 @@ public:
 
 private:
   int fd2 = -1;
-  u8 *extension = nullptr;
-  i64 extension_size = 0;
 };
 
 template <typename E>
@@ -202,17 +204,29 @@ void LockingOutputFile<E>::resize(Context<E> &ctx, i64 filesize) {
 }
 
 template <typename E>
+u8 *LockingOutputFile<E>::extend(Context<E> &ctx, i64 size) {
+  i64 mapsize = this->filesize;
+
+  if (ftruncate(this->fd, mapsize + size) == -1)
+    Fatal(ctx) << "ftruncate failed: " << errno_string();
+
+  u8 *buf =
+    (u8 *)mremap(this->buf, mapsize, mapsize + size, MREMAP_MAYMOVE);
+  if (buf == MAP_FAILED)
+    Fatal(ctx) << this->path << ": mremap failed: " << errno_string();
+
+  this->filesize += size;
+  this->buf = buf;
+  ctx.buf = buf;
+  mold::output_buffer_start = buf;
+  mold::output_buffer_end = buf + mapsize + size;
+  return buf + mapsize;
+}
+
+template <typename E>
 void LockingOutputFile<E>::close(Context<E> &ctx) {
   if (!this->is_unmapped)
     munmap(this->buf, this->filesize);
-
-  if (this->trailer) {
-    FILE *out = fdopen(this->fd, "w");
-    fseek(out, 0, SEEK_END);
-    fwrite(this->trailer, this->trailer_size, 1, out);
-    fclose(out);
-  }
-
   ::close(this->fd);
 }
 

@@ -1608,18 +1608,14 @@ public:
   open(Context<E> &ctx, std::string path, i64 filesize, int perm);
 
   virtual void close(Context<E> &ctx) = 0;
-  virtual ~OutputFile() { free(trailer); }
+  virtual ~OutputFile() = default;
 
-  // Returns a buffer for `size` bytes of additional data to be
-  // appended to the end of the output file. We use it to append
-  // .gdb_index, whose size is not known until all other sections
-  // have been written. By default, appended data is buffered on
-  // the heap and written out on close().
-  virtual u8 *extend(Context<E> &ctx, i64 size) {
-    trailer = (u8 *)realloc(trailer, trailer_size + size);
-    trailer_size += size;
-    return trailer + trailer_size - size;
-  }
+  // Appends `size` bytes to the output file and returns a pointer to
+  // the newly-allocated space, bumping `filesize` accordingly. We use
+  // it for .gdb_index, whose size is not known until all other
+  // sections have been written. The new space is zero-initialized.
+  // `buf` and `ctx.buf` may move as a result of this call.
+  virtual u8 *extend(Context<E> &ctx, i64 size) = 0;
 
   u8 *buf = nullptr;
   std::string path;
@@ -1631,18 +1627,31 @@ public:
 protected:
   OutputFile(std::string path, i64 filesize, bool is_mmapped)
     : path(path), filesize(filesize), is_mmapped(is_mmapped) {}
-
-  u8 *trailer = nullptr;
-  i64 trailer_size = 0;
 };
 
 template <typename E>
 class MallocOutputFile : public OutputFile<E> {
 public:
   MallocOutputFile(Context<E> &ctx, std::string path, i64 filesize, int perm)
-    : OutputFile<E>(path, filesize, false), ptr(new u8[filesize]),
-      perm(perm) {
-    this->buf = ptr.get();
+    : OutputFile<E>(path, filesize, false), perm(perm) {
+    this->buf = (u8 *)calloc(filesize, 1);
+    if (!this->buf)
+      Fatal(ctx) << "calloc failed: " << errno_string();
+  }
+
+  ~MallocOutputFile() { free(this->buf); }
+
+  u8 *extend(Context<E> &ctx, i64 size) override {
+    this->buf = (u8 *)realloc(this->buf, this->filesize + size);
+    if (!this->buf)
+      Fatal(ctx) << "realloc failed: " << errno_string();
+
+    u8 *space = this->buf + this->filesize;
+    memset(space, 0, size);
+
+    this->filesize += size;
+    ctx.buf = this->buf;
+    return space;
   }
 
   void close(Context<E> &ctx) override {
@@ -1668,13 +1677,10 @@ public:
     }
 
     fwrite(this->buf, this->filesize, 1, fp);
-    if (this->trailer)
-      fwrite(this->trailer, this->trailer_size, 1, fp);
     fclose(fp);
   }
 
 private:
-  std::unique_ptr<u8[]> ptr;
   int perm;
 };
 
@@ -1683,6 +1689,7 @@ class LockingOutputFile : public OutputFile<E> {
 public:
   LockingOutputFile(Context<E> &ctx, std::string path, int perm);
   void resize(Context<E> &ctx, i64 filesize);
+  u8 *extend(Context<E> &ctx, i64 size) override;
   void close(Context<E> &ctx) override;
 };
 
@@ -1690,7 +1697,7 @@ public:
 // gdb-index.cc
 //
 
-template <typename E> std::span<u8> write_gdb_index(Context<E> &ctx);
+template <typename E> void write_gdb_index(Context<E> &ctx);
 
 //
 // input-files.cc

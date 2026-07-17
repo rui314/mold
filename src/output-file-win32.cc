@@ -39,22 +39,36 @@ public:
       CloseHandle(handle);
   }
 
+  u8 *extend(Context<E> &ctx, i64 size) override {
+    UnmapViewOfFile(this->buf);
+
+    HANDLE map = CreateFileMapping(handle, nullptr, PAGE_READWRITE, 0,
+                                   this->filesize + size, nullptr);
+    if (!map)
+      Fatal(ctx) << this->path << ": CreateFileMapping failed: "
+                 << GetLastError();
+
+    this->buf = (u8 *)MapViewOfFile(map, FILE_MAP_WRITE, 0, 0,
+                                    this->filesize + size);
+    if (!this->buf)
+      Fatal(ctx) << this->path << ": MapViewOfFile failed: " << GetLastError();
+
+    CloseHandle(map);
+
+    u8 *space = this->buf + this->filesize;
+    memset(space, 0, size);
+
+    this->filesize += size;
+    ctx.buf = this->buf;
+    mold::output_buffer_start = this->buf;
+    mold::output_buffer_end = this->buf + this->filesize;
+    return space;
+  }
+
   void close(Context<E> &ctx) override {
     Timer t(ctx, "close_file");
 
     UnmapViewOfFile(this->buf);
-
-    if (this->trailer) {
-      if (SetFilePointer(handle, 0, nullptr, FILE_END) == INVALID_SET_FILE_POINTER)
-        Fatal(ctx) << this->path << ": SetFilePointer failed: "
-                   << GetLastError();
-
-      DWORD written;
-      if (!WriteFile(handle, this->trailer, this->trailer_size, &written,
-                     nullptr))
-        Fatal(ctx) << this->path << ": WriteFile failed: " << GetLastError();
-    }
-
     CloseHandle(handle);
     handle = INVALID_HANDLE_VALUE;
   }
@@ -105,6 +119,11 @@ LockingOutputFile<E>::LockingOutputFile(Context<E> &ctx, std::string path,
 
 template <typename E>
 void LockingOutputFile<E>::resize(Context<E> &ctx, i64 filesize) {}
+
+template <typename E>
+u8 *LockingOutputFile<E>::extend(Context<E> &ctx, i64 size) {
+  return nullptr;
+}
 
 template <typename E>
 void LockingOutputFile<E>::close(Context<E> &ctx) {}

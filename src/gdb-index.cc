@@ -635,7 +635,7 @@ std::span<u8> get_buffer(Context<E> &ctx, Chunk<E> *chunk) {
 }
 
 template <typename E>
-std::span<u8> write_gdb_index(Context<E> &ctx) {
+void write_gdb_index(Context<E> &ctx) {
   Timer t(ctx, "write_gdb_index");
 
   // Find debug info sections
@@ -654,7 +654,7 @@ std::span<u8> write_gdb_index(Context<E> &ctx) {
   }
 
   if (ctx.debug_info.empty())
-    return {};
+    return;
 
   // Read debug info
   std::vector<Compunit> cus = read_compunits(ctx);
@@ -797,12 +797,10 @@ std::span<u8> write_gdb_index(Context<E> &ctx) {
     ctx.gdb_index->shdr.sh_size = bufsize;
     ctx.shdr->copy_buf(ctx);
   }
-
-  return {buf, (size_t)bufsize};
 }
 
 using E = MOLD_TARGET;
 
-template std::span<u8> write_gdb_index(Context<E> &);
+template void write_gdb_index(Context<E> &);
 
 } // namespace mold
