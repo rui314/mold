@@ -1237,12 +1237,18 @@ static bool should_write_to_local_symtab(Context<E> &ctx, Symbol<E> &sym) {
   if (sym.get_type() == STT_SECTION)
     return false;
 
-  // Local symbols are discarded if --discard-local is given or they
-  // are in a mergeable section. I *believe* we exclude symbols in
-  // mergeable sections because (1) there are too many and (2) they are
-  // merged, so their origins shouldn't matter, but I don't really
-  // know the rationale. Anyway, this is the behavior of the
-  // traditional linkers.
+  // Temporary local symbols such as .L.str.42 are compiler-internal
+  // and numerous; a Chromium debug build contains more than two
+  // million of them, adding ~180 MiB of .symtab and .strtab. They are
+  // not referenced by DWARF, so we discard them by default, as lld
+  // does. GNU ld keeps them unless -X is given; --discard-none
+  // restores that behavior.
+  //
+  // Even with --discard-none, we discard temporary symbols in
+  // mergeable sections. I *believe* they are excluded because (1)
+  // there are too many and (2) they are merged, so their origins
+  // shouldn't matter, but I don't really know the rationale. Anyway,
+  // this is the behavior of the traditional linkers.
   if (sym.name().starts_with(".L") || sym.name() == "L0\001") {
     if (ctx.arg.discard_locals)
       return false;

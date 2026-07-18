@@ -2449,7 +2449,7 @@ struct Context {
     bool demangle = true;
     bool detach = true;
     bool discard_all = false;
-    bool discard_locals = false;
+    bool discard_locals = true;
     bool dynamic_list_data = false;
     bool eh_frame_hdr = true;
     bool emit_relocs = false;

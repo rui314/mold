@@ -375,7 +375,14 @@ but as `-o magic`.
   Discard temporary local symbols to reduce the sizes of the symbol table and
   the string table. Temporary local symbols are local symbols starting with
   `.L`. Compilers usually generate such symbols for unnamed program elements
-  such as string literals or floating-point literals.
+  such as string literals or floating-point literals. This is the default;
+  use `--discard-none` to keep temporary local symbols.
+
+* `--discard-none`:
+  Keep all local symbols in the symbol table, including temporary ones
+  starting with `.L`, except ones in mergeable sections. This restores the
+  default behavior of GNU ld. `mold` and `ld.lld` discard temporary local
+  symbols by default.
 
 * `-e` _symbol_, `--entry`=_symbol_:
 

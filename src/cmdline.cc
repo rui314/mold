@@ -47,7 +47,7 @@ Options:
                               Set DT_DEPAUDIT to the specified value
   -S, --strip-debug           Strip .debug_* sections
   -T FILE, --script FILE      Read linker script
-  -X, --discard-locals        Discard temporary local symbols
+  -X, --discard-locals        Discard temporary local symbols (default)
   -e SYMBOL, --entry SYMBOL   Set program entry point
   -f SHLIB, --auxiliary SHLIB Set DT_AUXILIARY to the specified value
   -h LIBNAME, --soname LIBNAME
@@ -98,6 +98,7 @@ Options:
     --no-demangle
   --detach                    Create separate debug info file in the background (default)
     --no-detach
+  --discard-none              Keep all local symbols in the symbol table
   --enable-new-dtags          Emit DT_RUNPATH for --rpath (default)
     --disable-new-dtags       Emit DT_RPATH for --rpath
   --execute-only              Make executable segments unreadable
@@ -658,11 +659,6 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.rpaths += arg;
     }
   };
-
-  // RISC-V and LoongArch object files contains lots of local symbols,
-  // so by default we discard them. This is compatible with GNU ld.
-  if constexpr (is_riscv<E> || is_loongarch<E>)
-    ctx.arg.discard_locals = true;
 
   // We generally don't need to write addends to relocated places if the
   // relocation type is RELA because RELA records contain addends.
@@ -1382,6 +1378,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.discard_all = true;
     } else if (read_flag("discard-locals") || read_flag("X")) {
       ctx.arg.discard_locals = true;
+    } else if (read_flag("discard-none")) {
+      ctx.arg.discard_all = false;
+      ctx.arg.discard_locals = false;
     } else if (read_flag("strip-all") || read_flag("s")) {
       ctx.arg.strip_all = true;
     } else if (read_flag("strip-debug") || read_flag("S")) {

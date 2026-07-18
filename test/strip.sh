@@ -14,17 +14,18 @@ readelf --symbols $t/exe > $t/log
 grep -F _start $t/log
 grep -F foo $t/log
 grep -F bar $t/log
+not grep -F .L.baz $t/log
 
-if [[ $MACHINE != riscv* ]] && [[ $MACHINE != loongarch* ]]; then
-  grep -F .L.baz $t/log
-fi
+./mold -o $t/exe $t/a.o --discard-none
+readelf --symbols $t/exe > $t/log
+grep -F _start $t/log
+grep -F foo $t/log
+grep -F bar $t/log
+grep -F .L.baz $t/log
 
 ./mold -o $t/exe $t/a.o -strip-all
 readelf --symbols $t/exe > $t/log
 not grep -F _start $t/log
 not grep -F foo $t/log
 not grep -F bar $t/log
-
-if [[ $MACHINE != riscv* ]] && [[ $MACHINE != loongarch* ]]; then
-  not grep -F .L.baz $t/log
-fi
+not grep -F .L.baz $t/log
