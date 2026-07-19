@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "May 2026" ""
+.TH "MOLD" "1" "July 2026" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -193,7 +193,10 @@ Omit \fB\.debug_*\fR sections from the output file\.
 Read linker script from \fIfile\fR\.
 .TP
 \fB\-X\fR, \fB\-\-discard\-locals\fR
-Discard temporary local symbols to reduce the sizes of the symbol table and the string table\. Temporary local symbols are local symbols starting with \fB\.L\fR\. Compilers usually generate such symbols for unnamed program elements such as string literals or floating\-point literals\.
+Discard temporary local symbols to reduce the sizes of the symbol table and the string table\. Temporary local symbols are local symbols starting with \fB\.L\fR\. Compilers usually generate such symbols for unnamed program elements such as string literals or floating\-point literals\. This is the default; use \fB\-\-discard\-none\fR to keep temporary local symbols\.
+.TP
+\fB\-\-discard\-none\fR
+Keep all local symbols in the symbol table, including temporary ones starting with \fB\.L\fR, except ones in mergeable sections\. This restores the default behavior of GNU ld\. \fBmold\fR and \fBld\.lld\fR discard temporary local symbols by default\.
 .TP
 \fB\-e\fR \fIsymbol\fR, \fB\-\-entry\fR=\fIsymbol\fR:
 
