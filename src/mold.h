@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -1730,7 +1731,7 @@ template <typename E>
 class MergeableSection {
 public:
   MergeableSection(Context<E> &ctx, MergedSection<E> &parent,
-                   std::unique_ptr<InputSection<E>> &isec);
+                   InputSection<E> *&isec);
 
   void split_contents(Context<E> &ctx);
   void resolve_contents(Context<E> &ctx);
@@ -1739,7 +1740,7 @@ public:
 
   MergedSection<E> &parent;
   u8 p2align = 0;
-  std::unique_ptr<InputSection<E>> input_section;
+  InputSection<E> *input_section = nullptr;
   std::vector<SectionFragment<E> *> fragments;
 
 private:
@@ -1859,7 +1860,15 @@ public:
   InputSection<E> *get_section(const ElfSym<E> &esym);
 
   std::string archive_name;
-  std::vector<std::unique_ptr<InputSection<E>>> sections;
+
+  // InputSection objects are allocated from this pool and referenced
+  // through `sections`. A null entry means the section does not exist
+  // or has been discarded. We pool the allocations because a large
+  // link creates tens of millions of InputSections, and allocating
+  // them individually is measurably slow.
+  std::deque<InputSection<E>> sections_pool;
+  std::vector<InputSection<E> *> sections;
+
   std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
   std::vector<ElfShdr<E>> elf_sections2;
   std::vector<CieRecord<E>> cies;
@@ -1883,7 +1892,7 @@ public:
   i64 fde_size = 0;
 
   // For ICF
-  std::unique_ptr<InputSection<E>> llvm_addrsig;
+  InputSection<E> *llvm_addrsig = nullptr;
 
   // For .gdb_index
   InputSection<E> *debug_info = nullptr;
@@ -3237,7 +3246,7 @@ inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
 
 template <typename E>
 inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
-  return sections[get_shndx(esym)].get();
+  return sections[get_shndx(esym)];
 }
 
 template <typename E>

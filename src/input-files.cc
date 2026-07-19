@@ -433,16 +433,18 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (ctx.arg.oformat_binary && !(shdr.sh_flags & SHF_ALLOC))
         continue;
 
-      this->sections[i] = std::make_unique<InputSection<E>>(ctx, *this, i);
-      InputSection<E> *isec = this->sections[i].get();
+      this->sections[i] = &this->sections_pool.emplace_back(ctx, *this, i);
+      InputSection<E> *isec = this->sections[i];
 
       // Save .llvm_addrsig for --icf=safe.
       if (shdr.sh_type == SHT_LLVM_ADDRSIG && !ctx.arg.relocatable) {
         // sh_link should be the index of the symbol table section.
         // Tools that mutates the symbol table, such as objcopy or `ld -r`
         // tend to not preserve sh_link, so we ignore such section.
-        if (shdr.sh_link != 0)
-          llvm_addrsig = std::move(this->sections[i]);
+        if (shdr.sh_link != 0) {
+          llvm_addrsig = this->sections[i];
+          this->sections[i] = nullptr;
+        }
         continue;
       }
 
@@ -506,7 +508,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     const ElfShdr<E> &shdr = this->elf_sections[i];
     if (shdr.sh_type == (E::is_rela ? SHT_RELA : SHT_REL) ||
         shdr.sh_type == SHT_CREL) {
-      if (std::unique_ptr<InputSection<E>> &target = sections[shdr.sh_info]) {
+      if (InputSection<E> *target = sections[shdr.sh_info]) {
         assert(target->relsec_idx == -1);
         target->relsec_idx = i;
       }
@@ -515,10 +517,10 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
   // Attach .arm.exidx sections to their corresponding sections
   if constexpr (is_arm32<E>)
-    for (std::unique_ptr<InputSection<E>> &isec : this->sections)
+    for (InputSection<E> *isec : this->sections)
       if (isec && isec->shdr().sh_type == SHT_ARM_EXIDX)
-        if (InputSection<E> *target = sections[isec->shdr().sh_link].get())
-          target->extra.exidx = isec.get();
+        if (InputSection<E> *target = sections[isec->shdr().sh_link])
+          target->extra.exidx = isec;
 }
 
 // .eh_frame contains data records explaining how to handle exceptions.
@@ -758,7 +760,7 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     sym.sym_idx = i;
 
     if (!esym.is_abs())
-      sym.set_input_section(sections[get_shndx(esym)].get());
+      sym.set_input_section(sections[get_shndx(esym)]);
   }
 
   this->symbols.resize(this->elf_syms.size());
@@ -817,7 +819,7 @@ template <typename E>
 void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   if constexpr (is_riscv<E> || is_loongarch<E>) {
     for (i64 i = 1; i < sections.size(); i++) {
-      std::unique_ptr<InputSection<E>> &isec = sections[i];
+      InputSection<E> *&isec = sections[i];
       if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
         continue;
 
@@ -832,7 +834,7 @@ template <typename E>
 void ObjectFile<E>::convert_mergeable_sections(Context<E> &ctx) {
   // Convert InputSections to MergeableSections
   for (i64 i = 0; i < this->sections.size(); i++) {
-    InputSection<E> *isec = this->sections[i].get();
+    InputSection<E> *isec = this->sections[i];
     if (!isec || isec->sh_size == 0 || isec->relsec_idx != -1)
       continue;
 
@@ -924,7 +926,7 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
 
   // Compute the size of frag_syms.
   i64 nfrag_syms = 0;
-  for (std::unique_ptr<InputSection<E>> &isec : sections)
+  for (InputSection<E> *isec : sections)
     if (isec && (isec->shdr().sh_flags & SHF_ALLOC))
       for (ElfRel<E> &r : isec->get_rels(ctx))
         if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
@@ -938,7 +940,7 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
   // create a new dummy non-section symbol and redirect the relocation
   // to the newly created symbol.
   i64 idx = 0;
-  for (std::unique_ptr<InputSection<E>> &isec : sections) {
+  for (InputSection<E> *isec : sections) {
     if (isec && (isec->shdr().sh_flags & SHF_ALLOC)) {
       for (ElfRel<E> &r : isec->get_rels(ctx)) {
         const ElfSym<E> &esym = this->elf_syms[r.r_sym];
@@ -1150,7 +1152,7 @@ ObjectFile<E>::mark_live_objects(Context<E> &ctx,
 template <typename E>
 void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations against seciton contents
-  for (std::unique_ptr<InputSection<E>> &isec : sections)
+  for (InputSection<E> *isec : sections)
     if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC))
       isec->scan_relocations(ctx);
 
@@ -1221,14 +1223,14 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     elf_sections2.push_back(shdr);
 
     i64 idx = this->elf_sections.size() + elf_sections2.size() - 1;
-    auto isec = std::make_unique<InputSection<E>>(ctx, *this, idx);
+    InputSection<E> *isec = &sections_pool.emplace_back(ctx, *this, idx);
 
-    sym.set_input_section(isec.get());
+    sym.set_input_section(isec);
     sym.value = 0;
     sym.sym_idx = i;
     sym.ver_idx = ctx.default_version;
     sym.is_weak = false;
-    sections.push_back(std::move(isec));
+    sections.push_back(isec);
   }
 }
 

@@ -920,7 +920,7 @@ void rewrite_endbr(Context<E> &ctx) {
   // Write back endbr64 instructions if they are referred to by address-taking
   // relocations.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+    for (InputSection<E> *isec : file->sections) {
       if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC)) {
         for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
           if (!is_func_call_rel(rel)) {

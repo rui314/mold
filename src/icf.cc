@@ -325,7 +325,7 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
   std::vector<i64> indices(ctx.objs.size() + 1);
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
+    for (InputSection<E> *isec : ctx.objs[i]->sections) {
       if (!isec || !isec->is_alive)
         continue;
 
@@ -347,10 +347,10 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
   // Fill `sections` contents.
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     i64 idx = indices[i];
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections) {
+    for (InputSection<E> *isec : ctx.objs[i]->sections) {
       if (isec && isec->is_alive && isec->icf_eligible) {
         isec->icf_idx = idx;
-        sections[idx++] = isec.get();
+        sections[idx++] = isec;
       }
     }
   });
@@ -477,12 +477,12 @@ static void print_icf_sections(Context<E> &ctx) {
   tbb::concurrent_unordered_multimap<InputSection<E> *, InputSection<E> *> map;
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+    for (InputSection<E> *isec : file->sections) {
       if (isec && isec->is_alive && isec->leader) {
-        if (isec.get() == isec->leader)
-          leaders.push_back(isec.get());
+        if (isec == isec->leader)
+          leaders.push_back(isec);
         else
-          map.insert({isec->leader, isec.get()});
+          map.insert({isec->leader, isec});
       }
     }
   });
@@ -591,7 +591,7 @@ void icf_sections(Context<E> &ctx) {
   {
     Timer t(ctx, "update_alignment");
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+      for (InputSection<E> *isec : file->sections)
         if (isec && isec->is_alive && isec->icf_removed())
           update_maximum(isec->leader->p2align, isec->p2align);
     });
@@ -604,7 +604,7 @@ void icf_sections(Context<E> &ctx) {
     Timer t(ctx, "sweep");
     static Counter eliminated("icf_eliminated");
     tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+      for (InputSection<E> *isec : file->sections) {
         if (isec && isec->is_alive && isec->icf_removed()) {
           isec->kill();
           eliminated++;

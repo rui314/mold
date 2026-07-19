@@ -485,9 +485,9 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 }
 
 static InputSection<E> *get_opd_section(ObjectFile<E> &file) {
-  for (std::unique_ptr<InputSection<E>> &isec : file.sections)
+  for (InputSection<E> *isec : file.sections)
     if (isec && isec->name == ".opd")
-      return isec.get();
+      return isec;
   return nullptr;
 }
 
@@ -594,8 +594,8 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
     ranges::stable_sort(opd_syms, {}, &OpdSymbol::r_offset);
 
     // Rewrite relocations so that they directly refer to .opd.
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
-      if (!isec || !isec->is_alive || isec.get() == opd)
+    for (InputSection<E> *isec : file->sections) {
+      if (!isec || !isec->is_alive || isec == opd)
         continue;
 
       for (ElfRel<E> &r : isec->get_rels(ctx)) {

@@ -386,7 +386,7 @@ void resolve_symbols(Context<E> &ctx) {
       for (ComdatGroupRef<E> &ref : file->comdat_groups)
         if (ref.group->owner != file->priority)
           for (u32 i : ref.members)
-            if (InputSection<E> *isec = file->sections[i].get())
+            if (InputSection<E> *isec = file->sections[i])
               isec->is_alive = false;
   });
 
@@ -645,7 +645,7 @@ void create_output_sections(Context<E> &ctx) {
     // It makes a noticeable difference if we have millions of input sections.
     MapType &cache = caches.local();
 
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+    for (InputSection<E> *isec : file->sections) {
       if (!isec || !isec->is_alive)
         continue;
 
@@ -701,9 +701,9 @@ void create_output_sections(Context<E> &ctx) {
     osec->members_vec.resize(ctx.objs.size());
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (std::unique_ptr<InputSection<E>> &isec : ctx.objs[i]->sections)
+    for (InputSection<E> *isec : ctx.objs[i]->sections)
       if (isec && isec->output_section)
-        isec->output_section->members_vec[i].push_back(isec.get());
+        isec->output_section->members_vec[i].push_back(isec);
   });
 
   // Compute section alignment
@@ -1022,7 +1022,7 @@ R"(# This is an output of the mold linker's --print-dependencies option.
   };
 
   for (ObjectFile<E> *file : ctx.objs) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+    for (InputSection<E> *isec : file->sections) {
       if (!isec)
         continue;
 
@@ -1166,7 +1166,7 @@ void convert_zero_to_bss(Context<E> &ctx) {
     if (!file->is_reachable)
       return;
 
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+    for (InputSection<E> *isec : file->sections) {
       if (isec && isec->is_alive &&
           isec->shdr().sh_type == SHT_PROGBITS &&
           (isec->shdr().sh_flags & SHF_ALLOC) &&
@@ -2419,7 +2419,7 @@ void compute_address_significance(Context<E> &ctx) {
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // If .llvm_addrsig is available, use it.
-    if (InputSection<E> *sec = file->llvm_addrsig.get()) {
+    if (InputSection<E> *sec = file->llvm_addrsig) {
       u8 *p = (u8 *)sec->contents.data();
       u8 *end = p + sec->contents.size();
       while (p != end) {
@@ -2431,7 +2431,7 @@ void compute_address_significance(Context<E> &ctx) {
     }
 
     // Otherwise, infer address significance.
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+    for (InputSection<E> *isec : file->sections) {
       if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
         continue;
 
@@ -3583,7 +3583,7 @@ void show_stats(Context<E> &ctx) {
     static Counter undefined("undefined_syms");
     undefined += obj->symbols.size() - obj->first_global;
 
-    for (std::unique_ptr<InputSection<E>> &sec : obj->sections) {
+    for (InputSection<E> *sec : obj->sections) {
       if (!sec || !sec->is_alive)
         continue;
 

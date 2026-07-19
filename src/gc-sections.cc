@@ -44,10 +44,10 @@ template <typename E>
 static StartStopMap<E> build_start_stop_map(Context<E> &ctx) {
   StartStopMap<E> map;
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections)
+    for (InputSection<E> *isec : file->sections)
       if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC) &&
           is_c_identifier(isec->name))
-        map[isec->name].push_back(isec.get());
+        map[isec->name].push_back(isec);
   });
   return map;
 }
@@ -79,7 +79,7 @@ collect_root_set(Context<E> &ctx) {
 
   // Add sections that are not subject to garbage collection.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (std::unique_ptr<InputSection<E>> &isec : file->sections) {
+    for (InputSection<E> *isec : file->sections) {
       if (!isec || !isec->is_alive)
         continue;
 
@@ -93,7 +93,7 @@ collect_root_set(Context<E> &ctx) {
       }
 
       if (should_keep(*isec))
-        enqueue_section(isec.get());
+        enqueue_section(isec);
     }
   });
 
@@ -213,10 +213,10 @@ static void sweep(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     ObjectFile<E> &file = *ctx.objs[i];
 
-    for (std::unique_ptr<InputSection<E>> &isec : file.sections) {
+    for (InputSection<E> *isec : file.sections) {
       if (isec && isec->is_alive && !isec->is_visited) {
         isec->kill();
-        sections[i].push_back(isec.get());
+        sections[i].push_back(isec);
       }
     }
   });
