@@ -214,10 +214,20 @@ void LockingOutputFile<E>::resize(Context<E> &ctx, i64 filesize) {
   if (ftruncate(this->fd, filesize) == -1)
     Fatal(ctx) << "ftruncate failed: " << errno_string();
 
-  this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
+  // As in MemoryMappedOutputFile, we map the file with twice as much
+  // address space as its size so that extend() can grow the file into
+  // the mapping in place.
+  vasize = filesize * 2;
+  this->buf = (u8 *)mmap(nullptr, vasize, PROT_READ | PROT_WRITE,
                          MAP_SHARED, this->fd, 0);
-  if (this->buf == MAP_FAILED)
-    Fatal(ctx) << this->path << ": mmap failed: " << errno_string();
+
+  if (this->buf == MAP_FAILED) {
+    vasize = filesize;
+    this->buf = (u8 *)mmap(nullptr, filesize, PROT_READ | PROT_WRITE,
+                           MAP_SHARED, this->fd, 0);
+    if (this->buf == MAP_FAILED)
+      Fatal(ctx) << this->path << ": mmap failed: " << errno_string();
+  }
 
   this->filesize = filesize;
   mold::output_buffer_start = this->buf;
@@ -231,23 +241,30 @@ u8 *LockingOutputFile<E>::extend(Context<E> &ctx, i64 size) {
   if (ftruncate(this->fd, mapsize + size) == -1)
     Fatal(ctx) << "ftruncate failed: " << errno_string();
 
-  u8 *buf =
-    (u8 *)mremap(this->buf, mapsize, mapsize + size, MREMAP_MAYMOVE);
-  if (buf == MAP_FAILED)
-    Fatal(ctx) << this->path << ": mremap failed: " << errno_string();
+  if (mapsize + size > vasize) {
+    // The appended data does not fit in the mapping. Map the grown
+    // file again, moving the buffer.
+    munmap(this->buf, vasize);
+    vasize = mapsize + size;
+
+    this->buf = (u8 *)mmap(nullptr, vasize, PROT_READ | PROT_WRITE,
+                           MAP_SHARED, this->fd, 0);
+    if (this->buf == MAP_FAILED)
+      Fatal(ctx) << this->path << ": mmap failed: " << errno_string();
+
+    ctx.buf = this->buf;
+    mold::output_buffer_start = this->buf;
+  }
 
   this->filesize += size;
-  this->buf = buf;
-  ctx.buf = buf;
-  mold::output_buffer_start = buf;
-  mold::output_buffer_end = buf + mapsize + size;
-  return buf + mapsize;
+  mold::output_buffer_end = this->buf + mapsize + size;
+  return this->buf + mapsize;
 }
 
 template <typename E>
 void LockingOutputFile<E>::close(Context<E> &ctx) {
   if (!this->is_unmapped)
-    munmap(this->buf, this->filesize);
+    munmap(this->buf, vasize);
   ::close(this->fd);
 }
 

@@ -1692,6 +1692,10 @@ public:
   void resize(Context<E> &ctx, i64 filesize);
   u8 *extend(Context<E> &ctx, i64 size) override;
   void close(Context<E> &ctx) override;
+
+private:
+  // Size of the file mapping, which may extend past the end of the file.
+  i64 vasize = 0;
 };
 
 //
