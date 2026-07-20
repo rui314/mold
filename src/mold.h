@@ -1974,7 +1974,43 @@ struct ReaderContext {
   bool in_lib = false;
   bool static_ = false;
   bool whole_archive = false;
-  tbb::task_group *tg = nullptr;
+
+  // The position of the file currently being read in the command
+  // line. We read input files in parallel, so files are not read in
+  // the command line order; instead, we record each file's position
+  // when it's found and sort files by position afterwards.
+  //
+  // Positions are hierarchical: the n-th file found inside another
+  // file, such as an archive member or a file named by a GROUP linker
+  // script command, gets its parent file's position extended with n.
+  // Comparing positions lexicographically thus gives the command line
+  // order.
+  std::vector<u32> pos;
+
+  // The number of files found so far in the current file.
+  u32 num_children = 0;
+
+  // Returns a context for the next file found inside the current file.
+  ReaderContext next_child() {
+    ReaderContext child = *this;
+    child.pos.push_back(num_children++);
+    child.num_children = 0;
+    return child;
+  }
+};
+
+// A file to read along with the reader state at its command line
+// position. parse_nonpositional_args() creates one ReaderJob per
+// input file argument; `name` is a path or, if `is_lib` is set, a
+// library name to search for. read_input_files() additionally
+// enqueues archive members as jobs in an already-opened form, with
+// `mf` and `archive_name` set instead.
+struct ReaderJob {
+  ReaderContext rctx;
+  std::string name;
+  bool is_lib = false;
+  MappedFile *mf = nullptr;
+  std::string archive_name;
 };
 
 struct DynamicPattern {
@@ -2131,7 +2167,7 @@ template <typename E>
 std::vector<std::string_view> expand_response_files(Context<E> &ctx, char **argv);
 
 template <typename E>
-std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
+std::vector<ReaderJob> parse_nonpositional_args(Context<E> &ctx);
 
 //
 // passes.cc
@@ -2587,6 +2623,12 @@ struct Context {
 
   // Reader context
   i64 file_priority = 10000;
+
+  // Input files with their command line positions, in the
+  // nondeterministic order in which the parallel file reader found
+  // them. read_input_files() sorts them by position to construct
+  // `objs` and `dsos`.
+  tbb::concurrent_vector<std::pair<std::vector<u32>, InputFile<E> *>> unsorted_input_files;
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;

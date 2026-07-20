@@ -21,8 +21,8 @@ check_file_compatibility(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
 }
 
 template <typename E>
-static ObjectFile<E> *new_object_file(Context<E> &ctx, ReaderContext &rctx,
-                                      MappedFile *mf, std::string archive_name) {
+static void new_object_file(Context<E> &ctx, ReaderContext &rctx,
+                            MappedFile *mf, std::string archive_name) {
   static Counter count("parsed_objs");
   count++;
 
@@ -30,83 +30,87 @@ static ObjectFile<E> *new_object_file(Context<E> &ctx, ReaderContext &rctx,
 
   ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, archive_name);
   ctx.obj_pool.emplace_back(file);
-  file->priority = ctx.file_priority++;
   file->as_needed =
     rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
 
-  rctx.tg->run([file, &ctx] { file->parse(ctx); });
-  if (ctx.arg.trace)
-    Out(ctx) << "trace: " << *file;
-  return file;
+  file->parse(ctx);
+  ctx.unsorted_input_files.push_back({rctx.pos, file});
 }
 
 template <typename E>
-static ObjectFile<E> *new_lto_obj(Context<E> &ctx, ReaderContext &rctx,
-                                  MappedFile *mf, std::string archive_name) {
+static void new_lto_obj(Context<E> &ctx, ReaderContext &rctx,
+                        MappedFile *mf, std::string archive_name) {
   static Counter count("parsed_lto_objs");
   count++;
 
   if (ctx.arg.ignore_ir_file.count(mf->get_identifier()))
-    return nullptr;
+    return;
 
   ObjectFile<E> *file = read_lto_object(ctx, mf);
   if (!file)
-    return nullptr;
+    return;
 
-  file->priority = ctx.file_priority++;
   file->archive_name = archive_name;
   file->as_needed =
     rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
 
-  if (ctx.arg.trace)
-    Out(ctx) << "trace: " << *file;
-  return file;
+  ctx.unsorted_input_files.push_back({rctx.pos, file});
 }
 
 template <typename E>
-static SharedFile<E> *
-new_shared_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
+static void new_shared_file(Context<E> &ctx, ReaderContext &rctx,
+                            MappedFile *mf) {
   check_file_compatibility(ctx, rctx, mf);
 
   SharedFile<E> *file = new SharedFile<E>(ctx, mf);
   ctx.dso_pool.emplace_back(file);
-  file->priority = ctx.file_priority++;
   file->as_needed = rctx.as_needed;
 
-  rctx.tg->run([file, &ctx] { file->parse(ctx); });
-  if (ctx.arg.trace)
-    Out(ctx) << "trace: " << *file;
-  return file;
+  file->parse(ctx);
+  ctx.unsorted_input_files.push_back({rctx.pos, file});
 }
 
+// Reads a file inside an archive.
+template <typename E>
+static void read_archive_member(Context<E> &ctx, ReaderContext &rctx,
+                                MappedFile *mf, std::string archive_name) {
+  switch (get_file_type(ctx, mf)) {
+  case FileType::ELF_OBJ:
+    new_object_file(ctx, rctx, mf, archive_name);
+    break;
+  case FileType::GCC_LTO_OBJ:
+  case FileType::LLVM_BITCODE:
+    new_lto_obj(ctx, rctx, mf, archive_name);
+    break;
+  case FileType::ELF_DSO:
+    Warn(ctx) << archive_name << "(" << mf->name
+              << "): shared object file in an archive is ignored";
+    break;
+  default:
+    break;
+  }
+}
+
+// Reads the given file, which is located at rctx.pos in the command
+// line. If the file is a container, i.e. an archive file or a linker
+// script, the files in it are read in place, recursively.
+//
+// read_input_files() reads top-level files with this function too but
+// overrides the container cases to read archive members in parallel.
 template <typename E>
 void read_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
   switch (get_file_type(ctx, mf)) {
   case FileType::ELF_OBJ:
-    ctx.objs.push_back(new_object_file(ctx, rctx, mf, ""));
+    new_object_file(ctx, rctx, mf, "");
     return;
   case FileType::ELF_DSO:
-    ctx.dsos.push_back(new_shared_file(ctx, rctx, mf));
+    new_shared_file(ctx, rctx, mf);
     return;
   case FileType::AR:
   case FileType::THIN_AR:
     for (MappedFile *child : read_archive_members(ctx, mf)) {
-      switch (get_file_type(ctx, child)) {
-      case FileType::ELF_OBJ:
-        ctx.objs.push_back(new_object_file(ctx, rctx, child, mf->name));
-        break;
-      case FileType::GCC_LTO_OBJ:
-      case FileType::LLVM_BITCODE:
-        if (ObjectFile<E> *file = new_lto_obj(ctx, rctx, child, mf->name))
-          ctx.objs.push_back(file);
-        break;
-      case FileType::ELF_DSO:
-        Warn(ctx) << mf->name << "(" << child->name
-                  << "): shared object file in an archive is ignored";
-        break;
-      default:
-        break;
-      }
+      ReaderContext rctx2 = rctx.next_child();
+      read_archive_member(ctx, rctx2, child, mf->name);
     }
     return;
   case FileType::TEXT:
@@ -114,8 +118,7 @@ void read_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
     return;
   case FileType::GCC_LTO_OBJ:
   case FileType::LLVM_BITCODE:
-    if (ObjectFile<E> *file = new_lto_obj(ctx, rctx, mf, ""))
-      ctx.objs.push_back(file);
+    new_lto_obj(ctx, rctx, mf, "");
     return;
   default:
     Fatal(ctx) << mf->name << ": unknown file type";
@@ -124,35 +127,23 @@ void read_file(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
 
 template <typename E>
 static std::string_view
-detect_machine_type(Context<E> &ctx, std::vector<std::string> args) {
-  for (ReaderContext rctx; const std::string &arg : args) {
-    if (arg == "--Bstatic") {
-      rctx.static_ = true;
-    } else if (arg == "--Bdynamic") {
-      rctx.static_ = false;
-    } else if (!arg.starts_with('-')) {
-      if (MappedFile *mf = open_file(ctx, arg))
+detect_machine_type(Context<E> &ctx, std::span<ReaderJob> jobs) {
+  for (ReaderJob &job : jobs)
+    if (!job.is_lib)
+      if (MappedFile *mf = open_file(ctx, job.name))
         if (get_file_type(ctx, mf) != FileType::TEXT)
-          if (std::string_view target = get_machine_type(ctx, rctx, mf);
+          if (std::string_view target = get_machine_type(ctx, job.rctx, mf);
               !target.empty())
             return target;
-    }
-  }
 
-  for (ReaderContext rctx; const std::string &arg : args) {
-    if (arg == "--Bstatic") {
-      rctx.static_ = true;
-    } else if (arg == "--Bdynamic") {
-      rctx.static_ = false;
-    } else if (!arg.starts_with('-')) {
-      if (MappedFile *mf = open_file(ctx, arg))
+  for (ReaderJob &job : jobs)
+    if (!job.is_lib)
+      if (MappedFile *mf = open_file(ctx, job.name))
         if (get_file_type(ctx, mf) == FileType::TEXT)
           if (std::string_view target =
-              Script(ctx, rctx, mf).get_script_output_type();
+              Script(ctx, job.rctx, mf).get_script_output_type();
               !target.empty())
             return target;
-    }
-  }
 
   Fatal(ctx) << "-m option is missing";
 }
@@ -194,67 +185,113 @@ MappedFile *find_library(Context<E> &ctx, ReaderContext &rctx, std::string name)
   Fatal(ctx) << "library not found: " << name;
 }
 
+// Reads all input files.
+//
+// Reading input files is I/O- and CPU-intensive, and a large program
+// can easily consist of tens of thousands of them, so we want to read
+// files in parallel. The command line, on the other hand, is
+// inherently sequential: options such as --as-needed or
+// --whole-archive apply to the files after them, and a file's
+// priority for symbol resolution is its position in the command line.
+//
+// We reconcile the two as follows: the command line parser has
+// already recorded the reader state and the position for each file
+// argument in its ReaderJob. We open and read files in parallel and
+// then sort the files we've found back into the command line order to
+// assign priorities.
 template <typename E>
-static void read_input_files(Context<E> &ctx, std::span<std::string> args) {
+static void read_input_files(Context<E> &ctx, std::vector<ReaderJob> &jobs) {
   Timer t(ctx, "read_input_files");
 
-  ReaderContext rctx;
-  std::vector<ReaderContext> stack;
-  std::unordered_set<std::string_view> visited;
+  // Open and read files in parallel. Archive files are expanded into
+  // one job per member so that members are read in parallel too.
+  //
+  // Linker scripts are the exception to the parallelism: they can
+  // modify the context, e.g. by defining symbol versions, so we only
+  // collect them here and parse them after this loop, one at a time
+  // and in the command line order, to keep their effects
+  // deterministic. Scripts given as input files are rare and small,
+  // such as the GROUP file that glibc installs as libc.so, so the
+  // lost parallelism doesn't matter.
+  //
+  // Parsing scripts late assumes that no script directive affects how
+  // command line arguments after the script are read. That holds for
+  // the directives we currently support: a script can only add input
+  // files, whose positions order them correctly, and define symbol
+  // versions or symbols, which are not used until after this
+  // function. If we add a directive that doesn't satisfy this, such
+  // as SEARCH_DIR, which affects how -l arguments after it are
+  // resolved, this scheme needs to be revisited.
+  tbb::concurrent_vector<ReaderJob> scripts;
 
-  tbb::task_group tg;
-  rctx.tg = &tg;
+  tbb::parallel_for_each(jobs, [&](ReaderJob &job,
+                                   tbb::feeder<ReaderJob> &feeder) {
+    ReaderContext &rctx = job.rctx;
 
-  while (!args.empty()) {
-    std::string_view arg = args[0];
-    args = args.subspan(1);
-
-    if (arg == "--as-needed") {
-      rctx.as_needed = true;
-    } else if (arg == "--no-as-needed") {
-      rctx.as_needed = false;
-    } else if (arg == "--whole-archive") {
-      rctx.whole_archive = true;
-    } else if (arg == "--no-whole-archive") {
-      rctx.whole_archive = false;
-    } else if (arg == "--Bstatic") {
-      rctx.static_ = true;
-    } else if (arg == "--Bdynamic") {
-      rctx.static_ = false;
-    } else if (arg == "--start-lib") {
-      rctx.in_lib = true;
-    } else if (arg == "--end-lib") {
-      rctx.in_lib = false;
-    } else if (arg == "--push-state") {
-      stack.push_back(rctx);
-    } else if (arg == "--pop-state") {
-      if (stack.empty())
-        Fatal(ctx) << "no state pushed before popping";
-      rctx = stack.back();
-      stack.pop_back();
-    } else if (arg.starts_with("-l")) {
-      arg = arg.substr(2);
-      if (visited.contains(arg))
-        continue;
-      visited.insert(arg);
-
-      MappedFile *mf = find_library(ctx, rctx, std::string(arg));
-      mf->given_fullpath = false;
-      read_file(ctx, rctx, mf);
-    } else {
-      read_file(ctx, rctx, must_open_file(ctx, std::string(arg)));
+    // An archive member is enqueued in an already-opened form by the
+    // job that read its archive file.
+    if (!job.archive_name.empty()) {
+      read_archive_member(ctx, rctx, job.mf, job.archive_name);
+      return;
     }
+
+    // Everything else is a command line argument that we need to open.
+    MappedFile *mf;
+    if (job.is_lib) {
+      mf = find_library(ctx, rctx, job.name);
+      mf->given_fullpath = false;
+    } else {
+      mf = must_open_file(ctx, job.name);
+    }
+
+    switch (get_file_type(ctx, mf)) {
+    case FileType::AR:
+    case FileType::THIN_AR:
+      for (MappedFile *child : read_archive_members(ctx, mf)) {
+        ReaderJob job2;
+        job2.rctx = rctx.next_child();
+        job2.mf = child;
+        job2.archive_name = mf->name;
+        feeder.add(std::move(job2));
+      }
+      break;
+    case FileType::TEXT:
+      job.mf = mf;
+      scripts.push_back(std::move(job));
+      break;
+    default:
+      read_file(ctx, rctx, mf);
+    }
+  });
+
+  // Parse linker scripts and read the files they name.
+  ranges::sort(scripts, {}, [](const ReaderJob &job) {
+    return job.rctx.pos;
+  });
+
+  for (ReaderJob &job : scripts)
+    Script(ctx, job.rctx, job.mf).parse_linker_script();
+
+  // Sort the files into the command line order and assign priorities.
+  ranges::sort(ctx.unsorted_input_files, {},
+               &std::pair<std::vector<u32>, InputFile<E> *>::first);
+
+  for (auto &pair : ctx.unsorted_input_files) {
+    InputFile<E> *file = pair.second;
+    file->priority = ctx.file_priority++;
+    if (ctx.arg.trace)
+      Out(ctx) << "trace: " << *file;
+
+    if (file->is_dso)
+      ctx.dsos.push_back((SharedFile<E> *)file);
+    else
+      ctx.objs.push_back((ObjectFile<E> *)file);
   }
+
+  ctx.unsorted_input_files.clear();
 
   if (ctx.objs.empty() && ctx.dsos.empty())
     Fatal(ctx) << "no input files";
-
-  if (rctx.static_ || ctx.arg.relocatable) {
-    ctx.arg.static_ = true;
-    ctx.arg.dynamic_linker = "";
-  }
-
-  tg.wait();
 }
 
 template <typename E>
@@ -292,11 +329,11 @@ int mold_main(int argc, char **argv) {
 
   // Parse non-positional command line options
   ctx.cmdline_args = expand_response_files(ctx, argv);
-  std::vector<std::string> file_args = parse_nonpositional_args(ctx);
+  std::vector<ReaderJob> jobs = parse_nonpositional_args(ctx);
 
   // If no -m option is given, deduce it from input files.
   if (ctx.arg.emulation.empty())
-    ctx.arg.emulation = detect_machine_type(ctx, file_args);
+    ctx.arg.emulation = detect_machine_type(ctx, jobs);
 
   // Redo if -m does not match with our speculation.
   if (ctx.arg.emulation != E::name) {
@@ -331,7 +368,7 @@ int mold_main(int argc, char **argv) {
     get_symbol(ctx, arg)->is_traced = true;
 
   // Parse input files
-  read_input_files(ctx, file_args);
+  read_input_files(ctx, jobs);
 
   // Uniquify shared object files by soname
   {
@@ -711,5 +748,6 @@ int mold_main(int argc, char **argv) {
 using E = MOLD_TARGET;
 
 template int mold_main<E>(int, char **);
+template void read_file(Context<E> &, ReaderContext &, MappedFile *);
 
 } // namespace mold

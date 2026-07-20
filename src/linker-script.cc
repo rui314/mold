@@ -200,7 +200,8 @@ Script<E>::read_group(std::span<std::string_view> tok) {
     }
 
     MappedFile *mf = resolve_path(tok[0], true);
-    read_file(ctx, rctx, mf);
+    ReaderContext rctx2 = rctx.next_child();
+    read_file(ctx, rctx2, mf);
     tok = tok.subspan(1);
   }
 

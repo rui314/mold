@@ -603,11 +603,14 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
 
   load_lto_plugin(ctx);
 
-  // V0 API's claim_file is not thread-safe.
+  // We read input files in parallel, but the plugin interface is not
+  // ready for concurrent claims: claim_file_hook() returns a file's
+  // symbol table through the add_symbols() callback into a global
+  // buffer, and members of the same archive share their parent's file
+  // descriptor, which we close after each claim. Serialize the whole
+  // claim sequence.
   static std::mutex mu;
-  std::unique_lock lock(mu, std::defer_lock);
-  if (!is_gcc_linker_api_v1)
-    lock.lock();
+  std::scoped_lock lock(mu);
 
   // Create mold's object instance
   ObjectFile<E> *obj = new ObjectFile<E>;

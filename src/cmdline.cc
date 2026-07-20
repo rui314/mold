@@ -630,11 +630,18 @@ static bool returns_etxtbsy() {
 }
 
 template <typename E>
-std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
+std::vector<ReaderJob> parse_nonpositional_args(Context<E> &ctx) {
   std::span<std::string_view> args = ctx.cmdline_args;
   args = args.subspan(1);
 
-  std::vector<std::string> remaining;
+  // Input file arguments are turned into ReaderJobs for
+  // read_input_files(). rctx tracks the reader state options, such as
+  // --as-needed, that apply to the files after them; each job gets a
+  // snapshot of the state at its position.
+  std::vector<ReaderJob> jobs;
+  ReaderContext rctx;
+  std::vector<ReaderContext> rctx_stack;
+  std::unordered_set<std::string_view> visited_libs;
   std::string_view arg;
 
   ctx.arg.color_diagnostics = isatty(STDERR_FILENO);
@@ -756,7 +763,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
 
   while (!args.empty()) {
     if (!args[0].starts_with('-')) {
-      remaining.emplace_back(args[0]);
+      ReaderJob job = {rctx, std::string(args[0])};
+      job.rctx.pos = {(u32)jobs.size()};
+      jobs.push_back(std::move(job));
       args = args.subspan(1);
       continue;
     }
@@ -862,7 +871,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
         Fatal(ctx) << "unknown -m argument: " << arg;
       }
     } else if (read_flag("end-lib")) {
-      remaining.emplace_back("--end-lib");
+      rctx.in_lib = false;
     } else if (read_flag("export-dynamic") || read_flag("E")) {
       ctx.arg.export_dynamic = true;
     } else if (read_flag("no-export-dynamic")) {
@@ -893,9 +902,9 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_flag("print-map") || read_flag("M")) {
       ctx.arg.print_map = true;
     } else if (read_flag("Bstatic") || read_flag("dn") || read_flag("static")) {
-      remaining.emplace_back("--Bstatic");
+      rctx.static_ = true;
     } else if (read_flag("Bdynamic") || read_flag("dy")) {
-      remaining.emplace_back("--Bdynamic");
+      rctx.static_ = false;
     } else if (read_flag("shared") || read_flag("Bshareable")) {
       ctx.arg.shared = true;
     } else if (read_arg("spare-dynamic-tags")) {
@@ -904,7 +913,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.spare_program_headers
         = parse_number(ctx, "spare-program-headers", arg);
     } else if (read_flag("start-lib")) {
-      remaining.emplace_back("--start-lib");
+      rctx.in_lib = true;
     } else if (read_flag("start-stop")) {
       ctx.arg.start_stop = true;
     } else if (read_arg("dependency-file")) {
@@ -1114,7 +1123,7 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
       ctx.arg.wrap.insert(arg);
     } else if (read_flag("omagic") || read_flag("N")) {
       ctx.arg.omagic = true;
-      remaining.emplace_back("--Bstatic");
+      rctx.static_ = true;
     } else if (read_flag("no-omagic")) {
       ctx.arg.omagic = false;
     } else if (read_arg("oformat")) {
@@ -1499,21 +1508,31 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_arg("export-dynamic-symbol-list")) {
       append(ctx.dynamic_list_patterns, parse_dynamic_list(ctx, arg));
     } else if (read_flag("as-needed")) {
-      remaining.emplace_back("--as-needed");
+      rctx.as_needed = true;
     } else if (read_flag("no-as-needed")) {
-      remaining.emplace_back("--no-as-needed");
+      rctx.as_needed = false;
     } else if (read_flag("whole-archive")) {
-      remaining.emplace_back("--whole-archive");
+      rctx.whole_archive = true;
     } else if (read_flag("no-whole-archive")) {
-      remaining.emplace_back("--no-whole-archive");
+      rctx.whole_archive = false;
     } else if (read_arg("l") || read_arg("library")) {
-      remaining.push_back("-l" + std::string(arg));
+      if (visited_libs.insert(arg).second) {
+        ReaderJob job = {rctx, std::string(arg)};
+        job.is_lib = true;
+        job.rctx.pos = {(u32)jobs.size()};
+        jobs.push_back(std::move(job));
+      }
     } else if (read_arg("script") || read_arg("T")) {
-      remaining.emplace_back(arg);
+      ReaderJob job = {rctx, std::string(arg)};
+      job.rctx.pos = {(u32)jobs.size()};
+      jobs.push_back(std::move(job));
     } else if (read_flag("push-state")) {
-      remaining.emplace_back("--push-state");
+      rctx_stack.push_back(rctx);
     } else if (read_flag("pop-state")) {
-      remaining.emplace_back("--pop-state");
+      if (rctx_stack.empty())
+        Fatal(ctx) << "no state pushed before popping";
+      rctx = rctx_stack.back();
+      rctx_stack.pop_back();
     } else if (args[0].starts_with("-z") && args[0].size() > 2) {
       Warn(ctx) << "unknown command line option: " << args[0];
       args = args.subspan(1);
@@ -1719,14 +1738,19 @@ std::vector<std::string> parse_nonpositional_args(Context<E> &ctx) {
     sym->gc_root = true;
   ctx.arg.entry->gc_root = true;
 
-  if (version_shown && remaining.empty())
+  if (version_shown && jobs.empty())
     exit(0);
-  return remaining;
+
+  if (rctx.static_ || ctx.arg.relocatable) {
+    ctx.arg.static_ = true;
+    ctx.arg.dynamic_linker = "";
+  }
+  return jobs;
 }
 
 using E = MOLD_TARGET;
 
 template std::vector<std::string_view> expand_response_files(Context<E> &, char **);
-template std::vector<std::string> parse_nonpositional_args(Context<E> &ctx);
+template std::vector<ReaderJob> parse_nonpositional_args(Context<E> &ctx);
 
 } // namespace mold
