@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
@@ -520,6 +521,94 @@ public:
 
   Entry *entries = nullptr;
   u64 nbuckets = 0;
+};
+
+// ShardedMap is a map from strings to values of type T, built in two
+// phases. In the first phase, which may run in parallel, threads call
+// add(), which only appends the key and a caller-supplied payload to
+// a thread-local buffer binned by the key's hash. gather() then ends
+// the phase: it deduplicates the recorded keys into per-shard hash
+// tables and invokes `callback(payload, value)` for each record,
+// where `value` is the T created for (or found for) the record's key.
+//
+// Keys whose hashes fall into different shards never interact, and
+// each shard is processed by exactly one thread during gather(), so
+// unlike with a concurrent hash table, no synchronization is needed,
+// and each key is hashed only once, in add().
+//
+// insert() is a mutex-protected slow path for keys that arrive
+// outside this pattern.
+template <typename T, typename Payload>
+class ShardedMap {
+public:
+  void add(std::string_view key, Payload payload) {
+    u64 hash = hash_string(key);
+    bins.local()[hash % NUM_SHARDS].push_back({key, hash, std::move(payload)});
+  }
+
+  T *insert(std::string_view key) {
+    u64 hash = hash_string(key);
+    Shard &shard = shards[hash % NUM_SHARDS];
+    std::scoped_lock lock(shard.mu);
+    return shard.insert(key, hash);
+  }
+
+  template <typename Callback>
+  void gather(Callback callback) {
+    tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
+      Shard &shard = shards[i];
+
+      i64 count = 0;
+      for (Bin &bin : bins)
+        count += bin[i].size();
+      if (count == 0)
+        return;
+
+      shard.map.reserve(shard.map.size() + count);
+
+      for (Bin &bin : bins)
+        for (Pending &p : bin[i])
+          callback(p.payload, shard.insert(p.key, p.hash));
+    });
+
+    bins.clear();
+  }
+
+private:
+  static constexpr i64 NUM_SHARDS = 64;
+
+  struct Pending {
+    std::string_view key;
+    u64 hash;
+    Payload payload;
+  };
+
+  // The map key is a (hash, name) pair with the hash that was
+  // computed in add(). PassThroughHash makes the map use it as is,
+  // and the pair's operator== compares the hashes before the strings.
+  struct PassThroughHash {
+    size_t operator()(const std::pair<u64, std::string_view> &key) const {
+      return key.first;
+    }
+  };
+
+  struct Shard {
+    T *insert(std::string_view key, u64 hash) {
+      auto [it, inserted] = map.try_emplace({hash, key}, nullptr);
+      if (inserted)
+        it->second = &pool.emplace_back();
+      return it->second;
+    }
+
+    std::mutex mu;
+    std::unordered_map<std::pair<u64, std::string_view>, T *, PassThroughHash> map;
+    std::deque<T> pool;
+  };
+
+  using Bin = std::array<std::vector<Pending>, NUM_SHARDS>;
+
+  Shard shards[NUM_SHARDS];
+  tbb::enumerable_thread_specific<Bin> bins;
 };
 
 //

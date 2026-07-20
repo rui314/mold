@@ -353,6 +353,16 @@ void resolve_symbols(Context<E> &ctx) {
   // To redo symbol resolution, we want to clear the state first.
   clear_symbols(ctx);
 
+  // File parsing only records comdat group signatures; deduplicate
+  // them now and fill in each file's ComdatGroupRefs. We do this here
+  // and not in read_input_files() because the LTO plugin can add
+  // object files after that, in which case we redo symbol resolution
+  // and take this path again.
+  ctx.comdat_groups.gather(
+    [](std::pair<ObjectFile<E> *, i32> &ref, ComdatGroup *group) {
+      ref.first->comdat_groups[ref.second].group = group;
+    });
+
   // COMDAT elimination needs to happen exactly here.
   //
   // It needs to be after archive extraction, otherwise we might

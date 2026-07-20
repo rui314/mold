@@ -2632,7 +2632,14 @@ struct Context {
 
   // Symbol table
   tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
-  tbb::concurrent_hash_map<std::string_view, ComdatGroup, HashCmp> comdat_groups;
+
+  // Comdat groups, deduplicated by signature. Object file parsing
+  // records each SHT_GROUP section it finds with add(), along with
+  // which of the file's ComdatGroupRefs to fill in; resolve_symbols()
+  // gathers them. LTO object files add their comdats through the
+  // insert() slow path.
+  ShardedMap<ComdatGroup, std::pair<ObjectFile<E> *, i32>> comdat_groups;
+
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
@@ -3059,9 +3066,6 @@ Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
 
 template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view name);
-
-template <typename E>
-ComdatGroup *insert_comdat_group(Context<E> &ctx, std::string_view name);
 
 template <typename E>
 std::string_view demangle(const Symbol<E> &sym);

@@ -672,7 +672,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
     // have input sections.
     if (psym.comdat_key) {
       std::string_view key = save_string(ctx, psym.comdat_key);
-      obj->lto_comdat_groups[i + 1] = insert_comdat_group(ctx, key);
+      obj->lto_comdat_groups[i + 1] = ctx.comdat_groups.insert(key);
     }
   }
 
