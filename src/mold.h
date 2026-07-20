@@ -2178,6 +2178,7 @@ template <typename E> void create_internal_file(Context<E> &);
 template <typename E> void apply_exclude_libs(Context<E> &);
 template <typename E> void create_synthetic_sections(Context<E> &);
 template <typename E> void set_file_priority(Context<E> &);
+template <typename E> void gather_symbols(Context<E> &);
 template <typename E> void resolve_symbols(Context<E> &);
 template <typename E> void do_lto(Context<E> &);
 template <typename E> void parse_eh_frame_sections(Context<E> &);
@@ -2630,8 +2631,12 @@ struct Context {
   // `objs` and `dsos`.
   tbb::concurrent_vector<std::pair<std::vector<u32>, InputFile<E> *>> unsorted_input_files;
 
-  // Symbol table
-  tbb::concurrent_hash_map<std::string_view, Symbol<E>, HashCmp> symbol_map;
+  // Symbol table. Object file parsing records each global symbol
+  // with add(), along with which slot of the file's symbol vector to
+  // fill in; resolve_symbols() gathers them. Other symbols, such as
+  // linker-synthesized ones and shared library symbols, are interned
+  // through the insert() slow path in get_symbol().
+  ShardedMap<Symbol<E>, std::pair<InputFile<E> *, i32>> symbol_map;
 
   // Comdat groups, deduplicated by signature. Object file parsing
   // records each SHT_GROUP section it finds with add(), along with

@@ -186,6 +186,10 @@ static PluginStatus add_input_file(const char *path) {
   file->priority = file_priority++;
   file->is_reachable = true;
   file->parse(ctx);
+
+  // parse() only records global symbols; create them and fill in the
+  // file's symbol pointers before resolving.
+  gather_symbols(ctx);
   file->resolve_symbols(ctx);
   return LDPS_OK;
 }

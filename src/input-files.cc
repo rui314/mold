@@ -16,9 +16,10 @@ namespace mold {
 template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
                       std::string_view name) {
-  typename decltype(ctx.symbol_map)::const_accessor acc;
-  ctx.symbol_map.insert(acc, {key, Symbol<E>(name, ctx.arg.demangle)});
-  return const_cast<Symbol<E> *>(&acc->second);
+  return ctx.symbol_map.insert(key, [&](Symbol<E> &sym, std::string_view) {
+    sym.set_name(name);
+    sym.demangle = ctx.arg.demangle;
+  });
 }
 
 template <typename E>
@@ -790,20 +791,17 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     }
 
     // Handle --wrap option
-    Symbol<E> *sym;
     if (esym.is_undef() && name.starts_with("__real_") &&
         ctx.arg.wrap.contains(name.substr(7))) {
-      sym = get_symbol(ctx, key.substr(7), name.substr(7));
-    } else {
-      sym = get_symbol(ctx, key, name);
-      if (esym.is_undef() && sym->is_wrapped) {
-        key = save_string(ctx, "__wrap_" + std::string(key));
-        name = save_string(ctx, "__wrap_" + std::string(name));
-        sym = get_symbol(ctx, key, name);
-      }
+      key = key.substr(7);
+    } else if (esym.is_undef() && ctx.arg.wrap.contains(key)) {
+      key = save_string(ctx, "__wrap_" + std::string(key));
     }
 
-    this->symbols[i] = sym;
+    // Only record the symbol reference here; gather_symbols() creates
+    // the Symbols and fills in the `symbols` slots once all files
+    // have been read.
+    ctx.symbol_map.add(key, {this, (i32)i});
   }
 }
 

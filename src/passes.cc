@@ -305,9 +305,30 @@ static void clear_symbols(Context<E> &ctx) {
   });
 }
 
+// Creates a Symbol for each global symbol name recorded during file
+// parsing and fills in the files' symbol pointers. Each hash shard of
+// the symbol table is populated by a single thread, so no
+// synchronization is needed, unlike interning symbols directly into a
+// concurrent hash table as files are parsed.
+template <typename E>
+void gather_symbols(Context<E> &ctx) {
+  Timer t(ctx, "gather_symbols");
+
+  ctx.symbol_map.gather(
+    [&](Symbol<E> &sym, std::string_view key) {
+      sym.set_name(key.substr(0, key.find('@')));
+      sym.demangle = ctx.arg.demangle;
+    },
+    [](std::pair<InputFile<E> *, i32> &ref, Symbol<E> *sym) {
+      ref.first->symbols[ref.second] = sym;
+    });
+}
+
 template <typename E>
 void resolve_symbols(Context<E> &ctx) {
   Timer t(ctx, "resolve_symbols");
+
+  gather_symbols(ctx);
 
   std::vector<InputFile<E> *> files;
   append(files, ctx.objs);
@@ -3680,6 +3701,7 @@ template int redo_main<E>(std::string_view, int, char **);
 template void create_internal_file(Context<E> &);
 template void apply_exclude_libs(Context<E> &);
 template void create_synthetic_sections(Context<E> &);
+template void gather_symbols(Context<E> &);
 template void resolve_symbols(Context<E> &);
 template void do_lto(Context<E> &);
 template void parse_eh_frame_sections(Context<E> &);

@@ -536,6 +536,11 @@ public:
 // unlike with a concurrent hash table, no synchronization is needed,
 // and each key is hashed only once, in add().
 //
+// Values are default-constructed. If a value needs to be initialized
+// from its key, e.g. to store the key in the value, pass an
+// `on_create(value, key)` callback, which is called exactly once per
+// value, when it's created.
+//
 // insert() is a mutex-protected slow path for keys that arrive
 // outside this pattern.
 template <typename T, typename Payload>
@@ -547,14 +552,24 @@ public:
   }
 
   T *insert(std::string_view key) {
+    return insert(key, [](T &, std::string_view) {});
+  }
+
+  template <typename OnCreate>
+  T *insert(std::string_view key, OnCreate on_create) {
     u64 hash = hash_string(key);
     Shard &shard = shards[hash % NUM_SHARDS];
     std::scoped_lock lock(shard.mu);
-    return shard.insert(key, hash);
+    return shard.insert(key, hash, on_create);
   }
 
   template <typename Callback>
   void gather(Callback callback) {
+    gather([](T &, std::string_view) {}, callback);
+  }
+
+  template <typename OnCreate, typename Callback>
+  void gather(OnCreate on_create, Callback callback) {
     tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
       Shard &shard = shards[i];
 
@@ -568,7 +583,7 @@ public:
 
       for (Bin &bin : bins)
         for (Pending &p : bin[i])
-          callback(p.payload, shard.insert(p.key, p.hash));
+          callback(p.payload, shard.insert(p.key, p.hash, on_create));
     });
 
     bins.clear();
@@ -593,10 +608,13 @@ private:
   };
 
   struct Shard {
-    T *insert(std::string_view key, u64 hash) {
+    template <typename OnCreate>
+    T *insert(std::string_view key, u64 hash, OnCreate on_create) {
       auto [it, inserted] = map.try_emplace({hash, key}, nullptr);
-      if (inserted)
+      if (inserted) {
         it->second = &pool.emplace_back();
+        on_create(*it->second, key);
+      }
       return it->second;
     }
 
