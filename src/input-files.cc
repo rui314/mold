@@ -16,10 +16,12 @@ namespace mold {
 template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
                       std::string_view name) {
-  return ctx.symbol_map.insert(key, [&](Symbol<E> &sym, std::string_view) {
-    sym.set_name(name);
-    sym.demangle = ctx.arg.demangle;
-  });
+  auto [sym, created] = ctx.symbol_map.insert(key);
+  if (created) {
+    sym->set_name(name);
+    sym->demangle = ctx.arg.demangle;
+  }
+  return sym;
 }
 
 template <typename E>

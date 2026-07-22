@@ -528,18 +528,15 @@ public:
 // add(), which only appends the key and a caller-supplied payload to
 // a thread-local buffer binned by the key's hash. gather() then ends
 // the phase: it deduplicates the recorded keys into per-shard hash
-// tables and invokes `callback(payload, value)` for each record,
-// where `value` is the T created for (or found for) the record's key.
+// tables and invokes `callback(payload, value, key, created)` for
+// each record, where `value` is the T created for (or found for) the
+// record's key. `created` is true only for the call that created the
+// value, so callers can initialize it from the key there.
 //
 // Keys whose hashes fall into different shards never interact, and
 // each shard is processed by exactly one thread during gather(), so
 // unlike with a concurrent hash table, no synchronization is needed,
 // and each key is hashed only once, in add().
-//
-// Values are default-constructed. If a value needs to be initialized
-// from its key, e.g. to store the key in the value, pass an
-// `on_create(value, key)` callback, which is called exactly once per
-// value, when it's created.
 //
 // insert() is a mutex-protected slow path for keys that arrive
 // outside this pattern.
@@ -551,25 +548,15 @@ public:
     bins.local()[hash % NUM_SHARDS].push_back({key, hash, std::move(payload)});
   }
 
-  T *insert(std::string_view key) {
-    return insert(key, [](T &, std::string_view) {});
-  }
-
-  template <typename OnCreate>
-  T *insert(std::string_view key, OnCreate on_create) {
+  std::pair<T *, bool> insert(std::string_view key) {
     u64 hash = hash_string(key);
     Shard &shard = shards[hash % NUM_SHARDS];
     std::scoped_lock lock(shard.mu);
-    return shard.insert(key, hash, on_create);
+    return shard.insert(key, hash);
   }
 
   template <typename Callback>
   void gather(Callback callback) {
-    gather([](T &, std::string_view) {}, callback);
-  }
-
-  template <typename OnCreate, typename Callback>
-  void gather(OnCreate on_create, Callback callback) {
     tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
       Shard &shard = shards[i];
 
@@ -582,8 +569,10 @@ public:
       shard.map.reserve(shard.map.size() + count);
 
       for (Bin &bin : bins)
-        for (Pending &p : bin[i])
-          callback(p.payload, shard.insert(p.key, p.hash, on_create));
+        for (Pending &p : bin[i]) {
+          auto [val, created] = shard.insert(p.key, p.hash);
+          callback(p.payload, val, p.key, created);
+        }
     });
 
     bins.clear();
@@ -607,20 +596,16 @@ private:
     }
   };
 
+  // Values live directly in the map; std::unordered_map keeps value
+  // addresses stable across rehashing.
   struct Shard {
-    template <typename OnCreate>
-    T *insert(std::string_view key, u64 hash, OnCreate on_create) {
-      auto [it, inserted] = map.try_emplace({hash, key}, nullptr);
-      if (inserted) {
-        it->second = &pool.emplace_back();
-        on_create(*it->second, key);
-      }
-      return it->second;
+    std::pair<T *, bool> insert(std::string_view key, u64 hash) {
+      auto [it, created] = map.try_emplace({hash, key});
+      return {&it->second, created};
     }
 
     std::mutex mu;
-    std::unordered_map<std::pair<u64, std::string_view>, T *, PassThroughHash> map;
-    std::deque<T> pool;
+    std::unordered_map<std::pair<u64, std::string_view>, T, PassThroughHash> map;
   };
 
   using Bin = std::array<std::vector<Pending>, NUM_SHARDS>;

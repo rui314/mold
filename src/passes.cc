@@ -315,11 +315,12 @@ void gather_symbols(Context<E> &ctx) {
   Timer t(ctx, "gather_symbols");
 
   ctx.symbol_map.gather(
-    [&](Symbol<E> &sym, std::string_view key) {
-      sym.set_name(key.substr(0, key.find('@')));
-      sym.demangle = ctx.arg.demangle;
-    },
-    [](std::pair<InputFile<E> *, i32> &ref, Symbol<E> *sym) {
+    [&](std::pair<InputFile<E> *, i32> &ref, Symbol<E> *sym,
+        std::string_view key, bool created) {
+      if (created) {
+        sym->set_name(key.substr(0, key.find('@')));
+        sym->demangle = ctx.arg.demangle;
+      }
       ref.first->symbols[ref.second] = sym;
     });
 }
@@ -380,7 +381,8 @@ void resolve_symbols(Context<E> &ctx) {
   // object files after that, in which case we redo symbol resolution
   // and take this path again.
   ctx.comdat_groups.gather(
-    [](std::pair<ObjectFile<E> *, i32> &ref, ComdatGroup *group) {
+    [](std::pair<ObjectFile<E> *, i32> &ref, ComdatGroup *group,
+       std::string_view, bool) {
       ref.first->comdat_groups[ref.second].group = group;
     });
 
