@@ -11,6 +11,11 @@
 namespace mold {
 
 i64 HyperLogLog::get_cardinality() const {
+  u8 buckets[NBUCKETS] = {};
+  for (const Sketch &sketch : sketches)
+    for (i64 i = 0; i < NBUCKETS; i++)
+      buckets[i] = std::max(buckets[i], sketch.buckets[i]);
+
   double z = 0;
   for (i64 val : buckets)
     z += std::ldexp(1.0, -val);

@@ -627,23 +627,31 @@ void get_random_bytes(u8 *buf, i64 size);
 //
 
 class HyperLogLog {
-public:
-  void insert(u64 hash) {
-    update_maximum(buckets[hash & (NBUCKETS - 1)], std::countl_zero(hash) + 1);
-  }
-
-  i64 get_cardinality() const;
-
-  void merge(const HyperLogLog &other) {
-    for (i64 i = 0; i < NBUCKETS; i++)
-      update_maximum(buckets[i], other.buckets[i]);
-  }
-
 private:
   static constexpr i64 NBUCKETS = 2048;
   static constexpr double ALPHA = 0.79402;
 
-  Atomic<u8> buckets[NBUCKETS];
+public:
+  class Sketch {
+  public:
+    void insert(u64 hash) {
+      u8 &val = buckets[hash & (NBUCKETS - 1)];
+      val = std::max<u8>(val, std::countl_zero(hash) + 1);
+    }
+
+  private:
+    friend class HyperLogLog;
+    u8 buckets[NBUCKETS] = {};
+  };
+
+  Sketch &local() {
+    return sketches.local();
+  }
+
+  i64 get_cardinality() const;
+
+private:
+  tbb::enumerable_thread_specific<Sketch> sketches;
 };
 
 //

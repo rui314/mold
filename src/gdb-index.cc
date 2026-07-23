@@ -663,10 +663,9 @@ void write_gdb_index(Context<E> &ctx) {
   HyperLogLog estimator;
 
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
-    HyperLogLog e;
+    HyperLogLog::Sketch &sketch = estimator.local();
     for (NameType &nt : cu.nametypes)
-      e.insert(nt.hash);
-    estimator.merge(e);
+      sketch.insert(nt.hash);
   });
 
   ConcurrentMap<MapValue> map(estimator.get_cardinality() * 3 / 2);

@@ -423,16 +423,14 @@ void MergeableSection<E>::split_contents(Context<E> &ctx) {
   }
 
   // Compute hashes for section pieces
-  HyperLogLog estimator;
+  HyperLogLog::Sketch &sketch = parent.estimator.local();
   hashes.reserve(frag_offsets.size());
 
   for (i64 i = 0; i < frag_offsets.size(); i++) {
     u64 hash = hash_string(get_contents(i));
     hashes.push_back(hash);
-    estimator.insert(hash);
+    sketch.insert(hash);
   }
-
-  parent.estimator.merge(estimator);
 
   static Counter counter("string_fragments");
   counter += frag_offsets.size();
