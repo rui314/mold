@@ -411,6 +411,15 @@ int mold_main(int argc, char **argv) {
   std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_reachable; });
   std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_reachable; });
 
+  // Compilation units and public names depend only on input sections. Read
+  // them in a low-priority arena while foreground passes continue.
+  bool create_gdb_index = ctx.arg.gdb_index && !ctx.arg.relocatable;
+  tbb::task_arena gdb_arena(tbb::task_arena::automatic, 1,
+                            tbb::task_arena::priority::low);
+  tbb::task_group gdb_task;
+  if (create_gdb_index)
+    gdb_arena.enqueue([&] { read_gdb_index_inputs(ctx); }, gdb_task);
+
   // Parse .eh_frame section contents.
   parse_eh_frame_sections(ctx);
 
@@ -572,6 +581,10 @@ int mold_main(int argc, char **argv) {
   // be added to .dynsym.
   sort_dynsyms(ctx);
 
+  // sort_debug_info_sections may uncompress the same .debug_info sections.
+  if (create_gdb_index)
+    gdb_arena.wait_for(gdb_task);
+
   // Sort .debug_info contents so that DWARF32 debug info precedes that of
   // DWARF64. This is to mitigate the possibility of a relocation overflow.
   sort_debug_info_sections(ctx);
@@ -688,9 +701,8 @@ int mold_main(int argc, char **argv) {
   // so we sort them.
   sort_reldyn(ctx);
 
-  // .gdb_index's contents cannot be constructed before applying
-  // relocations to other debug sections. We have relocated debug
-  // sections now, so write the .gdb_index section.
+  // Address ranges in .gdb_index cannot be read before applying relocations
+  // to debug sections. We have relocated them now, so finish the index.
   if (ctx.gdb_index && !ctx.gnu_debuglink)
     write_gdb_index(ctx);
 

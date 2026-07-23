@@ -178,6 +178,7 @@ struct Compunit {
   DwarfKind kind;
   i64 offset;
   i64 size;
+  i32 file_idx;
   std::vector<std::pair<u64, u64>> ranges;
   std::vector<NameRecord> names;
 };
@@ -187,6 +188,14 @@ using GdbNameMap = ConcurrentMap<MapValue>;
 struct PoolSize {
   i64 type_bytes = 0;
   i64 name_bytes = 0;
+};
+
+struct GdbIndexData {
+  std::vector<Compunit> cus;
+  std::unique_ptr<GdbNameMap> map;
+  std::vector<GdbNameMap::Entry *> entries;
+  PoolSize pool_size;
+  i64 ht_size = 0;
 };
 
 // GCC can emit the same public name once for each COMDAT group. Remove these
@@ -598,7 +607,7 @@ static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
     return &*it;
   };
 
-  Compunit *cu = get_cu(file.debug_info->offset + hdr.debug_info_offset);
+  Compunit *cu = get_cu(hdr.debug_info_offset);
   i64 size = hdr.size + offsetof(PubnamesHdr, size) + sizeof(hdr.size);
   u8 *p = (u8 *)&hdr + sizeof(hdr);
   u8 *end = (u8 *)&hdr + size;
@@ -652,22 +661,50 @@ static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
 
 template <typename E>
 static std::vector<Compunit> read_compunits(Context<E> &ctx) {
+  std::vector<std::vector<Compunit>> file_cus(ctx.objs.size());
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 file_idx) {
+    ObjectFile<E> &file = *ctx.objs[file_idx];
+    if (!file.debug_info)
+      return;
+
+    file.debug_info->uncompress(ctx);
+    std::string_view contents = file.debug_info->contents;
+    std::vector<Compunit> &cus = file_cus[file_idx];
+    u8 *begin = (u8 *)contents.data();
+    u8 *end = begin + contents.size();
+
+    for (u8 *p = begin; p < end;) {
+      DwarfKind kind = get_dwarf_kind(ctx, p);
+      i64 size;
+      if (kind == DWARF2_32 || kind == DWARF5_32)
+        size = ((CuHdrDwarf2_32<E> *)p)->size + 4;
+      else
+        size = ((CuHdrDwarf2_64<E> *)p)->size + 12;
+
+      cus.push_back(Compunit{kind, p - begin, size, (i32)file_idx});
+      p += size;
+    }
+
+    read_pubnames(ctx, cus, file);
+    for (Compunit &cu : cus)
+      dedup_names(cu);
+  });
+
+  i64 size = 0;
+  for (std::vector<Compunit> &cus : file_cus)
+    size += cus.size();
+
   std::vector<Compunit> cus;
-  u8 *begin = &ctx.debug_info[0];
-  u8 *end = begin + ctx.debug_info.size();
+  cus.reserve(size);
+  for (std::vector<Compunit> &vec : file_cus)
+    for (Compunit &cu : vec)
+      cus.push_back(std::move(cu));
+  return cus;
+}
 
-  for (u8 *p = begin; p < end;) {
-    DwarfKind kind = get_dwarf_kind(ctx, p);
-    i64 size;
-    if (kind == DWARF2_32 || kind == DWARF5_32)
-      size = ((CuHdrDwarf2_32<E> *)p)->size + 4;
-    else
-      size = ((CuHdrDwarf2_64<E> *)p)->size + 12;
-
-    cus.push_back(Compunit{kind, p - begin, size});
-    p += size;
-  }
-
+template <typename E>
+static void read_address_ranges(Context<E> &ctx, std::vector<Compunit> &cus) {
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
     switch (cu.kind) {
     case DWARF2_32:
@@ -688,14 +725,6 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
       return range.first == 0 || range.first == range.second;
     });
   });
-
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    read_pubnames(ctx, cus, *file);
-  });
-
-  // GCC 11 may emit the same record once for each COMDAT group.
-  tbb::parallel_for_each(cus, dedup_names);
-  return cus;
 }
 
 template <typename E>
@@ -707,9 +736,82 @@ static std::span<u8> get_buffer(Context<E> &ctx, Chunk<E> *chunk) {
   return {ctx.buf + chunk->shdr.sh_offset, (size_t)chunk->shdr.sh_size};
 }
 
+// Read compilation units and their public names, deduplicate and intern the
+// names, and determine the constant-pool layout. This stage needs only input
+// sections, so it can run before output-section offsets are assigned.
+template <typename E>
+void read_gdb_index_inputs(Context<E> &ctx) {
+  Timer t(ctx, "read_gdb_index_inputs");
+
+  ctx.gdb_index_data = std::make_shared<GdbIndexData>();
+
+  GdbIndexData &data = *ctx.gdb_index_data;
+  data.cus = read_compunits(ctx);
+
+  HyperLogLog estimator;
+  tbb::parallel_for_each(data.cus, [&](Compunit &cu) {
+    HyperLogLog::Sketch &sketch = estimator.local();
+
+    // NameType keeps 56 hash bits. Spread them across a 64-bit word because
+    // HyperLogLog uses the number of leading zero bits.
+    for (NameRecord &record : cu.names)
+      sketch.insert(record.nametype.get_hash() * 0x9e37'79b9'7f4a'7c15);
+  });
+
+  data.map = std::make_unique<GdbNameMap>(estimator.get_cardinality() * 3 / 2);
+
+  tbb::parallel_for_each(data.cus, [&](Compunit &cu) {
+    for (NameRecord &record : cu.names) {
+      NameType &nt = record.nametype;
+      const char *name = nt.name;
+      u64 hash = nt.get_hash();
+      u8 type = nt.get_type();
+      MapValue *ent =
+        data.map->insert_cstr(name, hash, {}, initialize_gdb_name).first;
+      record.indexed = {ent, ent->count++ + 1, type};
+    }
+  });
+
+  data.entries = data.map->get_sorted_entries_all();
+  data.ht_size = bit_ceil(data.entries.size() * 5 / 4 + 1);
+
+  // The map may contain millions of names. Assign their type and string
+  // ranges with a parallel prefix sum.
+  auto scan = [&](const tbb::blocked_range<i64> &range, PoolSize size,
+                  bool is_final) {
+    for (i64 i = range.begin(); i < range.end(); i++) {
+      GdbNameMap::Entry *ent = data.entries[i];
+      if (is_final) {
+        ent->value.type_offset = size.type_bytes;
+        ent->value.name_offset = size.name_bytes;
+      }
+      size.type_bytes += ent->value.count * 4 + 4;
+      size.name_bytes += ent->keylen + 1;
+    }
+    return size;
+  };
+
+  data.pool_size = tbb::parallel_scan(
+    tbb::blocked_range<i64>(0, data.entries.size()), PoolSize{}, scan,
+    [](PoolSize a, PoolSize b) -> PoolSize {
+      return {a.type_bytes + b.type_bytes, a.name_bytes + b.name_bytes};
+    });
+
+  tbb::parallel_for_each(data.entries, [&](GdbNameMap::Entry *ent) {
+    ent->value.name_offset += data.pool_size.type_bytes;
+  });
+}
+
+// Read relocated address ranges and serialize the index prepared above.
 template <typename E>
 void write_gdb_index(Context<E> &ctx) {
   Timer t(ctx, "write_gdb_index");
+
+  std::shared_ptr<GdbIndexData> owner = std::move(ctx.gdb_index_data);
+  GdbIndexData &data = *owner;
+
+  if (data.cus.empty())
+    return;
 
   // Find debug info sections
   for (Chunk<E> *chunk : ctx.chunks) {
@@ -726,33 +828,15 @@ void write_gdb_index(Context<E> &ctx) {
       ctx.debug_rnglists = get_buffer(ctx, chunk);
   }
 
-  if (ctx.debug_info.empty())
-    return;
-
-  std::vector<Compunit> cus = read_compunits(ctx);
-
-  HyperLogLog estimator;
-  tbb::parallel_for_each(cus, [&](Compunit &cu) {
-    HyperLogLog::Sketch &sketch = estimator.local();
-    for (NameRecord &record : cu.names)
-      sketch.insert(record.nametype.get_hash() * 0x9e37'79b9'7f4a'7c15);
-  });
-
-  GdbNameMap map(estimator.get_cardinality() * 3 / 2);
-  tbb::parallel_for_each(cus, [&](Compunit &cu) {
-    for (NameRecord &record : cu.names) {
-      NameType &nt = record.nametype;
-      const char *name = nt.name;
-      u64 hash = nt.get_hash();
-      u8 type = nt.get_type();
-      MapValue *ent =
-        map.insert_cstr(name, hash, {}, initialize_gdb_name).first;
-      record.indexed = {ent, ent->count++ + 1, type};
-    }
-  });
-
-  std::vector<GdbNameMap::Entry *> entries = map.get_sorted_entries_all();
+  std::vector<Compunit> &cus = data.cus;
+  std::vector<GdbNameMap::Entry *> &entries = data.entries;
   using Entry = GdbNameMap::Entry;
+
+  for (Compunit &cu : cus)
+    cu.offset += ctx.objs[cu.file_idx]->debug_info->offset;
+  ranges::sort(cus, {}, &Compunit::offset);
+
+  read_address_ranges(ctx, cus);
 
   // Compute sizes of each component
   SectionHeader hdr;
@@ -764,38 +848,11 @@ void write_gdb_index(Context<E> &ctx) {
   for (Compunit &cu : cus)
     hdr.symtab_offset += cu.ranges.size() * 20;
 
-  i64 ht_size = bit_ceil(entries.size() * 5 / 4 + 1);
+  i64 ht_size = data.ht_size;
   hdr.const_pool_offset = hdr.symtab_offset + ht_size * 8;
 
-  // The map may contain millions of names. Assign their type and string
-  // ranges with a parallel prefix sum.
-  auto scan = [&](const tbb::blocked_range<i64> &range, PoolSize size,
-                  bool is_final) {
-    for (i64 i = range.begin(); i < range.end(); i++) {
-      Entry *ent = entries[i];
-      if (is_final) {
-        ent->value.type_offset = size.type_bytes;
-        ent->value.name_offset = size.name_bytes;
-      }
-      size.type_bytes += ent->value.count * 4 + 4;
-      size.name_bytes += ent->keylen + 1;
-    }
-    return size;
-  };
-
-  PoolSize pool_size = tbb::parallel_scan(
-    tbb::blocked_range<i64>(0, entries.size()), PoolSize{}, scan,
-    [](PoolSize a, PoolSize b) {
-      return PoolSize{a.type_bytes + b.type_bytes,
-                      a.name_bytes + b.name_bytes};
-    });
-
-  tbb::parallel_for_each(entries, [&](Entry *ent) {
-    ent->value.name_offset += pool_size.type_bytes;
-  });
-
-  i64 bufsize =
-    hdr.const_pool_offset + pool_size.type_bytes + pool_size.name_bytes;
+  i64 bufsize = hdr.const_pool_offset + data.pool_size.type_bytes +
+                data.pool_size.name_bytes;
 
   u8 *buf = ctx.output_file->extend(ctx, bufsize);
 
@@ -881,6 +938,7 @@ void write_gdb_index(Context<E> &ctx) {
 
 using E = MOLD_TARGET;
 
+template void read_gdb_index_inputs(Context<E> &);
 template void write_gdb_index(Context<E> &);
 
 } // namespace mold

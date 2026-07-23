@@ -19,6 +19,7 @@
 #include <tbb/concurrent_vector.h>
 #include <tbb/global_control.h>
 #include <tbb/spin_mutex.h>
+#include <tbb/task_arena.h>
 #include <tbb/task_group.h>
 #include <type_traits>
 #include <unordered_map>
@@ -55,6 +56,7 @@ template <typename E> struct FdeRecord;
 template <typename E> class MergeableSection;
 template <typename E> class RelocSection;
 
+struct GdbIndexData;
 struct ReaderContext;
 
 template <typename E>
@@ -1697,6 +1699,7 @@ private:
 // gdb-index.cc
 //
 
+template <typename E> void read_gdb_index_inputs(Context<E> &ctx);
 template <typename E> void write_gdb_index(Context<E> &ctx);
 
 //
@@ -2757,6 +2760,8 @@ struct Context {
   MergedSection<E> *comment = nullptr;
 
   // For --gdb-index
+  // shared_ptr lets the implementation type remain in gdb-index.cc.
+  std::shared_ptr<GdbIndexData> gdb_index_data;
   std::span<u8> debug_info;
   std::span<u8> debug_abbrev;
   std::span<u8> debug_ranges;
