@@ -308,10 +308,10 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
   Symbol<E> &sym = *file.symbols[rel.r_sym];
   const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
 
-  // If a symbol is defined in a comdat group, and the comdat group is
-  // discarded, the symbol may not have an owner. It is technically an
-  // violation of the One Definition Rule, so it is a programmer's fault.
-  if (!sym.file) {
+  // A global symbol in a discarded COMDAT group should resolve to the
+  // corresponding symbol in the prevailing group. If it does not, the
+  // object files violate the One Definition Rule.
+  if (!sym.file && &sym != &discarded_comdat_sym<E>) {
     Error(ctx) << *this << ": " << sym << " refers to a discarded COMDAT section"
                << " probably due to an ODR violation";
     return true;

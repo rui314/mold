@@ -793,26 +793,33 @@ void ObjectFile<E>::initialize_local_symbols(Context<E> &ctx) {
   if (this->elf_syms.empty())
     return;
 
-  this->local_syms.resize(this->first_global);
+  i64 num_local_syms = 1;
+  for (i64 i = 1; i < this->first_global; i++)
+    if (!is_discarded_comdat(this->elf_syms[i]))
+      num_local_syms++;
+
+  this->local_syms.resize(num_local_syms);
   this->local_syms[0].file = this;
   this->local_syms[0].sym_idx = 0;
+  this->symbols[0] = &this->local_syms[0];
 
-  for (i64 i = 0; i < this->first_global; i++)
-    this->symbols[i] = &this->local_syms[i];
-
+  i64 local_idx = 1;
   for (i64 i = 1; i < this->first_global; i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
     if (esym.is_common())
       Fatal(ctx) << *this << ": common local symbol?";
+
+    if (is_discarded_comdat(esym)) {
+      this->symbols[i] = &discarded_comdat_sym<E>;
+      continue;
+    }
+    this->symbols[i] = &this->local_syms[local_idx++];
 
     std::string_view name;
     if (esym.st_type == STT_SECTION) {
       i64 shndx = get_shndx(esym);
       if (InputSection<E> *isec = sections[shndx]) {
         name = isec->name();
-      } else if (!comdat_discarded.empty() && comdat_discarded[shndx]) {
-        // Discarded section symbol names are never emitted.
-        name = "";
       } else {
         name = this->shstrtab.data() + this->elf_sections[shndx].sh_name;
       }
@@ -820,22 +827,17 @@ void ObjectFile<E>::initialize_local_symbols(Context<E> &ctx) {
       name = this->get_symbol_name(i);
     }
 
-    Symbol<E> &sym = this->local_syms[i];
+    Symbol<E> &sym = *this->symbols[i];
     sym.set_name(name);
     sym.file = this;
     sym.value = esym.st_value;
     sym.sym_idx = i;
 
-    if (!esym.is_abs()) {
-      i64 shndx = get_shndx(esym);
-      sym.set_input_section(sections[shndx]);
-
-      // A reference to a local symbol in a discarded COMDAT section
-      // resolves to zero, as it did when the dead InputSection existed.
-      if (!comdat_discarded.empty() && comdat_discarded[shndx])
-        sym.value = 0;
-    }
+    if (!esym.is_abs())
+      sym.set_input_section(sections[get_shndx(esym)]);
   }
+
+  assert(local_idx == this->local_syms.size());
 }
 
 // Relocations are usually sorted by r_offset in relocation tables,
@@ -1314,13 +1316,7 @@ template <typename E>
 void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
   this->output_sym_indices.resize(this->elf_syms.size(), -1);
 
-  auto is_alive = [&](Symbol<E> &sym) -> bool {
-    if (!sym.esym().is_abs() && !sym.esym().is_common()) {
-      i64 shndx = get_shndx(sym.esym());
-      if (!comdat_discarded.empty() && comdat_discarded[shndx])
-        return false;
-    }
-
+  auto is_alive = [](Symbol<E> &sym) -> bool {
     if (SectionFragment<E> *frag = sym.get_frag())
       return frag->is_alive;
     if (InputSection<E> *isec = sym.get_input_section())
@@ -1331,6 +1327,9 @@ void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
   // Compute the size of local symbols
   if (!ctx.arg.discard_all && !ctx.arg.strip_all && !ctx.arg.retain_symbols_file) {
     for (i64 i = 1; i < this->first_global; i++) {
+      if (is_discarded_comdat(this->elf_syms[i]))
+        continue;
+
       Symbol<E> &sym = *this->symbols[i];
 
       if (is_alive(sym) && should_write_to_local_symtab(ctx, sym)) {

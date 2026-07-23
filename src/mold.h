@@ -3115,6 +3115,9 @@ public:
 };
 
 template <typename E>
+inline Symbol<E> discarded_comdat_sym;
+
+template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
                       std::string_view name);
 
@@ -3333,12 +3336,7 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
     return {};
 
   InputSection<E> *isec = sym.get_input_section();
-  bool discarded = false;
-
-  if (!isec && sym.file && !sym.file->is_dso && sym.sym_idx >= 0) {
-    ObjectFile<E> *file = (ObjectFile<E> *)sym.file;
-    discarded = file->is_discarded_comdat(sym.esym());
-  }
+  bool discarded = (&sym == &discarded_comdat_sym<E>);
 
   // Setting a tombstone is a special feature for a dead debug section.
   if ((!isec && !discarded) || (isec && isec->is_alive))
@@ -3894,6 +3892,9 @@ inline i64 Symbol<E>::get_output_sym_idx(Context<E> &ctx) const {
 
 template <typename E>
 inline const ElfSym<E> &Symbol<E>::esym() const {
+  static const ElfSym<E> empty = {};
+  if (this == &discarded_comdat_sym<E>)
+    return empty;
   return file->elf_syms[sym_idx];
 }
 
