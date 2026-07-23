@@ -274,46 +274,9 @@ static bool is_known_section_type(const ElfShdr<E> &shdr) {
 template <typename E>
 ExactArray<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
                                   const ElfShdr<E> &shdr) {
-  u8 *p = (u8 *)file.get_string(ctx, shdr).data();
-  u64 hdr = read_uleb(&p);
-  i64 nrels = hdr >> 3;
-  bool is_rela = hdr & 0b100;
-  i64 scale = hdr & 0b11;
-
-  if (is_rela && !E::is_rela)
-    Fatal(ctx) << file << ": CREL with addends is not supported for " << E::name;
-
-  u64 offset = 0;
-  i64 type = 0;
-  i64 symidx = 0;
-  i64 addend = 0;
-
-  ExactArray<ElfRel<E>> rels(nrels);
-
-  for (i64 i = 0; i < nrels; i++) {
-    u8 flags = *p++;
-    i64 nflags = is_rela ? 3 : 2;
-
-    // The first ULEB-128 encoded value is a concatenation of bit flags and
-    // an offset delta. The delta may be very large to decrease the
-    // current offset value by wrapping around. Combined, the encoded value
-    // can be up to 67 bit long. Thus we can't simply use read_uleb() which
-    // returns a u64.
-    u64 delta;
-    if (flags & 0x80)
-      delta = (read_uleb(&p) << (7 - nflags)) | ((flags & 0x7f) >> nflags);
-    else
-      delta = flags >> nflags;
-    offset += delta << scale;
-
-    if (flags & 1)
-      symidx += read_sleb(&p);
-    if (flags & 2)
-      type += read_sleb(&p);
-    if (is_rela && (flags & 4))
-      addend += read_sleb(&p);
-    rels[i] = ElfRel<E>(offset, type, symidx, addend);
-  }
+  CrelReader<E> reader(ctx, file, shdr);
+  ExactArray<ElfRel<E>> rels(reader.size());
+  reader.for_each([&](const ElfRel<E> &rel, i64 i) { rels[i] = rel; });
   return rels;
 }
 
@@ -393,7 +356,9 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       break;
     case SHT_CREL:
       decoded_crel.resize(i + 1);
-      decoded_crel[i] = decode_crel(ctx, *this, shdr);
+      if ((this->elf_sections[shdr.sh_info].sh_flags & SHF_ALLOC) ||
+          ctx.arg.relocatable || ctx.arg.emit_relocs)
+        decoded_crel[i] = decode_crel(ctx, *this, shdr);
       break;
     case SHT_REL:
     case SHT_RELA:
@@ -1817,5 +1782,8 @@ template Symbol<E> *get_symbol(Context<E> &, std::string_view);
 template std::string_view demangle(const Symbol<E> &);
 template std::ostream &operator<<(std::ostream &, const Symbol<E> &);
 template std::ostream &operator<<(std::ostream &, const InputFile<E> &);
+
+template ExactArray<ElfRel<E>>
+decode_crel(Context<E> &, ObjectFile<E> &, const ElfShdr<E> &);
 
 } // namespace mold

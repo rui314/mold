@@ -27,6 +27,8 @@
 #include <variant>
 #include <vector>
 
+#define ALWAYS_INLINE __attribute__((always_inline))
+
 #ifdef _WIN32
 # include <windows.h>
 #else
@@ -538,6 +540,11 @@ public:
   std::string_view name() const;
   ElfShdr<E> &shdr() const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
+
+  // Visit relocations without materializing a CREL table unless another pass
+  // has already decoded it. The callback must be always-inline because this
+  // function may invoke it millions of times.
+  void for_each_reloc(Context<E> &ctx, auto fn) const;
   std::span<FdeRecord<E>> get_fdes() const;
   std::string_view get_func_name(Context<E> &ctx, i64 offset) const;
   bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) const;
@@ -1872,6 +1879,10 @@ struct ObjectFileExtras<PPC32> {
   InputSection<PPC32> *got2 = nullptr;
 };
 
+template <typename E>
+ExactArray<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
+                                  const ElfShdr<E> &shdr);
+
 // ObjectFile represents an input .o file.
 template <typename E>
 class ObjectFile : public InputFile<E> {
@@ -3182,6 +3193,85 @@ inline std::string_view InputSection<E>::name() const {
   return {data, namelen};
 }
 
+// Decode CREL entries one at a time so callers can either stream them or
+// materialize them in an array.
+template <typename E>
+class CrelReader {
+public:
+  CrelReader(Context<E> &ctx, ObjectFile<E> &file, const ElfShdr<E> &shdr) {
+    u8 *p = (u8 *)file.get_string(ctx, shdr).data();
+    u64 hdr = read_uleb(&p);
+    data = p;
+    nrels = hdr >> 3;
+    is_rela = hdr & 0b100;
+    scale = hdr & 0b11;
+
+    if (is_rela && !E::is_rela)
+      Fatal(ctx) << file << ": CREL with addends is not supported for " << E::name;
+  }
+
+  i64 size() const {
+    return nrels;
+  }
+
+  void for_each(auto fn) const {
+    u8 *p = data;
+    i64 nflags = is_rela ? 3 : 2;
+    u64 offset = 0;
+    i64 type = 0;
+    i64 symidx = 0;
+    i64 addend = 0;
+
+    for (i64 i = 0; i < nrels; i++) {
+      u8 flags = *p++;
+
+      // The first byte combines flags with the low bits of an offset delta.
+      // A large delta continues as ULEB128 and can wrap the current offset.
+      u64 delta;
+      if (flags & 0x80)
+        delta = (read_uleb(&p) << (7 - nflags)) |
+                ((flags & 0x7f) >> nflags);
+      else
+        delta = flags >> nflags;
+      offset += delta << scale;
+
+      if (flags & 1)
+        symidx += read_sleb(&p);
+      if (flags & 2)
+        type += read_sleb(&p);
+      if (is_rela && (flags & 4))
+        addend += read_sleb(&p);
+
+      ElfRel<E> rel(offset, type, symidx, addend);
+      fn(rel, i);
+    }
+  }
+
+private:
+  u8 *data;
+  i64 nrels;
+  i64 scale;
+  bool is_rela;
+};
+
+template <typename E>
+inline void InputSection<E>::for_each_reloc(Context<E> &ctx, auto fn) const {
+  ObjectFile<E> &file = this->file;
+
+  if (relsec_idx != -1) {
+    ElfShdr<E> &shdr = file.elf_sections[relsec_idx];
+    if (shdr.sh_type == SHT_CREL &&
+        !file.decoded_crel[relsec_idx].data()) {
+      CrelReader<E>(ctx, file, shdr).for_each(fn);
+      return;
+    }
+  }
+
+  std::span<const ElfRel<E>> rels = get_rels(ctx);
+  for (i64 i = 0; i < rels.size(); i++)
+    fn(rels[i], i);
+}
+
 template <typename E>
 inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
@@ -3190,6 +3280,8 @@ inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   ElfShdr<E> &shdr = file.elf_sections[relsec_idx];
   if (shdr.sh_type == SHT_CREL) {
     ExactArray<ElfRel<E>> &rels = file.decoded_crel[relsec_idx];
+    if (!rels.data())
+      rels = decode_crel(ctx, file, shdr);
     return std::span<ElfRel<E>>(rels.data(), rels.size());
   }
   return file.template get_data<ElfRel<E>>(ctx, shdr);

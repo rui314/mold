@@ -5,15 +5,20 @@
 [[ $MACHINE = arm* ]] && skip
 [ $MACHINE = i686 ] && skip
 
-[ "$CC" = cc ] || skip
-clang -c -xc -o /dev/null /dev/null -Wa,--crel,--allow-experimental-crel || skip
+clang_args=()
+[ "$TRIPLE" = "" ] || clang_args+=(--target=$TRIPLE)
 
-cat <<EOF | clang -o $t/a.o -c -xc - -Wa,--crel,--allow-experimental-crel
+clang "${clang_args[@]}" -c -xc -o /dev/null /dev/null \
+  -Wa,--crel,--allow-experimental-crel || skip
+
+cat <<EOF | clang "${clang_args[@]}" -o $t/a.o -c -g -xc - \
+  -Wa,--crel,--allow-experimental-crel
 #include <stdio.h>
 int main() {
   printf("Hello world\n");
 }
 EOF
 
-clang -B. -o $t/exe $t/a.o
+clang "${clang_args[@]}" -B. -o $t/exe $t/a.o
 $QEMU $t/exe | grep 'Hello world'
+readelf --debug-dump=info $t/exe | grep -E 'DW_AT_name.*: main$'
