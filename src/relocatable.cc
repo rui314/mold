@@ -76,7 +76,7 @@ static void create_comdat_group_sections(Context<E> &ctx) {
     ObjectFile<E> &file = *ctx.objs[i];
 
     for (ComdatGroupRef<E> &ref : file.comdat_groups) {
-      if (ref.group->owner != file.priority)
+      if (!ref.is_owner)
         continue;
 
       Symbol<E> *sym = file.symbols[file.elf_sections[ref.sect_idx].sh_info];

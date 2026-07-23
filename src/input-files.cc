@@ -107,6 +107,28 @@ void InputFile<E>::populate_symbol_name_lengths() {
   }
 }
 
+// An ordinary global COMDAT signature is identified by its Symbol. Local,
+// section and versioned signatures are interned by their literal name.
+template <typename E>
+Symbol<E> *
+ObjectFile<E>::get_comdat_signature(Context<E> &ctx, i64 sect_idx) {
+  const ElfShdr<E> &shdr = this->elf_sections[sect_idx];
+  const ElfSym<E> &esym = this->elf_syms[shdr.sh_info];
+
+  std::string_view name;
+  if (esym.st_type == STT_SECTION)
+    name = this->shstrtab.data() +
+           this->elf_sections[get_shndx(esym)].sh_name;
+  else
+    name = this->get_symbol_name(shdr.sh_info);
+
+  if (esym.st_type != STT_SECTION && esym.st_bind != STB_LOCAL &&
+      !esym.is_undef() && name.find('@') == name.npos)
+    return this->symbols[shdr.sh_info];
+
+  return get_symbol(ctx, name);
+}
+
 template <typename E>
 ElfShdr<E> *InputFile<E>::find_section(i64 type) {
   for (ElfShdr<E> &sec : elf_sections)
@@ -307,14 +329,12 @@ void ObjectFile<E>::parse_comdat_groups(Context<E> &ctx) {
     if (shdr.sh_info >= this->elf_syms.size())
       Fatal(ctx) << *this << ": invalid symbol index";
     const ElfSym<E> &esym = this->elf_syms[shdr.sh_info];
-
     std::string_view signature;
-    if (esym.st_type == STT_SECTION) {
+    if (esym.st_type == STT_SECTION)
       signature = this->shstrtab.data() +
                   this->elf_sections[get_shndx(esym)].sh_name;
-    } else {
+    else
       signature = this->get_symbol_name(shdr.sh_info);
-    }
 
     // Ignore a broken comdat group GCC emits for .debug_macros.
     // https://github.com/rui314/mold/issues/438
@@ -329,8 +349,8 @@ void ObjectFile<E>::parse_comdat_groups(Context<E> &ctx) {
     if (entries[0] != GRP_COMDAT)
       Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
 
-    comdat_groups.push_back({nullptr, (i32)i, entries.subspan(1)});
-    ctx.comdat_groups.add(signature, {this, (i32)comdat_groups.size() - 1});
+    Symbol<E> *sig = get_comdat_signature(ctx, i);
+    comdat_groups.push_back({sig, entries.subspan(1), (i32)i});
   }
 }
 
@@ -1055,7 +1075,7 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx,
   if (!keep_discarded_comdat && !comdat_groups.empty()) {
     comdat_discarded.resize(sections.size());
     for (ComdatGroupRef<E> &ref : comdat_groups)
-      if (ref.group->owner != this->priority)
+      if (!ref.is_owner)
         for (u32 i : ref.members)
           comdat_discarded[i] = true;
   }

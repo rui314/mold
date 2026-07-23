@@ -285,22 +285,16 @@ static void resolve_default_symver(Context<E> &ctx) {
 
 template <typename E>
 static void clear_symbols(Context<E> &ctx) {
-  std::vector<InputFile<E> *> files;
-  append(files, ctx.objs);
-  append(files, ctx.dsos);
-
-  tbb::parallel_for_each(files, [](InputFile<E> *file) {
-    for (Symbol<E> *sym : file->get_global_syms()) {
-      if (__atomic_load_n(&sym->file, __ATOMIC_ACQUIRE) == file) {
-        sym->origin = 0;
-        sym->value = -1;
-        sym->sym_idx = -1;
-        sym->ver_idx = VER_NDX_UNSPECIFIED;
-        sym->is_weak = false;
-        sym->is_imported = false;
-        sym->is_exported = false;
-        __atomic_store_n(&sym->file, nullptr, __ATOMIC_RELEASE);
-      }
+  ctx.symbol_map.for_each([](Symbol<E> &sym) {
+    if (sym.file) {
+      sym.file = nullptr;
+      sym.origin = 0;
+      sym.value = -1;
+      sym.sym_idx = -1;
+      sym.ver_idx = VER_NDX_UNSPECIFIED;
+      sym.is_weak = false;
+      sym.is_imported = false;
+      sym.is_exported = false;
     }
   });
 }
@@ -329,6 +323,83 @@ void gather_symbols(Context<E> &ctx) {
       }
       ref.first->symbols[ref.second] = sym;
     });
+}
+
+// Select one copy of each COMDAT group and construct input sections only for
+// the selected copies. This function is called again after LTO because the
+// compiler backend may add new object files.
+template <typename E>
+static void eliminate_comdat_groups(Context<E> &ctx) {
+  bool has_lto = ranges::any_of(ctx.objs, [](ObjectFile<E> *file) {
+    return file->is_reachable &&
+           (file->is_lto_obj || file->is_gcc_offload_obj);
+  });
+
+  {
+    Timer t(ctx, "parse_comdat_groups");
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      if (file->is_reachable && !file->is_lto_obj && file->sections.empty())
+        file->parse_comdat_groups(ctx);
+    });
+  }
+
+  // Symbol resolution has just been cleared, so sym_idx is unused until the
+  // final resolution pass. Temporarily store the winning file priority there.
+  auto record_owner = [](Symbol<E> &sig, i32 priority) {
+    std::atomic_ref<i32> owner(sig.sym_idx);
+    i32 old = owner.load(std::memory_order_relaxed);
+    while ((old == -1 || priority < old) &&
+           !owner.compare_exchange_weak(old, priority, std::memory_order_relaxed));
+  };
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (!file->is_reachable)
+      return;
+
+    for (ComdatGroupRef<E> &ref : file->comdat_groups)
+      record_owner(*ref.signature, file->priority);
+  });
+
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (file->is_reachable)
+      for (ComdatGroupRef<E> &ref : file->comdat_groups)
+        ref.is_owner = (ref.signature->sym_idx == file->priority);
+  });
+
+  // LTO plugin symbol tables may not enumerate all section-level helper
+  // symbols (e.g. some thunks). Therefore, an IR file may claim a signature
+  // only if no reachable regular object has already claimed it.
+  for (ObjectFile<E> *file : ctx.objs) {
+    if (file->is_reachable) {
+      for (i64 i = 0; i < file->lto_comdat_signatures.size(); i++) {
+        if (Symbol<E> *sig = file->lto_comdat_signatures[i]) {
+          if (sig->sym_idx == -1)
+            sig->sym_idx = file->priority;
+          file->lto_comdat_discarded[i] = (sig->sym_idx != file->priority);
+        }
+      }
+    }
+  }
+
+  // Restore sym_idx before the final symbol-resolution pass.
+  ctx.symbol_map.for_each([](Symbol<E> &sym) { sym.sym_idx = -1; });
+
+  {
+    Timer t(ctx, "parse_sections");
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      if (file->is_reachable && !file->is_lto_obj && file->sections.empty())
+        file->parse_sections(ctx, has_lto);
+    });
+  }
+
+  // Existing sections may change ownership after LTO.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (file->is_reachable)
+      for (ComdatGroupRef<E> &ref : file->comdat_groups)
+        for (u32 i : ref.members)
+          if (InputSection<E> *isec = file->sections[i])
+            isec->is_alive = ref.is_owner;
+  });
 }
 
 template <typename E>
@@ -381,26 +452,6 @@ void resolve_symbols(Context<E> &ctx) {
   // To redo symbol resolution, we want to clear the state first.
   clear_symbols(ctx);
 
-  // Collect COMDAT signatures only from files included in the output.
-  {
-    Timer t2(ctx, "parse_comdat_groups");
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      if (file->is_reachable && !file->is_lto_obj && file->sections.empty())
-        file->parse_comdat_groups(ctx);
-    });
-  }
-
-  // The first parsing stage only records comdat group signatures; deduplicate
-  // them now and fill in each file's ComdatGroupRefs. We do this here
-  // and not in read_input_files() because the LTO plugin can add
-  // object files after that, in which case we redo symbol resolution
-  // and take this path again.
-  ctx.comdat_groups.gather(
-    [](std::pair<ObjectFile<E> *, i32> &ref, ComdatGroup *group,
-       std::string_view, bool) {
-      ref.first->comdat_groups[ref.second].group = group;
-    });
-
   // COMDAT elimination needs to happen exactly here.
   //
   // It needs to be after archive extraction, otherwise we might
@@ -410,48 +461,7 @@ void resolve_symbols(Context<E> &ctx) {
   // It needs to happen before the final symbol resolution, otherwise
   // we could eliminate a symbol that is already resolved to and cause
   // dangling references.
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    if (file->is_reachable)
-      for (ComdatGroupRef<E> &ref : file->comdat_groups)
-        update_minimum(ref.group->owner, file->priority);
-  });
-
-  // LTO plugin symbol tables may not enumerate all section-level helper
-  // symbols (e.g. some thunks). If an LTO file wins COMDAT ownership for
-  // a key shared with regular object files, section elimination may discard
-  // needed regular COMDAT members and create dangling relocations.
-  //
-  // Therefore, only let IR files claim ownership for COMDAT keys that have
-  // no reachable regular-object owner.
-  for (ObjectFile<E> *file : ctx.objs)
-    if (file->is_reachable)
-      for (ComdatGroup *g : file->lto_comdat_groups)
-        if (g && g->owner == (u32)-1)
-          g->owner = file->priority;
-
-  // Construct sections and local symbols now that duplicate COMDAT
-  // members can be skipped.
-  bool has_lto = ranges::any_of(ctx.objs, [](ObjectFile<E> *file) {
-    return file->is_reachable &&
-           (file->is_lto_obj || file->is_gcc_offload_obj);
-  });
-
-  {
-    Timer t2(ctx, "parse_sections");
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      if (file->is_reachable && !file->is_lto_obj && file->sections.empty())
-        file->parse_sections(ctx, has_lto);
-    });
-  }
-
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    if (file->is_reachable)
-      for (ComdatGroupRef<E> &ref : file->comdat_groups)
-        if (ref.group->owner != file->priority)
-          for (u32 i : ref.members)
-            if (InputSection<E> *isec = file->sections[i])
-              isec->is_alive = false;
-  });
+  eliminate_comdat_groups(ctx);
 
   // Redo symbol resolution
   tbb::parallel_for_each(files, [&](InputFile<E> *file) {
@@ -496,22 +506,6 @@ void do_lto(Context<E> &ctx) {
       file->is_reachable = false;
 
   std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
-
-  // Also reset the results of the pre-LTO COMDAT group selection. A group's
-  // winner may be an archive member that is not re-extracted because the
-  // LTO-generated code no longer uses it. If we didn't reset the state, no
-  // remaining file could provide the group's sections, and we would report
-  // a false ODR violation. LTO-generated files don't have ComdatGroups
-  // assigned yet, hence the null check.
-  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    for (ComdatGroupRef<E> &ref : file->comdat_groups) {
-      if (ref.group)
-        ref.group->owner = -1;
-      for (u32 i : ref.members)
-        if (InputSection<E> *isec = file->sections[i])
-          isec->is_alive = true;
-    }
-  });
 
   resolve_symbols(ctx);
 }
@@ -1212,10 +1206,8 @@ void check_duplicate_symbols(Context<E> &ctx) {
 
       // Skip if the symbol is a deduplicated comdat symbol that is in
       // an IR file.
-      if (file->is_lto_obj)
-        if (ComdatGroup *g = file->lto_comdat_groups[i])
-          if (g->owner != file->priority)
-            continue;
+      if (file->is_lto_obj && file->lto_comdat_discarded[i])
+        continue;
 
       // Skip if one side is an LTO IR object and the other is not.
       // The LTO backend resolves conflicts between IR and regular objects
@@ -3714,12 +3706,12 @@ void show_stats(Context<E> &ctx) {
 
     static Counter removed_comdats("removed_comdat_mem");
     for (ComdatGroupRef<E> &ref : obj->comdat_groups)
-      if (ref.group->owner != obj->priority)
+      if (!ref.is_owner)
         removed_comdats += ref.members.size();
 
     static Counter unique_comdats("unique_comdats");
     for (ComdatGroupRef<E> &ref : obj->comdat_groups)
-      if (ref.group->owner == obj->priority)
+      if (ref.is_owner)
         unique_comdats++;
 
     static Counter num_cies("num_cies");

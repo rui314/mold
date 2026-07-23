@@ -658,7 +658,8 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
 
   // Initialize esyms
   obj->lto_elf_syms.resize(plugin_symbols.size() + 1);
-  obj->lto_comdat_groups.resize(plugin_symbols.size() + 1);
+  obj->lto_comdat_signatures.resize(plugin_symbols.size() + 1);
+  obj->lto_comdat_discarded.resize(plugin_symbols.size() + 1);
   i64 strtab_offset = 1;
 
   for (i64 i = 0; i < plugin_symbols.size(); i++) {
@@ -676,7 +677,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
     // have input sections.
     if (psym.comdat_key) {
       std::string_view key = save_string(ctx, psym.comdat_key);
-      obj->lto_comdat_groups[i + 1] = ctx.comdat_groups.insert(key).first;
+      obj->lto_comdat_signatures[i + 1] = get_symbol(ctx, key);
     }
   }
 

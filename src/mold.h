@@ -1714,16 +1714,12 @@ template <typename E> void write_gdb_index(Context<E> &ctx);
 // sections have the same signature, the linker picks up one and
 // discards the other by eliminating all sections that the other
 // comdat section refers to.
-struct ComdatGroup {
-  // The file priority of the owner file of this comdat section.
-  Atomic<u32> owner = -1;
-};
-
 template <typename E>
 struct ComdatGroupRef {
-  ComdatGroup *group;
-  i32 sect_idx;
+  Symbol<E> *signature;
   std::span<U32<E>> members;
+  i32 sect_idx;
+  bool is_owner = false;
 };
 
 template <typename E>
@@ -1901,6 +1897,7 @@ public:
 
   i64 get_shndx(const ElfSym<E> &esym);
   InputSection<E> *get_section(const ElfSym<E> &esym);
+  Symbol<E> *get_comdat_signature(Context<E> &ctx, i64 sect_idx);
   bool is_discarded_comdat(const ElfSym<E> &esym);
 
   std::string archive_name;
@@ -1946,7 +1943,8 @@ public:
 
   // For LTO
   std::vector<ElfSym<E>> lto_elf_syms;
-  std::vector<ComdatGroup *> lto_comdat_groups;
+  std::vector<Symbol<E> *> lto_comdat_signatures;
+  std::vector<bool> lto_comdat_discarded;
 
 private:
   void initialize_sections(Context<E> &ctx);
@@ -2680,13 +2678,6 @@ struct Context {
   // linker-synthesized ones and shared library symbols, are interned
   // through the insert() slow path in get_symbol().
   ShardedMap<Symbol<E>, std::pair<InputFile<E> *, i32>> symbol_map;
-
-  // Comdat groups, deduplicated by signature. Object file parsing
-  // records each SHT_GROUP section it finds with add(), along with
-  // which of the file's ComdatGroupRefs to fill in; resolve_symbols()
-  // gathers them. LTO object files add their comdats through the
-  // insert() slow path.
-  ShardedMap<ComdatGroup, std::pair<ObjectFile<E> *, i32>> comdat_groups;
 
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
 

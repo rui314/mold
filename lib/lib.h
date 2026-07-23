@@ -629,6 +629,13 @@ public:
     bins.clear();
   }
 
+  void for_each(auto fn) {
+    tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
+      for (auto &entry : shards[i].map)
+        fn(*entry.second);
+    });
+  }
+
 private:
   static constexpr i64 NUM_SHARDS = 64;
 
