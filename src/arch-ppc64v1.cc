@@ -486,7 +486,7 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 
 static InputSection<E> *get_opd_section(ObjectFile<E> &file) {
   for (InputSection<E> *isec : file.sections)
-    if (isec && isec->name == ".opd")
+    if (isec && isec->name() == ".opd")
       return isec;
   return nullptr;
 }

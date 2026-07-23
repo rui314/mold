@@ -822,7 +822,7 @@ void ObjectFile<E>::initialize_local_symbols(Context<E> &ctx) {
     if (esym.st_type == STT_SECTION) {
       i64 shndx = get_shndx(esym);
       if (InputSection<E> *isec = sections[shndx]) {
-        name = isec->name;
+        name = isec->name();
       } else if (!comdat_discarded.empty() && comdat_discarded[shndx]) {
         // Discarded section symbol names are never emitted.
         name = "";
@@ -882,7 +882,7 @@ void ObjectFile<E>::convert_mergeable_sections(Context<E> &ctx) {
       continue;
 
     MergedSection<E> *parent =
-      MergedSection<E>::get_instance(ctx, isec->name, shdr);
+      MergedSection<E>::get_instance(ctx, isec->name(), shdr);
 
     if (parent) {
       this->mergeable_sections[i] =

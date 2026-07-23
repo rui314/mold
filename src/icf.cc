@@ -111,24 +111,25 @@ static void uniquify_cies(Context<E> &ctx) {
 template <typename E>
 static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
   const ElfShdr<E> &shdr = isec.shdr();
+  std::string_view name = isec.name();
 
   if (shdr.sh_size == 0 || !(shdr.sh_flags & SHF_ALLOC) ||
-      shdr.sh_type == SHT_NOBITS || is_c_identifier(isec.name))
+      shdr.sh_type == SHT_NOBITS || is_c_identifier(name))
     return false;
 
   if (shdr.sh_flags & SHF_EXECINSTR)
     return (ctx.arg.icf_all || !isec.address_taken) &&
-           isec.name != ".init" && isec.name != ".fini";
+           name != ".init" && name != ".fini";
 
   // .gcc_except_table contains a compiler-generated table. Pointer
   // equality for the section is not significant because only the C++
   // exception handling code will use the table at runtime.
-  if (isec.name == ".gcc_except_table" ||
-      isec.name.starts_with(".gcc_except_table."))
+  if (name == ".gcc_except_table" ||
+      name.starts_with(".gcc_except_table."))
     return true;
 
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
-  bool is_relro = isec.name.starts_with(".data.rel.ro");
+  bool is_relro = name.starts_with(".data.rel.ro");
   return (ctx.arg.ignore_data_address_equality || !isec.address_taken) &&
          (is_readonly || is_relro);
 }

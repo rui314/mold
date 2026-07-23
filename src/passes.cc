@@ -650,6 +650,8 @@ template <typename E>
 static OutputSectionKey
 get_output_section_key(Context<E> &ctx, InputSection<E> &isec,
                        bool ctors_in_init_array) {
+  std::string_view name = isec.name();
+
   // If .init_array/.fini_array exist, .ctors/.dtors must be merged
   // with them.
   //
@@ -659,14 +661,14 @@ get_output_section_key(Context<E> &ctx, InputSection<E> &isec,
   // We do not place them into .init_array/.fini_array because such
   // invalid pointer values would simply make the program to crash.
   if (ctors_in_init_array && !isec.get_rels(ctx).empty()) {
-    if (isec.name == ".ctors" || isec.name.starts_with(".ctors."))
+    if (name == ".ctors" || name.starts_with(".ctors."))
       return {".init_array", SHT_INIT_ARRAY};
-    if (isec.name == ".dtors" || isec.name.starts_with(".dtors."))
+    if (name == ".dtors" || name.starts_with(".dtors."))
       return {".fini_array", SHT_FINI_ARRAY};
   }
 
   const ElfShdr<E> &shdr = isec.shdr();
-  std::string_view name = get_output_name(ctx, isec.name, shdr.sh_flags);
+  name = get_output_name(ctx, name, shdr.sh_flags);
   u64 type = canonicalize_type<E>(name, shdr.sh_type);
   return {name, type};
 }
@@ -727,7 +729,8 @@ void create_output_sections(Context<E> &ctx) {
                      ~SHF_COMPRESSED & ~SHF_GNU_RETAIN;
 
       if (ctx.arg.relocatable && (sh_flags & SHF_GROUP)) {
-        OutputSection<E> *osec = new OutputSection<E>(isec->name, shdr.sh_type);
+        OutputSection<E> *osec =
+          new OutputSection<E>(isec->name(), shdr.sh_type);
         osec->sh_flags = sh_flags;
         isec->output_section = osec;
         ctx.osec_pool.emplace_back(osec);
@@ -1411,7 +1414,7 @@ void check_symbol_types(Context<E> &ctx) {
 template <typename E>
 static i64 get_init_fini_priority(InputSection<E> *isec) {
   static std::regex re(R"(\.(\d+)$)", std::regex_constants::optimize);
-  std::string_view name = isec->name;
+  std::string_view name = isec->name();
   std::cmatch m;
   if (std::regex_search(name.data(), name.data() + name.size(), m, re))
     return std::stoi(m[1]);
@@ -1433,7 +1436,7 @@ static i64 get_ctor_dtor_priority(InputSection<E> *isec) {
   if (std::regex_search(isec->file.filename, re2))
     return 65536;
 
-  std::string_view name = isec->name;
+  std::string_view name = isec->name();
   std::cmatch m;
   if (std::regex_search(name.data(), name.data() + name.size(), m, re3))
     return std::stoi(m[1]);
@@ -1459,8 +1462,8 @@ void sort_init_fini(Context<E> &ctx) {
         std::vector<Entry> vec;
 
         for (InputSection<E> *isec : osec->members) {
-          if (isec->name.starts_with(".ctors") ||
-              isec->name.starts_with(".dtors"))
+          std::string_view name = isec->name();
+          if (name.starts_with(".ctors") || name.starts_with(".dtors"))
             vec.push_back({isec, 65535 - get_ctor_dtor_priority(isec)});
           else
             vec.push_back({isec, get_init_fini_priority(isec)});
@@ -1668,13 +1671,13 @@ void fixup_ctors_in_init_array(Context<E> &ctx) {
   if (Chunk<E> *chunk = find_chunk(ctx, ".init_array"))
     if (OutputSection<E> *osec = chunk->to_osec())
       for (InputSection<E> *isec : osec->members)
-        if (isec->name.starts_with(".ctors"))
+        if (isec->name().starts_with(".ctors"))
           reverse_contents(*isec);
 
   if (Chunk<E> *chunk = find_chunk(ctx, ".fini_array"))
     if (OutputSection<E> *osec = chunk->to_osec())
       for (InputSection<E> *isec : osec->members)
-        if (isec->name.starts_with(".dtors"))
+        if (isec->name().starts_with(".dtors"))
           reverse_contents(*isec);
 }
 

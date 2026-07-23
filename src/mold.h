@@ -533,6 +533,7 @@ public:
 
   i64 get_priority() const;
   u64 get_addr() const;
+  std::string_view name() const;
   ElfShdr<E> &shdr() const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
   std::span<FdeRecord<E>> get_fdes() const;
@@ -547,37 +548,27 @@ public:
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
-  i64 sh_size = -1;
-
-  std::string_view name;
   std::string_view contents;
 
+  i64 sh_size = -1;
+  i64 offset = -1;
   i32 fde_begin = -1;
   i32 fde_end = -1;
-
-  i64 offset = -1;
   i32 shndx = -1;
   i32 relsec_idx = -1;
 
+  // UINT16_MAX means that name() must scan the remaining suffix.
+  u16 namelen = 0;
+
+  Atomic<u8> p2align = 0;
+  Atomic<bool> is_alive = true;       // for COMDAT and garbage collection
+  Atomic<bool> is_visited = false;    // for garbage collection
+  Atomic<bool> address_taken = false; // for ICF
   bool uncompressed = false;
 
-  // For COMDAT de-duplication and garbage collection
-  Atomic<bool> is_alive = true;
-  Atomic<u8> p2align = 0;
-
-  // For ICF
-  Atomic<bool> address_taken = false;
-
-  // For garbage collection
-  Atomic<bool> is_visited = false;
-
-  // For ICF
-  //
-  // `leader` is the section that this section has been merged with.
-  // Three kind of values are possible:
-  // - `leader == nullptr`: This section was not eligible for ICF.
-  // - `leader == this`: This section was retained.
-  // - `leader != this`: This section was merged with another identical section.
+  // `leader` is the section that this section has been merged with by ICF.
+  // It is null for ineligible sections, points to this for retained sections,
+  // and points to another section for removed sections.
   InputSection<E> *leader = nullptr;
   u32 icf_idx = -1;
   bool icf_eligible = false;
@@ -598,6 +589,9 @@ private:
 
   std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
 };
+
+static_assert(sizeof(InputSection<X86_64>) ==
+              (sizeof(void *) == 8 ? 88 : 72));
 
 //
 // tls.cc
@@ -3091,7 +3085,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 template <typename E>
 inline std::ostream &
 operator<<(std::ostream &out, const InputSection<E> &isec) {
-  out << isec.file << ":(" << isec.name << ")";
+  out << isec.file << ":(" << isec.name() << ")";
   return out;
 }
 
@@ -3136,6 +3130,18 @@ inline ElfShdr<E> &InputSection<E>::shdr() const {
   if (shndx < file.elf_sections.size())
     return file.elf_sections[shndx];
   return file.elf_sections2[shndx - file.elf_sections.size()];
+}
+
+template <typename E>
+inline std::string_view InputSection<E>::name() const {
+  if (shndx >= file.elf_sections.size())
+    return (shdr().sh_flags & SHF_TLS) ? ".tls_common" : ".common";
+
+  const char *data =
+    file.shstrtab.data() + file.elf_sections[shndx].sh_name;
+  if (namelen == UINT16_MAX)
+    return {data, UINT16_MAX + strlen(data + UINT16_MAX)};
+  return {data, namelen};
 }
 
 template <typename E>
@@ -3208,6 +3214,7 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   if ((!isec && !discarded) || (isec && isec->is_alive))
     return {};
 
+  std::string_view name = this->name();
   if (!name.starts_with(".debug_"))
     return {};
 
@@ -3362,7 +3369,7 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
     if (isec->icf_removed())
       return isec->leader->get_addr() + value;
 
-    if (isec->name == ".eh_frame") {
+    if (isec->name() == ".eh_frame") {
       // .eh_frame contents are parsed and reconstructed by the linker,
       // so pointing to a specific location in a source .eh_frame
       // section doesn't make much sense. However, CRT files contain
