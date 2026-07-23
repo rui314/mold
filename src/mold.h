@@ -1887,7 +1887,7 @@ public:
   std::vector<InputSection<E> *> eh_frame_sections;
   std::vector<InputSection<E> *> sframe_sections;
   std::vector<SFrameFde<E>> sframe_fdes;
-  std::vector<std::vector<ElfRel<E>>> decoded_crel;
+  std::vector<ExactArray<ElfRel<E>>> decoded_crel;
   bool exclude_libs = false;
   std::map<u32, u32> gnu_properties;
   bool needs_executable_stack = false;
@@ -3144,8 +3144,10 @@ inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
     return {};
 
   ElfShdr<E> &shdr = file.elf_sections[relsec_idx];
-  if (shdr.sh_type == SHT_CREL)
-    return file.decoded_crel[relsec_idx];
+  if (shdr.sh_type == SHT_CREL) {
+    ExactArray<ElfRel<E>> &rels = file.decoded_crel[relsec_idx];
+    return std::span<ElfRel<E>>(rels.data(), rels.size());
+  }
   return file.template get_data<ElfRel<E>>(ctx, shdr);
 }
 

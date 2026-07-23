@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -164,6 +165,41 @@ inline u64 bit_ceil(u64 val) {
     return val;
   return 1LL << (64 - std::countl_zero(val));
 }
+
+// ExactArray owns a fixed-size array without value-initializing trivial
+// elements that the caller is about to overwrite.
+template <typename T>
+class ExactArray {
+public:
+  ExactArray() = default;
+
+  explicit ExactArray(i64 sz)
+    : ptr(std::make_unique_for_overwrite<T[]>(sz)), size_(sz) {}
+
+  T &operator[](i64 i) {
+    return ptr[i];
+  }
+
+  const T &operator[](i64 i) const {
+    return ptr[i];
+  }
+
+  T *data() {
+    return ptr.get();
+  }
+
+  const T *data() const {
+    return ptr.get();
+  }
+
+  i64 size() const {
+    return size_;
+  }
+
+private:
+  std::unique_ptr<T[]> ptr;
+  i64 size_ = 0;
+};
 
 inline u64 align_to(u64 val, u64 align) {
   if (align == 0)

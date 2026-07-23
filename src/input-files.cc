@@ -248,8 +248,8 @@ static bool is_known_section_type(const ElfShdr<E> &shdr) {
 //
 // This function converts a CREL relocation table to a regular one.
 template <typename E>
-std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
-                                   const ElfShdr<E> &shdr) {
+ExactArray<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
+                                  const ElfShdr<E> &shdr) {
   u8 *p = (u8 *)file.get_string(ctx, shdr).data();
   u64 hdr = read_uleb(&p);
   i64 nrels = hdr >> 3;
@@ -264,10 +264,9 @@ std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
   i64 symidx = 0;
   i64 addend = 0;
 
-  std::vector<ElfRel<E>> vec;
-  vec.reserve(nrels);
+  ExactArray<ElfRel<E>> rels(nrels);
 
-  while (vec.size() < nrels) {
+  for (i64 i = 0; i < nrels; i++) {
     u8 flags = *p++;
     i64 nflags = is_rela ? 3 : 2;
 
@@ -289,9 +288,9 @@ std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
       type += read_sleb(&p);
     if (is_rela && (flags & 4))
       addend += read_sleb(&p);
-    vec.emplace_back(offset, type, symidx, addend);
+    rels[i] = ElfRel<E>(offset, type, symidx, addend);
   }
-  return vec;
+  return rels;
 }
 
 template <typename E>
