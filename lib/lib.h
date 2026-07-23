@@ -412,52 +412,21 @@ public:
   }
 
   std::pair<T *, bool> insert(std::string_view key, u64 hash, const T &val) {
-    assert(has_single_bit(nbuckets));
+    return insert_entry(key.data(), hash, val,
+                        [&](const char *ptr, u32 len) {
+                          return key == std::string_view(ptr, len);
+                        },
+                        [&](T &) { return (u32)key.size(); });
+  }
 
-    u64 begin = hash & (nbuckets - 1);
-    u64 mask = nbuckets / NUM_SHARDS - 1;
-
-    for (i64 i = 0; i < MAX_RETRY; i++) {
-      u64 idx = (begin & ~mask) | ((begin + i) & mask);
-      Entry &ent = entries[idx];
-
-      // It seems avoiding compare-and-swap is faster overall at least
-      // on my Zen4 machine, so do it.
-      if (const char *ptr = ent.key.load(std::memory_order_acquire);
-          ptr != nullptr && ptr != (char *)-1) {
-        if (key == std::string_view(ptr, ent.keylen))
-          return {&ent.value, false};
-        continue;
-      }
-
-      // Otherwise, use CAS to atomically claim the ownership of the slot.
-      const char *ptr = nullptr;
-      bool claimed = ent.key.compare_exchange_strong(ptr, (char *)-1,
-                                                     std::memory_order_acquire);
-
-      // If we successfully claimed the ownership of the slot,
-      // copy values to it.
-      if (claimed) {
-        new (&ent.value) T(val);
-        ent.keylen = key.size();
-        ent.key.store(key.data(), std::memory_order_release);
-        return {&ent.value, true};
-      }
-
-      // If someone is copying values to the slot, do busy wait.
-      while (ptr == (char *)-1) {
-        pause();
-        ptr = ent.key.load(std::memory_order_acquire);
-      }
-
-      // If the same key is already present, this is the slot we are
-      // looking for.
-      if (key == std::string_view(ptr, ent.keylen))
-        return {&ent.value, false};
-    }
-
-    std::cerr << "ConcurrentMap is full\n";
-    abort();
+  std::pair<T *, bool> insert_cstr(const char *key, u64 hash, const T &val,
+                                   auto initialize) {
+    // This variant avoids storing a length alongside every caller-side key.
+    // Only a newly inserted key needs its length computed by `initialize`.
+    return insert_entry(
+      key, hash, val,
+      [&](const char *ptr, u32) { return !strcmp(key, ptr); },
+      [&](T &value) { return initialize(value, key); });
   }
 
   i64 get_idx(T *value) const {
@@ -521,6 +490,52 @@ public:
 
   Entry *entries = nullptr;
   u64 nbuckets = 0;
+
+private:
+  std::pair<T *, bool> insert_entry(const char *key, u64 hash, const T &val,
+                                    auto equals, auto initialize) {
+    assert(has_single_bit(nbuckets));
+
+    u64 begin = hash & (nbuckets - 1);
+    u64 mask = nbuckets / NUM_SHARDS - 1;
+
+    for (i64 i = 0; i < MAX_RETRY; i++) {
+      u64 idx = (begin & ~mask) | ((begin + i) & mask);
+      Entry &ent = entries[idx];
+
+      // Avoid an atomic update when the slot is already occupied.
+      if (const char *ptr = ent.key.load(std::memory_order_acquire);
+          ptr != nullptr && ptr != (char *)-1) {
+        if (equals(ptr, ent.keylen))
+          return {&ent.value, false};
+        continue;
+      }
+
+      const char *ptr = nullptr;
+      bool claimed = ent.key.compare_exchange_strong(ptr, (char *)-1,
+                                                     std::memory_order_acquire);
+
+      // -1 marks the slot as claimed until its value has been initialized.
+      if (claimed) {
+        new (&ent.value) T(val);
+        ent.keylen = initialize(ent.value);
+        ent.key.store(key, std::memory_order_release);
+        return {&ent.value, true};
+      }
+
+      // Wait for the thread that claimed the slot to publish its key.
+      while (ptr == (char *)-1) {
+        pause();
+        ptr = ent.key.load(std::memory_order_acquire);
+      }
+
+      if (equals(ptr, ent.keylen))
+        return {&ent.value, false};
+    }
+
+    std::cerr << "ConcurrentMap is full\n";
+    abort();
+  }
 };
 
 // ShardedMap is a map from strings to values of type T, built in two

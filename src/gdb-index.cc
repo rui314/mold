@@ -58,6 +58,7 @@
 
 #include "mold.h"
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_scan.h>
 
 namespace mold {
 
@@ -125,13 +126,6 @@ struct SectionHeader {
   ul32 const_pool_offset = 0;
 };
 
-struct NameType {
-  auto operator<=>(const NameType &) const = default;
-  u64 hash;
-  u8 type;
-  std::string_view name;
-};
-
 struct MapValue {
   u32 gdb_hash = 0;
   Atomic<u32> count;
@@ -139,24 +133,111 @@ struct MapValue {
   u32 type_offset = 0;
 };
 
+struct NameType {
+  NameType(u64 hash, u8 type, const char *name)
+    : hash_and_type((hash << 8) | type), name(name) {}
+
+  u64 get_hash() const {
+    return hash_and_type >> 8;
+  }
+
+  u8 get_type() const {
+    return hash_and_type & 0xff;
+  }
+
+  bool operator==(const NameType &other) const {
+    return hash_and_type == other.hash_and_type && !strcmp(name, other.name);
+  }
+
+  // The low byte stores the type. Hash collisions, including collisions in
+  // the discarded high byte, are resolved by comparing the complete name.
+  u64 hash_and_type;
+  const char *name;
+};
+
+struct IndexedName {
+  MapValue *entry;
+  u32 type_idx;
+  u8 type;
+};
+
+// A name record is read as a NameType and replaced with an IndexedName after
+// the name has been interned. The union avoids retaining both forms for the
+// millions of public names in a large debug link.
+union NameRecord {
+  NameRecord(u64 hash, u8 type, const char *name)
+    : nametype(hash, type, name) {}
+
+  NameType nametype;
+  IndexedName indexed;
+};
+
+static_assert(sizeof(NameRecord) == 16);
+
 struct Compunit {
   DwarfKind kind;
   i64 offset;
   i64 size;
   std::vector<std::pair<u64, u64>> ranges;
-  std::vector<NameType> nametypes;
-  std::vector<MapValue *> entries;
+  std::vector<NameRecord> names;
 };
 
-// The hash function for .gdb_index.
-static u32 gdb_hash(std::string_view name) {
+using GdbNameMap = ConcurrentMap<MapValue>;
+
+struct PoolSize {
+  i64 type_bytes = 0;
+  i64 name_bytes = 0;
+};
+
+// GCC can emit the same public name once for each COMDAT group. Remove these
+// duplicates with a local hash table instead of sorting the strings.
+static void dedup_names(Compunit &cu) {
+  if (cu.names.size() < 2)
+    return;
+
+  u64 capacity = bit_ceil(cu.names.size() * 2);
+  std::vector<u32> buckets(capacity, UINT32_MAX);
+  u64 mask = capacity - 1;
+  i64 out = 0;
+
+  for (NameRecord &record : cu.names) {
+    NameType &nt = record.nametype;
+    u64 idx =
+      (nt.get_hash() ^ ((u64)nt.get_type() * 0x9e37'79b9)) & mask;
+    bool duplicate = false;
+
+    while (buckets[idx] != UINT32_MAX) {
+      if (cu.names[buckets[idx]].nametype == nt) {
+        duplicate = true;
+        break;
+      }
+      idx = (idx + 1) & mask;
+    }
+
+    if (duplicate)
+      continue;
+
+    if (&record != &cu.names[out])
+      cu.names[out] = record;
+    buckets[idx] = out++;
+  }
+
+  cu.names.erase(cu.names.begin() + out, cu.names.end());
+}
+
+// Compute the .gdb_index hash and length together when a name is first
+// inserted.
+static u32 initialize_gdb_name(MapValue &value, const char *name) {
   u32 h = 0;
-  for (u8 c : name) {
+  u32 size = 0;
+
+  for (u8 c = *name; c; c = name[++size]) {
     if ('A' <= c && c <= 'Z')
       c = 'a' + c - 'A';
     h = h * 67 + c - 113;
   }
-  return h;
+  value.gdb_hash = h;
+  return size;
 }
 
 template <typename E>
@@ -528,9 +609,11 @@ static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
     p += sizeof(Offset);
 
     u8 type = *p++;
-    std::string_view name = (char *)p;
-    p += name.size() + 1;
-    cu->nametypes.push_back(NameType{hash_string(name), type, name});
+    const char *name = (char *)p;
+    i64 len = strlen(name);
+    p += len + 1;
+    cu->names.emplace_back(
+      hash_string(std::string_view(name, len)), type, name);
   }
 
   return size;
@@ -555,7 +638,7 @@ static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
     if (isec->contents.empty())
       continue;
 
-    u8 *p = (u8*)&isec->contents[0];
+    u8 *p = (u8 *)&isec->contents[0];
     u8 *end = p + isec->contents.size();
 
     while (p < end) {
@@ -564,14 +647,12 @@ static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
       else
         p += read_pubnames_cu(ctx, *(PubnamesHdr32<E> *)p, cus, file);
     }
-  };
+  }
 }
 
 template <typename E>
 static std::vector<Compunit> read_compunits(Context<E> &ctx) {
   std::vector<Compunit> cus;
-
-  // Read compunits from the output .debug_info section.
   u8 *begin = &ctx.debug_info[0];
   u8 *end = begin + ctx.debug_info.size();
 
@@ -587,7 +668,6 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
     p += size;
   }
 
-  // Read address ranges for each compunit.
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
     switch (cu.kind) {
     case DWARF2_32:
@@ -604,29 +684,22 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
       break;
     }
 
-    // Remove empty ranges
-    std::erase_if(cu.ranges, [](std::pair<u64, u64> p) {
-      return p.first == 0 || p.first == p.second;
+    std::erase_if(cu.ranges, [](std::pair<u64, u64> range) {
+      return range.first == 0 || range.first == range.second;
     });
   });
 
-  // Read symbols from .debug_gnu_pubnames and .debug_gnu_pubtypes.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     read_pubnames(ctx, cus, *file);
   });
 
-  // Uniquify elements because GCC 11 seems to emit one record for each
-  // comdat group which results in having a lot of duplicate records.
-  tbb::parallel_for_each(cus, [](Compunit &cu) {
-    ranges::sort(cu.nametypes);
-    remove_duplicates(cu.nametypes);
-  });
-
+  // GCC 11 may emit the same record once for each COMDAT group.
+  tbb::parallel_for_each(cus, dedup_names);
   return cus;
 }
 
 template <typename E>
-std::span<u8> get_buffer(Context<E> &ctx, Chunk<E> *chunk) {
+static std::span<u8> get_buffer(Context<E> &ctx, Chunk<E> *chunk) {
   if (chunk->is_compressed) {
     CompressedSection<E> &sec = *(CompressedSection<E> *)chunk;
     return {sec.uncompressed_data.get(), (size_t)sec.chdr.ch_size};
@@ -656,39 +729,32 @@ void write_gdb_index(Context<E> &ctx) {
   if (ctx.debug_info.empty())
     return;
 
-  // Read debug info
   std::vector<Compunit> cus = read_compunits(ctx);
 
-  // Uniquify symbols
   HyperLogLog estimator;
-
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
     HyperLogLog::Sketch &sketch = estimator.local();
-    for (NameType &nt : cu.nametypes)
-      sketch.insert(nt.hash);
+    for (NameRecord &record : cu.names)
+      sketch.insert(record.nametype.get_hash() * 0x9e37'79b9'7f4a'7c15);
   });
 
-  ConcurrentMap<MapValue> map(estimator.get_cardinality() * 3 / 2);
-
+  GdbNameMap map(estimator.get_cardinality() * 3 / 2);
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
-    cu.entries.reserve(cu.nametypes.size());
-    for (NameType &nt : cu.nametypes) {
-      MapValue *ent;
-      bool inserted;
-      std::tie(ent, inserted) = map.insert(nt.name, nt.hash, {});
-
-      if (inserted)
-        ent->gdb_hash = gdb_hash(nt.name);
-      ent->count++;
-      cu.entries.push_back(ent);
+    for (NameRecord &record : cu.names) {
+      NameType &nt = record.nametype;
+      const char *name = nt.name;
+      u64 hash = nt.get_hash();
+      u8 type = nt.get_type();
+      MapValue *ent =
+        map.insert_cstr(name, hash, {}, initialize_gdb_name).first;
+      record.indexed = {ent, ent->count++ + 1, type};
     }
   });
 
-  // Sort symbols for build reproducibility
-  using Entry = typename decltype(map)::Entry;
-  std::vector<Entry *> entries = map.get_sorted_entries_all();
+  std::vector<GdbNameMap::Entry *> entries = map.get_sorted_entries_all();
+  using Entry = GdbNameMap::Entry;
 
-  // Compute sizes of each components
+  // Compute sizes of each component
   SectionHeader hdr;
   hdr.cu_list_offset = sizeof(hdr);
   hdr.cu_types_offset = hdr.cu_list_offset + cus.size() * 16;
@@ -701,18 +767,36 @@ void write_gdb_index(Context<E> &ctx) {
   i64 ht_size = bit_ceil(entries.size() * 5 / 4 + 1);
   hdr.const_pool_offset = hdr.symtab_offset + ht_size * 8;
 
-  i64 offset = 0;
-  for (Entry *ent : entries) {
-    ent->value.type_offset = offset;
-    offset += ent->value.count * 4 + 4;
-  }
+  // The map may contain millions of names. Assign their type and string
+  // ranges with a parallel prefix sum.
+  auto scan = [&](const tbb::blocked_range<i64> &range, PoolSize size,
+                  bool is_final) {
+    for (i64 i = range.begin(); i < range.end(); i++) {
+      Entry *ent = entries[i];
+      if (is_final) {
+        ent->value.type_offset = size.type_bytes;
+        ent->value.name_offset = size.name_bytes;
+      }
+      size.type_bytes += ent->value.count * 4 + 4;
+      size.name_bytes += ent->keylen + 1;
+    }
+    return size;
+  };
 
-  for (Entry *ent : entries) {
-    ent->value.name_offset = offset;
-    offset += ent->keylen + 1;
-  }
+  PoolSize pool_size = tbb::parallel_scan(
+    tbb::blocked_range<i64>(0, entries.size()), PoolSize{}, scan,
+    [](PoolSize a, PoolSize b) {
+      return PoolSize{a.type_bytes + b.type_bytes,
+                      a.name_bytes + b.name_bytes};
+    });
 
-  i64 bufsize = hdr.const_pool_offset + offset;
+  tbb::parallel_for_each(entries, [&](Entry *ent) {
+    ent->value.name_offset += pool_size.type_bytes;
+  });
+
+  i64 bufsize =
+    hdr.const_pool_offset + pool_size.type_bytes + pool_size.name_bytes;
+
   u8 *buf = ctx.output_file->extend(ctx, bufsize);
 
   // Write a section header
@@ -744,35 +828,32 @@ void write_gdb_index(Context<E> &ctx) {
   });
 
   // Write a symbol table
-  u32 mask = ht_size - 1;
   ul32 *ht = (ul32 *)(buf + hdr.symtab_offset);
   memset(ht, 0, ht_size * 8);
 
+  u32 mask = ht_size - 1;
   for (Entry *ent : entries) {
     u32 hash = ent->value.gdb_hash;
     u32 step = ((hash * 17) & mask) | 1;
-    u32 j = hash & mask;
+    u32 i = hash & mask;
 
-    while (ht[j * 2] || ht[j * 2 + 1])
-      j = (j + step) & mask;
+    while (ht[i * 2] || ht[i * 2 + 1])
+      i = (i + step) & mask;
 
-    ht[j * 2] = ent->value.name_offset;
-    ht[j * 2 + 1] = ent->value.type_offset;
+    ht[i * 2] = ent->value.name_offset;
+    ht[i * 2 + 1] = ent->value.type_offset;
   }
 
-  // Write types. Use MapValue::count as an atomic slot counter.
+  // Write types
   u8 *base = buf + hdr.const_pool_offset;
-
-  for (Entry *ent : entries)
-    ent->value.count = 0;
 
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
     i64 i = &cu - cus.data();
-    for (i64 j = 0; j < cu.nametypes.size(); j++) {
-      MapValue *ent = cu.entries[j];
+    for (NameRecord &record : cu.names) {
+      IndexedName &name = record.indexed;
+      MapValue *ent = name.entry;
       ul32 *p = (ul32 *)(base + ent->type_offset);
-      i64 idx = ++ent->count;
-      p[idx] = (cu.nametypes[j].type << 24) | i;
+      p[name.type_idx] = (name.type << 24) | i;
     }
   });
 
