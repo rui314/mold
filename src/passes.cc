@@ -1256,7 +1256,7 @@ void check_symbol_version_conflicts(Context<E> &ctx) {
         sym2->ver_idx == (sym->ver_idx & ~VERSYM_HIDDEN)) {
       ObjectFile<E> *file = (ObjectFile<E> *)sym->file;
       Error(ctx) << "duplicate symbol: " << *file << ": " << *sym2->file
-                 << ": " << file->symbol_names[sym->sym_idx];
+                 << ": " << file->get_symbol_name(sym->sym_idx);
     }
   }
 
@@ -2305,7 +2305,7 @@ void parse_symbol_version(Context<E> &ctx) {
       if (sym->file != file)
         continue;
 
-      std::string_view name = file->symbol_names[i];
+      std::string_view name = file->get_symbol_name(i);
       std::string_view ver = name.substr(name.find('@') + 1);
 
       bool is_default = false;

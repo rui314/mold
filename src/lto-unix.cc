@@ -682,7 +682,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
 
   obj->symbol_strtab = save_string(ctx, strtab);
   obj->elf_syms = obj->lto_elf_syms;
-  obj->populate_symbol_names();
+  obj->populate_symbol_name_lengths();
   obj->register_global_symbols(ctx);
   plugin_symbols.clear();
   return obj;

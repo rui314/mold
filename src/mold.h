@@ -1828,10 +1828,15 @@ public:
   std::string_view shstrtab;
   std::string_view symbol_strtab;
 
-  // Parallel to elf_syms; cached to avoid per-call strlen.
-  std::vector<std::string_view> symbol_names;
+  // Parallel to elf_syms; avoids rescanning complete symbol names.
+  std::vector<NameLen> symname_lens;
 
-  void populate_symbol_names();
+  void populate_symbol_name_lengths();
+
+  std::string_view get_symbol_name(i64 i) const {
+    const char *p = symbol_strtab.data() + elf_syms[i].st_name;
+    return symname_lens[i].get_string(p);
+  }
 
   bool as_needed = false;
   bool has_init_array = false;

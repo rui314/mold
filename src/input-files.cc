@@ -99,11 +99,11 @@ InputFile<E>::InputFile(Context<E> &ctx, MappedFile *mf)
 }
 
 template <typename E>
-void InputFile<E>::populate_symbol_names() {
-  symbol_names.reserve(elf_syms.size());
+void InputFile<E>::populate_symbol_name_lengths() {
+  symname_lens.reserve(elf_syms.size());
   for (const ElfSym<E> &esym : elf_syms) {
     const char *p = symbol_strtab.data() + esym.st_name;
-    symbol_names.emplace_back(p, strlen(p));
+    symname_lens.emplace_back(strlen(p));
   }
 }
 
@@ -313,7 +313,7 @@ void ObjectFile<E>::parse_comdat_groups(Context<E> &ctx) {
       signature = this->shstrtab.data() +
                   this->elf_sections[get_shndx(esym)].sh_name;
     } else {
-      signature = this->symbol_names[shdr.sh_info];
+      signature = this->get_symbol_name(shdr.sh_info);
     }
 
     // Ignore a broken comdat group GCC emits for .debug_macros.
@@ -773,7 +773,7 @@ void ObjectFile<E>::register_global_symbols(Context<E> &ctx) {
       has_common_symbol = true;
 
     // Get a symbol name
-    std::string_view key = this->symbol_names[i];
+    std::string_view key = this->get_symbol_name(i);
     std::string_view name = key;
 
     // Parse symbol version after atsign
@@ -832,7 +832,7 @@ void ObjectFile<E>::initialize_local_symbols(Context<E> &ctx) {
         name = this->shstrtab.data() + this->elf_sections[shndx].sh_name;
       }
     } else {
-      name = this->symbol_names[i];
+      name = this->get_symbol_name(i);
     }
 
     Symbol<E> &sym = this->local_syms[i];
@@ -1034,7 +1034,7 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
     this->first_global = symtab_sec->sh_info;
     this->elf_syms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
     this->symbol_strtab = this->get_string(ctx, symtab_sec->sh_link);
-    this->populate_symbol_names();
+    this->populate_symbol_name_lengths();
 
     if (ElfShdr<E> *shdr = this->find_section(SHT_SYMTAB_SHNDX))
       symtab_shndx_sec = this->template get_data<U32<E>>(ctx, *shdr);
