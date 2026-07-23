@@ -1747,6 +1747,43 @@ private:
   std::vector<u32> hashes;
 };
 
+// Store short name lengths exactly. A long name stores a logarithmic lower
+// bound so that finding its exact length requires scanning only its suffix.
+class NameLen {
+public:
+  NameLen() = default;
+
+  NameLen(i64 len) {
+    if (len < LONG_NAME) {
+      value = len;
+      return;
+    }
+    i64 log2 = std::bit_width((u64)(len - LONG_NAME + 1)) - 1;
+    value = LONG_NAME + std::min<i64>(log2, UINT8_MAX - LONG_NAME);
+  }
+
+  bool is_long() const {
+    return value >= LONG_NAME;
+  }
+
+  std::string_view get_string(const char *str) const {
+    i64 len = lower_bound();
+    if (is_long())
+      len += strlen(str + len);
+    return std::string_view(str, len);
+  }
+
+  i64 lower_bound() const {
+    if (!is_long())
+      return value;
+    return LONG_NAME - 1 + (i64(1) << (value - LONG_NAME));
+  }
+
+private:
+  static constexpr u8 LONG_NAME = 240;
+  u8 value = 0;
+};
+
 // InputFile is the base class of ObjectFile and SharedFile.
 template <typename E>
 class InputFile {
@@ -2816,10 +2853,9 @@ class Symbol {
 public:
   Symbol() = default;
 
-  Symbol(std::string_view name, bool demangle)
-    : nameptr(name.data()), namelen(name.size()), demangle(demangle) {}
-
-  Symbol(const Symbol<E> &other) : Symbol(other.name(), other.demangle) {}
+  Symbol(const Symbol<E> &other)
+    : nameptr(other.nameptr), demangle(other.demangle),
+      namelen(other.namelen) {}
 
   u64 get_addr(Context<E> &ctx, i64 flags = 0) const;
   u64 get_got_addr(Context<E> &ctx) const;
@@ -2924,7 +2960,6 @@ public:
   u64 value = 0;
 
   const char *nameptr = nullptr;
-  i32 namelen = 0;
 
   // Index into the symbol table of the owner file.
   i32 sym_idx = -1;
@@ -3063,6 +3098,8 @@ public:
 
   // If true, we try to dmenagle the sybmol when printing.
   bool demangle : 1 = false;
+
+  NameLen namelen;
 };
 
 template <typename E>
@@ -3775,7 +3812,7 @@ inline void Symbol<E>::set_name(std::string_view name) {
 
 template <typename E>
 inline std::string_view Symbol<E>::name() const {
-  return {nameptr, (size_t)namelen};
+  return namelen.get_string(nameptr);
 }
 
 template <typename E>

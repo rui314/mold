@@ -18,6 +18,8 @@ Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
                       std::string_view name) {
   auto [sym, created] = ctx.symbol_map.insert(key);
   if (created) {
+    if (NameLen(name.size()).is_long())
+      name = save_string(ctx, std::string(name));
     sym->set_name(name);
     sym->demangle = ctx.arg.demangle;
   }

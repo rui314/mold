@@ -318,7 +318,13 @@ void gather_symbols(Context<E> &ctx) {
     [&](std::pair<InputFile<E> *, i32> &ref, Symbol<E> *sym,
         std::string_view key, bool created) {
       if (created) {
-        sym->set_name(key.substr(0, key.find('@')));
+        std::string_view name = key.substr(0, key.find('@'));
+
+        // Long version-prefix views are not NUL-terminated.
+        if (NameLen(name.size()).is_long() &&
+            name.data()[name.size()] != '\0')
+          name = save_string(ctx, std::string(name));
+        sym->set_name(name);
         sym->demangle = ctx.arg.demangle;
       }
       ref.first->symbols[ref.second] = sym;
