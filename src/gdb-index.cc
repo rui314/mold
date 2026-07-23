@@ -198,6 +198,33 @@ struct GdbIndexData {
   i64 ht_size = 0;
 };
 
+// GDB index type lists contain fixed-width 32-bit records. Four byte-wise
+// passes are faster than comparison sorting once a list is sufficiently large.
+static void radix_sort(std::span<ul32> values, std::vector<ul32> &scratch) {
+  scratch.resize(values.size());
+  ul32 *src = values.data();
+  ul32 *dst = scratch.data();
+
+  for (i64 shift = 0; shift < 32; shift += 8) {
+    u32 counts[256] = {};
+    for (i64 i = 0; i < values.size(); i++)
+      counts[((u32)src[i] >> shift) & 255]++;
+
+    u32 offsets[256];
+    offsets[0] = 0;
+    for (i64 i = 1; i < 256; i++)
+      offsets[i] = offsets[i - 1] + counts[i - 1];
+
+    for (i64 i = 0; i < values.size(); i++) {
+      u32 val = src[i];
+      dst[offsets[(val >> shift) & 255]++] = val;
+    }
+    std::swap(src, dst);
+  }
+
+  assert(src == values.data());
+}
+
 // GCC can emit the same public name once for each COMDAT group. Remove these
 // duplicates with a local hash table instead of sorting the strings.
 static void dedup_names(Compunit &cu) {
@@ -914,17 +941,22 @@ void write_gdb_index(Context<E> &ctx) {
     }
   });
 
-  // Write the final counts into the buffer.
+  // Write the final counts into the buffer and sort the type lists.
+  tbb::enumerable_thread_specific<std::vector<ul32>> scratch;
   tbb::parallel_for_each(entries, [&](Entry *ent) {
     ul32 *p = (ul32 *)(base + ent->value.type_offset);
     p[0] = ent->value.count;
-    // Sort entries for deterministic output
-    std::sort(p + 1, p + 1 + ent->value.count);
+    std::span<ul32> values(p + 1, ent->value.count);
+
+    if (values.size() < 256)
+      ranges::sort(values);
+    else
+      radix_sort(values, scratch.local());
   });
 
   // Write names
   tbb::parallel_for_each(entries, [&](Entry *ent) {
-    u8 *dst = buf + hdr.const_pool_offset + ent->value.name_offset;
+    u8 *dst = base + ent->value.name_offset;
     memcpy(dst, ent->key, ent->keylen);
     dst[ent->keylen] = '\0';
   });
