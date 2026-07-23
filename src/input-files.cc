@@ -338,15 +338,18 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
     const ElfShdr<E> &shdr = this->elf_sections[i];
-    std::string_view name = this->shstrtab.data() + shdr.sh_name;
 
     if (!comdat_discarded.empty() && comdat_discarded[i])
       continue;
 
-    if ((shdr.sh_flags & SHF_EXCLUDE) &&
-        name.starts_with(".gnu.offload_lto_.symtab.")) {
-      this->is_gcc_offload_obj = true;
-      continue;
+    std::string_view name;
+
+    if (shdr.sh_flags & SHF_EXCLUDE) {
+      name = this->shstrtab.data() + shdr.sh_name;
+      if (name.starts_with(".gnu.offload_lto_.symtab.")) {
+        this->is_gcc_offload_obj = true;
+        continue;
+      }
     }
 
     if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC) &&
@@ -379,6 +382,9 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     case SHT_NULL:
       break;
     default:
+      if (!name.data())
+        name = this->shstrtab.data() + shdr.sh_name;
+
       if (!is_known_section_type(shdr))
         Fatal(ctx) << *this << ": " << name << ": unsupported section type: 0x"
                    << std::hex << (u32)shdr.sh_type;
@@ -440,7 +446,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (ctx.arg.oformat_binary && !(shdr.sh_flags & SHF_ALLOC))
         continue;
 
-      this->sections[i] = &this->sections_pool.emplace_back(ctx, *this, i);
+      this->sections[i] =
+        &this->sections_pool.emplace_back(ctx, *this, i, name);
       InputSection<E> *isec = this->sections[i];
 
       // Save .llvm_addrsig for --icf=safe.
@@ -813,10 +820,19 @@ void ObjectFile<E>::initialize_local_symbols(Context<E> &ctx) {
       Fatal(ctx) << *this << ": common local symbol?";
 
     std::string_view name;
-    if (esym.st_type == STT_SECTION)
-      name = this->shstrtab.data() + this->elf_sections[get_shndx(esym)].sh_name;
-    else
+    if (esym.st_type == STT_SECTION) {
+      i64 shndx = get_shndx(esym);
+      if (InputSection<E> *isec = sections[shndx]) {
+        name = isec->name;
+      } else if (!comdat_discarded.empty() && comdat_discarded[shndx]) {
+        // Discarded section symbol names are never emitted.
+        name = "";
+      } else {
+        name = this->shstrtab.data() + this->elf_sections[shndx].sh_name;
+      }
+    } else {
       name = this->symbol_names[i];
+    }
 
     Symbol<E> &sym = this->local_syms[i];
     sym.set_name(name);
@@ -1268,7 +1284,7 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     elf_sections2.push_back(shdr);
 
     i64 idx = this->elf_sections.size() + elf_sections2.size() - 1;
-    InputSection<E> *isec = &sections_pool.emplace_back(ctx, *this, idx);
+    InputSection<E> *isec = &sections_pool.emplace_back(ctx, *this, idx, "");
 
     sym.set_input_section(isec);
     sym.value = 0;

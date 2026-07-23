@@ -520,7 +520,8 @@ struct InputSectionExtras<E> {
 template <typename E>
 class __attribute__((aligned(4))) InputSection {
 public:
-  InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx);
+  InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx,
+               std::string_view section_name);
 
   void uncompress(Context<E> &ctx);
   void copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz);
