@@ -10,20 +10,28 @@
 
 namespace mold {
 
+template <typename E>
+static std::span<Symbol<E>>
+allocate_symbols(Context<E> &ctx, i64 size) {
+  if (size == 0)
+    return {};
+
+  Symbol<E> *data = ctx.arena.template allocate<Symbol<E>>(size);
+  std::uninitialized_value_construct_n(data, size);
+  return std::span<Symbol<E>>(data, size);
+}
+
 // If we haven't seen the same `key` before, create a new instance
 // of Symbol and returns it. Otherwise, returns the previously-
 // instantiated object. `key` is usually the same as `name`.
 template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
                       std::string_view name) {
-  auto [sym, created] = ctx.symbol_map.insert(key);
-  if (created) {
-    if (NameLen(name.size()).is_long())
-      name = save_string(ctx, std::string(name));
-    sym->set_name(name);
-    sym->demangle = ctx.arg.demangle;
-  }
-  return sym;
+  return ctx.symbol_map.insert(key, [&](std::string_view, Symbol<E> &sym) {
+    sym.has_map_name = true;
+    sym.set_name(name);
+    sym.demangle = ctx.arg.demangle;
+  });
 }
 
 template <typename E>
@@ -38,7 +46,7 @@ static bool is_rust_symbol(const Symbol<E> &sym) {
   // We don't want to accidentally demangle C++ symbols as Rust ones.
   // So, the legacy mangling scheme will be demangled only when we
   // know the object file was created by rustc.
-  if (sym.file && !sym.file->is_dso && ((ObjectFile<E> *)sym.file)->is_rust_obj)
+  if (sym.file && !sym.file->is_dso && sym.file->to_obj()->is_rust_obj)
     return true;
 
   // "_R" is the prefix of the new Rust mangling scheme.
@@ -68,7 +76,8 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym) {
 
 template <typename E>
 InputFile<E>::InputFile(Context<E> &ctx, MappedFile *mf)
-  : mf(mf), filename(mf->name) {
+  : mf(mf), symbols(ArenaAllocator<ArenaPtr<Symbol<E>>>(ctx.arena)),
+    filename(mf->name) {
   if (mf->size < sizeof(ElfEhdr<E>))
     Fatal(ctx) << *this << ": file too small";
   if (memcmp(mf->data, "\177ELF", 4))
@@ -97,6 +106,11 @@ InputFile<E>::InputFile(Context<E> &ctx, MappedFile *mf)
 
   shstrtab = this->get_string(ctx, shstrtab_idx);
 }
+
+template <typename E>
+InputFile<E>::InputFile(Context<E> &ctx)
+  : symbols(ArenaAllocator<ArenaPtr<Symbol<E>>>(ctx.arena)),
+    filename("<internal>") {}
 
 template <typename E>
 void InputFile<E>::populate_symbol_name_lengths() {
@@ -291,17 +305,11 @@ void ObjectFile<E>::parse_comdat_groups(Context<E> &ctx) {
 
     if (shdr.sh_info >= this->elf_syms.size())
       Fatal(ctx) << *this << ": invalid symbol index";
-    const ElfSym<E> &esym = this->elf_syms[shdr.sh_info];
-    std::string_view signature;
-    if (esym.st_type == STT_SECTION)
-      signature = this->shstrtab.data() +
-                  this->elf_sections[get_shndx(esym)].sh_name;
-    else
-      signature = this->get_symbol_name(shdr.sh_info);
+    Symbol<E> *signature = get_comdat_signature(ctx, i);
 
     // Ignore a broken comdat group GCC emits for .debug_macros.
     // https://github.com/rui314/mold/issues/438
-    if (signature.starts_with("wm4."))
+    if (signature->name().starts_with("wm4."))
       continue;
 
     std::span<U32<E>> entries = this->template get_data<U32<E>>(ctx, shdr);
@@ -312,8 +320,7 @@ void ObjectFile<E>::parse_comdat_groups(Context<E> &ctx) {
     if (entries[0] != GRP_COMDAT)
       Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
 
-    Symbol<E> *sig = get_comdat_signature(ctx, i);
-    comdat_groups.push_back({sig, entries.subspan(1), (i32)i});
+    comdat_groups.emplace_back(ctx, signature, i);
   }
 }
 
@@ -782,7 +789,7 @@ void ObjectFile<E>::register_global_symbols(Context<E> &ctx) {
     // Only record the symbol reference here; gather_symbols() creates
     // the Symbols and fills in the `symbols` slots once all files
     // have been read.
-    ctx.symbol_map.add(key, {this, (i32)i});
+    ctx.symbol_map.add(key, this->symbols[i]);
   }
 }
 
@@ -796,7 +803,7 @@ void ObjectFile<E>::initialize_local_symbols(Context<E> &ctx) {
     if (!is_discarded_comdat(this->elf_syms[i]))
       num_local_syms++;
 
-  this->local_syms.resize(num_local_syms);
+  this->local_syms = allocate_symbols<E>(ctx, num_local_syms);
   this->local_syms[0].file = this;
   this->local_syms[0].sym_idx = 0;
   this->symbols[0] = &this->local_syms[0];
@@ -808,7 +815,7 @@ void ObjectFile<E>::initialize_local_symbols(Context<E> &ctx) {
       Fatal(ctx) << *this << ": common local symbol?";
 
     if (is_discarded_comdat(esym)) {
-      this->symbols[i] = &discarded_comdat_sym<E>;
+      this->symbols[i] = discarded_comdat_sym<E>;
       continue;
     }
     this->symbols[i] = &this->local_syms[local_idx++];
@@ -960,7 +967,9 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
           if (sections.get_mergeable(get_shndx(esym)))
             nfrag_syms++;
 
-  this->frag_syms.resize(nfrag_syms);
+  // Arena allocations cannot be reclaimed, so grow this vector only once.
+  this->symbols.reserve(this->symbols.size() + nfrag_syms);
+  this->frag_syms = allocate_symbols<E>(ctx, nfrag_syms);
 
   // For each relocation referring to a mergeable section symbol, we
   // create a new dummy non-section symbol and redirect the relocation
@@ -990,7 +999,7 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
 
         Symbol<E> &sym = this->frag_syms[idx];
         sym.file = this;
-        sym.set_name("<fragment>");
+        sym.is_fragment_dummy = true;
         sym.sym_idx = r.r_sym;
         sym.visibility = STV_HIDDEN;
         sym.set_frag(frag);
@@ -1004,7 +1013,7 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
   assert(idx == this->frag_syms.size());
 
   for (Symbol<E> &sym : this->frag_syms)
-    this->symbols.push_back(&sym);
+    this->symbols.emplace_back(&sym);
 }
 
 // Read global symbols before archive extraction so they can participate in
@@ -1040,7 +1049,7 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx,
     comdat_discarded.resize(sections.size());
     for (ComdatGroupRef<E> &ref : comdat_groups)
       if (!ref.is_owner)
-        for (u32 i : ref.members)
+        for (u32 i : ref.members(*this))
           comdat_discarded[i] = true;
   }
 
@@ -1088,7 +1097,8 @@ template <typename E>
 static u64 get_rank(const Symbol<E> &sym) {
   if (!sym.file)
     return 7 << 24;
-  return get_rank(sym.file, sym.esym(), !sym.file->is_reachable);
+  InputFile<E> *file = sym.file;
+  return get_rank(file, sym.esym(), !file->is_reachable);
 }
 
 // Symbol's visibility is set to the most restrictive one. For example,
@@ -1424,6 +1434,14 @@ void SharedFile<E>::parse(Context<E> &ctx) {
 
   // Read a symbol table.
   std::span<ElfSym<E>> esyms = this->template get_data<ElfSym<E>>(ctx, *symtab_sec);
+  if (esyms.size() < symtab_sec->sh_info)
+    Fatal(ctx) << *this << ": invalid symbol table";
+
+  i64 num_syms = esyms.size() - symtab_sec->sh_info;
+  this->elf_syms2.reserve(num_syms);
+  this->versyms.reserve(num_syms);
+  this->symbols.reserve(num_syms);
+  this->symbols2.reserve(num_syms);
 
   std::span<U16<E>> vers;
   if (ElfShdr<E> *sec = this->find_section(SHT_GNU_VERSYM))
@@ -1481,16 +1499,16 @@ void SharedFile<E>::parse(Context<E> &ctx) {
     // visit all symbol references to redirect `foo@VERSION` to `foo`.
     if (!has_version) {
       // Unversioned symbol
-      this->symbols.push_back(get_symbol(ctx, name));
+      this->symbols.emplace_back(get_symbol(ctx, name));
       this->symbols2.push_back(nullptr);
     } else if (esyms[i].is_undef() || (vers[i] & VERSYM_HIDDEN)) {
       // Versioned non-default symbol, or undefined reference whose
       // version comes from .gnu.version_r.
-      this->symbols.push_back(get_versioned_sym());
+      this->symbols.emplace_back(get_versioned_sym());
       this->symbols2.push_back(nullptr);
     } else {
       // Versioned default symbol
-      this->symbols.push_back(get_symbol(ctx, name));
+      this->symbols.emplace_back(get_symbol(ctx, name));
       this->symbols2.push_back(get_versioned_sym());
     }
   }
@@ -1622,7 +1640,7 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
 
     if (get_rank(this, esym, false) < get_rank(sym)) {
       sym.file = this;
-      sym.origin = 0;
+      sym.origin = nullptr;
       sym.value = esym.st_value;
       sym.sym_idx = i;
       sym.ver_idx = versyms[i];
@@ -1639,7 +1657,7 @@ void SharedFile<E>::resolve_symbols(Context<E> &ctx) {
 
       if (get_rank(this, esym, false) < get_rank(*sym2)) {
         sym2->file = this;
-        sym2->origin = (uintptr_t)&sym;
+        sym2->set_symbol_origin(&sym);
         sym2->sym_idx = i;
         sym2->is_versioned_default = true;
       }

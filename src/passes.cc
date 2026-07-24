@@ -276,10 +276,10 @@ static void resolve_default_symver(Context<E> &ctx) {
   append(files, ctx.dsos);
 
   tbb::parallel_for_each(files, [](InputFile<E> *file) {
-    std::span<Symbol<E> *> syms = file->get_global_syms();
+    std::span<ArenaPtr<Symbol<E>>> syms = file->get_global_syms();
     for (i64 i = 0; i < syms.size(); i++)
       if (syms[i]->is_versioned_default)
-        syms[i] = (Symbol<E> *)syms[i]->origin;
+        syms[i] = syms[i]->get_symbol_origin();
   });
 }
 
@@ -288,7 +288,7 @@ static void clear_symbols(Context<E> &ctx) {
   ctx.symbol_map.for_each([](Symbol<E> &sym) {
     if (sym.file) {
       sym.file = nullptr;
-      sym.origin = 0;
+      sym.origin = nullptr;
       sym.value = -1;
       sym.sym_idx = -1;
       sym.ver_idx = VER_NDX_UNSPECIFIED;
@@ -309,19 +309,10 @@ void gather_symbols(Context<E> &ctx) {
   Timer t(ctx, "gather_symbols");
 
   ctx.symbol_map.gather(
-    [&](std::pair<InputFile<E> *, i32> &ref, Symbol<E> *sym,
-        std::string_view key, bool created) {
-      if (created) {
-        std::string_view name = key.substr(0, key.find('@'));
-
-        // Long version-prefix views are not NUL-terminated.
-        if (NameLen(name.size()).is_long() &&
-            name.data()[name.size()] != '\0')
-          name = save_string(ctx, std::string(name));
-        sym->set_name(name);
-        sym->demangle = ctx.arg.demangle;
-      }
-      ref.first->symbols[ref.second] = sym;
+    [&](std::string_view key, Symbol<E> &sym) {
+      sym.has_map_name = true;
+      sym.set_name(key.substr(0, key.find('@')));
+      sym.demangle = ctx.arg.demangle;
     });
 }
 
@@ -357,13 +348,13 @@ static void eliminate_comdat_groups(Context<E> &ctx) {
       return;
 
     for (ComdatGroupRef<E> &ref : file->comdat_groups)
-      record_owner(*ref.signature, file->priority);
+      record_owner(*ref.signature(ctx), file->priority);
   });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (file->is_reachable)
       for (ComdatGroupRef<E> &ref : file->comdat_groups)
-        ref.is_owner = (ref.signature->sym_idx == file->priority);
+        ref.is_owner = (ref.signature(ctx)->sym_idx == file->priority);
   });
 
   // LTO plugin symbol tables may not enumerate all section-level helper
@@ -396,7 +387,7 @@ static void eliminate_comdat_groups(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (file->is_reachable)
       for (ComdatGroupRef<E> &ref : file->comdat_groups)
-        for (u32 i : ref.members)
+        for (u32 i : ref.members(*file))
           if (InputSection<E> *isec = file->sections[i])
             isec->is_alive = ref.is_owner;
   });
@@ -824,7 +815,8 @@ void create_output_sections(Context<E> &ctx) {
 // symbols.
 template <typename E>
 void create_internal_file(Context<E> &ctx) {
-  ObjectFile<E> *obj = new ObjectFile<E>;
+  ObjectFile<E> *obj =
+    ctx.arena.template make<ObjectFile<E>>(ctx);
   ctx.obj_pool.emplace_back(obj);
   ctx.internal_obj = obj;
   ctx.objs.push_back(obj);
@@ -832,13 +824,14 @@ void create_internal_file(Context<E> &ctx) {
   // Create linker-synthesized symbols.
   ctx.internal_esyms.resize(1);
 
-  obj->symbols.push_back(new Symbol<E>);
+  Symbol<E> *dummy = ctx.arena.template make<Symbol<E>>();
+  obj->symbols.emplace_back(dummy);
   obj->first_global = 1;
   obj->is_reachable = true;
   obj->priority = 1;
 
   auto add = [&](Symbol<E> *sym) {
-    obj->symbols.push_back(sym);
+    obj->symbols.emplace_back(sym);
 
     // An actual value will be set to a linker-synthesized symbol by
     // fix_synthetic_symbols(). Until then, `value` doesn't have a valid
@@ -909,7 +902,7 @@ void add_synthetic_symbols(Context<E> &ctx) {
 
     Symbol<E> *sym = get_symbol(ctx, name);
     sym->value = 0xdeadbeef; // unique dummy value
-    obj.symbols.push_back(sym);
+    obj.symbols.emplace_back(sym);
     return sym;
   };
 
@@ -1019,9 +1012,9 @@ void add_synthetic_symbols(Context<E> &ctx) {
         esym.ppc64_local_entry = sym2->esym().ppc64_local_entry;
 
       if (sym2->is_absolute())
-        sym1->origin = 0;
+        sym1->origin = nullptr;
     } else {
-      sym1->origin = 0;
+      sym1->origin = nullptr;
     }
   }
 }
@@ -1213,7 +1206,7 @@ void check_duplicate_symbols(Context<E> &ctx) {
       // The LTO backend resolves conflicts between IR and regular objects
       // on its own; only IR-vs-IR duplicates need to be caught here.
       if (!sym.file->is_dso &&
-          file->is_lto_obj != ((ObjectFile<E> *)sym.file)->is_lto_obj)
+          file->is_lto_obj != sym.file->to_obj()->is_lto_obj)
         continue;
 
       Error(ctx) << "duplicate symbol: " << *file << ": " << *sym.file
@@ -1246,7 +1239,7 @@ void check_symbol_version_conflicts(Context<E> &ctx) {
     Symbol<E> *sym2 = get_symbol(ctx, sym->name());
     if (sym2 != sym && sym2->file && !sym2->file->is_dso && !sym2->is_weak &&
         sym2->ver_idx == (sym->ver_idx & ~VERSYM_HIDDEN)) {
-      ObjectFile<E> *file = (ObjectFile<E> *)sym->file;
+      ObjectFile<E> *file = sym->file->to_obj();
       Error(ctx) << "duplicate symbol: " << *file << ": " << *sym2->file
                  << ": " << file->get_symbol_name(sym->sym_idx);
     }
@@ -1289,7 +1282,7 @@ void convert_zero_to_bss(Context<E> &ctx) {
 
 template <typename E>
 static bool has_dso_definition(Context<E> &ctx, Symbol<E> &sym) {
-  for (std::unique_ptr<SharedFile<E>> &file : ctx.dso_pool)
+  for (ArenaObjectPtr<SharedFile<E>> &file : ctx.dso_pool)
     for (i64 i = 0; i < file->symbols.size(); i++)
       if (file->symbols[i] == &sym && !file->elf_syms[i].is_undef())
         return true;
@@ -1321,7 +1314,7 @@ void check_shlib_undefined(Context<E> &ctx) {
   // symbol might be defined by that library.
   auto do_test = [&] {
     std::unordered_set<std::string_view> sonames;
-    for (std::unique_ptr<SharedFile<E>> &file : ctx.dso_pool)
+    for (ArenaObjectPtr<SharedFile<E>> &file : ctx.dso_pool)
       sonames.insert(file->soname);
 
     for (SharedFile<E> *file : ctx.dsos)
@@ -1830,13 +1823,14 @@ void claim_unresolved_symbols(Context<E> &ctx) {
                    << " symbol " << sym;
 
         sym.file = file;
-        sym.origin = 0;
+        sym.origin = nullptr;
         sym.value = 0;
         sym.sym_idx = i;
         sym.is_weak = false;
         sym.is_imported = is_imported;
         sym.is_exported = false;
-        sym.ver_idx = is_imported ? VER_NDX_UNSPECIFIED : ctx.default_version;
+        sym.ver_idx =
+          is_imported ? (u16)VER_NDX_UNSPECIFIED : ctx.default_version;
       };
 
       if (esym.is_undef_weak()) {
@@ -1961,7 +1955,7 @@ void scan_relocations(Context<E> &ctx) {
 
     if ((sym->flags & NEEDS_CANONICAL) && sym->get_type() != STT_FUNC) {
       if (ctx.arg.z_relro && sym->file->is_dso &&
-          ((SharedFile<E> *)sym->file)->is_readonly(sym))
+          sym->file->to_dso()->is_readonly(sym))
         ctx.copyrel_relro->add_symbol(ctx, sym);
       else
         ctx.copyrel->add_symbol(ctx, sym);
@@ -2349,7 +2343,7 @@ static bool should_export(Context<E> &ctx, Symbol<E> &sym) {
       if (u32 ty = sym.get_type(); ty != STT_FUNC && ty != STT_GNU_IFUNC)
         return true;
     if (ctx.arg.shared)
-      return !((ObjectFile<E> *)sym.file)->exclude_libs;
+      return !sym.file->to_obj()->exclude_libs;
     return ctx.arg.export_dynamic;
   case VER_NDX_LOCAL:
     return false;
@@ -3220,8 +3214,8 @@ void fix_synthetic_symbols(Context<E> &ctx) {
   } else {
     // If the symbols are not ncessary, we turn them to absolute
     // symbols at address 0.
-    ctx.__rel_iplt_start->origin = 0;
-    ctx.__rel_iplt_end->origin = 0;
+    ctx.__rel_iplt_start->origin = nullptr;
+    ctx.__rel_iplt_end->origin = nullptr;
   }
 
   // __{init,fini}_array_{start,end}
@@ -3352,7 +3346,7 @@ void fix_synthetic_symbols(Context<E> &ctx) {
     std::variant<Symbol<E> *, u64> val = ctx.arg.defsyms[i].second;
 
     if (u64 *addr = std::get_if<u64>(&val)) {
-      sym->origin = 0;
+      sym->origin = nullptr;
       sym->value = *addr;
     } else {
       Symbol<E> *sym2 = std::get<Symbol<E> *>(val);
@@ -3707,7 +3701,7 @@ void show_stats(Context<E> &ctx) {
     static Counter removed_comdats("removed_comdat_mem");
     for (ComdatGroupRef<E> &ref : obj->comdat_groups)
       if (!ref.is_owner)
-        removed_comdats += ref.members.size();
+        removed_comdats += ref.members(*obj).size();
 
     static Counter unique_comdats("unique_comdats");
     for (ComdatGroupRef<E> &ref : obj->comdat_groups)

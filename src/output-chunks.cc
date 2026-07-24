@@ -1972,7 +1972,7 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
   } else if ((isec->shdr().sh_flags & SHF_MERGE) &&
              !(isec->shdr().sh_flags & SHF_ALLOC)) {
     // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
-    ObjectFile<E> *file = (ObjectFile<E> *)sym.file;
+    ObjectFile<E> *file = sym.file->to_obj();
     MergeableSection<E> &m =
       *file->sections.get_mergeable(file->get_shndx(sym.esym()));
 
@@ -2779,7 +2779,7 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
   symbols.push_back(sym);
 
-  SharedFile<E> &file = *(SharedFile<E> *)sym->file;
+  SharedFile<E> &file = *sym->file->to_dso();
   i64 alignment = file.get_alignment(sym);
   u64 offset = align_to(this->shdr.sh_size, alignment);
 
@@ -2869,7 +2869,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
     return;
 
   ranges::stable_sort(syms, {}, [](Symbol<E> *x) {
-    return std::tuple{((SharedFile<E> *)x->file)->soname, x->ver_idx};
+    return std::tuple{x->file->to_dso()->soname, x->ver_idx};
   });
 
   // Resize .gnu.version
@@ -2920,7 +2920,7 @@ void VerneedSection<E>::construct(Context<E> &ctx) {
   // Create version entries.
   for (i64 i = 0; i < syms.size(); i++) {
     if (i == 0 || syms[i - 1]->file != syms[i]->file) {
-      start_group(*(SharedFile<E> *)syms[i]->file);
+      start_group(*syms[i]->file->to_dso());
       add_entry(syms[i]->get_version());
     } else if (syms[i - 1]->ver_idx != syms[i]->ver_idx) {
       add_entry(syms[i]->get_version());

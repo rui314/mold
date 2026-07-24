@@ -311,7 +311,7 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
   // A global symbol in a discarded COMDAT group should resolve to the
   // corresponding symbol in the prevailing group. If it does not, the
   // object files violate the One Definition Rule.
-  if (!sym.file && &sym != &discarded_comdat_sym<E>) {
+  if (!sym.file && &sym != discarded_comdat_sym<E>) {
     Error(ctx) << *this << ": " << sym << " refers to a discarded COMDAT section"
                << " probably due to an ODR violation";
     return true;

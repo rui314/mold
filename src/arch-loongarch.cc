@@ -706,7 +706,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     Symbol<E> &sym = *file.symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
-    if (!sym.file && &sym != &discarded_comdat_sym<E>) {
+    if (!sym.file && &sym != discarded_comdat_sym<E>) {
       record_undef_error(ctx, rel);
       return;
     }

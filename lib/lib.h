@@ -12,7 +12,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <deque>
 #include <fcntl.h>
 #include <filesystem>
 #include <iostream>
@@ -70,6 +69,57 @@ using namespace std::literals::string_view_literals;
 inline u64 combine_hash(u64 a, u64 b) {
   return a ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
 }
+
+// TaggedPtr stores one of several pointer types and uses the low pointer bits
+// to record which type it contains.
+template <typename... Ts>
+class TaggedPtr {
+public:
+  static_assert(sizeof...(Ts) > 0);
+
+  TaggedPtr() = default;
+
+  template <typename T> requires (std::is_same_v<T, Ts> || ...)
+  TaggedPtr(T *ptr) {
+    *this = ptr;
+  }
+
+  template <typename T> requires (std::is_same_v<T, Ts> || ...)
+  TaggedPtr &operator=(T *ptr) {
+    static_assert(alignof(T) >= 1ULL << TAG_BITS);
+    value = (uintptr_t)ptr;
+    if (ptr)
+      value |= get_tag<T>();
+    return *this;
+  }
+
+  TaggedPtr &operator=(std::nullptr_t) {
+    value = 0;
+    return *this;
+  }
+
+  template <typename T> requires (std::is_same_v<T, Ts> || ...)
+  T *get() const {
+    if (!value || (value & TAG_MASK) != get_tag<T>())
+      return nullptr;
+    return (T *)(value & ~TAG_MASK);
+  }
+
+private:
+  template <typename T>
+  static consteval uintptr_t get_tag() {
+    bool matches[] = {std::is_same_v<T, Ts>...};
+    for (i64 i = 0; i < sizeof...(Ts); i++)
+      if (matches[i])
+        return i;
+    return 0;
+  }
+
+  static constexpr i64 TAG_BITS = std::bit_width((u64)sizeof...(Ts) - 1);
+  static constexpr uintptr_t TAG_MASK = (1ULL << TAG_BITS) - 1;
+
+  uintptr_t value = 0;
+};
 
 //
 // perf.cc
@@ -574,40 +624,220 @@ private:
   }
 };
 
-// ShardedMap is a map from strings to values of type T, built in two
-// phases. In the first phase, which may run in parallel, threads call
-// add(), which only appends the key and a caller-supplied payload to
-// a thread-local buffer binned by the key's hash. gather() then ends
-// the phase: it deduplicates the recorded keys into per-shard hash
-// tables and invokes `callback(payload, value, key, created)` for
-// each record, where `value` is the T created for (or found for) the
-// record's key. `created` is true only for the call that created the
-// value, so callers can initialize it from the key there.
+static_assert(sizeof(void *) == 4 || sizeof(void *) == 8);
+
+// ArenaResource owns a sparsely-backed address range for symbols, input files,
+// and related linker data structures. Allocation is thread-safe and monotonic;
+// individual allocations are not freed. Keeping related objects in this range
+// lets ArenaPtr represent references between them as 32-bit self-relative
+// offsets.
+class ArenaResource {
+public:
+  // An 8 GiB arena ensures that the distance between any two allocations fits
+  // in ArenaPtr's signed 32-bit offset. A smaller reservation is used on
+  // 32-bit hosts, where address space is more limited.
+  static constexpr u64 SIZE = sizeof(void *) == 8 ? 1ULL << 33 : 1ULL << 28;
+
+  ArenaResource();
+  ~ArenaResource();
+  ArenaResource(const ArenaResource &) = delete;
+  ArenaResource &operator=(const ArenaResource &) = delete;
+
+  void *allocate(u64 size, u64 alignment);
+
+  template <typename T>
+  T *allocate(i64 count) {
+    if (count < 0 || (u64)count > SIZE / sizeof(T)) {
+      std::cerr << "mold: cannot allocate more than " << SIZE
+                << " bytes for linker data structures on this host\n";
+      std::exit(1);
+    }
+    return (T *)allocate(sizeof(T) * (u64)count, alignof(T));
+  }
+
+  template <typename T, typename... Args>
+  T *make(Args &&...args) {
+    return std::construct_at(allocate<T>(1), std::forward<Args>(args)...);
+  }
+
+  // ArenaPtr works only if the pointer field itself is within 8 GiB of its
+  // target. Records stored outside the arena instead use an index from the
+  // beginning of the arena. Indices count four-byte slots, and zero represents
+  // a null pointer.
+  u32 get_index(const void *ptr) const {
+    uintptr_t addr = (uintptr_t)ptr;
+    uintptr_t begin = (uintptr_t)data;
+    assert(begin < addr && addr < begin + SIZE);
+    assert((addr - begin) % 4 == 0);
+    return (addr - begin) / 4;
+  }
+
+  template <typename T>
+  T *get_pointer(u32 idx) const {
+    assert(0 < idx && (u64)idx * 4 < SIZE);
+    return (T *)(data + (u64)idx * 4);
+  }
+
+private:
+  u8 *data;
+
+  // Leave the first slots unused so that a base-relative index is never zero.
+  std::atomic<u64> offset = 8;
+};
+
+// ArenaAllocator adapts ArenaResource to the standard allocator interface so
+// containers can place their backing storage in the resource's address range.
+// It does not own the resource, and deallocation is deferred until the
+// resource itself is destroyed.
+template <typename T>
+class ArenaAllocator {
+public:
+  using value_type = T;
+
+  ArenaAllocator(ArenaResource &arena) : arena(arena) {}
+
+  template <typename U>
+  ArenaAllocator(const ArenaAllocator<U> &other) : arena(other.arena) {}
+
+  T *allocate(i64 count) {
+    return arena.template allocate<T>(count);
+  }
+
+  void deallocate(T *, i64) {}
+
+  template <typename U>
+  bool operator==(const ArenaAllocator<U> &other) const {
+    return &arena == &other.arena;
+  }
+
+private:
+  template <typename U> friend class ArenaAllocator;
+
+  ArenaResource &arena;
+};
+
+// ArenaPtr stores a pointer as a signed 32-bit offset from itself, in units of
+// four bytes. It is used for references between objects in an ArenaResource;
+// the ArenaPtr and its target must be four-byte aligned and less than 8 GiB
+// apart. An offset of zero represents a null pointer.
+template <typename T>
+class alignas(4) ArenaPtr {
+public:
+  ArenaPtr() = default;
+  ArenaPtr(std::nullptr_t) {}
+  ArenaPtr(T *ptr) { *this = ptr; }
+
+  // The offset is relative to this ArenaPtr, so copying it verbatim would
+  // make it point somewhere else.
+  ArenaPtr(const ArenaPtr &other) { *this = (T *)other; }
+  ArenaPtr(ArenaPtr &&other) { *this = (T *)other; }
+
+  ArenaPtr &operator=(T *ptr) {
+    if (!ptr) {
+      offset = 0;
+      return *this;
+    }
+
+    i64 byte_offset = (intptr_t)ptr - (intptr_t)this;
+    assert(byte_offset % 4 == 0);
+    assert(is_int(byte_offset / 4, 32));
+    offset = byte_offset / 4;
+    assert(offset != 0);
+    return *this;
+  }
+
+  ArenaPtr &operator=(const ArenaPtr &other) {
+    return *this = (T *)other;
+  }
+
+  ArenaPtr &operator=(ArenaPtr &&other) {
+    return *this = (T *)other;
+  }
+
+  operator T *() const {
+    return offset ? (T *)((intptr_t)this + (i64)offset * 4) : nullptr;
+  }
+
+  T *operator->() const {
+    return (T *)*this;
+  }
+
+  T &operator*() const {
+    return *(T *)*this;
+  }
+
+private:
+  i32 offset = 0;
+};
+
+static_assert(sizeof(ArenaPtr<u64>) == 4);
+
+// ArenaObjectDeleter runs an arena object's destructor without freeing its
+// storage. ArenaObjectPtr uses it to retain normal unique_ptr ownership
+// semantics for objects whose storage belongs to ArenaResource.
+template <typename T>
+struct ArenaObjectDeleter {
+  void operator()(T *ptr) const {
+    std::destroy_at(ptr);
+  }
+};
+
+template <typename T>
+using ArenaObjectPtr = std::unique_ptr<T, ArenaObjectDeleter<T>>;
+
+template <typename T>
+struct ShardedMapEntry : T {
+  ShardedMapEntry(std::string_view key) : key(key) {}
+
+  // Keeping the key outside T means that values not stored in a map do not
+  // pay for it. A mapped T is the base subobject of this entry.
+  std::string_view key;
+};
+
+template <typename T>
+std::string_view get_sharded_map_key(const T &object) {
+  return static_cast<const ShardedMapEntry<T> &>(object).key;
+}
+
+// ShardedMap is a map from strings to values of type T, built in two phases.
+// In the first phase, which may run in parallel, add() records a key and an
+// ArenaPtr<T> slot that needs the key's value. gather() then deduplicates the
+// keys, finds or creates one value for each key, and writes its address to
+// every recorded slot. The slots must remain at stable addresses until
+// gather().
 //
 // Keys whose hashes fall into different shards never interact, and
 // each shard is processed by exactly one thread during gather(), so
 // unlike with a concurrent hash table, no synchronization is needed,
 // and each key is hashed only once, in add().
 //
-// insert() is a mutex-protected slow path for keys that arrive
-// outside this pattern.
-template <typename T, typename Payload>
+// If a value needs to be initialized from its key, pass an
+// `on_create(key, value)` callback to gather() or insert(). It is called
+// exactly once when a value is created.
+//
+// insert() handles keys that arrive outside the two-phase pattern under a
+// shard mutex. All values live in stable arena blocks.
+template <typename T>
 class ShardedMap {
 public:
-  void add(std::string_view key, Payload payload) {
-    u64 hash = hash_string(key);
-    bins.local()[hash % NUM_SHARDS].push_back({key, hash, std::move(payload)});
+  explicit ShardedMap(ArenaResource &arena) {
+    for (Shard &shard : shards)
+      shard.arena = &arena;
   }
 
-  std::pair<T *, bool> insert(std::string_view key) {
+  void add(std::string_view key, ArenaPtr<T> &slot) {
+    u64 hash = hash_string(key);
+    bins.local()[hash % NUM_SHARDS].push_back({key, hash, &slot});
+  }
+
+  T *insert(std::string_view key, auto on_create) {
     u64 hash = hash_string(key);
     Shard &shard = shards[hash % NUM_SHARDS];
     std::scoped_lock lock(shard.mu);
-    return shard.insert(key, hash);
+    return shard.insert(key, hash, on_create);
   }
 
-  template <typename Callback>
-  void gather(Callback callback) {
+  void gather(auto on_create) {
     tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
       Shard &shard = shards[i];
 
@@ -617,13 +847,11 @@ public:
       if (count == 0)
         return;
 
-      shard.map.reserve(shard.map.size() + count);
+      shard.reserve(count);
 
       for (Bin &bin : bins)
-        for (Pending &p : bin[i]) {
-          auto [val, created] = shard.insert(p.key, p.hash);
-          callback(p.payload, val, p.key, created);
-        }
+        for (Pending &p : bin[i])
+          *p.slot = shard.insert(p.key, p.hash, on_create);
     });
 
     bins.clear();
@@ -631,41 +859,84 @@ public:
 
   void for_each(auto fn) {
     tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
-      for (auto &entry : shards[i].map)
-        fn(*entry.second);
+      Shard &shard = shards[i];
+      for (Block &block : shard.blocks)
+        for (i64 j = 0; j < block.size; j++)
+          fn(block.data[j]);
     });
   }
 
 private:
   static constexpr i64 NUM_SHARDS = 64;
+  using Entry = ShardedMapEntry<T>;
+  static_assert(std::is_trivially_destructible_v<Entry>);
+
+  struct Block {
+    Entry *data;
+    i64 size;
+    i64 capacity;
+  };
 
   struct Pending {
     std::string_view key;
     u64 hash;
-    Payload payload;
+    ArenaPtr<T> *slot;
   };
 
-  // The map key is a (hash, name) pair with the hash that was
-  // computed in add(). PassThroughHash makes the map use it as is,
-  // and the pair's operator== compares the hashes before the strings.
+  // add() already computed the string hash. Store it in the map key so that
+  // unordered_map does not scan the string again.
   struct PassThroughHash {
     size_t operator()(const std::pair<u64, std::string_view> &key) const {
       return key.first;
     }
   };
 
+  using Map = std::unordered_map<std::pair<u64, std::string_view>, Entry *,
+                                 PassThroughHash>;
+
   struct Shard {
-    std::pair<T *, bool> insert(std::string_view key, u64 hash) {
-      auto [it, created] = map.try_emplace({hash, key}, nullptr);
-      if (created)
-        it->second = &pool.emplace_back();
-      return {it->second, created};
+    Shard() = default;
+    Shard(const Shard &) = delete;
+    Shard &operator=(const Shard &) = delete;
+
+    T *insert(std::string_view key, u64 hash, auto on_create) {
+      auto [it, inserted] = map.try_emplace({hash, key}, nullptr);
+      if (!inserted)
+        return it->second;
+
+      if (blocks.empty() || blocks.back().size == blocks.back().capacity)
+        add_block(INSERT_BLOCK_SIZE);
+
+      Entry *entry = emplace(blocks.back(), key);
+      it->second = entry;
+      on_create(key, *entry);
+      return entry;
+    }
+
+    void reserve(i64 count) {
+      map.reserve(map.size() + count);
+      if (blocks.empty() ||
+          blocks.back().capacity - blocks.back().size < count)
+        add_block(std::max<i64>(INSERT_BLOCK_SIZE, count));
+    }
+
+    static constexpr i64 INSERT_BLOCK_SIZE = 256;
+
+    void add_block(i64 capacity) {
+      Entry *data = arena->allocate<Entry>(capacity);
+      blocks.push_back({data, 0, capacity});
+    }
+
+    Entry *emplace(Block &block, std::string_view key) {
+      assert(block.size < block.capacity);
+      Entry *entry = block.data + block.size++;
+      return std::construct_at(entry, key);
     }
 
     std::mutex mu;
-    std::unordered_map<std::pair<u64, std::string_view>, T *, PassThroughHash>
-      map;
-    std::deque<T> pool;
+    ArenaResource *arena = nullptr;
+    std::vector<Block> blocks;
+    Map map;
   };
 
   using Bin = std::array<std::vector<Pending>, NUM_SHARDS>;

@@ -57,8 +57,14 @@ template <typename E> struct Context;
 template <typename E> struct FdeRecord;
 template <typename E> class MergeableSection;
 template <typename E> class RelocSection;
+template <typename E> struct SectionFragment;
+
+// Local symbols in discarded COMDAT sections all use one zero-valued symbol.
+template <typename E>
+inline Symbol<E> *discarded_comdat_sym;
 
 struct GdbIndexData;
+
 struct ReaderContext;
 
 template <typename E>
@@ -520,7 +526,9 @@ struct InputSectionExtras<E> {
   std::vector<RelocDelta> r_deltas;
 };
 
-// InputSection represents a section in an input object file.
+// InputSection represents a section in an input object file. Symbol::origin
+// uses the low two bits of an InputSection pointer, so keep this type
+// four-byte aligned even on hosts such as m68k.
 template <typename E>
 class __attribute__((aligned(4))) InputSection {
 public:
@@ -1726,11 +1734,22 @@ template <typename E> void write_gdb_index(Context<E> &ctx);
 // comdat section refers to.
 template <typename E>
 struct ComdatGroupRef {
-  Symbol<E> *signature;
-  std::span<U32<E>> members;
+  ComdatGroupRef(Context<E> &ctx, Symbol<E> *sym, i32 sect_idx)
+    : sect_idx(sect_idx), signature_arena_idx(ctx.arena.get_index(sym)) {}
+
+  Symbol<E> *signature(Context<E> &ctx) const;
+  std::span<U32<E>> members(ObjectFile<E> &file) const;
+
   i32 sect_idx;
-  bool is_owner = false;
+
+  // The vector backing comdat_groups is outside the arena, so it cannot use
+  // ArenaPtr. The arena has at most 2^31 four-byte slots, leaving the high bit
+  // for is_owner.
+  u32 signature_arena_idx : 31;
+  u32 is_owner : 1 = false;
 };
+
+static_assert(sizeof(ComdatGroupRef<X86_64>) == 8);
 
 template <typename E>
 class MergeableSection {
@@ -1843,7 +1862,7 @@ template <typename E>
 class InputFile {
 public:
   InputFile(Context<E> &ctx, MappedFile *mf);
-  InputFile() : filename("<internal>") {}
+  InputFile(Context<E> &ctx);
 
   virtual ~InputFile() = default;
 
@@ -1865,14 +1884,16 @@ public:
   mark_live_objects(Context<E> &ctx,
                     std::function<void(InputFile<E> *)> feeder) = 0;
 
-  std::span<Symbol<E> *> get_local_syms();
-  std::span<Symbol<E> *> get_global_syms();
+  std::span<ArenaPtr<Symbol<E>>> get_local_syms();
+  std::span<ArenaPtr<Symbol<E>>> get_global_syms();
+  ObjectFile<E> *to_obj();
+  SharedFile<E> *to_dso();
   std::string_view get_source_name() const;
 
   MappedFile *mf = nullptr;
   std::span<ElfShdr<E>> elf_sections;
   std::span<ElfSym<E>> elf_syms;
-  std::vector<Symbol<E> *> symbols;
+  std::vector<ArenaPtr<Symbol<E>>, ArenaAllocator<ArenaPtr<Symbol<E>>>> symbols;
   i64 first_global = 0;
 
   std::string filename;
@@ -1908,8 +1929,8 @@ public:
   std::vector<i32> output_sym_indices;
 
 protected:
-  std::vector<Symbol<E>> local_syms;
-  std::vector<Symbol<E>> frag_syms;
+  std::span<Symbol<E>> local_syms;
+  std::span<Symbol<E>> frag_syms;
 };
 
 template <typename E>
@@ -1935,7 +1956,7 @@ ExactArray<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
 template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
-  ObjectFile() = default;
+  ObjectFile(Context<E> &ctx) : InputFile<E>(ctx) {}
 
   ObjectFile(Context<E> &ctx, MappedFile *mf, std::string archive_name)
     : InputFile<E>(ctx, mf), archive_name(archive_name) {}
@@ -1972,6 +1993,7 @@ public:
   std::vector<bool> has_symver;
   std::vector<ComdatGroupRef<E>> comdat_groups;
   std::vector<bool> comdat_discarded;
+
   std::vector<InputSection<E> *> eh_frame_sections;
   std::vector<InputSection<E> *> sframe_sections;
   std::vector<SFrameFde<E>> sframe_fdes;
@@ -2555,7 +2577,9 @@ struct ContextExtras<SPARC64> {
 // resource management, and other miscellaneous objects.
 template <typename E>
 struct Context {
-  Context() {
+  Context() : symbol_map(arena) {
+    discarded_comdat_sym<E> = arena.template make<Symbol<E>>();
+
     arg.entry = get_symbol(*this, "_start");
     arg.fini = get_symbol(*this, "_fini");
     arg.init = get_symbol(*this, "_init");
@@ -2727,19 +2751,20 @@ struct Context {
   // `objs` and `dsos`.
   tbb::concurrent_vector<std::pair<std::vector<u32>, InputFile<E> *>> unsorted_input_files;
 
-  // Symbol table. Object file parsing records each global symbol
-  // with add(), along with which slot of the file's symbol vector to
-  // fill in; resolve_symbols() gathers them. Other symbols, such as
-  // linker-synthesized ones and shared library symbols, are interned
-  // through the insert() slow path in get_symbol().
-  ShardedMap<Symbol<E>, std::pair<InputFile<E> *, i32>> symbol_map;
+  // Symbol table. Object file parsing records each global symbol with add(),
+  // together with the file's slot for the resulting Symbol pointer.
+  // gather_symbols() gathers them. Other symbols, such as linker-synthesized
+  // ones and shared library symbols, are interned directly through insert() in
+  // get_symbol().
+  ArenaResource arena;
+  ShardedMap<Symbol<E>> symbol_map;
 
   tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
 
-  tbb::concurrent_vector<std::unique_ptr<ObjectFile<E>>> obj_pool;
-  tbb::concurrent_vector<std::unique_ptr<SharedFile<E>>> dso_pool;
+  tbb::concurrent_vector<ArenaObjectPtr<ObjectFile<E>>> obj_pool;
+  tbb::concurrent_vector<ArenaObjectPtr<SharedFile<E>>> dso_pool;
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile>> mf_pool;
   tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> chunk_pool;
@@ -2905,10 +2930,8 @@ template <typename E>
 class Symbol {
 public:
   Symbol() = default;
-
-  Symbol(const Symbol<E> &other)
-    : nameptr(other.nameptr), demangle(other.demangle),
-      namelen(other.namelen) {}
+  Symbol(const Symbol &) = delete;
+  Symbol &operator=(const Symbol &) = delete;
 
   u64 get_addr(Context<E> &ctx, i64 flags = 0) const;
   u64 get_got_addr(Context<E> &ctx) const;
@@ -2965,10 +2988,12 @@ public:
   InputSection<E> *get_input_section() const;
   Chunk<E> *get_output_section() const;
   SectionFragment<E> *get_frag() const;
+  Symbol<E> *get_symbol_origin() const;
 
   void set_input_section(InputSection<E> *);
   void set_output_section(Chunk<E> *);
   void set_frag(SectionFragment<E> *);
+  void set_symbol_origin(Symbol<E> *);
 
   void set_name(std::string_view);
   std::string_view name() const;
@@ -2982,37 +3007,16 @@ public:
   // A symbol is owned by a file. If two or more files define the
   // same symbol, the one with the strongest definition owns the symbol.
   // If `file` is null, the symbol is not defined by any input file.
-  InputFile<E> *file = nullptr;
+  // A symbol usually belongs to an input section, but it can belong to a
+  // section fragment, an output section or nothing (i.e. an absolute symbol).
+  // A symbol pointer is used temporarily for default symbol versions.
+  TaggedPtr<InputSection<E>, Chunk<E>, SectionFragment<E>, Symbol<E>> origin;
 
-  // A symbol usually belongs to an input section, but it can belong
-  // to a section fragment, an output section or nothing
-  // (i.e. absolute symbol). `origin` holds one of them. We use the
-  // least significant two bits to distinguish type.
-  enum : uintptr_t {
-    TAG_ABS  = 0b00,
-    TAG_ISEC = 0b01,
-    TAG_OSEC = 0b10,
-    TAG_FRAG = 0b11,
-    TAG_MASK = 0b11,
-  };
-
-  // We want to make sure there are enough number of unused bits in
-  // pointers referring to these structures. In particular, we need
-  // __attribute__((aligned(4))) for m68k on which int, long, float
-  // and double are aligned only to two byte boundaries.
-  static_assert(alignof(InputSection<E>) >= 4);
-  static_assert(alignof(Chunk<E>) >= 4);
-  static_assert(alignof(SectionFragment<E>) >= 4);
-
-  uintptr_t origin = 0;
-
-  // `value` contains symbol value. If it's an absolute symbol, it is
-  // equivalent to its address. If it belongs to an input section or a
-  // section fragment, value is added to the base of the input section
-  // to yield an address.
+  // `value` contains the symbol value. If this is an absolute symbol, it is
+  // equivalent to its address. Otherwise, it is relative to `origin`.
   u64 value = 0;
 
-  const char *nameptr = nullptr;
+  ArenaPtr<InputFile<E>> file = nullptr;
 
   // Index into the symbol table of the owner file.
   i32 sym_idx = -1;
@@ -3028,11 +3032,6 @@ public:
 
   bool is_weak : 1 = false;
   bool write_to_symtab : 1 = false; // for --strip-all and the like
-  bool is_traced : 1 = false;       // for --trace-symbol
-  bool is_wrapped : 1 = false;      // for --wrap
-
-  // For symbols with default symbol version, e.g. foo@@VERSION.
-  bool is_versioned_default : 1 = false;
 
   // If a symbol can be resolved to a symbol in a different ELF file at
   // runtime, `is_imported` is true. If a symbol is a dynamic symbol and
@@ -3137,6 +3136,16 @@ public:
   // will become read-only at run-time.
   bool has_copyrel : 1 = false;
   bool is_copyrel_readonly : 1 = false;
+  bool demangle : 1 = false;
+
+  // Global symbols are stored next to their names in the symbol map.
+  bool has_map_name : 1 = false;
+
+  bool is_traced : 1 = false;       // for --trace-symbol
+  bool is_wrapped : 1 = false;      // for --wrap
+
+  // For symbols with default symbol version, e.g. foo@@VERSION.
+  bool is_versioned_default : 1 = false;
 
   // For symbol resolution. This flag is used rarely. See a comment in
   // resolve_symbols().
@@ -3149,14 +3158,16 @@ public:
   // opposed to IR object).
   bool referenced_by_regular_obj : 1 = false;
 
-  // If true, we try to dmenagle the sybmol when printing.
-  bool demangle : 1 = false;
+  // A dummy symbol created for a relocation into a mergeable fragment.
+  bool is_fragment_dummy : 1 = false;
 
+  // The name bytes live in the surrounding map entry or the owner file.
   NameLen namelen;
 };
 
-template <typename E>
-inline Symbol<E> discarded_comdat_sym;
+static_assert(sizeof(Symbol<X86_64>) == 40);
+static_assert(sizeof(ShardedMapEntry<Symbol<X86_64>>) == 56);
+static_assert(sizeof(ArenaPtr<Symbol<X86_64>>) == 4);
 
 template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
@@ -3377,7 +3388,7 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
     return {};
 
   InputSection<E> *isec = sym.get_input_section();
-  bool discarded = (&sym == &discarded_comdat_sym<E>);
+  bool discarded = (&sym == discarded_comdat_sym<E>);
 
   // Setting a tombstone is a special feature for a dead debug section.
   if ((!isec && !discarded) || (isec && isec->is_alive))
@@ -3433,6 +3444,22 @@ std::string_view MergeableSection<E>::get_contents(i64 i) {
 }
 
 template <typename E>
+std::span<U32<E>>
+ComdatGroupRef<E>::members(ObjectFile<E> &file) const {
+  const ElfShdr<E> &shdr = file.elf_sections[sect_idx];
+  std::span<U32<E>> entries(
+    (U32<E> *)(file.mf->data + shdr.sh_offset),
+    (i64)(shdr.sh_size / sizeof(U32<E>)));
+  assert(!entries.empty());
+  return entries.subspan(1);
+}
+
+template <typename E>
+Symbol<E> *ComdatGroupRef<E>::signature(Context<E> &ctx) const {
+  return ctx.arena.template get_pointer<Symbol<E>>(signature_arena_idx);
+}
+
+template <typename E>
 template <typename T>
 inline std::span<T>
 InputFile<E>::get_data(Context<E> &ctx, const ElfShdr<E> &shdr) {
@@ -3468,13 +3495,27 @@ inline std::string_view InputFile<E>::get_string(Context<E> &ctx, i64 idx) {
 }
 
 template <typename E>
-inline std::span<Symbol<E> *> InputFile<E>::get_local_syms() {
-  return std::span<Symbol<E> *>(this->symbols).subspan(0, this->first_global);
+inline std::span<ArenaPtr<Symbol<E>>> InputFile<E>::get_local_syms() {
+  return std::span<ArenaPtr<Symbol<E>>>(this->symbols)
+    .subspan(0, this->first_global);
 }
 
 template <typename E>
-inline std::span<Symbol<E> *> InputFile<E>::get_global_syms() {
-  return std::span<Symbol<E> *>(this->symbols).subspan(this->first_global);
+inline std::span<ArenaPtr<Symbol<E>>> InputFile<E>::get_global_syms() {
+  return std::span<ArenaPtr<Symbol<E>>>(this->symbols)
+    .subspan(this->first_global);
+}
+
+template <typename E>
+inline ObjectFile<E> *InputFile<E>::to_obj() {
+  assert(!is_dso);
+  return static_cast<ObjectFile<E> *>(this);
+}
+
+template <typename E>
+inline SharedFile<E> *InputFile<E>::to_dso() {
+  assert(is_dso);
+  return static_cast<SharedFile<E> *>(this);
 }
 
 template <typename E>
@@ -3906,44 +3947,43 @@ inline bool Symbol<E>::is_tprel_runtime_const(Context<E> &ctx) const {
 
 template <typename E>
 inline InputSection<E> *Symbol<E>::get_input_section() const {
-  if ((origin & TAG_MASK) == TAG_ISEC)
-    return (InputSection<E> *)(origin & ~TAG_MASK);
-  return nullptr;
+  return origin.template get<InputSection<E>>();
 }
 
 template <typename E>
 inline Chunk<E> *Symbol<E>::get_output_section() const {
-  if ((origin & TAG_MASK) == TAG_OSEC)
-    return (Chunk<E> *)(origin & ~TAG_MASK);
-  return nullptr;
+  return origin.template get<Chunk<E>>();
 }
 
 template <typename E>
 inline SectionFragment<E> *Symbol<E>::get_frag() const {
-  if ((origin & TAG_MASK) == TAG_FRAG)
-    return (SectionFragment<E> *)(origin & ~TAG_MASK);
-  return nullptr;
+  return origin.template get<SectionFragment<E>>();
 }
 
 template <typename E>
 inline void Symbol<E>::set_input_section(InputSection<E> *isec) {
-  uintptr_t addr = (uintptr_t)isec;
-  assert((addr & TAG_MASK) == 0);
-  origin = addr | TAG_ISEC;
+  origin = isec;
 }
 
 template <typename E>
 inline void Symbol<E>::set_output_section(Chunk<E> *osec) {
-  uintptr_t addr = (uintptr_t)osec;
-  assert((addr & TAG_MASK) == 0);
-  origin = addr | TAG_OSEC;
+  origin = osec;
 }
 
 template <typename E>
 inline void Symbol<E>::set_frag(SectionFragment<E> *frag) {
-  uintptr_t addr = (uintptr_t)frag;
-  assert((addr & TAG_MASK) == 0);
-  origin = addr | TAG_FRAG;
+  origin = frag;
+}
+
+template <typename E>
+inline Symbol<E> *Symbol<E>::get_symbol_origin() const {
+  return origin.template get<Symbol<E>>();
+}
+
+template <typename E>
+inline void Symbol<E>::set_symbol_origin(Symbol<E> *sym) {
+  assert(sym->has_map_name);
+  origin = sym;
 }
 
 template <typename E>
@@ -3956,7 +3996,7 @@ inline u32 Symbol<E>::get_type() const {
 template <typename E>
 inline std::string_view Symbol<E>::get_version() const {
   if (file->is_dso) {
-    std::span<std::string_view> vers = ((SharedFile<E> *)file)->version_strings;
+    std::span<std::string_view> vers = file->to_dso()->version_strings;
     if (!vers.empty())
       return vers[ver_idx];
   }
@@ -3975,19 +4015,41 @@ inline i64 Symbol<E>::get_output_sym_idx(Context<E> &ctx) const {
 template <typename E>
 inline const ElfSym<E> &Symbol<E>::esym() const {
   static const ElfSym<E> empty = {};
-  if (this == &discarded_comdat_sym<E>)
+  if (this == discarded_comdat_sym<E>)
     return empty;
   return file->elf_syms[sym_idx];
 }
 
 template <typename E>
 inline void Symbol<E>::set_name(std::string_view name) {
-  nameptr = name.data();
   namelen = name.size();
 }
 
 template <typename E>
 inline std::string_view Symbol<E>::name() const {
+  if (has_map_name) {
+    std::string_view key = get_sharded_map_key(*this);
+    if (namelen.is_long())
+      return key.substr(0, key.find('@', namelen.lower_bound()));
+    return key.substr(0, namelen.lower_bound());
+  }
+
+  if (is_fragment_dummy)
+    return "<fragment>";
+  if (!file || sym_idx < 0)
+    return "";
+
+  const ElfSym<E> &esym = file->elf_syms[sym_idx];
+  const char *nameptr;
+
+  if (esym.st_type == STT_SECTION) {
+    ObjectFile<E> &obj = *file->to_obj();
+    i64 shndx = obj.get_shndx(esym);
+    nameptr = file->shstrtab.data() + file->elf_sections[shndx].sh_name;
+  } else {
+    nameptr = file->symbol_strtab.data() + esym.st_name;
+  }
+
   return namelen.get_string(nameptr);
 }
 

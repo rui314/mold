@@ -424,6 +424,7 @@ endforeach()
 # Add other non-template source files.
 target_sources(mold PRIVATE
   lib/aho-corasick.cc
+  lib/arena.cc
   lib/compress.cc
   lib/crc32.cc
   lib/demangle.cc

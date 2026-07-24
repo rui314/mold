@@ -30,7 +30,8 @@ static void new_object_file(Context<E> &ctx, ReaderContext &rctx,
 
   check_file_compatibility(ctx, rctx, mf);
 
-  ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, archive_name);
+  ObjectFile<E> *file =
+    ctx.arena.template make<ObjectFile<E>>(ctx, mf, archive_name);
   ctx.obj_pool.emplace_back(file);
   file->as_needed =
     rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
@@ -67,7 +68,7 @@ static void new_shared_file(Context<E> &ctx, ReaderContext &rctx,
 
   check_file_compatibility(ctx, rctx, mf);
 
-  SharedFile<E> *file = new SharedFile<E>(ctx, mf);
+  SharedFile<E> *file = ctx.arena.template make<SharedFile<E>>(ctx, mf);
   ctx.dso_pool.emplace_back(file);
   file->as_needed = rctx.as_needed;
 
@@ -288,9 +289,9 @@ static void read_input_files(Context<E> &ctx, std::vector<ReaderJob> &jobs) {
       Out(ctx) << "trace: " << *file;
 
     if (file->is_dso)
-      ctx.dsos.push_back((SharedFile<E> *)file);
+      ctx.dsos.push_back(file->to_dso());
     else
-      ctx.objs.push_back((ObjectFile<E> *)file);
+      ctx.objs.push_back(file->to_obj());
   }
 
   ctx.unsorted_input_files.clear();

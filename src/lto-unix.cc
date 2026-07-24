@@ -179,7 +179,7 @@ static PluginStatus add_input_file(const char *path) {
   MappedFile *mf = must_open_file(ctx, path);
   mf->is_dependency = false;
 
-  ObjectFile<E> *file = new ObjectFile<E>(ctx, mf, "");
+  ObjectFile<E> *file = ctx.arena.template make<ObjectFile<E>>(ctx, mf, "");
   ctx.obj_pool.emplace_back(file);
   lto_objects<E>.push_back(file);
 
@@ -311,7 +311,7 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
     if (sym.file->is_dso)
       return LDPR_RESOLVED_DYN;
 
-    if (((ObjectFile<E> *)sym.file)->is_lto_obj && !sym.is_wrapped)
+    if (sym.file->to_obj()->is_lto_obj && !sym.is_wrapped)
       return esym.is_undef() ? LDPR_RESOLVED_IR : LDPR_PREEMPTED_IR;
     return esym.is_undef() ? LDPR_RESOLVED_EXEC : LDPR_PREEMPTED_REG;
   };
@@ -346,7 +346,7 @@ static void restart_process(Context<E> &ctx) {
   for (std::string_view arg : ctx.cmdline_args)
     args.push_back(strdup(std::string(arg).c_str()));
 
-  for (std::unique_ptr<ObjectFile<E>> &file : ctx.obj_pool)
+  for (ArenaObjectPtr<ObjectFile<E>> &file : ctx.obj_pool)
     if (file->is_lto_obj && !file->is_reachable)
       args.push_back(strdup(("--:ignore-ir-file=" +
                              file->mf->get_identifier()).c_str()));
@@ -617,11 +617,13 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
   std::scoped_lock lock(mu);
 
   // Create mold's object instance
-  ObjectFile<E> *obj = new ObjectFile<E>;
+  ObjectFile<E> *obj =
+    ctx.arena.template make<ObjectFile<E>>(ctx);
   ctx.obj_pool.emplace_back(obj);
 
   obj->filename = mf->name;
-  obj->symbols.push_back(new Symbol<E>);
+  Symbol<E> *dummy = ctx.arena.template make<Symbol<E>>();
+  obj->symbols.emplace_back(dummy);
   obj->first_global = 1;
   obj->is_lto_obj = true;
   obj->mf = mf;
@@ -706,7 +708,7 @@ std::vector<ObjectFile<E> *> run_lto_plugin(Context<E> &ctx) {
     if (!file->is_lto_obj) {
       for (Symbol<E> *sym : file->get_global_syms()) {
         if (sym->file && !sym->file->is_dso &&
-            ((ObjectFile<E> *)sym->file)->is_lto_obj) {
+            sym->file->to_obj()->is_lto_obj) {
           std::scoped_lock lock(sym->mu);
           sym->referenced_by_regular_obj = true;
         }

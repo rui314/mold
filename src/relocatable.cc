@@ -83,7 +83,7 @@ static void create_comdat_group_sections(Context<E> &ctx) {
       assert(sym);
 
       std::vector<Chunk<E> *> members;
-      for (u32 j : ref.members) {
+      for (u32 j : ref.members(file)) {
         const ElfShdr<E> &shdr = file.elf_sections[j];
         if (shdr.sh_type == (E::is_rela ? SHT_RELA : SHT_REL)) {
           InputSection<E> &isec = *file.sections[shdr.sh_info];
@@ -127,7 +127,7 @@ static void r_claim_unresolved_symbols(Context<E> &ctx) {
         continue;
 
       sym.file = file;
-      sym.origin = 0;
+      sym.origin = nullptr;
       sym.value = 0;
       sym.sym_idx = i;
     }
