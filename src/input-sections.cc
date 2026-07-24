@@ -358,9 +358,8 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
 
 template <typename E>
 MergeableSection<E>::MergeableSection(Context<E> &ctx, MergedSection<E> &parent,
-                                      InputSection<E> *&isec)
+                                      InputSection<E> *isec)
   : parent(parent), p2align(isec->p2align), input_section(isec) {
-  isec = nullptr;
   input_section->uncompress(ctx);
 
   std::scoped_lock lock(parent.mu);

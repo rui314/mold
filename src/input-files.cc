@@ -432,9 +432,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if (ctx.arg.oformat_binary && !(shdr.sh_flags & SHF_ALLOC))
         continue;
 
-      this->sections[i] =
-        &this->sections_pool.emplace_back(ctx, *this, i, name);
-      InputSection<E> *isec = this->sections[i];
+      InputSection<E> *isec = this->sections.emplace(ctx, *this, i, name);
 
       // Save .llvm_addrsig for --icf=safe.
       if (shdr.sh_type == SHT_LLVM_ADDRSIG && !ctx.arg.relocatable) {
@@ -442,8 +440,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         // Tools that mutates the symbol table, such as objcopy or `ld -r`
         // tend to not preserve sh_link, so we ignore such section.
         if (shdr.sh_link != 0) {
-          llvm_addrsig = this->sections[i];
-          this->sections[i] = nullptr;
+          llvm_addrsig = isec;
+          this->sections.erase(i);
         }
         continue;
       }
@@ -847,7 +845,7 @@ template <typename E>
 void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   if constexpr (is_riscv<E> || is_loongarch<E>) {
     for (i64 i = 1; i < sections.size(); i++) {
-      InputSection<E> *&isec = sections[i];
+      InputSection<E> *isec = sections[i];
       if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
         continue;
 
@@ -874,9 +872,9 @@ void ObjectFile<E>::convert_mergeable_sections(Context<E> &ctx) {
       MergedSection<E>::get_instance(ctx, isec->name(), shdr);
 
     if (parent) {
-      this->mergeable_sections[i] =
-        std::make_unique<MergeableSection<E>>(ctx, *parent, this->sections[i]);
-      this->sections[i] = nullptr;
+      std::unique_ptr<MergeableSection<E>> m =
+        std::make_unique<MergeableSection<E>>(ctx, *parent, isec);
+      this->sections.set_mergeable(i, std::move(m));
     }
   }
 }
@@ -937,7 +935,7 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
       continue;
 
     i64 shndx = get_shndx(esym);
-    std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[shndx];
+    MergeableSection<E> *m = sections.get_mergeable(shndx);
     if (!m || !m->parent.resolved)
       continue;
 
@@ -959,7 +957,7 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
       for (ElfRel<E> &r : isec->get_rels(ctx))
         if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
             esym.st_type == STT_SECTION)
-          if (mergeable_sections[get_shndx(esym)])
+          if (sections.get_mergeable(get_shndx(esym)))
             nfrag_syms++;
 
   this->frag_syms.resize(nfrag_syms);
@@ -976,7 +974,7 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
           continue;
 
         i64 shndx = get_shndx(esym);
-        std::unique_ptr<MergeableSection<E>> &m = mergeable_sections[shndx];
+        MergeableSection<E> *m = sections.get_mergeable(shndx);
         if (!m)
           continue;
 
@@ -1037,7 +1035,6 @@ template <typename E>
 void ObjectFile<E>::parse_sections(Context<E> &ctx,
                                    bool keep_discarded_comdat) {
   sections.resize(this->elf_sections.size());
-  mergeable_sections.resize(sections.size());
 
   if (!keep_discarded_comdat && !comdat_groups.empty()) {
     comdat_discarded.resize(sections.size());
@@ -1272,14 +1269,13 @@ void ObjectFile<E>::convert_common_symbols(Context<E> &ctx) {
     elf_sections2.push_back(shdr);
 
     i64 idx = this->elf_sections.size() + elf_sections2.size() - 1;
-    InputSection<E> *isec = &sections_pool.emplace_back(ctx, *this, idx, "");
+    InputSection<E> *isec = sections.emplace(ctx, *this, idx, "");
 
     sym.set_input_section(isec);
     sym.value = 0;
     sym.sym_idx = i;
     sym.ver_idx = ctx.default_version;
     sym.is_weak = false;
-    sections.push_back(isec);
   }
 }
 

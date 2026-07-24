@@ -1974,7 +1974,7 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
     // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
     ObjectFile<E> *file = (ObjectFile<E> *)sym.file;
     MergeableSection<E> &m =
-      *file->mergeable_sections[file->get_shndx(sym.esym())];
+      *file->sections.get_mergeable(file->get_shndx(sym.esym()));
 
     SectionFragment<E> *frag;
     i64 frag_addend;

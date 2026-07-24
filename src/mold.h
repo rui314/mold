@@ -1736,7 +1736,7 @@ template <typename E>
 class MergeableSection {
 public:
   MergeableSection(Context<E> &ctx, MergedSection<E> &parent,
-                   InputSection<E> *&isec);
+                   InputSection<E> *isec);
 
   void split_contents(Context<E> &ctx);
   void resolve_contents(Context<E> &ctx);
@@ -1751,6 +1751,54 @@ public:
 private:
   std::vector<u32> frag_offsets;
   std::vector<u32> hashes;
+};
+
+// ObjectFile needs a lookup table indexed by ELF section number. Store 31-bit
+// indices into per-file pools and use the high bit to distinguish regular and
+// mergeable sections.
+template <typename E>
+class InputSectionTable {
+public:
+  class Iterator {
+  public:
+    Iterator(InputSectionTable &table, i64 idx)
+      : table(table), idx(idx) {}
+
+    InputSection<E> *operator*() const { return table[idx]; }
+
+    Iterator &operator++() {
+      idx++;
+      return *this;
+    }
+
+    bool operator!=(const Iterator &other) const { return idx != other.idx; }
+
+  private:
+    InputSectionTable &table;
+    i64 idx;
+  };
+
+  InputSection<E> *operator[](i64 idx);
+  MergeableSection<E> *get_mergeable(i64 idx);
+  InputSection<E> *emplace(Context<E> &ctx, ObjectFile<E> &file, i64 shndx,
+                           std::string_view name);
+  void erase(i64 idx) { indices[idx] = 0; }
+  void set_mergeable(i64 idx, std::unique_ptr<MergeableSection<E>> m);
+
+  Iterator begin() { return {*this, 0}; }
+  Iterator end() { return {*this, (i64)indices.size()}; }
+
+  void resize(i64 size) { indices.resize(size); }
+  i64 size() const { return indices.size(); }
+  bool empty() const { return indices.empty(); }
+
+private:
+  static constexpr u32 MERGEABLE = 1U << 31;
+  static constexpr u32 INDEX_MASK = ~MERGEABLE;
+
+  std::deque<InputSection<E>> pool;
+  std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_pool;
+  std::vector<u32> indices;
 };
 
 // Store short name lengths exactly. A long name stores a logarithmic lower
@@ -1916,15 +1964,8 @@ public:
 
   std::string archive_name;
 
-  // InputSection objects are allocated from this pool and referenced
-  // through `sections`. A null entry means the section does not exist
-  // or has been discarded. We pool the allocations because a large
-  // link creates tens of millions of InputSections, and allocating
-  // them individually is measurably slow.
-  std::deque<InputSection<E>> sections_pool;
-  std::vector<InputSection<E> *> sections;
+  InputSectionTable<E> sections;
 
-  std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
   std::vector<ElfShdr<E>> elf_sections2;
   std::vector<CieRecord<E>> cies;
   std::vector<FdeRecord<E>> fdes;
@@ -3308,7 +3349,7 @@ InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
     return {nullptr, 0};
 
   i64 shndx = file.get_shndx(esym);
-  std::unique_ptr<MergeableSection<E>> &m = file.mergeable_sections[shndx];
+  MergeableSection<E> *m = file.sections.get_mergeable(shndx);
   if (!m)
     return {nullptr, 0};
 
@@ -3446,6 +3487,47 @@ inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
   if (esym.st_shndx >= SHN_LORESERVE)
     return 0;
   return esym.st_shndx;
+}
+
+template <typename E>
+inline InputSection<E> *InputSectionTable<E>::operator[](i64 idx) {
+  u32 value = indices[idx];
+  if (value == 0 || (value & MERGEABLE))
+    return nullptr;
+
+  return &pool[value - 1];
+}
+
+template <typename E>
+inline MergeableSection<E> *
+InputSectionTable<E>::get_mergeable(i64 idx) {
+  u32 value = indices[idx];
+  if (!(value & MERGEABLE))
+    return nullptr;
+  return mergeable_pool[(value & INDEX_MASK) - 1].get();
+}
+
+template <typename E>
+InputSection<E> *InputSectionTable<E>::emplace(Context<E> &ctx,
+                                               ObjectFile<E> &file,
+                                               i64 shndx,
+                                               std::string_view name) {
+  assert(0 <= shndx && shndx <= (i64)indices.size());
+  if (shndx == (i64)indices.size())
+    indices.push_back(0);
+
+  assert((u64)pool.size() + 1 < MERGEABLE);
+  InputSection<E> *isec = &pool.emplace_back(ctx, file, shndx, name);
+  indices[shndx] = pool.size();
+  return isec;
+}
+
+template <typename E>
+void InputSectionTable<E>::set_mergeable(
+    i64 idx, std::unique_ptr<MergeableSection<E>> m) {
+  assert(mergeable_pool.size() < MERGEABLE - 1);
+  mergeable_pool.push_back(std::move(m));
+  indices[idx] = MERGEABLE | mergeable_pool.size();
 }
 
 template <typename E>
