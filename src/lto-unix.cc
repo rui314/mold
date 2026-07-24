@@ -185,10 +185,10 @@ static PluginStatus add_input_file(const char *path) {
 
   file->priority = file_priority++;
   file->is_reachable = true;
-  file->parse(ctx);
+  file->parse_symbols(ctx);
 
-  // parse() only records global symbols; create them and fill in the
-  // file's symbol pointers before resolving.
+  // parse_symbols() only registers global symbols. Create their shared
+  // Symbol objects and fill in the file's pointers before resolving.
   gather_symbols(ctx);
   file->resolve_symbols(ctx);
   return LDPS_OK;
@@ -676,14 +676,14 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
     // have input sections.
     if (psym.comdat_key) {
       std::string_view key = save_string(ctx, psym.comdat_key);
-      obj->lto_comdat_groups[i + 1] = ctx.comdat_groups.insert(key);
+      obj->lto_comdat_groups[i + 1] = ctx.comdat_groups.insert(key).first;
     }
   }
 
   obj->symbol_strtab = save_string(ctx, strtab);
   obj->elf_syms = obj->lto_elf_syms;
   obj->populate_symbol_names();
-  obj->initialize_symbols(ctx);
+  obj->register_global_symbols(ctx);
   plugin_symbols.clear();
   return obj;
 }

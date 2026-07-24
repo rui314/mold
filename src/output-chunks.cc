@@ -3242,9 +3242,9 @@ get_symidx_addend(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel) 
       return {frag->output_section.shndx,
               frag->offset + sym.value + get_addend(isec, rel)};
 
-    InputSection<E> *isec2 = sym.get_input_section();
-    if (OutputSection<E> *osec = isec2->output_section)
-      return {osec->shndx, get_addend(isec, rel) + isec2->offset};
+    if (InputSection<E> *isec2 = sym.get_input_section())
+      if (OutputSection<E> *osec = isec2->output_section)
+        return {osec->shndx, get_addend(isec, rel) + isec2->offset};
 
     // This is usually a dead debug section referring to a
     // COMDAT-eliminated section.

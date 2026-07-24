@@ -315,11 +315,12 @@ void gather_symbols(Context<E> &ctx) {
   Timer t(ctx, "gather_symbols");
 
   ctx.symbol_map.gather(
-    [&](Symbol<E> &sym, std::string_view key) {
-      sym.set_name(key.substr(0, key.find('@')));
-      sym.demangle = ctx.arg.demangle;
-    },
-    [](std::pair<InputFile<E> *, i32> &ref, Symbol<E> *sym) {
+    [&](std::pair<InputFile<E> *, i32> &ref, Symbol<E> *sym,
+        std::string_view key, bool created) {
+      if (created) {
+        sym->set_name(key.substr(0, key.find('@')));
+        sym->demangle = ctx.arg.demangle;
+      }
       ref.first->symbols[ref.second] = sym;
     });
 }
@@ -374,13 +375,23 @@ void resolve_symbols(Context<E> &ctx) {
   // To redo symbol resolution, we want to clear the state first.
   clear_symbols(ctx);
 
-  // File parsing only records comdat group signatures; deduplicate
+  // Collect COMDAT signatures only from files included in the output.
+  {
+    Timer t2(ctx, "parse_comdat_groups");
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      if (file->is_reachable && !file->is_lto_obj && file->sections.empty())
+        file->parse_comdat_groups(ctx);
+    });
+  }
+
+  // The first parsing stage only records comdat group signatures; deduplicate
   // them now and fill in each file's ComdatGroupRefs. We do this here
   // and not in read_input_files() because the LTO plugin can add
   // object files after that, in which case we redo symbol resolution
   // and take this path again.
   ctx.comdat_groups.gather(
-    [](std::pair<ObjectFile<E> *, i32> &ref, ComdatGroup *group) {
+    [](std::pair<ObjectFile<E> *, i32> &ref, ComdatGroup *group,
+       std::string_view, bool) {
       ref.first->comdat_groups[ref.second].group = group;
     });
 
@@ -411,6 +422,21 @@ void resolve_symbols(Context<E> &ctx) {
       for (ComdatGroup *g : file->lto_comdat_groups)
         if (g && g->owner == (u32)-1)
           g->owner = file->priority;
+
+  // Construct sections and local symbols now that duplicate COMDAT
+  // members can be skipped.
+  bool has_lto = ranges::any_of(ctx.objs, [](ObjectFile<E> *file) {
+    return file->is_reachable &&
+           (file->is_lto_obj || file->is_gcc_offload_obj);
+  });
+
+  {
+    Timer t2(ctx, "parse_sections");
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      if (file->is_reachable && !file->is_lto_obj && file->sections.empty())
+        file->parse_sections(ctx, has_lto);
+    });
+  }
 
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
     if (file->is_reachable)

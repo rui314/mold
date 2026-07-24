@@ -35,7 +35,7 @@ static void new_object_file(Context<E> &ctx, ReaderContext &rctx,
   file->as_needed =
     rctx.in_lib || (!archive_name.empty() && !rctx.whole_archive);
 
-  file->parse(ctx);
+  file->parse_symbols(ctx);
   ctx.unsorted_input_files.push_back({rctx.pos, file});
 }
 

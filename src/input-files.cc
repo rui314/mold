@@ -16,10 +16,12 @@ namespace mold {
 template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,
                       std::string_view name) {
-  return ctx.symbol_map.insert(key, [&](Symbol<E> &sym, std::string_view) {
-    sym.set_name(name);
-    sym.demangle = ctx.arg.demangle;
-  });
+  auto [sym, created] = ctx.symbol_map.insert(key);
+  if (created) {
+    sym->set_name(name);
+    sym->demangle = ctx.arg.demangle;
+  }
+  return sym;
 }
 
 template <typename E>
@@ -293,11 +295,53 @@ std::vector<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
 }
 
 template <typename E>
+void ObjectFile<E>::parse_comdat_groups(Context<E> &ctx) {
+  assert(sections.empty());
+
+  for (i64 i = 0; i < this->elf_sections.size(); i++) {
+    const ElfShdr<E> &shdr = this->elf_sections[i];
+    if (shdr.sh_type != SHT_GROUP)
+      continue;
+
+    if (shdr.sh_info >= this->elf_syms.size())
+      Fatal(ctx) << *this << ": invalid symbol index";
+    const ElfSym<E> &esym = this->elf_syms[shdr.sh_info];
+
+    std::string_view signature;
+    if (esym.st_type == STT_SECTION) {
+      signature = this->shstrtab.data() +
+                  this->elf_sections[get_shndx(esym)].sh_name;
+    } else {
+      signature = this->symbol_names[shdr.sh_info];
+    }
+
+    // Ignore a broken comdat group GCC emits for .debug_macros.
+    // https://github.com/rui314/mold/issues/438
+    if (signature.starts_with("wm4."))
+      continue;
+
+    std::span<U32<E>> entries = this->template get_data<U32<E>>(ctx, shdr);
+    if (entries.empty())
+      Fatal(ctx) << *this << ": empty SHT_GROUP";
+    if (entries[0] == 0)
+      continue;
+    if (entries[0] != GRP_COMDAT)
+      Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
+
+    comdat_groups.push_back({nullptr, (i32)i, entries.subspan(1)});
+    ctx.comdat_groups.add(signature, {this, (i32)comdat_groups.size() - 1});
+  }
+}
+
+template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
     const ElfShdr<E> &shdr = this->elf_sections[i];
     std::string_view name = this->shstrtab.data() + shdr.sh_name;
+
+    if (!comdat_discarded.empty() && comdat_discarded[i])
+      continue;
 
     if ((shdr.sh_flags & SHF_EXCLUDE) &&
         name.starts_with(".gnu.offload_lto_.symtab.")) {
@@ -321,41 +365,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
     }
 
     switch (shdr.sh_type) {
-    case SHT_GROUP: {
-      // Get the signature of this section group.
-      if (shdr.sh_info >= this->elf_syms.size())
-        Fatal(ctx) << *this << ": invalid symbol index";
-      const ElfSym<E> &esym = this->elf_syms[shdr.sh_info];
-
-      std::string_view signature;
-      if (esym.st_type == STT_SECTION) {
-        signature = this->shstrtab.data() +
-                    this->elf_sections[get_shndx(esym)].sh_name;
-      } else {
-        signature = this->symbol_names[shdr.sh_info];
-      }
-
-      // Ignore a broken comdat group GCC emits for .debug_macros.
-      // https://github.com/rui314/mold/issues/438
-      if (signature.starts_with("wm4."))
-        continue;
-
-      // Get comdat group members.
-      std::span<U32<E>> entries = this->template get_data<U32<E>>(ctx, shdr);
-
-      if (entries.empty())
-        Fatal(ctx) << *this << ": empty SHT_GROUP";
-      if (entries[0] == 0)
-        continue;
-      if (entries[0] != GRP_COMDAT)
-        Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
-
-      // The group pointer is filled in when the signatures recorded
-      // here are deduplicated in resolve_symbols().
-      comdat_groups.push_back({nullptr, (i32)i, entries.subspan(1)});
-      ctx.comdat_groups.add(signature, {this, (i32)comdat_groups.size() - 1});
+    case SHT_GROUP:
       break;
-    }
     case SHT_CREL:
       decoded_crel.resize(i + 1);
       decoded_crel[i] = decode_crel(ctx, *this, shdr);
@@ -589,6 +600,10 @@ void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
         if (rels[rel_begin].r_offset - begin_offset != 8)
           Fatal(ctx) << *isec << ": FDE's first relocation should have offset 8";
 
+        // The function may belong to a discarded COMDAT group.
+        if (!get_section(this->elf_syms[rels[rel_begin].r_sym]))
+          continue;
+
         fdes.emplace_back(begin_offset, rel_begin);
       }
     }
@@ -713,8 +728,12 @@ void ObjectFile<E>::parse_sframe(Context<E> &ctx) requires supports_sframe<E> {
       const ElfRel<E> &rel = rels[rel_idx];
       i64 off = fre_off + ent.func_start_fre_off;
 
+      InputSection<E> *func = get_section(this->elf_syms[rel.r_sym]);
+      if (!func)
+        continue;
+
       SFrameFde<E> fde;
-      fde.isec = get_section(this->elf_syms[rel.r_sym]);
+      fde.isec = func;
       fde.sym = this->symbols[rel.r_sym];
       fde.addend = rel.r_addend;
       fde.fre = data.substr(off, sframe_fre_block_size<E>(data, off));
@@ -726,48 +745,19 @@ void ObjectFile<E>::parse_sframe(Context<E> &ctx) requires supports_sframe<E> {
 }
 
 template <typename E>
-void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
+void ObjectFile<E>::register_global_symbols(Context<E> &ctx) {
   if (this->elf_syms.empty())
     return;
 
   static Counter counter("all_syms");
   counter += this->elf_syms.size();
 
-  // Initialize local symbols
-  this->local_syms.resize(this->first_global);
-  this->local_syms[0].file = this;
-  this->local_syms[0].sym_idx = 0;
-
-  for (i64 i = 1; i < this->first_global; i++) {
-    const ElfSym<E> &esym = this->elf_syms[i];
-    if (esym.is_common())
-      Fatal(ctx) << *this << ": common local symbol?";
-
-    std::string_view name;
-    if (esym.st_type == STT_SECTION)
-      name = this->shstrtab.data() + this->elf_sections[get_shndx(esym)].sh_name;
-    else
-      name = this->symbol_names[i];
-
-    Symbol<E> &sym = this->local_syms[i];
-    sym.set_name(name);
-    sym.file = this;
-    sym.value = esym.st_value;
-    sym.sym_idx = i;
-
-    if (!esym.is_abs())
-      sym.set_input_section(sections[get_shndx(esym)]);
-  }
-
   this->symbols.resize(this->elf_syms.size());
 
   i64 num_globals = this->elf_syms.size() - this->first_global;
   has_symver.resize(num_globals);
 
-  for (i64 i = 0; i < this->first_global; i++)
-    this->symbols[i] = &this->local_syms[i];
-
-  // Initialize global symbols
+  // Register global symbols
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
 
@@ -802,6 +792,47 @@ void ObjectFile<E>::initialize_symbols(Context<E> &ctx) {
     // the Symbols and fills in the `symbols` slots once all files
     // have been read.
     ctx.symbol_map.add(key, {this, (i32)i});
+  }
+}
+
+template <typename E>
+void ObjectFile<E>::initialize_local_symbols(Context<E> &ctx) {
+  if (this->elf_syms.empty())
+    return;
+
+  this->local_syms.resize(this->first_global);
+  this->local_syms[0].file = this;
+  this->local_syms[0].sym_idx = 0;
+
+  for (i64 i = 0; i < this->first_global; i++)
+    this->symbols[i] = &this->local_syms[i];
+
+  for (i64 i = 1; i < this->first_global; i++) {
+    const ElfSym<E> &esym = this->elf_syms[i];
+    if (esym.is_common())
+      Fatal(ctx) << *this << ": common local symbol?";
+
+    std::string_view name;
+    if (esym.st_type == STT_SECTION)
+      name = this->shstrtab.data() + this->elf_sections[get_shndx(esym)].sh_name;
+    else
+      name = this->symbol_names[i];
+
+    Symbol<E> &sym = this->local_syms[i];
+    sym.set_name(name);
+    sym.file = this;
+    sym.value = esym.st_value;
+    sym.sym_idx = i;
+
+    if (!esym.is_abs()) {
+      i64 shndx = get_shndx(esym);
+      sym.set_input_section(sections[shndx]);
+
+      // A reference to a local symbol in a discarded COMDAT section
+      // resolves to zero, as it did when the dead InputSection existed.
+      if (!comdat_discarded.empty() && comdat_discarded[shndx])
+        sym.value = 0;
+    }
   }
 }
 
@@ -974,11 +1005,10 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
     this->symbols.push_back(&sym);
 }
 
+// Read global symbols before archive extraction so they can participate in
+// symbol resolution without constructing input sections.
 template <typename E>
-void ObjectFile<E>::parse(Context<E> &ctx) {
-  sections.resize(this->elf_sections.size());
-  mergeable_sections.resize(sections.size());
-
+void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
   symtab_sec = this->find_section(SHT_SYMTAB);
 
   if (symtab_sec) {
@@ -993,8 +1023,28 @@ void ObjectFile<E>::parse(Context<E> &ctx) {
       symtab_shndx_sec = this->template get_data<U32<E>>(ctx, *shdr);
   }
 
+  register_global_symbols(ctx);
+}
+
+// Construct sections only after COMDAT ownership is known, so duplicate
+// members normally do not require InputSection objects. We retain them before
+// LTO because a different copy may become the winner after LTO.
+template <typename E>
+void ObjectFile<E>::parse_sections(Context<E> &ctx,
+                                   bool keep_discarded_comdat) {
+  sections.resize(this->elf_sections.size());
+  mergeable_sections.resize(sections.size());
+
+  if (!keep_discarded_comdat && !comdat_groups.empty()) {
+    comdat_discarded.resize(sections.size());
+    for (ComdatGroupRef<E> &ref : comdat_groups)
+      if (ref.group->owner != this->priority)
+        for (u32 i : ref.members)
+          comdat_discarded[i] = true;
+  }
+
   initialize_sections(ctx);
-  initialize_symbols(ctx);
+  initialize_local_symbols(ctx);
   sort_relocations(ctx);
 }
 
@@ -1089,8 +1139,10 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     if (esym.is_undef())
       continue;
 
+    // Before sections are parsed, pre-liveness resolution treats all
+    // definitions as live. The final round uses the actual section state.
     InputSection<E> *isec = nullptr;
-    if (!esym.is_abs() && !esym.is_common()) {
+    if (!esym.is_abs() && !esym.is_common() && !sections.empty()) {
       isec = get_section(esym);
       if (!isec || !isec->is_alive)
         continue;
@@ -1260,7 +1312,13 @@ template <typename E>
 void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
   this->output_sym_indices.resize(this->elf_syms.size(), -1);
 
-  auto is_alive = [](Symbol<E> &sym) -> bool {
+  auto is_alive = [&](Symbol<E> &sym) -> bool {
+    if (!sym.esym().is_abs() && !sym.esym().is_common()) {
+      i64 shndx = get_shndx(sym.esym());
+      if (!comdat_discarded.empty() && comdat_discarded[shndx])
+        return false;
+    }
+
     if (SectionFragment<E> *frag = sym.get_frag())
       return frag->is_alive;
     if (InputSection<E> *isec = sym.get_input_section())

@@ -1845,8 +1845,10 @@ public:
   ObjectFile(Context<E> &ctx, MappedFile *mf, std::string archive_name)
     : InputFile<E>(ctx, mf), archive_name(archive_name) {}
 
-  void parse(Context<E> &ctx);
-  void initialize_symbols(Context<E> &ctx);
+  void parse_symbols(Context<E> &ctx);
+  void parse_comdat_groups(Context<E> &ctx);
+  void parse_sections(Context<E> &ctx, bool keep_discarded_comdat);
+  void register_global_symbols(Context<E> &ctx);
   void parse_ehframe(Context<E> &ctx);
   void parse_sframe(Context<E> &ctx) requires supports_sframe<E>;
   void convert_mergeable_sections(Context<E> &ctx);
@@ -1862,6 +1864,7 @@ public:
 
   i64 get_shndx(const ElfSym<E> &esym);
   InputSection<E> *get_section(const ElfSym<E> &esym);
+  bool is_discarded_comdat(const ElfSym<E> &esym);
 
   std::string archive_name;
 
@@ -1879,6 +1882,7 @@ public:
   std::vector<FdeRecord<E>> fdes;
   std::vector<bool> has_symver;
   std::vector<ComdatGroupRef<E>> comdat_groups;
+  std::vector<bool> comdat_discarded;
   std::vector<InputSection<E> *> eh_frame_sections;
   std::vector<InputSection<E> *> sframe_sections;
   std::vector<SFrameFde<E>> sframe_fdes;
@@ -1909,6 +1913,7 @@ public:
 
 private:
   void initialize_sections(Context<E> &ctx);
+  void initialize_local_symbols(Context<E> &ctx);
   void sort_relocations(Context<E> &ctx);
   void initialize_ehframe_sections(Context<E> &ctx);
   void parse_note_gnu_property(Context <E> &ctx, const ElfShdr <E> &shdr);
@@ -3189,9 +3194,15 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
     return {};
 
   InputSection<E> *isec = sym.get_input_section();
+  bool discarded = false;
+
+  if (!isec && sym.file && !sym.file->is_dso && sym.sym_idx >= 0) {
+    ObjectFile<E> *file = (ObjectFile<E> *)sym.file;
+    discarded = file->is_discarded_comdat(sym.esym());
+  }
 
   // Setting a tombstone is a special feature for a dead debug section.
-  if (!isec || isec->is_alive)
+  if ((!isec && !discarded) || (isec && isec->is_alive))
     return {};
 
   if (!name.starts_with(".debug_"))
@@ -3200,7 +3211,7 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   // If the section was dead due to ICF, we don't want to emit debug
   // info for that section but want to set real values to .debug_line so
   // that users can set a breakpoint inside a merged section.
-  if (isec->icf_removed() && name == ".debug_line")
+  if (isec && isec->icf_removed() && name == ".debug_line")
     return {};
 
   // 0 is an invalid value in most debug info sections, so we use it
@@ -3302,6 +3313,13 @@ inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
 template <typename E>
 inline InputSection<E> *ObjectFile<E>::get_section(const ElfSym<E> &esym) {
   return sections[get_shndx(esym)];
+}
+
+template <typename E>
+inline bool ObjectFile<E>::is_discarded_comdat(const ElfSym<E> &esym) {
+  if (comdat_discarded.empty() || esym.is_abs() || esym.is_common())
+    return false;
+  return comdat_discarded[get_shndx(esym)];
 }
 
 template <typename E>

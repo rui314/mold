@@ -59,6 +59,22 @@ n1=$(readelf --sframe=.sframe $t/exe2 | grep -c 'func idx')
 n2=$(readelf --sframe=.sframe $t/exe3 | grep -c 'func idx')
 [ "$n2" -lt "$n1" ]
 
+# An input .sframe may describe a function in a discarded COMDAT group.
+cat <<EOF | $CC -O0 -fno-inline -Wa,--gsframe -o $t/d.o -c -xc++ -
+inline __attribute__((noinline)) int comdat(int x) { return x + 1; }
+extern "C" int use_a(int x) { return comdat(x); }
+EOF
+
+cat <<EOF | $CC -O0 -fno-inline -Wa,--gsframe -o $t/e.o -c -xc++ -
+inline __attribute__((noinline)) int comdat(int x) { return x + 1; }
+extern "C" int use_a(int);
+extern "C" int use_b(int x) { return comdat(x); }
+int main() { return use_a(1) + use_b(2) != 5; }
+EOF
+
+$CC -B. -o $t/comdat $t/d.o $t/e.o
+$QEMU $t/comdat
+
 # A relocatable link (-r) must merge the inputs into a single .sframe and
 # keep each func_start as a relocation for the final link to resolve.
 ./mold --relocatable -o $t/r.o $t/a.o $t/b.o
