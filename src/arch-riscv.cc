@@ -252,7 +252,7 @@ find_paired_reloc(Context<E> &ctx, InputSection<E> &isec,
 //   ld    t0, 0(t0)  # R_RISCV_PCREL_LO12_I(.L0), R_RISCV_RELAX
 static bool is_got_load_pair(Context<E> &ctx, InputSection<E> &isec,
                              std::span<const ElfRel<E>> rels, i64 i) {
-  u8 *buf = (u8 *)isec.contents.data();
+  u8 *buf = isec.contents;
   return i + 3 < rels.size() &&
          rels[i].r_type == R_RISCV_GOT_HI20 &&
          rels[i + 1].r_type == R_RISCV_RELAX &&
@@ -268,7 +268,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<ElfRel<E>> rels = get_rels(ctx);
   std::span<RelocDelta> deltas = extra.r_deltas;
   i64 k = 0;
-  u8 *buf = (u8 *)contents.data();
+  u8 *buf = contents;
 
   for (i64 i = 0; i < rels.size(); i++) {
     ElfRel<E> &rel = rels[i];
@@ -886,7 +886,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   std::vector<RelocDelta> &deltas = isec.extra.r_deltas;
   i64 r_delta = 0;
-  u8 *buf = (u8 *)isec.contents.data();
+  u8 *buf = isec.contents;
 
   // True if we can use 2-byte instructions. This is usually true on
   // Unix because RV64GC is generally considered the baseline hardware.

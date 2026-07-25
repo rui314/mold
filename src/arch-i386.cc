@@ -516,7 +516,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    u8 *loc = (u8 *)(contents.data() + rel.r_offset);
+    u8 *loc = contents + rel.r_offset;
 
     if (sym.is_ifunc())
       sym.flags |= NEEDS_GOT | NEEDS_PLT;

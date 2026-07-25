@@ -546,6 +546,7 @@ public:
   i64 get_priority() const;
   u64 get_addr() const;
   std::string_view name() const;
+  std::string_view get_contents() const;
   ElfShdr<E> &shdr() const;
   std::span<ElfRel<E>> get_rels(Context<E> &ctx) const;
 
@@ -565,7 +566,11 @@ public:
 
   ObjectFile<E> &file;
   OutputSection<E> *output_section = nullptr;
-  std::string_view contents;
+
+  // contents initially points into the input file and is replaced with an
+  // uncompressed buffer when necessary. sh_size is the section size after
+  // decompression and may shrink during relaxation.
+  u8 *contents = nullptr;
 
   i64 sh_size = -1;
   i64 offset = -1;
@@ -608,7 +613,7 @@ private:
 };
 
 static_assert(sizeof(InputSection<X86_64>) ==
-              (sizeof(void *) == 8 ? 88 : 72));
+              (sizeof(void *) == 8 ? 80 : 64));
 
 //
 // tls.cc
@@ -3213,7 +3218,7 @@ inline i64 get_addend(u8 *loc, const ElfRel<E> &rel) {
 
 template <typename E>
 i64 get_addend(InputSection<E> &isec, const ElfRel<E> &rel) {
-  return get_addend((u8 *)isec.contents.data() + rel.r_offset, rel);
+  return get_addend(isec.contents + rel.r_offset, rel);
 }
 
 template <typename E>
@@ -3227,6 +3232,16 @@ inline ElfShdr<E> &InputSection<E>::shdr() const {
   if (shndx < file.elf_sections.size())
     return file.elf_sections[shndx];
   return file.elf_sections2[shndx - file.elf_sections.size()];
+}
+
+template <typename E>
+inline std::string_view InputSection<E>::get_contents() const {
+  if (!contents)
+    return {};
+  i64 size = shdr().sh_size;
+  if ((shdr().sh_flags & SHF_COMPRESSED) && uncompressed)
+    size = sh_size;
+  return {(char *)contents, (size_t)size};
 }
 
 template <typename E>
@@ -3431,9 +3446,10 @@ MergeableSection<E>::get_fragment(i64 offset) {
 template <typename E>
 std::string_view MergeableSection<E>::get_contents(i64 i) {
   i64 cur = frag_offsets[i];
+  std::string_view contents = input_section->get_contents();
   if (i == frag_offsets.size() - 1)
-    return input_section->contents.substr(cur);
-  return input_section->contents.substr(cur, frag_offsets[i + 1] - cur);
+    return contents.substr(cur);
+  return contents.substr(cur, frag_offsets[i + 1] - cur);
 }
 
 template <typename E>

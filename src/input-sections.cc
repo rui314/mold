@@ -40,11 +40,11 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx,
       name = file.shstrtab.data() + file.elf_sections[shndx].sh_name;
     namelen = std::min<i64>(name.size(), UINT16_MAX);
 
-    contents = {(char *)file.mf->data + shdr().sh_offset, (size_t)shdr().sh_size};
+    contents = file.mf->data + shdr().sh_offset;
   }
 
   if (shdr().sh_flags & SHF_COMPRESSED) {
-    ElfChdr<E> &chdr = *(ElfChdr<E> *)&contents[0];
+    ElfChdr<E> &chdr = *(ElfChdr<E> *)contents;
     sh_size = chdr.ch_size;
     p2align = to_p2align(chdr.ch_addralign);
   } else {
@@ -71,7 +71,7 @@ void InputSection<E>::uncompress(Context<E> &ctx) {
 
   u8 *buf = new u8[sh_size];
   copy_contents_to(ctx, buf, sh_size);
-  contents = std::string_view((char *)buf, sh_size);
+  contents = buf;
   ctx.string_pool.emplace_back(buf);
   uncompressed = true;
 }
@@ -79,15 +79,16 @@ void InputSection<E>::uncompress(Context<E> &ctx) {
 template <typename E>
 void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
   if (!(shdr().sh_flags & SHF_COMPRESSED) || uncompressed) {
-    memcpy(buf, contents.data(), sz);
+    memcpy(buf, contents, sz);
     return;
   }
 
-  if (contents.size() < sizeof(ElfChdr<E>))
+  std::string_view view = get_contents();
+  if (view.size() < sizeof(ElfChdr<E>))
     Fatal(ctx) << *this << ": corrupted compressed section";
 
-  ElfChdr<E> &hdr = *(ElfChdr<E> *)&contents[0];
-  std::string_view data = contents.substr(sizeof(ElfChdr<E>));
+  ElfChdr<E> &hdr = *(ElfChdr<E> *)contents;
+  std::string_view data = view.substr(sizeof(ElfChdr<E>));
 
   switch (hdr.ch_type) {
   case ELFCOMPRESS_ZLIB: {
@@ -258,15 +259,18 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
       copy_contents_to(ctx, buf, sh_size);
     } else {
       // A relaxed section is copied piece-wise.
-      memcpy(buf, contents.data(), deltas[0].offset);
+      memcpy(buf, contents, deltas[0].offset);
 
+      i64 input_size = get_contents().size();
       for (i64 i = 0; i < deltas.size(); i++) {
         i64 offset = deltas[i].offset;
         i64 delta = deltas[i].delta;
-        i64 end = (i + 1 == deltas.size()) ? contents.size() : deltas[i + 1].offset;
+        i64 end = input_size;
+        if (i + 1 < deltas.size())
+          end = deltas[i + 1].offset;
         i64 removed_bytes = get_removed_bytes(deltas, i);
         memcpy(buf + offset + removed_bytes - delta,
-               contents.data() + offset + removed_bytes,
+               contents + offset + removed_bytes,
                end - offset - removed_bytes);
       }
     }
@@ -396,7 +400,7 @@ static size_t find_null(std::string_view data, i64 pos, i64 entsize) {
 // We do not support mergeable sections that have relocations.
 template <typename E>
 void MergeableSection<E>::split_contents(Context<E> &ctx) {
-  std::string_view data = input_section->contents;
+  std::string_view data = input_section->get_contents();
   if (data.size() > UINT32_MAX)
     Fatal(ctx) << *input_section << ": mergeable section too large";
 

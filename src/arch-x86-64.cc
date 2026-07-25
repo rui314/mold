@@ -760,7 +760,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
       continue;
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
-    u8 *loc = (u8 *)(contents.data() + rel.r_offset);
+    u8 *loc = contents + rel.r_offset;
 
     if (sym.is_ifunc())
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
@@ -906,10 +906,14 @@ void rewrite_endbr(Context<E> &ctx) {
     // If isec has an endbr64 at a given offset, copy that instruction to
     // the output buffer, possibly overwriting a nop written in the above
     // loop.
+    i64 size = 0;
+    if (isec)
+      size = isec->get_contents().size();
+
     if (isec && isec->output_section &&
         (isec->shdr().sh_flags & SHF_EXECINSTR) &&
-        0 <= offset && offset <= isec->contents.size() - 4 &&
-        memcmp(isec->contents.data() + offset, endbr64, 4) == 0)
+        0 <= offset && offset <= size - 4 &&
+        memcmp(isec->contents + offset, endbr64, 4) == 0)
       memcpy(ctx.buf + isec->output_section->shdr.sh_offset + isec->offset + offset,
              endbr64, 4);
   };

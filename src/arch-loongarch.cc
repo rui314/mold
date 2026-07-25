@@ -133,7 +133,7 @@ static void set_rj(u8 *loc, u32 rj) {
 static bool is_relaxable_got_load(Context<E> &ctx, InputSection<E> &isec, i64 i) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   Symbol<E> &sym = *isec.file.symbols[rels[i].r_sym];
-  u8 *buf = (u8 *)isec.contents.data();
+  u8 *buf = isec.contents;
 
   if (ctx.arg.relax &&
       sym.is_pcrel_linktime_const(ctx) &&
@@ -272,7 +272,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
   std::span<ElfRel<E>> rels = get_rels(ctx);
   std::span<RelocDelta> deltas = extra.r_deltas;
   i64 k = 0;
-  u8 *buf = (u8 *)contents.data();
+  u8 *buf = contents;
 
   for (i64 i = 0; i < rels.size(); i++) {
     ElfRel<E> &rel = rels[i];
@@ -896,7 +896,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
   std::vector<RelocDelta> &deltas = isec.extra.r_deltas;
   i64 r_delta = 0;
-  u8 *buf = (u8 *)isec.contents.data();
+  u8 *buf = isec.contents;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];

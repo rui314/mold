@@ -1262,16 +1262,19 @@ void convert_zero_to_bss(Context<E> &ctx) {
       return;
 
     for (InputSection<E> *isec : file->sections) {
-      if (isec && isec->is_alive &&
-          isec->shdr().sh_type == SHT_PROGBITS &&
+      if (!isec || !isec->is_alive)
+        continue;
+
+      std::string_view contents = isec->get_contents();
+      if (isec->shdr().sh_type == SHT_PROGBITS &&
           (isec->shdr().sh_flags & SHF_ALLOC) &&
           (isec->shdr().sh_flags & SHF_WRITE) &&
           !(isec->shdr().sh_flags & SHF_EXECINSTR) &&
           isec->get_rels(ctx).empty() &&
-          !isec->contents.empty() &&
-          isec->contents.find_first_not_of('\0') == isec->contents.npos) {
+          !contents.empty() &&
+          contents.find_first_not_of('\0') == contents.npos) {
         isec->shdr().sh_type = SHT_NOBITS;
-        isec->contents = {};
+        isec->contents = nullptr;
       }
     }
   });
@@ -1531,8 +1534,8 @@ static bool is_dwarf32(Context<E> &ctx, InputSection<E> *isec) {
   // we need to uncompress it before accessing `isec->contents`.
   isec->uncompress(ctx);
 
-  u8 *p = (u8 *)isec->contents.data() + *(U64<E> *)(buf + 4) + 12;
-  u8 *end = (u8 *)isec->contents.data() + isec->sh_size;
+  u8 *p = isec->contents + *(U64<E> *)(buf + 4) + 12;
+  u8 *end = isec->contents + isec->sh_size;
 
   while (end - p >= 12) {
     if (*(U32<E> *)p != 0xffff'ffff)
@@ -1646,7 +1649,7 @@ void fixup_ctors_in_init_array(Context<E> &ctx) {
     if (isec.sh_size % sizeof(Word<E>))
       Fatal(ctx) << isec << ": section corrupted";
 
-    u8 *buf = (u8 *)isec.contents.data();
+    u8 *buf = isec.contents;
     std::reverse((Word<E> *)buf, (Word<E> *)(buf + isec.sh_size));
 
     std::span<ElfRel<E>> rels = isec.get_rels(ctx);
@@ -2516,8 +2519,8 @@ void compute_address_significance(Context<E> &ctx) {
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     // If .llvm_addrsig is available, use it.
     if (InputSection<E> *sec = file->llvm_addrsig) {
-      u8 *p = (u8 *)sec->contents.data();
-      u8 *end = p + sec->contents.size();
+      u8 *p = sec->contents;
+      u8 *end = p + sec->get_contents().size();
       while (p != end) {
         Symbol<E> *sym = file->symbols[read_uleb(&p)];
         if (InputSection<E> *isec = sym->get_input_section())

@@ -671,11 +671,12 @@ static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
       continue;
 
     isec->uncompress(ctx);
-    if (isec->contents.empty())
+    std::string_view contents = isec->get_contents();
+    if (contents.empty())
       continue;
 
-    u8 *p = (u8 *)&isec->contents[0];
-    u8 *end = p + isec->contents.size();
+    u8 *p = (u8 *)contents.data();
+    u8 *end = p + contents.size();
 
     while (p < end) {
       if (*(U32<E> *)p == 0xffff'ffff)
@@ -696,7 +697,7 @@ static std::vector<Compunit> read_compunits(Context<E> &ctx) {
       return;
 
     file.debug_info->uncompress(ctx);
-    std::string_view contents = file.debug_info->contents;
+    std::string_view contents = file.debug_info->get_contents();
     std::vector<Compunit> &cus = file_cus[file_idx];
     u8 *begin = (u8 *)contents.data();
     u8 *end = begin + contents.size();

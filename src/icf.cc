@@ -167,7 +167,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     hash(sym.value);
   };
 
-  hash_string(isec.contents);
+  hash_string(isec.get_contents());
   hash(isec.shdr().sh_flags);
   hash(isec.get_fdes().size());
   hash(isec.get_rels(ctx).size());
@@ -513,7 +513,7 @@ static void print_icf_sections(Context<E> &ctx) {
       *out << "selected section " << *leader << '\n';
       for (auto it = begin; it != end; it++) {
         *out << "  removing identical section " << *it->second << '\n';
-        saved_bytes += leader->contents.size();
+        saved_bytes += leader->get_contents().size();
       }
     }
   }
