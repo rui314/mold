@@ -316,39 +316,35 @@ void gather_symbols(Context<E> &ctx) {
     });
 }
 
-// Select one copy of each COMDAT group and construct input sections only for
-// the selected copies. This function is called again after LTO because the
-// compiler backend may add new object files.
 template <typename E>
-static void eliminate_comdat_groups(Context<E> &ctx) {
-  bool has_lto = ranges::any_of(ctx.objs, [](ObjectFile<E> *file) {
-    return file->is_reachable &&
-           (file->is_lto_obj || file->is_gcc_offload_obj);
-  });
+static void record_comdat_owner(Symbol<E> &signature, i32 priority) {
+  // Symbol resolution is clear while COMDAT groups are selected, so sym_idx
+  // can temporarily hold the winning file priority.
+  std::atomic_ref<i32> owner(signature.sym_idx);
+  i32 old = owner.load(std::memory_order_relaxed);
+  while ((old == -1 || priority < old) &&
+         !owner.compare_exchange_weak(old, priority,
+                                      std::memory_order_relaxed));
+}
 
-  {
-    Timer t(ctx, "parse_comdat_groups");
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      if (file->is_reachable && !file->is_lto_obj && file->sections.empty())
-        file->parse_comdat_groups(ctx);
-    });
-  }
+// Select COMDAT groups and construct input sections. If LTO will run,
+// the first invocation also constructs the losing copies of COMDAT
+// members because this function runs again after LTO and may then
+// select a different winner.
+template <typename E>
+static void parse_input_sections(Context<E> &ctx) {
+  Timer t(ctx, "parse_input_sections");
 
-  // Symbol resolution has just been cleared, so sym_idx is unused until the
-  // final resolution pass. Temporarily store the winning file priority there.
-  auto record_owner = [](Symbol<E> &sig, i32 priority) {
-    std::atomic_ref<i32> owner(sig.sym_idx);
-    i32 old = owner.load(std::memory_order_relaxed);
-    while ((old == -1 || priority < old) &&
-           !owner.compare_exchange_weak(old, priority, std::memory_order_relaxed));
-  };
-
+  // Read COMDAT metadata and choose an owner among reachable regular objects.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (!file->is_reachable)
       return;
 
+    if (file->mf && !file->is_lto_obj && !file->sections_parsed)
+      file->read_section_metadata(ctx);
+
     for (ComdatGroupRef<E> &ref : file->comdat_groups)
-      record_owner(*ref.signature(ctx), file->priority);
+      record_comdat_owner(*ref.signature(ctx), file->priority);
   });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -375,15 +371,22 @@ static void eliminate_comdat_groups(Context<E> &ctx) {
   // Restore sym_idx before the final symbol-resolution pass.
   ctx.symbol_map.for_each([](Symbol<E> &sym) { sym.sym_idx = -1; });
 
-  {
-    Timer t(ctx, "parse_sections");
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      if (file->is_reachable && !file->is_lto_obj && file->sections.empty())
-        file->parse_sections(ctx, has_lto);
+  // LTO can change archive extraction and therefore the winning COMDAT group.
+  // Construct the losing copies too so one can become the winner after LTO.
+  bool keep_discarded_comdat =
+    ranges::any_of(ctx.objs, [](ObjectFile<E> *file) {
+      return file->is_reachable &&
+             (file->is_lto_obj || file->is_gcc_offload_obj);
     });
-  }
 
-  // Existing sections may change ownership after LTO.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    if (file->is_reachable && file->mf && !file->is_lto_obj &&
+        !file->sections_parsed)
+      file->parse_sections(ctx, keep_discarded_comdat);
+  });
+
+  // Apply the selection to all group members. This also updates sections
+  // parsed before LTO if ownership has changed.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     if (file->is_reachable)
       for (ComdatGroupRef<E> &ref : file->comdat_groups)
@@ -443,16 +446,10 @@ void resolve_symbols(Context<E> &ctx) {
   // To redo symbol resolution, we want to clear the state first.
   clear_symbols(ctx);
 
-  // COMDAT elimination needs to happen exactly here.
-  //
-  // It needs to be after archive extraction, otherwise we might
-  // assign COMDAT leader to an archive member that is not supposed to
-  // be extracted.
-  //
-  // It needs to happen before the final symbol resolution, otherwise
-  // we could eliminate a symbol that is already resolved to and cause
-  // dangling references.
-  eliminate_comdat_groups(ctx);
+  // Parse input sections after archive extraction, so COMDAT selection
+  // considers only reachable objects. This must happen before final symbol
+  // resolution; otherwise discarding a group could leave a dangling reference.
+  parse_input_sections(ctx);
 
   // Redo symbol resolution
   tbb::parallel_for_each(files, [&](InputFile<E> *file) {

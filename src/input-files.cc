@@ -121,28 +121,6 @@ void InputFile<E>::populate_symbol_name_lengths() {
   }
 }
 
-// An ordinary global COMDAT signature is identified by its Symbol. Local,
-// section and versioned signatures are interned by their literal name.
-template <typename E>
-Symbol<E> *
-ObjectFile<E>::get_comdat_signature(Context<E> &ctx, i64 sect_idx) {
-  const ElfShdr<E> &shdr = this->elf_sections[sect_idx];
-  const ElfSym<E> &esym = this->elf_syms[shdr.sh_info];
-
-  std::string_view name;
-  if (esym.st_type == STT_SECTION)
-    name = this->shstrtab.data() +
-           this->elf_sections[get_shndx(esym)].sh_name;
-  else
-    name = this->get_symbol_name(shdr.sh_info);
-
-  if (esym.st_type != STT_SECTION && esym.st_bind != STB_LOCAL &&
-      !esym.is_undef() && name.find('@') == name.npos)
-    return this->symbols[shdr.sh_info];
-
-  return get_symbol(ctx, name);
-}
-
 template <typename E>
 ElfShdr<E> *InputFile<E>::find_section(i64 type) {
   for (ElfShdr<E> &sec : elf_sections)
@@ -294,22 +272,38 @@ ExactArray<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
   return rels;
 }
 
+// Read COMDAT groups and detect GCC offload objects. Both affect which input
+// sections can be discarded before LTO.
 template <typename E>
-void ObjectFile<E>::parse_comdat_groups(Context<E> &ctx) {
-  assert(sections.empty());
+void ObjectFile<E>::read_section_metadata(Context<E> &ctx) {
+  assert(!sections_parsed);
 
   for (i64 i = 0; i < this->elf_sections.size(); i++) {
     const ElfShdr<E> &shdr = this->elf_sections[i];
+
+    if (shdr.sh_flags & SHF_EXCLUDE) {
+      std::string_view name = this->shstrtab.data() + shdr.sh_name;
+      if (name.starts_with(".gnu.offload_lto_.symtab."))
+        this->is_gcc_offload_obj = true;
+    }
+
     if (shdr.sh_type != SHT_GROUP)
       continue;
 
     if (shdr.sh_info >= this->elf_syms.size())
       Fatal(ctx) << *this << ": invalid symbol index";
-    Symbol<E> *signature = get_comdat_signature(ctx, i);
+
+    const ElfSym<E> &esym = this->elf_syms[shdr.sh_info];
+    std::string_view name;
+    if (esym.st_type == STT_SECTION)
+      name = this->shstrtab.data() +
+             this->elf_sections[get_shndx(esym)].sh_name;
+    else
+      name = this->get_symbol_name(shdr.sh_info);
 
     // Ignore a broken comdat group GCC emits for .debug_macros.
     // https://github.com/rui314/mold/issues/438
-    if (signature->name().starts_with("wm4."))
+    if (name.starts_with("wm4."))
       continue;
 
     std::span<U32<E>> entries = this->template get_data<U32<E>>(ctx, shdr);
@@ -319,6 +313,15 @@ void ObjectFile<E>::parse_comdat_groups(Context<E> &ctx) {
       continue;
     if (entries[0] != GRP_COMDAT)
       Fatal(ctx) << *this << ": unsupported SHT_GROUP format";
+
+    // Ordinary global signatures already have a Symbol. Local, section and
+    // versioned signatures use the same symbol table through their full name.
+    Symbol<E> *signature;
+    if (esym.st_type != STT_SECTION && esym.st_bind != STB_LOCAL &&
+        !esym.is_undef() && name.find('@') == name.npos)
+      signature = this->symbols[shdr.sh_info];
+    else
+      signature = get_symbol(ctx, name);
 
     comdat_groups.emplace_back(ctx, signature, i);
   }
@@ -335,13 +338,8 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
 
     std::string_view name;
 
-    if (shdr.sh_flags & SHF_EXCLUDE) {
+    if (shdr.sh_flags & SHF_EXCLUDE)
       name = this->shstrtab.data() + shdr.sh_name;
-      if (name.starts_with(".gnu.offload_lto_.symtab.")) {
-        this->is_gcc_offload_obj = true;
-        continue;
-      }
-    }
 
     if ((shdr.sh_flags & SHF_EXCLUDE) && !(shdr.sh_flags & SHF_ALLOC) &&
         shdr.sh_type != SHT_LLVM_ADDRSIG && !ctx.arg.relocatable)
@@ -1037,12 +1035,13 @@ void ObjectFile<E>::parse_symbols(Context<E> &ctx) {
   register_global_symbols(ctx);
 }
 
-// Construct sections only after COMDAT ownership is known, so duplicate
-// members normally do not require InputSection objects. We retain them before
-// LTO because a different copy may become the winner after LTO.
+// Construct sections after COMDAT ownership is known. Members of losing groups
+// are normally skipped. If another selection will run after LTO, construct
+// them too so a different copy can become live.
 template <typename E>
 void ObjectFile<E>::parse_sections(Context<E> &ctx,
                                    bool keep_discarded_comdat) {
+  assert(!sections_parsed);
   sections.resize(this->elf_sections.size());
 
   if (!keep_discarded_comdat && !comdat_groups.empty()) {
@@ -1056,6 +1055,7 @@ void ObjectFile<E>::parse_sections(Context<E> &ctx,
   initialize_sections(ctx);
   initialize_local_symbols(ctx);
   sort_relocations(ctx);
+  sections_parsed = true;
 }
 
 // Symbols with higher priorities overwrites symbols with lower priorities.
@@ -1153,7 +1153,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     // Before sections are parsed, pre-liveness resolution treats all
     // definitions as live. The final round uses the actual section state.
     InputSection<E> *isec = nullptr;
-    if (!esym.is_abs() && !esym.is_common() && !sections.empty()) {
+    if (!esym.is_abs() && !esym.is_common() && sections_parsed) {
       isec = get_section(esym);
       if (!isec || !isec->is_alive)
         continue;

@@ -1721,17 +1721,10 @@ template <typename E> void write_gdb_index(Context<E> &ctx);
 // input-files.cc
 //
 
-// A comdat section typically represents an inline function,
-// which are de-duplicated by the linker.
-//
-// For each inline function, there's one comdat section, which
-// contains section indices of the function code and its data such as
-// string literals, if any.
-//
-// Comdat sections are identified by its signature. If two comdat
-// sections have the same signature, the linker picks up one and
-// discards the other by eliminating all sections that the other
-// comdat section refers to.
+// A COMDAT group usually contains an inline function's code and related data,
+// such as its string literals. Groups are identified by a signature. If two
+// groups have the same signature, the linker keeps one and discards the
+// sections in the other.
 template <typename E>
 struct ComdatGroupRef {
   ComdatGroupRef(Context<E> &ctx, Symbol<E> *sym, i32 sect_idx)
@@ -1962,7 +1955,7 @@ public:
     : InputFile<E>(ctx, mf), archive_name(archive_name) {}
 
   void parse_symbols(Context<E> &ctx);
-  void parse_comdat_groups(Context<E> &ctx);
+  void read_section_metadata(Context<E> &ctx);
   void parse_sections(Context<E> &ctx, bool keep_discarded_comdat);
   void register_global_symbols(Context<E> &ctx);
   void parse_ehframe(Context<E> &ctx);
@@ -1980,12 +1973,12 @@ public:
 
   i64 get_shndx(const ElfSym<E> &esym);
   InputSection<E> *get_section(const ElfSym<E> &esym);
-  Symbol<E> *get_comdat_signature(Context<E> &ctx, i64 sect_idx);
   bool is_discarded_comdat(const ElfSym<E> &esym);
 
   std::string archive_name;
 
   InputSectionTable<E> sections;
+  bool sections_parsed = false;
 
   std::vector<ElfShdr<E>> elf_sections2;
   std::vector<CieRecord<E>> cies;
