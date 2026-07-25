@@ -310,6 +310,12 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
       else
         *(U32<E> *)loc = S + A;
       break;
+    case R_SH_TLS_LDO_32:
+      if (std::optional<u64> val = get_tombstone(sym, frag))
+        *(U32<E> *)loc = *val;
+      else
+        *(U32<E> *)loc = S + A - ctx.dtp_addr;
+      break;
     default:
       Fatal(ctx) << *this << ": invalid relocation for non-allocated sections: "
                  << rel;
