@@ -1720,6 +1720,7 @@ private:
 //
 
 template <typename E> void read_gdb_index_inputs(Context<E> &ctx);
+template <typename E> void build_gdb_index_tables(Context<E> &ctx);
 template <typename E> void write_gdb_index(Context<E> &ctx);
 
 //

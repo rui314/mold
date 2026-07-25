@@ -24,6 +24,7 @@
 #include <string_view>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <tbb/blocked_range.h>
 #include <tbb/concurrent_vector.h>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for.h>
@@ -331,6 +332,16 @@ template <typename T>
 inline void write_vector(void *buf, const std::vector<T> &vec) {
   if (!vec.empty())
     memcpy(buf, vec.data(), vec.size() * sizeof(T));
+}
+
+inline void parallel_memcpy(void *dst, const void *src, i64 size) {
+  constexpr i64 BLOCK_SIZE = 2 * 1024 * 1024;
+
+  tbb::parallel_for(tbb::blocked_range<i64>(0, size, BLOCK_SIZE),
+                    [&](const tbb::blocked_range<i64> &range) {
+                      memcpy((u8 *)dst + range.begin(),
+                             (const u8 *)src + range.begin(), range.size());
+                    });
 }
 
 inline void encode_uleb(std::vector<u8> &vec, u64 val) {

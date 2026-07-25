@@ -3626,8 +3626,10 @@ void write_separate_debug_file(Context<E> &ctx) {
 
   copy_chunks(ctx);
 
-  if (ctx.gdb_index)
+  if (ctx.gdb_index) {
+    build_gdb_index_tables(ctx);
     write_gdb_index(ctx);
+  }
 
   // Reverse-compute a CRC32 value so that the CRC32 checksum embedded to
   // the .gnu_debuglink section in the main executable matches with the

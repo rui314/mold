@@ -412,14 +412,16 @@ int mold_main(int argc, char **argv) {
   std::erase_if(ctx.objs, [](InputFile<E> *file) { return !file->is_reachable; });
   std::erase_if(ctx.dsos, [](InputFile<E> *file) { return !file->is_reachable; });
 
-  // Compilation units and public names depend only on input sections. Read
-  // them in a low-priority arena while foreground passes continue.
+  // Building .gdb_index is split into three stages because the required data
+  // becomes available at different points in the link. Compilation units and
+  // public names depend only on input sections, so read them now in a
+  // low-priority arena while foreground passes continue.
   bool create_gdb_index = ctx.arg.gdb_index && !ctx.arg.relocatable;
-  tbb::task_arena gdb_arena(tbb::task_arena::automatic, 1,
-                            tbb::task_arena::priority::low);
+  tbb::task_arena gdb_input_arena(tbb::task_arena::automatic, 1,
+                                  tbb::task_arena::priority::low);
   tbb::task_group gdb_task;
   if (create_gdb_index)
-    gdb_arena.enqueue([&] { read_gdb_index_inputs(ctx); }, gdb_task);
+    gdb_input_arena.enqueue([&] { read_gdb_index_inputs(ctx); }, gdb_task);
 
   // Parse .eh_frame section contents.
   parse_eh_frame_sections(ctx);
@@ -584,11 +586,22 @@ int mold_main(int argc, char **argv) {
 
   // sort_debug_info_sections may uncompress the same .debug_info sections.
   if (create_gdb_index)
-    gdb_arena.wait_for(gdb_task);
+    gdb_input_arena.wait_for(gdb_task);
 
   // Sort .debug_info contents so that DWARF32 debug info precedes that of
   // DWARF64. This is to mitigate the possibility of a relocation overflow.
   sort_debug_info_sections(ctx);
+
+  // Type vectors identify compilation units by their order in the output
+  // .debug_info section. That order is now fixed, so build the table while the
+  // remaining layout passes continue. This stage stops scaling after about 12
+  // workers, so limit its arena to avoid competing with foreground work.
+  i64 gdb_table_workers =
+    std::clamp<i64>(get_thread_count(ctx) * 3 / 8, 1, 12);
+  tbb::task_arena gdb_table_arena(gdb_table_workers, 1,
+                                  tbb::task_arena::priority::low);
+  if (ctx.gdb_index && !ctx.gnu_debuglink)
+    gdb_table_arena.enqueue([&] { build_gdb_index_tables(ctx); }, gdb_task);
 
   // Print reports about undefined symbols, if needed.
   if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR)
@@ -702,10 +715,12 @@ int mold_main(int argc, char **argv) {
   // so we sort them.
   sort_reldyn(ctx);
 
-  // Address ranges in .gdb_index cannot be read before applying relocations
-  // to debug sections. We have relocated them now, so finish the index.
-  if (ctx.gdb_index && !ctx.gnu_debuglink)
+  // The final stage reads address ranges, which requires relocated debug
+  // sections. We have applied the relocations now, so finish the index.
+  if (ctx.gdb_index && !ctx.gnu_debuglink) {
+    gdb_table_arena.wait_for(gdb_task);
     write_gdb_index(ctx);
+  }
 
   // .note.gnu.build-id section contains a cryptographic hash of the
   // entire output file. Now that we wrote everything except build-id,
