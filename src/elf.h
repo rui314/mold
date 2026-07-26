@@ -378,6 +378,10 @@ enum : u32 {
 };
 
 enum : u32 {
+  EF_PPC64_ABI = 3,
+};
+
+enum : u32 {
   EF_RISCV_RVC = 1,
   EF_RISCV_FLOAT_ABI = 6,
   EF_RISCV_FLOAT_ABI_SOFT = 0,

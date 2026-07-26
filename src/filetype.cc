@@ -133,10 +133,12 @@ static std::string_view get_elf_type(u8 *buf) {
   bool is_le = (buf[EI_DATA] == ELFDATA2LSB);
   bool is_64 = (buf[EI_CLASS] == ELFCLASS64);
 
-  auto *ehdr_le = (ElfEhdr<I386> *)buf;
-  auto *ehdr_be = (ElfEhdr<M68K> *)buf;
+  auto *ehdr32_le = (ElfEhdr<ARM32LE> *)buf;
+  auto *ehdr32_be = (ElfEhdr<ARM32BE> *)buf;
+  auto *ehdr64_le = (ElfEhdr<ARM64LE> *)buf;
+  auto *ehdr64_be = (ElfEhdr<ARM64BE> *)buf;
 
-  switch (is_le ? ehdr_le->e_machine : ehdr_be->e_machine) {
+  switch (is_le ? ehdr32_le->e_machine : ehdr32_be->e_machine) {
   case EM_386:
     return I386::name;
   case EM_X86_64:
@@ -152,7 +154,18 @@ static std::string_view get_elf_type(u8 *buf) {
   case EM_PPC:
     return PPC32::name;
   case EM_PPC64:
-    return is_le ? PPC64V2::name : PPC64V1::name;
+    // ELFv1 is big-endian and ELFv2 is little-endian by convention, but
+    // the correspondence is not a rule; musl for example uses ELFv2 on
+    // big-endian too. We support only the usual combinations, so treat
+    // the others as unrecognizable rather than silently linking them
+    // against the wrong ABI.
+    if (!is_le)
+      if (u32 abi = (ehdr64_be->e_flags & EF_PPC64_ABI); abi == 0 || abi == 1)
+        return PPC64V1::name;
+    if (is_le)
+      if (u32 abi = (ehdr64_le->e_flags & EF_PPC64_ABI); abi == 0 || abi == 2)
+        return PPC64V2::name;
+    return "";
   case EM_S390X:
     return S390X::name;
   case EM_SPARC64:

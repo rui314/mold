@@ -15,6 +15,8 @@ template <typename E>
 static void
 check_file_compatibility(Context<E> &ctx, ReaderContext &rctx, MappedFile *mf) {
   std::string_view target = get_machine_type(ctx, rctx, mf);
+  if (target.empty())
+    Fatal(ctx) << mf->name << ": unknown machine type";
   if (target != ctx.arg.emulation)
     Fatal(ctx) << mf->name << ": incompatible file type: "
                << ctx.arg.emulation << " is expected but got " << target;
