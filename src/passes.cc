@@ -465,6 +465,22 @@ void do_lto(Context<E> &ctx) {
 
   std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
 
+  // Also reset the results of the pre-LTO COMDAT group selection. A group's
+  // winner may be an archive member that is not re-extracted because the
+  // LTO-generated code no longer uses it. If we didn't reset the state, no
+  // remaining file could provide the group's sections, and we would report
+  // a false ODR violation. LTO-generated files don't have ComdatGroups
+  // assigned yet, hence the null check.
+  tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
+    for (ComdatGroupRef<E> &ref : file->comdat_groups) {
+      if (ref.group)
+        ref.group->owner = -1;
+      for (u32 i : ref.members)
+        if (InputSection<E> *isec = file->sections[i])
+          isec->is_alive = true;
+    }
+  });
+
   resolve_symbols(ctx);
 }
 
