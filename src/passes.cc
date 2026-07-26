@@ -1809,7 +1809,7 @@ void claim_unresolved_symbols(Context<E> &ctx) {
         sym.is_weak = false;
         sym.is_imported = is_imported;
         sym.is_exported = false;
-        sym.ver_idx = is_imported ? 0 : ctx.default_version;
+        sym.ver_idx = is_imported ? VER_NDX_UNSPECIFIED : ctx.default_version;
       };
 
       if (esym.is_undef_weak()) {

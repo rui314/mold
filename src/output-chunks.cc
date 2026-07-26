@@ -2953,7 +2953,7 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   // Handle --default-symver
   if (ctx.arg.default_symver)
     for (Symbol<E> *sym : ctx.dynsym->symbols)
-      if (sym && !sym->file->is_dso)
+      if (sym && !sym->file->is_dso && !sym->esym().is_undef())
         if (u16 ver = sym->ver_idx;
             ver == VER_NDX_GLOBAL || ver == VER_NDX_UNSPECIFIED)
           sym->ver_idx = VER_NDX_LAST_RESERVED + 1;
@@ -2962,9 +2962,16 @@ void VerdefSection<E>::construct(Context<E> &ctx) {
   ctx.versym->contents.resize(ctx.dynsym->symbols.size(), VER_NDX_GLOBAL);
   ctx.versym->contents[0] = VER_NDX_LOCAL;
 
-  for (Symbol<E> *sym : ctx.dynsym->symbols)
-    if (sym && !sym->file->is_dso && sym->ver_idx != VER_NDX_UNSPECIFIED)
+  for (Symbol<E> *sym : ctx.dynsym->symbols) {
+    if (!sym || sym->file->is_dso)
+      continue;
+
+    // An unversioned undefined symbol takes version index 0.
+    if (sym->ver_idx != VER_NDX_UNSPECIFIED)
       ctx.versym->contents[sym->get_dynsym_idx(ctx)] = sym->ver_idx;
+    else if (sym->esym().is_undef())
+      ctx.versym->contents[sym->get_dynsym_idx(ctx)] = VER_NDX_LOCAL;
+  }
 
   // Allocate a buffer for .gnu.version_d and write to it
   contents.resize((sizeof(ElfVerdef<E>) + sizeof(ElfVerdaux<E>)) *

@@ -3618,11 +3618,16 @@ inline bool Symbol<E>::is_absolute() const {
          !get_output_section();
 }
 
+// Returns true if the symbol should be emitted as a local symbol in the
+// output symbol table. Note that a symbol that is merely not exported to
+// the dynamic symbol table is still a global symbol; only ones hidden by
+// symbol visibility or localized by a version script are demoted.
 template <typename E>
 inline bool Symbol<E>::is_local(Context<E> &ctx) const {
   if (ctx.arg.relocatable)
     return esym().st_bind == STB_LOCAL;
-  return !is_imported && !is_exported;
+  return visibility == STV_HIDDEN || visibility == STV_INTERNAL ||
+         ver_idx == VER_NDX_LOCAL;
 }
 
 template <typename E>
