@@ -1197,6 +1197,37 @@ void check_duplicate_symbols(Context<E> &ctx) {
   ctx.checkpoint();
 }
 
+// A default-versioned symbol `foo@@VER` can also be referred to as
+// `foo@VER`, so exporting both `foo@@VER` and `foo@VER` would produce a
+// dynamic symbol table with two definitions of the same versioned name,
+// and which one a versioned reference binds to would be up to the
+// dynamic loader. GNU ld and lld reject this; so do we.
+template <typename E>
+void check_symbol_version_conflicts(Context<E> &ctx) {
+  if (!ctx.dynsym || ctx.arg.allow_multiple_definition)
+    return;
+
+  Timer t(ctx, "check_symbol_version_conflicts");
+
+  for (i64 i = 1; i < ctx.dynsym->symbols.size(); i++) {
+    Symbol<E> *sym = ctx.dynsym->symbols[i];
+    if (sym->file->is_dso || sym->is_weak ||
+        sym->ver_idx == VER_NDX_UNSPECIFIED ||
+        !(sym->ver_idx & VERSYM_HIDDEN))
+      continue;
+
+    Symbol<E> *sym2 = get_symbol(ctx, sym->name());
+    if (sym2 != sym && sym2->file && !sym2->file->is_dso && !sym2->is_weak &&
+        sym2->ver_idx == (sym->ver_idx & ~VERSYM_HIDDEN)) {
+      ObjectFile<E> *file = (ObjectFile<E> *)sym->file;
+      Error(ctx) << "duplicate symbol: " << *file << ": " << *sym2->file
+                 << ": " << file->symbol_names[sym->sym_idx];
+    }
+  }
+
+  ctx.checkpoint();
+}
+
 // GCC and Clang set the SHT_NOBITS flag for an output section only if the
 // section name is .bss or similar. Sections with nonstandard names, such
 // as those defined with __attribute__((section(".sectname"))), are always
@@ -3731,6 +3762,7 @@ template void apply_section_align(Context<E> &);
 template void print_dependencies(Context<E> &);
 template void write_repro_file(Context<E> &);
 template void check_duplicate_symbols(Context<E> &);
+template void check_symbol_version_conflicts(Context<E> &);
 template void convert_zero_to_bss(Context<E> &);
 template void check_shlib_undefined(Context<E> &);
 template void check_symbol_types(Context<E> &);

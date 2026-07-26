@@ -2192,6 +2192,7 @@ template <typename E> void check_cet_errors(Context<E> &);
 template <typename E> void print_dependencies(Context<E> &);
 template <typename E> void write_repro_file(Context<E> &);
 template <typename E> void check_duplicate_symbols(Context<E> &);
+template <typename E> void check_symbol_version_conflicts(Context<E> &);
 template <typename E> void convert_zero_to_bss(Context<E> &);
 template <typename E> void check_shlib_undefined(Context<E> &);
 template <typename E> void check_symbol_types(Context<E> &);

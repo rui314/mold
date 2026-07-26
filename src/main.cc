@@ -546,6 +546,10 @@ int mold_main(int argc, char **argv) {
   // .got.plt, .dynsym, .dynstr, etc.
   scan_relocations(ctx);
 
+  // Now that we know all exported symbols, make sure that no versioned
+  // name is defined twice.
+  check_symbol_version_conflicts(ctx);
+
   // Compute the is_weak bit for each imported symbol.
   compute_imported_symbol_weakness(ctx);
 
