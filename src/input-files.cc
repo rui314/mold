@@ -1377,13 +1377,20 @@ void SharedFile<E>::parse(Context<E> &ctx) {
   for (i64 i = symtab_sec->sh_info; i < esyms.size(); i++) {
     u16 ver = vers.empty() ? VER_NDX_GLOBAL : (vers[i] & ~VERSYM_HIDDEN);
 
-    // A defined symbol with VER_NDX_LOCAL is bound locally and isn't
-    // really exposed for dynamic linking; skip it. We never skip
-    // undefined references — the dynamic loader doesn't distinguish
-    // local vs global on the undef side, and dropping them would hide
-    // the DSO's reference from us.
-    if (ver == VER_NDX_LOCAL && !esyms[i].is_undef())
-      continue;
+    // A version index of 0 (VER_NDX_LOCAL) is valid only for unversioned
+    // undefined symbols. A symbol that's actually local to a DSO doesn't
+    // appear in .dynsym in the first place, so index 0 on a defined
+    // symbol is ill-formed. GNU ld briefly emitted it
+    // (https://sourceware.org/bugzilla/show_bug.cgi?id=33577). We used
+    // to silently ignore such symbols, which turned into confusing
+    // "undefined symbol" errors down the line. Reject the file instead,
+    // like lld.
+    if (ver == VER_NDX_LOCAL) {
+      if (!esyms[i].is_undef())
+        Fatal(ctx) << *this << ": invalid version index 0 for defined symbol "
+                   << (this->symbol_strtab.data() + esyms[i].st_name);
+      ver = VER_NDX_GLOBAL;
+    }
 
     this->elf_syms2.push_back(esyms[i]);
 
