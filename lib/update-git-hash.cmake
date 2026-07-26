@@ -1,18 +1,17 @@
-# Get a git hash value. We do not want to use git command here
-# because we don't want to make git a build-time dependency.
-if(EXISTS "${SOURCE_DIR}/.git/HEAD")
-  file(READ "${SOURCE_DIR}/.git/HEAD" HASH)
-  string(STRIP "${HASH}" HASH)
+# Embed the current git commit hash into the mold executable. We ask git
+# instead of parsing files under .git because the repository format varies
+# (e.g. packed refs, reftable). When building from a source tarball, there's
+# no .git, and the hash is simply omitted.
+if(EXISTS "${SOURCE_DIR}/.git")
+  execute_process(
+    COMMAND git -C "${SOURCE_DIR}" rev-parse HEAD
+    OUTPUT_VARIABLE HASH
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE EXIT_CODE)
 
-  if(HASH MATCHES "^ref: (.*)")
-    set(HEAD "${CMAKE_MATCH_1}")
-    if(EXISTS "${SOURCE_DIR}/.git/${HEAD}")
-      file(READ "${SOURCE_DIR}/.git/${HEAD}" HASH)
-      string(STRIP "${HASH}" HASH)
-    else()
-      file(READ "${SOURCE_DIR}/.git/packed-refs" PACKED_REFS)
-      string(REGEX REPLACE ".*\n([0-9a-f]+) ${HEAD}\n.*" "\\1" HASH "\n${PACKED_REFS}")
-    endif()
+  if(NOT EXIT_CODE EQUAL 0)
+    set(HASH "")
   endif()
 endif()
 
