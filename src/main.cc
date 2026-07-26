@@ -60,6 +60,9 @@ static void new_lto_obj(Context<E> &ctx, ReaderContext &rctx,
 template <typename E>
 static void new_shared_file(Context<E> &ctx, ReaderContext &rctx,
                             MappedFile *mf) {
+  if (rctx.static_)
+    Fatal(ctx) << mf->name << ": attempted static link of a dynamic object";
+
   check_file_compatibility(ctx, rctx, mf);
 
   SharedFile<E> *file = new SharedFile<E>(ctx, mf);
