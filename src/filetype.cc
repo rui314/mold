@@ -133,12 +133,10 @@ static std::string_view get_elf_type(u8 *buf) {
   bool is_le = (buf[EI_DATA] == ELFDATA2LSB);
   bool is_64 = (buf[EI_CLASS] == ELFCLASS64);
 
-  auto *ehdr32_le = (ElfEhdr<ARM32LE> *)buf;
-  auto *ehdr32_be = (ElfEhdr<ARM32BE> *)buf;
   auto *ehdr64_le = (ElfEhdr<ARM64LE> *)buf;
   auto *ehdr64_be = (ElfEhdr<ARM64BE> *)buf;
 
-  switch (is_le ? ehdr32_le->e_machine : ehdr32_be->e_machine) {
+  switch (is_le ? ehdr64_le->e_machine : ehdr64_be->e_machine) {
   case EM_386:
     return I386::name;
   case EM_X86_64:
