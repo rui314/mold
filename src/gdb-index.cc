@@ -857,7 +857,7 @@ void build_gdb_index_tables(Context<E> &ctx) {
   // constant pool contains all type vectors followed by all name strings.
   i64 symtab_size = data.ht_size * 8;
   i64 pool_size = data.pool_size.type_bytes + data.pool_size.name_bytes;
-  data.tables = std::make_unique_for_overwrite<u8[]>(symtab_size + pool_size);
+  data.tables = std::unique_ptr<u8[]>(new u8[symtab_size + pool_size]);
 
   // Each occupied hash-table slot contains the constant-pool offsets of a name
   // and its type vector.

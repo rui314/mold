@@ -421,7 +421,9 @@ int mold_main(int argc, char **argv) {
                                   tbb::task_arena::priority::low);
   tbb::task_group gdb_task;
   if (create_gdb_index)
-    gdb_input_arena.enqueue([&] { read_gdb_index_inputs(ctx); }, gdb_task);
+    gdb_input_arena.execute([&] {
+      gdb_task.run([&] { read_gdb_index_inputs(ctx); });
+    });
 
   // Parse .eh_frame section contents.
   parse_eh_frame_sections(ctx);
@@ -586,7 +588,7 @@ int mold_main(int argc, char **argv) {
 
   // sort_debug_info_sections may uncompress the same .debug_info sections.
   if (create_gdb_index)
-    gdb_input_arena.wait_for(gdb_task);
+    gdb_input_arena.execute([&] { gdb_task.wait(); });
 
   // Sort .debug_info contents so that DWARF32 debug info precedes that of
   // DWARF64. This is to mitigate the possibility of a relocation overflow.
@@ -601,7 +603,9 @@ int mold_main(int argc, char **argv) {
   tbb::task_arena gdb_table_arena(gdb_table_workers, 1,
                                   tbb::task_arena::priority::low);
   if (ctx.gdb_index && !ctx.gnu_debuglink)
-    gdb_table_arena.enqueue([&] { build_gdb_index_tables(ctx); }, gdb_task);
+    gdb_table_arena.execute([&] {
+      gdb_task.run([&] { build_gdb_index_tables(ctx); });
+    });
 
   // Print reports about undefined symbols, if needed.
   if (ctx.arg.unresolved_symbols == UNRESOLVED_ERROR)
@@ -718,7 +722,7 @@ int mold_main(int argc, char **argv) {
   // The final stage reads address ranges, which requires relocated debug
   // sections. We have applied the relocations now, so finish the index.
   if (ctx.gdb_index && !ctx.gnu_debuglink) {
-    gdb_table_arena.wait_for(gdb_task);
+    gdb_table_arena.execute([&] { gdb_task.wait(); });
     write_gdb_index(ctx);
   }
 

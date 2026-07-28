@@ -225,7 +225,7 @@ public:
   ExactArray() = default;
 
   explicit ExactArray(i64 sz)
-    : ptr(std::make_unique_for_overwrite<T[]>(sz)), size_(sz) {}
+    : ptr(new T[sz]), size_(sz) {}
 
   T &operator[](i64 i) {
     return ptr[i];

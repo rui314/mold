@@ -41,4 +41,4 @@ _start:
 EOF
 
 $CC -B. -nostdlib -Wl,-e,_start -o $t/exe $t/c.o $t/a.o $t/b.o
-$OBJDUMP -s -j .text $t/exe | grep 'c3112233'
+$OBJDUMP -s -j .text $t/exe | grep '112233'

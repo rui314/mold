@@ -3901,6 +3901,7 @@ Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> 
         -branch_distance<E> <= disp && disp < branch_distance<E>)
       return *it;
   Fatal(ctx) << "range extension thunk out of range: " << *this;
+  unreachable();
 }
 
 template <typename E>
