@@ -209,13 +209,9 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
             symbols.local().push_back(&sym);
     });
 
+    // Add symbols to the thunk
     for (std::vector<Symbol<E> *> &vec : symbols)
       append(thunk.symbols, vec);
-
-    // Sort symbols added to the thunk to make the output deterministic.
-    ranges::sort(thunk.symbols, {}, [](Symbol<E> *x) {
-      return std::tuple{x->file->priority, x->sym_idx};
-    });
 
     // Now that we know the number of symbols in the thunk, we can compute
     // the thunk's size.
@@ -231,6 +227,13 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
   for (; t < thunks.size(); t++)
     for (Symbol<E> *sym : thunks[t]->symbols)
       sym->flags = 0;
+
+  // Sort symbols for deterministic output.
+  tbb::parallel_for_each(thunks, [](std::unique_ptr<Thunk<E>> &thunk) {
+    ranges::sort(thunk->symbols, {}, [](Symbol<E> *sym) {
+      return std::tuple{sym->file->priority, sym->sym_idx};
+    });
+  });
 
   this->shdr.sh_size = offset;
 }
