@@ -223,7 +223,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     b = c;
   }
 
-  // Reset flags for future use
+  // Clear marks for thunks that are still reachable from the last batch.
   for (; t < thunks.size(); t++)
     for (Symbol<E> *sym : thunks[t]->symbols)
       sym->flags = 0;
@@ -266,8 +266,11 @@ void remove_redundant_thunks(Context<E> &ctx) {
   for (OutputSection<E> *osec : sections) {
     tbb::parallel_for_each(osec->members, [&](InputSection<E> *isec) {
       for (const ElfRel<E> &rel : isec->get_rels(ctx))
-        if (requires_thunk(ctx, *isec, rel, false))
-          isec->file.symbols[rel.r_sym]->flags.test_and_set();
+        if (is_func_call_rel(rel))
+          if (Symbol<E> *sym = isec->file.symbols[rel.r_sym];
+              !sym->flags &&
+              requires_thunk(ctx, *isec, rel, false))
+            sym->flags.test_and_set();
     });
   }
 
@@ -303,12 +306,6 @@ void remove_redundant_thunks(Context<E> &ctx) {
     }
     osec->shdr.sh_size = offset;
   });
-
-  // Reset flags for future use
-  for (OutputSection<E> *osec : sections)
-    for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks)
-      for (Symbol<E> *sym : thunk->symbols)
-        sym->flags = 0;
 }
 
 // When applying relocations, we want to know the address in a reachable
