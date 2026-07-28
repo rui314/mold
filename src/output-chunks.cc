@@ -1918,7 +1918,7 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
   auto get_st_shndx = [&](Symbol<E> &sym) -> u32 {
     if (SectionFragment<E> *frag = sym.get_frag())
       if (frag->is_alive)
-        return frag->output_section.shndx;
+        return frag->get_output_section(ctx).shndx;
 
     if constexpr (is_ppc64v1<E>)
       if (sym.has_opd(ctx))
@@ -1953,7 +1953,7 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
     esym.st_value = sym.get_addr(ctx);
   } else if (SectionFragment<E> *frag = sym.get_frag()) {
     // Section fragment
-    shndx = frag->output_section.shndx;
+    shndx = frag->get_output_section(ctx).shndx;
     esym.st_value = sym.get_addr(ctx);
   } else if (!isec) {
     // Absolute symbol
@@ -2207,7 +2207,7 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
   name = get_merged_output_name(ctx, name, flags, entsize, addralign);
 
   auto find = [&]() -> MergedSection * {
-    for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
+    for (ArenaObjectPtr<MergedSection<E>> &osec : ctx.merged_sections)
       if (name == osec->name && flags == osec->shdr.sh_flags &&
           shdr.sh_type == osec->shdr.sh_type &&
           entsize == osec->shdr.sh_entsize)
@@ -2228,7 +2228,9 @@ MergedSection<E>::get_instance(Context<E> &ctx, std::string_view name,
   if (MergedSection *osec = find())
     return osec;
 
-  MergedSection *osec = new MergedSection(name, flags, shdr.sh_type, entsize);
+  void *buf = ctx.arena.template allocate<MergedSection>(1);
+  MergedSection *osec =
+    new (buf) MergedSection(name, flags, shdr.sh_type, entsize);
   ctx.merged_sections.emplace_back(osec);
   return osec;
 }
@@ -2243,7 +2245,7 @@ MergedSection<E>::insert(Context<E> &ctx, std::string_view data, u64 hash,
   bool is_alive = !ctx.arg.gc_sections || !(this->shdr.sh_flags & SHF_ALLOC);
 
   SectionFragment<E> *frag =
-    map.insert(data, hash, SectionFragment(this, is_alive)).first;
+    map.insert(data, hash, SectionFragment(ctx, *this, is_alive)).first;
   update_maximum(frag->p2align, p2align);
   return frag;
 }
@@ -3234,12 +3236,13 @@ get_symidx_addend(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel) 
     i64 frag_addend;
     std::tie(frag, frag_addend) = isec.get_fragment(ctx, rel);
     if (frag)
-      return {frag->output_section.shndx, frag->offset + frag_addend};
+      return {frag->get_output_section(ctx).shndx,
+              frag->offset + frag_addend};
   }
 
   if (sym.esym().st_type == STT_SECTION) {
     if (SectionFragment<E> *frag = sym.get_frag())
-      return {frag->output_section.shndx,
+      return {frag->get_output_section(ctx).shndx,
               frag->offset + sym.value + get_addend(isec, rel)};
 
     if (InputSection<E> *isec2 = sym.get_input_section())

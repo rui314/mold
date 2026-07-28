@@ -278,15 +278,25 @@ void release_global_lock();
 
 template <typename E>
 struct __attribute__((aligned(4))) SectionFragment {
-  SectionFragment(MergedSection<E> *sec, bool is_alive)
-    : output_section(*sec), is_alive(is_alive) {}
+  SectionFragment(Context<E> &ctx, MergedSection<E> &sec, bool is_alive)
+    : output_section_arena_idx(ctx.arena.get_index(&sec)),
+      is_alive(is_alive) {}
 
   u64 get_addr(Context<E> &ctx) const {
-    return output_section.shdr.sh_addr + offset;
+    return get_output_section(ctx).shdr.sh_addr + offset;
   }
 
-  MergedSection<E> &output_section;
+  MergedSection<E> &get_output_section(Context<E> &ctx) const {
+    return *ctx.arena.template get_pointer<MergedSection<E>>(
+      output_section_arena_idx);
+  }
+
   i64 offset = -1;
+
+  // SectionFragment lives in a separately mapped hash table, so it cannot use
+  // ArenaPtr.
+  u32 output_section_arena_idx;
+
   Atomic<u8> p2align = 0;
   Atomic<bool> is_alive = false;
 
@@ -294,6 +304,9 @@ struct __attribute__((aligned(4))) SectionFragment {
   // start of the output section.
   Atomic<bool> is_32bit = false;
 };
+
+static_assert(sizeof(SectionFragment<X86_64>) == 16);
+static_assert(sizeof(ConcurrentMap<SectionFragment<X86_64>>::Entry) == 32);
 
 // Additional class members for dynamic symbols. Because most symbols
 // don't need them and we allocate tens of millions of symbol objects
@@ -2758,7 +2771,7 @@ struct Context {
   ArenaResource arena;
   ShardedMap<Symbol<E>> symbol_map;
 
-  tbb::concurrent_vector<std::unique_ptr<MergedSection<E>>> merged_sections;
+  tbb::concurrent_vector<ArenaObjectPtr<MergedSection<E>>> merged_sections;
 
   tbb::concurrent_vector<std::unique_ptr<TimerRecord>> timer_records;
 

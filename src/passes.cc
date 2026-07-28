@@ -527,7 +527,7 @@ void create_merged_sections(Context<E> &ctx) {
   });
 
   tbb::parallel_for_each(ctx.merged_sections,
-                         [&](std::unique_ptr<MergedSection<E>> &sec) {
+                         [&](ArenaObjectPtr<MergedSection<E>> &sec) {
     if (sec->shdr.sh_flags & SHF_ALLOC)
       sec->resolve(ctx);
   });
@@ -794,7 +794,7 @@ void create_output_sections(Context<E> &ctx) {
   std::vector<Chunk<E> *> chunks;
   for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
     chunks.push_back(osec.get());
-  for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
+  for (ArenaObjectPtr<MergedSection<E>> &osec : ctx.merged_sections)
     chunks.push_back(osec.get());
 
   // Sections are added to the section lists in an arbitrary order
@@ -1588,7 +1588,7 @@ void sort_debug_info_sections(Context<E> &ctx) {
         if (osec->shdr.sh_size >= UINT32_MAX || is_in_test)
           vec1.push_back(osec);
 
-  for (std::unique_ptr<MergedSection<E>> &osec : ctx.merged_sections)
+  for (ArenaObjectPtr<MergedSection<E>> &osec : ctx.merged_sections)
     if (!(osec->shdr.sh_flags & SHF_ALLOC) && osec->name.starts_with(".debug_"))
       if (osec->shdr.sh_size >= UINT32_MAX || is_in_test)
         vec2.push_back(osec.get());
@@ -3737,7 +3737,7 @@ void show_stats(Context<E> &ctx) {
   using Entry = typename ConcurrentMap<SectionFragment<E>>::Entry;
 
   static Counter merged_strings("merged_strings");
-  for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
+  for (ArenaObjectPtr<MergedSection<E>> &sec : ctx.merged_sections)
     for (Entry &ent : std::span(sec->map.entries, sec->map.nbuckets))
       if (ent.key)
         merged_strings++;
@@ -3761,7 +3761,7 @@ void show_stats(Context<E> &ctx) {
 
   Counter::print();
 
-  for (std::unique_ptr<MergedSection<E>> &sec : ctx.merged_sections)
+  for (ArenaObjectPtr<MergedSection<E>> &sec : ctx.merged_sections)
     sec->print_stats(ctx);
 }
 
