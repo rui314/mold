@@ -191,22 +191,21 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     thunks.emplace_back(std::make_unique<Thunk<E>>(*this, offset));
 
     Thunk<E> &thunk = *thunks.back();
-    std::mutex mu;
+    tbb::enumerable_thread_specific<std::vector<Symbol<E> *>> symbols;
 
     // Scan relocations between B and C to collect symbols that need
     // entries in the new thunk.
     tbb::parallel_for(b, c, [&](i64 i) {
       InputSection<E> &isec = *m[i];
-      for (const ElfRel<E> &rel : isec.get_rels(ctx)) {
-        if (requires_thunk(ctx, isec, rel, true)) {
+      for (const ElfRel<E> &rel : isec.get_rels(ctx))
+        if (requires_thunk(ctx, isec, rel, true))
           if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
-              !sym.flags.test_and_set()) {
-            std::scoped_lock lock(mu);
-            thunk.symbols.push_back(&sym);
-          }
-        }
-      }
+              !sym.flags.test_and_set())
+            symbols.local().push_back(&sym);
     });
+
+    for (std::vector<Symbol<E> *> &vec : symbols)
+      append(thunk.symbols, vec);
 
     // Sort symbols added to the thunk to make the output deterministic.
     ranges::sort(thunk.symbols, {}, [](Symbol<E> *x) {
