@@ -26,9 +26,9 @@ $CC -B. -o $t/libret.so -shared $t/libret.o
 $CC -c -o $t/a.o $t/a.c -I$t -g
 $CC -B. -o $t/exe1 $t/a.o -Wl,--separate-debug-file,--gdb-index -L$t -lret
 readelf -SW $t/exe1 | grep -F .gnu_debuglink
-readelf -SW $t/exe1.dbg | grep -F .gdb_index
 
 flock $t/exe1.dbg true
+readelf -SW $t/exe1.dbg | grep -F .gdb_index
 gdb $t/exe1 -ex 'list main' -ex 'quit' | grep -F return1
 
 # Ensure the internal names for headers didn't leak in (i.e. PHDR)

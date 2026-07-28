@@ -626,7 +626,7 @@ private:
 };
 
 static_assert(sizeof(InputSection<X86_64>) ==
-              (sizeof(void *) == 8 ? 80 : 64));
+              (sizeof(void *) == 8 ? 80 : 72));
 
 //
 // tls.cc
@@ -3178,7 +3178,8 @@ public:
 };
 
 static_assert(sizeof(Symbol<X86_64>) == 40);
-static_assert(sizeof(ShardedMapEntry<Symbol<X86_64>>) == 56);
+static_assert(sizeof(ShardedMapEntry<Symbol<X86_64>>) ==
+              (sizeof(void *) == 8 ? 56 : 48));
 static_assert(sizeof(ArenaPtr<Symbol<X86_64>>) == 4);
 
 template <typename E>
