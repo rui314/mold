@@ -274,10 +274,12 @@ void remove_redundant_thunks(Context<E> &ctx) {
   // Remove symbols from thunks if they don't actually need range
   // extension thunks
   for (OutputSection<E> *osec : sections) {
-    for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks) {
-      std::erase_if(thunk->symbols, [&](Symbol<E> *sym) { return !sym->flags; });
+    tbb::parallel_for_each(osec->thunks,
+                           [&](std::unique_ptr<Thunk<E>> &thunk) {
+      std::erase_if(thunk->symbols,
+                    [&](Symbol<E> *sym) { return !sym->flags; });
       thunk->shrink_size(ctx);
-    }
+    });
   }
 
   // Recompute section sizes
