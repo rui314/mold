@@ -120,10 +120,11 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
     return;
 
   // Initialize input sections with a dummy offset so that we can
-  // distinguish sections that have got an address with the one who
-  // haven't.
-  for (InputSection<E> *isec : m)
+  // distinguish sections whose addresses have been assigned from those
+  // whose addresses have not.
+  tbb::parallel_for_each(m, [](InputSection<E> *isec) {
     isec->offset = -1;
+  });
   thunks.clear();
 
   // We create thunks from the beginning of the section to the end.
@@ -169,17 +170,21 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
       d++;
     }
 
-    // Move C forward so that C is apart from B by BATCH_SIZE. We want
-    // to make sure that there's at least one section between B and C
-    // to ensure progress.
-    c = b + 1;
-    while (c < d && m[c]->offset + m[c]->sh_size < m[b]->offset + batch_size)
-      c++;
+    // Find the end of the current batch. Section end addresses are sorted,
+    // so use binary search. Starting from B + 1 guarantees progress.
+    std::span<InputSection<E> *> range = m.subspan(b + 1, d - b - 1);
+    c = ranges::lower_bound(range, m[b]->offset + batch_size, {},
+                            [](InputSection<E> *isec) {
+                              return isec->offset + isec->sh_size;
+                            }) - m.begin();
 
-    // Move A forward so that A is reachable from C.
+    // Find the first section that is within branch range of C.
     i64 c_offset = (c == d) ? offset : m[c]->offset;
-    while (a < b && m[a]->offset + branch_distance<E> < c_offset)
-      a++;
+    range = m.subspan(a, b - a);
+    a = ranges::lower_bound(range, c_offset - branch_distance<E>, {},
+                            [](InputSection<E> *isec) {
+                              return isec->offset;
+                            }) - m.begin();
 
     // Erase references to out-of-range thunks.
     for (; t < thunks.size() && thunks[t]->offset < m[a]->offset; t++)
