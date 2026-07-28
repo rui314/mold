@@ -1906,7 +1906,7 @@ void scan_relocations(Context<E> &ctx) {
     if (sym->flags & NEEDS_GOT)
       ctx.got->add_got_symbol(ctx, sym);
 
-    if (sym->flags & NEEDS_CPLT) {
+    if ((sym->flags & NEEDS_CANONICAL) && sym->get_type() == STT_FUNC) {
       sym->is_canonical = true;
 
       // A canonical PLT needs to be visible from DSOs.
@@ -1932,7 +1932,7 @@ void scan_relocations(Context<E> &ctx) {
     if (sym->flags & NEEDS_TLSDESC)
       ctx.got->add_tlsdesc_symbol(ctx, sym);
 
-    if (sym->flags & NEEDS_COPYREL) {
+    if ((sym->flags & NEEDS_CANONICAL) && sym->get_type() != STT_FUNC) {
       if (ctx.arg.z_relro && sym->file->is_dso &&
           ((SharedFile<E> *)sym->file)->is_readonly(sym))
         ctx.copyrel_relro->add_symbol(ctx, sym);

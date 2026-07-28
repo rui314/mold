@@ -1216,7 +1216,7 @@ static AbsRelKind get_abs_rel_kind(Context<E> &ctx, Symbol<E> &sym) {
     return ABS_REL_NONE;
 
   // True if the symbol's address is in the output file.
-  if (!sym.is_imported || (sym.flags & NEEDS_CPLT) || (sym.flags & NEEDS_COPYREL))
+  if (!sym.is_imported || (sym.flags & NEEDS_CANONICAL))
     return ctx.arg.pic ? ABS_REL_BASEREL : ABS_REL_NONE;
 
   return ABS_REL_DYNREL;
@@ -1260,7 +1260,7 @@ void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
     for (AbsRel<E> &r : abs_rels)
       if (Symbol<E> &sym = *r.sym;
           sym.is_imported && !sym.is_absolute())
-        sym.flags |= (sym.get_type() == STT_FUNC) ? NEEDS_CPLT : NEEDS_COPYREL;
+        sym.flags |= NEEDS_CANONICAL;
 
   // Now we can compute whether they need to be promoted to dynamic
   // relocations or not.

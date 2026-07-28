@@ -128,7 +128,7 @@ void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
 // wingdi.h defines ERROR as a macro, so undefine it before use
 #undef ERROR
 
-typedef enum : u8 { NONE, ERROR, COPYREL, PLT, CPLT } Action;
+typedef enum : u8 { NONE, ERROR, CANONICAL, PLT } Action;
 
 template <typename E>
 static void do_action(Context<E> &ctx, Action action, InputSection<E> &isec,
@@ -141,16 +141,12 @@ static void do_action(Context<E> &ctx, Action action, InputSection<E> &isec,
                << std::hex << rel.r_offset << " against symbol `"
                << sym << "' can not be used; recompile with -fPIC";
     break;
-  case COPYREL:
-    sym.flags |= NEEDS_COPYREL;
+  case CANONICAL:
+    sym.flags |= NEEDS_CANONICAL;
     break;
   case PLT:
     // Create a PLT entry
     sym.flags |= NEEDS_PLT;
-    break;
-  case CPLT:
-    // Create a canonical PLT entry
-    sym.flags |= NEEDS_CPLT;
     break;
   }
 }
@@ -183,9 +179,9 @@ void InputSection<E>::scan_pcrel(Context<E> &ctx, Symbol<E> &sym,
   // linker generally does not support PC-relative relocations.
   static Action table[][4] = {
     // Absolute  Local    Imported data  Imported code
-    {  ERROR,    NONE,    ERROR,         PLT    },  // Shared object
-    {  ERROR,    NONE,    COPYREL,       CPLT   },  // Position-independent exec
-    {  NONE,     NONE,    COPYREL,       CPLT   },  // Position-dependent exec
+    {  ERROR,    NONE,    ERROR,         PLT       }, // Shared object
+    {  ERROR,    NONE,    CANONICAL,     CANONICAL }, // Position-independent exec
+    {  NONE,     NONE,    CANONICAL,     CANONICAL }, // Position-dependent exec
   };
 
   Action action = table[get_output_type(ctx)][get_sym_type(sym)];
@@ -202,9 +198,9 @@ void InputSection<E>::scan_absrel(Context<E> &ctx, Symbol<E> &sym,
   // resolved at link-time.
   static Action table[][4] = {
     // Absolute  Local    Imported data  Imported code
-    {  NONE,     ERROR,   ERROR,         ERROR },  // Shared object
-    {  NONE,     ERROR,   ERROR,         ERROR },  // Position-independent exec
-    {  NONE,     NONE,    COPYREL,       CPLT  },  // Position-dependent exec
+    {  NONE,     ERROR,   ERROR,         ERROR     }, // Shared object
+    {  NONE,     ERROR,   ERROR,         ERROR     }, // Position-independent exec
+    {  NONE,     NONE,    CANONICAL,     CANONICAL }, // Position-dependent exec
   };
 
   Action action = table[get_output_type(ctx)][get_sym_type(sym)];

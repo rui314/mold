@@ -2792,12 +2792,11 @@ std::ostream &operator<<(std::ostream &out, const InputFile<E> &file);
 enum {
   NEEDS_GOT       = 1 << 0,
   NEEDS_PLT       = 1 << 1,
-  NEEDS_CPLT      = 1 << 2,
+  NEEDS_CANONICAL = 1 << 2, // canonical PLT or copy relocation
   NEEDS_GOTTP     = 1 << 3,
   NEEDS_TLSGD     = 1 << 4,
-  NEEDS_COPYREL   = 1 << 5,
-  NEEDS_TLSDESC   = 1 << 6,
-  NEEDS_PPC_OPD   = 1 << 7, // for PPCv1
+  NEEDS_TLSDESC   = 1 << 5,
+  NEEDS_PPC_OPD   = 1 << 6, // for PPCv1
 };
 
 // Flags for Symbol<E>::get_addr()
