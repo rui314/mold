@@ -59,15 +59,15 @@ public:
   }
 
   operator T() const {
-    if (size == 3) {
-      if (is_le)
+    if constexpr (size == 3) {
+      if constexpr (is_le)
         return buf[2] << 16 | buf[1] << 8 | buf[0];
       return buf[0] << 16 | buf[1] << 8 | buf[2];
+    } else {
+      T v;
+      memcpy(&v, buf, size);
+      return is_native ? v : bswap(v);
     }
-
-    T v;
-    memcpy(&v, buf, size);
-    return is_native ? v : bswap(v);
   }
 
   Integer &operator=(T v)  { new (this) Integer(v); return *this; }
