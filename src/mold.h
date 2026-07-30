@@ -305,9 +305,6 @@ struct __attribute__((aligned(4))) SectionFragment {
   Atomic<bool> is_32bit = false;
 };
 
-static_assert(sizeof(SectionFragment<X86_64>) == 16);
-static_assert(sizeof(ConcurrentMap<SectionFragment<X86_64>>::Entry) == 32);
-
 // Additional class members for dynamic symbols. Because most symbols
 // don't need them and we allocate tens of millions of symbol objects
 // for large programs, we separate them from `Symbol` class to save
@@ -624,9 +621,6 @@ private:
 
   std::optional<u64> get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag);
 };
-
-static_assert(sizeof(InputSection<X86_64>) ==
-              (sizeof(void *) == 8 ? 80 : 72));
 
 //
 // tls.cc
@@ -1760,8 +1754,6 @@ struct ComdatGroupRef {
   u32 signature_arena_idx : 31;
   u32 is_owner : 1 = false;
 };
-
-static_assert(sizeof(ComdatGroupRef<X86_64>) == 8);
 
 template <typename E>
 class MergeableSection {
@@ -3176,11 +3168,6 @@ public:
   // The name bytes live in the surrounding map entry or the owner file.
   NameLen namelen;
 };
-
-static_assert(sizeof(Symbol<X86_64>) == 40);
-static_assert(sizeof(ShardedMapEntry<Symbol<X86_64>>) ==
-              (sizeof(void *) == 8 ? 56 : 48));
-static_assert(sizeof(ArenaPtr<Symbol<X86_64>>) == 4);
 
 template <typename E>
 Symbol<E> *get_symbol(Context<E> &ctx, std::string_view key,

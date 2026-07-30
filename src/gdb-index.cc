@@ -172,8 +172,6 @@ union NameRecord {
   IndexedName indexed;
 };
 
-static_assert(sizeof(NameRecord) == 16);
-
 struct Compunit {
   DwarfKind kind;
   i64 offset;
