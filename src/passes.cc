@@ -422,14 +422,11 @@ void resolve_symbols(Context<E> &ctx) {
     // symbol resolution from scratch with the flag to skip that symbol
     // next time. This should be rare.
     std::atomic_bool redo = false;
-    tbb::parallel_for_each(ctx.dsos, [&](SharedFile<E> *file) {
-      if (file->is_reachable) {
-        for (Symbol<E> *sym : file->symbols) {
-          if (sym->file == file && sym->visibility == STV_HIDDEN) {
-            sym->skip_dso = true;
-            redo = true;
-          }
-        }
+    ctx.symbol_map.parallel_for_each([&](Symbol<E> &sym) {
+      if (sym.file && sym.file->is_dso && sym.file->is_reachable &&
+          sym.visibility == STV_HIDDEN) {
+        sym.skip_dso = true;
+        redo = true;
       }
     });
 
@@ -2456,23 +2453,21 @@ void compute_import_export(Context<E> &ctx) {
   }
 
   if (!matcher.empty() || !cpp_matcher.empty()) {
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      for (Symbol<E> *sym : file->get_global_syms()) {
-        if (sym->file != file)
-          continue;
-        if (ctx.arg.shared && !sym->is_exported)
-          continue;
+    ctx.symbol_map.parallel_for_each([&](Symbol<E> &sym) {
+      if (!sym.file || sym.file->is_dso)
+        return;
+      if (ctx.arg.shared && !sym.is_exported)
+        return;
 
-        std::string_view name = sym->name();
+      std::string_view name = sym.name();
 
-        if (matcher.find(name) != -1) {
-          handle_match(sym);
-        } else if (!cpp_matcher.empty()) {
-          if (std::optional<std::string_view> s = demangle_cpp(name))
-            name = *s;
-          if (cpp_matcher.find(name) != -1)
-            handle_match(sym);
-        }
+      if (matcher.find(name) != -1) {
+        handle_match(&sym);
+      } else if (!cpp_matcher.empty()) {
+        if (std::optional<std::string_view> s = demangle_cpp(name))
+          name = *s;
+        if (cpp_matcher.find(name) != -1)
+          handle_match(&sym);
       }
     });
   }

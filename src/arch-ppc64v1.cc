@@ -616,11 +616,10 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
 // refers to the function's .opd entry. This function marks such symbols
 // with NEEDS_PPC_OPD.
 void ppc64v1_scan_symbols(Context<E> &ctx) {
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (Symbol<E> *sym : file->symbols)
-      if (sym->file == file && sym->is_exported)
-        if (u32 ty = sym->get_type(); ty == STT_FUNC || ty == STT_GNU_IFUNC)
-          sym->flags |= NEEDS_PPC_OPD;
+  ctx.symbol_map.parallel_for_each([](Symbol<E> &sym) {
+    if (sym.file && !sym.file->is_dso && sym.is_exported)
+      if (u32 ty = sym.get_type(); ty == STT_FUNC || ty == STT_GNU_IFUNC)
+        sym.flags |= NEEDS_PPC_OPD;
   });
 
   // Functions referenced by the ELF header also have to have .opd entries.
