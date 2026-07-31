@@ -26,20 +26,45 @@ bool AhoCorasick::can_handle(std::string_view pat) {
     pat.remove_prefix(1);
   if (pat.ends_with('*'))
     pat.remove_suffix(1);
-  return pat.find_first_of("*?[") == pat.npos;
+  return !pat.empty() && pat.find_first_of("*?[\\") == pat.npos;
+}
+
+i32 AhoCorasick::find_child(i32 node, u8 ch) const {
+  if (node == 0)
+    return root_children[ch];
+
+  for (i32 i = nodes[node].first_child; i != -1; i = nodes[i].next_sibling)
+    if (nodes[i].ch == ch)
+      return i;
+  return -1;
+}
+
+i32 AhoCorasick::add_child(i32 node, u8 ch) {
+  if (i32 child = find_child(node, ch); child != -1)
+    return child;
+
+  i32 child = nodes.size();
+  i32 sibling = nodes[node].first_child;
+  nodes.emplace_back();
+  nodes[child].next_sibling = sibling;
+  nodes[child].ch = ch;
+  nodes[node].first_child = child;
+
+  if (node == 0)
+    root_children[ch] = child;
+  return child;
 }
 
 i64 AhoCorasick::find(std::string_view str) {
   if (nodes.empty())
     return -1;
 
-  i64 idx = 0;
+  i32 idx = 0;
   i64 val = -1;
 
   auto walk = [&](u8 c) {
-    for (i64 j = idx; j != -1; j = nodes[j].suffix_link) {
-      i64 child = nodes[j].children[c];
-      if (child != -1) {
+    for (i32 j = idx; j != -1; j = nodes[j].suffix_link) {
+      if (i32 child = find_child(j, c); child != -1) {
         idx = child;
         val = std::max(val, nodes[child].value);
         return;
@@ -57,17 +82,13 @@ i64 AhoCorasick::find(std::string_view str) {
 
 bool AhoCorasick::add(std::string_view pat, i64 val) {
   assert(can_handle(pat));
-  if (nodes.empty())
-    nodes.resize(1);
-  i64 idx = 0;
+  if (nodes.empty()) {
+    root_children.fill(-1);
+    nodes.emplace_back();
+  }
+  i32 idx = 0;
 
-  auto walk = [&](u8 c) {
-    if (nodes[idx].children[c] == -1) {
-      nodes[idx].children[c] = nodes.size();
-      nodes.resize(nodes.size() + 1);
-    }
-    idx = nodes[idx].children[c];
-  };
+  auto walk = [&](u8 c) { idx = add_child(idx, c); };
 
   // We handle "foo" as if "\0foo\0", "*foo" as if "foo\0", "foo*" as
   // if "\0foo", and "*foo*" as if "foo". Aho-Corasick can do only
@@ -88,45 +109,34 @@ bool AhoCorasick::add(std::string_view pat, i64 val) {
 void AhoCorasick::compile() {
   if (nodes.empty())
     return;
-  fix_suffix_links(0);
-  fix_values();
-}
 
-void AhoCorasick::fix_suffix_links(i64 idx) {
-  for (i64 i = 0; i < 256; i++) {
-    i64 child = nodes[idx].children[i];
-    if (child == -1)
-      continue;
-
-    i64 j = nodes[idx].suffix_link;
-    for (; j != -1; j = nodes[j].suffix_link) {
-      if (nodes[j].children[i] != -1) {
-        nodes[child].suffix_link = j;
-        break;
-      }
-    }
-    if (j == -1)
-      nodes[child].suffix_link = 0;
-    fix_suffix_links(child);
+  // A failure link may refer to any node at the previous depth, so failure
+  // links must be constructed breadth-first.
+  std::queue<i32> queue;
+  for (i32 child = nodes[0].first_child; child != -1;
+       child = nodes[child].next_sibling) {
+    nodes[child].suffix_link = 0;
+    queue.push(child);
   }
-}
 
-void AhoCorasick::fix_values() {
-  std::queue<i64> queue;
-  queue.push(0);
-
-  do {
-    i64 idx = queue.front();
+  while (!queue.empty()) {
+    i32 idx = queue.front();
     queue.pop();
 
-    for (i64 child : nodes[idx].children) {
-      if (child != -1) {
-        i64 suffix = nodes[child].suffix_link;
-        nodes[child].value = std::max(nodes[child].value, nodes[suffix].value);
-        queue.push(child);
-      }
+    for (i32 child = nodes[idx].first_child; child != -1;
+         child = nodes[child].next_sibling) {
+      i32 suffix = nodes[idx].suffix_link;
+      while (suffix != 0 && find_child(suffix, nodes[child].ch) == -1)
+        suffix = nodes[suffix].suffix_link;
+
+      if (i32 next = find_child(suffix, nodes[child].ch); next != -1)
+        suffix = next;
+
+      nodes[child].suffix_link = suffix;
+      nodes[child].value = std::max(nodes[child].value, nodes[suffix].value);
+      queue.push(child);
     }
-  } while (!queue.empty());
+  }
 }
 
 } // namespace mold

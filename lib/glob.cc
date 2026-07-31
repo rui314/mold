@@ -1,94 +1,22 @@
-// This file implements a glob matcher that can run multiple glob patterns
-// against an input string. mold uses the glob matcher for symbol name
-// patterns in a version script or a dynamic list file. Since we may need to
-// match hundreds of glob patterns against millions of symbol names, the
-// speed of the matcher is very important.
-//
-// The pattern match implemented in this file is NFA-based, although the
-// cost of the function is O(n*m), where n is the number of NFA states and m
-// is the length of the input string. We do not use recursion or
-// backtracking, unlike a generic NFA-based regular expression matcher. This
-// is doable because glob patterns are very limited subsets of regexes.
-//
-// Here is the explanation of the algorithm. Observe that the only "tricky"
-// meta-character in a glob pattern is "*", which matches zero or more
-// characters. Other characters and meta-characters always match a single
-// input character. So the key of the algorithm is to handle "*" efficiently.
-//
-// We can represent a glob pattern "a*b*" with three NFA states: q_start, q1
-// and q_accept, with the following transition functions:
-//
-//   δ(q_start, "a") = q1
-//   δ(q1, <any character>) = q1
-//   δ(q1, "b") = q_accept
-//   δ(q_accept, <any character>) = q_accept
-//
-// We can construct such an NFA in a straightforward manner. We maintain NFA
-// states as a list, with the initial contents being the start state. Each
-// character except for "*" creates a new NFA state, adds a transition from
-// the last state in the list to the new one, and appends the new state at
-// the end of the list. "*" sets the "is_star" flag on the last NFA state.
-// The flag indicates that the state machine can remain in the state for any
-// input character.
-//
-// An NFA constructed this way doesn't have any complicated loops,
-// ε-transitions, or anything like that. Each state has only one incoming
-// edge. The only loops in the state transition are the self-loops on states
-// followed by a "*". Aside from that, the state machine progresses linearly
-// from the start state to the accept state.
-//
-// Each state of an NFA can be represented by a single bit. If a bit is 1,
-// the non-deterministic state machine is in that state. Otherwise, it's
-// not. Observe that a state with the "is_star" flag will continued to be 1
-// once it becomes 1, since the state machine can loop over the state on any
-// input character.
-//
-// With that observation, we can represent an NFA with a bit vector of N
-// bits, where N is the number of NFA states. For each input character, bit
-// M becomes 1 if
-//
-//   - bit M-1 is 1 and there's a transition from state_{M-1} to state_M
-//     with the given character, or
-//   - bit M is 1 and state_M's "is_star" flag is 1.
-//
-// Initially, the 0th bit is 1 for the start state. At each step, the bits
-// propagate from least significant to most significant positions, at most
-// one bit at a time. If the most significant bit is 1 after the entire
-// input has been processed, the string matches.
-//
-// This propagation can be implemented with bitwise OR, bitwise AND, and a
-// one-bit bit shift on the bit vector. All these operations are very cheap.
-//
-// We can combine multiple glob matchers into a single matcher by simply
-// concatenating the bit vectors of their state machines.
+// This file implements the glob matcher used for symbol name patterns.
+// Exact, prefix and suffix patterns are matched directly, and simple
+// substring patterns are combined into an Aho-Corasick matcher. The
+// remaining patterns are matched with the non-recursive algorithm described
+// at https://research.swtch.com/glob.
 
 #include "lib.h"
 
-#include <cstring>
-
 namespace mold {
 
-static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
-  std::vector<MultiGlob::State> vec(1);
+std::optional<Glob::Pattern> Glob::Pattern::compile(std::string_view pat,
+                                                    i64 value) {
+  std::vector<Token> tokens;
 
   while (!pat.empty()) {
     u8 c = pat[0];
-    pat = pat.substr(1);
-    std::bitset<256> chars;
+    pat.remove_prefix(1);
 
     switch (c) {
-    case '*':
-      vec.back().is_star = true;
-      continue;
-    case '?':
-      chars.set();
-      break;
-    case '\\':
-      if (pat.empty())
-        return {};
-      chars[pat[0]] = true;
-      pat = pat.substr(1);
-      break;
     case '[': {
       // Here are a few bracket pattern examples:
       //
@@ -100,23 +28,25 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
       // Both `!` and `^` are accepted as negation markers. `!` is the
       // POSIX/shell convention used by other linkers. `^` was mold's
       // original syntax and is kept for backward compatibility.
+      tokens.emplace_back(BRACKET);
+      std::bitset<256> &chars = tokens.back().chars;
       bool negate = false;
       bool closed = false;
 
       if (!pat.empty() && (pat[0] == '!' || pat[0] == '^')) {
         negate = true;
-        pat = pat.substr(1);
+        pat.remove_prefix(1);
       }
 
       while (!pat.empty()) {
         if (pat[0] == ']') {
-          pat = pat.substr(1);
+          pat.remove_prefix(1);
           closed = true;
           break;
         }
 
         if (pat[0] == '\\') {
-          pat = pat.substr(1);
+          pat.remove_prefix(1);
           if (pat.empty())
             return {};
         }
@@ -124,13 +54,13 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
         if (pat.size() >= 3 && pat[1] == '-') {
           u8 start = pat[0];
           u8 end = pat[2];
-          pat = pat.substr(3);
+          pat.remove_prefix(3);
 
           if (end == '\\') {
             if (pat.empty())
               return {};
             end = pat[0];
-            pat = pat.substr(1);
+            pat.remove_prefix(1);
           }
 
           if (end < start)
@@ -139,8 +69,8 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
           for (i64 i = start; i <= end; i++)
             chars[i] = true;
         } else {
-          chars[pat[0]] = true;
-          pat = pat.substr(1);
+          chars[(u8)pat[0]] = true;
+          pat.remove_prefix(1);
         }
       }
 
@@ -151,85 +81,93 @@ static std::vector<MultiGlob::State> parse_glob(std::string_view pat) {
         chars.flip();
       break;
     }
+    case '?':
+      tokens.emplace_back(QUESTION);
+      break;
+    case '*':
+      if (tokens.empty() || tokens.back().kind != STAR)
+        tokens.emplace_back(STAR);
+      break;
+    case '\\':
+      if (pat.empty())
+        return {};
+      if (tokens.empty() || tokens.back().kind != STRING)
+        tokens.emplace_back(STRING);
+      tokens.back().str += pat[0];
+      pat.remove_prefix(1);
+      break;
     default:
-      chars[c] = true;
+      if (tokens.empty() || tokens.back().kind != STRING)
+        tokens.emplace_back(STRING);
+      tokens.back().str += c;
       break;
     }
-
-    vec.push_back({chars, false});
   }
-  return vec;
+  return Pattern(std::move(tokens), value);
 }
 
-// Instead of returning just a match/no match boolean value, our glob
-// matcher returns an integer value associated with each given pattern.
-// If multiple patterns match at the same time, the largest associated
-// value will be returned by find().
-bool MultiGlob::add(std::string_view pat, i64 val) {
-  std::vector<State> vec = parse_glob(pat);
-  if (vec.empty())
+bool Glob::Pattern::match(std::string_view str) const {
+  if (!tokens.empty() && tokens.back().kind == STRING &&
+      !str.ends_with(tokens.back().str))
     return false;
-  patterns.push_back({std::move(vec), val});
+
+  i64 x = 0;
+  i64 y = 0;
+  i64 next_x = -1;
+  i64 next_y = -1;
+
+  while (x < str.size() || y < tokens.size()) {
+    if (y < tokens.size()) {
+      const Token &tok = tokens[y];
+
+      switch (tok.kind) {
+      case STRING:
+        if (str.substr(x).starts_with(tok.str)) {
+          x += tok.str.size();
+          y++;
+          continue;
+        }
+        break;
+      case STAR:
+        next_y = y++;
+        next_x = x + 1;
+
+        if (y < tokens.size() && tokens[y].kind == STRING) {
+          const std::string &s = tokens[y].str;
+          i64 pos = str.find(s, x);
+          if (pos == str.npos)
+            return false;
+          next_x = pos + 1;
+          x = pos + s.size();
+          y++;
+        }
+        continue;
+      case QUESTION:
+        if (x < str.size()) {
+          x++;
+          y++;
+          continue;
+        }
+        break;
+      case BRACKET:
+        if (x < str.size() && tok.chars[(u8)str[x]]) {
+          x++;
+          y++;
+          continue;
+        }
+        break;
+      }
+    }
+
+    // Retry the last star after assigning one more input byte to it.
+    if (next_x != -1 && next_x <= str.size()) {
+      x = next_x;
+      y = next_y;
+      continue;
+    }
+    return false;
+  }
   return true;
-}
-
-void MultiGlob::compile() {
-  if (patterns.empty())
-    return;
-
-  ranges::stable_sort(patterns, ranges::greater(), &GlobPattern::value);
-
-  std::vector<State> states;
-  for (GlobPattern &p : patterns)
-    append(states, p.states);
-  i64 sz = states.size();
-
-  start_states.resize(sz);
-  for (i64 pos = 0; GlobPattern &p : patterns) {
-    start_states[pos] = true;
-    pos += p.states.size();
-  }
-
-  star_mask.resize(sz);
-  for (i64 i = 0; i < sz; i++)
-    if (states[i].is_star)
-      star_mask[i] = true;
-
-  for (i64 i = 0; i < 256; i++) {
-    char_mask[i].resize(sz);
-    for (i64 j = 0; j < sz; j++)
-      if (states[j].incoming_edge[i])
-        char_mask[i][j] = true;
-  }
-}
-
-i64 MultiGlob::find(std::string_view str) {
-  if (patterns.empty())
-    return -1;
-
-  Bitvector bits = start_states;
-  Bitvector tmp;
-
-  for (u8 c : str) {
-    // This is equivalent to
-    //
-    //   bits = (bits & star_mask) | ((bits << 1) & char_mask[c])
-    //
-    // but we update the existing objects in place to avoid allocating
-    // temporary objects.
-    tmp = bits;
-    tmp &= star_mask;
-    bits <<= 1;
-    bits &= char_mask[c];
-    bits |= tmp;
-  }
-
-  for (i64 pos = 0; GlobPattern &p : patterns) {
-    pos += p.states.size();
-    if (bits[pos - 1])
-      return p.value;
-  }
-  return -1;
 }
 
 static bool is_literal(std::string_view pat) {
@@ -268,7 +206,12 @@ bool Glob::add(std::string_view pat, i64 val) {
   // Aho-Corasick algorithm is even faster than our glob matcher.
   if (aho_corasick.can_handle(pat))
     return aho_corasick.add(pat, val);
-  return multi_glob.add(pat, val);
+
+  if (std::optional<Pattern> pattern = Pattern::compile(pat, val)) {
+    patterns.push_back(std::move(*pattern));
+    return true;
+  }
+  return false;
 }
 
 i64 Glob::find(std::string_view str) {
@@ -284,7 +227,6 @@ i64 Glob::find(std::string_view str) {
     auto dup = ranges::unique(exacts, {}, &LiteralPattern::pat);
     exacts.erase(dup.begin(), dup.end());
 
-    multi_glob.compile();
     aho_corasick.compile();
     is_compiled = true;
   });
@@ -303,7 +245,10 @@ i64 Glob::find(std::string_view str) {
     if (val < p.value && str.ends_with(p.pat))
       val = p.value;
 
-  val = std::max(val, multi_glob.find(str));
+  for (const Pattern &p : patterns)
+    if (val < p.value && p.match(str))
+      val = p.value;
+
   return std::max(val, aho_corasick.find(str));
 }
 

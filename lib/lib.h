@@ -2,7 +2,6 @@
 
 #include "atomics.h"
 #include "integers.h"
-#include "bitvector.h"
 
 #include <array>
 #include <atomic>
@@ -1009,44 +1008,20 @@ public:
 
 private:
   struct TrieNode {
-    TrieNode() { children.fill(-1); }
     i64 value = -1;
     i32 suffix_link = -1;
-    std::array<i32, 256> children;
+    i32 first_child = -1;
+    i32 next_sibling = -1;
+    u8 ch = 0;
   };
 
-  void fix_suffix_links(i64 idx);
-  void fix_values();
+  i32 find_child(i32 node, u8 ch) const;
+  i32 add_child(i32 node, u8 ch);
 
+  // Most trie nodes have only one child. The root uses a dense table because
+  // it is visited for almost every input byte; other edges are stored sparsely.
+  std::array<i32, 256> root_children;
   std::vector<TrieNode> nodes;
-};
-
-//
-// glob.cc
-//
-
-class MultiGlob {
-public:
-  bool add(std::string_view pat, i64 val);
-  bool empty() const { return patterns.empty(); }
-  void compile();
-  i64 find(std::string_view str);
-
-  struct State {
-    std::bitset<256> incoming_edge;
-    bool is_star = false;
-  };
-
-  struct GlobPattern {
-    std::vector<State> states;
-    i64 value = -1;
-  };
-
-private:
-  std::vector<GlobPattern> patterns;
-  Bitvector start_states;
-  Bitvector star_mask;
-  Bitvector char_mask[256];
 };
 
 class Glob {
@@ -1070,12 +1045,33 @@ private:
     i64 value;
   };
 
-  i64 match_all = -1;                    // "*"
-  std::vector<LiteralPattern> exacts;    // "foo"
-  std::vector<LiteralPattern> prefixes;  // "foo*"
-  std::vector<LiteralPattern> suffixes;  // "*foo"
+  struct Pattern {
+    enum Kind { STRING, STAR, QUESTION, BRACKET };
 
-  MultiGlob multi_glob;
+    struct Token {
+      Token(Kind kind) : kind(kind) {}
+
+      Kind kind;
+      std::string str;
+      std::bitset<256> chars;
+    };
+
+    Pattern(std::vector<Token> &&tokens, i64 value)
+      : tokens(std::move(tokens)), value(value) {}
+
+    static std::optional<Pattern> compile(std::string_view pat, i64 value);
+    bool match(std::string_view str) const;
+
+    std::vector<Token> tokens;
+    i64 value;
+  };
+
+  i64 match_all = -1;                   // "*"
+  std::vector<LiteralPattern> exacts;   // "foo"
+  std::vector<LiteralPattern> prefixes; // "foo*"
+  std::vector<LiteralPattern> suffixes; // "*foo"
+  std::vector<Pattern> patterns;        // "foo*bar"
+
   AhoCorasick aho_corasick;
 };
 
