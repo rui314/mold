@@ -285,7 +285,7 @@ static void resolve_default_symver(Context<E> &ctx) {
 
 template <typename E>
 static void clear_symbols(Context<E> &ctx) {
-  ctx.symbol_map.for_each([](Symbol<E> &sym) {
+  ctx.symbol_map.parallel_for_each([](Symbol<E> &sym) {
     if (sym.file) {
       sym.file = nullptr;
       sym.origin = nullptr;
@@ -369,7 +369,7 @@ static void parse_input_sections(Context<E> &ctx) {
   }
 
   // Restore sym_idx before the final symbol-resolution pass.
-  ctx.symbol_map.for_each([](Symbol<E> &sym) { sym.sym_idx = -1; });
+  ctx.symbol_map.parallel_for_each([](Symbol<E> &sym) { sym.sym_idx = -1; });
 
   // LTO can change archive extraction and therefore the winning COMDAT group.
   // Construct the losing copies too so one can become the winner after LTO.
@@ -2228,25 +2228,23 @@ void apply_version_script(Context<E> &ctx) {
   }
 
   if (!matcher.empty() || !cpp_matcher.empty()) {
-    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-      for (Symbol<E> *sym : file->get_global_syms()) {
-        if (sym->file != file)
-          continue;
+    ctx.symbol_map.parallel_for_each([&](Symbol<E> &sym) {
+      if (!sym.file || sym.file->is_dso)
+        return;
 
-        std::string_view name = sym->name();
-        i64 match = matcher.find(name);
+      std::string_view name = sym.name();
+      i64 match = matcher.find(name);
 
-        // Match non-mangled symbols against the C++ pattern as well.
-        // Weird, but required to match other linkers' behavior.
-        if (!cpp_matcher.empty()) {
-          if (std::optional<std::string_view> s = demangle_cpp(name))
-            name = *s;
-          match = std::max(match, cpp_matcher.find(name));
-        }
-
-        if (match != -1)
-          sym->ver_idx = patterns[match].ver_idx;
+      // Match non-mangled symbols against the C++ pattern as well.
+      // Weird, but required to match other linkers' behavior.
+      if (!cpp_matcher.empty()) {
+        if (std::optional<std::string_view> s = demangle_cpp(name))
+          name = *s;
+        match = std::max(match, cpp_matcher.find(name));
       }
+
+      if (match != -1)
+        sym.ver_idx = patterns[match].ver_idx;
     });
   }
 

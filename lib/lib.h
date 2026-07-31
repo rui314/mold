@@ -868,7 +868,7 @@ public:
     bins.clear();
   }
 
-  void for_each(auto fn) {
+  void parallel_for_each(auto fn) {
     tbb::parallel_for((i64)0, NUM_SHARDS, [&](i64 i) {
       Shard &shard = shards[i];
       for (Block &block : shard.blocks)
