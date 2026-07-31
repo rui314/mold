@@ -689,9 +689,12 @@ int mold_main(int argc, char **argv) {
 
   // Re-finalize layout. fix_synthetic_symbols above may have changed
   // addends for dynamic relocations referencing synthetic symbols, which
-  // can shift the encoded size of .rela.dyn under --pack-dyn-relocs=android.
-  // For other modes this is a cheap no-op convergence.
-  filesize = set_osec_offsets(ctx);
+  // can shift the encoded size of .rela.dyn under --pack-dyn-relocs=android
+  // because Android's packed format encodes addends in variable-length
+  // SLEB128. Other modes, including ordinary RELR, encode nothing whose
+  // size depends on addends, so they do not need this pass.
+  if (ctx.arg.pack_dyn_relocs_android)
+    filesize = set_osec_offsets(ctx);
 
   // At this point, both memory and file layouts are fixed.
 
