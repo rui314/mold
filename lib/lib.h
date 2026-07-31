@@ -1066,12 +1066,28 @@ private:
     i64 value;
   };
 
+  // Nfa matches many glob patterns in parallel by representing each state
+  // with one bit. It is used only for large pattern sets; matching individual
+  // patterns is faster when there are only a few of them.
+  struct Nfa {
+    void compile(std::span<const Pattern> patterns);
+    i64 match(std::string_view str) const;
+    bool empty() const { return initial_states.empty(); }
+
+    std::vector<u64> initial_states;
+    std::vector<u64> star_states;
+    std::vector<u64> accept_states;
+    std::vector<u64> char_masks;
+    std::vector<i64> values;
+  };
+
   i64 match_all = -1;                   // "*"
   std::vector<LiteralPattern> exacts;   // "foo"
   std::vector<LiteralPattern> prefixes; // "foo*"
   std::vector<LiteralPattern> suffixes; // "*foo"
   std::vector<Pattern> patterns;        // "foo*bar"
 
+  Nfa nfa;
   AhoCorasick aho_corasick;
 };
 

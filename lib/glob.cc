@@ -2,7 +2,8 @@
 // Exact, prefix and suffix patterns are matched directly, and simple
 // substring patterns are combined into an Aho-Corasick matcher. The
 // remaining patterns are matched with the non-recursive algorithm described
-// at https://research.swtch.com/glob.
+// at https://research.swtch.com/glob. If there are many such patterns, a
+// bit-parallel NFA matches them together.
 
 #include "lib.h"
 
@@ -170,6 +171,99 @@ bool Glob::Pattern::match(std::string_view str) const {
   return true;
 }
 
+void Glob::Nfa::compile(std::span<const Pattern> patterns) {
+  i64 num_states = 0;
+
+  for (const Pattern &pattern : patterns) {
+    num_states++;
+
+    for (const Pattern::Token &tok : pattern.tokens) {
+      if (tok.kind == Pattern::STRING)
+        num_states += tok.str.size();
+      else if (tok.kind != Pattern::STAR)
+        num_states++;
+    }
+  }
+
+  i64 num_words = (num_states + 63) / 64;
+  initial_states.resize(num_words);
+  star_states.resize(num_words);
+  accept_states.resize(num_words);
+  char_masks.resize(256 * num_words);
+  values.resize(num_states, -1);
+
+  auto set_bit = [](std::vector<u64> &vec, i64 pos) {
+    vec[pos / 64] |= 1ULL << (pos % 64);
+  };
+
+  i64 state = 0;
+
+  for (const Pattern &pattern : patterns) {
+    set_bit(initial_states, state);
+
+    for (const Pattern::Token &tok : pattern.tokens) {
+      switch (tok.kind) {
+      case Pattern::STRING:
+        for (u8 c : tok.str) {
+          state++;
+          char_masks[c * num_words + state / 64] |= 1ULL << (state % 64);
+        }
+        break;
+      case Pattern::STAR:
+        set_bit(star_states, state);
+        break;
+      case Pattern::QUESTION:
+        state++;
+        for (i64 c = 0; c < 256; c++)
+          char_masks[c * num_words + state / 64] |= 1ULL << (state % 64);
+        break;
+      case Pattern::BRACKET:
+        state++;
+        for (i64 c = 0; c < 256; c++)
+          if (tok.chars[c])
+            char_masks[c * num_words + state / 64] |= 1ULL << (state % 64);
+        break;
+      }
+    }
+
+    set_bit(accept_states, state);
+    values[state] = pattern.value;
+    state++;
+  }
+}
+
+i64 Glob::Nfa::match(std::string_view str) const {
+  static thread_local std::vector<u64> states;
+  states.assign(initial_states.begin(), initial_states.end());
+
+  i64 num_words = states.size();
+
+  for (u8 c : str) {
+    const u64 *mask = char_masks.data() + c * num_words;
+    u64 carry = 0;
+
+    for (i64 i = 0; i < num_words; i++) {
+      u64 old = states[i];
+      u64 next = (old << 1) | carry;
+      states[i] = (old & star_states[i]) | (next & mask[i]);
+      carry = old >> 63;
+    }
+  }
+
+  i64 value = -1;
+
+  for (i64 i = 0; i < num_words; i++) {
+    u64 word = states[i] & accept_states[i];
+
+    while (word) {
+      i64 bit = std::countr_zero(word);
+      value = std::max(value, values[i * 64 + bit]);
+      word &= word - 1;
+    }
+  }
+  return value;
+}
+
 static bool is_literal(std::string_view pat) {
   return pat.find_first_of("*?[\\") == pat.npos;
 }
@@ -227,6 +321,11 @@ i64 Glob::find(std::string_view str) {
     auto dup = ranges::unique(exacts, {}, &LiteralPattern::pat);
     exacts.erase(dup.begin(), dup.end());
 
+    if (patterns.size() >= 64) {
+      nfa.compile(patterns);
+      patterns.clear();
+    }
+
     aho_corasick.compile();
     is_compiled = true;
   });
@@ -244,6 +343,9 @@ i64 Glob::find(std::string_view str) {
   for (const LiteralPattern &p : suffixes)
     if (val < p.value && str.ends_with(p.pat))
       val = p.value;
+
+  if (!nfa.empty())
+    val = std::max(val, nfa.match(str));
 
   for (const Pattern &p : patterns)
     if (val < p.value && p.match(str))
