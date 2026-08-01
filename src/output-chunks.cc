@@ -11,7 +11,7 @@
 namespace mold {
 
 template <typename E>
-static std::vector<u64> encode_relr(std::span<ElfRel<E>> rels);
+static std::vector<u64> encode_relr(std::span<u64> offsets);
 
 template <typename E>
 static std::vector<u8> encode_android(std::span<ElfRel<E>> rels);
@@ -414,9 +414,10 @@ static constexpr i64 DYNREL_SHARD_SIZE = 65536;
 template <typename E>
 void RelDynSection<E>::write_relocs(Context<E> &ctx, ElfRel<E> *buf) {
   for (Chunk<E> *chunk : ctx.chunks) {
-    if (chunk->num_dynrels) {
+    i64 size = chunk->num_dynrels - chunk->num_relrs;
+    if (size) {
       chunk->write_dynrels(ctx, buf);
-      buf += chunk->num_dynrels;
+      buf += size;
     }
   }
 }
@@ -426,22 +427,34 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
   i64 num_relocs = 0;
   for (Chunk<E> *chunk : ctx.chunks) {
     chunk->num_dynrels = chunk->get_num_dynrels(ctx);
+    chunk->num_relrs = 0;
     num_relocs += chunk->num_dynrels;
   }
 
-  relocs.resize(num_relocs);
-  write_relocs(ctx, relocs.data());
-  android_encoded.clear();
+  i64 num_relrs = 0;
+  if (ctx.arg.pack_dyn_relocs_relr) {
+    std::vector<u64> offsets;
+    offsets.reserve(num_relocs);
 
-  if (ctx.relrdyn) {
-    auto relrs = ranges::partition(relocs, std::not_fn(is_relr<E>));
-    ranges::sort(relrs, {}, &ElfRel<E>::r_offset);
-    ctx.relrdyn->relocs = encode_relr<E>(relrs);
+    for (Chunk<E> *chunk : ctx.chunks) {
+      if (chunk->num_dynrels) {
+        std::vector<u64> vec = chunk->get_relr_offsets(ctx);
+        chunk->num_relrs = vec.size();
+        assert(chunk->num_relrs <= chunk->num_dynrels);
+        append(offsets, vec);
+      }
+    }
+
+    ranges::sort(offsets);
+    num_relrs = offsets.size();
+    ctx.relrdyn->relocs = encode_relr<E>(offsets);
     ctx.relrdyn->shdr.sh_size = ctx.relrdyn->relocs.size() * sizeof(Word<E>);
-    relocs.erase(relrs.begin(), relrs.end());
   }
 
   if (ctx.arg.pack_dyn_relocs_android) {
+    relocs.resize(num_relocs - num_relrs);
+    write_relocs(ctx, relocs.data());
+
     // APS2 uses SLEB128-encoded deltas, so .rela.dyn size may oscillate
     // as addresses move. If a shrink is followed by a growth, stop
     // shrinking and pad the encoded stream to converge.
@@ -453,7 +466,7 @@ void RelDynSection<E>::update_shdr(Context<E> &ctx) {
       android_encoded.resize(old_size);
     this->shdr.sh_size = android_encoded.size();
   } else {
-    this->shdr.sh_size = relocs.size() * sizeof(ElfRel<E>);
+    this->shdr.sh_size = (num_relocs - num_relrs) * sizeof(ElfRel<E>);
   }
   this->shdr.sh_link = ctx.dynsym->shndx;
 }
@@ -463,7 +476,7 @@ void RelDynSection<E>::copy_buf(Context<E> &ctx) {
   if (ctx.arg.pack_dyn_relocs_android)
     write_vector(ctx.buf + this->shdr.sh_offset, android_encoded);
   else
-    write_vector(ctx.buf + this->shdr.sh_offset, relocs);
+    write_relocs(ctx, (ElfRel<E> *)(ctx.buf + this->shdr.sh_offset));
 }
 
 template <typename E>
@@ -1009,17 +1022,71 @@ i64 OutputSection<E>::get_num_dynrels(Context<E> &) const {
 }
 
 template <typename E>
+std::vector<u64> OutputSection<E>::get_relr_offsets(Context<E> &) {
+  i64 nshards = dynrel_offsets.size() - 1;
+  relr_offsets.assign(nshards + 1, 0);
+  std::vector<u64> offsets;
+  offsets.reserve(this->num_dynrels);
+
+  auto scan = [&](i64 begin, i64 end, std::vector<u64> &out) {
+    for (const AbsRel<E> &r : std::span(abs_rels).subspan(begin, end - begin)) {
+      if (r.kind != ABS_REL_BASEREL)
+        continue;
+
+      u64 P = this->shdr.sh_addr + r.isec->offset + r.offset;
+      if constexpr (is_riscv<E> || is_loongarch<E>)
+        P -= get_r_delta(*r.isec, r.offset);
+
+      if (P % sizeof(Word<E>) == 0)
+        out.push_back(P);
+    }
+  };
+
+  if (nshards <= 1) {
+    scan(0, abs_rels.size(), offsets);
+    relr_offsets[nshards] = offsets.size();
+    return offsets;
+  }
+
+  std::vector<std::vector<u64>> shards(nshards);
+  tbb::parallel_for((i64)0, nshards, [&](i64 idx) {
+    i64 begin = idx * DYNREL_SHARD_SIZE;
+    i64 end = std::min<i64>(begin + DYNREL_SHARD_SIZE, abs_rels.size());
+    scan(begin, end, shards[idx]);
+  });
+
+  for (i64 i = 0; i < nshards; i++) {
+    append(offsets, shards[i]);
+    relr_offsets[i + 1] = relr_offsets[i] + shards[i].size();
+  }
+  return offsets;
+}
+
+template <typename E>
 void OutputSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
   // A single output section such as .data.rel.ro can account for
   // most of an output's dynamic relocations, so we process its
   // absolute relocations in parallel shards.
   i64 nshards = dynrel_offsets.size() - 1;
-  assert(dynrel_offsets.back() == this->num_dynrels);
+  std::vector<i64> offsets = dynrel_offsets;
+
+  if (ctx.arg.pack_dyn_relocs_relr) {
+    assert(relr_offsets.size() == offsets.size());
+    for (i64 i = 0; i <= nshards; i++)
+      offsets[i] -= relr_offsets[i];
+  }
+
+  assert(offsets.back() == this->num_dynrels - this->num_relrs);
 
   tbb::parallel_for((i64)0, nshards, [&](i64 idx) {
     i64 begin = idx * DYNREL_SHARD_SIZE;
     i64 end = std::min<i64>(begin + DYNREL_SHARD_SIZE, abs_rels.size());
-    ElfRel<E> *loc = buf + dynrel_offsets[idx];
+    ElfRel<E> *loc = buf + offsets[idx];
+
+    auto write = [&](ElfRel<E> rel) {
+      if (!ctx.arg.pack_dyn_relocs_relr || !is_relr(rel))
+        *loc++ = rel;
+    };
 
     for (const AbsRel<E> &r : std::span(abs_rels).subspan(begin, end - begin)) {
       Symbol<E> &sym = *r.sym;
@@ -1036,20 +1103,20 @@ void OutputSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
       case ABS_REL_NONE:
         break;
       case ABS_REL_BASEREL:
-        *loc++ = ElfRel<E>(P, E::R_RELATIVE, 0, S + A);
+        write(ElfRel<E>(P, E::R_RELATIVE, 0, S + A));
         break;
       case ABS_REL_IFUNC:
         if constexpr (supports_ifunc<E>)
-          *loc++ = ElfRel<E>(P, E::R_IRELATIVE, 0,
-                             sym.get_addr(ctx, NO_PLT) + A);
+          write(ElfRel<E>(P, E::R_IRELATIVE, 0,
+                          sym.get_addr(ctx, NO_PLT) + A));
         break;
       case ABS_REL_DYNREL:
-        *loc++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
+        write(ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A));
         break;
       }
     }
 
-    assert(loc == buf + dynrel_offsets[idx + 1]);
+    assert(loc == buf + offsets[idx + 1]);
   });
 }
 
@@ -1116,21 +1183,25 @@ void OutputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 // representable in this encoding and such relocation must be stored to
 // the .rel.dyn section). A bitmap has LSB 1.
 template <typename E>
-static std::vector<u64> encode_relr(std::span<ElfRel<E>> rels) {
+static std::vector<u64> encode_relr(std::span<u64> offsets) {
   std::vector<u64> vec;
   i64 num_bits = E::is_64 ? 63 : 31;
   i64 max_delta = sizeof(Word<E>) * num_bits;
 
-  for (i64 i = 0; i < rels.size();) {
-    u64 first = rels[i].r_offset;
+  for (i64 i = 0; i < offsets.size();) {
+    u64 first = offsets[i];
     vec.push_back(first);
     u64 base = first + sizeof(Word<E>);
     i++;
 
     for (;;) {
       u64 bits = 0;
-      for (; i < rels.size() && (u64)rels[i].r_offset - base < max_delta; i++)
-        bits |= (u64)1 << (((u64)rels[i].r_offset - base) / sizeof(Word<E>));
+      for (; i < offsets.size(); i++) {
+        u64 offset = offsets[i];
+        if (offset - base >= max_delta)
+          break;
+        bits |= (u64)1 << ((offset - base) / sizeof(Word<E>));
+      }
 
       if (!bits)
         break;
@@ -1578,15 +1649,42 @@ i64 GotSection<E>::get_num_dynrels(Context<E> &ctx) const {
 }
 
 template <typename E>
+std::vector<u64> GotSection<E>::get_relr_offsets(Context<E> &ctx) {
+  if (!ctx.arg.pic)
+    return {};
+
+  std::vector<u64> offsets;
+  offsets.reserve(this->num_dynrels);
+
+  for (Symbol<E> *sym : got_syms) {
+    if constexpr (supports_ifunc<E>)
+      if (sym->is_ifunc())
+        continue;
+
+    if (!sym->is_imported && sym->is_relative()) {
+      u64 P = this->shdr.sh_addr + sym->get_got_idx(ctx) * sizeof(Word<E>);
+      if (P % sizeof(Word<E>) == 0)
+        offsets.push_back(P);
+    }
+  }
+  return offsets;
+}
+
+template <typename E>
 void GotSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
   std::vector<GotEntry<E>> entries = get_got_entries(ctx);
 
-  for (GotEntry<E> &ent : entries)
-    if (ent.r_type != R_NONE)
-      *buf++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
-                         ent.r_type,
-                         ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
-                         ent.val);
+  for (GotEntry<E> &ent : entries) {
+    if (ent.r_type == R_NONE)
+      continue;
+
+    ElfRel<E> rel(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
+                  ent.r_type,
+                  ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
+                  ent.val);
+    if (!ctx.arg.pack_dyn_relocs_relr || !is_relr(rel))
+      *buf++ = rel;
+  }
 }
 
 // Fill .got.

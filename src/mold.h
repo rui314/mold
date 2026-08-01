@@ -692,6 +692,7 @@ public:
   virtual void write_to(Context<E> &ctx, u8 *buf) { unreachable(); }
   virtual void update_shdr(Context<E> &ctx) {}
   virtual i64 get_num_dynrels(Context<E> &) const { return 0; }
+  virtual std::vector<u64> get_relr_offsets(Context<E> &) { return {}; }
 
   virtual void write_dynrels(Context<E> &, ElfRel<E> *) const { unreachable(); }
 
@@ -699,6 +700,7 @@ public:
   ElfShdr<E> shdr = { .sh_addralign = 1 };
   i64 shndx = 0;
   i64 num_dynrels = 0;
+  i64 num_relrs = 0;
   bool is_relro = false;
 
   // For --gdb-index
@@ -820,6 +822,7 @@ public:
   OutputSection<E> *to_osec() override { return this; }
   void compute_section_size(Context<E> &ctx) override;
   i64 get_num_dynrels(Context<E> &ctx) const override;
+  std::vector<u64> get_relr_offsets(Context<E> &ctx) override;
   void write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const override;
   void copy_buf(Context<E> &ctx) override;
   void write_to(Context<E> &ctx, u8 *buf) override;
@@ -835,6 +838,7 @@ public:
   std::unique_ptr<RelocSection<E>> reloc_sec;
   std::vector<AbsRel<E>> abs_rels;
   std::vector<i64> dynrel_offsets;
+  std::vector<i64> relr_offsets;
   Atomic<u32> sh_flags;
 
   // Used only by create_output_sections()
@@ -869,6 +873,7 @@ public:
   u64 get_tlsld_addr(Context<E> &ctx) const;
   bool has_tlsld(Context<E> &ctx) const { return tlsld_idx != -1; }
   i64 get_num_dynrels(Context<E> &ctx) const override;
+  std::vector<u64> get_relr_offsets(Context<E> &ctx) override;
   void write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const override;
   void copy_buf(Context<E> &ctx) override;
 
@@ -2434,6 +2439,7 @@ public:
 
   void add_symbol(Context<PPC64V1> &ctx, Symbol<PPC64V1> *sym);
   i64 get_num_dynrels(Context<PPC64V1> &ctx) const override;
+  std::vector<u64> get_relr_offsets(Context<PPC64V1> &ctx) override;
   void write_dynrels(Context<PPC64V1> &ctx, ElfRel<PPC64V1> *buf) const override;
   void copy_buf(Context<PPC64V1> &ctx) override;
 

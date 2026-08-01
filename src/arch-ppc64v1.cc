@@ -643,15 +643,30 @@ i64 PPC64OpdSection::get_num_dynrels(Context<E> &ctx) const {
   return ctx.arg.pic ? symbols.size() * 2 : 0;
 }
 
+std::vector<u64> PPC64OpdSection::get_relr_offsets(Context<E> &ctx) {
+  if (!ctx.arg.pic)
+    return {};
+
+  std::vector<u64> offsets;
+  offsets.reserve(symbols.size() * 2);
+  for (Symbol<E> *sym : symbols) {
+    u64 loc = sym->get_opd_addr(ctx);
+    offsets.push_back(loc);
+    offsets.push_back(loc + 8);
+  }
+  return offsets;
+}
+
 void PPC64OpdSection::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
   if (!ctx.arg.pic)
     return;
 
   for (Symbol<E> *sym : symbols) {
     u64 loc = sym->get_opd_addr(ctx);
-    *buf++ = ElfRel<E>(loc, E::R_RELATIVE, 0,
-                       sym->get_addr(ctx, NO_PLT | NO_OPD));
-    *buf++ = ElfRel<E>(loc + 8, E::R_RELATIVE, 0, ctx.extra.TOC->value);
+    if (!ctx.arg.pack_dyn_relocs_relr || loc % sizeof(Word<E>) != 0)
+      *buf++ = ElfRel<E>(loc, E::R_RELATIVE, 0, sym->get_addr(ctx, NO_PLT | NO_OPD));
+    if (!ctx.arg.pack_dyn_relocs_relr || (loc + 8) % sizeof(Word<E>) != 0)
+      *buf++ = ElfRel<E>(loc + 8, E::R_RELATIVE, 0, ctx.extra.TOC->value);
   }
 }
 
