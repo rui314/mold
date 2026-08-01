@@ -1465,18 +1465,15 @@ void SharedFile<E>::parse(Context<E> &ctx) {
       ver = VER_NDX_GLOBAL;
     }
 
-    // A defined symbol at the base version with the hidden bit set is a
-    // legacy compat alias. GNU as emits one for `.symver foo, foo@VER`
-    // without the `remove` modifier, so that binaries linked before the
-    // symbol was versioned keep resolving. A new reference to `foo` must
-    // bind to the default version instead. Such a symbol cannot be referred
-    // to by any name, as there is no version string to form `foo@VER` from,
-    // so skip it. Otherwise it would claim the unversioned name and beat
-    // the `foo@@VER` definition in resolve_symbols, which tie-breaks on
-    // dynsym order. lksctp-tools' libsctp.so.1 exports sctp_connectx
-    // this way.
-    if (!vers.empty() && (vers[i] & VERSYM_HIDDEN) &&
-        ver == VER_NDX_GLOBAL && !esyms[i].is_undef())
+    // A definition whose versym is exactly VERSYM_HIDDEN | VER_NDX_GLOBAL
+    // is a compatibility alias that exists only for binaries linked before
+    // the library adopted symbol versioning. GNU ld creates one for
+    // `.symver foo_impl, foo@`. New references must not bind to it; skip
+    // it so that an unversioned reference binds to the default-versioned
+    // `foo@@VERSION` definition instead. Versyms of undefined symbols
+    // encode required versions, so they are exempt.
+    if (!vers.empty() && vers[i] == (VERSYM_HIDDEN | VER_NDX_GLOBAL) &&
+        !esyms[i].is_undef())
       continue;
 
     this->elf_syms2.push_back(esyms[i]);
