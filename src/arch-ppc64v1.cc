@@ -639,18 +639,20 @@ void PPC64OpdSection::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   this->shdr.sh_size += ENTRY_SIZE;
 }
 
-std::vector<ElfRel<E>> PPC64OpdSection::collect_dynrels(Context<E> &ctx) const {
-  if (!ctx.arg.pic)
-    return {};
+i64 PPC64OpdSection::get_num_dynrels(Context<E> &ctx) const {
+  return ctx.arg.pic ? symbols.size() * 2 : 0;
+}
 
-  std::vector<ElfRel<E>> rels;
+void PPC64OpdSection::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
+  if (!ctx.arg.pic)
+    return;
 
   for (Symbol<E> *sym : symbols) {
     u64 loc = sym->get_opd_addr(ctx);
-    rels.emplace_back(loc, E::R_RELATIVE, 0, sym->get_addr(ctx, NO_PLT | NO_OPD));
-    rels.emplace_back(loc + 8, E::R_RELATIVE, 0, ctx.extra.TOC->value);
+    *buf++ = ElfRel<E>(loc, E::R_RELATIVE, 0,
+                       sym->get_addr(ctx, NO_PLT | NO_OPD));
+    *buf++ = ElfRel<E>(loc + 8, E::R_RELATIVE, 0, ctx.extra.TOC->value);
   }
-  return rels;
 }
 
 void PPC64OpdSection::copy_buf(Context<E> &ctx) {

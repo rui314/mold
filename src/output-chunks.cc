@@ -409,12 +409,29 @@ static bool is_relr(const ElfRel<E> &rel) {
          (u64)rel.r_offset % sizeof(Word<E>) == 0;
 }
 
+static constexpr i64 DYNREL_SHARD_SIZE = 65536;
+
+template <typename E>
+void RelDynSection<E>::write_relocs(Context<E> &ctx, ElfRel<E> *buf) {
+  for (Chunk<E> *chunk : ctx.chunks) {
+    if (chunk->num_dynrels) {
+      chunk->write_dynrels(ctx, buf);
+      buf += chunk->num_dynrels;
+    }
+  }
+}
+
 template <typename E>
 void RelDynSection<E>::update_shdr(Context<E> &ctx) {
-  relocs.clear();
+  i64 num_relocs = 0;
+  for (Chunk<E> *chunk : ctx.chunks) {
+    chunk->num_dynrels = chunk->get_num_dynrels(ctx);
+    num_relocs += chunk->num_dynrels;
+  }
+
+  relocs.resize(num_relocs);
+  write_relocs(ctx, relocs.data());
   android_encoded.clear();
-  for (Chunk<E> *chunk : ctx.chunks)
-    append(relocs, chunk->collect_dynrels(ctx));
 
   if (ctx.relrdyn) {
     auto relrs = ranges::partition(relocs, std::not_fn(is_relr<E>));
@@ -987,18 +1004,22 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
 }
 
 template <typename E>
-std::vector<ElfRel<E>>
-OutputSection<E>::collect_dynrels(Context<E> &ctx) const {
+i64 OutputSection<E>::get_num_dynrels(Context<E> &) const {
+  return dynrel_offsets.empty() ? 0 : dynrel_offsets.back();
+}
+
+template <typename E>
+void OutputSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
   // A single output section such as .data.rel.ro can account for
   // most of an output's dynamic relocations, so we process its
   // absolute relocations in parallel shards.
-  constexpr i64 shard_size = 65536;
-  i64 nshards = abs_rels.size() / shard_size + 1;
-  std::vector<std::vector<ElfRel<E>>> shards(nshards);
+  i64 nshards = dynrel_offsets.size() - 1;
+  assert(dynrel_offsets.back() == this->num_dynrels);
 
   tbb::parallel_for((i64)0, nshards, [&](i64 idx) {
-    i64 begin = idx * shard_size;
-    i64 end = std::min<i64>(begin + shard_size, abs_rels.size());
+    i64 begin = idx * DYNREL_SHARD_SIZE;
+    i64 end = std::min<i64>(begin + DYNREL_SHARD_SIZE, abs_rels.size());
+    ElfRel<E> *loc = buf + dynrel_offsets[idx];
 
     for (const AbsRel<E> &r : std::span(abs_rels).subspan(begin, end - begin)) {
       Symbol<E> &sym = *r.sym;
@@ -1015,21 +1036,21 @@ OutputSection<E>::collect_dynrels(Context<E> &ctx) const {
       case ABS_REL_NONE:
         break;
       case ABS_REL_BASEREL:
-        shards[idx].emplace_back(P, E::R_RELATIVE, 0, S + A);
+        *loc++ = ElfRel<E>(P, E::R_RELATIVE, 0, S + A);
         break;
       case ABS_REL_IFUNC:
         if constexpr (supports_ifunc<E>)
-          shards[idx].emplace_back(P, E::R_IRELATIVE, 0,
-                                   sym.get_addr(ctx, NO_PLT) + A);
+          *loc++ = ElfRel<E>(P, E::R_IRELATIVE, 0,
+                             sym.get_addr(ctx, NO_PLT) + A);
         break;
       case ABS_REL_DYNREL:
-        shards[idx].emplace_back(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
+        *loc++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
         break;
       }
     }
-  });
 
-  return flatten(shards);
+    assert(loc == buf + dynrel_offsets[idx + 1]);
+  });
 }
 
 template <typename E>
@@ -1262,10 +1283,23 @@ void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
           sym.is_imported && !sym.is_absolute())
         sym.flags |= NEEDS_CANONICAL;
 
-  // Now we can compute whether they need to be promoted to dynamic
-  // relocations or not.
-  for (AbsRel<E> &r : abs_rels)
+  // Classify relocations and retain exact per-shard output counts.
+  i64 nshards = (abs_rels.size() + DYNREL_SHARD_SIZE - 1) / DYNREL_SHARD_SIZE;
+  dynrel_offsets.assign(nshards + 1, 0);
+
+  for (i64 i = 0; i < (i64)abs_rels.size(); i++) {
+    AbsRel<E> &r = abs_rels[i];
     r.kind = get_abs_rel_kind(ctx, *r.sym);
+
+    bool emit = r.kind == ABS_REL_BASEREL || r.kind == ABS_REL_DYNREL;
+    if constexpr (supports_ifunc<E>)
+      emit |= (r.kind == ABS_REL_IFUNC);
+    if (emit)
+      dynrel_offsets[i / DYNREL_SHARD_SIZE + 1]++;
+  }
+
+  for (i64 i = 0; i < nshards; i++)
+    dynrel_offsets[i + 1] += dynrel_offsets[i];
 
   // If we have a relocation against a read-only section, we need to
   // set the DT_TEXTREL flag for the loader.
@@ -1538,17 +1572,21 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
 }
 
 template <typename E>
-std::vector<ElfRel<E>> GotSection<E>::collect_dynrels(Context<E> &ctx) const {
+i64 GotSection<E>::get_num_dynrels(Context<E> &ctx) const {
+  auto fn = [](const GotEntry<E> &ent) { return ent.r_type != R_NONE; };
+  return ranges::count_if(get_got_entries(ctx), fn);
+}
+
+template <typename E>
+void GotSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
   std::vector<GotEntry<E>> entries = get_got_entries(ctx);
-  std::vector<ElfRel<E>> rels;
 
   for (GotEntry<E> &ent : entries)
     if (ent.r_type != R_NONE)
-      rels.emplace_back(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
-                        ent.r_type,
-                        ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
-                        ent.val);
-  return rels;
+      *buf++ = ElfRel<E>(this->shdr.sh_addr + ent.idx * sizeof(Word<E>),
+                         ent.r_type,
+                         ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
+                         ent.val);
 }
 
 // Fill .got.
@@ -2806,15 +2844,16 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
 }
 
 template <typename E>
-std::vector<ElfRel<E>>
-CopyrelSection<E>::collect_dynrels(Context<E> &ctx) const {
-  std::vector<ElfRel<E>> rels;
+i64 CopyrelSection<E>::get_num_dynrels(Context<E> &) const {
+  return symbols.size();
+}
 
-  for (Symbol<E> *sym : symbols)
-    rels.emplace_back(sym->get_addr(ctx), E::R_COPY,
-                      sym->get_dynsym_idx(ctx), 0);
-
-  return rels;
+template <typename E>
+void CopyrelSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
+  for (i64 i = 0; i < (i64)symbols.size(); i++) {
+    Symbol<E> &sym = *symbols[i];
+    buf[i] = ElfRel<E>(sym.get_addr(ctx), E::R_COPY, sym.get_dynsym_idx(ctx), 0);
+  }
 }
 
 // .gnu.version section contains version indices as a parallel array for
