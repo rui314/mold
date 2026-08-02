@@ -170,16 +170,13 @@ enum : u32 {
   VER_NDX_GLOBAL = 1,
   VER_NDX_LAST_RESERVED = 1,
   VER_NDX_UNSPECIFIED = 0xffff,
+  VERSYM_HIDDEN = 0x8000,
 };
 
 enum : u32 {
   VER_FLG_BASE = 1,
   VER_FLG_WEAK = 2,
   VER_FLG_INFO = 4,
-};
-
-enum : u32 {
-  VERSYM_HIDDEN = 0x8000,
 };
 
 enum : u32 {
