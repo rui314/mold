@@ -580,8 +580,11 @@ public:
     return flatten(vec);
   }
 
-  static constexpr i64 MIN_NBUCKETS = 4096;
-  static constexpr i64 NUM_SHARDS = 16;
+  // MIN_NBUCKETS is chosen so that even the smallest map has
+  // MAX_RETRY buckets per shard; probing is confined to a shard, and
+  // a probe that visits MAX_RETRY distinct occupied slots aborts.
+  static constexpr i64 MIN_NBUCKETS = 16384;
+  static constexpr i64 NUM_SHARDS = 64;
   static constexpr i64 MAX_RETRY = 256;
 
   Entry *entries = nullptr;
