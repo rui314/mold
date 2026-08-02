@@ -424,28 +424,43 @@ void RelDynSection<E>::write_relocs(Context<E> &ctx, ElfRel<E> *buf) {
 
 template <typename E>
 void RelDynSection<E>::update_shdr(Context<E> &ctx) {
-  i64 num_relocs = 0;
-  for (Chunk<E> *chunk : ctx.chunks) {
+  // This function runs several times, as the size of .relr.dyn feeds
+  // back into section layout (set_osec_offsets calls us until the size
+  // converges), so it is worth doing the work in parallel.
+  tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
     chunk->num_dynrels = chunk->get_num_dynrels(ctx);
     chunk->num_relrs = 0;
+  });
+
+  i64 num_relocs = 0;
+  for (Chunk<E> *chunk : ctx.chunks)
     num_relocs += chunk->num_dynrels;
-  }
 
   i64 num_relrs = 0;
   if (ctx.arg.pack_dyn_relocs_relr) {
+    // Process chunks in address order. Each chunk returns its offsets
+    // in ascending order, and chunks occupy disjoint address ranges,
+    // so the concatenation is sorted as a whole, and the offsets never
+    // need to be sorted as one large array.
+    std::vector<Chunk<E> *> chunks = ctx.chunks;
+    ranges::stable_sort(chunks, {}, [](Chunk<E> *c) { return c->shdr.sh_addr; });
+
+    std::vector<std::vector<u64>> shards(chunks.size());
+
+    tbb::parallel_for((i64)0, (i64)chunks.size(), [&](i64 i) {
+      Chunk<E> *chunk = chunks[i];
+      if (chunk->num_dynrels) {
+        shards[i] = chunk->get_relr_offsets(ctx);
+        chunk->num_relrs = shards[i].size();
+        assert(chunk->num_relrs <= chunk->num_dynrels);
+      }
+    });
+
     std::vector<u64> offsets;
     offsets.reserve(num_relocs);
+    for (std::vector<u64> &shard : shards)
+      append(offsets, shard);
 
-    for (Chunk<E> *chunk : ctx.chunks) {
-      if (chunk->num_dynrels) {
-        std::vector<u64> vec = chunk->get_relr_offsets(ctx);
-        chunk->num_relrs = vec.size();
-        assert(chunk->num_relrs <= chunk->num_dynrels);
-        append(offsets, vec);
-      }
-    }
-
-    ranges::sort(offsets);
     num_relrs = offsets.size();
     ctx.relrdyn->relocs = encode_relr<E>(offsets);
     ctx.relrdyn->shdr.sh_size = ctx.relrdyn->relocs.size() * sizeof(Word<E>);
@@ -1642,10 +1657,46 @@ static std::vector<GotEntry<E>> get_got_entries(Context<E> &ctx) {
   return entries;
 }
 
+// Count the dynamic relocations that get_got_entries will emit, without
+// materializing the entries; computing each entry's value involves a
+// symbol address lookup, which is too expensive for a function that runs
+// on every layout iteration. The cases below must mirror the r_type
+// choices in get_got_entries.
 template <typename E>
 i64 GotSection<E>::get_num_dynrels(Context<E> &ctx) const {
-  auto fn = [](const GotEntry<E> &ent) { return ent.r_type != R_NONE; };
-  return ranges::count_if(get_got_entries(ctx), fn);
+  i64 n = 0;
+
+  for (Symbol<E> *sym : got_syms) {
+    if constexpr (supports_ifunc<E>) {
+      if (sym->is_ifunc()) {
+        n++; // R_IRELATIVE
+        continue;
+      }
+    }
+    if (sym->is_imported)
+      n++; // R_GLOB_DAT
+    else if (ctx.arg.pic && sym->is_relative())
+      n++; // R_RELATIVE
+  }
+
+  for (Symbol<E> *sym : tlsgd_syms) {
+    if (sym->is_imported)
+      n += 2; // R_DTPMOD + R_DTPOFF
+    else if (ctx.arg.shared)
+      n++; // R_DTPMOD
+  }
+
+  if constexpr (supports_tlsdesc<E>)
+    n += tlsdesc_syms.size(); // R_TLSDESC each
+
+  for (Symbol<E> *sym : gottp_syms)
+    if (sym->is_imported || ctx.arg.shared)
+      n++; // R_TPOFF
+
+  if (tlsld_idx != -1 && ctx.arg.shared)
+    n++; // R_DTPMOD
+
+  return n;
 }
 
 template <typename E>
