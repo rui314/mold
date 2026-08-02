@@ -22,7 +22,7 @@ grep -A10 -F '/a.o:(.debug_info)' $t/map1 | grep -F '/b.o:(.debug_info)'
 readelf -p .debug_line_str $t/exe1 > $t/str1
 
 if grep -Fw a.c $t/str1; then
-  grep -A10 -Fw a.c $t/str1 | grep -Fw b.c
+  sed -n '/a\.c/,$p' $t/str1 | grep -Fw b.c
 fi
 
 
@@ -31,7 +31,7 @@ grep -A10 -F '/a.o:(.debug_info)' $t/map2 | grep -F '/b.o:(.debug_info)'
 readelf -p .debug_line_str $t/exe2 > $t/str2
 
 if grep -Fw a.c $t/str2; then
-  grep -A10 -Fw a.c $t/str2 | grep -Fw b.c
+  sed -n '/a\.c/,$p' $t/str2 | grep -Fw b.c
 fi
 
 
