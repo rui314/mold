@@ -442,8 +442,17 @@ void MergeableSection<E>::split_contents(Context<E> &ctx) {
 template <typename E>
 void MergeableSection<E>::resolve_contents(Context<E> &ctx) {
   fragments.reserve(frag_offsets.size());
-  for (i64 i = 0; i < frag_offsets.size(); i++)
+
+  // The hash table is typically much larger than the cache, so each
+  // insertion stalls on a cache miss for its first probe. We know all
+  // hashes upfront, so prefetch the bucket a few insertions ahead.
+  constexpr i64 lookahead = 8;
+
+  for (i64 i = 0; i < frag_offsets.size(); i++) {
+    if (i + lookahead < frag_offsets.size())
+      parent.map.prefetch(hashes[i + lookahead]);
     fragments.push_back(parent.insert(ctx, get_contents(i), hashes[i], p2align));
+  }
 
   // Reclaim memory as we'll never use this vector again
   hashes.clear();

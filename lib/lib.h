@@ -530,6 +530,16 @@ public:
     return (Entry *)addr - entries;
   }
 
+  // Prefetch the bucket where a key with the given hash would be
+  // probed first. Useful when a caller knows the hashes of upcoming
+  // insertions, as probes into a large table miss the cache almost
+  // every time.
+  void prefetch(u64 hash) const {
+#ifdef __GNUC__
+    __builtin_prefetch(entries + (hash & (nbuckets - 1)));
+#endif
+  }
+
   // Return a list of map entries sorted in a deterministic order.
   std::vector<Entry *> get_sorted_entries(i64 shard_idx) {
     if (nbuckets == 0)
