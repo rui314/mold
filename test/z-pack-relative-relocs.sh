@@ -25,6 +25,8 @@ grep -Ew 'RELRENT|<unknown>: 25' $t/log2
 # Such a relative relocation is not representable in RELR.
 $CC -B. -o $t/exe3 $t/a.o -pie -Wl,-z,pack-relative-relocs \
   -Wl,--section-start=.foo=0x100001
-ptr_addr=$(readelf -sW $t/exe3 | awk '$NF == "ptr" { print $2; exit }')
+# `exit` in awk would close the pipe early and kill readelf with SIGPIPE,
+# which pipefail turns into a test failure.
+ptr_addr=$(readelf -sW $t/exe3 | awk '$NF == "ptr" && !found { print $2; found = 1 }')
 readelf -rW $t/exe3 | grep -E \
   "^[[:space:]]*$ptr_addr[[:space:]].*R_.*_RELATIVE"
