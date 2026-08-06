@@ -1474,7 +1474,7 @@ void OutputSection<E>::populate_symtab(Context<E> &ctx) {
 
 template <typename E>
 void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  sym->set_got_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
+  sym->aux->got_idx = this->shdr.sh_size / sizeof(Word<E>);
 
   // An IFUNC symbol uses two GOT slots in a position-dependent
   // executable.
@@ -1488,14 +1488,14 @@ void GotSection<E>::add_got_symbol(Context<E> &ctx, Symbol<E> *sym) {
 
 template <typename E>
 void GotSection<E>::add_gottp_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  sym->set_gottp_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
+  sym->aux->gottp_idx = this->shdr.sh_size / sizeof(Word<E>);
   this->shdr.sh_size += sizeof(Word<E>);
   gottp_syms.push_back(sym);
 }
 
 template <typename E>
 void GotSection<E>::add_tlsgd_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  sym->set_tlsgd_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
+  sym->aux->tlsgd_idx = this->shdr.sh_size / sizeof(Word<E>);
   this->shdr.sh_size += sizeof(Word<E>) * 2;
   tlsgd_syms.push_back(sym);
 }
@@ -1511,7 +1511,7 @@ void GotSection<E>::add_tlsdesc_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(supports_tlsdesc<E>);
   assert(!ctx.arg.static_);
 
-  sym->set_tlsdesc_idx(ctx, this->shdr.sh_size / sizeof(Word<E>));
+  sym->aux->tlsdesc_idx = this->shdr.sh_size / sizeof(Word<E>);
   this->shdr.sh_size += sizeof(Word<E>) * 2;
   tlsdesc_syms.push_back(sym);
 }
@@ -1880,7 +1880,7 @@ void GotPltSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void PltSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
-  sym->set_plt_idx(ctx, symbols.size());
+  sym->aux->plt_idx = symbols.size();
   symbols.push_back(sym);
   ctx.dynsym->add_symbol(ctx, sym);
 }
@@ -1960,7 +1960,7 @@ void PltGotSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   assert(!sym->has_plt(ctx));
   assert(sym->has_got(ctx));
 
-  sym->set_pltgot_idx(ctx, symbols.size());
+  sym->aux->pltgot_idx = symbols.size();
   symbols.push_back(sym);
   this->shdr.sh_size = symbols.size() * E::pltgot_size;
 }
@@ -2200,7 +2200,7 @@ void DynsymSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
     symbols.resize(1);
 
   if (sym->get_dynsym_idx(ctx) == -1) {
-    sym->set_dynsym_idx(ctx, -2);
+    sym->aux->dynsym_idx = -2;
     symbols.push_back(sym);
   }
 }
@@ -2308,7 +2308,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
     constexpr i64 word_bits = sizeof(Word<E>) * 8;
 
-    u32 h = syms[i]->get_djb_hash(ctx);
+    u32 h = syms[i]->aux->djb_hash;
     indices[i] = h % num_buckets;
 
     i64 idx = (h / word_bits) % num_bloom;
@@ -2328,7 +2328,7 @@ void GnuHashSection<E>::copy_buf(Context<E> &ctx) {
   for (i64 i = 0; i < syms.size(); i++) {
     // The last entry in a chain must be terminated with an entry with
     // least-significant bit 1.
-    u32 h = syms[i]->get_djb_hash(ctx);
+    u32 h = syms[i]->aux->djb_hash;
     if (i == syms.size() - 1 || indices[i] != indices[i + 1])
       table[i] = h | 1;
     else
@@ -2982,7 +2982,8 @@ void CopyrelSection<E>::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
   // aliases. If one of the symbols is copied by a copy relocation, other
   // symbols have to refer to the copied place as well.
   for (Symbol<E> *sym2 : file.get_symbols_at(sym)) {
-    sym2->add_aux(ctx);
+    if (!sym2->aux)
+      sym2->aux = ctx.arena.template make<SymbolAux<E>>();
     sym2->is_imported = true;
     sym2->is_exported = true;
     sym2->has_copyrel = true;

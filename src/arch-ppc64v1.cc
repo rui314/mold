@@ -634,7 +634,7 @@ void ppc64v1_scan_symbols(Context<E> &ctx) {
 }
 
 void PPC64OpdSection::add_symbol(Context<E> &ctx, Symbol<E> *sym) {
-  sym->set_opd_idx(ctx, symbols.size());
+  sym->aux->opd_idx = symbols.size();
   symbols.push_back(sym);
   this->shdr.sh_size += ENTRY_SIZE;
 }

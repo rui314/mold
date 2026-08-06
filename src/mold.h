@@ -2788,9 +2788,6 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> chunk_pool;
   tbb::concurrent_vector<std::unique_ptr<OutputSection<E>>> osec_pool;
 
-  // Symbol auxiliary data
-  std::vector<SymbolAux<E>> symbol_aux;
-
   // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
 
@@ -2961,14 +2958,6 @@ public:
   u64 get_opd_addr(Context<E> &ctx) const;
   u64 get_got_pltgot_addr(Context<E> &ctx) const;
 
-  void set_got_idx(Context<E> &ctx, i32 idx);
-  void set_gottp_idx(Context<E> &ctx, i32 idx);
-  void set_tlsgd_idx(Context<E> &ctx, i32 idx);
-  void set_tlsdesc_idx(Context<E> &ctx, i32 idx);
-  void set_plt_idx(Context<E> &ctx, i32 idx);
-  void set_pltgot_idx(Context<E> &ctx, i32 idx);
-  void set_opd_idx(Context<E> &ctx, i32 idx);
-  void set_dynsym_idx(Context<E> &ctx, i32 idx);
 
   i32 get_got_idx(Context<E> &ctx) const;
   i32 get_gottp_idx(Context<E> &ctx) const;
@@ -2985,9 +2974,6 @@ public:
   bool has_tlsgd(Context<E> &ctx) const { return get_tlsgd_idx(ctx) != -1; }
   bool has_tlsdesc(Context<E> &ctx) const { return get_tlsdesc_idx(ctx) != -1; }
   bool has_opd(Context<E> &ctx) const { return get_opd_idx(ctx) != -1; }
-
-  u32 get_djb_hash(Context<E> &ctx) const;
-  void set_djb_hash(Context<E> &ctx, u32 hash);
 
   void add_thunk_addr(Context<E> &ctx, u64 addr) requires needs_thunk<E>;
   u64 get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E>;
@@ -3020,7 +3006,6 @@ public:
   std::string_view get_version() const;
   i64 get_output_sym_idx(Context<E> &ctx) const;
   const ElfSym<E> &esym() const;
-  void add_aux(Context<E> &ctx);
 
   // A symbol is owned by a file. If two or more files define the
   // same symbol, the one with the strongest definition owns the symbol.
@@ -3039,7 +3024,9 @@ public:
   // Index into the symbol table of the owner file.
   i32 sym_idx = -1;
 
-  i32 aux_idx = -1;
+  // Auxiliary data for dynamic symbols, allocated in ctx.arena on demand.
+  ArenaPtr<SymbolAux<E>> aux;
+
   u16 ver_idx = VER_NDX_UNSPECIFIED;
 
   // `flags` has NEEDS_ flags.
@@ -3778,116 +3765,50 @@ inline u64 Symbol<E>::get_got_pltgot_addr(Context<E> &ctx) const {
 }
 
 template <typename E>
-inline void Symbol<E>::set_got_idx(Context<E> &ctx, i32 idx) {
-  assert(aux_idx != -1);
-  assert(ctx.symbol_aux[aux_idx].got_idx < 0);
-  ctx.symbol_aux[aux_idx].got_idx = idx;
-}
-
-template <typename E>
-inline void Symbol<E>::set_gottp_idx(Context<E> &ctx, i32 idx) {
-  assert(aux_idx != -1);
-  assert(ctx.symbol_aux[aux_idx].gottp_idx < 0);
-  ctx.symbol_aux[aux_idx].gottp_idx = idx;
-}
-
-template <typename E>
-inline void Symbol<E>::set_tlsgd_idx(Context<E> &ctx, i32 idx) {
-  assert(aux_idx != -1);
-  assert(ctx.symbol_aux[aux_idx].tlsgd_idx < 0);
-  ctx.symbol_aux[aux_idx].tlsgd_idx = idx;
-}
-
-template <typename E>
-inline void Symbol<E>::set_tlsdesc_idx(Context<E> &ctx, i32 idx) {
-  assert(aux_idx != -1);
-  assert(ctx.symbol_aux[aux_idx].tlsdesc_idx < 0);
-  ctx.symbol_aux[aux_idx].tlsdesc_idx = idx;
-}
-
-template <typename E>
-inline void Symbol<E>::set_plt_idx(Context<E> &ctx, i32 idx) {
-  assert(aux_idx != -1);
-  assert(ctx.symbol_aux[aux_idx].plt_idx < 0);
-  ctx.symbol_aux[aux_idx].plt_idx = idx;
-}
-
-template <typename E>
-inline void Symbol<E>::set_pltgot_idx(Context<E> &ctx, i32 idx) {
-  assert(aux_idx != -1);
-  assert(ctx.symbol_aux[aux_idx].pltgot_idx < 0);
-  ctx.symbol_aux[aux_idx].pltgot_idx = idx;
-}
-
-template <typename E>
-inline void Symbol<E>::set_opd_idx(Context<E> &ctx, i32 idx) {
-  assert(aux_idx != -1);
-  assert(ctx.symbol_aux[aux_idx].opd_idx < 0);
-  ctx.symbol_aux[aux_idx].opd_idx = idx;
-}
-
-template <typename E>
-inline void Symbol<E>::set_dynsym_idx(Context<E> &ctx, i32 idx) {
-  assert(aux_idx != -1);
-  ctx.symbol_aux[aux_idx].dynsym_idx = idx;
-}
-
-template <typename E>
 inline i32 Symbol<E>::get_got_idx(Context<E> &ctx) const {
-  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].got_idx;
+  return aux ? aux->got_idx : -1;
 }
 
 template <typename E>
 inline i32 Symbol<E>::get_gottp_idx(Context<E> &ctx) const {
-  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].gottp_idx;
+  return aux ? aux->gottp_idx : -1;
 }
 
 template <typename E>
 inline i32 Symbol<E>::get_tlsgd_idx(Context<E> &ctx) const {
-  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].tlsgd_idx;
+  return aux ? aux->tlsgd_idx : -1;
 }
 
 template <typename E>
 inline i32 Symbol<E>::get_tlsdesc_idx(Context<E> &ctx) const {
-  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].tlsdesc_idx;
+  return aux ? aux->tlsdesc_idx : -1;
 }
 
 template <typename E>
 inline i32 Symbol<E>::get_plt_idx(Context<E> &ctx) const {
-  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].plt_idx;
+  return aux ? aux->plt_idx : -1;
 }
 
 template <typename E>
 inline i32 Symbol<E>::get_pltgot_idx(Context<E> &ctx) const {
-  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].pltgot_idx;
+  return aux ? aux->pltgot_idx : -1;
 }
 
 template <typename E>
 inline i32 Symbol<E>::get_opd_idx(Context<E> &ctx) const {
-  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].opd_idx;
+  return aux ? aux->opd_idx : -1;
 }
 
 template <typename E>
 inline i32 Symbol<E>::get_dynsym_idx(Context<E> &ctx) const {
-  return (aux_idx == -1) ? -1 : ctx.symbol_aux[aux_idx].dynsym_idx;
-}
-
-template <typename E>
-inline u32 Symbol<E>::get_djb_hash(Context<E> &ctx) const {
-  assert(aux_idx != -1);
-  return ctx.symbol_aux[aux_idx].djb_hash;
-}
-
-template <typename E>
-inline void Symbol<E>::set_djb_hash(Context<E> &ctx, u32 hash) {
-  assert(aux_idx != -1);
-  ctx.symbol_aux[aux_idx].djb_hash = hash;
+  return aux ? aux->dynsym_idx : -1;
 }
 
 template <typename E>
 void Symbol<E>::add_thunk_addr(Context<E> &ctx, u64 addr) requires needs_thunk<E> {
-  add_aux(ctx);
-  std::vector<u64> &vec = ctx.symbol_aux[aux_idx].thunk_addrs;
+  if (!aux)
+    aux = ctx.arena.template make<SymbolAux<E>>();
+  std::vector<u64> &vec = aux->thunk_addrs;
   assert(vec.empty() || vec.back() < addr);
   vec.push_back(addr);
 }
@@ -3895,7 +3816,7 @@ void Symbol<E>::add_thunk_addr(Context<E> &ctx, u64 addr) requires needs_thunk<E
 template <typename E>
 u64
 Symbol<E>::get_thunk_addr(Context<E> &ctx, u64 P) const requires needs_thunk<E> {
-  std::span<u64> vec = ctx.symbol_aux[aux_idx].thunk_addrs;
+  std::span<u64> vec = aux->thunk_addrs;
   u64 lo = (P < branch_distance<E>) ? 0 : P - branch_distance<E>;
   if (auto it = ranges::lower_bound(vec, lo);
       it != vec.end())
@@ -4077,14 +3998,6 @@ inline std::string_view Symbol<E>::name() const {
   }
 
   return namelen.get_string(nameptr);
-}
-
-template <typename E>
-inline void Symbol<E>::add_aux(Context<E> &ctx) {
-  if (aux_idx == -1) {
-    aux_idx = ctx.symbol_aux.size();
-    ctx.symbol_aux.resize(aux_idx + 1);
-  }
 }
 
 inline bool is_c_identifier(std::string_view s) {

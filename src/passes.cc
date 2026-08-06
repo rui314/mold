@@ -1909,14 +1909,14 @@ void scan_relocations(Context<E> &ctx) {
   });
 
   std::vector<Symbol<E> *> syms = flatten(vec);
-  ctx.symbol_aux.reserve(syms.size());
 
   if (ctx.needs_tlsld)
     ctx.got->add_tlsld(ctx);
 
   // Assign offsets in additional tables for each dynamic symbol.
   for (Symbol<E> *sym : syms) {
-    sym->add_aux(ctx);
+    if (!sym->aux)
+      sym->aux = ctx.arena.template make<SymbolAux<E>>();
 
     if (sym->is_imported || sym->is_exported)
       ctx.dynsym->add_symbol(ctx, sym);
@@ -2135,12 +2135,12 @@ void sort_dynsyms(Context<E> &ctx) {
     u32 num_buckets = num_exported / ctx.gnu_hash->LOAD_FACTOR + 1;
 
     tbb::parallel_for_each(exported_syms, [&](Symbol<E> *sym) {
-      sym->set_djb_hash(ctx, djb_hash(sym->name()));
+      sym->aux->djb_hash = djb_hash(sym->name());
     });
 
     tbb::parallel_sort(exported_syms, [&](Symbol<E> *a, Symbol<E> *b) {
-      return std::tuple(a->get_djb_hash(ctx) % num_buckets, a->name()) <
-             std::tuple(b->get_djb_hash(ctx) % num_buckets, b->name());
+      return std::tuple(a->aux->djb_hash % num_buckets, a->name()) <
+             std::tuple(b->aux->djb_hash % num_buckets, b->name());
     });
 
     ctx.gnu_hash->num_buckets = num_buckets;
@@ -2152,7 +2152,7 @@ void sort_dynsyms(Context<E> &ctx) {
 
   tbb::enumerable_thread_specific<i64> size;
   tbb::parallel_for((i64)1, (i64)syms.size(), [&](i64 i) {
-    syms[i]->set_dynsym_idx(ctx, i);
+    syms[i]->aux->dynsym_idx = i;
     size.local() += syms[i]->name().size() + 1;
   });
 
