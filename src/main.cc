@@ -581,6 +581,11 @@ int mold_main(int argc, char **argv) {
   // within an output section to input sections.
   compute_section_sizes(ctx);
 
+  // RELR is encoded independently for each output chunk using offsets
+  // relative to that chunk.
+  if (ctx.arg.pack_dyn_relocs_relr)
+    ctx.reldyn->construct_relr(ctx);
+
   // Reserve a space for dynamic symbol strings in .dynstr and sort
   // .dynsym contents if necessary. Beyond this point, no symbol will
   // be added to .dynsym.

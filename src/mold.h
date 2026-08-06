@@ -701,6 +701,7 @@ public:
   i64 shndx = 0;
   i64 num_dynrels = 0;
   i64 num_relrs = 0;
+  std::vector<u64> relr;
   bool is_relro = false;
 
   // For --gdb-index
@@ -795,6 +796,7 @@ public:
 enum AbsRelKind {
   ABS_REL_NONE,
   ABS_REL_BASEREL,
+  ABS_REL_RELR,
   ABS_REL_IFUNC,
   ABS_REL_DYNREL,
 };
@@ -998,6 +1000,7 @@ public:
   void update_shdr(Context<E> &ctx) override;
   void copy_buf(Context<E> &ctx) override;
 
+  void construct_relr(Context<E> &ctx);
   void write_relocs(Context<E> &ctx, ElfRel<E> *buf);
 
   std::vector<ElfRel<E>> relocs;
@@ -1050,8 +1053,6 @@ public:
   }
 
   void copy_buf(Context<E> &ctx) override;
-
-  std::vector<u64> relocs;
 };
 
 // .strtab is referenced by .strtab and contains symbol names. Note that

@@ -3107,13 +3107,11 @@ i64 set_osec_offsets(Context<E> &ctx) {
     else
       set_virtual_addresses_by_order(ctx);
 
-    if (ctx.arg.pack_dyn_relocs_relr || ctx.arg.pack_dyn_relocs_android) {
+    if (ctx.arg.pack_dyn_relocs_android) {
       i64 x = ctx.reldyn->shdr.sh_size;
-      i64 y = ctx.relrdyn ? (i64)ctx.relrdyn->shdr.sh_size : 0;
       ctx.reldyn->update_shdr(ctx);
 
-      if (x != (i64)ctx.reldyn->shdr.sh_size ||
-          y != (ctx.relrdyn ? (i64)ctx.relrdyn->shdr.sh_size : 0))
+      if (x != (i64)ctx.reldyn->shdr.sh_size)
         continue;
     }
 

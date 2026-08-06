@@ -423,47 +423,52 @@ void RelDynSection<E>::write_relocs(Context<E> &ctx, ElfRel<E> *buf) {
 }
 
 template <typename E>
-void RelDynSection<E>::update_shdr(Context<E> &ctx) {
-  // This function runs several times, as the size of .relr.dyn feeds
-  // back into section layout (set_osec_offsets calls us until the size
-  // converges), so it is worth doing the work in parallel.
+void RelDynSection<E>::construct_relr(Context<E> &ctx) {
+  assert(ctx.arg.pack_dyn_relocs_relr);
+
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
     chunk->num_dynrels = chunk->get_num_dynrels(ctx);
     chunk->num_relrs = 0;
+
+    // Do not use RELR for executable chunks, as they don't usually contain
+    // base relocations.
+    if (chunk->shdr.sh_flags & SHF_EXECINSTR)
+      return;
+
+    // --section-start can override a chunk's alignment. Conservatively use
+    // .rel[a].dyn if the explicitly assigned address is not word-aligned.
+    if (auto it = ctx.arg.section_start.find(chunk->name);
+        it != ctx.arg.section_start.end() &&
+        it->second % sizeof(Word<E>) != 0)
+      return;
+
+    if (chunk->num_dynrels) {
+      std::vector<u64> offsets = chunk->get_relr_offsets(ctx);
+      chunk->num_relrs = offsets.size();
+      assert(chunk->num_relrs <= chunk->num_dynrels);
+      chunk->relr = encode_relr<E>(offsets);
+    }
   });
+  i64 size = 0;
+  for (Chunk<E> *chunk : ctx.chunks)
+    size += chunk->relr.size() * sizeof(Word<E>);
+  ctx.relrdyn->shdr.sh_size = size;
+}
+
+template <typename E>
+void RelDynSection<E>::update_shdr(Context<E> &ctx) {
+  if (!ctx.arg.pack_dyn_relocs_relr) {
+    tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
+      chunk->num_dynrels = chunk->get_num_dynrels(ctx);
+      chunk->num_relrs = 0;
+    });
+  }
 
   i64 num_relocs = 0;
-  for (Chunk<E> *chunk : ctx.chunks)
-    num_relocs += chunk->num_dynrels;
-
   i64 num_relrs = 0;
-  if (ctx.arg.pack_dyn_relocs_relr) {
-    // Process chunks in address order. Each chunk returns its offsets
-    // in ascending order, and chunks occupy disjoint address ranges,
-    // so the concatenation is sorted as a whole, and the offsets never
-    // need to be sorted as one large array.
-    std::vector<Chunk<E> *> chunks = ctx.chunks;
-    ranges::stable_sort(chunks, {}, [](Chunk<E> *c) { return c->shdr.sh_addr; });
-
-    std::vector<std::vector<u64>> shards(chunks.size());
-
-    tbb::parallel_for((i64)0, (i64)chunks.size(), [&](i64 i) {
-      Chunk<E> *chunk = chunks[i];
-      if (chunk->num_dynrels) {
-        shards[i] = chunk->get_relr_offsets(ctx);
-        chunk->num_relrs = shards[i].size();
-        assert(chunk->num_relrs <= chunk->num_dynrels);
-      }
-    });
-
-    std::vector<u64> offsets;
-    offsets.reserve(num_relocs);
-    for (std::vector<u64> &shard : shards)
-      append(offsets, shard);
-
-    num_relrs = offsets.size();
-    ctx.relrdyn->relocs = encode_relr<E>(offsets);
-    ctx.relrdyn->shdr.sh_size = ctx.relrdyn->relocs.size() * sizeof(Word<E>);
+  for (Chunk<E> *chunk : ctx.chunks) {
+    num_relocs += chunk->num_dynrels;
+    num_relrs += chunk->num_relrs;
   }
 
   if (ctx.arg.pack_dyn_relocs_android) {
@@ -497,8 +502,10 @@ void RelDynSection<E>::copy_buf(Context<E> &ctx) {
 template <typename E>
 void RelrDynSection<E>::copy_buf(Context<E> &ctx) {
   Word<E> *buf = (Word<E> *)(ctx.buf + this->shdr.sh_offset);
-  for (u64 val : relocs)
-    *buf++ = val;
+
+  for (Chunk<E> *chunk : ctx.chunks)
+    for (u64 val : chunk->relr)
+      *buf++ = (val & 1) ? val : chunk->shdr.sh_addr + val;
 }
 
 template <typename E>
@@ -1012,6 +1019,7 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
 
     switch (r.kind) {
     case ABS_REL_NONE:
+    case ABS_REL_RELR:
       *(Word<E> *)loc = S + A;
       break;
     case ABS_REL_BASEREL:
@@ -1044,16 +1052,15 @@ std::vector<u64> OutputSection<E>::get_relr_offsets(Context<E> &) {
   offsets.reserve(this->num_dynrels);
 
   auto scan = [&](i64 begin, i64 end, std::vector<u64> &out) {
-    for (const AbsRel<E> &r : std::span(abs_rels).subspan(begin, end - begin)) {
+    for (AbsRel<E> &r : std::span(abs_rels).subspan(begin, end - begin)) {
       if (r.kind != ABS_REL_BASEREL)
         continue;
 
-      u64 P = this->shdr.sh_addr + r.isec->offset + r.offset;
-      if constexpr (is_riscv<E> || is_loongarch<E>)
-        P -= get_r_delta(*r.isec, r.offset);
-
-      if (P % sizeof(Word<E>) == 0)
-        out.push_back(P);
+      if (r.isec->shdr().sh_addralign % sizeof(Word<E>) == 0 &&
+          r.offset % sizeof(Word<E>) == 0) {
+        r.kind = ABS_REL_RELR;
+        out.push_back(r.isec->offset + r.offset);
+      }
     }
   };
 
@@ -1085,7 +1092,7 @@ void OutputSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
   i64 nshards = dynrel_offsets.size() - 1;
   std::vector<i64> offsets = dynrel_offsets;
 
-  if (ctx.arg.pack_dyn_relocs_relr) {
+  if (ctx.arg.pack_dyn_relocs_relr && this->num_relrs) {
     assert(relr_offsets.size() == offsets.size());
     for (i64 i = 0; i <= nshards; i++)
       offsets[i] -= relr_offsets[i];
@@ -1097,11 +1104,6 @@ void OutputSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
     i64 begin = idx * DYNREL_SHARD_SIZE;
     i64 end = std::min<i64>(begin + DYNREL_SHARD_SIZE, abs_rels.size());
     ElfRel<E> *loc = buf + offsets[idx];
-
-    auto write = [&](ElfRel<E> rel) {
-      if (!ctx.arg.pack_dyn_relocs_relr || !is_relr(rel))
-        *loc++ = rel;
-    };
 
     for (const AbsRel<E> &r : std::span(abs_rels).subspan(begin, end - begin)) {
       Symbol<E> &sym = *r.sym;
@@ -1116,17 +1118,18 @@ void OutputSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
 
       switch (r.kind) {
       case ABS_REL_NONE:
+      case ABS_REL_RELR:
         break;
       case ABS_REL_BASEREL:
-        write(ElfRel<E>(P, E::R_RELATIVE, 0, S + A));
+        *loc++ = ElfRel<E>(P, E::R_RELATIVE, 0, S + A);
         break;
       case ABS_REL_IFUNC:
         if constexpr (supports_ifunc<E>)
-          write(ElfRel<E>(P, E::R_IRELATIVE, 0,
-                          sym.get_addr(ctx, NO_PLT) + A));
+          *loc++ = ElfRel<E>(P, E::R_IRELATIVE, 0,
+                             sym.get_addr(ctx, NO_PLT) + A);
         break;
       case ABS_REL_DYNREL:
-        write(ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A));
+        *loc++ = ElfRel<E>(P, E::R_ABS, sym.get_dynsym_idx(ctx), A);
         break;
       }
     }
@@ -1712,11 +1715,8 @@ std::vector<u64> GotSection<E>::get_relr_offsets(Context<E> &ctx) {
       if (sym->is_ifunc())
         continue;
 
-    if (!sym->is_imported && sym->is_relative()) {
-      u64 P = this->shdr.sh_addr + sym->get_got_idx(ctx) * sizeof(Word<E>);
-      if (P % sizeof(Word<E>) == 0)
-        offsets.push_back(P);
-    }
+    if (!sym->is_imported && sym->is_relative())
+      offsets.push_back(sym->get_got_idx(ctx) * sizeof(Word<E>));
   }
   return offsets;
 }
@@ -1733,7 +1733,7 @@ void GotSection<E>::write_dynrels(Context<E> &ctx, ElfRel<E> *buf) const {
                   ent.r_type,
                   ent.sym ? ent.sym->get_dynsym_idx(ctx) : 0,
                   ent.val);
-    if (!ctx.arg.pack_dyn_relocs_relr || !is_relr(rel))
+    if (!ctx.arg.pack_dyn_relocs_relr || !this->num_relrs || !is_relr(rel))
       *buf++ = rel;
   }
 }

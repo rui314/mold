@@ -27,4 +27,11 @@ readelf -WS $t/exe3 | grep -F .relr.dyn || skip
 $QEMU $t/exe3 2> /dev/null | grep 'Hello world' || skip
 
 $CC -B. -o $t/exe4 $t/a.o -pie -Wl,-z,pack-relative-relocs
+readelf -WS $t/exe4 | grep -F .relr.dyn
+
+# Keep relative relocations in executable sections out of RELR because their
+# offsets may change during relaxation or thunk removal.
+p_addr=$(readelf -sW $t/exe4 | awk '$NF == "p" { print $2; exit }')
+readelf -rW $t/exe4 | grep -E "^[[:space:]]*$p_addr[[:space:]].*R_.*_RELATIVE"
+
 $QEMU $t/exe4 | grep 'Hello world'
