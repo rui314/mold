@@ -44,6 +44,8 @@ if [ "$git_hash" = "" ]; then
   exit 1
 fi
 
+cache_dir=/var/cache/mold-gentoo
+
 # Create a Podman image. The lock prevents parallel invocations of
 # this script from racing to build the same image.
 #
@@ -101,7 +103,7 @@ fi
 (
   flock 9
   if ! podman image exists mold-gentoo; then
-    cat <<EOF | podman build -v /var/cache/distfiles-gentoo:/var/cache/distfiles -v /var/cache/ccache-gentoo:/ccache -v /var/cache/binpkgs-gentoo-ld:/var/cache/binpkgs -v `pwd`/lib:/mold-lib:ro -t mold-gentoo - || exit 1
+    cat <<EOF | podman build -v $cache_dir/distfiles:/var/cache/distfiles -v $cache_dir/ccache:/ccache -v $cache_dir/binpkgs-ld:/var/cache/binpkgs -v `pwd`/lib:/mold-lib:ro -t mold-gentoo - || exit 1
 FROM docker.io/gentoo/stage3
 RUN emerge-webrsync
 RUN echo 'USE="X ssl elogind -systemd truetype jpeg jpeg2k tiff zstd -perl udev lcms alsa"' >> /etc/portage/make.conf && \
@@ -137,10 +139,10 @@ fi
 # Build artifacts are shared between containers through host
 # directories bind-mounted into every container:
 #
-#   /var/cache/ccache-gentoo: compiler cache
-#   /var/cache/distfiles-gentoo: source tarballs, so that each
+#   /var/cache/mold-gentoo/ccache: compiler cache
+#   /var/cache/mold-gentoo/distfiles: source tarballs, so that each
 #     distfile is downloaded only once across all containers and runs
-#   /var/cache/binpkgs-gentoo-{mold,ld}: binary packages, so that each
+#   /var/cache/mold-gentoo/binpkgs-{mold,ld}: binary packages, so that each
 #     dependency is built only once instead of once per container that
 #     needs it
 #
@@ -158,7 +160,7 @@ cmd2="echo '$package test.conf' > /etc/portage/package.env"
 cmd3="FEATURES=buildpkg emerge --usepkg --onlydeps $package"
 cmd4="FEATURES=buildpkg emerge $package"
 filename=`echo "$package" | sed 's!/!_!g'`
-podman="podman run --rm --pids-limit=-1 --cap-add=SYS_PTRACE -v `pwd`:/mold:ro -v /var/cache/ccache-gentoo:/ccache -v /var/cache/distfiles-gentoo:/var/cache/distfiles"
+podman="podman run --rm --pids-limit=-1 --cap-add=SYS_PTRACE -v `pwd`:/mold:ro -v $cache_dir/ccache:/ccache -v $cache_dir/distfiles:/var/cache/distfiles"
 run="mold-gentoo timeout -v -k 15s 3h chrt --idle 0 nice -n 19 bash -c"
 dir=gentoo/$git_hash
 
@@ -166,7 +168,7 @@ mkdir -p "$dir"/success "$dir"/failure "$dir"/broken
 
 # Build the package with mold. If this succeeds, we don't need a
 # control build.
-$podman -v /var/cache/binpkgs-gentoo-mold:/var/cache/binpkgs $run "$cmd1 && $cmd2 && $cmd3 && $cmd4" >& "$dir"/"$filename".mold
+$podman -v $cache_dir/binpkgs-mold:/var/cache/binpkgs $run "$cmd1 && $cmd2 && $cmd3 && $cmd4" >& "$dir"/"$filename".mold
 if [ $? = 0 ]; then
   mv "$dir"/"$filename".mold "$dir"/success
   exit 0
@@ -174,7 +176,7 @@ fi
 
 # Build the package again with GNU ld to tell whether the failure is
 # mold's fault.
-$podman -v /var/cache/binpkgs-gentoo-ld:/var/cache/binpkgs $run "$cmd2 && $cmd3 && $cmd4" >& "$dir"/"$filename".ld
+$podman -v $cache_dir/binpkgs-ld:/var/cache/binpkgs $run "$cmd2 && $cmd3 && $cmd4" >& "$dir"/"$filename".ld
 if [ $? = 0 ]; then
   mv "$dir"/"$filename".mold "$dir"/failure
   mv "$dir"/"$filename".ld "$dir"/success
