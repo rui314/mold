@@ -2716,6 +2716,7 @@ struct Context {
     std::optional<i64> thread_count;
     std::optional<std::vector<Symbol<E> *>> retain_symbols_file;
     std::optional<u64> physical_image_base;
+    std::optional<u64> ttext_segment;
     std::string Map;
     std::string audit;
     std::string chroot;

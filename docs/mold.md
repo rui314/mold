@@ -465,6 +465,9 @@ but as `-o magic`.
 * `--Ttext`=_address_:
   Alias for `--section-start=.text=`_address_.
 
+* `--Ttext-segment`=_address_:
+  Set the address of the first byte of the text segment.
+
 * `--allow-multiple-definition`:
   Normally, the linker reports an error if there are more than one definition
   of a symbol. This option changes the default behavior so that it doesn't

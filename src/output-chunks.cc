@@ -85,6 +85,8 @@ void OutputEhdr<E>::copy_buf(Context<E> &ctx) {
 
   if (ctx.arg.relocatable)
     hdr.e_type = ET_REL;
+  else if (ctx.arg.pie && ctx.arg.ttext_segment)
+    hdr.e_type = ET_EXEC;
   else if (ctx.arg.pic)
     hdr.e_type = ET_DYN;
   else
