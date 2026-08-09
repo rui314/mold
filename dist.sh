@@ -95,7 +95,7 @@ ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends wget file make gcc g++ zlib1g-dev libssl-dev ca-certificates && \
+  apt-get install -y --no-install-recommends wget file make gcc g++ git zlib1g-dev libssl-dev ca-certificates && \
   rm -rf /var/lib/apt/lists
 
 # Build CMake 3.27
@@ -163,7 +163,7 @@ ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^deb/d' -e 's/^# deb /deb /g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-10 g++-10 clang-16 cmake && \
+  apt-get install -y --no-install-recommends build-essential gcc-10 g++-10 clang-16 cmake git && \
   ln -sf /usr/bin/clang-16 /usr/bin/clang && \
   ln -sf /usr/bin/clang++-16 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
@@ -176,7 +176,7 @@ ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e '/^URIs/d' -e 's/^# http/URIs: http/' /etc/apt/sources.list.d/debian.sources && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-18 cmake && \
+  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-18 cmake git && \
   ln -sf /usr/bin/clang-18 /usr/bin/clang && \
   ln -sf /usr/bin/clang++-18 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
@@ -189,7 +189,7 @@ ENV DEBIAN_FRONTEND=noninteractive TZ=UTC
 RUN sed -i -e 's!http[^ ]*!http://snapshot.debian.org/archive/debian-ports/20250620T014755Z!g' /etc/apt/sources.list && \
   echo 'Acquire::Retries "10"; Acquire::http::timeout "10"; Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/80-retries && \
   apt-get update && \
-  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-19 cmake && \
+  apt-get install -y --no-install-recommends build-essential gcc-14 g++-14 clang-19 cmake git && \
   ln -sf /usr/bin/clang-19 /usr/bin/clang && \
   ln -sf /usr/bin/clang++-19 /usr/bin/clang++ && \
   rm -rf /var/lib/apt/lists
