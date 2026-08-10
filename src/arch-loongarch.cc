@@ -295,6 +295,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     }
 
     Symbol<E> &sym = *file.symbols[rel.r_sym];
+    if (sym.get_type() == STT_TLS && sym.is_remaining_undef_weak())
+      continue;
+
     i64 r_offset = rel.r_offset - r_delta;
     u8 *loc = base + r_offset;
 
