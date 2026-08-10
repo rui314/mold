@@ -110,11 +110,11 @@ RUN mkdir /build && \
 # Build GCC 14
 RUN mkdir /build && \
   cd /build && \
-  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/gcc/gcc-14.2.0/gcc-14.2.0.tar.gz | tar xzf - --strip-components=1 && \
+  wget -O- --progress=dot:mega https://ftp.gnu.org/gnu/gcc/gcc-14.2.0/gcc-14.2.0.tar.gz | tar xzf - --strip-components=1 && \
   mkdir gmp mpc mpfr && \
-  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/gmp/gmp-6.3.0.tar.gz | tar xzf - --strip-components=1 -C gmp && \
-  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/mpc/mpc-1.3.1.tar.gz | tar xzf - --strip-components=1 -C mpc && \
-  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/mpfr/mpfr-4.2.1.tar.gz | tar xzf - --strip-components=1 -C mpfr && \
+  wget -O- --progress=dot:mega https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.gz | tar xzf - --strip-components=1 -C gmp && \
+  wget -O- --progress=dot:mega https://ftp.gnu.org/gnu/mpc/mpc-1.3.1.tar.gz | tar xzf - --strip-components=1 -C mpc && \
+  wget -O- --progress=dot:mega https://ftp.gnu.org/gnu/mpfr/mpfr-4.2.1.tar.gz | tar xzf - --strip-components=1 -C mpfr && \
   ./configure --prefix=/usr --enable-languages=c,c++ --disable-bootstrap --disable-multilib && \
   make -j\$(nproc) && \
   make install && \
@@ -124,7 +124,7 @@ RUN mkdir /build && \
 # Build GNU binutils 2.43
 RUN mkdir /build && \
   cd /build && \
-  wget -O- --progress=dot:mega https://ftpmirror.gnu.org/binutils/binutils-2.43.tar.gz | tar xzf - --strip-components=1 && \
+  wget -O- --progress=dot:mega https://ftp.gnu.org/gnu/binutils/binutils-2.43.tar.gz | tar xzf - --strip-components=1 && \
   ./configure --prefix=/usr && \
   make -j\$(nproc) && \
   make install && \
