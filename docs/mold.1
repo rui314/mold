@@ -1,6 +1,6 @@
 .\" generated with Ronn-NG/v0.9.1
 .\" http://github.com/apjanke/ronn-ng/tree/0.9.1
-.TH "MOLD" "1" "July 2026" ""
+.TH "MOLD" "1" "August 2026" ""
 .SH "NAME"
 \fBmold\fR \- a modern linker
 .SH "SYNOPSIS"
@@ -260,6 +260,9 @@ Alias for \fB\-\-section\-start=\.data=\fR\fIaddress\fR\.
 .TP
 \fB\-\-Ttext\fR=\fIaddress\fR
 Alias for \fB\-\-section\-start=\.text=\fR\fIaddress\fR\.
+.TP
+\fB\-\-Ttext\-segment\fR=\fIaddress\fR
+Set the address of the first byte of the text segment\.
 .TP
 \fB\-\-allow\-multiple\-definition\fR
 Normally, the linker reports an error if there are more than one definition of a symbol\. This option changes the default behavior so that it doesn't report an error for duplicate definitions and instead use the first definition\.
