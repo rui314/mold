@@ -2208,7 +2208,7 @@ struct SH4LE {
   static constexpr u32 page_size = 4096;
   static constexpr u32 e_machine = EM_SH;
   static constexpr u32 plt_hdr_size = 16;
-  static constexpr u32 plt_size = 16;
+  static constexpr u32 plt_size = 20;
   static constexpr u32 pltgot_size = 12;
   static constexpr u8 trap[] = { 0xfd, 0xff }; // illegal
 
