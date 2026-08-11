@@ -83,8 +83,7 @@ if they are linked with the dynamic C runtime (`ucrtbase.dll`) -- just put the
 `mimalloc.dll` into the import table (and put `mimalloc-redirect.dll` in the same 
 directory) Such patching can be done for example with [CFF Explorer](https://ntcore.com/?page_id=388).
 
-The `minject` program can also do this from the command line
-Use `minject --help` for options:
+The `minject` program can also do this from the command line. Use `minject --help` for options:
 
 ```
 > minject --help

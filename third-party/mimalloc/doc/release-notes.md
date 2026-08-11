@@ -10,6 +10,6 @@ Notes:
 - Generally it is recommended to download sources (or use `vcpkg` etc.) and build mimalloc as 
   part of your project.
 - Source releases can also be downloaded directly from github by the tag.  
-  For example <https://github.com/microsoft/mimalloc/archive/v3.3.2.tar.gz>.  
+  For example <https://github.com/microsoft/mimalloc/archive/v3.4.0.tar.gz>.  
 - Binary releases include a release-, debug-, and secure build.
 - Linux binaries are built on Ubuntu 22.

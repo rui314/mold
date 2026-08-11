@@ -47,3 +47,52 @@ static inline int print_test_summary(void)
 }
 
 #endif // TESTHELPER_H_
+
+// ------------------------------------------------------
+// helper to run on threads
+// ------------------------------------------------------
+typedef bool (*mi_thread_fun_t)(void);
+
+bool mi_run_on_thread(mi_thread_fun_t fun);
+
+typedef struct mi_thread_fun_args_s {
+  mi_thread_fun_t fun;
+  bool result;
+} mi_thread_fun_args_t;
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+static DWORD WINAPI mi_win_thread_entry(LPVOID varg) {
+  mi_thread_fun_args_t* arg = (mi_thread_fun_args_t*)varg;
+  arg->result = arg->fun(); 
+  return 0;
+}
+bool mi_run_on_thread(mi_thread_fun_t fun) {
+  mi_thread_fun_args_t arg = { fun, false };
+  HANDLE thread = CreateThread(NULL, 0, &mi_win_thread_entry, &arg, 0, NULL);
+  if (thread == NULL) return false;
+  WaitForSingleObject(thread, INFINITE);
+  CloseHandle(thread);
+  return arg.result;
+}
+#else
+#include <pthread.h>
+static void* mi_pthread_entry(void* varg) {
+  mi_thread_fun_args_t* arg = (mi_thread_fun_args_t*)varg;
+  arg->result = arg->fun(); 
+  return NULL;
+}
+bool mi_run_on_thread(mi_thread_fun_t fun) {
+  mi_thread_fun_args_t arg = { fun, false };
+  pthread_t thread;
+  if (pthread_create(&thread, NULL, &mi_pthread_entry, &arg) != 0) return false;
+  pthread_join(thread, NULL);
+  return arg.result;
+}
+#endif

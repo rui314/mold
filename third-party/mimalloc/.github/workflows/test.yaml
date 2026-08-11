@@ -22,6 +22,9 @@ jobs:
         exclude:
           - os: macos-14
             tests: extra          
+        include:
+          - os: windows-latest
+            tests: mingw-ucrt64
         
     steps:
       # Checkout: https://github.com/actions/checkout
@@ -59,13 +62,13 @@ jobs:
           ctest --test-dir out/debug-cxx --verbose --timeout 240 -C Debug
 
       - name: Release, C++
-        if: matrix.tests == 'basic' && runner.os == 'Linux'      # windows already uses C++ by default; macOS interpose does not work well with C++
+        if: matrix.tests == 'basic' && runner.os != 'Windows'      # windows already uses C++ by default
         run: |
           cmake . -B out/release-cxx -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_USE_CXX=ON
           cmake --build out/release-cxx --parallel 8 --config Release
           ctest --test-dir out/release-cxx --verbose --timeout 240 -C Release
 
-      # Extra, Windows x86
+      # Extra, Windows x86 
       - name: Debug, Win32
         if: matrix.tests == 'extra' && runner.os == 'Windows' && !endsWith(matrix.os,'arm')
         run: |
@@ -93,6 +96,36 @@ jobs:
           cmake . -B out/release-clang -DCMAKE_BUILD_TYPE=Release -A Win32 -T ClangCl
           cmake --build out/release-clang --parallel 4 --config Release
           ctest --test-dir out/release-clang --verbose --timeout 240 -C Release          
+
+      # Extra, macOS fixed TLS
+      - name: Debug, TLS fixed
+        if: matrix.tests == 'extra' && runner.os == 'macOS'
+        run: |
+          cmake . -B out/debug-tls-fixed -DCMAKE_BUILD_TYPE=Debug -DMI_TLS_MODEL_FIXED=ON
+          cmake --build out/debug-tls-fixed --parallel 4 --config Debug
+          ctest --test-dir out/debug-tls-fixed --verbose --timeout 240 -C Debug
+
+      - name: Release, TLS fixed
+        if: matrix.tests == 'extra' && runner.os == 'macOS'
+        run: |
+          cmake . -B out/release-tls-fixed -DCMAKE_BUILD_TYPE=Release -DMI_TLS_MODEL_FIXED=ON
+          cmake --build out/release-tls-fixed --parallel 4 --config Release
+          ctest --test-dir out/release-tls-fixed --verbose --timeout 240 -C Release
+
+      # Extra, Linux pthread TLS
+      - name: Debug, TLS pthreads
+        if: matrix.tests == 'extra' && runner.os == 'linux'
+        run: |
+          cmake . -B out/debug-tls-pthreads -DCMAKE_BUILD_TYPE=Debug -DMI_TLS_MODEL_PTHREADS=ON
+          cmake --build out/debug-tls-pthreads --parallel 4 --config Debug
+          ctest --test-dir out/debug-tls-pthreads --verbose --timeout 240 -C Debug
+
+      - name: Release, TLS pthreads
+        if: matrix.tests == 'extra' && runner.os == 'linux'
+        run: |
+          cmake . -B out/release-tls-pthreads -DCMAKE_BUILD_TYPE=Release -DMI_TLS_MODEL_PTHREADS=ON
+          cmake --build out/release-tls-pthreads --parallel 4 --config Release
+          ctest --test-dir out/release-tls-pthreads --verbose --timeout 240 -C Release
 
       # Extra
       - name: Release, SIMD
@@ -145,7 +178,7 @@ jobs:
           ctest --test-dir out/debug-tsan --verbose --timeout 240 -C Debug
 
       - name: Debug, Guarded
-        if: matrix.tests == 'extra' && matrix.os != 'windows-11-arm' && runner.os != 'macOS'
+        if: matrix.tests == 'extra' && runner.os != 'macOS'
         run: |
           cmake . -B out/debug-guarded -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_GUARDED=ON
           cmake --build out/debug-guarded --parallel 8 --config Debug
@@ -161,3 +194,33 @@ jobs:
           ctest --test-dir out/release-guarded --verbose --timeout 240 -C Release
         env:
           MIMALLOC_GUARDED_SAMPLE_RATE: 100
+
+      # MSYS2 mingw64 UCRT64
+      - name: mingw-ucrt64 x64, Setup
+        if: matrix.tests == 'mingw-ucrt64'
+        uses: msys2/setup-msys2@v2       
+        with: 
+          msystem: UCRT64
+          install: |
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-git
+            mingw-w64-ucrt-x86_64-make
+            mingw-w64-ucrt-x86_64-cmake
+
+      - name: mingw-ucrt64 x64, Debug
+        if: matrix.tests == 'mingw-ucrt64'
+        shell: msys2 {0}
+        run: |
+          env
+          cmake . -B out/debug-mingw-ucrt64-x64 -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+          cmake --build out/debug-mingw-ucrt64-x64 --parallel 4 --config Debug
+          ctest --test-dir out/debug-mingw-ucrt64-x64 --verbose --timeout 240 -C Debug
+
+      - name: mingw-ucrt64 x64, Release
+        if: matrix.tests == 'mingw-ucrt64'
+        shell: msys2 {0}
+        run: |
+          cmake . -B out/release-mingw-ucrt64-x64 -DCMAKE_BUILD_TYPE=Release  -DMI_OPT_ARCH=ON
+          cmake --build out/release-mingw-ucrt64-x64 --parallel 4 --config Release
+          ctest --test-dir out/release-mingw-ucrt64-x64 --verbose --timeout 240 -C Release
+

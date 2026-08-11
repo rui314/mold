@@ -437,6 +437,7 @@
     <ClInclude Include="..\..\include\mimalloc\atomic.h" />
     <ClInclude Include="..\..\include\mimalloc\bits.h" />
     <ClInclude Include="..\..\include\mimalloc\internal.h" />
+    <ClInclude Include="..\..\include\mimalloc\prim-tls.h" />
     <ClInclude Include="..\..\include\mimalloc\prim.h" />
     <ClInclude Include="..\..\include\mimalloc\track.h" />
     <ClInclude Include="..\..\include\mimalloc\types.h" />

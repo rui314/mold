@@ -24,7 +24,7 @@ warn() {
 }
 
 stop() {
-  warn $@
+  warn "$@"
   exit 1
 }
 
@@ -103,7 +103,11 @@ process_options() {
       -p) shift
           PREFIX="$1";;
       -p=*|--prefix=*)
-          PREFIX=`eval echo $flag_arg`;;  # no quotes so ~ gets expanded (issue #412)
+          case "$flag_arg" in
+            "~") PREFIX="$HOME" ;;
+            "~/"*) PREFIX="$HOME/${flag_arg#~/}" ;;
+            *) PREFIX="$flag_arg" ;;
+          esac;;
       -h|--help|-\?|help|\?)
           MODE="help";;
       *) case "$flag" in
@@ -139,7 +143,7 @@ download_file() {  # <url|file> <destination file>
       fi;;
     *)
       info "Copying: $1"
-      if ! cp $1 $2 ; then
+      if ! cp "$1" "$2" ; then
         stop "Unable to copy from $1"
       fi;;
   esac
@@ -220,7 +224,7 @@ main_help() {
 main_start() {
   detect_osarch
   detect_git_tag
-  process_options $@
+  process_options "$@"
   if [ "$MODE" = "help" ] ; then
     main_help
   else
@@ -229,4 +233,4 @@ main_start() {
 }
 
 # note: only start executing commands now to guard against partial downloads
-main_start $@
+main_start "$@"
