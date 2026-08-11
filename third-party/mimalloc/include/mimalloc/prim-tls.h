@@ -62,7 +62,7 @@ static inline mi_theap_t*   _mi_page_associated_theap_peek(mi_page_t* page); // 
 // but unfortunately we can not detect support reliably (see issue #883)
 #if (defined(_WIN32)) || \
     (defined(__GNUC__) && ( \
-           (defined(__GLIBC__)   && (defined(__x86_64__) || defined(__i386__) || (defined(__arm__) && __ARM_ARCH >= 7) || defined(__aarch64__) || defined(__riscv))) \
+           (defined(__GLIBC__)   && (defined(__x86_64__) || defined(__i386__) || (defined(__arm__) && __ARM_ARCH >= 7) || defined(__aarch64__))) \
         || (defined(__APPLE__)   && (defined(__x86_64__) || defined(__aarch64__) || defined(__POWERPC__))) \
         || (defined(__BIONIC__)  && (defined(__x86_64__) || defined(__i386__) || (defined(__arm__) && __ARM_ARCH >= 7) || defined(__aarch64__))) \
         || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__) || defined(__aarch64__))) \
@@ -99,10 +99,6 @@ static inline void* mi_prim_tls_slot(size_t slot) mi_attr_noexcept {
     #else
     __asm__ volatile ("mrs %0, tpidr_el0" : "=r" (tcb));
     #endif
-    res = tcb[slot];
-  #elif defined(__riscv)
-    void** tcb; MI_UNUSED(ofs);
-    __asm__ volatile ("mv %0, tp" : "=r" (tcb));
     res = tcb[slot];
   #elif defined(__APPLE__) && defined(__POWERPC__) // ppc, issue #781
     MI_UNUSED(ofs);
@@ -144,10 +140,6 @@ static inline void mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexce
     __asm__ volatile ("mrs %0, tpidr_el0" : "=r" (tcb));
     #endif
     tcb[slot] = value;
-  #elif defined(__riscv)
-    void** tcb; MI_UNUSED(ofs);
-    __asm__ volatile ("mv %0, tp" : "=r" (tcb));
-    tcb[slot] = value;
   #elif defined(__APPLE__) && defined(__POWERPC__) // ppc, issue #781
     MI_UNUSED(ofs);
     pthread_setspecific(slot, value);
@@ -181,7 +173,7 @@ static inline void mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexce
     #if    (defined(__GNUC__) && (__GNUC__ >= 7)  && defined(__aarch64__)) /* aarch64 for older gcc versions (issue #851) */ \
         || (defined(__GNUC__) && (__GNUC__ >= 7)  && defined(__riscv)) \
         || (defined(__GNUC__) && (__GNUC__ >= 11) && defined(__x86_64__)) \
-        || (defined(__clang_major__) && (__clang_major__ >= 14) && (defined(__aarch64__) || defined(__x86_64__)))
+        || (defined(__clang_major__) && (__clang_major__ >= 14) && (defined(__aarch64__) || defined(__x86_64__) || defined(__riscv)))
       #define MI_USE_BUILTIN_THREAD_POINTER  1
     #endif
   #endif
