@@ -1941,7 +1941,7 @@ struct ARM64LE {
   static constexpr u32 plt_size = 16;
   static constexpr u32 pltgot_size = 16;
   static constexpr u32 thunk_hdr_size = 0;
-  static constexpr u32 thunk_size = 32;
+  static constexpr u32 thunk_size = 24;
   static constexpr u8 trap[] = { 0x00, 0x7d, 0x20, 0xd4 }; // brk
 
   static constexpr u32 R_COPY = R_AARCH64_COPY;
