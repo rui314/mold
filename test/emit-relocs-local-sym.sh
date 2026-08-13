@@ -7,17 +7,18 @@
 # referred to an arbitrary unrelated global symbol.
 # https://github.com/rui314/mold/issues/1631
 #
-# GAS usually redirects relocations against local symbols to section
-# symbols; we use .reloc to bypass that.
+# Assemblers usually redirect relocations against local symbols to section
+# symbols, so we assemble `str` as a global symbol and localize it with
+# objcopy afterwards.
 
-echo | $CC -c -o $t/n.o -xc -
-if readelf -h $t/n.o | grep -q ELF64; then
+echo | $CC -c -o $t/a.o -xc -
+if readelf -h $t/a.o | grep -q ELF64; then
   reloc=BFD_RELOC_64
 else
   reloc=BFD_RELOC_32
 fi
 
-cat <<EOF | $CC -c -o $t/a.o -xassembler -
+cat <<EOF | $CC -c -o $t/b.o -xassembler -
 .text
 .globl _start
 _start:
@@ -25,10 +26,12 @@ _start:
   .space 8
 
 .data
+.globl str
 str:
   .string "Hello"
 EOF
 
-$CC -B. -o $t/exe $t/a.o -nostdlib -no-pie -Wl,--emit-relocs
-readelf -rW $t/exe > $t/log
-grep -w str $t/log
+$OBJCOPY --localize-symbol=str $t/b.o
+
+$CC -B. -o $t/exe $t/b.o -nostdlib -no-pie -Wl,--emit-relocs
+readelf -rW $t/exe | grep -w str
