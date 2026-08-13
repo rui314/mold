@@ -2691,6 +2691,8 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       if (ctx.arg.relocatable)
         continue;
 
+      u64 func_addr;
+
       for (i64 j = 0; j < rels.size(); j++) {
         const ElfRel<E> &rel = rels[j];
         assert(rel.r_offset - fde.input_offset < contents.size());
@@ -2700,13 +2702,30 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         u64 val = sym.get_addr(ctx) + get_addend(cie.input_section, rel);
         apply_eh_reloc(ctx, rel, loc, val);
 
-        if (j == 0 && eh_hdr) {
-          // Write to .eh_frame_hdr
-          HdrEntry &ent = eh_hdr[file->fde_idx + i];
-          u64 origin = ctx.eh_frame_hdr->shdr.sh_addr;
-          ent.init_addr = val - origin;
-          ent.fde_addr = this->shdr.sh_addr + offset - origin;
-        }
+        if (j == 0)
+          func_addr = val;
+      }
+
+      if (!eh_hdr)
+        continue;
+
+      // Write to .eh_frame_hdr
+      HdrEntry &ent = eh_hdr[file->fde_idx + i];
+      u8 *ptr = base + offset + 8 + cie.fde_ptr_size;
+      u64 range = (cie.fde_ptr_size == 4) ? *(U32<E> *)ptr : *(U64<E> *)ptr;
+
+      if (range == 0) {
+        // Compilers may emit a meaningless FDE covering a zero-length
+        // address range. Such an FDE must not be written to .eh_frame_hdr
+        // because another function may start at the same address, and a
+        // binary search on .eh_frame_hdr could then find the empty FDE
+        // instead of the real one. We write a tombstone value instead.
+        ent.init_addr = INT32_MAX;
+        ent.fde_addr = 0;
+      } else {
+        u64 origin = ctx.eh_frame_hdr->shdr.sh_addr;
+        ent.init_addr = func_addr - origin;
+        ent.fde_addr = this->shdr.sh_addr + offset - origin;
       }
     }
   });

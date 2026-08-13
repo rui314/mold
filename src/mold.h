@@ -455,9 +455,15 @@ struct CieRecord {
   u32 output_offset = -1;
   u32 rel_idx = -1;
   u32 icf_idx = -1;
-  bool is_leader = false;
   std::span<ElfRel<E>> rels;
   std::string_view contents;
+
+  // The size of the initial_location and address_range fields of FDEs
+  // associated with this CIE. Initialized by parse_ehframe().
+  u8 fde_ptr_size = -1; // 4 or 8
+
+  // For deduplication
+  bool is_leader = false;
 };
 
 template <typename E>
