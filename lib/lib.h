@@ -702,7 +702,13 @@ public:
   }
 
 private:
+  void *allocate_global(u64 size, u64 alignment);
+
   u8 *data;
+
+  // Index into the per-thread array of allocation blocks. Slots are never
+  // reused, so a new arena cannot inherit stale pointers from an old one.
+  u32 arena_slot;
 
   // Leave the first slots unused so that a base-relative index is never zero.
   std::atomic<u64> offset = 8;
