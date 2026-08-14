@@ -109,7 +109,7 @@ void Thunk<E>::compute_size() {
 
 template <>
 void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
-  std::span<InputSection<E> *> m = members;
+  std::span<ArenaPtr<InputSection<E>>> m = members;
   if (m.empty())
     return;
 
@@ -166,7 +166,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
 
     // Find the end of the current batch. Section end addresses are sorted,
     // so use binary search. Starting from B + 1 guarantees progress.
-    std::span<InputSection<E> *> range = m.subspan(b + 1, d - b - 1);
+    std::span<ArenaPtr<InputSection<E>>> range = m.subspan(b + 1, d - b - 1);
     c = ranges::lower_bound(range, m[b]->offset + batch_size, {},
                             [](InputSection<E> *isec) {
                               return isec->offset + isec->sh_size;
@@ -281,7 +281,7 @@ void remove_redundant_thunks(Context<E> &ctx) {
 
   // Recompute section sizes
   tbb::parallel_for_each(sections, [&](OutputSection<E> *osec) {
-    std::span<InputSection<E> *> m = osec->members;
+    std::span<ArenaPtr<InputSection<E>>> m = osec->members;
     std::span<std::unique_ptr<Thunk<E>>> t = osec->thunks;
     i64 offset = 0;
 

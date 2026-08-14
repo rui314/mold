@@ -519,7 +519,7 @@ struct InputSectionExtras {};
 
 template <is_arm32 E>
 struct InputSectionExtras<E> {
-  InputSection<E> *exidx = nullptr;
+  ArenaPtr<InputSection<E>> exidx;
 };
 
 struct RelocDelta {
@@ -580,8 +580,8 @@ public:
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
-  ObjectFile<E> *file;
-  OutputSection<E> *output_section = nullptr;
+  ArenaPtr<ObjectFile<E>> file;
+  ArenaPtr<OutputSection<E>> output_section;
 
   // contents initially points into the input file and is replaced with an
   // uncompressed buffer when necessary. sh_size is the section size after
@@ -595,6 +595,12 @@ public:
   i32 shndx = -1;
   i32 relsec_idx = -1;
 
+  // `leader` is the section that this section has been merged with by ICF.
+  // It is null for ineligible sections, points to this for retained sections,
+  // and points to another section for removed sections.
+  ArenaPtr<InputSection<E>> leader;
+  u32 icf_idx = -1;
+
   // UINT16_MAX means that name() must scan the remaining suffix.
   u16 namelen = 0;
 
@@ -603,12 +609,6 @@ public:
   Atomic<bool> is_visited = false;    // for garbage collection
   Atomic<bool> address_taken = false; // for ICF
   bool uncompressed = false;
-
-  // `leader` is the section that this section has been merged with by ICF.
-  // It is null for ineligible sections, points to this for retained sections,
-  // and points to another section for removed sections.
-  InputSection<E> *leader = nullptr;
-  u32 icf_idx = -1;
   bool icf_eligible = false;
 
   [[no_unique_address]] InputSectionExtras<E> extra;
@@ -841,16 +841,19 @@ public:
   void scan_abs_relocations(Context<E> &ctx);
   void create_range_extension_thunks(Context<E> &ctx);
 
-  std::vector<InputSection<E> *> members;
+  std::span<ArenaPtr<InputSection<E>>> members;
+
+  // Scratch buffer used by create_output_sections() to build `members`.
+  // Grouping input sections by file allows appending them in parallel
+  // without synchronization while keeping their order deterministic.
+  std::vector<std::vector<InputSection<E> *>> members_vec;
+
   std::vector<std::unique_ptr<Thunk<E>>> thunks;
   std::unique_ptr<RelocSection<E>> reloc_sec;
   std::vector<AbsRel<E>> abs_rels;
   std::vector<i64> dynrel_offsets;
   std::vector<i64> relr_offsets;
   Atomic<u32> sh_flags;
-
-  // Used only by create_output_sections()
-  std::vector<std::vector<InputSection<E> *>> members_vec;
 };
 
 // .got is a linker-synthesized constant pool whose entry size is the same
@@ -1801,6 +1804,9 @@ private:
 template <typename E>
 class InputSectionTable {
 public:
+  InputSectionTable(ArenaResource &arena)
+    : pool(ArenaAllocator<InputSection<E>>(arena)) {}
+
   class Iterator {
   public:
     Iterator(InputSectionTable &table, i64 idx)
@@ -1838,7 +1844,7 @@ private:
   static constexpr u32 MERGEABLE = 1U << 31;
   static constexpr u32 INDEX_MASK = ~MERGEABLE;
 
-  std::deque<InputSection<E>> pool;
+  std::deque<InputSection<E>, ArenaAllocator<InputSection<E>>> pool;
   std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_pool;
   std::vector<u32> indices;
 };
@@ -1968,7 +1974,7 @@ struct ObjectFileExtras<E> {
 
 template <>
 struct ObjectFileExtras<PPC32> {
-  InputSection<PPC32> *got2 = nullptr;
+  ArenaPtr<InputSection<PPC32>> got2;
 };
 
 template <typename E>
@@ -1979,10 +1985,10 @@ ExactArray<ElfRel<E>> decode_crel(Context<E> &ctx, ObjectFile<E> &file,
 template <typename E>
 class ObjectFile : public InputFile<E> {
 public:
-  ObjectFile(Context<E> &ctx) : InputFile<E>(ctx) {}
+  ObjectFile(Context<E> &ctx) : InputFile<E>(ctx), sections(ctx.arena) {}
 
   ObjectFile(Context<E> &ctx, MappedFile *mf, std::string archive_name)
-    : InputFile<E>(ctx, mf), archive_name(archive_name) {}
+    : InputFile<E>(ctx, mf), archive_name(archive_name), sections(ctx.arena) {}
 
   void parse_symbols(Context<E> &ctx);
   void read_section_metadata(Context<E> &ctx);
@@ -2034,12 +2040,12 @@ public:
   i64 fde_size = 0;
 
   // For ICF
-  InputSection<E> *llvm_addrsig = nullptr;
+  ArenaPtr<InputSection<E>> llvm_addrsig;
 
   // For .gdb_index
-  InputSection<E> *debug_info = nullptr;
-  InputSection<E> *debug_pubnames = nullptr;
-  InputSection<E> *debug_pubtypes = nullptr;
+  ArenaPtr<InputSection<E>> debug_info;
+  ArenaPtr<InputSection<E>> debug_pubnames;
+  ArenaPtr<InputSection<E>> debug_pubtypes;
 
   // For LTO
   std::vector<ElfSym<E>> lto_elf_syms;
@@ -2794,7 +2800,7 @@ struct Context {
   tbb::concurrent_vector<std::unique_ptr<u8[]>> string_pool;
   tbb::concurrent_vector<std::unique_ptr<MappedFile>> mf_pool;
   tbb::concurrent_vector<std::unique_ptr<Chunk<E>>> chunk_pool;
-  tbb::concurrent_vector<std::unique_ptr<OutputSection<E>>> osec_pool;
+  std::vector<ArenaObjectPtr<OutputSection<E>>> osec_pool;
 
   // Fully-expanded command line args
   std::vector<std::string_view> cmdline_args;
@@ -3027,7 +3033,7 @@ public:
   // equivalent to its address. Otherwise, it is relative to `origin`.
   u64 value = 0;
 
-  ArenaPtr<InputFile<E>> file = nullptr;
+  ArenaPtr<InputFile<E>> file;
 
   // Index into the symbol table of the owner file.
   i32 sym_idx = -1;

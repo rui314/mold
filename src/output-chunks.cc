@@ -947,7 +947,7 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
   // we first split input sections into groups and assign offsets to
   // groups.
   struct Group {
-    std::span<InputSection<E> *> members;
+    std::span<ArenaPtr<InputSection<E>>> members;
     i64 size = 0;
     i64 offset = 0;
     i64 align = 1;
@@ -956,7 +956,7 @@ void OutputSection<E>::compute_section_size(Context<E> &ctx) {
   std::vector<Group> groups;
   constexpr i64 group_size = 10000;
 
-  for (std::span<InputSection<E> *> m = members; !m.empty();) {
+  for (std::span<ArenaPtr<InputSection<E>>> m = members; !m.empty();) {
     i64 sz = std::min<i64>(group_size, m.size());
     groups.push_back({m.subspan(0, sz)});
     m = m.subspan(sz);

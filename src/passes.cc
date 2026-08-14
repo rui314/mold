@@ -4,9 +4,9 @@
 #include <blake3.h>
 #include <fstream>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <regex>
-#include <shared_mutex>
 #include <tbb/enumerable_thread_specific.h>
 #include <tbb/parallel_for_each.h>
 #include <tbb/parallel_sort.h>
@@ -694,18 +694,19 @@ void create_output_sections(Context<E> &ctx) {
 
   using MapType = std::unordered_map<OutputSectionKey, OutputSection<E> *,
                                      OutputSectionKey::Hash>;
+
   MapType map;
-  std::shared_mutex mu;
+  std::mutex mu;
   bool ctors_in_init_array = has_ctors_and_init_array(ctx);
   tbb::enumerable_thread_specific<MapType> caches;
 
-  // Instantiate output sections
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+  // Instantiate output sections and assign input sections to them
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     // Make a per-thread cache of the main map to avoid lock contention.
     // It makes a noticeable difference if we have millions of input sections.
     MapType &cache = caches.local();
 
-    for (InputSection<E> *isec : file->sections) {
+    for (InputSection<E> *isec : ctx.objs[i]->sections) {
       if (!isec || !isec->is_alive)
         continue;
 
@@ -715,9 +716,12 @@ void create_output_sections(Context<E> &ctx) {
 
       if (ctx.arg.relocatable && (sh_flags & SHF_GROUP)) {
         OutputSection<E> *osec =
-          new OutputSection<E>(isec->name(), shdr.sh_type);
+          ctx.arena.template make<OutputSection<E>>(isec->name(), shdr.sh_type);
         osec->sh_flags = sh_flags;
+        osec->members_vec.push_back({isec});
         isec->output_section = osec;
+
+        std::scoped_lock lock(mu);
         ctx.osec_pool.emplace_back(osec);
         continue;
       }
@@ -729,22 +733,17 @@ void create_output_sections(Context<E> &ctx) {
         if (auto it = cache.find(key); it != cache.end())
           return it->second;
 
-        {
-          std::shared_lock lock(mu);
-          if (auto it = map.find(key); it != map.end()) {
-            cache.insert({key, it->second});
-            return it->second;
-          }
+        std::scoped_lock lock(mu);
+        auto [it, inserted] = map.insert({key, nullptr});
+
+        if (inserted) {
+          OutputSection<E> *osec =
+            ctx.arena.template make<OutputSection<E>>(key.name, key.type);
+          osec->members_vec.resize(ctx.objs.size());
+          ctx.osec_pool.emplace_back(osec);
+          it->second = osec;
         }
 
-        std::unique_ptr<OutputSection<E>> osec =
-          std::make_unique<OutputSection<E>>(key.name, key.type);
-
-        std::unique_lock lock(mu);
-        auto [it, inserted] = map.insert({key, osec.get()});
-
-        if (inserted)
-          ctx.osec_pool.emplace_back(std::move(osec));
         cache.insert({key, it->second});
         return it->second;
       };
@@ -754,42 +753,47 @@ void create_output_sections(Context<E> &ctx) {
       if ((osec->sh_flags & sh_flags) != sh_flags)
         osec->sh_flags |= sh_flags;
       isec->output_section = osec;
+      osec->members_vec[i].push_back(isec);
     }
   });
 
-  // Add input sections to output sections
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
-    osec->members_vec.resize(ctx.objs.size());
-
-  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
-    for (InputSection<E> *isec : ctx.objs[i]->sections)
-      if (isec && isec->output_section)
-        isec->output_section->members_vec[i].push_back(isec);
-  });
-
   // Compute section alignment
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool) {
+  tbb::parallel_for_each(ctx.osec_pool, [](ArenaObjectPtr<OutputSection<E>> &osec) {
     Atomic<u32> p2align;
-    tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
+    tbb::parallel_for((i64)0, (i64)osec->members_vec.size(), [&](i64 i) {
       u32 x = 0;
       for (InputSection<E> *isec : osec->members_vec[i])
         x = std::max<u32>(x, isec->p2align);
       update_maximum(p2align, x);
     });
     osec->shdr.sh_addralign = 1 << p2align;
-  }
+  });
 
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool) {
+  // Flatten members_vec into an arena-allocated members array
+  for (ArenaObjectPtr<OutputSection<E>> &osec : ctx.osec_pool) {
     osec->shdr.sh_flags = osec->sh_flags;
     osec->is_relro = is_relro(*osec);
-    osec->members = flatten(osec->members_vec);
+
+    i64 n = 0;
+    for (std::vector<InputSection<E> *> &vec : osec->members_vec)
+      n += vec.size();
+
+    ArenaPtr<InputSection<E>> *array =
+      ctx.arena.template allocate<ArenaPtr<InputSection<E>>>(n);
+
+    i64 idx = 0;
+    for (std::vector<InputSection<E> *> &vec : osec->members_vec)
+      for (InputSection<E> *isec : vec)
+        std::construct_at(array + idx++, isec);
+
+    osec->members = {array, (size_t)n};
     osec->members_vec.clear();
     osec->members_vec.shrink_to_fit();
   }
 
   // Add output sections and mergeable sections to ctx.chunks
   std::vector<Chunk<E> *> chunks;
-  for (std::unique_ptr<OutputSection<E>> &osec : ctx.osec_pool)
+  for (ArenaObjectPtr<OutputSection<E>> &osec : ctx.osec_pool)
     chunks.push_back(osec.get());
   for (ArenaObjectPtr<MergedSection<E>> &osec : ctx.merged_sections)
     chunks.push_back(osec.get());
@@ -1596,7 +1600,7 @@ void sort_debug_info_sections(Context<E> &ctx) {
   // Read each input file's .debug_info to record whether the file contains
   // DWARF32 or DWARF64
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->is_dwarf32 = is_dwarf32(ctx, file->debug_info);
+    file->is_dwarf32 = is_dwarf32(ctx, (InputSection<E> *)file->debug_info);
   });
 
   // Unless we have a mix of DWARF32 and DWARF64, it doesn't make sense to
@@ -1606,11 +1610,17 @@ void sort_debug_info_sections(Context<E> &ctx) {
     return;
 
   // Reorder input sections in the output section so that DWARF32
-  // precededs DWARF64
+  // precededs DWARF64.
   tbb::parallel_for_each(vec1, [&](OutputSection<E> *osec) {
-    ranges::stable_partition(osec->members, [](InputSection<E> *isec) {
+    // We can't partition osec->members in place because stable_partition
+    // may move elements to a heap-allocated temporary buffer, and an
+    // ArenaPtr cannot live more than 8 GiB away from its target.
+    std::vector<InputSection<E> *> vec(osec->members.begin(), osec->members.end());
+    ranges::stable_partition(vec, [](InputSection<E> *isec) {
       return isec->file->is_dwarf32;
     });
+    for (i64 i = 0; i < vec.size(); i++)
+      osec->members[i] = vec[i];
     osec->compute_section_size(ctx);
   });
 
@@ -1670,7 +1680,7 @@ void fixup_ctors_in_init_array(Context<E> &ctx) {
 }
 
 template <typename E>
-static void shuffle(std::vector<InputSection<E> *> &vec, u64 seed) {
+static void shuffle(std::span<ArenaPtr<InputSection<E>>> vec, u64 seed) {
   if (vec.empty())
     return;
 
@@ -1692,7 +1702,7 @@ static void shuffle(std::vector<InputSection<E> *> &vec, u64 seed) {
   //
   // We are not using std::uniform_int_distribution for the same reason.
   for (i64 i = 0; i < vec.size() - 1; i++)
-    std::swap(vec[i], vec[i + rand() % (vec.size() - i)]);
+    ranges::swap(vec[i], vec[i + rand() % (vec.size() - i)]);
 }
 
 template <typename E>

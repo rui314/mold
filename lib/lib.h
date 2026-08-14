@@ -795,6 +795,12 @@ public:
     return *(T *)*this;
   }
 
+  friend void swap(ArenaPtr &x, ArenaPtr &y) {
+    T *tmp = x;
+    x = (T *)y;
+    y = tmp;
+  }
+
 private:
   i32 offset = 0;
 };

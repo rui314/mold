@@ -665,7 +665,8 @@ static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
 template <typename E>
 static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
                           ObjectFile<E> &file) {
-  for (InputSection<E> *isec : { file.debug_pubnames, file.debug_pubtypes }) {
+  InputSection<E> *sections[] = {file.debug_pubnames, file.debug_pubtypes};
+  for (InputSection<E> *isec : sections) {
     if (!isec)
       continue;
 

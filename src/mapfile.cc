@@ -71,7 +71,7 @@ void print_map(Context<E> &ctx) {
     if (!osec)
       continue;
 
-    std::span<InputSection<E> *> members = osec->members;
+    std::span<ArenaPtr<InputSection<E>>> members = osec->members;
     std::vector<std::string> bufs(members.size());
 
     tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
