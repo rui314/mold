@@ -46,7 +46,7 @@ requires_thunk(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel,
                bool first_pass) {
   if (!is_func_call_rel(rel))
     return false;
-  Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+  Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
 
   if (first_pass) {
     // On the first pass, we pessimistically assume that all out-of-section
@@ -198,7 +198,7 @@ void OutputSection<E>::create_range_extension_thunks(Context<E> &ctx) {
       InputSection<E> &isec = *m[i];
       for (const ElfRel<E> &rel : isec.get_rels(ctx))
         if (requires_thunk(ctx, isec, rel, true))
-          if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+          if (Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
               !sym.flags.test_and_set())
             symbols.local().push_back(&sym);
     });
@@ -261,7 +261,7 @@ void remove_redundant_thunks(Context<E> &ctx) {
     tbb::parallel_for_each(osec->members, [&](InputSection<E> *isec) {
       for (const ElfRel<E> &rel : isec->get_rels(ctx))
         if (is_func_call_rel(rel))
-          if (Symbol<E> *sym = isec->file.symbols[rel.r_sym];
+          if (Symbol<E> *sym = isec->file->symbols[rel.r_sym];
               !sym->flags &&
               requires_thunk(ctx, *isec, rel, false))
             sym->flags.test_and_set();

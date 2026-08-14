@@ -132,7 +132,7 @@ static void set_rj(u8 *loc, u32 rj) {
 //   ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12, R_LARCH_RELAX
 static bool is_relaxable_got_load(Context<E> &ctx, InputSection<E> &isec, i64 i) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
-  Symbol<E> &sym = *isec.file.symbols[rels[i].r_sym];
+  Symbol<E> &sym = *isec.file->symbols[rels[i].r_sym];
   u8 *buf = isec.contents;
 
   if (ctx.arg.relax &&
@@ -294,7 +294,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         r_delta = deltas[k - 1].delta;
     }
 
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file->symbols[rel.r_sym];
     if (sym.get_type() == STT_TLS && sym.is_remaining_undef_weak())
       continue;
 
@@ -706,7 +706,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     if (rel.r_type == R_NONE)
       return;
 
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     if (!sym.file && &sym != discarded_comdat_sym<E>) {
@@ -804,7 +804,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     if (record_undef_error(ctx, rel))
       continue;
 
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file->symbols[rel.r_sym];
 
     if (sym.is_ifunc())
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
@@ -903,7 +903,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
-    Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+    Symbol<E> &sym = *isec.file->symbols[r.r_sym];
 
     auto remove = [&](i64 d) {
       r_delta += d;

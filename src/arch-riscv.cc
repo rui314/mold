@@ -259,7 +259,7 @@ static bool is_got_load_pair(Context<E> &ctx, InputSection<E> &isec,
          rels[i + 2].r_type == R_RISCV_PCREL_LO12_I &&
          rels[i + 3].r_type == R_RISCV_RELAX &&
          rels[i].r_offset == rels[i + 2].r_offset - 4 &&
-         rels[i].r_offset == isec.file.symbols[rels[i + 2].r_sym]->value &&
+         rels[i].r_offset == isec.file->symbols[rels[i + 2].r_sym]->value &&
          get_rd(buf + rels[i].r_offset) == get_rd(buf + rels[i + 2].r_offset);
 }
 
@@ -287,7 +287,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         r_delta = deltas[k - 1].delta;
     }
 
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file->symbols[rel.r_sym];
     if (sym.get_type() == STT_TLS && sym.is_remaining_undef_weak())
       continue;
 
@@ -411,7 +411,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_PCREL_LO12_I:
     case R_RISCV_PCREL_LO12_S: {
       const ElfRel<E> &rel2 = find_paired_reloc(ctx, *this, rels, sym, i);
-      Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
+      Symbol<E> &sym2 = *file->symbols[rel2.r_sym];
 
       auto write =
         (rel.r_type == R_RISCV_PCREL_LO12_I) ? write_itype : write_stype;
@@ -545,7 +545,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_RISCV_TLSDESC_ADD_LO12:
     case R_RISCV_TLSDESC_CALL: {
       const ElfRel<E> &rel2 = find_paired_reloc(ctx, *this, rels, sym, i);
-      Symbol<E> &sym2 = *file.symbols[rel2.r_sym];
+      Symbol<E> &sym2 = *file->symbols[rel2.r_sym];
 
       if (!sym2.has_tlsdesc(ctx))
         rewrite(i, R_NONE);
@@ -684,7 +684,7 @@ void InputSection<E>::apply_reloc_nonalloc(Context<E> &ctx, u8 *base) {
     if (rel.r_type == R_NONE || record_undef_error(ctx, rel))
       return;
 
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file->symbols[rel.r_sym];
     u8 *loc = base + rel.r_offset;
 
     SectionFragment<E> *frag;
@@ -780,7 +780,7 @@ void InputSection<E>::scan_relocations(Context<E> &ctx) {
     if (rel.r_type == R_NONE || record_undef_error(ctx, rel))
       continue;
 
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file->symbols[rel.r_sym];
 
     if (sym.is_ifunc())
       sym.flags |= NEEDS_GOT | NEEDS_PLT;
@@ -893,11 +893,11 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
 
   // True if we can use 2-byte instructions. This is usually true on
   // Unix because RV64GC is generally considered the baseline hardware.
-  bool use_rvc = isec.file.get_eflags() & EF_RISCV_RVC;
+  bool use_rvc = isec.file->get_eflags() & EF_RISCV_RVC;
 
   for (i64 i = 0; i < rels.size(); i++) {
     const ElfRel<E> &r = rels[i];
-    Symbol<E> &sym = *isec.file.symbols[r.r_sym];
+    Symbol<E> &sym = *isec.file->symbols[r.r_sym];
 
     auto remove = [&](i64 d) {
       r_delta += d;
@@ -1023,7 +1023,7 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
     case R_RISCV_TLSDESC_LOAD_LO12:
     case R_RISCV_TLSDESC_ADD_LO12: {
       const ElfRel<E> &rel2 = find_paired_reloc(ctx, isec, rels, sym, i);
-      Symbol<E> &sym2 = *isec.file.symbols[rel2.r_sym];
+      Symbol<E> &sym2 = *isec.file->symbols[rel2.r_sym];
 
       if (r.r_type == R_RISCV_TLSDESC_LOAD_LO12) {
         if (!sym2.has_tlsdesc(ctx))

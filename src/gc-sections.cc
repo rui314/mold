@@ -148,13 +148,13 @@ static void visit_section(Context<E> &ctx, InputSection<E> *isec,
   // describing how to handle exceptions for that function.
   // We want to keep associated .eh_frame records.
   for (FdeRecord<E> &fde : isec->get_fdes())
-    for (const ElfRel<E> &rel : fde.get_rels(isec->file).subspan(1))
-      if (Symbol<E> *sym = isec->file.symbols[rel.r_sym])
+    for (const ElfRel<E> &rel : fde.get_rels(*isec->file).subspan(1))
+      if (Symbol<E> *sym = isec->file->symbols[rel.r_sym])
         mark(sym->get_input_section());
 
   for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
     // Symbol can refer to either a section fragment or an input section.
-    Symbol<E> &sym = *isec->file.symbols[rel.r_sym];
+    Symbol<E> &sym = *isec->file->symbols[rel.r_sym];
 
     if (sym.file && sym.file->is_dso) {
       sym.file->is_reachable.test_and_set();

@@ -173,19 +173,19 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
   hash(isec.get_rels(ctx).size());
 
   for (FdeRecord<E> &fde : isec.get_fdes()) {
-    hash(isec.file.cies[fde.cie_idx].icf_idx);
+    hash(isec.file->cies[fde.cie_idx].icf_idx);
 
     // Bytes 0 to 4 contain the length of this record, and
     // bytes 4 to 8 contain an offset to CIE.
-    hash_string(fde.get_contents(isec.file).substr(8));
+    hash_string(fde.get_contents(*isec.file).substr(8));
 
-    hash(fde.get_rels(isec.file).size());
+    hash(fde.get_rels(*isec.file).size());
 
-    for (const ElfRel<E> &rel : fde.get_rels(isec.file).subspan(1)) {
-      hash_symbol(*isec.file.symbols[rel.r_sym]);
+    for (const ElfRel<E> &rel : fde.get_rels(*isec.file).subspan(1)) {
+      hash_symbol(*isec.file->symbols[rel.r_sym]);
       hash(rel.r_type);
       hash(rel.r_offset - fde.input_offset);
-      hash(get_addend(isec.file.cies[fde.cie_idx].input_section, rel));
+      hash(get_addend(isec.file->cies[fde.cie_idx].input_section, rel));
     }
   }
 
@@ -193,7 +193,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
     hash(rel.r_offset);
     hash(rel.r_type);
     hash(get_addend(isec, rel));
-    hash_symbol(*isec.file.symbols[rel.r_sym]);
+    hash_symbol(*isec.file->symbols[rel.r_sym]);
   }
 
   Digest digest;
@@ -399,14 +399,14 @@ static void gather_edges(Context<E> &ctx,
     assert(isec.icf_eligible);
 
     for (FdeRecord<E> &fde : isec.get_fdes())
-      for (const ElfRel<E> &rel : fde.get_rels(isec.file).subspan(1))
-        if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+      for (const ElfRel<E> &rel : fde.get_rels(*isec.file).subspan(1))
+        if (Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
             InputSection<E> *isec = sym.get_input_section())
           if (isec->icf_eligible)
             edge_indices[i + 1]++;
 
     for (const ElfRel<E> &rel : isec.get_rels(ctx))
-      if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+      if (Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
           InputSection<E> *isec = sym.get_input_section())
         if (isec->icf_eligible)
           edge_indices[i + 1]++;
@@ -422,14 +422,14 @@ static void gather_edges(Context<E> &ctx,
     i64 idx = edge_indices[i];
 
     for (FdeRecord<E> &fde : isec.get_fdes())
-      for (const ElfRel<E> &rel : fde.get_rels(isec.file).subspan(1))
-        if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+      for (const ElfRel<E> &rel : fde.get_rels(*isec.file).subspan(1))
+        if (Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
             InputSection<E> *isec = sym.get_input_section())
           if (isec->icf_eligible)
             edges[idx++] = isec->icf_idx;
 
     for (const ElfRel<E> &rel : isec.get_rels(ctx))
-      if (Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+      if (Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
           InputSection<E> *isec = sym.get_input_section())
         if (isec->icf_eligible)
           edges[idx++] = isec->icf_idx;

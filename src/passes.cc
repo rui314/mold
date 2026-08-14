@@ -1419,9 +1419,9 @@ static i64 get_ctor_dtor_priority(InputSection<E> *isec) {
   // crtbegin.o and crtend.o contain marker symbols such as
   // __CTOR_LIST__ or __DTOR_LIST__. So they have to be at the
   // beginning or end of the section.
-  if (std::regex_search(isec->file.filename, re1))
+  if (std::regex_search(isec->file->filename, re1))
     return -2;
-  if (std::regex_search(isec->file.filename, re2))
+  if (std::regex_search(isec->file->filename, re2))
     return 65536;
 
   std::string_view name = isec->name();
@@ -1609,7 +1609,7 @@ void sort_debug_info_sections(Context<E> &ctx) {
   // precededs DWARF64
   tbb::parallel_for_each(vec1, [&](OutputSection<E> *osec) {
     ranges::stable_partition(osec->members, [](InputSection<E> *isec) {
-      return isec->file.is_dwarf32;
+      return isec->file->is_dwarf32;
     });
     osec->compute_section_size(ctx);
   });
@@ -1617,7 +1617,7 @@ void sort_debug_info_sections(Context<E> &ctx) {
   // Reorder strings in .debug_str and the like
   tbb::parallel_for_each(vec2, [&](MergedSection<E> *osec) {
     tbb::parallel_for_each(osec->members, [&](MergeableSection<E> *m) {
-      if (m->input_section->file.is_dwarf32)
+      if (m->input_section->file->is_dwarf32)
         for (u32 idx : m->fragments)
           m->parent.map.entries[idx].value.is_32bit = true;
     });

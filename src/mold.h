@@ -580,7 +580,7 @@ public:
   std::pair<SectionFragment<E> *, i64>
   get_fragment(Context<E> &ctx, const ElfRel<E> &rel);
 
-  ObjectFile<E> &file;
+  ObjectFile<E> *file;
   OutputSection<E> *output_section = nullptr;
 
   // contents initially points into the input file and is replaced with an
@@ -3198,7 +3198,7 @@ std::ostream &operator<<(std::ostream &out, const Symbol<E> &sym);
 template <typename E>
 inline std::ostream &
 operator<<(std::ostream &out, const InputSection<E> &isec) {
-  out << isec.file << ":(" << isec.name() << ")";
+  out << *isec.file << ":(" << isec.name() << ")";
   return out;
 }
 
@@ -3216,7 +3216,7 @@ inline u64 InputSection<E>::get_addr() const {
 
 template <typename E>
 inline i64 InputSection<E>::get_priority() const {
-  return ((i64)file.priority << 32) | shndx;
+  return ((i64)file->priority << 32) | shndx;
 }
 
 template <typename E>
@@ -3240,9 +3240,9 @@ void write_addend(u8 *loc, i64 val, const ElfRel<E> &rel) {}
 
 template <typename E>
 inline ElfShdr<E> &InputSection<E>::shdr() const {
-  if (shndx < file.elf_sections.size())
-    return file.elf_sections[shndx];
-  return file.elf_sections2[shndx - file.elf_sections.size()];
+  if (shndx < file->elf_sections.size())
+    return file->elf_sections[shndx];
+  return file->elf_sections2[shndx - file->elf_sections.size()];
 }
 
 template <typename E>
@@ -3257,11 +3257,11 @@ inline std::string_view InputSection<E>::get_contents() const {
 
 template <typename E>
 inline std::string_view InputSection<E>::name() const {
-  if (shndx >= file.elf_sections.size())
+  if (shndx >= file->elf_sections.size())
     return (shdr().sh_flags & SHF_TLS) ? ".tls_common" : ".common";
 
   const char *data =
-    file.shstrtab.data() + file.elf_sections[shndx].sh_name;
+    file->shstrtab.data() + file->elf_sections[shndx].sh_name;
   if (namelen == UINT16_MAX)
     return {data, UINT16_MAX + strlen(data + UINT16_MAX)};
   return {data, namelen};
@@ -3330,7 +3330,7 @@ private:
 
 template <typename E>
 inline void InputSection<E>::for_each_reloc(Context<E> &ctx, auto fn) const {
-  ObjectFile<E> &file = this->file;
+  ObjectFile<E> &file = *this->file;
 
   if (relsec_idx != -1) {
     ElfShdr<E> &shdr = file.elf_sections[relsec_idx];
@@ -3351,21 +3351,21 @@ inline std::span<ElfRel<E>> InputSection<E>::get_rels(Context<E> &ctx) const {
   if (relsec_idx == -1)
     return {};
 
-  ElfShdr<E> &shdr = file.elf_sections[relsec_idx];
+  ElfShdr<E> &shdr = file->elf_sections[relsec_idx];
   if (shdr.sh_type == SHT_CREL) {
-    ExactArray<ElfRel<E>> &rels = file.decoded_crel[relsec_idx];
+    ExactArray<ElfRel<E>> &rels = file->decoded_crel[relsec_idx];
     if (!rels.data())
-      rels = decode_crel(ctx, file, shdr);
+      rels = decode_crel(ctx, *file, shdr);
     return std::span<ElfRel<E>>(rels.data(), rels.size());
   }
-  return file.template get_data<ElfRel<E>>(ctx, shdr);
+  return file->template get_data<ElfRel<E>>(ctx, shdr);
 }
 
 template <typename E>
 inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
   if (fde_begin == -1)
     return {};
-  std::span<FdeRecord<E>> span(file.fdes);
+  std::span<FdeRecord<E>> span(file->fdes);
   return span.subspan(fde_begin, fde_end - fde_begin);
 }
 
@@ -3374,12 +3374,12 @@ std::pair<SectionFragment<E> *, i64>
 InputSection<E>::get_fragment(Context<E> &ctx, const ElfRel<E> &rel) {
   assert(!(shdr().sh_flags & SHF_ALLOC));
 
-  const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
+  const ElfSym<E> &esym = file->elf_syms[rel.r_sym];
   if (esym.is_abs() || esym.is_common() || esym.is_undef())
     return {nullptr, 0};
 
-  i64 shndx = file.get_shndx(esym);
-  MergeableSection<E> *m = file.sections.get_mergeable(shndx);
+  i64 shndx = file->get_shndx(esym);
+  MergeableSection<E> *m = file->sections.get_mergeable(shndx);
   if (!m)
     return {nullptr, 0};
 
@@ -3439,7 +3439,7 @@ inline void
 InputSection<E>::check_range(Context<E> &ctx, i64 i, i64 val, i64 lo, i64 hi) {
   if (val < lo || hi <= val) {
     const ElfRel<E> &rel = get_rels(ctx)[i];
-    Symbol<E> &sym = *file.symbols[rel.r_sym];
+    Symbol<E> &sym = *file->symbols[rel.r_sym];
     Error(ctx) << *this << ": relocation " << rel << " against "
                << sym << " out of range: " << val << " is not in ["
                << lo << ", " << hi << ")";

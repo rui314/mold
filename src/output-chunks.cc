@@ -1360,7 +1360,7 @@ void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
     InputSection<E> *isec = members[i];
     for (const ElfRel<E> &r : isec->get_rels(ctx))
       if (is_absrel(r))
-        shards[i].push_back(AbsRel<E>{isec, r.r_offset, isec->file.symbols[r.r_sym],
+        shards[i].push_back(AbsRel<E>{isec, r.r_offset, isec->file->symbols[r.r_sym],
                                       get_addend(*isec, r)});
   });
 
@@ -3439,7 +3439,7 @@ void RelocSection<E>::update_shdr(Context<E> &ctx) {
 template <typename E>
 static std::pair<i64, i64>
 get_symidx_addend(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel) {
-  Symbol<E> &sym = *isec.file.symbols[rel.r_sym];
+  Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
 
   if (!(isec.shdr().sh_flags & SHF_ALLOC)) {
     SectionFragment<E> *frag;

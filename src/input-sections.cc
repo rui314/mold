@@ -33,7 +33,7 @@ bool cie_equals(const CieRecord<E> &a, const CieRecord<E> &b) {
 template <typename E>
 InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx,
                               std::string_view section_name)
-  : file(file), shndx(shndx) {
+  : file(&file), shndx(shndx) {
   if (shndx < file.elf_sections.size()) {
     std::string_view name = section_name;
     if (name.empty())
@@ -291,8 +291,8 @@ void InputSection<E>::write_to(Context<E> &ctx, u8 *buf) {
 template <typename E>
 std::string_view
 InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) const {
-  for (Symbol<E> *sym : file.symbols)
-    if (sym->file == &file)
+  for (Symbol<E> *sym : file->symbols)
+    if (sym->file == file)
       if (const ElfSym<E> &esym = sym->esym();
           esym.st_shndx == shndx && esym.st_type == STT_FUNC &&
           esym.st_value <= offset && offset < esym.st_value + esym.st_size)
@@ -306,11 +306,11 @@ template <typename E>
 bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) {
   // If a relocation refers to a linker-synthesized symbol for a
   // section fragment, it's always been resolved.
-  if (file.elf_syms.size() <= rel.r_sym)
+  if (file->elf_syms.size() <= rel.r_sym)
     return false;
 
-  Symbol<E> &sym = *file.symbols[rel.r_sym];
-  const ElfSym<E> &esym = file.elf_syms[rel.r_sym];
+  Symbol<E> &sym = *file->symbols[rel.r_sym];
+  const ElfSym<E> &esym = file->elf_syms[rel.r_sym];
 
   // A global symbol in a discarded COMDAT group should resolve to the
   // corresponding symbol in the prevailing group. If it does not, the
@@ -323,12 +323,12 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
 
   auto record = [&] {
     std::stringstream ss;
-    if (std::string_view source = file.get_source_name(); !source.empty())
+    if (std::string_view source = file->get_source_name(); !source.empty())
       ss << ">>> referenced by " << source << "\n";
     else
       ss << ">>> referenced by " << *this << "\n";
 
-    ss << ">>>               " << file;
+    ss << ">>>               " << *file;
     if (std::string_view func = get_func_name(ctx, rel.r_offset); !func.empty())
       ss << ":(" << func << ")";
     ss << '\n';
