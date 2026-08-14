@@ -1618,8 +1618,8 @@ void sort_debug_info_sections(Context<E> &ctx) {
   tbb::parallel_for_each(vec2, [&](MergedSection<E> *osec) {
     tbb::parallel_for_each(osec->members, [&](MergeableSection<E> *m) {
       if (m->input_section->file.is_dwarf32)
-        for (SectionFragment<E> *frag : m->fragments)
-          frag->is_32bit = true;
+        for (u32 idx : m->fragments)
+          m->parent.map.entries[idx].value.is_32bit = true;
     });
   });
 

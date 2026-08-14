@@ -451,7 +451,10 @@ void MergeableSection<E>::resolve_contents(Context<E> &ctx) {
   for (i64 i = 0; i < frag_offsets.size(); i++) {
     if (i + lookahead < frag_offsets.size())
       parent.map.prefetch(hashes[i + lookahead]);
-    fragments.push_back(parent.insert(ctx, get_contents(i), hashes[i], p2align));
+
+    SectionFragment<E> *frag =
+      parent.insert(ctx, get_contents(i), hashes[i], p2align);
+    fragments.push_back(parent.map.get_idx(frag));
   }
 
   // Reclaim memory as we'll never use this vector again

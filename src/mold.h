@@ -1788,7 +1788,7 @@ public:
   MergedSection<E> &parent;
   u8 p2align = 0;
   InputSection<E> *input_section = nullptr;
-  std::vector<SectionFragment<E> *> fragments;
+  std::vector<u32> fragments; // indices into parent.map.entries
 
 private:
   std::vector<u32> frag_offsets;
@@ -3451,7 +3451,7 @@ std::pair<SectionFragment<E> *, i64>
 MergeableSection<E>::get_fragment(i64 offset) {
   auto it = ranges::upper_bound(frag_offsets, offset);
   i64 idx = it - 1 - frag_offsets.begin();
-  return {fragments[idx], offset - frag_offsets[idx]};
+  return {&parent.map.entries[fragments[idx]].value, offset - frag_offsets[idx]};
 }
 
 template <typename E>
