@@ -1893,6 +1893,9 @@ void scan_relocations(Context<E> &ctx) {
     file->scan_relocations(ctx);
   });
 
+  // Exit if there was a relocation that refers an undefined symbol.
+  ctx.checkpoint();
+
   // Word-size absolute relocations (e.g. R_X86_64_64) are handled
   // separately because they can be promoted to dynamic relocations.
   tbb::parallel_for_each(ctx.chunks, [&](Chunk<E> *chunk) {
@@ -1901,7 +1904,7 @@ void scan_relocations(Context<E> &ctx) {
         osec->scan_abs_relocations(ctx);
   });
 
-  // Exit if there was a relocation that refers an undefined symbol.
+  // Exit if the absolute-relocation pass reported an error.
   ctx.checkpoint();
 
   // Aggregate dynamic symbols to a single vector.
