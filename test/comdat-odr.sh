@@ -16,4 +16,4 @@ Foo b;
 EOF
 
 { ./mold -shared -o $t/c.so $t/a.o $t/b.o 2>&1; [ $? = 1 ]; } |
-  grep -F 'Foo::~Foo() refers to a discarded COMDAT section'
+  grep -F ">>> prevailing definition is in $t/a.o"

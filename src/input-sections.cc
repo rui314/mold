@@ -300,6 +300,30 @@ InputSection<E>::get_func_name(Context<E> &ctx, i64 offset) const {
   return "";
 }
 
+// Find the prevailing group having the same signature as the discarded group
+// that contains esym. This is called only on an error path, so a linear scan is
+// sufficient.
+template <typename E>
+static ObjectFile<E> *
+find_comdat_owner(Context<E> &ctx, ObjectFile<E> &file, const ElfSym<E> &esym) {
+  if (esym.is_undef() || esym.is_abs() || esym.is_common())
+    return nullptr;
+
+  i64 shndx = file.get_shndx(esym);
+  for (ComdatGroupRef<E> &ref : file.comdat_groups) {
+    if (ref.is_owner ||
+        !ranges::any_of(ref.members(file), [&](u32 x) { return x == shndx; }))
+      continue;
+
+    Symbol<E> *sig = ref.signature(ctx);
+    for (ObjectFile<E> *file : ctx.objs)
+      for (ComdatGroupRef<E> &ref : file->comdat_groups)
+        if (ref.is_owner && ref.signature(ctx) == sig)
+          return file;
+  }
+  return nullptr;
+}
+
 // Test if the symbol a given relocation refers to has already been resolved.
 // If not, record that error and returns true.
 template <typename E>
@@ -316,8 +340,12 @@ bool InputSection<E>::record_undef_error(Context<E> &ctx, const ElfRel<E> &rel) 
   // corresponding symbol in the prevailing group. If it does not, the
   // object files violate the One Definition Rule.
   if (!sym.file && &sym != discarded_comdat_sym<E>) {
-    Error(ctx) << *this << ": " << sym << " refers to a discarded COMDAT section"
-               << " probably due to an ODR violation";
+    std::stringstream ss;
+    ss << *this << ": " << sym << " refers to a discarded COMDAT section"
+       << " probably due to an ODR violation";
+    if (ObjectFile<E> *owner = find_comdat_owner(ctx, *file, esym))
+      ss << '\n' << ">>> prevailing definition is in " << *owner;
+    Error(ctx) << ss.str();
     return true;
   }
 
