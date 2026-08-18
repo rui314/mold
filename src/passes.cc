@@ -99,7 +99,7 @@ void apply_exclude_libs(Context<E> &ctx) {
 template <typename E>
 static bool has_debug_info_section(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
-    if (file->debug_info)
+    if (!file->debug_info_sections.empty())
       return true;
   return false;
 }
@@ -1518,9 +1518,6 @@ void sort_ctor_dtor(Context<E> &ctx) {
 // `isec` must be a .debug_info section.
 template <typename E>
 static bool is_dwarf32(Context<E> &ctx, InputSection<E> *isec) {
-  if (!isec)
-    return true;
-
   if (isec->sh_size < 12) {
     // The section is too short. This is a user error, but instead of
     // being nitpicky about it, we simply handle it on a garbage-in,
@@ -1615,16 +1612,22 @@ void sort_debug_info_sections(Context<E> &ctx) {
   if (vec1.empty() && vec2.empty())
     return;
 
-  // Read each input file's .debug_info to record whether the file contains
-  // DWARF32 or DWARF64
+  // Record whether each input file contains DWARF32 debug info.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    file->is_dwarf32 = is_dwarf32(ctx, (InputSection<E> *)file->debug_info);
+    file->is_dwarf32 =
+      ranges::any_of(file->debug_info_sections, [&](InputSection<E> *isec) {
+        return is_dwarf32(ctx, isec);
+      });
   });
 
-  // Unless we have a mix of DWARF32 and DWARF64, it doesn't make sense to
-  // sort sections.
-  if (ranges::all_of(ctx.objs, &ObjectFile<E>::is_dwarf32) ||
-      ranges::none_of(ctx.objs, &ObjectFile<E>::is_dwarf32))
+  // Unless DWARF32 and DWARF64 debug info come from different files, it
+  // doesn't make sense to sort sections.
+  bool has_dwarf32 = ranges::any_of(ctx.objs, &ObjectFile<E>::is_dwarf32);
+  bool has_dwarf64 = ranges::any_of(ctx.objs, [](ObjectFile<E> *file) {
+    return !file->is_dwarf32 && !file->debug_info_sections.empty();
+  });
+
+  if (!has_dwarf32 || !has_dwarf64)
     return;
 
   // Reorder input sections in the output section so that DWARF32

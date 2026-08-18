@@ -468,7 +468,7 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
           sframe_sections.push_back(isec);
 
       if (name == ".debug_info" && !(shdr.sh_flags & SHF_ALLOC))
-        debug_info = isec;
+        debug_info_sections.push_back(isec);
 
       if constexpr (is_ppc32<E>)
         if (name == ".got2")

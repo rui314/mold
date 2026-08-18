@@ -5,10 +5,12 @@
 // 2) a map from function address ranges to compunits. gdb uses these
 // maps to quickly find a compunit given a name or an instruction pointer.
 //
-// (Terminology: a compilation unit, often abbreviated as compunit or
-// CU, is a unit of debug info. An input .debug_info section usually
-// contains one compunit, and thus an output .debug_info contains as
-// many compunits as the number of input files.)
+// (Terminology: a DWARF "unit" is a self-contained sequence of debug
+// entries. A compilation unit (CU) describes a source file and owns
+// address ranges. A type unit (TU) describes one shareable type and is
+// identified by a signature. DWARF 4 puts TUs in .debug_types; DWARF 5
+// puts DW_UT_type units in .debug_info. This file reads CUs from DWARF 2
+// to 5 and TUs from DWARF 5.)
 //
 // .gdb_index is not mandatory. All the information in .gdb_index is
 // also in other debug info sections. You can actually create an
@@ -62,8 +64,14 @@
 
 namespace mold {
 
+// DWARF32 and DWARF64 describe the width of DWARF section offsets, not
+// the ELF class or target address size. Versions 2 to 4 use the same CU
+// header layout; version 5 adds unit_type and moves address_size before
+// abbrev_offset. A DWARF64 unit starts with 0xffffffff followed by an
+// eight-byte unit length.
 enum DwarfKind { DWARF2_32, DWARF5_32, DWARF2_64, DWARF5_64 };
 
+// On-disk header for a DWARF 2 to 4 CU using 32-bit section offsets.
 template <typename E>
 struct CuHdrDwarf2_32 {
   U32<E> size;
@@ -72,6 +80,7 @@ struct CuHdrDwarf2_32 {
   u8 address_size;
 };
 
+// On-disk header for a DWARF 5 CU using 32-bit section offsets.
 template <typename E>
 struct CuHdrDwarf5_32 {
   U32<E> size;
@@ -81,6 +90,19 @@ struct CuHdrDwarf5_32 {
   U32<E> abbrev_offset;
 };
 
+// A 32-bit DWARF 5 TU header extends the CU header with a signature and the
+// unit-relative offset of the DIE that defines the type.
+template <typename E> struct TuHdrDwarf5_32 {
+  U32<E> size;
+  U16<E> version;
+  u8 unit_type;
+  u8 address_size;
+  U32<E> abbrev_offset;
+  U64<E> type_signature;
+  U32<E> type_offset;
+};
+
+// DWARF64 counterpart of CuHdrDwarf2_32. `magic` is the 0xffffffff marker.
 template <typename E>
 struct CuHdrDwarf2_64 {
   U32<E> magic;
@@ -90,6 +112,7 @@ struct CuHdrDwarf2_64 {
   u8 address_size;
 };
 
+// On-disk header for a DWARF 5 CU using 64-bit section offsets.
 template <typename E>
 struct CuHdrDwarf5_64 {
   U32<E> magic;
@@ -100,6 +123,19 @@ struct CuHdrDwarf5_64 {
   U64<E> abbrev_offset;
 };
 
+// DWARF64 counterpart of TuHdrDwarf5_32.
+template <typename E> struct TuHdrDwarf5_64 {
+  U32<E> magic;
+  U64<E> size;
+  U16<E> version;
+  u8 unit_type;
+  u8 address_size;
+  U64<E> abbrev_offset;
+  U64<E> type_signature;
+  U64<E> type_offset;
+};
+
+// Header of one GNU pubnames or pubtypes set in DWARF32 format.
 template <typename E>
 struct PubnamesHdr32 {
   U32<E> size;
@@ -108,6 +144,7 @@ struct PubnamesHdr32 {
   U32<E> debug_info_size;
 };
 
+// Header of one GNU pubnames or pubtypes set in DWARF64 format.
 template <typename E>
 struct PubnamesHdr64 {
   U32<E> magic;
@@ -117,6 +154,7 @@ struct PubnamesHdr64 {
   U64<E> debug_info_size;
 };
 
+// The six-word .gdb_index header. All five table offsets are section-relative.
 struct SectionHeader {
   ul32 version = 7;
   ul32 cu_list_offset = 0;
@@ -126,13 +164,15 @@ struct SectionHeader {
   ul32 const_pool_offset = 0;
 };
 
+// Build-time state for one unique name in the .gdb_index symbol table.
 struct MapValue {
   u32 gdb_hash = 0;
   Atomic<u32> count;
   u32 name_offset = 0;
-  u32 type_offset = 0;
+  u32 type_vector_offset = 0;
 };
 
+// A public name and its GNU kind before the name is interned in GdbNameMap.
 struct NameType {
   NameType(u64 hash, u8 type, const char *name)
     : hash_and_type((hash << 8) | type), name(name) {}
@@ -155,9 +195,10 @@ struct NameType {
   const char *name;
 };
 
+// The interned name's map entry and reserved slot in its type vector.
 struct IndexedName {
   MapValue *entry;
-  u32 type_idx;
+  u32 type_vector_idx;
   u8 type;
 };
 
@@ -172,24 +213,45 @@ union NameRecord {
   IndexedName indexed;
 };
 
+// CU metadata carried from input parsing through final index serialization.
+// CUs own address ranges; both CUs and TUs below may own public names.
 struct Compunit {
   DwarfKind kind;
+  // Initially relative to the input contribution selected by file_idx/shndx;
+  // rebased to the output .debug_info section in build_gdb_index_tables.
   i64 offset;
   i64 size;
   i32 file_idx;
+  i32 shndx;
   std::vector<std::pair<u64, u64>> ranges;
+  std::vector<NameRecord> names;
+};
+
+// TU metadata used for the .gdb_index type-unit list. TUs have no address
+// ranges because executable code is attributed to compilation units.
+struct Typeunit {
+  // `offset` is rebased like Compunit::offset. `type_die_offset` remains
+  // relative to the unit, as required by the .gdb_index type-unit table.
+  i64 offset;
+  u64 type_die_offset;
+  u64 signature;
+  i32 file_idx;
+  i32 shndx;
   std::vector<NameRecord> names;
 };
 
 using GdbNameMap = ConcurrentMap<MapValue>;
 
+// Byte counts accumulated by the parallel constant-pool layout scan.
 struct PoolSize {
   i64 type_bytes = 0;
   i64 name_bytes = 0;
 };
 
+// State shared by the input reader, table builder and final serialization pass.
 struct GdbIndexData {
   std::vector<Compunit> cus;
+  std::vector<Typeunit> tus;
   std::unique_ptr<GdbNameMap> map;
   std::vector<GdbNameMap::Entry *> entries;
   std::unique_ptr<u8[]> tables;
@@ -226,7 +288,7 @@ static void radix_sort(std::span<ul32> values, std::vector<ul32> &scratch) {
 
 // GCC can emit the same public name once for each COMDAT group. Remove these
 // duplicates with a local hash table instead of sorting the strings.
-static void dedup_names(Compunit &cu) {
+static void dedup_names(auto &cu) {
   if (cu.names.size() < 2)
     return;
 
@@ -275,21 +337,61 @@ static u32 initialize_gdb_name(MapValue &value, const char *name) {
   return size;
 }
 
+// Version-independent view of the header fields needed while walking
+// .debug_info. Type-specific fields are zero for compilation units.
+struct ParsedDwarfUnit {
+  DwarfKind kind;
+  i64 size;
+  u8 unit_type;
+  u64 type_die_offset = 0;
+  u64 signature = 0;
+};
+
 template <typename E>
-static DwarfKind get_dwarf_kind(Context<E> &ctx, u8 *p) {
-  if (*(U32<E> *)p == 0xffff'ffff) {
-    CuHdrDwarf2_64<E> &hdr = *(CuHdrDwarf2_64<E> *)p;
-    if (hdr.version > 5)
-      Fatal(ctx) << "--gdb-index: DWARF version " << hdr.version
-                 << " is not supported";
-    return (hdr.version == 5) ? DWARF5_64 : DWARF2_64;
+static ParsedDwarfUnit parse_unit_header(Context<E> &ctx, u8 *p) {
+  // The first word is either a DWARF32 unit length or DWARF64's reserved
+  // marker. unit_length excludes its own encoding: four bytes in DWARF32, or
+  // the four-byte marker plus eight-byte length in DWARF64.
+  bool is_dwarf64 = *(U32<E> *)p == 0xffff'ffff;
+  u16 version = is_dwarf64 ? ((CuHdrDwarf2_64<E> *)p)->version
+                           : ((CuHdrDwarf2_32<E> *)p)->version;
+
+  if (version > 5)
+    Fatal(ctx) << "--gdb-index: DWARF version " << version
+               << " is not supported";
+
+  // Versions 2 to 4 have no unit_type and .debug_info contains only CUs.
+  if (version < 5) {
+    if (is_dwarf64) {
+      CuHdrDwarf2_64<E> &hdr = *(CuHdrDwarf2_64<E> *)p;
+      return {DWARF2_64, (i64)hdr.size + 12, DW_UT_compile};
+    }
+
+    CuHdrDwarf2_32<E> &hdr = *(CuHdrDwarf2_32<E> *)p;
+    return {DWARF2_32, (i64)hdr.size + 4, DW_UT_compile};
   }
 
-  CuHdrDwarf2_32<E> &hdr = *(CuHdrDwarf2_32<E> *)p;
-  if (hdr.version > 5)
-    Fatal(ctx) << "--gdb-index: DWARF version " << hdr.version
-               << " is not supported";
-  return (hdr.version == 5) ? DWARF5_32 : DWARF2_32;
+  if (is_dwarf64) {
+    CuHdrDwarf5_64<E> &hdr = *(CuHdrDwarf5_64<E> *)p;
+    ParsedDwarfUnit unit{DWARF5_64, (i64)hdr.size + 12, hdr.unit_type};
+
+    if (hdr.unit_type == DW_UT_type || hdr.unit_type == DW_UT_split_type) {
+      TuHdrDwarf5_64<E> &tu = *(TuHdrDwarf5_64<E> *)p;
+      unit.type_die_offset = tu.type_offset;
+      unit.signature = tu.type_signature;
+    }
+    return unit;
+  }
+
+  CuHdrDwarf5_32<E> &hdr = *(CuHdrDwarf5_32<E> *)p;
+  ParsedDwarfUnit unit{DWARF5_32, (i64)hdr.size + 4, hdr.unit_type};
+
+  if (hdr.unit_type == DW_UT_type || hdr.unit_type == DW_UT_split_type) {
+    TuHdrDwarf5_32<E> &tu = *(TuHdrDwarf5_32<E> *)p;
+    unit.type_die_offset = tu.type_offset;
+    unit.signature = tu.type_signature;
+  }
+  return unit;
 }
 
 template <typename E, typename CuHdr>
@@ -298,6 +400,9 @@ u8 *find_cu_abbrev(Context<E> &ctx, u8 **p, const CuHdr &hdr) {
     Fatal(ctx) << "--gdb-index: unsupported address size " << hdr.address_size;
 
   if constexpr (requires { hdr.unit_type; }) {
+    // DWARF 5 skeleton and split-compile headers have an eight-byte dwo_id
+    // between the common header and the first DIE. Type-unit header tails are
+    // parsed separately because type units do not contribute ranges.
     switch (hdr.unit_type) {
     case DW_UT_compile:
     case DW_UT_partial:
@@ -307,16 +412,15 @@ u8 *find_cu_abbrev(Context<E> &ctx, u8 **p, const CuHdr &hdr) {
       *p += 8;
       break;
     default:
-      Fatal(ctx) << "--gdb-index: unknown unit type: 0x"
-                 << std::hex << hdr.unit_type;
+      Fatal(ctx) << "--gdb-index: unknown unit type: 0x" << std::hex
+                 << (u32)hdr.unit_type;
     }
   }
 
   i64 abbrev_code = read_uleb(p);
 
-  // Find a .debug_abbrev record corresponding to the .debug_info record.
-  // We assume the .debug_info record at a given offset is of
-  // DW_TAG_compile_unit which describes a compunit.
+  // The first DIE refers to an abbreviation by its ULEB128 code. Walk the
+  // unit's abbreviation table to find the attribute forms for that DIE.
   u8 *abbrev = &ctx.debug_abbrev[0] + hdr.abbrev_offset;
 
   for (;;) {
@@ -352,8 +456,9 @@ u8 *find_cu_abbrev(Context<E> &ctx, u8 **p, const CuHdr &hdr) {
   return abbrev;
 }
 
-// .debug_info contains variable-length fields.
-// This function reads one scalar value from a given location.
+// .debug_info contains variable-length fields. `Offset` is four or eight bytes
+// according to the DWARF32/DWARF64 format; Word<E> is instead the target's
+// address width. This function advances over one scalar attribute value.
 template <typename E, typename Offset>
 u64 read_scalar(Context<E> &ctx, u8 **p, u64 form) {
   switch (form) {
@@ -553,7 +658,9 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
     }
   }
 
-  // Handle non-contiguous address ranges.
+  // Before DWARF 5, DW_AT_ranges is a byte offset into .debug_ranges. In
+  // DWARF 5 it is either a direct .debug_rnglists offset (sec_offset) or an
+  // index into the offset table rooted at DW_AT_rnglists_base (rnglistx).
   if (ranges.form) {
     if (hdr.version <= 4) {
       Word<E> *p = (Word<E> *)(&ctx.debug_ranges[0] + ranges.value);
@@ -578,7 +685,9 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
     return vec;
   }
 
-  // Handle a contiguous address range.
+  // For one contiguous range, high_pc is either an address or an unsigned
+  // length, as indicated by its form. DWARF 5 may store either endpoint as an
+  // index into the address table rooted at DW_AT_addr_base.
   if (low_pc.form && high_pc.form) {
     u64 lo;
 
@@ -620,51 +729,82 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
   return {};
 }
 
+// Returns the .debug_info contribution a pubnames set refers to. The set
+// header's debug_info_offset field is relocated against the particular
+// contribution containing the unit. This matters for DWARF 5 because type
+// units live in separate COMDAT contributions with the same section name.
+template <typename E, typename PubnamesHdr>
+static std::pair<InputSection<E> *, i64>
+get_pubnames_target(Context<E> &ctx, InputSection<E> &isec,
+                    const PubnamesHdr &hdr, ObjectFile<E> &file) {
+  i64 off = (u8 *)&hdr + offsetof(PubnamesHdr, debug_info_offset) - isec.contents;
+  std::span<ElfRel<E>> rels = isec.get_rels(ctx);
+
+  auto it = ranges::lower_bound(rels, off, std::less(), &ElfRel<E>::r_offset);
+  if (it == rels.end() || it->r_offset != off)
+    return {nullptr, 0};
+
+  const ElfSym<E> &esym = file.elf_syms[it->r_sym];
+  return {file.get_section(esym), esym.st_value + get_addend(isec, *it)};
+}
+
+// Units are appended in input section and contribution offset order, so both
+// the CU and TU vectors are sorted by this key.
+static std::vector<NameRecord> *find_unit_names(auto &units, i32 shndx,
+                                                i64 offset) {
+  auto key = std::pair(shndx, offset);
+  auto it = ranges::lower_bound(units, key, {}, [](const auto &unit) {
+    return std::pair(unit.shndx, unit.offset);
+  });
+
+  if (it == units.end() || std::pair(it->shndx, it->offset) != key)
+    return nullptr;
+  return &it->names;
+}
+
 template <typename E, typename PubnamesHdr>
 static i64 read_pubnames_cu(Context<E> &ctx, const PubnamesHdr &hdr,
-                            std::vector<Compunit> &cus, ObjectFile<E> &file) {
-  using Offset = decltype(hdr.size);
+                            std::vector<Compunit> &cus, std::vector<Typeunit> &tus,
+                            ObjectFile<E> &file, InputSection<E> &isec) {
+  auto [target, offset] = get_pubnames_target(ctx, isec, hdr, file);
+  std::vector<NameRecord> *names = nullptr;
 
-  // Compunits are sorted by offset, so we can use binary search.
-  auto get_cu = [&](i64 offset) {
-    auto it = ranges::lower_bound(cus, offset, {}, &Compunit::offset);
-    if (it == cus.end() || it->offset != offset)
-      Fatal(ctx) << file << ": corrupted debug_info_offset";
-    return &*it;
-  };
+  if (target) {
+    names = find_unit_names(cus, target->shndx, offset);
+    if (!names)
+      names = find_unit_names(tus, target->shndx, offset);
+  }
 
-  Compunit *cu = get_cu(hdr.debug_info_offset);
+  if (!names)
+    Fatal(ctx) << file << ": corrupted debug_info_offset";
+
   i64 size = hdr.size + offsetof(PubnamesHdr, size) + sizeof(hdr.size);
   u8 *p = (u8 *)&hdr + sizeof(hdr);
   u8 *end = (u8 *)&hdr + size;
 
   while (p < end) {
-    if (*(Offset *)p == 0)
+    using T = decltype(hdr.size);
+    if (*(T *)p == 0)
       break;
-    p += sizeof(Offset);
+    p += sizeof(T);
 
     u8 type = *p++;
     const char *name = (char *)p;
     i64 len = strlen(name);
     p += len + 1;
-    cu->names.emplace_back(
-      hash_string(std::string_view(name, len)), type, name);
+    names->emplace_back(hash_string(std::string_view(name, len)), type, name);
   }
 
   return size;
 }
 
-// Parses .debug_gnu_pubnames and .debug_gnu_pubtypes. These sections
-// start with a 14 bytes header followed by (4-byte offset, 1-byte type,
-// null-terminated string) tuples.
-//
-// The 4-byte offset is an offset into .debug_info that contains details
-// about the name. The 1-byte type is a type of the corresponding name
-// (e.g. function, variable or datatype). The string is a name of a
-// function, a variable or a type.
+// Parses .debug_gnu_pubnames and .debug_gnu_pubtypes. Each set starts with a
+// DWARF32 or DWARF64 header identifying one debug unit, followed by
+// (DIE offset, 1-byte kind, NUL-terminated name) tuples. The GNU kind byte lets
+// GDB distinguish functions, variables and types without reading their DIEs.
 template <typename E>
 static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
-                          ObjectFile<E> &file) {
+                          std::vector<Typeunit> &tus, ObjectFile<E> &file) {
   InputSection<E> *sections[] = {file.debug_pubnames, file.debug_pubtypes};
   for (InputSection<E> *isec : sections) {
     if (!isec)
@@ -680,55 +820,93 @@ static void read_pubnames(Context<E> &ctx, std::vector<Compunit> &cus,
 
     while (p < end) {
       if (*(U32<E> *)p == 0xffff'ffff)
-        p += read_pubnames_cu(ctx, *(PubnamesHdr64<E> *)p, cus, file);
+        p += read_pubnames_cu(ctx, *(PubnamesHdr64<E> *)p, cus, tus, file,
+                              *isec);
       else
-        p += read_pubnames_cu(ctx, *(PubnamesHdr32<E> *)p, cus, file);
+        p += read_pubnames_cu(ctx, *(PubnamesHdr32<E> *)p, cus, tus, file,
+                              *isec);
     }
   }
 }
 
+// CUs and TUs collected from one object file or from the entire link.
+struct DebugUnits {
+  std::vector<Compunit> cus;
+  std::vector<Typeunit> tus;
+};
+
+// Read every unit in one input .debug_info contribution. Keeping this separate
+// leaves read_debug_units responsible only for object-level orchestration.
 template <typename E>
-static std::vector<Compunit> read_compunits(Context<E> &ctx) {
-  std::vector<std::vector<Compunit>> file_cus(ctx.objs.size());
+static void read_debug_info_section(Context<E> &ctx, DebugUnits &units,
+                                    InputSection<E> &isec, i32 file_idx) {
+  isec.uncompress(ctx);
+  std::string_view contents = isec.get_contents();
+  u8 *begin = (u8 *)contents.data();
+  u8 *end = begin + contents.size();
+
+  for (u8 *p = begin; p < end;) {
+    ParsedDwarfUnit unit = parse_unit_header(ctx, p);
+
+    switch (unit.unit_type) {
+    case DW_UT_compile:
+    case DW_UT_partial:
+    case DW_UT_skeleton:
+    case DW_UT_split_compile:
+      units.cus.push_back(
+          Compunit{unit.kind, p - begin, unit.size, file_idx, isec.shndx});
+      break;
+    case DW_UT_type:
+    case DW_UT_split_type:
+      units.tus.push_back(Typeunit{p - begin, unit.type_die_offset,
+                                   unit.signature, file_idx, isec.shndx});
+      break;
+    default:
+      Fatal(ctx) << "--gdb-index: unknown unit type: 0x" << std::hex
+                 << (u32)unit.unit_type;
+    }
+
+    p += unit.size;
+  }
+}
+
+template <typename E> static DebugUnits read_debug_units(Context<E> &ctx) {
+  std::vector<DebugUnits> file_units(ctx.objs.size());
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 file_idx) {
     ObjectFile<E> &file = *ctx.objs[file_idx];
-    if (!file.debug_info)
-      return;
+    DebugUnits &units = file_units[file_idx];
 
-    file.debug_info->uncompress(ctx);
-    std::string_view contents = file.debug_info->get_contents();
-    std::vector<Compunit> &cus = file_cus[file_idx];
-    u8 *begin = (u8 *)contents.data();
-    u8 *end = begin + contents.size();
+    // Skip type units that lost COMDAT group selection.
+    for (InputSection<E> *isec : file.debug_info_sections)
+      if (isec->is_alive())
+        read_debug_info_section(ctx, units, *isec, (i32)file_idx);
 
-    for (u8 *p = begin; p < end;) {
-      DwarfKind kind = get_dwarf_kind(ctx, p);
-      i64 size;
-      if (kind == DWARF2_32 || kind == DWARF5_32)
-        size = ((CuHdrDwarf2_32<E> *)p)->size + 4;
-      else
-        size = ((CuHdrDwarf2_64<E> *)p)->size + 12;
-
-      cus.push_back(Compunit{kind, p - begin, size, (i32)file_idx});
-      p += size;
-    }
-
-    read_pubnames(ctx, cus, file);
-    for (Compunit &cu : cus)
+    read_pubnames(ctx, units.cus, units.tus, file);
+    for (Compunit &cu : units.cus)
       dedup_names(cu);
+    for (Typeunit &tu : units.tus)
+      dedup_names(tu);
   });
 
-  i64 size = 0;
-  for (std::vector<Compunit> &cus : file_cus)
-    size += cus.size();
+  i64 num_cus = 0;
+  i64 num_tus = 0;
+  for (DebugUnits &units : file_units) {
+    num_cus += units.cus.size();
+    num_tus += units.tus.size();
+  }
 
-  std::vector<Compunit> cus;
-  cus.reserve(size);
-  for (std::vector<Compunit> &vec : file_cus)
-    for (Compunit &cu : vec)
-      cus.push_back(std::move(cu));
-  return cus;
+  DebugUnits result;
+  result.cus.reserve(num_cus);
+  result.tus.reserve(num_tus);
+
+  for (DebugUnits &units : file_units) {
+    for (Compunit &cu : units.cus)
+      result.cus.push_back(std::move(cu));
+    for (Typeunit &tu : units.tus)
+      result.tus.push_back(std::move(tu));
+  }
+  return result;
 }
 
 template <typename E>
@@ -774,31 +952,41 @@ void read_gdb_index_inputs(Context<E> &ctx) {
   ctx.gdb_index_data = std::make_shared<GdbIndexData>();
 
   GdbIndexData &data = *ctx.gdb_index_data;
-  data.cus = read_compunits(ctx);
+  DebugUnits units = read_debug_units(ctx);
+  data.cus = std::move(units.cus);
+  data.tus = std::move(units.tus);
 
   HyperLogLog estimator;
-  tbb::parallel_for_each(data.cus, [&](Compunit &cu) {
-    HyperLogLog::Sketch &sketch = estimator.local();
+  auto estimate_names = [&](auto &units) {
+    tbb::parallel_for_each(units, [&](auto &unit) {
+      HyperLogLog::Sketch &sketch = estimator.local();
 
-    // NameType keeps 56 hash bits. Spread them across a 64-bit word because
-    // HyperLogLog uses the number of leading zero bits.
-    for (NameRecord &record : cu.names)
-      sketch.insert(record.nametype.get_hash() * 0x9e37'79b9'7f4a'7c15);
-  });
+      // NameType keeps 56 hash bits. Spread them across a 64-bit word because
+      // HyperLogLog uses the number of leading zero bits.
+      for (NameRecord &record : unit.names)
+        sketch.insert(record.nametype.get_hash() * 0x9e37'79b9'7f4a'7c15);
+    });
+  };
+  estimate_names(data.cus);
+  estimate_names(data.tus);
 
   data.map = std::make_unique<GdbNameMap>(estimator.get_cardinality() * 3 / 2);
 
-  tbb::parallel_for_each(data.cus, [&](Compunit &cu) {
-    for (NameRecord &record : cu.names) {
-      NameType &nt = record.nametype;
-      const char *name = nt.name;
-      u64 hash = nt.get_hash();
-      u8 type = nt.get_type();
-      MapValue *ent =
-        data.map->insert_cstr(name, hash, {}, initialize_gdb_name).first;
-      record.indexed = {ent, ent->count++ + 1, type};
-    }
-  });
+  auto intern_names = [&](auto &units) {
+    tbb::parallel_for_each(units, [&](auto &unit) {
+      for (NameRecord &record : unit.names) {
+        NameType &nt = record.nametype;
+        const char *name = nt.name;
+        u64 hash = nt.get_hash();
+        u8 type = nt.get_type();
+        MapValue *ent = data.map->insert_cstr(name, hash, {}, initialize_gdb_name).first;
+        record.indexed = {ent, ent->count++ + 1, type};
+      }
+    });
+  };
+
+  intern_names(data.cus);
+  intern_names(data.tus);
 
   data.entries = data.map->get_sorted_entries_all();
   data.ht_size = bit_ceil(data.entries.size() * 5 / 4 + 1);
@@ -810,7 +998,7 @@ void read_gdb_index_inputs(Context<E> &ctx) {
     for (i64 i = range.begin(); i < range.end(); i++) {
       GdbNameMap::Entry *ent = data.entries[i];
       if (is_final) {
-        ent->value.type_offset = size.type_bytes;
+        ent->value.type_vector_offset = size.type_bytes;
         ent->value.name_offset = size.name_bytes;
       }
       size.type_bytes += ent->value.count * 4 + 4;
@@ -838,19 +1026,30 @@ void build_gdb_index_tables(Context<E> &ctx) {
   Timer t(ctx, "build_gdb_index_tables");
 
   GdbIndexData &data = *ctx.gdb_index_data;
-  if (data.cus.empty() || data.tables)
+  if ((data.cus.empty() && data.tus.empty()) || data.tables)
     return;
 
   std::vector<Compunit> &cus = data.cus;
+  std::vector<Typeunit> &tus = data.tus;
   std::vector<GdbNameMap::Entry *> &entries = data.entries;
   using Entry = GdbNameMap::Entry;
 
-  // CU offsets are relative to their input .debug_info sections. Convert them
-  // to output-section offsets and sort the CUs in output order. A CU's position
-  // in this vector is the CU number stored in type vectors and address ranges.
+  // Unit offsets are relative to their input .debug_info contributions.
+  // Convert them to output-section offsets and sort each .gdb_index list in
+  // output order. The format's unit-number namespace consists of every CU-list
+  // entry followed by every TU-list entry, even when CUs and TUs are
+  // interleaved in .debug_info. Address-area records refer only to the CU list.
+  auto get_output_offset = [&](const auto &unit) {
+    InputSection<E> *isec = ctx.objs[unit.file_idx]->sections[unit.shndx];
+    return isec->offset;
+  };
+
   for (Compunit &cu : cus)
-    cu.offset += ctx.objs[cu.file_idx]->debug_info->offset;
+    cu.offset += get_output_offset(cu);
+  for (Typeunit &tu : tus)
+    tu.offset += get_output_offset(tu);
   ranges::sort(cus, {}, &Compunit::offset);
+  ranges::sort(tus, {}, &Typeunit::offset);
 
   // `tables` contains the name hash table followed by the constant pool. The
   // constant pool contains all type vectors followed by all name strings.
@@ -876,7 +1075,7 @@ void build_gdb_index_tables(Context<E> &ctx) {
       i = (i + step) & mask;
 
     ht[i * 2] = ent->value.name_offset;
-    ht[i * 2 + 1] = ent->value.type_offset;
+    ht[i * 2 + 1] = ent->value.type_vector_offset;
   }
 
   u8 *base = data.tables.get() + symtab_size;
@@ -884,22 +1083,26 @@ void build_gdb_index_tables(Context<E> &ctx) {
   // Each occurrence of a name contributes one value to its type vector. Each
   // occurrence was assigned a distinct slot while the names were interned, so
   // the vectors can be filled in parallel. The high byte is the name's type
-  // and the low 24 bits are the CU number.
-  tbb::parallel_for_each(cus, [&](Compunit &cu) {
-    i64 i = &cu - cus.data();
-    for (NameRecord &record : cu.names) {
-      IndexedName &name = record.indexed;
-      MapValue *ent = name.entry;
-      ul32 *p = (ul32 *)(base + ent->type_offset);
-      p[name.type_idx] = (name.type << 24) | i;
-    }
-  });
+  // and the low 24 bits are the unit number. TU numbers follow CU numbers.
+  auto write_names = [&](auto &units, i64 unit_base) {
+    tbb::parallel_for_each(units, [&](auto &unit) {
+      i64 i = unit_base + (&unit - units.data());
+      for (NameRecord &record : unit.names) {
+        IndexedName &name = record.indexed;
+        MapValue *ent = name.entry;
+        ul32 *p = (ul32 *)(base + ent->type_vector_offset);
+        p[name.type_vector_idx] = (name.type << 24) | i;
+      }
+    });
+  };
+  write_names(cus, 0);
+  write_names(tus, cus.size());
 
   // Prefix each type vector with its length and sort it for deterministic
   // output. Store the NUL-terminated name at its assigned string-pool offset.
   tbb::enumerable_thread_specific<std::vector<ul32>> scratch;
   tbb::parallel_for_each(entries, [&](Entry *ent) {
-    ul32 *p = (ul32 *)(base + ent->value.type_offset);
+    ul32 *p = (ul32 *)(base + ent->value.type_vector_offset);
     p[0] = ent->value.count;
     std::span<ul32> values(p + 1, ent->value.count);
 
@@ -916,9 +1119,12 @@ void build_gdb_index_tables(Context<E> &ctx) {
   // The serialized tables contain everything needed from names and the map.
   // Release their storage here so reclamation remains part of this background
   // phase rather than delaying the final output path.
-  tbb::parallel_for_each(cus, [](Compunit &cu) {
-    std::vector<NameRecord>().swap(cu.names);
-  });
+  auto release_names = [](auto &units) {
+    tbb::parallel_for_each(
+        units, [](auto &unit) { std::vector<NameRecord>().swap(unit.names); });
+  };
+  release_names(cus);
+  release_names(tus);
   std::vector<GdbNameMap::Entry *>().swap(data.entries);
   data.map.reset();
 }
@@ -931,7 +1137,7 @@ void write_gdb_index(Context<E> &ctx) {
   std::shared_ptr<GdbIndexData> owner = std::move(ctx.gdb_index_data);
   GdbIndexData &data = *owner;
 
-  if (data.cus.empty())
+  if (data.cus.empty() && data.tus.empty())
     return;
 
   // Find debug info sections
@@ -950,6 +1156,7 @@ void write_gdb_index(Context<E> &ctx) {
   }
 
   std::vector<Compunit> &cus = data.cus;
+  std::vector<Typeunit> &tus = data.tus;
 
   read_address_ranges(ctx, cus);
 
@@ -957,7 +1164,7 @@ void write_gdb_index(Context<E> &ctx) {
   SectionHeader hdr;
   hdr.cu_list_offset = sizeof(hdr);
   hdr.cu_types_offset = hdr.cu_list_offset + cus.size() * 16;
-  hdr.ranges_offset = hdr.cu_types_offset;
+  hdr.ranges_offset = hdr.cu_types_offset + tus.size() * 24;
 
   hdr.symtab_offset = hdr.ranges_offset;
   for (Compunit &cu : cus)
@@ -974,7 +1181,7 @@ void write_gdb_index(Context<E> &ctx) {
   // Write a section header
   memcpy(buf, &hdr, sizeof(hdr));
 
-  // Write a CU list
+  // A CU-list entry is {.debug_info offset, unit size}.
   u8 *p = buf + sizeof(hdr);
 
   for (Compunit &cu : cus) {
@@ -983,7 +1190,16 @@ void write_gdb_index(Context<E> &ctx) {
     p += 16;
   }
 
-  // Write address areas
+  // A TU-list entry is {.debug_info offset, unit-relative type DIE offset,
+  // signature}. Unlike a CU-list entry, it does not contain the unit size.
+  for (Typeunit &tu : tus) {
+    *(ul64 *)p = tu.offset;
+    *(ul64 *)(p + 8) = tu.type_die_offset;
+    *(ul64 *)(p + 16) = tu.signature;
+    p += 24;
+  }
+
+  // An address-area entry is {start address, end address, CU-list index}.
   std::vector<i64> range_offsets(cus.size());
   for (i64 i = 1; i < cus.size(); i++)
     range_offsets[i] = range_offsets[i - 1] + cus[i - 1].ranges.size() * 20;

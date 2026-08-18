@@ -2058,8 +2058,10 @@ public:
   // For ICF
   ArenaPtr<InputSection<E>> llvm_addrsig;
 
+  // .debug_info sections
+  std::vector<InputSection<E> *> debug_info_sections;
+
   // For .gdb_index
-  ArenaPtr<InputSection<E>> debug_info;
   ArenaPtr<InputSection<E>> debug_pubnames;
   ArenaPtr<InputSection<E>> debug_pubtypes;
 
