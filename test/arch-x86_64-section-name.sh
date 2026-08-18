@@ -51,6 +51,11 @@ _start:
 .ascii ".rodata "
 .section .rodata.foo
 .ascii ".rodata.foo "
+
+.section .srodata
+.ascii ".srodata "
+.section .srodata.foo
+.ascii ".srodata.foo "
 EOF
 
 ./mold -o $t/exe $t/a.o -z keep-text-section-prefix
@@ -64,6 +69,7 @@ readelf -p .text $t/exe | grep -F '.text .text.foo'
 readelf -p .data.rel.ro $t/exe | grep -F '.data.rel.ro .data.rel.ro.foo'
 readelf -p .data $t/exe | grep -F '.data .data.foo'
 readelf -p .rodata $t/exe | grep -F '.rodata .rodata.foo'
+readelf -p .srodata $t/exe | grep -F '.srodata .srodata.foo'
 
 ./mold -o $t/exe $t/a.o
 readelf --sections $t/exe | not grep -F .text.hot
