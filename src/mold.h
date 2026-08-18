@@ -1592,7 +1592,7 @@ private:
 };
 
 // RelocSection represents a relocation table for an output file.
-// This is used only for the reproducible output (i.e. the `-r` output).
+// This is used only for the relocatable output (i.e. the `-r` output).
 template <typename E>
 class RelocSection : public Chunk<E> {
 public:
@@ -1623,7 +1623,7 @@ public:
 };
 
 // ComdatGroupSection represents a comdat group for an output file.
-// This is used only for the reproducible output (i.e. the `-r` output).
+// This is used only for the relocatable output (i.e. the `-r` output).
 template <typename E>
 class ComdatGroupSection : public Chunk<E> {
 public:
