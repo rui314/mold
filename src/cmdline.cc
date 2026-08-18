@@ -1346,8 +1346,7 @@ std::vector<ReaderJob> parse_nonpositional_args(Context<E> &ctx) {
                                    std::string(arg));
     } else if (read_arg("opt-remarks-passes")) {
       ctx.arg.plugin_opt.push_back("opt-remarks-passes=" + std::string(arg));
-    } else if (read_flag("opt-remarks-with-hotness") ||
-               read_flag("opt-remarks-with_hotness")) {
+    } else if (read_flag("opt-remarks-with-hotness")) {
       ctx.arg.plugin_opt.emplace_back("opt-remarks-with-hotness");
     } else if (args[0].starts_with("-lto-O")) {
       ctx.arg.plugin_opt.push_back("O" + std::string(args[0].substr(6)));
