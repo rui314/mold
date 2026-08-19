@@ -440,7 +440,7 @@ static void gather_edges(Context<E> &ctx,
 // digest and the current digests of the vertices it refers to. A
 // vertex's digest after the nth round is therefore a hash of its
 // unfolding into a tree of depth n.
-static void propagate(std::span<Digest> cur, std::span<Digest> next,
+static void propagate(std::vector<Digest> &cur, std::vector<Digest> &next,
                       std::span<u32> edges, std::span<u32> edge_indices) {
   tbb::parallel_for((i64)0, (i64)cur.size(), [&](i64 i) {
     SipHash13_128 hasher(siphash_key);
@@ -450,12 +450,9 @@ static void propagate(std::span<Digest> cur, std::span<Digest> next,
     i64 end = edge_indices[i + 1];
     for (i64 j : edges.subspan(begin, end - begin))
       hasher.update(&cur[j], sizeof(Digest));
-
     hasher.finish(&next[i]);
   });
-
-  static Counter counter("icf_round");
-  counter++;
+  std::swap(cur, next);
 }
 
 template <typename E>
@@ -469,6 +466,9 @@ static i64 count_num_classes(std::span<Digest> digests,
     if (map.insert(digests[i], sections[i]))
       num_classes.local()++;
   });
+
+  static Counter counter("icf_round");
+  counter++;
   return num_classes.combine(std::plus());
 }
 
@@ -528,17 +528,13 @@ void icf_sections(Context<E> &ctx) {
     return;
 
   get_random_bytes(siphash_key, sizeof(siphash_key));
-
   uniquify_cies(ctx);
 
   // Prepare for the propagation rounds.
   std::vector<InputSection<E> *> sections = gather_sections(ctx);
 
-  // `digests` holds the current digest of each vertex; `scratch` is
-  // where a propagation round writes the next digests before the two
-  // vectors swap roles.
+  // `digests` holds the current digest of each vertex
   std::vector<Digest> digests = compute_digests<E>(ctx, sections);
-  std::vector<Digest> scratch(digests.size());
 
   std::vector<u32> edges;
   std::vector<u32> edge_indices;
@@ -565,10 +561,15 @@ void icf_sections(Context<E> &ctx) {
   {
     Timer t(ctx, "propagate");
     i64 num_classes = -1;
+    std::vector<Digest> scratch(digests.size());
 
     for (;;) {
+      // count_num_classes is as expensive as propagate, so we propagate
+      // a few times before counting the number of distinct groups.
       propagate(digests, scratch, edges, edge_indices);
-      std::swap(digests, scratch);
+      propagate(digests, scratch, edges, edge_indices);
+      propagate(digests, scratch, edges, edge_indices);
+
       i64 m = count_num_classes<E>(digests, sections, map);
       if (m == num_classes)
         break;
