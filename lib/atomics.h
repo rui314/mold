@@ -32,7 +32,16 @@ struct Atomic : std::atomic<T> {
   }
 
   T exchange(T val) { return std::atomic<T>::exchange(val, relaxed); }
-  T operator|=(T val) { return std::atomic<T>::fetch_or(val, relaxed); }
+
+  T fetch_or(T val, std::memory_order order = relaxed) {
+    return std::atomic<T>::fetch_or(val, order);
+  }
+
+  T fetch_and(T val, std::memory_order order = relaxed) {
+    return std::atomic<T>::fetch_and(val, order);
+  }
+
+  T operator|=(T val) { return fetch_or(val); }
   T operator++() { return std::atomic<T>::fetch_add(1, relaxed) + 1; }
   T operator--() { return std::atomic<T>::fetch_sub(1, relaxed) - 1; }
   T operator++(int) { return std::atomic<T>::fetch_add(1, relaxed); }

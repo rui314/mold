@@ -118,7 +118,7 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
     return false;
 
   if (shdr.sh_flags & SHF_EXECINSTR)
-    return (ctx.arg.icf_all || !isec.address_taken) &&
+    return (ctx.arg.icf_all || !isec.is_address_taken()) &&
            name != ".init" && name != ".fini";
 
   // .gcc_except_table contains a compiler-generated table. Pointer
@@ -130,7 +130,7 @@ static bool is_eligible(Context<E> &ctx, InputSection<E> &isec) {
 
   bool is_readonly = !(shdr.sh_flags & SHF_WRITE);
   bool is_relro = name.starts_with(".data.rel.ro");
-  return (ctx.arg.ignore_data_address_equality || !isec.address_taken) &&
+  return (ctx.arg.ignore_data_address_equality || !isec.is_address_taken()) &&
          (is_readonly || is_relro);
 }
 
@@ -169,10 +169,11 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
 
   hash_string(isec.get_contents());
   hash(isec.shdr().sh_flags);
-  hash(isec.get_fdes().size());
+  std::span<FdeRecord<E>> fdes = isec.get_fdes();
+  hash(fdes.size());
   hash(isec.get_rels(ctx).size());
 
-  for (FdeRecord<E> &fde : isec.get_fdes()) {
+  for (FdeRecord<E> &fde : fdes) {
     hash(isec.file->cies[fde.cie_idx].icf_idx);
 
     // Bytes 0 to 4 contain the length of this record, and
@@ -331,7 +332,7 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
         continue;
 
       assert(isec->icf_idx == -1);
-      if (!isec->is_alive)
+      if (!isec->is_alive())
         continue;
 
       if (is_eligible(ctx, *isec)) {
@@ -477,17 +478,16 @@ static i64 count_num_classes(std::span<Digest> digests,
 }
 
 template <typename E>
-static void print_icf_sections(Context<E> &ctx,
-                               std::span<InputSection<E> *> sections) {
+static void
+print_icf_sections(Context<E> &ctx, std::span<InputSection<E> *> sections) {
   tbb::concurrent_vector<InputSection<E> *> leader_sections;
   tbb::concurrent_unordered_multimap<InputSection<E> *, InputSection<E> *> map;
 
   tbb::parallel_for_each(sections, [&](InputSection<E> *isec) {
-    InputSection<E> *leader = isec->icf_leader;
-    if (isec == leader)
+    if (isec == isec->icf_leader)
       leader_sections.push_back(isec);
     else
-      map.insert({leader, isec});
+      map.insert({isec->icf_leader, isec});
   });
 
   tbb::parallel_sort(leader_sections.begin(), leader_sections.end(),
@@ -584,7 +584,7 @@ void icf_sections(Context<E> &ctx) {
   {
     Timer t(ctx, "group");
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-      std::construct_at(&sections[i]->icf_leader, map.find(digests[i]));
+      sections[i]->icf_leader = map.find(digests[i]);
     });
   }
 
@@ -595,9 +595,8 @@ void icf_sections(Context<E> &ctx) {
   {
     Timer t(ctx, "update_alignment");
     tbb::parallel_for_each(sections, [&](InputSection<E> *isec) {
-      InputSection<E> *leader = isec->icf_leader;
-      if (isec != leader)
-        update_maximum(leader->p2align, isec->p2align);
+      if (isec != isec->icf_leader)
+        update_maximum(isec->icf_leader->p2align, isec->p2align);
     });
   }
 
@@ -608,13 +607,12 @@ void icf_sections(Context<E> &ctx) {
     Timer t(ctx, "sweep");
     static Counter eliminated("icf_eliminated");
     tbb::parallel_for_each(sections, [&](InputSection<E> *isec) {
-      InputSection<E> *leader = isec->icf_leader;
-      if (isec != leader) {
-        isec->is_icf_removed = true;
+      if (isec != isec->icf_leader) {
+        isec->set_icf_removed();
         isec->kill();
         eliminated++;
       } else {
-        std::construct_at(&isec->offset, -1);
+        isec->offset = -1;
       }
     });
   }

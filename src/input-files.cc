@@ -481,12 +481,12 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
         // in an output file is just a waste of space.
         if (name == ".debug_gnu_pubnames") {
           debug_pubnames = isec;
-          isec->is_alive = false;
+          isec->kill();
         }
 
         if (name == ".debug_gnu_pubtypes") {
           debug_pubtypes = isec;
-          isec->is_alive = false;
+          isec->kill();
         }
 
         // .debug_types is similar to .debug_info but contains type info
@@ -709,7 +709,7 @@ void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
       fdes[i].cie_idx = find_cie(fdes[i].input_offset + 4 - cie_offset);
     }
 
-    isec->is_alive = false;
+    isec->kill();
   }
 
   auto get_isec = [&](const FdeRecord<E> &fde) {
@@ -724,17 +724,19 @@ void ObjectFile<E>::parse_ehframe(Context<E> &ctx) {
 
   // Associate FDEs to input sections.
   for (i64 i = 0; i < fdes.size();) {
-    InputSection<E> *isec = get_isec(fdes[i]);
+    i64 begin = i;
+    InputSection<E> *isec = get_isec(fdes[i++]);
     assert(isec->fde_begin == -1);
 
-    if (isec->is_alive) {
-      isec->fde_begin = i++;
-      while (i < fdes.size() && isec == get_isec(fdes[i]))
-        i++;
-      isec->fde_end = i;
-    } else {
-      fdes[i++].is_alive = false;
-    }
+    while (i < fdes.size() && isec == get_isec(fdes[i]))
+      i++;
+    fdes[i - 1].is_last = true;
+
+    if (isec->is_alive())
+      isec->fde_begin = begin;
+    else
+      for (i64 j = begin; j < i; j++)
+        fdes[j].is_alive = false;
   }
 }
 
@@ -776,7 +778,7 @@ void ObjectFile<E>::parse_sframe(Context<E> &ctx) requires supports_sframe<E> {
   for (InputSection<E> *isec : sframe_sections) {
     // The input section is consumed by the linker; it's not copied to the
     // output as-is but reconstructed into ctx.sframe.
-    isec->is_alive = false;
+    isec->kill();
 
     std::string_view data = this->get_string(ctx, isec->shdr());
     const SFrameHeader<E> &hdr = *(const SFrameHeader<E> *)data.data();
@@ -943,7 +945,7 @@ void ObjectFile<E>::sort_relocations(Context<E> &ctx) {
   if constexpr (is_riscv<E> || is_loongarch<E>) {
     for (i64 i = 1; i < sections.size(); i++) {
       InputSection<E> *isec = sections[i];
-      if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
+      if (!isec || !isec->is_alive() || !(isec->shdr().sh_flags & SHF_ALLOC))
         continue;
 
       std::span<ElfRel<E>> rels = isec->get_rels(ctx);
@@ -1247,7 +1249,7 @@ void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
     InputSection<E> *isec = nullptr;
     if (!esym.is_abs() && !esym.is_common() && sections_parsed) {
       isec = get_section(esym);
-      if (!isec || !isec->is_alive)
+      if (!isec || !isec->is_alive())
         continue;
     }
 
@@ -1301,7 +1303,7 @@ template <typename E>
 void ObjectFile<E>::scan_relocations(Context<E> &ctx) {
   // Scan relocations against seciton contents
   for (InputSection<E> *isec : sections)
-    if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC))
+    if (isec && isec->is_alive() && (isec->shdr().sh_flags & SHF_ALLOC))
       isec->scan_relocations(ctx);
 
   // Scan relocations against exception frames
@@ -1418,7 +1420,7 @@ void ObjectFile<E>::compute_symtab_size(Context<E> &ctx) {
     if (SectionFragment<E> *frag = sym.get_frag())
       return frag->is_alive;
     if (InputSection<E> *isec = sym.get_input_section())
-      return isec->is_alive;
+      return isec->is_alive();
     return true;
   };
 

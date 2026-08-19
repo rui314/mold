@@ -496,6 +496,7 @@ struct FdeRecord {
   u32 rel_idx = -1;
   u16 cie_idx = -1;
   Atomic<bool> is_alive = true;
+  bool is_last = false; // Last FDE associated with an input section
 };
 
 // Represents a single function descriptor entry (FDE) read from an input
@@ -559,6 +560,24 @@ public:
   void apply_reloc_nonalloc(Context<E> &ctx, u8 *base);
   void kill();
 
+  static constexpr u8 IS_ALIVE = 1 << 0;
+  static constexpr u8 IS_VISITED = 1 << 1;
+  static constexpr u8 IS_ADDRESS_TAKEN = 1 << 2;
+  static constexpr u8 IS_UNCOMPRESSED = 1 << 3;
+  static constexpr u8 IS_ICF_REMOVED = 1 << 4;
+
+  bool is_alive() const { return flags & IS_ALIVE; }
+  bool is_visited() const { return flags & IS_VISITED; }
+  bool is_address_taken() const { return flags & IS_ADDRESS_TAKEN; }
+  bool is_uncompressed() const { return flags & IS_UNCOMPRESSED; }
+  bool is_icf_removed() const { return flags & IS_ICF_REMOVED; }
+
+  bool visit() { return !(flags.fetch_or(IS_VISITED) & IS_VISITED); }
+  void set_visited() { flags |= IS_VISITED; }
+  void set_address_taken() { flags |= IS_ADDRESS_TAKEN; }
+  void set_uncompressed() { flags |= IS_UNCOMPRESSED; }
+  void set_icf_removed() { flags |= IS_ICF_REMOVED; }
+
   i64 get_priority() const;
   u64 get_addr() const;
   std::string_view name() const;
@@ -598,7 +617,6 @@ public:
 
   i64 sh_size = -1;
   i32 fde_begin = -1;
-  i32 fde_end = -1;
   i32 shndx = -1;
   i32 relsec_idx = -1;
 
@@ -606,11 +624,7 @@ public:
   u16 namelen = 0;
 
   Atomic<u8> p2align = 0;
-  Atomic<bool> is_alive = true;       // for COMDAT and garbage collection
-  Atomic<bool> is_visited = false;    // for garbage collection
-  Atomic<bool> address_taken = false; // for ICF
-  bool uncompressed : 1 = false;
-  bool is_icf_removed : 1 = false;
+  Atomic<u8> flags = IS_ALIVE;
 
   [[no_unique_address]] InputSectionExtras<E> extra;
 
@@ -3211,7 +3225,7 @@ operator<<(std::ostream &out, const InputSection<E> &isec) {
 
 template <typename E>
 inline void InputSection<E>::kill() {
-  if (is_alive.exchange(false))
+  if (flags.fetch_and((u8)~IS_ALIVE) & IS_ALIVE)
     for (FdeRecord<E> &fde : get_fdes())
       fde.is_alive = false;
 }
@@ -3257,7 +3271,7 @@ inline std::string_view InputSection<E>::get_contents() const {
   if (!contents)
     return {};
   i64 size = shdr().sh_size;
-  if ((shdr().sh_flags & SHF_COMPRESSED) && uncompressed)
+  if ((shdr().sh_flags & SHF_COMPRESSED) && is_uncompressed())
     size = sh_size;
   return {(char *)contents, (size_t)size};
 }
@@ -3371,8 +3385,12 @@ template <typename E>
 inline std::span<FdeRecord<E>> InputSection<E>::get_fdes() const {
   if (fde_begin == -1)
     return {};
+
   std::span<FdeRecord<E>> span(file->fdes);
-  return span.subspan(fde_begin, fde_end - fde_begin);
+  i64 end = fde_begin + 1;
+  while (!span[end - 1].is_last)
+    end++;
+  return span.subspan(fde_begin, end - fde_begin);
 }
 
 template <typename E>
@@ -3416,7 +3434,7 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   bool discarded = (&sym == discarded_comdat_sym<E>);
 
   // Setting a tombstone is a special feature for a dead debug section.
-  if ((!isec && !discarded) || (isec && isec->is_alive))
+  if ((!isec && !discarded) || (isec && isec->is_alive()))
     return {};
 
   std::string_view name = this->name();
@@ -3426,7 +3444,7 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   // If the section was dead due to ICF, we don't want to emit debug
   // info for that section but want to set real values to .debug_line so
   // that users can set a breakpoint inside a merged section.
-  if (isec && isec->is_icf_removed && name == ".debug_line")
+  if (isec && isec->is_icf_removed() && name == ".debug_line")
     return {};
 
   // 0 is an invalid value in most debug info sections, so we use it
@@ -3637,8 +3655,8 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
   if (!isec)
     return value; // absolute symbol
 
-  if (!isec->is_alive) {
-    if (isec->is_icf_removed)
+  if (!isec->is_alive()) {
+    if (isec->is_icf_removed())
       return isec->icf_leader->get_addr() + value;
 
     if (isec->name() == ".eh_frame") {

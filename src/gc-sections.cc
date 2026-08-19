@@ -47,7 +47,7 @@ static StartStopMap<E> build_start_stop_map(Context<E> &ctx) {
   StartStopMap<E> map;
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (InputSection<E> *isec : file->sections)
-      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC))
+      if (isec && isec->is_alive() && (isec->shdr().sh_flags & SHF_ALLOC))
         if (std::string_view name = isec->name();
             is_c_identifier(name))
           map[name].push_back(isec);
@@ -57,7 +57,7 @@ static StartStopMap<E> build_start_stop_map(Context<E> &ctx) {
 
 template <typename E>
 static bool mark_section(InputSection<E> *isec) {
-  return isec && isec->is_alive && !isec->is_visited.test_and_set();
+  return isec && isec->is_alive() && isec->visit();
 }
 
 template <typename E>
@@ -83,7 +83,7 @@ collect_root_set(Context<E> &ctx) {
   // Add sections that are not subject to garbage collection.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (InputSection<E> *isec : file->sections) {
-      if (!isec || !isec->is_alive)
+      if (!isec || !isec->is_alive())
         continue;
 
       // --gc-sections discards only SHF_ALLOC sections. If you want to
@@ -91,7 +91,7 @@ collect_root_set(Context<E> &ctx) {
       // use `strip` command, compile without debug info or use
       // --strip-all linker option.
       if (!(isec->shdr().sh_flags & SHF_ALLOC)) {
-        isec->is_visited = true;
+        isec->set_visited();
         continue;
       }
 
@@ -131,7 +131,7 @@ template <typename E>
 static void visit_section(Context<E> &ctx, InputSection<E> *isec,
                           tbb::feeder<InputSection<E> *> &feeder, i64 depth,
                           const StartStopMap<E> &start_stop_map) {
-  assert(isec->is_visited);
+  assert(isec->is_visited());
 
   // Mark a section alive. For better performacne, we don't call
   // `feeder.add` too often.
@@ -217,7 +217,7 @@ static void sweep(Context<E> &ctx) {
     ObjectFile<E> &file = *ctx.objs[i];
 
     for (InputSection<E> *isec : file.sections) {
-      if (isec && isec->is_alive && !isec->is_visited) {
+      if (isec && isec->is_alive() && !isec->is_visited()) {
         isec->kill();
         sections[i].push_back(isec);
       }

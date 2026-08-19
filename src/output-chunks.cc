@@ -2114,9 +2114,9 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
         return ctx.extra.opd->shndx;
 
     if (InputSection<E> *isec = sym.get_input_section()) {
-      if (isec->is_alive)
+      if (isec->is_alive())
         return isec->output_section->shndx;
-      if (isec->is_icf_removed)
+      if (isec->is_icf_removed())
         return isec->icf_leader->output_section->shndx;
     }
 
@@ -2755,7 +2755,7 @@ void SFrameSection<E>::construct(Context<E> &ctx) requires supports_sframe<E> {
   // position-independent and are simply concatenated by copy_buf.
   for (ObjectFile<E> *file : ctx.objs)
     for (SFrameFde<E> &fde : file->sframe_fdes)
-      if (fde.isec->is_alive)
+      if (fde.isec->is_alive())
         fdes.push_back(&fde);
 
   // If no live function has unwind info, leave the section empty so that

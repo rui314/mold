@@ -90,7 +90,7 @@ void shrink_sections(Context<E> &ctx) {
   // them. We scan relocations only once here.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (InputSection<E> *isec : file->sections)
-      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_EXECINSTR))
+      if (isec && isec->is_alive() && (isec->shdr().sh_flags & SHF_EXECINSTR))
         shrink_section(ctx, *isec);
   });
 

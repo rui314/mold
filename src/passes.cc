@@ -391,8 +391,12 @@ static void parse_input_sections(Context<E> &ctx) {
     if (file->is_reachable)
       for (ComdatGroupRef<E> &ref : file->comdat_groups)
         for (u32 i : ref.members(*file))
-          if (InputSection<E> *isec = file->sections[i])
-            isec->is_alive = ref.is_owner;
+          if (InputSection<E> *isec = file->sections[i]) {
+            if (ref.is_owner)
+              isec->flags |= InputSection<E>::IS_ALIVE;
+            else
+              isec->kill();
+          }
   });
 }
 
@@ -707,7 +711,7 @@ void create_output_sections(Context<E> &ctx) {
     MapType &cache = caches.local();
 
     for (InputSection<E> *isec : ctx.objs[i]->sections) {
-      if (!isec || !isec->is_alive)
+      if (!isec || !isec->is_alive())
         continue;
 
       const ElfShdr<E> &shdr = isec->shdr();
@@ -1191,7 +1195,7 @@ void check_duplicate_symbols(Context<E> &ctx) {
       // section has been eliminated due to comdat deduplication.
       if (!esym.is_abs()) {
         InputSection<E> *isec = file->get_section(esym);
-        if (!isec || !isec->is_alive)
+        if (!isec || !isec->is_alive())
           continue;
       }
 
@@ -1263,7 +1267,7 @@ void convert_zero_to_bss(Context<E> &ctx) {
       return;
 
     for (InputSection<E> *isec : file->sections) {
-      if (!isec || !isec->is_alive)
+      if (!isec || !isec->is_alive())
         continue;
 
       std::string_view contents = isec->get_contents();
@@ -2530,32 +2534,32 @@ void compute_address_significance(Context<E> &ctx) {
       while (p != end) {
         Symbol<E> *sym = file->symbols[read_uleb(&p)];
         if (InputSection<E> *isec = sym->get_input_section())
-          isec->address_taken = true;
+          isec->set_address_taken();
       }
       return;
     }
 
     // Otherwise, infer address significance.
     for (InputSection<E> *isec : file->sections) {
-      if (!isec || !isec->is_alive || !(isec->shdr().sh_flags & SHF_ALLOC))
+      if (!isec || !isec->is_alive() || !(isec->shdr().sh_flags & SHF_ALLOC))
         continue;
 
       if (!(isec->shdr().sh_flags & SHF_EXECINSTR))
-        isec->address_taken = true;
+        isec->set_address_taken();
 
       for (const ElfRel<E> &r : isec->get_rels(ctx))
         if (!is_func_call_rel(r))
           if (Symbol<E> *sym = file->symbols[r.r_sym];
               InputSection<E> *dst = sym->get_input_section())
             if (dst->shdr().sh_flags & SHF_EXECINSTR)
-              dst->address_taken = true;
+              dst->set_address_taken();
     }
   });
 
   auto mark = [](Symbol<E> *sym) {
     if (sym)
       if (InputSection<E> *isec = sym->get_input_section())
-        isec->address_taken = true;
+        isec->set_address_taken();
   };
 
   // Some symbols' pointer values are leaked to the dynamic section.
@@ -3689,7 +3693,7 @@ void show_stats(Context<E> &ctx) {
     undefined += obj->symbols.size() - obj->first_global;
 
     for (InputSection<E> *sec : obj->sections) {
-      if (!sec || !sec->is_alive)
+      if (!sec || !sec->is_alive())
         continue;
 
       static Counter alloc("reloc_alloc");

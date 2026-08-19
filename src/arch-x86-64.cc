@@ -925,7 +925,7 @@ void rewrite_endbr(Context<E> &ctx) {
   // relocations.
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
     for (InputSection<E> *isec : file->sections) {
-      if (isec && isec->is_alive && (isec->shdr().sh_flags & SHF_ALLOC)) {
+      if (isec && isec->is_alive() && (isec->shdr().sh_flags & SHF_ALLOC)) {
         for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
           if (!is_func_call_rel(rel)) {
             Symbol<E> *sym = file->symbols[rel.r_sym];

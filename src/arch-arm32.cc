@@ -726,7 +726,7 @@ void create_arm_exidx_section<E>(Context<E> &ctx) {
       ctx.chunk_pool.emplace_back(sec);
 
       for (InputSection<E> *isec : osec->members)
-        isec->is_alive = false;
+        isec->kill();
       break;
     }
   }
@@ -875,7 +875,7 @@ void arm32be_swap_bytes(Context<E> &ctx) {
 
     for (Symbol<E> *sym : file->get_local_syms())
       if (InputSection<E> *isec = sym->get_input_section())
-        if (isec->is_alive && (isec->shdr().sh_flags & SHF_EXECINSTR))
+        if (isec->is_alive() && (isec->shdr().sh_flags & SHF_EXECINSTR))
           if (std::string_view x = sym->name();
               x == "$a" || x.starts_with("$a.") ||
               x == "$t" || x.starts_with("$t.") ||

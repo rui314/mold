@@ -563,7 +563,7 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
     InputSection<E> *opd = get_opd_section(*file);
     if (!opd)
       return;
-    opd->is_alive = false;
+    opd->kill();
 
     // Move symbols from .opd to .text.
     std::vector<OpdSymbol> opd_syms;
@@ -595,7 +595,7 @@ void ppc64v1_rewrite_opd(Context<E> &ctx) {
 
     // Rewrite relocations so that they directly refer to .opd.
     for (InputSection<E> *isec : file->sections) {
-      if (!isec || !isec->is_alive || isec == opd)
+      if (!isec || !isec->is_alive() || isec == opd)
         continue;
 
       for (ElfRel<E> &r : isec->get_rels(ctx)) {

@@ -66,19 +66,19 @@ InputSection<E>::InputSection(Context<E> &ctx, ObjectFile<E> &file, i64 shndx,
 
 template <typename E>
 void InputSection<E>::uncompress(Context<E> &ctx) {
-  if (!(shdr().sh_flags & SHF_COMPRESSED) || uncompressed)
+  if (!(shdr().sh_flags & SHF_COMPRESSED) || is_uncompressed())
     return;
 
   u8 *buf = new u8[sh_size];
   copy_contents_to(ctx, buf, sh_size);
   contents = buf;
   ctx.string_pool.emplace_back(buf);
-  uncompressed = true;
+  set_uncompressed();
 }
 
 template <typename E>
 void InputSection<E>::copy_contents_to(Context<E> &ctx, u8 *buf, i64 sz) {
-  if (!(shdr().sh_flags & SHF_COMPRESSED) || uncompressed) {
+  if (!(shdr().sh_flags & SHF_COMPRESSED) || is_uncompressed()) {
     memcpy(buf, contents, sz);
     return;
   }
