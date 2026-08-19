@@ -2116,8 +2116,8 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
     if (InputSection<E> *isec = sym.get_input_section()) {
       if (isec->is_alive)
         return isec->output_section->shndx;
-      if (isec->icf_removed())
-        return isec->leader->output_section->shndx;
+      if (isec->is_icf_removed)
+        return isec->icf_leader->output_section->shndx;
     }
 
     return SHN_UNDEF;

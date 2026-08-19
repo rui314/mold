@@ -158,7 +158,7 @@ static Digest compute_digest(Context<E> &ctx, InputSection<E> &isec) {
       hash((u64)frag);
     } else if (!isec) {
       hash('3');
-    } else if (isec->icf_eligible) {
+    } else if (isec->icf_idx != -1) {
       hash('4');
     } else {
       hash('5');
@@ -327,12 +327,16 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
 
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     for (InputSection<E> *isec : ctx.objs[i]->sections) {
-      if (!isec || !isec->is_alive)
+      if (!isec)
+        continue;
+
+      assert(isec->icf_idx == -1);
+      if (!isec->is_alive)
         continue;
 
       if (is_eligible(ctx, *isec)) {
         eligible++;
-        isec->icf_eligible = true;
+        isec->icf_idx = 0;
         indices[i + 1]++;
       } else {
         non_eligible++;
@@ -349,7 +353,7 @@ static std::vector<InputSection<E> *> gather_sections(Context<E> &ctx) {
   tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 i) {
     i64 idx = indices[i];
     for (InputSection<E> *isec : ctx.objs[i]->sections) {
-      if (isec && isec->is_alive && isec->icf_eligible) {
+      if (isec && isec->icf_idx != -1) {
         isec->icf_idx = idx;
         sections[idx++] = isec;
       }
@@ -396,19 +400,19 @@ static void gather_edges(Context<E> &ctx,
 
   tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
     InputSection<E> &isec = *sections[i];
-    assert(isec.icf_eligible);
+    assert(isec.icf_idx != -1);
 
     for (FdeRecord<E> &fde : isec.get_fdes())
       for (const ElfRel<E> &rel : fde.get_rels(*isec.file).subspan(1))
         if (Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
             InputSection<E> *isec = sym.get_input_section())
-          if (isec->icf_eligible)
+          if (isec->icf_idx != -1)
             edge_indices[i + 1]++;
 
     for (const ElfRel<E> &rel : isec.get_rels(ctx))
       if (Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
           InputSection<E> *isec = sym.get_input_section())
-        if (isec->icf_eligible)
+        if (isec->icf_idx != -1)
           edge_indices[i + 1]++;
   });
 
@@ -425,13 +429,13 @@ static void gather_edges(Context<E> &ctx,
       for (const ElfRel<E> &rel : fde.get_rels(*isec.file).subspan(1))
         if (Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
             InputSection<E> *isec = sym.get_input_section())
-          if (isec->icf_eligible)
+          if (isec->icf_idx != -1)
             edges[idx++] = isec->icf_idx;
 
     for (const ElfRel<E> &rel : isec.get_rels(ctx))
       if (Symbol<E> &sym = *isec.file->symbols[rel.r_sym];
           InputSection<E> *isec = sym.get_input_section())
-        if (isec->icf_eligible)
+        if (isec->icf_idx != -1)
           edges[idx++] = isec->icf_idx;
   });
 }
@@ -473,22 +477,20 @@ static i64 count_num_classes(std::span<Digest> digests,
 }
 
 template <typename E>
-static void print_icf_sections(Context<E> &ctx) {
-  tbb::concurrent_vector<InputSection<E> *> leaders;
+static void print_icf_sections(Context<E> &ctx,
+                               std::span<InputSection<E> *> sections) {
+  tbb::concurrent_vector<InputSection<E> *> leader_sections;
   tbb::concurrent_unordered_multimap<InputSection<E> *, InputSection<E> *> map;
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    for (InputSection<E> *isec : file->sections) {
-      if (isec && isec->is_alive && isec->leader) {
-        if (isec == isec->leader)
-          leaders.push_back(isec);
-        else
-          map.insert({isec->leader, isec});
-      }
-    }
+  tbb::parallel_for_each(sections, [&](InputSection<E> *isec) {
+    InputSection<E> *leader = isec->icf_leader;
+    if (isec == leader)
+      leader_sections.push_back(isec);
+    else
+      map.insert({leader, isec});
   });
 
-  tbb::parallel_sort(leaders.begin(), leaders.end(),
+  tbb::parallel_sort(leader_sections.begin(), leader_sections.end(),
                      [](InputSection<E> *a, InputSection<E> *b) {
                        return a->get_priority() < b->get_priority();
                      });
@@ -507,7 +509,7 @@ static void print_icf_sections(Context<E> &ctx) {
 
   i64 saved_bytes = 0;
 
-  for (InputSection<E> *leader : leaders) {
+  for (InputSection<E> *leader : leader_sections) {
     auto [begin, end] = map.equal_range(leader);
     if (begin != end) {
       *out << "selected section " << *leader << '\n';
@@ -582,20 +584,20 @@ void icf_sections(Context<E> &ctx) {
   {
     Timer t(ctx, "group");
     tbb::parallel_for((i64)0, (i64)sections.size(), [&](i64 i) {
-      sections[i]->leader = map.find(digests[i]);
+      std::construct_at(&sections[i]->icf_leader, map.find(digests[i]));
     });
   }
 
   if (!ctx.arg.print_icf_sections.empty())
-    print_icf_sections(ctx);
+    print_icf_sections<E>(ctx, sections);
 
   // Update alignment of leaders.
   {
     Timer t(ctx, "update_alignment");
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (InputSection<E> *isec : file->sections)
-        if (isec && isec->is_alive && isec->icf_removed())
-          update_maximum(isec->leader->p2align, isec->p2align);
+    tbb::parallel_for_each(sections, [&](InputSection<E> *isec) {
+      InputSection<E> *leader = isec->icf_leader;
+      if (isec != leader)
+        update_maximum(leader->p2align, isec->p2align);
     });
   }
 
@@ -605,12 +607,14 @@ void icf_sections(Context<E> &ctx) {
   {
     Timer t(ctx, "sweep");
     static Counter eliminated("icf_eliminated");
-    tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-      for (InputSection<E> *isec : file->sections) {
-        if (isec && isec->is_alive && isec->icf_removed()) {
-          isec->kill();
-          eliminated++;
-        }
+    tbb::parallel_for_each(sections, [&](InputSection<E> *isec) {
+      InputSection<E> *leader = isec->icf_leader;
+      if (isec != leader) {
+        isec->is_icf_removed = true;
+        isec->kill();
+        eliminated++;
+      } else {
+        std::construct_at(&isec->offset, -1);
       }
     });
   }

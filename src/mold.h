@@ -573,7 +573,6 @@ public:
   std::span<FdeRecord<E>> get_fdes() const;
   std::string_view get_func_name(Context<E> &ctx, i64 offset) const;
   bool is_relr_reloc(Context<E> &ctx, const ElfRel<E> &rel) const;
-  bool icf_removed() const;
   bool record_undef_error(Context<E> &ctx, const ElfRel<E> &rel);
   void check_range(Context<E> &ctx, i64 i, i64 val, i64 lo, i64 hi);
 
@@ -588,18 +587,20 @@ public:
   // decompression and may shrink during relaxation.
   u8 *contents = nullptr;
 
+  // `offset` is normally the section's offset within the output section.
+  // During ICF, `icf_idx` temporarily holds a dense section index. After ICF,
+  // `icf_leader` points to the leader for a section eliminated by ICF.
+  union {
+    i64 offset = -1;
+    u32 icf_idx;
+    ArenaPtr<InputSection<E>> icf_leader;
+  };
+
   i64 sh_size = -1;
-  i64 offset = -1;
   i32 fde_begin = -1;
   i32 fde_end = -1;
   i32 shndx = -1;
   i32 relsec_idx = -1;
-
-  // `leader` is the section that this section has been merged with by ICF.
-  // It is null for ineligible sections, points to this for retained sections,
-  // and points to another section for removed sections.
-  ArenaPtr<InputSection<E>> leader;
-  u32 icf_idx = -1;
 
   // UINT16_MAX means that name() must scan the remaining suffix.
   u16 namelen = 0;
@@ -608,8 +609,8 @@ public:
   Atomic<bool> is_alive = true;       // for COMDAT and garbage collection
   Atomic<bool> is_visited = false;    // for garbage collection
   Atomic<bool> address_taken = false; // for ICF
-  bool uncompressed = false;
-  bool icf_eligible = false;
+  bool uncompressed : 1 = false;
+  bool is_icf_removed : 1 = false;
 
   [[no_unique_address]] InputSectionExtras<E> extra;
 
@@ -3266,8 +3267,7 @@ inline std::string_view InputSection<E>::name() const {
   if (shndx >= file->elf_sections.size())
     return (shdr().sh_flags & SHF_TLS) ? ".tls_common" : ".common";
 
-  const char *data =
-    file->shstrtab.data() + file->elf_sections[shndx].sh_name;
+  const char *data = file->shstrtab.data() + file->elf_sections[shndx].sh_name;
   if (namelen == UINT16_MAX)
     return {data, UINT16_MAX + strlen(data + UINT16_MAX)};
   return {data, namelen};
@@ -3426,18 +3426,13 @@ InputSection<E>::get_tombstone(Symbol<E> &sym, SectionFragment<E> *frag) {
   // If the section was dead due to ICF, we don't want to emit debug
   // info for that section but want to set real values to .debug_line so
   // that users can set a breakpoint inside a merged section.
-  if (isec && isec->icf_removed() && name == ".debug_line")
+  if (isec && isec->is_icf_removed && name == ".debug_line")
     return {};
 
   // 0 is an invalid value in most debug info sections, so we use it
   // as a tombstone value. .debug_loc and .debug_ranges reserve 0 as
   // the terminator marker, so we use 1 if that's the case.
   return (name == ".debug_loc" || name == ".debug_ranges") ? 1 : 0;
-}
-
-template <typename E>
-inline bool InputSection<E>::icf_removed() const {
-  return this->leader && this->leader != this;
 }
 
 template <typename E>
@@ -3643,8 +3638,8 @@ u64 Symbol<E>::get_addr(Context<E> &ctx, i64 flags) const {
     return value; // absolute symbol
 
   if (!isec->is_alive) {
-    if (isec->icf_removed())
-      return isec->leader->get_addr() + value;
+    if (isec->is_icf_removed)
+      return isec->icf_leader->get_addr() + value;
 
     if (isec->name() == ".eh_frame") {
       // .eh_frame contents are parsed and reconstructed by the linker,
