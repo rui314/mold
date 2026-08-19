@@ -492,6 +492,10 @@ void MergeableSection<E>::resolve_contents(Context<E> &ctx) {
 
 using E = MOLD_TARGET;
 
+// InputSections are allocated from the arena, which does not run
+// destructors, so the class must stay trivially destructible.
+static_assert(std::is_trivially_destructible_v<InputSection<E>>);
+
 template bool cie_equals(const CieRecord<E> &, const CieRecord<E> &);
 template class InputSection<E>;
 template class MergeableSection<E>;

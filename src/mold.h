@@ -537,10 +537,13 @@ struct RelocDelta {
 // `delta` bytes when copying section contents to the output buffer.
 //
 // Since code-shrinking relaxation never bloats section contents, `delta`
-// increases monotonically within the vector as well.
+// increases monotonically within the array as well.
+//
+// The array is written once by shrink_section() and lives in the arena so
+// that InputSection stays trivially destructible.
 template <typename E> requires is_riscv<E> || is_loongarch<E>
 struct InputSectionExtras<E> {
-  std::vector<RelocDelta> r_deltas;
+  std::span<RelocDelta> r_deltas;
 };
 
 // InputSection represents a section in an input object file. Symbol::origin

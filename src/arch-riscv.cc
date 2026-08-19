@@ -887,7 +887,7 @@ u64 get_eflags(Context<E> &ctx) {
 template <>
 void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
   std::span<const ElfRel<E>> rels = isec.get_rels(ctx);
-  std::vector<RelocDelta> &deltas = isec.extra.r_deltas;
+  std::vector<RelocDelta> deltas;
   i64 r_delta = 0;
   u8 *buf = isec.contents;
 
@@ -1040,6 +1040,12 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
     }
   }
 
+  if (deltas.empty())
+    return;
+
+  RelocDelta *p = ctx.arena.template allocate<RelocDelta>(deltas.size());
+  ranges::copy(deltas, p);
+  isec.extra.r_deltas = {p, deltas.size()};
   isec.sh_size -= r_delta;
 }
 
