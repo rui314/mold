@@ -2691,7 +2691,9 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       if (ctx.arg.relocatable)
         continue;
 
-      u64 func_addr;
+      // Always set in the loop below because parse_ehframe() discards
+      // FDEs that have no relocations.
+      u64 func_addr = -1;
 
       for (i64 j = 0; j < rels.size(); j++) {
         const ElfRel<E> &rel = rels[j];
