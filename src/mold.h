@@ -5,7 +5,6 @@
 
 #include <cassert>
 #include <cstdint>
-#include <deque>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -1816,14 +1815,14 @@ private:
   std::vector<u32> hashes;
 };
 
-// ObjectFile needs a lookup table indexed by ELF section number. Store 31-bit
-// indices into per-file pools and use the high bit to distinguish regular and
-// mergeable sections.
+// ObjectFile needs a lookup table indexed by ELF section number. The table
+// lives outside the arena, so it cannot use ArenaPtr; a regular section is
+// instead stored as its 31-bit arena index. The high bit distinguishes
+// mergeable sections, which are stored as indices into a per-file pool.
 template <typename E>
 class InputSectionTable {
 public:
-  InputSectionTable(ArenaResource &arena)
-    : pool(ArenaAllocator<InputSection<E>>(arena)) {}
+  InputSectionTable(ArenaResource &arena) : arena(arena) {}
 
   class Iterator {
   public:
@@ -1862,7 +1861,7 @@ private:
   static constexpr u32 MERGEABLE = 1U << 31;
   static constexpr u32 INDEX_MASK = ~MERGEABLE;
 
-  std::deque<InputSection<E>, ArenaAllocator<InputSection<E>>> pool;
+  ArenaResource &arena;
   std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_pool;
   std::vector<u32> indices;
 };
@@ -3577,8 +3576,7 @@ inline InputSection<E> *InputSectionTable<E>::operator[](i64 idx) {
   u32 value = indices[idx];
   if (value == 0 || (value & MERGEABLE))
     return nullptr;
-
-  return &pool[value - 1];
+  return arena.get_pointer<InputSection<E>>(value);
 }
 
 template <typename E>
@@ -3599,9 +3597,8 @@ InputSection<E> *InputSectionTable<E>::emplace(Context<E> &ctx,
   if (shndx == (i64)indices.size())
     indices.push_back(0);
 
-  assert((u64)pool.size() + 1 < MERGEABLE);
-  InputSection<E> *isec = &pool.emplace_back(ctx, file, shndx, name);
-  indices[shndx] = pool.size();
+  InputSection<E> *isec = arena.make<InputSection<E>>(ctx, file, shndx, name);
+  indices[shndx] = arena.get_index(isec);
   return isec;
 }
 
