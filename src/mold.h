@@ -1820,26 +1820,24 @@ private:
 // instead stored as its 31-bit arena index. The high bit distinguishes
 // mergeable sections, which are stored as indices into a per-file pool.
 template <typename E>
-class InputSectionTable {
+class InputSectionVector {
 public:
-  InputSectionTable(ArenaResource &arena) : arena(arena) {}
+  InputSectionVector(ArenaResource &arena) : arena(arena) {}
 
   class Iterator {
   public:
-    Iterator(InputSectionTable &table, i64 idx)
-      : table(table), idx(idx) {}
+    Iterator(InputSectionVector &table, i64 idx) : table(table), idx(idx) {}
 
     InputSection<E> *operator*() const { return table[idx]; }
+    bool operator!=(const Iterator &other) const { return idx != other.idx; }
 
     Iterator &operator++() {
       idx++;
       return *this;
     }
 
-    bool operator!=(const Iterator &other) const { return idx != other.idx; }
-
   private:
-    InputSectionTable &table;
+    InputSectionVector &table;
     i64 idx;
   };
 
@@ -2030,7 +2028,7 @@ public:
 
   std::string archive_name;
 
-  InputSectionTable<E> sections;
+  InputSectionVector<E> sections;
   bool sections_parsed = false;
 
   std::vector<ElfShdr<E>> elf_sections2;
@@ -3572,7 +3570,7 @@ inline i64 ObjectFile<E>::get_shndx(const ElfSym<E> &esym) {
 }
 
 template <typename E>
-inline InputSection<E> *InputSectionTable<E>::operator[](i64 idx) {
+inline InputSection<E> *InputSectionVector<E>::operator[](i64 idx) {
   u32 value = indices[idx];
   if (value == 0 || (value & MERGEABLE))
     return nullptr;
@@ -3581,7 +3579,7 @@ inline InputSection<E> *InputSectionTable<E>::operator[](i64 idx) {
 
 template <typename E>
 inline MergeableSection<E> *
-InputSectionTable<E>::get_mergeable(i64 idx) {
+InputSectionVector<E>::get_mergeable(i64 idx) {
   u32 value = indices[idx];
   if (!(value & MERGEABLE))
     return nullptr;
@@ -3589,7 +3587,7 @@ InputSectionTable<E>::get_mergeable(i64 idx) {
 }
 
 template <typename E>
-InputSection<E> *InputSectionTable<E>::emplace(Context<E> &ctx,
+InputSection<E> *InputSectionVector<E>::emplace(Context<E> &ctx,
                                                ObjectFile<E> &file,
                                                i64 shndx,
                                                std::string_view name) {
@@ -3603,7 +3601,7 @@ InputSection<E> *InputSectionTable<E>::emplace(Context<E> &ctx,
 }
 
 template <typename E>
-void InputSectionTable<E>::set_mergeable(
+void InputSectionVector<E>::set_mergeable(
     i64 idx, std::unique_ptr<MergeableSection<E>> m) {
   assert(mergeable_pool.size() < MERGEABLE - 1);
   mergeable_pool.push_back(std::move(m));
