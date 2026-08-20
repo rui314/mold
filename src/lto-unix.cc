@@ -184,6 +184,7 @@ static PluginStatus add_input_file(const char *path) {
   lto_objects<E>.push_back(file);
 
   file->priority = file_priority++;
+  file->is_lto_output = true;
   file->is_reachable = true;
   file->parse_symbols(ctx);
 

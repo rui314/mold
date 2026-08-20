@@ -317,10 +317,17 @@ void gather_symbols(Context<E> &ctx) {
 }
 
 template <typename E>
-static void record_comdat_owner(Symbol<E> &signature, i32 priority) {
+static void record_comdat_owner(Symbol<E> &sig, ObjectFile<E> &file) {
+  // A group claimed by an IR file belongs to the LTO result, so only an
+  // LTO-generated file may own it. LLVM keeps claimed groups in its output;
+  // GCC emits their contents without a group, so no file owns them.
+  if (sig.comdat_claimed_by_ir && !file.is_lto_output)
+    return;
+
   // Symbol resolution is clear while COMDAT groups are selected, so sym_idx
   // can temporarily hold the winning file priority.
-  std::atomic_ref<i32> owner(signature.sym_idx);
+  i32 priority = file.priority;
+  std::atomic_ref<i32> owner(sig.sym_idx);
   i32 old = owner.load(std::memory_order_relaxed);
   while ((old == -1 || priority < old) &&
          !owner.compare_exchange_weak(old, priority,
@@ -344,7 +351,7 @@ static void parse_input_sections(Context<E> &ctx) {
       file->read_section_metadata(ctx);
 
     for (ComdatGroupRef<E> &ref : file->comdat_groups)
-      record_comdat_owner(*ref.signature(ctx), file->priority);
+      record_comdat_owner(*ref.signature(ctx), *file);
   });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
@@ -356,12 +363,19 @@ static void parse_input_sections(Context<E> &ctx) {
   // LTO plugin symbol tables may not enumerate all section-level helper
   // symbols (e.g. some thunks). Therefore, an IR file may claim a signature
   // only if no reachable regular object has already claimed it.
+  //
+  // An IR file's claim is permanent: the LTO result provides the claimed
+  // definitions, so a regular object extracted after LTO must not win the
+  // group and resurrect a copy of them
+  // (https://github.com/rui314/mold/issues/1637).
   for (ObjectFile<E> *file : ctx.objs) {
     if (file->is_reachable) {
       for (i64 i = 0; i < file->lto_comdat_signatures.size(); i++) {
         if (Symbol<E> *sig = file->lto_comdat_signatures[i]) {
-          if (sig->sym_idx == -1)
+          if (sig->sym_idx == -1) {
             sig->sym_idx = file->priority;
+            sig->comdat_claimed_by_ir = true;
+          }
           file->lto_comdat_discarded[i] = (sig->sym_idx != file->priority);
         }
       }
