@@ -39,6 +39,14 @@ $GCC -g -ggnu-pubnames -gdwarf-5 -fdebug-types-section -c $t/b.c -o $t/b.o
 # Clang accepts -fdebug-types-section but does not emit type units.
 readelf --debug-dump=info $t/a.o | grep -F DW_UT_type || skip
 
+# Old GDB versions choke on DWARF 5 type units no matter how the program
+# is linked; GDB 10 even crashes. Skip if GDB cannot debug an executable
+# that doesn't contain a .gdb_index section.
+$GCC -B. $t/a.o $t/b.o -o $t/exe-noindex
+DEBUGINFOD_URLS= gdb $t/exe-noindex -nx -batch -ex 'ptype struct Shape' \
+  -ex quit >& $t/log-noindex || skip
+grep -Fq 'type = struct Shape {' $t/log-noindex || skip
+
 check_index() {
   readelf --debug-dump=gdb_index $1 > $2 || true
   grep -F 'Version 9' $2 || return 1
