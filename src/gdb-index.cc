@@ -64,75 +64,18 @@
 
 namespace mold {
 
-// DWARF32 and DWARF64 describe the width of DWARF section offsets, not
-// the ELF class or target address size. Versions 2 to 4 use the same CU
-// header layout; version 5 adds unit_type and moves address_size before
-// abbrev_offset. A DWARF64 unit starts with 0xffffffff followed by an
-// eight-byte unit length.
-enum DwarfKind { DWARF2_32, DWARF5_32, DWARF2_64, DWARF5_64 };
-
-// On-disk header for a DWARF 2 to 4 CU using 32-bit section offsets.
-template <typename E>
-struct CuHdrDwarf2_32 {
-  U32<E> size;
-  U16<E> version;
-  U32<E> abbrev_offset;
-  u8 address_size;
-};
-
-// On-disk header for a DWARF 5 CU using 32-bit section offsets.
-template <typename E>
-struct CuHdrDwarf5_32 {
-  U32<E> size;
-  U16<E> version;
+// Normalized view of a DWARF unit header. DWARF32 and DWARF64 describe the
+// width of section offsets, not the ELF class or target address size.
+struct DwarfUnitHeader {
+  i64 size;
+  i64 header_size;
+  u64 abbrev_offset;
+  u64 type_die_offset;
+  u64 signature;
+  u8 version;
   u8 unit_type;
   u8 address_size;
-  U32<E> abbrev_offset;
-};
-
-// A 32-bit DWARF 5 TU header extends the CU header with a signature and the
-// unit-relative offset of the DIE that defines the type.
-template <typename E> struct TuHdrDwarf5_32 {
-  U32<E> size;
-  U16<E> version;
-  u8 unit_type;
-  u8 address_size;
-  U32<E> abbrev_offset;
-  U64<E> type_signature;
-  U32<E> type_offset;
-};
-
-// DWARF64 counterpart of CuHdrDwarf2_32. `magic` is the 0xffffffff marker.
-template <typename E>
-struct CuHdrDwarf2_64 {
-  U32<E> magic;
-  U64<E> size;
-  U16<E> version;
-  U64<E> abbrev_offset;
-  u8 address_size;
-};
-
-// On-disk header for a DWARF 5 CU using 64-bit section offsets.
-template <typename E>
-struct CuHdrDwarf5_64 {
-  U32<E> magic;
-  U64<E> size;
-  U16<E> version;
-  u8 unit_type;
-  u8 address_size;
-  U64<E> abbrev_offset;
-};
-
-// DWARF64 counterpart of TuHdrDwarf5_32.
-template <typename E> struct TuHdrDwarf5_64 {
-  U32<E> magic;
-  U64<E> size;
-  U16<E> version;
-  u8 unit_type;
-  u8 address_size;
-  U64<E> abbrev_offset;
-  U64<E> type_signature;
-  U64<E> type_offset;
+  u8 offset_size;
 };
 
 // Header of one GNU pubnames or pubtypes set in DWARF32 format.
@@ -228,7 +171,6 @@ union NameRecord {
 // CU metadata carried from input parsing through final index serialization.
 // CUs own address ranges; both CUs and TUs below may own public names.
 struct Compunit {
-  DwarfKind kind;
   // Initially relative to the input contribution selected by file_idx/shndx;
   // rebased to the output .debug_info section in build_gdb_index_tables.
   i64 offset;
@@ -349,85 +291,77 @@ static u32 initialize_gdb_name(MapValue &value, const char *name) {
   return size;
 }
 
-// Version-independent view of the header fields needed while walking
-// .debug_info. Type-specific fields are zero for compilation units.
-struct ParsedDwarfUnit {
-  DwarfKind kind;
-  i64 size;
-  u8 unit_type;
-  u64 type_die_offset = 0;
-  u64 signature = 0;
-};
+template <typename T>
+static u64 read_uint(u8 **p) {
+  u64 val = *(T *)*p;
+  *p += sizeof(T);
+  return val;
+}
 
 template <typename E>
-static ParsedDwarfUnit parse_unit_header(Context<E> &ctx, u8 *p) {
+static u64 read_offset(u8 **p, u8 offset_size) {
+  if (offset_size == 4)
+    return read_uint<U32<E>>(p);
+  assert(offset_size == 8);
+  return read_uint<U64<E>>(p);
+}
+
+template <typename E>
+static DwarfUnitHeader parse_unit_header(Context<E> &ctx, u8 *start) {
   // The first word is either a DWARF32 unit length or DWARF64's reserved
   // marker. unit_length excludes its own encoding: four bytes in DWARF32, or
   // the four-byte marker plus eight-byte length in DWARF64.
-  bool is_dwarf64 = *(U32<E> *)p == 0xffff'ffff;
-  u16 version = is_dwarf64 ? ((CuHdrDwarf2_64<E> *)p)->version
-                           : ((CuHdrDwarf2_32<E> *)p)->version;
+  u8 *p = start;
+  i64 unit_length = read_uint<U32<E>>(&p);
+  i64 initial_length_size = 4;
+  u8 offset_size = 4;
+
+  if (unit_length == UINT32_MAX) {
+    unit_length = read_uint<U64<E>>(&p);
+    initial_length_size = 12;
+    offset_size = 8;
+  }
+
+  u16 version = read_uint<U16<E>>(&p);
 
   if (version > 5)
-    Fatal(ctx) << "--gdb-index: DWARF version " << version
-               << " is not supported";
+    Fatal(ctx) << "--gdb-index: DWARF version " << version << " is not supported";
 
-  // Versions 2 to 4 have no unit_type and .debug_info contains only CUs.
+  DwarfUnitHeader unit = {};
+  unit.size = unit_length + initial_length_size;
+  unit.version = version;
+  unit.unit_type = DW_UT_compile;
+  unit.offset_size = offset_size;
+
   if (version < 5) {
-    if (is_dwarf64) {
-      CuHdrDwarf2_64<E> &hdr = *(CuHdrDwarf2_64<E> *)p;
-      return {DWARF2_64, (i64)hdr.size + 12, DW_UT_compile};
+    unit.abbrev_offset = read_offset<E>(&p, offset_size);
+    unit.address_size = *p++;
+  } else {
+    unit.unit_type = *p++;
+    unit.address_size = *p++;
+    unit.abbrev_offset = read_offset<E>(&p, offset_size);
+
+    switch (unit.unit_type) {
+    case DW_UT_skeleton:
+    case DW_UT_split_compile:
+      p += 8; // dwo_id
+      break;
+    case DW_UT_type:
+    case DW_UT_split_type:
+      unit.signature = read_uint<U64<E>>(&p);
+      unit.type_die_offset = read_offset<E>(&p, offset_size);
+      break;
     }
-
-    CuHdrDwarf2_32<E> &hdr = *(CuHdrDwarf2_32<E> *)p;
-    return {DWARF2_32, (i64)hdr.size + 4, DW_UT_compile};
   }
 
-  if (is_dwarf64) {
-    CuHdrDwarf5_64<E> &hdr = *(CuHdrDwarf5_64<E> *)p;
-    ParsedDwarfUnit unit{DWARF5_64, (i64)hdr.size + 12, hdr.unit_type};
-
-    if (hdr.unit_type == DW_UT_type || hdr.unit_type == DW_UT_split_type) {
-      TuHdrDwarf5_64<E> &tu = *(TuHdrDwarf5_64<E> *)p;
-      unit.type_die_offset = tu.type_offset;
-      unit.signature = tu.type_signature;
-    }
-    return unit;
-  }
-
-  CuHdrDwarf5_32<E> &hdr = *(CuHdrDwarf5_32<E> *)p;
-  ParsedDwarfUnit unit{DWARF5_32, (i64)hdr.size + 4, hdr.unit_type};
-
-  if (hdr.unit_type == DW_UT_type || hdr.unit_type == DW_UT_split_type) {
-    TuHdrDwarf5_32<E> &tu = *(TuHdrDwarf5_32<E> *)p;
-    unit.type_die_offset = tu.type_offset;
-    unit.signature = tu.type_signature;
-  }
+  unit.header_size = p - start;
   return unit;
 }
 
-template <typename E, typename CuHdr>
-u8 *find_cu_abbrev(Context<E> &ctx, u8 **p, const CuHdr &hdr) {
+template <typename E>
+u8 *find_cu_abbrev(Context<E> &ctx, u8 **p, const DwarfUnitHeader &hdr) {
   if (hdr.address_size != sizeof(Word<E>))
     Fatal(ctx) << "--gdb-index: unsupported address size " << hdr.address_size;
-
-  if constexpr (requires { hdr.unit_type; }) {
-    // DWARF 5 skeleton and split-compile headers have an eight-byte dwo_id
-    // between the common header and the first DIE. Type-unit header tails are
-    // parsed separately because type units do not contribute ranges.
-    switch (hdr.unit_type) {
-    case DW_UT_compile:
-    case DW_UT_partial:
-      break;
-    case DW_UT_skeleton:
-    case DW_UT_split_compile:
-      *p += 8;
-      break;
-    default:
-      Fatal(ctx) << "--gdb-index: unknown unit type: 0x" << std::hex
-                 << (u32)hdr.unit_type;
-    }
-  }
 
   i64 abbrev_code = read_uleb(p);
 
@@ -468,11 +402,11 @@ u8 *find_cu_abbrev(Context<E> &ctx, u8 **p, const CuHdr &hdr) {
   return abbrev;
 }
 
-// .debug_info contains variable-length fields. `Offset` is four or eight bytes
-// according to the DWARF32/DWARF64 format; Word<E> is instead the target's
-// address width. This function advances over one scalar attribute value.
-template <typename E, typename Offset>
-u64 read_scalar(Context<E> &ctx, u8 **p, u64 form) {
+// .debug_info contains variable-length fields. `offset_size` is four or eight
+// bytes according to the DWARF32/DWARF64 format; Word<E> is instead the
+// target's address width. This function advances over one scalar value.
+template <typename E>
+u64 read_scalar(Context<E> &ctx, u8 **p, u64 form, u8 offset_size) {
   switch (form) {
   case DW_FORM_flag_present:
     return 0;
@@ -485,44 +419,26 @@ u64 read_scalar(Context<E> &ctx, u8 **p, u64 form) {
   case DW_FORM_data2:
   case DW_FORM_strx2:
   case DW_FORM_addrx2:
-  case DW_FORM_ref2: {
-    u64 val = *(U16<E> *)*p;
-    *p += 2;
-    return val;
-  }
+  case DW_FORM_ref2:
+    return read_uint<U16<E>>(p);
   case DW_FORM_strx3:
-  case DW_FORM_addrx3: {
-    u64 val = *(U24<E> *)*p;
-    *p += 3;
-    return val;
-  }
+  case DW_FORM_addrx3:
+    return read_uint<U24<E>>(p);
   case DW_FORM_data4:
   case DW_FORM_strx4:
   case DW_FORM_addrx4:
-  case DW_FORM_ref4: {
-    u64 val = *(U32<E> *)*p;
-    *p += 4;
-    return val;
-  }
+  case DW_FORM_ref4:
+    return read_uint<U32<E>>(p);
   case DW_FORM_data8:
-  case DW_FORM_ref8: {
-    u64 val = *(U64<E> *)*p;
-    *p += 8;
-    return val;
-  }
+  case DW_FORM_ref8:
+    return read_uint<U64<E>>(p);
   case DW_FORM_strp:
   case DW_FORM_sec_offset:
-  case DW_FORM_line_strp: {
-    u64 val = *(Offset *)*p;
-    *p += sizeof(Offset);
-    return val;
-  }
+  case DW_FORM_line_strp:
+    return read_offset<E>(p, offset_size);
   case DW_FORM_addr:
-  case DW_FORM_ref_addr: {
-    u64 val = *(Word<E> *)*p;
-    *p += sizeof(Word<E>);
-    return val;
-  }
+  case DW_FORM_ref_addr:
+    return read_uint<Word<E>>(p);
   case DW_FORM_strx:
   case DW_FORM_addrx:
   case DW_FORM_udata:
@@ -618,13 +534,13 @@ read_rnglist_range(std::vector<std::pair<u64, u64>> &vec, u8 *p,
 // ranges are read from .debug_ranges (or .debug_rnglists for DWARF5).
 // Otherwise, a range is read directly from .debug_info (or possibly
 // from .debug_addr for DWARF5).
-template <typename E, typename CuHdr>
+template <typename E>
 static std::vector<std::pair<u64, u64>>
 read_address_ranges(Context<E> &ctx, const Compunit &cu) {
   // Read .debug_info to find the record at a given offset.
-  u8 *p = &ctx.debug_info[0] + cu.offset;
-  CuHdr &hdr = *(CuHdr *)p;
-  p += sizeof(hdr);
+  u8 *start = &ctx.debug_info[0] + cu.offset;
+  DwarfUnitHeader hdr = parse_unit_header(ctx, start);
+  u8 *p = start + hdr.header_size;
 
   u8 *abbrev = find_cu_abbrev(ctx, &p, hdr);
 
@@ -633,8 +549,6 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
     u64 form = 0;
     u64 value = 0;
   };
-
-  using Offset = decltype(hdr.size);
 
   Record low_pc;
   Record high_pc;
@@ -649,7 +563,7 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
     if (name == 0 && form == 0)
       break;
 
-    u64 val = read_scalar<E, Offset>(ctx, &p, form);
+    u64 val = read_scalar<E>(ctx, &p, form, hdr.offset_size);
 
     switch (name) {
     case DW_AT_low_pc:
@@ -691,8 +605,9 @@ read_address_ranges(Context<E> &ctx, const Compunit &cu) {
         Fatal(ctx) << "--gdb-index: missing DW_AT_rnglists_base";
 
       u8 *base = buf + rnglists_base;
-      Offset *offsets = (Offset *)base;
-      read_rnglist_range<E>(vec, base + offsets[ranges.value], addrx, low_pc.value);
+      u8 *entry = base + ranges.value * hdr.offset_size;
+      u64 offset = read_offset<E>(&entry, hdr.offset_size);
+      read_rnglist_range<E>(vec, base + offset, addrx, low_pc.value);
     }
     return vec;
   }
@@ -858,7 +773,7 @@ static void read_debug_info_section(Context<E> &ctx, DebugUnits &units,
   u8 *end = begin + contents.size();
 
   for (u8 *p = begin; p < end;) {
-    ParsedDwarfUnit unit = parse_unit_header(ctx, p);
+    DwarfUnitHeader unit = parse_unit_header(ctx, p);
 
     switch (unit.unit_type) {
     case DW_UT_compile:
@@ -866,7 +781,7 @@ static void read_debug_info_section(Context<E> &ctx, DebugUnits &units,
     case DW_UT_skeleton:
     case DW_UT_split_compile:
       units.cus.push_back(
-          Compunit{unit.kind, p - begin, unit.size, file_idx, isec.shndx});
+          Compunit{p - begin, unit.size, file_idx, isec.shndx});
       break;
     case DW_UT_type:
     case DW_UT_split_type:
@@ -924,20 +839,7 @@ template <typename E> static DebugUnits read_debug_units(Context<E> &ctx) {
 template <typename E>
 static void read_address_ranges(Context<E> &ctx, std::vector<Compunit> &cus) {
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
-    switch (cu.kind) {
-    case DWARF2_32:
-      cu.ranges = read_address_ranges<E, CuHdrDwarf2_32<E>>(ctx, cu);
-      break;
-    case DWARF5_32:
-      cu.ranges = read_address_ranges<E, CuHdrDwarf5_32<E>>(ctx, cu);
-      break;
-    case DWARF2_64:
-      cu.ranges = read_address_ranges<E, CuHdrDwarf2_64<E>>(ctx, cu);
-      break;
-    case DWARF5_64:
-      cu.ranges = read_address_ranges<E, CuHdrDwarf5_64<E>>(ctx, cu);
-      break;
-    }
+    cu.ranges = read_address_ranges(ctx, cu);
 
     std::erase_if(cu.ranges, [](std::pair<u64, u64> range) {
       return range.first == 0 || range.first == range.second;
