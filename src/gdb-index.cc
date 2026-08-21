@@ -154,14 +154,26 @@ struct PubnamesHdr64 {
   U64<E> debug_info_size;
 };
 
-// The six-word .gdb_index header. All five table offsets are section-relative.
-struct SectionHeader {
-  ul32 version = 7;
-  ul32 cu_list_offset = 0;
-  ul32 cu_types_offset = 0;
-  ul32 ranges_offset = 0;
-  ul32 symtab_offset = 0;
-  ul32 const_pool_offset = 0;
+// The version 7 .gdb_index header. All table offsets are section-relative.
+struct SectionHeaderV7 {
+  ul32 version;
+  ul32 cu_list_offset;
+  ul32 cu_types_offset;
+  ul32 ranges_offset;
+  ul32 symtab_offset;
+  ul32 const_pool_offset;
+};
+
+// Version 9 inserts a shortcut table between the symbol table and the
+// constant pool. We currently emit an empty shortcut table.
+struct SectionHeaderV9 {
+  ul32 version;
+  ul32 cu_list_offset;
+  ul32 cu_types_offset;
+  ul32 ranges_offset;
+  ul32 symtab_offset;
+  ul32 shortcut_offset;
+  ul32 const_pool_offset;
 };
 
 // Build-time state for one unique name in the .gdb_index symbol table.
@@ -1160,29 +1172,55 @@ void write_gdb_index(Context<E> &ctx) {
 
   read_address_ranges(ctx, cus);
 
-  // Compute sizes of each component
-  SectionHeader hdr;
-  hdr.cu_list_offset = sizeof(hdr);
-  hdr.cu_types_offset = hdr.cu_list_offset + cus.size() * 16;
-  hdr.ranges_offset = hdr.cu_types_offset + tus.size() * 24;
+  // Version 8 made symbol-table entries refer directly to type units, as ours
+  // do. GDB 12 accepts version 8 but assumes that its type-unit list refers to
+  // .debug_types and crashes on DWARF 5 type units in .debug_info. Version 9
+  // makes it safely ignore such an index, while newer GDB versions can use it.
+  // Keep version 7 for TU-free indices so older GDB versions can still use them.
+  i64 header_size = tus.empty() ? sizeof(SectionHeaderV7) : sizeof(SectionHeaderV9);
 
-  hdr.symtab_offset = hdr.ranges_offset;
+  // Compute sizes of each component.
+  i64 cu_list_offset = header_size;
+  i64 cu_types_offset = cu_list_offset + cus.size() * 16;
+  i64 ranges_offset = cu_types_offset + tus.size() * 24;
+
+  i64 symtab_offset = ranges_offset;
   for (Compunit &cu : cus)
-    hdr.symtab_offset += cu.ranges.size() * 20;
+    symtab_offset += cu.ranges.size() * 20;
 
   i64 ht_size = data.ht_size;
-  hdr.const_pool_offset = hdr.symtab_offset + ht_size * 8;
+  i64 shortcut_offset = symtab_offset + ht_size * 8;
+  i64 const_pool_offset = shortcut_offset + (tus.empty() ? 0 : 8);
 
-  i64 bufsize = hdr.const_pool_offset + data.pool_size.type_bytes +
+  i64 bufsize = const_pool_offset + data.pool_size.type_bytes +
                 data.pool_size.name_bytes;
 
   u8 *buf = ctx.output_file->extend(ctx, bufsize);
 
-  // Write a section header
-  memcpy(buf, &hdr, sizeof(hdr));
+  // Write a section header. A zero language marks the version 9 shortcut
+  // table as containing no main-function information.
+  if (tus.empty()) {
+    SectionHeaderV7 &hdr = *(SectionHeaderV7 *)buf;
+    hdr.version = 7;
+    hdr.cu_list_offset = cu_list_offset;
+    hdr.cu_types_offset = cu_types_offset;
+    hdr.ranges_offset = ranges_offset;
+    hdr.symtab_offset = symtab_offset;
+    hdr.const_pool_offset = const_pool_offset;
+  } else {
+    SectionHeaderV9 &hdr = *(SectionHeaderV9 *)buf;
+    hdr.version = 9;
+    hdr.cu_list_offset = cu_list_offset;
+    hdr.cu_types_offset = cu_types_offset;
+    hdr.ranges_offset = ranges_offset;
+    hdr.symtab_offset = symtab_offset;
+    hdr.shortcut_offset = shortcut_offset;
+    hdr.const_pool_offset = const_pool_offset;
+    memset(buf + shortcut_offset, 0, 8);
+  }
 
   // A CU-list entry is {.debug_info offset, unit size}.
-  u8 *p = buf + sizeof(hdr);
+  u8 *p = buf + cu_list_offset;
 
   for (Compunit &cu : cus) {
     *(ul64 *)p = cu.offset;
@@ -1206,7 +1244,7 @@ void write_gdb_index(Context<E> &ctx) {
 
   tbb::parallel_for_each(cus, [&](Compunit &cu) {
     i64 i = &cu - cus.data();
-    u8 *p = buf + hdr.ranges_offset + range_offsets[i];
+    u8 *p = buf + ranges_offset + range_offsets[i];
     for (std::pair<u64, u64> range : cu.ranges) {
       *(ul64 *)p = range.first;
       *(ul64 *)(p + 8) = range.second;
@@ -1215,9 +1253,9 @@ void write_gdb_index(Context<E> &ctx) {
     }
   });
 
-  i64 tables_size = ht_size * 8 + data.pool_size.type_bytes +
-                    data.pool_size.name_bytes;
-  parallel_memcpy(buf + hdr.symtab_offset, data.tables.get(), tables_size);
+  i64 pool_size = data.pool_size.type_bytes + data.pool_size.name_bytes;
+  parallel_memcpy(buf + symtab_offset, data.tables.get(), ht_size * 8);
+  parallel_memcpy(buf + const_pool_offset, data.tables.get() + ht_size * 8, pool_size);
 
   // Update the section size and rewrite the section header
   if (ctx.shdr) {

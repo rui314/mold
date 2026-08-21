@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 . $(dirname $0)/common.inc
 
+# OneTBB isn't tsan-clean
+nm mold | grep '__tsan_init' && skip
+
 on_qemu && skip
 [ $MACHINE = riscv64 -o $MACHINE = riscv32 -o $MACHINE = sparc64 ] && skip
 command -v gdb >& /dev/null || skip
@@ -36,11 +39,20 @@ $GCC -g -ggnu-pubnames -gdwarf-5 -fdebug-types-section -c $t/b.c -o $t/b.o
 # Clang accepts -fdebug-types-section but does not emit type units.
 readelf --debug-dump=info $t/a.o | grep -F DW_UT_type || skip
 
-$GCC -B. -Wl,--gdb-index $t/a.o $t/b.o -o $t/exe
-readelf --debug-dump=gdb_index $t/exe > $t/index
+check_index() {
+  readelf --debug-dump=gdb_index $1 > $2 || true
+  grep -F 'Version 9' $2 || return 1
 
-grep -A4 '^TU table:' $t/index | grep -E '^\[ *0\]'
-grep -A4 '^TU table:' $t/index | grep -E '^\[ *1\]'
+  # Binutils 2.38 predates version 9 and cannot decode the tables. Newer
+  # readelf versions should show both type units.
+  if grep -q '^TU table:' $2; then
+    grep -A4 '^TU table:' $2 | grep -E '^\[ *0\]' || return 1
+    grep -A4 '^TU table:' $2 | grep -E '^\[ *1\]' || return 1
+  fi
+}
+
+$GCC -B. -Wl,--gdb-index $t/a.o $t/b.o -o $t/exe
+check_index $t/exe $t/index
 
 DEBUGINFOD_URLS= gdb $t/exe -nx -batch -ex 'ptype struct Shape' -ex quit >& $t/log
 grep -F 'type = struct Shape {' $t/log
@@ -51,9 +63,7 @@ grep -F 'double area;' $t/log
 # section. Make sure each set is still matched to its CU or TU contribution.
 ./mold -r -o $t/ab.o $t/a.o $t/b.o
 $GCC -B. -Wl,--gdb-index $t/ab.o -o $t/exe-r
-readelf --debug-dump=gdb_index $t/exe-r > $t/index-r
-grep -A4 '^TU table:' $t/index-r | grep -E '^\[ *0\]'
-grep -A4 '^TU table:' $t/index-r | grep -E '^\[ *1\]'
+check_index $t/exe-r $t/index-r
 
 # Exercise the 64-bit DWARF type-unit header when the compiler supports it.
 if $GCC -g -ggnu-pubnames -gdwarf-5 -gdwarf64 -fdebug-types-section \
@@ -61,7 +71,5 @@ if $GCC -g -ggnu-pubnames -gdwarf-5 -gdwarf64 -fdebug-types-section \
   $GCC -g -ggnu-pubnames -gdwarf-5 -gdwarf64 -fdebug-types-section \
     -c $t/b.c -o $t/b64.o
   $GCC -B. -Wl,--gdb-index $t/a64.o $t/b64.o -o $t/exe64
-  readelf --debug-dump=gdb_index $t/exe64 > $t/index64
-  grep -A4 '^TU table:' $t/index64 | grep -E '^\[ *0\]'
-  grep -A4 '^TU table:' $t/index64 | grep -E '^\[ *1\]'
+  check_index $t/exe64 $t/index64
 fi
