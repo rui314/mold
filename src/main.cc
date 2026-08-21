@@ -303,7 +303,7 @@ static void read_input_files(Context<E> &ctx, std::vector<ReaderJob> &jobs) {
 template <typename E>
 static bool has_lto_obj(Context<E> &ctx) {
   for (ObjectFile<E> *file : ctx.objs)
-    if (file->is_reachable && (file->is_lto_obj || file->is_gcc_offload_obj))
+    if (file->is_reachable && (file->is_lto_input || file->is_gcc_offload_obj))
       return true;
   return false;
 }

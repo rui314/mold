@@ -347,7 +347,7 @@ static void parse_input_sections(Context<E> &ctx) {
     if (!file->is_reachable)
       return;
 
-    if (file->mf && !file->is_lto_obj && !file->sections_parsed)
+    if (file->mf && !file->is_lto_input && !file->sections_parsed)
       file->read_section_metadata(ctx);
 
     for (ComdatGroupRef<E> &ref : file->comdat_groups)
@@ -390,11 +390,11 @@ static void parse_input_sections(Context<E> &ctx) {
   bool keep_discarded_comdat =
     ranges::any_of(ctx.objs, [](ObjectFile<E> *file) {
       return file->is_reachable &&
-             (file->is_lto_obj || file->is_gcc_offload_obj);
+             (file->is_lto_input || file->is_gcc_offload_obj);
     });
 
   tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
-    if (file->is_reachable && file->mf && !file->is_lto_obj &&
+    if (file->is_reachable && file->mf && !file->is_lto_input &&
         !file->sections_parsed)
       file->parse_sections(ctx, keep_discarded_comdat);
   });
@@ -505,10 +505,10 @@ void do_lto(Context<E> &ctx) {
   // symbols. Reset their reachability so that resolve_symbols() below can
   // re-derive which archive members are actually needed.
   for (ObjectFile<E> *file : ctx.objs)
-    if (file->is_lto_obj || file->as_needed)
+    if (file->is_lto_input || file->as_needed)
       file->is_reachable = false;
 
-  std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_obj; });
+  std::erase_if(ctx.objs, [](ObjectFile<E> *file) { return file->is_lto_input; });
 
   resolve_symbols(ctx);
 }
@@ -1215,14 +1215,14 @@ void check_duplicate_symbols(Context<E> &ctx) {
 
       // Skip if the symbol is a deduplicated comdat symbol that is in
       // an IR file.
-      if (file->is_lto_obj && file->lto_comdat_discarded[i])
+      if (file->is_lto_input && file->lto_comdat_discarded[i])
         continue;
 
       // Skip if one side is an LTO IR object and the other is not.
       // The LTO backend resolves conflicts between IR and regular objects
       // on its own; only IR-vs-IR duplicates need to be caught here.
       if (!sym.file->is_dso &&
-          file->is_lto_obj != sym.file->to_obj()->is_lto_obj)
+          file->is_lto_input != sym.file->to_obj()->is_lto_input)
         continue;
 
       Error(ctx) << "duplicate symbol: " << *file << ": " << *sym.file

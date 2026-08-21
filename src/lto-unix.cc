@@ -285,7 +285,7 @@ template <typename E>
 static PluginStatus
 get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
   ObjectFile<E> &file = *(ObjectFile<E> *)handle;
-  assert(file.is_lto_obj);
+  assert(file.is_lto_input);
 
   // If file is an archive member which was not chose to be included in
   // to the final result, we need to make the plugin to ignore all
@@ -312,7 +312,7 @@ get_symbols(const void *handle, int nsyms, PluginSymbol *psyms, bool is_v2) {
     if (sym.file->is_dso)
       return LDPR_RESOLVED_DYN;
 
-    if (sym.file->to_obj()->is_lto_obj && !sym.is_wrapped)
+    if (sym.file->to_obj()->is_lto_input && !sym.is_wrapped)
       return esym.is_undef() ? LDPR_RESOLVED_IR : LDPR_PREEMPTED_IR;
     return esym.is_undef() ? LDPR_RESOLVED_EXEC : LDPR_PREEMPTED_REG;
   };
@@ -348,7 +348,7 @@ static void restart_process(Context<E> &ctx) {
     args.push_back(strdup(std::string(arg).c_str()));
 
   for (ArenaObjectPtr<ObjectFile<E>> &file : ctx.obj_pool)
-    if (file->is_lto_obj && !file->is_reachable)
+    if (file->is_lto_input && !file->is_reachable)
       args.push_back(strdup(("--:ignore-ir-file=" +
                              file->mf->get_identifier()).c_str()));
 
@@ -626,7 +626,7 @@ ObjectFile<E> *read_lto_object(Context<E> &ctx, MappedFile *mf) {
   Symbol<E> *dummy = ctx.arena.template make<Symbol<E>>();
   obj->symbols.emplace_back(dummy);
   obj->first_global = 1;
-  obj->is_lto_obj = true;
+  obj->is_lto_input = true;
   obj->mf = mf;
   obj->archive_name = mf->parent ? mf->parent->name : "";
 
@@ -706,10 +706,10 @@ std::vector<ObjectFile<E> *> run_lto_plugin(Context<E> &ctx) {
 
   // Set `referenced_by_regular_obj` bit.
   tbb::parallel_for_each(ctx.objs, [](ObjectFile<E> *file) {
-    if (!file->is_lto_obj) {
+    if (!file->is_lto_input) {
       for (Symbol<E> *sym : file->get_global_syms()) {
         if (sym->file && !sym->file->is_dso &&
-            sym->file->to_obj()->is_lto_obj) {
+            sym->file->to_obj()->is_lto_input) {
           std::scoped_lock lock(sym->mu);
           sym->referenced_by_regular_obj = true;
         }
@@ -737,7 +737,7 @@ std::vector<ObjectFile<E> *> run_lto_plugin(Context<E> &ctx) {
   // given to the LTO backend. Such sections contains code and data for
   // peripherails (typically GPUs).
   for (ObjectFile<E> *file : ctx.objs) {
-    if (file->is_reachable && !file->is_lto_obj && file->is_gcc_offload_obj) {
+    if (file->is_reachable && !file->is_lto_input && file->is_gcc_offload_obj) {
       PluginInputFile pfile = create_plugin_input_file(ctx, file->mf);
       int claimed = false;
       claim_file_hook(&pfile, &claimed);
