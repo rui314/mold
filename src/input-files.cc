@@ -848,6 +848,8 @@ void ObjectFile<E>::register_global_symbols(Context<E> &ctx) {
   has_symver.resize(num_globals);
 
   // Register global symbols
+  auto &bin = ctx.symbol_map.get_bin();
+
   for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
     const ElfSym<E> &esym = this->elf_syms[i];
 
@@ -871,17 +873,17 @@ void ObjectFile<E>::register_global_symbols(Context<E> &ctx) {
     }
 
     // Handle --wrap option
-    if (esym.is_undef() && name.starts_with("__real_") &&
-        ctx.arg.wrap.contains(name.substr(7))) {
-      key = key.substr(7);
-    } else if (esym.is_undef() && ctx.arg.wrap.contains(key)) {
-      key = save_string(ctx, "__wrap_" + std::string(key));
+    if (esym.is_undef() && !ctx.arg.wrap.empty()) {
+      if (name.starts_with("__real_") && ctx.arg.wrap.contains(name.substr(7)))
+        key = key.substr(7);
+      else if (ctx.arg.wrap.contains(key))
+        key = save_string(ctx, "__wrap_" + std::string(key));
     }
 
     // Only record the symbol reference here; gather_symbols() creates
     // the Symbols and fills in the `symbols` slots once all files
     // have been read.
-    ctx.symbol_map.add(key, this->symbols[i]);
+    ctx.symbol_map.add(bin, key, this->symbols[i]);
   }
 }
 

@@ -855,14 +855,35 @@ std::string_view get_sharded_map_key(const T &object) {
 template <typename T>
 class ShardedMap {
 public:
+  static constexpr i64 NUM_SHARDS = 64;
+
+  // A key recorded by add() with the slot that receives its value's address.
+  struct Pending {
+    std::string_view key;
+    u64 hash;
+    ArenaPtr<T> *slot;
+  };
+
+  // A thread's recorded keys, grouped by shard.
+  using Bin = std::array<std::vector<Pending>, NUM_SHARDS>;
+
   explicit ShardedMap(ArenaResource &arena) {
     for (Shard &shard : shards)
       shard.arena = &arena;
   }
 
+  // Records a key and the slot to receive its value's address. A caller
+  // adding many keys should fetch its thread's bin once with get_bin(),
+  // as the thread-local lookup costs more than the record itself.
   void add(std::string_view key, ArenaPtr<T> &slot) {
+    add(get_bin(), key, slot);
+  }
+
+  Bin &get_bin() { return bins.local(); }
+
+  void add(Bin &bin, std::string_view key, ArenaPtr<T> &slot) {
     u64 hash = hash_string(key);
-    bins.local()[hash % NUM_SHARDS].push_back({key, hash, &slot});
+    bin[hash % NUM_SHARDS].push_back({key, hash, &slot});
   }
 
   T *insert(std::string_view key, auto on_create) {
@@ -902,7 +923,6 @@ public:
   }
 
 private:
-  static constexpr i64 NUM_SHARDS = 64;
   using Entry = ShardedMapEntry<T>;
   static_assert(std::is_trivially_destructible_v<Entry>);
 
@@ -910,12 +930,6 @@ private:
     Entry *data;
     i64 size;
     i64 capacity;
-  };
-
-  struct Pending {
-    std::string_view key;
-    u64 hash;
-    ArenaPtr<T> *slot;
   };
 
   // add() already computed the string hash. Store it in the map key so that
@@ -973,8 +987,6 @@ private:
     std::vector<Block> blocks;
     Map map;
   };
-
-  using Bin = std::array<std::vector<Pending>, NUM_SHARDS>;
 
   Shard shards[NUM_SHARDS];
   tbb::enumerable_thread_specific<Bin> bins;
