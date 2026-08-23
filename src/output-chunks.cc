@@ -1355,18 +1355,32 @@ static bool is_absrel(const ElfRel<E> &r) {
 // be promoted to dynamic relocations.
 template <typename E>
 void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
-  std::vector<std::vector<AbsRel<E>>> shards(members.size());
+  // Collect all word-size absolute relocations. Count them per member
+  // first so that they can be written to their final positions in
+  // parallel, without a per-member vector.
+  std::vector<i64> offsets(members.size() + 1);
 
-  // Collect all word-size absolute relocations
   tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
-    InputSection<E> *isec = members[i];
-    for (const ElfRel<E> &r : isec->get_rels(ctx))
+    i64 n = 0;
+    for (const ElfRel<E> &r : members[i]->get_rels(ctx))
       if (is_absrel(r))
-        shards[i].push_back(AbsRel<E>{isec, r.r_offset, isec->file->symbols[r.r_sym],
-                                      get_addend(*isec, r)});
+        n++;
+    offsets[i + 1] = n;
   });
 
-  abs_rels = flatten(shards);
+  for (i64 i = 0; i < members.size(); i++)
+    offsets[i + 1] += offsets[i];
+
+  abs_rels.resize(offsets.back());
+
+  tbb::parallel_for((i64)0, (i64)members.size(), [&](i64 i) {
+    InputSection<E> *isec = members[i];
+    AbsRel<E> *p = abs_rels.data() + offsets[i];
+    for (const ElfRel<E> &r : isec->get_rels(ctx))
+      if (is_absrel(r))
+        *p++ = AbsRel<E>{isec, r.r_offset, isec->file->symbols[r.r_sym],
+                         get_addend(*isec, r)};
+  });
 
   // We can sometimes avoid creating dynamic relocations in read-only
   // sections by promoting symbols to canonical PLT or copy relocations.
