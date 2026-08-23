@@ -2018,6 +2018,7 @@ public:
   void convert_mergeable_sections(Context<E> &ctx);
   void reattach_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
+  void resolve_symbol(Context<E> &ctx, i64 idx);
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
   void convert_undefined_weak_symbols(Context<E> &ctx);

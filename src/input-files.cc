@@ -1237,33 +1237,39 @@ static void print_trace_symbol(Context<E> &ctx, InputFile<E> &file,
 
 template <typename E>
 void ObjectFile<E>::resolve_symbols(Context<E> &ctx) {
-  for (i64 i = this->first_global; i < this->elf_syms.size(); i++) {
-    Symbol<E> &sym = *this->symbols[i];
-    const ElfSym<E> &esym = this->elf_syms[i];
+  for (i64 i = this->first_global; i < this->elf_syms.size(); i++)
+    resolve_symbol(ctx, i);
+}
 
-    if (esym.is_undef())
-      continue;
+// Makes this file's i'th symbol the definition of the global symbol it
+// refers to if it is the best one seen so far.
+template <typename E>
+void ObjectFile<E>::resolve_symbol(Context<E> &ctx, i64 i) {
+  Symbol<E> &sym = *this->symbols[i];
+  const ElfSym<E> &esym = this->elf_syms[i];
 
-    // Before sections are parsed, pre-liveness resolution treats all
-    // definitions as live. The final round uses the actual section state.
-    InputSection<E> *isec = nullptr;
-    if (!esym.is_abs() && !esym.is_common() && sections_parsed) {
-      isec = get_section(esym);
-      if (!isec || !isec->is_alive())
-        continue;
-    }
+  if (esym.is_undef())
+    return;
 
-    std::scoped_lock lock(sym.mu);
+  // Before sections are parsed, pre-liveness resolution treats all
+  // definitions as live. The final round uses the actual section state.
+  InputSection<E> *isec = nullptr;
+  if (!esym.is_abs() && !esym.is_common() && sections_parsed) {
+    isec = get_section(esym);
+    if (!isec || !isec->is_alive())
+      return;
+  }
 
-    if (get_rank(this, esym, !this->is_reachable) < get_rank(sym)) {
-      sym.file = this;
-      sym.set_input_section(isec);
-      sym.value = esym.st_value;
-      sym.sym_idx = i;
-      sym.ver_idx = ctx.default_version;
-      sym.is_weak = esym.is_weak();
-      sym.is_versioned_default = false;
-    }
+  std::scoped_lock lock(sym.mu);
+
+  if (get_rank(this, esym, !this->is_reachable) < get_rank(sym)) {
+    sym.file = this;
+    sym.set_input_section(isec);
+    sym.value = esym.st_value;
+    sym.sym_idx = i;
+    sym.ver_idx = ctx.default_version;
+    sym.is_weak = esym.is_weak();
+    sym.is_versioned_default = false;
   }
 }
 

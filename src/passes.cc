@@ -213,6 +213,16 @@ void create_synthetic_sections(Context<E> &ctx) {
     ctx.extra.save_restore = push(new PPC64SaveRestoreSection);
 }
 
+// Marks the files that the given files depend on reachable, recursively.
+template <typename E>
+static void mark_live_objects(Context<E> &ctx,
+                              std::vector<InputFile<E> *> &roots) {
+  tbb::parallel_for_each(roots, [&](InputFile<E> *file,
+                                    tbb::feeder<InputFile<E> *> &feeder) {
+    file->mark_live_objects(ctx, [&](InputFile<E> *obj) { feeder.add(obj); });
+  });
+}
+
 template <typename E>
 static void mark_live_objects(Context<E> &ctx) {
   for (Symbol<E> *sym : ctx.arg.undefined)
@@ -247,11 +257,7 @@ static void mark_live_objects(Context<E> &ctx) {
       file->is_reachable = true;
 
   std::erase_if(roots, [](InputFile<E> *file) { return !file->is_reachable; });
-
-  tbb::parallel_for_each(roots, [&](InputFile<E> *file,
-                                    tbb::feeder<InputFile<E> *> &feeder) {
-    file->mark_live_objects(ctx, [&](InputFile<E> *obj) { feeder.add(obj); });
-  });
+  mark_live_objects(ctx, roots);
 }
 
 // Symbol resolution involving a default symbol version is tricky because
@@ -284,18 +290,22 @@ static void resolve_default_symver(Context<E> &ctx) {
 }
 
 template <typename E>
+static void clear_symbol(Symbol<E> &sym) {
+  sym.file = nullptr;
+  sym.origin = nullptr;
+  sym.value = -1;
+  sym.sym_idx = -1;
+  sym.ver_idx = VER_NDX_UNSPECIFIED;
+  sym.is_weak = false;
+  sym.is_imported = false;
+  sym.is_exported = false;
+}
+
+template <typename E>
 static void clear_symbols(Context<E> &ctx) {
   ctx.symbol_map.parallel_for_each([](Symbol<E> &sym) {
-    if (sym.file) {
-      sym.file = nullptr;
-      sym.origin = nullptr;
-      sym.value = -1;
-      sym.sym_idx = -1;
-      sym.ver_idx = VER_NDX_UNSPECIFIED;
-      sym.is_weak = false;
-      sym.is_imported = false;
-      sym.is_exported = false;
-    }
+    if (sym.file)
+      clear_symbol(sym);
   });
 }
 
@@ -424,33 +434,53 @@ void resolve_symbols(Context<E> &ctx) {
   append(files, ctx.objs);
   append(files, ctx.dsos);
 
+  // Call resolve_symbols() to find the most appropriate file for each
+  // symbol. And then mark reachable objects to decide which files to
+  // include into an output.
+  tbb::parallel_for_each(files, [&](InputFile<E> *file) {
+    file->resolve_symbols(ctx);
+  });
+
+  resolve_default_symver(ctx);
+  mark_live_objects(ctx);
+
+  // Symbols with hidden visibility need to be resolved within the
+  // output file. If a hidden symbol was resolved to a DSO, we resolve
+  // that symbol again, skipping DSOs. Its new definition may be in an
+  // archive member that is not reachable yet; making it reachable can
+  // change other symbols' visibility, so we repeat until no hidden
+  // symbol resolves to a DSO. This should be rare.
   for (;;) {
-    // Call resolve_symbols() to find the most appropriate file for each
-    // symbol. And then mark reachable objects to decide which files to
-    // include into an output.
-    tbb::parallel_for_each(files, [&](InputFile<E> *file) {
-      file->resolve_symbols(ctx);
-    });
-
-    resolve_default_symver(ctx);
-    mark_live_objects(ctx);
-
-    // Symbols with hidden visibility need to be resolved within the
-    // output file. If a hidden symbol was resolved to a DSO, we'll redo
-    // symbol resolution from scratch with the flag to skip that symbol
-    // next time. This should be rare.
-    std::atomic_bool redo = false;
+    tbb::concurrent_vector<Symbol<E> *> hidden;
     ctx.symbol_map.parallel_for_each([&](Symbol<E> &sym) {
       if (sym.file && sym.file->is_dso && sym.file->is_reachable &&
           sym.visibility == STV_HIDDEN) {
         sym.skip_dso = true;
-        redo = true;
+        hidden.push_back(&sym);
       }
     });
 
-    if (!redo)
+    if (hidden.empty())
       break;
-    clear_symbols(ctx);
+
+    for (Symbol<E> *sym : hidden)
+      clear_symbol(*sym);
+
+    tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+      std::span<ArenaPtr<Symbol<E>>> syms = file->get_global_syms();
+      for (i64 i = 0; i < syms.size(); i++)
+        if (syms[i]->skip_dso)
+          file->resolve_symbol(ctx, file->first_global + i);
+    });
+
+    std::vector<InputFile<E> *> roots;
+    for (Symbol<E> *sym : hidden) {
+      if (sym->file && !sym->file->is_reachable) {
+        sym->file->is_reachable = true;
+        roots.push_back(sym->file);
+      }
+    }
+    mark_live_objects(ctx, roots);
   }
 
   // Now that we know the exact set of input files that are to be
