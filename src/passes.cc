@@ -1865,15 +1865,28 @@ template <typename E>
 void claim_unresolved_symbols(Context<E> &ctx) {
   Timer t(ctx, "claim_unresolved_symbols");
 
-  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+  // Find the references to symbols that no file defines. Nearly all
+  // references are to defined symbols, which this pass leaves alone, so
+  // they are filtered out without taking the symbols' locks, which
+  // would otherwise be contended for every popular symbol.
+  std::vector<std::vector<i64>> shards(ctx.objs.size());
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 j) {
+    ObjectFile<E> *file = ctx.objs[j];
     if (file == ctx.internal_obj)
       return;
 
-    for (i64 i = file->first_global; i < file->elf_syms.size(); i++) {
+    for (i64 i = file->first_global; i < file->elf_syms.size(); i++)
+      if (file->elf_syms[i].is_undef() && !file->symbols[i]->file)
+        shards[j].push_back(i);
+  });
+
+  tbb::parallel_for((i64)0, (i64)ctx.objs.size(), [&](i64 j) {
+    ObjectFile<E> *file = ctx.objs[j];
+
+    for (i64 i : shards[j]) {
       const ElfSym<E> &esym = file->elf_syms[i];
       Symbol<E> &sym = *file->symbols[i];
-      if (!esym.is_undef())
-        continue;
 
       std::scoped_lock lock(sym.mu);
 
