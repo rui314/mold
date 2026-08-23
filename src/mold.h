@@ -574,7 +574,7 @@ public:
   bool is_uncompressed() const { return flags & IS_UNCOMPRESSED; }
   bool is_icf_removed() const { return flags & IS_ICF_REMOVED; }
 
-  bool visit() { return !(flags.fetch_or(IS_VISITED) & IS_VISITED); }
+  bool visit();
   void set_visited() { flags |= IS_VISITED; }
   void set_address_taken() { flags |= IS_ADDRESS_TAKEN; }
   void set_uncompressed() { flags |= IS_UNCOMPRESSED; }
@@ -3240,6 +3240,15 @@ inline void InputSection<E>::kill() {
 template <typename E>
 inline u64 InputSection<E>::get_addr() const {
   return output_section->shdr.sh_addr + offset;
+}
+
+template <typename E>
+inline bool InputSection<E>::visit() {
+  // Most sections are referenced many times, so check with a plain
+  // load before the atomic RMW.
+  if (is_visited())
+    return false;
+  return !(flags.fetch_or(IS_VISITED) & IS_VISITED);
 }
 
 template <typename E>
