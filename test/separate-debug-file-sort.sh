@@ -23,5 +23,5 @@ flock $t/exe.dbg true
 readelf -p .debug_line_str $t/exe.dbg > $t/str
 
 if grep -Fw a.c $t/str; then
-  grep -A10 -Fw a.c $t/str | grep -Fw b.c
+  sed -n '/a\.c/,$p' $t/str | grep -Fw b.c
 fi
