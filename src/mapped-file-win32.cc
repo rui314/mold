@@ -48,6 +48,7 @@ MappedFile *open_file_impl(const std::string &path, std::string &error) {
       error = path + ": MapViewOfFile failed: " + errno_string();
       return nullptr;
     }
+    mf->is_mmapped = true;
   }
 
   return mf;

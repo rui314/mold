@@ -782,7 +782,7 @@ int mold_main(int argc, char **argv) {
   // faster, as the kernel otherwise reclaims them in a single thread
   // on exit. File contents stay in the page cache.
   tbb::parallel_for_each(ctx.mf_pool, [](std::unique_ptr<MappedFile> &mf) {
-    if (!mf->parent && mf->data && mf->size)
+    if (mf->is_mmapped && !mf->parent && mf->data && mf->size)
       madvise(mf->data, mf->size, MADV_DONTNEED);
   });
 #endif

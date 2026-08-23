@@ -176,8 +176,8 @@ void install_signal_handler();
 // mapped-file-unix.cc
 //
 
-// MappedFile represents an mmap'ed input file.
-// mold uses mmap-IO only.
+// MappedFile represents an input file that is either mmap'ed or read into
+// memory. Either way, its contents are accessible through `data`.
 class MappedFile {
 public:
   ~MappedFile() { unmap(); }
@@ -228,6 +228,10 @@ public:
   bool given_fullpath = true;
   MappedFile *parent = nullptr;
   MappedFile *thin_parent = nullptr;
+
+  // True if `data` is a memory mapping of the file rather than a copy of
+  // its contents in anonymous memory. See open_file_impl().
+  bool is_mmapped = false;
 
   // For --dependency-file
   bool is_dependency = true;
