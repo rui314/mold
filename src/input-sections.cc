@@ -393,9 +393,6 @@ MergeableSection<E>::MergeableSection(Context<E> &ctx, MergedSection<E> &parent,
                                       InputSection<E> *isec)
   : parent(parent), p2align(isec->p2align), input_section(isec) {
   input_section->uncompress(ctx);
-
-  std::scoped_lock lock(parent.mu);
-  parent.members.push_back(this);
 }
 
 static size_t find_null(std::string_view data, i64 pos, i64 entsize) {

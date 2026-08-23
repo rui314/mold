@@ -541,6 +541,13 @@ void create_merged_sections(Context<E> &ctx) {
     file->convert_mergeable_sections(ctx);
   });
 
+  // Register each mergeable section with its merged section. There are
+  // only a few merged sections, so doing this from the parallel loop
+  // above under a lock would serialize all threads on it.
+  for (ObjectFile<E> *file : ctx.objs)
+    for (std::unique_ptr<MergeableSection<E>> &m : file->sections.mergeable_sections)
+      m->parent.members.push_back(m.get());
+
   tbb::parallel_for_each(ctx.merged_sections,
                          [&](ArenaObjectPtr<MergedSection<E>> &sec) {
     if (sec->shdr.sh_flags & SHF_ALLOC)

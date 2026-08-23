@@ -1300,7 +1300,6 @@ public:
   void print_stats(Context<E> &ctx);
 
   std::vector<MergeableSection<E> *> members;
-  std::mutex mu;
 
   ConcurrentMap<SectionFragment<E>> map;
   HyperLogLog estimator;
@@ -1822,7 +1821,7 @@ private:
 // ObjectFile needs a lookup table indexed by ELF section number. The table
 // lives outside the arena, so it cannot use ArenaPtr; a regular section is
 // instead stored as its 31-bit arena index. The high bit distinguishes
-// mergeable sections, which are stored as indices into a per-file pool.
+// mergeable sections, which are stored as indices into mergeable_sections.
 template <typename E>
 class InputSectionVector {
 public:
@@ -1859,12 +1858,13 @@ public:
   i64 size() const { return indices.size(); }
   bool empty() const { return indices.empty(); }
 
+  std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_sections;
+
 private:
   static constexpr u32 MERGEABLE = 1U << 31;
   static constexpr u32 INDEX_MASK = ~MERGEABLE;
 
   ArenaResource &arena;
-  std::vector<std::unique_ptr<MergeableSection<E>>> mergeable_pool;
   std::vector<u32> indices;
 };
 
@@ -3603,7 +3603,7 @@ InputSectionVector<E>::get_mergeable(i64 idx) {
   u32 value = indices[idx];
   if (!(value & MERGEABLE))
     return nullptr;
-  return mergeable_pool[(value & INDEX_MASK) - 1].get();
+  return mergeable_sections[(value & INDEX_MASK) - 1].get();
 }
 
 template <typename E>
@@ -3623,9 +3623,9 @@ InputSection<E> *InputSectionVector<E>::emplace(Context<E> &ctx,
 template <typename E>
 void InputSectionVector<E>::set_mergeable(
     i64 idx, std::unique_ptr<MergeableSection<E>> m) {
-  assert(mergeable_pool.size() < MERGEABLE - 1);
-  mergeable_pool.push_back(std::move(m));
-  indices[idx] = MERGEABLE | mergeable_pool.size();
+  assert(mergeable_sections.size() < MERGEABLE - 1);
+  mergeable_sections.push_back(std::move(m));
+  indices[idx] = MERGEABLE | mergeable_sections.size();
 }
 
 template <typename E>
