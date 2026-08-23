@@ -75,12 +75,14 @@ struct ArHdr {
 };
 }
 
+// Returns the paths of the members of a thin archive, which are stored
+// outside of the archive file, without opening them.
 template <typename E>
-std::vector<MappedFile *>
-read_thin_archive_members(Context<E> &ctx, MappedFile *mf) {
+std::vector<std::string>
+get_thin_archive_member_paths(Context<E> &ctx, MappedFile *mf) {
   u8 *begin = mf->data;
   u8 *data = begin + 8;
-  std::vector<MappedFile *> vec;
+  std::vector<std::string> vec;
   std::string_view strtab;
 
   while (data < begin + mf->size) {
@@ -114,11 +116,22 @@ read_thin_archive_members(Context<E> &ctx, MappedFile *mf) {
     if (name == "__.SYMDEF" || name == "__.SYMDEF SORTED")
       continue;
 
-    std::string path = name.starts_with('/') ?
-      name : (path_dirname(mf->name) / name).string();
+    if (name.starts_with('/'))
+      vec.push_back(name);
+    else
+      vec.push_back((path_dirname(mf->name) / name).string());
+    data = body;
+  }
+  return vec;
+}
+
+template <typename E>
+std::vector<MappedFile *>
+read_thin_archive_members(Context<E> &ctx, MappedFile *mf) {
+  std::vector<MappedFile *> vec;
+  for (std::string &path : get_thin_archive_member_paths(ctx, mf)) {
     vec.push_back(must_open_file(ctx, path));
     vec.back()->thin_parent = mf;
-    data = body;
   }
   return vec;
 }
@@ -175,6 +188,9 @@ read_archive_members(Context<E> &ctx, MappedFile *mf) {
 }
 
 using E = MOLD_TARGET;
+
+template std::vector<std::string>
+get_thin_archive_member_paths(Context<E> &, MappedFile *);
 
 template std::vector<MappedFile *>
 read_thin_archive_members(Context<E> &, MappedFile *);

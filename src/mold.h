@@ -2178,7 +2178,12 @@ struct ReaderJob {
   std::string name;
   bool is_lib = false;
   MappedFile *mf = nullptr;
+
+  // For an archive member. A member of a regular archive is a slice of
+  // the archive's mapping and comes already opened as `mf`; a member of
+  // a thin archive is a separate file that the job opens by `name`.
   std::string archive_name;
+  MappedFile *thin_parent = nullptr;
 };
 
 struct DynamicPattern {
@@ -2236,6 +2241,10 @@ parse_dynamic_list(Context<E> &ctx, std::string_view path);
 //
 // archive-file.cc
 //
+
+template <typename E>
+std::vector<std::string>
+get_thin_archive_member_paths(Context<E> &ctx, MappedFile *mf);
 
 template <typename E>
 std::vector<MappedFile *>

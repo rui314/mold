@@ -234,10 +234,17 @@ static void read_input_files(Context<E> &ctx, std::vector<ReaderJob> &jobs) {
                                    tbb::feeder<ReaderJob> &feeder) {
     ReaderContext &rctx = job.rctx;
 
-    // An archive member is enqueued in an already-opened form by the
-    // job that read its archive file.
+    // An archive member is enqueued by the job that read its archive
+    // file. A thin archive's members are opened here rather than by
+    // that job, so that the files of a large archive are opened in
+    // parallel.
     if (!job.archive_name.empty()) {
-      read_archive_member(ctx, rctx, job.mf, job.archive_name);
+      MappedFile *mf = job.mf;
+      if (!mf) {
+        mf = must_open_file(ctx, job.name);
+        mf->thin_parent = job.thin_parent;
+      }
+      read_archive_member(ctx, rctx, mf, job.archive_name);
       return;
     }
 
@@ -252,12 +259,21 @@ static void read_input_files(Context<E> &ctx, std::vector<ReaderJob> &jobs) {
 
     switch (get_file_type(ctx, mf)) {
     case FileType::AR:
-    case FileType::THIN_AR:
-      for (MappedFile *child : read_archive_members(ctx, mf)) {
+      for (MappedFile *child : read_fat_archive_members(ctx, mf)) {
         ReaderJob job2;
         job2.rctx = rctx.next_child();
         job2.mf = child;
         job2.archive_name = mf->name;
+        feeder.add(std::move(job2));
+      }
+      break;
+    case FileType::THIN_AR:
+      for (std::string &path : get_thin_archive_member_paths(ctx, mf)) {
+        ReaderJob job2;
+        job2.rctx = rctx.next_child();
+        job2.name = std::move(path);
+        job2.archive_name = mf->name;
+        job2.thin_parent = mf;
         feeder.add(std::move(job2));
       }
       break;
