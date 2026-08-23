@@ -239,6 +239,15 @@ Options:
 mold: supported targets: elf32-i386 elf64-x86-64 elf32-littlearm elf64-littleaarch64 elf64-bigaarch64 elf32-littleriscv elf32-bigriscv elf64-littleriscv elf64-bigriscv elf32-powerpc elf64-powerpc elf64-powerpc elf64-powerpcle elf64-s390 elf64-sparc elf32-m68k elf32-sh-linux elf64-loongarch elf32-loongarch
 mold: supported emulations: elf_i386 elf_x86_64 armelf_linux_eabi aarch64elf aarch64linux aarch64elfb aarch64linuxb elf32lriscv elf32briscv elf64lriscv elf64briscv elf32ppc elf32ppclinux elf64ppc elf64lppc elf64_s390 elf64_sparc m68kelf shlelf_linux shelf_linux elf64loongarch elf32loongarch)";
 
+// Same as isspace() in the C locale, without the function call that the
+// tokenizer below would otherwise make for every byte of a response file.
+static constexpr std::array<bool, 256> is_space = [] {
+  std::array<bool, 256> x = {};
+  for (u8 c : {' ', '\t', '\n', '\v', '\f', '\r'})
+    x[c] = true;
+  return x;
+}();
+
 // If a command line argument is in the form of `@path/to/some/file` (i.e.
 // it starts with an atsign), the linker reads the given file and
 // interprets its contents as a list of command line arguments. A file
@@ -258,91 +267,65 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
   MappedFile *mf = must_open_file(ctx, std::string(path));
   mf->is_dependency = false;
 
-  std::vector<std::string> vec;
-  std::ostringstream os;
-  char quote = 0;
+  std::string_view data((char *)mf->data, mf->size);
+  std::vector<std::string_view> vec;
 
-  // Each state represents the type of characters currently being read.
-  // SPACE indicates blank characters between tokens, BARE indicates an
-  // unquoted token, and QUOTED indicates a quoted token.
-  enum { SPACE, BARE, QUOTED } state = SPACE;
-
-  for (i64 i = 0; i <= mf->size; i++) {
-    char c = (i < mf->size) ? mf->data[i] : 0;
-    char c2 = (i + 1 < mf->size) ? mf->data[i + 1] : 0;
-
-    if (c == '\\' && c2 == 0)
-      Fatal(ctx) << path << ": premature end of input";
-
-    switch (state) {
-    case SPACE:
-      if (c == 0 || isspace(c))
-        break;
-
-      if (c == '\\') {
-        os << c2;
-        state = BARE;
-        i++;
-        break;
-      }
-
-      if (c == '\'' || c == '"') {
-        quote = c;
-        state = QUOTED;
-        break;
-      }
-
-      os << c;
-      state = BARE;
-      break;
-    case BARE:
-      if (c == 0 || isspace(c)) {
-        vec.push_back(os.str());
-        os = {};
-        state = SPACE;
-        break;
-      }
-
-      if (c == '\\') {
-        os << c2;
-        i++;
-        break;
-      }
-
-      if (c == '\'' || c == '"') {
-        quote = c;
-        state = QUOTED;
-        break;
-      }
-
-      os << c;
-      break;
-    case QUOTED:
-      if (c == 0)
-        Fatal(ctx) << path << ": premature end of input";
-
-      if (c == '\\') {
-        os << c2;
-        i++;
-        break;
-      }
-
-      if (c == quote) {
-        state = BARE;
-        break;
-      }
-
-      os << c;
-      break;
+  for (i64 i = 0; i < data.size();) {
+    if (is_space[(u8)data[i]]) {
+      i++;
+      continue;
     }
+
+    // A token containing no quotes or backslashes, which is by far the
+    // common case, is returned as a substring of the file.
+    i64 end = i;
+    while (end < data.size() && !is_space[(u8)data[end]] && data[end] != '\\' &&
+           data[end] != '\'' && data[end] != '"')
+      end++;
+
+    if (end == data.size() || is_space[(u8)data[end]]) {
+      vec.push_back(data.substr(i, end - i));
+      i = end;
+      continue;
+    }
+
+    // Otherwise, copy the token, removing quotes and backslashes. A
+    // backslash escapes the next character, and a quoted part may be
+    // followed by more characters of the same token.
+    std::string tok(data.substr(i, end - i));
+    char quote = 0;
+
+    for (i = end; i < data.size(); i++) {
+      char c = data[i];
+      if (c == '\\') {
+        if (i + 1 == data.size())
+          Fatal(ctx) << path << ": premature end of input";
+        tok += data[++i];
+      } else if (quote) {
+        if (c == quote)
+          quote = 0;
+        else
+          tok += c;
+      } else if (c == '\'' || c == '"') {
+        quote = c;
+      } else if (is_space[(u8)c]) {
+        break;
+      } else {
+        tok += c;
+      }
+    }
+
+    if (quote)
+      Fatal(ctx) << path << ": premature end of input";
+    vec.push_back(save_string(ctx, tok));
   }
 
   std::vector<std::string_view> vec2;
-  for (std::string &tok : vec) {
+  for (std::string_view tok : vec) {
     if (tok.starts_with('@'))
       append(vec2, read_response_file(ctx, tok.substr(1), depth + 1));
     else
-      vec2.push_back(save_string(ctx, tok));
+      vec2.push_back(tok);
   }
   return vec2;
 }
