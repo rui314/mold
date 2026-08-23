@@ -812,39 +812,39 @@ void create_output_sections(Context<E> &ctx) {
     }
   });
 
-  // Compute section alignment
-  tbb::parallel_for_each(ctx.osec_pool, [](ArenaObjectPtr<OutputSection<E>> &osec) {
-    Atomic<u32> p2align;
-    tbb::parallel_for((i64)0, (i64)osec->members_vec.size(), [&](i64 i) {
-      u32 x = 0;
-      for (InputSection<E> *isec : osec->members_vec[i])
-        x = std::max<u32>(x, isec->p2align);
-      update_maximum(p2align, x);
-    });
-    osec->shdr.sh_addralign = 1 << p2align;
-  });
-
-  // Flatten members_vec into an arena-allocated members array
-  for (ArenaObjectPtr<OutputSection<E>> &osec : ctx.osec_pool) {
+  // Flatten members_vec into an arena-allocated members array and
+  // compute the section alignment. Both are done in parallel over the
+  // files; an output section such as .text has a million members.
+  tbb::parallel_for_each(ctx.osec_pool, [&](ArenaObjectPtr<OutputSection<E>> &osec) {
     osec->shdr.sh_flags = osec->sh_flags;
     osec->is_relro = is_relro(*osec);
 
-    i64 n = 0;
-    for (std::vector<InputSection<E> *> &vec : osec->members_vec)
-      n += vec.size();
+    std::vector<std::vector<InputSection<E> *>> &vecs = osec->members_vec;
+    std::vector<i64> offsets(vecs.size() + 1);
+    for (i64 i = 0; i < vecs.size(); i++)
+      offsets[i + 1] = offsets[i] + vecs[i].size();
 
+    i64 n = offsets.back();
     ArenaPtr<InputSection<E>> *array =
       ctx.arena.template allocate<ArenaPtr<InputSection<E>>>(n);
+    Atomic<u32> p2align;
 
-    i64 idx = 0;
-    for (std::vector<InputSection<E> *> &vec : osec->members_vec)
-      for (InputSection<E> *isec : vec)
-        std::construct_at(array + idx++, isec);
+    tbb::parallel_for((i64)0, (i64)vecs.size(), [&](i64 i) {
+      u32 x = 0;
+      ArenaPtr<InputSection<E>> *p = array + offsets[i];
+      for (InputSection<E> *isec : vecs[i]) {
+        x = std::max<u32>(x, isec->p2align);
+        std::construct_at(p++, isec);
+      }
+      update_maximum(p2align, x);
+      vecs[i] = {};
+    });
 
+    osec->shdr.sh_addralign = 1 << p2align;
     osec->members = {array, (size_t)n};
-    osec->members_vec.clear();
-    osec->members_vec.shrink_to_fit();
-  }
+    vecs.clear();
+    vecs.shrink_to_fit();
+  });
 
   // Add output sections and mergeable sections to ctx.chunks
   std::vector<Chunk<E> *> chunks;
