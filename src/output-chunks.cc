@@ -1000,7 +1000,9 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
   u8 *buf = ctx.buf + this->shdr.sh_offset;
   write_to(ctx, buf);
 
-  for (AbsRel<E> &r : abs_rels) {
+  // Apply absolute relocations. An output section can have a million
+  // of them, so this loop is parallel.
+  tbb::parallel_for_each(abs_rels, [&](AbsRel<E> &r) {
     Symbol<E> &sym = *r.sym;
     u8 *loc = buf + r.isec->offset + r.offset;
     u64 S = sym.get_addr(ctx);
@@ -1038,7 +1040,7 @@ void OutputSection<E>::copy_buf(Context<E> &ctx) {
         *(Word<E> *)loc = A;
       break;
     }
-  }
+  });
 }
 
 template <typename E>
@@ -1368,45 +1370,50 @@ void OutputSection<E>::scan_abs_relocations(Context<E> &ctx) {
 
   // We can sometimes avoid creating dynamic relocations in read-only
   // sections by promoting symbols to canonical PLT or copy relocations.
-  if (!ctx.arg.pic && !(this->shdr.sh_flags & SHF_WRITE))
-    for (AbsRel<E> &r : abs_rels)
-      if (Symbol<E> &sym = *r.sym;
-          sym.is_imported && !sym.is_absolute())
-        sym.flags |= NEEDS_CANONICAL;
+  bool promote = !ctx.arg.pic && !(this->shdr.sh_flags & SHF_WRITE);
 
-  // Classify relocations and retain exact per-shard output counts.
+  // Classify relocations and retain exact per-shard output counts. A
+  // single output section such as .data.rel.ro can account for most of
+  // an output's absolute relocations, so this runs in the same parallel
+  // shards as write_dynrels().
   i64 nshards = (abs_rels.size() + DYNREL_SHARD_SIZE - 1) / DYNREL_SHARD_SIZE;
   dynrel_offsets.assign(nshards + 1, 0);
 
-  for (i64 i = 0; i < (i64)abs_rels.size(); i++) {
-    AbsRel<E> &r = abs_rels[i];
-    r.kind = get_abs_rel_kind(ctx, *r.sym);
+  tbb::parallel_for((i64)0, nshards, [&](i64 idx) {
+    i64 begin = idx * DYNREL_SHARD_SIZE;
+    i64 end = std::min<i64>(begin + DYNREL_SHARD_SIZE, abs_rels.size());
 
-    bool emit = r.kind == ABS_REL_BASEREL || r.kind == ABS_REL_DYNREL;
-    if constexpr (supports_ifunc<E>)
-      emit |= (r.kind == ABS_REL_IFUNC);
-    if (emit)
-      dynrel_offsets[i / DYNREL_SHARD_SIZE + 1]++;
-  }
+    for (AbsRel<E> &r : std::span(abs_rels).subspan(begin, end - begin)) {
+      Symbol<E> &sym = *r.sym;
+      if (promote && sym.is_imported && !sym.is_absolute())
+        sym.flags |= NEEDS_CANONICAL;
+
+      r.kind = get_abs_rel_kind(ctx, sym);
+
+      bool emit = r.kind == ABS_REL_BASEREL || r.kind == ABS_REL_DYNREL;
+      if constexpr (supports_ifunc<E>)
+        emit |= (r.kind == ABS_REL_IFUNC);
+      if (emit)
+        dynrel_offsets[idx + 1]++;
+
+      // If we have a relocation against a read-only section, we need to
+      // set the DT_TEXTREL flag for the loader.
+      if (r.kind != ABS_REL_NONE && !(r.isec->shdr().sh_flags & SHF_WRITE)) {
+        if (ctx.arg.z_text) {
+          Error(ctx) << *r.isec << ": relocation at offset 0x"
+                     << std::hex << r.offset << " against symbol `"
+                     << sym << "' can not be used; recompile with -fPIC";
+        } else if (ctx.arg.warn_textrel) {
+          Warn(ctx) << *r.isec << ": relocation against symbol `" << sym
+                    << "' in read-only section";
+        }
+        ctx.has_textrel = true;
+      }
+    }
+  });
 
   for (i64 i = 0; i < nshards; i++)
     dynrel_offsets[i + 1] += dynrel_offsets[i];
-
-  // If we have a relocation against a read-only section, we need to
-  // set the DT_TEXTREL flag for the loader.
-  for (AbsRel<E> &r : abs_rels) {
-    if (r.kind != ABS_REL_NONE && !(r.isec->shdr().sh_flags & SHF_WRITE)) {
-      if (ctx.arg.z_text) {
-        Error(ctx) << *r.isec << ": relocation at offset 0x"
-                   << std::hex << r.offset << " against symbol `"
-                   << *r.sym << "' can not be used; recompile with -fPIC";
-      } else if (ctx.arg.warn_textrel) {
-        Warn(ctx) << *r.isec << ": relocation against symbol `" << *r.sym
-                  << "' in read-only section";
-      }
-      ctx.has_textrel = true;
-    }
-  }
 }
 
 // Compute spaces needed for thunk symbols
