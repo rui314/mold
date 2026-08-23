@@ -248,6 +248,15 @@ static constexpr std::array<bool, 256> is_space = [] {
   return x;
 }();
 
+// True for the characters that end or alter a token: whitespace, quotes
+// and backslash. A table keeps the tokenizer's scan loop tight.
+static constexpr std::array<bool, 256> is_token_boundary = [] {
+  std::array<bool, 256> x = {};
+  for (u8 c : {' ', '\t', '\n', '\v', '\f', '\r', '\\', '\'', '"'})
+    x[c] = true;
+  return x;
+}();
+
 // If a command line argument is in the form of `@path/to/some/file` (i.e.
 // it starts with an atsign), the linker reads the given file and
 // interprets its contents as a list of command line arguments. A file
@@ -279,8 +288,7 @@ read_response_file(Context<E> &ctx, std::string_view path, i64 depth) {
     // A token containing no quotes or backslashes, which is by far the
     // common case, is returned as a substring of the file.
     i64 end = i;
-    while (end < data.size() && !is_space[(u8)data[end]] && data[end] != '\\' &&
-           data[end] != '\'' && data[end] != '"')
+    while (end < data.size() && !is_token_boundary[(u8)data[end]])
       end++;
 
     if (end == data.size() || is_space[(u8)data[end]]) {
