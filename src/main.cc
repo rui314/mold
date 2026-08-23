@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <tbb/parallel_for_each.h>
+#include <tbb/parallel_sort.h>
 #include <unordered_set>
 
 namespace mold {
@@ -295,8 +296,9 @@ static void read_input_files(Context<E> &ctx, std::vector<ReaderJob> &jobs) {
     Script(ctx, job.rctx, job.mf).parse_linker_script();
 
   // Sort the files into the command line order and assign priorities.
-  ranges::sort(ctx.unsorted_input_files, {},
-               &std::pair<std::vector<u32>, InputFile<E> *>::first);
+  tbb::parallel_sort(ctx.unsorted_input_files, [](auto &a, auto &b) {
+    return a.first < b.first;
+  });
 
   for (auto &pair : ctx.unsorted_input_files) {
     InputFile<E> *file = pair.second;
