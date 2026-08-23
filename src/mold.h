@@ -1979,6 +1979,7 @@ public:
 protected:
   std::span<Symbol<E>> local_syms;
   std::span<Symbol<E>> frag_syms;
+  i64 num_frag_syms = 0;
 };
 
 template <typename E>
@@ -2019,6 +2020,7 @@ public:
   void reattach_section_pieces(Context<E> &ctx);
   void resolve_symbols(Context<E> &ctx) override;
   void resolve_symbol(Context<E> &ctx, i64 idx);
+  i64 count_frag_syms(std::span<const ElfRel<E>> rels);
   void mark_live_objects(Context<E> &ctx,
                          std::function<void(InputFile<E> *)> feeder) override;
   void convert_undefined_weak_symbols(Context<E> &ctx);

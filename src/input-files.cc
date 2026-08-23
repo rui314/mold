@@ -327,6 +327,20 @@ void ObjectFile<E>::read_section_metadata(Context<E> &ctx) {
   }
 }
 
+// Returns the number of relocations referring to the section symbol of
+// a mergeable section. reattach_section_pieces() replaces each of them
+// with a symbol for the section piece it refers to.
+template <typename E>
+i64 ObjectFile<E>::count_frag_syms(std::span<const ElfRel<E>> rels) {
+  i64 n = 0;
+  for (const ElfRel<E> &r : rels)
+    if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
+        esym.st_type == STT_SECTION &&
+        (this->elf_sections[get_shndx(esym)].sh_flags & SHF_MERGE))
+      n++;
+  return n;
+}
+
 template <typename E>
 void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
   // Read sections
@@ -364,9 +378,19 @@ void ObjectFile<E>::initialize_sections(Context<E> &ctx) {
       if ((this->elf_sections[shdr.sh_info].sh_flags & SHF_ALLOC) ||
           ctx.arg.relocatable || ctx.arg.emit_relocs)
         decoded_crel[i] = decode_crel(ctx, *this, shdr);
+
+      // Count the relocations just decoded while they are in cache.
+      if (this->elf_sections[shdr.sh_info].sh_flags & SHF_ALLOC) {
+        std::span<const ElfRel<E>> rels(decoded_crel[i].data(), decoded_crel[i].size());
+        this->num_frag_syms += count_frag_syms(rels);
+      }
       break;
     case SHT_REL:
     case SHT_RELA:
+      if (this->elf_sections[shdr.sh_info].sh_flags & SHF_ALLOC)
+        this->num_frag_syms +=
+          count_frag_syms(this->template get_data<ElfRel<E>>(ctx, shdr));
+      break;
     case SHT_SYMTAB:
     case SHT_SYMTAB_SHNDX:
     case SHT_STRTAB:
@@ -1051,19 +1075,12 @@ void ObjectFile<E>::reattach_section_pieces(Context<E> &ctx) {
     sym.value = frag_offset;
   }
 
-  // Compute the size of frag_syms.
-  i64 nfrag_syms = 0;
-  for (InputSection<E> *isec : sections)
-    if (isec && (isec->shdr().sh_flags & SHF_ALLOC))
-      for (ElfRel<E> &r : isec->get_rels(ctx))
-        if (const ElfSym<E> &esym = this->elf_syms[r.r_sym];
-            esym.st_type == STT_SECTION)
-          if (sections.get_mergeable(get_shndx(esym)))
-            nfrag_syms++;
-
   // Arena allocations cannot be reclaimed, so grow this vector only once.
-  this->symbols.reserve(this->symbols.size() + nfrag_syms);
-  this->frag_syms = allocate_symbols<E>(ctx, nfrag_syms);
+  // num_frag_syms, counted when the sections were parsed, may include
+  // references to mergeable sections that were not converted; the extra
+  // symbols stay unused.
+  this->symbols.reserve(this->symbols.size() + this->num_frag_syms);
+  this->frag_syms = allocate_symbols<E>(ctx, this->num_frag_syms);
 
   // For each relocation referring to a mergeable section symbol, we
   // create a new dummy non-section symbol and redirect the relocation
