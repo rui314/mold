@@ -3358,12 +3358,10 @@ void fix_synthetic_symbols(Context<E> &ctx) {
 
   // RISC-V's __global_pointer$
   if (ctx.__global_pointer) {
-    if (Chunk<E> *chunk = find(".sdata")) {
+    if (Chunk<E> *chunk = find(".sdata"))
       start(ctx.__global_pointer, chunk, 0x800);
-    } else {
-      ctx.__global_pointer->set_output_section(sections[0]);
-      ctx.__global_pointer->value = 0;
-    }
+    else
+      start(ctx.__global_pointer, sections[0]);
   }
 
   // ARM32's __exidx_{start,end}
