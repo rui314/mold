@@ -913,9 +913,14 @@ void shrink_section(Context<E> &ctx, InputSection<E> &isec) {
     // follows the NOPs is aligned to a specified alignment boundary.
     if (r.r_type == R_RISCV_ALIGN) {
       // The total bytes of NOPs is stored to r_addend, so the next
-      // instruction is r_addend away.
+      // instruction is r_addend away. The alignment itself is not recorded
+      // anywhere; it is the smallest power of two greater than r_addend,
+      // because the assembler emits as many NOP bytes as the worst case
+      // requires, which is the alignment minus the minimum instruction
+      // size. For example, `.balign 4` yields r_addend 2 in RVC code and
+      // `.balign 8` yields 4 in non-RVC code.
       u64 P = isec.get_addr() + r.r_offset - r_delta;
-      u64 desired = align_to(P, bit_ceil(r.r_addend));
+      u64 desired = align_to(P, bit_ceil(r.r_addend + 1));
       u64 actual = P + r.r_addend;
       if (desired != actual)
         remove(actual - desired);
