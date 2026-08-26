@@ -215,6 +215,10 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     auto r2save_thunk_addr = [&] { return sym.get_thunk_addr(ctx, P); };
     auto no_r2save_thunk_addr = [&] { return sym.get_thunk_addr(ctx, P) + 8; };
 
+    auto check = [&](i64 val, i64 lo, i64 hi) {
+      check_range(ctx, i, val, lo, hi);
+    };
+
     switch (rel.r_type) {
     case R_PPC64_TOC16_HA:
       *(ul16 *)loc = ha(S + A - TOC);
@@ -223,6 +227,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = lo(S + A - TOC);
       break;
     case R_PPC64_TOC16_DS:
+      check(S + A - TOC, -(1 << 15), 1 << 15);
+      *(ul16 *)loc |= (S + A - TOC) & 0xfffc;
+      break;
     case R_PPC64_TOC16_LO_DS:
       *(ul16 *)loc |= (S + A - TOC) & 0xfffc;
       break;
