@@ -257,7 +257,7 @@ static mi_decl_restrict void* mi_theap_zalloc_aligned_at(mi_theap_t* theap, size
   return mi_theap_malloc_zero_aligned_at(theap, size, alignment, offset, true, NULL);
 }
 
-static mi_decl_restrict void* mi_theap_zalloc_aligned(mi_theap_t* theap, size_t size, size_t alignment) mi_attr_noexcept {
+mi_decl_restrict void* mi_theap_zalloc_aligned(mi_theap_t* theap, size_t size, size_t alignment) mi_attr_noexcept {
   return mi_theap_zalloc_aligned_at(theap, size, alignment, 0);
 }
 

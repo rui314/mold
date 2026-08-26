@@ -61,7 +61,7 @@ static inline size_t mi_page_queue_count(const mi_page_queue_t* pq) {
 // Returns MI_BIN_HUGE if the size is too large.
 // We use `wsize` for the size in "machine word sizes",
 // i.e. byte size == `wsize*sizeof(void*)`.
-static mi_decl_noinline size_t mi_bin(size_t size) {
+static size_t mi_bin(size_t size) {
   size_t wsize = _mi_wsize_from_size(size);
 #if defined(MI_ALIGN4W)
   if mi_likely(wsize <= 4) {
@@ -212,7 +212,7 @@ static inline void mi_theap_queue_first_update(mi_theap_t* theap, const mi_page_
   if (size > MI_SMALL_SIZE_MAX) return;
 
   mi_page_t* page = pq->first;
-  if (pq->first == NULL) page = (mi_page_t*)&_mi_page_empty;
+  if (pq->first == NULL) page = _mi_page_empty_get();
 
   // find index in the right direct page array
   const size_t idx = _mi_wsize_from_size(size);

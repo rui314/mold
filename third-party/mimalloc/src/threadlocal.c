@@ -6,9 +6,9 @@ terms of the MIT license. A copy of the license can be found in the file
 -----------------------------------------------------------------------------*/
 
 /* ----------------------------------------------------------------------------
-Implement dynamic thread local variables (for heap's).
-Unlike most OS native implementations there is no limit on the number
-that can be allocated.
+  Implement dynamic thread local variables (used by heap's for their theap's).
+  Unlike most OS native implementations there is no limit on the number
+  that can be allocated.
 -----------------------------------------------------------------------------*/
 
 #include "mimalloc.h"
@@ -27,10 +27,11 @@ typedef struct mi_tls_slot_s {
 
 typedef struct mi_thread_locals_s {
   size_t        count;
+  mi_memid_t    memid;
   mi_tls_slot_t slots[1];
 } mi_thread_locals_t;
 
-static mi_thread_locals_t mi_thread_locals_empty = { 0, {{0,NULL}} };
+static mi_thread_locals_t mi_thread_locals_empty = mi_init_struct_zero;
 
 
 /* -----------------------------------------------------------
@@ -54,7 +55,7 @@ static mi_thread_locals_t mi_thread_locals_empty = { 0, {{0,NULL}} };
 #define mi_define_thread_local(tp,name,initval) \
   static mi_decl_thread tp __##name = initval; \
   static inline tp   name##_peek(void)    { return __##name; } \
-  static inline tp   name##_get(void)     { return __##name; } \
+  static inline tp   name##_get(void)     { tp result = __##name; return (result!=NULL ? result : initval); } \
   static inline bool name##_set(tp val)   { __##name = val; return true; } \
   static inline void name##_delete(void)  {  }
 #endif
@@ -118,8 +119,12 @@ static mi_thread_locals_t* mi_thread_locals_expand(size_t least_idx) {
     count = least_idx + 1;
   }
   if (count > MI_TLS_IDX_MAX) { return NULL; }  // too large
-  mi_thread_locals_t* tls = (mi_thread_locals_t*)mi_rezalloc(tls_old, sizeof(mi_thread_locals_t) + count*sizeof(mi_tls_slot_t));
+  // allocate as meta (for secure mode)
+  // we could also allocate on the main heap; this is recursion safe as that uses the fast local key
+  mi_memid_t memid = (tls_old==NULL ? _mi_memid_none() : tls_old->memid);
+  mi_thread_locals_t* tls = (mi_thread_locals_t*)_mi_meta_rezalloc(_mi_subproc(), tls_old, sizeof(mi_thread_locals_t) + count*sizeof(mi_tls_slot_t), &memid);
   if mi_unlikely(tls==NULL) return NULL;
+  tls->memid = memid;
   tls->count = count;
   mi_thread_locals_set(tls);
   return tls;
@@ -170,8 +175,13 @@ bool _mi_thread_local_set( mi_thread_local_t key, void* val ) {
 // get a tls slot value
 static mi_decl_noinline void* mi_thread_local_get_regular( mi_thread_local_t key ) {
   mi_assert_internal(key!=0);
-  const mi_thread_locals_t* const tls = mi_thread_locals_get();
-  mi_assert_internal(tls!=NULL);
+  const mi_thread_locals_t* const tls = mi_thread_locals_peek();
+  if mi_unlikely(tls==NULL) {
+    // this can happen if a thread local is accessed after the thread local has been freed
+    // from mi_thread_done or mi_process_done.
+    // todo: can we remove this check? now we can still call this from process done when stats are printed (which calls mi_heap_theap_peek)
+    return NULL;
+  }
   const size_t idx = mi_key_index(key);
   if mi_likely(idx < tls->count && mi_key_version(key) == tls->slots[idx].version) {
     return tls->slots[idx].value;
@@ -195,7 +205,7 @@ void* _mi_thread_local_get( mi_thread_local_t key ) {
 void _mi_thread_locals_thread_done(void) {
   mi_thread_locals_t* const tls = mi_thread_locals_peek();
   if (tls!=NULL && tls->count > 0) {
-    mi_free(tls);
+    _mi_meta_free(_mi_subproc(), tls, tls->memid);
     mi_thread_locals_set(NULL);
   }
   if (mi_slot_fast_peek() != NULL) {
@@ -221,9 +231,7 @@ void _mi_thread_locals_done(void) {
   mi_lock(&mi_thread_locals_lock) {
     mi_bitmap_t* const slots = mi_thread_locals_free;
     if (slots!=NULL) {
-      const size_t slots_count = mi_bitmap_max_bits(slots);
-      const size_t slots_size  = mi_bitmap_size(slots_count,NULL);
-      _mi_meta_free(_mi_subproc_main(), slots,slots_size,mi_thread_locals_memid);
+      _mi_meta_free(_mi_subproc_main(), slots, mi_thread_locals_memid);
     }
   }
   mi_lock_done(&mi_thread_locals_lock);
@@ -261,14 +269,14 @@ static bool mi_thread_local_create_expand(void) {
   const size_t newsize = mi_bitmap_size( newcount, NULL );
   // mi_bitmap_t* newslots = (mi_bitmap_t*)mi_zalloc_aligned(newsize, MI_BCHUNK_SIZE);
   mi_memid_t memid;
-  mi_bitmap_t* newslots = (mi_bitmap_t*)_mi_meta_zalloc(_mi_subproc_main(), newsize, &memid); // always allocate thread locals in the main subprocess
+  mi_bitmap_t* newslots = (mi_bitmap_t*)_mi_meta_zalloc_aligned(_mi_subproc_main(), newsize, MI_BCHUNK_SIZE, &memid); // always allocate thread locals in the main subprocess
   mi_assert_internal(_mi_is_aligned(newslots,MI_BCHUNK_SIZE));
   if (newslots==NULL) { return false; }
   if (slots!=NULL) {
     // copy over the previous bitmap
     const size_t oldsize = mi_bitmap_size(oldcount,NULL);
     _mi_memcpy_aligned(newslots, slots, oldsize);
-    _mi_meta_free(_mi_subproc_main(), slots,oldsize,mi_thread_locals_memid);
+    _mi_meta_free(_mi_subproc_main(), slots, mi_thread_locals_memid);
   }
   mi_bitmap_init(newslots, newcount, true /* pretend already zero'd so we do not zero out the copied old entries */);
   mi_bitmap_unsafe_setN(newslots, oldcount, newcount - oldcount);  /* set the new expanded slots as available */

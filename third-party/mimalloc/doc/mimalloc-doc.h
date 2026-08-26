@@ -71,13 +71,13 @@ There are three maintained versions of mimalloc. All versions are mostly equal e
 how the OS memory is handled. New development is mostly on v3, while v1 and v2 are maintained 
 with security and bug fixes. 
 
-- __v1__: initial design of mimalloc (release tags: `v1.9.x`, development branch `dev`). Send PR's against this version if possible.
-- __v2__: main mimalloc version. Uses thread-local segments to reduce fragmentation. (release tags: `v2.2.x`, development branch `dev2`)
-- __v3__: simplifies the lock-free design of previous versions, and improves sharing of 
+- __v3__ __recommended__: simplifies the lock-free design of previous versions, and improves sharing of 
         memory between threads. On certain large workloads this version may use 
         (much) less memory. Also supports true first-class heaps (that can allocate from any thread) 
         and has more efficient heap-walking (for the CPython GC for example).
-        (release tags: `v3.2.x`, development branch `dev3`).
+        (release tags: `v3.4.x`, development branch `dev3`).
+- __v2__ __stable__: Uses thread-local segments to reduce fragmentation. (release tags: `v2.4.x`, development branch `dev2`)
+- __v1__ __legacy__: initial design of mimalloc (release tags: `v1.9.x`, development branch `dev`). Send PR's against this version if possible.
 
 You can read more on the design of mimalloc in the
 [technical report](https://www.microsoft.com/en-us/research/publication/mimalloc-free-list-sharding-in-action)
@@ -99,6 +99,7 @@ Further information:
 - \ref malloc
 - \ref aligned
 - \ref typed
+- \ref constantsize
 - \ref zeroinit
 
 - \ref heap
@@ -107,6 +108,7 @@ Further information:
 - \ref subproc
 
 - \ref extended
+- \ref stats
 - \ref options
 - \ref theap
 - \ref posix
@@ -342,7 +344,8 @@ void* mi_realloc_aligned_at(void* p, size_t newsize, size_t alignment, size_t of
 /// ```
 /// int* p = mi_malloc_tp(int)
 /// ```
-///
+/// On __v3__ these can improve performance as they use the `mi_<malloc>_csize` api's that 
+/// in turn can use mi_malloc_small(), mi_free_small(), etc.
 /// \{
 
 /// Allocate a block of type \a tp.
@@ -354,12 +357,22 @@ void* mi_realloc_aligned_at(void* p, size_t newsize, size_t alignment, size_t of
 /// ```
 /// int* p = mi_malloc_tp(int)
 /// ```
-///
-/// @see mi_malloc()
-#define mi_malloc_tp(tp)        ((tp*)mi_malloc(sizeof(tp)))
+/// Using this is more safe, but can also be more efficient since
+/// the allocation size is a compile-time constant.
+/// @see mi_malloc_csize()
+/// @see mi_malloc_small()
+#define mi_malloc_tp(tp)        ((tp*)mi_malloc_csize(sizeof(tp)))
+
+/// Free an object of type \a tp.
+/// @param tp The type of the object that is freed.
+/// @param p A pointer to an object of type \a tp (or \a NULL )
+/// Can be more efficient as it internally uses mi_free_csize()
+/// @see mi_free_csize()
+/// @see mi_free_small()
+#define mi_free_tp(tp,p)        (mi_free_csize(p,sizeof(tp)))
 
 /// Allocate a zero-initialized block of type \a tp.
-#define mi_zalloc_tp(tp)        ((tp*)mi_zalloc(sizeof(tp)))
+#define mi_zalloc_tp(tp)        ((tp*)mi_zalloc_csize(sizeof(tp)))
 
 /// Allocate \a count zero-initialized blocks of type \a tp.
 #define mi_calloc_tp(tp,count)      ((tp*)mi_calloc(count,sizeof(tp)))
@@ -387,6 +400,41 @@ void* mi_realloc_aligned_at(void* p, size_t newsize, size_t alignment, size_t of
 
 /// Re-allocate to \a count zero initialized blocks of type \a tp in a heap \a hp.
 #define mi_heap_recalloc_tp(tp,hp,p,count)  ((tp*)mi_heap_recalloc(p,count,sizeof(tp)))
+
+/// \}
+
+/// \defgroup constantsize Constant size allocation
+/// Constant size allocation and freeing
+/// For example:
+/// ```
+/// long* p = (long*)mi_malloc_csize(sizeof(long))
+/// ```
+/// On __v3__ these can improve performance as they will statically
+/// use mi_malloc_small(), mi_free_small(), etc. when possible.
+/// This is especially useful for compilers and runtimes where the
+/// the size is often statically known. These functions can be used
+/// even when the size is not constant but then there is no performance benefit.
+/// \{
+
+/// @brief Allocate a constant size object.
+/// @param size A (compile-time) constant size.
+/// @return A pointer to an allocated block of size \a size bytes.
+/// @see mi_free_csize()
+/// @see mi_malloc()
+void* mi_malloc_csize(size_t size);
+
+void* mi_zalloc_csize(size_t size);
+
+void* mi_theap_malloc_csize(mi_theap_t* theap, size_t size);
+
+void* mi_theap_zalloc_csize(mi_theap_t* theap, size_t size);
+
+/// @brief Free a pointer with a known constant size.
+/// @param p The pointer to the allocated block (or \a NULL )
+/// @param size The (compile time constant) size with which the pointer was allocated.
+/// @see mi_malloc_csize()
+/// @see mi_free_size()
+void mi_free_csize(void* p, size_t size);
 
 /// \}
 
@@ -1006,13 +1054,14 @@ void* mi_malloc_small(size_t size);
 /// with care!
 void* mi_zalloc_small(size_t size);
 
-/// __v3__: Can be used to free an object that was allocated with #mi_malloc_small et al.
+/// __v3__: Can be used to free an object that was allocated with mi_malloc_small() or 
+/// any allocation with a size < MI_SMALL_SIZE_MAX()
 /// @param p Pointer that was returned from #mi_malloc_small et al.
 /// @details
 /// This function is meant for use in run-time systems for best
 /// performance and does not check if the pointer was _indeed_ allocated
-/// with #mi_malloc_small (et al) -- use with care!
-/// This function has a small perf benefit but only if mimalloc was built with `MI_PAGE_META_ALIGNED_FREE_SMALL=1`
+/// as a small object -- use with care!
+///
 /// @see mi_malloc_small()
 /// @see mi_zalloc_small()
 /// @see mi_heap_malloc_small()
@@ -1357,8 +1406,9 @@ void* mi_theap_realloc(mi_theap_t* theap, void* p, size_t newsize);
 ///
 /// \{
 
-/// Just as `free` but also checks if the pointer `p` belongs to our heap.
-void   mi_cfree(void* p);
+/// Checked `free`: just as `mi_free` but always checks if the pointer `p` belongs to our heap
+/// and is safe to use when a pointer might be invalid or allocated by another allocator.
+void  mi_cfree(void* p);
 void* mi__expand(void* p, size_t newsize);
 
 size_t mi_malloc_size(const void* p);
@@ -1387,8 +1437,22 @@ int   mi_reallocarr(void* p, size_t count, size_t size);
 void* mi_aligned_recalloc(void* p, size_t newcount, size_t size, size_t alignment);
 void* mi_aligned_offset_recalloc(void* p, size_t newcount, size_t size, size_t alignment, size_t offset);
 
+/// @brief Free an object that was allocated with a known size.
+/// @param p The pointer that was allocated with \a size bytes (or \a NULL )
+/// @param size The size in bytes.
+/// __v3__: this can improve performance for objects with a \size < MI_SMALL_SIZE_MAX()
+/// as it will use mi_free_small() internally. Always use this if possible.
+/// @see mi_free_tp()
+/// @see mi_free_csize()
 void mi_free_size(void* p, size_t size);
+
+/// @brief Free an object that was allocated aligned.
+/// @param p The pointer to the object (or \a NULL )
+/// @param size The size of the object as allocated.
+/// @param alignment The requested alignment at the allocation.
+/// Currently just defers to mi_free_size()
 void mi_free_size_aligned(void* p, size_t size, size_t alignment);
+
 void mi_free_aligned(void* p, size_t alignment);
 
 /// \}
@@ -1670,7 +1734,7 @@ Further options for large workloads and services:
    at runtime. Setting `N` to 1 may avoid problems in some virtual environments. Also, setting it to a lower number than
    the actual NUMA nodes is fine and will only cause threads to potentially allocate more memory across actual NUMA
    nodes (but this can happen in any case as NUMA local allocation is always a best effort but not guaranteed).
-- `MIMALLOC_ALLOW_LARGE_OS_PAGES=0`: Set to 1 to use large OS pages (2 or 4MiB) when available; for some workloads this can
+- `MIMALLOC_ALLOW_LARGE_OS_PAGES=0`: Set to 1 to use large OS pages (usually 2MiB) when available; for some workloads this can
    significantly improve performance. However, large OS pages cannot be purged or shared with other processes so may lead
    to increased memory usage in some cases.
    Use `MIMALLOC_VERBOSE` to check if the large OS pages are enabled -- usually one needs

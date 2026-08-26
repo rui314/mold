@@ -64,10 +64,13 @@
     <ClCompile Include="..\..\src\threadlocal.c">
       <Filter>Sources</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\arena-meta.c">
+    <ClCompile Include="..\..\src\page-map.c">
       <Filter>Sources</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\page-map.c">
+    <ClCompile Include="..\..\src\subproc.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\prim\prim-tls.c">
       <Filter>Sources</Filter>
     </ClCompile>
   </ItemGroup>

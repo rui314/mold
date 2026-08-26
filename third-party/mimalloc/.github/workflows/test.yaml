@@ -1,5 +1,5 @@
 on:
-  workflow_dispatch:   # allow running the workflow manually 
+  workflow_dispatch:   # allow running the workflow manually
   push:
     branches:
       - 'dev*'
@@ -9,23 +9,37 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true # Cancel any in-progress runs of this workflow when a new run is triggered on the same ref (branch or tag)
-  
+
 name: Test
 jobs:
   build:
     name: Test
     runs-on: ${{ matrix.os }}
+    env:
+      MIMALLOC_SHOW_ERRORS: 1
     strategy:
       matrix:
         tests: [basic,extra]
         os: [windows-latest, macos-latest, ubuntu-latest, macos-14, macos-15-intel, ubuntu-22.04-arm, windows-11-arm]
         exclude:
           - os: macos-14
-            tests: extra          
+            tests: extra
         include:
+          - os: ubuntu-latest
+            tests: freebsd-x64
+          - os: ubuntu-latest
+            tests: alpine-x64
+          - os: ubuntu-latest
+            tests: alpine-riscv64   # qemu
+          - os: ubuntu-latest
+            tests: alpine-arm32     # qemu
           - os: windows-latest
             tests: mingw-ucrt64
-        
+          # - os: ubuntu-latest
+          #   tests: android-x64
+          # - os: ubuntu-latest       # slow, so disable by default
+          #   tests: freebsd-arm64    # qemu
+
     steps:
       # Checkout: https://github.com/actions/checkout
       - name: Checkout repository
@@ -35,16 +49,25 @@ jobs:
       - name: Debug
         if: matrix.tests == 'basic'
         run: |
-          cmake . -B out/debug -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+          env
+          cmake . -B out/debug -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL
           cmake --build out/debug --parallel 4 --config Debug
           ctest --test-dir out/debug --verbose --timeout 240 -C Debug
 
       - name: Release
         if: matrix.tests == 'basic'
         run: |
-          cmake . -B out/release -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON
+          cmake . -B out/release -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_SEE_ASM=ON
           cmake --build out/release --parallel 4 --config Release
           ctest --test-dir out/release --verbose --timeout 240 -C Release
+
+      - name: Release, Asm
+        if: matrix.tests == 'basic' && runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.os }}-asm
+          path: out/release/CMakeFiles/mimalloc-static.dir/src/*.c.s
+
 
       - name: Secure
         if: matrix.tests == 'basic'
@@ -57,7 +80,7 @@ jobs:
       - name: Debug, C++
         if: matrix.tests == 'basic' && runner.os != 'Windows'   # windows already uses C++ by default
         run: |
-          cmake . -B out/debug-cxx -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
+          cmake . -B out/debug-cxx -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL -DMI_USE_CXX=ON
           cmake --build out/debug-cxx --parallel 8 --config Debug
           ctest --test-dir out/debug-cxx --verbose --timeout 240 -C Debug
 
@@ -68,7 +91,7 @@ jobs:
           cmake --build out/release-cxx --parallel 8 --config Release
           ctest --test-dir out/release-cxx --verbose --timeout 240 -C Release
 
-      # Extra, Windows x86 
+      # Extra, Windows x86
       - name: Debug, Win32
         if: matrix.tests == 'extra' && runner.os == 'Windows' && !endsWith(matrix.os,'arm')
         run: |
@@ -95,7 +118,7 @@ jobs:
         run: |
           cmake . -B out/release-clang -DCMAKE_BUILD_TYPE=Release -A Win32 -T ClangCl
           cmake --build out/release-clang --parallel 4 --config Release
-          ctest --test-dir out/release-clang --verbose --timeout 240 -C Release          
+          ctest --test-dir out/release-clang --verbose --timeout 240 -C Release
 
       # Extra, macOS fixed TLS
       - name: Debug, TLS fixed
@@ -123,9 +146,17 @@ jobs:
       - name: Release, TLS pthreads
         if: matrix.tests == 'extra' && runner.os == 'linux'
         run: |
-          cmake . -B out/release-tls-pthreads -DCMAKE_BUILD_TYPE=Release -DMI_TLS_MODEL_PTHREADS=ON
+          cmake . -B out/release-tls-pthreads -DCMAKE_BUILD_TYPE=Release -DMI_TLS_MODEL_PTHREADS=ON -DMI_SEE_ASM=ON
           cmake --build out/release-tls-pthreads --parallel 4 --config Release
           ctest --test-dir out/release-tls-pthreads --verbose --timeout 240 -C Release
+
+      - name: Release, TLS pthreads, Asm
+        if: matrix.tests == 'extra' && runner.os == 'linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.os }}-pthreads-asm
+          path: out/release-tls-pthreads/CMakeFiles/mimalloc-static.dir/src/*.c.s
+
 
       # Extra
       - name: Release, SIMD
@@ -145,46 +176,53 @@ jobs:
       - name: Debug, C++, clang++
         if: matrix.tests == 'extra' && runner.os == 'Linux'
         run: |
-          CC=clang CXX=clang++ cmake . -B out/debug-clang-cxx -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_USE_CXX=ON
+          CC=clang CXX=clang++ cmake . -B out/debug-clang-cxx -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL -DMI_USE_CXX=ON
           cmake --build out/debug-clang-cxx --parallel 8 --config Debug
           ctest --test-dir out/debug-clang-cxx --verbose --timeout 240 -C Debug
 
       - name: Release, C++, clang++
         if: matrix.tests == 'extra' && runner.os == 'Linux'
         run: |
-          CC=clang CXX=clang++ cmake . -B out/release-clang-cxx -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_USE_CXX=ON
+          CC=clang CXX=clang++ cmake . -B out/release-clang-cxx -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_USE_CXX=ON -DMI_SEE_ASM=ON
           cmake --build out/release-clang-cxx --parallel 8 --config Release
           ctest --test-dir out/release-clang-cxx --verbose --timeout 240 -C Release
+
+      - name: Release, C++, clang++, Asm
+        if: matrix.tests == 'extra' && runner.os == 'Linux'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.os }}-clang-cxx-asm
+          path: out/release-clang-cxx/*.s
 
       - name: Debug, ASAN
         if: matrix.tests == 'extra' && runner.os == 'Linux'
         run: |
-          CC=clang CXX=clang++ cmake . -B out/debug-asan -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_TRACK_ASAN=ON
+          CC=clang CXX=clang++ cmake . -B out/debug-asan -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL -DMI_TRACK=ASAN
           cmake --build out/debug-asan --parallel 8 --config Debug
           ctest --test-dir out/debug-asan --verbose --timeout 240 -C Debug
 
       - name: Debug, UBSAN
         if: matrix.tests == 'extra' && runner.os == 'Linux'
         run: |
-          CC=clang CXX=clang++ cmake . -B out/debug-ubsan -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_DEBUG_UBSAN=ON
+          CC=clang CXX=clang++ cmake . -B out/debug-ubsan -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL -DMI_DEBUG_UBSAN=ON
           cmake --build out/debug-ubsan --parallel 8 --config Debug
           ctest --test-dir out/debug-ubsan --verbose --timeout 240 -C Debug
 
       - name: Debug, TSAN
         if: matrix.tests == 'extra' && runner.os == 'Linux'
         run: |
-          CC=clang CXX=clang++ cmake . -B out/debug-tsan -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_DEBUG_TSAN=ON
+          CC=clang CXX=clang++ cmake . -B out/debug-tsan -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL -DMI_DEBUG_TSAN=ON
           cmake --build out/debug-tsan --parallel 8 --config Debug
           ctest --test-dir out/debug-tsan --verbose --timeout 240 -C Debug
 
       - name: Debug, Guarded
         if: matrix.tests == 'extra' && runner.os != 'macOS'
         run: |
-          cmake . -B out/debug-guarded -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON -DMI_GUARDED=ON
+          cmake . -B out/debug-guarded -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL -DMI_GUARDED=ON
           cmake --build out/debug-guarded --parallel 8 --config Debug
           ctest --test-dir out/debug-guarded --verbose --timeout 240 -C Debug
         env:
-          MIMALLOC_GUARDED_SAMPLE_RATE: 100
+          MIMALLOC_GUARDED_SAMPLE_RATE: 10
 
       - name: Release, Guarded
         if: matrix.tests == 'extra' && runner.os == 'Linux' && startsWith(github.ref_name,'dev3')
@@ -193,13 +231,20 @@ jobs:
           cmake --build out/release-guarded --parallel 8 --config Release
           ctest --test-dir out/release-guarded --verbose --timeout 240 -C Release
         env:
-          MIMALLOC_GUARDED_SAMPLE_RATE: 100
+          MIMALLOC_GUARDED_SAMPLE_RATE: 10
 
-      # MSYS2 mingw64 UCRT64
+      - name: Debug, Secure Full
+        if: matrix.tests == 'extra' && runner.os != 'macOS'
+        run: |
+          cmake . -B out/debug-secure-full -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL -DMI_SECURE=FULL
+          cmake --build out/debug-secure-full --parallel 8 --config Debug
+          ctest --test-dir out/debug-secure-full --verbose --timeout 240 -C Debug        
+
+      # MSYS2 mingw64
       - name: mingw-ucrt64 x64, Setup
         if: matrix.tests == 'mingw-ucrt64'
-        uses: msys2/setup-msys2@v2       
-        with: 
+        uses: msys2/setup-msys2@v2
+        with:
           msystem: UCRT64
           install: |
             mingw-w64-ucrt-x86_64-gcc
@@ -212,7 +257,7 @@ jobs:
         shell: msys2 {0}
         run: |
           env
-          cmake . -B out/debug-mingw-ucrt64-x64 -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG_FULL=ON
+          cmake . -B out/debug-mingw-ucrt64-x64 -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL
           cmake --build out/debug-mingw-ucrt64-x64 --parallel 4 --config Debug
           ctest --test-dir out/debug-mingw-ucrt64-x64 --verbose --timeout 240 -C Debug
 
@@ -224,3 +269,228 @@ jobs:
           cmake --build out/release-mingw-ucrt64-x64 --parallel 4 --config Release
           ctest --test-dir out/release-mingw-ucrt64-x64 --verbose --timeout 240 -C Release
 
+
+      # VM: FreeBSD (arm64 and x64)
+      - name: FreeBSD arm64, Setup
+        if: matrix.tests == 'freebsd-arm64'
+        uses: vmactions/freebsd-vm@v1
+        with:
+          arch: arm64
+          custom-shell-name: freebsd-arm64
+          cache-after-prepare: true
+          prepare: |
+            uname -a
+            pkg install -y cmake
+
+      - name: FreeBSD arm64, Debug
+        if: matrix.tests == 'freebsd-arm64'
+        shell: freebsd-arm64 {0}
+        run: |
+          export MI_TEST_LIGHT=1
+          cmake . -B out/debug-arm64 -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL
+          cmake --build out/debug-arm64 --parallel 4 --config Debug
+          ctest --test-dir out/debug-arm64 --verbose --timeout 240 -C Debug
+
+      - name: FreeBSD arm64, Release
+        if: matrix.tests == 'freebsd-arm64'
+        shell: freebsd-arm64 {0}
+        run: |
+          export MI_TEST_LIGHT=1
+          cmake . -B out/release-arm64 -G Ninja -DCMAKE_BUILD_TYPE=Release  -DMI_OPT_ARCH=ON
+          cmake --build out/release-arm64 --parallel 4 --config Release
+          ctest --test-dir out/release-arm64 --verbose --timeout 240 -C Release
+
+      - name: FreeBSD arm64, Secure
+        if: matrix.tests == 'freebsd-arm64'
+        shell: freebsd-arm64 {0}
+        run: |
+          export MI_TEST_LIGHT=1
+          cmake . -B out/secure-arm64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DMI_SECURE=ON
+          cmake --build out/secure-arm64 --parallel 4 --config Release
+          ctest --test-dir out/secure-arm64 --verbose --timeout 240 -C Release
+
+
+      - name: FreeBSD x64, Setup
+        if: matrix.tests == 'freebsd-x64'
+        uses: vmactions/freebsd-vm@v1
+        with:
+          arch: x86_64
+          usesh: true
+          custom-shell-name: freebsd-x64
+          cache-after-prepare: true
+          prepare: |
+            pkg install -y cmake
+
+      - name: FreeBSD x64, Debug
+        if: matrix.tests == 'freebsd-x64'
+        shell: freebsd-x64 {0}
+        run: |
+          cmake . -B out/debug-x64 -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL
+          cmake --build out/debug-x64 --parallel 4 --config Debug
+          ctest --test-dir out/debug-x64 --verbose --timeout 240 -C Debug
+
+      - name: FreeBSD x64, Release
+        if: matrix.tests == 'freebsd-x64'
+        shell: freebsd-x64 {0}
+        run: |
+          cmake . -B out/release-x64 -DCMAKE_BUILD_TYPE=Release  -DMI_OPT_ARCH=ON
+          cmake --build out/release-x64 --parallel 4 --config Release
+          ctest --test-dir out/release-x64 --verbose --timeout 240 -C Release
+
+      - name: FreeBSD x64, Secure
+        if: matrix.tests == 'freebsd-x64'
+        shell: freebsd-x64 {0}
+        run: |
+          cmake . -B out/secure-x64 -DCMAKE_BUILD_TYPE=Release -DMI_SECURE=ON
+          cmake --build out/secure-x64 --parallel 4 --config Release
+          ctest --test-dir out/secure-x64 --verbose --timeout 240 -C Release
+
+
+      # VM: Alpine Linux with MUSL libc (riscv64 and x64)
+      - name: Alpine riscv64, Setup
+        if: matrix.tests == 'alpine-riscv64'
+        uses: jirutka/setup-alpine@v1
+        with:
+          arch: riscv64
+          shell-name: alpine-riscv64.sh
+          packages: |
+            build-base
+            cmake
+            ninja
+
+      - name: Alpine riscv64, Debug
+        if: matrix.tests == 'alpine-riscv64'
+        shell: alpine-riscv64.sh {0}
+        env:
+          MI_TEST_LIGHT: 1
+        run: |
+          uname -m
+          cmake . -B out/debug-riscv64 -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL
+          cmake --build out/debug-riscv64 --parallel 4 --config Debug
+          ctest --test-dir out/debug-riscv64 --verbose --timeout 240 -C Debug
+
+      - name: Alpine riscv64, Release
+        if: matrix.tests == 'alpine-riscv64'
+        shell: alpine-riscv64.sh {0}
+        run: |
+          cmake . -B out/release-riscv64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DMI_OPT_ARCH=ON -DMI_SEE_ASM=ON
+          cmake --build out/release-riscv64 --parallel 4 --config Release
+          ctest --test-dir out/release-riscv64 --verbose --timeout 240 -C Release
+
+      - name: Alpine risc64, Asm
+        if: matrix.tests == 'alpine-riscv64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: alpine-riscv64-asm
+          path: out/release-riscv64/CMakeFiles/mimalloc.dir/src/*.c.s
+
+      - name: Alpine riscv64, Secure
+        if: matrix.tests == 'alpine-riscv64'
+        shell: alpine-riscv64.sh {0}
+        run: |
+          cmake . -B out/secure-riscv64 -G Ninja -DCMAKE_BUILD_TYPE=Release -DMI_SECURE=ON
+          cmake --build out/secure-riscv64 --parallel 4 --config Release
+          ctest --test-dir out/secure-riscv64 --verbose --timeout 240 -C Release
+
+
+      - name: Alpine x64, Setup
+        if: matrix.tests == 'alpine-x64'
+        uses: jirutka/setup-alpine@v1
+        with:
+          arch: x86_64
+          shell-name: alpine-x64.sh
+          packages: |
+            build-base
+            cmake
+
+      - name: Alpine x64, Debug
+        if: matrix.tests == 'alpine-x64'
+        shell: alpine-x64.sh {0}
+        run: |
+          cmake . -B out/debug-x64 -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL
+          cmake --build out/debug-x64 --parallel 4 --config Debug
+          ctest --test-dir out/debug-x64 --verbose --timeout 240 -C Debug
+
+      - name: Alpine x64, Release
+        if: matrix.tests == 'alpine-x64'
+        shell: alpine-x64.sh {0}
+        run: |
+          cmake . -B out/release-x64 -DCMAKE_BUILD_TYPE=Release  -DMI_OPT_ARCH=ON
+          cmake --build out/release-x64 --parallel 4 --config Release
+          ctest --test-dir out/release-x64 --verbose --timeout 240 -C Release
+
+      - name: Alpine x64, Secure
+        if: matrix.tests == 'alpine-x64'
+        shell: alpine-x64.sh {0}
+        run: |
+          cmake . -B out/secure-x64 -DCMAKE_BUILD_TYPE=Release -DMI_SECURE=ON
+          cmake --build out/secure-x64 --parallel 4 --config Release
+          ctest --test-dir out/secure-x64 --verbose --timeout 240 -C Release
+
+      - name: Alpine arm32, Setup
+        if: matrix.tests == 'alpine-arm32'
+        uses: jirutka/setup-alpine@v1
+        with:
+          arch: armv7  # or armhf for arm-v6 with hard float
+          shell-name: alpine-arm32.sh
+          packages: |
+            build-base
+            cmake
+
+      - name: Alpine arm32, Debug
+        if: matrix.tests == 'alpine-arm32'
+        shell: alpine-arm32.sh {0}
+        env:
+          MI_TEST_LIGHT: 1
+        run: |
+          uname -m
+          cmake . -B out/debug-arm32 -DCMAKE_BUILD_TYPE=Debug -DMI_DEBUG=FULL
+          cmake --build out/debug-arm32 --parallel 4 --config Debug
+          ctest --test-dir out/debug-arm32 --verbose --timeout 240 -C Debug
+
+      - name: Alpine arm32, Release
+        if: matrix.tests == 'alpine-arm32'
+        shell: alpine-arm32.sh {0}
+        run: |
+          cmake . -B out/release-arm32 -DCMAKE_BUILD_TYPE=Release  -DMI_OPT_ARCH=ON
+          cmake --build out/release-arm32 --parallel 4 --config Release
+          ctest --test-dir out/release-arm32 --verbose --timeout 240 -C Release
+
+      - name: Alpine arm32, Secure
+        if: matrix.tests == 'alpine-arm32'
+        shell: alpine-arm32.sh {0}
+        run: |
+          cmake . -B out/secure-arm32 -DCMAKE_BUILD_TYPE=Release -DMI_SECURE=ON
+          cmake --build out/secure-arm32 --parallel 4 --config Release
+          ctest --test-dir out/secure-arm32 --verbose --timeout 240 -C Release
+
+      # - name: Android, Setup
+      #   if: matrix.tests == 'android-x64'
+      #   uses: android-actions/setup-android@v4
+      #   #id: setup-ndk
+      #   # with:
+      #     # ndk-version: r27d
+      #     # link-to-sdk: true
+      #     # local-cache: true
+
+      # - name: Android, Debug Build
+      #   if: matrix.tests == 'android-x64'
+      #   # env:
+      #   #  ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      #   run: |
+      #     env
+      #     cmake . -G Ninja -B out/android-x64 -DCMAKE_BUILD_TYPE=Debug \
+      #       -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+      #       -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-27
+      #     cmake --build out/android-x64 --parallel 4 --config Debug
+
+      # - name: Android, Debug Run
+      #   if: matrix.tests == 'android-x64'
+      #   uses: reactivecircus/android-emulator-runner@v2
+      #   with:
+      #     api-level: 27
+      #     target: default
+      #     arch: x86_64
+      #     script: |
+      #       adb push out/android-x64/mimalloc-test-api /data/local/tmp/
+      #       adb shell "/data/local/tmp/mimalloc-test-api"        

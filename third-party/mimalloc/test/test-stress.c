@@ -42,10 +42,14 @@ terms of the MIT license.
 // > mimalloc-test-stress [THREADS] [SCALE] [ITER]
 //
 // argument defaults
-#if defined(MI_TSAN)          // with thread-sanitizer reduce the threads to test within the azure pipeline limits
+#if defined(MI_TSAN) && MI_TEST_LIGHT         // with thread-sanitizer reduce the threads to test within the azure pipeline limits
+static int THREADS = NTHREADS/4;
+static int SCALE   = 10;
+static int ITER    = 100;
+#elif defined(MI_TSAN)          // with thread-sanitizer reduce the threads to test within the azure pipeline limits
 static int THREADS = NTHREADS/4;
 static int SCALE   = 25;
-static int ITER    = 400;
+static int ITER    = 500;
 #elif defined(MI_UBSAN)       // with undefined behavious sanitizer reduce parameters to stay within the azure pipeline limits
 static int THREADS = NTHREADS/4;
 static int SCALE   = 25;
@@ -54,11 +58,14 @@ static int ITER    = 20;
 static int THREADS = NTHREADS/4;
 static int SCALE   = 25;
 static int ITER    = 10;
-#elif 0
+#elif MI_DEBUG && MI_TEST_LIGHT
+static int THREADS = NTHREADS/4;
+static int SCALE   = 25;
+static int ITER    = 10;
+#elif MI_DEBUG
 static int THREADS = NTHREADS;
 static int SCALE   = 25;
-static int ITER    = 50;
-#define ALLOW_LARGE true
+static int ITER    = 25;
 #else
 static int THREADS = NTHREADS;      // more repeatable if THREADS <= #processors
 static int SCALE   = 50;            // scaling factor
@@ -306,7 +313,7 @@ static void test_stress(mi_subproc_id_t subproc) {
     if ((n + 1) % 10 == 0) {
       printf("- iterations left: %3d\n", ITER - (n + 1));
       #ifndef USE_STD_MALLOC
-      // mi_debug_show_arenas();
+      mi_debug_show_arenas();
       #endif
       //mi_collect(true);
       //mi_debug_show_arenas();
@@ -315,10 +322,14 @@ static void test_stress(mi_subproc_id_t subproc) {
   }
 
   #ifndef USE_STD_MALLOC
+  #ifdef MI_USE_HEAPS
+  mi_subproc_heap_stats_print_out(mi_subproc_current(),NULL,NULL);
+  #else
   mi_stats_print(NULL);
   #endif
+  #endif
 
-  // clean up  (a bit too early to test the final free_items still works correctly)
+  // clean up  (a bit too early in order to test if the final `free_items` still works correctly)
   #ifdef MI_USE_HEAPS
   for (int i = 0; i < MI_USE_HEAPS; i++) {
     mi_heap_delete(prev_heaps[i]); prev_heaps[i] = NULL;
@@ -392,7 +403,7 @@ int main(int argc, char** argv) {
   #endif  
   #if !defined(NDEBUG) && !defined(USE_STD_MALLOC)
     mi_option_set(mi_option_arena_reserve, (long)(mi_arena_min_size()/1024) /* in KiB ! */);
-    mi_option_set(mi_option_purge_delay,1);
+    // mi_option_set(mi_option_purge_delay,1);
   #endif
   #if defined(NDEBUG) && !defined(USE_STD_MALLOC)
     // mi_option_set(mi_option_purge_delay,-1);
@@ -456,7 +467,7 @@ int main(int argc, char** argv) {
   //  mi_free(json);
   //}
   #endif
-  mi_collect(true);
+  // mi_collect(true);
   mi_stats_print(NULL);
 #endif
   //bench_end_program();

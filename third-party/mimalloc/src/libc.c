@@ -1,12 +1,12 @@
 /* ----------------------------------------------------------------------------
-Copyright (c) 2018-2024, Microsoft Research, Daan Leijen
+Copyright (c) 2018-2026, Microsoft Research, Daan Leijen
 This is free software; you can redistribute it and/or modify it under the
 terms of the MIT license. A copy of the license can be found in the file
 "LICENSE" at the root of this distribution.
 -----------------------------------------------------------------------------*/
 
 // --------------------------------------------------------
-// This module defines various std libc functions to reduce
+// This module defines various standard libc functions to reduce
 // the dependency on libc, and also prevent errors caused
 // by some libc implementations when called before `main`
 // executes (due to malloc redirection)
@@ -119,7 +119,7 @@ bool _mi_atomic_once_enter(mi_atomic_once_t* once) {
   }
   const mi_threadid_t current_tid = _mi_thread_id();
   if (once_tid == current_tid) {
-    return false; // recursive invocation; we need this for process_init for example
+    return false; // recursive invocation; don't block on ourselves
   }
 
   mi_lock_acquire(&once->lock);
@@ -154,6 +154,79 @@ mi_decl_noinline bool _mi_pthread_key_create(pthread_key_t* pkey, void (*destruc
   };
   mi_assert_internal(pthread_getspecific(*pkey)==init);
   return true;
+}
+#endif
+
+// --------------------------------------------------------
+// Detect CPU features
+// --------------------------------------------------------
+mi_decl_cache_align size_t _mi_cpu_movsb_max = 0;  // for size <= max, rep movsb is fast
+mi_decl_cache_align size_t _mi_cpu_stosb_max = 0;  // for size <= max, rep stosb is fast
+mi_decl_cache_align bool   _mi_cpu_has_popcnt = false;
+
+#if (MI_ARCH_X64 || MI_ARCH_X86)
+#if defined(__GNUC__)
+// #include <cpuid.h>
+static bool mi_cpuid(uint32_t* regs4, uint32_t level, uint32_t sublevel) {
+  // note: use explicit assembly instead of __get_cpuid as we need the sublevel (in ecx)
+  // (on Ubuntu 22 with WSL the __get_cpuid does not clear ecx for level 7 which is incorrect).
+  uint32_t eax, ebx, ecx, edx;
+  __asm __volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx) : "a"(level), "c"(sublevel) : );
+  regs4[0] = eax;
+  regs4[1] = ebx;
+  regs4[2] = ecx;
+  regs4[3] = edx;
+  return true;
+}
+
+#elif defined(_MSC_VER)
+static bool mi_cpuid(uint32_t* regs4, uint32_t level, uint32_t sublevel) {
+  __cpuidex((int32_t*)regs4, (int32_t)level, (int32_t)sublevel);
+  return true;
+}
+#else
+static bool mi_cpuid(uint32_t* regs4, uint32_t level, uint32_t sublevel) {
+  MI_UNUSED(regs4); MI_UNUSED(level); MI_UNUSED(sublevel);
+  return false;
+}
+#endif
+
+void _mi_detect_cpu_features(void) {
+  // FSRM for fast short rep movsb support (AMD Zen3+ (~2020) or Intel Ice Lake+ (~2017))
+  // EMRS for fast enhanced rep movsb/stosb support (not used at the moment, memcpy always seems faster?)
+  // FSRS for fast short rep stosb
+  bool amd = false;
+  bool fsrm = false;
+  // bool erms = false;
+  bool fsrs = false;
+  uint32_t cpu_info[4];
+  if (mi_cpuid(cpu_info, 0, 0)) {
+    amd = (cpu_info[2]==0x444d4163); // (Auth enti cAMD)
+  }
+  if (mi_cpuid(cpu_info, 7, 0)) {
+    fsrm = ((cpu_info[3] & (1 << 4)) != 0); // bit 4 of EDX : see <https://en.wikipedia.org/wiki/CPUID#EAX=7,_ECX=0:_Extended_Features>
+    // erms = ((cpu_info[1] & (1 << 9)) != 0); // bit 9 of EBX : see <https://en.wikipedia.org/wiki/CPUID#EAX=7,_ECX=0:_Extended_Features>
+  }
+  if (mi_cpuid(cpu_info, 7, 1)) {
+    fsrs = ((cpu_info[1] & (1 << 11)) != 0); // bit 11 of EBX: see <https://en.wikipedia.org/wiki/CPUID#EAX=7,_ECX=1:_Extended_Features>
+  }
+  if (mi_cpuid(cpu_info, 1, 0)) {
+    _mi_cpu_has_popcnt = ((cpu_info[2] & (1 << 23)) != 0); // bit 23 of ECX : see <https://en.wikipedia.org/wiki/CPUID#EAX=1:_Processor_Info_and_Feature_Bits>
+  }
+
+  if (fsrm) {
+    _mi_cpu_movsb_max = 127;
+  }
+  if (fsrs || (amd && fsrm)) {  // fsrm on amd implies fsrs, see: https://marc.info/?l=git-commits-head&m=168186277717803
+    _mi_cpu_stosb_max = 127;
+  }
+}
+
+#else
+void _mi_detect_cpu_features(void) {
+  #if MI_ARCH_ARM64
+  _mi_cpu_has_popcnt = true;
+  #endif
 }
 #endif
 

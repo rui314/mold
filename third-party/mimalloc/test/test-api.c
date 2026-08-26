@@ -110,7 +110,7 @@ int main(void) {
   };
   #if MI_INTPTR_BITS > 32
   CHECK_BODY("malloc-free-invalid-low") {
-    mi_free((void*)(MI_ZU(0x0000000003990080))); // issue #1087
+    mi_cfree((void*)(MI_ZU(0x0000000003990080))); // issue #1087
   };
   #endif
   CHECK_BODY("calloc-overflow") {
@@ -240,7 +240,7 @@ int main(void) {
     void* p[8];
     const int max_align_shift =
       #if SIZE_MAX > UINT32_MAX
-      28
+      28  /* up to 64 MiB alignment */
       #else
       20
       #endif
@@ -399,6 +399,29 @@ int main(void) {
   }
 
   // ---------------------------------------------------
+  // Small allocations
+  // ---------------------------------------------------
+  CHECK_BODY("free_small1") {
+    for(size_t n = 1; n < MI_SMALL_SIZE_MAX; n *=2) {
+      const size_t size = n*sizeof(int);
+      int* p = (int*)mi_zalloc(size);
+      p[n-1] = 42;
+      mi_free_size(p,size);
+    }
+  }
+
+  CHECK_BODY("free_small2") {
+    for(size_t n = 1; n < MI_SMALL_SIZE_MAX; n *=2) {
+      const size_t size = n*sizeof(int);
+      int* p = (int*)mi_zalloc(size);
+      p[n-1] = 42;
+      p = (int*)mi_rezalloc(p, size + MI_SMALL_SIZE_MAX);
+      mi_free_size(p,size + MI_SMALL_SIZE_MAX);
+    }
+  }
+  
+
+  // ---------------------------------------------------
   // Returned block sizes
   // ---------------------------------------------------
   CHECK_BODY("umalloc1") {
@@ -437,19 +460,43 @@ int main(void) {
 
   CHECK_BODY("heap-os2") {
     // @zoxc opus bug #3.
+    mi_collect(true);
     mi_stats_t_decl(stats0); 
     mi_stats_get(&stats0);
 
-    mi_heap_t* h = mi_heap_new();      
+    mi_heap_t* h = mi_heap_new();
+    long failed = 0;      
     for(int i = 0; i < 10; i++) {
       int* p = (int*)mi_heap_malloc_aligned(h, 1<<20, 2<<20);   // forced OS allocation
-      p[0] = 42;
+      if (p==NULL) {
+        failed++;
+      }
+      else {
+        p[0] = 42;
+      }
     }
     mi_heap_destroy(h);
 
+    mi_collect(true);
     mi_stats_t_decl(stats1); 
-    mi_stats_get(&stats1);
+    mi_stats_get(&stats1);    
     result = (stats0.pages.current == stats1.pages.current);    
+    if (!result) {
+      fprintf(stderr, "heap-os2: pages: %ld != %ld (failed: %ld)\n", (long)stats0.pages.current, (long)stats1.pages.current, failed);
+    }
+  }
+
+  #define NHEAPS (1000)
+  CHECK_BODY("heap-many") {    // check creating many heaps and threadlocals, see issue #1358
+    mi_heap_t* heaps[NHEAPS];
+    for (size_t i = 0; i < NHEAPS; i++) {
+      heaps[i] = mi_heap_new();
+      if (heaps[i] == NULL) { result = false; break; };
+      if (mi_heap_malloc(heaps[i], 32) == NULL) { result = false; break; }
+    }
+    for (size_t i = 0; i < NHEAPS; i++) {
+      mi_heap_destroy(heaps[i]);
+    }  
   }
 
   //CHECK("theap_destroy", test_theap1());

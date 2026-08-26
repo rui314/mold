@@ -16,19 +16,20 @@ terms of the MIT license. A copy of the license can be found in the file
 // to a thread-local theap pointer (in `alloc.c:mi_malloc`).
 //
 // For performance, we tend to use specialized code for various platforms.
-// This leads to quite a few ifdefs but it is just for performance and there 
+// This leads to quite a few ifdefs but it is just for performance and there
 // is always a portable fallback (based on regular thread local variables).
 //
 // Windows          : use NtCurrentTeB and TlsAlloc (MI_TLS_MODEL_WIN32)
-// Linux,FreeBSD    : use thread locals with the initial-exec model  (MI_TLS_MODEL_LOCAL)  
-// macOS            : use pthread locals with assembly for the thread-id  (MI_TLS_MODEL_PTHREADS) 
+// Linux,FreeBSD    : use thread locals with the initial-exec model  (MI_TLS_MODEL_LOCAL)
+// macOS            : use pthread locals with assembly for the thread-id  (MI_TLS_MODEL_PTHREADS)
 // Android,OpenBSD  : use pthread locals (MI_TLS_MODEL_PTHREADS). todo: maybe on Android MI_TLS_MODEL_LOCAL is better?
 // --------------------------------------------------------------------------
 
-// static inline void*         mi_prim_tls_slot(size_t slot) mi_attr_noexcept;  // directly read an entry from the thread local storage (or thread control block)
-// static inline void          mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexcept;
+// static inline void** mi_prim_thread_pointer(void);   // get a pointer to the thread local storage
+// static inline void*  mi_prim_tls_slot(size_t slot);  // directly read an entry from the thread local storage block
+// static inline void   mi_prim_tls_slot_set(size_t slot, void* value);
 
-static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept;       // get a unique id for a thread
+static inline mi_threadid_t _mi_prim_thread_id(void);                        // get a unique id for a thread
 static inline mi_theap_t*   _mi_theap_default(void);                         // the default thread local theap
 static inline mi_theap_t*   _mi_theap_cached(void);                          // last used thread local theap using the _heap_ api
 static inline bool          _mi_thread_is_initialized(void);                 // a thread is initialized if it has a default theap
@@ -50,115 +51,7 @@ static inline mi_theap_t*   _mi_page_associated_theap_peek(mi_page_t* page); // 
 
 
 //-------------------------------------------------------------------
-// Access to TLS (thread local storage) slots.
-//-------------------------------------------------------------------
-
-// On some libc + platform combinations we can directly access a thread-local storage (TLS) slot.
-// The TLS layout depends on both the OS and libc implementation so we use specific tests for each main platform.
-// If you test on another platform and it works please send a PR :-)
-// see also https://akkadia.org/drepper/tls.pdf for more info on the TLS register.
-//
-// Note: we would like to prefer `__builtin_thread_pointer()` nowadays instead of using assembly,
-// but unfortunately we can not detect support reliably (see issue #883)
-#if (defined(_WIN32)) || \
-    (defined(__GNUC__) && ( \
-           (defined(__GLIBC__)   && (defined(__x86_64__) || defined(__i386__) || (defined(__arm__) && __ARM_ARCH >= 7) || defined(__aarch64__))) \
-        || (defined(__APPLE__)   && (defined(__x86_64__) || defined(__aarch64__) || defined(__POWERPC__))) \
-        || (defined(__BIONIC__)  && (defined(__x86_64__) || defined(__i386__) || (defined(__arm__) && __ARM_ARCH >= 7) || defined(__aarch64__))) \
-        || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__) || defined(__aarch64__))) \
-        || (defined(__OpenBSD__) && (defined(__x86_64__) || defined(__i386__) || defined(__aarch64__))) \
-      ))
-
-static inline void* mi_prim_tls_slot(size_t slot) mi_attr_noexcept {
-  void* res;
-  const size_t ofs = (slot*sizeof(void*));
-  #if defined(_WIN32)  
-    #if (_M_X64 || _M_AMD64) && !defined(_M_ARM64EC)
-      res = (void*)__readgsqword((unsigned long)ofs);   // direct load at offset from gs
-    #elif _M_IX86 && !defined(_M_ARM64EC)
-      res = (void*)__readfsdword((unsigned long)ofs);   // direct load at offset from fs
-    #else
-      res = ((void**)NtCurrentTeb())[slot]; MI_UNUSED(ofs);
-    #endif
-  #elif defined(__i386__)
-    __asm__("movl %%gs:%1, %0" : "=r" (res) : "m" (*((void**)ofs)) : );  // x86 32-bit always uses GS
-  #elif defined(__APPLE__) && defined(__x86_64__)
-    __asm__("movq %%gs:%1, %0" : "=r" (res) : "m" (*((void**)ofs)) : );  // x86_64 macOSX uses GS
-  #elif defined(__x86_64__) && (MI_INTPTR_SIZE==4)
-    __asm__("movl %%fs:%1, %0" : "=r" (res) : "m" (*((void**)ofs)) : );  // x32 ABI
-  #elif defined(__x86_64__)
-    __asm__("movq %%fs:%1, %0" : "=r" (res) : "m" (*((void**)ofs)) : );  // x86_64 Linux, BSD uses FS
-  #elif defined(__arm__)
-    void** tcb; MI_UNUSED(ofs);
-    __asm__ volatile ("mrc p15, 0, %0, c13, c0, 3\nbic %0, %0, #3" : "=r" (tcb));
-    res = tcb[slot];
-  #elif defined(__aarch64__)
-    void** tcb; MI_UNUSED(ofs);
-    #if defined(__APPLE__) // M1, issue #343
-    __asm__ volatile ("mrs %0, tpidrro_el0\nbic %0, %0, #7" : "=r" (tcb));
-    #else
-    __asm__ volatile ("mrs %0, tpidr_el0" : "=r" (tcb));
-    #endif
-    res = tcb[slot];
-  #elif defined(__APPLE__) && defined(__POWERPC__) // ppc, issue #781
-    MI_UNUSED(ofs);
-    res = pthread_getspecific(slot);
-  #else
-    #define MI_HAS_TLS_SLOT 0
-    MI_UNUSED(ofs);
-    res = NULL;
-  #endif
-  return res;
-}
-
-#ifndef MI_HAS_TLS_SLOT
-#define MI_HAS_TLS_SLOT 1
-#endif
-
-// setting a tls slot is only used with TLS_MODEL_FIXED (which is not used by default on any platform)
-static inline void mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexcept {
-  const size_t ofs = (slot*sizeof(void*));
-  #if defined(_WIN32)
-    ((void**)NtCurrentTeb())[slot] = value; MI_UNUSED(ofs);
-  #elif defined(__i386__)
-    __asm__("movl %1,%%gs:%0" : "=m" (*((void**)ofs)) : "rn" (value) : );  // 32-bit always uses GS
-  #elif defined(__APPLE__) && defined(__x86_64__)
-    __asm__("movq %1,%%gs:%0" : "=m" (*((void**)ofs)) : "rn" (value) : );  // x86_64 macOS uses GS
-  #elif defined(__x86_64__) && (MI_INTPTR_SIZE==4)
-    __asm__("movl %1,%%fs:%0" : "=m" (*((void**)ofs)) : "rn" (value) : );  // x32 ABI
-  #elif defined(__x86_64__)
-    __asm__("movq %1,%%fs:%0" : "=m" (*((void**)ofs)) : "rn" (value) : );  // x86_64 Linux, BSD uses FS
-  #elif defined(__arm__)
-    void** tcb; MI_UNUSED(ofs);
-    __asm__ volatile ("mrc p15, 0, %0, c13, c0, 3\nbic %0, %0, #3" : "=r" (tcb));
-    tcb[slot] = value;
-  #elif defined(__aarch64__)
-    void** tcb; MI_UNUSED(ofs);
-    #if defined(__APPLE__) // M1, issue #343
-    __asm__ volatile ("mrs %0, tpidrro_el0\nbic %0, %0, #7" : "=r" (tcb));
-    #else
-    __asm__ volatile ("mrs %0, tpidr_el0" : "=r" (tcb));
-    #endif
-    tcb[slot] = value;
-  #elif defined(__APPLE__) && defined(__POWERPC__) // ppc, issue #781
-    MI_UNUSED(ofs);
-    pthread_setspecific(slot, value);
-  #else
-    MI_UNUSED(ofs); MI_UNUSED(value);
-  #endif
-}
-
-#endif
-
-
-//-------------------------------------------------------------------
-// Get a fast unique thread id.
-//
-// Getting the thread id should be performant as it is called in the
-// fast path of `_mi_free` and we specialize for various platforms as
-// inlined definitions. Regular code should call `init.c:_mi_thread_id()`.
-// We only require _mi_prim_thread_id() to return a unique id
-// for each thread (unequal to zero) with the bottom 2 bits clear.
+// Access to the thread pointer
 //-------------------------------------------------------------------
 
 // Do we have __builtin_thread_pointer? This would be the preferred way to get a unique thread id
@@ -173,75 +66,128 @@ static inline void mi_prim_tls_slot_set(size_t slot, void* value) mi_attr_noexce
     #if    (defined(__GNUC__) && (__GNUC__ >= 7)  && defined(__aarch64__)) /* aarch64 for older gcc versions (issue #851) */ \
         || (defined(__GNUC__) && (__GNUC__ >= 7)  && defined(__riscv)) \
         || (defined(__GNUC__) && (__GNUC__ >= 11) && defined(__x86_64__)) \
-        || (defined(__clang_major__) && (__clang_major__ >= 14) && (defined(__aarch64__) || defined(__x86_64__) || defined(__riscv)))
+        || (defined(__clang_major__) && (__clang_major__ >= 14) && (defined(__aarch64__) || defined(__x86_64__) || defined(__riscv__)))
       #define MI_USE_BUILTIN_THREAD_POINTER  1
     #endif
   #endif
 #endif
 
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept;
-
-static inline mi_threadid_t _mi_prim_thread_id(void) mi_attr_noexcept {
-  const mi_threadid_t tid = __mi_prim_thread_id();
-  mi_assert_internal(tid > 1);
-  mi_assert_internal((tid & MI_PAGE_FLAG_MASK) == 0);  // bottom 2 bits are clear?
-  return tid;
+#if defined(MI_PRIM_THREAD_POINTER)  // potential user override
+static inline void** mi_prim_thread_pointer(void) {
+  return MI_PRIM_THREAD_POINTER();
 }
-
-// Get a unique id for the current thread.
-#if defined(MI_PRIM_THREAD_ID)
-
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
-  return MI_PRIM_THREAD_ID();  // used for example by CPython for a free threaded build (see python/cpython#115488)
-}
-
 #elif defined(_WIN32)
-
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
-  // Windows: works on Intel and ARM in both 32- and 64-bit
-  return (uintptr_t)NtCurrentTeb();
+static inline void** mi_prim_thread_pointer(void) {
+  return (void**)NtCurrentTeb();
 }
-
 #elif MI_USE_BUILTIN_THREAD_POINTER
-
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
-  // Works on most Unix based platforms with recent compilers
-  return (uintptr_t)__builtin_thread_pointer();
+static inline void** mi_prim_thread_pointer(void) {
+  return (void**)__builtin_thread_pointer();
 }
-
-#elif MI_HAS_TLS_SLOT
-
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
-  #if defined(__BIONIC__)
-    // issue #384, #495: on the Bionic libc (Android), slot 1 is the thread id
-    // see: https://github.com/aosp-mirror/platform_bionic/blob/c44b1d0676ded732df4b3b21c5f798eacae93228/libc/platform/bionic/tls_defines.h#L86
-    return (uintptr_t)mi_prim_tls_slot(1);
+#elif defined(__GNUC__) && !defined(__CYGWIN__)
+  #if defined(__aarch64__)
+  static inline void** mi_prim_thread_pointer(void) {
+    void** tcb;
+    #if defined(__APPLE__) // M1, issue rgb(62, 76, 62)
+    __asm__ ("mrs %0, tpidrro_el0\n\tbic %0, %0, #7" : "=r" (tcb));
+    #else
+    __asm__ ("mrs %0, tpidr_el0" : "=r" (tcb));
+    #endif
+    return tcb;
+  }
+  #elif defined(__riscv)
+  static inline void** mi_prim_thread_pointer(void) {
+    void** tcb;
+    __asm__ ("mv %0, tp" : "=r" (tcb));
+    return tcb;
+  }
+  #elif defined(__arm__)
+  static inline void** mi_prim_thread_pointer(void) {
+    void** tcb;
+    __asm__ volatile ("mrc p15, 0, %0, c13, c0, 3\n\tbic %0, %0, #3" : "=r" (tcb));
+    return tcb;
+  }
+  #elif defined(__i386__)
+  static inline void** mi_prim_thread_pointer(void) {
+    void** tcb;
+    __asm__ ("movl %%gs:0, %0" : "=r" (tcb) : : );  // x86 32-bit always uses GS
+    return tcb;
+  }
+  #elif defined(__x86_64__)
+  static inline void** mi_prim_thread_pointer(void) {
+    void** tcb;
+    #if defined(__APPLE__)
+    __asm__ ("movq %%gs:0, %0" : "=r" (tcb) : : );  // x86_64 macOSX uses GS
+    #elif (MI_INTPTR_SIZE==4)
+    __asm__ ("movl %%fs:0, %0" : "=r" (tcb) : : );  // x32 ABI
+    #else
+    __asm__ ("movq %%fs:0, %0" : "=r" (tcb) : : );  // x86_64 Linux, BSD uses FS
+    #endif
+    return tcb;
+  }
   #else
-    // in all our other targets, slot 0 is the thread id
-    // glibc: https://sourceware.org/git/?p=glibc.git;a=blob_plain;f=sysdeps/x86_64/nptl/tls.h
-    // apple: https://github.com/apple/darwin-xnu/blob/main/libsyscall/os/tsd.h#L36
-    return (uintptr_t)mi_prim_tls_slot(0);
+  #define MI_NO_THREAD_POINTER (1)
+  #endif
+#elif MI_USE_PTHREADS && defined(__APPLE__)
+static inline void** mi_prim_thread_pointer(void) {
+  return (void**)pthread_self();
+}
+#else
+#define MI_NO_THREAD_POINTER (1)
+#endif
+
+#if !MI_NO_THREAD_POINTER
+#define MI_HAS_TLS_SLOT  (1)
+static inline void* mi_prim_tls_slot(size_t slot) {
+  #if defined(_WIN32)
+    #if (_M_X64 || _M_AMD64) && !defined(_M_ARM64EC)
+      return (void*)__readgsqword((unsigned long)(slot*sizeof(void*)));   // direct load at offset from gs
+    #elif _M_IX86 && !defined(_M_ARM64EC)
+      return (void*)__readfsdword((unsigned long)(slot*sizeof(void*)));   // direct load at offset from fs
+    #else
+      return mi_prim_thread_pointer()[slot];
+    #endif
+  #else
+    return mi_prim_thread_pointer()[slot];
   #endif
 }
 
-#elif defined(MI_USE_PTHREADS) && defined(__APPLE__)
-
-// on macOS, pthread_t is pointer
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
-  return (uintptr_t)((void*)pthread_self());
+static inline void mi_prim_tls_slot_set(size_t slot, void* value) {
+  mi_prim_thread_pointer()[slot] = value;
 }
-
-#else
-
-extern mi_decl_hidden mi_decl_thread void* __mi_thread_id_helper;
-
-// otherwise use portable C, taking the address of a thread local variable (this is still very fast on most platforms).
-static inline mi_threadid_t __mi_prim_thread_id(void) mi_attr_noexcept {
-  return (uintptr_t)&__mi_thread_id_helper;
-}
-
 #endif
 
+/* ----------------------------------------------------------------------------------------
+  Get a unique thread-id for a thread
+---------------------------------------------------------------------------------------- */
+
+// Get a unique id for the current thread.
+#if defined(MI_PRIM_THREAD_ID)
+static inline mi_threadid_t __mi_prim_thread_id(void) {
+  return MI_PRIM_THREAD_ID();  // used for example by CPython for a free threaded build (see python/cpython#115488)
+}
+#elif !MI_NO_THREAD_POINTER
+static inline mi_threadid_t __mi_prim_thread_id(void) {
+  #if defined(__BIONIC__)
+  return (mi_threadid_t)mi_prim_tls_slot(1);
+  #else
+  return (mi_threadid_t)mi_prim_thread_pointer();
+  #endif
+}
+#else
+// otherwise use portable C, taking the address of a thread local variable (this is still very fast on most platforms).
+extern mi_decl_hidden mi_decl_thread void* __mi_thread_id_helper;
+static inline mi_threadid_t __mi_prim_thread_id(void) {
+  return (uintptr_t)&__mi_thread_id_helper;
+}
+#endif
+
+static inline mi_threadid_t _mi_prim_thread_id(void) {
+  const mi_threadid_t tid = __mi_prim_thread_id();
+  mi_assert_internal(tid > MI_THREADID_DETACHED);
+  mi_assert_internal((tid & MI_PAGE_FLAG_MASK) == 0);  // bottom 2 bits are clear?
+  return tid;
+}
 
 
 /* ----------------------------------------------------------------------------------------
@@ -269,7 +215,7 @@ We have 4 models:
     where the underlying TLS implementation (or the loader) will call itself `malloc`
     on a first access to a thread local (and recurse in the MI_TLS_MODEL_LOCAL).
     This goes wrong though if the OS or a library uses the same fixed slot, and also
-    prevents multiple instances of mimalloc in the same process. 
+    prevents multiple instances of mimalloc in the same process.
 
 - MI_TLS_MODEL_WIN32: use a dynamically allocated slot with TlsAlloc. (default on Windows)
     We use TlsAlloc'd slot. First tries to use one of the "direct" first 64 slots which
@@ -323,26 +269,28 @@ static inline mi_theap_t* _mi_theap_cached(void) {
 // can be avoided with pthreads.
 #define MI_THEAP_INITASNULL  1
 
-extern mi_decl_hidden pthread_key_t _mi_theap_default_key;
-extern mi_decl_hidden pthread_key_t _mi_theap_cached_key;
+extern mi_decl_hidden _Atomic(pthread_key_t) _mi_theap_default_key;
+extern mi_decl_hidden _Atomic(pthread_key_t) _mi_theap_cached_key;
 
 static inline mi_theap_t* _mi_theap_default(void) {
+  pthread_key_t key = mi_atomic_load_relaxed(&_mi_theap_default_key);
   #if defined(__APPLE__) && defined(__aarch64__) && MI_HAS_TLS_SLOT
   // on apple arm64, the pthread specific slots are direct slots; inline it to avoid a stack frame setup in `mi_malloc`
-  // todo: this is probably also the case on x64 and power pc?
-  if (_mi_theap_default_key == MI_PTHREAD_KEY_INVALID) return NULL;
-  return (mi_theap_t*)mi_prim_tls_slot(_mi_theap_default_key);
+  // todo: this is probably also the case on x64 and power pc?  
+  if (key == MI_PTHREAD_KEY_INVALID) return NULL;
+  return (mi_theap_t*)mi_prim_tls_slot(key);
   #else
-  return (mi_theap_t*)mi_pthread_key_get(_mi_theap_default_key);  
+  return (mi_theap_t*)mi_pthread_key_get(key);
   #endif
 }
 
 static inline mi_theap_t* _mi_theap_cached(void) {
+  pthread_key_t key = mi_atomic_load_relaxed(&_mi_theap_cached_key);
   #if defined(__APPLE__) && defined(__aarch64__) && MI_HAS_TLS_SLOT
-  if (_mi_theap_cached_key == MI_PTHREAD_KEY_INVALID) return NULL;
-  return (mi_theap_t*)mi_prim_tls_slot(_mi_theap_cached_key);
+  if (key == MI_PTHREAD_KEY_INVALID) return NULL;
+  return (mi_theap_t*)mi_prim_tls_slot(key);
   #else
-  return (mi_theap_t*)mi_pthread_key_get(_mi_theap_cached_key);
+  return (mi_theap_t*)mi_pthread_key_get(key);
   #endif
 }
 
@@ -393,7 +341,7 @@ static inline mi_theap_t* _mi_theap_cached(void) {
 
 #elif MI_TLS_MODEL_FIXED
 // Fixed TLS slot. Can be the fastest approach, but does not work if there are multiple instances of
-// mimalloc in the same process. Most OS's do not have official user reserved fixed slots so this cannot be 
+// mimalloc in the same process. Most OS's do not have official user reserved fixed slots so this cannot be
 // guaranteed to work in general.
 #define MI_THEAP_INITASNULL  1
 
@@ -468,7 +416,8 @@ static inline mi_theap_t* _mi_page_associated_theap_peek(mi_page_t* page) {
   mi_theap_t* const theap = (mi_theap_t*)_mi_thread_local_get(heap->theap);
   if (theap==NULL) return NULL;
   if (theap->heap != heap) return NULL; // should never happen, but can happen for a free across subprocesses, which can happen during pthread tls storage deallocation
-  mi_assert_internal(!_mi_is_empty_theap(theap) && _mi_thread_id()==theap->tld->thread_id);
+  mi_assert_internal(!_mi_is_empty_theap(theap) && mi_theap_matches_thread(theap));
+  // note: for pages allocated by a detached theap, the returned theap may not be detached
   return theap;
 }
 

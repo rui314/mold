@@ -69,14 +69,17 @@ void __mi_stat_decrease(mi_stat_count_t* stat, size_t amount) {
 static void mi_stat_adjust_mt(mi_stat_count_t* stat, int64_t amount) {
   if (amount == 0) return;
   // adjust atomically
+  const size_t peak = mi_atomic_loadi64_relaxed((_Atomic(int64_t)*)&stat->peak);
   mi_atomic_addi64_relaxed(&stat->current, amount);
-  mi_atomic_addi64_relaxed(&stat->total, amount);
+  const size_t prev_total = mi_atomic_addi64_relaxed(&stat->total, amount);
+  if (prev_total == peak) { mi_atomic_addi64_relaxed(&stat->peak, amount); }
 }
 
 static void mi_stat_adjust(mi_stat_count_t* stat, int64_t amount) {
   if (amount == 0) return;
   stat->current += amount;
-  stat->total += amount;
+  if (stat->total==stat->peak) { stat->peak += amount; }
+  stat->total += amount;  
 }
 
 void __mi_stat_adjust_increase_mt(mi_stat_count_t* stat, size_t amount) {
@@ -102,7 +105,7 @@ static void mi_stat_count_add_mt(mi_stat_count_t* stat, const mi_stat_count_t* s
   const int64_t prev_current = mi_atomic_addi64_relaxed(&stat->current, src_current);
 
   // Global current plus thread peak approximates new global peak
-  // note: peak scores do really not work across threads.
+  // note: peak scores do not really work across threads.
   // we used to just add them together but that often overestimates in practice.
   // similarly, max does not seem to work well. The current approach
   // by Artem Kharytoniuk (@artem-lunarg) seems to work better, see PR#1112
@@ -416,12 +419,13 @@ void _mi_stats_print(const char* name, size_t id, const mi_stats_t* stats, mi_ou
     mi_stat_print_ex(&stats->heaps, "heaps", 0, out, arg, "");
     mi_stat_counter_print(&stats->heaps_delete_wait, "heap waits", out, arg);
     _mi_fprintf(out, arg, "\n");
-
-    mi_print_header("process", out, arg);
-    mi_stat_print_ex(&stats->threads, "threads", 0, out, arg, "");
-    _mi_fprintf(out, arg, "  %-10s: %5i\n", "numa nodes", _mi_os_numa_node_count());
-    mi_process_info_print_out(out, arg);
   }
+
+  mi_print_header("process", out, arg);
+  mi_stat_print_ex(&stats->threads, "threads", 0, out, arg, "");
+  _mi_fprintf(out, arg, "  %-10s: %5i\n", "numa nodes", _mi_os_numa_node_count());
+  mi_process_info_print_out(out, arg);
+  
   _mi_fprintf(out, arg, "\n");
 }
 
@@ -460,6 +464,10 @@ static const mi_stats_t* mi_heap_get_stats(mi_heap_t* heap) {
               else return mi_stats_merge_theap_to_heap(theap);
 }
 
+static const mi_stats_t* mi_theap_get_stats(mi_theap_t* theap) {
+  return &theap->stats;
+}
+
 // deprecated
 void mi_stats_reset(void) mi_attr_noexcept {
   if (!mi_theap_is_initialized(_mi_theap_default())) return;
@@ -492,6 +500,10 @@ void mi_subproc_heap_stats_print_out(mi_subproc_id_t subproc_id, mi_output_fun* 
   if (subproc==NULL) return;
   mi_heap_print_visit_info_t vinfo = { out, arg };
   mi_subproc_visit_heaps(subproc_id, &mi_heap_print_visitor, &vinfo);
+  if (subproc->theap_meta!=NULL) {
+    _mi_stats_print("meta", subproc->subproc_seq, &subproc->theap_meta->stats, out, arg);
+  }
+  // if (subproc->theap_meta!=NULL) { _mi_stats_merge_into(&subproc->stats, &subproc->theap_meta->stats); }
   _mi_stats_print("subproc", subproc->subproc_seq, &subproc->stats, out, arg);
 }
 
@@ -615,6 +627,9 @@ bool mi_heap_stats_get(mi_heap_t* heap, mi_stats_t* stats) mi_attr_noexcept {
   return mi_stats_copy(stats, mi_heap_get_stats(heap));
 }
 
+bool mi_theap_stats_get(mi_theap_t* theap, mi_stats_t* stats) mi_attr_noexcept {
+  return mi_stats_copy(stats, mi_theap_get_stats(theap));
+}
 
 static bool mi_cdecl mi_heap_aggregate_visitor(mi_heap_t* heap, void* arg) {
   mi_stats_t* stats = (mi_stats_t*)arg;
@@ -628,6 +643,8 @@ bool mi_subproc_stats_get(mi_subproc_id_t subproc_id, mi_stats_t* stats) mi_attr
   if (subproc == NULL) return false;
   if (!mi_stats_copy(stats, &subproc->stats)) return false;
   mi_subproc_visit_heaps(subproc_id, &mi_heap_aggregate_visitor, stats);
+  // hide meta data stats
+  // if (subproc->theap_meta!=NULL) { mi_stats_add_into(stats, &subproc->theap_meta->stats); }
   return true;
 }
 

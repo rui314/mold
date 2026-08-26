@@ -791,7 +791,7 @@ static void NTAPI mi_win_main(PVOID module, DWORD reason, LPVOID reserved) {
 #endif
 
 #if defined(MI_WIN_INIT_USE_CRT_TLS)
-  #if !defined(__MINGW32__) || !defined(MI_MINGW_UCRT64)  // on mingw without UCRT use the constructor attribute (in `src/prim/prim.c`)
+  #if !defined(__MINGW32__) || defined(MI_MINGW_UCRT64)  // on mingw without UCRT use the constructor attribute (in `src/prim/prim.c`)
   #define MI_PRIM_HAS_PROCESS_ATTACH  1   
   #endif
 

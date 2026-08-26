@@ -35,12 +35,6 @@ mi_decl_nodiscard size_t mi_malloc_good_size(size_t size) mi_attr_noexcept {
   return mi_good_size(size);
 }
 
-void mi_cfree(void* p) mi_attr_noexcept {
-  if (mi_is_in_heap_region(p)) {
-    mi_free(p);
-  }
-}
-
 int mi_posix_memalign(void** p, size_t alignment, size_t size) {  // mi_attr_noexcept (issue #794)
   // Note: The spec dictates we should not modify `*p` on an error. (issue#27)
   // <http://man7.org/linux/man-pages/man3/posix_memalign.3.html>

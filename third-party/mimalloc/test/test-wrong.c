@@ -65,6 +65,9 @@ int main(int argc, char** argv) {
   char* c = (char*)mi(malloc)(3);
   printf("invalid byte: over: %d, under: %d\n", c[4], c[-1]);
   mi(free)(c);
+  
+  // double free
+  mi(free)(c);
 
   // undefined access
   long* q = (long*)mi(malloc)(sizeof(long));

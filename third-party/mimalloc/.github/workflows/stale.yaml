@@ -1,7 +1,7 @@
 on:
   workflow_dispatch:       # allow running the workflow manually   
   schedule:
-    - cron: "15 21 * * *"  # minute, hour, day (1-31), month (1-12), day of the week (0 - 6 or SUN-SAT)
+    - cron: "01 21 * * *"  # minute, hour, day (1-31), month (1-12), day of the week (0 - 6 or SUN-SAT)
 
 name: Close inactive issues
 jobs:

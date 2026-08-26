@@ -58,13 +58,16 @@
     <ClCompile Include="..\..\src\free.c">
       <Filter>Sources</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\src\arena-meta.c">
-      <Filter>Sources</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\src\heap.c">
       <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\threadlocal.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\prim\prim-tls.c">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\subproc.c">
       <Filter>Sources</Filter>
     </ClCompile>
   </ItemGroup>

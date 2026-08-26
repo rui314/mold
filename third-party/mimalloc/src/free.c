@@ -13,10 +13,10 @@ terms of the MIT license. A copy of the license can be found in the file
 #endif
 
 // forward declarations
-static void   mi_check_padding(const mi_page_t* page, const mi_block_t* block);
-static bool   mi_check_is_double_free(const mi_page_t* page, const mi_block_t* block);
+mi_decl_nodiscard static bool mi_check_padding_on_free(const mi_page_t* page, const mi_block_t* block, bool is_guarded, size_t* usable_size);
 static size_t mi_page_usable_size_of(const mi_page_t* page, const mi_block_t* block, bool was_guarded);
 static void   mi_stat_free(const mi_page_t* page, const mi_block_t* block);
+// static bool   mi_check_is_double_free(const mi_page_t* page, const mi_block_t* block);
 
 
 // ------------------------------------------------------
@@ -27,27 +27,26 @@ static void   mi_stat_free(const mi_page_t* page, const mi_block_t* block);
 // fast path written carefully to prevent spilling on the stack
 static inline void mi_free_block_local(mi_page_t* page, mi_block_t* block, bool was_guarded, bool track_stats, bool check_full)
 {
-  MI_UNUSED(was_guarded);
   // checks  
-  if mi_unlikely(mi_check_is_double_free(page, block)) return;
-  if (!was_guarded) { mi_check_padding(page, block); }
-  if (track_stats) { mi_stat_free(page, block); }
+  size_t usable_size;
+  if mi_unlikely(!mi_check_padding_on_free(page, block, was_guarded, &usable_size)) return; 
+  // if mi_unlikely(!mi_check_is_double_free(page,block)) return;  // checked with padding
+
+  if (track_stats) { 
+    mi_stat_free(page, block);    
+    mi_track_free_size(block, usable_size); 
+  }
   #if (MI_DEBUG>0) && !MI_TRACK_ENABLED  && !MI_TSAN
-  size_t dbgsize = mi_page_block_size(page);
-  if (dbgsize > 1*MI_MiB) { dbgsize = 1*MI_MiB; }
+  const size_t dbgsize = (usable_size > MI_MiB ? MI_MiB : usable_size);
   _mi_memset_aligned(block, MI_DEBUG_FREED, dbgsize);  
   #endif
-  if (track_stats) { mi_track_free_size(block, mi_page_usable_size_of(page, block, was_guarded)); } // faster then mi_usable_size as we already know the page and that p is unaligned
-
+  
   // actual free: push on the local free list
+  const mi_used_t used = page->used - 1;
   mi_block_set_next(page, block, page->local_free);
+  page->used = used;
   page->local_free = block;
-  #if defined(__clang__) && defined(__aarch64__)
-  if mi_unlikely(page->used-- == 1)   // better code on arm64 than using `--page->used == 0`
-  #else
-  if mi_unlikely(--page->used == 0)
-  #endif
-  {  
+  if mi_unlikely(used==0) {  
     if (page->retire_expire==0) { // no need to re-retire retired pages (happens when we alloc/free one block repeatedly in an empty page)
       _mi_page_retire(page); 
     }
@@ -63,17 +62,17 @@ static void mi_decl_noinline mi_free_try_collect_mt(mi_page_t* page, mi_block_t*
 // Free a block multi-threaded
 static inline void mi_free_block_mt(mi_page_t* page, mi_block_t* block, bool was_guarded, bool allow_collect) mi_attr_noexcept
 {
-  // todo: we cannot safely check for double free in _mt -- should check when collecting the thread_free list
-  if (!was_guarded) { mi_check_padding(page, block); }   // checking padding is safe for mt
+  size_t usable_size;
+  if mi_unlikely(!mi_check_padding_on_free(page, block, was_guarded, &usable_size)) return;    // checking padding is safe for mt
+  
   // adjust stats (after padding check )
   mi_stat_free(page, block);    // stat_free may access the padding
-  mi_track_free_size(block, mi_page_usable_size_of(page, block, was_guarded));
+  mi_track_free_size(block, usable_size);
 
   // _mi_padding_shrink(page, block, sizeof(mi_block_t));
   #if (MI_DEBUG>0) && !MI_TRACK_ENABLED  && !MI_TSAN       // note: when tracking, cannot use mi_usable_size with multi-threading
   if (!was_guarded) {
-    size_t dbgsize = mi_usable_size(block);
-    if (dbgsize > 1*MI_MiB) { dbgsize = 1*MI_MiB; }
+    const size_t dbgsize = (usable_size > MI_MiB ? MI_MiB : usable_size);
     _mi_memset_aligned(block, MI_DEBUG_FREED, dbgsize);
   }
   #endif
@@ -107,7 +106,10 @@ mi_block_t* _mi_page_ptr_unalign(const mi_page_t* page, const void* p) {
 
   const size_t diff = (uint8_t*)p - mi_page_start(page);
   const size_t block_size = mi_page_block_size(page);
-  const size_t adjust = (_mi_is_power_of_two(block_size) ? diff & (block_size - 1) : diff % block_size);
+  size_t adjust = diff & (block_size - 1); 
+  if mi_unlikely(!_mi_is_power_of_two(block_size)) {
+    adjust = diff % block_size;     
+  }
   return (mi_block_t*)((uintptr_t)p - adjust);
 }
 
@@ -167,36 +169,64 @@ void mi_decl_noinline _mi_free_generic(mi_page_t* page, bool is_local, void* p) 
 
 // Get the page belonging to a pointer
 // Does further checks in debug mode to see if this was a valid pointer.
-static inline mi_page_t* mi_validate_ptr_page(const void* p, const char* msg)
+static inline bool mi_validate_ptr_page_nonnull(const void* p, const char* msg, bool free_small, mi_page_t** ppage)
 {
   MI_UNUSED_RELEASE(msg);
   #if MI_DEBUG
   if mi_unlikely(((uintptr_t)p & (MI_INTPTR_SIZE - 1)) != 0 && !mi_option_is_enabled(mi_option_guarded_precise)) {
     _mi_error_message(EINVAL, "%s: invalid (unaligned) pointer: %p\n", msg, p);
-    return NULL;
+    return false;
   }
-  mi_page_t* page = _mi_safe_ptr_page(p);
-  if (p != NULL && page == NULL) {
-    _mi_error_message(EINVAL, "%s: invalid pointer: %p\n", msg, p);
-  }
-  return page;
-  #else
-  return _mi_ptr_page(p);
   #endif
+  
+  mi_page_t* page;
+  #if MI_PAGE_META_IS_ALIGNED
+    page = _mi_aligned_ptr_page0(p);
+    if mi_unlikely(page==NULL) return false; // p==NULL => page==NULL    
+    #if MI_DEBUG 
+    mi_page_t* const cpage = _mi_checked_ptr_page(p);
+    if mi_unlikely(cpage==NULL) { _mi_error_message(EINVAL, "%s: invalid pointer: %p\n", msg, p); }
+    #endif
+    
+    #if MI_SMALL_PAGE_SIZE == MI_ARENA_SLICE_SIZE
+    // for mi_free_small we can avoid a load-acquire
+    if (free_small) { mi_assert_internal(page == mi_atomic_load_ptr_acquire(mi_page_t,&page->self)); } 
+               else { page = mi_atomic_load_ptr_acquire(mi_page_t,&page->self); }
+    #else
+    MI_UNUSED(free_small);
+    page = mi_atomic_load_ptr_acquire(mi_page_t,&page->self);
+    #endif
+
+    mi_assert_internal(page!=NULL);
+    mi_assert(cpage==page /* page_map lookup should be the same as aligned lookup */ );  
+  #else
+    MI_UNUSED(free_small);
+    page = _mi_ptr_page(p);
+    if mi_unlikely(page==NULL) {
+      #if MI_DEBUG
+      if (p!=NULL) { _mi_error_message(EINVAL, "%s: invalid pointer: %p\n", msg, p); }
+      #endif
+      return false;
+    }
+  #endif
+  *ppage = page;
+  return true;
+}
+
+static inline mi_page_t* mi_validate_ptr_page(const void* p, const char* msg) {
+  mi_page_t* page;
+  return (mi_validate_ptr_page_nonnull(p,msg,false,&page) ? page : NULL);
 }
 
 // Free a block
 // Fast path written carefully to prevent register spilling on the stack
-static mi_decl_forceinline void mi_free_ex(void* p, size_t* pblock_size, mi_page_t* page, bool allow_collect)  
+static mi_decl_forceinline void mi_free_nonnull(void* p, mi_page_t* page, size_t* pblock_size, bool allow_collect)  
 {
-  if mi_unlikely(page==NULL) { // page will be NULL if p==NULL
-    if (pblock_size!=NULL) { *pblock_size = 0; }
-    return;  
-  }
   mi_assert_internal(p!=NULL && page!=NULL);
   if (pblock_size!=NULL) { *pblock_size = mi_page_block_size(page); }
 
-  const mi_threadid_t xtid = (_mi_prim_thread_id() ^ mi_page_xthread_id(page));
+  const mi_threadid_t ptid = mi_page_xthread_id(page);
+  const mi_threadid_t xtid = (_mi_prim_thread_id() ^ ptid);
   if mi_likely(xtid == 0) {                        // `tid == mi_page_thread_id(page) && mi_page_flags(page) == 0`
     // thread-local, aligned, and not a full page
     mi_block_t* const block = mi_validate_block_from_ptr(page,p);
@@ -218,43 +248,116 @@ static mi_decl_forceinline void mi_free_ex(void* p, size_t* pblock_size, mi_page
   }
 }
 
-void mi_free(void* p) mi_attr_noexcept {
-  mi_page_t* const page = mi_validate_ptr_page(p,"mi_free");  
-  mi_free_ex(p, NULL, page, true);
+void mi_free(void* p) mi_attr_noexcept {  
+  mi_page_t* page; 
+  if mi_likely(mi_validate_ptr_page_nonnull(p,"mi_free",false,&page)) {    
+    mi_free_nonnull(p, page, NULL, true /* allow collect? */);
+  }
 }
 
 void mi_ufree(void* p, size_t* pblock_size) mi_attr_noexcept {
-  mi_page_t* const page = mi_validate_ptr_page(p,"mi_ufree");  
-  mi_free_ex(p, pblock_size, page, true);
+  mi_page_t* page; 
+  if mi_likely(mi_validate_ptr_page_nonnull(p,"mi_ufree",false,&page)) {    
+    mi_free_nonnull(p, page, pblock_size, true /* allow collect? */);
+  }
+  else {
+    if (pblock_size!=NULL) { *pblock_size = 0; }
+  }
 }
 
 void mi_free_small(void* p) mi_attr_noexcept {
-  // We can only call `mi_free_small` for pointers allocated with `mi_(heap_)malloc_small`.
-  // If we keep page info in front of the page area for small objects, we can find the info
-  // just by aligning down the pointer instead of looking it up in the page map.
-  #if MI_PAGE_META_ALIGNED_FREE_SMALL 
+  #if MI_PAGE_META_SMALL_IS_ALIGNED 
+    // deprecated: We can only call `mi_free_small` for pointers allocated with `mi_(heap_)malloc_small`.
+    // If we keep page info in front of the page area for small objects, we can find the info
+    // just by aligning down the pointer instead of looking it up in the page map.    
     #if MI_GUARDED 
-    #warning "MI_PAGE_META_ALIGNED_FREE_SMALL ignored as MI_GUARDED is defined"
+    #warning "MI_OPT_FREE_SMALL (MI_PAGE_META_SMALL_IS_ALIGNED) ignored as MI_GUARDED is defined"
     mi_free(p);
     #elif MI_ARENA_SLICE_ALIGN < MI_SMALL_PAGE_SIZE
-    #warning "MI_PAGE_META_ALIGNED_FREE_SMALL ignored as the MI_ARENA_SLICE_ALIGN is less than the small page size"
+    #warning "MI_OPT_FREE_SMALL (MI_PAGE_META_SMALL_IS_ALIGNED) ignored as the MI_ARENA_SLICE_ALIGN is less than the small page size"
     mi_free(p);
     #else
       mi_page_t* const page = (mi_page_t*)_mi_align_down_ptr(p,MI_SMALL_PAGE_SIZE);
       mi_assert(page == mi_validate_ptr_page(p,"mi_free_small"));
       mi_assert((void*)page == _mi_align_down_ptr(mi_page_start(page),MI_SMALL_PAGE_SIZE));
-      mi_assert(page->block_size <= MI_SMALL_SIZE_MAX);  // note: not `MI_SMALL_MAX_OBJ_SIZE` as we need to match `mi_(heap_)malloc_small`
-      mi_free_ex(p, NULL, page, true);
+      mi_assert(page->block_size <= mi_good_size(MI_SMALL_SIZE_MAX));  // note: not `MI_SMALL_MAX_OBJ_SIZE` as we need to match `mi_(heap_)malloc_small`
+      mi_free_nonnull(p, page, NULL, true);
     #endif
   #else
-  mi_free(p);
+    mi_page_t* page; 
+    if mi_likely(mi_validate_ptr_page_nonnull(p,"mi_free_small",true /* is_small? */,&page)) {    
+      mi_free_nonnull(p, page, NULL, true /* allow collect? */);
+    }  
   #endif  
 }
 
+// void _mi_free_subproc_safe_in_page_nonnull(void* p, mi_page_t* page) mi_attr_noexcept {
+//   mi_free_nonnull(p, page, NULL, false /* allow collect? */);
+// }
+
 // Free a pointer that is potentially allocated in a different sub-process
-void _mi_free_subproc_safe(void* p) {
-  mi_page_t* const page = mi_validate_ptr_page(p,"_mi_free_subproc_safe");  
-  mi_free_ex(p, NULL, page, false);
+void _mi_free_subproc_safe(void* p) mi_attr_noexcept {
+  mi_page_t* page; 
+  if mi_likely(mi_validate_ptr_page_nonnull(p,"_mi_free_subproc_safe",false,&page)) {    
+    mi_free_nonnull(p, page, NULL, false /* allow collect? */);
+  }
+}
+
+// ------------------------------------------------------
+// Free variants
+// ------------------------------------------------------
+
+void mi_free_size(void* p, size_t size) mi_attr_noexcept {
+  MI_UNUSED_RELEASE(size);
+  #if MI_DEBUG
+    const mi_page_t* const page = mi_validate_ptr_page(p,"mi_free_size");
+    if (page==NULL) return;
+    mi_assert(p!=NULL);
+    const size_t usable = _mi_page_usable_size(page,p);
+    if mi_unlikely(size > usable) { 
+      _mi_error_message(EINVAL, "pointer %p is freed with mi_free_size but the size %zu is greater than the usable size %zu\n", p, size, usable);
+      mi_free(p);
+      return;
+    }
+    else if mi_unlikely(size <= MI_SMALL_SIZE_MAX && mi_page_block_size(page) > mi_good_size(MI_SMALL_SIZE_MAX)) { 
+      _mi_error_message(EINVAL, "pointer %p is freed with mi_free_size but the given size %zu is less than the allocated block size %zu\n", p, size, mi_page_block_size(page));
+      mi_free(p);
+      return;
+    }
+  #endif
+  #if MI_PAGE_META_SMALL_IS_ALIGNED
+  if mi_likely(size <= MI_SMALL_SIZE_MAX) {
+    mi_free_small(p); 
+  }
+  else 
+  #endif
+  {
+    mi_free(p);
+  }
+}
+
+void mi_free_size_aligned(void* p, size_t size, size_t alignment) mi_attr_noexcept {
+  MI_UNUSED_RELEASE(alignment);
+  mi_assert(((uintptr_t)p % alignment) == 0);
+  mi_free_size(p,size);
+}
+
+void mi_free_aligned(void* p, size_t alignment) mi_attr_noexcept {
+  MI_UNUSED_RELEASE(alignment);
+  mi_assert(((uintptr_t)p % alignment) == 0);
+  mi_free(p);
+}
+
+// checked free
+bool mi_cfree(void* p) mi_attr_noexcept {
+  mi_page_t* const page = _mi_checked_ptr_page(p);
+  if mi_likely(page!=NULL) {
+    mi_free_nonnull(p, page, NULL, true /* allow collect? */);
+    return true;
+  }
+  else {
+    return false;
+  }
 }
 
 
@@ -448,38 +551,12 @@ mi_decl_nodiscard size_t mi_usable_size(const void* p) mi_attr_noexcept {
 
 
 // ------------------------------------------------------
-// Free variants
-// ------------------------------------------------------
-
-void mi_free_size(void* p, size_t size) mi_attr_noexcept {
-  MI_UNUSED_RELEASE(size);
-  #if MI_DEBUG
-  const mi_page_t* const page = mi_validate_ptr_page(p,"mi_free_size");  
-  const size_t available = _mi_page_usable_size(page,p);
-  mi_assert(p == NULL || size <= available || available == 0 /* invalid pointer */ );
-  #endif
-  mi_free(p);
-}
-
-void mi_free_size_aligned(void* p, size_t size, size_t alignment) mi_attr_noexcept {
-  MI_UNUSED_RELEASE(alignment);
-  mi_assert(((uintptr_t)p % alignment) == 0);
-  mi_free_size(p,size);
-}
-
-void mi_free_aligned(void* p, size_t alignment) mi_attr_noexcept {
-  MI_UNUSED_RELEASE(alignment);
-  mi_assert(((uintptr_t)p % alignment) == 0);
-  mi_free(p);
-}
-
-
-// ------------------------------------------------------
+// Deprecated: double free is checked with padding now.
 // Check for double free in secure and debug mode
 // This is somewhat expensive so only enabled for secure mode 4
 // ------------------------------------------------------
 
-#if MI_CHECK_DOUBLE_FREE
+#if MI_CHECK_DOUBLE_FREE      
 // linear check if the free list contains a specific element
 static bool mi_list_contains(const mi_page_t* page, const mi_block_t* list, const mi_block_t* elem, const char* list_kind) {
   const size_t max_count = page->capacity;      // can never hold more blocks than the capacity
@@ -511,8 +588,8 @@ static mi_decl_noinline bool mi_check_is_double_freex(const mi_page_t* page, con
 // Used for double free checking to avoid checking free lists too frequently
 static inline bool mi_block_could_be_double_free(const mi_page_t* page, const mi_block_t* block) {
   mi_block_t* n = mi_block_nextx(page,block,page->keys);
-  return (((uintptr_t)n & (MI_INTPTR_SIZE-1))==0 &&  // quick check: aligned pointer?
-          (n==NULL || mi_is_in_same_page(block,n))); // quick check: in the same page or NULL?  
+  return (((uintptr_t)n & (MI_INTPTR_SIZE-1))==0 &&       // quick check: aligned pointer?
+          (n==NULL || mi_page_contains_address(page,n))); // quick check: in the same page or NULL?  
 }
 
 // check if `block` was free'd before
@@ -539,16 +616,17 @@ static inline bool mi_check_is_double_free(const mi_page_t* page, const mi_block
 // ---------------------------------------------------------------------------
 
 #if MI_PADDING // && !MI_TRACK_ENABLED
-static bool mi_page_decode_padding(const mi_page_t* page, const mi_block_t* block, size_t* delta, size_t* bsize) {
+static inline bool mi_page_decode_padding(const mi_page_t* page, const mi_block_t* block, size_t* delta, size_t* bsize, bool* double_free) {
   *bsize = mi_page_usable_block_size(page);
-  const mi_padding_t* const padding = (mi_padding_t*)((uint8_t*)block + *bsize);
+  mi_padding_t* const padding = (mi_padding_t*)((uint8_t*)block + *bsize);
   mi_track_mem_defined(padding,sizeof(mi_padding_t));
   *delta = padding->delta;
-  uint32_t canary = padding->canary;
-  uintptr_t keys[2];
-  keys[0] = page->keys[0];
-  keys[1] = page->keys[1];
-  bool ok = (mi_ptr_encode_canary(page,block,keys) == canary && *delta <= *bsize);
+  const uint32_t canary = padding->canary;
+  const bool ok = (mi_ptr_encode_canary(page,block,page->keys) == canary && *delta <= *bsize);
+  if (double_free!=NULL) {
+    if mi_unlikely(!ok) { *double_free = mi_ptr_decode_canary_is_freed(canary); }   // double free?
+                   else { padding->canary = mi_ptr_encode_canary_freed(); }         // mark as freed
+  }
   mi_track_mem_noaccess(padding,sizeof(mi_padding_t));
   return ok;
 }
@@ -562,7 +640,7 @@ static size_t mi_page_usable_size_of(const mi_page_t* page, const mi_block_t* bl
   else {
     size_t bsize;
     size_t delta;
-    bool ok = mi_page_decode_padding(page, block, &delta, &bsize);
+    bool ok = mi_page_decode_padding(page, block, &delta, &bsize, NULL);
     mi_assert_internal(ok); mi_assert_internal(delta <= bsize);
     return (ok ? bsize - delta : 0);
   }
@@ -575,7 +653,7 @@ static size_t mi_page_usable_size_of(const mi_page_t* page, const mi_block_t* bl
 void _mi_padding_shrink(const mi_page_t* page, const mi_block_t* block, const size_t min_size) {
   size_t bsize;
   size_t delta;
-  bool ok = mi_page_decode_padding(page, block, &delta, &bsize);
+  bool ok = mi_page_decode_padding(page, block, &delta, &bsize, NULL);
   mi_assert_internal(ok);
   if (!ok || (bsize - delta) >= min_size) return;  // usually already enough space
   mi_assert_internal(bsize >= min_size);
@@ -604,16 +682,17 @@ void _mi_padding_shrink(const mi_page_t* page, const mi_block_t* block, const si
 }
 #endif
 
-#if MI_PADDING && MI_PADDING_CHECK
+#if MI_PADDING
 
-static bool mi_verify_padding(const mi_page_t* page, const mi_block_t* block, size_t* size, size_t* wrong) {
+static bool mi_verify_padding(const mi_page_t* page, const mi_block_t* block, size_t* size, size_t* wrong, bool* is_double_free) {
   size_t bsize;
   size_t delta;
-  bool ok = mi_page_decode_padding(page, block, &delta, &bsize);
+  bool ok = mi_page_decode_padding(page, block, &delta, &bsize, is_double_free );
   *size = *wrong = bsize;
   if (!ok) return false;
   mi_assert_internal(bsize >= delta);
   *size = bsize - delta;
+  #if MI_PADDING_CHECK_BYTES
   if (!mi_page_is_huge(page)) {
     uint8_t* fill = (uint8_t*)block + bsize - delta;
     const size_t maxpad = (delta > MI_MAX_ALIGN_SIZE ? MI_MAX_ALIGN_SIZE : delta); // check at most the first N padding bytes
@@ -627,22 +706,37 @@ static bool mi_verify_padding(const mi_page_t* page, const mi_block_t* block, si
     }
     mi_track_mem_noaccess(fill, maxpad);
   }
+  #endif
   return ok;
 }
 
-static void mi_check_padding(const mi_page_t* page, const mi_block_t* block) {
-  size_t size;
-  size_t wrong;
-  if (!mi_verify_padding(page,block,&size,&wrong)) {
-    _mi_error_message(EFAULT, "buffer overflow in theap block %p of size %zu: write after %zu bytes\n", block, size, wrong );
+mi_decl_nodiscard static bool mi_check_padding_on_free(const mi_page_t* page, const mi_block_t* block, bool is_guarded, size_t* usable_size) {
+  if mi_unlikely(is_guarded) {
+    const size_t bsize = mi_page_block_size(page);
+    *usable_size = (bsize - _mi_os_page_size());
+    return true;
+  }
+  else {
+    size_t wrong;
+    bool is_double_free;
+    if mi_unlikely(!mi_verify_padding(page,block,usable_size,&wrong,&is_double_free)) {
+      if (is_double_free) {
+        _mi_error_message(EAGAIN, "double free detected of heap block %p with size %zu\n", block, *usable_size);
+      }
+      else {
+        _mi_error_message(EFAULT, "buffer overflow in heap block %p of size %zu: write after %zu bytes\n", block, *usable_size, wrong );
+      }
+      return false;  
+    }
+    return true;
   }
 }
 
 #else
 
-static void mi_check_padding(const mi_page_t* page, const mi_block_t* block) {
-  MI_UNUSED(page);
-  MI_UNUSED(block);
+mi_decl_nodiscard static bool mi_check_padding_on_free(const mi_page_t* page, const mi_block_t* block, bool is_guarded, size_t* usable_size) {
+  *usable_size = mi_page_usable_size_of(page,block,is_guarded);
+  return true;
 }
 
 #endif
@@ -650,9 +744,18 @@ static void mi_check_padding(const mi_page_t* page, const mi_block_t* block) {
 // only maintain stats for smaller objects if requested
 #if (MI_STAT>0)
 static void mi_stat_free(const mi_page_t* page, const mi_block_t* block) {
-  MI_UNUSED(block);
-  mi_theap_t* const theap = _mi_theap_default();
-  if (!mi_theap_is_initialized(theap)) return; // (for now) skip statistics if free'd after thread_done was called (usually a thread cleanup call by the OS)
+  MI_UNUSED(block);  
+  mi_theap_t* theap = _mi_theap_default();
+  mi_lock_t* lock = NULL;
+  mi_subproc_t* const subproc = mi_page_subproc(page);
+  mi_theap_t* const theap_meta = subproc->theap_meta;
+  if mi_unlikely(!mi_theap_is_initialized(theap) || // can happen if free'd after thread_done was called (usually a thread cleanup call by the OS)
+                  // page->theap == subproc->theap_meta  .. but we cannot read `theap` if we don't own the page
+                  (theap_meta != NULL && mi_page_thread_id(page) == theap_meta->tld->thread_id)) { 
+    theap = theap_meta;
+    lock = &subproc->theap_meta_lock;
+    mi_lock_acquire(lock);
+  }
 
   const size_t bsize = mi_page_usable_block_size(page);
   // #if (MI_STAT>1)
@@ -668,6 +771,10 @@ static void mi_stat_free(const mi_page_t* page, const mi_block_t* block) {
   else {
     const size_t bpsize = mi_page_block_size(page);  // match stat in page.c:mi_huge_page_alloc
     mi_theap_stat_decrease(theap, malloc_huge, bpsize);
+  }
+
+  if mi_unlikely(lock!=NULL) {
+    mi_lock_release(lock);
   }
 }
 #else

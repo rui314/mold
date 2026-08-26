@@ -170,7 +170,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>../../include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MI_OPT_FREE=1;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SupportJustMyCode>false</SupportJustMyCode>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -201,7 +201,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>../../include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MI_DEBUG=4;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MI_OPT_FREE=1;MI_DEBUG=4;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SupportJustMyCode>false</SupportJustMyCode>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -232,7 +232,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>../../include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MI_DEBUG=4;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MI_OPT_FREE=1;MI_DEBUG=4;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SupportJustMyCode>false</SupportJustMyCode>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -263,7 +263,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>../../include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MI_DEBUG=4;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MI_OPT_FREE=1;MI_DEBUG=4;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <SupportJustMyCode>false</SupportJustMyCode>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -295,7 +295,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>../../include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MI_OPT_FREE=1;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
       <AssemblerOutput>AssemblyAndSourceCode</AssemblerOutput>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -330,7 +330,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>../../include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MI_OPT_FREE=1;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
       <AssemblerOutput>AssemblyAndSourceCode</AssemblerOutput>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -365,7 +365,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>../../include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MI_OPT_FREE=1;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
       <AssemblerOutput>AssemblyAndSourceCode</AssemblerOutput>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -401,7 +401,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <ConformanceMode>true</ConformanceMode>
       <AdditionalIncludeDirectories>../../include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
+      <PreprocessorDefinitions>MI_OPT_FREE=1;MI_SHARED_LIB;MI_SHARED_LIB_EXPORT;MI_MALLOC_OVERRIDE;%(PreprocessorDefinitions);NDEBUG</PreprocessorDefinitions>
       <AssemblerOutput>AssemblyAndSourceCode</AssemblerOutput>
       <AssemblerListingLocation>$(IntDir)</AssemblerListingLocation>
       <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -466,7 +466,6 @@
     </ClCompile>
     <ClCompile Include="..\..\src\alloc-posix.c" />
     <ClCompile Include="..\..\src\alloc.c" />
-    <ClCompile Include="..\..\src\arena-meta.c" />
     <ClCompile Include="..\..\src\arena.c" />
     <ClCompile Include="..\..\src\bitmap.c" />
     <ClCompile Include="..\..\src\free.c">
@@ -480,6 +479,8 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\..\src\heap.c" />
+    <ClCompile Include="..\..\src\prim\prim-tls.c" />
+    <ClCompile Include="..\..\src\subproc.c" />
     <ClCompile Include="..\..\src\theap.c" />
     <ClCompile Include="..\..\src\init.c" />
     <ClCompile Include="..\..\src\libc.c" />

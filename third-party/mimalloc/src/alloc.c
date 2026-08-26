@@ -39,15 +39,22 @@ static mi_decl_forceinline void* mi_page_malloc_zero(mi_theap_t* theap, mi_page_
 
   // check the free list
   mi_block_t* const block = page->free;
-  if mi_unlikely(block == NULL) {
+  const mi_used_t used = page->used;
+  #if defined(__GNUC__) 
+  __asm("" : : : "memory");  // alway load used before the test
+  #endif  
+  if (block == NULL) {
     return _mi_malloc_generic(theap, size, (zero ? 1 : 0), ppage);
   }
   mi_assert_internal(block != NULL && _mi_ptr_page(block) == page);
   if (ppage != NULL) { *ppage = page; };
 
   // pop from the free list
-  page->free = mi_block_next(page, block);
-  page->used++;
+  mi_block_t* next = mi_block_next(page,block);
+  mi_track_mem_undefined(block,sizeof(*block));
+  block->next = 0;  // don't leak internal data
+  page->free = next;
+  page->used = used+1;
   mi_assert_internal(page->free == NULL || _mi_ptr_page(page->free) == page);
   mi_assert_internal(page->block_size < MI_MAX_ALIGN_SIZE || _mi_is_aligned(block, MI_MAX_ALIGN_SIZE));
 
@@ -78,7 +85,7 @@ static mi_decl_forceinline void* mi_page_malloc_zero(mi_theap_t* theap, mi_page_
   // zero the block? note: we need to zero the full block size (issue #63)
   if mi_likely(!zero) {
     // #if MI_SECURE
-    block->next = 0;  // don't leak internal data
+    // block->next = 0;  // don't leak internal data
     // #endif
     #if (MI_DEBUG>0) && !MI_TRACK_ENABLED && !MI_TSAN
       if (!mi_page_is_huge(page)) { memset(block, MI_DEBUG_UNINIT, bsize); }
@@ -103,7 +110,7 @@ static mi_decl_forceinline void* mi_page_malloc_zero(mi_theap_t* theap, mi_page_
     mi_track_mem_defined(padding,sizeof(mi_padding_t));  // note: re-enable since mi_page_usable_block_size may set noaccess
     padding->canary = mi_ptr_encode_canary(page,block,page->keys);
     padding->delta  = (uint32_t)(delta);
-    #if MI_PADDING_CHECK
+    #if MI_PADDING_CHECK_BYTES
     if (!mi_page_is_huge(page)) {
       uint8_t* fill = (uint8_t*)padding - delta;
       const size_t maxpad = (delta > MI_MAX_ALIGN_SIZE ? MI_MAX_ALIGN_SIZE : delta); // set at most N initial padding bytes
@@ -128,8 +135,7 @@ static mi_decl_forceinline mi_decl_restrict void* mi_theap_malloc_small_zero_non
   mi_assert(theap != NULL);
   mi_assert(size <= MI_SMALL_SIZE_MAX);
   #if MI_DEBUG
-  const uintptr_t tid = _mi_thread_id();
-  mi_assert(theap->tld->thread_id == 0 || theap->tld->thread_id == tid); // theaps are thread local
+  mi_assert(mi_theap_matches_thread(theap)); // theaps are thread local
   #endif
   #if (MI_PADDING || MI_GUARDED)
   if mi_unlikely(size == 0) { size = sizeof(void*); }
@@ -167,7 +173,7 @@ static mi_decl_forceinline void* mi_theap_malloc_generic(mi_theap_t* theap, size
   #if !MI_THEAP_INITASNULL
   mi_assert(theap!=NULL);
   #endif
-  mi_assert(theap==NULL || theap->tld->thread_id == 0 || theap->tld->thread_id == _mi_thread_id());   // theaps are thread local
+  mi_assert(mi_theap_matches_thread(theap));   // theaps are thread local
   mi_assert((huge_alignment & 1)==0);
   void* const p = _mi_malloc_generic(theap, size + MI_PADDING_SIZE, (zero ? 1 : 0) | huge_alignment, ppage);  // note: size can overflow but it is detected in malloc_generic
   mi_track_malloc(p, size, zero);
@@ -236,7 +242,7 @@ extern mi_decl_forceinline void* _mi_theap_malloc_zero_ex(mi_theap_t* theap, siz
   }
 }
 
-void* _mi_theap_malloc_zero(mi_theap_t* theap, size_t size, bool zero, mi_page_t** ppage) mi_attr_noexcept {
+inline void* _mi_theap_malloc_zero(mi_theap_t* theap, size_t size, bool zero, mi_page_t** ppage) mi_attr_noexcept {
   return _mi_theap_malloc_zero_ex(theap, size, zero, 0, ppage);
 }
 
@@ -244,7 +250,7 @@ void* _mi_theap_malloc_zero(mi_theap_t* theap, size_t size, bool zero, mi_page_t
 // Main allocation functions
 
 mi_decl_nodiscard extern inline mi_decl_restrict void* mi_theap_malloc(mi_theap_t* theap, size_t size) mi_attr_noexcept {
-  return _mi_theap_malloc_zero(theap, size, false, NULL);
+  return _mi_theap_malloc_zero_ex(theap, size, false, 0, NULL);
 }
 
 mi_decl_nodiscard mi_decl_restrict void* mi_malloc(size_t size) mi_attr_noexcept {
@@ -460,7 +466,7 @@ static void* mi_theap_reallocf(mi_theap_t* theap, void* p, size_t newsize) mi_at
   return newp;
 }
 
-static void* mi_theap_rezalloc(mi_theap_t* theap, void* p, size_t newsize) mi_attr_noexcept {
+mi_decl_nodiscard void* mi_theap_rezalloc(mi_theap_t* theap, void* p, size_t newsize) mi_attr_noexcept {
   // optimize p==NULL 
   if (p==NULL) {
     return mi_theap_zalloc(theap,newsize);

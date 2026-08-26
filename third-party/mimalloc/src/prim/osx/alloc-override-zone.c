@@ -71,17 +71,12 @@ static void* zone_valloc(malloc_zone_t* zone, size_t size) {
 }
 
 static void zone_free(malloc_zone_t* zone, void* p) {
-  if mi_likely(mi_any_heap_contains(p)) {
-    if mi_likely(_mi_thread_is_initialized()) {
-      mi_free(p); // with the page_map and pagemap_commit=1 we can use the regular free
+  // during C++ thread shutdown `_pthread_tsd_cleanup` may call `zone_free` 
+  // after mimalloc mi_thread_done, and also on a pointer that was allocated in another subproc.
+  if mi_unlikely(!mi_cfree(p)) {
+    if (!is_mimalloc_zone(zone)) {  // can happen due to interpose
+      zone->free(zone,p);
     }
-    else {
-      // during thread shutdown `_pthread_tsd_cleanup` may call `zone_free` on a pointer that was allocated in another subproc.
-      _mi_free_subproc_safe(p); 
-    }
-  }
-  else if (!is_mimalloc_zone(zone)) {  // can happen due to interpose
-    zone->free(zone,p);
   }
 }
 

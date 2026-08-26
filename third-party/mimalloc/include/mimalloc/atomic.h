@@ -355,17 +355,17 @@ static inline bool mi_atomic_casi64_strong_acq_rel(volatile _Atomic(int64_t)* p,
 }
 
 // The pointer macros cast to `uintptr_t`.
-#define mi_atomic_load_ptr_acquire(tp,p)                (tp*)mi_atomic_load_acquire((_Atomic(uintptr_t)*)(p))
-#define mi_atomic_load_ptr_relaxed(tp,p)                (tp*)mi_atomic_load_relaxed((_Atomic(uintptr_t)*)(p))
+#define mi_atomic_load_ptr_acquire(tp,p)                ((tp*)mi_atomic_load_acquire((_Atomic(uintptr_t)*)(p)))
+#define mi_atomic_load_ptr_relaxed(tp,p)                ((tp*)mi_atomic_load_relaxed((_Atomic(uintptr_t)*)(p)))
 #define mi_atomic_store_ptr_release(tp,p,x)             mi_atomic_store_release((_Atomic(uintptr_t)*)(p),(uintptr_t)(x))
 #define mi_atomic_store_ptr_relaxed(tp,p,x)             mi_atomic_store_relaxed((_Atomic(uintptr_t)*)(p),(uintptr_t)(x))
 #define mi_atomic_cas_ptr_weak_release(tp,p,exp,des)    mi_atomic_cas_weak_release((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
 #define mi_atomic_cas_ptr_weak_acq_rel(tp,p,exp,des)    mi_atomic_cas_weak_acq_rel((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
 #define mi_atomic_cas_ptr_strong_release(tp,p,exp,des)  mi_atomic_cas_strong_release((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
 #define mi_atomic_cas_ptr_strong_acq_rel(tp,p,exp,des)  mi_atomic_cas_strong_acq_rel((_Atomic(uintptr_t)*)(p),(uintptr_t*)exp,(uintptr_t)des)
-#define mi_atomic_exchange_ptr_relaxed(tp,p,x)          (tp*)mi_atomic_exchange_relaxed((_Atomic(uintptr_t)*)(p),(uintptr_t)x)
-#define mi_atomic_exchange_ptr_release(tp,p,x)          (tp*)mi_atomic_exchange_release((_Atomic(uintptr_t)*)(p),(uintptr_t)x)
-#define mi_atomic_exchange_ptr_acq_rel(tp,p,x)          (tp*)mi_atomic_exchange_acq_rel((_Atomic(uintptr_t)*)(p),(uintptr_t)x)
+#define mi_atomic_exchange_ptr_relaxed(tp,p,x)          ((tp*)mi_atomic_exchange_relaxed((_Atomic(uintptr_t)*)(p),(uintptr_t)x))
+#define mi_atomic_exchange_ptr_release(tp,p,x)          ((tp*)mi_atomic_exchange_release((_Atomic(uintptr_t)*)(p),(uintptr_t)x))
+#define mi_atomic_exchange_ptr_acq_rel(tp,p,x)          ((tp*)mi_atomic_exchange_acq_rel((_Atomic(uintptr_t)*)(p),(uintptr_t)x))
 
 #define mi_atomic_loadi64_acquire(p)    mi_atomic(loadi64_explicit)(p,mi_memory_order(acquire))
 #define mi_atomic_loadi64_relaxed(p)    mi_atomic(loadi64_explicit)(p,mi_memory_order(relaxed))
