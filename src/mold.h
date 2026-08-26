@@ -2505,7 +2505,7 @@ ppc64_save_restore_insns;
 class PPC64SaveRestoreSection : public Chunk<PPC64V2> {
 public:
   PPC64SaveRestoreSection() {
-    this->name = ".save_restore_gprs";
+    this->name = ".save_restore_regs";
     this->shdr.sh_type = SHT_PROGBITS;
     this->shdr.sh_flags = SHF_ALLOC | SHF_EXECINSTR;
     this->shdr.sh_addralign = 16;

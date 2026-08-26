@@ -573,8 +573,9 @@ void Thunk<E>::copy_buf(Context<E> &ctx) {
 }
 
 // GCC may emit references to the following functions in function prologue
-// and epiilogue if -Os is specified. For some reason, these functions are
-// not in libgcc.a and expected to be synthesized by the linker.
+// and epilogue if -Os is specified. For some reason, these functions are
+// not in libgcc.a and expected to be synthesized by the linker. There are
+// variants for general-purpose, floating-point and vector registers.
 const std::vector<std::pair<std::string_view, u32>>
 ppc64_save_restore_insns = {
   { "_savegpr0_14", 0xf9c1ff70 }, // std r14,-144(r1)
@@ -663,6 +664,106 @@ ppc64_save_restore_insns = {
   { "_restgpr1_29", 0xebacffe8 }, // ld r29,-24(r12)
   { "_restgpr1_30", 0xebccfff0 }, // ld r30,-16(r12)
   { "_restgpr1_31", 0xebecfff8 }, // ld r31,-8(r12)
+  { "",             0x4e800020 }, // blr
+
+  { "_savefpr_14",  0xd9c1ff70 }, // stfd f14,-144(r1)
+  { "_savefpr_15",  0xd9e1ff78 }, // stfd f15,-136(r1)
+  { "_savefpr_16",  0xda01ff80 }, // stfd f16,-128(r1)
+  { "_savefpr_17",  0xda21ff88 }, // stfd f17,-120(r1)
+  { "_savefpr_18",  0xda41ff90 }, // stfd f18,-112(r1)
+  { "_savefpr_19",  0xda61ff98 }, // stfd f19,-104(r1)
+  { "_savefpr_20",  0xda81ffa0 }, // stfd f20,-96(r1)
+  { "_savefpr_21",  0xdaa1ffa8 }, // stfd f21,-88(r1)
+  { "_savefpr_22",  0xdac1ffb0 }, // stfd f22,-80(r1)
+  { "_savefpr_23",  0xdae1ffb8 }, // stfd f23,-72(r1)
+  { "_savefpr_24",  0xdb01ffc0 }, // stfd f24,-64(r1)
+  { "_savefpr_25",  0xdb21ffc8 }, // stfd f25,-56(r1)
+  { "_savefpr_26",  0xdb41ffd0 }, // stfd f26,-48(r1)
+  { "_savefpr_27",  0xdb61ffd8 }, // stfd f27,-40(r1)
+  { "_savefpr_28",  0xdb81ffe0 }, // stfd f28,-32(r1)
+  { "_savefpr_29",  0xdba1ffe8 }, // stfd f29,-24(r1)
+  { "_savefpr_30",  0xdbc1fff0 }, // stfd f30,-16(r1)
+  { "_savefpr_31",  0xdbe1fff8 }, // stfd f31,-8(r1)
+  { "",             0xf8010010 }, // std r0,16(r1)
+  { "",             0x4e800020 }, // blr
+
+  { "_restfpr_14",  0xc9c1ff70 }, // lfd f14,-144(r1)
+  { "_restfpr_15",  0xc9e1ff78 }, // lfd f15,-136(r1)
+  { "_restfpr_16",  0xca01ff80 }, // lfd f16,-128(r1)
+  { "_restfpr_17",  0xca21ff88 }, // lfd f17,-120(r1)
+  { "_restfpr_18",  0xca41ff90 }, // lfd f18,-112(r1)
+  { "_restfpr_19",  0xca61ff98 }, // lfd f19,-104(r1)
+  { "_restfpr_20",  0xca81ffa0 }, // lfd f20,-96(r1)
+  { "_restfpr_21",  0xcaa1ffa8 }, // lfd f21,-88(r1)
+  { "_restfpr_22",  0xcac1ffb0 }, // lfd f22,-80(r1)
+  { "_restfpr_23",  0xcae1ffb8 }, // lfd f23,-72(r1)
+  { "_restfpr_24",  0xcb01ffc0 }, // lfd f24,-64(r1)
+  { "_restfpr_25",  0xcb21ffc8 }, // lfd f25,-56(r1)
+  { "_restfpr_26",  0xcb41ffd0 }, // lfd f26,-48(r1)
+  { "_restfpr_27",  0xcb61ffd8 }, // lfd f27,-40(r1)
+  { "_restfpr_28",  0xcb81ffe0 }, // lfd f28,-32(r1)
+  { "_restfpr_29",  0xe8010010 }, // ld r0,16(r1)
+  { "",             0xcba1ffe8 }, // lfd f29,-24(r1)
+  { "",             0x7c0803a6 }, // mtlr r0
+  { "",             0xcbc1fff0 }, // lfd f30,-16(r1)
+  { "",             0xcbe1fff8 }, // lfd f31,-8(r1)
+  { "",             0x4e800020 }, // blr
+  { "_restfpr_30",  0xcbc1fff0 }, // lfd f30,-16(r1)
+  { "_restfpr_31",  0xe8010010 }, // ld r0,16(r1)
+  { "",             0xcbe1fff8 }, // lfd f31,-8(r1)
+  { "",             0x7c0803a6 }, // mtlr r0
+  { "",             0x4e800020 }, // blr
+
+  { "_savevr_20",   0x3980ff40 }, // li r12,-192
+  { "",             0x7e8c01ce }, // stvx v20,r12,r0
+  { "_savevr_21",   0x3980ff50 }, // li r12,-176
+  { "",             0x7eac01ce }, // stvx v21,r12,r0
+  { "_savevr_22",   0x3980ff60 }, // li r12,-160
+  { "",             0x7ecc01ce }, // stvx v22,r12,r0
+  { "_savevr_23",   0x3980ff70 }, // li r12,-144
+  { "",             0x7eec01ce }, // stvx v23,r12,r0
+  { "_savevr_24",   0x3980ff80 }, // li r12,-128
+  { "",             0x7f0c01ce }, // stvx v24,r12,r0
+  { "_savevr_25",   0x3980ff90 }, // li r12,-112
+  { "",             0x7f2c01ce }, // stvx v25,r12,r0
+  { "_savevr_26",   0x3980ffa0 }, // li r12,-96
+  { "",             0x7f4c01ce }, // stvx v26,r12,r0
+  { "_savevr_27",   0x3980ffb0 }, // li r12,-80
+  { "",             0x7f6c01ce }, // stvx v27,r12,r0
+  { "_savevr_28",   0x3980ffc0 }, // li r12,-64
+  { "",             0x7f8c01ce }, // stvx v28,r12,r0
+  { "_savevr_29",   0x3980ffd0 }, // li r12,-48
+  { "",             0x7fac01ce }, // stvx v29,r12,r0
+  { "_savevr_30",   0x3980ffe0 }, // li r12,-32
+  { "",             0x7fcc01ce }, // stvx v30,r12,r0
+  { "_savevr_31",   0x3980fff0 }, // li r12,-16
+  { "",             0x7fec01ce }, // stvx v31,r12,r0
+  { "",             0x4e800020 }, // blr
+
+  { "_restvr_20",   0x3980ff40 }, // li r12,-192
+  { "",             0x7e8c00ce }, // lvx v20,r12,r0
+  { "_restvr_21",   0x3980ff50 }, // li r12,-176
+  { "",             0x7eac00ce }, // lvx v21,r12,r0
+  { "_restvr_22",   0x3980ff60 }, // li r12,-160
+  { "",             0x7ecc00ce }, // lvx v22,r12,r0
+  { "_restvr_23",   0x3980ff70 }, // li r12,-144
+  { "",             0x7eec00ce }, // lvx v23,r12,r0
+  { "_restvr_24",   0x3980ff80 }, // li r12,-128
+  { "",             0x7f0c00ce }, // lvx v24,r12,r0
+  { "_restvr_25",   0x3980ff90 }, // li r12,-112
+  { "",             0x7f2c00ce }, // lvx v25,r12,r0
+  { "_restvr_26",   0x3980ffa0 }, // li r12,-96
+  { "",             0x7f4c00ce }, // lvx v26,r12,r0
+  { "_restvr_27",   0x3980ffb0 }, // li r12,-80
+  { "",             0x7f6c00ce }, // lvx v27,r12,r0
+  { "_restvr_28",   0x3980ffc0 }, // li r12,-64
+  { "",             0x7f8c00ce }, // lvx v28,r12,r0
+  { "_restvr_29",   0x3980ffd0 }, // li r12,-48
+  { "",             0x7fac00ce }, // lvx v29,r12,r0
+  { "_restvr_30",   0x3980ffe0 }, // li r12,-32
+  { "",             0x7fcc00ce }, // lvx v30,r12,r0
+  { "_restvr_31",   0x3980fff0 }, // li r12,-16
+  { "",             0x7fec00ce }, // lvx v31,r12,r0
   { "",             0x4e800020 }, // blr
 };
 
