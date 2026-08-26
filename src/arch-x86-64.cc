@@ -492,8 +492,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ul16 *)loc = S + A - P;
       break;
     case R_X86_64_PC32:
-    case R_X86_64_PLT32:
       write32s(S + A - P);
+      break;
+    case R_X86_64_PLT32:
+      if (!sym.is_remaining_undef_weak())
+        check(S + A - P, -(1LL << 31), 1LL << 31);
+      *(ul32 *)loc = S + A - P;
       break;
     case R_X86_64_PC64:
       *(ul64 *)loc = S + A - P;

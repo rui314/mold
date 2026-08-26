@@ -303,7 +303,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       break;
     case R_SPARC_WDISP30:
     case R_SPARC_WPLT30:
-      check(S + A - P, -(1LL << 31), 1LL << 31);
+      if (!sym.is_remaining_undef_weak())
+        check(S + A - P, -(1LL << 31), 1LL << 31);
       *(ub32 *)loc |= bits(S + A - P, 31, 2);
       break;
     case R_SPARC_HI22:

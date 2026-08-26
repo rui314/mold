@@ -352,7 +352,9 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
         rewrite(i, R_RISCV_RVC_JUMP);
       } else {
         assert(removed_bytes == 0);
-        utype(val);
+        if (!sym.is_remaining_undef_weak())
+          check(val, -(1LL << 31) - 0x800, (1LL << 31) - 0x800);
+        write_utype(loc, val);
         write_itype(loc + 4, val);
       }
       break;

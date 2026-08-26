@@ -354,7 +354,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       write_d5k16(loc, (S + A - P) >> 2);
       break;
     case R_LARCH_B26:
-      check_branch(S + A - P, -(1 << 27), 1 << 27);
+      if (!sym.is_remaining_undef_weak())
+        check_branch(S + A - P, -(1 << 27), 1 << 27);
       write_d10k16(loc, (S + A - P) >> 2);
       break;
     case R_LARCH_ABS_LO12:
@@ -541,7 +542,8 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     case R_LARCH_CALL36:
       if (removed_bytes == 0) {
         i64 val = S + A - P;
-        check_branch(val, -(1LL << 37) - 0x20000, (1LL << 37) - 0x20000);
+        if (!sym.is_remaining_undef_weak())
+          check_branch(val, -(1LL << 37) - 0x20000, (1LL << 37) - 0x20000);
         write_j20(loc, (val + 0x20000) >> 18);
         write_k16(loc + 4, val >> 2);
       } else {

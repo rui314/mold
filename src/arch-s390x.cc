@@ -205,8 +205,12 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       *(ub32 *)loc |= bits(S + A - P, 24, 1);
       break;
     case R_390_PC32DBL:
-    case R_390_PLT32DBL:
       check_dbl(S + A - P, -(1LL << 32), 1LL << 32);
+      *(ub32 *)loc = (S + A - P) >> 1;
+      break;
+    case R_390_PLT32DBL:
+      if (!sym.is_remaining_undef_weak())
+        check_dbl(S + A - P, -(1LL << 32), 1LL << 32);
       *(ub32 *)loc = (S + A - P) >> 1;
       break;
     case R_390_GOT12:
