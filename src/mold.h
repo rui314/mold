@@ -2217,6 +2217,8 @@ private:
   std::span<std::string_view> read_output_format(std::span<std::string_view> tok);
   std::span<std::string_view> read_group(std::span<std::string_view> tok);
 
+  std::string_view unquote_pattern(std::string_view tok);
+
   std::span<std::string_view>
   read_version_script_commands(std::span<std::string_view> tok,
                                std::string_view ver_str, u16 ver_idx,

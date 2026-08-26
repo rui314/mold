@@ -111,6 +111,27 @@ static std::string_view unquote(std::string_view s) {
   return s;
 }
 
+// Version scripts and dynamic lists take a quoted name literally, while
+// an unquoted one is a glob pattern. We escape glob metacharacters in a
+// quoted name so that the pattern matcher treats them as literals.
+template <typename E>
+std::string_view Script<E>::unquote_pattern(std::string_view tok) {
+  if (!tok.starts_with('"'))
+    return tok;
+
+  std::string_view str = unquote(tok);
+  if (str.find_first_of("*?[\\") == str.npos)
+    return str;
+
+  std::string out;
+  for (char c : str) {
+    if (c == '*' || c == '?' || c == '[' || c == '\\')
+      out += '\\';
+    out += c;
+  }
+  return save_string(ctx, out);
+}
+
 template <typename E>
 std::span<std::string_view>
 Script<E>::read_output_format(std::span<std::string_view> tok) {
@@ -316,11 +337,11 @@ Script<E>::read_version_script_commands(std::span<std::string_view> tok,
     if (tok[0] == "*") {
       ctx.default_version = (is_global ? ver_idx : (u32)VER_NDX_LOCAL);
     } else if (is_global) {
-      ctx.version_patterns.push_back({unquote(tok[0]), mf->name, ver_str,
-                                      ver_idx, is_cpp});
+      ctx.version_patterns.push_back({unquote_pattern(tok[0]), mf->name,
+                                      ver_str, ver_idx, is_cpp});
     } else {
-      ctx.version_patterns.push_back({unquote(tok[0]), mf->name, ver_str,
-                                      VER_NDX_LOCAL, is_cpp});
+      ctx.version_patterns.push_back({unquote_pattern(tok[0]), mf->name,
+                                      ver_str, VER_NDX_LOCAL, is_cpp});
     }
 
     tok = tok.subspan(1);
@@ -394,7 +415,7 @@ Script<E>::read_dynamic_list_commands(std::span<std::string_view> tok,
       continue;
     }
 
-    result.push_back({unquote(tok[0]), "", is_cpp});
+    result.push_back({unquote_pattern(tok[0]), "", is_cpp});
     tok = skip(tok.subspan(1), ";");
   }
   return tok;
