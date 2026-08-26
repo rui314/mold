@@ -298,7 +298,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
     u64 S = sym.get_addr(ctx);
     u64 A = get_addend(*this, rel);
     u64 P = get_addr() + rel.r_offset;
-    u64 T = S & 1;
+    u64 T = is_thumb_func(ctx, sym);
     u64 G = sym.get_got_idx(ctx) * sizeof(Word<E>);
     u64 GOT = ctx.got->shdr.sh_addr;
 
@@ -333,15 +333,16 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       }
 
       // THM_CALL relocation refers to either BL or BLX instruction.
-      // They are different in only one bit. We need to use BL if
-      // the jump target is Thumb. Otherwise, use BLX.
+      // They are different in only one bit. We need to use BLX if the
+      // jump target is an ARM function. Otherwise, use BL.
       i64 val1 = S + A - P;
       i64 val2 = align_to(S + A - P, 4);
+      bool arm = is_arm_func(ctx, sym);
 
-      if (T && is_int(val1, 25)) {
+      if (!arm && is_int(val1, 25)) {
         *(U16<E> *)(loc + 2) |= 0x1000;  // BL
         write_thm_b25(loc, val1);
-      } else if (!T && is_int(val2, 25)) {
+      } else if (arm && is_int(val2, 25)) {
         *(U16<E> *)(loc + 2) &= ~0x1000; // BLX
         write_thm_b25(loc, val2);
       } else {
@@ -440,7 +441,7 @@ void InputSection<E>::apply_reloc_alloc(Context<E> &ctx, u8 *base) {
       // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
       // switch processor mode.
       i64 val = S + A - P;
-      if (!T || !is_int(val, 25))
+      if (is_arm_func(ctx, sym) || !is_int(val, 25))
         val = get_thumb_thunk_addr() + A - P;
       write_thm_b25(loc, val);
       break;

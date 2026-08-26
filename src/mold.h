@@ -2447,6 +2447,24 @@ void create_arm_exidx_section(Context<E> &ctx);
 
 void arm32be_swap_bytes(Context<ARM32BE> &ctx);
 
+// Only function symbols tell in the LSB of their value whether they are
+// Thumb or ARM code. A branch to a symbol of another type, such as a
+// plain label in hand-written assembly, does not switch the instruction
+// set. A branch to a PLT entry always lands on ARM code.
+template <is_arm32 E>
+inline bool is_thumb_func(Context<E> &ctx, Symbol<E> &sym) {
+  u32 ty = sym.get_type();
+  return (ty == STT_FUNC || ty == STT_GNU_IFUNC) && (sym.get_addr(ctx) & 1);
+}
+
+template <is_arm32 E>
+inline bool is_arm_func(Context<E> &ctx, Symbol<E> &sym) {
+  if (sym.has_plt(ctx))
+    return true;
+  u32 ty = sym.get_type();
+  return (ty == STT_FUNC || ty == STT_GNU_IFUNC) && !(sym.get_addr(ctx) & 1);
+}
+
 //
 // arch-riscv.cc
 //

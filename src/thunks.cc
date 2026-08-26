@@ -71,10 +71,9 @@ requires_thunk(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel,
   // always have to make them jump to a thunk to switch processor mode
   // even if their destinations are reachable.
   if constexpr (is_arm32<E>)
-    if (bool is_thumb = sym.get_addr(ctx) & 1;
-        (rel.r_type == R_ARM_JUMP24 && is_thumb) ||
-        (rel.r_type == R_ARM_PLT32 && is_thumb) ||
-        (rel.r_type == R_ARM_THM_JUMP24 && !is_thumb))
+    if ((rel.r_type == R_ARM_JUMP24 && is_thumb_func(ctx, sym)) ||
+        (rel.r_type == R_ARM_PLT32 && is_thumb_func(ctx, sym)) ||
+        (rel.r_type == R_ARM_THM_JUMP24 && is_arm_func(ctx, sym)))
       return true;
 
   // On PowerPC, all PLT calls go through range extension thunks.
