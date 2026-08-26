@@ -2166,9 +2166,18 @@ to_output_esym(Context<E> &ctx, Symbol<E> &sym, u32 st_name, U32<E> *shn_xindex)
     shndx = frag->get_output_section(ctx).shndx;
     esym.st_value = sym.get_addr(ctx);
   } else if (!isec) {
-    // Absolute symbol
-    esym.st_shndx = SHN_ABS;
-    esym.st_value = sym.get_addr(ctx);
+    if (sym.esym().is_common()) {
+      // Common symbol. Common symbols are converted to .bss unless we are
+      // creating a relocatable output, in which case they are passed
+      // through as they are. st_value of a common symbol is its alignment.
+      assert(ctx.arg.relocatable);
+      esym.st_shndx = SHN_COMMON;
+      esym.st_value = sym.esym().st_value;
+    } else {
+      // Absolute symbol
+      esym.st_shndx = SHN_ABS;
+      esym.st_value = sym.get_addr(ctx);
+    }
   } else if (sym.get_type() == STT_TLS) {
     // TLS symbol
     shndx = get_st_shndx(sym);
