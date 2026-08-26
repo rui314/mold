@@ -2702,7 +2702,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         Symbol<E> &sym = *file->symbols[rel.r_sym];
         u64 loc = cie.output_offset + rel.r_offset - cie.input_offset;
         u64 val = sym.get_addr(ctx) + get_addend(cie.input_section, rel);
-        apply_eh_reloc(ctx, rel, loc, val);
+        apply_eh_reloc(ctx, cie.input_section, rel, loc, val);
       }
     }
 
@@ -2732,7 +2732,7 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         Symbol<E> &sym = *file->symbols[rel.r_sym];
         u64 loc = offset + rel.r_offset - fde.input_offset;
         u64 val = sym.get_addr(ctx) + get_addend(cie.input_section, rel);
-        apply_eh_reloc(ctx, rel, loc, val);
+        apply_eh_reloc(ctx, cie.input_section, rel, loc, val);
 
         if (j == 0)
           func_addr = val;
@@ -2755,7 +2755,12 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
         ent.init_addr = INT32_MAX;
         ent.fde_addr = 0;
       } else {
+        // The table entries are 32-bit offsets from .eh_frame_hdr.
         u64 origin = ctx.eh_frame_hdr->shdr.sh_addr;
+        if (!is_int(func_addr - origin, 32))
+          Error(ctx) << *file << ": " << *file->symbols[rels[0].r_sym]
+                     << ": address out of range of .eh_frame_hdr";
+
         ent.init_addr = func_addr - origin;
         ent.fde_addr = this->shdr.sh_addr + offset - origin;
       }
@@ -2772,6 +2777,16 @@ void EhFrameSection<E>::copy_buf(Context<E> &ctx) {
       return a.init_addr < b.init_addr;
     });
   }
+}
+
+template <typename E>
+void EhFrameSection<E>::check_range(Context<E> &ctx, InputSection<E> &isec,
+                                    const ElfRel<E> &rel, i64 val, i64 lo,
+                                    i64 hi) {
+  if (val < lo || hi <= val)
+    Error(ctx) << isec << ": relocation " << rel << " against "
+               << *isec.file->symbols[rel.r_sym] << " out of range: " << val
+               << " is not in [" << lo << ", " << hi << ")";
 }
 
 // Lay out the output .sframe section. Like .eh_frame, .sframe is parsed

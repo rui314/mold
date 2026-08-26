@@ -104,24 +104,31 @@ void write_pltgot_entry(Context<E> &ctx, u8 *buf, Symbol<E> &sym) {
 }
 
 template <>
-void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel,
-                                       u64 offset, u64 val) {
+void EhFrameSection<E>::apply_eh_reloc(Context<E> &ctx, InputSection<E> &isec,
+                                       const ElfRel<E> &rel, u64 offset, u64 val) {
   u8 *loc = ctx.buf + this->shdr.sh_offset + offset;
+  u64 P = this->shdr.sh_addr + offset;
+
+  auto check = [&](i64 val, i64 lo, i64 hi) {
+    check_range(ctx, isec, rel, val, lo, hi);
+  };
 
   switch (rel.r_type) {
   case R_NONE:
     break;
   case R_X86_64_32:
+    check(val, 0, 1LL << 32);
     *(ul32 *)loc = val;
     break;
   case R_X86_64_64:
     *(ul64 *)loc = val;
     break;
   case R_X86_64_PC32:
-    *(ul32 *)loc = val - this->shdr.sh_addr - offset;
+    check(val - P, -(1LL << 31), 1LL << 31);
+    *(ul32 *)loc = val - P;
     break;
   case R_X86_64_PC64:
-    *(ul64 *)loc = val - this->shdr.sh_addr - offset;
+    *(ul64 *)loc = val - P;
     break;
   default:
     Fatal(ctx) << "unsupported relocation in .eh_frame: " << rel;

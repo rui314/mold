@@ -1326,8 +1326,13 @@ public:
   }
 
   void construct(Context<E> &ctx);
-  void apply_eh_reloc(Context<E> &ctx, const ElfRel<E> &rel, u64 offset, u64 val);
   void copy_buf(Context<E> &ctx) override;
+
+  void apply_eh_reloc(Context<E> &ctx, InputSection<E> &isec,
+                      const ElfRel<E> &rel, u64 offset, u64 val);
+
+  void check_range(Context<E> &ctx, InputSection<E> &isec, const ElfRel<E> &rel,
+                   i64 val, i64 lo, i64 hi);
 };
 
 // .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
