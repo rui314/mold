@@ -269,6 +269,13 @@ static bool read_label(std::span<std::string_view> &tok, std::string label) {
     tok = tok.subspan(2);
     return true;
   }
+
+  // The tokenizer keeps a colon in a token because of the C++ scope
+  // operator, so `local:*` is a single token. Split the pattern off.
+  if (tok.size() >= 1 && tok[0].starts_with(label + ":")) {
+    tok[0] = tok[0].substr(label.size() + 1);
+    return true;
+  }
   return false;
 }
 
