@@ -1,30 +1,21 @@
 # mold: A Modern Linker
 
-mold is a faster drop-in replacement for existing Unix linkers. It is several
-times quicker than the LLVM lld linker, the second-fastest open-source linker,
-which I initially developed a few years ago. mold aims to enhance developer
-productivity by minimizing build time, particularly in rapid
-debug-edit-rebuild cycles.
+mold is a high-performance drop-in replacement for existing Unix linkers,
+designed to speed up builds. In our August 2026 benchmarks, it links 4.9x
+faster than [LLVM lld](https://lld.llvm.org) and 1.9x faster than
+[wild](https://github.com/wild-linker/wild) at the median; see
+[Benchmark](#benchmark) for the full results.
 
-Here is a performance comparison of GNU ld, GNU gold, LLVM lld, and
-mold when linking final debuginfo-enabled executables for major large
-programs on a simulated 16-core, 32-thread machine.
+mold is written by the original developer of LLVM lld, the linker that
+Android, Chrome, FreeBSD, PlayStation, Nintendo Switch, and other production
+systems are built with. mold started as an effort to build an even faster
+linker from scratch, free of the architectural limits its author had run into
+while optimizing lld. It has been in production use since 2021, and today it
+is the default linker of many large open-source projects and is used
+internally by many companies.
 
-![Link speed comparison](docs/chart.svg)
-
-| Program (linker output size)  | GNU ld | GNU gold | LLVM lld | mold
-|-------------------------------|--------|----------|----------|------
-| MySQL 8.3 (0.47 GiB)          | 10.84s | 7.47s    | 1.64s    | 0.46s
-| Clang 19 (1.56 GiB)           | 42.07s | 33.13s   | 5.20s    | 1.35s
-| Chromium 124 (1.35 GiB)       | N/A    | 27.40s   | 6.10s    | 1.52s
-
-mold is so fast that it is only 2x _slower_ than the `cp` command on the same
-machine. If you find that mold is not faster than other linkers, feel
-free to [file a bug report](https://github.com/rui314/mold/issues).
-
-mold supports x86-64, i386, ARM64, ARM32, 64-bit/32-bit little/big-endian
-RISC-V, 32-bit PowerPC, 64-bit big-endian PowerPC ELFv1, 64-bit little-endian
-PowerPC ELFv2, s390x, 64-bit/32-bit LoongArch, SPARC64, m68k, and SH-4.
+mold supports x86-64, i386, ARM 32/64, RISC-V 32/64, PowerPC 32/64, s390x,
+LoongArch 32/64, SPARC64, m68k, and SH-4.
 
 ## Why does linking speed matter?
 
@@ -38,11 +29,105 @@ speed up this process, saving you time and preventing distractions while
 waiting for a lengthy build to finish. The difference is most noticeable
 during rapid debug-edit-rebuild cycles.
 
+## Benchmark
+
+Here is a performance comparison of lld, wild, and mold when linking nine
+large programs on two machines:
+
+- AMD Ryzen Threadripper 7980X (64 cores) running Ubuntu 24.04
+- Apple M1 Ultra (16 performance cores and 4 efficiency cores) running Fedora
+  Asahi Remix 42; the benchmark is restricted to the performance cores
+
+The Threadripper represents many-core workstation and server processors, and
+the M1 Ultra represents high-performance desktop processors.
+
+All three linkers were built from source in release configuration as of
+2026-08-28 and ran with their default options. Times are wall-clock times as
+seen by the caller, the median of three runs after a warm-up. The ARM64 rows
+are the ARM64 builds of the same programs. The benchmark suite, including all
+linker inputs, is available on [Zenodo](https://zenodo.org/records/21882261).
+
+**AMD Ryzen Threadripper 7980X, debug builds**
+
+| Program (output size)             | lld    | wild  | mold  | wild/mold | lld/mold
+|-----------------------------------|--------|-------|-------|-----------|---------
+| Blender 5.2 (2.46 GiB)            | 4.72s  | 1.98s | 0.86s | 2.3x      | 5.5x
+| Chromium 145 (4.51 GiB)           | 16.64s | 3.98s | 1.65s | 2.4x      | 10.1x
+| Chromium 145 ARM64 (4.76 GiB)     | 20.91s | N/A   | 1.83s | N/A       | 11.4x
+| Clang 21 (4.19 GiB)               | 6.19s  | 3.71s | 1.34s | 2.8x      | 4.6x
+| ClickHouse 26.1 (5.58 GiB)        | 6.62s  | 4.40s | 0.98s | 4.5x      | 6.7x
+| Firefox 149 (2.37 GiB)            | 5.11s  | N/A   | 0.78s | N/A       | 6.5x
+| Firefox 149 ARM64 (2.43 GiB)      | 6.40s  | N/A   | 0.93s | N/A       | 6.9x
+| Godot 4.6 (1.01 GiB)              | 1.77s  | 1.08s | 0.46s | 2.3x      | 3.8x
+| LibreOffice 26.2 (0.98 GiB)       | 3.46s  | 1.41s | 0.44s | 3.2x      | 7.9x
+| PyTorch 2.9 (3.51 GiB)            | 4.35s  | 2.48s | 0.80s | 3.1x      | 5.4x
+| TensorFlow 2.21 (9.55 GiB)        | 50.73s | N/A   | 3.15s | N/A       | 16.1x
+
+**AMD Ryzen Threadripper 7980X, release builds**
+
+| Program (output size)             | lld   | wild  | mold  | wild/mold | lld/mold
+|-----------------------------------|-------|-------|-------|-----------|---------
+| Blender 5.2 (0.24 GiB)            | 0.85s | 0.30s | 0.20s | 1.5x      | 4.2x
+| Chromium 145 (0.58 GiB)           | 6.48s | N/A   | 0.64s | N/A       | 10.2x
+| Chromium 145 ARM64 (0.60 GiB)     | 7.91s | N/A   | 0.73s | N/A       | 10.8x
+| Clang 21 (0.21 GiB)               | 0.53s | 0.23s | 0.11s | 2.2x      | 5.0x
+| ClickHouse 26.1 (1.23 GiB)        | 3.18s | 2.07s | 0.41s | 5.0x      | 7.7x
+| Firefox 149 (0.22 GiB)            | 1.01s | 0.41s | 0.21s | 2.0x      | 4.9x
+| Godot 4.6 (0.15 GiB)              | 0.44s | 0.21s | 0.08s | 2.7x      | 5.8x
+| LibreOffice 26.2 (0.19 GiB)       | 1.13s | 0.57s | 0.19s | 3.0x      | 6.0x
+| PyTorch 2.9 (0.31 GiB)            | 0.68s | 0.32s | 0.15s | 2.2x      | 4.7x
+| TensorFlow 2.21 (0.73 GiB)        | 9.62s | N/A   | 0.70s | N/A       | 13.7x
+
+**Apple M1 Ultra, debug builds**
+
+| Program (output size)             | lld    | wild  | mold  | wild/mold | lld/mold
+|-----------------------------------|--------|-------|-------|-----------|---------
+| Blender 5.2 (2.46 GiB)            | 3.21s  | 1.81s | 1.56s | 1.2x      | 2.1x
+| Chromium 145 (4.51 GiB)           | 9.54s  | 3.49s | 2.22s | 1.6x      | 4.3x
+| Chromium 145 ARM64 (4.76 GiB)     | 12.67s | N/A   | 2.31s | N/A       | 5.5x
+| Clang 21 (4.19 GiB)               | 4.40s  | 2.78s | 2.96s | 0.9x      | 1.5x
+| ClickHouse 26.1 (5.58 GiB)        | 4.92s  | 3.50s | 1.71s | 2.1x      | 2.9x
+| Firefox 149 (2.37 GiB)            | 3.21s  | N/A   | 1.12s | N/A       | 2.9x
+| Firefox 149 ARM64 (2.43 GiB)      | 4.13s  | N/A   | 1.12s | N/A       | 3.7x
+| Godot 4.6 (1.01 GiB)              | 1.12s  | 0.81s | 0.62s | 1.3x      | 1.8x
+| LibreOffice 26.2 (0.98 GiB)       | 2.08s  | 0.94s | 0.63s | 1.5x      | 3.3x
+| PyTorch 2.9 (3.51 GiB)            | 3.07s  | 2.10s | 1.45s | 1.4x      | 2.1x
+| TensorFlow 2.21 (9.55 GiB)        | 43.68s | N/A   | 4.43s | N/A       | 9.9x
+
+**Apple M1 Ultra, release builds**
+
+| Program (output size)             | lld   | wild  | mold  | wild/mold | lld/mold
+|-----------------------------------|-------|-------|-------|-----------|---------
+| Blender 5.2 (0.24 GiB)            | 0.56s | 0.20s | 0.25s | 0.8x      | 2.3x
+| Chromium 145 (0.58 GiB)           | 4.25s | N/A   | 0.78s | N/A       | 5.5x
+| Chromium 145 ARM64 (0.60 GiB)     | 5.17s | N/A   | 0.91s | N/A       | 5.7x
+| Clang 21 (0.21 GiB)               | 0.30s | 0.15s | 0.14s | 1.0x      | 2.1x
+| ClickHouse 26.1 (1.23 GiB)        | 1.94s | 0.95s | 0.55s | 1.7x      | 3.5x
+| Firefox 149 (0.22 GiB)            | 0.56s | 0.23s | 0.20s | 1.1x      | 2.7x
+| Godot 4.6 (0.15 GiB)              | 0.26s | 0.11s | 0.11s | 1.0x      | 2.3x
+| LibreOffice 26.2 (0.19 GiB)       | 0.62s | 0.30s | 0.23s | 1.3x      | 2.7x
+| PyTorch 2.9 (0.31 GiB)            | 0.43s | 0.22s | 0.17s | 1.3x      | 2.5x
+| TensorFlow 2.21 (0.73 GiB)        | 8.07s | N/A   | 0.68s | N/A       | 11.9x
+
+N/A indicates that the linker cannot link that program. wild's Chromium
+release links are also marked N/A because wild does not implement `--icf=all`
+and links without identical code folding.
+
+## Why is mold so fast?
+
+mold owes its speed to pervasive parallelism and to efficient data structures
+and algorithms. For details, read our paper "mold: A Massively Parallel
+Linker" (ASPLOS 2027), available at https://arxiv.org/abs/2608.23228.
+
 ## Installation
 
 Binary packages for the following systems are currently available:
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/mold.svg)](https://repology.org/project/mold/versions)
+
+Prebuilt binaries for Linux on x86-64, ARM64, ARM32, RISC-V, PPC64LE, s390x,
+and LoongArch are also attached to each
+[GitHub release](https://github.com/rui314/mold/releases).
 
 ## How to Build
 
@@ -219,39 +304,26 @@ is available online. You can read the same manual by running `man mold`.
 
 </details>
 
-## Why is mold so fast?
+## Stability
 
-One reason is that it utilizes faster algorithms and more efficient data
-structures compared to other linkers. Another reason is that mold is highly
-parallelized.
-
-Here is a side-by-side comparison of per-core CPU usage for lld (left) and
-mold (right), linking the same program, a Chromium executable.
-
-![CPU usage comparison in htop animation](docs/htop.gif)
-
-As you can see, mold uses all available cores throughout its execution and
-finishes quickly. In contrast, lld fails to utilize available cores most of
-the time. In this demo, the maximum parallelism is artificially capped at 16,
-so that the bars fit in the GIF.
-
-For details, please see the [design notes](docs/design.md).
+mold has been developed in the open since 2020 and has more than 140
+contributors. Its test suite, which covers every linker feature, runs in CI for
+all supported target CPU architectures, natively or under QEMU, and under ASAN
+and TSAN. Before each release, we try to build all of Gentoo Linux's roughly
+19,000 packages with mold, using GNU ld as a control, to find regressions before
+they reach a release.
 
 ## Sponsors
 
-It is taken for granted nowadays that compiler toolchains can be easily
-installed and used for free, and people may not think too much about the
-individuals behind these "free tools". mold supports many projects, but it
-is essentially a one-person project. This situation is similar to the one
-depicted in the following xkcd illustration.
+mold is free to use, but keeping it maintained is continuous work: supporting
+new architectures and toolchain features, keeping up with the projects that
+depend on it, and making it faster. That work is funded by sponsors. If mold
+saves you or your company time, please consider becoming a
+[GitHub sponsor](https://github.com/sponsors/rui314).
 
-[![xkcd 2347](https://imgs.xkcd.com/comics/dependency.png)](https://xkcd.com/2347)
-
-If you think that the "Nebraska guy" should be rewarded, please consider
-becoming our [GitHub sponsor](https://github.com/sponsors/rui314)!
-
-We thank everyone who sponsors our project. In particular, we'd like to acknowledge
-the following people and organizations who have sponsored $128/month or more:
+We thank everyone who sponsors the project. In particular, we'd like to
+acknowledge the following people and organizations who have sponsored
+$128/month or more:
 
 ### Corporate sponsors
 
