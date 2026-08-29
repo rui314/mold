@@ -737,7 +737,7 @@ int mold_main(int argc, char **argv) {
   if constexpr (is_arm32be<E>)
     arm32be_swap_bytes(ctx);
 
-  if constexpr (is_x86_64<E>)
+  if constexpr (is_x86_64<E> || is_arm64<E>)
     if (ctx.arg.z_rewrite_endbr)
       rewrite_endbr(ctx);
 

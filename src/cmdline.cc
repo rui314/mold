@@ -1244,8 +1244,8 @@ std::vector<ReaderJob> parse_nonpositional_args(Context<E> &ctx) {
     } else if (read_z_flag("x86-64-v4")) {
       ctx.arg.z_x86_64_isa_level |= GNU_PROPERTY_X86_ISA_1_V4;
     } else if (read_z_flag("rewrite-endbr")) {
-      if constexpr (!is_x86_64<E>)
-        Fatal(ctx) << "-z rewrite-endbr is supported only on x86-64";
+      if constexpr (!is_x86_64<E> && !is_arm64<E>)
+        Fatal(ctx) << "-z rewrite-endbr is supported only on x86-64 and arm64";
       ctx.arg.z_rewrite_endbr = true;
     } else if (read_z_flag("norewrite-endbr")) {
       ctx.arg.z_rewrite_endbr = false;

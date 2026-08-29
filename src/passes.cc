@@ -3838,6 +3838,121 @@ void show_stats(Context<E> &ctx) {
     sec->print_stats(ctx);
 }
 
+// Intel CET and Arm BTI are relatively new CPU features to enhance security by
+// protecting control flow integrity. If the feature is enabled, indirect
+// branches (i.e. branch instructions that take a register instead of an
+// immediate) must land on a "landing pad" instruction, or a CPU-level fault
+// will raise. That prevents an attacker from branching to a middle of a random
+// function, making ROP or JOP much harder to conduct.
+//
+// On x86-64, the landing pad instruction is ENDBR64. On ARM64, it's `bti c`.
+// In both cases the instruction is a repurposed NOP so that the same binary
+// still runs on older hardware that doesn't support the feature.
+//
+// The problem here is that the compiler always emits a landing pad at the
+// beginning of a global function because it doesn't know whether or not the
+// function's address is taken in other translation units. As a result, the
+// resulting binary contains more landing pads than necessary.
+//
+// This function rewrites a landing pad with a nop if the function's address
+// was not actually taken. We can do what the compiler cannot because we
+// know about all translation units.
+template <typename E>
+void rewrite_endbr(Context<E> &ctx) {
+  static_assert(is_x86_64<E> || is_arm64<E>);
+  Timer t(ctx, "rewrite_endbr");
+
+  // The landing pad instruction and the NOP that replaces it. Both are 4
+  // bytes long. ARM64 instructions are always little-endian, even in the
+  // big-endian ABI, so the byte patterns below are the same for ARM64BE.
+  constexpr std::array<u8, 4> landing_pad = is_x86_64<E>
+      ? std::array<u8, 4>{0xf3, 0x0f, 0x1e, 0xfa}  // endbr64
+      : std::array<u8, 4>{0x5f, 0x24, 0x03, 0xd5}; // bti c
+  constexpr std::array<u8, 4> nop = is_x86_64<E>
+      ? std::array<u8, 4>{0x0f, 0x1f, 0x40, 0x00}  // nopl 0x0(%rax)
+      : std::array<u8, 4>{0x1f, 0x20, 0x03, 0xd5}; // nop
+
+  // Rewrite all landing pad instructions referred to by function symbols
+  // with NOPs. We handle only global symbols because the compiler doesn't
+  // emit a landing pad for a file-scoped function in the first place if its
+  // address is not taken within the file.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (Symbol<E> *sym : file->get_global_syms()) {
+      if (sym->file == file && sym->esym().st_type == STT_FUNC) {
+        if (InputSection<E> *isec = sym->get_input_section();
+            isec && (isec->shdr().sh_flags & SHF_EXECINSTR)) {
+          if (OutputSection<E> *osec = isec->output_section) {
+            u8 *buf = ctx.buf + osec->shdr.sh_offset + isec->offset + sym->value;
+            if (memcmp(buf, landing_pad.data(), 4) == 0)
+              memcpy(buf, nop.data(), 4);
+          }
+        }
+      }
+    }
+  });
+
+  auto write_back = [&](InputSection<E> *isec, i64 offset) {
+    // If isec has a landing pad at a given offset, copy that instruction to
+    // the output buffer, possibly overwriting a nop written in the above
+    // loop.
+    i64 size = 0;
+    if (isec)
+      size = isec->get_contents().size();
+
+    if (isec && isec->output_section &&
+        (isec->shdr().sh_flags & SHF_EXECINSTR) &&
+        0 <= offset && offset <= size - 4 &&
+        memcmp(isec->contents + offset, landing_pad.data(), 4) == 0)
+      memcpy(ctx.buf + isec->output_section->shdr.sh_offset + isec->offset + offset,
+             landing_pad.data(), 4);
+  };
+
+  // Write back landing pad instructions if they are referred to by
+  // address-taking relocations.
+  tbb::parallel_for_each(ctx.objs, [&](ObjectFile<E> *file) {
+    for (InputSection<E> *isec : file->sections) {
+      if (isec && isec->is_alive() && (isec->shdr().sh_flags & SHF_ALLOC)) {
+        for (const ElfRel<E> &rel : isec->get_rels(ctx)) {
+          if (!is_func_call_rel(rel)) {
+            Symbol<E> *sym = file->symbols[rel.r_sym];
+            if (sym->esym().st_type == STT_SECTION)
+              write_back(sym->get_input_section(), rel.r_addend);
+            else
+              write_back(sym->get_input_section(), sym->value);
+          }
+        }
+      }
+    }
+  });
+
+  // We record addresses of some symbols in the ELF header, .dynamic or in
+  // .dynsym. We need to retain landing pads for such symbols.
+  auto keep = [&](Symbol<E> *sym) {
+    if (sym)
+      write_back(sym->get_input_section(), sym->value);
+  };
+
+  keep(ctx.arg.entry);
+  keep(ctx.arg.init);
+  keep(ctx.arg.fini);
+
+  if (ctx.dynsym)
+    for (Symbol<E> *sym : ctx.dynsym->symbols)
+      if (sym && sym->is_exported)
+        keep(sym);
+
+  // A range extension thunk reaches its target with an indirect branch, so
+  // a thunked function still needs its landing pad even if it's only ever
+  // called directly. thunk->symbols has been reduced to the symbols that
+  // actually need a thunk by remove_redundant_thunks().
+  if constexpr (needs_thunk<E>)
+    for (Chunk<E> *chunk : ctx.chunks)
+      if (OutputSection<E> *osec = chunk->to_osec())
+        for (std::unique_ptr<Thunk<E>> &thunk : osec->thunks)
+          for (Symbol<E> *sym : thunk->symbols)
+            keep(sym);
+}
+
 using E = MOLD_TARGET;
 
 template int redo_main<E>(std::string_view, int, char **);
@@ -3893,5 +4008,9 @@ template void write_gnu_debuglink(Context<E> &);
 template void write_separate_debug_file(Context<E> &);
 template void write_dependency_file(Context<E> &);
 template void show_stats(Context<E> &);
+
+#if MOLD_X86_64 || MOLD_ARM64LE || MOLD_ARM64BE
+template void rewrite_endbr(Context<E> &);
+#endif
 
 } // namespace mold

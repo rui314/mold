@@ -2414,12 +2414,7 @@ template <typename E> void write_gnu_debuglink(Context<E> &);
 template <typename E> void write_separate_debug_file(Context<E> &ctx);
 template <typename E> void write_dependency_file(Context<E> &);
 template <typename E> void show_stats(Context<E> &);
-
-//
-// arch-x86-64.cc
-//
-
-void rewrite_endbr(Context<X86_64> &ctx);
+template <typename E> void rewrite_endbr(Context<E> &);
 
 //
 // arch-arm32.cc
