@@ -400,12 +400,8 @@ pub mod symtab {
                 );
                 match part.writer {
                     Writer::Chunk(id) => chunks::populate_symtab(ctx, id, &mut block),
-                    Writer::Obj(id) => {
-                        ctx.objs[id.index()].populate_symtab(ctx, id, &mut block)
-                    }
-                    Writer::Dso(id) => {
-                        ctx.dsos[id.index()].populate_symtab(ctx, id, &mut block)
-                    }
+                    Writer::Obj(id) => ctx.objs[id.index()].populate_symtab(ctx, id, &mut block),
+                    Writer::Dso(id) => ctx.dsos[id.index()].populate_symtab(ctx, id, &mut block),
                 }
             });
     }

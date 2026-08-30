@@ -867,9 +867,7 @@ pub fn rewrite_endbr(ctx: &Context<X86_64>, buf: &mut [u8]) {
     for file in &ctx.objs {
         for &id in file.base.global_symbols() {
             let sym = &ctx.symbols[id];
-            if sym.file() != Some(FileId::Obj(file.id()))
-                || sym.st_type() != STT_FUNC
-            {
+            if sym.file() != Some(FileId::Obj(file.id())) || sym.st_type() != STT_FUNC {
                 continue;
             }
             let Some(isec) = sym.input_section_ref() else {

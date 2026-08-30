@@ -277,10 +277,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
 
     fn eflags(ctx: &Context<Self>) -> u32 {
         let internal = ctx.internal_obj;
-        let mut objs = ctx
-            .objs
-            .iter()
-            .filter(|file| Some(file.id()) != internal);
+        let mut objs = ctx.objs.iter().filter(|file| Some(file.id()) != internal);
         let Some(first) = objs.next() else { return 0 };
         let mut ret = first.base.e_flags;
         for file in objs {

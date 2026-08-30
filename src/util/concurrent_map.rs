@@ -20,7 +20,7 @@
 use rayon::prelude::*;
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
-use std::ptr;
+use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicPtr, Ordering};
 
 pub const NUM_SHARDS: usize = 64;
@@ -45,6 +45,22 @@ struct Entry<T> {
     keylen: UnsafeCell<u32>,
     value: UnsafeCell<MaybeUninit<T>>,
 }
+
+/// A stable reference to an occupied map entry.
+pub(crate) struct MapEntryRef<T>(NonNull<Entry<T>>);
+
+impl<T> Clone for MapEntryRef<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for MapEntryRef<T> {}
+
+// SAFETY: map entries are shared between threads only through atomics and
+// values whose synchronization is provided by T.
+unsafe impl<T: Send + Sync> Send for MapEntryRef<T> {}
+unsafe impl<T: Send + Sync> Sync for MapEntryRef<T> {}
 
 /// The index of a bucket, which identifies an entry for the life of
 /// the map.
@@ -123,7 +139,7 @@ impl<T> ConcurrentMap<T> {
     /// The number of entries, counted.
     pub fn len(&self) -> usize {
         (0..self.nbuckets)
-            .filter(|&idx| self.key_at(idx).is_some())
+            .filter(|&idx| self.is_occupied(idx))
             .count()
     }
 
@@ -135,6 +151,15 @@ impl<T> ConcurrentMap<T> {
         debug_assert!(idx < self.nbuckets);
         // SAFETY: idx is within the allocation.
         unsafe { &*self.entries.add(idx) }
+    }
+
+    fn entry_ref(&self, id: EntryId) -> MapEntryRef<T> {
+        MapEntryRef(NonNull::from(self.entry(id.0 as usize)))
+    }
+
+    fn is_occupied(&self, idx: usize) -> bool {
+        let key = self.entry(idx).key.load(Ordering::Acquire);
+        !key.is_null() && key != CLAIMED
     }
 
     /// The published key of a bucket, if any.
@@ -330,18 +355,20 @@ impl<T> ConcurrentMap<T> {
         let shard_size = self.nbuckets / NUM_SHARDS;
         let begin = shard * shard_size;
         let mut end = begin + shard_size;
-        let occupied = |idx: usize| self.key_at(idx).is_some();
+        let occupied = |idx: usize| self.is_occupied(idx);
+
+        let size = (begin..end).filter(|&idx| occupied(idx)).count();
+        let mut vec: Vec<EntryId> = Vec::with_capacity(size);
 
         // Since the shard is circular, we need to handle the last entries
         // as if they were next to the first entries.
-        let mut vec: Vec<EntryId> = Vec::new();
         while begin < end && occupied(end - 1) {
             end -= 1;
             vec.push(EntryId(end as u32));
         }
 
         let sort_run = |run: &mut [EntryId]| {
-            run.sort_by(|&a, &b| {
+            run.sort_unstable_by(|&a, &b| {
                 let (ka, kb) = (self.key(a), self.key(b));
                 ka.len().cmp(&kb.len()).then_with(|| ka.cmp(kb))
             });
@@ -378,6 +405,25 @@ impl<T> ConcurrentMap<T> {
             .collect()
     }
 
+    /// Returns all map entries as stable references in deterministic order.
+    pub(crate) fn sorted_entry_refs_all(&self) -> Vec<MapEntryRef<T>>
+    where
+        T: Send + Sync,
+    {
+        (0..NUM_SHARDS)
+            .into_par_iter()
+            .map(|shard| {
+                self.sorted_entries(shard)
+                    .into_iter()
+                    .map(|id| self.entry_ref(id))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
     /// Freezes the map for exclusive, mutable access to its values.
     pub fn freeze(self) -> FrozenMap<T> {
         FrozenMap { map: self }
@@ -391,7 +437,7 @@ impl<T> Drop for ConcurrentMap<T> {
         }
         if std::mem::needs_drop::<T>() {
             for idx in 0..self.nbuckets {
-                if self.key_at(idx).is_some() {
+                if self.is_occupied(idx) {
                     // SAFETY: the value of a published entry is initialized
                     // and dropped exactly once, here.
                     unsafe { (*self.entry(idx).value.get()).assume_init_drop() };
@@ -463,6 +509,39 @@ impl<T> FrozenMap<T> {
 
     pub fn is_empty(&self) -> bool {
         self.map.is_empty()
+    }
+}
+
+impl<T> MapEntryRef<T> {
+    fn entry(self, _owner: &FrozenMap<T>) -> &Entry<T> {
+        // SAFETY: the reference was made from an occupied bucket in this map,
+        // and the owner keeps the map's mmap allocation live.
+        unsafe { self.0.as_ref() }
+    }
+
+    pub(crate) fn value(self, owner: &FrozenMap<T>) -> &T {
+        // SAFETY: sorted entry references name published entries, whose values
+        // were initialized before publication.
+        unsafe { (*self.entry(owner).value.get()).assume_init_ref() }
+    }
+
+    pub(crate) fn value_mut_ptr(self, owner: &FrozenMap<T>) -> *mut T {
+        self.entry(owner).value.get().cast()
+    }
+
+    pub(crate) fn key(self, owner: &FrozenMap<T>) -> &'static [u8] {
+        let ent = self.entry(owner);
+        let key = ent.key.load(Ordering::Acquire);
+        debug_assert!(!key.is_null() && key != CLAIMED);
+        // SAFETY: this is a published key whose length was written before the
+        // key pointer, and map keys remain live for the complete link.
+        unsafe { std::slice::from_raw_parts(key, *ent.keylen.get() as usize) }
+    }
+
+    pub(crate) fn key_len(self, owner: &FrozenMap<T>) -> usize {
+        // SAFETY: the entry is published, so its key length is initialized and
+        // immutable.
+        unsafe { *self.entry(owner).keylen.get() as usize }
     }
 }
 

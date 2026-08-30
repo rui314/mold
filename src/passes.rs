@@ -1049,15 +1049,11 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
                 rest = tail;
                 offset += count;
             }
-            objs.par_iter_mut().zip(slices).for_each(
-                |(file, (base_id, slots))| {
+            objs.par_iter_mut()
+                .zip(slices)
+                .for_each(|(file, (base_id, slots))| {
                     let id = file.id();
-                    file.reattach_section_symbols::<E>(
-                        diag,
-                        id,
-                        &editor,
-                        merged_sections,
-                    );
+                    file.reattach_section_symbols::<E>(diag, id, &editor, merged_sections);
                     file.reattach_fragment_relocations::<E>(
                         diag,
                         id,
@@ -1065,8 +1061,7 @@ pub fn create_merged_sections<E: Arch>(ctx: &mut Context<E>) {
                         base_id,
                         slots,
                     );
-                },
-            );
+                });
         });
     }
 }
@@ -1802,9 +1797,7 @@ pub fn print_dependencies<E: Arch>(ctx: &Context<E>) {
         for i in 0..file.base.elf_syms.len() {
             let esym = &file.base.elf_syms.at_in::<E>(i);
             let sym = &ctx.symbols[file.base.symbols[i]];
-            if esym.is_undef()
-                && sym.file().is_some()
-                && sym.file() != Some(FileId::Dso(file.id()))
+            if esym.is_undef() && sym.file().is_some() && sym.file() != Some(FileId::Dso(file.id()))
             {
                 println(file, sym, esym);
             }
@@ -2367,7 +2360,11 @@ pub fn shuffle_sections<E: Arch>(ctx: &mut Context<E>) {
 }
 
 pub fn add_dynamic_strings<E: Arch>(ctx: &mut Context<E>) {
-    let dso_ids: Vec<_> = ctx.dsos.iter().map(crate::input_files::SharedFile::id).collect();
+    let dso_ids: Vec<_> = ctx
+        .dsos
+        .iter()
+        .map(crate::input_files::SharedFile::id)
+        .collect();
     for id in dso_ids {
         let audit = ctx.dsos[id.index()].dt_audit::<E>(&ctx.diag);
         if !audit.is_empty() {
@@ -3009,8 +3006,8 @@ pub fn parse_symbol_version<E: Arch>(ctx: &mut Context<E>) {
             continue;
         }
         let file_id = FileId::Obj(obj_id);
-        for i in ctx.objs[obj_id.index()].base.first_global
-            ..ctx.objs[obj_id.index()].base.elf_syms.len()
+        for i in
+            ctx.objs[obj_id.index()].base.first_global..ctx.objs[obj_id.index()].base.elf_syms.len()
         {
             let file = &ctx.objs[obj_id.index()];
             if !file.has_symver[i - file.base.first_global] {
