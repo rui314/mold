@@ -1,7 +1,11 @@
 //! Symbol name demangling for diagnostics.
 
+// demangle.cc
+
 /// Demangles an Itanium C++ ABI symbol name, if `name` is one.
 pub fn demangle_cpp(name: &[u8]) -> Option<String> {
+    // TODO(cwasser): Actually demangle Symbols on Windows using e.g.
+    // `UnDecorateSymbolName` from Dbghelp, maybe even Itanium symbols?
     if !name.starts_with(b"_Z") {
         return None;
     }

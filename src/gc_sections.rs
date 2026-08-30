@@ -1,6 +1,7 @@
-//! A mark-sweep garbage collector for `--gc-sections`: sections are
-//! vertices, relocations are edges, and anything reachable from a root
-//! section is kept.
+// gc-sections.cc
+//! This file implements a mark-sweep garbage collector for -gc-sections.
+//! In this algorithm, vertices are sections and edges are relocations.
+//! Any section that is reachable from a root section is considered alive.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -33,9 +34,11 @@ fn should_keep<E: Arch>(file: &ObjectFile, isec: &InputSection) -> bool {
         || name.starts_with(b".fini")
 }
 
-/// Sections with C identifier names can be referenced through the
-/// synthesized `__start_<name>`/`__stop_<name>` symbols, so a reference
-/// to such a symbol keeps every section of that name alive.
+/// Sections whose names are valid C identifiers can be referenced via
+/// __start_<name>/__stop_<name> symbols, which the linker synthesizes.
+/// Such sections must be kept alive only if such a marker symbol is
+/// referenced from a live section. This map lets us find all sections
+/// of a given name when we encounter such a reference during marking.
 type StartStopMap<'a> = HashMap<&'static [u8], Vec<&'a InputSection>>;
 
 fn build_start_stop_map<'a, E: Arch>(ctx: &'a Context<E>) -> StartStopMap<'a> {
@@ -86,8 +89,12 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
             let file_id = FileId::Obj(file.id());
             let mut roots = Vec::new();
 
-            // Sections not subject to garbage collection. Only SHF_ALLOC
-            // sections are discarded; use `strip` for the rest.
+            // Add sections that are not subject to garbage collection.
+            //
+            // --gc-sections discards only SHF_ALLOC sections. If you want to
+            // reduce the amount of non-memory-mapped segments, you should
+            // use `strip` command, compile without debug info or use
+            // --strip-all linker option.
             for isec in file.input_sections() {
                 if !isec.is_alive() {
                     continue;
@@ -101,7 +108,7 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
                 }
             }
 
-            // Sections containing GC roots or exported symbols.
+            // Add sections containing gc root or exported symbols
             for &id in &file.base.symbols {
                 let sym = &ctx.symbols[id];
                 if sym.file() == Some(file_id) && (sym.gc_root() || sym.is_exported()) {
@@ -109,7 +116,9 @@ fn collect_root_set<'a, E: Arch>(ctx: &'a Context<E>) -> Vec<&'a InputSection> {
                 }
             }
 
-            // CIEs are always kept along with everything they reference.
+            // .eh_frame consists of variable-length records called CIE and FDE
+            // records, and they are a unit of inclusion or exclusion.
+            // We just keep all CIEs and everything that are referenced by them.
             for cie in &file.cies {
                 for rel in cie.rels::<E>(file) {
                     enqueue_symbol(file.base.symbols[rel.r_sym as usize], &mut roots);
@@ -137,8 +146,10 @@ fn visit_section<'scope, E: Arch>(
     let file = &ctx.objs[isec.file.index()];
     debug_assert!(isec.is_visited());
 
-    // Mark a section alive. For better performance, we don't add work
-    // to the pool too often.
+    // Mark a section alive. For better performacne, we don't call
+    // `feeder.add` too often.
+    //
+    // The Rust port likewise avoids adding work to the pool too often.
     let mut mark = |target: &'scope InputSection| {
         if mark_section(target) {
             if depth < 3 {
@@ -149,7 +160,9 @@ fn visit_section<'scope, E: Arch>(
         }
     };
 
-    // Keep the .eh_frame records describing this section's functions.
+    // If this is a text section, .eh_frame may contain records
+    // describing how to handle exceptions for that function.
+    // We want to keep associated .eh_frame records.
     for fde in isec.fdes(file) {
         for rel in fde.rels::<E>(file).iter().skip(1) {
             if let Some(target) =
@@ -166,6 +179,7 @@ fn visit_section<'scope, E: Arch>(
             ctx.dsos[dso.index()].base.set_reachable(true);
             continue;
         }
+        // Symbol can refer to either a section fragment or an input section.
         if let Some(frag) = sym.fragment() {
             ctx.fragment(frag).set_alive();
             continue;
@@ -175,12 +189,18 @@ fn visit_section<'scope, E: Arch>(
         }
 
         // A reference to __start_<name> or __stop_<name> keeps every
-        // section named <name> alive.
+        // section named <name> alive, mirroring how those symbols are
+        // defined. A single such reference can keep an enormous number of
+        // sections alive, so we spread the fanout over threads instead
+        // of marking the sections one by one.
         if let Some(name) = start_stop_name(sym.name()) {
             if let Some(sections) = map.get(name) {
                 // Mark and visit the sections with a nested parallel loop.
-                // As in mark() below, a section added to the work pool has
-                // already been marked, so a task must visit it unconditionally.
+                // As in mark() below, a section added to a feeder has
+                // already been marked, so a feeder's loop body must visit
+                // it unconditionally.
+                //
+                // Rayon uses tasks rather than TBB feeder items here.
                 sections.par_chunks(GC_BATCH).for_each(|sections| {
                     let mut found = Vec::with_capacity(sections.len());
                     for &target in sections {
@@ -227,7 +247,7 @@ fn visit_batch<'scope, E: Arch>(
     }
 }
 
-// Mark all reachable sections.
+// Mark all reachable sections
 fn mark<'a, E: Arch>(ctx: &'a Context<E>, roots: Vec<&'a InputSection>, map: &'a StartStopMap<'a>) {
     let _t = ctx.timer("mark");
 
@@ -238,6 +258,7 @@ fn mark<'a, E: Arch>(ctx: &'a Context<E>, roots: Vec<&'a InputSection>, map: &'a
     });
 }
 
+// Remove unreachable sections
 fn sweep<E: Arch>(ctx: &Context<E>) {
     let _t = ctx.timer("sweep");
     let removed: Vec<Vec<SectionRef>> = ctx

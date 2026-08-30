@@ -1,3 +1,28 @@
+//! This file defines integral types for file input/output. We need to use
+//! these types instead of the plain integers (such as uint32_t or int32_t)
+//! when reading from/writing to an mmap'ed file area for the following
+//! reasons:
+//!
+//! 1. mold is always a cross linker and should not depend on what host it
+//!    is running on. For example, users should be able to run mold on a
+//!    little-endian x86 machine to create a big-endian s390x binary.
+//!
+//! 2. Even though data members in all ELF data strucutres are naturally
+//!    aligned, they are not guaranteed to be aligned on memory because of
+//!    archive files. Archive files (.a files) align each file only to a
+//!    2 byte boundary, so anything larger than 2 bytes may be misaligned
+//!    in an mmap'ed memory. Misaligned access is an undefined behavior in
+//!    C/C++, so we shouldn't cast an arbitrary pointer to a uint32_t, for
+//!    example, to read a 32 bit value.
+//!
+//! The data types defined in this file are independent of the host byte
+//! order and are designed to avoid unaligned access.
+//!
+//! Note that in C/C++, memcpy is a portable and efficient way to access
+//! unaligned data, as it is typically treated as an intrinsic. Compilers
+//! can easily optimize memcpy calls in this file into a single load or
+//! store instruction.
+//!
 //! ELF file format definitions.
 //!
 //! Records are decoded into the host-native structs defined here as they
@@ -21,6 +46,7 @@ pub use relnames::*;
 
 use crate::arch::Arch;
 
+// ELF types
 /// The on-disk layout of an ELF file: word size, byte order and
 /// relocation record format. Targets implement this through [`Arch`], and
 /// a few plain layouts exist for peeking into files before the target is
@@ -632,12 +658,18 @@ impl Record for ElfSym {
 
 const _: () = assert!(std::mem::size_of::<ElfSym>() == 24);
 
-/// A relocation record.
+/// Depending on the target, ElfRel may or may not contain r_addend member.
+/// The relocation record containing r_addend is called RELA, and that
+/// without r_addend is called REL.
 ///
-/// Targets use either REL or RELA relocation tables; the former store the
-/// addend in the relocated location rather than in the record. To keep the
-/// distinction out of most of the linker, `r_addend` is always present and
-/// simply zero when read from a REL table.
+/// If REL, relocation addends are stored as parts of section contents.
+/// That means we add a computed value to an existing value when writing a
+/// relocated value if REL. If RELA, we just overwrite an existing value
+/// with a newly computed value.
+///
+/// We don't want to have too many `if (REL)`s and `if (RELA)`s in our
+/// codebase, so ElfRel always takes r_addend as a constructor argument.
+/// If it's REL, the argument will simply be ignored.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ElfRel {
@@ -662,7 +694,8 @@ impl ElfRel {
         }
     }
 
-    /// Whether the relocation is one of the target's function-call relocations.
+    /// Returns true if a given relocation is of type used for direct
+    /// function call.
     #[inline(always)]
     pub fn is_func_call<E: Arch>(&self) -> bool {
         E::R_FUNCALL.contains(&self.r_type)
@@ -1998,7 +2031,12 @@ impl Record for ElfVerdaux {
     }
 }
 
-/// The header of an SFrame section (version 3).
+/// SFrame is a simple unwind information format used as a lightweight
+/// alternative to .eh_frame. A .sframe section consists of a header, an
+/// array of Function Descriptor Entries (FDEs) sorted by PC, and a blob
+/// of Frame Row Entries (FREs). mold understands SFrame Version 3.
+///
+/// https://sourceware.org/binutils/docs/sframe-spec.html
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SFrameHeader {
     pub magic: u16,
@@ -2065,7 +2103,9 @@ impl Record for SFrameHeader {
     }
 }
 
-/// The index part of an SFrame function descriptor entry.
+/// The index part of an SFrame Version 3 FDE. The func_start_offset field
+/// is PC-relative (relative to its own address) when the section flag
+/// SFRAME_F_FDE_FUNC_START_PCREL is set, which is how mold always emits it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SFrameFdeIdx {
     pub func_start_offset: i64,

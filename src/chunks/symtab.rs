@@ -16,8 +16,10 @@ use crate::symbol::{AddrFlags, Symbol, SymbolId};
 use crate::util::write_cstr;
 use crate::{error, fatal};
 
-/// `.strtab` holds the names of `.symtab` symbols. It isn't needed at
-/// runtime; names the loader needs are in `.dynstr`.
+// .strtab is referenced by .strtab and contains symbol names. Note that
+// .strtab is not needed at runtime; one can remove the section from an
+// ELF file without breaking it. Strings that runtime accesses are stored
+// in .dynstr.
 #[derive(Debug)]
 pub struct StrtabSection {
     pub hdr: ChunkHeader,
@@ -40,7 +42,7 @@ impl Default for StrtabSection {
 pub mod strtab {
     use super::*;
 
-    /// Offsets in `.strtab` of the ARM32 mapping symbol names.
+    // Offsets in .strtab for ARM32 mapping symbols
     pub const ARM: u32 = 1;
     pub const THUMB: u32 = 4;
     pub const DATA: u32 = 7;
@@ -48,8 +50,10 @@ pub mod strtab {
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         let mut offset = 1u64;
 
-        // ARM32 uses $a, $t and $d mapping symbols to mark ARM code, Thumb
-        // code and data; they only help disassemblers.
+        // ARM32 uses $a, $t and $t mapping symbols to mark the beginning of
+        // ARM, Thumb and data in text, respectively. These symbols don't
+        // affect correctness of the program but helps disassembler to
+        // disassemble machine code appropriately.
         if E::FAMILY == Family::Arm32 && !ctx.args.strip_all {
             offset += b"$a\0$t\0$d\0".len() as u64;
         }
@@ -78,7 +82,9 @@ pub mod strtab {
     }
 }
 
-/// `.shstrtab` holds section names.
+// .shstrtab contains section names, such as ".text" or ".data". Just like
+// .strtab, .shstrtab is not needed at runtime. One can remove .shstrtab
+// and section table from an executable without breaking it.
 #[derive(Debug)]
 pub struct ShstrtabSection {
     pub hdr: ChunkHeader,
@@ -133,7 +139,7 @@ pub mod shstrtab {
     }
 }
 
-/// `.dynstr` holds the strings the dynamic linker uses.
+// .dynstr contains strings that the runtime uses.
 #[derive(Debug)]
 pub struct DynstrSection {
     pub hdr: ChunkHeader,
@@ -187,7 +193,9 @@ pub mod dynstr {
     }
 }
 
-/// `.symtab` holds non-dynamic symbols, mainly for debugging.
+// .symtab contains non-dynamic symbols. The section is not needed at
+// runtime and can be stripped from an ELF file without affecting the
+// behavior of the program. Symbols in .symtab are mainly for debugging.
 #[derive(Debug)]
 pub struct SymtabSection {
     pub hdr: ChunkHeader,
@@ -202,8 +210,15 @@ impl SymtabSection {
     }
 }
 
-/// `.symtab_shndx` holds section indices too large for the 16-bit
-/// `st_shndx` field. Most files don't need it.
+// .symtab_shndx is a parallel table for .symtab to contain section
+// indices for symbols.
+//
+// Symbol table entry contains a field for section index, but that's only
+// 16 bit in size, so it cannot refer to a section whose section index is
+// greater than 65535. We use .symtab_shndx for ELF files containing a lot
+// of sections.
+//
+// Use of this section is exceptional. Most ELF files don't contain one.
 #[derive(Debug)]
 pub struct SymtabShndxSection {
     pub hdr: ChunkHeader,
@@ -246,11 +261,13 @@ pub mod symtab {
             nsyms += hdr.num_local_symtab;
         }
 
-        // File local symbols, then global symbols
+        // File local symbols
         for file in &mut ctx.objs {
             file.base.local_symtab_idx = nsyms;
             nsyms += file.base.num_local_symtab;
         }
+
+        // File global symbols
         for file in &mut ctx.objs {
             file.base.global_symtab_idx = nsyms;
             nsyms += file.base.num_global_symtab;
@@ -282,7 +299,7 @@ pub mod symtab {
             xindex.fill(0);
         }
 
-        // Section symbols
+        // Create section symbols
         for &id in &ctx.chunks {
             let hdr = ctx.chunk_header(id);
             if hdr.shndx == 0 {
@@ -321,6 +338,8 @@ pub mod symtab {
             strtab: (u64, u64),
         }
         let mut parts: Vec<Part> = Vec::new();
+
+        // Populate linker-synthesized symbols
         for &id in &ctx.chunks {
             let hdr = ctx.chunk_header(id);
             if hdr.num_local_symtab != 0 {
@@ -333,6 +352,7 @@ pub mod symtab {
                 });
             }
         }
+        // Copy symbols from input files
         for file in &ctx.objs {
             let base = &file.base;
             let locals = (base.local_symtab_idx, base.num_local_symtab);
@@ -426,8 +446,9 @@ pub mod symtab {
     }
 }
 
-/// RISC-V and LoongArch relaxation may have removed instructions from a
-/// function, so its size must be recomputed.
+// RISC-V and LoongArch have code-shrinking linker relaxation. If we
+// have removed instructions from a function, we need to update its
+// size as well.
 fn symbol_size<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> u64 {
     let esym = &sym.esym(ctx);
     if (E::IS_RISCV || E::IS_LOONGARCH) && esym.st_size != 0 {
@@ -496,6 +517,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     let isec = sym.input_section_ref();
 
     if sym.has_copyrel() {
+        // Symbol in .copyrel
         shndx = Some(if sym.is_copyrel_readonly() {
             ctx.copyrel_relro.hdr.shndx
         } else {
@@ -503,6 +525,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         });
         esym.st_value = sym.addr(ctx);
     } else if file.is_dso() || sym.is_undef() {
+        // Undefined symbol in a DSO
         esym.st_shndx = SHN_UNDEF as u16;
         esym.st_size = 0;
         if sym.is_canonical() {
@@ -517,21 +540,23 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         esym.st_value = sym.addr(ctx);
     } else if isec.is_none() {
         if sym.is_common() {
-            // Common symbols are converted to .bss unless we're creating
-            // a relocatable output. st_value of a common symbol is its
-            // alignment.
+            // Common symbol. Common symbols are converted to .bss unless we are
+            // creating a relocatable output, in which case they are passed
+            // through as they are. st_value of a common symbol is its alignment.
             debug_assert!(ctx.args.relocatable);
             esym.st_shndx = SHN_COMMON as u16;
             esym.st_value = sym.esym(ctx).st_value;
         } else {
+            // Absolute symbol
             esym.st_shndx = SHN_ABS as u16;
             esym.st_value = sym.addr(ctx);
         }
     } else if sym.ty() == STT_TLS {
+        // TLS symbol
         shndx = Some(st_shndx_of(sym));
         esym.st_value = sym.addr(ctx) - ctx.tls_begin;
     } else if sym.is_pde_ifunc(ctx) && sym.has_plt(&ctx.symbols) {
-        // An IFUNC in a PDE uses two GOT slots and its PLT address.
+        // IFUNC symbol in PDE that uses two GOT slots
         shndx = Some(st_shndx_of(sym));
         esym.set_type(STT_FUNC);
         esym.set_visibility(sym.visibility());
@@ -539,7 +564,7 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     } else if let Some(isec) = isec.filter(|isec| {
         isec.sh_flags & SHF_MERGE as u64 != 0 && isec.sh_flags & SHF_ALLOC as u64 == 0
     }) {
-        // A symbol in a mergeable non-alloc section, such as .debug_str
+        // Symbol in a mergeable non-SHF_ALLOC section, such as .debug_str
         let file = &ctx.objs[isec.file.index()];
         let m = file
             .mergeable_section(file.shndx_at_in::<E>(sym.sym_idx as usize))
@@ -551,12 +576,17 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
         esym.st_value =
             (msec.hdr.shdr.sh_addr + msec.fragments.get(frag).offset()).wrapping_add(addend as u64);
     } else {
+        // Symbol in a regular section
         shndx = Some(st_shndx_of(sym));
         esym.set_visibility(sym.visibility());
         esym.st_value = sym.addr_with(ctx, AddrFlags::NO_PLT);
     }
 
-    // st_shndx is 16 bits; a large index goes to .symtab_shndx.
+    // Symbol's st_shndx is only 16 bits wide, so we can't store a large
+    // section index there. If the total number of sections is equal to
+    // or greater than SHN_LORESERVE (= 65280), the real index is stored
+    // to a SHT_SYMTAB_SHNDX section which contains a parallel array of
+    // the symbol table.
     let mut xindex = 0;
     if let Some(shndx) = shndx {
         if shndx < SHN_LORESERVE {
@@ -569,7 +599,8 @@ pub fn to_output_esym<E: Arch>(ctx: &Context<E>, sym: &Symbol, st_name: u32) -> 
     (esym, xindex)
 }
 
-/// `.dynsym` holds the symbols used for dynamic linking.
+// .dynsym contains symbols for dynamic linking. This is similar to
+// .symtab, but .dynsym contains data that the runtime uses.
 #[derive(Debug)]
 pub struct DynsymSection {
     pub hdr: ChunkHeader,
@@ -635,7 +666,7 @@ pub mod dynsym {
     }
 }
 
-/// The hash function for `.hash`.
+// The hash function for .hash.
 pub fn elf_hash(name: &[u8]) -> u32 {
     let mut h: u32 = 0;
     for &c in name {
@@ -650,6 +681,7 @@ pub fn elf_hash(name: &[u8]) -> u32 {
 }
 
 /// The hash function for `.gnu.hash`.
+// The hash function for .gnu.hash.
 pub fn djb_hash(name: &[u8]) -> u32 {
     let mut h: u32 = 5381;
     for &c in name {
@@ -658,7 +690,15 @@ pub fn djb_hash(name: &[u8]) -> u32 {
     h
 }
 
-/// `.hash` is the classic on-disk hash table for `.dynsym`.
+// .hash contains an on-disk hash table for .dynsym so that the runtime
+// can look up a symbol name quickly without scannin all entries in
+// .dynsym.
+//
+// Quickly identifying whether or not a .dynsym contains a given symbol is
+// especially important for ELF because of the dynamic symbol lookup rule
+// for ELF. In ELF, each dynamic symbol is not searched from a specific
+// library but from all the ELF files loaded to memory. Therefore,
+// minimizing the cost of each dynamic symbol lookup is important.
 #[derive(Debug)]
 pub struct HashSection {
     pub hdr: ChunkHeader,
@@ -667,8 +707,9 @@ pub struct HashSection {
 impl HashSection {
     pub fn new<E: Arch>() -> HashSection {
         let mut hdr = ChunkHeader::new(".hash", SHT_HASH, SHF_ALLOC as u64);
-        // s390x uses 64-bit entries; it looks like a spec bug but we
-        // follow suit for compatibility.
+        // Even though u32 should suffice as an etnry size for all targets,
+        // s390x uses u64. It looks like a spec bug, but we need to follow
+        // suit for the sake of binary compatibility.
         let entry = hash::entry_size::<E>() as u64;
         hdr.shdr.sh_entsize = entry;
         hdr.shdr.sh_addralign = entry;
@@ -733,7 +774,9 @@ pub mod hash {
     }
 }
 
-/// `.gnu.hash` adds a bloom filter to speed up negative lookups.
+// .gnu.hash is an alternative format for .hash. It contains not only an
+// on-disk hash table but also contains a bloom filter to quickly identify
+// whether or not a given symbol name exists in .dynsym.
 #[derive(Debug)]
 pub struct GnuHashSection {
     pub hdr: ChunkHeader,
@@ -768,14 +811,14 @@ pub mod gnu_hash {
         }
         let word = E::WORD_SIZE as u64;
         let gh = ctx.gnu_hash.as_mut().unwrap();
-        // 12 bits per symbol in the bloom filter.
+        // We allocate 12 bits for each symbol in the bloom filter.
         gh.num_bloom = ((gh.num_exported as u64 * 12) / (word * 8))
             .max(1)
             .next_power_of_two() as u32;
         gh.hdr.shdr.sh_size = GnuHashSection::HEADER_SIZE
-            + gh.num_bloom as u64 * word
-            + gh.num_buckets as u64 * 4
-            + gh.num_exported as u64 * 4;
+            + gh.num_bloom as u64 * word // Bloom filter
+            + gh.num_buckets as u64 * 4 // Hash buckets
+            + gh.num_exported as u64 * 4; // Hash values
         gh.hdr.shdr.sh_link = ctx.dynsym.hdr.shndx;
     }
 
@@ -799,7 +842,7 @@ pub mod gnu_hash {
             return;
         }
 
-        // Bloom filter
+        // Write a bloom filter
         let bloom_off = GnuHashSection::HEADER_SIZE as usize;
         let word_bits = word * 8;
         let mut indices = Vec::with_capacity(syms.len());
@@ -817,7 +860,7 @@ pub mod gnu_hash {
             }
         }
 
-        // Hash buckets
+        // Write hash bucket indices
         let buckets_off = bloom_off + gh.num_bloom as usize * word;
         for (i, &bucket) in indices.iter().enumerate().rev() {
             E::Endian::write_u32(
@@ -826,9 +869,11 @@ pub mod gnu_hash {
             );
         }
 
-        // Hash values; the last entry of a chain has its LSB set.
+        // Write a hash table
         let table_off = buckets_off + gh.num_buckets as usize * 4;
         for (i, &id) in syms.iter().enumerate() {
+            // The last entry in a chain must be terminated with an entry with
+            // least-significant bit 1.
             let h = ctx.symbols[id].aux(&ctx.symbols).unwrap().djb_hash;
             let last = i + 1 == syms.len() || indices[i] != indices[i + 1];
             E::Endian::write_u32(
@@ -846,7 +891,7 @@ pub fn require_dynsym<E: Arch>(ctx: &Context<E>) {
     }
 }
 
-/// Whether the symbol belongs to the output rather than a DSO.
+// True if the symbol's address is in the output file.
 pub fn is_defined_in_output(sym: &Symbol) -> bool {
     matches!(sym.file(), Some(FileId::Obj(_)))
 }

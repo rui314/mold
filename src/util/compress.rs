@@ -1,11 +1,20 @@
-//! Multi-threaded zlib and zstd compression for `--compress-debug-sections`.
+//! This file implements a multi-threaded zlib and zstd compression
+//! routine.
 //!
-//! zlib-compressed data can be merged by concatenation as long as each
-//! piece ends with a sync flush, so the input is split into shards,
-//! compressed in parallel, and concatenated under one header and trailer.
-//! zstd frames concatenate the same way. Resetting the dictionary at shard
-//! boundaries costs a little compression ratio, which is negligible with
-//! large shards.
+//! zlib-compressed data can be merged just by concatenation as long as
+//! each piece of data is flushed with Z_SYNC_FLUSH. In this file, we
+//! split input data into multiple shards, compress them individually
+//! and concatenate them. We then append a header, a trailer and a
+//! checksum so that the concatenated data is valid zlib-format data.
+//!
+//! zstd-compressed data can be merged in the same way.
+//!
+//! Using threads to compress data has a downside. Since the dictionary
+//! is reset on boundaries of shards, compression ratio is sacrificed
+//! a little bit. However, if a shard size is large enough, that loss
+//! is negligible in practice.
+
+// compress.cc
 
 use flate2::{Compress, Compression, FlushCompress, FlushDecompress};
 use rayon::prelude::*;
@@ -58,10 +67,42 @@ fn adler32_combine(adler1: u32, adler2: u32, len2: u64) -> u32 {
 /// Compresses a shard as a raw deflate stream ending with a sync flush,
 /// so that the stream ends on a byte boundary and can be concatenated.
 fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
+    // Initialize zlib stream. Since debug info is generally compressed
+    // pretty well with lower compression levels, the default level is 1.
     let mut compress = Compress::new(Compression::new(level), false);
+
+    // Set an input buffer
+
+    // flate2 grows this vector as needed instead of exposing deflateBound().
+    // Set an output buffer. deflateBound() returns an upper bound
+    // on the compression size. +16 for Z_SYNC_FLUSH.
     let mut out = Vec::with_capacity(input.len() / 2 + 64);
     loop {
         let before = compress.total_in() as usize;
+
+        // Compress data. It writes all compressed bytes except the last
+        // partial byte, so up to 7 bits can be held to be written to the
+        // buffer.
+        //
+        // The C++ zlib path performs the following workaround explicitly.
+        // flate2 owns the lower-level flush operation in this implementation.
+        //
+        // This is a workaround for libbacktrace before 2022-04-06.
+        //
+        // Zlib is a bit stream, and what Z_SYNC_FLUSH does is to write a
+        // three bit value indicating the start of an uncompressed data
+        // block followed by four byte data 00 00 ff ff which indicates that
+        // the length of the block is zero. libbacktrace uses its own zlib
+        // inflate routine, and it had a bug that if that particular three
+        // bit value happens to end at a byte boundary, it accidentally
+        // skipped the next byte.
+        //
+        // In order to avoid triggering that bug, we should avoid calling
+        // deflate() with Z_SYNC_FLUSH if the current bit position is 5.
+        // If it's 5, we insert an empty block consisting of 10 bits so
+        // that the bit position is 7 in the next byte.
+        //
+        // https://github.com/ianlancetaylor/libbacktrace/pull/87
         let status = compress
             .compress_vec(&input[before..], &mut out, FlushCompress::Sync)
             .expect("deflate failed");
@@ -80,11 +121,14 @@ fn zlib_compress(input: &[u8], level: u32) -> Vec<u8> {
 impl Compressor {
     pub fn zlib(input: &[u8], level: u32) -> Compressor {
         let inputs: Vec<&[u8]> = input.chunks(SHARD_SIZE).collect();
+
+        // Compress each shard
         let (shards, adlers): (Vec<Vec<u8>>, Vec<u32>) = inputs
             .par_iter()
             .map(|shard| (zlib_compress(shard, level), adler32(shard)))
             .unzip();
 
+        // Combine checksums
         let mut checksum = adlers.first().copied().unwrap_or(1);
         for (adler, shard) in adlers.iter().zip(&inputs).skip(1) {
             checksum = adler32_combine(checksum, *adler, shard.len() as u64);
@@ -93,6 +137,7 @@ impl Compressor {
     }
 
     pub fn zstd(input: &[u8], level: i32) -> Compressor {
+        // Compress each shard
         let shards = input
             .par_chunks(SHARD_SIZE)
             .map(|shard| zstd::bulk::compress(shard, level).expect("zstd compression failed"))
@@ -101,8 +146,9 @@ impl Compressor {
     }
 
     pub fn compressed_size(&self) -> usize {
+        // Comput the total size
         match self {
-            // The header and the trailer add 8 bytes.
+            // the header and the trailer
             Compressor::Zlib { shards, .. } => 8 + shards.iter().map(Vec::len).sum::<usize>(),
             Compressor::Zstd { shards } => shards.iter().map(Vec::len).sum(),
         }
@@ -111,19 +157,25 @@ impl Compressor {
     pub fn write_to(&self, buf: &mut [u8]) {
         match self {
             Compressor::Zlib { shards, checksum } => {
+                // Write a zlib-format header
                 buf[0] = 0x78;
                 buf[1] = 0x9c;
+
+                // Copy compressed data
+                // +2 for the header
                 let mut pos = 2;
                 for shard in shards {
                     buf[pos..pos + shard.len()].copy_from_slice(shard);
                     pos += shard.len();
                 }
+                // Write a trailer
                 // An empty final block, then the Adler-32 checksum.
                 buf[pos] = 3;
                 buf[pos + 1] = 0;
                 buf[pos + 2..pos + 6].copy_from_slice(&checksum.to_be_bytes());
             }
             Compressor::Zstd { shards } => {
+                // Copy compressed data
                 let mut pos = 0;
                 for shard in shards {
                     buf[pos..pos + shard.len()].copy_from_slice(shard);

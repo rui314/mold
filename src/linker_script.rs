@@ -1,7 +1,11 @@
-//! A parser for the subset of the GNU linker script language that mold
-//! supports: `GROUP`/`INPUT` file lists as found in glibc's `libc.so`,
-//! `OUTPUT_FORMAT`, symbol assignments, version scripts and dynamic
-//! lists.
+// linker-script.cc
+//! On Linux, /usr/lib/x86_64-linux-gnu/libc.so is not actually
+//! a shared object file but an ASCII text file containing a linker
+//! script to include a "real" libc.so file. Therefore, we need to
+//! support a (very limited) subset of the linker script language.
+//!
+//! The supported subset also includes `OUTPUT_FORMAT`, symbol assignments,
+//! version scripts and dynamic lists.
 
 use crate::arch::Arch;
 use crate::args::{DefsymValue, ReaderContext};
@@ -270,9 +274,9 @@ impl<'a, E: Arch> Script<'a, E> {
         }
     }
 
-    /// Version scripts and dynamic lists take a quoted name literally,
-    /// while an unquoted one is a glob pattern. Glob metacharacters in a
-    /// quoted name are escaped so the matcher treats them as literals.
+    /// Version scripts and dynamic lists take a quoted name literally, while
+    /// an unquoted one is a glob pattern. We escape glob metacharacters in a
+    /// quoted name so that the pattern matcher treats them as literals.
     fn unquote_pattern(&self, tok: &'static [u8]) -> &'static [u8] {
         if !tok.starts_with(b"\"") {
             return tok;
@@ -520,8 +524,8 @@ impl<'a, E: Arch> Script<'a, E> {
     }
 }
 
-/// The tokenizer keeps colons inside tokens because of the C++ scope
-/// operator, so `local:*` is a single token. Splits such labels off.
+/// The tokenizer keeps a colon in a token because of the C++ scope
+/// operator, so `local:*` is a single token. Split the pattern off.
 fn split_labels(tokens: &[&'static [u8]]) -> Vec<&'static [u8]> {
     let mut out = Vec::with_capacity(tokens.len());
     for &tok in tokens {

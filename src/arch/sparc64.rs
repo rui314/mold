@@ -1,23 +1,61 @@
-//! SPARC, Sun's big-endian RISC ISA, in its 64-bit form.
+// arch-sparc64.cc
+//! SPARC is a RISC ISA developed by Sun Microsystems.
 //!
-//! All instructions are 4 bytes and 4-byte aligned. Unusually for a
-//! RISC, SPARC needs no range extension thunks: CALL has a 30-bit
-//! displacement scaled by 4, reaching PC ± 2 GiB at the cost of a
-//! quarter of the opcode space. CALL saves the return address in `%o7`
-//! and the thread pointer lives in `%g7`.
+//! The byte order of the processor is big-endian. Anything larger than a
+//! byte is stored in the "reverse" order compared to little-endian
+//! processors such as x86-64.
 //!
-//! There are no PC-relative loads or stores. Position-independent code
-//! materializes the address of the GOT with a `sethi`/`add` pair and a
-//! call to a `__sparc_get_pc_thunk` routine that adds `%o7` to it,
-//! with NOPs and ADDs in the branch delay slots: SPARC always executes
-//! the instruction after a branch. The GOT address isn't shared between
-//! functions, so each function computes it into whatever register it
-//! likes.
+//! All instructions are 4 bytes long and aligned to 4 bytes boundaries.
+//!
+//! A notable feature of SPARC is that, unlike other RISC ISAs, it doesn't
+//! need range extension thunks. It is because the SPARC's CALL instruction
+//! contains a whopping 30 bits immediate. The processor scales it by 4 to
+//! extend it to 32 bits (this is doable because all instructions are
+//! aligned to 4 bytes boundaries, so the least significant two bits are
+//! always zero). That means CALL's reach is PC ± 2 GiB, elinating the
+//! need of range extension thunks. It comes with the cost that the CALL
+//! instruction alone takes 1/4th of the instruction encoding space,
+//! though.
+//!
+//! SPARC has 32 general purpose registers. CALL instruction saves a return
+//! address to %o7, which is an alias for %r15. Thread pointer is stored to
+//! %g7 which is %r7.
+//!
+//! SPARC does not have PC-relative load/store instructions. To access data
+//! in the position-independent manner, we usually first set the address of
+//! .got to, for example, %l7, with the following piece of code
+//!
+//!   sethi  %hi(. - _GLOBAL_OFFSET_TABLE_), %l7
+//!   add  %l7, %lo(. - _GLOBAL_OFFSET_TABLE_), %l7
+//!   call __sparc_get_pc_thunk.l7
+//!   nop
+//!
+//! where __sparc_get_pc_thunk.l7 is defined as
+//!
+//!   retl
+//!   add  %o7, %l7, %l7
+//!
+//! . SETHI and the following ADD materialize a 32 bits offset to .got.
+//! CALL instruction sets a return address to $o7, and the subsequent ADD
+//! adds it to the GOT offset to materialize the absolute address of .got.
+//!
+//! Note that we have a NOP after CALL and an ADD after RETL because of
+//! SPARC's delay branch slots. That is, the SPARC processor always
+//! executes one instruction after a branch even if the branch is taken.
+//! This may seem like an odd behavior, and indeed it is considered as such
+//! (that's a premature optimization for the early pipelined SPARC
+//! processors), but that's been a part of the ISA's spec so that's what it
+//! is.
+//!
+//! Note also that the .got address obtained this way is not shared between
+//! functions, so functions can use an arbitrary register to hold the .got
+//! address. That also means each function needs to execute the above piece
+//! of code to become position-independent.
+//!
+//! https://github.com/rui314/psabi/blob/main/sparc.pdf
 //!
 //! Relocations carry a second addend in the upper 24 bits of the type
 //! field; only `R_SPARC_OLO10` uses it.
-//!
-//! https://github.com/rui314/psabi/blob/main/sparc.pdf
 
 use std::sync::atomic::Ordering;
 
@@ -40,12 +78,13 @@ impl Layout for Sparc64 {
     const IS_RELA: bool = true;
 }
 
+// Target-specific ELF data types
 /// The relocation type proper, without the second addend.
 fn r_type(rel: &ElfRel) -> u32 {
     rel.r_type & 0xff
 }
 
-/// The second addend of `R_SPARC_OLO10`.
+/// SPARC-specific: used for R_SPARC_OLO10
 fn r_type_data(rel: &ElfRel) -> u64 {
     (rel.r_type >> 8) as u64
 }
@@ -83,8 +122,8 @@ fn lox10(val: i64) -> u64 {
     bits(val as u64, 9, 0) | if val < 0 { 0b1_1100_0000_0000 } else { 0 }
 }
 
-/// The byte offset within `.plt` of the data pointer of a large PLT
-/// entry. See `write_plt_entry` for the layout this assumes.
+// Returns the byte offset within .plt of the data pointer for a large SPARC
+// PLT entry. See write_plt_entry below for the block layout this assumes.
 pub fn plt_ptr_offset(num_plt_symbols: usize, plt_idx: u64) -> u64 {
     let i = plt_idx - SPARC_NUM_SMALL_PLT;
     let block = i / 160;
@@ -118,23 +157,38 @@ impl Arch for Sparc64 {
         sparc64_rel_to_string(r_type & 0xff)
     }
 
-    /// The PLT is writable despite holding code: the loader patches
-    /// entries in place instead of writing to a `.got.plt`, and fills in
-    /// the header itself. The NOPs in entries leave it room.
+    // SPARC's PLT section is writable despite containing executable code.
+    // We don't need to write the PLT header entry because the dynamic loader
+    // will do that for us.
+    //
+    // We also don't need a .got.plt section to store the result of lazy PLT
+    // symbol resolution because the dynamic symbol resolver directly mutates
+    // instructions in PLT so that they jump to the right places next time.
+    // That's why each PLT entry contains lots of NOPs; they are a placeholder
+    // for the runtime to add more instructions.
+    //
+    // Self-modifying code is nowadays considered really bad from the security
+    // point of view, though.
     fn write_plt_header(_ctx: &Context<Self>, buf: &mut [u8]) {
         buf[..Self::PLT_HDR_SIZE as usize].fill(0);
     }
 
-    /// A "small" entry branches to the resolver stub at `.PLT1` with a
-    /// BPcc, whose reach is ±1 MiB. Past 0x100000 bytes of PLT, entries
-    /// switch to a "large" format that loads a 64-bit value from a
-    /// nearby data pointer and jumps to that value plus its own address.
-    ///
-    /// Large entries come in blocks of 160: 160 stubs, 24 bytes apart on
-    /// a fixed grid because the loader derives the symbol to resolve from
-    /// a stub's address, followed by 160 8-byte data pointers, which the
-    /// stubs reach with a signed 13-bit `ldx` offset. `buf` extends to
-    /// the end of the PLT, so the pointer region is in reach.
+    // SPARC uses two PLT entry formats. A "small" entry branches directly to
+    // the resolver stub (.PLT1) with a BPcc instruction whose reach is only
+    // ±1 MiB. Once the PLT grows past that (0x100000 bytes), we switch to a
+    // "large" format: rather than branching to the resolver, a large entry
+    // loads a 64-bit value from a nearby data pointer and jumps to (that value
+    // + its own address).
+    //
+    // Large entries are grouped into blocks of 160: each block is 160 code
+    // stubs followed by 160 8-byte data pointers, one per stub. The stubs must
+    // sit on a fixed grid, 24 bytes apart, because that is how the loader finds
+    // them: on a lazy bind the stub jumps to the resolver (.PLT0) with only its
+    // own address, and the loader derives which symbol to resolve from that
+    // address. Nothing may sit between two stubs, so each stub's pointer lives
+    // in the block's pointer region, which it reaches with a signed 13-bit ldx
+    // offset (see to_plt_offset). This layout is dictated by the loader; we
+    // cannot rearrange or simplify it.
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
         let plt = ctx.plt.hdr.shdr.sh_addr;
@@ -179,9 +233,9 @@ impl Arch for Sparc64 {
                 bits((plt + ptroff).wrapping_sub(call), 12, 0),
             );
 
-            // The data pointer initially holds (.PLT0 - call) so that the
-            // first call reaches the loader's lazy resolver at .PLT0,
-            // which then replaces it with (target - call).
+            // The data pointer initially holds (.PLT0 - call) so that the first call
+            // jumps to .PLT0, where the loader's lazy resolver lives. The resolver
+            // later overwrites it with (target - call).
             let ptr = (ptroff - (entry - plt)) as usize;
             w64(&mut buf[ptr..], plt.wrapping_sub(call));
         }
@@ -238,6 +292,7 @@ impl Arch for Sparc64 {
         let file = &ctx.objs[isec.file.index()];
         let mut needs_tlsgd = false;
 
+        // Scan relocations
         for rel in isec.rels::<Self>(file) {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
@@ -274,10 +329,10 @@ impl Arch for Sparc64 {
                 | R_SPARC_PC22 | R_SPARC_PC_LM22 | R_SPARC_WDISP16 | R_SPARC_WDISP19
                 | R_SPARC_WDISP22 | R_SPARC_PC_HH22 => scan_pcrel(ctx, isec, sym, &rel),
                 R_SPARC_TLS_GD_HI22 => {
-                    // A static executable always relaxes, since libc.a
-                    // has no __tls_get_addr.
+                    // We always relax if -static because libc.a doesn't contain
+                    // __tls_get_addr().
                     if ctx.args.is_static || (ctx.args.relax && sym.is_tprel_linktime_const(ctx)) {
-                        // Nothing to do.
+                        // do nothing
                     } else if ctx.args.relax && sym.is_tprel_runtime_const(ctx) {
                         sym.add_flags(NEEDS_GOTTP);
                     } else {
@@ -286,7 +341,11 @@ impl Arch for Sparc64 {
                     }
                 }
                 R_SPARC_TLS_LDM_HI22 => {
-                    if !(ctx.args.is_static || (ctx.args.relax && !ctx.args.shared)) {
+                    // We always relax if -static because libc.a doesn't contain
+                    // __tls_get_addr().
+                    if ctx.args.is_static || (ctx.args.relax && !ctx.args.shared) {
+                        // do nothing
+                    } else {
                         ctx.needs_tlsld.store(true, Ordering::Relaxed);
                     }
                 }
@@ -320,8 +379,8 @@ impl Arch for Sparc64 {
             }
         }
 
-        // TLS_GD_CALL and TLS_LDM_CALL implicitly call __tls_get_addr,
-        // which may come from libc.so.
+        // TLS_GD_CALL and TLS_LDM_CALL relocations implicitly refer to
+        // __tls_get_addr, which may be dynamically linked from libc.so.
         if let Some(id) = ctx.syms.tls_get_addr {
             let sym = &ctx.symbols[id];
             if sym.is_imported() && (needs_tlsgd || ctx.needs_tlsld.load(Ordering::Relaxed)) {
@@ -336,9 +395,8 @@ impl Arch for Sparc64 {
         let tls_get_addr =
             || ctx.symbols[ctx.syms.tls_get_addr.expect("SPARC has __tls_get_addr")].addr(ctx);
 
-        // Relocations are applied back to front so that rewriting a
-        // TLS_GD_CALL, which swaps the call with the instruction in its
-        // delay slot, sees that instruction already relocated.
+        // We iterate over relocations in reverse order so that it is easy
+        // to swap instructions for R_SPARC_TLS_GD_CALL.
         for (i, rel) in isec.rels::<Self>(file).iter().enumerate().rev() {
             if rel.r_type == R_NONE {
                 continue;
@@ -449,9 +507,9 @@ impl Arch for Sparc64 {
                 R_SPARC_GOT22 => or32(loc, bits(g(), 31, 10)),
                 R_SPARC_GOTDATA_HIX22 => or32(loc, hix22(sa.wrapping_sub(got) as i64)),
                 R_SPARC_GOTDATA_LOX10 => or32(loc, lox10(sa.wrapping_sub(got) as i64)),
-                // A GOT load of a local symbol is always relaxed to an
-                // immediate, since R_SPARC_GOTDATA_OP can't carry an
-                // addend for a local symbol.
+                // We always have to relax a GOT load to a load immediate if a
+                // symbol is local, because R_SPARC_GOTDATA_OP cannot represent
+                // an addend for a local symbol.
                 R_SPARC_GOTDATA_OP_HIX22 => {
                     if sym.is_absolute() {
                         or32(loc, hix22(sa as i64));
@@ -541,7 +599,7 @@ impl Arch for Sparc64 {
                 }
                 R_SPARC_TLS_GD_ADD => {
                     if sym.has_tlsgd(&ctx.symbols) {
-                        // Nothing to do.
+                        // do nothing
                     } else if sym.has_gottp(&ctx.symbols) {
                         // add %rs1, %rs2, %rd → ldx [ %rs1 + %rs2 ], %rd
                         w32(loc, (0xc058_0000 | rs1 | rs2 | rd) as u64);
@@ -557,9 +615,13 @@ impl Arch for Sparc64 {
                             bits(tls_get_addr().wrapping_add(a).wrapping_sub(p), 31, 2),
                         );
                     } else if sym.has_gottp(&ctx.symbols) {
-                        // The call becomes a non-branch, so it swaps
-                        // places with the instruction in its delay slot to
-                        // keep the original execution order.
+                        // When we rewrite a branch instruction with a non-branch one,
+                        // we need to swap the instruction and the following one so that
+                        // the original execution order, which is inverted due to the
+                        // branch delay slot, is preserved.
+                        //
+                        // Since we apply relocations from the end to the beginning,
+                        // the instruction at loc + 4 is already complete.
                         let next = r32(&loc[4..]);
                         w32(loc, next as u64);
                         w32(&mut loc[4..], 0x9001_c008); // add %g7, %o0, %o0

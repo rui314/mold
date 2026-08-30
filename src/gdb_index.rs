@@ -1,3 +1,64 @@
+// gdb-index.cc
+//! This file contains code to read DWARF debug info to create .gdb_index.
+//!
+//! .gdb_index is an optional section to speed up GNU debugger. It contains
+//! two maps: 1) a map from function/variable/type names to compunits, and
+//! 2) a map from function address ranges to compunits. gdb uses these
+//! maps to quickly find a compunit given a name or an instruction pointer.
+//!
+//! (Terminology: a DWARF "unit" is a self-contained sequence of debug
+//! entries. A compilation unit (CU) describes a source file and owns
+//! address ranges. A type unit (TU) describes one shareable type and is
+//! identified by a signature. DWARF 4 puts TUs in .debug_types; DWARF 5
+//! puts DW_UT_type units in .debug_info. This file reads CUs from DWARF 2
+//! to 5 and TUs from DWARF 5.)
+//!
+//! .gdb_index is not mandatory. All the information in .gdb_index is
+//! also in other debug info sections. You can actually create an
+//! executable without .gdb_index and later add it using the
+//! `gdb-add-index` post-processing tool that comes with gdb.
+//!
+//! Post-relocated debug section contents are needed to create a
+//! .gdb_index. Therefore, we create it after relocating all the other
+//! sections. The size of the section is also hard to estimate before
+//! applying relocations to debug info sections, so a .gdb_index is
+//! placed at the very end of the output file, even after the section
+//! header.
+//!
+//! The mapping from names to compunits is 1:n while the mapping from
+//! address ranges to compunits is 1:1. That is, two object files may
+//! define the same type name, while there should be no two functions
+//! that overlap with each other in memory.
+//!
+//! .gdb_index contains an on-disk hash table for names, so gdb can
+//! lookup names without loading all strings into memory and construct an
+//! in-memory hash table.
+//!
+//! Names are in .debug_gnu_pubnames and .debug_gnu_pubtypes input
+//! sections. These sections are created if `-ggnu-pubnames` is given.
+//! Besides names, these sections contain attributes for each name so
+//! that gdb can distinguish type names from function names, for example.
+//!
+//! A compunit contains one or more function address ranges. If an
+//! object file is compiled without -ffunction-sections, it contains
+//! only one .text section and therefore contains a single address range.
+//! Such range is typically stored directly to the compunit.
+//!
+//! If an object file is compiled with -ffunction-sections, it contains
+//! more than one .text section, and it has as many address ranges as
+//! the number of .text sections. Such discontiguous address ranges are
+//! stored to .debug_ranges in DWARF 2/3/4 and .debug_rnglists/.debug_addr
+//! in DWARF 5.
+//!
+//! .debug_info section contains DWARF debug info. Although we don't need
+//! to parse the whole .debug_info section to read address ranges, we
+//! have to do a little bit. DWARF is complicated and often handled using
+//! a library such as libdwarf. But we don't use any library because we
+//! don't want to add an extra run-time dependency just for --gdb-index.
+//!
+//! This page explains the format of .gdb_index:
+//! https://sourceware.org/gdb/onlinedocs/gdb/Index-Section-Format.html
+//!
 //! `.gdb_index` generation for `--gdb-index`.
 //!
 //! `.gdb_index` speeds up gdb start-up. It maps the names of functions,
@@ -37,7 +98,7 @@ use crate::util::hyperloglog::HyperLogLog;
 use crate::util::read_uleb;
 use crate::util::timer::Timer;
 
-/// A public name and its GNU kind before the name is interned.
+/// A public name and its GNU kind before the name is interned in GdbNameMap.
 #[derive(Clone, Copy)]
 #[repr(C)]
 struct NameType {
@@ -118,9 +179,11 @@ impl NameRecord {
 
 const _: () = assert!(std::mem::size_of::<NameRecord>() == 16);
 
-/// A compilation unit. Its offset is relative to its input section until
-/// `build_tables` rebases it to the output `.debug_info`.
+/// CU metadata carried from input parsing through final index serialization.
+/// CUs own address ranges; both CUs and TUs below may own public names.
 struct Compunit {
+    /// Initially relative to the input contribution selected by file_idx/shndx;
+    /// rebased to the output .debug_info section in build_gdb_index_tables.
     offset: u64,
     size: u64,
     file: u32,
@@ -129,9 +192,11 @@ struct Compunit {
     ranges: Vec<(u64, u64)>,
 }
 
-/// A DWARF 5 type unit. Type units have no address ranges, because code
-/// belongs to compilation units.
+/// TU metadata used for the .gdb_index type-unit list. TUs have no address
+/// ranges because executable code is attributed to compilation units.
 struct Typeunit {
+    /// `offset` is rebased like Compunit::offset. `type_die_offset` remains
+    /// relative to the unit, as required by the .gdb_index type-unit table.
     offset: u64,
     type_die_offset: u64,
     signature: u64,
@@ -140,7 +205,7 @@ struct Typeunit {
     names: Vec<NameRecord>,
 }
 
-/// A unique name in the index.
+/// Build-time state for one unique name in the .gdb_index symbol table.
 struct NameEntry {
     /// gdb's own hash of the name, which decides its hash table slot.
     gdb_hash: u32,
@@ -174,11 +239,13 @@ unsafe impl Send for NameEntryRef {}
 unsafe impl Sync for NameEntryRef {}
 
 #[derive(Clone, Copy, Default)]
+/// Byte counts accumulated by the parallel constant-pool layout scan.
 struct PoolSize {
     type_bytes: u32,
     name_bytes: u32,
 }
 
+/// State shared by the input reader, table builder and final serialization pass.
 pub struct GdbIndexData {
     cus: Vec<Compunit>,
     tus: Vec<Typeunit>,
@@ -199,8 +266,8 @@ fn words_as_bytes(words: &[u32]) -> &[u8] {
     unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), std::mem::size_of_val(words)) }
 }
 
-/// Normalized view of a DWARF unit header. DWARF32 and DWARF64 describe
-/// the width of section offsets, not the target address size.
+/// Normalized view of a DWARF unit header. DWARF32 and DWARF64 describe the
+/// width of section offsets, not the ELF class or target address size.
 struct UnitHeader {
     size: u64,
     header_size: u64,
@@ -300,8 +367,8 @@ impl<'d, 'a, E: Arch> Reader<'d, 'a, E> {
 
 fn parse_unit_header<E: Arch>(diag: &Diagnostics, data: &[u8], pos: usize) -> UnitHeader {
     // The first word is either a DWARF32 unit length or DWARF64's reserved
-    // marker. The length excludes its own encoding: four bytes in DWARF32,
-    // or the marker plus an eight-byte length in DWARF64.
+    // marker. unit_length excludes its own encoding: four bytes in DWARF32, or
+    // the four-byte marker plus eight-byte length in DWARF64.
     let mut r = Reader::<E>::new(diag, data, pos);
     let mut unit_length = r.u32() as u64;
     let mut initial_length_size = 4;
@@ -363,8 +430,8 @@ struct RangeSections<'a> {
     rnglists: &'a [u8],
 }
 
-/// Positions an abbreviation reader at the attribute specifications of
-/// the unit's first DIE, which must be the compilation unit DIE.
+/// The first DIE refers to an abbreviation by its ULEB128 code. Walk the
+/// unit's abbreviation table to find the attribute forms for that DIE.
 fn find_cu_abbrev<'d, 'a, E: Arch>(
     diag: &'d Diagnostics,
     die: &mut Reader<'d, 'a, E>,
@@ -385,15 +452,16 @@ fn find_cu_abbrev<'d, 'a, E: Arch>(
         if code == 0 {
             fatal!(diag, "--gdb-index: .debug_abbrev does not contain a record for the first .debug_info record");
         }
-        let tag = abbrev.uleb();
-        abbrev.u8(); // has_children
+        let tag = abbrev.uleb(); // tag
+        abbrev.u8(); // skip has_children byte
         if code == abbrev_code {
+            // Found a record
             if tag != DW_TAG_compile_unit as u64 && tag != DW_TAG_skeleton_unit as u64 {
                 fatal!(diag, "--gdb-index: the first entry's tag is not DW_TAG_compile_unit/DW_TAG_skeleton_unit but {tag:#x}");
             }
             return abbrev;
         }
-        // Skip the attribute specifications of an uninteresting record.
+        // Skip an uninteresting record
         loop {
             let name = abbrev.uleb();
             let form = abbrev.uleb();
@@ -407,8 +475,9 @@ fn find_cu_abbrev<'d, 'a, E: Arch>(
     }
 }
 
-/// Reads one attribute value of the given form. Only the forms used by
-/// the attributes of a compilation unit DIE are supported.
+/// .debug_info contains variable-length fields. `offset_size` is four or eight
+/// bytes according to the DWARF32/DWARF64 format; Word<E> is instead the
+/// target's address width. This function advances over one scalar value.
 fn read_scalar<E: Arch>(diag: &Diagnostics, r: &mut Reader<E>, form: u64, offset_size: u8) -> u64 {
     match form as u32 {
         DW_FORM_flag_present => 0,
@@ -431,7 +500,7 @@ fn read_scalar<E: Arch>(diag: &Diagnostics, r: &mut Reader<E>, form: u64, offset
     }
 }
 
-/// Reads a DWARF 2–4 range list from `.debug_ranges`.
+/// Read a range list from .debug_ranges starting at the given offset.
 fn read_debug_ranges<E: Arch>(r: &mut Reader<E>, mut base: u64) -> Vec<(u64, u64)> {
     let mut vec = Vec::new();
     loop {
@@ -448,8 +517,7 @@ fn read_debug_ranges<E: Arch>(r: &mut Reader<E>, mut base: u64) -> Vec<(u64, u64
     }
 }
 
-/// Reads a DWARF 5 range list from `.debug_rnglists`. `addrx` is the
-/// address table the list may index into.
+/// Read a range list from .debug_rnglists starting at the given offset.
 fn read_rnglist<E: Arch>(
     diag: &Diagnostics,
     r: &mut Reader<E>,
@@ -476,8 +544,8 @@ fn read_rnglist<E: Arch>(
             }
             DW_RLE_offset_pair => {
                 let (a, b) = (r.uleb(), r.uleb());
-                // A zero base means the range belongs to a discarded
-                // section.
+                // If the base is 0, this address range is for an eliminated
+                // section. We only emit it if it's alive.
                 if base != 0 {
                     vec.push((base + a, base + b));
                 }
@@ -500,25 +568,32 @@ fn read_rnglist<E: Arch>(
     }
 }
 
-/// Reads the address ranges of the compilation unit at `cu.offset` in the
-/// output `.debug_info`. A unit with several ranges refers to
-/// `.debug_ranges` (or `.debug_rnglists` in DWARF 5); a contiguous one
-/// stores its bounds directly, possibly through `.debug_addr`.
+/// Returns a list of address ranges explained by a compunit at the
+/// `offset` in an output .debug_info section.
+///
+/// .debug_info contains DWARF debug info records, so this function
+/// parses DWARF. If a designated compunit contains multiple ranges, the
+/// ranges are read from .debug_ranges (or .debug_rnglists for DWARF5).
+/// Otherwise, a range is read directly from .debug_info (or possibly
+/// from .debug_addr for DWARF5).
 fn read_address_ranges<E: Arch>(
     diag: &Diagnostics,
     secs: &RangeSections,
     cu: &Compunit,
 ) -> Vec<(u64, u64)> {
+    // Read .debug_info to find the record at a given offset.
     let hdr = parse_unit_header::<E>(diag, secs.info, cu.offset as usize);
     let mut die = Reader::<E>::new(diag, secs.info, (cu.offset + hdr.header_size) as usize);
     let mut abbrev = find_cu_abbrev::<E>(diag, &mut die, secs.abbrev, &hdr);
 
+    // Now, read debug info records.
     let mut low_pc: Option<(u64, u64)> = None;
     let mut high_pc: Option<(u64, u64)> = None;
     let mut ranges: Option<(u64, u64)> = None;
     let mut rnglists_base: Option<u64> = None;
     let mut addrx: &[u8] = &[];
 
+    // Read all interesting debug records.
     loop {
         let name = abbrev.uleb();
         let form = abbrev.uleb();
@@ -541,9 +616,9 @@ fn read_address_ranges<E: Arch>(
     };
     let base = low_pc.map_or(0, |(_, val)| val);
 
-    // Before DWARF 5, DW_AT_ranges is an offset into .debug_ranges. In
-    // DWARF 5 it is either an offset into .debug_rnglists or an index into
-    // the offset table at DW_AT_rnglists_base.
+    // Before DWARF 5, DW_AT_ranges is a byte offset into .debug_ranges. In
+    // DWARF 5 it is either a direct .debug_rnglists offset (sec_offset) or an
+    // index into the offset table rooted at DW_AT_rnglists_base (rnglistx).
     if let Some((form, val)) = ranges {
         if hdr.version <= 4 {
             let mut r = Reader::<E>::new(diag, secs.ranges, val as usize);
@@ -566,9 +641,9 @@ fn read_address_ranges<E: Arch>(
         return read_rnglist::<E>(diag, &mut r, addrx, base);
     }
 
-    // For one contiguous range, high_pc is either an address or a length,
-    // as indicated by its form. DWARF 5 may store either endpoint as an
-    // index into the address table.
+    // For one contiguous range, high_pc is either an address or an unsigned
+    // length, as indicated by its form. DWARF 5 may store either endpoint as an
+    // index into the address table rooted at DW_AT_addr_base.
     let (Some((lo_form, lo_val)), Some((hi_form, hi_val))) = (low_pc, high_pc) else {
         return Vec::new();
     };
@@ -594,7 +669,7 @@ fn read_address_ranges<E: Arch>(
     vec![(lo, hi)]
 }
 
-/// Units read from one object file.
+/// CUs and TUs collected from one object file or from the entire link.
 #[derive(Default)]
 struct FileUnits {
     cus: Vec<Compunit>,
@@ -711,6 +786,8 @@ pub fn prepare_inputs<E: Arch>(ctx: &mut Context<E>) -> Vec<GdbInputFile> {
 fn read_debug_units<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, file_idx: u32) -> FileUnits {
     let mut units = FileUnits::default();
     for input in &file.debug_info {
+        // Read every unit in one input .debug_info contribution. Keeping this separate
+        // leaves read_debug_units responsible only for object-level orchestration.
         let contents = input.contents;
         let mut pos = 0;
         while pos < contents.len() {
@@ -742,10 +819,10 @@ fn read_debug_units<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, file_idx: 
     units
 }
 
-/// Finds the unit a pubnames set refers to. The set header's
-/// `debug_info_offset` field is relocated against the input `.debug_info`
-/// contribution containing the unit, which matters for DWARF 5 type units
-/// in their own COMDAT sections.
+/// Returns the .debug_info contribution a pubnames set refers to. The set
+/// header's debug_info_offset field is relocated against the particular
+/// contribution containing the unit. This matters for DWARF 5 because type
+/// units live in separate COMDAT contributions with the same section name.
 fn pubnames_unit<'a>(
     input: &PubnamesInput,
     field_offset: u64,
@@ -761,8 +838,8 @@ fn pubnames_unit<'a>(
         .filter(|r| r.offset == field_offset)?;
     let key = (rel.target_shndx, rel.unit_offset);
 
-    // Units were appended in section and offset order, so both lists are
-    // sorted by this key.
+    // Units are appended in input section and contribution offset order, so both
+    // the CU and TU vectors are sorted by this key.
     if let Ok(i) = units
         .cus
         .binary_search_by_key(&key, |cu| (cu.shndx, cu.offset))
@@ -778,9 +855,10 @@ fn pubnames_unit<'a>(
     None
 }
 
-/// Parses `.debug_gnu_pubnames` and `.debug_gnu_pubtypes`. Each set starts
-/// with a DWARF32 or DWARF64 header naming one unit, followed by
-/// (DIE offset, kind byte, name) tuples until a zero offset.
+/// Parses .debug_gnu_pubnames and .debug_gnu_pubtypes. Each set starts with a
+/// DWARF32 or DWARF64 header identifying one debug unit, followed by
+/// (DIE offset, 1-byte kind, NUL-terminated name) tuples. The GNU kind byte lets
+/// GDB distinguish functions, variables and types without reading their DIEs.
 fn read_pubnames<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, units: &mut FileUnits) {
     for input in &file.pubnames {
         let contents = input.contents;
@@ -788,9 +866,11 @@ fn read_pubnames<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, units: &mut F
         while pos < contents.len() {
             let mut r = Reader::<E>::new(diag, contents, pos);
             let (set_size, offset_size, field_offset) = if r.u32() == u32::MAX {
+                // Header of one GNU pubnames or pubtypes set in DWARF64 format.
                 let size = r.u64();
                 (size + 12, 8, pos as u64 + 14)
             } else {
+                // Header of one GNU pubnames or pubtypes set in DWARF32 format.
                 r.pos = pos;
                 let size = r.u32() as u64;
                 (size + 4, 4, pos as u64 + 6)
@@ -820,7 +900,8 @@ fn read_pubnames<E: Arch>(diag: &Diagnostics, file: &GdbInputFile, units: &mut F
     }
 }
 
-/// GCC emits a name once per COMDAT group it appears in.
+/// GCC can emit the same public name once for each COMDAT group. Remove these
+/// duplicates with a local hash table instead of sorting the strings.
 fn dedup_names(names: &mut Vec<NameRecord>) {
     if names.len() < 2 {
         return;
@@ -856,7 +937,7 @@ fn dedup_names(names: &mut Vec<NameRecord>) {
     names.truncate(out);
 }
 
-/// Computes the `.gdb_index` hash and length together when a name is first
+/// Compute the .gdb_index hash and length together when a name is first
 /// inserted.
 fn initialize_gdb_name(name: *const u8) -> (u32, NameEntry) {
     let mut hash = 0u32;
@@ -928,8 +1009,8 @@ fn estimate_names<T: Sync>(units: &[T], names: impl Fn(&T) -> &[NameRecord] + Sy
     units
         .par_iter()
         .fold(HyperLogLog::default, |mut sketch, unit| {
-            // Name records keep 56 hash bits. Spread them across a 64-bit
-            // word because HyperLogLog uses the number of leading zero bits.
+            // NameType keeps 56 hash bits. Spread them across a 64-bit word because
+            // HyperLogLog uses the number of leading zero bits.
             for record in names(unit) {
                 sketch.insert(record.nametype().hash().wrapping_mul(0x9e37_79b9_7f4a_7c15));
             }
@@ -938,8 +1019,9 @@ fn estimate_names<T: Sync>(units: &[T], names: impl Fn(&T) -> &[NameRecord] + Sy
         .reduce(HyperLogLog::default, |a, b| a.merged(&b))
 }
 
-/// Reads compilation units and their public names from the input files,
-/// and interns the names.
+/// Read compilation units and their public names, deduplicate and intern the
+/// names, and determine the constant-pool layout. This stage needs only input
+/// sections, so it can run before output-section offsets are assigned.
 pub fn read_inputs<E: Arch>(
     timer: Timer,
     diag: &Diagnostics,
@@ -1058,8 +1140,13 @@ pub fn read_inputs<E: Arch>(
     }
 }
 
-/// Rebases unit offsets while the ObjectFiles are still available to the
-/// foreground driver. The returned data is then self-contained.
+/// Unit offsets are relative to their input .debug_info contributions.
+/// Convert them to output-section offsets and sort each .gdb_index list in
+/// output order. The format's unit-number namespace consists of every CU-list
+/// entry followed by every TU-list entry, even when CUs and TUs are
+/// interleaved in .debug_info. Address-area records refer only to the CU list.
+///
+/// The Rust port performs the sorting in `build_tables` after this rebasing.
 pub fn prepare_tables<E: Arch>(ctx: &Context<E>, data: &mut GdbIndexData) {
     let output_offset = |file: u32, shndx: u32| ctx.objs[file as usize].section_at(shndx).offset();
     for cu in &mut data.cus {
@@ -1110,9 +1197,9 @@ fn limited_parallel_for_mut_init<T: Send, S: Send>(
     });
 }
 
-/// Builds the name hash table and the constant pool. They depend on the
-/// order of units in the output `.debug_info` but not on addresses, so
-/// this can run before relocations are applied.
+/// Build the name lookup table and the constant pool for .gdb_index. They
+/// depend on compilation-unit order but not on relocated address ranges, so
+/// they can be built in the background once .debug_info offsets are fixed.
 pub fn build_tables(timer: Timer, mut data: GdbIndexData, workers: usize) -> GdbIndexData {
     let _timer = timer;
     if data.cus.is_empty() && data.tus.is_empty() {
@@ -1295,8 +1382,7 @@ fn parallel_copy(dst: &mut [u8], src: &[u8]) {
         .for_each(|(dst, src)| dst.copy_from_slice(src));
 }
 
-/// Reads the relocated address ranges and appends the finished index to
-/// the output file.
+/// Read relocated address ranges and serialize the index prepared above.
 pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
     let _t = ctx.timer("write_gdb_index");
     let Some(mut data) = ctx.gdb_index_data.take() else {
@@ -1306,6 +1392,7 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
         return;
     }
 
+    // Find debug info sections
     {
         let buf = output.buf();
         let secs = RangeSections {
@@ -1322,14 +1409,18 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
         });
     }
 
-    // Version 8 made symbol table entries refer to type units directly, as
-    // ours do. gdb 12 accepts version 8 but assumes its type unit list
-    // refers to .debug_types and crashes on DWARF 5 type units in
-    // .debug_info; version 9 makes it ignore the index instead. Version 7
-    // is kept for indices without type units so that older gdbs can use
-    // them.
+    // Version 8 made symbol-table entries refer directly to type units, as ours
+    // do. GDB 12 accepts version 8 but assumes that its type-unit list refers to
+    // .debug_types and crashes on DWARF 5 type units in .debug_info. Version 9
+    // makes it safely ignore such an index, while newer GDB versions can use it.
+    // Keep version 7 for TU-free indices so older GDB versions can still use them.
     let has_tus = !data.tus.is_empty();
+    // The version 7 .gdb_index header. All table offsets are section-relative.
+    //
+    // Version 9 inserts a shortcut table between the symbol table and the
+    // constant pool. We currently emit an empty shortcut table.
     let header_size = if has_tus { 28 } else { 24 };
+    // Compute sizes of each component.
     let cu_list_offset = header_size;
     let cu_types_offset = cu_list_offset + data.cus.len() * 16;
     let ranges_offset = cu_types_offset + data.tus.len() * 24;
@@ -1348,6 +1439,8 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
     output.extend(&ctx.diag, size);
     let buf = &mut output.buf()[file_size..];
 
+    // Write a section header. A zero language marks the version 9 shortcut
+    // table as containing no main-function information.
     let mut header: Vec<u32> = vec![
         if has_tus { 9 } else { 7 },
         cu_list_offset as u32,
@@ -1363,12 +1456,15 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
         buf[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
     }
 
+    // A CU-list entry is {.debug_info offset, unit size}.
     let mut p = cu_list_offset;
     for cu in &data.cus {
         buf[p..p + 8].copy_from_slice(&cu.offset.to_le_bytes());
         buf[p + 8..p + 16].copy_from_slice(&cu.size.to_le_bytes());
         p += 16;
     }
+    // A TU-list entry is {.debug_info offset, unit-relative type DIE offset,
+    // signature}. Unlike a CU-list entry, it does not contain the unit size.
     for tu in &data.tus {
         buf[p..p + 8].copy_from_slice(&tu.offset.to_le_bytes());
         buf[p + 8..p + 16].copy_from_slice(&tu.type_die_offset.to_le_bytes());
@@ -1403,7 +1499,7 @@ pub fn write<E: Arch>(ctx: &mut Context<E>, output: &mut OutputFile) {
         &tables[symtab_size..symtab_size + size - const_pool_offset],
     );
 
-    // The section header table was written before the index existed.
+    // Update the section size and rewrite the section header
     if let Some(gdb_index) = &mut ctx.gdb_index {
         gdb_index.hdr.shdr.sh_size = size as u64;
     }

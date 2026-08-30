@@ -1,3 +1,4 @@
+// mapped-file-unix.cc
 //! Input file access.
 //!
 //! Every input file is read once and kept in memory for the whole link,
@@ -43,10 +44,17 @@ pub fn drop_mappings() {
     });
 }
 
-/// Files up to this size are read into memory rather than mmap'ed. mmap(2)
-/// takes the process's address space lock, so with tens of thousands of
-/// input files the calls serialize; read(2) doesn't take that lock but
-/// copies the data, which only pays off for small files.
+// Files up to this size are read into malloc'ed memory rather than
+// mmap'ed. mmap(2) takes the process's address space lock, so with tens
+// of thousands of input files, the calls serialize at a few microseconds
+// each no matter how many threads make them. read(2) takes no such lock,
+// but copying costs memory bandwidth in proportion to the file size, so
+// large files are still mmap'ed. On a Chromium link, files below this
+// threshold are 64% of the inputs by count but 16% by size.
+//
+// The buffers add up to hundreds of megabytes on such a link, so they
+// need to be backed by huge pages; with 4 KiB pages, faulting them in
+// costs more than the mmap calls did. mimalloc does that by default.
 const READ_THRESHOLD: u64 = 32 * 1024;
 
 /// A byte range whose allocation is deliberately leaked with the input file.
@@ -83,7 +91,8 @@ impl MappedBytes {
     }
 }
 
-/// An input file, or a slice of one for an archive member.
+// MappedFile represents an input file that is either mmap'ed or read into
+// memory. Either way, its contents are accessible through `data`.
 #[derive(Debug)]
 pub struct MappedFile {
     pub name: String,
@@ -99,7 +108,7 @@ pub struct MappedFile {
     /// The thin archive this file is a member of.
     pub thin_parent: Option<&'static MappedFile>,
 
-    /// Whether the file should be listed in a `--dependency-file`.
+    // For --dependency-file
     pub is_dependency: AtomicBool,
 }
 
@@ -122,6 +131,8 @@ impl MappedFile {
             .unwrap_or_else(|e| fatal!(diag, "{path}: fstat failed: {e}"));
         let size = metadata.len();
 
+        // True if `data` is a memory mapping of the file rather than a copy of
+        // its contents in anonymous memory. See open_file_impl().
         let mut is_mmapped = false;
         let data = if size == 0 {
             MappedBytes::empty()
@@ -225,15 +236,17 @@ impl MappedFile {
         }
     }
 
-    /// Returns a string that uniquely identifies the file, including files
-    /// inside archives.
+    // Returns a string that uniquely identify a file that is possibly
+    // in an archive.
     pub fn identifier(&self) -> String {
         if let Some(parent) = self.parent {
-            // Archive members may share a name, so use the offset instead.
+            // We use the file offset within an archive as an identifier
+            // because archive members may have the same name.
             return format!("{}:{}", parent.name, self.offset());
         }
         if let Some(thin_parent) = self.thin_parent {
-            // A thin archive member's file name is unique within the archive.
+            // If this is a thin archive member, the filename part is
+            // guaranteed to be unique.
             return format!("{}:{}", thin_parent.name, self.name);
         }
         self.name.clone()

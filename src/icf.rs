@@ -1,3 +1,70 @@
+// icf.cc
+//! This file implements the Identical Code Folding feature which can
+//! reduce the output file size of a typical program by a few percent.
+//! ICF identifies read-only input sections that happen to be identical
+//! and thus can be used interchangeably. ICF leaves one of them and discards
+//! the others.
+//!
+//! ICF is usually used in combination with -ffunction-sections and
+//! -fdata-sections compiler options, so that object files have one section
+//! for each function or variable instead of having one large .text or .data.
+//! The unit of ICF merging is section.
+//!
+//! Two sections are considered identical by ICF if they have the exact
+//! same contents, metadata such as section flags, exception handling
+//! records, and relocations. The last one is interesting because two
+//! relocations are considered identical if they point to the _same_
+//! section in terms of ICF.
+//!
+//! To see what that means, consider two sections, A and B, which are
+//! identical except for one pair of relocations. Say, A has a relocation to
+//! section C, and B has a relocation to D. In this case, A and B are
+//! considered identical if C and D are considered identical. C and D can be
+//! either really the same section or two different sections that are
+//! considered identical by ICF. Below is an example of such inputs, A, B, C
+//! and D:
+//!
+//!   void A() { C(); }
+//!   void B() { D(); }
+//!   void C() { A(); }
+//!   void D() { B(); }
+//!
+//! If we assume A and B are mergeable, we can merge C and D, which makes A
+//! and B mergeable. There's no contradiction in our assumption, so we can
+//! conclude that A and B as well as C and D are mergeable.
+//!
+//! This problem boils down to one in graph theory. Input to ICF can be
+//! considered as a directed graph in which vertices are sections and edges
+//! are relocations. Vertices have labels (section contents, etc.), and so
+//! are edges (relocation offsets, etc.). Two vertices are considered
+//! identical if and only if the (possibly infinite) their unfoldings into
+//! regular trees are equal. Given this formulation, we want to find as
+//! many identical vertices as possible.
+//!
+//! Just like a lot of problems with graph, this problem doesn't have a
+//! straightforward "optimal" solution, and we need to resort to heuristics.
+//!
+//! mold approaches this problem by hashing program trees with increasing depth
+//! on each iteration.
+//! For example, when we start, we only hash individual functions with
+//! their call into other functions omitted. From the second iteration, we
+//! put the function they call into the hash by appending the hash of those
+//! functions from the previous iteration. This means that the nth iteration
+//! hashes call chain up to (n-1) levels deep.
+//! We use a cryptographic hash function, so the unique number of hashes will
+//! only monotonically increase as we take into account of deeper trees with
+//! iterations (otherwise, that means we have found a hash collision). We stop
+//! when the unique number of hashes stop increasing; this is based on the fact
+//! that once we observe an iteration with the same amount of unique hashes as
+//! the previous iteration, it will remain unchanged for further iterations.
+//! This is provable, but here we omit the proof for brevity.
+//!
+//! When compared to other approaches, mold's approach has a relatively cheaper
+//! cost per iteration, and as a bonus, is highly parallelizable.
+//! For Chromium, mold's ICF finishes in less than 1 second with 20 threads,
+//! whereas lld takes 5 seconds and gold takes 50 seconds under the same
+//! conditions.
+//!
 //! Identical Code Folding.
 //!
 //! ICF merges read-only sections with identical contents, metadata and
@@ -32,8 +99,12 @@ struct Digest {
     lo: u64,
 }
 
-// This is an implementation of SipHash based on the reference
-// implementation at https://github.com/rui314/siphash.
+// Original source note:
+// This is a header-only C++20 implementation of SipHash based on the
+// reference implementation. To use, just copy this header file into
+// your project and #include it.
+//
+// https://github.com/rui314/siphash/blob/main/siphash.h
 struct SipHash13_128 {
     v0: u64,
     v1: u64,
@@ -343,8 +414,9 @@ fn is_eligible<E: Arch>(ctx: &Context<E>, isec: &InputSection) -> bool {
             && name != b".init"
             && name != b".fini";
     }
-    // .gcc_except_table holds compiler-generated tables whose pointer
-    // identity doesn't matter.
+    // .gcc_except_table contains a compiler-generated table. Pointer
+    // equality for the section is not significant because only the C++
+    // exception handling code will use the table at runtime.
     if name == b".gcc_except_table" || name.starts_with(b".gcc_except_table.") {
         return true;
     }
@@ -398,7 +470,8 @@ fn compute_digest<E: Arch>(ctx: &Context<E>, key: &[u8; 16], r: SectionRef) -> D
     for fde in fdes {
         let cie = &file.cies[fde.cie_idx as usize];
         hash_u32(&mut h, cie.icf_idx);
-        // Bytes 0..4 hold the length and 4..8 the CIE pointer.
+        // Bytes 0 to 4 contain the length of this record, and
+        // bytes 4 to 8 contain an offset to CIE.
         hash_bytes(&mut h, &fde.contents::<E>(file)[8..]);
         let rels = fde.rels::<E>(file);
         h.update(&rels.len().to_ne_bytes());
@@ -683,6 +756,7 @@ pub fn icf_sections<E: Arch>(ctx: &mut Context<E>) {
     crate::util::random_bytes(&mut key);
 
     uniquify_cies(ctx);
+    // Prepare for the propagation rounds.
     let sections = gather_sections(ctx);
 
     // `digests` holds the current digest of each vertex.

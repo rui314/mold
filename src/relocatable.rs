@@ -1,9 +1,35 @@
-//! `-r` / `--relocatable`: combining object files into one object file.
+// relocatable.cc
+//! This file implements -r or --relocatable. That option forces the linker
+//! to combine input object files into another single large object file.
+//! Since the behavior of the linker when the option is given is quite
+//! different from that of the normal execution mode, we separate code for
+//! the feature into this separate file.
 //!
-//! Regular sections are copied and merged by name, the symbol and string
-//! tables are merged, COMDAT groups are uniquified, and relocations are
-//! copied with their symbol indices rewritten. This matches what GNU ld
-//! produces, which some programs (notably GHC's runtime linker) depend on.
+//! The --relocatable option isn't used very often. After all, if you want
+//! to combine object files into a single file, you could use `ar`.
+//! However, some programs use it in a creative manner which is hard to be
+//! substituted with static archives, so we need to support this option in
+//! the same way as GNU ld does. A notable example is GHC (Glasgow Haskell
+//! Compiler). GHC has its own dynamic linker which can load a .o file (as
+//! opposed to a .so) into memory. GHC's module is not a shared object file
+//! but a combined object file.
+//!
+//! There are many different ways to combine object files into a single file.
+//! The simplest approach would be to just copy all sections from input files
+//! to an output file as-is with a few exceptions for singleton sections such
+//! as the symbol table or the string table. That works, but that's not
+//! compatible with GNU ld.
+//!
+//! To be compatible with GNU ld, we need to do the followings:
+//!
+//!  - Regular sections containing opaque data (e.g. ".text" or ".data")
+//!    are just copied as-is. Two sections with the same name are merged.
+//!
+//!  - .symtab, .strtab and .shstrtab are merged.
+//!
+//!  - COMDAT groups are uniquified.
+//!
+//!  - Relocations are copied, but we need to fix symbol indices.
 
 use rayon::prelude::*;
 
@@ -20,6 +46,7 @@ use crate::output_file::OutputFile;
 use crate::passes;
 use crate::util::align_to;
 
+// Create linker-synthesized sections
 fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     ctx.ehdr = Some(OutputEhdr::new::<E>(0));
     ctx.shdr = Some(OutputShdr::new::<E>());
@@ -43,8 +70,9 @@ fn create_synthetic_sections<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-/// Propagates input COMDAT groups that survived uniquification as output
-/// groups.
+/// Create SHT_GROUP (i.e. comdat group) sections. We uniquify comdat
+/// sections by signature. We want to propagate input comdat groups as
+/// output comdat groups if they are still alive after uniquification.
 fn create_comdat_group_sections<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("create_comdat_group_sections");
     let mut sections = Vec::new();
@@ -86,8 +114,9 @@ fn create_comdat_group_sections<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-/// Unresolved symbols are propagated to the output as undefined symbols
-/// belonging to some input file.
+/// Unresolved undefined symbols in the -r mode are simply propagated to an
+/// output file as undefined symbols. This function guarantees that
+/// unresolved undefined symbols belongs to some input file.
 fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("r_claim_unresolved_symbols");
     let candidates: Vec<(crate::input_files::ObjId, usize)> = ctx
@@ -120,7 +149,8 @@ fn claim_unresolved_symbols<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-/// Assigns file offsets; addresses stay zero.
+/// Set output section in-file offsets. Output section memory addresses
+/// are left as zero.
 fn set_osec_offsets<E: Arch>(ctx: &mut Context<E>) -> u64 {
     let mut offset = 0;
     for id in ctx.chunks.clone() {

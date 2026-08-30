@@ -1,4 +1,19 @@
+// jobs-unix.cc
+// main.cc
 //! The linker driver: runs the passes in order.
+
+// Many build systems attempt to invoke as many linker processes as there
+// are cores, based on the assumption that the linker is single-threaded.
+// However, since mold is multi-threaded, such build systems' behavior is
+// not beneficial and just increases the overall peak memory usage.
+// On machines with limited memory, this could lead to an out-of-memory
+// error.
+//
+// This file implements a feature that limits the number of concurrent
+// mold processes to just 1 for each user. It is intended to be used as
+// `MOLD_JOBS=1 ninja` or `MOLD_JOBS=1 make -j$(nproc)`.
+//
+// The Rust driver does not yet implement the C++ MOLD_JOBS process gate.
 
 use std::fmt;
 use std::sync::{mpsc, Arc};
@@ -26,13 +41,17 @@ pub fn main(
 ) -> i32 {
     let diag = Diagnostics::new(false);
 
+    // Process -run option first. process_run_subcommand() does not return.
     if argv.get(1).is_some_and(|a| a == "-run" || a == "--run") {
         crate::subprocess::process_run_subcommand(&diag, &argv);
     }
 
-    // -C may change the directory; remember the original so that a
-    // restart for another target resolves relative paths the same way.
+    // parse_nonpositional_args() may chdir(2) for -C. If we end up
+    // restarting in redo_main(), we need to re-enter from the original
+    // directory so relative paths (e.g. response files) still resolve.
     let orig_cwd = std::env::current_dir().ok();
+
+    // Parse non-positional command line options
     let cmdline = args::expand_response_files(&diag, &argv);
 
     // Parse with x86-64 defaults; if the target turns out to be different,
@@ -70,7 +89,7 @@ fn configure_diagnostics(diag: &Diagnostics, args: &Args) {
 }
 
 fn thread_count(args: &Args) -> usize {
-    // mold doesn't scale well beyond 32 threads.
+    // mold doesn't scale well with too many threads, so limit it to 32.
     args.thread_count.unwrap_or_else(|| {
         std::thread::available_parallelism()
             .map_or(1, |n| n.get())
@@ -102,10 +121,12 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
     let mut ctx = Context::<E>::new(args, Diagnostics::new(false), cmdline.to_vec());
     configure_diagnostics(&ctx.diag, &ctx.args);
 
-    // If no -m option is given, deduce it from the input files.
+    // If no -m option is given, deduce it from input files.
     if ctx.args.emulation.is_empty() {
         ctx.args.emulation = crate::reader::detect_machine_type(&mut ctx, &jobs);
     }
+
+    // Redo if -m does not match with our speculation.
     if ctx.args.emulation != E::NAME {
         return Err(ctx.args.emulation.clone());
     }
@@ -113,6 +134,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
     let t_all = ctx.timer("all");
     crate::subprocess::install_signal_handler();
 
+    // Fork a subprocess unless --no-fork is given.
     if ctx.args.fork {
         crate::subprocess::fork_child();
     }
@@ -124,11 +146,12 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         .expect("failed to build linker thread pool");
 
     pool.install(|| {
-        // --wrap, --retain-symbols-file and --trace-symbol
+        // Handle --wrap options if any.
         for name in ctx.args.wrap.clone() {
             let id = ctx.get_symbol(name.as_bytes());
             ctx.symbols[id].set_wrapped(true);
         }
+        // Handle --retain-symbols-file options if any.
         if let Some(names) = ctx.args.retain_symbols_file.clone() {
             for name in names {
                 let id = ctx.get_symbol(name.as_bytes());
@@ -171,9 +194,10 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             }
         }
 
+        // Parse input files
         crate::reader::read_input_files(&mut ctx, jobs);
 
-        // Uniquify shared object files by soname, keeping the first of each.
+        // Uniquify shared object files by soname
         {
             let mut dsos = std::mem::take(&mut ctx.dsos);
             let mut keep = vec![false; dsos.len()];
@@ -201,14 +225,17 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             ctx.dsos = dsos;
         }
 
+        // Handle -repro
         if ctx.args.repro {
             passes::write_repro_file(&ctx);
         }
 
         let mut t_before_copy = ctx.timer("before_copy");
 
+        // Apply -exclude-libs
         passes::apply_exclude_libs(&mut ctx);
 
+        // Create a dummy file containing linker-synthesized symbols.
         if !ctx.args.relocatable {
             let t = ctx.timer("create_internal_file");
             passes::create_internal_file(&mut ctx);
@@ -254,80 +281,122 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             None
         };
 
+        // Parse .eh_frame section contents.
         passes::parse_eh_frame_sections(&mut ctx);
+
+        // Parse .sframe section contents.
         passes::parse_sframe_sections(&mut ctx);
+
+        // Split mergeable section contents into section pieces.
         passes::create_merged_sections(&mut ctx);
 
+        // Handle --relocatable. Since the linker's behavior is quite different
+        // from the normal one when the option is given, the logic is implemented
+        // to a separate file.
         if ctx.args.relocatable {
             crate::relocatable::combine_objects(&mut ctx);
             return Ok(0);
         }
 
+        // Create .bss sections for common symbols.
         passes::convert_common_symbols(&mut ctx);
+
+        // Apply version scripts.
         passes::apply_version_script(&mut ctx);
+
+        // Parse symbol version suffixes (e.g. "foo@ver1").
         passes::parse_symbol_version(&mut ctx);
+
+        // Set is_imported and is_exported bits for each symbol.
         passes::compute_import_export(&mut ctx);
 
+        // Make sure that there's no duplicate symbol
         if !ctx.args.allow_multiple_definition {
             passes::check_duplicate_symbols(&ctx);
         }
+        // Handle --zero-to-bss, which converts data sections containing only
+        // zeros into BSS.
         if ctx.args.zero_to_bss {
             let t = ctx.timer("convert_zero_to_bss");
             passes::convert_zero_to_bss(&mut ctx);
             drop(t);
         }
+        // Set "address-taken" bits for input sections.
         if ctx.args.icf {
             let t = ctx.timer("compute_address_significance");
             passes::compute_address_significance(&mut ctx);
             drop(t);
         }
+        // Handle PPC64-specific .opd sections.
         E::rewrite_input_sections(&mut ctx);
+
+        // Garbage-collect unreachable sections.
         if ctx.args.gc_sections {
             crate::gc_sections::gc_sections(&mut ctx);
         }
+        // Merge identical read-only sections.
         if ctx.args.icf {
             crate::icf::icf_sections(&mut ctx);
         }
 
+        // Create linker-synthesized sections such as .got or .plt.
         let t = ctx.timer("create_synthetic_sections");
         passes::create_synthetic_sections(&mut ctx);
         drop(t);
 
+        // Handle --no-allow-shlib-undefined
         if !ctx.args.allow_shlib_undefined {
             passes::check_shlib_undefined(&mut ctx);
         }
+
+        // Warn if symbols with different types are defined under the same name.
         passes::check_symbol_types(&ctx);
+
+        // Bin input sections into output sections.
         passes::create_output_sections(&mut ctx);
 
+        // Convert an .ARM.exidx to a synthetic section.
         if E::FAMILY == arch::Family::Arm32 {
             chunks::arm_exidx::create(&mut ctx);
         }
 
+        // Handle --section-align options.
         if !ctx.args.section_align.is_empty() {
             passes::apply_section_align(&mut ctx);
         }
+        // Add synthetic symbols such as __ehdr_start or __end.
         let t = ctx.timer("add_synthetic_symbols");
         passes::add_synthetic_symbols(&mut ctx);
         drop(t);
 
-        // Beyond this point, no new files are added.
+        // Beyond this point, no new files will be added to ctx.objs
+        // or ctx.dsos.
 
+        // Handle `-z cet-report`.
         if ctx.args.z_cet_report != args::CetReportKind::None {
             passes::check_cet_errors(&ctx);
         }
+        // Handle `-z execstack-if-needed`.
         if ctx.args.z_execstack_if_needed && ctx.objs.iter().any(|f| f.needs_executable_stack) {
             ctx.args.z_execstack = true;
         }
 
-        // Remaining undefined symbols become imports in a DSO, and weak
-        // undefined symbols get another chance to be resolved at runtime.
+        // If we are linking a .so file, remaining undefined symbols does
+        // not cause a linker error. Instead, they are treated as if they
+        // were imported symbols.
+        //
+        // If we are linking an executable, weak undefs are converted to
+        // weakly imported symbols so that they'll have another chance to be
+        // resolved.
         passes::claim_unresolved_symbols(&mut ctx);
 
-        // Beyond this point, no new symbols are added.
+        // Beyond this point, no new symbols will be added to the result.
 
+        // Handle --print-dependencies
         if ctx.args.print_dependencies {
             passes::print_dependencies(&ctx);
         }
+        // Handle --require-defined
         for name in ctx.args.require_defined.clone() {
             let id = ctx.get_symbol(name.as_bytes());
             if ctx.symbols[id].file().is_none() {
@@ -338,37 +407,68 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             }
         }
 
+        // .init_array and .fini_array contents have to be sorted by
+        // a special rule. Sort them.
         passes::sort_init_fini(&mut ctx);
+
+        // Likewise, .ctors and .dtors have to be sorted. They are rare
+        // because they are superceded by .init_array/.fini_array, though.
         passes::sort_ctor_dtor(&mut ctx);
+
+        // If .ctors/.dtors are to be placed to .init_array/.fini_array,
+        // we need to reverse their contents.
         passes::fixup_ctors_in_init_array(&mut ctx);
 
+        // Handle --shuffle-sections
         if ctx.args.shuffle_sections != args::ShuffleSectionsKind::None {
             passes::shuffle_sections(&mut ctx);
         }
+        // Copy string referred by .dynamic to .dynstr.
         let t = ctx.timer("add_dynamic_strings");
         passes::add_dynamic_strings(&mut ctx);
         drop(t);
         E::scan_symbols(&mut ctx);
+
+        // Scan relocations to find symbols that need entries in .got, .plt,
+        // .got.plt, .dynsym, .dynstr, etc.
         passes::scan_relocations(&mut ctx);
+
+        // Now that we know all exported symbols, make sure that no versioned
+        // name is defined twice.
         passes::check_symbol_version_conflicts(&ctx);
+
+        // Compute the is_weak bit for each imported symbol.
         passes::compute_imported_symbol_weakness(&mut ctx);
+
+        // Sort sections by section attributes so that we'll have to
+        // create as few segments as possible.
         let t = ctx.timer("sort_output_sections");
         passes::sort_output_sections(&mut ctx);
         drop(t);
 
+        // Handle --separate-debug-file.
         if ctx.gnu_debuglink.is_some() {
             passes::separate_debug_sections(&mut ctx);
         }
+        // Compute sizes of output sections while assigning offsets
+        // within an output section to input sections.
         passes::compute_section_sizes(&mut ctx);
 
+        // RELR is encoded independently for each output chunk using offsets
+        // relative to that chunk.
         if ctx.args.pack_dyn_relocs_relr {
             chunks::dynamic::reldyn::construct_relr(&mut ctx);
         }
+        // Reserve a space for dynamic symbol strings in .dynstr and sort
+        // .dynsym contents if necessary. Beyond this point, no symbol will
+        // be added to .dynsym.
         passes::sort_dynsyms(&mut ctx);
         // sort_debug_info_sections may uncompress the same .debug_info sections.
         if let Some(job) = gdb_input_job {
             ctx.gdb_index_data = Some(wait_for_background(job, ".gdb_index input"));
         }
+        // Sort .debug_info contents so that DWARF32 debug info precedes that of
+        // DWARF64. This is to mitigate the possibility of a relocation overflow.
         passes::sort_debug_info_sections(&mut ctx);
 
         // Type vectors identify compilation units by their order in the output
@@ -397,37 +497,57 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             None
         };
 
+        // Print reports about undefined symbols, if needed.
         if ctx.args.unresolved_symbols == args::UnresolvedKind::Error {
             passes::report_undef_errors(&ctx);
         }
 
+        // Fill .gnu.version_d section contents.
         if ctx.verdef.is_some() {
             chunks::version::verdef::construct(&mut ctx);
         }
+        // Fill .gnu.version_r section contents.
         chunks::version::verneed::construct(&mut ctx);
+
+        // .eh_frame is a special section from the linker's point of view,
+        // as its contents are parsed and reconstructed by the linker,
+        // unlike other sections that are regarded as opaque bytes.
+        // Here, we construct output .eh_frame contents.
         chunks::eh_frame::construct(&mut ctx);
+
+        // .sframe is likewise parsed and reconstructed by the linker. Build
+        // the merged, PC-sorted output .sframe.
         chunks::sframe::construct(&mut ctx);
 
+        // If --emit-relocs is given, we'll copy relocation sections from input
+        // files to an output file.
         if ctx.args.emit_relocs {
             passes::create_reloc_sections(&mut ctx);
         }
+        // Compute .symtab and .strtab sizes for each file.
         if !ctx.args.strip_all {
             passes::create_output_symtab(&mut ctx);
         }
+        // Compute the section header values for all sections.
         let t = ctx.timer("compute_section_headers");
         passes::compute_section_headers(&mut ctx);
         drop(t);
 
+        // Assign offsets to output sections
         let mut filesize = passes::set_osec_offsets(&mut ctx);
 
-        // RISC-V and LoongArch branches are encoded with instruction pairs
-        // that reach ±2 GiB; those whose targets are close enough are now
-        // shortened.
+        // On RISC-V, branches are encode using multiple instructions so
+        // that they can jump to anywhere in ±2 GiB by default. They may
+        // be replaced with shorter instruction sequences if destinations
+        // are close enough. Do this optimization.
         if E::IS_RISCV || E::IS_LOONGARCH {
             crate::relax::shrink_sections(&mut ctx);
             filesize = passes::set_osec_offsets(&mut ctx);
         }
 
+        // We've created range extension thunks with a pessimistive assumption
+        // that all out-of-section references are out of range. Now that we know
+        // the addresses of all sections,, we can eliminate excessive thunks.
         if E::NEEDS_THUNK {
             crate::thunks::remove_redundant_thunks(&mut ctx);
             filesize = passes::set_osec_offsets(&mut ctx);
@@ -437,24 +557,38 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
             filesize = passes::set_osec_offsets(&mut ctx);
         }
 
-        // The memory layout is fixed; set the addresses of synthesized symbols.
+        // At this point, memory layout is fixed.
+
+        // Set actual addresses to linker-synthesized symbols.
         let t = ctx.timer("fix_synthetic_symbols");
         passes::fix_synthetic_symbols(&mut ctx);
         drop(t);
         chunks::sframe::sort(&mut ctx);
 
+        // Beyond this, you can assume that symbol addresses including their
+        // GOT or PLT addresses have a correct final value.
+
+        // If --compress-debug-sections is given, compress .debug_* sections
+        // using zlib or zstd.
         if ctx.args.compress_debug_sections != ELFCOMPRESS_NONE {
             passes::compress_debug_sections(&mut ctx);
             filesize = passes::set_osec_offsets(&mut ctx);
         }
+        // Gather thunk symbols and attach them to themselves.
         if E::NEEDS_THUNK {
             crate::thunks::gather_thunk_addresses(&mut ctx);
         }
-        // Addends of dynamic relocations against synthetic symbols may have
-        // changed the packed relocation size.
+        // Re-finalize layout. fix_synthetic_symbols above may have changed
+        // addends for dynamic relocations referencing synthetic symbols, which
+        // can shift the encoded size of .rela.dyn under --pack-dyn-relocs=android
+        // because Android's packed format encodes addends in variable-length
+        // SLEB128. Other modes, including ordinary RELR, encode nothing whose
+        // size depends on addends, so they do not need this pass.
         if ctx.args.pack_dyn_relocs_android {
             filesize = passes::set_osec_offsets(&mut ctx);
         }
+
+        // At this point, both memory and file layouts are fixed.
 
         let t = ctx.timer("update_reldyn");
         chunks::dynamic::reldyn::update_shdr(&mut ctx);
@@ -462,6 +596,8 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         ctx.filesize = filesize;
         t_before_copy.stop();
 
+        // Create an output file
+        // Output buffer
         let t_open = ctx.timer("open_file");
         let mut output = OutputFile::open(
             &ctx.diag,
@@ -474,11 +610,14 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         {
             let mut t_copy = ctx.timer("copy");
             let buf = output.buf();
+
+            // Copy input sections to the output file and apply relocations.
             copy_chunks(&ctx, buf);
 
             E::finish_output(&ctx, buf);
 
-            // The dynamic linker works better with sorted .rela.dyn.
+            // Dynamic linker works better with sorted .rela.dyn section,
+            // so we sort them.
             let reldyn = ctx.reldyn.hdr.shdr;
             if ctx.chunks.contains(&ChunkId::RelDyn) && reldyn.sh_size != 0 {
                 chunks::dynamic::reldyn::sort(
@@ -488,7 +627,8 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
                 );
             }
 
-            // The address table of .gdb_index needs relocated debug info.
+            // The final stage reads address ranges, which requires relocated debug
+            // sections. We have applied the relocations now, so finish the index.
             if ctx.gdb_index.is_some() && ctx.gnu_debuglink.is_none() {
                 if let Some(job) = gdb_table_job.take() {
                     ctx.gdb_index_data = Some(wait_for_background(job, ".gdb_index table"));
@@ -496,6 +636,9 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
                 crate::gdb_index::write(&mut ctx, &mut output);
             }
 
+            // .note.gnu.build-id section contains a cryptographic hash of the
+            // entire output file. Now that we wrote everything except build-id,
+            // we can compute it.
             if ctx.buildid.is_some() {
                 let is_mmapped = output.is_mmapped();
                 passes::write_build_id(&mut ctx, output.buf(), is_mmapped);
@@ -507,10 +650,12 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         }
         ctx.checkpoint();
 
+        // Close the output file. This is the end of the linker's main job.
         let t_close = ctx.timer("close_file");
         output.close(&ctx.diag);
         drop(t_close);
 
+        // Handle --dependency-file
         if !ctx.args.dependency_file.is_empty() {
             passes::write_dependency_file(&ctx);
         }
@@ -525,6 +670,7 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         if ctx.gnu_debuglink.is_some() {
             passes::write_separate_debug_file(&mut ctx);
         }
+        // Show stats numbers
         if ctx.args.stats {
             passes::show_stats(&ctx);
         }
@@ -536,6 +682,9 @@ pub fn link<E: Arch>(cmdline: &[String], diag: &Diagnostics) -> Result<i32, Stri
         let _ = std::io::Write::flush(&mut std::io::stderr());
         crate::subprocess::notify_parent();
 
+        // Dropping page table entries here in parallel makes process exit
+        // faster, as the kernel otherwise reclaims them in a single thread
+        // on exit. File contents stay in the page cache.
         crate::mapped_file::drop_mappings();
 
         if ctx.args.quick_exit {
@@ -565,13 +714,13 @@ struct Task {
     extra: Vec<ChunkId>,
 }
 
-/// Copies every chunk into the output buffer.
-///
-/// Each chunk owns its own byte range, and a few also write into another
-/// chunk's range (`.eh_frame` fills the `.eh_frame_hdr` table, `.symtab`
-/// writes `.strtab`, and relocation sections may patch addends into their
-/// target sections). The buffer is split into the disjoint ranges each
-/// task needs so that all tasks can run in parallel safely.
+// Copy chunks to an output file
+//
+// Each chunk owns its own byte range, and a few also write into another
+// chunk's range (`.eh_frame` fills the `.eh_frame_hdr` table, `.symtab`
+// writes `.strtab`, and relocation sections may patch addends into their
+// target sections). The buffer is split into the disjoint ranges each
+// task needs so that all tasks can run in parallel safely.
 pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     let t = ctx.timer("copy_chunks");
 
@@ -640,10 +789,13 @@ pub fn copy_chunks<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     run_tasks(ctx, buf, &first, &t);
     run_tasks(ctx, buf, &last, &t);
 
-    // Undefined symbols in non-alloc sections are found only now.
+    // Undefined symbols in SHF_ALLOC sections are found by scan_relocations(),
+    // but those in non-SHF_ALLOC sections cannot be found until we copy section
+    // contents. So we need to call this function again to report possible
+    // undefined errors.
     passes::report_undef_errors(ctx);
 
-    // Zero the padding between chunks.
+    // Zero-clear paddings between chunks
     let mut ranges: Vec<Range> = ctx
         .chunks
         .iter()

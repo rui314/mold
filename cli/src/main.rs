@@ -5,10 +5,27 @@
 
 use mold::diagnostics::Diagnostics;
 
+// Including mimalloc-new-delete.h overrides the new/delete operators.
+// We need it only when using mimalloc as a dynamic library.
+// This header should be included in only one source file, so we do
+// it in this file.
+//
+// Rust selects the allocator in this executable for the same one-place rule.
 #[global_allocator]
 static GLOBAL: mold_mimalloc::MiMalloc = mold_mimalloc::MiMalloc;
 
-/// Links for a target, or reports the target the inputs are actually for.
+// Silence mimalloc warnings that users can ignore
+
+// A parent process may have disabled transparent huge pages, and the
+// flag is inherited. Huge pages make mold considerably faster on
+// large links, so re-enable them for this process.
+//
+// These two C++ entry-point operations are owned by mimalloc/C++-specific
+// APIs; the Rust entry point currently has no corresponding calls.
+
+// Since mold_main is a template, we can't run it without a type parameter.
+// We speculatively run mold_main with X86_64, and if the speculation was
+// wrong, re-run it with an actual machine type.
 fn link_for_target(target: &str, cmdline: &[String], diag: &Diagnostics) -> Result<i32, String> {
     match target {
         #[cfg(feature = "x86_64")]

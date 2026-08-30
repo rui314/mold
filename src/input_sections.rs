@@ -1,3 +1,4 @@
+// input-sections.cc
 //! Input sections and the records the linker parses out of them.
 
 use std::cell::Cell;
@@ -65,9 +66,19 @@ pub struct FragmentRef {
     pub entry: EntryId,
 }
 
-/// A byte range that RISC-V or LoongArch relaxation removed from a
-/// section: the contents at and after `offset` shift towards the
-/// beginning of the section by `delta` bytes in total.
+// RISC-V and LoongArch support code-shrinking linker relaxation.
+//
+// r_deltas is used to manage the locations where instructions are removed
+// from a section. r_deltas is sorted by offset. Each RelocDelta indicates
+// that the contents at and after `offset` and up to the next RelocDelta
+// offset need to be shifted towards the beginning of the section by
+// `delta` bytes when copying section contents to the output buffer.
+//
+// Since code-shrinking relaxation never bloats section contents, `delta`
+// increases monotonically within the array as well.
+//
+// The array is written once by shrink_section() and lives in the arena so
+// that InputSection stays trivially destructible.
 #[derive(Clone, Copy, Debug)]
 pub struct RelocDelta {
     pub offset: u64,
@@ -84,7 +95,7 @@ const IS_NOBITS: u8 = 1 << 6;
 const NO_RELSEC: u32 = u32::MAX;
 const NO_FDE: u32 = u32::MAX;
 
-/// Rarely used input-section state, allocated only when needed.
+// A struct to hold target-dependent input section members.
 #[derive(Debug, Default)]
 struct InputSectionExtras {
     /// The `.ARM.exidx` section describing this section (ARM32).
@@ -94,7 +105,10 @@ struct InputSectionExtras {
     r_deltas: Box<[RelocDelta]>,
 }
 
-/// A section of an input object file.
+// C++ layout constraint (Rust stores the origin tag separately):
+// InputSection represents a section in an input object file. Symbol::origin
+// uses the low two bits of an InputSection pointer, so keep this type
+// four-byte aligned even on hosts such as m68k.
 #[derive(Debug)]
 pub struct InputSection {
     pub file: ObjId,
@@ -110,8 +124,9 @@ pub struct InputSection {
     /// file when needed.
     pub sh_flags: u64,
 
-    /// The section contents as they appear in the file, or the
-    /// decompressed contents once [`Self::uncompress`] has run.
+    // contents initially points into the input file and is replaced with an
+    // uncompressed buffer when necessary. sh_size is the section size after
+    // decompression and may shrink during relaxation.
     contents: usize,
 
     /// The size after decompression; may shrink during relaxation.
@@ -120,9 +135,9 @@ pub struct InputSection {
 
     pub output_section: Option<OutputSectionId>,
 
-    /// Offset within the output section. During ICF it temporarily holds the
-    /// dense section index and then the encoded leader, as in C++ mold's
-    /// union. Sections are processed in parallel, so it is atomic.
+    // `offset` is normally the section's offset within the output section.
+    // During ICF, `icf_idx` temporarily holds a dense section index. After ICF,
+    // `icf_leader` points to the leader for a section eliminated by ICF.
     offset: AtomicU64,
 
     /// Index of the relocation section applying to this section, or
@@ -133,6 +148,13 @@ pub struct InputSection {
     /// First FDE in the owner file's contiguous run for this section.
     pub(crate) fde_begin: u32,
 
+    // ArenaPtr stores a pointer as a signed 32-bit offset from itself, in units of
+    // four bytes. It is used for references between objects in an ArenaResource;
+    // the ArenaPtr and its target must be four-byte aligned and less than 8 GiB
+    // apart. An offset of zero represents a null pointer.
+    //
+    // The offset is relative to this ArenaPtr, so copying it verbatim would
+    // make it point somewhere else.
     /// A self-relative pointer to rarely used state, in four-byte units.
     extra: i32,
 
@@ -195,10 +217,14 @@ impl InputSection {
             flags: AtomicU8::new(IS_ALIVE),
         };
 
-        // Compressed sections are usually decompressed straight into the
-        // output file, but REL-type targets read relocation addends from
-        // section contents, so those need the contents early. SH4 stores
-        // addends in sections despite being RELA.
+        // Sections may have been compressed. We usually uncompress them
+        // directly into the mmap'ed output file, but we want to uncompress
+        // early for REL-type ELF types to read relocation addends from
+        // section contents. For RELA-type, we don't need to do this because
+        // addends are in relocations.
+        //
+        // SH-4 stores addends to sections despite being RELA, which is a
+        // special (and buggy) case.
         if !E::IS_RELA || E::FAMILY == Family::Sh4 {
             isec.uncompress::<E>(diag, file, name, shdr.sh_size as usize);
         }
@@ -276,7 +302,7 @@ impl InputSection {
     #[inline]
     pub fn visit(&self) -> bool {
         // Most sections are referenced many times, so check with a plain
-        // load before the atomic read-modify-write.
+        // load before the atomic RMW.
         if self.is_visited() {
             return false;
         }
@@ -528,7 +554,7 @@ impl InputSection {
             && rel.r_offset.is_multiple_of(E::WORD_SIZE as u64)
     }
 
-    /// Returns the name of the function containing `offset`.
+    /// Get the name of a function containin a given offset.
     pub fn func_name<E: Arch>(&self, ctx: &Context<E>, offset: u64) -> Option<String> {
         let file = &ctx.objs[self.file.index()];
         for &id in &file.base.symbols {
@@ -579,7 +605,9 @@ impl InputSection {
         file.relocations::<E>(self.relsec_idx())
     }
 
-    /// Visits relocations without materializing a deferred CREL table.
+    // Visit relocations without materializing a CREL table unless another pass
+    // has already decoded it. The callback must be always-inline because this
+    // function may invoke it millions of times.
     #[inline]
     pub fn for_each_reloc<E: Arch>(&self, ctx: &Context<E>, f: impl FnMut(ElfRel, usize)) {
         let file = &ctx.objs[self.file.index()];
@@ -740,12 +768,16 @@ impl InputSection {
         }
     }
 
-    /// Returns a tombstone value if `sym` refers to a dead debug section.
-    ///
-    /// Linkers don't remove debug info for functions eliminated by COMDAT
-    /// deduplication or ICF, since that would require parsing the whole
-    /// debug section. Instead, dead debug records get a tombstone value
-    /// that debuggers know to skip.
+    // Input object files may contain duplicate code for inline functions
+    // and such. Linkers de-duplicate them at link-time. However, linkers
+    // generaly don't remove debug info for de-duplicated functions because
+    // doing that requires parsing the entire debug section.
+    //
+    // Instead, linkers write "tombstone" values to dead debug info records
+    // instead of bogus values so that debuggers can skip them.
+    //
+    // This function returns a tombstone value for the symbol if the symbol
+    // refers a dead debug info section.
     #[inline(always)]
     pub fn tombstone<E: Arch>(
         &self,
@@ -774,6 +806,7 @@ impl InputSection {
         let discarded = sym.file().is_none() && sym.name().is_empty() && !sym.is_fragment_dummy();
         let discarded = discarded && std::ptr::eq(sym, &ctx.symbols[SymbolId::DISCARDED_COMDAT]);
 
+        // Setting a tombstone is a special feature for a dead debug section.
         match isec {
             None if !discarded => return None,
             Some(isec) if isec.is_alive() => return None,
@@ -785,8 +818,9 @@ impl InputSection {
             return None;
         }
 
-        // A section folded by ICF keeps real values in .debug_line so that
-        // users can set breakpoints inside the merged section.
+        // If the section was dead due to ICF, we don't want to emit debug
+        // info for that section but want to set real values to .debug_line so
+        // that users can set a breakpoint inside a merged section.
         if let Some(isec) = isec {
             if isec.is_icf_removed() && name == b".debug_line" {
                 return None;
@@ -794,8 +828,8 @@ impl InputSection {
         }
 
         // 0 is an invalid value in most debug info sections, so we use it
-        // as a tombstone. .debug_loc and .debug_ranges reserve 0 as the
-        // terminator marker, so those use 1.
+        // as a tombstone value. .debug_loc and .debug_ranges reserve 0 as
+        // the terminator marker, so we use 1 if that's the case.
         Some(if name == b".debug_loc" || name == b".debug_ranges" {
             1
         } else {
@@ -803,9 +837,8 @@ impl InputSection {
         })
     }
 
-    /// Checks whether the symbol a relocation refers to is unresolved and
-    /// records the error if so. Returns true if the relocation must be
-    /// skipped.
+    /// Test if the symbol a given relocation refers to has already been resolved.
+    /// If not, record that error and returns true.
     #[inline(always)]
     pub fn record_undef_error<E: Arch>(&self, ctx: &Context<E>, rel: &ElfRel) -> bool {
         let file = &ctx.objs[self.file.index()];
@@ -821,8 +854,8 @@ impl InputSection {
         file: &ObjectFile,
         rel: &ElfRel,
     ) -> bool {
-        // A relocation may refer to a linker-synthesized symbol for a
-        // section fragment, which is always resolved.
+        // If a relocation refers to a linker-synthesized symbol for a
+        // section fragment, it's always been resolved.
         let sym_idx = rel.r_sym as usize;
         if sym_idx >= file.base.elf_syms.len() {
             return false;
@@ -831,16 +864,16 @@ impl InputSection {
         let sym = &ctx.symbols[sym_id];
 
         // A global symbol in a discarded COMDAT group should resolve to the
-        // corresponding symbol in the prevailing group. If it doesn't, the
+        // corresponding symbol in the prevailing group. If it does not, the
         // object files violate the One Definition Rule.
         if sym.file().is_none() && sym_id != SymbolId::DISCARDED_COMDAT {
             self.report_discarded_comdat(ctx, file, rel, sym);
             return true;
         }
 
-        // A non-weak undefined symbol must be promoted to an imported
-        // symbol or resolved to a definition. Otherwise, we need to report
-        // an error or a warning.
+        // A non-weak undefined symbol must be promoted to an imported symbol
+        // or resolved to an defined symbol. Otherwise, we need to report an
+        // error or warn on it.
         //
         // Every ELF file has an absolute local symbol as its first symbol.
         // Referring to that symbol is always valid.
@@ -919,11 +952,15 @@ impl InputSection {
         let buf = &mut buf[..self.sh_size as usize];
         let input_size = file.base.shdrs.sh_offset_and_size(self.shndx as usize).1 as usize;
 
-        // On RISC-V and LoongArch, relaxation may have removed bytes from
-        // the middle of the section, so a relaxed section is copied piecewise.
+        // Copy data. In RISC-V and LoongArch object files, sections are not
+        // atomic unit of copying because of relaxation. That is, some
+        // relocations are allowed to remove bytes from the middle of a
+        // section and shrink the overall size of it.
         if self.r_deltas().is_empty() {
+            // If a section is not relaxed, we can copy it as a one big chunk.
             self.copy_contents_to::<E>(&ctx.diag, file, self.name(file), input_size, buf);
         } else {
+            // A relaxed section is copied piece-wise.
             let contents = self.original_contents(file);
             let deltas = self.r_deltas();
             buf[..deltas[0].offset as usize]
@@ -941,6 +978,7 @@ impl InputSection {
             }
         }
 
+        // Apply relocations
         if !ctx.args.relocatable {
             if self.is_alloc() {
                 E::apply_reloc_alloc(ctx, self, buf);
@@ -953,6 +991,12 @@ impl InputSection {
 
 impl Drop for InputSection {
     fn drop(&mut self) {
+        // C++ mold has this arena constraint:
+        // InputSections are allocated from the arena, which does not run
+        // destructors, so the class must stay trivially destructible.
+        //
+        // Rust's SectionList explicitly drops every InputSection, so an
+        // extras record may own its r_deltas allocation here.
         if let Some(extra) = self.extra_ptr() {
             // SAFETY: this section uniquely owns its initialized extras
             // record. Its arena storage is released after all sections drop.
@@ -998,8 +1042,9 @@ pub fn r_delta(isec: &InputSection, offset: u64) -> i64 {
     }
 }
 
-/// Finds the object owning the prevailing COMDAT group for a symbol in a
-/// discarded group. Used only on an error path.
+/// Find the prevailing group having the same signature as the discarded group
+/// that contains esym. This is called only on an error path, so a linear scan is
+/// sufficient.
 fn find_comdat_owner<E: Arch>(
     ctx: &Context<E>,
     file: &ObjectFile,
@@ -1026,6 +1071,10 @@ fn find_comdat_owner<E: Arch>(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// wingdi.h defines ERROR as a macro, so undefine it before use
+//
+// Rust does not have the C preprocessor collision, but keeps the same action
+// name as the C++ decision tables.
 enum Action {
     None,
     Error,
@@ -1051,7 +1100,10 @@ fn do_action<E: Arch>(
             sym
         ),
         Action::Canonical => sym.add_flags(NEEDS_CANONICAL),
-        Action::Plt => sym.add_flags(NEEDS_PLT),
+        Action::Plt => {
+            // Create a PLT entry
+            sym.add_flags(NEEDS_PLT)
+        }
     }
 }
 
@@ -1077,9 +1129,9 @@ fn sym_type(sym: &Symbol) -> usize {
     }
 }
 
-/// Handles a PC-relative relocation such as R_X86_64_PC32. These can't be
-/// promoted to dynamic relocations because dynamic linkers generally don't
-/// support PC-relative ones.
+/// This is for PC-relative relocations (e.g. R_X86_64_PC32).
+/// We cannot promote them to dynamic relocations because the dynamic
+/// linker generally does not support PC-relative relocations.
 pub fn scan_pcrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel) {
     use Action::*;
     const TABLE: [[Action; 4]; 3] = [
@@ -1091,9 +1143,11 @@ pub fn scan_pcrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, 
     do_action(ctx, TABLE[output_type(ctx)][sym_type(sym)], isec, sym, rel);
 }
 
-/// Handles an absolute relocation smaller than the pointer size, such as
-/// R_X86_64_32. Dynamic linkers don't support dynamic relocations of that
-/// size, so it's an error if the value isn't known at link time.
+/// This is a decision table for absolute relocations that is smaller
+/// than the pointer size (e.g. R_X86_64_32). Since the dynamic linker
+/// generally does not support dynamic relocations smaller than the
+/// pointer size, we need to report an error if a relocation cannot be
+/// resolved at link-time.
 pub fn scan_absrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol, rel: &ElfRel) {
     use Action::*;
     const TABLE: [[Action; 4]; 3] = [
@@ -1107,17 +1161,21 @@ pub fn scan_absrel<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol,
 
 pub fn scan_tlsdesc<E: Arch>(ctx: &Context<E>, sym: &Symbol) {
     if ctx.args.is_static || (ctx.args.relax && sym.is_tprel_linktime_const(ctx)) {
-        // Relax TLSDESC to Local Exec: the TP-relative offset is
-        // materialized directly, so no dynamic relocation is needed.
+        // Relax TLSDESC to Local Exec. In this case, we directly materialize
+        // a TP-relative offset, so no dynamic relocation is needed.
         //
-        // TLSDESC relocations must always be relaxed for statically-linked
-        // executables even with -no-relax, because a static executable
-        // doesn't contain the trampoline function TLSDESC needs.
+        // TLSDESC relocs must always be relaxed for statically-linked
+        // executables even if -no-relax is given. It is because a
+        // statically-linked executable doesn't contain a trampoline
+        // function needed for TLSDESC.
     } else if ctx.args.relax && sym.is_tprel_runtime_const(ctx) {
-        // The TP-relative offset is known at process startup, so relax to
-        // code that reads it from the GOT and adds TP.
+        // In this condition, TP-relative offset of a thread-local variable
+        // is known at process startup time, so we can relax TLSDESC to the
+        // code that reads the TP-relative offset from GOT and add TP to it.
         sym.add_flags(NEEDS_GOTTP);
     } else {
+        // If no relaxation is doable, we simply create a TLSDESC dynamic
+        // relocation.
         sym.add_flags(NEEDS_TLSDESC);
     }
 }
@@ -1134,12 +1192,33 @@ pub fn check_tlsle<E: Arch>(ctx: &Context<E>, isec: &InputSection, sym: &Symbol,
     }
 }
 
-/// A CIE record in an input `.eh_frame` section.
-///
-/// Compilers emit nearly identical CIEs in every object file, so the
-/// linker deduplicates them; and since FDEs of dead functions must go, the
-/// linker has to understand the record structure rather than copying
-/// `.eh_frame` as opaque bytes.
+// .eh_frame section contains CIE and FDE records to teach the runtime
+// how to handle exceptions. Usually, a .eh_frame contains one CIE
+// followed by as many FDEs as the number of functions defined by the
+// file. CIE contains common information for FDEs (it is actually
+// short for Common Information Entry). FDE contains the start address
+// of a function and its length as well as how to handle exceptions
+// for that function.
+//
+// Unlike other sections, the linker has to parse .eh_frame for optimal
+// output for the following reasons:
+//
+// - Compilers tend to emit the same CIE as long as the programming
+//   language is the same, so CIEs in input object files are almost
+//   always identical. We want to merge them to make a resulting
+//   .eh_frame smaller.
+//
+// - If we eliminate a function (e.g. when we see two object files
+//   containing the duplicate definition of an inlined function), we
+//   want to also eliminate a corresponding FDE so that a resulting
+//   .eh_frame doesn't contain a dead FDE entry.
+//
+// - If we need to compare two function definitions for equality for
+//   ICF, we need to compare not only the function body but also its
+//   exception handlers.
+//
+// Note that we assume that the first relocation entry for an FDE
+// always points to the function that the FDE is associated to.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RelocationSpan {
     Input(&'static [u8]),
@@ -1168,10 +1247,11 @@ pub struct CieRecord {
     pub rel_idx: u32,
     /// The relocation table shared by this CIE and its FDEs.
     pub(crate) relocations: RelocationSpan,
+    // For deduplication
     pub icf_idx: u32,
-    /// The size of the initial_location and address_range fields of FDEs
-    /// associated with this CIE: 4 or 8.
-    pub fde_ptr_size: u8,
+    // The size of the initial_location and address_range fields of FDEs
+    // associated with this CIE. Initialized by parse_ehframe().
+    pub fde_ptr_size: u8, // 4 or 8
     /// Whether this is the representative of its equivalence class.
     pub is_leader: bool,
 }
@@ -1226,6 +1306,7 @@ pub struct FdeRecord {
     pub rel_idx: u32,
     pub cie_idx: u16,
     pub is_alive: AtomicBool,
+    // Last FDE associated with an input section
     pub(crate) is_last: bool,
 }
 
@@ -1281,22 +1362,29 @@ impl FdeRecord {
     }
 }
 
-/// A function descriptor entry read from an input `.sframe` section. The
-/// FRE block carries no relocations and is copied verbatim; only the
-/// function start is relocated.
+// Represents a single function descriptor entry (FDE) read from an input
+// .sframe section. Unlike .eh_frame, the variable-length Frame Row Entry
+// (FRE) data carries no relocations, so it can be copied to the output
+// verbatim. Only the FDE's func_start field is relocated, which we
+// resolve here and re-emit as a PC-relative offset.
 #[derive(Debug)]
 pub struct SFrameFde {
-    /// The function's input section, for liveness.
+    // the function's input section (liveness)
     pub section: u32,
-    /// The symbol the func_start relocation refers to.
+    // symbol the func_start reloc points to
     pub sym: SymbolId,
+    // addend of the func_start reloc
     pub addend: i64,
+    // the FRE block (attr + FREs), copied as-is
     pub fre: &'static [u8],
     pub func_size: u32,
     pub num_fres: u32,
 }
 
-/// A section fragment: the unit of deduplication in a mergeable section.
+// Mergeable section fragments
+//
+// SectionFragment lives in a separately mapped hash table, so it cannot use
+// ArenaPtr.
 #[derive(Debug)]
 pub struct SectionFragment {
     pub p2align: AtomicU8,
@@ -1305,8 +1393,8 @@ pub struct SectionFragment {
     /// one run.
     offset: AtomicU64,
     pub is_alive: AtomicBool,
-    /// Whether the fragment must be placed within 4 GiB of the start of
-    /// the output section.
+    // True if this fragment must be placed within 2^32 bytes from the
+    // start of the output section.
     pub is_32bit: AtomicBool,
 }
 
@@ -1351,17 +1439,13 @@ impl SectionFragment {
 }
 
 /// An input section with the SHF_MERGE flag, split into fragments.
-///
-/// Mergeable sections typically contain string literals or fixed-size
-/// constants. The linker splits them into pieces, deduplicates the pieces
-/// across all input files, and emits each unique piece once.
 #[derive(Debug)]
 pub struct MergeableSection {
     pub parent: MergedSectionId,
     pub p2align: u8,
     pub shndx: u32,
     input_offset: u32,
-    /// The fragment of each piece, parallel to `frag_offsets`.
+    // indices into parent.map.entries
     pub fragments: Vec<EntryId>,
     frag_offsets: Vec<u32>,
     hashes: Vec<u64>,
@@ -1384,7 +1468,23 @@ impl MergeableSection {
         }
     }
 
-    /// Splits the section contents into pieces and computes their hashes.
+    /// Mergeable sections (sections with SHF_MERGE bit) typically contain
+    /// string literals. Linker is expected to split the section contents
+    /// into null-terminated strings, merge them with mergeable strings
+    /// from other object files, and emit uniquified strings to an output
+    /// file.
+    ///
+    /// This mechanism reduces the size of an output file. If two source
+    /// files happen to contain the same string literal, the output will
+    /// contain only a single copy of it.
+    ///
+    /// It is less common than string literals, but mergeable sections can
+    /// contain fixed-sized read-only records too.
+    ///
+    /// This function splits the section contents into small pieces that we
+    /// call "section fragments". Section fragment is a unit of merging.
+    ///
+    /// We do not support mergeable sections that have relocations.
     pub fn split_contents<E: Arch>(
         &mut self,
         diag: &Diagnostics,
@@ -1404,6 +1504,7 @@ impl MergeableSection {
         }
         let entsize = parent.hdr.shdr.sh_entsize as usize;
 
+        // Split sections
         if parent.hdr.shdr.sh_flags & SHF_STRINGS as u64 != 0 {
             let mut pos = 0;
             while pos < data.len() {
@@ -1508,10 +1609,10 @@ fn find_null(data: &[u8], pos: usize, entsize: usize) -> Option<usize> {
     None
 }
 
-/// ObjectFile needs a lookup table indexed by ELF section number. The table
-/// lives outside the arena, so a regular section is stored as its 31-bit arena
-/// index. The high bit distinguishes mergeable sections, which are stored as
-/// indices into `mergeable`.
+// ObjectFile needs a lookup table indexed by ELF section number. The table
+// lives outside the arena, so it cannot use ArenaPtr; a regular section is
+// instead stored as its 31-bit arena index. The high bit distinguishes
+// mergeable sections, which are stored as indices into mergeable_sections.
 #[derive(Debug)]
 pub struct SectionList {
     indices: Vec<u32>,
@@ -1542,6 +1643,10 @@ const MAX_LOCAL_SECTION_ALLOC: usize = SECTION_ARENA_BLOCK_SIZE / 4;
 
 #[derive(Clone, Copy)]
 struct LocalSectionBlock {
+    // Index into the per-thread array of allocation blocks. Slots are never
+    // reused, so a new arena cannot inherit stale pointers from an old one.
+    //
+    // Rust records an arena identity in its one thread-local block instead.
     arena_id: u64,
     position: usize,
     end: usize,
@@ -1576,8 +1681,13 @@ impl SectionArena {
     pub fn new() -> SectionArena {
         let flags = libc::MAP_ANONYMOUS | libc::MAP_PRIVATE;
         #[cfg(any(target_os = "android", target_os = "linux"))]
+        // The arena is much larger than most links need. Do not reserve swap for
+        // pages that may never be touched.
         let flags = flags | libc::MAP_NORESERVE;
 
+        // The C++ implementation's Windows allocation counterpart notes:
+        // VirtualAlloc reserves and commits address space separately.
+        //
         // SAFETY: this creates private anonymous storage. SectionList makes
         // typed references only to elements it has initialized.
         let data = unsafe {
@@ -1638,6 +1748,10 @@ impl SectionArena {
 
     fn allocate_offset(&self, size: usize, alignment: usize) -> usize {
         if size <= MAX_LOCAL_SECTION_ALLOC && alignment <= SECTION_ARENA_BLOCK_ALIGNMENT {
+            // The C++ arena uses its thread-local block for the same reason:
+            // Standard containers make many small allocations. Reserve them from a
+            // thread-local block to avoid contending on the global bump pointer.
+            //
             // Most files need a small section block. Reserve such allocations
             // from a thread-local block to avoid contending on the global bump
             // pointer.
@@ -1682,6 +1796,8 @@ impl SectionArena {
                 .cast::<InputSection>()
                 .write(section)
         };
+        // ArenaPtr and base-relative indices both encode offsets in four-byte units.
+        // Offsets are from the beginning of the arena in four-byte units.
         u32::try_from(begin / 4).expect("input-section arena is too large")
     }
 
@@ -1768,6 +1884,10 @@ impl SectionList {
     #[inline]
     fn input_ptr(&self, index: u32) -> *mut InputSection {
         debug_assert!(index != 0 && index & MERGEABLE_SECTION == 0);
+        // ArenaPtr works only if the pointer field itself is within 8 GiB of its
+        // target. Records stored outside the arena instead use an index from the
+        // beginning of the arena. Indices count four-byte slots, and zero represents
+        // a null pointer.
         // SAFETY: regular indices are offsets in four-byte units into this
         // SectionList's arena mapping.
         unsafe { self.arena_base.as_ptr().add(index as usize * 4).cast() }
@@ -1955,6 +2075,11 @@ impl SectionList {
 
 impl Drop for SectionList {
     fn drop(&mut self) {
+        // ArenaObjectDeleter runs an arena object's destructor without freeing its
+        // storage. ArenaObjectPtr uses it to retain normal unique_ptr ownership
+        // semantics for objects whose storage belongs to ArenaResource.
+        //
+        // Rust performs the corresponding destructor-only operation explicitly.
         for &value in &self.indices {
             let index = if value == 0 {
                 continue;

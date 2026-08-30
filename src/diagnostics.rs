@@ -1,3 +1,4 @@
+// error.cc
 //! Error, warning and fatal-error reporting.
 //!
 //! Errors don't abort the link immediately: the linker keeps going so that
@@ -64,6 +65,8 @@ impl Diagnostics {
         self.color.load(Ordering::Relaxed)
     }
 
+    // Some C++ stdlibs don't support std::osyncstream even though
+    // it's is in the C++20 standard. So we implement it ourselves.
     fn emit(&self, prefix_mono: &str, prefix_color: &str, msg: fmt::Arguments) {
         let prefix = if self.color() {
             prefix_color
@@ -171,7 +174,9 @@ macro_rules! out {
     };
 }
 
-/// Formats an OS error the way `strerror` would.
+// strerror is not thread-safe, so guard it with a lock.
+//
+// Rust's standard-library conversion owns the returned message.
 pub fn errno_string() -> String {
     io::Error::last_os_error().to_string()
 }

@@ -78,12 +78,24 @@ pub struct SyntheticSymbols {
     pub fini: SymbolId,
 }
 
+// Context represents a context object for each invocation of the linker.
+// It contains command line flags, pointers to singleton objects
+// (such as linker-synthesized output sections), unique_ptrs for
+// resource management, and other miscellaneous objects.
 pub struct Context<E: Arch> {
+    // Command-line arguments
     pub args: Args,
     pub diag: Arc<Diagnostics>,
+
+    // Fully-expanded command line args
     pub cmdline_args: Vec<String>,
     pub timers: Timers,
 
+    // Symbol table. Object file parsing records each global symbol with add(),
+    // together with the file's slot for the resulting Symbol pointer.
+    // gather_symbols() gathers them. Other symbols, such as linker-synthesized
+    // ones and shared library symbols, are interned directly through insert() in
+    // get_symbol().
     pub symbols: SymbolTable,
 
     /// Global symbol keys recorded while input files are parsed, one bin per
@@ -100,8 +112,12 @@ pub struct Context<E: Arch> {
     /// Files indexed by priority, for decoding symbol resolution results.
     pub file_by_priority: Vec<Option<FileId>>,
 
-    /// Files read so far with their command line positions, in the
-    /// arbitrary order the parallel reader found them.
+    // Reader context
+
+    // Input files with their command line positions, in the
+    // nondeterministic order in which the parallel file reader found
+    // them. read_input_files() sorts them by position to construct
+    // `objs` and `dsos`.
     pub pending_files: Vec<(Vec<u32>, FileId)>,
 
     /// Sonames of all shared libraries given to the linker, including
@@ -126,7 +142,7 @@ pub struct Context<E: Arch> {
     /// The chunks that make up the output, in file order.
     pub chunks: Vec<ChunkId>,
 
-    /// Debug chunks set aside for `--separate-debug-file`.
+    // For --separate-debug-file
     pub debug_chunks: Vec<ChunkId>,
 
     pub ehdr: Option<OutputEhdr>,
@@ -162,6 +178,8 @@ pub struct Context<E: Arch> {
     pub verdef: Option<VerdefSection>,
     pub buildid: Option<BuildIdSection>,
     pub note_package: NotePackageSection,
+
+    // Target-specific context members
     pub note_property: Option<NotePropertySection>,
     pub riscv_attributes: Option<RiscvAttributesSection>,
     pub arm_exidx: Option<crate::chunks::arm_exidx::ArmExidxSection>,
@@ -171,6 +189,9 @@ pub struct Context<E: Arch> {
     /// how thunks address their targets.
     pub is_power10: AtomicBool,
     pub gdb_index: Option<GdbIndexSection>,
+
+    // For --gdb-index
+    // shared_ptr lets the implementation type remain in gdb-index.cc.
     pub gdb_index_data: Option<crate::gdb_index::GdbIndexData>,
     pub relro_padding: Option<RelroPaddingSection>,
     pub comment: Option<MergedSectionId>,
@@ -186,6 +207,7 @@ pub struct Context<E: Arch> {
     pub default_version: u16,
     pub page_size: u64,
 
+    // For thread-local variables
     pub tls_begin: u64,
     pub tp_addr: u64,
     pub dtp_addr: u64,
@@ -330,7 +352,9 @@ impl<E: Arch> Context<E> {
             .unwrap_or_default()
     }
 
-    /// Interns a global symbol by name.
+    // If we haven't seen the same `key` before, create a new instance
+    // of Symbol and returns it. Otherwise, returns the previously-
+    // instantiated object. `key` is usually the same as `name`.
     pub fn get_symbol(&mut self, name: &[u8]) -> SymbolId {
         if let Some(id) = self.symbols.lookup(name) {
             return id;

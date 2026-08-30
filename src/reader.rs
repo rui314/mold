@@ -156,7 +156,7 @@ fn new_lto_object<E: Arch>(
     Some(file)
 }
 
-/// Reads a member of an archive.
+// Reads a file inside an archive.
 fn read_archive_member<E: Arch>(
     ctx: &Context<E>,
     rctx: &ReaderContext,
@@ -183,8 +183,12 @@ fn read_archive_member<E: Arch>(
     }
 }
 
-/// Reads a file at `rctx.pos`. Containers (archives and linker scripts)
-/// are expanded in place, recursively.
+// Reads the given file, which is located at rctx.pos in the command
+// line. If the file is a container, i.e. an archive file or a linker
+// script, the files in it are read in place, recursively.
+//
+// read_input_files() reads top-level files with this function too but
+// overrides the container cases to read archive members in parallel.
 pub fn read_file<E: Arch>(ctx: &mut Context<E>, rctx: &mut ReaderContext, mf: &'static MappedFile) {
     match get_file_type(ctx, mf) {
         FileType::ElfObj => {
@@ -305,14 +309,42 @@ pub fn find_library<E: Arch>(
     fatal!(ctx, "library not found: {name}");
 }
 
-/// Reads all input files.
+// Reads all input files.
+//
+// Reading input files is I/O- and CPU-intensive, and a large program
+// can easily consist of tens of thousands of them, so we want to read
+// files in parallel. The command line, on the other hand, is
+// inherently sequential: options such as --as-needed or
+// --whole-archive apply to the files after them, and a file's
+// priority for symbol resolution is its position in the command line.
+//
+// We reconcile the two as follows: the command line parser has
+// already recorded the reader state and the position for each file
+// argument in its ReaderJob. We open and read files in parallel and
+// then sort the files we've found back into the command line order to
+// assign priorities.
 pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     let _t = ctx.timer("read_input_files");
 
-    // Open files and expand archives into one job per member so that
-    // members are read in parallel too. Linker scripts can modify the
-    // context, so they are collected and parsed afterwards, one at a time
-    // and in command line order.
+    // Open and read files in parallel. Archive files are expanded into
+    // one job per member so that members are read in parallel too.
+    //
+    // Linker scripts are the exception to the parallelism: they can
+    // modify the context, e.g. by defining symbol versions, so we only
+    // collect them here and parse them after this loop, one at a time
+    // and in the command line order, to keep their effects
+    // deterministic. Scripts given as input files are rare and small,
+    // such as the GROUP file that glibc installs as libc.so, so the
+    // lost parallelism doesn't matter.
+    //
+    // Parsing scripts late assumes that no script directive affects how
+    // command line arguments after the script are read. That holds for
+    // the directives we currently support: a script can only add input
+    // files, whose positions order them correctly, and define symbol
+    // versions or symbols, which are not used until after this
+    // function. If we add a directive that doesn't satisfy this, such
+    // as SEARCH_DIR, which affects how -l arguments after it are
+    // resolved, this scheme needs to be revisited.
     let scripts = WorkerBins::new();
     let loaded = WorkerBins::new();
 
@@ -320,6 +352,8 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
     rayon::scope(|scope| {
         jobs.into_par_iter().for_each(|job| {
             let mut rctx = job.rctx.clone();
+
+            // Everything else is a command line argument that we need to open.
             let mf = if job.is_lib {
                 let mf = find_library(ctx_ref, &rctx, &job.name);
                 crate::util::leak(MappedFile {
@@ -334,6 +368,10 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
                 must_open_file(&ctx_ref.diag, &ctx_ref.args.chroot, &job.name)
             };
 
+            // An archive member is enqueued by the job that read its archive
+            // file. A thin archive's members are opened here rather than by
+            // that job, so that the files of a large archive are opened in
+            // parallel.
             match get_file_type(ctx_ref, mf) {
                 FileType::Ar => {
                     for child in archive::read_fat_archive_members(&ctx_ref.diag, mf) {
@@ -407,7 +445,7 @@ pub fn read_input_files<E: Arch>(ctx: &mut Context<E>, jobs: Vec<ReaderJob>) {
         Script::new(ctx, &mut rctx, job.mf.unwrap()).parse_linker_script();
     }
 
-    // Sort the files into command line order and assign priorities.
+    // Sort the files into the command line order and assign priorities.
     let mut pending = std::mem::take(&mut ctx.pending_files);
     pending.sort_by(|a, b| a.0.cmp(&b.0));
 

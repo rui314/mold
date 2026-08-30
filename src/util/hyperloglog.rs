@@ -1,4 +1,10 @@
-//! Cardinality estimation, for sizing hash tables before filling them.
+//! This file implements HyperLogLog algorithm, which estimates
+//! the number of unique items in a given multiset.
+//!
+//! For more info, read
+//! https://engineering.fb.com/2018/12/13/data-infrastructure/hyperloglog
+
+// hyperloglog.cc
 
 /// Estimates the number of distinct values in a stream of hashes.
 ///

@@ -1,13 +1,23 @@
-//! LoongArch, Loongson's RISC ISA from 2021.
+//! LoongArch is a new RISC ISA announced in 2021 by Loongson. The ISA
+//! feels like a modernized MIPS with a hint of RISC-V flavor, although
+//! it's not compatible with either one.
 //!
-//! LoongArch feels like a modernized MIPS with a hint of RISC-V, without
-//! being compatible with either. All instructions are 4 bytes long and
-//! 4-byte aligned, and there are 32 general-purpose registers, of which
-//! `$t0`–`$t8` (`$r12`–`$r20`) are temporaries the PLT may use.
+//! While LoongArch is a fresh and clean ISA, its technological advantage
+//! over other modern RISC ISAs such as RISC-V doesn't seem to be very
+//! significant. It appears that the real selling point of LoongArch is
+//! that the ISA is developed and controlled by a Chinese company,
+//! reflecting a desire for domestic CPUs. Loongson is actively working on
+//! bootstrapping the entire ecosystem for LoongArch, sending patches to
+//! Linux, GCC, LLVM, etc.
 //!
-//! Like RISC-V, LoongArch relies on linker relaxation: certain
-//! instruction sequences may be rewritten to shorter ones, so sections
-//! are not copied as atomic units. See [`crate::relax`].
+//! Speaking of the ISA, all instructions are 4 byte long and aligned to 4
+//! byte boundaries in LoongArch. It has 32 general-purpose registers.
+//! Among these, $t0 - $t8 (aliases for $r12 - $r20) are temporary
+//! registers that we can use in our PLT.
+//!
+//! Just like RISC-V, LoongArch supports section-shrinking relaxations.
+//! That is, it allows linkers to rewrite certain instruction sequences to
+//! shorter ones. Sections are not an atomic unit of copying.
 //!
 //! https://github.com/loongson/la-abi-specs/blob/release/laelf.adoc
 
@@ -45,20 +55,39 @@ fn page(val: u64) -> u64 {
     val & !0xfff
 }
 
-/// The immediate of a `pcalau12i` that, followed by an `addi.d` with the
-/// low 12 bits, materializes `val`.
-///
-/// `pcalau12i` computes `pc + (imm << 12)` with the low 12 bits cleared,
-/// and `addi.d` sign-extends its immediate. So when bit 11 of the
-/// target is set, `pcalau12i` has to aim 0x1000 higher to compensate.
-/// RISC-V's `auipc` differs in not clearing the low bits.
+// A PC-relative address with a 32 bit offset is materialized in a
+// register with the following instructions:
+//
+// pcalau12i $rN, %pc_hi20(sym)
+// addi.d    $rN, $rN, %lo12(sym)
+//
+// PCALAU12I materializes bits [63:12] by computing (pc + imm << 12)
+// and zero-clear [11:0]. ADDI.D sign-extends its 12 bit immediate and
+// add it to the register. To compensate the sign-extension, PCALAU12I
+// needs to materialize a 0x1000 larger value than the desired [63:12]
+// if [11:0] is sign-extended.
+//
+// This is similar but different from RISC-V because RISC-V's AUIPC
+// doesn't zero-clear [11:0].
 fn hi20(val: u64, pc: u64) -> u64 {
     bits(page(val.wrapping_add(0x800)).wrapping_sub(page(pc)), 31, 12)
 }
 
-/// The upper part of a 64-bit PC-relative address for the large code
-/// model, which the psABI's formula compensates for the sign extensions
-/// of the `addi.d`/`lu32i.d`/`lu52i.d` sequence following `pcalau12i`.
+// A PC-relative 64-bit address is materialized with the following
+// instructions for the large code model:
+//
+// pcalau12i $rN, %pc_hi20(sym)
+// addi.d    $rM, $zero, %lo12(sym)
+// lu32i.d   $rM, %pc64_lo20(sym)
+// lu52i.d   $rM, $r12, %pc64_hi12(sym)
+// add.d     $rN, $rN, $rM
+//
+// PCALAU12I computes (pc + imm << 12) to materialize a 64-bit value.
+// ADDI.D adds a sign-extended 12 bit value to a register. LU32I.D and
+// LU52I.D simply set bits to [51:31] and to [63:53], respectively.
+//
+// Compensating all the sign-extensions is a bit complicated. The
+// psABI gives the following formula.
 fn higher(val: u64, pc: u64) -> u64 {
     let compensation = if val & 0x800 != 0 {
         0x1000u64.wrapping_sub(0x1_0000_0000)
@@ -181,14 +210,11 @@ fn add_uleb(loc: &mut [u8], val: u64, subtract: bool) {
     );
 }
 
-/// Whether the `i`th relocation refers to a GOT load of a symbol whose
-/// PC-relative address is a link-time constant, which can become an
-/// address materialization:
-///
-/// ```text
-///   pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20, R_LARCH_RELAX
-///   ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12, R_LARCH_RELAX
-/// ```
+// Returns true if isec's i'th relocation refers to the following
+// relaxable instructioon pair.
+//
+// pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20, R_LARCH_RELAX
+// ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12, R_LARCH_RELAX
 fn is_relaxable_got_load<E: Arch>(ctx: &Context<E>, isec: &InputSection, i: usize) -> bool {
     let rels = isec.rels::<E>(&ctx.objs[isec.file.index()]);
     let file = &ctx.objs[isec.file.index()];
@@ -256,7 +282,11 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
     const PLT_HDR_SIZE: u64 = 32;
     const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
-    const TRAP: &'static [u8] = &[0x00, 0x00, 0x2a, 0x00]; // break 0
+    // The C++ LOONGARCH64 and LOONGARCH32 target structs each record this
+    // instruction:
+    // break 0
+    // break 0
+    const TRAP: &'static [u8] = &[0x00, 0x00, 0x2a, 0x00];
 
     const R_COPY: u32 = R_LARCH_COPY;
     const R_GLOB_DAT: u32 = if IS_64 { R_LARCH_64 } else { R_LARCH_32 };
@@ -366,6 +396,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
+        // Scan relocations
         for rel in isec.rels::<Self>(file) {
             if is_marker(rel.r_type) || isec.record_undef_error(ctx, &rel) {
                 continue;
@@ -474,15 +505,20 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
             let sa = s.wrapping_add(a);
             let pcrel = sa.wrapping_sub(p);
 
-            // Unlike other psABIs, LoongArch uses the same relocation types
-            // for GOT entries of thread-local and regular symbols, so G
-            // refers to whichever the symbol has.
+            // Unlike other psABIs, the LoongArch ABI uses the same relocation
+            // types to refer to GOT entries for thread-local symbols and regular
+            // ones. Therefore, G may refer to a TLSGD or a regular GOT slot
+            // depending on the symbol type.
             //
-            // LoongArch defines TLSLD relocations but doesn't really support
-            // TLSLD: GCC and LLVM emit identical code for the global- and
-            // local-dynamic models, so TLSLD relocations are treated as
-            // TLSGD ones. Fixing the compilers is out of the question by
-            // now; the way forward is TLSDESC.
+            // Note that even though LoongArch defines relocations for TLSLD, TLSLD
+            // is not actually supported on it. GCC and LLVM emit identical machine
+            // code for -ftls-model=global-dynamic and -ftls-model=local-dynamic,
+            // and we need to handle TLSLD relocations as equivalent to TLSGD
+            // relocations. This is clearly a compiler bug, but it's too late to
+            // fix. The only way to fix it would be to define a new set of
+            // relocations for true TLSLD and deprecate the current ones. But it
+            // appears that migrating to TLSDESC is a better choice, so it's
+            // unlikely to happen.
             let g = || {
                 let entry = if sym.has_tlsgd(&ctx.symbols) {
                     sym.tlsgd_addr(ctx)
@@ -531,9 +567,10 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 R_LARCH_ABS64_LO20 => write_j20(loc, sa >> 32),
                 R_LARCH_ABS64_HI12 => write_k12(loc, sa >> 52),
                 R_LARCH_PCALA_LO12 => {
-                    // Contrary to the psABI, R_LARCH_PCALA_LO12 is sometimes
-                    // applied to a JIRL, whose immediate is 16 bits rather
-                    // than 12. GNU ld accepts that, so this does too.
+                    // It looks like R_LARCH_PCALA_LO12 is sometimes used for JIRL even
+                    // though the instruction takes a 16 bit immediate rather than 12 bits.
+                    // It is contrary to the psABI document, but GNU ld has special
+                    // code to handle it, so we accept it too.
                     if insn(loc) & 0xfc00_0000 == 0x4c00_0000 {
                         write_k16(loc, (sign_extend(sa, 12) >> 2) as u64);
                     } else {
@@ -544,9 +581,8 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                     if removed == 0 {
                         write_j20(loc, hi20(sa, p));
                     } else {
-                        // pcalau12i + addi.d became a pcaddi: the high part
-                        // vanishes and the low part turns into the pcaddi's
-                        // PC-relative relocation.
+                        // Rewrite pcalau12i + addi.d with pcaddi. The high part vanishes and
+                        // the low part becomes the pcaddi's PC-relative relocation.
                         debug_assert_eq!(removed, 4);
                         write_pcaddi(loc, pcrel >> 2);
                         i += 3;
@@ -557,9 +593,16 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 R_LARCH_GOT_PC_LO12 => write_k12(loc, got_entry()),
                 R_LARCH_GOT_PC_HI20 => {
                     if removed == 0 {
-                        // A GOT load of a symbol whose PC-relative address
-                        // is a link-time constant becomes an address
-                        // materialization: the ld.d turns into an addi.d.
+                        // If the PC-relative symbol address is known at link-time, we can
+                        // rewrite the following GOT load
+                        //
+                        // pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20
+                        // ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12
+                        //
+                        // with the following address materialization
+                        //
+                        // pcalau12i $t0, 0
+                        // addi.d    $t0, $t0, 0
                         if is_relaxable_got_load(ctx, isec, i - 1)
                             && is_int(compute_distance(ctx, sym, isec, rel), 32)
                         {
@@ -572,7 +615,8 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                             write_j20(loc, hi20(got_entry(), p));
                         }
                     } else {
-                        // pcalau12i + ld.d became a pcaddi.
+                        // Rewrite pcalau12i + ld.d with pcaddi. The high part vanishes and the
+                        // low part becomes the pcaddi's PC-relative relocation.
                         debug_assert_eq!(removed, 4);
                         write_pcaddi(loc, pcrel >> 2);
                         i += 3;
@@ -633,8 +677,7 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                         write_j20(loc, pcrel.wrapping_add(0x20000) >> 18);
                         write_k16(&mut loc[4..], pcrel >> 2);
                     } else {
-                        // pcaddu18i + jirl became a B or a BL, depending on
-                        // whether the jirl linked.
+                        // Rewrite PCADDU18I + JIRL to B or BL
                         debug_assert_eq!(removed, 4);
                         let jirl = insn(&contents[rel.r_offset as usize + 4..]);
                         set_insn(
@@ -650,28 +693,48 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 }
                 R_LARCH_ADD_ULEB128 => add_uleb(loc, sa, false),
                 R_LARCH_SUB_ULEB128 => add_uleb(loc, sa, true),
-                // TLSDESC materializes a TP-relative address in $a0 with
+                // LoongArch TLSDESC uses the following code sequence to materialize
+                // a TP-relative address in a0.
                 //
-                //   pcalau12i $a0, 0            R_LARCH_TLS_DESC_PC_HI20
-                //   addi.[dw] $a0, $a0, 0       R_LARCH_TLS_DESC_PC_LO12
-                //   ld.d      $ra, $a0, 0       R_LARCH_TLS_DESC_LD
-                //   jirl      $ra, $ra, 0       R_LARCH_TLS_DESC_CALL
+                // pcalau12i $a0, 0
+                // R_LARCH_TLS_DESC_PC_HI20    foo
+                // addi.[dw] $a0, $a0, 0
+                // R_LARCH_TLS_DESC_PC_LO12    foo
+                // ld.d      $ra, $a0, 0
+                // R_LARCH_TLS_DESC_LD         foo
+                // jirl      $ra, $ra, 0
+                // R_LARCH_TLS_DESC_CALL       foo
                 //
-                // If the TP-relative address is a link-time constant, the
-                // first two instructions go away and the last two become
+                // We may relax the instructions to the following if its TP-relative
+                // address is known at link-time
                 //
-                //   lu12i.w   $a0, foo@TPOFF
-                //   addi.w    $a0, $a0, foo@TPOFF
+                // <deleted>
+                // <deleted>
+                // lu12i.w   $a0, foo@TPOFF
+                // addi.w    $a0, $a0, foo@TPOFF
                 //
-                // or, for a small TP offset, the first three go away and
-                // the last becomes `ori $a0, $zero, foo@TPOFF`. If the
-                // address is known at process start, the last two become
+                // or to the following if the TP offset is small enough.
                 //
-                //   pcalau12i $a0, foo@GOTTP
-                //   ld.[dw]   $a0, $a0, foo@GOTTP
+                // <deleted>
+                // <deleted>
+                // <deleted>
+                // ori       $a0, $zero, foo@TPOFF
                 //
-                // Failing all that, the first two can still fold into one
-                // `pcaddi $a0, foo@GOTDESC` if the descriptor is near.
+                // If the TP-relative address is known at process startup time, we
+                // may relax the instructions to the following.
+                //
+                // <deleted>
+                // <deleted>
+                // pcalau12i $a0, foo@GOTTP
+                // ld.[dw]   $a0, $a0, foo@GOTTP
+                //
+                // If we don't know anything about the symbol, we can still relax
+                // the first two instructions to a single pcaddi as shown below.
+                //
+                // <deleted>
+                // pcaddi    $a0, foo@GOTDESC
+                // ld.d      $ra, $a0, 0
+                // jirl      $ra, $ra, 0
                 R_LARCH_TLS_DESC_PC_HI20 => {
                     if sym.has_tlsdesc(&ctx.symbols) && removed == 0 {
                         write_j20(loc, hi20(sym.tlsdesc_addr(ctx).wrapping_add(a), p));
@@ -688,10 +751,12 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                     }
                 }
                 R_LARCH_TLS_DESC_LD => {
-                    // The ld.d slot holds the first instruction of the IE or
-                    // LE sequence, unless that sequence is a single one.
-                    if sym.has_tlsdesc(&ctx.symbols) || removed == 4 {
-                        // Nothing to do.
+                    // TLSDESC is relaxed to IE or LE. The ld.d slot holds the first
+                    // instruction of the resulting sequence.
+                    if sym.has_tlsdesc(&ctx.symbols) {
+                        // Do nothing (TLSDESC kept)
+                    } else if removed == 4 {
+                        // Small TP offset: the instruction was deleted.
                     } else if sym.has_gottp(&ctx.symbols) {
                         set_insn(loc, 0x1a00_0004); // pcalau12i $a0, 0
                         write_j20(loc, hi20(sym.gottp_addr(ctx).wrapping_add(a), p));
@@ -704,8 +769,10 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                     // The jirl slot holds the second instruction of the IE
                     // or LE sequence.
                     if sym.has_tlsdesc(&ctx.symbols) {
-                        // Nothing to do.
+                        // Do nothing
                     } else if sym.has_gottp(&ctx.symbols) {
+                        // ld.d $a0, $a0, 0
+                        // ld.w $a0, $a0, 0
                         set_insn(loc, if IS_64 { 0x28c0_0084 } else { 0x2880_0084 }); // ld.[dw] $a0, $a0, 0
                         write_k12(loc, sym.gottp_addr(ctx).wrapping_add(a));
                     } else {
@@ -721,9 +788,8 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                         write_k12(loc, val as u64);
                     }
                 }
-                // lu12i.w + add.d + addi.d reach TP ± 2 GiB; a variable
-                // within 2 KiB of TP needs only the addi.d, then relative
-                // to $tp itself.
+                // lu12i.w + add.d + addi.d => addi.d when the variable is within 2 KiB
+                // of TP, in which case the lu12i.w loses its relocation.
                 R_LARCH_TLS_LE_HI20_R => {
                     if removed == 0 {
                         write_j20(loc, sa.wrapping_add(0x800).wrapping_sub(ctx.tp_addr) >> 12);
@@ -732,11 +798,16 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 R_LARCH_TLS_LE_LO12_R => {
                     let val = sa.wrapping_sub(ctx.tp_addr) as i64;
                     write_k12(loc, val as u64);
+                    // Rewrite `addi.d $t0, $t0, <offset>` with `addi.d $t0, $tp, <offset>`
+                    // if the offset is directly accessible using tp. tp is r2.
                     if is_int(val, 12) {
                         set_rj(loc, 2); // $tp
                     }
                 }
-                R_LARCH_TLS_LE_ADD_R | R_LARCH_64 => {}
+                R_LARCH_TLS_LE_ADD_R | R_LARCH_64 => {
+                    // add.d that materializes TP + offset; removed together with the
+                    // lu12i.w when the variable is within 2 KiB of TP.
+                }
                 _ => unreachable!("unexpected relocation {}", rel.type_name::<Self>()),
             }
         }
@@ -815,6 +886,9 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
             R_LARCH_PCALA_HI20 | R_LARCH_GOT_PC_HI20 if removed != 0 => R_NONE,
             R_LARCH_PCALA_LO12 | R_LARCH_GOT_PC_LO12 if folded_into_pcaddi() => R_LARCH_PCREL20_S2,
             R_LARCH_CALL36 if removed != 0 => R_LARCH_B26,
+            // pcalau12i + addi.d => pcaddi when TLSDESC is kept; both deleted when it
+            // is relaxed to IE/LE. Either way the high part loses its relocation.
+            // The folded pcaddi's relocation is emitted from the LO12 slot below.
             R_LARCH_TLS_DESC_PC_HI20 if !sym.has_tlsdesc(&ctx.symbols) || removed != 0 => R_NONE,
             R_LARCH_TLS_DESC_PC_LO12 => {
                 if !sym.has_tlsdesc(&ctx.symbols) {
@@ -873,14 +947,17 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
             let r = &rels.at(i);
             let sym = &ctx.symbols[file.base.symbols[r.r_sym as usize]];
 
-            // An R_LARCH_ALIGN refers to a run of NOPs, some or all of which
-            // are removed so that the instruction after them is aligned. A
-            // request for 2^n alignment refers to 2^n - 4 bytes of NOPs.
+            // A R_LARCH_ALIGN relocation refers to the beginning of a nop
+            // sequence. We need to remove some or all of them so that the
+            // instruction that immediately follows that is aligned to a specified
+            // boundary. To allow that, a R_LARCH_ALIGN relocation that requests
+            // 2^n alignment refers to 2^n - 4 bytes of nop instructions.
             if r.r_type == R_LARCH_ALIGN {
-                // The upper bits of r_addend can also carry an upper limit
-                // of the alignment, allowing the following instruction not
-                // to be aligned at all. That looks like a spec bug and
-                // isn't supported.
+                // The actual rule for storing the alignment size is a bit weird.
+                // In particular, the most significant 56 bits of r_addend is
+                // sometimes used to store the upper limit of the alignment,
+                // allowing the instruction that follows nops _not_ to be aligned at
+                // all. I think that's a spec bug, so we don't want to support that.
                 let alignment = if r.r_sym != 0 {
                     if r.r_addend >> 8 != 0 {
                         fatal!(
@@ -910,13 +987,13 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                 continue;
             }
 
-            // Other relaxations are optional.
+            // Handling other relocations is optional.
             if !ctx.args.relax || i + 1 == rels.len() || rels.at(i + 1).r_type != R_LARCH_RELAX {
                 continue;
             }
 
-            // Linker-synthesized symbols get their values only once the
-            // layout is fixed, so they're never relaxed against.
+            // Skip linker-synthesized symbols because their final addresses
+            // are not fixed yet.
             if sym.file() == ctx.internal_obj.map(FileId::Obj) {
                 continue;
             }
@@ -924,8 +1001,17 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
             let mut remove = |d: i64| record(&mut deltas, &mut delta, r, d);
 
             match r.r_type {
-                // lu12i.w + add.d + addi.d reach TP ± 2 GiB. A variable
-                // within TP ± 2 KiB needs only `addi.d $t0, $tp, offset`.
+                // LoongArch uses the following three instructions to access
+                // TP ± 2 GiB.
+                //
+                // lu12i.w $t0, 0           # R_LARCH_TLS_LE_HI20_R
+                // add.d   $t0, $t0, $tp    # R_LARCH_TLS_LE_ADD_R
+                // addi.d  $t0, $t0, 0      # R_LARCH_TLS_LE_LO12_R
+                //
+                // If the thread-local variable is within TP ± 2 KiB, we can
+                // relax them into the following single instruction.
+                //
+                // addi.d  $t0, $tp, <tp-offset>
                 R_LARCH_TLS_LE_HI20_R | R_LARCH_TLS_LE_ADD_R => {
                     let val = sym
                         .addr(ctx)
@@ -935,8 +1021,16 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                         remove(4);
                     }
                 }
-                // pcalau12i + addi.d materialize a PC-relative address with
-                // a 32-bit displacement; within ±2 MiB a pcaddi does.
+                // The following two instructions are used to materialize a
+                // PC-relative address with a 32 bit displacement.
+                //
+                // pcalau12i $t0, 0         # R_LARCH_PCALA_HI20
+                // addi.d    $t0, $t0, 0    # R_LARCH_PCALA_LO12
+                //
+                // If the displacement is within ±2 MiB, we can relax them to
+                // the following instruction.
+                //
+                // pcaddi    $t0, <offset>
                 R_LARCH_PCALA_HI20 => {
                     if i + 3 < rels.len()
                         && rels.at(i + 2).r_type == R_LARCH_PCALA_LO12
@@ -957,9 +1051,14 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                         }
                     }
                 }
-                // pcaddu18i + jirl reach PC ± 128 GiB; within ±128 MiB a B
-                // or BL does, provided the jirl's link register is $zero
-                // or $ra.
+                // A CALL36 relocation referes to the following instruction pair
+                // to jump to PC ± 128 GiB.
+                //
+                // pcaddu18i $t0,       0         # R_LARCH_CALL36
+                // jirl      $zero/$ra, $t0, 0
+                //
+                // If the displacement is PC ± 128 MiB, we can use B or BL instead.
+                // Note that $zero is $r0 and $ra is $r1.
                 R_LARCH_CALL36 => {
                     let dist = compute_distance(ctx, sym, isec, r);
                     let jirl = insn(&contents[r.r_offset as usize + 4..]);
@@ -967,9 +1066,16 @@ impl<const IS_64: bool> Arch for LoongArchTarget<IS_64> {
                         remove(4);
                     }
                 }
-                // pcalau12i + ld.d load a symbol's address from the GOT;
-                // if that address is a link-time constant within ±2 MiB, a
-                // pcaddi materializes it directly.
+                // The following two instructions are used to load a symbol address
+                // from the GOT.
+                //
+                // pcalau12i $t0, 0         # R_LARCH_GOT_PC_HI20
+                // ld.d      $t0, $t0, 0    # R_LARCH_GOT_PC_LO12
+                //
+                // If the PC-relative symbol address is known at link-time, we can
+                // relax them to the following instruction.
+                //
+                // pcaddi    $t0, <offset>
                 R_LARCH_GOT_PC_HI20 => {
                     if is_relaxable_got_load(ctx, isec, i) {
                         let dist = compute_distance(ctx, sym, isec, r);

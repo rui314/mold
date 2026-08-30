@@ -1,21 +1,48 @@
-//! PowerPC64 ELFv1, the ABI of big-endian 64-bit PowerPC systems. The
-//! little-endian systems use ELFv2; see [`crate::arch::ppc64v2`].
+// arch-ppc64v1.cc
+//! This file contains code for the 64-bit PowerPC ELFv1 ABI that is
+//! commonly used for big-endian PPC systems. Modern PPC systems that use
+//! the processor in the little-endian mode use the ELFv2 ABI instead. For
+//! ELFv2, see arch-ppc64v2.cc.
 //!
-//! Beyond endianness, ELFv1's distinctive feature is that a function
-//! pointer refers not to the function's code but to a *function
-//! descriptor*: a 24-byte structure holding the entry point, the value
-//! `r2` must have while the function runs, and an unused environment
-//! pointer. The reason is the same TOC-pointer scheme as in ELFv2:
-//! position-independent code addresses data relative to `r2 = GOT +
-//! 0x8000`, each module has its own GOT, so calling into another module
-//! requires switching `r2`, and a caller through a pointer can only do
-//! that if the pointer tells it the callee's `r2`. Calls through the PLT
-//! restore `r2` themselves, so only indirect calls pay for it.
+//! Even though they are similiar, ELFv1 isn't only different from ELFv2 in
+//! endianness. The most notable difference is, in ELFv1, a function
+//! pointer doesn't directly refer to the entry point of a function but
+//! instead refers to a data structure so-called "function descriptor".
 //!
-//! The descriptors live in `.opd` ("official procedure descriptors").
-//! Just as a function can have a PLT or GOT address on other targets, a
-//! function here can also have an OPD address, which is what
-//! address-taking relocations resolve to.
+//! The function descriptor is essentially a pair of a function entry point
+//! address and a value that should be set to %r2 before calling that
+//! function. There is also a third member for "the environment pointer for
+//! languages such as Pascal and PL/1" according to the psABI, but it looks
+//! like no one acutally uses it. In total, the function descriptor is 24
+//! bytes long. Here is why we need it.
+//!
+//! PPC generally lacks PC-relative data access instructions. Position-
+//! independent code sets GOT + 0x8000 to %r2 and access global variables
+//! relative to %r2.
+//!
+//! Each ELF file has its own GOT. If a function calls another function in
+//! the same ELF file, it doesn't have to reset %r2. However, if it is in
+//! other file (e.g. other .so), it has to set a new value to %r2 so that
+//! the register contains the callee's GOT + 0x8000.
+//!
+//! In this way, you can't call a function just by knowing the function's
+//! entry point address. You also need to know a proper %r2 value for the
+//! function. This is why a function pointer refers to a tuple of an
+//! address and a %r2 value.
+//!
+//! If a function call is made through PLT, PLT takes care of restoring %r2.
+//! Therefore, the caller has to restore %r2 only for function calls
+//! through function pointers.
+//!
+//! .opd (short for "official procedure descriptors") contains function
+//! descriptors.
+//!
+//! You can think OPD as this: even in other targets, a function can have a
+//! few different addresses for different purposes. It may not only have an
+//! entry point address but may also have PLT and/or GOT addresses.
+//! In PPCV1, it may have an OPD address in addition to these. OPD address
+//! is used for relocations that refers to the address of a function as a
+//! function pointer.
 //!
 //! https://github.com/rui314/psabi/blob/main/ppc64v1.pdf
 
@@ -101,22 +128,47 @@ fn toc(ctx: &Context<Ppc64V1>) -> u64 {
     ctx.symbols[ctx.syms.toc.expect("PPC64 has a .TOC. symbol")].addr(ctx)
 }
 
-/// Compilers emit a descriptor for every function into `.opd`, as if
-/// the output `.opd` could be linked like any other section. It can't:
-///
-/// 1. Function symbols refer to `.opd`, which suits address-taking
-///    relocations but not branches, which need the code address that
-///    only the descriptor's contents reveal.
-/// 2. Only functions whose addresses are taken need output descriptors;
-///    copying the input sections would keep plenty of dead ones.
-/// 3. Every function being reachable from `.opd` defeats graph-based
-///    passes such as garbage collection and identical code folding.
-///
-/// So this undoes the compiler's work: function symbols move from
-/// `.opd` to their code, relocations against `.opd` are redirected to
-/// those symbols, and the input `.opd` sections die. Descriptors are then
-/// synthesized for the functions marked `NEEDS_PPC_OPD`, like PLT
-/// entries.
+// Compiler creates an .opd entry for each function symbol. The intention
+// is to make it possible to create an output .opd section just by linking
+// input .opd sections in the same manner as we do to other normal input
+// sections.
+//
+// However, in reality, .opd isn't a normal input section. It needs many
+// special treatments as follows:
+//
+// 1. A function symbol refers to not a .text but an .opd. Its address
+//    works fine for address-taking relocations such as R_PPC64_ADDR64.
+//    However, R_PPC64_REL24 (which is used for branch instruction) needs
+//    a function's real address instead of the function's .opd address.
+//    We need to read .opd contents to find out a function entry point
+//    address to apply R_PPC64_REL24.
+//
+// 2. Output .opd entries are needed only for functions whose addresses
+//    are taken. Just copying input .opd sections to an output would
+//    produces lots of dead .opd entries.
+//
+// 3. In this design, all function symbols refer to an .opd section, and
+//    that doesn't work well with graph traversal optimizations such as
+//    garbage collection or identical comdat folding. For example, garbage
+//    collector would mark an .opd alive which in turn mark all functions
+//    thatare referenced by .opd as alive, effectively keeping all
+//    functions as alive.
+//
+// The problem is that the compiler creates a half-baked .opd section, and
+// the linker has to figure out what all these .opd entries and
+// relocations are trying to achieve. It's like the compiler would emit a
+// half-baked .plt section in an object file and the linker has to deal
+// with that. That's not a good design.
+//
+// So, in this function, we undo what the compiler did to .opd. We remove
+// function symbols from .opd and reattach them to their function entry
+// points. We also rewrite relocations that directly refer to an input
+// .opd  section so that they refer to function symbols instead. We then
+// mark input .opd sections as dead.
+//
+// After this function, we mark symbols with the NEEDS_PPC_OPD flag if the
+// symbol needs an .opd entry. We then create an output .opd just like we
+// do for .plt or .got.
 pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
     let _t = ctx.timer("rewrite_opd");
 
@@ -143,7 +195,7 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
             .map(|r| (r.r_offset, r))
             .collect();
 
-        // Move function symbols from .opd to their code.
+        // Move symbols from .opd to .text.
         let mut descriptors: Vec<(u64, u32)> = Vec::new(); // (offset in .opd, local symbol index)
         for (idx, &id) in local_symbols.iter().enumerate() {
             let sym = &ctx.symbols[id];
@@ -175,9 +227,10 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
             sym.set_origin_state(origin);
             sym.value = rel.r_addend as u64;
         }
+        // Sort symbols so that get_opd_sym_at() can do binary search.
         descriptors.sort_by_key(|&(offset, _)| offset);
 
-        // Redirect relocations against .opd to the function symbols.
+        // Rewrite relocations so that they directly refer to .opd.
         let refers_to_opd: Vec<bool> = local_symbols
             .iter()
             .map(|&id| ctx.symbols[id].input_section() == Some(opd))
@@ -224,8 +277,9 @@ pub fn rewrite_opd(ctx: &mut Context<Ppc64V1>) {
     }
 }
 
-/// An exported function's dynamic symbol refers to its descriptor, and so
-/// do the ELF header's entry point and the `DT_INIT`/`DT_FINI` routines.
+// When a function is exported, the dynamic symbol for the function should
+// refers to the function's .opd entry. This function marks such symbols
+// with NEEDS_PPC_OPD.
 pub fn scan_symbols(ctx: &mut Context<Ppc64V1>) {
     let _t = ctx.timer("scan_symbols");
     let needs_descriptor = |sym: &Symbol| sym.add_flags(NEEDS_PPC_OPD);
@@ -239,6 +293,7 @@ pub fn scan_symbols(ctx: &mut Context<Ppc64V1>) {
             needs_descriptor(sym);
         }
     }
+    // Functions referenced by the ELF header also have to have .opd entries.
     for id in [ctx.syms.entry, ctx.syms.init, ctx.syms.fini] {
         let sym = &ctx.symbols[id];
         if !sym.is_imported() {
@@ -284,13 +339,16 @@ impl Arch for Ppc64V1 {
         scan_symbols(ctx);
     }
 
-    /// `.plt` serves lazy symbol resolution only. All PLT calls go through
-    /// thunks, which read the target's descriptor from `.got.plt` and jump
-    /// there, so once a symbol is resolved the PLT is skipped.
+    // .plt is used only for lazy symbol resolution on PPC64. All PLT
+    // calls are made via range extension thunks even if they are within
+    // reach. Thunks read addresses from .got.plt and jump there.
+    // Therefore, once PLT symbols are resolved and final addresses are
+    // written to .got.plt, thunks just skip .plt and directly jump to the
+    // resolved addresses.
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
         const INSN: [u32; 11] = [
             0x7d88_02a6, // mflr    r12
-            0x429f_0005, // bcl     20, 31, 4
+            0x429f_0005, // bcl     20, 31, 4 // obtain PC
             0x7d68_02a6, // mflr    r11
             0x7d88_03a6, // mtlr    r12
             0x3d6b_0000, // addis   r11, r11, GOTPLT_OFFSET@ha
@@ -313,12 +371,15 @@ impl Arch for Ppc64V1 {
         or32(&mut buf[20..], lo(val));
     }
 
-    /// The loader fills `.got.plt` itself and expects the layout the ABI
-    /// prescribes: entries of 8 bytes up to index 0x8000 and 12 bytes
-    /// beyond, since a larger index no longer fits an `li`.
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
         let plt0 = ctx.plt.hdr.shdr.sh_addr;
+
+        // The PPC64 ELFv1 ABI requires PLT entries to be vary in size depending
+        // on their indices. Unlike other targets, .got.plt is filled not by us
+        // but by the loader, so we don't have a control over where the initial
+        // call to the PLT entry jumps to. So we need to strictly follow the PLT
+        // section layout as the loader expect it to be.
         if idx < 0x8000 {
             write_insns(buf, &[0x3800_0000, 0x4b00_0000]); // li r0, PLT_INDEX; b plt0
             or32(buf, idx);
@@ -338,7 +399,8 @@ impl Arch for Ppc64V1 {
         }
     }
 
-    /// Thunks read GOT entries directly, so `.plt.got` has no entries.
+    // .plt.got is not necessary on PPC64 because range extension thunks
+    // directly read GOT entries and jump there.
     fn write_pltgot_entry(_ctx: &Context<Self>, _buf: &mut [u8], _sym: &Symbol) {}
 
     fn apply_eh_reloc(
@@ -371,6 +433,8 @@ impl Arch for Ppc64V1 {
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
+
+        // Scan relocations
         for rel in isec.rels::<Self>(file) {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
@@ -380,7 +444,8 @@ impl Arch for Ppc64V1 {
                 sym.add_flags(NEEDS_GOT | NEEDS_PLT | NEEDS_PPC_OPD);
             }
 
-            // Anything but a branch takes the function's address.
+            // Any relocation except R_PPC64_REL24 is considered as an
+            // address-taking relocation.
             if rel.r_type != R_PPC64_REL24 && sym.ty() == STT_FUNC {
                 sym.add_flags(NEEDS_PPC_OPD);
             }
@@ -464,7 +529,6 @@ impl Arch for Ppc64V1 {
                 }
                 R_PPC64_TOC16_LO_DS => or16(loc, sa.wrapping_sub(toc) & 0xfffc),
                 R_PPC64_REL24 => {
-                    // A branch goes to the code, not the descriptor.
                     let code = sym.addr_with(ctx, AddrFlags::NO_OPD);
                     let mut val = code.wrapping_add(a).wrapping_sub(p) as i64;
                     if sym.has_plt(&ctx.symbols) || !is_int(val, 26) {
@@ -473,9 +537,10 @@ impl Arch for Ppc64V1 {
                     isec.check_range(ctx, i, val, -(1 << 25), 1 << 25);
                     or32(loc, bits(val as u64, 25, 2) << 2);
 
-                    // The PLT saves r2 to the caller's r2 save slot, which
-                    // must be restored after the call returns. The
-                    // placeholder for that is usually a NOP after the BL.
+                    // If a callee is an external function, PLT saves %r2 to the
+                    // caller's r2 save slot. We need to restore it after function
+                    // return. To do so, there's usually a NOP as a placeholder
+                    // after a BL. 0x6000'0000 is a NOP.
                     if sym.has_plt(&ctx.symbols) && loc.len() >= 8 && r32(&loc[4..]) == 0x6000_0000
                     {
                         w32(&mut loc[4..], 0xe841_0028); // ld r2, 40(r1)
@@ -550,35 +615,45 @@ impl Arch for Ppc64V1 {
         });
     }
 
-    /// All PLT calls go through thunks.
     fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &ElfRel) -> bool {
         sym.has_plt(&ctx.symbols)
     }
 
     fn write_thunk(ctx: &Context<Self>, thunk: &Thunk, _addr: u64, buf: &mut [u8]) {
-        // A thunk to a function with a GOT entry saves the caller's r2,
-        // reads the descriptor's address from the GOT, sets the callee's
-        // r2 and jumps.
+        // If the destination is .plt.got, we save the current r2, read an
+        // address of a function descriptor from .got, restore %r2 and jump
+        // to the function.
         const PLTGOT_THUNK: [u32; 7] = [
-            0xf841_0028, // std   r2, 40(r1)
-            0x3d82_0000, // addis r12, r2,  foo@got@toc@ha
-            0xe98c_0000, // ld    r12, foo@got@toc@lo(r12)
-            0xe84c_0008, // ld    r2,  8(r12)
-            0xe98c_0000, // ld    r12, 0(r12)
-            0x7d89_03a6, // mtctr r12
+            // Store the caller's %r2
+            0xf841_0028, // std   %r2, 40(%r1)
+            // Load an address of a function descriptor
+            0x3d82_0000, // addis %r12, %r2,  foo@got@toc@ha
+            0xe98c_0000, // ld    %r12, foo@got@toc@lo(%r12)
+            // Restore the callee's %r2
+            0xe84c_0008, // ld    %r2,  8(%r12)
+            // Jump to the function
+            0xe98c_0000, // ld    %r12, 0(%r12)
+            0x7d89_03a6, // mtctr %r12
             0x4e80_0420, // bctr
         ];
-        // A thunk to a PLT symbol finds the descriptor in .got.plt.
+
+        // If the destination is .plt, read a function descriptor from .got.plt.
         const PLT_THUNK: [u32; 7] = [
-            0xf841_0028, // std   r2, 40(r1)
-            0x3d82_0000, // addis r12, r2,  foo@gotplt@toc@ha
-            0x398c_0000, // addi  r12, r12, foo@gotplt@toc@lo
-            0xe84c_0008, // ld    r2,  8(r12)
-            0xe98c_0000, // ld    r12, 0(r12)
-            0x7d89_03a6, // mtctr r12
+            // Store the caller's %r2
+            0xf841_0028, // std   %r2, 40(%r1)
+            // Materialize an address of a function descriptor
+            0x3d82_0000, // addis %r12, %r2,  foo@gotplt@toc@ha
+            0x398c_0000, // addi  %r12, %r12, foo@gotplt@toc@lo
+            // Restore the callee's %r2
+            0xe84c_0008, // ld    %r2,  8(%r12)
+            // Jump to the function
+            0xe98c_0000, // ld    %r12, 0(%r12)
+            0x7d89_03a6, // mtctr %r12
             0x4e80_0420, // bctr
         ];
-        // A thunk to a function in this module jumps straight to its code.
+
+        // If the destination is a non-imported function, we directly jump
+        // to the function entry address.
         const LOCAL_THUNK: [u32; 7] = [
             0x3d82_0000, // addis r12, r2,  foo@toc@ha
             0x398c_0000, // addi  r12, r12, foo@toc@lo

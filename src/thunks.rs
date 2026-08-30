@@ -1,3 +1,21 @@
+// thunks.cc
+//! RISC instructions are usually up to 4 bytes long, so the immediates of
+//! their branch instructions are naturally smaller than 32 bits.  This is
+//! contrary to x86-64 on which branch instructions take 4 bytes immediates
+//! and can jump to anywhere within PC ± 2 GiB.
+//!
+//! In fact, ARM32's branch instructions can jump only within ±16 MiB and
+//! ARM64's ±128 MiB, for example. If a branch target is further than that,
+//! we need to let it branch to a linker-synthesized code sequence that
+//! construct a full 32 bit address in a register and jump there. That
+//! linker-synthesized code is called "thunk".
+//!
+//! The function in this file creates thunks.
+//!
+//! Thunk size varies widely across programs. In an ARM64 build of Clang 16,
+//! thunks occupy about 30 KiB (0.01%) of a ~300 MiB text section, compared
+//! with about 12.5 MiB (2.5%) of a ~500 MiB text section in TensorFlow.
+//!
 //! Range extension thunks.
 //!
 //! RISC branch instructions have small immediates: ARM32 branches reach
@@ -57,7 +75,8 @@ impl Thunk {
 /// A section offset that hasn't been assigned yet.
 const UNPLACED: u64 = u64::MAX;
 
-/// Thunks are created per batch of code of this size.
+/// We create thunks for each 32/8/16 MiB code block for
+/// ARM64/ARM32/PPC, respectively.
 fn batch_size<E: Arch>() -> u64 {
     let mib = match E::FAMILY {
         Family::Arm64 => 32,
@@ -67,13 +86,14 @@ fn batch_size<E: Arch>() -> u64 {
     mib << 20
 }
 
-/// A thunk is assumed to be smaller than half a batch.
+/// We assume that a single thunk group is smaller than 16/4/8 MiB
+/// for ARM64/ARM32/PPC, respectively.
 fn max_thunk_size<E: Arch>() -> u64 {
     batch_size::<E>() / 2
 }
 
 /// Power10 prefixed instructions must not cross a 64-byte boundary.
-/// Aligning each thunk to 8 bytes guarantees that.
+/// Aligning each thunk group to a 8-byte boundary guarantees that.
 const THUNK_ALIGN: u64 = 8;
 
 /// The thunk symbols collected by each Rayon worker. This is the equivalent
@@ -135,7 +155,7 @@ fn requires_thunk<E: Arch>(
         match sym.input_section_ref() {
             Some(target) if target.output_section == isec.output_section => {
                 // If the target section is in the same output section but
-                // hasn't got any address yet, that's unreachable.
+                // hasn't got any address yet, that's unreacahble.
                 if target.offset() == UNPLACED {
                     return true;
                 }
@@ -155,6 +175,8 @@ fn requires_thunk<E: Arch>(
         return true;
     }
 
+    // Compute a distance between the relocated place and the symbol
+    // and check if they are within reach.
     let s = sym.addr_with(ctx, AddrFlags::NO_OPD) as i64;
     let a = isec.rel_addend::<E>(rel);
     let p = (isec.addr(ctx) + rel.r_offset) as i64;
@@ -178,21 +200,25 @@ fn executable_sections<E: Arch>(ctx: &Context<E>) -> Vec<OutputSectionId> {
         .collect()
 }
 
-/// Lays out an executable output section, inserting a thunk after each
-/// batch of input sections.
+/// We create thunks from the beginning of the section to the end.
+/// We manage progress using four offsets which increase monotonically.
+/// The locations they point to are always A <= B <= C <= D.
 ///
-/// Progress is tracked with four indices into the members, A <= B <= C
-/// <= D. The sections between B and C are the current batch; A is the
-/// first section that can still reach the batch, and D the last section
-/// such that a thunk placed after it is reachable from the whole batch.
+/// Input sections between B and C are the current batch.
+///
+/// A is the input section with the smallest address than can reach
+/// from the current batch.
+///
+/// D is the input section with the largest address such that the thunk
+/// is reachable from the current batch if it's inserted at D.
 ///
 ///  ................................ <input sections> ............
 ///     A    B    C    D
-///                    ^ a thunk for the current batch goes just before D
-///          <--->       the current batch, smaller than the batch size
-///     <-------->       smaller than the branch distance
-///          <-------->  smaller than the branch distance
-///     <------------->  reachable from the current batch
+///                    ^ We insert a thunk for the current batch just before D
+///          <--->       The current batch, which is smaller than BATCH_SIZE
+///     <-------->       Smaller than BRANCH_DISTANCE
+///          <-------->  Smaller than BRANCH_DISTANCE
+///     <------------->  Reachable from the current batch
 pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
     let members = std::mem::take(&mut ctx.output_sections[id.index()].members);
     if members.is_empty() {
@@ -214,12 +240,11 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
     let mut thunks: Vec<Thunk> = Vec::new();
     let (mut a, mut b, mut d) = (0usize, 0usize, 0usize);
     let mut offset = 0u64;
-    // The first thunk that is still reachable from the current batch.
+    // The smallest thunk index that is reachable from the current batch.
     let mut t = 0usize;
 
     while b < n {
-        // Move D forward as far as a thunk placed after D is reachable
-        // from B.
+        // Move D foward as far as we can jump from B to a thunk at D.
         while d < n {
             let sec = ctx.input_section(members[d]);
             let (p2align, size) = (sec.p2align(), sec.sh_size);
@@ -236,9 +261,8 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
             d += 1;
         }
 
-        // The batch ends at the first section that ends beyond B plus the
-        // batch size. Section ends increase, so binary search; starting
-        // from B + 1 guarantees progress.
+        // Find the end of the current batch. Section end addresses are sorted,
+        // so use binary search. Starting from B + 1 guarantees progress.
         let b_offset = ctx.input_section(members[b]).offset();
         let c = b
             + 1
@@ -247,7 +271,7 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
                 sec.offset() + sec.sh_size < b_offset + batch
             });
 
-        // The first section within branch range of C.
+        // Find the first section that is within branch range of C.
         let c_offset = if c == d {
             offset
         } else {
@@ -257,7 +281,7 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
             ctx.input_section(member).offset() < c_offset.saturating_sub(distance)
         });
 
-        // Thunks before A are out of range now.
+        // Erase references to out-of-range thunks.
         while t < thunks.len() && thunks[t].offset < ctx.input_section(members[a]).offset() {
             for &sym in &thunks[t].symbols {
                 ctx.symbols[sym].unmark();
@@ -265,12 +289,13 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
             t += 1;
         }
 
-        // Create a thunk at D for the calls of the batch. A symbol
-        // already covered by a reachable thunk is marked and skipped.
+        // Create a new thunk and place it at D.
         offset = align_to(offset, THUNK_ALIGN);
         let symbol_bins = ThunkSymbolBins::new();
         {
             let ctx: &Context<E> = ctx;
+            // Scan relocations between B and C to collect symbols that need
+            // entries in the new thunk.
             members[b..c].par_iter().for_each(|&member| {
                 let isec = ctx.input_section(member);
                 let file = &ctx.objs[isec.file.index()];
@@ -286,27 +311,32 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
                 }
             });
         }
+        // Add symbols to the thunk
         let mut thunk = Thunk {
             offset,
             symbols: symbol_bins.into_vec(),
             offsets: Vec::new(),
             name: String::new(),
         };
+        // Now that we know the number of symbols in the thunk, we can compute
+        // the thunk's size.
         thunk.offsets = thunk.fixed_offsets::<E>();
         debug_assert!(thunk.size() < max_thunk);
         offset += thunk.size();
         thunks.push(thunk);
 
+        // Move B forward to point to the begining of the next batch.
         b = c;
     }
 
+    // Clear marks for thunks that are still reachable from the last batch.
     for thunk in &thunks[t..] {
         for &sym in &thunk.symbols {
             ctx.symbols[sym].unmark();
         }
     }
 
-    // Sort the symbols for deterministic output.
+    // Sort symbols for deterministic output.
     {
         let ctx: &Context<E> = ctx;
         thunks.par_iter_mut().for_each(|thunk| {
@@ -323,13 +353,25 @@ pub fn create_range_extension_thunks<E: Arch>(ctx: &mut Context<E>, id: OutputSe
     osec.members = members;
 }
 
-/// Now that addresses are known, drops the thunk entries for calls that
-/// turned out to be in range, and shrinks the sections accordingly.
+/// create_range_extension_thunks() creates thunks with a pessimistic
+/// assumption that all out-of-section references are out of range.
+/// After computing output section addresses, we revisit all thunks to
+/// remove unneeded entries from them.
+///
+/// We create more thunks than necessary and then eliminate some of
+/// them later, instead of just creating thunks at this stage. This is
+/// because we can safely shrink sections after assigning addresses to
+/// them without worrying about making existing references to thunks go
+/// out of range. On the other hand, if we insert thunks after
+/// assigning addresses to sections, references to thunks could become
+/// out of range due to the new extra gaps for thunks. Thus, the
+/// creation of thunks is a two-pass process.
 pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("remove_redundant_thunks");
+    // Gather output executable sections
     let sections = executable_sections(ctx);
 
-    // Mark the symbols that really need thunks.
+    // Mark all symbols that actually need range extension thunks
     {
         let ctx: &Context<E> = ctx;
         for &id in &sections {
@@ -357,13 +399,15 @@ pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
         {
             let ctx: &Context<E> = ctx;
             let osec = &ctx.output_sections[id.index()];
+            // Remove symbols from thunks if they don't actually need range
+            // extension thunks
             thunks.par_iter_mut().for_each(|thunk| {
                 thunk.symbols.retain(|&sym| ctx.symbols[sym].is_marked());
                 thunk.offsets = E::thunk_offsets(ctx, thunk, thunk.addr(osec));
             });
         }
 
-        // Lay the members and thunks out again, in their existing order.
+        // Recompute section sizes
         let members = ctx.output_sections[id.index()].members.clone();
         let (mut mi, mut ti) = (0, 0);
         let mut offset = 0;
@@ -390,8 +434,14 @@ pub fn remove_redundant_thunks<E: Arch>(ctx: &mut Context<E>) {
     }
 }
 
-/// Records with each symbol the addresses of its thunk entries, so that
-/// applying a branch relocation can find one in range quickly.
+/// When applying relocations, we want to know the address in a reachable
+/// range extension thunk for a given symbol. Doing it by scanning all
+/// reachable range extension thunks is too expensive.
+///
+/// In this function, we create a list of all addresses in range extension
+/// thunks for each symbol, so that it is easy to find one.
+///
+/// Note that thunk_addrs must be sorted for binary search.
 pub fn gather_thunk_addresses<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("gather_thunk_addresses");
     let mut sections = executable_sections(ctx);

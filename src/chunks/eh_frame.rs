@@ -90,6 +90,10 @@ impl CieHandle {
     }
 }
 
+// .eh_frame contains runtime information as to how to handle exceptions
+// for each function. Each input object file contains one .eh_frame section.
+// We parse input .eh_frame sections, merge their contents and emit the
+// merged information to .eh_frame.
 #[derive(Debug)]
 pub struct EhFrameSection {
     pub hdr: ChunkHeader,
@@ -124,11 +128,11 @@ pub fn cie_equals<E: Layout>(
         })
 }
 
-/// Lays out the output `.eh_frame`: dead FDEs are removed, CIEs are
-/// deduplicated, and each file gets a range for its FDEs.
 pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     let _t = ctx.timer("eh_frame");
 
+    // Remove dead FDEs and assign them offsets within their corresponding
+    // CIE group.
     ctx.objs.par_iter_mut().for_each(|file| {
         file.fdes.retain(|fde| fde.is_alive());
         let mut offset = 0;
@@ -179,7 +183,7 @@ pub fn construct<E: Arch>(ctx: &mut Context<E>) {
     ctx.eh_frame.hdr.shdr.sh_size = offset + 4;
 }
 
-/// Writes `.eh_frame` and the `.eh_frame_hdr` lookup table.
+// Write to .eh_frame and .eh_frame_hdr.
 pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut [u8]>) {
     let sh_addr = ctx.eh_frame.hdr.shdr.sh_addr;
     let sh_size = ctx.eh_frame.hdr.shdr.sh_size;
@@ -280,6 +284,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
 
     items.into_par_iter().for_each(|mut item| {
         let file = item.file;
+
+        // Copy CIEs.
         for (ci, dst) in item.cies {
             write_cie(file, &file.cies[ci], dst);
         }
@@ -287,6 +293,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
             return;
         };
 
+        // Copy FDEs.
         for (i, fde) in file.fdes.iter().enumerate() {
             let rels = fde.rels::<E>(file);
             let offset = file.fde_offset + fde.output_offset as u64;
@@ -303,6 +310,8 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
                 continue;
             }
 
+            // Always set in the loop below because parse_ehframe() discards
+            // FDEs that have no relocations.
             let mut func_addr = 0u64;
             for (j, rel) in rels.iter().enumerate() {
                 let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
@@ -327,6 +336,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
             let Some(origin) = hdr_addr else {
                 continue;
             };
+            // Write to .eh_frame_hdr
             let entry = &mut item.hdr_entries.as_deref_mut().unwrap()[i * 8..][..8];
 
             // Compilers may emit a meaningless FDE covering a zero-length
@@ -359,9 +369,10 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8], hdr_buf: Option<&mut 
         }
     });
 
-    // Terminator
+    // Write a terminator.
     E::Endian::write_u32(&mut buf[sh_size as usize - 4..], 0);
 
+    // Sort .eh_frame_hdr contents.
     if let Some(table) = hdr_table {
         let (entries, remainder) = table.as_chunks_mut::<8>();
         debug_assert!(remainder.is_empty());
@@ -390,8 +401,11 @@ pub fn check_range<E: Arch>(
     }
 }
 
-/// `.eh_frame_hdr` is a sorted table of (function address, FDE address)
-/// pairs.
+// .eh_frame_hdr is a lookup table for .eh_frame. Entries in .eh_frame_hdr
+// are sorted by their dcorresponding function addresses, so tha the
+// runtime can quickly find an exception-handling record for the current
+// function by binary search. Without .eh_frame_hdr, the runtime would
+// have had to do linear search in .eh_frame.
 #[derive(Debug)]
 pub struct EhFrameHdrSection {
     pub hdr: ChunkHeader,
@@ -425,9 +439,10 @@ pub mod eh_frame_hdr {
         sec.hdr.shdr.sh_size = EhFrameHdrSection::HEADER_SIZE + num_fdes * 8;
     }
 
-    /// Writes the header; the table is written by `eh_frame::copy_buf`.
     pub fn write_header<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         let sec = ctx.eh_frame_hdr.as_ref().unwrap();
+
+        // Write a header. The actual table is written by EhFrameSection::copy_buf.
         buf[0] = 1;
         buf[1] = (DW_EH_PE_pcrel | DW_EH_PE_sdata4) as u8;
         buf[2] = DW_EH_PE_udata4 as u8;
@@ -445,7 +460,9 @@ pub mod eh_frame_hdr {
     }
 }
 
-/// `.rela.eh_frame`, for relocatable outputs only.
+// EhFrameRelocSection contains relcoation records for .eh_frame. We use
+// this class only for relocatable outputs (i.e. the output is an .o file
+// as opposed to an executable or a .so file.)
 #[derive(Debug)]
 pub struct EhFrameRelocSection {
     pub hdr: ChunkHeader,
@@ -511,9 +528,9 @@ pub mod eh_frame_reloc {
             };
 
             if sym.st_type() == STT_SECTION {
-                // Section symbols are recreated per output section, so a
-                // relocation's addend must account for the input section's
-                // offset in the output.
+                // We discard section symbols in input files and re-create new
+                // ones for each output section. So we need to adjust relocations'
+                // addends if they refer a section symbol.
                 let target = sym.input_section_ref().unwrap();
                 out.r_sym = ctx.output_section(target.output_section.unwrap()).hdr.shndx;
                 let addend = isec.rel_addend::<E>(r) + target.offset() as i64;

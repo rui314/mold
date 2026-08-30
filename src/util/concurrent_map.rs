@@ -1,12 +1,15 @@
 //! A fast concurrent hash map.
 //!
-//! Unlike ordinary hash tables, this implementation just aborts if it
-//! becomes full. So you need to give a correct estimation of the final
-//! size before using it (see [`crate::util::hyperloglog`]). We use this
-//! hash map to uniquify pieces of data in mergeable sections.
+//! Concurrent Map
 //!
-//! We've implemented this ourselves because the performance of the
-//! concurrent hash map is critical for our linker.
+//! This is an implementation of a fast concurrent hash map. Unlike
+//! ordinary hash tables, this impl just aborts if it becomes full.
+//! So you need to give a correct estimation of the final size before
+//! using it. We use this hash map to uniquify pieces of data in
+//! mergeable sections.
+//!
+//! We've implemented this ourselves because the performance of
+//! conrurent hash map is critical for our linker.
 //!
 //! The map is an open-addressing table. Insertion is lock-free: a thread
 //! claims an empty bucket with a compare-and-swap on its key pointer,
@@ -25,9 +28,9 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 
 pub const NUM_SHARDS: usize = 64;
 
-/// `MIN_NBUCKETS` is chosen so that even the smallest map has `MAX_RETRY`
-/// buckets per shard; probing is confined to a shard, and a probe that
-/// visits `MAX_RETRY` distinct occupied slots aborts.
+// MIN_NBUCKETS is chosen so that even the smallest map has
+// MAX_RETRY buckets per shard; probing is confined to a shard, and
+// a probe that visits MAX_RETRY distinct occupied slots aborts.
 const MIN_NBUCKETS: usize = 16384;
 const MAX_RETRY: usize = 256;
 
@@ -36,9 +39,9 @@ const MAX_RETRY: usize = 256;
 /// initialized.
 const CLAIMED: *mut u8 = usize::MAX as *mut u8;
 
-/// A bucket of the table. In order to avoid unnecessary cache-line false
-/// sharing, we want to make this object aligned to a reasonably large
-/// power-of-two address.
+// In order to avoid unnecessary cache-line false sharing, we want
+// to make this object to be aligned to a reasonably large
+// power-of-two address.
 #[repr(C, align(32))]
 struct Entry<T> {
     key: AtomicPtr<u8>,
@@ -99,8 +102,8 @@ impl<T> ConcurrentMap<T> {
         let nbuckets = nkeys.next_power_of_two().max(MIN_NBUCKETS);
         let bufsize = Self::bufsize(nbuckets);
 
-        // Allocate a zero-initialized buffer: zeroed memory is a table of
-        // empty buckets. mmap is faster than malloc + memset.
+        // Allocate a zero-initialized buffer. mmap is faster than
+        // malloc + memset.
         // SAFETY: an anonymous private mapping, checked for failure below.
         let entries = unsafe {
             libc::mmap(
@@ -221,6 +224,8 @@ impl<T> ConcurrentMap<T> {
         hash: u64,
         initialize: impl FnOnce(*const u8) -> (u32, T),
     ) -> (EntryId, &T, bool) {
+        // This variant avoids storing a length alongside every caller-side key.
+        // Only a newly inserted key needs its length computed by `initialize`.
         self.insert_entry(
             key,
             hash,
@@ -291,10 +296,10 @@ impl<T> ConcurrentMap<T> {
         panic!("the concurrent map is full");
     }
 
-    /// Prefetches the bucket where a key with the given hash would be
-    /// probed first. Useful when a caller knows the hashes of upcoming
-    /// insertions, as probes into a large table miss the cache almost
-    /// every time.
+    // Prefetch the bucket where a key with the given hash would be
+    // probed first. Useful when a caller knows the hashes of upcoming
+    // insertions, as probes into a large table miss the cache almost
+    // every time.
     pub fn prefetch(&self, hash: u64) {
         #[cfg(target_arch = "x86_64")]
         if self.nbuckets > 0 {
@@ -341,8 +346,7 @@ impl<T> ConcurrentMap<T> {
         })
     }
 
-    /// Returns a list of the entries of a shard sorted in a deterministic
-    /// order.
+    // Return a list of map entries sorted in a deterministic order.
     ///
     /// Linear probing fills the same set of buckets whatever the order
     /// keys were inserted in, but which of two colliding keys got the

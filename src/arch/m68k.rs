@@ -1,11 +1,16 @@
-//! m68k, the Motorola 68000 series.
+//! This file contains code for the Motorola 68000 series microprocessors,
+//! which is often abbreviated as m68k. Running a Unix-like system on a
+//! m68k-based machine today is a retro-computing hobby activity, but the
+//! processor was a popular choice to build Unix computers during '80s.
+//! Early Sun workstations for example used m68k. Macintosh until 1994 were
+//! based on m68k as well until they switched to PowerPC (and then to x86
+//! and to ARM.)
 //!
-//! Running a Unix-like system on m68k is a retro-computing hobby today,
-//! but the processor was a popular choice for Unix workstations in the
-//! '80s, including the early Suns and the Macintosh until 1994. For a
-//! linker it is straightforward: a 32-bit big-endian CISC ISA whose
-//! PC-relative addressing modes make position-independent code simpler
-//! than on the contemporary i386.
+//! From the linker's point of view, it is not hard to support m68k. It's
+//! just a 32-bit big-endian CISC ISA. Compared to comtemporary i386,
+//! m68k's psABI is actually simpler because m68k has PC-relative memory
+//! access instructions and therefore can support position-independent
+//! code without too much hassle.
 //!
 //! https://github.com/rui314/psabi/blob/main/m68k.pdf
 

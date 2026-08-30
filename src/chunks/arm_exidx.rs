@@ -63,12 +63,13 @@ pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>) {
     let osec = ctx.arm_exidx.as_ref().unwrap().output_section;
     output_section::compute_section_size(ctx, osec);
     let size = ctx.output_sections[osec.index()].hdr.shdr.sh_size;
+    // +8 for sentinel
     ctx.arm_exidx.as_mut().unwrap().hdr.shdr.sh_size = size + ENTRY_SIZE as u64;
     // plus the sentinel
 }
 
-/// `sh_link` refers to `.text`. The runtime doesn't care, but `strip`
-/// does.
+// .ARM.exidx's sh_link should be set to the .text section index.
+// Runtime doesn't care about it, but the binutils's strip command does.
 pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
     if let Some(text) = ctx.find_chunk_by_name(b".text") {
         let shndx = ctx.chunk_header(text).shndx;
@@ -94,7 +95,7 @@ pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     buf.copy_from_slice(&contents);
 }
 
-/// The end of the text segment, which the sentinel record covers up to.
+// Returns the end of the text segment
 fn text_end<E: Arch>(ctx: &Context<E>) -> u64 {
     ctx.chunks
         .iter()
@@ -105,24 +106,50 @@ fn text_end<E: Arch>(ctx: &Context<E>) -> u64 {
         .unwrap_or(0)
 }
 
+// ARM executables use an .ARM.exidx section to look up an exception
+// handling record for the current instruction pointer. The table needs
+// to be sorted by their addresses.
+//
+// Other target uses .eh_frame_hdr instead for the same purpose.
+// I don't know why only ARM uses the different mechanism, but it's
+// likely that it's due to some historical reason.
+//
+// This function returns contents of .ARM.exidx.
 fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     let sec = ctx.arm_exidx.as_ref().unwrap();
     let osec = &ctx.output_sections[sec.output_section.index()];
     let base = sec.hdr.shdr.sh_addr;
 
-    // The records as the input sections define them, plus a sentinel.
+    // .ARM.exidx records consists of a signed 31-bit relative address
+    // and a 32-bit value. The relative address indicates the start
+    // address of a function that the record covers. The value is one of
+    // the followings:
+    //
+    // 1. CANTUNWIND indicating that there's no unwinding info for the function,
+    // 2. a compact unwinding record encoded into a 32-bit value, or
+    // 3. a 31-bit relative address which points to a larger record in
+    // the .ARM.extab section.
+    //
+    // CANTUNWIND is value 1. The most significant bit is set in (2) but
+    // not in (3). So we can distinguished them just by looking at a value.
+
+    // We reserve one extra slot for the sentinel
     let num_entries = osec.hdr.shdr.sh_size as usize / ENTRY_SIZE + 1;
     let mut buf = vec![0u8; num_entries * ENTRY_SIZE];
+
+    // Write section contents to the buffer
     output_section::write_to(ctx, sec.output_section, &mut buf);
     let sentinel_addr = base + ((num_entries - 1) * ENTRY_SIZE) as u64;
     let mut entries: Vec<(u32, u32)> = buf
         .chunks_exact(ENTRY_SIZE)
         .map(|e| (E::Endian::read_u32(e), E::Endian::read_u32(&e[4..])))
         .collect();
+    // Fill in sentinel fields
     entries[num_entries - 1] = (text_end(ctx).wrapping_sub(sentinel_addr) as u32, CANTUNWIND);
 
-    // Addresses are relative to the records themselves. Make them
-    // relative to the section to sort by them.
+    // Entry's addresses are relative to themselves. In order to sort
+    // records by address, we first translate them so that the addresses
+    // are relative to the beginning of the section.
     let is_relative = |val: u32| val != CANTUNWIND && val & 0x8000_0000 == 0;
     entries
         .par_iter_mut()
@@ -136,10 +163,12 @@ fn contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
         });
     entries.sort_by_key(|&(addr, _)| addr);
 
-    // Adjacent functions with the same unwind information, or which both
-    // can't be unwound, share one record.
+    // Remove duplicate adjacent entries. That is, if two adjacent functions
+    // have the same compact unwind info or are both CANTUNWIND, we can
+    // merge them into a single address range.
     entries.dedup_by_key(|&mut (_, val)| val);
 
+    // Make addresses relative to themselves.
     entries
         .par_iter_mut()
         .enumerate()

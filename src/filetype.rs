@@ -1,3 +1,4 @@
+// filetype.cc
 //! Input file classification.
 
 use crate::arch::{self, TargetInfo};
@@ -39,8 +40,8 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
         return false;
     };
 
-    // e_shstrndx is a 16-bit field. If .shstrtab's section index is too
-    // large, the actual number is stored in sh_link of the first header.
+    // e_shstrndx is a 16-bit field. If .shstrtab's section index is
+    // too large, the actual number is stored to sh_link field.
     let shstrtab_idx = if ehdr.e_shstrndx as u32 == SHN_XINDEX {
         first.sh_link as usize
     } else {
@@ -53,10 +54,11 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
     };
 
     for i in 0..shdrs.len() {
-        // GCC FAT LTO objects contain both regular ELF sections and
-        // GCC-specific LTO sections, so that they can be linked as LTO
-        // objects if the plugin is available and as regular objects
-        // otherwise. They can be identified by a `.gnu.lto_.symtab.` section.
+        // GCC FAT LTO objects contain both regular ELF sections and GCC-
+        // specific LTO sections, so that they can be linked as LTO objects if
+        // the LTO linker plugin is available and falls back as regular
+        // objects otherwise. GCC FAT LTO object can be identified by the
+        // presence of `.gcc.lto_.symtab` section.
         if let Some(offset) = shstrtab_offset {
             let name = crate::util::cstr_at(data, offset + shdrs.sh_name_in::<E>(i) as usize);
             if name.starts_with(b".gnu.lto_.symtab.") {
@@ -69,9 +71,9 @@ fn is_gcc_lto_obj<E: Layout>(data: &[u8], has_gcc_plugin: bool) -> bool {
         }
         let shdr = shdrs.at_in::<E>(i);
 
-        // A non-FAT GCC LTO object contains only section symbols followed
-        // by a common symbol named `__gnu_lto_slim` (or `__gnu_lto_v1` in
-        // older releases).
+        // GCC non-FAT LTO object contains only sections symbols followed by
+        // a common symbol whose name is `__gnu_lto_slim` (or `__gnu_lto_v1`
+        // for older GCC releases).
         let off = shdr.sh_offset as usize;
         let Some(bytes) = data.get(off..off + shdr.sh_size as usize) else {
             return false;
@@ -105,9 +107,9 @@ pub fn get_file_type(plugin: &str, mf: &MappedFile) -> FileType {
         return FileType::Empty;
     }
 
-    // GCC FAT LTO objects can be linked as regular ELF objects. If the
-    // active plugin is LLVM's, treat them as regular objects so that we
-    // fall back to native code instead of routing them through GCC LTO.
+    // GCC FAT LTO objects can be linked as regular ELF objects. If the active
+    // plugin is LLVM's, treat them as regular objects so that we can fall back
+    // to native code instead of routing them through GCC LTO handling.
     let has_gcc_plugin = !plugin.is_empty() && !plugin.contains("LLVMgold.");
 
     if data.starts_with(b"\x7fELF") && data.len() >= 20 {
@@ -206,11 +208,11 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
         },
         EM_PPC => "ppc32",
         EM_PPC64 => {
-            // ELFv1 is big-endian and ELFv2 is little-endian by convention,
-            // but that's not a rule; musl for example uses ELFv2 on
-            // big-endian too. We support only the usual combinations, so
-            // treat the others as unrecognizable rather than silently
-            // linking them against the wrong ABI.
+            // ELFv1 is big-endian and ELFv2 is little-endian by convention, but
+            // the correspondence is not a rule; musl for example uses ELFv2 on
+            // big-endian too. We support only the usual combinations, so treat
+            // the others as unrecognizable rather than silently linking them
+            // against the wrong ABI.
             let abi = e_flags & EF_PPC64_ABI;
             if !is_le && (abi == 0 || abi == 1) {
                 "ppc64v1"
@@ -242,8 +244,8 @@ pub fn get_elf_target(data: &[u8]) -> Option<&'static str> {
     Some(name)
 }
 
-/// Reads the beginning of a file and returns the target it was compiled
-/// for, looking inside archives if necessary.
+// Read the beginning of a given file and returns its machine type
+// (e.g. EM_X86_64 or EM_386).
 pub fn get_machine_type(
     diag: &Diagnostics,
     plugin: &str,

@@ -1,13 +1,30 @@
-//! x86-64.
+// arch-x86-64.cc
+//! Supporting x86-64 is straightforward. Unlike its predecessor, i386,
+//! x86-64 supports PC-relative addressing for position-independent code.
+//! Being CISC, its instructions are variable in size. Branch instructions
+//! take 4 bytes offsets, so we don't need range extension thunks.
 //!
-//! x86-64 is straightforward: it has PC-relative addressing for
-//! position-independent code, and 32-bit branch displacements, so no
-//! range extension thunks are needed. `%r11` is neither caller- nor
-//! callee-saved, so the PLT uses it as a scratch register.
+//! The psABI specifies %r11 as neither caller- nor callee-saved. It's
+//! intentionally left out so that we can use it as a scratch register in
+//! PLT.
 //!
-//! The thread pointer lives in the `%fs` segment register, and for
-//! historical reasons points past the end of the TLS block, so offsets to
-//! thread-local variables in the main executable are negative.
+//! Thread Pointer (TP) is stored not to a general-purpose register but to
+//! FS segment register. Segment register is a 64-bits register which can
+//! be used as a base address for memory access. Each thread has a unique
+//! FS value, and they access their thread-local variables relative to FS
+//! as %fs:offset_from_tp.
+//!
+//! The value of a segment register itself is not generally readable from
+//! the user space. As a workaround, libc initializes %fs:0 (the first word
+//! referenced by FS) to the value of %fs itself. So we can obtain TP just
+//! by `mov %fs:0, %rax` if we need it.
+//!
+//! For historical reasons, TP points past the end of the TLS block on x86.
+//! This is contrary to other psABIs which usually use the beginning of the
+//! TLS block as TP (with some addend). As a result, offsets from TP to
+//! thread-local variables (TLVs) in the main executable are all negative.
+//!
+//! https://gitlab.com/x86-psABIs/x86-64-ABI
 
 use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
@@ -62,18 +79,28 @@ impl Arch for X86_64 {
         x86_64_rel_to_string(r_type)
     }
 
-    /// The PLT header and entries start with `endbr64` for Intel CET.
-    /// Unlike GNU ld's IBT PLT, which splits `.plt` and `.plt.sec` with
-    /// 32 bytes per entry, ours keeps 16-byte entries in one section.
-    /// Clobbering `%r11` is fine because the resolver does so anyway.
+    // This is a security-enhanced version of the regular PLT. The PLT
+    // header and each PLT entry starts with endbr64 for the Intel's
+    // control-flow enforcement security mechanism.
+    //
+    // Note that our IBT-enabled PLT instruction sequence is different
+    // from the one used in GNU ld. GNU's IBTPLT implementation uses two
+    // separate sections (.plt and .plt.sec) in which one PLT entry takes
+    // 32 bytes in total. Our IBTPLT consists of just .plt and each entry
+    // is 16 bytes long.
+    //
+    // Our PLT entry clobbers %r11, but that's fine because the resolver
+    // function (_dl_runtime_resolve) clobbers %r11 anyway.
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
         const INSN: [u8; 32] = [
             0xf3, 0x0f, 0x1e, 0xfa, // endbr64
             0x41, 0x53, // push %r11
             0xff, 0x35, 0, 0, 0, 0, // push GOTPLT+8(%rip)
             0xff, 0x25, 0, 0, 0, 0, // jmp *GOTPLT+16(%rip)
-            0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc,
-            0xcc, // padding
+            0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+            0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+            0xcc, 0xcc, 0xcc, 0xcc, // (padding)
+            0xcc, 0xcc, // (padding)
         ];
         buf[..32].copy_from_slice(&INSN);
         let gotplt = ctx.gotplt.hdr.shdr.sh_addr;
@@ -91,8 +118,9 @@ impl Arch for X86_64 {
     fn write_plt_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         let plt_idx = sym.plt_idx(&ctx.symbols).unwrap();
         let disp = sym.gotplt_addr(ctx).wrapping_sub(sym.plt_addr(ctx));
-        // Only a canonical PLT entry can be address-taken, so only it
-        // needs a landing pad.
+        // Only a canonical PLT can be address-taken; there's no way to take
+        // an address of a non-canonical PLT. Therefore, a non-canonical PLT
+        // doesn't have to start with an endbr64.
         if sym.is_canonical() {
             const INSN: [u8; 16] = [
                 0xf3, 0x0f, 0x1e, 0xfa, // endbr64
@@ -106,7 +134,7 @@ impl Arch for X86_64 {
             const INSN: [u8; 16] = [
                 0x41, 0xbb, 0, 0, 0, 0, // mov $index_in_relplt, %r11d
                 0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOTPLT
-                0xcc, 0xcc, 0xcc, 0xcc, // padding
+                0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
             write_u32(&mut buf[2..], plt_idx);
@@ -117,7 +145,7 @@ impl Arch for X86_64 {
     fn write_pltgot_entry(ctx: &Context<Self>, buf: &mut [u8], sym: &Symbol) {
         const INSN: [u8; 8] = [
             0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-            0xcc, 0xcc, // padding
+            0xcc, 0xcc, // (padding)
         ];
         buf[..8].copy_from_slice(&INSN);
         let disp = sym
@@ -153,11 +181,17 @@ impl Arch for X86_64 {
     }
 
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
+        // Linker has to create data structures in an output file to apply
+        // some type of relocations. For example, if a relocation refers a GOT
+        // or a PLT entry of a symbol, linker has to create an entry in .got
+        // or in .plt for that symbol. In order to fix the file layout, we
+        // need to scan relocations.
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
         let rels = isec.rels::<Self>(file);
         let mut i = 0;
 
+        // Scan relocations
         while i < rels.len() {
             let rel = &rels.at(i);
             i += 1;
@@ -215,9 +249,9 @@ impl Arch for X86_64 {
                     }
                 }
                 R_X86_64_TLSGD => {
-                    // Always relax with -static because libc.a doesn't
-                    // contain __tls_get_addr.
                     if ctx.args.is_static || (ctx.args.relax && sym.is_tprel_linktime_const(ctx)) {
+                        // We always relax if -static because libc.a doesn't contain
+                        // __tls_get_addr().
                         i += 1;
                     } else if ctx.args.relax && sym.is_tprel_runtime_const(ctx) {
                         sym.add_flags(NEEDS_GOTTP);
@@ -227,6 +261,8 @@ impl Arch for X86_64 {
                     }
                 }
                 R_X86_64_TLSLD => {
+                    // We always relax if -static because libc.a doesn't contain
+                    // __tls_get_addr().
                     if ctx.args.is_static || (ctx.args.relax && !ctx.args.shared) {
                         i += 1;
                     } else {
@@ -264,6 +300,9 @@ impl Arch for X86_64 {
         }
     }
 
+    // Apply relocations to SHF_ALLOC sections (i.e. sections that are
+    // mapped to memory at runtime) based on the result of
+    // scan_relocations().
     fn apply_reloc_alloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         let rels = isec.rels::<Self>(file);
@@ -351,8 +390,9 @@ impl Arch for X86_64 {
                     g.wrapping_add(got_base).wrapping_add(a).wrapping_sub(p),
                 ),
                 R_X86_64_GOTPCRELX | R_X86_64_REX_GOTPCRELX | R_X86_64_CODE_4_GOTPCRELX => {
-                    // GOTPCRELX is relaxed even with --no-relax because some
-                    // static PIE runtime code depends on it.
+                    // We always want to relax GOTPCRELX relocs even if --no-relax
+                    // was given because some static PIE runtime code depends on these
+                    // relaxations.
                     let v = s.wrapping_add(a).wrapping_sub(p);
                     if sym.is_pcrel_linktime_const(ctx) && is_int(v as i64, 32) {
                         let insn = relax_gotpcrelx(&buf[..off], rel);
@@ -417,14 +457,34 @@ impl Arch for X86_64 {
                     write32s(buf, sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(p))
                 }
                 R_X86_64_GOTPC32_TLSDESC | R_X86_64_CODE_4_GOTPC32_TLSDESC => {
-                    // TLSDESC materializes a TP-relative address in %rax:
+                    // x86-64 TLSDESC uses the following code sequence to materialize
+                    // a TP-relative address in %rax.
                     //
-                    //   lea    0(%rip), %rax  # R_X86_64_GOTPC32_TLSDESC
-                    //   call   *(%rax)        # R_X86_64_TLSDESC_CALL
+                    //   lea    0(%rip), %rax
+                    //       R_X86_64_GOTPC32_TLSDESC    foo
+                    //   call   *(%rax)
+                    //       R_X86_64_TLSDESC_CALL       foo
                     //
-                    // If the address is known at link time it becomes
-                    // `mov $foo@TPOFF, %rax; nop`, and if at load time
-                    // `mov foo@GOTTPOFF(%rip), %rax; nop`.
+                    // We may relax the instructions to the following if its TP-relative
+                    // address is known at link-time
+                    //
+                    //   mov     $foo@TPOFF, %rax
+                    //   nop
+                    //
+                    // or to the following if the TP-relative address is known at
+                    // process startup time.
+                    //
+                    //   mov     foo@GOTTPOFF(%rip), %rax
+                    //   nop
+                    //
+                    // We allow the following alternative code sequence too because
+                    // LLVM emits such code.
+                    //
+                    //   lea    0(%rip), %reg
+                    //       R_X86_64_GOTPC32_TLSDESC    foo
+                    //   mov    %reg, %rax
+                    //   call   *(%rax)
+                    //       R_X86_64_TLSDESC_CALL       foo
                     if sym.has_tlsdesc(&ctx.symbols) {
                         write32s(buf, sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(p));
                     } else if sym.has_gottp(&ctx.symbols) {
@@ -473,8 +533,18 @@ impl Arch for X86_64 {
         }
     }
 
-    /// Relocations against non-allocated sections (mostly debug info)
-    /// never need GOT or PLT entries, and aren't scanned beforehand.
+    // This function is responsible for applying relocations against
+    // non-SHF_ALLOC sections (i.e. sections that are not mapped to memory
+    // at runtime).
+    //
+    // Relocations against non-SHF_ALLOC sections are much easier to
+    // handle than that against SHF_ALLOC sections. It is because, since
+    // they are not mapped to memory, they don't contain any variable or
+    // function and never need PLT or GOT. Non-SHF_ALLOC sections are
+    // mostly debug info sections.
+    //
+    // Relocations against non-SHF_ALLOC sections are not scanned by
+    // scan_relocations.
     fn apply_reloc_nonalloc(ctx: &Context<Self>, isec: &InputSection, buf: &mut [u8]) {
         let file = &ctx.objs[isec.file.index()];
         isec.for_each_reloc::<Self>(ctx, |rel, i| {
@@ -530,9 +600,10 @@ impl Arch for X86_64 {
                     &mut buf[off..],
                     s.wrapping_add(a).wrapping_sub(ctx.gotplt.hdr.shdr.sh_addr),
                 ),
-                // GCC 6.3 emits this for _GLOBAL_OFFSET_TABLE_ even though a
-                // PC-relative relocation makes no sense here.
                 R_X86_64_GOTPC64 => {
+                    // PC-relative relocation doesn't make sense for non-memory-allocated
+                    // section, but GCC 6.3.0 seems to create this reloc for
+                    // _GLOBAL_OFFSET_TABLE_.
                     write_u64(&mut buf[off..], ctx.gotplt.hdr.shdr.sh_addr.wrapping_add(a))
                 }
                 R_X86_64_SIZE32 => write32(buf, sym.esym(ctx).st_size.wrapping_add(a)),
@@ -616,15 +687,22 @@ fn relax_gotpcrelx(loc: &[u8], rel: &ElfRel) -> u32 {
         return 0;
     }
     match last3(loc) {
-        // mov 0(%rip), %reg -> lea 0(%rip), %reg
-        0x488b05 | 0x4c8b05 => 0x8d05,
-        0x488b0d | 0x4c8b0d => 0x8d0d,
-        0x488b15 | 0x4c8b15 => 0x8d15,
-        0x488b1d | 0x4c8b1d => 0x8d1d,
-        0x488b25 | 0x4c8b25 => 0x8d25,
-        0x488b2d | 0x4c8b2d => 0x8d2d,
-        0x488b35 | 0x4c8b35 => 0x8d35,
-        0x488b3d | 0x4c8b3d => 0x8d3d,
+        0x488b05 => 0x8d05, // mov 0(%rip), %rax -> lea 0(%rip), %rax
+        0x488b0d => 0x8d0d, // mov 0(%rip), %rcx -> lea 0(%rip), %rcx
+        0x488b15 => 0x8d15, // mov 0(%rip), %rdx -> lea 0(%rip), %rdx
+        0x488b1d => 0x8d1d, // mov 0(%rip), %rbx -> lea 0(%rip), %rbx
+        0x488b25 => 0x8d25, // mov 0(%rip), %rsp -> lea 0(%rip), %rsp
+        0x488b2d => 0x8d2d, // mov 0(%rip), %rbp -> lea 0(%rip), %rbp
+        0x488b35 => 0x8d35, // mov 0(%rip), %rsi -> lea 0(%rip), %rsi
+        0x488b3d => 0x8d3d, // mov 0(%rip), %rdi -> lea 0(%rip), %rdi
+        0x4c8b05 => 0x8d05, // mov 0(%rip), %r8  -> lea 0(%rip), %r8
+        0x4c8b0d => 0x8d0d, // mov 0(%rip), %r9  -> lea 0(%rip), %r9
+        0x4c8b15 => 0x8d15, // mov 0(%rip), %r10 -> lea 0(%rip), %r10
+        0x4c8b1d => 0x8d1d, // mov 0(%rip), %r11 -> lea 0(%rip), %r11
+        0x4c8b25 => 0x8d25, // mov 0(%rip), %r12 -> lea 0(%rip), %r12
+        0x4c8b2d => 0x8d2d, // mov 0(%rip), %r13 -> lea 0(%rip), %r13
+        0x4c8b35 => 0x8d35, // mov 0(%rip), %r14 -> lea 0(%rip), %r14
+        0x4c8b3d => 0x8d3d, // mov 0(%rip), %r15 -> lea 0(%rip), %r15
         _ => 0,
     }
 }
@@ -636,45 +714,43 @@ fn relax_gottpoff(loc: &[u8], rel: &ElfRel) -> u32 {
     let insn = last3(loc);
     if rel.r_type == R_X86_64_GOTTPOFF {
         match insn {
-            // mov 0(%rip), %reg -> mov $0, %reg
-            0x488b05 => 0x48c7c0,
-            0x488b0d => 0x48c7c1,
-            0x488b15 => 0x48c7c2,
-            0x488b1d => 0x48c7c3,
-            0x488b25 => 0x48c7c4,
-            0x488b2d => 0x48c7c5,
-            0x488b35 => 0x48c7c6,
-            0x488b3d => 0x48c7c7,
-            0x4c8b05 => 0x49c7c0,
-            0x4c8b0d => 0x49c7c1,
-            0x4c8b15 => 0x49c7c2,
-            0x4c8b1d => 0x49c7c3,
-            0x4c8b25 => 0x49c7c4,
-            0x4c8b2d => 0x49c7c5,
-            0x4c8b35 => 0x49c7c6,
-            0x4c8b3d => 0x49c7c7,
+            0x488b05 => 0x48c7c0, // mov 0(%rip), %rax -> mov $0, %rax
+            0x488b0d => 0x48c7c1, // mov 0(%rip), %rcx -> mov $0, %rcx
+            0x488b15 => 0x48c7c2, // mov 0(%rip), %rdx -> mov $0, %rdx
+            0x488b1d => 0x48c7c3, // mov 0(%rip), %rbx -> mov $0, %rbx
+            0x488b25 => 0x48c7c4, // mov 0(%rip), %rsp -> mov $0, %rsp
+            0x488b2d => 0x48c7c5, // mov 0(%rip), %rbp -> mov $0, %rbp
+            0x488b35 => 0x48c7c6, // mov 0(%rip), %rsi -> mov $0, %rsi
+            0x488b3d => 0x48c7c7, // mov 0(%rip), %rdi -> mov $0, %rdi
+            0x4c8b05 => 0x49c7c0, // mov 0(%rip), %r8  -> mov $0, %r8
+            0x4c8b0d => 0x49c7c1, // mov 0(%rip), %r9  -> mov $0, %r9
+            0x4c8b15 => 0x49c7c2, // mov 0(%rip), %r10 -> mov $0, %r10
+            0x4c8b1d => 0x49c7c3, // mov 0(%rip), %r11 -> mov $0, %r11
+            0x4c8b25 => 0x49c7c4, // mov 0(%rip), %r12 -> mov $0, %r12
+            0x4c8b2d => 0x49c7c5, // mov 0(%rip), %r13 -> mov $0, %r13
+            0x4c8b35 => 0x49c7c6, // mov 0(%rip), %r14 -> mov $0, %r14
+            0x4c8b3d => 0x49c7c7, // mov 0(%rip), %r15 -> mov $0, %r15
             _ => 0,
         }
     } else {
         debug_assert_eq!(rel.r_type, R_X86_64_CODE_4_GOTTPOFF);
         match insn {
-            // mov 0(%rip), %r16..%r31 -> mov $0, %r16..%r31
-            0x488b05 => 0x18c7c0,
-            0x488b0d => 0x18c7c1,
-            0x488b15 => 0x18c7c2,
-            0x488b1d => 0x18c7c3,
-            0x488b25 => 0x18c7c4,
-            0x488b2d => 0x18c7c5,
-            0x488b35 => 0x18c7c6,
-            0x488b3d => 0x18c7c7,
-            0x4c8b05 => 0x19c7c0,
-            0x4c8b0d => 0x19c7c1,
-            0x4c8b15 => 0x19c7c2,
-            0x4c8b1d => 0x19c7c3,
-            0x4c8b25 => 0x19c7c4,
-            0x4c8b2d => 0x19c7c5,
-            0x4c8b35 => 0x19c7c6,
-            0x4c8b3d => 0x19c7c7,
+            0x488b05 => 0x18c7c0, // mov 0(%rip), %r16 -> mov $0, %r16
+            0x488b0d => 0x18c7c1, // mov 0(%rip), %r17 -> mov $0, %r17
+            0x488b15 => 0x18c7c2, // mov 0(%rip), %r18 -> mov $0, %r18
+            0x488b1d => 0x18c7c3, // mov 0(%rip), %r19 -> mov $0, %r19
+            0x488b25 => 0x18c7c4, // mov 0(%rip), %r20 -> mov $0, %r20
+            0x488b2d => 0x18c7c5, // mov 0(%rip), %r21 -> mov $0, %r21
+            0x488b35 => 0x18c7c6, // mov 0(%rip), %r22 -> mov $0, %r22
+            0x488b3d => 0x18c7c7, // mov 0(%rip), %r23 -> mov $0, %r23
+            0x4c8b05 => 0x19c7c0, // mov 0(%rip), %r24 -> mov $0, %r24
+            0x4c8b0d => 0x19c7c1, // mov 0(%rip), %r25 -> mov $0, %r25
+            0x4c8b15 => 0x19c7c2, // mov 0(%rip), %r26 -> mov $0, %r26
+            0x4c8b1d => 0x19c7c3, // mov 0(%rip), %r27 -> mov $0, %r27
+            0x4c8b25 => 0x19c7c4, // mov 0(%rip), %r28 -> mov $0, %r28
+            0x4c8b2d => 0x19c7c5, // mov 0(%rip), %r29 -> mov $0, %r29
+            0x4c8b35 => 0x19c7c6, // mov 0(%rip), %r30 -> mov $0, %r30
+            0x4c8b3d => 0x19c7c7, // mov 0(%rip), %r31 -> mov $0, %r31
             _ => 0,
         }
     }
@@ -686,23 +762,38 @@ fn relax_tlsdesc_to_ie(loc: &[u8], rel: &ElfRel) -> u32 {
     }
     let _ = rel;
     match last3(loc) {
-        // lea 0(%rip), %reg -> mov 0(%rip), %reg
-        0x488d05 => 0x488b05,
-        0x488d0d => 0x488b0d,
-        0x488d15 => 0x488b15,
-        0x488d1d => 0x488b1d,
-        0x488d25 => 0x488b25,
-        0x488d2d => 0x488b2d,
-        0x488d35 => 0x488b35,
-        0x488d3d => 0x488b3d,
-        0x4c8d05 => 0x4c8b05,
-        0x4c8d0d => 0x4c8b0d,
-        0x4c8d15 => 0x4c8b15,
-        0x4c8d1d => 0x4c8b1d,
-        0x4c8d25 => 0x4c8b25,
-        0x4c8d2d => 0x4c8b2d,
-        0x4c8d35 => 0x4c8b35,
-        0x4c8d3d => 0x4c8b3d,
+        // lea 0(%rip), %r16 -> mov 0(%rip), %r16
+        0x488d05 => 0x488b05, // lea 0(%rip), %rax -> mov 0(%rip), %rax
+        // lea 0(%rip), %r17 -> mov 0(%rip), %r17
+        0x488d0d => 0x488b0d, // lea 0(%rip), %rcx -> mov 0(%rip), %rcx
+        // lea 0(%rip), %r18 -> mov 0(%rip), %r18
+        0x488d15 => 0x488b15, // lea 0(%rip), %rdx -> mov 0(%rip), %rdx
+        // lea 0(%rip), %r19 -> mov 0(%rip), %r19
+        0x488d1d => 0x488b1d, // lea 0(%rip), %rbx -> mov 0(%rip), %rbx
+        // lea 0(%rip), %r20 -> mov 0(%rip), %r20
+        0x488d25 => 0x488b25, // lea 0(%rip), %rsp -> mov 0(%rip), %rsp
+        // lea 0(%rip), %r21 -> mov 0(%rip), %r21
+        0x488d2d => 0x488b2d, // lea 0(%rip), %rbp -> mov 0(%rip), %rbp
+        // lea 0(%rip), %r22 -> mov 0(%rip), %r22
+        0x488d35 => 0x488b35, // lea 0(%rip), %rsi -> mov 0(%rip), %rsi
+        // lea 0(%rip), %r23 -> mov 0(%rip), %r23
+        0x488d3d => 0x488b3d, // lea 0(%rip), %rdi -> mov 0(%rip), %rdi
+        // lea 0(%rip), %r24 -> mov 0(%rip), %r24
+        0x4c8d05 => 0x4c8b05, // lea 0(%rip), %r8  -> mov 0(%rip), %r8
+        // lea 0(%rip), %r25 -> mov 0(%rip), %r25
+        0x4c8d0d => 0x4c8b0d, // lea 0(%rip), %r9  -> mov 0(%rip), %r9
+        // lea 0(%rip), %r26 -> mov 0(%rip), %r26
+        0x4c8d15 => 0x4c8b15, // lea 0(%rip), %r10 -> mov 0(%rip), %r10
+        // lea 0(%rip), %r27 -> mov 0(%rip), %r27
+        0x4c8d1d => 0x4c8b1d, // lea 0(%rip), %r11 -> mov 0(%rip), %r11
+        // lea 0(%rip), %r28 -> mov 0(%rip), %r28
+        0x4c8d25 => 0x4c8b25, // lea 0(%rip), %r12 -> mov 0(%rip), %r12
+        // lea 0(%rip), %r29 -> mov 0(%rip), %r29
+        0x4c8d2d => 0x4c8b2d, // lea 0(%rip), %r13 -> mov 0(%rip), %r13
+        // lea 0(%rip), %r30 -> mov 0(%rip), %r30
+        0x4c8d35 => 0x4c8b35, // lea 0(%rip), %r14 -> mov 0(%rip), %r14
+        // lea 0(%rip), %r31 -> mov 0(%rip), %r31
+        0x4c8d3d => 0x4c8b3d, // lea 0(%rip), %r15 -> mov 0(%rip), %r15
         _ => 0,
     }
 }
@@ -714,54 +805,62 @@ fn relax_tlsdesc_to_le(loc: &[u8], rel: &ElfRel) -> u32 {
     let insn = last3(loc);
     if rel.r_type == R_X86_64_GOTPC32_TLSDESC {
         match insn {
-            // lea 0(%rip), %reg -> mov $0, %reg
-            0x488d05 => 0x48c7c0,
-            0x488d0d => 0x48c7c1,
-            0x488d15 => 0x48c7c2,
-            0x488d1d => 0x48c7c3,
-            0x488d25 => 0x48c7c4,
-            0x488d2d => 0x48c7c5,
-            0x488d35 => 0x48c7c6,
-            0x488d3d => 0x48c7c7,
-            0x4c8d05 => 0x49c7c0,
-            0x4c8d0d => 0x49c7c1,
-            0x4c8d15 => 0x49c7c2,
-            0x4c8d1d => 0x49c7c3,
-            0x4c8d25 => 0x49c7c4,
-            0x4c8d2d => 0x49c7c5,
-            0x4c8d35 => 0x49c7c6,
-            0x4c8d3d => 0x49c7c7,
+            0x488d05 => 0x48c7c0, // lea 0(%rip), %rax -> mov $0, %rax
+            0x488d0d => 0x48c7c1, // lea 0(%rip), %rcx -> mov $0, %rcx
+            0x488d15 => 0x48c7c2, // lea 0(%rip), %rdx -> mov $0, %rdx
+            0x488d1d => 0x48c7c3, // lea 0(%rip), %rbx -> mov $0, %rbx
+            0x488d25 => 0x48c7c4, // lea 0(%rip), %rsp -> mov $0, %rsp
+            0x488d2d => 0x48c7c5, // lea 0(%rip), %rbp -> mov $0, %rbp
+            0x488d35 => 0x48c7c6, // lea 0(%rip), %rsi -> mov $0, %rsi
+            0x488d3d => 0x48c7c7, // lea 0(%rip), %rdi -> mov $0, %rdi
+            0x4c8d05 => 0x49c7c0, // lea 0(%rip), %r8  -> mov $0, %r8
+            0x4c8d0d => 0x49c7c1, // lea 0(%rip), %r9  -> mov $0, %r9
+            0x4c8d15 => 0x49c7c2, // lea 0(%rip), %r10 -> mov $0, %r10
+            0x4c8d1d => 0x49c7c3, // lea 0(%rip), %r11 -> mov $0, %r11
+            0x4c8d25 => 0x49c7c4, // lea 0(%rip), %r12 -> mov $0, %r12
+            0x4c8d2d => 0x49c7c5, // lea 0(%rip), %r13 -> mov $0, %r13
+            0x4c8d35 => 0x49c7c6, // lea 0(%rip), %r14 -> mov $0, %r14
+            0x4c8d3d => 0x49c7c7, // lea 0(%rip), %r15 -> mov $0, %r15
             _ => 0,
         }
     } else {
         match insn {
-            0x488d05 => 0x18c7c0,
-            0x488d0d => 0x18c7c1,
-            0x488d15 => 0x18c7c2,
-            0x488d1d => 0x18c7c3,
-            0x488d25 => 0x18c7c4,
-            0x488d2d => 0x18c7c5,
-            0x488d35 => 0x18c7c6,
-            0x488d3d => 0x18c7c7,
-            0x4c8d05 => 0x19c7c0,
-            0x4c8d0d => 0x19c7c1,
-            0x4c8d15 => 0x19c7c2,
-            0x4c8d1d => 0x19c7c3,
-            0x4c8d25 => 0x19c7c4,
-            0x4c8d2d => 0x19c7c5,
-            0x4c8d35 => 0x19c7c6,
-            0x4c8d3d => 0x19c7c7,
+            0x488d05 => 0x18c7c0, // lea 0(%rip), %r16 -> mov $0, %r16
+            0x488d0d => 0x18c7c1, // lea 0(%rip), %r17 -> mov $0, %r17
+            0x488d15 => 0x18c7c2, // lea 0(%rip), %r18 -> mov $0, %r18
+            0x488d1d => 0x18c7c3, // lea 0(%rip), %r19 -> mov $0, %r19
+            0x488d25 => 0x18c7c4, // lea 0(%rip), %r20 -> mov $0, %r20
+            0x488d2d => 0x18c7c5, // lea 0(%rip), %r21 -> mov $0, %r21
+            0x488d35 => 0x18c7c6, // lea 0(%rip), %r22 -> mov $0, %r22
+            0x488d3d => 0x18c7c7, // lea 0(%rip), %r23 -> mov $0, %r23
+            0x4c8d05 => 0x19c7c0, // lea 0(%rip), %r24 -> mov $0, %r24
+            0x4c8d0d => 0x19c7c1, // lea 0(%rip), %r25 -> mov $0, %r25
+            0x4c8d15 => 0x19c7c2, // lea 0(%rip), %r26 -> mov $0, %r26
+            0x4c8d1d => 0x19c7c3, // lea 0(%rip), %r27 -> mov $0, %r27
+            0x4c8d25 => 0x19c7c4, // lea 0(%rip), %r28 -> mov $0, %r28
+            0x4c8d2d => 0x19c7c5, // lea 0(%rip), %r29 -> mov $0, %r29
+            0x4c8d35 => 0x19c7c6, // lea 0(%rip), %r30 -> mov $0, %r30
+            0x4c8d3d => 0x19c7c7, // lea 0(%rip), %r31 -> mov $0, %r31
             _ => 0,
         }
     }
 }
 
-/// Rewrites a `__tls_get_addr` call sequence to compute a link-time
-/// constant TP-relative address instead.
+// Rewrite a function call to __tls_get_addr to a cheaper instruction
+// sequence. We can do this when we know the thread-local variable's TP-
+// relative address at link-time.
 fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
     match rel.r_type {
         R_X86_64_PLT32 | R_X86_64_PC32 | R_X86_64_GOTPCREL | R_X86_64_GOTPCRELX => {
-            // lea foo@tlsgd(%rip), %rdi; call __tls_get_addr
+            // The original instructions are the following:
+            //
+            //  66 48 8d 3d 00 00 00 00    lea  foo@tlsgd(%rip), %rdi
+            //  66 66 48 e8 00 00 00 00    call __tls_get_addr
+            //
+            // or
+            //
+            //  66 48 8d 3d 00 00 00 00    lea foo@tlsgd(%rip), %rdi
+            //  66 48 ff 15 00 00 00 00    call *__tls_get_addr@GOT(%rip)
             const INSN: [u8; 16] = [
                 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
                 0x48, 0x81, 0xc0, 0, 0, 0, 0, // add $tp_offset, %rax
@@ -770,8 +869,12 @@ fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
             write_u32(&mut buf[off + 8..], val as u32);
         }
         R_X86_64_PLTOFF64 => {
-            // lea foo@tlsgd(%rip), %rdi; movabs __tls_get_addr, %rax;
-            // add %rbx, %rax; call *%rax
+            // The original instructions are the following:
+            //
+            //  48 8d 3d 00 00 00 00           lea    foo@tlsgd(%rip), %rdi
+            //  48 b8 00 00 00 00 00 00 00 00  movabs __tls_get_addr, %rax
+            //  48 01 d8                       add    %rbx, %rax
+            //  ff d0                          call   *%rax
             const INSN: [u8; 22] = [
                 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
                 0x48, 0x81, 0xc0, 0, 0, 0, 0, // add $tp_offset, %rax
@@ -807,15 +910,21 @@ fn relax_gd_to_ie(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
     }
 }
 
-/// Like `relax_gd_to_le`, but materializes the address of the TLS block
-/// rather than of a particular variable.
+// Rewrite a function call to __tls_get_addr to a cheaper instruction
+// sequence. The difference from relax_gd_to_le is that we are materializing
+// the address of the beginning of TLS block instead of an address of a
+// particular thread-local variable.
 fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, tls_size: u64) {
     match rel.r_type {
         R_X86_64_PLT32 | R_X86_64_PC32 => {
-            // lea foo@tlsld(%rip), %rdi; call __tls_get_addr
+            // The original instructions are the following:
             //
-            // The sequence is so short that `mov %fs:0, %rax` (9 bytes)
-            // doesn't fit; `xor %eax, %eax` plus `mov %fs:(%rax), %rax` does.
+            //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
+            //  e8 00 00 00 00          call   __tls_get_addr
+            //
+            // Because the original instruction sequence is so short that we need a
+            // little bit of code golfing here. "mov %fs:0, %rax" is 9 byte long, so
+            // xor + mov is shorter. Note that `xor %eax, %eax` zero-clears %eax.
             const INSN: [u8; 12] = [
                 0x31, 0xc0, // xor %eax, %eax
                 0x64, 0x48, 0x8b, 0x00, // mov %fs:(%rax), %rax
@@ -825,7 +934,10 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, tls_size: u64) {
             write_u32(&mut buf[off + 5..], tls_size as u32);
         }
         R_X86_64_GOTPCREL | R_X86_64_GOTPCRELX => {
-            // lea foo@tlsld(%rip), %rdi; call *__tls_get_addr@GOT(%rip)
+            // The original instructions are the following:
+            //
+            //  48 8d 3d 00 00 00 00    lea    foo@tlsld(%rip), %rdi
+            //  ff 15 00 00 00 00       call   *__tls_get_addr@GOT(%rip)
             const INSN: [u8; 13] = [
                 0x48, 0x31, 0xc0, // xor %rax, %rax
                 0x64, 0x48, 0x8b, 0x00, // mov %fs:(%rax), %rax
@@ -835,8 +947,12 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, tls_size: u64) {
             write_u32(&mut buf[off + 6..], tls_size as u32);
         }
         R_X86_64_PLTOFF64 => {
-            // lea foo@tlsld(%rip), %rdi; movabs __tls_get_addr@GOTOFF, %rax;
-            // add %rbx, %rax; call *%rax
+            // The original instructions are the following:
+            //
+            //  48 8d 3d 00 00 00 00           lea    foo@tlsld(%rip), %rdi
+            //  48 b8 00 00 00 00 00 00 00 00  movabs __tls_get_addr@GOTOFF, %rax
+            //  48 01 d8                       add    %rbx, %rax
+            //  ff d0                          call   *%rax
             const INSN: [u8; 22] = [
                 0x64, 0x48, 0x8b, 0x04, 0x25, 0, 0, 0, 0, // mov %fs:0, %rax
                 0x48, 0x2d, 0, 0, 0, 0, // sub $tls_size, %rax
@@ -849,10 +965,25 @@ fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, tls_size: u64) {
     }
 }
 
-/// Rewrites `endbr64` landing pads of functions whose address is never
-/// taken with NOPs. The compiler emits a landing pad for every global
-/// function since it can't know whether the address is taken elsewhere;
-/// the linker sees all translation units and can do better.
+// Intel CET is a relatively new CPU feature to enhance security by
+// protecting control flow integrity. If the feature is enabled, indirect
+// branches (i.e. branch instructions that take a register instead of an
+// immediate) must land on a "landing pad" instruction, or a CPU-level fault
+// will raise. That prevents an attacker to branch to a middle of a random
+// function, making ROP or JOP much harder to conduct.
+//
+// On x86-64, the landing pad instruction is ENDBR64. That is actually a
+// repurposed NOP instruction to provide binary compatibility with older
+// hardware that doesn't support CET.
+//
+// The problem here is that the compiler always emits a landing pad at the
+// beginning fo a global function because it doesn't know whether or not the
+// function's address is taken in other translation units. As a result, the
+// resulting binary contains more landing pads than necessary.
+//
+// This function rewrites a landing pad with a nop if the function's address
+// was not actually taken. We can do what the compiler cannot because we
+// know about all translation units.
 pub fn rewrite_endbr(ctx: &Context<X86_64>, buf: &mut [u8]) {
     const ENDBR64: [u8; 4] = [0xf3, 0x0f, 0x1e, 0xfa];
     const NOP: [u8; 4] = [0x0f, 0x1f, 0x40, 0x00];
@@ -862,8 +993,10 @@ pub fn rewrite_endbr(ctx: &Context<X86_64>, buf: &mut [u8]) {
         Some(osec.hdr.shdr.sh_offset + isec.offset())
     };
 
-    // Rewrite the landing pads of all global functions. File-scoped
-    // functions don't get one unless their address is taken anyway.
+    // Rewrite all endbr64 instructions referred to by function symbols with
+    // NOPs. We handle only global symbols because the compiler doesn't emit
+    // an endbr64 for a file-scoped function in the first place if its address
+    // is not taken within the file.
     for file in &ctx.objs {
         for &id in file.base.global_symbols() {
             let sym = &ctx.symbols[id];
@@ -886,8 +1019,10 @@ pub fn rewrite_endbr(ctx: &Context<X86_64>, buf: &mut [u8]) {
         }
     }
 
-    // Restore the landing pads that address-taking relocations refer to.
     let mut write_back = |isec: Option<&InputSection>, offset: i64| {
+        // If isec has an endbr64 at a given offset, copy that instruction to
+        // the output buffer, possibly overwriting a nop written in the above
+        // loop.
         let Some(isec) = isec else { return };
         let size = isec.contents().len() as i64;
         if isec.sh_flags & SHF_EXECINSTR as u64 == 0 || offset < 0 || offset > size - 4 {
@@ -902,6 +1037,8 @@ pub fn rewrite_endbr(ctx: &Context<X86_64>, buf: &mut [u8]) {
         }
     };
 
+    // Write back endbr64 instructions if they are referred to by address-taking
+    // relocations.
     for file in &ctx.objs {
         for isec in file.input_sections() {
             if !isec.is_alive() || !isec.is_alloc() {
@@ -922,8 +1059,8 @@ pub fn rewrite_endbr(ctx: &Context<X86_64>, buf: &mut [u8]) {
         }
     }
 
-    // Symbols whose addresses are recorded in the ELF header, .dynamic or
-    // .dynsym keep their landing pads.
+    // We record addresses of some symbols in the ELF header, .dynamic or in
+    // .dynsym. We need to retain endbr64s for such symbols.
     let mut keep = |id: SymbolId| {
         let sym = &ctx.symbols[id];
         write_back(sym.input_section_ref(), sym.value as i64);

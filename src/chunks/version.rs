@@ -10,8 +10,14 @@ use crate::input_files::{DsoId, FileId};
 use crate::symbol::SymbolId;
 use crate::util::path_filename;
 
-/// `.gnu.version` is a table parallel to `.dynsym` giving each symbol's
-/// version index.
+// .gnu.version section contains version indices as a parallel array for
+// .dynsym. If a dynamic symbol is a defined one, its version information
+// is in .gnu.version_d. Otherwise, it's in .gnu.version_r.
+//
+// .gnu.version contains a parallel table for .dynsym to specify symbol
+// versions of undefined symbols. A symbol having an entry in .gnu.version
+// must be resolved to a symbol with the exact same version string at
+// runtime.
 #[derive(Debug)]
 pub struct VersymSection {
     pub hdr: ChunkHeader,
@@ -51,7 +57,8 @@ pub mod versym {
     }
 }
 
-/// `.gnu.version_r` lists the versions required from each shared library.
+// .gnu.version_r contains information to refer to shared libraries and
+// their symbol versions.
 #[derive(Debug)]
 pub struct VerneedSection {
     pub hdr: ChunkHeader,
@@ -75,10 +82,20 @@ impl Default for VerneedSection {
     }
 }
 
-/// `-z pack-relative-relocs` outputs crash on glibc before 2.38, which
-/// doesn't understand RELR. Adding a dependency on the dummy version
-/// `GLIBC_ABI_DT_RELR` turns that into a friendlier "version not found"
-/// error; newer glibc knows the name and ignores it.
+// If `-z pack-relative-relocs` is specified, we'll create a .relr.dyn
+// section and store base relocation records to that section instead of
+// to the usual .rela.dyn section.
+//
+// .relr.dyn is relatively new feature and not supported by glibc until
+// 2.38 which was released in 2022. If we don't do anything, executables
+// built with `-z pack-relative-relocs` would just crash immediately on
+// startup with an older version of glibc.
+//
+// As a workaround, we'll add a dependency to a dummy version name
+// "GLIBC_ABI_DT_RELR" if `-z pack-relative-relocs` is given so that
+// executables built with the option failed with a more friendly "version
+// `GLIBC_ABI_DT_RELR' not found" error message. glibc 2.38 or later knows
+// about this dummy version name and simply ignores it.
 fn is_glibc2(dso: &crate::input_files::SharedFile) -> bool {
     dso.soname.starts_with("libc.so.")
         && dso
@@ -93,7 +110,7 @@ pub mod verneed {
     pub fn construct<E: Arch>(ctx: &mut Context<E>) {
         let _t = ctx.timer("fill_verneed");
 
-        // Versioned symbols, sorted by file and version.
+        // Create a list of versioned symbols and sort by file and version.
         let mut syms: Vec<(DsoId, SymbolId)> = ctx
             .dynsym
             .symbols
@@ -120,12 +137,15 @@ pub mod verneed {
             )
         });
 
+        // Resize .gnu.version
         let n = ctx.dynsym.symbols.len();
         ctx.versym.contents.resize(n, VER_NDX_GLOBAL as u16);
         ctx.versym.contents[0] = VER_NDX_LOCAL as u16;
 
+        // Allocate a large enough buffer for .gnu.version_r.
+        let capacity = (ElfVerneed::size::<E>() + ElfVernaux::size::<E>()) * (syms.len() + 1);
         let mut builder = VerneedBuilder::<E> {
-            contents: Vec::new(),
+            contents: Vec::with_capacity(capacity),
             veridx: VER_NDX_LAST_RESERVED as u16 + ctx.args.version_definitions.len() as u16,
             num_groups: 0,
             group_pos: None,
@@ -133,6 +153,8 @@ pub mod verneed {
             _arch: std::marker::PhantomData,
         };
 
+        // Fill .gnu.version_r.
+        // Create version entries.
         for i in 0..syms.len() {
             let (dso, id) = syms[i];
             let start_group = i == 0 || syms[i - 1].0 != dso;
@@ -153,6 +175,7 @@ pub mod verneed {
             ctx.versym.contents[dynsym_idx] = builder.veridx;
         }
 
+        // Resize .gnu.version_r to fit to its contents.
         ctx.verneed.hdr.shdr.sh_info = builder.num_groups;
         ctx.verneed.contents = builder.contents;
     }
@@ -226,8 +249,9 @@ pub mod verneed {
     }
 }
 
-/// `.gnu.version_d` defines the versions of the symbols this file
-/// exports. It exists only in shared libraries.
+// .gnu.version contains a parallel table for .dynsym to specify symbol
+// versions of defined symbols. This section appears only in .so files,
+// and it specifies the symbol version for each defined dynamic symbol.
 #[derive(Debug)]
 pub struct VerdefSection {
     pub hdr: ChunkHeader,
@@ -260,7 +284,7 @@ pub mod verdef {
             return;
         }
 
-        // --default-symver
+        // Handle --default-symver
         if ctx.args.default_symver {
             for &id in ctx.dynsym.symbols.iter().flatten() {
                 let sym = &mut ctx.symbols[id];
@@ -273,6 +297,7 @@ pub mod verdef {
             }
         }
 
+        // Resize .gnu.version and write to it
         let n = ctx.dynsym.symbols.len();
         ctx.versym.contents.resize(n, VER_NDX_GLOBAL as u16);
         ctx.versym.contents[0] = VER_NDX_LOCAL as u16;
@@ -291,9 +316,12 @@ pub mod verdef {
             }
         }
 
-        let mut contents: Vec<u8> = Vec::new();
+        // Allocate a buffer for .gnu.version_d and write to it
         let verdef_size = ElfVerdef::size::<E>();
         let verdaux_size = ElfVerdaux::size::<E>();
+        let mut contents: Vec<u8> = Vec::with_capacity(
+            (verdef_size + verdaux_size) * (ctx.args.version_definitions.len() + 1),
+        );
         let mut prev: Option<usize> = None;
         let mut count = 0u32;
 

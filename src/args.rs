@@ -1,3 +1,4 @@
+// cmdline.cc
 //! Command-line argument parsing.
 
 use std::collections::{HashMap, HashSet};
@@ -311,7 +312,7 @@ pub struct SectionOrder {
     pub kind: SectionOrderKind,
     pub name: String,
     pub value: u64,
-    /// The original token, for error messages.
+    // for error reporting
     pub token: String,
 }
 
@@ -329,8 +330,16 @@ pub enum DynamicListSource {
     Pattern(String),
 }
 
-/// Options that apply to the input files following them on the command
-/// line.
+// The position of the file currently being read in the command
+// line. We read input files in parallel, so files are not read in
+// the command line order; instead, we record each file's position
+// when it's found and sort files by position afterwards.
+//
+// Positions are hierarchical: the n-th file found inside another
+// file, such as an archive member or a file named by a GROUP linker
+// script command, gets its parent file's position extended with n.
+// Comparing positions lexicographically thus gives the command line
+// order.
 #[derive(Clone, Debug, Default)]
 pub struct ReaderContext {
     pub as_needed: bool,
@@ -344,12 +353,12 @@ pub struct ReaderContext {
     /// command line order.
     pub pos: Vec<u32>,
 
-    /// The number of files found so far inside the current file.
+    // The number of files found so far in the current file.
     pub num_children: u32,
 }
 
 impl ReaderContext {
-    /// Returns a context for the next file found inside the current one.
+    // Returns a context for the next file found inside the current file.
     pub fn next_child(&mut self) -> ReaderContext {
         let mut child = self.clone();
         child.pos.push(self.num_children);
@@ -359,7 +368,12 @@ impl ReaderContext {
     }
 }
 
-/// A file to read, with the reader state at its command line position.
+// A file to read along with the reader state at its command line
+// position. parse_nonpositional_args() creates one ReaderJob per
+// input file argument; `name` is a path or, if `is_lib` is set, a
+// library name to search for. read_input_files() additionally
+// enqueues archive members as jobs in an already-opened form, with
+// `mf` and `archive_name` set instead.
 #[derive(Clone, Debug, Default)]
 pub struct ReaderJob {
     pub rctx: ReaderContext,
@@ -367,8 +381,9 @@ pub struct ReaderJob {
     pub is_lib: bool,
     pub mf: Option<&'static MappedFile>,
 
-    /// For an archive member: the archive's name and, for a thin archive,
-    /// the archive itself.
+    // For an archive member. A member of a regular archive is a slice of
+    // the archive's mapping and comes already opened as `mf`; a member of
+    // a thin archive is a separate file that the job opens by `name`.
     pub archive_name: String,
     pub thin_parent: Option<&'static MappedFile>,
 }
@@ -678,11 +693,26 @@ pub struct TargetTraits {
 }
 
 fn is_space(c: u8) -> bool {
+    // Same as isspace() in the C locale, without the function call that the
+    // tokenizer below would otherwise make for every byte of a response file.
     matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
 }
 
-/// Reads a response file (`@file`) and returns its tokens, expanding
-/// nested response files.
+// True for the characters that end or alter a token: whitespace, quotes
+// and backslash. A table keeps the tokenizer's scan loop tight.
+//
+// Rust tests these characters directly in the tokenizer below.
+
+// If a command line argument is in the form of `@path/to/some/file` (i.e.
+// it starts with an atsign), the linker reads the given file and
+// interprets its contents as a list of command line arguments. A file
+// containing command line arguments is called a "response file".
+//
+// A response file is often used to pass a very large number of arguments
+// to the linker without exceeding the kernel's command line length limit.
+//
+// This function opens a given file, tokenizes its contents, and returns a
+// list of tokens.
 fn read_response_file(diag: &Diagnostics, path: &str, depth: usize) -> Vec<String> {
     if depth > 10 {
         fatal!(diag, "{path}: response file nesting too deep");
@@ -700,7 +730,14 @@ fn read_response_file(diag: &Diagnostics, path: &str, depth: usize) -> Vec<Strin
             continue;
         }
 
-        // A backslash escapes the next character; a quoted part may be
+        // The C++ tokenizer preserves this zero-copy fast path:
+        // A token containing no quotes or backslashes, which is by far the
+        // common case, is returned as a substring of the file.
+        //
+        // Rust's owned command-line strings require copying either way.
+
+        // Otherwise, copy the token, removing quotes and backslashes. A
+        // backslash escapes the next character, and a quoted part may be
         // followed by more characters of the same token.
         let mut tok = Vec::new();
         let mut quote = None;
@@ -746,7 +783,7 @@ fn read_response_file(diag: &Diagnostics, path: &str, depth: usize) -> Vec<Strin
     expanded
 }
 
-/// Replaces `@file` arguments with the contents of the named files.
+// Replace "@path/to/some/text/file" with its file contents.
 pub fn expand_response_files(diag: &Diagnostics, argv: &[String]) -> Vec<String> {
     let mut args = Vec::new();
     for arg in argv {
@@ -759,19 +796,25 @@ pub fn expand_response_files(diag: &Diagnostics, argv: &[String]) -> Vec<String>
     args
 }
 
-/// Matches an argument against an option name. On success, returns the
-/// remainder of the argument: matching "--foo=bar" against "foo" yields
-/// "=bar", and matching "--foo" against "foo" yields "".
-///
-/// Multi-letter option names accept a single or double dash, except names
-/// starting with "o", which need a double dash so that "-omagic" means
-/// "-o magic". Single-letter options take a single dash.
+// This function matches a command line argument against an option
+// name and, on success, returns the remainder of the argument. For
+// example, matching "--foo=bar" against "foo" yields "=bar", and
+// matching "--foo" against "foo" yields an empty string. On
+// mismatch, it returns std::nullopt.
+//
+// Multi-letter option names can be preceded by either a single dash
+// or double dashes except ones starting with "o", which must be
+// preceded by double dashes. For example, "-omagic" is interpreted
+// as "-o magic". If you really want to specify the "omagic" option,
+// you have to pass "--omagic". Single-letter option names take a
+// single dash.
 fn match_option<'a>(arg: &'a str, name: &str) -> Option<&'a str> {
     let arg = arg.strip_prefix('-')?;
 
     if name.len() == 1 {
         return arg.strip_prefix(name);
     }
+    // Options beginning with "o" require double dashes
     if name.starts_with('o') && !arg.starts_with('-') {
         return None;
     }
@@ -945,12 +988,15 @@ fn parse_defsym_value(s: &str) -> DefsymValue {
     DefsymValue::Symbol(s.to_string())
 }
 
-/// Linux 6.11 and 6.12 don't return ETXTBSY for open(2) on a running
-/// executable, which makes overwriting an output file in place unsafe.
+// Version 6.11 and 6.12 of the Linux kernel does not return ETXTBSY for
+// open(2) on an executable file that is currently running. This function
+// returns true if we are running on a Linux kernel older than 6.11 or newer
+// than 6.12.
 fn returns_etxtbsy() -> bool {
     let Ok(release) = std::fs::read_to_string("/proc/sys/kernel/osrelease") else {
         return false;
     };
+    // Parses a kernel version string, e.g. "6.8.0-47-generic".
     let mut parts = release
         .trim()
         .split(['.', '-'])
@@ -974,6 +1020,10 @@ pub struct ParsedArgs {
 
 /// Parses all options. `cmdline` includes the program name.
 pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String]) -> ParsedArgs {
+    // Input file arguments are turned into ReaderJobs for
+    // read_input_files(). rctx tracks the reader state options, such as
+    // --as-needed, that apply to the files after them; each job gets a
+    // snapshot of the state at its position.
     let mut a = Args::default();
     let mut jobs: Vec<ReaderJob> = Vec::new();
     let mut rctx = ReaderContext::default();
@@ -997,16 +1047,24 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
 
     // We generally don't need to write addends to relocated places if the
     // relocation type is RELA because RELA records contain addends.
-    // However, too much code wrongly assumes that addends are written to
-    // both, so we write them by default. SPARC's dynamic linker adds both
-    // r_addend and the value at the relocated place, and static PIEs
-    // crash on some RISC-V environments if addends are written, so those
-    // targets are exceptions.
+    // However, there are too much code that wrongly assumes that addends
+    // are written to both RELA records and relocated places, so we write
+    // addends to relocated places by default. There are a few exceptions:
+    //
+    // - It looks like the SPARC's dynamic linker takes both RELA's r_addend
+    // and the value at the relocated place. So we don't want to write
+    // values to relocated places.
+    //
+    // - Static PIE binaries crash on startup in some RISC-V environment if
+    // we write addends to relocated places.
     a.apply_dynamic_relocs = !target.is_sparc && !target.is_riscv;
 
     let mut i = 1;
     let mut arg = String::new();
 
+    // An option and its argument are either separate command line
+    // arguments or a single one, as in "-o foo" vs. "-ofoo" or
+    // "--output foo" vs. "--output=foo".
     macro_rules! read_arg {
         ($name:expr) => {{
             let name: &str = $name;
@@ -1958,8 +2016,9 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         }
     }
 
-    // Even though SH4 is RELA, addends in its relocation records are
-    // always zero and actual addends are written to relocated places.
+    // Even though SH4 is RELA, addends in its relocation records are always
+    // zero, and actual addends are written to relocated places. So we need
+    // to handle it as an exception.
     if (!target.is_rela || target.is_sh4) && !a.apply_dynamic_relocs {
         fatal!(
             diag,
@@ -2011,6 +2070,7 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
         a.detach = false;
     }
 
+    // Mark GC root symbols
     a.undefined.push(a.entry.clone());
     for (_, value) in &a.defsyms {
         if let DefsymValue::Symbol(sym) = value {
@@ -2019,14 +2079,22 @@ pub fn parse_args(diag: &Diagnostics, target: &TargetTraits, cmdline: &[String])
     }
 
     // --oformat=binary implies --strip-all because without a section
-    // header, there's no way to identify the location of a symbol table.
+    // header, there's no way to identify the locations of a symbol
+    // table in an output file in the first place.
     if a.oformat_binary {
         a.strip_all = true;
     }
 
-    // Overwriting an existing output file in place is faster than
-    // creating a fresh one, but a running executable is protected by
-    // ETXTBSY only on some kernels, and shared objects never are.
+    // By default, mold tries to ovewrite to an output file if exists
+    // because at least on Linux, writing to an existing file is much
+    // faster than creating a fresh file and writing to it.
+    //
+    // However, if an existing file is in use, writing to it will mess
+    // up processes that are executing that file. Linux prevents a write
+    // to a running executable file; it returns ETXTBSY on open(2).
+    // However, that mechanism doesn't protect .so files. Therefore, we
+    // want to disable this optimization if we are creating a shared
+    // object file.
     a.overwrite_output_file = !a.shared && returns_etxtbsy();
 
     if version_shown && jobs.is_empty() {

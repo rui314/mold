@@ -10,7 +10,7 @@ use crate::input_files::FileId;
 use crate::symbol::SymbolId;
 use crate::util::encode_sleb;
 
-/// `.rela.dyn` holds the dynamic relocations of all other sections.
+// .rel.dyn contains relocation infromation for other sections.
 #[derive(Debug)]
 pub struct RelDynSection {
     pub hdr: ChunkHeader,
@@ -85,12 +85,13 @@ pub mod reldyn {
             hdr.num_relrs = 0;
             hdr.relr.clear();
 
-            // Executable chunks don't usually contain base relocations.
+            // Do not use RELR for executable chunks, as they don't usually contain
+            // base relocations.
             if hdr.shdr.sh_flags & SHF_EXECINSTR as u64 != 0 {
                 continue;
             }
-            // --section-start can override a chunk's alignment; use
-            // .rel[a].dyn if the assigned address isn't word-aligned.
+            // --section-start can override a chunk's alignment. Conservatively use
+            // .rel[a].dyn if the explicitly assigned address is not word-aligned.
             let name = String::from_utf8_lossy(hdr.name).into_owned();
             if ctx
                 .args
@@ -139,9 +140,9 @@ pub mod reldyn {
 
         if ctx.args.pack_dyn_relocs_android {
             let relocs = collect_relocs(ctx);
-            // APS2 uses SLEB128-encoded deltas, so the size may oscillate
+            // APS2 uses SLEB128-encoded deltas, so .rela.dyn size may oscillate
             // as addresses move. If a shrink is followed by a growth, stop
-            // shrinking and pad the stream to converge.
+            // shrinking and pad the encoded stream to converge.
             let encoded = encode_android::<E>(relocs);
             let old_size = ctx.reldyn.hdr.shdr.sh_size as usize;
             let reldyn = &mut ctx.reldyn;
@@ -178,12 +179,30 @@ pub mod reldyn {
         }
     }
 
-    /// Sorts the dynamic relocations in the output so that the loader's
-    /// one-entry symbol cache is effective and IFUNC resolvers run last.
+    // Sort dynamic relocations. This is the reason why we do it.
+    // Quote from https://www.airs.com/blog/archives/186
+    //
+    //   The dynamic linker in glibc uses a one element cache when processing
+    //   relocs: if a relocation refers to the same symbol as the previous
+    //   relocation, then the dynamic linker reuses the value rather than
+    //   looking up the symbol again. Thus the dynamic linker gets the best
+    //   results if the dynamic relocations are sorted so that all dynamic
+    //   relocations for a given dynamic symbol are adjacent.
+    //
+    //   Other than that, the linker sorts together all relative relocations,
+    //   which don't have symbols. Two relative relocations, or two relocations
+    //   against the same symbol, are sorted by the address in the output
+    //   file. This tends to optimize paging and caching when there are two
+    //   references from the same page.
     pub fn sort<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
+        // .rela.dyn contains APS2-encoded bytes, not ElfRel entries.
         if ctx.args.pack_dyn_relocs_android {
             return;
         }
+
+        // We group IFUNC relocations at the end of .rel.dyn because we want to
+        // apply all the other relocations before running user-supplied IFUNC
+        // resolvers.
         let rank = |r_type: u32| -> u32 {
             if r_type == E::R_RELATIVE {
                 0
@@ -206,8 +225,39 @@ pub mod reldyn {
     }
 }
 
-/// `.relr.dyn` stores base relocations compactly: a start address followed
-/// by bitmaps, each bit covering one word after the address.
+// .relr.dyn is a relatively new section to contain base relocation
+// information.
+//
+// A relocatable executable/DSO contains a lot of certain type of
+// relocation entries, called "base relocations", to specify the locations
+// of pointers in the FILE that need to be adjusted according to the
+// desired load address and the actual load address. As an example,
+// consider the following C code.
+//
+// extern int foo;
+// int *bar = &foo;
+//
+// If an executable containing the above code is built as relocatable
+// executable, meaning that the executable can be loaded not to a specific
+// address in memory but anywhere in the virtual address space, then the
+// pointer `bar`'s address is not known at link-time.
+//
+// The linker temporarily links the executable to a base address, record
+// that information to the ELF header, and emits dynamic relocations to
+// refer to the location of `bar`. At runtime, the loader adds the
+// difference of the expected load address and the actual one to the
+// pointer value to fix the pointer value.
+//
+// Relocatable executables/DSOs usually contain a fairly large number of
+// base relocations. In particular, C++ virtual function table is an array
+// of statically-initialized pointers which need base relocations.
+//
+// Notice that base relocations don't contain symbol information. They
+// need only pointer locations in the ELF file that need fixing at
+// load-time. Therefore, storing that information to the usual ELF
+// relocation table is waste of space.
+//
+// .relr.dyn is designed to store base relocations in a space-efficient way.
 #[derive(Debug)]
 pub struct RelrDynSection {
     pub hdr: ChunkHeader,
@@ -252,9 +302,23 @@ pub mod relrdyn {
     }
 }
 
-/// Encodes sorted offsets in RELR form. Each address group is a start
-/// address followed by bitmaps whose bit N means "also fix address + N *
-/// word size". Addresses have LSB 0 and bitmaps LSB 1.
+// .relr.dyn contains base relocations encoded in a space-efficient form.
+// The contents of the section is essentially just a list of addresses
+// that have to be fixed up at runtime.
+//
+// Here is the encoding scheme (we assume 64-bit ELF in this description
+// for the sake of simplicity): .relr.dyn contains zero or more address
+// groups. Each address group consists of a 64-bit start address followed
+// by zero or more 63-bit bitmaps. Let A be the address of a start
+// address. Then, the loader fixes address A. If Nth bit in the following
+// bitmap is on, the loader also fixes address A + N * 8. In this scheme,
+// one address and one bitmap can represent up to 64 base relocations in a
+// 512 bytes range.
+//
+// A start address and a bitmap is distinguished by the lowest significant
+// bit. An address must be even and thus its LSB is 0 (odd address is not
+// representable in this encoding and such relocation must be stored to
+// the .rel.dyn section). A bitmap has LSB 1.
 pub fn encode_relr<E: Arch>(offsets: &[u64]) -> Vec<u64> {
     let word = E::WORD_SIZE as u64;
     let num_bits = if E::IS_64 { 63 } else { 31 };
@@ -283,9 +347,13 @@ pub fn encode_relr<E: Arch>(offsets: &[u64]) -> Vec<u64> {
     vec
 }
 
-/// Encodes relocations in the Android packed format (APS2). Relocations
-/// are grouped so that shared offset deltas, info values and addend deltas
-/// are factored out. See bionic's linker_relocs.cpp for the decoder.
+// Encode dynamic relocations using the Android Packed Relocation format
+// (APS2). The encoded stream begins with the magic bytes "APS2" followed
+// by SLEB128-encoded fields. Relocations are emitted in groups; within a
+// group, common offset deltas, info values, and addend deltas are
+// factored out so each per-relocation entry is just the differing fields.
+//
+// See bionic's linker/linker_relocs.cpp for the decoder.
 pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel>) -> Vec<u8> {
     const GROUPED_BY_INFO: i64 = 1;
     const GROUPED_BY_OFFSET_DELTA: i64 = 2;
@@ -306,8 +374,12 @@ pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel>) -> Vec<u8> {
         return buf;
     }
 
-    // Offset deltas are signed, so sort by (type, symbol, offset) to
-    // gather the dominant type (usually R_RELATIVE) in one run.
+    // APS2 offset deltas are signed, so the format doesn't require
+    // relocations to be in increasing-offset order. Sort by (r_type,
+    // r_sym, r_offset) so all relocs of the dominant type (typically
+    // R_RELATIVE, ~90% of dynrels in a real Android binary) land in one
+    // contiguous block. That collapses dozens of type-broken groups into
+    // a few large info-grouped runs.
     rels.sort_by_key(|r| (r.r_type, r.r_sym, r.r_offset));
 
     let mut prev_offset = 0i64;
@@ -317,6 +389,8 @@ pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel>) -> Vec<u8> {
         let offset_delta = rels[i].r_offset as i64 - prev_offset;
         let cur_info = r_info(&rels[i]);
 
+        // Greedily extend the group while consecutive relocations share the
+        // same offset_delta and r_info.
         let mut j = i + 1;
         while j < rels.len()
             && r_info(&rels[j]) == cur_info
@@ -350,7 +424,9 @@ pub fn encode_android<E: Arch>(mut rels: Vec<ElfRel>) -> Vec<u8> {
     buf
 }
 
-/// `.dynamic` tells the dynamic linker where everything is.
+// .dynamic contains various information for dynamically-linked ELF files.
+// At runtime, the dynamic linker reads the information to work
+// appropriately.
 #[derive(Debug)]
 pub struct DynamicSection {
     pub hdr: ChunkHeader,
@@ -377,11 +453,20 @@ impl DynamicSection {
 pub mod dynamic {
     use super::*;
 
-    /// An AArch64 function with a non-standard calling convention is marked
-    /// with STO_AARCH64_VARIANT_PCS. It isn't safe to call through a lazy
-    /// PLT stub, so the loader resolves such symbols eagerly when
-    /// DT_AARCH64_VARIANT_PCS is set. RISC-V has the same feature under a
-    /// different name.
+    // An ARM64 function with a non-standard calling convention is marked with
+    // STO_AARCH64_VARIANT_PCS bit in the symbol table.
+    //
+    // A function with that bit is not safe to be called through a lazy PLT
+    // stub because the PLT resolver may clobber registers that should be
+    // preserved in a non-standard calling convention.
+    //
+    // To solve the problem, the dynamic linker scans the dynamic symbol table
+    // at process startup time and resolve symbols with STO_AARCH64_VARIANT_PCS
+    // bit eagerly, so that the PLT resolver won't be called for that symbol
+    // lazily. As an optimization, it does so only when DT_AARCH64_VARIANT_PCS
+    // is set in the dynamic section.
+    //
+    // This function returns true if DT_AARCH64_VARIANT_PCS needs to be set.
     fn contains_variant_pcs<E: Arch>(ctx: &Context<E>) -> bool {
         ctx.plt
             .symbols
@@ -605,6 +690,7 @@ pub mod dynamic {
         if E::FAMILY == Family::Arm64 && contains_variant_pcs(ctx) {
             define(DT_AARCH64_VARIANT_PCS, 0);
         }
+        // RISC-V has the same feature but with a different name.
         if E::IS_RISCV
             && ctx
                 .plt
@@ -618,15 +704,17 @@ pub mod dynamic {
             define(DT_PPC_GOT, ctx.gotplt.hdr.shdr.sh_addr);
         }
         if E::IS_PPC64 {
-            // The psABI defines PPC64_GLINK as 32 bytes before the first
-            // PLT entry.
+            // PPC64_GLINK is defined by the psABI to refer to 32 bytes before
+            // the first PLT entry. I don't know why it's 32 bytes off, but
+            // it's what it is.
             define(
                 DT_PPC64_GLINK,
                 ctx.plt.hdr.shdr.sh_addr + crate::chunks::got::plt::entry_offset::<E>(0) - 32,
             );
         }
 
-        // GDB needs a DT_DEBUG entry in an executable for its own use.
+        // GDB needs a DT_DEBUG entry in an executable to store a word-size
+        // data for its own purpose. Its content is not important.
         if !ctx.args.shared && !ctx.args.z_rodynamic {
             define(DT_DEBUG, 0);
         }

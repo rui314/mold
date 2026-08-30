@@ -1,15 +1,37 @@
-//! s390x, IBM's 64-bit z/Architecture.
+//! This file contains code for the IBM z/Architecture 64-bit ISA, which is
+//! commonly referred to as "s390x" on Linux.
 //!
-//! z/Architecture is a big-endian CISC ISA with 16 general-purpose
-//! registers and 2-, 4- or 6-byte instructions aligned to 2 bytes. From a
-//! linker's point of view it feels like an x86-64 from a parallel
-//! universe. `%r0` and `%r1` are scratch registers the PLT may use, `%r12`
-//! holds the GOT address in position-independent code, `%r14` the return
-//! address and `%r15` the stack pointer.
+//! z/Architecture is a 64-bit CISC ISA developed by IBM around 2000 for
+//! IBM's "big iron" mainframe computers. The computers are direct
+//! descendents of IBM System/360 all the way back in 1966. I've never
+//! actually seen a mainframe, and you probaly haven't either, but it looks
+//! like the mainframe market is still large enough to sustain its ecosystem.
+//! Ubuntu for example provides the official support for s390x as of 2022.
+//! Since they are being actively maintained, we need to support them.
 //!
-//! Thread-local storage works as elsewhere except that `__tls_get_offset`
-//! takes the place of `__tls_get_addr` and returns an offset from the
-//! thread pointer rather than an address.
+//! As an instruction set, s390x isn't particularly odd. It has 16 general-
+//! purpose registers. Instructions are 2, 4 or 6 bytes long and always
+//! aligned to 2 bytes boundaries. Despite unfamiliarty, I found that it
+//! just feels like an x86-64 in a parallel universe.
+//!
+//! Here is the register usage in this ABI:
+//!
+//!   r0-r1: reserved as scratch registers so we can use them in our PLT
+//!   r2:    parameter passing and return values
+//!   r3-r6: parameter passing
+//!   r12:   address of GOT if position-independent code
+//!   r14:   return address
+//!   r15:   stack pointer
+//!   a1:    upper 32 bits of TP (thread pointer)
+//!   a2:    lower 32 bits of TP (thread pointer)
+//!
+//! Thread-local storage (TLS) is supported on s390x in the same way as it
+//! is on other targets with one exeption. On other targets, __tls_get_addr
+//! is used to get an address of a thread-local variable. On s390x,
+//! __tls_get_offset is used instead. The difference is __tls_get_offset
+//! returns an address of a thread-local variable as an offset from TP. So
+//! we need to add TP to a return value before use. I don't know why it is
+//! different, but that is the way it is.
 //!
 //! https://github.com/IBM/s390x-abi/releases/download/v1.6.1/lzsabi_s390x.pdf
 
@@ -108,16 +130,18 @@ impl Arch for S390x {
 
     fn write_plt_header(ctx: &Context<Self>, buf: &mut [u8]) {
         const INSN: [u8; 48] = [
-            // The offset into .rela.plt is (%r0 - %r1 - 48 - 14) * 3/2,
-            // where %r0 is the PLT entry address plus 14, %r1 the start of
-            // .plt, and 48 the size of this header; PLT entries are 16
-            // bytes and .rela.plt entries 24.
+            // Compute the offset into .rela.plt. This is equivalent to
+            // (%r0 - %r1 - 48 - 14) * 3/2 where %r0 is the PLT entry address
+            // plus 14, %r1 is the start address of .plt, and 48 is the size
+            // of this PLT header. We multiply by 3/2 because each PLT entry
+            // is 16 bytes, whereas each .rela.plt entry is 24 bytes.
             0xb9, 0x09, 0x00, 0x01, // sgr   %r0, %r1
             0xa7, 0x0b, 0xff, 0xc2, // aghi  %r0, -62
             0xeb, 0x10, 0x00, 0x01, 0x00, 0x0c, // srlg  %r1, %r0, 1
             0xb9, 0x08, 0x00, 0x01, // agr   %r0, %r1
-            // Store the result at 56(%r15) and .got.plt[1] at 48(%r15),
-            // %r15 being the stack pointer.
+            // agr   %r0, %r1
+            // Store the computed value to 56(%r15) and .got.plt[1] to 48(%15)
+            // where %r15 is the stack pointer.
             0xe3, 0x00, 0xf0, 0x38, 0x00, 0x24, // stg   %r0, 56(%r15)
             0xc0, 0x10, 0, 0, 0, 0, // larl  %r1, GOTPLT_OFFSET
             0xd2, 0x07, 0xf0, 0x30, 0x10, 0x08, // mvc   48(8, %r15), 8(%r1)
@@ -190,6 +214,7 @@ impl Arch for S390x {
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
+        // Scan relocations
         for rel in isec.rels::<Self>(file) {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
                 continue;
@@ -222,10 +247,11 @@ impl Arch for S390x {
                 }
                 R_390_TLS_GOTIE20 | R_390_TLS_IEENT => sym.add_flags(NEEDS_GOTTP),
                 R_390_TLS_GD32 | R_390_TLS_GD64 => {
-                    // Calls to __tls_get_offset are always relaxed in a
-                    // static executable, since libc.a's just aborts.
+                    // We always want to relax calls to __tls_get_offset() in statically-
+                    // linked executables because __tls_get_offset() in libc.a just calls
+                    // abort().
                     if ctx.args.is_static || (ctx.args.relax && sym.is_tprel_linktime_const(ctx)) {
-                        // Nothing to do.
+                        // Do nothing
                     } else if ctx.args.relax && sym.is_tprel_runtime_const(ctx) {
                         sym.add_flags(NEEDS_GOTTP);
                     } else {
@@ -233,7 +259,9 @@ impl Arch for S390x {
                     }
                 }
                 R_390_TLS_LDM32 | R_390_TLS_LDM64 => {
-                    if !(ctx.args.is_static || (ctx.args.relax && !ctx.args.shared)) {
+                    if ctx.args.is_static || (ctx.args.relax && !ctx.args.shared) {
+                        // Do nothing
+                    } else {
                         ctx.needs_tlsld
                             .store(true, std::sync::atomic::Ordering::Relaxed);
                     }
@@ -272,7 +300,7 @@ impl Arch for S390x {
             let pcrel = sa.wrapping_sub(p);
 
             let check = |val: i64, lo: i64, hi: i64| isec.check_range(ctx, i, val, lo, hi);
-            // *DBL relocations must not refer to odd addresses.
+            // R_390_*DBL relocs should never refer to a symbol at an odd address
             let check_dbl = |val: i64, lo: i64, hi: i64| {
                 check(val, lo, hi);
                 if val & 1 != 0 {
@@ -374,9 +402,9 @@ impl Arch for S390x {
                     w32(&mut buf[off..], (val >> 1) as u32);
                 }
                 R_390_GOTENT => {
-                    // A GOT-loading LGRL (0xc4?8 followed by a 32-bit offset)
-                    // becomes an address-materializing LARL (0xc0?0) if the
-                    // address is a link-time constant.
+                    // If we can relax a GOT-loading LGRL to an address-materializing
+                    // LARL, do that. The format of LGRL is 0xc 0x4 <reg> 0x8 followed
+                    // by a 32-bit offset. LARL is 0xc 0x0 <reg> 0x0.
                     if relaxes_gotent(ctx, isec, &rel, sym) {
                         let op = r16(&buf[off - 2..]);
                         w16(&mut buf[off - 2..], 0xc000 | (op & 0x00f0));
@@ -413,7 +441,7 @@ impl Arch for S390x {
                 }
                 R_390_TLS_GDCALL => {
                     if sym.has_tlsgd(&ctx.symbols) {
-                        // Nothing to do.
+                        // do nothing
                     } else if sym.has_gottp(&ctx.symbols) {
                         buf[off..off + 6].copy_from_slice(&[0xe3, 0x22, 0xc0, 0x00, 0x00, 0x04]);
                     // lg %r2, 0(%r2, %r12)

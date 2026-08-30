@@ -1,16 +1,36 @@
-//! ARM32, in either byte order.
+// arch-arm32.cc
+//! ARM32 is a bit special from the linker's viewpoint because ARM
+//! processors support two different instruction encodings: Thumb and
+//! ARM (in a narrower sense). Thumb instructions are either 16 bits or
+//! 32 bits, while ARM instructions are all 32 bits. Feature-wise,
+//! Thumb is a subset of ARM, so not all ARM instructions are
+//! representable in Thumb.
 //!
-//! ARM processors support two instruction encodings: ARM, with 4-byte
-//! instructions, and Thumb, with 2- or 4-byte ones, which was added later
-//! for code density. The processor runs in one mode or the other and
-//! switches with BX-family instructions, so calling a Thumb function from
-//! ARM code needs such an instruction, sometimes in a linker-synthesized
-//! interworking thunk.
+//! ARM processors originally supported only ARM instructions. Thumb
+//! instructions were later added to increase code density.
 //!
-//! Since instructions are at least 2-byte aligned, the least significant
-//! bit of a function address is free, and it is used to mark Thumb
-//! functions: a function symbol with value 0x2001 is a Thumb function at
-//! 0x2000, and so is a function pointer with that value.
+//! ARM processors runs in either ARM mode or Thumb mode. The mode can
+//! be switched using BX (branch and mode exchange)-family instructions.
+//! We need to use that instructions to, for example, call a function
+//! encoded in Thumb from a function encoded in ARM. Sometimes, the
+//! linker even has to emit interworking thunk code to switch mode.
+//!
+//! ARM instructions are aligned to 4 byte boundaries. Thumb are to 2
+//! byte boundaries. So the least significant bit of a function address
+//! is always 0.
+//!
+//! To distinguish Thumb functions from ARM fucntions, the LSB of a
+//! function address is repurposed as a boolean flag. If the LSB is 0,
+//! the function referred to by the address is encoded in ARM;
+//! otherwise, Thumb.
+//!
+//! For example, if a symbol `foo` is of type STT_FUNC and has value
+//! 0x2001, `foo` is a function using Thumb instructions whose address
+//! is 0x2000 (not 0x2001, as Thumb instructions are always 2-byte
+//! aligned). Likewise, if a function pointer has value 0x2001, it
+//! refers a Thumb function at 0x2000.
+//!
+//! https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst
 //!
 //! Relocations are of the REL type, and addends are packed into the
 //! instruction fields they relocate.
@@ -24,8 +44,6 @@
 //! converted to little-endian at the very end, after it's copied to the
 //! output; see [`swap_code_bytes`]. Linker-synthesized code is written
 //! in little-endian form to begin with.
-//!
-//! https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst
 
 use std::marker::PhantomData;
 
@@ -132,14 +150,14 @@ fn set_thm_bl<End: Endian>(loc: &mut [u8], is_bl: bool) {
     End::write_u16(&mut loc[2..], second);
 }
 
-/// Whether a branch to the symbol lands in Thumb code. Only function
-/// symbols carry the mode bit; a plain label doesn't switch modes.
+// Only function symbols tell in the LSB of their value whether they are
+// Thumb or ARM code. A branch to a symbol of another type, such as a
+// plain label in hand-written assembly, does not switch the instruction
+// set. A branch to a PLT entry always lands on ARM code.
 fn is_thumb_func<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool {
     matches!(sym.ty(), STT_FUNC | STT_GNU_IFUNC) && sym.addr(ctx) & 1 != 0
 }
 
-/// Whether a branch to the symbol lands in ARM code. A PLT entry always
-/// does.
 fn is_arm_func<E: Arch>(ctx: &Context<E>, sym: &Symbol) -> bool {
     sym.has_plt(&ctx.symbols)
         || (matches!(sym.ty(), STT_FUNC | STT_GNU_IFUNC) && sym.addr(ctx) & 1 == 0)
@@ -177,15 +195,31 @@ fn mapping_symbol_kind(name: &[u8]) -> Option<Option<usize>> {
     }
 }
 
-/// Converts the code in the output's input sections from the big-endian
-/// form the compiler emitted to the little-endian form BE8 executes.
-///
-/// A text section may mix 4-byte ARM instructions, 2-byte Thumb
-/// instructions and data, which need 4-byte swaps, 2-byte swaps and no
-/// change respectively. The mapping symbols `$a`, `$t` and `$d` mark
-/// where each kind begins.
+// Even though using ARM32 in big-endian mode is very rare, the processor
+// technically supports both little- and big-endian modes. There are two
+// variants of big-endian mode: BE32 and BE8. In BE32, instructions and
+// data are encoded in big-endian. In BE8, instructions are encoded in
+// little-endian, and only data is in big-endian. BE8 is the de facto
+// standard for ARMv6 or later. We support only BE8.
+//
+// A tricky thing is that instructions in an object file are always
+// big-endian if the file is compiled for big-endian mode. In other words,
+// the compiler always emit code in BE32 if -mbig-endian is specified. It
+// is the linker's responsibility to rewrite instructions from big-endian
+// to little-endian for an BE8 output. This function does that.
+//
+// The text section may contain a mix of 32-bit ARM instructions, 16-bit
+// Thumb instructions, and data. We need to distinguish them to swap 4
+// bytes, 2 bytes, or not swap bytes, respectively. The beginning of ARM
+// code, Thumb code, and data is labeled with a mapping symbol of $a, $t,
+// and $d, respectively. We use mapping symbols to determine what to do
+// with the text section.
+//
+// This function is called after we copy the input section contents to the
+// output file. We rewrite instructions in the output buffer in place.
 pub fn swap_code_bytes<End: Endian>(ctx: &Context<Arm32Target<End>>, buf: &mut [u8]) {
     for file in &ctx.objs {
+        // Collect mapping symbols
         let mut marks: Vec<(SectionRef, u64, Option<usize>)> = file
             .base
             .local_symbols()
@@ -199,8 +233,10 @@ pub fn swap_code_bytes<End: Endian>(ctx: &Context<Arm32Target<End>>, buf: &mut [
                     .then_some((sec, sym.value, kind))
             })
             .collect();
+        // Group mapping symbols by input section and sort by address
         marks.sort_by_key(|&(sec, offset, _)| (sec.shndx, offset));
 
+        // Swap bytes
         for (i, &(sec, start, kind)) in marks.iter().enumerate() {
             let Some(width) = kind else { continue };
             let isec = ctx.section(sec);
@@ -327,6 +363,7 @@ impl<End: Endian> Arch for Arm32Target<End> {
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
+        // Scan relocations
         isec.for_each_reloc::<Self>(ctx, |rel, _| {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
                 return;
@@ -430,12 +467,15 @@ impl<End: Endian> Arch for Arm32Target<End> {
                 R_ARM_REL32 => write32(loc, pcrel as u32),
                 R_ARM_THM_CALL => {
                     if sym.is_remaining_undef_weak() {
-                        // A call to an undefined weak symbol falls through.
+                        // On ARM, calling an weak undefined symbol jumps to the
+                        // next instruction.
+                        // NOP.W
                         write32(loc, THM_NOP_W);
                         continue;
                     }
-                    // THM_CALL refers to a BL or a BLX, which differ in one
-                    // bit; BLX is for ARM targets.
+                    // THM_CALL relocation refers to either BL or BLX instruction.
+                    // They are different in only one bit. We need to use BLX if the
+                    // jump target is an ARM function. Otherwise, use BL.
                     let val1 = pcrel as i64;
                     let val2 = align_to(pcrel, 4) as i64;
                     let arm = is_arm_func(ctx, sym);
@@ -462,11 +502,11 @@ impl<End: Endian> Arch for Arm32Target<End> {
                 R_ARM_GOT_BREL => write32(loc, g().wrapping_add(a) as u32),
                 R_ARM_CALL => {
                     if sym.is_remaining_undef_weak() {
-                        write32(loc, ARM_NOP);
+                        write32(loc, ARM_NOP); // NOP
                         continue;
                     }
-                    // Like THM_CALL, ARM_CALL refers to a BL or a BLX, which
-                    // may need to be swapped for each other.
+                    // Just like THM_CALL, ARM_CALL relocation refers to either BL or
+                    // BLX instruction. We may need to rewrite BL → BLX or BLX → BL.
                     let insn = End::read_u32(loc);
                     let is_bl = insn & 0xff00_0000 == 0xeb00_0000;
                     let is_blx = insn & 0xfe00_0000 == 0xfa00_0000;
@@ -493,12 +533,15 @@ impl<End: Endian> Arch for Arm32Target<End> {
                 }
                 R_ARM_JUMP24 => {
                     if sym.is_remaining_undef_weak() {
-                        write32(loc, ARM_NOP);
+                        write32(loc, ARM_NOP); // NOP
                         continue;
                     }
-                    // B can't become BX in place, since BX takes a register
-                    // rather than an immediate, so a mode switch goes
-                    // through a thunk.
+                    // These relocs refers to a B (unconditional branch) instruction.
+                    // Unlike BL or BLX, we can't rewrite B to BX in place when the
+                    // processor mode switch is required because BX doesn't takes an
+                    // immediate; it takes only a register. So if mode switch is
+                    // required, we jump to a linker-synthesized thunk which does the
+                    // job with a longer code sequence.
                     let mut val = pcrel;
                     if t != 0 || !is_int(val as i64, 26) {
                         val = arm_thunk().wrapping_add(a).wrapping_sub(p);
@@ -507,7 +550,7 @@ impl<End: Endian> Arch for Arm32Target<End> {
                 }
                 R_ARM_PLT32 => {
                     if sym.is_remaining_undef_weak() {
-                        write32(loc, ARM_NOP);
+                        write32(loc, ARM_NOP); // NOP
                     } else {
                         let val = if t != 0 { arm_thunk() } else { s }
                             .wrapping_add(a)
@@ -529,9 +572,11 @@ impl<End: Endian> Arch for Arm32Target<End> {
                 }
                 R_ARM_THM_JUMP24 => {
                     if sym.is_remaining_undef_weak() {
-                        write32(loc, THM_NOP_W);
+                        write32(loc, THM_NOP_W); // NOP
                         continue;
                     }
+                    // Just like R_ARM_JUMP24, we need to jump to a thunk if we need to
+                    // switch processor mode.
                     let mut val = pcrel;
                     if is_arm_func(ctx, sym) || !is_int(val as i64, 25) {
                         val = thumb_thunk().wrapping_add(a).wrapping_sub(p);
@@ -569,19 +614,32 @@ impl<End: Endian> Arch for Arm32Target<End> {
                     sym.gottp_addr(ctx).wrapping_add(a).wrapping_sub(p) as u32,
                 ),
                 R_ARM_TLS_LE32 => write32(loc, sa.wrapping_sub(ctx.tp_addr) as u32),
-                // TLSDESC materializes a TP-relative address in r0:
+                // ARM32 TLSDESC uses the following code sequence to materialize
+                // a TP-relative address in r0.
                 //
-                //       ldr     r0, .L2
-                //  .L1: bl      foo              # R_ARM_TLS_CALL
-                //  .L2: .word   foo + . - .L1    # R_ARM_TLS_GOTDESC
+                // ldr     r0, .L2
+                // .L1: bl      foo
+                // R_ARM_TLS_CALL
+                // .L2: .word   foo + . - .L1
+                // R_ARM_TLS_GOTDESC
                 //
-                // If the address is known at link time, the call becomes a
-                // nop and the word `foo(tpoff)`; if at load time, the call
-                // becomes `ldr r0, [pc, r0]` and the word
-                // `foo(gottpoff) + . - .L1`.
+                // We may relax the instructions to the following if its TP-relative
+                // address is known at link-time
+                //
+                // ldr     r0, .L2
+                // .L1: nop
+                // ...
+                // .L2: .word   foo(tpoff)
+                //
+                // or to the following if the TP-relative address is known at
+                // process startup time.
+                //
+                // ldr     r0, .L2
+                // .L1: ldr r0, [pc, r0]
+                // ...
+                // .L2: .word   foo(gottpoff) + . - .L1
                 R_ARM_TLS_GOTDESC => {
-                    // The addend is odd if the corresponding TLS_CALL is
-                    // Thumb.
+                    // A is odd if the corresponding TLS_CALL is Thumb.
                     if sym.has_tlsdesc(&ctx.symbols) {
                         let adjust = if a & 1 != 0 { 6 } else { 4 };
                         write32(
@@ -621,13 +679,15 @@ impl<End: Endian> Arch for Arm32Target<End> {
                     if sym.has_tlsdesc(&ctx.symbols) {
                         let val = align_to(tlsdesc_trampoline().wrapping_sub(p).wrapping_sub(4), 4);
                         write_thm_b25::<End>(loc, val as u32);
-                        set_thm_bl::<End>(loc, false); // BL -> BLX
+                        // rewrite BL with BLX
+                        set_thm_bl::<End>(loc, false);
                     } else if sym.has_gottp(&ctx.symbols) {
-                        // `ldr r0, [pc, r0]` isn't encodable in Thumb; two
-                        // instructions do the job.
+                        // Since `ldr r0, [pc, r0]` is not representable in Thumb,
+                        // we use two instructions instead.
                         write16(loc, 0x4478); // add r0, pc
                         write16(&mut loc[2..], 0x6800); // ldr r0, [r0]
                     } else {
+                        // nop.w
                         write32(loc, THM_NOP_W);
                     }
                 }
@@ -672,8 +732,9 @@ impl<End: Endian> Arch for Arm32Target<End> {
         }
     }
 
-    /// Thumb and ARM B instructions can't switch modes, so a branch to a
-    /// function of the other kind always goes through a thunk.
+    /// Thumb and ARM B instructions cannot be converted to BX, so we
+    /// always have to make them jump to a thunk to switch processor mode
+    /// even if their destinations are reachable.
     fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, rel: &ElfRel) -> bool {
         match rel.r_type {
             R_ARM_JUMP24 | R_ARM_PLT32 => is_thumb_func(ctx, sym),
@@ -683,17 +744,17 @@ impl<End: Endian> Arch for Arm32Target<End> {
     }
 
     fn write_thunk(ctx: &Context<Self>, thunk: &Thunk, addr: u64, buf: &mut [u8]) {
-        // ARM32's TLSDESC is designed so that this common trampoline is
-        // factored out of object files to save space. Nobody provides it,
-        // so the linker synthesizes one per thunk.
+        // TLS trampoline code. ARM32's TLSDESC is designed so that this
+        // common piece of code is factored out from object files to reduce
+        // output size. Since no one provide, the linker has to synthesize it.
         const HDR: [u32; 4] = [
             0xe08e_0000, // add r0, lr, r0
             0xe590_1004, // ldr r1, [r0, #4]
             0xe12f_ff11, // bx  r1
             0xe320_f000, // nop
         ];
-        // A range extension and mode switch thunk, with two entry points:
-        // +0 for Thumb and +4 for ARM.
+        // This is a range extension and mode switch thunk.
+        // It has two entry points: +0 for Thumb and +4 for ARM.
         const ENTRY: [u8; 16] = [
             // .thumb
             0x78, 0x47, //    bx   pc  # jumps to 1f

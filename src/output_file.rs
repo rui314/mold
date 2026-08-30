@@ -1,4 +1,8 @@
+// output-file.cc
 //! The output file and helpers for writing to it from many threads.
+
+// The C++ Windows output-file counterpart records:
+// TODO: use intermediate temporary file for output.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -28,6 +32,9 @@ enum Storage {
     /// A mapping of the file, possibly larger than the file itself; `len`
     /// is the file's size.
     Mmap {
+        // Size of the file mapping, which may extend past the end of the file.
+        // The C++ locking-output counterpart tracks the same capacity:
+        // Size of the file mapping, which may extend past the end of the file.
         map: MmapMut,
         len: usize,
     },
@@ -76,6 +83,9 @@ fn map_file(file: &File, size: u64) -> Storage {
         .or_else(|_| unsafe { MmapMut::map_mut(file) });
     match map {
         Ok(mut map) => {
+            // Enable transparent huge page for an output memory-mapped file.
+            // Linking a Chromium debug build is ~20% faster with this madvise call.
+            //
             // Without this, every 4 KiB page of the output takes its own
             // page fault when it is first written, and the faults of the
             // many copying threads serialize on the file's page cache. With
@@ -134,10 +144,9 @@ impl OutputFile {
             .map_or(String::new(), |n| n.to_string_lossy().into_owned());
         let tmp = dir.join(format!(".{name}.{}", std::process::id()));
 
-        // On Linux, writing to an existing file is much faster than
-        // creating a fresh one, so when it's safe to do so the previous
-        // output is renamed to the temporary name and reused. Every byte
-        // of it is overwritten before the rename back.
+        // Reuse an existing file if exists and writable because on Linux,
+        // writing to an existing file is much faster than creating a fresh
+        // file and writing to it.
         let reuse_existing = || -> Option<File> {
             if !overwrite_in_place || std::fs::rename(path, &tmp).is_err() {
                 return None;
@@ -184,6 +193,8 @@ impl OutputFile {
         }
     }
 
+    // LockingOutputFile is similar to MemoryMappedOutputFile, but it doesn't
+    // rename output files and instead acquires file lock using flock().
     /// Opens a file that is written in place under an exclusive lock, for
     /// a separate debug file that a debugger may wait on. The file is
     /// made unusable right away so that a stale one isn't picked up by
@@ -200,6 +211,9 @@ impl OutputFile {
         unsafe {
             libc::flock(file.as_raw_fd(), libc::LOCK_EX);
         }
+        // We may be overwriting to an existing debug info file. We want to
+        // make the file unusable so that gdb won't use it by accident until
+        // it's ready.
         file.write_all(&[0; 256])
             .unwrap_or_else(|e| fatal!(diag, "{path}: write failed: {e}"));
         OutputFile {
@@ -219,6 +233,9 @@ impl OutputFile {
             .expect("resizing an output file that isn't a file");
         file.set_len(size)
             .unwrap_or_else(|e| fatal!(diag, "{}: ftruncate failed: {e}", self.path));
+        // As in MemoryMappedOutputFile, we map the file with twice as much
+        // address space as its size so that extend() can grow the file into
+        // the mapping in place.
         self.storage = map_file(file, size);
     }
 
@@ -245,10 +262,18 @@ impl OutputFile {
         self.len() == 0
     }
 
-    /// Extends the file so that the caller can fill the appended data
-    /// through the tail of the mapping, for sections whose size is known
-    /// only after everything else has been written. This is called at
-    /// most once per output file.
+    // Extend the file so that the caller can fill the appended data
+    // through the tail of the mapping. This is called at most once per
+    // output file.
+    //
+    // C++ OutputFile::extend has this pointer-returning contract; Rust grows
+    // the same storage and lets the caller borrow the new tail afterwards.
+    //
+    // Appends `size` bytes to the output file and returns a pointer to
+    // the newly-allocated space, bumping `filesize` accordingly. We use
+    // it for .gdb_index, whose size is not known until all other
+    // sections have been written. The new space is zero-initialized.
+    // `buf` and `ctx.buf` may move as a result of this call.
     pub fn extend(&mut self, diag: &Diagnostics, size: usize) {
         let new_len = self.len() + size;
         match (&mut self.storage, &self.file) {
@@ -260,6 +285,10 @@ impl OutputFile {
                 if new_len <= map.len() {
                     *len = new_len;
                 } else {
+                    // MemoryMappedOutputFile counterpart:
+                    // The appended data does not fit in the mapping. Map the grown
+                    // file again, moving the buffer.
+                    // LockingOutputFile counterpart:
                     // The appended data does not fit in the mapping. Map the
                     // grown file again, moving the buffer.
                     self.storage = map_file(file, new_len as u64);
@@ -306,10 +335,10 @@ impl OutputFile {
             }
         }
         if let Some(tmp) = self.tmp_path {
-            // If an output file already exists, open a file and then remove
-            // it. This is the fastest way to unlink a file, as it does not
-            // make the system immediately release disk blocks occupied by
-            // the file. The descriptor is kept until the process exits.
+            // If an output file already exists, open a file and then remove it.
+            // This is the fastest way to unlink a file, as it does not make the
+            // system to immediately release disk blocks occupied by the file.
+            // The descriptor is kept until the process exits.
             if let Ok(old) = File::open(&self.path) {
                 let _ = std::fs::remove_file(&self.path);
                 std::mem::forget(old);

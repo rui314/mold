@@ -1,3 +1,84 @@
+// lto.cc
+//! This file handles the linker plugin to support LTO (Link-Time
+//! Optimization).
+//!
+//! LTO is a technique to do whole-program optimization to a program. Since
+//! a linker sees the whole program as opposed to a single compilation
+//! unit, it in theory can do some optimizations that cannot be done in the
+//! usual separate compilation model. For example, LTO should be able to
+//! inline functions that are defined in other compilation unit.
+//!
+//! In GCC and Clang, all you have to do to enable LTO is adding the
+//! `-flto` flag to the compiler and the linker command lines. If `-flto`
+//! is given, the compiler generates a file that contains not machine code
+//! but the compiler's IR (intermediate representation). In GCC, the output
+//! is an ELF file which wraps GCC's IR. In LLVM, it's not even an ELF file
+//! but just a raw LLVM IR file.
+//!
+//! Here is what we have to do if at least one input file is not a usual
+//! ELF file but an IR object file:
+//!
+//!  1. Read symbols both from usual ELF files and from IR object files and
+//!     resolve symbols as usual.
+//!
+//!  2. Pass all IR objects to the compiler backend. The compiler backend
+//!     compiles the IRs and returns a few big ELF object files as a
+//!     result.
+//!
+//!  3. Parse the returned ELF files and overwrite IR object symbols with
+//!     the returned ones, discarding IR object files.
+//!
+//!  4. Continue the rest of the linking process as usual.
+//!
+//! When gcc or clang inovkes ld, they pass `-plugin /path/to/linker-plugin.so`
+//! to the linker. The given .so file provides a way to call the compiler
+//! backend.
+//!
+//! The linker plugin API is documented at
+//! https://gcc.gnu.org/wiki/whopr/driver, though the document is a bit
+//! outdated.
+//!
+//! Frankly, the linker plugin API is peculiar and is not very easy to use.
+//! For some reason, the API functions don't return the result of a
+//! function call as a return value but instead calls other function with
+//! the result as its argument to "return" the result.
+//!
+//! For example, the first thing you need to do after dlopen()'ing a linker
+//! plugin .so is to call `onload` function with a list of callback
+//! functions. `onload` calls callbacks to notify about the pointers to
+//! other functions the linker plugin provides. I don't know why `onload`
+//! can't just return a list of functions or why the linker plugin can't
+//! define not only `onload` but other functions, but that's what it is.
+//!
+//! Here is the steps to use the linker plugin:
+//!
+//!  1. dlopen() the linker plugin .so and call `onload` to obtain pointers
+//!     to other functions provided by the plugin.
+//!
+//!  2. Call `claim_file_hook` with an IR object file to read its symbol
+//!     table. `claim_file_hook` calls the `add_symbols` callback to
+//!     "return" a list of symbols.
+//!
+//!  3. `claim_file_hook` returns LDPT_OK only when the plugin wants to
+//!     handle a given file. Since we pass only IR object files to the
+//!     plugin in mold, it always returns LDPT_OK in our case.
+//!
+//!  4. Once we made a decision as to which object file to include into the
+//!     output file, we call `all_symbols_read_hook` to compile IR objects
+//!     into a few big ELF files. That function calls the `get_symbols`
+//!     callback to ask us about the symbol resolution results. (The
+//!     compiler backend needs to know whether an undefined symbol in an IR
+//!     object was resolved to a regular object file or a shared object to
+//!     do whole program optimization, for example.)
+//!
+//!  5. `all_symbols_read_hook` "returns" the result by calling the
+//!     `add_input_file` callback. The callback is called with a path to an
+//!     LTO'ed ELF file. We parse that ELF file and override symbols
+//!     defined by IR objects with the ELF file's ones.
+//!
+//!  6. Lastly, we call `cleanup_hook` to remove temporary files created by
+//!     the compiler backend.
+//!
 //! Link-time optimization through the linker plugin interface.
 //!
 //! With `-flto`, compilers emit files holding their intermediate
@@ -268,6 +349,9 @@ impl ClaimedSymbol {
     }
 }
 
+// Global variables
+// We store LTO-related information to global variables,
+// as the LTO plugin is not thread-safe by design anyway.
 static LOADED: OnceLock<()> = OnceLock::new();
 static HOOKS: Mutex<Hooks> = Mutex::new(Hooks {
     claim_file: None,
@@ -293,6 +377,7 @@ fn diag() -> &'static Diagnostics {
     unsafe { &*DIAG.load(Ordering::Acquire) }
 }
 
+// Event handlers
 /// Reports a message the plugin formatted.
 ///
 /// # Safety
@@ -344,6 +429,12 @@ unsafe extern "C" fn add_input_file<E: Arch>(path: *const c_char) -> c_int {
     file.is_lto_output = true;
     file.base.set_reachable(true);
     file.base.priority = ctx.file_by_priority.len() as u32;
+    // The corresponding C++ path resolves these immediately:
+    // parse_symbols() only registers global symbols. Create their shared
+    // Symbol objects and fill in the file's pointers before resolving.
+    //
+    // The Rust port gathers and resolves the registered symbols after the
+    // plugin callback returns.
     file.register_global_symbols::<E>(&ctx.args, &mut ctx.symbol_bin());
     let id = ObjId(ctx.objs.push(Box::new(file)));
     ctx.file_by_priority.push(Some(FileId::Obj(id)));
@@ -460,9 +551,14 @@ unsafe extern "C" fn get_symbols_v3<E: Arch>(
     get_symbols::<E>(handle, nsyms, psyms, false)
 }
 
-/// Tells the plugin how the symbols of an IR object were resolved. The
-/// backend uses this to decide what it must keep: a definition that no
-/// regular object refers to may be inlined away, for example.
+/// get_symbols teaches the LTO plugin as to how we have resolved symbols.
+/// The plugin uses the symbol resolution info to optimize the program.
+///
+/// For example, if a definition in an IR file is not referenced by
+/// non-IR objects at all, the plugin may choose to completely inline
+/// that definition within the IR objects and remove the symbol from the
+/// LTO result. On the other hand, if a definition is referenced by a
+/// non-IR object, it has to keep the symbol in the LTO result.
 unsafe fn get_symbols<E: Arch>(
     handle: *const c_void,
     nsyms: c_int,
@@ -480,7 +576,9 @@ unsafe fn get_symbols<E: Arch>(
         return LDPS_BAD_HANDLE;
     };
 
-    // An archive member that wasn't extracted contributes nothing.
+    // If file is an archive member which was not chose to be included in
+    // to the final result, we need to make the plugin to ignore all
+    // symbols.
     if !file.base.is_reachable() {
         for psym in psyms {
             psym.resolution = LDPR_PREEMPTED_REG;
@@ -488,6 +586,7 @@ unsafe fn get_symbols<E: Arch>(
         return LDPS_NO_SYMS;
     }
 
+    // Set the symbol resolution results to psyms.
     let this = FileId::Obj(file.id());
     for (i, psym) in psyms.iter_mut().enumerate() {
         let esym = &file.base.elf_syms.at(i + 1);
@@ -557,7 +656,7 @@ fn dlerror_string() -> String {
     }
 }
 
-/// Loads the plugin and hands it the transfer vector, once.
+/// dlopen the linker plugin file
 fn load_plugin<E: Arch>(ctx: &Context<E>) {
     LOADED.get_or_init(|| {
         DIAG.store(
@@ -711,13 +810,14 @@ fn load_plugin<E: Arch>(ctx: &Context<E>) {
     });
 }
 
-/// Whether the plugin looks like LLVM's rather than GCC's.
+/// Returns true if a given linker plugin looks like LLVM's one.
+/// Returns false if it's GCC.
 fn is_llvm<E: Arch>(ctx: &Context<E>) -> bool {
     ctx.args.plugin.contains("LLVMgold.")
 }
 
-/// Whether the plugin supports `get_symbols_v3`: any LLVM, and GCC 12 or
-/// newer.
+/// Returns true if a given linker plugin supports the get_symbols_v3 API.
+/// Any version of LLVM and GCC 12 or newer support it.
 fn supports_v3_api<E: Arch>(ctx: &Context<E>) -> bool {
     HOOKS.lock().unwrap().gcc_api_v1 || is_llvm(ctx)
 }
@@ -763,11 +863,17 @@ pub fn read_lto_object<E: Arch>(
         fatal!(ctx, "LTO plugin did not register a claim_file hook");
     };
 
-    // Input files are read in parallel, but claims are serialized: the
-    // plugin returns a file's symbols through a global buffer.
+    // We read input files in parallel, but the plugin interface is not
+    // ready for concurrent claims: claim_file_hook() returns a file's
+    // symbol table through the add_symbols() callback into a global
+    // buffer, and members of the same archive share their parent's file
+    // descriptor, which we close after each claim. Serialize the whole
+    // claim sequence.
     let _claim = CLAIM_LOCK.lock().unwrap();
+    // Create plugin's object instance
     let (input, file) = plugin_input_file(ctx, mf);
     let mut claimed: c_int = 0;
+    // claim_file_hook() calls add_symbols() which initializes `plugin_symbols`
     // SAFETY: `input` describes an open file.
     unsafe { claim_file(&input, &mut claimed) };
     drop(file);
@@ -784,10 +890,10 @@ pub fn read_lto_object<E: Arch>(
         return None;
     }
 
-    // A null symbol followed by the plugin's symbols, with their names in
-    // a string table of our own.
+    // Create a symbol strtab
     let symbols = std::mem::take(&mut *CLAIMED_SYMBOLS.lock().unwrap());
     let mut strtab = vec![0u8];
+    // Initialize esyms
     let mut elf_syms = vec![ElfSym::default()];
     let mut comdat_keys = vec![None];
     for sym in &symbols {
@@ -796,8 +902,13 @@ pub fn read_lto_object<E: Arch>(
         strtab.extend_from_slice(&sym.name);
         strtab.push(0);
         elf_syms.push(esym);
+        // comdat_key is non-null if the symbol is defined in a comdat member
+        // section. We handle such symbols differently than comdat symbols in
+        // a regular file because, unlike regular object files, IR files don't
+        // have input sections.
         comdat_keys.push(sym.comdat_key.as_ref().map(|key| leak_bytes(key.clone())));
     }
+    // Create mold's object instance
     Some(ObjectFile::lto_input::<E>(
         mf,
         archive_name,
@@ -807,9 +918,20 @@ pub fn read_lto_object<E: Arch>(
     ))
 }
 
-/// Restarts the linker with the archive members that turned out to be
-/// unneeded excluded, for plugins without `get_symbols_v3`, which
-/// otherwise provides no way to withdraw a file that was claimed.
+/// This function restarts mold itself with `--:lto-pass2` and
+/// `--:ignore-ir-file` flags. We do this as a workaround for the old
+/// linker plugins that do not support the get_symbols_v3 API.
+///
+/// get_symbols_v1 and get_symbols_v2 don't provide a way to ignore an
+/// object file we previously passed to the linker plugin. So we can't
+/// "unload" object files in archives that we ended up not choosing to
+/// include into the final output.
+///
+/// As a workaround, we restart the linker with a list of object files
+/// the linker has to ignore, so that it won't read the object files
+/// from archives next time.
+///
+/// This is an ugly hack and should be removed once GCC adopts the v3 API.
 fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
     let mut args: Vec<String> = ctx.cmdline_args.clone();
     for file in &ctx.objs {
@@ -831,6 +953,7 @@ fn restart_process<E: Arch>(ctx: &Context<E>) -> ! {
     std::process::exit(1);
 }
 
+// Entry point
 /// Has the plugin compile the IR objects. The resulting objects are added
 /// to the context.
 pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
@@ -841,8 +964,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
         restart_process(ctx);
     }
 
-    // Definitions in IR objects that regular objects refer to must survive
-    // the optimization.
+    // Set `referenced_by_regular_obj` bit.
     let referenced: Vec<SymbolId> = {
         let ctx: &Context<E> = ctx;
         ctx.objs
@@ -859,8 +981,8 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
         ctx.symbols[id].set_referenced_by_regular_obj(true);
     }
 
-    // Wrapped symbols are referred to by name from regular objects, and
-    // -u symbols must be kept.
+    // Symbols specified by the --wrap option needs to be visible from
+    // regular object files.
     let mut names: Vec<String> = Vec::new();
     for name in &ctx.args.wrap {
         names.extend([
@@ -869,14 +991,16 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
             format!("__real_{name}"),
         ]);
     }
+    // Keep some symbols
     names.extend(ctx.args.undefined.iter().cloned());
     for name in names {
         let id = ctx.get_symbol(name.as_bytes());
         ctx.symbols[id].set_referenced_by_regular_obj(true);
     }
 
-    // Objects with .gnu.offload_lto_.* sections carry code for
-    // accelerators, which the backend needs as well.
+    // Object files containing .gnu.offload_lto_.* sections need to be
+    // given to the LTO backend. Such sections contains code and data for
+    // peripherails (typically GPUs).
     let claim_file = HOOKS
         .lock()
         .unwrap()
@@ -891,8 +1015,7 @@ pub fn run_plugin<E: Arch>(ctx: &mut Context<E>) {
         }
     }
 
-    // The hook asks for symbol resolutions, compiles, and returns the
-    // objects through add_input_file.
+    // all_symbols_read_hook() calls add_input_file() and add_input_library()
     let all_symbols_read = HOOKS
         .lock()
         .unwrap()

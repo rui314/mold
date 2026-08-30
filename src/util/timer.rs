@@ -1,5 +1,12 @@
 //! Wall-clock and CPU time accounting for `--perf`.
 
+// perf.cc
+
+// Counter is used to collect statistics numbers.
+//
+// The Rust port does not currently have the C++ Counter facility; this module
+// contains its timer counterpart.
+
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -16,6 +23,8 @@ struct Record {
     children: Vec<usize>,
 }
 
+// Timer and TimeRecord records elapsed time (wall clock time)
+// used by each pass of the linker.
 /// Collects timing records for the passes of a link. Cloning shares the
 /// underlying records.
 #[derive(Clone, Debug, Default)]

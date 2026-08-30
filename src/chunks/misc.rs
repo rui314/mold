@@ -17,7 +17,10 @@ use crate::util::align_to;
 use crate::util::compress::Compressor;
 use crate::util::{path_filename, write_cstr};
 
-/// `.interp` names the dynamic linker.
+// .interp contains the pathname of a dynamic linker. Dynamically-linked
+// executables have the section. If exists, the kernel runs the program at
+// the specified path with the executable pathname as an argument,
+// allowing the dynamic linker to run the program.
 #[derive(Debug)]
 pub struct InterpSection {
     pub hdr: ChunkHeader,
@@ -50,8 +53,8 @@ pub mod interp {
     }
 }
 
-/// `.copyrel` and `.copyrel.rel.ro` hold the space that copy relocations
-/// fill from shared libraries at load time.
+// .copyrel and .copyrel.rel.ro represent memory regions to which the
+// runtime copies symbols from other ELF files for copy relocations.
 #[derive(Debug)]
 pub struct CopyrelSection {
     pub hdr: ChunkHeader,
@@ -110,8 +113,12 @@ pub mod copyrel {
 
         let alignment = dso.alignment(sym);
         let size = sym.esym(ctx).st_size;
-        // Aliases at the same address must refer to the copied place too,
-        // e.g. `environ`, `_environ` and `__environ` in libc.
+        // We need to create dynamic symbols not only for this particular symbol
+        // but also for its aliases (i.e. other symbols at the same address)
+        // becasue otherwise the aliases are broken apart at runtime.
+        // For example, `environ`, `_environ` and `__environ` in libc.so are
+        // aliases. If one of the symbols is copied by a copy relocation, other
+        // symbols have to refer to the copied place as well.
         let aliases: Vec<SymbolId> = dso.symbols_at(ctx, sym, dso_id).to_vec();
 
         let sec = if relro {
@@ -157,7 +164,9 @@ pub mod copyrel {
     }
 }
 
-/// `.note.gnu.build-id` identifies the output, usually by a hash of it.
+// .note.gnu.build-id contains an identifier for an output ELF file. The
+// contents of the section is usually a cryptogrpahic hash of the output
+// file itself to guarantee uniqueness of build-id.
 #[derive(Debug)]
 pub struct BuildIdSection {
     pub hdr: ChunkHeader,
@@ -186,22 +195,25 @@ pub mod build_id {
     use super::*;
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
-        let size = ctx.args.build_id.size() as u64 + 16;
+        let size = ctx.args.build_id.size() as u64 + 16; // +16 for the header
         ctx.buildid.as_mut().unwrap().hdr.shdr.sh_size = size;
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         let sec = ctx.buildid.as_ref().unwrap();
         buf.fill(0);
-        E::Endian::write_u32(buf, 4);
-        E::Endian::write_u32(&mut buf[4..], ctx.args.build_id.size() as u32);
+        E::Endian::write_u32(buf, 4); // Name size
+        E::Endian::write_u32(&mut buf[4..], ctx.args.build_id.size() as u32); // Hash size
         E::Endian::write_u32(&mut buf[8..], NT_GNU_BUILD_ID);
-        buf[12..16].copy_from_slice(b"GNU\0");
-        buf[16..16 + sec.contents.len()].copy_from_slice(&sec.contents);
+        buf[12..16].copy_from_slice(b"GNU\0"); // Name string
+        buf[16..16 + sec.contents.len()].copy_from_slice(&sec.contents); // Build ID
     }
 }
 
-/// `.note.package` carries package metadata for distributions.
+// .note.package is an optional hint section that can contain arbitrary
+// string. Package managers, such as dpkg or rpm, uses the section to
+// embed package metadata into each ELF file so that it is easy to find
+// the origin of an ELF file without any additional information.
 #[derive(Debug)]
 pub struct NotePackageSection {
     pub hdr: ChunkHeader,
@@ -226,7 +238,7 @@ pub mod note_package {
 
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
         if !ctx.args.package_metadata.is_empty() {
-            // +17 for the header and the NUL terminator
+            // +17 is for the header and the NUL terminator
             ctx.note_package.hdr.shdr.sh_size =
                 align_to(ctx.args.package_metadata.len() as u64 + 17, 4);
         }
@@ -234,16 +246,16 @@ pub mod note_package {
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         buf.fill(0);
-        E::Endian::write_u32(buf, 4);
-        E::Endian::write_u32(&mut buf[4..], ctx.note_package.hdr.shdr.sh_size as u32 - 16);
+        E::Endian::write_u32(buf, 4); // Name size
+        E::Endian::write_u32(&mut buf[4..], ctx.note_package.hdr.shdr.sh_size as u32 - 16); // Content size
         E::Endian::write_u32(&mut buf[8..], NT_FDO_PACKAGING_METADATA);
         buf[12..16].copy_from_slice(b"FDO\0");
-        write_cstr(&mut buf[16..], ctx.args.package_metadata.as_bytes());
+        write_cstr(&mut buf[16..], ctx.args.package_metadata.as_bytes()); // Content
     }
 }
 
-/// `.note.gnu.property` merges the input files' properties, such as CET
-/// features on x86.
+// .note.gnu.property section contains an additional runtime information
+// about ISA variant.
 #[derive(Debug)]
 pub struct NotePropertySection {
     pub hdr: ChunkHeader,
@@ -272,7 +284,9 @@ pub mod note_property {
         }
     }
 
+    // Merges input files' .note.gnu.property values.
     pub fn update_shdr<E: Arch>(ctx: &mut Context<E>) {
+        // Obtain the list of keys
         let files: Vec<&crate::input_files::ObjectFile> = ctx
             .objs
             .iter()
@@ -286,23 +300,25 @@ pub mod note_property {
             f.gnu_properties.get(&key).copied().unwrap_or(0)
         };
 
+        // Merge values for each key
         let mut map: BTreeMap<u32, u32> = BTreeMap::new();
         for key in keys {
             if (GNU_PROPERTY_X86_UINT32_AND_LO..=GNU_PROPERTY_X86_UINT32_AND_HI).contains(&key) {
-                // An AND feature is set if all inputs have it.
+                // An AND feature is set if all input objects have the property and
+                // the feature.
                 map.insert(
                     key,
                     files.iter().fold(u32::MAX, |acc, f| acc & value(f, key)),
                 );
             } else if (GNU_PROPERTY_X86_UINT32_OR_LO..=GNU_PROPERTY_X86_UINT32_OR_HI).contains(&key)
             {
-                // An OR feature is set if some input has it.
+                // An OR feature is set if some input object has the feature.
                 map.insert(key, files.iter().fold(0, |acc, f| acc | value(f, key)));
             } else if (GNU_PROPERTY_X86_UINT32_OR_AND_LO..=GNU_PROPERTY_X86_UINT32_OR_AND_HI)
                 .contains(&key)
             {
-                // An OR-AND feature is set if all inputs have the property
-                // and some have the feature.
+                // An OR-AND feature is set if all input object files have the property
+                // and some of them has the feature.
                 if files.iter().all(|f| f.gnu_properties.contains_key(&key)) {
                     map.insert(key, files.iter().fold(0, |acc, f| acc | value(f, key)));
                 }
@@ -319,6 +335,7 @@ pub mod note_property {
         }
         *map.entry(GNU_PROPERTY_X86_ISA_1_NEEDED).or_insert(0) |= ctx.args.z_x86_64_isa_level;
 
+        // Serialize the map
         let contents: Vec<(u32, u32)> = map.into_iter().filter(|&(_, v)| v != 0).collect();
         let sec = ctx.note_property.as_mut().unwrap();
         sec.hdr.shdr.sh_size = if contents.is_empty() {
@@ -332,20 +349,22 @@ pub mod note_property {
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         let sec = ctx.note_property.as_ref().unwrap();
         buf.fill(0);
-        E::Endian::write_u32(buf, 4);
-        E::Endian::write_u32(&mut buf[4..], sec.hdr.shdr.sh_size as u32 - 16);
+        E::Endian::write_u32(buf, 4); // Name size
+        E::Endian::write_u32(&mut buf[4..], sec.hdr.shdr.sh_size as u32 - 16); // Content size
         E::Endian::write_u32(&mut buf[8..], NT_GNU_PROPERTY_TYPE_0);
         buf[12..16].copy_from_slice(b"GNU\0");
         for (i, &(ty, val)) in sec.contents.iter().enumerate() {
             let off = 16 + i * entry_size::<E>();
             E::Endian::write_u32(&mut buf[off..], ty);
             E::Endian::write_u32(&mut buf[off + 4..], 4);
-            E::Endian::write_u32(&mut buf[off + 8..], val);
+            E::Endian::write_u32(&mut buf[off + 8..], val); // Content
         }
     }
 }
 
-/// `.gnu_debuglink` names the separate debug file and its CRC32.
+// .gnu_debuglink section contains a pathname and its CRC32 checksum for a
+// separate debug info file. gdb can read the section to read debug info
+// from an external file.
 #[derive(Debug)]
 pub struct GnuDebuglinkSection {
     pub hdr: ChunkHeader,
@@ -390,8 +409,9 @@ pub mod gnu_debuglink {
     }
 }
 
-/// Pads a PT_GNU_RELRO segment to a page boundary. Leaving the trailing
-/// part of the segment unused would work, but `strip` would delete it.
+// PT_GNU_RELRO works on page granularity. We want to align its end to
+// a page boundary. We append this section at end of a segment so that
+// the segment always ends at a page boundary.
 #[derive(Debug)]
 pub struct RelroPaddingSection {
     pub hdr: ChunkHeader,
@@ -413,7 +433,9 @@ impl Default for RelroPaddingSection {
     }
 }
 
-/// A debug section compressed with zlib or zstd.
+// Debug sections can be compressed with zlib or zstd to reduce the
+// overall size of an ELF file. CompressedSection represents a compressed
+// section.
 #[derive(Debug)]
 pub struct CompressedSection {
     pub hdr: ChunkHeader,
@@ -435,7 +457,15 @@ pub mod compressed {
 
     pub fn new<E: Arch>(ctx: &Context<E>, original: ChunkId) -> CompressedSection {
         let hdr = ctx.chunk_header(original);
+
+        // The C++ implementation avoids zero-initializing this scratch buffer:
+        //
+        // Allocate a temporary buffer to write uncompressed contents. Note
+        // that we use u8[] instead of std::vector<u8> to avoid the cost of
+        // zero-initialization, as sh_size can be very large.
         let mut buf = vec![0u8; hdr.shdr.sh_size as usize];
+
+        // Write uncompressed contents and then compress them
         chunks::write_to(ctx, original, &mut buf);
 
         let level = ctx.args.compress_debug_sections_level;
@@ -445,6 +475,7 @@ pub mod compressed {
             Compressor::zstd(&buf, level as i32)
         };
 
+        // Compute header field values
         let chdr = ElfChdr {
             ch_type: ctx.args.compress_debug_sections,
             ch_size: hdr.shdr.sh_size,
@@ -462,6 +493,7 @@ pub mod compressed {
         new_hdr.shdr.sh_addralign = 1;
         new_hdr.shdr.sh_size = (ElfChdr::size::<E>() + compressor.compressed_size()) as u64;
 
+        // We can discard the uncompressed contents unless --gdb-index is given
         CompressedSection {
             hdr: new_hdr,
             chdr,
@@ -478,7 +510,8 @@ pub mod compressed {
     }
 }
 
-/// A relocation table for an output section, for `-r` and `--emit-relocs`.
+// RelocSection represents a relocation table for an output file.
+// This is used only for the relocatable output (i.e. the `-r` output).
 #[derive(Debug)]
 pub struct RelocSection {
     pub hdr: ChunkHeader,
@@ -506,6 +539,7 @@ pub mod reloc {
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
         hdr.shdr.sh_entsize = ElfRel::size::<E>() as u64;
 
+        // Compute an offset for each input section
         let mut offsets = Vec::with_capacity(osec.members.len());
         let mut sum = 0u64;
         for &m in &osec.members {
@@ -531,9 +565,9 @@ pub mod reloc {
         sec.hdr.shdr.sh_info = osec_shndx;
     }
 
-    /// Translates a relocation's symbol reference into the {r_sym, addend}
-    /// pair valid in the output: either an output section index or an
-    /// output symbol table index.
+    // Translates an input relocation's symbol reference into the {r_sym, addend}
+    // pair that is valid in the output file. The returned r_sym is either an output
+    // section index (for section-relative relocs) or an output symbol table index.
     fn symidx_addend<E: Arch>(ctx: &Context<E>, isec: &InputSection, rel: &ElfRel) -> (u32, i64) {
         let file = &ctx.objs[isec.file.index()];
         let sym = &ctx.symbols[file.base.symbols[rel.r_sym as usize]];
@@ -566,7 +600,8 @@ pub mod reloc {
                     );
                 }
             }
-            // A dead debug section referring to a COMDAT-eliminated section.
+            // This is usually a dead debug section referring to a
+            // COMDAT-eliminated section.
             return (0, 0);
         }
 
@@ -597,10 +632,15 @@ pub mod reloc {
                 let (symidx, addend) = symidx_addend(ctx, isec, &rel);
                 let mut r_offset = osec.hdr.shdr.sh_addr + isec.offset() + rel.r_offset;
                 if E::IS_RISCV || E::IS_LOONGARCH {
+                    // On RISC-V and LoongArch, relaxation may have deleted instructions,
+                    // shifting this relocation's offset.
                     r_offset -= r_delta(isec, rel.r_offset) as u64;
                 }
-                // SH4 stores addends in the relocated places, and the
-                // records we emit follow that convention.
+
+                // SH4 object files store addends in the relocated places rather
+                // than in r_addend, and the relocation records we emit here are
+                // meant to be consumed as if they were in an object file, so we
+                // follow that convention.
                 let out_addend = if E::FAMILY == crate::arch::Family::Sh4 {
                     0
                 } else {
@@ -621,7 +661,8 @@ pub mod reloc {
     }
 }
 
-/// A COMDAT group in a relocatable output.
+// ComdatGroupSection represents a comdat group for an output file.
+// This is used only for the relocatable output (i.e. the `-r` output).
 #[derive(Debug)]
 pub struct ComdatGroupSection {
     pub hdr: ChunkHeader,

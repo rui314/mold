@@ -1,5 +1,7 @@
 //! Small helpers shared across the linker.
 
+// Utility functions
+
 pub mod compress;
 pub mod concurrent_map;
 pub mod demangle;
@@ -7,6 +9,12 @@ pub mod glob;
 pub mod hyperloglog;
 pub mod tar;
 pub mod timer;
+
+// Some C++ libraries haven't implemented std::has_single_bit yet.
+// Rust supplies the equivalent operation as `is_power_of_two`.
+
+// Some C++ libraries haven't implemented std::bit_ceil yet.
+// Rust supplies the equivalent operation as `next_power_of_two`.
 
 /// Rounds `value` up to a multiple of `align`, which must be zero or a power
 /// of two. Zero means "no alignment".
@@ -30,13 +38,14 @@ pub fn bit(value: u64, pos: u32) -> u64 {
     (value >> pos) & 1
 }
 
-/// Returns bits `hi..=lo` of `value`, shifted down to start at bit zero.
+// Returns [hi:lo] bits of val.
 #[inline]
 pub fn bits(value: u64, hi: u32, lo: u32) -> u64 {
     (value >> lo) & ((1u64 << (hi - lo + 1)) - 1)
 }
 
-/// Sign-extends the low `n` bits of `value`.
+// Cast val to a signed N bit integer.
+// For example, sign_extend(x, 32) == (i32)x for any integer x.
 pub fn sign_extend(value: u64, n: u32) -> i64 {
     ((value << (64 - n)) as i64) >> (64 - n)
 }
@@ -182,6 +191,7 @@ pub fn dedup_sorted<T: PartialEq>(vec: &mut Vec<T>) {
     vec.dedup();
 }
 
+// random.cc
 /// Fills `buf` with random bytes from the operating system.
 pub fn random_bytes(buf: &mut [u8]) {
     use std::io::Read;
@@ -208,8 +218,14 @@ pub fn leak_str(s: String) -> &'static str {
     String::leak(s)
 }
 
-/// Returns the path of the running executable.
+// filepath.cc
+
+// Returns the path of the mold executable itself
 pub fn self_path() -> std::path::PathBuf {
+    // The Rust port currently supports the /proc path below. The C++ FreeBSD
+    // implementation records why that platform needs a different path:
+    // /proc may not be mounted on FreeBSD. The proper way to get the
+    // current executable's path is to use sysctl(2).
     std::fs::read_link("/proc/self/exe").expect("cannot read /proc/self/exe")
 }
 

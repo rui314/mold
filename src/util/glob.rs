@@ -1,11 +1,28 @@
-//! Glob matching for symbol name patterns in version scripts and dynamic
-//! lists.
+//! This file implements the glob matcher used for symbol name patterns.
+//! Exact, prefix and suffix patterns are matched directly, and simple
+//! substring patterns are combined into an Aho-Corasick matcher. The
+//! remaining patterns are matched with the non-recursive algorithm described
+//! at https://research.swtch.com/glob. If there are many such patterns, a
+//! bit-parallel NFA matches them together.
+
+// aho-corasick.cc
+
+//! This file implements the Aho-Corasick algorithm to search multiple
+//! strings within an input string simultaneously. It is essentially a
+//! trie with additional links. For details, see
+//! https://en.wikipedia.org/wiki/Aho-Corasick_algorithm.
 //!
-//! Exact, prefix and suffix patterns are matched directly, simple
-//! substring patterns are combined into an Aho-Corasick automaton, and the
-//! remaining patterns use the non-recursive algorithm described at
-//! <https://research.swtch.com/glob>. If there are many such patterns, a
-//! bit-parallel NFA matches them all at once.
+//! We use it for simple glob patterns in version scripts or dynamic
+//! list files. Here are some examples of glob patterns:
+//!
+//!    qt_private_api_tag*
+//!    *16QAccessibleCache*
+//!    *32QAbstractFileIconProviderPrivate*
+//!    *17QPixmapIconEngine*
+//!
+//! Aho-Corasick can do only substring search, so it cannot handle
+//! complex glob patterns such as `*foo*bar*`. We handle such patterns
+//! with the Glob class.
 
 use std::collections::VecDeque;
 use std::sync::OnceLock;
@@ -49,9 +66,16 @@ impl Pattern {
             pat = rest;
             match c {
                 b'[' => {
-                    // Bracket expressions: [abc], [a-z], [!a-z] and [^a-z].
-                    // Both `!` and `^` negate; `!` is the POSIX convention
-                    // and `^` is kept for backward compatibility.
+                    // Here are a few bracket pattern examples:
+                    //
+                    // [abc]: a, b or c
+                    // [$\]!]: $, ] or !
+                    // [a-czg-i]: a, b, c, z, g, h, or i
+                    // [!a-z]: Any character except lowercase letters
+                    //
+                    // Both `!` and `^` are accepted as negation markers. `!` is the
+                    // POSIX/shell convention used by other linkers. `^` was mold's
+                    // original syntax and is kept for backward compatibility.
                     let mut tok = Token::new(Kind::Bracket);
                     let mut negate = false;
                     let mut closed = false;
@@ -212,9 +236,9 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     None
 }
 
-/// A bit-parallel NFA that matches many glob patterns at once. Each NFA
-/// state is one bit, so a byte of input advances all patterns with a few
-/// word operations.
+// Nfa matches many glob patterns in parallel by representing each state
+// with one bit. It is used only for large pattern sets; matching individual
+// patterns is faster when there are only a few of them.
 #[derive(Debug, Default)]
 struct Nfa {
     initial_states: Vec<u64>,
@@ -322,6 +346,8 @@ impl Nfa {
 /// a NUL byte at the beginning or end of the pattern.
 #[derive(Debug, Default)]
 struct AhoCorasick {
+    // Most trie nodes have only one child. The root uses a dense table because
+    // it is visited for almost every input byte; other edges are stored sparsely.
     root_children: Vec<i32>,
     nodes: Vec<TrieNode>,
 }
@@ -394,9 +420,10 @@ impl AhoCorasick {
             self.nodes.push(TrieNode::default());
         }
 
-        // "foo" is handled as "\0foo\0", "*foo" as "foo\0", "foo*" as
-        // "\0foo" and "*foo*" as "foo": NUL marks the beginning or end of
-        // the input.
+        // We handle "foo" as if "\0foo\0", "*foo" as if "foo\0", "foo*" as
+        // if "\0foo", and "*foo*" as if "foo". Aho-Corasick can do only
+        // substring matching, so we use \0 as a beginning/end-of-string
+        // markers.
         let mut idx = 0;
         if !pat.starts_with(b"*") {
             idx = self.add_child(idx, 0);
@@ -418,8 +445,8 @@ impl AhoCorasick {
             return;
         }
 
-        // Suffix links refer to nodes at a smaller depth, so build them
-        // breadth-first.
+        // A failure link may refer to any node at the previous depth, so failure
+        // links must be constructed breadth-first.
         let mut queue = VecDeque::new();
         let mut child = self.nodes[0].first_child;
         while child != -1 {
@@ -490,11 +517,16 @@ struct Literal {
 /// string returns the largest value among the matching patterns, or -1.
 #[derive(Debug, Default)]
 pub struct Glob {
-    match_all: i64,
+    // Patterns that need only a literal string comparison are kept out
+    // of the automaton-based matchers below, which scan the entire input
+    // string per query. Real version scripts consist almost entirely of
+    // such patterns (e.g. `local: *;` or `v8dbg_*;`), and we match them
+    // against every defined symbol name.
+    match_all: i64, // "*"
     exacts: Vec<Literal>,
     prefixes: Vec<Literal>,
     suffixes: Vec<Literal>,
-    patterns: Vec<Pattern>,
+    patterns: Vec<Pattern>, // "foo*bar"
     aho_corasick: AhoCorasick,
     compiled: OnceLock<Compiled>,
     is_empty: bool,
@@ -532,8 +564,8 @@ impl Glob {
         self.is_empty = false;
 
         // Match-all, exact, prefix and suffix patterns are handled with
-        // plain string comparisons, which are much cheaper than the
-        // general matchers.
+        // plain string comparisons instead of the matchers below, which
+        // have to scan the entire input string on every query.
         if pat == b"*" {
             self.match_all = self.match_all.max(value);
             return true;
@@ -559,6 +591,8 @@ impl Glob {
             });
             return true;
         }
+        // If the pattern requires only a single substring search, the
+        // Aho-Corasick algorithm is even faster than our glob matcher.
         if AhoCorasick::can_handle(pat) {
             self.aho_corasick.add(pat, value);
             return true;
@@ -574,9 +608,10 @@ impl Glob {
 
     fn compiled(&self) -> &Compiled {
         self.compiled.get_or_init(|| {
-            // If the same name was added more than once, keep only the
-            // entry with the largest value, as find() returns the largest
-            // match.
+            // If the same name was added more than once, keep only the entry
+            // with the largest value, as find() returns the largest match.
+            // Sorting by (name, negated value) places that entry first in
+            // each run of duplicates, which is the one unique() keeps.
             let mut exacts: Vec<Literal> = self
                 .exacts
                 .iter()

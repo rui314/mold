@@ -12,6 +12,10 @@ use std::ops::{Deref, DerefMut, Index, IndexMut, Range};
 use std::ptr::NonNull;
 use std::sync::atomic::{AtomicPtr, AtomicU8, AtomicUsize, Ordering};
 
+// C++ mold wraps the standard atomics used throughout its data structures:
+// This is the same as std::atomic except that the default memory
+// order is relaxed instead of sequential consistency.
+
 use bstr::BStr;
 use hashbrown::{Equivalent, HashMap};
 use rayon::prelude::*;
@@ -29,7 +33,7 @@ use crate::util::demangle::{demangle_cpp, demangle_rust};
 pub struct SymbolId(pub u32);
 
 impl SymbolId {
-    /// A placeholder for local symbols in discarded COMDAT sections.
+    // Local symbols in discarded COMDAT sections all use one zero-valued symbol.
     pub const DISCARDED_COMDAT: SymbolId = SymbolId(0);
 
     /// No symbol. Used where an optional id must remain four bytes.
@@ -41,6 +45,11 @@ impl SymbolId {
     }
 }
 
+// TaggedPtr stores one of several pointer types and uses the low pointer bits
+// to record which type it contains.
+//
+// Rust stores the same choice in Symbol's padding byte instead, leaving this
+// payload available for the selected pointer or id.
 /// The payload describing what a symbol's value is relative to. Its kind
 /// lives in a byte of [`Symbol`]'s padding so that the payload remains eight
 /// bytes without restricting any of the contained ids.
@@ -118,14 +127,14 @@ pub const NEEDS_CANONICAL: u8 = 1 << 2;
 pub const NEEDS_GOTTP: u8 = 1 << 3;
 pub const NEEDS_TLSGD: u8 = 1 << 4;
 pub const NEEDS_TLSDESC: u8 = 1 << 5;
-pub const NEEDS_PPC_OPD: u8 = 1 << 6;
+pub const NEEDS_PPC_OPD: u8 = 1 << 6; // for PPCv1
 
-/// Flags for [`Symbol::addr`].
+// Flags for Symbol<E>::get_addr()
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct AddrFlags {
-    /// Request an address other than the PLT entry.
+    // Request an address other than .plt
     pub no_plt: bool,
-    /// Request an address other than the OPD entry (PPC64 ELFv1 only).
+    // Request an address other than .opd (PPC64V1 only)
     pub no_opd: bool,
 }
 
@@ -140,8 +149,10 @@ impl AddrFlags {
     };
 }
 
-/// Table indices for dynamic symbols. Most symbols never need them, so
-/// they are allocated on demand.
+// Additional class members for dynamic symbols. Because most symbols
+// don't need them and we allocate tens of millions of symbol objects
+// for large programs, we separate them from `Symbol` class to save
+// memory.
 #[derive(Debug, Default)]
 pub struct SymbolAux {
     pub got_idx: Option<u32>,
@@ -153,7 +164,7 @@ pub struct SymbolAux {
     pub dynsym_idx: Option<u32>,
     pub opd_idx: Option<u32>,
     pub djb_hash: u32,
-    /// Addresses of range extension thunks, in ascending order.
+    // For range extension thunks
     pub thunk_addrs: Vec<u64>,
 }
 
@@ -199,8 +210,15 @@ impl SymbolFile {
     }
 }
 
+// Symbol class represents a symbol. For each unique symbol name, we
+// create one instance of Symbol.
+//
+// A symbol has not only one but several different addresses if it
+// has PLT or GOT entries. This class provides various functions to
+// compute different addresses.
 #[derive(Debug)]
 pub struct Symbol {
+    // Global symbols are stored next to their names in the symbol map.
     // The name bytes live in the surrounding map entry or the owner file.
     // Rust's symbol map is separate from its symbol array, so retain a thin
     // pointer rather than a 16-byte slice.
@@ -212,25 +230,31 @@ pub struct Symbol {
     /// the structure's existing padding.
     mu: AtomicU8,
 
-    /// The file that defines the symbol, if any. If several files define
-    /// it, the one with the strongest definition owns it.
+    // A symbol is owned by a file. If two or more files define the
+    // same symbol, the one with the strongest definition owns the symbol.
+    // If `file` is null, the symbol is not defined by any input file.
+    // A symbol usually belongs to an input section, but it can belong to a
+    // section fragment, an output section or nothing (i.e. an absolute symbol).
+    // A symbol pointer is used temporarily for default symbol versions.
     file: SymbolFile,
     origin: Origin,
 
-    /// The symbol value: its address if absolute, otherwise an offset
-    /// relative to `origin`.
+    // `value` contains the symbol value. If this is an absolute symbol, it is
+    // equivalent to its address. Otherwise, it is relative to `origin`.
     pub value: u64,
 
-    /// Index of the symbol's entry in the owner file's symbol table. The
-    /// entry itself is read from the file (see [`Self::esym`]); only its
-    /// type and binding, and the section index that tells an undefined
-    /// or common symbol, are kept here, being consulted constantly.
+    // Index into the symbol table of the owner file.
     pub sym_idx: u32,
     st_info: u8,
 
     pub ver_idx: u16,
     pub visibility: AtomicU8,
+
+    // `flags` has NEEDS_ flags.
     pub flags: AtomicU8,
+
+    // Auxiliary data for dynamic symbols, allocated in ctx.arena on demand.
+    // Rust stores an index into SymbolTable's auxiliary-data array.
     aux_idx: u32,
 
     /// The symbol's boolean attributes, packed; the accessors below name
@@ -241,10 +265,13 @@ pub struct Symbol {
 const _: () = assert!(std::mem::size_of::<Symbol>() == 48);
 
 const SYMBOL_LOCKED: u8 = 1 << 0;
+
+// For symbol resolution. This flag is used rarely. See a comment in
+// resolve_symbols().
 const SYMBOL_SKIP_DSO: u8 = 1 << 1;
 
 const NO_AUX: u32 = u32::MAX;
-const WRITE_TO_SYMTAB: u8 = 1 << 7;
+const WRITE_TO_SYMTAB: u8 = 1 << 7; // for --strip-all and the like
 const NEEDS_MASK: u8 = !WRITE_TO_SYMTAB;
 
 const VISIBILITY_MASK: u8 = 0b11;
@@ -258,40 +285,128 @@ const SYMBOL_DEFINED: u8 = 2;
 
 const WEAK: u16 = 1 << 0;
 
-/// A symbol that may resolve to a definition in another ELF file at
-/// runtime is imported; one that other files may use at runtime is
-/// exported. Both can be true: a symbol exported from a DSO is usually
-/// also imported by it, since a definition elsewhere may interpose it.
+// If a symbol can be resolved to a symbol in a different ELF file at
+// runtime, `is_imported` is true. If a symbol is a dynamic symbol and
+// can be used by other ELF file at runtime, `is_exported` is true.
+//
+// Note that both can be true at the same time. Such symbol represents
+// a function or data exported from this ELF file which can be
+// imported by other definition at runtime. That is actually a usual
+// exported symbol when creating a DSO. In other words, a dynamic
+// symbol exported by a DSO is usually imported by itself.
+//
+// If is_imported is true and is_exported is false, it is a dynamic
+// symbol just imported from other DSO.
+//
+// If is_imported is false and is_exported is true, there are two
+// possible cases. If we are creating an executable, we know that
+// exported symbols cannot be intercepted by any DSO (because the
+// dynamic loader searches a dynamic symbol from an executable before
+// examining any DSOs), so any exported symbol is export-only in an
+// executable. If we are creating a DSO, export-only symbols
+// represent a protected symbol (i.e. a symbol whose visibility is
+// STV_PROTECTED).
 const IMPORTED: u16 = 1 << 1;
 const EXPORTED: u16 = 1 << 2;
 
-/// Whether the symbol's address is that of its PLT entry. C guarantees
-/// that function pointers compare equal process-wide, so when a
-/// position-dependent executable takes the address of an imported
-/// function it uses its own PLT entry as the address, and the DSO
-/// defining the function must use the same address.
+// `is_canonical` is true if this symbol represents a "canonical" PLT.
+// Here is the explanation as to what the canonical PLT is.
+//
+// In C/C++, the process-wide function pointer equality is guaranteed.
+// That is, if you take an address of a function `foo`, it's always
+// evaluated to the same address wherever you do that.
+//
+// For the sake of explanation, assume that `libx.so` exports a
+// function symbol `foo`, and there's a program that uses `libx.so`.
+// Both `libx.so` and the main executable take the address of `foo`,
+// which must be evaluated to the same address because of the above
+// guarantee.
+//
+// If the main executable is position-independent code (PIC), `foo` is
+// evaluated to the beginning of the function code, as you would have
+// expected. The address of `foo` is stored to GOTs, and the machine
+// code that takes the address of `foo` reads the GOT entries at
+// runtime.
+//
+// However, if it's not PIC, the main executable's code was compiled
+// to not use GOT (note that shared objects are always PIC, only
+// executables can be non-PIC). It instead assumes that `foo` (and any
+// other global variables/functions) has an address that is fixed at
+// link-time. This assumption is correct if `foo` is in the same
+// position-dependent executable, but it's not if `foo` is imported
+// from some other DSO at runtime.
+//
+// In this case, we use the address of the `foo`'s PLT entry in the
+// main executable (whose address is fixed at link-time) as its
+// address. In order to guarantee pointer equality, we also need to
+// fill foo's GOT entries in DSOs with the addres of the foo's PLT
+// entry instead of `foo`'s real address. We can do that by setting a
+// symbol value to `foo`'s dynamic symbol. If a symbol value is set,
+// the dynamic loader initialize `foo`'s GOT entries with that value
+// instead of the symbol's real address.
+//
+// We call such PLT entry in the main executable as "canonical".
+// If `foo` has a canonical PLT, its address is evaluated to its
+// canonical PLT's address. Otherwise, it's evaluated to `foo`'s
+// address.
+//
+// Only non-PIC main executables may have canonical PLTs. PIC
+// executables and shared objects never have a canonical PLT.
+//
+// This bit manages if we need to make this symbol's PLT canonical.
+// This bit is meaningful only when the symbol has a PLT entry.
 const CANONICAL: u16 = 1 << 3;
 
-/// Whether the symbol's data is copied from a DSO into the executable's
-/// BSS at load time, so that non-PIC code can address it.
+// If an input object file is not compiled with -fPIC (or with
+// -fno-PIC), the file not position independent. That means the
+// machine code included in the object file does not use GOT to access
+// global variables. Instead, it assumes that addresses of global
+// variables are known at link-time.
+//
+// Let's say `libx.so` exports a global variable `foo`, and a main
+// executable uses the variable. If the executable is not compiled
+// with -fPIC, we can't simply apply a relocation that refers `foo`
+// because `foo`'s address is not known at link-time.
+//
+// In this case, we could print out the "recompile with -fPIC" error
+// message, but there's a way to workaround.
+//
+// The loader supports a feature so-called "copy relocations".
+// A copy relocation instructs the loader to copy data from a DSO to a
+// specified location in the main executable. By using this feature,
+// we can copy `foo`'s data to a BSS region at runtime. With that,
+// we can apply relocations agianst `foo` as if `foo` existed in the
+// main executable's BSS area, whose address is known at link-time.
+//
+// Copy relocations are used only by position-dependent executables.
+// Position-independent executables and DSOs don't need them because
+// they use GOT to access global variables.
+//
+// `has_copyrel` is true if we need to emit a copy relocation for this
+// symbol. If the original symbol in a DSO is in a read-only memory
+// region, `is_copyrel_readonly` is set to true so that the copied data
+// will become read-only at run-time.
 const COPYREL: u16 = 1 << 4;
 const COPYREL_READONLY: u16 = 1 << 5;
 
-const TRACED: u16 = 1 << 6;
-const WRAPPED: u16 = 1 << 7;
+const TRACED: u16 = 1 << 6; // for --trace-symbol
+const WRAPPED: u16 = 1 << 7; // for --wrap
 
-/// For symbols with a default version, `foo@@VERSION`.
+// For symbols with default symbol version, e.g. foo@@VERSION.
 const VERSIONED_DEFAULT: u16 = 1 << 8;
 
+// For --gc-sections
 const GC_ROOT: u16 = 1 << 10;
 
-/// For LTO: referenced by a regular (non-IR) object.
+// For LTO. True if the symbol is referenced by a regular object (as
+// opposed to IR object).
 const REFERENCED_BY_REGULAR_OBJ: u16 = 1 << 11;
 
-/// For LTO: the signature of a COMDAT group claimed by an IR file.
+// For LTO. True if the symbol is the signature of a COMDAT group
+// claimed by an IR file.
 const COMDAT_CLAIMED_BY_IR: u16 = 1 << 12;
 
-/// A dummy symbol standing in for a relocation into a section fragment.
+// A dummy symbol created for a relocation into a mergeable fragment.
 const FRAGMENT_DUMMY: u16 = 1 << 13;
 
 /// Whether the symbol comes from a Rust object, which decides how a
@@ -337,6 +452,8 @@ symbol_bits! {
     is_fragment_dummy, set_fragment_dummy: FRAGMENT_DUMMY;
     is_rust, set_rust: RUST;
 }
+
+// Inline objects and functions
 
 impl Symbol {
     #[inline]
@@ -512,10 +629,14 @@ impl Symbol {
         self.set_visibility_bits(VISIBILITY_MASK, v as u8);
     }
 
-    /// Narrows the visibility to the most restrictive of the current one
-    /// and `vis`: a hidden reference makes a symbol hidden.
+    // Symbol's visibility is set to the most restrictive one. For example,
+    // if one input file has a defined symbol `foo` with the default
+    // visibility and the other input file has an undefined symbol `foo`
+    // with the hidden visibility, the resulting symbol is a hidden defined
+    // symbol.
     #[inline]
     pub fn merge_visibility(&self, vis: u32) {
+        // Canonicalize visibility
         let vis = if vis == STV_INTERNAL { STV_HIDDEN } else { vis } as u8;
         let rank = |v: u8| match v as u32 {
             STV_HIDDEN => 1,
@@ -812,7 +933,9 @@ impl Symbol {
         self.ty() == STT_GNU_IFUNC
     }
 
-    /// An unresolved weak symbol acts as an absolute symbol at address 0.
+    // A remaining weak undefined symbol is promoted to a dynamic symbol
+    // in DSO and resolved to 0 in an executable. This function returns
+    // true if it's latter.
     #[inline]
     pub fn is_remaining_undef_weak(&self) -> bool {
         !self.is_imported() && self.is_undef_weak()
@@ -820,6 +943,8 @@ impl Symbol {
 
     #[inline]
     pub fn is_absolute(&self) -> bool {
+        // An unresolved weak symbol acts as if it were an absolute address
+        // at address 0
         if self.is_remaining_undef_weak() {
             return true;
         }
@@ -831,10 +956,11 @@ impl Symbol {
         !self.is_absolute()
     }
 
-    /// Whether the symbol appears as a local symbol in the output symbol
-    /// table. A global symbol may be demoted by visibility or by a version
-    /// script; not being exported to the dynamic symbol table is not
-    /// enough.
+    // Returns true if the symbol should be emitted as a local symbol in the
+    // output symbol table. Note that a symbol that is merely not exported to
+    // the dynamic symbol table is still a global symbol; besides symbols that
+    // are local in the input file, only ones hidden by symbol visibility or
+    // localized by a version script are demoted.
     #[inline]
     pub fn is_local<E: Arch>(&self, ctx: &Context<E>) -> bool {
         if self.st_bind() == STB_LOCAL {
@@ -847,26 +973,27 @@ impl Symbol {
         vis == STV_HIDDEN || vis == STV_INTERNAL || self.ver_idx as u32 == VER_NDX_LOCAL
     }
 
-    /// An IFUNC in a position-dependent executable occupies two GOT slots:
-    /// the PLT address, used as the symbol's address, and the resolved one.
     pub fn is_pde_ifunc<E: Arch>(&self, ctx: &Context<E>) -> bool {
+        // Returns true if this is an ifunc tha uses two GOT slots
         self.is_ifunc() && !ctx.args.pic && !E::IS_PPC64
     }
 
-    /// Whether the PC-relative address is known at link time.
+    // Returns true if the symbol's PC-relative address is known at link-time.
     pub fn is_pcrel_linktime_const<E: Arch>(&self, ctx: &Context<E>) -> bool {
         !self.is_imported() && !self.is_ifunc() && (self.is_relative() || !ctx.args.pic)
     }
 
-    /// Whether the thread-pointer-relative address is known at link time.
+    // Returns true if the symbol's Thread Pointer-relative address is
+    // known at link-time.
     pub fn is_tprel_linktime_const<E: Arch>(&self, ctx: &Context<E>) -> bool {
         debug_assert_eq!(self.ty(), STT_TLS);
         !ctx.args.shared && !self.is_imported()
     }
 
-    /// Whether the thread-pointer-relative address is known at load time,
-    /// i.e. unless we are creating a dlopen'able DSO.
+    // Returns true if the symbol's Thread Pointer-relative address is
+    // known at load-time.
     pub fn is_tprel_runtime_const<E: Arch>(&self, ctx: &Context<E>) -> bool {
+        // Returns true unless we are creating a dlopen'able DSO.
         debug_assert_eq!(self.ty(), STT_TLS);
         !(ctx.args.shared && ctx.args.z_dlopen)
     }
@@ -883,8 +1010,10 @@ impl Symbol {
         if let Some(frag_ref) = self.fragment() {
             let frag = ctx.fragment(frag_ref);
             if !frag.is_alive() {
-                // A non-alloc section (typically debug info) refers to a
-                // piece of an alloc section that was garbage-collected.
+                // This condition is met if a non-alloc section refers an
+                // alloc section and if the referenced piece of data is
+                // garbage-collected. Typically, this condition occurs if a
+                // debug info section refers a string constant in .rodata.
                 return 0;
             }
             return ctx.fragment_addr(frag_ref) + self.value;
@@ -917,10 +1046,13 @@ impl Symbol {
                     }
 
                     if isec.name(&ctx.objs[isec.file.index()]) == b".eh_frame" {
-                        // .eh_frame contents are parsed and reconstructed by
-                        // the linker, so a pointer into an input .eh_frame
-                        // isn't meaningful; but CRT files define symbols at
-                        // the very beginning and end of the section.
+                        // .eh_frame contents are parsed and reconstructed by the linker,
+                        // so pointing to a specific location in a source .eh_frame
+                        // section doesn't make much sense. However, CRT files contain
+                        // symbols pointing to the very beginning and ending of the section.
+                        //
+                        // If LTO is enabled, GCC may add `.lto_priv.<whatever>` as a symbol
+                        // suffix. That's why we use starts_with() instead of `==` here.
                         let name = self.name();
                         let eh_frame = &ctx.eh_frame.hdr.shdr;
                         if name.starts_with(b"__EH_FRAME_BEGIN__")
@@ -935,9 +1067,9 @@ impl Symbol {
                         {
                             return eh_frame.sh_addr + eh_frame.sh_size;
                         }
-                        // ARM object files contain "$d" local symbols at
-                        // the beginning of data sections. Their values are
-                        // not significant for .eh_frame.
+                        // ARM object files contain "$d" local symbol at the beginning
+                        // of data sections. Their values are not significant for .eh_frame,
+                        // so we just treat them as offset 0.
                         if name == b"$d" || name.starts_with(b"$d.") {
                             return eh_frame.sh_addr;
                         }
@@ -949,10 +1081,11 @@ impl Symbol {
                         );
                     }
 
-                    // A relocation refers to a local symbol in a COMDAT
-                    // section that was discarded. This violates the spec,
-                    // which allows only global symbols to refer to COMDAT
-                    // members, but .eh_frame tends to do it.
+                    // The control can reach here if there's a relocation that refers
+                    // a local symbol belonging to a comdat group section. This is a
+                    // violation of the spec, as all relocations should use only global
+                    // symbols of comdat members. However, .eh_frame tends to have such
+                    // relocations.
                     return 0;
                 }
                 isec.addr(ctx) + self.value
@@ -1002,10 +1135,19 @@ impl Symbol {
         ctx.opd_addr(self.opd_idx(&ctx.symbols).unwrap())
     }
 
-    /// The GOT slot a PLT entry should load its target from: for an IFUNC
-    /// in a position-dependent executable that is the second of its two
-    /// slots.
     pub fn got_pltgot_addr<E: Arch>(&self, ctx: &Context<E>) -> u64 {
+        // An ifunc symbol occupies two consecutive GOT slots in a
+        // position-dependent executable (PDE). The first slot contains the
+        // symbol's PLT address, and the second slot holds the resolved
+        // address. A PDE uses the ifunc symbol's PLT entry as the address
+        // for the symbol, akin to a canonical PLT.
+        //
+        // This function returns the address that the PLT entry should use
+        // to jump to the resolved address.
+        //
+        // Note that we don't use this function for PPC64. In PPC64, symbols
+        // are always accessed through the TOC table regardless of the
+        // -fno-PIE setting. We don't need canonical PLTs on the psABIs too.
         if self.is_pde_ifunc(ctx) {
             self.got_addr(ctx) + E::WORD_SIZE as u64
         } else {
@@ -1051,8 +1193,12 @@ impl Symbol {
         b""
     }
 
-    /// Returns the demangled name if demangling is possible.
     pub fn demangled(&self) -> Option<String> {
+        // The legacy Rust mangling scheme is indistinguishtable from C++.
+        // We don't want to accidentally demangle C++ symbols as Rust ones.
+        // So, the legacy mangling scheme will be demangled only when we
+        // know the object file was created by rustc.
+        // "_R" is the prefix of the new Rust mangling scheme.
         if self.is_rust() || self.name().starts_with(b"_R") {
             demangle_rust(self.name())
         } else {
@@ -1079,6 +1225,11 @@ pub fn name_len(key: &[u8]) -> usize {
     crate::util::find_byte(b'@', key).unwrap_or(key.len())
 }
 
+// Keeping the key outside T means that values not stored in a map do not
+// pay for it. A mapped T is the base subobject of this entry.
+//
+// add() already computed the string hash. Store it in the map key so that
+// unordered_map does not scan the string again.
 /// A key with its hash. Recording a key already computed its hash; it is
 /// stored in the map key so that the map does not scan the string again.
 #[derive(Clone, Copy, Debug)]
@@ -1151,6 +1302,7 @@ fn shard_of(hash: u64) -> usize {
     (hash % NUM_SHARDS as u64) as usize
 }
 
+// A key recorded by add() with the slot that receives its value's address.
 /// A key recorded for interning, with the slot that receives its symbol.
 /// A slot is an owner and an index whose meaning is up to the recorder.
 #[derive(Clone, Copy, Debug)]
@@ -1160,6 +1312,7 @@ struct Pending<S> {
     slot: S,
 }
 
+// A thread's recorded keys, grouped by shard.
 /// The keys one task recorded for interning, grouped by shard.
 #[derive(Debug)]
 pub struct Bins<S = (u32, u32)>(Vec<Vec<Pending<S>>>);
@@ -1175,6 +1328,11 @@ impl<S> Bins<S> {
         Bins((0..NUM_SHARDS).map(|_| Vec::new()).collect())
     }
 
+    // Records a key and the slot to receive its value's address. A caller
+    // adding many keys should fetch its thread's bin once with get_bin(),
+    // as the thread-local lookup costs more than the record itself.
+    //
+    // Rust passes the task-local Bins value to this method directly.
     /// Records `key`, whose symbol is named by its first `name_len` bytes.
     #[inline]
     pub fn record(&mut self, key: &'static [u8], name_len: usize, slot: S) {
@@ -1258,6 +1416,18 @@ impl ParallelSymbolAllocator<'_> {
     }
 }
 
+// ArenaResource owns a sparsely-backed address range for symbols, input files,
+// and related linker data structures. Allocation is thread-safe and monotonic;
+// individual allocations are not freed. Keeping related objects in this range
+// lets ArenaPtr represent references between them as 32-bit self-relative
+// offsets.
+//
+// ArenaAllocator adapts ArenaResource to the standard allocator interface so
+// containers can place their backing storage in the resource's address range.
+// It does not own the resource, and deallocation is deferred until the
+// resource itself is destroyed.
+//
+// Rust uses typed arena storage rather than a standard-container allocator.
 /// A sparsely-backed address range for symbols. Allocation is monotonic and
 /// individual symbols are not freed. Reserving the complete range up front
 /// keeps symbol addresses stable and lets the kernel back the densely filled
@@ -1274,9 +1444,9 @@ unsafe impl Send for SymbolArena {}
 unsafe impl Sync for SymbolArena {}
 
 impl SymbolArena {
-    // C++ mold reserves 8 GiB on 64-bit hosts and a smaller range where
-    // address space is limited. The mapping is sparse, so unused pages consume
-    // neither physical memory nor page-table entries.
+    // An 8 GiB arena ensures that the distance between any two allocations fits
+    // in ArenaPtr's signed 32-bit offset. A smaller reservation is used on
+    // 32-bit hosts, where address space is more limited.
     const SIZE: usize = if usize::BITS == 64 {
         1usize << 33
     } else {
@@ -1436,6 +1606,27 @@ impl SymbolBlockPtr {
     }
 }
 
+// ShardedMap is a map from strings to values of type T, built in two phases.
+// In the first phase, which may run in parallel, add() records a key and an
+// ArenaPtr<T> slot that needs the key's value. gather() then deduplicates the
+// keys, finds or creates one value for each key, and writes its address to
+// every recorded slot. The slots must remain at stable addresses until
+// gather().
+//
+// Keys whose hashes fall into different shards never interact, and
+// each shard is processed by exactly one thread during gather(), so
+// unlike with a concurrent hash table, no synchronization is needed,
+// and each key is hashed only once, in add().
+//
+// If a value needs to be initialized from its key, pass an
+// `on_create(key, value)` callback to gather() or insert(). It is called
+// exactly once when a value is created.
+//
+// insert() handles keys that arrive outside the two-phase pattern under a
+// shard mutex. All values live in stable arena blocks.
+//
+// Rust's SymbolTable is the corresponding specialized map and hands SymbolId
+// values to its recorded slots.
 /// The arena of all symbols, and the index of global ones by name.
 ///
 /// The index is a map from strings to symbols, built in two phases. In

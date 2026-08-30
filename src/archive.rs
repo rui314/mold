@@ -1,13 +1,28 @@
-//! Archive (`.a`) file reading.
+// archive-file.cc
+//! This file contains functions to read an archive file (.a file).
+//! An archive file is just a bundle of object files. It's similar to
+//! tar or zip, but the contents are not compressed.
 //!
-//! An archive is a bundle of object files, similar to tar but without
-//! compression. A regular ("fat") archive contains the object files
-//! themselves; a thin archive contains only their paths.
+//! An archive file is either "regular" or "thin". A regular archive
+//! contains object files directly, while a thin archive contains only
+//! pathnames. In the latter case, actual file contents have to be read
+//! from given pathnames. A regular archive is sometimes called "fat"
+//! archive as opposed to "thin".
 //!
-//! Giving an archive to the linker means something different from giving
-//! its members directly: only the members needed to resolve undefined
-//! symbols are linked. That is why linking `libc.a` doesn't pull the whole
-//! C library into an executable.
+//! If an archive file is given to the linker, the linker pulls out
+//! object files that are needed to resolve undefined symbols. So,
+//! bunding object files as an archive and giving that archive to the
+//! linker has a different meaning than directly giving the same set of
+//! object files to the linker. The former links only needed object
+//! files, while the latter links all the given object files.
+//!
+//! Therefore, if you link libc.a for example, not all the libc
+//! functions are linked to your binary. Instead, only object files
+//! that provides functions and variables used in your program get
+//! linked. To make this efficient, static library functions are
+//! usually separated to each object file in an archive file. You can
+//! see the contents of libc.a by running `ar t
+//! /usr/lib/x86_64-linux-gnu/libc.a`.
 
 use crate::diagnostics::Diagnostics;
 use crate::fatal;
@@ -63,7 +78,7 @@ impl<'a> ArHeader<'a> {
             return String::from_utf8_lossy(&start[..end]).into_owned();
         }
 
-        // Short filename
+        // Short fileanme
         let end = self
             .name
             .iter()
@@ -107,12 +122,16 @@ fn for_each_member(
         let body_end = (body_start + hdr.size).min(data.len());
         let mut body = &data[body_start..body_end];
 
+        // Read a string table.
         if hdr.is_strtab() {
+            // Read if string table
             strtab = body;
             pos = body_end;
             continue;
         }
+        // Skip a symbol table.
         if hdr.is_symtab() {
+            // Skip if symbol table
             pos = body_end;
             continue;
         }
@@ -125,6 +144,7 @@ fn for_each_member(
             );
         }
 
+        // Read the name field
         let name = hdr.read_name(strtab, &mut body);
 
         if thin {
@@ -135,7 +155,10 @@ fn for_each_member(
             pos = body_end;
         }
 
-        // Skip the symbol table
+        // Thin-archive counterpart:
+        // Skip if symbol table
+        // Fat-archive counterpart:
+        // Skip if symbol table
         if name == "__.SYMDEF" || name == "__.SYMDEF SORTED" {
             continue;
         }
@@ -144,7 +167,8 @@ fn for_each_member(
     }
 }
 
-/// Returns the paths of the members of a thin archive without opening them.
+/// Returns the paths of the members of a thin archive, which are stored
+/// outside of the archive file, without opening them.
 pub fn get_thin_archive_member_paths(diag: &Diagnostics, mf: &'static MappedFile) -> Vec<String> {
     let mut paths = Vec::new();
     for_each_member(diag, mf, true, |name, _| {

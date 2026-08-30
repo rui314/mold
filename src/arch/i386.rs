@@ -1,17 +1,40 @@
-//! i386.
+//! i386 is similar to x86-64 but lacks PC-relative memory access
+//! instructions. So it's not straightforward to support position-
+//! independent code (PIC) on that target.
 //!
-//! i386 has no PC-relative memory access, so position-independent code
-//! first learns its own address by calling a thunk such as
-//! `__x86.get_pc_thunk.bx`, which returns the address after the call in a
-//! register, and then addresses variables relative to the GOT, whose
-//! address it keeps in `%ebx`. PLT entries of position-independent code
-//! use `%ebx` likewise; a position-dependent executable can't assume
-//! `%ebx` holds anything, so it gets PLT entries with absolute addresses.
+//! If an object file is compiled with -fPIC, a function that needs to load
+//! a value from memory first obtains its own address with the following
+//! code
+//!
+//!   call __x86.get_pc_thunk.bx
+//!
+//! where __x86.get_pc_thunk.bx is defined as
+//!
+//!   __x86.get_pc_thunk.bx:
+//!     mov (%esp), %ebx  # move the return address to %ebx
+//!     ret
+//!
+//! . With the function's own address (or, more precisely, the address
+//! immediately after the call instruction), the function can compute an
+//! absolute address of a variable with its address + link-time constant.
+//!
+//! Executing call-mov-ret isn't very cheap, and allocating one register to
+//! store PC isn't cheap too, especially given that i386 has only 8
+//! general-purpose registers. But that's the cost of PIC on i386. You need
+//! to pay it when creating a .so and a position-independent executable.
+//!
+//! When a position-independent function calls another function, it sets
+//! %ebx to the address of .got. Position-independent PLT entries use that
+//! register to load values from .got.plt/.got.
+//!
+//! If we are creating a position-dependent executable (PDE), we can't
+//! assume that %ebx is set to .got. For PDE, we need to create position-
+//! dependent PLT entries which don't use %ebx.
+//!
+//! https://github.com/rui314/psabi/blob/main/i386.pdf
 //!
 //! Relocations are of the REL type: addends live in the relocated
 //! locations rather than in the relocation entries.
-//!
-//! https://github.com/rui314/psabi/blob/main/i386.pdf
 
 use crate::arch::{Arch, Family};
 use crate::chunks::eh_frame;
@@ -64,7 +87,7 @@ impl Arch for I386 {
                 0x8d, 0x8b, 0, 0, 0, 0, // lea GOTPLT+4(%ebx), %ecx
                 0xff, 0x31, // push (%ecx)
                 0xff, 0x61, 0x04, // jmp *0x4(%ecx)
-                0xcc, 0xcc, 0xcc, 0xcc, // padding
+                0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
             write_u32(
@@ -77,7 +100,7 @@ impl Arch for I386 {
                 0xb9, 0, 0, 0, 0, // mov GOTPLT+4, %ecx
                 0xff, 0x31, // push (%ecx)
                 0xff, 0x61, 0x04, // jmp *0x4(%ecx)
-                0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // padding
+                0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
             write_u32(&mut buf[2..], (gotplt + 4) as u32);
@@ -91,7 +114,7 @@ impl Arch for I386 {
             const INSN: [u8; 16] = [
                 0xb9, 0, 0, 0, 0, // mov $reloc_offset, %ecx
                 0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
-                0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // padding
+                0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
             write_u32(&mut buf[1..], reloc_offset as u32);
@@ -103,7 +126,7 @@ impl Arch for I386 {
             const INSN: [u8; 16] = [
                 0xb9, 0, 0, 0, 0, // mov $reloc_offset, %ecx
                 0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-                0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // padding
+                0xcc, 0xcc, 0xcc, 0xcc, 0xcc, // (padding)
             ];
             buf[..16].copy_from_slice(&INSN);
             write_u32(&mut buf[1..], reloc_offset as u32);
@@ -115,7 +138,7 @@ impl Arch for I386 {
         if ctx.args.pic {
             const INSN: [u8; 8] = [
                 0xff, 0xa3, 0, 0, 0, 0, // jmp *foo@GOT(%ebx)
-                0xcc, 0xcc, // padding
+                0xcc, 0xcc, // (padding)
             ];
             buf[..8].copy_from_slice(&INSN);
             write_u32(
@@ -125,7 +148,7 @@ impl Arch for I386 {
         } else {
             const INSN: [u8; 8] = [
                 0xff, 0x25, 0, 0, 0, 0, // jmp *foo@GOT
-                0xcc, 0xcc, // padding
+                0xcc, 0xcc, // (padding)
             ];
             buf[..8].copy_from_slice(&INSN);
             write_u32(&mut buf[2..], sym.got_pltgot_addr(ctx) as u32);
@@ -154,6 +177,7 @@ impl Arch for I386 {
         let rels = isec.rels::<Self>(file);
         let mut i = 0;
 
+        // Scan relocations
         while i < rels.len() {
             let rel = &rels.at(i);
             i += 1;
@@ -186,11 +210,12 @@ impl Arch for I386 {
                 R_386_PC8 | R_386_PC16 | R_386_PC32 => scan_pcrel(ctx, isec, sym, rel),
                 R_386_GOT32 | R_386_GOTPC => sym.add_flags(NEEDS_GOT),
                 R_386_GOT32X => {
-                    // GOT32X is relaxed even with --no-relax because static
-                    // PIE doesn't work without it.
-                    if !(sym.is_pcrel_linktime_const(ctx)
-                        && relax_got32x(loc_before(isec, rel)) != 0)
+                    // We always want to relax GOT32X even if --no-relax is given
+                    // because static PIE doesn't work without it.
+                    if sym.is_pcrel_linktime_const(ctx) && relax_got32x(loc_before(isec, rel)) != 0
                     {
+                        // Do nothing
+                    } else {
                         sym.add_flags(NEEDS_GOT);
                     }
                 }
@@ -201,8 +226,8 @@ impl Arch for I386 {
                 }
                 R_386_TLS_GOTIE | R_386_TLS_IE => sym.add_flags(NEEDS_GOTTP),
                 R_386_TLS_GD => {
-                    // Always relax with -static because libc.a doesn't
-                    // contain __tls_get_addr.
+                    // We always relax if -static because libc.a doesn't contain
+                    // __tls_get_addr().
                     if ctx.args.is_static || (ctx.args.relax && sym.is_tprel_linktime_const(ctx)) {
                         i += 1;
                     } else {
@@ -210,6 +235,8 @@ impl Arch for I386 {
                     }
                 }
                 R_386_TLS_LDM => {
+                    // We always relax if -static because libc.a doesn't contain
+                    // __tls_get_addr().
                     if ctx.args.is_static || (ctx.args.relax && !ctx.args.shared) {
                         i += 1;
                     } else {
@@ -345,16 +372,38 @@ impl Arch for I386 {
                     sym.esym(ctx).st_size.wrapping_add(a) as u32,
                 ),
                 R_386_TLS_GOTDESC => {
-                    // TLSDESC materializes a TP-relative address in %eax:
+                    // i386 TLSDESC uses the following code sequence to materialize
+                    // a TP-relative address in %eax.
                     //
-                    //   lea    0(%ebx), %eax   # R_386_TLS_GOTDESC
-                    //   call   *(%eax)         # R_386_TLS_DESC_CALL
+                    // lea    0(%ebx), %eax
+                    // R_386_TLS_GOTDESC   foo
+                    // call   *(%eax)
+                    // R_386_TLS_DESC_CALL foo
                     //
-                    // If the address is known at link time it becomes
-                    // `mov $foo@TPOFF, %eax; nop`, and if at load time
-                    // `mov foo@GOTTPOFF(%ebx), %eax; nop`. LLVM may put a
-                    // `mov %reg, %eax` between the two instructions, which
-                    // is why the lea may target any register.
+                    // We may relax the instructions to the following if its TP-relative
+                    // address is known at link-time
+                    //
+                    // mov     $foo@TPOFF, %eax
+                    // nop
+                    //
+                    // or to the following if the TP-relative address is known at
+                    // process startup time.
+                    //
+                    // mov     foo@GOTTPOFF(%ebx), %eax
+                    // nop
+                    //
+                    // We allow the following alternative code sequence too because
+                    // LLVM emits such code.
+                    //
+                    // lea    0(%ebx), %reg
+                    // R_386_TLS_GOTDESC   foo
+                    // mov    %reg, %eax
+                    // call   *(%eax)
+                    // R_386_TLS_DESC_CALL foo
+                    //
+                    // Note that the compiler always uses the local-exec TLS model
+                    // for -fno-pic, so TLSDESC code is always PIC (i.e. uses %ebx to
+                    // store the address of GOT.)
                     if sym.has_tlsdesc(&ctx.symbols) {
                         write_u32(
                             &mut buf[off..],
@@ -529,8 +578,7 @@ fn last2(loc: &[u8]) -> u32 {
     }
 }
 
-/// `mov imm(%reg1), %reg2` -> `lea imm(%reg1), %reg2`, or 0 if the
-/// instruction isn't a GOT load that can be relaxed.
+// mov imm(%reg1), %reg2 -> lea imm(%reg1), %reg2
 fn relax_got32x(loc: &[u8]) -> u32 {
     match loc {
         [.., 0x8b, modrm] => 0x8d00 | *modrm as u32,
@@ -538,8 +586,7 @@ fn relax_got32x(loc: &[u8]) -> u32 {
     }
 }
 
-/// Rewrites a `__tls_get_addr` call sequence to compute a link-time
-/// constant TP-relative address instead.
+// Relax GD to LE
 fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
     const INSN: [u8; 12] = [
         0x65, 0xa1, 0, 0, 0, 0, // mov %gs:0, %eax
@@ -558,8 +605,7 @@ fn relax_gd_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, val: u64) {
     }
 }
 
-/// Like `relax_gd_to_le`, but materializes the address of the TLS block
-/// rather than of a particular variable.
+// Relax LD to LE
 fn relax_ld_to_le(buf: &mut [u8], off: usize, rel: &ElfRel, tls_size: u64) {
     match rel.r_type {
         R_386_PLT32 | R_386_PC32 => {

@@ -1,17 +1,24 @@
-//! ARM64.
+//! This file contains ARM64-specific code. Being new, the ARM64's ELF
+//! psABI doesn't have anything peculiar. ARM64 is a clean RISC
+//! instruction set that supports PC-relative load/store instructions.
 //!
-//! ARM64's ELF psABI has nothing peculiar; it is a clean RISC instruction
-//! set with PC-relative loads and stores. All instructions are 4 bytes,
-//! and are little-endian even on big-endian targets, where only data is
-//! byte-swapped. Branches reach ±128 MiB, so binaries with a larger
-//! `.text` need range extension thunks.
+//! Unlike ARM32, instructions length doesn't vary. All ARM64
+//! instructions are 4 bytes long.
 //!
-//! Unlike most targets, -fPIC code uses the TLSDESC model to access
-//! thread-local variables by default rather than the less efficient GD
-//! model, which needs `-mtls-dialect=trad`. GD is rare enough that GD to
-//! LE relaxation isn't implemented.
+//! Branch instructions used for function call can jump within ±128 MiB.
+//! We need to create range extension thunks to support binaries whose
+//! .text is larger than that.
+//!
+//! Unlike most other targets, the TLSDESC access model is used by default
+//! for -fPIC to access thread-local variables instead of the less
+//! efficient GD model. You can still enable GD but it needs the
+//! -mtls-dialect=trad flag. Since GD is used rarely, we don't need to
+//! implement GD → LE relaxation.
 //!
 //! https://github.com/ARM-software/abi-aa/blob/main/aaelf64/aaelf64.rst
+//!
+//! Instructions are little-endian even on big-endian targets, where only
+//! data is byte-swapped.
 
 use std::marker::PhantomData;
 
@@ -69,8 +76,10 @@ fn write_adr(loc: &mut [u8], val: u64) {
 fn write_movn_movz(loc: &mut [u8], val: i64) {
     let rd = insn(loc) & 0b0000_0000_0110_0000_0000_0000_0001_1111;
     let imm = if val >= 0 {
+        // rewrite to movz
         0xd280_0000 | (bits(val as u64, 15, 0) << 5) as u32
     } else {
+        // rewrite to movn
         0x9280_0000 | (bits(!val as u64, 15, 0) << 5) as u32
     };
     write_insn(loc, rd | imm);
@@ -82,14 +91,17 @@ fn page(val: u64) -> u64 {
 
 // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions
 fn is_adrp(loc: &[u8]) -> bool {
+    // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/ADRP--Form-PC-relative-address-to-4KB-page-
     bits(insn(loc) as u64, 31, 24) & 0b1001_1111 == 0b1001_0000
 }
 
 fn is_ldr(loc: &[u8]) -> bool {
+    // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/LDR--immediate---Load-Register--immediate--
     bits(insn(loc) as u64, 31, 20) & 0b1111_1111_1100 == 0b1111_1001_0100
 }
 
 fn is_add(loc: &[u8]) -> bool {
+    // https://developer.arm.com/documentation/ddi0596/2021-12/Base-Instructions/ADD--immediate---Add--immediate--
     bits(insn(loc) as u64, 31, 20) & 0b1111_1111_1100 == 0b1001_0001_0000
 }
 
@@ -252,6 +264,7 @@ impl<End: Endian> Arch for Arm64Target<End> {
         let rels = isec.rels::<Self>(file);
         let mut i = 0;
 
+        // Scan relocations
         while i < rels.len() {
             let rel = &rels.at(i);
             i += 1;
@@ -268,13 +281,14 @@ impl<End: Endian> Arch for Arm64Target<End> {
             match rel.r_type {
                 R_AARCH64_MOVW_UABS_G3 => scan_absrel(ctx, isec, sym, rel),
                 R_AARCH64_ADR_GOT_PAGE => {
-                    // An ADRP+LDR pair loading a symbol's address from the
-                    // GOT can become ADRP+ADD if the address is a link-time
-                    // constant, saving the memory load. The pair must be
-                    // consecutive and use the same register.
+                    // An ADR_GOT_PAGE and GOT_LO12_NC relocation pair is used to load a
+                    // symbol's address from GOT. If the GOT value is a link-time
+                    // constant, we may be able to rewrite the ADRP+LDR instruction pair
+                    // with an ADRP+ADD, eliminating a GOT memory load.
                     let relaxable = ctx.args.relax
                         && sym.is_pcrel_linktime_const(ctx)
                         && rels.get(i).is_some_and(|rel2| {
+                            // ADRP+LDR must be consecutive and use the same register to relax.
                             rel2.r_type == R_AARCH64_LD64_GOT_LO12_NC
                                 && rel2.r_offset == rel.r_offset + 4
                                 && rel2.r_sym == rel.r_sym
@@ -436,7 +450,7 @@ impl<End: Endian> Arch for Arm64Target<End> {
                         check(val as i64, -(1 << 32), 1 << 32);
                         write_adrp(loc, val);
                     } else {
-                        // Relax the GOT-loading ADRP+LDR to ADRP+ADD.
+                        // Relax GOT-loading ADRP+LDR to an immediate ADRP+ADD
                         let val = page(sa).wrapping_sub(page(p));
                         check(val as i64, -(1 << 32), 1 << 32);
                         write_adrp(loc, val);
@@ -449,8 +463,10 @@ impl<End: Endian> Arch for Arm64Target<End> {
                     }
                 }
                 R_AARCH64_ADR_PREL_PG_HI21 | R_AARCH64_ADR_PREL_PG_HI21_NC => {
-                    // ADRP+ADD may become NOP+ADR if the target is within
-                    // ±1 MiB.
+                    // The ARM64 psABI defines that an `ADRP x0, foo` and `ADD x0, x0,
+                    // :lo12: foo` instruction pair to materialize a PC-relative address
+                    // in a register can be relaxed to `NOP` followed by `ADR x0, foo`
+                    // if foo is in PC ± 1 MiB.
                     if Self::relaxes_adrp_add(ctx, isec, i - 1) {
                         let reg = bits(insn(loc) as u64, 4, 0) as u32;
                         write_insn(loc, NOP);
@@ -471,7 +487,8 @@ impl<End: Endian> Arch for Arm64Target<End> {
                 }
                 R_AARCH64_CALL26 | R_AARCH64_JUMP26 => {
                     if sym.is_remaining_undef_weak() {
-                        // Calling an undefined weak symbol falls through.
+                        // On ARM, calling an weak undefined symbol jumps to the
+                        // next instruction.
                         write_insn(loc, NOP);
                     } else {
                         let mut val = pcrel;
@@ -558,16 +575,33 @@ impl<End: Endian> Arch for Arm64Target<End> {
                     loc,
                     (bits(sym.tlsgd_addr(ctx).wrapping_add(a), 11, 0) << 10) as u32,
                 ),
-                // TLSDESC materializes a TP-relative address in x0:
+                // ARM64 TLSDESC uses the following code sequence to materialize
+                // a TP-relative address in x0.
                 //
-                //   adrp x0, 0          # R_AARCH64_TLSDESC_ADR_PAGE21
-                //   ldr  x1, [x0]       # R_AARCH64_TLSDESC_LD64_LO12
-                //   add  x0, x0, #0     # R_AARCH64_TLSDESC_ADD_LO12
-                //   blr  x1             # R_AARCH64_TLSDESC_CALL
+                // adrp    x0, 0
+                // R_AARCH64_TLSDESC_ADR_PAGE21 foo
+                // ldr     x1, [x0]
+                // R_AARCH64_TLSDESC_LD64_LO12  foo
+                // add     x0, x0, #0
+                // R_AARCH64_TLSDESC_ADD_LO12   foo
+                // blr     x1
+                // R_AARCH64_TLSDESC_CALL       foo
                 //
-                // If the address is known at link time the sequence becomes
-                // two NOPs, `movz x0, hi, lsl #16` and `movk x0, lo`; if at
-                // load time, two NOPs, `adrp x0, gottprel` and `ldr x0`.
+                // We may relax the instructions to the following if its TP-relative
+                // address is known at link-time
+                //
+                // nop
+                // nop
+                // movz    x0, :tls_offset_hi:foo, lsl #16
+                // movk    x0, :tls_offset_lo:foo
+                //
+                // or to the following if the TP-relative address is known at
+                // process startup time.
+                //
+                // nop
+                // nop
+                // adrp    x0, :gottprel:foo
+                // ldr     x0, [x0, :gottprel_lo12:foo]
                 R_AARCH64_TLSDESC_ADR_PAGE21 => {
                     if sym.has_tlsdesc(&ctx.symbols) {
                         let val = page(sym.tlsdesc_addr(ctx).wrapping_add(a)).wrapping_sub(page(p));
@@ -606,7 +640,7 @@ impl<End: Endian> Arch for Arm64Target<End> {
                 }
                 R_AARCH64_TLSDESC_CALL => {
                     if sym.has_tlsdesc(&ctx.symbols) {
-                        // Nothing to do.
+                        // Do nothing
                     } else if sym.has_gottp(&ctx.symbols) {
                         write_insn(
                             loc,
@@ -711,13 +745,16 @@ impl<End: Endian> Arch for Arm64Target<End> {
         }
     }
 
-    /// Thunk entries are 12 bytes when the target is within ±4 GiB and
-    /// 24 bytes otherwise.
+    // The size of a thunk entry varies on ARM64 depending on the distance to
+    // the branch target. This function computes the size of each thunk entry.
     fn thunk_offsets(ctx: &Context<Self>, thunk: &Thunk, addr: u64) -> Vec<u64> {
-        // The distance between S and P only shrinks during layout, but
-        // page(S) - page(P) may still grow by a page as addresses move, so
-        // a page of margin is kept: page(0x1200) - page(0x1000) is 0 while
-        // page(0x1100) - page(0xfff) is 0x1000 for a shorter distance.
+        // The distance between S and P is only reduced by shrink_size(), but
+        // page(S) – page(P) may still increase by one page due to address
+        // changes, so we add a safety margin.
+        //
+        // For example, page(0x1200) – page(0x1000) is 0, whereas
+        // page(0x1100) – page(0xfff) is 0x1000, even though the latter
+        // distance is shorter than the former.
         let is_small = |prel: i64| is_int(prel + 0x1000, 33) && is_int(prel - 0x1000, 33);
         let mut offsets = vec![0];
         let mut off = 0;
@@ -732,13 +769,13 @@ impl<End: Endian> Arch for Arm64Target<End> {
     }
 
     fn write_thunk(ctx: &Context<Self>, thunk: &Thunk, addr: u64, buf: &mut [u8]) {
-        // A short thunk with a 33-bit displacement.
+        // Short thunk with a 33 bit displacement
         const SHORT: [u32; 3] = [
             0x9000_0010, // adrp x16, 0
             0x9100_0210, // add  x16, x16
             0xd61f_0200, // br   x16
         ];
-        // A long thunk with a 64-bit displacement.
+        // Long thunk with a 64 bit displacement
         const LONG: [u32; 6] = [
             0x1000_0010, // adr  x16, 0
             0xd2a0_0011, // movz x17, 0, lsl #16

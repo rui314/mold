@@ -1,3 +1,4 @@
+// mapfile.cc
 //! `--print-map` / `-Map`: a listing of output sections, their input
 //! sections and symbols.
 
@@ -15,7 +16,7 @@ use crate::input_files::FileId;
 use crate::input_sections::SectionRef;
 use crate::symbol::SymbolId;
 
-/// Maps each input section to the symbols defined in it, sorted by value.
+// Construct a section-to-symbol map.
 fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<SectionRef, Vec<SymbolId>> {
     let mut map: HashMap<SectionRef, Vec<SymbolId>> = HashMap::new();
     for file in &ctx.objs {
@@ -36,6 +37,7 @@ fn section_symbols<E: Arch>(ctx: &Context<E>) -> HashMap<SectionRef, Vec<SymbolI
 }
 
 pub fn print_map<E: Arch>(ctx: &Context<E>) {
+    // Print a mapfile.
     let _t = ctx.timer("print_map");
     let map = section_symbols(ctx);
 

@@ -32,8 +32,7 @@ pub enum AbsRelKind {
     DynRel,
 }
 
-/// A word-size absolute relocation (e.g. R_X86_64_64), which may need to
-/// be promoted to a dynamic relocation.
+// Represents a word-size absolute relocation (e.g. R_X86_64_64)
 #[derive(Clone, Debug)]
 pub struct AbsRel {
     pub isec: InputSectionId,
@@ -43,6 +42,8 @@ pub struct AbsRel {
     pub kind: AbsRelKind,
 }
 
+// OutputSection represents the usual output section that contains input
+// sections read from object files.
 #[derive(Debug)]
 pub struct OutputSection {
     pub hdr: ChunkHeader,
@@ -129,9 +130,7 @@ impl OutputSection {
     }
 }
 
-/// Assigns offsets to the members of an output section and computes its
-/// size. An output section may contain millions of input sections, so the
-/// members are split into groups laid out in parallel.
+// Assign offsets to OutputSection members
 pub fn compute_section_size<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
     let size = layout(ctx, id);
     ctx.output_sections[id.index()].hdr.shdr.sh_size = size;
@@ -146,12 +145,18 @@ pub fn layout<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
     const GROUP_SIZE: usize = 10000;
 
     let osec = &ctx.output_sections[id.index()];
+
+    // Text sections must to be handled by create_range_extension_thunks()
+    // if they may need range extension thunks.
     debug_assert!(
         !E::NEEDS_THUNK
             || osec.hdr.shdr.sh_flags & SHF_EXECINSTR as u64 == 0
             || ctx.args.relocatable
     );
 
+    // Since one output section may contain millions of input sections,
+    // we first split input sections into groups and assign offsets to
+    // groups.
     struct Group {
         size: u64,
         offset: u64,
@@ -184,6 +189,7 @@ pub fn layout<E: Arch>(ctx: &Context<E>, id: OutputSectionId) -> u64 {
         off += g.size;
     }
 
+    // Assign offsets to input sections.
     osec.members
         .par_chunks(GROUP_SIZE)
         .zip(&groups)
@@ -232,7 +238,7 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: OutputSectionId, buf: &mut [u8]) 
                     let filler: &[u8] = if E::FAMILY == Family::S390x
                         && (osec.hdr.name == b".init" || osec.hdr.name == b".fini")
                     {
-                        &[0x07, 0x00]
+                        &[0x07, 0x00] // nopr
                     } else {
                         E::TRAP
                     };
@@ -432,7 +438,7 @@ fn abs_rel_kind<E: Arch>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> AbsRe
     if sym.is_absolute() {
         return AbsRelKind::None;
     }
-    // The symbol's address is in the output file.
+    // True if the symbol's address is in the output file.
     if !sym.is_imported() || sym.flags() & NEEDS_CANONICAL != 0 {
         return if ctx.args.pic {
             AbsRelKind::BaseRel
@@ -445,24 +451,28 @@ fn abs_rel_kind<E: Arch>(ctx: &Context<E>, sym: &crate::symbol::Symbol) -> AbsRe
 
 fn is_absrel<E: Arch>(r: &ElfRel) -> bool {
     match E::FAMILY {
-        // R_ARM_TARGET1 is typically used for entries in .init_array and
-        // is interpreted as either ABS32 or REL32 depending on the target;
-        // all targets we support treat it as ABS32.
+        // On ARM32, R_ARM_TARGET1 is typically used for entries in .init_array
+        // and is interpreted as either ABS32 or REL32 depending on the target.
+        // All targets we support handle it as if it were a ABS32.
         Family::Arm32 => r.r_type == R_ARM_ABS32 || r.r_type == R_ARM_TARGET1,
-        // SPARC64 has separate relocations for aligned and unaligned words.
+        // SPARC64 defines two separate relocations for aligned and unaligned words.
         Family::Sparc64 => r.r_type == R_SPARC_64 || r.r_type == R_SPARC_UA64,
         _ => r.r_type == E::R_ABS,
     }
 }
 
-/// Collects word-size absolute relocations, which are the only ones that
-/// can be promoted to dynamic relocations, and classifies them.
+// Scan word-size absolute relocations (e.g. R_X86_64_64). This is
+// separated from scan_relocations() because only such relocations can
+// be promoted to dynamic relocations.
 pub fn scan_abs_relocations<E: Arch>(
     ctx: &Context<E>,
     id: OutputSectionId,
 ) -> (Vec<AbsRel>, Vec<u64>) {
     let osec = &ctx.output_sections[id.index()];
 
+    // Collect all word-size absolute relocations. Count them per member
+    // first so that they can be written to their final positions in
+    // parallel, without a per-member vector.
     let mut abs_rels: Vec<AbsRel> = osec
         .members
         .par_iter()
@@ -482,11 +492,14 @@ pub fn scan_abs_relocations<E: Arch>(
         })
         .collect();
 
-    // In a position-dependent executable, dynamic relocations in read-only
-    // sections can sometimes be avoided by promoting symbols to canonical
-    // PLT entries or copy relocations.
+    // We can sometimes avoid creating dynamic relocations in read-only
+    // sections by promoting symbols to canonical PLT or copy relocations.
     let promote = !ctx.args.pic && osec.hdr.shdr.sh_flags & SHF_WRITE as u64 == 0;
 
+    // Classify relocations and retain exact per-shard output counts. A
+    // single output section such as .data.rel.ro can account for most of
+    // an output's absolute relocations, so this runs in the same parallel
+    // shards as write_dynrels().
     let counts: Vec<u64> = abs_rels
         .par_chunks_mut(DYNREL_SHARD_SIZE)
         .map(|shard| {
@@ -504,7 +517,8 @@ pub fn scan_abs_relocations<E: Arch>(
                     count += 1;
                 }
 
-                // A relocation against a read-only section needs DT_TEXTREL.
+                // If we have a relocation against a read-only section, we need to
+                // set the DT_TEXTREL flag for the loader.
                 let isec = ctx.input_section(r.isec);
                 if r.kind != AbsRelKind::None && isec.sh_flags & SHF_WRITE as u64 == 0 {
                     if ctx.args.z_text {
@@ -537,7 +551,7 @@ pub fn scan_abs_relocations<E: Arch>(
     (abs_rels, dynrel_offsets)
 }
 
-/// Sizes the symbols synthesized for range extension thunks.
+// Compute spaces needed for thunk symbols
 pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
     if !E::NEEDS_THUNK {
         return;
@@ -547,7 +561,9 @@ pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
     osec.hdr.strtab_size = 0;
     osec.hdr.num_local_symtab = 0;
     for thunk in &osec.thunks {
-        // ARM32 gets "$t", "$a" and "$d" mapping symbols per thunk entry.
+        // For ARM32, we emit additional symbol "$t", "$a" and "$d" for
+        // each thunk to mark the beginning of Thumb code, ARM code and
+        // data, respectively.
         let per_entry = if E::FAMILY == Family::Arm32 { 4 } else { 1 };
         osec.hdr.num_local_symtab += (thunk.symbols.len() * per_entry) as u32;
         for &sym in &thunk.symbols {
@@ -556,8 +572,9 @@ pub fn compute_symtab_size<E: Arch>(ctx: &mut Context<E>, id: OutputSectionId) {
     }
 }
 
-/// Produces the symbols marking thunk locations, which help disassembly
-/// and debugging.
+// If we create range extension thunks, we also synthesize symbols to mark
+// the locations of thunks. Creating such symbols is optional, but it helps
+// disassembling and/or debugging our output.
 pub fn populate_symtab<E: Arch>(
     ctx: &Context<E>,
     id: OutputSectionId,
@@ -582,6 +599,7 @@ pub fn populate_symtab<E: Arch>(
             let suffix = format!("${}", thunk.name);
             block.push_synthetic::<E>(name, suffix.as_bytes(), func(addr));
             if E::FAMILY == Family::Arm32 {
+                // Emit "$t", "$a" and "$d" if ARM32.
                 block.push_mapping_symbol::<E>(crate::chunks::symtab::strtab::THUMB, func(addr));
                 block.push_mapping_symbol::<E>(crate::chunks::symtab::strtab::ARM, func(addr + 4));
                 block

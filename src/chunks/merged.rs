@@ -45,6 +45,9 @@ struct ShardLayout {
     fragments: Vec<EntryId>,
 }
 
+// MergedSection represents a section containing a constant pool such as
+// string literals or floating-point constants. It is created from
+// MergeableSection.
 #[derive(Debug)]
 pub struct MergedSection {
     pub hdr: ChunkHeader,
@@ -108,9 +111,6 @@ impl fmt::Display for FileName<'_> {
     }
 }
 
-/// Normalizes the name of a merged output section. GCC creates sections
-/// named `.rodata.strN.<mangled-symbol>.M` or `.rodata.cst.<symbol>.cstN`;
-/// the symbol name part is dropped.
 fn merged_output_name(
     args: &Args,
     name: &'static BStr,
@@ -124,6 +124,10 @@ fn merged_output_name(
     if !args.unique.is_empty() && args.unique.find(name) != -1 {
         return name;
     }
+
+    // GCC seems to create sections named ".rodata.strN.<mangled-symbol-name>.M"
+    // or ".rodata.cst.<mangled-symbol-name.cstN". We want to eliminate the
+    // symbol name part from the section name.
     if name.starts_with(b".rodata.") {
         let name2 = if flags & SHF_STRINGS as u64 != 0 {
             format!(".rodata.str{entsize}.{addralign}")
@@ -192,9 +196,12 @@ impl MergedSection {
                 .map(|i| MergedSectionId(i as u32))
         };
 
+        // Search for an exiting output section.
         if let Some(id) = find(&sections.read().unwrap()) {
             return Some(id);
         }
+
+        // Create a new output section.
         let mut sections = sections.write().unwrap();
         if let Some(id) = find(&sections) {
             return Some(id);
@@ -203,8 +210,6 @@ impl MergedSection {
         Some(MergedSectionId(sections.len() as u32 - 1))
     }
 
-    /// Inserts a piece of data. Only memory-mapped strings are subject to
-    /// garbage collection; strings in debug info are kept.
     pub fn insert(
         &self,
         data: &'static [u8],
@@ -212,6 +217,9 @@ impl MergedSection {
         p2align: u8,
         gc_sections: bool,
     ) -> EntryId {
+        // Even if GC is enabled, we garbage-collect only memory-mapped strings.
+        // Non-memory-allocated strings are typically identifiers used by debug info.
+        // To remove such strings, use the `strip` command.
         let is_alive = !gc_sections || !self.is_alloc();
         let (id, frag, _) = self
             .map
@@ -410,8 +418,7 @@ pub fn resolve_sections<E: Arch>(
         });
 }
 
-/// Adds an identification string, and the command line under
-/// `MOLD_DEBUG`, to `.comment`.
+// Add strings to .comment
 fn add_comment_strings(msec: &MergedSection, gc_sections: bool, cmdline_args: &[String]) {
     let add = |s: String| {
         let mut bytes = s.into_bytes();
@@ -419,7 +426,10 @@ fn add_comment_strings(msec: &MergedSection, gc_sections: bool, cmdline_args: &[
         let data = crate::util::leak_bytes(bytes);
         msec.insert(data, xxhash_rust::xxh3::xxh3_64(data), 0, gc_sections);
     };
+    // Add an identification string to .comment.
     add(crate::args::VERSION.to_string());
+
+    // Embed command line arguments for debugging.
     if std::env::var("MOLD_DEBUG").is_ok_and(|v| !v.is_empty()) {
         add(format!(
             "mold command line: {}",
@@ -515,7 +525,8 @@ pub fn write_to<E: Arch>(ctx: &Context<E>, id: MergedSectionId, buf: &mut [u8]) 
     let msec = &ctx.merged_sections[id.index()];
     let frags = &msec.fragments;
 
-    // Alignment may leave gaps between fragments, which must be zeroed.
+    // There might be gaps between strings to satisfy alignment requirements.
+    // If that's the case, we need to zero-clear them.
     let has_gaps =
         msec.hdr.shdr.sh_addralign > 1 && msec.hdr.shdr.sh_addralign != msec.hdr.shdr.sh_entsize;
     if has_gaps {

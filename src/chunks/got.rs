@@ -7,9 +7,9 @@ use crate::elf::*;
 use crate::input_files::SymtabBlock;
 use crate::symbol::{AddrFlags, SymbolId};
 
-/// `.got` is a linker-synthesized table of pointer-sized entries holding
-/// runtime addresses of global variables and TP-relative offsets of
-/// thread-local variables.
+// .got is a linker-synthesized constant pool whose entry size is the same
+// as the pointer size. It is used to store runtime addresses of global
+// variables and TP-relative offsets of thread-local variables.
 #[derive(Debug)]
 pub struct GotSection {
     pub hdr: ChunkHeader,
@@ -25,8 +25,9 @@ impl GotSection {
         let mut hdr = ChunkHeader::new(".got", SHT_PROGBITS, (SHF_ALLOC | SHF_WRITE) as u64);
         hdr.is_relro = true;
         hdr.shdr.sh_addralign = E::WORD_SIZE as u64;
-        // .got always exists so that _GLOBAL_OFFSET_TABLE_ has something
-        // to point to. s390x reserves GOT[1] and GOT[2] as well.
+        // We always create a .got so that _GLOBAL_OFFSET_TABLE_ has
+        // something to point to. s390x psABI define GOT[1] and GOT[2]
+        // as reserved slots, so we allocate two more for them.
         let reserved = if E::FAMILY == Family::S390x { 3 } else { 1 };
         hdr.shdr.sh_size = reserved * E::WORD_SIZE as u64;
         GotSection {
@@ -61,7 +62,8 @@ pub mod got {
         let idx = (ctx.got.hdr.shdr.sh_size / word::<E>()) as u32;
         let is_pde_ifunc = ctx.symbols[sym].is_pde_ifunc(ctx);
         ctx.symbols.aux_mut(sym).got_idx = Some(idx);
-        // An IFUNC in a position-dependent executable uses two GOT slots.
+        // An IFUNC symbol uses two GOT slots in a position-dependent
+        // executable.
         ctx.got.hdr.shdr.sh_size += if is_pde_ifunc {
             2 * word::<E>()
         } else {
@@ -84,10 +86,13 @@ pub mod got {
         ctx.got.tlsgd_syms.push(sym);
     }
 
-    /// TLSDESC GOT slots always get a dynamic relocation, since their
-    /// values depend on the libc. A static executable has no dynamic
-    /// relocations, so TLSDESC is always relaxed away there.
     pub fn add_tlsdesc_symbol<E: Arch>(ctx: &mut Context<E>, sym: SymbolId) {
+        // TLSDESC's GOT slot values may vary depending on libc, so we
+        // always emit a dynamic relocation for each TLSDESC entry.
+        //
+        // If dynamic relocation is not available (i.e. if we are creating a
+        // statically-linked executable), we always relax TLSDESC relocations
+        // so that no TLSDESC relocation exist at runtime.
         debug_assert!(E::SUPPORTS_TLSDESC);
         debug_assert!(!ctx.args.is_static);
         let idx = (ctx.got.hdr.shdr.sh_size / word::<E>()) as u32;
@@ -109,9 +114,21 @@ pub mod got {
         sym: Option<SymbolId>,
     }
 
-    /// Computes the GOT contents. An entry whose value is known at link
-    /// time is filled in directly; otherwise a dynamic relocation lets the
-    /// loader fill it.
+    // Get .got and .rel.dyn contents.
+    //
+    // .got is a linker-synthesized constant pool whose entry is of pointer
+    // size. If we know a correct value for an entry, we'll just set that value
+    // to the entry. Otherwise, we'll create a dynamic relocation and let the
+    // dynamic linker to fill the entry at load-time.
+    //
+    // Most GOT entries contain addresses of global variable. If a global
+    // variable is an imported symbol, we don't know its address until runtime.
+    // GOT contains the addresses of such variables at runtime so that we can
+    // access imported global variables via GOT.
+    //
+    // Thread-local variables (TLVs) also use GOT entries. We need them because
+    // TLVs are accessed in a different way than the ordinary global variables.
+    // Their addresses are not unique; each thread has its own copy of TLVs.
     fn got_entries<E: Arch>(ctx: &Context<E>) -> Vec<GotEntry> {
         let mut entries = Vec::new();
         let mut add = |idx: u32, val: u64, r_type: u32, sym: Option<SymbolId>| {
@@ -124,6 +141,7 @@ pub mod got {
         };
         let got = &ctx.got;
 
+        // Create GOT entries for ordinary symbols
         for &id in &got.got_syms {
             let sym = &ctx.symbols[id];
             let idx = sym.got_idx(&ctx.symbols).unwrap();
@@ -152,8 +170,10 @@ pub mod got {
             }
 
             if sym.is_imported() {
+                // If a symbol is imported, let the dynamic linker to resolve it.
                 add(idx, 0, E::R_GLOB_DAT, Some(id));
             } else if ctx.args.pic && sym.is_relative() {
+                // We know the symbol's address, but it needs a base relocation.
                 add(
                     idx,
                     sym.addr_with(ctx, AddrFlags::NO_PLT),
@@ -161,19 +181,22 @@ pub mod got {
                     None,
                 );
             } else {
+                // We know the symbol's exact run-time address at link-time.
                 add(idx, sym.addr_with(ctx, AddrFlags::NO_PLT), R_NONE, None);
             }
         }
 
+        // Create GOT entries for TLVs.
         for &id in &got.tlsgd_syms {
             let sym = &ctx.symbols[id];
             let idx = sym.tlsgd_idx(&ctx.symbols).unwrap();
             if sym.is_imported() {
+                // If a symbol is imported, let the dynamic linker to resolve it.
                 add(idx, 0, E::R_DTPMOD, Some(id));
                 add(idx + 1, 0, E::R_DTPOFF, Some(id));
             } else if ctx.args.shared {
-                // The offset within the TLS block is known but the module
-                // ID isn't.
+                // If we are creating a shared library, we know the TLV's offset
+                // within the current TLS block. We don't know the module ID though.
                 add(idx, 0, E::R_DTPMOD, None);
                 add(
                     idx + 1,
@@ -182,7 +205,8 @@ pub mod got {
                     None,
                 );
             } else {
-                // Module ID 1 is the main executable.
+                // If we are creating an executable, we know both the module ID and
+                // the offset. Module ID 1 indicates the main executable.
                 add(idx, 1, R_NONE, None);
                 add(
                     idx + 1,
@@ -197,6 +221,12 @@ pub mod got {
             for &id in &got.tlsdesc_syms {
                 let sym = &ctx.symbols[id];
                 let idx = sym.tlsdesc_idx(&ctx.symbols).unwrap();
+
+                // TLSDESC uses two consecutive GOT slots, and a single TLSDESC
+                // dynamic relocation fills both. The actual values of the slots
+                // vary depending on libc, so we can't precompute their values.
+                // We always emit a dynamic relocation for each incoming TLSDESC
+                // reloc.
                 if sym.is_imported() {
                     add(idx, 0, r_tlsdesc, Some(id));
                 } else {
@@ -214,8 +244,12 @@ pub mod got {
             let sym = &ctx.symbols[id];
             let idx = sym.gottp_idx(&ctx.symbols).unwrap();
             if sym.is_imported() {
+                // If we know nothing about the symbol, let the dynamic linker
+                // to fill the GOT entry.
                 add(idx, 0, E::R_TPOFF, Some(id));
             } else if ctx.args.shared {
+                // If we know the offset within the current thread vector,
+                // let the dynamic linker to adjust it.
                 add(
                     idx,
                     sym.addr(ctx).wrapping_sub(ctx.tls_begin),
@@ -223,6 +257,8 @@ pub mod got {
                     None,
                 );
             } else {
+                // Otherwise, we know the offset from the thread pointer (TP) at
+                // link-time, so we can fill the GOT entry directly.
                 add(idx, sym.addr(ctx).wrapping_sub(ctx.tp_addr), R_NONE, None);
             }
         }
@@ -231,45 +267,50 @@ pub mod got {
             if ctx.args.shared {
                 add(idx, 0, E::R_DTPMOD, None);
             } else {
-                add(idx, 1, R_NONE, None);
+                add(idx, 1, R_NONE, None); // 1 means the main executable
             }
         }
         entries
     }
 
-    /// Counts the dynamic relocations the GOT emits without computing
-    /// entry values, which is too expensive for every layout iteration.
-    /// Must mirror `got_entries`.
+    // Count the dynamic relocations that get_got_entries will emit, without
+    // materializing the entries; computing each entry's value involves a
+    // symbol address lookup, which is too expensive for a function that runs
+    // on every layout iteration. The cases below must mirror the r_type
+    // choices in get_got_entries.
     pub fn num_dynrels<E: Arch>(ctx: &Context<E>) -> u64 {
         let got = &ctx.got;
         let mut n = 0;
         for &id in &got.got_syms {
             let sym = &ctx.symbols[id];
-            if (E::SUPPORTS_IFUNC && sym.is_ifunc())
-                || sym.is_imported()
-                || (ctx.args.pic && sym.is_relative())
-            {
-                n += 1;
+            if E::SUPPORTS_IFUNC && sym.is_ifunc() {
+                n += 1; // R_IRELATIVE
+                continue;
+            }
+            if sym.is_imported() {
+                n += 1; // R_GLOB_DAT
+            } else if ctx.args.pic && sym.is_relative() {
+                n += 1; // R_RELATIVE
             }
         }
         for &id in &got.tlsgd_syms {
             let sym = &ctx.symbols[id];
             if sym.is_imported() {
-                n += 2;
+                n += 2; // R_DTPMOD + R_DTPOFF
             } else if ctx.args.shared {
-                n += 1;
+                n += 1; // R_DTPMOD
             }
         }
         if E::SUPPORTS_TLSDESC {
-            n += got.tlsdesc_syms.len() as u64;
+            n += got.tlsdesc_syms.len() as u64; // R_TLSDESC each
         }
         for &id in &got.gottp_syms {
             if ctx.symbols[id].is_imported() || ctx.args.shared {
-                n += 1;
+                n += 1; // R_TPOFF
             }
         }
         if got.tlsld_idx.is_some() && ctx.args.shared {
-            n += 1;
+            n += 1; // R_DTPMOD
         }
         n
     }
@@ -311,6 +352,7 @@ pub mod got {
         debug_assert_eq!(i, out.len());
     }
 
+    // Fill .got.
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
         buf.fill(0);
         let w = word::<E>() as usize;
@@ -322,12 +364,17 @@ pub mod got {
             }
         };
 
-        // s390x's psABI requires GOT[0] to hold the address of _DYNAMIC.
-        // glibc's arm64 -static-pie code path wrongly assumes the same.
+        // s390x psABI requires GOT[0] to be set to the link-time value of _DYNAMIC.
         if let Some(dynamic) = &ctx.dynamic {
-            if E::FAMILY == Family::S390x
-                || (E::FAMILY == Family::Arm64 && ctx.args.is_static && ctx.args.pie)
-            {
+            if E::FAMILY == Family::S390x {
+                write(buf, 0, dynamic.hdr.shdr.sh_addr);
+            }
+
+            // ARM64 psABI doesn't say anything about GOT[0], but glibc/arm64's code
+            // path for -static-pie wrongly assumed that GOT[0] refers to _DYNAMIC.
+            //
+            // https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=43d06ed218fc8be5
+            if E::FAMILY == Family::Arm64 && ctx.args.is_static && ctx.args.pie {
                 write(buf, 0, dynamic.hdr.shdr.sh_addr);
             }
         }
@@ -339,10 +386,14 @@ pub mod got {
                 continue;
             }
             if ctx.args.apply_dynamic_relocs {
-                // A TLSDESC relocation fixes two consecutive slots: a
-                // function pointer and its argument. The addend applies to
-                // the argument, which is in the second slot, except on ARM32
-                // which uses the inverted layout.
+                // A single TLSDESC relocation fixes two consecutive GOT slots
+                // where one slot holds a function pointer and the other an
+                // argument to the function. An addend should be applied not to
+                // the function pointer but to the function argument, which is
+                // usually stored to the second slot.
+                //
+                // ARM32 employs the inverted layout for some reason, so an
+                // addend is applied to the first slot.
                 let mut i = ent.idx as usize;
                 if E::SUPPORTS_TLSDESC
                     && E::FAMILY != Family::Arm32
@@ -415,7 +466,8 @@ pub mod got {
     }
 }
 
-/// `.got.plt` holds the function pointers used by `.plt`.
+// .got.plt is similar to .got in the sense that it is a table containing
+// pointers. The contents in .got.plt are function pointers used by .plt.
 #[derive(Debug)]
 pub struct GotPltSection {
     pub hdr: ChunkHeader,
@@ -455,8 +507,9 @@ pub mod gotplt {
     }
 
     pub fn copy_buf<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
-        // On PPC64 the loader fills .got.plt itself, finding the PLT
-        // through DT_PPC64_GLINK.
+        // On PPC64, it's dynamic loader responsibility to fill the .got.plt
+        // section. Dynamic loader finds the address of the first PLT entry by
+        // DT_PPC64_GLINK and assumes that each PLT entry is 4 bytes long.
         if E::IS_PPC64 {
             return;
         }
@@ -468,8 +521,8 @@ pub mod gotplt {
                 E::Endian::write_u32(&mut buf[idx * w..], val as u32);
             }
         };
-        // The first slot points to _DYNAMIC as the psABI requests; the
-        // next two are reserved for the loader.
+        // The first slot of .got.plt points to _DYNAMIC, as requested by
+        // the psABI. The second and the third slots are reserved by the psABI.
         write(
             buf,
             0,
@@ -483,8 +536,9 @@ pub mod gotplt {
     }
 }
 
-/// `.plt` contains stubs that branch to the real function entry points,
-/// used for lazy symbol resolution.
+// .plt contains linker-synthesized stub code that acts as if they are
+// functions. They are in fact immediately branches to real function entry
+// points. .plt is used as a stub for runtime lazy symbol resolution.
 #[derive(Debug)]
 pub struct PltSection {
     pub hdr: ChunkHeader,
@@ -510,26 +564,31 @@ impl PltSection {
 pub mod plt {
     use super::*;
 
-    /// SPARC uses 32-byte "small" PLT entries until the table grows past
-    /// 0x100000 bytes, then switches to a "large" format.
+    // On SPARC, .plt uses 32-byte "small" entries until it grows past 0x100000
+    // bytes (the reach of a small entry's branch to the resolver), after which
+    // it switches to a "large" entry format. This is how many small entries fit.
     pub const SPARC_NUM_SMALL_PLT: u64 = (0x100000 - 128) / 32;
 
     /// The offset of a PLT entry within `.plt`.
     pub fn entry_offset<E: Arch>(idx: u32) -> u64 {
         let idx = idx as u64;
         match E::FAMILY {
-            // PPC64 ELFv1 entries are 8 bytes for indices below 32768 and
-            // 12 bytes beyond.
             Family::Ppc64V1 => {
+                // The PPC64 ELFv1 ABI requires PLT entries to vary in size
+                // depending on their indices. For entries whose PLT index is
+                // less than 32768, the entry size is 8 bytes. Other entries are
+                // 12 bytes long.
                 if idx < 0x8000 {
                     E::PLT_HDR_SIZE + idx * 8
                 } else {
                     E::PLT_HDR_SIZE + 0x8000 * 8 + (idx - 0x8000) * 12
                 }
             }
-            // SPARC large entries come in blocks of 160 24-byte stubs
-            // followed by 160 8-byte pointers.
             Family::Sparc64 => {
+                // SPARC large PLT entries are grouped into blocks of 160, each holding
+                // 160 24-byte code stubs followed by 160 8-byte data pointers (so a
+                // stub's `ldx` reaches its pointer within a signed 13-bit offset). This
+                // returns the offset of pltidx's code stub.
                 if idx < SPARC_NUM_SMALL_PLT {
                     E::PLT_HDR_SIZE + idx * E::PLT_SIZE
                 } else {
@@ -612,8 +671,10 @@ pub mod plt {
     }
 }
 
-/// `.plt.got` is like `.plt` but for symbols that already have a GOT
-/// entry; resolving them lazily through `.plt` would be pointless.
+// .plt.got is similar to .plt but doesn't support lazy symbol resolution.
+// If we have the same symbol already in .got, resolving the same symbol
+// lazily for .plt is just waste of time. Therefore, in such case, we use
+// .plt.got for that symbol instead.
 #[derive(Debug)]
 pub struct PltGotSection {
     pub hdr: ChunkHeader,
@@ -693,7 +754,7 @@ pub mod pltgot {
     }
 }
 
-/// `.rela.plt` holds the relocations for `.plt`.
+// .rel.plt contains relocation information for .plt.
 #[derive(Debug)]
 pub struct RelPltSection {
     pub hdr: ChunkHeader,
@@ -729,8 +790,12 @@ pub mod relplt {
         for (i, &id) in ctx.plt.symbols.iter().enumerate() {
             let sym = &ctx.symbols[id];
             let rel = if E::IS_SPARC {
-                // SPARC has no .got.plt: its .plt is writable and the
-                // loader patches the stubs in place.
+                // SPARC doesn't have a .got.plt because its role is merged to .plt.
+                // On SPARC, .plt is writable (!) and the dynamic linker directly
+                // modifies .plt's machine instructions as it resolves dynamic symbols.
+                // Therefore, it doesn't need a separate section to store the symbol
+                // resolution results. That is of course horrible from the security
+                // point of view, though.
                 let idx = sym.plt_idx(&ctx.symbols).unwrap() as u64;
                 if idx < plt::SPARC_NUM_SMALL_PLT {
                     ElfRel::new(
@@ -740,6 +805,10 @@ pub mod relplt {
                         0,
                     )
                 } else {
+                    // A large PLT entry resolves through a data pointer rather than
+                    // self-modifying code, so its relocation targets that pointer and
+                    // carries -(call address) as the addend, making the loader store
+                    // (target - call) there (see arch-sparc64.cc).
                     let call = sym.plt_addr(ctx) + 4;
                     let ptr = ctx.plt.hdr.shdr.sh_addr
                         + crate::arch::sparc64::plt_ptr_offset(ctx.plt.symbols.len(), idx);

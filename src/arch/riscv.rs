@@ -1,14 +1,20 @@
-//! RISC-V, 64- and 32-bit, in either byte order.
+// arch-riscv.cc
+//! RISC-V is a clean RISC ISA. It supports PC-relative load/store for
+//! position-independent code. Its 32-bit and 64-bit ISAs are almost
+//! identical. That is, you can think RV32 as a RV64 without 64-bit
+//! operations. In this file, we support both RV64 and RV32.
 //!
-//! RISC-V is a clean RISC ISA with PC-relative loads and stores for
-//! position-independent code, and RV32 is essentially RV64 without the
-//! 64-bit operations. Big-endian RISC-V exists as an extension; even then
-//! instructions are little-endian, only data is byte-swapped.
+//! RISC-V is essentially little-endian, but the big-endian version is
+//! available as an extension. GCC supports `-mbig-endian` to generate
+//! big-endian code. Even in big-endian mode, machine instructions are
+//! defined to be encoded in little-endian, though. Only the behavior of
+//! load/store instructions are different between LE RISC-V and BE RISC-V.
 //!
-//! What makes RISC-V unusual from the linker's point of view is that
-//! sections can shrink while being copied: branches are emitted as
-//! instruction pairs reaching ±2 GiB, and the linker replaces them with a
-//! single instruction when the target is close enough. See `relax.rs`.
+//! From the linker's point of view, the RISC-V's psABI is unique because
+//! sections in input object files can be shrunk while being copied to the
+//! output file. That is contrary to other psABIs in which sections are an
+//! atomic unit of copying. See file comments in shrink-sections.cc for
+//! details.
 //!
 //! https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
 
@@ -94,10 +100,12 @@ fn write_btype(loc: &mut [u8], val: u64) {
     );
 }
 
-/// U-type instructions set the upper 20 bits of a register, and a
-/// following I-type instruction adds a sign-extended 12-bit immediate;
-/// 0x800 compensates for the sign extension.
 fn write_utype(loc: &mut [u8], val: u64) {
+    // U-type instructions are used in combination with I-type
+    // instructions. U-type insn sets an immediate to the upper 20-bits
+    // of a register. I-type insn sign-extends a 12-bits immediate and
+    // adds it to a register value to construct a complete value. 0x800
+    // is added here to compensate for the sign-extension.
     write32(
         loc,
         (insn32(loc) & 0b000000_00000_00000_000_11111_1111111)
@@ -175,13 +183,25 @@ fn is_hi20(r_type: u32) -> bool {
     )
 }
 
-/// Finds the HI20 relocation a LO12 relocation is paired with.
-///
-/// AUIPC materializes the upper 52 bits of a PC-relative address and a
-/// following instruction the low 12 bits, but the pair need not be
-/// adjacent. So the compiler creates a local symbol at the AUIPC and the
-/// LO12 relocation refers to that symbol. The pair usually is adjacent,
-/// which a linear search from `i` exploits.
+// RISC-V generally uses the AUIPC + ADDI/LW/SW/etc instruction pair
+// to access the AUIPC's address ± 2 GiB. AUIPC materializes the most
+// significant 52 bits in a PC-relative manner, and the following
+// instruction specifies the remaining least significant 12 bits.
+// There are several HI20 and LO12 relocation types for them.
+//
+// LO12 relocations need to materialize an address relative to AUIPC's
+// address, not relative to the instruction that the relocation
+// directly refers to.
+//
+// The problem here is that the instruction pair may not always be
+// adjacent. We need a mechanism to find a paired AUIPC for a given
+// LO12 relocation. For this purpose, the compiler creates a local
+// symbol for each location to which HI20 refers, and the LO12
+// relocation refers to that symbol.
+//
+// This function returns a paired HI20 relocation for a given LO12.
+// Since the instructions are typically adjacent, we do a linear
+// search.
 fn find_paired_reloc<E: Arch>(
     ctx: &Context<E>,
     isec: &InputSection,
@@ -208,14 +228,13 @@ fn find_paired_reloc<E: Arch>(
     );
 }
 
-/// Whether the relocation at `i` heads the GOT-loading instruction pair
-/// `la rd, foo` expands to:
-///
-/// ```text
-/// .L0:
-///   auipc rd, 0      # R_RISCV_GOT_HI20(foo),     R_RISCV_RELAX
-///   ld    rd, 0(rd)  # R_RISCV_PCREL_LO12_I(.L0), R_RISCV_RELAX
-/// ```
+// Returns true if isec's i'th relocation refers to the following
+// GOT-load instructioon pair, which is an expeanded form of
+// `la t0, foo` pseudo assembly instruction.
+//
+// .L0
+//   auipc t0, 0      # R_RISCV_GOT_HI20(foo),     R_RISCV_RELAX
+//   ld    t0, 0(t0)  # R_RISCV_PCREL_LO12_I(.L0), R_RISCV_RELAX
 fn is_got_load_pair<E: Arch>(ctx: &Context<E>, isec: &InputSection, i: usize) -> bool {
     let rels = isec.rels::<E>(&ctx.objs[isec.file.index()]);
     let file = &ctx.objs[isec.file.index()];
@@ -245,7 +264,10 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
     const PLT_HDR_SIZE: u64 = 32;
     const PLT_SIZE: u64 = 16;
     const PLTGOT_SIZE: u64 = 16;
-    const TRAP: &'static [u8] = &[0x02, 0x90]; // c.ebreak
+    // The C++ RV64LE and RV32LE target structs each record this instruction:
+    // c.ebreak
+    // c.ebreak
+    const TRAP: &'static [u8] = &[0x02, 0x90];
 
     const R_COPY: u32 = R_RISCV_COPY;
     const R_GLOB_DAT: u32 = if IS_64 { R_RISCV_64 } else { R_RISCV_32 };
@@ -378,6 +400,8 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
+
+        // Scan relocations
         isec.for_each_reloc::<Self>(ctx, |rel, _| {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
                 return;
@@ -509,7 +533,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                         write16(loc, 0b101_00000000000_01);
                         write_cjtype(loc, pcrel);
                     } else if removed == 6 && rd == 1 {
-                        // auipc + jalr -> c.jal (RV32 only)
+                        // auipc + jalr -> c.jal
                         debug_assert!(!IS_64);
                         write16(loc, 0b001_00000000000_01);
                         write_cjtype(loc, pcrel);
@@ -523,17 +547,21 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     }
                 }
                 R_RISCV_GOT_HI20 => {
-                    // This relocation usually heads an AUIPC+LD pair loading
-                    // a symbol value from the GOT. If the value is a
-                    // link-time constant, it can be materialized directly.
+                    // This relocation usually refers to an AUIPC + LD instruction
+                    // pair to load a symbol value from the GOT. If the symbol value
+                    // is actually a link-time constant, we can materialize the value
+                    // directly into a register to eliminate a memory load.
                     let rd = rd(orig);
                     if removed == 6 {
-                        // c.li rd, val
+                        // c.li <rd>, val
                         write16(loc, 0b010_0_00000_00000_01 | (rd as u16) << 7);
                         write_citype(loc, s);
+
+                        // The value is materialized directly, so neither this nor the paired
+                        // PCREL_LO12 (the load) needs a relocation anymore.
                         i += 3;
                     } else if removed == 4 {
-                        // addi rd, zero, val
+                        // addi <rd>, zero, val
                         write32(loc, 0b0010011 | (rd << 7));
                         write_itype(loc, s);
                         i += 3;
@@ -544,8 +572,10 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                             && is_got_load_pair(ctx, isec, i - 1)
                             && is_int(pcrel as i64, 32)
                         {
-                            // auipc rd, %hi20(val); addi rd, rd, %lo12(val)
+                            // auipc <rd>, %hi20(val)
                             utype(loc, pcrel);
+
+                            // addi <rd>, <rd>, %lo12(val)
                             write32(&mut loc[4..], 0b0010011 | (rd << 15) | (rd << 7));
                             write_itype(&mut loc[4..], pcrel);
                             i += 3;
@@ -589,10 +619,11 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     }
                 }
                 R_RISCV_HI20 => {
-                    // `lui` materializes the upper bits of a link-time
-                    // constant; it may have been compressed to `c.lui` or
-                    // removed by relaxation.
+                    // lui (+ addi) => an instruction holding a link-time constant. The lui
+                    // may be compressed to c.lui (removed 2 bytes) or deleted outright
+                    // (removed 4 bytes); either way it no longer needs a relocation.
                     if removed == 2 {
+                        // Rewrite LUI with C.LUI
                         let rd = rd(orig);
                         write16(loc, 0b011_0_00000_00000_01 | (rd as u16) << 7);
                         write_citype(loc, sa.wrapping_add(0x800) >> 12);
@@ -606,21 +637,26 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     } else {
                         write_stype(loc, sa);
                     }
-                    // If the address fits in 12 bits, the `lui` may have
-                    // been removed, so address relative to the zero
-                    // register.
+                    // Rewrite `lw t1, 0(t0)` with `lw t1, 0(x0)` if the address is
+                    // accessible relative to the zero register because if that's the
+                    // case, corresponding LUI might have been removed by relaxation.
                     if is_int(sa as i64, 12) {
                         set_rs1(loc, 0);
                     }
                 }
                 R_RISCV_TPREL_HI20 => {
                     debug_assert!(removed == 0 || removed == 4);
+
+                    // lui + add => deleted; the variable is accessed relative to tp directly.
                     if removed == 0 {
                         utype(loc, sa.wrapping_sub(ctx.tp_addr));
                     }
                 }
-                // This only annotates an ADD that relaxation may remove.
-                R_RISCV_TPREL_ADD => {}
+                R_RISCV_TPREL_ADD => {
+                    // This relocation just annotates an ADD instruction that can be
+                    // removed when a TPREL is relaxed. No value is needed to be
+                    // written.
+                }
                 R_RISCV_TPREL_LO12_I | R_RISCV_TPREL_LO12_S => {
                     let val = sa.wrapping_sub(ctx.tp_addr);
                     if rel.r_type == R_RISCV_TPREL_LO12_I {
@@ -628,26 +664,50 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     } else {
                         write_stype(loc, val);
                     }
-                    // If the offset fits in 12 bits, address relative to
-                    // tp (x4) directly.
+                    // Rewrite `lw t1, 0(t0)` with `lw t1, 0(tp)` if the address is
+                    // directly accessible using tp. tp is x4.
                     if is_int(val as i64, 12) {
                         set_rs1(loc, 4);
                     }
                 }
-                // TLSDESC materializes a TP-relative address in a0:
+                // RISC-V TLSDESC uses the following code sequence to materialize
+                // a TP-relative address in a0.
                 //
                 //   .L0:
-                //   auipc  tX, 0          # R_RISCV_TLSDESC_HI20        foo
-                //   l[d|w] tY, tX, 0      # R_RISCV_TLSDESC_LOAD_LO12_I .L0
-                //   addi   a0, tX, 0      # R_RISCV_TLSDESC_ADD_LO12_I  .L0
-                //   jalr   t0, tY         # R_RISCV_TLSDESC_CALL        .L0
+                //   auipc  tX, 0
+                //       R_RISCV_TLSDESC_HI20         foo
+                //   l[d|w] tY, tX, 0
+                //       R_RISCV_TLSDESC_LOAD_LO12_I  .L0
+                //   addi   a0, tX, 0
+                //       R_RISCV_TLSDESC_ADD_LO12_I   .L0
+                //   jalr   t0, tY
+                //       R_RISCV_TLSDESC_CALL         .L0
                 //
-                // Without a descriptor, the first two instructions are
-                // deleted by relaxation and the rest becomes either
-                // `auipc a0, %gottp_hi; l[d|w] a0, %gottp_lo(a0)`, or for an
-                // executable `addi a0, zero, %tpoff_lo` (the addi also
-                // deleted) or `lui a0, %tpoff_hi; addi a0, a0, %tpoff_lo`.
-                // Without relaxation the useless instructions remain.
+                // For non-dlopen'd DSO, we may relax the instructions to the following:
+                //
+                //   <deleted>
+                //   <deleted>
+                //   auipc  a0, %gottp_hi(a0)
+                //   l[d|w] a0, %gottp_lo(a0)
+                //
+                // For executable, if the TP offset is small enough, we'll relax
+                // it to the following:
+                //
+                //   <deleted>
+                //   <deleted>
+                //   <deleted>
+                //   addi   a0, zero, %tpoff_lo(a0)
+                //
+                // Otherwise, the following sequence is used:
+                //
+                //   <deleted>
+                //   <deleted>
+                //   lui    a0, %tpoff_hi(a0)
+                //   addi   a0, a0, %tpoff_lo(a0)
+                //
+                // If the code-shrinking relaxation is disabled, we may leave
+                // original useless instructions instead of deleting them, but we
+                // accept that because relaxations are enabled by default.
                 R_RISCV_TLSDESC_HI20 => {
                     if sym.has_tlsdesc(&ctx.symbols) && removed == 0 {
                         utype(loc, sym.tlsdesc_addr(ctx).wrapping_add(a).wrapping_sub(p));
@@ -671,7 +731,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                                     sym2.tlsdesc_addr(ctx).wrapping_add(a2).wrapping_sub(p2),
                                 );
                             } else {
-                                write32(loc, NOP);
+                                write32(loc, NOP); // nop
                             }
                         }
                         R_RISCV_TLSDESC_ADD_LO12 => {
@@ -681,18 +741,19 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                                     sym2.tlsdesc_addr(ctx).wrapping_add(a2).wrapping_sub(p2),
                                 );
                             } else if sym2.has_gottp(&ctx.symbols) {
-                                write32(loc, 0x517); // auipc a0, <hi20>
+                                write32(loc, 0x517); // auipc a0,<hi20>
                                 utype(loc, sym2.gottp_addr(ctx).wrapping_add(a2).wrapping_sub(p2));
                             } else {
-                                write32(loc, 0x537); // lui a0, <hi20>
+                                write32(loc, 0x537); // lui a0,<hi20>
                                 utype(loc, tprel);
                             }
                         }
                         _ => {
                             if sym2.has_tlsdesc(&ctx.symbols) {
-                                // Nothing to do.
+                                // Do nothing
                             } else if sym2.has_gottp(&ctx.symbols) {
-                                write32(loc, if IS_64 { 0x53503 } else { 0x52503 }); // l[d|w] a0, <lo12>
+                                // l[d|w] a0,<lo12>
+                                write32(loc, if IS_64 { 0x53503 } else { 0x52503 });
                                 write_itype(
                                     loc,
                                     sym2.gottp_addr(ctx).wrapping_add(a2).wrapping_sub(p2),
@@ -701,11 +762,11 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                                 write32(
                                     loc,
                                     if is_int(tprel as i64, 12) {
-                                        0x513
+                                        0x513 // addi a0,zero,<lo12>
                                     } else {
-                                        0x50513
+                                        0x50513 // addi a0,a0,<lo12>
                                     },
-                                ); // addi a0, zero|a0, <lo12>
+                                );
                                 write_itype(loc, tprel);
                             }
                         }
@@ -720,15 +781,18 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                 R_RISCV_SUB32 => End::write_u32(loc, End::read_u32(loc).wrapping_sub(sa as u32)),
                 R_RISCV_SUB64 => End::write_u64(loc, End::read_u64(loc).wrapping_sub(sa)),
                 R_RISCV_ALIGN => {
-                    // R_RISCV_ALIGN is followed by NOPs, some of which may
-                    // have been removed to align the next instruction. The
-                    // whole NOP sequence is rewritten so that it stays valid
-                    // (the first two bytes of a 4-byte NOP can't go alone).
+                    // A R_RISCV_ALIGN is followed by a NOP sequence. We need to remove
+                    // zero or more bytes so that the instruction after R_RISCV_ALIGN is
+                    // aligned to a given alignment boundary.
+                    //
+                    // We need to guarantee that the NOP sequence is valid after byte
+                    // removal (e.g. we can't remove the first 2 bytes of a 4-byte NOP).
+                    // For the sake of simplicity, we always rewrite the entire NOP sequence.
                     let padding = (rel.r_addend - removed) as usize;
                     debug_assert_eq!(padding & 1, 0);
                     let mut k = 0;
                     while k + 4 <= padding {
-                        write32(&mut loc[k..], NOP);
+                        write32(&mut loc[k..], NOP); // nop
                         k += 4;
                     }
                     if k < padding {
@@ -866,6 +930,7 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
         }
     }
 
+    // Scan relocations to shrink a given section.
     fn shrink_section(ctx: &Context<Self>, isec: &InputSection) -> Vec<RelocDelta> {
         let file = &ctx.objs[isec.file.index()];
         let rels = isec.rels::<Self>(file);
@@ -873,8 +938,8 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
         let mut deltas: Vec<RelocDelta> = Vec::new();
         let mut delta = 0i64;
 
-        // Whether 2-byte instructions may be used. They usually may on
-        // Unix, since RV64GC is the common baseline.
+        // True if we can use 2-byte instructions. This is usually true on
+        // Unix because RV64GC is generally considered the baseline hardware.
         let use_rvc = file.base.e_flags & EF_RISCV_RVC != 0;
 
         // Records that `d` bytes go away at relocation `r`.
@@ -890,12 +955,19 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
             let r = &rels.at(i);
             let sym = &ctx.symbols[file.base.symbols[r.r_sym as usize]];
 
-            // R_RISCV_ALIGN must be handled: it refers to NOPs, some or all
-            // of which are removed so that the following instruction is
-            // aligned. r_addend holds the number of NOP bytes, and the
-            // alignment is the smallest power of two greater than that,
-            // since the assembler emits enough NOPs for the worst case.
+            // Handling R_RISCV_ALIGN is mandatory.
+            //
+            // R_RISCV_ALIGN refers to NOP instructions. We need to eliminate some
+            // or all of the instructions so that the instruction that immediately
+            // follows the NOPs is aligned to a specified alignment boundary.
             if r.r_type == R_RISCV_ALIGN {
+                // The total bytes of NOPs is stored to r_addend, so the next
+                // instruction is r_addend away. The alignment itself is not recorded
+                // anywhere; it is the smallest power of two greater than r_addend,
+                // because the assembler emits as many NOP bytes as the worst case
+                // requires, which is the alignment minus the minimum instruction
+                // size. For example, `.balign 4` yields r_addend 2 in RVC code and
+                // `.balign 8` yields 4 in non-RVC code.
                 let p = isec.addr(ctx) + r.r_offset - delta as u64;
                 let desired = align_to(p, (r.r_addend as u64 + 1).next_power_of_two());
                 let actual = p + r.r_addend as u64;
@@ -905,13 +977,16 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                 continue;
             }
 
-            // Other relaxations are optional.
+            // Handling other relocations is optional.
             if !ctx.args.relax || i + 1 == rels.len() || rels.at(i + 1).r_type != R_RISCV_RELAX {
                 continue;
             }
 
-            // Linker-synthesized symbols get their values only once the
-            // layout is fixed, so they're never relaxed against.
+            // Linker-synthesized symbols haven't been assigned their final
+            // values when we are shrinking sections because actual values can
+            // be computed only after we fix the file layout. Therefore, we
+            // assume that relocations against such symbols are always
+            // non-relaxable.
             if sym.file() == ctx.internal_obj.map(FileId::Obj) {
                 continue;
             }
@@ -920,33 +995,40 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
 
             match r.r_type {
                 R_RISCV_CALL | R_RISCV_CALL_PLT => {
-                    // AUIPC+JALR reaches ±2 GiB; C.J, C.JAL or JAL do for
-                    // nearer targets.
+                    // These relocations refer to an AUIPC + JALR instruction pair to
+                    // allow to jump to anywhere in PC ± 2 GiB. If the jump target is
+                    // close enough to PC, we can use C.J, C.JAL or JAL instead.
                     let dist = compute_distance(ctx, sym, isec, r);
                     if dist & 1 != 0 {
                         continue;
                     }
                     let rd = rd(&contents[r.r_offset as usize + 4..]);
                     if use_rvc && rd == 0 && is_int(dist, 12) {
-                        // x0 and within ±2 KiB: C.J saves 6 bytes.
+                        // If rd is x0 and the jump target is within ±2 KiB, we can use
+                        // C.J, saving 6 bytes.
                         remove(6);
                     } else if use_rvc && !IS_64 && rd == 1 && is_int(dist, 12) {
-                        // x1 and within ±2 KiB: C.JAL, which is RV32-only.
+                        // If rd is x1 and the jump target is within ±2 KiB, we can use
+                        // C.JAL. This is RV32 only because C.JAL is RV32-only instruction.
                         remove(6);
                     } else if is_int(dist, 21) {
-                        // Within ±1 MiB: JAL.
+                        // If the jump target is within ±1 MiB, we can use JAL.
                         remove(4);
                     }
                 }
                 R_RISCV_GOT_HI20 => {
-                    // A GOT load of a link-time constant becomes a direct
-                    // materialization of the value.
+                    // A GOT_HI20 followed by a PCREL_LO12_I is used to load a value from
+                    // GOT. If the loaded value is a link-time constant, we can rewrite
+                    // the instructions to directly materialize the value, eliminating a
+                    // memory load.
                     if sym.is_absolute() && is_got_load_pair(ctx, isec, i) {
                         let val = sym.addr(ctx).wrapping_add(r.r_addend as u64) as i64;
                         if use_rvc && is_int(val, 6) && rd(&contents[r.r_offset as usize..]) != 0 {
-                            remove(6); // AUIPC+LD -> C.LI
+                            // Replace AUIPC + LD with C.LI.
+                            remove(6);
                         } else if is_int(val, 12) {
-                            remove(4); // AUIPC+LD -> ADDI
+                            // Replace AUIPC + LD with ADDI.
+                            remove(4);
                         }
                     }
                 }
@@ -954,20 +1036,36 @@ impl<End: Endian, const IS_64: bool> Arch for RiscvTarget<End, IS_64> {
                     let val = sym.addr(ctx).wrapping_add(r.r_addend as u64) as i64;
                     let rd = rd(&contents[r.r_offset as usize..]);
                     if is_int(val, 12) {
-                        // `lui t0, %hi(foo); add t0, t0, %lo(foo)` becomes
-                        // `add t0, x0, %lo(foo)` if bits 32..11 of foo are all
-                        // ones or all zeros.
+                        // We can replace `lui t0, %hi(foo)` and `add t0, t0, %lo(foo)`
+                        // instruction pair with `add t0, x0, %lo(foo)` if foo's bits
+                        // [32:11] are all one or all zero.
                         remove(4);
                     } else if use_rvc && rd != 0 && rd != 2 && is_int(val + 0x800, 18) {
-                        // The upper 20 bits fit in 6 bits: C.LUI.
+                        // If the upper 20 bits can actually be represented in 6 bits,
+                        // we can use C.LUI instead of LUI.
                         remove(2);
                     }
                 }
                 R_RISCV_TPREL_HI20 | R_RISCV_TPREL_ADD => {
-                    // `lui t0, %tprel_hi(foo); add t0, t0, tp` compute
-                    // TP + %tprel_hi20(foo), which the low 12-bit access is
-                    // relative to. Within TP ± 2 KiB that is TP itself, so
-                    // both instructions go and the access uses tp directly.
+                    // These relocations are used to add a high 20-bit value to the
+                    // thread pointer. The following two instructions materializes
+                    // TP + %tprel_hi20(foo) in %t0, for example.
+                    //
+                    //  lui  t0, %tprel_hi(foo)         # R_RISCV_TPREL_HI20
+                    //  add  t0, t0, tp                 # R_RISCV_TPREL_ADD
+                    //
+                    // Then thread-local variable `foo` is accessed with the low
+                    // 12-bit offset like this:
+                    //
+                    //  sw   t0, %tprel_lo(foo)(t0)     # R_RISCV_TPREL_LO12_S
+                    //
+                    // However, if the variable is at TP ± 2 KiB, TP + %tprel_hi20(foo)
+                    // is the same as TP, so we can instead access the thread-local
+                    // variable directly using TP like this:
+                    //
+                    //  sw   t0, %tprel_lo(foo)(tp)
+                    //
+                    // Here, we remove `lui` and `add` if the offset is within ±2 KiB.
                     let val = sym
                         .addr(ctx)
                         .wrapping_add(r.r_addend as u64)
@@ -1028,16 +1126,32 @@ fn write_plt_stub<const IS_64: bool>(buf: &mut [u8], disp: u64) {
     write_itype(&mut buf[4..], disp);
 }
 
-// ISA strings
+// ISA name handlers
 //
-// An ISA string such as "rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0" names
-// the base ISA followed by extensions, each with a mandatory major and
-// minor version ("m2p0" is the "m" extension, version 2.0). Single-letter
-// extensions come first; "z" extensions are named by several letters,
-// and "s" and "x" prefixes are reserved for supervisor-level and private
-// extensions. Every input object records the string of the extensions it
-// uses, and the output gets the merged string. Extensions must appear in
-// a specific, not quite alphabetical order for the string to be unique.
+// An example of ISA name is "rv64i2p1_m2p0_a2p1_f2p2_d2p2_c2p0_zicsr2p0".
+// An ISA name starts with the base name (e.g. "rv64i2p1") followed by
+// ISA extensions separated by underscores.
+//
+// There are lots of ISA extensions defined for RISC-V, and they are
+// identified by name. Some extensions are of single-letter alphabet such
+// as "m" or "q". Newer extension names start with "z" followed by one or
+// more alphabets (i.e. "zicsr"). "s" and "x" prefixes are reserved
+// for supervisor-level extensions and private extensions, respectively.
+//
+// Each extension consists of a name, a major version and a minor version.
+// For example, "m2p0" indicates the "m" extension of version 2.0. "p" is
+// just a separator. Versions are often omitted in documents, but they are
+// mandatory in .riscv.attributes. Likewise, abbreviations such as "G"
+// (which is short for "IMAFD") are not allowed in .riscv.attributes.
+//
+// Each RISC-V object file contains an ISA string enumerating extensions
+// used by the object file. We need to merge input objects' ISA strings
+// into a single ISA string.
+//
+// In order to guarantee string uniqueness, extensions have to be ordered
+// in a specific manner. The exact rule is unfortunately a bit complicated.
+//
+// The following functions takes care of ISA strings.
 
 #[derive(Clone, Debug)]
 struct Extension {
@@ -1046,8 +1160,13 @@ struct Extension {
     minor: u64,
 }
 
-/// Whether extension `x` must precede extension `y`. For example,
-/// rv64imafd is legal but rv64iafdm isn't.
+// As per the RISC-V spec, the extension names must be sorted in a very
+// specific way, and unfortunately that's not just an alphabetical order.
+// For example, rv64imafd is a legal ISA string, whereas rv64iafdm is not.
+// The exact rule is somewhat arbitrary.
+//
+// This function returns true if the first extension name should precede
+// the second one as per the rule.
 fn extension_precedes(x: &str, y: &str) -> bool {
     fn single_letter_rank(c: u8) -> i64 {
         const ORDER: &[u8] = b"iemafdqlcbkjtpvnh";
@@ -1103,14 +1222,14 @@ fn parse_arch_string(s: &[u8]) -> Option<Vec<Extension>> {
     (!result.is_empty()).then_some(result)
 }
 
-/// Merges two extension lists, keeping the newer version of an extension
-/// present in both. The base ISAs must match.
 fn merge_extensions(x: &[Extension], y: &[Extension]) -> Option<Vec<Extension>> {
+    // The base part (i.e. "rv64i" or "rv32i") must match.
     if x[0].name != y[0].name {
         return None;
     }
     let mut result = Vec::new();
     let (mut x, mut y) = (x, y);
+    // Merge ISA extension strings
     while let (Some(a), Some(b)) = (x.first(), y.first()) {
         if a.name == b.name {
             result.push(if (a.major, a.minor) < (b.major, b.minor) {
@@ -1141,8 +1260,9 @@ fn arch_string(extensions: &[Extension]) -> String {
         .join("_")
 }
 
-/// The contents of the output `.riscv.attributes`: the merged ISA string
-/// and stack alignment of the inputs.
+//
+// Output .riscv.attributes class
+//
 pub fn attributes_contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
     let mut stack: Option<u64> = None;
     let mut arch: Vec<Extension> = Vec::new();
@@ -1186,8 +1306,6 @@ pub fn attributes_contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
         return Vec::new();
     }
 
-    // Format version, then one "riscv" sub-section holding a file-scoped
-    // sub-sub-section of tagged attributes. Both carry their length.
     let mut attributes = Vec::new();
     if let Some(stack) = stack {
         encode_uleb(&mut attributes, ELF_TAG_RISCV_STACK_ALIGN as u64);
@@ -1208,11 +1326,11 @@ pub fn attributes_contents<E: Arch>(ctx: &Context<E>) -> Vec<u8> {
         E::Endian::write_u32(&mut bytes, v);
         bytes
     };
-    let mut out = vec![b'A'];
-    out.extend_from_slice(&u32_bytes(sub_size as u32));
-    out.extend_from_slice(b"riscv\0");
-    out.push(ELF_TAG_FILE as u8);
-    out.extend_from_slice(&u32_bytes(sub_sub_size as u32));
+    let mut out = vec![b'A']; // Format version
+    out.extend_from_slice(&u32_bytes(sub_size as u32)); // Sub-section length
+    out.extend_from_slice(b"riscv\0"); // Vendor name
+    out.push(ELF_TAG_FILE as u8); // Sub-section tag
+    out.extend_from_slice(&u32_bytes(sub_sub_size as u32)); // Sub-sub-section length
     out.extend_from_slice(&attributes);
     out
 }

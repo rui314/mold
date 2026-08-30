@@ -67,6 +67,7 @@ pub struct ThunkLayout {
     pub entry_size: u64,
 }
 
+// Machine descriptions
 pub trait Arch: Layout {
     const NAME: &'static str;
     const FAMILY: Family;
@@ -113,11 +114,29 @@ pub trait Arch: Layout {
     const IS_RISCV: bool = matches!(Self::FAMILY, Family::RiscV);
     const IS_LOONGARCH: bool = matches!(Self::FAMILY, Family::LoongArch);
 
-    /// The maximum distance a direct branch can cover, for targets that need
-    /// range extension thunks. A small safety margin is subtracted so that
-    /// the exact branch origin, which differs slightly between targets,
-    /// doesn't matter.
+    // The maximum distance of branch instructions used for function calls.
+    //
+    // The exact origin for computing a destination varies slightly depending
+    // on the target architecture. For example, ARM32's B instruction jumps to
+    // the branch's address + immediate + 4 (i.e., B with offset 0 jumps to
+    // the next instruction), while RISC-V has no such implicit bias. Here, we
+    // subtract 32 as a safety margin that is large enough for all targets.
     fn branch_distance() -> i64 {
+        // ARM64's branch has 26 bits immediate. The immediate is padded with
+        // implicit two-bit zeros because all instructions are 4 bytes aligned
+        // and therefore the least two bits are always zero. So the branch
+        // operand is effectively 28 bits long. That means the branch range is
+        // [-2^27, 2^27) or PC ± 128 MiB.
+        //
+        // ARM32's Thumb branch has 24 bits immediate, and the instructions are
+        // aligned to 2, so it's effectively 25 bits. It's [-2^24, 2^24) or PC ±
+        // 16 MiB.
+        //
+        // ARM32's non-Thumb branches have twice longer range than its Thumb
+        // counterparts, but we conservatively use the Thumb's limitation.
+        //
+        // PPC's branch has 24 bits immediate, and the instructions are aligned
+        // to 4, therefore the reach is [-2^25, 2^25) or PC ± 32 MiB.
         let bits = match Self::FAMILY {
             Family::Arm64 => 27,
             Family::Arm32 => 24,

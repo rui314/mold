@@ -1,3 +1,4 @@
+// output-chunks.cc
 //! Output chunks: the contiguous regions that make up the output file.
 //!
 //! Besides the output sections built from input sections, the linker
@@ -118,7 +119,7 @@ impl ChunkId {
     }
 }
 
-/// State shared by all chunks.
+// Chunk represents a contiguous region in an output file.
 #[derive(Debug)]
 pub struct ChunkHeader {
     pub name: &'static BStr,
@@ -135,7 +136,10 @@ pub struct ChunkHeader {
     /// For --gdb-index
     pub is_compressed: bool,
 
-    // Synthesized local symbols, e.g. `foo$got` or thunk labels.
+    // Some synethetic sections add local symbols to the output.
+    // For example, range extension thunks adds function_name@thunk
+    // symbol for each thunk entry. The following members are used
+    // for such synthesizing symbols.
     pub local_symtab_idx: u32,
     pub num_local_symtab: u32,
     pub strtab_size: u64,
@@ -185,7 +189,7 @@ impl ChunkHeader {
     }
 }
 
-/// The ELF file header.
+// ELF header which is at the beginning of each ELF file.
 #[derive(Debug)]
 pub struct OutputEhdr {
     pub hdr: ChunkHeader,
@@ -200,8 +204,11 @@ impl OutputEhdr {
     }
 }
 
-/// The section header table, usually at the end of the file. It is not
-/// needed at runtime; only the program header is.
+// OutputShdr represents the section header. The section header is usually
+// located at the end of an ELF file and is optional for executables.
+// Executables work without it because the runtime only reads the program
+// header. Section header is significant only in object files and not
+// needed at runtime
 #[derive(Debug)]
 pub struct OutputShdr {
     pub hdr: ChunkHeader,
@@ -216,7 +223,10 @@ impl OutputShdr {
     }
 }
 
-/// The program header, describing the segments the kernel maps.
+// Program header, a.k.a. segment header. Each entry in the program header
+// represents a contiguous region of memory and has attributes such as
+// page protection bits. On program startup, the kernel mmap's the file
+// contents to memory based on the program header.
 #[derive(Debug)]
 pub struct OutputPhdr {
     pub hdr: ChunkHeader,
@@ -234,7 +244,7 @@ impl OutputPhdr {
     }
 }
 
-/// `.gdb_index`, built after everything else has been written.
+// .gdb_index contains several tables to speed up gdb start-up.
 #[derive(Debug)]
 pub struct GdbIndexSection {
     pub hdr: ChunkHeader,
@@ -284,8 +294,8 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     ehdr.e_flags = E::eflags(ctx);
     ehdr.e_ehsize = ElfEhdr::size::<E>() as u16;
 
-    // If e_shstrndx is too large, the real value goes to the zeroth
-    // section's sh_link.
+    // If e_shstrndx is too large, a dummy value is set to e_shstrndx.
+    // The real value is stored to the zero'th section's sh_link field.
     if let Some(shstrtab) = &ctx.shstrtab {
         ehdr.e_shstrndx = if shstrtab.hdr.shndx < SHN_LORESERVE {
             shstrtab.hdr.shndx as u16
@@ -313,8 +323,9 @@ fn write_ehdr<E: Arch>(ctx: &Context<E>, buf: &mut [u8]) {
     if let Some(shdr) = &ctx.shdr {
         ehdr.e_shoff = shdr.hdr.shdr.sh_offset;
         ehdr.e_shentsize = ElfShdr::size::<E>() as u16;
-        // e_shnum is 16 bits; a larger count is stored in the zeroth
-        // section's sh_size.
+        // Since e_shnum is a 16-bit integer field, we can't store a very
+        // large value there. If it is >65535, the real value is stored to
+        // the zero'th section's sh_size field.
         let shnum = shdr.hdr.shdr.sh_size / ElfShdr::size::<E>() as u64;
         ehdr.e_shnum = if shnum <= u16::MAX as u64 {
             shnum as u16
@@ -392,9 +403,10 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
             ..ElfPhdr::default()
         };
         if shdr.sh_type == SHT_NOBITS {
-            // p_offset is not significant for a segment with no file
-            // contents, but some loaders want it congruent with the
-            // virtual address modulo the page size.
+            // p_offset indicates the in-file start offset and is not
+            // significant for segments with zero on-file size. We still want to
+            // keep it congruent with the virtual address modulo page size
+            // because some loaders (at least FreeBSD's) are picky about it.
             phdr.p_offset = shdr.sh_addr % ctx.page_size;
         } else {
             phdr.p_offset = shdr.sh_offset;
@@ -425,7 +437,8 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
     };
     let is_note = |id: ChunkId| ctx.chunk_header(id).shdr.sh_type == SHT_NOTE;
 
-    // Only these chunks are considered when creating PT_LOAD segments.
+    // When we are creating PT_LOAD segments, we consider only
+    // the following chunks.
     let mut chunks: Vec<ChunkId> = ctx
         .chunks
         .iter()
@@ -433,21 +446,24 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         .filter(|&id| ctx.chunk_header(id).is_alloc() && !is_tbss(id))
         .collect();
 
-    // The ELF spec requires PT_LOAD entries to be sorted by p_vaddr.
+    // The ELF spec says that "loadable segment entries in the program
+    // header table appear in ascending order, sorted on the p_vaddr
+    // member".
     chunks.sort_by_key(|&id| ctx.chunk_header(id).shdr.sh_addr);
 
-    // PT_PHDR for the program header itself.
+    // Create a PT_PHDR for the program header itself.
     if let Some(phdr) = &ctx.phdr {
         if phdr.hdr.is_alloc() {
             define(&mut vec, PT_PHDR, PF_R, ChunkId::Phdr);
         }
     }
 
+    // Create a PT_INTERP.
     if ctx.interp.is_some() {
         define(&mut vec, PT_INTERP, PF_R, ChunkId::Interp);
     }
 
-    // PT_NOTE for note sections.
+    // Create a PT_NOTE for SHF_NOTE sections.
     let mut i = 0;
     while i < chunks.len() {
         let first = chunks[i];
@@ -462,7 +478,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         }
     }
 
-    // PT_LOAD segments.
+    // Create PT_LOAD segments.
     let mut i = 0;
     while i < chunks.len() {
         let first = chunks[i];
@@ -497,7 +513,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         }
     }
 
-    // PT_TLS
+    // Create a PT_TLS.
     let is_tls = |id: ChunkId| ctx.chunk_header(id).shdr.sh_flags & SHF_TLS as u64 != 0;
     let mut i = 0;
     while i < ctx.chunks.len() {
@@ -512,6 +528,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         }
     }
 
+    // Add PT_DYNAMIC
     if let Some(dynamic) = &ctx.dynamic {
         if dynamic.hdr.shdr.sh_size != 0 {
             let flags = to_phdr_flags(ctx, ChunkId::Dynamic);
@@ -519,18 +536,22 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         }
     }
 
+    // Add PT_GNU_EH_FRAME
     if ctx.eh_frame_hdr.is_some() {
         define(&mut vec, PT_GNU_EH_FRAME, PF_R, ChunkId::EhFrameHdr);
     }
 
+    // Add PT_GNU_SFRAME
     if ctx.sframe.hdr.shdr.sh_size != 0 && ctx.chunks.contains(&ChunkId::SFrame) {
         define(&mut vec, PT_GNU_SFRAME, PF_R, ChunkId::SFrame);
     }
 
+    // Add PT_GNU_PROPERTY
     if let Some(id) = ctx.find_chunk_by_name(b".note.gnu.property") {
         define(&mut vec, PT_GNU_PROPERTY, PF_R, id);
     }
 
+    // Create a PT_RISCV_ATTRIBUTES
     if ctx
         .riscv_attributes
         .as_ref()
@@ -544,12 +565,13 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         );
     }
 
+    // Create a PT_ARM_EDXIDX
     if ctx.arm_exidx.is_some() {
         define(&mut vec, PT_ARM_EXIDX, PF_R, ChunkId::ArmExidx);
     }
 
-    // PT_GNU_STACK is a marker segment controlling the executable bit of
-    // the stack area.
+    // Add PT_GNU_STACK, which is a marker segment that doesn't really
+    // contain any segments. It controls executable bit of stack area.
     vec.push(ElfPhdr {
         p_type: PT_GNU_STACK,
         p_flags: if ctx.args.z_execstack {
@@ -562,7 +584,7 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         ..ElfPhdr::default()
     });
 
-    // PT_GNU_RELRO
+    // Create a PT_GNU_RELRO.
     if ctx.args.z_relro {
         let mut i = 0;
         while i < chunks.len() {
@@ -579,16 +601,33 @@ fn create_phdr<E: Arch>(ctx: &Context<E>) -> Vec<ElfPhdr> {
         }
     }
 
+    // Create a PT_OPENBSD_RANDOMIZE
     for &id in &ctx.chunks {
         if ctx.chunk_header(id).name == b".openbsd.randomdata" {
             define(&mut vec, PT_OPENBSD_RANDOMIZE, PF_R | PF_W, id);
         }
     }
 
-    // --physical-image-base sets p_paddr for embedded programs whose
-    // segments start out in ROM. We keep vaddr == paddr for as many
-    // segments as possible so that they can be used in place, but give
-    // up once a gap between segments is two pages or larger.
+    // Set p_paddr if --physical-image-base was given. --physical-image-base
+    // is typically used in embedded programming to specify the base address
+    // of a memory-mapped ROM area. In that environment, paddr refers to a
+    // segment's initial location in ROM and vaddr refers the its run-time
+    // address.
+    //
+    // When a device is turned on, it start executing code at a fixed
+    // location in the ROM area. At that location is a startup routine that
+    // copies data or code from ROM to RAM before using them.
+    //
+    // .data must have different paddr and vaddr because ROM is not writable.
+    // paddr of .rodata and .text may or may be equal to vaddr. They can be
+    // directly read or executed from ROM, but oftentimes they are copied
+    // from ROM to RAM because Flash or EEPROM are usually much slower than
+    // DRAM.
+    //
+    // We want to keep vaddr == pvaddr for as many segments as possible so
+    // that they can be directly read/executed from ROM. If a gap between
+    // two segments is two page size or larger, we give up and pack segments
+    // tightly so that we don't waste too much ROM area.
     if let Some(base) = ctx.args.physical_image_base {
         if let Some(first) = vec.iter().position(|p| p.p_type == PT_LOAD) {
             let mut addr = base;

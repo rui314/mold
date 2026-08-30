@@ -292,6 +292,7 @@ pub const EF_LOONGARCH_ABI_MODIFIER_MASK: u32 = 0x7;
 pub const EF_LOONGARCH_OBJABI_V1: u32 = 0x40;
 pub const EF_LOONGARCH_OBJABI_MASK: u32 = 0xC0;
 
+// Relocation types
 pub const R_NONE: u32 = 0;
 
 pub const R_X86_64_NONE: u32 = 0;
@@ -1220,6 +1221,7 @@ pub const R_LARCH_TLS_LD_PCREL20_S2: u32 = 124;
 pub const R_LARCH_TLS_GD_PCREL20_S2: u32 = 125;
 pub const R_LARCH_TLS_DESC_PCREL20_S2: u32 = 126;
 
+// DWARF data types
 pub const DW_EH_PE_absptr: u32 = 0;
 pub const DW_EH_PE_omit: u32 = 0xff;
 pub const DW_EH_PE_uleb128: u32 = 0x01;

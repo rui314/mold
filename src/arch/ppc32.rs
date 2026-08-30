@@ -1,27 +1,42 @@
-//! PowerPC, 32-bit.
+//! This file implements the PowerPC 32-bit ISA. For 64-bit PowerPC, see
+//! arch-ppc64v1.cpp and arch-ppc64v2.cpp.
 //!
-//! PPC32 is a big-endian RISC ISA with 32 general-purpose registers, of
-//! which `r0`, `r11` and `r12` are reserved for the linker's use in PLT
-//! entries and thunks. The link register LR holds return addresses and
-//! CTR is a branch target register.
+//! PPC32 is a RISC ISA. It has 32 general-purpose registers (GPRs).
+//! r0, r11 and r12 are reserved for static linkers, so we can use these
+//! registers in PLTs and range extension thunks. In addition to that, it
+//! has a few special registers. Notable ones are LR which holds a return
+//! address and CTR which we can use to store a branch target address.
 //!
-//! What complicates the psABI is the lack of PC-relative loads and
-//! stores. A position-independent function finds its own address with
+//! It feels that the PPC32 psABI is unnecessarily complicated at first
+//! glance, but that is mainly stemmed from the fact that the ISA lacks
+//! PC-relative load/store instructions. Since machine instructions cannot
+//! load data relative to its own address, it is not straightforward to
+//! support position-independent code (PIC) on PPC32.
 //!
-//! ```text
-//!    mflr  r0        // save the return address
-//!    bcl   20, 31, 4 // "call" the next instruction
-//!    mflr  r12       // the return address is our own address
-//!    mtlr  r0        // restore the return address
-//! ```
+//! A position-independent function typically contains the following code
+//! in the prologue to obtain its own address:
 //!
-//! and an object compiled with `-fPIC` has a `.got2` section holding the
-//! addresses of the objects it refers to. A PIC function sets `r30` to
-//! its own file's `.got2 + 0x8000` so that any of those addresses is one
-//! 16-bit-offset load away. Each input file has its own `.got2`, so `r30`
-//! means different things in functions from different files; GNU ld
-//! exploits it anyway with per-file PLTs, but the PLT here simply
-//! doesn't depend on `r30`.
+//!    mflr  r0        // save the current return address to %r0
+//!    bcl   20, 31, 4 // call the next instruction as if it were a function
+//!    mtlr  r12       // save the return address to %r12
+//!    mtlr  r0        // restore the original return address
+//!
+//! An object file compiled with -fPIC contains a data section named
+//! `.got2` to store addresses of locally-defined global variables and
+//! constants. A PIC function usually computes its .got2+0x8000 and set it
+//! to %r30. This scheme allows the function to access global objects
+//! defined in the same input file with a single %r30-relative load/store
+//! instruction with a 16-bit offset, given that .got2 is smaller than
+//! 0x10000 (or 65536) bytes.
+//!
+//! Since each object file has its own .got2, %r30 refers to different
+//! places in a merged .got2 for two functions that came from different
+//! input files. Therefore, %r30 makes sense only within a single function.
+//!
+//! Technically, we can reuse a %r30 value in our PLT if we create a PLT
+//! _for each input file_ (that's what GNU ld seems to be doing), but that
+//! doesn't seems to be worth its complexity. Our PLT simply doesn't rely
+//! on a %r30 value.
 //!
 //! https://github.com/rui314/psabi/blob/main/ppc32.pdf
 
@@ -85,10 +100,12 @@ fn write_insns(buf: &mut [u8], insns: &[u32]) {
 /// its own address, loads the destination from the GOT entry at a
 /// known offset and jumps there.
 const PLT_ENTRY: [u32; 9] = [
+    // Get the address of this PLT entry
     0x7c08_02a6, // mflr    r0
     0x429f_0005, // bcl     20, 31, 4
     0x7d88_02a6, // mflr    r12
     0x7c08_03a6, // mtlr    r0
+    // Load an address from the GOT/GOTPLT entry and jump to that address
     0x3d6c_0000, // addis   r11, r12, OFFSET@higha
     0x396b_0000, // addi    r11, r11, OFFSET@lo
     0x818b_0000, // lwz     r12, 0(r11)
@@ -195,6 +212,7 @@ impl Arch for Ppc32 {
     fn scan_relocations(ctx: &Context<Self>, isec: &InputSection) {
         debug_assert!(isec.is_alloc());
         let file = &ctx.objs[isec.file.index()];
+        // Scan relocations
         isec.for_each_reloc::<Self>(ctx, |rel, _| {
             if rel.r_type == R_NONE || isec.record_undef_error(ctx, &rel) {
                 return;
@@ -341,7 +359,7 @@ impl Arch for Ppc32 {
         }
     }
 
-    /// All PLT calls go through thunks.
+    /// On PowerPC, all PLT calls go through range extension thunks.
     fn always_needs_thunk(ctx: &Context<Self>, sym: &Symbol, _rel: &ElfRel) -> bool {
         sym.has_plt(&ctx.symbols)
     }
@@ -353,7 +371,7 @@ impl Arch for Ppc32 {
             0x429f_0005, // bcl     20, 31, 4
             0x7d88_02a6, // mflr    r12
             0x7c08_03a6, // mtlr    r0
-            // Materialize the destination's address in r11 and jump there.
+            // Materialize the destination's address in %r11 and jump to that address
             0x3d6c_0000, // addis   r11, r12, OFFSET@higha
             0x396b_0000, // addi    r11, r11, OFFSET@lo
             0x7d69_03a6, // mtctr   r11
